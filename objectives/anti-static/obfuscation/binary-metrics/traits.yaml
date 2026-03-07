@@ -15,6 +15,11 @@ traits:
       type: metrics
       field: binary.overall_entropy
       min: 7.0
+    downgrade:
+      any:
+        - type: string
+          substr: ";!@Install@!UTF-8!"
+        - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
   - id: very-high-entropy
     desc: "Very high entropy (strongly indicates"
     crit: suspicious
@@ -24,6 +29,19 @@ traits:
       type: metrics
       field: binary.overall_entropy
       min: 7.5
+    downgrade:
+      any:
+        - type: string
+          substr: ";!@Install@!UTF-8!"
+        - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
+  - id: 7zsfx-config-marker
+    desc: "7z SFX installer config marker"
+    crit: component
+    conf: 0.9
+    for: [pe]
+    if:
+      type: string
+      substr: ";!@Install@!UTF-8!"
   - id: high-code-entropy
     desc: "High code section entropy (encrypted/packed"
     crit: suspicious
@@ -45,7 +63,11 @@ traits:
     if:
       type: metrics
       field: binary.high_entropy_regions
-      min: 3
+      min: 8
+    downgrade:
+      any:
+        - type: section
+          substr: '.themida'
   # NOTE: Go and Rust binaries have uniform code sections due to compilation
   # patterns, not packing. Lowered threshold - Go binaries typically have
   # entropy variance around 0.3-0.6, so only flag truly uniform binaries.
@@ -80,6 +102,8 @@ traits:
         max: 0
     downgrade:
       any:
+        - type: section
+          substr: '.themida'
         - type: raw
           substr: "ntoskrnl"
         - type: section
@@ -149,13 +173,13 @@ traits:
       type: metrics
       field: binary.import_entropy
       min: 5.0
-  # === String Anomalies ===
-
   # NOTE: Some legitimate binaries (Go, Rust) may have low string counts
   # depending on how strings are extracted. Downgraded to baseline - only useful
   # in composite rules with other indicators. Requires min: 1 to avoid
   # triggering when metrics are not available (0 indicates missing data).
   - id: no-strings
+    # === String Anomalies ===
+
     desc: "No readable strings (potentially encrypted/packed)"
     crit: baseline
     conf: 0.4
@@ -241,6 +265,11 @@ traits:
       - type: metrics
         field: binary.function_count
         max: 20
+      # Export-heavy shared libraries (e.g., parser/codec runtimes) can have
+      # legitimately complex control flow without obfuscation.
+      - type: metrics
+        field: binary.export_count
+        min: 20
   - id: very-high-avg-complexity
     desc: "Very high average complexity (heavy"
     crit: suspicious
@@ -255,6 +284,9 @@ traits:
       - type: metrics
         field: binary.function_count
         max: 20
+      - type: metrics
+        field: binary.export_count
+        min: 20
   - id: extreme-max-complexity
     desc: "Extremely high max function complexity"
     crit: notable
@@ -286,12 +318,12 @@ traits:
       type: metrics
       field: binary.very_high_complexity_functions
       min: 5
-  # === Control Flow Anomalies ===
-
   # NOTE: Complex libraries (parsers, state machines, protocol handlers) naturally
   # have more basic blocks due to branching logic. Raised threshold to avoid FPs
   # on legitimate software like XML parsers (libexpat), compressors, etc.
   - id: many-basic-blocks
+    # === Control Flow Anomalies ===
+
     desc: "High basic blocks per function"
     crit: notable
     conf: 0.55
@@ -375,7 +407,24 @@ traits:
       type: metrics
       field: binary.overlay_entropy
       min: 7.0
+  - id: repeated-padding-marker
+    desc: "Repeated padding marker string block"
+    crit: notable
+    conf: 0.82
+    for: [pe, dll]
+    if:
+      type: string
+      substr: "PADDINGXXPADDING"
 composite_rules:
+  - id: signed-7zsfx-installer
+    desc: "Signed 7z self-extracting installer"
+    crit: component
+    conf: 0.85
+    for: [pe]
+    all:
+      - id: objectives/anti-static/obfuscation/binary-metrics::7zsfx-config-marker
+      - id: micro-behaviors/data/embedded/payload::7z-magic
+      - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
   # === Combined Packing Detection ===
   # NOTE: Removed no-strings/no-imports from this rule as they cause FPs on Go/Rust binaries
   - id: binary-packed
@@ -390,6 +439,11 @@ composite_rules:
       - id: objectives/anti-static/obfuscation/binary-metrics::very-high-entropy
       - id: objectives/anti-static/obfuscation/binary-metrics::high-code-entropy
       - id: objectives/anti-static/obfuscation/binary-metrics::wx-sections
+    downgrade:
+      any:
+        - type: string
+          substr: ";!@Install@!UTF-8!"
+        - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
   - id: binary-heavily-packed
     desc: "Binary is heavily packed/encrypted"
     crit: hostile
@@ -414,6 +468,15 @@ composite_rules:
     all:
       - id: objectives/anti-static/obfuscation/binary-metrics::has-overlay
       - id: objectives/anti-static/obfuscation/binary-metrics::high-entropy-overlay
+  - id: embedded-payload-padding-camouflage
+    desc: "Embedded payload with padding camouflage"
+    crit: notable
+    conf: 0.84
+    attack: "T1027.009"
+    for: [pe, dll]
+    all:
+      - id: objectives/anti-static/obfuscation/binary-metrics::repeated-padding-marker
+      - id: micro-behaviors/data/embedded/payload::pe-magic-embedded
   - id: packer-signature
     desc: "Packer signature pattern detected"
     crit: suspicious
@@ -439,6 +502,11 @@ composite_rules:
     unless:
       - type: raw
         regex: 'BSJB'
+      # Shared libraries with broad exported APIs often include large parser
+      # and state-machine implementations that inflate complexity metrics.
+      - type: metrics
+        field: binary.export_count
+        min: 20
     needs: 2
     any:
       - id: objectives/anti-static/obfuscation/binary-metrics::high-avg-complexity
