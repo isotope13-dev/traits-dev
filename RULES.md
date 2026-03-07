@@ -112,7 +112,7 @@ traits:
 
 | Type | Purpose | Fields |
 |------|---------|--------|
-| `ast` | Parse source | `kind`/`node`, `exact`/`substr`/`regex`/`query` (tree-sitter S-expression) |
+| `ast` | Parse source | `kind`/`node`, `exact`/`substr`/`regex`/`query` (tree-sitter S-expression), `count_min`, `count_max`, `per_kb_min`, `per_kb_max` |
 | `syscall` | Direct syscalls | `name`, `number`, `arch` (all optional, OR within field, AND across fields), `count_min`, `count_max`, `per_kb_min`, `per_kb_max` |
 | `section` | Binary sections | `exact`, `substr`, `regex`, `word`, `case_insensitive`, `length_min`, `length_max`, `entropy_min`, `entropy_max`, `readable`, `writable`, `executable` |
 | `section_ratio` | Section size ratio | `section`, `compare_to` (default: "total"), `min`, `max` |
