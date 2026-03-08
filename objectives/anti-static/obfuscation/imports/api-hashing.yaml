@@ -87,6 +87,26 @@ traits:
       type: hex
       section: text
       pattern: "8B 4? 3C" # mov reg, [reg+0x3C]
+  # x64 PEB access via GS segment (mov rax, qword ptr gs:[0x60])
+  # Common in MSVC CRT (__security_init_cookie, heap init) — only meaningful in composites
+  - id: peb-access-x64
+    desc: Direct PEB access (GS segment)
+    crit: component
+    conf: 0.95
+    for: [pe, dll]
+    if:
+      type: hex
+      pattern: "65 48 8b 04 25 60 00 00 00"
+  # Manual LDR module list traversal (x64)
+  # Walks PEB->Ldr->InMemoryOrderModuleList to enumerate loaded modules
+  - id: ldr-walk
+    desc: Manual LDR module list traversal
+    crit: suspicious
+    conf: 0.9
+    for: [pe, dll]
+    if:
+      type: hex
+      pattern: "48 8b ?? 18 00 00 00 48 8b ?? 20 00 00 00"
   # Common API hash values (from known malware families)
   # LoadLibraryA ROR13 hash = 0xec0e4e8e
   - id: loadlibrarya-ror13-hash
@@ -124,6 +144,8 @@ composite_rules:
       - id: peb-ldr-access
       - id: teb-peb-access
       - id: pe-header-walk
+      - id: peb-access-x64
+      - id: ldr-walk
   # ROR13 hash-based API resolution pattern
   - id: api-hash-resolution
     desc: Dynamic API resolution via ROR13 hashing
@@ -144,16 +166,11 @@ composite_rules:
     conf: 0.85
     all:
       - id: pe-export-walk-primitive
-    any:
-      - id: ror13-hash-seed
-      - id: djb2-hash-constant
-      - id: djb2-multiply-33
-      - id: fnv1a-offset-basis
-    needs: 3
-    none:
+      - id: hash-primitive
+    unless:
       - id: metadata/format/pe::dotnet-assembly
       - id: metadata/format/pe::dotnet-metadata
-  # DJB2-specific API resolution (constant + multiply + PEB walk)
+  # DJB2-specific API resolution (constant + PEB/PE walk)
   - id: djb2-api-resolution
     desc: DJB2 hash-based API resolution
     crit: suspicious
@@ -162,10 +179,11 @@ composite_rules:
     for: [pe]
     all:
       - id: djb2-hash-constant
-      - id: djb2-multiply-33
     any:
       - id: peb-ldr-access
       - id: teb-peb-access
       - id: pe-header-walk
-    none:
+      - id: peb-access-x64
+    needs: 1
+    unless:
       - id: metadata/format/pe::dotnet-metadata

@@ -68,6 +68,7 @@ traits:
     attack: "T1562"                      # Optional ATT&CK code (T1234 or T1234.001)
     for: [csharp]                        # File types (see below)
     platforms: [linux, macos, windows]   # Optional platform filter
+    arch: [x86-64]                       # Optional architecture filter (clamps search in fat binaries)
     size_min: 1000                       # Optional min file size (bytes)
     size_max: 10485760                   # Optional max file size
     entropy_min: 4.5                     # Optional min file entropy (0.0-8.0; section entropy handled via type: section)
@@ -83,6 +84,8 @@ traits:
 
 **Platforms:** `linux`, `macos`, `windows`, `unix`, `android`, `ios`, `all`.
 
+**Architectures:** `x86`, `x86-64`, `aarch64`, `arm`, `riscv`, `mips`, `powerpc`, `powerpc64`, `sparc`, `m68k`, `superh`, `all`. Omitting `arch` is equivalent to `arch: [all]`. Architecture is derived from the analyzed file, never the runtime host. For fat/universal Mach-O binaries, `arch` also clamps pattern searches (hex, raw, encoded) to the byte range of the matching slice, preventing cross-slice false positives.
+
 **Groups:** `binaries` (or `binary`), `scripts` (or `script`, `scripting`).
 **Exclusions:** Prefix with `-` (e.g., `-php`, `scripts,-python`).
 **Unset field:** Use `none` anywhere in the list to unset the field entirely, ignoring defaults.
@@ -96,7 +99,7 @@ traits:
 | `string` | Extracted strings | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `external_ip` |
 | `raw` | Raw file bytes | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `external_ip` |
 | `symbol` | Imports/exports/functions | `exact`, `substr`, `regex` | `platforms` |
-| `hex` | Byte patterns (wildcards always extracted) | pattern string | count, density, `offset`, `offset_range` |
+| `hex` | Byte patterns (wildcards always extracted) | pattern string | count, density, `offset`, `offset_range`, `arch` clamped in fat binaries |
 | `encoded` | **All decoded strings** | `exact`, `substr`, `regex`, `word` | count, density, location, `encoding`, `case_insensitive`, `external_ip` |
 | ~~`base64`~~ | *(removed — use `encoded`)* | | |
 | ~~`xor`~~ | *(removed — use `encoded`)* | | |
