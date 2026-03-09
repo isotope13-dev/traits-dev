@@ -1,0 +1,209 @@
+# PDF document execution triggers and JavaScript eval patterns
+#
+# Detects two related classes of atomic signals in PDF files:
+#
+# 1. Action type tokens in PDF object dictionaries (/S /JavaScript, /S /Launch,
+#    /OpenAction, /AA). Action dicts are always uncompressed, so raw byte
+#    matching is reliable regardless of stream compression.
+#
+# 2. JavaScript code patterns inside PDF JS streams — eval/unescape/fromCharCode
+#    idioms used to hide shellcode, plus known CVE-specific API calls.
+#    Coverage gap: FlateDecode-compressed JS requires a stream decoder.
+#
+# References: ISO 32000-1 §12.6 (Actions), §12.6.4.2 (Launch), §12.6.4.16 (JS)
+# ATT&CK: T1059.007, T1204.002
+defaults:
+  crit: notable
+  conf: 0.9
+  for: [pdf]
+
+traits:
+  # === PDF Action Dictionary Tokens ===
+
+  # JavaScript action — /S /JavaScript or /S /JS (short form).
+  # Legitimate in forms; combined with obfuscation or auto-open: exploit.
+  - id: js-action
+    desc: PDF JavaScript action (/S /JavaScript or /S /JS)
+    if:
+      type: raw
+      regex: "/S\\s+/J(ava)?[Ss]cript"
+
+  # Launch action — executes an arbitrary OS program or document.
+  # No legitimate end-user PDF needs /S /Launch.
+  - id: launch-action
+    desc: PDF Launch action — executes external program
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: raw
+      regex: "/S\\s+/Launch"
+
+  # OpenAction — fires automatically when the PDF is opened.
+  # Benign alone; hostile when paired with JS or Launch.
+  - id: openaction
+    desc: PDF OpenAction — auto-executes on document open
+    if:
+      type: raw
+      substr: "/OpenAction"
+
+  # Additional Actions (/AA) — trigger-based per-field/page actions.
+  - id: additional-actions
+    desc: PDF Additional Actions dict (/AA) — trigger-based execution
+    if:
+      type: raw
+      regex: "/AA\\s*<<"
+
+  # SubmitForm — HTTP-POSTs form data to a remote server.
+  - id: submitform-action
+    desc: PDF SubmitForm action — posts form data to remote server
+    if:
+      type: raw
+      regex: "/S\\s+/SubmitForm"
+
+  # RichMedia — embeds Flash (SWF). Flash is dead tech; presence is suspicious.
+  - id: rich-media
+    desc: PDF RichMedia annotation — Flash/multimedia embed
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: raw
+      substr: "/RichMedia"
+
+  # URI action — opens external URL or protocol handler.
+  - id: uri-action
+    desc: PDF URI action — external URL navigation
+    crit: baseline
+    conf: 0.8
+    if:
+      type: raw
+      regex: "/S\\s+/URI"
+
+  # === JavaScript Content Patterns ===
+
+  # eval() — primary shellcode deobfuscation entry point in PDF JS exploits.
+  - id: js-eval
+    desc: JavaScript eval() in PDF content
+    crit: suspicious
+    if:
+      type: raw
+      regex: "\\beval\\s*\\("
+
+  # unescape() — converts %XX or %uXXXX sequences to chars; classic shellcode encoding.
+  - id: js-unescape
+    desc: JavaScript unescape() in PDF — shellcode percent-encoding
+    crit: suspicious
+    if:
+      type: raw
+      regex: "\\bunescape\\s*\\("
+
+  # decodeURIComponent — modern unescape equivalent.
+  - id: js-decode-uri
+    desc: decodeURIComponent() in PDF JavaScript — shellcode deobfuscation
+    crit: suspicious
+    conf: 0.85
+    if:
+      type: raw
+      regex: "\\bdecodeURIComponent\\s*\\("
+
+  # String.fromCharCode — constructs strings from integer char code arrays.
+  - id: js-fromcharcode
+    desc: String.fromCharCode in PDF JavaScript — character-array shellcode
+    crit: suspicious
+    if:
+      type: raw
+      substr: "String.fromCharCode"
+
+  # %uXXXX Unicode escape — Windows shellcode encoding; 4+ sequences = payload.
+  - id: js-unicode-shellcode
+    desc: Percent-encoded Unicode shellcode sequence in PDF (%uXXXX)
+    crit: suspicious
+    conf: 0.88
+    if:
+      type: raw
+      regex: "(%u[0-9a-fA-F]{4}){4,}"
+
+  # Heap spray NOP sled — %u0c0c%u0c0c or %u9090 packed repeatedly.
+  - id: js-heap-spray
+    desc: JavaScript heap spray NOP sled pattern in PDF
+    crit: suspicious
+    conf: 0.88
+    if:
+      type: raw
+      regex: "(%u0[cC]0[cC]|%u9090){3,}"
+
+  # app.launchURL() — JS API to open a URL; used in drive-by download chains.
+  - id: js-launchurl
+    desc: app.launchURL() in PDF JavaScript — URL-triggered navigation
+    crit: suspicious
+    if:
+      type: raw
+      substr: "app.launchURL"
+
+  # === Known CVE Exploit Patterns ===
+
+  # Collab.collectEmailInfo — CVE-2007-5659 (Adobe Reader ≤8.1.2).
+  - id: js-collab-email
+    desc: Collab.collectEmailInfo() — CVE-2007-5659 exploit
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: raw
+      substr: "Collab.collectEmailInfo"
+
+  # util.printf — CVE-2008-2992 (Adobe Reader ≤8.1.3).
+  - id: js-util-printf
+    desc: util.printf() in PDF JavaScript — CVE-2008-2992 format string exploit
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: raw
+      substr: "util.printf"
+
+  # spell.customDictionaryOpen — CVE-2009-0927 (Adobe Reader 9.0).
+  - id: js-spell-dict
+    desc: spell.customDictionaryOpen() — CVE-2009-0927 stack overflow
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: raw
+      substr: "spell.customDictionaryOpen"
+
+  # getAnnots() — annotation enumeration used for heap spray allocation.
+  - id: js-getannots
+    desc: getAnnots() in PDF JavaScript — heap spray via annotation enumeration
+    if:
+      type: raw
+      regex: "\\bgetAnnots\\s*\\("
+
+composite_rules:
+  # Helper: any auto-execution trigger (used by hostile composites in objectives/).
+  - id: pdf-auto-trigger
+    desc: PDF has auto-execution trigger (OpenAction or AA)
+    crit: suspicious
+    conf: 0.9
+    any:
+      - id: openaction
+      - id: additional-actions
+
+  # Helper: any known CVE exploit pattern.
+  - id: pdf-known-cve
+    desc: PDF contains known CVE JavaScript exploit API call
+    crit: suspicious
+    conf: 0.97
+    any:
+      - id: js-collab-email
+      - id: js-util-printf
+      - id: js-spell-dict
+
+  # Helper: any shellcode deobfuscation idiom in PDF JS.
+  - id: pdf-js-shellcode-pattern
+    desc: PDF JavaScript shellcode deobfuscation idiom
+    crit: suspicious
+    conf: 0.9
+    any:
+      - id: js-eval
+      - id: js-unescape
+      - id: js-decode-uri
+      - id: js-fromcharcode
+      - id: js-unicode-shellcode
+      - id: js-heap-spray

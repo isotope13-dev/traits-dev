@@ -1,0 +1,123 @@
+# PDF malicious execution objectives
+#
+# Hostile composites for weaponized PDF documents, organized by attack pattern:
+#
+#   pdf-launch-exec      — /Launch fires an OS command (always hostile)
+#   pdf-openaction-js    — document auto-executes JavaScript on open
+#   pdf-js-shellcode     — JS with shellcode deobfuscation idioms
+#   pdf-known-cve-js     — specific CVE exploit API calls present
+#   pdf-obfuscated-js    — JS action combined with stream-level evasion
+#   pdf-autoopen-exploit — full chain: auto-open + JS + shellcode pattern
+#   pdf-form-exfil       — auto-triggered form submission to remote URL
+#   pdf-flash-exploit    — Flash RichMedia embed combined with JavaScript
+#
+# ATT&CK: T1059.007, T1204.002, T1027, T1048.002
+# MBC: B0037 (PDF Exploit)
+defaults:
+  for: [pdf]
+
+composite_rules:
+  # /S /Launch is the PDF action for executing an external program.
+  # There is no legitimate reason for an end-user PDF to include this.
+  # Exploit kits use it to shell out to cmd.exe, powershell, or curl.
+  # Requires an auto-trigger to be hostile vs. merely suspicious.
+  - id: pdf-launch-exec
+    desc: PDF Launch action with auto-execution trigger
+    crit: hostile
+    conf: 0.95
+    attack: "T1204.002"
+    mbc: "B0037"
+    all:
+      - id: micro-behaviors/process/create/eval::launch-action
+      - id: micro-behaviors/process/create/eval::pdf-auto-trigger
+
+  # /OpenAction combined with a JavaScript action means the PDF automatically
+  # executes code the moment it is opened — no user interaction required.
+  - id: pdf-openaction-js
+    desc: PDF auto-executes JavaScript on document open
+    crit: hostile
+    conf: 0.93
+    attack: "T1059.007"
+    mbc: "B0037"
+    all:
+      - id: micro-behaviors/process/create/eval::openaction
+      - id: micro-behaviors/process/create/eval::js-action
+
+  # JavaScript action combined with shellcode deobfuscation idioms.
+  # eval(unescape(...)), String.fromCharCode, Unicode %u, or heap spray
+  # are the canonical patterns for hiding shellcode in PDF JS content.
+  - id: pdf-js-shellcode
+    desc: PDF JavaScript with shellcode deobfuscation (eval/unescape/fromCharCode)
+    crit: hostile
+    conf: 0.93
+    attack: "T1059.007"
+    mbc: "B0037"
+    all:
+      - id: micro-behaviors/process/create/eval::js-action
+      - id: micro-behaviors/process/create/eval::pdf-js-shellcode-pattern
+
+  # Known CVE exploit API calls — these specific JS APIs were abused in
+  # documented Adobe Reader/Acrobat vulnerabilities. Their presence in a
+  # PDF is near-certain evidence of a weaponized document.
+  - id: pdf-known-cve-js
+    desc: PDF contains known CVE JavaScript exploit pattern
+    crit: hostile
+    conf: 0.97
+    attack: "T1059.007"
+    mbc: "B0037"
+    all:
+      - id: micro-behaviors/process/create/eval::js-action
+      - id: micro-behaviors/process/create/eval::pdf-known-cve
+
+  # JavaScript action with stream obfuscation — the attacker layers encoding
+  # (multi-filter, hex-encoded names, ASCIIHex) to evade signature-based AV
+  # while still delivering executable JavaScript.
+  - id: pdf-obfuscated-js
+    desc: PDF JavaScript with stream-level obfuscation (evasive exploit)
+    crit: hostile
+    conf: 0.92
+    attack: "T1027"
+    mbc: "B0037"
+    all:
+      - id: micro-behaviors/process/create/eval::js-action
+    any:
+      - id: micro-behaviors/data/encode/custom::pdf-multi-filter
+      - id: micro-behaviors/data/encode/custom::pdf-hex-name
+      - id: micro-behaviors/data/encode/custom::pdf-ascii-hex-filter
+
+  # Full drive-by exploit chain: PDF auto-opens, triggers JS, JS contains
+  # shellcode deobfuscation. No user interaction required after opening.
+  - id: pdf-autoopen-exploit
+    desc: PDF auto-opens and executes obfuscated JavaScript shellcode
+    crit: hostile
+    conf: 0.95
+    attack: "T1059.007"
+    mbc: "B0037"
+    all:
+      - id: micro-behaviors/process/create/eval::openaction
+      - id: micro-behaviors/process/create/eval::js-action
+      - id: micro-behaviors/process/create/eval::pdf-js-shellcode-pattern
+
+  # OpenAction + SubmitForm: the PDF opens and immediately exfiltrates
+  # all form field contents to an attacker-controlled server.
+  - id: pdf-form-exfil
+    desc: PDF auto-submits form data to remote server on open
+    crit: hostile
+    conf: 0.88
+    attack: "T1048.002"
+    all:
+      - id: micro-behaviors/process/create/eval::openaction
+      - id: micro-behaviors/process/create/eval::submitform-action
+
+  # Flash RichMedia + JavaScript: embedded SWF can call back into PDF JS
+  # to trigger additional exploits. Used in targeted attacks against older
+  # Acrobat versions with bundled Flash Player (pre-2020).
+  - id: pdf-flash-exploit
+    desc: PDF Flash RichMedia combined with JavaScript (SWF exploit vector)
+    crit: hostile
+    conf: 0.87
+    attack: "T1204.002"
+    mbc: "B0037"
+    all:
+      - id: micro-behaviors/process/create/eval::rich-media
+      - id: micro-behaviors/process/create/eval::js-action
