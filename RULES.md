@@ -80,13 +80,26 @@ traits:
 
 **Field override:** List fields (`for`, `platforms`) can be set to `[none]` to unset file-level defaults. Example: `for: [none]` removes file type filtering even if defaults specify types. Scalar fields (`conf`, `crit`) do not support `none`.
 
-**File types:** `elf`, `macho`, `pe`, `dll`, `so`, `dylib`, `shell`, `batch`, `python`, `javascript`, `typescript`, `rust`, `java`, `class`, `ruby`, `c`, `cpp`, `go`, `csharp`, `php`, `perl`, `powershell`, `lua`, `swift`, `objectivec`, `groovy`, `scala`, `zig`, `elixir`, `vbs`, `html`, `applescript`, `packagejson`, `chrome-manifest`, `cargo-toml`, `pyproject-toml`, `github-actions`, `composer-json`, `plist`, `ipa`, `text`, `rtf`, `lnk`, `jpeg`, `png`, `pkginfo`, `all`.
+**File types:** `elf`, `macho`, `pe`, `dll`, `so`, `dylib`, `shell`, `batch`, `python`, `javascript`, `typescript`, `rust`, `java`, `class`, `ruby`, `c`, `cpp`, `go`, `csharp`, `php`, `perl`, `powershell`, `lua`, `swift`, `objectivec`, `groovy`, `scala`, `zig`, `elixir`, `vbs`, `html`, `applescript`, `package.json`, `chrome-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `plist`, `ipa`, `text`, `rtf`, `lnk`, `jpeg`, `png`, `pkginfo`, `pdf`.
 
 **Platforms:** `linux`, `macos`, `windows`, `unix`, `android`, `ios`, `all`.
 
 **Architectures:** `x86`, `x86-64`, `aarch64`, `arm`, `riscv`, `mips`, `powerpc`, `powerpc64`, `sparc`, `m68k`, `superh`, `all`. Omitting `arch` is equivalent to `arch: [all]`. Architecture is derived from the analyzed file, never the runtime host. For fat/universal Mach-O binaries, `arch` also clamps pattern searches (hex, raw, encoded) to the byte range of the matching slice, preventing cross-slice false positives.
 
-**Groups:** `binaries` (or `binary`), `scripts` (or `script`, `scripting`).
+**Named groups** (preferred over listing individual types):
+
+| Group | Members |
+|-------|---------|
+| `binaries` | `elf`, `macho`, `pe`, `dylib`, `so`, `dll`, `class` |
+| `scripts` | `shell`, `batch`, `python`, `javascript`, `ruby`, `php`, `perl`, `lua`, `powershell`, `applescript` |
+| `source` | `typescript`, `rust`, `java`, `c`, `cpp`, `go`, `csharp`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir`, `vbs` |
+| `manifests` | `package.json`, `chrome-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `pkginfo`, `plist`, `lnk` |
+| `documents` | `text`, `pdf`, `rtf`, `html` |
+| `media` | `jpeg`, `png` |
+| `data` | `ipa` |
+
+Use groups instead of listing 7 or more individual types. `for: [all]` is no longer valid — combine groups explicitly (e.g., `for: [binaries, scripts]`) or use specific types.
+
 **Exclusions:** Prefix with `-` (e.g., `-php`, `scripts,-python`).
 **Unset field:** Use `none` anywhere in the list to unset the field entirely, ignoring defaults.
 
