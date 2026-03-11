@@ -16,6 +16,7 @@ traits:
     desc: ROR13 hash algorithm constant
     crit: component
     conf: 0.8
+    arch: [x86, x86-64]
     count_min: 15
     per_kb_min: 0.05
     size_max: 5242880
@@ -30,7 +31,7 @@ traits:
     desc: DJB2 hash algorithm constant (5381)
     crit: component
     conf: 0.75
-    count_min: 2
+    count_min: 1
     size_max: 5242880
     if:
       type: hex
@@ -42,12 +43,13 @@ traits:
     desc: DJB2 hash multiply-by-33 instruction
     crit: component
     conf: 0.7
-    count_min: 2
+    arch: [x86, x86-64]
+    count_min: 1
     size_max: 10485760
     if:
       type: hex
       section: text
-      pattern: "6B ?? 21" # imul reg, 0x21
+      pattern: "6B C? 21" # imul ecx/edx/ebx, reg, 0x21 (DJB2 multiply)
   # FNV1a 32-bit offset basis (0x811c9dc5)
   - id: fnv1a-offset-basis
     desc: FNV1a hash offset basis constant
@@ -65,6 +67,7 @@ traits:
     crit: component
     conf: 0.85
     for: [pe]
+    arch: [x86]
     if:
       type: hex
       section: text
@@ -76,6 +79,7 @@ traits:
     crit: component
     conf: 0.85
     for: [pe]
+    arch: [x86]
     if:
       type: hex
       section: text
@@ -87,12 +91,52 @@ traits:
     crit: component
     conf: 0.7
     for: [pe]
+    arch: [x86, x86-64]
     count_min: 2
     size_max: 5242880
     if:
       type: hex
       section: text
       pattern: "8B 4? 3C" # mov reg, [reg+0x3C]
+  # x64 PE header access pattern (movsxd reg, dword [reg+0x3C] → e_lfanew)
+  # x64 binaries use movsxd (sign-extend 32→64) instead of mov for e_lfanew access
+  - id: pe-header-walk-x64
+    desc: "x64 PE header access via movsxd"
+    crit: component
+    conf: 0.75
+    for: [pe, dll]
+    arch: [x86-64]
+    size_max: 5242880
+    if:
+      type: hex
+      section: text
+      pattern: "48 63 ?? 3C" # movsxd reg, dword [reg+0x3C]
+  # MZ magic check in code (mov eax, 0x5A4D) — validates PE header
+  # Used by manual GetProcAddress implementations to verify DLL base
+  - id: mz-magic-check
+    desc: MZ header validation in code
+    crit: component
+    conf: 0.85
+    for: [pe, dll]
+    arch: [x86, x86-64]
+    size_max: 524288
+    if:
+      type: hex
+      section: text
+      pattern: "B8 4D 5A 00 00"
+  # PE signature check in code (cmp dword [reg], 0x4550)
+  # Validates PE signature during manual export directory parsing
+  - id: pe-signature-check
+    desc: PE signature validation in code
+    crit: component
+    conf: 0.85
+    for: [pe, dll]
+    arch: [x86, x86-64]
+    size_max: 524288
+    if:
+      type: hex
+      section: text
+      pattern: "81 ?? ?? 50 45 00 00"
   # x64 PEB access via GS segment (mov rax, qword ptr gs:[0x60])
   # Common in MSVC CRT (__security_init_cookie, heap init) — only meaningful in composites
   - id: peb-access-x64
@@ -100,6 +144,7 @@ traits:
     crit: component
     conf: 0.95
     for: [pe, dll]
+    arch: [x86-64]
     if:
       type: hex
       section: ".text"
@@ -111,6 +156,7 @@ traits:
     crit: suspicious
     conf: 0.9
     for: [pe, dll]
+    arch: [x86-64]
     if:
       type: hex
       section: ".text"
@@ -152,8 +198,26 @@ composite_rules:
       - id: peb-ldr-access
       - id: teb-peb-access
       - id: pe-header-walk
+      - id: pe-header-walk-x64
       - id: peb-access-x64
       - id: ldr-walk
+      - id: mz-magic-check
+      - id: pe-signature-check
+  # Custom GetProcAddress: PEB walk + MZ/PE validation + export parsing
+  - id: manual-getprocaddress
+    desc: Custom GetProcAddress implementation
+    crit: suspicious
+    conf: 0.9
+    for: [pe, dll]
+    size_max: 524288
+    all:
+      - id: peb-access-x64
+    needs: 2
+    any:
+      - id: mz-magic-check
+      - id: pe-signature-check
+      - id: pe-header-walk-x64
+      - id: pe-header-walk
   # ROR13 hash-based API resolution pattern
   - id: api-hash-resolution
     desc: Dynamic API resolution via ROR13 hashing
@@ -194,7 +258,44 @@ composite_rules:
       - id: peb-ldr-access
       - id: teb-peb-access
       - id: pe-header-walk
+      - id: pe-header-walk-x64
       - id: peb-access-x64
     needs: 1
     unless:
       - id: metadata/format/pe::dotnet-metadata
+  # String-based API resolution (PEB walk + minimal imports, no hash)
+  # Catches malware that uses PEB walking with string comparison
+  # instead of hash-based resolution
+  - id: string-based-api-resolution
+    desc: PEB-based API resolution with minimal imports
+    crit: suspicious
+    conf: 0.88
+    for: [pe, dll]
+    size_max: 524288
+    all:
+      - id: peb-access-x64
+      - id: objectives/command-and-control/dropper/loader::pe-single-import
+    any:
+      - id: objectives/anti-static/obfuscation/strings/runtime-decrypt::dll-names-no-loadlibrary
+      - id: pe-header-walk-x64
+      - id: pe-header-walk
+    unless:
+      - id: metadata/format/pe::dotnet-assembly
+      - id: metadata/format/pe::dotnet-metadata
+  # Hostile: custom GetProcAddress + DLL name decryption + minimal imports
+  # Combines manual API resolution with runtime string decryption in
+  # a binary with almost no imports — clear evasion intent
+  - id: hostile-api-concealment
+    desc: Complete API concealment (PEB walk + PE parsing + string decrypt)
+    crit: hostile
+    conf: 0.92
+    for: [pe, dll]
+    size_max: 524288
+    all:
+      - id: manual-getprocaddress
+      - id: objectives/anti-static/obfuscation/strings/runtime-decrypt::dll-names-no-loadlibrary
+    any:
+      - id: objectives/command-and-control/dropper/loader::pe-single-import
+      - id: objectives/command-and-control/dropper/loader::pe-few-imports
+    unless:
+      - id: metadata/format/pe::dotnet-assembly
