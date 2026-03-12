@@ -91,8 +91,8 @@ traits:
 | Group | Members |
 |-------|---------|
 | `binaries` | `elf`, `macho`, `pe`, `dylib`, `so`, `dll`, `class` |
-| `scripts` | `shell`, `batch`, `python`, `javascript`, `ruby`, `php`, `perl`, `lua`, `powershell`, `applescript` |
-| `source` | `typescript`, `rust`, `java`, `c`, `cpp`, `go`, `csharp`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir`, `vbs` |
+| `scripts` | `shell`, `batch`, `python`, `javascript`, `ruby`, `php`, `perl`, `lua`, `powershell`, `applescript`, `vbs` |
+| `source` | `typescript`, `rust`, `java`, `c`, `cpp`, `go`, `csharp`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir` |
 | `manifests` | `package.json`, `chrome-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `pkginfo`, `plist`, `lnk` |
 | `documents` | `text`, `pdf`, `rtf`, `html` |
 | `media` | `jpeg`, `png` |
