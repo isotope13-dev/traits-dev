@@ -29,6 +29,7 @@ traits:
     unless:
       - type: raw
         substr: "mscoree" # .NET assemblies have normal null padding in IL sections
+      - id: metadata/format/document/help2::help2-container
   # Very large null run (128+ bytes) - suspicious in PE/ELF
   # Mach-O universals commonly have alignment padding with null runs
   # PE files can have null runs from virtual-size > raw-size alignment gaps
@@ -45,8 +46,14 @@ traits:
       # 128 consecutive null bytes - indicates significant padding/cave
       pattern: "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
     unless:
+      - id: objectives/anti-static/packer/detect::upx-section
       - type: raw
         substr: "BSJB" # .NET assemblies have normal null padding in IL sections
+      - type: raw
+        substr: "storport.sys" # StorPort miniport drivers commonly carry discardable init/alignment padding
+      - type: string
+        exact: "ScsiMiniPort"
+      - id: metadata/format/document/help2::help2-container
   # Repeated INT3 instructions (0xCC) - debugger breakpoint padding
   # MSVC uses CC padding for 16-byte function alignment extensively;
   # this is normal in all MSVC-compiled binaries. Use as component for
@@ -55,11 +62,12 @@ traits:
     desc: Dense INT3 breakpoint instructions
     crit: component
     conf: 0.8
-    per_kb_min: 3.0
+    size_max: 1048576
+    per_kb_min: 0.5
     if:
       type: hex
       section: text
-      pattern: "CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC"
+      pattern: "CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC"
   # Alternating null and NOP pattern (obfuscated cave)
   # This also appears in large MSVC-built PE/DLLs as alignment/table artifacts,
   # so keep it as a building block for composites instead of a standalone alert.
@@ -138,6 +146,23 @@ traits:
       type: section
       substr: ".fptable"
 composite_rules:
+  - id: code-cave-null-indicator
+    desc: Large executable null padding indicator
+    crit: component
+    conf: 0.85
+    any:
+      - id: large-null-run-text
+      - id: huge-null-run-text
+
+  - id: code-cave-support-indicator
+    desc: Secondary code cave structure indicator
+    crit: component
+    conf: 0.8
+    any:
+      - id: int3-padding-text
+      - id: null-nop-pattern
+      - id: low-entropy-executable
+      - id: fptable-section
   # Code cave with null padding
   # MSVC-compiled PE files routinely have null padding and low-entropy sections
   # from virtual-size alignment and function padding, so downgrade for those
@@ -151,24 +176,21 @@ composite_rules:
     attack: T1027
     size_min: 16384 # PE files under 16KB have null padding from normal header/section alignment
     size_max: 150000
-    needs: 2
-    any:
-      - id: large-null-run-text
-      - id: huge-null-run-text
-      - id: int3-padding-text
-      - id: null-nop-pattern
-      - id: low-entropy-executable
-      - id: fptable-section
+    all:
+      - id: code-cave-null-indicator
+      - id: code-cave-support-indicator
+    unless:
+      - id: metadata/format::many-imports
+      - id: metadata/format::many-exports
     downgrade:
       any:
-        - id: metadata/vendor/microsoft::microsoft-corp-versioninfo
-        - id: metadata/format/pe::standard-com-server-exports
         - id: metadata/lang/compiler::msvc
         - id: metadata/format/pe::dotnet-assembly # .NET IL has normal null padding/alignment
-        - id: metadata/format::no-imports # Data-only DLLs (keyboard layouts, codepage tables) have null padding as data structure
         - id: metadata/format::many-imports
         - type: raw
           substr: "PECompac" # PECompact has null padding in packed sections
+        - type: trait
+          id: metadata/lang/compiler::svkp-delphi-layout
   # Injection-ready code cave
   - id: injection-ready-cave
     desc: Code cave suitable for code injection
@@ -184,15 +206,13 @@ composite_rules:
       - id: metadata/format::many-imports
       - id: metadata/lang/compiler::dvclal-resource
       - type: section
-        substr: '.themida'
-      - type: section
-        substr: '.aspr'
+        regex: "(\\.themida|\\.aspr)"
       - type: raw
-        substr: "BSJB" # .NET NI (NGEN) DLLs have null padding + RWX sections by design
+        regex: "(BSJB|PECompac|ntoskrnl|storport\\.sys)" # .NET NI images, packers, and kernel/storage drivers can combine benign null caves with RWX sections
       - type: raw
-        substr: "ntoskrnl" # Windows kernel drivers have null padding + RWX INIT sections normally
-      - type: raw
-        substr: "PECompac" # PECompact-packed binaries have null padding + RWX sections
+        regex: "(Enigma Protector|enigmaprotector\\.com)" # Enigma Protector commonly leaves large null runs plus RWX sections
+      - type: string
+        exact: "ScsiMiniPort"
   # Suspicious padding pattern
   # Large legitimate binaries routinely have null padding and alignment artifacts
   - id: suspicious-padding

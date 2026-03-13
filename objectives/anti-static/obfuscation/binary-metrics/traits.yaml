@@ -10,7 +10,7 @@ traits:
   # === Entropy-Based Detection ===
   - id: high-overall-entropy
     desc: "High overall file entropy (likely"
-    crit: suspicious
+    crit: notable
     conf: 0.85
     if:
       type: metrics
@@ -21,6 +21,8 @@ traits:
         - type: string
           substr: ";!@Install@!UTF-8!"
         - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
+        - type: raw
+          substr: "PECompac" # handled by dedicated PECompact traits
   - id: very-high-entropy
     desc: "Very high entropy (strongly indicates"
     crit: suspicious
@@ -57,6 +59,11 @@ traits:
         - type: raw
           substr: "BSJB"
         - id: metadata/signed/platform::apple
+        - type: raw
+          substr: "PECompac" # PECompact stubs are intentionally high-entropy
+    unless:
+      - id: metadata/format/pe::dotnet-metadata
+      - id: metadata/dotnet::bsjb-signature
   - id: high-entropy-regions
     desc: "Multiple high entropy regions"
     crit: suspicious
@@ -101,20 +108,18 @@ traits:
     unless:
       - type: string
         substr: "ApiSet Stub DLL"
-      - type: metrics
-        field: binary.import_density
-        max: 0
+      - type: raw
+        substr: "storport.sys"
+      - type: string
+        exact: "ScsiMiniPort"
     downgrade:
       any:
-        - id: metadata/lang/compiler::dvclal-resource
-        - type: section
-          substr: '.themida'
+        - type: string
+          exact: "Software\\ASProtect\\SpecData"
         - type: raw
-          substr: "ntoskrnl"
-        - type: raw
-          substr: "PECompac" # PECompact stubs commonly use RWX sections
+          regex: "(PECompac|Enigma Protector|enigmaprotector\\.com)" # Common benign packer/protector markers
         - type: section
-          regex: "^(UPX|upx|.aspr)"
+          regex: "^(UPX|upx|\\.aspr|\\.themida)"
   - id: many-wx-sections
     desc: "Multiple W+X sections (packer pattern)"
     crit: suspicious
@@ -124,26 +129,16 @@ traits:
       type: metrics
       field: binary.wx_sections
       min: 2
-    unless:
-      - type: metrics
-        field: macho.file_type
-        min: 1
-        max: 1
-      - type: metrics
-        field: elf.e_type
-        min: 1
-        max: 1
     downgrade:
       any:
-        - id: metadata/lang/compiler::dvclal-resource
-        - type: section
-          exact: ".pseudo"
-        - type: section
-          substr: '.aspr'
-        - type: section
-          regex: "^(UPX\\d|\\.upx)" # UPX-packed binaries inherently have multiple RWX sections
+        - type: string
+          exact: "Software\\ASProtect\\SpecData"
         - type: raw
-          substr: "PECompac" # PECompact-packed binaries have multiple RWX sections
+          regex: "(storport\\.sys|ScsiMiniPort|PECompac)" # Common benign drivers and PECompact-packed binaries with RWX sections
+        - type: raw
+          regex: "(Enigma Protector|enigmaprotector\\.com)" # Enigma Protector often uses multiple RWX sections
+        - type: section
+          regex: "^(UPX\\d|\\.upx|\\.pseudo|\\.aspr)" # Common packer and protector W+X section names
   - id: high-section-name-entropy
     desc: "High entropy section names (packer"
     crit: notable
@@ -222,14 +217,15 @@ traits:
       type: metrics
       field: binary.high_entropy_strings
       min: 10
+    unless:
+      - type: metrics
+        field: binary.avg_string_entropy
+        max: 3.2
     # Media/codec libraries and large GUI frameworks often contain a handful of
     # compressed tables or format signatures without broader string obfuscation.
     downgrade:
       any:
         - id: objectives/anti-static/obfuscation/binary-metrics::high-string-density-large-pe
-          type: metrics
-          field: binary.avg_string_entropy
-          max: 3.2
         - id: metadata/signed/platform::apple
   # NOTE: Function detection depends on analysis depth and binary format.
   # Shared libraries (.so, .dylib, .dll) may have few detected functions
@@ -264,6 +260,13 @@ traits:
       field: binary.avg_function_size
       min: 1
       max: 32
+    unless:
+      # Average function size is too unstable when only a stub or a handful of
+      # functions were recovered, which is common in .NET/managed loader DLLs.
+      - type: metrics
+        field: binary.function_count
+        max: 5
+      - id: metadata/format/pe::dotnet-assembly
   # === Complexity Anomalies (Control Flow Obfuscation) ===
   - id: high-avg-complexity
     desc: "High average cyclomatic complexity (control"
@@ -287,6 +290,10 @@ traits:
       - type: metrics
         field: binary.export_count
         min: 20
+    downgrade:
+      any:
+        - id: metadata/quality/versioning::pe-version-resource
+        - id: metadata/vendor/microsoft::microsoft-corp-versioninfo
   - id: very-high-avg-complexity
     desc: "Very high average complexity (heavy"
     crit: notable
@@ -304,6 +311,26 @@ traits:
       - type: metrics
         field: binary.export_count
         min: 20
+  - id: high-function-count-200
+    desc: High function count over 200
+    crit: component
+    conf: 0.7
+    if:
+      type: metrics
+      field: binary.function_count
+      min: 200
+    unless:
+      - id: metadata/format/pe::dotnet-assembly
+  - id: high-string-count-1000
+    desc: High string count over 1000
+    crit: component
+    conf: 0.7
+    if:
+      type: metrics
+      field: binary.string_count
+      min: 1000
+    unless:
+      - id: metadata/format/pe::dotnet-assembly
   - id: extreme-max-complexity
     desc: "Extremely high max function complexity"
     crit: notable
@@ -313,11 +340,18 @@ traits:
       type: metrics
       field: binary.max_complexity
       min: 500
+    unless:
+      - id: objectives/anti-static/obfuscation/binary-metrics::large-dotnet-library
+      # Large API/provider DLLs often contain parser and policy functions
+      # with extreme complexity without any obfuscation intent.
+      - type: metrics
+        field: binary.export_count
+        min: 100
   # NOTE: Go runtime has many complex functions (GC, scheduler, etc.)
   # Increased threshold and downgraded to notable
   - id: many-complex-functions
     desc: "Many high complexity functions (>50"
-    crit: notable
+    crit: baseline
     conf: 0.6
     attack: "T1027.002"
     if:
@@ -348,6 +382,10 @@ traits:
       type: metrics
       field: binary.avg_basic_blocks
       min: 50
+    downgrade:
+      any:
+        - id: metadata/quality/versioning::pe-version-resource
+        - id: metadata/vendor/microsoft::microsoft-corp-versioninfo
   - id: many-linear-functions
     desc: "Many linear functions (possible VM"
     crit: notable
@@ -400,7 +438,7 @@ traits:
   # === Overlay Anomalies ===
   - id: has-overlay
     desc: "Binary has overlay data"
-    crit: notable
+    crit: component
     conf: 0.5
     for: [pe, dll, macho]
     if:
@@ -409,10 +447,16 @@ traits:
       min: 1
     unless:
       - id: metadata/format/pe::resource-only-dll
+      - type: metrics
+        field: binary.overlay_size
+        max: 16384
     downgrade:
       any:
         - id: metadata/signed/platform::microsoft
         - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
+        - id: metadata/format/pe::dotnet-assembly
+        - id: metadata/quality/versioning::pe-version-resource
+        - id: metadata/binary/debug-info::pdb-visual-studio
   - id: large-overlay
     desc: "Large overlay relative to file"
     crit: suspicious
@@ -422,14 +466,17 @@ traits:
       type: metrics
       field: binary.overlay_ratio
       min: 0.5
+    unless:
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/quality/versioning::dotnet-versioned-assembly
+      - id: metadata/format/document/help2::help2-container
+      - id: metadata/format/installer::known-benign-installer
     downgrade:
       any:
-        - id: objectives/anti-static/obfuscation/binary-metrics::7zsfx-config-marker
-        - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
-        - id: metadata/signed/platform::microsoft
-        - id: metadata/format/installer::nsis-error-title
-        - type: string
-          substr: "Inno Setup Setup Data ("
+        - type: trait
+          id: objectives/anti-static/obfuscation/binary-metrics::7zsfx-config-marker
+        - type: trait
+          id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
   - id: high-entropy-overlay-raw
     desc: "High entropy overlay data"
     crit: component
@@ -439,6 +486,12 @@ traits:
       type: metrics
       field: binary.overlay_entropy
       min: 7.0
+    unless:
+      - type: metrics
+        field: binary.overlay_size
+        max: 16384
+      - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
+      - id: metadata/format/document/help2::help2-container
   - id: large-overlay-size
     desc: "Overlay large enough to contain payload"
     crit: component
@@ -447,17 +500,22 @@ traits:
       type: metrics
       field: binary.overlay_size
       min: 81920
+    unless:
+      - id: metadata/format/document/help2::help2-container
   - id: repeated-padding-marker
     desc: "Repeated padding marker string block"
-    crit: notable
+    crit: component
     conf: 0.82
     for: [pe, dll]
     if:
       type: string
       substr: "PADDINGXXPADDING"
+    unless:
+      - type: string
+        substr: '<assembly xmlns="urn:schemas-microsoft-com:asm.v1"'
   - id: high-string-density-large-pe
     desc: Large PE with dense string corpus
-    crit: notable
+    crit: component
     conf: 0.82
     for: [pe]
     size_min: 250000
@@ -467,6 +525,18 @@ traits:
       min: 12.0
       min_size: 500000
 composite_rules:
+  - id: large-dotnet-library
+    desc: Large .NET library structure
+    crit: component
+    conf: 0.7
+    all:
+      - id: metadata/format/pe::dotnet-assembly
+      - id: objectives/anti-static/obfuscation/binary-metrics::high-function-count-200
+      - id: objectives/anti-static/obfuscation/binary-metrics::high-string-count-1000
+    any:
+      - id: objectives/anti-static/obfuscation/binary-metrics::high-code-entropy
+      - id: objectives/anti-static/obfuscation/binary-metrics::high-entropy-overlay-raw
+      - id: objectives/anti-static/obfuscation/binary-metrics::high-import-entropy
   - id: signed-7zsfx-installer
     desc: "Signed 7z self-extracting installer"
     crit: component
@@ -494,6 +564,8 @@ composite_rules:
         - type: string
           substr: ";!@Install@!UTF-8!"
         - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
+        - type: raw
+          substr: "PECompac" # explicit PECompact signature is less ambiguous than generic packing heuristics
   - id: binary-heavily-packed
     desc: "Binary is heavily packed/encrypted"
     crit: hostile
@@ -516,34 +588,38 @@ composite_rules:
     crit: suspicious
     conf: 0.8
     attack: "T1027.009"
+    unless:
+      - id: metadata/format/document/help2::help2-container
+      - id: metadata/format/installer::known-benign-installer
+      - type: string
+        exact: "Software\\WinRAR SFX"
     all:
       - id: high-entropy-overlay-raw
       - id: large-overlay-size
     downgrade:
       any:
+        - id: metadata/format/installer::known-benign-installer
         - id: objectives/anti-static/obfuscation/binary-metrics::7zsfx-config-marker
         - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
-        - id: metadata/format/installer::nsis-error-title
-        - type: string
-          substr: "Inno Setup Setup Data ("
+        - id: metadata/format/document/help2::help2-container
   - id: binary-encrypted-overlay
     desc: "Binary with encrypted overlay payload"
     crit: notable
     conf: 0.85
     attack: "T1027.009"
     unless:
-      - id: metadata/format/installer::wix-burn-bootstrapper
+      - id: metadata/format/installer::known-benign-installer
       - id: metadata/format/pe::resource-only-dll
       - id: metadata/signed/platform::microsoft
+      - id: metadata/format/document/help2::help2-container
       - id: objectives/anti-static/obfuscation/binary-metrics::7zsfx-config-marker
+      - type: string
+        exact: "Software\\WinRAR SFX"
     all:
       - id: objectives/anti-static/obfuscation/binary-metrics::has-overlay
       - id: objectives/anti-static/obfuscation/binary-metrics::high-entropy-overlay
     downgrade:
       any:
-        - id: metadata/format/installer::nsis-error-title
-        - type: string
-          substr: "Inno Setup Setup Data ("
         - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
   - id: embedded-payload-padding-camouflage
     desc: "Embedded payload with padding camouflage"
@@ -568,8 +644,15 @@ composite_rules:
       - id: metadata/format::few-sections
       - id: objectives/anti-static/obfuscation/binary-metrics::wx-sections
     unless:
+      - id: objectives/anti-static/packer/detect::upx-section
       - type: raw
         substr: "PECompac" # handled by dedicated PECompact traits
+    downgrade:
+      all:
+        - type: trait
+          id: metadata/lang/compiler::svkp-delphi-layout
+      any:
+        - id: metadata/format/pe::asprotect
   # === Control Flow Obfuscation Detection ===
   - id: control-flow-obfuscation
     desc: "Control flow obfuscation detected"
@@ -596,14 +679,11 @@ composite_rules:
       any:
         - id: metadata/format::many-imports
         - id: metadata/vendor/jetbrains::jetbrains-company-string
-        - id: metadata/format::small-pe
         - id: metadata/vendor/microsoft::microsoft-corp-versioninfo
         # Large managed PE assemblies often have compiler-generated async/iterator
         # state machines that spike max complexity without indicating obfuscation.
         - id: objectives/anti-static/obfuscation/binary-metrics::high-string-density-large-pe
-          type: metrics
-          field: pe.is_dotnet
-          min: 1
+        - id: metadata/format/pe::dotnet-assembly
   - id: heavy-control-flow-obfuscation
     desc: "Heavy control flow obfuscation"
     crit: hostile
@@ -636,15 +716,13 @@ composite_rules:
     attack: "T1027.009"
     for: [pe]
     unless:
-      - id: metadata/format/installer::wix-burn-bootstrapper
-      - id: metadata/format/installer::nsis-error-title
+      - id: metadata/format/installer::known-benign-installer
       - id: objectives/anti-static/obfuscation/binary-metrics::7zsfx-config-marker
     all:
       - id: binary-encrypted-overlay
     downgrade:
       any:
-        - type: string
-          substr: "Inno Setup Setup Data ("
+        - id: metadata/format/installer::known-benign-installer
     needs: 1
     any:
       - id: objectives/anti-static/obfuscation/payload/self-read::self-read-file-chain

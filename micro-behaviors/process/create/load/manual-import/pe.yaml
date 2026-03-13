@@ -1,6 +1,6 @@
 defaults:
   platforms: [unix, windows, macos]
-  for: [shell, python, javascript, powershell, pe, elf]
+  for: [binaries, scripts]
 traits:
   - id: asm-manual-import-export-dir
     conf: 0.9
@@ -9,6 +9,9 @@ traits:
     if:
       type: string
       word: IMAGE_EXPORT_DIRECTORY
+    unless:
+      - type: string
+        word: ExportTable
     # PE viewers/debuggers enumerate PE struct fields as display labels
     downgrade:
       any:
@@ -25,6 +28,9 @@ traits:
     if:
       type: string
       word: AddressOfNames
+    unless:
+      - type: string
+        word: ExportTable
     downgrade:
       any:
         - type: string
@@ -40,6 +46,9 @@ traits:
     if:
       type: string
       word: AddressOfFunctions
+    unless:
+      - type: string
+        word: ExportTable
     downgrade:
       any:
         - type: string
@@ -59,7 +68,72 @@ traits:
       any:
         - type: string
           word: IMAGE_FILE_MACHINE_I386
+  - id: asm-export-table-rva-offset
+    conf: 0.9
+    crit: suspicious
+    desc: Export table RVA parsed by offset
+    if:
+      type: raw
+      regex: 'mov\s+esi,\s*\[eax\+78h\]'
+  - id: asm-export-base-adjust
+    conf: 0.88
+    crit: component
+    desc: Export RVA adjusted to base
+    if:
+      type: raw
+      regex: 'add\s+esi,\s*\[ebp\+MZAddy\]'
+  - id: asm-export-slot-atable
+    conf: 0.85
+    crit: component
+    desc: AddressOfFunctions slot label
+    if:
+      type: raw
+      word: ATableVA
+  - id: asm-export-slot-ntable
+    conf: 0.85
+    crit: component
+    desc: AddressOfNames slot label
+    if:
+      type: raw
+      word: NTableVA
+  - id: asm-export-slot-otable
+    conf: 0.85
+    crit: component
+    desc: AddressOfOrdinals slot label
+    if:
+      type: raw
+      word: OTableVA
+  - id: asm-export-name-scan
+    conf: 0.9
+    crit: suspicious
+    desc: Manual export name comparison loop
+    if:
+      type: raw
+      regex: 'rep\s+cmpsb'
+  - id: asm-export-ordinal-load
+    conf: 0.85
+    crit: component
+    desc: Loads ordinal table entries
+    if:
+      type: raw
+      word: lodsw
 composite_rules:
+  - id: asm-export-table-slots
+    conf: 0.9
+    crit: suspicious
+    desc: Stores export table addresses
+    needs: 2
+    any:
+      - id: asm-export-slot-atable
+      - id: asm-export-slot-ntable
+      - id: asm-export-slot-otable
+  - id: asm-export-ordinal-lookup
+    conf: 0.88
+    crit: suspicious
+    desc: Manual export ordinal lookup
+    all:
+      - id: asm-export-slot-otable
+      - id: asm-export-ordinal-load
   - id: asm-manual-import-parsing
     conf: 0.9
     crit: suspicious
@@ -73,7 +147,20 @@ composite_rules:
     downgrade:
       any:
         - id: micro-behaviors/fs/file/section::pe-viewer-machine-types
+        - type: string
+          word: ExportTable
         - type: metrics
           field: binary.export_count
           min: 100
         - id: metadata/purpose/debug-tool::ollydbg-plugin-export
+  - id: asm-manual-import-offset-parsing
+    conf: 0.93
+    crit: suspicious
+    desc: Manual export parsing via PE offsets
+    all:
+      - id: asm-export-table-rva-offset
+      - id: asm-export-base-adjust
+    any:
+      - id: asm-export-table-slots
+      - id: asm-export-name-scan
+      - id: asm-export-ordinal-lookup
