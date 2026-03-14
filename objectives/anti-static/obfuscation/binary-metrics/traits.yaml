@@ -16,6 +16,9 @@ traits:
       type: metrics
       field: binary.overall_entropy
       min: 7.0
+    unless:
+      - type: raw
+        regex: 'BSJB'
     downgrade:
       any:
         - type: string
@@ -54,16 +57,13 @@ traits:
       type: metrics
       field: binary.code_entropy
       min: 7.0
+    unless:
+      - id: high-code-entropy-known-fps
+      - type: raw
+        regex: 'BSJB'
     downgrade:
       any:
-        - type: raw
-          substr: "BSJB"
-        - id: metadata/signed/platform::apple
-        - type: raw
-          substr: "PECompac" # PECompact stubs are intentionally high-entropy
-    unless:
-      - id: metadata/format/pe::dotnet-metadata
-      - id: metadata/dotnet::bsjb-signature
+        - id: high-code-entropy-known-fps
   - id: high-entropy-regions
     desc: "Multiple high entropy regions"
     crit: suspicious
@@ -87,11 +87,15 @@ traits:
     desc: "Low entropy variance (uniform packing)"
     crit: notable
     conf: 0.4
+    size_min: 65536
     if:
       type: metrics
       field: binary.entropy_variance
       min: 0.01
       max: 0.2
+    unless:
+      - type: raw
+        regex: 'BSJB'
   # === Section Anomalies ===
   - id: wx-sections
     desc: "Writable and executable sections (self-modifying"
@@ -99,27 +103,23 @@ traits:
     conf: 0.9
     attack: "T1055"
     size_max: 31457280
-    size_min: 8192 # Tiny legacy PEs have rwx from old compiler defaults, not self-modifying code
+    size_min: 32768 # Tiny legacy PEs often use RWX .text from old toolchains, not self-modifying code
     if:
       type: metrics
       field: binary.wx_sections
       min: 1
-    # API set forwarding stubs and relocatable object files have W+X sections legitimately
+    # API set forwarding stubs, relocatable object files, and known packers have W+X sections legitimately
     unless:
-      - type: string
-        substr: "ApiSet Stub DLL"
+      - id: metadata/format/pe::asprotect
       - type: raw
-        substr: "storport.sys"
-      - type: string
-        exact: "ScsiMiniPort"
+        regex: "(ApiSet Stub DLL|storport\\.sys|ScsiMiniPort)"
     downgrade:
       any:
+        - id: metadata/format/pe::rich-imported-low-entropy-layout
+        - id: micro-behaviors/data/encode/pecompact::pecompact-signature
+        - id: objectives/anti-static/packer/detect::upx-section
         - type: string
-          exact: "Software\\ASProtect\\SpecData"
-        - type: raw
-          regex: "(PECompac|Enigma Protector|enigmaprotector\\.com)" # Common benign packer/protector markers
-        - type: section
-          regex: "^(UPX|upx|\\.aspr|\\.themida)"
+          regex: "(?i)(enigma.protector|ntoskrnl\\.exe|WATCOM C/C)"
   - id: many-wx-sections
     desc: "Multiple W+X sections (packer pattern)"
     crit: suspicious
@@ -129,16 +129,17 @@ traits:
       type: metrics
       field: binary.wx_sections
       min: 2
+    unless:
+      - id: metadata/format/pe::asprotect
+      - id: objectives/anti-static/packer/detect::upx-section
+      - id: objectives/anti-static/packer/detect::upx-marker
     downgrade:
       any:
+        - id: micro-behaviors/data/encode/pecompact::pecompact-signature
+        - id: objectives/anti-static/packer/detect::themida-section
         - type: string
-          exact: "Software\\ASProtect\\SpecData"
-        - type: raw
-          regex: "(storport\\.sys|ScsiMiniPort|PECompac)" # Common benign drivers and PECompact-packed binaries with RWX sections
-        - type: raw
-          regex: "(Enigma Protector|enigmaprotector\\.com)" # Enigma Protector often uses multiple RWX sections
-        - type: section
-          regex: "^(UPX\\d|\\.upx|\\.pseudo|\\.aspr)" # Common packer and protector W+X section names
+          regex: "(Enigma Protector|enigmaprotector)"
+        - id: metadata/lang/compiler::watcom-runtime
   - id: high-section-name-entropy
     desc: "High entropy section names (packer"
     crit: notable
@@ -160,7 +161,7 @@ traits:
     if:
       type: metrics
       field: binary.largest_section_ratio
-      min: 0.85
+      min: 0.90
     unless:
       - type: metrics
         field: binary.import_density
@@ -173,8 +174,8 @@ traits:
       any:
         - id: metadata/quality/versioning::pe-version-resource
         - id: metadata/format/pe::large-rsrc-section
-        - id: metadata/vendor/microsoft::microsoft-corp-marker-rsrc
-        - id: metadata/vendor/microsoft::microsoft-corp-marker-rdata
+        - id: metadata/vendor/microsoft::microsoft-corp-marker
+        - id: metadata/format/installer::nsis-sfx-deadbeef-magic
   # === Import Anomalies ===
   - id: high-import-entropy
     desc: "High entropy import names (obfuscated"
@@ -224,7 +225,12 @@ traits:
     # Media/codec libraries and large GUI frameworks often contain a handful of
     # compressed tables or format signatures without broader string obfuscation.
     downgrade:
+      all:
+        - id: metadata/format::many-imports
+        - id: micro-behaviors/dylib/library/abi-graphics::opengl-ref-a
       any:
+        - id: micro-behaviors/dylib/library/abi-graphics::opengl-ref-b
+        - id: metadata/quality/versioning::pe-version-resource
         - id: objectives/anti-static/obfuscation/binary-metrics::high-string-density-large-pe
         - id: metadata/signed/platform::apple
   # NOTE: Function detection depends on analysis depth and binary format.
@@ -386,6 +392,9 @@ traits:
       any:
         - id: metadata/quality/versioning::pe-version-resource
         - id: metadata/vendor/microsoft::microsoft-corp-versioninfo
+        - type: metrics
+          field: binary.import_count
+          min: 80
   - id: many-linear-functions
     desc: "Many linear functions (possible VM"
     crit: notable
@@ -462,19 +471,19 @@ traits:
     crit: suspicious
     conf: 0.7
     attack: "T1027.009"
+    size_min: 131072
     if:
       type: metrics
       field: binary.overlay_ratio
       min: 0.5
     unless:
+      - id: metadata/format/pe::resource-only-dll
       - id: metadata/signed/platform::microsoft
       - id: metadata/quality/versioning::dotnet-versioned-assembly
       - id: metadata/format/document/help2::help2-container
       - id: metadata/format/installer::known-benign-installer
     downgrade:
       any:
-        - type: trait
-          id: objectives/anti-static/obfuscation/binary-metrics::7zsfx-config-marker
         - type: trait
           id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
   - id: high-entropy-overlay-raw
@@ -525,6 +534,26 @@ traits:
       min: 12.0
       min_size: 500000
 composite_rules:
+  - id: legitimate-microsoft-versioned-pe
+    desc: Versioned Microsoft PE with normal import surface
+    crit: component
+    conf: 0.8
+    all:
+      - id: metadata/quality/versioning::version-resource-metadata
+      - id: metadata/format::many-imports
+    any:
+      - id: metadata/vendor/microsoft::microsoft-corp-marker-rsrc
+      - id: metadata/vendor/microsoft::microsoft-corp-marker-rdata
+  - id: high-code-entropy-known-fps
+    desc: High code entropy known false positive profile
+    crit: component
+    conf: 0.7
+    any:
+      - id: metadata/format/pe::dotnet-metadata
+      - id: metadata/signed/platform::apple
+      - id: metadata/format/pe::unity-player-framework
+      - id: micro-behaviors/data/encode/pecompact::pecompact-signature
+      - id: legitimate-microsoft-versioned-pe
   - id: large-dotnet-library
     desc: Large .NET library structure
     crit: component
@@ -559,6 +588,9 @@ composite_rules:
       - id: objectives/anti-static/obfuscation/binary-metrics::very-high-entropy
       - id: objectives/anti-static/obfuscation/binary-metrics::high-code-entropy
       - id: objectives/anti-static/obfuscation/binary-metrics::wx-sections
+    unless:
+      - type: raw
+        regex: 'BSJB'
     downgrade:
       any:
         - type: string
@@ -647,12 +679,14 @@ composite_rules:
       - id: objectives/anti-static/packer/detect::upx-section
       - type: raw
         substr: "PECompac" # handled by dedicated PECompact traits
+      - id: metadata/format/pe::rich-imported-low-entropy-layout
+      - type: metrics
+        field: binary.import_count
+        min: 80
     downgrade:
-      all:
-        - type: trait
-          id: metadata/lang/compiler::svkp-delphi-layout
       any:
         - id: metadata/format/pe::asprotect
+        - id: metadata/lang/compiler::watcom-runtime
   # === Control Flow Obfuscation Detection ===
   - id: control-flow-obfuscation
     desc: "Control flow obfuscation detected"
@@ -697,6 +731,9 @@ composite_rules:
     desc: "VM-based obfuscation detected"
     crit: notable
     conf: 0.9
+    all:
+      - id: objectives/anti-static/obfuscation/binary-metrics::very-high-avg-complexity
+      - id: objectives/anti-static/obfuscation/binary-metrics::very-complex-functions
   # NOTE: Go/Rust runtimes have complex functions and large stack frames legitimately
   # Increased count requirement and downgraded to notable
   - id: anti-analysis-pattern
