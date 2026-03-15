@@ -74,7 +74,7 @@ traits:
     entropy_min: 4.5                     # Optional min file entropy (0.0-8.0; section entropy handled via type: section)
     entropy_max: 7.5                     # Optional max file entropy
     if:                                  # Condition (see below)
-      type: string
+      type: string_value
       substr: ".Kill("
 ```
 
@@ -116,7 +116,7 @@ Use groups instead of listing 7 or more individual types. `for: [all]` is no lon
 
 | Type | Purpose | Matchers | Modifiers |
 |------|---------|----------|-----------|
-| `string` | Extracted strings | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `external_ip` |
+| `string_value` | Extracted string values | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `external_ip` |
 | `raw` | Raw file bytes | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `external_ip` |
 | `symbol` | Imports/exports/functions | `exact`, `substr`, `regex` | `platforms` |
 | `hex` | Byte patterns (wildcards always extracted) | pattern string | count, density, `offset`, `offset_range`, `arch` clamped in fat binaries |
@@ -127,7 +127,7 @@ Use groups instead of listing 7 or more individual types. `for: [all]` is no lon
 | `basename` | Filename | `exact`, `substr`, `regex` | `case_insensitive` |
 
 **Matcher notes:**
-- `word` - Word boundary match (equivalent to `\b{value}\b`). Available on `string`, `raw`, `section`, `encoded`. NOT available on `symbol`, `basename`, `hex`.
+- `word` - Word boundary match (equivalent to `\b{value}\b`). Available on `string_value`, `raw`, `section`, `encoded`. NOT available on `symbol`, `basename`, `hex`.
 - `external_ip` - Only match if evidence contains a valid external IP (rejects RFC1918, loopback, reserved ranges).
 - **Symbol normalization:** Leading underscores are stripped from both loaded symbols and `exact`/`substr` patterns for cross-platform portability (macOS `_malloc`, glibc `__libc_start_main` both match `exact: "malloc"` / `exact: "libc_start_main"`). Regex patterns are not normalized.
 
@@ -142,7 +142,7 @@ Use groups instead of listing 7 or more individual types. `for: [all]` is no lon
 | `import_combination` | Import patterns | `required`, `suspicious`, `min_suspicious`, `max_total` |
 | `structure` | Binary structure | `feature` (hierarchical ID), `min_sections` |
 | `exports_count` | Export count bounds | `min`, `max` |
-| `string_count` | String count analysis | `min`, `max`, `min_length`, `regex` (filter) |
+| `string_value_count` | String value count analysis | `min`, `max`, `min_length`, `regex` (filter) |
 | `metrics` | Code metrics | `field` (e.g., "identifiers.avg_entropy"), `min`, `max`, `min_size`, `max_size` |
 | `yara` | YARA rule | `source` |
 
@@ -200,7 +200,7 @@ Matching uses prefix logic: `feature: "binary"` matches all `binary/*` features.
 # Detect string obfuscation (very few visible strings)
 - id: few-strings
   if:
-    type: string_count
+    type: string_value_count
     max: 20
     min_length: 4    # Only count strings 4+ chars
 
@@ -250,7 +250,7 @@ if:
 
 ## Count & Density Constraints
 
-Available on `string`, `raw`, `hex`, `encoded`, `base64`, `xor`:
+Available on `string_value`, `raw`, `hex`, `encoded`:
 
 | Field | Description |
 |-------|-------------|
@@ -270,7 +270,7 @@ Available on `string`, `raw`, `hex`, `encoded`, `base64`, `xor`:
 
 ## Location Constraints
 
-Available on `string`, `raw`, `encoded`, `base64`, `xor`. Hex supports `offset` and `offset_range`.
+Available on `string_value`, `raw`, `encoded`. Hex supports `offset` and `offset_range`.
 
 | Field | Description |
 |-------|-------------|
@@ -284,7 +284,7 @@ Available on `string`, `raw`, `encoded`, `base64`, `xor`. Hex supports `offset` 
 # Last 1KB of file
 - id: trailer-check
   if:
-    type: string
+    type: string_value
     substr: "END"
     offset_range: [-1024, null]
 
@@ -298,7 +298,7 @@ Available on `string`, `raw`, `encoded`, `base64`, `xor`. Hex supports `offset` 
 # Within .rodata section, first 256 bytes
 - id: rodata-header
   if:
-    type: string
+    type: string_value
     substr: "CONFIG"
     section: rodata
     section_offset_range: [0, 256]
@@ -737,14 +737,14 @@ cleave /path/to/file                    # Analyze file
 cleave symbols <file>                   # View symbols
 cleave strings <file>                   # View strings
 cleave test-rules <file> --rules "x,y"  # Debug rules
-cleave test-match <file> --type string --pattern "eval"  # Test patterns
+cleave test-match <file> --type string-value --pattern "eval"  # Test patterns
 ```
 
 ### test-match Options
 
 | Option | Values |
 |--------|--------|
-| `--type` | `string`, `symbol`, `raw`, `kv`, `hex`, `encoded`, `base64`, `xor` |
+| `--type` | `string-value`, `symbol`, `raw`, `kv`, `hex`, `encoded` |
 | `--method` | `exact`, `contains`, `regex`, `word` |
 | `--pattern` | Search pattern |
 | `--encoding` | Encoding filter for `encoded` type: `base64`, `base64,hex`, etc. |
