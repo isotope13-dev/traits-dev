@@ -1,14 +1,13 @@
 defaults:
   platforms: [unix, windows, macos]
-  for: [shell, python, javascript, powershell, pe, elf]
+  for: [scripts, binaries, source]
 traits:
   - id: ld-library-path-env
     desc: References LD_LIBRARY_PATH environment variable
     crit: notable
     conf: 0.6
     if:
-      type: string
-      substr: LD_LIBRARY_PATH
+      id: micro-behaviors/os/linker/env::ld-library-path
     downgrade:
       any:
         - type: basename
@@ -124,7 +123,7 @@ traits:
     for: [shell]
     if:
       type: string
-      regex: chattr\s+[-][ia]+\s+/etc/ld\.so\.preload
+      regex: chattr\s+[-+][ia]+\s+/etc/ld\.so\.preload
       # libc-dlopen-mode removed - use micro-behaviors/dylib/library::libc-internal-functions-a instead
   - id: original-prefix-a
     desc: original_ prefix core hook set
@@ -158,6 +157,40 @@ traits:
     if:
       type: string
       regex: \breal_(connect|socket|unlink)\b
+  - id: old-prefix-a
+    desc: old_ prefix core hook set
+    crit: notable
+    conf: 0.7
+    for: [elf, c]
+    if:
+      type: raw
+      regex: \bold_(open|read|write|execve)\b
+  - id: old-prefix-b
+    desc: old_ prefix filesystem hook set
+    crit: notable
+    conf: 0.7
+    for: [elf, c]
+    if:
+      type: raw
+      regex: \bold_(readdir|unlink|mkdir|rmdir)\b
+  - id: old-prefix-c
+    desc: old_ prefix xattr hook set
+    crit: notable
+    conf: 0.7
+    for: [elf, c]
+    if:
+      type: raw
+      regex: \bold_(listxattr|getxattr|setxattr)\b
+  - id: ld-so-preload-write
+    desc: Writes shared library path to ld.so.preload
+    crit: suspicious
+    conf: 0.9
+    mbc: F0015
+    attack: T1574.006
+    for: [shell]
+    if:
+      type: raw
+      regex: 'echo\s+.{0,60}\.so.{0,10}\s*>\s*/etc/ld\.so\.preload'
   - id: ld-so-preload-clear
     desc: Clears /etc/ld.so.preload content
     crit: suspicious
@@ -185,6 +218,14 @@ composite_rules:
     all:
       - id: micro-behaviors/dylib/lookup::dlsym-symbol
       - id: micro-behaviors/dylib/lookup::rtld-next
+  - id: hook-infrastructure-source
+    desc: Hooking infrastructure in source code
+    crit: suspicious
+    conf: 0.9
+    for: [c, cpp]
+    all:
+      - id: micro-behaviors/dylib/lookup::dlsym-symbol
+      - id: micro-behaviors/dylib/lookup::rtld-next-source
   - id: dlsym-rtld-next
     desc: Uses dlsym with RTLD_NEXT (function
     crit: suspicious
@@ -194,6 +235,7 @@ composite_rules:
     any:
       - id: dlsym-rtld-next-pattern
       - id: hook-infrastructure
+      - id: hook-infrastructure-source
   - id: hook-indicator
     desc: Hook implementation indicator
     crit: notable
@@ -238,6 +280,16 @@ composite_rules:
     any:
       - id: real-prefix-a
       - id: real-prefix-b
+  - id: old-prefix
+    desc: old_ function prefix (hook backup)
+    crit: notable
+    conf: 0.7
+    for: [elf, c]
+    needs: 2
+    any:
+      - id: old-prefix-a
+      - id: old-prefix-b
+      - id: old-prefix-c
   - id: symbiote
     desc: Symbiote rootkit indicators
     crit: suspicious
@@ -294,23 +346,26 @@ composite_rules:
     conf: 0.95
     mbc: F0015
     attack: T1574.006
-    for: [elf]
+    for: [elf, c]
     all:
       - id: dlsym-rtld-next
     any:
       - id: proc-hiding
       - id: symbiote
       - id: hook-prefixes
+      - id: old-prefix
   - id: ld-preload-installer
     desc: LD_PRELOAD rootkit installer (modifies
     crit: suspicious
     conf: 0.95
     mbc: F0015
     attack: T1574.006
-    for: [elf]
+    for: [elf, shell]
     all:
       - id: ld-so-preload-file
     any:
       - id: ld-backup-pattern
       - id: micro-behaviors/dylib/library/libc::libc-internal-functions-a
       - id: dlsym-rtld-next
+      - id: ld-so-preload-write
+      - id: ld-so-preload-chattr

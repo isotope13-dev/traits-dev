@@ -26,6 +26,7 @@ traits:
         - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
         - type: raw
           substr: "PECompac" # handled by dedicated PECompact traits
+        - id: metadata/format/magic::gzip # Downgrade if it's a gzip file
   - id: very-high-entropy
     desc: "Very high entropy (strongly indicates"
     crit: suspicious
@@ -40,6 +41,7 @@ traits:
         - type: string
           substr: ";!@Install@!UTF-8!"
         - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
+        - id: metadata/format/magic::gzip # Downgrade if it's a gzip file
   - id: 7zsfx-config-marker
     desc: "7z SFX installer config marker"
     crit: component
@@ -111,15 +113,18 @@ traits:
     # API set forwarding stubs, relocatable object files, and known packers have W+X sections legitimately
     unless:
       - id: metadata/format/pe::asprotect
+      - id: objectives/anti-static/packer/detect::upx-section
       - type: raw
         regex: "(ApiSet Stub DLL|storport\\.sys|ScsiMiniPort)"
     downgrade:
       any:
         - id: metadata/format/pe::rich-imported-low-entropy-layout
         - id: micro-behaviors/data/encode/pecompact::pecompact-signature
-        - id: objectives/anti-static/packer/detect::upx-section
         - type: string
-          regex: "(?i)(enigma.protector|ntoskrnl\\.exe|WATCOM C/C)"
+          regex: "(?i)(enigma.protector|ntoskrnl\\.exe|WATCOM C/C|supR3Hardened)"
+        - type: section
+          exact: "INIT"
+          executable: true
   - id: many-wx-sections
     desc: "Multiple W+X sections (packer pattern)"
     crit: suspicious
@@ -224,6 +229,8 @@ traits:
         max: 3.2
     # Media/codec libraries and large GUI frameworks often contain a handful of
     # compressed tables or format signatures without broader string obfuscation.
+    # Massive executables (>50MB) naturally accumulate high-entropy strings from
+    # embedded resources, compressed data, and UUIDs without indicating obfuscation.
     downgrade:
       all:
         - id: metadata/format::many-imports
@@ -231,8 +238,8 @@ traits:
       any:
         - id: micro-behaviors/dylib/library/abi-graphics::opengl-ref-b
         - id: metadata/quality/versioning::pe-version-resource
-        - id: objectives/anti-static/obfuscation/binary-metrics::high-string-density-large-pe
         - id: metadata/signed/platform::apple
+        - id: metadata/format::massive-executable
   # NOTE: Function detection depends on analysis depth and binary format.
   # Shared libraries (.so, .dylib, .dll) may have few detected functions
   # if only exported symbols are counted. Downgraded to notable to avoid
@@ -353,6 +360,13 @@ traits:
       - type: metrics
         field: binary.export_count
         min: 100
+    downgrade:
+      any:
+        # Large binaries with many functions naturally have complex
+        # state machines and dispatch logic.
+        - type: metrics
+          field: binary.function_count
+          min: 1000
   # NOTE: Go runtime has many complex functions (GC, scheduler, etc.)
   # Increased threshold and downgraded to notable
   - id: many-complex-functions
@@ -470,6 +484,7 @@ traits:
     desc: "Large overlay relative to file"
     crit: suspicious
     conf: 0.7
+    for: [pe, dll, macho]
     attack: "T1027.009"
     size_min: 131072
     if:
@@ -490,6 +505,7 @@ traits:
     desc: "High entropy overlay data"
     crit: component
     conf: 0.8
+    for: [pe, dll, macho]
     attack: "T1027.009"
     if:
       type: metrics
@@ -505,6 +521,7 @@ traits:
     desc: "Overlay large enough to contain payload"
     crit: component
     conf: 0.7
+    for: [pe, dll, macho]
     if:
       type: metrics
       field: binary.overlay_size
@@ -598,6 +615,7 @@ composite_rules:
         - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
         - type: raw
           substr: "PECompac" # explicit PECompact signature is less ambiguous than generic packing heuristics
+        - id: metadata/format/magic::gzip # Downgrade if it's a gzip file
   - id: binary-heavily-packed
     desc: "Binary is heavily packed/encrypted"
     crit: hostile
@@ -619,6 +637,7 @@ composite_rules:
     desc: "Large high-entropy overlay (encrypted payload)"
     crit: suspicious
     conf: 0.8
+    for: [pe, dll, macho]
     attack: "T1027.009"
     unless:
       - id: metadata/format/document/help2::help2-container
@@ -677,6 +696,7 @@ composite_rules:
       - id: objectives/anti-static/obfuscation/binary-metrics::wx-sections
     unless:
       - id: objectives/anti-static/packer/detect::upx-section
+      - id: objectives/anti-static/packer/detect::upx-marker
       - type: raw
         substr: "PECompac" # handled by dedicated PECompact traits
       - id: metadata/format/pe::rich-imported-low-entropy-layout
