@@ -9,12 +9,12 @@ A three-tier taxonomy following [MBC (Malware Behavior Catalog)](https://github.
 | **Capabilities** (`micro-behaviors/`) | Observable mechanics (what code *can do*) | component → baseline → notable → suspicious | [Micro-objectives](https://github.com/MBCProject/mbc-markdown/tree/master/micro-behaviors) |
 | **Objectives** (`objectives/`) | Attacker goals (why code *likely wants* to do something) | component → baseline → notable → suspicious → hostile | [Objectives](https://github.com/MBCProject/mbc-markdown#malware-objective-descriptions) |
 | **Known Entities** (`well-known/`) | Specific signatures | component → baseline → suspicious → hostile | (MBC corpus) |
-| **Meta** (`metadata/`) | File-level properties (informational only) | baseline | — |
+| **Meta** (`metadata/`) | Neutral file-structure metadata | baseline → component (→ ocassionally suspicious, if no objective can be tied to it) | — |
 
 **Criticality levels:**
 - **component** - Building block for composites that makes no sense individually (e.g., string fragments like `&cc=`). Filtered from terminal output unless a composite that references it fires. Always included in JSON output for ML signal.
 - **baseline** - Common functionality that doesn't describe program purpose (e.g., `mmap`, `stdio`, `read`). Always included in output for ML signal.
-- **notable** - Defines program purpose (`socket`, `exec`, `eval`)
+- **notable** - Defines program purpose (`socket`, `exec`, `eval`) - communications and code execution should always be notable or higher. Notable traits are used for human review of a program as well as differential analysis for detecting unexpected changes in subtle supply-chain attacks.
 - **suspicious** - Rarely legitimate, indicates possible malicious intent
 - **hostile** - Clear attack pattern, no legitimate use (requires precision >= 3.5)
 
