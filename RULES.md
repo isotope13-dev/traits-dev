@@ -107,6 +107,37 @@ traits:
 
 Use groups instead of listing 7 or more individual types. `for: [all]` is no longer valid — combine groups explicitly (e.g., `for: [binaries, scripts]`) or use specific types.
 
+### Platform Auto-Filtering
+
+When you use **group names** (`binaries`, `scripts`, etc.), cleave automatically filters the expanded types against the rule's `platforms:` field. This means you can write broad `for:` declarations without worrying about platform-incompatible types:
+
+```yaml
+defaults:
+  platforms: [macos]
+  for: [scripts, binaries]
+  # Auto-filtered at load time to: [shell, python, javascript, ruby, php, perl,
+  #   lua, applescript, macho, dylib, go, objc, class, pyc]
+  # PE, DLL, ELF, SO, Batch, VBS, PowerShell are silently dropped (not macOS)
+```
+
+This eliminates the most common trait authoring mistake: forgetting to include `macho` when listing `[shell, python, javascript, powershell, pe, elf]`.
+
+**When you use explicit type names** (not groups), platform conflicts remain a validation error:
+
+```yaml
+# ❌ ERROR: PE requires windows, but platforms is macos-only
+defaults:
+  platforms: [macos]
+  for: [pe, macho]
+
+# ✅ OK: Groups auto-filter, so this just works
+defaults:
+  platforms: [macos]
+  for: [binaries]
+```
+
+**Best practice:** Use `for: [scripts, binaries]` for most traits. Only use explicit types when you genuinely need to restrict to a specific format (e.g., `for: [macho]` for Mach-O-specific structural analysis).
+
 **Exclusions:** Prefix with `-` (e.g., `-php`, `scripts,-python`).
 **Unset field:** Use `none` anywhere in the list to unset the field entirely, ignoring defaults.
 
