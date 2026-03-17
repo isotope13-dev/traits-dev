@@ -1,0 +1,247 @@
+# Windows PE Trojan/Backdoor Detection
+# Composites detecting common Windows trojan behavior patterns
+# ATT&CK: T1071.001 (Application Layer Protocol: Web Protocols)
+# MBC: B0030 (Command and Control)
+defaults:
+  for: [pe, dll]
+  platforms: [windows]
+traits:
+  - id: winsock-library-reference
+    desc: Winsock library string marker
+    crit: component
+    conf: 0.78
+    attack: "T1071"
+    if:
+      type: string_value
+      regex: "(?i)^WS2_32\\.dll$"
+      section: ".rdata"
+composite_rules:
+  # PE with dynamic WinInet + command execution = C2 backdoor
+  - id: dynamic-wininet-c2
+    desc: Dynamic WinInet loading with command execution
+    crit: hostile
+    conf: 0.95
+    attack: "T1071.001"
+    all:
+      - id: micro-behaviors/communications/http/get::wininet-dynamic-load
+      - id: objectives/anti-static/obfuscation/reflection/class::dynamic-load-pattern
+    any:
+      - id: micro-behaviors/process/create/spawn::create-process-w
+      - id: micro-behaviors/process/create/spawn::create-process-a
+      - id: micro-behaviors/process/create/exec::winexec
+    downgrade:
+      any:
+        - id: metadata/format::many-imports
+        - id: metadata/quality/versioning::pe-version-resource
+        - id: well-known/tools/reverse-engineering::debug-event-loop
+        - id: well-known/tools/reverse-engineering::ida-debugger-server
+  # PE with dynamically loaded HTTP + process kill = trojan
+  - id: pe-trojan-indicators
+    desc: Dynamic HTTP loading with process termination
+    crit: suspicious
+    conf: 0.9
+    attack: "T1071.001"
+    all:
+      - id: objectives/impact/degrade/edr/enumerate::process-enumeration-terminate
+      - id: micro-behaviors/communications/http/get::wininet-dynamic-load
+    downgrade:
+      any:
+        - id: metadata/format::many-imports
+        - id: metadata/quality/versioning::pe-version-resource
+        - id: metadata/vendor/microsoft::microsoft-corp-versioninfo
+        - id: metadata/vendor/microsoft::microsoft-corp-marker-rsrc
+        - id: metadata/vendor/microsoft::microsoft-corp-marker-rdata
+  # Pipe-based command capture with dynamic HTTP loading
+  - id: pipe-command-capture-c2
+    desc: Pipe command capture with dynamic HTTP loading
+    crit: suspicious
+    conf: 0.9
+    attack: "T1059"
+    all:
+      - id: micro-behaviors/communications/ipc/pipe::pipe-io-redirect
+      - id: micro-behaviors/communications/http/get::wininet-dynamic-load
+    downgrade:
+      any:
+        - id: metadata/format::many-imports
+        - id: metadata/quality/versioning::pe-version-resource
+        - id: well-known/tools/reverse-engineering::debug-event-loop
+        - id: well-known/tools/reverse-engineering::ida-debugger-server
+  - id: wininet-mac-fingerprint-beacon
+    desc: WinInet beacon with MAC fingerprint parameter
+    crit: suspicious
+    conf: 0.92
+    attack: "T1071.001"
+    all:
+      - id: micro-behaviors/communications/http/get::internet-open
+      - id: micro-behaviors/os/network/interface::get-adapters-info
+      - id: micro-behaviors/communications/http/url::mac-query-param-format
+  - id: winhttp-token-kill-chain
+    desc: WinHTTP C2 with tokenized spawn and process-kill evasion
+    crit: hostile
+    conf: 0.93
+    attack: "T1071.001"
+    all:
+      - id: micro-behaviors/communications/http/client::winhttp-request-flow
+      - id: objectives/privilege-escalation/token-manipulation::token-spawn-api-chain
+      - id: objectives/impact/degrade/edr/enumerate::process-enumeration-terminate
+    any:
+      - id: micro-behaviors/process/sync/mutex::mutex-instance-check
+      - id: micro-behaviors/os/registry/access::registry-write-api-chain
+      - id: micro-behaviors/data/embedded/payload::pe-resource-full-extraction
+    needs: 1
+  - id: winhttp-staged-loader-profile
+    desc: WinHTTP C2 with staged loader host integration profile
+    crit: suspicious
+    conf: 0.94
+    attack: "T1071.001"
+    all:
+      - id: micro-behaviors/communications/http/client::winhttp-request-flow
+      - id: micro-behaviors/process/sync/mutex::mutex-instance-check
+    any:
+      - id: micro-behaviors/os/registry/access::registry-write-api-chain
+      - id: objectives/impact/degrade/edr/enumerate::process-enumeration-terminate
+      - id: micro-behaviors/data/embedded/payload::pe-resource-full-extraction
+      - id: micro-behaviors/crypto/library::capi-keyed-buffer-crypto-chain
+      - id: objectives/persistence/login/startup/startup-folder::startup-folder-shell-path-composition-chain
+    needs: 2
+    downgrade:
+      any:
+        - id: metadata/vendor/microsoft::is-microsoft-named
+        - id: metadata/vendor/microsoft::is-defender-named
+        - id: metadata/vendor/microsoft::microsoft-corp-versioninfo
+        - id: metadata/quality/versioning::pe-version-resource
+  - id: winhttp-ip-c2-loader
+    desc: WinHTTP IP C2 loader profile
+    crit: suspicious
+    conf: 0.93
+    attack: "T1071.001"
+    all:
+      - id: micro-behaviors/communications/http/client::winhttp-read-data
+      - id: micro-behaviors/communications/ip::external-ipv4-port-binary
+    any:
+      - id: objectives/anti-analysis/debugger-detect/check::debugger-api
+      - id: objectives/anti-analysis/timing/evasion::timing-anti-debug
+      - id: micro-behaviors/communications/ipc/named-pipe::create-named-pipe
+      - id: micro-behaviors/process/sync/mutex::open-mutex
+      - id: objectives/anti-static/obfuscation/payload/encrypted::high-entropy-data
+    needs: 2
+    downgrade:
+      any:
+        - id: metadata/vendor/microsoft::is-microsoft-named
+        - id: metadata/vendor/microsoft::microsoft-corp-versioninfo
+        - id: metadata/signed/platform::microsoft
+  - id: staged-pe-loader-plumbing
+    desc: Staged PE loader plumbing profile
+    crit: suspicious
+    conf: 0.91
+    all:
+      - id: objectives/anti-static/obfuscation/payload/encrypted::high-entropy-data
+      - id: micro-behaviors/communications/ipc/named-pipe::create-named-pipe
+    any:
+      - id: micro-behaviors/process/sync/mutex::open-mutex
+      - id: micro-behaviors/fs/file/move::move-file
+      - id: micro-behaviors/fs/config/system::legacy-profile-api
+      - id: micro-behaviors/os/sysinfo/directories::get-system-windows-directory
+      - id: micro-behaviors/os/sysinfo/directories::get-system-wow64-directory
+      - id: micro-behaviors/mem/protect/modify::virtual-alloc
+    needs: 2
+    downgrade:
+      any:
+        - id: metadata/vendor/microsoft::is-microsoft-named
+        - id: metadata/signed/platform::microsoft
+  - id: pe-winsock-evasive-loader
+    desc: Winsock-linked PE with evasive loader profile
+    crit: suspicious
+    conf: 0.9
+    attack: "T1071"
+    unless:
+      - id: metadata/format::many-imports
+    all:
+      - id: winsock-library-reference
+      - id: objectives/anti-analysis/debugger-detect/check::debugger-api
+    any:
+      - id: objectives/anti-analysis/timing/evasion::timing-delta-check
+      - id: objectives/anti-static/obfuscation/reflection/class::dynamic-load-pattern
+      - id: metadata/format::no-functions
+    needs: 2
+    downgrade:
+      any:
+        - id: metadata/vendor/microsoft::is-microsoft-named
+        - id: metadata/vendor/microsoft::is-defender-named
+        - id: metadata/vendor/microsoft::microsoft-corp-versioninfo
+        - id: well-known/tools/reverse-engineering::debug-event-loop
+        - id: metadata/signed/certificate::bitdefender-brand-text
+        - id: metadata/format/pe::resource-only-dll
+  # PE loader with WinInet HTTP, hardcoded C2 IPs, machine fingerprinting,
+  # and process injection capability
+  - id: wininet-c2-loader
+    desc: WinInet HTTP loader with C2 and injection
+    crit: hostile
+    conf: 0.93
+    attack: "T1071.001"
+    all:
+      - id: micro-behaviors/communications/http/get::internet-open
+      - id: micro-behaviors/communications/http/get::internet-connect
+      - id: objectives/command-and-control/infrastructure/ip-port::hardcoded-ipv4-port-dup
+    any:
+      - id: objectives/discovery/system/fingerprint/machine-id::machineguid
+      - id: objectives/evasion/process/injection::process-hollowing-context-hijack
+      - id: objectives/anti-analysis/debugger-detect/check::win-anti-analysis-suite
+      - id: objectives/persistence/login/startup/startup-folder::startup-folder-shell-path-composition-chain
+    needs: 2
+    downgrade:
+      any:
+        - id: metadata/vendor/microsoft::is-microsoft-named
+        - id: metadata/vendor/microsoft::is-defender-named
+        - id: metadata/vendor/microsoft::microsoft-corp-versioninfo
+  - id: winsock-proxy-connect-command-backdoor
+    desc: Winsock proxy CONNECT C2 with command backdoor
+    crit: hostile
+    conf: 0.94
+    attack: "T1071.001"
+    all:
+      - id: winsock-library-reference
+      - id: micro-behaviors/communications/http/request::http-proxy-connect-auth-tunnel
+    any:
+      - id: micro-behaviors/process/create/shell::cmd-slash-c
+      - id: micro-behaviors/os/registry/access::windows-firewall-authorizedapps-write-chain
+      - id: micro-behaviors/process/sync/mutex::mutex-instance-check
+    needs: 2
+    downgrade:
+      any:
+        - id: metadata/vendor/microsoft::is-microsoft-named
+        - id: metadata/vendor/microsoft::is-defender-named
+        - id: metadata/vendor/microsoft::microsoft-corp-versioninfo
+  - id: ip-port-obfuscated-pe
+    desc: External IP:port with obfuscation techniques
+    crit: suspicious
+    conf: 0.88
+    attack: "T1071.001"
+    all:
+      - id: micro-behaviors/communications/ip::external-ipv4-port-binary
+    any:
+      - id: objectives/anti-static/obfuscation/control-flow/logic::stack-string-construction
+      - id: objectives/anti-analysis/self-modify/runtime::xor-loop-pattern
+      - id: objectives/anti-static/obfuscation/imports::pe-header-walk
+      - id: objectives/anti-static/obfuscation/imports::peb-access-x64
+    downgrade:
+      any:
+        - id: metadata/signed/platform::microsoft
+  - id: evasive-trojan-dll
+    desc: Evasive DLL with anti-debug, registry access, and C2 capability
+    crit: hostile
+    conf: 0.93
+    attack: "T1071.001"
+    all:
+      - id: objectives/anti-analysis/debugger-detect/check::anti-debug-api-pair
+      - id: micro-behaviors/os/registry/access::registry-read-api-chain
+      - id: objectives/anti-static/obfuscation/binary-metrics::max-50-imports
+    any:
+      - id: micro-behaviors/process/create/shell
+      - id: micro-behaviors/communications/http/client
+      - id: objectives/anti-static/obfuscation/imports::pe-header-walk
+    needs: 2
+    none:
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/vendor/microsoft::is-microsoft-named
+      - id: metadata/format::many-imports
