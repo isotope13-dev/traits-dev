@@ -631,7 +631,7 @@ composite_rules:
     conf: 0.95
     all:
       - id: micro-behaviors/process/create
-      - id: micro-behaviors/mem/allocate/rwx
+      - id: micro-behaviors/mem/alloc/rwx
     downgrade:                           # → suspicious if debugger
       all:                               # Full boolean logic supported
         - id: micro-behaviors/process/create/load/library::debugger-tool-marker

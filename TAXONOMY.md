@@ -205,29 +205,35 @@ micro-behaviors/
 │   │                      #   Disk wiping → objectives/impact/wipe/.
 │   │                      #   Hidden file creation → objectives/evasion/file-hiding/.
 │   │                      #   Obfuscated paths → objectives/anti-static/obfuscation/.
-│   ├── file/              #   File operations (read, write, copy, move, delete, stat)
-│   ├── directory/         #   Directory operations (create, list, traverse, delete)
-│   ├── enumerate/         #   File/directory/drive enumeration
 │   ├── attributes/        #   File attributes (chattr, xattr)
-│   ├── chmod/             #   Permission modification
-│   ├── permission/        #   Permission queries/ACLs
+│   ├── chmod/             #   Permission modification, queries, ACLs, chown
+│   ├── config/            #   Configuration file operations
+│   ├── delete/            #   File deletion
+│   ├── device/            #   Block/character device access
+│   ├── directory/         #   Directory operations (create, list, traverse, delete)
+│   ├── disk/              #   Disk/partition operations
+│   ├── enumerate/         #   File/directory/drive enumeration
+│   ├── file/              #   File operations (read, write, copy, move, delete, stat)
 │   ├── link/              #   Hard/symbolic links
 │   ├── lock/              #   File locking (flock)
+│   ├── memory/            #   Memory-mapped I/O (mmap)
 │   ├── path/              #   Path references and construction
 │   │   ├── config/        #     Config paths (accounts, groups, sudoers)
 │   │   ├── device/        #     Device paths (storage, terminal)
 │   │   ├── sensitive/     #     Sensitive paths (SSH keys, wallets, credentials)
 │   │   └── temp/          #     Temporary paths
-│   ├── disk/              #   Disk/partition operations
-│   ├── device/            #   Block/character device access
-│   ├── proc/              #   /proc filesystem access
-│   ├── volume/            #   Volume mount/unmount
 │   ├── pipe/              #   Named pipes (FIFO)
-│   ├── watch/             #   File monitoring (inotify, fanotify, fswatch)
-│   ├── overwrite/         #   File overwriting
-│   ├── memory/            #   Memory-mapped I/O (mmap)
+│   ├── proc/              #   /proc filesystem access
+│   ├── quota/             #   Filesystem quota operations
+│   ├── read/              #   File reading (standalone)
+│   ├── shell-ops/         #   Shell file operations (cp, mv, rm)
+│   ├── swap/              #   Swap operations
+│   ├── sync/              #   Filesystem sync (fsync, fdatasync)
 │   ├── temp/              #   Temporary file/directory creation
-│   └── config/            #   Configuration file operations
+│   ├── traversal/         #   Directory/drive traversal
+│   ├── volume/            #   Volume mount/unmount
+│   ├── watch/             #   File monitoring (inotify, fanotify, fswatch)
+│   └── write/             #   File writing (standalone)
 │
 ├── hardware/              # Hardware device I/O                 → MBC: Hardware
 │   │                      #   Direct interaction with hardware devices.
@@ -243,12 +249,13 @@ micro-behaviors/
 │   └── wireless/          #   Wireless network interfaces
 │
 ├── mem/                   # Memory operations                   → MBC: Memory
-│   ├── alloc/             #   Heap allocation (malloc, VirtualAlloc)
-│   ├── allocate/          #   Executable memory allocation (PAGE_EXECUTE_*)
+│   ├── advise/            #   Memory advisory (madvise, posix_madvise)
+│   ├── alloc/             #   Memory allocation (malloc, VirtualAlloc, PAGE_EXECUTE_*)
 │   ├── anonymous/         #   Anonymous memory (memfd_create, /dev/shm)
 │   ├── c-runtime/         #   C runtime memory functions (memcpy, memset)
 │   ├── create/            #   Memory-backed file creation
 │   ├── decompress/        #   Native decompression in memory
+│   ├── gc/                #   Garbage collection
 │   ├── inline-asm/        #   Inline assembly detection
 │   ├── lock/              #   Memory locking (VirtualLock, mlock)
 │   ├── protect/           #   Memory protection changes (mprotect, VirtualProtect)
@@ -305,17 +312,38 @@ micro-behaviors/
 │   └── wsh/               #   Windows Script Host
 │
 ├── process/               # Process control                     → MBC: Process
-│   ├── create/            #   Process creation
+│   │                      #   Privilege APIs → os/privilege/. Env vars → os/env/.
+│   │                      #   Container runtime → os/container/.
+│   ├── argument/          #   Command-line argument parsing
+│   ├── attach/            #   Process attachment (ptrace, debug)
+│   ├── control/           #   Process control signals
+│   ├── create/            #   Process creation (spawn, exec)
+│   ├── daemonize/         #   Daemon creation (setsid, double-fork)
+│   ├── debug/             #   Debug operations
+│   ├── enumerate/         #   Process listing
+│   ├── exit/              #   Process self-exit
+│   ├── fd/                #   File descriptor manipulation (dup2)
+│   ├── fork/              #   POSIX fork/clone
+│   ├── hook/              #   API/function hooking
+│   ├── identity/          #   Process identity (getpid, getppid)
+│   ├── info/              #   Process information queries
 │   ├── inject/            #   Cross-process injection (DLL, thread, APC, atom-bombing)
 │   ├── interpreter/       #   Code interpreters/runtimes
 │   │   ├── vm/            #     Node.js VM module (createContext, runInContext)
 │   │   ├── node/          #     Node.js internal bindings (process.binding)
 │   │   └── gentee/        #     Gentee scripting runtime
-│   ├── terminate/         #   Process termination
-│   ├── enumerate/         #   Process listing
-│   ├── hollow/            #   Process hollowing
-│   ├── hook/              #   API/function hooking
-│   └── fd/                #   File descriptor manipulation (dup2)
+│   ├── io/                #   Process I/O redirection
+│   ├── lifecycle/         #   Process lifecycle management
+│   ├── pid/               #   PID file operations
+│   ├── resources/         #   Process resource management
+│   ├── script/            #   Script execution
+│   ├── sync/              #   Process synchronization
+│   ├── terminate/         #   Process termination (killing other processes)
+│   ├── thread/            #   Thread lifecycle (Java)
+│   ├── threading/         #   Threading primitives (Windows sync)
+│   ├── tls/               #   Thread-local storage
+│   ├── tty/               #   TTY/PTY operations (terminal detection, pseudoterminals)
+│   └── user/              #   Process user identity (whoami, getlogin, getpwuid)
 │
 ├── ui/                    # User interface operations
 │   ├── dialog/            #   Dialog boxes, message boxes, prompts
