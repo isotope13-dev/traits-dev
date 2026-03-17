@@ -1,82 +1,59 @@
-# Ruby Webshell and Backdoor Detection
-# Detects webshell patterns in Ruby web applications
-# ATT&CK: T1505.003 (Server Software Component: Web Shell)
+# Web Shell Client Detection - Ruby
+# Detects clients that connect to web shells for remote command execution
+# ATT&CK: T1059 (Command and Scripting Interpreter), T1071.001 (Web Protocols)
 defaults:
-  platforms: [linux, macos, windows, unix, android, ios]
-  crit: suspicious
-  attack: "T1505.003"
+  attack: T1059
   for: [ruby]
+  platforms: [unix, windows]
 traits:
-  # === Cookie-based Command Channel ===
-  - id: http-cookie-extract
-    desc: HTTP cookie extraction
-    crit: notable
-    conf: 0.85
-    if:
-      type: string_value
-      substr: "HTTP_COOKIE"
-  - id: cookie-regex-extract
-    desc: Cookie value regex extraction
+  # === Web Shell URL Pattern ===
+  - id: web-shell-cmd-param
+    desc: Web shell command parameter
     crit: suspicious
     conf: 0.90
     if:
-      type: raw
-      regex: "\\['HTTP_COOKIE'\\]\\.(match|scan|=~)"
-  # === Rack/Rails Middleware Hooking ===
-  - id: rack-middleware-hook
-    desc: Rack middleware hooking
+      type: string_value
+      regex: "cmd=|command=|exec=|run="
+  # === PHP Shell Function Pattern ===
+  - id: php-shell-function
+    desc: PHP exec function in URL
     crit: notable
-    conf: 0.85
+    conf: 0.92
     if:
-      type: raw
-      regex: "Rack::[A-Z][a-zA-Z]+\\.prepend"
-  # === Base64 Decode + Eval (RCE pattern) ===
-  - id: base64-decode-eval
-    desc: Base64 decode to eval
-    crit: suspicious
-    conf: 0.95
+      type: string_value
+      regex: "shell_exec|passthru|popen\\("
+    unless:
+      - id: micro-behaviors/process/create/shell/lang::ruby-shell-exec
+  # === Shell Prompt Pattern ===
+  - id: shell-prompt-string
+    desc: Shell prompt marker
+    crit: notable
+    conf: 0.70
     if:
-      type: raw
-      regex: "eval\\s*\\(\\s*Base64\\.(decode64|urlsafe_decode64|strict_decode64)"
-  # === External Data Exfiltration ===
-  - id: faraday-exfil
-    desc: Faraday HTTP with env data
-    crit: suspicious
-    conf: 0.85
-    if:
-      type: raw
-      regex: "Faraday\\.(get|post).{0,50}ENV\\["
+      type: string_value
+      regex: "shell\\$|sh\\$|zsh\\$"
 composite_rules:
-  # === Ruby Cookie-based Webshell ===
-  # Complexity: file_types(+1) + all(+3) = 4 (meets HOSTILE threshold)
-  - id: ruby-cookie-webshell
-    desc: Ruby cookie-based webshell
-    crit: hostile
-    conf: 0.95
-    mbc: "B0030"
-    all:
-      - id: http-cookie-extract
-      - id: micro-behaviors/data/decode/base64::base64-decode
-      - id: objectives/execution/interpreter/eval/dynamic::eval-call-ruby
-  # === Ruby Middleware Backdoor ===
-  # Complexity: file_types(+1) + all(+4) = 5 (meets HOSTILE threshold)
-  - id: ruby-middleware-backdoor
-    desc: Ruby middleware backdoor
-    crit: hostile
-    conf: 0.95
-    mbc: "B0030"
-    all:
-      - id: rack-middleware-hook
-      - id: objectives/execution/interpreter/eval/dynamic::prepend-module
-      - id: micro-behaviors/data/decode/base64::base64-decode
-      - id: objectives/execution/interpreter/eval/dynamic::eval-call-ruby
-  # === Base64 Eval RCE ===
-  # Complexity: file_types(+1) + all(+2) = 3 (suspicious)
-  - id: base64-eval-rce
-    desc: Base64 decode to eval RCE
+  # === Web Shell Client ===
+  - id: web-shell-client
+    desc: Web shell client for remote command execution
     crit: suspicious
-    conf: 0.95
-    attack: "T1059.005"
-    all:
-      - id: micro-behaviors/data/decode/base64::base64-decode
-      - id: objectives/execution/interpreter/eval/dynamic::eval-call-ruby
+    conf: 0.92
+    needs: 3
+    any:
+      - id: web-shell-cmd-param
+      - id: php-shell-function
+      - id: micro-behaviors/data/control-flow/analysis::ruby-while-true
+      - id: micro-behaviors/process/create/system::ruby-system
+  # === Interactive Shell Client ===
+  - id: interactive-shell-client
+    desc: Interactive shell with user input
+    crit: suspicious
+    conf: 0.88
+    needs: 4
+    any:
+      - id: micro-behaviors/os/console/io::stdin-gets
+      - id: shell-prompt-string
+      - id: micro-behaviors/os/console/io::exit-command-check
+      - id: micro-behaviors/data/control-flow/analysis::ruby-while-true
+      - id: micro-behaviors/communications/http/lib/netlib::open-uri
+      - id: micro-behaviors/process/create/system::ruby-system

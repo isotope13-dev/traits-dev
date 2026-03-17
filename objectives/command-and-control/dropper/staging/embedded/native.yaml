@@ -1,0 +1,303 @@
+defaults:
+  platforms: [unix, windows, macos]
+  for: [binaries]
+  mbc: B0030
+  attack: T1027.009
+traits:
+  - id: large-hex-payload-dup
+    desc: Large hex-encoded payload string (10KB+)
+    crit: suspicious
+    conf: 0.85
+    if:
+      type: string_value
+      regex: "^[0-9a-fA-F]{20000,}$"
+  - id: custom-encoding-alphabet
+    desc: Custom encoding alphabet (cipher/obfuscation)
+    crit: notable
+    conf: 0.8
+    mbc: B0032
+    attack: T1027
+    if:
+      type: string_value
+      # Focus on base64-like custom alphabets; avoid matching arbitrary identifier text.
+      regex: "^[A-Za-z0-9+/_-]{64}$"
+    not:
+      # Exclude common padded base64/base64url chunks (false positives in cert/runtime blobs)
+      - regex: ^[A-Za-z0-9+/]{62}==$
+      - regex: ^[A-Za-z0-9+/]{63}=$
+      - regex: ^[A-Za-z0-9+/_-]{62}==$
+      - regex: ^[A-Za-z0-9+/_-]{63}=$
+      - regex: ^VUID-
+      - regex: ^VK_[A-Z0-9_]+$
+      - regex: ^[A-Za-z0-9_]+$
+      - regex: ^[A-Za-z0-9+/]{64}$
+      - exact: ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/
+      - exact: ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_
+      - exact: 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/
+      - exact: 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_
+      - exact: abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/
+      - exact: abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_0123456789
+      - exact: -0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz
+      - regex: "^[A-Za-z0-9._-]+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_[A-Za-z0-9._-]+$"
+      - regex: "^[A-Za-z]+(?:-[A-Za-z]+){2,}$"
+      - regex: "(?i)(csibm|utf-[0-9]+|x-mac-|windows-[0-9]+|iso-8859-)"
+      - regex: ^[/*=-]+$
+      - regex: "%[sdfu@]"
+      - regex: (%[0-9]*[hlL]*[xXo]){4}
+      - regex: '!"#\$%&'
+      - regex: '^[vV@:iIcCsSqQlLdDfBn^#?{(\[\]0-9*]+$'
+      - regex: HALS_|__CF|RKN?[0-9]|^![0-9]
+      - regex: "[a-z]{4}bolg.*[a-z]{4}bolg"
+      - substr: "@@"
+      - regex: "@[A-Za-z].*@[A-Za-z].*@[A-Za-z]"
+      - regex: "[*]{6}|[#]{6}|[!]{6}|[=]{6}|[-]{6}|[+]{6}|[_]{6}"
+      - substr: _FLAG_
+      - regex: "^[0-9]{10,11}[a-z]{26}[A-Z]{26}[-_@+/]{1,2}$"
+      - regex: '^[A-Za-z][A-Za-z0-9_]*\\([A-Za-z0-9_]*\\)[A-Za-z0-9_]*$'
+composite_rules:
+  - id: pe-resource-staged-loader
+    desc: PE resource staged loader chain
+    crit: suspicious
+    conf: 0.88
+    attack: T1027.009 - pe - dll
+    size_max: 524288
+    all:
+      - id: micro-behaviors/data/embedded/payload::pe-resource-loader-api-chain
+      - id: micro-behaviors/dylib/lookup::get-proc-address
+    any:
+      - id: micro-behaviors/mem/protect/modify::virtual-alloc
+      - id: objectives/anti-analysis/timing/evasion::timing-delta-check
+    downgrade:
+      any:
+        - id: metadata/quality/versioning::pe-version-resource
+        - id: metadata/format::many-imports
+        - id: metadata/lang/compiler::msvc
+        - id: metadata/vendor/microsoft::is-microsoft-named
+  - id: pe-resource-loader-registry-evasion-chain
+    desc: PE resource loader with registry tamper and anti-analysis
+    crit: suspicious
+    conf: 0.93
+    attack: T1027.009 - pe - dll
+    size_max: 5242880
+    all:
+      - id: micro-behaviors/data/embedded/payload::pe-resource-loader-api-chain
+      - id: objectives/anti-static/obfuscation/reflection/class::dynamic-load-pattern
+      - id: micro-behaviors/os/registry/access::registry-write-api-chain
+      - id: objectives/anti-analysis/timing/evasion::timing-anti-debug
+    any:
+      - id: micro-behaviors/process/thread/create::create-thread
+      - id: micro-behaviors/fs/enumerate/directory::find-next-file
+      - id: micro-behaviors/fs/path/check::path-is-directory
+    downgrade:
+      any:
+        - id: metadata/format/installer::known-benign-installer
+        - id: metadata/vendor/microsoft::is-microsoft-named
+        - id: metadata/signed/platform::microsoft
+        - id: metadata/format::many-imports
+        - id: metadata/quality/versioning::pe-version-resource
+        - id: metadata/lang/compiler::msvc
+        - id: metadata/signed/certificate::simon-tatham-cert
+  - id: pe-resource-memory-stage-with-hooking
+    desc: PE resource loader with memory staging and UI hook setup
+    crit: suspicious
+    conf: 0.91
+    attack: T1027.009 - pe - dll
+    all:
+      - id: micro-behaviors/data/embedded/payload::pe-resource-full-extraction
+      - id: objectives/anti-static/obfuscation/reflection/class::dynamic-load-pattern
+      - id: micro-behaviors/mem/protect/modify::virtual-protect
+    any:
+      - id: micro-behaviors/hardware/input/keyboard::set-windows-hook
+      - id: micro-behaviors/hardware/display/screen::gdi-screen-capture-primitives
+      - id: objectives/anti-static/obfuscation/payload/section::oversized-data-section
+    needs: 1
+    downgrade:
+      any:
+        - id: metadata/vendor/microsoft::is-microsoft-named
+        - id: metadata/signed/platform::microsoft
+        - id: metadata/format::many-imports
+        - id: metadata/quality/versioning::pe-version-resource
+        - id: metadata/lang/compiler::msvcrt
+  - id: libcurl-network-dropper
+    desc: libcurl dropper (downloads and executes payload)
+    crit: hostile
+    conf: 0.95
+    attack: T1105 - elf
+    size_max: 500000
+    all:
+      - id: micro-behaviors/communications/download/curl::libcurl-http
+      - id: micro-behaviors/process/create/shell::shell-execution
+      - id: micro-behaviors/fs/file/operations::binary-file-ops
+      - id: micro-behaviors/fs/proc/info::process-pid-exe
+  - id: libcurl-minimal-dropper
+    desc: Minimal libcurl dropper (stripped binary)
+    crit: hostile
+    conf: 0.92
+    attack: T1105 - elf
+    all:
+      - id: micro-behaviors/communications/download/curl::libcurl-http
+      - id: micro-behaviors/process/create/shell::shell-execution
+      - id: objectives/anti-static/obfuscation/payload/encrypted::minimal-imports
+  - id: hex-payload-dropper
+    desc: Hex-encoded payload dropper (decodes and executes)
+    crit: hostile
+    conf: 0.95
+    attack: T1059 - macho - elf
+    all:
+      - id: objectives/command-and-control/dropper/staging/embedded::large-hex-payload-dup
+      - id: objectives/anti-static/obfuscation/payload/encrypted::minimal-imports
+      - id: micro-behaviors/process/create/shell::shell-execution
+  - id: custom-encoded-dropper
+    desc: Custom-encoded payload dropper
+    crit: hostile
+    conf: 0.92
+    attack: T1059 - macho - elf
+    all:
+      - id: objectives/command-and-control/dropper/staging/embedded::large-hex-payload-dup
+      - id: custom-encoding-alphabet
+      - id: micro-behaviors/process/create/shell::shell-execution
+  - id: pe-encrypted-resource-dropper
+    desc: PE encrypted resource dropper (extract, write, execute)
+    crit: hostile
+    conf: 0.93
+    attack: T1027.009 - pe - dll
+    size_max: 5242880
+    all:
+      - id: micro-behaviors/data/embedded/payload::pe-resource-full-extraction
+      - id: micro-behaviors/io/console/output::write-file
+      - id: objectives/anti-static/obfuscation/payload/encrypted::dominant-rsrc-section
+    any:
+      - id: micro-behaviors/process/create/exec::shell-execute-ex
+      - id: micro-behaviors/process/create/exec::shell-execute
+    downgrade:
+      any:
+        - id: metadata/vendor/microsoft::is-microsoft-named
+        - id: metadata/quality/versioning::pe-version-resource
+        - id: metadata/format/installer::known-benign-installer
+  - id: pe-resource-dropper-with-process-scan
+    desc: PE resource dropper with process scanning
+    crit: hostile
+    conf: 0.92
+    attack: T1027.009 - pe - dll
+    size_max: 5242880
+    all:
+      - id: micro-behaviors/data/embedded/payload::pe-resource-full-extraction
+      - id: micro-behaviors/io/console/output::write-file
+      - id: micro-behaviors/process/enumerate/psapi::psapi-process-scan
+    downgrade:
+      any:
+        - id: metadata/vendor/microsoft::is-microsoft-named
+        - id: metadata/quality/versioning::pe-version-resource
+  - id: pe-resource-temp-stager-persistence-chain
+    desc: PE resource dropper with temp staging, spawn, and persistence chain
+    crit: hostile
+    conf: 0.94
+    attack: T1027.009 - pe - dll
+    size_max: 5242880
+    all:
+      - id: micro-behaviors/data/embedded/payload::pe-resource-full-extraction
+      - id: micro-behaviors/fs/temp/directory::temp-file-staging-primitives
+      - id: micro-behaviors/process/create/spawn::create-process-w
+    any:
+      - id: micro-behaviors/fs/file/move::move-file-ex
+      - id: micro-behaviors/os/service/control::reconfigure-and-start-service
+      - id: micro-behaviors/os/registry/access::registry-write-api-chain
+    needs: 1
+    downgrade:
+      any:
+        - id: metadata/format/installer::known-benign-installer
+        - id: metadata/vendor/microsoft::is-microsoft-named
+        - id: metadata/quality/versioning::pe-version-resource
+        - id: metadata/vendor/realtek::realtek-camera-stack
+        - id: metadata/format::many-imports
+  - id: pe-resource-service-hijack-stager
+    desc: Resource stager with service hijack chain
+    crit: suspicious
+    conf: 0.95
+    attack: T1543.003 - pe - dll
+    all:
+      - id: micro-behaviors/data/embedded/payload::pe-resource-full-extraction
+      - id: micro-behaviors/fs/temp/directory::temp-file-staging-primitives
+      - id: micro-behaviors/process/create/spawn::create-process-w
+      - id: micro-behaviors/os/service/control::reconfigure-and-start-service
+    any:
+      - id: micro-behaviors/fs/file/move::move-file-ex
+      - id: micro-behaviors/os/registry/access::registry-write-api-chain
+      - id: micro-behaviors/process/create/exec::shell-execute
+    downgrade:
+      any:
+        - id: metadata/vendor/microsoft::is-microsoft-named
+        - id: metadata/quality/versioning::pe-version-resource
+        - id: metadata/format::many-imports
+        - id: metadata/lang/compiler::msvc
+        - id: metadata/format/installer::nsis
+        - id: metadata/format/installer::known-benign-installer
+  - id: pe-embedded-payload-sandbox-aware
+    desc: Embedded PE payload with sandbox-evasion corpus
+    crit: suspicious
+    conf: 0.93
+    attack: T1027.009 - pe - dll
+    all:
+      - id: micro-behaviors/data/embedded/payload::pe-magic-embedded
+    any:
+      - id: objectives/anti-analysis/sandbox-detect/environment
+    downgrade:
+      any:
+        - id: metadata/quality/versioning::pe-version-resource
+        - id: metadata/vendor/microsoft::is-microsoft-named
+  - id: pe-zip-staged-loader
+    desc: PE staged ZIP payload loader chain
+    crit: suspicious
+    conf: 0.91
+    attack: T1027.009 - pe - dll
+    all:
+      - id: micro-behaviors/data/embedded/payload::zip-magic-multiple-pe
+      - id: objectives/anti-analysis/vm-detect::instruction-based-evasion
+    any:
+      - id: micro-behaviors/dylib/lookup::get-proc-address
+      - id: micro-behaviors/dylib/load::load-library-w
+      - id: objectives/anti-static/polyglot/format::jar-polyglot-prefix
+  - id: pe-data-embedded-payload-dropper
+    desc: PE data-section embedded payload dropper
+    crit: suspicious
+    conf: 0.93
+    attack: T1027.009 - pe - dll
+    size_min: 200000
+    all:
+      - id: micro-behaviors/data/embedded/payload::zip-magic
+      - id: objectives/anti-static/obfuscation/payload/section::oversized-data-section
+      - id: micro-behaviors/fs/file/operations::file-create-win
+      - id: micro-behaviors/io/console/output::write-file
+    any:
+      - id: micro-behaviors/dylib/lookup::get-proc-address
+      - id: objectives/anti-static/obfuscation/binary-metrics::low-volume-aliased-exports
+      - id: objectives/anti-analysis/debugger-detect/check::anti-debug-api-pair
+      - id: objectives/anti-static/obfuscation/payload/encrypted::high-entropy-data
+    needs: 2
+    downgrade:
+      any:
+        - id: metadata/vendor/microsoft::is-microsoft-named
+        - id: metadata/signed/platform::microsoft
+        - id: metadata/quality/versioning::pe-version-resource
+  - id: pe-nim-rc4-memory-loader
+    desc: PE Nim RC4 decode to memory-exec chain
+    crit: suspicious
+    conf: 0.94
+    attack: T1055
+    platforms:
+      - windows
+      - pe
+      - dll
+    for: [pe]
+    all:
+      - id: micro-behaviors/data/decode/base64::nim-base64-decoder-symbol
+      - id: micro-behaviors/crypto/symmetric/stream::rc4-symbol-chain
+      - id: micro-behaviors/mem/protect/modify::virtual-alloc
+    any:
+      - id: micro-behaviors/mem/protect/modify::virtual-protect
+      - id: objectives/evasion/process/injection/native::shellcode
+      - id: micro-behaviors/dylib/lookup::get-proc-address
+    downgrade:
+      any:
+        - id: metadata/vendor/microsoft::is-microsoft-named
+        - id: metadata/quality/versioning::pe-version-resource

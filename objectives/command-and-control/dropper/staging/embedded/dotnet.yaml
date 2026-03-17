@@ -1,0 +1,166 @@
+# .NET Dropper Detection
+# Detects .NET executables that decode and write payloads to disk
+# MBC: B0030 (Dropper), C0027 (File Write)
+# ATT&CK: T1027 (Obfuscated Files), T1140 (Deobfuscate/Decode Files)
+defaults:
+  mbc: "B0030"
+  attack: "T1140"
+  platforms: [windows]
+  for: [powershell, pe, csharp]
+traits:
+  # === Base64 Decode + File Write Pattern ===
+  - id: frombase64string
+    desc: Base64 string decoding
+    crit: component
+    conf: 0.75
+    if:
+      type: string_value
+      substr: "FromBase64String"
+  - id: convert-frombase64
+    desc: Convert.FromBase64String call
+    crit: component
+    conf: 0.8
+    if:
+      type: string_value
+      regex: "Convert.{0,10}FromBase64String|\\[Convert\\]::FromBase64String"
+  - id: writeallbytes
+    desc: File.WriteAllBytes call
+    crit: component
+    conf: 0.75
+    if:
+      type: string_value
+      substr: "WriteAllBytes"
+  - id: io-file-write
+    desc: System.IO.File write method
+    crit: notable
+    conf: 0.7
+    if:
+      type: string_value
+      regex: "System\\.IO\\.File.{0,20}Write|\\[System\\.IO\\.File\\]::Write"
+  # === VBS file dropping ===
+  - id: vbs-file-write
+    desc: VBS file path reference
+    crit: notable
+    conf: 0.7
+    if:
+      type: string_value
+      regex: "\\.vbs['\"]"
+  # === Script payload patterns ===
+  - id: bat-file-write
+    desc: BAT file written to disk
+    crit: notable
+    conf: 0.8
+    attack: "T1059.003"
+    if:
+      type: string_value
+      regex: "\\.bat['\"]|WriteAllBytes.{0,50}\\.bat"
+  - id: ps1-file-write
+    desc: PS1 file written to disk
+    crit: notable
+    conf: 0.8
+    attack: "T1059.001"
+    if:
+      type: string_value
+      regex: "\\.ps1['\"]|WriteAllBytes.{0,50}\\.ps1"
+composite_rules:
+  - id: obfuscated-resource-loader
+    desc: Obfuscated .NET resource loader
+    crit: suspicious
+    conf: 0.92
+    attack: "T1027.009"
+    all:
+      - id: writeallbytes
+      - id: objectives/anti-static/obfuscation/reflection/invoke::method-info
+      - id: micro-behaviors/data/embedded/payload::dotnet-managed-resource-access
+    any:
+      - id: frombase64string
+      - id: convert-frombase64
+  - id: managed-resource-reflection-loader
+    desc: .NET managed resource reflection loader
+    crit: suspicious
+    conf: 0.94
+    attack: "T1027.009"
+    size_max: 500000
+    all:
+      - id: micro-behaviors/data/embedded/payload::dotnet-managed-resource-access
+      - id: objectives/anti-static/obfuscation/reflection/invoke::method-info
+    any:
+      - id: objectives/command-and-control/dropper/execution/loader::dotnet-single-import
+      - id: objectives/anti-static/obfuscation/binary-metrics::dotnet-randomized-symbols
+  # Base64 decode and write file
+  - id: base64-file-dropper
+    desc: Base64 decode and write file
+    crit: notable
+    conf: 0.9
+    all:
+      - id: writeallbytes
+    any:
+      - id: frombase64string
+      - id: convert-frombase64
+  # VBScript dropper from .NET
+  - id: csharp-vbs-dropper
+    desc: .NET VBScript dropper
+    crit: suspicious
+    conf: 0.95
+    attack: "T1059.005"
+    all:
+      - id: base64-file-dropper
+      - id: vbs-file-written-to-disk
+  - id: vbs-file-written-to-disk
+    desc: VBS file written to disk
+    crit: suspicious
+    conf: 0.85
+    attack: "T1059.005"
+    all:
+      - id: vbs-file-write
+    any:
+      - id: writeallbytes
+      - id: io-file-write
+  # Script dropper (any script type)
+  - id: csharp-script-dropper
+    desc: .NET script file dropper
+    crit: suspicious
+    conf: 0.9
+    attack: "T1059"
+    all:
+      - id: base64-file-dropper
+    any:
+      - id: vbs-file-written-to-disk
+      - id: bat-file-write
+      - id: ps1-file-write
+  # .NET AES resource dropper: decrypts payload from managed resources, writes to disk
+  - id: dotnet-aes-resource-dropper
+    desc: .NET AES resource extraction dropper
+    crit: suspicious
+    conf: 0.92
+    attack: "T1027.009"
+    all:
+      - id: writeallbytes
+    any:
+      - id: micro-behaviors/crypto/symmetric/aes::dotnet-rijndael
+      - id: micro-behaviors/crypto/symmetric/aes::dotnet-aes-managed
+      - id: micro-behaviors/crypto/symmetric/aes::dotnet-create-decryptor
+        # Dropper with anti-forensics (drop + delete)
+  # Complexity: all(2) + any(1) + file_types(1) = 4
+  - id: dropper-with-cleanup
+    desc: .NET dropper with anti-forensics
+    crit: hostile
+    conf: 0.95
+    attack: "T1070.004"
+    all:
+      - id: csharp-vbs-dropper
+      - id: objectives/evasion/self-delete/file::vbs-file-delete
+    any:
+      - id: objectives/command-and-control/implant/reflective-load/memory::sma-namespace
+      - id: objectives/command-and-control/implant/reflective-load/memory::runspace-factory
+  # .NET PowerShell dropper (drops VBS that launches PowerShell)
+  # Complexity: all(3) + file_types(1) = 4
+  - id: csharp-powershell-vbs-dropper
+    desc: .NET PowerShell VBS dropper
+    crit: hostile
+    conf: 0.95
+    attack: "T1059.001"
+    all:
+      - id: csharp-vbs-dropper
+      - id: objectives/command-and-control/implant/reflective-load/memory::sma-namespace
+      - id: objectives/command-and-control/implant/reflective-load/memory::add-script

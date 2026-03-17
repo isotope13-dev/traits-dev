@@ -105,6 +105,12 @@ When a behavior could serve multiple objectives, place the single trait where ev
 | Disabling/flushing firewall rules | `impact/degrade/firewall/` | Degrading system capability, not hiding |
 | Hidden files in system directories | `evasion/file-hiding/` | Concealment from users/admins; a hidden file doesn't survive reboots better |
 | Daemon fork+setsid persisting across reboot | `persistence/system/daemon/` | Restarting after reboot is persistence |
+| Reads Chrome Login Data SQLite | `credential-access/browser/` | Targets a specific credential store |
+| Reads `AWS_SECRET_ACCESS_KEY` from env | `credential-access/env/secrets/` | Targets a specific secret |
+| Reads `os.environ` generically | `micro-behaviors/os/env/` | Neutral capability, no credential targeting |
+| Generic keystroke capture | `collection/keylog/` | General capture; credential-access composites reference it |
+| Chrome passwords + HTTP POST to attacker | `exfiltration/stealer/credential/` | Source + transport = exfiltration |
+| "admin" or "root" keyword | `micro-behaviors/data/text/keywords/` | Neutral string, not credential access |
 | File property with no behavioral implication | `metadata/` | Structural fact, not behavior |
 | File property indicating deceptive intent | `evasion/masquerade/` | Deception is behavioral |
 
@@ -221,7 +227,7 @@ objectives/
 │   │   ├── eval/              #     Dynamic execution (eval, exec, Function)
 │   │   ├── control-flow/      #     Control-flow (flattening, opaque predicates)
 │   │   ├── instruction/       #     Instruction-level (junk/dead code)     B0032
-│   │   ├── identifier/        #     Name mangling (var rename, exports)
+│   │   ├── name-mangling/      #     Name mangling (var rename, exports)
 │   │   ├── imports/           #     Import concealment, API hashing
 │   │   ├── payload/           #     Embedded/encrypted payloads
 │   │   ├── document/          #     Document-specific (RTF, Office, LNK)
@@ -238,25 +244,39 @@ objectives/
 ├── evasion/                   # Evade detection in production (OB0006)
 │   │                          #   Users, admins, AV/EDR, forensics
 │   │                          #   "Don't see me" — targets defenders & security tools
+│   │                          #   Bypass/stealth only — aggressive termination of
+│   │                          #   security products belongs in impact/degrade/edr/.
 │   ├── anti-av/               #   AV/EDR bypass (stealth, not termination)
 │   │   ├── amsi/              #     AMSI bypass
-│   │   ├── defender/          #     Windows Defender bypass
+│   │   ├── blinding/          #     Kernel security module neutralization
+│   │   ├── edr-detect/        #     Security product enumeration           B0013
 │   │   ├── heuristic/         #     Heuristic evasion (TBAV)
+│   │   ├── import-pollution/  #     Import table pollution
+│   │   ├── platform/          #     Platform-specific bypass (exclusions, disables)
 │   │   ├── syscall/           #     Direct/indirect syscalls (EDR bypass)
-│   │   └── platform/          #     Platform-specific bypasses
+│   │   └── tls-fingerprint/   #     TLS fingerprint manipulation
+│   ├── decoy/                 #   Deceptive content (documents, fake errors, lures)
 │   ├── file-hiding/           #   Hidden files/directories                E1564, F0005
+│   ├── file-unlock/           #   Force-close file locks                  T1562
+│   ├── fileless/              #   Avoid disk artifacts (memory-only staging)
+│   ├── hijack-execution-flow/ #   Execution flow hijacking                F0015
+│   ├── hosts-file/            #   Hosts file manipulation                 F0004
+│   ├── indicator-removal/     #   Remove evidence of activity             T1070
+│   │   ├── cleanup/           #     Artifact cleanup (scripts, marker files)
+│   │   ├── history/           #     Shell history clearing                T1070.003
+│   │   ├── logs/              #     Log clearing + audit sanitization     T1070.001
+│   │   └── timestamps/        #     Timestomping                          T1070.006
 │   ├── kernel-hide/           #   Kernel-level hiding (rootkit)           E1014
-│   ├── log-clear/             #   Log clearing                            T1070
-│   ├── timestomp/             #   Timestamp modification                  T1070.006
-│   ├── self-delete/           #   Self-deletion after execution           F0007
-│   ├── evidence-removal/      #   Artifact cleanup
 │   ├── masquerade/            #   File/process masquerading               T1036
-│   ├── decoy/                 #   Decoy documents/files
-│   ├── fileless/              #   Fileless execution (avoid disk artifacts)
-│   ├── process/               #   Process manipulation
-│   │   ├── injection/         #     Process injection                     E1055
-│   │   └── hidden/            #     Hide processes/windows
-│   └── hijack-execution-flow/ #   Execution flow hijacking                F0015
+│   ├── process/               #   Process-level evasion
+│   │   ├── callstack-spoof/   #     Callstack spoofing
+│   │   ├── hidden/            #     Hidden process/window execution       E1564
+│   │   ├── hook/              #     API/XHR hooking
+│   │   └── injection/         #     Process injection                     E1055
+│   ├── quarantine-removal/    #   macOS Gatekeeper bypass                 B0047
+│   ├── security-bypass/       #   Security restriction bypass (PHP etc.)
+│   ├── self-delete/           #   Self-deletion after execution           F0007
+│   └── tcc-manipulation/      #   macOS TCC database manipulation
 │
 ├── command-and-control/       # C2 communication (OB0004)
 │   │                          #   "Communicate with compromised systems to control them"
@@ -289,28 +309,91 @@ objectives/
 │
 ├── collection/                # Information gathering (OB0003)
 │   │                          #   "Identify and gather information, such as sensitive files"
+│   │                          #   Generic capture mechanisms live here.
+│   │                          #   Credential-specific stores → credential-access/.
+│   │                          #   Financial data → credential-access/financial/.
 │   ├── keylog/                #   Keystroke logging                       T1056.001
 │   ├── clipboard/             #   Clipboard capture                       T1115
 │   ├── screenshot/            #   Screen capture                          T1113
-│   └── audio/                 #   Audio capture                           T1123
-│   # MBC lists capture behaviors (keylog, clipboard, screen) under both
-│   # Collection AND Credential Access. Single-trait rule: general-purpose
-│   # capture mechanisms live here. credential-access/ targets specific
-│   # credential stores. Composites in credential-access/ reference these.
+│   ├── archive/               #   Archive collected data                  T1560
+│   ├── database/              #   Database enumeration/access             T1005
+│   ├── file-copy/             #   File copying mechanisms                 T1005
+│   ├── file-targeting/        #   File enumeration for targeting          T1083
+│   ├── network/               #   Network packet/traffic capture          T1040
+│   ├── messaging/             #   Messaging app data collection           T1005
+│   ├── app-data/              #   Application-specific data (Notes, Stickies)
+│   ├── monitor/               #   Monitoring/telemetry capture
+│   ├── stealer/               #   Multi-step stealer behavior composites  T1119
+│   └── activity/              #   User activity tracking
 │
 ├── credential-access/         # Credential theft (OB0005)
-│   │                          #   "Obtain credential access" — specific stores
-│   ├── browser/               #   Browser credentials                     T1555.003
-│   ├── system/                #   OS credentials                          T1003
-│   ├── network/               #   Network credentials
-│   └── cloud/                 #   Cloud service credentials
+│   │                          #   "Obtain credential access" — targeting specific stores.
+│   │                          #   Generic capture (keystrokes, clipboard) → collection/.
+│   │                          #   Neutral env access (os.environ) → micro-behaviors/.
+│   │                          #   Credential access + transport → exfiltration/stealer/.
+│   │                          #   Neutral keywords ("admin", "root") → micro-behaviors/.
+│   ├── api-harvest/           #   API key/token harvesting                T1528
+│   ├── browser/               #   Browser credential stores              T1555.003
+│   ├── capture/input/         #   Password prompt capture                 T1056
+│   ├── clipboard/             #   Clipboard credential targeting
+│   ├── cloud/token/           #   Cloud service tokens
+│   ├── cracking/              #   Password cracking                       T1110
+│   ├── dev-tools/             #   Developer tool credentials (JFrog)
+│   ├── discord/token/         #   Discord token theft                     T1528
+│   ├── dump/system/           #   OS credential dumping                   T1003
+│   ├── email/                 #   Email client credentials
+│   ├── env/                   #   Environment secrets                     T1552.001
+│   │   ├── dotenv/            #     .env file access
+│   │   ├── harvesting/        #     Env var harvesting
+│   │   ├── secrets/           #     Secret access patterns (AWS_SECRET, etc.)
+│   │   └── token/             #     Hardcoded tokens in env
+│   ├── files/config/          #   Config file credentials                 T1552.001
+│   ├── ftp/                   #   FTP client credentials
+│   ├── gaming/                #   Gaming platform credentials (Steam)
+│   ├── harvesting/            #   Credential harvesting + validation
+│   ├── keychain/              #   macOS Keychain                          T1555.001
+│   ├── messaging/             #   Messaging app credentials (Telegram)
+│   ├── pam/intercept/         #   PAM interception                        T1556.003
+│   ├── phishing/              #   Credential phishing                     T1566
+│   ├── shell/history/         #   Shell history                           T1552.003
+│   ├── ssh/key/               #   SSH key theft                           T1552.004
+│   ├── theft/                 #   Credential theft composites
+│   ├── validation/            #   Credential validation
+│   ├── variable-detection/    #   Variable name scanning for creds
+│   ├── vpn/config/            #   VPN config credentials
+│   ├── wallet/                #   Crypto wallet access                    B0028
+│   └── windows-registry/      #   Registry credential extraction
 │
 ├── discovery/                 # Environment reconnaissance (OB0007)
 │   │                          #   "Gain knowledge about the system and network"
-│   ├── system/                #   System information                      T1082
+│   │                          #   Rules must infer reconnaissance INTENT, not just
+│   │                          #   observe a single system call. Single os.platform() →
+│   │                          #   micro-behaviors/. Profiling multiple properties → here.
+│   ├── system/                #   System information                      E1082
+│   │   ├── fingerprint/       #     System/hardware/OS profiling
+│   │   ├── architecture/      #     CPU architecture discovery
+│   │   ├── locale/            #     Language/region discovery
+│   │   ├── hardware/          #     Hardware enumeration
+│   │   └── device/            #     Device discovery
 │   ├── network/               #   Network information                     T1016
-│   ├── user/                  #   User information                        T1033
-│   └── software/              #   Installed software                      T1518
+│   │   ├── connections/       #     Active connections                     T1049
+│   │   ├── enumeration/       #     Host enumeration                      T1018
+│   │   ├── interface/         #     Interface listing
+│   │   ├── scan/              #     Port/service scanning                 T1046
+│   │   └── iot-devices/       #     IoT device discovery
+│   ├── host/                  #   Host-specific discovery
+│   │   ├── application/       #     Application discovery                 E1010
+│   │   ├── browser/           #     Browser data locations
+│   │   ├── geo/               #     Geolocation
+│   │   ├── permissions/       #     Permission enumeration
+│   │   ├── security/          #     Security software discovery           T1518.001
+│   │   └── software/          #     Installed software                    T1518
+│   ├── process/               #   Process enumeration                     T1057
+│   │   └── window/            #     Window discovery                      E1010
+│   ├── account/               #   Account/user discovery                  T1087, T1033
+│   │   └── lookup/
+│   └── cloud/                 #   Cloud instance metadata                 T1552.005
+│       └── metadata/
 │
 ├── execution/                 # Code execution (OB0009)
 │   │                          #   "Execute code on a system to achieve a variety of goals"
@@ -458,24 +541,69 @@ objectives/
 
 ## Tier 3: Known Entities (`well-known/`)
 
-Specific malware families and tool signatures. Similar to MBC's [malware corpus](https://github.com/MBCProject/mbc-markdown/tree/master/xample-malware) but structured as detection rules.
+Specific malware families and tool signatures. Similar to MBC's [malware corpus](https://github.com/MBCProject/mbc-markdown/tree/master/xample-malware) but structured as detection rules. Categories align with [MBC/STIX 2.1 malware types](https://docs.oasis-open.org/cti/stix/v2.1/os/stix-v2.1-os.html).
+
+**Rules:**
+- Each malware family appears in exactly **one** category — pick the primary behavior
+- Categories describe **what the malware does**, not who made it or how it arrives
+- Actor attribution (APT group, nation-state) belongs in trait descriptions, not directory names
+- When a family has multiple capabilities (e.g., stealer + worm), pick the most distinctive
+- `trojan/` is the catch-all — use only when no more specific type fits
 
 ```
 well-known/
 ├── malware/               # Malware family signatures
-│   ├── apt/               #   APT/nation-state groups
-│   ├── backdoor/          ├── botnet/          ├── dropper/
-│   ├── exploit/           ├── loader/          ├── miner/
-│   ├── ransomware/        ├── rat/             ├── rootkit/
-│   ├── stealer/           ├── trojan/          ├── virus/
-│   └── worm/
+│   ├── backdoor/          #   Passive remote access — shell, tunnel, implant
+│   │                      #     Waits for attacker commands. Simpler than a RAT.
+│   │                      #     (BPFDoor, TinyShell, RustDoor)
+│   ├── botnet/            #   Bot network member — C2-controlled fleet
+│   │                      #     Part of coordinated infrastructure.
+│   │                      #     (Mirai, Gafgyt, Mozi)
+│   ├── downloader/        #   Fetches payload from remote URL
+│   │                      #     No embedded payload — downloads at runtime.
+│   │                      #     (SugarLoader)
+│   ├── dropper/           #   Contains or stages another payload
+│   │                      #     Embedded payload dropped to disk or loaded into memory.
+│   │                      #     (Nemucod, Hadooken, TEARDROP)
+│   ├── exploit/           #   Exploits a specific vulnerability (CVE, PoC)
+│   │                      #     (Roblox game exploits, CVE-specific code)
+│   ├── keylogger/         #   Primary function is keystroke capture
+│   │                      #     (Backtrack, ChromePush)
+│   ├── miner/             #   Cryptomining / resource hijacking
+│   │                      #     MBC: resource-exploitation. (XMRig, Kinsing)
+│   ├── ransomware/        #   Encrypts files and demands ransom
+│   │                      #     (LockBit, Conti, Babuk)
+│   ├── rat/               #   Full remote administration toolkit
+│   │                      #     Superset of backdoor — file manager, screen viewer,
+│   │                      #     keylogger, webcam, plugin system.
+│   │                      #     (Cobalt Strike, Sliver, Pupy)
+│   ├── rootkit/           #   Kernel or userspace hiding + privilege escalation
+│   │                      #     (eBPFKit, Reptile, Diamorphine)
+│   ├── stealer/           #   Information stealer — credentials, tokens, wallets
+│   │                      #     MBC: information-stealer. (AMOS, RedLine, Vidar)
+│   ├── supply-chain/      #   Malicious package, extension, or update
+│   │                      #     Delivery context matters for ML — a malicious npm
+│   │                      #     package looks different from a standalone binary.
+│   ├── trojan/            #   Disguised as legitimate software
+│   │                      #     Use only when no more specific type fits. The social
+│   │                      #     engineering / disguise is the defining characteristic.
+│   │                      #     (Emotet, DNSChanger)
+│   ├── virus/             #   Self-replicating file infector
+│   │                      #     Modifies other executables to include itself.
+│   │                      #     (Rivanon, BlackHawk, Nicole)
+│   ├── webshell/          #   Web-based backdoor (PHP/JSP/ASP shell)
+│   │                      #     (Alfa, Ribel)
+│   └── worm/              #   Self-propagating across networks
+│                          #     Spreads without user interaction (email, SMB, SSH).
+│                          #     (MyDoom, Conficker, Beagle)
 │
 └── tools/                 # Legitimate tools often abused
-    ├── browser/           #   Browser components (Chromium sandbox)
-    ├── offensive/         #   Pentesting tools (Cobalt Strike, Metasploit)
+    ├── browser/           #   Browser components (Chromium sandbox, extensions)
+    ├── detection/         #   Security detection tools (cleave's own stng)
+    ├── dual-use/          #   Dual-use utilities (licensing, converters)
+    ├── offensive/         #   Pentesting/red-team tools + game cheat frameworks
     ├── reverse-engineering/#  RE tools (IDA, OllyDbg, Scylla, LordPE)
-    ├── sysadmin/          #   Admin tools (PsExec, WMI, winpty, disk utils)
-    └── dual-use/          #   Dual-use utilities
+    └── sysadmin/          #   Admin tools, system libraries, VCS
 ```
 
 ## Metadata (`metadata/`)
