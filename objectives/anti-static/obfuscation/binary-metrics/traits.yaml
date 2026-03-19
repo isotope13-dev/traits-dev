@@ -1,15 +1,17 @@
-# Binary Metrics-Based Obfuscation/Packing Detection
-# Detects packing, obfuscation, and anomalies in binaries via statistical analysis
-# ATT&CK: T1027 (Obfuscated Files or Information), T1045 (Software Packing)
 defaults:
-  platforms: [linux, unix, android, windows, macos, ios]
+  platforms:
+    - linux
+    - unix
+    - android
+    - windows
+    - macos
+    - ios
   for: [binaries]
-  attack: "T1027"
-  mbc: "B0032"
+  attack: T1027
+  mbc: B0032
 traits:
-  # === Entropy-Based Detection ===
   - id: high-overall-entropy
-    desc: "High overall file entropy (likely"
+    desc: High overall file entropy (likely
     crit: notable
     conf: 0.85
     if:
@@ -18,20 +20,20 @@ traits:
       min: 7.0
     unless:
       - type: raw
-        regex: "BSJB"
+        regex: BSJB
     downgrade:
       any:
         - type: string_value
-          substr: ";!@Install@!UTF-8!"
+          substr: ;!@Install@!UTF-8!
         - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
         - type: raw
-          substr: "PECompac" # handled by dedicated PECompact traits
-        - id: metadata/format/magic::gzip # Downgrade if it's a gzip file
+          substr: PECompac
+        - id: metadata/format/magic::gzip
   - id: very-high-entropy
-    desc: "Very high entropy (strongly indicates"
+    desc: Very high entropy (strongly indicates
     crit: suspicious
     conf: 0.95
-    attack: "T1045"
+    attack: T1045
     if:
       type: metrics
       field: binary.overall_entropy
@@ -39,22 +41,23 @@ traits:
     downgrade:
       any:
         - type: string_value
-          substr: ";!@Install@!UTF-8!"
+          substr: ;!@Install@!UTF-8!
         - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
-        - id: metadata/format/magic::gzip # Downgrade if it's a gzip file
+        - id: metadata/format/magic::gzip
   - id: 7zsfx-config-marker
-    desc: "7z SFX installer config marker"
+    desc: 7z SFX installer config marker
     crit: component
     conf: 0.9
-    for: [pe]
+    for:
+      - pe
     if:
       type: string_value
-      substr: ";!@Install@!UTF-8!"
+      substr: ;!@Install@!UTF-8!
   - id: high-code-entropy
-    desc: "High code section entropy (encrypted/packed"
+    desc: High code section entropy (encrypted/packed
     crit: suspicious
     conf: 0.8
-    attack: "T1045"
+    attack: T1045
     if:
       type: metrics
       field: binary.code_entropy
@@ -62,13 +65,12 @@ traits:
     unless:
       - id: high-code-entropy-known-fps
       - type: raw
-        regex: "BSJB"
+        regex: BSJB
     downgrade:
       any:
         - id: high-code-entropy-known-fps
-
   - id: high-entropy-regions
-    desc: "Multiple high entropy regions"
+    desc: Multiple high entropy regions
     crit: suspicious
     conf: 0.75
     if:
@@ -81,13 +83,9 @@ traits:
     downgrade:
       any:
         - type: section
-          substr: ".themida"
-  # NOTE: Go and Rust binaries have uniform code sections due to compilation
-  # patterns, not packing. Lowered threshold - Go binaries typically have
-  # entropy variance around 0.3-0.6, so only flag truly uniform binaries.
-  # Requires min: 0.01 to avoid triggering when metrics are unavailable.
+          substr: .themida
   - id: entropy-variance-low
-    desc: "Low entropy variance (uniform packing)"
+    desc: Low entropy variance (uniform packing)
     crit: notable
     conf: 0.4
     size_min: 65536
@@ -98,40 +96,37 @@ traits:
       max: 0.2
     unless:
       - type: raw
-        regex: "BSJB"
-  # === Section Anomalies ===
+        regex: BSJB
   - id: wx-sections
-    desc: "Writable and executable sections (self-modifying"
+    desc: Writable and executable sections (self-modifying
     crit: suspicious
     conf: 0.9
-    attack: "T1055"
+    attack: T1055
     size_max: 31457280
-    size_min: 32768 # Tiny legacy PEs often use RWX .text from old toolchains, not self-modifying code
+    size_min: 32768
     if:
       type: metrics
       field: binary.wx_sections
       min: 1
-    # API set forwarding stubs, relocatable object files, and known packers have W+X sections legitimately
     unless:
       - id: metadata/format/pe::asprotect
       - id: objectives/anti-static/pack/detect::upx-section
       - type: raw
-        regex: "(ApiSet Stub DLL|storport\\.sys|ScsiMiniPort)"
+        regex: (ApiSet Stub DLL|storport\.sys|ScsiMiniPort)
     downgrade:
       any:
         - id: metadata/format/pe::rich-imported-low-entropy-layout
         - id: micro-behaviors/data/encode/pecompact::pecompact-signature
         - type: string_value
-          regex: "(?i)(enigma.protector|ntoskrnl|WATCOM C/C|supR3Hardened)"
-
+          regex: (?i)(enigma.protector|ntoskrnl|WATCOM C/C|supR3Hardened)
         - type: metrics
           field: binary.overall_entropy
           max: 5
   - id: many-wx-sections
-    desc: "Multiple W+X sections (packer pattern)"
+    desc: Multiple W+X sections (packer pattern)
     crit: suspicious
     conf: 0.95
-    attack: "T1045"
+    attack: T1045
     if:
       type: metrics
       field: binary.wx_sections
@@ -145,72 +140,64 @@ traits:
         - id: micro-behaviors/data/encode/pecompact::pecompact-signature
         - id: objectives/anti-static/pack/detect::themida-section
         - type: string_value
-          regex: "(Enigma Protector|enigmaprotector)"
+          regex: (Enigma Protector|enigmaprotector)
         - id: metadata/lang/compiler::watcom-runtime
   - id: high-section-name-entropy
-    desc: "High entropy section names (packer"
+    desc: High entropy section names (packer
     crit: notable
     conf: 0.85
-    attack: "T1045"
+    attack: T1045
     if:
       type: metrics
       field: binary.section_name_entropy
       min: 5.4
-  # NOTE: Many legitimate system binaries have a dominant .text section.
-  # This is normal for compiled C/C++ programs without large data sections.
-  # Downgraded to notable - only suspicious when combined with other packing indicators.
   - id: dominant-section
-    desc: "Single section dominates file (packer"
+    desc: Single section dominates file (packer
     crit: notable
     conf: 0.6
-    platforms: [linux, unix, windows, macos]
-    attack: "T1045"
+    platforms:
+      - linux
+      - unix
+      - windows
+      - macos
+    attack: T1045
     if:
       type: metrics
       field: binary.largest_section_ratio
-      min: 0.90
+      min: 0.9
     unless:
       - type: metrics
         field: binary.import_density
         max: 0
-      # .NET assemblies naturally have a single large .text section
-      # containing all IL code + metadata - not a packing indicator
       - type: raw
-        regex: "BSJB"
+        regex: BSJB
     downgrade:
       any:
         - id: metadata/quality/versioning::pe-version-resource
         - id: metadata/format/pe::large-rsrc-section
         - id: metadata/vendor/microsoft::microsoft-corp-marker
         - id: metadata/format/installer::nsis-sfx-deadbeef-magic
-  # === Import Anomalies ===
   - id: high-import-entropy
-    desc: "High entropy import names (obfuscated"
+    desc: High entropy import names (obfuscated
     crit: suspicious
     conf: 0.8
     if:
       type: metrics
       field: binary.import_entropy
       min: 5.0
-  # NOTE: Some legitimate binaries (Go, Rust) may have low string counts
-  # depending on how strings are extracted. Downgraded to baseline - only useful
-  # in composite rules with other indicators. Requires min: 1 to avoid
-  # triggering when metrics are not available (0 indicates missing data).
   - id: no-strings
-    # === String Anomalies ===
-
-    desc: "No readable strings (potentially encrypted/packed)"
+    desc: No readable strings (potentially encrypted/packed)
     crit: baseline
     conf: 0.4
     size_min: 32768
-    attack: "T1045"
+    attack: T1045
     if:
       type: metrics
       field: binary.string_count
       min: 1
       max: 5
   - id: high-string-entropy
-    desc: "High entropy strings (encoded data)"
+    desc: High entropy strings (encoded data)
     crit: suspicious
     conf: 0.8
     if:
@@ -218,7 +205,7 @@ traits:
       field: binary.avg_string_entropy
       min: 5.0
   - id: many-high-entropy-strings
-    desc: "Many high entropy strings (embedded"
+    desc: Many high entropy strings (embedded
     crit: suspicious
     conf: 0.85
     if:
@@ -229,39 +216,27 @@ traits:
       - type: metrics
         field: binary.avg_string_entropy
         max: 3.2
-    # Media/codec libraries and large GUI frameworks often contain a handful of
-    # compressed tables or format signatures without broader string obfuscation.
-    # Massive executables (>50MB) naturally accumulate high-entropy strings from
-    # embedded resources, compressed data, and UUIDs without indicating obfuscation.
     downgrade:
       all:
         - id: many-high-entropy-strings-known-fp
-  # NOTE: Function detection depends on analysis depth and binary format.
-  # Shared libraries (.so, .dylib, .dll) may have few detected functions
-  # if only exported symbols are counted. Downgraded to notable to avoid
-  # false positives on legitimate libraries.
   - id: huge-functions
-    desc: "Has extremely large functions (>64KB)"
+    desc: Has extremely large functions (>64KB)
     crit: suspicious
     conf: 0.75
     if:
       type: metrics
       field: binary.huge_functions
       min: 1
-  # NOTE: Go and Rust binaries have many tiny functions due to inlining,
-  # generated code, and runtime helpers. Raised threshold significantly.
   - id: many-tiny-functions
-    desc: "Many tiny functions (<16 bytes)"
+    desc: Many tiny functions (<16 bytes)
     crit: notable
     conf: 0.4
     if:
       type: metrics
       field: binary.tiny_functions
       min: 500
-  # NOTE: Requires min: 1 to avoid triggering when metrics are unavailable.
-  # Small utilities legitimately have small functions.
   - id: small-avg-function
-    desc: "Very small average function size"
+    desc: Very small average function size
     crit: notable
     conf: 0.4
     if:
@@ -270,32 +245,24 @@ traits:
       min: 1
       max: 32
     unless:
-      # Average function size is too unstable when only a stub or a handful of
-      # functions were recovered, which is common in .NET/managed loader DLLs.
       - type: metrics
         field: binary.function_count
         max: 5
       - id: metadata/format/pe::dotnet-assembly
-  # === Complexity Anomalies (Control Flow Obfuscation) ===
   - id: high-avg-complexity
-    desc: "High average cyclomatic complexity (control"
+    desc: High average cyclomatic complexity (control
     crit: notable
     conf: 0.75
-    attack: "T1027.002"
+    attack: T1027.002
     size_max: 500000
     if:
       type: metrics
       field: binary.avg_complexity
       min: 55
     unless:
-      # With fewer than 20 detected functions, average complexity is
-      # statistically unreliable — a few complex parsers/state machines
-      # easily skew the mean (e.g., DLLs where only exports are counted)
       - type: metrics
         field: binary.function_count
         max: 20
-      # Export-heavy shared libraries (e.g., parser/codec runtimes) can have
-      # legitimately complex control flow without obfuscation.
       - type: metrics
         field: binary.export_count
         min: 20
@@ -304,10 +271,10 @@ traits:
         - id: metadata/quality/versioning::pe-version-resource
         - id: metadata/vendor/microsoft::microsoft-corp-versioninfo
   - id: very-high-avg-complexity
-    desc: "Very high average complexity (heavy"
+    desc: Very high average complexity (heavy
     crit: notable
     conf: 0.85
-    attack: "T1027.002"
+    attack: T1027.002
     size_max: 500000
     if:
       type: metrics
@@ -341,57 +308,44 @@ traits:
     unless:
       - id: metadata/format/pe::dotnet-assembly
   - id: extreme-max-complexity
-    desc: "Extremely high max function complexity"
+    desc: Extremely high max function complexity
     crit: notable
     conf: 0.7
-    attack: "T1027.002"
+    attack: T1027.002
     if:
       type: metrics
       field: binary.max_complexity
       min: 500
     unless:
       - id: objectives/anti-static/obfuscation/binary-metrics::large-dotnet-library
-      # Large API/provider DLLs often contain parser and policy functions
-      # with extreme complexity without any obfuscation intent.
       - type: metrics
         field: binary.export_count
         min: 100
     downgrade:
       any:
-        # Large binaries with many functions naturally have complex
-        # state machines and dispatch logic.
         - type: metrics
           field: binary.function_count
           min: 1000
-  # NOTE: Go runtime has many complex functions (GC, scheduler, etc.)
-  # Increased threshold and downgraded to notable
   - id: many-complex-functions
-    desc: "Many high complexity functions (>50"
+    desc: Many high complexity functions (>50
     crit: notable
     conf: 0.6
-    attack: "T1027.002"
+    attack: T1027.002
     if:
       type: metrics
       field: binary.high_complexity_functions
       min: 15
-  # NOTE: Go runtime legitimately has functions with >100 cyclomatic complexity
-  # (e.g., runtime.mallocgc, runtime.scanobject). Increased threshold to reduce FPs.
   - id: very-complex-functions
-    desc: "Has many very high complexity"
+    desc: Has many very high complexity
     crit: notable
     conf: 0.7
-    attack: "T1027.002"
+    attack: T1027.002
     if:
       type: metrics
       field: binary.very_high_complexity_functions
       min: 5
-  # NOTE: Complex libraries (parsers, state machines, protocol handlers) naturally
-  # have more basic blocks due to branching logic. Raised threshold to avoid FPs
-  # on legitimate software like XML parsers (libexpat), compressors, etc.
   - id: many-basic-blocks
-    # === Control Flow Anomalies ===
-
-    desc: "High basic blocks per function"
+    desc: High basic blocks per function
     crit: notable
     conf: 0.55
     if:
@@ -406,7 +360,7 @@ traits:
           field: binary.import_count
           min: 80
   - id: many-linear-functions
-    desc: "Many linear functions (possible VM"
+    desc: Many linear functions (possible VM
     crit: notable
     conf: 0.6
     if:
@@ -414,7 +368,7 @@ traits:
       field: binary.linear_functions
       min: 50
   - id: recursive-functions
-    desc: "Has recursive functions"
+    desc: Has recursive functions
     crit: notable
     conf: 0.5
     if:
@@ -422,16 +376,15 @@ traits:
       field: binary.recursive_functions
       min: 3
   - id: many-noreturn-functions
-    desc: "Many noreturn functions (anti-analysis pattern)"
+    desc: Many noreturn functions (anti-analysis pattern)
     crit: suspicious
     conf: 0.7
     if:
       type: metrics
       field: binary.noreturn_functions
       min: 20
-  # === Stack Anomalies ===
   - id: large-stack-frames
-    desc: "Has functions with large stack"
+    desc: Has functions with large stack
     crit: notable
     conf: 0.6
     if:
@@ -439,7 +392,7 @@ traits:
       field: binary.large_stack_functions
       min: 3
   - id: huge-stack-frame
-    desc: "Extremely large max stack frame"
+    desc: Extremely large max stack frame
     crit: suspicious
     conf: 0.7
     if:
@@ -447,19 +400,21 @@ traits:
       field: binary.max_stack_frame
       min: 65536
   - id: high-avg-stack
-    desc: "High average stack frame size"
+    desc: High average stack frame size
     crit: notable
     conf: 0.6
     if:
       type: metrics
       field: binary.avg_stack_frame
       min: 2048
-  # === Overlay Anomalies ===
   - id: has-overlay
-    desc: "Binary has overlay data"
+    desc: Binary has overlay data
     crit: component
     conf: 0.5
-    for: [pe, dll, macho]
+    for:
+      - pe
+      - dll
+      - macho
     if:
       type: metrics
       field: binary.has_overlay
@@ -477,11 +432,14 @@ traits:
         - id: metadata/quality/versioning::pe-version-resource
         - id: metadata/binary/debug-info::pdb-visual-studio
   - id: large-overlay
-    desc: "Large overlay relative to file"
+    desc: Large overlay relative to file
     crit: suspicious
     conf: 0.7
-    for: [pe, dll, macho]
-    attack: "T1027.009"
+    for:
+      - pe
+      - dll
+      - macho
+    attack: T1027.009
     size_min: 131072
     if:
       type: metrics
@@ -498,11 +456,14 @@ traits:
         - type: trait
           id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
   - id: high-entropy-overlay-raw
-    desc: "High entropy overlay data"
+    desc: High entropy overlay data
     crit: component
     conf: 0.8
-    for: [pe, dll, macho]
-    attack: "T1027.009"
+    for:
+      - pe
+      - dll
+      - macho
+    attack: T1027.009
     if:
       type: metrics
       field: binary.overlay_entropy
@@ -514,10 +475,13 @@ traits:
       - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
       - id: metadata/format/document/help2::help2-container
   - id: large-overlay-size
-    desc: "Overlay large enough to contain payload"
+    desc: Overlay large enough to contain payload
     crit: component
     conf: 0.7
-    for: [pe, dll, macho]
+    for:
+      - pe
+      - dll
+      - macho
     if:
       type: metrics
       field: binary.overlay_size
@@ -525,21 +489,24 @@ traits:
     unless:
       - id: metadata/format/document/help2::help2-container
   - id: repeated-padding-marker
-    desc: "Repeated padding marker string block"
+    desc: Repeated padding marker string block
     crit: component
     conf: 0.82
-    for: [pe, dll]
+    for:
+      - pe
+      - dll
     if:
       type: string_value
-      substr: "PADDINGXXPADDING"
+      substr: PADDINGXXPADDING
     unless:
       - type: string_value
-        substr: '<assembly xmlns="urn:schemas-microsoft-com:asm.v1"'
+        substr: <assembly xmlns="urn:schemas-microsoft-com:asm.v1"
   - id: high-string-density-large-pe
     desc: Large PE with dense string corpus
     crit: component
     conf: 0.82
-    for: [pe]
+    for:
+      - pe
     size_min: 250000
     if:
       type: metrics
@@ -592,21 +559,20 @@ composite_rules:
       - id: objectives/anti-static/obfuscation/binary-metrics::high-entropy-overlay-raw
       - id: objectives/anti-static/obfuscation/binary-metrics::high-import-entropy
   - id: signed-7zsfx-installer
-    desc: "Signed 7z self-extracting installer"
+    desc: Signed 7z self-extracting installer
     crit: component
     conf: 0.85
-    for: [pe]
+    for:
+      - pe
     all:
       - id: objectives/anti-static/obfuscation/binary-metrics::7zsfx-config-marker
       - id: micro-behaviors/data/embedded/payload::7z-magic
       - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
-  # === Combined Packing Detection ===
-  # NOTE: Removed no-strings/no-imports from this rule as they cause FPs on Go/Rust binaries
   - id: binary-packed
-    desc: "Binary appears to be packed"
+    desc: Binary appears to be packed
     crit: suspicious
     conf: 0.9
-    attack: "T1045"
+    attack: T1045
     needs: 2
     any:
       - id: objectives/anti-static/obfuscation/binary-metrics::high-overall-entropy
@@ -615,23 +581,20 @@ composite_rules:
       - id: objectives/anti-static/obfuscation/binary-metrics::wx-sections
     unless:
       - type: raw
-        regex: "BSJB"
+        regex: BSJB
     downgrade:
       any:
         - type: string_value
-          substr: ";!@Install@!UTF-8!"
+          substr: ;!@Install@!UTF-8!
         - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
         - type: raw
-          substr: "PECompac" # explicit PECompact signature is less ambiguous than generic packing heuristics
-        - id: metadata/format/magic::gzip # Downgrade if it's a gzip file
+          substr: PECompac
+        - id: metadata/format/magic::gzip
   - id: binary-heavily-packed
-    desc: "Binary is heavily packed/encrypted"
+    desc: Binary is heavily packed/encrypted
     crit: hostile
     conf: 0.95
-    attack: "T1045"
-    # Small binaries (<20KB) naturally have few strings/functions/imports;
-    # these metrics only indicate packing in binaries large enough to
-    # expect substantial code and data.
+    attack: T1045
     size_min: 20000
     needs: 3
     any:
@@ -639,19 +602,20 @@ composite_rules:
       - id: objectives/anti-static/obfuscation/binary-metrics::no-strings
       - id: metadata/format::no-functions
       - id: objectives/anti-static/obfuscation/binary-metrics::wx-sections
-  # High-entropy overlay that's large enough to be a real payload, not just an
-  # authenticode signature (~5-20KB). Replaces the old atomic high-entropy-overlay.
   - id: high-entropy-overlay
-    desc: "Large high-entropy overlay (encrypted payload)"
+    desc: Large high-entropy overlay (encrypted payload)
     crit: suspicious
     conf: 0.8
-    for: [pe, dll, macho]
-    attack: "T1027.009"
+    for:
+      - pe
+      - dll
+      - macho
+    attack: T1027.009
     unless:
       - id: metadata/format/document/help2::help2-container
       - id: metadata/format/installer::known-benign-installer
       - type: string_value
-        exact: "Software\\WinRAR SFX"
+        exact: Software\WinRAR SFX
     all:
       - id: high-entropy-overlay-raw
       - id: large-overlay-size
@@ -662,10 +626,10 @@ composite_rules:
         - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
         - id: metadata/format/document/help2::help2-container
   - id: binary-encrypted-overlay
-    desc: "Binary with encrypted overlay payload"
+    desc: Binary with encrypted overlay payload
     crit: notable
     conf: 0.85
-    attack: "T1027.009"
+    attack: T1027.009
     unless:
       - id: metadata/format/installer::known-benign-installer
       - id: metadata/format/pe::resource-only-dll
@@ -673,7 +637,7 @@ composite_rules:
       - id: metadata/format/document/help2::help2-container
       - id: objectives/anti-static/obfuscation/binary-metrics::7zsfx-config-marker
       - type: string_value
-        exact: "Software\\WinRAR SFX"
+        exact: Software\WinRAR SFX
     all:
       - id: objectives/anti-static/obfuscation/binary-metrics::has-overlay
       - id: objectives/anti-static/obfuscation/binary-metrics::high-entropy-overlay
@@ -681,21 +645,21 @@ composite_rules:
       any:
         - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
   - id: embedded-payload-padding-camouflage
-    desc: "Embedded payload with padding camouflage"
+    desc: Embedded payload with padding camouflage
     crit: notable
     conf: 0.84
-    attack: "T1027.009"
-    for: [pe, dll]
+    attack: T1027.009
+    for:
+      - pe
+      - dll
     all:
       - id: objectives/anti-static/obfuscation/binary-metrics::repeated-padding-marker
       - id: micro-behaviors/data/embedded/payload::pe-magic-embedded
   - id: packer-signature
-    desc: "Packer signature pattern detected"
+    desc: Packer signature pattern detected
     crit: suspicious
     conf: 0.9
-    attack: "T1045"
-    # Packers operate on substantial binaries. Tiny stubs (<20KB) like
-    # API set forwarding DLLs naturally have few sections and W+X memory.
+    attack: T1045
     size_min: 20000
     needs: 2
     any:
@@ -706,7 +670,7 @@ composite_rules:
       - id: objectives/anti-static/pack/detect::upx-section
       - id: objectives/anti-static/pack/detect::upx-marker
       - type: raw
-        substr: "PECompac" # handled by dedicated PECompact traits
+        substr: PECompac
       - id: metadata/format/pe::rich-imported-low-entropy-layout
       - type: metrics
         field: binary.import_count
@@ -715,19 +679,14 @@ composite_rules:
       any:
         - id: metadata/format/pe::asprotect
         - id: metadata/lang/compiler::watcom-runtime
-  # === Control Flow Obfuscation Detection ===
   - id: control-flow-obfuscation
-    desc: "Control flow obfuscation detected"
+    desc: Control flow obfuscation detected
     crit: suspicious
     conf: 0.85
-    attack: "T1027.002"
-    # Managed PE assemblies routinely contain compiler-generated async/iterator
-    # state machines that inflate max complexity without indicating obfuscation.
+    attack: T1027.002
     unless:
       - type: raw
-        regex: "BSJB"
-      # Shared libraries with broad exported APIs often include large parser
-      # and state-machine implementations that inflate complexity metrics.
+        regex: BSJB
       - type: metrics
         field: binary.export_count
         min: 20
@@ -742,30 +701,26 @@ composite_rules:
         - id: metadata/format::many-imports
         - id: metadata/vendor/jetbrains::jetbrains-company-string
         - id: metadata/vendor/microsoft::microsoft-corp-versioninfo
-        # Large managed PE assemblies often have compiler-generated async/iterator
-        # state machines that spike max complexity without indicating obfuscation.
         - id: objectives/anti-static/obfuscation/binary-metrics::high-string-density-large-pe
         - id: metadata/format/pe::dotnet-assembly
   - id: heavy-control-flow-obfuscation
-    desc: "Heavy control flow obfuscation"
+    desc: Heavy control flow obfuscation
     crit: hostile
     conf: 0.9
-    attack: "T1027.002"
+    attack: T1027.002
     all:
       - id: objectives/anti-static/obfuscation/binary-metrics::very-high-avg-complexity
       - id: objectives/anti-static/obfuscation/binary-metrics::very-complex-functions
       - id: objectives/anti-static/obfuscation/binary-metrics::many-complex-functions
   - id: vm-based-obfuscation
-    desc: "VM-based obfuscation detected"
+    desc: VM-based obfuscation detected
     crit: notable
     conf: 0.9
     all:
       - id: objectives/anti-static/obfuscation/binary-metrics::very-high-avg-complexity
       - id: objectives/anti-static/obfuscation/binary-metrics::very-complex-functions
-  # NOTE: Go/Rust runtimes have complex functions and large stack frames legitimately
-  # Increased count requirement and downgraded to notable
   - id: anti-analysis-pattern
-    desc: "Anti-analysis pattern detected"
+    desc: Anti-analysis pattern detected
     crit: notable
     conf: 0.6
     needs: 3
@@ -775,11 +730,12 @@ composite_rules:
       - id: metadata/format::few-leaf-functions
       - id: objectives/anti-static/obfuscation/binary-metrics::large-stack-frames
   - id: pe-encrypted-overlay-dropper
-    desc: "PE dropper with encrypted overlay and evasion"
+    desc: PE dropper with encrypted overlay and evasion
     crit: hostile
     conf: 0.92
-    attack: "T1027.009"
-    for: [pe]
+    attack: T1027.009
+    for:
+      - pe
     unless:
       - id: metadata/format/installer::known-benign-installer
       - id: objectives/anti-static/obfuscation/binary-metrics::7zsfx-config-marker

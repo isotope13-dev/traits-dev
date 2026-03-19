@@ -1,146 +1,144 @@
-# Direct Syscall Instruction Stubs
-# Detects raw syscall/sysenter/int 0x80 instructions in executable sections
-# Malware uses direct syscalls to bypass userland hooks (EDR/AV evasion)
-# ATT&CK: T1106 (Native API)
-# ATT&CK: T1562.001 (Impair Defenses: Disable or Modify Tools)
 defaults:
-  platforms: [unix, windows, macos]
-  attack: "T1106"
-  mbc: "B0009"
+  platforms:
+    - unix
+    - windows
+    - macos
+  attack: T1106
+  mbc: B0009
   for: [binaries]
 traits:
-  # === x86/x64 Syscall Instructions ===
-
-  # Modern x64 syscall instruction (0F 05)
   - id: syscall-x64-instruction
     desc: Direct syscall instruction (x64)
     crit: notable
     conf: 0.8
-    platforms: [linux, windows]
-    for: [pe, elf]
+    platforms:
+      - linux
+      - windows
+    for:
+      - pe
+      - elf
     count_min: 8
     per_kb_min: 0.03
     size_max: 10485760
     if:
       type: hex
       section: text
-      pattern: "0F 05"
+      pattern: 0F 05
     unless:
       - type: raw
-        substr: "BSJB" # .NET IL bytecode contains 0F 05 sequences that aren't syscalls
-  # Legacy x86 int 0x80 (CD 80)
+        substr: BSJB
   - id: int-80-instruction
     desc: Direct int 0x80 syscall (x86)
     crit: notable
     conf: 0.85
-    platforms: [linux]
-    for: [elf]
+    platforms:
+      - linux
+    for:
+      - elf
     count_min: 2
     size_max: 10485760
     if:
       type: hex
       section: text
-      pattern: "CD 80"
-  # sysenter instruction (0F 34) - fast syscall on x86
+      pattern: CD 80
   - id: sysenter-instruction
     desc: Direct sysenter syscall
     crit: notable
     conf: 0.8
-    platforms: [linux, windows]
-    for: [pe, elf]
+    platforms:
+      - linux
+      - windows
+    for:
+      - pe
+      - elf
     count_min: 5
     per_kb_min: 0.03
     size_max: 10485760
     if:
       type: hex
       section: text
-      pattern: "0F 34"
-  # SVC #0x80 on macOS ARM64 (D4 00 01 01 in little-endian)
+      pattern: 0F 34
   - id: svc-macos-arm64
-    # === ARM64 Syscall (macOS/Linux) ===
-
     desc: Direct SVC syscall stub (macOS ARM64)
     crit: notable
     conf: 0.65
-    platforms: [macos]
-    for: [macho]
+    platforms:
+      - macos
+    for:
+      - macho
     count_min: 6
     if:
       type: hex
       section: text
-      pattern: "01 10 00 D4" # svc #0x80
+      pattern: 01 10 00 D4
     unless:
-      # Go runtime uses svc #0x80 for all syscalls on macOS ARM64 via assembly stubs.
-      # This is a normal artifact of any Go binary and not evasion.
       - id: metadata/lang/compiler::go-version-string
-      # Apple platform binaries legitimately contain syscall veneers and stubs.
       - id: metadata/signed/platform::apple
-  # SVC #0 on Linux ARM64
   - id: svc-linux-arm64
     desc: Direct SVC syscall (Linux ARM64)
     crit: notable
     conf: 0.85
-    platforms: [linux]
-    for: [elf]
+    platforms:
+      - linux
+    for:
+      - elf
     count_min: 3
     if:
       type: hex
       section: text
-      pattern: "01 00 00 D4" # svc #0
-  # Common pattern: MOV RAX, imm ; SYSCALL
-  # B8 XX XX XX XX 0F 05 (mov eax, syscall_nr; syscall)
+      pattern: 01 00 00 D4
   - id: syscall-with-number
-    # === Syscall Number Patterns ===
-
     desc: Syscall with immediate number
     crit: suspicious
     conf: 0.9
-    platforms: [linux, windows]
-    for: [pe, elf]
+    platforms:
+      - linux
+      - windows
+    for:
+      - pe
+      - elf
     size_max: 10485760
     count_min: 2
     per_kb_min: 0.002
     if:
       type: hex
       section: text
-      pattern: "B8 ?? ?? ?? ?? 0F 05"
+      pattern: B8 ?? ?? ?? ?? 0F 05
     unless:
       - id: metadata/lang/compiler::go-version-string
       - id: metadata/lang::go-runtime-marker
-  # Pattern: MOV R10, RCX ; MOV RAX, imm ; SYSCALL (Windows x64 convention)
-  # 4C 8B D1 B8 XX XX XX XX 0F 05
   - id: windows-x64-syscall-stub
     desc: Windows x64 syscall stub pattern
     crit: suspicious
     conf: 0.95
-    platforms: [windows]
-    for: [pe]
+    platforms:
+      - windows
+    for:
+      - pe
     if:
       type: hex
       section: text
-      pattern: "4C 8B D1 B8 ?? ?? ?? 00 0F 05"
-  # Dense syscall usage (EDR bypass indicator)
+      pattern: 4C 8B D1 B8 ?? ?? ?? 00 0F 05
   - id: dense-syscalls
-    # === High Syscall Density ===
-
     desc: High density of syscall instructions
     crit: suspicious
     conf: 0.85
-    per_kb_min: 5.0 # 5+ syscalls per KB is unusual
+    per_kb_min: 5.0
     size_max: 10485760
     if:
       type: hex
       section: text
-      pattern: "0F 05"
+      pattern: 0F 05
 composite_rules:
-  # Linux x86/x64 direct syscall evasion
   - id: syscall-evasion-linux-x86
     desc: Direct syscall usage (EDR/hook evasion)
     crit: hostile
     conf: 0.95
-    attack: "T1562.001"
-    for: [elf]
-    platforms: [linux]
+    attack: T1562.001
+    for:
+      - elf
+    platforms:
+      - linux
     needs: 2
     unless:
       - id: metadata/lang::sbcl-runtime
@@ -153,28 +151,30 @@ composite_rules:
       - id: sysenter-instruction
       - id: syscall-with-number
       - id: dense-syscalls
-  # Linux ARM64 direct syscall evasion
   - id: syscall-evasion-linux-arm64
     desc: Direct syscall usage (EDR/hook evasion)
     crit: hostile
     conf: 0.95
-    attack: "T1562.001"
-    for: [elf]
-    platforms: [linux]
+    attack: T1562.001
+    for:
+      - elf
+    platforms:
+      - linux
     needs: 2
     unless:
       - id: metadata/lang::is-sbcl
     any:
       - id: svc-linux-arm64
       - id: dense-syscalls
-  # macOS ARM64 direct syscall evasion
   - id: syscall-evasion-macos-arm64
     desc: Direct syscall usage (EDR/hook evasion)
     crit: hostile
     conf: 0.95
-    attack: "T1562.001"
-    for: [macho]
-    platforms: [macos]
+    attack: T1562.001
+    for:
+      - macho
+    platforms:
+      - macos
     all:
       - id: dense-syscalls
     any:
@@ -182,27 +182,29 @@ composite_rules:
     unless:
       - id: metadata/lang::is-sbcl
       - id: metadata/signed/platform::apple
-  # Windows x64 direct syscalls (strong evasion indicator)
   - id: windows-direct-syscalls
     desc: Windows direct syscalls (EDR bypass)
     crit: hostile
     conf: 0.98
-    attack: "T1562.001"
-    for: [pe]
-    platforms: [windows]
+    attack: T1562.001
+    for:
+      - pe
+    platforms:
+      - windows
     all:
       - id: windows-x64-syscall-stub
     any:
       - id: dense-syscalls
       - id: objectives/anti-static/obfuscation/payload::minimal-pe-dynamic-load
-  # Windows x64 direct syscall evasion (general)
   - id: syscall-evasion-windows
     desc: Direct syscall usage (EDR/hook evasion)
     crit: hostile
     conf: 0.95
-    attack: "T1562.001"
-    for: [pe]
-    platforms: [windows]
+    attack: T1562.001
+    for:
+      - pe
+    platforms:
+      - windows
     needs: 2
     any:
       - id: syscall-x64-instruction

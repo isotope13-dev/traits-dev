@@ -1,32 +1,29 @@
-# API Hashing Detection
-# Detects hash constants used for dynamic API resolution (import obfuscation)
-# Malware uses hash-based lookups to avoid listing API names in imports
-# ATT&CK: T1027.007 (Obfuscated Files or Information: Dynamic API Resolution)
 defaults:
-  platforms: [windows, linux, unix, android, macos, ios]
-  attack: "T1027.007"
-  mbc: "B0032.014"
+  platforms:
+    - windows
+    - linux
+    - unix
+    - android
+    - macos
+    - ios
+  attack: T1027.007
+  mbc: B0032.014
   for: [binaries]
 traits:
-  # === Common API Hashing Constants ===
-
-  # ROR13 hash seeds (very common in malware)
-  # These specific constants appear in GetProcAddress hash implementations
   - id: ror13-hash-seed
     desc: ROR13 hash algorithm constant
     crit: component
     conf: 0.8
-    arch: [x86, x86-64]
+    arch:
+      - x86
+      - x86-64
     count_min: 15
     per_kb_min: 0.05
     size_max: 5242880
     if:
       type: hex
       section: text
-      pattern: "C1 C? 0D" # ROR reg, 0x0D (rotate right 13 bits)
-  # DJB2 hash constant (5381 = 0x1505)
-  # Note: This 4-byte pattern can appear randomly; only meaningful in composite rules
-  # Found in both .text (inline hash loops) and .data sections
+      pattern: C1 C? 0D
   - id: djb2-hash-constant
     desc: DJB2 hash algorithm constant (5381)
     crit: component
@@ -35,22 +32,21 @@ traits:
     size_max: 5242880
     if:
       type: hex
-      section: ".text"
-      pattern: "05 15 00 00" # Little-endian 0x1505
-  # DJB2 multiply-by-33 instruction (IMUL reg, 0x21)
-  # Core of the DJB2 hash loop: hash = hash * 33 + c
+      section: .text
+      pattern: 05 15 00 00
   - id: djb2-multiply-33
     desc: DJB2 hash multiply-by-33 instruction
     crit: component
     conf: 0.7
-    arch: [x86, x86-64]
+    arch:
+      - x86
+      - x86-64
     count_min: 1
     size_max: 10485760
     if:
       type: hex
       section: text
-      pattern: "6B C? 21" # imul ecx/edx/ebx, reg, 0x21 (DJB2 multiply)
-  # FNV1a 32-bit offset basis (0x811c9dc5)
+      pattern: 6B C? 21
   - id: fnv1a-offset-basis
     desc: FNV1a hash offset basis constant
     crit: component
@@ -58,133 +54,139 @@ traits:
     if:
       type: hex
       section: data
-      pattern: "C5 9D 1C 81" # Little-endian
+      pattern: C5 9D 1C 81
     unless:
       - id: metadata/format/pe::dotnet-assembly
-  # PEB walk pattern (accessing PEB->Ldr for module enumeration)
-  # MOV eax, fs:[0x30] = 64 A1 30 00 00 00
-  # Common in legitimate MSVC-compiled DLLs (CRT __security_init_cookie) — only meaningful in composites
   - id: peb-ldr-access
     desc: PEB Ldr access for module enumeration
     crit: component
     conf: 0.85
-    for: [pe]
-    arch: [x86]
+    for:
+      - pe
+    arch:
+      - x86
     if:
       type: hex
       section: text
-      pattern: "64 A1 30 00 00 00" # mov eax, fs:[0x30]
-  # TEB walk then PEB access (fs:[0x18] → TEB, then [eax+0x30] → PEB)
-  # Used by malware that walks TEB→PEB→Ldr for module enumeration
+      pattern: 64 A1 30 00 00 00
   - id: teb-peb-access
     desc: TEB to PEB access for module enumeration
     crit: component
     conf: 0.85
-    for: [pe]
-    arch: [x86]
+    for:
+      - pe
+    arch:
+      - x86
     size_max: 1048576
     if:
       type: hex
       section: text
-      pattern: "64 A1 18 00 00 00" # mov eax, fs:[0x18] (TEB)
-  # PE header access pattern (mov reg, [reg+0x3C] → e_lfanew)
-  # Shellcode/hash resolvers access PE header to walk export table
+      pattern: 64 A1 18 00 00 00
   - id: pe-header-walk
     desc: PE header access via e_lfanew offset
     crit: component
     conf: 0.7
-    for: [pe]
-    arch: [x86, x86-64]
+    for:
+      - pe
+    arch:
+      - x86
+      - x86-64
     count_min: 2
     size_max: 1048576
     if:
       type: hex
       section: text
-      pattern: "8B 4? 3C" # mov reg, [reg+0x3C]
-  # x64 PE header access pattern (movsxd reg, dword [reg+0x3C] → e_lfanew)
-  # x64 binaries use movsxd (sign-extend 32→64) instead of mov for e_lfanew access
+      pattern: 8B 4? 3C
   - id: pe-header-walk-x64
-    desc: "x64 PE header access via movsxd"
+    desc: x64 PE header access via movsxd
     crit: component
     conf: 0.75
-    for: [pe, dll]
-    arch: [x86-64]
+    for:
+      - pe
+      - dll
+    arch:
+      - x86-64
     size_max: 5242880
     if:
       type: hex
       section: text
-      pattern: "48 63 ?? 3C" # movsxd reg, dword [reg+0x3C]
-  # MZ magic check in code (mov eax, 0x5A4D) — validates PE header
-  # Used by manual GetProcAddress implementations to verify DLL base
+      pattern: 48 63 ?? 3C
   - id: mz-magic-check
     desc: MZ header validation in code
     crit: component
     conf: 0.85
-    for: [pe, dll]
-    arch: [x86, x86-64]
+    for:
+      - pe
+      - dll
+    arch:
+      - x86
+      - x86-64
     size_max: 524288
     if:
       type: hex
       section: text
-      pattern: "B8 4D 5A 00 00"
-  # PE signature check in code (cmp dword [reg], 0x4550)
-  # Validates PE signature during manual export directory parsing
+      pattern: B8 4D 5A 00 00
   - id: pe-signature-check
     desc: PE signature validation in code
     crit: component
     conf: 0.85
-    for: [pe, dll]
-    arch: [x86, x86-64]
+    for:
+      - pe
+      - dll
+    arch:
+      - x86
+      - x86-64
     size_max: 524288
     if:
       type: hex
       section: text
-      pattern: "81 ?? ?? 50 45 00 00"
-  # x64 PEB access via GS segment (mov rax, qword ptr gs:[0x60])
-  # Common in MSVC CRT (__security_init_cookie, heap init) — only meaningful in composites
+      pattern: 81 ?? ?? 50 45 00 00
   - id: peb-access-x64
     desc: Direct PEB access (GS segment)
     crit: component
     conf: 0.95
-    for: [pe, dll]
-    arch: [x86-64]
+    for:
+      - pe
+      - dll
+    arch:
+      - x86-64
     if:
       type: hex
-      section: ".text"
-      pattern: "65 48 8b 04 25 60 00 00 00"
-  # Manual LDR module list traversal (x64)
-  # Walks PEB->Ldr->InMemoryOrderModuleList to enumerate loaded modules
+      section: .text
+      pattern: 65 48 8b 04 25 60 00 00 00
   - id: ldr-walk
     desc: Manual LDR module list traversal
     crit: suspicious
     conf: 0.9
-    for: [pe, dll]
-    arch: [x86-64]
+    for:
+      - pe
+      - dll
+    arch:
+      - x86-64
     if:
       type: hex
-      section: ".text"
-      pattern: "48 8b ?? 18 00 00 00 48 8b ?? 20 00 00 00"
-  # Common API hash values (from known malware families)
-  # LoadLibraryA ROR13 hash = 0xec0e4e8e
+      section: .text
+      pattern: 48 8b ?? 18 00 00 00 48 8b ?? 20 00 00 00
   - id: loadlibrarya-ror13-hash
     desc: LoadLibraryA ROR13 hash constant
     crit: suspicious
     conf: 0.9
-    for: [pe]
+    for:
+      - pe
     if:
       type: hex
       section: data
-      pattern: "8E 4E 0E EC" # Little-endian
-  # GetProcAddress ROR13 hash = 0x7c0dfcaa
+      pattern: 8E 4E 0E EC
   - id: getprocaddress-ror13-hash
     desc: GetProcAddress ROR13 hash constant
     crit: suspicious
     conf: 0.9
-    for: [pe]
+    for:
+      - pe
     if:
       type: hex
       section: data
-      pattern: "AA FC 0D 7C" # Little-endian
+      pattern: AA FC 0D 7C
 composite_rules:
   - id: hash-primitive
     desc: API hashing primitive
@@ -206,12 +208,13 @@ composite_rules:
       - id: ldr-walk
       - id: mz-magic-check
       - id: pe-signature-check
-  # Custom GetProcAddress: PEB walk + MZ/PE validation + export parsing
   - id: manual-getprocaddress
     desc: Custom GetProcAddress implementation
     crit: suspicious
     conf: 0.9
-    for: [pe, dll]
+    for:
+      - pe
+      - dll
     size_max: 524288
     all:
       - id: peb-access-x64
@@ -224,7 +227,6 @@ composite_rules:
     none:
       - id: micro-behaviors/dylib/lookup::get-proc-address
       - id: metadata/format::many-imports
-  # ROR13 hash-based API resolution pattern
   - id: api-hash-resolution
     desc: Dynamic API resolution via ROR13 hashing
     crit: hostile
@@ -235,7 +237,6 @@ composite_rules:
       - id: loadlibrarya-ror13-hash
       - id: getprocaddress-ror13-hash
       - id: peb-ldr-access
-  # Generic hash-based obfuscation (less specific)
   - id: hash-based-obfuscation
     desc: Hash-based import obfuscation
     crit: suspicious
@@ -253,12 +254,12 @@ composite_rules:
       - id: metadata/format::many-imports
       - id: metadata/format/pe::dotnet-assembly
       - id: metadata/format/pe::dotnet-metadata
-  # DJB2-specific API resolution (constant + PEB/PE walk)
   - id: djb2-api-resolution
     desc: DJB2 hash-based API resolution
     crit: suspicious
     conf: 0.9
-    for: [pe]
+    for:
+      - pe
     all:
       - id: djb2-hash-constant
       - id: djb2-multiply-33
@@ -273,14 +274,13 @@ composite_rules:
       - id: micro-behaviors/dylib/lookup::get-proc-address
       - id: metadata/format::many-imports
       - id: metadata/format/pe::dotnet-metadata
-  # String-based API resolution (PEB walk + minimal imports, no hash)
-  # Catches malware that uses PEB walking with string comparison
-  # instead of hash-based resolution
   - id: string-based-api-resolution
     desc: PEB-based API resolution with minimal imports
     crit: suspicious
     conf: 0.88
-    for: [pe, dll]
+    for:
+      - pe
+      - dll
     size_max: 524288
     all:
       - id: peb-access-x64
@@ -292,14 +292,13 @@ composite_rules:
     unless:
       - id: metadata/format/pe::dotnet-assembly
       - id: metadata/format/pe::dotnet-metadata
-  # Hostile: custom GetProcAddress + DLL name decryption + minimal imports
-  # Combines manual API resolution with runtime string decryption in
-  # a binary with almost no imports — clear evasion intent
   - id: hostile-api-concealment
     desc: Complete API concealment (PEB walk + PE parsing + string decrypt)
     crit: hostile
     conf: 0.92
-    for: [pe, dll]
+    for:
+      - pe
+      - dll
     size_max: 524288
     all:
       - id: manual-getprocaddress
@@ -310,7 +309,7 @@ composite_rules:
     unless:
       - id: metadata/format/pe::dotnet-assembly
   - id: dynamic-api-resolution-peb
-    desc: "Detects dynamic API resolution via PEB traversal"
+    desc: Detects dynamic API resolution via PEB traversal
     all:
       - id: peb-access-x64
     any:

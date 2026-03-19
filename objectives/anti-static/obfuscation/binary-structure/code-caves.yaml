@@ -1,64 +1,51 @@
-# Code Cave Detection
-# Detects large runs of null bytes or padding in executable sections
-# Code caves can indicate:
-# - Space reserved for runtime code injection
-# - Poorly packed binaries with injection points
-# - Section padding abuse for hiding payloads
-# ATT&CK: T1055 (Process Injection)
 defaults:
-  platforms: [windows, linux, unix, android, macos, ios]
-  attack: "T1055"
+  platforms:
+    - windows
+    - linux
+    - unix
+    - android
+    - macos
+    - ios
+  attack: T1055
   for: [binaries]
 traits:
-  # === Null Byte Runs in Executable Sections ===
-
-  # Large run of null bytes in .text section (64+ bytes)
-  # Mach-O universals commonly have alignment padding
-  # PE files routinely have small null-padded gaps for section/function alignment
-  # Require multiple occurrences to indicate actual code caves
   - id: large-null-run-text
     desc: Large null run in executable (64+ bytes)
     crit: component
     conf: 0.85
-    for: [pe, elf]
+    for:
+      - pe
+      - elf
     count_min: 10
     if:
       type: hex
       section: text
-      pattern: "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
+      pattern: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
     unless:
       - type: raw
-        substr: "mscoree" # .NET assemblies have normal null padding in IL sections
+        substr: mscoree
       - id: metadata/format/document/help2::help2-container
-  # Very large null run (128+ bytes) - suspicious in PE/ELF
-  # Mach-O universals commonly have alignment padding with null runs
-  # PE files can have null runs from virtual-size > raw-size alignment gaps
-  # Note: Pattern must be explicit null bytes, not [N-M] gap syntax (which matches any bytes)
-  # Using 128 bytes as 256+ would be an extremely long pattern
   - id: huge-null-run-text
     desc: Huge null run in executable (128+ bytes)
     crit: component
     conf: 0.95
-    for: [pe, elf]
+    for:
+      - pe
+      - elf
     if:
       type: hex
       section: text
-      # 128 consecutive null bytes - indicates significant padding/cave
-      pattern: "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
+      pattern: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
     unless:
       - id: objectives/anti-static/pack/detect::upx-section
       - type: raw
-        substr: "BSJB" # .NET assemblies have normal null padding in IL sections
+        substr: BSJB
       - type: raw
-        substr: "storport.sys" # StorPort miniport drivers commonly carry discardable init/alignment padding
+        substr: storport.sys
       - type: string_value
-        exact: "ScsiMiniPort"
+        exact: ScsiMiniPort
       - id: metadata/format/document/help2::help2-container
-      - id: metadata/format/pe::resource-only-dll # Resource-only DLLs have normal null padding from header/section alignment
-  # Repeated INT3 instructions (0xCC) - debugger breakpoint padding
-  # MSVC uses CC padding for 16-byte function alignment extensively;
-  # this is normal in all MSVC-compiled binaries. Use as component for
-  # composites that combine it with other suspicious indicators.
+      - id: metadata/format/pe::resource-only-dll
   - id: int3-padding-text
     desc: Dense INT3 breakpoint instructions
     crit: component
@@ -68,13 +55,8 @@ traits:
     if:
       type: hex
       section: text
-      pattern: "CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC"
-  # Alternating null and NOP pattern (obfuscated cave)
-  # This also appears in large MSVC-built PE/DLLs as alignment/table artifacts,
-  # so keep it as a building block for composites instead of a standalone alert.
+      pattern: CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC
   - id: null-nop-pattern
-    # === Mixed Padding Patterns ===
-
     desc: Alternating null and NOP pattern
     crit: component
     conf: 0.85
@@ -82,73 +64,59 @@ traits:
     if:
       type: hex
       section: text
-      pattern: "00 90 00 90 00 90 00 90 00 90 00 90 00 90 00 90"
-  # High density of NOP instructions (cave or alignment abuse)
-  # Search for 8 consecutive NOPs — individual NOPs are too common (compiler alignment),
-  # but runs of 8+ indicate padding caves or intentional NOP sleds
+      pattern: 00 90 00 90 00 90 00 90 00 90 00 90 00 90 00 90
   - id: dense-nops-executable
     desc: Dense NOP instructions in executable section
     crit: notable
     conf: 0.75
-    per_kb_min: 10.0 # Adjusted: each match is 8 NOPs, so 10 runs/KB ≈ 80+ NOPs/KB
+    per_kb_min: 10.0
     size_max: 10485760
     if:
       type: hex
       section: text
-      pattern: "90 90 90 90 90 90 90 90"
+      pattern: 90 90 90 90 90 90 90 90
     unless:
-      - id: metadata/compiler::go-binary # Go uses NOPs for alignment
-  # Executable section with very low entropy (mostly zeros/padding)
-  # Mach-O __TEXT segment includes __const data sections with rx permissions,
-  # so require larger size to avoid matching normal const data tables
-  # Low entropy in executable sections can indicate code caves/padding, but also
-  # occurs normally in PE files with virtual-size > raw-size alignment gaps.
-  # Use as a building block in composites rather than standalone suspicious finding.
+      - id: metadata/compiler::go-binary
   - id: low-entropy-executable
-    # === Low Entropy in Executable Sections ===
-
     desc: Executable section with very low entropy
     crit: notable
     conf: 0.8
-    entropy_max: 1.0 # Nearly zero information content (true code caves only)
+    entropy_max: 1.0
     if:
       type: section
       executable: true
-      length_min: 65536 # At least 64KB to filter out normal const/padding sections
+      length_min: 65536
     unless:
       - id: metadata/signed/platform::apple
       - type: raw
-        substr: "mscoree" # .NET assemblies have normal low-entropy IL regions
+        substr: mscoree
       - type: metrics
         field: binary.import_count
-        min: 80 # Normal binaries with many imports have legitimate low-entropy sections
-  # Large executable section (potential cave space)
+        min: 80
   - id: oversized-text-section
-    # === Section Slack Space ===
-
     desc: Unusually large executable section
     crit: notable
     conf: 0.7
     if:
       type: section
       executable: true
-      length_min: 4194304 # 4MB+ executable section
+      length_min: 4194304
     unless:
-      - id: metadata/compiler::go-binary # Go binaries are large
+      - id: metadata/compiler::go-binary
       - id: metadata/format::many-imports
       - type: metrics
         field: pe.is_dotnet
         min: 1
-  # .fptable section — unusual section name, often all zeros
-  # Seen in packed/encrypted PE stubs as a placeholder for runtime patching
   - id: fptable-section
-    desc: ".fptable section (packer artifact)"
+    desc: .fptable section (packer artifact)
     crit: component
     conf: 0.8
-    for: [pe, dll]
+    for:
+      - pe
+      - dll
     if:
       type: section
-      substr: ".fptable"
+      substr: .fptable
 composite_rules:
   - id: code-cave-null-indicator
     desc: Large executable null padding indicator
@@ -166,18 +134,12 @@ composite_rules:
       - id: null-nop-pattern
       - id: low-entropy-executable
       - id: fptable-section
-  # Code cave with null padding
-  # MSVC-compiled PE files routinely have null padding and low-entropy sections
-  # from virtual-size alignment and function padding, so downgrade for those
-  # Large legitimate PE/ELF binaries routinely have null padding, INT3 alignment,
-  # and low-entropy regions from section alignment and function padding. Restrict
-  # to smaller binaries where these patterns are more indicative of code caves.
   - id: code-cave-null-padding
     desc: Code cave with null byte padding
     crit: suspicious
     conf: 0.9
     attack: T1027
-    size_min: 16384 # PE files under 16KB have null padding from normal header/section alignment
+    size_min: 16384
     size_max: 150000
     all:
       - id: code-cave-null-indicator
@@ -188,18 +150,17 @@ composite_rules:
     downgrade:
       any:
         - id: metadata/lang/compiler::msvc
-        - id: metadata/format/pe::dotnet-assembly # .NET IL has normal null padding/alignment
+        - id: metadata/format/pe::dotnet-assembly
         - id: metadata/format::many-imports
         - type: raw
-          substr: "PECompac" # PECompact has null padding in packed sections
+          substr: PECompac
         - type: trait
           id: metadata/lang/compiler::svkp-delphi-layout
-  # Injection-ready code cave
   - id: injection-ready-cave
     desc: Code cave suitable for code injection
     crit: hostile
     conf: 0.95
-    size_min: 16384 # Tiny PEs have null padding from section alignment, not injection caves
+    size_min: 16384
     all:
       - id: huge-null-run-text
       - id: metadata/hardening/memory::wx-section
@@ -211,17 +172,15 @@ composite_rules:
       - id: metadata/format::many-imports
       - id: metadata/lang/compiler::dvclal-resource
       - type: section
-        regex: "(\\.themida|\\.aspr)"
+        regex: (\.themida|\.aspr)
       - type: raw
-        regex: "(BSJB|PECompac|ntoskrnl|storport\\.sys)" # .NET NI images, packers, and kernel/storage drivers can combine benign null caves with RWX sections
+        regex: (BSJB|PECompac|ntoskrnl|storport\.sys)
       - type: raw
-        regex: "(Enigma Protector|enigmaprotector\\.com)" # Enigma Protector commonly leaves large null runs plus RWX sections
+        regex: (Enigma Protector|enigmaprotector\.com)
       - type: string_value
-        exact: "ScsiMiniPort"
+        exact: ScsiMiniPort
       - type: raw
-        substr: "WATCOM C/C" # Watcom C/C++ linker produces RWX sections with null padding as normal artifacts
-  # Suspicious padding pattern
-  # Large legitimate binaries routinely have null padding and alignment artifacts
+        substr: WATCOM C/C
   - id: suspicious-padding
     desc: Suspicious executable section padding
     crit: suspicious
