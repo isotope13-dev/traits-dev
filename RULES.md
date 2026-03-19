@@ -147,11 +147,11 @@ defaults:
 
 | Type | Purpose | Matchers | Modifiers |
 |------|---------|----------|-----------|
-| `string_value` | Extracted string values | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `external_ip` |
-| `raw` | Raw file bytes | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `external_ip` |
-| `symbol` | Imports/exports/functions | `exact`, `substr`, `regex` | `platforms` |
+| `string_value` | Extracted string values | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
+| `raw` | Raw file bytes | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
+| `symbol` | Imports/exports/functions | `exact`, `substr`, `regex` | `platforms`, `is` |
 | `hex` | Byte patterns (wildcards always extracted) | pattern string | count, density, `offset`, `offset_range`, `arch` clamped in fat binaries |
-| `encoded` | **All decoded strings** | `exact`, `substr`, `regex`, `word` | count, density, location, `encoding`, `case_insensitive`, `external_ip` |
+| `encoded` | **All decoded strings** | `exact`, `substr`, `regex`, `word` | count, density, location, `encoding`, `case_insensitive`, `is` |
 | ~~`base64`~~ | *(removed — use `encoded`)* | | |
 | ~~`xor`~~ | *(removed — use `encoded`)* | | |
 | `kv` | Manifest data | `exact`, `substr`, `regex` | `path`, `exists`, `size_min`, `size_max`, `case_insensitive` (value only) |
@@ -159,7 +159,9 @@ defaults:
 
 **Matcher notes:**
 - `word` - Word boundary match (equivalent to `\b{value}\b`). Available on `string_value`, `raw`, `section`, `encoded`. NOT available on `symbol`, `basename`, `hex`.
-- `external_ip` - Only match if evidence contains a valid external IP (rejects RFC1918, loopback, reserved ranges).
+- `is` - High-fidelity validator for common data patterns. Supported values:
+  - `external_ip`: Only match if evidence contains a valid external IPv4 (rejects RFC1918, loopback, reserved).
+  - `bitcoin_addr`: Only match if evidence contains a valid Bitcoin address (P2PKH, P2SH, or SegWit) with a valid checksum.
 - **Symbol normalization:** Leading underscores are stripped from both loaded symbols and `exact`/`substr` patterns for cross-platform portability (macOS `_malloc`, glibc `__libc_start_main` both match `exact: "malloc"` / `exact: "libc_start_main"`). Regex patterns are not normalized.
 
 ### Structural
