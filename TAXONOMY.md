@@ -576,7 +576,7 @@ objectives/
 │   │                          #   → privilege-escalation/. Remote commands → command-and-control/.
 │   │                          #   Droppers → command-and-control/dropper/ (all droppers are C2).
 │   │                          #   Install hooks (setup.py cmdclass) → micro-behaviors/build/setup/;
-│   │                          #   composites using them live in lateral-movement/supply-chain/.
+│   │                          #   composites using them live in supply-chain/.
 │   ├── activex/               #   COM/ActiveX execution                   E1569
 │   ├── autoinstall/           #   Automatic dependency installation
 │   ├── automation/            #   Compiled automation (AppleScript)        E1059
