@@ -656,7 +656,6 @@ objectives/
 │   ├── pass-the-hash/         #   Credential reuse for remote access      T1550.002
 │   ├── social-engineering/    #   Lures, spam (passive lateral)           B0020, B0021
 │   ├── ssh/                   #   SSH lateral (connect, backdoor, deploy) T1021.004
-│   ├── supply-chain/          #   Supply chain compromise                 E1195
 │   ├── trojanize/             #   Software trojanization
 │   ├── usb-worm/              #   USB drive propagation
 │   └── worm/                  #   Self-propagating (email, SMB, IRC, P2P)
@@ -712,6 +711,52 @@ objectives/
 │   ├── process-injection/     #   Injection into privileged procs         E1055
 │   ├── install-certificate/   #   Root cert installation                  F0016
 │   └── token-manipulation/    #   Token/privilege manipulation             T1134
+│
+├── supply-chain/                # Supply chain compromise (T1195)
+│   │                            #   "Manipulate products or product delivery mechanisms
+│   │                            #   prior to receipt by a final consumer for the purpose
+│   │                            #   of data or system compromise."
+│   │                            #   Organized by ATTACK TECHNIQUE, not ecosystem.
+│   │                            #   Ecosystem (npm, pypi, rubygems) = filename, never directory.
+│   │                            #   A trait belongs here only if it is supply-chain-specific —
+│   │                            #   it would never fire outside a package/extension context.
+│   │                            #   Generic behaviors stay in their existing objectives:
+│   │                            #     Generic recon (whoami) → discovery/.
+│   │                            #     Generic exfil (HTTP POST) → exfiltration/.
+│   │                            #     Generic obfuscation → anti-static/obfuscation/.
+│   │                            #     Generic credential reads → credential-access/.
+│   │                            #   Supply-chain composites reference those atomics.
+│   │                            #   Neutral FP-context (bundler/framework/test detection)
+│   │                            #   belongs in metadata/ tier, not here.
+│   ├── install-hook/            #   Install-time code execution              T1195.002
+│   │                            #     Code that runs as side-effect of package installation.
+│   │                            #     NOT runtime code. NOT manually invoked build scripts.
+│   ├── recon-exfil/             #   Package-install-triggered recon + exfil  T1082, T1041
+│   │                            #     Gathering host/env info and exfiltrating from package
+│   │                            #     lifecycle contexts (postinstall scripts, OAST callbacks,
+│   │                            #     CI/CD secrets exfil from lifecycle hooks).
+│   │                            #     NOT generic recon (→ discovery/).
+│   │                            #     NOT generic exfil (→ exfiltration/).
+│   ├── credential-theft/        #   Stealing package-manager credentials     T1552
+│   │                            #     Targeting package-ecosystem credential stores (.npmrc,
+│   │                            #     pip.conf, gem credentials, registry tokens).
+│   │                            #     NOT generic credential access (→ credential-access/).
+│   ├── hidden-payload/          #   Concealed malicious code in packages     T1027
+│   │                            #     Package-specific concealment — unicode steg in manifests,
+│   │                            #     bytenode compilation, hex arrays in install scripts.
+│   │                            #     Composites reference anti-static/ atomics.
+│   │                            #     NOT general obfuscation (→ anti-static/obfuscation/).
+│   ├── metadata-anomaly/        #   Suspicious package metadata patterns     T1195.002
+│   │                            #     Anomalies in manifests, registry data, version schemes,
+│   │                            #     author fields, extension manifests. Signals the package
+│   │                            #     is suspicious before looking at code.
+│   │                            #     NOT neutral metadata (→ metadata/ tier).
+│   ├── impersonation/           #   Package identity deception               T1195.002
+│   │                            #     Typosquatting, dependency confusion, deprecated-package
+│   │                            #     hijack, function shadowing, name similarity.
+│   └── trojanized/              #   Backdoored legitimate code               T1195.002
+│                                #     Modifications to known-good libraries/frameworks.
+│                                #     NOT wholly malicious packages (→ hidden-payload/).
 ```
 
 ## Tier 3: Known Entities (`well-known/`)
@@ -788,7 +833,7 @@ File-level properties with no behavioral implication. Describes *what a file is*
 **Rules:**
 - Behavioral detection belongs in `objectives/`, not here
 - Tool/malware signatures belong in `well-known/`, not here
-- Supply-chain attack indicators belong in `objectives/lateral-movement/supply-chain/`
+- Supply-chain attack indicators belong in `objectives/supply-chain/` (organized by technique, not ecosystem)
 - Vendor-specific traits go under `vendor/`
 - New top-level subdirectories require updating both TAXONOMY.md and `ALLOWED_METADATA` in `src/capabilities/validation/directory_whitelist.rs`
 
