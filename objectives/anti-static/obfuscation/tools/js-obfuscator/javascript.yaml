@@ -140,14 +140,75 @@ traits:
       type: raw
       regex: '[\[\]\(\)!]{3,}[\+][\[\]\(\)!]{3,}'
   - id: whitespace-hiding
-    desc: Very long horizontal whitespace to hide code
+    desc: Long inline whitespace hides code
+    crit: suspicious
+    conf: 0.9
+    attack: T1027
+    mbc: B0032
+    if:
+      type: metrics
+      field: text.max_inline_whitespace_run
+      min: 100
+  # Global property with punctuation name (global['!'] = ...)
+  - id: global-punctuation-property
+    desc: Global property with non-alphanumeric name
+    crit: suspicious
+    conf: 0.92
+    attack: T1027.002
+    mbc: B0032
+    if:
+      type: raw
+      regex: "global\\s*\\[\\s*['\"][^a-zA-Z0-9_]['\"]\\s*\\]\\s*="
+  # _$_ prefix naming convention used by some obfuscators
+  - id: dollar-underscore-function-names
+    desc: Dollar-underscore prefixed function names (_$_ pattern)
     crit: notable
     conf: 0.85
     attack: T1027
     mbc: B0032
+    count_min: 2
     if:
       type: raw
-      regex: ^.{0,100};?[\t ]{150,300}.{10,200}$
+      regex: "function\\s+_\\$[_a-zA-Z0-9]{2,}\\s*\\("
+  - id: dollar-underscore-variable-names
+    desc: Dollar-underscore prefixed variable names (_$_ pattern)
+    crit: notable
+    conf: 0.85
+    attack: T1027
+    mbc: B0032
+    count_min: 2
+    if:
+      type: raw
+      regex: "(var|let|const)\\s+_\\$[_a-zA-Z0-9]{2,}\\s*="
+  # Character permutation deobfuscation (string shuffle/swap loops)
+  - id: char-permutation-deobfuscator
+    desc: Character permutation deobfuscation function
+    crit: suspicious
+    conf: 0.9
+    attack: T1027.002
+    mbc: B0032
+    if:
+      type: raw
+      regex: "for\\s*\\([^)]{0,60}\\)\\s*\\{.{0,500}\\bcharAt\\b.{0,500}\\bcharCodeAt\\b"
+  # Global require/module aliasing via bracket notation
+  - id: global-bracket-require-alias
+    desc: Require aliased to global via bracket notation
+    crit: suspicious
+    conf: 0.92
+    attack: T1027.002
+    mbc: B0032
+    if:
+      type: raw
+      regex: "global\\s*\\[.{1,80}\\]\\s*=\\s*require\\b"
+  - id: global-bracket-module-alias
+    desc: Module aliased to global via bracket notation
+    crit: suspicious
+    conf: 0.88
+    attack: T1027.002
+    mbc: B0032
+    if:
+      type: raw
+      regex: "global\\s*\\[.{1,80}\\]\\s*=\\s*module\\b"
   - id: packer-eval-pattern
     desc: Packer obfuscation (eval with replace)
     crit: suspicious
@@ -219,6 +280,39 @@ composite_rules:
       - id: packer-eval-pattern
       - id: jsfuck-pattern
       - id: global-buffer-access
+  # Dollar-underscore obfuscator naming
+  - id: dollar-underscore-name-mangling
+    desc: Dollar-underscore prefixed identifiers (obfuscation)
+    crit: suspicious
+    conf: 0.9
+    attack: T1027
+    mbc: B0032
+    any:
+      - id: dollar-underscore-function-names
+      - id: dollar-underscore-variable-names
+  # Any style of obfuscator name mangling
+  - id: any-name-mangling
+    desc: Obfuscator-style name mangling
+    crit: suspicious
+    conf: 0.9
+    attack: T1027
+    mbc: B0032
+    any:
+      - id: hex-name-mangling
+      - id: dollar-underscore-name-mangling
+  # Permutation-based obfuscation (charAt/charCodeAt + split/join + global aliasing)
+  - id: permutation-obfuscation
+    desc: Permutation-based string obfuscation
+    crit: suspicious
+    conf: 0.92
+    attack: T1027.002
+    mbc: B0032
+    all:
+      - id: char-permutation-deobfuscator
+    any:
+      - id: objectives/anti-static/obfuscation/string/encoding::js-array-join-symbol
+      - id: objectives/anti-static/obfuscation/string/encoding::js-split-join-cleanup
+      - id: objectives/anti-static/obfuscation/string/encoding::js-array-swap
   - id: strong-js-obfuscation
     desc: Strong JavaScript obfuscation indicators
     crit: hostile
@@ -228,9 +322,12 @@ composite_rules:
     needs: 2
     any:
       - id: hex-name-mangling
+      - id: dollar-underscore-name-mangling
       - id: commercial-obfuscation
       - id: advanced-array-shuffling
       - id: whitespace-hiding
+      - id: permutation-obfuscation
+      - id: global-bracket-require-alias
   - id: obfuscated-eval-npm-trojan
     desc: Obfuscated eval payload in npm package (supply-chain trojan)
     crit: hostile
@@ -238,8 +335,36 @@ composite_rules:
     attack: T1195.002
     mbc: B0024
     all:
-      - id: hex-name-mangling
+      - id: any-name-mangling
     any:
       - id: objectives/anti-static/obfuscation/encoding::encoded-eval
       - id: objectives/execution/interpreter/eval/dynamic::eval-variable
       - id: objectives/anti-static/obfuscation/string/array::string-array-hex-index
+  # Whitespace-hidden obfuscated eval
+  - id: whitespace-hidden-eval
+    desc: Obfuscated code hidden behind whitespace padding
+    crit: hostile
+    conf: 0.95
+    attack: T1027.002
+    mbc: B0032
+    all:
+      - id: whitespace-hiding
+    any:
+      - id: char-permutation-deobfuscator
+      - id: objectives/anti-static/obfuscation/string/encoding::js-dynamic-exec
+      - id: objectives/execution/interpreter/eval/dynamic::eval-variable
+      - id: objectives/anti-static/obfuscation/string/encoding::dense-fromcharcode
+  # Global aliasing with obfuscation = supply-chain trojan
+  - id: global-alias-obfuscation
+    desc: Global require/module aliasing with obfuscation
+    crit: hostile
+    conf: 0.95
+    attack: T1195.002
+    mbc: B0024
+    all:
+      - id: global-bracket-require-alias
+    any:
+      - id: char-permutation-deobfuscator
+      - id: whitespace-hiding
+      - id: objectives/anti-static/obfuscation/string/encoding::js-string-deobfuscation
+      - id: any-name-mangling
