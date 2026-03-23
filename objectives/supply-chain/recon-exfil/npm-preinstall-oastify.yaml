@@ -1,0 +1,120 @@
+# NPM preinstall hook with OOB exfiltration
+# Detects npm packages with preinstall scripts that exfiltrate system data via curl
+# to OOB callback services like oastify.com
+# MBC: B0030 (C2), E1041 (Exfiltration)
+# ATT&CK: T1195.002 (Supply Chain Compromise), T1041 (Exfiltration Over Web)
+
+defaults:
+  platforms: [linux, macos, windows, unix, android, ios]
+  for: [data, manifests]
+
+traits:
+  # Detect curl usage in preinstall scripts within npm registry metadata
+  - id: preinstall-curl-exfil
+    desc: npm preinstall uses curl for data exfiltration
+    crit: suspicious
+    conf: 0.95
+    attack: T1041
+    mbc: "B0030"
+    if:
+      type: string_value
+      regex: "preinstall.{0,80}curl.{0,80}--data-urlencode"
+
+  # Detect /etc/passwd exfiltration pattern
+  - id: passwd-exfil
+    desc: Exfiltrates /etc/passwd via curl
+    crit: suspicious
+    conf: 0.97
+    attack: T1003
+    if:
+      type: string_value
+      regex: "--data-urlencode\\s+(file|content)\\s*=\\s*@?/etc/passwd"
+
+  # Detect OOB callback domain in preinstall
+  - id: preinstall-oob-callback
+    desc: Preinstall script references OOB callback domain
+    crit: suspicious
+    conf: 0.95
+    attack: T1048
+    if:
+      type: string_value
+      regex: "preinstall.{0,100}https?://[a-z0-9-]+\\.oastify\\.com"
+
+  # Detect --data-urlencode pattern (form URL-encoded POST)
+  - id: data-urlencode-post
+    desc: Uses --data-urlencode for POST data
+    crit: notable
+    conf: 0.9
+    if:
+      type: string_value
+      regex: "--data-urlencode\\s+"
+
+  # Detect silent curl (suppresses output)
+  - id: curl-silent
+    desc: curl uses -sS (silent) flags
+    crit: notable
+    conf: 0.85
+    if:
+      type: string_value
+      regex: "curl\\s+.{0,50}\\b-s\\b"
+
+  # Detect shell execution wrapper
+  - id: shell-preinstall
+    desc: preinstall wraps command in sh -c
+    crit: notable
+    conf: 0.85
+    if:
+      type: string_value
+      regex: "preinstall.{0,50}sh\\s+-c\\s+"
+
+composite_rules:
+  # Complete preinstall OOB exfiltration
+  - id: npm-preinstall-oob-exfil
+    desc: npm preinstall exfiltrates data to OOB service
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002
+    mbc: "B0030"
+    all:
+      - id: preinstall-curl-exfil
+    any:
+      - id: preinstall-oob-callback
+      - id: passwd-exfil
+    needs: 2
+
+  # NPM registry metadata with malicious preinstall
+  - id: npm-metadata-malicious-preinstall
+    desc: NPM registry metadata with malicious preinstall hook
+    crit: hostile
+    conf: 0.96
+    attack: T1195.002
+    mbc: "B0024"
+    all:
+      - id: preinstall-curl-exfil
+      - id: data-urlencode-post
+    any:
+      - id: preinstall-oob-callback
+      - id: passwd-exfil
+    needs: 2
+
+  # System credential theft via install hook
+  - id: npm-credential-theft-preinstall
+    desc: Install hook steals system credentials
+    crit: hostile
+    conf: 0.97
+    attack: T1003
+    mbc: "OB0005"
+    all:
+      - id: preinstall-curl-exfil
+      - id: passwd-exfil
+      - id: data-urlencode-post
+
+  # Silent download and exfil
+  - id: npm-silent-exfil
+    desc: Silent exfiltration via install hook
+    crit: hostile
+    conf: 0.95
+    attack: T1041
+    all:
+      - id: preinstall-curl-exfil
+      - id: curl-silent

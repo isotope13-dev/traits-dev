@@ -1,0 +1,112 @@
+# Browser-Side JavaScript Cookie Stealer / Skimmer
+# Detects browser-injected JS that harvests cookies, UA, URL params and exfiltrates them
+# ATT&CK: T1539 (Steal Web Session Cookie), T1185 (Browser Session Hijacking)
+# MBC: E1005
+defaults:
+  platforms: [linux, macos, windows, unix, android, ios]
+  for: [javascript, typescript, html]
+  attack: "T1539"
+
+traits:
+  - id: gclid-tracking-field
+    desc: Google Click ID (gclid) ad attribution tracking
+    crit: notable
+    conf: 0.75
+    attack: "T1082"
+    if:
+      type: raw
+      word: gclid
+
+  - id: distributer-id-field
+    desc: Distributer ID affiliate tracking field
+    crit: notable
+    conf: 0.8
+    if:
+      type: raw
+      regex: distributer[_-]?id
+
+  - id: vsent-beacon-cookie
+    desc: vsent cookie as exfiltration send-once beacon flag
+    crit: notable
+    conf: 0.8
+    if:
+      type: raw
+      word: vsent
+
+  - id: cookiebot-consent-check
+    desc: Checks Cookiebot consent before tracking (GDPR evasion)
+    crit: notable
+    conf: 0.75
+    if:
+      type: raw
+      regex: Cookiebot(\?\.|\.)consent
+
+  - id: ga-cookie-polling-interval
+    desc: Polls for Google Analytics _ga_ cookie
+    crit: notable
+    conf: 0.75
+    if:
+      type: raw
+      regex: _ga_
+
+  - id: cookie-filter-vwo-vis-opt
+    desc: Filters vwo/vis_opt cookies to evade analytics
+    crit: component
+    conf: 0.8
+    if:
+      type: raw
+      regex: (vwo|vis_opt)
+
+  - id: json-stringify-post-body
+    desc: JSON.stringify encodes data as HTTP POST body
+    crit: notable
+    conf: 0.7
+    if:
+      type: raw
+      regex: JSON\.stringify\s*\(
+
+composite_rules:
+  - id: js-cookie-harvest-all
+    desc: Iterates all browser cookies and includes in object
+    crit: suspicious
+    conf: 0.85
+    all:
+      - id: micro-behaviors/communications/http/cookies::document-cookie-split-iterate
+      - id: micro-behaviors/communications/http/cookies::document-cookie-write
+    downgrade:
+      any:
+        - id: metadata/quality::has-tests
+        - id: metadata/signed/platform/
+
+  - id: js-browser-skimmer
+    desc: Browser-side skimmer harvests all cookies and exfiltrates via POST
+    crit: hostile
+    conf: 0.95
+    mbc: "E1005"
+    all:
+      - id: micro-behaviors/communications/http/cookies::document-cookie-split-iterate
+      - id: micro-behaviors/communications/http/request::fetch-string
+      - id: json-stringify-post-body
+    any:
+      - id: micro-behaviors/communications/http/cookies::navigator-useragent-read
+      - id: gclid-tracking-field
+      - id: distributer-id-field
+      - id: vsent-beacon-cookie
+      - id: objectives/credential-access/phishing/behavior::js-location-redirect
+      - id: cookie-filter-vwo-vis-opt
+    downgrade:
+      any:
+        - id: metadata/quality::has-tests
+        - id: metadata/signed/platform/
+
+  - id: js-cookie-with-url-params
+    desc: Writes URL query params to cookies for tracking/exfil
+    crit: suspicious
+    conf: 0.85
+    all:
+      - id: micro-behaviors/communications/http/cookies::location-search-harvest
+      - id: micro-behaviors/communications/http/cookies::document-cookie-write
+    downgrade:
+      any:
+        - id: metadata/quality::has-tests
+        - id: metadata/signed/platform/
