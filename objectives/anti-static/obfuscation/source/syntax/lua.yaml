@@ -1,0 +1,106 @@
+# Lua source-level obfuscation patterns
+# Anti-tamper metamethods, environment capture, IIFE wrappers,
+# and identifier obfuscation specific to Lua source.
+defaults:
+  platforms: [linux, macos, windows, unix, android, ios]
+  for: [lua]
+  crit: notable
+  conf: 0.85
+  attack: T1027
+  mbc: B0032
+traits:
+  # === Environment Capture ===
+  - id: lua-getfenv-or-env
+    desc: Environment capture (getfenv fallback to _ENV)
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: raw
+      regex: 'getfenv\s+(and\s+)?getfenv\s*\(\s*\)\s*or\s+_ENV'
+
+  - id: lua-return-function-wrapper
+    desc: Obfuscation IIFE (return function wrapper)
+    if:
+      type: raw
+      regex: '^return\s*\(\s*function\s*\('
+      offset_range: [0, 64]
+
+  # === Metatable Anti-Tamper ===
+  - id: lua-gc-metamethod-trap
+    desc: Anti-tamper via __gc metamethod
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: raw
+      regex: '__gc'
+
+  - id: lua-len-metamethod-sentinel
+    desc: Sentinel value via __len metamethod
+    if:
+      type: raw
+      regex: '__len\s*[,=]?\s*function\s*\(\s*\)\s*return\s*[-]?\d+'
+
+  # === Identifier Obfuscation ===
+  - id: lua-identifier-reuse-collapse
+    desc: Near-zero identifier reuse ratio (obfuscated)
+    crit: suspicious
+    conf: 0.85
+    if:
+      type: metrics
+      field: identifiers.reuse_ratio
+      max: 0.01
+      min_size: 10240
+
+  # === DLL Injection ===
+  - id: lua-current-dll-path
+    desc: DLL injection path reference (currentDllPath)
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: string_value
+      exact: "currentDllPath"
+
+composite_rules:
+  # === Anti-Tamper Infrastructure ===
+  - id: lua-anti-tamper
+    desc: Anti-tamper infrastructure (metamethods + env capture)
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: lua-gc-metamethod-trap
+    any:
+      - id: lua-getfenv-or-env
+      - id: metadata/lang/scripted::env-access-getfenv
+      - id: metadata/lang/scripted::meta-proxy-usage
+
+  # === Hostile Composites ===
+  # VM dispatch + string concealment = no legitimate use
+  - id: lua-virtualized-malware
+    desc: Lua virtualized malware (VM dispatch + string encoding)
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: objectives/anti-static/obfuscation/control-flow::lua-vm-obfuscation
+      - id: objectives/anti-static/obfuscation/string/encoding::lua-string-concealment
+
+  # All three pillars: VM + concealment + anti-tamper
+  - id: lua-full-obfuscation-suite
+    desc: Full Lua obfuscation suite (VM + encoding + anti-tamper)
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: objectives/anti-static/obfuscation/control-flow::lua-vm-obfuscation
+      - id: objectives/anti-static/obfuscation/string/encoding::lua-string-concealment
+      - id: lua-anti-tamper
+
+  # Obfuscated Lua inside a non-.lua file (e.g., .txt, .dat)
+  - id: lua-payload-in-disguise
+    desc: Obfuscated Lua payload in non-script extension
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: lua-return-function-wrapper
+      - id: objectives/anti-static/obfuscation/string/encoding::lua-string-concealment
+    any:
+      - id: objectives/evasion/masquerade/file::basename-is-doc-other-1
+      - id: objectives/evasion/masquerade/file::basename-is-doc-txt
