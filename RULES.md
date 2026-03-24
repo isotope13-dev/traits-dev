@@ -514,7 +514,6 @@ composite_rules:
     any:                              # OR (at least one)
       - id: pattern-a
       - id: pattern-b
-    none:                             # NOT (none may match)
       - id: legitimate-use
     needs: 2                          # Min matches from `any:` ONLY (has no effect on `all:`)
 ```
@@ -529,7 +528,6 @@ composite_rules:
     desc: Binary lacks any code signature
     crit: notable
     conf: 0.8
-    none:
       - id: file/signed/apple
       - id: file/signed/microsoft
 ```
@@ -637,7 +635,6 @@ composite_rules:
     downgrade:                           # → suspicious if debugger
       all:                               # Full boolean logic supported
         - id: micro-behaviors/process/create/load/library::debugger-tool-marker
-      none:
         - id: objectives/anti-analysis/packing::upx
 ```
 
