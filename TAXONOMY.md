@@ -159,6 +159,7 @@ micro-behaviors/
 │   ├── proxy/             #   Proxy/tunneling (SOCKS)
 │   ├── url/               #   URL construction/parsing
 │   ├── websocket/         #   WebSocket
+│   ├── async-io/          #   Async I/O (epoll, kqueue, io_uring, tokio)
 │   ├── capture/           #   Packet capture (tcpdump, wireshark)
 │   └── benchmark/         #   Network performance testing
 │
@@ -194,8 +195,7 @@ micro-behaviors/
 │   ├── string/            #   String operations (library, conversion)          C0019
 │   ├── buffer/            #   Buffer operations (offset writes, reassembly)
 │   ├── db/                #   Database operations (SQL, Redis, MongoDB, etc.)
-│   ├── control-flow/      #   Control flow patterns (loops, error handling)
-│   └── exploitation/      #   Generic exploit terms (ROP, gadget — building blocks)
+│   └── control-flow/      #   Control flow patterns (loops, error handling)
 │   # NOTE: PRNG → os/random/. Config detection → metadata/config/.
 │   # data/ is for data transformation, not system queries or file metadata.
 │
@@ -268,17 +268,19 @@ micro-behaviors/
 ├── os/                    # OS integration                      → MBC: Operating System
 │   │                      #   OS-specific APIs that don't fit other top-level categories.
 │   │                      #   Process ops → process/. File ops → fs/. Timing → time/.
-│   │                      #   Persistence (autorun, crontab, registry Run keys) →
-│   │                      #   objectives/persistence/ (MBC has no autorun micro-behavior).
+│   │                      #   Persistence composites (crontab, registry Run keys) →
+│   │                      #   objectives/persistence/.
 │   ├── api-resolution/    #   API resolution (GetProcAddress, hash-based)
+│   ├── autorun/           #   Autorun keyword/scheduled task patterns
 │   ├── bpf/               #   BPF/eBPF operations
 │   ├── callback/          #   OS callback mechanisms
 │   ├── clipboard/         #   Clipboard access (OS IPC)
 │   ├── com/               #   Windows COM/OLE
+│   ├── compat/            #   OS compatibility layers
 │   ├── console/           #   Console I/O (C0033)
 │   ├── container/         #   Container runtime detection
-│   ├── dos/               #   DOS interrupt handling (vintage)
 │   ├── env/               #   Environment variables (C0034)
+│   ├── event/             #   OS event mechanisms
 │   ├── exception/         #   Exception/error handling
 │   ├── firewall/          #   Firewall tool references (iptables, nft, ufw, firewalld)
 │   │                      #     Neutral: "code references a firewall tool" (notable)
@@ -289,6 +291,7 @@ micro-behaviors/
 │   ├── linker/            #   Dynamic linker configuration
 │   ├── message/           #   Message queues
 │   ├── module/            #   Module loading
+│   ├── msdos/             #   MS-DOS interrupt handling (vintage)
 │   ├── network/           #   Network config (interfaces, status)
 │   ├── package-manager/   #   Package management (apt, pip)
 │   ├── pam/               #   PAM authentication
@@ -298,6 +301,7 @@ micro-behaviors/
 │   ├── security/          #   OS security APIs (keychain, capabilities, auth)
 │   ├── service/           #   System service management
 │   ├── signal/            #   Signal handling
+│   ├── stdio/             #   Standard I/O operations
 │   ├── syscall/           #   Direct syscall invocation
 │   ├── sysinfo/           #   System information queries
 │   │   ├── platform/      #     OS/arch detection (uname, sys.platform, GOOS)
@@ -307,6 +311,7 @@ micro-behaviors/
 │   │   ├── process/       #     Current process info (GetStartupInfo)
 │   │   ├── config/        #     System config (sysconf, sysctl)
 │   │   └── vmware/        #     VMware/ESXi paths, commands
+│   ├── telemetry/         #   OS telemetry and instrumentation
 │   ├── user/              #   User account management
 │   ├── wmi/               #   Windows WMI queries
 │   └── wsh/               #   Windows Script Host
@@ -346,12 +351,14 @@ micro-behaviors/
 │   └── user/              #   Process user identity (whoami, getlogin, getpwuid)
 │
 ├── ui/                    # User interface operations
+│   ├── controls/          #   Widget/control operations
 │   ├── dialog/            #   Dialog boxes, message boxes, prompts
-│   ├── window/            #   Window management (create, show, position)
-│   ├── menu/              #   Menu operations (popup, context)
-│   ├── graphics/          #   GDI/drawing operations
 │   ├── framework/         #   UI framework usage (tkinter, WinForms)
-│   └── controls/          #   Widget/control operations
+│   ├── graphics/          #   GDI/drawing operations
+│   ├── menu/              #   Menu operations (popup, context)
+│   ├── terminal/          #   Terminal/console UI (ANSI, ncurses)
+│   ├── wallpaper/         #   Desktop wallpaper manipulation
+│   └── window/            #   Window management (create, show, position)
 │   # NOTE: Stealth UI behaviors (hiding Dock icon, hiding windows,
 │   # excessive VScrollBar deception) belong in objectives/evasion/,
 │   # not here. Micro-behaviors/ui is for NEUTRAL UI operations only.
@@ -359,7 +366,7 @@ micro-behaviors/
 └── time/                  # Timing operations
     ├── sleep/             #   Delays
     ├── schedule/          #   Scheduled execution
-    └── timer/             #   Timers
+    └── timing/            #   Timers and timing measurements
 ```
 
 ## Tier 2: Objectives (`objectives/`)
@@ -500,6 +507,7 @@ objectives/
 │   ├── screenshot/            #   Screen capture                          T1113
 │   ├── archive/               #   Archive collected data                  T1560
 │   ├── database/              #   Database enumeration/access             T1005
+│   ├── email-harvest/         #   Email address harvesting                T1114
 │   ├── file-copy/             #   File copying mechanisms                 T1005
 │   ├── file-targeting/        #   File enumeration for targeting          T1083
 │   ├── network/               #   Network packet/traffic capture          T1040
@@ -609,6 +617,7 @@ objectives/
 │   │                          #   Transport + sensitive source = exfiltration objective.
 │   ├── cloud/                 #   Cloud storage exfil (S3, GCS, Colab)     T1567
 │   ├── dns/                   #   DNS-based exfil (subdomain encoding)     T1048
+│   ├── ftp/                   #   FTP-based exfil
 │   ├── http/                  #   HTTP/HTTPS exfil (POST, upload, paste)   T1041
 │   ├── messaging/             #   Messaging platform abuse for exfil
 │   │   ├── discord/           #     Discord webhooks
@@ -664,6 +673,7 @@ objectives/
 │   ├── exploit/               #   Remote exploitation for access
 │   ├── infection/             #   File infection / virus propagation      T1554
 │   ├── pass-the-hash/         #   Credential reuse for remote access      T1550.002
+│   ├── smb/                   #   SMB share propagation                   T1021.002
 │   ├── social-engineering/    #   Lures, spam (passive lateral)           B0020, B0021
 │   ├── ssh/                   #   SSH lateral (connect, backdoor, deploy) T1021.004
 │   ├── trojanize/             #   Software trojanization
