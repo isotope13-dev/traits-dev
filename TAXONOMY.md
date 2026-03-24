@@ -38,7 +38,7 @@ The ML pipeline extracts features from **subdirectory path + criticality**, not 
 - **Group related detections under the same subdirectory** so they aggregate into a single, strong feature. A directory with 10+ traits produces a robust signal; a directory with 1-2 traits produces a weak one.
 - **Don't create single-trait subdirectories** when the trait fits an existing directory. `credential-access/browser/` (11 traits) is a strong feature; adding `credential-access/opera/` with 1 trait creates a weak feature that should instead be a file within `credential-access/browser/`.
 - **Criticality assignment affects ML directly.** A trait bumped from `notable` to `suspicious` changes which feature it contributes to. Assign criticality based on the trait's actual detection confidence, not to manipulate features.
-- **The 3-level depth limit** means `objectives/anti-static/obfuscation/string/encoding/` extracts as `anti-static/obfuscation/string` — the `encoding/` level is aggregated into `string/`. Plan directory depth accordingly.
+- **The 3-level depth limit** means `objectives/anti-static/obfuscation/string/encoding/` extracts as `anti-static/obfuscation/string` — the `encoding/` level is aggregated into `string/`. Plan directory depth accordingly. Avoid unnecessary intermediate directories (e.g., prefer `obfuscation/syntax/` over `obfuscation/source/syntax/`).
 
 ## Core Principles
 
@@ -389,19 +389,29 @@ objectives/
 ├── anti-static/               # Evade static analysis (OB0002)
 │   │                          #   Disassembly, decompilation, string extraction
 │   ├── obfuscation/           #   Obfuscated files/code          E1027 + B0032
+│   │   │                      #   Organized by technique, not by language or file type.
+│   │   │                      #   A string encryption rule works the same whether
+│   │   │                      #   the target is a Python script or a PE binary.
 │   │   ├── string/            #     String obfuscation (encrypt, split, concat)
-│   │   ├── encoding/          #     Data encoding (base64, hex, xor)
-│   │   ├── eval/              #     Dynamic execution (eval, exec, Function)
-│   │   ├── control-flow/      #     Control-flow (flattening, opaque predicates)
+│   │   ├── encoding/          #     Data encoding (base64, hex, xor, arithmetic)
+│   │   ├── eval/              #     Dynamic execution (eval, exec, Function, WSH)
+│   │   ├── control-flow/      #     Control-flow (flattening, VM dispatch, polymorphism)
+│   │   ├── syntax/            #     Source syntax patterns (AST/raw; anti-tamper,
+│   │   │                      #       dynamic property access, IIFE wrappers).
+│   │   │                      #       vs string/: string/ detects string-value techniques;
+│   │   │                      #       syntax/ detects source-level structural patterns.
+│   │   │                      #       vs control-flow/: control-flow/ is about execution
+│   │   │                      #       path manipulation; syntax/ is about language-specific
+│   │   │                      #       constructs used to hide intent.
 │   │   ├── instruction/       #     Instruction-level (junk/dead code)     B0032
-│   │   ├── name-mangling/      #     Name mangling (var rename, exports)
+│   │   ├── name-mangling/     #     Name mangling (var rename, exports, identifiers)
 │   │   ├── imports/           #     Import concealment, API hashing
+│   │   ├── reflection/        #     Dynamic dispatch (prototype, proxy, dlsym)
 │   │   ├── payload/           #     Embedded/encrypted payloads
 │   │   ├── document/          #     Document-specific (RTF, Office, LNK)
 │   │   ├── steganography/     #     Data hiding (images, unicode)
-│   │   ├── source/            #     Source-level obfuscation patterns
 │   │   ├── binary-metrics/    #     Binary structural anomalies
-│   │   ├── code-metrics/      #     Source code anomalies
+│   │   ├── code-metrics/      #     Source code anomalies (metrics-driven)
 │   │   ├── tools/             #     Known obfuscators (js-obfuscator, garble)
 │   │   ├── multi-layer/       #     Multiple techniques combined
 │   │   └── anti-decompile/    #     Anti-disassembly tricks                B0012
