@@ -1,0 +1,175 @@
+# npm Clone / Identity Spoofing Detection
+# ATT&CK: T1195.002 (Compromise Software Supply Chain)
+# Detects packages that clone/impersonate legitimate npm packages
+defaults:
+  platforms: [linux, macos, windows, unix, android, ios]
+  for: [package.json]
+  crit: suspicious
+  attack: T1195.002
+  mbc: E1195.002
+
+traits:
+  # === Package Name Similarity Patterns ===
+  # Detects packages with names that are suspiciously similar to legitimate packages
+  # These patterns look for name variations typical of clone packages
+
+  - id: name-variation-any-illu
+    desc: Known n8n-comfyui package clone variant
+    crit: notable
+    conf: 0.85
+    if:
+      type: kv
+      path: "name"
+      regex: n8n-nodes-comfyui-(illu|lite|any-pro|x)
+
+  - id: name-suffix-addition
+    desc: Package name with suspicious suffix
+    crit: notable
+    conf: 0.75
+    if:
+      type: kv
+      path: "name"
+      regex: -(any|pro|plus|extra)$
+
+  - id: name-suffix-enhanced
+    desc: Package name with quality-word suffix
+    crit: notable
+    conf: 0.75
+    if:
+      type: kv
+      path: "name"
+      regex: -(enhanced|ultimate)$
+
+  - id: name-suffix-illu
+    desc: Package name with illu suffix (identity marker)
+    crit: notable
+    conf: 0.8
+    if:
+      type: kv
+      path: "name"
+      substr: -illu
+
+  # === Author Field Retention Detection ===
+  # Legitimate forks usually change author; retained author suggests identity laundering
+
+  - id: author-retained-original
+    desc: Package retains original author from cloned package
+    crit: notable
+    conf: 0.7
+    if:
+      type: kv
+      path: "author.email"
+      substr: gmail.com
+
+  - id: author-empty-or-missing
+    desc: Package has empty or missing author field
+    crit: notable
+    conf: 0.6
+    if:
+      type: kv
+      path: "author.name"
+      exists: true
+
+  # === Repository URL Mismatch ===
+  # Repository points to original author but package is published by different actor
+
+  - id: repo-zerorooot-matcher
+    desc: Repository references zerorooot original author
+    crit: notable
+    conf: 0.85
+    if:
+      type: kv
+      path: "repository.url"
+      substr: github.com/zerorooot
+
+  - id: repo-mismatch-indicator
+    desc: Repository URL may not match publisher
+    crit: component
+    conf: 0.5
+    if:
+      type: kv
+      path: "repository.url"
+      regex: github\.com/[a-z0-9-]+/[a-z0-9-]+\.git
+
+  # === Version Anomalies ===
+  # Mature version (1.0.4+) on initial publication suggests fake history
+
+  - id: version-mature-published
+    desc: Mature version on initial publication
+    crit: notable
+    conf: 0.65
+    if:
+      type: kv
+      path: "version"
+      regex: ^1\.[0-9]\.[4-9]|^[2-9]\.
+
+  # === Build Artifact Leakage ===
+  # TypeScript build artifacts that reveal build environment
+
+  - id: tsbuildinfo-buildpath-leak
+    desc: TypeScript build info contains absolute path
+    crit: notable
+    conf: 0.9
+    if:
+      type: kv
+      path: "__resolved"
+      regex: (C:\\Users|/Users/|/home/).{0,50}\.tgz
+
+  - id: npminstall-done-false
+    desc: Package has npminstall_done flag set
+    crit: component
+    conf: 0.5
+    if:
+      type: kv
+      path: "__npminstall_done"
+      exists: true
+
+  - id: pnpm-workspace-path-leak
+    desc: Build path reveals pnpm workspace structure
+    crit: notable
+    conf: 0.75
+    if:
+      type: kv
+      path: "__resolved"
+      substr: pnpm
+
+# === Composite Rules ===
+
+composite_rules:
+  - id: npm-clone-name-pattern
+    desc: Package name matches known clone pattern
+    crit: suspicious
+    conf: 0.85
+    any:
+      - id: name-variation-any-illu
+      - id: name-suffix-addition
+      - id: name-suffix-enhanced
+      - id: name-suffix-illu
+
+  - id: npm-identity-laundering
+    desc: Package identity laundering (retained author + different repository)
+    crit: suspicious
+    conf: 0.88
+    all:
+      - id: author-retained-original
+      - id: repo-zerorooot-matcher
+
+  - id: npm-build-artifact-leakage
+    desc: Build environment leaked in package artifacts
+    crit: notable
+    conf: 0.85
+    any:
+      - id: tsbuildinfo-buildpath-leak
+      - id: pnpm-workspace-path-leak
+
+  - id: npm-suspicious-clone
+    desc: Suspicious npm package clone detected
+    crit: suspicious
+    conf: 0.9
+    needs: 2
+    any:
+      - id: npm-clone-name-pattern
+      - id: npm-identity-laundering
+      - id: npm-build-artifact-leakage
+      - id: repo-mismatch-indicator
+      - id: npminstall-done-false
