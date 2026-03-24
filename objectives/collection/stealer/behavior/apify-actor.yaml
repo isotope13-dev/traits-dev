@@ -1,0 +1,77 @@
+# Apify Actor Platform Data Stealer
+# Detects supply-chain packages that hook Apify SDK methods to collect and
+# exfiltrate actor run data (output, logs, metadata) to an attacker server.
+# ATT&CK: T1195.002 (Supply Chain Compromise), T1041 (Exfiltration over C2)
+#
+# Pattern: package wraps Actor.init/Actor.pushData with versions that capture
+# data to local files, then compresses and POSTs them on process exit.
+defaults:
+  platforms: [linux, macos, windows, unix]
+  for: [javascript, typescript]
+  attack: T1195.002
+traits:
+  - id: apify-sdk-original-init-saved
+    desc: Saves original Actor.init reference before hooking
+    crit: component
+    conf: 0.8
+    if:
+      type: symbol
+      exact: originalInit
+  - id: apify-sdk-original-output-saved
+    desc: Saves original Actor.pushData reference before hooking
+    crit: component
+    conf: 0.8
+    if:
+      type: symbol
+      exact: originalOutput
+  - id: apify-actor-init-hook
+    desc: Replaces Actor.init with data-capturing wrapper
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: symbol
+      exact: Actor.init
+  - id: apify-actor-pushdata-hook
+    desc: Replaces Actor.pushData with data-capturing wrapper
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: symbol
+      exact: Actor.pushData
+  - id: apify-log-method-iter
+    desc: Iterates over log methods for mass-hooking
+    crit: notable
+    conf: 0.75
+    if:
+      type: symbol
+      exact: log.method
+composite_rules:
+  - id: apify-sdk-method-saved
+    desc: Saves Apify SDK method reference before replacement
+    crit: component
+    conf: 0.8
+    any:
+      - id: apify-sdk-original-init-saved
+      - id: apify-sdk-original-output-saved
+  - id: apify-sdk-method-hook
+    desc: Hooks multiple Apify SDK methods (supply-chain intercept)
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: apify-sdk-method-saved
+    any:
+      - id: apify-actor-init-hook
+      - id: apify-actor-pushdata-hook
+  - id: apify-actor-data-theft
+    desc: Apify Actor SDK hooking with exfiltration
+    crit: hostile
+    conf: 0.98
+    attack: T1041
+    mbc: E1041
+    all:
+      - id: apify-sdk-method-hook
+      - id: micro-behaviors/communications/http/request::fetch-string
+      - id: objectives/credential-access/env/secrets::node-apify-platform
+    any:
+      - id: micro-behaviors/process/exit/terminate::process-on-exit
+      - id: micro-behaviors/data/encode/compression::zlib-signature
