@@ -836,60 +836,112 @@ File-level properties with no behavioral implication. Describes *what a file is*
 - Supply-chain attack indicators belong in `objectives/supply-chain/` (organized by technique, not ecosystem)
 - Vendor-specific traits go under `vendor/`
 - New top-level subdirectories require updating both TAXONOMY.md and `ALLOWED_METADATA` in `src/capabilities/validation/directory_whitelist.rs`
+- **Max depth:** 3 levels within `metadata/` (ML pipeline limit)
+- **Max leaf size:** No leaf directory should exceed 80 traits
+- **Prefer technology-neutral subdirectory names.** Technology names belong in filenames, not directory names, unless needed to stay under the 80-trait limit at depth 3.
 
 ```
 metadata/
-├── analytics/             # Analytics tracking (UTM parameters)
-├── arch/                  # Architecture (x86, x64, arm, arm64, MIPS)
-├── archive/               # Archive structure
-├── binary/                # Binary structure (sections, debug info)
-├── builder/               # Build system detection (cmake, cargo, docker)
-├── bundle/                # Bundle structure (macOS .app)
-├── compiler/              # Compiler detection
-├── config/                # Configuration file detection
-├── dev/                   # Development context (testing frameworks)
-├── encoded-payload/       # Encoded content detection (base64 presence)
-├── entitlements/          # Code entitlements (macOS/iOS capabilities)
-├── file/                  # File-level metadata (size)
-├── format/                # File format detection (ELF, PE, Mach-O, PDF)
-│   ├── anomaly/           #   Structural anomalies
-│   ├── elf/  pe/          #   Format-specific traits
-│   ├── archive/           #   Archive formats
-│   ├── security-rule/     #   Security rule formats (YARA, Sigma)
-│   └── ...
-├── hardening/             # Security hardening (sandbox, seccomp, pledge)
-│                          #   Can be used in downgrade: rules
-├── import/                # Dependencies/imports (auto-generated, no YAML needed)
+├── arch/                  # CPU architecture (x86, ARM, MIPS, IoT)
+├── binary/                # Binary internals (requires binary parsing)
+│   ├── anomaly/           #   Structural violations (format, timestamp, layout)
+│   ├── debug/             #   Debug symbols (PDB, DWARF)
+│   ├── framework/         #   Runtime/framework detection (.NET, Java, VB6, MFC)
+│   ├── installer/         #   Installer framework detection
+│   │   ├── database/      #     Database-based (MSI, WiX)
+│   │   ├── script/        #     Script-based (NSIS, Inno Setup)
+│   │   └── sfx/           #     Self-extracting (7zip, WinRAR, IExpress)
+│   ├── instruction/       #   Instruction-level patterns (indirect calls, CPUID)
+│   ├── layout/            #   File-level structure (overlay, embedded, bundles)
+│   ├── linking/           #   Runtime linking and dynamic resolution
+│   ├── metrics/           #   Structural measurements (import/export/function
+│   │                      #     counts, entropy, ratios, size thresholds)
+│   ├── resource/          #   Embedded resource analysis
+│   ├── section/           #   Section analysis
+│   │   ├── content/       #     Section content patterns
+│   │   ├── metrics/       #     Section entropy, ratios, custom names
+│   │   └── names/         #     Section name detection
+│   └── symbols/           #   Import/export symbol analysis
+├── build/                 # Build systems, CI/CD (cmake, cargo, docker, jenkins)
+├── document/              # Document internals (requires document parsing)
+│   ├── html/              #   HTML structure
+│   ├── office/            #   Office documents
+│   │   ├── macro/         #     VBA, embedded macros
+│   │   └── markup/        #     OOXML, ActiveMime structure
+│   ├── ole/               #   OLE compound documents
+│   ├── pdf/               #   PDF structure
+│   └── rtf/               #   RTF analysis
+├── file/                  # File-level observables (no deep parsing required)
+│   ├── encoded/           #   Encoded content presence (base64)
+│   ├── extension/         #   File extension classification
+│   ├── magic/             #   Magic byte signatures
+│   └── text/              #   Text/data format identification (JSON, makefile)
+├── hardening/             # Security hardening features (sandbox, seccomp, pledge)
+├── import/                # Dependencies/imports (auto-generated)
 │   ├── python/ npm/ ruby/ java/ go/ rust/ c/
 │   └── macho/ elf/ pe/   #   Binary format imports
-├── lang/                  # Source language and encoding detection
-├── library/               # Library/framework detection (react, vue, jquery)
-├── quality/               # Code quality metrics
-│   ├── chrome-extension/  #   Extension manifest keywords
-│   ├── config/            #   Configuration quality
+├── lang/                  # Language, compiler, encoding detection
+│   ├── compiled/          #   Compiled language detection (assembly, C, Go, Rust)
+│   ├── compiler/          #   Compiler identification
+│   │   ├── managed/       #     Managed runtimes (.NET, Delphi)
+│   │   ├── native/        #     Native toolchains (GCC, Clang, MSVC, MinGW)
+│   │   └── systems/       #     Systems language compilers (Go, Rust)
+│   ├── encoded/           #   Encoded strings (unicode, wide)
+│   ├── javascript-features/ # JavaScript language features
+│   ├── scripted/          #   Scripted language detection (VBScript, Lua, Perl)
+│   └── ...                #   go-build, linking, optimization, security, shebang, source, version
+├── library/               # Library/framework detection
+│   ├── data/              #   Data/infrastructure libraries
+│   ├── runtime/           #   Runtime/framework libraries
+│   └── (per-library subdirs: ai, async, jquery, react, vue, etc.)
+├── package/               # Package ecosystem metadata & project quality
+│   ├── chrome-extension/  #   Extension manifest analysis
+│   ├── config/            #   Configuration file detection
 │   ├── contributors/      #   Contributor metadata
-│   ├── dependencies/      #   Dependency counts
+│   ├── dependencies/      #   Dependency analysis
 │   ├── documentation/     #   Documentation presence
 │   ├── error-handling/    #   Error handling patterns
-│   ├── files/             #   File counts and content types
-│   ├── keywords/          #   Package keyword metadata
+│   ├── fields/            #   Package field analysis
+│   ├── files/             #   File counts and types
+│   ├── help/              #   Help/usage interface
+│   ├── keywords/          #   Package keywords
 │   ├── license/           #   License detection
 │   ├── logging/           #   Logging patterns
 │   ├── maintainers/       #   Maintainer counts
 │   ├── metrics/           #   Code metrics
-│   ├── npm/               #   npm-specific quality signals
-│   ├── package-info/      #   Package metadata (empty fields)
-│   ├── testing/           #   Test presence
-│   └── versioning/        #   Version resource detection (PE, semver)
-├── signed/                # Code signature detection
-│   ├── apple/             #   Apple signing (YAML-defined wrappers)
-│   ├── certificate/       #   Certificate string patterns
-│   ├── platform/          #   Platform signatures (auto-generated)
+│   ├── quality/           #   Quality signals
+│   ├── scripts/           #   Package scripts
+│   ├── testing/           #   Testing detection
+│   │   ├── compiled/      #     Compiled-language frameworks
+│   │   ├── harness/       #     Runtime-specific test harnesses
+│   │   ├── presence/      #     Test presence indicators
+│   │   └── scripted/      #     Scripted-language frameworks
+│   ├── tooling/           #   Package tooling
+│   └── versioning/        #   Version detection
+├── signed/                # Code signatures, certificates, entitlements
+│   ├── certificate/       #   Certificate chain string patterns
+│   ├── entitlements/      #   Code entitlements (macOS/iOS, Android)
+│   ├── platform/          #   Platform-signed binary composites (auto-generated)
+│   ├── trust-level/       #   Signing trust level (ad-hoc, developer, platform, app store)
 │   └── (auto-generated: platform::apple, developer::*, adhoc::unsigned)
 └── vendor/                # Vendor identification
-    ├── apple/  fsf/  jetbrains/  microsoft/
-    └── openssl/  realtek/  valve/
+    └── (per-vendor subdirs: apple, adobe, microsoft, openssl, etc.)
 ```
+
+### Metadata boundary rubric
+
+When placing a new metadata trait, use this tiebreaker table. Each row names the two most likely categories and the deciding question:
+
+| Category A | Category B | Deciding question |
+|-----------|-----------|-------------------|
+| `binary/` | `file/` | Does it require parsing binary headers (PE/ELF/Mach-O)? → `binary/`. Observable from filename/magic/size alone? → `file/` |
+| `binary/` | `document/` | Does it require a binary parser? → `binary/`. Does it require a document parser (OLE, OOXML, PDF objects)? → `document/` |
+| `binary/` | `lang/` | Is it about the binary's structure (sections, imports, metrics)? → `binary/`. Is it about what language/compiler produced it? → `lang/` |
+| `binary/metrics/` | `binary/anomaly/` | Is the measurement neutral (could be normal)? → `metrics/`. Does it inherently indicate malformation or tampering? → `anomaly/` |
+| `document/` | `file/` | Does it require parsing document internals (OLE streams, OOXML parts, PDF objects)? → `document/`. Observable from header/extension alone? → `file/` |
+| `build/` | `lang/` | Is it about build orchestration (cmake, docker, CI/CD)? → `build/`. Is it about the language toolchain (gcc, rustc, delphi)? → `lang/` |
+| `package/` | `library/` | Is it about ecosystem-level metadata (fields, scripts, quality, testing)? → `package/`. Is it detecting a specific embedded library? → `library/` |
+| `signed/` | `vendor/` | Is it about the cryptographic signature chain or entitlements? → `signed/`. Is it identifying the vendor by strings/resources/patterns? → `vendor/` |
 
 ## Reference
 
