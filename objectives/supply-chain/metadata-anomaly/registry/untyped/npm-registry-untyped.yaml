@@ -3,7 +3,7 @@
 # No for: default means traits match any file type including unknown
 defaults:
   platforms: [linux, macos, windows, unix, android, ios]
-  for: [data, manifests, scripts]
+  for: [binaries, scripts, source, manifests, documents, media, data]
 traits:
   # ── Registry metadata identification ──
   - id: meta-json-basename
@@ -63,6 +63,30 @@ traits:
       type: raw
       regex: "\"postinstall\"\\s*:\\s*\"[^\"]{1,200}\""
 
+  - id: install-hook-present
+    desc: Registry metadata has install hook entry
+    crit: component
+    conf: 0.85
+    if:
+      type: raw
+      regex: "\"install\"\\s*:\\s*\"[^\"]{1,200}\""
+
+  - id: install-node-script
+    desc: Install hook invokes node on JS file
+    crit: component
+    conf: 0.88
+    if:
+      type: raw
+      regex: "\"install\"\\s*:\\s*\"node\\s+[a-zA-Z0-9_./-]{1,60}\\.js"
+
+  - id: install-hook-error-suppressed
+    desc: Install hook suppresses errors with exit 0
+    crit: component
+    conf: 0.9
+    if:
+      type: raw
+      substr: "|| exit 0\""
+
   - id: postinstall-npm-run-fallback
     desc: Postinstall chains npm run with OR fallbacks
     crit: suspicious
@@ -71,6 +95,24 @@ traits:
     if:
       type: raw
       regex: "\"postinstall\"\\s*:\\s*\"npm run [^\"]{1,40}\\|\\|"
+
+  # ── Readme anomalies ──
+  - id: readme-mentions-exfil-metadata
+    desc: Readme describes sending host metadata
+    crit: component
+    conf: 0.92
+    if:
+      type: raw
+      regex: "\"readme\"[^}]{0,200}(hostname|OS|cwd|Node version)"
+
+  - id: readme-dep-confusion-self-id
+    desc: Readme self-identifies as dependency confusion
+    crit: component
+    conf: 0.95
+    if:
+      type: raw
+      regex: "\"readme\"[^}]{0,100}dependency confusion"
+      case_insensitive: true
 
   # ── Version anomalies ──
   - id: inflated-version-9999
@@ -145,6 +187,7 @@ traits:
     desc: Hardcoded external IP with port in strings
     crit: notable
     conf: 0.88
+    for: [scripts, source, manifests, documents, data]
     if:
       type: string_value
       regex: "[0-9]{1,3}(\\.[0-9]{1,3}){3}:[0-9]{2,5}"
@@ -169,6 +212,119 @@ traits:
     if:
       type: raw
       regex: "\"socket.io-client\"[^}]{0,600}\"sqlite3\""
+
+  # ── Exfil tool in lifecycle hooks ──
+  - id: hook-curl-exfil
+    desc: Lifecycle hook runs curl command
+    crit: component
+    conf: 0.9
+    attack: "T1041"
+    if:
+      type: raw
+      regex: "\"(preinstall|postinstall|preupdate|test)\"\\s*:\\s*\"curl\\s"
+
+  - id: hook-wget-exfil
+    desc: Lifecycle hook runs wget command
+    crit: component
+    conf: 0.9
+    attack: "T1041"
+    if:
+      type: raw
+      regex: "\"(preinstall|postinstall|preupdate|test)\"\\s*:\\s*\"wget\\s"
+
+  # ── Command substitution in hooks ──
+  - id: hook-whoami-sub
+    desc: Hook uses $(whoami) command substitution
+    crit: component
+    conf: 0.93
+    attack: "T1082"
+    if:
+      type: raw
+      substr: "$(whoami)"
+
+  - id: hook-hostname-sub
+    desc: Hook uses $(hostname) command substitution
+    crit: component
+    conf: 0.93
+    attack: "T1082"
+    if:
+      type: raw
+      substr: "$(hostname)"
+
+  - id: hook-pwd-sub
+    desc: Hook uses $(pwd) command substitution
+    crit: component
+    conf: 0.88
+    attack: "T1083"
+    if:
+      type: raw
+      substr: "$(pwd)"
+
+  - id: hook-id-sub
+    desc: Hook uses $(id) command substitution
+    crit: component
+    conf: 0.93
+    attack: "T1033"
+    if:
+      type: raw
+      substr: "$(id)"
+
+  - id: hook-cmd-query-exfil
+    desc: Hook exfils via cmd= query parameter
+    crit: component
+    conf: 0.95
+    attack: "T1041"
+    if:
+      type: raw
+      regex: "\\?cmd=\\$\\((whoami|hostname|id|pwd)\\)"
+
+  # ── webhook.site OOB callback ──
+  - id: webhook-site-url
+    desc: webhook.site OOB callback URL
+    crit: component
+    conf: 0.95
+    attack: "T1041"
+    if:
+      type: raw
+      substr: "webhook.site/"
+
+  # ── Postinstall node bootstrap ──
+  - id: postinstall-node-script
+    desc: Postinstall invokes node on JS file
+    crit: component
+    conf: 0.88
+    if:
+      type: raw
+      regex: "\"postinstall\"\\s*:\\s*\"node\\s+[a-zA-Z0-9_./-]{1,60}\\.js\""
+
+  # ── Registry readme error ──
+  - id: readme-error-no-data
+    desc: Registry README reports no data found
+    crit: component
+    conf: 0.8
+    if:
+      type: raw
+      substr: "\"readme\": \"ERROR: No README data found!\""
+
+  # ── Empty description ──
+  - id: empty-description
+    desc: Registry metadata has empty description
+    crit: component
+    conf: 0.75
+    if:
+      type: raw
+      substr: "\"description\": \"\""
+
+  # empty-author removed - use objectives/supply-chain/metadata-anomaly/registry::versioned-empty-author instead
+
+  # ── Inflated version 10-89 range ──
+  - id: inflated-version-10plus
+    desc: Registry version major 10+
+    crit: component
+    conf: 0.7
+    if:
+      type: raw
+      regex: "\"version\"\\s*:\\s*\"[1-8][0-9]\\.[0-9]"
 
 composite_rules:
   # ── Registry metadata indicator for untyped files ──
@@ -245,6 +401,75 @@ composite_rules:
       - id: inflated-version-90plus
     needs: 1
 
+  # ── Install hook in untyped registry metadata ──
+  - id: untyped-registry-install
+    desc: Registry metadata has install hook
+    crit: notable
+    conf: 0.88
+    attack: "T1195.002"
+    all:
+      - id: untyped-registry-metadata
+      - id: install-hook-present
+
+  # ── Dependency confusion: inflated version + install hook ──
+  - id: depconf-install-inflated
+    desc: Dependency confusion install hook with inflated version
+    crit: hostile
+    conf: 0.96
+    attack: "T1195.002"
+    all:
+      - id: untyped-registry-metadata
+      - id: install-hook-present
+    any:
+      - id: inflated-version-9999
+      - id: inflated-version-100plus
+      - id: inflated-version-90plus
+    needs: 1
+
+  # ── Install node bootstrap in tiny package ──
+  - id: install-node-bootstrap-tiny
+    desc: Install node script in tiny registry package
+    crit: suspicious
+    conf: 0.93
+    attack: "T1195.002"
+    all:
+      - id: untyped-registry-metadata
+      - id: install-node-script
+    any:
+      - id: dist-filecount-1-to-4
+      - id: dist-unpacked-under-4kb
+    needs: 1
+
+  # ── Self-identifying dependency confusion ──
+  - id: dep-conf-registry-self-identified
+    desc: Package self-identifies as dependency confusion
+    crit: hostile
+    conf: 0.99
+    attack: "T1195.002"
+    all:
+      - id: untyped-registry-metadata
+      - id: readme-dep-confusion-self-id
+    any:
+      - id: install-hook-present
+      - id: preinstall-hook-present
+      - id: postinstall-hook-present
+    needs: 1
+
+  # ── Canary with exfil and ngrok ──
+  - id: canary-exfil-ngrok
+    desc: Canary beacon package with ngrok tunnel
+    crit: hostile
+    conf: 0.97
+    attack: "T1195.002"
+    all:
+      - id: untyped-registry-metadata
+      - id: objectives/command-and-control/channel/tunnel/proxy::ngrok-name
+    any:
+      - id: readme-mentions-exfil-metadata
+      - id: desc-harmless-canary-claim
+      - id: readme-dep-confusion-self-id
+    needs: 1
+
   # ── Fake research claim + install hook ──
   - id: fake-research-with-hook
     desc: Fake security research claim with install hook
@@ -256,6 +481,7 @@ composite_rules:
     any:
       - id: preinstall-hook-present
       - id: postinstall-hook-present
+      - id: install-hook-present
       - id: desc-security-research-claim
       - id: desc-harmless-canary-claim
     needs: 2
@@ -335,3 +561,110 @@ composite_rules:
       - id: untyped-registry-metadata
       - id: dep-socket-io-plus-sqlite3
       - id: postinstall-hook-present
+
+  # ── Hook exfil with webhook.site OOB ──
+  - id: hook-webhook-site-sysinfo-exfil
+    desc: Lifecycle hook exfils sysinfo to webhook.site
+    crit: hostile
+    conf: 0.99
+    attack: "T1041"
+    mbc: "E1041"
+    all:
+      - id: untyped-registry-metadata
+      - id: webhook-site-url
+    any:
+      - id: hook-whoami-sub
+      - id: hook-hostname-sub
+      - id: hook-pwd-sub
+      - id: hook-id-sub
+      - id: hook-curl-exfil
+      - id: hook-wget-exfil
+      - id: hook-cmd-query-exfil
+    needs: 2
+
+  # ── Curl/wget sysinfo exfil in registry metadata ──
+  - id: hook-curl-wget-sysinfo-exfil
+    desc: Lifecycle hook exfils sysinfo via curl or wget
+    crit: hostile
+    conf: 0.98
+    attack: "T1041"
+    mbc: "E1041"
+    all:
+      - id: untyped-registry-metadata
+    any:
+      - id: hook-whoami-sub
+      - id: hook-hostname-sub
+      - id: hook-id-sub
+      - id: hook-curl-exfil
+      - id: hook-wget-exfil
+      - id: hook-cmd-query-exfil
+    needs: 3
+
+  # ── Postinstall node + empty metadata ──
+  - id: postinstall-node-throwaway
+    desc: Postinstall node bootstrap in throwaway package
+    crit: suspicious
+    conf: 0.93
+    attack: "T1195.002"
+    all:
+      - id: untyped-registry-metadata
+      - id: postinstall-node-script
+    any:
+      - id: dist-filecount-1-to-4
+      - id: readme-error-no-data
+      - id: empty-description
+      - id: objectives/supply-chain/metadata-anomaly/registry::versioned-empty-author
+    needs: 2
+
+  # ── Postinstall node + inflated version + sparse metadata ──
+  - id: postinstall-node-inflated-throwaway
+    desc: Postinstall node bootstrap with inflated version
+    crit: hostile
+    conf: 0.96
+    attack: "T1195.002"
+    all:
+      - id: untyped-registry-metadata
+      - id: postinstall-node-script
+      - id: readme-error-no-data
+    any:
+      - id: inflated-version-10plus
+      - id: inflated-version-90plus
+      - id: inflated-version-100plus
+      - id: empty-description
+      - id: objectives/supply-chain/metadata-anomaly/registry::versioned-empty-author
+      - id: dist-filecount-1-to-4
+    needs: 2
+
+  # ── Install node + inflated version throwaway ──
+  - id: install-node-inflated-throwaway
+    desc: Install node bootstrap in inflated version package
+    crit: hostile
+    conf: 0.96
+    attack: "T1195.002"
+    all:
+      - id: untyped-registry-metadata
+      - id: install-node-script
+    any:
+      - id: inflated-version-90plus
+      - id: inflated-version-100plus
+      - id: inflated-version-9999
+      - id: dist-filecount-1-to-4
+      - id: dist-unpacked-under-4kb
+      - id: desc-harmless-canary-claim
+    needs: 3
+
+  # ── Error-suppressed install hook in tiny package ──
+  - id: suppressed-install-tiny-package
+    desc: Error-suppressed install hook in tiny package
+    crit: suspicious
+    conf: 0.94
+    attack: "T1195.002"
+    all:
+      - id: untyped-registry-metadata
+      - id: install-hook-error-suppressed
+    any:
+      - id: dist-filecount-1-to-4
+      - id: dist-unpacked-under-4kb
+      - id: inflated-version-90plus
+      - id: inflated-version-100plus
+    needs: 1
