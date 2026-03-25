@@ -80,7 +80,7 @@ traits:
 
 **Field override:** List fields (`for`, `platforms`) can be set to `[none]` to unset file-level defaults. Example: `for: [none]` removes file type filtering even if defaults specify types. Scalar fields (`conf`, `crit`) do not support `none`.
 
-**File types:** `elf`, `macho`, `pe`, `dll`, `so`, `dylib`, `shell`, `batch`, `python`, `javascript`, `typescript`, `rust`, `java`, `class`, `ruby`, `c`, `cpp`, `go`, `csharp`, `php`, `perl`, `powershell`, `lua`, `swift`, `objectivec`, `groovy`, `scala`, `zig`, `elixir`, `vbs`, `html`, `applescript`, `package.json`, `chrome-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `plist`, `ipa`, `rtf`, `lnk`, `jpeg`, `png`, `pkginfo`, `pdf`, `oledoc`, `ooxml`.
+**File types:** `elf`, `macho`, `pe`, `dll`, `so`, `dylib`, `pyc`, `shell`, `batch`, `python`, `javascript`, `typescript`, `rust`, `java`, `class`, `ruby`, `c`, `cpp`, `go`, `csharp`, `php`, `perl`, `powershell`, `lua`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir`, `vbs`, `html`, `applescript`, `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `plist`, `ipa`, `rtf`, `lnk`, `jpeg`, `png`, `pkginfo`, `pickle`, `pdf`, `oledoc`, `ooxml`.
 
 **Aliases** (resolved to the canonical type):
 
@@ -97,10 +97,10 @@ traits:
 
 | Group | Members |
 |-------|---------|
-| `binaries` | `elf`, `macho`, `pe`, `dylib`, `so`, `dll`, `class` |
+| `binaries` | `elf`, `macho`, `pe`, `dylib`, `so`, `dll`, `class`, `pyc` |
 | `scripts` | `shell`, `batch`, `python`, `javascript`, `ruby`, `php`, `perl`, `lua`, `powershell`, `applescript`, `vbs` |
 | `source` | `typescript`, `rust`, `java`, `c`, `cpp`, `go`, `csharp`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir` |
-| `manifests` | `package.json`, `chrome-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `pkginfo`, `plist`, `lnk` |
+| `manifests` | `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `pkginfo`, `plist`, `lnk` |
 | `documents` | `pdf`, `rtf`, `html`, `oledoc`, `ooxml` |
 | `media` | `jpeg`, `png` |
 | `data` | `ipa` |
@@ -168,8 +168,8 @@ defaults:
 
 | Type | Purpose | Fields |
 |------|---------|--------|
-| `ast` | Parse source | `kind`/`node`, `exact`/`substr`/`regex`/`query` (tree-sitter S-expression), `count_min`, `count_max`, `per_kb_min`, `per_kb_max` |
-| `syscall` | Direct syscalls | `name`, `number`, `arch` (all optional, OR within field, AND across fields), `count_min`, `count_max`, `per_kb_min`, `per_kb_max` |
+| `ast` | Parse source | `kind`/`node`, `exact`/`substr`/`regex`/`query` (tree-sitter S-expression) |
+| `syscall` | Direct syscalls | `name`, `number`, `arch` (all optional, OR within field, AND across fields) |
 | `section` | Binary sections | `exact`, `substr`, `regex`, `word`, `case_insensitive`, `length_min`, `length_max`, `entropy_min`, `entropy_max`, `readable`, `writable`, `executable` |
 | `section_ratio` | Section size ratio | `section`, `compare_to` (default: "total"), `min`, `max` |
 | `import_combination` | Import patterns | `required`, `suspicious`, `min_suspicious`, `max_total` |
@@ -283,7 +283,7 @@ if:
 
 ## Count & Density Constraints
 
-Available on `string_value`, `raw`, `hex`, `encoded`:
+These are **trait-level fields** (siblings of `if:`, not nested inside the condition):
 
 | Field | Description |
 |-------|-------------|
@@ -294,11 +294,11 @@ Available on `string_value`, `raw`, `hex`, `encoded`:
 
 ```yaml
 - id: dense-chr-calls
+  count_min: 10
+  per_kb_min: 2.0
   if:
     type: raw
     regex: "chr\\s*\\("
-    count_min: 10
-    per_kb_min: 2.0
 ```
 
 ## Location Constraints
@@ -421,7 +421,7 @@ The `encoded` type searches decoded/encoded strings with optional encoding filte
 
 - **Word boundary matching**: `word` parameter (not available in `base64`/`xor`)
 - **Flexible encoding filter**: Single, multiple (OR), or omit (all)
-- **Supports all encoding types**: base64, base64-obf, hex, xor, url, unicode-escape, stack, wide
+- **Supports all encoding types**: base64, base64-obf, hex, xor, url, unicode-escape, base32, base85, utf16le, utf16be, stack, wide
 
 ### Encoding Filter
 
