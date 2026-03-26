@@ -1,0 +1,182 @@
+# PHP Webshell: Dynamic Function Execution Patterns
+# 
+# This trait detects advanced obfuscation techniques used in PHP webshells
+# that evade simple keyword-based detection.
+# 
+# MBC: B0030 (C2 Communication), B0032 (Obfuscation)
+# ATT&CK: T1505.003 (Web Shell), T1027 (Obfuscated Files/Information)
+defaults:
+  platforms:
+    - linux
+    - macos
+    - windows
+    - unix
+    - android
+    - ios
+  for:
+    - php
+
+traits:
+  # forward_static_call_array with string concatenation - obfuscation technique
+  - id: forward-static-call-concat
+    desc: forward_static_call_array with string concatenation (obfuscation)
+    crit: suspicious
+    conf: 0.95
+    attack: T1027
+    mbc: B0032
+    if:
+      type: ast
+      query: |
+        (call_expression
+          function: (function_call
+            name: (identifier) @name
+          )
+          arguments: (arguments
+            (binary_op
+              operator: "."
+            )
+          )
+        )
+  
+  # forward_static_call_array alone (less common than call_user_func_array)
+  - id: forward-static-call-array
+    desc: forward_static_call_array usage (suspicious in PHP)
+    crit: notable
+    conf: 0.85
+    mbc: B0030
+    attack: T1505.003
+    if:
+      type: ast
+      kind: call
+      exact: forward_static_call_array
+
+  # call_user_func_array with binary_op - another dynamic execution pattern
+  - id: call-user-func-array-binary-op
+    desc: call_user_func_array with binary_operation (dynamic exec)
+    crit: suspicious
+    conf: 0.9
+    attack: T1027
+    mbc: B0032
+    if:
+      type: ast
+      query: |
+        (call_expression
+          function: (identifier) @name
+          arguments: (arguments
+            (binary_op)
+          )
+        )
+        (#eq? @name "call_user_func_array")
+
+  # Variable used as function name via $_REQUEST
+  - id: request-as-function-variable
+    desc: $_REQUEST used as variable in function context
+    crit: notable
+    conf: 0.85
+    attack: T1505.003
+    mbc: B0030
+    if:
+      type: ast
+      query: |
+        (call_expression
+          arguments: (arguments
+            (array_access_expression
+              variable: (variable_name) @request
+              offset: (variable_name) @var
+            )?
+          )
+        )
+        (#eq? @request "_REQUEST")
+  
+  # Variable + string concatenation in call (obfuscation pattern)
+  - id: var-string-concat-in-call
+    desc: Variable concatenated with string in function call
+    crit: suspicious
+    conf: 0.92
+    attack: T1027
+    mbc: B0032
+    if:
+      type: ast
+      query: |
+        (call_expression
+          arguments: (arguments
+            (binary_op
+              operator: "."
+              left: (variable_name)
+            )
+          )
+        )
+
+  # Substring from HTTP to build function name
+  - id: http-substring-to-execution
+    desc: Substring from HTTP header used in execution
+    crit: notable
+    conf: 0.85
+    attack: T1505.003
+    mbc: B0030
+    if:
+      type: ast
+      query: |
+        (assignment_expression
+          value: (call_expression
+            function: (variable_name) @substr
+            arguments: (arguments
+              (array_access_expression
+                variable: (variable_name) @server
+                offset: (string
+                  value: (string_value) @header
+                )
+              )
+            )
+          )
+        )
+        (#eq? @substr "substr")
+        (#offset? @header "HTTP")
+
+  # $_SERVER from HTTP Referer used in code execution
+  - id: http-referer-to-reflection
+    desc: HTTP Referer header used in function execution
+    crit: notable
+    conf: 0.85
+    attack: T1505.003
+    mbc: B0030
+    if:
+      type: ast
+      query: |
+        (call_expression
+          arguments: (arguments
+            (array_access_expression
+              variable: (variable_name) @server
+              offset: (string
+                value: (string_value) @referer
+              )
+            )?
+          )
+        )
+        (#eq? @referer "HTTP_REFERER")
+
+composite_rules:
+  # Obfuscated PHP webshell: uses string concatenation to hide function name
+  - id: obfuscated-webshell-pattern
+    desc: Obfuscated PHP webshell (string concat + dynamic call)
+    crit: suspicious
+    conf: 0.95
+    attack: T1505.003
+    mbc: B0030
+    all:
+      - id: objectives/command-and-control/backdoor/webshell::forward-static-call-concat
+      - id: objectives/command-and-control/backdoor/webshell::var-string-concat-in-call
+    any:
+      - id: objectives/command-and-control/backdoor/webshell::http-referer-to-reflection
+      - id: objectives/command-and-control/backdoor/webshell::forward-static-call-array
+
+  # Advanced webshell: substring from HTTP header to build executable code
+  - id: http-substring-webshell
+    desc: Webshell using HTTP substring for code execution
+    crit: notable
+    conf: 0.92
+    attack: T1505.003
+    mbc: B0030
+    all:
+      - id: objectives/command-and-control/backdoor/webshell::http-substring-to-execution
+      - id: micro-behaviors/communications/http/request::request
