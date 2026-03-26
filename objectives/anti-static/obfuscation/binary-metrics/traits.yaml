@@ -32,7 +32,7 @@ traits:
         - id: metadata/file/magic::gzip
   - id: very-high-entropy
     desc: Very high entropy (strongly indicates
-    crit: suspicious
+    crit: notable
     conf: 0.95
     attack: T1045
     if:
@@ -42,6 +42,7 @@ traits:
     unless:
       - id: metadata/file/magic::zip-archive
       - id: metadata/file/magic::gzip
+      - id: metadata/lang/compiler/managed::versioned-vcl-app
     downgrade:
       any:
         - type: string_value
@@ -101,7 +102,7 @@ traits:
         regex: BSJB
   - id: wx-sections
     desc: Writable and executable sections (self-modifying
-    crit: suspicious
+    crit: notable
     conf: 0.9
     attack: T1055
     size_max: 31457280
@@ -111,19 +112,16 @@ traits:
       field: binary.wx_sections
       min: 1
     unless:
-      - id: metadata/binary/framework::asprotect
-      - id: objectives/anti-static/pack/detect::upx-section
-      - type: raw
-        regex: (ApiSet Stub DLL|storport\.sys|ScsiMiniPort)
+      - id: wx-sections-known-benign
+      - id: metadata/binary/layout::legacy-watcom-packed-utility
+      - type: section
+        writable: true
+        executable: true
+        length_max: 0
+      - id: metadata/vendor/pash::zprotect-plugin
     downgrade:
       any:
-        - id: metadata/binary/layout::rich-imported-low-entropy-layout
-        - id: micro-behaviors/data/encode/pecompact::pecompact-signature
-        - type: string_value
-          regex: (?i)(enigma.protector|ntoskrnl|WATCOM C/C|supR3Hardened)
-        - type: metrics
-          field: binary.overall_entropy
-          max: 5
+        - id: wx-sections-soft-fp
   - id: many-wx-sections
     desc: Multiple W+X sections (packer pattern)
     crit: suspicious
@@ -136,15 +134,15 @@ traits:
       min: 2
     unless:
       - id: metadata/binary/framework::asprotect
-      - id: objectives/anti-static/pack/detect::upx-section
+      - id: micro-behaviors/data/encode/pecompact::pecompact-seh-trick
+      - id: objectives/anti-static/obfuscation/binary-metrics::upx-identified-artifact
+      - id: metadata/binary/layout::legacy-watcom-packed-utility
     downgrade:
       any:
         - id: micro-behaviors/data/encode/pecompact::pecompact-signature
         - id: objectives/anti-static/pack/detect::themida-section
         - type: string_value
           regex: (Enigma Protector|enigmaprotector)
-        - id: metadata/lang/compiler/native::watcom-runtime
-        - id: well-known/tools/reverse-engineering::ollydbg-executable-marker
   - id: high-section-name-entropy
     desc: High entropy section names (packer
     crit: notable
@@ -176,12 +174,11 @@ traits:
         max: 0
       - type: raw
         regex: BSJB
+      - id: metadata/binary/layout::legacy-watcom-packed-utility
+      - id: metadata/vendor/pash::zprotect-plugin
     downgrade:
       any:
-        - id: metadata/package/versioning::pe-version-resource
-        - id: metadata/binary/framework::large-rsrc-section
-        - id: metadata/vendor/microsoft::microsoft-corp-marker
-        - id: metadata/binary/installer/script::nsis-sfx-deadbeef-magic
+        - id: dominant-section-known-benign
   - id: high-import-entropy
     desc: High entropy import names (obfuscated
     crit: suspicious
@@ -346,6 +343,9 @@ traits:
       type: metrics
       field: binary.high_complexity_functions
       min: 40
+    downgrade:
+      any:
+        - id: metadata/binary/metrics::many-exports-200
   - id: very-complex-functions
     desc: Has many very high complexity
     crit: notable
@@ -458,10 +458,10 @@ traits:
       min: 0.5
     unless:
       - id: metadata/binary/resource::resource-only-dll
-      - id: metadata/signed/platform::microsoft
       - id: metadata/package/versioning::dotnet-versioned-assembly
       - id: metadata/document/office::help2-container
       - id: metadata/binary/installer::known-benign-installer
+      - id: objectives/anti-static/obfuscation/binary-metrics::7zsfx-config-marker
     downgrade:
       any:
         - type: trait
@@ -487,6 +487,26 @@ traits:
       - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
       - id: metadata/document/office::help2-container
       - id: objectives/anti-static/pack/detect::upx-section
+  - id: compact-high-entropy-overlay
+    desc: Compact high entropy overlay blob
+    crit: component
+    conf: 0.84
+    for:
+      - pe
+      - dll
+    attack: T1027.009
+    if:
+      type: metrics
+      field: binary.overlay_entropy
+      min: 7.0
+    unless:
+      - type: metrics
+        field: binary.overlay_size
+        max: 255
+      - type: metrics
+        field: binary.overlay_size
+        min: 4097
+      - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
   - id: large-overlay-size
     desc: Overlay large enough to contain payload
     crit: component
@@ -541,6 +561,13 @@ traits:
       min: 12.0
       min_size: 500000
 composite_rules:
+  - id: upx-identified-artifact
+    desc: UPX sections or marker present
+    crit: component
+    conf: 1.0
+    any:
+      - id: objectives/anti-static/pack/detect::upx-section
+      - id: objectives/anti-static/pack/detect::upx-marker
   - id: many-high-entropy-strings-known-fp
     desc: High entropy strings known false positive profile
     crit: component
@@ -563,6 +590,24 @@ composite_rules:
     any:
       - id: metadata/vendor/microsoft::microsoft-corp-marker-rsrc
       - id: metadata/vendor/microsoft::microsoft-corp-marker-rdata
+  - id: dominant-section-known-benign
+    desc: Dominant section benign packer profile
+    crit: component
+    conf: 0.8
+    any:
+      - id: metadata/binary/framework::large-rsrc-section
+      - id: metadata/vendor/microsoft::microsoft-corp-marker
+      - id: metadata/binary/installer/script::nsis-sfx-deadbeef-magic
+  - id: encrypted-loader-overlay
+    desc: High entropy overlay attached to packed loader
+    crit: suspicious
+    conf: 0.92
+    all:
+      - id: compact-high-entropy-overlay
+    any:
+      - id: metadata/hardening/memory::wx-section
+      - id: objectives/anti-static/obfuscation/imports::peb-ldr-access
+      - id: metadata/binary/anomaly::timestamp-anomaly
   - id: high-code-entropy-known-fps
     desc: High code entropy known false positive profile
     crit: component
@@ -573,6 +618,26 @@ composite_rules:
       - id: metadata/binary/framework::unity-player-framework
       - id: micro-behaviors/data/encode/pecompact::pecompact-signature
       - id: legitimate-microsoft-versioned-pe
+  - id: wx-sections-known-benign
+    desc: WX section known benign profile
+    crit: component
+    conf: 0.7
+    any:
+      - id: metadata/binary/framework::asprotect
+      - id: micro-behaviors/data/encode/pecompact::pecompact-seh-trick
+      - id: objectives/anti-static/obfuscation/binary-metrics::upx-identified-artifact
+      - id: metadata/package::apiset-stub
+      - id: objectives/anti-static/obfuscation/binary-structure::scsi-miniport-string
+      - id: objectives/anti-static/obfuscation/binary-structure::kernel-driver-string
+      - id: metadata/lang/compiler/managed::versioned-vcl-app
+  - id: wx-sections-soft-fp
+    desc: WX section downgrade profile
+    crit: component
+    conf: 0.7
+    any:
+      - id: metadata/binary/layout::rich-imported-low-entropy-layout
+      - id: micro-behaviors/data/encode/pecompact::pecompact-signature
+      - id: objectives/anti-static/pack/detect::enigma-protector
   - id: large-dotnet-library
     desc: Large .NET library structure
     crit: component
@@ -612,13 +677,15 @@ composite_rules:
       - id: metadata/binary/framework::dotnet-metadata
     downgrade:
       any:
-        - type: string_value
-          substr: ;!@Install@!UTF-8!
-        - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
-        - type: raw
-          substr: PECompac
-        - type: string_value
-          substr: "UPX executable packer"
+        - id: packed-binary-known-benign
+  - id: packed-binary-known-benign
+    desc: Packed binary known benign profile
+    crit: component
+    conf: 0.8
+    any:
+      - id: objectives/anti-static/obfuscation/binary-metrics::7zsfx-config-marker
+      - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
+      - id: micro-behaviors/data/encode/pecompact::pecompact-signature
   - id: binary-heavily-packed
     desc: Binary is heavily packed/encrypted
     crit: hostile
@@ -697,12 +764,12 @@ composite_rules:
       - id: objectives/anti-static/pack/detect::upx-section
       - id: objectives/anti-static/pack/detect::upx-marker
       - id: micro-behaviors/data/encode/pecompact::pecompact-signature
+      - id: micro-behaviors/data/encode/pecompact::pecompact-seh-trick
       - id: metadata/binary/layout::rich-imported-low-entropy-layout
-      - id: metadata/binary/metrics::many-imports
+      - id: metadata/binary/layout::legacy-watcom-packed-utility
     downgrade:
       any:
         - id: metadata/binary/framework::asprotect
-        - id: metadata/lang/compiler/native::watcom-runtime
   - id: control-flow-obfuscation
     desc: Control flow obfuscation detected
     crit: suspicious

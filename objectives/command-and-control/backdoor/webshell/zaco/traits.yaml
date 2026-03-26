@@ -1,5 +1,4 @@
 defaults:
-  for: [scripts]
   platforms:
     - linux
     - macos
@@ -7,6 +6,7 @@ defaults:
     - unix
     - android
     - ios
+  for: [php]
   size_min: 8000
   size_max: 50000
   attack: T1505.003
@@ -26,6 +26,13 @@ traits:
     if:
       type: raw
       exact: $page=$page==''||($page!='cmd'&&$page!='mysql'&&$page!='eval')?'cmd':$page;
+  - id: post-page-dispatch
+    desc: POST-driven page dispatch
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: raw
+      exact: $page=isset($_POST['page'])?$_POST['page']:(isset($_SERVER['QUERY_STRING'])?$_SERVER['QUERY_STRING']:'');
   - id: page-switch
     desc: Page switch dispatcher
     crit: notable
@@ -79,6 +86,14 @@ traits:
     if:
       type: raw
       exact: <input name='action' value='eval_in_html' type='submit'>
+  - id: eval-inline-html
+    desc: Inline HTML eval execution
+    crit: suspicious
+    conf: 0.98
+    attack: T1059.006
+    if:
+      type: raw
+      exact: if($action=='eval_in_html')
   - id: dir-browser
     desc: Interactive directory browser loop
     crit: notable
@@ -129,27 +144,38 @@ traits:
     if:
       type: raw
       exact: <tr><td>User :<input name='user' type=text value='<?=$user?>'></td><td>Passwd :<input name='passwd' type=text value='<?=$passwd?>'></td><td>Host :<input name='host' type=text value='<?=$host?>'></td><td>DB :<input name='db' type=text value='<?=$db?>'></td></tr>
+  - id: mysql-query-panel
+    desc: Arbitrary SQL query textarea
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: raw
+      substr: "<textarea name='query' cols=120 rows=20><?=htmlspecialchars($query)?></textarea>"
   - id: mysql-dumper-banner
     desc: ZaCo MySQL dumper banner
     crit: suspicious
     conf: 0.98
     if:
       type: raw
-      exact: $dump_file="#ZaCo MySQL Dumper\n#db $db from $host\n";
-  - id: mysql-show-tables
-    desc: MySQL show tables dumper
+      exact: "$dump_file=\"#ZaCo MySQL Dumper\\n#db $db from $host\\n\";"
+  - id: single-file-webshell-metrics
+    desc: Single-file admin shell metrics
     crit: notable
-    conf: 0.95
+    conf: 0.9
     if:
-      type: raw
-      exact: $result=mysql_query('show tables',$mysql_link);
-  - id: mysql-show-columns
-    desc: MySQL schema dump loop
+      type: metrics
+      field: binary.file_size
+      min: 12000
+      max: 22000
+  - id: dense-embedded-ui-strings
+    desc: Dense embedded UI string surface
     crit: notable
-    conf: 0.95
+    conf: 0.88
     if:
-      type: raw
-      exact: $result2=@mysql_query('show columns from `'.$rows[0].'`',$mysql_link);
+      type: metrics
+      field: binary.string_count
+      min: 150
+      max: 320
 composite_rules:
   - id: tracker-exfiltration
     desc: Mail-based server fingerprint exfiltration
@@ -162,6 +188,20 @@ composite_rules:
     any:
       - id: micro-behaviors/communications/email/send::gmail-phone-home-subject
       - id: family-banner
+  - id: post-routed-admin-surface
+    desc: POST-routed multi-mode admin shell
+    crit: suspicious
+    conf: 0.985
+    all:
+      - id: post-page-dispatch
+      - id: page-router
+      - id: page-switch
+    any:
+      - id: cmd-backtick-rce
+      - id: eval-panel
+      - id: mysql-console
+      - id: mysql-query-panel
+    needs: 2
   - id: file-manager
     desc: Webshell file management console
     crit: suspicious
@@ -181,9 +221,8 @@ composite_rules:
       - id: mysql-connect
     any:
       - id: mysql-console
+      - id: mysql-query-panel
       - id: mysql-dumper-banner
-      - id: mysql-show-tables
-      - id: mysql-show-columns
     needs: 2
   - id: execution-surface
     desc: Webshell command execution surfaces
@@ -192,6 +231,19 @@ composite_rules:
     any:
       - id: cmd-backtick-rce
       - id: eval-panel
+      - id: eval-inline-html
+  - id: single-file-php-admin-suite
+    desc: Single-file PHP admin backdoor
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: single-file-webshell-metrics
+      - id: dense-embedded-ui-strings
+    any:
+      - id: post-routed-admin-surface
+      - id: file-manager
+      - id: mysql-admin-surface
+      - id: execution-surface
   - id: family-detected
     desc: ZaCo PHP webshell family
     crit: hostile
@@ -202,6 +254,7 @@ composite_rules:
       - id: magic-quotes-normalizer
     any:
       - id: tracker-exfiltration
+      - id: post-routed-admin-surface
       - id: file-manager
       - id: mysql-admin-surface
       - id: execution-surface
