@@ -1,0 +1,115 @@
+defaults:
+  platforms: [windows]
+  for: [pe]
+  mbc: B0024
+  attack: T1105
+
+traits:
+  - id: hidden-powershell-launch
+    desc: Hidden PowerShell launcher string
+    crit: notable
+    conf: 0.92
+    if:
+      type: raw
+      regex: 'powershell\.exe.{0,60}-WindowStyle Hidden'
+      case_insensitive: true
+
+  - id: start-process-runas-chain
+    desc: Start-Process RunAs chain
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: raw
+      regex: 'Start-Process .{0,80}-Verb RunAs'
+      case_insensitive: true
+
+  - id: invoke-webrequest-tls12-chain
+    desc: Invoke-WebRequest with forced TLS12
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: raw
+      regex: 'SecurityProtocolType\]::Tls12.{0,120}Invoke-WebRequest -Uri '
+      case_insensitive: true
+
+  - id: download-log-artifact
+    desc: Download log artifact name
+    crit: notable
+    conf: 0.9
+    if:
+      type: string_value
+      exact: download_log.txt
+
+  - id: task-system-xml-name
+    desc: System task XML artifact
+    crit: notable
+    conf: 0.9
+    if:
+      type: string_value
+      exact: client_task_system.xml
+
+  - id: task-user-xml-name
+    desc: User task XML artifact
+    crit: notable
+    conf: 0.9
+    if:
+      type: string_value
+      exact: client_task_user.xml
+
+  - id: public-libraries-drop-path
+    desc: Public Libraries drop path
+    crit: notable
+    conf: 0.9
+    if:
+      type: string_value
+      exact: C:\Users\Public\Libraries
+
+  - id: decoy-vcruntime-error
+    desc: Decoy missing VCRUNTIME error text
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: string_value
+      exact: The code execution cannot be continued because VCRUNTIME140.dll was not found. Reinstalling the program may fix this problem.
+
+composite_rules:
+  - id: powershell-staged-dropper
+    desc: Resource dropper with PowerShell staging
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: objectives/command-and-control/dropper/staging/embedded::pe-resource-temp-stager-persistence-chain
+    any:
+      - id: hidden-powershell-launch
+      - id: start-process-runas-chain
+      - id: invoke-webrequest-tls12-chain
+      - id: objectives/evasion/anti-av/platform::defender-exclusion
+    needs: 3
+
+  - id: windows-tasked-powershell-dropper
+    desc: PowerShell dropper with scheduled task persistence
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: powershell-staged-dropper
+      - id: objectives/persistence/login/scheduled-task/masquerade::schtask-elevated
+    any:
+      - id: public-libraries-drop-path
+      - id: task-system-xml-name
+      - id: task-user-xml-name
+      - id: download-log-artifact
+      - id: metadata/binary/symbols::wrapper-main-export-pair
+    needs: 2
+
+  - id: decoy-error-dropper
+    desc: Dropper with deceptive failure dialog
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: decoy-vcruntime-error
+      - id: micro-behaviors/ui/dialog/prompt::message-box-w
+    any:
+      - id: powershell-staged-dropper
+      - id: objectives/anti-analysis/debugger-detect/check::is-debugger-present-symbol
+      - id: objectives/evasion/masquerade/version-resource::fake-windows-update-service-versioninfo
+    needs: 2
