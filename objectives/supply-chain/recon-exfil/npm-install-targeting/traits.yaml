@@ -1,0 +1,176 @@
+defaults:
+  platforms: [unix, windows, macos]
+  for: [javascript, package.json]
+
+traits:
+  - id: webhook-get-type-data
+    desc: webhook GET with type/data
+    crit: suspicious
+    conf: 0.98
+    attack: T1041
+    if:
+      type: string_value
+      regex: "webhook\\.site/[0-9a-f-]{36}/\\?type=.{0,80}&data="
+  - id: dockerfile-hunt-root
+    desc: Finds Dockerfiles from root
+    crit: suspicious
+    conf: 0.98
+    attack: T1083
+    if:
+      type: string_value
+      exact: 'find / -name "Dockerfile" -type f 2>/dev/null | head -5'
+  - id: dockerfile-workdir-parse
+    desc: Parses Dockerfile WORKDIR
+    crit: suspicious
+    conf: 0.94
+    attack: T1083
+    if:
+      type: string_value
+      exact: WORKDIR
+  - id: usr-src-app-target
+    desc: Targets /usr/src/app
+    crit: suspicious
+    conf: 0.97
+    attack: T1083
+    if:
+      type: string_value
+      exact: /usr/src/app
+  - id: target-dir-file-inventory
+    desc: Lists target directory files
+    crit: suspicious
+    conf: 0.97
+    attack: T1083
+    if:
+      type: string_value
+      exact: 'find ${TARGET_DIR} -type f -exec ls -lh {} \; 2>/dev/null | head -20'
+  - id: flag-file-hunt
+    desc: Hunts *flag* files
+    crit: suspicious
+    conf: 0.98
+    attack: T1005
+    if:
+      type: string_value
+      regex: "\\*flag\\*\"\\s+-o\\s+-name\\s+\"\\*FLAG\\*"
+  - id: callback-label-directory-error
+    desc: directory error label
+    crit: component
+    conf: 0.9
+    if:
+      type: string_value
+      exact: directory_error
+  - id: callback-label-detailed-file-list
+    desc: detailed file list label
+    crit: component
+    conf: 0.9
+    if:
+      type: string_value
+      exact: detailed_file_list
+  - id: callback-label-cwd
+    desc: cwd callback label
+    crit: component
+    conf: 0.9
+    if:
+      type: string_value
+      exact: current_working_directory
+  - id: callback-label-dockerfile-info
+    desc: Dockerfile info label
+    crit: component
+    conf: 0.9
+    if:
+      type: string_value
+      exact: dockerfile_info
+  - id: callback-label-flag-file
+    desc: flag file label
+    crit: component
+    conf: 0.92
+    if:
+      type: string_value
+      exact: flag_file_content
+
+composite_rules:
+  - id: typed-recon-callback-labels
+    desc: Typed recon callback labels
+    crit: suspicious
+    conf: 0.97
+    needs: 3
+    any:
+      - id: callback-label-directory-error
+      - id: callback-label-detailed-file-list
+      - id: callback-label-cwd
+      - id: callback-label-dockerfile-info
+      - id: callback-label-flag-file
+  - id: npm-install-container-recon-exfil
+    desc: Install hook exfils container recon
+    crit: hostile
+    conf: 0.995
+    attack: T1041
+    mbc: E1041
+    all:
+      - id: objectives/supply-chain/install-hook/scripts::install-runs-node-local-script
+      - id: objectives/exfiltration/oob::webhook-site
+      - id: micro-behaviors/communications/http/request::https-get
+      - id: webhook-get-type-data
+      - id: usr-src-app-target
+    any:
+      - id: target-dir-file-inventory
+      - id: dockerfile-hunt-root
+      - id: typed-recon-callback-labels
+    needs: 1
+  - id: npm-install-dockerfile-profile
+    desc: Install hook profiles Dockerfiles
+    crit: suspicious
+    conf: 0.98
+    attack: T1083
+    all:
+      - id: objectives/supply-chain/install-hook/scripts::install-runs-node-local-script
+      - id: dockerfile-hunt-root
+    any:
+      - id: dockerfile-workdir-parse
+      - id: micro-behaviors/fs/file/read::read-node
+      - id: typed-recon-callback-labels
+  - id: js-container-recon-exfil
+    desc: JS exfils container recon
+    crit: hostile
+    conf: 0.995
+    attack: T1041
+    mbc: E1041
+    all:
+      - id: objectives/exfiltration/oob::webhook-site
+      - id: micro-behaviors/communications/http/request::https-get
+      - id: dockerfile-hunt-root
+      - id: typed-recon-callback-labels
+    any:
+      - id: usr-src-app-target
+      - id: flag-file-hunt
+      - id: micro-behaviors/fs/file/read::read-node
+    needs: 1
+  - id: npm-install-flag-harvest-exfil
+    desc: Install hook exfils flag files
+    crit: hostile
+    conf: 0.995
+    attack: T1005
+    mbc: E1041
+    all:
+      - id: objectives/supply-chain/install-hook/scripts::install-runs-node-local-script
+      - id: objectives/exfiltration/oob::webhook-site
+      - id: flag-file-hunt
+    any:
+      - id: callback-label-flag-file
+      - id: micro-behaviors/fs/file/read::read-node
+      - id: webhook-get-type-data
+    needs: 1
+  - id: js-flag-harvest-exfil
+    desc: JS exfils flag file data
+    crit: hostile
+    conf: 0.995
+    attack: T1005
+    mbc: E1041
+    all:
+      - id: objectives/exfiltration/oob::webhook-site
+      - id: flag-file-hunt
+      - id: callback-label-flag-file
+    any:
+      - id: micro-behaviors/fs/file/read::read-node
+      - id: micro-behaviors/communications/http/request::https-get
+      - id: typed-recon-callback-labels
+    needs: 1

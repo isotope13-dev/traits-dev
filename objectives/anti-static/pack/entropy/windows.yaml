@@ -18,6 +18,7 @@ traits:
       - id: objectives/anti-static/obfuscation/reflection/invoke::namespace-import
       - id: metadata/binary/framework::dotnet-assembly
       - id: metadata/lang/compiler/managed::versioned-vcl-app
+      - id: micro-behaviors/data/encode/pecompact::pecompact-seh-trick
   # .NET assemblies with near-maximum entropy in .text carry encrypted payloads
   # Normal .NET IL code has entropy ~5.5-6.5; 7.9+ means encrypted/packed blob
   - id: dotnet-high-entropy-text-raw
@@ -51,6 +52,36 @@ traits:
       type: metrics
       field: binary.string_count
       min: 800
+  - id: dotnet-xaml-generated-namespace
+    desc: WPF generated XAML namespace marker
+    crit: component
+    if:
+      type: string_value
+      exact: XamlGeneratedNamespace
+  - id: dotnet-wpf-component-connector
+    desc: WPF component connector marker
+    crit: component
+    if:
+      type: string_value
+      exact: System.Windows.Markup.IComponentConnector.Connect
+  - id: dotnet-wpf-component-resource-path
+    desc: WPF pack resource path marker
+    crit: component
+    if:
+      type: string_value
+      regex: ;component/Resources/
+  - id: dotnet-costura-assembly-loader
+    desc: Costura embedded assembly loader symbol
+    crit: component
+    if:
+      type: symbol
+      substr: 'Costura::AssemblyLoader::'
+  - id: dotnet-costura-compressed-resource
+    desc: Costura compressed embedded dependency
+    crit: component
+    if:
+      type: string_value
+      regex: ^costura\..{1,80}\.(dll|pdb)\.compressed$
 composite_rules:
   - id: dotnet-versioned-resource-library
     desc: Versioned .NET resource library profile
@@ -62,6 +93,30 @@ composite_rules:
       - id: micro-behaviors/data/compress/library::dotnet-gzip-compression
       - id: many-functions-dotnet-profile
       - id: many-strings-dotnet-profile
+  - id: dotnet-wpf-ui-bundle-profile
+    desc: WPF UI bundle packed into .text
+    crit: component
+    conf: 0.8
+    all:
+      - id: metadata/package/versioning::pe-version-resource
+      - id: metadata/binary/framework::dotnet-assembly
+    any:
+      - id: dotnet-xaml-generated-namespace
+      - id: dotnet-wpf-component-connector
+      - id: dotnet-wpf-component-resource-path
+      - id: micro-behaviors/data/embedded/payload::wpf-resource-stream-access
+      - id: many-strings-dotnet-profile
+    needs: 3
+  - id: dotnet-costura-bundle-profile
+    desc: Costura dependency bundle packed into .text
+    crit: component
+    conf: 0.85
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: metadata/package/versioning::pe-version-resource
+      - id: micro-behaviors/data/embedded/payload::dotnet-getmanifestresourcestream
+      - id: dotnet-costura-assembly-loader
+      - id: dotnet-costura-compressed-resource
   - id: dotnet-encrypted-text-section
     desc: .NET assembly with encrypted .text section
     crit: suspicious
@@ -72,12 +127,15 @@ composite_rules:
       - id: metadata/binary/framework::dotnet-assembly
     unless:
       - id: dotnet-versioned-resource-library
+      - id: dotnet-costura-bundle-profile
+      - id: dotnet-wpf-ui-bundle-profile
     downgrade:
       all:
         - id: micro-behaviors/data/embedded/payload::dotnet-managed-resource-access
         - id: micro-behaviors/data/compress/library::dotnet-gzip-compression
       any:
         - id: dotnet-versioned-resource-library
+        - id: dotnet-costura-bundle-profile
   - id: dotnet-large-packed-text
     desc: .NET assembly with giant packed .text
     crit: suspicious
@@ -88,8 +146,11 @@ composite_rules:
       - id: metadata/binary/framework::dotnet-assembly
     unless:
       - id: dotnet-versioned-resource-library
+      - id: dotnet-costura-bundle-profile
+      - id: dotnet-wpf-ui-bundle-profile
     downgrade:
       any:
         - id: metadata/signed/developer
         - id: micro-behaviors/data/embedded/payload::dotnet-managed-resource-access
         - id: dotnet-versioned-resource-library
+        - id: dotnet-costura-bundle-profile

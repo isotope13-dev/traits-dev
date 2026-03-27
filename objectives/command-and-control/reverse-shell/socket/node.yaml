@@ -29,9 +29,15 @@ traits:
     crit: notable
     conf: 0.7
     if:
-      type: ast
-      kind: call
+      type: symbol
       exact: net.createConnection
+  - id: net-createServer
+    desc: net.createServer call
+    crit: notable
+    conf: 0.8
+    if:
+      type: symbol
+      exact: net.createServer
   - id: net-connect
     desc: net.connect call
     crit: notable
@@ -77,6 +83,42 @@ traits:
           (#eq? @meth "connect")
           (#match? @host "^(10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[0-1])\\.)")
         )
+  - id: listen-call
+    desc: listen() call
+    crit: notable
+    conf: 0.7
+    if:
+      type: ast
+      language: javascript
+      query: |
+        (call_expression
+          function: (member_expression
+            property: (property_identifier) @meth
+          )
+          (#eq? @meth "listen")
+        )
+  - id: shell-platform-switch
+    desc: Platform-switched shell selection
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: raw
+      regex: process\.platform\.match\(.{0,40}\).{0,80}cmd\.exe
+  - id: argv-length-3
+    desc: argv length equals three
+    crit: component
+    conf: 0.95
+    if:
+      type: raw
+      substr: argv.length==3
+
+  - id: argv-length-4
+    desc: argv length equals four
+    crit: component
+    conf: 0.95
+    if:
+      type: raw
+      substr: argv.length==4
   - id: exec-cmd-exe
     desc: exec launches cmd.exe
     crit: notable
@@ -113,6 +155,24 @@ traits:
           (#eq? @pipe "pipe")
           (#eq? @fd "stdin")
         )
+  - id: shell-stdin-resume
+    desc: Resumes shell stdin stream
+    crit: component
+    conf: 0.9
+    if:
+      type: ast
+      language: javascript
+      query: |
+        (call_expression
+          function: (member_expression
+            object: (member_expression
+              property: (property_identifier) @fd
+            )
+            property: (property_identifier) @meth
+          )
+          (#eq? @fd "stdin")
+          (#eq? @meth "resume")
+        )
   - id: shell-stdout-pipe
     desc: Pipes shell stdout to socket
     crit: component
@@ -130,6 +190,44 @@ traits:
           )
           (#eq? @fd "stdout")
           (#eq? @pipe "pipe")
+        )
+  - id: shell-stdout-write-bridge
+    desc: Shell stdout writes to socket
+    crit: component
+    conf: 0.98
+    if:
+      type: ast
+      language: javascript
+      query: |
+        (call_expression
+          function: (member_expression
+            object: (member_expression
+              property: (property_identifier) @fd
+            )
+            property: (property_identifier) @on
+          )
+          arguments: (arguments
+            (string (string_fragment) @event)
+            (function_expression
+              parameters: (formal_parameters (identifier) @chunk)
+              body: (statement_block
+                (expression_statement
+                  (call_expression
+                    function: (member_expression
+                      object: (identifier) @sock
+                      property: (property_identifier) @write
+                    )
+                    arguments: (arguments (identifier) @chunk2)
+                  )
+                )
+              )
+            )
+          )
+          (#eq? @fd "stdout")
+          (#eq? @on "on")
+          (#eq? @event "data")
+          (#eq? @write "write")
+          (#eq? @chunk @chunk2)
         )
   - id: shell-stderr-pipe
     desc: Pipes shell stderr to socket
@@ -149,6 +247,89 @@ traits:
           (#eq? @fd "stderr")
           (#eq? @pipe "pipe")
         )
+  - id: shell-stderr-write-bridge
+    desc: Shell stderr writes to socket
+    crit: component
+    conf: 0.98
+    if:
+      type: ast
+      language: javascript
+      query: |
+        (call_expression
+          function: (member_expression
+            object: (member_expression
+              property: (property_identifier) @fd
+            )
+            property: (property_identifier) @on
+          )
+          arguments: (arguments
+            (string (string_fragment) @event)
+            (function_expression
+              parameters: (formal_parameters (identifier) @chunk)
+              body: (statement_block
+                (expression_statement
+                  (call_expression
+                    function: (member_expression
+                      object: (identifier) @sock
+                      property: (property_identifier) @write
+                    )
+                    arguments: (arguments (identifier) @chunk2)
+                  )
+                )
+              )
+            )
+          )
+          (#eq? @fd "stderr")
+          (#eq? @on "on")
+          (#eq? @event "data")
+          (#eq? @write "write")
+          (#eq? @chunk @chunk2)
+        )
+  - id: socket-data-to-stdin-write
+    desc: Socket data written to stdin
+    crit: component
+    conf: 0.98
+    if:
+      type: ast
+      language: javascript
+      query: |
+        (call_expression
+          function: (member_expression
+            object: (identifier) @sock
+            property: (property_identifier) @on
+          )
+          arguments: (arguments
+            (string (string_fragment) @event)
+            (function_expression
+              parameters: (formal_parameters (identifier) @chunk)
+              body: (statement_block
+                (expression_statement
+                  (call_expression
+                    function: (member_expression
+                      object: (member_expression
+                        property: (property_identifier) @fd
+                      )
+                      property: (property_identifier) @write
+                    )
+                    arguments: (arguments (identifier) @chunk2)
+                  )
+                )
+              )
+            )
+          )
+          (#eq? @on "on")
+          (#eq? @event "data")
+          (#eq? @fd "stdin")
+          (#eq? @write "write")
+          (#eq? @chunk @chunk2)
+        )
+  - id: shell-banner-write
+    desc: Shell connected banner write
+    crit: component
+    conf: 0.9
+    if:
+      type: string_value
+      substr: "shell : connected"
   - id: execSync-call-dup
     desc: execSync function call
     crit: notable
@@ -255,6 +436,7 @@ composite_rules:
       - id: net-socket-string
       - id: new-net-socket
       - id: net-createConnection
+      - id: net-createServer
       - id: net-connect
       - id: connect-port-host
   - id: exec-function
@@ -307,17 +489,94 @@ composite_rules:
     all:
       - id: net-socket
       - id: exec-function
-  - id: stdio-bridge
-    desc: Shell stdio bridged over socket
+  - id: stdio-bridge-pipe
+    desc: Shell pipe-based socket bridge
     crit: suspicious
     conf: 0.98
     all:
       - id: pipe-to-shell-stdin
       - id: shell-stdout-pipe
       - id: shell-stderr-pipe
+  - id: stdio-bridge-write
+    desc: Shell write-based socket bridge
+    crit: suspicious
+    conf: 0.98
+    all:
+      - id: socket-data-to-stdin-write
+      - id: shell-stdout-write-bridge
+      - id: shell-stderr-write-bridge
+  - id: stdio-bridge
+    desc: Shell stdio bridged over socket
+    crit: suspicious
+    conf: 0.98
+    any:
+      - id: stdio-bridge-pipe
+      - id: stdio-bridge-write
     unless:
       - id: objectives/anti-static/obfuscation/payload::source-map-extension
       - id: objectives/anti-static/obfuscation/payload::sources-content-json
+  - id: shell-session-bridge
+    desc: Interactive shell session bridged
+    crit: suspicious
+    conf: 0.98
+    all:
+      - id: stdio-bridge
+      - id: shell-stdin-resume
+    any:
+      - id: micro-behaviors/process/create/shell::bin-shell
+      - id: micro-behaviors/process/create/shell::bin-sh
+      - id: exec-cmd-exe
+  - id: dual-argv-mode
+    desc: Dual argv mode dispatch
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: argv-length-3
+      - id: argv-length-4
+  - id: node-backconnect-shell
+    desc: Node.js backconnect shell bridge
+    crit: hostile
+    conf: 0.99
+    attack: T1059
+    all:
+      - id: net-createConnection
+      - id: shell-stdin-resume
+      - id: socket-data-to-stdin-write
+      - id: shell-stdout-write-bridge
+      - id: shell-stderr-write-bridge
+      - id: micro-behaviors/process/create/shell/lang::child-process-require
+      - id: micro-behaviors/process/create/shell/lang::spawn-call
+    any:
+      - id: micro-behaviors/process/create/shell::bin-sh
+      - id: exec-cmd-exe
+  - id: node-bind-shell
+    desc: Node.js bind shell bridge
+    crit: hostile
+    conf: 0.99
+    attack: T1059
+    all:
+      - id: net-createServer
+      - id: listen-call
+      - id: shell-stdin-resume
+      - id: socket-data-to-stdin-write
+      - id: shell-stdout-write-bridge
+      - id: shell-stderr-write-bridge
+      - id: micro-behaviors/process/create/shell/lang::child-process-require
+      - id: micro-behaviors/process/create/shell/lang::spawn-call
+    any:
+      - id: micro-behaviors/process/create/shell::bin-sh
+      - id: exec-cmd-exe
+  - id: dual-mode-network-shell
+    desc: Dual-mode Node network shell
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: dual-argv-mode
+      - id: shell-platform-switch
+      - id: shell-banner-write
+    any:
+      - id: node-backconnect-shell
+      - id: node-bind-shell
   - id: cmd-shell-socket-bridge
     desc: cmd.exe shell bridged over socket
     crit: hostile
