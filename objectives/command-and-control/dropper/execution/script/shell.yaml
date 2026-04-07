@@ -2,7 +2,6 @@ defaults:
   platforms: [linux, unix, macos, android, ios, windows]
   for: [shell]
 traits:
-  # wget-q-flag: use micro-behaviors/communications/http/download::wget-q-flag
   - id: wget-output-stdout
     desc: "wget output to stdout flag"
     crit: notable
@@ -29,72 +28,91 @@ traits:
     if:
       type: raw
       regex: 'curl(\.exe)?\s+[^|&\n]{0,120}--silent[^|&\n]{0,120}(https?://|ftp://)'
-  - id: cmd-quiet-chain
-    desc: "Windows cmd quiet chained execution"
-    crit: notable
-    conf: 0.8
-    platforms: [windows]
-    for: [javascript, powershell, batch, vbs, lnk]
-    if:
-      type: raw
-      regex: '\bcmd(\.exe)?\s+/q\s+/c\s'
-      case_insensitive: true
-  - id: cmd-quiet-args
-    desc: "cmd-style quiet arguments chain"
-    crit: notable
-    conf: 0.75
-    platforms: [windows]
-    for: [javascript, powershell, batch, vbs, lnk]
-    if:
-      type: raw
-      regex: '(^|\s)/q\s+/c\s+'
-      case_insensitive: true
-  - id: curl-output-appdata-js
-    desc: "Download JavaScript to AppData via curl"
-    crit: suspicious
-    conf: 0.9
-    platforms: [windows]
-    for: [javascript, powershell, batch, vbs, lnk]
-    if:
-      type: raw
-      regex: '\bcurl(\.exe)?\b[^\n]{0,220}(--output|-o)\s+%APPDATA%\\[^\n&|]{1,180}\.js\b'
-      case_insensitive: true
-  - id: appdata-staging-dir
-    desc: "Create staging directory under AppData"
-    crit: notable
-    conf: 0.8
-    platforms: [windows]
-    for: [javascript, powershell, batch, vbs, lnk]
-    if:
-      type: raw
-      regex: '\b(md|mkdir)\s+"?%APPDATA%\\[^"&|\n]{1,80}\\[^"&|\n]{1,80}"?'
-      case_insensitive: true
-  - id: wscript-js-launch
-    desc: "Execute JavaScript via WScript"
-    crit: suspicious
-    conf: 0.9
-    platforms: [windows]
-    for: [javascript, powershell, batch, vbs, lnk]
-    if:
-      type: raw
-      regex: '\bwscript(\.exe)?\s+[^"&|\n]{1,180}\.js\b'
-      case_insensitive: true
-  - id: lnk-launcher-name
-    desc: "LNK-named launcher artifact"
-    crit: component
-    conf: 0.95
-    platforms: [windows]
-    for: [javascript, powershell, batch, vbs, lnk]
-    if:
-      type: basename
-      regex: '(?i)\.lnk$'
   - id: gpg-import-pipe
     desc: GPG key import via pipe
     crit: component
     if:
       type: raw
       regex: '\|\s*([a-z/]+/)?gpg\b\s+--import'
+  - id: shell-interpreter-bash
+    desc: Shell interpreter bash
+    crit: component
+    if:
+      type: raw
+      substr: 'bash'
+  - id: shell-interpreter-sh
+    desc: Shell interpreter sh
+    crit: component
+    if:
+      type: raw
+      substr: 'sh'
+      offset_range: [0, 8192]
+  - id: miner-hijack-config
+    desc: Hijacking other miner configurations
+    crit: suspicious
+    if:
+      type: raw
+      substr: 'kill_list.patterns'
+  - id: miner-config-poisoning
+    desc: Poisoning other miner configurations
+    crit: suspicious
+    if:
+      type: raw
+      substr: 'hijacked_${_hhex}'
+  - id: python-inline-socket-listener
+    desc: Inline Python background socket listener
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: raw
+      regex: "python3?\\s+-c\\s+[\"'].{0,50}socket\\.socket.{0,50}bind.{0,50}listen.{0,50}os\\.fork"
+
 composite_rules:
+  - id: python-inline-mutex-hostile
+    desc: Hostile Python inline socket mutex script
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: python-inline-socket-listener
+      - id: micro-behaviors/os/sysinfo/network::ss
+  - id: hostile-miner-hijack
+    desc: Known hostile miner hijacking behavior
+    crit: hostile
+    any:
+      - id: miner-hijack-config
+      - id: miner-config-poisoning
+  - id: shell-fetch-exec-bash
+    desc: Shell script downloads and executes via pipe to bash
+    crit: hostile
+    conf: 0.98
+    attack: T1105
+    all:
+      - id: shell-interpreter-bash
+    any:
+      - id: curl-silent-stdout
+      - id: wget-silent-stdout
+  - id: shell-fetch-exec-curl
+    desc: Shell script downloads via curl and executes via pipe
+    crit: hostile
+    conf: 0.95
+    attack: T1105
+    all:
+      - id: micro-behaviors/communications/http/download/curl::curl-cmd
+      - id: curl-silent-stdout
+    any:
+      - id: shell-interpreter-bash
+      - id: shell-interpreter-sh
+  - id: shell-fetch-exec-wget
+    desc: Shell script downloads via wget and executes via pipe
+    crit: hostile
+    conf: 0.95
+    attack: T1105
+    all:
+      - id: micro-behaviors/communications/http/download/curl::wget-cmd
+      - id: wget-silent-stdout
+    any:
+      - id: shell-interpreter-bash
+      - id: shell-interpreter-sh
   - id: wget-silent-stdout
     desc: "Silent wget output to stdout"
     crit: suspicious
@@ -125,31 +143,3 @@ composite_rules:
     any:
       - id: inline__curl-silent-stdout__any_1
       - id: inline__curl-silent-stdout__any_2
-  - id: windows-appdata-js-dropper-chain
-    desc: "Windows shell chain downloads JS to AppData and executes with WScript"
-    crit: hostile
-    conf: 0.96
-    attack: T1105
-    all:
-      - id: curl-output-appdata-js
-      - id: appdata-staging-dir
-      - id: wscript-js-launch
-    any:
-      - id: cmd-quiet-chain
-      - id: cmd-quiet-args
-  - id: windows-lnk-js-dropper-launcher
-    desc: "Tiny LNK launcher downloads JS to AppData and runs WScript"
-    crit: hostile
-    conf: 0.97
-    attack: T1105
-    platforms: [windows]
-    for: [javascript, powershell, batch, vbs, lnk]
-    size_max: 4096
-    all:
-      - id: lnk-launcher-name
-      - id: curl-output-appdata-js
-      - id: appdata-staging-dir
-      - id: wscript-js-launch
-    any:
-      - id: cmd-quiet-chain
-      - id: cmd-quiet-args
