@@ -405,7 +405,7 @@ objectives/
 │   │   ├── control-flow/      #     Control-flow (flattening, VM dispatch, polymorphism)
 │   │   ├── syntax/            #     Source syntax patterns (AST/raw; anti-tamper,
 │   │   │                      #       dynamic property access, IIFE wrappers).
-│   │   │                      #       vs string/: string/ detects string-value techniques;
+│   │   │                      #       vs string/: string/ detects string/text concealment techniques;
 │   │   │                      #       syntax/ detects source-level structural patterns.
 │   │   │                      #       vs control-flow/: control-flow/ is about execution
 │   │   │                      #       path manipulation; syntax/ is about language-specific

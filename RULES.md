@@ -74,7 +74,7 @@ traits:
     entropy_min: 4.5                     # Optional min file entropy (0.0-8.0; section entropy handled via type: section)
     entropy_max: 7.5                     # Optional max file entropy
     if:                                  # Condition (see below)
-      type: string_value
+      type: text
       substr: ".Kill("
 ```
 
@@ -147,8 +147,10 @@ defaults:
 
 | Type | Purpose | Matchers | Modifiers |
 |------|---------|----------|-----------|
-| `string_value` | Extracted string values | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
-| `raw` | Raw file bytes | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
+| `text` | Human-readable text. Binaries use extracted strings; source/text files use raw text. | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
+| `string_literal` | AST-backed string literals only (no raw fallback) | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
+| `string_value` | Deprecated compatibility alias. Runtime still honors it, but `validate` warns. | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
+| `raw` | Raw file content / bytes (comments, cross-boundary matches, byte-precise ranges) | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
 | `symbol` | Imports/exports/functions | `exact`, `substr`, `regex` | `platforms`, `is` |
 | `hex` | Byte patterns (wildcards always extracted) | pattern string | count, density, `offset`, `offset_range`, `arch` clamped in fat binaries |
 | `encoded` | **All decoded strings** | `exact`, `substr`, `regex`, `word` | count, density, location, `encoding`, `case_insensitive`, `is` |
@@ -158,11 +160,17 @@ defaults:
 | `basename` | Filename | `exact`, `substr`, `regex` | `case_insensitive` |
 
 **Matcher notes:**
-- `word` - Word boundary match (equivalent to `\b{value}\b`). Available on `string_value`, `raw`, `section`, `encoded`. NOT available on `symbol`, `basename`, `hex`.
+- `word` - Word boundary match (equivalent to `\b{value}\b`). Available on `text`, `string_literal`, `string_value` (deprecated), `raw`, `section`, `encoded`. NOT available on `symbol`, `basename`, `hex`.
 - `is` - High-fidelity validator for common data patterns. Supported values:
   - `external_ip`: Only match if evidence contains a valid external IPv4 (rejects RFC1918, loopback, reserved).
   - `bitcoin_addr`: Only match if evidence contains a valid Bitcoin address (P2PKH, P2SH, or SegWit) with a valid checksum.
 - **Symbol normalization:** Leading underscores are stripped from both loaded symbols and `exact`/`substr` patterns for cross-platform portability (macOS `_malloc`, glibc `__libc_start_main` both match `exact: "malloc"` / `exact: "libc_start_main"`). Regex patterns are not normalized.
+
+**Which one should I use?**
+- Use `text` by default for human-readable content.
+- Use `string_literal` only when you specifically mean AST-backed string literals in source/script languages.
+- Use `raw` when you need comments, byte-precise offsets/ranges, or matches that can cross string boundaries.
+- `string_value` is deprecated. Existing traits still run, but `cleave validate` warns and should be migrated to `text` or `string_literal`.
 
 ### Structural
 
@@ -303,7 +311,7 @@ These are **trait-level fields** (siblings of `if:`, not nested inside the condi
 
 ## Location Constraints
 
-Available on `string_value`, `raw`, `encoded`. Hex supports `offset` and `offset_range`.
+Available on `text`, `string_literal`, `string_value` (deprecated), `raw`, `encoded`. Hex supports `offset` and `offset_range`.
 
 | Field | Description |
 |-------|-------------|
@@ -317,7 +325,7 @@ Available on `string_value`, `raw`, `encoded`. Hex supports `offset` and `offset
 # Last 1KB of file
 - id: trailer-check
   if:
-    type: string_value
+    type: raw
     substr: "END"
     offset_range: [-1024, null]
 
@@ -331,7 +339,7 @@ Available on `string_value`, `raw`, `encoded`. Hex supports `offset` and `offset
 # Within .rodata section, first 256 bytes
 - id: rodata-header
   if:
-    type: string_value
+    type: text
     substr: "CONFIG"
     section: rodata
     section_offset_range: [0, 256]
@@ -753,6 +761,7 @@ Regex patterns are validated at load time:
 
 - **Literal regex conversion:** Patterns without regex metacharacters (`.`, `*`, `+`, `?`, `^`, `$`, `(`, `)`, `[`, `]`, `{`, `}`, `|`, `\`) are auto-converted to `substr:` for performance
 - **Size-only traits:** Traits with `size_min`/`size_max` but no `if:` condition get a synthetic "always-true" condition
+- **Deprecated string type:** `type: string_value` remains runtime-compatible, but `cleave validate` warns and should be migrated to `text` or `string_literal`
 
 ### Evidence Handling
 
@@ -767,14 +776,14 @@ cleave /path/to/file                    # Analyze file
 cleave symbols <file>                   # View symbols
 cleave strings <file>                   # View strings
 cleave test-rules <file> --rules "x,y"  # Debug rules
-cleave test-match <file> --type string-value --pattern "eval"  # Test patterns
+cleave test-match <file> --type text --pattern "eval"  # Test patterns
 ```
 
 ### test-match Options
 
 | Option | Values |
 |--------|--------|
-| `--type` | `string-value`, `symbol`, `raw`, `kv`, `hex`, `encoded` |
+| `--type` | `text`, `string-literal`, `string-value` (deprecated), `symbol`, `raw`, `kv`, `hex`, `encoded`, `section`, `metrics` |
 | `--method` | `exact`, `contains`, `regex`, `word` |
 | `--pattern` | Search pattern |
 | `--encoding` | Encoding filter for `encoded` type: `base64`, `base64,hex`, etc. |
