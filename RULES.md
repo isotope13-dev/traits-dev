@@ -80,7 +80,7 @@ traits:
 
 **Field override:** List fields (`for`, `platforms`) can be set to `[none]` to unset file-level defaults. Example: `for: [none]` removes file type filtering even if defaults specify types. Scalar fields (`conf`, `crit`) do not support `none`.
 
-**File types:** `elf`, `macho`, `pe`, `dll`, `so`, `dylib`, `pyc`, `shell`, `batch`, `python`, `javascript`, `typescript`, `rust`, `java`, `class`, `ruby`, `c`, `cpp`, `go`, `csharp`, `php`, `perl`, `powershell`, `lua`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir`, `vbs`, `html`, `applescript`, `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `plist`, `ipa`, `rtf`, `lnk`, `jpeg`, `png`, `pkginfo`, `pickle`, `pdf`, `oledoc`, `ooxml`.
+**File types:** `elf`, `macho`, `pe`, `dll`, `so`, `dylib`, `pyc`, `shell`, `batch`, `python`, `javascript`, `typescript`, `rust`, `java`, `class`, `ruby`, `c`, `cpp`, `go`, `csharp`, `php`, `perl`, `powershell`, `lua`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir`, `vbs`, `html`, `applescript`, `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `systemd-service`, `composer.json`, `plist`, `ipa`, `rtf`, `lnk`, `jpeg`, `png`, `pkginfo`, `pickle`, `pdf`, `oledoc`, `ooxml`.
 
 **Aliases** (resolved to the canonical type):
 
@@ -88,6 +88,7 @@ traits:
 |-------|-------------|--------|
 | `doc`, `xls`, `ppt`, `msg`, `ole` | `oledoc` | Legacy Microsoft Office (OLE2/CFBF) |
 | `docx`, `xlsx`, `pptx`, `docm`, `xlsm`, `pptm` | `ooxml` | Modern Microsoft Office (OOXML/ZIP) |
+| `systemd`, `service`, `.service` | `systemd-service` | systemd service unit files and `.service.d/*.conf` drop-ins |
 
 **Platforms:** `linux`, `macos`, `windows`, `unix`, `android`, `ios`, `all`.
 
@@ -100,7 +101,7 @@ traits:
 | `binaries` | `elf`, `macho`, `pe`, `dylib`, `so`, `dll`, `class`, `pyc` |
 | `scripts` | `shell`, `batch`, `python`, `javascript`, `ruby`, `php`, `perl`, `lua`, `powershell`, `applescript`, `vbs` |
 | `source` | `typescript`, `rust`, `java`, `c`, `cpp`, `go`, `csharp`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir` |
-| `manifests` | `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `pkginfo`, `plist`, `lnk` |
+| `manifests` | `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `systemd-service`, `composer.json`, `pkginfo`, `plist`, `lnk` |
 | `documents` | `pdf`, `rtf`, `html`, `oledoc`, `ooxml` |
 | `media` | `jpeg`, `png` |
 | `data` | `ipa` |
@@ -156,7 +157,7 @@ defaults:
 | `encoded` | **All decoded strings** | `exact`, `substr`, `regex`, `word` | count, density, location, `encoding`, `case_insensitive`, `is` |
 | ~~`base64`~~ | *(removed — use `encoded`)* | | |
 | ~~`xor`~~ | *(removed — use `encoded`)* | | |
-| `kv` | Manifest data | `exact`, `substr`, `regex` | `path`, `exists`, `size_min`, `size_max`, `case_insensitive` (value only) |
+| `kv` | Structured manifest / unit-file data | `exact`, `substr`, `regex` | `path`, `exists`, `size_min`, `size_max`, `case_insensitive` (value only) |
 | `basename` | Filename | `exact`, `substr`, `regex` | `case_insensitive` |
 
 **Matcher notes:**
@@ -656,7 +657,7 @@ cleave test-rules file.bin --rules "debugger-check"
 
 ## KV Path Syntax
 
-For JSON/YAML/TOML manifests (`package.json`, `manifest.json`, `Cargo.toml`, etc.):
+For JSON/YAML/TOML manifests and systemd service units (`package.json`, `manifest.json`, `Cargo.toml`, `foo.service`, `foo.service.d/override.conf`, etc.):
 
 ```yaml
 path: "key"                    # Top-level key
@@ -701,6 +702,56 @@ type: kv
 path: "version"
 regex: "^0\\.0\\.0$"      # Version is 0.0.0
 ```
+
+### Systemd Service KV Paths
+
+`type: kv` has first-class support for systemd service files (`.service`) and service drop-ins (`.service.d/*.conf`). Other unit families such as `.timer`, `.socket`, `.path`, and `.mount` are not covered by this structured parser yet.
+
+Systemd section names and directive names are normalized to lowercase `snake_case`, so `[Unit]` becomes `unit`, `ExecStart` becomes `exec_start`, and `WantedBy` becomes `wanted_by`.
+
+```yaml
+# Common systemd KV paths
+path: "unit.after"
+path: "service.exec_start"
+path: "service.exec_start_pre"
+path: "service.restart"
+path: "install.wanted_by"
+path: "service.environment.LD_PRELOAD"
+path: "service.environment_list"
+```
+
+```yaml
+# Match suspicious launchers in ExecStart=
+- id: suspicious-exec-start
+  for: [systemd-service]
+  platforms: [linux, unix]
+  if:
+    type: kv
+    path: "service.exec_start"
+    regex: '(?i)(curl|wget).{0,80}(sh|bash)|python\s+-c|/dev/tcp/'
+
+# Detect environment-based injection
+- id: ld-preload-env
+  if:
+    type: kv
+    path: "service.environment.LD_PRELOAD"
+    exists: true
+
+# Boot persistence target
+- id: multi-user-target
+  if:
+    type: kv
+    path: "install.wanted_by"
+    exact: "multi-user.target"
+```
+
+Systemd-specific KV behavior:
+- Prefer the base path (for example `install.wanted_by` or `service.environment_list`) when you want scalar-or-array-safe matching. KV string matching checks scalars directly and arrays element-wise.
+- Use `[*]` only when you specifically need array expansion and expect the field to hold multiple values.
+- Token-list directives such as `After=` and `WantedBy=` are split into individual items. A single item is stored as a scalar; multiple items or repeated directives become arrays.
+- `Environment=` populates both `service.environment.<NAME>` and `service.environment_list`; the unsplit original value remains under `service._raw.environment`.
+- `Exec*` directives stay as raw command strings; repeated `Exec*` lines become arrays, and their unsplit originals remain under `service._raw.exec_start`, `service._raw.exec_start_pre`, etc.
+- Empty resets such as `ExecStart=` clear prior values within the parsed file.
 
 ### Collection Size Constraints
 
@@ -794,7 +845,7 @@ cleave test-match <file> --type text --pattern "eval"  # Test patterns
 | `--section-offset`, `--section-offset-range` | Section-relative position |
 | `--case-insensitive` | Case-insensitive match |
 | `--kv-path` | Path for KV searches |
-| `--file-type` | Override detection |
+| `--file-type` | Override detection (for example `systemd-service` or `service`) |
 
 ## Reference Codes
 
