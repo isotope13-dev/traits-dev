@@ -1,0 +1,89 @@
+# Go Cross-Platform C2 Agent — /proc Recon, Hidden Tmp Drop, base64-JSON Beacon
+# Detects a cross-platform C2 RAT written in Go: /proc filesystem enumeration
+# for process discovery, payload drop to hidden temp path with chmod 0777,
+# base64-encoded JSON polling beacon over HTTP with a spoofed User-Agent,
+# and optional registry persistence for the Windows variant.
+# ATT&CK: T1059 (Command and Scripting Interpreter), T1071.001 (HTTP)
+defaults:
+  platforms:
+    - linux
+    - macos
+    - windows
+    - unix
+  for:
+    - go
+  attack: T1059
+traits:
+  - id: go-proc-walk
+    desc: /proc filesystem walk for process enumeration
+    crit: notable
+    conf: 0.8
+    attack: T1057
+    if:
+      type: text
+      regex: os\.Open\s*\(\s*"/proc"\s*\)|filepath\.(Walk|WalkDir)\s*\(\s*"/proc"
+  - id: go-tmp-chmod-777
+    desc: Temp path drop with chmod 0777
+    crit: suspicious
+    conf: 0.9
+    attack: T1222.002
+    if:
+      type: text
+      regex: os\.Chmod\s*\(.{0,120}0o?777\b
+  - id: go-base64-json-beacon
+    desc: base64 JSON marshal for HTTP POST beacon
+    crit: suspicious
+    conf: 0.88
+    attack: T1071.001
+    if:
+      type: text
+      regex: base64\.(StdEncoding|RawStdEncoding)\.EncodeToString.{0,400}json\.Marshal|json\.Marshal.{0,400}base64\.(StdEncoding|RawStdEncoding)\.EncodeToString
+  - id: go-useragent-spoof
+    desc: Spoof User-Agent on HTTP request
+    crit: notable
+    conf: 0.8
+    attack: T1036.005
+    if:
+      type: text
+      regex: \.Header\.Set\s*\(\s*"User-Agent"\s*,
+  - id: go-tempfile-exec
+    desc: Create temp file, exec as subprocess
+    crit: suspicious
+    conf: 0.88
+    if:
+      type: text
+      regex: (os\.CreateTemp|ioutil\.TempFile).{0,600}exec\.Command
+  - id: go-sleep-poll-loop
+    desc: Periodic beacon via time.Sleep loop
+    crit: notable
+    conf: 0.78
+    attack: T1071.001
+    if:
+      type: text
+      regex: for\s*\{.{0,400}time\.Sleep.{0,200}(http\.|net/http|\.Do\(|\.Post\()
+composite_rules:
+  - id: go-cross-platform-c2-agent
+    desc: Go cross-platform C2 agent with /proc recon and remote command dispatch
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: go-tmp-chmod-777
+      - id: go-base64-json-beacon
+      - id: go-tempfile-exec
+    any:
+      - id: go-proc-walk
+      - id: go-useragent-spoof
+      - id: go-sleep-poll-loop
+    needs: 1
+  - id: go-c2-beacon-loop
+    desc: Go C2 agent with polling beacon and UA spoofing
+    crit: suspicious
+    conf: 0.9
+    attack: T1071.001
+    all:
+      - id: go-base64-json-beacon
+      - id: go-useragent-spoof
+    any:
+      - id: go-sleep-poll-loop
+      - id: go-proc-walk
+    needs: 1
