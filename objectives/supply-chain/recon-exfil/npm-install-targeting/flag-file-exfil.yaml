@@ -1,0 +1,100 @@
+defaults:
+  platforms: [linux, unix]
+  for: [javascript]
+
+traits:
+  - id: container-flag-path
+    desc: Targets container flag file
+    crit: suspicious
+    conf: 0.99
+    attack: T1005
+    if:
+      type: text
+      substr: /usr/src/app/flag
+
+  - id: passwd-fallback-read
+    desc: Reads /etc/passwd as fallback
+    crit: suspicious
+    conf: 0.96
+    attack: T1005
+    if:
+      type: text
+      regex: readFileSync\([^)]{0,80}/etc/passwd
+
+  - id: req-write-data
+    desc: Writes stolen data to HTTP body
+    crit: suspicious
+    conf: 0.95
+    attack: T1041
+    if:
+      type: text
+      substr: req.write(data)
+
+  - id: plain-text-body-header
+    desc: Sends text/plain body data
+    crit: suspicious
+    conf: 0.92
+    attack: T1041
+    if:
+      type: text
+      regex: Content-Type['"]\s*:\s*['"]text/plain
+
+  - id: small-postinstall-sidecar
+    desc: Tiny postinstall sidecar payload
+    crit: notable
+    conf: 0.88
+    size_max: 2048
+    if:
+      type: basename
+      exact: postinstall.js
+
+composite_rules:
+  - id: local-file-fallback-targeting
+    desc: Targets flag file with passwd fallback
+    crit: suspicious
+    conf: 0.99
+    attack: T1005
+    all:
+      - id: container-flag-path
+      - id: passwd-fallback-read
+
+  - id: raw-http-body-exfil
+    desc: Raw Node HTTP body exfiltration
+    crit: suspicious
+    conf: 0.97
+    attack: T1041
+    all:
+      - id: micro-behaviors/communications/http/request::http-request
+      - id: micro-behaviors/communications/http/post::post
+      - id: req-write-data
+    any:
+      - id: plain-text-body-header
+      - id: micro-behaviors/communications/http/request::req-write
+
+  - id: npm-flag-file-http-exfil
+    desc: npm sidecar steals local file via HTTP
+    crit: hostile
+    conf: 0.995
+    attack: T1041
+    mbc: E1041
+    all:
+      - id: local-file-fallback-targeting
+      - id: raw-http-body-exfil
+      - id: micro-behaviors/communications/ip::external-ipv4-script
+    any:
+      - id: small-postinstall-sidecar
+      - id: objectives/supply-chain/metadata-anomaly/behavior/npm::small-file-5k
+
+  - id: npm-container-flag-exfil
+    desc: npm postinstall exfiltrates container flag
+    crit: hostile
+    conf: 0.995
+    attack: T1005
+    mbc: E1041
+    all:
+      - id: container-flag-path
+      - id: raw-http-body-exfil
+      - id: micro-behaviors/communications/ip::external-ipv4-script
+    any:
+      - id: small-postinstall-sidecar
+      - id: objectives/supply-chain/install-hook/scripts::postinstall-js-filename
