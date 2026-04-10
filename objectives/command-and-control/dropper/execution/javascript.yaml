@@ -122,6 +122,79 @@ traits:
     if:
       type: text
       substr: op?n:22:2C:20:31:29
+  - id: json-parse-call-raw
+    desc: JSON.parse call in staged payload loader
+    crit: component
+    conf: 0.7
+    if:
+      type: text
+      regex: 'JSON\.parse\s*\('
+  - id: payload-js-write
+    desc: Writes fetched content to payload.js
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: 'writeFileSync\s*\(\s*[''"]payload\.js[''"]'
+  - id: json-cookie-write
+    desc: Writes json.cookie property to local payload
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: 'writeFileSync\s*\(\s*[''"]payload\.js[''"]\s*,\s*[A-Za-z_$][A-Za-z0-9_$]*\.cookie'
+  - id: browser-uint8array-stage
+    desc: Uint8Array stage buffer allocation
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      substr: Uint8Array(len)
+  - id: browser-textdecoder-utf8
+    desc: TextDecoder utf8 stage decode
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      substr: TextDecoder("utf-8")
+  - id: browser-escape-fallback-decoder
+    desc: escape decodeURIComponent fallback decoder
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: 'decodeURIComponent\s*\(\s*escape\s*\(\s*[A-Za-z_$][A-Za-z0-9_$]*\s*\)\s*\)'
+  - id: js-eval-call
+    desc: JavaScript eval call
+    crit: notable
+    conf: 0.82
+    if:
+      type: text
+      regex: \beval\s*\(
+    unless:
+      - type: text
+        substr: JSON.retrocycle
+  - id: js-max-string-over-3000
+    desc: Embedded string exceeds 3000 chars
+    crit: notable
+    conf: 0.86
+    size_min: 8000
+    size_max: 30000
+    if:
+      type: metrics
+      field: strings.max_length
+      min: 3000
+    unless:
+      - type: text
+        substr: 万与丑专业丛东丝丢两严丧个
+      - type: text
+        substr: mermaid-architecture
+      - type: text
+        substr: 'Unknown stretchy delimiter.'
+      - type: text
+        substr: '/*! jQuery v'
+      - type: text
+        substr: '//! Copyright (C) Microsoft.'
 
 composite_rules:
   - id: jscript-xmlhttp-adodb-dropper
@@ -186,3 +259,144 @@ composite_rules:
       - id: wsh-percent-encoded-shell-app
       - id: wsh-percent-encoded-shell-exec-path
       - id: wsh-percent-encoded-open-verb
+  - id: browser-xor-stage-decoder
+    desc: Browser XOR stage decoder routine
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: browser-uint8array-stage
+      - id: browser-textdecoder-utf8
+      - id: micro-behaviors/crypto/symmetric/xor/loop::js-xor-charcode-assignment
+  - id: obfuscated-browser-stage-loader
+    desc: Browser self-decoding stage loader
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: browser-xor-stage-decoder
+      - id: browser-escape-fallback-decoder
+      - id: objectives/anti-static/obfuscation/syntax::html-xor-self-decoding-loader
+      - id: micro-behaviors/data/source/dynamic/eval::new-function-iife
+  - id: hidden-browser-payload-execution
+    desc: Hidden browser payload decoded and executed
+    crit: hostile
+    conf: 0.985
+    all:
+      - id: obfuscated-browser-stage-loader
+      - id: objectives/anti-static/obfuscation/tools/js-obfuscator::hex-variable-names
+      - id: objectives/anti-static/obfuscation/tools/js-obfuscator::hex-function-names
+      - id: objectives/anti-static/obfuscation/code-metrics/structure::very-long-lines
+  - id: local-dropper
+    desc: Writes a file and executes it locally
+    crit: suspicious
+    conf: 0.85
+    attack: "T1105"
+    near_lines: 25
+    all:
+      - id: micro-behaviors/fs/write/file::js-file-write
+      - id: micro-behaviors/process/create/shell/lang::child-process-require
+    any:
+      - id: micro-behaviors/process/create/shell/lang::js-exec
+      - id: micro-behaviors/process/create/shell/lang::js-execsync
+      - id: micro-behaviors/process/create/shell/lang::js-spawn
+    unless:
+      - id: metadata/package/testing/harness::node-common-require
+    downgrade:
+      any:
+        - id: metadata/package/testing/harness::node-common-require
+        - id: metadata/library/prettier::prettier-detection
+        - id: metadata/package/documentation::has-jsdoc
+        - id: micro-behaviors/process/create/shell/host::vscode-extension-marker
+  - id: obfuscated-local-dropper
+    desc: Obfuscated local dropper (Hostile)
+    crit: hostile
+    conf: 0.95
+    attack: "T1027"
+    mbc: "B0032"
+    all:
+      - id: local-dropper
+      - id: objectives/anti-static/obfuscation/string/encoding::js-strong-obfuscation
+  - id: js-malware-hosting-powershell
+    desc: References PowerShell script on known malware hosting (Dropper)
+    crit: hostile
+    conf: 0.95
+    attack: "T1105"
+    all:
+      - id: objectives/command-and-control/infrastructure/domain/hosting::malware-hosting
+      - id: micro-behaviors/process/create/script::powershell-script-execution
+  - id: staged-json-payload-dropper
+    desc: Fetches staged JSON payload and writes a JavaScript file
+    crit: suspicious
+    conf: 0.88
+    attack: "T1105"
+    near_lines: 20
+    all:
+      - id: micro-behaviors/communications/http/request::https-request
+      - id: objectives/command-and-control/infrastructure::jsonkeeper
+      - id: json-parse-call-raw
+      - id: payload-js-write
+    any:
+      - id: json-cookie-write
+      - id: objectives/command-and-control/dropper/builder::js-ext
+    unless:
+      - id: metadata/package/testing/harness::node-common-require
+      - id: metadata/package/testing/harness::is-test
+  - id: secret-header-staged-json-dropper
+    desc: Header-gated staged JSON payload dropper
+    crit: suspicious
+    conf: 0.92
+    attack: "T1105"
+    all:
+      - id: staged-json-payload-dropper
+      - id: objectives/exfiltration/http::secret-key
+  - id: secret-gated-remote-js-stage
+    desc: Secret-gated remote JavaScript stage written to disk
+    crit: hostile
+    conf: 0.96
+    attack: "T1105"
+    near_lines: 20
+    all:
+      - id: secret-header-staged-json-dropper
+      - id: objectives/command-and-control/infrastructure::jsonkeeper
+    any:
+      - id: objectives/command-and-control/dropper/builder::js-ext
+      - id: micro-behaviors/data/text/keywords::payload
+    unless:
+      - id: metadata/package/testing/harness::node-common-require
+      - id: metadata/package/testing/harness::is-test
+  - id: obfuscated-eval-stage-loader
+    desc: Obfuscated eval loader with staged blobs
+    crit: hostile
+    conf: 0.97
+    attack: T1059.007
+    mbc: B0032.001
+    size_min: 8000
+    size_max: 30000
+    all:
+      - id: objectives/anti-static/obfuscation/syntax::js-trig-charcode-decoder
+      - id: objectives/anti-static/obfuscation/code-metrics::js-very-long-string-blobs
+      - id: objectives/anti-static/obfuscation/code-metrics::js-multi-line-blob-layout
+      - id: objectives/anti-static/obfuscation/code-metrics::js-base64-candidate-cluster
+      - id: js-eval-call
+    any:
+      - id: objectives/anti-static/obfuscation/code-metrics/structure::high-text-entropy
+      - id: objectives/anti-static/obfuscation/code-metrics::js-high-entropy-identifier-ratio
+      - id: js-max-string-over-3000
+      - id: objectives/anti-static/obfuscation/code-metrics/structure::very-long-lines
+    unless:
+      - id: metadata/package/testing/harness::is-test
+  - id: jscript-cc-token-stage-wrapper
+    desc: JScript conditional tokenized stage wrapper
+    crit: hostile
+    conf: 0.97
+    attack: T1059.007
+    mbc: B0032.001
+    size_min: 50000
+    all:
+      - id: objectives/anti-static/obfuscation/string/conceal::js-cc-object-token-reconstruction
+      - id: js-eval-call
+    any:
+      - id: micro-behaviors/process/interpreter/eval::js-eval-raw
+      - id: objectives/supply-chain/impersonation::eval-variable-dup
+      - id: objectives/anti-static/obfuscation/code-metrics/structure::very-long-lines
+      - id: objectives/anti-static/obfuscation/string/conceal::js-comment-exec-body
+      - id: js-max-string-over-3000
