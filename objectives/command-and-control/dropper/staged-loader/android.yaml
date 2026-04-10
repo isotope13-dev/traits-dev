@@ -1,7 +1,7 @@
 # Android staged loader using a hidden asset DEX and reflective classloader patching.
 defaults:
   platforms: [android]
-  for: [apk, binaries]
+  for: [none]
   crit: suspicious
   conf: 0.95
   attack: "T1406"
@@ -39,6 +39,82 @@ traits:
       type: text
       exact: "android.net.conn.CONNECTIVITY_CHANGE"
 
+  - id: wake-lock-permission
+    desc: Wake lock permission requested
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      exact: "android.permission.WAKE_LOCK"
+
+  - id: read-external-storage
+    desc: External storage read permission
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      exact: "android.permission.READ_EXTERNAL_STORAGE"
+
+  - id: write-external-storage
+    desc: External storage write permission
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      exact: "android.permission.WRITE_EXTERNAL_STORAGE"
+
+  - id: post-notifications
+    desc: Notification posting permission requested
+    crit: notable
+    conf: 0.78
+    if:
+      type: text
+      exact: "android.permission.POST_NOTIFICATIONS"
+
+  - id: obfuscated-gc-namespace-burst
+    desc: Repeated short obfuscated tk.gc classes
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: yara
+      source: |
+        rule obfuscated_gc_namespace_burst {
+          strings:
+            $a = /tk\.gc\.[A-Za-z]{1,5}/ ascii wide
+          condition:
+            #a >= 20
+        }
+
+  - id: loader-manifest-control-yara
+    desc: Obfuscated loader manifest control surface
+    crit: suspicious
+    conf: 0.995
+    if:
+      type: yara
+      source: |
+        rule loader_manifest_control_surface {
+          strings:
+            $a = "com.google.firebase.MESSAGING_EVENT" ascii wide
+            $b = "android.permission.FOREGROUND_SERVICE" ascii wide
+            $c = "android.permission.READ_EXTERNAL_STORAGE" ascii wide
+            $d = "android.permission.WRITE_EXTERNAL_STORAGE" ascii wide
+            $e = "android.net.conn.CONNECTIVITY_CHANGE" ascii wide
+            $f = "android.permission.WAKE_LOCK" ascii wide
+            $g = "usesCleartextTraffic" ascii wide
+            $h = "android.permission.POST_NOTIFICATIONS" ascii wide
+            $ns = /tk\.gc\.[A-Za-z]{1,5}/ ascii wide
+          condition:
+            $a and $b and $c and $d and $e and 1 of ($f,$g,$h) and #ns >= 20
+        }
+
+  - id: reflective-loader-cluster-marker
+    desc: Obfuscated staged loader class markers
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: raw
+      substr: "scnl.eift2kiuh"
+
 composite_rules:
   - id: staged-dex-loader
     desc: APK hides and loads a second-stage DEX from assets
@@ -48,6 +124,39 @@ composite_rules:
     all:
       - id: micro-behaviors/process/create/loader::reflective-classloader-patch
       - id: micro-behaviors/process/create/loader::hidden-dex-write
+
+  - id: obfuscated-push-control-manifest
+    desc: Obfuscated manifest with push control hooks
+    crit: suspicious
+    conf: 0.98
+    all:
+      - id: firebase-messaging-event
+      - id: obfuscated-gc-namespace-burst
+    any:
+      - id: foreground-service-permission
+      - id: connectivity-change-receiver
+      - id: cleartext-traffic-enabled
+      - id: wake-lock-permission
+      - id: read-external-storage
+      - id: write-external-storage
+      - id: post-notifications
+    needs: 3
+
+  - id: staged-loader-manifest-control-surface
+    desc: Staged loader manifest with background control surface
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: loader-manifest-control-yara
+      - id: obfuscated-gc-namespace-burst
+
+  - id: staged-loader-dex-cluster
+    desc: Reflective staged loader with obfuscated class cluster
+    crit: hostile
+    conf: 0.995
+    all:
+      - id: micro-behaviors/process/create/loader::reflective-dex-loader-member
+      - id: reflective-loader-cluster-marker
 
   - id: staged-loader-with-push-control
     desc: Staged Android loader with push and background control hooks

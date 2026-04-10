@@ -2,7 +2,7 @@
 # Detects stage-1 APK loaders that decrypt/write a hidden payload and patch BaseDexClassLoader internals.
 defaults:
   platforms: [android]
-  for: [apk, binaries]
+  for: [none]
   crit: notable
   conf: 0.9
   attack: "T1406"
@@ -13,61 +13,111 @@ traits:
     crit: component
     conf: 0.88
     if:
-      type: text
-      exact: "Ljava/lang/reflect/Array;"
+      type: raw
+      substr: "Ljava/lang/reflect/Array;"
 
   - id: base-dex-class-loader
     desc: BaseDexClassLoader referenced directly
     conf: 0.92
     if:
-      type: text
-      exact: "dalvik.system.BaseDexClassLoader"
+      type: raw
+      substr: "dalvik.system.BaseDexClassLoader"
 
   - id: dex-elements-field
     desc: BaseDexClassLoader dexElements field access
     conf: 0.94
     if:
-      type: text
-      exact: "dexElements"
+      type: raw
+      substr: "dexElements"
 
   - id: path-list-field
     desc: BaseDexClassLoader pathList field access
     conf: 0.92
     if:
-      type: text
-      exact: "pathList"
+      type: raw
+      substr: "pathList"
 
   - id: attach-base-context
     desc: Loader hooks Application attachBaseContext
     crit: component
     conf: 0.82
     if:
-      type: text
-      exact: "attachBaseContext"
+      type: raw
+      substr: "attachBaseContext"
 
   - id: hidden-stage-asset
-    desc: Obfuscated stage asset name
+    desc: Large hex named opaque asset
     crit: suspicious
-    conf: 0.99
+    conf: 0.9
+    size_min: 1048576
     if:
-      type: text
-      exact: "assets/cd50f0bb"
+      type: basename
+      regex: '^[a-f0-9]{8}$'
+
+  - id: high-entropy-stage-asset
+    desc: Large stage asset has maximum entropy
+    crit: suspicious
+    conf: 0.96
+    size_min: 1048576
+    if:
+      type: metrics
+      field: binary.overall_entropy
+      min: 7.95
 
   - id: dropped-stage-dex
-    desc: Hidden payload dropped as private DEX
+    desc: Hex named private DEX path
     crit: suspicious
-    conf: 0.99
+    conf: 0.94
     if:
-      type: text
-      exact: "622a2177.dex"
+      type: raw
+      regex: '[a-f0-9]{8}\.dex'
 
   - id: file-output-stream-call
     desc: Loader writes payload with FileOutputStream
     crit: component
     conf: 0.84
     if:
-      type: text
-      exact: "java.io.FileOutputStream("
+      type: raw
+      substr: "java.io.FileOutputStream("
+
+  - id: dex-file-api
+    desc: Dalvik DexFile loader API
+    conf: 0.92
+    if:
+      type: raw
+      substr: "dalvik.system.DexFile"
+
+  - id: zip-stage-read
+    desc: Stage loaded from ZipFile
+    crit: component
+    conf: 0.84
+    if:
+      type: raw
+      substr: "Ljava/util/zip/ZipFile;"
+
+  - id: reflective-field-access
+    desc: Reflective declared field access
+    crit: component
+    conf: 0.84
+    if:
+      type: raw
+      substr: "getDeclaredField"
+
+  - id: reflective-method-access
+    desc: Reflective declared method access
+    crit: component
+    conf: 0.84
+    if:
+      type: raw
+      substr: "getDeclaredMethod"
+
+  - id: reflective-access-bypass
+    desc: Reflection accessibility bypass
+    crit: component
+    conf: 0.86
+    if:
+      type: raw
+      substr: "setAccessible"
 
 composite_rules:
   - id: reflective-classloader-patch
@@ -81,6 +131,31 @@ composite_rules:
     any:
       - id: reflective-array
       - id: attach-base-context
+
+  - id: reflective-dex-loader-member
+    desc: Reflective DexFile classloader patching chain
+    crit: suspicious
+    conf: 0.98
+    all:
+      - id: base-dex-class-loader
+      - id: dex-elements-field
+      - id: path-list-field
+      - id: dex-file-api
+    any:
+      - id: reflective-field-access
+      - id: reflective-method-access
+      - id: reflective-access-bypass
+      - id: file-output-stream-call
+      - id: zip-stage-read
+    needs: 2
+
+  - id: opaque-hex-stage-asset
+    desc: Hex named staged asset with high entropy
+    crit: suspicious
+    conf: 0.98
+    all:
+      - id: hidden-stage-asset
+      - id: high-entropy-stage-asset
 
   - id: hidden-dex-write
     desc: Hidden stage asset written to private DEX path
