@@ -80,7 +80,7 @@ traits:
 
 **Field override:** List fields (`for`, `platforms`) can be set to `[none]` to unset file-level defaults. Example: `for: [none]` removes file type filtering even if defaults specify types. Scalar fields (`conf`, `crit`) do not support `none`.
 
-**File types:** `elf`, `macho`, `pe`, `dll`, `so`, `dylib`, `pyc`, `shell`, `batch`, `python`, `javascript`, `typescript`, `rust`, `java`, `class`, `ruby`, `c`, `cpp`, `go`, `csharp`, `php`, `perl`, `powershell`, `lua`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir`, `vbs`, `html`, `applescript`, `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `systemd-service`, `composer.json`, `plist`, `ipa`, `rtf`, `lnk`, `jpeg`, `png`, `pkginfo`, `pickle`, `pdf`, `oledoc`, `ooxml`.
+**File types:** `elf`, `macho`, `pe`, `dll`, `so`, `dylib`, `pyc`, `shell`, `batch`, `python`, `javascript`, `typescript`, `rust`, `java`, `class`, `ruby`, `c`, `cpp`, `go`, `csharp`, `php`, `perl`, `powershell`, `lua`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir`, `vbs`, `html`, `applescript`, `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `systemd`, `composer.json`, `plist`, `ipa`, `rtf`, `lnk`, `jpeg`, `png`, `pkginfo`, `pickle`, `pdf`, `oledoc`, `ooxml`.
 
 **Aliases** (resolved to the canonical type):
 
@@ -88,7 +88,7 @@ traits:
 |-------|-------------|--------|
 | `doc`, `xls`, `ppt`, `msg`, `ole` | `oledoc` | Legacy Microsoft Office (OLE2/CFBF) |
 | `docx`, `xlsx`, `pptx`, `docm`, `xlsm`, `pptm` | `ooxml` | Modern Microsoft Office (OOXML/ZIP) |
-| `systemd`, `service`, `.service` | `systemd-service` | systemd service unit files and `.service.d/*.conf` drop-ins |
+| `systemd-service`, `systemd_service`, `service`, `.service` | `systemd` | systemd service unit files and `.service.d/*.conf` drop-ins |
 
 **Platforms:** `linux`, `macos`, `windows`, `unix`, `android`, `ios`, `all`.
 
@@ -101,7 +101,7 @@ traits:
 | `binaries` | `elf`, `macho`, `pe`, `dylib`, `so`, `dll`, `class`, `pyc` |
 | `scripts` | `shell`, `batch`, `python`, `javascript`, `ruby`, `php`, `perl`, `lua`, `powershell`, `applescript`, `vbs` |
 | `source` | `typescript`, `rust`, `java`, `c`, `cpp`, `go`, `csharp`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir` |
-| `manifests` | `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `systemd-service`, `composer.json`, `pkginfo`, `plist`, `lnk` |
+| `manifests` | `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `systemd`, `composer.json`, `pkginfo`, `plist`, `lnk` |
 | `documents` | `pdf`, `rtf`, `html`, `oledoc`, `ooxml` |
 | `media` | `jpeg`, `png` |
 | `data` | `ipa` |
@@ -723,7 +723,7 @@ path: "service.environment_list"
 ```yaml
 # Match suspicious launchers in ExecStart=
 - id: suspicious-exec-start
-  for: [systemd-service]
+  for: [systemd]
   platforms: [linux, unix]
   if:
     type: kv
@@ -845,7 +845,7 @@ cleave test-match <file> --type text --pattern "eval"  # Test patterns
 | `--section-offset`, `--section-offset-range` | Section-relative position |
 | `--case-insensitive` | Case-insensitive match |
 | `--kv-path` | Path for KV searches |
-| `--file-type` | Override detection (for example `systemd-service` or `service`) |
+| `--file-type` | Override detection (for example `systemd` or legacy `systemd-service`) |
 
 ## Reference Codes
 
