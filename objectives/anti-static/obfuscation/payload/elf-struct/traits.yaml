@@ -1,0 +1,120 @@
+# ELF Format Anomalies
+# Structural issues in ELF binaries that indicate tampering or malware
+defaults:
+  platforms: [linux, unix, android]
+  for: [elf]
+  mbc: B0001
+  attack: T1027
+
+traits:
+  # Tiny file with oversized LOAD segment: the segment claims far more data
+  # than the file actually contains. Common in shellcode stagers and crafted ELFs.
+  - id: load-segment-exceeds-tiny-file
+    desc: Oversized LOAD segment in tiny ELF
+    crit: suspicious
+    conf: 0.95
+    size_max: 10240
+    if:
+      type: metrics
+      field: "elf.load_segment_max_p_filesz"
+      min: 32768
+  - id: load-segment-exceeds-small-file
+    desc: Oversized LOAD segment in small ELF
+    crit: suspicious
+    conf: 0.90
+    size_max: 200000
+    if:
+      type: metrics
+      field: "elf.load_segment_max_p_filesz"
+      min: 1000000
+
+  # Section headers claim more code bytes than the file contains.
+  # Metamorphic packers fabricate inflated section sizes to confuse parsers.
+  # Use largest_section_ratio >= 1.0 as the detectable proxy — a section
+  # logically spanning the entire file indicates overlapping/synthetic headers.
+  - id: code-exceeds-file-size
+    desc: Section code size exceeds file size
+    crit: suspicious
+    conf: 0.90
+    size_min: 524288
+    if:
+      type: metrics
+      field: binary.largest_section_ratio
+      min: 0.99
+    unless:
+      - type: section
+        regex: "^(UPX\\d|\\.upx)"
+      - id: metadata/binary/framework::dotnet-metadata
+      - type: raw
+        regex: BSJB
+
+  # ELF entry point resolves to a non-.text section.
+  # Legitimate compilers always place _start in .text; metamorphic/packed ELFs
+  # set entry into custom sections to hide the unpacking stub from disassemblers.
+  - id: entry-not-in-text
+    desc: ELF entry point outside .text section
+    crit: suspicious
+    conf: 0.88
+    if:
+      type: metrics
+      field: binary.entry_in_nonstandard_section
+      min: 1
+    unless:
+      - type: section
+        regex: "^(UPX\\d|\\.upx)"
+      - id: metadata/lang/compiler/systems::go-binary
+
+  # Large executable ELF section whose name contains uppercase letters.
+  # Standard Linux toolchains produce only lowercase section names (.text, .plt,
+  # .data, etc.). An executable section with uppercase in its name — combined
+  # with near-maximum entropy and substantial size — is characteristic of
+  # metamorphic packers that generate synthetic section tables (.eDM0/.eDM1 etc.).
+  - id: uppercase-exec-section
+    desc: Large high-entropy executable section with uppercase name
+    crit: suspicious
+    conf: 0.88
+    platforms: [linux, unix]
+    if:
+      type: section
+      regex: "[A-Z]"
+      entropy_min: 7.5
+      length_min: 65536
+    unless:
+      - type: section
+        regex: "^(UPX\\d|\\.upx)"
+
+  # Component-level building block for the metamorphic-packed-elf composite.
+  # Records that the entry point is outside the standard .text section without
+  # rendering a verdict — the composite rule decides what it means in context.
+  - id: elf-nonstandard-entry
+    desc: ELF entry in non-standard section
+    crit: component
+    conf: 0.7
+    if:
+      type: metrics
+      field: binary.entry_in_nonstandard_section
+      min: 1
+
+composite_rules:
+  # All structural tampering signals combined: entry point hijacked out of .text,
+  # section table claims more bytes than the file holds (fabricated headers),
+  # all strings near-noise (encrypted payload), mprotect to flip memory
+  # executable at runtime (the unpack stub). Uses lower-level building blocks
+  # rather than suspicious-level composites so this hostile finding surfaces
+  # alongside the individual suspicious signals.
+  - id: metamorphic-packed-elf
+    desc: Metamorphic ELF with entry hijack, fabricated sections, and runtime unpacking
+    crit: hostile
+    conf: 0.95
+    size_min: 524288
+    attack: T1027.002
+    all:
+      - id: elf-nonstandard-entry
+      - id: objectives/anti-static/obfuscation/binary-metrics::dominant-section
+      - id: objectives/anti-static/obfuscation/binary-metrics::sparse-strings-large-binary
+      - id: objectives/anti-static/obfuscation/binary-metrics::noisy-avg-string-length
+      - id: micro-behaviors/mem/protect/modify::mprotect-symbol
+    unless:
+      - id: objectives/anti-static/pack/detect::upx-section
+      - id: metadata/binary/framework::dotnet-metadata
+      - id: metadata/lang/compiler/systems::go-binary
