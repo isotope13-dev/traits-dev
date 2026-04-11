@@ -1,0 +1,84 @@
+defaults:
+  platforms: [windows, linux, macos, unix]
+  for: [binaries]
+  crit: suspicious
+  conf: 0.8
+
+traits:
+  # phi^-2 delta: 0x61C88647 = floor(2^32 / phi^2)
+  # Used in XXTEA variants as an alternate key-schedule delta
+  # (canonical TEA uses 0x9E3779B9 = floor(2^32 / phi))
+
+  # IMUL r32, r/m32, 0x61C88647 — register-agnostic (wildcard ModRM byte)
+  - id: xxtea-phi2-delta
+    desc: XXTEA phi^-2 delta in IMUL
+    arch: [x86, x86-64]
+    if:
+      type: hex
+      section: .text
+      pattern: 69 ?? 47 86 C8 61
+
+  # MOV r32, 0x61C88647 — compiler may load constant before multiplying
+  - id: xxtea-phi2-delta-mov
+    desc: XXTEA phi^-2 delta as MOV
+    crit: component
+    conf: 0.72
+    arch: [x86, x86-64]
+    if:
+      type: hex
+      section: .text
+      pattern: B? 47 86 C8 61
+
+  # Canonical TEA/XTEA/XXTEA delta: 0x9E3779B9 = floor(2^32 / phi)
+  # Appears in TEA, XTEA, standard XXTEA, and some hash tables (Knuth)
+  # — use as component; combine with cipher structure for confident detection
+
+  # MOV r32, 0x9E3779B9  (B8–BF prefix, then little-endian bytes B9 79 37 9E)
+  - id: tea-canonical-delta-mov
+    desc: TEA canonical delta as MOV
+    crit: component
+    conf: 0.75
+    arch: [x86, x86-64]
+    if:
+      type: hex
+      section: .text
+      pattern: B? B9 79 37 9E
+
+  # ADD EAX, 0x9E3779B9  (short-form ADD imm32 opcode 05)
+  - id: tea-canonical-delta-add
+    desc: TEA canonical delta as ADD EAX
+    crit: component
+    conf: 0.8
+    arch: [x86, x86-64]
+    if:
+      type: hex
+      section: .text
+      pattern: 05 B9 79 37 9E
+
+  - id: xxtea-string
+    desc: XXTEA cipher name string
+    crit: notable
+    conf: 0.85
+    for: [binaries, scripts, source]
+    if:
+      type: text
+      word: xxtea
+      case_insensitive: true
+
+composite_rules:
+  # Fires when any form of the canonical TEA delta is present
+  - id: tea-canonical-delta
+    desc: TEA-family canonical delta constant
+    crit: component
+    any:
+      - id: tea-canonical-delta-mov
+      - id: tea-canonical-delta-add
+
+  # Fires when any form of the phi^-2 XXTEA variant delta is present
+  - id: xxtea-phi2
+    desc: XXTEA phi^-2 variant delta present
+    crit: suspicious
+    conf: 0.8
+    any:
+      - id: xxtea-phi2-delta
+      - id: xxtea-phi2-delta-mov

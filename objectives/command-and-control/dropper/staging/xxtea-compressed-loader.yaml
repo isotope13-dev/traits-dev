@@ -1,0 +1,64 @@
+# Decrypt-then-decompress loader pattern
+# Characteristic of staged payload loaders that use a lightweight cipher
+# (TEA-family) to decrypt an embedded payload, then zlib to decompress it,
+# before mapping into memory. Seen in STX RAT loader and similar PE DLLs.
+#
+# Tier: objectives — these atomics individually are neutral; their combination
+# infers a specific loading intent that belongs here, not in micro-behaviors.
+defaults:
+  for: [pe, dll]
+  platforms: [windows]
+  attack: T1140
+  mbc: B0003
+
+composite_rules:
+  # XXTEA phi^-2 variant + embedded zlib in a compact PE — strong signal.
+  # The phi^-2 delta (0x61C88647) is obscure outside malware; its presence
+  # alongside inline zlib almost exclusively indicates a self-contained loader.
+  - id: xxtea-zlib-compact-loader
+    desc: XXTEA phi^-2 + zlib in compact PE
+    crit: suspicious
+    conf: 0.9
+    size_max: 2097152
+    all:
+      - id: micro-behaviors/crypto/symmetric/xxtea::xxtea-phi2
+      - id: micro-behaviors/data/compress/library::zlib-adler32-binary
+    unless:
+      - id: metadata/binary/metrics::many-imports
+      - id: metadata/signed/platform::microsoft
+
+  # Broader form: any TEA-family delta + any zlib indicator in a compact PE.
+  # Lower confidence because 0x9E3779B9 also appears in Fibonacci hash tables.
+  - id: tea-family-zlib-loader
+    desc: TEA-family cipher + zlib in compact PE
+    crit: suspicious
+    conf: 0.78
+    size_max: 2097152
+    all:
+      - id: micro-behaviors/data/compress/library::zlib
+    any:
+      - id: micro-behaviors/crypto/symmetric/xxtea::xxtea-phi2
+      - id: micro-behaviors/crypto/symmetric/xxtea::tea-canonical-delta
+    unless:
+      - id: metadata/binary/metrics::many-imports
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/binary/framework::dotnet-assembly
+
+  # Highest confidence: TEA-family + zlib + dynamic API resolution.
+  # A loader that hides its Windows API calls AND decrypts a payload AND
+  # decompresses it has no plausible legitimate explanation.
+  - id: tea-zlib-hidden-api-loader
+    desc: TEA cipher + zlib + hidden API in PE
+    crit: hostile
+    conf: 0.93
+    size_max: 2097152
+    all:
+      - id: micro-behaviors/data/compress/library::zlib
+      - id: objectives/anti-static/obfuscation/imports::pe-export-walk-primitive
+      - id: objectives/anti-static/obfuscation/imports::ror14-hash-loop-x64
+    any:
+      - id: micro-behaviors/crypto/symmetric/xxtea::xxtea-phi2
+      - id: micro-behaviors/crypto/symmetric/xxtea::tea-canonical-delta
+    unless:
+      - id: metadata/binary/metrics::many-imports
+      - id: metadata/signed/platform::microsoft
