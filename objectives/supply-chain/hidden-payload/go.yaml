@@ -1,0 +1,90 @@
+# Go Hidden Payload Detection
+# ATT&CK: T1195.002 (Supply Chain Compromise: Compromise Software Supply Chain)
+# MBC: B0024 (Execution Guardrails)
+defaults:
+  platforms: [linux, macos, windows, unix, android, ios]
+  for: [go]
+  attack: T1195.002
+
+traits:
+  - id: header-stripping
+    desc: Stripping fixed-size header from buffer
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      regex: '\[\d{1,8}:\]'
+    unless:
+      - id: metadata/package/testing/harness::go-test
+
+  - id: exec-python-inline
+    desc: Go exec.Command with inline Python (-c)
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: 'exec\.Command\(.{0,100}, "-c"'
+    unless:
+      - id: metadata/package/testing/harness::go-test
+
+  - id: exec-decoded-string
+    desc: exec.Command with string-converted byte slice (deobfuscation)
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: 'exec\.Command\(.{0,200}string\('
+    unless:
+      - id: metadata/package/testing/harness::go-test
+
+composite_rules:
+  - id: header-stripping-write
+    desc: Stripping fixed-size header and writing back to file
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: header-stripping
+      - id: micro-behaviors/fs/file/operations::os-write-file
+    unless:
+      - id: metadata/package/testing/harness::go-test
+
+  - id: exec-temp-file
+    desc: Executes a file from temporary directory
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: micro-behaviors/process/create/direct::exec-command
+      - id: micro-behaviors/os/env/access::os-tempdir
+    unless:
+      - id: metadata/package/testing/harness::go-test
+
+  - id: base64-decode-to-exec
+    desc: Decodes base64 then executes (dropper pattern)
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: micro-behaviors/data/decode/base64::base64-decoding
+      - id: micro-behaviors/process/create/direct::exec-command
+    # already exists as base64-exec-command-proximity in some places, but we add more context here
+
+  - id: go-dropper-flow
+    desc: Go downloader/dropper flow (download + extract + execute)
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: micro-behaviors/communications/http/lib/netlib::go-http-newrequest
+      - id: micro-behaviors/data/archive/zip::zip-reader
+      - id: micro-behaviors/process/create/direct::exec-command
+    any:
+      - id: header-stripping
+      - id: micro-behaviors/fs/chmod/commands::go-os-chmod
+
+  - id: go-exec-decoded-payload
+    desc: Go executes decoded/transformed payload
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: micro-behaviors/data/decode/base64::base64-decoding
+    any:
+      - id: exec-python-inline
+      - id: exec-decoded-string

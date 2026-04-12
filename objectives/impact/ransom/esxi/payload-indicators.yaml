@@ -1,0 +1,220 @@
+# ESXi ransomware implementation patterns
+# Observed in: Payload ransomware (SHA256: bed8d1752a12e5681412efbb8283910857f7c5c431c2d73f9bbc5b379047a316)
+# Ref: https://0x3obad.github.io/posts/payload-ransomware-writeup/
+defaults:
+  platforms: [linux]
+  for: [elf]
+  arch: [x86-64]
+  mbc: C0027
+  attack: T1486
+  size_min: 32768
+  size_max: 524288
+
+traits:
+  # --- File markers ---
+  - id: xx0001-extension
+    desc: Payload ransomware encrypted file extension
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      substr: ".xx0001"
+
+  - id: footer-magic
+    desc: Payload footer magic bytes in rodata
+    crit: component
+    conf: 0.9
+    if:
+      type: hex
+      section: rodata
+      section_offset_range: [0, 2048]
+      pattern: "70 61 79 6C 6F 61 64 00"
+
+  # --- Embedded C-Thread-Pool library error strings ---
+  - id: thpool-init-oom
+    desc: Thread pool init OOM error message
+    crit: component
+    conf: 0.95
+    if:
+      type: text
+      substr: "thpool_init(): Could not allocate memory for thread pool"
+
+  - id: thpool-job-oom
+    desc: Thread pool job add OOM error message
+    crit: component
+    conf: 0.95
+    if:
+      type: text
+      substr: "thpool_add_work(): Could not allocate memory for new job"
+
+  - id: thpool-sigusr
+    desc: Thread pool SIGUSR1 handler error message
+    crit: component
+    conf: 0.95
+    if:
+      type: text
+      substr: "thread_do(): cannot handle SIGUSR1"
+
+  - id: bsem-error
+    desc: Binary semaphore invalid value error message
+    crit: component
+    conf: 0.95
+    if:
+      type: text
+      substr: "bsem_init(): Binary semaphore can take only values 1 or 0"
+
+  # --- Process masquerading via thread pool name ---
+  - id: thread-pool-name
+    desc: FBI-prefixed thread pool process name
+    crit: component
+    conf: 0.95
+    if:
+      type: text
+      substr: "FBIthread-pool-"
+
+  # --- Curve25519 key loading error strings ---
+  - id: key-err-invalid-size
+    desc: Invalid Curve25519 key size error string
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      substr: "[!] invalid key size"
+
+  - id: key-err-b64-decode
+    desc: Base64 public key decode failure string
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      substr: "[!] base64 pubkey decode failed"
+
+  # --- Hardcoded attacker Curve25519 public keys ---
+  - id: pubkey-b64-1
+    desc: Hardcoded Curve25519 public key constant (fragment 1)
+    crit: component
+    conf: 0.99
+    if:
+      type: text
+      substr: "TnJqU2F5RFFYREpPTURkUGx5Q3NMem0yNlZKM0s1aks="
+
+  - id: pubkey-b64-2
+    desc: Hardcoded Curve25519 public key constant (fragment 2)
+    crit: component
+    conf: 0.99
+    if:
+      type: text
+      substr: "Pmep+UUmeFwxxUO+P03HA558P3ZPZWN8bCK4XzNXtXU="
+
+  - id: pubkey-head
+    desc: Hardcoded Curve25519 public key header constant
+    crit: component
+    conf: 0.99
+    if:
+      type: text
+      substr: "W2M6q8YwDKCcSvBj7YRjVNtSI/PO22G+"
+
+  # --- File encryption bytecode patterns ---
+  - id: segment-loop-5
+    desc: Five-segment file encryption loop bytecode
+    crit: component
+    conf: 0.8
+    if:
+      type: hex
+      section: text
+      pattern: "B? 05 00 00 00 [0-16] 3? 05"
+
+  - id: flock-lockex
+    desc: flock LOCK_EX call bytecode pattern
+    crit: component
+    conf: 0.75
+    if:
+      type: hex
+      section: text
+      pattern: "B? 02 00 00 00 [0-8] E8 ?? ?? ?? ??"
+
+composite_rules:
+  - id: thpool-library
+    desc: Embedded C thread pool library (3+ of 4 error strings)
+    crit: suspicious
+    conf: 0.9
+    needs: 3
+    any:
+      - id: thpool-init-oom
+      - id: thpool-job-oom
+      - id: thpool-sigusr
+      - id: bsem-error
+
+  - id: pubkey-embedded
+    desc: Hardcoded Curve25519 attacker public key
+    crit: suspicious
+    conf: 0.99
+    any:
+      - id: pubkey-b64-1
+      - id: pubkey-b64-2
+      - id: pubkey-head
+
+  - id: key-errors
+    desc: Curve25519 key loading error strings
+    crit: component
+    any:
+      - id: key-err-invalid-size
+      - id: key-err-b64-decode
+
+  - id: encrypted-file-marker
+    desc: Encrypted file extension or footer marker
+    crit: component
+    any:
+      - id: footer-magic
+      - id: xx0001-extension
+
+  - id: encryption-bytecodes
+    desc: File encryption bytecode patterns combined
+    crit: component
+    all:
+      - id: segment-loop-5
+      - id: flock-lockex
+
+  # Anti-debug + embedded pubkey + ChaCha20 (YARA branch 2)
+  - id: esxi-chacha-antidebug
+    desc: ESXi ransomware with ChaCha20 and debugger evasion
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: pubkey-embedded
+      - id: objectives/anti-analysis/debugger-detect/check::tracerpid-string
+      - id: micro-behaviors/crypto/symmetric/stream::chacha-salsa-constant
+    any:
+      - id: encrypted-file-marker
+      - id: vmsvc-power-off
+      - id: key-errors
+
+  # ESXi XML VM inventory + vim-cmd (YARA branch 3)
+  - id: esxi-xml-kill-chain
+    desc: ESXi ransomware XML inventory with VM kill chain
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: vim-cmd-vmsvc
+      - id: vminventory-xml
+      - id: xpath-config-entry
+    any:
+      - id: esxi-welcome-note
+      - id: thpool-library
+      - id: encrypted-file-marker
+
+  # ChaCha20 + Curve25519 clamp + ESXi commands (YARA branch 4)
+  - id: esxi-chacha-curve25519
+    desc: ESXi ransomware with Curve25519 ECDH and ChaCha20
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: micro-behaviors/crypto/symmetric/stream::chacha-salsa-constant
+      - id: micro-behaviors/crypto/asymmetric/curve25519::curve25519-clamp
+    needs: 2
+    any:
+      - id: vmsvc-power-off
+      - id: vminventory-xml
+      - id: thread-pool-name
+      - id: xpath-config-entry
+
