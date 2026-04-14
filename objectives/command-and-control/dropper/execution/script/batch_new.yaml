@@ -44,6 +44,24 @@ traits:
     if:
       type: text
       regex: start\s+["']?["']?\s*/[Bb]
+  - id: hidden-self-relaunch
+    desc: Hidden self relaunch through cmd and call
+    crit: suspicious
+    conf: 0.94
+    for:
+      - batch
+    if:
+      type: text
+      regex: (?i)start\s+["']?["']?\s*/min\s+cmd(\.exe)?\s+/c\s+call\s+"?%~f0"?
+  - id: self-relaunch-via-cmd
+    desc: Batch relaunches itself through cmd call chain
+    crit: suspicious
+    conf: 0.9
+    for:
+      - batch
+    if:
+      type: text
+      regex: (?i)start[^\n]{0,120}cmd(\.exe)?[^\n]{0,80}/c[^\n]{0,80}call[^\n]{0,40}%~f0
   - id: run-from-temp
     desc: Execute binary from TEMP directory
     crit: suspicious
@@ -454,6 +472,53 @@ traits:
     if:
       type: text
       regex: (?i)(%TEMP%|%TMP%|\$env:TEMP|\$env:TMP)[^\\\r\n]{0,40}\\[A-Za-z0-9._-]+\.tmp
+  - id: temp-dat-stage-path
+    desc: Temp DAT intermediate stage path
+    crit: notable
+    conf: 0.84
+    for:
+      - batch
+      - shell
+      - powershell
+    if:
+      type: text
+      regex: (?i)(%TEMP%|%TMP%|\$env:TEMP|\$env:TMP)[^\\\r\n]{0,40}\\[A-Za-z0-9._-]+\.dat
+  - id: grouped-echo-stage-redirect
+    desc: Grouped echo block redirected into stage file
+    crit: suspicious
+    conf: 0.94
+    for:
+      - batch
+    if:
+      type: text
+      regex: (?is)\(\s*(echo\s+[A-Za-z0-9+/=]{80,}\s*){2,}\)\s*>\s*(%[A-Za-z0-9_]{3,}%|"?%TEMP%\\[A-Za-z0-9._-]+\.(dat|tmp)"?)
+  - id: embedded-pe-base64-prefix
+    desc: Embedded PE base64 prefix in echoed payload
+    crit: notable
+    conf: 0.92
+    for:
+      - batch
+    if:
+      type: text
+      regex: (?im)^\s*echo\s+TVpQAAIA[A-Za-z0-9+/=]{20,}
+  - id: set-temp-stage-var
+    desc: Variable assigned temp stage file path
+    crit: notable
+    conf: 0.86
+    for:
+      - batch
+    if:
+      type: text
+      regex: (?i)\bset\s+[A-Za-z0-9_]{3,}=(%TEMP%|%TMP%)[^\r\n]{0,80}\.(dat|tmp)\b
+  - id: delete-stage-var
+    desc: Deletes staged variable-backed temp file
+    crit: suspicious
+    conf: 0.9
+    for:
+      - batch
+    if:
+      type: text
+      regex: (?i)\bdel\b[^\r\n]{0,20}%[A-Za-z0-9_]{3,}%\b
   - id: temp-raw-base64-rebuild
     desc: Temp file raw base64 rebuild chain
     crit: notable
@@ -718,6 +783,74 @@ composite_rules:
       - id: temp-powershell-stage-rebuild
       - id: powershell-file-flag
       - id: temp-ps1-stage-path
+  - id: batch-certutil-temp-exec-chain
+    desc: Batch rebuilds a temp payload, decodes it with certutil, then executes it
+    crit: hostile
+    conf: 0.99
+    attack: T1140
+    for:
+      - batch
+    all:
+      - id: echo-off
+      - id: certutil-decode
+      - id: run-from-temp
+    any:
+      - id: grouped-echo-stage-redirect
+      - id: batch-echo-base64-stage
+      - id: temp-tmp-stage-path
+      - id: temp-dat-stage-path
+      - id: set-temp-stage-var
+      - id: delete-stage-var
+      - id: redirect-null
+    needs: 4
+  - id: batch-base64-pe-payload
+    desc: Batch contains a base64-encoded PE payload
+    crit: suspicious
+    conf: 0.95
+    for:
+      - batch
+    all:
+      - id: objectives/anti-static/obfuscation/payload::base64-pe-header
+    any:
+      - id: embedded-pe-base64-prefix
+      - id: grouped-echo-stage-redirect
+      - id: temp-dat-stage-path
+      - id: temp-tmp-stage-path
+    needs: 1
+  - id: batch-certutil-pe-loader
+    desc: Batch decodes and runs an embedded PE payload with certutil
+    crit: hostile
+    conf: 0.99
+    attack: T1140
+    for:
+      - batch
+    all:
+      - id: certutil-decode
+      - id: run-from-temp
+      - id: batch-base64-pe-payload
+    any:
+      - id: temp-dat-stage-path
+      - id: temp-tmp-stage-path
+      - id: set-temp-stage-var
+      - id: grouped-echo-stage-redirect
+      - id: redirect-null
+    needs: 2
+  - id: batch-hidden-certutil-loader
+    desc: Hidden self-relaunching certutil batch loader
+    crit: hostile
+    conf: 0.99
+    attack: T1059.003
+    for:
+      - batch
+    all:
+      - id: batch-certutil-pe-loader
+    any:
+      - id: hidden-self-relaunch
+      - id: self-relaunch-via-cmd
+      - id: grouped-echo-stage-redirect
+      - id: embedded-pe-base64-prefix
+      - id: objectives/anti-static/obfuscation/string/anomaly::batch-fragmentation-metrics
+    needs: 1
   - id: go-build-stealth
     desc: Go build with stealth flags
     crit: notable
