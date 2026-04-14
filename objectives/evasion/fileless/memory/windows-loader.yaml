@@ -3,7 +3,108 @@ defaults:
   platforms: [windows]
   attack: T1055
   mbc: B0033
+traits:
+  - id: anti-analysis-loader-import-cluster
+    desc: Anti-analysis loader import cluster
+    crit: suspicious
+    conf: 0.94
+    attack: T1497.003
+    mbc: B0003.003
+    if:
+      type: import_combination
+      required:
+        - "^GetProcessIoCounters$"
+        - "^GetProcessTimes$"
+        - "^GetTickCount$"
+        - "^GlobalAlloc$"
+        - "^FindFirstFileA$"
+      suspicious:
+        - "^IsDebuggerPresent$"
+        - "^QueryPerformanceCounter$"
+        - "^VirtualAlloc$"
+        - "^Sleep$"
+      min_suspicious: 2
+      max_total: 90
+  - id: desktop-ini-sidecar
+    desc: desktop.ini staged payload marker
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      exact: desktop.ini
+  - id: restricted-alpha-stage-blob
+    desc: Restricted alphabet stage blob
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: text
+      regex: '[ADGINPX]{1024,}'
+  - id: rundll32-export
+    desc: rundll32 export entrypoint
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: symbol
+      exact: rundll32
+  - id: self-read-transacted-loader-imports
+    desc: Self-read transacted staging imports
+    crit: suspicious
+    conf: 0.97
+    attack: T1112
+    if:
+      type: import_combination
+      required:
+        - "^GetModuleFileNameW$"
+        - "^CreateFileW$"
+        - "^ReadFile$"
+        - "^RegCreateKeyExW$"
+        - "^RegSetValueExW$"
+      suspicious:
+        - "^RegCreateKeyTransactedW$"
+        - "^RegOpenKeyTransactedW$"
+        - "^RegDeleteKeyTransactedW$"
+        - "^CopyFileW$"
+        - "^CoCreateInstance$"
+        - "^SHGetFolderPathW$"
+        - "^OutputDebugStringW$"
+        - "^IsProcessorFeaturePresent$"
+      min_suspicious: 5
+      max_total: 220
 composite_rules:
+  - id: anti-analysis-packed-loader
+    desc: Anti-analysis packed memory loader
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: anti-analysis-loader-import-cluster
+    any:
+      - id: metadata/binary/metrics::no-functions
+      - id: objectives/anti-analysis/timing/evasion::timing-check-minimal-stub
+      - id: objectives/anti-static/obfuscation/binary-metrics::dominant-section
+      - id: objectives/anti-static/obfuscation/payload/section::packed-loader-largest-section-dominates
+    needs: 2
+    downgrade:
+      any:
+        - id: metadata/signed/platform::microsoft
+  - id: desktop-ini-rundll32-loader
+    desc: Rundll32 DLL loads disguised alpha stage
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: desktop-ini-sidecar
+      - id: restricted-alpha-stage-blob
+      - id: rundll32-export
+      - id: micro-behaviors/fs/file/read::read-file
+      - id: micro-behaviors/mem/protect/modify::virtual-alloc
+    any:
+      - id: micro-behaviors/os/module/load::get-proc-address-import
+      - id: micro-behaviors/dylib/load::load-library-w
+      - id: micro-behaviors/process/create/exec::shell-execute
+      - id: objectives/anti-static/obfuscation/binary-metrics::has-overlay
+    needs: 2
+    downgrade:
+      any:
+        - id: metadata/signed/platform::microsoft
   - id: encoded-self-loader
     desc: Self-reading encoded payload memory loader
     crit: hostile
@@ -21,3 +122,192 @@ composite_rules:
     downgrade:
       any:
         - id: metadata/signed/platform::microsoft
+  - id: anti-analysis-memory-loader
+    desc: Anti-analysis in-memory payload loader
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: anti-analysis-loader-import-cluster
+      - id: objectives/anti-static/obfuscation/binary-metrics::many-wx-sections
+    any:
+      - id: anti-analysis-packed-loader
+      - id: metadata/binary/metrics::no-functions
+      - id: objectives/anti-analysis/timing/evasion::timing-check-minimal-stub
+      - id: objectives/anti-static/obfuscation/payload/section::packed-loader-largest-section-dominates
+    needs: 1
+    downgrade:
+      any:
+        - id: metadata/signed/platform::microsoft
+  - id: transacted-self-read-loader
+    desc: Self-reading loader with transacted registry fallback
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: objectives/anti-static/obfuscation/payload/self-read::self-read-file-chain
+      - id: micro-behaviors/os/registry/access::transacted-registry-write-fallback
+      - id: metadata/binary/metrics::no-functions
+    any:
+      - id: metadata/binary/section/metrics::high-entropy-rdata-section
+      - id: objectives/anti-static/obfuscation/instruction/junk::gettickcount-junk-branches
+      - id: objectives/anti-analysis/debugger-detect/check::output-debug-string
+      - id: objectives/anti-analysis/vm-detect/processor-features::is-processor-feature-present
+      - id: objectives/anti-static/obfuscation/binary-metrics::compact-high-entropy-overlay
+    needs: 2
+    downgrade:
+      any:
+        - id: metadata/signed/platform::microsoft
+        - id: metadata/binary/installer::known-benign-installer
+  - id: transacted-self-read-evasive-profile
+    desc: Self-reading transacted loader with evasion profile
+    crit: suspicious
+    conf: 0.97
+    unless:
+      - id: metadata/binary/installer::known-benign-installer
+      - id: metadata/signed/platform::microsoft
+    all:
+      - id: objectives/anti-static/obfuscation/payload/self-read::self-read-file-chain
+      - id: micro-behaviors/os/registry/access::transacted-registry-write-fallback
+      - id: metadata/binary/metrics::no-functions
+      - id: metadata/binary/section/metrics::high-entropy-rdata-section
+      - id: objectives/anti-static/obfuscation/instruction/junk::gettickcount-junk-branches
+      - id: objectives/anti-analysis/debugger-detect/check::output-debug-string
+      - id: objectives/anti-analysis/vm-detect/processor-features::is-processor-feature-present
+      - id: micro-behaviors/ui/window/station::window-station-query-chain
+      - id: micro-behaviors/fs/shell-ops/commands::shell-get-folder-path
+    downgrade:
+      any:
+        - id: metadata/binary/metrics::many-imports
+  - id: signed-admin-transacted-self-reader
+    desc: Signed admin self-reader with transacted registry staging
+    crit: hostile
+    conf: 0.99
+    unless:
+      - id: metadata/binary/installer::known-benign-installer
+      - id: metadata/signed/platform::microsoft
+    all:
+      - id: transacted-self-read-loader
+      - id: micro-behaviors/os/privilege/manifest::require-administrator
+    any:
+      - id: metadata/signed/developer::freemium-gmbh
+      - id: micro-behaviors/ui/window/station::window-station-query-chain
+      - id: micro-behaviors/os/com/invoke::co-create-instance
+      - id: micro-behaviors/fs/shell-ops/commands::shell-get-folder-path
+      - id: micro-behaviors/fs/file/copy::copyfile-w
+    needs: 2
+    downgrade:
+      any:
+        - id: metadata/binary/installer::known-benign-installer
+  - id: freemium-admin-transacted-self-reader
+    desc: Freemium-signed admin transacted self-reader
+    crit: hostile
+    conf: 0.995
+    unless:
+      - id: metadata/binary/installer::known-benign-installer
+      - id: metadata/signed/platform::microsoft
+    all:
+      - id: transacted-self-read-evasive-profile
+      - id: metadata/signed/developer::freemium-gmbh
+      - id: micro-behaviors/os/privilege/manifest::require-administrator
+      - id: micro-behaviors/os/com/invoke::co-create-instance
+      - id: micro-behaviors/fs/file/copy::copyfile-w
+      - id: micro-behaviors/fs/shell-ops/commands::shell-get-folder-path
+      - id: micro-behaviors/ui/window/station::window-station-query-chain
+    downgrade:
+      any:
+        - id: metadata/binary/installer::known-benign-installer
+  - id: xor-freemium-transacted-self-reader
+    desc: Freemium-signed transacted self-reader with anti-analysis
+    crit: hostile
+    conf: 0.997
+    unless:
+      - id: metadata/binary/installer::known-benign-installer
+      - id: metadata/signed/platform::microsoft
+    all:
+      - id: transacted-self-read-loader
+      - id: metadata/signed/developer::freemium-gmbh
+      - id: micro-behaviors/os/privilege/manifest::require-administrator
+      - id: objectives/anti-analysis/debugger-detect/check::output-debug-string
+      - id: objectives/anti-analysis/vm-detect/processor-features::is-processor-feature-present
+    any:
+      - id: micro-behaviors/os/com/invoke::co-create-instance
+      - id: micro-behaviors/fs/file/copy::copyfile-w
+      - id: micro-behaviors/fs/shell-ops/commands::shell-get-folder-path
+      - id: objectives/anti-static/obfuscation/instruction/junk::gettickcount-junk-branches
+      - id: objectives/anti-static/obfuscation/binary-metrics::compact-high-entropy-overlay
+    needs: 4
+    downgrade:
+      any:
+        - id: metadata/binary/installer::known-benign-installer
+  - id: transacted-temp-staging-self-reader
+    desc: Self-reading transacted loader stages via temp paths
+    crit: suspicious
+    conf: 0.985
+    unless:
+      - id: metadata/binary/installer::known-benign-installer
+      - id: metadata/signed/platform::microsoft
+    all:
+      - id: transacted-self-read-loader
+      - id: micro-behaviors/fs/file/copy::copyfile-w
+      - id: micro-behaviors/fs/temp/directory::get-temp-path-dup
+      - id: micro-behaviors/fs/shell-ops/commands::shell-get-folder-path
+    any:
+      - id: micro-behaviors/os/privilege/manifest::require-administrator
+      - id: micro-behaviors/os/com/invoke::co-create-instance
+      - id: micro-behaviors/ui/window/station::window-station-query-chain
+      - id: objectives/anti-analysis/debugger-detect/check::output-debug-string
+    needs: 2
+  - id: direct-transacted-self-reader
+    desc: Direct transacted self-reader loader
+    crit: hostile
+    conf: 0.992
+    unless:
+      - id: metadata/binary/installer::known-benign-installer
+      - id: metadata/signed/platform::microsoft
+    all:
+      - id: self-read-transacted-loader-imports
+      - id: metadata/binary/metrics::no-functions
+      - id: metadata/binary/section/metrics::high-entropy-rdata-section
+    any:
+      - id: objectives/anti-static/obfuscation/encoding/xor::string-decrypt
+      - id: objectives/anti-static/obfuscation/instruction/junk::gettickcount-junk-branches
+      - id: objectives/anti-analysis/debugger-detect/check::output-debug-string
+      - id: objectives/anti-analysis/vm-detect/processor-features::is-processor-feature-present
+      - id: micro-behaviors/os/registry/access::transacted-registry-write-fallback
+    needs: 3
+  - id: freemium-admin-transacted-stager-direct
+    desc: Freemium admin transacted staging loader
+    crit: hostile
+    conf: 0.996
+    unless:
+      - id: metadata/binary/installer::known-benign-installer
+      - id: metadata/signed/platform::microsoft
+    all:
+      - id: self-read-transacted-loader-imports
+      - id: metadata/signed/developer::freemium-gmbh
+      - id: micro-behaviors/os/privilege/manifest::require-administrator
+      - id: metadata/binary/metrics::no-functions
+    any:
+      - id: objectives/anti-static/obfuscation/encoding/xor::string-decrypt
+      - id: micro-behaviors/os/com/invoke::co-create-instance
+      - id: micro-behaviors/fs/file/copy::copyfile-w
+      - id: micro-behaviors/fs/shell-ops/commands::shell-get-folder-path
+      - id: micro-behaviors/ui/window/station::window-station-query-chain
+      - id: objectives/anti-analysis/debugger-detect/check::output-debug-string
+      - id: objectives/anti-analysis/vm-detect/processor-features::is-processor-feature-present
+    needs: 5
+  - id: freemium-temp-staging-self-reader
+    desc: Freemium-signed transacted temp staging self-reader
+    crit: hostile
+    conf: 0.998
+    unless:
+      - id: metadata/binary/installer::known-benign-installer
+      - id: metadata/signed/platform::microsoft
+    all:
+      - id: transacted-temp-staging-self-reader
+      - id: metadata/signed/developer::freemium-gmbh
+    any:
+      - id: objectives/anti-static/obfuscation/instruction/junk::gettickcount-junk-branches
+      - id: objectives/anti-analysis/vm-detect/processor-features::is-processor-feature-present
+      - id: objectives/anti-analysis/debugger-detect/check::output-debug-string
+      - id: micro-behaviors/os/privilege/manifest::require-administrator
+    needs: 2
