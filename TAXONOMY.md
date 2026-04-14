@@ -235,6 +235,12 @@ micro-behaviors/
 │   ├── watch/             #   File monitoring (inotify, fanotify, fswatch)
 │   └── write/             #   File writing (standalone)
 │
+├── revision-control/      # Revision control systems
+│   │                      #   Neutral VCS operations only.
+│   │                      #   Hook persistence → objectives/persistence/system/git-hooks/.
+│   │                      #   Supply-chain telemetry/tampering → objectives/supply-chain/.
+│   └── git/               #   Git operations (query, clone, pull, push, tag, hooks)
+│
 ├── hardware/              # Hardware device I/O                 → MBC: Hardware
 │   │                      #   Direct interaction with hardware devices.
 │   │                      #   Querying system properties → os/sysinfo/.
