@@ -92,6 +92,8 @@ traits:
 
 **Platforms:** `linux`, `macos`, `windows`, `unix`, `android`, `ios`, `all`.
 
+**Platform hierarchy:** `unix` is the superset of Linux and macOS — it covers any Unix-like system. Use `unix` when a rule broadly applies across Linux and macOS (e.g., ELF binaries, shell scripts, POSIX APIs). Use `linux` or `macos` when a rule targets a platform-specific feature (e.g., `systemd` is Linux-only, `plist` is macOS-only). Do not list `unix` together with `linux` or `macos` — the validator will flag this as redundant. `android` is separate (not a traditional Unix desktop/server OS) and should be listed explicitly where needed. `ios` is the mobile Apple platform and is rarely needed outside of mobile app analysis.
+
 **Architectures:** `x86`, `x86-64`, `aarch64`, `arm`, `riscv`, `mips`, `powerpc`, `powerpc64`, `sparc`, `m68k`, `superh`, `all`. Omitting `arch` is equivalent to `arch: [all]`. Architecture is derived from the analyzed file, never the runtime host. For fat/universal Mach-O binaries, `arch` also clamps pattern searches (hex, raw, encoded) to the byte range of the matching slice, preventing cross-slice false positives.
 
 **Named groups** (preferred over listing individual types):
