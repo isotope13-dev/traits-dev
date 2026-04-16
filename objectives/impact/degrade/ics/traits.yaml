@@ -1,6 +1,7 @@
 # ICS/OT Safety Parameter Manipulation
 # Detects attempts to tamper with industrial control system safety parameters:
-# chemical dosing, pressure, valve states, turbine speeds, safety interlocks.
+# chemical dosing, pressure, valves, turbines, breakers, frequency, SIS trip points.
+# Covers water, power grid, gas/pipeline, and safety instrumented systems.
 # ATT&CK for ICS: T0836 (Modify Parameter), T0855 (Unauthorized Command Message)
 defaults:
   for: [binaries, scripts]
@@ -9,7 +10,7 @@ defaults:
   conf: 0.92
 
 traits:
-  # --- Chemical dosing manipulation ---
+  # === Water treatment ===
   - id: chlorine-max-dose
     desc: Chlorine dosing set to dangerous level
     conf: 0.96
@@ -31,7 +32,6 @@ traits:
       type: text
       regex: (?i)Chlorine[-_]?Valve\s*[=:]\s*(OPEN|1|TRUE)\b
 
-  # --- Pressure manipulation ---
   - id: pressure-dangerous-value
     desc: Sets pressure to dangerous value
     conf: 0.92
@@ -39,7 +39,7 @@ traits:
       type: text
       regex: (?i)(RO[-_]?Pressure|Tank[-_]?Pressure)\s*[=:]\s*([89]\d|[1-9]\d{2,})\b
 
-  # --- Valve/pump override ---
+  # === Mechanical overrides (cross-sector) ===
   - id: safety-valve-force-close
     desc: Forces safety valve to CLOSE
     conf: 0.88
@@ -54,7 +54,6 @@ traits:
       type: text
       regex: (?i)Pump[-_]?(Speed|Override)\s*[=:]\s*(MAX|100|FULL)\b
 
-  # --- Turbine manipulation ---
   - id: turbine-speed-override
     desc: Overrides turbine speed setting
     conf: 0.90
@@ -62,7 +61,51 @@ traits:
       type: text
       regex: (?i)Turbine[-_]?Speed\s*[=:]\s*(MAX|[2-9]\d{2,})\b
 
-  # --- Safety system disable ---
+  # === Power grid ===
+  - id: breaker-force-open
+    desc: Forces circuit breaker open (trip)
+    conf: 0.94
+    if:
+      type: text
+      regex: (?i)(Breaker|CB)[-_]?(Status|Command)\s*[=:]\s*(OPEN|TRIP|1)\b
+
+  - id: frequency-setpoint-override
+    desc: Overrides grid frequency setpoint
+    conf: 0.92
+    if:
+      type: text
+      regex: (?i)(Frequency[-_]?Setpoint|Hz[-_]?Target)\s*[=:]\s*\d
+
+  - id: load-shed-force
+    desc: Forces load shedding command
+    conf: 0.90
+    if:
+      type: text
+      regex: (?i)Load[-_]?Shed\s*[=:]\s*(ON|TRUE|1|ALL|FORCE)\b
+
+  - id: generator-trip
+    desc: Forces generator trip/disconnect
+    conf: 0.92
+    if:
+      type: text
+      regex: (?i)Generator[-_]?(Trip|Disconnect|Shutdown)\s*[=:]\s*(ON|TRUE|1)\b
+
+  # === Gas/pipeline ===
+  - id: pipeline-pressure-override
+    desc: Overrides pipeline pressure limits
+    conf: 0.90
+    if:
+      type: text
+      regex: (?i)(Pipeline|Line)[-_]?Pressure\s*[=:]\s*([89]\d|[1-9]\d{2,})\b
+
+  - id: compressor-override
+    desc: Forces compressor speed override
+    conf: 0.88
+    if:
+      type: text
+      regex: (?i)Compressor[-_]?(Speed|RPM)\s*[=:]\s*(MAX|FULL|[1-9]\d{3,})\b
+
+  # === Safety instrumented system (SIS) ===
   - id: safety-interlock-disable
     desc: Disables safety interlock or alarm
     conf: 0.92
@@ -77,7 +120,22 @@ traits:
       type: text
       regex: (?i)(Alarm[-_]?System|High[-_]?Alarm|Low[-_]?Alarm)\s*[=:]\s*(OFF|0|DISABLED)\b
 
+  - id: sis-trip-bypass
+    desc: Bypasses SIS trip point logic
+    conf: 0.94
+    if:
+      type: text
+      regex: (?i)(Trip[-_]?Point|SIS[-_]?Logic|ESD)\s*[=:]\s*(BYPASS|OFF|DISABLED|0)\b
+
+  - id: sis-setpoint-override
+    desc: Overrides SIS safety setpoint
+    conf: 0.92
+    if:
+      type: text
+      regex: (?i)(Safety[-_]?Setpoint|Trip[-_]?Value|Shutdown[-_]?Threshold)\s*[=:]\s*\d
+
 composite_rules:
+  # === Sector-specific sabotage ===
   - id: chemical-dosing-sabotage
     desc: Chemical dosing parameter tampering
     crit: hostile
@@ -88,6 +146,38 @@ composite_rules:
       - id: chlorine-pump-force-on
       - id: chlorine-valve-force-open
 
+  - id: power-grid-sabotage
+    desc: Power grid parameter manipulation
+    crit: hostile
+    conf: 0.96
+    needs: 2
+    any:
+      - id: breaker-force-open
+      - id: frequency-setpoint-override
+      - id: load-shed-force
+      - id: generator-trip
+
+  - id: pipeline-sabotage
+    desc: Gas/pipeline parameter manipulation
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: pipeline-pressure-override
+    any:
+      - id: compressor-override
+      - id: safety-valve-force-close
+
+  - id: sis-sabotage
+    desc: Safety system bypass or override
+    crit: hostile
+    conf: 0.97
+    needs: 2
+    any:
+      - id: sis-trip-bypass
+      - id: sis-setpoint-override
+      - id: safety-interlock-disable
+
+  # === Cross-sector composites ===
   - id: safety-parameter-tampering
     desc: ICS safety parameter tampering
     crit: hostile
@@ -95,6 +185,9 @@ composite_rules:
     needs: 2
     any:
       - id: chemical-dosing-sabotage
+      - id: power-grid-sabotage
+      - id: pipeline-sabotage
+      - id: sis-sabotage
       - id: pressure-dangerous-value
       - id: safety-valve-force-close
       - id: pump-speed-override
@@ -109,6 +202,5 @@ composite_rules:
     all:
       - id: objectives/discovery/system/ics-environment::ics-environment-fingerprint
     any:
-      - id: chemical-dosing-sabotage
       - id: safety-parameter-tampering
       - id: micro-behaviors/communications/modbus::write-single-register

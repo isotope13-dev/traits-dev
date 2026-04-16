@@ -1,10 +1,15 @@
+# Python Startup Persistence Hooks
+# Detects abuse of Python's automatic startup mechanisms for persistence:
+# sitecustomize.py, usercustomize.py, .pth files, PYTHONSTARTUP env var.
+# ATT&CK: T1546 (Event Triggered Execution)
 defaults:
-  platforms: [windows]
+  platforms: [windows, unix]
   for: [python]
   size_max: 131072
   attack: T1546
 
 traits:
+  # --- sitecustomize / usercustomize ---
   - id: sitecustomize-path
     desc: Python sitecustomize startup path
     crit: suspicious
@@ -13,21 +18,64 @@ traits:
       type: text
       regex: '(?i)(\\|/)Lib(\\|/)sitecustomize\.py\b'
 
-  - id: py-getargcargv
-    desc: CPython argv inspection API
+  - id: is-sitecustomize-file
+    desc: File is named sitecustomize.py
     crit: notable
-    conf: 0.9
+    conf: 0.95
+    if:
+      type: basename
+      exact: sitecustomize.py
+
+  - id: usercustomize-path
+    desc: Python usercustomize startup path
+    crit: suspicious
+    conf: 0.94
     if:
       type: text
-      substr: Py_GetArgcArgv
+      regex: '(?i)(\\|/)usercustomize\.py\b'
+
+  - id: is-usercustomize-file
+    desc: File is named usercustomize.py
+    crit: notable
+    conf: 0.95
+    if:
+      type: basename
+      exact: usercustomize.py
+
+  # --- .pth file abuse ---
+  - id: pth-import-exec
+    desc: .pth file with import for code execution
+    crit: suspicious
+    conf: 0.95
+    for: [python, shell]
+    if:
+      type: basename
+      regex: '\.pth$'
+
+  # --- CPython internals abuse ---
+  - id: py-getargcargv
+    desc: CPython argv inspection API
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: symbol
+      exact: ctypes.pythonapi.Py_GetArgcArgv
 
   - id: runpy-run-path
     desc: runpy run_path execution
     crit: suspicious
     conf: 0.93
     if:
-      type: text
-      substr: runpy.run_path
+      type: symbol
+      exact: runpy.run_path
+
+  - id: runpy-run-module
+    desc: runpy run_module execution
+    crit: notable
+    conf: 0.88
+    if:
+      type: symbol
+      exact: runpy.run_module
 
   - id: pythonw-launch
     desc: pythonw executable reference
@@ -36,6 +84,24 @@ traits:
     if:
       type: text
       regex: '(?i)\bpythonw(\.exe)?\b'
+
+  # --- DLL masquerade for Python payload ---
+  - id: dll-extension-string
+    desc: DLL filename referenced in Python script
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '\w{4,}\.dll\b'
+
+  # --- PYTHONSTARTUP env var ---
+  - id: pythonstartup-env
+    desc: PYTHONSTARTUP environment variable reference
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      word: PYTHONSTARTUP
 
 composite_rules:
   - id: sitecustomize-startup-hijack
@@ -50,3 +116,36 @@ composite_rules:
       - id: pythonw-launch
       - id: objectives/anti-static/obfuscation/eval/scripting::pythonw-exe-replace-trick
     needs: 1
+
+  - id: sitecustomize-argv-loader
+    desc: sitecustomize.py with argv-gated loader
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: py-getargcargv
+      - id: runpy-run-path
+    any:
+      - id: is-sitecustomize-file
+      - id: dll-extension-string
+      - id: sitecustomize-path
+
+  - id: startup-hook-file
+    desc: Python startup hook file with exec
+    crit: suspicious
+    conf: 0.93
+    all:
+      - id: micro-behaviors/process/interpreter/python::exec-builtin
+    any:
+      - id: is-sitecustomize-file
+      - id: is-usercustomize-file
+
+  - id: usercustomize-loader
+    desc: usercustomize.py with dynamic code loading
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: is-usercustomize-file
+    any:
+      - id: runpy-run-path
+      - id: runpy-run-module
+      - id: micro-behaviors/process/interpreter/python::exec-builtin
