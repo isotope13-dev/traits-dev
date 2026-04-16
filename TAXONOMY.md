@@ -161,7 +161,18 @@ micro-behaviors/
 │   ├── websocket/         #   WebSocket
 │   ├── async-io/          #   Async I/O (epoll, kqueue, io_uring, tokio)
 │   ├── capture/           #   Packet capture (tcpdump, wireshark)
-│   └── benchmark/         #   Network performance testing
+│   ├── benchmark/         #   Network performance testing
+│   │                      #   --- ICS/OT protocols (neutral mechanics only) ---
+│   │                      #   ICS port scanning → objectives/discovery/network/scan/.
+│   │                      #   ICS sabotage/manipulation → objectives/impact/degrade/ics/.
+│   │                      #   ICS environment discovery → objectives/discovery/system/.
+│   ├── modbus/            #   Modbus industrial control protocol         (TCP 502)
+│   ├── dnp3/              #   DNP3 SCADA/utility protocol                (TCP 20000)
+│   ├── s7/                #   Siemens S7comm/ISO-TSAP                    (TCP 102)
+│   ├── bacnet/            #   BACnet building/industrial automation      (UDP 47808)
+│   ├── ethernet-ip/       #   EtherNet/IP + CIP industrial protocol     (TCP 44818)
+│   ├── opcua/             #   OPC UA industrial interoperability         (TCP 4840)
+│   └── profinet/          #   PROFINET industrial Ethernet               (RT/IRT)
 │
 ├── crypto/                # Cryptographic operations            → MBC: Cryptography
 │   │                      #   Neutral crypto primitives only.
@@ -653,6 +664,10 @@ objectives/
 │   │   ├── edr/               #     EDR/AV termination (aggressive)       T1562.001
 │   │   ├── firewall/          #     Firewall disable/flush                T1562.004
 │   │   │                      #       Atoms (tool refs) in micro-behaviors/os/firewall/
+│   │   ├── ics/               #     ICS/OT safety parameter manipulation  T0836
+│   │   │                      #       Chemical dosing, pressure, valve overrides,
+│   │   │                      #       turbine speed, safety interlock disable.
+│   │   │                      #       Atoms (protocol refs) in micro-behaviors/communications/.
 │   │   ├── rival-bot/         #     Competing malware termination
 │   │   └── system/            #     Critical file/recovery deletion
 │   ├── destroy/               #   Data destruction                        T1485
