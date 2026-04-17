@@ -1,7 +1,12 @@
 defaults:
   attack: T1547.001
   crit: suspicious
-  for: [scripts, binaries]
+  for:
+    - pe
+    - oledoc
+    - powershell
+    - batch
+    - csharp
   platforms:
     - windows
 traits:
@@ -36,13 +41,6 @@ traits:
     if:
       type: text
       substr: SOFTWARE\Microsoft\Windows\CurrentVersion\Run
-  - id: startupapproved-run-key
-    desc: StartupApproved Run registry path
-    crit: notable
-    conf: 0.82
-    if:
-      type: text
-      substr: Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run
   - id: hkcu-run
     desc: HKCU Run key reference
     crit: notable
@@ -91,7 +89,7 @@ traits:
     conf: 0.72
     if:
       type: text
-      regex: '^\\?Software\\Microsoft\\Windows NT\\CurrentVersion\\Windows$'
+      substr: CurrentVersion\Windows
   - id: run-value-name
     desc: Run value name string
     crit: component
@@ -106,26 +104,12 @@ traits:
     if:
       type: text
       regex: (?i)(\\|/)RunOnce(\\|$)
-  - id: runonce-cmd-batch-launcher
-    desc: RunOnce launches batch via cmd.exe
-    crit: notable
-    conf: 0.92
-    if:
-      type: text
-      regex: '(?i)RunOnce.{0,120}cmd\.exe\s+/c.{0,120}\.bat'
-  - id: appdata-templates-batch-path
-    desc: AppData Templates batch path
-    crit: notable
-    conf: 0.95
-    if:
-      type: text
-      regex: '(?i)%APPDATA%\\Microsoft\\Windows\\Templates\\.{0,80}\.bat'
   - id: import-winreg
     desc: import winreg statement
     crit: notable
     conf: 0.5
     if:
-      type: text
+      type: raw
       substr: import winreg
   - id: from-winreg
     desc: from winreg import
@@ -156,7 +140,7 @@ traits:
       - powershell
       - batch
     if:
-      type: text
+      type: string_literal
       regex: SetValueEx\b
   - id: createkey
     desc: CreateKey call
@@ -166,7 +150,7 @@ traits:
       - powershell
       - batch
     if:
-      type: text
+      type: string_literal
       substr: CreateKey
   - id: schtasks-create-cmd
     desc: schtasks /create command
@@ -236,44 +220,35 @@ traits:
     crit: component
     conf: 0.65
     if:
-      type: text
+      type: raw
       substr: .endswith(
   - id: create-shortcut
     desc: COM CreateShortcut method call
     crit: notable
     conf: 0.75
-    unless:
-      - id: metadata/binary/installer/script::nsis
     if:
-      type: text
+      type: raw
       substr: CreateShortcut
   - id: shortcut-target-path
     desc: Shortcut TargetPath property access
     crit: notable
     conf: 0.75
     if:
-      type: text
+      type: raw
       substr: .TargetPath
-  - id: shortcut-arguments-property
-    desc: Shortcut Arguments property access
-    crit: component
-    conf: 0.72
+  - id: shortcut-arguments
+    desc: Shortcut Arguments property modification
+    crit: notable
+    conf: 0.75
     if:
-      type: text
+      type: raw
       substr: .Arguments
-  - id: iwshshortcut-type
-    desc: IWshShortcut type reference
-    crit: component
-    conf: 0.72
-    if:
-      type: text
-      exact: IWshShortcut
   - id: shortcut-save
     desc: Shortcut Save method call
-    crit: component
-    conf: 0.6
+    crit: notable
+    conf: 0.65
     if:
-      type: text
+      type: raw
       substr: .Save()
   - id: windows-powershell-registry
     desc: Modifies registry for persistence via
@@ -334,13 +309,6 @@ composite_rules:
     any:
       - id: objectives/persistence/login/registry/autostart::run-once-key
       - id: runonce-word
-  - id: windows-runonce-batch-relauncher
-    desc: RunOnce persists copied batch launcher
-    conf: 0.96
-    crit: suspicious
-    all:
-      - id: runonce-cmd-batch-launcher
-      - id: appdata-templates-batch-path
   - id: windows-python-winreg-import
     desc: Imports Python winreg module for
     conf: 0.7
@@ -383,15 +351,7 @@ composite_rules:
     any:
       - id: schtasks-create-cmd
       - id: schtasks-exe-create
-  - id: shortcut-arguments
-    desc: Shortcut Arguments used with shortcut API
-    conf: 0.8
-    crit: notable
-    all:
-      - id: shortcut-arguments-property
-    any:
-      - id: create-shortcut
-      - id: iwshshortcut-type
+      - id: itaskscheduler-iface
   - id: windows-service-install
     desc: Installs Windows service for persistence
     conf: 0.85
@@ -426,11 +386,6 @@ composite_rules:
     all:
       - id: create-shortcut
       - id: shortcut-target-path
-      - id: shortcut-save
-    any:
-      - id: start-menu-startup
-      - id: appdata-startup
-      - id: shell-startup
   - id: windows-shortcut-argument-injection
     desc: Shortcut argument injection via COM
     crit: suspicious
@@ -440,10 +395,6 @@ composite_rules:
       - id: create-shortcut
       - id: shortcut-arguments
       - id: shortcut-save
-    any:
-      - id: start-menu-startup
-      - id: appdata-startup
-      - id: shell-startup
   - id: windows-shortcut-walk-modify
     desc: Enumerates and modifies shortcut files
     crit: suspicious
@@ -489,7 +440,7 @@ composite_rules:
     desc: PE self-copies and persists via Run key
     crit: suspicious
     conf: 0.92
-    for: [pe]
+    for: [pe, dll]
     all:
       - id: micro-behaviors/os/registry/access::registry-write-api-chain
       - id: software-run-key
@@ -503,26 +454,6 @@ composite_rules:
         - id: metadata/signed/platform::microsoft
         - id: metadata/vendor/microsoft::is-microsoft-named
         - id: metadata/binary/metrics::many-imports
-  - id: run-key-open-set-exec
-    desc: Run key open set and launch chain
-    crit: suspicious
-    conf: 0.95
-    all:
-      - id: windows-registry-run-access
-      - id: micro-behaviors/os/registry/access::registry-open-key-api
-      - id: micro-behaviors/os/registry/access::registry-set-value-api
-      - id: micro-behaviors/process/create/exec::shell-execute-a
-    any:
-      - id: micro-behaviors/fs/file/copy::copyfile-a
-      - id: start-menu-startup
-      - id: appdata-startup
-      - id: micro-behaviors/process/info/current::get-module-filename
-    needs: 1
-    downgrade:
-      any:
-        - id: metadata/signed/platform::microsoft
-        - id: metadata/vendor/microsoft::is-microsoft-named
-        - id: metadata/binary/installer/script::nsis
   - id: windows-shortcut-walk-argument-inject
     desc: Enumerates shortcuts and injects arguments
     crit: hostile

@@ -24,6 +24,31 @@ See [TAXONOMY.md](./TAXONOMY.md) for complete tier structure.
 - `micro-behaviors/` must NOT reference `objectives/` (capabilities are atomic, objectives infer intent)
 - `micro-behaviors/` must NOT use `crit: hostile` (hostile requires intent inference, belongs in `objectives/`)
 
+## Tier Placement Litmus Test
+
+Before placing a trait in `objectives/` or `well-known/`, ask: **would this fire on `/bin/ls`, `/bin/sh`, or `/usr/bin/curl`?** If yes, it's too broad for an intent-inferring tier.
+
+**Common mistakes:**
+
+| Pattern | Wrong Tier | Correct Tier | Why |
+|---------|-----------|--------------|-----|
+| Binary has many exports | `objectives/evasion/` | `metadata/binary/symbols/` | Neutral structural property |
+| Binary has high entropy | `objectives/anti-static/` | `metadata/binary/metrics/` | Neutral measurement |
+| Binary has low complexity | `objectives/anti-static/` | `metadata/binary/metrics/` | Normal for most binaries |
+| ELF64 class marker | `objectives/anti-static/pack/` | `metadata/binary/metrics/` | Every 64-bit ELF has this |
+| CLI help/usage text | `objectives/anti-static/` | `metadata/binary/metrics/` | Normal binary property |
+| HTTP Content-Type header | `objectives/c2/` | `micro-behaviors/communications/http/` | Neutral protocol element |
+| SOCKS protocol string | `objectives/c2/backdoor/` | `micro-behaviors/communications/proxy/` | Neutral protocol |
+| `$HOME` env var | `objectives/discovery/` | `micro-behaviors/os/env/` | Universal env var |
+| `execve` symbol | `well-known/tools/offensive/` | `micro-behaviors/process/create/` | Standard syscall |
+| `umask` syscall | `objectives/persistence/` | `micro-behaviors/process/daemonize/` | Standard POSIX call |
+| SELinux xattr | `objectives/evasion/anti-av/` | `micro-behaviors/fs/attributes/xattr/` | Normal on Linux |
+| `readdir` export | `objectives/evasion/kernel-hide/` | Needs `unless:` for PIE executables | PIE ELFs are ET_DYN like .so |
+
+**The rule:** A single API call, syscall, string literal, or structural measurement is **never** an objective. It becomes one only when combined with other signals in a composite rule. Place the atom in `micro-behaviors/` or `metadata/`, and let composites in `objectives/` reference it.
+
+**Component traits in `objectives/`:** Only allowed when the fragment is attack-context-specific with no meaning outside that context (e.g., Nemucod-specific string pieces, C2 domain patterns). Generic protocol strings, syscalls, and binary metrics always belong in neutral tiers even when used as composite building blocks.
+
 ## Trait Placement & IDs
 
 - IDs auto-prefixed by directory path (e.g., `traits/micro-behaviors/process/create/shell/` → prefix `micro-behaviors/process/create/shell`)
@@ -74,13 +99,13 @@ traits:
     entropy_min: 4.5                     # Optional min file entropy (0.0-8.0; section entropy handled via type: section)
     entropy_max: 7.5                     # Optional max file entropy
     if:                                  # Condition (see below)
-      type: text
+      type: string_value
       substr: ".Kill("
 ```
 
 **Field override:** List fields (`for`, `platforms`) can be set to `[none]` to unset file-level defaults. Example: `for: [none]` removes file type filtering even if defaults specify types. Scalar fields (`conf`, `crit`) do not support `none`.
 
-**File types:** `elf`, `macho`, `pe`, `dll`, `so`, `dylib`, `pyc`, `shell`, `batch`, `python`, `javascript`, `typescript`, `rust`, `java`, `class`, `ruby`, `c`, `cpp`, `go`, `csharp`, `php`, `perl`, `powershell`, `lua`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir`, `vbs`, `html`, `applescript`, `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `systemd`, `composer.json`, `plist`, `ipa`, `rtf`, `lnk`, `jpeg`, `png`, `pkginfo`, `pickle`, `pdf`, `oledoc`, `ooxml`.
+**File types:** `elf`, `macho`, `pe`, `dll`, `so`, `dylib`, `pyc`, `shell`, `batch`, `python`, `javascript`, `typescript`, `rust`, `java`, `class`, `ruby`, `c`, `cpp`, `go`, `csharp`, `php`, `perl`, `powershell`, `lua`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir`, `vbs`, `html`, `applescript`, `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `plist`, `ipa`, `rtf`, `lnk`, `jpeg`, `png`, `pkginfo`, `pickle`, `pdf`, `oledoc`, `ooxml`.
 
 **Aliases** (resolved to the canonical type):
 
@@ -88,11 +113,8 @@ traits:
 |-------|-------------|--------|
 | `doc`, `xls`, `ppt`, `msg`, `ole` | `oledoc` | Legacy Microsoft Office (OLE2/CFBF) |
 | `docx`, `xlsx`, `pptx`, `docm`, `xlsm`, `pptm` | `ooxml` | Modern Microsoft Office (OOXML/ZIP) |
-| `systemd-service`, `systemd_service`, `service`, `.service` | `systemd` | systemd service unit files and `.service.d/*.conf` drop-ins |
 
 **Platforms:** `linux`, `macos`, `windows`, `unix`, `android`, `ios`, `all`.
-
-**Platform hierarchy:** `unix` is the superset of Linux and macOS — it covers any Unix-like system. Use `unix` when a rule broadly applies across Linux and macOS (e.g., ELF binaries, shell scripts, POSIX APIs). Use `linux` or `macos` when a rule targets a platform-specific feature (e.g., `systemd` is Linux-only, `plist` is macOS-only). Do not list `unix` together with `linux` or `macos` — the validator will flag this as redundant. `android` is separate (not a traditional Unix desktop/server OS) and should be listed explicitly where needed. `ios` is the mobile Apple platform and is rarely needed outside of mobile app analysis.
 
 **Architectures:** `x86`, `x86-64`, `aarch64`, `arm`, `riscv`, `mips`, `powerpc`, `powerpc64`, `sparc`, `m68k`, `superh`, `all`. Omitting `arch` is equivalent to `arch: [all]`. Architecture is derived from the analyzed file, never the runtime host. For fat/universal Mach-O binaries, `arch` also clamps pattern searches (hex, raw, encoded) to the byte range of the matching slice, preventing cross-slice false positives.
 
@@ -103,7 +125,7 @@ traits:
 | `binaries` | `elf`, `macho`, `pe`, `dylib`, `so`, `dll`, `class`, `pyc` |
 | `scripts` | `shell`, `batch`, `python`, `javascript`, `ruby`, `php`, `perl`, `lua`, `powershell`, `applescript`, `vbs` |
 | `source` | `typescript`, `rust`, `java`, `c`, `cpp`, `go`, `csharp`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir` |
-| `manifests` | `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `systemd`, `composer.json`, `pkginfo`, `plist`, `lnk` |
+| `manifests` | `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `pkginfo`, `plist`, `lnk` |
 | `documents` | `pdf`, `rtf`, `html`, `oledoc`, `ooxml` |
 | `media` | `jpeg`, `png` |
 | `data` | `ipa` |
@@ -150,20 +172,18 @@ defaults:
 
 | Type | Purpose | Matchers | Modifiers |
 |------|---------|----------|-----------|
-| `text` | Human-readable text. Binaries use extracted strings; source/text files use raw text. | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
-| `string_literal` | AST-backed string literals only (no raw fallback) | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
-| `string_value` | Deprecated compatibility alias. Runtime still honors it, but `validate` warns. | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
-| `raw` | Raw file content / bytes (comments, cross-boundary matches, byte-precise ranges) | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
+| `string_value` | Extracted string values | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
+| `raw` | Raw file bytes | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
 | `symbol` | Imports/exports/functions | `exact`, `substr`, `regex` | `platforms`, `is` |
 | `hex` | Byte patterns (wildcards always extracted) | pattern string | count, density, `offset`, `offset_range`, `arch` clamped in fat binaries |
 | `encoded` | **All decoded strings** | `exact`, `substr`, `regex`, `word` | count, density, location, `encoding`, `case_insensitive`, `is` |
 | ~~`base64`~~ | *(removed — use `encoded`)* | | |
 | ~~`xor`~~ | *(removed — use `encoded`)* | | |
-| `kv` | Structured manifest / unit-file data | `exact`, `substr`, `regex` | `path`, `exists`, `size_min`, `size_max`, `case_insensitive` (value only) |
+| `kv` | Manifest data | `exact`, `substr`, `regex` | `path`, `exists`, `size_min`, `size_max`, `case_insensitive` (value only) |
 | `basename` | Filename | `exact`, `substr`, `regex` | `case_insensitive` |
 
 **Matcher notes:**
-- `word` - Word boundary match (equivalent to `\b{value}\b`). Available on `text`, `string_literal`, `string_value` (deprecated), `raw`, `section`, `encoded`. NOT available on `symbol`, `basename`, `hex`.
+- `word` - Word boundary match (equivalent to `\b{value}\b`). Available on `string_value`, `raw`, `section`, `encoded`. NOT available on `symbol`, `basename`, `hex`.
 - `is` - High-fidelity validator for common data patterns. Supported values:
   - `external_ip`: Only match if evidence contains a valid external IPv4 (rejects RFC1918, loopback, reserved).
   - `bitcoin_addr`: Only match if evidence contains a valid Bitcoin address (P2PKH, P2SH, or SegWit) with a valid checksum.
@@ -177,6 +197,7 @@ defaults:
 - Before writing AST for simple calls, check `cleave symbols <file>` to see whether the needed calls are already exposed as symbols.
 - Use `ast` when the behavior depends on structure rather than just the presence of a call: argument relationships, assignment shape, control flow, object construction, chained access patterns, or other syntax that `symbol` cannot express precisely.
 - `string_value` is deprecated. Existing traits still run, but `cleave validate` warns and should be migrated to `text` or `string_literal`.
+
 
 ### Structural
 
@@ -317,7 +338,7 @@ These are **trait-level fields** (siblings of `if:`, not nested inside the condi
 
 ## Location Constraints
 
-Available on `text`, `string_literal`, `string_value` (deprecated), `raw`, `encoded`. Hex supports `offset` and `offset_range`.
+Available on `string_value`, `raw`, `encoded`. Hex supports `offset` and `offset_range`.
 
 | Field | Description |
 |-------|-------------|
@@ -331,7 +352,7 @@ Available on `text`, `string_literal`, `string_value` (deprecated), `raw`, `enco
 # Last 1KB of file
 - id: trailer-check
   if:
-    type: raw
+    type: string_value
     substr: "END"
     offset_range: [-1024, null]
 
@@ -345,7 +366,7 @@ Available on `text`, `string_literal`, `string_value` (deprecated), `raw`, `enco
 # Within .rodata section, first 256 bytes
 - id: rodata-header
   if:
-    type: text
+    type: string_value
     substr: "CONFIG"
     section: rodata
     section_offset_range: [0, 256]
@@ -662,7 +683,7 @@ cleave test-rules file.bin --rules "debugger-check"
 
 ## KV Path Syntax
 
-For JSON/YAML/TOML manifests and systemd service units (`package.json`, `manifest.json`, `Cargo.toml`, `foo.service`, `foo.service.d/override.conf`, etc.):
+For JSON/YAML/TOML manifests (`package.json`, `manifest.json`, `Cargo.toml`, etc.):
 
 ```yaml
 path: "key"                    # Top-level key
@@ -707,56 +728,6 @@ type: kv
 path: "version"
 regex: "^0\\.0\\.0$"      # Version is 0.0.0
 ```
-
-### Systemd Service KV Paths
-
-`type: kv` has first-class support for systemd service files (`.service`) and service drop-ins (`.service.d/*.conf`). Other unit families such as `.timer`, `.socket`, `.path`, and `.mount` are not covered by this structured parser yet.
-
-Systemd section names and directive names are normalized to lowercase `snake_case`, so `[Unit]` becomes `unit`, `ExecStart` becomes `exec_start`, and `WantedBy` becomes `wanted_by`.
-
-```yaml
-# Common systemd KV paths
-path: "unit.after"
-path: "service.exec_start"
-path: "service.exec_start_pre"
-path: "service.restart"
-path: "install.wanted_by"
-path: "service.environment.LD_PRELOAD"
-path: "service.environment_list"
-```
-
-```yaml
-# Match suspicious launchers in ExecStart=
-- id: suspicious-exec-start
-  for: [systemd]
-  platforms: [linux, unix]
-  if:
-    type: kv
-    path: "service.exec_start"
-    regex: '(?i)(curl|wget).{0,80}(sh|bash)|python\s+-c|/dev/tcp/'
-
-# Detect environment-based injection
-- id: ld-preload-env
-  if:
-    type: kv
-    path: "service.environment.LD_PRELOAD"
-    exists: true
-
-# Boot persistence target
-- id: multi-user-target
-  if:
-    type: kv
-    path: "install.wanted_by"
-    exact: "multi-user.target"
-```
-
-Systemd-specific KV behavior:
-- Prefer the base path (for example `install.wanted_by` or `service.environment_list`) when you want scalar-or-array-safe matching. KV string matching checks scalars directly and arrays element-wise.
-- Use `[*]` only when you specifically need array expansion and expect the field to hold multiple values.
-- Token-list directives such as `After=` and `WantedBy=` are split into individual items. A single item is stored as a scalar; multiple items or repeated directives become arrays.
-- `Environment=` populates both `service.environment.<NAME>` and `service.environment_list`; the unsplit original value remains under `service._raw.environment`.
-- `Exec*` directives stay as raw command strings; repeated `Exec*` lines become arrays, and their unsplit originals remain under `service._raw.exec_start`, `service._raw.exec_start_pre`, etc.
-- Empty resets such as `ExecStart=` clear prior values within the parsed file.
 
 ### Collection Size Constraints
 
@@ -817,7 +788,6 @@ Regex patterns are validated at load time:
 
 - **Literal regex conversion:** Patterns without regex metacharacters (`.`, `*`, `+`, `?`, `^`, `$`, `(`, `)`, `[`, `]`, `{`, `}`, `|`, `\`) are auto-converted to `substr:` for performance
 - **Size-only traits:** Traits with `size_min`/`size_max` but no `if:` condition get a synthetic "always-true" condition
-- **Deprecated string type:** `type: string_value` remains runtime-compatible, but `cleave validate` warns and should be migrated to `text` or `string_literal`
 
 ### Evidence Handling
 
@@ -832,14 +802,14 @@ cleave /path/to/file                    # Analyze file
 cleave symbols <file>                   # View symbols
 cleave strings <file>                   # View strings
 cleave test-rules <file> --rules "x,y"  # Debug rules
-cleave test-match <file> --type text --pattern "eval"  # Test patterns
+cleave test-match <file> --type string-value --pattern "eval"  # Test patterns
 ```
 
 ### test-match Options
 
 | Option | Values |
 |--------|--------|
-| `--type` | `text`, `string-literal`, `string-value` (deprecated), `symbol`, `raw`, `kv`, `hex`, `encoded`, `section`, `metrics` |
+| `--type` | `string-value`, `symbol`, `raw`, `kv`, `hex`, `encoded` |
 | `--method` | `exact`, `contains`, `regex`, `word` |
 | `--pattern` | Search pattern |
 | `--encoding` | Encoding filter for `encoded` type: `base64`, `base64,hex`, etc. |
@@ -850,7 +820,7 @@ cleave test-match <file> --type text --pattern "eval"  # Test patterns
 | `--section-offset`, `--section-offset-range` | Section-relative position |
 | `--case-insensitive` | Case-insensitive match |
 | `--kv-path` | Path for KV searches |
-| `--file-type` | Override detection (for example `systemd` or legacy `systemd-service`) |
+| `--file-type` | Override detection |
 
 ## Reference Codes
 

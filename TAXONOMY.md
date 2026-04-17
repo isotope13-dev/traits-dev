@@ -246,12 +246,6 @@ micro-behaviors/
 │   ├── watch/             #   File monitoring (inotify, fanotify, fswatch)
 │   └── write/             #   File writing (standalone)
 │
-├── revision-control/      # Revision control systems
-│   │                      #   Neutral VCS operations only.
-│   │                      #   Hook persistence → objectives/persistence/system/git-hooks/.
-│   │                      #   Supply-chain telemetry/tampering → objectives/supply-chain/.
-│   └── git/               #   Git operations (query, clone, pull, push, tag, hooks)
-│
 ├── hardware/              # Hardware device I/O                 → MBC: Hardware
 │   │                      #   Direct interaction with hardware devices.
 │   │                      #   Querying system properties → os/sysinfo/.
@@ -422,7 +416,7 @@ objectives/
 │   │   ├── control-flow/      #     Control-flow (flattening, VM dispatch, polymorphism)
 │   │   ├── syntax/            #     Source syntax patterns (AST/raw; anti-tamper,
 │   │   │                      #       dynamic property access, IIFE wrappers).
-│   │   │                      #       vs string/: string/ detects string/text concealment techniques;
+│   │   │                      #       vs string/: string/ detects string-value techniques;
 │   │   │                      #       syntax/ detects source-level structural patterns.
 │   │   │                      #       vs control-flow/: control-flow/ is about execution
 │   │   │                      #       path manipulation; syntax/ is about language-specific
@@ -917,26 +911,20 @@ metadata/
 │   ├── extension/         #   File extension classification
 │   ├── magic/             #   Magic byte signatures
 │   └── text/              #   Text/data format identification (JSON, makefile)
-├── hardening/             # Security hardening features
-│   ├── build/             #   Compiler-applied mitigations (PIE, FORTIFY, RELRO, stack canary)
-│   ├── elf/               #   ELF-specific hardening (NX, RELRO absence)
-│   └── memory/            #   Runtime memory protections (sandbox, seccomp, pledge)
+├── hardening/             # Security hardening features (sandbox, seccomp, pledge)
 ├── import/                # Dependencies/imports (auto-generated)
 │   ├── python/ npm/ ruby/ java/ go/ rust/ c/
 │   └── macho/ elf/ pe/   #   Binary format imports
-├── lang/                  # Language and compiler detection (what produced a file)
+├── lang/                  # Language, compiler, encoding detection
 │   ├── compiled/          #   Compiled language detection (assembly, C, Go, Rust)
-│   ├── compiler/          #   Compiler/toolchain identification
+│   ├── compiler/          #   Compiler identification
 │   │   ├── managed/       #     Managed runtimes (.NET, Delphi)
 │   │   ├── native/        #     Native toolchains (GCC, Clang, MSVC, MinGW)
 │   │   └── systems/       #     Systems language compilers (Go, Rust)
-│   ├── encoded/           #   Code patterns found in encoded strings (wide, unicode-escape)
-│   ├── go-build/          #   Go build flags (-buildmode, -trimpath)
-│   ├── javascript-features/ # JavaScript language version features (ES6+, ESM)
-│   ├── scripted/          #   Scripted language detection (VBScript, Lua, Perl, PowerShell)
-│   ├── shebang/           #   Interpreter detection via shebang lines
-│   ├── source/            #   Source language detection (Delphi)
-│   └── version/           #   Language version strings
+│   ├── encoded/           #   Encoded strings (unicode, wide)
+│   ├── javascript-features/ # JavaScript language features
+│   ├── scripted/          #   Scripted language detection (VBScript, Lua, Perl)
+│   └── ...                #   go-build, linking, optimization, security, shebang, source, version
 ├── library/               # Library/framework detection
 │   ├── data/              #   Data/infrastructure libraries
 │   ├── runtime/           #   Runtime/framework libraries
@@ -975,26 +963,6 @@ metadata/
     └── (per-vendor subdirs: apple, adobe, microsoft, openssl, etc.)
 ```
 
-### `metadata/lang/` scope
-
-`lang/` answers one question: **"what language or compiler produced this file?"** It detects the toolchain, not the result.
-
-**Belongs in `lang/`:**
-- Compiler identification (GCC version, rustc, Clang, .NET AOT)
-- Language detection (Lua patterns, VBScript keywords, shebang lines)
-- Language version (Go 1.22, ES6 features)
-- Build mode (Go `-buildmode=c-shared`, `-trimpath`)
-- Encoded code detection (JavaScript in wide strings, unicode-escape)
-
-**Does NOT belong in `lang/`:**
-- Build hardening (PIE, FORTIFY, RELRO, stack canary) → `hardening/`
-- Binary linking strategy (static, dynamic, API sets) → `binary/linking/`
-- Binary structure (sections, imports, metrics) → `binary/`
-- Specific tool/malware signatures embedded in source paths → `well-known/` or demote to `component` if used as a composite building block
-- Runtime behavior that happens to be language-specific → `micro-behaviors/`
-
-A good litmus test: if the trait would fire identically on two programs written in the same language doing completely different things, it's `lang/`. If it depends on what the program *does*, it belongs elsewhere.
-
 ### Metadata boundary rubric
 
 When placing a new metadata trait, use this tiebreaker table. Each row names the two most likely categories and the deciding question:
@@ -1007,9 +975,6 @@ When placing a new metadata trait, use this tiebreaker table. Each row names the
 | `binary/metrics/` | `binary/anomaly/` | Is the measurement neutral (could be normal)? → `metrics/`. Does it inherently indicate malformation or tampering? → `anomaly/` |
 | `document/` | `file/` | Does it require parsing document internals (OLE streams, OOXML parts, PDF objects)? → `document/`. Observable from header/extension alone? → `file/` |
 | `build/` | `lang/` | Is it about build orchestration (cmake, docker, CI/CD)? → `build/`. Is it about the language toolchain (gcc, rustc, delphi)? → `lang/` |
-| `lang/` | `hardening/` | Does it identify what language/compiler produced the file? → `lang/`. Does it detect a security mitigation applied at build time (PIE, FORTIFY, stack canary, RELRO, NX)? → `hardening/` |
-| `lang/` | `binary/linking/` | Does it identify the language toolchain? → `lang/`. Does it describe how the binary is linked (static, dynamic, API sets)? → `binary/linking/` |
-| `lang/` | `binary/` | Does it answer "what language is this?" → `lang/`. Does it describe binary structure regardless of language (sections, imports, metrics)? → `binary/` |
 | `package/` | `library/` | Is it about ecosystem-level metadata (fields, scripts, quality, testing)? → `package/`. Is it detecting a specific embedded library? → `library/` |
 | `signed/` | `vendor/` | Is it about the cryptographic signature chain or entitlements? → `signed/`. Is it identifying the vendor by strings/resources/patterns? → `vendor/` |
 
