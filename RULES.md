@@ -173,6 +173,9 @@ defaults:
 - Use `text` by default for human-readable content.
 - Use `string_literal` only when you specifically mean AST-backed string literals in source/script languages.
 - Use `raw` when you need comments, byte-precise offsets/ranges, or matches that can cross string boundaries.
+- Prefer `symbol` for simple API/function/method call detection in source and binaries when cleave extracts it cleanly. It is usually the fastest search type, and is often less brittle than AST or broad text regexes for calls like `fetch`, `appendChild`, `FormData`, `querySelectorAll`, or `document.getElementById`.
+- Before writing AST for simple calls, check `cleave symbols <file>` to see whether the needed calls are already exposed as symbols.
+- Use `ast` when the behavior depends on structure rather than just the presence of a call: argument relationships, assignment shape, control flow, object construction, chained access patterns, or other syntax that `symbol` cannot express precisely.
 - `string_value` is deprecated. Existing traits still run, but `cleave validate` warns and should be migrated to `text` or `string_literal`.
 
 ### Structural
