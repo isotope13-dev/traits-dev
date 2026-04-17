@@ -853,3 +853,10 @@ cleave test-match <file> --type text --pattern "eval"  # Test patterns
 
 - **ATT&CK**: `T1234` or `T1234.001`
 - **MBC**: `B0001` (behavior), `C0015` (micro-behavior), `E1234` (ATT&CK+MBC)
+
+## Rule Logic & Precision
+- **Proximity Clusters:** Use `regex: A.{0,32}B` to detect targeted blacklists (e.g. CIS country codes) and avoid false positives in global localization libraries.
+- **Script Support:** Always include `batch` and `powershell` in `for:` lists for Windows logic. Note: `shell` requires a non-Windows platform tag to pass validation.
+- **Atomic vs Composite:** `if:` blocks do not support `all`/`any`. Create atomic traits and combine them using `composite_rules`.
+- **ID Formatting:** Cross-file references must use `category/path::id`. Never include the YAML filename in a trait ID.
+- **Tier Constraints:** `hostile` criticality is only allowed in `objectives/` and `well-known/`. `micro-behaviors/` max out at `suspicious`.
