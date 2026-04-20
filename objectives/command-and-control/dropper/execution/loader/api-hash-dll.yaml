@@ -1,0 +1,54 @@
+# Small, hand-rolled DLLs that hide their imports by walking the PEB and
+# matching exported function names against hardcoded hashes at runtime.
+# This is the PlugX/Korplug sideload loader shape: tiny file, one or zero
+# declared imports, a handful of exports, and unmistakable PEB+hash constants
+# in .text.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  attack: T1574.002
+  mbc: E1574.002
+composite_rules:
+  # === HELPER (component): minimal-import small DLL with PEB/hash machinery ===
+  - id: api-hash-micro-dll-core
+    desc: Tiny DLL with PEB and hash-based resolution
+    crit: component
+    conf: 0.88
+    size_max: 65536
+    all:
+      - id: objectives/anti-static/obfuscation/imports::pe-export-walk-primitive
+    any:
+      - id: metadata/binary/metrics::no-imports
+      - id: metadata/binary/symbols::single-import-raw
+      - id: metadata/binary/symbols::few-import-count
+
+  # === SUSPICIOUS: tiny DLL walks PEB + carries a hash seed ===
+  # PEB access alone could be CRT boilerplate; combined with a hash-algorithm
+  # constant (DJB2/ROR/FNV) in a tiny DLL it is a manual-resolver signature.
+  - id: api-hash-sideload-dll
+    desc: Tiny DLL with manual API-hash resolution
+    crit: suspicious
+    conf: 0.9
+    size_max: 65536
+    all:
+      - id: api-hash-micro-dll-core
+      - id: objectives/anti-static/obfuscation/imports::api-hash-family-any
+
+  # === HOSTILE: all loader signals present — PlugX/Korplug sideload shape ===
+  # Tiny DLL + PEB walk + hash seed + sparse strings/functions.  The sparse
+  # footprint is the tell that the apparent "empty" code is a loader with the
+  # real logic pulled in after resolution.
+  - id: plugx-style-sideload-loader-dll
+    desc: PlugX-style sideload loader DLL
+    crit: hostile
+    conf: 0.95
+    size_max: 65536
+    all:
+      - id: api-hash-sideload-dll
+    any:
+      - id: well-known/malware/trojan/shellobject::sparse-function-stub
+      - id: well-known/malware/trojan/shellobject::tiny-string-table
+      - id: objectives/anti-static/obfuscation/payload::low-string-count-vb6
+    unless:
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/binary/framework::dotnet-assembly

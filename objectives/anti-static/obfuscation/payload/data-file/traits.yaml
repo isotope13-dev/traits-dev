@@ -1,0 +1,123 @@
+# Opaque "data" files commonly carry encrypted/XOR'd malware payloads
+# (PlugX Canon.dat, Cobalt Strike profile drops, staged shellcode).
+# Standalone blobs with no recognised format but high entropy and XOR'd
+# platform fingerprints are the classic sideload-payload shape.
+defaults:
+  for: [data]
+  attack: T1027
+  mbc: F0001
+traits:
+  # === NOTABLE: opaque data file with elevated entropy (any OS) ===
+  - id: high-entropy-data-file
+    desc: Opaque data file with elevated entropy
+    crit: notable
+    conf: 0.7
+    platforms: [windows, linux, macos]
+    size_min: 1024
+    if:
+      type: metrics
+      field: binary.overall_entropy
+      min: 6.5
+
+  # === NOTABLE: very high entropy suggests strong obfuscation/crypto ===
+  - id: very-high-entropy-data-file
+    desc: Data file with very high entropy
+    crit: notable
+    conf: 0.85
+    platforms: [windows, linux, macos]
+    size_min: 1024
+    if:
+      type: metrics
+      field: binary.overall_entropy
+      min: 7.5
+
+  # === SUSPICIOUS: XOR-decoded plaintext strings (any OS) ===
+  - id: xor-decoded-strings-in-data
+    desc: XOR-decoded plaintext in data file
+    crit: suspicious
+    conf: 0.85
+    platforms: [windows, linux, macos]
+    if:
+      type: encoded
+      encoding: xor
+      regex: "[A-Za-z]{10,}"
+
+  # === SUSPICIOUS: XOR-decoded PE loader APIs (Windows-only) ===
+  - id: xor-decoded-loader-api
+    desc: XOR-decoded loader API in data file
+    crit: suspicious
+    conf: 0.9
+    platforms: [windows]
+    if:
+      type: encoded
+      encoding: xor
+      regex: "(LoadLibrary|GetProcAddress|VirtualAlloc)"
+
+  # === SUSPICIOUS: XOR-decoded PE thread/mem APIs ===
+  - id: xor-decoded-exec-api
+    desc: XOR-decoded execution API in data file
+    crit: suspicious
+    conf: 0.9
+    platforms: [windows]
+    if:
+      type: encoded
+      encoding: xor
+      regex: "(CreateThread|VirtualProtect|RtlMoveMemory)"
+
+  # === SUSPICIOUS: XOR-decoded sync primitive (PE runtime init) ===
+  - id: xor-decoded-sync-api
+    desc: XOR-decoded sync-primitive in data file
+    crit: suspicious
+    conf: 0.85
+    platforms: [windows]
+    if:
+      type: encoded
+      encoding: xor
+      regex: "InitializeCriticalSection"
+
+  # === SUSPICIOUS: XOR-decoded PE DOS stub text (unambiguous PE header) ===
+  - id: xor-decoded-pe-dos-stub
+    desc: XOR-decoded PE DOS stub string
+    crit: suspicious
+    conf: 0.95
+    platforms: [windows]
+    if:
+      type: encoded
+      encoding: xor
+      substr: "This program cannot be run in DOS mode"
+
+composite_rules:
+  # Helper: any XOR'd Windows API name reveals PE-shape content under the mask.
+  - id: xor-decoded-winapi-name
+    desc: XOR-decoded Windows API name in data
+    crit: component
+    conf: 0.9
+    platforms: [windows]
+    any:
+      - id: xor-decoded-loader-api
+      - id: xor-decoded-exec-api
+      - id: xor-decoded-sync-api
+
+  # === HOSTILE: DOS stub + at least one API-name XOR decode ===
+  # One PE clue via XOR can be a coincidence; DOS stub + any API name is the
+  # PlugX-style packed payload shape.
+  - id: xor-encoded-pe-payload-data
+    desc: Data file contains XOR-encoded PE payload
+    crit: hostile
+    conf: 0.95
+    platforms: [windows]
+    attack: T1027.013
+    all:
+      - id: xor-decoded-pe-dos-stub
+      - id: xor-decoded-winapi-name
+
+  # === HOSTILE: DOS stub + very-high entropy body (packed/crypted PE) ===
+  - id: xor-encoded-pe-payload-entropy
+    desc: XOR-encoded PE with packed crypted body
+    crit: hostile
+    conf: 0.92
+    platforms: [windows]
+    attack: T1027.013
+    all:
+      - id: xor-decoded-pe-dos-stub
+      - id: very-high-entropy-data-file
