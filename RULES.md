@@ -208,8 +208,7 @@ defaults:
 | `syscall` | Direct syscalls | `name`, `number`, `arch` (all optional, OR within field, AND across fields) |
 | `section` | Binary sections | `exact`, `substr`, `regex`, `word`, `case_insensitive`, `length_min`, `length_max`, `entropy_min`, `entropy_max`, `readable`, `writable`, `executable` |
 | `section_ratio` | Section size ratio | `section`, `compare_to` (default: "total"), `min`, `max` |
-| `structure` | Binary structure | `feature` (hierarchical ID), `min_sections` |
-| `metrics` | Code metrics | `field` (e.g., "identifiers.avg_entropy", "binary.export_count", "binary.string_count"), `min`, `max`, `min_size`, `max_size` |
+| `metrics` | Code metrics | `field` (e.g., "identifiers.avg_entropy", "binary.export_count", "binary.string_count", "elf.e_machine"), `min`, `max`, `min_size`, `max_size` |
 | `yara` | YARA rule | `source` |
 
 > **Note**: File size filtering uses trait-level `size_min`/`size_max` fields, not a condition type.
@@ -235,27 +234,20 @@ The `syscall` type filters are all optional. Within each field (name, number, ar
 
 ### Structural Condition Examples
 
-Feature IDs use hierarchical paths. Common features include:
-- `binary/format/elf`, `binary/format/macho`, `binary/format/pe`
-- `binary/arch/{arch}` (e.g., `binary/arch/x86_64`, `binary/arch/arm`)
-- `binary/stripped`, `binary/signed`, `binary/pie`
-- `entropy/high` (high entropy section, suggests packing/encryption)
-- `source/language/{lang}` (e.g., `source/language/python`)
-
-Matching uses prefix logic: `feature: "binary"` matches all `binary/*` features.
+File-format and architecture gates are expressed at the trait level with `for:`
+and `arch:` rather than a condition type. To identify a specific architecture or
+format, use a `metrics` check against the numeric header field:
 
 ```yaml
-# Detect high entropy (packed/encrypted) sections
-- id: high-entropy-section
+# Fire only on x86-64 ELF binaries
+- id: arm64-elf
+  for: [elf]
+  arch: [aarch64]
   if:
-    type: structure
-    feature: "entropy/high"
-
-# Detect stripped binary
-- id: stripped-binary
-  if:
-    type: structure
-    feature: "binary/stripped"
+    type: metrics
+    field: elf.e_machine
+    min: 183
+    max: 183
 
 # Detect binaries with suspiciously few exports
 - id: minimal-exports
