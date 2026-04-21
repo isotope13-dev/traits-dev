@@ -174,7 +174,7 @@ defaults:
 |------|---------|----------|-----------|
 | `string_value` | Extracted string values | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
 | `raw` | Raw file bytes | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
-| `symbol` | Imports/exports/functions | `exact`, `substr`, `regex` | `platforms`, `is` |
+| `symbol` | Imports/exports/functions | `exact`, `substr`, `regex` | `platforms`, `is`, `kind` |
 | `hex` | Byte patterns (wildcards always extracted) | pattern string | count, density, `offset`, `offset_range`, `arch` clamped in fat binaries |
 | `encoded` | **All decoded strings** | `exact`, `substr`, `regex`, `word` | count, density, location, `encoding`, `case_insensitive`, `is` |
 | ~~`base64`~~ | *(removed — use `encoded`)* | | |
@@ -188,6 +188,7 @@ defaults:
   - `external_ip`: Only match if evidence contains a valid external IPv4 (rejects RFC1918, loopback, reserved).
   - `bitcoin_addr`: Only match if evidence contains a valid Bitcoin address (P2PKH, P2SH, or SegWit) with a valid checksum.
 - **Symbol normalization:** Leading underscores are stripped from both loaded symbols and `exact`/`substr` patterns for cross-platform portability (macOS `_malloc`, glibc `__libc_start_main` both match `exact: "malloc"` / `exact: "libc_start_main"`). Regex patterns are not normalized.
+- **`kind:` filter on `symbol`:** restrict matching to one category — `import`, `export`, `forward` (PE re-exports only), or `function` (internal functions recovered by disassembly). Omitting `kind:` matches across imports, exports, and functions as before. When `kind: forward`, the pattern is tested against both the export name *and* the forward target (`KERNEL32.LoadLibraryA`), so rules can filter either side of the re-export edge. Use `kind: import` + composites for per-import set/count queries (what `import_combination` used to do in one block).
 
 **Which one should I use?**
 - Use `text` by default for human-readable content.
@@ -207,7 +208,6 @@ defaults:
 | `syscall` | Direct syscalls | `name`, `number`, `arch` (all optional, OR within field, AND across fields) |
 | `section` | Binary sections | `exact`, `substr`, `regex`, `word`, `case_insensitive`, `length_min`, `length_max`, `entropy_min`, `entropy_max`, `readable`, `writable`, `executable` |
 | `section_ratio` | Section size ratio | `section`, `compare_to` (default: "total"), `min`, `max` |
-| `import_combination` | Import patterns | `required`, `suspicious`, `min_suspicious`, `max_total` |
 | `structure` | Binary structure | `feature` (hierarchical ID), `min_sections` |
 | `exports_count` | Export count bounds | `min`, `max` |
 | `string_value_count` | String value count analysis | `min`, `max`, `min_length`, `regex` (filter) |
