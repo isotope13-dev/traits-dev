@@ -1,7 +1,7 @@
 .PHONY: validate install-precommit
 
 validate:
-	cleave validate
+	CLEAVE_TRAITS_PATH=. cleave validate
 
 install-precommit:
 	cp scripts/pre-commit .git/hooks/pre-commit

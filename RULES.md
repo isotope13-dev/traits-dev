@@ -99,7 +99,7 @@ traits:
     entropy_min: 4.5                     # Optional min file entropy (0.0-8.0; section entropy handled via type: section)
     entropy_max: 7.5                     # Optional max file entropy
     if:                                  # Condition (see below)
-      type: string_value
+      type: text
       substr: ".Kill("
 ```
 
@@ -172,18 +172,24 @@ defaults:
 
 | Type | Purpose | Matchers | Modifiers |
 |------|---------|----------|-----------|
-| `string_value` | Extracted string values | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
+| `text` | Extracted strings (binaries) or raw text (source) | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
+| `string_literal` | AST-backed string literals only (source) | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
 | `raw` | Raw file bytes | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
-| `symbol` | Imports/exports/functions | `exact`, `substr`, `regex` | `platforms`, `is`, `kind` |
+| `symbol` | Imports/exports/forwards/functions | `exact`, `substr`, `regex` | `platforms`, `is`, `kind` |
 | `hex` | Byte patterns (wildcards always extracted) | pattern string | count, density, `offset`, `offset_range`, `arch` clamped in fat binaries |
 | `encoded` | **All decoded strings** | `exact`, `substr`, `regex`, `word` | count, density, location, `encoding`, `case_insensitive`, `is` |
 | ~~`base64`~~ | *(removed — use `encoded`)* | | |
 | ~~`xor`~~ | *(removed — use `encoded`)* | | |
+| ~~`string_value`~~ | *(removed — use `text`)* | | |
+| ~~`string_count` / `string_value_count`~~ | *(removed — use `metrics: binary.string_count` or a `type: text` trait with `count_min`)* | | |
+| ~~`exports_count`~~ | *(removed — use `metrics: binary.export_count`)* | | |
+| ~~`import_combination`~~ | *(removed — use `symbol kind: import` plus composite `all`/`any`/`needs`)* | | |
+| ~~`structure`~~ | *(removed — express file-format and arch gates via trait-level `for:`/`arch:`, or check `elf.e_machine`/`macho.cpu_type`/`pe.machine` via `metrics`)* | | |
 | `kv` | Manifest data | `exact`, `substr`, `regex` | `path`, `exists`, `size_min`, `size_max`, `case_insensitive` (value only) |
 | `basename` | Filename | `exact`, `substr`, `regex` | `case_insensitive` |
 
 **Matcher notes:**
-- `word` - Word boundary match (equivalent to `\b{value}\b`). Available on `string_value`, `raw`, `section`, `encoded`. NOT available on `symbol`, `basename`, `hex`.
+- `word` - Word boundary match (equivalent to `\b{value}\b`). Available on `text`, `string_literal`, `raw`, `section`, `encoded`. NOT available on `symbol`, `basename`, `hex`.
 - `is` - High-fidelity validator for common data patterns. Supported values:
   - `external_ip`: Only match if evidence contains a valid external IPv4 (rejects RFC1918, loopback, reserved).
   - `bitcoin_addr`: Only match if evidence contains a valid Bitcoin address (P2PKH, P2SH, or SegWit) with a valid checksum.
@@ -197,7 +203,6 @@ defaults:
 - Prefer `symbol` for simple API/function/method call detection in source and binaries when cleave extracts it cleanly. It is usually the fastest search type, and is often less brittle than AST or broad text regexes for calls like `fetch`, `appendChild`, `FormData`, `querySelectorAll`, or `document.getElementById`.
 - Before writing AST for simple calls, check `cleave symbols <file>` to see whether the needed calls are already exposed as symbols.
 - Use `ast` when the behavior depends on structure rather than just the presence of a call: argument relationships, assignment shape, control flow, object construction, chained access patterns, or other syntax that `symbol` cannot express precisely.
-- `string_value` is deprecated. Existing traits still run, but `cleave validate` warns and should be migrated to `text` or `string_literal`.
 
 
 ### Structural
@@ -330,7 +335,7 @@ These are **trait-level fields** (siblings of `if:`, not nested inside the condi
 
 ## Location Constraints
 
-Available on `string_value`, `raw`, `encoded`. Hex supports `offset` and `offset_range`.
+Available on `text`, `string_literal`, `raw`, `encoded`. Hex supports `offset` and `offset_range`.
 
 | Field | Description |
 |-------|-------------|
@@ -344,7 +349,7 @@ Available on `string_value`, `raw`, `encoded`. Hex supports `offset` and `offset
 # Last 1KB of file
 - id: trailer-check
   if:
-    type: string_value
+    type: text
     substr: "END"
     offset_range: [-1024, null]
 
@@ -358,7 +363,7 @@ Available on `string_value`, `raw`, `encoded`. Hex supports `offset` and `offset
 # Within .rodata section, first 256 bytes
 - id: rodata-header
   if:
-    type: string_value
+    type: text
     substr: "CONFIG"
     section: rodata
     section_offset_range: [0, 256]
