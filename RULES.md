@@ -206,9 +206,8 @@ defaults:
 |------|---------|--------|
 | `ast` | Parse source | `kind`/`node`, `exact`/`substr`/`regex`/`query` (tree-sitter S-expression) |
 | `syscall` | Direct syscalls | `name`, `number`, `arch` (all optional, OR within field, AND across fields) |
-| `section` | Binary sections | `exact`, `substr`, `regex`, `word`, `case_insensitive`, `length_min`, `length_max`, `entropy_min`, `entropy_max`, `readable`, `writable`, `executable` |
-| `section_ratio` | Section size ratio | `section`, `compare_to` (default: "total"), `min`, `max` |
-| `metrics` | Code metrics | `field` (e.g., "identifiers.avg_entropy", "binary.export_count", "binary.string_count", "elf.e_machine"), `min`, `max`, `min_size`, `max_size` |
+| `section` | Binary sections | `exact`, `substr`, `regex`, `word`, `case_insensitive`, `length_min`, `length_max`, `entropy_min`, `entropy_max`, `readable`, `writable`, `executable`, `compare_to` (default: "total"), `ratio_min`, `ratio_max` |
+| `metrics` | Code metrics | `field` (e.g., `identifiers.avg_entropy`, `binary.text_to_file_ratio`, `binary.data_to_file_ratio`, `binary.rsrc_to_file_ratio`, `binary.string_count`, `elf.e_machine`), `min`, `max`, `min_size`, `max_size` |
 | `yara` | YARA rule | `source` |
 
 > **Note**: File size filtering uses trait-level `size_min`/`size_max` fields, not a condition type.
