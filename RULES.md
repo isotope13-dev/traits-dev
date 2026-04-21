@@ -209,9 +209,7 @@ defaults:
 | `section` | Binary sections | `exact`, `substr`, `regex`, `word`, `case_insensitive`, `length_min`, `length_max`, `entropy_min`, `entropy_max`, `readable`, `writable`, `executable` |
 | `section_ratio` | Section size ratio | `section`, `compare_to` (default: "total"), `min`, `max` |
 | `structure` | Binary structure | `feature` (hierarchical ID), `min_sections` |
-| `exports_count` | Export count bounds | `min`, `max` |
-| `string_value_count` | String value count analysis | `min`, `max`, `min_length`, `regex` (filter) |
-| `metrics` | Code metrics | `field` (e.g., "identifiers.avg_entropy"), `min`, `max`, `min_size`, `max_size` |
+| `metrics` | Code metrics | `field` (e.g., "identifiers.avg_entropy", "binary.export_count", "binary.string_count"), `min`, `max`, `min_size`, `max_size` |
 | `yara` | YARA rule | `source` |
 
 > **Note**: File size filtering uses trait-level `size_min`/`size_max` fields, not a condition type.
@@ -262,15 +260,18 @@ Matching uses prefix logic: `feature: "binary"` matches all `binary/*` features.
 # Detect binaries with suspiciously few exports
 - id: minimal-exports
   if:
-    type: exports_count
+    type: metrics
+    field: binary.export_count
     max: 5
 
-# Detect string obfuscation (very few visible strings)
+# Detect string obfuscation (very few visible strings).
+# stng already applies min_length=4 during extraction, so binary.string_count
+# reflects strings of length >= 4 — no separate filter needed.
 - id: few-strings
   if:
-    type: string_value_count
+    type: metrics
+    field: binary.string_count
     max: 20
-    min_length: 4    # Only count strings 4+ chars
 
 # Detect obfuscated identifiers via entropy
 - id: high-entropy-identifiers
