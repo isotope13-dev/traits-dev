@@ -2,7 +2,7 @@
 # Detects structural anomalies common in packed/obfuscated ELF binaries
 # ATT&CK: T1027.002 (Software Packing)
 defaults:
-  platforms: [unix, android]
+  platforms: [linux, android]
   for: [elf]
 traits:
   - id: elf32-class
@@ -43,12 +43,29 @@ traits:
       id: metadata/hardening/memory::wx-section
   - id: upx-packer-string
     desc: UPX executable packer signature string
-    crit: component
+    crit: suspicious
+    conf: 1.0
     if:
       type: text
       substr: UPX executable packer
 
 composite_rules:
+  - id: upx-packed-elf
+    desc: "UPX-packed ELF binary"
+    crit: suspicious
+    conf: 0.9
+    mbc: "F0001"
+    attack: "T1027.002"
+    all:
+      - id: upx-packer-string
+    any:
+      - id: objectives/anti-static/obfuscation/binary-metrics::high-overall-entropy
+      - id: objectives/anti-static/obfuscation/binary-metrics::very-high-entropy
+      - id: metadata/binary/anomaly::elf-no-section-headers
+      - id: metadata/binary/linking::static-linked
+      - id: metadata/binary/linking::static-linked-heuristic
+      - id: linux-loader-breadcrumbs
+      - id: metadata/binary/anomaly::compact-large-load-memory-image
   - id: elf32-no-section-headers
     desc: "ELF32 has no section headers"
     crit: component
@@ -74,6 +91,7 @@ composite_rules:
     mbc: "F0001"
     attack: "T1027.002"
     any:
+      - id: metadata/binary/anomaly::elf-no-section-headers
       - id: elf32-no-section-headers
       - id: elf64-no-section-headers
   - id: stripped-packed
@@ -87,6 +105,69 @@ composite_rules:
       - id: objectives/anti-static/obfuscation/binary-metrics::high-overall-entropy
     unless:
       - id: upx-packer-string
+  - id: linux-loader-breadcrumbs
+    desc: "Linux loader leaves memory/temp execution breadcrumbs"
+    crit: notable
+    conf: 0.78
+    any:
+      - id: micro-behaviors/mem/anonymous/create::memfd-create-text
+      - id: micro-behaviors/fs/temp/mktemp::o-tmpfile-flag
+      - id: micro-behaviors/fs/path/device::dev-shm-bare
+      - id: micro-behaviors/fs/proc/info::process-self-ex-fragment
+    needs: 2
+  - id: packed-linux-memory-temp-loader
+    desc: "Packed Linux ELF with memory/temp loader breadcrumbs"
+    crit: hostile
+    conf: 0.9
+    mbc: "F0001"
+    attack: "T1027.002"
+    all:
+      - id: no-section-headers
+      - id: objectives/anti-static/obfuscation/binary-metrics::very-high-entropy
+      - id: linux-loader-breadcrumbs
+    unless:
+      - id: metadata/binary/installer::known-benign-installer
+      - id: metadata/binary/layout::legacy-watcom-packed-utility
+  - id: concealed-packed-loader
+    desc: "Concealed sectionless packed ELF loader"
+    crit: hostile
+    conf: 0.92
+    mbc: "F0001"
+    attack: "T1027.002"
+    all:
+      - id: no-section-headers
+      - id: objectives/anti-static/obfuscation/binary-metrics::very-high-entropy
+    any:
+      - id: metadata/binary/metrics::few-functions
+      - id: objectives/anti-static/obfuscation/binary-metrics::noisy-avg-string-length
+      - id: metadata/binary/linking::static-linked
+      - id: metadata/binary/linking::static-linked-heuristic
+      - id: linux-loader-breadcrumbs
+      - id: metadata/binary/anomaly::compact-large-load-memory-image
+    needs: 2
+    unless:
+      - id: upx-packer-string
+      - id: metadata/binary/installer::known-benign-installer
+      - id: metadata/binary/layout::legacy-watcom-packed-utility
+  - id: expanded-memory-packed-loader
+    desc: "Sectionless packed ELF expands into a large memory image"
+    crit: hostile
+    conf: 0.88
+    mbc: "F0001"
+    attack: "T1027.002"
+    all:
+      - id: no-section-headers
+      - id: objectives/anti-static/obfuscation/binary-metrics::very-high-entropy
+      - id: metadata/binary/anomaly::compact-large-load-memory-image
+    any:
+      - id: metadata/binary/metrics::few-functions
+      - id: objectives/anti-static/obfuscation/binary-metrics::noisy-avg-string-length
+      - id: metadata/binary/linking::static-linked
+      - id: metadata/binary/linking::static-linked-heuristic
+      - id: linux-loader-breadcrumbs
+    unless:
+      - id: metadata/binary/installer::known-benign-installer
+      - id: metadata/binary/layout::legacy-watcom-packed-utility
   - id: mirai-like
     desc: "Mirai-like IoT malware pattern: static + stripped + exotic arch + packed"
     crit: hostile
