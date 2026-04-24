@@ -105,7 +105,7 @@ traits:
 
 **Field override:** List fields (`for`, `platforms`) can be set to `[none]` to unset file-level defaults. Example: `for: [none]` removes file type filtering even if defaults specify types. Scalar fields (`conf`, `crit`) do not support `none`.
 
-**File types:** `elf`, `macho`, `pe`, `dll`, `so`, `dylib`, `pyc`, `shell`, `batch`, `python`, `javascript`, `typescript`, `rust`, `java`, `class`, `ruby`, `c`, `cpp`, `go`, `csharp`, `php`, `perl`, `powershell`, `lua`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir`, `vbs`, `html`, `applescript`, `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `plist`, `ipa`, `rtf`, `lnk`, `jpeg`, `png`, `pkginfo`, `pickle`, `pdf`, `oledoc`, `ooxml`.
+**File types:** `elf`, `macho`, `pe`, `dll`, `so`, `dylib`, `pyc`, `shell`, `batch`, `python`, `javascript`, `typescript`, `rust`, `java`, `class`, `ruby`, `c`, `cpp`, `go`, `csharp`, `php`, `perl`, `powershell`, `lua`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir`, `vbs`, `html`, `applescript`, `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `plist`, `ipa`, `rtf`, `lnk`, `jpeg`, `png`, `pkginfo`, `pickle`, `pdf`, `oledoc`, `ooxml`, `systemd-service`, `desktop-entry`.
 
 **Aliases** (resolved to the canonical type):
 
@@ -125,7 +125,7 @@ traits:
 | `binaries` | `elf`, `macho`, `pe`, `dylib`, `so`, `dll`, `class`, `pyc` |
 | `scripts` | `shell`, `batch`, `python`, `javascript`, `ruby`, `php`, `perl`, `lua`, `powershell`, `applescript`, `vbs` |
 | `source` | `typescript`, `rust`, `java`, `c`, `cpp`, `go`, `csharp`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir` |
-| `manifests` | `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `pkginfo`, `plist`, `lnk` |
+| `manifests` | `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `pkginfo`, `plist`, `lnk`, `systemd-service`, `desktop-entry` |
 | `documents` | `pdf`, `rtf`, `html`, `oledoc`, `ooxml` |
 | `media` | `jpeg`, `png` |
 | `data` | `ipa` |
@@ -690,6 +690,46 @@ path: "arr[*]"                 # Any array element
 path: "scripts.postinstall"    # npm scripts
 path: "permissions"            # Chrome extension
 ```
+
+### INI-style formats (systemd, Desktop Entry)
+
+`.service` unit files and `.desktop` entries are parsed with sections as the
+top-level object. Section headers and keys are normalized to snake_case
+(`[Desktop Entry]` → `desktop_entry`, `X-GNOME-Autostart-enabled` →
+`x_gnome_autostart_enabled`). Known `;`-separated list keys (e.g. `Categories`,
+`MimeType`, `Keywords`, `Actions`) are split into arrays; the original
+unparsed value is also kept under `<section>._raw.<key>`.
+
+```yaml
+# systemd: ExecStart from /tmp
+type: kv
+path: service.exec_start
+regex: "^/tmp/"
+
+# .desktop: Exec= invokes shell
+type: kv
+path: desktop_entry.exec
+regex: '\bbash\s+-c\b'
+
+# .desktop: GNOME autostart enabled
+type: kv
+path: desktop_entry.x_gnome_autostart_enabled
+exact: "true"
+
+# .desktop: Categories contains a specific tag
+type: kv
+path: desktop_entry.categories
+exact: Utility
+
+# .desktop: secondary [Desktop Action <name>] section
+type: kv
+path: desktop_action_new_window.exec
+exists: true
+```
+
+Localized keys (`Name[cs]=...`) are dropped during parsing; only the base
+key (`name`) is exposed. Use `cleave kv <file>` to dump the full path map
+for any structured file while authoring traits.
 
 ### Value Matching
 
