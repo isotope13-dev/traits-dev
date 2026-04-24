@@ -1,0 +1,159 @@
+# MSBuild inline-task dropper (.csproj / .xml LOLBAS).
+#
+# `<UsingTask TaskFactory="CodeTaskFactory">` with an embedded `<Code
+# Language="cs">...</Code>` block tells msbuild.exe to compile and execute the
+# enclosed C# code — a well-known living-off-the-land pattern (ATT&CK
+# T1127.001, Trusted Developer Utilities Proxy Execution: MSBuild). The
+# .csproj / .xml file itself IS the stager; msbuild acts as the loader.
+#
+# Atoms here query the parsed XML (kv paths rooted at `Project.*`) plus the
+# embedded C# source text to surface common dropper behaviors.
+defaults:
+  platforms: [windows]
+  for: [xml]
+  attack: T1127.001
+
+traits:
+  - id: msbuild-project-root
+    desc: Project root with MSBuild schema
+    crit: component
+    if:
+      type: kv
+      path: Project.@xmlns
+      regex: msbuild
+
+  - id: msbuild-code-task-factory
+    desc: UsingTask TaskFactory=CodeTaskFactory
+    crit: notable
+    conf: 0.95
+    if:
+      type: kv
+      path: Project.UsingTask.@TaskFactory
+      exact: CodeTaskFactory
+
+  - id: msbuild-inline-csharp
+    desc: Inline C# code block
+    crit: notable
+    conf: 0.95
+    if:
+      type: kv
+      path: Project.UsingTask.Task.Code.@Language
+      regex: '^(cs|C#|csharp)$'
+
+  - id: msbuild-inline-vb
+    desc: Inline VB.NET code block
+    crit: notable
+    conf: 0.9
+    if:
+      type: kv
+      path: Project.UsingTask.Task.Code.@Language
+      regex: '^(vb|VB)$'
+
+  - id: msbuild-code-webclient
+    desc: Inline code uses WebClient
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '\bWebClient\b|\bHttpClient\b'
+
+  - id: msbuild-code-download-string
+    desc: Inline code calls DownloadString
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '\bDownload(String|Data|File)\b'
+
+  - id: msbuild-code-process-start
+    desc: Inline code spawns a process
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: '\bProcess\.Start\b'
+
+  - id: msbuild-code-virtualalloc
+    desc: Inline code allocates executable memory
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '\bVirtualAlloc(Ex)?\b'
+
+  - id: msbuild-code-create-thread
+    desc: Inline code creates a remote thread
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '\bCreateRemoteThread\b|\bCreateThread\b'
+
+  - id: msbuild-code-marshal-delegate
+    desc: Inline code builds a function pointer
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '\bMarshal\.GetDelegateForFunctionPointer\b'
+
+  - id: msbuild-code-reflection-invoke
+    desc: Inline code reflects an assembly
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: '\bAssembly\.Load\b|\bAssembly\.Reflection'
+
+  - id: msbuild-code-freeze-loop
+    desc: Inline code runs an infinite loop
+    crit: notable
+    conf: 0.75
+    if:
+      type: text
+      regex: '\bwhile\s*\(\s*true\s*\)'
+
+  - id: msbuild-code-automation
+    desc: Inline code uses PowerShell automation
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '\bSystem\.Management\.Automation\b'
+
+composite_rules:
+  - id: msbuild-inline-task
+    desc: MSBuild inline task with code
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: msbuild-project-root
+      - id: msbuild-code-task-factory
+    any:
+      - id: msbuild-inline-csharp
+      - id: msbuild-inline-vb
+
+  - id: msbuild-proxy-exec
+    desc: MSBuild inline task runs a payload
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: msbuild-inline-task
+    any:
+      - id: msbuild-code-download-string
+      - id: msbuild-code-virtualalloc
+      - id: msbuild-code-create-thread
+      - id: msbuild-code-marshal-delegate
+      - id: msbuild-code-reflection-invoke
+      - id: msbuild-code-automation
+
+  - id: msbuild-inline-dropper
+    desc: MSBuild inline task downloads and runs
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: msbuild-inline-task
+      - id: msbuild-code-webclient
+    any:
+      - id: msbuild-code-download-string
+      - id: msbuild-code-process-start
