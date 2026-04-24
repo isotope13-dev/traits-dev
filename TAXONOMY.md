@@ -469,7 +469,12 @@ objectives/
 │   │   ├── hook/              #     API/XHR hooking
 │   │   └── injection/         #     Process injection                     E1055
 │   ├── quarantine-removal/    #   macOS Gatekeeper bypass                 B0047
-│   ├── security-bypass/       #   Security restriction bypass (PHP etc.)
+│   ├── security-bypass/       #   Security restriction bypass (PHP, LLM policy boundaries)
+│   │   └── llm/               #     Prompt-injection composites that bypass
+│   │                          #     AI agent instruction hierarchy, tool-use
+│   │                          #     controls, or safety policies. Neutral or
+│   │                          #     standalone prompt text atoms stay in
+│   │                          #     micro-behaviors/data/text/llm/.
 │   ├── self-delete/           #   Self-deletion after execution           F0007
 │   └── tcc-manipulation/      #   macOS TCC database manipulation
 │
