@@ -1,0 +1,73 @@
+# Dual-implementation crypto fallback: tries the high-level Python
+# cryptography library first, then falls back to direct ctypes calls
+# into Windows BCrypt CNG (or libcrypto on Unix). The intent is to
+# decrypt staged C2 payloads on systems where the user-installed
+# cryptography library may not be available — every staging environment
+# has the OS crypto provider, so the fallback path guarantees decryption.
+#
+# Legitimate code picks one crypto stack and sticks with it. Dual
+# fallback like this is diagnostic of stagers that must run on stripped
+# Python installs.
+defaults:
+  platforms: [windows, unix]
+  for: [python]
+  attack: T1027
+  mbc: B0032
+traits:
+  # Try-block importing or using cryptography.hazmat with except branch
+  # invoking ctypes-based crypto.
+  - id: dual-crypto-bcrypt-fallback
+    desc: Crypto try/except fallback to ctypes BCrypt
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: 'try\s*:[\s\S]{0,800}\bcryptography\.[\s\S]{0,400}except[\s\S]{0,200}ctypes\.WinDLL\s*\(\s*["'']bcrypt["'']'
+
+  # Same with libcrypto on Unix
+  - id: dual-crypto-libcrypto-fallback
+    desc: Crypto try/except fallback to ctypes libcrypto
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: 'try\s*:[\s\S]{0,800}\bcryptography\.[\s\S]{0,400}except[\s\S]{0,200}ctypes\.CDLL\s*\(\s*["'']libcrypto'
+
+  # Direct BCrypt usage (without try/except wrap) — also a stager-grade
+  # signal because legitimate code uses cryptography library.
+  - id: bcrypt-cng-direct-usage
+    desc: Direct ctypes BCrypt CNG bypass
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      regex: 'ctypes\.WinDLL\s*\(\s*["'']bcrypt["'']\s*\)[\s\S]{0,600}BCrypt(?:OpenAlgorithmProvider|GenerateSymmetricKey|Decrypt|Encrypt)'
+
+composite_rules:
+  - id: stager-grade-crypto-stack
+    desc: Stager-grade crypto stack (lib + native fallback)
+    crit: hostile
+    conf: 0.96
+    any:
+      - id: dual-crypto-bcrypt-fallback
+      - id: dual-crypto-libcrypto-fallback
+    downgrade:
+      any:
+        - id: metadata/package/testing/presence::python-test-file
+        - id: metadata/package/testing/presence::test-directory
+
+  # File-level dual-implementation: same module both imports the high-
+  # level cryptography library AND uses ctypes BCrypt directly.
+  # The try/except wiring may be in a different function from the imports,
+  # so this version is laxer than the regex-based fallback above.
+  - id: dual-crypto-file-level
+    desc: Same file uses cryptography lib and ctypes BCrypt
+    crit: hostile
+    conf: 0.94
+    all:
+      - id: bcrypt-cng-direct-usage
+      - id: micro-behaviors/crypto/symmetric/aes::cryptography-aes
+    downgrade:
+      any:
+        - id: metadata/package/testing/presence::python-test-file
+        - id: metadata/package/testing/presence::test-directory

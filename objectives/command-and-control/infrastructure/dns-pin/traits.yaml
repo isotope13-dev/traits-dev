@@ -1,0 +1,106 @@
+# DNS resolution bypass / pinning patterns: code that side-steps the system
+# resolver to force traffic at hardcoded IPs. Strong indicator of malware
+# evading DNS-based blocklists, EDR DNS hooks, and sinkholes.
+defaults:
+  platforms: [windows, unix]
+  attack: T1090.004
+  mbc: B0030
+
+traits:
+  # `curl --resolve <host>:<port>:<ip>` overrides the system resolver for
+  # one hostname, pinning it to an attacker-chosen address. Used to keep
+  # talking to a known C2 IP even when DNS for the cover hostname is blocked
+  # or sinkholed.
+  - id: curl-resolve-flag
+    desc: curl --resolve DNS pin override
+    crit: suspicious
+    conf: 0.95
+    for: [scripts, source, batch, powershell]
+    if:
+      type: text
+      regex: \bcurl(?:\.exe)?\b[^\n]{0,200}\s--resolve\s+["']?[A-Za-z0-9.-]+:\d{1,5}:\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}
+
+  # Inverted DNS-validity check: `if resolved_addr.split('.')[0] != '127':
+  # return None`. Returning the hardcoded fallback when DNS does NOT yield
+  # a loopback is a sandbox/honeypot DNS-rewriting evasion — most analysis
+  # environments rewrite C2 DNS to localhost.
+  - id: inverted-dns-loopback-check
+    desc: Inverted DNS check returns None on non-loopback
+    crit: suspicious
+    conf: 0.9
+    for: [python]
+    if:
+      type: text
+      regex: '\.split\(["'']\.["'']\)\[0\]\s*!=\s*["'']127["'']'
+
+  # Monkey-patching the resolver — `socket.getaddrinfo = my_resolver` swaps
+  # out the standard library's lookup function process-wide. Used by
+  # stagers to redirect every subsequent connection.
+  - id: getaddrinfo-monkey-patch
+    desc: socket.getaddrinfo monkey-patched
+    crit: suspicious
+    conf: 0.95
+    for: [python]
+    if:
+      type: text
+      regex: 'socket\.getaddrinfo\s*=\s*\w+'
+  - id: gethostbyname-monkey-patch
+    desc: socket.gethostbyname monkey-patched
+    crit: suspicious
+    conf: 0.95
+    for: [python]
+    if:
+      type: text
+      regex: 'socket\.gethostbyname\s*=\s*\w+'
+
+  # dnspython direct query targeting a specific nameserver. Legitimate
+  # code lets the OS resolver pick.
+  - id: dnspython-direct-where
+    desc: dnspython query targets specific nameserver
+    crit: suspicious
+    conf: 0.92
+    for: [python]
+    if:
+      type: text
+      regex: 'dns\.query\.(?:udp|tcp|tls|https)\s*\([^)\n]{0,200}\bwhere\s*='
+  - id: dnspython-resolver-nameservers-set
+    desc: dns.resolver.Resolver().nameservers reassigned
+    crit: suspicious
+    conf: 0.9
+    for: [python]
+    if:
+      type: text
+      regex: '\.nameservers\s*=\s*\[\s*["'']\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}["'']'
+
+  # Writing to /etc/hosts or hosts file from a script — the cross-platform
+  # form of curl --resolve. Different from existing hosts-file/ traits
+  # which focus on AV/security-vendor blocking; this one is for C2 redirect.
+  - id: hosts-file-c2-write
+    desc: Script writes mapping to system hosts file
+    crit: suspicious
+    conf: 0.94
+    for: [python, shell, batch, powershell]
+    if:
+      type: text
+      regex: '(?:/etc/hosts|drivers[/\\]+etc[/\\]+hosts)["'']?\s*,\s*["''](?:a|w|w\+|a\+)["'']'
+
+composite_rules:
+  # Aggregator: any DNS-pin / resolver-bypass mechanism in this directory.
+  - id: dns-pin-mechanism
+    desc: DNS resolution bypass mechanism (any form)
+    crit: suspicious
+    conf: 0.93
+    any:
+      - id: objectives/command-and-control/infrastructure/dns-pin
+
+  - id: dns-pinning-bypass
+    desc: DNS resolution bypass for hardcoded fallback
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: dns-pin-mechanism
+      - id: micro-behaviors/communications/ip::external-ipv4-script
+    downgrade:
+      any:
+        - id: metadata/package/testing/presence::python-test-file
+        - id: metadata/package/testing/presence::test-directory

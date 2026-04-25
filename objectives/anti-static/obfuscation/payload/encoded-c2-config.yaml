@@ -1,0 +1,104 @@
+# Encoded C2-config patterns: file-scope constants whose names label them
+# as URL/API/AUTH/KEY material and whose values are encoded byte arrays
+# or hex blobs. The combination of "named-like-config" + "encoded
+# representation" + "decode operation" has no legitimate use — legit
+# code stores URLs and keys as string literals.
+defaults:
+  platforms: [windows, unix]
+  for: [python]
+  attack: T1027
+  mbc: B0032
+
+traits:
+  # Variables named like API endpoint fragments storing byte arrays or
+  # int lists. Pattern: `_API_<X> = bytes([0xNN, ...])` or similar.
+  - id: api-named-byte-array-const
+    desc: API-named byte-array constant (encoded URL fragment)
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '\b_(?:API|AUTH|TOKEN|URL|HOST|DOMAIN|TLD|SCHEMA|ENDPOINT|TARGET)_[A-Z0-9_]{1,40}\s*=\s*(?:bytes\s*\(\s*)?\[\s*0x[0-9a-fA-F]'
+
+  # Sequential URL-component concatenation: `_API_SCHEMA + _API_HOST +
+  # _API_DOMAIN + _API_TLD` style. Three or more URL-component-named
+  # constants concatenated is the URL-from-fragments reconstruction
+  # pattern.
+  - id: url-component-concat
+    desc: URL reconstructed from named component constants
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '\b_(?:API|URL|ENDPOINT)_[A-Z]+\s*\+\s*_(?:API|URL|ENDPOINT|HOST|DOMAIN|TLD|SCHEMA|PATH)_[A-Z]+\s*\+\s*_(?:API|URL|ENDPOINT|HOST|DOMAIN|TLD|SCHEMA|PATH)_[A-Z]+'
+
+  # Variables named like key/hash/credential material storing hex blobs.
+  # Dict-of-hex-keyed-by-architecture is the per-platform signing/cred
+  # blob pattern (Polyseed _PLATFORM_HASHES = {"win32_x64": "<sha>"}).
+  - id: arch-keyed-hex-blob-dict
+    desc: Architecture-keyed hex-blob dictionary
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '\b_?(?:PLATFORM|ARCH|TARGET|HOST)[_A-Z]*\s*=\s*\{[^}\n]{0,40}["''](?:win32|linux|darwin|macos|android|ios)_(?:x86|x64|arm64|amd64)["'']\s*:\s*["''][0-9a-fA-F]{32,}'
+
+  # KEY/SIG/HASH-named hex string constants. Two or more in the same
+  # file = key blob.
+  - id: cred-named-hex-string-const
+    desc: Credential-named hex string constant
+    crit: notable
+    conf: 0.88
+    count_min: 2
+    if:
+      type: text
+      regex: '\b_(?:KEY|SIG|HASH|SECRET|TOKEN|CRED|HMAC)_?[A-Z0-9_]{0,40}\s*=\s*["''][0-9a-fA-F]{32,}["'']'
+
+  # Underscore-prefixed function names that build / return decoded
+  # URL/key strings. Cryptic external API: `_ep()` returns endpoint,
+  # `_sk()` returns signing key. These are not Python "private" — they're
+  # called externally with names designed to carry no signal.
+  - id: cryptic-config-builder-fn
+    desc: Cryptic-named zero-arg config-builder function
+    crit: notable
+    conf: 0.85
+    count_min: 2
+    if:
+      type: text
+      regex: '^\s*def\s+_[a-z]{1,3}\s*\(\s*\)\s*:'
+
+composite_rules:
+  # Aggregator: any encoded-C2-config marker.
+  - id: encoded-c2-config-marker
+    desc: Encoded C2-config marker present
+    crit: suspicious
+    conf: 0.92
+    any:
+      - id: api-named-byte-array-const
+      - id: url-component-concat
+      - id: arch-keyed-hex-blob-dict
+      - id: cred-named-hex-string-const
+      - id: cryptic-config-builder-fn
+
+  # Hostile: encoded-C2-config marker + an actual decode operation in the
+  # same file. The label says "this is an API endpoint" and the file
+  # decodes it — there's no legitimate intent.
+  - id: encoded-c2-config-with-decode
+    desc: Encoded C2-config plus decode operation
+    crit: hostile
+    conf: 0.97
+    size_max: 50000
+    all:
+      - id: encoded-c2-config-marker
+    any:
+      - id: micro-behaviors/data/encode/xor::xor-bytes-genexpr-key
+      - id: micro-behaviors/data/encode/xor::xor-bytes-genexpr-literal
+      - id: micro-behaviors/data/encode/xor::xor-bytearray-mutating-loop
+      - id: objectives/anti-static/obfuscation/string/encoding::python-hex
+      - id: objectives/anti-static/obfuscation/string/encoding::bytes-fromhex-call
+      - id: objectives/anti-static/obfuscation/encoding/arithmetic::subtract-bytes-genexpr
+      - id: objectives/anti-static/obfuscation/encoding/arithmetic::add-mod-bytes-genexpr
+    downgrade:
+      any:
+        - id: metadata/package/testing/presence::python-test-file
+        - id: metadata/package/testing/presence::test-directory

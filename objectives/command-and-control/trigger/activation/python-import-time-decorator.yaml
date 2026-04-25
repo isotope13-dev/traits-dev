@@ -1,0 +1,176 @@
+# Python "ensure_env" / first-call-hook decorator pattern: a module-scope
+# decorator wraps every entry function (commonly `main`) so that the first
+# user invocation triggers a one-shot bootstrap that runs network calls
+# and/or starts a worker thread before the user's intended code executes.
+#
+# Legitimate frameworks gate environment validation behind an explicit
+# initialize step or a config object — they don't pair a decorator that
+# memoizes "ready" state with a HTTP/decrypt/Popen chain inside the
+# decorated init function. The pattern here is straight out of stager
+# malware (Polyseed-Monero, similar typosquats).
+#
+# AST queries are used here because the structural shape (decorator
+# definition, decorator application, one-shot guard) is what defines the
+# pattern — text regex would either over-match `def *_env(` helpers or
+# under-match obfuscated decorator names.
+defaults:
+  platforms: [windows, unix]
+  for: [python]
+  attack: T1195.002
+  mbc: B0024
+
+traits:
+  # Decorator application: `@ensure_env` (or any decorator whose name
+  # matches the env/init/bootstrap family) above a public-looking entry
+  # function. AST captures the decorator-on-function relationship
+  # without false positives from comments or docstrings.
+  - id: env-guard-decorator-on-entry
+    desc: Env-guard decorator applied to entrypoint
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: ast
+      query: |
+        (decorated_definition
+          (decorator
+            (identifier) @dec
+            (#match? @dec "^(ensure|guard|require|init|bootstrap)_(env|runtime|setup|deps)$"))
+          definition: (function_definition
+            name: (identifier) @fn
+            (#match? @fn "^(main|run|start|cli|app|entry)$")))
+
+  # Decorator definition: a function named ensure_env / guard_env / ...
+  # that takes `fn` and wraps it in an inner function. The structural
+  # shape (outer takes a callable, returns an inner callable) is what
+  # makes it a decorator.
+  - id: env-guard-decorator-def
+    desc: First-call hook decorator definition
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: ast
+      query: |
+        (function_definition
+          name: (identifier) @outer
+          parameters: (parameters
+            (identifier) @param)
+          body: (block
+            (function_definition))
+          (#match? @outer "^(ensure|guard|require|init|bootstrap)_(env|runtime|setup|deps)$")
+          (#eq? @param "fn"))
+
+  # === Other import-time / first-touch C2 hooks ===
+
+  # atexit.register(<fn>) — `fn` runs at interpreter shutdown. Adversaries
+  # use this to delay C2 until the user has moved on, dodging dynamic
+  # analysis tools that observe initial-run telemetry.
+  - id: atexit-register
+    desc: atexit.register hook installation
+    crit: notable
+    conf: 0.85
+    if:
+      type: symbol
+      exact: atexit.register
+      kind: import
+
+  # sys.settrace(callback) — fires on every Python statement. Used by some
+  # stealth loaders to delay execution until after stack-frame fingerprints
+  # match an expected production environment.
+  - id: sys-settrace-install
+    desc: sys.settrace global tracer installation
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: symbol
+      exact: sys.settrace
+      kind: import
+
+  # sys.meta_path.insert(...) / append(...) — installs a custom import
+  # finder that runs on every subsequent `import`. Standard for build
+  # tools, but in scripts importing only stdlib it's a stager hook.
+  - id: sys-meta-path-mutation
+    desc: sys.meta_path mutation (custom import finder)
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      regex: 'sys\.meta_path\s*\.\s*(?:insert|append)\s*\('
+
+  # sys.path_hooks mutation — same family, different layer.
+  - id: sys-path-hooks-mutation
+    desc: sys.path_hooks mutation (custom path importer)
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      regex: 'sys\.path_hooks\s*\.\s*(?:insert|append)\s*\('
+
+  # PEP 562 module-level __getattr__ — fires on any attribute access into
+  # the module. Lets a decorator-free package run code on first attribute
+  # touch from a consumer.
+  - id: module-getattr-pep562
+    desc: Module-level __getattr__ defined (PEP 562)
+    crit: notable
+    conf: 0.82
+    if:
+      type: ast
+      query: |
+        (module
+          (function_definition
+            name: (identifier) @name
+            (#eq? @name "__getattr__")))
+
+  # __init_subclass__ — class-method hook fired automatically when a
+  # subclass is defined. Used as an import-time trigger when the class
+  # is in a popular base library that downstream code subclasses.
+  - id: init-subclass-hook
+    desc: __init_subclass__ class hook defined
+    crit: notable
+    conf: 0.82
+    if:
+      type: ast
+      query: |
+        (function_definition
+          name: (identifier) @name
+          (#eq? @name "__init_subclass__"))
+
+  # Class-based decorator: `class ensure_env: def __call__(self, fn): ...`
+  # — same intent as the function-based form, harder to text-grep.
+  - id: class-based-env-decorator
+    desc: Class-based ensure-env decorator
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: ast
+      query: |
+        (class_definition
+          name: (identifier) @cls
+          (#match? @cls "^(ensure|guard|require|init|bootstrap)_(env|runtime|setup|deps)$")
+          body: (block
+            (function_definition
+              name: (identifier) @method
+              (#eq? @method "__call__"))))
+
+composite_rules:
+  # Aggregator for any import-time / first-touch C2 hook in this directory.
+  # Composites elsewhere can reference this one ID.
+  - id: import-time-hook-installation
+    desc: Import-time / first-touch C2 hook installation
+    crit: suspicious
+    conf: 0.92
+    any:
+      - id: objectives/command-and-control/trigger/activation
+
+  # Full pattern: a first-call / import-time hook co-located with a daemon
+  # thread spawn — the canonical import-time C2 stager fingerprint.
+  - id: import-time-network-stager
+    desc: Import-time decorator runs worker thread on first call
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: import-time-hook-installation
+      - id: micro-behaviors/process/create/thread::python-thread-create
+    downgrade:
+      any:
+        - id: metadata/package/testing/presence::python-test-file
+        - id: metadata/package/testing/presence::test-directory

@@ -40,3 +40,56 @@ composite_rules:
       - id: exec-zlib-base64-hex-loader
       - id: objectives/anti-static/obfuscation/reflection/dynamic::dunder-import-getattr-dynamic
       - id: objectives/anti-static/obfuscation/syntax::setattr-builtins-tamper
+
+  # Multi-form obfuscation density: ≥2 distinct obfuscation primitives in
+  # a single small file. Each individual atom is `notable`; the
+  # combination escalates to `suspicious` because no benign script needs
+  # multiple decode/transform primitives co-located.
+  - id: multi-form-obfuscation-density
+    desc: Multiple obfuscation primitives co-located in one file
+    crit: suspicious
+    conf: 0.93
+    size_max: 50000
+    needs: 2
+    any:
+      - id: micro-behaviors/data/encode/xor::xor-bytes-genexpr-key
+      - id: micro-behaviors/data/encode/xor::xor-bytes-genexpr-literal
+      - id: micro-behaviors/data/encode/xor::xor-bytearray-mutating-loop
+      - id: objectives/anti-static/obfuscation/string/encoding::python-hex
+      - id: objectives/anti-static/obfuscation/code-metrics
+      - id: objectives/anti-static/obfuscation/encoding/arithmetic::subtract-bytes-genexpr
+      - id: objectives/anti-static/obfuscation/encoding/arithmetic::add-mod-bytes-genexpr
+      - id: objectives/anti-static/obfuscation/encoding/arithmetic::rot-n-chr-ord-decode
+    unless:
+      - id: metadata/package/testing/harness::is-test
+      - id: metadata/package/testing/presence::test-directory
+
+  # Hostile escalation: the multi-form obfuscation pattern paired with
+  # any of the high-cost downstream actions that consume the decoded
+  # output. A "config builder" file that decodes to a URL/IP/secret is
+  # only meaningful when something consumes the result — and the consumer
+  # is itself diagnostic of malware intent (HTTP fetch, subprocess exec,
+  # crypto operations on attacker-controlled input).
+  - id: stager-config-builder-hostile
+    desc: Multi-form obfuscation feeds remote stager
+    crit: hostile
+    conf: 0.96
+    size_max: 100000
+    all:
+      - id: multi-form-obfuscation-density
+    any:
+      # Output consumed for HTTP request — URL builder pattern
+      - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen
+      - id: micro-behaviors/communications/http/lib/requests
+      - id: micro-behaviors/communications/socket/ssl::tls-validation-fully-disabled
+      # Output fed to subprocess — exec stager pattern
+      - id: micro-behaviors/process/create/subprocess
+      # Output fed to crypto operation — encrypted-config pattern
+      - id: micro-behaviors/crypto/symmetric/aes
+      - id: objectives/evasion/security-bypass/tls::python-tls-validation-bypass
+      # Output consumed at module-import time via a first-touch hook
+      - id: objectives/command-and-control/trigger/activation::import-time-hook-installation
+    downgrade:
+      any:
+        - id: metadata/package/testing/presence::python-test-file
+        - id: metadata/package/testing/presence::test-directory

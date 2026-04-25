@@ -1,0 +1,140 @@
+# PEP 517 / 518 build-backend hooks. Modern Python packages declare a
+# build backend in pyproject.toml. Malicious backends override
+# build_wheel / build_sdist / prepare_metadata_for_build_wheel and run
+# code during `pip install` even with --no-build-isolation off.
+#
+# Existing setup.py coverage doesn't catch these — pyproject.toml-only
+# packages have no setup.py at all.
+defaults:
+  platforms: [windows, unix]
+  for: [python]
+  attack: T1195.002
+  mbc: B0024
+
+traits:
+  # PEP 517 backend entrypoints. Defining ANY of these in a module that
+  # also runs subprocess/exec is the modern equivalent of cmdclass.
+  - id: pep517-build-wheel-def
+    desc: PEP 517 build_wheel function defined
+    crit: notable
+    conf: 0.85
+    if:
+      type: ast
+      query: |
+        (function_definition
+          name: (identifier) @name
+          (#eq? @name "build_wheel"))
+  - id: pep517-build-sdist-def
+    desc: PEP 517 build_sdist function defined
+    crit: notable
+    conf: 0.85
+    if:
+      type: ast
+      query: |
+        (function_definition
+          name: (identifier) @name
+          (#eq? @name "build_sdist"))
+  - id: pep517-prepare-metadata-def
+    desc: PEP 517 prepare_metadata_for_build_wheel defined
+    crit: notable
+    conf: 0.85
+    if:
+      type: ast
+      query: |
+        (function_definition
+          name: (identifier) @name
+          (#eq? @name "prepare_metadata_for_build_wheel"))
+
+  # Other setuptools command class overrides we don't yet cover.
+  - id: setuptools-build-ext-override
+    desc: setuptools build_ext command overridden
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: 'cmdclass\s*=\s*\{[^}\n]{0,200}["'']build_ext["'']'
+  - id: setuptools-build-py-override
+    desc: setuptools build_py command overridden
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: 'cmdclass\s*=\s*\{[^}\n]{0,200}["'']build_py["'']'
+  - id: setuptools-install-lib-override
+    desc: setuptools install_lib command overridden
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: 'cmdclass\s*=\s*\{[^}\n]{0,200}["'']install_lib["'']'
+  - id: setuptools-develop-override
+    desc: setuptools develop command (editable) overridden
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: 'cmdclass\s*=\s*\{[^}\n]{0,200}["'']develop["'']'
+
+  # Editable install side effects: .pth files that exec code on import.
+  # Modern PEP 660 editable installs use `__editable__.<pkg>.pth` which
+  # can carry an `import <foo>` line that runs immediately.
+  - id: editable-pth-import-side-effect
+    desc: Editable .pth executes import side-effect
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: '__editable__\.[A-Za-z0-9_-]{1,40}\.pth'
+
+  # Custom build backend declared in pyproject.toml pointing at local module.
+  # `build-backend = "_local_backend"` rather than `setuptools.build_meta`.
+  - id: pyproject-local-build-backend
+    desc: pyproject.toml uses non-standard local build backend
+    crit: suspicious
+    conf: 0.92
+    for: [pyproject.toml]
+    if:
+      type: kv
+      path: build_system.build_backend
+      exists: true
+    not:
+      - regex: '^setuptools'
+      - regex: '^hatchling'
+      - regex: '^flit_core'
+      - regex: '^poetry\.'
+      - regex: '^pdm\.'
+      - regex: '^maturin'
+      - regex: '^scikit_build_core'
+      - regex: '^meson_python'
+
+composite_rules:
+  - id: pep517-backend-execution
+    desc: PEP 517 build backend defines hook + executes code
+    crit: hostile
+    conf: 0.95
+    any:
+      - id: pep517-build-wheel-def
+      - id: pep517-build-sdist-def
+      - id: pep517-prepare-metadata-def
+    all:
+      - id: micro-behaviors/process/create/subprocess
+    downgrade:
+      any:
+        - id: metadata/package/testing/presence::python-test-file
+        - id: metadata/package/testing/presence::test-directory
+
+  - id: setuptools-non-install-hook-execution
+    desc: setuptools non-install build command executes code
+    crit: hostile
+    conf: 0.95
+    any:
+      - id: setuptools-build-ext-override
+      - id: setuptools-build-py-override
+      - id: setuptools-install-lib-override
+      - id: setuptools-develop-override
+    all:
+      - id: micro-behaviors/process/create/subprocess
+    downgrade:
+      any:
+        - id: metadata/package/testing/presence::python-test-file
+        - id: metadata/package/testing/presence::test-directory

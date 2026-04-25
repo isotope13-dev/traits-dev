@@ -1,0 +1,67 @@
+# Python staging chain. The textbook script-based PE/ELF/Mach-O dropper:
+# remote-fetched bytes are validated against an executable magic, written
+# to a disposable temp file, executed hidden, then erased. Each atom is
+# individually low-criticality, but the combination is rarely benign.
+#
+# Phase 3 generalization: the composite uses *family* references where
+# possible (write/rename/exec/cleanup) so it survives variant swaps —
+# pathlib instead of tempfile, os.replace instead of os.rename,
+# os.startfile instead of subprocess.Popen, etc.
+defaults:
+  platforms: [windows]
+  for: [python]
+  attack: T1105
+  mbc: B0023
+
+composite_rules:
+  - id: python-pe-stager-chain
+    desc: Python writes, renames, executes, and deletes an EXE payload
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: micro-behaviors/fs/temp/mktemp
+      - id: micro-behaviors/fs/file/rename
+      - id: micro-behaviors/process/create/subprocess
+      - id: objectives/evasion/process/hidden/creation-flags::creationflags
+      - id: micro-behaviors/fs/file/delete::py-remove
+    any:
+      - id: micro-behaviors/fs/file/rename::rename-target-exe
+      - id: micro-behaviors/data/format
+      - id: objectives/evasion/masquerade/file::artifact-prefix-masquerade
+    downgrade:
+      any:
+        - id: metadata/package/testing/presence::python-test-file
+        - id: metadata/package/testing/presence::test-directory
+
+  - id: python-pe-magic-validated-stager
+    desc: Python validates exec-format magic before staging payload
+    crit: hostile
+    conf: 0.98
+    near_lines: 120
+    all:
+      - id: micro-behaviors/process/create/subprocess
+      - id: objectives/evasion/process/hidden/creation-flags::creationflags
+      - id: micro-behaviors/data/format::exec-format-magic-validation
+    downgrade:
+      any:
+        - id: metadata/package/testing/presence::python-test-file
+        - id: metadata/package/testing/presence::test-directory
+
+  # Variant: artifact-prefix masquerade + script-side exec is a strong
+  # standalone signal even without explicit magic validation. A script
+  # that names its temp like Office/Crashpad/SQLite *and* executes it
+  # is staging a payload behind borrowed identity.
+  - id: artifact-masquerade-execution
+    desc: Artifact-prefix masqueraded temp file executed
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: objectives/evasion/masquerade/file::artifact-prefix-masquerade
+    any:
+      - id: micro-behaviors/process/create/subprocess
+      - id: micro-behaviors/process/create/system::python-os-system
+      - id: micro-behaviors/process/create/launch::os-startfile-call
+    downgrade:
+      any:
+        - id: metadata/package/testing/presence::python-test-file
+        - id: metadata/package/testing/presence::test-directory

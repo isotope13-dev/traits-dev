@@ -1,0 +1,66 @@
+# Python script-side target/locale activation gating. Malware that only
+# fires when running on the intended victim or in the intended locale.
+# These complement timing/timer/time-bomb.yaml (date-based gating) and
+# the existing macOS keyboard-layout traits in this directory.
+defaults:
+  platforms: [windows, unix]
+  for: [python]
+  attack: T1480
+  mbc: B0003
+  crit: suspicious
+
+traits:
+  # Hostname allowlist: gate execution on a specific or substring hostname.
+  - id: hostname-allowlist-equality
+    desc: Execution gated on specific hostname
+    conf: 0.92
+    if:
+      type: text
+      regex: 'socket\.gethostname\s*\(\s*\)\s*==\s*["''][A-Za-z0-9-]{3,63}["'']'
+  - id: hostname-allowlist-membership
+    desc: Execution gated on hostname-in-list
+    conf: 0.94
+    if:
+      type: text
+      regex: 'socket\.gethostname\s*\(\s*\)[^\n]{0,40}\bin\s*\(?\s*[\[\(]\s*["''][A-Za-z0-9-]{3,63}["'']\s*[,\]\)]'
+
+  # FQDN substring gate: `if 'corp.target.com' in fqdn`
+  - id: fqdn-substring-gate
+    desc: Execution gated on FQDN substring
+    conf: 0.93
+    if:
+      type: text
+      case_insensitive: true
+      regex: '["''][a-z0-9.-]{4,80}\.(?:com|org|net|local|corp|internal)["'']\s*\bin\b\s*\w+'
+
+  # Locale exclusion (skip on RU/CN/CIS) — common in CIS-respecting malware.
+  - id: locale-exclusion-check
+    desc: Locale checked against CIS/RU/CN exclusion set
+    conf: 0.92
+    if:
+      type: text
+      case_insensitive: true
+      regex: 'locale\.getdefaultlocale\s*\(\s*\)[^\n]{0,80}\bin\s*\(?\s*[\[\(][^\)\]]{0,160}["''](?:ru|kk|uk|be|cn|zh)[_-]'
+  - id: locale-cyrillic-skip
+    desc: getlocale checked for Cyrillic CIS code
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?:locale\.getlocale|locale\.getdefaultlocale)\s*\(\s*\)[^\n]{0,120}["''](?:ru_RU|uk_UA|be_BY|kk_KZ)["'']'
+
+  # Domain-join check (corporate-only activation)
+  - id: domain-join-check
+    desc: Workgroup/domain checked for corp join
+    conf: 0.88
+    for: [python, powershell]
+    if:
+      type: text
+      regex: 'win32com\.client\.GetObject\s*\(\s*["'']winmgmts[^"'']{0,160}Domain'
+
+composite_rules:
+  - id: target-activation-gate
+    desc: Execution gated on target identity (hostname/locale/domain)
+    crit: suspicious
+    conf: 0.94
+    any:
+      - id: objectives/anti-analysis/geofencing/location
