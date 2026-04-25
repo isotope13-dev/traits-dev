@@ -15,10 +15,10 @@
 See [TAXONOMY.md](./TAXONOMY.md) for complete tier structure.
 
 **Tier dependencies:**
-- `micro-behaviors/` → can reference `micro-behaviors/` and `metadata/` only
-- `objectives/` → can reference `micro-behaviors/`, `objectives/`, and `metadata/`
+- `micro-behaviors/` → can reference `micro-behaviors/`, `metadata/`, and `well-known/{tool,app,lib,game}/` for false-positive exclusions only
+- `objectives/` → can reference `micro-behaviors/`, `objectives/`, `metadata/`, and `well-known/{tool,app,lib,game}/` for false-positive exclusions only
 - `well-known/` → can reference `micro-behaviors/`, `objectives/`, `well-known/`, and `metadata/`
-- `metadata/` → typically references `metadata/` only
+- `metadata/` → typically references `metadata/`; may reference `well-known/{tool,app,lib,game}/` for benign context
 
 **Critical rules:**
 - `micro-behaviors/` must NOT reference `objectives/` (capabilities are atomic, objectives infer intent)
@@ -40,7 +40,7 @@ Before placing a trait in `objectives/` or `well-known/`, ask: **would this fire
 | HTTP Content-Type header | `objectives/c2/` | `micro-behaviors/communications/http/` | Neutral protocol element |
 | SOCKS protocol string | `objectives/c2/backdoor/` | `micro-behaviors/communications/proxy/` | Neutral protocol |
 | `$HOME` env var | `objectives/discovery/` | `micro-behaviors/os/env/` | Universal env var |
-| `execve` symbol | `well-known/tools/offensive/` | `micro-behaviors/process/create/` | Standard syscall |
+| `execve` symbol | `well-known/tool/offensive/` | `micro-behaviors/process/create/` | Standard syscall |
 | `umask` syscall | `objectives/persistence/` | `micro-behaviors/process/daemonize/` | Standard POSIX call |
 | SELinux xattr | `objectives/evasion/anti-av/` | `micro-behaviors/fs/attributes/xattr/` | Normal on Linux |
 | `readdir` export | `objectives/evasion/kernel-hide/` | Needs `unless:` for PIE executables | PIE ELFs are ET_DYN like .so |

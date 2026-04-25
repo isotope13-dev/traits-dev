@@ -50,10 +50,10 @@ Unlike MBC, which allows one behavior to map to multiple objectives (e.g., Proce
 
 | Tier | Can Reference | Rationale |
 |------|--------------|-----------|
-| `micro-behaviors/` | `micro-behaviors/`, `metadata/` | Capabilities must not depend on objectives |
-| `objectives/` | `micro-behaviors/`, `objectives/`, `metadata/` | Objectives build on capabilities and other objectives |
+| `micro-behaviors/` | `micro-behaviors/`, `metadata/`, `well-known/tool/`, `well-known/app/`, `well-known/lib/`, `well-known/game/` for false-positive exclusions only | Capabilities must not depend on objectives or malware families |
+| `objectives/` | `micro-behaviors/`, `objectives/`, `metadata/`, `well-known/tool/`, `well-known/app/`, `well-known/lib/`, `well-known/game/` for false-positive exclusions only | Objectives build on capabilities and other objectives |
 | `well-known/` | all tiers | Signatures can reference anything |
-| `metadata/` | `metadata/` | Informational properties reference only other metadata |
+| `metadata/` | `metadata/`, `well-known/tool/`, `well-known/app/`, `well-known/lib/`, `well-known/game/` for benign context only | Informational properties must not depend on behavior or objectives |
 
 **Capabilities must not reference objectives.** Capabilities are observable mechanics; objectives infer intent. If a `micro-behaviors/` rule needs an `objectives/` trait, either move the objective to `micro-behaviors/` (if it's actually a capability), refactor the dependency away, or move the whole rule to `objectives/` (if it's actually inferring intent).
 
@@ -812,6 +812,12 @@ Specific malware families and tool signatures. Similar to MBC's [malware corpus]
 
 ```
 well-known/
+├── app/                   # Specific legitimate applications and suites
+│   └── (adobe, bitdefender, defender, vendor drivers, etc.)
+├── game/                  # Game clients/platforms and game-specific tools
+│   └── (steam, etc.)
+├── lib/                   # Specific embedded libraries/frameworks/runtimes
+│   └── (openssl, zlib, ffmpeg, psutil, sharpshell, etc.)
 ├── malware/               # Malware family signatures
 │   ├── backdoor/          #   Passive remote access — shell, tunnel, implant
 │   │                      #     Waits for attacker commands. Simpler than a RAT.
@@ -857,8 +863,9 @@ well-known/
 │                          #     Spreads without user interaction (email, SMB, SSH).
 │                          #     (MyDoom, Conficker, Beagle)
 │
-└── tools/                 # Legitimate tools often abused
+└── tool/                  # Legitimate tools often abused
     ├── browser/           #   Browser components (Chromium sandbox, extensions)
+    ├── development/       #   IDEs and developer tools (JetBrains)
     ├── detection/         #   Security detection tools (cleave's own stng)
     ├── dual-use/          #   Dual-use utilities (licensing, converters)
     ├── offensive/         #   Pentesting/red-team tools + game cheat frameworks
@@ -874,7 +881,8 @@ File-level properties with no behavioral implication. Describes *what a file is*
 - Behavioral detection belongs in `objectives/`, not here
 - Tool/malware signatures belong in `well-known/`, not here
 - Supply-chain attack indicators belong in `objectives/supply-chain/` (organized by technique, not ecosystem)
-- Vendor-specific traits go under `vendor/`
+- OS/platform vendor traits go under `vendor/`
+- Specific apps, tools, games, and library/framework/runtime fingerprints go under `well-known/{app,tool,game,lib}/`, not `metadata/`
 - New top-level subdirectories require updating both TAXONOMY.md and `ALLOWED_METADATA` in `src/capabilities/validation/directory_whitelist.rs`
 - **Max depth:** 3 levels within `metadata/` (ML pipeline limit)
 - **Max leaf size:** No leaf directory should exceed 80 traits
@@ -930,10 +938,10 @@ metadata/
 │   ├── javascript-features/ # JavaScript language features
 │   ├── scripted/          #   Scripted language detection (VBScript, Lua, Perl)
 │   └── ...                #   go-build, linking, optimization, security, shebang, source, version
-├── library/               # Library/framework detection
+├── library/               # Legacy neutral library/framework context
 │   ├── data/              #   Data/infrastructure libraries
 │   ├── runtime/           #   Runtime/framework libraries
-│   └── (per-library subdirs: ai, async, jquery, react, vue, etc.)
+│   └── (neutral package/library context; known-library fingerprints → well-known/lib/)
 ├── package/               # Package ecosystem metadata & project quality
 │   ├── chrome-extension/  #   Extension manifest analysis
 │   ├── config/            #   Configuration file detection
@@ -964,8 +972,8 @@ metadata/
 │   ├── platform/          #   Platform-signed binary composites (auto-generated)
 │   ├── trust-level/       #   Signing trust level (ad-hoc, developer, platform, app store)
 │   └── (auto-generated: platform::apple, developer::*, adhoc::unsigned)
-└── vendor/                # Vendor identification
-    └── (per-vendor subdirs: apple, adobe, microsoft, openssl, etc.)
+└── vendor/                # OS/platform vendor identification only
+    └── (per-vendor subdirs: apple, microsoft, netbsd, fsf, etc.)
 ```
 
 ### Metadata boundary rubric
@@ -980,8 +988,10 @@ When placing a new metadata trait, use this tiebreaker table. Each row names the
 | `binary/metrics/` | `binary/anomaly/` | Is the measurement neutral (could be normal)? → `metrics/`. Does it inherently indicate malformation or tampering? → `anomaly/` |
 | `document/` | `file/` | Does it require parsing document internals (OLE streams, OOXML parts, PDF objects)? → `document/`. Observable from header/extension alone? → `file/` |
 | `build/` | `lang/` | Is it about build orchestration (cmake, docker, CI/CD)? → `build/`. Is it about the language toolchain (gcc, rustc, delphi)? → `lang/` |
-| `package/` | `library/` | Is it about ecosystem-level metadata (fields, scripts, quality, testing)? → `package/`. Is it detecting a specific embedded library? → `library/` |
-| `signed/` | `vendor/` | Is it about the cryptographic signature chain or entitlements? → `signed/`. Is it identifying the vendor by strings/resources/patterns? → `vendor/` |
+| `package/` | `library/` | Is it about ecosystem-level metadata (fields, scripts, quality, testing)? → `package/`. Is it neutral library context retained for metadata use? → `library/`. Is it identifying a specific library/framework/runtime? → `well-known/lib/` |
+| `signed/` | `vendor/` | Is it about the cryptographic signature chain or entitlements? → `signed/`. Is it identifying an OS/platform vendor by strings/resources/patterns? → `vendor/` |
+| `vendor/` | `well-known/app/` or `well-known/tool/` | Is it an OS/platform vendor or system userland marker (Apple, Microsoft, NetBSD, GNU/FSF)? → `vendor/`. Is it a specific application or suite? → `well-known/app/`. Is it a utility or analyst/admin/developer tool? → `well-known/tool/` |
+| `vendor/` | `well-known/lib/` | Is it identifying the platform vendor that produced the file? → `vendor/`. Is it an embedded third-party library/framework/runtime fingerprint (OpenSSL, zlib, FFmpeg, psutil, SharpShell)? → `well-known/lib/` |
 
 ## Reference
 
