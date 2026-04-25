@@ -1,15 +1,132 @@
 defaults:
   platforms: [windows, unix]
-  for: [javascript]
+  for: [javascript, typescript]
+  attack: T1553.004
 traits:
   - id: node-tls-reject-disabled
-    desc: Node.js TLS certificate verification disabled
+    desc: Node.js TLS verification env var disabled
     crit: suspicious
     conf: 0.95
-    attack: T1553.004
     if:
       type: text
       regex: NODE_TLS_REJECT_UNAUTHORIZED['"]?\]\s*=\s*['"]0['"]
     unless:
       - type: basename
         regex: '(^|[-_.])(test|spec)\.[cm]?[jt]sx?$'
+
+  # `https.Agent({ rejectUnauthorized: false })` — explicit agent bypass
+  - id: https-agent-reject-unauthorized
+    desc: https.Agent rejectUnauthorized false
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: 'new\s+https\.Agent\s*\(\s*\{[^}\n]{0,200}rejectUnauthorized\s*:\s*false'
+    unless:
+      - type: basename
+        regex: '(^|[-_.])(test|spec)\.[cm]?[jt]sx?$'
+
+  # Generic `rejectUnauthorized: false` in any options object — covers
+  # axios, got, node-fetch, request (legacy), superagent, etc.
+  - id: reject-unauthorized-false-generic
+    desc: rejectUnauthorized false in options
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '\brejectUnauthorized\s*:\s*false\b'
+    unless:
+      - type: basename
+        regex: '(^|[-_.])(test|spec)\.[cm]?[jt]sx?$'
+
+  # axios specifically: `axios.<method>(url, { httpsAgent: ... })` with
+  # bypass config. Keep this even though the generic above catches it,
+  # because composite consumers may want the library-specific atom.
+  - id: axios-https-agent-bypass
+    desc: axios using TLS-bypass httpsAgent
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: 'axios\.(get|post|put|delete|head|patch|request)\s*\([^\n]{0,400}rejectUnauthorized\s*:\s*false'
+
+  # got: `got(url, { https: { rejectUnauthorized: false } })`
+  - id: got-rejectunauthorized-false
+    desc: got TLS bypass via https option
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: 'got\s*\([^\n]{0,400}https\s*:\s*\{[^}\n]{0,200}rejectUnauthorized\s*:\s*false'
+
+  # node-fetch + custom Agent (less common but valid)
+  - id: node-fetch-agent-bypass
+    desc: node-fetch with TLS-bypass agent
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?:fetch|node-fetch)\s*\([^\n]{0,400}agent\s*:\s*new\s+https\.Agent\s*\(\s*\{[^}\n]{0,200}rejectUnauthorized\s*:\s*false'
+
+  # Always-true cert-validation callback: `tls.connect({ rejectUnauthorized: false, checkServerIdentity: () => undefined })`
+  - id: check-server-identity-bypass
+    desc: checkServerIdentity returns undefined/null
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: 'checkServerIdentity\s*:\s*(?:\(\s*[\w,\s]{0,40}\s*\)\s*=>\s*(?:undefined|null|true)|function\s*\([^)\n]{0,40}\)\s*\{\s*return\s*(?:undefined|null|true)\s*;?\s*\})'
+
+  # Set servername explicitly to a value that differs from the destination
+  # in tls.connect — the SNI decouple pattern. Different from "manual
+  # socket replace" since this works without raw-socket plumbing.
+  - id: tls-connect-servername-override
+    desc: tls.connect with explicit servername override
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      regex: 'tls\.connect\s*\(\s*\{[^}\n]{0,400}servername\s*:'
+
+composite_rules:
+  - id: js-tls-validation-bypass
+    desc: JS TLS validation disabled (any form)
+    crit: suspicious
+    conf: 0.93
+    any:
+      - id: node-tls-reject-disabled
+      - id: https-agent-reject-unauthorized
+      - id: reject-unauthorized-false-generic
+      - id: axios-https-agent-bypass
+      - id: got-rejectunauthorized-false
+      - id: node-fetch-agent-bypass
+      - id: check-server-identity-bypass
+
+  # SNI/host-decouple: tls.connect specifies a `servername` while
+  # connecting to a different destination — same intent as the Python
+  # manual-socket-wrap composite. Pair with hardcoded IP for hostile.
+  - id: js-tls-sni-host-decouple
+    desc: TLS SNI decoupled from destination
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: tls-connect-servername-override
+      - id: micro-behaviors/communications/ip::external-ipv4-script
+    downgrade:
+      any:
+        - id: metadata/package/testing/harness::is-test
+        - id: metadata/package/testing/presence::test-directory
+
+  # TLS bypass + hardcoded IP target — JS equivalent of the Python
+  # tls-bypass-ip-target hostile composite.
+  - id: js-tls-bypass-ip-target
+    desc: TLS validation off with hardcoded IP target
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: js-tls-validation-bypass
+      - id: micro-behaviors/communications/ip::external-ipv4-script
+    downgrade:
+      any:
+        - id: metadata/package/testing/harness::is-test
+        - id: metadata/package/testing/presence::test-directory

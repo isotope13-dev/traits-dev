@@ -5,25 +5,26 @@
 # code stores URLs and keys as string literals.
 defaults:
   platforms: [windows, unix]
-  for: [python]
+  for: [scripts, source]
   attack: T1027
   mbc: B0032
 
 traits:
   # Variables named like API endpoint fragments storing byte arrays or
-  # int lists. Pattern: `_API_<X> = bytes([0xNN, ...])` or similar.
+  # int lists. Pattern: `_API_<X> = bytes([0xNN, ...])` (Python) /
+  # `const _API_X = [0xNN, ...]` (JS) / `let _API_X = Uint8Array.of(...)`.
   - id: api-named-byte-array-const
     desc: API-named byte-array constant (encoded URL fragment)
     crit: notable
     conf: 0.92
     if:
       type: text
-      regex: '\b_(?:API|AUTH|TOKEN|URL|HOST|DOMAIN|TLD|SCHEMA|ENDPOINT|TARGET)_[A-Z0-9_]{1,40}\s*=\s*(?:bytes\s*\(\s*)?\[\s*0x[0-9a-fA-F]'
+      regex: '\b_(?:API|AUTH|TOKEN|URL|HOST|DOMAIN|TLD|SCHEMA|ENDPOINT|TARGET)_[A-Z0-9_]{1,40}\s*=\s*(?:bytes\s*\(\s*|new\s+Uint8Array\s*\(?\s*|Uint8Array\.(?:of|from)\s*\(\s*)?\[\s*0x[0-9a-fA-F]'
 
   # Sequential URL-component concatenation: `_API_SCHEMA + _API_HOST +
   # _API_DOMAIN + _API_TLD` style. Three or more URL-component-named
   # constants concatenated is the URL-from-fragments reconstruction
-  # pattern.
+  # pattern. Identical syntax in Python and JS.
   - id: url-component-concat
     desc: URL reconstructed from named component constants
     crit: notable
@@ -33,8 +34,9 @@ traits:
       regex: '\b_(?:API|URL|ENDPOINT)_[A-Z]+\s*\+\s*_(?:API|URL|ENDPOINT|HOST|DOMAIN|TLD|SCHEMA|PATH)_[A-Z]+\s*\+\s*_(?:API|URL|ENDPOINT|HOST|DOMAIN|TLD|SCHEMA|PATH)_[A-Z]+'
 
   # Variables named like key/hash/credential material storing hex blobs.
-  # Dict-of-hex-keyed-by-architecture is the per-platform signing/cred
-  # blob pattern (Polyseed _PLATFORM_HASHES = {"win32_x64": "<sha>"}).
+  # Dict/object-of-hex-keyed-by-architecture is the per-platform
+  # signing/cred blob pattern (Polyseed _PLATFORM_HASHES). Same shape in
+  # Python dict and JS object literal.
   - id: arch-keyed-hex-blob-dict
     desc: Architecture-keyed hex-blob dictionary
     crit: notable
@@ -44,7 +46,7 @@ traits:
       regex: '\b_?(?:PLATFORM|ARCH|TARGET|HOST)[_A-Z]*\s*=\s*\{[^}\n]{0,40}["''](?:win32|linux|darwin|macos|android|ios)_(?:x86|x64|arm64|amd64)["'']\s*:\s*["''][0-9a-fA-F]{32,}'
 
   # KEY/SIG/HASH-named hex string constants. Two or more in the same
-  # file = key blob.
+  # file = key blob. Language-agnostic.
   - id: cred-named-hex-string-const
     desc: Credential-named hex string constant
     crit: notable
@@ -56,19 +58,32 @@ traits:
 
   # Underscore-prefixed function names that build / return decoded
   # URL/key strings. Cryptic external API: `_ep()` returns endpoint,
-  # `_sk()` returns signing key. These are not Python "private" — they're
+  # `_sk()` returns signing key. These are not "private" — they're
   # called externally with names designed to carry no signal.
-  - id: cryptic-config-builder-fn
-    desc: Cryptic-named zero-arg config-builder function
+  # Python `def _x():` form.
+  - id: cryptic-config-builder-fn-py
+    desc: Cryptic-named zero-arg helper (Python)
     crit: notable
     conf: 0.85
     count_min: 2
+    for: [python]
     if:
       type: text
       regex: '^\s*def\s+_[a-z]{1,3}\s*\(\s*\)\s*:'
+  # JS `function _x()` and `const _x = () =>` and `_x:` shorthand.
+  - id: cryptic-config-builder-fn-js
+    desc: Cryptic-named zero-arg helper (JS)
+    crit: notable
+    conf: 0.85
+    count_min: 2
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '^\s*(?:function\s+_[a-z]{1,3}\s*\(\s*\)|(?:const|let|var)\s+_[a-z]{1,3}\s*=\s*(?:function\s*)?\(\s*\)\s*=>?)'
 
 composite_rules:
-  # Aggregator: any encoded-C2-config marker.
+  # Aggregator: any encoded-C2-config marker. Listed explicitly because
+  # the payload/ parent directory holds many unrelated traits.
   - id: encoded-c2-config-marker
     desc: Encoded C2-config marker present
     crit: suspicious
@@ -78,7 +93,6 @@ composite_rules:
       - id: url-component-concat
       - id: arch-keyed-hex-blob-dict
       - id: cred-named-hex-string-const
-      - id: cryptic-config-builder-fn
 
   # Hostile: encoded-C2-config marker + an actual decode operation in the
   # same file. The label says "this is an API endpoint" and the file
@@ -91,13 +105,10 @@ composite_rules:
     all:
       - id: encoded-c2-config-marker
     any:
-      - id: micro-behaviors/data/encode/xor::xor-bytes-genexpr-key
-      - id: micro-behaviors/data/encode/xor::xor-bytes-genexpr-literal
-      - id: micro-behaviors/data/encode/xor::xor-bytearray-mutating-loop
+      - id: micro-behaviors/data/encode/xor
       - id: objectives/anti-static/obfuscation/string/encoding::python-hex
       - id: objectives/anti-static/obfuscation/string/encoding::bytes-fromhex-call
-      - id: objectives/anti-static/obfuscation/encoding/arithmetic::subtract-bytes-genexpr
-      - id: objectives/anti-static/obfuscation/encoding/arithmetic::add-mod-bytes-genexpr
+      - id: objectives/anti-static/obfuscation/encoding/arithmetic
     downgrade:
       any:
         - id: metadata/package/testing/presence::python-test-file
