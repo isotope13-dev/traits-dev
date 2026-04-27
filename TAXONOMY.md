@@ -59,7 +59,6 @@ Unlike MBC, which allows one behavior to map to multiple objectives (e.g., Proce
 
 **Capabilities must not use `crit: hostile`.** Hostile requires intent inference, which belongs in `objectives/`. Maximum capability criticality is `suspicious`. Validation rejects hostile capabilities.
 
-
 **Neutral capabilities belong in `micro-behaviors/`, not `objectives/`.** A trait that detects a single API call, syscall, or keyword (fork, crontab, SetFileAttributes, getenv) is a capability — it belongs in `micro-behaviors/` regardless of which objective composite references it. Composites reference traits across directories. Component traits (`crit: component`) may appear in `objectives/` only when they are attack-context-specific fragments that have no meaning outside that context (e.g., Nemucod string pieces, default credential lists, supply-chain URL patterns).
 
 ### Directory Layout Convention
@@ -802,6 +801,8 @@ objectives/
 ## Tier 3: Known Entities (`well-known/`)
 
 Specific malware families and tool signatures. Similar to MBC's [malware corpus](https://github.com/MBCProject/mbc-markdown/tree/master/xample-malware) but structured as detection rules. Categories align with [MBC/STIX 2.1 malware types](https://docs.oasis-open.org/cti/stix/v2.1/os/stix-v2.1-os.html).
+
+Do not create general-purpose traits in well-known/ that would possibly match multiple families, even if they are at a low criticality. Move general-purpose traits to a general-purpose location.
 
 **Rules:**
 - Each malware family appears in exactly **one** category — pick the primary behavior
