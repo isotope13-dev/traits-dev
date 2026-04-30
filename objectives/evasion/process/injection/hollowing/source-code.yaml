@@ -1,0 +1,125 @@
+# Source-level process hollowing (RunPE) detection for C/C++
+# Detects the full RunPE chain: suspended process creation, memory unmapping,
+# payload injection, and thread context redirection.
+# ATT&CK: T1055.012 (Process Injection: Process Hollowing)
+# MBC: E1055.012
+defaults:
+  for: [c, cpp]
+  platforms: [windows]
+  attack: T1055.012
+  mbc: E1055.012
+
+traits:
+  # --- CreateProcess with CREATE_SUSPENDED in source ---
+
+  - id: create-suspended-source
+    desc: CREATE_SUSPENDED flag in source code
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      substr: CREATE_SUSPENDED
+
+  # --- ZwUnmapViewOfSection in source ---
+
+  - id: zwunmap-source
+    desc: ZwUnmapViewOfSection reference in source
+    crit: component
+    conf: 0.95
+    if:
+      type: text
+      substr: ZwUnmapViewOfSection
+
+  # --- Browser path extraction for hollowing target ---
+
+  - id: browser-path-extraction
+    desc: Default browser path extraction from registry
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: "http\\\\shell\\\\open\\\\command"
+
+  # --- PE header parsing in source (for hollowing) ---
+
+  - id: pe-header-parsing
+    desc: PE header structure parsing in source
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      substr: offsetToPE
+
+  # --- Resource extraction to temp (payload staging) ---
+
+  - id: resource-to-temp-extraction
+    desc: Resource extraction to temp directory in source
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: GetTempPath.{0,200}CreateFile
+
+  # --- PAGE_EXECUTE_READWRITE allocation ---
+
+  - id: rwx-allocation-source
+    desc: RWX memory allocation in source
+    crit: component
+    conf: 0.8
+    if:
+      type: text
+      substr: PAGE_EXECUTE_READWRITE
+
+  # --- Dynamic API resolution for hollowing APIs ---
+
+  - id: dynamic-hollowing-apis
+    desc: Dynamic resolution of hollowing APIs via GetProcAddress
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: GetProcAddress.{0,100}(WriteProcessMemory|SetThreadContext|VirtualAllocEx)
+
+composite_rules:
+  - id: runpe-source-code
+    desc: Process hollowing (RunPE) in source code
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: create-suspended-source
+      - id: zwunmap-source
+      - id: micro-behaviors/process/inject/runtime::write-process-memory-dup
+      - id: micro-behaviors/process/info/thread::set-thread-context
+      - id: micro-behaviors/process/info/thread::resume-thread
+    any:
+      - id: browser-path-extraction
+      - id: pe-header-parsing
+      - id: rwx-allocation-source
+    needs: 1
+
+  - id: suspended-browser-hollowing
+    desc: Suspended browser process hollowing chain
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: create-suspended-source
+      - id: browser-path-extraction
+      - id: micro-behaviors/process/create/spawn::create-process-w
+    any:
+      - id: zwunmap-source
+      - id: pe-header-parsing
+      - id: resource-to-temp-extraction
+    needs: 2
+
+  - id: pe-injection-staging
+    desc: PE payload extraction and injection staging
+    crit: suspicious
+    conf: 0.92
+    all:
+      - id: resource-to-temp-extraction
+      - id: pe-header-parsing
+      - id: rwx-allocation-source
+    any:
+      - id: create-suspended-source
+      - id: dynamic-hollowing-apis
+    needs: 1
