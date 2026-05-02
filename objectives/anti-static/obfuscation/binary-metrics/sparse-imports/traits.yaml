@@ -1,0 +1,81 @@
+# Sparse-import / .text-heavy PE — the structural fingerprint of a
+# loader/implant that has folded most of its functionality into
+# statically-bundled code paths instead of importing Win32 APIs.
+#
+# Indicators in concert:
+#   - text_to_file_ratio > 0.70 (one .text section dominates)
+#   - import_count < 400 (few imported APIs)
+#   - behavioral_import_ratio < 0.10 (very few of those imports are
+#     actually behavior-relevant; the rest are CRT scaffolding)
+#   - PE has API hashing indicators
+#
+# Observed in: VECT 2026 ransomware, statically-linked libsodium
+# implants, post-2023 affiliate ransomware that hashes APIs to
+# defeat static IAT scanners.
+#
+# Atomics are `component` (terminal-suppressed) — Go binaries and
+# managed-language compilations naturally hit these thresholds. The
+# composite gates on api-hashing-indicators which is the actual
+# malicious signal.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  attack: T1027
+  mbc: B0032
+  size_min: 524288
+traits:
+  - id: text-heavy-binary
+    desc: One .text section dominates file
+    crit: component
+    conf: 0.85
+    if:
+      type: metrics
+      field: binary.text_to_file_ratio
+      min: 0.70
+    unless:
+      - id: metadata/lang/compiled::go-runtime-marker
+      - id: metadata/lang/compiler/systems::go-pe-symtab
+      - id: metadata/lang/go-build::go-build-trimpath
+  - id: low-import-count
+    desc: Sparse import table
+    crit: component
+    conf: 0.85
+    if:
+      type: metrics
+      field: binary.import_count
+      max: 400
+    unless:
+      - id: metadata/lang/compiled::go-runtime-marker
+      - id: metadata/lang/compiler/systems::go-pe-symtab
+      - id: metadata/lang/go-build::go-build-trimpath
+  - id: low-behavioral-import-ratio
+    desc: Low behavioral-import ratio
+    crit: component
+    conf: 0.9
+    if:
+      type: metrics
+      field: binary.behavioral_import_ratio
+      max: 0.10
+    unless:
+      - id: metadata/lang/compiled::go-runtime-marker
+      - id: metadata/lang/compiler/systems::go-pe-symtab
+      - id: metadata/lang/go-build::go-build-trimpath
+composite_rules:
+  - id: sparse-import-evasive-pe
+    desc: Sparse-import evasive PE loader
+    crit: suspicious
+    conf: 0.93
+    needs: 2
+    all:
+      - id: objectives/anti-static/obfuscation/imports::pe-api-hashing-indicator-single
+    any:
+      - id: text-heavy-binary
+      - id: low-import-count
+      - id: low-behavioral-import-ratio
+    unless:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: metadata/binary/framework::dotnet-metadata
+      - id: metadata/lang/compiled::go-runtime-marker
+      - id: metadata/lang/compiler/systems::go-pe-symtab
+      - id: metadata/binary/framework::electron-desktop-runtime
+      - id: metadata/binary/installer::known-benign-installer

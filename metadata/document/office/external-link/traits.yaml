@@ -1,0 +1,102 @@
+# OOXML external-relationship breakdown.
+#
+# Office documents can declare relationships of many `Type:` URIs in
+# their `_rels/*.rels` parts. Most of these are benign (image links,
+# hyperlinks, internal references); a handful — attachedTemplate,
+# oleObject, frame, subDocument — are template-injection vectors that
+# fetch and execute content from a remote server when the document is
+# opened.
+#
+# cleave's office analyzer tallies these into per-rel-type counts on
+# `office.external_*_count`. The atomics below let traits and
+# composites distinguish "external image" (notable, sometimes used
+# for tracking pixels) from "external attached template" (hostile,
+# the canonical CVE-2017-0199 vector).
+defaults:
+  for: [ooxml]
+  platforms: [windows, unix]
+
+traits:
+  - id: ooxml-external-attached-template
+    desc: External attachedTemplate relationship
+    crit: suspicious
+    conf: 0.97
+    attack: T1221
+    if:
+      type: metrics
+      field: office.external_template_count
+      min: 1
+
+  - id: ooxml-external-oleobject
+    desc: External oleObject relationship
+    crit: suspicious
+    conf: 0.96
+    attack: T1559.001
+    if:
+      type: metrics
+      field: office.external_oleobject_count
+      min: 1
+
+  - id: ooxml-external-frame
+    desc: External frame or subDocument relationship
+    crit: suspicious
+    conf: 0.95
+    attack: T1221
+    if:
+      type: metrics
+      field: office.external_frame_count
+      min: 1
+
+  - id: ooxml-external-image
+    desc: External image relationship
+    crit: notable
+    conf: 0.92
+    if:
+      type: metrics
+      field: office.external_image_count
+      min: 1
+
+  - id: ooxml-external-many
+    desc: Many external relationships
+    crit: notable
+    conf: 0.9
+    if:
+      type: metrics
+      field: office.external_ref_count
+      min: 5
+
+  # Suspicious-extension entries inside the OOXML zip (e.g., an .exe
+  # or .lnk packed alongside the document XML). Per-extension
+  # bookkeeping is at the analyzer level; the metric is the count.
+  - id: ooxml-suspicious-zip-extension
+    desc: OOXML archive contains suspicious extension
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: metrics
+      field: office.ooxml.suspicious_extension_count
+      min: 1
+
+composite_rules:
+  # Template-injection composite: external attached template OR remote
+  # OLE object reference IS the malicious payload retrieval mechanism.
+  - id: ooxml-template-injection
+    desc: OOXML template injection vector
+    crit: suspicious
+    conf: 0.98
+    attack: T1221
+    any:
+      - id: ooxml-external-attached-template
+      - id: ooxml-external-oleobject
+      - id: ooxml-external-frame
+
+  # External image fetch combined with macros — the tracking-pixel-
+  # plus-loader pattern. Two-atomic gate so the composite isn't
+  # collapsed by the validator's single-item check.
+  - id: ooxml-image-fetch-with-macros
+    desc: External image fetch in macro-bearing document
+    crit: suspicious
+    conf: 0.94
+    all:
+      - id: ooxml-external-image
+      - id: metadata/document/office/markup::ooxml-vba-project-content

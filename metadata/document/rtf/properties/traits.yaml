@@ -1,0 +1,167 @@
+# RTF document property atomics, keyed on the synthesized kv tree.
+#
+# cleave's RTF analyzer parses the `\info` group and `\field`
+# instructions and stashes them on `report.kv_tree` as
+# `info.*`/`info_numeric.*`/`fields[]` (see `rtf::rtf_kv` for the
+# schema). These atomics turn each useful path into a discrete
+# detection signal — composites elsewhere combine them into
+# attacker-intent rules.
+defaults:
+  for: [rtf]
+  platforms: [windows, unix]
+  crit: notable
+  conf: 0.9
+
+traits:
+  # --- Locale / script in author fields ---
+  - id: rtf-info-author-cyrillic
+    desc: RTF info.author contains Cyrillic
+    if:
+      type: kv
+      path: info.author
+      regex: '[Ѐ-ӿ]'
+  - id: rtf-info-author-cjk
+    desc: RTF info.author contains CJK
+    if:
+      type: kv
+      path: info.author
+      regex: '[一-鿿぀-ゟ゠-ヿ]'
+
+  # --- Brand impersonation ---
+  - id: rtf-info-author-microsoft
+    desc: RTF info.author claims Microsoft
+    if:
+      type: kv
+      path: info.author
+      substr: Microsoft
+      case_insensitive: true
+  - id: rtf-info-company-docusign
+    desc: RTF info.company claims DocuSign
+    if:
+      type: kv
+      path: info.company
+      substr: DocuSign
+      case_insensitive: true
+
+  # --- Empty-author + has-objects shape (mass-produced lures
+  #     often skip the author field). ---
+  - id: rtf-info-author-missing
+    desc: RTF info.author is missing
+    crit: baseline
+    conf: 0.85
+    if:
+      type: kv
+      path: info.author
+      exists: false
+
+  # --- Date sentinels ---
+  - id: rtf-info-creatim-future
+    desc: RTF creatim is in the future
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: kv
+      path: info.creatim
+      regex: 'yr20[3-9][0-9]'
+
+  # --- Field-instruction atomics ---
+  - id: rtf-field-ddeauto
+    desc: RTF DDEAUTO field instruction
+    crit: suspicious
+    conf: 0.97
+    attack: T1559.002
+    if:
+      type: kv
+      path: fields[*].kind
+      exact: DDEAUTO
+  - id: rtf-field-includetext
+    desc: RTF INCLUDETEXT field instruction
+    crit: suspicious
+    conf: 0.93
+    attack: T1221
+    if:
+      type: kv
+      path: fields[*].kind
+      exact: INCLUDETEXT
+  - id: rtf-field-import
+    desc: RTF IMPORT field instruction
+    crit: suspicious
+    conf: 0.93
+    attack: T1221
+    if:
+      type: kv
+      path: fields[*].kind
+      exact: IMPORT
+  - id: rtf-field-link
+    desc: RTF LINK field instruction
+    crit: notable
+    conf: 0.9
+    if:
+      type: kv
+      path: fields[*].kind
+      exact: LINK
+
+  # --- DDE field with shell-invoking payload, split into two
+  #     atomics so each regex stays under the 3-pipe / 80-byte
+  #     limits the validator enforces. ---
+  - id: rtf-field-target-cmd-or-script
+    desc: RTF field invokes cmd/script host
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: kv
+      path: fields[*].target
+      regex: '(?i)(cmd\.exe|wscript|cscript)'
+  - id: rtf-field-target-living-off-the-land
+    desc: RTF field target invokes LOLBin
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: kv
+      path: fields[*].target
+      regex: '(?i)(powershell|mshta|bitsadmin)'
+  - id: rtf-field-target-remote-url
+    desc: RTF field target is a remote URL
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: kv
+      path: fields[*].target
+      regex: 'https?://'
+
+  # --- Object class IDs for known CVE families.  Class names live
+  #     under `objects[*].class` in the kv tree. ---
+  - id: rtf-object-equation-3
+    desc: Embedded Equation.3 object (CVE-2017-11882)
+    crit: suspicious
+    conf: 0.97
+    attack: T1203
+    if:
+      type: kv
+      path: objects[*].class
+      regex: '(?i)Equation\.3'
+  - id: rtf-object-package
+    desc: Embedded OLE Package object
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: kv
+      path: objects[*].class
+      substr: Package
+      case_insensitive: true
+  - id: rtf-object-listview-2012-0158
+    desc: Embedded MSCOMCTL.ListViewCtrl (CVE-2012-0158)
+    crit: suspicious
+    conf: 0.96
+    attack: T1203
+    if:
+      type: kv
+      path: objects[*].class
+      regex: '(?i)ListView'
+  - id: rtf-object-word-document
+    desc: Embedded Word.Document object
+    crit: notable
+    if:
+      type: kv
+      path: objects[*].class
+      regex: '(?i)Word\.Document'

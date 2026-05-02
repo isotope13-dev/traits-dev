@@ -1,0 +1,150 @@
+# VBA `Declare` imports of kernel32 / kernelbase APIs.
+#
+# These atomics fire when a VBA module declares a function imported from
+# kernel32.dll. cleave's office analyzer surfaces each `Declare ... Lib
+# "kernel32" Alias "<NAME>"` (or bare-name when no Alias clause is
+# present) as a `kind: import` symbol with `library: kernel32`, so we
+# can match by the *imported API name* rather than scraping module
+# source with regex.  See `RULES.md` "Prefer `type: symbol` over
+# `type: text`".
+#
+# Coverage corresponds roughly to maldoca's `VbaDllFunctionName` enum
+# kernel32 set: memory management, thread creation, dynamic linking,
+# process creation. Each atom is `notable` by default; the loader
+# composite in `objectives/execution/interpreter/document/` upgrades
+# to `hostile` only when allocation + memory-copy + thread-creation
+# are all present.
+#
+# Note: `VirtualAllocEx`, `WriteProcessMemory`, and `GetProcAddress`
+# are *also* matched by existing raw-substr scans in
+# `process/inject/{dll,runtime}` and `dylib/lookup` for raw embedded
+# binaries; we don't redeclare them as `type: symbol` here to keep the
+# pattern table clean. Composites can reference those existing IDs
+# directly when needed.
+defaults:
+  for: [oledoc, ooxml, vbs]
+  platforms: [windows]
+  crit: notable
+  conf: 0.92
+
+traits:
+  # --- Memory allocation / protection ---
+  - id: vba-declare-virtualalloc
+    desc: VBA Declare imports VirtualAlloc
+    crit: suspicious
+    if:
+      type: symbol
+      kind: import
+      exact: VirtualAlloc
+  - id: vba-declare-virtualprotect
+    desc: VBA Declare imports VirtualProtect
+    crit: suspicious
+    if:
+      type: symbol
+      kind: import
+      exact: VirtualProtect
+  - id: vba-declare-heapalloc
+    desc: VBA Declare imports HeapAlloc
+    if:
+      type: symbol
+      kind: import
+      exact: HeapAlloc
+  - id: vba-declare-globalalloc
+    desc: VBA Declare imports GlobalAlloc
+    if:
+      type: symbol
+      kind: import
+      exact: GlobalAlloc
+
+  # --- Memory copy primitives (often used to stage shellcode bytes).
+  #     Consolidated into one atomic — the four call sites
+  #     (Rtl{Move,Copy}Memory, {Move,Copy}Memory) are interchangeable
+  #     for the loader composite's purposes and a single regex keeps
+  #     the rule table compact.
+  - id: vba-declare-memcopy-primitive
+    desc: VBA Declare imports a memory-copy primitive
+    crit: suspicious
+    if:
+      type: symbol
+      kind: import
+      regex: '^(Rtl)?(Move|Copy)Memory$'
+
+  # --- Thread / control-flow handover ---
+  - id: vba-declare-createthread
+    desc: VBA Declare imports CreateThread
+    crit: suspicious
+    if:
+      type: symbol
+      kind: import
+      exact: CreateThread
+  - id: vba-declare-createremotethread
+    desc: VBA Declare imports CreateRemoteThread
+    crit: suspicious
+    if:
+      type: symbol
+      kind: import
+      exact: CreateRemoteThread
+
+  # --- Process creation variants beyond the basic CreateProcess[AW]
+  #     (those are already covered by `process/create/spawn/`); we
+  #     surface only the privileged-context variants which are
+  #     uncommon outside malicious VBA. ---
+  - id: vba-declare-createprocessasuser
+    desc: VBA Declare imports CreateProcessAsUser
+    crit: suspicious
+    if:
+      type: symbol
+      kind: import
+      regex: '^CreateProcessAsUser[AW]?$'
+  - id: vba-declare-createprocesswithlogon
+    desc: VBA Declare imports CreateProcessWithLogon
+    crit: suspicious
+    if:
+      type: symbol
+      kind: import
+      regex: '^CreateProcessWithLogon[AW]?$'
+  - id: vba-declare-createprocesswithtoken
+    desc: VBA Declare imports CreateProcessWithToken
+    crit: suspicious
+    if:
+      type: symbol
+      kind: import
+      regex: '^CreateProcessWithToken[AW]?$'
+  - id: vba-declare-terminateprocess
+    desc: VBA Declare imports TerminateProcess
+    if:
+      type: symbol
+      kind: import
+      exact: TerminateProcess
+  - id: vba-declare-winexec
+    desc: VBA Declare imports WinExec
+    crit: suspicious
+    if:
+      type: symbol
+      kind: import
+      exact: WinExec
+
+  # --- Dynamic linking ---
+  - id: vba-declare-loadlibrary
+    desc: VBA Declare imports LoadLibrary
+    if:
+      type: symbol
+      kind: import
+      regex: '^LoadLibrary[AW]?$'
+  - id: vba-declare-loadlibraryex
+    desc: VBA Declare imports LoadLibraryEx
+    if:
+      type: symbol
+      kind: import
+      regex: '^LoadLibraryEx[AW]?$'
+
+  # --- Composite-only structural metric (not a behavior on its own;
+  #     surfaced as a feature so loader composites can require it) ---
+  - id: vba-declare-non-literal-lib
+    desc: VBA Declare with runtime-built Lib name
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: metrics
+      field: office.vba.declare_non_literal_count
+      min: 1

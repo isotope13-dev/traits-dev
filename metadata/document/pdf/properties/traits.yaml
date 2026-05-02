@@ -1,0 +1,247 @@
+# PDF document property atomics, keyed on the synthesized kv tree.
+#
+# cleave's PDF analyzer (lenient byte-scan extractor — see
+# `analyzers::pdf::parser`) parses the DocumentInfo dict, action
+# dicts, embedded files, and stream filters, then stashes a kv tree
+# on `report.kv_tree` per the schema in `analyzers::pdf::pdf_kv`:
+#
+#   info.{author, title, creator, producer, subject, keywords,
+#         creation_date, mod_date, trapped}
+#   catalog.{has_openaction, has_additional_actions, has_acroform,
+#            has_xfa, embedded_file_count}
+#   actions[]: kind, source, snippet
+#   embedded_files[]: filename, size
+#   filter_chains[]: comma-joined filter names per stream
+#   header.{version, header_count}
+#   shape.{object_count, eof_count, encrypted, linearized,
+#          jbig2_filter_count, three_d_object_count}
+#
+# Atomics here are detection building blocks; composites elsewhere
+# combine them into attacker-intent rules.
+defaults:
+  for: [pdf]
+  platforms: [windows, macos, linux]
+  crit: notable
+  conf: 0.9
+
+traits:
+  # --- Locale / script in author / creator ---
+  - id: pdf-info-author-cyrillic
+    desc: PDF info.author contains Cyrillic
+    if:
+      type: kv
+      path: info.author
+      regex: '[Ѐ-ӿ]'
+  - id: pdf-info-author-cjk
+    desc: PDF info.author contains CJK
+    if:
+      type: kv
+      path: info.author
+      regex: '[一-鿿぀-ゟ゠-ヿ]'
+  - id: pdf-info-creator-libreoffice
+    desc: PDF info.producer claims LibreOffice
+    if:
+      type: kv
+      path: info.producer
+      substr: LibreOffice
+      case_insensitive: true
+
+  # --- Date sentinels ---
+  - id: pdf-info-creation-future
+    desc: PDF creation_date is in the future
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: kv
+      path: info.creation_date
+      regex: 'D:20[3-9][0-9]'
+
+  # --- Catalog / structural flags ---
+  - id: pdf-has-openaction
+    desc: PDF catalog has OpenAction
+    if:
+      type: kv
+      path: catalog.has_openaction
+      exact: "true"
+  - id: pdf-has-additional-actions
+    desc: PDF catalog has AA additional actions
+    if:
+      type: kv
+      path: catalog.has_additional_actions
+      exact: "true"
+  - id: pdf-has-acroform
+    desc: PDF has AcroForm
+    crit: baseline
+    if:
+      type: kv
+      path: catalog.has_acroform
+      exact: "true"
+  - id: pdf-has-xfa
+    desc: PDF AcroForm contains XFA
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: kv
+      path: catalog.has_xfa
+      exact: "true"
+
+  # --- Action atomics ---
+  - id: pdf-action-javascript
+    desc: PDF JavaScript action present
+    crit: suspicious
+    conf: 0.95
+    attack: T1059.007
+    if:
+      type: kv
+      path: actions[*].kind
+      exact: javascript
+  - id: pdf-action-launch
+    desc: PDF Launch action present
+    crit: suspicious
+    conf: 0.97
+    attack: T1204.001
+    if:
+      type: kv
+      path: actions[*].kind
+      exact: launch
+  - id: pdf-action-uri
+    desc: PDF URI action present
+    if:
+      type: kv
+      path: actions[*].kind
+      exact: uri
+  - id: pdf-action-submitform
+    desc: PDF SubmitForm action present
+    if:
+      type: kv
+      path: actions[*].kind
+      exact: submitform
+  - id: pdf-action-importdata
+    desc: PDF ImportData action present
+    if:
+      type: kv
+      path: actions[*].kind
+      exact: importdata
+
+  # --- JavaScript snippet patterns (high-precision payload tells) ---
+  - id: pdf-js-app-alert
+    desc: PDF JS calls app.alert
+    crit: notable
+    if:
+      type: kv
+      path: actions[*].snippet
+      substr: app.alert
+  - id: pdf-js-util-printd
+    desc: PDF JS calls util.printd
+    crit: notable
+    if:
+      type: kv
+      path: actions[*].snippet
+      substr: util.printd
+  - id: pdf-js-this-getfield
+    desc: PDF JS calls this.getField
+    crit: notable
+    if:
+      type: kv
+      path: actions[*].snippet
+      substr: this.getField
+  - id: pdf-js-fromcharcode
+    desc: PDF JS uses String.fromCharCode
+    crit: suspicious
+    if:
+      type: kv
+      path: actions[*].snippet
+      substr: fromCharCode
+  - id: pdf-js-unescape
+    desc: PDF JS uses unescape (heap-spray hint)
+    crit: suspicious
+    if:
+      type: kv
+      path: actions[*].snippet
+      substr: unescape
+
+  # --- Launch action targets ---
+  - id: pdf-launch-target-cmd
+    desc: PDF Launch target invokes cmd / script
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: kv
+      path: actions[*].snippet
+      regex: '(?i)(cmd\.exe|wscript|cscript)'
+  - id: pdf-launch-target-shell
+    desc: PDF Launch target invokes shell / LOLBin
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: kv
+      path: actions[*].snippet
+      regex: '(?i)(powershell|mshta|bitsadmin)'
+
+  # --- Embedded file shape (split into native/script/installer
+  #     groups so each regex stays under the 3-pipe limit). ---
+  - id: pdf-embedded-native-executable
+    desc: PDF embeds native executable
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: kv
+      path: embedded_files[*].filename
+      regex: '(?i)\.(exe|dll|scr|lnk)$'
+  - id: pdf-embedded-script-payload
+    desc: PDF embeds script payload
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: kv
+      path: embedded_files[*].filename
+      regex: '(?i)\.(hta|bat|js|vbs)$'
+  - id: pdf-embedded-jar-payload
+    desc: PDF embeds JAR payload
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: kv
+      path: embedded_files[*].filename
+      regex: '(?i)\.jar$'
+
+  # --- Filter chain anomalies ---
+  - id: pdf-filter-chain-multi
+    desc: PDF stream uses multi-step filter chain
+    if:
+      type: kv
+      path: filter_chains[*]
+      substr: ","
+  - id: pdf-filter-jbig2-cve-2010-1297
+    desc: PDF JBIG2Decode filter (CVE-2010-1297 family)
+    crit: suspicious
+    conf: 0.96
+    attack: T1203
+    if:
+      type: kv
+      path: shape.jbig2_filter_count
+      regex: '^[1-9]'
+
+  # --- Stacked PDF / structural anomalies ---
+  - id: pdf-multiple-headers-stacked
+    desc: PDF contains multiple %PDF- headers
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: kv
+      path: header.header_count
+      regex: '^[2-9]'
+  - id: pdf-many-incremental-updates
+    desc: PDF has many %%EOF markers
+    crit: notable
+    if:
+      type: kv
+      path: shape.eof_count
+      regex: '^[5-9]|^[1-9][0-9]'
+  - id: pdf-encrypted
+    desc: PDF is encrypted
+    crit: notable
+    if:
+      type: kv
+      path: shape.encrypted
+      exact: "true"
