@@ -1,0 +1,68 @@
+# Go XOR string deobfuscation patterns.
+# Detects rolling-key XOR decode loops and the obfuscated byte-array tables
+# that feed them. Common in Go-based stagers/stealers that need to hide
+# sensitive paths, URLs, or env-var names from static review.
+defaults:
+  platforms: [unix, windows]
+  for: [go]
+  attack: T1140
+  mbc: B0032
+traits:
+  # out[i] = enc[i] ^ key[i % len(key)]
+  - id: go-rolling-xor-loop
+    desc: Go rolling-key XOR decode loop
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: ast
+      query: |
+        (assignment_statement
+          left: (expression_list
+            (index_expression))
+          right: (expression_list
+            (binary_expression
+              operator: "^"
+              right: (index_expression
+                operand: (identifier)
+                index: (binary_expression
+                  operator: "%"
+                  right: (call_expression
+                    function: (identifier) @lenfn))))))
+        (#eq? @lenfn "len")
+  - id: go-xor-byte-loop-text
+    desc: Go XOR byte-loop indexed by modulo length
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: '\^\s*\w+\[\s*\w+\s*%\s*len\('
+  - id: go-obfuscated-byte-table
+    desc: Long obfuscated byte literal table
+    crit: notable
+    conf: 0.85
+    count_min: 2
+    if:
+      type: text
+      regex: '\[\]byte\{\s*0x[0-9A-Fa-f]{2}(?:\s*,\s*0x[0-9A-Fa-f]{2}){15,}'
+composite_rules:
+  - id: go-xor-string-decoder
+    desc: Go program contains XOR string decoder over byte tables
+    crit: suspicious
+    conf: 0.95
+    near_lines: 60
+    any:
+      - id: go-rolling-xor-loop
+      - id: go-xor-byte-loop-text
+    all:
+      - id: go-obfuscated-byte-table
+  - id: go-static-string-evasion
+    desc: Multiple static-string evasion techniques in Go source
+    crit: suspicious
+    conf: 0.93
+    needs: 2
+    any:
+      - id: go-rolling-xor-loop
+      - id: go-xor-byte-loop-text
+      - id: go-obfuscated-byte-table
+      - id: objectives/anti-static/obfuscation/string/concat::go-string-fragment-joiner
+      - id: objectives/anti-static/obfuscation/string/concat::go-many-fragment-joins

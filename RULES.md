@@ -64,8 +64,8 @@ Before placing a trait in `objectives/` or `well-known/`, ask: **would this fire
 | Level | Use When |
 |-------|----------|
 | `component` | Building blocks that make no sense individually (string fragments like `&cc=`) |
-| `baseline` | Common functionality that doesn't describe program purpose (`mmap`, `stdio`, `read`) |
-| `notable` | Defines program purpose (`socket`, `exec`, `eval`, `sysctl`) |
+| `baseline` | Common functionality that nearly every program has (`mmap`, `stdio`, `read`) |
+| `notable` | Defines program purpose and behavior (`socket`, `exec`, `eval`, `sysctl`) |
 | `suspicious` | Hides intent/crosses boundaries (VM detection, obfuscation) |
 | `hostile` | Attack patterns, no legitimate use (reverse shell, ransomware) |
 
