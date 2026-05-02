@@ -215,8 +215,10 @@ micro-behaviors/
 │   │                      #   Disk wiping → objectives/impact/wipe/.
 │   │                      #   Hidden file creation → objectives/evasion/file-hiding/.
 │   │                      #   Obfuscated paths → objectives/anti-static/obfuscation/.
+│   ├── acl/               #   Access Control List manipulation (setfacl, getfacl, NTFS ACLs)
 │   ├── attributes/        #   File attributes (chattr, xattr)
-│   ├── chmod/             #   Permission modification, queries, ACLs, chown
+│   ├── chmod/             #   Permission mode modification and queries (chmod, umask)
+│   ├── chown/             #   Ownership modification (chown, lchown, fchown, takeown)
 │   ├── config/            #   Configuration file operations
 │   ├── delete/            #   File deletion
 │   ├── device/            #   Block/character device access

@@ -57,6 +57,7 @@ Before placing a trait in `objectives/` or `well-known/`, ask: **would this fire
   - NOT `micro-behaviors/process/create/shell/python::foo` or `micro-behaviors/process/create/shell/python/foo`
 - Cross-tier references use full paths: `micro-behaviors/process/create/shell::subprocess`
 - Directory match: `micro-behaviors/process/create/shell/` matches all traits in that directory
+- Do not add junk subdirectory names like "operations/" or "commands/"; add subdirectories for the exact operation like "move" instead to provide maximum signal to our ML pipeline, which only sees directory names
 - Generic capabilities NEVER go in `well-known/`
 
 ## Criticality Levels
