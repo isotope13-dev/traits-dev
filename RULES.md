@@ -732,6 +732,81 @@ Localized keys (`Name[cs]=...`) are dropped during parsing; only the base
 key (`name`) is exposed. Use `cleave kv <file>` to dump the full path map
 for any structured file while authoring traits.
 
+### Binary formats (ELF, PE, Mach-O)
+
+`type: kv` works on binaries too. Cleave synthesizes a kv tree of *raw
+structural reads* — strings, names, identities, hex digests, raw bit-flag
+values lifted directly from binary headers, sections, and load commands.
+This is the cleanest surface for build-environment / supply-chain
+attribution because the data sources are stable per build pipeline.
+
+```yaml
+# ELF: PDB-style attribution paths leaked from C2 frameworks
+type: kv
+path: debug.pdb_path
+regex: "(^|[/\\\\])Apollo\\.pdb$"
+
+# PE: trojanized installer using cross-vendor masquerade
+type: kv
+path: pe.version_info.product_name
+regex: "HWiNFO|HWMonitor"
+
+# Mach-O: code signature identifies the developer team
+type: kv
+path: signing.team_id
+exact: "9XQGPJ8B7K"
+
+# ELF: vendor binary requires a specific glibc version
+type: kv
+path: elf.needed_versions
+regex: "GLIBC_2\\.38"
+
+# PE: side-by-side manifest declares Win10+ support
+type: kv
+path: pe.manifest.supported_os
+regex: '"name":"win10"'
+
+# ELF: built on a specific distro
+type: kv
+path: build.distro
+exact: wolfi
+
+# Mach-O: Swift code presence (any __swift5_* section)
+type: kv
+path: macho.swift_sections
+exists: true
+
+# Cross-format: builder home directory leaked
+type: kv
+path: build.user_home
+regex: "^/home/[a-z0-9_-]{1,40}$"
+```
+
+Top-level kv namespaces synthesized from binaries:
+
+| Namespace | Contents | Examples |
+|---|---|---|
+| `build.*` | Cross-format toolchain attribution | `target_arch`, `toolchain`, `toolchain_family`, `distro`, `linker`, `username`, `user_home`, `build_root`, `source_paths[]`, `sanitizers[]`, `fortified[]`, `command_line`, `rust_runtime_symbols[]`, `rust_mangling`, `has_rustc_section` |
+| `signing.*` | Cross-format code-signing identity | `is_signed`, `subject`, `issuer`, `thumbprint_sha1`, `serial`, `not_before`, `not_after`, `signing_time`, `team_id`, `bundle_identifier`, `authorities[]`, `entitlements.*`, `catalog`, `type`, `cdhash_sha256`, `requirements_sha256`, `notarized`, `hardened_runtime` |
+| `debug.*` | Cross-format debug info | `pdb_path`, `build_id`, `has_build_id`, `has_debuglink`, `producer`, `comp_dir` |
+| `pe.*` | PE-specific | `rich_header.*`, `version_info.*`, `manifest.*` (assembly_identity, requested_execution_level, supported_os, dependencies), `dll_characteristics.*` (named flag bools), `debug_directory_types[]`, `is_reproducible_build`, `has_pogo`, `has_iltcg`, `codeview_guid`, `linker_version`, `timestamp`, `checksum`, `bound_imports[]`, `resource_types[]`, `load_config.*` |
+| `elf.*` | ELF-specific | `entry_section`, `relro`, `interpreter`, `comment`, `soname`, `needed[]`, `rpath[]`, `runpath[]`, `dt_flags.*` (named flag bools), `gnu_property.{ibt,shstk,pac,bti,x86_isa_level}`, `needed_versions[]` (per-lib symbol versions), `provided_versions[]` |
+| `macho.*` | Mach-O-specific | `uuid`, `platform`, `min_os_version`, `sdk_version`, `tools[]`, `load_dylibs[]`, `rpath[]`, `id_dylib`, `linker_options[]`, `source_version`, `info_plist.*`, `launchd_plist.*`, `is_fat`, `slice_count`, `slices[]`, `swift_sections[]` |
+| `dwarf.*` | DWARF debug info (unstripped ELF) | `producers[]`, `comp_dirs[]`, `languages[]`, `source_files[]`, `cu_count` |
+| `package.*` | FDO `.note.package` self-attestation | `type` (apk/rpm/deb), `name`, `version`, `architecture`, `os`, `cpe`, `url`, `vcs` |
+| `go.*` | Go buildinfo | `version`, `main_path`, `main_module.*`, `dependencies[]`, `build.*`, `vcs.*` |
+| `hashes.*` | Cluster / similarity hashes | `imphash`, `rich_header_hash`, `cdhash_sha256` |
+| `consistency.*` (kv mirror) | Cross-format internal-consistency flags | (see metrics: `consistency.bundle_identifier_mismatch`, `manifest_product_version_mismatch`, `cert_issued_after_build`, etc.) |
+
+For derived booleans, counts, deltas, and comparisons (e.g.
+`signing.is_signed`, `pe.cert_chain_depth`, `consistency.*`), prefer
+`type: metrics` since those are typed integers/booleans on the metrics
+structs. Use `type: kv` for raw structural reads — strings, hex digests,
+named identities, list contents.
+
+Run `cleave kv <binary>` on a sample to see every kv path it produces;
+the same paths are matchable from YAML traits.
+
 ### Value Matching
 
 Path-only (no matcher) = existence check.
