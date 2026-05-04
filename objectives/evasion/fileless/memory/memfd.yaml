@@ -28,9 +28,17 @@ traits:
     desc: SYS_memfd_create constant
     crit: suspicious
     conf: 0.6
-    for: [scripts, binaries]
+    for: [scripts, binaries, c, cpp, rust, go, elf]
     if:
       type: string_literal
+      substr: SYS_memfd_create
+  - id: sys-memfd-create-source
+    desc: SYS_memfd_create syscall source
+    crit: suspicious
+    conf: 0.86
+    for: [c, cpp, rust, go]
+    if:
+      type: text
       substr: SYS_memfd_create
   - id: syscall-319
     desc: memfd_create syscall number 319
@@ -80,6 +88,46 @@ traits:
     if:
       type: string_literal
       substr: /proc/self/fd/
+  - id: proc-self-exe-source
+    desc: Reads own executable via procfs
+    crit: suspicious
+    conf: 0.86
+    for: [c, cpp, rust, go, elf]
+    if:
+      type: text
+      substr: /proc/self/exe
+  - id: unlink-argv0-source
+    desc: Deletes argv0 executable path
+    crit: suspicious
+    conf: 0.86
+    for: [c, cpp, elf]
+    if:
+      type: text
+      regex: '\bunlink\s*\(\s*argv\s*\[\s*0\s*\]\s*\)'
+  - id: execveat-call
+    desc: execveat file descriptor execution
+    crit: suspicious
+    conf: 0.9
+    for: [c, cpp, rust, go, elf]
+    if:
+      type: text
+      regex: '\bexecveat\s*\(|\bsyscall\s*\(\s*(?:SYS_execveat|322)\b'
+  - id: memfd-reexec-guard
+    desc: memfd re-execution guard variable
+    crit: suspicious
+    conf: 0.86
+    for: [c, cpp, rust, go, elf]
+    if:
+      type: text
+      regex: '_(MFD|MEMFD)_[A-Z0-9_]{1,32}'
+  - id: clears-memfd-cloexec
+    desc: Clears close-on-exec on memfd
+    crit: suspicious
+    conf: 0.86
+    for: [c, cpp, rust, go, elf]
+    if:
+      type: text
+      regex: 'F_SETFD[\s\S]{0,120}(0|FD_CLOEXEC)|FD_CLOEXEC[\s\S]{0,120}F_SETFD'
   - id: os-exec
     desc: os.exec Python call
     crit: suspicious
@@ -271,19 +319,38 @@ composite_rules:
     desc: Creates anonymous memory-backed file (memfd_create
     crit: suspicious
     conf: 0.95
-    for: [scripts, binaries]
+    for: [scripts, binaries, c, cpp, rust, go, elf]
     any:
       - id: memfd-create-fn
       - id: memfd-create-call
       - id: sys-memfd-create
+      - id: sys-memfd-create-source
   - id: proc-fd-path
     desc: References /proc/self/fd path
     crit: suspicious
     conf: 0.5
-    for: [scripts, binaries]
+    for: [scripts, binaries, c, cpp, rust, go, elf]
     any:
       - id: objectives/evasion/fileless/memory::proc-self-fd-dup
       - id: objectives/evasion/fileless/memory::proc-self-fd-dup-slash
+  - id: memfd-reexec-target
+    desc: Executes from memfd file descriptor
+    crit: suspicious
+    conf: 0.95
+    for: [scripts, binaries, c, cpp, rust, go, elf]
+    any:
+      - id: execveat-call
+      - id: proc-fd-path
+  - id: memfd-reexec-cleanup
+    desc: Cleans artifacts before memfd reexec
+    crit: suspicious
+    conf: 0.92
+    for: [c, cpp, rust, go, elf]
+    any:
+      - id: clears-memfd-cloexec
+      - id: memfd-reexec-guard
+      - id: unlink-argv0-source
+      - id: micro-behaviors/fs/file/delete::unlink
   - id: proc-fd-exec
     desc: Executes binary from /proc/self/fd (fileless
     crit: suspicious
@@ -292,6 +359,17 @@ composite_rules:
     all:
       - id: proc-fd-path
       - id: exec-function
+  - id: memfd-self-reexec
+    desc: Re-executes itself from anonymous memory
+    crit: hostile
+    conf: 0.98
+    attack: "T1620, T1070.004"
+    for: [c, cpp, rust, go, elf]
+    all:
+      - id: memfd-create-comp
+      - id: proc-self-exe-source
+      - id: memfd-reexec-target
+      - id: memfd-reexec-cleanup
   - id: ctypes-syscall
     desc: Direct syscall invocation via ctypes
     crit: suspicious
