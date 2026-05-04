@@ -1,0 +1,145 @@
+# GitHub Actions pull_request_target exploitation payload shapes observed in
+# automated PR campaigns. These traits avoid campaign names and focus on the
+# reusable mechanics: log-based token exfil, Actions API recon, temp workflow
+# dispatch attempts, and delayed /proc environment scraping.
+defaults:
+  platforms: [unix]
+  for: [shell, python, javascript, typescript, rust]
+  attack: "T1195.002, T1552.001"
+
+traits:
+  - id: gha-env-gzip-base64-log
+    desc: GitHub environment gzip base64 log
+    crit: suspicious
+    conf: 0.94
+    for: [shell]
+    if:
+      type: text
+      regex: '\benv\b[\s\S]{0,260}\bgzip\s+-c\s*\|\s*base64|gzip\s+-c\s*\|\s*base64[\s\S]{0,260}\benv\b'
+
+  - id: gha-extraheader-gzip-base64-log
+    desc: GitHub checkout token base64 log
+    crit: suspicious
+    conf: 0.98
+    for: [shell]
+    if:
+      type: text
+      regex: 'http\.https://github\.com/\.extraheader[\s\S]{0,260}gzip\s+-c\s*\|\s*base64'
+
+  - id: gha-actions-secrets-api
+    desc: GitHub Actions secrets API enumeration
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '/repos/[^''"\s]{1,160}/actions/(secrets|organization-secrets)\b'
+
+  - id: gha-environments-api
+    desc: GitHub Actions environments API enumeration
+    crit: suspicious
+    conf: 0.88
+    if:
+      type: text
+      regex: '/repos/[^''"\s]{1,160}/environments\b'
+
+  - id: gha-temp-workflow-write
+    desc: GitHub temporary workflow creation
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '/repos/[^''"\s]{1,160}/contents/\.github/workflows/[^''"\s]{0,80}\.ya?ml'
+
+  - id: gha-workflow-dispatch-api
+    desc: GitHub workflow dispatch API
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: '/repos/[^''"\s]{1,160}/actions/workflows/[^''"\s]{1,120}/dispatches'
+
+  - id: gha-pr-label-api
+    desc: GitHub pull request label API
+    crit: notable
+    conf: 0.84
+    if:
+      type: text
+      regex: '/repos/[^''"\s]{1,160}/(labels|issues/[^''"\s]{1,80}/labels)\b'
+
+  - id: gha-pr-comment-api
+    desc: GitHub pull request comment API
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: '/repos/[^''"\s]{1,160}/issues/[^''"\s]{1,80}/comments\b'
+
+  - id: gha-interesting-secret-keywords
+    desc: CI secret keyword cluster
+    crit: suspicious
+    conf: 0.9
+    count_min: 4
+    if:
+      type: text
+      regex: '\b(NPM_TOKEN|DOCKER|CLOUDFLARE|DATABASE_URL|PRIVATE_KEY|AWS_SECRET|NETLIFY|OPENAI|ANTHROPIC|GEMINI|SSH_PRIVATE)\b'
+
+  - id: python-proc-environ-loop
+    desc: Python loops over proc environments
+    crit: suspicious
+    conf: 0.94
+    for: [python]
+    if:
+      type: text
+      regex: 'os\.listdir\s*\(\s*[''"]/proc[''"]\s*\)[\s\S]{0,600}/proc/\{?pid\}?/environ|/proc/\{?pid\}?/environ[\s\S]{0,600}os\.listdir\s*\(\s*[''"]/proc[''"]\s*\)'
+
+composite_rules:
+  - id: gha-log-token-exfil
+    desc: GitHub token exfiltrated through logs
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: gha-env-gzip-base64-log
+      - id: gha-extraheader-gzip-base64-log
+
+  - id: gha-actions-secret-recon
+    desc: GitHub Actions secret name recon
+    crit: hostile
+    conf: 0.985
+    all:
+      - id: gha-actions-secrets-api
+    any:
+      - id: gha-environments-api
+      - id: objectives/supply-chain/trojanized/build-pipeline::gha-checkout-extraheader-read
+      - id: objectives/credential-access/env/secrets::github-token-var
+
+  - id: gha-temp-workflow-secret-capture
+    desc: Temporary workflow secret capture
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: gha-temp-workflow-write
+      - id: gha-workflow-dispatch-api
+    any:
+      - id: gha-actions-secrets-api
+      - id: gha-interesting-secret-keywords
+      - id: objectives/supply-chain/trojanized/build-pipeline::gha-bulk-secret-form-post
+
+  - id: gha-label-gate-bypass-attempt
+    desc: GitHub label gate bypass attempt
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: gha-pr-label-api
+    any:
+      - id: gha-actions-secrets-api
+      - id: gha-workflow-dispatch-api
+      - id: objectives/supply-chain/trojanized/build-pipeline::gha-workflow-dispatch-api-call
+
+  - id: gha-delayed-proc-env-comment-exfil
+    desc: Delayed proc environment PR exfil
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: python-proc-environ-loop
+      - id: gha-pr-comment-api
+      - id: gha-interesting-secret-keywords

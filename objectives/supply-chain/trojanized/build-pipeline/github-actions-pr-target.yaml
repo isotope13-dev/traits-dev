@@ -1,0 +1,176 @@
+# GitHub Actions workflow patterns that allow untrusted PR content to
+# influence privileged repository workflows. These are generic CI supply-chain
+# risks, not Nx-specific indicators.
+defaults:
+  platforms: [unix, windows]
+  for: [github-actions, shell, javascript]
+  attack: T1195.002
+
+traits:
+  - id: gha-pr-title-run-interpolation
+    desc: PR title interpolated into shell
+    crit: suspicious
+    conf: 0.94
+    for: [github-actions]
+    if:
+      type: text
+      regex: 'run\s*:\s*(\||>)[\s\S]{0,500}\$\{\{\s*github\.event\.pull_request\.title\s*\}\}'
+
+  - id: gha-pr-body-run-interpolation
+    desc: PR body interpolated into shell
+    crit: suspicious
+    conf: 0.94
+    for: [github-actions]
+    if:
+      type: text
+      regex: 'run\s*:\s*(\||>)[\s\S]{0,500}\$\{\{\s*github\.event\.pull_request\.body\s*\}\}'
+
+  - id: gha-checkout-extraheader-read
+    desc: actions checkout extraheader token read
+    crit: suspicious
+    conf: 0.96
+    for: [github-actions, shell]
+    if:
+      type: text
+      regex: 'git\s+config\s+--get-all\s+http\.https://github\.com/\.extraheader'
+
+  - id: gha-curl-extraheader-post
+    desc: Curl posts checkout extraheader token
+    crit: suspicious
+    conf: 0.98
+    for: [github-actions, shell]
+    if:
+      type: text
+      regex: 'curl[^\n]{0,180}(-d|--data|--data-raw)[^\n]{0,220}git\s+config\s+--get-all\s+http\.https://github\.com/\.extraheader'
+
+  - id: gha-workflow-dispatch-api-call
+    desc: GitHub workflow dispatch API call
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: 'api\.github\.com/repos/[^''"\s]{1,160}/actions/workflows/[^''"\s]{1,120}/dispatches'
+
+  - id: gha-node-auth-token-env
+    desc: NODE_AUTH_TOKEN workflow environment secret
+    crit: suspicious
+    conf: 0.9
+    for: [github-actions]
+    if:
+      type: text
+      regex: 'NODE_AUTH_TOKEN\s*:\s*\$\{\{\s*secrets\.'
+
+  - id: gha-cache-bust-env-write
+    desc: GitHub Actions cache-bust env write
+    crit: notable
+    conf: 0.82
+    for: [github-actions]
+    if:
+      type: text
+      regex: 'CACHE_BUST\s*=\s*\$?\(?date\s+\+%s\)?[\s\S]{0,80}GITHUB_ENV'
+
+  - id: gha-secret-form-post
+    desc: GitHub secrets in curl form post
+    crit: suspicious
+    conf: 0.96
+    for: [github-actions]
+    if:
+      type: text
+      regex: 'curl[^\n]{0,160}(-d|--data|--data-raw)[^\n]{0,500}\$\{\{\s*secrets\.[A-Za-z0-9_]+\s*\}\}'
+
+  - id: gha-bulk-secret-form-post
+    desc: Multiple GitHub secrets form posted
+    crit: suspicious
+    conf: 0.98
+    for: [github-actions]
+    count_min: 2
+    if:
+      type: text
+      regex: '\$\{\{\s*secrets\.[A-Za-z0-9_]+\s*\}\}'
+
+  - id: gha-package-publish-secret-name
+    desc: Package registry publish secret name
+    crit: suspicious
+    conf: 0.88
+    for: [github-actions]
+    if:
+      type: text
+      regex: '\b(PYPI_API_TOKEN|NPM_TOKEN|NODE_AUTH_TOKEN|TWINE_PASSWORD|DOCKERHUB_TOKEN|DOCKER_PASSWORD|CRATES_IO_TOKEN|CARGO_REGISTRY_TOKEN)\b'
+
+  - id: gha-github-script-workspace-require
+    desc: github-script requires workspace file
+    crit: suspicious
+    conf: 0.92
+    for: [github-actions]
+    if:
+      type: text
+      regex: 'actions/github-script[\s\S]{0,900}require\s*\(\s*[''"]?\$\{\{\s*github\.workspace\s*\}\}/'
+
+composite_rules:
+  - id: gha-pr-target-shell-injection
+    desc: pull_request_target shell injection risk
+    crit: suspicious
+    conf: 0.98
+    all:
+      - id: metadata/build/github-actions::pull-request-target-trigger
+    any:
+      - id: gha-pr-title-run-interpolation
+      - id: gha-pr-body-run-interpolation
+
+  - id: gha-checkout-token-exfil
+    desc: actions checkout token exfiltration
+    crit: hostile
+    conf: 0.985
+    all:
+      - id: gha-checkout-extraheader-read
+    any:
+      - id: objectives/supply-chain/recon-exfil/secrets/
+      - id: gha-workflow-dispatch-api-call
+      - id: gha-curl-extraheader-post
+      - id: objectives/exfiltration/oob::webhook-site
+
+  - id: gha-pr-target-checkout-token-theft
+    desc: pull_request_target checkout token theft
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: gha-pr-target-shell-injection
+      - id: gha-checkout-extraheader-read
+    any:
+      - id: gha-checkout-token-exfil
+      - id: objectives/exfiltration/oob::webhook-site
+      - id: gha-workflow-dispatch-api-call
+
+  - id: gha-publish-secret-workspace-script
+    desc: Publish secret reaches workspace script
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: metadata/build/github-actions::workflow-dispatch-trigger
+      - id: gha-node-auth-token-env
+      - id: gha-github-script-workspace-require
+
+  - id: gha-dispatch-tokened-publish-exfil
+    desc: Dispatched publish workflow token exfil
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: gha-workflow-dispatch-api-call
+      - id: gha-node-auth-token-env
+    any:
+      - id: objectives/supply-chain/recon-exfil/secrets::secrets-to-webhook
+      - id: objectives/supply-chain/recon-exfil/secrets::secrets-in-http-body
+      - id: objectives/supply-chain/recon-exfil/secrets::github-actions-secret-theft
+
+  - id: gha-bulk-secrets-workflow-exfil
+    desc: GitHub Actions bulk secrets exfil
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: gha-secret-form-post
+      - id: gha-bulk-secret-form-post
+    any:
+      - id: gha-package-publish-secret-name
+      - id: gha-cache-bust-env-write
+      - id: metadata/build/github-actions::workflow-dispatch-trigger
+      - id: objectives/supply-chain/recon-exfil/secrets::secrets-to-webhook

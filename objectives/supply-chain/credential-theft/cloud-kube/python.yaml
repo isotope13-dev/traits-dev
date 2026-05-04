@@ -1,0 +1,93 @@
+defaults:
+  platforms: [unix]
+  for: [python]
+  attack: "T1552.001, T1041"
+  mbc: E1552
+
+traits:
+  - id: python-ai-provider-env-harvest
+    desc: Python AI provider key harvest
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: 'os\.(?:getenv|environ(?:\.get)?)\s*\(.{0,40}(OPENAI_API_KEY|ANTHROPIC_API_KEY|AZURE_OPENAI_API_KEY|AZURE_API_KEY)'
+    unless:
+      - id: objectives/supply-chain/credential-theft::legitimate-python-env-config-context
+
+  - id: python-kube-serviceaccount-read
+    desc: Python reads Kubernetes serviceaccount files
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '/var/run/secrets/kubernetes\.io/serviceaccount[\s\S]{0,700}\b(token|namespace|ca\.crt)\b|open\s*\(.{0,120}/var/run/secrets/kubernetes\.io/serviceaccount/(token|namespace|ca\.crt)'
+    unless:
+      - id: metadata/package/testing/presence::python-test-file
+      - id: metadata/package/testing/presence::test-directory
+
+  - id: python-secret-tar-archive
+    desc: Python archives harvested secret files
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '(\.aws/credentials|\.kube/config|serviceaccount/token|OPENAI_API_KEY|ANTHROPIC_API_KEY)[\s\S]{0,1600}tarfile\.open\s*\(.{0,160}w:gz|tarfile\.open\s*\(.{0,160}w:gz[\s\S]{0,1600}(\.aws/credentials|\.kube/config|serviceaccount/token|OPENAI_API_KEY|ANTHROPIC_API_KEY)'
+    unless:
+      - id: metadata/package/testing/presence::python-test-file
+      - id: metadata/package/testing/presence::test-directory
+
+  - id: python-encrypted-archive-post
+    desc: Python posts encrypted secret archive
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?:Fernet|AES|encrypt\s*\()[\s\S]{0,900}requests\.post\s*\(|requests\.post\s*\([\s\S]{0,900}(?:Fernet|AES|encrypt\s*\()'
+    unless:
+      - id: metadata/package/testing/presence::python-test-file
+      - id: metadata/package/testing/presence::test-directory
+
+  - id: python-user-systemd-backdoor-install
+    desc: Python installs user systemd backdoor
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '\.config/systemd/user[\s\S]{0,500}(ExecStart|systemctl\s+--user|daemon-reload|enable)'
+    unless:
+      - id: metadata/package/testing/presence::python-test-file
+      - id: metadata/package/testing/presence::test-directory
+
+composite_rules:
+  - id: python-cloud-kube-secret-harvest
+    desc: Python cloud Kubernetes secret harvest
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: python-kube-serviceaccount-read
+    any:
+      - id: python-ai-provider-env-harvest
+      - id: objectives/supply-chain/credential-theft::python-cloud-creds
+      - id: objectives/supply-chain/credential-theft::python-package-tokens
+      - id: micro-behaviors/os/container/runtime::api-secrets-path
+      - id: micro-behaviors/fs/path/sensitive/credentials::kube-config
+      - id: micro-behaviors/fs/path/sensitive/credentials::aws-credentials-dup
+    needs: 2
+
+  - id: python-encrypted-secret-bundle-exfil
+    desc: Python encrypted secret bundle exfiltration
+    crit: hostile
+    conf: 0.985
+    all:
+      - id: python-cloud-kube-secret-harvest
+      - id: python-secret-tar-archive
+      - id: python-encrypted-archive-post
+
+  - id: python-secret-exfil-systemd-backdoor
+    desc: Python secret exfiltration systemd backdoor
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: python-encrypted-secret-bundle-exfil
+      - id: python-user-systemd-backdoor-install
