@@ -39,6 +39,7 @@ The ML pipeline extracts features from **subdirectory path + criticality**, not 
 - **Don't create single-trait subdirectories** when the trait fits an existing directory. `credential-access/browser/` (11 traits) is a strong feature; adding `credential-access/opera/` with 1 trait creates a weak feature that should instead be a file within `credential-access/browser/`.
 - **Use technique-based directories.** Directory names should describe the behavior or method being detected, not the implementation language, platform, ecosystem, file type, malware family, or sample source. Use implementation details in filenames when they help readability, unless the technique itself is platform-specific.
 - **Prefer concise, meaningful names.** Short directory names are easier to scan and produce cleaner ML features: use `exec`, `poll`, `proxy`, `shell`, `reflect`, or `stage` when they are clear in context. Do not shorten names so far that humans lose the technique meaning.
+- **Avoid marker buckets.** Do not use `marker/` or `markers/` as directory names; name the behavior or technique being indicated instead.
 - **Criticality assignment affects ML directly.** A trait bumped from `notable` to `suspicious` changes which feature it contributes to. Assign criticality based on the trait's actual detection confidence, not to manipulate features.
 - **The 3-level depth limit** means `objectives/anti-static/obfuscation/string/encoding/` extracts as `anti-static/obfuscation/string` — the `encoding/` level is aggregated into `string/`. Plan directory depth accordingly. Avoid unnecessary intermediate directories (e.g., prefer `obfuscation/syntax/` over `obfuscation/source/syntax/`).
 
@@ -918,6 +919,7 @@ metadata/
 │   └── symbols/           #   Import/export symbol analysis
 ├── build/                 # Build systems, CI/CD (cmake, cargo, docker, jenkins)
 ├── document/              # Document internals (requires document parsing)
+│   ├── chm/               #   Compiled HTML Help (ITSF/ITSP/PMGL)
 │   ├── html/              #   HTML structure
 │   ├── office/            #   Office documents
 │   │   ├── macro/         #     VBA, embedded macros

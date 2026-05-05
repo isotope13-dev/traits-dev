@@ -36,7 +36,125 @@ traits:
       type: text
       regex: '(?i)(Marshal|\$marshalClass)::Copy\('
 
+  # AMSI-bypass-via-Unicode-normalize-replace obfuscation.
+  #
+  # Modern AMSI bypasses (AxiomWallets, April 2026) avoid literal
+  # `AmsiUtils` / `amsiInitFailed` strings entirely. Instead they:
+  #   1. Build a Unicode string with diacritic-substituted letters
+  #      that *visually* resemble the target (e.g. `'ÄmsíÚtí'+'ls'`
+  #      for "AmsiUtils", `'ämsîÌnítF'+'áílèd'` for "amsiInitFailed").
+  #   2. Call `.Normalize(<form>)` on it — the form name is built
+  #      character-by-character via `[Char]([byte]0x46) + …` so
+  #      neither "FormD" nor "FormKD" is ever a literal.
+  #   3. Pipe through `-replace` with another char-built pattern
+  #      that strips the combining marks left over from
+  #      decomposition. The result is the cleartext "AmsiUtils" or
+  #      "amsiInitFailed" without the literal substring ever
+  #      appearing in the source.
+  #
+  # The obfuscation requires the chained `.Normalize(...)` followed
+  # closely by `-replace`. That two-keyword pair is rare in benign
+  # PowerShell (Normalize is uncommon outside i18n tooling, and
+  # deliberate string-cleaning with byte-built char patterns is
+  # almost exclusively a malware idiom).
+  - id: powershell-normalize-call
+    desc: PowerShell Normalize call
+    crit: component
+    conf: 0.9
+    for: [powershell, vbs, html, batch, lnk]
+    if:
+      type: encoded
+      regex: '\.Normalize\s*\('
+      case_insensitive: true
+
+  - id: powershell-replace-op
+    desc: PowerShell replace operator
+    crit: component
+    conf: 0.9
+    for: [powershell, vbs, html, batch, lnk]
+    if:
+      type: encoded
+      regex: '-?replace\b'
+      case_insensitive: true
+
+  # Build-a-string-from-byte-codes: `[Char]([byte]0xNN)` /
+  # `[Char](NN+NN)` chains that stitch together identifier names
+  # from numeric pieces. Two or more occurrences in close proximity
+  # is characteristic of the byte-arithmetic obfuscation used in
+  # the AMSI bypass above (and many similar malware loaders).
+  - id: powershell-char-cast-chain
+    desc: PowerShell repeated [Char]() casts in close proximity
+    # Requires 4 `[Char](...)` invocations clustered within a few
+    # hundred bytes — the textbook shape of identifier-from-bytes
+    # obfuscation. The regex itself enforces the repetition rather
+    # than relying on `count_min`, which `type: encoded` interprets
+    # per-decoded-string and so wouldn't fire on a single decoded
+    # blob containing many matches.
+    crit: component
+    conf: 0.86
+    for: [powershell, vbs, html, batch, lnk]
+    if:
+      type: encoded
+      regex: '(\[Char\]\s*\([^)]{1,80}\)[\s+]*){4,}'
+      case_insensitive: true
+
+  - id: powershell-byte-hex-cast
+    desc: PowerShell byte hex cast
+    crit: component
+    conf: 0.82
+    for: [powershell, vbs, html, batch, lnk]
+    if:
+      type: encoded
+      regex: '\[Byte\]\s*0x[0-9A-Fa-f]{1,2}'
+      case_insensitive: true
+
+  - id: powershell-char-arithmetic
+    desc: PowerShell char arithmetic
+    crit: component
+    conf: 0.82
+    for: [powershell, vbs, html, batch, lnk]
+    if:
+      type: encoded
+      regex: '\d{1,4}\s*[+*/-]\s*\d{1,4}'
+
+  # Direct reference to System.Management.Automation.dll — the
+  # assembly that exports AmsiUtils. AMSI bypasses that load the
+  # assembly directly via `AppDomain.CurrentDomain.GetAssemblies()`
+  # use this string instead of the typical `[Ref].Assembly.GetType`
+  # path that the existing `amsi-bypass-reflection` atom matches.
+  - id: amsi-automation-dll-reflection
+    desc: PowerShell reflection over System.Management.Automation.dll
+    crit: suspicious
+    conf: 0.9
+    for: [powershell, vbs, html, batch, lnk]
+    if:
+      type: encoded
+      regex: 'System\.Management\.Automation\.dll'
+      case_insensitive: true
+
 composite_rules:
+  - id: powershell-normalize-replace-deobfuscation
+    desc: PowerShell Normalize replace deobfuscation
+    crit: suspicious
+    conf: 0.93
+    for: [powershell, vbs, html, batch, lnk]
+    near_bytes: 1024
+    all:
+      - id: powershell-normalize-call
+      - id: powershell-replace-op
+
+  - id: powershell-char-byte-build-chain
+    desc: PowerShell char-byte string builder
+    crit: suspicious
+    conf: 0.88
+    for: [powershell, vbs, html, batch, lnk]
+    near_bytes: 1024
+    all:
+      - id: powershell-char-cast-chain
+    any:
+      - id: powershell-byte-hex-cast
+      - id: powershell-char-arithmetic
+
   - id: amsi-open-session-memory-patch
     desc: Obfuscated PowerShell memory patch
     crit: hostile
@@ -47,3 +165,20 @@ composite_rules:
       - id: objectives/anti-static/obfuscation/string/reconstruct::single-char-concat-pattern
       - id: objectives/execution/interpreter/eval/invoke::add-type-variable
       - id: objectives/evasion/anti-av/platform::ntdll-dll-str
+
+  # Reflection-based AmsiUtils.amsiInitFailed bypass that avoids
+  # literal AMSI strings entirely. The two atomic conditions below
+  # together are very nearly conclusive: byte-built char chains plus
+  # a Normalize-then-replace pipeline is the textbook obfuscation
+  # technique for AMSI / EDR-API bypasses, and we additionally gate
+  # on a Reflection-Assembly entry point so we don't flag innocent
+  # i18n code that happens to use both keywords.
+  - id: amsi-bypass-normalize-reflection
+    desc: AMSI bypass via Unicode-normalize string deobfuscation + reflection
+    crit: hostile
+    conf: 0.97
+    for: [powershell, vbs, html, batch, lnk]
+    all:
+      - id: powershell-normalize-replace-deobfuscation
+      - id: powershell-char-byte-build-chain
+      - id: amsi-automation-dll-reflection
