@@ -1,0 +1,48 @@
+# Native PE that loads a .NET payload via the CLR.
+#
+# A native (non-.NET) Windows binary that references `mscoree.dll`
+# AND calls `CorExitProcess` AND has `LoadLibrary` capability is
+# almost certainly hosting a .NET DLL inside a native shell. This is
+# the DTProHelper → Engine.dll shape: native PE for cert/signing
+# optics on the outside, managed code on the inside.
+#
+# The pattern catches:
+#   - Trojanized vendor binaries dropping .NET payloads
+#   - Shellcode loaders that pivot into a .NET runtime
+#   - "Mixed-mode native shim + managed DLL" backdoors
+#
+# Critical exclusion: actual .NET assemblies (BSJB metadata) and
+# .NET single-file host runtimes — those legitimately call mscoree
+# and CorExitProcess as part of their startup path.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  attack: "T1620"
+  mbc: "B0032"
+
+traits:
+  - id: mscoree-dll-text-ref
+    desc: mscoree.dll text reference
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      exact: mscoree.dll
+
+composite_rules:
+  - id: native-pe-loads-dotnet-payload
+    desc: Native PE loads .NET payload via CLR
+    crit: suspicious
+    conf: 0.93
+    all:
+      - id: mscoree-dll-text-ref
+      - id: micro-behaviors/process/inject/runtime::corexitprocess-string
+    any:
+      - id: micro-behaviors/dylib/load::load-library-a-string-no-import
+      - id: objectives/anti-static/obfuscation/imports::pe-is-authenticode-signed
+    unless:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: metadata/binary/framework::dotnet-metadata
+      - id: metadata/binary/framework::dotnet-singlefilehost-runtime
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/signed/platform::microsoft-windows

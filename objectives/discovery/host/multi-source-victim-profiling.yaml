@@ -1,0 +1,158 @@
+# Multi-source victim profiling — generic detection of binaries that
+# fingerprint the host from many distinct sources (network identity,
+# running processes, installed software, default User-Agent, OS
+# locale, hostname). Any one of these is benign in isolation; the
+# concentration in a small binary is the recon signal.
+#
+# Optimised for .NET P/Invoke scouts (e.g. DAEMON Tools InfoCollector)
+# where the Windows API names appear as text rather than as native
+# imports, so existing symbol-keyed atoms in
+# micro-behaviors/os/network/interface/windows-api.yaml don't fire.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  size_max: 524288
+
+traits:
+  - id: getadaptersinfo-text
+    desc: GetAdaptersInfo P/Invoke string for MAC recon
+    crit: notable
+    conf: 0.9
+    attack: "T1016"
+    if:
+      type: text
+      word: GetAdaptersInfo
+
+  - id: getcomputername-text
+    desc: GetComputerName P/Invoke string for hostname recon
+    crit: notable
+    conf: 0.9
+    attack: "T1082"
+    if:
+      type: text
+      regex: "GetComputerName(Ex)?[AW]?"
+
+  - id: getprocesses-text
+    desc: System.Diagnostics.Process.GetProcesses token
+    crit: notable
+    conf: 0.85
+    attack: "T1057"
+    if:
+      type: text
+      word: GetProcesses
+
+  - id: process32-traversal-text
+    desc: Process32 traversal P/Invoke text
+    crit: notable
+    conf: 0.9
+    attack: "T1057"
+    if:
+      type: text
+      regex: "Process32(First|Next)"
+
+  - id: uninstall-key-text
+    desc: Uninstall registry key path text
+    crit: notable
+    conf: 0.9
+    attack: "T1518"
+    if:
+      type: text
+      substr: "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"
+
+  - id: internet-settings-key-text
+    desc: Internet Settings registry key path text
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      substr: "Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings"
+
+  - id: urlmon-option-useragent-text
+    desc: URLMON_OPTION_USERAGENT lookup constant
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      exact: URLMON_OPTION_USERAGENT
+
+  - id: urlmon-getsessionoption-text
+    desc: UrlMkGetSessionOption P/Invoke string
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      word: UrlMkGetSessionOption
+
+  - id: physical-dns-hostname-token
+    desc: PhysicalDnsHostname adapter-info token
+    crit: notable
+    conf: 0.85
+    attack: "T1016"
+    if:
+      type: text
+      word: PhysicalDnsHostname
+
+  - id: physical-netbios-token
+    desc: PhysicalNetBIOS adapter-info token
+    crit: notable
+    conf: 0.85
+    attack: "T1016"
+    if:
+      type: text
+      word: PhysicalNetBIOS
+
+  - id: ip-adapter-info-struct
+    desc: IP_ADAPTER_INFO P/Invoke struct token
+    crit: notable
+    conf: 0.85
+    attack: "T1016"
+    if:
+      type: text
+      substr: IP_ADAPTER_INFO
+
+composite_rules:
+  - id: pinvoke-adapter-mac-recon
+    desc: P/Invoke MAC-address adapter recon
+    crit: suspicious
+    conf: 0.94
+    attack: "T1016"
+    all:
+      - id: getadaptersinfo-text
+    any:
+      - id: physical-dns-hostname-token
+      - id: physical-netbios-token
+      - id: ip-adapter-info-struct
+
+  - id: multi-source-victim-fingerprint
+    desc: Multi-source host fingerprint of victim
+    crit: suspicious
+    conf: 0.96
+    attack: "T1082"
+    needs: 4
+    any:
+      - id: getadaptersinfo-text
+      - id: getcomputername-text
+      - id: getprocesses-text
+      - id: process32-traversal-text
+      - id: uninstall-key-text
+      - id: internet-settings-key-text
+      - id: urlmon-option-useragent-text
+      - id: urlmon-getsessionoption-text
+    unless:
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/signed/platform::microsoft-windows
+      - id: metadata/binary/installer::known-benign-installer
+
+  - id: multi-source-victim-fingerprint-tiny-stub
+    desc: Multi-source host fingerprint in tiny .NET stub
+    crit: hostile
+    conf: 0.97
+    attack: "T1592"
+    mbc: "C0015"
+    size_max: 65536
+    all:
+      - id: multi-source-victim-fingerprint
+      - id: metadata/binary/framework::dotnet-assembly
+    unless:
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/signed/platform::microsoft-windows

@@ -1,0 +1,133 @@
+# WININET API stack-string resolution.
+#
+# A binary builds Windows networking API names on the stack as
+# concatenated character sequences (`HttpQueryInfInternetOpen`,
+# `InternetOpenUrlA` adjacent to `InternetReadFile`, `InternetSetOptio`
+# tail-truncated stacks), then resolves them dynamically via
+# LoadLibrary("WININET.DLL") + GetProcAddress.
+#
+# Why this matters: legitimate signed Windows binaries that need WININET
+# import the APIs through the IAT — their names appear in the import
+# table, not as stack-built run-on strings. Trojanized vendor binaries
+# routinely hide their real network surface this way so static IAT
+# scanners never see a network-aware binary.
+#
+# Hostile firing requires multiple stack-string fragments in the same
+# binary AND the absence of WININET in the import table.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  attack: "T1027.007"
+  mbc: "B0032"
+
+traits:
+  - id: stack-httpqueryinf-internetopen-runon
+    desc: HttpQueryInfo+InternetOpen run-on stack string
+    crit: notable
+    conf: 0.97
+    if:
+      type: text
+      substr: HttpQueryInfInternetOpen
+
+  - id: stack-internetopenurla-token
+    desc: InternetOpenUrlA stack-string token
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      substr: InternetOpenUrlA
+
+  - id: stack-internetreadfile-token
+    desc: InternetReadFile stack-string token
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      substr: InternetReadFile
+
+  - id: stack-internetclosehandle-truncated
+    desc: InternetCloseHan truncated stack fragment
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      substr: InternetCloseHan
+
+  - id: stack-internetsetoption-truncated
+    desc: InternetSetOptio truncated stack fragment
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      substr: InternetSetOptio
+
+  - id: stack-internet-readfile-adjacent-mozilla
+    desc: InternetReadFile adjacent to Mozilla UA stack fragment
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: "InternetReadFile.{0,256}Mozilla/5\\.0|Mozilla/5\\.0.{0,256}InternetReadFile"
+
+  - id: wininet-import-absent
+    desc: WININET.DLL absent from PE import table
+    crit: baseline
+    conf: 1.0
+    if:
+      type: metrics
+      field: pe.import_dll_count
+      max: 12
+    unless:
+      - type: kv
+        path: pe.imports
+        substr: WININET
+
+  - id: pe-is-authenticode-signed
+    desc: PE has an Authenticode signature
+    crit: baseline
+    conf: 1.0
+    if:
+      type: metrics
+      field: binary.has_signature
+      min: 1
+
+composite_rules:
+  - id: wininet-stack-string-fragment-cluster
+    desc: WININET API names built as stack strings
+    crit: suspicious
+    conf: 0.97
+    needs: 3
+    any:
+      - id: stack-httpqueryinf-internetopen-runon
+      - id: stack-internetopenurla-token
+      - id: stack-internetreadfile-token
+      - id: stack-internetclosehandle-truncated
+      - id: stack-internetsetoption-truncated
+    unless:
+      - id: metadata/binary/installer::known-benign-installer
+
+  - id: hidden-wininet-api-resolution
+    desc: WININET APIs resolved dynamically not via IAT
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: wininet-stack-string-fragment-cluster
+      - id: micro-behaviors/dylib/load::load-library-a-string-no-import
+    unless:
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/signed/platform::microsoft-windows
+      - id: metadata/binary/installer::known-benign-installer
+
+  - id: signed-pe-with-hidden-http-api-resolution
+    desc: Signed PE hides its WININET surface via stack strings
+    crit: hostile
+    conf: 0.99
+    attack: "T1553.002"
+    all:
+      - id: hidden-wininet-api-resolution
+      - id: pe-is-authenticode-signed
+    unless:
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/signed/platform::microsoft-windows
+      - id: metadata/binary/installer::known-benign-installer
+      - id: metadata/binary/framework::dotnet-singlefilehost-runtime

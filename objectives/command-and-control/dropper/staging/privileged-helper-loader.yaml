@@ -1,0 +1,69 @@
+# Privileged helper / updater loader pattern.
+#
+# A binary that:
+#   - declares requireAdministrator in its manifest,
+#   - writes a Run/RunOnce registry persistence key,
+#   - opens an outbound HTTP session, and
+#   - fingerprints the host (MAC adapter or computer name)
+#
+# is a textbook "privileged dropper" — fits trojanized vendor helpers
+# (DTProHelper-class), fake updaters, and post-exploitation loaders.
+# The combination is what tames the false-positive rate: each leg in
+# isolation is benign, the four-way coincidence is not.
+#
+# Size cap (50 KB - 4 MB) excludes both pure-stub noise and the very
+# large signed installers that legitimately do similar things. The
+# `unless:` list strips known-benign installer/SFX contexts.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  size_min: 50000
+  size_max: 4194304
+  attack: "T1547.001"
+  mbc: "F0012"
+
+composite_rules:
+  - id: registry-runonce-or-run-write
+    desc: Run or RunOnce registry persistence write
+    crit: notable
+    conf: 0.85
+    any:
+      - id: objectives/persistence/login/registry/autostart::run-once-key
+      - id: objectives/persistence/login/registry/autostart::run-key
+
+  - id: helper-host-fingerprint
+    desc: Host fingerprint via adapter or computer name
+    crit: notable
+    conf: 0.85
+    any:
+      - id: micro-behaviors/os/network/interface::get-adapters-info
+      - id: objectives/discovery/host::getcomputername-text
+      - id: objectives/discovery/host::getadaptersinfo-text
+
+  - id: helper-http-capability
+    desc: HTTP outbound capability via WinINet/WinHTTP
+    crit: notable
+    conf: 0.85
+    any:
+      - id: micro-behaviors/communications/http/get::internet-open-url
+      - id: micro-behaviors/communications/http/get::urlmon-dll-reference
+      - id: objectives/anti-static/obfuscation/imports::stack-internetopenurla-token
+      - id: objectives/anti-static/obfuscation/imports::stack-httpqueryinf-internetopen-runon
+
+  - id: privileged-helper-network-persistence
+    desc: Elevated helper persists and reaches network
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: micro-behaviors/os/privilege/manifest::require-administrator
+      - id: helper-http-capability
+      - id: registry-runonce-or-run-write
+      - id: helper-host-fingerprint
+    unless:
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/signed/platform::microsoft-windows
+      - id: metadata/binary/installer::known-benign-installer
+      - id: metadata/binary/installer/sfx::winrar-sfx-footprint
+      - id: metadata/binary/installer/script::nsis
+      - id: metadata/binary/installer/script::inno-setup
+      - id: metadata/binary/installer::squirrel-windows-installer

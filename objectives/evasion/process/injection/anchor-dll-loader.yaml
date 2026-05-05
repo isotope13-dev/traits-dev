@@ -1,0 +1,113 @@
+# Anchor-DLL targeted shellcode loader — generic detection of
+# injectors that pick a victim process by module presence (anchor-DLL
+# targeting) and inject shellcode using the OpenProcess /
+# VirtualAllocEx / WriteProcessMemory / CreateRemoteThread sequence.
+#
+# Designed to catch future variants of CodeInj-class injectors even
+# when method names and CLI banners are renamed. The hostile firing
+# requires the targeting capability AND the injection trinity AND a
+# small binary footprint (<= 512 KB) to avoid matching legitimate
+# diagnostic / hot-patch tools that scan modules for unrelated
+# reasons.
+#
+# .NET P/Invoke variants of these APIs appear as text strings rather
+# than as native PE imports, so this file uses text matching for the
+# API names. Native-import variants are already covered by symbol-
+# keyed atoms in micro-behaviors/process/inject/.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  size_max: 524288
+  attack: "T1055.002"
+
+traits:
+  - id: cli-rc4-key-arg-hint
+    desc: Command-line RC4 key argument hint
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: "<RC4 key>|RC4 key cannot be empty"
+
+  - id: shellcode-file-arg-hint
+    desc: Command-line shellcode-file argument hint
+    crit: notable
+    conf: 0.93
+    if:
+      type: text
+      regex: "shellcode file|<shellcode file>"
+
+  - id: virtual-alloc-ex-text
+    desc: VirtualAllocEx API name in strings
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      word: VirtualAllocEx
+
+  - id: write-process-memory-text
+    desc: WriteProcessMemory API name in strings
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      word: WriteProcessMemory
+
+  - id: create-remote-thread-text
+    desc: CreateRemoteThread API name in strings
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      word: CreateRemoteThread
+
+  - id: open-process-text
+    desc: OpenProcess API name in strings
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      word: OpenProcess
+
+composite_rules:
+  - id: injection-trinity-text
+    desc: VirtualAllocEx + WriteProcessMemory + CreateRemoteThread strings
+    crit: suspicious
+    conf: 0.94
+    all:
+      - id: virtual-alloc-ex-text
+      - id: write-process-memory-text
+      - id: create-remote-thread-text
+    unless:
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/signed/platform::microsoft-windows
+      - id: metadata/binary/metrics::many-exports-200
+
+  - id: anchor-dll-shellcode-injector
+    desc: Anchor-DLL targeted shellcode injector
+    crit: hostile
+    conf: 0.985
+    mbc: "E1055"
+    all:
+      - id: objectives/discovery/process/targeting::anchor-dll-module-enumeration
+      - id: injection-trinity-text
+    unless:
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/signed/platform::microsoft-windows
+      - id: well-known/tool/development/visual-studio::diagnostics-hub
+
+  - id: cli-rc4-shellcode-loader
+    desc: CLI RC4-decrypt shellcode loader (key + shellcode-file argv)
+    crit: hostile
+    conf: 0.98
+    mbc: "B0009"
+    all:
+      - id: cli-rc4-key-arg-hint
+      - id: shellcode-file-arg-hint
+      - id: write-process-memory-text
+    any:
+      - id: create-remote-thread-text
+      - id: virtual-alloc-ex-text
+    unless:
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/signed/platform::microsoft-windows

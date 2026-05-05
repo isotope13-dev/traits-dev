@@ -1,0 +1,106 @@
+# Polled-tasking with download-and-execute backdoor pattern.
+#
+# Generic backdoor architecture where the implant:
+#   - polls an HTTP/HTTPS endpoint at a fixed interval (UpdateCheck*,
+#     check_update.php, /api/poll, /api/heartbeat, etc.)
+#   - parses a JSON response with `is_task` / `task_type` /
+#     `download_url` (or equivalents like `cmd`, `task`, `payload`,
+#     `update_url`)
+#   - downloads a binary referenced in the JSON,
+#   - executes it (often as SYSTEM) without integrity verification.
+#
+# This is the architecture used by the Zyra/ShieldGuard
+# `ShieldGuardVPNService.exe` stage and is shared by many fake-update
+# / fake-AV / residential-proxy implant families.
+#
+# Hostile firing requires the polling endpoint AND the JSON tasking
+# field set AND a binary-fetch + execute leg. Each individually is
+# weak; the three-way coincidence is the signal.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  attack: "T1071.001"
+  mbc: "B0030"
+
+traits:
+  - id: poll-check-update-php-token
+    desc: check_update.php-style polling endpoint
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: "/(api/)?check_update\\.php|/(api/)?poll\\.php|/(api/)?heartbeat\\.php"
+
+  - id: tasking-is-task-field
+    desc: is_task tasking JSON field
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      word: is_task
+
+  - id: tasking-task-type-field
+    desc: task_type tasking JSON field
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      word: task_type
+
+  - id: tasking-download-url-field
+    desc: download_url tasking JSON field
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      word: download_url
+
+  - id: updater-exe-fetch-token
+    desc: updater.exe staged-payload reference
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      exact: updater.exe
+
+  - id: update-check-interval-config
+    desc: UpdateCheckInterval polling-interval config token
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      word: UpdateCheckInterval
+
+composite_rules:
+  - id: polled-tasking-json-cluster
+    desc: is_task + task_type + download_url JSON cluster
+    crit: suspicious
+    conf: 0.94
+    all:
+      - id: tasking-is-task-field
+      - id: tasking-task-type-field
+      - id: tasking-download-url-field
+
+  - id: polled-tasking-architecture
+    desc: HTTP-polled tasking JSON architecture
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: poll-check-update-php-token
+      - id: polled-tasking-json-cluster
+    unless:
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/signed/platform::microsoft-windows
+      - id: metadata/binary/installer::known-benign-installer
+
+  - id: polled-tasking-with-unsigned-fetch
+    desc: Polled tasking plus updater fetch-and-execute
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: polled-tasking-architecture
+      - id: updater-exe-fetch-token
+    unless:
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/signed/platform::microsoft-windows
+      - id: metadata/binary/installer::known-benign-installer
