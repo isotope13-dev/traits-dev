@@ -1,0 +1,111 @@
+# AES-CBC Payload Decryption via Windows CNG/BCrypt
+# Loader reads encrypted blob from disk, decrypts with AES-CBC via BCrypt API,
+# executes in memory via VirtualAlloc + CreateThread.
+# Seen in Office DLL sideloading chains (rtc.dll reading cache161.db).
+defaults:
+  for: [pe]
+  platforms: [windows]
+  size_max: 10485760
+  mbc: B0023
+  attack: T1140
+
+traits:
+- id: microsoft-company-string
+  desc: Microsoft company string
+  crit: component
+  conf: 0.9
+  if:
+    type: text
+    substr: Microsoft Corporation
+- id: staged-payload-file-name--rx-1
+  desc: Regex component marker
+  crit: component
+  conf: 0.85
+  if:
+    type: text
+    substr: payload
+    case_insensitive: true
+  count_max: 1008891
+- id: staged-payload-file-name--rx-2
+  desc: Regex component marker
+  crit: component
+  conf: 0.85
+  if:
+    type: text
+    substr: cache
+    case_insensitive: true
+  count_max: 1008892
+- id: staged-payload-file-name--rx-3
+  desc: Regex component marker
+  crit: component
+  conf: 0.85
+  if:
+    type: text
+    substr: stage
+    case_insensitive: true
+  count_max: 1008893
+composite_rules:
+- id: aes-cbc-payload-decrypt
+  desc: AES-CBC decryption of staged payload via Windows CNG
+  crit: suspicious
+  conf: 0.92
+  all:
+  - id: micro-behaviors/crypto/symmetric/aes::bcrypt-aes-cbc
+  - id: micro-behaviors/fs/file/read::read-file
+  - id: staged-payload-file-name
+  unless:
+  - id: metadata/binary/framework::dotnet-assembly
+  - id: objectives/credential-access/browser/chromium::chrome-path
+  - id: metadata/binary/metrics::many-exports
+  - id: metadata/signed/developer::broadcom-inc
+  - id: microsoft-company-string
+  - id: metadata/signed/platform::microsoft
+
+- id: resource-aes-cng-payload
+  desc: Resource-embedded payload decrypted via Windows CNG
+  crit: suspicious
+  conf: 0.95
+  all:
+  - id: micro-behaviors/crypto/symmetric/aes::bcrypt-aes-cbc
+  - id: micro-behaviors/data/embedded/payload::find-resource-a
+  - id: micro-behaviors/data/embedded/payload::load-resource
+  - id: micro-behaviors/data/embedded/payload::sizeof-resource
+  unless:
+  - id: metadata/binary/metrics::many-exports
+  - id: metadata/signed/platform::microsoft
+
+- id: aes-cng-memory-exec
+  desc: AES-CBC decryption then in-memory execution via CNG
+  crit: hostile
+  conf: 0.97
+  all:
+  - id: micro-behaviors/crypto/symmetric/aes::bcrypt-aes-cbc
+  - id: micro-behaviors/fs/file/read::read-file
+  - id: staged-payload-file-name
+  - id: micro-behaviors/mem/protect/modify::virtual-alloc
+  - id: micro-behaviors/process/thread/create::create-thread
+  unless:
+  - id: objectives/credential-access/browser/chromium::chrome-path
+  - id: metadata/binary/metrics::many-exports
+  - id: metadata/signed/developer::broadcom-inc
+  - id: microsoft-company-string
+  - id: metadata/signed/platform::microsoft
+
+- id: resource-aes-timer-callback-loader
+  desc: Resource payload decrypted then executed via timer callback
+  crit: hostile
+  conf: 0.98
+  all:
+  - id: resource-aes-cng-payload
+  - id: objectives/evasion/process/injection/callback::timer-callback-shellcode
+  unless:
+  - id: metadata/binary/metrics::many-exports
+  - id: metadata/signed/platform::microsoft
+- id: staged-payload-file-name
+  desc: Staged encrypted payload filename
+  crit: component
+  conf: 0.85
+  any:
+  - id: staged-payload-file-name--rx-1
+  - id: staged-payload-file-name--rx-2
+  - id: staged-payload-file-name--rx-3

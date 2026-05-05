@@ -1,0 +1,539 @@
+defaults:
+  platforms: [windows, unix]
+  for: [scripts, binaries]
+traits:
+  - id: binascii-unhexlify
+    desc: Hex decoding via binascii.unhexlify
+    crit: component
+    conf: 0.7
+    mbc: B0032
+    attack: T1140
+    for:
+      - python
+    if:
+      type: text
+      substr: binascii.unhexlify
+  - id: unhexlify-import
+    desc: unhexlify function import
+    crit: component
+    conf: 0.7
+    mbc: B0032
+    attack: T1140
+    for:
+      - python
+    if:
+      type: text
+      regex: from\s+binascii\s+import.{0,50}unhexlify
+  - id: binascii-import
+    desc: binascii module import
+    crit: component
+    conf: 0.9
+    for:
+      - python
+    if:
+      type: text
+      regex: import\s+binascii\b
+  - id: hex-encoded-eval
+    desc: Hex-encoded "eval" string
+    crit: suspicious
+    conf: 0.95
+    attack: T1027
+    for:
+      - python
+    if:
+      type: text
+      regex: eval\s*\(\s*["']\\\\145\\\\166\\\\141\\\\154["']
+  - id: hex-escape-eval
+    desc: Hex escape encoded "eval"
+    crit: suspicious
+    conf: 0.95
+    attack: T1027
+    for:
+      - python
+    if:
+      type: text
+      regex: eval\s*\(\s*["']\\\\x65\\\\x76\\\\x61\\\\x6c["']
+  - id: exec-decode-pattern
+    desc: exec() with decode chain
+    crit: suspicious
+    conf: 0.85
+    attack: T1027
+    for:
+      - python
+    if:
+      type: string_literal
+      regex: exec\s*\([^)]{0,120}decode\s*\(
+    not:
+      - regex: exec\s*\([^)]*zlib\.decompress\s*\([^)]*base64\.b64decode
+    unless:
+      - id: metadata/library/runtime::python-bundled-modules-loader
+  - id: eval-decode-pattern
+    desc: eval() with decode chain
+    crit: suspicious
+    conf: 0.85
+    attack: T1027
+    for:
+      - python
+    if:
+      type: string_literal
+      regex: eval\s*\([^)]{0,120}decode\s*\(
+  - id: b64decode-exec-pattern
+    desc: Base64 decode followed by exec
+    crit: suspicious
+    conf: 0.85
+    attack: T1140
+    mbc: B0032
+    for:
+      - python
+    if:
+      type: string_literal
+      regex: b64decode.{0,64}exec
+  - id: exported-decryptor
+    desc: Module exports decryption function
+    crit: component
+    conf: 0.8
+    for:
+      - javascript
+      - typescript
+    if:
+      type: text
+      regex: module\.exports\s*=\s*function
+  - id: decode-exec-js
+    desc: Base64 decode followed by eval/Function (JS)
+    crit: suspicious
+    conf: 0.85
+    for:
+      - javascript
+      - typescript
+    if:
+      type: string_literal
+      regex: atob.{0,64}(eval|Function)
+  - id: large-base64-string-dup
+    desc: Large base64-like string (512+ chars)
+    crit: suspicious
+    conf: 0.75
+    if:
+      type: text
+      regex: ^[A-Za-z0-9+/]{512,}([+/]|[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)$
+    not:
+      - substr: iVBORw0KGgoAAAANSUhEUg
+      - substr: PADDINGXXPADDING
+      - regex: ^iVBORw0KGgoAAAANSUhEUg[A-Za-z0-9+/]{490,}$
+      - regex: ^MII[A-Za-z0-9+/]{508,}([+/]|[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)$
+  - id: large-hex-string-dup
+    desc: Large hex-encoded string (1024+ chars)
+    crit: notable
+    conf: 0.75
+    if:
+      type: text
+      regex: '[0-9a-fA-F]{1024,}'
+    not:
+      - regex: ^F{16}C90FDAA2
+      - regex: A{256,}
+  - id: sh2bin-markers
+    desc: sh2bin build or module marker
+    crit: suspicious
+    conf: 0.98
+    size_min: 1000000
+    for: [elf]
+    if:
+      type: text
+      regex: carlospolop/sh2bin|/PEASS-ng/sh2bin/sh2bin.go
+  - id: encoded-linpeas-markers
+    desc: Encoded LinPEAS script markers
+    crit: suspicious
+    conf: 0.98
+    size_min: 1000000
+    for: [elf]
+    if:
+      type: text
+      substr: IyEvYmluL3NoClZFUlNJT049Im5nIgpBRFZJU09SWT0
+  - id: js-basic-auth-base64-header
+    desc: JS Basic auth header built via Buffer.from
+    crit: notable
+    for: [javascript, typescript]
+    if:
+      type: text
+      substr: "Authorization'] = `Basic ${Buffer.from(`${this.username}:"
+  - id: eval-regex-literal
+    desc: Regex literal matching eval text
+    crit: suspicious
+    for: [python]
+    if:
+      type: text
+      substr: 'r''eval\\('
+  - id: eval-rewrite-status-text
+    desc: Status text about replacing eval statements
+    crit: suspicious
+    for: [python]
+    if:
+      type: text
+      substr: "Failed to replace eval"
+
+composite_rules:
+  - id: exec-function-call
+    desc: exec() call context
+    crit: component
+    conf: 0.7
+    mbc: E1059
+    attack: T1059
+    for:
+      - python
+    all:
+      - id: micro-behaviors/process/interpreter/python::exec-builtin
+    unless:
+      - id: metadata/library/python-runtime::python-runtime
+  - id: base64-eval-proximity
+    desc: Base64 decode + eval in same file
+    crit: hostile
+    conf: 0.95
+    mbc: B0032
+    attack: T1140
+    all:
+      - id: micro-behaviors/data/decode/base64::base64-decoding
+    any:
+      - id: micro-behaviors/process/interpreter/python::eval-builtin
+      - id: micro-behaviors/process/interpreter/eval::js-eval-raw
+      - id: micro-behaviors/process/interpreter/eval::ruby-eval
+    unless:
+      - id: metadata/package::has-tests
+      - id: metadata/library/structure::js-large-module-bundle
+      - id: metadata/library/runtime::next-edge-runtime-bundle
+      - id: js-basic-auth-base64-header
+      - id: eval-regex-literal
+      - id: eval-rewrite-status-text
+  - id: base64-exec-proximity
+    desc: Base64 decode + exec in same file
+    crit: hostile
+    conf: 0.95
+    mbc: B0032
+    attack: T1140
+    for: [scripts, -python, source]
+    all:
+      - id: micro-behaviors/data/decode/base64::base64-decoding
+    any:
+      - id: exec-function-call
+      - id: micro-behaviors/process/create/exec/
+    unless:
+      - id: metadata/package::has-tests
+      - id: metadata/library/runtime::shiboken-embedded-support-loader
+      - id: metadata/library/versioneer::embedded-source-wrapper
+  - id: base64-subprocess-proximity
+    desc: Base64 decode + subprocess execution
+    crit: hostile
+    conf: 0.92
+    mbc: B0032
+    attack: T1059
+    all:
+      - id: micro-behaviors/data/decode/base64::base64-decoding
+    any:
+      - id: micro-behaviors/process/create/subprocess/
+      - id: micro-behaviors/process/create/system::js-child-process
+      - id: micro-behaviors/process/create/system::ruby-system
+    unless:
+      - id: metadata/package::has-tests
+      - id: metadata/library/versioneer::embedded-source-wrapper
+  - id: base64-function-proximity
+    desc: Base64 decode + Function constructor
+    crit: hostile
+    conf: 0.95
+    mbc: B0032
+    attack: T1140
+    all:
+      - id: micro-behaviors/data/decode/base64::base64-decoding
+      - id: objectives/anti-static/obfuscation/string/encoding::js-new-function
+    near_lines: 40
+    unless:
+      - id: metadata/package::has-tests
+  - id: exec-unhexlify
+    desc: Execute hex-decoded payload
+    crit: hostile
+    conf: 0.95
+    mbc: B0032
+    attack: T1027
+    for:
+      - python
+    all:
+      - id: exec-function-call
+      - id: binascii-unhexlify
+    any:
+      - id: unhexlify-import
+      - id: binascii-import
+      - id: objectives/anti-static/obfuscation/code-metrics/structure::low-whitespace
+  - id: large-encoded-string
+    desc: Large high-entropy string literal
+    crit: suspicious
+    conf: 0.85
+    any:
+      - id: objectives/anti-static/obfuscation/payload/encoded::large-base64-string-dup
+      - id: objectives/anti-static/obfuscation/payload/encoded::large-hex-string-dup
+      - id: micro-behaviors/data/encode/embedded::gzip-base64-blob
+  - id: repeated-gzip-payload-wrapper
+    desc: Repeated gzip-base64 payload wrapper
+    crit: suspicious
+    conf: 0.94
+    for:
+      - javascript
+      - typescript
+    all:
+      - id: micro-behaviors/data/encode/embedded::repeated-gzip-base64-assignment
+    any:
+      - id: objectives/anti-static/obfuscation/payload/encoded::large-base64-string-dup
+      - id: objectives/anti-static/obfuscation/code-metrics/structure::very-long-lines
+  - id: large-base64-shell-wrapper
+    desc: Large base64 payload piped to shell
+    crit: suspicious
+    conf: 0.95
+    for: [elf]
+    size_min: 1000000
+    all:
+      - id: micro-behaviors/process/create/shell/lang::go-piped-shell-wrapper
+      - id: objectives/anti-static/obfuscation/payload/encoded::large-base64-string-dup
+  - id: sh2bin-linpeas-wrapper
+    desc: sh2bin-wrapped LinPEAS shell payload
+    crit: hostile
+    conf: 0.99
+    attack: T1027.009
+    for: [elf]
+    size_min: 1000000
+    all:
+      - id: large-base64-shell-wrapper
+    any:
+      - id: sh2bin-markers
+      - id: encoded-linpeas-markers
+    needs: 2
+  - id: payload-execution
+    desc: Large encoded payload with dynamic execution
+    crit: hostile
+    conf: 0.95
+    mbc: B0032
+    attack: T1027
+    for:
+      - python
+    all:
+      - id: large-encoded-string
+    any:
+      - id: exec-decode-pattern
+      - id: eval-decode-pattern
+      - id: micro-behaviors/process/interpreter/python::compile-exec-mode
+  - id: hardcoded-key-decryptor
+    desc: Decryption module with hardcoded key material
+    crit: suspicious
+    conf: 0.9
+    for:
+      - javascript
+      - typescript
+    all:
+      - id: micro-behaviors/crypto/symmetric/aes::createDecipheriv
+      - id: micro-behaviors/crypto/symmetric/aes::hardcoded-key
+    any:
+      - id: micro-behaviors/crypto/symmetric/aes::buffer-hex-key-material
+      - id: exported-decryptor
+    downgrade:
+      any:
+        - id: metadata/package/testing/harness::is-test
+  - id: python-packed-payload
+    desc: Python packed payload (exec + base64 + zlib + __import__)
+    crit: hostile
+    conf: 0.95
+    attack: T1027
+    mbc: B0032
+    for:
+      - python
+    all:
+      - id: exec-function-call
+      - id: micro-behaviors/data/decode/base64::base64-decoding
+    any:
+      - id: micro-behaviors/data/encode/compression::zlib-signature
+      - id: micro-behaviors/data/decode/base64::dunder-import-base64
+      - id: micro-behaviors/data/encode/compression::dunder-import-zlib
+      - id: objectives/anti-static/obfuscation/string/base64::long-base64-in-strings
+    unless:
+      - id: metadata/package::has-tests
+      - id: metadata/library/runtime::python-bundled-modules-loader
+  - id: exec-decompress-payload
+    desc: exec() with decompressed data (Python packer)
+    crit: hostile
+    conf: 0.95
+    attack: T1027
+    mbc: B0032
+    for:
+      - python
+    all:
+      - id: exec-function-call
+      - id: micro-behaviors/data/compress/library::zlib-decompress-symbol
+    unless:
+      - id: metadata/package::has-tests
+      - id: metadata/library/runtime::python-bundled-modules-loader
+      - id: metadata/library/runtime::python-bundler-exporter-template
+  - id: double-dunder-import-encoding
+    desc: __import__ evasion for both base64 and zlib
+    crit: hostile
+    conf: 0.95
+    attack: T1027
+    mbc: B0032
+    for:
+      - python
+    all:
+      - id: micro-behaviors/data/decode/base64::dunder-import-base64
+      - id: micro-behaviors/data/encode/compression::dunder-import-zlib
+  - id: compile-exec-dunder-import
+    desc: compile()+exec bytecode with __import__ evasion
+    crit: hostile
+    conf: 0.95
+    attack: T1027
+    mbc: B0032
+    for:
+      - python
+    all:
+      - id: micro-behaviors/process/interpreter/python::compile-exec-mode
+    any:
+      - id: micro-behaviors/process/interpreter/python::dunder-import-call
+      - id: micro-behaviors/data/decode/base64::dunder-import-base64
+      - id: micro-behaviors/data/encode/compression::dunder-import-zlib
+    unless:
+      - id: metadata/package::has-tests
+      - id: metadata/package/testing/harness::python-stdlib-test-support
+  - id: exec-long-base64-dunder-import
+    desc: exec() with large base64 payload and __import__ evasion
+    crit: hostile
+    conf: 0.95
+    attack: T1027
+    mbc: B0032
+    for:
+      - python
+    all:
+      - id: exec-function-call
+      - id: objectives/anti-static/obfuscation/string/base64::long-base64-in-strings
+    any:
+      - id: micro-behaviors/process/interpreter/python::dunder-import-call
+      - id: micro-behaviors/data/decode/base64::dunder-import-base64
+      - id: micro-behaviors/data/encode/compression::dunder-import-zlib
+    unless:
+      - id: metadata/package::has-tests
+  - id: js-eval-base64-child-process
+    desc: eval + base64 decode + child_process (JS trojan)
+    crit: hostile
+    conf: 0.95
+    attack: T1059.007
+    mbc: B0032
+    for:
+      - javascript
+      - typescript
+    all:
+      - id: micro-behaviors/data/decode/base64::base64-decoding
+      - id: micro-behaviors/process/create/shell/bridge::child-process-require
+    any:
+      - id: micro-behaviors/process/interpreter/eval::js-eval-raw
+      - id: objectives/execution/interpreter/eval/dynamic::eval-variable
+      - id: objectives/anti-static/obfuscation/encoding::encoded-eval
+    unless:
+      - id: metadata/package::has-tests
+      - id: metadata/library/runtime::ncc-webpack-runtime-marker
+  - id: js-eval-child-process
+    desc: eval() + child_process in same file (JS payload execution)
+    crit: hostile
+    conf: 0.95
+    attack: T1059.007
+    mbc: B0032
+    for:
+      - javascript
+      - typescript
+    all:
+      - id: micro-behaviors/process/create/shell/bridge::child-process-require
+    any:
+      - id: micro-behaviors/process/interpreter/eval::js-eval-raw
+      - id: objectives/execution/interpreter/eval/dynamic::eval-variable
+      - id: objectives/anti-static/obfuscation/encoding::encoded-eval
+    downgrade:
+      any:
+        - id: micro-behaviors/process/create/shell/host::vscode-extension-marker
+        - id: objectives/supply-chain/metadata-anomaly/manifest::vscode-extension
+    unless:
+      - id: metadata/package::has-tests
+      - id: metadata/library/structure::js-large-module-bundle
+  - id: ruby-eval-base64-decode
+    desc: eval + Base64.decode64 (Ruby payload execution)
+    crit: hostile
+    conf: 0.95
+    attack: T1059
+    mbc: B0032
+    for:
+      - ruby
+    all:
+      - id: micro-behaviors/data/decode/base64::base64-decoding
+      - id: micro-behaviors/process/interpreter/eval::ruby-eval
+    unless:
+      - id: metadata/package::has-tests
+  - id: ruby-system-base64-decode
+    desc: system() + Base64.decode64 (Ruby command execution)
+    crit: hostile
+    conf: 0.95
+    attack: T1059
+    mbc: B0032
+    for:
+      - ruby
+    all:
+      - id: micro-behaviors/data/decode/base64::base64-decoding
+    any:
+      - id: micro-behaviors/process/create/system::ruby-system
+      - id: micro-behaviors/process/create/shell/lang::ruby-system-dup
+    unless:
+      - id: metadata/package::has-tests
+  - id: go-exec-base64-decode
+    desc: exec.Command + base64 decode (Go payload execution)
+    crit: hostile
+    conf: 0.95
+    attack: T1059
+    mbc: B0032
+    for:
+      - go
+    all:
+      - id: micro-behaviors/data/decode/base64::base64-decoding
+      - id: micro-behaviors/process/create/exec/
+    unless:
+      - id: metadata/package::has-tests
+  - id: shell-eval-base64-decode
+    desc: Shell eval with base64 decode
+    crit: suspicious
+    conf: 0.85
+    attack: T1059.004
+    mbc: B0032
+    for:
+      - shell
+    all:
+      - id: micro-behaviors/data/decode/base64::base64-decoding
+    any:
+      - id: micro-behaviors/process/interpreter/eval::shell-eval
+      - id: micro-behaviors/process/interpreter/eval::shell-exec
+    unless:
+      - id: objectives/anti-static/obfuscation/eval::nvidia-bug-report-basename
+      - id: objectives/anti-static/obfuscation/eval::shell-heredoc-base64-eval
+      - id: objectives/anti-static/obfuscation/payload/container::source-map-extension
+      - id: objectives/anti-static/obfuscation/payload/container::sources-content-json
+      - id: metadata/package::has-tests
+      - id: micro-behaviors/data/text/archive::makeself-archive-context
+  - id: perl-eval-base64-decode
+    desc: Perl eval + base64 decode (payload execution)
+    crit: hostile
+    conf: 0.95
+    attack: T1059
+    mbc: B0032
+    for:
+      - perl
+    all:
+      - id: micro-behaviors/data/decode/base64::base64-decoding
+      - id: micro-behaviors/process/interpreter/eval::js-eval-raw
+    unless:
+      - id: metadata/package::has-tests
+  - id: exec-join-chr-obfuscation
+    desc: exec() combined with join(chr()) integer array obfuscation
+    crit: hostile
+    conf: 0.99
+    attack: T1027
+    mbc: B0032
+    for:
+      - python
+    all:
+      - id: exec-function-call
+      - id: objectives/command-and-control/dropper/execution/eval::join-chr-comprehension
