@@ -549,6 +549,8 @@ composite_rules:
       - id: pattern-b
       - id: legitimate-use
     needs: 2                          # Min matches from `any:` ONLY (has no effect on `all:`)
+    scope: leaf                       # Optional: tighten cross-source FPs (see Scope)
+    near_bytes: 256                   # Optional: tighten by byte proximity
 ```
 
 **Trait references:** Use `{ id: trait-id }` in condition lists. The `type:` field can be omitted for trait references.
@@ -628,6 +630,36 @@ composite_rules:
 | `downgrade:` | Reduce criticality by one level if condition matches |
 
 **Proximity (composites only):** `near_bytes: N`, `near_lines: N` - require evidence from different conditions to fall within a single span of N bytes/lines. Uses a sliding window: the check passes when any contiguous window of size N contains evidence from enough distinct conditions (all conditions for `all:`, `needs` conditions for `any:`).
+
+**Scope (composites only):** `scope: outer | archive | file | leaf` — require all evidence to share an analysis-tree ancestor at the named level. Default `outer` is today's behavior (anywhere in the input). Use a stricter scope to suppress archive/multi-file false positives where two conditions happen to match in unrelated entries of the same archive. Scope filtering runs *before* `near_bytes`/`near_lines`, so the two compose: scope picks the source bucket, proximity narrows within it.
+
+| Value | Constraint | Use case |
+|-------|------------|----------|
+| `outer` | anywhere in the on-disk input (default) | today's behavior |
+| `archive` | same nearest enclosing archive entry; degrades to `outer` if no archive | rules that should fire only when conditions land in entries of the same archive |
+| `file` | same leaf-file (deepest file-shaped unit) | rules that must see all conditions in one file even if it sits inside an archive; pools the file with its decoded payload layers |
+| `leaf` | same exact analyzed unit, including decoded payload layers | strictest — both conditions must land in the same decoded layer (or the same file with no decoding) |
+
+Concrete tree examples (`!` separates archive entries; `::` denotes decoded layers):
+
+| Tree path | `leaf` key | `file` key | `archive` key | `outer` |
+|---|---|---|---|---|
+| `script.py` | input | input | input | input |
+| `loader.exe::overlay::final.py` | the decoded layer | input | input (no archive) | input |
+| `archive.zip!stage.exe` | `archive:stage.exe` | `archive:stage.exe` | `archive:` (single-level) | input |
+| `outer.zip!inner.zip!stage.exe` | the entry | the entry | `archive:outer.zip!inner.zip` (nearest archive) | input |
+
+```yaml
+composite_rules:
+  - id: anchor-dll-shellcode-injector
+    crit: hostile
+    all:
+      - id: anchor-dll-targeting
+      - id: injection-trinity-text
+    scope: leaf       # both conditions must land in the same analyzed unit;
+                      # suppresses archive cross-entry FPs
+    near_bytes: 64    # ...AND additionally within 64 bytes of each other
+```
 
 ### Downgrade Behavior
 

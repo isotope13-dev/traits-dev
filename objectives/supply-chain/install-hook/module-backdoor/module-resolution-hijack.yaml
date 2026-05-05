@@ -1,156 +1,100 @@
 # Module Resolution Hijacking
-# Detects package/runtime search-order hijacks through hidden module paths.
+# Detects package/runtime search-order hijacks where the search path
+# is extended with a hidden directory (a leading-dot folder, a
+# tempdir path, or a sibling of a known package directory).
+#
+# Earlier revisions of this file matched bare list methods
+# (`append` / `extend` / `insert`) and bare directory tokens
+# (`site-packages` / `venv`), which triggered on every Python stdlib
+# file that touches a list method or imports from a package
+# directory. The fix is to match the *combined* shape: a path-list
+# manipulation API receiving a hidden-path string literal — i.e.
+# the actual attack pattern, not the building blocks.
 defaults:
   platforms: [windows, unix]
   for: [javascript, python, shell]
-traits:
-- id: hidden-module-directory--rx-1
-  desc: Regex component marker
-  crit: component
-  conf: 0.8
-  if:
-    type: text
-    substr: python_modules
-  count_max: 1025725
-- id: hidden-module-directory--rx-2
-  desc: Regex component marker
-  crit: component
-  conf: 0.8
-  if:
-    type: text
-    substr: site-packages
-  count_max: 1025726
-- id: hidden-module-directory--rx-3
-  desc: Regex component marker
-  crit: component
-  conf: 0.8
-  if:
-    type: text
-    substr: node_modules
-  count_max: 1025727
-- id: hidden-module-directory--rx-4
-  desc: Regex component marker
-  crit: component
-  conf: 0.8
-  if:
-    type: text
-    substr: pkgs
-  count_max: 1025728
-- id: hidden-module-directory--rx-5
-  desc: Regex component marker
-  crit: component
-  conf: 0.8
-  if:
-    type: text
-    substr: venv
-  count_max: 1025729
-- id: runtime-path-manipulation-hidden--rx-6
-  desc: Regex component marker
-  crit: component
-  conf: 0.9
-  for: [javascript, python]
-  if:
-    type: text
-    substr: module.paths
-  count_max: 1025730
-- id: runtime-path-manipulation-hidden--rx-7
-  desc: Regex component marker
-  crit: component
-  conf: 0.9
-  for: [javascript, python]
-  if:
-    type: text
-    substr: sys.path
-  count_max: 1025731
-- id: runtime-path-manipulation-hidden--rx-8
-  desc: Regex component marker
-  crit: component
-  conf: 0.9
-  for: [javascript, python]
-  if:
-    type: text
-    substr: unshift
-  count_max: 1025732
-- id: runtime-path-manipulation-hidden--rx-9
-  desc: Regex component marker
-  crit: component
-  conf: 0.9
-  for: [javascript, python]
-  if:
-    type: text
-    substr: append
-  count_max: 1025733
-- id: runtime-path-manipulation-hidden--rx-10
-  desc: Regex component marker
-  crit: component
-  conf: 0.9
-  for: [javascript, python]
-  if:
-    type: text
-    substr: extend
-  count_max: 1025734
-- id: runtime-path-manipulation-hidden--rx-11
-  desc: Regex component marker
-  crit: component
-  conf: 0.9
-  for: [javascript, python]
-  if:
-    type: text
-    substr: insert
-  count_max: 1025735
-- id: env-path-hijack-hidden
-  desc: Hidden module path env
-  crit: suspicious
-  conf: 0.9
-  if:
-    type: text
-    regex: '(?i)(export\s+)?(NODE_PATH|PYTHONPATH)=.{0,120}/\.[\w-]{1,20}(/|[:;]|$)'
 
-- id: require-from-hidden-path
-  desc: Import from hidden module directory
-  crit: notable
-  conf: 0.85
-  for: [javascript, python]
-  if:
-    type: text
-    regex: '(require\(|import\s+).{0,40}/\.[\w-]{1,20}/'
+traits:
+  - id: sys-path-mutate
+    desc: sys.path mutation
+    crit: component
+    conf: 0.86
+    for: [python]
+    if:
+      type: text
+      regex: 'sys\.path\.(insert|append|extend)\s*\('
+
+  - id: node-module-paths-mutate
+    desc: module.paths mutation
+    crit: component
+    conf: 0.86
+    for: [javascript]
+    if:
+      type: text
+      regex: 'module\.paths\.(unshift|push|splice)\s*\('
+
+  - id: hidden-dir-literal
+    desc: Hidden directory literal
+    crit: component
+    conf: 0.84
+    if:
+      type: text
+      regex: '["'']([^"''\n]{0,80}/)?\.[A-Za-z_][\w-]{0,30}'
+
+  # `PYTHONPATH=` / `NODE_PATH=` set to a hidden directory.
+  - id: env-path-hijack-hidden
+    desc: NODE_PATH or PYTHONPATH set to hidden directory
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)(export\s+)?(NODE_PATH|PYTHONPATH)=.{0,120}/\.[\w-]{1,20}(/|[:;]|$)'
+
+  # `require("/.hidden/foo")` / `import .hidden.foo`
+  - id: require-from-hidden-path
+    desc: Import from hidden module directory
+    crit: notable
+    conf: 0.85
+    for: [javascript, python]
+    if:
+      type: text
+      regex: '(require\(|import\s+).{0,40}/\.[\w-]{1,20}/'
 
 composite_rules:
-- id: module-resolution-hijack
-  desc: Module resolution hijack
-  crit: hostile
-  conf: 0.95
-  any:
-  - id: runtime-path-manipulation-hidden
-  - id: env-path-hijack-hidden
-  - id: require-from-hidden-path
-  all:
-  - id: hidden-module-directory
-  downgrade:
+  # `sys.path.<insert|append|extend>(<literal hidden path>)` — Python.
+  - id: sys-path-hijack-hidden
+    desc: sys.path mutated with hidden-directory literal
+    crit: suspicious
+    conf: 0.93
+    for: [python]
+    near_lines: 1
+    all:
+      - id: sys-path-mutate
+      - id: hidden-dir-literal
+
+  # `module.paths.<unshift|push>(<literal hidden path>)` — Node.js.
+  - id: node-module-paths-hijack-hidden
+    desc: module.paths mutated with hidden-directory literal
+    crit: suspicious
+    conf: 0.93
+    for: [javascript]
+    near_lines: 1
+    all:
+      - id: node-module-paths-mutate
+      - id: hidden-dir-literal
+
+  - id: module-resolution-hijack
+    desc: Module resolution hijack
+    crit: hostile
+    conf: 0.95
     any:
-    - id: metadata/library/structure::js-large-module-bundle
-    - id: micro-behaviors/process/create/shell/host::vscode-extension-marker
-  unless:
-  - id: well-known/lib/psutil::python-package
-- id: hidden-module-directory
-  desc: Hidden module directory path reference
-  crit: notable
-  conf: 0.8
-  any:
-  - id: hidden-module-directory--rx-1
-  - id: hidden-module-directory--rx-2
-  - id: hidden-module-directory--rx-3
-  - id: hidden-module-directory--rx-4
-  - id: hidden-module-directory--rx-5
-- id: runtime-path-manipulation-hidden
-  desc: Hidden runtime path insertion
-  crit: suspicious
-  conf: 0.9
-  for: [javascript, python]
-  any:
-  - id: runtime-path-manipulation-hidden--rx-6
-  - id: runtime-path-manipulation-hidden--rx-7
-  - id: runtime-path-manipulation-hidden--rx-8
-  - id: runtime-path-manipulation-hidden--rx-9
-  - id: runtime-path-manipulation-hidden--rx-10
-  - id: runtime-path-manipulation-hidden--rx-11
+      - id: sys-path-hijack-hidden
+      - id: node-module-paths-hijack-hidden
+      - id: env-path-hijack-hidden
+      - id: require-from-hidden-path
+    downgrade:
+      any:
+        - id: metadata/library/structure::js-large-module-bundle
+        - id: micro-behaviors/process/create/shell/host::vscode-extension-marker
+    unless:
+      - id: well-known/lib/psutil::python-package

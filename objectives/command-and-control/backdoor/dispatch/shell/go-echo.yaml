@@ -1,0 +1,232 @@
+defaults:
+  platforms: [windows, unix]
+  for:
+    - go
+  mbc: B0024
+  attack: T1195.002
+traits:
+  - id: echo-command-listener-start
+    desc: Echo command listener banner
+    crit: component
+    conf: 0.96
+    attack: T1059
+    for: [elf]
+    platforms: [linux]
+    if:
+      type: text
+      substr: Echo Listener for commands has started
+  - id: echo-command-executed
+    desc: Echo listener command executed
+    crit: component
+    conf: 0.96
+    attack: T1059
+    for: [elf]
+    platforms: [linux]
+    if:
+      type: text
+      substr: DEBUG/ECHO_LISTENER/DONE -> Correctly executed command
+  - id: echo-command-killed-error
+    desc: Echo listener kill error
+    crit: component
+    conf: 0.9
+    attack: T1059
+    for: [elf]
+    platforms: [linux]
+    if:
+      type: text
+      substr: ECHO_LISTENER/ERROR
+  - id: obfuscated-c2-config-fragment-1
+    desc: Obfuscated config string fragment
+    crit: component
+    conf: 0.85
+    if:
+      type: string_literal
+      regex: config.{0,20}(base64|xor)
+  - id: obfuscated-c2-config-fragment-2
+    desc: Decoded address string fragment
+    crit: component
+    conf: 0.85
+    if:
+      type: string_literal
+      regex: decode.{0,20}(config|addr)
+  - id: obfuscated-c2-config-fragment-3
+    desc: XOR address string fragment
+    crit: component
+    conf: 0.85
+    if:
+      type: string_literal
+      regex: xor.{0,20}(addr|host)
+  - id: embedded-binary-blob
+    desc: Large embedded binary blob
+    crit: suspicious
+    conf: 0.75
+    if:
+      type: string_literal
+      regex: //go:embed.{0,50}\.(exe|elf|bin)|embeddedBinary
+  - id: hidden-init-function
+    desc: Hidden initialization in init()
+    crit: component
+    conf: 0.7
+    if:
+      type: ast
+      query: "(function_declaration\n  name: (identifier) @name\n  (#eq? @name \"init\"))\n"
+  - id: goroutine-connect
+    desc: Goroutine connect pattern
+    crit: suspicious
+    conf: 0.8
+    if:
+      type: string_literal
+      regex: go\s+connect
+  - id: goroutine-beacon
+    desc: Goroutine beacon pattern
+    crit: suspicious
+    conf: 0.8
+    if:
+      type: string_literal
+      regex: go\s+beacon
+  - id: goroutine-dial
+    desc: Goroutine dial pattern
+    crit: suspicious
+    conf: 0.75
+    if:
+      type: string_literal
+      regex: go\s+dial
+composite_rules:
+  - id: go-echo-command-backdoor
+    desc: Go Echo command backdoor
+    crit: hostile
+    conf: 0.98
+    attack: T1059
+    for: [elf]
+    platforms: [linux]
+    all:
+      - id: echo-command-listener-start
+      - id: echo-command-executed
+      - id: micro-behaviors/process/create/system::go-os-exec-pclntab
+    any:
+      - id: echo-command-killed-error
+      - id: micro-behaviors/process/create/shell/invoke::bin-sh
+  - id: obfuscated-c2-config
+    desc: Obfuscated C2 configuration
+    crit: suspicious
+    conf: 0.85
+    any:
+      - id: obfuscated-c2-config-fragment-1
+      - id: obfuscated-c2-config-fragment-2
+      - id: obfuscated-c2-config-fragment-3
+  - id: goroutine-backdoor
+    desc: Goroutine backdoor patterns
+    crit: suspicious
+    conf: 0.8
+    any:
+      - id: goroutine-connect
+      - id: goroutine-beacon
+      - id: goroutine-dial
+  - id: network-connectivity
+    desc: Network connectivity method
+    crit: suspicious
+    conf: 0.8
+    any:
+      - id: micro-behaviors/communications/socket/connect::dial
+      - id: objectives/command-and-control/channel/tor/client::bine-import
+  - id: rat-capabilities
+    desc: RAT additional capabilities
+    crit: suspicious
+    conf: 0.8
+    any:
+      - id: micro-behaviors/hardware/display/screen::screenshot-import
+      - id: objectives/discovery/network/scan/port::gomap-import
+      - id: micro-behaviors/fs/delete/secure::shred-import
+  - id: persistence-mechanism
+    desc: Persistence mechanism
+    crit: suspicious
+    conf: 0.85
+    any:
+      - id: objectives/persistence/login/registry/run-key::run-key-persistence
+      - id: objectives/persistence/login/scheduled-task/masquerade::schtask-persistence
+      - id: objectives/persistence/system/wmi/subscription::wmi-persistence
+      - id: objectives/persistence/login/xdg::xdg-persistence
+  - id: execution-method
+    desc: Execution method
+    crit: suspicious
+    conf: 0.8
+    any:
+      - id: micro-behaviors/process/create/direct::exec-command
+      - id: objectives/privilege-escalation/elevation-control/uac-bypass::go-escalate-import
+  - id: c2-backend
+    desc: C2 communication backend
+    crit: suspicious
+    conf: 0.85
+    any:
+      - id: micro-behaviors/process/create/direct::exec-command
+      - id: micro-behaviors/communications/socket/rpc::rpc-register
+  - id: rat-shell-access
+    desc: RAT with remote shell execution
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: micro-behaviors/communications/socket/rpc::rpc-register
+      - id: micro-behaviors/process/create/direct::exec-command
+      - id: network-connectivity
+  - id: rat-screenshot
+    desc: RAT with screen capture
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: micro-behaviors/hardware/display/screen::screenshot-import
+      - id: micro-behaviors/communications/socket/rpc::rpc-register
+      - id: network-connectivity
+  - id: rat-network-recon
+    desc: RAT with network scanning
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: objectives/discovery/network/scan/port::gomap-import
+      - id: micro-behaviors/communications/socket/rpc::rpc-register
+      - id: c2-backend
+  - id: tor-rat
+    desc: Tor-based Remote Access Trojan
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: objectives/command-and-control/channel/tor/client::bine-import
+      - id: micro-behaviors/communications/socket/rpc::rpc-register
+      - id: micro-behaviors/process/create/direct::exec-command
+      - id: rat-capabilities
+  - id: tor-rat-persistent
+    desc: Tor RAT with persistence mechanisms
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: objectives/command-and-control/channel/tor/client::bine-import
+      - id: micro-behaviors/communications/socket/rpc::rpc-register
+      - id: persistence-mechanism
+      - id: execution-method
+  - id: supply-chain-rat-init
+    desc: RAT functionality hidden in init()
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: hidden-init-function
+      - id: goroutine-backdoor
+      - id: network-connectivity
+      - id: c2-backend
+  - id: supply-chain-rat-antiforensics
+    desc: RAT with anti-forensic capabilities
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: micro-behaviors/fs/delete/secure::shred-import
+      - id: micro-behaviors/communications/socket/rpc::rpc-register
+      - id: network-connectivity
+      - id: execution-method
+  - id: full-rat-profile
+    desc: Full-featured Remote Access Trojan
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: micro-behaviors/communications/socket/rpc::rpc-register
+      - id: micro-behaviors/process/create/direct::exec-command
+      - id: network-connectivity
+      - id: rat-capabilities
+      - id: persistence-mechanism
