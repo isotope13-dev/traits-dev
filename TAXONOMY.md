@@ -329,6 +329,7 @@ micro-behaviors/
 │   │   └── vmware/        #     VMware/ESXi paths, commands
 │   ├── telemetry/         #   OS telemetry and instrumentation
 │   ├── user/              #   User account management
+│   ├── virtualization/    #   Hypervisors, virtual devices, VM snapshots
 │   ├── wmi/               #   Windows WMI queries
 │   └── wsh/               #   Windows Script Host
 │

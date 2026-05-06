@@ -212,8 +212,8 @@ defaults:
 |------|---------|--------|
 | `ast` | Parse source | `kind`/`node`, `exact`/`substr`/`regex`/`query` (tree-sitter S-expression) |
 | `syscall` | Direct syscalls | `name`, `number`, `arch` (all optional, OR within field, AND across fields) |
-| `section` | Binary sections | `exact`, `substr`, `regex`, `word`, `case_insensitive`, `length_min`, `length_max`, `entropy_min`, `entropy_max`, `readable`, `writable`, `executable`, `compare_to` (default: "total"), `ratio_min`, `ratio_max` |
-| `metrics` | Code metrics | `field` (e.g., `identifiers.avg_entropy`, `binary.text_to_file_ratio`, `binary.data_to_file_ratio`, `binary.rsrc_to_file_ratio`, `binary.string_count`, `elf.e_machine`), `min`, `max`, `min_size`, `max_size` |
+| `section` | Binary sections | `exact`, `substr`, `regex`, `word`, `case_insensitive`, `length_min`, `length_max`, `entropy_min`, `entropy_max`, `readable`, `writable`, `executable`, `compare_to` (reference section for both ratio checks; default: "total" for size), `size_ratio_min`, `size_ratio_max`, `entropy_ratio_min`, `entropy_ratio_max` |
+| `metrics` | Code metrics | `field` (e.g., `identifiers.avg_entropy`, `binary.text_to_file_ratio`, `binary.data_to_file_ratio`, `binary.rsrc_to_file_ratio`, `binary.string_count`, `elf.e_machine`, `pe.dos_stub_zeroed`, `pe.security_directory_out_of_bounds`, `consistency.cert_org_pdb_mismatch`), `min`, `max`, `min_size`, `max_size` |
 | `yara` | YARA rule | `source` |
 
 > **Note**: File size filtering uses trait-level `size_min`/`size_max` fields, not a condition type.
@@ -277,7 +277,42 @@ format, use a `metrics` check against the numeric header field:
     field: "identifiers.avg_entropy"
     min: 4.5
     min_size: 10000  # Only check files >10KB
+
+# PE: DOS stub erased (bytes 0x40..e_lfanew all zeroed)
+# Standard "This program cannot be run in DOS mode" message removed
+- id: dos-stub-zeroed
+  for: [pe, dll]
+  if:
+    type: metrics
+    field: pe.dos_stub_zeroed
+    min: 1
+
+# PE: security directory file offset exceeds file length (header tampering)
+- id: security-dir-out-of-bounds
+  for: [pe, dll]
+  if:
+    type: metrics
+    field: pe.security_directory_out_of_bounds
+    min: 1
+
+# Consistency: no word from cert signer org appears in PDB path (supply-chain swap)
+- id: cert-org-pdb-mismatch
+  for: [pe, dll]
+  if:
+    type: metrics
+    field: consistency.cert_org_pdb_mismatch
+    min: 1
 ```
+
+**Available `pe.*` metric fields (boolean, 0/1):**
+- `pe.dos_stub_zeroed` — every byte in the DOS stub region (0x40..e_lfanew) is 0x00; standard "This program cannot be run in DOS mode" message erased
+- `pe.security_directory_out_of_bounds` — security directory file offset exceeds actual file length; indicates header tampering
+
+**Available `consistency.*` metric fields (boolean, 0/1):**
+- `consistency.cert_org_pdb_mismatch` — no word from the cert signer organization appears in the PDB path; supply-chain swap signal
+- `consistency.bundle_identifier_mismatch` — bundle identifier in Info.plist differs from signing identity
+- `consistency.manifest_product_version_mismatch` — product version in PE manifest differs from version info resource
+- `consistency.cert_issued_after_build` — authenticode cert `not_before` timestamp is later than the PE link timestamp
 
 ### Hex Pattern Syntax
 
@@ -447,6 +482,33 @@ regex: "^(\\.data|__data)"
 writable: true
 entropy_min: 6.5
 ```
+
+### Ratio Constraints
+
+Compare a section's size or entropy against another section (or the total file) using ratio fields. `compare_to` names the reference: `"total"` uses total file size as the denominator (default for size ratios), or any section name substring (e.g. `"text"` matches `.text` / `__TEXT.__text`).
+
+```yaml
+# Section size ratio: .rsrc must be ≥ 30% of total file size
+- id: large-resource-section
+  desc: Resource section unusually large relative to file
+  type: section
+  substr: rsrc
+  compare_to: total
+  size_ratio_min: 0.3
+
+# Entropy ratio: .rsrc entropy must be ≥ 1.5× .text entropy
+- id: high-entropy-resource-vs-code
+  desc: Resource section much higher entropy than code
+  type: section
+  substr: rsrc
+  compare_to: text
+  entropy_ratio_min: 1.5
+```
+
+**Ratio fields:**
+- `compare_to` — reference section name substring, or `"total"` for total file size (default for size ratios)
+- `size_ratio_min` / `size_ratio_max` — section size as a fraction of the reference size
+- `entropy_ratio_min` / `entropy_ratio_max` — section entropy divided by reference section entropy
 
 ## Encoded Strings
 
