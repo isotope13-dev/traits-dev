@@ -1,0 +1,112 @@
+# .NET WPF Game Modification Tools
+#
+# Detects legitimate .NET WPF game modification tools (e.g., "Endfield
+# Uncensored" by DynamiByte) that use standard Windows process injection
+# APIs to inject DLLs into game processes for rendering modifications
+# (Vulkan hooking, transparency filter removal, etc.).
+#
+# These tools are NOT malware — they are open-source game mods distributed
+# via GitHub. They use the same injection APIs as game cheats but target
+# specific games for legitimate rendering modifications.
+#
+# Used as a downgrade/unless condition in injection-related rules to
+# suppress false positives on legitimate game modification tools.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  size_max: 10485760
+
+traits:
+  # .NET WPF framework references — strong indicator of a GUI application
+  - id: wpf-namespace-ref
+    desc: .NET WPF namespace reference
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      section: .text
+      regex: "System\\.(Windows|WindowsBase|PresentationCore|PresentationFramework)"
+
+  # .NET WPF GUI method names (split to satisfy regex constraints)
+  - id: wpf-gui-method-names-core
+    desc: .NET WPF GUI method names (core)
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      section: .text
+      regex: "\\b(MainWindow|WiggleWindow|MinimizeWindow|DragWindow)\\b"
+
+  - id: wpf-gui-method-names-init
+    desc: .NET WPF GUI method names (init)
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      section: .text
+      regex: "\\b(CacheStoryboards|InitializeVersionLabel|SetInteractionEnabled|HandleInvalidButton)\\b"
+
+  - id: wpf-gui-method-names-injector
+    desc: .NET WPF GUI method names (injector)
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      section: .text
+      regex: "\\b(AppendOutput|InjectorThreadProc|StartInjectorAsync|ExtractEmbeddedDll)\\b"
+
+  # Game-specific DLL references (Unity IL2CPP games)
+  - id: game-unity-dll-refs
+    desc: Unity IL2CPP game DLL references
+    crit: component
+    conf: 0.95
+    if:
+      type: text
+      section: .text
+      regex: "\\b(GameAssembly|Gameplay\\.Beyond)\\.dll\\b"
+
+  # Vulkan/graphics API references in game-mod context
+  - id: game-vulkan-ref
+    desc: Vulkan graphics API reference in game-mod context
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      section: .text
+      word: Vulkan
+
+composite_rules:
+  # .NET WPF GUI method names — MainWindow, Window methods
+  - id: wpf-gui-method-names
+    desc: .NET WPF GUI method names
+    crit: component
+    conf: 0.9
+    any:
+      - id: wpf-gui-method-names-core
+      - id: wpf-gui-method-names-init
+      - id: wpf-gui-method-names-injector
+
+  # .NET WPF game modification tool — the outer .NET assembly with WPF GUI
+  - id: dotnet-wpf-game-mod
+    desc: .NET WPF game modification tool
+    crit: baseline
+    conf: 0.92
+    all:
+      - id: wpf-namespace-ref
+    any:
+      - id: wpf-gui-method-names
+      - id: game-unity-dll-refs
+      - id: game-vulkan-ref
+    needs: 1
+
+  # Embedded DLL that is part of a game modification tool —
+  # detected by game-specific strings or injection exports in native PEs
+  - id: game-mod-embedded-dll
+    desc: Native DLL embedded in game modification tool
+    crit: baseline
+    conf: 0.88
+    all:
+      - id: game-unity-dll-refs
+    any:
+      - id: game-vulkan-ref
+      - id: objectives/anti-static/obfuscation/name-mangling/export-name::inject-export
