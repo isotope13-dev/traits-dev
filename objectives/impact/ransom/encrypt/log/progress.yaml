@@ -1,0 +1,61 @@
+# Operator-debug progress logging in file-encrypting ransomware.
+#
+# Most ransomware families log nothing once deployed — silent encryption
+# is the operational ideal. But families that were developed against
+# real victim filesystems leave behind operator-debug `printf`-style
+# progress strings: directory tally counters, layer/pass markers,
+# secure-delete failure paths, etc. These format strings stand out
+# because (a) they reference filesystem-walk progress (`total_dir`,
+# `total_skip_dir`, `file=%d`, `skip_file=%d`), and (b) they survive
+# stripping/garble while symbol names don't.
+defaults:
+  platforms: [windows, linux, macos]
+  for: [binaries]
+  attack: T1486
+  mbc: B0040
+
+traits:
+  - id: progress-total-dir-counter
+    desc: Encryption progress total_dir counter format string
+    # `total_dir=%d, total_skip_dir=%d` is a directory-walk
+    # progress dump — the `total_skip_dir` half is the giveaway,
+    # since legitimate filesystem code rarely tracks "skipped"
+    # directories as a counted metric (only encryptors that maintain
+    # a skip-path allowlist do).
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: raw
+      substr: 'total_dir=%d, total_skip_dir=%d'
+
+  - id: progress-layer-finished
+    desc: Encryption progress layer/file=skip_file counter
+    # `layer %d finished: file=%d, skip_file=%d` — multi-pass
+    # encryption progress. "Layer" here is a pass over the
+    # filesystem (e.g. small files first, then large files); the
+    # `skip_file` counter is the encryptor self-skip-list metric.
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: raw
+      substr: 'layer %d finished: file=%d, skip_file=%d'
+
+  - id: progress-source-size-changed
+    desc: Encryption "source size changed. abort" race-detector message
+    # File-was-modified-mid-encrypt error from a Rust ransomware —
+    # benign code rarely prints "abort" to stderr in this shape.
+    crit: notable
+    conf: 0.85
+    if:
+      type: raw
+      substr: 'source size changed (%d -> %d). abort'
+
+composite_rules:
+  - id: encryption-progress-logger
+    desc: File-encrypting ransomware operator-debug progress logger
+    crit: suspicious
+    conf: 0.96
+    any:
+      - id: progress-total-dir-counter
+      - id: progress-layer-finished
+      - id: progress-source-size-changed

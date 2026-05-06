@@ -1,0 +1,191 @@
+defaults:
+  platforms: [unix, windows]
+  attack: T1195.002
+
+traits:
+- id: lint-builder-dependency
+  desc: Depends on lint-builder payload
+  crit: suspicious
+  conf: 0.98
+  for: [package.json]
+  if:
+    type: kv
+    path: dependencies.lint-builder
+    exists: true
+
+- id: four-sdk-aes-ipheriv-dependency
+  desc: Depends on four-sdk-aes-ipheriv
+  crit: suspicious
+  conf: 0.995
+  for: [package.json]
+  if:
+    type: kv
+    path: dependencies.four-sdk-aes-ipheriv
+    exists: true
+
+- id: wime-zle-dependency
+  desc: Depends on wime-zle payload
+  crit: suspicious
+  conf: 0.995
+  for: [package.json]
+  if:
+    type: kv
+    path: dependencies.wime-zle
+    exists: true
+
+- id: require-lint-builder
+  desc: Requires lint-builder module
+  crit: suspicious
+  conf: 0.98
+  for: [javascript, typescript]
+  if:
+    type: ast
+    query: |
+      (call_expression
+        function: (identifier) @fn
+        arguments: (arguments
+          (string
+            (string_fragment) @mod))
+        (#eq? @fn "require")
+        (#eq? @mod "lint-builder"))
+
+- id: require-four-sdk-aes-ipheriv
+  desc: Requires four-sdk-aes-ipheriv
+  crit: suspicious
+  conf: 0.995
+  for: [javascript, typescript]
+  if:
+    type: text
+    substr: require('four-sdk-aes-ipheriv')
+
+- id: require-wime-zle
+  desc: Requires wime-zle module
+  crit: suspicious
+  conf: 0.995
+  for: [javascript, typescript]
+  if:
+    type: ast
+    query: |
+      (call_expression
+        function: (identifier) @fn
+        arguments: (arguments
+          (string
+            (string_fragment) @mod))
+        (#eq? @fn "require")
+        (#eq? @mod "wime-zle"))
+
+- id: call-aes-create-ipheriv
+  desc: Calls aesCreateIpheriv helper
+  crit: suspicious
+  conf: 0.995
+  for: [javascript, typescript]
+  if:
+    type: text
+    substr: aesCreateIpheriv();
+
+- id: from-str-loader-call
+  desc: Calls from_str loader method
+  crit: component
+  conf: 0.98
+  for: [javascript, typescript]
+  if:
+    type: ast
+    query: |
+      (call_expression
+        function: (member_expression
+          object: (_) @obj
+          property: (property_identifier) @method)
+        (#eq? @method "from_str"))
+
+- id: noop-loader-promises
+  desc: Loader chain swallows promise results
+  crit: suspicious
+  conf: 0.97
+  for: [javascript, typescript]
+  if:
+    type: text
+    substr: .then(e => { }).catch(e => { })
+
+- id: from-str-promise-swallow
+  desc: from_str promise swallows errors
+  crit: component
+  conf: 0.99
+  for: [javascript, typescript]
+  if:
+    type: text
+    substr: .then(e => e).catch(e => { })
+
+- id: swallowed-loader-errors
+  desc: Empty catch hides loader errors
+  crit: component
+  conf: 0.97
+  for: [javascript, typescript]
+  size_max: 65536
+  if:
+    type: text
+    regex: catch\s*\(\s*[A-Za-z_][A-Za-z0-9_]*\s*\)\s*\{\s*\}
+  unless:
+  - type: text
+    substr: instantiateWasm
+  downgrade:
+    any:
+    - id: metadata/package/quality::has-tests
+    - type: basename
+      regex: '(?i)\.(spec|test)\.[jt]s$'
+
+composite_rules:
+- id: hidden-dependency-loader
+  desc: Embedded dependency loader stub
+  crit: suspicious
+  conf: 0.99
+  for: [javascript, typescript]
+  all:
+  - id: require-lint-builder
+  - id: from-str-loader-call
+  - id: noop-loader-promises
+  - id: swallowed-loader-errors
+
+- id: trojanized-library-hidden-loader
+  desc: Trojanized library runs hidden dependency
+  crit: hostile
+  conf: 0.995
+  all:
+  - id: lint-builder-dependency
+  - id: hidden-dependency-loader
+  any:
+  - id: objectives/supply-chain/impersonation/npm-clone::version-mature-published
+  - id: objectives/supply-chain/impersonation/npm-clone::author-retained-original
+  - id: objectives/supply-chain/metadata-anomaly/manifest/npm::name-hyphenated-multiword
+- id: wime-zle-hidden-loader
+  desc: Embedded wime-zle dependency loader
+  crit: hostile
+  conf: 0.998
+  for: [javascript, typescript, package.json]
+  all:
+  - id: wime-zle-dependency
+  - id: require-wime-zle
+  - id: from-str-loader-call
+  - id: from-str-promise-swallow
+
+- id: wime-zle-loader-stub
+  desc: wime-zle import-time loader stub
+  crit: hostile
+  conf: 0.998
+  for: [javascript, typescript]
+  all:
+  - id: require-wime-zle
+  - id: from-str-loader-call
+  - id: from-str-promise-swallow
+
+- id: trojanized-crypto-sdk-helper
+  desc: Trojanized SDK triggers four-sdk-aes-ipheriv helper
+  crit: hostile
+  conf: 0.998
+  all:
+  - id: four-sdk-aes-ipheriv-dependency
+  - id: require-four-sdk-aes-ipheriv
+  - id: call-aes-create-ipheriv
+  any:
+  - id: objectives/supply-chain/trojanized/library/framework::ethers-str
+  - id: objectives/supply-chain/trojanized/library/framework::sdk-suffix
+  - id: objectives/supply-chain/metadata-anomaly/manifest/npm::name-hyphenated-multiword

@@ -1,0 +1,85 @@
+# DNS-based Data Exfiltration - Python
+# GuardDog-inspired: Combines DNS lookup capability with sensitive data access
+# ATT&CK: T1048.003 (Exfiltration Over Alternative Protocol - DNS)
+defaults:
+  attack: T1048.003
+  platforms: [linux, macos, windows, unix, android, ios]
+  for: [python]
+traits:
+  - id: ci-lan-ip-helper-context
+    desc: CI-aware LAN IP helper
+    crit: baseline
+    conf: 0.95
+    platforms: [unix, windows]
+    if:
+      type: text
+      regex: 'get_lan_ip\(\)[\s\S]{0,500}os\.environ\.get\(["'']CI["'']\)[\s\S]{0,500}gethostbyname'
+composite_rules:
+  # Narrow DNS lookup composite that excludes getaddrinfo (used for general TCP connection
+  # setup in legitimate networking code) — keeps gethostbyname and dedicated DNS libraries
+  - id: dns-exfil-lookup-capability
+    desc: DNS lookup exfiltration capability
+    crit: suspicious
+    any:
+      - id: micro-behaviors/communications/dns/lookup/resolver::gethostbyname
+      - id: micro-behaviors/communications/dns/lookup/resolver::dnspython-lookup
+      - id: micro-behaviors/communications/dns/lookup/resolver::aiodns-query
+  # GuardDog: DNS exfiltration pattern
+  - id: dns-exfiltration
+    desc: DNS-based data exfiltration pattern
+    crit: hostile
+    conf: 0.95
+    mbc: "B0030"
+    near_lines: 30
+    all:
+      - id: dns-exfil-lookup-capability
+    any:
+      # Sensitive data sources
+      - id: micro-behaviors/os/env/access::os-environ-symbol
+      - id: objectives/credential-access/env/secrets/script::aws-credentials-access
+      - id: micro-behaviors/fs/path/sensitive/credentials/
+      - id: micro-behaviors/fs/path/sensitive/browser/
+    unless:
+      - id: ci-lan-ip-helper-context
+      - id: metadata/package/testing/presence/harness::test-directory
+      - id: metadata/package/testing/harness/runtime::is-test
+  # Variant: DNS + any environment access
+  - id: dns-env-exfiltration
+    desc: DNS queries with environment access
+    crit: suspicious
+    conf: 0.90
+    near_lines: 30
+    all:
+      - id: dns-exfil-lookup-capability
+      - id: micro-behaviors/os/env/access/
+  # Raw socket DNS exfiltration (bypasses standard DNS libraries)
+  - id: raw-socket-dns-exfil
+    desc: Raw socket DNS exfiltration with system info
+    crit: hostile
+    conf: 0.95
+    mbc: "B0030"
+    all:
+      - id: micro-behaviors/communications/dns/raw::python-dns-construction
+      - id: micro-behaviors/communications/socket/connect::connect-python
+    any:
+      - id: objectives/discovery/system/fingerprint/hardware::python-sysinfo-multi
+      - id: objectives/discovery/system/fingerprint/hardware::python-platform-uname
+      - id: objectives/discovery/system/fingerprint/hardware::gethostname-call
+  # TCP DNS exfiltration via subdomain encoding
+  - id: tcp-dns-subdomain-exfil
+    desc: TCP DNS exfiltration via subdomain encoding
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: micro-behaviors/communications/dns/connect::tcp-dns-connect
+      - id: objectives/exfiltration/dns/prep::subdomain-data-encoding
+  # CI/CD targeted DNS exfiltration
+  - id: cicd-dns-exfil
+    desc: CI/CD environment exfiltrated via DNS
+    crit: hostile
+    conf: 0.95
+    any:
+      - id: objectives/discovery/system/fingerprint/cicd::runner-fingerprinting
+      - id: micro-behaviors/os/env/vars/cicd::runner-name
+    all:
+      - id: micro-behaviors/communications/dns/raw::python-dns-construction

@@ -1,0 +1,144 @@
+# Concatenated ransomware target-extension blobs.
+#
+# Many file-encryptor ransomware families embed their list of
+# "valuable" file extensions as a single static array of strings.
+# The Rust / Go static-string layout packs these arrays as one
+# contiguous run of bytes with an offset table — so the scanner
+# sees one giant lowercase-only "string" combining every targeted
+# extension end-to-end:
+#
+#   docdocxxlsxlsxpptpptxpdfjpgpngzip…dbmdbsqlbakvmdkvdiwallets…
+#
+# That shape is essentially exclusive to ransomware. Benign Rust /
+# Go binaries with file-extension allow-lists keep them as separate
+# strings (one per ext) or as match-arms in code; only the
+# "encrypt-everything-of-value" target list interns them all into
+# one blob.
+#
+# We key on a small set of *highly distinctive sub-runs* — sequences
+# of 4+ rare extensions packed together that wouldn't co-occur in
+# any other context. Each atom matches a different family of
+# valuable data (databases, VM disks, password managers, financial
+# software). A single hit is suspicious; a composite-mandated 2+
+# hits across families is conclusive.
+defaults:
+  platforms: [windows, linux, macos]
+  for: [binaries]
+  attack: T1486
+  mbc: B0040
+
+traits:
+  - id: target-ext-quickbooks-set
+    desc: Packed QuickBooks extension blob
+    # Five QuickBooks file-format extensions with no separator —
+    # uniquely a ransomware target list. QuickBooks files are a
+    # high-value financial-records target.
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      substr: 'qbbqbmqbrqbwqbxqby'
+      case_insensitive: true
+
+  - id: target-ext-vmware-set
+    desc: Packed VMware extension blob
+    # VMware virtual-machine disk and metadata files; encrypting
+    # these takes whole hosted environments offline.
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      substr: 'vmdkvmsdvmxvmxf'
+      case_insensitive: true
+
+  # Same intent as `target-ext-vmware-set` but matches the
+  # Go-idiom dotted-prefix concat (e.g. `.vmdk.vmsd.vmxf`) common
+  # in stripped Go ransomware (target list expressed as a single
+  # `&str` of `.ext.ext.ext`). Three VMware extensions packed with
+  # dots is just as conclusive as the no-separator Rust form.
+  - id: target-ext-vmware-set-dotted
+    desc: Packed VMware extension blob (dotted/Go style)
+    # `type: raw` because stng splits dotted-prefix blobs into
+    # individual `.ext` strings during extraction, so `type: text`
+    # never sees the concatenated form. Raw section bytes preserve
+    # the literal layout.
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: raw
+      regex: '(?i)\.vmdk\.vmsd\.vm(x|xf)'
+
+  - id: target-ext-database-set
+    desc: Packed data-store extension blob
+    # Hits the typical "data store" cluster — server databases
+    # (`mdf`/`ldf` for SQL Server, `myd` for MyISAM, `frm` for
+    # MariaDB), plus Outlook PST. Each piece individually is
+    # unremarkable; the contiguous concat is the marker.
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)(mdfldf|myindnddnk2|pstmsg|wallets)'
+
+  - id: target-ext-keepass-set
+    desc: Packed password-store extension blob
+    # Password-manager database extensions concatenated. Encrypting
+    # these locks the user out of every other secret they own.
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)kdbxkdc|psafe3pspimage'
+
+  - id: target-ext-keepass-set-dotted
+    desc: Packed password-store extension blob (dotted/Go style)
+    # Go-idiom dotted-prefix variant — `.kdbx.kpdx` packs KeePass +
+    # KeePassX-port database files into a single targets literal.
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: raw
+      regex: '(?i)\.kdbx\.kpdx|\.psafe3\.pspimage'
+
+  - id: target-ext-photo-raw-set
+    desc: Packed camera-raw extension blob
+    # Camera-raw photo formats. The blob form (no separators)
+    # distinguishes ransomware target lists from legitimate photo
+    # software which keeps them as separate strings.
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: '(?i)(cr2crwcs|nefnrw|orfraf|rw2)[a-z0-9]{8,}'
+
+  - id: target-ext-archive-blob
+    desc: Generic ransomware target-extension blob (>500 char run)
+    # Any 500+ char run of pure lowercase letters and digits
+    # with no separators is a highly-specific ransomware signature.
+    # Real text data has spaces / punctuation; concatenated extension
+    # blobs from a Rust/Go interned-strings table do not.
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      regex: '[a-z0-9]{600,}'
+
+composite_rules:
+  # Two or more independent extension-family hits = conclusive
+  # ransomware target list. The atoms cover disjoint software
+  # categories (financial, virtualization, password managers,
+  # databases, photo); a non-ransomware binary basically can't trip
+  # multiple at once.
+  - id: ransomware-target-extension-blob
+    desc: Ransomware target-extension blob (multi-category file types)
+    crit: hostile
+    conf: 0.97
+    needs: 2
+    any:
+      - id: target-ext-quickbooks-set
+      - id: target-ext-vmware-set
+      - id: target-ext-vmware-set-dotted
+      - id: target-ext-database-set
+      - id: target-ext-keepass-set
+      - id: target-ext-keepass-set-dotted
+      - id: target-ext-photo-raw-set

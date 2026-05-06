@@ -1,0 +1,219 @@
+defaults:
+  platforms: [windows]
+  for: [pe]
+  crit: component
+  conf: 0.9
+
+traits:
+  # --- Company Names ---
+- id: trusted-company-microsoft
+  desc: CompanyName claims Microsoft Corporation
+  if:
+    type: text
+    exact: "Microsoft Corporation"
+    section: .rsrc
+
+- id: file-description-malware--rx-1
+  desc: Regex component marker
+  crit: component
+  if:
+    type: text
+    regex: "(?i)\\b(malware|trojan)\\b"
+    section: .rsrc
+
+  count_max: 1027960
+- id: file-description-malware--rx-2
+  desc: Regex component marker
+  crit: component
+  if:
+    type: text
+    regex: "(?i)\\b(backdoor|injector)\\b"
+    section: .rsrc
+
+  count_max: 1027961
+- id: file-description-malware--rx-3
+  desc: Regex component marker
+  crit: component
+  if:
+    type: text
+    regex: "(?i)\\b(keylog|stealer)\\b"
+    section: .rsrc
+
+  count_max: 1027962
+- id: trusted-company-cpuid
+  desc: CompanyName claims CPUID
+  if:
+    type: text
+    substr: CPUID
+    section: .rsrc
+
+- id: trusted-company-realtek
+  desc: CompanyName claims Realtek
+  if:
+    type: text
+    substr: Realtek
+    section: .rsrc
+
+- id: trusted-company-intel
+  desc: CompanyName claims Intel
+  if:
+    type: text
+    substr: Intel Corporation
+    section: .rsrc
+
+- id: realtek-audio-service-label
+  desc: Realtek Audio Service label
+  if:
+    type: text
+    exact: Realtek Audio Service
+    section: .rsrc
+
+- id: realtek-rtkaudio-filename
+  desc: Realtek rtkaudio DLL filename
+  if:
+    type: text
+    exact: rtkaudio.dll
+    section: .rsrc
+
+- id: realtek-rtkaudio-manifest
+  desc: Realtek rtkaudio manifest identity
+  if:
+    type: text
+    exact: Realtek.Windows.rtkaudio
+    section: .rsrc
+
+- id: kixdhfzron-single-instance-mutex
+  desc: Hardcoded kixdhfzron mutex
+  if:
+    type: text
+    exact: \BaseNamedObjects\kixdhfzron9fbmr4
+    section: .rdata
+
+  # --- Product Names ---
+- id: trusted-product-hwmonitor
+  desc: ProductName claims HWMonitor
+  if:
+    type: text
+    substr: HWMonitor
+    section: .rsrc
+
+- id: trusted-product-hwinfo
+  desc: ProductName claims HWiNFO
+  if:
+    type: text
+    substr: HWiNFO
+    section: .rsrc
+
+- id: trusted-product-cpu-z
+  desc: ProductName claims CPU-Z
+  if:
+    type: text
+    substr: CPU-Z
+    section: .rsrc
+
+composite_rules:
+- id: brand-confusion-cpuid-hwinfo
+  desc: Brand confusion (CPUID Company vs HWiNFO Product)
+  crit: suspicious
+  conf: 0.95
+  all:
+  - id: trusted-company-cpuid
+  - id: trusted-product-hwinfo
+    # HWiNFO is made by REALiX, not CPUID.
+
+- id: brand-confusion-cpuid-mismatch
+  desc: CPUID product name mismatch
+  crit: suspicious
+  conf: 0.8
+  all:
+  - id: trusted-company-cpuid
+  - id: metadata/package/versioning::pe-productname-field
+  unless:
+  - id: trusted-product-hwmonitor
+  - id: trusted-product-cpu-z
+    # CPUID usually makes HWMonitor or CPU-Z.
+
+- id: brand-confusion-realtek-mismatch
+  desc: Realtek product name mismatch
+  crit: suspicious
+  conf: 0.8
+  all:
+  - id: trusted-company-realtek
+  - id: trusted-company-intel
+    # Often malware mixes Realtek/Intel strings in version info.
+
+- id: brand-confusion-realtek-rtkaudio
+  desc: Realtek rtkaudio service identity
+  crit: suspicious
+  conf: 0.97
+  all:
+  - id: trusted-company-realtek
+  - id: realtek-audio-service-label
+  any:
+  - id: realtek-rtkaudio-filename
+  - id: realtek-rtkaudio-manifest
+- id: realtek-rtkaudio-loader-masquerade
+  desc: Realtek rtkaudio loader masquerade
+  crit: hostile
+  conf: 0.99
+  all:
+  - id: brand-confusion-realtek-rtkaudio
+  - id: metadata/binary/symbols/exports::export-dll-register-server
+  - id: kixdhfzron-single-instance-mutex
+  unless:
+  - id: metadata/signed/platform::microsoft
+- id: realtek-com-registration-suspicious
+  desc: Realtek identity exposes COM registration export
+  crit: suspicious
+  conf: 0.96
+  attack: T1036.004
+  all:
+  - id: brand-confusion-realtek-rtkaudio
+  - id: metadata/binary/symbols/exports::export-dll-register-server
+  unless:
+  - id: metadata/signed/platform::microsoft
+- id: realtek-com-registration-masquerade
+  desc: Unsigned Realtek COM registration masquerade
+  crit: hostile
+  conf: 0.98
+  attack: T1036.004
+  all:
+  - id: realtek-com-registration-suspicious
+  - id: metadata/signed/trust-level::unsigned
+  unless:
+  - id: metadata/signed/platform::microsoft
+
+- id: dropper-masquerading-as-hardware-tool
+  desc: Dropper masquerading as hardware monitor (CPUID/HWiNFO mix)
+  crit: hostile
+  conf: 0.99
+  all:
+  - id: brand-confusion-cpuid-hwinfo
+  - id: metadata/binary/layout::overlay-over-35pct
+  any:
+  - id: metadata/binary/layout::pe-checksum-zeroed
+  - id: metadata/signed/adhoc::unsigned
+  unless:
+  - id: metadata/binary/layout::pe-signature-present
+    # Legit HWiNFO or CPUID are always signed and don't mix brands or have zeroed checksums.
+
+- id: microsoft-masquerade-malware-description
+  desc: Microsoft masquerade with malware self-description
+  crit: hostile
+  conf: 0.99
+  attack: T1036.004
+  all:
+  - id: trusted-company-microsoft
+  - id: file-description-malware
+    # Microsoft never calls its own binaries malware in the description.
+    # This contradiction is diagnostic of a masquerading dropper.
+  unless:
+  - id: metadata/signed/platform::microsoft
+- id: file-description-malware
+  desc: FileDescription contains malware indicator
+  crit: baseline
+  conf: 1.0
+  any:
+  - id: file-description-malware--rx-1
+  - id: file-description-malware--rx-2
+  - id: file-description-malware--rx-3

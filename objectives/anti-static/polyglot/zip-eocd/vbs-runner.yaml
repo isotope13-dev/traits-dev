@@ -1,0 +1,120 @@
+# VBScript polyglot that pulls its second stage out of a ZIP's
+# end-of-central-directory comment field.
+#
+# Pattern (AxiomWallets, 2026 phishing wave):
+#
+#     1. The "Wallets.zip" file is a polyglot — a valid ZIP whose
+#        first KB is a VBScript program. wscript.exe is launched via
+#        a `password.txt.lnk` shortcut with `//E:vbscript` engine
+#        override forcing script interpretation of the .zip.
+#     2. The VBScript opens itself with `ADODB.Stream`, walks
+#        backwards from the file end looking for the ZIP
+#        end-of-central-directory signature `PK\x05\x06`, reads the
+#        comment-length field at EOCD+20, then treats the trailing
+#        N bytes (the ZIP's comment field) as UTF-8 text and feeds
+#        them to `Shell.Run` with `0` (hidden window) + `False` (no
+#        wait).
+#
+# The ZIP's comment field is variable-length and arbitrary, so it's
+# the perfect side-channel for a stage-2 command line — static
+# analysis tools that parse the .zip cleanly never look at the
+# comment, and the script body looks like a benign EOCD walk.
+#
+# Atoms here key on:
+#   - The literal `PK<NUL><NUL>` byte test inside a script (the EOCD
+#     signature, but ASCII-encoded into individual bytes so the
+#     scanner sees it as four separate `Byte` comparisons).
+#   - The `S1.Size - i` / `S1.Size - CommentLen` arithmetic that
+#     walks backwards from EOF.
+#   - The `ADODB.Stream` open + read used to access the file's own
+#     bytes (the script reads its own container).
+#   - `Shell.Run <buf>, 0, False` — the hidden, fire-and-forget
+#     dispatch.
+defaults:
+  platforms: [windows]
+  for: [vbs]
+  attack: "T1027.011"
+  mbc: "B0032"
+
+traits:
+  - id: vbs-zip-eocd-byte-walk
+    desc: VBScript byte-walks for ZIP EOCD (PK\\x05\\x06) signature
+    # Script tests four consecutive bytes for `80, 75, 5, 6` (the
+    # EOCD magic). Real polyglots never *find* PK by string match —
+    # they reconstruct it byte-by-byte to hide from naive scanners.
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: 'b1\s*=\s*80\s+And\s+b2\s*=\s*75\s+And\s+b3\s*=\s*5\s+And\s+b4\s*=\s*6'
+      case_insensitive: true
+
+  - id: vbs-self-load-archive-stream
+    desc: VBScript self-loads archive polyglot
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: 'LoadFromFile\s+"\.\.[\\/][^"]{1,80}\.(zip|chm|cab)"'
+      case_insensitive: true
+
+  - id: vbs-self-load-document-stream
+    desc: VBScript self-loads document polyglot
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: 'LoadFromFile\s+"\.\.[\\/][^"]{1,80}\.(pdf|doc[xm]?|rtf)"'
+      case_insensitive: true
+
+  - id: vbs-self-load-image-stream
+    desc: VBScript self-loads image polyglot
+    crit: suspicious
+    conf: 0.85
+    if:
+      type: text
+      regex: 'LoadFromFile\s+"\.\.[\\/][^"]{1,80}\.(jpg|png)"'
+      case_insensitive: true
+
+  - id: vbs-eocd-comment-length-read
+    desc: VBScript reads ZIP CommentLen from EOCD position+20
+    # `S1.Position = S1.Size - i + 20` followed by two byte reads is
+    # the ZIP-EOCD comment-length parse pattern. In context with
+    # the byte-walk above it is conclusive.
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '\.Position\s*=\s*\S+\.Size\s*-\s*\w+\s*\+\s*20'
+
+  - id: vbs-shell-run-readtext-hidden
+    desc: VBScript runs ReadText hidden
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: '\.Run\s+\S+\.ReadText\s*,\s*0\s*,\s*False'
+      case_insensitive: true
+
+composite_rules:
+  - id: vbs-self-load-adodb-stream
+    desc: VBScript self-loads ADODB.Stream
+    crit: suspicious
+    conf: 0.85
+    any:
+      - id: vbs-self-load-archive-stream
+      - id: vbs-self-load-document-stream
+      - id: vbs-self-load-image-stream
+
+  # Full polyglot stager: walks the ZIP EOCD, reads CommentLen,
+  # extracts comment bytes, runs them as a hidden command. This is
+  # the AxiomWallets shape — distinctive enough to be a hostile
+  # signature on its own, no extension-mismatch corroboration needed.
+  - id: vbs-zip-comment-runner
+    desc: VBScript polyglot — ZIP EOCD comment as hidden runner
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: vbs-zip-eocd-byte-walk
+      - id: vbs-eocd-comment-length-read
+      - id: vbs-shell-run-readtext-hidden

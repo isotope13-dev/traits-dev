@@ -1,0 +1,397 @@
+# Import-to-size ratio anomalies
+# Detects binaries with suspiciously few imports relative to file size
+# Indicates embedded payloads, overlay data, or statically compiled malware
+defaults:
+  platforms: [linux, macos, windows]
+traits:
+- id: max-30-imports
+  desc: Binary has 30 or fewer imports
+  crit: notable
+  conf: 0.7
+  for: [pe, elf, macho, -go, -rust]
+  size_min: 524288   # 512KB - small utilities legitimately have few imports
+  if:
+    type: metrics
+    field: binary.import_count
+    max: 30
+  unless:
+  - type: basename
+    regex: \.(pak|bin|dat|desktop)$
+  - type: basename
+    regex: \.(map|deb|gz|mun)$
+  - type: metrics
+    field: binary.import_count
+    max: 0
+  - id: sparse-import-benign-context
+  - type: metrics
+    field: binary.export_count
+    min: 100
+  - id: metadata/package/fields/vendor::bitdefender-ctc-module
+  - id: metadata/lang/compiler/systems::go-pe-symtab
+- id: max-25-imports
+  desc: Binary has 25 or fewer imports
+  crit: notable
+  conf: 0.75
+  for: [pe, elf, macho, -go, -rust]
+  size_min: 524288   # 512KB
+  if:
+    type: metrics
+    field: binary.import_count
+    max: 25
+  unless:
+  - type: basename
+    regex: \.(pak|bin|dat|desktop)$
+  - type: basename
+    regex: \.(map|deb|gz|mun)$
+  - type: metrics
+    field: binary.import_count
+    max: 0
+  - id: sparse-import-benign-context
+  - type: metrics
+    field: binary.export_count
+    min: 100
+  - id: metadata/package/fields/vendor::bitdefender-ctc-module
+- id: max-50-imports
+  desc: Binary has 50 or fewer imports
+    # Component-only: import count alone doesn't indicate obfuscation.
+    # Used by composites that require entropy/section-dominance context.
+  crit: component
+  conf: 0.7
+  for: [pe, elf, macho, -go, -rust]
+  size_min: 524288   # 512KB
+  if:
+    type: metrics
+    field: binary.import_count
+    max: 50
+  unless:
+  - type: basename
+    regex: \.(pak|bin|dat|desktop)$
+  - type: basename
+    regex: \.(map|deb|gz|mun)$
+  - type: metrics
+    field: binary.import_count
+    max: 0
+  - id: sparse-import-benign-context
+  - type: metrics
+    field: binary.export_count
+    min: 100
+  - id: metadata/package/fields/vendor::bitdefender-ctc-module
+  - id: metadata/lang/compiler/systems::go-pe-symtab
+- id: max-80-imports
+  desc: Binary has 80 or fewer imports
+    # Component-only: the import count alone doesn't indicate obfuscation.
+    # Used by `sparse-import-packed-loader` which also requires GetProcAddress +
+    # self-module-resolution + packed-loader-data-geometry.
+  crit: component
+  conf: 0.84
+  for: [pe]
+  platforms: [windows]
+  size_min: 524288
+  if:
+    type: metrics
+    field: binary.import_count
+    max: 80
+  unless:
+  - type: basename
+    regex: \.(pak|bin|dat|desktop)$
+  - type: basename
+    regex: \.(map|deb|gz|mun)$
+  - id: metadata/binary/framework::dotnet-assembly
+  - id: metadata/binary/metrics/structural::no-functions
+  - type: metrics
+    field: binary.export_count
+    min: 50
+  - id: metadata/lang/compiler/systems::go-pe-symtab
+  - id: metadata/binary/linking/static::static-linked-heuristic
+- id: aliased-exports
+  desc: Multiple exports resolve to same function
+  crit: suspicious
+  conf: 0.88
+  for: [pe]
+    # Alias-heavy exports are common in large compatibility DLLs. Keep this
+    # obfuscation signal focused on stub-like binaries instead of broad API
+    # surfaces.
+  if:
+    type: metrics
+    field: binary.aliased_exports
+    min: 8
+  unless:
+  - id: metadata/binary/metrics/structural::many-exports
+  - id: metadata/binary/metrics/structural::many-imports
+  - id: metadata/binary/metrics/structural::many-functions
+  - type: metrics
+    field: binary.export_count
+    min: 401
+  - id: wmdrm-compatibility-stub
+- id: fully-aliased-export-stub
+  desc: All exports aliased in tiny stub DLL
+  crit: suspicious
+  conf: 0.92
+  for: [pe]
+  size_max: 65536
+  if:
+    type: metrics
+    field: binary.aliased_exports
+    min: 1
+  unless:
+  - type: metrics
+    field: binary.export_count
+    min: 5
+  - type: metrics
+    field: pe.is_dotnet
+    min: 1
+  - id: low-volume-aliased-exports-benign-context
+
+- id: low-volume-aliased-exports
+  desc: Small export table with aliasing
+  crit: suspicious
+  conf: 0.9
+  for: [pe]
+  if:
+    type: metrics
+    field: binary.aliased_exports
+    min: 5
+  unless:
+  - type: metrics
+    field: pe.is_dotnet
+    min: 1
+  - id: low-volume-aliased-exports-benign-context
+  - type: metrics
+    field: binary.export_count
+    min: 10
+- id: mscoree-string
+  desc: mscoree .NET runtime reference
+  crit: component
+  for: [pe]
+  if:
+    type: text
+    substr: mscoree
+    section: ".idata"
+- id: libiconv-open-symbol
+  desc: libiconv_open symbol present
+  crit: baseline
+  for: [pe]
+  if:
+    type: symbol
+    exact: libiconv_open
+- id: taggant-prepare-import
+  desc: TaggantPrepare import present
+  crit: component
+  for: [pe]
+  if:
+    type: symbol
+    exact: TaggantPrepare
+- id: wmdrm-compatibility-stub
+  desc: WMDRM compatibility stub marker
+  crit: baseline
+  conf: 0.98
+  for: [pe]
+  if:
+    type: text
+    substr: WMDRM backwards compatibility stub
+    section: .rsrc
+- id: low-volume-aliased-exports-benign-context-cond-0--inline-30351
+  desc: Regex component marker
+  crit: component
+  conf: 0.95
+  for: [pe]
+  if:
+    type: trait
+    id: libiconv-open-symbol
+  count_max: 1030352
+- id: low-volume-aliased-exports-benign-context-cond-1--inline-30352
+  desc: Regex component marker
+  crit: component
+  conf: 0.95
+  for: [pe]
+  if:
+    type: trait
+    id: metadata/binary/symbols/exports::standard-com-server-exports
+  count_max: 1030353
+- id: low-volume-aliased-exports-benign-context-cond-2--inline-30353
+  desc: Regex component marker
+  crit: component
+  conf: 0.95
+  for: [pe]
+  if:
+    type: trait
+    id: metadata/binary/symbols/plugin::ollydbg-plugin-export
+  count_max: 1030354
+- id: low-volume-aliased-exports-benign-context-cond-3--inline-30354
+  desc: Regex component marker
+  crit: component
+  conf: 0.95
+  for: [pe]
+  if:
+    type: trait
+    id: metadata/signed/platform::microsoft-corporation
+  count_max: 1030355
+- id: low-volume-aliased-exports-benign-context-cond-4--inline-30355
+  desc: Regex component marker
+  crit: component
+  conf: 0.95
+  for: [pe]
+  if:
+    type: trait
+    id: objectives/anti-static/pack/entropy::many-functions-dotnet-profile
+  count_max: 1030356
+- id: low-volume-aliased-exports-benign-context-cond-5--inline-30356
+  desc: Regex component marker
+  crit: component
+  conf: 0.95
+  for: [pe]
+  if:
+    type: trait
+    id: wmdrm-compatibility-stub
+  count_max: 1030357
+composite_rules:
+- id: low-volume-aliased-exports-benign-context
+  desc: Benign low-volume alias export context
+  crit: baseline
+  conf: 0.95
+  for: [pe]
+  any:
+  - id: low-volume-aliased-exports-benign-context-cond-0--inline-30351
+  - id: low-volume-aliased-exports-benign-context-cond-1--inline-30352
+  - id: low-volume-aliased-exports-benign-context-cond-2--inline-30353
+  - id: low-volume-aliased-exports-benign-context-cond-3--inline-30354
+  - id: low-volume-aliased-exports-benign-context-cond-4--inline-30355
+  - id: low-volume-aliased-exports-benign-context-cond-5--inline-30356
+- id: sparse-import-bitdefender-context
+  desc: Bitdefender sparse-import context
+  crit: baseline
+  conf: 0.99
+  any:
+  - id: metadata/package/fields/vendor::bitdefender-ecnet-telemetry
+  - id: metadata/package/fields/vendor::bitdefender-ctc-module
+- id: sparse-import-benign-context
+  desc: Benign sparse-import binary context
+  crit: baseline
+  conf: 0.85
+  for: [pe, elf, macho, -go, -rust]
+  any:
+  - id: metadata/binary/framework::dotnet-assembly
+  - id: metadata/binary/metrics/structural::no-functions
+  - id: metadata/binary/metrics/threshold::many-exports-100
+  - id: metadata/binary/metrics/anomaly::high-export-count-marker
+  - id: metadata/package/fields/vendor::bitdefender-ecnet-telemetry
+  - id: metadata/package/fields/vendor::bitdefender-ctc-module
+  - id: metadata/signed/platform::microsoft
+  - id: metadata/lang/compiler/systems::go-binary
+  - id: metadata/lang/compiled::go-runtime-marker
+  - id: metadata/binary/linking/static::static-linked-heuristic
+  - id: metadata/binary/symbols/plugin::ollydbg-plugin-export
+  - id: metadata/package/quality::quickbms-utility-context
+  # === Extreme size-to-import ratio ===
+- id: massive-file-minimal-imports
+  desc: Large binary with minimal imports
+  crit: suspicious
+  conf: 0.9
+  for: [pe, elf, macho, -go, -rust]
+  attack: "T1027"
+  mbc: "B0032"
+  size_min: 5242880   # 5MB
+  all:
+  - id: max-30-imports
+  any:
+      # Has dynamic loading (hiding real imports)
+  - id: micro-behaviors/dylib/load/runtime::load-library-a
+  - id: micro-behaviors/dylib/lookup::get-proc-address
+  - id: objectives/anti-static/obfuscation/reflection/class::dlopen
+  - id: micro-behaviors/dylib/lookup::dlsym-symbol
+  unless:
+  - id: metadata/binary/metrics/threshold::dotnet-binary
+  - id: sparse-import-benign-context
+  - id: metadata/lang/compiler/systems::go-binary
+  - id: metadata/lang/compiled::go-runtime-marker
+  - id: metadata/binary/linking/static::static-linked-heuristic
+  - id: metadata/package/fields/vendor::bitdefender-ctc-module
+  - id: taggant-prepare-import
+- id: huge-file-tiny-imports
+  desc: Huge binary with minimal imports
+  crit: hostile
+  conf: 0.95
+  for: [pe, elf, macho, -go, -rust]
+  attack: "T1027"
+  mbc: "B0032"
+  size_min: 10485760   # 10MB
+  all:
+  - id: max-25-imports
+  needs: 2
+  any:
+  - id: micro-behaviors/dylib/load/runtime::load-library-a
+  - id: micro-behaviors/dylib/lookup::get-proc-address
+  - id: micro-behaviors/crypto/
+  - id: micro-behaviors/process/create/shell/
+  unless:
+  - id: metadata/binary/metrics/threshold::many-sections-20
+  - id: metadata/binary/metrics/threshold::dotnet-binary
+  - id: metadata/binary/linking/static::static-linked-heuristic
+- id: embedded-payload-binary
+  desc: Binary with suspected embedded payload
+  crit: suspicious
+  conf: 0.85
+  for: [pe, elf, macho, -go, -rust]
+  attack: "T1027.009"
+  size_min: 1048576   # 1MB
+  all:
+  - id: max-50-imports
+  needs: 2
+  any:
+  - id: objectives/anti-static/pack/entropy::high-entropy-section
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::dominant-section
+  - id: micro-behaviors/process/create/shell/
+  - id: micro-behaviors/crypto/
+  unless:
+  - id: well-known/tool/sysadmin/
+  - id: metadata/binary/metrics/structural::many-exports
+  - id: mscoree-string
+  downgrade:
+    any:
+    - id: objectives/anti-static/obfuscation/reflection/invoke/
+    - id: micro-behaviors/dylib/library/
+- id: dynamic-resolution-export-stub-profile
+  desc: Dynamic resolution with aliased export stubs
+  crit: suspicious
+  conf: 0.92
+  for: [pe]
+  attack: "T1027.007"
+  mbc: "B0032.014"
+  all:
+  - id: low-volume-aliased-exports
+  - id: micro-behaviors/dylib/lookup::get-proc-address
+  any:
+  - id: metadata/binary/metrics/structural::high-entropy-data
+  - id: objectives/anti-static/obfuscation/payload/section::oversized-data-section
+  - id: micro-behaviors/data/embedded/payload/archive::zip-magic
+  - id: objectives/anti-analysis/debugger-detect/check::anti-debug-api-pair
+  needs: 2
+  downgrade:
+    any:
+    - id: metadata/package/versioning::pe-version-resource
+  unless:
+  - id: metadata/binary/metrics/threshold::many-imports-100
+  - id: metadata/binary/metrics/threshold::many-functions-5000
+- id: sparse-import-packed-loader
+  desc: Sparse-import packed PE loader
+  crit: suspicious
+  conf: 0.95
+  for: [pe]
+  platforms: [windows]
+  attack: "T1027"
+  mbc: "B0032"
+  size_min: 524288
+  all:
+  - id: micro-behaviors/dylib/lookup::get-proc-address
+  - id: micro-behaviors/os/module/load::self-module-resolution
+  - id: objectives/anti-static/obfuscation/payload/section::packed-loader-data-geometry
+  any:
+  - id: max-80-imports
+  - id: max-50-imports
+  downgrade:
+    any:
+    - id: metadata/binary/vendor::is-microsoft-named
+    - id: metadata/file::is-windows-named
+    - id: metadata/package/versioning::pe-version-resource
+  unless:
+  - id: metadata/binary/metrics/threshold::many-functions-50

@@ -1,0 +1,60 @@
+# Secure-delete (overwrite-then-unlink) operator-debug strings.
+#
+# Ransomware that wants to prevent forensic recovery overwrites the
+# original plaintext file's bytes with random data before unlinking
+# it (so the on-disk blocks no longer hold the cleartext). The
+# operator-debug warning emitted when that two-step sequence fails
+# is one of the most distinctive ransomware fingerprints in the
+# wild — almost no benign software prints "overwrite succeeded but
+# delete failed", because no benign workflow needs both steps.
+defaults:
+  platforms: [windows, linux, macos]
+  for: [pe, elf, macho]
+  attack: T1486
+  mbc: B0040
+
+traits:
+  - id: overwrite-then-delete-warning
+    desc: overwrite then delete failure
+    # 52-char literal `WARNING: overwrite succeeded but delete
+    # failed for` — the conjunction "succeeded but ... failed"
+    # referring to two file operations on the same path is
+    # essentially exclusive to ransomware secure-delete code,
+    # and the WARNING-prefixed Rust-style operator log nails it
+    # down further. Scope kept to compiled binaries since the
+    # literal is a compile-time string.
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: text
+      substr: 'WARNING: overwrite succeeded but delete failed for'
+
+  - id: secure-delete-error-rust
+    desc: Rust secure-delete error log
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      substr: 'ERROR secure-delete'
+
+composite_rules:
+  - id: secure-overwrite-delete
+    desc: Secure-delete (overwrite-then-unlink) routine
+    crit: suspicious
+    conf: 0.97
+    any:
+      - id: overwrite-then-delete-warning
+      - id: secure-delete-error-rust
+
+  # Secure-delete combined with file-encryption is conclusive
+  # ransomware: the only legitimate reason to overwrite-then-delete
+  # the original of a file you just encrypted is to prevent
+  # forensic recovery of the cleartext. Combined with a ransomware
+  # target-extension blob this is overdetermined.
+  - id: ransomware-secure-delete-encryptor
+    desc: Ransomware encryptor with secure-delete
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: secure-overwrite-delete
+      - id: objectives/impact/ransom/encrypt/extension::ransomware-target-extension-blob

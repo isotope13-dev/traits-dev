@@ -1,0 +1,144 @@
+# ELF Hardening Metadata
+# Observational traits for ELF binary security features.
+# These reflect compiler-applied mitigations.
+defaults:
+  platforms: [unix, android]
+  for: [elf]
+  crit: notable
+  conf: 0.9
+traits:
+  # The canary / NX / RELRO markers below are Linux-ELF conventions. OpenBSD's
+  # toolchain enforces equivalent protections (W^X, stack smashing protector,
+  # mandatory ASLR, pledge/unveil) without emitting the Linux-style markers, so
+  # these would be false positives on any OpenBSD binary — suppress them.
+  - id: no-stack-canary
+    desc: No stack canary (stack smashing protection absent)
+    crit: notable
+    if:
+      type: metrics
+      field: elf.stack_canary
+      max: 0
+    unless:
+      - id: metadata/binary/linking/static::openbsd-elf-note
+      - id: metadata/binary/provenance::netbsd-runtime-linker-artifact
+      # Relocatable object files (ET_REL=1) and static archive members are
+      # linker inputs, not loaded binaries — hardening flags don't apply.
+      - type: metrics
+        field: elf.e_type
+        max: 1
+
+  - id: text-relocations
+    desc: ELF requires text relocations (DT_TEXTREL)
+    crit: suspicious
+    if:
+      type: metrics
+      field: elf.textrel_present
+      min: 1
+    unless:
+      - type: metrics
+        field: elf.e_type
+        max: 1
+
+  - id: nx-disabled
+    desc: NX/DEP disabled (stack is executable)
+    if:
+      type: metrics
+      field: elf.nx_enabled
+      max: 0
+    unless:
+      - id: metadata/binary/linking/static::openbsd-elf-note
+      - id: metadata/binary/provenance::netbsd-runtime-linker-artifact
+      - type: metrics
+        field: elf.e_type
+        max: 1
+    downgrade:
+      any:
+        - id: metadata/lang/compiler/systems::go-binary
+
+  - id: no-relro
+    desc: No RELRO (GOT writable after load)
+    crit: notable
+    if:
+      type: metrics
+      field: elf.relro
+      max: 0
+    unless:
+      - id: metadata/binary/linking/static::openbsd-elf-note
+      - type: metrics
+        field: elf.e_type
+        max: 1
+
+  - id: partial-relro
+    desc: Partial RELRO (GOT partially protected)
+    crit: notable
+    conf: 0.8
+    if:
+      type: metrics
+      field: elf.relro
+      min: 1
+      max: 1
+
+  - id: full-relro
+    desc: Full RELRO (GOT read-only after load)
+    crit: notable
+    conf: 1.0
+    if:
+      type: metrics
+      field: elf.relro
+      min: 2
+
+  - id: textrel
+    desc: Text relocations present (writable code segment)
+    crit: notable
+    conf: 0.8
+    if:
+      type: metrics
+      field: elf.textrel_present
+      min: 1
+    unless:
+      - id: metadata/binary/section/content::freebsd-kernel-image
+      # ET_REL relocatable objects and ET_DYN kernel modules normally have
+      # text relocations — they're not yet linked.
+      - type: metrics
+        field: elf.e_type
+        max: 1
+
+  - id: rpath-set
+    desc: RPATH/RUNPATH set (library injection vector)
+    crit: notable
+    conf: 0.7
+    if:
+      type: metrics
+      field: elf.rpath_set
+      min: 1
+
+  - id: no-pie-struct
+    desc: "Binary not position-independent (no ASLR)"
+    crit: notable
+    conf: 0.6
+    if:
+      type: metrics
+      field: elf.e_type
+      max: 2
+    downgrade:
+      # Go binaries default to non-PIE on most targets (except linux/amd64 with
+      # -buildmode=pie); ELF e_type=2 (ET_EXEC) is normal for Go builds.
+      any:
+        - id: metadata/lang/compiled::go-runtime-marker
+        - id: metadata/lang/compiler/systems::go-binary
+
+composite_rules:
+  - id: no-mitigations
+    desc: ELF lacks key security mitigations (no canary + no NX + no RELRO)
+    crit: notable
+    conf: 0.8
+    all:
+      - id: no-stack-canary
+      - id: nx-disabled
+      - id: no-relro
+    unless:
+      - id: metadata/binary/linking/static::openbsd-elf-note
+      - id: metadata/lang/compiler/systems::go-binary
+    downgrade:
+      any:
+        - id: metadata/binary/provenance::netbsd-base-system-artifact

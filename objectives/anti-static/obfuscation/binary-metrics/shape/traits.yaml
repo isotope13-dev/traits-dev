@@ -1,0 +1,1191 @@
+defaults:
+  platforms:
+  - linux
+  - windows
+  - macos
+  for: [elf, macho, pe]
+  attack: T1027
+  mbc: B0032
+traits:
+- id: high-overall-entropy
+  desc: High overall file entropy
+  crit: suspicious
+  conf: 0.85
+  if:
+    type: metrics
+    field: binary.overall_entropy
+    min: 7.0
+  unless:
+  - id: compressed-file-magic
+  - id: metadata/binary/installer/family::known-benign-installer
+  - id: metadata/binary/framework::dotnet-metadata-fallback
+  - id: metadata/binary/layout::svk-packed-section
+  downgrade:
+    any:
+    - id: benign-packed-entropy-context
+- id: very-high-entropy
+  desc: Very high overall file entropy
+  crit: suspicious
+  conf: 0.95
+  attack: T1045
+  if:
+    type: metrics
+    field: binary.overall_entropy
+    min: 7.5
+  unless:
+  - id: compressed-file-magic
+  - id: metadata/binary/installer/family::known-benign-installer
+  - id: metadata/lang/compiler/managed::versioned-vcl-app
+  - id: metadata/binary/layout::svk-packed-section
+  downgrade:
+    any:
+    - id: benign-packed-entropy-context
+- id: high-code-entropy
+  desc: High code section entropy (encrypted/packed
+  crit: suspicious
+  conf: 0.8
+  attack: T1045
+  if:
+    type: metrics
+    field: binary.code_entropy
+    min: 7.0
+  unless:
+  - id: metadata/lang/compiler/systems::go-binary
+  - id: metadata/binary/metrics/pe-details::high-code-entropy-go
+  - id: high-code-entropy-known-fps
+  - id: metadata/signed/platform::microsoft-corporation
+- id: high-entropy-regions
+  desc: Multiple high entropy regions
+  crit: suspicious
+  conf: 0.75
+  if:
+    type: metrics
+    field: binary.high_entropy_regions
+    min: 8
+  unless:
+  - id: metadata/lang/compiler/systems::go-binary
+  - id: metadata/lang/compiled::go-runtime-marker
+  - id: upx-many-section-high-entropy-profile
+  - type: metrics
+    field: binary.code_entropy
+    max: 5.5
+- id: upx-many-wx-sections
+  desc: UPX-like many WX sections
+  crit: component
+  conf: 0.82
+  for:
+  - pe
+  if:
+    type: metrics
+    field: binary.wx_sections
+    min: 10
+- id: entropy-variance-low
+  desc: Low entropy variance (uniform packing)
+  crit: suspicious
+  conf: 0.4
+  size_min: 65536
+  if:
+    type: metrics
+    field: binary.entropy_variance
+    min: 0.01
+    max: 0.2
+  unless:
+  - type: raw
+    regex: BSJB
+- id: wx-sections
+  desc: Writable and executable sections (self-modifying
+  crit: component
+  conf: 0.9
+  attack: T1055
+  size_max: 31457280
+  size_min: 32768
+  if:
+    type: metrics
+    field: binary.wx_sections
+    min: 1
+  unless:
+  - id: wx-sections-known-benign
+  - id: metadata/binary/layout::legacy-watcom-packed-utility
+  - type: section
+    writable: true
+    executable: true
+    length_max: 0
+  - id: well-known/tool/dual-use/zprotect::zprotect-plugin
+  downgrade:
+    any:
+    - id: wx-sections-soft-fp
+- id: many-wx-sections
+  desc: Multiple W+X sections (packer pattern)
+  crit: component
+  conf: 0.95
+  attack: T1045
+  size_min: 32768
+  if:
+    type: metrics
+    field: binary.wx_sections
+    min: 2
+  unless:
+  - id: wx-sections-known-benign
+  - id: metadata/binary/layout::legacy-watcom-packed-utility
+  - id: metadata/binary/symbols/exports::total-commander-packer-plugin
+  - id: metadata/binary/layout::svk-packed-section
+  downgrade:
+    any:
+    - id: packed-single-function-wx-profile
+    - id: wx-sections-soft-fp
+- id: high-section-name-entropy
+  desc: High entropy section names (packer
+  crit: suspicious
+  conf: 0.85
+  attack: T1045
+  if:
+    type: metrics
+    field: binary.section_name_entropy
+    min: 5.4
+- id: dominant-section
+  desc: Single section dominates file (packer
+  crit: component
+  conf: 0.6
+  attack: T1045
+  if:
+    type: metrics
+    field: binary.largest_section_ratio
+    min: 0.9
+  unless:
+  - type: basename
+    regex: \.(mun|rll)$
+  - type: section
+    regex: "^(UPX\\d|\\.upx)"
+  - type: metrics
+    field: binary.import_density
+    max: 0
+  - type: raw
+    regex: BSJB
+  - id: metadata/binary/layout::legacy-watcom-packed-utility
+  - id: metadata/binary/metrics/threshold::many-exports-20
+  downgrade:
+    any:
+    - id: dominant-section-known-benign
+- id: high-import-entropy
+  desc: High entropy import names (obfuscated
+  crit: suspicious
+  conf: 0.8
+  if:
+    type: metrics
+    field: binary.import_entropy
+    min: 5.0
+- id: no-strings
+  desc: No readable strings (potentially encrypted/packed)
+  crit: baseline
+  conf: 0.4
+  size_min: 32768
+  attack: T1045
+  if:
+    type: metrics
+    field: binary.string_count
+    min: 1
+    max: 5
+
+  # Large binary whose longest readable string is implausibly short.
+  # A 512 KB+ binary with max_string_length <= 40 has encrypted all symbols
+  # and error messages. Legitimate binaries this size routinely have version
+  # strings, paths, and error messages well above 40 chars.
+- id: sparse-strings-large-binary
+  desc: Short max string length in large binary
+  crit: component
+  conf: 0.75
+  size_min: 524288
+  if:
+    type: metrics
+    field: binary.max_string_length
+    max: 40
+  unless:
+  - id: metadata/binary/framework::dotnet-metadata
+
+  # Large binary where nearly all "strings" are noise fragments.
+  # avg_string_length <= 6 means even the strings cleave finds are 3–5 char
+  # garbage from binary data — no real content anywhere. For a binary with
+  # substantial imports this is a near-certain sign of string encryption.
+- id: noisy-avg-string-length
+  desc: Near-noise average string length in large binary
+  crit: component
+  conf: 0.75
+  size_min: 524288
+  if:
+    type: metrics
+    field: binary.avg_string_length
+    max: 6.0
+  unless:
+  - id: metadata/binary/framework::dotnet-metadata
+
+- id: high-string-entropy
+  desc: High entropy strings (encoded data)
+  crit: suspicious
+  conf: 0.8
+  if:
+    type: metrics
+    field: binary.avg_string_entropy
+    min: 5.0
+  unless:
+  - id: well-known/lib/tree-sitter::tree-sitter-grammar-library
+- id: many-high-entropy-strings
+  desc: Many high entropy strings (embedded
+  crit: suspicious
+  conf: 0.85
+  if:
+    type: metrics
+    field: binary.high_entropy_strings
+    min: 20
+  unless:
+  - type: metrics
+    field: binary.avg_string_entropy
+    max: 3.2
+  - type: metrics
+    field: binary.func_count
+    min: 500
+  - type: section
+    exact: '.rdata'
+    length_min: 500000
+  - type: metrics
+    field: binary.string_count
+    min: 10000
+  - type: metrics
+    field: binary.max_string_length
+    min: 10000
+  downgrade:
+    all:
+    - id: many-high-entropy-strings-known-fp
+- id: huge-functions
+  desc: Has extremely large functions (>64KB)
+  crit: suspicious
+  conf: 0.75
+  if:
+    type: metrics
+    field: binary.huge_funcs
+    min: 1
+- id: many-tiny-functions
+  desc: Many tiny functions (<16 bytes)
+  crit: suspicious
+  conf: 0.4
+  if:
+    type: metrics
+    field: binary.tiny_funcs
+    min: 500
+- id: small-avg-function
+  desc: Very small average function size
+  crit: suspicious
+  conf: 0.4
+  size_min: 65536
+  if:
+    type: metrics
+    field: binary.avg_func_size
+    min: 1
+    max: 32
+  unless:
+  - type: metrics
+    field: binary.func_count
+    max: 5
+  - id: metadata/binary/framework::dotnet-assembly
+  - id: metadata/lang/compiler/systems::haskell-binary
+  - id: well-known/app/hopenpgp-tools::release-path
+  - type: basename
+    substr: hopenpgp-tools
+  - type: basename
+    regex: '[\\/]h(op|ot|kt|okey)$'
+  downgrade:
+    any:
+    - id: metadata/binary/framework::dotnet-metadata
+    - id: metadata/signed/platform/
+    - id: metadata/lang/compiler/systems::haskell-binary
+    - id: well-known/app/hopenpgp-tools::release-path
+- id: high-avg-complexity
+  desc: High average cyclomatic complexity (control
+  crit: notable
+  conf: 0.75
+  attack: T1027.002
+  size_max: 500000
+  if:
+    type: metrics
+    field: binary.avg_complexity
+    min: 55
+  unless:
+  - type: metrics
+    field: binary.func_count
+    max: 20
+  - type: metrics
+    field: binary.export_count
+    min: 20
+  - type: basename
+    exact: UAC.exe
+  downgrade:
+    any:
+    - id: metadata/package/versioning::pe-version-resource
+    - id: metadata/binary/vendor::microsoft-corp-versioninfo
+- id: very-high-avg-complexity
+  desc: Very high average complexity (heavy
+  crit: notable
+  conf: 0.85
+  attack: T1027.002
+  size_max: 500000
+  if:
+    type: metrics
+    field: binary.avg_complexity
+    min: 75
+  unless:
+  - type: metrics
+    field: binary.func_count
+    max: 20
+  - type: metrics
+    field: binary.export_count
+    min: 20
+- id: many-complex-functions
+  desc: Many high complexity functions (>80)
+  crit: baseline
+  conf: 0.6
+  attack: T1027.002
+  if:
+    type: metrics
+    field: binary.high_complexity_funcs
+    min: 80
+  downgrade:
+    any:
+    - id: metadata/binary/metrics/threshold::many-exports-200
+    - id: metadata/signed/platform::microsoft-corporation
+    - id: well-known/tool/reverse-engineering/ollydbg::ollydbg-executable-marker
+  unless:
+  - id: benign-complexity-context
+  - id: metadata/binary/framework::dotnet-singlefilehost-runtime
+  - type: basename
+    exact: urlmon.dll
+  - id: metadata/signed/platform::apple
+- id: very-complex-functions
+  desc: Has many very high complexity
+  crit: suspicious
+  conf: 0.7
+  attack: T1027.002
+  if:
+    type: metrics
+    field: binary.very_high_complexity_funcs
+    min: 5
+  unless:
+  - id: metadata/signed/platform::apple
+- id: many-basic-blocks
+  desc: High basic blocks per function
+  crit: notable
+  conf: 0.55
+  if:
+    type: metrics
+    field: binary.avg_basic_blocks
+    min: 50
+  unless:
+  - type: metrics
+    field: binary.func_count
+    max: 20
+  downgrade:
+    any:
+    - id: metadata/package/versioning::pe-version-resource
+    - id: metadata/binary/vendor::microsoft-corp-versioninfo
+    - type: metrics
+      field: binary.import_count
+      min: 80
+- id: many-linear-functions
+  desc: Many linear functions (possible VM
+  crit: suspicious
+  conf: 0.6
+  if:
+    type: metrics
+    field: binary.linear_funcs
+    min: 50
+- id: recursive-functions
+  desc: Has recursive functions
+  crit: suspicious
+  conf: 0.5
+  if:
+    type: metrics
+    field: binary.recursive_funcs
+    min: 3
+- id: many-noreturn-functions
+  desc: Many noreturn functions (anti-analysis pattern)
+  crit: suspicious
+  conf: 0.7
+  if:
+    type: metrics
+    field: binary.noreturn_funcs
+    min: 20
+- id: large-stack-frames
+  desc: Has functions with large stack
+  crit: suspicious
+  conf: 0.6
+  if:
+    type: metrics
+    field: binary.large_stack_funcs
+    min: 3
+- id: huge-stack-frame
+  desc: Extremely large max stack frame
+  crit: suspicious
+  conf: 0.7
+  if:
+    type: metrics
+    field: binary.max_stack_frame
+    min: 65536
+- id: high-avg-stack
+  desc: High average stack frame size
+  crit: suspicious
+  conf: 0.6
+  if:
+    type: metrics
+    field: binary.avg_stack_frame
+    min: 2048
+- id: has-overlay
+  desc: Binary has overlay data
+  crit: component
+  conf: 0.5
+  for:
+  - pe
+  - macho
+  if:
+    type: metrics
+    field: binary.has_overlay
+    min: 1
+  unless:
+  - id: has-overlay-known-benign
+  - type: metrics
+    field: binary.overlay_size
+    max: 16384
+  downgrade:
+    any:
+    - id: metadata/signed/platform::microsoft
+    - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
+    - id: metadata/binary/framework::dotnet-assembly
+    - id: metadata/package/versioning::pe-version-resource
+    - id: metadata/binary/debug::pdb-visual-studio
+- id: large-overlay
+  desc: Large overlay relative to file
+  crit: baseline
+  conf: 0.7
+  for:
+  - pe
+  - macho
+  attack: T1027.009
+  size_min: 131072
+  if:
+    type: metrics
+    field: binary.overlay_ratio
+    min: 0.5
+  unless:
+  - id: large-overlay-known-benign
+  - id: metadata/binary/linking/runtime::cosmopolitan-marker
+  - id: well-known/tool/reverse-engineering/resource-hacker::resource-hacker-marker
+  - id: metadata/binary/linking/runtime::cosmopolitan-marker
+  downgrade:
+    any:
+    - type: trait
+      id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
+    - id: micro-behaviors/fs/temp/py2exe::py2exe-bundle
+- id: high-entropy-overlay-raw
+  desc: High entropy overlay data
+  crit: component
+  conf: 0.8
+  for:
+  - pe
+  - macho
+  attack: T1027.009
+  if:
+    type: metrics
+    field: binary.overlay_entropy
+    min: 7.0
+  unless:
+  - id: metadata/binary/linking/runtime::ape-binary-marker
+  - type: metrics
+    field: binary.overlay_size
+    max: 16384
+  - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
+  - id: metadata/document/office::help2-container
+  - id: metadata/binary/installer/script::nsis
+  - id: metadata/binary/section/names::upx-section
+- id: compact-high-entropy-overlay
+  desc: Compact high entropy overlay blob
+  crit: component
+  conf: 0.84
+  for:
+  - pe
+  attack: T1027.009
+  if:
+    type: metrics
+    field: binary.overlay_entropy
+    min: 7.0
+  unless:
+  - type: metrics
+    field: binary.overlay_size
+    max: 255
+  - type: metrics
+    field: binary.overlay_size
+    min: 4097
+  - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
+- id: large-overlay-size
+  desc: Overlay large enough to contain payload
+  crit: component
+  conf: 0.7
+  for:
+  - pe
+  - macho
+  if:
+    type: metrics
+    field: binary.overlay_size
+    min: 81920
+  unless:
+  - id: large-overlay-size-known-benign
+- id: medium-overlay-size
+  desc: Overlay large enough for stage data
+  crit: component
+  conf: 0.72
+  for:
+  - pe
+  - macho
+  if:
+    type: metrics
+    field: binary.overlay_size
+    min: 32768
+  unless:
+  - id: metadata/document/office::help2-container
+- id: high-string-density-large-pe
+  desc: Large PE with dense string corpus
+  crit: component
+  conf: 0.82
+  for:
+  - pe
+  size_min: 250000
+  if:
+    type: metrics
+    field: binary.string_density
+    min: 12.0
+    min_size: 500000
+- id: file-size-1m-plus
+  desc: Binary is 1MB or larger
+  crit: component
+  conf: 1.0
+  size_min: 1048576
+  unless:
+  - id: metadata/file::system-shell-basename
+  - id: metadata/lang/compiler/systems::go-pe-symtab
+- id: function-count-1000-plus
+  desc: Binary has 1000 or more functions
+  crit: component
+  conf: 1.0
+  if:
+    type: metrics
+    field: binary.func_count
+    min: 1000
+  unless:
+  - id: metadata/file::system-shell-basename
+  - id: metadata/lang/compiler/systems::go-pe-symtab
+- id: zero-entropy-executable-section
+  desc: Zero-entropy executable section (carved/packed PE)
+  crit: suspicious
+  conf: 0.92
+  for:
+  - pe
+  if:
+    type: section
+    executable: true
+    entropy_max: 0.01
+    length_min: 4096
+  unless:
+  - id: metadata/binary/metrics/structural::section-exceeds-file-size
+  - id: metadata/binary/metrics/structural::many-imports
+  - id: metadata/binary/vendor::bitdefender-product-marker
+  - id: metadata/file::freedos-program-basename
+composite_rules:
+- id: benign-complexity-context
+  desc: Benign complexity context
+  crit: component
+  conf: 0.95
+  any:
+  - id: metadata/binary/provenance::unicode-script-table-marker
+  - id: metadata/file::system-shell-basename
+- id: compressed-file-magic
+  desc: Compressed file magic marker
+  crit: component
+  conf: 0.9
+  any:
+  - id: metadata/file/magic::zip-archive
+  - id: metadata/file/magic::gzip
+- id: benign-packed-entropy-context
+  desc: Benign packed entropy downgrade context
+  crit: component
+  conf: 0.9
+  any:
+  - id: objectives/anti-static/pack/detection::upx-packer-string
+  - id: metadata/binary/installer/sfx::7zsfx-config-marker
+  - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
+  - id: micro-behaviors/data/encode/pecompact::pecompact-signature
+  # Both max and avg string length are implausibly short in a substantial binary.
+  # Either alone can appear in stripped helper binaries; both together means
+  # the packer/implant has encrypted all string content — extremely rare in benign code.
+- id: encrypted-strings-large-binary
+  desc: Both max and avg string length near-noise
+  crit: suspicious
+  conf: 0.88
+  all:
+  - id: sparse-strings-large-binary
+  - id: noisy-avg-string-length
+  unless:
+  - id: metadata/binary/framework::dotnet-metadata
+  - id: upx-identified-artifact
+
+- id: has-overlay-known-benign
+  desc: Benign overlay-bearing binary context
+  crit: component
+  conf: 0.95
+  any:
+  - id: metadata/binary/resource::resource-only-dll
+  - id: metadata/binary/linking/runtime::ape-binary-marker
+- id: large-overlay-known-benign
+  desc: Benign large overlay binary context
+  crit: component
+  conf: 0.95
+  any:
+  - id: metadata/binary/linking/runtime::cosmopolitan-marker
+  - id: metadata/binary/installer/script::inno-setup-data-marker
+  - id: metadata/binary/installer/script::inno-setup-installer-marker
+  - id: metadata/signed/platform::microsoft
+  - id: metadata/signed/platform::ip-zinukhov-stanislav-igorevich
+  - id: metadata/signed/developer::martin-tofall
+  - id: metadata/signed/developer::valve-corp.
+  - id: metadata/binary/layout::jar-manifest-marker
+  - id: metadata/file/magic::zip-archive
+  - id: overlay-dominant-importless-blob
+  - id: metadata/binary/resource::resource-only-dll
+  - id: well-known/tool/reverse-engineering/resource-hacker::resource-hacker-marker
+  - id: metadata/package/versioning::dotnet-versioned-assembly
+  - id: metadata/document/office::help2-container
+  - id: metadata/binary/installer/family::known-benign-installer
+  - id: metadata/binary/installer/script::nullsoftinst-marker
+  - id: metadata/binary/installer/script::nsis-error-title
+  - id: metadata/binary/installer/sfx::7zsfx-config-marker
+  - id: micro-behaviors/fs/temp/pyinstaller::pyinstaller-bundle
+- id: large-overlay-size-known-benign
+  desc: Benign large overlay size context
+  crit: component
+  conf: 0.95
+  any:
+  - id: metadata/signed/platform::microsoft
+  - id: metadata/signed/platform::ip-zinukhov-stanislav-igorevich
+  - id: metadata/signed/developer::valve-corp.
+  - id: metadata/binary/installer/family::known-benign-installer
+  - id: metadata/document/office::help2-container
+  - id: metadata/binary/linking/runtime::ape-binary-marker
+- id: signed-payload-overlay
+  desc: Signed PE with high entropy payload overlay
+  crit: suspicious
+  conf: 0.95
+  for:
+  - pe
+  all:
+  - id: large-overlay
+  - id: high-entropy-overlay-raw
+  - id: large-overlay-size
+  any:
+  - id: metadata/binary/layout::pe-signature-present
+  - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
+  unless:
+  - id: metadata/binary/installer/family::known-benign-installer
+  - id: metadata/binary/framework::dotnet-assembly
+  - id: metadata/binary/metrics/threshold::dotnet-binary
+  - id: metadata/binary/resource::resource-only-dll
+- id: low-entropy-overlay-inflation
+  desc: Low entropy overlay inflation
+  crit: suspicious
+  conf: 0.94
+  for:
+  - pe
+  all:
+  - id: metadata/binary/layout::overlay-dominates-third
+  - id: metadata/binary/layout::large-overlay-1mb
+  - id: metadata/binary/layout::low-overlay-entropy
+  any:
+  - id: metadata/binary/layout::pe-checksum-mismatch
+  - id: metadata/binary/metrics/pe-details::pe-dll-characteristics
+  - id: metadata/binary/metrics/threshold::many-exports-100
+  unless:
+  - id: metadata/binary/installer/family::known-benign-installer
+  - id: metadata/file::freedos-program-basename
+  - id: metadata/binary/installer/script::inno-setup
+  - id: metadata/binary/installer/script::nsis
+  - id: metadata/binary/installer/sfx::7zip-sfx-runtime
+  - id: metadata/signed/platform::microsoft
+- id: overlay-dominant-importless-blob
+  desc: Overlay-dominant PE blob lacks code context
+  crit: component
+  conf: 0.9
+  all:
+  - id: metadata/binary/layout::overlay-dominates-third
+  - id: metadata/binary/symbols/imports::few-import-count
+  - id: objectives/anti-static/obfuscation/imports::extremely-low-strings
+- id: upx-identified-artifact
+  desc: UPX sections or marker present
+  crit: component
+  conf: 1.0
+  any:
+  - id: metadata/binary/section/names::upx-section
+  - id: objectives/anti-static/pack/detect::upx-marker
+- id: many-high-entropy-strings-known-fp
+  desc: High entropy strings known false positive profile
+  crit: component
+  conf: 0.7
+  all:
+  - id: metadata/binary/metrics/structural::many-imports
+  - id: micro-behaviors/dylib/library/abi-graphics::opengl-ref-a
+  any:
+  - id: micro-behaviors/dylib/library/abi-graphics::opengl-ref-b
+  - id: metadata/package/versioning::pe-version-resource
+  - id: metadata/signed/platform::apple
+  - id: metadata/binary/metrics/size::massive-executable
+- id: legitimate-microsoft-versioned-pe
+  desc: Versioned Microsoft PE with normal import surface
+  crit: component
+  conf: 0.8
+  all:
+  - id: metadata/package/versioning::version-resource-metadata
+  - id: metadata/binary/metrics/structural::many-imports
+  any:
+  - id: metadata/binary/vendor::microsoft-corp-marker-rsrc
+  - id: metadata/binary/vendor::microsoft-corp-marker-rdata
+- id: dominant-section-known-benign
+  desc: Dominant section benign packer profile
+  crit: component
+  conf: 0.8
+  any:
+  - id: metadata/binary/framework::dotnet-assembly
+  - id: metadata/binary/framework::large-rsrc-section
+  - id: metadata/binary/vendor::microsoft-corp-marker
+  - id: metadata/binary/installer/script::nsis-sfx-deadbeef-magic
+  - id: well-known/tool/dual-use/zprotect::zprotect-plugin
+- id: encrypted-loader-overlay
+  desc: High entropy overlay attached to packed loader
+  crit: suspicious
+  conf: 0.92
+  all:
+  - id: compact-high-entropy-overlay
+  any:
+  - id: metadata/hardening/memory::wx-section
+  - id: objectives/anti-static/obfuscation/imports::peb-ldr-access
+  - id: objectives/evasion/indicator-removal/timestamps::timestamp-anomaly
+  unless:
+  - id: metadata/lang/compiled::autoit-compiled-script
+  - id: metadata/lang/compiler/aot::native-runtime-large-file
+  - id: metadata/lang/compiler/aot::huge-runtime-function-count
+  - id: well-known/tool/sysadmin/virtualization::thinapp-boot-loader
+- id: high-code-entropy-known-fps
+  desc: High code entropy known false positive profile
+  crit: component
+  conf: 0.7
+  any:
+  - id: metadata/signed/developer::martin-tofall
+  - id: metadata/signed/developer::tencent-technologyshenzhen-company-limited
+  - id: objectives/anti-static/pack/detect::obsidium-software-marker
+  - id: metadata/binary/framework::dotnet-metadata
+  - id: metadata/signed/platform::apple
+  - id: metadata/binary/framework::unity-player-framework
+  - id: micro-behaviors/data/encode/pecompact::pecompact-seh-trick
+  - id: micro-behaviors/data/encode/pecompact::pecompact-signature
+  - id: legitimate-microsoft-versioned-pe
+  - id: metadata/binary/vendor::windows-production-pca-2011-string
+  - id: metadata/binary/provenance::uefi-driver-ntfs-debug-path
+- id: upx-many-section-high-entropy-profile
+  desc: UPX-like many-section packed profile
+  crit: component
+  conf: 0.82
+  for:
+  - pe
+  all:
+  - id: metadata/binary/section/names::upx-section
+  - id: metadata/binary/metrics/threshold::many-sections-20
+  - id: upx-many-wx-sections
+- id: wx-sections-known-benign
+  desc: WX section known benign profile
+  crit: component
+  conf: 0.7
+  any:
+  - id: metadata/binary/framework::asprotect
+  - id: micro-behaviors/data/encode/pecompact::pecompact-seh-trick
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::upx-identified-artifact
+  - id: metadata/package/quality::apiset-stub
+  - id: objectives/anti-static/obfuscation/binary-structure::scsi-miniport-string
+  - id: objectives/anti-static/obfuscation/binary-structure::kernel-driver-string
+  - id: metadata/lang/compiler/managed::versioned-vcl-app
+  - id: well-known/tool/reverse-engineering/scyllahide::sharpod-plugin-string
+  - id: metadata/signed/developer::martin-tofall
+  - id: metadata/lang/compiled::autoit-compiled-script
+  - id: metadata/binary/symbols/plugin::ollydbg-plugin-export
+- id: wx-sections-soft-fp
+  desc: WX section downgrade profile
+  crit: component
+  conf: 0.7
+  any:
+  - id: metadata/binary/layout::rich-imported-low-entropy-layout
+  - id: micro-behaviors/data/encode/pecompact::pecompact-signature
+  - id: objectives/anti-static/pack/detect::enigma-protector
+  - id: objectives/anti-static/pack/detect::themida-section
+- id: packed-single-function-wx-profile
+  desc: Packed single-function WX profile
+  crit: component
+  conf: 0.7
+  all:
+  - id: metadata/binary/symbols/compat::zero-import-count
+  - id: metadata/binary/metrics/structural::single-complex-function
+- id: large-dotnet-library
+  desc: Large .NET library structure
+  crit: component
+  conf: 0.7
+  all:
+  - id: metadata/binary/framework::dotnet-assembly
+  - id: metadata/binary/metrics/threshold::high-function-count-200
+  - id: metadata/binary/metrics/threshold::high-string-count-1000
+  any:
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::high-code-entropy
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::high-entropy-overlay-raw
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::high-import-entropy
+- id: signed-7zsfx-installer
+  desc: Signed 7z self-extracting installer
+  crit: component
+  conf: 0.85
+  for:
+  - pe
+  all:
+  - id: metadata/binary/installer/sfx::7zsfx-config-marker
+  - id: micro-behaviors/data/embedded/payload/archive::7z-magic
+  - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
+- id: binary-packed
+  desc: Binary appears to be packed
+  crit: suspicious
+  conf: 0.9
+  attack: T1045
+  needs: 3
+  any:
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::very-high-entropy
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::high-code-entropy
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::wx-sections
+  unless:
+  - id: metadata/file/magic::zip-archive
+  - id: metadata/file/magic::gzip
+  - id: metadata/binary/framework::dotnet-metadata
+  - id: packed-binary-readable-cli-profile
+  downgrade:
+    any:
+    - id: packed-binary-known-benign
+- id: packed-binary-known-benign
+  desc: Packed binary known benign profile
+  crit: component
+  conf: 0.8
+  any:
+  - id: metadata/signed/developer::martin-tofall
+  - id: objectives/anti-static/pack/detect::obsidium-software-marker
+  - id: metadata/binary/linking/runtime::cosmopolitan-marker
+  - id: metadata/binary/installer/sfx::7zsfx-config-marker
+  - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
+  - id: micro-behaviors/data/encode/pecompact::pecompact-seh-trick
+  - id: micro-behaviors/data/encode/pecompact::pecompact-signature
+- id: packed-binary-readable-cli-profile
+  desc: Readable CLI binary profile
+  crit: component
+  conf: 0.8
+  all:
+  - id: metadata/binary/metrics/threshold::string-count-1000-plus
+  - id: metadata/binary/metrics/threshold::avg-string-entropy-4-max
+  any:
+  - id: metadata/binary/metrics/structural::help-usage-string
+  - id: metadata/package/help::options-usage-string
+  - id: metadata/package/help::options-accepted-string
+- id: binary-heavily-packed
+  desc: Binary is heavily packed/encrypted
+  crit: hostile
+  conf: 0.95
+  attack: T1045
+  size_min: 20000
+  needs: 3
+  any:
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::very-high-entropy
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::no-strings
+  - id: metadata/binary/metrics/structural::no-functions
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::wx-sections
+- id: importless-corrupted-pe-loader
+  desc: Importless PE with corrupted header and embedded payload
+  crit: notable
+  conf: 0.92
+  for: [pe]
+  all:
+  - id: metadata/binary/symbols/imports::few-import-count
+  needs: 2
+  any:
+  - id: metadata/binary/layout::pe-embedded
+  - id: metadata/binary/resource::large-null-rsrc
+  - id: metadata/binary/metrics/structural::dominant-section
+  unless:
+  - id: metadata/binary/installer/family::known-benign-installer
+  - id: metadata/binary/framework::dotnet-assembly
+- id: malformed-importless-stub-loader
+  desc: Malformed importless PE stub with embedded payload
+  crit: suspicious
+  conf: 0.96
+  for: [pe]
+  all:
+  - id: metadata/binary/symbols/imports::few-import-count
+  - id: metadata/binary/metrics/structural::malformed-pe-structure
+  any:
+  - id: metadata/binary/layout::pe-embedded
+  - id: metadata/binary/resource::large-null-rsrc
+  - id: metadata/binary/metrics/structural::dominant-section
+  unless:
+  - id: metadata/binary/installer/family::known-benign-installer
+  - id: metadata/binary/metrics/structural::section-exceeds-file-size
+  - id: metadata/file::freedos-program-basename
+- id: high-entropy-overlay
+  desc: Large high-entropy overlay
+  crit: suspicious
+  conf: 0.8
+  for:
+  - pe
+  - macho
+  attack: T1027.009
+  unless:
+  - id: large-overlay-known-benign
+  - id: metadata/binary/installer/family::known-benign-installer
+  - id: metadata/signed/developer::sordum-software
+  - id: metadata/binary/installer/script::nsis-manifest-exehead
+  all:
+  - id: high-entropy-overlay-raw
+  - id: large-overlay-size
+  downgrade:
+    any:
+    - id: objectives/anti-static/pack/detect/
+- id: binary-encrypted-overlay
+  desc: Binary with encrypted overlay payload
+  crit: suspicious
+  conf: 0.85
+  attack: T1027.009
+  unless:
+  - id: metadata/binary/installer/family::known-benign-installer
+  - id: metadata/binary/resource::resource-only-dll
+  - id: metadata/signed/platform::microsoft
+  - id: metadata/document/office::help2-container
+  - id: metadata/binary/installer/sfx::7zsfx-config-marker
+  - id: metadata/binary/installer/sfx::registry-key
+  all:
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::has-overlay
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::high-entropy-overlay
+  downgrade:
+    any:
+    - id: micro-behaviors/data/embedded/certificate::pkcs7-signeddata-oid
+- id: embedded-payload-padding-camouflage
+  desc: Embedded payload with padding camouflage
+  crit: suspicious
+  conf: 0.84
+  attack: T1027.009
+  for:
+  - pe
+  all:
+  - id: objectives/anti-static/obfuscation/string/junking::repeated-padding-marker
+  - id: micro-behaviors/data/embedded/payload/header::pe-magic-embedded
+- id: packer-signature
+  desc: Packer signature pattern detected
+  crit: suspicious
+  conf: 0.9
+  attack: T1045
+  size_min: 20000
+  needs: 3
+  any:
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::high-section-name-entropy
+  - id: metadata/binary/metrics/structural::few-sections
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::wx-sections
+  unless:
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::upx-identified-artifact
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::pecompact-artifact
+  - id: metadata/binary/layout::rich-imported-low-entropy-layout
+  - id: metadata/binary/layout::legacy-watcom-packed-utility
+  - id: metadata/binary/symbols/plugin::ollydbg-plugin-export
+  downgrade:
+    any:
+    - id: metadata/binary/framework::asprotect
+- id: pecompact-artifact
+  desc: PECompact packer artifact
+  crit: component
+  conf: 0.95
+  any:
+  - id: micro-behaviors/data/encode/pecompact::pecompact-signature
+  - id: micro-behaviors/data/encode/pecompact::pecompact-seh-trick
+- id: control-flow-obfuscation
+  desc: Control flow obfuscation detected
+  crit: notable
+  conf: 0.85
+  attack: T1027.002
+  needs: 2
+  any:
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::high-avg-complexity
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::many-complex-functions
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::many-basic-blocks
+  - id: metadata/binary/metrics/structural::extreme-max-complexity
+  unless:
+  - id: metadata/binary/metrics/threshold::many-exports-100
+  - id: metadata/binary/section/names::debug-info
+  - id: well-known/lib/tree-sitter::tree-sitter-grammar-library
+  downgrade:
+    any:
+    - id: control-flow-soft-fp
+- id: heavy-control-flow-obfuscation
+  desc: Heavy control flow obfuscation
+  crit: hostile
+  conf: 0.9
+  attack: T1027.002
+  all:
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::very-high-avg-complexity
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::very-complex-functions
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::many-complex-functions
+- id: vm-based-obfuscation
+  desc: VM-based obfuscation detected
+  crit: suspicious
+  conf: 0.9
+  all:
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::very-high-avg-complexity
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::very-complex-functions
+- id: anti-analysis-pattern
+  desc: Anti-analysis pattern detected
+  crit: suspicious
+  conf: 0.6
+  needs: 3
+  any:
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::many-noreturn-functions
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::many-complex-functions
+  - id: metadata/binary/metrics/structural::few-leaf-functions
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::large-stack-frames
+- id: large-binary-low-average-complexity
+  desc: Large binary with low average complexity
+  crit: baseline
+  conf: 0.9
+  all:
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::file-size-1m-plus
+  - id: objectives/anti-static/obfuscation/binary-metrics/shape::function-count-1000-plus
+  - id: metadata/binary/metrics/threshold::avg-complexity-15-max
+  - id: metadata/binary/layout::low-overall-entropy
+  - id: metadata/binary/metrics/threshold::string-count-1000-plus
+  unless:
+      # Go binaries statically link the runtime (~1000+ small functions, low
+      # per-function complexity, many runtime strings) — matching this profile
+      # is the norm, not an obfuscation indicator. Same for Rust release builds.
+  - id: metadata/lang/compiled::go-runtime-marker
+  - id: metadata/lang/compiler/systems::go-binary
+  - id: metadata/lang/compiler/systems::go-pe-symtab
+  - id: metadata/lang/compiler/systems::rust-binary
+- id: control-flow-soft-fp
+  desc: Benign control flow complexity profile
+  crit: component
+  conf: 0.85
+  any:
+  - id: metadata/binary/metrics/structural::many-imports
+  - id: well-known/tool/development/jetbrains::jetbrains-company-string
+  - id: metadata/binary/vendor::microsoft-corp-versioninfo
+  - id: metadata/lang/compiler/native::vcruntime-import
+  - id: large-binary-low-average-complexity
+  - id: metadata/binary/symbols/imports::nt-initialize-registry-symbol
+- id: pe-encrypted-overlay-dropper
+  desc: PE high-entropy overlay with loader APIs
+  crit: suspicious
+  conf: 0.92
+  attack: T1027.009
+  for:
+  - pe
+  unless:
+  - id: metadata/binary/installer/family::known-benign-installer
+  - id: metadata/binary/installer/sfx::7zsfx-config-marker
+  - id: micro-behaviors/fs/temp/pyinstaller::pyinstaller-bundle
+  all:
+  - id: binary-encrypted-overlay
+  downgrade:
+    any:
+    - id: metadata/binary/installer/family::known-benign-installer
+  any:
+  - id: objectives/anti-static/obfuscation/payload/self-read::self-read-file-chain
+  - id: objectives/anti-static/obfuscation/string/runtime-decrypt::runtime-api-decryption
+  - id: objectives/evasion/anti-av/syscall::indirect-nt-api-self-injection
+  - id: objectives/evasion/decoy/strings::multiple-compiler-decoys
+- id: signature-append-multi-pe-bundle
+  desc: Signed PE with multiple appended payload binaries (signature-append)
+  crit: suspicious
+  conf: 0.85
+  attack: T1027.009
+  for: [pe]
+  all:
+  - id: metadata/signed/platform::microsoft
+  - id: metadata/binary/metrics/structural::embedded-pe-multi
+  any:
+  - id: metadata/binary/resource::large-null-rsrc
+  - id: metadata/binary/metrics/structural::malformed-pe-structure
+  - id: metadata/binary/metrics/structural::embedded-pe-three-plus
+  unless:
+  - id: metadata/binary/installer/family::known-benign-installer
+  - id: metadata/binary/installer/script::nsis
+  - id: metadata/binary/installer/script::inno-setup
+  - id: metadata/binary/installer/sfx::winrar-sfx
+  - id: metadata/binary/installer/sfx::7zip-sfx-runtime
+  - id: metadata/binary/installer/sfx::7zip-sfx-installer
+  - id: well-known/tool/sysadmin/sysinternals::sysinternals-tool
+- id: signed-pe-malformed-with-payload
+  desc: Signed PE with malformed structure and embedded payload
+  crit: hostile
+  conf: 0.93
+  for: [pe]
+  all:
+  - id: metadata/signed/platform::microsoft
+  - id: metadata/binary/metrics/structural::malformed-pe-structure
+  - id: metadata/binary/metrics/structural::embedded-pe-multi
+  unless:
+  - id: metadata/binary/installer/family::known-benign-installer
+- id: signed-pe-with-embedded-payloads
+  desc: Microsoft-signed PE carrying embedded payload binaries
+  crit: suspicious
+  conf: 0.85
+  attack: T1027.009
+  for: [pe]
+  all:
+  - id: metadata/signed/platform::microsoft
+  - id: metadata/binary/metrics/structural::embedded-pe-multi
+  unless:
+  - id: metadata/binary/installer/family::known-benign-installer
+  - id: metadata/binary/installer/script::nsis
+  - id: metadata/binary/installer/sfx::7zip-sfx-installer
+  - id: metadata/binary/installer/sfx::7zip-sfx-runtime
+  - id: well-known/tool/sysadmin/sysinternals::sysinternals-tool
+- id: signed-pe-tampered-with-embedded-payloads
+  desc: Microsoft-signed PE tampered after signing with embedded payloads
+  crit: hostile
+  conf: 0.95
+  attack: T1027.009,T1574.002
+  for: [pe]
+  all:
+  - id: metadata/signed/platform::microsoft
+  - id: metadata/binary/layout::pe-checksum-mismatch
+  - id: metadata/binary/metrics/structural::embedded-pe-multi
+  unless:
+  - id: metadata/binary/installer/family::known-benign-installer
+  - id: metadata/binary/installer/script::inno-setup
+  - id: metadata/binary/installer/sfx::winrar-sfx
+  - id: metadata/binary/installer/sfx::7zip-sfx-runtime
+  - id: metadata/binary/framework::dotnet-assembly
+  - id: metadata/binary/installer/database::msi-installer-raw
+- id: signed-pe-multi-tool-decoy
+  desc: Signed Microsoft PE carrying decoy strings from unrelated MS tools
+  crit: suspicious
+  conf: 0.92
+  attack: T1036.001
+  mbc: B0030
+  for: [pe]
+  all:
+  - id: metadata/signed/platform::microsoft
+  needs: 2
+  any:
+  - id: metadata/binary/installer/sfx::7zip-sfx-runtime
+  - id: metadata/binary/installer/sfx::7zip-uninstaller-profile
+  - id: metadata/binary/metrics/structural::embedded-pe-three-plus
+  - id: metadata/binary/resource::large-null-rsrc
+  unless:
+  - id: metadata/binary/installer/family::known-benign-installer

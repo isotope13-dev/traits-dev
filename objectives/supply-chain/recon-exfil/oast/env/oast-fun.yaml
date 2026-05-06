@@ -1,0 +1,172 @@
+defaults:
+  for: [manifests]
+  platforms: [windows, unix]
+  size_min: 100
+  size_max: 1048576
+traits:
+  # oast.fun is an OAST (Out-of-Band Application Security Testing) server
+  # used by attackers to exfiltrate data via DNS/HTTP callbacks
+  - id: oast-fun-url
+    desc: Lifecycle hook references oast.fun OAST endpoint
+    crit: suspicious
+    conf: 0.97
+    attack: T1048.003
+    if:
+      type: raw
+      regex: "https?://[a-z0-9.-]+\\.oast\\.fun"
+
+  # curl -d sends POST body implicitly (no -X POST needed)
+  - id: curl-data-body
+    desc: Lifecycle hook curl -d posts data
+    crit: component
+    conf: 0.93
+    attack: T1041
+    if:
+      type: raw
+      regex: "curl\\s+(-[a-zA-Z]+\\s+){0,4}-d\\s+"
+
+  # $(env;cat ...) - dump all environment variables plus a file
+  - id: shell-env-dump
+    desc: Lifecycle hook dumps env vars via shell
+    crit: suspicious
+    conf: 0.95
+    attack: T1552.007
+    if:
+      type: raw
+      regex: "\\$\\(env[;|]"
+
+  # cat ~/.npmrc or cat /root/.npmrc - reads npm credentials
+  - id: npmrc-credential-read
+    desc: Lifecycle hook reads .npmrc credentials
+    crit: suspicious
+    conf: 0.98
+    attack: T1552.001
+    if:
+      type: raw
+      regex: "cat\\s+(~|/root|/home/[^/\\s]{1,60})/\\.npmrc"
+
+  # URL query params with shell command substitution for recon
+  - id: url-query-whoami-subshell
+    desc: URL query has whoami command substitution
+    crit: suspicious
+    conf: 0.97
+    attack: T1033
+    if:
+      type: raw
+      regex: "[?&]user=\\$\\(whoami\\)"
+
+  - id: url-query-hostname-subshell
+    desc: URL query has hostname command substitution
+    crit: suspicious
+    conf: 0.97
+    attack: T1082
+    if:
+      type: raw
+      regex: "[?&]hostname=\\$\\(hostname\\)"
+
+  # Maintainer email set to OAST subdomain (DNS exfil via email registration)
+  - id: oast-fun-maintainer-email
+    desc: Maintainer email encodes oast.fun subdomain
+    crit: suspicious
+    conf: 0.999
+    attack: T1048.003
+    if:
+      type: raw
+      regex: "\"email\"\\s*:\\s*\"[^\"@]{1,120}@[^\",]{1,160}\\.oast\\.fun\""
+
+  # Description that falsely claims the package is not malicious
+  - id: desc-not-malicious-claim
+    desc: Description falsely claims code not malicious
+    crit: suspicious
+    conf: 0.90
+    attack: T1195.002
+    if:
+      type: raw
+      regex: "\"description\"\\s*:\\s*\"[^\"]{0,280}not malicious"
+      case_insensitive: true
+
+composite_rules:
+  # Primary: curl -d posts env dump + npmrc to oast.fun with shell recon query params
+  - id: curl-d-oast-fun-envdump-exfil
+    desc: Preinstall curl POSTs env/npmrc to oast.fun
+    crit: hostile
+    conf: 0.999
+    attack: T1041
+    mbc: E1041
+    all:
+      - id: objectives/supply-chain/metadata-anomaly/registry/snapshot::registry-metadata-json
+      - id: oast-fun-url
+      - id: curl-data-body
+    any:
+      - id: npmrc-credential-read
+      - id: shell-env-dump
+      - id: url-query-whoami-subshell
+
+  # Triple lifecycle hook: same exfil in preinstall + preupdate + test
+  - id: triple-hook-oast-fun-exfil
+    desc: Triple lifecycle hooks exfiltrate to oast.fun
+    crit: hostile
+    conf: 0.999
+    attack: T1195.002
+    all:
+      - id: objectives/supply-chain/metadata-anomaly/registry/snapshot::registry-metadata-json
+      - id: oast-fun-url
+      - id: objectives/supply-chain/metadata-anomaly/registry/snapshot::versioned-preupdate-hook
+      - id: objectives/supply-chain/metadata-anomaly/registry/snapshot::versioned-preinstall-hook
+
+  # OAST domain used as maintainer email (DNS-based exfil on package installation)
+  - id: oast-fun-dns-exfil-email
+    desc: Maintainer email encodes oast.fun DNS callback
+    crit: hostile
+    conf: 0.999
+    attack: T1048.003
+    all:
+      - id: objectives/supply-chain/metadata-anomaly/registry/snapshot::registry-metadata-json
+      - id: oast-fun-maintainer-email
+
+  # Deceptive "not malicious" claim combined with oast.fun exfil
+  - id: deceptive-not-malicious-oast-exfil
+    desc: Claims not malicious while exfiltrating to OAST
+    crit: hostile
+    conf: 0.995
+    all:
+      - id: objectives/supply-chain/metadata-anomaly/registry/snapshot::registry-metadata-json
+      - id: oast-fun-url
+      - id: desc-not-malicious-claim
+
+  # exec() embeds shell var in DNS subdomain to OAST service (DNS callback exfil)
+  - id: exec-host-var-oast-dns-exfil
+    desc: exec sends whoami to OAST via DNS
+    crit: hostile
+    conf: 0.98
+    attack: T1048.003
+    mbc: E1041
+    all:
+      - id: micro-behaviors/process/create/shell/bridge::js-exec
+      - id: micro-behaviors/communications/dns/tools::host-var-subdomain
+      - id: objectives/exfiltration/oob
+
+  # Postinstall curl to external IP with user/hostname query parameter exfil
+  - id: postinstall-curl-ip-recon-exfil
+    desc: Postinstall curl exfils user/hostname to IP
+    crit: hostile
+    conf: 0.98
+    attack: T1041
+    mbc: E1041
+    all:
+      - id: url-query-whoami-subshell
+      - id: url-query-hostname-subshell
+    any:
+      - id: micro-behaviors/communications/ip/literal::http-ip-url
+      - id: objectives/supply-chain/recon-exfil/oast/secret::curl-post-ssilent
+
+  # exec() + whoami + OAST callback: minimal DNS recon exfil (without host command)
+  - id: npm-exec-whoami-oast-callback
+    desc: npm exec sends whoami to OAST service
+    crit: suspicious
+    conf: 0.96
+    attack: T1033
+    all:
+      - id: micro-behaviors/process/create/shell/bridge::js-exec
+      - id: micro-behaviors/process/user/query::whoami-cmd
+      - id: objectives/exfiltration/oob

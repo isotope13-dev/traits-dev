@@ -1,0 +1,89 @@
+# Operator-side console output of an SSH credential-spraying tool.
+#
+# Many ransomware families that include a lateral-spread module (Sorry,
+# Spirit, EvilBunny etc.) bundle a Go-based SSH brute-forcer. When
+# linked into a stripped binary the *only* artifacts that survive are
+# the operator-debug `[+] SUCCESS …` and `[*] Found …` log format
+# strings. The combination of those format strings with an embedded
+# password dictionary and SSH client crypto library is conclusive
+# enough to be hostile on its own — benign software does not log
+# credential-spray output in this shape.
+defaults:
+  platforms: [unix, windows]
+  for: [binaries, scripts]
+  attack: T1110.001
+  mbc: E1110
+
+traits:
+  - id: brute-success-log-pass
+    desc: SSH brute-force success log (password)
+    # Distinctive operator-debug print emitted on a successful
+    # credential guess. The `user=%s  pass=%s` format with two
+    # spaces between fields is characteristic — generic logging
+    # libraries don't double-space their KV separators.
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: raw
+      substr: '[+] SUCCESS %s:%d  user=%s  pass=%s'
+
+  - id: brute-success-log-key
+    desc: SSH brute-force success log (key)
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: raw
+      substr: '[+] SUCCESS %s:%d  user=%s  key=%s'
+
+  - id: brute-scan-found-services
+    desc: SSH recursive services-found log
+    # Recursive scanner — the "level" terminology indicates a
+    # multi-hop lateral propagation pattern (compromise host A,
+    # scan from A for hosts B, scan from B for hosts C…). That
+    # framing is unique to ransomware-worm style brute-forcers.
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: raw
+      substr: '[*] Found %d SSH services in level %d'
+
+  - id: brute-scan-target-level
+    desc: SSH scanner "Scanning target level" log
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: raw
+      substr: '[*] Scanning target level %d (%d targets)'
+
+  - id: brute-scan-no-services
+    desc: SSH recursive no-services log
+    crit: notable
+    conf: 0.85
+    if:
+      type: raw
+      substr: '[*] No SSH services found in level %d'
+
+composite_rules:
+  # Either operator-debug success message is conclusive on its own;
+  # firing both is overdetermined.
+  - id: ssh-credential-spray-success-log
+    desc: SSH credential-spray operator success log
+    crit: hostile
+    conf: 0.98
+    any:
+      - id: brute-success-log-pass
+      - id: brute-success-log-key
+
+  # Recursive lateral-propagation framing — "scan target level N"
+  # implies multi-hop worm propagation. Combined with success
+  # logging this is conclusive ransomware-worm shape.
+  - id: ssh-recursive-lateral-worm
+    desc: Recursive SSH lateral-propagation worm
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: ssh-credential-spray-success-log
+    any:
+      - id: brute-scan-found-services
+      - id: brute-scan-target-level
+      - id: brute-scan-no-services
