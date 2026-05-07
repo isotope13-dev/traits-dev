@@ -11,6 +11,14 @@ traits:
       type: basename
       exact: phpunit_src_Util_PHP_eval-stdin.php
 
+  - id: phpunit-eval-stdin-collected-path
+    desc: Collected PHPUnit RCE path
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: basename
+      regex: '(?i)_vendor_phpunit_phpunit_src_Util_PHP_eval-stdin\.php\.bin$'
+
   - id: php-document-root-access
     desc: Retrieves web server document root path
     crit: suspicious
@@ -27,7 +35,102 @@ traits:
       type: text
       substr: /fm_40400.php
 
+  - id: source-import-base64-decode
+    desc: PHP source imports base64_decode
+    crit: component
+    conf: 0.9
+    if:
+      type: kv
+      path: source.imports
+      exact: base64_decode
+
+  - id: source-import-file-put-contents
+    desc: PHP source imports file_put_contents
+    crit: component
+    conf: 0.9
+    if:
+      type: kv
+      path: source.imports
+      exact: file_put_contents
+
+  - id: near-zero-whitespace
+    desc: Near-zero whitespace script
+    crit: component
+    conf: 0.84
+    if:
+      type: metrics
+      field: text.whitespace_ratio
+      max: 0.02
+
+  - id: very-long-string
+    desc: Very long embedded string
+    crit: component
+    conf: 0.86
+    if:
+      type: metrics
+      field: strings.max_length
+      min: 500
+
+  - id: get-directory-param
+    desc: GET directory parameter
+    crit: component
+    conf: 0.78
+    if:
+      type: text
+      regex: '\$_GET\s*\[\s*["'']d["'']\s*\]'
+
+  - id: get-delete-param
+    desc: GET delete parameter
+    crit: component
+    conf: 0.82
+    if:
+      type: text
+      regex: '\$_GET\s*\[\s*["'']del["'']\s*\]'
+
+  - id: get-download-param
+    desc: GET download parameter
+    crit: component
+    conf: 0.82
+    if:
+      type: text
+      regex: '\$_GET\s*\[\s*["'']dl["'']\s*\]'
+
+  - id: content-disposition-download
+    desc: Content-Disposition download response
+    crit: component
+    conf: 0.82
+    if:
+      type: text
+      regex: 'Content-Disposition.{0,40}filename'
+
+  - id: readfile-output
+    desc: PHP readfile output function
+    crit: component
+    conf: 0.84
+    if:
+      type: text
+      word: readfile
+
 composite_rules:
+  - id: php-file-action-triad
+    desc: PHP file action triad
+    crit: suspicious
+    conf: 0.92
+    all:
+      - id: get-directory-param
+      - id: get-delete-param
+      - id: get-download-param
+      - id: micro-behaviors/fs/enumerate/directory::php-scandir
+
+  - id: php-file-download-handler
+    desc: PHP file download handler
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: get-download-param
+      - id: readfile-output
+      - id: content-disposition-download
+
   - id: php-file-manager-payload
     desc: Payload includes file management features (upload, list, delete)
     crit: suspicious
@@ -40,12 +143,74 @@ composite_rules:
       - id: objectives/command-and-control/backdoor/webshell/decoder::eval-base64-large-payload
       - id: objectives/anti-static/obfuscation/string/base64::long-base64-in-strings
 
+  - id: php-file-manager-control-panel
+    desc: PHP file manager control panel
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: php-document-root-access
+      - id: micro-behaviors/fs/write/file/direct::move-uploaded-file
+      - id: micro-behaviors/fs/enumerate/directory::php-scandir
+      - id: micro-behaviors/fs/delete/file::php-unlink
+      - id: objectives/command-and-control/backdoor/webshell/ui::ajax-handler
+    any:
+      - id: micro-behaviors/communications/http/request/params::files
+      - id: micro-behaviors/communications/http/post::post-form
+      - id: micro-behaviors/communications/http/post::multipart-form
+
+  - id: php-file-manager-with-download
+    desc: PHP file manager with download
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: php-file-manager-control-panel
+      - id: php-file-download-handler
+
+  - id: php-get-file-action-webshell
+    desc: GET-controlled PHP file webshell
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: php-file-action-triad
+      - id: micro-behaviors/fs/delete/file::php-unlink
+      - id: readfile-output
+
+  - id: php-stealth-file-manager-webshell
+    desc: Stealthy PHP file manager webshell
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: php-file-manager-control-panel
+      - id: micro-behaviors/os/stdio::error-suppress-prefix
+
+  - id: encoded-php-file-manager-webshell
+    desc: Encoded PHP file manager webshell
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: metadata/lang/encoded/base64::php
+      - id: php-file-manager-control-panel
+
+  - id: one-line-encoded-webroot-writer
+    desc: One-line encoded webroot writer
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: metadata/file/text/metrics::file-one-liner
+      - id: near-zero-whitespace
+      - id: very-long-string
+      - id: php-document-root-access
+      - id: source-import-base64-decode
+      - id: source-import-file-put-contents
+
   - id: phpunit-rce-dropper
     desc: Exploits PHPUnit vulnerability to drop a payload
     crit: hostile
     conf: 0.99
-    all:
+    any:
       - id: phpunit-eval-stdin-path
+      - id: phpunit-eval-stdin-collected-path
+    all:
       - id: micro-behaviors/fs/write/file/direct::file-put-contents
       - id: objectives/command-and-control/backdoor/webshell/decoder::eval-base64-large-payload
 

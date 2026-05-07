@@ -885,12 +885,12 @@ Top-level kv namespaces synthesized from binaries:
 | `debug.*` | Cross-format debug info | `pdb_path`, `build_id`, `has_build_id`, `has_debuglink`, `producer`, `comp_dir` |
 | `pe.*` | PE-specific | `rich_header.*`, `version_info.*`, `manifest.*` (assembly_identity, requested_execution_level, supported_os, dependencies), `dll_characteristics.*` (named flag bools), `debug_directory_types[]`, `is_reproducible_build`, `has_pogo`, `has_iltcg`, `codeview_guid`, `linker_version`, `timestamp`, `checksum`, `bound_imports[]`, `resource_types[]`, `load_config.*` |
 | `elf.*` | ELF-specific | `entry_section`, `relro`, `interpreter`, `comment`, `soname`, `needed[]`, `rpath[]`, `runpath[]`, `dt_flags.*` (named flag bools), `gnu_property.{ibt,shstk,pac,bti,x86_isa_level}`, `needed_versions[]` (per-lib symbol versions), `provided_versions[]` |
-| `macho.*` | Mach-O-specific | `uuid`, `platform`, `min_os_version`, `sdk_version`, `tools[]`, `load_dylibs[]`, `rpath[]`, `id_dylib`, `linker_options[]`, `source_version`, `info_plist.*`, `launchd_plist.*`, `is_fat`, `slice_count`, `slices[]`, `swift_sections[]` |
-| `dwarf.*` | DWARF debug info (unstripped ELF) | `producers[]`, `comp_dirs[]`, `languages[]`, `source_files[]`, `cu_count` |
+| `macho.*` | Mach-O-specific | `uuid`, `platform`, `min_os_version`, `sdk_version`, `tools[]`, `load_dylibs[]`, `rpath[]`, `install_name`, `linker_options[]`, `source_version`, `info_plist.*`, `launchd_plist.*`, `slices[]`, `swift_sections[]`, `cs_flags.*`, `header_flags.*` |
+| `signing.*` | Signing metadata | `catalog`, `format`, `time`, `team_id`, `bundle_identifier`, `authorities[]`, `cert.{subject, issuer, serial, thumbprint_sha1}`, `validity.{not_before, not_after}` |
+| `dwarf.*` | DWARF debug info (unstripped ELF) | `producers[]`, `comp_dirs[]`, `languages[]`, `source_files[]` |
 | `package.*` | FDO `.note.package` self-attestation | `type` (apk/rpm/deb), `name`, `version`, `architecture`, `os`, `cpe`, `url`, `vcs` |
-| `go.*` | Go buildinfo | `version`, `main_path`, `main_module.*`, `dependencies[]`, `build.*`, `vcs.*` |
-| `hashes.*` | Cluster / similarity hashes | `imphash`, `rich_header_hash`, `cdhash_sha256` |
-| `consistency.*` (kv mirror) | Cross-format internal-consistency flags | (see metrics: `consistency.bundle_identifier_mismatch`, `manifest_product_version_mismatch`, `cert_issued_after_build`, etc.) |
+| `go.*` | Go buildinfo | `version`, `main_path`, `main_module.*`, `dependencies[]`, `build.*`, `vcs.{system, revision, time, modified}` |
+| `hash.*` | Cluster / similarity hashes (terse stems) | `imp`, `sym`, `dylib`, `export`, `entitlement`, `gimp`, `tlsh`, `ssdeep`, `cd`, `authenti`, `rich_header` |
 
 For derived booleans, counts, deltas, and comparisons (e.g.
 `signing.is_signed`, `pe.cert_chain_depth`, `consistency.*`), prefer
@@ -1040,3 +1040,32 @@ cleave test-match <file> --type string-value --pattern "eval"  # Test patterns
 - **Atomic vs Composite:** `if:` blocks do not support `all`/`any`. Create atomic traits and combine them using `composite_rules`.
 - **ID Formatting:** Cross-file references must use `category/path::id`. Never include the YAML filename in a trait ID.
 - **Tier Constraints:** `hostile` criticality is only allowed in `objectives/` and `well-known/`. `micro-behaviors/` max out at `suspicious`.
+
+## Where to put a metric / kv path
+
+Cleave's metric pools are organized by **computation scope**, not by category.
+The decision rule:
+
+- **Format-agnostic computation** (entropy, function counts, strings, complexity —
+  the same code path regardless of binary format) → `binary.*`
+- **Format-specific structural data** (sections, segments, dylibs, dynamic tags —
+  semantics differ per format) → `<format>.*` (`pe.*`, `elf.*`, `macho.*`)
+- **Cross-format derived signal** (single bool/string that COMBINES multiple
+  format-specific sources under one name — `is_pie`, `has_signature`,
+  `has_executable_stack`, `entry_in_writable_region`) → `binary.*`
+- **Consistency / cross-field derivation within one format** (`text_writable`,
+  `bundle_identifier_mismatch`, `cert_org_pdb_mismatch`) → on the
+  format-specific struct, NOT in a separate consistency pool
+
+KV path placement:
+
+- **Similarity / digest hashes** (imp, sym, dylib, gimp, tlsh, ssdeep, cd, authenti, …) → `hash.*` (singular namespace, terse stems)
+- **Cross-format signing data** (cert.subject, cert.issuer, validity.*, time, format, catalog) → `signing.*`
+- **Format-specific kv** → `<format>.*` (`pe.*`, `elf.*`, `macho.*`)
+
+**Disjoint by data kind.** kv carries values only (strings, paths, hashes,
+identifiers, structured trees, decoded named bit-flags). Metrics carry bools,
+counts, and computed scalars. Every fact lives in exactly one tree — the only
+acceptable cross-dimension "split" is a raw `u32` bitfield on metrics paired
+with its decoded named-bit subtree in kv (e.g. `pe.dll_characteristics.*`,
+`macho.cs_flags.*`).

@@ -1,0 +1,218 @@
+# ELF Format Anomalies
+# Structural issues in ELF binaries that indicate tampering or malware
+defaults:
+  platforms: [linux, android]
+  for: [elf]
+  crit: notable
+  conf: 0.95
+traits:
+  - id: elf-no-section-headers
+    desc: ELF binary without section headers
+    if:
+      type: metrics
+      field: binary.section_count
+      max: 0
+    unless:
+      - id: objectives/anti-static/pack/detection::upx-packer-string
+  # Tiny file with oversized LOAD segment: the segment claims far more data
+  # than the file actually contains. Common in shellcode stagers and crafted ELFs.
+  - id: load-segment-exceeds-tiny-file
+    desc: Oversized LOAD segment in tiny ELF
+    mbc: B0001
+    attack: T1027
+    size_max: 10240
+    if:
+      type: metrics
+      field: "elf.load_segment_max_p_filesz"
+      min: 32768
+  - id: load-segment-exceeds-small-file
+    desc: Oversized LOAD segment in small ELF
+    mbc: B0001
+    attack: T1027
+    conf: 0.90
+    size_max: 200000
+    if:
+      type: metrics
+      field: "elf.load_segment_max_p_filesz"
+      min: 1000000
+  - id: compact-large-load-memory-image
+    desc: Compact ELF reserves large memory image
+    crit: notable
+    conf: 0.72
+    mbc: F0001
+    attack: T1027.002
+    size_max: 5000000
+    if:
+      type: metrics
+      field: "elf.load_segment_max_p_memsz"
+      min: 33554432
+
+  # === Tier A: segment / EP anomalies ===
+  - id: elf-entry-in-writable-segment
+    desc: ELF entry point in writable PT_LOAD
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: metrics
+      field: elf.entry_in_writable_segment
+      min: 1
+  - id: elf-entry-outside-segments
+    desc: ELF entry point outside any PT_LOAD
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: metrics
+      field: elf.entry_outside_segments
+      min: 1
+  - id: elf-entry-in-last-segment
+    desc: ELF entry in final PT_LOAD
+    crit: notable
+    conf: 0.7
+    if:
+      type: metrics
+      field: elf.entry_in_last_segment
+      min: 1
+  - id: elf-wx-segment
+    desc: ELF has W+X loadable segment
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: metrics
+      field: elf.wx_segment_count
+      min: 1
+  - id: elf-executable-stack
+    desc: ELF PT_GNU_STACK has executable bit set
+    crit: notable
+    conf: 0.85
+    if:
+      type: metrics
+      field: elf.executable_stack
+      min: 1
+  - id: elf-segment-overlap
+    desc: ELF PT_LOAD segments with overlapping vaddr ranges
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: metrics
+      field: elf.segment_overlap_count
+      min: 1
+  - id: elf-section-header-count-mismatch
+    desc: ELF e_shnum disagrees with parsed section table
+    crit: notable
+    conf: 0.95
+    if:
+      type: metrics
+      field: elf.section_header_count_mismatch
+      min: 1
+  - id: elf-multiple-pt-interp
+    desc: ELF has more than one PT_INTERP segment
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: metrics
+      field: elf.multiple_pt_interp
+      min: 1
+
+  # === Tier B: dynamic + section anomalies ===
+  - id: elf-dt-audit-present
+    desc: ELF DT_AUDIT installs LD_AUDIT-style hooks
+    crit: notable
+    conf: 0.9
+    if:
+      type: metrics
+      field: elf.has_dt_audit
+      min: 1
+  - id: elf-dt-depaudit-present
+    desc: ELF DT_DEPAUDIT installs LD_AUDIT hooks for deps
+    crit: notable
+    conf: 0.9
+    if:
+      type: metrics
+      field: elf.has_dt_depaudit
+      min: 1
+  - id: elf-dt-needed-absolute-path
+    desc: ELF DT_NEEDED entry contains absolute path
+    crit: notable
+    conf: 0.85
+    if:
+      type: metrics
+      field: elf.dt_needed_abs_path_count
+      min: 1
+  - id: elf-dt-needed-traversal
+    desc: ELF DT_NEEDED entry contains path traversal
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: metrics
+      field: elf.dt_needed_traversal_count
+      min: 1
+  - id: elf-gnu-stack-section-absent
+    desc: ELF .note.GNU-stack section absent
+    crit: baseline
+    conf: 0.7
+    if:
+      type: metrics
+      field: elf.gnu_stack_section_absent
+      min: 1
+  - id: elf-both-hash-and-gnu-hash
+    desc: ELF has both .hash and .gnu.hash sections
+    crit: notable
+    conf: 0.7
+    if:
+      type: metrics
+      field: elf.has_both_hash_tables
+      min: 1
+  - id: elf-duplicate-section-name
+    desc: ELF section name appears more than once
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: metrics
+      field: elf.duplicate_section_name_count
+      min: 1
+
+  # === Tier A — modern toolchain / hardening posture ===
+  - id: elf-dt-relr-present
+    desc: ELF uses DT_RELR compressed relocations (modern toolchain)
+    crit: baseline
+    if:
+      type: metrics
+      field: elf.has_dt_relr
+      min: 1
+  - id: elf-dt-preinit-array
+    desc: ELF declares preinit functions (run before init_array)
+    crit: notable
+    conf: 0.8
+    if:
+      type: metrics
+      field: elf.dt_preinit_array_count
+      min: 1
+  - id: elf-dt-debug-nonzero
+    desc: ELF DT_DEBUG entry has non-zero value
+    crit: notable
+    conf: 0.7
+    if:
+      type: metrics
+      field: elf.has_dt_debug
+      min: 1
+  - id: elf-fortify-source-used
+    desc: ELF imports FORTIFY_SOURCE __*_chk symbols
+    crit: baseline
+    if:
+      type: metrics
+      field: elf.fortify_source_used
+      min: 1
+  - id: elf-relacount-present
+    desc: ELF declares DT_RELACOUNT (relative relocations)
+    crit: baseline
+    if:
+      type: metrics
+      field: elf.relacount
+      min: 1
+  - id: elf-compressed-debug-sections
+    desc: ELF carries SHF_COMPRESSED sections (compressed debug info)
+    crit: baseline
+    if:
+      type: metrics
+      field: elf.compressed_sections_count
+      min: 1

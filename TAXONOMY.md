@@ -242,6 +242,7 @@ micro-behaviors/
 │   ├── proc/              #   /proc filesystem access
 │   ├── quota/             #   Filesystem quota operations
 │   ├── read/              #   File reading (standalone)
+│   ├── search/            #   File search/query tools (locate, mdfind, Spotlight)
 │   ├── shell-ops/         #   Shell file operations (cp, mv, rm)
 │   ├── swap/              #   Swap operations
 │   ├── sync/              #   Filesystem sync (fsync, fdatasync)
