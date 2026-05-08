@@ -21,7 +21,7 @@ Traits rarely seen in legitimate software that have well-defined objectives shou
 |-------|---------|-----------------|
 | **component** | Building block for composites; no standalone signal (e.g., string fragment `&cc=`). Filtered from terminal output unless a referencing composite fires. Always in JSON for ML. | Any tier |
 | **baseline** | Common functionality; doesn't indicate program purpose (e.g., `mmap`, `stdio`, `read`). Always in output for ML. | Any tier |
-| **notable** | Defines program purpose (e.g., `socket`, `exec`, `eval`). Communications and code execution should always be notable or higher. Used for human review and differential analysis of supply-chain changes. | `micro-behaviors/`, `objectives/`, `well-known/` |
+| **notable** | Defines program purpose (e.g., `socket`, `exec`, `eval`). Capabilities that matter for differential analysis of supply-chain changes — i.e., anything an analyst would want to see "appeared" or "disappeared" between two versions — should be notable or higher: communications (HTTP, sockets, DNS, IPC), code execution (interpreters, eval, dynamic loaders), encryption methods (AES, RSA, ChaCha, KEM), encoding/decoding methods (base64, hex, custom alphabets), privilege escalation (sudo, setuid, capabilities), file access (read/write/delete on sensitive paths), registry access (Windows registry r/w), and persistence (cron, systemd, autoruns, launch agents). | `micro-behaviors/`, `objectives/`, `well-known/` |
 | **suspicious** | Rarely legitimate; indicates possible malicious intent. | `micro-behaviors/`, `objectives/`, `well-known/`, `metadata/` (rare) |
 | **hostile** | Clear attack pattern; no legitimate use. Requires precision >= 3.5. | `objectives/`, `well-known/` only — **never** `micro-behaviors/` |
 
@@ -54,7 +54,7 @@ Unlike MBC, which allows one behavior to map to multiple objectives (e.g., Proce
 | Tier | Can Reference | Rationale |
 |------|--------------|-----------|
 | `micro-behaviors/` | `micro-behaviors/`, `metadata/`, `well-known/tool/`, `well-known/app/`, `well-known/lib/`, `well-known/game/` for false-positive exclusions only | Capabilities must not depend on objectives or malware families |
-| `objectives/` | `micro-behaviors/`, `objectives/`, `metadata/`, `well-known/tool/`, `well-known/app/`, `well-known/lib/`, `well-known/game/` for false-positive exclusions only | Objectives build on capabilities and other objectives |
+| `objectives/` | `micro-behaviors/`, `objectives/`, `metadata/`, `well-known/{tool,app,lib,game}/` (positive evidence allowed); never `well-known/malware/` | Objectives build on capabilities and other objectives. Legitimate-software identifiers are fine as positive evidence — the relationship runs `well-known/malware/ → objectives/`, not the reverse |
 | `well-known/` | all tiers | Signatures can reference anything |
 | `metadata/` | `metadata/`, `well-known/tool/`, `well-known/app/`, `well-known/lib/`, `well-known/game/` for benign context only | Informational properties must not depend on behavior or objectives |
 
