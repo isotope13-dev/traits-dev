@@ -1,0 +1,95 @@
+defaults:
+  platforms: [windows]
+  for: [pe]
+  attack: T1622
+
+traits:
+  - id: sleep-20000ms-constant
+    desc: 20-second sleep constant 0x4e20
+    crit: component
+    conf: 0.8
+    arch: [x86]
+    if:
+      type: hex
+      pattern: 68 20 4E 00 00
+      section: .text
+
+  - id: minimal-import-dll-count
+    desc: Minimal PE import DLL count (<= 3)
+    crit: component
+    conf: 0.95
+    if:
+      type: metrics
+      field: pe.import_dll_count
+      max: 3
+
+  - id: combase-runtime-resolve-string
+    desc: combase.dll resolved at runtime
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      exact: combase.dll
+      section: rdata
+    unless:
+      - type: kv
+        path: pe.imports
+        substr: combase
+
+  - id: mscoree-runtime-resolve-string
+    desc: mscoree.dll resolved at runtime
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      exact: mscoree.dll
+      section: rdata
+    unless:
+      - type: kv
+        path: pe.imports
+        substr: mscoree
+
+composite_rules:
+  - id: peb-being-debugged-with-long-sleep
+    desc: PEB.BeingDebugged check with long sleep
+    crit: suspicious
+    conf: 0.92
+    size_max: 4194304
+    any:
+      - id: micro-behaviors/os/api-resolution/hash-based::peb-being-debugged-byte
+      - id: micro-behaviors/os/api-resolution/hash-based::peb-being-debugged-byte-i386
+    all:
+      - id: sleep-20000ms-constant
+    unless:
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/signed/platform::microsoft-windows
+      - id: metadata/signed/certificate::pe-signature-verified
+
+  - id: empty-stub-runtime-resolver
+    desc: Empty PE stub with COM/CLR runtime resolver
+    crit: suspicious
+    conf: 0.9
+    size_max: 524288
+    all:
+      - id: minimal-import-dll-count
+      - id: micro-behaviors/dylib/load/runtime::load-library-a-string-no-import
+    any:
+      - id: combase-runtime-resolve-string
+      - id: mscoree-runtime-resolve-string
+    unless:
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/signed/certificate::pe-signature-verified
+      - id: metadata/binary/installer/family::known-benign-installer
+
+  - id: anti-debug-elevated-empty-stub
+    desc: Empty PE stub with anti-debug and elevation request
+    crit: hostile
+    conf: 0.93
+    size_max: 1048576
+    all:
+      - id: peb-being-debugged-with-long-sleep
+      - id: empty-stub-runtime-resolver
+      - id: micro-behaviors/os/privilege/manifest::require-administrator
+    unless:
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/signed/certificate::pe-signature-verified
