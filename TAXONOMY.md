@@ -1052,4 +1052,11 @@ composite_rules:
 - **MBC Behaviors**: `B0001` (behavior), `C0015` (micro-behavior)
 - **MBC Enhanced**: `E1234` (ATT&CK technique with MBC enhancements)
 
-See [MBC Identifiers](https://github.com/MBCProject/mbc-markdown#identifiers) for the full specification.
+## Directory & Evolution Guidelines
+
+- **Leaf-Node Policy**: A directory level cannot contain both YAML files and subdirectories. This prevents files from being "orphaned" or miscategorized when adding new sub-techniques. If a directory contains subdirectories (representing sub-techniques), it must not contain its own YAML files.
+- **Intent-Based Categorization**: 
+  - **`objectives/`**: Reserved for improper/malicious behavior that requires intent inference. Any finding suggesting malice or abuse must be categorized under an `objectives/` hierarchy.
+  - **`micro-behaviors/`**: Reserved for strictly neutral, atomic observations. If a trait is neutral, it belongs here.
+- **Platform/Language Neutrality**: Directories must NOT be named after programming languages (e.g., `python/`) or platforms (e.g., `windows/`). These are used as suffixes in YAML filenames (e.g., `dropper_python.yaml`). This ensures the ML pipeline can perform cross-language and cross-platform technique correlation.
+
