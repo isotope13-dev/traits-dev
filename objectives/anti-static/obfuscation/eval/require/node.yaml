@@ -26,10 +26,17 @@ traits:
     conf: 1.0
     for: [scripts]
     unless:
-      - id: metadata/library/structure::js-large-module-bundle
+      - id: metadata/library/structure::js-vite-rollup-vendor-chunk
       - id: metadata/package/tooling::webpack-bundled
       - id: metadata/library/jquery
-      - id: well-known/app/adguardhome::release-path
+      - id: metadata/library/runtime::acquire-vscode-api
+      - id: micro-behaviors/process/create/shell/host::vscode-extension-marker
+      - type: text
+        word: tiktoken
+      - type: basename
+        regex: '^esbuild(\.js)?$'
+    not:
+      - substr: WebAssembly loader from the Go compiler
     if:
       type: text
       regex: new Function(\.constructor)?\(['"]
@@ -45,6 +52,8 @@ traits:
         - id: metadata/library/structure::js-large-module-bundle
         - id: metadata/package/tooling::webpack-bundled
         - id: metadata/package/tooling::esbuild-bundled
+        - id: metadata/library/runtime::vscode-webview-bundle
+        - id: metadata/library/runtime::acquire-vscode-api
 
   - id: function-constructor-require-arg
     desc: new Function with require param (module smuggling)
@@ -55,11 +64,14 @@ traits:
     if:
       type: text
       regex: "new Function\\(['\"]require['\"]"
-    downgrade:
-      any:
-        - id: metadata/library/structure::js-large-module-bundle
-        - id: metadata/package/tooling::webpack-bundled
-        - id: metadata/package/tooling::esbuild-bundled
+    unless:
+      - id: metadata/library/structure::js-vite-rollup-vendor-chunk
+      - id: metadata/package/tooling::webpack-bundled
+      - id: metadata/package/tooling::esbuild-bundled
+      - id: metadata/library/runtime::acquire-vscode-api
+      - id: micro-behaviors/process/create/shell/host::vscode-extension-marker
+      - type: basename
+        regex: '^esbuild(\.js)?$'
   - id: function-constructor-require-arg-base64
     desc: Base64-decoded new Function require param
     crit: suspicious
@@ -70,8 +82,51 @@ traits:
       type: encoded
       encoding: base64
       regex: "new Function\\(['\"]require['\"]"
+  - id: function-constructor-module-smuggle-call
+    desc: new Function call with require/module/exports args
+    crit: suspicious
+    conf: 0.95
+    attack: T1059.007
+    for: [javascript, typescript]
+    if:
+      type: ast
+      language: javascript
+      query: |
+        (new_expression
+          constructor: (identifier) @ctor
+          arguments: (arguments
+            (string (string_fragment) @a1)
+            (string (string_fragment) @a2)
+            (string (string_fragment) @a3)
+            (_) @body)
+          (#eq? @ctor "Function")
+          (#eq? @a1 "require")
+          (#eq? @a2 "module")
+          (#eq? @a3 "exports"))
+    unless:
+      - id: metadata/library/structure::js-large-module-bundle
+      - id: metadata/package/tooling::webpack-bundled
+      - id: metadata/library/runtime::vscode-webview-bundle
 
 composite_rules:
+  - id: remote-code-module-smuggle
+    desc: Remote code executed via Function module smuggling
+    crit: hostile
+    conf: 0.96
+    attack: T1059.007
+    for: [javascript, typescript]
+    all:
+      - id: function-constructor-module-smuggle-call
+    any:
+      - id: micro-behaviors/communications/http/request/client::js-fetch-call
+      - id: micro-behaviors/communications/http/request/client::axios-direct-call
+      - id: micro-behaviors/communications/http/request/client::http-request
+      - id: micro-behaviors/communications/http/url/rpc::solana-rpc-method-any
+    unless:
+      - id: metadata/library/structure::js-large-module-bundle
+      - id: metadata/library/runtime::vscode-webview-bundle
+      - id: metadata/package/tooling::webpack-bundled
+
   - id: font-steganography-hex
     desc: Load JavaScript from font file (hex)
     crit: suspicious
