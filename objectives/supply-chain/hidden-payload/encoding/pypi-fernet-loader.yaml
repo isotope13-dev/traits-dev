@@ -1,0 +1,104 @@
+# PyPI packages that ship Fernet-encrypted Python source code inside
+# innocuous-looking data files (JSON, etc.) and decrypt+exec at runtime.
+# This pattern hides arbitrary code from static analysis behind a
+# Fernet token (cryptography library AES-CBC+HMAC), which is NOT used
+# by any legitimate Python packager — PyInstaller, py2exe, cx_Freeze,
+# zipapp, and PyOxidizer use marshal/zlib/base64, never Fernet.
+defaults:
+  platforms: [windows, unix]
+  for: [python]
+  attack: T1027
+  mbc: B0032
+traits:
+  - id: fernet-token-double-b64
+    desc: Base64-of-Fernet-token in package data
+    crit: suspicious
+    conf: 0.95
+    for: [python, javascript, manifests, documents]
+    if:
+      type: text
+      substr: Z0FBQUFBQn
+  - id: fernet-token-direct-b64
+    desc: Fernet token in encoded string
+    crit: suspicious
+    conf: 0.95
+    for: [python, javascript, manifests, documents]
+    if:
+      type: encoded
+      regex: '^gAAAAAB[A-Za-z0-9_-]{20,}'
+  - id: python-sys-modules-injection
+    desc: Python writes to sys.modules at runtime
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: 'sys\.modules\[[^\]]{1,80}\]\s*='
+  - id: python-types-moduletype-create
+    desc: Python creates ModuleType objects at runtime
+    crit: notable
+    conf: 0.9
+    if:
+      type: symbol
+      regex: '^types\.ModuleType$'
+composite_rules:
+  - id: python-fernet-encrypted-loader
+    desc: Python decrypts Fernet payload and exec()s the result
+    crit: hostile
+    conf: 0.97
+    attack: T1027.013
+    near_bytes: 4096
+    all:
+      - id: micro-behaviors/crypto/symmetric/fernet::decrypt
+      - id: micro-behaviors/process/interpreter/python::exec-builtin
+      - id: micro-behaviors/process/interpreter/python::compile-builtin
+    any:
+      - id: micro-behaviors/data/compress/library::zlib-decompress-symbol
+      - id: micro-behaviors/data/decode/base64::b64decode-call
+  - id: pypi-fernet-payload-in-data-files
+    desc: PyPI package ships Fernet-encrypted blob in data files
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002
+    mbc: E1027
+    all:
+      - id: fernet-token-double-b64
+    any:
+      - id: micro-behaviors/crypto/symmetric/fernet::decrypt
+      - id: micro-behaviors/crypto/symmetric/fernet::from-cryptography-fernet
+  - id: python-runtime-module-injection
+    desc: Python registers decrypted modules into sys.modules
+    crit: hostile
+    conf: 0.96
+    attack: T1059.006
+    near_bytes: 2048
+    all:
+      - id: python-fernet-encrypted-loader
+      - id: python-sys-modules-injection
+      - id: python-types-moduletype-create
+  - id: pypi-encrypted-loader-with-bare-metadata
+    desc: Encrypted payload loader package with stripped metadata
+    crit: hostile
+    conf: 0.97
+    attack: T1195.002
+    for: [python, pkginfo]
+    scope: archive
+    all:
+      - id: python-fernet-encrypted-loader
+    any:
+      - id: objectives/supply-chain/metadata-anomaly/author::pkginfo-no-author
+      - id: objectives/supply-chain/metadata-anomaly/description::pkginfo-missing-description
+      - id: objectives/supply-chain/metadata-anomaly/description::pkginfo-no-homepage
+      - id: objectives/supply-chain/metadata-anomaly/manifest/pypi::pkginfo-tiny
+  - id: python-encrypted-payload-tempfile-staging
+    desc: Encrypted payload decrypted, written to tempfile, then exec via sys.modules entry
+    crit: hostile
+    conf: 0.95
+    attack: T1027.013
+    near_bytes: 4096
+    all:
+      - id: micro-behaviors/crypto/symmetric/fernet::decrypt
+      - id: micro-behaviors/fs/temp/mktemp::tempfile-named-temporary-file
+      - id: python-sys-modules-injection
+    any:
+      - id: micro-behaviors/process/interpreter/python::exec-builtin
+      - id: micro-behaviors/process/interpreter/python::compile-builtin
