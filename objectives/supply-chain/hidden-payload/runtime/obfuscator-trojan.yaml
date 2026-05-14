@@ -1,0 +1,360 @@
+# Hostile / suspicious composites for npm-published bundles that combine
+# obfuscator.io packing with structural and string-table content signals.
+#
+# Standalone obfuscator.io output is already hostile via
+# objectives/anti-static/obfuscation/tools/js-obfuscator::obfuscated-eval-npm-trojan.
+# These composites add independent findings that capture distinct
+# tampering shapes and the in-table identifiers obfuscator.io leaves behind.
+#
+# String-table reasoning: obfuscator.io collects all property names and
+# string literals referenced by the original source into a single array
+# (the `_0x3afe()` table) and dispatches them at runtime via decoder
+# calls (`_0x4524e4(0x19f)` → table[idx]). Identifiers that appear in
+# that table are referenced by the original source code — they are not
+# stowaway garbage. Combining "this file is obfuscator.io output" with
+# "the string-table contains X" is reliable evidence the original source
+# referenced X.
+#
+# We still avoid over-claiming behavioral semantics: a `resolveTxt`
+# reference means the source called `.resolveTxt(...)` on something; it
+# does not by itself prove DNS-TXT C2 (could be DNS recon, hosts-file
+# manipulation, etc.). So these stay at `suspicious` unless paired with
+# another structural hostile shape.
+#
+# Generic across families. Family attribution belongs in well-known/malware/
+# with family-unique signatures, not here.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1195.002
+traits:
+  # base64 alphabet appearing as a string literal indicates an embedded
+  # base64 codec implementation (vs. a runtime `Buffer.from` call that
+  # uses Node's built-in codec). Using string_literal here scopes the
+  # match to AST-backed string literals so comments and identifiers
+  # cannot trigger it.
+  - id: base64-alphabet-literal
+    desc: Standard base64 alphabet string literal
+    crit: component
+    conf: 0.95
+    if:
+      type: string_literal
+      substr: ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=
+  - id: etc-hosts-literal
+    desc: /etc/hosts path string literal
+    crit: component
+    conf: 0.9
+    if:
+      type: string_literal
+      substr: /etc/hosts
+  - id: resolvetxt-literal
+    desc: resolveTxt string literal
+    crit: component
+    conf: 0.85
+    if:
+      type: string_literal
+      word: resolveTxt
+  - id: child-process-keyword-literal
+    desc: child_process module name literal
+    crit: component
+    conf: 0.9
+    if:
+      type: string_literal
+      word: child_process
+  - id: execsync-method-literal
+    desc: execSync string literal
+    crit: component
+    conf: 0.9
+    if:
+      type: string_literal
+      word: execSync
+  # Host-fingerprint property names commonly emitted by obfuscator.io into
+  # its string table when the original source called e.g. `os.homedir()`
+  # or `process.arch`. Using string_literal here means we match the
+  # obfuscator's emitted `'homedir'` / `'arch'` strings, not the bare
+  # property-access identifiers that legitimate code uses.
+  - id: homedir-literal
+    desc: homedir string literal
+    crit: component
+    conf: 0.8
+    if:
+      type: string_literal
+      word: homedir
+  - id: arch-literal
+    desc: arch string literal
+    crit: component
+    conf: 0.7
+    if:
+      type: string_literal
+      word: arch
+  - id: endianness-literal
+    desc: endianness string literal
+    crit: component
+    conf: 0.85
+    if:
+      type: string_literal
+      word: endianness
+  - id: pid-literal
+    desc: pid string literal
+    crit: component
+    conf: 0.7
+    if:
+      type: string_literal
+      word: pid
+  - id: randombytes-literal
+    desc: randomBytes string literal
+    crit: component
+    conf: 0.85
+    if:
+      type: string_literal
+      word: randomBytes
+  - id: digest-literal
+    desc: digest string literal
+    crit: component
+    conf: 0.8
+    if:
+      type: string_literal
+      word: digest
+  # obfuscator.io control-flow-flattening signature: pipe-separated digit
+  # permutations like '5|1|4|3|0|2' or '4|3|0|2|1'. These appear as
+  # AST string literals — the state-ordering for the
+  # while(!![]){switch(...)} dispatcher. Nothing else in JavaScript produces
+  # this shape (5+ single-digit, pipe-joined elements) as a string.
+  - id: cfg-flatten-state-list
+    desc: Obfuscator.io control-flow-flattening state list
+    crit: suspicious
+    conf: 0.95
+    count_min: 2
+    if:
+      type: string_literal
+      regex: '^\d(\|\d){4,}$'
+  # Metric helpers for the "malware-scale obfuscation" composite below.
+  - id: high-max-line-length
+    desc: A single line exceeds 50,000 characters
+    crit: component
+    conf: 0.95
+    if:
+      type: metrics
+      field: text.max_line_length
+      min: 50000
+  - id: high-digit-ratio
+    desc: Text is over 30% digit characters
+    crit: component
+    conf: 0.85
+    if:
+      type: metrics
+      field: text.digit_ratio
+      min: 0.3
+composite_rules:
+  # esbuild-bundled output PLUS obfuscator.io-style packing in the same file.
+  # esbuild itself never produces obfuscator.io output (hex `_0x` names, the
+  # while(!![]){switch(...)} state machine, parseInt decoder loops). When
+  # both are present the bundle was post-processed by an obfuscator after
+  # the bundler ran — the textbook supply-chain shape where the source
+  # repo looks clean and the published artifact is hostile.
+  - id: tampered-prebuilt-bundle
+    desc: Pre-built bundle was post-obfuscated before publish
+    crit: hostile
+    conf: 0.95
+    mbc: B0024
+    all:
+      - id: metadata/library/structure::js-esbuild-bundle
+    any:
+      - id: objectives/anti-static/obfuscation/tools/js-obfuscator::any-name-mangling
+      - id: objectives/anti-static/obfuscation/tools/js-obfuscator::decoder-loop-keyword-triad
+      - id: objectives/anti-static/obfuscation/syntax::js-while-switch-state-machine
+    unless:
+      - id: metadata/package/testing/harness/runtime::is-test
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+
+  # Dense obfuscator.io toolkit usage: many distinct obfuscator.io
+  # techniques co-occurring. Real "license-protection" obfuscation typically
+  # uses one or two techniques on a small region. A bundle that simultaneously
+  # carries name-mangling, the while/switch state machine, the parseInt
+  # decoder loop, and a hex-indexed string array is using the full
+  # obfuscator.io toolkit — package authors do not ship this output as the
+  # advertised library; it is the signature of a trojanized publish.
+  - id: obfuscator-io-toolkit-bundle
+    desc: Bundle uses full obfuscator.io toolkit (multi-technique)
+    crit: hostile
+    conf: 0.96
+    mbc: B0032
+    attack: T1027.002
+    all:
+      - id: objectives/anti-static/obfuscation/tools/js-obfuscator::any-name-mangling
+    any:
+      - id: objectives/anti-static/obfuscation/syntax::js-while-switch-state-machine
+      - id: objectives/anti-static/obfuscation/string/array::string-array-hex-index
+      - id: objectives/anti-static/obfuscation/code-metrics/structure::single-long-line-outlier
+    needs: 2
+    unless:
+      - id: metadata/package/testing/harness/runtime::is-test
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+
+  # Obfuscated bundle whose string table embeds the complete standard
+  # base64 alphabet. obfuscator.io collects literals from source into the
+  # decoder table, so presence of the alphabet means the original source
+  # carries a hand-rolled base64 encoder/decoder rather than relying on
+  # Node's built-in `Buffer.from(x, "base64")`. Hand-rolled codecs in an
+  # obfuscated bundle are the classic shape of an embedded stager.
+  - id: obfuscated-bundle-embedded-base64-codec
+    desc: Obfuscated bundle embeds a base64 codec alphabet
+    crit: suspicious
+    conf: 0.9
+    mbc: F0024
+    all:
+      - id: objectives/anti-static/obfuscation/tools/js-obfuscator::any-name-mangling
+      - id: base64-alphabet-literal
+    unless:
+      - id: metadata/package/testing/harness/runtime::is-test
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+
+  # Obfuscated bundle whose string table references DNS TXT lookup API.
+  # The `resolveTxt` method exists on `dns`/`dns.promises` and on
+  # `dns.Resolver`; it has no other common usage. Presence in an
+  # obfuscator.io string table means the source called `.resolveTxt(...)`
+  # somewhere — a known covert-channel primitive (data exfil over DNS
+  # TXT records, lookup of attacker-controlled C2 routing). We stop at
+  # `suspicious` because the call site could also be benign DNS recon.
+  - id: obfuscated-bundle-references-dns-txt
+    desc: Obfuscated bundle references DNS TXT lookup API
+    crit: suspicious
+    conf: 0.92
+    mbc: B0030
+    attack: T1071.004
+    all:
+      - id: objectives/anti-static/obfuscation/tools/js-obfuscator::any-name-mangling
+      - id: resolvetxt-literal
+    unless:
+      - id: metadata/package/testing/harness/runtime::is-test
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+
+  # Obfuscated bundle whose string table includes /etc/hosts reads.
+  # /etc/hosts inspection in an obfuscator-packed bundle is consistent
+  # with hosts-file manipulation, custom DNS resolution, or fingerprinting
+  # whether a system has been pre-tainted by another tool — all
+  # supply-chain-malicious shapes.
+  - id: obfuscated-bundle-etc-hosts-access
+    desc: Obfuscated bundle references /etc/hosts
+    crit: suspicious
+    conf: 0.93
+    mbc: B0030
+    attack: T1565.001
+    all:
+      - id: objectives/anti-static/obfuscation/tools/js-obfuscator::any-name-mangling
+      - id: etc-hosts-literal
+    unless:
+      - id: metadata/package/testing/harness/runtime::is-test
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+
+  # Obfuscated bundle whose string table includes child_process / execSync
+  # identifiers — i.e. the original source invokes shell command execution.
+  # A maintained npm library would call these directly (no obfuscation);
+  # finding them in obfuscator.io output is a malware-stager shape.
+  - id: obfuscated-bundle-shell-exec-references
+    desc: Obfuscated bundle references shell-exec primitives
+    crit: hostile
+    conf: 0.95
+    mbc: C0017
+    attack: T1059
+    all:
+      - id: objectives/anti-static/obfuscation/tools/js-obfuscator::any-name-mangling
+    any:
+      - id: child-process-keyword-literal
+      - id: execsync-method-literal
+    unless:
+      - id: metadata/package/testing/harness/runtime::is-test
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+
+  # The "complete stealer toolkit" shape: obfuscation + host-fingerprint
+  # surface + base64 codec. Stealers gather host info, encode it, and
+  # ship it out. Together these three are the full toolkit; legitimate
+  # libraries do not co-locate all three in an obfuscated bundle.
+  - id: obfuscated-bundle-stealer-toolkit
+    desc: Obfuscated stealer toolkit (host-fingerprint + base64)
+    crit: hostile
+    conf: 0.96
+    mbc: B0030
+    attack: T1082
+    all:
+      - id: objectives/anti-static/obfuscation/tools/js-obfuscator::any-name-mangling
+      - id: base64-alphabet-literal
+    any:
+      - id: homedir-literal
+      - id: arch-literal
+      - id: endianness-literal
+      - id: pid-literal
+      - id: randombytes-literal
+      - id: digest-literal
+    needs: 3
+    unless:
+      - id: metadata/package/testing/harness/runtime::is-test
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+
+  # Helper composite: any shell-exec primitive present
+  - id: any-shell-exec-literal
+    desc: Any shell-exec primitive identifier
+    crit: component
+    any:
+      - id: child-process-keyword-literal
+      - id: execsync-method-literal
+  # Helper composite: any DNS primitive present
+  - id: any-dns-literal
+    desc: Any DNS lookup primitive identifier
+    crit: component
+    any:
+      - id: resolvetxt-literal
+      - id: etc-hosts-literal
+  # Re-state the hostile DNS+exec composite using the two helpers so it
+  # truly requires both categories.
+  - id: obfuscated-bundle-dns-and-exec
+    desc: Obfuscated bundle co-locates DNS lookup and shell-exec
+    crit: hostile
+    conf: 0.97
+    mbc: B0030
+    attack: T1071.004
+    all:
+      - id: objectives/anti-static/obfuscation/tools/js-obfuscator::any-name-mangling
+      - id: any-dns-literal
+      - id: any-shell-exec-literal
+    unless:
+      - id: metadata/package/testing/harness/runtime::is-test
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+
+  # Obfuscator.io control-flow-flattening with multiple distinct state
+  # orderings. The pipe-separated digit permutations are the explicit
+  # state-list used by the while/switch dispatcher — having multiple
+  # different orderings in one file means multiple obfuscated functions
+  # were emitted, i.e. this is the output of obfuscator.io applied to
+  # a sizeable code body, not a single license-protection block.
+  - id: obfuscated-bundle-cfg-flattening
+    desc: Obfuscator.io control-flow-flattening across multiple state lists
+    crit: hostile
+    conf: 0.95
+    mbc: B0032
+    attack: T1027.002
+    all:
+      - id: objectives/anti-static/obfuscation/tools/js-obfuscator::any-name-mangling
+      - id: cfg-flatten-state-list
+    unless:
+      - id: metadata/package/testing/harness/runtime::is-test
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+
+  # Metric-based: obfuscator.io output that is also large and heavy on
+  # digit characters. Legitimate "license-protection" obfuscation is
+  # small (<10KB) and the digit-character density is moderate. A bundle
+  # that is large AND has extreme digit density AND a single very long
+  # line is a packed payload — not protected source.
+  - id: obfuscated-bundle-massive-payload-metrics
+    desc: Obfuscator.io output at malware-scale size and digit density
+    crit: hostile
+    conf: 0.94
+    mbc: B0032
+    attack: T1027.002
+    all:
+      - id: objectives/anti-static/obfuscation/tools/js-obfuscator::any-name-mangling
+      - id: high-max-line-length
+      - id: high-digit-ratio
+    unless:
+      - id: metadata/package/testing/harness/runtime::is-test
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
