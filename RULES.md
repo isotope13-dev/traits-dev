@@ -349,6 +349,50 @@ if:
 
 `call`, `function`, `class`, `import`, `string`, `comment`, `assignment`, `return`, `binary_op`, `identifier`, `attribute`, `subscript`, `conditional`, `loop`
 
+Each abstract kind maps to one or more tree-sitter node types per language (see `composite_rules/ast_kinds.rs` in cleave). The matcher walks the AST and for every node of a matching type compares your pattern against the node's text.
+
+**What "node text" means depends on the kind.** For most kinds the node text is exactly what you'd expect — a `string` node is the string literal, a `comment` node is the comment body. The exception is `call`:
+
+- `kind: call` matches `function_call_expression` (PHP), `call_expression` (JS/TS/Go/Rust/C/…), `call` (Python/Elixir), `method_invocation` (Java), etc.
+- The node text for a call is **the full call expression**, including arguments and the parentheses: `curl_exec($ch)`, `aes.NewCipher(key)`, `eval("x")`.
+- This matters most for `exact:`. cleave gives you two matching surfaces on call-kind nodes:
+  - the **full text** (`name(args)`) — what `substr:`/`regex:` always check
+  - the **extracted function name** (`name`) — checked as a fallback for `exact:` so `exact: curl_exec` matches `curl_exec($ch)` cleanly
+
+You almost never want to combine `kind: call` with `exact: "name()"` style patterns that include the parens — they only match zero-arg calls and break the moment someone passes an argument. Use the canonical forms below.
+
+### Matching calls — recipe table
+
+| Goal | Best form | Notes |
+|------|-----------|-------|
+| Match a function called by exact name (`curl_exec(...)`, `aes.NewCipher(...)`) | `type: symbol exact: <name>` | Fastest — uses the pre-extracted symbol table. Available for languages with a symbol extractor (PHP, Python, JS/TS, Ruby, Go, Java, C#, Rust, Lua, Perl, PowerShell, Groovy). |
+| Same, but you specifically need AST scope (e.g. you're combining with another AST condition under `scope: leaf` and `near_bytes:`) | `type: ast kind: call exact: <name>` | Matches via the extracted-name fallback. One match per call site. |
+| Match a call whose arguments contain a specific literal | `type: ast kind: call substr: "name(\"<literal>"` | Matches against full call text including args. |
+| Match a call by name with a prefix anchor (no FPs from substring overlap) | `type: ast kind: call regex: "^<name>\\("` | The regex is anchored at the start of the call expression. |
+| Match a structural shape (this method on that object, with this argument relationship) | `type: ast kind: call query: "(call_expression ...)"` | Full tree-sitter S-expression query — see [tree-sitter docs](https://tree-sitter.github.io/tree-sitter/using-parsers#pattern-matching-with-queries). |
+| Detect any call from a known dangerous family (`eval`, `exec`, `system`, `assert`) | `type: symbol regex: '^(eval\|exec\|system\|assert)$'` | Symbol regex with anchors keeps it tight. |
+
+**Picking between `type: symbol` and `type: ast kind: call`:**
+
+- `type: symbol` is preferred for plain "is this function called anywhere in the file?" — it's faster and survives weird whitespace/formatting that the AST cache doesn't see.
+- `type: ast kind: call` is preferred when you need AST guarantees: a real call site (not a string mention of the name), or you're combining several AST conditions with `near_bytes:` proximity to require they all sit in the same expression context.
+
+### Other AST kinds — what node text actually is
+
+| Kind | Node text is… | Useful matcher forms |
+|------|---------------|---------------------|
+| `call` | full call expression `name(args)` (plus the extracted name as a fallback for `exact:`) | `exact:` (name), `substr: "name("`, `regex:`, `query:` |
+| `function` / `class` | the whole definition body — usually thousands of bytes | `query:` or `substr:` on a definition keyword; `exact:` on the whole body is never useful |
+| `string` | the string literal **including quotes** (so `exact: hello` won't match `"hello"`; use `substr: hello` or `exact: '"hello"'`) | `substr:`, `regex:` |
+| `comment` | the comment body including comment delimiters | `substr:`, `regex:` |
+| `import` | the import/use/require statement text | `substr:`, `regex:` |
+| `assignment` | the full assignment `lhs = rhs` | `substr:`, `regex:` |
+| `identifier` | a single identifier token | `exact:`, `substr:`, `regex:` |
+| `attribute` / `subscript` | the attribute access or subscript expression | `substr:`, `regex:` |
+| `return` / `binary_op` / `conditional` / `loop` | the full statement/expression text | `substr:`, `regex:`, `query:` |
+
+If you're ever in doubt about what a node's text is, run `cleave test-match <file> --type ast --kind <kind> --pattern <something-permissive>` and inspect the captured evidence.
+
 ## Count & Density Constraints
 
 These are **trait-level fields** (siblings of `if:`, not nested inside the condition):
