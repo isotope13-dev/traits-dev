@@ -54,6 +54,20 @@ traits:
     if:
       type: text
       exact: GetNetworkResource
+  - id: siphon-image-data-method
+    desc: SiphonImageData bitmap extraction method
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      exact: SiphonImageData
+  - id: accumulate-raw-channels-method
+    desc: AccumulateRawChannels bitmap extraction method
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      exact: AccumulateRawChannels
 composite_rules:
   - id: http-reflection-loader
     desc: .NET fileless HTTP reflection loader
@@ -70,7 +84,7 @@ composite_rules:
       - id: objectives/anti-static/obfuscation/reflection/invoke::activator
       - id: metadata/lang/compiler/managed::reflection-emit
     unless:
-      - id: objectives/command-and-control/dropper/staging/embedded::writeallbytes
+      - id: micro-behaviors/fs/write/file/direct::dotnet-writeallbytes-token
   - id: http-entrypoint-loader
     desc: .NET HTTP download-decode-load-invoke chain
     crit: suspicious
@@ -82,7 +96,23 @@ composite_rules:
       - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
       - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-entrypoint-reflection
     unless:
-      - id: objectives/command-and-control/dropper/staging/embedded::writeallbytes
+      - id: micro-behaviors/fs/write/file/direct::dotnet-writeallbytes-token
+  - id: http-aes-reflection-injection-stage
+    desc: .NET HTTP AES reflection injection stage
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: objectives/command-and-control/dropper/staging/memory::http-reflection-loader
+      - id: micro-behaviors/communications/http/client/managed::dotnet-http-client-with-aes
+      - id: objectives/evasion/process/injection/toolkit::dotnet-split-winapi-injection-loader
+    any:
+      - id: objectives/anti-static/obfuscation/reflection/invoke::delegate-execution-chain
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-resource-resolver-loader
+      - id: metadata/binary/symbols/imports::single-import-raw
+    needs: 2
+    unless:
+      - id: metadata/signed/platform::microsoft-windows
+      - id: metadata/binary/resource::resource-only-dll
   - id: disguised-media-loader
     desc: HTTP loader fetches media-named payload
     crit: suspicious
@@ -121,7 +151,7 @@ composite_rules:
       - id: objectives/evasion/masquerade/file/lure::wav-payload-url
     unless:
       - id: metadata/signed/platform::microsoft
-      - id: objectives/command-and-control/dropper/staging/embedded::writeallbytes
+      - id: micro-behaviors/fs/write/file/direct::dotnet-writeallbytes-token
   - id: glitch-media-3des-loader
     desc: .NET Glitch WAV stage loader
     crit: hostile
@@ -130,6 +160,21 @@ composite_rules:
       - id: objectives/command-and-control/dropper/staging/memory::http-3des-reflection-loader
       - id: objectives/evasion/masquerade/file/lure::wav-payload-url
       - id: micro-behaviors/communications/http/user-agent::ipad-safari-15-ua-pe
+  - id: stego-bitmap-byte-extraction-chain
+    desc: .NET bitmap channel byte extraction chain
+    crit: suspicious
+    conf: 0.94
+    attack: T1027.003
+    mbc: E1027.m02
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: micro-behaviors/data/embedded/payload/image::dotnet-resource-bitmap-pixel-readback
+    any:
+      - id: siphon-image-data-method
+      - id: accumulate-raw-channels-method
+      - id: objectives/command-and-control/dropper/delivery/stego::dotnet-stego-acquire
+      - id: objectives/command-and-control/dropper/delivery/stego::dotnet-harvestimage-pixel-extract
+    needs: 2
   - id: stego-bitmap-reflection-invoke
     desc: .NET bitmap stego reflection invoke chain
     crit: suspicious
@@ -145,6 +190,38 @@ composite_rules:
     any:
       - id: objectives/anti-static/pack/entropy::dotnet-large-packed-text
       - id: metadata/binary/symbols/imports::single-import-count
+      - id: metadata/binary/symbols/imports::single-import-raw
+      - id: objectives/anti-static/pack/runtime::dotnet-packed-stub
+  - id: stego-bitmap-minimal-import-packed-stub
+    desc: .NET bitmap loader packed stub with minimal imports
+    crit: suspicious
+    conf: 0.93
+    attack: T1027.003
+    mbc: F0001
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: metadata/binary/symbols/imports::single-import-raw
+      - id: micro-behaviors/data/embedded/payload/image::dotnet-resource-bitmap-pixel-readback
+    any:
+      - id: objectives/anti-static/pack/runtime::dotnet-packed-stub
+      - id: metadata/binary/section/metrics::random-exec-payload-section
+      - id: objectives/anti-static/obfuscation/binary-metrics/shape::high-code-entropy
+    needs: 2
+    downgrade:
+      any:
+        - id: well-known/app/crayens::crayens-installer
+  - id: stego-bitmap-stage-load-chain
+    desc: .NET bitmap stage in-memory load chain
+    crit: suspicious
+    conf: 0.95
+    attack: T1620
+    mbc: E1059
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: micro-behaviors/data/embedded/payload/image::dotnet-resource-bitmap-pixel-readback
+    any:
+      - id: objectives/command-and-control/dropper/staging/memory::stego-bitmap-reflection-invoke
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-appdomain-callbyname-load
   - id: stego-bitmap-memory-loader
     desc: .NET steganographic bitmap in-memory loader
     crit: hostile
@@ -153,9 +230,10 @@ composite_rules:
     mbc: E1105
     all:
       - id: metadata/binary/framework::dotnet-assembly
-      - id: micro-behaviors/data/embedded/payload/image::dotnet-resource-bitmap-pixel-readback
-      - id: objectives/command-and-control/dropper/staging/memory::stego-bitmap-reflection-invoke
+      - id: objectives/command-and-control/dropper/staging/memory::stego-bitmap-byte-extraction-chain
+      - id: objectives/command-and-control/dropper/staging/memory::stego-bitmap-minimal-import-packed-stub
       - id: objectives/command-and-control/dropper/staging/memory::stego-bitmap-packing-signal
+      - id: objectives/command-and-control/dropper/staging/memory::stego-bitmap-stage-load-chain
     unless:
       - id: metadata/signed/platform::microsoft
       - id: metadata/binary/resource::resource-only-dll

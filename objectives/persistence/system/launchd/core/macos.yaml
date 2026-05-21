@@ -201,16 +201,17 @@ traits:
     mbc: B0028
     attack: T1543.004
     if:
-      type: text
-      substr: inetdCompatibility
+      type: kv
+      path: inetdCompatibility
   - id: shell-program
     desc: Shell as launchd Program (/bin/sh)
     crit: component
     conf: 0.7
     attack: T1059.004
     if:
-      type: text
-      regex: <key>Program</key>\s*<string>/bin/(sh|shell|zsh)</string>
+      type: kv
+      path: Program
+      regex: ^/bin/(sh|shell|zsh)$
   - id: embedded-plist-shell
     desc: Embedded plist template with shell program
     crit: component
@@ -325,7 +326,7 @@ traits:
       exact: install_daemon
   - id: fake-apple-label
     desc: Launchd Label uses com.apple namespace
-    crit: component
+    crit: notable
     conf: 0.85
     if:
       type: kv
@@ -355,7 +356,7 @@ traits:
         - id: metadata/import/framework::system-framework
   - id: fake-homebrew-label
     desc: Fake homebrew identifier (com.homebrew)
-    crit: component
+    crit: notable
     conf: 0.9
     for:
       - macho
@@ -491,6 +492,46 @@ traits:
       type: kv
       path: ProgramArguments[0]
       regex: /\.[^/]{1,120}$
+  - id: progargs-user-dotdir
+    desc: ProgramArguments[0] under user dot directory
+    crit: notable
+    conf: 0.82
+    if:
+      type: kv
+      path: ProgramArguments[0]
+      regex: ^/Users/[^/]{1,80}/\.[^/]{1,80}/
+  - id: program-user-dotdir
+    desc: Program under user dot directory
+    crit: notable
+    conf: 0.82
+    if:
+      type: kv
+      path: Program
+      regex: ^/Users/[^/]{1,80}/\.[^/]{1,80}/
+  - id: progargs-python-script
+    desc: ProgramArguments[0] Python script
+    crit: component
+    conf: 0.84
+    if:
+      type: kv
+      path: ProgramArguments[0]
+      regex: (?i)\.py$
+  - id: progargs-python-interpreter
+    desc: ProgramArguments[0] Python interpreter
+    crit: component
+    conf: 0.84
+    if:
+      type: kv
+      path: ProgramArguments[0]
+      regex: (^|/)python[0-9.]*$
+  - id: progargs1-user-dotdir-python
+    desc: ProgramArguments[1] Python in user dot directory
+    crit: component
+    conf: 0.82
+    if:
+      type: kv
+      path: ProgramArguments[1]
+      regex: ^/Users/[^/]{1,80}/\.[^/]{1,80}/.{1,160}\.py$
   - id: program-system
     desc: LaunchAgent Program in /System/
     crit: component
@@ -561,6 +602,20 @@ traits:
       type: kv
       path: ProgramArguments[0]
       regex: '^(/Library/Application Support/Microsoft/|/Applications/Microsoft)'
+  - id: program-adobe
+    desc: LaunchAgent Program is Adobe app
+    crit: component
+    if:
+      type: kv
+      path: Program
+      regex: '^(/Library/Application Support/Adobe/|/Applications/Adobe)'
+  - id: progargs-adobe
+    desc: LaunchAgent ProgramArguments[0] is Adobe app
+    crit: component
+    if:
+      type: kv
+      path: ProgramArguments[0]
+      regex: '^(/Library/Application Support/Adobe/|/Applications/Adobe)'
   - id: program-oracle-java
     desc: LaunchAgent Program is Oracle Java plugin
     crit: component
@@ -591,11 +646,15 @@ composite_rules:
       - id: plist-extension
       - id: run-at-load
       - id: keep-alive
+      - id: throttle-interval
       - id: start-interval
       - id: start-calendar-interval
       - id: stdout-path
       - id: stderr-path
-      - id: objectives/persistence/system/launchd::env-vars-dup
+      - id: objectives/persistence/system/launchd/event::watch-paths
+      - id: objectives/persistence/system/launchd/event::queue-directories
+      - id: objectives/persistence/system/launchd/event::start-on-mount
+      - id: objectives/persistence/system/launchd/core::env-vars-dup
       - id: mach-services
       - id: sockets
       - id: service-ipc
@@ -740,6 +799,53 @@ composite_rules:
       - id: args-shared
       - id: program-hidden
       - id: args-hidden
+      - id: progargs-user-dotdir
+      - id: program-user-dotdir
+  - id: progargs-user-dotdir-python-script
+    desc: Launchd Python script from user dot directory
+    crit: notable
+    conf: 0.88
+    all:
+      - id: progargs-user-dotdir
+      - id: progargs-python-script
+  - id: launchd-user-dotdir
+    desc: Launchd program in user dot directory
+    crit: notable
+    conf: 0.86
+    any:
+      - id: progargs-user-dotdir
+      - id: program-user-dotdir
+  - id: progargs-user-dotdir-python-arg
+    desc: Launchd Python interpreter with user dot-directory script
+    crit: component
+    conf: 0.88
+    all:
+      - id: progargs-python-interpreter
+      - id: progargs1-user-dotdir-python
+  - id: launchd-scheduled-user-dotdir-python
+    desc: Scheduled LaunchAgent runs Python from user dot directory
+    crit: suspicious
+    conf: 0.92
+    attack: T1543.004,T1053.003
+    all:
+      - id: run-at-load
+      - id: start-interval
+    any:
+      - id: progargs-user-dotdir-python-script
+      - id: progargs-user-dotdir-python-arg
+  - id: launchd-user-dotdir-temp-output
+    desc: LaunchAgent from user dot directory logs to temp
+    crit: suspicious
+    conf: 0.9
+    attack: T1543.004
+    all:
+      - id: launchd-user-dotdir
+      - id: output-suspicious-location
+    any:
+      - id: run-at-load
+      - id: keep-alive
+      - id: start-interval
+      - id: start-calendar-interval
   - id: launchd-masquerading-apple
     desc: Apple-labeled Launchd item launching from unusual location
     crit: hostile
@@ -806,6 +912,16 @@ composite_rules:
     unless:
       - id: program-microsoft
       - id: progargs-microsoft
+  - id: launchd-masquerading-adobe
+    desc: Adobe-labeled Launchd item launching from unusual location
+    crit: hostile
+    conf: 0.9
+    all:
+      - id: label-adobe
+      - id: program-unusual-location
+    unless:
+      - id: program-adobe
+      - id: progargs-adobe
   - id: launchd-masquerading-oracle
     desc: Oracle-labeled Launchd item launching from unusual location
     crit: hostile

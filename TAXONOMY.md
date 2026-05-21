@@ -8,7 +8,7 @@ A three-tier taxonomy following [MBC (Malware Behavior Catalog)](https://github.
 |------|---------|-------------------|----------------|
 | **Capabilities** (`micro-behaviors/`) | Observable mechanics — what code *can do* | component → baseline → notable → suspicious | [Micro-objectives](https://github.com/MBCProject/mbc-markdown/tree/master/micro-behaviors) |
 | **Objectives** (`objectives/`) | Attacker goals — why code *likely wants* to do something | component → baseline → notable → suspicious → hostile | [Objectives](https://github.com/MBCProject/mbc-markdown#malware-objective-descriptions) |
-| **Known Entities** (`well-known/`) | Specific malware families and tool signatures | component → baseline → suspicious → hostile | [Corpus](https://github.com/MBCProject/mbc-markdown/tree/master/xample-malware) |
+| **Known Entities** (`well-known/`) | Specific malware, unwanted software, and tool/app/library signatures | component → baseline → suspicious → hostile | [Corpus](https://github.com/MBCProject/mbc-markdown/tree/master/xample-malware) |
 | **Metadata** (`metadata/`) | Neutral file-structure properties — what a file *is* | component → baseline (occasionally suspicious) | — |
 
 NOTE: atomic traits should be organized based on what they detect, not on what composite they serve. atomics and composites are often in completely different directories.
@@ -77,7 +77,7 @@ All tiers follow: `TIER/CATEGORY/BEHAVIOR/METHOD/platform.yaml`
 ### Tier Selection
 
 ```
-Specific malware family or tool signature?
+Specific malware, unwanted software, or tool signature?
   → well-known/
 
 Attacker intent inferred from capability combinations?
@@ -130,6 +130,7 @@ When a behavior could serve multiple objectives, place the single trait where ev
 | Hidden files in system directories | `evasion/file-hiding/` | Concealment from users/admins; a hidden file doesn't survive reboots better |
 | Daemon fork+setsid persisting across reboot | `persistence/system/daemon/` | Restarting after reboot is persistence |
 | Reads Chrome Login Data SQLite | `credential-access/browser/` | Targets a specific credential store |
+| Extracts saved Wi-Fi profile keys | `credential-access/wifi/` | Targets a specific credential store |
 | Reads `AWS_SECRET_ACCESS_KEY` from env | `credential-access/env/secrets/` | Targets a specific secret |
 | Reads `os.environ` generically | `micro-behaviors/os/env/` | Neutral capability, no credential targeting |
 | Generic keystroke capture | `collection/keylog/` | General capture; credential-access composites reference it |
@@ -872,6 +873,11 @@ well-known/
 │                          #     Spreads without user interaction (email, SMB, SSH).
 │                          #     (MyDoom, Conficker, Beagle)
 │
+├── unwanted/              # Potentially unwanted software and riskware families
+│                          #   Use for named PUP/adware/riskware entities that are
+│                          #   not ordinary dual-use tools and not clearly hostile
+│                          #   malware. (Computrace/rpcnetp)
+│
 └── tool/                  # Legitimate tools often abused
     ├── browser/           #   Browser components (Chromium sandbox, extensions)
     ├── development/       #   IDEs and developer tools (JetBrains)
@@ -1059,4 +1065,3 @@ composite_rules:
   - **`objectives/`**: Reserved for improper/malicious behavior that requires intent inference. Any finding suggesting malice or abuse must be categorized under an `objectives/` hierarchy.
   - **`micro-behaviors/`**: Reserved for strictly neutral, atomic observations. If a trait is neutral, it belongs here.
 - **Platform/Language Neutrality**: Directories must NOT be named after programming languages (e.g., `python/`) or platforms (e.g., `windows/`). These are used as suffixes in YAML filenames (e.g., `dropper_python.yaml`). This ensures the ML pipeline can perform cross-language and cross-platform technique correlation.
-
