@@ -1,0 +1,82 @@
+# Language-agnostic canonical reverse-shell detection.
+#
+# Every reverse-shell idiom is a triple:
+#   (1) socket dialing an attacker IP+port (or shell-level /dev/tcp redirect)
+#   (2) stdio/file-descriptor redirection (dup2, >&, reopen)
+#   (3) interactive shell exec (`/bin/sh -i`, `bash -i`, `cmd.exe`, etc.)
+#
+# Existing language-specific trait files (socket/python.yaml, socket/perl.yaml,
+# socket/ruby.yaml, socket/sh.yaml, socket/powershell.yaml, socket/node.yaml,
+# socket/c-cpp.yaml, …) catch the rich variants. This file is the safety net:
+# it pairs broad component atoms across every text-based language so the
+# canonical samples in `testdata/reverse-shell/` always surface at least one
+# hostile finding even when the language-specific composite has a stricter
+# `all:` clause that the sample doesn't quite match.
+defaults:
+  for: [scripts, source]
+  platforms: [linux, macos, windows]
+  attack: T1059
+  mbc: B0030
+
+traits:
+  - id: dev-tcp-redirect
+    desc: bash /dev/tcp socket redirect
+    crit: component
+    conf: 0.99
+    if:
+      type: text
+      regex: '/dev/(tcp|udp)/[^/\s"]+/[0-9]{1,5}'
+  - id: external-ipv4-literal
+    desc: external IPv4 literal
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '\b(?:[1-9][0-9]{0,2}\.){3}[0-9]{1,3}\b'
+      is: external_ip
+  - id: interactive-sh-exec
+    desc: launches interactive /bin/sh
+    crit: component
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?:/bin/sh\s+-i\b|/bin/bash\s+-i\b|\bbash\s+-i\b|\bsh\s+-i\b|"/bin/sh"|''/bin/sh'')'
+  - id: dup2-stdio
+    desc: dup2 hijacks stdio onto fd
+    crit: component
+    conf: 0.95
+    if:
+      type: text
+      regex: '\bdup2\s*\([^)]{0,40}[012]\s*\)'
+  - id: socket-connect-call
+    desc: socket connect to remote endpoint
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?:\.connect\s*\(|gen_tcp:connect|TCPSocket|TcpStream::connect|fsockopen\s*\(|TCPClient\b|tcpConnectToHost|Net::Sockets::TCPClient)'
+
+composite_rules:
+  - id: dev-tcp-revshell
+    desc: bash /dev/tcp reverse shell idiom
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: dev-tcp-redirect
+      - id: external-ipv4-literal
+  - id: socket-connect-shell-exec
+    desc: socket connect plus interactive shell exec
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: socket-connect-call
+      - id: interactive-sh-exec
+      - id: external-ipv4-literal
+  - id: dup2-shell-exec
+    desc: dup2 stdio plus interactive shell exec
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: dup2-stdio
+      - id: interactive-sh-exec
+      - id: external-ipv4-literal

@@ -1,0 +1,105 @@
+# Language-agnostic detection of the fetch -> chmod -> background-exec hidden
+# implant idiom. Fires whether the bytes live inside a shell script,
+# package.json postinstall, setup.py cmdclass, Rakefile, Dockerfile RUN,
+# Makefile target, GitHub Actions step, Jenkinsfile, AppleScript do-shell-
+# script, Kotlin/Scala ProcessBuilder, etc.
+#
+# Hidden stage path = a leading dot under a writable scratch directory
+# (/tmp/.x, /var/tmp/.x, /dev/shm/.x, ~/.x, $HOME/.x). Per-destination atoms
+# keep individual regexes short and machine-grouped.
+defaults:
+  for: [scripts, source, manifests]
+  platforms: [linux, macos, windows]
+  attack: T1105
+  mbc: B0024
+
+traits:
+  # ---- Hidden stage path atoms (one per scratch directory) ----
+  - id: stage-path-tmp
+    desc: hidden file under /tmp
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '/tmp/\.[A-Za-z0-9._-]+'
+  - id: stage-path-vartmp
+    desc: hidden file under /var/tmp
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '/var/tmp/\.[A-Za-z0-9._-]+'
+  - id: stage-path-devshm
+    desc: hidden file under /dev/shm
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '/dev/shm/\.[A-Za-z0-9._-]+'
+  - id: stage-path-tilde-home
+    desc: hidden file under ~/
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(^|[\s;&|`("''])~/\.[A-Za-z0-9._-]+'
+  - id: stage-path-env-home
+    desc: hidden file under $HOME
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '\$HOME/\.[A-Za-z0-9._-]+'
+
+  # ---- Action atoms ----
+  - id: fetch-output-flag
+    desc: curl or wget with output flag
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: '\b(curl|wget)(\.exe)?\b[^\n]{0,200}\s(-o|-O)\s'
+  - id: chmod-make-executable
+    desc: chmod marks file executable
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: '\bchmod\s+(\+x|0?7[57][57])\s'
+
+composite_rules:
+  # ---- Aggregator: any hidden-stage destination ----
+  - id: any-hidden-stage-path
+    desc: hidden scratch directory stage path
+    crit: notable
+    conf: 0.9
+    any:
+      - id: stage-path-tmp
+      - id: stage-path-vartmp
+      - id: stage-path-devshm
+      - id: stage-path-tilde-home
+      - id: stage-path-env-home
+
+  # ---- Three hostile pairings, so a complete chain lights up 3 findings ----
+  - id: stealth-fetch-hidden-stage
+    desc: stealth fetch arms hidden stage file
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: fetch-output-flag
+      - id: chmod-make-executable
+      - id: any-hidden-stage-path
+  - id: fetch-then-stage-output
+    desc: fetch writes to hidden stage path
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: fetch-output-flag
+      - id: any-hidden-stage-path
+  - id: chmod-arms-hidden-stage
+    desc: chmod arms hidden scratch payload
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: chmod-make-executable
+      - id: any-hidden-stage-path
