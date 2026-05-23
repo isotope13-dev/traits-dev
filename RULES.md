@@ -177,6 +177,9 @@ defaults:
 | `string_literal` | AST-backed string literals only (source) | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
 | `raw` | Raw file bytes | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
 | `symbol` | Imports/exports/forwards/functions | `exact`, `substr`, `regex` | `platforms`, `is`, `kind` |
+| `import` | Imported symbols / source import calls | `exact`, `substr`, `regex` | `platforms`, `is` |
+| `export` | Exported symbols | `exact`, `substr`, `regex` | `platforms`, `is` |
+| `function` | Internal functions / source call targets | `exact`, `substr`, `regex` | `platforms`, `is` |
 | `hex` | Byte patterns (wildcards always extracted) | pattern string | count, density, `offset`, `offset_range`, `arch` clamped in fat binaries |
 | `encoded` | **All decoded strings** | `exact`, `substr`, `regex`, `word` | count, density, location, `encoding`, `case_insensitive`, `is` |
 | ~~`base64`~~ | *(removed — use `encoded`)* | | |
@@ -184,9 +187,9 @@ defaults:
 | ~~`string_value`~~ | *(removed — use `text`)* | | |
 | ~~`string_count` / `string_value_count`~~ | *(removed — use `metrics: binary.string_count` or a `type: text` trait with `count_min`)* | | |
 | ~~`exports_count`~~ | *(removed — use `metrics: binary.export_count`)* | | |
-| ~~`import_combination`~~ | *(removed — use `symbol kind: import` plus composite `all`/`any`/`needs`)* | | |
+| ~~`import_combination`~~ | *(removed — use `type: import` plus composite `all`/`any`/`needs`)* | | |
 | ~~`structure`~~ | *(removed — express file-format and arch gates via trait-level `for:`/`arch:`, or check `elf.e_machine`/`macho.cpu_type`/`pe.machine` via `metrics`)* | | |
-| `kv` | Manifest data | `exact`, `substr`, `regex` | `path`, `exists`, `size_min`, `size_max`, `case_insensitive` (value only) |
+| `value` | Residual structured values / manifest data | `exact`, `substr`, `regex` | `path`, `exists`, `size_min`, `size_max`, `case_insensitive` |
 | `basename` | Filename | `exact`, `substr`, `regex` | `case_insensitive` |
 
 **Matcher notes:**
@@ -195,13 +198,13 @@ defaults:
   - `external_ip`: Only match if evidence contains a valid external IPv4 (rejects RFC1918, loopback, reserved).
   - `bitcoin_addr`: Only match if evidence contains a valid Bitcoin address (P2PKH, P2SH, or SegWit) with a valid checksum.
 - **Symbol normalization:** Leading underscores are stripped from both loaded symbols and `exact`/`substr` patterns for cross-platform portability (macOS `_malloc`, glibc `__libc_start_main` both match `exact: "malloc"` / `exact: "libc_start_main"`). Regex patterns are not normalized.
-- **`kind:` filter on `symbol`:** restrict matching to one category — `import`, `export`, `forward` (PE re-exports only), or `function` (internal functions recovered by disassembly). Omitting `kind:` matches across imports, exports, and functions as before. When `kind: forward`, the pattern is tested against both the export name *and* the forward target (`KERNEL32.LoadLibraryA`), so rules can filter either side of the re-export edge. Use `kind: import` + composites for per-import set/count queries (what `import_combination` used to do in one block).
+- **Symbol family shortcuts:** use `type: import`, `type: export`, or `type: function` when you know the family. They are clearer spellings for `type: symbol` with `kind: import/export/function`. Keep `type: symbol` for cross-family searches or `kind: forward` PE re-export rules. When `kind: forward`, the pattern is tested against both the export name *and* the forward target (`KERNEL32.LoadLibraryA`).
 
 **Which one should I use?**
 - Use `text` by default for human-readable content.
 - Use `string_literal` only when you specifically mean AST-backed string literals in source/script languages.
 - Use `raw` when you need comments, byte-precise offsets/ranges, or matches that can cross string boundaries.
-- Prefer `symbol` for simple API/function/method call detection in source and binaries when cleave extracts it cleanly. It is usually the fastest search type, and is often less brittle than AST or broad text regexes for calls like `fetch`, `appendChild`, `FormData`, `querySelectorAll`, or `document.getElementById`.
+- Prefer `import`, `export`, or `function` for typed filefacts symbol families; use `symbol` for cross-family searches. Prefer these over `value` paths such as `source.imports` or `pe.imports`. It is usually the fastest search type, and is often less brittle than AST or broad text regexes for calls like `fetch`, `appendChild`, `FormData`, `querySelectorAll`, or `document.getElementById`.
 - Before writing AST for simple calls, check `cleave symbols <file>` to see whether the needed calls are already exposed as symbols.
 - Use `ast` when the behavior depends on structure rather than just the presence of a call: argument relationships, assignment shape, control flow, object construction, chained access patterns, or other syntax that `symbol` cannot express precisely.
 
@@ -841,86 +844,85 @@ unparsed value is also kept under `<section>._raw.<key>`.
 
 ```yaml
 # systemd: ExecStart from /tmp
-type: kv
+type: value
 path: service.exec_start
 regex: "^/tmp/"
 
 # .desktop: Exec= invokes shell
-type: kv
+type: value
 path: desktop_entry.exec
 regex: '\bbash\s+-c\b'
 
 # .desktop: GNOME autostart enabled
-type: kv
+type: value
 path: desktop_entry.x_gnome_autostart_enabled
 exact: "true"
 
 # .desktop: Categories contains a specific tag
-type: kv
+type: value
 path: desktop_entry.categories
 exact: Utility
 
 # .desktop: secondary [Desktop Action <name>] section
-type: kv
+type: value
 path: desktop_action_new_window.exec
 exists: true
 ```
 
 Localized keys (`Name[cs]=...`) are dropped during parsing; only the base
-key (`name`) is exposed. Use `cleave kv <file>` to dump the full path map
+key (`name`) is exposed. Use `cleave value <file>` to dump the full path map
 for any structured file while authoring traits.
 
 ### Binary formats (ELF, PE, Mach-O)
 
-`type: kv` works on binaries too. Cleave synthesizes a kv tree of *raw
+`type: value` works on binaries too. Cleave synthesizes a values tree of *raw
 structural reads* — strings, names, identities, hex digests, raw bit-flag
 values lifted directly from binary headers, sections, and load commands.
 This is the cleanest surface for build-environment / supply-chain
 attribution because the data sources are stable per build pipeline.
 
 ```yaml
-# ELF: PDB-style attribution paths leaked from C2 frameworks
-type: kv
-path: debug.pdb_path
+# PE: PDB-style attribution paths leaked from C2 frameworks
+type: value
+path: pe.debug.pdb.path
 regex: "(^|[/\\\\])Apollo\\.pdb$"
 
 # PE: trojanized installer using cross-vendor masquerade
-type: kv
-path: pe.version_info.product_name
+type: value
+path: pe.version.product_name
 regex: "HWiNFO|HWMonitor"
 
 # Mach-O: code signature identifies the developer team
-type: kv
-path: signing.team_id
+type: value
+path: macho.code_signature.team_id
 exact: "9XQGPJ8B7K"
 
 # ELF: vendor binary requires a specific glibc version
-type: kv
+type: value
 path: elf.needed_versions
 regex: "GLIBC_2\\.38"
 
 # PE: side-by-side manifest declares Win10+ support
-type: kv
+type: value
 path: pe.manifest.supported_os
 regex: '"name":"win10"'
 
 # ELF: built on a specific distro
-type: kv
+type: value
 path: build.distro
 exact: wolfi
 
 # Mach-O: Swift code presence (any __swift5_* section)
-type: kv
-path: macho.swift_sections
-exists: true
+type: section
+substr: "__swift5_"
 
 # Cross-format: builder home directory leaked
-type: kv
+type: value
 path: build.user_home
 regex: "^/home/[a-z0-9_-]{1,40}$"
 ```
 
-Top-level kv namespaces synthesized from binaries:
+Top-level value namespaces synthesized from binaries:
 
 | Namespace | Contents | Examples |
 |---|---|---|
@@ -939,10 +941,10 @@ Top-level kv namespaces synthesized from binaries:
 For derived booleans, counts, deltas, and comparisons (e.g.
 `signing.is_signed`, `pe.cert_chain_depth`, `consistency.*`), prefer
 `type: metrics` since those are typed integers/booleans on the metrics
-structs. Use `type: kv` for raw structural reads — strings, hex digests,
+structs. Use `type: value` for raw structural reads — strings, hex digests,
 named identities, list contents.
 
-Run `cleave kv <binary>` on a sample to see every kv path it produces;
+Run `cleave value <binary>` on a sample to see every value path it produces;
 the same paths are matchable from YAML traits.
 
 ### Value Matching
@@ -951,31 +953,31 @@ Path-only (no matcher) = existence check.
 
 ```yaml
 # Existence check (field must exist)
-type: kv
+type: value
 path: "description"
 
 # Explicit existence check
-type: kv
+type: value
 path: "description"
 exists: true              # Field must exist
 
 # Non-existence check
-type: kv
+type: value
 path: "description"
 exists: false             # Field must NOT exist
 
 # String matching
-type: kv
+type: value
 path: "scripts.postinstall"
 substr: "curl"            # Contains substring
 
 # Exact match
-type: kv
+type: value
 path: "license"
 exact: "MIT"              # Exact string match
 
 # Regex match
-type: kv
+type: value
 path: "version"
 regex: "^0\\.0\\.0$"      # Version is 0.0.0
 ```
@@ -986,23 +988,23 @@ Constrain collection size (array elements or object keys):
 
 ```yaml
 # Exactly one maintainer
-type: kv
+type: value
 path: "maintainers"
 size_min: 1
 size_max: 1
 
 # At least 3 dependencies
-type: kv
+type: value
 path: "bundledDependencies"
 size_min: 3
 
 # No more than 10 keywords
-type: kv
+type: value
 path: "keywords"
 size_max: 10
 
 # Empty array/object
-type: kv
+type: value
 path: "contributors"
 size_max: 0
 ```
@@ -1011,12 +1013,12 @@ size_max: 0
 
 ```yaml
 # At least 5 dependencies
-type: kv
+type: value
 path: "dependencies"
 size_min: 5
 
 # No dependencies
-type: kv
+type: value
 path: "dependencies"
 size_max: 0
 ```
@@ -1060,7 +1062,7 @@ cleave test-match <file> --type string-value --pattern "eval"  # Test patterns
 
 | Option | Values |
 |--------|--------|
-| `--type` | `string-value`, `symbol`, `raw`, `kv`, `hex`, `encoded` |
+| `--type` | `text`, `string-literal`, `symbol`, `raw`, `value`, `hex`, `encoded`, `section`, `metrics` |
 | `--method` | `exact`, `contains`, `regex`, `word` |
 | `--pattern` | Search pattern |
 | `--encoding` | Encoding filter for `encoded` type: `base64`, `base64,hex`, etc. |
@@ -1070,7 +1072,7 @@ cleave test-match <file> --type string-value --pattern "eval"  # Test patterns
 | `--offset`, `--offset-range` | Absolute position |
 | `--section-offset`, `--section-offset-range` | Section-relative position |
 | `--case-insensitive` | Case-insensitive match |
-| `--kv-path` | Path for KV searches |
+| `--path` | Path for value searches |
 | `--file-type` | Override detection |
 
 ## Reference Codes
@@ -1085,7 +1087,7 @@ cleave test-match <file> --type string-value --pattern "eval"  # Test patterns
 - **ID Formatting:** Cross-file references must use `category/path::id`. Never include the YAML filename in a trait ID.
 - **Tier Constraints:** `hostile` criticality is only allowed in `objectives/` and `well-known/`. `micro-behaviors/` max out at `suspicious`.
 
-## Where to put a metric / kv path
+## Where to put a metric / value path
 
 Cleave's metric pools are organized by **computation scope**, not by category.
 The decision rule:
@@ -1101,15 +1103,15 @@ The decision rule:
   `bundle_identifier_mismatch`, `cert_org_pdb_mismatch`) → on the
   format-specific struct, NOT in a separate consistency pool
 
-KV path placement:
+Value path placement:
 
 - **Similarity / digest hashes** (imp, sym, dylib, gimp, tlsh, ssdeep, cd, authenti, …) → `hash.*` (singular namespace, terse stems)
 - **Cross-format signing data** (cert.subject, cert.issuer, validity.*, time, format, catalog) → `signing.*`
-- **Format-specific kv** → `<format>.*` (`pe.*`, `elf.*`, `macho.*`)
+- **Format-specific value** → `<format>.*` (`pe.*`, `elf.*`, `macho.*`)
 
-**Disjoint by data kind.** kv carries values only (strings, paths, hashes,
+**Disjoint by data kind.** `value` carries residual structured values only (strings, paths, hashes,
 identifiers, structured trees, decoded named bit-flags). Metrics carry bools,
 counts, and computed scalars. Every fact lives in exactly one tree — the only
 acceptable cross-dimension "split" is a raw `u32` bitfield on metrics paired
-with its decoded named-bit subtree in kv (e.g. `pe.dll_characteristics.*`,
+with its decoded named-bit subtree in values (e.g. `pe.dll_characteristics.*`,
 `macho.cs_flags.*`).

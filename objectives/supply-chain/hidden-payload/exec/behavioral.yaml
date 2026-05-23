@@ -1,6 +1,61 @@
 defaults:
-  platforms: [unix, windows, macos]
+  platforms: [unix, windows]
   for: [javascript, typescript]
+traits:
+  - id: setup-gzip-pyc-loader
+    desc: setup.py extracts Python bytecode from gzip
+    crit: suspicious
+    conf: 0.96
+    attack: T1195.002
+    for: [python]
+    if:
+      type: symbol
+      exact: GzipFile
+  - id: setup-pyc-filename-builder
+    desc: setup.py builds Python bytecode filename
+    crit: component
+    conf: 0.94
+    attack: T1195.002
+    for: [python]
+    if:
+      type: text
+      regex: '\.pyc|bytes\.fromhex\s*\(\s*["'']707963["'']\s*\)'
+  - id: setup-importlib-exec-module
+    desc: setup.py executes module through importlib spec
+    crit: suspicious
+    conf: 0.95
+    attack: T1195.002
+    for: [python]
+    if:
+      type: text
+      regex: 'spec_from_file_location[\s\S]{0,500}exec_module\s*\('
+  - id: obfuscated-httpx-socks-import
+    desc: Obfuscated httpx_socks import
+    crit: suspicious
+    conf: 0.95
+    attack: T1027
+    for: [python]
+    if:
+      type: text
+      regex: "__import__\\s*\\(\\s*['\"]httpx['\"]\\s*\\+\\s*['\"]_socks['\"]"
+  - id: reversed-subprocess-import
+    desc: Reversed subprocess dynamic import
+    crit: suspicious
+    conf: 0.96
+    attack: T1027
+    for: [python]
+    if:
+      type: text
+      regex: "__import__\\s*\\(\\s*['\"]ssecorpbus['\"]\\s*\\[::?-1\\]"
+  - id: obfuscated-shell-bool-spawn
+    desc: Obfuscated subprocess shell spawn
+    crit: suspicious
+    conf: 0.92
+    attack: T1059.006
+    for: [python]
+    if:
+      type: text
+      regex: 'shell\s*=\s*bool\s*\('
 composite_rules:
   - id: spawn-bash-detached
     desc: Spawns detached bash shell process
@@ -34,3 +89,329 @@ composite_rules:
       - id: objectives/supply-chain/recon-exfil/install-hook::init-py-file
       - id: micro-behaviors/process/create/subprocess::call-touch-argv
       - id: micro-behaviors/process/create/subprocess::call
+  - id: python-package-inline-reverse-shell
+    desc: Python package contains inline reverse shell
+    crit: hostile
+    conf: 0.99
+    attack: T1195.002
+    for: [python, pkginfo, zip]
+    scope: archive
+    all:
+      - id: metadata/build/pip::setup-py
+      - id: objectives/command-and-control/reverse-shell/socket::inline-python-reverse-shell
+  - id: import-time-discord-dropper-bot
+    desc: Import-time Discord dropper bot
+    crit: hostile
+    conf: 0.99
+    attack: T1195.002
+    for: [python]
+    all:
+      - id: objectives/supply-chain/recon-exfil/install-hook::init-py-file
+      - id: objectives/command-and-control/channel/discord::discord-python-bot-c2
+      - id: objectives/command-and-control/dropper/execution/script::python-download-appdata-startfile
+    scope: file
+  - id: import-time-encrypted-python-payload
+    desc: Import-time encrypted Python payload
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002
+    for: [python]
+    all:
+      - id: micro-behaviors/crypto/symmetric/stream::python-rc4-like-stream-cipher
+      - id: micro-behaviors/crypto/hash/digest::sha3-256-python
+      - id: micro-behaviors/fs/file/write/direct::py-write-call
+    any:
+      - id: micro-behaviors/data/text/source::python-import-from-statement
+      - id: micro-behaviors/data/text/source::python-py-extension-literal
+    scope: file
+  - id: time-gated-encrypted-python-payload
+    desc: Time-gated encrypted Python payload
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002
+    for: [python]
+    all:
+      - id: micro-behaviors/crypto/symmetric/stream::python-rc4-like-stream-cipher
+      - id: micro-behaviors/crypto/hash/digest::sha3-256-python
+      - id: micro-behaviors/fs/file/write/direct::py-write-call
+    any:
+      - id: micro-behaviors/data/text/source::python-datetime-threshold
+      - id: micro-behaviors/data/text/source::python-timezone-utc
+    needs: 1
+    scope: file
+  - id: python-packaged-data-executable-loader
+    desc: Python package decrypts resource then writes and launches it
+    crit: hostile
+    conf: 0.99
+    attack: T1195.002
+    for: [python]
+    all:
+      - id: micro-behaviors/fs/read/resource::pkgutil-get-data
+      - id: micro-behaviors/data/decode/base64::b64decode-string
+      - id: objectives/anti-static/obfuscation/eval/scripting::python-chr-ord-shift
+      - id: micro-behaviors/fs/file/write/direct::py-write-call
+      - id: micro-behaviors/process/create/subprocess::popen-content
+    any:
+      - id: micro-behaviors/fs/chmod/modify::python-os-chmod
+      - id: micro-behaviors/fs/chmod/executable/mode::python-executable
+      - id: objectives/anti-static/obfuscation/payload/loader::py-subprocess-devnull
+    scope: file
+  - id: python-base64-zlib-exec-loader
+    desc: Python executes base64-decoded zlib payload
+    crit: suspicious
+    conf: 0.96
+    attack: T1027
+    for: [python]
+    all:
+      - id: micro-behaviors/process/interpreter/python::exec-builtin
+      - id: micro-behaviors/data/decode/base64::base64-decoding
+      - id: micro-behaviors/data/compress/library::zlib-decompress-symbol
+    scope: file
+  - id: setup-gzip-pyc-exec-module
+    desc: setup.py extracts and executes gzip-compressed bytecode
+    crit: hostile
+    conf: 0.99
+    attack: T1195.002
+    for: [python]
+    all:
+      - id: objectives/supply-chain/recon-exfil/install-hook::setup-py-file-dup
+      - id: setup-gzip-pyc-loader
+      - id: setup-pyc-filename-builder
+      - id: setup-importlib-exec-module
+    scope: file
+  - id: pypi-setup-gzip-pyc-loader
+    desc: PyPI sdist executes gzip-compressed bytecode during setup
+    crit: hostile
+    conf: 0.99
+    attack: T1195.002
+    for: [python, pkginfo, archives, zip]
+    all:
+      - id: setup-gzip-pyc-exec-module
+      - id: metadata/build/pip::setup-py
+    scope: archive
+  - id: obfuscated-proxy-download-exec
+    desc: Obfuscated proxy download-execute payload
+    crit: hostile
+    conf: 0.98
+    attack: T1204.002
+    for: [python]
+    all:
+      - id: obfuscated-httpx-socks-import
+      - id: reversed-subprocess-import
+      - id: obfuscated-shell-bool-spawn
+  - id: pypi-obfuscated-proxy-download-exec
+    desc: PyPI package contains obfuscated proxy download-execute payload
+    crit: hostile
+    conf: 0.99
+    attack: T1195.002
+    for: [python, pkginfo, archives, zip]
+    all:
+      - id: obfuscated-proxy-download-exec
+      - id: metadata/build/pip::setup-py
+    scope: archive
+  - id: import-deferred-packaged-executable-loader
+    desc: Import-time deferred packaged executable loader
+    crit: hostile
+    conf: 0.99
+    attack: T1195.002
+    for: [python]
+    all:
+      - id: objectives/supply-chain/recon-exfil/install-hook::init-py-file
+      - id: micro-behaviors/process/hook/interception::atexit-register
+      - id: python-packaged-data-executable-loader
+    scope: file
+  - id: setup-tempfile-remote-exec-launch
+    desc: Setup hook writes remote-exec stager then launches it
+    crit: hostile
+    conf: 0.99
+    attack: T1195.002
+    for: [python]
+    all:
+      - id: objectives/supply-chain/recon-exfil/install-hook::setup-py-file-dup
+      - id: objectives/command-and-control/dropper/execution/eval::exec-urlopen-read
+      - id: micro-behaviors/fs/file/write/direct::py-write-call
+      - id: objectives/anti-static/obfuscation/eval/scripting::pythonw-exe-replace-trick
+    scope: file
+  - id: setup-base64-pe-tempfile-launch
+    desc: Setup hook decodes PE payload to temp file and launches it
+    crit: hostile
+    conf: 0.99
+    attack: T1195.002
+    for: [python]
+    all:
+      - id: objectives/supply-chain/recon-exfil/install-hook::setup-py-file-dup
+      - id: objectives/anti-static/obfuscation/payload/encoded::base64-pe-header
+      - id: micro-behaviors/data/decode/base64::b64decode-string
+      - id: micro-behaviors/fs/temp/reference::tempfile-ref
+      - id: micro-behaviors/fs/file/write/direct::py-write-call
+      - id: micro-behaviors/process/create/subprocess::popen-content
+    scope: file
+  - id: python-packed-async-entrypoint
+    desc: Packed Python async entrypoint
+    crit: hostile
+    conf: 0.97
+    attack: T1195.002
+    for: [python]
+    all:
+      - id: objectives/anti-static/obfuscation/payload/encoded::python-packed-payload
+      - id: micro-behaviors/process/lifecycle/auto-exec::asyncio-run-main
+    scope: file
+  - id: setup-encoded-c2-exec-payload
+    desc: setup.py executes encoded C2 payload
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002
+    for: [python]
+    all:
+      - id: objectives/supply-chain/recon-exfil/install-hook::setup-py-file-dup
+      - id: objectives/anti-static/obfuscation/payload/encoded::decoded-c2-payload
+      - id: objectives/anti-static/obfuscation/eval/scripting::import-builtins-exec
+    scope: file
+  - id: pth-obfuscated-exec-dropper
+    desc: pth file contains obfuscated exec dropper
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002
+    for: [python]
+    all:
+      - id: objectives/persistence/login/python-pth::pth-encoded-exec-line
+      - id: objectives/anti-static/obfuscation/code-metrics/structure::one-line-obfuscated-dropper
+  - id: decoded-fetch-write-exec-loader
+    desc: Decoded loader fetches writes executes payload
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002
+    for: [python]
+    all:
+      - id: objectives/command-and-control/dropper/node-bootstrap::fetch-write-execute
+      - id: objectives/anti-static/obfuscation/eval/scripting::python-decode-decrypt-dynamic-exec
+  - id: file-read-base64-exec-loader
+    desc: File content base64 decoded then executed
+    crit: hostile
+    conf: 0.97
+    attack: T1195.002
+    for: [python]
+    all:
+      - id: micro-behaviors/fs/read/file::file-read-content
+      - id: micro-behaviors/data/decode/base64::b64decode-string
+      - id: micro-behaviors/process/interpreter/python::exec-builtin
+    near_lines: 80
+    unless:
+      - id: metadata/library/python-stdlib
+      - id: metadata/package/testing/presence/harness::python-test-file
+      - id: metadata/package/testing/presence/harness::test-directory
+  - id: file-read-decode-dynamic-exec-loader
+    desc: File content decoded through dynamic exec loader
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002
+    for: [python]
+    all:
+      - id: file-read-base64-exec-loader
+      - id: objectives/anti-static/obfuscation/eval/scripting::python-decode-decrypt-dynamic-exec
+    scope: file
+  - id: encrypted-file-read-exec-loader
+    desc: Encrypted file content decoded and executed
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002
+    for: [python, pkginfo, zip]
+    all:
+      - id: objectives/command-and-control/dropper/staging/encrypted::encrypted-loader
+      - id: micro-behaviors/fs/read/file::file-read-content
+      - id: micro-behaviors/data/decode/base64::b64decode-string
+      - id: micro-behaviors/process/interpreter/python::exec-builtin
+  - id: pypi-encoded-subprocess-payload
+    desc: PyPI package has encoded subprocess payload
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002
+    for: [python, pkginfo, zip]
+    all:
+      - id: objectives/supply-chain/metadata-anomaly/manifest/pypi::is-pkginfo-file
+      - id: objectives/anti-static/obfuscation/payload/encoded::base64-subprocess-proximity
+    scope: archive
+    unless:
+      - id: metadata/package/quality::has-tests
+  - id: pypi-packed-python-payload
+    desc: PyPI package has packed Python payload
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002
+    for: [python, pkginfo, zip]
+    all:
+      - id: objectives/supply-chain/metadata-anomaly/manifest/pypi::is-pkginfo-file
+      - id: objectives/anti-static/obfuscation/payload/encoded::python-packed-payload
+    scope: archive
+    unless:
+      - id: metadata/package/quality::has-tests
+  - id: pypi-pth-open-read-payload
+    desc: PyPI package uses .pth startup to execute payload file
+    crit: hostile
+    conf: 0.99
+    attack: T1195.002
+    for: [python, pkginfo]
+    all:
+      - id: objectives/supply-chain/metadata-anomaly/manifest/pypi::is-pkginfo-file
+      - id: objectives/persistence/login/python-startup::pth-open-read-startup-exec
+    scope: archive
+  - id: pypi-pth-process-launch-payload
+    desc: PyPI .pth startup payload launches process
+    crit: hostile
+    conf: 0.99
+    attack: T1195.002
+    for: [python, pkginfo]
+    all:
+      - id: pypi-pth-open-read-payload
+      - id: micro-behaviors/process/create/subprocess::popen-content
+    scope: archive
+  - id: pth-startup-neighbor-process-payload
+    desc: .pth startup neighbor payload launches process
+    crit: suspicious
+    conf: 0.97
+    attack: T1195.002
+    for: [python, pkginfo, zip]
+    all:
+      - id: objectives/persistence/login/python-startup::pth-exec-open-read-line
+      - id: micro-behaviors/process/create/subprocess::popen-content
+    scope: archive
+  - id: pth-startup-process-launch
+    desc: .pth startup loader reaches process launch
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002
+    for: [python, pkginfo, zip]
+    all:
+      - id: objectives/persistence/login/python-startup::pth-open-read-startup-exec
+      - id: micro-behaviors/process/create/subprocess::popen-content
+    scope: archive
+  - id: pypi-fetch-write-execute-dropper
+    desc: PyPI package fetches writes executes payload
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002
+    for: [python, pkginfo]
+    all:
+      - id: objectives/supply-chain/metadata-anomaly/manifest/pypi::is-pkginfo-file
+      - id: objectives/command-and-control/dropper/node-bootstrap::fetch-write-execute
+    scope: archive
+  - id: pypi-remote-exec-payload
+    desc: PyPI package executes remote code
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002
+    for: [python, pkginfo]
+    all:
+      - id: objectives/supply-chain/metadata-anomaly/manifest/pypi::is-pkginfo-file
+      - id: objectives/command-and-control/dropper/execution/eval::remote-exec-text
+    scope: archive
+  - id: pypi-setup-network-code-execution
+    desc: PyPI setup hook executes network code
+    crit: hostile
+    conf: 0.99
+    attack: T1195.002
+    for: [python, pkginfo]
+    all:
+      - id: objectives/supply-chain/install-hook/setup::setup-code-execution
+      - id: objectives/supply-chain/install-hook/build::setup-py-network-in-install
+    scope: archive
