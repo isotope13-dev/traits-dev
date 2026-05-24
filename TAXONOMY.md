@@ -826,8 +826,12 @@ well-known/
 │   └── (adobe, bitdefender, defender, vendor drivers, etc.)
 ├── game/                  # Game clients/platforms and game-specific tools
 │   └── (steam, etc.)
-├── lib/                   # Specific embedded libraries/frameworks/runtimes
+├── lib/                   # Widely recognized libraries/frameworks/runtimes
 │   └── (openssl, zlib, ffmpeg, psutil, sharpshell, etc.)
+│                          # Do not add narrow package-specific allowlists here.
+│                          # Prefer improving the generic behavioral rule unless
+│                          # the software is well known enough to be useful across
+│                          # many samples and analysts.
 ├── malware/               # Malware family signatures
 │   ├── backdoor/          #   Passive remote access — shell, tunnel, implant
 │   │                      #     Waits for attacker commands. Simpler than a RAT.
