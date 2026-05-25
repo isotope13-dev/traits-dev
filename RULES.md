@@ -173,27 +173,28 @@ defaults:
 
 | Type | Purpose | Matchers | Modifiers |
 |------|---------|----------|-----------|
-| `text` | Extracted strings (binaries) or raw text (source) | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
-| `string_literal` | AST-backed string literals only (source) | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
+| `text` | Byte-scan extracted runs (binaries) or raw text (source) | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
+| `literal` | Parser-extracted constants — strings and numbers | `exact`, `substr`, `regex`, `word`, `value`, `radix` | `kind: string\|number`, count, density, location, `case_insensitive`, `is` |
 | `raw` | Raw file bytes | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
-| `symbol` | Imports/exports/forwards/functions | `exact`, `substr`, `regex` | `platforms`, `is`, `kind` |
+| `symbol` | Imports/exports/forwards/functions/calls | `exact`, `substr`, `regex` | `platforms`, `is`, `kind`, `arg` (call only) |
 | `import` | Imported symbols / source import calls | `exact`, `substr`, `regex` | `platforms`, `is` |
 | `export` | Exported symbols | `exact`, `substr`, `regex` | `platforms`, `is` |
 | `function` | Internal functions / source call targets | `exact`, `substr`, `regex` | `platforms`, `is` |
 | `hex` | Byte patterns (wildcards always extracted) | pattern string | count, density, `offset`, `offset_range`, `arch` clamped in fat binaries |
 | `encoded` | **All decoded strings** | `exact`, `substr`, `regex`, `word` | count, density, location, `encoding`, `case_insensitive`, `is` |
-| ~~`base64`~~ | *(removed — use `encoded`)* | | |
-| ~~`xor`~~ | *(removed — use `encoded`)* | | |
+| `value` | Residual structured values / manifest data | `exact`, `substr`, `regex` | `path`, `exists`, `size_min`, `size_max`, `case_insensitive` |
+| `basename` | Filename | `exact`, `substr`, `regex` | `case_insensitive` |
+| ~~`string_literal`~~ | *(renamed — use `literal`; old spelling kept as serde alias)* | | |
+| ~~`ast`~~ | *(renamed — use `tree-sitter`; old spelling kept as serde alias)* | | |
+| ~~`base64`~~, ~~`xor`~~ | *(removed — use `encoded`)* | | |
 | ~~`string_value`~~ | *(removed — use `text`)* | | |
 | ~~`string_count` / `string_value_count`~~ | *(removed — use `metrics: binary.string_count` or a `type: text` trait with `count_min`)* | | |
 | ~~`exports_count`~~ | *(removed — use `metrics: binary.export_count`)* | | |
 | ~~`import_combination`~~ | *(removed — use `type: import` plus composite `all`/`any`/`needs`)* | | |
 | ~~`structure`~~ | *(removed — express file-format and arch gates via trait-level `for:`/`arch:`, or check `elf.e_machine`/`macho.cpu_type`/`pe.machine` via `metrics`)* | | |
-| `value` | Residual structured values / manifest data | `exact`, `substr`, `regex` | `path`, `exists`, `size_min`, `size_max`, `case_insensitive` |
-| `basename` | Filename | `exact`, `substr`, `regex` | `case_insensitive` |
 
 **Matcher notes:**
-- `word` - Word boundary match (equivalent to `\b{value}\b`). Available on `text`, `string_literal`, `raw`, `section`, `encoded`. NOT available on `symbol`, `basename`, `hex`.
+- `word` - Word boundary match (equivalent to `\b{value}\b`). Available on `text`, `literal`, `raw`, `section`, `encoded`. NOT available on `symbol`, `basename`, `hex`.
 - `is` - High-fidelity validator for common data patterns. Supported values:
   - `external_ip`: Only match if evidence contains a valid external IPv4 (rejects RFC1918, loopback, reserved).
   - `bitcoin_addr`: Only match if evidence contains a valid Bitcoin address (P2PKH, P2SH, or SegWit) with a valid checksum.
@@ -201,22 +202,50 @@ defaults:
 - **Symbol family shortcuts:** use `type: import`, `type: export`, or `type: function` when you know the family. They are clearer spellings for `type: symbol` with `kind: import/export/function`. Keep `type: symbol` for cross-family searches or `kind: forward` PE re-export rules. When `kind: forward`, the pattern is tested against both the export name *and* the forward target (`KERNEL32.LoadLibraryA`).
 
 **Which one should I use?**
-- Use `text` by default for human-readable content.
-- Use `string_literal` only when you specifically mean AST-backed string literals in source/script languages.
-- Use `raw` when you need comments, byte-precise offsets/ranges, or matches that can cross string boundaries.
-- Prefer `import`, `export`, or `function` for typed filefacts symbol families; use `symbol` for cross-family searches. Prefer these over `value` paths such as `source.imports` or `pe.imports`. It is usually the fastest search type, and is often less brittle than AST or broad text regexes for calls like `fetch`, `appendChild`, `FormData`, `querySelectorAll`, or `document.getElementById`.
-- Before writing AST for simple calls, check `cleave symbols <file>` to see whether the needed calls are already exposed as symbols.
-- Use `ast` when the behavior depends on structure rather than just the presence of a call: argument relationships, assignment shape, control flow, object construction, chained access patterns, or other syntax that `symbol` cannot express precisely.
+
+Speed and accuracy run together. From best to worst:
+
+1. **`symbol` / `import` / `export` / `function` / `literal`** — index lookups
+   against precomputed facts. No re-parse, no scan. Sharpest signal: the
+   walker already split code from comments and string contents, so these
+   never fire on a stray mention in a comment or unrelated string.
+2. **`text`** — substring/regex over extracted strings. Fast enough; less
+   precise than symbol/literal because the corpus includes everything the
+   string extractor recovered.
+3. **`raw`** — substring/regex over the full file bytes. Catches what the
+   string extractor missed (comments, byte sequences across boundaries),
+   pays for it in false positives and wall-clock.
+4. **`tree-sitter`** — live query against the parse tree. Slowest by a wide
+   margin (one walk per rule). Reach for it only when behavior depends on
+   tree shape the symbol projections can't express.
+
+Pick the highest tier that answers your question:
+
+- `symbol` for "is this called / imported / exported anywhere?" — and with
+  `kind: call, arg: ...` for "this specific call site with this specific
+  arg" (see the call-matching section below).
+- `literal` for language-level constants — quoted strings or numeric
+  literals recovered from the parse. `kind: number` is the only way to
+  match numbers by value and radix.
+- `text` for human-readable content that isn't tagged by the parser as
+  string or symbol — error messages, log strings, embedded config.
+- `raw` for comments, byte-precise offsets, or matches that cross string
+  boundaries.
+- `tree-sitter` only when nothing above works.
+
+Before reaching for `tree-sitter`, check `cleave facts <file>` —
+the call, member, bind, or literal you need is usually already a
+structured fact.
 
 
 ### Structural
 
 | Type | Purpose | Fields |
 |------|---------|--------|
-| `ast` | Parse source | `kind`/`node`, `exact`/`substr`/`regex`/`query` (tree-sitter S-expression) |
+| `tree-sitter` | Live tree-sitter query (escape hatch) | `kind`/`node`, `exact`/`substr`/`regex`/`query` (S-expression). `ast` is a serde alias. |
 | `syscall` | Direct syscalls | `name`, `number`, `arch` (all optional, OR within field, AND across fields) |
 | `section` | Binary sections | `exact`, `substr`, `regex`, `word`, `case_insensitive`, `length_min`, `length_max`, `entropy_min`, `entropy_max`, `readable`, `writable`, `executable`, `compare_to` (reference section for both ratio checks; default: "total" for size), `size_ratio_min`, `size_ratio_max`, `entropy_ratio_min`, `entropy_ratio_max` |
-| `metrics` | Code metrics | `field` (e.g., `identifiers.avg_entropy`, `binary.text_to_file_ratio`, `binary.data_to_file_ratio`, `binary.rsrc_to_file_ratio`, `binary.string_count`, `elf.e_machine`, `pe.dos_stub_zeroed`, `pe.security_directory_out_of_bounds`, `consistency.cert_org_pdb_mismatch`), `min`, `max`, `min_size`, `max_size` |
+| `metrics` | Code metrics | `field` (e.g., `identifiers.avg_entropy`, `binary.text_to_file_ratio`, `binary.string_count`, `elf.e_machine`, `pe.dos_stub_zeroed`, `consistency.cert_org_pdb_mismatch`), `min`, `max`, `min_size`, `max_size` |
 | `yara` | YARA rule | `source` |
 
 > **Note**: File size filtering uses trait-level `size_min`/`size_max` fields, not a condition type.
@@ -348,37 +377,79 @@ if:
   pattern: "5D 00 00 (00|80) 00 (01|02|03|04) [7] ??"
 ```
 
-### AST Kinds
+### Tree-sitter Kinds
 
-`call`, `function`, `class`, `import`, `string`, `comment`, `assignment`, `return`, `binary_op`, `identifier`, `attribute`, `subscript`, `conditional`, `loop`
+Used with `type: tree-sitter` (the escape hatch). Available kinds:
+`call`, `function`, `class`, `import`, `string`, `comment`, `assignment`,
+`return`, `binary_op`, `identifier`, `attribute`, `subscript`, `member`,
+`conditional`, `loop`.
 
-Each abstract kind maps to one or more tree-sitter node types per language (see `composite_rules/ast_kinds.rs` in cleave). The matcher walks the AST and for every node of a matching type compares your pattern against the node's text.
+Each abstract kind maps to one or more tree-sitter node types per language
+(see `composite_rules/ast_kinds.rs`). The matcher walks the parse tree and
+for every node of a matching type compares your pattern against the node's
+text.
 
-**What "node text" means depends on the kind.** For most kinds the node text is exactly what you'd expect — a `string` node is the string literal, a `comment` node is the comment body. The exception is `call`:
+**The node text rule:** for most kinds, the text is what you'd expect — a
+`string` node is the string literal, a `comment` node is the comment body.
+The exception is `call`:
 
-- `kind: call` matches `function_call_expression` (PHP), `call_expression` (JS/TS/Go/Rust/C/…), `call` (Python/Elixir), `method_invocation` (Java), etc.
-- The node text for a call is **the full call expression**, including arguments and the parentheses: `curl_exec($ch)`, `aes.NewCipher(key)`, `eval("x")`.
-- This matters most for `exact:`. cleave gives you two matching surfaces on call-kind nodes:
-  - the **full text** (`name(args)`) — what `substr:`/`regex:` always check
-  - the **extracted function name** (`name`) — checked as a fallback for `exact:` so `exact: curl_exec` matches `curl_exec($ch)` cleanly
+- `kind: call` matches `function_call_expression` (PHP), `call_expression`
+  (JS/TS/Go/Rust/C/…), `call` (Python/Elixir), `method_invocation` (Java).
+- The node text is the **full call expression** including arguments and
+  parens: `curl_exec($ch)`, `aes.NewCipher(key)`, `eval("x")`.
+- For `exact:`, cleave checks two surfaces: the full text (`name(args)`)
+  and the extracted name (`name`) as a fallback — so `exact: curl_exec`
+  matches `curl_exec($ch)`.
 
-You almost never want to combine `kind: call` with `exact: "name()"` style patterns that include the parens — they only match zero-arg calls and break the moment someone passes an argument. Use the canonical forms below.
+**`member` matches dotted access including normalized subscripts.** Tree-sitter
+emits `obj.foo` and `obj["foo"]` as different node types. The walker folds
+string-subscript access into the member chain, so `obj["constructor"]`
+matches `kind: member, substr: obj.constructor` — the JS sandbox-escape
+pattern is a normal member-chain rule, not a tree-sitter query.
+
+For straightforward call matching, `type: symbol, kind: call` is faster and
+clearer than `type: tree-sitter, kind: call`. Use tree-sitter only when the
+behavior depends on tree shape the symbol projections can't express.
 
 ### Matching calls — recipe table
 
+Each call site is a structured fact: target name plus per-argument shape and
+value. Reach for `type: symbol, kind: call` first. Drop to `tree-sitter` only
+when the projection genuinely doesn't carry what you need.
+
 | Goal | Best form | Notes |
 |------|-----------|-------|
-| Match a function called by exact name (`curl_exec(...)`, `aes.NewCipher(...)`) | `type: symbol exact: <name>` | Fastest — uses the pre-extracted symbol table. Available for languages with a symbol extractor (PHP, Python, JS/TS, Ruby, Go, Java, C#, Rust, Lua, Perl, PowerShell, Groovy). |
-| Same, but you specifically need AST scope (e.g. you're combining with another AST condition under `scope: leaf` and `near_bytes:`) | `type: ast kind: call exact: <name>` | Matches via the extracted-name fallback. One match per call site. |
-| Match a call whose arguments contain a specific literal | `type: ast kind: call substr: "name(\"<literal>"` | Matches against full call text including args. |
-| Match a call by name with a prefix anchor (no FPs from substring overlap) | `type: ast kind: call regex: "^<name>\\("` | The regex is anchored at the start of the call expression. |
-| Match a structural shape (this method on that object, with this argument relationship) | `type: ast kind: call query: "(call_expression ...)"` | Full tree-sitter S-expression query — see [tree-sitter docs](https://tree-sitter.github.io/tree-sitter/using-parsers#pattern-matching-with-queries). |
-| Detect any call from a known dangerous family (`eval`, `exec`, `system`, `assert`) | `type: symbol regex: '^(eval\|exec\|system\|assert)$'` | Symbol regex with anchors keeps it tight. |
+| Match a function called anywhere by exact name | `type: symbol exact: <name>` | Fastest. Walks the symbol table — imports, exports, functions, calls. |
+| Match a specific call site (`chmod(_, 0o777)`) by name + arg value | `type: symbol kind: call substr: <name> arg: { kind: number, value: 511, radix: 8 }` | Args carry shape + literal value. Joins on the same call site, not file-wide coincidence. |
+| Match a call with a literal string argument | `type: symbol kind: call substr: <name> arg: { kind: string, substr: <part> }` | The arg filter narrows to calls whose argument list contains a matching arg. |
+| Match a call whose arg is a specific identifier (e.g. `setTimeout(callback, ...)`) | `type: symbol kind: call substr: <name> arg: { kind: identifier, name: <ident> }` | Identifier-shaped args carry the bare name. |
+| Detect any call from a known dangerous family | `type: symbol regex: '^(eval\|exec\|system\|assert)$'` | Symbol regex with anchors stays tight. |
+| Match a structural shape the projection can't express (loop containing call inside try) | `type: tree-sitter kind: call query: "(call_expression ...)"` | Full S-expression query — [tree-sitter docs](https://tree-sitter.github.io/tree-sitter/using-parsers#pattern-matching-with-queries). |
 
-**Picking between `type: symbol` and `type: ast kind: call`:**
+**`arg:` filter shape** (used inside `type: symbol, kind: call`):
 
-- `type: symbol` is preferred for plain "is this function called anywhere in the file?" — it's faster and survives weird whitespace/formatting that the AST cache doesn't see.
-- `type: ast kind: call` is preferred when you need AST guarantees: a real call site (not a string mention of the name), or you're combining several AST conditions with `near_bytes:` proximity to require they all sit in the same expression context.
+```yaml
+arg:
+  kind: number       # string | number | identifier | bool | template | <shape>
+  value: 511         # numeric value (kind=number)
+  radix: 8           # source-written radix: 2/8/10/16. With value, both must match.
+  substr: "evil"     # substring on string/template values
+  exact: "..."       # exact value match
+  name: "BACKDOOR_PORT"  # identifier name (kind=identifier)
+```
+
+The filter matches if **at least one** arg in the call's arg list satisfies all
+specified fields. `kind: number, value: 511, radix: 8` matches `chmod(_,
+0o777)` but not `chmod(_, 511)` — the source-written radix discriminates
+deliberate octal mode bits from incidentally-computed integers.
+
+**Picking between `type: symbol` and `type: tree-sitter`:**
+
+- `type: symbol` covers nearly every call-matching need. It runs against the
+  precomputed symbol view — no live parse, no per-rule tree walk.
+- `type: tree-sitter` is the escape hatch. Use it for patterns that depend on
+  the surrounding tree shape: call inside a try/catch, assignment whose RHS is
+  a call whose argument is itself a call, etc.
 
 ### Other AST kinds — what node text actually is
 
@@ -418,7 +489,7 @@ These are **trait-level fields** (siblings of `if:`, not nested inside the condi
 
 ## Location Constraints
 
-Available on `text`, `string_literal`, `raw`, `encoded`. Hex supports `offset` and `offset_range`.
+Available on `text`, `literal`, `raw`, `encoded`. Hex supports `offset` and `offset_range`.
 
 | Field | Description |
 |-------|-------------|
@@ -1052,17 +1123,19 @@ Regex patterns are validated at load time:
 
 ```bash
 cleave /path/to/file                    # Analyze file
-cleave symbols <file>                   # View symbols
-cleave strings <file>                   # View strings
+cleave facts symbols <file>             # View unified symbols (imports/exports/functions/calls/...)
+cleave facts calls <file>               # View call-site records (target + args with values)
+cleave facts literals <file>            # View parser-extracted string + number literals
+cleave facts text <file>                # View byte-scan text runs
 cleave test-rules <file> --rules "x,y"  # Debug rules
-cleave test-match <file> --type string-value --pattern "eval"  # Test patterns
+cleave test-match <file> --type literal --pattern "eval"  # Test patterns
 ```
 
 ### test-match Options
 
 | Option | Values |
 |--------|--------|
-| `--type` | `text`, `string-literal`, `symbol`, `raw`, `value`, `hex`, `encoded`, `section`, `metrics` |
+| `--type` | `text`, `literal`, `symbol`, `raw`, `value`, `hex`, `encoded`, `section`, `metrics`, `tree-sitter` |
 | `--method` | `exact`, `contains`, `regex`, `word` |
 | `--pattern` | Search pattern |
 | `--encoding` | Encoding filter for `encoded` type: `base64`, `base64,hex`, etc. |
