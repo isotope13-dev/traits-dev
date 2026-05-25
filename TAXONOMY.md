@@ -15,6 +15,8 @@ NOTE: atomic traits should be organized based on what they detect, not on what c
 
 Traits rarely seen in legitimate software that have well-defined objectives should go within objectives rather than micro-behaviors.
 
+When a trait causes false positives because it is in the wrong tier, fix the placement rather than lowering criticality. Generic capabilities such as process execution, interpreter invocation, network clients, registry manipulation, file writes to sensitive locations, and persistence surfaces belong where those behaviors are described, usually under `micro-behaviors/`, and should stay notable or higher when they are analyst-relevant. Objective traits should compose those capabilities with intent-specific evidence instead of carrying generic atomics as hidden `component` rules.
+
 ## Criticality
 
 | Level | Meaning | Tier Constraints |

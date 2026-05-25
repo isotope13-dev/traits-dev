@@ -49,6 +49,8 @@ Before placing a trait in `objectives/` or `well-known/`, ask: **would this fire
 
 **Component traits in `objectives/`:** Only allowed when the fragment is attack-context-specific with no meaning outside that context (e.g., Nemucod-specific string pieces, C2 domain patterns). Generic protocol strings, syscalls, and binary metrics always belong in neutral tiers even when used as composite building blocks.
 
+**Do not fix placement mistakes by lowering criticality.** If a false positive happens because a trait is searching for a generic capability from the wrong tier or directory, move the trait to the location that describes what it actually detects. For example, `powershell.exe`, `cmd.exe`, `exec`, `spawn`, sockets, HTTP clients, registry writes, and persistence surfaces should remain notable or higher when they define observable behavior; objective rules should reference those micro-behavior traits and add the intent-specific context. Demoting a generic execution or network trait to `component` hides useful analyst signal and leaves the taxonomy wrong.
+
 ## Trait Placement & IDs
 
 - IDs auto-prefixed by directory path (e.g., `traits/micro-behaviors/process/create/shell/` → prefix `micro-behaviors/process/create/shell`)
