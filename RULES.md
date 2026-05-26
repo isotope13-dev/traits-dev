@@ -788,7 +788,7 @@ traits:
   desc: Stratum mining protocol
   crit: notable                      # Same as referenced trait
   if:
-    id: objectives/impact/cryptojacking/miner/protocol::stratum-tcp
+    id: objectives/impact/cryptojacking/miner/stratum::stratum-tcp
     # No section, count, downgrade, unless, etc.
 ```
 
@@ -799,8 +799,8 @@ If you need a short name for use in composite rules, reference the original trai
 composite_rules:
   - id: miner-indicators
     any:
-      - id: objectives/impact/cryptojacking/miner/protocol::stratum-tcp
-      - id: objectives/impact/cryptojacking/miner/protocol::stratum-ssl
+      - id: objectives/impact/cryptojacking/miner/stratum::stratum-tcp
+      - id: objectives/impact/cryptojacking/miner/stratum::stratum-ssl
 ```
 
 ## Exception Directives
