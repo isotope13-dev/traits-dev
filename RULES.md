@@ -184,7 +184,7 @@ defaults:
 | `function` | Internal functions / source call targets | `exact`, `substr`, `regex` | `platforms`, `is` |
 | `hex` | Byte patterns (wildcards always extracted) | pattern string | count, density, `offset`, `offset_range`, `arch` clamped in fat binaries |
 | `encoded` | **All decoded strings** | `exact`, `substr`, `regex`, `word` | count, density, location, `encoding`, `case_insensitive`, `is` |
-| `value` | Residual structured values / manifest data | `exact`, `substr`, `regex` | `path`, `exists`, `size_min`, `size_max`, `case_insensitive` |
+| `value` | Residual structured values / manifest data | `exact`, `substr`, `regex`, `eq`, `ne` | `path` (accepts `<filename>::` sibling prefix), `exists`, `size_min`, `size_max`, `case_insensitive` |
 | `basename` | Filename | `exact`, `substr`, `regex` | `case_insensitive` |
 | ~~`string_literal`~~ | *(renamed — use `literal`; old spelling kept as serde alias)* | | |
 | ~~`ast`~~ | *(renamed — use `tree-sitter`; old spelling kept as serde alias)* | | |
@@ -898,13 +898,41 @@ cleave test-rules file.bin --rules "debugger-check"
 For JSON/YAML/TOML manifests (`package.json`, `manifest.json`, `Cargo.toml`, etc.):
 
 ```yaml
-path: "key"                    # Top-level key
-path: "a.b.c"                  # Nested access
-path: "arr[0]"                 # Array index
-path: "arr[*]"                 # Any array element
-path: "scripts.postinstall"    # npm scripts
-path: "permissions"            # Chrome extension
+path: "key"                                 # Top-level key
+path: "a.b.c"                               # Nested access
+path: "arr[0]"                              # Array index
+path: "arr[*]"                              # Any array element
+path: "scripts.postinstall"                 # npm scripts
+path: "permissions"                         # Chrome extension
+path: "package.json::name"                  # Sibling-file value (archive scope)
+path: "README.md::markdown.first_heading"   # Sibling's path in its own value tree
 ```
+
+### Sibling-file prefix `<filename>::`
+
+When a trait is evaluated against an archive (npm tarball, Python wheel,
+zip, etc.), value paths can reach into the value tree of any **sibling
+archive entry** by prefixing the path with `<filename>::`. The filename
+half is matched against the basename of each entry in `report.files[*]`
+(case-insensitive, last path component only — `package/package.json` and
+`outer.tgz!inner/package.json` both match `package.json::`).
+
+```yaml
+package.json::name                  # `name` field in any sibling package.json
+README.md::markdown.first_heading   # markdown analyzer's heading fact
+METADATA::Name                      # PEP 427 wheel METADATA Name header
+```
+
+Notes:
+- Same-file paths (no `::`) are unchanged: they resolve in the current
+  file's value tree.
+- The first `::` wins. `a::b::c` resolves to sibling `a`, remaining
+  path `b::c` (which then fails to parse — nested cross-file isn't
+  supported by design).
+- The lookup walks `report.files[*]`. Entries that cleave didn't
+  deep-analyze (large blobs, opaque types) aren't reachable. Identity-
+  signal types (Markdown, PkgInfo) are deep-analyzed even when they
+  aren't `is_program()`.
 
 ### INI-style formats (systemd, Desktop Entry)
 
@@ -1054,6 +1082,42 @@ type: value
 path: "version"
 regex: "^0\\.0\\.0$"      # Version is 0.0.0
 ```
+
+### Cross-File Value Comparison (`eq` / `ne`)
+
+When both sides of a comparison are themselves value paths (rather than
+a path-vs-literal check), use `eq:` or `ne:`. The right-hand side is
+**always a path** — never a literal. For literal comparisons keep using
+`exact:` / `substr:` / `regex:`.
+
+```yaml
+# README declares one package identity, package.json declares another
+- type: value
+  path: README.md::markdown.first_heading
+  ne: package.json::name
+
+# PE binary's embedded OriginalFilename disagrees with its basename
+- type: value
+  path: file.basename
+  ne: pe.version_info.original_filename
+
+# Wheel filename's name field matches the dist-info METADATA Name header
+- type: value
+  path: whl.filename.name_prefix
+  eq: METADATA::Name
+```
+
+Defaults: case-insensitive, whitespace-trimmed. There are no opt-out
+knobs — if you need strict-case literal matching, write the literal
+on the right with `exact:` instead. Comparison is scalar-only
+(strings, numbers, booleans). Containers and `null` silently produce
+no match.
+
+When either side fails to resolve (path absent in this file, or the
+named sibling isn't in the archive), the matcher reports no match —
+treat missing values like missing string evidence. To require both
+sides to exist *and* differ, compose with `exists:` checks in an
+`all:` composite.
 
 ### Collection Size Constraints
 
