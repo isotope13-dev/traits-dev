@@ -1,0 +1,69 @@
+# Trojanized npm package: encoded dead-drop C2 + stealth background exec.
+#
+# Pattern observed in repackaged/typosquatted libraries (e.g. a logger cloned
+# under a new name) where a benign codebase is shipped with an injected payload:
+#   - a base64/obfuscated external URL pointing at a dead-drop service
+#     (jsonstorage.net, pastebin-like) used as config/C2,
+#   - a detached, stdio-ignored, unref'd child process spawned at use time so
+#     the implant survives the parent exiting,
+#   - injected HTTP-exfil + local-DB dependencies (axios/request + sqlite3) that
+#     the host library never legitimately needed.
+#
+# Any one signal is weak; these pairings have no benign use together. Composites
+# aggregate findings across the package's files (manifest + code).
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript, package.json, archives]
+  attack: T1071.001
+  mbc: E1105
+composite_rules:
+  - id: npm-encoded-url-present
+    desc: Encoded external URL present
+    crit: component
+    conf: 0.9
+    any:
+      - id: micro-behaviors/communications/url/encoded::encoded-http-url
+      - id: micro-behaviors/communications/url/encoded::encoded-https-url
+      - id: micro-behaviors/process/interpreter/vm::base64-url
+      - id: objectives/anti-static/obfuscation/encoding/content::encoded-http-url
+  - id: npm-http-exfil-dep
+    desc: HTTP client dependency suited to exfiltration
+    crit: component
+    conf: 0.8
+    any:
+      - id: metadata/import/npm::axios
+      - id: metadata/import/npm::request
+  - id: npm-deaddrop-detached-implant
+    desc: npm package with encoded dead-drop URL and detached background exec
+    crit: hostile
+    conf: 0.92
+    scope: archive
+    all:
+      - id: npm-encoded-url-present
+      - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+  - id: npm-stealth-spawn-stealer-stack
+    desc: Detached background exec with injected exfil and local-DB dependencies
+    crit: hostile
+    conf: 0.9
+    scope: archive
+    all:
+      - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+      - id: metadata/import/npm::sqlite3
+      - id: npm-http-exfil-dep
+  - id: npm-encoded-c2-stealer-stack
+    desc: Encoded dead-drop URL with injected exfil and local-DB dependencies
+    crit: hostile
+    conf: 0.9
+    scope: archive
+    all:
+      - id: npm-encoded-url-present
+      - id: metadata/import/npm::sqlite3
+      - id: npm-http-exfil-dep
+  - id: npm-encoded-c2-usetime-stager
+    desc: Encoded dead-drop URL with use-time network stager activation
+    crit: hostile
+    conf: 0.9
+    scope: archive
+    all:
+      - id: npm-encoded-url-present
+      - id: objectives/command-and-control/trigger/activation::js-import-time-network-stager
