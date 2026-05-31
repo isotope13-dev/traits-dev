@@ -456,11 +456,14 @@ objectives/
 │   ├── anti-av/               #   AV/EDR bypass (stealth, not termination)
 │   │   ├── amsi/              #     AMSI bypass
 │   │   ├── blinding/          #     Kernel security module neutralization
+│   │   ├── code-padding/      #     Benign code-mass padding (ML/heuristic dilution)
 │   │   ├── edr-detect/        #     Security product enumeration           B0013
-│   │   ├── heuristic/         #     Heuristic evasion (TBAV)
+│   │   ├── gui-decoy/         #     Decoy GUI message-pump (no real GUI resources)
 │   │   ├── import-pollution/  #     Import table pollution
+│   │   ├── manifest-padding/  #     Fake AV dummy text in PE manifest
 │   │   ├── platform/          #     Platform-specific bypass (exclusions, disables)
 │   │   ├── syscall/           #     Direct/indirect syscalls (EDR bypass)
+│   │   ├── tbav/              #     TBAV anti-heuristic ASM signature
 │   │   └── tls-fingerprint/   #     TLS fingerprint manipulation
 │   ├── decoy/                 #   Deceptive content (documents, fake errors, lures)
 │   ├── file-hiding/           #   Hidden files/directories                E1564, F0005
