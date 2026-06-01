@@ -30,6 +30,25 @@ traits:
   - id: thenify-create-wrapper-eval
   - id: metadata/package/testing/harness/runtime::is-test
   - id: metadata/package/testing/harness/runtime::v8-native-intrinsic-call
+  # Sibling exec sinks for the packed-payload composite. eval-of-transform only
+  # covers `eval(fn(...))`; future variants swap the sink for `new Function(fn(`
+  # or indirect eval `(0,eval)(...)`. These mirror it without the large-bundle
+  # unless that js-new-function-constructor carries (which would suppress them
+  # on exactly the megabyte blobs we care about).
+- id: new-function-of-transform
+  desc: new Function() wrapping a transform call
+  crit: suspicious
+  conf: 0.9
+  if:
+    type: text
+    regex: 'new Function\([a-zA-Z_$][a-zA-Z0-9_$]{0,30}\('
+- id: indirect-eval-of-transform
+  desc: Indirect eval invocation
+  crit: suspicious
+  conf: 0.9
+  if:
+    type: text
+    regex: '\(\s*0\s*,\s*eval\s*\)\s*\('
   # Core dropper pattern: small JS file that reads a file and eval's transformed content
 - id: eval-transform-ast
   desc: eval of transformed local data
@@ -127,3 +146,33 @@ composite_rules:
   any:
   - id: objectives/anti-static/obfuscation/payload/encoded::exported-decryptor
   - id: objectives/anti-static/obfuscation/payload/encoded::hardcoded-key-decryptor
+# Self-contained packed eval dropper: a megabyte-plus single line that carries
+# a self-decoder (Caesar/char-code) and feeds the result straight into eval().
+# File-scoped, metric-driven, and filename-agnostic — fires on any single JS
+# file of this shape, no package.json or archive context required. The megabyte
+# single-line atom already excludes source maps, vscode webviews, tiktoken, and
+# many-module bundles, so legit minified output does not reach here; a 1 MB line
+# that self-decodes into eval has no benign explanation.
+- id: packed-payload-exec-sink
+  desc: Dynamic execution sink for a packed payload
+  crit: component
+  conf: 0.95
+  any:
+  - id: eval-of-transform
+  - id: new-function-of-transform
+  - id: indirect-eval-of-transform
+- id: packed-single-line-eval-dropper
+  desc: Megabyte single-line self-decoding eval dropper
+  crit: hostile
+  conf: 0.96
+  mbc: B0032
+  attack: T1027
+  all:
+  - id: objectives/anti-static/obfuscation/code-metrics/line-shape::js-megabyte-single-line
+  - id: packed-payload-exec-sink
+  any:
+  - id: micro-behaviors/data/encode/caesar::charcodeat-shift
+  - id: micro-behaviors/data/encode/caesar::fromcharcode-map-decode
+  - id: objectives/anti-static/obfuscation/code-metrics/line-shape::js-junk-number-padding
+  - id: objectives/supply-chain/hidden-payload/runtime::high-digit-ratio
+  needs: 1

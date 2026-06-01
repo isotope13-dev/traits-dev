@@ -199,6 +199,7 @@ defaults:
 - `word` - Word boundary match (equivalent to `\b{value}\b`). Available on `text`, `literal`, `raw`, `section`, `encoded`. NOT available on `symbol`, `basename`, `hex`.
 - `is` - High-fidelity validator for common data patterns. Supported values:
   - `external_ip`: Only match if evidence contains a valid external IPv4 (rejects RFC1918, loopback, reserved).
+  - `valid_ip`: Only match if evidence contains a structurally valid IPv4 of any range (octets 0–255, no leading zeros, exactly four parts) — includes private/loopback. Use this to confirm an IP *literal* of any kind and to reject malformed dotted-decimal runs (e.g. SVG path coordinates `022.617.46.402`) that a bare `\d{1,3}` regex would accept.
   - `bitcoin_addr`: Only match if evidence contains a valid Bitcoin address (P2PKH, P2SH, or SegWit) with a valid checksum.
 - **Symbol normalization:** Leading underscores are stripped from both loaded symbols and `exact`/`substr` patterns for cross-platform portability (macOS `_malloc`, glibc `__libc_start_main` both match `exact: "malloc"` / `exact: "libc_start_main"`). Regex patterns are not normalized.
 - **Symbol family shortcuts:** use `type: import`, `type: export`, or `type: function` when you know the family. They are clearer spellings for `type: symbol` with `kind: import/export/function`. Keep `type: symbol` for cross-family searches or `kind: forward` PE re-export rules. When `kind: forward`, the pattern is tested against both the export name *and* the forward target (`KERNEL32.LoadLibraryA`).

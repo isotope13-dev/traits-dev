@@ -2,20 +2,37 @@ defaults:
   platforms: [windows, unix]
   for: [javascript]
 traits:
-  - id: js-arithmetic-array-init
-    desc: "Array initialization with repetitive arithmetic expressions (obfuscation)"
-    crit: suspicious
+  # A raw subtraction count scales with file size: a 300 KB React/Babel bundle
+  # accumulates ~187 subtractions (benign) — more than a packed obfuscated
+  # array (~121). Count alone can't tell them apart. These two atoms gate the
+  # composite below on count AND density so concentration, not size, decides.
+  - id: arithmetic-sub-count
+    desc: Many subtraction operators present
+    crit: component
     conf: 0.95
+    # Floor: enough subtractions to be a real packed array, not incidental
+    # arithmetic. Prevents a tiny file with a few subtractions from tripping
+    # the density gate.
     if:
-      # Migrated from a tree-sitter `number - number` query (count_min: 50) to
-      # the `ast.op.sub` density metric. 50+ subtractions is the obfuscation
-      # signal; the high threshold keeps it FP-safe. Counted inline in the
-      # single AST walk; O(1) match.
       type: metrics
       field: 'ast.op.sub'
-      min: 50
+      min: 30
+  - id: arithmetic-sub-density
+    desc: Subtraction operators dominate the parse tree
+    crit: component
+    conf: 0.95
+    # Concentration: subtractions as a fraction of all AST nodes. Benign
+    # bundles sit near 0.1%; an obfuscated `number - number` array runs 15%+.
+    # 2% leaves ~20x margin over the benign case.
+    if:
+      type: metrics
+      field: 'ast.op_density.sub'
+      min: 0.02
+    # Documentation files (changelogs, release notes) legitimately carry dense
+    # version-number arithmetic; exclude them here on the density atom so the
+    # composite below stays free of inline primitives (composites reference
+    # atoms only).
     unless:
-      - id: metadata/library/structure::js-webpack-bundle
       - type: basename
         regex: '(?i)^changelog(\.[^/]+)?$'
       - type: basename
@@ -46,3 +63,16 @@ traits:
       - id: metadata/library/structure::js-webpack-bundle
       - type: text
         regex: 'for \(j = 0; j < 2; j\+\+\) \{\s+m\[0\] = t\[0\] - 0xffed;'
+composite_rules:
+  # Flag on DENSITY, not raw count. Requires both a subtraction floor and high
+  # subtraction density, so file size alone can't trip it. Keeps the
+  # `js-arithmetic-array-init` id that well-known/.../nemucod references.
+  - id: js-arithmetic-array-init
+    desc: "Array initialization with repetitive arithmetic expressions (obfuscation)"
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: arithmetic-sub-count
+      - id: arithmetic-sub-density
+    unless:
+      - id: metadata/library/structure::js-webpack-bundle
