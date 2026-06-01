@@ -149,6 +149,35 @@ Value-neutral observations about what code can do. High confidence from static a
 
 ```
 micro-behaviors/
+├── browser-extension/     # Browser-extension (WebExtension) platform APIs
+│   │                      #   Irreducibly extension-specific surfaces only — the
+│   │                      #   browser is the host platform here, not an OS.
+│   │                      #   Generic extension capabilities map to their technique
+│   │                      #   homes instead (messaging → communications/ipc/message/,
+│   │                      #   storage → data/db/web-storage/, alarms → time/schedule/,
+│   │                      #   scripting → process/inject/, webRequest → process/hook/,
+│   │                      #   cookies → communications/http/cookies/, downloads →
+│   │                      #   communications/http/download/, native messaging →
+│   │                      #   communications/ipc/native-host/, identity → os/security/,
+│   │                      #   proxy → os/network/, debugger → process/attach/).
+│   ├── host-access/       #   Granted origin authority (host_permissions /
+│   │                      #     content-script matches). Engine-emitted, one
+│   │                      #     dynamic trait per host: host-access/<host>::granted.
+│   │                      #     The host is its own subdirectory (not a local id)
+│   │                      #     so the UI shows each host and the ML pipeline keys
+│   │                      #     a per-host feature; engine IDs use the canonical
+│   │                      #     <dir>::<local> form, same as YAML. The grant covers
+│   │                      #     DOM injection, cookie reads, privileged cross-origin
+│   │                      #     requests, and traffic interception — not mere comms.
+│   ├── permission/        #   Declared API permission, engine-emitted one per
+│   │                      #     permission: permission/<perm>::declared (kebab-cased).
+│   │                      #     Own subdir per permission (UI + ML). Risk/intent
+│   │                      #     (overprivileged, dangerous combos) → YAML objectives.
+│   ├── lifecycle/         #   Runtime lifecycle / identity / browser.* namespace
+│   ├── tabs/              #   Tab create / query / update / navigate
+│   ├── management/        #   Enumerate / enable / uninstall other extensions
+│   └── action/            #   Toolbar action / popup surface
+│
 ├── communications/        # Network communication              → MBC: Communication
 │   │                      #   Organized by protocol. Neutral mechanics only.
 │   │                      #   Port scanning → objectives/discovery/network/scan/.
