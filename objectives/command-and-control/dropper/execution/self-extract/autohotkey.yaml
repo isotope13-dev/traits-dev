@@ -1,0 +1,90 @@
+# AutoHotkey FileInstall self-extracting droppers.
+#
+# Compiled AutoHotkey (.ahk -> .exe) binaries import a huge API surface for the
+# *interpreter* (WinInet, sockets, GDI screen capture, keyboard/mouse, audio),
+# so import-table capability traits fire on EVERY AHK binary, benign or not.
+# The reliable, FP-free signal is the embedded *script* behavior: the AHK
+# `FileInstall` command embeds a file at compile time and writes it to disk at
+# runtime; `Run`/`RunWait` then executes it. Legit AHK apps FileInstall data
+# (configs, images, DLLs) into their own folder — they do not embed a standalone
+# executable/MSI, drop it to %TEMP%, and run it. Each composite below pairs that
+# drop-and-execute core with a distinct discriminator (masquerade, embedded
+# OLE2/MSI, temp drop) so it stays hostile-grade without flagging benign AHK.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  attack: T1036.008
+  mbc: B0023
+traits:
+  # FileInstall whose *source* file is an executable/installer (not data) — the
+  # AHK compile-time embed of a payload. `FileInstall, <source>, <dest>, <flag>`.
+  - id: ahk-fileinstall-executable
+    desc: AutoHotkey FileInstall of an executable payload
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)FileInstall\s*,\s*[^,\n]{0,120}\.(exe|msi|scr|bat)\b'
+  # AHK Run / RunWait command (executes a program).
+  - id: ahk-run-cmd
+    desc: AutoHotkey Run/RunWait command
+    crit: component
+    conf: 0.8
+    if:
+      type: text
+      regex: '(?i)\bRun(Wait)?\s*,'
+  # AHK %A_Temp% builtin — the user temp dir, the canonical drop target.
+  - id: ahk-temp-path
+    desc: AutoHotkey A_Temp directory reference
+    crit: component
+    conf: 0.8
+    if:
+      type: text
+      word: A_Temp
+  # OLE2 / CFBF compound-file magic (MSI installers, legacy Office) embedded in
+  # the binary — here the FileInstalled payload.
+  - id: ahk-embedded-ole2
+    desc: Embedded OLE2/CFBF (MSI) compound-file payload
+    crit: component
+    conf: 0.85
+    if:
+      type: hex
+      section: .rsrc
+      pattern: 'D0 CF 11 E0 A1 B1 1A E1'
+composite_rules:
+  # 1) Masquerade dropper: a RENAMED AutoHotkey interpreter that embeds and runs
+  #    an executable payload. Renamed-AHK alone is only suspicious (portable apps
+  #    rename it too); embedding + running a standalone executable is the dropper.
+  - id: autohotkey-masquerade-fileinstall-dropper
+    desc: Renamed AutoHotkey wrapper drops and runs an embedded executable
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: objectives/evasion/masquerade/wrapper::renamed-autohotkey
+      - id: ahk-fileinstall-executable
+      - id: ahk-run-cmd
+  # 2) Embedded-installer dropper: FileInstall of an executable + Run, and the
+  #    binary carries an embedded OLE2/MSI compound payload. Legit MSI installers
+  #    ARE the MSI; they are not an AHK GUI exe carrying and dropping one.
+  - id: autohotkey-embedded-compound-dropper
+    desc: AutoHotkey embeds and executes an OLE2/MSI installer payload
+    crit: hostile
+    conf: 0.95
+    attack: T1218.007
+    all:
+      - id: ahk-fileinstall-executable
+      - id: ahk-run-cmd
+      - id: ahk-embedded-ole2
+  # 3) Temp drop-and-execute: FileInstall of an executable written to %A_Temp%
+  #    and run, all within the same script block. Legit AHK apps install into
+  #    their own folder, not %TEMP%, and do not immediately run from it.
+  - id: autohotkey-temp-fileinstall-execute
+    desc: AutoHotkey FileInstall drops an executable to temp and runs it
+    crit: hostile
+    conf: 0.92
+    attack: T1074.001
+    near_lines: 10
+    all:
+      - id: ahk-fileinstall-executable
+      - id: ahk-run-cmd
+      - id: ahk-temp-path
