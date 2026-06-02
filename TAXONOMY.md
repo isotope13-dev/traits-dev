@@ -53,6 +53,14 @@ The ML pipeline extracts features from **subdirectory path + criticality**, not 
 
 Unlike MBC, which allows one behavior to map to multiple objectives (e.g., Process Injection is both Defense Evasion and Privilege Escalation), cleave allows exactly **one trait per behavior**. Place it at the most specific location the evidence supports. Composite rules in other directories can reference the single trait to express multi-objective interpretations.
 
+### Matcher Defines Identity
+
+**A trait's matcher is its identity. Its name, description, and directory must describe what the matcher actually searches for — not the intent of a composite that references it, and not the worst case it might contribute to.** This is the rule behind "organize atomics by what they detect, not by what composite they serve" (see the note under [Tiers](#tiers)), and it applies at **every** criticality, `component` and `baseline` included.
+
+A trait fails this rule when its name/description/location claim an intent its matcher does not capture. Example: a regex that merely reads `$_SERVER['HTTP_REFERER']`, named `http-referer-to-reflection` ("HTTP Referer used in function execution") and filed under `objectives/command-and-control/backdoor/webshell/obf-dispatch/`. The matcher detects only *"reads the Referer request header"* — a neutral capability present in countless benign plugins — so the trait is both **mislabeled** (the name asserts reflective dispatch the regex never checks) and **misplaced** (a neutral read does not belong in a webshell objective directory). The reflective-dispatch intent lives in the *other* legs of the composite (the dynamic-call atoms); this atom only contributes "the referer was read."
+
+**The fix is to relocate and rename the trait to match its matcher** (here: a `micro-behaviors/communications/http/...` capability such as "reads the Referer request header"), then have the webshell composite reference it cross-directory. **Lowering the criticality is never the fix.** Demoting to `component` does not make the false positive disappear — per the [Criticality](#criticality) visibility caveat, the web UI and JSON still surface it, now mislabeled as a webshell building block and keyed to the wrong `directory-path + criticality` ML feature. Reserve `component`/`baseline` for traits that are *already* accurately named and located for what they detect and genuinely have no standalone meaning.
+
 ### Tier Dependencies
 
 | Tier | Can Reference | Rationale |

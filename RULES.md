@@ -51,6 +51,10 @@ Before placing a trait in `objectives/` or `well-known/`, ask: **would this fire
 
 **Do not fix placement mistakes by lowering criticality.** If a false positive happens because a trait is searching for a generic capability from the wrong tier or directory, move the trait to the location that describes what it actually detects. For example, `powershell.exe`, `cmd.exe`, `exec`, `spawn`, sockets, HTTP clients, registry writes, and persistence surfaces should remain notable or higher when they define observable behavior; objective rules should reference those micro-behavior traits and add the intent-specific context. Demoting a generic execution or network trait to `component` hides useful analyst signal and leaves the taxonomy wrong.
 
+**A trait's matcher defines its identity — its name, description, AND directory must describe what the matcher actually searches for, not the intent of a composite that references it.** This holds at *every* criticality, including `component` and `baseline`: a `component` trait is still wrong if it is named/filed for the composite it feeds rather than for what its matcher detects. When a trait's name/description/location imply an intent its matcher does not capture, the trait is mislabeled **and** misplaced — fix it by **relocating and renaming** it to match the matcher, then have composites reference it. Lowering its criticality is **never** the fix.
+
+> **Worked example.** A regex that merely reads `$_SERVER['HTTP_REFERER']`, filed under `objectives/command-and-control/backdoor/webshell/obf-dispatch/` and named `http-referer-to-reflection` ("referer used in reflective dispatch"), false-positives on every plugin that reads the Referer header. The matcher only detects *"reads the Referer request header"* — a neutral capability. The fix is to relocate + rename it under `micro-behaviors/communications/http/...` and have the webshell composite reference it cross-directory; the reflective-dispatch intent comes from the *other* composite legs (the dynamic-call atoms), not from this read. Demoting it to `component` is the **wrong** fix: the bare-referer match would still surface in the web UI and JSON (see [Criticality Levels](#criticality-levels)), now mislabeled as a webshell building block and keyed to the wrong ML feature.
+
 ## Trait Placement & IDs
 
 - IDs auto-prefixed by directory path (e.g., `traits/micro-behaviors/process/create/shell/` → prefix `micro-behaviors/process/create/shell`)
@@ -74,7 +78,7 @@ Before placing a trait in `objectives/` or `well-known/`, ask: **would this fire
 
 Both `component` and `baseline` are allowed in any tier.
 
-**Component traits** are filtered from terminal output unless a composite rule that references them fires. JSON output always includes all components for ML signal.
+**Component traits** are filtered from the CLI terminal output unless a composite rule that references them fires. **They are not hidden everywhere, though:** the JSON output always includes them (for ML signal) and **the web UI surfaces `component`/`baseline` traits to users**. So lowering a trait to `component`/`baseline` does **not** make a false positive disappear — it only removes it from the default CLI view while leaving it visible, and now mislabeled, in the web UI and JSON, and keyed to a `directory-path + criticality` ML feature it doesn't belong to. Demote only when the lower tier is genuinely correct for what the matcher detects, never to hide an FP — fix real FPs by tightening the matcher, adding an `unless:`/`not:` exclusion, or relocating + renaming the trait.
 
 **HOSTILE composites require precision ≥ 3.5**, else downgraded. See [PRECISION.md](./PRECISION.md) for the calculation algorithm and authoring guidelines.
 
@@ -133,7 +137,7 @@ traits:
 | `media` | `jpeg`, `png` |
 | `data` | `json`, `ipa`, `text`, opaque `data` |
 
-Use groups instead of listing 7 or more individual types. `for: [all]` is no longer valid — combine groups explicitly (e.g., `for: [binaries, scripts]`) or use specific types.
+Use groups instead of listing 9 or more individual types (up to 8 explicit types is accepted — a hand-picked spread across groups that no single named group expresses). `for: [all]` is no longer valid — combine groups explicitly (e.g., `for: [binaries, scripts]`) or use specific types.
 
 ### Platform Auto-Filtering
 

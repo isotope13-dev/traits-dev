@@ -1,0 +1,66 @@
+# npm install-time recon/exfil beacons that ship victim data to a chat webhook
+# (Discord) instead of a hardcoded IP. Observed in @chat-template/auth@1.0.0:
+# a `preinstall` hook runs a Node payload that harvests process.env + host/IP
+# recon and POSTs it to a Discord webhook with errors suppressed (`|| true`).
+# The existing js-public-ip-beacon only fires when the exfil destination is a
+# hardcoded IPv4 — these cover the webhook-destination variants.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1041
+  mbc: E1041
+composite_rules:
+  # 1) Full environment harvested and shipped to a chat webhook. No legitimate
+  #    package serializes the entire process.env into a body POSTed to Discord.
+  - id: npm-env-harvest-webhook-exfil
+    desc: Full process.env harvested and exfiltrated to a chat webhook
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/hook-file::postinstall-full-process-env-report
+      - id: micro-behaviors/communications/http/webhook::discord-webhook-path-any
+    unless:
+      - id: metadata/package/testing/harness/runtime::is-test
+
+  # 2) Public-IP discovery beaconed to a chat webhook (the IP-beacon pattern,
+  #    but exfil targets a webhook hostname rather than a hardcoded IPv4).
+  - id: npm-public-ip-webhook-beacon
+    desc: Public IP discovered and beaconed to a chat webhook
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: objectives/discovery/network/scan/external::ipify-org
+      - id: micro-behaviors/communications/http/webhook::discord-webhook-path-any
+    unless:
+      - id: metadata/package/testing/harness/runtime::is-test
+
+  # 3) Comprehensive host/system fingerprint shipped to a chat webhook —
+  #    victim-profiling beacon (hostname, OS, arch, cwd POSTed to Discord).
+  - id: npm-host-fingerprint-webhook-beacon
+    desc: Host system fingerprint beaconed to a chat webhook
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: objectives/discovery/system/fingerprint/hardware::js-victim-id
+      - id: micro-behaviors/communications/http/webhook::discord-webhook-path-any
+    unless:
+      - id: metadata/package/testing/harness/runtime::is-test
+
+  # 4) Install hook collects host recon and beacons to a chat webhook — the
+  #    preinstall hook in package.json runs the recon/exfil payload (archive
+  #    scope pools the lifecycle hook with the payload file).
+  - id: npm-install-hook-recon-webhook-beacon
+    desc: npm install hook collects host recon and beacons to a chat webhook
+    crit: hostile
+    conf: 0.97
+    scope: archive
+    for: [javascript, typescript, archives, pkginfo]
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::has-preinstall
+      - id: micro-behaviors/communications/http/webhook::discord-webhook-path-any
+    any:
+      - id: objectives/discovery/system/fingerprint/hardware::js-victim-id
+      - id: objectives/discovery/network/scan/external::ipify-org
+      - id: objectives/supply-chain/install-hook/scripts/hook-file::postinstall-full-process-env-report
+    unless:
+      - id: metadata/package/testing/harness/runtime::is-test

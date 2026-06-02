@@ -65,127 +65,99 @@ traits:
       kind: call
       exact: "exec("
   # === File Open Binary Write ===
-  - id: ruby-ast-file-open-wb
-    desc: File binary write mode
-    crit: notable
-    conf: 0.82
-    unless:
-      - id: well-known/lib/jruby::package-path
-      - id: well-known/lib/jruby::module-marker
-      - id: well-known/lib/jruby::jruby-home-path
-    downgrade:
-      any:
-        - id: well-known/lib/nokogiri::native-extension-bundle
-    if:
-      # Migrated from a tree-sitter query to a `kind: member` match on
-      # the pre-extracted member fact (no per-member cursor walk).
-      type: symbol
-      kind: member
-      exact: 'File.open'
+  # `ruby-ast-file-open-wb` was removed: its `kind: member` fact carried only
+  # the receiver-qualified call `File.open` (not the mode argument), so despite
+  # the "binary write mode" label it matched every File.open and surfaced
+  # standalone as an FP. It had no composite consumers, and binary-write is
+  # already covered precisely by `ruby-ast-file-binmode-write` (`.binmode`)
+  # and the `micro-behaviors/fs/write/file/direct::ruby-file-open-write-binary`
+  # micro-behavior.
   # === File Rename ===
   - id: ruby-ast-file-rename
     desc: File rename operation
     crit: component
     conf: 0.95
     if:
-      type: tree-sitter
-      query: |
-        ((call
-          receiver: (constant) @const
-          method: (identifier) @method)
-         (#eq? @const "File")
-         (#eq? @method "rename"))
+      # Identical to the canonical `File.rename` member-chain atom; delegate to
+      # it rather than duplicating the matcher. Keeps this id stable for the
+      # rename-exec / rubygems-anomaly composites that reference it.
+      id: micro-behaviors/fs/file/rename::ruby-rename
   # === File Rename Image to Exe ===
   - id: ruby-ast-rename-img-to-exe
     desc: Rename image file to executable
     crit: suspicious
     conf: 0.95
+    # `File.rename("*.png", "*.exe")` — disguising a payload by renaming an
+    # image to an executable. Matched on the cached call fact with a multi-arg
+    # filter: one string arg with an image extension AND a distinct string arg
+    # with an executable extension (each ≤4 alternatives, alt-chain limit; the
+    # common disguise extensions, narrower than the former 8-img/7-exe query).
     if:
-      type: tree-sitter
-      query: |
-        ((call
-          receiver: (constant) @const
-          method: (identifier) @method
-          arguments: (argument_list
-            (string) @source
-            (string) @dest))
-         (#eq? @const "File")
-         (#eq? @method "rename")
-         (#match? @source "\\.(png|jpg|jpeg|gif|bmp|ico|svg|webp)[\"']?$")
-         (#match? @dest "\\.(exe|com|bat|cmd|sh|elf|bin)[\"']?$"))
+      type: symbol
+      kind: call
+      exact: rename
+      args:
+        - {kind: string, regex: '\.(png|jpe?g|gif|bmp)$'}
+        - {kind: string, regex: '\.(exe|com|bat|cmd)$'}
   # === File Rename to Executable ===
   - id: ruby-ast-rename-to-exe
     desc: Rename file to executable extension
     crit: suspicious
     conf: 0.90
+    # A `rename(..., "*.exe")` call — matched on the cached call fact plus an
+    # arg-value filter on the destination string. The `.exe` destination is the
+    # dominant signal; renaming any file to an executable extension is the tell.
     if:
-      type: tree-sitter
-      query: |
-        ((call
-          receiver: (constant) @const
-          method: (identifier) @method
-          arguments: (argument_list
-            (_) @source
-            (string) @dest))
-         (#eq? @const "File")
-         (#eq? @method "rename")
-         (#match? @dest "\\.exe[\"']?$"))
+      type: symbol
+      kind: call
+      exact: rename
+      arg:
+        kind: string
+        regex: '\.exe[''"]?$'
   # === Windows OS Check (Regex) ===
   - id: ruby-ast-check-windows-regex
-    desc: Check for Windows OS via regex
-    crit: suspicious
+    desc: Windows OS detection via RbConfig host_os tokens
+    # Building block: meaningful only inside the dropper composites that
+    # require it alongside rename-to-exe / exec (e.g. `ruby-windows-dropper`,
+    # `extconf-os-check-exec`). Component so it never surfaces standalone.
+    crit: component
     conf: 0.85
     if:
-      # Migrated from a tree-sitter query to a `kind: call` match on
-      # the pre-extracted call fact (no per-member cursor walk).
-      type: symbol
-      kind: call
-      exact: 'match'
-  # === URL String Concatenation ===
-  - id: ruby-ast-url-concatenation
-    desc: String concatenation of URL scheme
-    crit: suspicious
-    conf: 0.85
-    if:
-      # Migrated from a tree-sitter query to a lenient `type: text`
-      # match (no per-member cursor walk). Approximates the query's
-      # structural intent via its distinctive token(s).
+      # The earlier lenient migration matched `kind: call, exact: 'match'`,
+      # i.e. ANY `.match` call in any Ruby file. The real signal is a host_os
+      # platform check — the canonical RbConfig::CONFIG['host_os'] values that
+      # Ruby uses to detect Windows. Match those distinctive tokens directly.
       type: text
-      regex: 'https?:'
-  # === Suspicious URL Scheme String ===
-  - id: ruby-ast-suspicious-url-scheme
-    desc: Suspicious URL scheme string literal (e.g. "https:/")
-    crit: suspicious
-    conf: 0.8
-    if:
-      type: tree-sitter
-      query: |
-        ((string) @str
-         (#match? @str "^[\"']https?:/[\"']$"))
+      regex: '\b(mswin|mingw|cygwin|bccwin)\b'
+  # `ruby-ast-url-concatenation` was removed: its lenient `type: text`
+  # regex `https?:` matched every ordinary URL (firing standalone-suspicious
+  # on any gem with an `https://...` string), and it had no composite
+  # consumers. The truncated-scheme signal it was meant to capture is now
+  # the canonical `objectives/anti-static/obfuscation/string/concat::ruby-ast-suspicious-url-scheme`
+  # (consolidated there as a string-obfuscation literal).
   # === Fragmented URL Fetch ===
   - id: ruby-ast-fragmented-url-fetch
-    desc: Network fetch with fragmented URL construction
-    crit: suspicious
+    desc: Net::HTTP client fetch call
+    # Building block for `extconf-fragmented-download` (requires it alongside
+    # an extconf.rb build file). Component so it never surfaces standalone.
+    crit: component
     conf: 0.85
     if:
-      # Migrated from a tree-sitter query to a `kind: call` match on
-      # the pre-extracted call fact (no per-member cursor walk).
+      # The earlier lenient migration matched bare `kind: call` names
+      # `get|post|request`, i.e. ANY method so named (`hash.get`, `params.get`,
+      # a `request` accessor, ...). Call facts are receiver-qualified, so anchor
+      # to the canonical Ruby HTTP client `Net::HTTP.<call>` to keep this a real
+      # network fetch (other clients/open-uri are covered by their own atoms).
       type: symbol
       kind: call
-      regex: '^(get|post|request)$'
+      regex: '^Net::HTTP\.'
   # === Host OS Configuration Access ===
   - id: ruby-ast-host-os-access
     desc: Access host OS configuration
     crit: suspicious
     conf: 0.9
+    # `RbConfig::CONFIG['host_os']` — the receiver-qualified constant subscript
+    # is distinctive enough as source text (no live query needed).
     if:
-      type: tree-sitter
-      query: |-
-        ((element_reference
-          object: (constant_resolution
-            scope: (constant) @scope
-            name: (constant) @name)
-          index: (string) @key)
-         (#eq? @scope "RbConfig")
-         (#eq? @name "CONFIG")
-         (#match? @key "host_os"))
+      type: text
+      regex: "RbConfig::CONFIG\\s*\\[\\s*['\"]host_os"
