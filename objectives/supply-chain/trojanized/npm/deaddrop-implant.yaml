@@ -26,6 +26,18 @@ composite_rules:
       - id: micro-behaviors/communications/url/encoded::encoded-https-url
       - id: micro-behaviors/process/interpreter/vm::base64-url
       - id: objectives/anti-static/obfuscation/encoding/content::encoded-http-url
+  # A dead-drop URL is suspicious whether or not it is base64-obfuscated: a
+  # reference to a paste / JSON-storage host (jsonkeeper, jsonbin, npoint,
+  # pastebin, …) used as config/C2 counts as a dead-drop even in plaintext.
+  # express-denv's caller.js uses a PLAINTEXT jsonkeeper URL; only the dormant
+  # base64 const.js satisfied npm-encoded-url-present.
+  - id: npm-deaddrop-url-present
+    desc: Dead-drop URL present encoded or paste-host
+    crit: component
+    conf: 0.9
+    any:
+      - id: npm-encoded-url-present
+      - id: objectives/command-and-control/infrastructure/paste/
   - id: npm-http-exfil-dep
     desc: HTTP client dependency suited to exfiltration
     crit: component
@@ -39,14 +51,14 @@ composite_rules:
   # Gate these archive-scope hostile composites on the benign-bundled-extension
   # context so they don't fire on legit bundled extensions.
   - id: npm-deaddrop-detached-implant
-    desc: npm package with encoded dead-drop URL and detached background exec
+    desc: npm package with dead-drop URL and detached background exec
     crit: hostile
     conf: 0.92
     scope: archive
     unless:
       - id: objectives/supply-chain/trojanized/app/context::benign-bundled-extension-code
     all:
-      - id: npm-encoded-url-present
+      - id: npm-deaddrop-url-present
       - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
   - id: npm-stealth-spawn-stealer-stack
     desc: Detached background exec with injected exfil and local-DB dependencies
@@ -60,23 +72,59 @@ composite_rules:
       - id: metadata/import/npm::sqlite3
       - id: npm-http-exfil-dep
   - id: npm-encoded-c2-stealer-stack
-    desc: Encoded dead-drop URL with injected exfil and local-DB dependencies
+    desc: Dead-drop URL with injected exfil and local-DB dependencies
     crit: hostile
     conf: 0.9
     scope: archive
     unless:
       - id: objectives/supply-chain/trojanized/app/context::benign-bundled-extension-code
     all:
-      - id: npm-encoded-url-present
+      - id: npm-deaddrop-url-present
       - id: metadata/import/npm::sqlite3
       - id: npm-http-exfil-dep
   - id: npm-encoded-c2-usetime-stager
-    desc: Encoded dead-drop URL with use-time network stager activation
+    desc: Dead-drop URL with use-time network stager activation
     crit: hostile
     conf: 0.9
     scope: archive
     unless:
       - id: objectives/supply-chain/trojanized/app/context::benign-bundled-extension-code
     all:
-      - id: npm-encoded-url-present
+      - id: npm-deaddrop-url-present
       - id: objectives/command-and-control/trigger/activation::js-import-time-network-stager
+  # worker_threads variant of the detached stager: a Worker running a sibling
+  # stage is harder to flag than a detached child_process (legit worker pools
+  # abound), so only treat it as C2 when paired with a dead-drop URL.
+  - id: npm-worker-thread-deaddrop-stage
+    desc: worker_threads stage with dead-drop URL
+    crit: hostile
+    conf: 0.88
+    scope: archive
+    unless:
+      - id: objectives/supply-chain/trojanized/app/context::benign-bundled-extension-code
+    all:
+      - id: npm-deaddrop-url-present
+    any:
+      - id: micro-behaviors/process/create/workers::worker-threads-import
+      - id: micro-behaviors/process/create/workers::new-worker-instance
+  # Trojanized-cover detector (archive scope): a logging-library codebase
+  # (pino/winston/bunyan/log4js cover) shipped with an injected implant in a
+  # SEPARATE file — detached/forked background stage, remote-eval loader, or a
+  # dead-drop URL. Real logging libs use worker_threads, not detached child
+  # processes or remote eval, so the pairing has no benign use. The per-file
+  # logging-library composite misses the split-file case (cover and implant in
+  # different files); this pools across the package.
+  - id: npm-trojanized-logging-cover-implant
+    desc: Logging-library cover with injected implant
+    crit: hostile
+    conf: 0.9
+    scope: archive
+    unless:
+      - id: objectives/supply-chain/trojanized/app/context::benign-bundled-extension-code
+    all:
+      - id: objectives/supply-chain/trojanized/library/framework::logging-indicators
+    any:
+      - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+      - id: micro-behaviors/process/create/spawn::detached-fork
+      - id: objectives/anti-static/obfuscation/eval/dynamic::iife-remote-eval
+      - id: npm-deaddrop-url-present

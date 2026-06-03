@@ -142,6 +142,7 @@ When a behavior could serve multiple objectives, place the single trait where ev
 | Hidden files in system directories | `evasion/file-hiding/` | Concealment from users/admins; a hidden file doesn't survive reboots better |
 | Daemon fork+setsid persisting across reboot | `persistence/system/daemon/` | Restarting after reboot is persistence |
 | Reads Chrome Login Data SQLite | `credential-access/browser/` | Targets a specific credential store |
+| Reads a cookie-store data field (`CookiesData`, etc.) | `micro-behaviors/communications/http/cookies/` | Neutral cookie-store field access; credential-access/exfil composites reference it |
 | Extracts saved Wi-Fi profile keys | `credential-access/wifi/` | Targets a specific credential store |
 | Reads `AWS_SECRET_ACCESS_KEY` from env | `credential-access/env/secrets/` | Targets a specific secret |
 | Reads `os.environ` generically | `micro-behaviors/os/env/` | Neutral capability, no credential targeting |
