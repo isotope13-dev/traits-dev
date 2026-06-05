@@ -1,0 +1,57 @@
+# node-gyp binding.gyp install-time code execution.
+#
+# npm runs `node-gyp configure` automatically when installing a package that
+# contains a binding.gyp. During configure, node-gyp evaluates gyp command
+# expansions — `<!(cmd)` and `<!@(cmd)` — by executing `cmd` in a shell and
+# substituting its stdout. Legitimate native modules use this to locate headers,
+# e.g. `<!(node -p "require('node-addon-api').include")` in `include_dirs` —
+# those RETURN a build value and never redirect output or chain commands.
+#
+# A command expansion placed in `sources` (which should list static .c/.cc
+# files) that discards/chains its output is not building anything — it is an
+# install hook executing a payload.
+# MBC: B0024  ATT&CK: T1195.002 (supply chain), T1059 (command interpreter)
+defaults:
+  platforms: [unix, windows]
+  for: [gyp]
+  attack: T1195.002
+  mbc: B0024
+traits:
+  - id: gyp-source-command-expansion
+    desc: gyp sources entry is a command expansion
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      regex: '"sources"\s*:\s*\[[^\]]{0,300}<!@?\('
+  - id: gyp-expansion-sideeffect
+    desc: gyp command expansion has shell side effects
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '<!@?\([^)]{0,200}(/dev/null|2>&1|&&)'
+
+composite_rules:
+  # A binding.gyp `sources` command expansion with shell side effects: node-gyp
+  # executes it at install/configure time. Real source lists are static files;
+  # an output-discarding/chaining command here is install-time RCE.
+  - id: gyp-install-command-execution
+    desc: binding.gyp runs a command at install time
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: gyp-source-command-expansion
+      - id: gyp-expansion-sideeffect
+  # Cross-file: the native-build manifest carries a command-expansion source and
+  # the package ships an obfuscated single-line eval dropper — the gyp hook is
+  # the trigger that runs the bundled payload at install.
+  - id: gyp-runs-obfuscated-entry-dropper
+    desc: binding.gyp install hook paired with obfuscated eval dropper
+    crit: hostile
+    conf: 0.98
+    for: [archives]
+    scope: archive
+    all:
+      - id: gyp-source-command-expansion
+      - id: objectives/supply-chain/hidden-payload/eval::packed-single-line-eval-dropper

@@ -9,3 +9,82 @@ traits:
     if:
       type: text
       regex: 'spec_from_file_location[\s\S]{0,500}exec_module\s*\('
+  # `importlib.import_module(name)` — the standard dynamic-import API. Neutral:
+  # plugin loaders, lazy imports, and back-compat alias shims (e.g. cat-ademic's
+  # `cat_ademic` → `catademic`) use it. Relocated from
+  # objectives/anti-static/obfuscation/reflection; the obfuscation/dynamic-import
+  # composites reference it cross-directory.
+  - id: py-importlib-import-module
+    desc: Python importlib.import_module
+    crit: component
+    conf: 0.6
+    if:
+      type: symbol
+      kind: call
+      exact: importlib.import_module
+  # Runtime module construction / registration. Neutral import-system mechanics:
+  # plenty of legitimate frameworks build a module object and register it in
+  # sys.modules to execute code in an isolated namespace (Bokeh/Panel/HoloViz
+  # `execute_in_module`, IPython, namespace-package generators). Relocated here
+  # from objectives/supply-chain/hidden-payload/encoding — the hidden-payload
+  # intent comes from the Fernet-decrypt + exec() composite legs that reference
+  # these cross-directory, not from the module registration itself.
+  - id: python-sys-modules-write
+    desc: Python writes to sys.modules at runtime
+    crit: notable
+    conf: 0.9
+    if:
+      # tree-sitter assignment node, not text: a `type: text` scan also matches
+      # `sys.modules[...] =` written inside comments/docstrings, which is not a
+      # runtime write. The assignment node only exists for real statements.
+      type: tree-sitter
+      kind: assignment
+      regex: 'sys\.modules\[[^\]]{1,80}\]\s*='
+    unless:
+      - id: well-known/tool/detection/malware-config-parser
+      - id: python-generated-submodule-registration
+      # The `six` Py2/3 compat shim (vendored into botocore, requests, and a
+      # huge fraction of PyPI) registers lazy submodules via its
+      # `_SixMetaPathImporter`, whose `load_module` does `sys.modules[fullname]
+      # = mod`. Benign, ubiquitous.
+      - type: text
+        substr: '_SixMetaPathImporter'
+      - id: metadata/package/testing/presence/harness::python-test-file
+      - id: metadata/package/testing/presence/harness::test-directory
+  - id: python-register-module-helper-def
+    desc: Python generated submodule registration helper
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      substr: "def _register_module(name, module, *, package=False):"
+  - id: python-register-module-package-path
+    desc: Python generated package path assignment
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      substr: "module.__path__ = []"
+  - id: python-register-module-sysmodules-name
+    desc: Python generated submodule sys.modules assignment
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      substr: "sys.modules[name] = module"
+  - id: python-types-moduletype-create
+    desc: Python creates ModuleType objects at runtime
+    crit: notable
+    conf: 0.9
+    if:
+      type: symbol
+      regex: '^types\.ModuleType$'
+composite_rules:
+  - id: python-generated-submodule-registration
+    desc: Generated Python package submodule registration
+    crit: component
+    conf: 0.9
+    all:
+      - id: python-register-module-helper-def
+      - id: python-register-module-package-path
+      - id: python-register-module-sysmodules-name

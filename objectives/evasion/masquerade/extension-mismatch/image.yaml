@@ -3,68 +3,86 @@ defaults:
   crit: suspicious
   conf: 0.9
   attack: T1036.008
+# Executable content wearing a benign *document/image/text* extension
+# (PE-named-.png, ELF-named-.pdf, shell-named-.jpg, …) is the masquerade
+# (T1036.008). filefacts reports the content→extension group transition via
+# `consistency.extension_content_mismatch.<content>_as_<ext>`. We gate on the
+# specific dangerous transitions only — image / document / text — and NOT on the
+# benign-but-mismatched cases (a Mach-O named `ls.macOS` is `binary_as_unknown`;
+# a versioned `.so.1.2` is `binary_as_data`; a `.zip`/`.json` container is
+# `binary_as_archive`/`binary_as_config`). A real executable named as an *image*
+# is the most egregious transition (hostile composite); document/text disguises
+# are suspicious.
 traits:
-  # Image-format mismatches (JPEG-named-.png, PNG-named-.jpg, etc.) are extremely
-  # common and benign — a renderable raster with the wrong extension is not a hidden
-  # payload. Only executable/script content disguised as an image is the real
-  # masquerade (T1036.008), so these atoms gate on `for: [scripts, elf, macho, pe]`
-  # and the benign image-as-image case is a non-surfacing building block.
-  - id: not-png-as-png
-    desc: Non-PNG content with .png extension
-    crit: suspicious
-    for: [scripts, elf, macho, pe, -png]
-    if:
-      type: basename
-      regex: (?i)\.png$
-    unless:
-      # Executables/scripts under a samples//tests/ path are deliberate test fixtures.
-      - type: basename
-        regex: '(?i)(^|[\\/!])(samples?|tests?)[\\/!].*\.png$'
-  # NOTE: a JPEG named .png (even one carrying Photoshop metadata) is just the common
-  # benign image-as-image mismatch — no separate "carrier" trait. Genuine hidden payloads
-  # in images are caught by polyglot / appended-archive / embedded-PE detection, not by
-  # the extension mismatch.
-  - id: not-jpeg-as-jpeg
-    desc: Non-JPEG content with .jpg/.jpeg extension
-    crit: suspicious
-    for: [scripts, elf, macho, pe, -jpeg]
-    if:
-      type: basename
-      regex: (?i)\.(jpe?g)$
-  - id: binary-as-pdf
-    desc: Binary disguised as PDF document
+  - id: binary-content-as-image-extension
+    desc: Binary content under image extension
+    crit: component
+    conf: 0.97
     for: [elf, macho, pe]
     if:
-      type: basename
-      regex: (?i)\.pdf$
-  - id: binary-as-office
-    desc: Binary disguised as Office document
+      type: metrics
+      field: consistency.extension_content_mismatch.binary_as_image
+      min: 1
+  - id: binary-content-as-document-extension
+    desc: Binary content under document extension
+    crit: component
+    conf: 0.95
     for: [elf, macho, pe]
     if:
-      type: basename
-      regex: (?i)\.(docx?|xlsx?|pptx?)$
-  - id: binary-as-text
-    desc: Binary disguised as text file
+      type: metrics
+      field: consistency.extension_content_mismatch.binary_as_document
+      min: 1
+  - id: binary-content-as-text-extension
+    desc: Binary content under text extension
+    crit: component
+    conf: 0.9
+    for: [elf, macho, pe]
+    if:
+      type: metrics
+      field: consistency.extension_content_mismatch.binary_as_text
+      min: 1
+  - id: script-content-as-image-extension
+    desc: Script content under image extension
+    crit: component
+    conf: 0.9
+    for: [scripts]
+    if:
+      type: metrics
+      field: consistency.extension_content_mismatch.script_as_image
+      min: 1
+  - id: script-content-as-document-extension
+    desc: Script content under document extension
+    crit: component
+    conf: 0.9
+    for: [scripts]
+    if:
+      type: metrics
+      field: consistency.extension_content_mismatch.script_as_document
+      min: 1
+composite_rules:
+  - id: binary-disguised-as-image-extension
+    desc: Executable disguised as an image file
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: binary-content-as-image-extension
+    any:
+      - id: metadata/file/magic::elf-header
+      - id: metadata/file/magic::macho-32
+      - id: metadata/file/magic::macho-64
+      - id: metadata/file/magic::cafebabe-magic
+      - id: metadata/file/magic::pe-dos-stub
+  - id: binary-masquerades-as-document-extension
+    desc: Executable disguised as document or text
     crit: suspicious
-    for: [elf, macho, pe]
-    if:
-      type: basename
-      regex: (?i)\.(txt|csv|md)$
-    unless:
-      - type: metrics
-        field: text.total_lines
-        min: 5
-      - type: metrics
-        field: binary.string_count
-        min: 20
-      - type: metrics
-        field: text.whitespace_ratio
-        min: 0.08
-      - type: basename
-        regex: (?i)(^|[\\/])(rfc\d+|requirements[^\\/]*)\.txt$
-      - type: basename
-        regex: (?i)(^|[\\/])(docs|test-data|perf/texts)[\\/]
-      - type: basename
-        regex: (?i)(^|[\\/])(test|CMakeLists)\.txt$
-      - type: basename
-        regex: (?i)[^/]+_example\.txt$
+    conf: 0.95
+    any:
+      - id: binary-content-as-document-extension
+      - id: binary-content-as-text-extension
+  - id: script-masquerades-as-document-extension
+    desc: Script disguised as image or document
+    crit: suspicious
+    conf: 0.9
+    any:
+      - id: script-content-as-image-extension
+      - id: script-content-as-document-extension

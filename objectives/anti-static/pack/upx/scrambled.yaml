@@ -15,12 +15,83 @@ traits:
       type: raw
       substr: "UPX!"
 
+  - id: entry-in-writable-section
+    desc: Entry point in writable section
+    crit: component
+    conf: 0.85
+    if:
+      type: metrics
+      field: pe.entry_in_writable_section
+      min: 1
+
 composite_rules:
   - id: scrambled-upx-header
     desc: UPX section names but UPX magic erased
     crit: suspicious
     conf: 0.97
     all:
-      - id: metadata/binary/section/names::upx-section-pair
+      - id: metadata/binary/section/names::upx0-section-name
+    any:
+      - id: metadata/binary/section/names::upx1-section-name
+      - id: metadata/binary/section/names::upx2-section-name
     unless:
       - id: upx-magic-bytes
+
+  # The canonical UPX layout is UPX0 (empty RWX), UPX1 (compressed payload)
+  # and UPX2 (loader imports). Renaming the UPX1 spine to a benign name
+  # (e.g. .data) defeats every UPX1-anchored detector while UPX0/UPX2 and
+  # the empty RWX decoy survive. Genuine UPX always keeps UPX1 and the UPX!
+  # magic, so their joint absence is conclusive tampering.
+  - id: scrambled-upx-renamed-spine-loader
+    desc: UPX bookend sections with renamed payload spine
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: metadata/binary/section/names::upx0-section-name
+      - id: metadata/binary/section/names::upx2-section-name
+      - id: objectives/command-and-control/dropper/execution/loader::empty-rwx-upx0
+    unless:
+      - id: upx-magic-bytes
+      - id: metadata/binary/section/names::upx1-section-name
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/signed/developer/
+
+  # The renamed payload section is writable+executable and holds the entry
+  # point: the stub decrypts itself in place at runtime. Genuine UPX also
+  # runs from a writable section, so the UPX! magic absence is the gate
+  # that isolates the tampered, magic-stripped variant.
+  - id: wx-entrypoint-scrambled-upx-loader
+    desc: Entry point in writable scrambled UPX section
+    crit: hostile
+    conf: 0.95
+    attack: T1620
+    mbc: B0030
+    all:
+      - id: entry-in-writable-section
+      - id: metadata/hardening/memory::wx-section
+      - id: metadata/binary/section/names::upx-section
+    unless:
+      - id: upx-magic-bytes
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/signed/developer/
+      - id: metadata/binary/installer/family::known-benign-installer
+
+  # A genuinely UPX-compressed image holds almost no readable prose, yet
+  # this loader is padded with cleartext license/EULA text (sentence ratio
+  # high) to dilute entropy heuristics and look benign. Combined with the
+  # empty RWX decoy and minimal dynamic-load imports it is a masquerade.
+  - id: packed-loader-license-prose-decoy
+    desc: Packed loader padded with license prose decoy
+    crit: hostile
+    conf: 0.95
+    attack: T1027.001
+    mbc: B0032
+    all:
+      - id: metadata/binary/metrics/threshold::rich-sentence-strings-20pct
+      - id: metadata/binary/section/names::upx-section
+      - id: objectives/command-and-control/dropper/execution/loader::empty-rwx-upx0
+      - id: objectives/anti-static/obfuscation/payload/import::minimal-pe-dynamic-load
+    unless:
+      - id: upx-magic-bytes
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/signed/developer/
