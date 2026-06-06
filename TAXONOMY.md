@@ -255,6 +255,21 @@ micro-behaviors/
 │   └── control-flow/      #   Control flow patterns (loops, error handling)
 │   # NOTE: PRNG → os/random/. Config detection → metadata/config/.
 │   # data/ is for data transformation, not system queries or file metadata.
+│   #
+│   # NOTE — decoding/deserialization is a CAPABILITY, not file metadata.
+│   #   Decoding an encoding (base64, hex, custom alphabet) or parsing a
+│   #   particular format (pickle/marshal, an image/archive/document format)
+│   #   is on the TAXONOMY notable bar — an analyst wants it surfaced in a
+│   #   supply-chain diff. It belongs here (encode/, decode/, serialize/,
+│   #   compress/, archive/, format/), NOT in metadata/. This includes the
+│   #   neutral act of IMPORTING such a module (e.g. Python `import base64`
+│   #   → encode/base64::import-base64, `import pickle` →
+│   #   serialize/unsafe/python::import-pickle): the import is a capability
+│   #   observation, kept at notable. metadata/ only records what a file IS
+│   #   (e.g. "contains base64-looking strings"), never that code decodes.
+│   #   The engine also emits a neutral per-module import node under
+│   #   metadata/import/<lang>/<module> for composites that need an
+│   #   import fact without inferring the decode capability.
 │
 ├── fs/                    # Filesystem access                   → MBC: File System
 │   │                      #   Neutral file operations only.
