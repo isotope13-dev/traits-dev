@@ -236,6 +236,20 @@ traits:
   if:
     type: text
     substr: with title "macOS"
+# Generic credential-ask phrasing used by fake macOS authorization dialogs,
+# independent of the specific impersonated service name. Covers AMOS lure
+# variants like "System Helper requires authorization. Please provide your
+# device password to proceed with verification." where the existing
+# fixed-title atoms above (macOS Protection Service / wants to make changes)
+# do not match the bespoke wording.
+- id: provide-password-lure
+  desc: Fake prompt asks for device password
+  crit: suspicious
+  conf: 0.9
+  attack: T1056.002
+  if:
+    type: text
+    regex: '(?i)(provide|enter|input) your (\w{1,10} )?password'
 - id: chrome-generic-password-query
   desc: Chrome generic password query
   crit: suspicious
@@ -638,6 +652,7 @@ composite_rules:
   - id: applescript-direct-chunked-upload
   - id: applescript-outzip-curl-exfil
   - id: applescript-upload-php-exfil
+  - id: applescript-buildid-databinary-exfil
 - id: applescript-password-phishing
   desc: AppleScript password phishing behavior
   crit: suspicious
@@ -755,3 +770,76 @@ composite_rules:
   - id: curl-download-archive-zip-dmg-pkg
   - id: curl-download-archive-tarball
   - id: curl-download-app-bundle
+# --- Variant-independent AMOS (Atomic Stealer) behaviors ---
+# The family-tuned composites above key on specific upload shapes (chunked,
+# /tmp/out.zip, upload.php), specific lure titles, and named handler functions.
+# Numerically-obfuscated AMOS variants delivered as a single-line
+# `osascript -e 'run script "..."'` blob (functions renamed to f<digits>, paths
+# built by concatenation, AST string literals not cleanly exposed) slip past
+# them while performing the identical kill chain. These three text-based
+# composites detect the behaviors directly, regardless of the carrier wrapping.
+- id: applescript-credential-phish-hostile
+  desc: Fake auth dialog harvests and validates login password
+  crit: hostile
+  conf: 0.97
+  attack: T1056.002
+  # Impersonation lure + masked password entry + dscl validation of the entered
+  # password is the complete credential-phish-and-verify loop; `dscl . authonly`
+  # to check a user-typed password against the local directory service has no
+  # legitimate use behind a hand-rolled dialog (real tools use Authorization
+  # Services / `with administrator privileges`).
+  all:
+  - id: objectives/credential-access/validation/check::dscl-authonly-comp
+  - id: objectives/credential-access/phishing/lure::hidden-answer
+  any:
+  - id: protection-service-title
+  - id: device-password-authorize-prompt
+  - id: macos-wants-change-prompt
+  - id: provide-password-lure
+- id: applescript-buildid-databinary-exfil
+  desc: Campaign-tagged curl upload of collected data
+  crit: hostile
+  conf: 0.96
+  attack: T1041
+  # AMOS C2 protocol: a curl request carrying the `buildid:` campaign header that
+  # binary-uploads a staged file. The buildid header + --data-binary file upload
+  # + (POST or a hardcoded-IP endpoint) is the exf* leg, independent of whether
+  # the archive is chunked or named out.zip.
+  all:
+  - id: buildid-upload-header
+  - id: micro-behaviors/communications/http/curl::curl-data-binary-file
+  any:
+  - id: micro-behaviors/communications/http/curl::curl-post-flag
+  - id: objectives/command-and-control/infrastructure/ip::ip-address-url
+# Handler-independent full-infostealer verdict. The family composites above
+# (applescript-infostealer-hostile / -macsync-style-stealer) require
+# helper-handler-bundle — three NAMED handler functions (filegrabber, chromium,
+# uploadToC2 ...) that numerically-obfuscated variants rename out of reach. This
+# capstone drops the function-name leg and rests on four independent behavioral
+# clusters that all describe a stealer: mass app-data collection, /tmp staging
+# layout, credential phishing, and exfiltration. Their co-occurrence in one
+# script has no benign explanation regardless of how handlers are named.
+- id: applescript-complete-infostealer
+  desc: Complete infostealer collects stages exfiltrates
+  crit: hostile
+  conf: 0.98
+  all:
+  - id: applescript-browser-wallet-collection
+  - id: applescript-staging-layout
+  - id: applescript-password-phishing
+  - id: applescript-exfiltration
+# Victim-registration beacon: a full system_profiler hardware/software profile
+# (or the SPHardware UUID query) shipped to C2 under a campaign buildid header.
+# Legitimate diagnostics read system_profiler, but they do not POST the profile
+# to a host tagged with an attacker campaign id — that pairing is the stealer
+# check-in that registers the victim before/with data theft.
+- id: applescript-fingerprint-c2-beacon
+  desc: System fingerprint beaconed to campaign C2
+  crit: hostile
+  conf: 0.95
+  attack: T1082
+  all:
+  - id: applescript-buildid-databinary-exfil
+  any:
+  - id: full-system-profile
+  - id: uuid-query-command

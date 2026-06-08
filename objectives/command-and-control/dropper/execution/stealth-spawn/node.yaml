@@ -18,7 +18,139 @@ traits:
   if:
     type: text
     regex: 'github\.com/.{1,40}/.{1,60}/raw/refs/heads/.{1,40}/.{1,80}\.(bat|cmd)'
+# When the encoded loader moves out of the manifest into a bundled .js install
+# script (postinstall: node install.js), its child_process/spawn/detached calls
+# are char-code-encoded too, so the AST spawn atoms below cannot see them. These
+# text atoms recover the loader from the raw .js by the obfuscation shape of its
+# embedded program: a long char-code array OR a long base64 blob, paired with the
+# matching decoder. The blob/array is the rare discriminator; bundles excluded.
+- id: js-charcode-array-program
+  desc: Large char-code numeric array literal
+  crit: notable
+  conf: 0.85
+  attack: "T1027"
+  if:
+    type: text
+    regex: '\[\d{1,3}(,\d{1,3}){80,}\]'
+  unless:
+  - id: metadata/library/structure::js-any-bundle-output
+  - id: metadata/package/testing/harness/runtime::is-test
+- id: js-fromcharcode-decoder
+  desc: String built from character codes
+  crit: component
+  conf: 0.8
+  attack: "T1027"
+  if:
+    type: text
+    regex: 'String\s*[.\[]\s*["'']?from(CharCode|CodePoint)'
+# Base64 variant of the embedded program: a long base64 string literal. Bundles,
+# tests and source-mapped output (which legitimately carry large base64) excluded.
+- id: js-base64-blob
+  desc: Long base64 string literal
+  crit: notable
+  conf: 0.8
+  attack: "T1027"
+  if:
+    type: text
+    regex: '["''][A-Za-z0-9+/]{200,}={0,2}["'']'
+  unless:
+  - id: metadata/library/structure::js-any-bundle-output
+  - id: metadata/package/testing/harness/runtime::is-test
+  - id: metadata/package/tooling::has-sourcemap
+- id: js-base64-decode
+  desc: Base64 decode call
+  crit: component
+  conf: 0.7
+  attack: "T1140"
+  if:
+    type: text
+    regex: 'Buffer\.from\([^,)]{1,40},\s*["'']base64|\batob\s*\('
+# require() of a decoder applied to an array literal — require(fn([99,104,..]))
+# loads a module by a char-code-decoded name. Survives the runtime-fetch variant
+# (https/net required by decoded name) where no program is embedded at all.
+- id: js-encoded-require
+  desc: Require of a decoded module name
+  crit: notable
+  conf: 0.85
+  attack: "T1027"
+  if:
+    type: text
+    regex: 'require\s*\(\s*\w+\s*\(\s*\['
+  unless:
+  - id: metadata/library/structure::js-any-bundle-output
+  - id: metadata/package/testing/harness/runtime::is-test
 composite_rules:
+  # Umbrellas over the embedded-program forms, so the loader composite survives an
+  # attacker swapping a char-code array for a base64 blob.
+- id: js-charcode-encoded-program
+  desc: Embedded char-code program
+  crit: component
+  near_bytes: 16384
+  all:
+  - id: js-charcode-array-program
+  - id: js-fromcharcode-decoder
+- id: js-base64-encoded-program
+  desc: Embedded base64 program
+  crit: component
+  near_bytes: 16384
+  all:
+  - id: js-base64-blob
+  - id: js-base64-decode
+  # Encoded self-respawn loader inside a .js file: an embedded encoded program
+  # (char-code array or base64 blob) + a process.execPath self-spawn, all as raw
+  # text because the spawn/child_process calls are themselves encoded. The
+  # combination is not produced by benign code; bundles and tests excluded.
+- id: js-encoded-node-self-respawn-loader
+  desc: Encoded JS loader respawns Node on a decoded program
+  crit: hostile
+  conf: 0.96
+  attack: "T1027, T1059.007"
+  mbc: "B0032, E1027"
+  near_bytes: 16384
+  all:
+  - id: micro-behaviors/process/create/spawn::process-execpath-spawn
+  any:
+  - id: js-charcode-encoded-program
+  - id: js-base64-encoded-program
+  unless:
+  - id: metadata/library/structure::js-any-bundle-output
+  - id: metadata/package/testing/harness/runtime::is-test
+  - id: micro-behaviors/process/create/spawn::node-self-respawn
+  # Encoded dynamic-require loader: a .js file that requires a module by a decoded
+  # name AND defines the matching decoder. Catches the runtime-fetch variant where
+  # the payload is downloaded (https/net required by decoded name) and the
+  # execPath self-spawn anchor is absent. Bundles and tests excluded.
+- id: js-encoded-dynamic-require-loader
+  desc: JS loader requires modules by decoded name
+  crit: hostile
+  conf: 0.95
+  attack: "T1027, T1105, T1059.007"
+  mbc: "B0032, E1027"
+  near_bytes: 16384
+  all:
+  - id: js-encoded-require
+  any:
+  - id: js-fromcharcode-decoder
+  - id: js-base64-decode
+  unless:
+  - id: metadata/library/structure::js-any-bundle-output
+  - id: metadata/package/testing/harness/runtime::is-test
+  # Self-respawning obfuscated install loader: a package manifest whose lifecycle
+  # command char-code-decodes a program AND references process.execPath is
+  # re-launching the Node interpreter on the decoded body (typically detached
+  # with ignored stdio so it survives the install and hides its output). The
+  # child_process/spawn/detached calls are themselves char-code-encoded, so this
+  # anchors on the manifest-text shape rather than AST symbols.
+- id: npm-hook-node-self-respawn-loader
+  desc: Install hook self-respawns Node on a decoded program
+  crit: hostile
+  conf: 0.98
+  attack: "T1059.007, T1027, T1195.002"
+  mbc: "B0032, F0011"
+  for: [package.json]
+  all:
+  - id: objectives/supply-chain/install-hook/scripts/lifecycle::lifecycle-node-eval-charcode-program
+  - id: objectives/supply-chain/install-hook/scripts/lifecycle::manifest-node-execpath-respawn
   # Temp directory use is normal for lock files and telemetry dedupe. Treat it
   # as dropper staging only when the temp path is paired with payload writes.
 - id: temp-payload-staging
@@ -66,6 +198,7 @@ composite_rules:
   - id: objectives/command-and-control/dropper/execution/integrity::node-sha256-download-verification
   - id: objectives/command-and-control/dropper/execution/integrity::node-validated-npm-runtime-bootstrapper
   - id: micro-behaviors/process/create/spawn::node-lazy-daemon-spawn
+  - id: micro-behaviors/process/create/spawn::node-self-respawn
   - id: metadata/package/testing/presence/fixture::test-filename-pattern
   - id: metadata/package/testing/harness/runtime::is-test
   - id: metadata/package/testing/presence/manifest::test-fixtures
@@ -87,6 +220,10 @@ composite_rules:
   - id: objectives/command-and-control/dropper/execution/integrity::node-sha256-download-verification
   - id: objectives/command-and-control/dropper/execution/integrity::node-validated-npm-runtime-bootstrapper
   - id: micro-behaviors/process/create/spawn::node-lazy-daemon-spawn
+  - id: micro-behaviors/process/create/spawn::node-self-respawn
+  - id: metadata/package/testing/presence/fixture::test-filename-pattern
+  - id: metadata/package/testing/harness/runtime::is-test
+  - id: metadata/package/testing/presence/manifest::test-fixtures
 - id: supply-chain-dropper-destructured-child-process
   desc: Supply-chain dropper via destructured child_process
   crit: hostile

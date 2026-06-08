@@ -1,0 +1,97 @@
+# Runtime self-decoding loader
+#
+# A module that, at load time, reconstructs an embedded blob through a decode
+# chain (base64 / cyclic-XOR) and executes the result via a Function constructor
+# reached indirectly through a literal's prototype chain
+# (`[].constructor.constructor`, `"".constructor.constructor`) and immediately
+# invoked. The indirection exists only to keep the literal `Function`/`eval`
+# token out of the source so static scanners miss the execution sink; decoding
+# an embedded blob straight into that sink at import has no benign use.
+#
+# Observed in the avatar-forge -> dom-weave -> sync-logger npm decoy chain
+# (2026-06): the carrier package (avatar-forge) is a clean avatar generator, its
+# dependency (dom-weave) fire-and-forget loads an optional dependency
+# (sync-logger), and sync-logger ships this loader, which decrypts a
+# dead-drop-resolved endpoint and spawns a hidden powershell/node stager on
+# Windows. See objectives/supply-chain/hidden-payload/staging::optional-dep-fire-forget-loader.
+#
+# ATT&CK: T1027 (Obfuscated Files or Information), T1059.007 (JavaScript)
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1027
+  mbc: B0032
+traits:
+  # Standalone suspicious: an indirectly-obtained Function constructor whose
+  # argument is a base64 decode expression, immediately invoked.
+  # `[].constructor.constructor(Buffer.from(blob,"base64")...)()` — there is no
+  # legitimate reason to route a decode through the prototype-chain Function
+  # constructor and run it inline. Atomic traits cap at suspicious; the hostile
+  # verdict comes from the corroborated composites below.
+  - id: indirect-ctor-decode-iife
+    desc: Indirect constructor runs decoded blob inline
+    crit: suspicious
+    conf: 0.9
+    attack: T1059.007
+    if:
+      type: text
+      regex: '\.constructor\.constructor\(\s*(Buffer\.from|atob)[\s\S]{0,160}\)\(\)'
+    unless:
+      - id: metadata/package/testing/harness/runtime::is-test
+      - id: micro-behaviors/data/text/security/scanner::defensive-threat-signatures
+      - id: micro-behaviors/data/text/llm/scanner::llm-scanner-context
+  # Building block: indirect Function constructor immediately invoking any
+  # transform call (decoder, deobfuscator). Looser than the decode-specific
+  # trait above; only meaningful paired with decode infrastructure in a
+  # composite, so it is component-level on its own.
+  - id: indirect-ctor-transform-iife
+    desc: Indirect constructor immediately invokes transform
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '\.constructor\.constructor\(\s*\w[\w$.]{0,40}\([\s\S]{0,160}\)\(\)'
+composite_rules:
+  # The transform fed to the indirect constructor need not be a bare
+  # Buffer.from/atob call (it may be a custom decoder), as long as decode
+  # infrastructure is present in the same file. Pairs the immediate-invoke
+  # indirect sink with a base64/cyclic-XOR decode primitive.
+  - id: self-decoding-runtime-loader
+    desc: Module decodes an embedded blob into an indirect eval sink
+    crit: hostile
+    conf: 0.95
+    attack: T1059.007
+    all:
+      - id: indirect-ctor-transform-iife
+    any:
+      - id: micro-behaviors/data/encode/xor::js-xor-cyclic-pattern
+      - id: micro-behaviors/data/decode/base64::buffer-from-base64
+      - id: micro-behaviors/data/decode/base64::buffer-from-base64-to-utf8
+      - id: micro-behaviors/data/decode/base64::atob-decode
+    # No bundle-output unless: a sourcemap reference / minified shape does NOT
+    # excuse `[].constructor.constructor(decode(...))()` — tsup/rollup-built
+    # malware ships sourcemaps too (the sync-logger payload did). The indirect
+    # constructor + immediate invoke + in-file decode primitive is specific
+    # enough that legitimate bundler output does not reach it.
+    unless:
+      - id: metadata/package/testing/harness/runtime::is-test
+      - id: micro-behaviors/data/text/security/scanner::defensive-threat-signatures
+      - id: micro-behaviors/data/text/llm/scanner::llm-scanner-context
+  # Variant keyed on the embedded payload rather than the decode primitive: a
+  # large base64 blob literal in a file that also immediately invokes an
+  # indirect Function constructor. Covers custom decoders that don't surface a
+  # bare Buffer.from/atob/XOR call. The indirect-invoke leg is the
+  # discriminator — large base64 literals are common (inline sourcemaps, icons,
+  # wasm), but pairing one with a prototype-chain eval sink is not.
+  - id: blob-fed-indirect-eval
+    desc: Embedded base64 blob executed via indirect eval sink
+    crit: hostile
+    conf: 0.94
+    attack: T1059.007
+    all:
+      - id: indirect-ctor-transform-iife
+      - id: micro-behaviors/data/encode/payload::large-base64-string-literals
+    unless:
+      - id: metadata/package/testing/harness/runtime::is-test
+      - id: micro-behaviors/data/text/security/scanner::defensive-threat-signatures
+      - id: micro-behaviors/data/text/llm/scanner::llm-scanner-context

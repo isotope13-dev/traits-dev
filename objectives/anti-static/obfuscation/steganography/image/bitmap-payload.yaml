@@ -14,6 +14,26 @@ traits:
       exact: HarvestAtlasFragments
 
 composite_rules:
+  # HOSTILE (T1027.003 Steganography): the bitmap pixel-payload extractor
+  # feeding a reflective in-memory loader. The payload is hidden in the pixels
+  # of a resource bitmap, reconstructed byte-by-byte at runtime, then loaded and
+  # executed via Assembly.Load(byte[]) + Activator.CreateInstance — it never
+  # touches disk in cleartext. No benign program hides executable code in image
+  # pixels and reflectively runs it. This catches GetPixel-based variants that
+  # the ToArgb/Base64 stego-decode rule misses (e.g. SnakeKeyLogger crypters
+  # whose decoder reconstructs bytes through a generated delegate).
+  - id: dotnet-bitmap-stego-reflective-loader
+    desc: .NET extracts a payload from bitmap pixels and reflectively executes it
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: dotnet-bitmap-pixel-payload-extraction
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-reflective-loader-chain
+    unless:
+      - id: metadata/signed/platform::microsoft
+    downgrade:
+      any:
+        - id: well-known/app/crayens::crayens-installer
   - id: dotnet-bitmap-pixel-payload-extraction
     desc: .NET bitmap pixel payload extraction
     crit: suspicious
@@ -28,6 +48,31 @@ composite_rules:
       - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-appdomain-exportedtype-invoke
       - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-exportedtype-constructor-invoke
       - id: objectives/anti-static/pack/entropy::dotnet-large-packed-text
+    downgrade:
+      any:
+        - id: well-known/app/crayens::crayens-installer
+
+  # Per-pixel ARGB readback (GetPixel + ToArgb) of a resource bitmap whose bytes
+  # are then Base64-decoded, inside a packed near-maximum-entropy assembly, is a
+  # steganographic payload extractor. No benign program reconstructs a byte
+  # stream out of image pixels and Base64-decodes it from a 7.9-entropy packed
+  # body; ordinary image processing reads pixels but ships normal-entropy IL and
+  # no decode step. Discriminated from the loader rule by requiring the decode
+  # (FromBase64String) rather than the reflective-execution leg.
+  - id: dotnet-bitmap-pixel-stego-decode
+    desc: .NET resource-bitmap pixel steganography payload decode (packed body)
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: micro-behaviors/data/embedded/payload/image::dotnet-resource-manager-token
+      - id: micro-behaviors/data/encode/image/pixel::pixel-access-getpixel
+      - id: micro-behaviors/data/encode/image/pixel::pixel-access-toargb
+      - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+      - id: objectives/anti-static/pack/entropy::dotnet-high-entropy-text-raw
+    unless:
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/binary/resource::resource-only-dll
     downgrade:
       any:
         - id: well-known/app/crayens::crayens-installer

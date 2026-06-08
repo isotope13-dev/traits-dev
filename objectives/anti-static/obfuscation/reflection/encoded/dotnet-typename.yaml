@@ -1,0 +1,80 @@
+# .NET reflection type/method names hidden as Base64 (or split-concat) strings
+# so that static scanners never see "System.Activator" / "CreateInstance". These
+# tokens are the deterministic Base64 encodings of language/framework construct
+# names (not sample IOCs): any crypter that hides the same reflection type name
+# produces the identical standalone string. Observed in a Wordle-game-decoy .NET
+# crypter that ran ldstr "U3lzdGVtLkFjdGl2YXRvcg==" (= "System.Activator") then
+# rebuilt "CreateInstance" as 'C' + "reateInstance" before the GetType/GetMethod
+# /Invoke chain.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  attack: T1027.009
+  mbc: B0009.014
+
+traits:
+  - id: b64-system-activator
+    desc: Base64-encoded "System.Activator" reflection type name
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      exact: U3lzdGVtLkFjdGl2YXRvcg==
+  - id: b64-system-reflection-assembly
+    desc: Base64-encoded "System.Reflection.Assembly" type name
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      exact: U3lzdGVtLlJlZmxlY3Rpb24uQXNzZW1ibHk=
+  - id: b64-system-appdomain
+    desc: Base64-encoded "System.AppDomain" type name
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      exact: U3lzdGVtLkFwcERvbWFpbg==
+  - id: b64-system-reflection
+    desc: Base64-encoded "System.Reflection" namespace token
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      exact: U3lzdGVtLlJlZmxlY3Rpb24=
+  # Standalone "reateInstance" only arises from splitting "CreateInstance" as
+  # 'C' + "reateInstance" to defeat substring scanners; it is not a real symbol.
+  - id: split-createinstance-fragment
+    desc: Fragmented "CreateInstance" method name (split-concat obfuscation)
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      exact: reateInstance
+
+composite_rules:
+  - id: dotnet-encoded-reflection-typename
+    desc: .NET reflection type name hidden as Base64/split string
+    crit: suspicious
+    conf: 0.88
+    all:
+      - id: metadata/binary/framework::dotnet-metadata
+      # dir-ref: matches when any encoded reflection-typename atom in this
+      # directory fires (b64 System.Activator / Reflection.Assembly / AppDomain
+      # / Reflection, or the split "reateInstance" fragment).
+      - id: objectives/anti-static/obfuscation/reflection/encoded
+    unless:
+      - id: metadata/signed/platform::microsoft
+
+  # Hidden reflection type name + an actual reflective-invoke form + a packed
+  # near-maximum-entropy body == a crypter stub that decodes and reflectively
+  # executes a hidden payload while hiding the API names from static analysis.
+  - id: dotnet-obfuscated-reflective-loader
+    desc: .NET packed loader with Base64-hidden reflection type name
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: dotnet-encoded-reflection-typename
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-reflective-invoke-any
+      - id: objectives/anti-static/pack/entropy::dotnet-high-entropy-text-raw
+    unless:
+      - id: metadata/signed/platform::microsoft

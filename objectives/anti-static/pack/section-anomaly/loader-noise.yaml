@@ -89,6 +89,34 @@ traits:
     - id: metadata/signed/platform::microsoft
   unless:
   - id: well-known/app/internet-explorer::internet-explorer-frame-component
+# filefacts walks the base-relocation directory and emits the fraction of the
+# hosting section that is NOT real relocation data (pe.reloc_overhang_ratio) and
+# the absolute overhang in bytes (pe.reloc_overhang_bytes). A genuine .reloc
+# fills its section (overhang ~0); a loader that appends an encrypted second
+# stage to .reloc leaves the section vastly larger than the few real relocation
+# blocks. The ratio ALONE false-positives on every minimal .reloc: a .NET
+# assembly has one 12-byte bootstrap fixup padded to the 512-byte file
+# alignment, which is ratio 0.98 but only ~500 bytes of zero padding — not a
+# concealed payload. Requiring the absolute overhang to clear the largest
+# plausible alignment gap (8 KiB) keeps the ratio meaningful: entropy-
+# independent structural evidence of a real hidden stage (catches low-entropy
+# stages the entropy traits miss) without firing on alignment slack.
+- id: reloc-overhang-ratio-high
+  desc: Reloc section mostly non-relocation bytes
+  crit: component
+  conf: 0.9
+  if:
+    type: metrics
+    field: pe.reloc_overhang_ratio
+    min: 0.5
+- id: reloc-overhang-bytes-significant
+  desc: Reloc-section overhang exceeds alignment-padding scale
+  crit: component
+  conf: 0.9
+  if:
+    type: metrics
+    field: pe.reloc_overhang_bytes
+    min: 8192
 - id: x64-xor-dec-dword-payload-loop
   desc: XOR then decrement dword decode loop
   crit: component
@@ -430,6 +458,30 @@ traits:
     exact: "M332"
     section: .text
 composite_rules:
+- id: reloc-overhang-dominant
+  desc: Reloc section dominated by significant non-relocation bytes
+  crit: notable
+  conf: 0.95
+  all:
+    - id: reloc-overhang-ratio-high
+    - id: reloc-overhang-bytes-significant
+# Read-only-.reloc loaders (no RWX, so the existing reloc-rwx composites miss
+# them) that hide an ENCRYPTED stage: the section is high-entropy AND the
+# overhang metric proves most of it is non-relocation data. Two independent
+# structural anomalies (entropy + overhang) co-firing on .reloc is effectively
+# never benign. Family-agnostic: catches the ACRStealer/Shelma-style loader
+# (legit signed host with payload stuffed into an oversized read-only .reloc).
+- id: reloc-concealed-encrypted-payload
+  desc: Encrypted payload concealed in oversized reloc
+  crit: hostile
+  conf: 0.97
+  attack: "T1027.009"
+  all:
+  - id: reloc-readonly-encrypted-payload
+  - id: reloc-overhang-dominant
+  downgrade:
+    any:
+    - id: metadata/signed/platform::microsoft
 - id: decoy-resource-string-suite
   desc: Gibberish localized decoy resource string suite
   crit: component

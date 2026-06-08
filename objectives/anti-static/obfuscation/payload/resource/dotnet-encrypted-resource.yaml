@@ -1,0 +1,54 @@
+# Encrypted second-stage payloads hidden in CLR MANAGED resources — the blind
+# spot the Win32 resource walk misses. filefacts scans the cor20 resources blob
+# and emits per-managed-resource entropy/size metrics. A .NET crypter stashes
+# its encrypted payload as a managed resource: a large, high-entropy chunk
+# sitting among the low-entropy `.resources`/bitmap streams (observed 6.5-7.1
+# vs 4.9-6.2 for the decoy resources). Entropy alone is a neutral capability
+# (apps embed compressed images/zips too), so the hostile verdict requires a
+# reflective-resource LOADER reading it — i.e. the assembly decrypts and runs
+# an embedded high-entropy blob. The size floor (64 KiB) filters small benign
+# high-entropy UI assets (icons, a lone PNG) from genuine packed stages.
+defaults:
+  for:
+    - pe
+    - dll
+  platforms:
+    - windows
+  attack: T1027.009
+traits:
+  - id: clr-resource-high-entropy
+    desc: High-entropy CLR managed resource present
+    crit: component
+    conf: 0.7
+    if:
+      type: metrics
+      field: pe.clr.managed_resource_max_entropy
+      min: 6.5
+  - id: clr-resource-large
+    desc: Large CLR managed resource present
+    crit: component
+    conf: 0.6
+    if:
+      type: metrics
+      field: pe.clr.managed_resource_max_size
+      min: 65536
+composite_rules:
+  - id: dotnet-large-high-entropy-managed-resource
+    desc: Large high-entropy embedded managed resource
+    crit: notable
+    conf: 0.8
+    mbc: B0032
+    all:
+      - id: clr-resource-high-entropy
+      - id: clr-resource-large
+  - id: dotnet-reflective-encrypted-resource-loader
+    desc: Reflective loader reading a large encrypted managed resource
+    crit: hostile
+    conf: 0.93
+    mbc: B0009.014
+    all:
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-activator-resource-invoker
+      - id: dotnet-large-high-entropy-managed-resource
+    unless:
+      - id: metadata/signed/platform::microsoft-windows
+      - id: metadata/binary/resource::resource-only-dll

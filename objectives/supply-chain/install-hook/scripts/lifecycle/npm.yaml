@@ -615,6 +615,88 @@ traits:
       - type: value
         path: "scripts.postinstall"
         regex: 'node\s+-e\s+\\?["''][^"\n]{0,120}\.(copyFileSync|mkdirSync)\('
+  # === Obfuscated program embedded in a lifecycle command ===
+  # An install hook that runs `node -e`/`--eval` and reconstructs its program
+  # from an inline decoder is decoding an obfuscated payload at install time. No
+  # legitimate lifecycle command encodes the code it executes; the decoder
+  # defeats static review of the manifest. These primitives anchor on the
+  # decode-and-run shape (not IOCs) and are split so the composites survive
+  # decoder-swap, radix-swap, and bracket-notation evasions.
+  #
+  # Primitive: an inline node program in a manifest script.
+  - id: manifest-node-inline-eval
+    desc: Manifest script runs an inline node program
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: 'node\s+(-e|--eval)\b'
+  # Primitive: char-code decoder reached by dot OR bracket notation
+  # (String["fromCharCode"]), so bracket-notation cannot hide the decoder.
+  - id: manifest-decoder-charcode
+    desc: Manifest builds strings from character codes
+    crit: component
+    conf: 0.85
+    attack: "T1027"
+    if:
+      type: text
+      regex: 'from(CharCode|CodePoint)'
+  # Primitive: the other inline decoders an obfuscated hook may swap in instead
+  # of char codes (base64, percent/URI escape). Covers the decoder-swap evasion.
+  - id: manifest-decoder-encoded
+    desc: Manifest decodes base64 or escaped data inline
+    crit: component
+    conf: 0.8
+    attack: "T1027"
+    if:
+      type: text
+      regex: '(atob\(|Buffer\.from\(|unescape\(|decodeURIComponent\()'
+  # A long all-numeric array literal in the manifest is a byte-packed program
+  # (each element a character code). Manifests never carry 80+ element arrays.
+  - id: manifest-charcode-numeric-array
+    desc: Manifest embeds a long char-code numeric array
+    crit: notable
+    conf: 0.9
+    attack: "T1027"
+    if:
+      type: text
+      regex: '\[\d{1,3}(,\d{1,3}){80,}\]'
+  # Radix-swap evasion: the same byte-packed program written as a hex array
+  # (`[0x28,0x66,...]`) rather than decimal.
+  - id: manifest-charcode-hex-array
+    desc: Manifest embeds a long hex char-code array
+    crit: notable
+    conf: 0.9
+    attack: "T1027"
+    if:
+      type: text
+      regex: '\[0x[0-9a-fA-F]{1,2}(,\s?0x[0-9a-fA-F]{1,2}){80,}\]'
+  # process.execPath in a manifest = the install command respawns the Node
+  # interpreter on itself (self-spawn loader), almost always paired with a
+  # decoded `--eval` body and detached/ignored stdio to survive the install.
+  # Dot or bracket notation (process["execPath"]).
+  - id: manifest-node-execpath-respawn
+    desc: Manifest command respawns the Node interpreter
+    crit: notable
+    conf: 0.9
+    attack: "T1059.007"
+    if:
+      type: text
+      regex: 'process\s*[.\[]\s*["'']?execPath'
+  # require() of a decoder applied to an array literal — require(fn([99,104,..]))
+  # loads a module (child_process/https/net/fs) by a char-code-decoded name, the
+  # standard way an obfuscated hook hides which capability it pulls in. This is
+  # the signal that survives a runtime-fetch variant: even when the payload is
+  # downloaded rather than embedded, the network/exec module must be required by
+  # a decoded name. No legitimate manifest computes a module name from an array.
+  - id: manifest-encoded-require
+    desc: Manifest requires a decoded module name
+    crit: notable
+    conf: 0.9
+    attack: "T1027"
+    if:
+      type: text
+      regex: 'require\s*\(\s*\w+\s*\(\s*\['
   - id: silent-obfuscated-npm-dropper
     desc: Silent obfuscated npm lifecycle dropper
     crit: suspicious
@@ -648,6 +730,59 @@ traits:
       regex: '(install|prepare)\.(sh|bash)$'
 # === Composite Rules ===
 composite_rules:
+  # Umbrella over the inline decoders an obfuscated hook can use, so downstream
+  # composites survive an attacker swapping char codes for base64/escape.
+  - id: manifest-inline-decoder
+    desc: Manifest decodes obfuscated data inline
+    crit: component
+    any:
+      - id: manifest-decoder-charcode
+      - id: manifest-decoder-encoded
+  # Standalone signal: a manifest script runs an inline node program AND decodes
+  # data inside it. Suspicious on its own (no benign hook decodes its command);
+  # the hostile composites add a second packed-program/respawn signal. Kept under
+  # this id because metadata-anomaly and stealth-spawn reference it.
+  - id: lifecycle-node-eval-charcode-program
+    desc: Manifest node program decodes data inline
+    crit: suspicious
+    conf: 0.95
+    attack: "T1027, T1195.002"
+    mbc: "E1027, B0032"
+    all:
+      - id: manifest-node-inline-eval
+      - id: manifest-inline-decoder
+  # Install hook that decodes and runs an encoded program. The hook encodes its
+  # payload (defeating manifest review) and either ships the program as a long
+  # numeric/hex array or respawns Node on the decoded body. Either pairing is a
+  # definitive obfuscated install-time loader.
+  - id: install-hook-charcode-encoded-loader
+    desc: Install hook decodes and runs an encoded program
+    crit: hostile
+    conf: 0.98
+    attack: "T1027, T1059.007, T1195.002"
+    mbc: "E1027, B0032"
+    all:
+      - id: manifest-node-inline-eval
+      - id: manifest-inline-decoder
+    any:
+      - id: manifest-charcode-numeric-array
+      - id: manifest-charcode-hex-array
+      - id: manifest-node-execpath-respawn
+  # Install hook that decodes module names dynamically. Even when the payload is
+  # fetched at runtime rather than embedded, an obfuscated hook must require the
+  # network/exec module (https/net/child_process) by a decoded name to hide it.
+  # node -e + inline decoder + require(fn([...])) is a definitive obfuscated
+  # loader regardless of whether the second stage is embedded or downloaded.
+  - id: install-hook-encoded-dynamic-require
+    desc: Install hook requires modules by decoded name
+    crit: hostile
+    conf: 0.97
+    attack: "T1027, T1059.007, T1195.002"
+    mbc: "E1027, B0032"
+    all:
+      - id: manifest-node-inline-eval
+      - id: manifest-inline-decoder
+      - id: manifest-encoded-require
   - id: preinstall-heartbeat-pid-reaper
     desc: preinstall reaps heartbeat PID files
     crit: suspicious

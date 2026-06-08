@@ -46,6 +46,18 @@ traits:
     if:
       type: text
       regex: '(?i)should never be (browsed|accessed|used)|sensitive[_ ]?(home[_ ]?)?dir(ector(y|ies))?\b'
+  # A hardening sandbox that builds a minimal child-process env to KEEP
+  # credentials away from spawned commands: it strips credential-bearing vars
+  # and redirects HOME/TMPDIR to a scratch dir so reads of ~/.npmrc/~/.ssh land
+  # in an empty directory. The defensive intent (strip / scratch-instead-of-home)
+  # is the opposite of credential theft.
+  - id: credential-stripping-sandbox-env
+    desc: Credential-stripping sandbox environment builder
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)(strip\w* credential|scratch dir\w* instead of)'
   - id: credential-dir-denylist-phrase
     desc: Credential-store directory denylist phrasing
     crit: component
@@ -189,6 +201,30 @@ traits:
       type: text
       regex: 'description:\s*".{0,120}"'
 
+  # A secret-LEAK redactor catalogs `{ pattern: /.../, suggest: 'process.env.X' }`
+  # entries — it detects hardcoded secrets and tells the author to use an env
+  # var instead. The `suggest: 'process.env.<NAME>'` field is the giveaway:
+  # credential-theft code reads `process.env.X` as an expression, it never
+  # *quotes* the env path as a remediation hint. Requiring several such entries
+  # avoids matching a one-off string.
+  - id: secret-redactor-suggest-field
+    desc: Secret redactor env-var remediation suggestion
+    crit: component
+    conf: 0.92
+    count_min: 3
+    if:
+      type: text
+      regex: "suggest:\\s*['\"]process\\.env\\."
+
+  # Function/array names of a secret leak scanner / redactor module.
+  - id: secret-redactor-symbols
+    desc: Secret redactor / leak-scanner function names
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '\b(LEAK_SCANNERS|redactString|redactSecrets?|sanitizePayload|scanForLeaks)\b'
+
   - id: secret-pattern-severity-field
     desc: Secret scanner severity field
     crit: component
@@ -226,6 +262,7 @@ composite_rules:
     any:
       - id: sensitive-dir-guard-comment
       - id: credential-dir-denylist-phrase
+      - id: credential-stripping-sandbox-env
   - id: secret-pattern-scanner-db
     desc: Secret-detection pattern database
     crit: component
@@ -239,6 +276,36 @@ composite_rules:
     any:
       - id: secret-pattern-private-key-label
       - id: secret-pattern-token-label
+
+  # Secret-leak redactor context (scanner-context-inversion). A module that
+  # redacts hardcoded secrets out of payloads legitimately contains a catalog of
+  # credential names (NPM_TOKEN, GITHUB_TOKEN, AWS_ACCESS_KEY_ID, …) as detection
+  # strings. Used as an `unless:` to mute credential-access FPs — the env-name
+  # atoms match `string_literal process.env.X`, which is a *quoted* remediation
+  # hint here, never real access.
+  - id: secret-redactor-context
+    desc: Secret-leak redactor / sanitizer tool context
+    crit: component
+    conf: 0.95
+    any:
+      - id: secret-redactor-suggest-field
+      - id: secret-redactor-symbols
+      - id: secret-pattern-scanner-db
+
+  # Umbrella over the defensive security-tool contexts (SAST integration, LLM
+  # scanner, threat-signature catalogs, sensitive-dir denylists, secret
+  # redactors). Collapses several `unless:` entries into one on the credential
+  # traits that all of these legitimately trip.
+  - id: defensive-scanner-tool-context
+    desc: Defensive secret/threat scanner or sandbox context
+    crit: component
+    conf: 0.95
+    any:
+      - id: well-known/tool/detection/sast::sast-scanner-integration
+      - id: micro-behaviors/data/text/llm/scanner::llm-scanner-context
+      - id: defensive-threat-signatures
+      - id: defensive-sensitive-dir-denylist
+      - id: secret-redactor-context
 
   - id: defensive-wordpress-scanner
     desc: Defensive WordPress scanner package or module
