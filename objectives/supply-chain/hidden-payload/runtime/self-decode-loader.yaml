@@ -17,7 +17,31 @@ defaults:
   for: [javascript, typescript]
   attack: T1195.002
   mbc: B0032
+traits:
+  - id: env-aes-key-access
+    desc: Runtime reads AES key from environment
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(process\.env|import\.meta\.env)\.[A-Z0-9_]{0,40}AES[A-Z0-9_]{0,40}KEY'
 composite_rules:
+  - id: node-env-key-aes-decrypt
+    desc: Node AES decrypts with environment key
+    crit: component
+    conf: 0.92
+    all:
+      - id: env-aes-key-access
+      - id: micro-behaviors/crypto/symmetric/aes/runtime-library::createDecipheriv
+      - id: micro-behaviors/crypto/symmetric/aes/runtime-library::aes-256-gcm-dash
+  - id: browser-env-key-webcrypto-decrypt
+    desc: Browser WebCrypto decrypts with environment key
+    crit: component
+    conf: 0.92
+    all:
+      - id: env-aes-key-access
+      - id: micro-behaviors/crypto/library/provider::subtle-encrypt-decrypt
+      - id: micro-behaviors/crypto/library/provider::subtle-key-ops
   - id: library-silent-self-decode
     desc: Library silently runs a self-decoded payload via indirect eval
     crit: hostile
@@ -36,3 +60,41 @@ composite_rules:
       - id: metadata/package/testing/harness/runtime::is-test
       - id: micro-behaviors/data/text/security/scanner::defensive-threat-signatures
       - id: micro-behaviors/data/text/llm/scanner::llm-scanner-context
+  - id: node-env-key-encrypted-import-exec
+    desc: Node import decrypts and executes encrypted payload
+    crit: hostile
+    conf: 0.98
+    attack: T1027.013, T1059.007
+    all:
+      - id: node-env-key-aes-decrypt
+      - id: micro-behaviors/fs/file/read::read-node
+      - id: micro-behaviors/process/interpreter/vm::vm-runInThisContext
+    unless:
+      - id: metadata/package/testing/harness/runtime::is-test
+      - id: metadata/library/structure::js-large-module-bundle
+  - id: browser-env-key-encrypted-import-exec
+    desc: Browser import decrypts and executes encrypted payload
+    crit: hostile
+    conf: 0.98
+    attack: T1027.013, T1059.007
+    all:
+      - id: browser-env-key-webcrypto-decrypt
+      - id: micro-behaviors/data/decode/base64::atob-decode
+      - id: micro-behaviors/process/interpreter/eval::js-new-function-constructor
+    unless:
+      - id: metadata/package/testing/harness/runtime::is-test
+      - id: metadata/library/structure::js-large-module-bundle
+  - id: package-env-key-encrypted-import-exec
+    desc: Package imports encrypted payload executor
+    crit: hostile
+    conf: 0.99
+    for: [javascript, typescript, archives, package.json]
+    scope: archive
+    all:
+      - id: objectives/anti-static/obfuscation/payload/encrypted::large-ciphertext-blob-literal
+    any:
+      - id: node-env-key-encrypted-import-exec
+      - id: browser-env-key-encrypted-import-exec
+    unless:
+      - id: metadata/package/testing/harness/runtime::is-test
+      - id: metadata/library/structure::js-large-module-bundle
