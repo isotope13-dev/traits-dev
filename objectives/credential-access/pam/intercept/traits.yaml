@@ -1,7 +1,6 @@
 defaults:
   platforms:
-  - linux
-  - macos
+  - unix
   attack: T1556.003
   for:
   - elf
@@ -199,6 +198,70 @@ traits:
   if:
     type: text
     regex: '\bpam_authenticate\s*\('
+- id: pam-start-text
+  desc: Embedded pam_start C source call
+  crit: notable
+  conf: 0.85
+  for: [elf, macho, c, cpp, shell, scripts]
+  if:
+    type: text
+    regex: '\bpam_start\s*\('
+- id: pam-chauthtok-text
+  desc: Embedded pam_chauthtok C source call
+  crit: notable
+  conf: 0.85
+  for: [elf, macho, c, cpp, shell, scripts]
+  if:
+    type: text
+    regex: '\bpam_chauthtok\s*\('
+- id: pam-chauthtok-symbol
+  desc: pam_chauthtok function symbol
+  crit: notable
+  conf: 0.85
+  for: [elf, macho]
+  if:
+    type: symbol
+    exact: pam_chauthtok
+- id: pam-conversation-callback-name
+  desc: PAM conversation callback name
+  crit: notable
+  conf: 0.82
+  for: [elf, macho, c, cpp]
+  if:
+    type: text
+    word: pam_conv
+- id: pam-prompt-echo-source
+  desc: PAM echo prompt handling
+  crit: suspicious
+  conf: 0.86
+  for: [c, cpp]
+  if:
+    type: text
+    regex: 'PAM_PROMPT_ECHO_(OFF|ON)'
+- id: pam-response-copy-source
+  desc: PAM response buffer assignment
+  crit: suspicious
+  conf: 0.88
+  for: [c, cpp]
+  if:
+    type: text
+    regex: 'reply\s*\[[A-Za-z0-9_]+\]\.resp'
+- id: pam-start-root-source
+  desc: pam_start targets root account
+  crit: suspicious
+  conf: 0.9
+  for: [c, cpp]
+  if:
+    type: text
+    regex: '\bpam_start\s*\(.{0,80}"root"'
+- id: pam-auth-root-success-text
+  desc: PAM root authentication message
+  crit: suspicious
+  conf: 0.84
+  for: [elf, macho, c, cpp]
+  if:
+    type: text
+    substr: authentication succeeded for root
 composite_rules:
 - id: pam-library
   desc: PAM library references
@@ -226,6 +289,104 @@ composite_rules:
   - id: pam-open-session
   - id: micro-behaviors/os/pam/auth::pam-acct-mgmt
   - id: micro-behaviors/os/pam/auth::pam-setcred-symbol
+  - id: pam-authenticate-text
+  - id: pam-chauthtok-text
+- id: pam-start-api
+  desc: PAM start API usage
+  crit: notable
+  conf: 0.86
+  for: [elf, macho, c, cpp]
+  any:
+  - id: pam-start-text
+  - id: micro-behaviors/os/pam/auth::pam-start-symbol
+- id: pam-authenticate-api
+  desc: PAM authenticate API usage
+  crit: notable
+  conf: 0.88
+  for: [elf, macho, c, cpp]
+  any:
+  - id: pam-authenticate-text
+  - id: micro-behaviors/os/pam/auth::pam-authenticate
+- id: pam-chauthtok-api
+  desc: PAM chauthtok API usage
+  crit: notable
+  conf: 0.86
+  for: [elf, macho, c, cpp]
+  any:
+  - id: pam-chauthtok-text
+  - id: pam-chauthtok-symbol
+- id: pam-client-api-sequence
+  desc: PAM client authentication API sequence
+  crit: suspicious
+  conf: 0.92
+  for: [elf, macho, c, cpp]
+  all:
+  - id: pam-start-api
+  - id: pam-authenticate-api
+  any:
+  - id: pam-chauthtok-api
+  - id: pam-conversation-callback-name
+  - id: micro-behaviors/os/pam/auth::pam-acct-mgmt
+- id: pam-prompt-response-copy
+  desc: PAM prompt response copying
+  crit: suspicious
+  conf: 0.92
+  for: [c, cpp]
+  all:
+  - id: pam-prompt-echo-source
+  - id: pam-response-copy-source
+- id: pam-root-auth-target
+  desc: PAM authentication targets root
+  crit: suspicious
+  conf: 0.9
+  for: [elf, macho, c, cpp]
+  any:
+  - id: pam-start-root-source
+  - id: pam-auth-root-success-text
+- id: pam-local-account-map
+  desc: PAM configuration with local account databases
+  crit: suspicious
+  conf: 0.94
+  for: [elf, macho, c, cpp]
+  all:
+  - id: micro-behaviors/os/pam/auth::pam-config-paths
+  - id: micro-behaviors/os/privilege/paths::etc-shadow
+  any:
+  - id: micro-behaviors/fs/path/config/accounts::etc-passwd
+  - id: objectives/exfiltration/http/upload::native-elf-account-file-path
+- id: pam-client-root-credential-harvester
+  desc: PAM client captures root credential prompts
+  crit: hostile
+  conf: 0.98
+  for: [elf, macho, c, cpp]
+  all:
+  - id: pam-client-api-sequence
+  - id: pam-root-auth-target
+  any:
+  - id: pam-prompt-response-copy
+  - id: pam-conversation-callback-name
+  - id: pam-local-account-map
+- id: pam-config-and-shadow-harvester
+  desc: PAM configuration and shadow database harvesting
+  crit: hostile
+  conf: 0.97
+  for: [elf, macho, c, cpp]
+  all:
+  - id: pam-local-account-map
+  any:
+  - id: pam-client-api-sequence
+  - id: pam-auth-functions
+- id: pam-root-password-change-probe
+  desc: PAM root password change probe
+  crit: hostile
+  conf: 0.97
+  for: [elf, macho, c, cpp]
+  all:
+  - id: pam-root-auth-target
+  - id: pam-chauthtok-api
+  any:
+  - id: objectives/privilege-escalation/elevation-control/setuid/runtime::native-chpasswd-command
+  - id: objectives/persistence/login/account/create::chpasswd-command
 - id: interceptor
   desc: PAM credential token access
   crit: suspicious
@@ -247,7 +408,7 @@ composite_rules:
     any:
     - id: metadata/binary/provenance::netbsd-base-system-artifact
 - id: pam-config-injector
-  desc: Binary that injects a PAM module into /etc/pam.d/ config
+  desc: PAM module config injector
   crit: suspicious
   conf: 0.9
   for: [c, macho, elf, scripts]
