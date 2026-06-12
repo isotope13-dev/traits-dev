@@ -16,7 +16,7 @@ See [TAXONOMY.md](./TAXONOMY.md) for complete tier structure.
 
 **Tier dependencies:**
 - `micro-behaviors/` → can reference `micro-behaviors/`, `metadata/`, and `well-known/{tool,app,lib,game}/` for false-positive exclusions only
-- `objectives/` → can reference `micro-behaviors/`, `objectives/`, `metadata/`, and `well-known/{tool,app,lib,game}/` for false-positive exclusions only
+- `objectives/` → can reference `micro-behaviors/`, `objectives/`, `metadata/`, and `well-known/{tool,app,lib,game}/` (positive evidence allowed); never `well-known/malware/` (the dependency runs `well-known/malware/ → objectives/`, not the reverse)
 - `well-known/` → can reference `micro-behaviors/`, `objectives/`, `well-known/`, and `metadata/`
 - `metadata/` → typically references `metadata/`; may reference `well-known/{tool,app,lib,game}/` for benign context
 
@@ -49,11 +49,13 @@ Before placing a trait in `objectives/` or `well-known/`, ask: **would this fire
 
 **Component traits in `objectives/`:** Only allowed when the fragment is attack-context-specific with no meaning outside that context (e.g., Nemucod-specific string pieces, C2 domain patterns). Generic protocol strings, syscalls, and binary metrics always belong in neutral tiers even when used as composite building blocks.
 
-**Do not fix placement mistakes by lowering criticality.** If a false positive happens because a trait is searching for a generic capability from the wrong tier or directory, move the trait to the location that describes what it actually detects. For example, `powershell.exe`, `cmd.exe`, `exec`, `spawn`, sockets, HTTP clients, registry writes, and persistence surfaces should remain notable or higher when they define observable behavior; objective rules should reference those micro-behavior traits and add the intent-specific context. Demoting a generic execution or network trait to `component` hides useful analyst signal and leaves the taxonomy wrong.
+### Matcher defines identity — never fix placement by lowering criticality
 
-**A trait's matcher defines its identity — its name, description, AND directory must describe what the matcher actually searches for, not the intent of a composite that references it.** This holds at *every* criticality, including `component` and `baseline`: a `component` trait is still wrong if it is named/filed for the composite it feeds rather than for what its matcher detects. When a trait's name/description/location imply an intent its matcher does not capture, the trait is mislabeled **and** misplaced — fix it by **relocating and renaming** it to match the matcher, then have composites reference it. Lowering its criticality is **never** the fix.
+A trait's matcher *is* its identity. Its name, description, AND directory must describe what the matcher actually searches for — not the intent of a composite that references it. This holds at *every* criticality, `component` and `baseline` included; a trait named or filed for the composite it feeds rather than for what its matcher detects is both mislabeled and misplaced.
 
-> **Worked example.** A regex that merely reads `$_SERVER['HTTP_REFERER']`, filed under `objectives/command-and-control/backdoor/webshell/obf-dispatch/` and named `http-referer-to-reflection` ("referer used in reflective dispatch"), false-positives on every plugin that reads the Referer header. The matcher only detects *"reads the Referer request header"* — a neutral capability. The fix is to relocate + rename it under `micro-behaviors/communications/http/...` and have the webshell composite reference it cross-directory; the reflective-dispatch intent comes from the *other* composite legs (the dynamic-call atoms), not from this read. Demoting it to `component` is the **wrong** fix: the bare-referer match would still surface in the web UI and JSON (see [Criticality Levels](#criticality-levels)), now mislabeled as a webshell building block and keyed to the wrong ML feature.
+So when a false positive comes from a trait that searches for a generic capability from the wrong tier or directory — `powershell.exe`, `cmd.exe`, `exec`, `spawn`, sockets, HTTP clients, registry writes, persistence surfaces — relocate and rename it to the location that describes what it detects (these stay notable or higher when they define observable behavior), then have the objective composite reference it and supply the intent-specific context. Demoting such a trait to `component` mislabels useful analyst signal, keys it to the wrong ML feature, and leaves the taxonomy wrong. Lowering criticality is never the fix. (See [Criticality Levels](#criticality-levels) for why demotion does not hide a match.)
+
+> **Worked example.** A regex that merely reads `$_SERVER['HTTP_REFERER']`, filed under `objectives/command-and-control/backdoor/webshell/obf-dispatch/` and named `http-referer-to-reflection` ("referer used in reflective dispatch"), false-positives on every plugin that reads the Referer header. The matcher only detects *"reads the Referer request header"* — a neutral capability. The fix is to relocate + rename it under `micro-behaviors/communications/http/...` and have the webshell composite reference it cross-directory; the reflective-dispatch intent comes from the *other* composite legs (the dynamic-call atoms), not from this read. Demoting it to `component` is the wrong fix: the bare-referer match would still surface to users (web UI, JSON, diffs, and possibly the CLI), now mislabeled as a webshell building block and keyed to the wrong ML feature.
 
 ## Trait Placement & IDs
 
@@ -76,9 +78,11 @@ Before placing a trait in `objectives/` or `well-known/`, ask: **would this fire
 | `suspicious` | Hides intent/crosses boundaries (VM detection, obfuscation) |
 | `hostile` | Attack patterns, no legitimate use (reverse shell, ransomware) |
 
-Both `component` and `baseline` are allowed in any tier.
+Both `component` and `baseline` are allowed in any tier. `hostile` is allowed only in `objectives/` and `well-known/`; `micro-behaviors/` and `metadata/` max out at `suspicious`.
 
-**Component traits** are filtered from the CLI terminal output unless a composite rule that references them fires. **They are not hidden everywhere, though:** the JSON output always includes them (for ML signal) and **the web UI surfaces `component`/`baseline` traits to users**. So lowering a trait to `component`/`baseline` does **not** make a false positive disappear — it only removes it from the default CLI view while leaving it visible, and now mislabeled, in the web UI and JSON, and keyed to a `directory-path + criticality` ML feature it doesn't belong to. Demote only when the lower tier is genuinely correct for what the matcher detects, never to hide an FP — fix real FPs by tightening the matcher, adding an `unless:`/`not:` exclusion, or relocating + renaming the trait.
+**`component`/`baseline` traits are not hidden.** The CLI may surface them (historically `component` was filtered from terminal output unless a referencing composite fired; that is no longer guaranteed), and the JSON output, the web UI, and version-to-version differential analysis always include them. Lowering a trait to `component`/`baseline` therefore does **not** make a false positive disappear — the match stays visible, now mislabeled, and keyed to a `directory-path + criticality` ML feature it doesn't belong to.
+
+A trait must be correct — accurately named, described, and located for exactly what its matcher detects — at *every* criticality. The level sets weight and emphasis, not whether correctness matters. Fix real FPs by tightening the matcher, adding an `unless:`/`not:` exclusion, or relocating + renaming the trait (see [Matcher defines identity](#matcher-defines-identity--never-fix-placement-by-lowering-criticality)). Demote only when the lower tier is genuinely correct for what the matcher detects.
 
 **HOSTILE composites require precision ≥ 3.5**, else downgraded. See [PRECISION.md](./PRECISION.md) for the calculation algorithm and authoring guidelines.
 
@@ -141,7 +145,7 @@ Use groups instead of listing 9 or more individual types (up to 8 explicit types
 
 ### Platform Auto-Filtering
 
-When you use **group names** (`binaries`, `scripts`, etc.), cleave automatically filters the expanded types against the rule's `platforms:` field. This means you can write broad `for:` declarations without worrying about platform-incompatible types:
+When you use **group names** (`binaries`, `scripts`, etc.), cleave automatically filters the expanded types against the rule's `platforms:` field. This lets you write broad `for:` declarations without worrying about platform-incompatible types:
 
 ```yaml
 defaults:
@@ -450,13 +454,12 @@ specified fields. `kind: number, value: 511, radix: 8` matches `chmod(_,
 0o777)` but not `chmod(_, 511)` — the source-written radix discriminates
 deliberate octal mode bits from incidentally-computed integers.
 
-**Picking between `type: symbol` and `type: tree-sitter`:**
-
-- `type: symbol` covers nearly every call-matching need. It runs against the
-  precomputed symbol view — no live parse, no per-rule tree walk.
-- `type: tree-sitter` is the escape hatch. Use it for patterns that depend on
-  the surrounding tree shape: call inside a try/catch, assignment whose RHS is
-  a call whose argument is itself a call, etc.
+**Picking between `type: symbol` and `type: tree-sitter`:** `type: symbol`
+covers nearly every call-matching need. It runs against the precomputed symbol
+view — no live parse, no per-rule tree walk. `type: tree-sitter` is the escape
+hatch; use it only for patterns that depend on the surrounding tree shape — a
+call inside a try/catch, or an assignment whose RHS is a call whose argument is
+itself a call.
 
 ### Other AST kinds — what node text actually is
 
@@ -637,7 +640,7 @@ Compare a section's size or entropy against another section (or the total file) 
 
 ## Encoded Strings
 
-The `encoded` type searches decoded/encoded strings with optional encoding filter. It unifies and replaces the deprecated `base64` and `xor` types with additional features:
+The `encoded` type searches decoded/encoded strings with an optional encoding filter. It unifies and replaces the deprecated `base64` and `xor` types, adding:
 
 - **Word boundary matching**: `word` parameter (not available in `base64`/`xor`)
 - **Flexible encoding filter**: Single, multiple (OR), or omit (all)
@@ -758,7 +761,7 @@ composite_rules:
 
 ## Trait References in `if:`
 
-Atomic traits can reference other traits via `if: id:`. This creates a **derived trait** that fires when the referenced trait matches. This is a hybrid between atomic traits and composites.
+Atomic traits can reference other traits via `if: id:`. This creates a **derived trait** that fires when the referenced trait matches — a hybrid between atomic traits and composites.
 
 ```yaml
 traits:
@@ -856,7 +859,7 @@ Reduces criticality by **one level** when conditions match:
 |----------------------|----------|
 | `hostile` → `suspicious` | Known malware signature found in security tool |
 | `suspicious` → `notable` | Anti-debug technique in signed system binary |
-| `notable` → `baseline` | Common capability in trusted context (becomes invisible) |
+| `notable` → `baseline` | Common capability in trusted context (de-emphasized, not hidden — still in JSON, web UI, and diffs) |
 
 **Syntax** (works on both atomic traits and composite rules):
 
@@ -890,7 +893,7 @@ composite_rules:
         - id: objectives/anti-analysis/packing::upx
 ```
 
-**Note:** Downgrade to `baseline` removes the finding from terminal output, but it is still included in JSON output. Use `unless:` if you want to skip matching entirely.
+**Note:** Downgrade to `baseline` de-emphasizes the finding in the CLI, but it remains in the JSON output, the web UI, and differential analysis — it is not hidden from users or the ML pipeline. Use `unless:` if you want to skip matching entirely.
 
 **Debug:** Use `test-rules` to see downgrade evaluation:
 ```bash
@@ -1228,8 +1231,6 @@ cleave test-match <file> --type literal --pattern "eval"  # Test patterns
 - **Proximity Clusters:** Use `regex: A.{0,32}B` to detect targeted blacklists (e.g. CIS country codes) and avoid false positives in global localization libraries.
 - **Script Support:** Always include `batch` and `powershell` in `for:` lists for Windows logic. Note: `shell` requires a non-Windows platform tag to pass validation.
 - **Atomic vs Composite:** `if:` blocks do not support `all`/`any`. Create atomic traits and combine them using `composite_rules`.
-- **ID Formatting:** Cross-file references must use `category/path::id`. Never include the YAML filename in a trait ID.
-- **Tier Constraints:** `hostile` criticality is only allowed in `objectives/` and `well-known/`. `micro-behaviors/` max out at `suspicious`.
 
 ## Where to put a metric / value path
 

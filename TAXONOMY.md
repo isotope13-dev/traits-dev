@@ -11,27 +11,25 @@ A three-tier taxonomy following [MBC (Malware Behavior Catalog)](https://github.
 | **Known Entities** (`well-known/`) | Specific malware, unwanted software, and tool/app/library signatures | component → baseline → suspicious → hostile | [Corpus](https://github.com/MBCProject/mbc-markdown/tree/master/xample-malware) |
 | **Metadata** (`metadata/`) | Neutral file-structure properties — what a file *is* | component → baseline (occasionally suspicious) | — |
 
-NOTE: atomic traits should be organized based on what they detect, not on what composite they serve. atomics and composites are often in completely different directories.
+Organize atomic traits by what they detect, not by what composite they serve — atomics and the composites that reference them often live in completely different directories. See [Matcher Defines Identity](#matcher-defines-identity) for the full rule and the placement-over-criticality guidance.
 
-Traits rarely seen in legitimate software that have well-defined objectives should go within objectives rather than micro-behaviors.
-
-When a trait causes false positives because it is in the wrong tier, fix the placement rather than lowering criticality. Generic capabilities such as process execution, interpreter invocation, network clients, registry manipulation, file writes to sensitive locations, and persistence surfaces belong where those behaviors are described, usually under `micro-behaviors/`, and should stay notable or higher when they are analyst-relevant. Objective traits should compose those capabilities with intent-specific evidence instead of carrying generic atomics as hidden `component` rules.
+Traits rarely seen in legitimate software that have well-defined objectives belong in `objectives/` rather than `micro-behaviors/`.
 
 ## Criticality
 
 | Level | Meaning | Tier Constraints |
 |-------|---------|-----------------|
-| **component** | Building block for composites; no standalone signal (e.g., string fragment `&cc=`). Filtered from CLI terminal output unless a referencing composite fires. Always in JSON for ML. | Any tier |
-| **baseline** | Common functionality; doesn't indicate program purpose (e.g., `mmap`, `stdio`, `read`). Always in output for ML. | Any tier |
-
-> **Visibility caveat — `component`/`baseline` are hidden from the CLI, not from users.** The default CLI terminal output filters out `component` (and de-emphasizes `baseline`), but the JSON output and the **web interface surface them to users**. So do **not** demote a trait to `component`/`baseline` merely to make a false positive disappear from the CLI — a web-interface user will still see it, mislabeled. Lower criticality only when the lower tier is genuinely correct (a true composite fragment or universal-baseline capability). If a finding is a real false positive, fix it properly: add an `unless:`/`not:` exclusion, tighten the matcher, or relocate the trait to the correct taxonomy location (see "When a trait causes false positives because it is in the wrong tier…" above).
-| **notable** | Defines program purpose (e.g., `socket`, `exec`, `eval`). Capabilities that matter for differential analysis of supply-chain changes — i.e., anything an analyst would want to see "appeared" or "disappeared" between two versions — should be notable or higher: communications (HTTP, sockets, DNS, IPC), code execution (interpreters, eval, dynamic loaders), encryption methods (AES, RSA, ChaCha, KEM), encoding/decoding methods (base64, hex, custom alphabets), privilege escalation (sudo, setuid, capabilities), file access (read/write/delete on sensitive paths), registry access (Windows registry r/w), and persistence (cron, systemd, autoruns, launch agents). | `micro-behaviors/`, `objectives/`, `well-known/` |
+| **component** | Building block for composites; no standalone signal (e.g., string fragment `&cc=`). The CLI may de-emphasize or omit it unless a referencing composite fires; always present in JSON, the web UI, and differential analysis. | Any tier |
+| **baseline** | Common functionality; doesn't indicate program purpose (e.g., `mmap`, `stdio`, `read`). Always present in JSON, the web UI, and differential analysis. | Any tier |
+| **notable** | Defines program purpose (e.g., `socket`, `exec`, `eval`). Differential analysis surfaces appeared/disappeared traits at *every* criticality (`component` and `baseline` included), so this bar is only about which capabilities *deserve at least* `notable` — anything an analyst would want to weigh prominently in a supply-chain diff: communications (HTTP, sockets, DNS, IPC), code execution (interpreters, eval, dynamic loaders), encryption methods (AES, RSA, ChaCha, KEM), encoding/decoding methods (base64, hex, custom alphabets), privilege escalation (sudo, setuid, capabilities), file access (read/write/delete on sensitive paths), registry access (Windows registry r/w), and persistence (cron, systemd, autoruns, launch agents). | `micro-behaviors/`, `objectives/`, `well-known/` |
 | **suspicious** | Rarely legitimate; indicates possible malicious intent. | `micro-behaviors/`, `objectives/`, `well-known/`, `metadata/` (rare) |
 | **hostile** | Clear attack pattern; no legitimate use. Requires precision >= 3.5. | `objectives/`, `well-known/` only — **never** `micro-behaviors/` |
 
+> **Visibility caveat — `component`/`baseline` are not hidden from users.** The CLI may de-emphasize or omit them (historically `component` was filtered unless a referencing composite fired; that is no longer guaranteed), but the JSON output, the web interface, and version-to-version differential analysis all surface them. Demoting a trait therefore does **not** make a false positive disappear — a user still sees it, mislabeled — and rules are equally important to get right at every criticality level. Lower criticality only when the lower tier is genuinely correct (a true composite fragment or universal-baseline capability). Fix a real false positive properly: tighten the matcher, add an `unless:`/`not:` exclusion, or relocate the trait (see [Matcher Defines Identity](#matcher-defines-identity)).
+
 ## ML Feature Extraction
 
-The ML pipeline extracts features from **subdirectory path + criticality**, not individual trait IDs. Each trait's directory path (up to 3 levels deep) combined with its criticality level becomes a feature dimension. This means:
+The ML pipeline extracts features from **subdirectory path + criticality**, not individual trait IDs. Each trait's directory path (up to 3 levels deep), combined with its criticality level, becomes a feature dimension. This means:
 
 - **Directory structure is the feature space.** A trait at `objectives/evasion/kernel-hide/rootkit/linux.yaml` with `crit: suspicious` generates the feature `evasion/kernel-hide/rootkit:suspicious`. The directory hierarchy directly shapes what the model learns.
 - **Criticality is the signal strength.** Two traits in the same directory but at different criticality levels produce different features. A `suspicious` rootkit trait and a `component` rootkit trait are distinct signals.
@@ -41,11 +39,11 @@ The ML pipeline extracts features from **subdirectory path + criticality**, not 
 
 - **Group related detections under the same subdirectory** so they aggregate into a single, strong feature. A directory with 10+ traits produces a robust signal; a directory with 1-2 traits produces a weak one.
 - **Don't create single-trait subdirectories** when the trait fits an existing directory. `credential-access/browser/` (11 traits) is a strong feature; adding `credential-access/opera/` with 1 trait creates a weak feature that should instead be a file within `credential-access/browser/`.
-- **Use technique-based directories.** Directory names should describe the behavior or method being detected, not the implementation language, platform, ecosystem, file type, malware family, or sample source. Use implementation details in filenames when they help readability, unless the technique itself is platform-specific.
+- **Use technique-based directories.** Directory names should describe the behavior or method being detected, not the implementation language, platform, ecosystem, file type, malware family, or sample source. Put implementation details in filenames when they help readability, unless the technique itself is platform-specific.
 - **Prefer concise, meaningful names.** Short directory names are easier to scan and produce cleaner ML features: use `exec`, `poll`, `proxy`, `shell`, `reflect`, or `stage` when they are clear in context. Do not shorten names so far that humans lose the technique meaning.
 - **Avoid marker buckets.** Do not use `marker/` or `markers/` as directory names; name the behavior or technique being indicated instead.
 - **Criticality assignment affects ML directly.** A trait bumped from `notable` to `suspicious` changes which feature it contributes to. Assign criticality based on the trait's actual detection confidence, not to manipulate features.
-- **The 3-level depth limit** means `objectives/anti-static/obfuscation/string/encoding/` extracts as `anti-static/obfuscation/string` — the `encoding/` level is aggregated into `string/`. Plan directory depth accordingly. Avoid unnecessary intermediate directories (e.g., prefer `obfuscation/syntax/` over `obfuscation/source/syntax/`).
+- **The 3-level depth limit** means `objectives/anti-static/obfuscation/string/encoding/` extracts as `anti-static/obfuscation/string` — the `encoding/` level is aggregated into `string/`. Plan directory depth accordingly, and avoid unnecessary intermediate directories (e.g., prefer `obfuscation/syntax/` over `obfuscation/source/syntax/`).
 
 ## Core Principles
 
@@ -55,11 +53,13 @@ Unlike MBC, which allows one behavior to map to multiple objectives (e.g., Proce
 
 ### Matcher Defines Identity
 
-**A trait's matcher is its identity. Its name, description, and directory must describe what the matcher actually searches for — not the intent of a composite that references it, and not the worst case it might contribute to.** This is the rule behind "organize atomics by what they detect, not by what composite they serve" (see the note under [Tiers](#tiers)), and it applies at **every** criticality, `component` and `baseline` included.
+**A trait's matcher is its identity. Its name, description, and directory must describe what the matcher actually searches for — not the intent of a composite that references it, and not the worst case it might contribute to.** Organize atomic traits by what they detect, not by what composite they serve. This applies at **every** criticality, `component` and `baseline` included.
 
-A trait fails this rule when its name/description/location claim an intent its matcher does not capture. Example: a regex that merely reads `$_SERVER['HTTP_REFERER']`, named `http-referer-to-reflection` ("HTTP Referer used in function execution") and filed under `objectives/command-and-control/backdoor/webshell/obf-dispatch/`. The matcher detects only *"reads the Referer request header"* — a neutral capability present in countless benign plugins — so the trait is both **mislabeled** (the name asserts reflective dispatch the regex never checks) and **misplaced** (a neutral read does not belong in a webshell objective directory). The reflective-dispatch intent lives in the *other* legs of the composite (the dynamic-call atoms); this atom only contributes "the referer was read."
+A trait fails this rule when its name, description, or location claims an intent its matcher does not capture. Example: a regex that merely reads `$_SERVER['HTTP_REFERER']`, named `http-referer-to-reflection` ("HTTP Referer used in function execution") and filed under `objectives/command-and-control/backdoor/webshell/obf-dispatch/`. The matcher detects only *"reads the Referer request header"* — a neutral capability present in countless benign plugins — so the trait is both **mislabeled** (the name asserts reflective dispatch the regex never checks) and **misplaced** (a neutral read does not belong in a webshell objective directory). The reflective-dispatch intent lives in the *other* legs of the composite (the dynamic-call atoms); this atom only contributes "the referer was read."
 
-**The fix is to relocate and rename the trait to match its matcher** (here: a `micro-behaviors/communications/http/...` capability such as "reads the Referer request header"), then have the webshell composite reference it cross-directory. **Lowering the criticality is never the fix.** Demoting to `component` does not make the false positive disappear — per the [Criticality](#criticality) visibility caveat, the web UI and JSON still surface it, now mislabeled as a webshell building block and keyed to the wrong `directory-path + criticality` ML feature. Reserve `component`/`baseline` for traits that are *already* accurately named and located for what they detect and genuinely have no standalone meaning.
+**The fix is to relocate and rename the trait to match its matcher** (here, a `micro-behaviors/communications/http/...` capability such as "reads the Referer request header"), then have the webshell composite reference it cross-directory. **Lowering the criticality is never the fix.** Demoting to `component` does not make the false positive disappear — per the [Criticality](#criticality) visibility caveat, the JSON output, web UI, and differential analysis still surface it (and the CLI may too), now mislabeled as a webshell building block and keyed to the wrong `directory-path + criticality` ML feature. Reserve `component`/`baseline` for traits that are *already* accurately named and located for what they detect and genuinely have no standalone meaning.
+
+When a generic capability false-positives because it sits in the wrong tier, fix the placement. Generic capabilities such as process execution, interpreter invocation, network clients, registry manipulation, file writes to sensitive locations, and persistence surfaces belong where those behaviors are described — usually under `micro-behaviors/` — and should stay `notable` or higher when they are analyst-relevant. Objective traits should compose those capabilities with intent-specific evidence rather than bury generic atomics as mislabeled `component` rules.
 
 ### Tier Dependencies
 
@@ -72,16 +72,16 @@ A trait fails this rule when its name/description/location claim an intent its m
 
 **Capabilities must not reference objectives.** Capabilities are observable mechanics; objectives infer intent. If a `micro-behaviors/` rule needs an `objectives/` trait, either move the objective to `micro-behaviors/` (if it's actually a capability), refactor the dependency away, or move the whole rule to `objectives/` (if it's actually inferring intent).
 
-**Capabilities must not use `crit: hostile`.** Hostile requires intent inference, which belongs in `objectives/`. Maximum capability criticality is `suspicious`. Validation rejects hostile capabilities.
+**Capabilities must not use `crit: hostile`.** Hostile requires intent inference, which belongs in `objectives/`. Maximum capability criticality is `suspicious`; validation rejects hostile capabilities.
 
-**Neutral capabilities belong in `micro-behaviors/`, not `objectives/`.** A trait that detects a single API call, syscall, or keyword (fork, crontab, SetFileAttributes, getenv) is a capability — it belongs in `micro-behaviors/` regardless of which objective composite references it. Composites reference traits across directories. Component traits (`crit: component`) may appear in `objectives/` only when they are attack-context-specific fragments that have no meaning outside that context (e.g., Nemucod string pieces, default credential lists, supply-chain URL patterns).
+**Neutral capabilities belong in `micro-behaviors/`, not `objectives/`.** A trait that detects a single API call, syscall, or keyword (fork, crontab, SetFileAttributes, getenv) is a capability — it belongs in `micro-behaviors/` regardless of which objective composite references it. Composites reference traits across directories. Component traits (`crit: component`) may appear in `objectives/` only when they are attack-context-specific fragments with no meaning outside that context (e.g., Nemucod string pieces, default credential lists, supply-chain URL patterns).
 
 ### Directory Layout Convention
 
 All tiers follow: `TIER/CATEGORY/BEHAVIOR/METHOD/platform.yaml`
 
 - **`objectives/`**: `objectives/OBJECTIVE/BEHAVIOR/METHOD/` with technique-based directories and per-platform or per-ecosystem YAML files. Add sub-method directories when a method has many variants (e.g., string obfuscation techniques). Avoid platform, language, ecosystem, file-type, and family names as directories unless they are the technique being detected.
-- **`micro-behaviors/`**: `micro-behaviors/CATEGORY/BEHAVIOR/METHOD/` (e.g., `crypto/symmetric/aes/ruby.yaml`, not `crypto/symmetric/aes.yaml`). If no specific method applies, group by syscall, protocol, or logical grouping. Directory names may be referenced by composite traits to match related rules.
+- **`micro-behaviors/`**: `micro-behaviors/CATEGORY/BEHAVIOR/METHOD/` (e.g., `crypto/symmetric/aes/ruby.yaml`, not `crypto/symmetric/aes.yaml`). If no specific method applies, group by syscall, protocol, or logical grouping. Composite traits may reference directory names to match related rules.
 - **Directory names** should be short, readable, and semantically useful. Prefer `exec` over `command-execution`, `poll` over `polling-command`, and `reflect` over `reflective-loader` when the parent path supplies enough context. Keep longer names when the shorter form would be ambiguous.
 
 ## Decision Framework
@@ -248,6 +248,7 @@ micro-behaviors/
 │   │                      #     File-level format identification → metadata/format/
 │   ├── embedded/          #   Embedded content (certificates, EXIF, runtime)
 │   ├── text/              #   Text/string analysis (keywords, patterns)
+│   │   ├── language/      #     Human language detection (Chinese, Russian, etc.)
 │   ├── source/            #   Source code patterns (syntax, quality, identifiers)
 │   ├── string/            #   String operations (library, conversion)          C0019
 │   ├── buffer/            #   Buffer operations (offset writes, reassembly)
@@ -871,7 +872,7 @@ objectives/
 
 Specific malware families and tool signatures. Similar to MBC's [malware corpus](https://github.com/MBCProject/mbc-markdown/tree/master/xample-malware) but structured as detection rules. Categories align with [MBC/STIX 2.1 malware types](https://docs.oasis-open.org/cti/stix/v2.1/os/stix-v2.1-os.html).
 
-Do not create general-purpose traits in well-known/ that would possibly match multiple families, even if they are at a low criticality. Move general-purpose traits to a general-purpose location.
+Do not create general-purpose traits in `well-known/` that could match multiple families, even at a low criticality. Move general-purpose traits to a general-purpose location.
 
 **Rules:**
 - Each malware family appears in exactly **one** category — pick the primary behavior
