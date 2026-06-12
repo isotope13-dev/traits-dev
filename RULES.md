@@ -763,6 +763,8 @@ composite_rules:
 
 Atomic traits can reference other traits via `if: id:`. This creates a **derived trait** that fires when the referenced trait matches — a hybrid between atomic traits and composites.
 
+**Reference, don't copy.** When a pattern you need already exists as a trait, reference it rather than duplicate the matcher. Keeping each matcher defined once keeps the trait set slim and stops copies from drifting out of sync — this is the matcher-level side of the Single-Trait Rule in [TAXONOMY.md](./TAXONOMY.md).
+
 ```yaml
 traits:
   # Derived trait: adds section constraint to existing pattern
@@ -1173,6 +1175,35 @@ size_max: 0
 - Scalars (strings, numbers, booleans) will fail size constraints
 - Evidence output includes `size: N (array)` or `size: N (object)`
 
+## Where to put a metric / value path
+
+Cleave's metric pools are organized by **computation scope**, not by category.
+The decision rule:
+
+- **Format-agnostic computation** (entropy, function counts, strings, complexity —
+  the same code path regardless of binary format) → `binary.*`
+- **Format-specific structural data** (sections, segments, dylibs, dynamic tags —
+  semantics differ per format) → `<format>.*` (`pe.*`, `elf.*`, `macho.*`)
+- **Cross-format derived signal** (single bool/string that COMBINES multiple
+  format-specific sources under one name — `is_pie`, `has_signature`,
+  `has_executable_stack`, `entry_in_writable_region`) → `binary.*`
+- **Consistency / cross-field derivation within one format** (`text_writable`,
+  `bundle_identifier_mismatch`, `cert_org_pdb_mismatch`) → on the
+  format-specific struct, NOT in a separate consistency pool
+
+Value path placement:
+
+- **Similarity / digest hashes** (imp, sym, dylib, gimp, tlsh, ssdeep, cd, authenti, …) → `hash.*` (singular namespace, terse stems)
+- **Cross-format signing data** (cert.subject, cert.issuer, validity.*, time, format, catalog) → `signing.*`
+- **Format-specific value** → `<format>.*` (`pe.*`, `elf.*`, `macho.*`)
+
+**Disjoint by data kind.** `value` carries residual structured values only (strings, paths, hashes,
+identifiers, structured trees, decoded named bit-flags). Metrics carry bools,
+counts, and computed scalars. Every fact lives in exactly one tree — the only
+acceptable cross-dimension "split" is a raw `u32` bitfield on metrics paired
+with its decoded named-bit subtree in values (e.g. `pe.dll_characteristics.*`,
+`macho.cs_flags.*`).
+
 ## Validation & Auto-Fix
 
 ### Regex Constraints
@@ -1180,7 +1211,7 @@ size_max: 0
 Regex patterns are validated at load time:
 - Maximum 80 bytes for regex patterns
 - Maximum 3 `|` alternation symbols outside character classes
-- Simple alphanumeric alternation (like `foo|bar|baz`) triggers a warning to use separate atomic traits
+- **Decompose alternations into separate traits when each branch is an independent signal.** If the branches of a `|` would each stand alone as a notable detection (`foo|bar|baz`), split them into separate atomic traits — each then gets its own evidence, criticality, directory/ML feature, and can be referenced independently; the validator warns on this. Keep `|` only for equivalent variants of a *single* signal that should never stand alone: spelling/encoding/register variants, or a tight anchored family like `^(eval|exec|system|assert)$`.
 
 ### Auto-Fix Behaviors
 
@@ -1231,32 +1262,3 @@ cleave test-match <file> --type literal --pattern "eval"  # Test patterns
 - **Proximity Clusters:** Use `regex: A.{0,32}B` to detect targeted blacklists (e.g. CIS country codes) and avoid false positives in global localization libraries.
 - **Script Support:** Always include `batch` and `powershell` in `for:` lists for Windows logic. Note: `shell` requires a non-Windows platform tag to pass validation.
 - **Atomic vs Composite:** `if:` blocks do not support `all`/`any`. Create atomic traits and combine them using `composite_rules`.
-
-## Where to put a metric / value path
-
-Cleave's metric pools are organized by **computation scope**, not by category.
-The decision rule:
-
-- **Format-agnostic computation** (entropy, function counts, strings, complexity —
-  the same code path regardless of binary format) → `binary.*`
-- **Format-specific structural data** (sections, segments, dylibs, dynamic tags —
-  semantics differ per format) → `<format>.*` (`pe.*`, `elf.*`, `macho.*`)
-- **Cross-format derived signal** (single bool/string that COMBINES multiple
-  format-specific sources under one name — `is_pie`, `has_signature`,
-  `has_executable_stack`, `entry_in_writable_region`) → `binary.*`
-- **Consistency / cross-field derivation within one format** (`text_writable`,
-  `bundle_identifier_mismatch`, `cert_org_pdb_mismatch`) → on the
-  format-specific struct, NOT in a separate consistency pool
-
-Value path placement:
-
-- **Similarity / digest hashes** (imp, sym, dylib, gimp, tlsh, ssdeep, cd, authenti, …) → `hash.*` (singular namespace, terse stems)
-- **Cross-format signing data** (cert.subject, cert.issuer, validity.*, time, format, catalog) → `signing.*`
-- **Format-specific value** → `<format>.*` (`pe.*`, `elf.*`, `macho.*`)
-
-**Disjoint by data kind.** `value` carries residual structured values only (strings, paths, hashes,
-identifiers, structured trees, decoded named bit-flags). Metrics carry bools,
-counts, and computed scalars. Every fact lives in exactly one tree — the only
-acceptable cross-dimension "split" is a raw `u32` bitfield on metrics paired
-with its decoded named-bit subtree in values (e.g. `pe.dll_characteristics.*`,
-`macho.cs_flags.*`).

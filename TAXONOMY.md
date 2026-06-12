@@ -51,6 +51,8 @@ The ML pipeline extracts features from **subdirectory path + criticality**, not 
 
 Unlike MBC, which allows one behavior to map to multiple objectives (e.g., Process Injection is both Defense Evasion and Privilege Escalation), cleave allows exactly **one trait per behavior**. Place it at the most specific location the evidence supports. Composite rules in other directories can reference the single trait to express multi-objective interpretations.
 
+The same logic extends to matchers: define each one once. If two traits would search for the same thing, make a single canonical atom and reference it rather than copy the pattern — duplicate matchers drift out of sync, double-count evidence, and split one signal across two ML features. Unique matchers keep the trait set slim.
+
 ### Matcher Defines Identity
 
 **A trait's matcher is its identity. Its name, description, and directory must describe what the matcher actually searches for — not the intent of a composite that references it, and not the worst case it might contribute to.** Organize atomic traits by what they detect, not by what composite they serve. This applies at **every** criticality, `component` and `baseline` included.
@@ -83,6 +85,14 @@ All tiers follow: `TIER/CATEGORY/BEHAVIOR/METHOD/platform.yaml`
 - **`objectives/`**: `objectives/OBJECTIVE/BEHAVIOR/METHOD/` with technique-based directories and per-platform or per-ecosystem YAML files. Add sub-method directories when a method has many variants (e.g., string obfuscation techniques). Avoid platform, language, ecosystem, file-type, and family names as directories unless they are the technique being detected.
 - **`micro-behaviors/`**: `micro-behaviors/CATEGORY/BEHAVIOR/METHOD/` (e.g., `crypto/symmetric/aes/ruby.yaml`, not `crypto/symmetric/aes.yaml`). If no specific method applies, group by syscall, protocol, or logical grouping. Composite traits may reference directory names to match related rules.
 - **Directory names** should be short, readable, and semantically useful. Prefer `exec` over `command-execution`, `poll` over `polling-command`, and `reflect` over `reflective-loader` when the parent path supplies enough context. Keep longer names when the shorter form would be ambiguous.
+
+### Directory & Evolution Guidelines
+
+- **Leaf-Node Policy**: A directory level cannot contain both YAML files and subdirectories. This prevents files from being "orphaned" or miscategorized when adding new sub-techniques. If a directory contains subdirectories (representing sub-techniques), it must not contain its own YAML files.
+- **Intent-Based Categorization**:
+  - **`objectives/`**: Reserved for improper/malicious behavior that requires intent inference. Any finding suggesting malice or abuse must be categorized under an `objectives/` hierarchy.
+  - **`micro-behaviors/`**: Reserved for strictly neutral, atomic observations. If a trait is neutral, it belongs here.
+- **Platform/Language Neutrality**: Directories must NOT be named after programming languages (e.g., `python/`) or platforms (e.g., `windows/`). These are used as suffixes in YAML filenames (e.g., `dropper_python.yaml`). This ensures the ML pipeline can perform cross-language and cross-platform technique correlation.
 
 ## Decision Framework
 
@@ -1122,11 +1132,3 @@ composite_rules:
 - **ATT&CK Techniques**: `T1234` or `T1234.001` (sub-technique)
 - **MBC Behaviors**: `B0001` (behavior), `C0015` (micro-behavior)
 - **MBC Enhanced**: `E1234` (ATT&CK technique with MBC enhancements)
-
-## Directory & Evolution Guidelines
-
-- **Leaf-Node Policy**: A directory level cannot contain both YAML files and subdirectories. This prevents files from being "orphaned" or miscategorized when adding new sub-techniques. If a directory contains subdirectories (representing sub-techniques), it must not contain its own YAML files.
-- **Intent-Based Categorization**: 
-  - **`objectives/`**: Reserved for improper/malicious behavior that requires intent inference. Any finding suggesting malice or abuse must be categorized under an `objectives/` hierarchy.
-  - **`micro-behaviors/`**: Reserved for strictly neutral, atomic observations. If a trait is neutral, it belongs here.
-- **Platform/Language Neutrality**: Directories must NOT be named after programming languages (e.g., `python/`) or platforms (e.g., `windows/`). These are used as suffixes in YAML filenames (e.g., `dropper_python.yaml`). This ensures the ML pipeline can perform cross-language and cross-platform technique correlation.
