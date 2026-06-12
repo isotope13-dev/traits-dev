@@ -1,0 +1,68 @@
+defaults:
+  platforms: [linux]
+  for: [shell]
+  attack: T1195.002
+
+traits:
+  - id: pacman-scriptlet-hook
+    # pacman/AUR `.install` scriptlets define hook functions that run as root
+    # during `pacman -U`/AUR build install: post_install, pre_install,
+    # post_upgrade, pre_upgrade, post_remove, pre_remove.
+    desc: pacman install scriptlet hook function
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: '\b(post|pre)_(install|upgrade|remove)\s*\(\s*\)'
+
+  # The three foreign-ecosystem install legs are package-install capabilities
+  # (notable, like objectives/execution/autoinstall/pip). They are anchored to
+  # shell command position — start-of-line/after a shell separator/sudo|RUN —
+  # so prose that merely mentions an install command (e.g. a docstring "...the
+  # optional curl extra: pip install pkg[curl]" or a README) is NOT matched. The
+  # supply-chain intent comes from the hostile composite below, which requires a
+  # pacman install-scriptlet hook to co-occur.
+  - id: scriptlet-npm-install-package
+    desc: Scriptlet installs a named npm package
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      regex: '[\n;&|(][ \t]*(sudo\s+)?npm\s+(install|i|add)\s+[\w@][\w@./-]'
+
+  - id: scriptlet-pip-install-package
+    desc: Scriptlet installs a pip package
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      regex: '[\n;&|(][ \t]*(sudo\s+)?pip[0-9]?\s+install\s+[\w@][\w@./-]'
+    unless:
+      - id: well-known/app/localai::localai-backend-build-context
+      - type: text
+        regex: '#[^\n]*\bpip[0-9]?\s+install\b'
+
+  - id: scriptlet-gem-install-package
+    desc: Scriptlet installs a RubyGems package
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      regex: '[\n;&|(][ \t]*(sudo\s+)?gem\s+install\s+[\w@][\w@./-]'
+
+composite_rules:
+  - id: pacman-scriptlet-foreign-package-bootstrap
+    # The AUR/ALVR supply-chain vector: a distro package's root-level install
+    # scriptlet pulls a foreign-ecosystem package (npm/pip/gem), whose own
+    # install hooks then execute as root. A legitimate package declares its
+    # dependencies through the PKGBUILD and pacman — it does not shell out to a
+    # second package manager to fetch arbitrary code at install time.
+    desc: pacman scriptlet bootstraps a foreign-ecosystem package install
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: pacman-scriptlet-hook
+    any:
+      - id: scriptlet-npm-install-package
+      - id: scriptlet-pip-install-package
+      - id: scriptlet-gem-install-package

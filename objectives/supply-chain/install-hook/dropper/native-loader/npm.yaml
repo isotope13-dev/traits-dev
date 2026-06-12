@@ -3,7 +3,116 @@ defaults:
   for: [archives]
   attack: T1195.002
 
+traits:
+  # An npm lifecycle hook whose command is a single bare relative/absolute path
+  # with no interpreter and no script extension is directly executing a
+  # committed file as a program — i.e. a bundled native binary. Legitimate hooks
+  # invoke an interpreter (`node x.js`, `bash x.sh`), a tool (`husky`,
+  # `node-gyp rebuild`, `prebuild-install`), or a `.bin` shim — none of which
+  # match a bare `./src/hooks/deps`-style path. The `not:` list drops script
+  # targets and `.bin` shims so only direct-executable hooks remain.
+  - id: preinstall-runs-bundled-executable
+    desc: preinstall hook directly executes a bundled file
+    crit: suspicious
+    conf: 0.85
+    for: [package.json]
+    if:
+      type: value
+      path: scripts.preinstall
+      regex: '^\s*\.{0,2}/[\w.-]+(/[\w.-]+)*\s*$'
+    not:
+      - regex: '\.(c?js|mjs|ts|tsx|sh|bash|py|rb|ps1|cmd|bat|exe|dll)$'
+      - substr: 'node_modules/.bin'
+  - id: install-runs-bundled-executable
+    desc: install hook directly executes a bundled file
+    crit: suspicious
+    conf: 0.85
+    for: [package.json]
+    if:
+      type: value
+      path: scripts.install
+      regex: '^\s*\.{0,2}/[\w.-]+(/[\w.-]+)*\s*$'
+    not:
+      - regex: '\.(c?js|mjs|ts|tsx|sh|bash|py|rb|ps1|cmd|bat|exe|dll)$'
+      - substr: 'node_modules/.bin'
+  - id: postinstall-runs-bundled-executable
+    desc: postinstall hook directly executes a bundled file
+    crit: suspicious
+    conf: 0.85
+    for: [package.json]
+    if:
+      type: value
+      path: scripts.postinstall
+      regex: '^\s*\.{0,2}/[\w.-]+(/[\w.-]+)*\s*$'
+    not:
+      - regex: '\.(c?js|mjs|ts|tsx|sh|bash|py|rb|ps1|cmd|bat|exe|dll)$'
+      - substr: 'node_modules/.bin'
+
 composite_rules:
+  - id: npm-install-bundled-native-binary
+    # The supply-chain dropper shape behind the AUR/ALVR `atomic-lockfile`
+    # attack: a package whose install hook directly runs a relative path AND
+    # ships a native ELF/Mach-O/PE binary. A JS library has no reason to execute
+    # a committed machine-code binary at install time — this is a native payload
+    # disguised as a build/dependency step. `metadata/binary/` fires only on real
+    # compiled members, never on JS/JSON/manifests.
+    desc: npm install hook executes a bundled native binary
+    crit: hostile
+    conf: 0.95
+    scope: archive
+    all:
+      - id: metadata/binary/
+    any:
+      - id: preinstall-runs-bundled-executable
+      - id: install-runs-bundled-executable
+      - id: postinstall-runs-bundled-executable
+
+  - id: npm-install-hook-native-credential-stealer
+    # A package that runs an install-time hook AND ships a native binary that
+    # harvests credentials from many apps (browsers, Discord, Telegram, SSH,
+    # shells) is a trojanized supply-chain stealer — the lifecycle hook
+    # auto-detonates the bundled stealer on every `npm install`.
+    desc: npm install hook detonates a bundled native credential stealer
+    crit: hostile
+    conf: 0.97
+    scope: archive
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::install-hook-exists
+    any:
+      - id: objectives/credential-access/theft/multi-app::multi-app-credential-stealer
+      - id: objectives/credential-access/discord/token::native-discord-token-grabber
+
+  - id: npm-install-hook-native-rootkit
+    # A package that runs an install-time hook AND ships an eBPF directory- or
+    # connection-hiding rootkit installs a kernel-level implant the moment the
+    # package is installed — there is no benign reason for a JS package to carry
+    # a getdents/connection-hiding eBPF rootkit.
+    desc: npm install hook deploys a bundled eBPF hiding rootkit
+    crit: hostile
+    conf: 0.98
+    scope: archive
+    attack: T1014
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::install-hook-exists
+    any:
+      - id: objectives/evasion/kernel-hide/ebpf::getdents-offset-rewrite-hide-rootkit
+      - id: objectives/evasion/kernel-hide/ebpf::ebpf-connection-hide-rootkit
+
+  - id: npm-install-hook-tor-c2-implant
+    # A package that runs an install-time hook AND ships a binary that pulls down
+    # the Tor Expert Bundle to anonymize its C2/exfil is an install-triggered
+    # onion-routed implant.
+    desc: npm install hook deploys a bundled Tor-anonymized implant
+    crit: hostile
+    conf: 0.97
+    scope: archive
+    attack: T1090.003
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::install-hook-exists
+    any:
+      - id: objectives/command-and-control/channel/tor/bundle::credential-stealer-tor-exfil
+      - id: objectives/command-and-control/channel/tor/bundle::tor-expert-bundle
+
   - id: npm-throwaway-native-loader-stub
     desc: Tiny throwaway npm native-loader install stub
     crit: hostile

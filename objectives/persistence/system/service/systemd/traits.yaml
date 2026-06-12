@@ -88,6 +88,10 @@ traits:
 - id: exec-start-text
   desc: ExecStart directive (extracted strings)
   crit: component
+  # Native daemons/stealers that author a unit file at runtime embed these
+  # directives as plain strings; the file `defaults.for` omits elf, so without
+  # this override the systemd composites can never fire on compiled binaries.
+  for: [shell, python, systemd, go, rust, elf]
   if:
     type: text
     word: "ExecStart"
@@ -101,8 +105,13 @@ traits:
     path: "service.exec_start"
 
 - id: restart-always-text
+  # Restart=always is a persistence-defining directive: it keeps the unit
+  # respawning indefinitely. On the TAXONOMY persistence bar that is notable in
+  # its own right, not a mere composite fragment.
   desc: Restart=always directive (extracted strings)
-  crit: component
+  crit: notable
+  conf: 0.7
+  for: [shell, python, systemd, go, rust, elf]
   if:
     type: text
     word: "Restart=always"
@@ -117,11 +126,26 @@ traits:
     exact: "always"
 
 - id: wanted-by-target-text
+  # WantedBy=default.target enrolls the unit for automatic start — a
+  # persistence directive that defines program purpose, hence notable.
   desc: 'WantedBy=default.target directive'
-  crit: component
+  crit: notable
+  conf: 0.7
+  for: [shell, python, systemd, go, rust, elf]
   if:
     type: text
     word: "WantedBy=default.target"
+
+- id: wanted-by-multi-user-text
+  # WantedBy=multi-user.target enrolls a system-wide (root) service for boot
+  # autostart — the system-service equivalent of default.target enrollment.
+  desc: 'WantedBy=multi-user.target directive'
+  crit: notable
+  conf: 0.7
+  for: [shell, python, systemd, go, rust, elf]
+  if:
+    type: text
+    word: "WantedBy=multi-user.target"
 
 - id: wanted-by-target-kv
   desc: 'WantedBy=default.target directive'
@@ -634,10 +658,11 @@ composite_rules:
   - id: restart-always-kv
 
 - id: wanted-by-target
-  desc: WantedBy=default.target directive
+  desc: WantedBy autostart-enrollment directive
   crit: suspicious
   any:
   - id: wanted-by-target-text
+  - id: wanted-by-multi-user-text
   - id: wanted-by-target-kv
 
 - id: systemd-timer-trigger
@@ -892,3 +917,37 @@ composite_rules:
   any:
   - id: systemd-dropin-path--rx-1
   - id: systemd-dropin-path--rx-2
+
+- id: native-unit-authoring
+  # A compiled binary that embeds the directives of a systemd unit as plain
+  # strings (ExecStart plus an autostart/auto-respawn directive) is writing a
+  # unit file at runtime to persist itself — notable persistence program
+  # purpose. The structured `.service` composites above cover parsed unit files;
+  # this targets the binary that authors one.
+  desc: Native binary authors a systemd persistence unit
+  crit: notable
+  conf: 0.8
+  for: [elf]
+  all:
+  - id: exec-start-text
+  any:
+  - id: restart-always-text
+  - id: wanted-by-target-text
+  - id: wanted-by-multi-user-text
+
+- id: native-systemd-persistent-stealer
+  # A compiled binary that authors a systemd unit to relaunch itself across
+  # reboots AND harvests credentials or installs an eBPF hiding rootkit is an
+  # autonomous persistent implant, not a service installer. The stealer/rootkit
+  # leg supplies the malicious intent the bare persistence directives lack.
+  desc: Native binary installs systemd persistence for a credential stealer
+  crit: hostile
+  conf: 0.95
+  for: [elf]
+  all:
+  - id: native-unit-authoring
+  any:
+  - id: objectives/credential-access/theft/multi-app::multi-app-credential-stealer
+  - id: objectives/credential-access/discord/token::native-discord-token-grabber
+  - id: objectives/evasion/kernel-hide/ebpf::bpf-hidden-object-names
+  - id: objectives/command-and-control/channel/tor/bundle::tor-expert-bundle
