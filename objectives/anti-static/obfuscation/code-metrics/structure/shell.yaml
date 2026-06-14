@@ -214,6 +214,99 @@ traits:
   if:
     type: text
     regex: "[\"'][A-Za-z0-9][\"'][\"'][A-Za-z0-9][\"']"
+  # === Command-NAME reconstruction (filefacts call-target metrics) ===
+  # filefacts classifies each call's command-name token. An "obfuscated"
+  # target is a command name welded from quote-shatter, backslash escapes, a
+  # decoding command substitution, a default-value parameter, or expansions
+  # glued into a word — shapes that exist only to hide which program runs and
+  # never occur in hand-written shell. See filefacts call_target_metrics.
+- id: sh-obfuscated-command-target
+  desc: Command name built from obfuscated tokens
+  crit: suspicious
+  conf: 0.9
+  if:
+    type: metrics
+    field: calls.obfuscated_target_count
+    min: 1
+  # A "dynamic" target is a bare variable/positional expansion used as the
+  # command ($CC, $1, $cmd). Legitimate alone (interpreter-in-a-variable), so
+  # this stays a building block gated by the reconstruction composite below.
+- id: sh-dynamic-command-target
+  desc: Command name is a bare variable expansion
+  crit: notable
+  conf: 0.6
+  if:
+    type: metrics
+    field: calls.dynamic_target_count
+    min: 1
+  # Word rebuilt by interleaving quoted and unquoted single characters, e.g.
+  # b"u"n or s"t"a. Distinct from sh-char-split-concatenation (which needs two
+  # ADJACENT quoted fragments); this catches the eval-quote-split and mixed
+  # forms where quoted chars alternate with bare ones.
+- id: sh-inline-char-split
+  desc: Word built from interleaved quoted characters
+  crit: suspicious
+  conf: 0.88
+  count_min: 1
+  if:
+    type: text
+    regex: "[A-Za-z][\"'][A-Za-z][\"'][A-Za-z]"
+  # === Command-line staging setups (gate the ambiguous dynamic targets) ===
+  # set -- loads a command line into the positional params for `$1 $2 …` exec.
+- id: sh-positional-set-reconstruct
+  desc: Positional parameters set then expanded
+  crit: notable
+  conf: 0.7
+  if:
+    type: text
+    regex: '(^|[;&\n])\s*set\s+--\s'
+  # IFS reassigned to a non-whitespace delimiter to word-split a packed string
+  # into an argv ("a,b,c" + IFS=, then unquoted $var). `IFS= read` (set to
+  # empty/space) is the common benign idiom and is excluded by the class.
+- id: sh-ifs-field-mangle
+  desc: IFS set to a non-whitespace delimiter
+  crit: notable
+  conf: 0.7
+  if:
+    type: text
+    regex: '(^|[;&\n])\s*IFS=[^ \t\n;]'
+  # Function whose body begins by running a bare positional param — `f(){ $1 …`
+  # — a thin indirection wrapper. Quoted "$@"/"$1" forwarders do not match.
+- id: sh-function-positional-body
+  desc: Function body runs a bare positional param
+  crit: notable
+  conf: 0.7
+  if:
+    type: text
+    regex: '\)\s*\{\s*\$[1-9@]'
+  # Several local assignments — the pieces a command is welded from ($A $B $C).
+- id: sh-multiple-local-assignments
+  desc: Several local variable assignments
+  crit: component
+  conf: 0.6
+  if:
+    type: metrics
+    field: binds.count
+    min: 2
+  # Two or more aliases defined to stand in for command words, then invoked.
+- id: sh-alias-command-definition
+  desc: Multiple command aliases defined
+  crit: notable
+  conf: 0.6
+  count_min: 2
+  if:
+    type: text
+    regex: '(^|[;&\n])\s*alias\s+[A-Za-z_]\w*='
+  # Shell rc/dotfile basenames where alias collections are normal and benign.
+- id: sh-rc-dotfile-basename
+  desc: Shell rc/profile/alias dotfile basename
+  crit: component
+  conf: 0.95
+  attack: ''
+  mbc: ''
+  if:
+    type: basename
+    regex: '(^|[\\/])\.?(bash|zsh|ksh)?(rc|_profile|_aliases|_login)$|(^|[\\/])\.(profile|aliases)$'
   # Nested command substitution used to hide commands
 - id: sh-dense-command-subst
   desc: Dense nested command substitution
@@ -493,3 +586,47 @@ composite_rules:
   - id: sh-dense-printf-decode-unless-cond-0--rx-8
   - id: sh-dense-printf-decode-unless-cond-0--rx-9
   - id: sh-dense-printf-decode-unless-cond-0--rx-10
+# A command name welded from quote-shatter, escapes, a decoding substitution,
+# a default-value parameter, or expansions glued into a word — there is no
+# benign reason to hide which program runs, so this is hostile on sight.
+- id: sh-reconstructed-command-name
+  desc: Command name reconstructed to evade scanners
+  crit: hostile
+  conf: 0.93
+  all:
+  - id: shell-script-context
+  any:
+  - id: sh-obfuscated-command-target
+  - id: sh-inline-char-split
+# Ambiguous "dynamic command name" ($A, $1, $cmd) gated tightly: only hostile
+# when a tiny script also STAGES the command line out of pieces (set --, an
+# IFS field-split, a positional-forwarding function, or several local
+# assignments). A plain `$EDITOR "$1"` wrapper has no such staging and is
+# excluded. Size cap keeps real programs (which dwarf these stubs) out.
+- id: sh-staged-command-reconstruction
+  desc: Tiny script stages and runs a hidden command
+  crit: hostile
+  conf: 0.9
+  size_max: 512
+  all:
+  - id: shell-script-context
+  - id: sh-dynamic-command-target
+  any:
+  - id: sh-positional-set-reconstruct
+  - id: sh-ifs-field-mangle
+  - id: sh-function-positional-body
+  - id: sh-multiple-local-assignments
+# Tiny shebang'd script that defines command aliases and nothing of substance.
+# Aliasing command words then invoking them hides the call from static scans;
+# real alias collections live in large, un-shebang'd rc files (excluded by the
+# size cap and the basename guard).
+- id: sh-alias-command-reconstruction
+  desc: Tiny script aliases then runs a command
+  crit: suspicious
+  conf: 0.85
+  size_max: 256
+  all:
+  - id: shell-script-context
+  - id: sh-alias-command-definition
+  unless:
+  - id: sh-rc-dotfile-basename
