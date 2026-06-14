@@ -1025,6 +1025,7 @@ metadata/
 │   │   ├── managed/       #     Managed runtimes (.NET, Delphi)
 │   │   ├── native/        #     Native toolchains (GCC, Clang, MSVC, MinGW)
 │   │   └── systems/       #     Systems language compilers (Go, Rust)
+│   ├── embedded/          #   Embedded language detection
 │   ├── encoded/           #   Encoded strings (unicode, wide)
 │   ├── javascript-features/ # JavaScript language features
 │   ├── scripted/          #   Scripted language detection (VBScript, Lua, Perl)
