@@ -1,0 +1,82 @@
+# PKGBUILD build-phase execution anomalies (T1195.002).
+#
+# pkgver(), prepare(), and build() run on the BUILDER's machine during makepkg
+# (pkgver() even during AUR-helper update checks) — before, and independent of,
+# the package being installed. The legitimate channel for external inputs is the
+# checksummed source=() array; code in these functions that fetches more code,
+# executes a non-extracted blob, decodes-and-runs a payload, escalates with
+# sudo, or persists into the builder's HOME is a supply-chain compromise of the
+# build host. Each behavior leg is a generic capability detected elsewhere; the
+# proximity-anchored lifecycle leg supplies the build-phase intent.
+defaults:
+  platforms: [linux]
+  for: [shell]
+  attack: T1195.002
+
+composite_rules:
+  - id: pkgbuild-pkgver-dynamic-exec
+    # pkgver() should only print a version string. Fetching code, decoding a
+    # payload, or piping to a shell there is pre-install code execution that
+    # fires during routine AUR update checks.
+    desc: PKGBUILD pkgver() fetches or executes code
+    crit: hostile
+    conf: 0.94
+    near_lines: 20
+    all:
+      - id: metadata/build/package::pkgbuild-pkgver-fn
+    any:
+      - id: micro-behaviors/communications/http/download/shell::shell-curl-wget-url-fetch
+      - id: micro-behaviors/process/create/eval::shell-eval
+      - id: objectives/command-and-control/dropper/execution/pipe::pipe-to-shell
+
+  - id: pkgbuild-build-undeclared-fetch
+    # A build()/prepare() that curls/wgets a URL pulls code outside the
+    # checksummed source=() array — unverified, swappable input at build time.
+    desc: PKGBUILD build phase fetches undeclared code
+    crit: suspicious
+    conf: 0.8
+    near_lines: 25
+    all:
+      - id: micro-behaviors/communications/http/download/shell::shell-curl-wget-url-fetch
+    any:
+      - id: metadata/build/package::pkgbuild-build-fn
+      - id: metadata/build/package::pkgbuild-prepare-fn
+
+  - id: pkgbuild-noextract-manual-exec
+    # noextract keeps a downloaded source unextracted; running it directly
+    # (./blob, sh blob, eval) executes fetched bytes without the usual review.
+    desc: PKGBUILD runs a non-extracted source directly
+    crit: suspicious
+    conf: 0.85
+    all:
+      - id: metadata/build/package::pkgbuild-noextract-nonempty
+    any:
+      - id: objectives/command-and-control/dropper/execution/pipe::execute-dot-slash
+      - id: objectives/command-and-control/dropper/execution/pipe::pipe-to-shell
+      - id: micro-behaviors/process/create/eval::shell-eval
+
+  - id: pkgbuild-build-sudo
+    # build()/prepare() run in fakeroot; a real sudo/doas there is an attempt to
+    # mutate the live host during the build, not legitimate packaging.
+    desc: PKGBUILD build phase uses sudo to elevate
+    crit: suspicious
+    conf: 0.85
+    near_lines: 25
+    all:
+      - id: micro-behaviors/os/privilege/elevation::sudo-command-invoke
+    any:
+      - id: metadata/build/package::pkgbuild-build-fn
+      - id: metadata/build/package::pkgbuild-prepare-fn
+
+  - id: pkgbuild-build-home-persistence
+    # build()/prepare() runs as the developer, so writing into the builder's own
+    # shell rc or authorized_keys backdoors the build host / CI runner itself.
+    desc: PKGBUILD build phase persists into builder HOME
+    crit: hostile
+    conf: 0.92
+    near_lines: 25
+    all:
+      - id: objectives/persistence/login/shell/rc::home-shell-rc-write
+    any:
+      - id: metadata/build/package::pkgbuild-build-fn
+      - id: metadata/build/package::pkgbuild-prepare-fn

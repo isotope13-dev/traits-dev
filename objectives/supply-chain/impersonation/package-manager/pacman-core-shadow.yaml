@@ -1,0 +1,68 @@
+# Pacman package-identity hijack via replaces=/epoch (T1195.002).
+#
+# `replaces=('<core-pkg>')` makes pacman uninstall a trusted system package and
+# swap in this one — the AUR analog of dependency confusion, and the most direct
+# supply-chain takeover (e.g. replaces=('sudo') / replaces=('openssh')). An
+# inflated epoch= forces pacman to treat the package as newer than the genuine
+# one regardless of version, so the swap wins automatically. Legitimate forks
+# almost never `replaces` a core package, and epoch bumps are small and rare.
+defaults:
+  platforms: [linux]
+  for: [shell]
+  attack: T1195.002
+
+traits:
+  - id: pacman-replaces-core-base
+    desc: replaces= shadows a base system package
+    crit: suspicious
+    conf: 0.85
+    if:
+      type: text
+      regex: 'replaces=\([^)]{0,200}\b(bash|sudo|coreutils|systemd)\b'
+
+  - id: pacman-replaces-core-crypto
+    desc: replaces= shadows an auth/crypto package
+    crit: suspicious
+    conf: 0.85
+    if:
+      type: text
+      regex: 'replaces=\([^)]{0,200}\b(openssh|openssl|pacman|glibc)\b'
+
+  - id: pacman-replaces-core-net
+    desc: replaces= shadows a network/kernel package
+    crit: suspicious
+    conf: 0.8
+    if:
+      type: text
+      regex: 'replaces=\([^)]{0,200}\b(linux|shadow|curl|wget)\b'
+
+  - id: pacman-epoch-inflation
+    desc: PKGBUILD declares an inflated epoch
+    crit: notable
+    conf: 0.7
+    if:
+      type: text
+      regex: '(?m)^\s*epoch=[1-9][0-9]+'
+
+composite_rules:
+  - id: pacman-core-package-shadow
+    desc: AUR package replaces a core system package
+    crit: suspicious
+    conf: 0.85
+    any:
+      - id: pacman-replaces-core-base
+      - id: pacman-replaces-core-crypto
+      - id: pacman-replaces-core-net
+
+  - id: pacman-core-shadow-forced-override
+    # Shadowing a core package AND either inflating epoch to win the version
+    # comparison or shipping an install scriptlet (code on top of the swap) is
+    # an unambiguous package-takeover, not a benign fork.
+    desc: AUR package force-overrides a core system package
+    crit: hostile
+    conf: 0.93
+    all:
+      - id: pacman-core-package-shadow
+    any:
+      - id: pacman-epoch-inflation
+      - id: objectives/supply-chain/install-hook/distro-scriptlet::pacman-scriptlet-hook

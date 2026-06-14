@@ -228,12 +228,16 @@ traits:
     type: metrics
     field: calls.obfuscated_target_count
     min: 1
+  unless:
+    # Tcl/Tk polyglots: the bash parser mis-reads the Tcl body into bogus
+    # escaped "command" tokens (`\[0-9\]*`). The file is Tcl, not shell.
+  - id: sh-tcl-reexec-polyglot
   # A "dynamic" target is a bare variable/positional expansion used as the
   # command ($CC, $1, $cmd). Legitimate alone (interpreter-in-a-variable), so
   # this stays a building block gated by the reconstruction composite below.
 - id: sh-dynamic-command-target
   desc: Command name is a bare variable expansion
-  crit: notable
+  crit: component
   conf: 0.6
   if:
     type: metrics
@@ -248,14 +252,16 @@ traits:
   crit: suspicious
   conf: 0.88
   count_min: 1
+  # Double-quote only: single-quote variant matches contractions/possessives
+  # and Tcl/sh polyglots (`t'o'm`). Obfuscation samples use double quotes.
   if:
     type: text
-    regex: "[A-Za-z][\"'][A-Za-z][\"'][A-Za-z]"
+    regex: '[A-Za-z]"[A-Za-z]"[A-Za-z]'
   # === Command-line staging setups (gate the ambiguous dynamic targets) ===
   # set -- loads a command line into the positional params for `$1 $2 …` exec.
 - id: sh-positional-set-reconstruct
   desc: Positional parameters set then expanded
-  crit: notable
+  crit: component
   conf: 0.7
   if:
     type: text
@@ -265,7 +271,7 @@ traits:
   # empty/space) is the common benign idiom and is excluded by the class.
 - id: sh-ifs-field-mangle
   desc: IFS set to a non-whitespace delimiter
-  crit: notable
+  crit: component
   conf: 0.7
   if:
     type: text
@@ -274,7 +280,7 @@ traits:
   # — a thin indirection wrapper. Quoted "$@"/"$1" forwarders do not match.
 - id: sh-function-positional-body
   desc: Function body runs a bare positional param
-  crit: notable
+  crit: component
   conf: 0.7
   if:
     type: text
@@ -297,6 +303,18 @@ traits:
   if:
     type: text
     regex: '(^|[;&\n])\s*alias\s+[A-Za-z_]\w*='
+  # Tcl/Tk self-re-exec polyglot header (`# \` + `exec wish "$0"`). The body is
+  # Tcl, not shell; the bash parser mis-reads it into garbage "command" tokens
+  # (`\[0-9\]*`, escaped regex), so suppress shell-obfuscation verdicts on it.
+- id: sh-tcl-reexec-polyglot
+  desc: Tcl/Tk self-re-exec polyglot header
+  crit: component
+  conf: 0.95
+  attack: ''
+  mbc: ''
+  if:
+    type: text
+    regex: 'exec\s+(tclsh|wish|expect|tclkit)\b[^\n]{0,20}\$0'
   # Shell rc/dotfile basenames where alias collections are normal and benign.
 - id: sh-rc-dotfile-basename
   desc: Shell rc/profile/alias dotfile basename
@@ -598,6 +616,9 @@ composite_rules:
   any:
   - id: sh-obfuscated-command-target
   - id: sh-inline-char-split
+  - id: sh-char-split-concatenation
+  unless:
+  - id: sh-tcl-reexec-polyglot
 # Ambiguous "dynamic command name" ($A, $1, $cmd) gated tightly: only hostile
 # when a tiny script also STAGES the command line out of pieces (set --, an
 # IFS field-split, a positional-forwarding function, or several local
@@ -616,6 +637,8 @@ composite_rules:
   - id: sh-ifs-field-mangle
   - id: sh-function-positional-body
   - id: sh-multiple-local-assignments
+  unless:
+  - id: sh-tcl-reexec-polyglot
 # Tiny shebang'd script that defines command aliases and nothing of substance.
 # Aliasing command words then invoking them hides the call from static scans;
 # real alias collections live in large, un-shebang'd rc files (excluded by the
