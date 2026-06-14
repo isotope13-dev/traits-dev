@@ -1,0 +1,87 @@
+# Identity of Wine builtin PE DLLs and, more generally, of any binary that
+# *implements* (exports) the native Windows API surface rather than calling it.
+#
+# Wine ships PE reimplementations of the Windows system DLLs (crypt32,
+# kernelbase, kernel32, srclient, ntdll, …). These legitimately contain the
+# full injection / certificate-store / system-restore API surface because they
+# PROVIDE it to the Windows programs running on top. Malware *imports* those
+# APIs to abuse them; the implementer *exports* them — that direction is the
+# discriminator. Offensive composites reference this as `unless` so the API
+# provider DLL is never mistaken for the attacker. Generalizes to genuine
+# Windows system DLLs and ReactOS, not just Wine.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+traits:
+  - id: wine-builtin-dll-marker
+    desc: Wine builtin DLL marker string
+    crit: component
+    conf: 0.96
+    if:
+      type: text
+      substr: Wine builtin DLL
+      # Wine writes this marker into the DOS stub (offset 0x40) of every
+      # builtin PE, replacing the usual "cannot be run in DOS mode" text.
+      offset_range: [0, 256]
+
+  # Offensive API surface, decomposed into themed export atoms (each ≤3 `|`,
+  # ≤90 bytes). NtCreateThreadEx and RtlCreateUserThread are kept in separate
+  # atoms so no single atom is a superset of the existing injection symbol trait.
+  - id: exports-thread-inject-api
+    desc: Exports thread/APC injection API
+    crit: component
+    conf: 0.9
+    if:
+      type: export
+      regex: ^(CreateRemoteThread|NtCreateThreadEx|QueueUserAPC)$
+  - id: exports-mem-map-inject-api
+    desc: Exports memory/section injection API
+    crit: component
+    conf: 0.9
+    if:
+      type: export
+      regex: ^(VirtualAllocEx|WriteProcessMemory|NtMapViewOfSection|RtlCreateUserThread)$
+  - id: exports-cert-store-api
+    desc: Exports certificate-store management API
+    crit: component
+    conf: 0.9
+    if:
+      type: export
+      regex: ^(CertCreateSelfSignCertificate|CertUnregisterPhysicalStore)$
+  - id: exports-cert-add-api
+    desc: Exports certificate-add-to-store API
+    crit: component
+    conf: 0.9
+    if:
+      type: export
+      substr: CertAddEncodedCertificateToStore
+  - id: exports-system-restore-api
+    desc: Exports system-restore-point API
+    crit: component
+    conf: 0.9
+    if:
+      type: export
+      regex: ^(SRRemoveRestorePoint|SRSetRestorePointW|SRSetRestorePointA)$
+
+composite_rules:
+  # An OS-implementer DLL exports offensive APIs from multiple categories; a
+  # single export is noise, so require at least two categories.
+  - id: exports-native-offensive-api-surface
+    desc: Exports native Windows offensive API surface
+    crit: component
+    conf: 0.9
+    needs: 2
+    any:
+      - id: exports-thread-inject-api
+      - id: exports-mem-map-inject-api
+      - id: exports-cert-store-api
+      - id: exports-cert-add-api
+      - id: exports-system-restore-api
+
+  - id: windows-system-implementer-dll
+    desc: Windows system DLL implementer or API provider
+    crit: component
+    conf: 0.95
+    any:
+      - id: wine-builtin-dll-marker
+      - id: exports-native-offensive-api-surface
