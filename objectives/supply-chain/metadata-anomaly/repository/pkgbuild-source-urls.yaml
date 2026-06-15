@@ -10,6 +10,11 @@ defaults:
   attack: T1195.002
 
 traits:
+  # The ephemeral-host and shortener atoms read the parsed pkg.source[] array, so
+  # a URL outside source=() cannot trip them. The IP atom stays text-based: value
+  # conditions can't combine `is: valid_ip` (octet validation) with a host-anchor
+  # regex, and `is:` alone would false-positive on version-numbered filenames
+  # like foo-1.2.3.4.tar.gz — the source=-anchored regex + is: is more precise.
   - id: pkgbuild-source-ip-address
     desc: PKGBUILD sources from a raw IP address
     crit: suspicious
@@ -26,13 +31,32 @@ traits:
     crit: suspicious
     conf: 0.9
     if:
-      type: text
-      regex: 'source=[^)]{0,300}https?://[^)\s"'']{0,40}(0x0\.st|transfer\.sh|file\.io|termbin)'
+      type: value
+      path: pkg.source[*]
+      regex: 'https?://[^\s]{0,40}(0x0\.st|transfer\.sh|file\.io|termbin)'
 
   - id: pkgbuild-source-url-shortener
     desc: PKGBUILD sources via a URL shortener
     crit: suspicious
     conf: 0.9
     if:
-      type: text
-      regex: 'source=[^)]{0,300}https?://[^)\s"'']{0,30}(bit\.ly|tinyurl|is\.gd|t\.co)/'
+      type: value
+      path: pkg.source[*]
+      regex: 'https?://[^\s]{0,30}(bit\.ly|tinyurl|is\.gd|t\.co)/'
+
+  # Fork impersonation: when the declared upstream `url` is a GitHub repo, its
+  # source archives should come from the SAME owner. filefacts projects the
+  # owner of `url` and of every github.com source into pkg.*_github_owner(s);
+  # this fires when a source repo belongs to a DIFFERENT owner — the -bin
+  # fork-impersonation vector (an attacker repo posing as the project's release).
+  # Owner comparison is high-confidence; a bare cross-domain difference (project
+  # site vs CDN vs github) is normal and is not projected, so cannot trip this.
+  - id: pkgbuild-source-foreign-github-owner
+    desc: Source repo owner differs from upstream
+    crit: suspicious
+    conf: 0.85
+    if:
+      type: value
+      path: pkg.url_github_owner
+      ne: pkg.source_github_owners
+      match: any

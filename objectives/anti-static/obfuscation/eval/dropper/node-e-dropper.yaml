@@ -1,0 +1,148 @@
+# Obfuscated `node -e` dropper one-liners.
+# A decode/encode/reflective transform feeds a child_process / eval exec sink.
+# Atoms are for:[shell] text anchored on `node -e` (the interpreter+flag prefix
+# is the FP gate) so they match the wrapper script even when the embedded-JS
+# pass is unavailable. MBC: E1027 (Obfuscated Files) / B0030 (C2 exec).
+defaults:
+  platforms: [linux, macos, windows]
+  for: [shell]
+  conf: 0.85
+
+traits:
+  # --- node -e exec sinks ---------------------------------------------------
+  - id: node-e-exec-sink
+    desc: node -e child_process exec sink
+    crit: notable
+    attack: T1059.007
+    if:
+      type: text
+      regex: '\b(node|nodejs)\s+-e\s+.{0,220}(exec|spawn|fork)(Sync)?\s*\('
+  - id: node-e-eval-sink
+    desc: node -e eval/Function dynamic sink
+    crit: notable
+    attack: T1027
+    if:
+      type: text
+      regex: '\b(node|nodejs)\s+-e\s+.{0,220}(\beval\s*\(|new\s+Function\s*\()'
+
+  # --- node -e decode / encoding transforms ---------------------------------
+  - id: node-e-buffer-decode
+    desc: node -e Buffer.from hex/base64 decode
+    crit: notable
+    attack: T1140
+    if:
+      type: text
+      regex: '\b(node|nodejs)\s+-e\s+.{0,220}Buffer\.from\s*\([^)]{0,80}[''"](hex|base64)[''"]'
+  - id: node-e-charcode-decode
+    desc: node -e fromCharCode char assembly
+    crit: notable
+    attack: T1027
+    if:
+      type: text
+      regex: '\b(node|nodejs)\s+-e\s+.{0,220}(String\.fromCharCode|\.charCodeAt)\s*\('
+  - id: node-e-atob-decode
+    desc: node -e atob/unescape string decode
+    crit: notable
+    attack: T1140
+    if:
+      type: text
+      regex: '\b(node|nodejs)\s+-e\s+.{0,220}\b(atob|unescape)\s*\('
+  - id: node-e-reverse-replace
+    desc: node -e reverse or junk-replace decode
+    crit: notable
+    attack: T1027
+    if:
+      type: text
+      regex: '\b(node|nodejs)\s+-e\s+.{0,220}(reverse\(\)\.join|\.replace\s*\(\s*/[^/]{1,4}/g)'
+  - id: node-e-hex-escape-string
+    desc: node -e hex-escape encoded string arg
+    crit: notable
+    attack: T1027
+    if:
+      type: text
+      regex: '\b(node|nodejs)\s+-e\s+.{0,220}(\\x[0-9a-f]{2}){3}'
+
+  # --- node -e reflective callee --------------------------------------------
+  - id: node-e-reflective-callee
+    desc: node -e bracket/Object.keys reflective call
+    crit: notable
+    attack: T1027
+    if:
+      type: text
+      regex: '\b(node|nodejs)\s+-e\s+.{0,220}(\[["'']require["'']\]|Object\.keys\s*\([^)]{0,20}\)\.find)'
+  # child_process reference: pairs with a reflective callee to form the sink
+  # for bracket-computed exec (04, 15) where no literal exec( token appears.
+  - id: node-e-child-process-ref
+    desc: node -e references child_process module
+    crit: notable
+    attack: T1059.007
+    if:
+      type: text
+      regex: '\b(node|nodejs)\s+-e\s+.{0,220}["'']child_process["'']'
+
+  # --- cleartext exec (no obfuscation) --------------------------------------
+  # Suspicious (not hostile): cleartext command run via node -e. The node -e
+  # prefix is the FP gate; flagging hostile would FP on benign one-liners.
+  - id: node-e-cleartext-exec
+    desc: Cleartext command run via node -e
+    crit: suspicious
+    attack: T1059.007
+    if:
+      type: text
+      regex: '\b(node|nodejs)\s+-e\s+.{0,140}(exec|spawn)(Sync)?\s*\(\s*[`"''\[]'
+
+composite_rules:
+  # --- aggregator: any obfuscation transform under node -e ------------------
+  - id: node-e-decode-transform
+    desc: Any node -e decode/reflective transform
+    crit: component
+    any:
+      - id: node-e-buffer-decode
+      - id: node-e-charcode-decode
+      - id: node-e-atob-decode
+      - id: node-e-reverse-replace
+      - id: node-e-hex-escape-string
+  - id: node-e-any-sink
+    desc: Any node -e exec/eval sink
+    crit: component
+    any:
+      - id: node-e-exec-sink
+      - id: node-e-eval-sink
+
+  # === HOSTILE: obfuscated transform feeds a node -e exec/eval sink =========
+  # Covers 01 hex, 02 base64, 03 reverse, 04 bracket, 05 charcode, 06 replace,
+  # 09 hex-escapes(via buffer/atob), 13 unescape, 14 atob, 15 object-keys.
+  - id: node-e-obfuscated-dropper
+    desc: Obfuscated node -e payload feeds exec sink
+    crit: hostile
+    attack: T1059.007
+    near_bytes: 256
+    all:
+      - id: node-e-decode-transform
+      - id: node-e-any-sink
+
+  # === HOSTILE: reflective bracket/computed-key child_process exec ==========
+  # Covers 04 global["require"](...)["execSync"], 15 cp[Object.keys(...).find].
+  # The reflective callee + child_process reference is the obfuscation; no
+  # literal exec( token appears, so this path is separate from the sink one.
+  - id: node-e-reflective-dropper
+    desc: Reflective child_process exec via node -e
+    crit: hostile
+    attack: T1059.007
+    near_bytes: 256
+    all:
+      - id: node-e-reflective-callee
+      - id: node-e-child-process-ref
+
+  # === HOSTILE: eval/new Function string-split execution ====================
+  # Covers 08 eval('...'+'...'), 10 new Function('...')() — the dynamic-eval
+  # sink plus the child_process reference is the obfuscation (the command
+  # string is assembled at runtime inside the eval/Function body).
+  - id: node-e-eval-construct-dropper
+    desc: node -e eval/Function dynamic execution
+    crit: hostile
+    attack: T1027
+    near_bytes: 256
+    all:
+      - id: node-e-eval-sink
+      - id: node-e-child-process-ref

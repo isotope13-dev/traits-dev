@@ -1,0 +1,156 @@
+# Obfuscated `ruby -e` dropper one-liners.
+# A decode/encode/reflective transform feeds a system/exec/backtick shell sink.
+# Atoms are for:[shell] text anchored on `ruby -e` (interpreter+flag prefix is
+# the FP gate) so they match the wrapper even when the embedded-Ruby pass is
+# unavailable. An optional `-require`/`-r`/`-M` module flag may precede `-e`.
+# MBC: E1027 (Obfuscated Files) / B0030 (C2 exec).
+defaults:
+  platforms: [linux, macos, windows]
+  for: [shell]
+  conf: 0.85
+
+traits:
+  # --- ruby -e exec sinks ---------------------------------------------------
+  - id: ruby-e-exec-sink
+    desc: ruby -e system/exec shell sink
+    crit: notable
+    attack: T1059.004
+    if:
+      type: text
+      regex: '\bruby\s+([-''"]\S*\s+){0,3}-e\s+.{0,220}\b(system|exec|Kernel\.send)\b'
+  - id: ruby-e-backtick-sink
+    desc: ruby -e backtick or %x exec sink
+    crit: notable
+    attack: T1059.004
+    if:
+      type: text
+      regex: '\bruby\s+([-''"]\S*\s+){0,3}-e\s+.{0,200}(%x\(|`[^`]{0,80}`)'
+  - id: ruby-e-eval-sink
+    desc: ruby -e eval/send dynamic sink
+    crit: notable
+    attack: T1027
+    if:
+      type: text
+      regex: '\bruby\s+([-''"]\S*\s+){0,3}-e\s+.{0,220}(\beval\s*\(|Kernel\.send\s*\()'
+
+  # --- ruby -e decode / encoding transforms ---------------------------------
+  - id: ruby-e-pack-decode
+    desc: ruby -e pack hex/byte array decode
+    crit: notable
+    attack: T1140
+    if:
+      type: text
+      regex: '\bruby\s+([-''"]\S*\s+){0,3}-e\s+.{0,220}\.pack\s*\(\s*["''][Hc]'
+  - id: ruby-e-base64-decode
+    desc: ruby -e Base64.decode64 decode
+    crit: notable
+    attack: T1140
+    if:
+      type: text
+      regex: '\bruby\s+([-''"]\S*\s+){0,3}-e\s+.{0,220}(Base64\.decode64|decode64)\s*\('
+  - id: ruby-e-reverse-gsub
+    desc: ruby -e reverse or junk-gsub decode
+    crit: notable
+    attack: T1027
+    if:
+      type: text
+      regex: '\bruby\s+([-''"]\S*\s+){0,3}-e\s+.{0,220}(\.reverse\b|\.gsub\s*\(\s*["''][^"'']{1,3})'
+  - id: ruby-e-tr-rot
+    desc: ruby -e tr rot13 substitution decode
+    crit: notable
+    attack: T1027
+    if:
+      type: text
+      regex: '\bruby\s+([-''"]\S*\s+){0,3}-e\s+.{0,220}\.tr\s*\(\s*["''][A-Za-z-]{3,}'
+  - id: ruby-e-hex-escape-string
+    desc: ruby -e hex-escape encoded string arg
+    crit: notable
+    attack: T1027
+    if:
+      type: text
+      regex: '\bruby\s+([-''"]\S*\s+){0,3}-e\s+.{0,220}(\\x[0-9a-f]{2}){3}'
+
+  # --- ruby -e reflective callee --------------------------------------------
+  - id: ruby-e-reflective-send
+    desc: ruby -e Kernel.send reflective dispatch
+    crit: notable
+    attack: T1027
+    if:
+      type: text
+      regex: '\bruby\s+([-''"]\S*\s+){0,3}-e\s+.{0,220}\.send\s*\(\s*:'
+  - id: ruby-e-string-split-concat
+    desc: ruby -e split keyword string concat
+    crit: notable
+    attack: T1027
+    if:
+      type: text
+      regex: '\bruby\s+([-''"]\S*\s+){0,3}-e\s+.{0,220}["''][a-z]{2,4}["'']\s*\+\s*["'']'
+
+  # --- cleartext exec (no obfuscation) --------------------------------------
+  # Suspicious (not hostile): cleartext command run via ruby -e. The ruby -e
+  # prefix is the FP gate; flagging hostile would FP on benign one-liners.
+  - id: ruby-e-cleartext-exec
+    desc: Cleartext command run via ruby -e
+    crit: suspicious
+    attack: T1059.004
+    if:
+      type: text
+      regex: '\bruby\s+([-''"]\S*\s+){0,3}-e\s+.{0,120}((system|exec)[\s(*"]|%x\(|`\w)'
+
+composite_rules:
+  # --- aggregator: any obfuscation transform under ruby -e ------------------
+  - id: ruby-e-decode-transform
+    desc: Any ruby -e decode/reflective transform
+    crit: component
+    any:
+      - id: ruby-e-pack-decode
+      - id: ruby-e-base64-decode
+      - id: ruby-e-reverse-gsub
+      - id: ruby-e-tr-rot
+      - id: ruby-e-hex-escape-string
+  - id: ruby-e-any-sink
+    desc: Any ruby -e exec/backtick sink
+    crit: component
+    any:
+      - id: ruby-e-exec-sink
+      - id: ruby-e-backtick-sink
+
+  # === HOSTILE: obfuscated transform feeds a ruby -e shell sink =============
+  # Covers 01 pack-hex, 02 pack-byte, 03 reverse, 04 base64, 09 gsub, 10 tr,
+  # 14 hex-escape.
+  - id: ruby-e-obfuscated-dropper
+    desc: Obfuscated ruby -e payload feeds shell sink
+    crit: hostile
+    attack: T1059.004
+    near_bytes: 256
+    all:
+      - id: ruby-e-decode-transform
+      - id: ruby-e-any-sink
+
+  # === HOSTILE: reflective send / eval string-split execution ===============
+  # Covers 05 Kernel.send(:sySstem...), 11 eval("sys"+"tem(...)").
+  # 05 Kernel.send(:sySstem.to_s.delete("S"), ...): reflective dispatch + a
+  # system/exec/Kernel.send sink token. The send-to-symbol IS the obfuscation.
+  - id: ruby-e-reflective-dropper
+    desc: Reflective send exec via ruby -e
+    crit: hostile
+    attack: T1027
+    near_bytes: 256
+    all:
+      - id: ruby-e-reflective-send
+      - id: ruby-e-exec-sink
+  # 11 eval("sys"+"tem(...)"): eval of a runtime-assembled command string. The
+  # eval driver plus the split-keyword string concat is the obfuscation.
+  - id: ruby-e-eval-dropper
+    desc: ruby -e eval dynamic execution
+    crit: hostile
+    attack: T1027
+    near_bytes: 256
+    all:
+      - id: ruby-e-eval-sink
+      - id: ruby-e-string-split-concat
+
+  # === SUSPICIOUS: cleartext command via ruby -e (no obfuscation) ===========
+  # Covers 06 %x, 07 backtick, 08 exec, 12 splat, 13 format, 15 interpolation.
+  # The suspicious tier is carried directly by the ruby-e-cleartext-exec atom
+  # (no composite needed — flagging hostile would FP on benign one-liners).

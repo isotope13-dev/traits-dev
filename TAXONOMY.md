@@ -1016,6 +1016,9 @@ metadata/
 │   ├── magic/             #   Magic byte signatures
 │   └── text/              #   Text/data format identification (JSON, makefile)
 ├── hardening/             # Security hardening features (sandbox, seccomp, pledge)
+├── image/                 # Image-specific neutral measurements
+│   └── metrics/           #   Pixel/channel/statistical image measurements
+│                          #   File identity remains under file/{magic,extension}
 ├── import/                # Dependencies/imports (auto-generated)
 │   ├── python/ npm/ ruby/ java/ go/ rust/ c/
 │   └── macho/ elf/ pe/   #   Binary format imports

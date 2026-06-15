@@ -1,0 +1,176 @@
+# Obfuscated python -c dropper one-liners.
+# Decoder/encoding transform feeding a shell-exec sink, plus reflective
+# __import__ execution. Atoms are text-based for:[python,pyc] so they match
+# the embedded python extracted from a `python -c "..."` shell invocation.
+# MBC: E1027 (Obfuscated Files) / E1059.006 (Python exec)
+defaults:
+  platforms: [linux, macos, windows]
+  for: [python, pyc]
+  conf: 0.85
+
+traits:
+  # --- shell-exec sinks (text form, reliable on obfuscated one-liners) ----
+  - id: py-system-sink
+    desc: Python os.system shell-exec sink
+    crit: notable
+    attack: T1059.006
+    if:
+      type: text
+      regex: '\bos\.(system|popen)\s*\('
+  - id: py-dynamic-eval-sink
+    desc: Python eval/exec dynamic sink
+    crit: notable
+    if:
+      type: text
+      regex: '\b(eval|exec)\s*\('
+  # python-specific reflective tokens, safe to also match in shell one-liners
+  - id: py-c-reflective-exec
+    desc: python -c eval/exec on import string
+    crit: notable
+    for: [shell]
+    attack: T1027
+    if:
+      type: text
+      regex: '\bpython[23]?\s+-c\s+.{0,200}(eval|exec)\s*\(.{0,40}(__import__|os)'
+
+  # --- decoder / encoding transforms ----------------------------------------
+  - id: py-hex-decode
+    desc: Python hex byte decode transform
+    crit: notable
+    attack: T1140
+    if:
+      type: text
+      regex: '\b(bytes\.fromhex|unhexlify)\s*\('
+  - id: py-replace-stuffing
+    desc: junk-char .replace stuffing removal
+    crit: notable
+    attack: T1027
+    if:
+      type: text
+      regex: '\.replace\s*\(\s*[''"][^''")]{1,3}[''"]\s*,\s*[''"][''"]\s*\)'
+  - id: py-chr-join-decode
+    desc: chr-join character assembly transform
+    crit: notable
+    attack: T1027
+    if:
+      type: text
+      regex: 'join\s*\(\s*chr\s*\(|chr\s*\(\s*\w{1,4}\s*\)\s+for'
+
+  # --- shell-anchored decoder / sink (for when embedded-python pass is off) -
+  # python -c is the FP gate: these decoder tokens are python-specific and the
+  # one-liner context excludes real .py files.
+  - id: py-c-decoder-transform
+    desc: python -c decode/encoding transform
+    crit: notable
+    for: [shell]
+    attack: T1140
+    if:
+      type: text
+      regex: '\bpython[23]?\s+-c\s+.{0,200}(fromhex|b64decode|rot[_-]?13|\[::\s*-\s*1\])'
+  - id: py-c-decoder-stuffing
+    desc: python -c chr-join or replace stuffing
+    crit: notable
+    for: [shell]
+    attack: T1027
+    if:
+      type: text
+      regex: '\bpython[23]?\s+-c\s+.{0,200}(join\s*\(\s*chr|\.replace\s*\([^,)]{1,6},\s*[''"][''"])'
+  - id: py-c-exec-sink
+    desc: python -c os.system/popen exec sink
+    crit: notable
+    for: [shell]
+    attack: T1059.006
+    if:
+      type: text
+      regex: '\bpython[23]?\s+-c\s+.{0,200}(os\.(system|popen)|subprocess\.\w{1,6}\()'
+
+  # --- reflective import execution (shell -c one-liner context) -------------
+  # Anchored on python -c so the python-specific __import__ reflection token is
+  # FP-safe even when surfaced as for:[shell] (the obfuscated dropper case).
+  - id: py-c-reflective-import
+    desc: python -c reflective __import__ call
+    crit: notable
+    for: [shell]
+    attack: T1027
+    if:
+      type: text
+      regex: '\bpython[23]?\s+-c\s+.{0,200}__import__\s*\(\s*\\?[''"][a-z]{1,12}'
+  - id: py-c-reflective-callee
+    desc: getattr/walrus/lambda reflective callee
+    crit: notable
+    for: [shell]
+    attack: T1027
+    if:
+      type: text
+      regex: '\bpython[23]?\s+-c\s+.{0,200}(getattr\s*\(|:=\s*__import__|lambda\s+\w{1,6}\s*:)'
+
+composite_rules:
+  # --- aggregators (flatten the any-of legs for the all-of composites) ------
+  - id: py-decode-transform
+    desc: Any python decode/encoding transform
+    crit: component
+    any:
+      - id: py-hex-decode
+      - id: py-replace-stuffing
+      - id: py-chr-join-decode
+      - id: micro-behaviors/data/decode/base64::b64decode-string
+      - id: objectives/anti-static/obfuscation/string/reverse::reverse-slice-operator
+      - id: objectives/anti-static/obfuscation/encoding/arithmetic::codecs-rot13-decode
+  - id: py-shell-exec-sink
+    desc: Any python shell-exec sink
+    crit: component
+    any:
+      - id: py-system-sink
+      - id: micro-behaviors/process/create/subprocess::shell-true
+      - id: micro-behaviors/process/create/subprocess::shell-true-call
+      - id: py-dynamic-eval-sink
+
+  # === HOSTILE: decoder/encoding transform feeding a shell-exec sink ========
+  # Covers 01 hex, 03 base64, 04 chr-join, 05 reverse, 06 replace, 10 rot13,
+  # 14 exec+base64. near_bytes keeps decoder+sink adjacent (one-liner scope).
+  - id: python-decode-shell-exec-dropper
+    desc: Decoded payload feeds shell-exec sink
+    crit: hostile
+    attack: T1059.006
+    near_bytes: 256
+    all:
+      - id: py-decode-transform
+      - id: py-shell-exec-sink
+
+  # Shell-anchored equivalent: catches one-liners whose embedded-python pass is
+  # not extracted (rot13/hex args where os.system isn't a recognized call).
+  # Covers 01,03,04,05,06,10. python -c gate keeps real .py files out.
+  - id: py-c-decode-any
+    desc: Any python -c decode transform
+    crit: component
+    for: [shell]
+    any:
+      - id: py-c-decoder-transform
+      - id: py-c-decoder-stuffing
+  - id: python-c-decode-exec-dropper
+    desc: python -c decode feeds shell-exec sink
+    crit: hostile
+    for: [shell]
+    attack: T1059.006
+    all:
+      - id: py-c-decode-any
+      - id: py-c-exec-sink
+
+  # === HOSTILE: reflective __import__ execution in python -c ================
+  # Covers 02 getattr, 07 eval-of-import, 08 walrus, 09 lambda. All shell-level
+  # python -c one-liners; the reflective-import token alone is the obfuscation.
+  - id: py-c-reflective-driver
+    desc: Reflective callee or eval/exec driver
+    crit: component
+    for: [shell]
+    any:
+      - id: py-c-reflective-callee
+      - id: py-c-reflective-exec
+  - id: python-reflective-import-exec
+    desc: Reflective import drives execution
+    crit: hostile
+    for: [shell]
+    attack: T1059.006
+    all:
+      - id: py-c-reflective-import
+      - id: py-c-reflective-driver

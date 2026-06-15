@@ -1,0 +1,74 @@
+# Sudo credential interception. A standalone (non-sudo) binary that wraps the
+# real sudo behind a pseudoterminal and/or re-exec to capture the entered
+# password and persist it to a log file. Real sudo also allocates a PTY, toggles
+# echo and execs the target, so every hostile composite here is gated on the two
+# malicious differentiators real sudo never has together: it re-execs the *real
+# sudo binary as a child* (a wrapper) AND writes a credential log file. Anchored
+# on symbols + .rodata strings (debug-section strings are not matchable on ELF).
+defaults:
+  platforms: [linux, macos]
+  for: [elf, macho]
+  attack: T1056.002
+traits:
+  - id: sudo-binary-exec-target
+    desc: References real sudo binary path to wrap
+    crit: notable
+    conf: 0.6
+    if:
+      type: text
+      regex: '/(usr/)?s?bin/sudo(\.real)?'
+  - id: execvp-symbol
+    desc: execvp child-exec symbol
+    crit: component
+    conf: 0.6
+    if:
+      type: symbol
+      exact: execvp
+  - id: sudo-password-prompt-text
+    desc: sudo password prompt text
+    crit: component
+    conf: 0.82
+    if:
+      type: text
+      regex: '(\[?sudo\]?\s+password|do\]\s+password|sudo: .{0,80}password|Sorry, try again)'
+composite_rules:
+  # PTY-MITM angle: pseudoterminal + echo control around a wrapped real sudo,
+  # persisting the captured password to a credential log.
+  - id: pty-sudo-credential-wrapper
+    desc: PTY-wraps sudo and logs the password
+    crit: hostile
+    conf: 0.95
+    mbc: B0042
+    all:
+      - id: micro-behaviors/process/tty/pty::posix-openpt
+      - id: micro-behaviors/process/tty/pty::tcsetattr
+      - id: sudo-binary-exec-target
+      - id: objectives/exfiltration/stealer/credential/sudo-log::credential-log-filename
+  # Re-exec angle: proxies the real sudo via exec while logging the password.
+  - id: sudo-proxy-exec-credential-logger
+    desc: Proxies sudo via exec and logs password
+    crit: hostile
+    conf: 0.95
+    mbc: B0042
+    all:
+      - id: sudo-binary-exec-target
+      - id: objectives/exfiltration/stealer/credential/sudo-log::credential-log-filename
+      - id: micro-behaviors/process/tty/pty::tcsetattr
+    any:
+      - id: execvp-symbol
+      - id: micro-behaviors/process/create/direct::posix-spawnp-import
+  # Pipe fallback angle: watches sudo output for the password prompt and treats
+  # the next line read over stdout/stderr pipes as the captured credential.
+  - id: sudo-pipe-credential-logger
+    desc: Captures sudo password from pipe
+    crit: hostile
+    conf: 0.95
+    mbc: B0042
+    all:
+      - id: sudo-binary-exec-target
+      - id: objectives/exfiltration/stealer/credential/sudo-log::credential-log-filename
+      - id: sudo-password-prompt-text
+      - id: micro-behaviors/process/create/direct::child-stdio-pipe-redirect
+    any:
+      - id: execvp-symbol
+      - id: micro-behaviors/process/create/direct::posix-spawnp-import

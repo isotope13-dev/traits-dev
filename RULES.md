@@ -192,7 +192,7 @@ defaults:
 | `function` | Internal functions / source call targets | `exact`, `substr`, `regex` | `platforms`, `is` |
 | `hex` | Byte patterns (wildcards always extracted) | pattern string | count, density, `offset`, `offset_range`, `arch` clamped in fat binaries |
 | `encoded` | **All decoded strings** | `exact`, `substr`, `regex`, `word` | count, density, location, `encoding`, `case_insensitive`, `is` |
-| `value` | Residual structured values / manifest data | `exact`, `substr`, `regex`, `eq`, `ne` | `path` (accepts `<filename>::` sibling prefix), `exists`, `size_min`, `size_max`, `case_insensitive` |
+| `value` | Residual structured values / manifest data | `exact`, `substr`, `regex`, `eq`, `ne` | `path` (accepts `<filename>::` sibling prefix), `match` (`any`/`all` quantifier for `eq`/`ne` over arrays), `exists`, `size_min`, `size_max`, `case_insensitive` |
 | `basename` | Filename | `exact`, `substr`, `regex` | `case_insensitive` |
 | ~~`string_literal`~~ | *(renamed — use `literal`; old spelling kept as serde alias)* | | |
 | ~~`ast`~~ | *(renamed — use `tree-sitter`; old spelling kept as serde alias)* | | |
@@ -1115,18 +1115,41 @@ a path-vs-literal check), use `eq:` or `ne:`. The right-hand side is
 - type: value
   path: whl.filename.name_prefix
   eq: METADATA::Name
+
+# A -bin package's source repo owner differs from its declared upstream:
+# url owner (scalar) compared against the array of source owners.
+- type: value
+  path: pkg.url_github_owner
+  ne: pkg.source_github_owners
+  match: any
 ```
 
-Defaults: case-insensitive, whitespace-trimmed. There are no opt-out
+Defaults: case-insensitive, whitespace-trimmed. There are no case opt-out
 knobs — if you need strict-case literal matching, write the literal
-on the right with `exact:` instead. Comparison is scalar-only
-(strings, numbers, booleans). Containers and `null` silently produce
-no match.
+on the right with `exact:` instead. Scalar values (strings, numbers,
+booleans) compare directly; **objects and `null` never match**.
 
-When either side fails to resolve (path absent in this file, or the
-named sibling isn't in the archive), the matcher reports no match —
-treat missing values like missing string evidence. To require both
-sides to exist *and* differ, compose with `exists:` checks in an
+**Arrays compare element-wise.** When a path resolves to an array — a bare
+array path (`pkg.source_github_owners`) or a `[*]` wildcard
+(`content_scripts[*].matches`) — its scalar elements are each compared, on
+either side. `match:` is the quantifier over the right-hand values:
+
+| `match` | `eq` fires when… | `ne` fires when… |
+|---------|------------------|------------------|
+| `any` (default) | some right value equals a left value | some right value differs from a left value |
+| `all` | every right value equals a left value | every right value differs from a left value |
+
+So `ne: arr match: any` is "differs from **some** element" (e.g. a foreign
+source owner is present); `ne: arr match: all` is "differs from **every**
+element" (the left value is absent from the set). The scalar-vs-scalar case
+has one value per side, so both quantifiers reduce to a plain compare —
+`match:` only matters when a side is an array. Objects/`null` elements within
+an array contribute nothing.
+
+When either side fails to resolve (path absent in this file, the named sibling
+isn't in the archive, or it resolves only to objects/`null`), the matcher
+reports no match — treat missing values like missing string evidence. To
+require both sides to exist *and* differ, compose with `exists:` checks in an
 `all:` composite.
 
 ### Collection Size Constraints
@@ -1205,6 +1228,27 @@ with its decoded named-bit subtree in values (e.g. `pe.dll_characteristics.*`,
 `macho.cs_flags.*`).
 
 ## Validation & Auto-Fix
+
+### Forward compatibility (newer fields, older binaries)
+
+A rule that uses a condition field, type, or enum value added in a newer release
+will fail to parse on a build that predates it. The two contexts handle that
+differently, by design:
+
+- **At analysis time** (`cleave <file>`, the `scan` pipeline, server) the
+  offending **file is skipped with a warning** — "skipped N trait file(s) this
+  build of `<prog>` could not parse; … upgrade `<prog>`" — and the rest of the
+  rule set loads and runs normally. Forward-incompatible rules degrade to
+  "inert until upgraded" rather than taking the whole corpus down. (This can
+  only help builds from this change forward; already-released older binaries
+  still hard-fail.)
+- **At validation time** (`cleave validate` / `CLEAVE_VALIDATE=1`) the same
+  parse failure is **fatal** — authoring must never ship a malformed or
+  typo'd rule. Per-file granularity: one unparseable file fails validation.
+
+Practical consequence: it's safe to publish a rule pack that uses a new field;
+older analyzers skip just those rules instead of erroring out. Bump the analyzer
+when you need those rules to actually fire.
 
 ### Regex Constraints
 

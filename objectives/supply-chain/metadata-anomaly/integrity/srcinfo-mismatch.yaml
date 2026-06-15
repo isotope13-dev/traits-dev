@@ -1,0 +1,75 @@
+# PKGBUILD ↔ .SRCINFO metadata divergence (T1195.002).
+#
+# `.SRCINFO` is machine-generated from the PKGBUILD (`makepkg --printsrcinfo`)
+# and is what the AUR web UI and review tooling display — but pacman builds from
+# the PKGBUILD. When the two disagree, the metadata that was reviewed is not the
+# metadata that builds.
+#
+# Discriminating benign staleness from attack matters: a maintainer who bumps the
+# version but forgets to regenerate .SRCINFO shifts pkgver, source AND checksums
+# together (internally consistent, just old). The malicious shape is the
+# opposite — the .SRCINFO keeps the reviewed version while the PKGBUILD swaps the
+# source bytes: SAME pkgver, DIFFERENT checksum. So the hostile rule pairs a
+# checksum mismatch with a pkgver *match*.
+#
+# filefacts parses both into a shared pkg.* value tree (the checksum digest is
+# normalized — sorted, deduped, SKIP excluded — and never $-expanded, so it is
+# directly comparable; raw source=() is NOT, because the PKGBUILD keeps
+# $pkgver/$pkgname unexpanded while .SRCINFO expands them). The trait is
+# archive-scoped (it evaluates on the package tarball that holds both files) and
+# reaches each member's value tree through the `<filename>::` sibling prefix;
+# every comparison no-ops when either side is absent, so a package shipping no
+# .SRCINFO never fires.
+defaults:
+  platforms: [linux]
+  for: [tar, archives]
+  attack: T1195.002
+
+traits:
+  - id: srcinfo-checksum-mismatch
+    desc: PKGBUILD checksums differ from .SRCINFO
+    # AUR sources are .tar.gz; `tar` keeps this under the type:value 3-type cap.
+    for: [tar]
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: value
+      path: PKGBUILD::pkg.checksums
+      ne: .SRCINFO::pkg.checksums
+
+  - id: srcinfo-pkgver-match
+    # Building block: the PKGBUILD and .SRCINFO agree on the version. Combined
+    # with a checksum mismatch this means "same advertised version, different
+    # bytes" — the silent-swap discriminator.
+    desc: PKGBUILD pkgver matches .SRCINFO
+    for: [tar]
+    crit: component
+    conf: 0.6
+    if:
+      type: value
+      path: PKGBUILD::pkg.pkgver
+      eq: .SRCINFO::pkg.pkgver
+
+  - id: srcinfo-pkgbase-mismatch
+    # pkgbase is the package identity; a legitimate regen never changes it.
+    desc: PKGBUILD pkgbase differs from .SRCINFO
+    for: [tar]
+    crit: suspicious
+    conf: 0.85
+    if:
+      type: value
+      path: PKGBUILD::pkg.pkgbase
+      ne: .SRCINFO::pkg.pkgbase
+
+composite_rules:
+  - id: srcinfo-silent-payload-swap
+    # Same version advertised, different source checksum built: the reviewed
+    # .SRCINFO does not describe the bytes the PKGBUILD fetches. This is the
+    # bait-and-switch / review-evasion shape, distinct from a benign stale regen
+    # (which would also shift pkgver).
+    desc: PKGBUILD swaps source bytes behind reviewed .SRCINFO
+    crit: hostile
+    conf: 0.92
+    all:
+      - id: srcinfo-checksum-mismatch
+      - id: srcinfo-pkgver-match

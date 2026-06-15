@@ -1,0 +1,144 @@
+# Obfuscated `perl -e` dropper one-liners.
+# A decode/encode transform feeds a system/exec/backtick/qx shell sink.
+# Atoms are for:[shell] text anchored on `perl -e` (interpreter+flag prefix is
+# the FP gate) so they match the wrapper even when the embedded-Perl pass is
+# unavailable. An optional `-M`/`-m` module flag may precede `-e`.
+# MBC: E1027 (Obfuscated Files) / B0030 (C2 exec).
+defaults:
+  platforms: [linux, macos, windows]
+  for: [shell]
+  conf: 0.85
+
+traits:
+  # --- perl -e exec sinks ---------------------------------------------------
+  - id: perl-e-exec-sink
+    desc: perl -e system/exec shell sink
+    crit: notable
+    attack: T1059.004
+    if:
+      type: text
+      regex: '\bperl\s+([-''"]\S*\s+){0,3}-e\s+.{0,220}\b(system|exec)\s*\('
+  - id: perl-e-backtick-sink
+    desc: perl -e backtick or qx exec sink
+    crit: notable
+    attack: T1059.004
+    if:
+      type: text
+      regex: '\bperl\s+([-''"]\S*\s+){0,3}-e\s+.{0,200}(qx\(|`[^`]{0,80}`)'
+  - id: perl-e-eval-sink
+    desc: perl -e eval dynamic sink
+    crit: notable
+    attack: T1027
+    if:
+      type: text
+      regex: '\bperl\s+([-''"]\S*\s+){0,3}-e\s+.{0,220}\beval\s+["'']'
+
+  # --- perl -e decode / encoding transforms ---------------------------------
+  - id: perl-e-pack-decode
+    desc: perl -e pack hex byte decode
+    crit: notable
+    attack: T1140
+    if:
+      type: text
+      regex: '\bperl\s+([-''"]\S*\s+){0,3}-e\s+.{0,220}pack\s*\(\s*["'']H'
+  - id: perl-e-chr-map-decode
+    desc: perl -e chr or map char decode
+    crit: notable
+    attack: T1027
+    if:
+      type: text
+      regex: '\bperl\s+([-''"]\S*\s+){0,3}-e\s+.{0,220}(chr\s*\(\s*\d|map\s*\{\s*chr)'
+  - id: perl-e-base64-decode
+    desc: perl -e decode_base64 decode
+    crit: notable
+    attack: T1140
+    if:
+      type: text
+      regex: '\bperl\s+([-''"]\S*\s+){0,3}-e\s+.{0,220}decode_base64\s*\('
+  - id: perl-e-reverse-subst
+    desc: perl -e reverse or junk s/// decode
+    crit: notable
+    attack: T1027
+    if:
+      type: text
+      regex: '\bperl\s+([-''"]\S*\s+){0,3}-e\s+.{0,220}(\breverse\b|s/[^/]{1,3}//g)'
+  - id: perl-e-tr-rot
+    desc: perl -e tr rot13 substitution decode
+    crit: notable
+    attack: T1027
+    if:
+      type: text
+      regex: '\bperl\s+([-''"]\S*\s+){0,3}-e\s+.{0,220}tr/[A-Za-z-]{3,}/'
+  - id: perl-e-split-decode
+    desc: perl -e split-on-delimiter deobfuscation
+    crit: notable
+    attack: T1027
+    if:
+      type: text
+      regex: '\bperl\s+([-''"]\S*\s+){0,3}-e\s+.{0,220}split\s*\(\s*["''][^"'']'
+  - id: perl-e-hex-escape-string
+    desc: perl -e hex-escape encoded string arg
+    crit: notable
+    attack: T1027
+    if:
+      type: text
+      regex: '\bperl\s+([-''"]\S*\s+){0,3}-e\s+.{0,220}(\\x[0-9a-f]{2}){3}'
+
+  # --- cleartext exec (no obfuscation) --------------------------------------
+  # Suspicious (not hostile): cleartext command run via perl -e. The perl -e
+  # prefix is the FP gate; flagging hostile would FP on benign one-liners.
+  - id: perl-e-cleartext-exec
+    desc: Cleartext command run via perl -e
+    crit: suspicious
+    attack: T1059.004
+    if:
+      type: text
+      regex: '\bperl\s+([-''"]\S*\s+){0,3}-e\s+.{0,120}((system|exec)\s*\(|qx\(|`\w)'
+
+composite_rules:
+  # --- aggregator: any obfuscation transform under perl -e ------------------
+  - id: perl-e-decode-transform
+    desc: Any perl -e decode/deobfuscation transform
+    crit: component
+    any:
+      - id: perl-e-pack-decode
+      - id: perl-e-chr-map-decode
+      - id: perl-e-base64-decode
+      - id: perl-e-reverse-subst
+      - id: perl-e-tr-rot
+      - id: perl-e-split-decode
+      - id: perl-e-hex-escape-string
+  - id: perl-e-any-sink
+    desc: Any perl -e exec/backtick sink
+    crit: component
+    any:
+      - id: perl-e-exec-sink
+      - id: perl-e-backtick-sink
+
+  # === HOSTILE: obfuscated transform feeds a perl -e shell sink =============
+  # Covers 01 pack-hex, 02 chr, 03 reverse, 04 base64, 06 s///, 11 tr-rot,
+  # 13 map-chr, 14 hex-escape, 15 split-join.
+  - id: perl-e-obfuscated-dropper
+    desc: Obfuscated perl -e payload feeds shell sink
+    crit: hostile
+    attack: T1059.004
+    near_bytes: 256
+    all:
+      - id: perl-e-decode-transform
+      - id: perl-e-any-sink
+
+  # === HOSTILE: eval of a runtime-assembled command string ==================
+  # Covers 10 eval "system(...)": eval-string driver plus a system/exec sink.
+  - id: perl-e-eval-dropper
+    desc: perl -e eval dynamic execution
+    crit: hostile
+    attack: T1027
+    near_bytes: 256
+    all:
+      - id: perl-e-eval-sink
+      - id: perl-e-exec-sink
+
+  # === SUSPICIOUS: cleartext command via perl -e (no obfuscation) ===========
+  # Covers 05 join, 07 string-multiply, 08 exec, 09 backtick, 12 qx.
+  # The suspicious tier is carried directly by the perl-e-cleartext-exec atom
+  # (no composite needed — flagging hostile would FP on benign one-liners).

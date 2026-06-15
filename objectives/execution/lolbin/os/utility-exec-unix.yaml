@@ -1,0 +1,79 @@
+# GTFOBins: benign Unix utilities coerced into executing arbitrary commands
+# through a side-channel flag. Each utility (tar, cpio, split, gdb, ssh,
+# nsenter, code) has a legitimate primary purpose; the flags below exist for
+# real features (post-rotation hooks, remote transports, per-chunk filters) but
+# are a standard offensive technique for running a command where a scanner only
+# expects an archive/transfer/debug step. Patterns are anchored on the abuse
+# flag AND — where the flag itself has benign uses (split --filter compressors,
+# ssh ProxyCommand jump-hosts) — additionally require a shell payload, so a
+# normal `split --filter='xz > $FILE'` or `ProxyCommand nc %h %p` does not fire.
+defaults:
+  platforms: [unix]
+  for: [shell]
+  attack: T1218
+  mbc: B0023
+  crit: suspicious
+  conf: 0.85
+
+traits:
+  # tar --checkpoint-action=exec runs a command at each checkpoint record.
+  # There is no benign reason to attach `exec=` to a checkpoint — it is the
+  # GTFOBins archive-to-command primitive.
+- id: tar-checkpoint-exec
+  desc: tar checkpoint action executes a command
+  conf: 0.9
+  if:
+    type: text
+    regex: '\btar\b.{0,60}--checkpoint-action[= ]exec'
+
+  # cpio --rsh-command names the program cpio invokes for "remote" copies;
+  # pointing it at an arbitrary binary runs that binary. Rare in real use.
+- id: cpio-rsh-command
+  desc: cpio rsh-command runs an arbitrary program
+  if:
+    type: text
+    regex: '\bcpio\b.{0,50}--rsh-command[= ]'
+
+  # split --filter runs a shell command per output chunk — legitimately a
+  # compressor (`--filter='gzip > $FILE'`). Only the form that pipes a chunk
+  # into a shell interpreter is the command-execution abuse.
+- id: split-filter-shell
+  desc: split per-chunk filter spawns a shell
+  if:
+    type: text
+    regex: '\bsplit\b.{0,40}--filter=[^\n]{0,20}\b(ba)?sh\b'
+
+  # nsenter joins another process's namespaces; targeting PID 1's namespaces
+  # and dropping into a shell is the canonical container-escape one-liner.
+- id: nsenter-namespace-shell
+  desc: nsenter enters namespaces and spawns a shell
+  if:
+    type: text
+    regex: '\bnsenter\b.{0,60}\b(ba)?sh\b'
+
+  # gdb batch scripting (-ex) that reaches the python/shell/system bridges runs
+  # arbitrary code under cover of a debugging session.
+- id: gdb-batch-command-exec
+  desc: gdb batch script executes shell or python
+  if:
+    type: text
+    regex: '\bgdb\b.{0,40}-ex\s.{0,40}\b(python|shell|system)\b'
+
+  # ssh ProxyCommand runs locally to set up the connection. The benign forms
+  # are a netcat/`-W` transport; a shell as the ProxyCommand is command exec.
+- id: ssh-proxycommand-shell
+  desc: ssh ProxyCommand runs a shell
+  if:
+    type: text
+    regex: 'ProxyCommand[= ][^\n]{0,30}\b(ba)?sh\b'
+
+  # `code tunnel` / `--server-tunnel` turns a VS Code install into a persistent
+  # remote-access endpoint reachable from the vendor relay — remote access
+  # establishment, not local editing. Legitimate for developers, so notable.
+- id: vscode-remote-tunnel
+  desc: VS Code tunnel establishes remote access
+  crit: notable
+  conf: 0.8
+  if:
+    type: text
+    regex: '\bcode\s+(tunnel\b|.{0,20}--\S*tunnel)'
