@@ -259,6 +259,14 @@ micro-behaviors/
 │   ├── embedded/          #   Embedded content (certificates, EXIF, runtime)
 │   ├── text/              #   Text/string analysis (keywords, patterns)
 │   │   ├── language/      #     Human language detection (Chinese, Russian, etc.)
+│   │   ├── keywords/      #     Keyword/vocabulary detection, organized into TOPIC-COHERENT
+│   │   │                  #       subdirs (credential/, wallet/, exploit/, malware/, locale/...).
+│   │   │                  #       Each subdir must name the topic it detects. There is NO generic
+│   │   │                  #       catch-all bucket: do not create or keep `lexicon/`, `misc/`,
+│   │   │                  #       `general/`, or a grab-bag `traits.yaml` of unrelated words.
+│   │   │                  #       A keyword goes in the topic dir for WHAT IT DETECTS (a destructive
+│   │   │                  #       verb → impact/, an EDR product name → a security topic, a fake-AV
+│   │   │                  #       URL → communications/url/), even if a composite elsewhere uses it.
 │   ├── source/            #   Source code patterns (syntax, quality, identifiers)
 │   ├── string/            #   String operations (library, conversion)          C0019
 │   ├── buffer/            #   Buffer operations (offset writes, reassembly)
@@ -984,7 +992,16 @@ metadata/
 ├── binary/                # Binary internals (requires binary parsing)
 │   ├── anomaly/           #   Structural violations (format, timestamp, layout)
 │   ├── debug/             #   Debug symbols (PDB, DWARF)
-│   ├── framework/         #   Runtime/framework detection (.NET, Java, VB6, MFC)
+│   ├── framework/         #   Language-runtime / application-framework IDENTITY only
+│   │                      #     (.NET/CLR, Java, Flutter, VB6, MFC, Electron, Node-API
+│   │                      #     native addons, macOS app frameworks). Answers "what
+│   │                      #     runtime/framework was this binary built on or embeds."
+│   │                      #     NOT packers/protectors (ASProtect, UPX) → anti-static/pack/.
+│   │                      #     NOT specific apps/components (Windows Media Player, BITS)
+│   │                      #       → well-known/app/ or metadata/vendor/.
+│   │                      #     NOT generic structure facts ("is a binary") → file/ or layout/.
+│   │                      #     NOT UI-framework USAGE (tkinter, WinForms) → micro-behaviors/ui/framework/.
+│   │                      #     NOT the compiler/toolchain that produced it → metadata/lang/.
 │   ├── installer/         #   Installer framework detection
 │   │   ├── database/      #     Database-based (MSI, WiX)
 │   │   ├── script/        #     Script-based (NSIS, Inno Setup)
