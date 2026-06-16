@@ -995,10 +995,11 @@ metadata/
 │   ├── metrics/           #   Structural measurements (import/export/function
 │   │                      #     counts, entropy, ratios, size thresholds)
 │   ├── resource/          #   Embedded resource analysis
-│   ├── section/           #   Section analysis
-│   │   ├── content/       #     Section content patterns
-│   │   ├── metrics/       #     Section entropy, ratios, custom names
+│   ├── section/           #   Section analysis (neutral size/entropy/layout)
+│   │   ├── metrics/       #     Section entropy, ratios, layout, custom names
 │   │   └── names/         #     Section name detection
+│   │                      #   (no content/ — section *content* patterns describe
+│   │                      #    behavior → objectives/, or capability → micro-behaviors/)
 │   └── symbols/           #   Import/export symbol analysis
 ├── build/                 # Build systems, CI/CD (cmake, cargo, docker, jenkins)
 ├── document/              # Document internals (requires document parsing)

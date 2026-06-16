@@ -32,6 +32,7 @@ ARTIFACT_PACKAGES := \
 	$(ARTIFACTS)/sample.war \
 	$(ARTIFACTS)/sample.ear \
 	$(ARTIFACTS)/sample.apk \
+	$(ARTIFACTS)/sample-alpine.apk \
 	$(ARTIFACTS)/sample.aar \
 	$(ARTIFACTS)/sample.ipa \
 	$(ARTIFACTS)/sample.xpi \
@@ -40,10 +41,14 @@ ARTIFACT_PACKAGES := \
 	$(ARTIFACTS)/sample.vsix \
 	$(ARTIFACTS)/sample.whl \
 	$(ARTIFACTS)/sample.egg \
+	$(ARTIFACTS)/sample.conda \
 	$(ARTIFACTS)/sample.crx \
 	$(ARTIFACTS)/sample.crate \
 	$(ARTIFACTS)/sample.gem \
-	$(ARTIFACTS)/sample.deb
+	$(ARTIFACTS)/sample.deb \
+	$(ARTIFACTS)/sample.pkg \
+	$(ARTIFACTS)/sample.pkg.tar.zst \
+	$(ARTIFACTS)/sample.asar
 ARTIFACT_BYTECODE := $(ARTIFACTS)/sample.pyc $(ARTIFACTS)/sample.class
 ARTIFACT_DATA := $(ARTIFACTS)/sample.pkl $(ARTIFACTS)/sample.lnk
 
@@ -177,6 +182,9 @@ $(ARTIFACTS)/sample.apk: $(SCRIPTS)/make_zip_bundle.py $(OUT)/$(BINARY)-linux-38
 $(ARTIFACTS)/sample.aar: $(SCRIPTS)/make_zip_bundle.py $(ARTIFACTS)/sample.class
 	$(PY) $< aar $@ $(ARTIFACTS)/sample.class
 
+$(ARTIFACTS)/sample-alpine.apk: $(SCRIPTS)/make_tar_pkg.py
+	$(PY) $< alpine $@
+
 $(ARTIFACTS)/sample.ipa: $(SCRIPTS)/make_zip_bundle.py $(OUT)/$(BINARY)-darwin-arm64.xz
 	$(PY) $< ipa $@ $(OUT)/$(BINARY)-darwin-arm64.xz
 
@@ -198,6 +206,9 @@ $(ARTIFACTS)/sample.whl: $(SCRIPTS)/make_zip_bundle.py
 $(ARTIFACTS)/sample.egg: $(SCRIPTS)/make_zip_bundle.py
 	$(PY) $< egg $@
 
+$(ARTIFACTS)/sample.conda: $(SCRIPTS)/make_zip_bundle.py
+	$(PY) $< conda $@
+
 $(ARTIFACTS)/sample.crx: $(SCRIPTS)/make_crx.py
 	$(PY) $< $@
 
@@ -208,6 +219,19 @@ $(ARTIFACTS)/sample.gem: $(SCRIPTS)/make_gem.py
 	$(PY) $< $@
 
 $(ARTIFACTS)/sample.deb: $(SCRIPTS)/make_deb.py
+	$(PY) $< $@
+
+$(ARTIFACTS)/sample.pkg: $(SCRIPTS)/make_tar_pkg.py
+	$(PY) $< freebsd $@.tar
+	zstd -q -19 -f -o $@ $@.tar
+	rm -f $@.tar
+
+$(ARTIFACTS)/sample.pkg.tar.zst: $(SCRIPTS)/make_tar_pkg.py
+	$(PY) $< arch $@.tar
+	zstd -q -19 -f -o $@ $@.tar
+	rm -f $@.tar
+
+$(ARTIFACTS)/sample.asar: $(SCRIPTS)/make_asar.py
 	$(PY) $< $@
 
 $(ARTIFACTS)/sample.pyc: $(ARTIFACTS)/sample.py

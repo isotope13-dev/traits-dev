@@ -158,6 +158,23 @@ Version: 0.1.0
 Summary: A sample egg that does nothing.
 """
 
+CONDA_METADATA = """{
+  "conda_pkg_format_version": 2,
+  "package_metadata_version": 1
+}
+"""
+
+CONDA_INDEX = """{
+  "name": "sample",
+  "version": "0.1.0",
+  "build": "0",
+  "build_number": 0,
+  "subdir": "noarch",
+  "depends": [],
+  "license": "MIT"
+}
+"""
+
 
 def write(z: zipfile.ZipFile, name: str, data: str) -> None:
     z.writestr(name, data, compress_type=zipfile.ZIP_DEFLATED)
@@ -244,6 +261,13 @@ def build_egg(z: zipfile.ZipFile) -> None:
     write(z, "EGG-INFO/PKG-INFO", EGG_PKG_INFO)
 
 
+def build_conda(z: zipfile.ZipFile) -> None:
+    write(z, "metadata.json", CONDA_METADATA)
+    write(z, "info/index.json", CONDA_INDEX)
+    write(z, "info/files", "share/doc/sample/README\n")
+    write(z, "pkg/share/doc/sample/README", MESSAGE + "\n")
+
+
 def main(kind: str, target: Path, *extras: str) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as z:
@@ -271,6 +295,8 @@ def main(kind: str, target: Path, *extras: str) -> None:
             build_whl(z)
         elif kind == "egg":
             build_egg(z)
+        elif kind == "conda":
+            build_conda(z)
         else:
             raise SystemExit(f"unknown kind: {kind}")
 
