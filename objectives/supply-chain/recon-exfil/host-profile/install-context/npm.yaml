@@ -1,0 +1,182 @@
+defaults:
+  platforms:
+  - unix
+  - windows
+  for:
+  - package.json
+traits:
+- id: require-os-dup
+  desc: require('os') import
+  crit: component
+  conf: 0.7
+  for:
+  - javascript
+  if:
+    type: symbol
+    kind: import
+    exact: os
+- id: package-resolved-field
+  desc: Reads package ___resolved field
+  crit: notable
+  conf: 0.85
+  for:
+  - javascript
+  if:
+    type: text
+    substr: ".___resolved"
+- id: querystring-msg-field
+  desc: URL-encodes msg field for POST
+  crit: notable
+  conf: 0.85
+  for:
+  - javascript
+  if:
+    type: text
+    regex: 'querystring\.stringify\s*\(\s*\{\s*msg\s*:'
+- id: dirname-tracking-field
+  desc: Includes __dirname in tracking data
+  crit: notable
+  conf: 0.8
+  for:
+  - javascript
+  if:
+    type: text
+    regex: "\\bc\\s*:\\s*__dirname\\b"
+- id: local-stealer-import-1
+  desc: Local stealer import pattern 1
+  crit: suspicious
+  conf: 0.9
+  if:
+    type: text
+    regex: "(from|require\\()\\s*\\./stealer"
+- id: local-stealer-import-2
+  desc: Local stealer import pattern 2
+  crit: suspicious
+  conf: 0.85
+  if:
+    type: text
+    regex: "(from|require\\()\\s*\\./(logger|exfil)"
+composite_rules:
+- id: npm-install-tracking-object
+  desc: NPM hook builds install tracking object
+  crit: suspicious
+  conf: 0.93
+  attack: T1082
+  for:
+  - javascript
+  all:
+  - id: micro-behaviors/data/serialize/json::json-stringify-call
+  - id: micro-behaviors/fs/path/construct::script-dirname-ref
+  - id: micro-behaviors/fs/file/read::require-local-package-json
+  any:
+  - id: objectives/supply-chain/recon-exfil/host-profile/install-context::querystring-msg-field
+  - id: objectives/supply-chain/recon-exfil/host-profile/install-context::package-resolved-field
+  - id: objectives/supply-chain/recon-exfil/host-profile/install-context::dirname-tracking-field
+  needs: 2
+- id: npm-node-host-metadata-exfil
+  desc: NPM hook exfiltrates host package metadata
+  crit: hostile
+  conf: 0.99
+  mbc: E1041
+  attack: T1041
+  for:
+  - javascript
+  all:
+  - id: objectives/discovery/system/fingerprint/hardware::js-victim-id
+  - id: micro-behaviors/process/user/query::os-homedir-call
+  - id: micro-behaviors/communications/dns/lookup/resolver::require-dns
+  - id: micro-behaviors/fs/file/read::require-local-package-json
+  - id: micro-behaviors/communications/http/request/client::https-request
+  - id: micro-behaviors/communications/http/post::post-form
+  any:
+  - id: objectives/exfiltration/oob/endpoint::pipedream
+  - id: objectives/supply-chain/recon-exfil/host-profile/install-context::querystring-msg-field
+  - id: objectives/supply-chain/recon-exfil/host-profile/install-context::package-resolved-field
+  - id: objectives/supply-chain/recon-exfil/host-profile/install-context::npm-install-tracking-object
+  needs: 2
+- id: local-stealer-import
+  desc: Imports local stealer module
+  crit: suspicious
+  conf: 0.8
+  for:
+  - javascript
+  - typescript
+  any:
+  - id: objectives/supply-chain/recon-exfil/host-profile/install-context::local-stealer-import-1
+  - id: objectives/supply-chain/recon-exfil/host-profile/install-context::local-stealer-import-2
+- id: npm-data-exfil
+  desc: NPM package exfiltrates system info via HTTP
+  crit: notable
+  conf: 0.95
+  attack: T1020
+  mbc: E1041
+  all:
+  - id: micro-behaviors/communications/http/post::post
+  - id: metadata/file/metrics::javascript-small-file-5k
+  any:
+  - id: objectives/discovery/system/fingerprint/hardware::js-sysinfo-multi
+  - id: objectives/discovery/system/fingerprint/hardware::process-fingerprint-multi
+- id: npm-victim-exfil
+  desc: NPM package sends victim ID via HTTP POST
+  crit: notable
+  conf: 0.92
+  attack: T1020
+  mbc: E1041
+  all:
+  - id: objectives/discovery/system/fingerprint/hardware::js-victim-id
+  - id: micro-behaviors/communications/http/post::post
+  - id: metadata/file/metrics::javascript-small-file-5k
+- id: dangerous-requires
+  desc: Dangerous Node.js API imports
+  crit: notable
+  conf: 0.8
+  for:
+  - javascript
+  needs: 3
+  any:
+  - id: objectives/supply-chain/recon-exfil/host-profile/install-context::require-os-dup
+  - id: metadata/import/builtin::require-child-process
+  - id: metadata/package/files/package-json::require-https-dup
+  - id: metadata/import/builtin::require-fs
+- id: small-js-dangerous-requires
+  desc: Small JavaScript file imports risky Node APIs
+  crit: suspicious
+  conf: 0.85
+  for:
+  - javascript
+  all:
+  - id: metadata/file/metrics::javascript-small-file-5k
+  - id: objectives/supply-chain/recon-exfil/host-profile/install-context::dangerous-requires
+  unless:
+  - id: metadata/library/structure::js-any-bundle-output
+  downgrade:
+    any:
+    - id: metadata/package/testing/presence/manifest::test-fixtures
+- id: child-unref
+  desc: Orphan child process (unref pattern)
+  crit: suspicious
+  conf: 0.85
+  for:
+  - javascript
+  - typescript
+  any:
+  - id: micro-behaviors/process/create/spawn::child-unref-call
+  - id: micro-behaviors/process/create/spawn::unref-call
+- id: stdio-ignore-comp
+  desc: Silent process execution (stdio ignored)
+  crit: notable
+  conf: 0.8
+  for:
+  - javascript
+  - typescript
+  any:
+  - id: micro-behaviors/process/create/spawn::stdio-ignore
+  - id: micro-behaviors/process/create/spawn::stdio-ignore
+- id: npm-sysinfo-http
+  desc: NPM package with system info and HTTP POST
+  crit: suspicious
+  conf: 0.85
+  attack: T1082
+  all:
+  - id: objectives/discovery/system/fingerprint/hardware::js-victim-id
+  - id: micro-behaviors/communications/http/post::post

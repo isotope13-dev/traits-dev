@@ -1,0 +1,79 @@
+defaults:
+  platforms: [unix, windows]
+  for: [package.json, javascript]
+traits:
+# A curl/wget beacon carrying victim identifiers as request parameters
+# (`--data-urlencode "user=…" "host=…"`). >=2 distinct identity fields = a
+# fingerprint beacon, not a normal API call. Catches the spawned-curl exfil
+# used by the @403name/ether-js typosquat (clickfix-callback).
+- id: curl-beacon-victim-fields
+  desc: curl beacons victim user/host fields
+  crit: suspicious
+  conf: 0.9
+  for: [javascript, typescript, shell]
+  count_min: 2
+  if:
+    type: text
+    regex: "--data(-urlencode)?[\\s\"']{1,3}(user|hostname?|bid|uid)="
+composite_rules:
+  # Victim recon (user/hostname collection in a small npm package) beaconed out
+  # via a curl identity beacon = host fingerprint exfiltration.
+  - id: npm-victim-curl-beacon-exfil
+    desc: NPM victim identifiers beaconed via curl
+    crit: hostile
+    conf: 0.96
+    attack: T1041
+    mbc: E1041
+    all:
+      - id: npm-victim-id-recon
+      - id: curl-beacon-victim-fields
+  - id: npm-victim-id-recon
+    desc: NPM package collects victim identifiers
+    crit: notable
+    conf: 0.9
+    all:
+      - id: objectives/discovery/system/fingerprint/hardware::js-victim-id
+      - id: metadata/file/metrics::javascript-small-file-5k
+    unless:
+      - id: metadata/lang/compiler/systems::rust-binary
+      - id: metadata/lang/compiler/systems::go-version-string
+      - id: metadata/package/manifest/repository::has-repository-evidence
+      - id: objectives/supply-chain/recon-exfil/install-hook::parcel-cpu-count-worker
+  - id: npm-victim-exfil-transport
+    desc: NPM victim exfil transport
+    crit: component
+    conf: 0.94
+    any:
+      - id: objectives/exfiltration/http/upload::node-collect-exfil
+      - id: objectives/exfiltration/http/upload::node-stealthy-exfil
+      - id: objectives/exfiltration/http/upload::curl-file-upload-exfil
+      - id: objectives/exfiltration/messaging/webhook::webhook-c2-channel
+      - id: objectives/exfiltration/messaging/webhook::discord-host-fingerprint-exfiltration
+  - id: npm-victim-id-exfil
+    desc: NPM victim identifiers with exfiltration
+    crit: hostile
+    conf: 0.99
+    attack: T1020
+    mbc: E1041
+    all:
+      - id: npm-victim-id-recon
+      - id: npm-victim-exfil-transport
+    unless:
+      - id: metadata/package/manifest/publishing::is-private
+      - id: metadata/package/manifest/name::official-pm2-package
+      - id: metadata/library/structure::js-large-module-bundle
+      - id: objectives/supply-chain/trojanized/app/context::large-minified-js-bundle
+  - id: npm-victim-id-oob-exfil
+    desc: NPM victim identifiers exfiltrated to OOB
+    crit: hostile
+    conf: 0.98
+    attack: T1048
+    mbc: E1041
+    all:
+      - id: npm-victim-id-recon
+      - id: micro-behaviors/communications/http/request/client::https-request
+    any:
+      - id: objectives/exfiltration/oob/endpoint
+    unless:
+      - id: metadata/package/testing/presence/harness::test-directory
+      - id: metadata/package/manifest/publishing::is-private

@@ -1,0 +1,363 @@
+# Direct URL Dependencies - npm
+# GuardDog-inspired: Detects packages with direct URL/Git dependencies
+# These dependencies are not immutable and can be used to inject untrusted code
+# ATT&CK: T1195.002 (Compromise Software Supply Chain)
+# MBC: E1195 (Supply Chain Compromise)
+defaults:
+  platforms: [unix, windows]
+  for: [package.json]
+  crit: suspicious
+  conf: 0.85
+  attack: "T1195.002"
+  mbc: "E1195"
+traits:
+  - id: package-dependencies-field
+    desc: Manifest includes packageDependencies field
+    crit: component
+    conf: 0.7
+    if:
+      type: value
+      path: "packageDependencies"
+  - id: dep-https-url-kv
+    desc: Dependency value uses HTTPS URL
+    crit: notable
+    conf: 0.85
+    if:
+      type: value
+      path: dependencies.*
+      regex: '^https://'
+  # The attacker's own staging path names the technique. A dependency tarball
+  # served from a URL whose host/path contains a dependency-confusion marker
+  # (e.g. .../depenconf/pkg.tgz) is self-identifying malicious infrastructure;
+  # no legitimate dependency resolves from such a location.
+  - id: dep-url-depconf-staging-marker
+    desc: 'dep url depconf staging marker'
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: value
+      path: dependencies.*
+      regex: '://[^"\s]{0,256}(depenconf|dep[-_]?confusion|dependency[-_]?confusion)'
+  # A dependency resolved from a generic object-storage bucket (GCS/S3/Azure/R2)
+  # rather than the registry or a VCS is a supply-chain red flag: bucket content
+  # is mutable and trivially attacker-controlled. One notable trait per provider.
+  - id: dep-bucket-gcs
+    desc: Dependency URL on GCS bucket
+    crit: notable
+    conf: 0.85
+    if:
+      type: value
+      path: dependencies.*
+      regex: '://[a-z0-9.-]{0,63}storage\.googleapis\.com'
+  - id: dep-bucket-s3
+    desc: Dependency URL on an AWS S3 bucket
+    crit: notable
+    conf: 0.85
+    if:
+      type: value
+      path: dependencies.*
+      regex: '://[a-z0-9.-]{0,40}s3[.-][a-z0-9.-]{0,30}amazonaws\.com'
+  - id: dep-bucket-azure
+    desc: Dependency URL on Azure Blob bucket
+    crit: notable
+    conf: 0.85
+    if:
+      type: value
+      path: dependencies.*
+      regex: '://[a-z0-9.-]{0,63}blob\.core\.windows\.net'
+  - id: dep-bucket-r2-do
+    desc: Dependency URL on R2/Spaces bucket
+    crit: notable
+    conf: 0.85
+    if:
+      type: value
+      path: dependencies.*
+      regex: '://[a-z0-9.-]{0,63}(r2\.cloudflarestorage\.com|digitaloceanspaces\.com)'
+  - id: devdep-https-url-kv
+    desc: DevDependency value uses HTTPS URL
+    crit: notable
+    conf: 0.8
+    if:
+      type: value
+      path: devDependencies.*
+      regex: '^https://'
+  - id: dep-http-url-kv
+    desc: Dependency value uses HTTP URL
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: value
+      path: dependencies.*
+      regex: '^http://'
+  - id: devdep-http-url-kv
+    desc: DevDependency value uses HTTP URL
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: value
+      path: devDependencies.*
+      regex: '^http://'
+  # Direct HTTP URL in dependencies
+  - id: dep-http-url
+    desc: Dependency using HTTPS URL
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      regex: '"dependencies"\s*:\s*\{[^}]{0,1000}:\s*"https://'
+  - id: devdep-http-url
+    desc: DevDependency using HTTPS URL
+    crit: notable
+    conf: 0.75
+    if:
+      type: text
+      regex: '"devDependencies"\s*:\s*\{[^}]{0,1000}:\s*"https://'
+    downgrade:
+      any:
+        - id: metadata/package/manifest/publishing::is-private
+  # git:// protocol
+  - id: dep-git-url
+    desc: Dependency using git:// URL
+    crit: suspicious
+    conf: 0.90
+    if:
+      type: text
+      regex: '"dependencies"\s*:\s*\{[^}]{0,1000}git://'
+  # git+ssh://
+  - id: dep-git-ssh-url
+    desc: Dependency using git+ssh:// URL
+    crit: suspicious
+    conf: 0.85
+    if:
+      type: text
+      regex: '"dependencies"\s*:\s*\{[^}]{0,1000}git\+ssh://'
+  # git+http:// or git+https://
+  - id: dep-git-http-url
+    desc: Dependency using git+http(s):// URL
+    crit: suspicious
+    conf: 0.85
+    if:
+      type: text
+      regex: '"dependencies"\s*:\s*\{[^}]{0,1000}git\+https?://'
+  # git+file://
+  - id: dep-git-file-url
+    desc: Dependency using git+file:// URL
+    crit: suspicious
+    conf: 0.90
+    if:
+      type: text
+      regex: '"dependencies"\s*:\s*\{[^}]{0,1000}git\+file://'
+  # GitHub shorthand: "user/repo"
+  - id: dep-github-shorthand
+    desc: Dependency using GitHub shorthand
+    crit: suspicious
+    conf: 0.80
+    if:
+      type: text
+      regex: '"dependencies".{0,5}\{.{0,200}:\s*"[a-zA-Z0-9_.-]+/'
+    not:
+      - substr: "http"
+      - substr: "git://"
+  - id: devdep-github-shorthand
+    desc: DevDependency using GitHub shorthand
+    crit: notable
+    conf: 0.75
+    if:
+      type: text
+      regex: '"devDependencies".{0,5}\{.{0,200}:\s*"[a-zA-Z0-9_.-]+/'
+    not:
+      - substr: "http"
+      - substr: "git://"
+  # Direct tarball URLs
+  - id: dep-tarball-url
+    desc: Dependency using direct tarball URL
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '"dependencies"\s*:\s*\{.{0,1000}\.tgz"'
+  # file:// protocol
+  - id: dep-file-protocol
+    desc: Dependency using file:// protocol
+    crit: notable
+    conf: 0.70
+    if:
+      type: text
+      regex: '"dependencies"\s*:\s*\{[^}]{0,1000}file://'
+  # Relative paths
+  - id: dep-relative-path
+    desc: Dependency using relative path
+    crit: notable
+    conf: 0.65
+    if:
+      type: text
+      regex: '"dependencies".{0,5}\{.{0,500}:\s*"\.\.?/'
+  # Plain HTTP (not HTTPS) dependency
+  - id: dep-plaintext-http
+    desc: Dependency fetched over plain HTTP
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '"dependencies"\s*:\s*\{[^}]{0,1000}"http://'
+  - id: devdep-plaintext-http
+    desc: DevDependency fetched over plain HTTP
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: '"devDependencies"\s*:\s*\{[^}]{0,1000}"http://'
+  - id: dep-securityctrl-url
+    desc: Dependency URL uses securityctrl host
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: value
+      path: dependencies.*
+      regex: '^https://.{0,40}securityctrl\.com/'
+  - id: dep-single-https-url
+    desc: Dependencies contain single HTTPS URL
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '"dependencies"\s*:\s*\{\s*".{1,80}"\s*:\s*"https://.{1,160}"\s*\}'
+    not:
+      - regex: '"dependencies"\s*:\s*\{\s*"preact"\s*:\s*"https://pkg\.csb\.dev/'
+composite_rules:
+  # Any HTTP/HTTPS URL in dependencies
+  - id: http-url-dependency
+    desc: Package depends on HTTPS URL
+    crit: notable
+    conf: 0.8
+    any:
+      - id: dep-https-url-kv
+      - id: devdep-https-url-kv
+      - id: dep-http-url
+      - id: dep-tarball-url
+  # Any Git URL
+  - id: git-url-dependency
+    desc: Package depends on Git URL
+    crit: suspicious
+    conf: 0.85
+    any:
+      - id: dep-git-url
+      - id: dep-git-ssh-url
+      - id: dep-git-http-url
+      - id: dep-git-file-url
+  # Direct URL Dependency (all types)
+  - id: direct-url-dependency
+    desc: Package has direct URL dependencies
+    crit: suspicious
+    conf: 0.85
+    any:
+      - id: http-url-dependency
+      - id: git-url-dependency
+      - id: dep-github-shorthand
+  # Multiple URL dependencies
+  - id: multiple-url-dependencies
+    desc: Package has multiple direct URL deps
+    crit: hostile
+    conf: 0.90
+    needs: 2
+    any:
+      - id: dep-http-url
+      - id: dep-http-url-kv
+      - id: devdep-http-url-kv
+      - id: dep-git-url
+      - id: dep-git-ssh-url
+      - id: dep-git-http-url
+      - id: dep-github-shorthand
+      - id: dep-tarball-url
+  # URL dependency with install hooks
+  - id: url-dependency-with-hooks
+    desc: Direct URL dependency with install hooks
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: direct-url-dependency
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::install-hook-exists
+    unless:
+      - id: package-dependencies-field
+      - id: metadata/package/manifest/repository::has-repository-evidence
+  # Plain HTTP dep composite
+  - id: plaintext-http-dependency
+    desc: Dependency fetched over plain HTTP
+    crit: suspicious
+    conf: 0.95
+    any:
+      - id: dep-http-url-kv
+      - id: devdep-http-url-kv
+      - id: dep-plaintext-http
+      - id: devdep-plaintext-http
+  - id: runtime-url-dependency
+    desc: Runtime dependency uses remote URL
+    crit: component
+    conf: 0.95
+    any:
+      - id: dep-http-url-kv
+      - id: dep-https-url-kv
+      - id: dep-plaintext-http
+      - id: dep-http-url
+  - id: dev-url-dependency
+    desc: Dev dependency uses remote URL
+    crit: component
+    conf: 0.95
+    any:
+      - id: devdep-http-url-kv
+      - id: devdep-https-url-kv
+      - id: devdep-plaintext-http
+      - id: devdep-http-url
+  - id: runtime-and-dev-url-dependency
+    desc: Remote dependency appears in runtime and dev scopes
+    crit: notable
+    conf: 0.95
+    all:
+      - id: runtime-url-dependency
+      - id: dev-url-dependency
+  - id: duplicated-plaintext-http-dependency
+    desc: Plain HTTP dependency in runtime and dev scopes
+    crit: hostile
+    conf: 0.985
+    all:
+      - id: dep-plaintext-http
+      - id: devdep-plaintext-http
+    unless:
+      - id: metadata/package/manifest/publishing::is-private
+  - id: inflated-version-anomaly
+    desc: Package shows inflated version anomaly
+    crit: component
+    conf: 0.9
+    any:
+      - id: metadata/package/versioning::npm-version-major-40-plus
+      - id: metadata/package/versioning::npm-unrealistic-major-version
+  - id: duplicated-plaintext-http-minimal
+    desc: Minimal package duplicates plain HTTP dependency
+    crit: hostile
+    conf: 0.995
+    all:
+      - id: duplicated-plaintext-http-dependency
+      - id: inflated-version-anomaly
+      - id: objectives/supply-chain/impersonation/manifest/skeleton::pkg-no-description-short
+  - id: url-dep-minimal-metadata
+    desc: URL dependency with minimal package metadata
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: direct-url-dependency
+      - id: objectives/supply-chain/impersonation/manifest/skeleton::pkg-no-description-short
+    unless:
+      - id: metadata/package/manifest/repository::has-repository-evidence
+  - id: inflated-single-url-dependency
+    desc: Inflated version with single URL dependency
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: dep-single-https-url
+      - id: metadata/package/versioning::npm-version-major-40-plus
+    any:
+      - id: objectives/supply-chain/impersonation/manifest/attack-label::dependency-confusion-claim
+      - id: dep-securityctrl-url
+      - id: metadata/package/quality/empty::npm-empty-author
+    unless:
+      - id: metadata/package/manifest/repository::has-repository-field

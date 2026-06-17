@@ -1,0 +1,216 @@
+# PE Authenticode cert-chain attribution.  Expose's PE Authenticode
+# parser walks the PKCS#7 SignedData blob and surfaces the leaf signer's
+# full identity at `pe.signatures[0].{subject,issuer,thumbprint_sha1,serial}`
+# plus validity window (`pe.signatures[0].{not_before,not_after}`).
+# These are the canonical anchors for vendor-continuity checks across
+# releases — a SolarWinds-style swap would change at least one
+# (typically the thumbprint).
+#
+# Cert-chain depth is a derived count and lives on the
+# `pe.cert_chain_depth` metric, not in kv.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  conf: 1.0
+traits:
+  - id: pe-cert-issuer-microsoft-pca
+    desc: Issued by a Microsoft Code Signing PCA
+    crit: baseline
+    if:
+      type: value
+      path: pe.signatures[0].issuer
+      regex: "Microsoft.{0,40}Code Signing"
+  - id: pe-cert-issuer-digicert
+    desc: Issued by a DigiCert Code Signing CA
+    crit: baseline
+    if:
+      type: value
+      path: pe.signatures[0].issuer
+      regex: "DigiCert.{0,40}Code Signing|DigiCert.{0,40}Trusted"
+  - id: pe-cert-issuer-sectigo
+    desc: Issued by Sectigo Code Signing CA
+    crit: baseline
+    if:
+      type: value
+      path: pe.signatures[0].issuer
+      regex: "Sectigo"
+  - id: pe-cert-issuer-comodo
+    desc: Issued by Comodo Code Signing CA
+    crit: baseline
+    if:
+      type: value
+      path: pe.signatures[0].issuer
+      regex: "[Cc]omodo|COMODO"
+  - id: pe-cert-issuer-globalsign
+    desc: Issued by GlobalSign Code Signing CA
+    crit: baseline
+    if:
+      type: value
+      path: pe.signatures[0].issuer
+      regex: "GlobalSign"
+  - id: pe-cert-leaf-self-issued
+    desc: PE leaf certificate self-issued
+    crit: notable
+    if:
+      type: metrics
+      field: pe.leaf_self_issued
+      min: 1
+  - id: pe-cert-chain-truncated
+    desc: PE Authenticode chain truncated
+    crit: notable
+    if:
+      type: metrics
+      field: pe.cert_chain_truncated
+      min: 1
+  - id: pe-cert-shallow-chain
+    desc: Cert chain has only 2 entries
+    crit: notable
+    if:
+      type: metrics
+      field: pe.cert_chain_depth
+      min: 2
+      max: 2
+  - id: pe-cert-leaf-no-code-signing-eku
+    desc: Leaf cert lacks codeSigning EKU
+    crit: suspicious
+    conf: 0.95
+    unless:
+      - id: metadata/signed/leaf::microsoft-corporation
+      - id: metadata/signed/leaf::python-software-foundation
+    if:
+      type: metrics
+      field: pe.non_codesign_leaf
+      min: 1
+  - id: pe-cert-leaf-no-code-signing-eku-kv
+    desc: Leaf cert lacks codeSigning EKU
+    crit: suspicious
+    conf: 0.95
+    unless:
+      - id: metadata/signed/leaf::microsoft-corporation
+      - id: metadata/signed/leaf::python-software-foundation
+      # MSIX-packaged PEs are covered by the package's AppxSignature; the inner
+      # PE's leaf commonly omits the code-signing EKU. Recognized, verified
+      # publisher leaf — same allowlist case as Microsoft/PSF above.
+      - id: metadata/signed/leaf::imagemagick-studio-llc
+    if:
+      type: value
+      path: pe.signatures[0].eku_code_signing
+      regex: '^false$'
+  - id: pe-cert-leaf-domain-subject
+    desc: Leaf subject is a DNS name
+    crit: notable
+    conf: 0.85
+    if:
+      type: value
+      path: pe.signatures[0].subject
+      regex: '^CN=(\*\.)?[a-z0-9][a-z0-9-]{0,62}(\.[a-z0-9][a-z0-9-]{0,62}){1,5}$'
+  # Signed with what looks like an individual / hobbyist leaf cert rather than a
+  # corporate signing identity. Azure Trusted Signing AOC-CA-issued certs can
+  # match this subject shape.
+  - id: binary-signed-with-individual-cert
+    desc: Signed binary with personal-name leaf cert
+    crit: notable
+    conf: 0.85
+    if:
+      type: value
+      path: pe.signatures[0].subject
+      regex: '^CN=[\p{L}][\p{L}\s\.\-'']{0,40}$'
+  - id: pe-cert-leaf-sha1-signature
+    desc: PE leaf certificate signed with SHA-1
+    crit: notable
+    conf: 0.85
+    if:
+      type: value
+      path: pe.leaf_signature_algorithm
+      regex: '^sha1With'
+  - id: pe-cert-nested-signature
+    desc: "PE Authenticode dual-signed"
+    crit: baseline
+    if:
+      type: metrics
+      field: pe.has_nested_signature
+      min: 1
+  - id: pe-signature-digest-mismatch
+    desc: PE signature digest mismatch
+    crit: suspicious
+    conf: 1.0
+    if:
+      type: metrics
+      field: pe.signature_digest_mismatch
+      min: 1
+    downgrade:
+      any:
+        - id: metadata/signed/certificate/identity::pe-signature-verified
+        - id: metadata/signed/certificate/identity::binary-signed-with-individual-cert
+        - id: metadata/lang/compiler/native::mingw-built-pe
+        - id: metadata/signed/leaf::apowersoft-ltd
+  - id: pe-signature-verified
+    desc: "PE Authenticode sig cryptographically valid"
+    crit: baseline
+    if:
+      type: metrics
+      field: pe.signature_verified
+      min: 1
+  - id: pe-signature-verified-kv
+    desc: PE Authenticode signature verified metadata
+    crit: baseline
+    if:
+      type: value
+      path: pe.signatures[0].verified
+      regex: '^true$'
+  - id: pe-cert-issued-after-build
+    desc: Leaf cert issued after build
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: metrics
+      field: pe.cert_issued_after_build
+      min: 1
+    unless:
+    - id: well-known/app/protected-benign-pe/
+    - id: metadata/binary/installer/script::inno-setup
+    - id: metadata/binary/installer/database::wix-bootstrapper-manifest
+    - id: well-known/app/atlantis::atlantis-word-processor-installer
+    downgrade:
+      any:
+        - id: well-known/app/contextmagic-clickyes::clickyes-product-versioninfo
+  - id: pe-signature-not-verified
+    desc: 'PE Authenticode sig failed crypto verification'
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: metrics
+      field: pe.signature_verification_failed
+      min: 1
+  - id: pe-signature-algorithm-unsupported
+    desc: Unsupported PE signature algorithm
+    crit: notable
+    conf: 0.7
+    if:
+      type: metrics
+      field: pe.sig_algorithm_unsupported
+      min: 1
+  - id: pe-signer-info-mismatch-leaf
+    desc: SignerInfo differs from leaf cert
+    crit: notable
+    conf: 0.85
+    if:
+      type: metrics
+      field: pe.signer_info_mismatches_leaf
+      min: 1
+  - id: pe-nested-leaf-no-code-signing-eku
+    desc: Nested leaf lacks codeSigning EKU
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: metrics
+      field: pe.nested_leaf_no_codesign_eku
+      min: 1
+  - id: pe-nested-signature-digest-mismatch
+    desc: Nested signature digest mismatch
+    crit: suspicious
+    conf: 1.0
+    if:
+      type: metrics
+      field: pe.nested_signature_digest_mismatch
+      min: 1

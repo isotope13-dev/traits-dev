@@ -115,6 +115,17 @@ Neutral file property (not behavioral)?
   → metadata/
 ```
 
+### Text, Content, and Metadata Boundaries
+
+The matcher type does not decide tier placement. A `type: text`, `string_literal`, `raw`, or `encoded` matcher still belongs where the thing it detects belongs:
+
+- Terms go where the represented concept belongs, not under a text bucket. A credential word belongs in `objectives/credential-access/theft/keywords/`; HTTP verbs belong in `micro-behaviors/communications/http/keywords/`; help and usage strings belong in `micro-behaviors/ui/help/` because they represent the ability to expose a user-facing help surface.
+- Terms that represent attacker intent or impact go under `objectives/`. Infection terms such as "infected", "virus", or ELF infection context belong with `objectives/impact/infect/`; hostile traits stay in `objectives/` or `well-known/`.
+- Specific product, malware-family, tool, library, app, or game identifiers go under `well-known/`, not a generic keyword bucket.
+- Metadata is only for neutral structural facts about what a file or package is: manifest fields, declared permissions, file magic, dimensions, counts, layout, package quality, or other non-behavioral shape. Suspicious metadata can be used as evidence in an objective composite, but "metadata anomaly" is not itself a supply-chain attack kind.
+- `micro-behaviors/data/` is for operations on data: encoding, decoding, compression, serialization, parsing, archive handling, string manipulation, buffers, databases, embedded payload/resource handling, source-level data mechanics, and control-flow patterns over data. It is not for data merely being present.
+- Do not create generic content buckets such as `data/text/`, `text/`, `lexicon/`, `vocabulary/`, `words/`, or `strings/` as dumping grounds. Split terms by the concept they represent, and let composites reference those atoms across directories.
+
 ### Evasion Boundaries
 
 Three objective categories cover evasion, following MBC's distinction between analysis evasion and detection evasion:
@@ -158,7 +169,9 @@ When a behavior could serve multiple objectives, place the single trait where ev
 | Reads `os.environ` generically | `micro-behaviors/os/env/` | Neutral capability, no credential targeting |
 | Generic keystroke capture | `collection/keylog/` | General capture; credential-access composites reference it |
 | Chrome passwords + HTTP POST to attacker | `exfiltration/stealer/credential/` | Source + transport = exfiltration |
-| "admin" or "root" keyword | `micro-behaviors/data/text/keywords/` | Neutral string, not credential access |
+| "admin" or "root" keyword | Concept-specific keyword directory, usually `objectives/discovery/account/keywords/` or a narrower objective when context supports it | Account/user concept, not credential access and not generic text |
+| CLI `--help` / `Usage:` text | `micro-behaviors/ui/help/` | Help text is a user-interface behavior, not file metadata |
+| Infection vocabulary | `objectives/impact/infect/` | The terms represent an impact objective, not generic content |
 | File property with no behavioral implication | `metadata/` | Structural fact, not behavior |
 | File property indicating deceptive intent | `evasion/masquerade/` | Deception is behavioral |
 
@@ -255,36 +268,31 @@ micro-behaviors/
 │   ├── archive/           #   Archive operations (tar, zip extraction)
 │   ├── serialize/         #   Serialization (JSON, YAML, pickle, protobuf)
 │   ├── format/            #   Format patterns in content (MZ header, PDF, HTML)
-│   │                      #     File-level format identification → metadata/format/
-│   ├── embedded/          #   Embedded content (certificates, EXIF, runtime)
-│   ├── text/              #   Text/string analysis (keywords, patterns)
-│   │   ├── language/      #     Human language detection (Chinese, Russian, etc.)
-│   │   ├── keywords/      #     Keyword/vocabulary detection, organized into TOPIC-COHERENT
-│   │   │                  #       subdirs (credential/, wallet/, exploit/, malware/, locale/...).
-│   │   │                  #       Each subdir must name the topic it detects. There is NO generic
-│   │   │                  #       catch-all bucket: do not create or keep `lexicon/`, `misc/`,
-│   │   │                  #       `general/`, or a grab-bag `traits.yaml` of unrelated words.
-│   │   │                  #       A keyword goes in the topic dir for WHAT IT DETECTS (a destructive
-│   │   │                  #       verb → impact/, an EDR product name → a security topic, a fake-AV
-│   │   │                  #       URL → communications/url/), even if a composite elsewhere uses it.
+│   │                      #     File-level format identification → metadata/file/format/
+│   ├── embedded/          #   Embedded content/resource handling (certificates, EXIF, runtime)
+│   ├── language/          #   Human language detection (Chinese, Russian, etc.)
 │   ├── source/            #   Source code patterns (syntax, quality, identifiers)
 │   ├── string/            #   String operations (library, conversion)          C0019
 │   ├── buffer/            #   Buffer operations (offset writes, reassembly)
 │   ├── db/                #   Database operations (SQL, Redis, MongoDB, etc.)
 │   └── control-flow/      #   Control flow patterns (loops, error handling)
 │   # NOTE: PRNG → os/random/. Config detection → metadata/config/.
-│   # data/ is for data transformation, not system queries or file metadata.
+│   # data/ is for data transformation and data-structure handling, not
+│   # system queries, file metadata, data merely being present, or generic
+│   # text/content buckets. Do not add data/text/; terms belong where the
+│   # concept they represent belongs.
 │   #
 │   # NOTE — decoding/deserialization is a CAPABILITY, not file metadata.
 │   #   Decoding an encoding (base64, hex, custom alphabet) or parsing a
 │   #   particular format (pickle/marshal, an image/archive/document format)
 │   #   is on the TAXONOMY notable bar — an analyst wants it surfaced in a
-│   #   supply-chain diff. It belongs here (encode/, decode/, serialize/,
-│   #   compress/, archive/, format/), NOT in metadata/. This includes the
+│   #   supply-chain diff. It belongs here (data/encode/, data/decode/,
+│   #   data/serialize/, data/compress/, data/archive/, data/format/),
+│   #   NOT in metadata/. This includes the
 │   #   neutral act of IMPORTING such a module (e.g. Python `import base64`
-│   #   → encode/base64::import-base64, `import pickle` →
-│   #   serialize/unsafe/python::import-pickle): the import is a capability
-│   #   observation, kept at notable. metadata/ only records what a file IS
+│   #   → data/encode/base64::import-base64, `import pickle` →
+│   #   data/serialize/unsafe/python::import-pickle): the import is a
+│   #   capability observation, kept at notable. metadata/ only records what a file IS
 │   #   (e.g. "contains base64-looking strings"), never that code decodes.
 │   #   The engine also emits a neutral per-module import node under
 │   #   metadata/import/<lang>/<module> for composites that need an
@@ -450,6 +458,7 @@ micro-behaviors/
 │   ├── dialog/            #   Dialog boxes, message boxes, prompts
 │   ├── framework/         #   UI framework usage (tkinter, WinForms)
 │   ├── graphics/          #   GDI/drawing operations
+│   ├── help/              #   Help/usage surfaces and documented CLI behavior
 │   ├── menu/              #   Menu operations (popup, context)
 │   ├── terminal/          #   Terminal/console UI (ANSI, ncurses)
 │   ├── wallpaper/         #   Desktop wallpaper manipulation
@@ -561,7 +570,7 @@ objectives/
 │   │                          #     AI agent instruction hierarchy, tool-use
 │   │                          #     controls, or safety policies. Neutral or
 │   │                          #     standalone prompt text atoms stay in
-│   │                          #     micro-behaviors/data/text/llm/.
+│   │                          #     micro-behaviors/data/llm/.
 │   ├── self-delete/           #   Self-deletion after execution           F0007
 │   └── tcc-manipulation/      #   macOS TCC database manipulation
 │
@@ -843,8 +852,14 @@ objectives/
 │   │                            #   "Manipulate products or product delivery mechanisms
 │   │                            #   prior to receipt by a final consumer for the purpose
 │   │                            #   of data or system compromise."
-│   │                            #   Organized by ATTACK TECHNIQUE, not ecosystem.
-│   │                            #   Ecosystem (npm, pypi, rubygems) = filename, never directory.
+│   │                            #   Organized by ATTACK TECHNIQUE, not ecosystem
+│   │                            #   or evidence container. Ecosystem (npm, pypi,
+│   │                            #   rubygems) usually belongs in filenames; use it
+│   │                            #   as a directory only when the registry surface
+│   │                            #   itself is the technique being modeled.
+│   │                            #   Avoid vague buckets such as package/,
+│   │                            #   manifest/, behavior/, metadata/, or more/:
+│   │                            #   choose the move being made instead.
 │   │                            #   A trait belongs here only if it is supply-chain-specific —
 │   │                            #   it would never fire outside a package/extension context.
 │   │                            #   Generic behaviors stay in their existing objectives:
@@ -862,6 +877,12 @@ objectives/
 │   │                            #     Gathering host/env info and exfiltrating from package
 │   │                            #     lifecycle contexts (postinstall scripts, OAST callbacks,
 │   │                            #     CI/CD secrets exfil from lifecycle hooks).
+│   │                            #     Useful subdirectories name the move:
+│   │                            #     host-profile/, callback/, dns/, artifacts/,
+│   │                            #     install-hook/, pipeline/, registry/, secrets/,
+│   │                            #     oast/. Do not add package/ or manifest/ under
+│   │                            #     recon-exfil; those describe where evidence was
+│   │                            #     found, not what the attack does.
 │   │                            #     NOT generic recon (→ discovery/).
 │   │                            #     NOT generic exfil (→ exfiltration/).
 │   ├── credential-theft/        #   Stealing package-manager credentials     T1552
@@ -873,14 +894,13 @@ objectives/
 │   │                            #     bytenode compilation, hex arrays in install scripts.
 │   │                            #     Composites reference anti-static/ atomics.
 │   │                            #     NOT general obfuscation (→ anti-static/obfuscation/).
-│   ├── metadata-anomaly/        #   Suspicious package metadata patterns     T1195.002
-│   │                            #     Anomalies in manifests, registry data, version schemes,
-│   │                            #     author fields, extension manifests. Signals the package
-│   │                            #     is suspicious before looking at code.
-│   │                            #     NOT neutral metadata (→ metadata/ tier).
 │   ├── impersonation/           #   Package identity deception               T1195.002
 │   │                            #     Typosquatting, dependency confusion, deprecated-package
 │   │                            #     hijack, function shadowing, name similarity.
+│   │                            #     Suspicious metadata is not a supply-chain attack kind;
+│   │                            #     use metadata/package facts as signals for concrete
+│   │                            #     objectives such as impersonation, install-hook,
+│   │                            #     recon-exfil, hidden-payload, or credential-theft.
 │   └── trojanized/              #   Backdoored legitimate code               T1195.002
 │                                #     Modifications to known-good libraries/frameworks.
 │                                #     NOT wholly malicious packages (→ hidden-payload/).
@@ -1029,10 +1049,16 @@ metadata/
 │   ├── pdf/               #   PDF structure
 │   └── rtf/               #   RTF analysis
 ├── file/                  # File-level observables (no deep parsing required)
+│   ├── catalog/           #   File/catalog identity and generated registries
 │   ├── encoded/           #   Encoded content presence (base64)
 │   ├── extension/         #   File extension classification
+│   ├── format/            #   Text/data format identification (JSON, makefile)
+│   ├── invisible-unicode/ #   Invisible Unicode text properties
 │   ├── magic/             #   Magic byte signatures
-│   └── text/              #   Text/data format identification (JSON, makefile)
+│   ├── metrics/           #   Text/file-level measurements
+│   ├── policy/            #   Policy/config text identities
+│   ├── profile/           #   Text profile and wrapper shapes
+│   └── string/            #   Neutral string identities
 ├── hardening/             # Security hardening features (sandbox, seccomp, pledge)
 ├── image/                 # Image-specific neutral measurements
 │   └── metrics/           #   Pixel/channel/statistical image measurements
@@ -1056,19 +1082,17 @@ metadata/
 │   ├── runtime/           #   Runtime/framework libraries
 │   └── (neutral package/library context; known-library fingerprints → well-known/lib/)
 ├── package/               # Package ecosystem metadata & project quality
-│   ├── chrome-extension/  #   Extension manifest analysis
 │   ├── config/            #   Configuration file detection
 │   ├── contributors/      #   Contributor metadata
 │   ├── dependencies/      #   Dependency analysis
 │   ├── documentation/     #   Documentation presence
 │   ├── error-handling/    #   Error handling patterns
-│   ├── fields/            #   Package field analysis
 │   ├── files/             #   File counts and types
-│   ├── help/              #   Help/usage interface
 │   ├── keywords/          #   Package keywords
 │   ├── license/           #   License detection
 │   ├── logging/           #   Logging patterns
 │   ├── maintainers/       #   Maintainer counts
+│   ├── manifest/          #   Package manifest fields (name, author, repository, engines)
 │   ├── metrics/           #   Code metrics
 │   ├── quality/           #   Quality signals
 │   ├── scripts/           #   Package scripts
@@ -1079,6 +1103,35 @@ metadata/
 │   │   └── scripted/      #     Scripted-language frameworks
 │   ├── tooling/           #   Package tooling
 │   └── versioning/        #   Version detection
+├── permission/            # Declared permission and extension authority metadata
+│   │                      #   Neutral facts about what authority a manifest grants or
+│   │                      #   what extension APIs appear. Provider/ecosystem belongs
+│   │                      #   in filenames (browser.yaml, vscode.yaml), not dirs.
+│   │                      #   Abuse chains using these facts belong in objectives/.
+│   ├── activation/        #   Auto-activation and extension lifecycle triggers
+│   ├── active-tab/        #   Browser activeTab authority
+│   ├── alarm/             #   Timers/alarms extension authority
+│   ├── bookmark/          #   Bookmark access authority
+│   ├── capture/           #   Screen, tab, media, and display capture authority
+│   ├── clipboard/         #   Clipboard read/write authority
+│   ├── cookie/            #   Cookie read/write/watch authority
+│   ├── debugger/          #   Browser/debugger attachment authority
+│   ├── dom/               #   Page DOM script/style injection authority
+│   ├── download/          #   Download API authority
+│   ├── extension-api/     #   Generic extension host API context markers
+│   ├── extension-id/      #   Extension identifier lists/maps
+│   ├── history/           #   Browser history/top-sites authority
+│   ├── host/              #   Host/origin authority patterns and broad host access
+│   ├── identity/          #   OAuth/identity permission declarations
+│   ├── management/        #   Extension-management authority
+│   ├── manifest/          #   Extension manifest structure and manifest-only fields
+│   ├── network/           #   Request interception/filtering/modification authority
+│   ├── offscreen/         #   Offscreen document authority
+│   ├── runtime/           #   Runtime lifecycle callbacks and extension context
+│   ├── storage/           #   Extension storage authority
+│   ├── telemetry/         #   Extension telemetry/event reporting authority
+│   ├── uri/               #   URI handler and OAuth callback authority
+│   └── workspace/         #   Workspace/file access authority
 ├── signed/                # Code signatures, certificates, entitlements
 │   ├── certificate/       #   Certificate chain string patterns
 │   ├── entitlements/      #   Code entitlements (macOS/iOS, Android)
@@ -1102,6 +1155,7 @@ When placing a new metadata trait, use this tiebreaker table. Each row names the
 | `document/` | `file/` | Does it require parsing document internals (OLE streams, OOXML parts, PDF objects)? → `document/`. Observable from header/extension alone? → `file/` |
 | `build/` | `lang/` | Is it about build orchestration (cmake, docker, CI/CD)? → `build/`. Is it about the language toolchain (gcc, rustc, delphi)? → `lang/` |
 | `package/` | `library/` | Is it about ecosystem-level metadata (fields, scripts, quality, testing)? → `package/`. Is it neutral library context retained for metadata use? → `library/`. Is it identifying a specific library/framework/runtime? → `well-known/lib/` |
+| `package/` | `permission/` | Is it ordinary package metadata (name, dependencies, files, scripts, quality)? → `package/`. Is it declared authority or extension API surface (browser/IDE extension permissions, host access, OAuth scopes, content scripts)? → `permission/` |
 | `signed/` | `vendor/` | Is it about the cryptographic signature chain or entitlements? → `signed/`. Is it identifying an OS/platform vendor by strings/resources/patterns? → `vendor/` |
 | `vendor/` | `well-known/app/` or `well-known/tool/` | Is it an OS/platform vendor or system userland marker (Apple, Microsoft, NetBSD, GNU/FSF)? → `vendor/`. Is it a specific application or suite? → `well-known/app/`. Is it a utility or analyst/admin/developer tool? → `well-known/tool/` |
 | `vendor/` | `well-known/lib/` | Is it identifying the platform vendor that produced the file? → `vendor/`. Is it an embedded third-party library/framework/runtime fingerprint (OpenSSL, zlib, FFmpeg, psutil, SharpShell)? → `well-known/lib/` |
