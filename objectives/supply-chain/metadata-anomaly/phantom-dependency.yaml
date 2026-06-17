@@ -1,0 +1,53 @@
+# Phantom runtime dependency (T1195.002) — name-agnostic supply-chain tell.
+#
+# A package that declares a `dependencies` entry no shipped module ever
+# imports/requires has no functional reason to carry it. That is the structural
+# fingerprint of an install-time payload: a hijacked publisher appends a
+# malicious package whose `postinstall` hook runs the attack, while the package
+# code that would reference it is never touched. The June 2026 Mastra
+# scope-takeover injected `easy-day-js` exactly this way -- but this signal needs
+# no name list, so it generalizes to the next campaign.
+#
+# `consistency.unused_runtime_deps` is computed in cleave at archive scope: it
+# diffs package.json's runtime `dependencies` against the union of import
+# specifiers across all code members (manifest/lockfiles excluded, since the
+# engine surfaces declared deps as imports for the `type: import` matchers). The
+# metric is emitted only when both a manifest and at least one real import are
+# present, so a types-only or asset package never produces a false phantom.
+#
+# Alone this is notable: legitimate cases exist (a dep consumed only by a shipped
+# CLI binary, re-exported via `exports`, or a pure side-effect/polyfill package).
+# Paired with the manifest/build version skew it becomes the manifest-only-edit
+# fingerprint a genuine rebuild could not produce, which is hostile.
+defaults:
+  platforms: [unix, windows]
+  attack: T1195.002
+  for: [npm, tar, zip]
+
+traits:
+  - id: npm-phantom-runtime-dependency
+    desc: Declares a runtime dep no module imports
+    crit: notable
+    conf: 0.6
+    if:
+      type: metrics
+      field: consistency.unused_runtime_deps
+      min: 1
+
+composite_rules:
+  - id: npm-manifest-only-phantom-injection
+    # Manifest version bumped past the build output (republished without a
+    # rebuild) AND a runtime dependency no code imports: a dependency was
+    # appended to the manifest by hand, not by a build. A benign stale-docs
+    # release shifts the version without adding an unused dep; a benign unused
+    # dep ships in a normally-built release with no version skew. Only the
+    # hijacked-publisher edit produces both at once.
+    desc: Republished manifest injects unused dependency
+    crit: hostile
+    conf: 0.9
+    scope: archive
+    attack: "T1195.002,T1059.007"
+    mbc: B0024
+    all:
+      - id: npm-phantom-runtime-dependency
+      - id: objectives/supply-chain/metadata-anomaly::npm-manifest-build-version-skew
