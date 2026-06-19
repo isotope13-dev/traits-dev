@@ -1,97 +1,148 @@
 # VBA-as-loader composites.
 #
 # Atomic Declare-import detections live in
-# `micro-behaviors/process/create/load/vba/`. These composites
-# combine them into attacker-intent signals — shellcode allocation,
-# URL-driven dropper, COM-runtime loader. Per RULES.md, `hostile`
-# requires precision >= 3.5; the composites here gate on >= 3 distinct
-# atomics each so a single accidental import doesn't fire.
+# `micro-behaviors/process/create/load/vba/`. These composites combine them
+# into attacker-intent signals: shellcode allocation, URL-driven droppers, and
+# COM/runtime loaders.
 defaults:
   for: [oledoc, ooxml, vbs]
   platforms: [windows]
 
+traits:
+  - id: vba-document-content-payload
+    desc: VBA reads document content payload
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      substr: Content.Characters.Parent
+  - id: vba-split-delimiter-call
+    desc: VBA split delimiter call
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: '(?i)\bSplit\s*\(.{0,80}["''][A-Za-z0-9_]{8,}["'']'
+  - id: vba-join-cvar-call
+    desc: VBA Join CVar call
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: '(?i)\bJoin\s*\(\s*CVar\s*\('
+
 composite_rules:
-  # The textbook in-process shellcode loader: allocate RWX memory, copy
-  # bytes into it, then hand control off via a thread or callback.
-  # Three independent atomics so legit native-call wrappers don't fire.
-- id: vba-shellcode-loader
-  desc: VBA imports the shellcode-loader API set
-  crit: hostile
-  conf: 0.97
-  attack: T1059.005
-  all:
-  - id: micro-behaviors/process/create/load/vba::vba-declare-virtualalloc
-  - id: micro-behaviors/process/create/load/vba::vba-declare-memcopy-primitive
-    # Plus a control-flow handover or process injection primitive.
-    # Modeled as a second `any:` collapsed into one composite via the
-    # capability mapper's evaluation pipeline (composites can compose
-    # multiple `any:` clauses by chaining trait references).
-- id: vba-shellcode-loader-with-thread
-  desc: VBA shellcode loader plus thread handover
-  crit: hostile
-  conf: 0.98
-  attack: T1055
-  all:
+  - id: vba-delimiter-split-rejoin
+    desc: VBA delimiter split rejoin
+    crit: suspicious
+    conf: 0.88
+    all:
+      - id: vba-split-delimiter-call
+      - id: vba-join-cvar-call
   - id: vba-shellcode-loader
-  any:
-  - id: micro-behaviors/process/create/load/vba::vba-declare-createthread
-  - id: micro-behaviors/process/create/load/vba::vba-declare-createremotethread
-- id: vba-url-dropper
-  desc: VBA URL dropper with auto-trigger
-  crit: hostile
-  conf: 0.96
-  attack: T1105
-  all:
-  - id: micro-behaviors/process/create/macro/office::auto-open-sub-decl
-  any:
-  - id: micro-behaviors/process/create/load/vba::vba-declare-urlmon-fetcher
-  - id: micro-behaviors/process/create/load/vba::vba-declare-wininet-http-fetcher
-- id: vba-com-runtime-loader
-  desc: VBA COM runtime loader with non-literal ProgID
-  crit: hostile
-  conf: 0.96
-  attack: T1559.001
-  any:
-  - id: micro-behaviors/process/create/load/vba::vba-declare-cogetobject
-  - id: micro-behaviors/process/create/load/vba::vba-declare-cocreateinstance
-  - id: micro-behaviors/process/create/load/vba::vba-declare-cogetinstancefromfile
-  all:
-  - id: micro-behaviors/process/create/macro/office::createobject-non-literal-arg
-- id: vba-shell-and-http-dropper
-  desc: VBA CreateObject shell-plus-HTTP dropper
-  crit: hostile
-  conf: 0.95
-  attack: T1059.005
-  all:
-  - id: micro-behaviors/process/create/macro/office::auto-open-sub-decl
-  any:
-  - id: micro-behaviors/process/create/macro/office::createobject-wscript-shell
-  - id: micro-behaviors/process/create/macro/office::createobject-shell-application
-- id: vba-shell-and-http-dropper-with-fetcher
-  desc: VBA shell dropper with HTTP fetch object
-  crit: hostile
-  conf: 0.97
-  attack: T1105
-  all:
+    desc: VBA imports shellcode loader APIs
+    crit: hostile
+    conf: 0.97
+    attack: T1059.005
+    all:
+      - id: micro-behaviors/process/create/load/vba::vba-declare-virtualalloc
+      - id: micro-behaviors/process/create/load/vba::vba-declare-memcopy-primitive
+  - id: vba-shellcode-loader-with-thread
+    desc: VBA shellcode loader thread handover
+    crit: hostile
+    conf: 0.98
+    attack: T1055
+    all:
+      - id: vba-shellcode-loader
+    any:
+      - id: micro-behaviors/process/create/load/vba::vba-declare-createthread
+      - id: micro-behaviors/process/create/load/vba::vba-declare-createremotethread
+  - id: vba-url-dropper
+    desc: VBA URL dropper with auto-trigger
+    crit: hostile
+    conf: 0.96
+    attack: T1105
+    all:
+      - id: micro-behaviors/process/create/macro/office::auto-open-sub-decl
+    any:
+      - id: micro-behaviors/process/create/load/vba::vba-declare-urlmon-fetcher
+      - id: micro-behaviors/process/create/load/vba::vba-declare-wininet-http-fetcher
+  - id: vba-com-runtime-loader
+    desc: VBA COM runtime non-literal ProgID
+    crit: hostile
+    conf: 0.96
+    attack: T1559.001
+    any:
+      - id: micro-behaviors/process/create/load/vba::vba-declare-cogetobject
+      - id: micro-behaviors/process/create/load/vba::vba-declare-cocreateinstance
+      - id: micro-behaviors/process/create/load/vba::vba-declare-cogetinstancefromfile
+    all:
+      - id: micro-behaviors/process/create/macro/office::createobject-non-literal-arg
   - id: vba-shell-and-http-dropper
-  any:
-  - id: micro-behaviors/process/create/macro/office::createobject-http-fetcher
-  - id: micro-behaviors/process/create/macro/office::createobject-adodb-stream
-- id: vba-runtime-built-imports
-  desc: VBA imports built at runtime (heavy obfuscation)
-  crit: suspicious
-  conf: 0.94
-  all:
-  - id: micro-behaviors/process/create/load/vba::vba-declare-non-literal-lib
-  - id: micro-behaviors/process/create/macro/office::createobject-non-literal-arg
-- id: raw-vba-powershell-autostart
-  desc: Raw VBA PowerShell autostart loader
-  crit: hostile
-  conf: 0.97
-  attack: T1059.005
-  all:
-  - id: micro-behaviors/process/create/macro/office::raw-auto-open-entrypoint
-  - id: micro-behaviors/process/create/macro/office::raw-createobject-call
-  - id: micro-behaviors/process/create/macro/office::createobject-wscript-shell
-  - id: micro-behaviors/process/create/macro/office::raw-shell-call
-  - id: micro-behaviors/process/create/macro/office::raw-caesar3-powershell-encodedcommand
+    desc: VBA shell-plus-HTTP dropper
+    crit: hostile
+    conf: 0.95
+    attack: T1059.005
+    all:
+      - id: micro-behaviors/process/create/macro/office::auto-open-sub-decl
+    any:
+      - id: micro-behaviors/process/create/macro/office::createobject-wscript-shell
+      - id: micro-behaviors/process/create/macro/office::createobject-shell-application
+  - id: vba-shell-and-http-dropper-with-fetcher
+    desc: VBA shell dropper with HTTP fetch
+    crit: hostile
+    conf: 0.97
+    attack: T1105
+    all:
+      - id: vba-shell-and-http-dropper
+    any:
+      - id: micro-behaviors/process/create/macro/office::createobject-http-fetcher
+      - id: micro-behaviors/process/create/macro/office::createobject-adodb-stream
+  - id: vba-runtime-built-imports
+    desc: VBA imports built at runtime
+    crit: suspicious
+    conf: 0.94
+    all:
+      - id: micro-behaviors/process/create/load/vba::vba-declare-non-literal-lib
+      - id: micro-behaviors/process/create/macro/office::createobject-non-literal-arg
+  - id: raw-vba-powershell-autostart
+    desc: Raw VBA PowerShell autostart loader
+    crit: hostile
+    conf: 0.97
+    attack: T1059.005
+    all:
+      - id: micro-behaviors/process/create/macro/office::raw-auto-open-entrypoint
+      - id: micro-behaviors/process/create/macro/office::raw-createobject-call
+      - id: micro-behaviors/process/create/macro/office::createobject-wscript-shell
+      - id: micro-behaviors/process/create/macro/office::raw-shell-call
+      - id: micro-behaviors/process/create/macro/office::raw-caesar3-powershell-encodedcommand
+  - id: vba-autoopen-hidden-wmi-loader
+    desc: Auto-open VBA hidden WMI loader
+    crit: hostile
+    conf: 0.97
+    attack: T1047
+    all:
+      - id: micro-behaviors/process/create/macro/office::auto-open-sub-decl
+    any:
+      - id: objectives/execution/wmi::wmi-hidden-cvar-process-create
+      - id: objectives/execution/wmi::wmi-hidden-variable-process-create
+  - id: vba-content-hidden-wmi-loader
+    desc: VBA document-content WMI loader
+    crit: hostile
+    conf: 0.97
+    attack: T1047
+    all:
+      - id: vba-document-content-payload
+    any:
+      - id: objectives/execution/wmi::wmi-hidden-cvar-process-create
+      - id: objectives/execution/wmi::wmi-hidden-variable-process-create
+  - id: vba-obfuscated-wmi-stage-loader
+    desc: Obfuscated VBA WMI stage loader
+    crit: hostile
+    conf: 0.96
+    attack: T1027, T1047
+    all:
+      - id: vba-delimiter-split-rejoin
+    any:
+      - id: objectives/execution/wmi::wmi-hidden-cvar-process-create
+      - id: objectives/execution/wmi::wmi-hidden-variable-process-create
