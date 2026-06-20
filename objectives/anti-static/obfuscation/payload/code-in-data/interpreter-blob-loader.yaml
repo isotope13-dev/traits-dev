@@ -1,0 +1,81 @@
+# Code-as-data unpackers: a host file that decompresses an opaque "data" blob and
+# materializes live code from it — the SiteGuarding WordPress shape, where a
+# small PHP/data stub gzuncompresses a `.dat`/`.key` companion into a backdoor.
+# cleave extracts an embedded interpreter body and parses its AST, so the inner
+# decompress / file-read / blob-filename / decode signals surface on the host.
+#
+# This file holds only intent-inferring composites plus the one unambiguous
+# attack atom (eval/exec of decompressed bytes). The neutral building blocks they
+# reference live in their own tiers:
+#   - decompression call / decompress-then-decode -> micro-behaviors/data/compress/library
+#   - opaque data-blob filename literal           -> micro-behaviors/fs/file/extension
+#   - file-open-for-read                          -> micro-behaviors/fs/file/open
+#   - one-liner / degenerate-AST metrics          -> metadata/file/metrics
+defaults:
+  platforms: [linux, macos, windows]
+  for: [scripts]
+  conf: 0.9
+
+traits:
+  # The decompressed bytes are passed straight to eval()/exec() — runtime code
+  # materialized from a compressed payload. No benign use (an executed decompress
+  # output is always an unpack-and-run loader), so this is an objective-tier atom,
+  # not a neutral capability. Covers python/ruby/node `*.decompress(...)`; PHP's
+  # gz*(eval(...)) form is handled by the multi-layer php-packed-eval-stager.
+  - id: exec-of-decompressed
+    desc: eval/exec of decompressed bytes
+    crit: notable
+    attack: T1140
+    if:
+      type: text
+      regex: '\b(eval|exec)\s*\(.{0,80}decompress\s*\('
+
+composite_rules:
+  # === HOSTILE: compressed code masqueraded as a data file ==================
+  # An embedded interpreter (surfaced only because it is hidden in a non-python
+  # host) decompresses an opaque data-extension blob and decodes the bytes into
+  # source. The host-type gate is the disguise discriminator: these atoms on a
+  # PHP/JS/etc. file mean a foreign interpreter program is concealed inside it.
+  # A standalone .py doing the same is benign and excluded by the gate.
+  - id: compressed-code-masqueraded-as-data
+    desc: Hidden interpreter unpacks code from data blob
+    crit: hostile
+    conf: 0.96
+    attack: T1027.009
+    for: [php, javascript, ruby, perl, lua, powershell]
+    all:
+      - id: micro-behaviors/data/compress/library::script-decompress-call
+      - id: micro-behaviors/data/compress/library::decompress-decoded-to-text
+      - id: micro-behaviors/fs/file/extension::data-blob-extension
+
+  # === HOSTILE: decompressed payload is executed (host-agnostic) =============
+  # eval/exec of decompressed bytes is an unpack-and-run loader with no benign
+  # use — fires regardless of host language or any extension masquerade, catching
+  # non-disguised droppers that actually execute the unpacked stage. (The
+  # print()-only SiteGuarding stub has no exec sink and is caught by the
+  # masquerade / code-as-data composites instead.)
+  - id: decompressed-code-executed
+    desc: Executes runtime-decompressed code
+    crit: hostile
+    conf: 0.97
+    attack: T1140,T1059
+    all:
+      - id: exec-of-decompressed
+      - id: micro-behaviors/data/compress/library::script-decompress-call
+
+  # === SUSPICIOUS: opaque-blob decompressor stub (host-agnostic) =============
+  # A whole-file one-liner that decompresses an opaque data-extension blob and
+  # decodes it to text. Inline like this it is the dropper-stub shape — but
+  # decompress+decode of a *.dat is dual-use, so this stays suspicious, not
+  # hostile. The one-liner gate separates the stub from a larger program that
+  # legitimately decompresses a data file.
+  - id: opaque-blob-decompress-stub
+    desc: One-line opaque-blob decompressor stub
+    crit: suspicious
+    conf: 0.85
+    attack: T1027,T1140
+    all:
+      - id: micro-behaviors/data/compress/library::script-decompress-call
+      - id: micro-behaviors/data/compress/library::decompress-decoded-to-text
+      - id: micro-behaviors/fs/file/extension::data-blob-extension
+      - id: metadata/file/metrics::file-one-liner

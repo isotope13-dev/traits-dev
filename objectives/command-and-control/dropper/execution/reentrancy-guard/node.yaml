@@ -1,0 +1,48 @@
+# Re-entrancy-guarded self-respawn loader (Node.js).
+#
+# The loader re-launches the Node interpreter on its own script
+# (spawn(process.execPath, [__filename], ...)) detached, injecting a fresh guard
+# environment variable over the inherited process.env. The parent returns
+# immediately so `npm install` completes normally; the detached child sees the
+# guard set and runs the real payload. The guard both prevents double-execution
+# and forwards the operator's full environment to the spawned stage.
+#
+# Behavior over IOCs: the per-build guard-tag literal (e.g. __XXXXXXXXXX_TAG) is
+# deliberately NOT keyed — only the structural shape (self-respawn + env mutation
+# over process.env). A benign daemonizer (pm2/forever) self-respawns with an env
+# flag too, so the self-respawn+env-guard atom is only notable on its own; it
+# becomes hostile when paired with remote-payload retrieval, which a daemonizer
+# never does.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1059.007
+traits:
+  - id: node-self-respawn-env-guard
+    desc: Self-respawn injects guard env over process.env
+    crit: notable
+    conf: 0.85
+    attack: "T1480, T1059.007"
+    if:
+      type: text
+      regex: 'spawn\s*\(\s*process\.execPath[\s\S]{0,400}Object\.assign\(\s*\{\s*\}\s*,\s*process\.env'
+composite_rules:
+  - id: node-reentrancy-guard-fetch-loader
+    desc: Re-entrancy-guarded self-respawn loader fetches payload
+    crit: hostile
+    conf: 0.94
+    attack: "T1105, T1059.007, T1480"
+    mbc: "B0024, F0011"
+    near_bytes: 8192
+    all:
+      - id: node-self-respawn-env-guard
+    any:
+      - id: objectives/command-and-control/dropper/node-bootstrap::download-file
+      - id: micro-behaviors/fs/chmod/executable/mode::node-chmod-make-executable
+      - id: micro-behaviors/communications/url/external/github::github-release-download
+    needs: 1
+    unless:
+      - id: metadata/package/testing/
+      - id: metadata/package/testing/presence/harness/
+      - id: metadata/library/structure/
+      - id: metadata/package/quality/false-positives::benign-app-fp-context

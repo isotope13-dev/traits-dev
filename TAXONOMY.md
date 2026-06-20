@@ -42,6 +42,7 @@ The ML pipeline extracts features from **subdirectory path + criticality**, not 
 - **Use technique-based directories.** Directory names should describe the behavior or method being detected, not the implementation language, platform, ecosystem, file type, malware family, or sample source. Put implementation details in filenames when they help readability, unless the technique itself is platform-specific.
 - **Prefer concise, meaningful names.** Short directory names are easier to scan and produce cleaner ML features: use `exec`, `poll`, `proxy`, `shell`, `reflect`, or `stage` when they are clear in context. Do not shorten names so far that humans lose the technique meaning.
 - **Avoid marker buckets.** Do not use `marker/` or `markers/` as directory names; name the behavior or technique being indicated instead.
+- **Every subdirectory must add precision over the path that leads to it.** A child directory has to answer "the parent's concept, but *which kind / how / in what form?*" — if it merely restates the parent (a synonym) or means "everything else here," it earns no place in the tree. Test: read the full path left-to-right; each segment should narrow the set further. `process/create/shell/invoke/` fails — *invoking* a shell **is** *creating* a shell process, so `invoke` is a synonym for `create`, not a refinement; in practice it had become the catch-all bucket (everything that wasn't one of the precise siblings `batch/`, `encoded/`, `injection/`, `interactive/`…), which is why it bloated past the size cap. Contrast its siblings, which each genuinely refine "create a shell" (*via a batch file*, *with an encoded command*, *by injection*). A segment that you can't finish the sentence "…the parent, specifically the **___** kind" for is either a synonym (drop it / merge up) or a grab-bag (split it into the precise techniques it actually contains). Verb-vs-verb synonyms (`create`/`invoke`/`spawn`/`exec`/`run`) are the most common offenders.
 - **Criticality assignment affects ML directly.** A trait bumped from `notable` to `suspicious` changes which feature it contributes to. Assign criticality based on the trait's actual detection confidence, not to manipulate features.
 - **The 3-level depth limit** means `objectives/anti-static/obfuscation/string/encoding/` extracts as `anti-static/obfuscation/string` — the `encoding/` level is aggregated into `string/`. Plan directory depth accordingly, and avoid unnecessary intermediate directories (e.g., prefer `obfuscation/syntax/` over `obfuscation/source/syntax/`).
 
@@ -229,6 +230,13 @@ micro-behaviors/
 │   ├── proxy/             #   Proxy/tunneling (SOCKS)
 │   ├── url/               #   URL construction/parsing
 │   ├── websocket/         #   WebSocket
+│   ├── messaging/         #   Chat/bot platform send APIs (sendMessage, sendDocument)
+│   │                      #     Platform-AGNOSTIC message-send verbs only — Slack,
+│   │                      #     Discord, Teams, Telegram all share them. The platform
+│   │                      #     HOST marker (api.telegram.org) belongs in
+│   │                      #     http/services/<platform>/; exfil INTENT belongs in
+│   │                      #     objectives/exfiltration/messaging/. Native-messaging
+│   │                      #     IPC (browser host bridge) → ipc/native-host/, not here.
 │   ├── async-io/          #   Async I/O (epoll, kqueue, io_uring, tokio)
 │   ├── capture/           #   Packet capture (tcpdump, wireshark)
 │   ├── benchmark/         #   Network performance testing
@@ -602,6 +610,13 @@ objectives/
 │   │   ├── delivery/          #     Transport (HTTP, FTP, GitHub, document)
 │   │   ├── staging/           #     Payload prep (embedded, encrypted, memory)
 │   │   ├── execution/         #     How payload runs (script, loader, eval)
+│   │   │                      #       native-binary/ → fetch + chmod +x + run a
+│   │   │                      #         downloaded executable; the stealth-exec leg
+│   │   │                      #         (detached/stdio-ignore) separates it from a
+│   │   │                      #         benign binary-wrapper installer.
+│   │   │                      #       reentrancy-guard/ → process re-spawns ITSELF
+│   │   │                      #         detached with a guard env var to outlive the
+│   │   │                      #         installer; hostile only with payload retrieval.
 │   │   └── behavior/          #     Multi-step behavioral composites
 │   ├── infrastructure/        #   C2 infrastructure (domains, IPs, cloud)    B0030
 │   │   ├── domain/            #     Domains, DGA, hosting
@@ -663,6 +678,10 @@ objectives/
 │   ├── shell/history/         #   Shell history                           T1552.003
 │   ├── ssh/key/               #   SSH key theft                           T1552.004
 │   ├── theft/                 #   Credential theft composites
+│   │   ├── multi-app/         #     Sweep across app SESSIONS (wallets, Discord, Steam)
+│   │   └── multi-store/       #     Sweep across developer credential STORES (cloud
+│   │                          #       configs, SSH keys, .env/.npmrc, browser DBs) +
+│   │                          #       exfil; the dev-workstation analogue of multi-app.
 │   ├── validation/            #   Credential validation
 │   ├── vpn/config/            #   VPN config credentials
 │   ├── wallet/                #   Crypto wallet access                    B0028
@@ -1002,6 +1021,8 @@ File-level properties with no behavioral implication. Describes *what a file is*
 - Supply-chain attack indicators belong in `objectives/supply-chain/` (organized by technique, not ecosystem)
 - OS/platform vendor traits go under `vendor/`
 - Specific apps, tools, games, and library/framework/runtime fingerprints go under `well-known/{app,tool,game,lib}/`, not `metadata/`
+- **Distinguish a tool's *output* from the tool's *identity*.** "This code was bundled/minified/transpiled" is a build-transform fact → `metadata/build/<function>/` (group by function: `bundler/`, `minifier/`, `transpiler/`). "This file *is* webpack / PuTTY / Wireshark" is a named-software fingerprint → `well-known/`. Putting a software identity in `metadata/` is the same *matcher-defines-identity* violation as mislabeling a generic capability.
+- **Avoid grab-bag directories.** A directory must name one coherent concept that is meaningful as an ML path feature. If a dir accretes unrelated kinds of traits — e.g. the former `package/tooling/` held build-output (`webpack-bundled`), software identities (`tool-identity-putty`), *and* project-hygiene facts (`has-eslint-config`) all at once — the path feature becomes noise and analysts can't reason about it. Split each kind to its proper home (`build/`, `well-known/`, `package/quality/`) and delete the grab-bag. Vague names (`tooling`, `context`, `misc`, `helpers`) are a smell that this has happened.
 - New top-level subdirectories require updating both TAXONOMY.md and `ALLOWED_METADATA` in `src/capabilities/validation/directory_whitelist.rs`
 - **Max depth:** 3 levels within `metadata/` (ML pipeline limit)
 - **Max leaf size:** No leaf directory should exceed 80 traits
@@ -1039,7 +1060,20 @@ metadata/
 │   │                      #   (no content/ — section *content* patterns describe
 │   │                      #    behavior → objectives/, or capability → micro-behaviors/)
 │   └── symbols/           #   Import/export symbol analysis
-├── build/                 # Build systems, CI/CD (cmake, cargo, docker, jenkins)
+├── build/                 # How an artifact was BUILT or TRANSFORMED — never *who* the
+│   │                      #   tool is. Group by transform FUNCTION, not by specific tool:
+│   │                      #   the directory is an ML feature, so `bundler/` is one dense
+│   │                      #   signal across webpack/rollup/esbuild/parcel/vite, and the
+│   │                      #   specific tool is the trait NAME (`esbuild-bundled`). The
+│   │                      #   tool's IDENTITY as named software (e.g. "this binary IS
+│   │                      #   webpack/PuTTY") belongs in well-known/, never here.
+│   ├── bundler/           #   Module bundlers (webpack, rollup, esbuild, parcel, vite)
+│   ├── minifier/          #   Minifier / uglifier output patterns
+│   ├── transpiler/        #   Source-to-source transforms (babel, typescript, swc)
+│   ├── autotools/         #   GNU build family (autoconf, automake, libtool)
+│   ├── scaffold/          #   Project/code generators and templating
+│   ├── ci/                #   CI/CD pipeline fingerprints (github-actions, jenkins)
+│   └── ...                #   cmake, cargo, docker, conda, ecosystem
 ├── document/              # Document internals (requires document parsing)
 │   ├── chm/               #   Compiled HTML Help (ITSF/ITSP/PMGL)
 │   ├── html/              #   HTML structure
@@ -1093,6 +1127,8 @@ metadata/
 │   ├── license/           #   License detection
 │   ├── logging/           #   Logging patterns
 │   ├── maintainers/       #   Maintainer counts
+│   ├── manager/           #   Package-manager fingerprints (homebrew, composer) — the
+│   │                      #     distribution tool, distinct from the build transform (build/)
 │   ├── manifest/          #   Package manifest fields (name, author, repository, engines)
 │   ├── metrics/           #   Code metrics
 │   ├── quality/           #   Quality signals
@@ -1102,8 +1138,10 @@ metadata/
 │   │   ├── harness/       #     Runtime-specific test harnesses
 │   │   ├── presence/      #     Test presence indicators
 │   │   └── scripted/      #     Scripted-language frameworks
-│   ├── tooling/           #   Package tooling
 │   └── versioning/        #   Version detection
+│       # NO `tooling/` — it was a grab-bag mixing build-output (→ build/),
+│       # software identities (→ well-known/), and quality facts (→ quality/).
+│       # See "Avoid grab-bag directories" below.
 ├── permission/            # Declared permission and extension authority metadata
 │   │                      #   Neutral facts about what authority a manifest grants or
 │   │                      #   what extension APIs appear. Provider/ecosystem belongs
@@ -1155,6 +1193,8 @@ When placing a new metadata trait, use this tiebreaker table. Each row names the
 | `binary/metrics/` | `binary/anomaly/` | Is the measurement neutral (could be normal)? → `metrics/`. Does it inherently indicate malformation or tampering? → `anomaly/` |
 | `document/` | `file/` | Does it require parsing document internals (OLE streams, OOXML parts, PDF objects)? → `document/`. Observable from header/extension alone? → `file/` |
 | `build/` | `lang/` | Is it about build orchestration (cmake, docker, CI/CD)? → `build/`. Is it about the language toolchain (gcc, rustc, delphi)? → `lang/` |
+| `metadata/build/` | `well-known/` | Is it the **output/shape a tool left in the file** (this code was *bundled*, *minified*, *transpiled*)? → `metadata/build/<function>`. Is it the **named tool/software being identified** (this *is* PuTTY / Wireshark / the webpack package)? → `well-known/{app,tool,lib}/`. The transform is a metadata fact; the identity is a fingerprint. A named-software fingerprint in `metadata/` is the "matcher defines identity" violation. |
+| `metadata/build/` | `metadata/package/quality/` | Is it evidence of a build/transform tool's output (bundled, minified, autotools-generated)? → `build/`. Is it a project-hygiene/maturity fact (has ESLint/Prettier/TS config, has docs, has tests)? → `package/quality/` |
 | `package/` | `library/` | Is it about ecosystem-level metadata (fields, scripts, quality, testing)? → `package/`. Is it neutral library context retained for metadata use? → `library/`. Is it identifying a specific library/framework/runtime? → `well-known/lib/` |
 | `package/` | `permission/` | Is it ordinary package metadata (name, dependencies, files, scripts, quality)? → `package/`. Is it declared authority or extension API surface (browser/IDE extension permissions, host access, OAuth scopes, content scripts)? → `permission/` |
 | `signed/` | `vendor/` | Is it about the cryptographic signature chain or entitlements? → `signed/`. Is it identifying an OS/platform vendor by strings/resources/patterns? → `vendor/` |

@@ -1,0 +1,55 @@
+# Developer-credential sweep + exfiltration (Node.js).
+#
+# A stealer that harvests secrets from multiple DISTINCT credential stores a
+# developer workstation holds — cloud provider configs (~/.aws, ~/.gcp,
+# ~/.azure), SSH private keys, dev-tool tokens (.env/.npmrc/.netrc), browser
+# login databases, wallet files — and ships them off-host with an encoded or
+# error-suppressed HTTP upload.
+#
+# Behavior over IOCs: no filename, host, or token literal is keyed. The signal
+# is breadth-of-targeting (>=2 unrelated credential categories) paired with a
+# hide-the-payload exfil. The existing multi-app aggregate counts app sessions
+# (wallets/discord/steam) but not cloud-config or dev-token theft, so a
+# developer-targeting supply-chain stealer slipped through; this covers it.
+#
+# FP boundary: a devops tool legitimately reading its own ~/.aws + ~/.ssh and
+# POSTing to an API is excluded because the exfil leg requires a stealer tell —
+# base64-of-file-bytes (node-encode-exfil) or silenced network errors
+# (node-stealthy-exfil) or bundled system-profile collection — not a plain POST.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1555
+  mbc: E1552
+composite_rules:
+  - id: node-credential-store-targets
+    desc: Reads two or more distinct credential stores
+    crit: component
+    conf: 0.9
+    needs: 2
+    any:
+      - id: micro-behaviors/fs/path/sensitive/cloud/
+      - id: micro-behaviors/fs/path/sensitive/ssh/
+      - id: micro-behaviors/fs/path/sensitive/credentials/
+      - id: micro-behaviors/fs/path/sensitive/browser/
+      - id: micro-behaviors/fs/path/sensitive/crypto/
+  - id: node-developer-credential-sweep
+    desc: Harvests multiple credential stores and exfiltrates
+    crit: hostile
+    conf: 0.94
+    attack: "T1555, T1552.001, T1041"
+    mbc: "E1552, E1041"
+    near_bytes: 16384
+    all:
+      - id: node-credential-store-targets
+    any:
+      - id: objectives/exfiltration/http/upload::node-encode-exfil
+      - id: objectives/exfiltration/http/upload::node-stealthy-exfil
+      - id: objectives/exfiltration/http/upload::node-collect-exfil
+    unless:
+      - id: metadata/package/testing/
+      - id: metadata/package/testing/presence/harness/
+      - id: metadata/library/structure/
+      - id: metadata/package/quality/false-positives::benign-app-fp-context
+      - id: micro-behaviors/os/service/legitimate::package-manager
+      - id: micro-behaviors/os/service/legitimate::ci-cd-pipeline
