@@ -122,12 +122,20 @@ traits:
     regex: Object\.keys\(\w+\)\.forEach\(\w+\s*=>\s*\w+\(\w+\[\w+\]\)\)
 - id: jsonkeeper-b64-endpoint
   desc: Base64 encoded jsonkeeper endpoint
-  crit: component
+  crit: suspicious
   conf: 0.98
   if:
     type: encoded
     encoding: base64
     regex: https://(www\.)?jsonkeeper\.com/b/[A-Za-z0-9_-]{4,16}
+- id: jsonkeeper-b64-endpoint-literal
+  desc: Base64 literal jsonkeeper endpoint
+  crit: suspicious
+  conf: 0.98
+  if:
+    type: literal
+    kind: string
+    regex: '^aHR0cHM6Ly93d3cuanNvbmtlZXBlci5jb20[A-Za-z0-9_-]{4,80}={0,2}$'
 - id: await-fetch-text-eval
   desc: eval awaits fetched response text
   crit: suspicious
@@ -136,6 +144,17 @@ traits:
   if:
     type: text
     regex: eval\s*\(\s*await\s*\(\s*await\s+fetch\(.{1,120}\)\)\.text\(\)\s*\)
+# Point-free form: `.then(eval)` hands the resolved value straight to eval —
+# after a fetch chain that is the response body executed as code. No legitimate
+# code pipes a promise result into the global eval.
+- id: then-eval-pointfree
+  desc: Promise resolution piped into eval
+  crit: suspicious
+  conf: 0.92
+  attack: T1059.007
+  if:
+    type: text
+    regex: '\.then\s*\(\s*eval\s*\)'
 - id: userjs-endpoint
   desc: User JavaScript endpoint path
   crit: component
@@ -193,7 +212,7 @@ traits:
   if:
     type: literal
     kind: string
-    regex: ^["']?fetch\s*\(
+    regex: ^["']?fetch\s*\(\s*[^)]
 - id: post-method-literal-string
   desc: Literal string contains a POST method fragment
   crit: component
@@ -202,6 +221,29 @@ traits:
     type: literal
     kind: string
     regex: method\s*:\s*['"]POST['"]
+- id: axios-atob-data-content
+  desc: Axios decoded URL content fetch
+  crit: suspicious
+  conf: 0.96
+  if:
+    type: text
+    regex: 'axios\.get\s*\(\s*atob\s*\(\s*\w+\s*\)\s*\)[\s\S]{0,40}\.data\.content'
+- id: node-module-instance-compile
+  desc: Node module instance compile
+  crit: notable
+  conf: 0.96
+  attack: T1059.007
+  if:
+    type: text
+    regex: '\._compile\s*\(\s*\w+\s*,\s*["''][^"'']{1,40}\.js'
+- id: node-error-js-module-facade
+  desc: Fake error.js module facade
+  crit: component
+  conf: 0.95
+  attack: T1036
+  if:
+    type: text
+    regex: 'new\s+\w+\.Module\s*\(\s*["'']error\.js'
 composite_rules:
 - id: fetch-eval-remote-code
   desc: Fetch remote code and eval in memory
@@ -289,6 +331,7 @@ composite_rules:
   any:
   - id: objectives/command-and-control/infrastructure/paste::jsonkeeper
   - id: jsonkeeper-b64-endpoint
+  - id: jsonkeeper-b64-endpoint-literal
   - id: objectives/anti-static/obfuscation/encoding/content::encoded-http-url
 - id: fetch-atob-json-eval-loader
   desc: Base64-decoded URL JSON content eval
@@ -393,7 +436,24 @@ composite_rules:
   attack: T1102.001
   all:
   - id: fetch-json-function-constructor-require
+  any:
   - id: jsonkeeper-b64-endpoint
+  - id: jsonkeeper-b64-endpoint-literal
+- id: jsonkeeper-node-module-compile-loader
+  desc: JsonKeeper payload compiled as Node module
+  crit: hostile
+  conf: 0.995
+  attack: T1102.001,T1059.007,T1036
+  mbc: B0009.016
+  all:
+  - id: axios-atob-data-content
+  - id: node-module-instance-compile
+  - id: node-error-js-module-facade
+  any:
+  - id: jsonkeeper-b64-endpoint
+  - id: jsonkeeper-b64-endpoint-literal
+  unless:
+  - id: metadata/package/testing/
 - id: detached-fetch-text-eval-loader
   desc: Detached process fetches and evals text
   crit: hostile
@@ -462,3 +522,19 @@ composite_rules:
   all:
   - id: dynamic-fetch-constructor-eval
   - id: post-method-literal-string
+# Point-free fetch→eval: `fetch(c2).then(r=>r.text()).then(eval)` runs the
+# response body as code. The eval shape alone is suspicious; with a fetch call
+# in proximity it is the remote-code-execution loader.
+- id: fetch-pointfree-remote-eval
+  desc: Point-free fetch response piped to eval
+  crit: hostile
+  conf: 0.95
+  attack: T1105,T1059.007
+  mbc: B0024
+  near_lines: 3
+  all:
+  - id: micro-behaviors/communications/http/request/client::js-fetch-call
+  - id: then-eval-pointfree
+  unless:
+  - id: metadata/package/testing/
+  - id: well-known/tool/detection/security-scanner/
