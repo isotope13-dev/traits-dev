@@ -1,0 +1,192 @@
+# Archive-layout detection for DLL-sideloading staging bundles.
+#
+# Loader/dropper families (PlugX, ValleyRAT, Gh0st variants, and many Chinese
+# APT toolchains) are frequently delivered as a single archive that, once
+# extracted, drops a legitimate signed host executable next to a malicious
+# proxy DLL plus an encrypted payload blob. When that archive is a
+# password-protected 7z, the encrypted streams defeat content inspection, but
+# the plaintext member listing still reveals the staging layout: a generic
+# installer/launcher entrypoint at the root, the application's own bundled GUI
+# runtime (Qt/MSVC redistributables) acting as sideload-host scaffolding, and
+# native binaries scattered across update/library staging directories.
+#
+# These composites operate purely on `archive.members[*].path`, so they fire
+# even when the payload cannot be decrypted. They stop at `suspicious`: the
+# layout is the technique's fingerprint, but the malicious payload itself stays
+# encrypted, so an analyst — not the scanner alone — confirms intent.
+defaults:
+  platforms: [windows]
+  for: [tar]
+  attack: T1574.002
+  mbc: F0015
+
+traits:
+  # --- generic installer/launcher entrypoint at archive root ---
+  - id: archive-root-setup-exe
+    desc: setup.exe at archive root
+    crit: component
+    conf: 0.8
+    if:
+      type: value
+      path: "archive.members[*].path"
+      regex: '(?i)^setup([_-][a-z0-9]+)?\.exe$'
+
+  - id: archive-root-installer-exe
+    desc: install(er).exe at archive root
+    crit: component
+    conf: 0.8
+    if:
+      type: value
+      path: "archive.members[*].path"
+      regex: '(?i)^install(er)?\.exe$'
+
+  - id: archive-root-updater-exe
+    desc: update(r).exe at archive root
+    crit: component
+    conf: 0.8
+    if:
+      type: value
+      path: "archive.members[*].path"
+      regex: '(?i)^update(r)?\.exe$'
+
+  - id: archive-root-launcher-exe
+    desc: launcher.exe at archive root
+    crit: component
+    conf: 0.8
+    if:
+      type: value
+      path: "archive.members[*].path"
+      regex: '(?i)^launcher\.exe$'
+
+  # --- bundled GUI/runtime redistributables (sideload-host scaffold) ---
+  - id: archive-bundled-qt-runtime
+    desc: Bundled Qt runtime DLL
+    crit: component
+    conf: 0.82
+    if:
+      type: value
+      path: "archive.members[*].path"
+      regex: '(?i)(^|/)qt[56][a-z]+\.dll$'
+
+  - id: archive-bundled-msvc-runtime
+    desc: Bundled MSVC runtime DLL
+    crit: component
+    conf: 0.82
+    if:
+      type: value
+      path: "archive.members[*].path"
+      regex: '(?i)(^|/)msvc[rp]\d+\.dll$'
+
+  - id: archive-bundled-vcruntime
+    desc: Bundled VC/UCRT runtime DLL
+    crit: component
+    conf: 0.82
+    if:
+      type: value
+      path: "archive.members[*].path"
+      regex: '(?i)(^|/)(vcruntime|ucrtbase)\d*\.dll$'
+
+  # --- native binaries scattered across staging directories ---
+  - id: archive-bin-in-update-dir
+    desc: Binary under Updates dir
+    crit: component
+    conf: 0.8
+    if:
+      type: value
+      path: "archive.members[*].path"
+      regex: '(?i)(^|/)updates?/[^/]+\.(exe|dll)$'
+
+  - id: archive-bin-in-library-dir
+    desc: Binary under Library dir
+    crit: component
+    conf: 0.8
+    if:
+      type: value
+      path: "archive.members[*].path"
+      regex: '(?i)(^|/)library/[^/]+\.(exe|dll)$'
+
+  # --- decoy padding: foreign interpreter test-suite files ---
+  - id: archive-interpreter-testsuite-padding
+    desc: PHP .phpt test file member
+    crit: component
+    conf: 0.78
+    if:
+      type: value
+      path: "archive.members[*].path"
+      regex: '(?i)(^|/)[^/]+\.phpt$'
+
+  # --- genuine-PHP-distribution guards (suppress decoy FP) ---
+  - id: archive-php-runtime-binary
+    desc: PHP runtime binary member
+    crit: component
+    conf: 0.9
+    if:
+      type: value
+      path: "archive.members[*].path"
+      regex: '(?i)(^|/)php[0-9a-z_]*\.(exe|dll)$'
+
+  - id: archive-php-ini-member
+    desc: php.ini config member
+    crit: component
+    conf: 0.9
+    if:
+      type: value
+      path: "archive.members[*].path"
+      regex: '(?i)(^|/)php\.ini(-[a-z]+)?$'
+
+composite_rules:
+  - id: archive-installer-entrypoint-root
+    desc: Generic installer exe at archive root
+    crit: component
+    conf: 0.8
+    any:
+      - id: archive-root-setup-exe
+      - id: archive-root-installer-exe
+      - id: archive-root-updater-exe
+      - id: archive-root-launcher-exe
+
+  - id: archive-bundled-gui-runtime
+    desc: Bundled Qt/MSVC runtime DLLs
+    crit: component
+    conf: 0.82
+    any:
+      - id: archive-bundled-qt-runtime
+      - id: archive-bundled-msvc-runtime
+      - id: archive-bundled-vcruntime
+
+  - id: archive-native-bins-in-update-dirs
+    desc: Native binary in update/library dir
+    crit: component
+    conf: 0.8
+    any:
+      - id: archive-bin-in-update-dir
+      - id: archive-bin-in-library-dir
+
+  - id: archive-php-distribution-member
+    desc: PHP distribution member
+    crit: component
+    conf: 0.9
+    any:
+      - id: archive-php-runtime-binary
+      - id: archive-php-ini-member
+
+  - id: archive-sideload-host-kit
+    desc: Self-contained DLL-sideload host kit
+    crit: suspicious
+    conf: 0.85
+    all:
+      - id: archive-installer-entrypoint-root
+      - id: archive-bundled-gui-runtime
+      - id: metadata/build/archive::archive-native-binary-entry
+
+  - id: archive-decoy-padded-binary-bundle
+    desc: Binaries padded with unrelated test files
+    crit: suspicious
+    conf: 0.85
+    all:
+      - id: archive-native-bins-in-update-dirs
+      - id: archive-interpreter-testsuite-padding
+    unless:
+      # PHP source/SDK trees legitimately ship .phpt tests beside php*.exe/php*.dll.
+      - id: archive-php-distribution-member
+      - id: metadata/build/archive::archive-cargo-toml-entry

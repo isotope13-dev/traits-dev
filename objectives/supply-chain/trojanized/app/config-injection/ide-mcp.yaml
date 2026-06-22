@@ -26,14 +26,35 @@ traits:
       type: text
       substr: ".kiro"
 
-  # === JWT decode for token exfiltration ===
-  - id: jwt-decode-import
-    desc: JWT decode library import
+  # === AI CLI endpoint/token env vars ===
+  # The env vars the official Claude Code CLI reads to pick its API endpoint and
+  # credential. Writing them into the agent's settings re-points model traffic
+  # (prompts, code, responses) at a chosen server — the redirect intent comes
+  # from the config-write composite below.
+  - id: anthropic-base-url-env
+    desc: Claude API base URL env var
     crit: notable
-    conf: 0.9
+    conf: 0.85
     if:
       type: text
-      word: "jwt-decode"
+      word: ANTHROPIC_BASE_URL
+  - id: anthropic-auth-token-env
+    desc: Claude API auth token env var
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      word: ANTHROPIC_AUTH_TOKEN
+
+  # Codex's config.toml key that selects which API server the agent talks to.
+  # Setting it to a custom provider re-points Codex at a chosen endpoint.
+  - id: codex-model-provider-config
+    desc: Codex model_provider config key
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      regex: '\bmodel_providers?\b'
 
 composite_rules:
   # MCP config + any IDE directory = config injection
@@ -81,13 +102,59 @@ composite_rules:
       - id: micro-behaviors/communications/ipc/mcp/
       - id: well-known/tool/detection/
 
+  # Redirecting the AI CLI's API endpoint and planting an auth token into the
+  # agent's config file routes the victim's prompts/code through a chosen server.
+  # Dual-use: legitimate proxy/"router" tools do this too, so suspicious — the
+  # hostile escalation comes from co-resident beacon/sandbox-disable composites.
+  - id: ai-agent-api-endpoint-hijack
+    desc: Redirects AI CLI to third-party API endpoint
+    crit: suspicious
+    conf: 0.85
+    all:
+      - id: anthropic-base-url-env
+      - id: anthropic-auth-token-env
+    any:
+      - id: micro-behaviors/fs/path/application/config::claude-config-directory
+      - id: micro-behaviors/fs/write/file/direct::js-file-write
+    unless:
+      - id: well-known/tool/detection/
+
+  # Codex twin of the redirect above: overriding model_provider in config.toml
+  # and writing OPENAI_API_KEY into ~/.codex routes Codex's traffic and key
+  # through a chosen server. Dual-use (relay tools), so suspicious.
+  - id: codex-provider-credential-hijack
+    desc: Redirects Codex provider, writes API key
+    crit: suspicious
+    conf: 0.85
+    all:
+      - id: codex-model-provider-config
+      - id: objectives/credential-access/env/secrets/ai-provider::openai-api-key
+    any:
+      - id: micro-behaviors/fs/path/application/config::codex-config-directory
+      - id: micro-behaviors/fs/write/file/direct::js-file-write
+    unless:
+      - id: well-known/tool/detection/
+
+  # Endpoint+token redirect is dual-use; ALSO planting a SessionStart lifecycle
+  # hook into the same agent config is not — a benign API "router" never injects
+  # a session hook. The pair is a trojanized config-injection backdoor.
+  - id: ai-agent-config-hijack-with-hook
+    desc: Hijacks AI CLI config, injects session hook
+    crit: hostile
+    conf: 0.9
+    all:
+      - id: ai-agent-api-endpoint-hijack
+      - id: micro-behaviors/communications/ipc/agent-hook::claude-session-hook--sessionstart
+    unless:
+      - id: well-known/tool/detection/
+
   # JWT decode + MCP config = token exfiltration
   - id: mcp-token-exfiltration
     desc: JWT token exfiltration via MCP config
     crit: hostile
     conf: 0.95
     all:
-      - id: jwt-decode-import
+      - id: well-known/lib/jwt-decode::jwt-decode-import
     any:
       - id: micro-behaviors/fs/path/application/config::mcp-json-filename
       - id: micro-behaviors/fs/path/application/config::mcp-config-json-filename

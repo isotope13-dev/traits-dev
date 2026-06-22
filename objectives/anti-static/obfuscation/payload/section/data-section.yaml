@@ -302,17 +302,28 @@ traits:
   platforms:
   - windows
   size_min: 16777216
+  # Size-inflation padding is dominated by NUL runs (entropy ~0), but loaders
+  # routinely dilute it with stuffed decoy strings (ripped SDK/library text) to
+  # masquerade as a complex benign app, lifting .data entropy to ~3-4.5. That is
+  # still far below packed/encrypted payloads (6.5+); the 16MB writable floor plus
+  # the 95%-of-file and code:data legs in low-entropy-data-padding-carrier keep
+  # this near-zero-FP against ordinary mixed-content .data sections.
   if:
     type: section
     exact: .data
     writable: true
     length_min: 16777216
-    entropy_max: 0.8
+    entropy_max: 4.5
   unless:
   - id: metadata/signed/platform/
-  - id: metadata/binary/resource/
+  # Narrowed from the whole metadata/binary/resource/ dir: that prefix matched
+  # any PE carrying an icon (pe-resource-icon-list), which suppressed this trait
+  # on essentially every real-world executable. Only resource-ONLY DLLs and
+  # null-padded resource blobs legitimately present a huge low-entropy section.
+  - id: metadata/binary/resource::resource-only-dll
+  - id: metadata/binary/resource::large-null-rsrc
 - id: dot-data-over-95pct-of-pe
-  desc: .data occupies over ninety-five percent
+  desc: Largest section over ninety-five percent of file
   crit: component
   conf: 0.92
   for:
@@ -320,9 +331,13 @@ traits:
   platforms:
   - windows
   size_min: 16777216
+  # binary.data_to_file_ratio is not produced by the analyzer (phantom field →
+  # the trait never fired). largest_section_ratio is the equivalent signal; the
+  # composite pairs it with massive-low-entropy-dot-data, which confirms the
+  # dominant section is the writable .data blob.
   if:
     type: metrics
-    field: binary.data_to_file_ratio
+    field: binary.largest_section_ratio
     min: 0.95
 - id: extreme-loader-code-to-data-imbalance
   desc: Code to data ratio below 0.05
@@ -981,9 +996,17 @@ composite_rules:
   - id: metadata/binary/layout::pe-checksum-zeroed
   - id: metadata/binary/metrics/size::massive-executable
   - id: objectives/evasion/indicator-removal/timestamps::export-timestamp-maxval
+  # The three geometry legs (16MB+ writable .data, >=95% of file, code:data<0.05)
+  # already exclude every benign runtime — managed frameworks ship their bulk as
+  # high-entropy resources/snapshots, not a low-entropy writable .data blob. The
+  # exclusions below are light insurance, scoped to specific RUNTIME markers.
+  # The previous `metadata/binary/framework/` dir-prefix was too broad: it also
+  # matched ATL/WTL RTTI and a bare "mscoree" string, both of which a
+  # decoy-stuffed loader trivially fakes, defeating the padding verdict.
   unless:
   - id: metadata/signed/platform/
-  - id: metadata/binary/framework/
+  - id: metadata/binary/framework::dotnet-metadata
+  - id: metadata/binary/framework::flutter-windows-dll
 - id: encoded-rdata-loader-geometry
   desc: Encoded loader payload in rdata
   crit: suspicious
