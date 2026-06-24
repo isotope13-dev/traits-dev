@@ -1,0 +1,70 @@
+# WebAssembly execution from a JavaScript/Node host.
+#
+# Neutral capability mechanics: instantiating a WASM module, driving the
+# Go/TinyGo `wasm_exec.js` host runtime, and hoisting Node builtins onto
+# globalThis so the guest module can reach them. These are legitimate in
+# WASM-backed tooling (tree-sitter, sql.js, esbuild-wasm); intent is inferred
+# by composites that pair them with concealment (random payload names, silent
+# error suppression) in objectives/.
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript]
+  crit: notable
+  conf: 0.85
+traits:
+  - id: webassembly-instantiate
+    desc: Instantiates a WebAssembly module
+    # WebAssembly.instantiate / instantiateStreaming / compile run a WASM
+    # module — a real code-execution sink for a portable bytecode payload.
+    if:
+      type: text
+      regex: '\bWebAssembly\.(instantiate|instantiateStreaming|compile|compileStreaming)\s*\('
+  - id: go-wasm-runtime
+    desc: Go/TinyGo wasm_exec host runtime object
+    conf: 0.9
+    # `new Go()` (optionally `new globalThis.Go()`) constructs the runtime
+    # bridge the Go/TinyGo `wasm_exec.js` shim defines to host a Go-compiled
+    # WASM module. Distinctive of running a Go WASM payload from JS.
+    if:
+      type: text
+      regex: '\bnew\s+(globalThis\.)?Go\s*\(\s*\)'
+  - id: go-wasm-run-instance
+    desc: Runs an instantiated Go WASM instance
+    crit: component
+    conf: 0.9
+    # `go.run(instance)` starts the Go scheduler on the instantiated module.
+    if:
+      type: text
+      regex: '\bgo\.run\s*\('
+  - id: wasm-bytes-from-file
+    desc: Instantiates WASM from a disk file
+    crit: component
+    conf: 0.85
+    # readFileSync feeding WebAssembly.instantiate — the WASM payload is read
+    # from a sibling file rather than fetched, the npm/extension shape.
+    if:
+      type: text
+      regex: 'WebAssembly\.(instantiate|compile)[A-Za-z]*\s*\(\s*[A-Za-z_$.]*readFileSync'
+  - id: node-builtins-global-hoist
+    desc: Hoists Node builtins onto globalThis
+    crit: component
+    conf: 0.85
+    # `globalThis.fs = require('fs')` / `globalThis.crypto = ...` /
+    # `globalThis.require = require` — the host-environment setup the Go WASM
+    # runtime expects, which also grants a guest module global reach to Node
+    # filesystem, crypto, and module-loading capabilities.
+    if:
+      type: text
+      regex: "globalThis\\.(require|fs|crypto)\\s*="
+composite_rules:
+  - id: go-wasm-host-execution
+    desc: Runs a Go-compiled WASM module from a JS host
+    crit: notable
+    conf: 0.9
+    all:
+      - id: go-wasm-runtime
+      - id: webassembly-instantiate
+    any:
+      - id: go-wasm-run-instance
+      - id: wasm-bytes-from-file
+      - id: node-builtins-global-hoist

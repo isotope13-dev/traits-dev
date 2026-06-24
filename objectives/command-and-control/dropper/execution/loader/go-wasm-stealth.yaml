@@ -1,0 +1,64 @@
+# Stealth Go-WASM payload loader.
+#
+# A tiny JavaScript bootstrap (commonly a VS Code / npm `extension.js`
+# entrypoint) that, at load time, silently executes a Go-compiled WebAssembly
+# payload it ships alongside. The malicious shape is the combination:
+#   - the Go `wasm_exec` host runtime (`new Go()` + WebAssembly.instantiate),
+#   - the payload + sidecar carried as random, high-entropy basenames
+#     (`orybbbdsuqmaapel.wasm`, `require("./djfbmsniidcbvvsp.js")`) so the real
+#     logic stays in opaque bytecode that static scanners can't read,
+#   - every error swallowed (`.catch(function(){})`, empty `catch{}`) so a
+#     failed bootstrap is invisible.
+# Legitimate WASM tooling ships named modules (`tree-sitter.wasm`, `main.wasm`)
+# and does not silently discard load failures, so the random-name + silent-fail
+# pair is the discriminator. Observed delivering a Go-WASM Solana
+# transaction-monitor payload in a trojanized editor extension (2026-06).
+#
+# ATT&CK: T1027 (Obfuscated Files or Information), T1059.007 (JavaScript)
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript]
+  attack: "T1027,T1059.007"
+  mbc: B0023
+traits:
+  - id: random-named-wasm-payload
+    desc: Loads a random-named WASM file
+    crit: component
+    conf: 0.85
+    # 14+ unbroken lowercase letters (no words, digits, or separators) is a
+    # generated/random basename, not a product name like `tree-sitter.wasm`.
+    if:
+      type: text
+      regex: '["''][a-z]{14,}\.wasm["'']'
+  - id: random-named-sidecar-require
+    desc: Requires a random-named sidecar module
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: 'require\(\s*["'']\.\/[a-z]{14,}(\.js)?["'']\s*\)'
+  - id: silent-wasm-loader-catch
+    desc: Empty catch swallows loader errors
+    crit: component
+    conf: 0.85
+    # `.catch(function(){})` / `.catch(()=>{})` on the WASM run promise — a
+    # silent-fail loader, not error handling.
+    if:
+      type: text
+      regex: '\.catch\(\s*(function\s*\(\)|\(\))\s*(=>)?\s*\{\s*\}\s*\)'
+composite_rules:
+  - id: go-wasm-stealth-payload-loader
+    desc: Silently bootstraps a concealed Go-WASM payload
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: micro-behaviors/process/interpreter/wasm::go-wasm-runtime
+      - id: micro-behaviors/process/interpreter/wasm::webassembly-instantiate
+      - id: silent-wasm-loader-catch
+    any:
+      - id: random-named-wasm-payload
+      - id: random-named-sidecar-require
+    unless:
+      - id: metadata/package/testing/
+      - id: well-known/tool/detection/security-scanner/
+      - id: well-known/tool/detection/llm-scanner/
