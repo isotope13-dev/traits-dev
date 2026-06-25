@@ -6,6 +6,12 @@ defaults:
   for: [all]
   platforms: [unix, windows, android, ios]
 
+# Note on the security-hold tombstone: it stays at `suspicious` (the atomic
+# `metadata/registry::registry-security-hold`), not hostile. npm's takedown
+# replaces the malware with a benign *placeholder* package, so the bytes under
+# analysis are no longer malicious — the registry fact "this name once shipped
+# malware" is a strong signal about the name, not a hostile verdict on the stub.
+
 composite_rules:
 - id: social-media-data-harvester-extension
   desc: Browser extension whose store listing advertises bulk social-media data harvesting
@@ -44,8 +50,8 @@ composite_rules:
 
 - id: new-package-publish-burst
   desc: A brand-new package bursting out several releases in 24h — a campaign drop cadence
-  crit: suspicious
-  conf: 0.7
+  crit: notable
+  conf: 0.6
   # Typosquat and dependency-confusion campaigns publish a fresh name and then
   # rev it repeatedly within hours (chasing an install, evading a takedown). A
   # young package + a publish burst is that shape; an established package's
@@ -83,16 +89,101 @@ composite_rules:
     - id: metadata/registry::brand-new-package
     - id: metadata/registry::registry-install-hook
 
+- id: young-package-release-churn
+  desc: Young package with abnormal release churn
+  crit: notable
+  conf: 0.6
+  # Observed across feed-confirmed-malicious npm packages: a name only weeks old
+  # that has already published 20+ versions — rapid re-publish to chase an
+  # install window or outrun a takedown (e.g. 300+ versions in a month). A
+  # genuinely popular fast-shipping project is excluded by `widely-installed`.
+  all:
+    - id: metadata/registry::recent-package
+    - id: metadata/registry::many-releases
+  unless:
+    - id: metadata/registry::widely-installed
+
+- id: fresh-unestablished-throwaway
+  desc: Brand-new low-adoption throwaway package
+  crit: notable
+  conf: 0.6
+  # The majority shape in the malicious-npm sweep: a package first seen in the
+  # last week, only a release or two, essentially no installs. Benign new
+  # packages look the same on day one, so this stays notable — a review flag,
+  # strongest when it co-occurs with artifact behavior (see the package-scoped
+  # rule below).
+  all:
+    - id: metadata/registry::brand-new-package
+    - id: metadata/registry::few-releases
+    - id: metadata/registry::low-adoption
+
 # Flagship cross-source rule: `scope: package` pools the REGISTRY record's facts
 # with the fetched ARTIFACT's own behavior, which only co-occur under `--fetch` /
 # `pkg:`. A brand-new package is unremarkable; a brand-new package whose code
 # POSTs data out of an install script is the supply-chain drop pattern.
 - id: fresh-package-exfil-on-install
   desc: Brand-new package's install script POSTs data out
+  crit: suspicious
+  conf: 0.72
+  scope: package
+  attack: "T1195.002"
+  # A lifecycle-script POST in a days-old package is the install-hook exfil
+  # shape, but a benign postinstall can also POST telemetry — suspicious, not
+  # hostile, unless it also obfuscates (the rules below).
+  all:
+    - id: metadata/registry::brand-new-package
+    - id: micro-behaviors/communications/http/post::npm-script-post
+  unless:
+    - id: metadata/registry::widely-installed
+
+# Paired against the SPECIFIC artifact behaviors seen across a 24h sweep of
+# feed-confirmed-malicious npm packages: `strong-js-obfuscation` (obfuscator.io
+# output, ~530 of them) and the credential/exfil sinks (~310-340). The
+# obfuscation leg is the discriminator — legit packages essentially never ship
+# obfuscator.io output; a days-old package that does, *and* exfiltrates, is the
+# stealer pattern. `widely-installed` excludes a hyped-but-legit fresh launch,
+# and the three-way `all:` keeps each generic leg (a new package, an HTTP body)
+# from firing on its own.
+
+- id: fresh-package-obfuscated-exfil
+  desc: Brand-new package hides outbound data exfiltration
   crit: hostile
-  conf: 0.8
+  conf: 0.85
   scope: package
   attack: "T1195.002"
   all:
     - id: metadata/registry::brand-new-package
-    - id: micro-behaviors/communications/http/post::npm-script-post
+    - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::strong-js-obfuscation
+    - id: objectives/exfiltration/sensitive-data::js-http-upload-or-body-sink
+  unless:
+    - id: metadata/registry::widely-installed
+
+- id: fresh-package-credential-file-harvest
+  desc: Brand-new package hunts credential files
+  crit: hostile
+  conf: 0.85
+  scope: package
+  attack: "T1552.001"
+  # A fresh package enumerating SSH keys / .npmrc / dotenv filenames is a
+  # credential sweep; the obfuscation leg removes the rare benign key-tooling.
+  all:
+    - id: metadata/registry::brand-new-package
+    - id: objectives/exfiltration/stealer/credential/multi-source::node-find-key-filenames
+    - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::strong-js-obfuscation
+  unless:
+    - id: metadata/registry::widely-installed
+
+- id: fresh-obfuscated-package
+  desc: Days-old package ships obfuscator.io output
+  crit: suspicious
+  conf: 0.7
+  scope: package
+  # A review flag, not a verdict: a brand-new package shipping strong
+  # obfuscator-grade code is anomalous (legit new packages don't), but
+  # obfuscation alone isn't proof of malice — a hostile call needs the exfil/
+  # credential leg above. Excludes a popular launch.
+  all:
+    - id: metadata/registry::brand-new-package
+    - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::strong-js-obfuscation
+  unless:
+    - id: metadata/registry::widely-installed
