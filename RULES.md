@@ -827,7 +827,7 @@ composite_rules:
 
 **Proximity (composites only):** `near_bytes: N`, `near_lines: N` - require evidence from different conditions to fall within a single span of N bytes/lines. Uses a sliding window: the check passes when any contiguous window of size N contains evidence from enough distinct conditions (all conditions for `all:`, `needs` conditions for `any:`).
 
-**Scope (composites only):** `scope: outer | archive | file | leaf` — require all evidence to share an analysis-tree ancestor at the named level. Default `file` requires all evidence to land in the same leaf-file (the deepest file-shaped unit); set `outer` to pool evidence across the whole input. Scope filtering runs *before* `near_bytes`/`near_lines`, so the two compose: scope picks the source bucket, proximity narrows within it.
+**Scope (composites only):** `scope: outer | archive | file | leaf | package` — require all evidence to share an analysis-tree ancestor at the named level. Default `file` requires all evidence to land in the same leaf-file (the deepest file-shaped unit); set `outer` to pool evidence across the whole input. Scope filtering runs *before* `near_bytes`/`near_lines`, so the two compose: scope picks the source bucket, proximity narrows within it. `package` is special: it correlates a fetched artifact with its registry metadata and is **only effective under `--fetch` / `pkg:`** (a no-op on a bare local scan) — see below.
 
 | Value | Constraint | Use case |
 |-------|------------|----------|
@@ -835,6 +835,7 @@ composite_rules:
 | `archive` | same nearest enclosing archive entry; degrades to `outer` if no archive | rules that should fire only when conditions land in entries of the same archive |
 | `file` | same leaf-file (deepest file-shaped unit); pools the file with its decoded payload layers | default — rules must see all conditions in one file even if it sits inside an archive |
 | `leaf` | same exact analyzed unit, including decoded payload layers | strictest — both conditions must land in the same decoded layer (or the same file with no decoding) |
+| `package` | a fetched artifact **plus its registry metadata** (`*.registry.json`), paired by PURL | correlate a registry fact (deprecated, low downloads, fresh publish) with a behavior in the artifact bytes — fetch-only, no effect on a plain local scan |
 
 Concrete tree examples (`!` separates archive entries; `::` denotes decoded layers):
 
@@ -844,6 +845,8 @@ Concrete tree examples (`!` separates archive entries; `::` denotes decoded laye
 | `loader.exe::overlay::final.py` | the decoded layer | input | input (no archive) | input |
 | `archive.zip!stage.exe` | `archive:stage.exe` | `archive:stage.exe` | `archive:` (single-level) | input |
 | `outer.zip!inner.zip!stage.exe` | the entry | the entry | `archive:outer.zip!inner.zip` (nearest archive) | input |
+
+`package` is **not** in the table above because it does not key within a single on-disk input: it is the one scope that spans two *separate* analyses — the fetched artifact and its registry-metadata document — which is why it only does anything when `--fetch` (or a `pkg:`/`url` scan) produced both. Like `outer`, it pools by presence rather than by location.
 
 ```yaml
 composite_rules:
@@ -855,6 +858,16 @@ composite_rules:
     # scope defaults to `file` — both conditions must land in the
     # same leaf-file. Use `scope: outer` to pool across an archive.
     near_bytes: 64    # additionally within 64 bytes of each other
+
+  - id: deprecated-package-ships-native-addon
+    crit: suspicious
+    all:
+      - id: registry/status/deprecated         # from the *.registry.json metadata
+      - id: artifact/native-addon-present       # from the fetched artifact's bytes
+    # scope: package pools the fetched artifact together with its registry
+    # metadata, so this fires under `--fetch` / `pkg:` even though the two are
+    # analyzed as separate files. On a plain local scan it never fires.
+    scope: package
 ```
 
 ### Downgrade Behavior
