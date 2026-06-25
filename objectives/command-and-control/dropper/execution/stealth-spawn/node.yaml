@@ -18,82 +18,6 @@ traits:
   if:
     type: text
     regex: 'github\.com/.{1,40}/.{1,60}/raw/refs/heads/.{1,40}/.{1,80}\.(bat|cmd)'
-# When the encoded loader moves out of the manifest into a bundled .js install
-# script (postinstall: node install.js), its child_process/spawn/detached calls
-# are char-code-encoded too, so the AST spawn atoms below cannot see them. These
-# text atoms recover the loader from the raw .js by the obfuscation shape of its
-# embedded program: a long char-code array OR a long base64 blob, paired with the
-# matching decoder. The blob/array is the rare discriminator; bundles excluded.
-- id: js-charcode-array-program
-  desc: Large char-code numeric array literal
-  crit: notable
-  conf: 0.85
-  attack: "T1027"
-  if:
-    type: text
-    regex: '\[\d{1,3}(,\d{1,3}){80,}\]'
-  unless:
-  - id: metadata/library/structure/
-  - id: metadata/package/testing/
-- id: js-fromcharcode-decoder
-  desc: String built from character codes
-  crit: component
-  conf: 0.8
-  attack: "T1027"
-  if:
-    type: text
-    regex: 'String\s*[.\[]\s*["'']?from(CharCode|CodePoint)'
-# Base64 variant of the embedded program: a long base64 string literal. Bundles,
-# tests and source-mapped output (which legitimately carry large base64) excluded.
-- id: js-base64-blob
-  desc: Long base64 string literal
-  crit: notable
-  conf: 0.8
-  attack: "T1027"
-  if:
-    type: text
-    regex: '["''][A-Za-z0-9+/]{200,}={0,2}["'']'
-  unless:
-  - id: metadata/library/structure/
-  - id: metadata/package/testing/
-  - id: metadata/build/bundler::has-sourcemap
-- id: js-base64-decode
-  desc: Base64 decode call
-  crit: component
-  conf: 0.7
-  attack: "T1140"
-  if:
-    type: text
-    regex: 'Buffer\.from\([^,)]{1,40},\s*["'']base64|\batob\s*\('
-# require() of a decoder applied to an array literal — require(fn([99,104,..]))
-# loads a module by a char-code-decoded name. Survives the runtime-fetch variant
-# (https/net required by decoded name) where no program is embedded at all.
-- id: js-encoded-require
-  desc: Require of a decoded module name
-  crit: notable
-  conf: 0.85
-  attack: "T1027"
-  if:
-    type: text
-    regex: 'require\s*\(\s*\w+\s*\(\s*\['
-  unless:
-  - id: metadata/library/structure/
-  - id: metadata/package/testing/
-- id: wheeler-update-hook-path
-  desc: Wheeler update-check hook path
-  crit: baseline
-  conf: 0.95
-  if:
-    type: path
-    basename: true
-    exact: "wheeler-check-update.js"
-- id: wheeler-update-checker-agent
-  desc: Wheeler update-checker user agent
-  crit: baseline
-  conf: 0.95
-  if:
-    type: text
-    substr: "wheeler-update-checker"
 composite_rules:
   # Umbrellas over the embedded-program forms, so the loader composite survives an
   # attacker swapping a char-code array for a base64 blob.
@@ -102,15 +26,15 @@ composite_rules:
   crit: component
   near_bytes: 16384
   all:
-  - id: js-charcode-array-program
-  - id: js-fromcharcode-decoder
+  - id: objectives/anti-static/obfuscation/payload/encoded::js-charcode-array-program
+  - id: objectives/anti-static/obfuscation/payload/encoded::js-fromcharcode-decoder
 - id: js-base64-encoded-program
   desc: Embedded base64 program
   crit: component
   near_bytes: 16384
   all:
-  - id: js-base64-blob
-  - id: js-base64-decode
+  - id: objectives/anti-static/obfuscation/payload/encoded::js-base64-blob
+  - id: objectives/anti-static/obfuscation/payload/encoded::js-base64-decode
   # Encoded self-respawn loader inside a .js file: an embedded encoded program
   # (char-code array or base64 blob) + a process.execPath self-spawn, all as raw
   # text because the spawn/child_process calls are themselves encoded. The
@@ -143,10 +67,10 @@ composite_rules:
   mbc: "B0032, E1027"
   near_bytes: 16384
   all:
-  - id: js-encoded-require
+  - id: objectives/anti-static/obfuscation/payload/encoded::js-encoded-require
   any:
-  - id: js-fromcharcode-decoder
-  - id: js-base64-decode
+  - id: objectives/anti-static/obfuscation/payload/encoded::js-fromcharcode-decoder
+  - id: objectives/anti-static/obfuscation/payload/encoded::js-base64-decode
   unless:
   - id: metadata/library/structure/
   - id: metadata/package/testing/
@@ -211,8 +135,7 @@ composite_rules:
   - id: node-payload-retrieval-or-staging
   unless:
   - id: objectives/command-and-control/dropper/execution/integrity/
-  - id: objectives/command-and-control/dropper/execution/integrity/
-  - id: micro-behaviors/process/create/spawn/
+  - id: micro-behaviors/process/create/spawn::node-lazy-daemon-spawn
   - id: micro-behaviors/process/create/spawn::node-self-respawn
   - id: metadata/package/testing/presence/fixture::test-filename-pattern
   - id: metadata/package/testing/
@@ -233,8 +156,7 @@ composite_rules:
   - id: node-payload-retrieval-or-staging
   unless:
   - id: objectives/command-and-control/dropper/execution/integrity/
-  - id: objectives/command-and-control/dropper/execution/integrity/
-  - id: micro-behaviors/process/create/spawn/
+  - id: micro-behaviors/process/create/spawn::node-lazy-daemon-spawn
   - id: micro-behaviors/process/create/spawn::node-self-respawn
   - id: metadata/package/testing/presence/fixture::test-filename-pattern
   - id: metadata/package/testing/
@@ -254,8 +176,8 @@ composite_rules:
   - id: micro-behaviors/communications/http/request/client::https-get
   - id: micro-behaviors/fs/write/file/direct::create-write-stream
   unless:
-  - id: wheeler-update-hook-path
-  - id: wheeler-update-checker-agent
+  - id: well-known/tool/dual-use/wheeler::wheeler-update-hook-path
+  - id: well-known/tool/dual-use/wheeler::wheeler-update-checker-agent
 # Launcher that spawns a DETACHED, output-suppressed copy of a bundled sibling
 # script (the second stage ships inside the package, so there is no network
 # retrieval in the launcher itself — express-denv's index.js spawns ./lib/caller.js).
@@ -274,7 +196,7 @@ composite_rules:
   - id: micro-behaviors/process/create/shell/bridge::child-process-require
   - id: micro-behaviors/process/create/shell/bridge::child-process-destructure-require
   unless:
-  - id: micro-behaviors/process/create/spawn/
+  - id: micro-behaviors/process/create/spawn::node-lazy-daemon-spawn
   - id: metadata/package/testing/presence/fixture::test-filename-pattern
   - id: metadata/package/testing/
   - id: metadata/package/testing/presence/manifest::test-fixtures
@@ -292,7 +214,7 @@ composite_rules:
   all:
   - id: micro-behaviors/process/create/spawn::detached-fork
   unless:
-  - id: micro-behaviors/process/create/spawn/
+  - id: micro-behaviors/process/create/spawn::node-lazy-daemon-spawn
   - id: metadata/package/testing/presence/fixture::test-filename-pattern
   - id: metadata/package/testing/
   - id: metadata/package/testing/presence/manifest::test-fixtures
