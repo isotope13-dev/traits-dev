@@ -1,0 +1,85 @@
+# A freshly-published package that ships malicious obfuscated code. Two legs are
+# fixed in `all:` — the execution vector (exfil sink or install hook) and
+# `freshly-published`, the supply-chain context. `freshly-published` is the
+# *version* age, so it catches both a fresh malware drop AND an account-takeover
+# that pushes a new version of an *old* package (which `brand-new-package`, the
+# package age, would miss). The obfuscation style is the `any:` group because a
+# single subtree is too narrow: the audit's packages obfuscate every which way —
+# obfuscator.io output, string-array rotation, control-flow state machines. The
+# group excludes `code-metrics/` (legit minification) and `encoding/` (base64 is
+# benign-common); `obfuscator/`/`string/`/`syntax/` are tool-grade tells. The
+# obfuscation-OR plus the exfil/hook leg is the FP governor — legit packages don't
+# ship tool-obfuscated code that also exfiltrates or runs install hooks. The OR
+# lives inline alongside `all:` because cleave filters a bare `any:`/`needs:1`
+# combiner as low-value. (Trait-dir iteration needs `CLEAVE_SKIP_CACHE=1` — the
+# report cache keys on bytes, not the trait set.)
+defaults:
+  for: [all]
+  platforms: [unix, windows, android, ios]
+
+composite_rules:
+- id: package-obfuscated-exfil
+  desc: Anomalous package hides outbound data exfiltration
+  crit: hostile
+  conf: 0.85
+  scope: package
+  attack: "T1195.002"
+  needs: 1
+  all:
+    - id: objectives/exfiltration/
+    - id: metadata/registry::freshly-published
+  any:
+    - id: objectives/anti-static/obfuscation/obfuscator/
+    - id: objectives/anti-static/obfuscation/string/
+    - id: objectives/anti-static/obfuscation/syntax/
+  unless:
+    - id: metadata/registry::widely-installed
+
+- id: package-obfuscated-install-dropper
+  desc: Anomalous package runs an obfuscated install hook
+  crit: hostile
+  conf: 0.85
+  scope: package
+  attack: "T1195.002"
+  needs: 1
+  # The install hook is the execution vector instead of (or alongside) the exfil
+  # sink — `ts-biginteger-lib` in the audit was a takeover publishing an
+  # obfuscated install-hook dropper.
+  all:
+    - id: objectives/supply-chain/install-hook/
+    - id: metadata/registry::freshly-published
+  any:
+    - id: objectives/anti-static/obfuscation/obfuscator/
+    - id: objectives/anti-static/obfuscation/string/
+    - id: objectives/anti-static/obfuscation/syntax/
+  unless:
+    - id: metadata/registry::widely-installed
+
+- id: fresh-package-exfil-on-install
+  desc: Brand-new package's install script POSTs data out
+  crit: suspicious
+  conf: 0.72
+  scope: package
+  attack: "T1195.002"
+  # A lifecycle-script POST in a days-old package is the install-hook exfil
+  # shape, but a benign postinstall can also POST telemetry — suspicious, not
+  # hostile, unless it also obfuscates (the rules above).
+  all:
+    - id: metadata/registry::brand-new-package
+    - id: micro-behaviors/communications/http/post::npm-script-post
+  unless:
+    - id: metadata/registry::widely-installed
+
+- id: fresh-obfuscated-package
+  desc: Days-old package ships obfuscator-grade code
+  crit: suspicious
+  conf: 0.7
+  scope: package
+  # A review flag, not a verdict: a brand-new package shipping tool-grade
+  # obfuscation is anomalous (legit new packages don't), but obfuscation alone
+  # isn't proof of malice — a hostile call needs the exfil leg above.
+  all:
+    - id: metadata/registry::brand-new-package
+    - id: objectives/anti-static/obfuscation/obfuscator/
+  unless:
+    - id: metadata/registry::widely-installed
