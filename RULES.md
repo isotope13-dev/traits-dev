@@ -76,6 +76,7 @@ Some findings are emitted by cleave itself rather than loaded from YAML, for exa
 
 | Level | Use When |
 |-------|----------|
+| `exception` | Benign-context composite that suppresses/downgrades a host detection (composite-only; referenced only from `unless:`/`downgrade:`) — see [Exception composites](#exception-composites) |
 | `component` | Building blocks that make no sense individually (string fragments like `&cc=`) |
 | `baseline` | Common functionality that nearly every program has (`mmap`, `stdio`, `read`) |
 | `notable` | Defines program purpose and behavior (`socket`, `exec`, `eval`, `sysctl`) |
@@ -89,6 +90,35 @@ Both `component` and `baseline` are allowed in any tier. `hostile` is allowed on
 A trait must be correct — accurately named, described, and located for exactly what its matcher detects — at *every* criticality. The level sets weight and emphasis, not whether correctness matters. Fix real FPs by tightening the matcher, adding an `unless:`/`not:` exclusion, or relocating + renaming the trait (see [Matcher defines identity](#matcher-defines-identity--never-fix-placement-by-lowering-criticality)). Demote only when the lower tier is genuinely correct for what the matcher detects. Avoid filename based rules unless absolutely possible as they may be brittle.
 
 **HOSTILE composites require precision ≥ 3.5**, else downgraded. See [PRECISION.md](./PRECISION.md) for the calculation algorithm and authoring guidelines.
+
+### Exception composites
+
+`crit: exception` is the home for a *benign-context suppressor* — a known-good pattern that, when it matches, quiets a host detection from inside that detection's `unless:`/`downgrade:`. Reach for it when a false positive comes from a recognizable benign program or toolchain whose individually-`notable` behaviors add up to something safe. It keeps those suppressors out of `objectives/`/`well-known/malware/`, where benign rules don't belong — validation flags any non-`exception` rule in those two tiers whose id or description reads as suppression (`benign`, a `*-context` / `*-fp` / `*-exceptions` name, `fp-context`, `false-positive`, allow/whitelisting).
+
+An exception is **composite-only** and must obey: referenced **only** from `unless:`/`downgrade:` (never `all:`/`any:`/`if:`); referenced by **at least one** rule (an unreferenced exception is rejected); every `all:`/`any:` member is a **named trait reference** (no inline matchers) resolving to **`notable`** (or another `exception`). It may live in any directory.
+
+```yaml
+# Benign pattern: a signed vendor updater that legitimately talks to its own endpoint.
+# Each leg is an individually-notable behavior; together they are known-good.
+- id: vendor-updater-benign
+  desc: Signed vendor auto-updater contacting its expected update endpoint
+  crit: exception
+  all:
+    - id: well-known/app/acme::signed-by-acme              # notable
+    - id: objectives/communications/http::acme-update-host # notable
+
+# The host detection references it from unless: — when the benign pattern fires,
+# the suspicious self-update is suppressed.
+- id: suspicious-self-update
+  desc: Binary rewrites and relaunches itself
+  crit: suspicious
+  all:
+    - id: objectives/evasion/self-update::rewrite-and-exec
+  unless:
+    - id: vendor-updater-benign
+```
+
+**Directory safety.** Dropping a whole directory into `all:`/`any:` (e.g. `- id: objectives/communications/http`) never pulls in an exception that happens to live under it — directory references exclude exceptions for non-exception rules. Target an exception explicitly by its full `dir::id` (which is what `unless:`/`downgrade:` do). The one carve-out: an exception composite *may* reference a directory of exceptions, and there the exceptions beneath it are included.
 
 ## Trait Definition
 
@@ -120,7 +150,7 @@ traits:
 
 **Field override:** List fields such as `for` and `platforms` must resolve to concrete supported values. Do not use `[none]`; the validator requires every trait and composite to target at least one file type.
 
-**File types:** `elf`, `macho`, `pe`, `dll`, `so`, `dylib`, `pyc`, `shell`, `batch`, `jcl`, `python`, `javascript`, `typescript`, `rust`, `java`, `class`, `ruby`, `c`, `cpp`, `go`, `csharp`, `php`, `perl`, `powershell`, `lua`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir`, `vbs`, `html`, `applescript`, `package.json`, `package-lock.json`, `json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `plist`, `ipa`, `rtf`, `lnk`, `jpeg`, `png`, `pkginfo`, `pickle`, `pdf`, `oledoc`, `ooxml`, `systemd-service`, `desktop-entry`.
+**File types:** `elf`, `macho`, `pe`, `dll`, `so`, `dylib`, `pyc`, `shell`, `batch`, `jcl`, `python`, `javascript`, `typescript`, `rust`, `java`, `class`, `ruby`, `c`, `cpp`, `go`, `csharp`, `php`, `perl`, `powershell`, `lua`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir`, `vbs`, `html`, `applescript`, `package.json`, `package-lock.json`, `json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `plist`, `ipa`, `rtf`, `lnk`, `jpeg`, `png`, `pkginfo`, `pickle`, `pdf`, `oledoc`, `ooxml`, `systemd-service`, `desktop-entry`, `zip`, `tar`, `npm`, `whl`, `python-sdist`, `egg`, `gem`, `nupkg`, `crate`, `conda`, `deb`, `rpm`, `apk`, `jar`, `crx`, `xpi`, `vsix`, `chm`.
 
 **Aliases** (resolved to the canonical type):
 

@@ -19,6 +19,7 @@ Traits rarely seen in legitimate software that have well-defined objectives belo
 
 | Level | Meaning | Tier Constraints |
 |-------|---------|-----------------|
+| **exception** | Benign-context composite: a known-good pattern assembled from `notable` traits that, when it matches, suppresses or downgrades a host detection. Referenced only from `unless:`/`downgrade:`. Assembly-only — never emitted to JSON, the CLI, the web UI, or differential analysis. See [Exception composites](#exception-composites-crit-exception). | Composites only; any tier |
 | **component** | Building block for composites; no standalone signal (e.g., string fragment `&cc=`). The CLI may de-emphasize or omit it unless a referencing composite fires; always present in JSON, the web UI, and differential analysis. | Any tier |
 | **baseline** | Common functionality; doesn't indicate program purpose (e.g., `mmap`, `stdio`, `read`). Always present in JSON, the web UI, and differential analysis. | Any tier |
 | **notable** | Defines program purpose (e.g., `socket`, `exec`, `eval`). Differential analysis surfaces appeared/disappeared traits at *every* criticality (`component` and `baseline` included), so this bar is only about which capabilities *deserve at least* `notable` — anything an analyst would want to weigh prominently in a supply-chain diff: communications (HTTP, sockets, DNS, IPC), code execution (interpreters, eval, dynamic loaders), encryption methods (AES, RSA, ChaCha, KEM), encoding/decoding methods (base64, hex, custom alphabets), privilege escalation (sudo, setuid, capabilities), file access (read/write/delete on sensitive paths), registry access (Windows registry r/w), and persistence (cron, systemd, autoruns, launch agents). | `micro-behaviors/`, `objectives/`, `well-known/` |
@@ -26,6 +27,21 @@ Traits rarely seen in legitimate software that have well-defined objectives belo
 | **hostile** | Clear attack pattern; no legitimate use. Requires precision >= 3.5. | `objectives/`, `well-known/` only — **never** `micro-behaviors/` |
 
 > **Visibility caveat — `component`/`baseline` are not hidden from users.** The CLI may de-emphasize or omit them (historically `component` was filtered unless a referencing composite fired; that is no longer guaranteed), but the JSON output, the web interface, and version-to-version differential analysis all surface them. Demoting a trait therefore does **not** make a false positive disappear — a user still sees it, mislabeled — and rules are equally important to get right at every criticality level. Lower criticality only when the lower tier is genuinely correct (a true composite fragment or universal-baseline capability). Fix a real false positive properly: tighten the matcher, add an `unless:`/`not:` exclusion, or relocate the trait (see [Matcher Defines Identity](#matcher-defines-identity)).
+
+### Exception composites (`crit: exception`)
+
+`exception` is a special, **composite-only** criticality for a *benign-context suppressor*: a known-good pattern that, when it matches, suppresses or downgrades another detection through that detection's `unless:`/`downgrade:` clause. It is the sanctioned home for "this combination looks alarming but is a recognized benign program or toolchain" rules — the kind that otherwise drift into `objectives/` or `well-known/malware/`, where a benign suppressor does not belong. A rule whose id or description reads as benign suppression — `benign`, a `<thing>-context` name (`fp-context`, `safety-context`, `panos-context`, …), a `-fp` / `-soft-fp` / `-known-fp` or `-exceptions` id, `false-positive`, or allow/whitelisting — sitting in `objectives/` or `well-known/malware/` is almost certainly misorganized; make it a `crit: exception` composite instead (or, if it really detects something, rename it for what its matcher finds).
+
+The contract (each is enforced at load time):
+
+- **Composites only.** An atomic trait may not be `crit: exception`.
+- **Referenced only from `unless:`/`downgrade:`.** An exception is never positive evidence — referencing one from `all:`/`any:`/atomic `if:` is an error.
+- **Must be referenced.** An exception no rule reaches is dead weight and is rejected.
+- **Members must be `notable`.** Its `all:`/`any:` legs must each resolve to a `notable` trait — or another `exception` (an exception may compose nested benign patterns). A benign assertion is assembled from "defines program purpose" facts, not baseline noise, component fragments, or `suspicious`/`hostile` legs.
+- **Named traits only.** Every condition must be a trait reference; inline matchers (`text`, `symbol`, `raw`, …) are rejected, since they carry no criticality and would bypass the `notable`-member rule.
+- **May live anywhere**, because it is named and located by what it suppresses rather than by tier.
+
+**Directory-reference safety — the reason this class exists.** A bare directory reference (`objectives/foo`) in an `all:`/`any:` clause silently *excludes* any exception beneath it, so you can fold an entire `objectives/` directory in as positive evidence without ever inheriting a suppressor by accident. Exceptions are reached only by an exact `dir::id` reference — the form `unless:`/`downgrade:` use — with one carve-out: inside another exception composite, a directory reference *does* include the exceptions beneath it, so an exception may deliberately assemble a directory of benign patterns.
 
 ## ML Feature Extraction
 
