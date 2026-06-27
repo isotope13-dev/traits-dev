@@ -62,12 +62,74 @@ traits:
       type: text
       regex: '-d\s*"?\$\(cat\s+/tmp/[^)]{1,80}\)'
   - id: data-dir-listing-command-substitution
-    desc: Shell substitution lists /data directory
+    desc: Shell substitution reads /data command output
     crit: suspicious
     conf: 0.97
     if:
       type: text
-      substr: $(ls -la /data/)
+      regex: '\$\((ls\s+-[A-Za-z0-9]*R?\s+/data/?|cat\s+/data/[^)]{1,120})\)'
+  - id: root-file-search
+    desc: Searches files from root
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: 'find\s+/\s+-type\s+f'
+  - id: mysql-client-name
+    desc: postinstall names mysql client
+    crit: component
+    conf: 0.92
+    if:
+      type: value
+      path: scripts.postinstall
+      substr: mysql
+  - id: mongo-client-name
+    desc: postinstall names mongo client
+    crit: component
+    conf: 0.92
+    if:
+      type: value
+      path: scripts.postinstall
+      regex: '\bmongosh?\b'
+  - id: psql-client-name
+    desc: postinstall names psql client
+    crit: component
+    conf: 0.92
+    if:
+      type: value
+      path: scripts.postinstall
+      substr: psql
+  - id: redis-client-name
+    desc: postinstall names redis client
+    crit: component
+    conf: 0.92
+    if:
+      type: value
+      path: scripts.postinstall
+      substr: redis-cli
+  - id: sqlite-client-name
+    desc: postinstall names sqlite client
+    crit: component
+    conf: 0.92
+    if:
+      type: value
+      path: scripts.postinstall
+      substr: sqlite3
+  - id: elasticsearch-client-name
+    desc: postinstall names elasticsearch
+    crit: component
+    conf: 0.92
+    if:
+      type: value
+      path: scripts.postinstall
+      substr: elasticsearch
+  - id: data-output-redirect
+    desc: Writes command output to /data
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '>\s*/data/'
   - id: js-shell-sysinfo-commands
     desc: Node shell system profiling commands
     crit: suspicious
@@ -156,15 +218,55 @@ composite_rules:
     unless:
       - id: metadata/package/testing/harness/runtime/
   - id: curl-data-dir-oast-exfil
-    desc: curl exfils /data directory listing to OASTify
+    desc: curl exfils /data command output to OASTify
     crit: hostile
     conf: 0.99
     attack: T1041
     all:
-      - id: objectives/exfiltration/oob/endpoint::oastify
-      - id: micro-behaviors/communications/http/curl::curl-post-flag
+      - id: objectives/supply-chain/recon-exfil/oast/secret::oastify-url
+      - id: objectives/supply-chain/install-hook/scripts/postinstall::curl-http-post
       - id: data-dir-listing-command-substitution
       - id: oastify-data-path
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+  - id: database-client-root-discovery
+    desc: Root search for database clients
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: root-file-search
+    any:
+      - id: mysql-client-name
+      - id: mongo-client-name
+      - id: psql-client-name
+      - id: redis-client-name
+      - id: sqlite-client-name
+      - id: elasticsearch-client-name
+    needs: 3
+  - id: database-query-output-to-data
+    desc: Database query output to /data
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: data-output-redirect
+    any:
+      - id: mysql-client-name
+      - id: mongo-client-name
+      - id: psql-client-name
+      - id: redis-client-name
+      - id: sqlite-client-name
+  - id: curl-database-recon-oast-exfil
+    desc: curl exfils database reconnaissance output to OASTify
+    crit: hostile
+    conf: 0.99
+    attack: T1041
+    all:
+      - id: objectives/supply-chain/recon-exfil/oast/secret::oastify-url
+      - id: objectives/supply-chain/install-hook/scripts/postinstall::curl-http-post
+      - id: oastify-data-path
+    any:
+      - id: database-client-root-discovery
+      - id: database-query-output-to-data
     unless:
       - id: metadata/package/testing/harness/runtime/
   - id: npm-postinstall-cloud-metadata-oast-exfil
@@ -200,6 +302,25 @@ composite_rules:
       - id: postinstall-cloud-metadata-oob-exfil
     unless:
       - id: metadata/package/testing/harness/runtime/
+  - id: npm-postinstall-cloud-secret-file-stage
+    desc: npm postinstall stages cloud and container secrets
+    crit: hostile
+    conf: 0.995
+    attack: T1552.005
+    scope: archive
+    for: [javascript, package.json, archives]
+    all:
+      - id: objectives/supply-chain/install-hook/package/manifest::postinstall-runs-node-script
+      - id: objectives/credential-access/cloud/token/files::aws-imds-access
+      - id: micro-behaviors/os/container/runtime::serviceaccount-files
+      - id: micro-behaviors/process/create/shell/bridge::js-execsync
+      - id: micro-behaviors/fs/write/file/direct::write-file-sync
+    any:
+      - id: micro-behaviors/fs/path/config/accounts::etc-passwd
+      - id: micro-behaviors/os/env/access::javascript
+      - id: micro-behaviors/fs/path/sensitive/credentials::container-credentials
+    unless:
+      - id: metadata/package/testing/harness/runtime/
   - id: npm-postinstall-data-dir-oast-exfil
     desc: npm postinstall exfils /data directory listing to OASTify
     crit: hostile
@@ -209,5 +330,16 @@ composite_rules:
     all:
       - id: objectives/execution/interpreter/script/npm::npm-postinstall-script
       - id: curl-data-dir-oast-exfil
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+  - id: npm-postinstall-database-recon-oast-exfil
+    desc: npm postinstall exfils database reconnaissance to OASTify
+    crit: hostile
+    conf: 0.99
+    scope: archive
+    for: [javascript, package.json, archives]
+    all:
+      - id: objectives/execution/interpreter/script/npm::npm-postinstall-script
+      - id: curl-database-recon-oast-exfil
     unless:
       - id: metadata/package/testing/harness/runtime/
