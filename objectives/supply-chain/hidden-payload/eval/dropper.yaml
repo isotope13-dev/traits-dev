@@ -43,6 +43,18 @@ traits:
   - id: metadata/package/testing/harness/runtime::v8-native-intrinsic-call
   - id: well-known/lib/firebug-lite/
   - id: emscripten-run-script-bridge
+  # Inline decoder functions are common in legacy JS packers, so keep this
+  # as packed-payload component evidence instead of a standalone eval finding.
+- id: eval-inline-function-transform
+  desc: eval wraps inline transform function
+  crit: component
+  conf: 0.9
+  if:
+    type: text
+    substr: 'eval(function'
+  unless:
+  - id: objectives/anti-static/pack/detect::dean-edwards
+  - id: metadata/package/testing/
   # Sibling exec sink for the packed-payload composite. eval-of-transform only
   # covers `eval(fn(...))`; this mirrors it for `new Function(fn(` without the
   # large-bundle unless that js-new-function-constructor carries (which would
@@ -99,6 +111,15 @@ traits:
   unless:
   - id: metadata/package/testing/harness/runtime/
   - id: metadata/package/testing/harness/runtime::node-common-require
+- id: globalthis-dynamic-dispatch
+  desc: globalThis indexed dynamic dispatch
+  crit: suspicious
+  conf: 0.9
+  if:
+    type: text
+    regex: 'globalThis\s*\[\s*[A-Za-z_$][A-Za-z0-9_$]{0,30}\s*\]\s*\('
+  unless:
+  - id: metadata/package/testing/
 - id: decipher-update-from-hex-ast
   desc: Decipher update from hex Buffer
   crit: component
@@ -107,6 +128,18 @@ traits:
   if:
     type: text
     regex: "\\.update\\(\\s*Buffer\\.from\\([^)]{1,200}['\"]hex['\"]\\s*\\)\\s*\\)"
+- id: huge-numeric-source-blob
+  desc: Huge numeric JavaScript payload
+  crit: notable
+  conf: 0.93
+  size_min: 1000000
+  if:
+    type: metrics
+    field: text.digit_ratio
+    min: 0.8
+  unless:
+  - id: objectives/anti-static/obfuscation/payload/container::source-map-extension
+  - id: metadata/file/format::sourcemap-sources-content
 composite_rules:
 - id: file-read-eval-dropper
   desc: Reads file and eval()s transformed content
@@ -167,6 +200,17 @@ composite_rules:
   any:
   - id: objectives/anti-static/obfuscation/payload/encoded::exported-decryptor
   - id: objectives/anti-static/obfuscation/payload/encoded::hardcoded-key-decryptor
+- id: tiny-base64-dynamic-eval-loader
+  desc: Tiny base64 dynamic-eval loader
+  crit: hostile
+  conf: 0.96
+  attack: T1027,T1059.007
+  all:
+  - id: micro-behaviors/data/decode/base64::buffer-from-base64-to-utf8
+  - id: globalthis-dynamic-dispatch
+  - id: metadata/file/metrics::javascript-small-file-5k
+  unless:
+  - id: metadata/package/testing/
 # Self-contained packed eval dropper: a megabyte-plus single line that carries
 # a self-decoder (Caesar/char-code) and feeds the result straight into eval().
 # File-scoped, metric-driven, and filename-agnostic — fires on any single JS
@@ -180,9 +224,36 @@ composite_rules:
   conf: 0.95
   any:
   - id: eval-of-transform
+  - id: eval-inline-function-transform
   - id: new-function-of-transform
   - id: objectives/supply-chain/hidden-payload/encoding::indirect-eval-comma
   - id: objectives/anti-static/obfuscation/eval/loader::indirect-ctor-transform-iife
+- id: packed-single-line-payload-shape
+  desc: Megabyte single-line packed payload shape
+  crit: component
+  conf: 0.94
+  any:
+  - id: objectives/anti-static/obfuscation/code-metrics/line-shape::js-megabyte-single-line
+  - id: huge-numeric-source-blob
+- id: packed-charcode-decoder
+  desc: Charcode decoder for packed payload
+  crit: component
+  conf: 0.92
+  any:
+  - id: micro-behaviors/data/encode/caesar::charcodeat-shift
+  - id: micro-behaviors/data/encode/caesar::fromcharcode-map-decode
+  - id: objectives/anti-static/obfuscation/code-metrics/line-shape::js-junk-number-padding
+  - id: objectives/supply-chain/hidden-payload/runtime::high-digit-ratio
+- id: megabyte-charcode-packed-payload
+  desc: Megabyte charcode-packed JavaScript payload
+  crit: hostile
+  conf: 0.96
+  mbc: B0032
+  attack: T1027
+  all:
+  - id: huge-numeric-source-blob
+  - id: micro-behaviors/data/encode/caesar::charcodeat-shift
+  - id: micro-behaviors/data/encode/caesar::fromcharcode-map-decode
 - id: packed-single-line-eval-dropper
   desc: Megabyte single-line self-decoding eval dropper
   crit: hostile
@@ -190,14 +261,8 @@ composite_rules:
   mbc: B0032
   attack: T1027
   all:
-  - id: objectives/anti-static/obfuscation/code-metrics/line-shape::js-megabyte-single-line
   - id: packed-payload-exec-sink
-  any:
-  - id: micro-behaviors/data/encode/caesar::charcodeat-shift
-  - id: micro-behaviors/data/encode/caesar::fromcharcode-map-decode
-  - id: objectives/anti-static/obfuscation/code-metrics/line-shape::js-junk-number-padding
-  - id: objectives/supply-chain/hidden-payload/runtime::high-digit-ratio
-  needs: 1
+  - id: packed-single-line-payload-shape
+  - id: packed-charcode-decoder
   unless:
   - id: objectives/anti-static/obfuscation/code-metrics/structure/
-  - id: metadata/library/structure/
