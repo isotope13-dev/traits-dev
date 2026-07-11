@@ -20,13 +20,25 @@ Traits rarely seen in legitimate software that have well-defined objectives belo
 | Level | Meaning | Tier Constraints |
 |-------|---------|-----------------|
 | **exception** | Benign-context composite: a known-good pattern assembled from `notable` traits that, when it matches, suppresses or downgrades a host detection. Referenced only from `unless:`/`downgrade:`. Assembly-only — never emitted to JSON, the CLI, the web UI, or differential analysis. See [Exception composites](#exception-composites-crit-exception). | Composites only; any tier |
-| **component** | Building block for composites; no standalone signal (e.g., string fragment `&cc=`). The CLI may de-emphasize or omit it unless a referencing composite fires; always present in JSON, the web UI, and differential analysis. | Any tier |
+| **component** | Evidence too weak or incomplete to express a clear standalone observation (e.g., the string fragment `&cc=` or one half of a protocol marker). Reserve this for fragments that only acquire meaning when combined with other evidence. Being referenced by a composite does **not** make a trait a component. | Any tier |
 | **baseline** | Common functionality; doesn't indicate program purpose (e.g., `mmap`, `stdio`, `read`). Always present in JSON, the web UI, and differential analysis. | Any tier |
-| **notable** | Defines program purpose (e.g., `socket`, `exec`, `eval`). Differential analysis surfaces appeared/disappeared traits at *every* criticality (`component` and `baseline` included), so this bar is only about which capabilities *deserve at least* `notable` — anything an analyst would want to weigh prominently in a supply-chain diff: communications (HTTP, sockets, DNS, IPC), code execution (interpreters, eval, dynamic loaders), encryption methods (AES, RSA, ChaCha, KEM), encoding/decoding methods (base64, hex, custom alphabets), privilege escalation (sudo, setuid, capabilities), file access (read/write/delete on sensitive paths), registry access (Windows registry r/w), and persistence (cron, systemd, autoruns, launch agents). | `micro-behaviors/`, `objectives/`, `well-known/` |
+| **notable** | Expresses a clear behavior, purpose, or identity that could interest a security engineer during differential analysis (e.g., `socket`, HTTP requests, network-library imports, `exec`, `eval`). If an appeared/disappeared atomic finding would help an analyst understand what changed, it should be at least notable—even when the behavior is benign. This includes communications, code execution, crypto, encoding/decoding, privilege operations, sensitive file access, registry access, persistence, program identity, and signing information. | `micro-behaviors/`, `objectives/`, `well-known/` |
 | **suspicious** | Rarely legitimate; indicates possible malicious intent. | `micro-behaviors/`, `objectives/`, `well-known/`, `metadata/` (rare) |
 | **hostile** | Clear attack pattern; no legitimate use. Requires precision >= 3.5. | `objectives/`, `well-known/` only — **never** `micro-behaviors/` |
 
 > **Visibility caveat — `component`/`baseline` are not hidden from users.** The CLI may de-emphasize or omit them (historically `component` was filtered unless a referencing composite fired; that is no longer guaranteed), but the JSON output, the web interface, and version-to-version differential analysis all surface them. Demoting a trait therefore does **not** make a false positive disappear — a user still sees it, mislabeled — and rules are equally important to get right at every criticality level. Lower criticality only when the lower tier is genuinely correct (a true composite fragment or universal-baseline capability). Fix a real false positive properly: tighten the matcher, add an `unless:`/`not:` exclusion, or relocate the trait (see [Matcher Defines Identity](#matcher-defines-identity)).
+
+### Prefer strong atomic traits
+
+Atomic traits should, whenever possible, be strong enough to communicate a precise and useful fact on their own. `component` is a last resort for evidence that cannot honestly support such a fact—not a default for the leaves of a composite.
+
+- **Composite membership does not determine criticality.** A complete API call, import, command, protocol operation, path access, or product identity remains `notable` when it independently tells an analyst something useful, even if a composite also references it.
+- **Use the standalone-description test.** Imagine the atomic finding appearing by itself in a version diff. If its matcher supports a clear description that a security engineer could use to understand or investigate the change, it is not a component. If the only honest description is “fragment,” “marker,” “part of,” or an otherwise incomplete clue, `component` may be correct.
+- **Distinguish `baseline` from `component`.** A baseline trait expresses a clear but nearly universal behavior (`read`, `stdio`, `mmap`). A component does not yet express a clear behavior at all. Do not use `component` merely because a behavior is common.
+- **Strengthen weak atoms before accepting components.** Prefer a structured matcher, call argument, anchored token, tighter context, proximity constraint, or a canonical matcher that captures equivalent syntax. The goal is fewer, stronger atomics—not many weak fragments assembled mechanically.
+- **Never demote to manage duplicate output.** If an atomic and composite finding overlap, consolidate equivalent matchers, choose a canonical trait, update references, or improve presentation. Do not lower an independently meaningful atomic capability to `component` just because it participates in a composite.
+
+Examples: `urllib.request.urlopen()`, a socket connection, an HTTP-client import, `execve`, AES use, or a registry write are independently meaningful and therefore notable. A bare `&cc=` fragment, one word from a multi-token family signature, or one half of an encoded marker may correctly be a component.
 
 ### Exception composites (`crit: exception`)
 
@@ -78,7 +90,7 @@ A trait fails this rule when its name, description, or location claims an intent
 
 **The fix is to relocate and rename the trait to match its matcher** (here, a `micro-behaviors/communications/http/...` capability such as "reads the Referer request header"), then have the webshell composite reference it cross-directory. **Lowering the criticality is never the fix.** Demoting to `component` does not make the false positive disappear — per the [Criticality](#criticality) visibility caveat, the JSON output, web UI, and differential analysis still surface it (and the CLI may too), now mislabeled as a webshell building block and keyed to the wrong `directory-path + criticality` ML feature. Reserve `component`/`baseline` for traits that are *already* accurately named and located for what they detect and genuinely have no standalone meaning.
 
-When a generic capability false-positives because it sits in the wrong tier, fix the placement. Generic capabilities such as process execution, interpreter invocation, network clients, registry manipulation, file writes to sensitive locations, and persistence surfaces belong where those behaviors are described — usually under `micro-behaviors/` — and should stay `notable` or higher when they are analyst-relevant. Objective traits should compose those capabilities with intent-specific evidence rather than bury generic atomics as mislabeled `component` rules.
+When a generic capability false-positives because it sits in the wrong tier, fix the placement. Generic capabilities such as process execution, interpreter invocation, network clients, registry manipulation, file writes to sensitive locations, and persistence surfaces belong where those behaviors are described — usually under `micro-behaviors/` — and should stay `notable` or higher when they are analyst-relevant. Notable in terms of what would be interesting to a security engineer for triage: such as who, what, when, where of a program (even if benign). Objective traits should compose those capabilities with intent-specific evidence rather than bury generic atomics as mislabeled `component` rules.
 
 ### Tier Dependencies
 
@@ -125,7 +137,7 @@ Attacker intent inferred from capability combinations?
 Single observable mechanic, no intent inference?
   → micro-behaviors/
      Rarely legitimate?     → suspicious
-     Defines program purpose? → notable
+     Useful in differential analysis? → notable
      Universal baseline?      → baseline
 
 Neutral file property (not behavioral)?

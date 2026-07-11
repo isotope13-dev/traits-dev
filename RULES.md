@@ -77,9 +77,9 @@ Some findings are emitted by cleave itself rather than loaded from YAML, for exa
 | Level | Use When |
 |-------|----------|
 | `exception` | Benign-context composite that suppresses/downgrades a host detection (composite-only; referenced only from `unless:`/`downgrade:`) — see [Exception composites](#exception-composites) |
-| `component` | Building blocks that make no sense individually (string fragments like `&cc=`) |
+| `component` | Incomplete evidence that cannot express a clear standalone observation (string fragments like `&cc=`); composite membership alone never justifies this level |
 | `baseline` | Common functionality that nearly every program has (`mmap`, `stdio`, `read`) |
-| `notable` | Defines program purpose and behavior (`socket`, `exec`, `eval`, `sysctl`) |
+| `notable` | A clear behavior, purpose, or identity that could interest a security engineer in differential analysis (`socket`, HTTP requests/imports, `exec`, `eval`, `sysctl`, program name, signing information); in general, every program—benign or not—should have at least one notable behavior |
 | `suspicious` | Hides intent/crosses boundaries (VM detection, obfuscation) |
 | `hostile` | Attack patterns, no legitimate use (reverse shell, ransomware) |
 
@@ -88,6 +88,19 @@ Both `component` and `baseline` are allowed in any tier. `hostile` is allowed on
 **`component`/`baseline` traits are not hidden.** The CLI may surface them (historically `component` was filtered from terminal output unless a referencing composite fired; that is no longer guaranteed), and the JSON output, the web UI, and version-to-version differential analysis always include them. Lowering a trait to `component`/`baseline` therefore does **not** make a false positive disappear — the match stays visible, now mislabeled, and keyed to a `directory-path + criticality` ML feature it doesn't belong to.
 
 A trait must be correct — accurately named, described, and located for exactly what its matcher detects — at *every* criticality. The level sets weight and emphasis, not whether correctness matters. Fix real FPs by tightening the matcher, adding an `unless:`/`not:` exclusion, or relocating + renaming the trait (see [Matcher defines identity](#matcher-defines-identity--never-fix-placement-by-lowering-criticality)). Demote only when the lower tier is genuinely correct for what the matcher detects. Avoid filename based rules unless absolutely possible as they may be brittle.
+
+### Component is an evidence judgment, not a composition role
+
+Aim for every atomic trait to represent a strong, precise signal in its own right. Use `component` only when the matcher finds evidence that is genuinely too incomplete to support a clear standalone observation.
+
+1. **Ignore the rule graph when assigning atomic criticality.** Being referenced by `all:`, `any:`, `needs:`, or another composite says nothing about whether an atom is a component. A meaningful atomic remains meaningful when composed.
+2. **Apply the differential-analysis test.** If this atomic appeared between two package versions, could a security engineer reasonably care about or investigate it? If yes, it should normally be `notable` or higher. Complete network operations and imports, process execution, interpreters, crypto/encoding operations, privilege changes, sensitive file access, registry changes, persistence surfaces, and program identity all pass this test.
+3. **Apply the standalone-description test.** If the matcher supports a precise, useful sentence by itself—“calls `urlopen`,” “imports an HTTP client,” “connects a socket,” “writes a Run key”—the atom is not a component. `component` is appropriate when the honest description is only a partial token, syntax shard, generic field name, or one leg of a signature that has no clear meaning alone.
+4. **Do not confuse common with incomplete.** `baseline` is for a clear behavior that is nearly universal. `component` is for evidence that does not yet establish a clear behavior.
+5. **Prefer stronger matchers over more components.** Before creating a component, try structured symbols/imports/calls, arguments, anchored literals, value paths, proximity, counts, or a tighter canonical matcher. The desired taxonomy has as few weak components as practical.
+6. **Do not demote for deduplication.** When an atomic and its umbrella composite both surface, fix matcher duplication, select a canonical trait, update references, or address presentation in the engine. Never turn a complete, analyst-relevant capability into a component merely to make output quieter.
+
+For example, aliased forms of `urllib.request.urlopen`, a full `requests.post` call, or a network-library import remain notable if each independently proves HTTP-client behavior. In contrast, `&cc=`, a lone family-specific word fragment, or half of a split encoded marker may be components because none communicates a clear behavior alone.
 
 **HOSTILE composites require precision ≥ 3.5**, else downgraded. See [PRECISION.md](./PRECISION.md) for the calculation algorithm and authoring guidelines.
 
@@ -1302,7 +1315,7 @@ when you need those rules to actually fire.
 Regex patterns are validated at load time:
 - Maximum 80 bytes for regex patterns
 - Maximum 3 `|` alternation symbols outside character classes
-- **Decompose alternations into separate traits when each branch is an independent signal.** If the branches of a `|` would each stand alone as a notable detection (`foo|bar|baz`), split them into separate atomic traits — each then gets its own evidence, criticality, directory/ML feature, and can be referenced independently; the validator warns on this. Keep `|` only for equivalent variants of a *single* signal that should never stand alone: spelling/encoding/register variants, or a tight anchored family like `^(eval|exec|system|assert)$`.
+- **Decompose alternations into separate traits when each branch is an independent signal.** If the branches of a `|` would each stand alone as a notable detection (`foo|bar|baz`), split them into separate atomic traits — each then gets its own evidence, criticality, directory/ML feature, and can be referenced independently; the validator warns on this. Those atoms remain notable when a composite later combines them. Keep `|` only for equivalent variants of a *single* signal that should never stand alone: spelling/encoding/register variants, or a tight anchored family like `^(eval|exec|system|assert)$`.
 
 ### Auto-Fix Behaviors
 
