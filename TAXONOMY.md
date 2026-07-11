@@ -231,6 +231,7 @@ micro-behaviors/
 │   │                      #     <dir>::<local> form, same as YAML. The grant covers
 │   │                      #     DOM injection, cookie reads, privileged cross-origin
 │   │                      #     requests, and traffic interception — not mere comms.
+│   │   └── shopping/      #     Shopping and e-commerce host targeting
 │   ├── permission/        #   Declared API permission, engine-emitted one per
 │   │                      #     permission: permission/<perm>::declared (kebab-cased).
 │   │                      #     Own subdir per permission (UI + ML). Risk/intent
