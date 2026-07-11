@@ -1,0 +1,76 @@
+# Card-data field access and skimmer exfil in compiled/managed binaries. The
+# field atoms are format- and case-tolerant (cardNumber, card_number,
+# card-number, CardNumber, CARD_NUMBER) so a future skimmer that renames the
+# fields is still caught. Handling card data is notable on its own; the hostile
+# signal is card fields serialized and shipped to a hardcoded external endpoint.
+#
+# Sample: Braintree.Net NuGet typosquat (Socket, 2026). An injected
+# CardOperationLogger copies each card request into a JSON body and POSTs it to
+# https://api.348672-shakepay.com/api/card (X-Api-Key auth) before the genuine
+# gateway call, inside an empty catch. Real processor SDKs send card data to
+# their own typed API, never a flat JSON blob at an unrelated host.
+defaults:
+  platforms: [windows, linux, macos]
+  for: [pe, dll, macho, elf]
+  attack: T1005
+  mbc: B0030
+
+traits:
+  - id: managed-card-number-field
+    desc: Card number field reference
+    crit: notable
+    conf: 0.75
+    if:
+      type: text
+      regex: '(?i)card[-_. ]?number'
+  - id: managed-cvv-field
+    desc: Card CVV/CVC field reference
+    crit: notable
+    conf: 0.75
+    if:
+      type: text
+      regex: '(?i)\bcv[vc]2?\b'
+  - id: managed-card-type-field
+    desc: Card type field reference
+    crit: notable
+    conf: 0.7
+    if:
+      type: text
+      regex: '(?i)card[-_. ]?type'
+  - id: managed-card-expiry-field
+    desc: Card expiration field reference
+    crit: notable
+    conf: 0.75
+    if:
+      type: text
+      regex: '(?i)expir(ation|y)[-_. ]?date'
+  # The skimmer authenticates to its C2 with a hardcoded key; the exact token is
+  # a campaign IOC, distinctive enough to strengthen the exfil composites.
+  - id: skimmer-c2-static-api-key
+    desc: Hardcoded skimmer C2 API key
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      substr: 2523-5235-8564-2683-2386
+
+composite_rules:
+  # Handling card number + expiry together is normal for any payment code, so
+  # this is notable (not suspicious); the malicious signal is the exfil transport.
+  - id: managed-card-data-fields
+    desc: Card number and expiry handled together
+    crit: notable
+    conf: 0.85
+    all:
+      - id: managed-card-number-field
+      - id: managed-card-expiry-field
+  - id: dotnet-card-skimmer-exfil
+    desc: Compiled SDK exfiltrates card data
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: managed-card-data-fields
+      - id: micro-behaviors/communications/http/client/managed::httpclient
+    any:
+      - id: objectives/command-and-control/infrastructure/domain/malicious::numeric-lookalike-c2-host
+      - id: skimmer-c2-static-api-key

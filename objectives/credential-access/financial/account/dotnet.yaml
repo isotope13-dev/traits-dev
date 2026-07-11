@@ -1,0 +1,64 @@
+# Payment-gateway credential theft in a compiled/managed binary. Format- and
+# case-tolerant field atoms (merchantId, merchant_id, MerchantID; privateKey,
+# private_key, PRIVATE_KEY) so a renamed variant is still caught. Referencing a
+# gateway's own API credentials is notable; exfiltrating the merchant/public/
+# private key triple to a hardcoded external endpoint is credential theft.
+#
+# Sample: Braintree.Net NuGet typosquat (Socket, 2026). The
+# BraintreeGateway.PrivateKey setter serializes merchantId + publicKey +
+# privateKey into a JSON body and POSTs it to
+# https://api.348672-shakepay.com/api/account, granting full gateway API access.
+defaults:
+  platforms: [windows, linux, macos]
+  for: [pe, dll, macho, elf]
+  attack: T1552
+  mbc: B0030
+
+traits:
+  - id: managed-merchant-id-field
+    desc: Payment merchant ID field reference
+    crit: notable
+    conf: 0.72
+    if:
+      type: text
+      regex: '(?i)merchant[-_. ]?id'
+  # Bare public/private-key field names are ubiquitous in any TLS/JWT/crypto
+  # code, so they are component building blocks -- not notable on their own. The
+  # payment-specific signal is `merchantId`; the gateway-credential intent comes
+  # from the triple + exfil composite below.
+  - id: managed-gateway-public-key-field
+    desc: Public key field reference
+    crit: component
+    conf: 0.7
+    if:
+      type: text
+      regex: '(?i)public[-_. ]?key'
+  - id: managed-gateway-private-key-field
+    desc: Private key field reference
+    crit: component
+    conf: 0.75
+    if:
+      type: text
+      regex: '(?i)private[-_. ]?key'
+
+composite_rules:
+  # A gateway config legitimately names all three fields, so the triple is
+  # notable; the malicious signal is serializing them out to an external host.
+  - id: managed-gateway-credential-triple
+    desc: Gateway merchant and key fields together
+    crit: notable
+    conf: 0.85
+    all:
+      - id: managed-merchant-id-field
+      - id: managed-gateway-public-key-field
+      - id: managed-gateway-private-key-field
+  - id: dotnet-gateway-credential-exfil
+    desc: Compiled SDK exfiltrates gateway keys
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: managed-gateway-credential-triple
+      - id: micro-behaviors/communications/http/client/managed::httpclient
+    any:
+      - id: objectives/command-and-control/infrastructure/domain/malicious::numeric-lookalike-c2-host
+      - id: objectives/credential-access/financial/credit-card::skimmer-c2-static-api-key

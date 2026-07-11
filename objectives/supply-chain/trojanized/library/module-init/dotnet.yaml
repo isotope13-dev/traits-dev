@@ -1,0 +1,73 @@
+# Trojanized-clone supply-chain implant: an attacker downloads an established
+# library's source, grafts a payload, and republishes under the brand. In .NET
+# the graft is a [ModuleInitializer] (see the auto-exec capability) that runs
+# the instant the CLR loads the assembly -- before any consumer code -- and
+# hands control to code delivered as a separately published, innocuously named
+# NuGet dependency, all inside an empty catch so the host never notices.
+#
+# Sample: Braintree.Net typosquat (Socket, 2026). Braintree.DependencyInjectorLoader.Load()
+# ([ModuleInitializer]) calls DependencyInjector.Core, the recon/exfil stage
+# shipped as a dependency scoped to net8/9/10 only.
+defaults:
+  platforms: [windows, linux, macos]
+  for: [pe, dll]
+  attack: "T1195.001,T1195.002"
+  mbc: B0024
+
+traits:
+  - id: dotnet-injector-loader-shim
+    desc: Module-init dependency loader shim class
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      substr: DependencyInjectorLoader
+      section: text
+  - id: dotnet-injected-analyzer-namespace
+    desc: SDK invokes injected analyzer namespace
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      substr: DependencyInjector.Core.Analysis
+      section: text
+  - id: nuspec-injected-payload-dependency
+    desc: Manifest adds DependencyInjector.Core dep
+    crit: suspicious
+    conf: 0.9
+    for: [xml, nupkg]
+    if:
+      type: text
+      regex: '<dependency\s+id="DependencyInjector\.Core"'
+
+composite_rules:
+  # Brand- and payload-agnostic: a shipped assembly that both auto-runs on load
+  # and was rebuilt from a downloaded source archive is a trojanized clone. A
+  # real maintainer's CI never produces a Downloads\<repo>-master PDB path, and
+  # a legit library does not add a module initializer to such a rebuild.
+  - id: dotnet-trojanized-clone-autoexec
+    desc: Rebuilt clone auto-runs on assembly load
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: micro-behaviors/process/lifecycle/auto-exec::dotnet-module-initializer
+      - id: metadata/binary/anomaly/provenance::pe-pdb-downloads-source-unpack
+  - id: dotnet-module-init-injected-loader
+    desc: Module init loads injected dependency
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: micro-behaviors/process/lifecycle/auto-exec::dotnet-module-initializer
+      - id: dotnet-injector-loader-shim
+      - id: dotnet-injected-analyzer-namespace
+  # Two-part attack: the manifest declares the payload dependency that the DLL's
+  # module initializer auto-loads. Pool manifest + code at archive scope.
+  - id: dotnet-manifest-injected-dependency-loader
+    desc: Manifest ships dep the SDK auto-loads
+    crit: hostile
+    conf: 0.97
+    for: [nupkg, archives]
+    scope: archive
+    all:
+      - id: nuspec-injected-payload-dependency
+      - id: dotnet-module-init-injected-loader
