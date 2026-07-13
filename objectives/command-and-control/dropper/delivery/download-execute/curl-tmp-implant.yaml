@@ -8,99 +8,19 @@
 # (/tmp/.x, /var/tmp/.x, /dev/shm/.x, ~/.x, $HOME/.x). Per-destination atoms
 # keep individual regexes short and machine-grouped.
 defaults:
-  for: [scripts, source, manifests, dockerfile]
+  for: [scripts, source, manifests, dockerfile, package-lock.json]
   platforms: [linux, macos, windows]
   attack: T1105
   mbc: B0024
 
-traits:
-  # ---- Hidden stage path atoms (one per scratch directory) ----
-  # /var/tmp and /dev/shm hidden paths live in micro-behaviors/fs/path/temp
-  # (single matcher); reference them rather than duplicating the regex.
-  - id: stage-path-tmp
-    desc: hidden dotfile under /tmp
-    crit: component
-    conf: 0.9
-    if:
-      type: text
-      # Leading char after the dot must be alnum/underscore so comment
-      # placeholders like `/tmp/...` do not count as hidden stage paths.
-      regex: '/tmp/\.[A-Za-z0-9_][A-Za-z0-9._-]*'
-  - id: stage-path-tilde-home
-    desc: hidden dotfile under home
-    crit: component
-    conf: 0.9
-    if:
-      type: text
-      regex: '(^|[\s;&|`("''])~/\.[A-Za-z0-9_][A-Za-z0-9._-]*($|[\s;&|`"'')])'
-    not:
-      - regex: '~/\.(cache|config|local|ssh|aws|gnupg|claude|openclaw|cloudshell|steam|var)(/|$)'
-      - regex: '~/\.cdk\.json\b'
-      - regex: '~/\.buildroot-ccache'
-      - regex: '~/\.buildman\b'
-      # Standard build-tool / package-manager repo & cache dirs that
-      # legitimately receive downloaded artifacts (Maven, Cargo, Gradle, npm…).
-      - regex: '~/\.(m2|cargo|rustup|gradle|npm|nuget|ivy2|sbt|gem|bundle|composer|yarn|go|pub-cache|cpan|nvm|rvm|rbenv|sdkman|fnm|volta|deno|bun|pyenv|asdf|pnpm|poetry|nodenv|goenv)(/|$)'
-      - regex: '~/\.(bashrc|bash_profile|profile|zshrc|zprofile|kshrc|cshrc|tcshrc|inputrc|gemrc)($|[\s;&|`"'')])'
-      # rc config files, incl. suffixed variants (~/.zshrc.custom, ~/.bashrc.local, ~/.zshrc.d)
-      - regex: '~/\.[A-Za-z0-9._-]*rc([._-][A-Za-z0-9._-]+)?($|[\s;&|`"'')])'
-  - id: stage-path-env-home
-    desc: hidden dotfile under HOME
-    crit: component
-    conf: 0.9
-    unless:
-      - type: text
-        substr: ".steam/steam"
-      - type: text
-        substr: "com.valvesoftware.Steam"
-    if:
-      type: text
-      regex: '\$HOME/\.[A-Za-z0-9_][A-Za-z0-9._-]*($|[\s;&|`"'')])'
-    not:
-      - regex: '\$HOME/\.(cache|config|local|ssh|aws|gnupg|cloudshell|steam|var)(/|$)'
-      - regex: '\$HOME/\.buildroot-ccache'
-      # Standard build-tool / package-manager repo & cache dirs.
-      - regex: '\$HOME/\.(m2|cargo|rustup|gradle|npm|nuget|ivy2|sbt|gem|bundle|composer|yarn|go|pub-cache|cpan|nvm|rvm|rbenv|sdkman|fnm|volta|deno|bun|pyenv|asdf|pnpm|poetry|nodenv|goenv)(/|$)'
-      - regex: '\$HOME/\.(bashrc|bash_profile|profile|zshrc|zprofile|kshrc|cshrc|tcshrc|inputrc|gemrc)($|[\s;&|`"'')])'
-      # rc config files, incl. suffixed variants ($HOME/.zshrc.custom, $HOME/.bashrc.local)
-      - regex: '\$HOME/\.[A-Za-z0-9._-]*rc([._-][A-Za-z0-9._-]+)?($|[\s;&|`"'')])'
-
-  # ---- Action atoms ----
-  - id: gradlew-basename
-    desc: Gradle wrapper script basename
-    crit: component
-    conf: 0.99
-    for: [shell]
-    if:
-      type: basename
-      exact: gradlew
-
-  - id: gradle-wrapper-script-text
-    desc: Gradle wrapper script text
-    crit: component
-    conf: 0.99
-    if:
-      type: text
-      substr: "Gradle wrapper script"
 composite_rules:
-  # ---- Aggregator: any hidden-stage destination ----
-  - id: any-hidden-stage-path
-    desc: hidden dotfile stage path
-    crit: notable
-    conf: 0.9
-    any:
-      - id: stage-path-tmp
-      - id: micro-behaviors/fs/path/temp::var-tmp-hidden
-      - id: micro-behaviors/fs/path/temp::dev-shm-hidden--rx-1
-      - id: stage-path-tilde-home
-      - id: stage-path-env-home
   - id: fetch-output-hidden-stage
     desc: fetch writes hidden stage path
     crit: component
     conf: 0.92
     near_lines: 1
     all:
-      - id: any-hidden-stage-path
+      - id: micro-behaviors/fs/path/location::hidden-writable-path
     any:
       - id: micro-behaviors/communications/http/download/cli::fetch-output-flag-script
       - id: micro-behaviors/communications/http/download/cli::fetch-output-flag-build-file
@@ -110,8 +30,11 @@ composite_rules:
     conf: 0.92
     near_lines: 1
     all:
+      - id: micro-behaviors/fs/path/location::hidden-writable-path
+    any:
       - id: micro-behaviors/fs/chmod/executable/mode::chmod-make-executable
-      - id: any-hidden-stage-path
+      - id: micro-behaviors/fs/chmod/executable/mode::pyproject-chmod-make-executable
+      - id: micro-behaviors/fs/chmod/executable/mode::composer-chmod-make-executable
 
   # ---- Three hostile pairings, so a complete chain lights up 3 findings ----
   - id: stealth-fetch-hidden-stage
@@ -130,21 +53,20 @@ composite_rules:
     all:
       - id: micro-behaviors/communications/http/request/client::curl-external-ip-request
       - id: micro-behaviors/fs/chmod/executable/mode::chmod-make-executable
-      - id: any-hidden-stage-path
-  - id: fetch-then-stage-output
-    desc: fetch writes hidden stage path
+      - id: micro-behaviors/fs/path/location::hidden-writable-path
+  - id: quiet-fetch-hidden-stage
+    desc: Quiet download writes hidden stage
     crit: hostile
     conf: 0.97
     near_lines: 1
     all:
-      - id: any-hidden-stage-path
+      - id: micro-behaviors/fs/path/location::hidden-writable-path
     any:
-      - id: micro-behaviors/communications/http/download/cli::fetch-output-flag-script
-      - id: micro-behaviors/communications/http/download/cli::fetch-output-flag-build-file
+      - id: micro-behaviors/communications/http/download/curl::curl-quiet-http-request
+      - id: micro-behaviors/communications/http/download/curl::curl-silent
+      - id: micro-behaviors/communications/http/download/cli::wget-q-flag
     unless:
-      - id: gradlew-basename
-      - id: gradle-wrapper-script-text
-      - id: metadata/package/quality/false-positives::release-version-home-dotfile
+      - id: well-known/lib/huggingface::sandbox-server-bootstrap
       - id: well-known/app/vscode/
       - id: metadata/package/quality/source::source-archive-member
       - id: well-known/tool/sysadmin/atuin::atuin-install-script-path
@@ -154,8 +76,11 @@ composite_rules:
     conf: 0.97
     near_lines: 1
     all:
+      - id: micro-behaviors/fs/path/location::hidden-writable-path
+    any:
       - id: micro-behaviors/fs/chmod/executable/mode::chmod-make-executable
-      - id: any-hidden-stage-path
+      - id: micro-behaviors/fs/chmod/executable/mode::pyproject-chmod-make-executable
+      - id: micro-behaviors/fs/chmod/executable/mode::composer-chmod-make-executable
     unless:
       - id: well-known/tool/detection/llm-scanner/
       - id: metadata/file/catalog/identity::elastic-license-v2
@@ -165,6 +90,52 @@ composite_rules:
       - id: metadata/package/quality/false-positives::app-version-home-dotfile
       - id: metadata/package/quality/false-positives::noop-clear-wrapper
       - id: metadata/package/quality/source::source-archive-member
+  - id: manifest-fetch-chmod-hidden-stage
+    desc: Manifest downloads and arms hidden stage
+    crit: hostile
+    conf: 0.98
+    for: [pyproject.toml, composer.json]
+    all:
+      - id: micro-behaviors/communications/http/download/cli::fetch-output-flag-build-file
+    any:
+      - id: micro-behaviors/fs/chmod/executable/mode::pyproject-chmod-make-executable
+      - id: micro-behaviors/fs/chmod/executable/mode::composer-chmod-make-executable
+  - id: manifest-fetch-background-hidden-stage
+    desc: Manifest downloads and backgrounds hidden stage
+    crit: hostile
+    conf: 0.98
+    for: [pyproject.toml, composer.json]
+    all:
+      - id: micro-behaviors/communications/http/download/cli::fetch-output-flag-build-file
+    any:
+      - id: micro-behaviors/process/create/local-exec::pyproject-hidden-tmp-background-exec
+      - id: micro-behaviors/process/create/local-exec::composer-hidden-tmp-background-exec
+  - id: pyproject-chmod-background-hidden-stage
+    desc: PyProject arms and backgrounds hidden stage
+    crit: hostile
+    conf: 0.98
+    for: [pyproject.toml]
+    all:
+      - id: micro-behaviors/process/create/local-exec::pyproject-hidden-tmp-background-exec
+      - id: micro-behaviors/fs/chmod/executable/mode::pyproject-chmod-make-executable
+  - id: composer-chmod-background-hidden-stage
+    desc: Composer hook arms and backgrounds hidden stage
+    crit: hostile
+    conf: 0.98
+    for: [composer.json]
+    all:
+      - id: micro-behaviors/process/create/local-exec::composer-hidden-tmp-background-exec
+      - id: micro-behaviors/fs/chmod/executable/mode::composer-chmod-make-executable
+  - id: structured-download-chmod-background-hidden-stage
+    desc: Structured command downloads and backgrounds hidden stage
+    crit: hostile
+    conf: 0.98
+    for: [vbs, package-lock.json, plist]
+    near_lines: 3
+    all:
+      - id: fetch-output-hidden-stage
+      - id: chmod-hidden-stage
+      - id: micro-behaviors/process/create/local-exec::structured-hidden-tmp-background-exec
   - id: dockerfile-fetch-hidden-stage-output
     desc: Dockerfile fetch writes hidden stage
     crit: hostile
@@ -172,7 +143,7 @@ composite_rules:
     for: [dockerfile]
     near_lines: 1
     all:
-      - id: stage-path-tmp
+      - id: micro-behaviors/fs/path/temp::tmp-hidden-file
     any:
       - id: micro-behaviors/communications/http/download/cli::fetch-output-flag-script
       - id: micro-behaviors/communications/http/download/cli::fetch-output-flag-build-file
@@ -186,7 +157,7 @@ composite_rules:
     near_lines: 1
     all:
       - id: micro-behaviors/fs/chmod/executable/mode::shell-plus-x
-      - id: stage-path-tmp
+      - id: micro-behaviors/fs/path/temp::tmp-hidden-file
     unless:
       - id: metadata/package/quality/source::source-archive-member
   - id: dockerfile-stealth-fetch-hidden-stage
