@@ -1,0 +1,259 @@
+# Browsing-history surveillance and exfiltration by a browser extension.
+#
+# Behavioral, not IOC-based: the atoms key on the *structure* of the
+# collect -> stage -> exfil pipeline (request interception, per-request host
+# extraction, WebCrypto/IndexedDB staging, scheduled POST) rather than on any
+# campaign domain or string. Those Chrome API names cannot be renamed by a
+# minifier, so the signature survives the "heavily minified, interwoven with
+# legitimate code" packaging documented for the 2026 ModHeader
+# (idgpnmonknjnojddfkpgkljpfnnfcklj) campaign and generalizes to future
+# history-stealer extensions built on any collection channel.
+#
+# Discriminator vs. a legitimate content-blocker or URL-reputation service
+# (which also intercept requests and read hostnames): a *stealer* batches the
+# collected hosts into local storage (often encrypted) and uploads them, rather
+# than fetching filter lists in or checking one host at a time. HOSTILE rules
+# therefore require a local-staging leg; the send-only pattern (which a
+# reputation service also shows) is only SUSPICIOUS.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1041
+  crit: notable
+  conf: 0.9
+
+traits:
+  - id: extension-visited-domain-extraction
+    desc: Extracts host of intercepted request URL
+    attack: T1119
+    conf: 0.9
+    if:
+      type: text
+      regex: 'new\s+URL\(\s*[A-Za-z_$][\w$]*\.url\s*\)\.(hostname|host)\b'
+
+  - id: dexie-indexeddb-wrapper
+    desc: Dexie IndexedDB wrapper instantiation
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: '\bnew\s+Dexie\s*\('
+
+  - id: extension-domain-collection-cap
+    desc: Caps number of collected domains
+    crit: component
+    conf: 0.8
+    if:
+      type: text
+      regex: '\b[Mm]ax[A-Za-z]*(Domain|Url|Host)[A-Za-z]*\s*='
+
+  - id: js-empty-allowlist-decl
+    desc: Declares an empty allowlist array
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: '\b(allow|white)[Ll]ist\s*=\s*\[\s*\]'
+
+  - id: js-allowlist-membership-return-gate
+    desc: Returns early on allowlist non-membership
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: '\b(allow|white)[Ll]ist\.indexOf\([^)]{0,40}\)\s*===?\s*-\s*1'
+
+  - id: js-device-fingerprint-timestamp
+    desc: Hashes timestamp into device fingerprint
+    conf: 0.85
+    if:
+      type: text
+      regex: '(Date\.now\(\)|performance\.now\(\))[\s\S]{0,80}\.digest\('
+
+  - id: js-location-host-read
+    desc: Reads page location host
+    crit: component
+    conf: 0.8
+    if:
+      type: text
+      regex: '\blocation\.(hostname|host)\b'
+
+  - id: js-latin-cjk-marker-token
+    desc: Latin token with embedded CJK marker
+    conf: 0.8
+    if:
+      type: text
+      regex: '[A-Za-z]{2,}[\x{3400}-\x{9fff}][A-Za-z]{2,}'
+
+composite_rules:
+  # Any channel through which the extension learns which pages the user visits.
+  - id: extension-visited-url-source
+    desc: Monitors pages the user visits
+    crit: component
+    conf: 0.9
+    any:
+      - id: micro-behaviors/process/hook/webextension::chrome-webrequest-pre-request
+      - id: micro-behaviors/browser-extension/tabs::chrome-tabs-on-updated
+      - id: micro-behaviors/browser-extension/tabs::chrome-tabs-on-activated
+      - id: micro-behaviors/browser-extension/lifecycle::chrome-webnavigation-api
+      - id: micro-behaviors/browser-extension/lifecycle::chrome-history-state-listener
+
+  # Any channel that pushes data outbound (POST / beacon / pixel / XHR-send).
+  # A bare GET fetch is excluded so filter-list *downloads* don't count.
+  - id: extension-data-upload-channel
+    desc: Pushes data to a remote endpoint
+    crit: component
+    conf: 0.9
+    any:
+      - id: micro-behaviors/communications/http/request/client::post-method-text
+      - id: micro-behaviors/communications/http/request/client::fetch-post-pattern
+      - id: micro-behaviors/communications/http/request/client::xmlhttprequest-new
+      - id: micro-behaviors/communications/http/client/xmlhttp::js-xmlhttp-send
+      - id: micro-behaviors/communications/http/services/analytics/browser::browser-send-beacon
+      - id: micro-behaviors/communications/http/request/client::image-src-network-request
+
+  # Any local staging of collected data before batched upload.
+  - id: extension-local-staging
+    desc: Stages collected data locally
+    crit: component
+    conf: 0.9
+    any:
+      - id: micro-behaviors/crypto/library/provider/node::subtle-encrypt-decrypt
+      - id: micro-behaviors/crypto/symmetric/aes/library/javascript::webcrypto-aes-gcm-importkey
+      - id: dexie-indexeddb-wrapper
+      - id: micro-behaviors/data/db/web-storage::indexeddb-open
+      - id: micro-behaviors/data/db/web-storage::chrome-storage-local-set
+
+  # ===================== HOSTILE: batched history stealers ====================
+
+  # Core signature: intercepts requests, harvests the host of each visited page,
+  # stages the batch locally, and uploads it. This is the ModHeader pipeline and
+  # it is a browsing-history stealer regardless of the destination domain.
+  - id: extension-visited-domain-history-exfil
+    desc: Extension exfiltrates visited-domain history
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: extension-visited-domain-extraction
+      - id: micro-behaviors/process/hook/webextension::chrome-webrequest-pre-request
+      - id: extension-data-upload-channel
+      - id: extension-local-staging
+
+  # Same theft via the tabs channel: reads the host from tab/navigation events,
+  # stages it, and uploads. Staging is required so benign tab-sync (which posts
+  # tab URLs to a first-party backend without local batching) is not caught.
+  - id: extension-tab-visited-url-exfil
+    desc: Exfiltrates visited URLs from tab events
+    crit: hostile
+    conf: 0.93
+    all:
+      - id: extension-visited-domain-extraction
+      - id: extension-visited-url-source
+      - id: extension-data-upload-channel
+      - id: extension-local-staging
+    any:
+      - id: micro-behaviors/browser-extension/tabs::chrome-tabs-on-updated
+      - id: micro-behaviors/browser-extension/tabs::chrome-tabs-on-activated
+
+  # Direct history-API harvest: reads the actual browser history and uploads it.
+  - id: extension-history-api-harvest-exfil
+    desc: Uploads harvested browser history
+    crit: hostile
+    conf: 0.95
+    attack: T1217
+    all:
+      - id: extension-data-upload-channel
+    any:
+      - id: metadata/permission/history/browser::history-search
+      - id: metadata/permission/history/browser::history-get-visits
+      - id: metadata/permission/history/browser::top-sites-get
+
+  # ===================== SUSPICIOUS: one leg short / dual-use ==================
+
+  # Sends intercepted visited hosts to a remote endpoint with no local batching.
+  # A URL-reputation service (Web-of-Trust style) looks the same, so: suspicious.
+  - id: extension-request-host-upload
+    desc: Uploads intercepted visited hosts
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: extension-visited-domain-extraction
+      - id: micro-behaviors/process/hook/webextension::chrome-webrequest-pre-request
+      - id: extension-data-upload-channel
+
+  # Device-fingerprinted, scheduled beacon to a remote endpoint. The fingerprint
+  # + periodic alarm + outbound upload is the covert-telemetry shape.
+  - id: extension-scheduled-fingerprint-beacon
+    desc: Scheduled fingerprinted remote beacon
+    crit: suspicious
+    conf: 0.9
+    attack: T1029
+    all:
+      - id: js-device-fingerprint-timestamp
+      - id: micro-behaviors/time/schedule/webextension::chrome-alarms-create
+      - id: extension-data-upload-channel
+
+  # A collection+exfil pipeline gated behind an empty allowlist kill switch, so
+  # it stays inert under sandbox review yet ships fully functional.
+  - id: extension-dormant-surveillance-pipeline
+    desc: Dormant browsing surveillance pipeline
+    crit: suspicious
+    conf: 0.92
+    attack: T1480
+    all:
+      - id: extension-dormant-allowlist-kill-switch
+      - id: extension-visited-url-source
+      - id: extension-data-upload-channel
+
+  # ===================== ARCHIVE-SCOPE: pool manifest + code ==================
+
+  # All-URL extension whose background code harvests visited hosts and uploads
+  # them: manifest breadth + code behavior together, evaluated across the crx.
+  - id: extension-all-urls-surveillance-package
+    desc: All-URL extension harvests and uploads visits
+    crit: hostile
+    conf: 0.95
+    scope: archive
+    for: [crx, xpi, zip, archives]
+    all:
+      - id: metadata/permission/manifest::host-permission-all-urls
+      - id: extension-visited-domain-extraction
+      - id: extension-data-upload-channel
+      - id: extension-local-staging
+
+  # All-URL content script that reads each page's host and relays it to the
+  # background worker -- page-visit tracking injected into every site.
+  - id: content-script-all-urls-visit-tracking
+    desc: All-URL content script tracks page visits
+    crit: suspicious
+    conf: 0.9
+    scope: archive
+    for: [crx, xpi, zip, archives]
+    all:
+      - id: metadata/permission/host::content-script-all-urls
+      - id: js-location-host-read
+      - id: micro-behaviors/communications/ipc/message/webextension::chrome-runtime-send-message
+
+  # ===================== NOTABLE: individual characteristics ==================
+
+  # Dormant kill switch: a capability gated behind an allowlist that ships empty.
+  - id: extension-dormant-allowlist-kill-switch
+    desc: Dormant empty-allowlist kill switch
+    crit: notable
+    conf: 0.9
+    attack: T1480
+    all:
+      - id: js-empty-allowlist-decl
+      - id: js-allowlist-membership-return-gate
+
+  # Lifecycle telemetry beacon: pings a remote on install/update and registers a
+  # remote uninstall URL. Surfaces the hardcoded phone-home endpoints.
+  - id: extension-lifecycle-remote-beacon
+    desc: Extension beacons remote on lifecycle events
+    crit: notable
+    conf: 0.9
+    attack: T1176
+    all:
+      - id: micro-behaviors/browser-extension/lifecycle::chrome-runtime-on-installed
+      - id: micro-behaviors/browser-extension/lifecycle::runtime-set-uninstall-url
+      - id: micro-behaviors/communications/http/request/client::js-fetch-call
