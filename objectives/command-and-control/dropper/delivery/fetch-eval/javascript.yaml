@@ -30,13 +30,15 @@ traits:
     type: text
     regex: fetch\s*\(\s*atob\s*\(.{1,80}\)\s*\)[\s\S]{0,160}\.json\s*\(
 - id: eval-json-content-field
-  desc: eval executes JSON content field
+  desc: Assigns .content then immediately evals
   crit: suspicious
   conf: 0.96
   attack: T1059.007
+  # Covers both `const x = obj.content; eval(x)` and nested
+  # `const x = data.files[name].content; eval(x)` gist/API shapes.
   if:
     type: text
-    regex: const\s+[A-Za-z_$][\w$]*\s*=\s*\w+\.content;\s*eval\s*\(
+    regex: '=\s*[^\n;]{0,120}\.content\s*;\s*eval\s*\('
 - id: eval-direct-json-content
   desc: eval directly executes JSON content
   crit: suspicious
@@ -279,8 +281,9 @@ composite_rules:
   - id: objectives/anti-static/obfuscation/encoding/content::encoded-http-url
   - id: micro-behaviors/data/encode/hex::js-dense-hex-escapes
   - id: micro-behaviors/process/interpreter/eval::js-eval-variable-argument
+  # Prefer the more-specific `.content`-field loader when both match.
   unless:
-  - id: objectives/command-and-control/dropper/delivery/fetch-eval/
+  - id: fetch-content-field-eval-loader
   downgrade:
     any:
     - id: metadata/library/structure::js-large-module-bundle
@@ -586,3 +589,23 @@ composite_rules:
   unless:
   - id: metadata/package/testing/
   - id: well-known/tool/detection/security-scanner/
+# Two-step remote loader: assign a fetched object's `.content` into a binding,
+# then immediately `eval(...)` that binding. Common for gist/paste JSON APIs
+# where the response is `{files: {name: {content: "..."}}}` rather than raw JS.
+- id: fetch-content-field-eval-loader
+  desc: Fetched .content field executed via eval
+  crit: hostile
+  conf: 0.97
+  attack: T1059.007,T1105
+  mbc: B0009.016
+  all:
+  - id: micro-behaviors/communications/http/request/client::js-fetch-call
+  - id: eval-json-content-field
+  unless:
+  - id: metadata/package/testing/
+  - id: metadata/package/testing/presence/manifest::test-fixtures
+  downgrade:
+    any:
+    - id: metadata/library/structure::js-large-module-bundle
+    - id: metadata/package/quality/false-positives::benign-build-tooling-context
+
