@@ -163,7 +163,7 @@ traits:
 
 **Field override:** List fields such as `for` and `platforms` must resolve to concrete supported values. Do not use `[none]`; the validator requires every trait and composite to target at least one file type.
 
-**File types:** `elf`, `macho`, `pe`, `dll`, `so`, `dylib`, `pyc`, `shell`, `batch`, `jcl`, `python`, `javascript`, `typescript`, `rust`, `java`, `class`, `ruby`, `c`, `cpp`, `go`, `csharp`, `php`, `perl`, `powershell`, `lua`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir`, `vbs`, `html`, `applescript`, `package.json`, `package-lock.json`, `json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `plist`, `ipa`, `rtf`, `lnk`, `jpeg`, `png`, `pkginfo`, `pickle`, `pdf`, `oledoc`, `ooxml`, `systemd-service`, `desktop-entry`, `zip`, `tar`, `npm`, `whl`, `python-sdist`, `egg`, `gem`, `nupkg`, `crate`, `conda`, `deb`, `rpm`, `apk`, `jar`, `crx`, `xpi`, `vsix`, `chm`.
+**File types:** `elf`, `macho`, `pe`, `dll`, `so`, `dylib`, `pyc`, `shell`, `batch`, `jcl`, `python`, `javascript`, `typescript`, `rust`, `java`, `class`, `ruby`, `c`, `cpp`, `go`, `csharp`, `php`, `perl`, `powershell`, `lua`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir`, `vbs`, `html`, `applescript`, `package.json`, `package-lock.json`, `json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `plist`, `ipa`, `rtf`, `lnk`, `jpeg`, `png`, `pkginfo`, `pickle`, `pdf`, `oledoc`, `ooxml`, `systemd-service`, `desktop-entry`, `zip`, `tar`, `npm`, `whl`, `python-sdist`, `egg`, `gem`, `nupkg`, `crate`, `conda`, `deb`, `rpm`, `apk`, `jar`, `crx`, `xpi`, `vsix`, `chm`, `static-lib` (a `.a` Unix static library — native object code; scanned as a binary blob, in the `binaries` group).
 
 **Aliases** (resolved to the canonical type):
 
@@ -180,7 +180,7 @@ traits:
 
 | Group | Members |
 |-------|---------|
-| `binaries` | `elf`, `macho`, `pe`, `dylib`, `so`, `dll`, `class`, `pyc` |
+| `binaries` | `elf`, `macho`, `pe`, `dylib`, `so`, `dll`, `class`, `pyc`, `wasm`, `static-lib` |
 | `scripts` | `shell`, `batch`, `jcl`, `python`, `javascript`, `ruby`, `php`, `perl`, `lua`, `powershell`, `applescript`, `vbs` |
 | `source` | `typescript`, `rust`, `java`, `c`, `cpp`, `go`, `csharp`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir` |
 | `manifests` | `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `pkginfo`, `plist`, `lnk`, `systemd-service`, `desktop-entry` |
