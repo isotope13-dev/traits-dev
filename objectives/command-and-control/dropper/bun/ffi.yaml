@@ -1,0 +1,80 @@
+defaults:
+  platforms: [windows]
+  for: [pe, javascript]
+  attack: T1106
+
+traits:
+  # Less common Win32 names used by Bun FFI native loaders (not the ubiquitous
+  # VirtualAlloc/CreateThread literals that appear in benign runtimes).
+  - id: ffi-rtladdfunctiontable-api
+    desc: FFI RtlAddFunctionTable API name
+    crit: component
+    conf: 0.93
+    if:
+      type: text
+      substr: RtlAddFunctionTable
+  - id: ffi-searchpatha-api
+    desc: FFI SearchPathA API name
+    crit: component
+    conf: 0.88
+    if:
+      type: text
+      substr: SearchPathA
+
+  # Timestamped single-file Bun payload entry (malware packaging, not the
+  # stock Bun CLI which has no B:/~BUN/root/loader_* VFS root).
+  - id: bun-vfs-loader-entry
+    desc: Bun VFS timestamped loader entry path
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: text
+      regex: 'B:/~BUN/root/loader_[0-9]{8}_'
+
+  - id: bun-sysreq-module-marker
+    desc: Bun embedded sysreq module marker
+    crit: component
+    conf: 0.94
+    if:
+      type: text
+      regex: 'sysreq\.js'
+
+composite_rules:
+  - id: bun-ffi-native-loader-api-set
+    desc: Bun FFI native loader APIs
+    crit: suspicious
+    conf: 0.95
+    needs: 3
+    any:
+      - id: micro-behaviors/mem/protect/modify::virtual-alloc
+      - id: micro-behaviors/mem/protect/modify::virtual-protect
+      - id: micro-behaviors/process/thread/create::create-thread
+      - id: ffi-rtladdfunctiontable-api
+      - id: ffi-searchpatha-api
+
+  - id: bun-ffi-self-injection-loader
+    desc: Bun FFI self injection loader
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: micro-behaviors/dylib/load/runtime::bun-ffi-module
+      - id: bun-ffi-native-loader-api-set
+      # Stock Bun CLI carries bun:ffi + Win32 API imports; gate on malware VFS root.
+      - id: bun-vfs-loader-entry
+    any:
+      - id: metadata/binary/section/name::bun-section-name
+      - id: objectives/command-and-control/dropper/delivery/http::bun-loader-api-protocol
+
+  - id: bun-singlefile-sysreq-ffi-loader
+    desc: Bun single-file obfuscated sysreq FFI loader
+    crit: hostile
+    conf: 0.98
+    attack: T1106,T1027
+    all:
+      - id: metadata/binary/section/name::bun-section-name
+      - id: micro-behaviors/dylib/load/runtime::bun-ffi-module
+      - id: bun-vfs-loader-entry
+      - id: bun-sysreq-module-marker
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/signed/developer/
