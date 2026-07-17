@@ -12,18 +12,36 @@ defaults:
   mbc: B0023
 
 traits:
-  # Stage-2 URL retrieved from DNS TXT record. Indicator: dnspython resolve
-  # for type='TXT' followed by base64/hex decoding of the response.
-- id: dns-txt-config-retrieve
-  desc: Stage-2 config retrieved from DNS TXT record
-  crit: suspicious
-  conf: 0.93
-  unless:
-    - id: well-known/app/anthropic-cybersecurity-skills::defensive-cybersecurity-skills-repository
-    - id: well-known/app/remotepower::documented-rmm-release-context
+  # A DNS TXT lookup alone is ordinary service discovery. These atoms are
+  # intentionally incomplete; the composite below requires a nearby decode.
+- id: dns-txt-query-call
+  desc: Python DNS query requests TXT record
+  crit: component
+  conf: 0.92
   if:
     type: text
-    regex: 'dns\.resolver\.(resolve|query)\s*\([^)\n]{0,200}["'']TXT["'']'
+    regex: 'dns\.resolver\.query\s*\([^)]{0,160}["'']TXT["'']'
+- id: dns-txt-resolve-call
+  desc: Python DNS resolve requests TXT record
+  crit: component
+  conf: 0.92
+  if:
+    type: text
+    regex: 'dns\.resolver\.resolve\s*\([^)]{0,160}["'']TXT["'']'
+- id: dns-txt-base64-decode
+  desc: Decodes DNS TXT data with base64
+  crit: component
+  conf: 0.86
+  if:
+    type: text
+    regex: 'base64\.(b64decode|decodebytes)'
+- id: dns-txt-hex-decode
+  desc: Decodes DNS TXT data from hex
+  crit: component
+  conf: 0.86
+  if:
+    type: text
+    regex: 'binascii\.(unhexlify|a2b_hex)|bytes\.fromhex'
 
   # JSON config retrieval where the config drives staging. These markers are
   # only components; the composite below also requires an HTTP client and a
@@ -142,6 +160,31 @@ traits:
     substr: paste.ee/r
   count_max: 1006462
 composite_rules:
+- id: dns-txt-query
+  desc: Python DNS TXT lookup
+  crit: component
+  conf: 0.92
+  any:
+  - id: dns-txt-query-call
+  - id: dns-txt-resolve-call
+- id: dns-txt-response-decode
+  desc: Decodes DNS TXT response
+  crit: component
+  conf: 0.86
+  any:
+  - id: dns-txt-base64-decode
+  - id: dns-txt-hex-decode
+- id: dns-txt-config-retrieve
+  desc: Stage-2 config decoded from DNS TXT record
+  crit: suspicious
+  conf: 0.93
+  near_lines: 80
+  all:
+  - id: dns-txt-query
+  - id: dns-txt-response-decode
+  unless:
+  - id: well-known/app/anthropic-cybersecurity-skills::defensive-cybersecurity-skills-repository
+  - id: well-known/app/remotepower::documented-rmm-release-context
 - id: multi-stage-delivery
   desc: Multi-stage payload delivery (any form)
   crit: suspicious
@@ -167,6 +210,9 @@ composite_rules:
   - id: micro-behaviors/process/create/subprocess::process-execution
   - id: micro-behaviors/process/interpreter/python::exec-builtin
   - id: micro-behaviors/process/interpreter/python::eval-builtin
+  # Keep retrieval and execution in the same local path; unrelated process
+  # calls elsewhere in a networking module are not staged execution.
+  near_lines: 80
   downgrade:
     any:
     - id: metadata/package/testing/presence/harness::python-test-file
