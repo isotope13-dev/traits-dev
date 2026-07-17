@@ -85,6 +85,65 @@ traits:
       type: hex
       section: ".text"
       pattern: "48 89 f8 48 89 f7 48 89 d6 48 89 ca 4d 89 c2 4d 89 c8 4c 8b 4c 24 08 0f 05 c3"
+
+  # ---- mov-immediate syscall idiom (`mov eax, N; ...; syscall`) ----
+  #
+  # The push/pop atoms above are shellcode-specific: a compiler never emits
+  # `push 9; pop rax`, so they stay notable standalone. The `mov eax, imm; syscall`
+  # idiom below is NOT shellcode-specific -- it is exactly what a libc syscall
+  # wrapper compiles to, so on a static-libc binary it appears hundreds of times.
+  # These atoms are therefore `component`: a single site means little on its own;
+  # the analyst-facing signal is a mov-immediate site in a *nolibc* binary with a
+  # handful of functions (a hand-written syscall program -- see the composites,
+  # and the benign archetype samples/benign/handwritten-asm/pong.elf), which the
+  # `elf-needed-libs-zero` + low `functions.count` gate expresses.
+  #
+  # Not section-scoped: the binaries that hand-roll syscalls are frequently
+  # section-header-less, so `section: ".text"` would make these blind exactly where
+  # they matter. `offset_range` bounds the scan to the code region instead.
+  # `b8 XX 00 00 00` = `mov eax, 0xXX`; the high three bytes pin the syscall number
+  # to <= 255, which covers every syscall these composites target.
+  - id: x64-mov-syscall-dispatch
+    desc: Direct syscall dispatch via mov-immediate
+    crit: component
+    conf: 0.8
+    if:
+      type: hex
+      offset_range: [64, 262144]
+      pattern: "b8 ?? 00 00 00 [0-32] 0f 05"
+  - id: x64-mov-execve-syscall
+    desc: execve(2) via mov-immediate syscall
+    crit: component
+    conf: 0.85
+    if:
+      type: hex
+      offset_range: [64, 262144]
+      pattern: "b8 3b 00 00 00 [0-24] 0f 05"
+  - id: x64-mov-socket-syscall
+    desc: socket(2) via mov-immediate syscall
+    crit: component
+    conf: 0.85
+    if:
+      type: hex
+      offset_range: [64, 262144]
+      pattern: "b8 29 00 00 00 [0-24] 0f 05"
+  - id: x64-mov-connect-syscall
+    desc: connect(2) via mov-immediate syscall
+    crit: component
+    conf: 0.85
+    if:
+      type: hex
+      offset_range: [64, 262144]
+      pattern: "b8 2a 00 00 00 [0-24] 0f 05"
+  - id: x64-mov-ptrace-syscall
+    desc: ptrace(2) via mov-immediate syscall
+    crit: component
+    conf: 0.85
+    if:
+      type: hex
+      offset_range: [64, 262144]
+      pattern: "b8 65 00 00 00 [0-24] 0f 05"
+
 composite_rules:
   - id: raw-network-syscalls
     desc: Raw socket+connect syscalls
@@ -93,3 +152,19 @@ composite_rules:
     all:
       - id: x64-socket-syscall
       - id: x64-connect-syscall
+
+  # The generalized identity of samples/benign/handwritten-asm/pong.elf: a program
+  # that issues raw syscalls with no libc behind it. Neutral and often benign (a
+  # nolibc TUI, an init stub, a demoscene binary) -- but rare and worth surfacing
+  # in a diff, because the same shape is what a stager adopts to present no
+  # imported symbols to static analysis. The low `functions.count` separates a
+  # hand-written program (pong: 1) from a statically-linked libc program (which is
+  # also needed-libs-zero but carries hundreds to thousands of functions).
+  - id: nolibc-direct-syscall-binary
+    desc: Hand-rolled nolibc binary issuing raw syscalls
+    crit: notable
+    conf: 0.9
+    all:
+      - id: x64-mov-syscall-dispatch
+      - id: metadata/binary/linking/static::elf-needed-libs-zero
+      - id: metadata/binary/metrics/threshold::functions-at-most-32
