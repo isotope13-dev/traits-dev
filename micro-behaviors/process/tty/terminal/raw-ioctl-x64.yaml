@@ -1,0 +1,61 @@
+# Terminal attribute control issued as direct ioctl(2) syscalls (x86-64 Linux).
+#
+# The libc spellings of this behavior (tcgetattr/tcsetattr/cfmakeraw) are already
+# covered by the symbol traits in ./traits.yaml, and by the source-text traits in
+# objectives/collection/keylog/terminal/. All of them key on symbols or C source, so
+# a statically linked, stripped, or hand-written binary that invokes ioctl(2)
+# directly carries no evidence they can see: the request constant left in the
+# machine code is all that remains.
+#
+# That is the shape a terminal keylogger takes when it drops libc to stay out of
+# reach of symbol-based detection -- but it is equally the shape of any full-screen
+# terminal UI (editor, pager, game), so these describe the capability and stay at
+# capability level. Intent lives in what the program does with the keystrokes;
+# objectives/collection/keylog/terminal/ composes these with that evidence.
+#
+# Each request constant is anchored to a syscall instruction within 16 bytes so a
+# match lands on a real call site rather than an incidental 4-byte value in data.
+# `be XX 54 00 00` is `mov esi, 0x54XX` -- rsi holds the request argument of
+# ioctl(fd, request, argp) under the SysV syscall ABI.
+defaults:
+  platforms: [linux]
+  for: [elf]
+  arch: [x86-64]
+  crit: notable
+  conf: 0.85
+
+traits:
+  - id: tcgets-ioctl-syscall
+    desc: Reads terminal attributes via raw ioctl
+    if:
+      type: hex
+      offset_range: [64, 65536]
+      pattern: "be 01 54 00 00 [0-16] 0f 05"
+
+  - id: tcsets-ioctl-syscall
+    desc: Sets terminal attributes via raw ioctl
+    if:
+      type: hex
+      offset_range: [64, 65536]
+      pattern: "be 02 54 00 00 [0-16] 0f 05"
+
+  - id: tiocgwinsz-ioctl-syscall
+    desc: Queries terminal size via raw ioctl
+    crit: baseline
+    conf: 0.8
+    if:
+      type: hex
+      offset_range: [64, 65536]
+      pattern: "be 13 54 00 00 [0-16] 0f 05"
+
+composite_rules:
+  # Read-modify-write of the terminal line discipline. Disabling ECHO/ICANON this
+  # way is what turns the tty over to the program byte-by-byte; it is the
+  # precondition for both a raw-mode UI and an in-terminal keystroke capture.
+  - id: raw-termios-mode-change
+    desc: Terminal mode reprogrammed via raw ioctl
+    crit: notable
+    conf: 0.9
+    all:
+      - id: tcgets-ioctl-syscall
+      - id: tcsets-ioctl-syscall
