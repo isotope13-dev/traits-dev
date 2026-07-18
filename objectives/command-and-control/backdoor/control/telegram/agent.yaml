@@ -37,23 +37,49 @@ traits:
       exact: vscode.commands.executeCommand
       arg:
         kind: string
-        substr: internal
+        regex: '^solopreneur\.internal[A-Za-z]+$'
 
-  # Benign opt-in marker: the Telegram bot token / chat id are read from the
-  # user's own VS Code configuration (the user pairs their OWN bot). A backdoor
-  # hardcodes or obfuscates the token instead (see encoded-telegram-token-fallback
-  # / node-telegram-http-control-backdoor). Referenced from the control
-  # composite's `unless:` so a documented, user-configured Telegram integration
-  # is not mislabeled as attacker remote control.
-  - id: telegram-token-from-user-config
-    desc: Telegram token read from user configuration
+  # These atoms describe the application-specific, user-facing authorization
+  # flow.  They are only used by the exception composite below; a single
+  # approval prompt or command name is not a benign verdict by itself.
+  - id: telegram-user-approval-binding
+    desc: Telegram user approval prompt
     crit: notable
-    conf: 0.9
+    conf: 0.95
+    if:
+      type: symbol
+      kind: call
+      exact: vscode.window.showWarningMessage
+      arg:
+        kind: string
+        regex: '(?i)(Telegram|Chat ID).{0,240}(authorize|授权)'
+
+  - id: telegram-fixed-agent-command-set
+    desc: Telegram fixed agent command set
+    crit: notable
+    conf: 0.92
+    count_min: 5
     if:
       type: text
-      regex: '(?i)\.get\s*\(\s*["'']telegram(bottoken|enabled|chatid)'
+      regex: '/(status|run|stop|approve|deny)\b'
 
 composite_rules:
+  # A real backdoor may also read a token from configuration.  Keep this
+  # exception narrow: it requires the documented opt-in settings, Telegram
+  # polling, explicit local approval, and a fixed agent-control vocabulary.
+  - id: telegram-vscode-user-authorized-agent-context
+    desc: User-authorized Telegram agent integration
+    crit: exception
+    conf: 0.98
+    all:
+      - id: micro-behaviors/data/config/schema::javascript-telegram-bot-setting-read
+      - id: micro-behaviors/data/config/schema::javascript-telegram-opt-in-setting-read
+      - id: micro-behaviors/communications/http/services/telegram::telegram-api-host
+      - id: micro-behaviors/communications/http/services/telegram::telegram-get-updates-endpoint
+      - id: vscode-internal-command-dispatch
+      - id: telegram-user-approval-binding
+      - id: telegram-fixed-agent-command-set
+
   - id: telegram-vscode-agent-control
     desc: Telegram remote control of a local VS Code agent
     crit: hostile
@@ -63,7 +89,7 @@ composite_rules:
       - id: micro-behaviors/communications/http/services/telegram::telegram-get-updates-endpoint
       - id: vscode-internal-command-dispatch
     unless:
-      - id: telegram-token-from-user-config
+      - id: telegram-vscode-user-authorized-agent-context
 
   - id: node-telegram-http-control-backdoor
     desc: HTTP-controlled Node Telegram bot with an obfuscated token
