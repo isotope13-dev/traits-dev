@@ -59,46 +59,33 @@ traits:
         field: binary.code_size
         max: 65536
 
-  - id: pe-checksum-mismatch
-    desc: PE checksum mismatch (modified binary)
-    crit: notable
-    conf: 0.95
+  # The stored CheckSum field is populated (non-zero). Paired with
+  # pe-checksum-content-invalid below to separate "header says nothing" from
+  # "header says something that is no longer true".
+  - id: pe-checksum-populated
+    desc: PE checksum field holds a non-zero value
+    crit: component
+    conf: 1.0
     if:
-      type: yara
-      source: |
-        import "pe"
-        rule pe_checksum_mismatch {
-          condition:
-            pe.checksum != 0 and pe.checksum != pe.calculate_checksum()
-        }
+      type: metrics
+      field: pe.checksum
+      min: 1
+
+  # Stored CheckSum != checksum recomputed over the current bytes. Read from
+  # cleave's native pe.checksum_valid metric: the previous inline YARA form
+  # (pe.checksum != pe.calculate_checksum()) never matched in this build, so
+  # every rule that consumed the mismatch below was silently inert.
+  - id: pe-checksum-content-invalid
+    desc: PE checksum does not match content
+    crit: component
+    conf: 1.0
+    if:
+      type: metrics
+      field: pe.checksum_valid
+      max: 0
     unless:
-      - id: pe-checksum-zeroed
-      - id: tiny-single-function-pe
-      - id: metadata/binary/framework::dotnet-metadata
       - type: basename
         regex: '^(privoxy\.exe|privoxy\.exe\.gz)$'
-    downgrade:
-      any:
-        - id: metadata/signed/platform/
-        - id: metadata/signed/developer::cisco-systems
-        - id: metadata/signed/leaf::cisco-systems-inc.
-
-  - id: signed-pe-checksum-mismatch
-    desc: Signed PE checksum mismatch
-    crit: component
-    conf: 0.95
-    if:
-      type: yara
-      source: |
-        import "pe"
-        rule signed_pe_checksum_mismatch {
-          condition:
-            pe.checksum != 0 and pe.checksum != pe.calculate_checksum()
-        }
-    unless:
-      - id: pe-checksum-zeroed
-      - id: tiny-single-function-pe
-      - id: metadata/binary/framework::dotnet-metadata
 
   - id: cert-table-present
     desc: PE certificate table entry populated
@@ -137,6 +124,40 @@ traits:
       min: 1
 
 composite_rules:
+  # Populated-but-wrong CheckSum: the linker wrote a value and the bytes have
+  # changed since. Widely referenced as a "binary was modified after link"
+  # building block.
+  - id: pe-checksum-mismatch
+    desc: PE checksum mismatch (modified binary)
+    crit: notable
+    conf: 0.95
+    all:
+      - id: pe-checksum-populated
+      - id: pe-checksum-content-invalid
+    unless:
+      - id: pe-checksum-zeroed
+      - id: tiny-single-function-pe
+      - id: metadata/binary/framework::dotnet-metadata
+    downgrade:
+      any:
+        - id: metadata/signed/platform/
+        - id: metadata/signed/developer::cisco-systems
+        - id: metadata/signed/leaf::cisco-systems-inc.
+
+  # Same mismatch, but on a binary that also carries a certificate table — the
+  # id has always promised "signed", while the old matcher only re-tested the
+  # checksum and never looked at the certificate. signtool rewrites CheckSum
+  # when it signs, so a signed image whose checksum no longer matches its bytes
+  # was altered after signing (or the certificate came from another file).
+  - id: signed-pe-checksum-mismatch
+    desc: Signed PE checksum no longer matches its content
+    crit: suspicious
+    conf: 0.95
+    attack: T1553.002
+    all:
+      - id: cert-table-present
+      - id: pe-checksum-mismatch
+
   - id: cert-data-zeroed-checksum
     desc: Certificate table present but PE checksum zeroed
     crit: suspicious
