@@ -3,127 +3,60 @@ defaults:
   for: [pe, shell, batch, powershell]
   attack: T1090
 traits:
-  - id: qemu-system-binary
-    desc: QEMU system emulator binary reference
-    crit: component
-    if:
-      type: text
-      regex: (?i)\bqemu-system-(x86_64|i386|arm|aarch64)(\.exe)?\b
-  - id: qemu-user-netdev
-    desc: QEMU user netdev binding
-    crit: component
-    if:
-      type: text
-      regex: (?i)-netdev\s+user,id=[A-Za-z0-9_.-]{1,32}\b
-  - id: qemu-e1000-device
-    desc: QEMU e1000 network device
-    crit: component
-    if:
-      type: text
-      regex: (?i)-device\s+e1000,netdev=[A-Za-z0-9_.-]{1,32}\b
-  - id: qemu-cpu-max-flag
-    desc: QEMU cpu max flag
-    crit: component
-    if:
-      type: text
-      regex: (?i)-cpu\s+max\b
-  - id: qemu-display-none-flag
-    desc: QEMU display none flag
-    crit: component
-    if:
-      type: text
-      regex: (?i)-display\s+none\b
-  - id: qemu-hda-image
-    desc: QEMU hda disk image
-    crit: component
-    if:
-      type: text
-      regex: (?i)-hda\s+\S+
-  - id: qemu-drive-image-file
-    desc: QEMU drive image file
-    crit: suspicious
-    if:
-      type: text
-      regex: (?i)-drive\s+file=[^\s&]{1,120}\.(img|qcow2|vhd|vmdk)\b
-  - id: qemu-nographic-flag
-    desc: QEMU -nographic flag
-    crit: component
-    if:
-      type: text
-      regex: (?i)-nographic\b
-  - id: qemu-monitor-none-flag
-    desc: QEMU -monitor none flag
-    crit: component
-    if:
-      type: text
-      regex: (?i)-monitor\s+none\b
-  # The neutral host-to-guest port-forward capability lives in
-  # micro-behaviors/os/virtualization/hypervisor::hostfwd-guest-forward
-  # (notable). The hostile composite below references it and adds the
-  # intent-specific context (headless flags + misleading-extension sidecar disk).
+  # Attack-specific: disk image disguised with a non-disk extension so the
+  # sidecar VM looks like a database/DLL/log rather than a guest image.
   - id: qemu-misleading-disk-ext
-    desc: "QEMU disk image has misleading extension"
+    desc: QEMU disk image has misleading extension
     crit: suspicious
     conf: 0.8
     if:
       type: text
       regex: (?i)-drive\s+.*?file=.*?\.(db|dll|txt|log)\b
+
 composite_rules:
-  - id: qemu-headless-console
-    desc: QEMU headless console flags
-    crit: component
-    all:
-      - id: qemu-nographic-flag
-      - id: qemu-monitor-none-flag
-  - id: qemu-headless-args
-    desc: QEMU headless execution arguments
-    crit: suspicious
-    any:
-      - id: qemu-headless-console
-      - id: qemu-display-none-flag
   - id: qemu-sidecar-networking
-    desc: QEMU sidecar network bridge
+    desc: QEMU sidecar e1000 user-netdev bridge
     crit: suspicious
     all:
-      - id: qemu-user-netdev
-      - id: qemu-e1000-device
+      - id: micro-behaviors/os/virtualization/hypervisor::qemu-user-netdev
+      - id: micro-behaviors/os/virtualization/hypervisor::qemu-e1000-device
     unless:
       - id: metadata/package/testing/presence/harness::qemu-examples-tests
-  - id: qemu-sidecar-disk
-    desc: QEMU guest disk image
-    crit: suspicious
-    any:
-      - id: qemu-hda-image
-      - id: qemu-drive-image-file
-      - id: qemu-misleading-disk-ext
-  - id: qemu-headless-image-launcher
-    desc: Headless QEMU image launcher
-    crit: hostile
-    conf: 0.94
-    all:
-      - id: qemu-drive-image-file
-      - id: qemu-nographic-flag
-      - id: objectives/command-and-control/dropper/execution/batch::start-exe
+
+  # Headless QEMU + hostfwd + a *disguised* disk image (not ordinary .qcow2/.img).
+  # Plain CI/Packer/Vagrant provisioning uses real disk extensions and must not
+  # match this hostile pattern.
   - id: qemu-legacy-headless-backdoor
-    desc: Headless QEMU port forward backdoor
+    desc: Headless QEMU port forward with disguised disk
     crit: hostile
     conf: 0.93
     all:
-      - id: qemu-system-binary
-      - id: qemu-headless-args
+      - id: micro-behaviors/os/virtualization/hypervisor::qemu-system-binary
+      - id: micro-behaviors/os/virtualization/hypervisor::qemu-headless-args
       - id: micro-behaviors/os/virtualization/hypervisor::hostfwd-guest-forward
-      - id: qemu-sidecar-disk
+      - id: qemu-misleading-disk-ext
     unless:
       - id: metadata/package/testing/presence/harness::qemu-examples-tests
+
+  - id: qemu-headless-image-launcher
+    desc: Headless QEMU image launcher via start
+    crit: hostile
+    conf: 0.94
+    all:
+      - id: micro-behaviors/os/virtualization/hypervisor::qemu-drive-image-file
+      - id: micro-behaviors/os/virtualization/hypervisor::qemu-nographic-flag
+      - id: objectives/command-and-control/dropper/execution/batch::start-exe
+
   - id: qemu-sidecar-headless-backdoor
     desc: Headless QEMU sidecar foothold
     crit: hostile
     conf: 0.95
     all:
-      - id: qemu-headless-args
+      - id: micro-behaviors/os/virtualization/hypervisor::qemu-headless-args
       - id: qemu-sidecar-networking
-      - id: qemu-sidecar-disk
-      - id: qemu-cpu-max-flag
+      - id: micro-behaviors/os/virtualization/hypervisor::qemu-guest-disk
+      - id: micro-behaviors/os/virtualization/hypervisor::qemu-cpu-max-flag
+
   - id: qemu-hidden-vm-backdoor
     desc: QEMU used as a hidden virtualized backdoor
     crit: hostile
