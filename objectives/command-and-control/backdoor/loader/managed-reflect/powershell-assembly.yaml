@@ -1,70 +1,13 @@
-# PowerShell .NET Assembly Loading
-# Detects reflective loading and execution of .NET assemblies within PowerShell
-# MBC: B0024 (Execution), B0032 (Obfuscated Files or Information)
-# ATT&CK: T1620 (Reflective Code Loading), T1059.001 (PowerShell)
+# PowerShell .NET assembly loading composites.
+# Atomic reflection operations live in micro-behaviors; these rules infer
+# loader intent from combinations with decoding, download, or invocation.
 defaults:
   platforms: [unix, windows]
   for: [powershell, batch, shell]
   mbc: "B0024"
   attack: "T1620"
+
 traits:
-  # [System.Reflection.Assembly]::Load(...)
-  - id: ps-assembly-load
-    desc: Reflective assembly load
-    crit: suspicious
-    conf: 0.95
-    if:
-      type: text
-      regex: '(?i)\[System\.Reflection\.Assembly\]::Load\('
-    not:
-      - substr: 'SharpZipLib.dll'
-    unless:
-      - id: well-known/app/sql-server-dsc::benign-module-context
-      - id: well-known/app/sql-server-dsc::module-path-identity
-      - id: well-known/app/sql-server-dsc::module-name-identity
-  # [System.Reflection.Assembly]::LoadWithPartialName(...)
-  - id: ps-assembly-load-partial
-    desc: Reflective assembly load with partial name
-    crit: suspicious
-    conf: 0.85
-    if:
-      type: text
-      regex: '(?i)\[System\.Reflection\.Assembly\]::LoadWithPartialName\('
-    not:
-      - substr: "[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms')"
-      - substr: "[Reflection.Assembly]::LoadWithPartialName('Microsoft.VisualBasic')"
-    unless:
-      - id: well-known/app/posh-ovirt/
-      - type: text
-        substr: Microsoft.HyperV.PowerShell
-      - id: metadata/file/string/identity/
-      - id: well-known/app/sql-server-dsc::benign-module-context
-      - id: well-known/app/sql-server-dsc::module-path-identity
-      - id: well-known/app/sql-server-dsc::module-name-identity
-  # Assembly EntryPoint Invocation
-  - id: ps-assembly-invoke
-    desc: Reflective assembly entry point invocation
-    crit: suspicious
-    conf: 0.95
-    if:
-      type: text
-      regex: '(?i)\.EntryPoint\.Invoke\('
-  - id: ps-assembly-method-invoke
-    desc: Reflective assembly method invoke
-    crit: suspicious
-    conf: 0.95
-    unless:
-      - id: metadata/file/string/identity/
-    if:
-      type: text
-      regex: '(?i)\.GetMethod\([^)]{1,40}\)\.Invoke\('
-  - id: ps-appdomain-reflected-load-invoke
-    desc: AppDomain reflected Load invoke
-    crit: suspicious
-    conf: 0.96
-    if:
-      type: text
-      regex: '(?is)AppDomain.{0,160}CurrentDomain.{0,240}GetMethod\([''"]Load[''"].{0,200}\.Invoke\('
   - id: ps-appdomain-token
     desc: PowerShell AppDomain token
     crit: component
@@ -72,6 +15,7 @@ traits:
     if:
       type: string_literal
       substr: "[System.AppDomain]"
+
   - id: ps-currentdomain-token
     desc: PowerShell CurrentDomain token
     crit: component
@@ -79,6 +23,7 @@ traits:
     if:
       type: string_literal
       substr: CurrentDomain.
+
   - id: ps-load-token
     desc: PowerShell Load token
     crit: component
@@ -86,6 +31,7 @@ traits:
     if:
       type: string_literal
       exact: Load
+
   - id: ps-reflected-type-name
     desc: PowerShell reflected type name
     crit: component
@@ -93,6 +39,7 @@ traits:
     if:
       type: string_literal
       substr: ClassLibrary3.Class1
+
   - id: ps-reflected-vfskm-type-name
     desc: PowerShell VfSKm reflected type
     crit: component
@@ -100,6 +47,7 @@ traits:
     if:
       type: string_literal
       substr: VfSKm.Class1
+
   - id: ps-getmethod-split-left
     desc: PowerShell split GetMethod prefix
     crit: component
@@ -107,6 +55,7 @@ traits:
     if:
       type: string_literal
       substr: .GetM
+
   - id: ps-reflected-method-name
     desc: PowerShell reflected method name
     crit: component
@@ -114,6 +63,7 @@ traits:
     if:
       type: string_literal
       substr: MsqBIbY
+
   - id: ps-invoke-token
     desc: PowerShell Invoke token
     crit: component
@@ -122,6 +72,7 @@ traits:
       type: string_literal
       exact: invoke
       case_insensitive: true
+
 composite_rules:
   - id: ps-appdomain-byte-load
     desc: PowerShell AppDomain byte assembly load
@@ -133,7 +84,8 @@ composite_rules:
       - id: ps-load-token
     any:
       - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
-      - id: ps-appdomain-reflected-load-invoke
+      - id: micro-behaviors/process/interpreter/reflection/runtime::powershell-appdomain-reflected-load-invoke
+
   - id: ps-split-reflection-method-dispatch
     desc: PowerShell split reflection method dispatch
     crit: suspicious
@@ -145,6 +97,7 @@ composite_rules:
     any:
       - id: ps-reflected-type-name
       - id: ps-reflected-vfskm-type-name
+
   - id: ps-appdomain-base64-method-loader
     desc: PowerShell AppDomain base64 method loader
     crit: hostile
@@ -152,48 +105,51 @@ composite_rules:
     all:
       - id: ps-appdomain-byte-load
       - id: ps-split-reflection-method-dispatch
-  # Reflective .NET loading chain (B64 decode -> Load -> Invoke)
+
   - id: reflective-dotnet-loader
-    desc: PowerShell Reflective .NET Loader
+    desc: PowerShell reflective .NET loader
     crit: hostile
     conf: 0.95
     all:
-      - id: ps-assembly-load
+      - id: micro-behaviors/process/interpreter/reflection/resolve::powershell-assembly-load
       - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
     any:
-      - id: ps-assembly-invoke
+      - id: micro-behaviors/process/interpreter/reflection/runtime::powershell-assembly-entrypoint-invoke
       - id: metadata/lang/scripted::invoke-prefixed-cmdlet-name
-      - id: ps-assembly-method-invoke
+      - id: micro-behaviors/process/interpreter/reflection/runtime::powershell-assembly-method-invoke
+
   - id: appdomain-reflective-dotnet-loader
     desc: PowerShell AppDomain reflective loader
     crit: hostile
     conf: 0.96
     all:
-      - id: ps-appdomain-reflected-load-invoke
+      - id: micro-behaviors/process/interpreter/reflection/runtime::powershell-appdomain-reflected-load-invoke
       - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
     any:
-      - id: ps-assembly-invoke
+      - id: micro-behaviors/process/interpreter/reflection/runtime::powershell-assembly-entrypoint-invoke
       - id: metadata/lang/scripted::invoke-prefixed-cmdlet-name
-      - id: ps-assembly-method-invoke
+      - id: micro-behaviors/process/interpreter/reflection/runtime::powershell-assembly-method-invoke
+
   - id: remote-dotnet-method-loader
     desc: PowerShell remote .NET method loader
     crit: hostile
     conf: 0.98
     all:
-      - id: ps-assembly-load
-      - id: ps-assembly-method-invoke
+      - id: micro-behaviors/process/interpreter/reflection/resolve::powershell-assembly-load
+      - id: micro-behaviors/process/interpreter/reflection/runtime::powershell-assembly-method-invoke
       - id: micro-behaviors/communications/http/lib/invoke-webrequest::download
     any:
       - id: micro-behaviors/communications/http/client/managed::downloaddata
       - id: objectives/evasion/anti-av/platform/defender::amsi-memory-patch-bypass
+
   - id: gzip-base64-reflective-loader
     desc: GZip base64 reflective assembly loader
     crit: hostile
     conf: 0.98
     all:
       - id: micro-behaviors/data/compress/library::dotnet-gzip-compression
-      - id: ps-assembly-load
+      - id: micro-behaviors/process/interpreter/reflection/resolve::powershell-assembly-load
       - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
     any:
-      - id: ps-assembly-invoke
-      - id: ps-assembly-method-invoke
+      - id: micro-behaviors/process/interpreter/reflection/runtime::powershell-assembly-entrypoint-invoke
+      - id: micro-behaviors/process/interpreter/reflection/runtime::powershell-assembly-method-invoke
