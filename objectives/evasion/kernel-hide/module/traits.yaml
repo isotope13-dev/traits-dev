@@ -119,38 +119,14 @@ traits:
     substr: orig_cr0
   unless:
   - id: metadata/lang/source::linux-kernel-arch-source-path
-- id: write-cr0
-  desc: Toggles CR0 WP to patch kernel memory
-  crit: suspicious
-  conf: 0.9
-  mbc: F0015
-  if:
-    type: symbol
-    regex: ^write_cr0
-  unless:
-  - type: text
-    substr: _ASM_X86_SPECIAL_INSNS_H
-  - id: metadata/lang/source::linux-kernel-arch-source-path
-  downgrade:
-    any:
-    - type: text
-      regex: <linux/(module|export)\.h>
-- id: native-write-cr0
-  desc: Disables CR0 write protection
-  crit: suspicious
-  conf: 0.9
-  mbc: F0015
-  if:
-    type: symbol
-    regex: ^native_write_cr0
-  unless:
-  - type: text
-    substr: _ASM_X86_SPECIAL_INSNS_H
-  - id: metadata/lang/source::linux-kernel-arch-source-path
-  downgrade:
-    any:
-    - type: text
-      regex: <linux/(module|export)\.h>
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+# The bare `write_cr0` / `native_write_cr0` / `read_cr0` calls are neutral
+# privileged-register capabilities and live in
+# micro-behaviors/os/kernel/register/. They used to be defined here as
+# suspicious traits described as "Toggles CR0 WP" / "Disables CR0 write
+# protection", but neither matcher inspected the WP bit — they fired on any CR0
+# access, so ordinary in-tree drivers doing cache control tripped the whole
+# kernel-hide family. The WP intent is now asserted by cr0-manipulation below.
 - id: init-module
   desc: init_module entry point
   crit: component
@@ -485,16 +461,29 @@ composite_rules:
   - id: sys-getdents
   - id: sys-getdents64
   - id: sys-kill
+# A CR0 write plus evidence that the write-protect bit specifically is being
+# cleared. Requiring the WP evidence is what separates a rootkit unlocking
+# read-only kernel memory from a driver toggling cache or restoring CR0 on
+# resume, both of which write CR0 without ever touching bit 16.
 - id: cr0-manipulation
-  desc: CR0 write protection bypass
+  desc: CR0 write-protect bypass
   crit: suspicious
   conf: 0.9
+  all:
+  - id: cr0-write-protect-clear
   any:
+  - id: micro-behaviors/os/kernel/register::cr0-write-call
+  - id: micro-behaviors/os/kernel/register::native-cr0-write-call
   - id: orig-cr0
-  - id: write-cr0
-  - id: native-write-cr0
   unless:
   - id: metadata/lang/source::linux-kernel-arch-source-path
+- id: cr0-write-protect-clear
+  desc: Clears the CR0 write-protect bit
+  crit: suspicious
+  conf: 0.95
+  any:
+  - id: objectives/evasion/kernel-hide/lkm/internals::cr0-wp-bit-manipulation
+  - id: objectives/evasion/kernel-hide/hook::cr0-wp-bit-clear-source
 - id: syscall-hook
   desc: Syscall table manipulation patterns
   crit: suspicious
@@ -504,6 +493,8 @@ composite_rules:
   any:
   - id: syscall-table-hook
   - id: cr0-manipulation
+  unless:
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
 - id: syscall-table-hook
   desc: Syscall table with hook targets
   crit: suspicious
@@ -644,6 +635,8 @@ composite_rules:
   - id: micro-behaviors/fs/proc/system::proc-ksyms
   - id: objectives/evasion/kernel-hide/wp::lookup-address-usage
   - id: micro-behaviors/os/kernel/routines::kallsyms-lookup-symbol
+  unless:
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
 - id: lkm-rootkit-behavior-comp
   desc: LKM rootkit behavior indicators
   crit: suspicious
