@@ -89,11 +89,11 @@ traits:
   if:
     type: text
     exact: RtlMoveMemory
-- id: go-shellcode-word
-  desc: Go shellcode word
+- id: native-shellcode-word
+  desc: Native shellcode reference
   crit: component
   conf: 0.84
-  for: [pe]
+  for: [pe, dll]
   if:
     type: text
     word: shellcode
@@ -119,6 +119,58 @@ traits:
     type: hex
     pattern: "ad ab ff c9 75 fa"
     section: .text
+
+# Native loader status strings are unusually explicit: they identify a
+# shellcode runner, rather than merely mentioning a memory API. Keep these
+# separate from generic shellcode-word evidence so the composites below can
+# require the complete loader context.
+- id: native-shellcode-function-marker
+  desc: Native shellcode runner function marker
+  crit: suspicious
+  conf: 0.97
+  for: [pe, dll]
+  if:
+    type: text
+    regex: '(?i)RunShell(InLocal|Uncompressed|Encrypted)\s+function'
+
+- id: native-shellcode-execution-marker
+  desc: Native shellcode execution marker
+  crit: suspicious
+  conf: 0.97
+  for: [pe, dll]
+  if:
+    type: text
+    substr: Executing shellcode
+    case_insensitive: true
+
+- id: native-encrypted-shellcode-execution-marker
+  desc: Encrypted shellcode execution marker
+  crit: suspicious
+  conf: 0.97
+  for: [pe, dll]
+  if:
+    type: text
+    substr: executed the encrypted shell code
+    case_insensitive: true
+
+- id: native-data-file-target-marker
+  desc: Native loader target data-file marker
+  crit: suspicious
+  conf: 0.95
+  for: [pe, dll]
+  if:
+    type: text
+    substr: Target data file path
+
+- id: native-data-file-read-marker
+  desc: Native loader data-file read marker
+  crit: suspicious
+  conf: 0.95
+  for: [pe, dll]
+  if:
+    type: text
+    regex: '(?i)read .{0,40} bytes from data file'
+
 composite_rules:
 - id: powershell-shellcode-bin-bytearray
   desc: PowerShell shellcode byte array staging
@@ -175,7 +227,7 @@ composite_rules:
   - id: micro-behaviors/mem/alloc/executable::page-execute-readwrite
   - id: micro-behaviors/mem/alloc/executable::page-execute-readwrite-arg-x64
   - id: go-rtlmovememory-api
-  - id: go-shellcode-word
+  - id: native-shellcode-word
   - id: metadata/binary/section/metrics::high-entropy-rdata-section
   unless:
   - id: well-known/tool/sysadmin/kubernetes
@@ -216,6 +268,38 @@ composite_rules:
   unless:
   - id: metadata/signed/platform/
   - id: well-known/tool/
+
+- id: native-file-mapped-shellcode-loader
+  desc: Native file-mapped compressed shellcode loader
+  crit: hostile
+  conf: 0.99
+  for: [pe, dll]
+  all:
+    - id: native-shellcode-function-marker
+    - id: micro-behaviors/fs/memory/mmap::win32-file-mapping
+    - id: micro-behaviors/mem/decompress/native::rtl-decompress-buffer
+
+- id: native-shellcode-loader-status
+  desc: Native shellcode loader status cluster
+  crit: suspicious
+  conf: 0.97
+  for: [pe, dll]
+  any:
+    - id: native-shellcode-function-marker
+    - id: native-shellcode-execution-marker
+    - id: native-encrypted-shellcode-execution-marker
+
+- id: native-encrypted-file-shellcode-loader
+  desc: Native encrypted data-file shellcode loader
+  crit: hostile
+  conf: 0.99
+  for: [pe, dll]
+  all:
+    - id: native-shellcode-loader-status
+    - id: native-encrypted-shellcode-execution-marker
+    - id: native-data-file-target-marker
+    - id: native-data-file-read-marker
+    - id: micro-behaviors/mem/decompress/native::rtl-decompress-buffer
 - id: w-xor-x-injection
   desc: W^X memory protection transition (RW -> RX)
   crit: notable
