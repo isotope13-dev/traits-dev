@@ -2,7 +2,7 @@ CLEAVE ?= $(if $(wildcard ../cleave/target/release/cleave),../cleave/target/rele
 YARA_PRECOMPILE ?= $(if $(wildcard ../cleave/target/release/yara-precompile),../cleave/target/release/yara-precompile,yara-precompile)
 YARA_UPDATE ?= $(abspath $(if $(wildcard ../cleave/tools/yara-update/yara-update),../cleave/tools/yara-update/yara-update,yara-update))
 
-.PHONY: validate install-precommit yara-update yara-compile
+.PHONY: validate install-precommit yara-update yara-compile deploy-traiter
 
 validate:
 	$(CLEAVE) --traits-dir . validate
@@ -26,3 +26,12 @@ install-precommit:
 	cp scripts/pre-commit .git/hooks/pre-commit
 	chmod +x .git/hooks/pre-commit
 	@echo "Pre-commit hook installed."
+
+# Install the unattended 30-min trait-publish timer on THIS host: a `traiter`
+# system user with its own checkouts of this repo and of cleave, plus the
+# systemd unit that rebuilds + uploads the trait bundles to R2. The publish
+# targets it runs (publish-traits-cron and below) live in cleave's Makefile,
+# because rendering a manifest compiles cleave at HEAD and at each recent
+# release tag to compat-test every trait commit. See the script's header.
+deploy-traiter:
+	./hacks/traiter-linux.sh
