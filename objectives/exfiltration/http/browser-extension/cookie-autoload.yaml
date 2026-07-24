@@ -1,0 +1,68 @@
+# Content-script auto-capture that kicks a background cookie harvest on
+# every matched page load. Paired with cookie-store remote POST, this is the
+# silent session-hijack shape used by marketplace/ads stealers.
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript, chrome-manifest, crx, archives]
+  attack: T1185,T1539
+
+traits:
+  - id: extension-capture-cookies-message
+    desc: Extension message triggers cookie capture
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '["'']CAPTURE_COOKIES["'']|type\s*:\s*["'']CAPTURE_COOKIES["'']'
+
+  - id: extension-auto-send-capture-cookies
+    desc: Content script auto-sends cookie capture
+    crit: suspicious
+    conf: 0.94
+    for: [javascript, typescript]
+    if:
+      type: text
+      # IIFE / top-level sendMessage with CAPTURE_COOKIES and no user gesture.
+      regex: 'sendMessage\s*\(\s*\{[\s\S]{0,120}CAPTURE_COOKIES'
+
+composite_rules:
+  - id: extension-autoload-cookie-harvest
+    desc: Autoload content script cookie harvest
+    crit: hostile
+    conf: 0.97
+    attack: T1185,T1539,T1041
+    scope: archive
+    for: [crx, zip, archives]
+    all:
+      - id: extension-auto-send-capture-cookies
+      - id: objectives/credential-access/browser/extension::extension-cookie-store-remote-post
+      - id: metadata/permission/cookie::permission-cookies
+
+  # Fetch+POST of a mapped cookie jar without requiring the archive-scoped
+  # autoload path — catches the background service worker alone.
+  - id: extension-cookie-map-remote-exfil
+    desc: Maps and POSTs cookies to remote host
+    crit: hostile
+    conf: 0.96
+    attack: T1539,T1041
+    for: [javascript, typescript]
+    all:
+      - id: micro-behaviors/communications/http/cookies::chrome-cookies-get-all-text
+      - id: objectives/credential-access/browser/extension::extension-cookies-map-name-value
+      - id: micro-behaviors/communications/http/request/client::fetch-post-pattern
+      - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+
+  # Mirrors cookies into document.cookie then uploads the jar — distinct from
+  # the pure chrome.cookies→$.post path (tele-scope / ads stealers).
+  - id: extension-cookie-document-mirror-exfil
+    desc: Mirrors cookies to document then uploads
+    crit: hostile
+    conf: 0.96
+    attack: T1539,T1041
+    for: [javascript, typescript]
+    all:
+      - id: micro-behaviors/communications/http/cookies::chrome-cookies-get-all-text
+      - id: micro-behaviors/communications/http/cookies::document-cookie-read
+      - id: objectives/credential-access/browser/extension::jquery-post-stringified-cookies
+      - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
