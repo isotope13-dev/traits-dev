@@ -1,0 +1,84 @@
+# NativeAOT/Aotera-style loaders ship as Secur32.dll (and similar security
+# DLLs) while exporting the real SSPI surface so a host process can load them
+# as a proxy. Combined with fabricated VERSIONINFO and a mismatched
+# OriginalFilename, this is sideload masquerade — not a Microsoft secur32.
+defaults:
+  platforms: [windows]
+  for: [dll]
+  attack: T1574.001,T1036.005
+
+traits:
+  - id: secur32-dll-basename
+    desc: Basename is Secur32.dll
+    crit: notable
+    conf: 0.95
+    if:
+      type: path
+      basename: true
+      exact: Secur32.dll
+      case_insensitive: true
+
+  - id: secur32-accept-security-context-export
+    desc: Exports AcceptSecurityContext (Secur32 SSPI)
+    crit: notable
+    conf: 0.94
+    if:
+      type: symbol
+      exact: AcceptSecurityContext
+
+  - id: secur32-acquire-credentials-export
+    desc: Exports AcquireCredentialsHandleW (Secur32 SSPI)
+    crit: notable
+    conf: 0.94
+    if:
+      type: symbol
+      exact: AcquireCredentialsHandleW
+
+composite_rules:
+  - id: secur32-sspi-export-pair
+    desc: Secur32 SSPI export surface present
+    crit: notable
+    conf: 0.95
+    all:
+      - id: secur32-accept-security-context-export
+      - id: secur32-acquire-credentials-export
+
+  # Catches future NativeAOT/Aotera secur32.dll proxies that keep the SSPI
+  # export surface while shipping a fabricated identity and wrong original
+  # filename — the same shape used for other system-DLL name swaps.
+  - id: nativeaot-secur32-proxy-masquerade
+    desc: NativeAOT Secur32.dll proxy with fabricated identity
+    crit: hostile
+    conf: 0.98
+    attack: T1574.001,T1036.005,T1027
+    all:
+      - id: metadata/lang/compiler/aot::nativeaot-runtime-markers
+      - id: secur32-dll-basename
+      - id: secur32-sspi-export-pair
+      - id: metadata/binary/anomaly/provenance::pe-basename-differs-from-original-filename
+      - id: metadata/binary/layout::pe-no-signature-record
+    any:
+      - id: objectives/evasion/masquerade/versioninfo::word-salad-version-description
+      - id: objectives/evasion/masquerade/versioninfo::word-salad-version-copyright
+      - id: metadata/binary/section/metrics::large-reloc-section
+    needs: 1
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/signed/developer::microsoft
+
+  # Same proxy shape without requiring NativeAOT markers — unsigned Secur32
+  # basename + SSPI exports + identity mismatch still indicates a hostile
+  # security-DLL stand-in used for sideloading.
+  - id: unsigned-secur32-proxy-identity-masquerade
+    desc: Unsigned Secur32.dll proxy with mismatched fabricated identity
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: secur32-dll-basename
+      - id: secur32-sspi-export-pair
+      - id: metadata/binary/anomaly/provenance::pe-basename-differs-from-original-filename
+      - id: metadata/binary/layout::pe-no-signature-record
+      - id: objectives/evasion/masquerade/versioninfo::word-salad-version-description
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/signed/developer::microsoft
