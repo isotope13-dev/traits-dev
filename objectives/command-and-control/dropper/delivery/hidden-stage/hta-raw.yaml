@@ -1,9 +1,8 @@
 defaults:
   platforms: [windows]
-  # Junk-padded .hta often classifies as unknown (analyzer skipped). These
-  # raw fallbacks target types GenericAnalyzer still runs — e.g. the same
-  # dropper shipped as .txt/.dat or without a leading pad block.
-  # Raw matcher file-type cap is 3; keep html/text/data (not vbs).
+  # Junk-padded .hta often classifies as unknown (analyzer skipped — cannot
+  # target unknown in for:). Raw fallbacks cover the same dropper when typed
+  # as html/text/data (clean HTA, .txt/.dat carriers). Raw filetype cap is 3.
   for: [html, text, data]
 
 # Bounded raw fallbacks catch WMI/WSH staging when junk padding empties
@@ -64,13 +63,15 @@ traits:
     type: raw
     regex: '(?is)window\.(resizeTo|moveTo)\s*\(.{0,120}(-\d+|0\s*,\s*0)'
 
-- id: hta-raw-nonascii-padding
-  desc: Non-ASCII HTA padding
-  crit: suspicious
-  conf: 0.96
+# Non-ASCII pad after HTA applicationname — bounded class + literal prefix
+# (re-nested / re-perf). Tag identity stays on metadata text trait (dedup).
+- id: hta-raw-nonascii-run
+  desc: Non-ASCII run near HTA applicationname
+  crit: component
+  conf: 0.9
   if:
     type: raw
-    regex: '(?is)<hta:application\b.{0,900}[^\x00-\x7f]{8,}'
+    regex: '(?is)applicationname.{0,800}[^\x00-\x7f]{8,64}'
 
 - id: hta-raw-split-join-cleanup
   desc: Raw HTA strips marker via split-join
@@ -81,7 +82,26 @@ traits:
     type: raw
     regex: '(?is)\.split\s*\(\s*["''][^"'']{4,80}["'']\s*\)\s*\.join\s*\(\s*["'']{2}\s*\)'
 
+# Text Item() writes miss when junk padding empties string extraction.
+- id: hta-raw-environment-item-write
+  desc: Raw HTA writes a WSH environment item
+  crit: suspicious
+  conf: 0.97
+  if:
+    type: raw
+    regex: '(?is)\.Item\s*\(\s*["''][A-Za-z_][A-Za-z0-9_]{2,32}["'']\s*\)\s*='
+
 composite_rules:
+# Non-ASCII pad near HTA markup. Same id as the former raw regex so
+# unicode-padded WMI hostiles keep wiring.
+- id: hta-raw-nonascii-padding
+  desc: Non-ASCII HTA padding
+  crit: suspicious
+  conf: 0.96
+  all:
+  - id: metadata/file/format::hta-application-element
+  - id: hta-raw-nonascii-run
+
 # Hidden WMI stage plus an encoded https carrier (UTF-16LE Base64 prefix or
 # decoded URL). Catches the next customs-doc HTA that stages a remote PS
 # download without hardcoding hostnames.
@@ -119,6 +139,7 @@ composite_rules:
   - id: hta-raw-hidden-wmi-process-stage
   - id: hta-raw-offscreen-marker
   - id: hta-raw-user-environment
-  # Canonical text matcher — do not duplicate as raw (cross-type dedup).
-  - id: hta-environment-item-write
   - id: hta-raw-split-join-cleanup
+  any:
+  - id: hta-environment-item-write
+  - id: hta-raw-environment-item-write
