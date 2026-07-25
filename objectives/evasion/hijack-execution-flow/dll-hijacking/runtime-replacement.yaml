@@ -13,6 +13,18 @@ traits:
       type: text
       regex: '(?i)\bvcruntime\d*(_\d+)?_backup(_[a-z0-9{}.-]{0,50})?\.dll\b'
 
+  # Complements metadata/binary/anomaly/format::vcruntime-dll-basename, which
+  # already covers the vcruntime* half of the redistributable set; the two
+  # regexes are disjoint and are combined in `any:` below.
+  - id: msvc-redistributable-dll-basename
+    desc: Non-vcruntime MSVC redistributable basename
+    crit: component
+    conf: 0.98
+    if:
+      type: path
+      basename: true
+      regex: '(?i)^(msvcp|concrt|vccorlib|vcomp|vcamp)\d{2,3}[a-z0-9_]*\.dll$'
+
 composite_rules:
   - id: privileged-runtime-dll-replacement
     desc: Elevated installer bypasses PowerShell policy while replacing a runtime DLL
@@ -22,3 +34,43 @@ composite_rules:
       - id: objectives/evasion/security-bypass/policy/execution::bypass-execution-policy
       - id: micro-behaviors/os/privilege/manifest::require-administrator
       - id: runtime-dll-backup-name
+
+  # A file named like a Microsoft Visual C++ redistributable, but whose code
+  # walks a directory and hands what it finds to LoadLibrary, is a side-load
+  # proxy: it is dropped next to a target application so the loader picks it up
+  # instead of the real runtime, forwards the genuine exports, and gets
+  # arbitrary DLLs mapped into that application's process.
+  #
+  # The real redistributables cannot match.  Every Microsoft-shipped
+  # vcruntime/msvcp/concrt binary carries a VS_VERSION_INFO resource and an
+  # Authenticode signature, and none of them enumerate a directory or load
+  # modules by path -- the C++ runtime has no reason to.  Both are required to
+  # be absent, so a genuine copy redistributed inside an installer or archive
+  # is never convicted; only a rewritten stand-in is.
+  - id: msvc-runtime-redistributable-basename
+    desc: File is named like an MSVC runtime redistributable
+    crit: component
+    conf: 0.98
+    for: [pe, dll]
+    any:
+      - id: metadata/binary/anomaly/format::vcruntime-dll-basename
+      - id: msvc-redistributable-dll-basename
+
+  - id: counterfeit-msvc-runtime-module-loader
+    desc: Counterfeit MSVC runtime DLL enumerates a directory and loads modules
+    crit: hostile
+    conf: 0.95
+    attack: T1574.001
+    for: [pe, dll]
+    all:
+      - id: msvc-runtime-redistributable-basename
+      - id: micro-behaviors/fs/enumerate/directory::find-file-walker-wide
+    needs: 1
+    any:
+      - id: micro-behaviors/dylib/load/runtime::load-library-a
+      - id: micro-behaviors/dylib/load/runtime::load-library-w
+      - id: micro-behaviors/dylib/load/runtime::load-library-ex-a
+    unless:
+      - id: metadata/package/versioning::pe-version-resource
+      - id: metadata/signed/platform/
+      - id: metadata/signed/leaf::microsoft-corporation
