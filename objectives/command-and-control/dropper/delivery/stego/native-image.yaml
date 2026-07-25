@@ -1,0 +1,93 @@
+# Native PE loaders that recover a follow-on PE from image mosaics / custom
+# PNG containers (PXK2, mosaic decode) and map it with VirtualAlloc/Protect.
+# Catches PicturePayload-style stego hosts and similar image-carrier loaders
+# that are not GDI+ LockBits .NET stego.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  attack: T1027.003,T1620
+  mbc: E1027.m02,B0032.001
+
+traits:
+  - id: mosaic-image-decode-failure
+    desc: Mosaic image decode failure string
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: text
+      substr: mosaic decode failed
+
+  - id: pxk2-payload-container
+    desc: PXK2 image payload container marker
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: text
+      regex: '\bPXK2(_RC4_KEY| failed)\b'
+
+  - id: picture-payload-host-manifest
+    desc: PicturePayload.Host assembly identity
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: text
+      substr: PicturePayload.Host
+
+  - id: pic-decode-dib-symbol
+    desc: pic_decode_dib image decode symbol
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      word: pic_decode_dib
+
+  - id: winapi-virtual-alloc-symbol
+    desc: winapi_virtual_alloc resolver symbol
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      word: winapi_virtual_alloc
+
+  - id: stego-pe-blob-size-log
+    desc: Stego PE blob size log format
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '\b(blob|PE) %zu\b'
+
+composite_rules:
+  - id: native-image-stego-container
+    desc: Native image stego payload container
+    crit: suspicious
+    conf: 0.95
+    any:
+      - id: mosaic-image-decode-failure
+      - id: pxk2-payload-container
+      - id: picture-payload-host-manifest
+    needs: 2
+
+  - id: native-image-stego-memory-map
+    desc: Image decode paired with VirtualAlloc mapping
+    crit: suspicious
+    conf: 0.94
+    all:
+      - id: native-image-stego-container
+    any:
+      - id: winapi-virtual-alloc-symbol
+      - id: micro-behaviors/mem/protect/modify::virtual-protect
+      - id: micro-behaviors/fs/file/pe-inspect::inline-pe-signature-check
+
+  - id: native-image-stego-pe-loader
+    desc: Native image stego PE in-memory loader
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: native-image-stego-container
+      - id: micro-behaviors/fs/file/pe-inspect::inline-pe-signature-check
+    any:
+      - id: winapi-virtual-alloc-symbol
+      - id: pic-decode-dib-symbol
+      - id: stego-pe-blob-size-log
+    needs: 2
