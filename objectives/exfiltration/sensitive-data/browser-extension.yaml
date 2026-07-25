@@ -5,16 +5,14 @@ defaults:
   mbc: B0030
 
 traits:
-- id: extension-user-id-key
-  desc: Extension user ID key
-  crit: notable
-  conf: 0.96
-  if:
-    type: text
-    word: extension_user_id
+# `extension_user_id` moved to
+# micro-behaviors/browser-extension/lifecycle::extension-install-user-id-key —
+# a per-install pseudonymous id is neutral extension plumbing, not sensitive
+# user data, and the same matcher existed twice (here and in the streaming
+# panel family file).
 
-- id: amazon-profile-report-methods
-  desc: Amazon profile report methods
+- id: streaming-profile-report-methods
+  desc: Profile/history/watchlist report method names
   crit: notable
   conf: 0.96
   if:
@@ -22,12 +20,26 @@ traits:
     regex: \breport(Profiles|History|Bookmarks|Subscriptions)\b
 
 - id: send-history-to-metriq
-  desc: History reporting method
+  desc: Uploads viewing history via sendHistoryToMetriq
   crit: notable
   conf: 0.98
   if:
     type: symbol
     exact: sendHistoryToMetriq
+
+# An object field carrying the signed-in *account holder's* e-mail, as read
+# back from a service's own account/billing API. Deliberately not `user_email`
+# — that spelling is the ordinary login-form/telemetry field (and is already
+# matched in micro-behaviors/os/telemetry/logging/llm); the account/customer
+# spellings are what account-summary scrapes produce. The composite below adds
+# the off-origin transport that makes it an exfiltration objective.
+- id: account-email-object-field
+  desc: Object field holding an account e-mail
+  crit: notable
+  conf: 0.9
+  if:
+    type: text
+    regex: '\b(customer|account|billing)_email\s*:'
 
 - id: supabase-edge-function-upload
   desc: Supabase edge upload endpoint
@@ -140,25 +152,49 @@ composite_rules:
   - id: metadata/permission/cookie::permission-cookies
   - id: micro-behaviors/communications/http/request/client::fetch-post-pattern
 
-- id: amazon-profile-exfiltration
-  desc: Amazon profile telemetry exfiltration
-  crit: hostile
-  conf: 0.99
+# Streaming viewing-panel telemetry: a per-install id plus named
+# profile/history report methods posted to the operator. This is the shape of
+# both a covert audience-panel implant and a disclosed, opt-out-able analytics
+# SDK (the QVI extension network is the latter — see well-known/unwanted/qvi),
+# and a per-install id next to a POST cannot tell them apart, so it is not a
+# hostile pattern on its own.
+- id: streaming-profile-telemetry-upload
+  desc: Streaming profile/history telemetry upload
+  crit: suspicious
+  conf: 0.95
   all:
-  - id: extension-user-id-key
+  - id: micro-behaviors/browser-extension/lifecycle::extension-install-user-id-key
   - id: micro-behaviors/communications/http/request/client::post-method-text
   any:
-  - id: amazon-profile-report-methods
+  - id: streaming-profile-report-methods
   - id: send-history-to-metriq
 
 - id: primevideo-viewing-telemetry-exfiltration
   desc: Prime Video viewing telemetry exfiltration
-  crit: hostile
-  conf: 0.98
+  crit: suspicious
+  conf: 0.96
   all:
-  - id: extension-user-id-key
+  - id: micro-behaviors/browser-extension/lifecycle::extension-install-user-id-key
   - id: micro-behaviors/communications/http/request/client::post-method-text
   - id: objectives/collection/activity/browser::primevideo-react-view-tracking
+
+# The account e-mail of the logged-in user, packed into a Base64-wrapped POST
+# body aimed at a hardcoded remote host from inside an extension. Reading your
+# own account page is ordinary; shipping the identity it returns to a host that
+# is not the site you are on is the exfiltration step, and it is what separates
+# an audience panel (or an account scraper) from a page-enhancement extension.
+- id: extension-account-email-offsite-upload
+  desc: Extension uploads account e-mail to a remote host
+  crit: suspicious
+  conf: 0.95
+  attack: T1041,T1589.002
+  all:
+  - id: account-email-object-field
+  - id: micro-behaviors/communications/http/post::fetch-post-b64encode-body
+  - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+  any:
+  - id: micro-behaviors/browser-extension/lifecycle::chrome-namespace
+  - id: micro-behaviors/data/db/web-storage::chrome-storage-api
 
 - id: extension-course-material-cloud-exfiltration
   desc: Extension uploads course materials
