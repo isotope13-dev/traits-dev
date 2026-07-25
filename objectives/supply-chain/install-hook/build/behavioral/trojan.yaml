@@ -604,7 +604,24 @@ traits:
     for: [python]
     if:
       type: text
-      substr: "openrewrite"
+      substr: "openrewrite"  # Benign-context suppressor for the standard sdist clean command,
+  # `os.system("rm -rf ./build ./dist ./*.egg-info")`. It previously lived in
+  # composite_rules with BOTH an `all:` clause and this `if:` regex; a rule
+  # carrying `all:` loads as a composite and the inline `if:` was dropped, so
+  # the regex never applied and what remained was "a setup.py that calls
+  # os.system". That is also exactly the two legs of setup-py-os-system-file,
+  # which lists this in `unless:` -- requirement and suppressor were the same
+  # fact, so that rule could never fire. Anchoring on `.egg-info` keeps this
+  # narrow: it is a Python build artifact, not something a dropper names.
+  - id: setup-py-clean-command-removes-build-artifacts
+    desc: setup.py clean removes build artifacts
+    crit: notable
+    conf: 0.9
+    for: [python]
+    if:
+      type: text
+      regex: 'os\.system\([^\n]{0,120}rm\s+-[^\n]{0,120}\.egg-info'
+
 composite_rules:
   - id: npm-script-base64
     desc: NPM lifecycle script decodes base64 data
@@ -676,8 +693,17 @@ composite_rules:
     crit: suspicious
     conf: 0.95
     for: [python]
-    scope: leaf
-    near_bytes: 4096
+    # `scope: leaf` -> `file`: root-setup-py is path/identity evidence, which
+    # does not share a leaf key with the file's content evidence, so under
+    # `leaf` the two legs could never co-occur. `file` still keys to the single
+    # setup.py member, so an archive cannot pool "a setup.py exists" with an
+    # os.system call sitting in some unrelated module.
+    scope: file
+    # `near_bytes` removed: one leg is root-setup-py, a path/identity fact with
+    # no byte location in the file, so proximity against a code fact could
+    # never be satisfied and the rule was unsatisfiable regardless of content.
+    # It also bought nothing semantically -- both legs are statements about the
+    # same single file, not about two things that need to sit near each other.
     unless:
       - id: metadata/package/testing/presence/harness/
       - id: metadata/build/pip::python-packaging-tool-tests
@@ -705,17 +731,6 @@ composite_rules:
       - id: objectives/anti-static/obfuscation/payload/encoded::decoded-local-execution
       - id: micro-behaviors/fs/chmod/executable/mode::chmod-make-executable
       - id: metadata/build/package::setup-cmdclass-install
-  - id: setup-py-clean-command-removes-build-artifacts
-    desc: setup.py clean removes build artifacts
-    crit: notable
-    conf: 0.9
-    for: [python]
-    all:
-      - id: metadata/build/pip::root-setup-py
-      - id: micro-behaviors/process/create/system::python-os-system
-    if:
-      type: text
-      regex: 'os\.system\([^\n]{0,80}rm\s+-[^\n]{0,80}(\./)?build[^\n]{0,80}(\./)?dist[^\n]{0,120}\.egg-info'
   # === Composite: setup.py curl/wget execution ===
   - id: setup-py-curl-exec
     desc: setup.py curl/wget downloads then executes
@@ -804,7 +819,13 @@ composite_rules:
     for: [python]
     scope: leaf
     any:
-      - id: setup-py-os-system-file
+      # setup-py-os-system-file is deliberately NOT a leg here. Every other
+      # alternative below requires download-and-execute; that one requires only
+      # "a root setup.py calls os.system", which legitimate build scripts do to
+      # run make, drive a compiler or generate sources -- verified: a setup.py
+      # whose only shell call is `os.system("make -j4")` was convicted hostile
+      # while this leg was present. It stands on its own at `suspicious`, the
+      # criticality the trait itself declares.
       - id: setup-py-curl-exec
       - id: setup-py-urlopen-exec
       - id: setup-py-wget-tmp-bash
