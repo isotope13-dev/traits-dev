@@ -17,6 +17,36 @@ composite_rules:
       - id: micro-behaviors/process/fd/dup-wrapper::native-dup2-wrapper-symbol
       - id: micro-behaviors/process/create/shell/spawn::bin-sh-binary-text
       - id: micro-behaviors/process/create/execv::exec-variant-symbol-text
+  # The two rules around this one are both static-only, which left the most
+  # ordinary compiled reverse shell uncovered:
+  #   * native-address-stdio-shell needs glibc's INTERNAL aliases
+  #     (__libc_socket / __GI_socket, __libc_connect, __libc_dup2). Those names
+  #     only appear when glibc is linked statically; a dynamically linked ELF
+  #     imports the public `socket` / `connect` / `dup2` instead.
+  #   * static-forked-reverse-shell-linux matches raw x86-64 syscall bytes and
+  #     additionally requires clone().
+  # So `gcc revshell.c -o x` — socket + connect + dup2(0,1,2) + execl("/bin/sh")
+  # with the C2 address compiled in — scored no hostile at all.
+  #
+  # Precision rests on the pinned address, not on the primitive set: socat, nc,
+  # sshd, screen and script(1) all connect a socket to a shell, but they take
+  # the peer from argv or config. Measured on 9,314 ELF files under /usr/bin,
+  # /usr/lib and /usr/sbin: 21 carry socket+connect+dup2+/bin/sh+inet_*+exec*
+  # (libc.so.6, ncat, pppd, sudoers.so, busybox among them), and zero of those
+  # 21 also carry a pinned host address -- so the address leg is what separates
+  # an implant from the general-purpose tools, and the six legs together have no
+  # false positive on that corpus.
+  - id: dynamic-linked-reverse-shell-linux
+    desc: Dynamically linked reverse shell to pinned IP
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: micro-behaviors/communications/socket/create::posix-socket-import
+      - id: micro-behaviors/communications/socket/connect::connect-symbol
+      - id: micro-behaviors/process/fd/dup::dup2
+      - id: micro-behaviors/process/create/shell/spawn::bin-sh-binary-text
+      - id: micro-behaviors/process/create/execv::exec-variant-symbol-text
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-host-literal-binary
   # Fork/clone before connect+dup2+/bin/sh is the classic detached reverse
   # shell shape. Catches stripped static GetShell/Trojan.Linux variants that
   # background before dialing out — not covered by symbol-based native-address-stdio-shell.
