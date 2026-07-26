@@ -113,6 +113,44 @@ traits:
     type: value
     path: scripts.postinstall
     regex: node\s+-e\s+['"].{0,100}https?://
+# The Python spelling of the two node-e traits above. Every other inline-
+# interpreter install hook is already covered and scores heavily -- measured on
+# synthetic manifests: `curl -s URL | sh` in postinstall reaches risk 268,
+# `wget -qO- URL | bash` in preinstall 305, a base64+eval one-liner 119, and
+# `node -e` with a fetch+execSync 120 -- but the same dropper written as
+# `python3 -c "...urlopen(...)..."` scored 6 with nothing above notable, because
+# the Python fetch/exec atoms are gated to `for: [python]` and never see a
+# manifest. python3 is on essentially every CI image and dev box, so this is a
+# free substitution for an attacker.
+#
+# The URL requirement matters: `python -c` alone appears in build shims, and a
+# hook that downloads a native artifact is dual-use. Measured over 559 real
+# package.json files (109 with install/prepare hooks) from an npm global tree:
+# zero contain `python -c`, `python -c` + a URL, or `exec(` in a hook.
+# Note on the character class: `[^"]{0,N}` after the opening quote -- the shape
+# the neighbouring atoms use -- cannot cross the escaped inner quotes that an
+# inline one-liner always carries (`"postinstall":"python3 -c \"import ..."`),
+# so it stops dead at the first `\"`. These use a bounded `.` instead, which is
+# why they see the body of the hook. `type: value` on `scripts.postinstall`
+# would also work (it reads the decoded string) but needs one atom per hook key.
+- id: scripts-install-python-c-url
+  desc: Inline Python install hook fetches a URL
+  crit: suspicious
+  conf: 0.95
+  for:
+  - package.json
+  if:
+    type: text
+    regex: '"(pre|post)?install"\s*:\s*".{0,100}python3?\s+-c.{0,140}https?://'
+- id: scripts-install-python-c-exec
+  desc: Inline Python install hook calls exec()
+  crit: suspicious
+  conf: 0.9
+  for:
+  - package.json
+  if:
+    type: text
+    regex: '"(pre|post)?install"\s*:\s*".{0,100}python3?\s+-c.{0,160}exec\('
 - id: scripts-preinstall-pipe-2--node
   desc: preinstall pipe (node)
   crit: notable
@@ -258,6 +296,22 @@ traits:
     path: scripts.postinstall
     regex: \bpowershell\b
 composite_rules:
+# Fetch and exec in one install-hook one-liner. Both legs are narrow on their
+# own; together they are the manifest-level equivalent of the shell
+# `curl URL | sh` hooks that npm-install-trojan already treats as hostile, with
+# strictly more evidence than that rule's `eval`/`sh -c` leg. A hook that only
+# downloads (urlretrieve to a path, no exec sink) is deliberately left at the
+# single suspicious atom, since fetching a native artifact at install time is a
+# real pattern in ML and native-addon packages.
+- id: npm-install-python-fetch-exec
+  desc: Install hook fetches and execs inline Python
+  crit: hostile
+  conf: 0.95
+  for:
+  - package.json
+  all:
+  - id: scripts-install-python-c-url
+  - id: scripts-install-python-c-exec
 - id: scripts-preinstall-pipe-2
   desc: preinstall pipe (executors node/sh/shell/eval)
   crit: notable
