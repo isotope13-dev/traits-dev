@@ -1,0 +1,52 @@
+# Dist trojanization: a payload appended to an already-built bundle.
+#
+# The published bundle is the highest-value place to hide code — it is what
+# `main`/`module` point at, it is generated so nobody reads it, and it is not
+# what the repository shows. eslint-scope, ua-parser-js and node-ipc 12.0.1
+# (80KB obfuscated blob appended to the shipped node-ipc.cjs, exfiltrating
+# credential files over DNS) are all this same shape.
+#
+# The existing appended-line rules cannot see it: `appended-long-line` is
+# skipped by the benign-build-tooling context and `long-line-eval-injection`
+# by the whole `metadata/library/structure/` directory, so a bundle — the
+# exact target — suppresses both. Verified on a bundle with an appended
+# obfuscated line: every primitive fired (last_line_length, lines_over_1000,
+# hex names, Function constructor) and nothing above notable came out.
+#
+# Rather than weaken those exclusions (they hold back real minified-bundle
+# FPs), this states the tampering shape positively: bundler output whose
+# ONE over-long line is its LAST line, in a file that otherwise has normal
+# short lines, ending in something a bundler never emits.
+#
+# Not hostile: a build step that appends a minified polyfill or licence blob
+# would look the same up to the obfuscation leg, and this could not be tested
+# against the real trojanized artifact — one suspicious cannot convict alone.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1195.002
+  mbc: B0032
+
+composite_rules:
+  - id: bundled-artifact-appended-payload
+    desc: Bundler output with appended obfuscated line
+    crit: suspicious
+    conf: 0.9
+    all:
+      # Generated artifact: esbuild/webpack/rollup emitter markers.
+      - id: metadata/library/structure::js-known-bundler-output
+      # Exactly one line over 1000 chars, and it is the final line. A fully
+      # minified bundle is uniformly long (many outliers, or one line total,
+      # which the 30-line floor rejects), so it cannot satisfy both.
+      - id: objectives/anti-static/obfuscation/code-metrics/structure::single-long-line-outlier
+      - id: objectives/anti-static/obfuscation/code-metrics/structure::last-line-over-1000
+      - id: metadata/file/metrics::file-has-30-plus-lines
+    # The tell that the trailing line is not the emitter's own work.
+    any:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::hex-name-mangling
+      - id: micro-behaviors/process/interpreter/eval::js-new-function-constructor
+      - id: micro-behaviors/data/decode/base64::buffer-from-base64
+    needs: 1
+    unless:
+      # Obfuscated fixtures and packer test corpora ship this shape on purpose.
+      - id: metadata/package/testing/
