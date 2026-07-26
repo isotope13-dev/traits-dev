@@ -4,13 +4,28 @@ defaults:
   attack: T1021.004
 
 traits:
-  - id: python-ssh-root-target
-    desc: Python SSH root target command
+  # Split out of one `root@|username"\)\s*@|user}@` alternation described as
+  # "Python SSH root target command". Two of its three branches match ANY
+  # interpolated username, so that description asserted a root/privileged target
+  # for plain `f"{user}@{host}"` -- the shape of every Fabric/Ansible wrapper, CI
+  # deploy helper, testinfra/molecule fixture and container-lab health check.
+  # Separating them lets a diff reader distinguish "this tool SSHes AS ROOT"
+  # (privilege-relevant) from "this tool SSHes as a configured user" (routine).
+  # Both stay `component`: a target fragment is not on its own an SSH connection.
+  - id: python-ssh-root-user-target
+    desc: SSH target string names the root account
     crit: component
     conf: 0.86
     if:
       type: text
-      regex: 'root@|username"\)\s*@|user}@'
+      substr: 'root@'
+  - id: python-ssh-interpolated-user-target
+    desc: SSH target built from user variable
+    crit: component
+    conf: 0.86
+    if:
+      type: text
+      regex: 'username"\)\s*@|user}@'
   - id: python-ssh-identity-option
     desc: Python SSH command uses identity-file option
     crit: notable
@@ -29,6 +44,19 @@ traits:
         regex: '(^|[/\\])pydoc_data[/\\]'
 
 composite_rules:
+  # The two target atoms are folded into ONE leg here rather than listed
+  # separately in the `any:` below. `needs:` counts findings, so a single command
+  # spelled `root@{host}` that also interpolates a user variable would otherwise
+  # satisfy 2 of the 2 required legs by itself -- turning a one-signal command
+  # into a quorum. Union of the two branches == the old `python-ssh-root-target`,
+  # so the parent's match behaviour is unchanged by the split.
+  - id: python-ssh-user-host-target
+    desc: SSH command builds a user@host target
+    crit: component
+    conf: 0.86
+    any:
+      - id: python-ssh-root-user-target
+      - id: python-ssh-interpolated-user-target
   - id: python-ssh-key-lateral-probe
     desc: Python SSH key lateral probe
     crit: hostile
@@ -38,6 +66,6 @@ composite_rules:
       - id: python-ssh-identity-option
     any:
       - id: micro-behaviors/communications/ssh/client::ssh-batch-mode-option
-      - id: python-ssh-root-target
+      - id: python-ssh-user-host-target
       - id: objectives/lateral-movement/ssh/connect::connect-timeout
     needs: 2
