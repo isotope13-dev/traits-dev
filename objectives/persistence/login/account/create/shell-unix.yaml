@@ -1,0 +1,60 @@
+# Planting a root account by writing the account databases directly, instead of
+# going through useradd/adduser.
+#
+# The sibling `root-equivalent-useradd` in traits.yaml already treats the
+# tool-driven form (`useradd -o -u 0 -g 0 ...`) as hostile, and node-unix.yaml
+# covers one Node family -- but by its literal username string
+# (`backdoor:x:0:0:Backdoor User`), so it convicts exactly one implant. The
+# shell redirect form had no coverage at all: a maintainer script doing
+#   echo "hax:x:0:0:root:/root:/bin/bash" >> /etc/passwd
+#   echo 'hax:$6$...:20000:0:99999:7:::'  >> /etc/shadow
+# scored risk 2 with nothing above notable, while the useradd spelling of the
+# same act scores 119. Distro policy is what makes this unambiguous: packages
+# are required to use adduser/useradd, so a direct append is never the
+# legitimate route.
+#
+# The redirect target must be a bare absolute path. That is the discriminator
+# against image builders, which construct an account database inside a staging
+# root: measured over 108,671 text files under /usr/bin, /usr/share, /etc,
+# /usr/lib, /usr/sbin and /opt, the loose form (allowing a prefix before
+# /etc/passwd) hit exactly one file -- mkinitcpio's `zfsencryptssh` hook, which
+# writes `root:x:0:0:...` into "${BUILDROOT}"/etc/passwd so the initramfs can
+# accept an SSH unlock session. Requiring the direct path drops that hit and any
+# $DPKG_ROOT / DESTDIR / chroot staging idiom with it: 0 of 108,671 for both
+# atoms below.
+defaults:
+  platforms: [unix]
+  for: [scripts, binaries]
+  attack: T1136.001
+
+traits:
+  - id: passwd-uid-zero-line-append
+    desc: Appends a UID-zero account line to /etc/passwd
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: ':0:0:[^\n]{0,60}>>\s*[''"]?/etc/passwd'
+
+  - id: shadow-file-append
+    desc: Appends a line to /etc/shadow
+    crit: suspicious
+    conf: 0.93
+    attack: T1098
+    if:
+      type: text
+      regex: '>>\s*[''"]?/etc/shadow'
+
+composite_rules:
+  # Both halves of a working login: the passwd entry grants uid 0, the shadow
+  # entry supplies the credential to use it. Password-setting tools (chpasswd,
+  # usermod, passwd) rewrite the file in place and never append, so the pair has
+  # no legitimate spelling.
+  - id: root-account-database-implant
+    desc: Writes a root account into passwd and shadow
+    crit: hostile
+    conf: 0.97
+    attack: T1136.001,T1098
+    all:
+      - id: passwd-uid-zero-line-append
+      - id: shadow-file-append
