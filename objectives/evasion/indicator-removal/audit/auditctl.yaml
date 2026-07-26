@@ -1,0 +1,61 @@
+# The two `auditctl` invocations that neutralise the Linux audit subsystem,
+# matched as command text with no language gate.
+#
+# Both were previously defined in go-unix.yaml as `go-audit-rules-delete` /
+# `go-auditctl-disable` under `for: [go, elf]`. The matchers are exact command
+# spellings and check nothing about the language, so that gate made the whole
+# technique invisible where it is most often written: a maintainer script
+# (postinst/preinst) in a trojanised .deb, a post-exploitation shell script, or
+# a CI step. A `.postinst` that ran `auditctl -D`, removed
+# /etc/audit/rules.d/*.rules and stopped auditd scored nothing at all.
+#
+# Discriminator against admin tooling: hardening scripts LOAD rules
+# (`auditctl -R <file>`) and query state (`auditctl -s`); only tampering
+# deletes every rule or turns the subsystem off. The audit package's own
+# rules loader, /usr/bin/augenrules, uses -R and -s -- neither spelling below
+# appears in any script shipped under /usr/bin, /usr/share or /etc on a system
+# with the audit package installed.
+defaults:
+  platforms: [unix, appliance]
+  # Hand-picked rather than a group: the string is a command line, so the types
+  # that matter are the ones that drive commands -- shell (maintainer scripts,
+  # post-exploitation), the scripting languages that shell out, Go source, and
+  # ELF for the compiled case. `go` + `elf` keep the coverage the Go composite
+  # in go-unix.yaml relies on. Groups would expand past the type:text cap of 19.
+  for: [shell, python, perl, ruby, go, elf]
+  attack: T1070.002
+
+traits:
+  - id: auditctl-rules-delete
+    desc: auditctl deletes all audit rules
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      substr: auditctl -D
+
+  - id: auditctl-subsystem-disable
+    desc: auditctl disables the audit subsystem
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      substr: auditctl -e 0
+
+  # The file-level spelling of the same act, which `auditctl -D` misses: wipe
+  # the rule set on disk so it does not come back on reload either.
+  #
+  # The target must be the rules DIRECTORY or a glob inside it, or the compiled
+  # audit.rules -- `(\*|\s)` after the optional slash is what enforces that. A
+  # package's own postrm removing the one file it shipped
+  # (`rm -f /etc/audit/rules.d/30-vendor.rules`) is therefore not a match, which
+  # is the difference between uninstalling a hardening package and disarming the
+  # host's whole audit configuration.
+  - id: audit-rules-store-delete
+    desc: Deletes the audit rules directory or glob
+    crit: suspicious
+    conf: 0.9
+    attack: T1070
+    if:
+      type: text
+      regex: 'rm\s+-\S*[rf]\S*\s+/etc/audit/(audit\.rules|rules\.d/?(\*|\s))'
