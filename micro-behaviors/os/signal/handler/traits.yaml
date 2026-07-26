@@ -4,39 +4,6 @@ defaults:
 # C runtime signal handlers (Windows and Unix)
 traits:
   # === Signal Management ===
-  - id: sig-ign-sighup-x64
-    desc: SIGHUP signal ignore pattern (x86_64)
-    # Component-only: the 10-byte pattern `mov edi, 1; mov esi, 1` is common
-    # compiler-generated code — two small immediate loads that collide with
-    # arbitrary function prologues in large binaries. Only meaningful paired
-    # with a signal-handler import inside `signal-ignore-pattern`.
-    crit: component
-    conf: 0.4
-    for:
-      - elf
-      - macho
-    size_max: 10485760
-    if:
-      type: hex
-      section: .text
-      pattern: BF 01 00 00 00 BE 01 00 00 00
-    unless:
-      - id: metadata/file/string/identity::system-shell-basename
-      - id: micro-behaviors/os/event/library/tokio::tokio-crate-path
-      - type: trait
-        id: metadata/file/extension/identity::linux-kernel-package-artifact-basename
-      - id: well-known/app/drivers/
-  - id: sig-ign-sigpipe-x64
-    desc: SIGPIPE signal ignore pattern (x86_64)
-    crit: component
-    conf: 0.4
-    for:
-      - elf
-      - macho
-    if:
-      type: hex
-      section: .text
-      pattern: BF 0D 00 00 00 BE 01 00 00 00
   - id: signal
     desc: Install signal handler
     crit: baseline
@@ -100,38 +67,48 @@ traits:
     if:
       type: symbol
       exact: "abort"
+
+  # Match the two arguments on the same signal() call.  The former native
+  # byte-pattern atoms only saw `mov <reg>, 1; mov <reg>, 1`, which also occurs
+  # in ordinary allocators (for example calloc(1, 1)) and is not evidence of
+  # SIG_IGN.
+  - id: signal-ignore-sighup-call
+    desc: Calls signal with SIGHUP ignored
+    crit: notable
+    conf: 0.9
+    for: [elf, macho, c, cpp, objc, swift]
+    platforms: [unix]
+    if:
+      type: symbol
+      kind: call
+      exact: signal
+      args:
+        - kind: identifier
+          name: SIGHUP
+        - kind: identifier
+          name: SIG_IGN
+  - id: signal-ignore-sigpipe-call
+    desc: Calls signal with SIGPIPE ignored
+    crit: notable
+    conf: 0.9
+    for: [elf, macho, c, cpp, objc, swift]
+    platforms: [unix]
+    if:
+      type: symbol
+      kind: call
+      exact: signal
+      args:
+        - kind: identifier
+          name: SIGPIPE
+        - kind: identifier
+          name: SIG_IGN
 composite_rules:
-  - id: sig-ign-pattern
-    desc: Signal ignore byte pattern (x86_64)
+  - id: signal-ignore-call
+    desc: Installs SIG_IGN for SIGHUP or SIGPIPE
     crit: notable
-    conf: 0.4
-    for:
-      - elf
-      - macho
+    conf: 0.9
+    for: [elf, macho, c, cpp, objc, swift]
+    platforms: [unix]
     any:
-      - id: sig-ign-sighup-x64
-      - id: sig-ign-sigpipe-x64
-    unless:
-      # Rust std ignores SIGPIPE; rustc-path alone misses stripped crates
-      # that still embed .rs source paths.
-      - id: metadata/lang/compiler/systems::rustc-path
-      - id: metadata/lang/compiler/systems::rust-src-path
-  - id: signal-ignore-pattern
-    desc: Sets SIGHUP/SIGPIPE to SIG_IGN
-    crit: notable
-    conf: 0.3
-    for:
-      - elf
-      - macho
-    all:
-      - id: signal
-      - id: sig-ign-pattern
-    any:
-      - id: signal
-      - id: sigaction
-    unless:
-      - id: metadata/file/string/identity::system-shell-basename
-      - id: metadata/library/data/
-      - id: metadata/lang/compiler/systems::rustc-path
-      - id: metadata/lang/compiler/systems::rust-src-path
-      - id: metadata/lang/compiler/systems::go-binary-macho
+      - id: signal-ignore-sighup-call
+      - id: signal-ignore-sigpipe-call
