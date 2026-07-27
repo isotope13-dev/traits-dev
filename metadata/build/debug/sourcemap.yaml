@@ -1,0 +1,74 @@
+# Build-environment attribution leaked through a JavaScript source map.
+#
+# A `.map` file's `sources` array records where each input sat on the machine
+# that ran the bundler. Configured well it is relative (`../src/index.ts`, as in
+# @adhdev/session-host's maps); configured carelessly — or built straight from an
+# absolute `--sourceRoot`, a monorepo path, or a CI checkout — it embeds the
+# builder's home directory verbatim.
+#
+# The sibling dwarf.yaml already records exactly this for compiled artifacts
+# ("DWARF leaks builder home dir (/home/<user>)"), and metadata/build/ci/hosts
+# records CI runner homes. Source maps had no equivalent: every existing
+# sourcemap trait (metadata/file/format::sourcemap / ::sourcemap-sources-content /
+# ::sourcemap-inline-base64, metadata/build/bundler::has-sourcemap) only
+# identifies the artifact *type*, none reads what the paths inside it disclose.
+#
+# Why an analyst wants it: it names the account and layout of the build host, and
+# it is one of the few cross-sample linkages available for JavaScript malware,
+# which otherwise carries no build metadata at all. Notable and metadata-only —
+# shipping a map with absolute paths is a hygiene lapse, not an act; the split by
+# platform keeps each attribution a distinct ML feature.
+defaults:
+  platforms: [unix, windows]
+  # A source map is JSON, but cleave routinely types one as javascript (both
+  # samples measured here did), and archive members can land as shell — the
+  # format traits in metadata/file/format/json.yaml carry the same spread for
+  # that reason.
+  for: [json, javascript, typescript, shell]
+  crit: notable
+  conf: 0.9
+
+traits:
+  # Anchored INSIDE the `sources` array, not a bare home-path match. A loose
+  # `"…/Users/<name>/"` regex fires on any JavaScript with a hardcoded path
+  # (measured: a two-line file containing `const p = "/Users/alice/notes.txt"`
+  # tripped it), which would make the trait's name and directory assert a source
+  # map the matcher never checked. The 400-char window covers the leading
+  # entries of a real `sources` array; a map whose *first* paths are relative and
+  # whose absolute one appears far later is accepted as a miss rather than
+  # widening this into the generic-path matcher it must not become.
+  - id: sourcemap-macos-home-path
+    desc: Source map leaks a macOS home path
+    if:
+      type: text
+      regex: '"sources"\s*:\s*\[[^\]]{0,400}/Users/[^/"]{1,40}/'
+
+  - id: sourcemap-linux-home-path
+    desc: Source map leaks a Linux home path
+    if:
+      type: text
+      regex: '"sources"\s*:\s*\[[^\]]{0,400}/home/[^/"]{1,40}/'
+
+  # JSON escapes each backslash, so a Windows path appears as C:\\Users\\name\\.
+  - id: sourcemap-windows-home-path
+    desc: Source map leaks a Windows home path
+    if:
+      type: text
+      regex: '"sources"\s*:\s*\[[^\]]{0,400}Users\\\\[^\\"]{1,40}\\\\'
+
+composite_rules:
+  # Belt-and-braces over the `"sources":[` anchor already in each atom: the
+  # anchor makes each atom self-standing (its name and directory are honest on
+  # its own), and this composite additionally requires the file to be recognised
+  # as a source map, so one finding is emitted for the fact rather than three
+  # when a map leaks paths on several platforms' entries.
+  - id: sourcemap-leaks-builder-home
+    desc: Source map discloses the builder home directory
+    crit: notable
+    conf: 0.93
+    all:
+      - id: metadata/file/format::sourcemap
+    any:
+      - id: sourcemap-macos-home-path
+      - id: sourcemap-linux-home-path
+      - id: sourcemap-windows-home-path
