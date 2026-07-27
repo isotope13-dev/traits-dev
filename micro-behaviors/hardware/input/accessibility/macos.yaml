@@ -1,0 +1,85 @@
+# macOS Accessibility (AX) API — the TCC privilege that gates reading another
+# application's UI and driving synthetic input.
+#
+# The sibling android.yaml has covered Android's AccessibilityService since
+# forever, but the macOS half of this directory did not exist: `AXIsProcess*`,
+# `AXUIElement*` and `kAXTrustedCheckOptionPrompt` matched nothing anywhere in
+# the tree. That left a hole under the two macOS capabilities that DO have
+# atoms — hardware/input/event/macos::CGEventTapCreate and
+# hardware/display/screen/macos (CGWindowListCreateImage / SCShareableContent) —
+# because both of those are inert without the Accessibility grant these calls
+# request and test. A macOS stealer that reads a password straight out of a
+# browser window's AX tree, or a remote-control implant that posts synthetic
+# clicks, has to touch one of these symbols.
+#
+# Deliberately anchored on API symbols, never on the word "accessibility":
+# consent-forward apps describe the permission in their own settings UI (e.g.
+# OpenClaw's macOS settings pane says a toggle "requires Accessibility, Screen
+# Recording, and gateway command authorization"), and a prose matcher would
+# convict that caption. Notable, not suspicious — VoiceOver utilities, window
+# managers, RPA/automation tools, and password managers all use these legally.
+# Intent belongs to composites that pair a grant check with keystroke capture,
+# event injection, or credential-store reads.
+defaults:
+  platforms: [macos]
+  for: [swift, objc, c, cpp, macho, dylib]
+  crit: notable
+  conf: 0.9
+
+traits:
+  # AXIsProcessTrusted() / AXIsProcessTrustedWithOptions() — asks TCC whether
+  # this process already holds the Accessibility grant. Malware calls it to
+  # decide whether to nag; legitimate automation calls it to disable features.
+  # `type: text`, not `type: symbol`, throughout this file. Verified against the
+  # Swift walker: `if !AXIsProcessTrustedWithOptions(opts)` records a call fact
+  # with NO target — the callee name is dropped inside a prefix-`!` expression —
+  # so a symbol matcher misses the API exactly where it is idiomatically used
+  # (negated inside an `if`/`guard`). These are globally unique Apple symbol
+  # names, so text costs essentially no precision, and one text matcher covers
+  # both source and the Mach-O import/string tables.
+  - id: ax-trust-check
+    desc: Checks macOS Accessibility trust status
+    attack: T1082
+    if:
+      type: text
+      substr: AXIsProcessTrusted
+
+  # Passing kAXTrustedCheckOptionPrompt raises the system "grant Accessibility"
+  # dialog. Distinct from the silent check above: this one actively solicits the
+  # privilege rather than merely testing for it, which is the nag-until-granted
+  # step in every macOS remote-control install flow.
+  - id: ax-trust-prompt-option
+    desc: Prompts the user for Accessibility access
+    attack: T1082
+    if:
+      type: text
+      substr: kAXTrustedCheckOptionPrompt
+
+  # AXUIElementCopyAttributeValue against another process's element tree is how
+  # window titles, field contents, and on-screen text are read without a screen
+  # capture — the API path behind AX-based keyloggers and form scrapers.
+  - id: ax-element-attribute-read
+    desc: Reads another app's UI via Accessibility
+    attack: T1113
+    if:
+      type: text
+      regex: 'AXUIElementCopy(AttributeValue|ElementAtPosition)'
+
+  # AXUIElementCreateApplication(pid) opens a handle onto a *specific other*
+  # process's UI tree; the systemwide variant covers the focused-element route.
+  - id: ax-target-application-handle
+    desc: Opens another process's Accessibility tree
+    attack: T1113
+    if:
+      type: text
+      regex: 'AXUIElementCreate(Application|SystemWide)'
+
+  # AXUIElementPerformAction / SetAttributeValue drive the target UI — pressing
+  # buttons and setting field values in another application without synthesizing
+  # events at all, so a CGEvent-tap matcher never sees it.
+  - id: ax-element-drive-target
+    desc: Drives another app's UI via Accessibility
+    attack: T1059
+    if:
+      type: text
+      regex: 'AXUIElement(PerformAction|SetAttributeValue)'
