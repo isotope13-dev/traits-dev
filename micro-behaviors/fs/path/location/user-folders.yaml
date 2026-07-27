@@ -24,6 +24,43 @@ traits:
   if:
     type: text
     regex: (?i)((^|[^A-Za-z0-9_./-])(~|/Users/[^/\\]{1,64})[/\\]Downloads\b|["']Downloads["'])
+# The OneDrive sync root was the one user-visible folder with no atom here. It
+# is a strictly better drop target than Desktop for an attacker: the file lands
+# in front of the user AND is replicated to their cloud and every other signed-in
+# device. Every prior OneDrive match in the tree is a masquerade reference
+# (OneDrive.exe, OneDriveStandaloneUpdater sideload host, an OneDriveUpdate task
+# name) -- none of them the folder as a write target.
+- id: onedrive-folder-target
+  desc: OneDrive folder path reference
+  crit: component
+  conf: 0.75
+  platforms: [windows, unix]
+  if:
+    type: text
+    regex: (?i)((^|[^A-Za-z0-9_./-])(~|/Users/[^/\\]{1,64})[/\\]OneDrive\b|["']OneDrive["'])
+# The sibling atoms above only recognise a user folder written as `~/Desktop`,
+# `/Users/<name>/Desktop`, or a fully quoted `"Desktop"`. That structurally
+# misses the form modern JS/PowerShell actually uses -- interpolating a
+# home-directory expression, `${homedir}/Desktop/` -- because the folder name is
+# neither quoted nor preceded by `~`. Measured on peacenotwar 9.1.3 (the npm
+# protestware that node-ipc 11.x pulled in), whose whole payload is
+# `` `${homedir}/Desktop/` `` + `` `${homedir}/OneDrive/` `` + fs.writeFile: the
+# package scored one baseline write and one component `homedir` literal, and
+# nothing tied them to a user-visible drop.
+#
+# Notable rather than component: unlike a bare quoted "Desktop", this shows a
+# filesystem path being CONSTRUCTED under the invoking user's home, which is a
+# complete observation on its own. The home-expression prefix within 24
+# characters is what keeps it off menu labels and docs prose.
+- id: home-user-folder-path-expression
+  desc: Builds user folder path from home directory
+  crit: notable
+  conf: 0.85
+  platforms: [windows, unix]
+  for: [scripts, typescript]
+  if:
+    type: text
+    regex: (?i)(homedir|HOMEPATH|USERPROFILE)[^\n]{0,24}[/\\]{1,2}(Desktop|OneDrive)
 composite_rules:
 - id: common-user-folders
   desc: Multiple common user folders referenced
@@ -34,9 +71,36 @@ composite_rules:
   - id: desktop-folder-target
   - id: documents-folder-target
   - id: downloads-folder-target
+  - id: onedrive-folder-target
   unless:
   - id: metadata/package/testing/
   # HTML/docs pages label menus "Desktop"/"Documents"/"Downloads" without
   # targeting those paths as a collection surface.
   - id: metadata/document/html::doctype
   - id: metadata/document/html::legacy-doctype
+# Joins the home-derived folder path to an actual write. The two halves existed
+# separately and both sat below the reporting bar -- fs.writeFile is `baseline`
+# (nearly every script writes a file) and a path expression alone proves
+# nothing -- so a module that plants a file on the user's Desktop produced no
+# analyst-visible finding at all.
+#
+# Deliberately `notable`, not suspicious: an Electron app or a CLI with a
+# "save report to Desktop" feature does exactly this, and micro-behaviors/ is
+# where a neutral mechanic belongs. What makes the peacenotwar shape an attack
+# is that a *library* does it at import time rather than a user-invoked export
+# -- that intent is for an objectives/ composite to add, referencing this leg.
+- id: user-folder-file-write
+  desc: Writes a file into a user home folder
+  crit: notable
+  conf: 0.85
+  platforms: [windows, unix]
+  for: [javascript, typescript]
+  all:
+  - id: home-user-folder-path-expression
+  # Directory reference rather than the four writeFile/appendFile ids: any
+  # write primitive that lands in there should join this, including ones added
+  # later.
+  any:
+  - id: micro-behaviors/fs/write/file/direct/
+  unless:
+  - id: metadata/package/testing/
