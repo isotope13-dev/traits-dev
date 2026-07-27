@@ -76,6 +76,28 @@ traits:
   if:
     type: text
     regex: '\b(p|b)\s*&\s*1\b'
+  # Image-extension URL used as a payload carrier, WITHOUT any image library.
+  #
+  # Every stego atom above assumes PIL: getdata / getpixel / _getexif. The
+  # rarcore family (PyPI, OSV MAL-2026-6977) never imports PIL -- at import time
+  # it urlopen()s a `.png` on raw.githubusercontent.com and base64-decodes the
+  # bytes appended past the PNG IEND terminator, then unzips and runs the result.
+  # So `multi-stage-delivery` never fired and the hostile `two-stage-fetch-and-exec`
+  # below stayed dark on the entire family. Measured on a reconstruction of that
+  # stage: 16 notable + 1 suspicious total, atomscan silent.
+  #
+  # The image extension is the camouflage, so the discriminator is what the
+  # response is FED TO: code that decodes or unzips a downloaded `.png` is using
+  # the extension as cover, whereas code that hands it to an imaging library is
+  # doing image work. Hence the `unless:` on PIL/cv2/imageio/skimage imports --
+  # that is the honest separator, not the URL by itself.
+- id: image-url-literal
+  desc: URL literal ending in an image extension
+  crit: component
+  conf: 0.9
+  if:
+    type: string_literal
+    regex: '(?i)^https?://[^"''\s]{4,200}\.(png|jpe?g|gif)$'
 - id: exif-comment-retrieve
   desc: EXIF comment field retrieved as payload
   crit: notable
@@ -159,6 +181,7 @@ composite_rules:
   - id: pil-lsb-loop
   - id: exif-comment-retrieve
   - id: pastebin-raw-fetch
+  - id: image-url-payload-retrieval
 
   # Stage-1 retrieve + stage-2 exec is the canonical two-stage pattern.
 - id: two-stage-fetch-and-exec
@@ -171,6 +194,11 @@ composite_rules:
   - id: micro-behaviors/process/create/subprocess::process-execution
   - id: micro-behaviors/process/interpreter/python::exec-builtin
   - id: micro-behaviors/process/interpreter/python::eval-builtin
+  # os.startfile() on a dropped .exe is stage-2 execution just as much as
+  # subprocess/exec/eval are, and it is the launcher the image-carrier droppers
+  # actually use on Windows -- without it a fetch-decode-unzip-launch chain
+  # stopped one leg short of this composite.
+  - id: micro-behaviors/process/create/launch::startfile-exe-text
   # Keep retrieval and execution in the same local path; unrelated process
   # calls elsewhere in a networking module are not staged execution.
   near_lines: 80
@@ -246,3 +274,24 @@ composite_rules:
   any:
   - id: micro-behaviors/communications/http/request/client/
   - id: micro-behaviors/communications/http/lib/requests/
+- id: image-url-payload-decode
+  desc: Decode or unpack primitive for fetched bytes
+  crit: component
+  any:
+  - id: micro-behaviors/data/decode/base64::base64-decoding
+  - id: micro-behaviors/data/archive/extract/zip::python-zipfile-extractall
+- id: image-url-payload-retrieval
+  desc: Image URL fetched then decoded as payload
+  crit: suspicious
+  conf: 0.92
+  near_lines: 40
+  all:
+  - id: image-url-literal
+  - id: image-url-payload-decode
+  any:
+  - id: micro-behaviors/communications/http/request/client/
+  - id: micro-behaviors/communications/http/lib/
+  unless:
+  # Genuine image work, not camouflage.
+  - id: micro-behaviors/data/format/media/raster::python-imaging-library-import
+  - id: metadata/package/testing/
