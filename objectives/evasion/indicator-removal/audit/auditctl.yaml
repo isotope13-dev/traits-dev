@@ -32,15 +32,61 @@ traits:
     conf: 0.92
     if:
       type: text
-      substr: auditctl -D
+      regex: 'auditctl["'',\s]{1,6}-D\b'
 
+  # Widened from `substr: auditctl -e 0` to absorb argv punctuation, so the one
+  # canonical matcher covers both the shell spelling and the list spelling a
+  # scripting language actually emits: `subprocess.run(["auditctl","-e","0"])`,
+  # `exec.Command("auditctl","-e","0")`. That gap is why a *second*, Python-only
+  # copy existed as `logs/python-linux::python-auditctl-disable`
+  # (`substr: '"auditctl", "-e", "0"'` — that exact quoting, nothing else); it
+  # has been deleted and its hostile composite now references this atom, per the
+  # Single-Trait Rule.
+  #
+  # Requiring the literal 0 right after the separator is what preserves the
+  # original discrimination: `-e 1` re-enables and `-e 2` LOCKS the config until
+  # reboot (a hardening step), and neither can reach this pattern.
+  #
+  # No `\b` after the 0, deliberately. A trailing word-boundary reads as tighter
+  # but silently drops the compiled case: Go packs its string table as one
+  # contiguous blob, so the extracted run is `…prevstringauditctl -e 0nextstring…`
+  # and `\b` fails against the following letter. Measured: with `0\b` a binary
+  # carrying the command mid-run stopped matching. `for:` includes go and elf, so
+  # that is the case this atom most needs to keep.
+  #
+  # DELIBERATELY NOT line-anchored, unlike the comment-leader guard on
+  # `process/enumerate/shell::ps-ef`. Wrapping this in `(?m)^[^\n]{0,200}…` plus
+  # `not: ^\s*(\*|//|#)` does remove the "a comment merely names the command"
+  # FP — measured, it silences `# ...disable with auditctl -e 0 but we do not`.
+  # It also, in the same measurement, silenced the compiled case: a binary whose
+  # extracted run is `…Xauditctl -e 0nextstring…` (a Go-style contiguous string
+  # blob, >200 bytes into the run) stopped matching, because `^` binds per
+  # extracted run, not per file. `for:` includes go and elf, and the hostile
+  # go-unix.yaml composite is built on precisely that case. A missed Go/ELF
+  # audit-tamper implant costs more than a shell comment scoring one suspicious
+  # atom that still needs a second leg to convict. Do not "fix" this to anchor.
   - id: auditctl-subsystem-disable
     desc: auditctl disables the audit subsystem
     crit: suspicious
     conf: 0.93
     if:
       type: text
-      substr: auditctl -e 0
+      regex: 'auditctl["'',\s]{1,6}-e["'',\s]{1,6}0'
+
+  # The header above describes the scenario "ran `auditctl -D`, removed
+  # /etc/audit/rules.d/*.rules and stopped auditd" — but nothing here implemented
+  # the last clause, and no trait anywhere matched it. Stopping or masking the
+  # unit silences the subsystem without touching auditctl at all, and `mask` also
+  # survives a reboot. Direction is the discriminator: hardening and CIS
+  # benchmark scripts drive auditd the other way (`enable`/`start`).
+  - id: auditd-service-disable
+    desc: Stops, disables or masks the auditd unit
+    crit: suspicious
+    conf: 0.9
+    attack: T1562.012
+    if:
+      type: text
+      regex: 'systemctl["'',\s]{1,6}(stop|disable|mask)["'',\s]{1,6}auditd\b'
 
   # The file-level spelling of the same act, which `auditctl -D` misses: wipe
   # the rule set on disk so it does not come back on reload either.

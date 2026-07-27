@@ -1,0 +1,51 @@
+# The Linux audit subsystem (libaudit / auditd), as a program *uses* it.
+#
+# Sits next to the selinux sibling for the same reason: both are kernel security
+# subsystems a program talks to, and neither had audit coverage — `audit_open`,
+# `audit_log_acct_message` and `audit_send` matched nothing anywhere in the tree.
+# The only prior `audit` hits were auditd *masquerade* identity strings and two
+# language-specific auditctl-disable hardcodes.
+#
+# Measured on Debian libpam-modules-bin/unix_chkpwd (1.7.0-5), which links
+# libaudit.so.1 and emits a `PAM:unix_chkpwd` account event on every
+# authentication attempt: cleave described its crypt, shadow-lookup and
+# passwd-write behaviour but said nothing about the fact that it reports to the
+# audit trail at all.
+#
+# Notable and neutral: writing to the audit log is what login paths, PAM helpers,
+# sudo and account tools are supposed to do. The adversarial direction — silencing
+# the subsystem — lives in objectives/evasion/indicator-removal/logs/.
+defaults:
+  platforms: [linux]
+  for: [elf, so, c, cpp, scripts]
+  crit: notable
+  conf: 0.9
+
+traits:
+  # audit_open() acquires the netlink socket to the kernel audit subsystem. Any
+  # libaudit producer calls it first, so it is the cheapest single marker that a
+  # binary reports to the audit trail.
+  - id: libaudit-netlink-open
+    desc: Opens a Linux audit netlink socket
+    if:
+      type: text
+      substr: audit_open
+
+  # audit_log_acct_message() writes a USER_AUTH / USER_ACCT / ADD_USER-class
+  # record — the account-lifecycle events an authentication helper or account
+  # tool is expected to leave behind.
+  - id: libaudit-account-event-log
+    desc: Logs an account event to auditd
+    if:
+      type: text
+      substr: audit_log_acct_message
+
+  # audit_send()/audit_set_enabled() are the control path rather than the
+  # producer path: they change subsystem state. Neutral here because auditd and
+  # its own tooling call them; disabling via this route is the objective in
+  # evasion/indicator-removal/logs::auditctl-disable-audit.
+  - id: libaudit-control-message
+    desc: Sends a Linux audit control message
+    if:
+      type: text
+      regex: 'audit_(send|set_enabled)\b'
