@@ -1,0 +1,70 @@
+# Leading-whitespace padding in source files.
+#
+# A payload is spliced into an otherwise legitimate source file on a single
+# line preceded by hundreds of space/tab columns. `git diff`, GitHub's diff
+# view, and most editors then render an apparently blank line, and a reviewer
+# never scrolls right far enough to see the code.
+#
+# Observed in the July 2026 AsyncAPI compromise (Miasma RAT dropper): an
+# obfuscator.io payload was prepended to `index.js` of @asyncapi/specs and to
+# `validator.js` / `utils.js` of the generator monorepo behind 880-1205 leading
+# spaces. The sibling technique on the *inside* of a line is already covered by
+# objectives/anti-static/obfuscation/obfuscator/js-obfuscator::whitespace-hiding,
+# but its `text.max_inline_whitespace_run` metric ignores line-leading runs and
+# measured 1 on every one of those files, so the leading form needs its own
+# matcher.
+#
+# Threshold: benign real-world source tops out near 116 leading columns
+# (generated deeply-nested typebox `.mjs`). At 150 columns a sweep of ~14k
+# JS/TS/Python/Ruby/PHP/shell files under /usr/lib and /usr/share returned no
+# matches at all.
+defaults:
+  attack: T1027
+  mbc: B0032
+  platforms: [linux, macos, windows]
+  for: [scripts, typescript]
+
+traits:
+  - id: leading-whitespace-padded-line
+    desc: Source line begins past column 150
+    crit: suspicious
+    conf: 0.9
+    # Cap the scan: past a few MB the file is a build artifact, and this
+    # technique only pays off in a file a human is expected to read.
+    size_max: 16777216
+    # Concealment inserts one such line into an otherwise normal file. A file
+    # where wide-indent long lines are the prevailing shape is a formatting or
+    # code-generation style, not something hidden — each match is >=250 columns,
+    # so 2/KB already means half the file looks like this.
+    per_kb_max: 2.0
+    if:
+      # `(?m)^` is load-bearing: it restricts this to *line-leading* padding,
+      # which is what disappears from a diff. A long run in the middle of a
+      # line is a different signal and already has its own matcher
+      # (js-obfuscator::whitespace-hiding, via text.max_inline_whitespace_run).
+      # The pad repeat is a bare {150} rather than a bounded {150,N} range: an
+      # upper bound would silently stop matching once the attacker pads past N
+      # (the observed pads were 880 and 1205 columns). The trailing
+      # [^\n]{100,900} only asserts the line keeps going for another 100+
+      # columns, so it holds for a pad of any width.
+      type: text
+      regex: '(?m)^[ \t]{150}[^\n]{100,900}'
+
+composite_rules:
+  # The padding hides *that* something was inserted; the obfuscator legs
+  # establish that what sits on that line is a machine-generated payload rather
+  # than a long generated data line. Neither half has a legitimate joint use in
+  # hand-maintained source.
+  - id: whitespace-padded-obfuscator-payload
+    desc: Obfuscator payload behind whitespace padding
+    crit: hostile
+    conf: 0.95
+    attack: T1027.002
+    mbc: B0024
+    all:
+      - id: leading-whitespace-padded-line
+    any:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::any-name-mangling
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::push-shift-bracket-pattern
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::char-permutation-deobfuscator
+    needs: 1
