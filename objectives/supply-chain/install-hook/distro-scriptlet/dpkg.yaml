@@ -1,0 +1,160 @@
+# Debian/Ubuntu maintainer scripts (preinst/postinst/prerm/postrm) are executed
+# by dpkg AS ROOT during `dpkg -i` / `apt install`, which makes them the Linux
+# analogue of an npm postinstall hook and the primary payload site in a
+# trojanized .deb. The sibling pacman.yaml already models the Arch `.install`
+# scriptlet; this file gives the dpkg lifecycle the same treatment and reuses
+# the same generic capability atoms, so the composites stay technique-based.
+#
+# Debian Policy forbids maintainer scripts from touching the network, and a
+# correctly built package declares its dependencies through `Depends:` rather
+# than shelling into a second package manager at install time -- so the fetch,
+# obfuscation, backdoor and shell-rc composites below have no legitimate
+# counterpart in an archive package.
+#
+# Known limitation: a payload-only postinst that never branches on $1 and
+# carries no debhelper block is recognised by basename alone, so
+# `dpkg-maintainer-script-hook` needs the file to still be named
+# <pkg>.pre/postinst|rm. Such a script normally trips the generic
+# dropper/reverse-shell objectives on its own.
+defaults:
+  platforms: [linux]
+  for: [shell]
+
+composite_rules:
+  - id: dpkg-maintainer-script-hook
+    desc: Debian maintainer script run as root by dpkg
+    crit: notable
+    conf: 0.9
+    all:
+      - id: metadata/package/files/system-package::dpkg-maintainer-script
+    any:
+      - id: metadata/package/files/system-package::dpkg-lifecycle-argument-test
+      - id: metadata/package/files/system-package::dpkg-lifecycle-case-branch
+      - id: metadata/build/package::debhelper-auto-section-end
+
+  # One composite per foreign ecosystem, mirroring the pacman scriptlet family:
+  # each is an independently reportable notable fact ("the root install hook
+  # runs `pip install <name>`"), and the hostile umbrella below counts them.
+  - id: dpkg-maintainer-script-npm-install
+    desc: Debian maintainer script installs a named npm package
+    crit: notable
+    conf: 0.8
+    all:
+      - id: dpkg-maintainer-script-hook
+      - id: micro-behaviors/process/create/shell/build::npm-named-package-install-command
+
+  - id: dpkg-maintainer-script-pip-install
+    desc: Debian maintainer script installs a pip package
+    crit: notable
+    conf: 0.8
+    all:
+      - id: dpkg-maintainer-script-hook
+    any:
+      - id: micro-behaviors/process/create/shell/build::pip-named-package-install-command
+      - id: micro-behaviors/process/create/shell/build::pip3-named-package-install-command
+
+  - id: dpkg-maintainer-script-gem-install
+    desc: Debian maintainer script installs a RubyGems package
+    crit: notable
+    conf: 0.8
+    all:
+      - id: dpkg-maintainer-script-hook
+      - id: micro-behaviors/process/create/shell/build::gem-named-package-install-command
+
+  - id: dpkg-maintainer-script-js-runtime-install
+    # bun/pnpm/yarn fetch npm packages whose own lifecycle scripts then run as
+    # root, exactly like `npm install` does.
+    desc: Debian maintainer script adds a package via bun/pnpm/yarn
+    crit: notable
+    conf: 0.8
+    all:
+      - id: dpkg-maintainer-script-hook
+      - id: micro-behaviors/process/create/shell/build::js-runtime-named-package-install-command
+
+  - id: dpkg-maintainer-script-runtime-fetch-install
+    desc: Debian maintainer script installs via deno/pipx/uv
+    crit: notable
+    conf: 0.8
+    all:
+      - id: dpkg-maintainer-script-hook
+      - id: micro-behaviors/process/create/shell/build::runtime-fetch-install-command
+
+  - id: dpkg-maintainer-script-toolchain-install
+    # `cargo install` runs the crate's build.rs and `go install ...@latest`
+    # pulls and compiles a module -- remote code execution as root, chosen by
+    # whatever the named target resolves to today.
+    desc: Debian maintainer script installs via cargo/go toolchain
+    crit: notable
+    conf: 0.8
+    all:
+      - id: dpkg-maintainer-script-hook
+      - id: micro-behaviors/process/create/shell/build::native-toolchain-install-command
+
+  - id: dpkg-maintainer-script-foreign-package-bootstrap
+    # The .deb equivalent of the AUR bun/npm bootstrap: a root install hook
+    # pulls a foreign-ecosystem package or pipes a download straight into a
+    # shell, so code the archive never reviewed executes as root.
+    desc: Debian maintainer script bootstraps a foreign-ecosystem package
+    crit: hostile
+    conf: 0.95
+    attack: T1195.002
+    all:
+      - id: dpkg-maintainer-script-hook
+    any:
+      - id: dpkg-maintainer-script-npm-install
+      - id: dpkg-maintainer-script-pip-install
+      - id: dpkg-maintainer-script-gem-install
+      - id: dpkg-maintainer-script-js-runtime-install
+      - id: dpkg-maintainer-script-runtime-fetch-install
+      - id: dpkg-maintainer-script-toolchain-install
+      - id: objectives/command-and-control/dropper/execution/pipe::curl-download-pipe-shell
+
+  - id: dpkg-maintainer-script-obfuscated-command
+    # A maintainer script is plain shell by convention (dpkg diffs and lintian
+    # both read it). Shattering its commands into octal/hex escapes or
+    # single-character concatenation conceals what runs as root, whatever the
+    # hidden payload turns out to be.
+    desc: Debian maintainer script conceals its command with string obfuscation
+    crit: hostile
+    conf: 0.96
+    attack: T1195.002, T1027
+    all:
+      - id: dpkg-maintainer-script-hook
+    any:
+      - id: objectives/anti-static/obfuscation/code-metrics/structure::sh-dense-octal-escapes
+      - id: objectives/anti-static/obfuscation/code-metrics/structure::sh-dense-hex-escapes
+      - id: objectives/anti-static/obfuscation/code-metrics/structure::sh-char-split-concatenation
+
+  - id: dpkg-maintainer-script-privilege-backdoor
+    # Packages declare their service accounts through sysusers.d/adduser with
+    # no login shell and no sudo rights. Handing out an authorized_keys entry
+    # or passwordless root from an install hook is a root-level backdoor.
+    desc: Debian maintainer script installs a root backdoor
+    crit: hostile
+    conf: 0.95
+    attack: T1195.002, T1098.004
+    # Both spellings of each leg are listed on purpose: the umbrella atoms
+    # (`authorized-keys-append`, `sudo-nopasswd`) carry an `unless:` on their
+    # own directory and step aside as soon as a more specific sibling matches,
+    # so a composite that names only the umbrella silently misses the concrete
+    # `echo ... >> authorized_keys` / `NOPASSWD: ALL` cases.
+    all:
+      - id: dpkg-maintainer-script-hook
+    any:
+      - id: objectives/persistence/login/ssh/backdoor::authorized-keys-shell-append
+      - id: objectives/persistence/login/ssh/backdoor::authorized-keys-append
+      - id: micro-behaviors/fs/config/sudo::nopasswd-all-directive
+      - id: micro-behaviors/fs/config/sudo::sudo-nopasswd
+      - id: objectives/persistence/login/account/create::privilege-escalation-setup
+
+  - id: dpkg-maintainer-script-shell-rc-persistence
+    # A package ships files into /etc/profile.d through its data archive;
+    # writing into a LIVE system-wide shell rc from the install hook is
+    # persistence injected through the package lifecycle.
+    desc: Debian maintainer script writes persistence into system shell rc
+    crit: hostile
+    conf: 0.95
+    attack: T1195.002, T1546.004
+    all:
+      - id: dpkg-maintainer-script-hook
+      - id: objectives/persistence/login/shell/rc::system-shell-rc-write
