@@ -1,0 +1,77 @@
+# Runtime crypter behavior.
+#
+# Crypters preserve a payload while hiding it from static inspection. The
+# strongest source-level signal is the combination of a payload transform with
+# executable-memory staging. Re-encryption and deletion are separate composites
+# because a runtime stub may implement either one independently.
+defaults:
+  platforms: [linux, macos, windows]
+  for: [c, cpp, go, rust, python, powershell, javascript, typescript]
+  attack: T1027,T1140,T1620,T1070.004
+  mbc: B0032
+
+traits:
+  - id: reencrypt-function-call
+    desc: Re-encryption function call
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\bre.?encrypt\w*\s*\('
+
+  - id: reencrypt-payload-target
+    desc: Re-encryption targets a payload buffer
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\bre.?encrypt\w*\s*\([^;\n]{0,80}\b(payload|stage)\w*\b'
+
+composite_rules:
+  - id: payload-reencrypt-call
+    desc: Re-encrypts a payload buffer
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: reencrypt-function-call
+      - id: reencrypt-payload-target
+
+  - id: runtime-crypter-in-memory-payload
+    desc: Runtime crypter decodes a payload into executable memory
+    crit: hostile
+    conf: 0.97
+    attack: T1027,T1140,T1620
+    all:
+      - id: micro-behaviors/crypto/symmetric/xor/loop::source-repeating-key-xor-loop
+      - id: objectives/evasion/process/injection/shellcode::rwx-memcpy-injection
+
+  - id: powershell-runtime-crypter-in-memory-payload
+    desc: PowerShell crypter invokes decoded executable memory
+    crit: hostile
+    conf: 0.98
+    for: [powershell]
+    attack: T1027,T1140,T1620
+    all:
+      - id: micro-behaviors/crypto/symmetric/xor/loop::repeating-key-indexed-bxor-loader
+      - id: micro-behaviors/mem/alloc/executable::powershell-virtualalloc-call
+      - id: micro-behaviors/mem/alloc/executable::powershell-virtualalloc-rwx-flag
+      - id: micro-behaviors/mem/alloc/executable::powershell-memory-delegate-invoke
+
+  - id: self-reencrypting-runtime-crypter
+    desc: Runtime crypter re-encrypts its staged payload after launch
+    crit: hostile
+    conf: 0.98
+    attack: T1027,T1140,T1620
+    all:
+      - id: runtime-crypter-in-memory-payload
+      - id: payload-reencrypt-call
+    near_lines: 80
+
+  - id: melt-runtime-crypter
+    desc: Runtime crypter deletes its own executable after payload launch
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: runtime-crypter-in-memory-payload
+      - id: objectives/evasion/self-delete/file/script::native-self-delete-argv
+    near_lines: 80
