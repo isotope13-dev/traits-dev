@@ -1,0 +1,130 @@
+# ClickFix stages that use the Windows native downloader/archive/script chain.
+# The individual operations are common; the objective rules require their
+# combination in a temporary staging path or with Run-key persistence.
+defaults:
+  platforms: [windows]
+  for: [batch, powershell, javascript, typescript, vbs, html]
+  attack: T1105
+  mbc: B0024
+
+traits:
+  - id: wscript-temp-script-launch
+    desc: WScript launches a temp script
+    crit: suspicious
+    conf: 0.94
+    attack: T1059.005
+    if:
+      type: text
+      regex: '(?i)\b[wc]script(\.exe)?\b[^\r\n]{0,160}%TEMP%'
+
+  - id: node-remote-https-download
+    desc: Node HTTPS download call
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\bhttps?\.get\s*\(\s*["'']https?://'
+
+  - id: node-tar-archive-extract
+    desc: Node tar archive extraction
+    crit: notable
+    conf: 0.94
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\b(spawn|execFile)(Sync)?\s*\(\s*["'']tar["'']'
+  - id: node-tar-extract-flag
+    desc: Node tar extraction flag
+    crit: component
+    conf: 0.95
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '["'']-[xX][fF]["'']'
+
+  - id: node-run-key-path
+    desc: Node references the Windows Run key
+    crit: notable
+    conf: 0.9
+    attack: T1547.001
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '(?i)CurrentVersion[\\/]+Run'
+
+composite_rules:
+  - id: windows-clickfix-curl-archive-wscript
+    desc: Windows ClickFix archive and WScript chain
+    crit: hostile
+    conf: 0.99
+    attack: T1059.001,T1059.005,T1105,T1204.002
+    for: [batch, powershell]
+    near_lines: 8
+    all:
+      - id: micro-behaviors/communications/http/download/curl::curl-insecure
+      - id: micro-behaviors/communications/http/download/curl::curl-output-file
+      - id: objectives/command-and-control/dropper/staging/archive::powershell-archive-extract
+      - id: wscript-temp-script-launch
+
+  - id: windows-clickfix-run-key-wscript-persistence
+    desc: Windows Run-key WScript persistence
+    crit: hostile
+    conf: 0.99
+    attack: T1059.005,T1547.001,T1204.002
+    for: [batch, powershell, vbs]
+    near_lines: 8
+    all:
+      - id: objectives/persistence/login/startup/registry::run-key-wscript-vbs-launcher
+      - id: wscript-temp-script-launch
+
+  - id: node-clickfix-remote-archive-script-launch
+    desc: Node archive and WScript launch
+    crit: hostile
+    conf: 0.99
+    attack: T1059.005,T1059.007,T1105,T1204.002
+    for: [javascript, typescript]
+    near_bytes: 1600
+    all:
+      - id: node-remote-https-download
+      - id: micro-behaviors/fs/file/write/direct::node-write-file-sync
+      - id: node-tar-archive-extract
+      - id: node-tar-extract-flag
+      - id: micro-behaviors/process/create/shell/bridge::execSync-call
+      - id: wscript-temp-script-launch
+
+  - id: node-clickfix-run-key-wscript-persistence
+    desc: Node Run-key WScript persistence
+    crit: hostile
+    conf: 0.99
+    attack: T1059.005,T1059.007,T1547.001
+    for: [javascript, typescript]
+    near_bytes: 900
+    all:
+      - id: node-run-key-wscript-temp
+      - id: micro-behaviors/process/create/shell/bridge::execSync-call
+
+  - id: node-run-key-wscript-temp
+    desc: Node Run-key WScript temp launcher
+    crit: suspicious
+    conf: 0.97
+    attack: T1547.001
+    for: [javascript, typescript]
+    near_bytes: 700
+    all:
+      - id: node-run-key-path
+      - id: wscript-temp-script-launch
+
+  - id: windows-clickfix-delivery-runkey
+    desc: Windows ClickFix delivery with Run-key persistence
+    crit: hostile
+    conf: 0.99
+    attack: T1059.001,T1059.005,T1105,T1547.001,T1204.002
+    for: [batch, powershell, vbs]
+    near_lines: 8
+    all:
+      - id: objectives/persistence/login/startup/registry::run-key-wscript-vbs-launcher
+      - id: micro-behaviors/communications/http/download/curl::curl-insecure
+      - id: micro-behaviors/communications/http/download/curl::curl-output-file
+      - id: objectives/command-and-control/dropper/staging/archive::powershell-archive-extract
+      - id: wscript-temp-script-launch
