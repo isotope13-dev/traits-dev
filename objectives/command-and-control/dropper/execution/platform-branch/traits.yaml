@@ -6,7 +6,51 @@ defaults:
     - javascript
     - typescript
   attack: T1059.007
+
+traits:
+  - id: hash-input-startswith-prefix
+    desc: Hash input starts with a fixed prefix
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '(hash|digest)[A-Za-z0-9_$]*\.startsWith\("[0-9A-Fa-f]{5,}"\)'
+
+  - id: checksum-input-startswith-prefix
+    desc: Checksum input starts with a fixed prefix
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '(checksum|fingerprint)[A-Za-z0-9_$]*\.startsWith\("[0-9A-Fa-f]{5,}"\)'
+
+  - id: python-hash-input-prefix
+    desc: Python hash input starts with a prefix
+    crit: suspicious
+    conf: 0.9
+    for: [python]
+    if:
+      type: text
+      regex: '(hash|digest)[A-Za-z0-9_]*\.startswith\("[0-9A-Fa-f]{5,}"\)'
+
+  - id: python-platform-stage-branch
+    desc: Python branches to OS-specific stage names
+    crit: notable
+    conf: 0.85
+    for: [python]
+    if:
+      type: text
+      regex: '(platform\.system\(\)|sys\.platform)[^\n]{0,120}(Windows|Darwin|Linux)'
+
 composite_rules:
+  - id: hash-prefixed-input-gate
+    desc: Hash-like input prefix gate
+    crit: suspicious
+    conf: 0.9
+    any:
+      - id: hash-input-startswith-prefix
+      - id: checksum-input-startswith-prefix
+
   - id: platform-branched-dropper
     desc: Platform-branched payload dropper
     crit: suspicious
@@ -61,3 +105,42 @@ composite_rules:
       - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
     any:
       - id: objectives/evasion/self-delete/file/script
+
+  - id: hash-gated-second-stage-download-execute
+    desc: Hash-gated remote second-stage download and execution
+    crit: hostile
+    conf: 0.98
+    attack: T1105,T1059.007
+    near_bytes: 8192
+    all:
+      - id: hash-prefixed-input-gate
+      - id: micro-behaviors/communications/http/request/client::https-get
+      - id: micro-behaviors/process/create/system::js-execfile-call
+
+  - id: cross-platform-layered-stage-dropper
+    desc: Cross-platform downloader executes a Base64/XOR staged payload
+    crit: hostile
+    conf: 0.99
+    attack: T1027,T1059.007,T1105,T1222.002
+    near_bytes: 8192
+    all:
+      - id: micro-behaviors/os/sysinfo/platform/runtime::multi-platform-branch
+      - id: micro-behaviors/data/decode/base64::buffer-from-base64
+      - id: micro-behaviors/crypto/symmetric/xor/loop::xor-modulo-key-loop
+      - id: micro-behaviors/communications/http/request/client::https-get
+      - id: micro-behaviors/fs/file/write/direct::node-write-file-sync
+      - id: micro-behaviors/process/create/system::js-execfile-call
+
+  - id: python-hash-gated-platform-stage
+    desc: Python hash-gated platform stage
+    crit: hostile
+    conf: 0.98
+    for: [python]
+    attack: T1027,T1105,T1059.006,T1222.002
+    near_bytes: 8192
+    all:
+      - id: python-hash-input-prefix
+      - id: python-platform-stage-branch
+      - id: micro-behaviors/communications/http/lib/requests::requests-get
+      - id: micro-behaviors/fs/file/write/direct::py-open-write-mode
+      - id: micro-behaviors/process/create/subprocess::process-execution
