@@ -1,0 +1,185 @@
+# The article describes a repeatable collection-to-exfiltration workflow:
+# selectively find valuable files, regroup them into an archive, then move the
+# archive through a cloud, HTTP, or file-transfer channel.  The individual
+# capabilities remain notable; the conjunctions express the malicious goal.
+defaults:
+  platforms: [unix, windows]
+  for: [scripts]
+  attack: T1005,T1074.001,T1560.001,T1041,T1567.002
+
+traits:
+  - id: temporary-archive-path
+    desc: Temporary archive path
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)(/tmp|/var/tmp|\\temp|env:TEMP)'
+
+  - id: archive-variable-reference
+    desc: Archive staging variable reference
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\b(archive_path|STAGING|staged)\b'
+
+  - id: sevenzip-archive-command
+    desc: 7-Zip archive command
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\b7z[a]?\.?\s*(exe)?\s+[a-z-]*a\b'
+
+  - id: rar-archive-command
+    desc: RAR archive command
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\b(rar|winrar)(\.exe)?\s+[a-z-]*a\b'
+
+  - id: passworded-sevenzip-command
+    desc: Passworded 7-Zip command
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\b7z[a]?\b[^\r\n]{0,100}\s-p\S*'
+
+  - id: passworded-rar-command
+    desc: Passworded RAR command
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\b(rar|winrar)\b[^\r\n]{0,100}\s-p\S*'
+
+  - id: rclone-transfer-command
+    desc: Rclone transfer command
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\brclone(\.exe)?\s+(copy|sync|move)\b'
+
+  - id: azcopy-transfer-command
+    desc: AzCopy transfer command
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\bazcopy(\.exe)?\s+copy\b'
+
+  - id: megacmd-transfer-command
+    desc: MEGAcmd transfer command
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\bmegacmd\b[^\r\n]{0,120}\b(put|upload|copy)\b'
+
+  - id: python-multipart-upload
+    desc: Python multipart file upload
+    crit: notable
+    conf: 0.94
+    for: [python]
+    if:
+      type: text
+      regex: '(?i)\brequests\.(post|put)\s*\([^\r\n]{0,220}\bfiles\s*='
+
+  - id: curl-file-upload
+    desc: Curl file upload command
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\bcurl\b[^\r\n]{0,180}(-T|-F|--form|--upload-file)'
+
+  - id: ftp-file-transfer
+    desc: FTP file transfer command
+    crit: notable
+    conf: 0.94
+    for: [shell, batch, powershell]
+    if:
+      type: text
+      regex: '(?is)\bs?ftp\b[\s\S]{0,260}\bm?put\b'
+
+  - id: ftp-file-transfer-reverse
+    desc: FTP transfer command with put first
+    crit: notable
+    conf: 0.94
+    for: [shell, batch, powershell]
+    if:
+      type: text
+      regex: '(?is)\bm?put\b[\s\S]{0,260}\bs?ftp\b'
+
+composite_rules:
+  - id: archive-staging-location
+    desc: Local archive staging path
+    crit: notable
+    conf: 0.92
+    any:
+      - id: temporary-archive-path
+      - id: archive-variable-reference
+
+  - id: archive-transfer-command
+    desc: Archive transfer command
+    crit: notable
+    conf: 0.95
+    any:
+      - id: rclone-transfer-command
+      - id: azcopy-transfer-command
+      - id: megacmd-transfer-command
+      - id: python-multipart-upload
+      - id: curl-file-upload
+      - id: ftp-file-transfer
+      - id: ftp-file-transfer-reverse
+
+  - id: password-protected-archive-option
+    desc: Password-protected archive option
+    crit: notable
+    conf: 0.96
+    any:
+      - id: passworded-sevenzip-command
+      - id: passworded-rar-command
+
+  - id: archive-creation-for-collection
+    desc: Creates an archive from collected data
+    crit: notable
+    conf: 0.92
+    any:
+      - id: micro-behaviors/data/archive/create/tar::tar-create
+      - id: micro-behaviors/data/archive/create/tar::tar-from-file-list
+      - id: micro-behaviors/data/archive/create/zip::python-zipfile-writer
+      - id: micro-behaviors/data/archive/create/utility::archive-utility-create
+      - id: objectives/collection/archive/compress::tar-current-dir
+
+  - id: targeted-sensitive-archive-staging
+    desc: Stages targeted files in an archive
+    crit: hostile
+    conf: 0.98
+    attack: T1005,T1074.001,T1560.001
+    all:
+      - id: objectives/collection/file-targeting/filter::targeted-high-value-file-discovery
+      - id: archive-creation-for-collection
+      - id: archive-staging-location
+
+  - id: targeted-sensitive-archive-transfer
+    desc: Transfers a targeted-file archive
+    crit: hostile
+    conf: 0.99
+    attack: T1005,T1041,T1560.001,T1567.002
+    all:
+      - id: targeted-sensitive-archive-staging
+      - id: archive-transfer-command
+
+  - id: passworded-sensitive-archive-transfer
+    desc: Transfers a passworded targeted-file archive
+    crit: hostile
+    conf: 0.99
+    attack: T1005,T1041,T1560.001,T1567.002
+    all:
+      - id: targeted-sensitive-archive-transfer
+      - id: password-protected-archive-option
