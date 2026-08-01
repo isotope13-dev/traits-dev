@@ -1,0 +1,77 @@
+# Chromium App-Bound Encryption bypass through a browser memory snapshot and
+# same-process decryption. The API names are intentionally language-neutral so
+# the composite applies to native and managed implementations alike.
+defaults:
+  platforms: [windows]
+  for: [pe, dll, c, cpp, csharp, rust, go, python]
+  attack: T1555.003,T1055.004
+  mbc: B0028
+
+traits:
+  - id: v20-master-key-name
+    desc: Chromium v20 master-key name
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: text
+      regex: '(?i)\bv20[_-]?master[_-]?key\b'
+
+  - id: v20-key-prefix-bytes
+    desc: Chromium v20 key prefix bytes
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '0x76\s*,\s*0x32\s*,\s*0x30\s*,\s*0x00'
+
+  - id: v20-key-structure-tail
+    desc: Chromium key structure tail bytes
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '0x03\s*,\s*0x00\s*,\s*0x00\s*,\s*0x00\s*,\s*0x00\s*,\s*0x01'
+
+  - id: chromium-browser-store-set
+    desc: Chromium credential-store filename set
+    crit: suspicious
+    conf: 0.92
+    count_min: 2
+    if:
+      type: text
+      regex: '(?i)\b(Login Data|Cookies|Local State)\b'
+
+composite_rules:
+  - id: v20-memory-key-signature
+    desc: Chromium v20 master-key memory signature
+    crit: suspicious
+    conf: 0.98
+    all:
+      - id: v20-key-prefix-bytes
+      - id: v20-key-structure-tail
+    near_lines: 40
+
+  - id: chromium-abe-memory-apc-bypass
+    desc: Chromium ABE key recovered through process cloning and APC decryption
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: v20-memory-key-signature
+      - id: micro-behaviors/process/create/fork::nt-create-process-ex-reference
+      - id: micro-behaviors/os/security/dpapi::crypt-unprotect-memory-reference
+      - id: micro-behaviors/os/security/dpapi::cryptprotectmemory-same-process-flag
+      - id: micro-behaviors/process/inject/runtime/call::nt-read-virtual-memory-reference
+    any:
+      - id: micro-behaviors/process/inject/apc::nt-queue-apc-thread-reference
+      - id: micro-behaviors/process/inject/apc::nt-queue-apc-thread-ex2-reference
+    near_lines: 100
+
+  - id: chromium-abe-browser-store-access
+    desc: Chromium ABE bypass paired with browser credential-store collection
+    crit: hostile
+    conf: 0.99
+    attack: T1555.003
+    all:
+      - id: chromium-abe-memory-apc-bypass
+      - id: chromium-browser-store-set
+    near_lines: 140
