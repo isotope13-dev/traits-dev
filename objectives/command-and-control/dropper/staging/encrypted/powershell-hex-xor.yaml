@@ -1,0 +1,55 @@
+defaults:
+  platforms: [windows]
+  for: [powershell]
+  attack: T1027,T1059.001,T1140
+  mbc: B0032,C0043
+
+traits:
+  # A leading block comment is used by the reported stage as a script marker;
+  # it is only meaningful when paired with the decoder and ScriptBlock legs.
+  - id: powershell-leading-block-marker
+    desc: PowerShell block-comment stage marker
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?is)^\s*<#[^#\r\n]{1,160}#>'
+
+  - id: powershell-string-length-xor-loop
+    desc: PowerShell length-bounded decode loop
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\bfor\s*\([^\)\r\n]{0,120}-lt\s+\$[A-Za-z_][A-Za-z0-9_]*\.length\b'
+
+composite_rules:
+  - id: powershell-hex-xor-decoder
+    desc: PowerShell hex-pair XOR decoder
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: micro-behaviors/crypto/symmetric/xor/loop::hex-pair-bxor-charcode
+      - id: micro-behaviors/data/decode/hex::powershell-convert-toint32-radix16
+      - id: powershell-string-length-xor-loop
+    near_bytes: 2048
+
+  - id: powershell-hex-xor-scriptblock-loader
+    desc: PowerShell hex-XOR decoder materializes a ScriptBlock
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: powershell-hex-xor-decoder
+      - id: powershell-leading-block-marker
+      - id: micro-behaviors/process/interpreter/eval::powershell-scriptblock-constructor-text
+    near_bytes: 4096
+
+  - id: powershell-hex-xor-download-execute
+    desc: PowerShell hex-XOR ScriptBlock stage downloads and launches an executable
+    crit: hostile
+    conf: 0.99
+    attack: T1027,T1059.001,T1105,T1204.002
+    all:
+      - id: powershell-hex-xor-scriptblock-loader
+      - id: objectives/command-and-control/dropper/delivery/download-execute::powershell-webclient-remote-exe-launch
+    near_bytes: 4096
