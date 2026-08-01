@@ -1,0 +1,163 @@
+# Browser delivery gated by mobile user-agent and target branch.
+# This is the web half of a smishing chain: non-mobile clients are denied,
+# Android receives an APK, and Apple clients receive a credential page.
+defaults:
+  platforms: [android, unix, windows]
+  for: [javascript, typescript, python, php, html]
+  attack: T1614,T1566.002,T1204.001
+  mbc: B0007.003
+
+traits:
+  - id: user-agent-header-read
+    desc: Reads an HTTP or browser user-agent
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?s)(navigator\.userAgent|HTTP_USER_AGENT).{0,120}(Android|iPhone|iPad)'
+
+  - id: user-agent-header-map-read
+    desc: Reads a mobile User-Agent HTTP header
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?s)headers\[[^]]{0,80}[Uu]ser-[Aa]gent'
+
+  - id: android-user-agent-branch
+    desc: Branches on an Android user-agent
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?s)Android.{0,120}(test\(|match\(|includes\(|indexOf\()'
+
+  - id: android-user-agent-membership
+    desc: Tests Android user-agent membership
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?s)Android.{0,120}\sin\s'
+
+  - id: apple-user-agent-branch
+    desc: Branches on an iPhone or iPad user-agent
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)(iPhone|iPad)[\s\S]{0,180}if\b'
+
+  - id: apk-artifact-response
+    desc: Response contains an Android APK artifact
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)(\.apk\b|application/vnd\.android\.package-archive)'
+
+  - id: apk-response-navigation
+    desc: Navigates to or returns an APK response
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?is)\.apk\b.{0,180}(location\.href|window\.location|res\.send|redirect\b)'
+
+  - id: apk-response-navigation-reverse
+    desc: Navigation returns an APK artifact
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?is)(location\.href|window\.location|res\.send|redirect\b).{0,180}\.apk\b'
+
+  - id: apple-credential-form
+    desc: Response contains an Apple credential form
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)(Apple\s*ID|appleId|name\s*=\s*["'']password|type\s*=\s*["'']password)'
+
+  - id: http-404-response
+    desc: Source returns an HTTP 404 response
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)(status\s*\(\s*404|statusCode\s*=\s*404|status\s*:\s*404|404\s*\)?\.end)'
+
+composite_rules:
+  - id: mobile-user-agent-routing
+    desc: Routes responses by Android or Apple user-agent
+    crit: suspicious
+    conf: 0.94
+    all:
+      - id: user-agent-header-read-any
+      - id: android-user-agent-branch-any
+      - id: apple-user-agent-branch
+
+  - id: user-agent-header-read-any
+    desc: Reads a mobile user-agent
+    crit: notable
+    conf: 0.94
+    any:
+      - id: user-agent-header-read
+      - id: user-agent-header-map-read
+
+  - id: android-user-agent-branch-any
+    desc: Branches on an Android user-agent
+    crit: notable
+    conf: 0.92
+    any:
+      - id: android-user-agent-branch
+      - id: android-user-agent-membership
+
+  - id: android-apk-redirect
+    desc: Android user-agent receives APK navigation
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: android-user-agent-branch-any
+      - id: apk-artifact-response
+    any:
+      - id: apk-response-navigation
+      - id: apk-response-navigation-reverse
+    near_lines: 20
+
+  - id: apple-credential-page-branch
+    desc: Apple user-agent receives credential form
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: apple-user-agent-branch
+      - id: apple-credential-form
+    near_lines: 20
+
+  - id: non-mobile-404-branch
+    desc: User-agent routing includes an HTTP 404 denial response
+    crit: suspicious
+    conf: 0.92
+    all:
+      - id: user-agent-header-read-any
+      - id: http-404-response
+    near_lines: 40
+
+  - id: mobile-target-routing
+    desc: Mobile user-agent split delivers APK or credential page
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: mobile-user-agent-routing
+      - id: android-apk-redirect
+      - id: apple-credential-page-branch
+
+  - id: mobile-geofenced-smishing-delivery
+    desc: Geofenced mobile smishing delivery with non-mobile denial
+    crit: hostile
+    conf: 0.995
+    mbc: B0007.003,B0030
+    all:
+      - id: mobile-target-routing
+      - id: non-mobile-404-branch
