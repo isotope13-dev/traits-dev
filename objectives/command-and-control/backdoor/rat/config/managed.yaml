@@ -1,0 +1,156 @@
+# Runtime-encrypted managed settings used to hide a remote-access implant's
+# endpoint, installation, mutex, and operator-controlled options. The field
+# names are deliberately grouped by function rather than by family so renamed
+# variants retain coverage.
+defaults:
+  platforms: [windows]
+  for: [pe, dll, csharp]
+  attack: T1027
+  mbc: B0032
+
+traits:
+  - id: managed-static-config-field-cluster
+    desc: Managed static configuration field cluster
+    crit: notable
+    conf: 0.9
+    for: [csharp]
+    if:
+      type: text
+      regex: '(?im)\bstatic\s+(readonly\s+)?\w+[\[\]]*\s+\w+\s*[=;]'
+    count_min: 4
+
+  - id: c2-config-name-marker
+    desc: C2 endpoint configuration name
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\b(c2|remote)(host|endpoint|server)\b'
+
+  - id: persistence-config-name-marker
+    desc: Persistence configuration name
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\b(INSTALL|STARTUP|RUNKEY|PERSIST)\b'
+
+  - id: mutex-config-name-marker
+    desc: Mutex configuration name
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\bmutex(name|key|id)\b'
+
+  - id: stealth-config-name-marker
+    desc: Stealth configuration name
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\b(HIDE|STEALTH|UNATTENDED)\b'
+
+  - id: logging-config-name-marker
+    desc: Logging configuration name
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\blogging(config|path|level|enabled)\b'
+
+  - id: key-config-name-marker
+    desc: Configuration key name
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\b(ENCRYPTIONKEY|BOTNET)\b'
+
+  - id: managed-config-decrypt-assignments
+    desc: Multiple settings decrypted into fields
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?is)\b\w+\s*=\s*\w+\s*\.\s*(Decrypt|Unprotect|Decode)\s*\('
+    count_min: 3
+
+  - id: managed-config-hmac-buffer
+    desc: 32-byte configuration authentication buffer
+    crit: component
+    conf: 0.94
+    for: [csharp]
+    if:
+      type: text
+      regex: '\b(new\s+byte\s*\[\s*32\s*\]|HmacSha256Length)\b'
+
+  - id: managed-config-iv-buffer
+    desc: 16-byte configuration IV buffer
+    crit: component
+    conf: 0.94
+    for: [csharp]
+    if:
+      type: text
+      regex: '\b(new\s+byte\s*\[\s*16\s*\]|IvLength)\b'
+
+composite_rules:
+  - id: managed-encrypted-settings
+    desc: Managed settings decrypted at runtime
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: managed-static-config-field-cluster
+      - id: managed-config-decrypt-assignments
+    any:
+      - id: micro-behaviors/crypto/symmetric/aes/library::dotnet-aes-csp
+      - id: micro-behaviors/crypto/kdf/password::rfc2898derivebytes
+      - id: micro-behaviors/crypto/symmetric/decrypt::transform-final-block
+    needs: 2
+
+  - id: managed-rat-config-name-cluster
+    desc: Remote-access configuration name cluster
+    crit: suspicious
+    conf: 0.95
+    any:
+      - id: c2-config-name-marker
+      - id: persistence-config-name-marker
+      - id: mutex-config-name-marker
+      - id: stealth-config-name-marker
+      - id: logging-config-name-marker
+      - id: key-config-name-marker
+    needs: 3
+
+  - id: managed-encrypted-rat-config
+    desc: Managed RAT configuration decrypted at runtime
+    crit: hostile
+    conf: 0.98
+    attack: T1027,T1071,T1219
+    all:
+      - id: managed-rat-config-name-cluster
+      - id: managed-config-decrypt-assignments
+      - id: micro-behaviors/crypto/symmetric/aes/library::dotnet-aes-csp
+      - id: micro-behaviors/crypto/kdf/password::rfc2898derivebytes
+
+  - id: managed-authenticated-c2-config
+    desc: Authenticated AES configuration blob for C2 settings
+    crit: hostile
+    conf: 0.98
+    attack: T1027,T1071,T1573
+    all:
+      - id: managed-rat-config-name-cluster
+      - id: managed-config-decrypt-assignments
+      - id: managed-config-hmac-layout
+      - id: micro-behaviors/crypto/symmetric/aes/library::dotnet-aes-csp
+      - id: micro-behaviors/crypto/hash/hmac::dotnet-hmacsha256
+
+  - id: managed-config-hmac-layout
+    desc: HMAC IV ciphertext configuration layout
+    crit: suspicious
+    conf: 0.95
+    for: [csharp]
+    all:
+      - id: managed-config-hmac-buffer
+      - id: managed-config-iv-buffer
+      - id: micro-behaviors/crypto/symmetric/decrypt::transform-final-block
+    near_lines: 80
