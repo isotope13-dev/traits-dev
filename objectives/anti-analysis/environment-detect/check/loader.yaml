@@ -1,0 +1,83 @@
+# Cross-platform loader checks that suppress execution in analysis and build
+# environments.  The individual atoms require a provider/hostname cluster;
+# the hostile composite additionally requires a Linux debugger-status probe.
+defaults:
+  platforms: [unix, windows]
+  for: [scripts, binaries]
+  attack: T1497.001
+  mbc: B0001
+
+traits:
+  - id: analysis-hostname-call
+    desc: Queries the host name
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)(gethostname\(|hostname\(|\$\([[:space:]]*hostname)'
+
+  - id: analysis-hostname-blocklist
+    desc: Lists analysis host names
+    crit: component
+    conf: 0.9
+    count_min: 2
+    if:
+      type: text
+      regex: '(?i)(sandbox|vmware|cuckoo)'
+
+  - id: analysis-termination-shell
+    desc: Returns or exits with status
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)(return|exit)[[:space:]]+\b(0|1)\b'
+
+  - id: analysis-termination-python
+    desc: Raises or exits in Python
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)(raise[[:space:]]+SystemExit|sys\.exit\()'
+
+  - id: multi-ci-provider-list
+    desc: CI provider environment blocklist
+    crit: suspicious
+    conf: 0.92
+    count_min: 3
+    if:
+      type: text
+      regex: '\b(GITHUB_ACTIONS|GITLAB_CI|JENKINS_URL|CIRCLECI|TRAVIS|BUILDKITE)\b'
+
+composite_rules:
+  - id: analysis-hostname-exit
+    desc: Exits after analysis hostname check
+    crit: suspicious
+    conf: 0.95
+    near_bytes: 4096
+    all:
+      - id: analysis-hostname-call
+      - id: analysis-hostname-blocklist
+      - id: analysis-termination
+
+  - id: analysis-termination
+    desc: Terminates after a check
+    crit: component
+    conf: 0.9
+    any:
+      - id: analysis-termination-shell
+      - id: analysis-termination-python
+
+  - id: multi-environment-anti-analysis-gate
+    desc: Loader suppresses under analysis conditions
+    crit: hostile
+    conf: 0.98
+    near_lines: 80
+    all:
+      - id: micro-behaviors/fs/proc/info/path::tracerpid-status-field
+      - id: analysis-hostname-exit
+      - id: multi-ci-provider-list
+    unless:
+      - id: metadata/package/testing/
+      - id: well-known/tool/detection/security-scanner/
