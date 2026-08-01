@@ -1,0 +1,150 @@
+# HiveServer2 UDF command execution. Hive UDFs are a legitimate extension
+# mechanism, but a UDF registered through a HiveServer2 client that invokes an
+# OS process is an explicit database-to-shell bridge. The second composite
+# covers the report's WebHDFS result channel without a campaign signature.
+defaults:
+  platforms: [unix, windows]
+  # Cover common script/source containers while excluding low-value language
+  # buckets that are unlikely to carry this Java/Hive client chain.
+  for: [scripts, source, json, -batch, -jcl, -ruby, -php, -perl, -lua, -applescript, -vbs, -c, -cpp, -swift, -objc, -groovy, -kotlin, -scala, -zig, -elixir]
+  attack: T1059,T1071.001,T1210
+  mbc: C0017
+  crit: notable
+  conf: 0.9
+
+traits:
+  - id: hive-server2-marker
+    desc: HiveServer2 service marker
+    if:
+      type: text
+      word: HiveServer2
+
+  - id: hive-port-10000-socket-call
+    desc: Socket call targets port 10000
+    if:
+      type: text
+      regex: '(?i)\bsocket\.\w+\([^\)\r\n]{0,120}\b10000\b'
+
+  - id: hive-sasl-plain-authentication
+    desc: Hive client uses SASL PLAIN authentication
+    if:
+      type: text
+      regex: '(?i)\bSASL[_ -]PLAIN\b'
+
+  - id: hive-open-session-request
+    desc: Hive client opens a Thrift session
+    if:
+      type: text
+      word: OpenSession
+
+  - id: hive-add-jar-command
+    desc: Hive query adds a Java jar
+    if:
+      type: text
+      regex: '(?i)\bADD\s+JAR\b'
+
+  - id: hive-create-function-command
+    desc: Hive query creates a function
+    if:
+      type: text
+      regex: '(?i)\bCREATE\s+(TEMPORARY\s+)?FUNCTION\b'
+
+  - id: hive-udf-class
+    desc: Java class implements a Hive UDF
+    if:
+      type: text
+      regex: '(?i)\b(extends UDF|org\.apache\.hadoop\.hive\.ql\.exec\.UDF)\b'
+
+  - id: hive-udf-runtime-exec
+    desc: Hive UDF invokes Java Runtime.exec
+    if:
+      type: text
+      regex: 'Runtime\.getRuntime\(\)\.exec\s*\('
+
+  - id: hive-udf-process-builder
+    desc: Hive UDF invokes Java ProcessBuilder
+    if:
+      type: text
+      regex: '(?i)\b(new )?ProcessBuilder\s*\('
+
+  - id: webhdfs-path
+    desc: WebHDFS API path
+    if:
+      type: text
+      substr: /webhdfs/v1
+
+  - id: webhdfs-port-50070
+    desc: WebHDFS service port 50070
+    if:
+      type: text
+      regex: ':50070\b'
+
+  - id: webhdfs-open-operation
+    desc: WebHDFS OPEN operation
+    if:
+      type: text
+      regex: '(?i)\bop=OPEN\b'
+
+composite_rules:
+  - id: hive-server2-sasl-client
+    desc: HiveServer2 client uses SASL access
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: hive-server2-marker
+      - id: hive-port-10000-socket-call
+      - id: hive-sasl-plain-authentication
+      - id: hive-open-session-request
+    near_bytes: 1600
+
+  - id: hive-udf-jar-registration
+    desc: Hive client registers a Java UDF jar
+    crit: notable
+    conf: 0.96
+    all:
+      - id: hive-add-jar-command
+      - id: hive-create-function-command
+    near_bytes: 800
+
+  - id: hive-udf-os-command-bridge
+    desc: Hive UDF implementation invokes an OS process
+    crit: suspicious
+    conf: 0.98
+    all:
+      - id: hive-udf-class
+    any:
+      - id: hive-udf-runtime-exec
+      - id: hive-udf-process-builder
+    near_bytes: 1600
+
+  - id: webhdfs-port-50070-result-channel
+    desc: WebHDFS result retrieval on port 50070
+    crit: notable
+    conf: 0.96
+    all:
+      - id: webhdfs-path
+      - id: webhdfs-port-50070
+    any:
+      - id: webhdfs-open-operation
+      - id: hive-udf-runtime-exec
+    near_bytes: 1200
+
+  - id: hive-server2-udf-command-execution
+    desc: HiveServer2 UDF reaches OS command execution
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: hive-server2-sasl-client
+      - id: hive-udf-jar-registration
+      - id: hive-udf-os-command-bridge
+    near_bytes: 5000
+
+  - id: hive-udf-webhdfs-command-channel
+    desc: Hive UDF returns command output through WebHDFS
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: hive-udf-jar-registration
+      - id: hive-udf-os-command-bridge
+      - id: webhdfs-port-50070-result-channel
+    near_bytes: 5000
