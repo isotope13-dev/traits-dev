@@ -2,8 +2,8 @@
 # Detects BPF-based backdoor techniques including BPFDoor-style packet filter backdoors
 # ATT&CK: T1205 (Traffic Signaling)
 defaults:
-  platforms: [linux]
-  for: [c, elf]
+  platforms: [unix]
+  for: [c, cpp, elf]
 
 traits:
   - id: icmp-module-obj
@@ -50,6 +50,25 @@ traits:
     if:
       type: text
       substr: "0x00005293"
+
+  - id: source-packet-command-compare
+    desc: Native source compares captured packet data
+    crit: notable
+    conf: 0.9
+    for: [c, cpp]
+    if:
+      type: text
+      regex: '\b[A-Za-z_]*(cmp|str)\s*\([^;\n]{0,120}\b(packet|payload|buf\w*)\b'
+
+  - id: source-packet-protocol-dispatch
+    desc: Native source dispatches on IP protocols
+    crit: notable
+    conf: 0.9
+    for: [c, cpp]
+    count_min: 2
+    if:
+      type: text
+      regex: '\bIPPROTO_(ICMP|UDP|TCP)\b'
 
 composite_rules:
   # BPF filter attachment helper
@@ -176,16 +195,61 @@ composite_rules:
     crit: hostile
     conf: 0.97
     attack: "T1205"
-    for: [c, cpp, elf]
+    for: [c, cpp]
     all:
-      - id: bpf-attachment
-      - id: raw-socket
+      - id: micro-behaviors/communications/socket/options::options-filter
       - id: micro-behaviors/communications/socket/receive::recvfrom-symbol
+      - id: micro-behaviors/communications/socket/raw::raw-socket-creation-regex
+      - id: micro-behaviors/process/create/shell/native::c-shell-execution-path
+      - id: source-packet-command-compare
+      - id: source-packet-protocol-dispatch
+
+  - id: binary-bpf-triggered-shell
+    desc: Native binary BPF packet shell
+    crit: hostile
+    conf: 0.97
+    attack: "T1205,T1059.004"
+    mbc: "B0030"
+    for: [elf]
+    all:
+      - id: micro-behaviors/communications/socket/options::options-set
+      - id: micro-behaviors/communications/socket/options::options-filter-x64
+      - id: micro-behaviors/communications/socket/receive::recvfrom-symbol
+      - id: micro-behaviors/process/create/shell/spawn::bin-sh-binary-text
+      - id: micro-behaviors/process/fd/dup::dup2
+      - id: micro-behaviors/process/create/execv::c-exec-variants
+
+  - id: packet-triggered-firewall-shell
+    desc: Packet-triggered firewall redirect shell
+    crit: hostile
+    conf: 0.98
+    attack: "T1205,T1059.004,T1562.004"
+    mbc: "B0030"
+    for: [c, cpp]
+    all:
+      - id: micro-behaviors/communications/socket/options::options-filter
+      - id: micro-behaviors/communications/socket/raw::raw-socket-creation-regex
+      - id: micro-behaviors/communications/socket/receive::recvfrom-symbol
+      - id: micro-behaviors/process/create/shell/native::c-shell-execution-path
+      - id: micro-behaviors/os/firewall/iptables::native-iptables-prerouting-redirect
+      - id: source-packet-protocol-dispatch
+
+  - id: packet-filter-daemon-masquerade
+    desc: Packet backdoor masquerades as system daemon
+    crit: hostile
+    conf: 0.98
+    attack: "T1205,T1036.004"
+    mbc: "B0030,F0004"
+    for: [c, cpp]
+    all:
+      - id: micro-behaviors/communications/socket/options::options-filter
+      - id: micro-behaviors/communications/socket/raw::raw-socket-creation-regex
+      - id: micro-behaviors/communications/socket/receive::recvfrom-symbol
+      - id: micro-behaviors/process/create/shell/native::c-shell-execution-path
     any:
-      - id: objectives/command-and-control/reverse-shell/dup::source-execve-fd-redirect-shell
-      - id: objectives/command-and-control/reverse-shell/dup::c-revshell-execve-shell-fd-redirect
-      - id: objectives/command-and-control/reverse-shell/dup::posix-fd-redirect-shell-source
-      - id: shell-activation
+      - id: objectives/evasion/masquerade/process/env::native-common-daemon-name
+      - id: objectives/evasion/masquerade/process/env::native-service-daemon-name
+      - id: objectives/evasion/masquerade/process/env::native-system-daemon-name
   - id: icmp-bpf-trigger-build
     desc: ICMP BPF trigger module build
     crit: suspicious
