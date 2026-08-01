@@ -1,0 +1,88 @@
+# Remote-management enrollment through a script or loader.  The signal is the
+# combination of a remote-agent installer, a transfer API, a process launch,
+# and an enrollment credential.  It deliberately avoids campaign domains and
+# vendor-specific tokens so the same tradecraft remains visible when the RMM
+# product, hosting, or scripting language changes.
+defaults:
+  platforms: [windows]
+  for: [batch, powershell, javascript, vbs, pe]
+  attack: T1105,T1219
+
+traits:
+  - id: remote-agent-installer-filename
+    desc: Remote-agent installer filename
+    crit: notable
+    conf: 0.92
+    if:
+      type: literal
+      kind: string
+      regex: '(?i)\b([A-Za-z0-9_-]{2,32}agent|([A-Za-z0-9_-]{2,32}\.)?clientsetup)\.(exe|msi)\b'
+
+  - id: msiexec-enrollment-credential
+    desc: MSI enrollment credential launch argument
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\bmsiexec(\.exe)?\b[^\r\n]{0,120}(API_KEY|auth[_-]?token)\s*='
+
+  - id: script-enrollment-credential
+    desc: Scripted enrollment credential launch argument
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\b(ShellExecute|Start-Process)\b[^\r\n]{0,120}(API_KEY|auth[_-]?token)\s*='
+
+composite_rules:
+  - id: remote-agent-enrollment-bootstrap
+    desc: Scripted remote-agent enrollment bootstrap
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: remote-agent-transfer
+      - id: remote-agent-launch
+    any:
+      - id: msiexec-enrollment-credential
+      - id: script-enrollment-credential
+    near_bytes: 4096
+
+  - id: identified-remote-agent-enrollment
+    desc: Remote-agent enrollment with installer artifact
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: remote-agent-enrollment-bootstrap
+      - id: remote-agent-installer-filename
+    near_bytes: 4096
+
+  - id: remote-agent-transfer
+    desc: Remote-agent transfer API use
+    crit: notable
+    conf: 0.9
+    any:
+      - id: micro-behaviors/communications/http/lib/invoke-webrequest::invoke-webrequest
+      - id: micro-behaviors/communications/http/client/xmlhttp::js-xmlhttp-open
+
+  - id: remote-agent-launch
+    desc: Remote-agent process launch
+    crit: notable
+    conf: 0.9
+    any:
+      - id: micro-behaviors/process/create/start-process::start-process-call
+      - id: micro-behaviors/process/create/shell/wsh::shellexecute-method-call
+
+  - id: rmm-post-access-security-recon
+    desc: RMM follow-on security posture reconnaissance
+    crit: hostile
+    conf: 0.97
+    attack: T1082,T1069.001,T1518.001
+    all:
+      - id: remote-agent-enrollment-bootstrap
+    any:
+      - id: objectives/discovery/host/security::ps-bitlocker-volume-query
+      - id: objectives/discovery/host/security::ps-firewall-profile-query
+      - id: objectives/discovery/account/enum::ps-local-administrators-group-query
+      - id: objectives/discovery/system/activity::ps-reboot-required-query
+    needs: 2
+    near_bytes: 8192
