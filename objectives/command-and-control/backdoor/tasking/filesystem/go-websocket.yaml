@@ -1,0 +1,105 @@
+# WebSocket file-tasking patterns derived from a Go agent that accepts a
+# structured file task, decodes its content, writes it to a requested path, and
+# executes it. Match the protocol shape and operation sequence so renamed
+# commands and changed endpoints remain detectable.
+defaults:
+  platforms: [windows, unix]
+  for: [go, elf, pe, macho]
+  attack: T1071.001,T1059,T1105
+  mbc: B0030
+
+traits:
+  - id: websocket-task-filename-field
+    desc: File task filename field
+    crit: component
+    conf: 0.88
+    if:
+      type: text
+      regex: '["'']filename["'']\s*:|json:"filename"'
+
+  - id: websocket-task-target-path-field
+    desc: File task target path field
+    crit: component
+    conf: 0.88
+    if:
+      type: text
+      regex: '["'']target_path["'']\s*:|json:"target_path"'
+
+  - id: websocket-task-content-field
+    desc: File task content field
+    crit: component
+    conf: 0.88
+    if:
+      type: text
+      regex: '["'']content["'']\s*:|json:"content"'
+
+  - id: websocket-task-encoding-field
+    desc: File task encoding field
+    crit: component
+    conf: 0.88
+    if:
+      type: text
+      regex: '["'']encoding["'']\s*:|json:"encoding"'
+
+  - id: websocket-task-data-field
+    desc: File task data field
+    crit: component
+    conf: 0.88
+    if:
+      type: text
+      regex: '["'']data["'']\s*:|json:"data"'
+
+  - id: websocket-file-task-command-roster
+    desc: WebSocket exposes file task commands
+    crit: suspicious
+    conf: 0.9
+    count_min: 2
+    if:
+      type: text
+      regex: '["''](browse|list|collect|start|upload|download|execute)_[A-Za-z0-9_]{1,40}["'']'
+
+composite_rules:
+  - id: websocket-file-task-schema
+    desc: File task path and encoded fields
+    crit: suspicious
+    conf: 0.91
+    needs: 4
+    any:
+      - id: websocket-task-filename-field
+      - id: websocket-task-target-path-field
+      - id: websocket-task-content-field
+      - id: websocket-task-encoding-field
+      - id: websocket-task-data-field
+
+  - id: go-decoded-file-task-execute
+    desc: Go decodes writes and executes a file payload
+    crit: suspicious
+    conf: 0.96
+    near_bytes: 200
+    all:
+      - id: micro-behaviors/data/decode/base64::std-encoding-decode-string
+      - id: micro-behaviors/fs/file/write/direct::go-os-writefile
+      - id: micro-behaviors/process/create/direct::exec-command
+
+  - id: go-websocket-upload-execute-tasking
+    desc: Go WebSocket accepts and executes uploaded content
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: micro-behaviors/communications/websocket/library::gorilla-websocket
+      - id: micro-behaviors/communications/websocket/send::go-websocket-json-write-call
+      - id: websocket-file-task-schema
+      - id: websocket-file-task-command-roster
+      - id: go-decoded-file-task-execute
+
+  - id: go-websocket-file-collection-control
+    desc: Go WebSocket controls file browsing and collection
+    crit: hostile
+    conf: 0.98
+    attack: T1071.001,T1083,T1119
+    all:
+      - id: micro-behaviors/communications/websocket/library::gorilla-websocket
+      - id: micro-behaviors/communications/websocket/send::go-websocket-json-write-call
+      - id: websocket-file-task-schema
+      - id: websocket-file-task-command-roster
+      - id: micro-behaviors/fs/read/directory::filepath-walk-dup
