@@ -1,0 +1,148 @@
+# Generalized native file-encryptor behavior inspired by cross-platform
+# lockers that use the same public-key-wrapped AEAD design on Windows and
+# Linux/ESXi. The rules intentionally avoid family names, ransom-note text,
+# fixed extensions, and published hashes.
+defaults:
+  platforms: [linux, windows]
+  for: [pe, elf, c, cpp, rust, go]
+  attack: T1486
+  mbc: B0040
+
+traits:
+  - id: encrypt-file-routine
+    desc: Native routine encrypting files
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: symbol
+      kind: function
+      regex: '(?i)encrypt.*file'
+
+  - id: encrypt-volume-routine
+    desc: Native routine encrypting volumes
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: symbol
+      kind: function
+      regex: '(?i)encrypt.*volume'
+
+  - id: crypt-file-routine
+    desc: Native crypt routine targeting files
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: symbol
+      kind: function
+      regex: '(?i)crypt.*file'
+
+  - id: encrypted-file-lock-sidecar
+    desc: Per-file lock sidecar construction
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)%s\.lock\b'
+
+  - id: encrypted-file-journal-sidecar
+    desc: Per-file journal sidecar construction
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)%s\.journal\b'
+
+  - id: percentage-encryption-setting
+    desc: Percentage-based encryption setting
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)percentage.{0,64}(encrypt|chunk)|encrypt.{0,64}percentage'
+
+  - id: random-chunk-selection
+    desc: Random chunk selection for encryption
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)random.{0,64}chunk|chunk.{0,64}random'
+
+composite_rules:
+  - id: xchacha-file-crypto
+    desc: XChaCha20 file-encryption primitive
+    crit: suspicious
+    conf: 0.95
+    any:
+      - id: micro-behaviors/crypto/symmetric/stream::xchacha20-poly1305-api
+      - id: micro-behaviors/crypto/symmetric/stream::xchacha20-poly1305-reference
+
+  - id: curve25519-key-wrapping
+    desc: Curve25519 file-key wrapping primitive
+    crit: suspicious
+    conf: 0.95
+    any:
+      - id: micro-behaviors/crypto/asymmetric/curve25519::curve25519-xsalsa20-poly1305-api
+      - id: micro-behaviors/crypto/asymmetric/curve25519::curve25519-xsalsa20-poly1305-reference
+
+  - id: native-file-encryption-routine
+    desc: Native file or volume encryption routine
+    crit: suspicious
+    conf: 0.95
+    any:
+      - id: encrypt-file-routine
+      - id: encrypt-volume-routine
+      - id: crypt-file-routine
+
+  - id: partial-random-chunk-encryption
+    desc: Percentage-based random chunk encryption
+    crit: suspicious
+    conf: 0.94
+    all:
+      - id: percentage-encryption-setting
+      - id: random-chunk-selection
+      - id: native-file-encryption-routine
+
+  - id: native-cross-platform-file-encryptor
+    desc: Native public-key-wrapped AEAD file encryptor
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: xchacha-file-crypto
+      - id: curve25519-key-wrapping
+      - id: native-file-encryption-routine
+    any:
+      - id: encrypted-file-lock-sidecar
+      - id: encrypted-file-journal-sidecar
+      - id: partial-random-chunk-encryption
+    needs: 2
+
+  - id: pre-encryption-process-service-disruption
+    desc: File encryptor kills processes and services
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: native-cross-platform-file-encryptor
+      - id: micro-behaviors/process/terminate/kill::terminate-process-source
+      - id: micro-behaviors/os/service/control::control-service
+
+  - id: operator-gated-debugger-resistant-locker
+    desc: Operator-gated file encryptor with watchdog
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: native-cross-platform-file-encryptor
+      - id: objectives/anti-analysis/environment-detect/check::hex-secret-digest-gate
+      - id: objectives/anti-analysis/debugger-detect/check::debugger-text-integrity-watchdog
+
+  - id: esxi-detached-volume-locker
+    desc: Detached ESXi volume encryptor
+    crit: hostile
+    conf: 0.99
+    platforms: [linux]
+    for: [c, cpp, elf]
+    all:
+      - id: native-cross-platform-file-encryptor
+      - id: micro-behaviors/os/sysinfo/vmware::vmfs-path
+      - id: micro-behaviors/os/sysinfo/vmware::vmware-welcome-path
+      - id: micro-behaviors/process/daemonize/detach::setsid-call
