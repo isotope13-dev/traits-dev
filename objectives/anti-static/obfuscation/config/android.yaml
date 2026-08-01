@@ -1,0 +1,133 @@
+# Android builders that conceal callback configuration while making each APK
+# look different. The matchers describe build operations, not product names.
+defaults:
+  platforms: [unix, windows]
+  for: [php]
+  attack: T1027,T1573.001
+
+traits:
+  - id: php-str-replace-call
+    desc: PHP str_replace call
+    crit: component
+    conf: 0.9
+    if:
+      type: symbol
+      kind: call
+      exact: str_replace
+
+  - id: php-preg-replace-call
+    desc: PHP preg_replace call
+    crit: component
+    conf: 0.9
+    if:
+      type: symbol
+      kind: call
+      exact: preg_replace
+
+  - id: php-package-identity-literal
+    desc: Android package identity string
+    crit: component
+    conf: 0.9
+    if:
+      type: literal
+      kind: string
+      regex: '^com\.[A-Za-z0-9_.-]{5,80}$'
+
+  - id: php-activity-identity-literal
+    desc: Android activity identity string
+    crit: component
+    conf: 0.9
+    if:
+      type: literal
+      kind: string
+      regex: '^[A-Za-z_][A-Za-z0-9_]{3,48}Activity$'
+
+  - id: android-manifest-output
+    desc: Android manifest archive entry
+    crit: component
+    conf: 0.9
+    if:
+      type: literal
+      kind: string
+      exact: AndroidManifest.xml
+
+  - id: php-android-asset-path
+    desc: Android archive asset path
+    crit: component
+    conf: 0.9
+    if:
+      type: literal
+      kind: string
+      regex: '^assets/[^/]{1,80}$'
+
+  - id: php-large-repeat-call
+    desc: PHP multi-megabyte repeated string
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: 'str_repeat\s*\(.{0,20},\s*(2[89]|3[0-5])[0-9]{5}\s*\)'
+
+composite_rules:
+  - id: php-identity-replacement-call
+    desc: PHP string identity replacement
+    crit: component
+    conf: 0.9
+    any:
+      - id: php-str-replace-call
+      - id: php-preg-replace-call
+
+  - id: php-android-random-identity-rewrite
+    desc: PHP randomizes Android identity before packaging
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: php-identity-replacement-call
+      - id: android-manifest-output
+      - id: micro-behaviors/os/random/crypto::php-random-bytes
+    any:
+      - id: php-package-identity-literal
+      - id: php-activity-identity-literal
+    near_bytes: 800
+
+  - id: php-android-asset-writer
+    desc: PHP writes Android manifest and assets
+    crit: notable
+    conf: 0.94
+    all:
+      - id: android-manifest-output
+      - id: micro-behaviors/data/archive/create/zip::php-ziparchive-add-from-string
+      - id: php-android-asset-path
+    near_bytes: 600
+
+  - id: php-large-repeated-base64-padding
+    desc: PHP encodes multi-megabyte repeated padding
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: php-large-repeat-call
+      - id: micro-behaviors/data/encode/base64::php-base64-encode
+    near_bytes: 180
+
+  - id: php-json-asset-padding-output
+    desc: PHP serializes JSON into an Android asset
+    crit: suspicious
+    conf: 0.94
+    all:
+      - id: micro-behaviors/data/serialize/json::php-json-encode
+      - id: php-android-asset-path
+      - id: micro-behaviors/data/archive/create/zip::php-ziparchive-add-from-string
+    near_bytes: 600
+
+  - id: android-apk-builder-c2-obfuscation
+    desc: Android builder hides C2 in padded JSON assets
+    crit: hostile
+    conf: 0.99
+    attack: T1027,T1027.013,T1573.001
+    all:
+      - id: php-android-random-identity-rewrite
+      - id: php-android-asset-writer
+      - id: php-large-repeated-base64-padding
+      - id: php-json-asset-padding-output
+      - id: micro-behaviors/crypto/symmetric/aes/openssl::php-openssl-aes-cbc
+      - id: micro-behaviors/crypto/kdf/algorithm::php-pbkdf2-key-derivation
