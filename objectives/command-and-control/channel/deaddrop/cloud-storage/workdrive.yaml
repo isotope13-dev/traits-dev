@@ -1,0 +1,175 @@
+# Legitimate cloud storage can be repurposed as a dead-drop command channel.
+# ZOHOMURK used WorkDrive folders as victim-specific inboxes and outboxes:
+# the implant polled files, consumed and removed command files, executed the
+# decoded task, and uploaded the response.  The rules below describe that
+# workflow rather than the family name, fixed folder IDs, or one OAuth token.
+defaults:
+  platforms: [unix, windows]
+  for: [scripts, binaries]
+  attack: T1102.002,T1059
+  mbc: B0030
+
+traits:
+  - id: workdrive-cloud-host
+    desc: WorkDrive service host reference
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)(workdrive\.zoho|zohoapis)\.[a-z.]+'
+
+  - id: workdrive-file-listing-call
+    desc: Lists cloud files through a request
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)\b(get|fetch)\s*\(\s*(WORKDRIVE_FILES|workdrive)'
+
+  - id: workdrive-command-file-name
+    desc: Cloud tasking file marker
+    crit: component
+    conf: 0.93
+    if:
+      type: text
+      regex: '(?i)\b(command|readata)\.(dat|bin)\b'
+
+  - id: workdrive-command-patch-call
+    desc: Patches a WorkDrive file endpoint
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: text
+      regex: '(?i)\b(patch|delete)\s*\(\s*["'']https?://.{0,120}\b(workdrive|zohoapis)\b'
+
+  - id: workdrive-command-patch-method
+    desc: Uses PATCH on a WorkDrive file
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: text
+      regex: '(?i)\bworkdrive\b.{0,80}\bmethod\s*[:=]\s*["'']PATCH["'']'
+
+  - id: workdrive-command-status-marker
+    desc: Marks a cloud task as removed
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\bstatus\s*["'':=]+\s*["'']?51\b'
+
+  - id: workdrive-response-data-marker
+    desc: Names data returned from cloud tasking
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\b(outbox|response\.dat|(result|output)\.dat)\b'
+
+  - id: workdrive-upload-call
+    desc: Posts data to cloud storage
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)\b(post|upload)\s*\(\s*workdrive[_a-z]*'
+
+  - id: workdrive-upload-request
+    desc: Sends a request to cloud upload storage
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\b(fetch|axios)\s*\(\s*[^,]{0,80}(workdrive|upload)'
+
+  - id: workdrive-opcode-marker
+    desc: Uses an opcode for cloud tasking
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\bopcode\b'
+
+  - id: workdrive-process-launch
+    desc: Launches a process for cloud tasking
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: text
+      regex: '(?i)\b(subprocess\.check_output|execFileSync)\s*\('
+
+composite_rules:
+  - id: workdrive-command-file-poll
+    desc: Polls cloud storage for task files
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: workdrive-file-listing-call
+      - id: workdrive-command-file-name
+    near_lines: 80
+
+  - id: workdrive-command-consume-cleanup
+    desc: Removes a cloud task file after use
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: workdrive-command-file-poll
+      - id: workdrive-command-status-marker
+    any:
+      - id: workdrive-command-patch-call
+      - id: workdrive-command-patch-method
+    near_lines: 80
+
+  - id: workdrive-response-upload
+    desc: Uploads task output to cloud storage
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: workdrive-response-data-marker
+    any:
+      - id: workdrive-upload-call
+      - id: workdrive-upload-request
+    near_lines: 80
+
+  - id: workdrive-opcode-shell-dispatch
+    desc: Dispatches a cloud opcode to a shell
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: workdrive-opcode-marker
+      - id: workdrive-process-launch
+    near_lines: 80
+
+  - id: workdrive-cloud-dead-drop
+    desc: Cloud storage dead-drop command and response channel
+    crit: hostile
+    conf: 0.98
+    attack: T1102.002,T1071.001
+    all:
+      - id: workdrive-cloud-host
+      - id: micro-behaviors/communications/http/url/cloud::zoho-oauth-token-url
+      - id: micro-behaviors/communications/http/oauth::refresh-token
+      - id: workdrive-command-file-poll
+      - id: workdrive-response-upload
+    near_lines: 180
+
+  - id: workdrive-command-execution
+    desc: Cloud dead-drop delivers shell tasking
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: workdrive-cloud-dead-drop
+      - id: workdrive-opcode-shell-dispatch
+    near_lines: 220
+
+  - id: workdrive-command-file-erasure
+    desc: Cloud task file is erased after retrieval
+    crit: hostile
+    conf: 0.98
+    attack: T1070.008,T1102.002
+    all:
+      - id: workdrive-cloud-host
+      - id: workdrive-command-file-name
+      - id: workdrive-command-file-poll
+      - id: workdrive-command-consume-cleanup
+    near_lines: 180
