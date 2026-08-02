@@ -32,8 +32,9 @@ traits:
     conf: 0.86
     for: [javascript, typescript, python, c, cpp, rust]
     if:
-      type: function
-      regex: '(?i)^(make|create|generate)[A-Za-z0-9_]*wallet$'
+      type: symbol
+      kind: function
+      regex: '(?i)^(make|create|generate)[A-Za-z0-9_]*(wallet|seed)[A-Za-z0-9_]*$'
 
   - id: wallet-weak-prng-source-api
     desc: Non-cryptographic PRNG source API
@@ -43,7 +44,17 @@ traits:
     if:
       type: symbol
       kind: call
-      regex: '(^|\.)(Math\.seedrandom|random\.(getrandbits|randbytes))$'
+      regex: '(^|\.)random\.(getrandbits|randbytes|bytes)$'
+
+  - id: wallet-seedrandom-source-api
+    desc: Seedrandom PRNG source API
+    crit: notable
+    conf: 0.88
+    for: [javascript, typescript]
+    if:
+      type: symbol
+      kind: call
+      regex: '(^|\.)Math\.seedrandom$'
 
   - id: wallet-embedded-prng-source
     desc: Embedded software PRNG source API
@@ -55,9 +66,8 @@ traits:
       kind: call
       regex: '(^|\.)(rng_get|pyb_rng_yasmarang|rand::thread_rng)$'
 
-  # These three atoms are neutral clock-seeding shapes.  They are intentionally
-  # kept separate from the wallet objective so ordinary test/PRNG seeds do not
-  # become wallet findings by token coincidence.
+  # These atoms retain an assignment shape so prose examples are less likely
+  # to become seed-source findings.
   - id: seed-date-now-source
     desc: Seed state initialized from Date.now
     crit: component
@@ -82,22 +92,6 @@ traits:
       type: text
       regex: '(?i)\b(seed|mnemonic|entropy)\w*\s*=\s*[^;\n]{0,50}\bclock\b'
 
-  - id: wallet-domain-marker
-    desc: Wallet or mnemonic domain marker
-    crit: component
-    conf: 0.9
-    if:
-      type: text
-      regex: '(?i)\b(wallet|mnemonic|keypair)\b'
-
-  - id: key-material-marker
-    desc: Private or secret key marker
-    crit: component
-    conf: 0.9
-    if:
-      type: text
-      regex: '(?i)\b(private[_ -]?key|secret[_ -]?key)\b'
-
   - id: seed-state-assignment
     desc: Seed-related state assignment
     crit: component
@@ -114,21 +108,13 @@ traits:
       type: text
       regex: '(?i)\b(wallet|keypair|private[_ -]?key|secret[_ -]?key)\w*\s*='
 
-  - id: device-state-token
-    desc: Explicit device identifier token
-    crit: component
-    conf: 0.86
-    if:
-      type: text
-      regex: '(?i)\b(device|hardware|machine)[_-](uid|id)\s*[:=(\[]'
-
   - id: wallet-seed-device-id-link
     desc: Seed assignment uses a device identifier
     crit: component
     conf: 0.92
     if:
       type: text
-      regex: '(?i)\b(seed|mnemonic|entropy)\w*=\s*[^;\n]{0,20}device[_-]u?id'
+      regex: '(?i)\b(seed|mnemonic|entropy)\w*\s*=\s*[^;\n]{0,50}device[_-]u?id\b'
 
   - id: wallet-seed-hardware-id-link
     desc: Seed assignment uses a hardware identifier
@@ -136,7 +122,7 @@ traits:
     conf: 0.92
     if:
       type: text
-      regex: '(?i)\b(seed|mnemonic|entropy)\w*=\s*[^;\n]{0,20}hardware[_-]u?id'
+      regex: '(?i)\b(seed|mnemonic|entropy)\w*\s*=\s*[^;\n]{0,50}hardware[_-]u?id\b'
 
   - id: wallet-seed-machine-id-link
     desc: Seed assignment uses a machine identifier
@@ -144,15 +130,37 @@ traits:
     conf: 0.92
     if:
       type: text
-      regex: '(?i)\b(seed|mnemonic|entropy)\w*=\s*[^;\n]{0,20}machine[_-]u?id'
+      regex: '(?i)\b(seed|mnemonic|entropy)\w*\s*=\s*[^;\n]{0,50}machine[_-]u?id\b'
 
-  - id: device-systick-token
-    desc: SysTick-derived state token
-    crit: component
-    conf: 0.86
+  - id: wallet-prng-uid-assignment
+    desc: PRNG state assigned from a device UID
+    crit: suspicious
+    conf: 0.95
+    for: [c]
     if:
-      type: text
-      word: SysTick
+      type: tree-sitter
+      kind: assignment
+      regex: '(?i)\b(state|seed|pad)\w*\s*=\s*[^;\n]{0,80}(UID|UNIQUE_ID)'
+
+  - id: wallet-prng-timer-assignment
+    desc: PRNG state assigned from timer state
+    crit: suspicious
+    conf: 0.95
+    for: [c]
+    if:
+      type: tree-sitter
+      kind: assignment
+      regex: '(?i)\b(state|seed|pad)\w*\s*=\s*[^;\n]{0,80}\b(SysTick|RTC)\b'
+
+  - id: wallet-prng-clock-assignment
+    desc: PRNG state assigned from a clock
+    crit: suspicious
+    conf: 0.95
+    for: [c]
+    if:
+      type: tree-sitter
+      kind: assignment
+      regex: '(?i)\b(state|seed|pad)\w*\s*=\s*[^;\n]{0,80}\b(timer|clock)\b'
 
   - id: wallet-rng-disabled-compile-config
     desc: Hardware RNG disabled by compile flag
@@ -192,22 +200,29 @@ traits:
       regex: '(^|\.)reseed$'
 
   - id: wallet-rng-32bit-reseed-input
-    desc: Reseed uses a 32-bit value
+    desc: Reseed function accepts a 32-bit value
     crit: notable
     conf: 0.9
+    for: [c]
     if:
-      type: text
-      regex: '(?i)\b(uint32_t|uint32|u32)\b.{0,50}\b(reseed|seed)\b'
+      type: tree-sitter
+      kind: function
+      regex: '(?is)\b(uint32_t|uint32|u32)\b[^{}]{0,80}\b(reseed|seed)\s*\('
+
+  - id: wallet-rng-32bit-unpack
+    desc: 32-bit word unpack for reseeding
+    crit: notable
+    conf: 0.9
+    for: [python]
+    if:
+      type: symbol
+      kind: call
+      regex: '(^|\.)unpack$'
+      arg:
+        kind: string
+        exact: I
 
 composite_rules:
-  - id: wallet-key-material-marker
-    desc: Wallet or key-material marker
-    crit: component
-    conf: 0.9
-    any:
-      - id: wallet-domain-marker
-      - id: key-material-marker
-
   - id: wallet-seed-clock-state-source
     desc: Seed state initialized from clock
     crit: suspicious
@@ -223,7 +238,7 @@ composite_rules:
     conf: 0.92
     all:
       - id: seed-date-now-source
-      - id: wallet-key-material-marker
+      - id: wallet-key-material-generation
     near_lines: 2
     near_bytes: 240
 
@@ -233,7 +248,7 @@ composite_rules:
     conf: 0.92
     all:
       - id: seed-time-call-source
-      - id: wallet-key-material-marker
+      - id: wallet-key-material-generation
     near_lines: 2
     near_bytes: 240
 
@@ -243,7 +258,7 @@ composite_rules:
     conf: 0.92
     all:
       - id: seed-clock-token-source
-      - id: wallet-key-material-marker
+      - id: wallet-key-material-generation
     near_lines: 2
     near_bytes: 240
 
@@ -255,19 +270,14 @@ composite_rules:
       - id: seed-state-assignment
       - id: wallet-key-state-assignment
 
-  - id: wallet-device-state-token
-    desc: Device-derived state marker
-    crit: component
-    conf: 0.86
-    any:
-      - id: device-state-token
-      - id: device-systick-token
-
   - id: wallet-seed-device-state-source
     desc: Seed state uses device state
     crit: suspicious
     conf: 0.92
     any:
+      - id: wallet-prng-uid-assignment
+      - id: wallet-prng-timer-assignment
+      - id: wallet-prng-clock-assignment
       - id: wallet-seed-device-id-link
       - id: wallet-seed-hardware-id-link
       - id: wallet-seed-machine-id-link
