@@ -1,0 +1,92 @@
+# Windows system-process name dropped into a user-writable path.
+# Windows service/OS processes (svchost, lsass, winlogon, csrss, spoolsv, ...)
+# only ever live under %SystemRoot%\System32. A file carrying one of those
+# names staged under a user profile folder (Documents, Downloads, AppData,
+# Public) or a Temp directory is name-and-location masquerade — the canonical
+# Windows analogue of the Linux service-name-in-/tmp trick in the sibling
+# systemd-service.yaml. Post-exploitation tooling uses it to hide a dropped
+# implant (e.g. a Cloudflare tunnel connector renamed to svchost.exe under the
+# victim's Documents folder) behind a trusted process name. The masquerade is
+# only asserted when a system-process name sits within a few bytes of a
+# user-writable path marker, so neither leg convicts on its own.
+# ATT&CK: T1036.005 (Match Legitimate Name or Location)
+defaults:
+  platforms: [windows]
+  for: [scripts]
+  attack: T1036.005
+  mbc: F0004
+
+traits:
+  # --- user-writable location markers (path fragments) ---
+  - id: path-user-shell-folder
+    desc: User shell-folder path marker
+    crit: component
+    conf: 0.6
+    if:
+      type: text
+      regex: '(?i)[\\/](Documents|Downloads|Desktop)[\\/]'
+
+  - id: path-appdata-writable
+    desc: AppData writable-path marker
+    crit: component
+    conf: 0.6
+    if:
+      type: text
+      regex: '(?i)([\\/]AppData[\\/]|%APPDATA%|\$env:APPDATA)'
+
+  - id: path-public-temp-writable
+    desc: Public or Temp writable-path marker
+    crit: component
+    conf: 0.6
+    if:
+      type: text
+      regex: '(?i)([\\/]Users[\\/]Public[\\/]|[\\/]Temp[\\/]|%TEMP%)'
+
+  # --- Windows system-process executable names ---
+  - id: sysproc-name-core
+    desc: System-process exe name, core set
+    crit: component
+    conf: 0.7
+    if:
+      type: text
+      regex: '(?i)\b(svchost|lsass|winlogon|csrss)\.exe\b'
+
+  - id: sysproc-name-service
+    desc: System-process exe name, service set
+    crit: component
+    conf: 0.7
+    if:
+      type: text
+      regex: '(?i)\b(services|spoolsv|wininit|conhost)\.exe\b'
+
+composite_rules:
+  - id: sysproc-name-any
+    desc: Windows system-process exe name
+    # A script referencing a protected System32 process by executable name
+    # (svchost.exe, lsass.exe, ...) is a notable identity fact on its own;
+    # paired with a writable path below it becomes masquerade.
+    crit: notable
+    conf: 0.7
+    any:
+      - id: sysproc-name-core
+      - id: sysproc-name-service
+
+  - id: writable-path-any
+    desc: User-writable Windows path marker
+    crit: component
+    conf: 0.6
+    any:
+      - id: path-user-shell-folder
+      - id: path-appdata-writable
+      - id: path-public-temp-writable
+
+  - id: windows-system-process-path-masquerade
+    desc: System-process exe in user-writable path
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: sysproc-name-any
+      - id: writable-path-any
+    near_bytes: 80
+    unless:
+      - id: metadata/package/testing/presence/harness/
