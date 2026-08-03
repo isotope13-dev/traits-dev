@@ -1,0 +1,137 @@
+# Theft and abuse of Chrome's cloud (Google Password Manager) passkey material.
+#
+# Chrome syncs WebAuthn passkeys through a Google cloud authenticator. The
+# private keys are protected by a 32-byte Security Domain Secret (SDS); the
+# device proves possession with a TPM-wrapped identity key. Unit 42's
+# Pass-ta-key / Silver Pass-ta-key / Golden Pass-ta-key research ("The Risks of
+# Passwordless Authentication", 2026-08) showed unprivileged malware can, from a
+# compromised endpoint:
+#
+#   * read the exported wrapped identity key out of `passkey_enclave_state` and
+#     re-import it into the same TPM to sign an assertion silently (Pass-ta-key);
+#   * delete the enclave state to force re-enrollment, then scrape the SDS out of
+#     Chrome's process memory while it briefly sits there in plaintext, and use
+#     it to decrypt every synced passkey (Golden Pass-ta-key).
+#
+# The class this file detects is that reuse: passkey enclave/record identifiers
+# co-located with a key-reuse, memory-scraping, or re-enroll-and-harvest mechanic.
+# The atoms are structural (Chrome field/file names and CNG API names), so the
+# composites generalize across languages and to Chromium-derived browsers.
+#
+# ATT&CK: T1555.003 (Credentials from Web Browsers), T1550 (Use Alternate
+# Authentication Material)   MBC: B0028
+defaults:
+  platforms: [windows, unix]
+  attack: T1555.003
+  mbc: B0028
+
+composite_rules:
+  # Pass-ta-key: rehydrate Chrome's wrapped device identity key and sign with it.
+  # Referencing the enclave key material AND performing a CNG import-then-sign is
+  # the silent assertion-forgery primitive. Browser bundles that legitimately
+  # implement this are excluded.
+  - id: passkey-identity-key-cng-reuse
+    desc: Reuses Chrome's wrapped passkey identity key via CNG
+    crit: hostile
+    conf: 0.95
+    attack: "T1555.003,T1550"
+    platforms: [windows]
+    all:
+      - id: micro-behaviors/crypto/library/provider::cng-import-then-sign
+    any:
+      - id: micro-behaviors/fs/path/sensitive/browser::chrome-passkey-enclave-state-file
+      - id: micro-behaviors/os/security/auth/passkey::wrapped-identity-private-key-field
+    unless:
+      - id: well-known/app/ungoogled-chromium/
+      - id: well-known/app/microsoft-edge/
+      - id: well-known/app/google-chrome-portable/
+      - id: well-known/tool/browser
+
+  # Exfiltration of synced passkey records lifted from the Sync Data LevelDB: the
+  # record enumeration plus a network send is passkey credential theft, not the
+  # browser's own sync.
+  - id: passkey-sync-record-theft
+    desc: Steals Chrome synced passkey records over the network
+    crit: hostile
+    conf: 0.93
+    all:
+      - id: micro-behaviors/os/security/auth/passkey::webauthn-credential-specifics-record
+      - id: micro-behaviors/fs/path/sensitive/browser::chrome-sync-data-leveldb-dir
+    any:
+      - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-data
+      - id: micro-behaviors/communications/http/request/client::http-client
+      - id: objectives/exfiltration/http
+    unless:
+      - id: well-known/app/ungoogled-chromium/
+      - id: well-known/app/microsoft-edge/
+      - id: well-known/app/google-chrome-portable/
+      - id: well-known/tool/browser
+
+  # Golden Pass-ta-key: pull the SDS out of Chrome's address space. The master-key
+  # marker plus a cross-process read that targets chrome.exe = memory scraping of
+  # the passkey master key.
+  - id: passkey-sds-memory-extraction
+    desc: Scrapes Chrome's passkey master key from process memory
+    crit: hostile
+    conf: 0.95
+    attack: "T1555.003,T1003.001"
+    platforms: [windows]
+    all:
+      - id: micro-behaviors/os/security/auth/passkey::security-domain-secret-field
+      - id: objectives/collection/stealer/browser::browser-process-chrome
+    any:
+      - id: micro-behaviors/mem/read/cross-process::read-process-memory-source
+      - id: micro-behaviors/process/inject/runtime/call::read-process-memory
+      - id: objectives/credential-access/financial/card-memory::toolhelp-process-vmread-scanner
+
+  # The re-enroll trigger: delete Chrome's enclave state so the browser recreates
+  # it and re-fetches the wrapped key material, paired with reading that material
+  # back (from process memory or the recreated file). Chrome never deletes its own
+  # enclave state and then scrapes it back.
+  - id: passkey-enclave-reenroll-harvest
+    desc: Forces passkey re-enrollment to reharvest key material
+    crit: hostile
+    conf: 0.93
+    attack: "T1555.003,T1485"
+    platforms: [windows]
+    all:
+      - id: micro-behaviors/fs/path/sensitive/browser::chrome-passkey-enclave-state-file
+      - id: micro-behaviors/fs/file/delete::deletefile-w
+    any:
+      - id: micro-behaviors/mem/read/cross-process::read-process-memory-source
+      - id: micro-behaviors/process/inject/runtime/call::read-process-memory
+      - id: micro-behaviors/os/security/auth/passkey::security-domain-secret-field
+
+  # Stage Zero reconnaissance: enumerate the victim's synced passkeys from the
+  # sync database. Reading the passkey store is sensitive regardless of intent, so
+  # suspicious rather than hostile.
+  - id: passkey-sync-db-recon
+    desc: Enumerates Chrome synced passkey records
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: micro-behaviors/os/security/auth/passkey::webauthn-credential-specifics-record
+      - id: micro-behaviors/fs/path/sensitive/browser::chrome-sync-data-leveldb-dir
+    unless:
+      - id: well-known/app/ungoogled-chromium/
+      - id: well-known/app/microsoft-edge/
+      - id: well-known/app/google-chrome-portable/
+      - id: well-known/tool/browser
+
+  # Harvesting the protected key fields out of those records — the wrapped secret,
+  # wrapped identity key, or SDS pulled from a passkey record context.
+  - id: passkey-credential-material-harvest
+    desc: Harvests protected fields from passkey records
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: micro-behaviors/os/security/auth/passkey::webauthn-credential-specifics-record
+    any:
+      - id: micro-behaviors/os/security/auth/passkey::wrapped-secret-field
+      - id: micro-behaviors/os/security/auth/passkey::wrapped-identity-private-key-field
+      - id: micro-behaviors/os/security/auth/passkey::security-domain-secret-field
+    unless:
+      - id: well-known/app/ungoogled-chromium/
+      - id: well-known/app/microsoft-edge/
+      - id: well-known/app/google-chrome-portable/
+      - id: well-known/tool/browser
