@@ -1,0 +1,101 @@
+# Where an AI-agent CLI sends its model traffic, and which vendor-side
+# bookkeeping it switches off.
+#
+# Both halves are documented, legitimately-used settings: teams front model
+# traffic with an internal gateway (LiteLLM, OpenRouter, a corporate egress
+# proxy) and privacy-conscious operators turn off telemetry, attribution
+# headers, and server-side response retention. So each atom stays a neutral
+# `notable` configuration capability.
+#
+# The abuse shape is the pair: an operator running someone else's key through
+# a relay host while disabling exactly the fields the vendor would use to
+# attribute the session. Unit 42's autonomous-exploitation campaign proxied
+# Claude Code and Codex through a third-party endpoint with the attribution
+# header and non-essential traffic turned off. The offensive interpretation is
+# assembled in objectives/execution/automation/agent/, which adds the
+# unattended exploit workflow.
+defaults:
+  platforms: [windows, unix]
+  for: [python, javascript, typescript, shell, powershell, go, rust, java, json]
+  attack: T1090
+  mbc: B0022
+  crit: notable
+  conf: 0.9
+
+traits:
+  # The vendor SDKs read a fixed set of base-URL variables. Assigning one an
+  # origin that is not the vendor's (and not a loopback dev server) redirects
+  # every model call through an intermediary that sees the prompts, the tool
+  # output, and the key. The `not:` list carries the vendor and loopback hosts,
+  # which the regex captures into the match.
+  - id: anthropic-base-url-off-vendor
+    desc: Anthropic API base URL set off-vendor
+    if:
+      type: text
+      regex: '\bANTHROPIC_(BASE_URL|API_URL)\b["'']?\s*[:=,]\s*["'']?https?://[\w.:-]{3,64}'
+    not:
+      - substr: api.anthropic.com
+      - substr: localhost
+      - substr: 127.0.0.1
+
+  - id: openai-base-url-off-vendor
+    desc: OpenAI API base URL set off-vendor
+    if:
+      type: text
+      regex: '\bOPENAI_(BASE_URL|API_BASE)\b["'']?\s*[:=,]\s*["'']?https?://[\w.:-]{3,64}'
+    not:
+      - substr: api.openai.com
+      - substr: localhost
+      - substr: 127.0.0.1
+
+  - id: deepseek-base-url-off-vendor
+    desc: DeepSeek API base URL set off-vendor
+    if:
+      type: text
+      regex: '\bDEEPSEEK_BASE_URL\b["'']?\s*[:=,]\s*["'']?https?://[\w.:-]{3,64}'
+    not:
+      - substr: api.deepseek.com
+      - substr: localhost
+      - substr: 127.0.0.1
+
+  # Claude Code spells these CLAUDE_CODE_ATTRIBUTION_HEADER and
+  # CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC. The vendor prefix is left open so
+  # the same convention in other agent CLIs matches without naming a product.
+  - id: ai-agent-attribution-header-disabled
+    desc: Agent attribution header disabled
+    conf: 0.94
+    if:
+      type: text
+      regex: '\b\w+_ATTRIBUTION_HEADER\b["'']?\s*[:=,]\s*["'']?(0|false)\b'
+
+  - id: ai-agent-nonessential-traffic-disabled
+    desc: Agent non-essential traffic disabled
+    conf: 0.94
+    if:
+      type: text
+      regex: '\b\w+_DISABLE_NONESSENTIAL_TRAFFIC\b["'']?\s*[:=,]\s*["'']?(1|true)\b'
+
+composite_rules:
+  - id: llm-api-base-url-third-party-host
+    desc: LLM API base URL points at a non-vendor host
+    crit: notable
+    conf: 0.9
+    any:
+      - id: anthropic-base-url-off-vendor
+      - id: openai-base-url-off-vendor
+      - id: deepseek-base-url-off-vendor
+
+  # Redirect plus suppression. Either alone has an ordinary explanation; the
+  # combination means the operator wants the traffic to reach a host of their
+  # choosing and wants the vendor unable to tie the session back to them.
+  - id: llm-relay-with-vendor-telemetry-disabled
+    desc: Model traffic relayed off-vendor with attribution disabled
+    crit: notable
+    conf: 0.93
+    near_lines: 24
+    all:
+      - id: llm-api-base-url-third-party-host
+    any:
+      - id: ai-agent-attribution-header-disabled
+      - id: ai-agent-nonessential-traffic-disabled
+      - id: ai-agent-response-storage-disabled
