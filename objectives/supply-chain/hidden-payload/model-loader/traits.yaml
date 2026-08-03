@@ -1,0 +1,122 @@
+# Repository-controlled model loaders can turn configuration into code-loading
+# instructions. These rules describe the concrete Diffusers-shaped artifacts
+# cited in the advisory: model_index.json points at Python modules, and a
+# default-derived None.py module subclasses a pipeline and executes at import.
+# The metadata atoms remain suspicious because custom model code can be
+# legitimate; hostile verdicts require the exact sentinel or an import-time
+# process-launch combination.
+defaults:
+  platforms: [windows, unix]
+  for: [python, json]
+  attack: T1195.002
+
+traits:
+  - id: diffusion-pipeline-subclass
+    desc: Python module subclasses a diffusion pipeline
+    crit: notable
+    conf: 0.96
+    for: [python]
+    if:
+      type: text
+      regex: '(?m)^\s*class\s+[A-Za-z_]\w*\s*\(.{0,120}\bDiffusionPipeline\b.{0,120}\)\s*:'
+
+  - id: sentinel-python-module-name
+    desc: Python module uses the None.py loader sentinel
+    crit: suspicious
+    conf: 0.98
+    for: [python]
+    if:
+      type: basename
+      exact: None.py
+
+  - id: model-index-pipeline-class
+    desc: Model index names a pipeline class
+    crit: notable
+    conf: 0.94
+    for: [json]
+    if:
+      type: value
+      path: _class_name
+      regex: '(?i)^[A-Za-z_]\w*Pipeline$'
+
+  - id: model-index-custom-pipeline-python
+    desc: Model index selects a Python custom pipeline
+    crit: suspicious
+    conf: 0.96
+    for: [json]
+    if:
+      type: value
+      path: custom_pipeline
+      regex: '(?i)\.py$'
+
+  - id: model-index-custom-component-python
+    desc: Model index references a Python component module
+    crit: suspicious
+    conf: 0.95
+    for: [json]
+    if:
+      type: value
+      path: 'unet[*]'
+      regex: '(?i)\.py$'
+
+  - id: model-index-sentinel-python
+    desc: Model index names the None.py module
+    crit: suspicious
+    conf: 0.99
+    for: [json]
+    if:
+      type: value
+      path: custom_pipeline
+      exact: None.py
+
+composite_rules:
+  # This is the concrete implicit-default path: the unresolved custom
+  # pipeline becomes None.py and a pipeline subclass is loaded from the repo.
+  - id: implicit-model-python-module
+    desc: Model pipeline uses implicit None.py code module
+    crit: hostile
+    conf: 0.99
+    for: [python]
+    all:
+      - id: sentinel-python-module-name
+      - id: diffusion-pipeline-subclass
+
+  # The module-scope process call makes the code-loading capability an actual
+  # import-time execution path, rather than merely a custom pipeline class.
+  - id: model-module-import-time-process
+    desc: Diffusion pipeline module launches a process on import
+    crit: hostile
+    conf: 0.99
+    for: [python]
+    all:
+      - id: diffusion-pipeline-subclass
+      - id: micro-behaviors/data/control-flow/module-exec::module-level-side-effect-call
+      - id: micro-behaviors/process/create/subprocess::run-ast
+    near_lines: 80
+
+  - id: model-index-custom-pipeline-loader
+    desc: Model index selects repository Python pipeline code
+    crit: suspicious
+    conf: 0.97
+    for: [json]
+    all:
+      - id: model-index-pipeline-class
+      - id: model-index-custom-pipeline-python
+
+  - id: model-index-custom-component-loader
+    desc: Model index selects repository Python component code
+    crit: suspicious
+    conf: 0.96
+    for: [json]
+    all:
+      - id: model-index-pipeline-class
+      - id: model-index-custom-component-python
+
+  - id: model-index-implicit-python-loader
+    desc: Model index combines pipeline metadata with None.py
+    crit: hostile
+    conf: 0.99
+    for: [json]
+    all:
+      - id: model-index-pipeline-class
+      - id: model-index-sentinel-python
