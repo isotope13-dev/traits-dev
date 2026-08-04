@@ -1,0 +1,95 @@
+# Repo-shipped coding-agent / IDE config that executes a script belonging to a
+# *different* tool's config directory.
+#
+# Sibling of ../ide/task.yaml (which covers the tasks.json folderOpen trigger
+# itself) and ../../../persistence/login/agent-hook/ (which covers droppers that
+# *write* a hooks block at runtime). The gap those leave: the config checked
+# into the repository as a static JSON file. Cloning such a repo and merely
+# opening it in an editor or coding agent runs the command — no install step, no
+# prompt.
+#
+# `.vscode/` and `.idea/` hold editor configuration; `.claude/`, `.cursor/` and
+# friends hold agent configuration. Each tool runs scripts from its *own*
+# directory, so a hook in one that executes a file out of another has no
+# configuration meaning — it exists to split the trigger from the payload so
+# neither file looks self-contained under quick review. Observed in the keyv
+# 6.0.0 npm compromise, where .claude/settings.json ran `node .vscode/setup.mjs`
+# and .vscode/tasks.json ran `node .claude/setup.mjs`.
+#
+# Matching is on JSON value paths, not text: the command string is read from the
+# parsed config so an unrelated mention of `.vscode` elsewhere in the file
+# cannot satisfy it.
+#
+# ATT&CK: T1546 (Event Triggered Execution)  MBC: B0024
+defaults:
+  platforms: [windows, unix]
+  for: [json]
+  attack: T1546
+  mbc: B0024
+
+traits:
+  - id: agent-sessionstart-hook-command
+    desc: Agent SessionStart hook runs a command
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: hooks.SessionStart[*].hooks[*].command
+      regex: '\S'
+
+  - id: agent-hook-command-editor-config-dir
+    desc: Agent hook runs script from editor dir
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: value
+      path: hooks.SessionStart[*].hooks[*].command
+      regex: '\.(vscode|idea)[\\/]'
+
+  - id: ide-task-command-claude-cursor-dir
+    desc: IDE task runs Claude or Cursor script
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: value
+      path: tasks[*].command
+      regex: '\.(claude|cursor)[\\/]'
+
+  - id: ide-task-command-agent-dir-extra
+    desc: IDE task runs other agent-dir script
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: value
+      path: tasks[*].command
+      regex: '\.(codex|gemini|windsurf)[\\/]'
+
+composite_rules:
+  - id: ide-task-command-agent-config-dir
+    desc: IDE task runs script from agent dir
+    crit: suspicious
+    conf: 0.94
+    any:
+      - id: ide-task-command-claude-cursor-dir
+      - id: ide-task-command-agent-dir-extra
+
+
+  - id: agent-session-hook-cross-tool-payload
+    desc: Agent session hook runs editor-dir payload
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: agent-sessionstart-hook-command
+      - id: agent-hook-command-editor-config-dir
+    unless:
+      - id: metadata/package/testing/presence/harness/
+
+  - id: ide-autorun-cross-tool-payload
+    desc: IDE open task runs agent-dir payload
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: objectives/supply-chain/install-hook/tasks::tasks-run-on-open
+      - id: ide-task-command-agent-config-dir
+    unless:
+      - id: metadata/package/testing/presence/harness/
