@@ -1,0 +1,50 @@
+# Bring-your-own-JavaScript-runtime droppers.
+#
+# The package is installed by npm, so `node` is already present and is what any
+# monitoring in the ecosystem — install-time hooks, npm's own sandboxing, EDR
+# rules keyed to the node process — expects to see execute the payload. These
+# droppers instead pull a second, unrelated JavaScript engine (Bun or Deno) off
+# its vendor's GitHub release page, unpack it into a directory whose name the
+# OS chose, hand it a script that shipped inside the package, and then delete
+# the engine again. The payload therefore never runs under `node`, and by the
+# time the install finishes the interpreter that ran it is gone.
+#
+# The legs are deliberately structural. Earlier rules for this family spelled
+# out one campaign's local variable names (`binPath`, `entryScriptPath`, a
+# `bun-dl-` mkdtemp prefix), which a rename defeats; the atoms referenced here
+# describe the shape instead — a vendor runtime archive, an unpredictable
+# staging directory, an exec of a program path resolved at run time, and the
+# recursive removal that follows.
+#
+# Installers that legitimately fetch a runtime keep it: the pairing that has no
+# benign reading is fetch, run once, erase.
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript]
+  attack: T1105
+  mbc: B0024
+
+composite_rules:
+  - id: js-runtime-temp-staging-exec
+    desc: Temp-staged JavaScript runtime executed
+    crit: suspicious
+    conf: 0.94
+    all:
+      - id: micro-behaviors/communications/http/download/github::js-runtime-release-archive-url
+      - id: micro-behaviors/fs/temp/directory::node-mkdtemp-os-tmpdir
+      - id: micro-behaviors/process/create/shell/bridge::js-execfilesync-resolved-program
+    unless:
+      - id: metadata/package/testing/presence/harness::test-fixture-directory
+      - id: well-known/app/cloudflare/
+
+  - id: selfremoving-js-runtime-dropper
+    desc: Downloaded JS runtime deleted after use
+    crit: hostile
+    conf: 0.96
+    attack: T1070.004
+    all:
+      - id: js-runtime-temp-staging-exec
+      - id: micro-behaviors/fs/directory/delete::fs-rm-recursive
+    unless:
+      - id: metadata/package/testing/presence/harness::test-fixture-directory
+      - id: well-known/app/cloudflare/
