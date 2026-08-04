@@ -1,0 +1,143 @@
+# The PAM *client* API surface: pam_start / pam_authenticate / pam_chauthtok,
+# the pam_conv callback and the PAM_PROMPT_ECHO_* constants, in both their C
+# source and compiled-symbol spellings.
+#
+# These lived in objectives/credential-access/pam/intercept/, which asserts
+# T1556.003 — a module that hooks the PAM stack to capture credentials. What
+# the matchers actually find is a program *consuming* PAM to authenticate a
+# user, which is what sshd, login, sudo, gdm, sddm, cockpit, xrdp and KRDP all
+# do by design; KRDP (KDE's RDP server, Fedora src.rpm) collected four
+# credential-access findings for doing exactly the job it ships to do. The
+# `unless:` list there was a basename allowlist whose own comment concedes it
+# "can't enumerate every PAM consumer" — the tell that the tier, not the guard,
+# was wrong. No `attack:` here either: that technique code describes modifying
+# the authentication process, not calling it.
+#
+# Interception intent is the *other* legs the objectives composites add:
+# authenticating specifically as root, copying the conversation response
+# buffer, writing a credential log path, or being a pam_sm_* module rather than
+# a caller. Those stayed behind in intercept/ and reference these
+# cross-directory.
+#
+# The suppression list on the sequence composite is carried over unchanged
+# rather than dropped: the hostile parents in intercept/ consume it, and
+# loosening what they see is a separate decision from fixing where this lives.
+defaults:
+  platforms: [unix]
+  for: [elf]
+
+traits:
+- id: pam-client-tool-basename
+  desc: PAM client tool basename
+  crit: baseline
+  conf: 0.94
+  if:
+    type: basename
+    regex: '^(vlock|pppd|doas|rlogind|in\.rlogind|ftpd|in\.ftpd)$'
+- id: pam-login-tool-basename
+  desc: PAM login tool basename
+  crit: baseline
+  conf: 0.94
+  if:
+    type: basename
+    regex: '^([rs]shd|login|su(do)?|runuser|passwd|gdm|sddm|lightdm)$'
+- id: pam-authenticate-call
+  desc: pam_authenticate call in C source
+  crit: notable
+  conf: 0.85
+  for: [c, cpp]
+  if:
+    type: symbol
+    kind: call
+    exact: pam_authenticate
+- id: pam-start-call
+  desc: pam_start call in C source
+  crit: notable
+  conf: 0.85
+  for: [c, cpp]
+  if:
+    type: symbol
+    kind: call
+    exact: pam_start
+- id: pam-chauthtok-call
+  desc: pam_chauthtok call in C source
+  crit: notable
+  conf: 0.85
+  for: [c, cpp]
+  if:
+    type: symbol
+    kind: call
+    exact: pam_chauthtok
+- id: pam-conversation-callback-name
+  desc: PAM conversation callback name
+  crit: notable
+  conf: 0.82
+  for: [c, cpp]
+  if:
+    type: text
+    word: pam_conv
+- id: pam-prompt-echo-source
+  desc: PAM echo prompt handling
+  crit: notable
+  conf: 0.86
+  for: [c, cpp]
+  if:
+    type: text
+    regex: 'PAM_PROMPT_ECHO_(OFF|ON)'
+  unless:
+    - id: well-known/app/openvpn::openvpn-source-tree
+    - id: well-known/app/postgresql::postgresql-source-tree
+
+composite_rules:
+- id: pam-start-api
+  desc: PAM start API usage
+  crit: notable
+  conf: 0.86
+  for: [elf, macho, c, cpp]
+  any:
+  - id: pam-start-call
+  - id: micro-behaviors/os/pam/auth::pam-start-symbol
+- id: pam-authenticate-api
+  desc: PAM authenticate API usage
+  crit: notable
+  conf: 0.88
+  for: [elf, macho, c, cpp]
+  any:
+  - id: pam-authenticate-call
+  - id: micro-behaviors/os/pam/auth::pam-authenticate
+- id: pam-chauthtok-api
+  desc: PAM chauthtok API usage
+  crit: notable
+  conf: 0.86
+  for: [elf, macho, c, cpp]
+  any:
+  - id: pam-chauthtok-call
+  - id: micro-behaviors/os/pam/auth::pam-chauthtok
+- id: pam-client-api-sequence
+  desc: PAM client authentication API sequence
+  crit: notable
+  conf: 0.92
+  for: [elf, macho, c, cpp]
+  all:
+  - id: pam-start-api
+  - id: pam-authenticate-api
+  any:
+  - id: pam-chauthtok-api
+  - id: pam-conversation-callback-name
+  - id: micro-behaviors/os/pam/auth::pam-acct-mgmt
+  unless:
+  - id: well-known/app/postgresql::postgresql-source-tree
+  # Standard system PAM client utilities (interactive login/account tools)
+  # legitimately run the full pam_start/pam_authenticate/pam_chauthtok
+  # sequence. Credential-harvester detection escalates through the hostile
+  # parents (root-auth-target, response-copy, credential-log-path), which a
+  # malicious implant satisfies regardless of an impersonated benign name.
+  - id: pam-client-tool-basename
+  - id: pam-login-tool-basename
+  - id: well-known/tool/sysadmin/shadow-utils::debian-shadow-chsh-context
+  # The basename lists can't enumerate every PAM consumer (login, su, runuser,
+  # sshd, postgres, ...); downgrade the bare sequence on documented/licensed
+  # userland tools. The hostile parents still fire on real harvesters.
+  downgrade:
+    any:
+    - id: micro-behaviors/ui/help/
