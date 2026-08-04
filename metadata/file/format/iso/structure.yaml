@@ -1,0 +1,226 @@
+defaults:
+  platforms: [unix, windows]
+  for: [iso]
+
+# Optical-disc image structure, read from the `iso.*` facts filefacts
+# publishes after walking the volume descriptors, both directory namespaces,
+# the El Torito catalog, and the UDF descriptor set.
+#
+# What an ISO is *for* is usually settled by its members, which cleave now
+# extracts and analyses individually. What these traits describe is the
+# container: how it was built, whether its two namespaces agree, and whether
+# it holds bytes outside the file tree entirely. Those are the questions a
+# member-by-member analysis cannot answer, because the evidence is in the
+# space between the members.
+traits:
+  - id: udf-volume
+    desc: Image carries a UDF filesystem
+    crit: baseline
+    conf: 1.0
+    if:
+      type: value
+      path: iso.format
+      regex: 'udf'
+
+  - id: joliet-namespace
+    desc: ISO image carries a Joliet namespace
+    crit: baseline
+    conf: 1.0
+    if:
+      type: value
+      path: iso.extensions
+      exact: joliet
+
+  - id: rock-ridge-namespace
+    desc: ISO image carries Rock Ridge extensions
+    crit: baseline
+    conf: 1.0
+    if:
+      type: value
+      path: iso.extensions
+      exact: rock-ridge
+
+  # Every mastering tool stamps its name into one of the PVD identifier
+  # fields. An image with all five blank was emitted by a library or a script
+  # rather than burned — which is how a delivery wrapper is built, and also
+  # how a build pipeline generates install media, so this stays a component
+  # fact for composites to draw on rather than a finding on its own.
+  - id: no-mastering-tool-identity
+    desc: ISO identifier fields carry no mastering tool
+    crit: component
+    conf: 0.95
+    if:
+      type: metrics
+      field: iso.blank_identifier_fields
+      min: 5
+
+  - id: single-payload-image
+    desc: One member fills nearly the whole image
+    crit: component
+    conf: 0.9
+    if:
+      type: metrics
+      field: iso.largest_file_ratio
+      min: 0.9
+
+  - id: sparse-file-tree
+    desc: ISO image holds at most two members
+    crit: component
+    conf: 1.0
+    if:
+      type: metrics
+      field: iso.file_count
+      max: 2
+
+  # Places an image can hold bytes its file listing does not show.
+  - id: trailing-data-after-volume
+    desc: Bytes appended past the declared ISO volume
+    crit: notable
+    conf: 0.95
+    if:
+      type: value
+      path: iso.anomalies
+      exact: trailing-data
+
+  - id: populated-unallocated-space
+    desc: Unclaimed ISO sectors hold data
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: iso.anomalies
+      exact: populated-unallocated-space
+
+  - id: nonzero-system-area
+    desc: ISO reserved system area holds non-boot data
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: iso.anomalies
+      exact: nonzero-system-area
+
+  # Ways two readers can disagree about what the image contains. ISO 9660 and
+  # Joliet are separate directory trees over the same sectors, and nothing
+  # requires them to describe the same set of files.
+  - id: namespace-only-member
+    desc: ISO member visible in only one namespace
+    crit: notable
+    conf: 0.95
+    if:
+      type: value
+      path: iso.anomalies
+      exact: tree-only-file
+
+  - id: namespace-name-divergence
+    desc: ISO member named differently in each namespace
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: iso.anomalies
+      exact: namespace-name-divergence
+
+  - id: overlapping-member-extents
+    desc: Two ISO members claim overlapping sectors
+    crit: notable
+    conf: 0.95
+    if:
+      type: value
+      path: iso.anomalies
+      exact: overlapping-extents
+
+  - id: extent-beyond-volume
+    desc: ISO extent runs past declared volume
+    crit: notable
+    conf: 0.95
+    if:
+      type: value
+      path: iso.anomalies
+      exact: extent-beyond-volume
+
+  - id: system-area-mbr
+    desc: ISO system area carries an MBR
+    crit: baseline
+    conf: 1.0
+    if:
+      type: value
+      path: iso.system_area.kind
+      exact: mbr
+
+  - id: system-area-gpt
+    desc: ISO system area carries a GPT
+    crit: baseline
+    conf: 1.0
+    if:
+      type: value
+      path: iso.system_area.kind
+      exact: gpt
+
+  - id: hidden-member
+    desc: ISO member carries the hidden flag
+    crit: notable
+    conf: 0.9
+    if:
+      type: metrics
+      field: iso.hidden_file_count
+      min: 1
+
+  - id: symlink-escapes-image
+    desc: ISO symlink points outside the image
+    crit: notable
+    conf: 0.95
+    if:
+      type: value
+      path: iso.anomalies
+      exact: symlink-escapes-image
+
+  - id: setuid-member
+    desc: ISO member carries setuid mode
+    crit: notable
+    conf: 0.9
+    if:
+      type: metrics
+      field: iso.setuid_file_count
+      min: 1
+
+  # El Torito. Bootable media is ordinary; the boot image itself is surfaced
+  # as a member and analysed, so these only record what the catalog declares.
+  - id: el-torito-bootable
+    desc: ISO declares El Torito boot entry
+    crit: baseline
+    conf: 1.0
+    if:
+      type: metrics
+      field: iso.boot.bootable_entry_count
+      min: 1
+
+  - id: el-torito-efi-boot
+    desc: ISO image declares an EFI boot entry
+    crit: baseline
+    conf: 1.0
+    if:
+      type: value
+      path: iso.boot.platforms
+      exact: efi
+
+composite_rules:
+  # An image that is also bootable as a raw disk ("isohybrid"): the reserved
+  # system area holds a partition table pointing back into the same sectors.
+  - id: hybrid-boot-record
+    desc: ISO system area carries a partition table
+    crit: baseline
+    conf: 1.0
+    any:
+      - id: system-area-mbr
+      - id: system-area-gpt
+
+  # Content outside the file tree entirely. Nothing writes there by accident.
+  - id: payload-outside-file-tree
+    desc: ISO holds content outside its file tree
+    crit: notable
+    conf: 0.92
+    any:
+      - id: trailing-data-after-volume
+      - id: populated-unallocated-space
+      - id: nonzero-system-area

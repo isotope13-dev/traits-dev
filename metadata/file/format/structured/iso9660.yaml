@@ -1,34 +1,33 @@
 defaults:
   platforms: [unix, windows]
-  for: [archive, data]
+  for: [iso, data]
 
-# cleave does not descend ISO-9660 images as archive members.  These neutral
-# markers preserve the container context so objective rules can still describe
-# dangerous files embedded in an otherwise opaque image.
+# cleave descends ISO-9660 / UDF images: every member is extracted from its
+# sector run and analysed on its own, and filefacts publishes the container's
+# structure as `iso.*` (see metadata/file/format/iso/structure.yaml).
+#
+# The traits that make a claim about the *image* therefore read facts. The
+# `embedded-*` byte markers stay, because they are still reached at two scopes
+# that hold opaque bytes with no analyser of their own: an image cleave could
+# not descend (encrypted, malformed, truncated), and the `slack` / `trailing`
+# regions carved out of an image's unclaimed space, which arrive typed `data`.
 traits:
   - id: primary-volume-descriptor
     desc: ISO-9660 primary volume descriptor marker
     crit: baseline
     conf: 1.0
-    for: [all]
     if:
-      type: text
-      exact: CD001
-      offset: 32769
+      type: value
+      path: iso.format
+      regex: 'iso9660'
   - id: embedded-lnk-member
     desc: ISO image contains LNK member
     crit: notable
-    conf: 0.96
+    conf: 1.0
     if:
-      type: yara
-      source: |
-        rule iso_lnk_member_context {
-          strings:
-            $pvd = { 01 43 44 30 30 31 01 }
-            $lnk = ".lnk;1" ascii wide nocase
-          condition:
-            $pvd at 0x8000 and $lnk
-        }
+      type: metrics
+      field: iso.lnk_file_count
+      min: 1
 
   - id: embedded-winrar-sfx-stub
     desc: WinRAR SFX stub marker
@@ -117,29 +116,24 @@ traits:
   - id: embedded-executable-member
     desc: Executable filename marker in opaque content
     crit: component
-    conf: 0.95
-    for: [all]
+    conf: 1.0
     if:
-      type: text
-      regex: '(?i)\.exe(;1|\b)'
+      type: metrics
+      field: iso.executable_file_count
+      min: 1
 
-  # Anchored on the primary volume descriptor and the ISO-9660 ";1" version
-  # suffix, exactly like embedded-lnk-member above. A bare "\.com\b" matches
-  # every hostname in any opaque blob (public-suffix lists, TLD tables).
+  # Reads the member list rather than the image's bytes. The byte match this
+  # replaces had to be anchored on the volume descriptor and the ISO-9660 ";1"
+  # version suffix, because a bare "\.com\b" matches every hostname in any
+  # opaque blob (public-suffix lists, TLD tables).
   - id: embedded-com-member
     desc: ISO image contains a DOS COM member
     crit: notable
-    conf: 0.95
+    conf: 1.0
     if:
-      type: yara
-      source: |
-        rule iso_com_member_context {
-          strings:
-            $pvd = { 01 43 44 30 30 31 01 }
-            $com = ".com;1" ascii wide nocase
-          condition:
-            $pvd at 0x8000 and $com
-        }
+      type: value
+      path: iso.file_extensions
+      exact: com
 
   # Only the CLR entry-point stubs are evidence of a managed image. The bare
   # string "mscoree.dll" is not: the MSVC C runtime resolves mscoree.dll /
@@ -152,15 +146,8 @@ traits:
     conf: 0.96
     attack: T1036.007,T1204.002
     if:
-      type: yara
-      source: |
-        rule iso_document_executable_lure {
-          strings:
-            $pvd = { 01 43 44 30 30 31 01 }
-            $lure = /(invoice|receipt|statement|letter|payment|pago|saldo|balance|proof[_ -]?of)[^\x00]{0,64}\.exe(;1)?/ ascii wide nocase
-          condition:
-            $pvd at 0x8000 and $lure
-        }
+      type: basename
+      regex: '(?i)(statement|letter|balance).{0,40}\.exe$'
 
   - id: embedded-telegram-product-claim
     desc: Telegram Desktop product claim in opaque content
@@ -213,11 +200,11 @@ traits:
   - id: embedded-batch-member
     desc: ISO image contains a batch member
     crit: notable
-    conf: 0.96
-    for: [all]
+    conf: 1.0
     if:
-      type: text
-      regex: '(?i)\.(bat);1\b'
+      type: value
+      path: iso.file_extensions
+      exact: bat
 
   - id: embedded-themida-section
     desc: Themida section marker
