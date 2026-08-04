@@ -1,0 +1,131 @@
+# Live credential validation before use/exfil.
+#
+# Stealers that harvest developer tokens often confirm each secret still works
+# against the provider's own API (npm /-/whoami, GitHub /user, Vault
+# lookup-self, aws sts get-caller-identity) so only live credentials are kept.
+# The individual API checks are notable on their own; pairing two or more
+# provider checks with multi-store harvest + HTTP exfil is the hostile class.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1552.001
+  mbc: E1552
+
+traits:
+  - id: github-user-api-path
+    desc: References GitHub /user API path
+    crit: component
+    conf: 0.88
+    if:
+      type: text
+      regex: 'path:\s*["'']/user["'']'
+
+  - id: vault-token-lookup-self
+    desc: Validates Vault token via lookup-self
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      substr: /v1/auth/token/lookup-self
+    unless:
+      - id: well-known/tool/detection/threat-intel/
+
+  - id: aws-sts-caller-identity-check
+    desc: Validates AWS via get-caller-identity
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      substr: sts get-caller-identity
+    unless:
+      - id: well-known/lib/aws-sdk-js/
+      - id: metadata/library/data::aws-sdk-js-v3-bundle
+      - id: metadata/package/files/dependency::node-modules-path
+
+  - id: node-vault-token-env-read
+    desc: Reads VAULT_TOKEN from process.env
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: 'process\.env(\[["'']VAULT_TOKEN["'']\]|\.VAULT_TOKEN)\b'
+    unless:
+      - id: well-known/tool/detection/threat-intel/
+
+  - id: gh-hosts-oauth-token-parse
+    desc: Parses oauth_token from gh hosts file
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: 'oauth_token:\s*|match\(\s*/oauth_token:'
+    unless:
+      - id: well-known/tool/detection/threat-intel/
+      - id: well-known/app/akm/
+
+composite_rules:
+  - id: github-api-user-token-check
+    desc: Validates GitHub token via /user API
+    crit: notable
+    conf: 0.93
+    near_bytes: 160
+    all:
+      - id: micro-behaviors/communications/http/services/github::github-api-host
+      - id: github-user-api-path
+    unless:
+      - id: well-known/tool/detection/threat-intel/
+
+  - id: multi-provider-token-live-check
+    desc: Live-checks tokens against multiple providers
+    crit: suspicious
+    conf: 0.96
+    needs: 2
+    any:
+      - id: objectives/supply-chain/hidden-payload/worm::npm-token-whoami-validation
+      - id: github-api-user-token-check
+      - id: vault-token-lookup-self
+      - id: aws-sts-caller-identity-check
+
+  - id: developer-store-harvest-cluster
+    desc: Harvests multiple developer credential stores
+    crit: suspicious
+    conf: 0.96
+    needs: 3
+    any:
+      - id: micro-behaviors/fs/path/sensitive/credentials
+      - id: node-vault-token-env-read
+      - id: objectives/exfiltration/stealer/credential/multi-source::node-dev-source-control-files
+      - id: objectives/exfiltration/stealer/credential/multi-source::node-dev-vault-iac-files
+
+  - id: validated-developer-credential-exfil
+    desc: Live-validates developer creds then exfils
+    crit: hostile
+    conf: 0.98
+    attack: "T1552.001,T1552.004,T1041"
+    mbc: "E1552,E1041"
+    all:
+      - id: developer-store-harvest-cluster
+      - id: multi-provider-token-live-check
+    any:
+      - id: objectives/exfiltration/http/upload::node-encode-exfil
+      - id: objectives/exfiltration/http/upload::node-upload-sink
+      - id: objectives/exfiltration/stealer/credential/multi-source::node-base64-json-exfil-body
+    unless:
+      - id: metadata/library/structure/
+      - id: well-known/tool/detection/threat-intel/
+
+  - id: npm-github-token-validate-exfil
+    desc: Validates npm and GitHub tokens then ships
+    crit: hostile
+    conf: 0.97
+    attack: "T1552.001,T1041"
+    mbc: "E1552,E1041"
+    all:
+      - id: objectives/supply-chain/hidden-payload/worm::npm-token-whoami-validation
+      - id: github-api-user-token-check
+    any:
+      - id: objectives/exfiltration/http/upload::node-encode-exfil
+      - id: objectives/exfiltration/stealer/credential/multi-source::node-base64-json-exfil-body
+      - id: micro-behaviors/fs/path/sensitive/credentials::npmrc-credentials
+    unless:
+      - id: well-known/tool/detection/threat-intel/

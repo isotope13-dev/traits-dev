@@ -12,6 +12,18 @@ traits:
     type: value
     path: "scripts.preinstall"
     exact: "node setup_bun.js"
+# Recurring Mini Shai-Hulud / TeamPCP install-hook fingerprint: the loader is
+# always named setup.mjs and wired through scripts.preinstall so npm runs it
+# before the install completes. Distinct from the setup_bun.js variant above.
+- id: preinstall-node-setup-mjs
+  desc: preinstall launches setup.mjs
+  crit: suspicious
+  conf: 0.97
+  for: [package.json]
+  if:
+    type: value
+    path: "scripts.preinstall"
+    regex: '(^|[;&|]\s*)node\s+(\./)?setup\.mjs\b'
 - id: bun-install-powershell-iex
   desc: Installs Bun via PowerShell IEX
   crit: suspicious
@@ -140,6 +152,48 @@ traits:
   if:
     type: text
     regex: 'ENTRY_SCRIPT\s*=\s*["'']execution\.js["'']|["'']execution\.js["''].{0,160}execFileSync\('
+# Opaque co-shipped payload names used across Mini Shai-Hulud waves
+# (execution.js historically; Math_Symbol.js in the keyv family wave).
+- id: bun-math-symbol-payload-name
+  desc: References Math_Symbol.js payload name
+  crit: component
+  conf: 0.97
+  for: [javascript]
+  if:
+    type: text
+    substr: Math_Symbol.js
+- id: bun-execution-payload-name
+  desc: References execution.js payload name
+  crit: component
+  conf: 0.9
+  for: [javascript]
+  if:
+    type: text
+    substr: 'execution.js'
+- id: bun-path-join-payload-script
+  desc: path.join builds co-shipped script path
+  crit: component
+  conf: 0.88
+  for: [javascript]
+  if:
+    type: text
+    regex: 'path\.join\([^)]{0,80}scriptDir'
+- id: bun-then-exit-zero
+  desc: Promise then path exits with zero
+  crit: component
+  conf: 0.9
+  for: [javascript]
+  if:
+    type: text
+    regex: '\.then\(\s*\(\)\s*=>\s*process\.exit\(\s*0\s*\)\s*\)'
+- id: bun-catch-exit-zero
+  desc: Promise catch path exits with zero
+  crit: component
+  conf: 0.9
+  for: [javascript]
+  if:
+    type: text
+    regex: '\.catch\(\s*\(\)\s*=>\s*process\.exit\(\s*0\s*\)\s*\)'
 - id: bun-temp-runtime-cleanup
   desc: Deletes temporary Bun runtime
   crit: component
@@ -213,6 +267,62 @@ composite_rules:
   - id: micro-behaviors/communications/http/download/handler::node-http-stream-to-file
   unless:
   - id: well-known/app/cloudflare/
+# Opaque co-shipped payload (Math_Symbol.js / execution.js) joined via path.join
+# and handed to the downloaded Bun binary — install-time dropper class.
+- id: bun-opaque-payload-sidecar
+  desc: Bun targets opaque co-shipped payload
+  crit: suspicious
+  conf: 0.97
+  for: [javascript]
+  near_bytes: 200
+  all:
+  - id: bun-path-join-payload-script
+  any:
+  - id: bun-math-symbol-payload-name
+  - id: bun-execution-payload-name
+- id: bun-bootstrap-silent-exit-both-paths
+  desc: Promise then/catch both exit zero
+  crit: suspicious
+  conf: 0.94
+  for: [javascript]
+  near_bytes: 120
+  all:
+  - id: bun-then-exit-zero
+  - id: bun-catch-exit-zero
+- id: bun-opaque-payload-temp-runtime-loader
+  desc: Temp Bun runtime launches opaque payload
+  crit: hostile
+  conf: 0.98
+  all:
+  - id: bun-temp-runtime-sidecar-loader
+  - id: bun-opaque-payload-sidecar
+  any:
+  - id: bun-temp-runtime-cleanup
+  - id: bun-bootstrap-silent-exit-both-paths
+  - id: micro-behaviors/communications/http/download/handler::node-http-stream-to-file
+  unless:
+  - id: well-known/app/cloudflare/
+- id: bun-silent-temp-runtime-loader
+  desc: Temp Bun loader hides install failures
+  crit: hostile
+  conf: 0.97
+  all:
+  - id: bun-temp-runtime-sidecar-loader
+  - id: bun-bootstrap-silent-exit-both-paths
+  unless:
+  - id: well-known/app/cloudflare/
+- id: bun-setup-mjs-preinstall-loader
+  desc: preinstall setup.mjs bootstraps Bun runtime
+  crit: hostile
+  conf: 0.99
+  scope: archive
+  for: [javascript, typescript, package.json, npm, archives]
+  all:
+  - id: preinstall-node-setup-mjs
+  - id: bun-temp-runtime-sidecar-loader
+  unless:
+  - id: well-known/app/cloudflare/
+  - id: well-known/tool/detection/threat-intel/
 - id: bun-release-zip-download
   desc: Downloads Bun release archive
   crit: notable
