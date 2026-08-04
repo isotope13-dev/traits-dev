@@ -111,6 +111,54 @@ traits:
     type: value
     path: scripts.postinstall
     regex: "(/tmp/|\\$TMPDIR|%TEMP%)"
+# Virtio block major 252 + fabricated /tmp/vdaN nodes are the container-escape
+# probe used by the simple-date-formatter-* npm campaign (and cousins): create a
+# host disk node from inside the container namespace, then mount/list it.
+- id: mknod-virtio-block
+  desc: postinstall mknod virtio block device
+  crit: suspicious
+  conf: 0.96
+  attack: T1611
+  if:
+    type: value
+    path: scripts.postinstall
+    regex: "\\bmknod\\s+/tmp/[^\\s\"']{1,40}\\s+b\\s+252\\s+[0-9]+"
+- id: mount-tmp-hostroot
+  desc: postinstall mounts tmp device on hostroot
+  crit: suspicious
+  conf: 0.95
+  attack: T1611
+  if:
+    type: value
+    path: scripts.postinstall
+    regex: "\\bmount\\s+(-[a-zA-Z]+\\s+){0,3}/tmp/[^\\s\"']{1,40}\\s+/tmp/hostroot\\b"
+- id: hostroot-kube-recon
+  desc: postinstall lists hostroot kubernetes paths
+  crit: suspicious
+  conf: 0.94
+  attack: T1613
+  if:
+    type: value
+    path: scripts.postinstall
+    regex: "/tmp/hostroot/(etc/kubernetes|var/lib/kubelet/pods)"
+- id: serviceaccount-token-read
+  desc: postinstall reads serviceaccount token
+  crit: suspicious
+  conf: 0.95
+  attack: T1552.007
+  if:
+    type: value
+    path: scripts.postinstall
+    substr: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+- id: curl-stdin-body-post
+  desc: postinstall curls stdin as POST body
+  crit: notable
+  conf: 0.9
+  attack: T1041
+  if:
+    type: value
+    path: scripts.postinstall
+    regex: "\\bcurl\\b[^\"\\n]{0,160}(-d|--data(-binary)?)\\s+@-"
 - id: hidden-dot-path
   desc: postinstall references hidden dot path
   crit: notable
@@ -197,3 +245,38 @@ composite_rules:
   any:
   - id: temp-path
   - id: hidden-dot-path
+- id: postinstall-virtio-block-escape-probe
+  desc: postinstall probes virtio block device escape
+  crit: hostile
+  conf: 0.98
+  attack: T1611,T1613
+  all:
+  - id: mknod-virtio-block
+  any:
+  - id: mount-tmp-hostroot
+  - id: hostroot-kube-recon
+  - id: serviceaccount-token-read
+- id: postinstall-virtio-escape-oast-exfil
+  desc: postinstall virtio escape recon posts to OAST
+  crit: hostile
+  conf: 0.99
+  attack: T1611,T1041,T1048.003
+  all:
+  - id: postinstall-virtio-block-escape-probe
+  - id: objectives/supply-chain/recon-exfil/oast/env::oast-fun-url
+  any:
+  - id: curl-http-post
+  - id: curl-stdin-body-post
+- id: postinstall-oast-fun-stdin-exfil
+  desc: postinstall pipes recon output to oast.fun
+  crit: hostile
+  conf: 0.98
+  attack: T1041,T1048.003
+  all:
+  - id: objectives/supply-chain/recon-exfil/oast/env::oast-fun-url
+  - id: curl-stdin-body-post
+  any:
+  - id: temp-path
+  - id: serviceaccount-token-read
+  - id: hostroot-kube-recon
+  - id: mknod-virtio-block
