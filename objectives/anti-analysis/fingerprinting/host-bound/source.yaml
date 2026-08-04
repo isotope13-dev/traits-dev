@@ -4,6 +4,18 @@ defaults:
   attack: T1027.013,T1497.001
 
 traits:
+  # The resolver hosts and the PowerShell HTTP cmdlets already have canonical
+  # atoms under micro-behaviors/communications/; the composites below reference
+  # those rather than restating the matchers here.
+  - id: public-ip-variable-binding
+    desc: Binds a public IP variable
+    crit: notable
+    conf: 0.9
+    for: [powershell]
+    if:
+      type: text
+      regex: '(?i)\$(publicIp|pubip|externalIp|egressIp)\s*='
+
   - id: host-key-from-identity
     desc: Key from host or volume identity
     crit: component
@@ -70,6 +82,69 @@ traits:
       regex: '(?is)\bComputeHash\s*\([^)]{0,160}\b(host|serial|machine)\b'
 
 composite_rules:
+  - id: external-ip-service-resolution
+    desc: Resolves the host public IP externally
+    crit: notable
+    conf: 0.94
+    for: [powershell]
+    all:
+      - id: public-ip-variable-binding
+    any:
+      - id: micro-behaviors/communications/http/ip-discovery/
+      - id: micro-behaviors/communications/ip/address/
+    near_bytes: 512
+
+  - id: public-ip-derived-key
+    desc: Hashes public IP into key material
+    crit: suspicious
+    conf: 0.96
+    for: [powershell]
+    all:
+      - id: public-ip-variable-binding
+    any:
+      - id: micro-behaviors/crypto/hash/digest::dotnet-computehash
+      - id: micro-behaviors/crypto/hash/digest::source-digest-call
+    near_bytes: 2048
+
+  - id: public-ip-keyed-xor-payload
+    desc: Public-IP keyed XOR payload decryptor
+    crit: hostile
+    conf: 0.99
+    attack: T1027,T1140,T1497.001
+    for: [powershell]
+    all:
+      - id: external-ip-service-resolution
+      - id: public-ip-derived-key
+      - id: micro-behaviors/crypto/symmetric/xor/loop::indexed-bxor-key-variable
+    near_bytes: 4096
+
+  - id: public-ip-keyed-in-memory-stage
+    desc: Public-IP keyed payload executes after in-memory decryption
+    crit: hostile
+    conf: 0.99
+    attack: T1027,T1059.001,T1140,T1497.001
+    for: [powershell]
+    all:
+      - id: public-ip-keyed-xor-payload
+    any:
+      - id: micro-behaviors/process/interpreter/eval::embedded-powershell-iex
+      - id: micro-behaviors/process/interpreter/eval::embedded-powershell-iex-alias
+    near_bytes: 4096
+
+  - id: public-ip-keyed-xor-execution
+    desc: Executes a public-IP keyed XOR stage
+    crit: hostile
+    conf: 0.99
+    attack: T1027,T1059.001,T1140,T1497.001
+    for: [powershell]
+    all:
+      - id: public-ip-derived-key
+      - id: micro-behaviors/crypto/symmetric/xor/loop::indexed-bxor-key-variable
+    any:
+      - id: micro-behaviors/process/interpreter/eval::embedded-powershell-iex
+      - id: micro-behaviors/process/interpreter/eval::embedded-powershell-iex-alias
+    near_bytes: 4096
+
   - id: victim-identity-source
     desc: Reads a victim-specific identity value
     crit: notable

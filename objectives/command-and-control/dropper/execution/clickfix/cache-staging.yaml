@@ -1,0 +1,214 @@
+# Browser-cache staging used by ClickFix pages.  The atoms describe the
+# mechanics; the hostile composites require cache enumeration, payload
+# carving, and script execution together.
+defaults:
+  platforms: [windows]
+  for: [html, javascript, powershell, batch]
+  attack: T1059.001,T1059.003,T1059.005,T1105,T1204.002
+  mbc: B0024
+
+traits:
+  - id: browser-localappdata-userdata-root
+    desc: LocalAppData browser profile root
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)(%LocalAppData%|AppData[\\/]Local)[\\/].{1,48}[\\/]User Data'
+
+  - id: browser-cache-data-marker
+    desc: Browser cache data marker
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\b(Cache_Data|cache2)\b'
+
+  # A bare `fetch(`/`Image(` call is universal in browser code — the staging
+  # signal is the *target* of the prefetch, so the request form and the
+  # carrier-image config key are matched as one span.
+  - id: image-url-cache-prefetch
+    desc: Prefetches a configured image URL
+    crit: notable
+    conf: 0.9
+    for: [html, javascript]
+    if:
+      type: text
+      regex: '(?i)(new\s+Image\s*\(\s*\)\s*\.src|fetch\s*\()[^;\n]{0,80}image[_-]?url'
+
+  - id: steg-payload-cache-prefetch
+    desc: Prefetches a steganographic payload URL
+    crit: notable
+    conf: 0.94
+    for: [html, javascript]
+    if:
+      type: text
+      regex: '(?i)(new\s+Image\s*\(\s*\)\s*\.src|fetch\s*\()[^;\n]{0,80}\bsteg'
+
+  - id: cache-findstr-command
+    desc: findstr writes a staged fragment
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\bfindstr(\.exe)?\b.{0,160}>\s*["'']?%TEMP%'
+
+  - id: temp-encoded-output
+    desc: TEMP path names encoded data
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)%TEMP%[\\/].{1,60}\.(b64|txt)\b'
+
+  - id: certutil-decode-temp
+    desc: Certutil decodes data into TEMP
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)\bcertutil(\.exe)?\b.{0,100}-decode.{0,100}%TEMP%'
+
+  - id: temp-js-output
+    desc: TEMP path names a JavaScript stage
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)%TEMP%[\\/].{1,60}\.js\b'
+
+  - id: temp-vbs-output
+    desc: TEMP path names a VBScript stage
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)%TEMP%[\\/].{1,60}\.vbs\b'
+
+  - id: temp-powershell-output
+    desc: TEMP path names a PowerShell stage
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)%TEMP%[\\/].{1,60}\.ps1\b'
+
+  - id: temp-hta-output
+    desc: TEMP path names an HTA stage
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)%TEMP%[\\/].{1,60}\.hta\b'
+
+  - id: temp-script-host
+    desc: Script host references TEMP
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\b(wscript|cscript|mshta)(\.exe)?\b.{0,100}%TEMP%'
+
+composite_rules:
+  - id: browser-profile-cache-data-path
+    desc: Browser profile contains a cache path
+    crit: notable
+    conf: 0.94
+    all:
+      - id: browser-localappdata-userdata-root
+    any:
+      - id: browser-cache-data-marker
+    near_bytes: 1024
+
+  - id: browser-prefetches-configured-image
+    desc: Browser fetches a configured image
+    crit: notable
+    conf: 0.9
+    for: [html, javascript]
+    any:
+      - id: image-url-cache-prefetch
+      - id: steg-payload-cache-prefetch
+
+  - id: cache-marked-payload-carve
+    desc: findstr carves data into TEMP
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: cache-findstr-command
+      - id: temp-encoded-output
+    near_bytes: 512
+
+  - id: temp-script-output
+    desc: TEMP path names a script
+    crit: notable
+    conf: 0.92
+    any:
+      - id: temp-js-output
+      - id: temp-vbs-output
+      - id: temp-powershell-output
+      - id: temp-hta-output
+
+  - id: cache-certutil-script-decode
+    desc: Certutil decodes a TEMP script
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: certutil-decode-temp
+      - id: temp-script-output
+    near_bytes: 512
+
+  - id: cache-script-host-launch
+    desc: Script host launches a TEMP script
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: temp-script-host
+      - id: temp-script-output
+    near_bytes: 512
+
+  - id: browser-cache-script-recovery
+    desc: Browser cache payload is decoded and launched
+    crit: hostile
+    conf: 0.99
+    attack: T1027,T1059.003,T1059.005,T1140,T1105
+    all:
+      - id: browser-profile-cache-data-path
+      - id: cache-marked-payload-carve
+      - id: cache-certutil-script-decode
+      - id: cache-script-host-launch
+    near_bytes: 4096
+
+  - id: browser-cache-recursive-script-recovery
+    desc: Recursively searches browser cache for scripts
+    crit: hostile
+    conf: 0.99
+    attack: T1027,T1059.003,T1059.005,T1140,T1105
+    all:
+      - id: browser-cache-script-recovery
+      - id: micro-behaviors/fs/enumerate/directory::batch-recursive-for-loop
+    near_bytes: 4096
+
+  - id: clickfix-browser-cache-command-lure
+    desc: Copies a cache-carving command to clipboard
+    crit: hostile
+    conf: 0.99
+    attack: T1059.003,T1059.005,T1204.002
+    for: [html, javascript]
+    all:
+      - id: browser-profile-cache-data-path
+      - id: micro-behaviors/fs/enumerate/directory::batch-recursive-for-loop
+      - id: cache-marked-payload-carve
+      - id: micro-behaviors/os/clipboard/browser::browser-html-clipboard-write
+    near_bytes: 4096
+
+  - id: browser-cached-image-script-loader
+    desc: Cached image stage is script-loaded
+    crit: hostile
+    conf: 0.99
+    attack: T1027,T1059.005,T1140,T1105,T1204.002
+    for: [html, javascript]
+    all:
+      - id: browser-cache-script-recovery
+      - id: browser-prefetches-configured-image
+      - id: micro-behaviors/os/clipboard/browser::browser-html-clipboard-write
+    near_bytes: 4096
