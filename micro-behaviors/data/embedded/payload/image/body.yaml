@@ -1,4 +1,15 @@
 ---
+# Executable headers carried inside a PNG. Both atoms declare `for: [png]`,
+# overriding the binary-oriented file default above.
+#
+# Neither used to be reachable: each carried `section: ".text"`, a leftover from
+# that binary default. A PNG has no section table, so the location gate could
+# never resolve and both atoms were silently dead -- verified against a PNG with
+# a complete PE header appended past IEND, which scored the byte-count metric
+# and nothing else. They are the only legs of
+# objectives/anti-static/polyglot/format::image-embedded-exec-magic, so the
+# whole "PNG carries an executable" chain was inert. The offset floor stays: it
+# keeps the magic out of the PNG signature and IHDR.
 defaults:
   platforms:
   - unix
@@ -11,6 +22,11 @@ defaults:
   mbc: F0001.006
   attack: T1027.009
 traits:
+# Four bytes of ELF magic alone is a 1-in-2^32 coincidence per offset, which a
+# multi-megabyte compressed pixel stream hits often enough to matter once the
+# section gate no longer suppresses every match. EI_CLASS (32/64-bit), EI_DATA
+# (endianness) and EI_VERSION (always 1) are fixed in every real ELF, so
+# requiring them costs no true positives and buys 16 more bits of specificity.
 - id: elf-magic-in-image-body
   desc: ELF magic inside image payload
   crit: suspicious
@@ -20,11 +36,17 @@ traits:
   size_min: 4096
   if:
     type: hex
-    section: ".text"
-    pattern: 7F 45 4C 46
+    pattern: 7F 45 4C 46 (01|02) (01|02) 01
     offset_range:
     - 1024
-    - 
+    -
+# The old pattern was `4D 5A ?? ?? 50 45 00 00`, which places the PE signature
+# four bytes past `MZ`. No real PE looks like that: `PE\0\0` sits at the offset
+# stored in e_lfanew, and the DOS header alone is 64 bytes, so the signature is
+# never below 0x40. The skip range spans the usual e_lfanew values -- 0x40 for a
+# stub-less image up through the 0x100-ish offsets a linker-written DOS stub and
+# Rich header produce -- which is what actually separates an embedded PE from a
+# stray `MZ` in compressed pixel data.
 - id: pe-magic-in-image-body
   desc: PE signature inside image payload
   crit: suspicious
@@ -34,8 +56,7 @@ traits:
   size_min: 4096
   if:
     type: hex
-    section: ".text"
-    pattern: 4D 5A ?? ?? 50 45 00 00
+    pattern: 4D 5A [56-320] 50 45 00 00
     offset_range:
     - 1024
-    - 
+    -
