@@ -1,0 +1,48 @@
+# A vendored `vmlinux.h` is the single largest file in most libbpf/CO-RE
+# projects and nobody reads it: `bpftool btf dump ... format c` emits megabytes
+# of declarations, and reviewers diff it by line count at best. That makes it an
+# attractive place to park eBPF program code, and it also defeats
+# metadata/file/string/artifact::linux-btf-vmlinux-type-dump, the benign-context
+# identity several kernel-hide rules consult.
+#
+# A genuine dump is declarations only — no SEC() program or license attributes
+# appear anywhere in it. Those legs are therefore deliberately excluded from
+# every `unless:` the identity is added to, so this composite still sees them.
+defaults:
+  platforms: [linux, android]
+  for: [c, cpp]
+  attack: T1195.002
+  mbc: B0032
+
+composite_rules:
+  - id: btf-header-preamble-over-bpf-program
+    desc: Generated vmlinux.h preamble wraps real eBPF program code
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: metadata/file/string/artifact::linux-btf-vmlinux-type-dump
+    needs: 1
+    any:
+      - id: micro-behaviors/os/bpf/program/loader::sec-license
+      - id: micro-behaviors/os/bpf/program/loader::sec-xdp
+      - id: micro-behaviors/os/bpf/program/tracing::kprobe-sec
+      - id: objectives/evasion/kernel-hide/ebpf::sec-syscall-enter
+      - id: objectives/evasion/kernel-hide/ebpf::sec-syscall-exit
+      - id: objectives/evasion/kernel-hide/ebpf::sec-uprobe
+
+  # The preamble also clears the kernel-vocabulary atoms (hide_pids map names,
+  # PROC_ROOT_INO, sys_call_table) that a genuine dump declares, which would
+  # otherwise cost the dirent-hiding composite its map-name leg. Rebuild the
+  # verdict from legs the identity never touches — the getdents64 exit hook
+  # and the userspace-buffer write — and treat wearing the dump preamble as
+  # aggravating rather than exculpating.
+  - id: btf-header-preamble-hides-dirent-rootkit
+    desc: vmlinux.h preamble conceals a getdents64-hiding eBPF rootkit
+    crit: hostile
+    conf: 0.97
+    attack: T1014
+    mbc: E1014
+    all:
+      - id: metadata/file/string/artifact::linux-btf-vmlinux-type-dump
+      - id: objectives/evasion/kernel-hide/ebpf::getdents64-tracepoint
+      - id: micro-behaviors/os/bpf/program/tracing::bpf-probe-write-user

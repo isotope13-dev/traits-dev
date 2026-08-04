@@ -16,3 +16,70 @@ traits:
     if:
       type: text
       substr: "SPDX-License-Identifier: CDDL-1.0"
+
+  # --- Generated kernel type-dump header (vmlinux.h) -----------------------
+  # `bpftool btf dump file /sys/kernel/btf/vmlinux format c` emits a single
+  # declarations-only header describing every type in the running kernel.
+  # Every libbpf/CO-RE project vendors a copy, often one per architecture
+  # (vmlinux.h, vmlinux_614.h, ...), so a basename match alone is unreliable.
+  # The file is pure `struct`/`enum` text, and the kernel's own vocabulary
+  # inside it — BPF_MAP_UPDATE_ELEM, proc_fs_info.hide_pid, PROC_ROOT_INO,
+  # sys_call_table, struct xdp_md — reads as rootkit tooling to any text
+  # matcher. These two markers are emitted together by bpftool and by nothing
+  # else, so they identify the artifact from its bytes rather than its name.
+  - id: btf-vmlinux-header-guard
+    desc: Generated vmlinux.h include guard
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      substr: "#ifndef __VMLINUX_H__"
+
+  - id: btf-core-preserve-access-index-pragma
+    desc: CO-RE preserve_access_index record pragma
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      substr: "(__attribute__((preserve_access_index)), apply_to = record)"
+
+  # The kernel's UAPI bpf.h defines the helper-ID enumeration macro that every
+  # BPF_FUNC_* constant is generated from, and documents each helper (including
+  # bpf_override_return, bpf_send_signal and bpf_send_signal_thread) in a
+  # comment block. Consumers `#include <linux/bpf.h>`; only the header itself
+  # — or a verbatim vendored copy, as libbpf and bpftool ship — defines the
+  # macro.
+  - id: linux-uapi-bpf-func-mapper-macro
+    desc: Kernel UAPI bpf.h helper-ID enumeration macro
+    crit: component
+    conf: 0.97
+    if:
+      type: text
+      regex: '#\s*define\s+_{2,3}BPF_FUNC_MAPPER\s*\('
+
+composite_rules:
+  - id: linux-btf-vmlinux-type-dump
+    desc: Generated Linux BTF vmlinux.h kernel type dump
+    crit: baseline
+    conf: 0.97
+    # Identity only — it says the generated preamble is present, not that the
+    # rest of the file is declarations-only. A dump preamble pasted in front
+    # of real BPF program code is caught by
+    # objectives/supply-chain/trojanized/library/source::btf-header-preamble-over-bpf-program,
+    # whose legs (SEC() program/license declarations) are deliberately left
+    # out of every `unless:` this identity appears in.
+    all:
+      - id: btf-vmlinux-header-guard
+      - id: btf-core-preserve-access-index-pragma
+
+  - id: linux-uapi-bpf-header
+    desc: Verbatim kernel UAPI linux/bpf.h header
+    crit: baseline
+    conf: 0.97
+    # Two independent markers, because this identity clears helper-name
+    # matches: the helper-ID generator macro the header defines, plus the
+    # Linux-syscall-note SPDX exception that only UAPI headers carry. Either
+    # alone is a line an attacker could paste into a rootkit source.
+    all:
+      - id: linux-uapi-bpf-func-mapper-macro
+      - id: linux-syscall-note-license
