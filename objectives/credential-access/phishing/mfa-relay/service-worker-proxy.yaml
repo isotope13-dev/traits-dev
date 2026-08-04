@@ -1,0 +1,74 @@
+# Adversary-in-the-middle relay built from a service worker and a web proxy.
+#
+# The kit no longer ships a cloned login page. It registers a service worker
+# scoped over the whole tab, then hands every request to an off-the-shelf
+# browser proxy runtime (Ultraviolet, Scramjet) that fetches the *real* identity
+# provider and rewrites the response so it renders under the phishing origin.
+# The victim drives the genuine sign-in — genuine branding, genuine MFA prompt,
+# genuine push notification — while the operator sits on the wire.
+#
+# That defeats MFA because the prize is not the password. Once the flow
+# completes, the IdP sets its session cookie on the response passing through the
+# worker, and the relay copies it out. A replayed session cookie is already past
+# every factor.
+#
+# Two things separate this from the filter-circumvention proxies the same
+# libraries were written for. First, the relay reads `Set-Cookie` off the
+# proxied response — a page cannot normally see that header, and a proxy that
+# only wants to render a site has no reason to extract it. Second, it ships what
+# it sees to a third-party collector. A proxy that merely renders a site
+# forwards responses to the tab and keeps nothing.
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript, html]
+  attack: T1557
+  mbc: B0030
+
+traits:
+  # JavaScript in a page cannot read `Set-Cookie`; only code holding the raw
+  # proxied response can. In a service worker relay that read is the session
+  # token being lifted out of the IdP's reply.
+  - id: proxied-set-cookie-header-read
+    desc: Reads Set-Cookie off a proxied response
+    crit: suspicious
+    conf: 0.93
+    attack: T1539
+    if:
+      type: text
+      regex: '(?i)headers\.get\(\s*["''](x-)?set-cookie["'']'
+
+composite_rules:
+  # A service worker that intercepts everything and hands it to a web proxy
+  # runtime. This is what an unblocker looks like too, so it stops at
+  # suspicious — the hostile composites below add the credential-theft legs.
+  - id: service-worker-transparent-proxy
+    desc: Service worker relays all traffic through a proxy
+    crit: suspicious
+    conf: 0.94
+    attack: T1090,T1557
+    all:
+      - id: micro-behaviors/communications/http/service-worker::intercept-all
+      - id: micro-behaviors/communications/proxy/library::service-worker-proxy-runtime
+
+  - id: relayed-set-cookie-exfiltration
+    desc: Relay lifts Set-Cookie and ships it off-origin
+    crit: hostile
+    conf: 0.96
+    attack: T1539,T1557,T1041
+    all:
+      - id: proxied-set-cookie-header-read
+      - id: micro-behaviors/communications/http/service-worker::event-fetch
+    needs: 1
+    any:
+      - id: micro-behaviors/communications/http/request/beacon::browser-send-beacon
+      - id: micro-behaviors/communications/http/post::fetch-post-call
+      - id: micro-behaviors/communications/http/request/client::fetch-post-pattern
+
+  - id: service-worker-idp-session-relay
+    desc: Proxy relay harvests IdP session cookies
+    crit: hostile
+    conf: 0.97
+    attack: T1539,T1557,T1111
+    all:
+      - id: service-worker-transparent-proxy
+      - id: objectives/credential-access/browser/session-hijack::idp-session-cookie-targeting
