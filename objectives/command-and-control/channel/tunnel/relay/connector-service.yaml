@@ -1,0 +1,122 @@
+# Reverse-tunnel / ingress connector registered as a boot-persistent OS
+# service, for connectors other than cloudflared.
+#
+# The sibling cloudflared-service.yaml chain identifies the persistence either
+# by the `cloudflared` binary name or by the Cloudflare tunnel token that has
+# to be pasted even when the connector is renamed. Neither leg survives the
+# operator swapping vendors, and the technique itself does not depend on which
+# connector is used: drop a legitimate ingress client, register it as a
+# service so it survives reboot, and get an authenticated inbound channel that
+# leaves the perimeter firewall untouched because every packet is outbound.
+# Post-exploitation crews rotate freely between cloudflared, ngrok, frp,
+# chisel, rathole and the smaller hosted agents, so the connector name is
+# matched as a family and the conviction comes from pairing it with an OS
+# service registration.
+#
+# Criticality is graduated on where the service image lives, because that is
+# what separates an operator from an administrator: connector-as-a-service is
+# notable (self-hosted frp and ngrok are deployed exactly this way), running
+# it from a user-writable or hidden path is suspicious, and wearing a Windows
+# system-process name on top of that is hostile.
+#
+# ATT&CK: T1572 (Protocol Tunneling), T1543 (Create or Modify System Process)
+defaults:
+  platforms: [windows, linux]
+  for: [scripts, systemd-service]
+  attack: T1572,T1543
+  mbc: B0022
+
+traits:
+  - id: hosted-tunnel-agent-name
+    desc: Hosted reverse-tunnel agent name
+    # Connector executables and their config files share the same distinctive
+    # stem (`rathole`, `rathole.toml`), so a word-boundary match on the stem
+    # covers both. Every name here is a coined product name with no English
+    # homograph. frp is not listed: its canonical identity already lives in
+    # well-known/tool/dual-use/frp and is referenced by the composite below.
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: '(?i)\b(rathole|localtonet|pgrok|zrok)\b'
+
+  - id: playit-agent-name
+    desc: playit.gg tunnel agent name
+    # `playit` collides with an ordinary `playIt` identifier under a
+    # case-insensitive match, so the extension or vendor domain is required.
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: '(?i)\bplayit(-agent|\.gg|\.exe)'
+
+  - id: chisel-client-command
+    desc: Chisel client or server subcommand
+    # `chisel` alone is an ordinary English word; the subcommand form is what
+    # identifies jpillora/chisel being driven as a tunnel.
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      regex: '(?i)\bchisel(\.exe)?\s+(client|server)\b'
+
+composite_rules:
+  - id: ingress-connector-reference
+    desc: Reverse-tunnel connector referenced
+    crit: notable
+    conf: 0.85
+    any:
+      - id: hosted-tunnel-agent-name
+      - id: playit-agent-name
+      - id: chisel-client-command
+      - id: objectives/command-and-control/channel/tunnel/proxy::ngrok-cli-name
+      - id: well-known/tool/dual-use/frp::frp-tool
+
+  - id: ingress-connector-persistent-service
+    desc: Tunnel connector registered as OS service
+    # Connector name plus a service registration verb — sc.exe create, the
+    # PowerShell service cmdlets, or a systemd ExecStart. Both halves in one
+    # file is the install step for a reboot-surviving inbound channel. Kept at
+    # notable because self-hosted frp and ngrok deployments are installed
+    # exactly this way; the tiers below are what separate those from an
+    # operator's staged relay.
+    crit: notable
+    conf: 0.9
+    all:
+      - id: ingress-connector-reference
+    any:
+      - id: micro-behaviors/os/service/control::sc-create-command
+      - id: micro-behaviors/os/service/config::powershell-binary-service-command
+      - id: micro-behaviors/os/service/config::exec-start-text
+      - id: micro-behaviors/os/service/config::exec-start-kv
+
+  - id: ingress-connector-untrusted-image-service
+    desc: Tunnel connector service runs from untrusted path
+    # An administrator installing frp or ngrok as a service puts the binary
+    # somewhere only root/SYSTEM can write — /usr/local/bin, %ProgramFiles%,
+    # %ProgramData%. A service image that instead resolves into a user profile
+    # folder, a world-writable staging directory, or a dotfile path is a
+    # dropped payload that was promoted to a boot-persistent service, which is
+    # the shape post-exploitation tooling leaves behind.
+    crit: suspicious
+    conf: 0.93
+    all:
+      - id: ingress-connector-persistent-service
+    any:
+      - id: objectives/persistence/system/service/install::writable-service-image-any
+      - id: objectives/persistence/system/service/systemd::exec-start-dangerous-path
+      - id: objectives/persistence/system/service/systemd::exec-start-hidden-executable
+
+  - id: ingress-connector-service-masquerade
+    desc: Tunnel connector service masquerades as system process
+    # The connector-agnostic twin of persistent-tunnel-service-masquerade: the
+    # service image carries a System32 process name (svchost, services,
+    # winlogon, ...) from a directory an unprivileged user can write.
+    crit: hostile
+    conf: 0.97
+    platforms: [windows]
+    for: [scripts]
+    attack: T1572,T1543.003,T1036.005
+    all:
+      - id: ingress-connector-untrusted-image-service
+      - id: objectives/evasion/masquerade/process/path::windows-system-process-path-masquerade
