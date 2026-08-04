@@ -1,0 +1,130 @@
+# Mailbox hijack via Exchange auto-forwarding, in both spellings an operator
+# reaches for after taking over a Microsoft 365 tenant: the Exchange Online
+# PowerShell cmdlets and the Microsoft Graph messageRules REST API.
+#
+# The technique outlives any one campaign. Once a mailbox is under the
+# attacker's control a forwarding rule keeps paying out after the password is
+# reset and after the stolen token expires, which is why business email
+# compromise plants one as its first post-authentication act and why incident
+# responders treat a new external forward as a compromise indicator.
+#
+# None of the underlying cmdlets or endpoints is itself an attack -- a tenant
+# forwarding a departing employee's mail uses the same ones. The composites
+# below all require the shape administration does not have: a destination the
+# organisation does not control, a rule that hides the mail it copies, or a
+# sweep that plants the same rule across every mailbox at once.
+defaults:
+  platforms: [windows, unix]
+  for: [python, javascript, typescript, powershell, csharp]
+  attack: T1114.003
+  mbc: E1114
+
+composite_rules:
+  # Forwarding plus concealment. An administrator forwarding mail has no reason
+  # to also mark it read, file it under RSS Feeds or delete the original -- the
+  # owner is meant to know. Hiding the evidence is what separates a hijack from
+  # a mail-flow change.
+  - id: inbox-rule-forwards-and-hides-mail
+    desc: Inbox rule forwards and hides mail
+    crit: hostile
+    conf: 0.96
+    attack: T1114.003,T1564.008
+    for: [powershell]
+    platforms: [windows]
+    all:
+      - id: micro-behaviors/communications/email/rule::new-inbox-rule-cmdlet
+      - id: micro-behaviors/communications/email/rule::inbox-rule-forward-parameter
+    any:
+      - id: micro-behaviors/communications/email/rule::mail-rule-moves-mail-to-rss-folder
+      - id: micro-behaviors/communications/email/address::consumer-webmail-address
+    near_lines: 40
+
+  # Mailbox-level forwarding with local delivery switched off: every message is
+  # relayed to the external address and none is left behind for the owner to
+  # find.
+  - id: mailbox-forwarded-offsite-without-local-copy
+    desc: Mailbox silently forwarded offsite
+    crit: hostile
+    conf: 0.96
+    attack: T1114.003,T1564.008
+    for: [powershell]
+    platforms: [windows]
+    all:
+      - id: micro-behaviors/communications/email/rule::mailbox-forwarding-address-parameter
+      - id: micro-behaviors/communications/email/rule::mailbox-forward-suppresses-local-delivery
+    any:
+      - id: micro-behaviors/communications/email/address::consumer-webmail-address
+      - id: micro-behaviors/communications/email/rule::mail-rule-moves-mail-to-rss-folder
+      - id: micro-behaviors/communications/email/rule::new-inbox-rule-cmdlet
+    near_lines: 40
+
+  # Enumerating every mailbox in the tenant and planting the same forwarding
+  # rule in each. Scale is the tell: a help-desk change targets one mailbox by
+  # name, and a rule deployed across an unbounded Get-Mailbox result set is
+  # collection infrastructure.
+  - id: tenant-wide-forwarding-rule-deployment
+    desc: Forwarding rule planted in every mailbox
+    crit: hostile
+    conf: 0.95
+    for: [powershell]
+    platforms: [windows]
+    all:
+      - id: objectives/collection/email-harvest::get-mailbox-enum
+      - id: micro-behaviors/communications/email/rule::new-inbox-rule-cmdlet
+      - id: micro-behaviors/communications/email/rule::inbox-rule-forward-parameter
+    any:
+      - id: micro-behaviors/communications/email/address::consumer-webmail-address
+      - id: micro-behaviors/communications/email/rule::mail-rule-moves-mail-to-rss-folder
+      - id: micro-behaviors/communications/email/rule::mailbox-forwarding-address-parameter
+    near_lines: 60
+
+  # Same objective over REST. The Graph messageRules body states the whole rule
+  # at once, so the forward action and the concealment action sit together in
+  # one JSON literal.
+  - id: graph-message-rule-forwards-and-hides-mail
+    desc: Graph mail rule forwards and hides mail
+    crit: hostile
+    conf: 0.96
+    attack: T1114.003,T1564.008
+    all:
+      - id: micro-behaviors/communications/email/rule::graph-message-rule-endpoint
+      - id: micro-behaviors/communications/email/rule::message-rule-forward-action
+      - id: micro-behaviors/communications/email/rule::message-rule-conceal-action
+    any:
+      - id: micro-behaviors/communications/email/address::consumer-webmail-address
+      - id: micro-behaviors/communications/email/rule::mail-rule-moves-mail-to-rss-folder
+    near_lines: 60
+
+  # The REST equivalent of the Get-Mailbox sweep above: page the whole user
+  # directory, then POST the same forwarding rule into each mailbox that comes
+  # back. Provisioning tooling addresses the mailbox it was asked to change,
+  # not every account the token can reach.
+  - id: graph-tenant-wide-rule-deployment
+    desc: Graph rule planted across enumerated users
+    crit: hostile
+    conf: 0.95
+    attack: T1114.003,T1564.008
+    all:
+      - id: micro-behaviors/communications/http/services/microsoft::graph-user-directory-listing
+      - id: micro-behaviors/communications/email/rule::graph-message-rule-endpoint
+      - id: micro-behaviors/communications/email/rule::message-rule-forward-action
+    any:
+      - id: micro-behaviors/communications/email/address::consumer-webmail-address
+      - id: micro-behaviors/communications/email/rule::mail-rule-moves-mail-to-rss-folder
+      - id: micro-behaviors/communications/email/rule::message-rule-conceal-action
+    near_lines: 60
+
+  # A rule that forwards offsite without any concealment is a mail-flow risk
+  # rather than a proven hijack -- some organisations really do relay to a
+  # personal account -- so it is reported one tier down.
+  - id: mail-rule-forwards-to-consumer-webmail
+    desc: Mail rule forwards to consumer webmail
+    crit: suspicious
+    conf: 0.9
+    any:
+      - id: micro-behaviors/communications/email/rule::inbox-rule-forward-parameter
+      - id: micro-behaviors/communications/email/rule::message-rule-forward-action
+      - id: micro-behaviors/communications/email/rule::mailbox-forwarding-address-parameter
+    all:
+      - id: micro-behaviors/communications/email/address::consumer-webmail-address
+    near_lines: 40
