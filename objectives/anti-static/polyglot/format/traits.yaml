@@ -69,18 +69,27 @@ traits:
     size_max: 1000000
     if:
       type: hex
-      pattern: 7F 45 4C 46 02 01 01
+      # e_ident (magic + ELFCLASS64 + ELFDATA2LSB + EI_VERSION=1), then the
+      # ABI/pad bytes, then a coherent header: e_type in {REL,EXEC,DYN},
+      # e_machine in the single-byte range, e_version=1. Requiring the whole
+      # header — not just the 7-byte e_ident prefix — is what makes "a binary
+      # is appended here" true: a bare magic near EOF (fuzzer mutations, a
+      # copied ident field) leaves no room for an image behind it.
+      pattern: 7F 45 4C 46 02 01 01 ?? [8] (01|02|03) 00 ?? 00 01 00 00 00
       offset_range:
         - 1
         - null
     unless:
-      - id: metadata/binary/linking/runtime::ape-binary-marker
-      - id: well-known/app/drivers::gsp-firmware-embedded-elf-path
+      - id: metadata/binary/layout::elf-image-carried-by-design
+      # A UPX image carries the loader stub's ELF template alongside the payload.
       - id: objectives/anti-static/pack/detect::upx-marker
-      - id: well-known/app/nnn::nnn-icons-static-basename
-      # Go's parser test suites ship intentionally-crafted polyglot/appended-ELF
-      # fixtures under go/src/**/testdata.
-      - id: well-known/tool/development/go-toolchain::go-toolchain-source-path
+      # When the carrier is itself an ELF that the parser rejected, its byte
+      # layout is unknown, so a second e_ident inside it is far more likely a
+      # corrupted/duplicated header than a deliberately appended payload.
+      # A real polyglot carrier parses as whatever format it claims to be.
+      - type: metrics
+        field: elf.parse_failed
+        min: 1
       # An ELF core dump embeds the crashed program's own image inside a PT_LOAD
       # segment, so an ELF magic appears at a non-zero offset — that is the
       # nature of a core file, not an appended-binary polyglot.
@@ -112,8 +121,7 @@ traits:
         - 1
         - null
     unless:
-      - id: metadata/binary/linking/runtime::ape-binary-marker
-      - id: well-known/app/drivers::gsp-firmware-embedded-elf-path
+      - id: metadata/binary/layout::elf-image-carried-by-design
       # An already-extracted embedded sub-object (UPX payload, eBPF object) is not
       # a polyglot/appended-ELF file. cleave's synthetic sub-object path carries
       # the `!!embedded` marker, available during evaluation.
