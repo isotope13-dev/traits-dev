@@ -90,6 +90,42 @@ traits:
       type: text
       regex: '(?i)\bcloudflared(\.exe)?\b[^\r\n]{0,80}\bservice\s+install\b'
 
+  - id: cloudflare-tunnel-token-credential
+    desc: Cloudflare tunnel token credential blob
+    # A Cloudflare tunnel token is base64 of
+    # {"a":"<account tag>","t":"<tunnel uuid>","s":"<secret>"} — so it always
+    # begins `eyJhIjoi` (base64 of `{"a":"`) and runs well past 120 chars. It is
+    # the one artifact that survives renaming the connector: an operator who
+    # ships cloudflared.exe as svchost.exe still has to paste this token to
+    # register the tunnel. Length floor keeps short base64 JSON off it.
+    crit: notable
+    conf: 0.9
+    for: [scripts, systemd-service, pe]
+    platforms: [windows, linux, macos]
+    attack: T1572
+    if:
+      type: text
+      regex: '\beyJhIjoi[A-Za-z0-9+/=_-]{120,}'
+
+  - id: tunnel-connector-service-install-token
+    desc: Tunnel connector service install with token
+    # `<connector> service install <token>` registers the connector as an OS
+    # service and authenticates the tunnel in one shot. Deliberately does NOT
+    # require the `cloudflared` binary name — the sibling
+    # cloudflared-service-install-command covers the named form and goes blind
+    # the moment the connector is renamed, which is exactly what post-
+    # exploitation tooling does. The long opaque token argument is what keeps
+    # this off ordinary `service install` verbs; barring a separator from the
+    # leading run keeps it off long filesystem paths.
+    crit: notable
+    conf: 0.9
+    for: [scripts, systemd-service]
+    platforms: [windows, linux]
+    attack: T1543
+    if:
+      type: text
+      regex: '(?i)\bservice\s+install\s+[A-Za-z0-9+_-]{20}[A-Za-z0-9+/=_-]{60,}'
+
   - id: cloudflared-systemd-service
     desc: Systemd service launches cloudflared
     crit: notable
@@ -152,6 +188,29 @@ composite_rules:
     platforms: [windows, linux]
     any:
       # run-command staged into a separate service registration, or the
-      # self-installing `cloudflared service install` one-shot.
+      # self-installing `cloudflared service install` one-shot — either under
+      # the connector's own name or renamed, in which case the opaque tunnel
+      # token is the leg that still identifies it.
       - id: tunnel-run-as-external-service
       - id: cloudflared-service-install-command
+      - id: tunnel-connector-service-install-token
+      - id: renamed-tunnel-connector-service-install
+
+  - id: renamed-tunnel-connector-service-install
+    desc: Cloudflare tunnel token registered as a service
+    # Token credential plus any OS service registration: the connector binary
+    # can be called anything at all and this still identifies the persistence
+    # as a Cloudflare tunnel.
+    crit: suspicious
+    conf: 0.93
+    for: [scripts, systemd-service]
+    platforms: [windows, linux]
+    attack: T1572,T1543
+    all:
+      - id: cloudflare-tunnel-token-credential
+    any:
+      - id: tunnel-connector-service-install-token
+      - id: micro-behaviors/os/service/control::sc-create-command
+      - id: micro-behaviors/os/service/config::powershell-binary-service-command
+      - id: micro-behaviors/os/service/config::exec-start-text
+      - id: cloudflared-systemd-service

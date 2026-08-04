@@ -1,0 +1,84 @@
+# Windows service registered against an image in a user-writable location.
+#
+# The Windows analogue of exec-start-userwritable-path in the sibling
+# systemd/traits.yaml. A Windows service runs as LocalSystem at boot, so its
+# image belongs under %SystemRoot%, %ProgramFiles% or %ProgramData% —
+# locations an unprivileged user cannot write. A service whose binPath resolves
+# into a user profile folder (Documents, Downloads, Desktop, AppData) or a
+# world-writable staging dir (Temp, Users\Public) is a payload that was dropped
+# as the user and then promoted to a boot-persistent SYSTEM service. It is also
+# a privilege-escalation primitive: whoever can rewrite that image controls
+# what SYSTEM executes at next boot.
+#
+# Each atom carries the binPath/-BinaryPathName assignment and the writable
+# location in one pattern, so the path is provably the service image rather
+# than an unrelated mention of %TEMP% elsewhere in the same installer.
+#
+# ATT&CK: T1543.003 (Create or Modify System Process: Windows Service)
+defaults:
+  platforms: [windows]
+  for: [powershell, batch, csharp, go]
+  crit: suspicious
+  conf: 0.93
+  attack: T1543.003
+  mbc: B0011.003
+
+traits:
+  - id: binpath-shell-folder
+    desc: Service binPath in user shell folder
+    if:
+      type: text
+      regex: '(?i)\bbinPath\s*=[^\r\n]{0,80}[\\/](Documents|Downloads|Desktop)[\\/]'
+
+  - id: binpath-appdata-temp
+    desc: Service binPath in AppData or Temp
+    if:
+      type: text
+      regex: '(?i)\bbinPath\s*=[^\r\n]{0,80}(%TEMP%|%APPDATA%|[\\/]AppData[\\/])'
+
+  - id: binpath-users-public
+    desc: Service binPath in Users Public directory
+    if:
+      type: text
+      regex: '(?i)\bbinPath\s*=[^\r\n]{0,80}[\\/]Users[\\/]Public[\\/]'
+
+  - id: new-service-shell-folder
+    desc: New-Service image in user shell folder
+    for: [powershell]
+    if:
+      type: text
+      regex: '(?i)-BinaryPathName[^\r\n]{0,80}[\\/](Documents|Downloads|Desktop)[\\/]'
+
+  - id: new-service-appdata-temp
+    desc: New-Service image in AppData or Temp
+    for: [powershell]
+    if:
+      type: text
+      regex: '(?i)-BinaryPathName[^\r\n]{0,80}(\$env:TEMP|\$env:APPDATA|[\\/]AppData[\\/])'
+
+composite_rules:
+  - id: writable-service-image-any
+    desc: Windows service image in writable path
+    crit: suspicious
+    conf: 0.93
+    any:
+      - id: binpath-shell-folder
+      - id: binpath-appdata-temp
+      - id: binpath-users-public
+      - id: new-service-shell-folder
+      - id: new-service-appdata-temp
+
+  - id: user-writable-service-image-autostart
+    desc: Auto-start service image in writable path
+    # Boot-persistent plus user-writable: together these are what make a
+    # dropped payload survive reboot running as SYSTEM.
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: writable-service-image-any
+    any:
+      - id: micro-behaviors/os/service/control::service-auto-start-setting
+      - id: micro-behaviors/os/service/control::sc-auto-start-service-create
+      - id: micro-behaviors/os/service/control::sc-local-system-service-create
+    unless:
+      - id: metadata/package/testing/presence/harness/
