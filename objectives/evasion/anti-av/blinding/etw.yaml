@@ -5,13 +5,14 @@ defaults:
   for: [binaries, pe, dll]
 
 traits:
-  - id: etw-patch-str
-    desc: ETW patching string indicator
-    crit: notable
+  - id: etw-write-after-api-string
+    desc: ETW API followed by native memory write
+    crit: suspicious
     conf: 0.95
+    for: [csharp, pe, dll]
     if:
       type: text
-      substr: "Patching EtwEventWrite"
+      regex: '(?is)EtwEventWrite.{0,320}(Marshal\.Copy|VirtualProtect|m_Writer\s*\()'
 
   - id: etw-patch-xor-ret
     desc: ETW patch bytes (xor eax,eax; ret)
@@ -19,7 +20,8 @@ traits:
     conf: 0.9
     if:
       type: text
-      substr: "0x33 0xC0 0xC3"
+      regex: '(?i)0x33\s*,?\s*0xC0\s*,?\s*0xC3'
+    for: [csharp, pe, dll]
 
   - id: etw-event-write-symbol
     desc: EtwEventWrite symbol reference
@@ -50,18 +52,38 @@ traits:
       section: .text
       pattern: 'C7 03 48 33 C0 C3'
 
+  - id: csharp-etw-api-resolution
+    desc: C# resolves EtwEventWrite from ntdll
+    crit: suspicious
+    conf: 0.97
+    attack: T1562.006
+    for: [csharp]
+    if:
+      type: text
+      regex: '(?s)LoadLibrary\("ntdll\.dll"\).{0,120}GetProcAddress.{0,50}"EtwEventWrite"'
+
 composite_rules:
   - id: etw-blinding-patch
     desc: Disables ETW by patching EtwEventWrite
     crit: hostile
     conf: 0.98
     all:
-      - id: etw-patch-str
+      - id: etw-write-after-api-string
     any:
       - id: etw-patch-xor-ret
       - id: etw-event-write-symbol
     unless:
       - id: metadata/signed/platform/
+
+  - id: csharp-etw-dynamic-memory-patch
+    desc: C# dynamically patches EtwEventWrite
+    crit: hostile
+    conf: 0.98
+    attack: T1562.006
+    for: [csharp]
+    all:
+      - id: csharp-etw-api-resolution
+      - id: etw-write-after-api-string
 
   - id: nttraceevent-blinding-patch
     desc: Dynamically resolves and disables NtTraceEvent telemetry
