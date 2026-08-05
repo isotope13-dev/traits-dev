@@ -169,6 +169,11 @@ traits:
   # ============================================================
   # JAVASCRIPT: package.json script trojans
   # ============================================================
+  # `fetch` was never part of what this trait claims to find, and as a bare
+  # substring it matched the ordinary binary-wrapper idiom
+  # `"postinstall": "node ./scripts/fetch-binary.js"` — which `npm-install-trojan`
+  # then convicted as hostile. Word-anchored so `curl`/`wget` must be the
+  # command, not a fragment of `curling`/`wgetrc`.
   - id: npm-preinstall-curl
     desc: preinstall script with curl/wget
     crit: suspicious
@@ -176,7 +181,7 @@ traits:
     for: [package.json]
     if:
       type: text
-      regex: '"preinstall"\s*:\s*"[^"]{0,200}(curl|wget|fetch)'
+      regex: '"preinstall"\s*:\s*"[^"]{0,200}\b(curl|wget)\b'
     unless:
       - id: well-known/app/vscode-marketplace::oxc-vscode-package-name
       - id: metadata/package/testing/presence/manifest::has-karma
@@ -187,20 +192,45 @@ traits:
     for: [package.json]
     if:
       type: text
-      regex: '"postinstall"\s*:\s*"[^"]{0,200}(curl|wget|fetch)'
+      regex: '"postinstall"\s*:\s*"[^"]{0,200}\b(curl|wget)\b'
     unless:
       - type: value
         path: scripts.postinstall
         substr: stackpath.bootstrapcdn.com/twitter-bootstrap
       - id: metadata/package/scripts/
-  - id: npm-install-exec
-    desc: install script executes external code
+  # Split from the old `npm-install-exec`, which matched the bare substring
+  # `eval` anywhere in the first 100 characters of a lifecycle script. That
+  # caught Node's own `--eval` flag: `node --input-type=module --eval "<inline
+  # script>"` is the cross-platform way to run a few lines at install time, and
+  # the code it runs is written out in the manifest for anyone to read — the
+  # opposite of the evaluated-string shape this rule is for. It also matched
+  # `eval-source-map` and any other hyphenated word starting with `eval`.
+  # Anchoring on both sides keeps the shell builtin (`eval "$(...)"`) and a JS
+  # `eval(...)` call while rejecting the flag spellings.
+  - id: npm-install-eval-string
+    desc: install script evaluates a code string
     crit: suspicious
     conf: 0.95
     for: [package.json]
     if:
       type: text
-      regex: '"(pre|post)?install"\s*:\s*"[^"]{0,100}(eval|sh -c)'
+      regex: '"(pre|post)?install"\s*:\s*"([^"]{0,100}[^-\w])?eval[^-\w]'
+    unless:
+      - id: well-known/app/vscode-marketplace::oxc-vscode-package-name
+      - id: metadata/package/testing/presence/manifest::has-karma
+
+  # The other half of the old `npm-install-exec`. Choosing an interpreter for
+  # an inline command is not by itself the trojan shape — conditional installers
+  # legitimately write `sh -c 'test -f x && node y'` — so this one is evidence
+  # for composites rather than a leg of the hostile umbrella below.
+  - id: npm-install-shell-command-string
+    desc: install script runs an inline shell command
+    crit: suspicious
+    conf: 0.9
+    for: [package.json]
+    if:
+      type: text
+      regex: '"(pre|post)?install"\s*:\s*"[^"]{0,100}\b(sh|bash|zsh)\s+-c\b'
     unless:
       - id: well-known/app/vscode-marketplace::oxc-vscode-package-name
       - id: metadata/package/testing/presence/manifest::has-karma
@@ -897,7 +927,7 @@ composite_rules:
     any:
       - id: npm-preinstall-curl
       - id: npm-postinstall-curl
-      - id: npm-install-exec
+      - id: npm-install-eval-string
       - id: npm-script-pipe-sh
       - id: npm-script-base64
     unless:
