@@ -1,0 +1,212 @@
+# Backend authentication relay behavior described in the article. These rules
+# intentionally match API workflow structure rather than provider names or
+# campaign-specific keys.
+defaults:
+  platforms: [windows, unix]
+  for: [python]
+  attack: T1056.002,T1556.006
+  mbc: B0030
+
+traits:
+  - id: python-auth-api-endpoint
+    desc: Python auth API URL
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)https?://[A-Za-z0-9._-]{1,120}/[^"''\s]{0,80}/(login|auth|signin)\b'
+
+  - id: python-login-field
+    desc: Python login field
+    crit: component
+    conf: 0.88
+    if:
+      type: text
+      regex: '(?i)\b(login|username)\b'
+
+  - id: python-password-field
+    desc: Python password field
+    crit: component
+    conf: 0.88
+    if:
+      type: text
+      regex: '(?i)\b(password|passwd|pass)\b'
+
+  - id: captcha-client-key
+    desc: CAPTCHA solver client key
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)client[_-]?key'
+
+  - id: captcha-task-marker
+    desc: CAPTCHA solver task marker
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)(create[_-]?task|recaptcha|captcha)'
+
+  - id: captcha-site-field
+    desc: CAPTCHA target site field
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)website[_-]?(url|key)'
+
+  - id: captcha-result-marker
+    desc: CAPTCHA result polling marker
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)(get[_-]?task[_-]?result|task[_-]?result|res\.php)'
+
+  - id: captcha-task-id
+    desc: CAPTCHA task ID field
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)task[_-]?id'
+
+  - id: mailbox-password-path
+    desc: Mailbox app-password API path
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)(app[_-]?pwds?|app[-_]password|imap)'
+
+  - id: raw-mailbox-password
+    desc: Raw mailbox password field
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)raw[_-]?password'
+
+  - id: mailbox-file-name
+    desc: Mailbox credential filename
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)open\s*\([^)]{0,100}(imap|mail|password)'
+
+  - id: python-append-mode
+    desc: Python append file mode
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)open\s*\([^)]{0,180},\s*["'']a["'']'
+
+  - id: mailbox-sender-field
+    desc: Mailbox sender field
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)["'']from["'']|\.from\b'
+
+  - id: noreply-sender-address
+    desc: No-reply sender address
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)(noreply|no-reply)@[A-Za-z0-9._-]{1,80}'
+
+  - id: mailbox-message-remove
+    desc: Mailbox message removal
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)messages[/_.-]?remove'
+
+composite_rules:
+  - id: python-auth-credential-payload
+    desc: Python login and password fields
+    crit: notable
+    conf: 0.92
+    all:
+      - id: python-login-field
+      - id: python-password-field
+    near_bytes: 220
+
+  - id: python-captcha-solver-api
+    desc: Python CAPTCHA solver workflow
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: captcha-client-key
+      - id: captcha-task-marker
+      - id: captcha-site-field
+      - id: captcha-result-marker
+      - id: captcha-task-id
+    near_bytes: 900
+
+  - id: python-mailbox-password-generation
+    desc: Mailbox app-password generation
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: mailbox-password-path
+      - id: raw-mailbox-password
+    near_bytes: 420
+
+  - id: python-mailbox-credential-file
+    desc: Mailbox credential file write
+    crit: suspicious
+    conf: 0.94
+    all:
+      - id: mailbox-file-name
+      - id: python-append-mode
+    near_bytes: 260
+
+  - id: mailbox-notification-filter
+    desc: Mailbox no-reply notification filter
+    crit: notable
+    conf: 0.92
+    all:
+      - id: mailbox-sender-field
+      - id: noreply-sender-address
+    near_bytes: 180
+
+  - id: python-authentication-relay
+    desc: Python auth relay
+    crit: hostile
+    conf: 0.99
+    attack: T1056.002,T1556.006,T1566.002
+    all:
+      - id: micro-behaviors/communications/http/lib/requests::requests-post
+      - id: python-auth-api-endpoint
+      - id: python-auth-credential-payload
+      - id: python-captcha-solver-api
+    near_bytes: 2200
+
+  - id: python-mailbox-credential-access
+    desc: Mailbox access after auth relay
+    crit: hostile
+    conf: 0.99
+    attack: T1056.002,T1556.006,T1078
+    all:
+      - id: python-authentication-relay
+      - id: python-mailbox-password-generation
+      - id: python-mailbox-credential-file
+    near_bytes: 2600
+
+  - id: python-mailbox-notification-suppression
+    desc: Mailbox notification suppression
+    crit: hostile
+    conf: 0.98
+    attack: T1070.008,T1056.002
+    all:
+      - id: mailbox-notification-filter
+      - id: mailbox-message-remove
+      - id: micro-behaviors/communications/http/lib/requests::requests-post
+    near_bytes: 900
