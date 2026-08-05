@@ -1,0 +1,155 @@
+# Remote-access agents provisioned for unattended entry, and stacked.
+#
+# A remote-support product only becomes a backdoor once it is configured to
+# accept a session without the logged-on user approving it: installed with the
+# vendor's silent switches, given a fixed access password, and left running.
+# Those switches are documented and an administrator uses them too, so on
+# their own they are configuration facts, not conviction.
+#
+# What an administrator does not produce is the shape post-exploitation crews
+# leave behind after taking over a management platform:
+#
+#   * the agent binary pulled from a bare IPv4 host. Vendors ship installers
+#     from their own domains; an operator re-hosts them on staging boxes,
+#     which is why every tool in these intrusions arrives from an IP.
+#   * an unattended-access agent installed alongside a reverse-tunnel
+#     connector registered as a boot service. The vendor's own cloud already
+#     provides the inbound path; a second, firewall-transparent one exists to
+#     survive the agent being removed.
+#
+# Operators also layer several vendors on one host — AnyDesk, RustDesk, a
+# TacticalRMM agent and HopToDesk in the same script — so that cleaning up one
+# channel leaves the others. That stacking is visible as several concurrent
+# identities from well-known/tool/dual-use/rmm/ rather than as a rule here.
+#
+# Product identities live in well-known/tool/dual-use/rmm/ (script-facing) and
+# in the per-product well-known directories; this file holds only the
+# provisioning flags and the intent composites built on them.
+#
+# ATT&CK: T1219 (Remote Access Software), T1572 (Protocol Tunneling)
+defaults:
+  platforms: [windows]
+  for: [scripts]
+  attack: T1219
+  mbc: B0030
+
+traits:
+  - id: anydesk-silent-install-flags
+    desc: AnyDesk unattended silent install switches
+    # `AnyDesk.exe --install <dir> --silent --start-with-win` is the documented
+    # unattended deployment: no UI, no prompt, service starts at boot.
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\bAnyDesk[^\r\n]{0,80}--install\b[^\r\n]{0,160}--silent\b'
+
+  - id: anydesk-unattended-password-set
+    desc: AnyDesk unattended-access password set
+    # `--set-password` writes the fixed password that lets an incoming session
+    # be accepted with nobody at the keyboard. It is the switch that turns an
+    # attended support tool into an always-available backdoor.
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\bAnyDesk[^\r\n]{0,120}--set-password\b'
+
+  - id: rustdesk-unattended-password-set
+    desc: RustDesk permanent access password set
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\brustdesk[^\r\n]{0,120}--password\b'
+
+  - id: remote-agent-silent-install-flag
+    desc: Remote-agent silent-install switch
+    # The `--silent-install` spelling shared by the RustDesk-derived agents
+    # (RustDesk, HopToDesk). Distinct enough as a flag to stand alone as a
+    # capability observation; vendor identity comes from the composites.
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      regex: '(?i)(^|[\s"''`])--silent-install\b'
+
+composite_rules:
+  - id: remote-agent-unattended-provisioning
+    desc: Remote agent provisioned for unattended entry
+    crit: suspicious
+    conf: 0.93
+    any:
+      - id: anydesk-silent-install-flags
+      - id: anydesk-unattended-password-set
+      - id: rustdesk-unattended-password-set
+      - id: remote-agent-silent-install-flag
+      - id: objectives/command-and-control/backdoor/control/rmm::silent-rmm-config
+      - id: objectives/persistence/login/self-install/remote-support/
+
+  - id: remote-access-agent-reference
+    desc: Third-party remote-access agent referenced
+    crit: notable
+    conf: 0.9
+    any:
+      - id: well-known/tool/dual-use/rmm/
+      - id: objectives/command-and-control/backdoor/control/rmm::simplehelp-rmm-marker
+      - id: well-known/tool/dual-use/screenconnect::screenconnect-product-marker
+
+  - id: remote-access-agent-delivery
+    desc: Remote-access agent retrieved over the network
+    crit: notable
+    conf: 0.9
+    all:
+      - id: remote-access-agent-reference
+    any:
+      - id: objectives/command-and-control/backdoor/control/rmm::remote-agent-transfer
+      - id: objectives/command-and-control/dropper/execution/batch::certutil-urlcache
+      - id: micro-behaviors/communications/http/download/manager::bitsadmin-job-lifecycle
+      - id: micro-behaviors/communications/http/download/url::executable-url-reference-a
+
+  - id: scripted-unattended-agent-deployment
+    desc: Script fetches and silently provisions a remote agent
+    # The general shape, one tier below conviction: a script pulls a
+    # remote-access agent over the network and turns on unattended entry in
+    # the same pass. Managed-service onboarding does this legitimately, which
+    # is why it stops at suspicious; the two composites below add what
+    # onboarding does not do.
+    crit: suspicious
+    conf: 0.94
+    attack: T1219,T1105
+    all:
+      - id: remote-access-agent-delivery
+      - id: remote-agent-unattended-provisioning
+    unless:
+      - id: metadata/package/testing/presence/harness/
+
+  - id: unattended-agent-from-ip-host
+    desc: Remote agent silently installed from a bare-IP host
+    # Vendors ship their installers from their own domains and CDNs. An agent
+    # binary pulled from a bare IPv4 URL and silently provisioned for
+    # unattended entry is an operator-staged copy: the download host is
+    # attacker infrastructure, not the vendor's.
+    crit: hostile
+    conf: 0.96
+    attack: T1219,T1105
+    all:
+      - id: scripted-unattended-agent-deployment
+      - id: micro-behaviors/communications/http/url/external-ip::url-external-ip-script
+    unless:
+      - id: metadata/package/testing/presence/harness/
+
+  - id: unattended-agent-with-tunnel-persistence
+    desc: Unattended remote agent plus tunnel service
+    # Two independent inbound paths installed together: the vendor-hosted
+    # session the agent provides, and a reverse tunnel connector registered as
+    # an OS service. Legitimate deployments use one or the other.
+    crit: hostile
+    conf: 0.96
+    attack: T1219,T1572,T1543.003
+    all:
+      - id: remote-access-agent-reference
+      - id: remote-agent-unattended-provisioning
+      - id: micro-behaviors/communications/proxy/tunnel::persistent-tunnel-service
+    unless:
+      - id: metadata/package/testing/presence/harness/
