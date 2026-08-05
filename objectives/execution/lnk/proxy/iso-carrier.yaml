@@ -3,7 +3,46 @@ defaults:
   for: [archive]
   attack: T1027,T1059.001,T1059.003,T1620
 
+traits:
+  # The companion PowerShell file is a separate ISO member from the LNK.
+  # Keep this carrier marker byte-based so the full chain remains visible even
+  # when the archive walker does not build a shared child-trait context.
+  - id: iso-powershell-rundll32-chain
+    desc: ISO PowerShell bypass/Rundll32 chain
+    crit: suspicious
+    conf: 0.99
+    attack: T1059.001,T1218.011
+    for: [archive, data]
+    if:
+      type: yara
+      source: |
+        rule iso_powershell_rundll32_chain {
+          strings:
+            $pvd = { 01 43 44 30 30 31 01 }
+            $powershell = "powershell.exe" ascii wide nocase
+            $bypass_exec = "-exec bypass" ascii wide nocase
+            $bypass_ep = "-ep bypass" ascii wide nocase
+            $bypass_full = "-executionpolicy bypass" ascii wide nocase
+            $script = "-file" ascii wide nocase
+            $ps1 = ".ps1" ascii wide nocase
+            $rundll32 = "rundll32.exe" ascii wide nocase
+            $ordinal = ",#" ascii wide
+            $ordinal_ps = ",`#" ascii wide
+          condition:
+            $pvd at 0x8000 and $powershell and any of ($bypass_*) and $script and $ps1 and $rundll32 and any of ($ordinal*)
+        }
+
 composite_rules:
+  - id: iso-powershell-rundll32-carrier
+    desc: ISO delivers a PowerShell-to-Rundll32 dropper chain
+    crit: hostile
+    conf: 0.99
+    attack: T1059.001,T1218.011,T1204.002
+    for: [all]
+    all:
+      - id: iso-powershell-rundll32-chain
+      - id: objectives/evasion/hijack-execution-flow/dll-hijacking::archive-shortcut-member
+
   - id: iso-lnk-batch-obfuscated-carrier
     desc: ISO carries an LNK and obfuscated batch execution chain
     crit: hostile
@@ -25,6 +64,24 @@ composite_rules:
       - id: metadata/file/format/structured::primary-volume-descriptor
       - id: metadata/file/format/structured::embedded-lnk-member
       - id: metadata/file/format/structured::embedded-lnk-cmd-rundll32-ordinal
+
+  - id: iso-lnk-powershell-rundll32-companion-dropper
+    desc: ISO LNK bypasses PowerShell policy before a DLL export stage
+    crit: hostile
+    conf: 0.99
+    attack: T1059.001,T1218.011,T1204.002
+    # ISO is surfaced as its own outer type by atomscan; archive scope keeps
+    # this composite on the image while its legs come from child members.
+    for: [all]
+    scope: archive
+    all:
+      - id: metadata/file/format/structured::primary-volume-descriptor
+      - id: metadata/file/format/structured::embedded-lnk-member
+      - id: objectives/command-and-control/dropper/lnk/target::powershell-target
+      - id: objectives/command-and-control/dropper/lnk/target::minimized-window
+      - id: objectives/command-and-control/dropper/lnk/target::powershell-argument-executionpolicy-bypass
+      - id: objectives/command-and-control/dropper/lnk/target::powershell-script-file-argument
+      - id: micro-behaviors/process/create/shell/script-host::rundll32-exec
 
   - id: udf-lnk-rundll32-ordinal-dropper
     desc: UDF image LNK launches a DLL export by ordinal
