@@ -1,0 +1,200 @@
+# Managed string-table obfuscation used by the Thanos/SmartAssembly lineage.
+# Constants are intentionally absent: variants change the XOR value, offset,
+# resource name, and AES material while retaining the decode pipeline.
+defaults:
+  platforms: [windows]
+  for: [pe, dll, csharp]
+  attack: T1027
+
+traits:
+  - id: managed-string-resource-header-source
+    desc: Managed {z} resource header
+    crit: notable
+    conf: 0.96
+    for: [csharp]
+    if:
+      type: text
+      regex: '(?i)\[\s*0\s*\].{0,120}0x7B.{0,120}\[\s*1\s*\].{0,120}0x7A.{0,120}\[\s*2\s*\].{0,120}0x7D'
+
+  - id: managed-string-resource-header-bytes
+    desc: Embedded {z} resource header
+    crit: notable
+    conf: 0.96
+    for: [pe, dll]
+    if:
+      type: hex
+      section: .rsrc
+      pattern: '7B 7A 7D (00|01|03)'
+
+  - id: managed-string-index-xor
+    desc: XOR-transformed string index
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      regex: '(?is)\b[A-Za-z_]\w*\s*\^=\s*[A-Za-z_]\w*\s*;'
+
+  - id: managed-string-index-offset
+    desc: Offset-adjusted string index
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      regex: '(?is)\b[A-Za-z_]\w*\s*-\s*=\s*[A-Za-z_]\w*\s*;'
+
+  - id: managed-string-length-prefix-flag
+    desc: String length high-bit flag
+    crit: notable
+    conf: 0.86
+    if:
+      type: text
+      regex: '(?is)\b[A-Za-z_]\w*\s*&\s*0x80\b'
+
+  - id: managed-string-length-prefix-branch
+    desc: String length continuation flag
+    crit: notable
+    conf: 0.86
+    if:
+      type: text
+      regex: '(?is)\b[A-Za-z_]\w*\s*&\s*0x(40|3F)\b'
+
+  - id: managed-string-length-prefix-shift
+    desc: String length bit-shift assembly
+    crit: notable
+    conf: 0.86
+    if:
+      type: text
+      regex: '(?is)<<\s*(8|24)\b'
+
+  - id: managed-string-il-dynamic-method
+    desc: DynamicMethod string dispatch token
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      word: DynamicMethod
+
+  - id: managed-string-il-generator
+    desc: ILGenerator string dispatch token
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      word: ILGenerator
+
+  - id: managed-string-metadata-token
+    desc: MetadataToken string dispatch token
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      word: MetadataToken
+
+  - id: managed-string-il-load-constant
+    desc: IL loads a string-table constant
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '\bOpCodes\.Ldc_I4\b'
+
+  - id: managed-string-il-subtract
+    desc: IL subtracts a string-table index
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '\bOpCodes\.Sub\b'
+
+  - id: managed-string-il-call
+    desc: IL calls a string decoder
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '\bOpCodes\.Call\b'
+
+composite_rules:
+  - id: managed-string-resource-access
+    desc: Managed embedded string resource access
+    crit: notable
+    conf: 0.91
+    any:
+      - id: micro-behaviors/data/embedded/payload/resource::dotnet-source-manifest-resource-stream-call
+      - id: micro-behaviors/data/embedded/payload/resource::dotnet-managed-resource-access
+
+  - id: managed-string-resource-header
+    desc: Managed {z} resource header
+    crit: notable
+    conf: 0.96
+    any:
+      - id: managed-string-resource-header-source
+      - id: managed-string-resource-header-bytes
+
+  - id: managed-string-index-xor-offset
+    desc: XOR-plus-offset string index
+    crit: suspicious
+    conf: 0.91
+    near_bytes: 256
+    all:
+      - id: managed-string-index-xor
+      - id: managed-string-index-offset
+
+  - id: managed-string-length-prefix-decoder
+    desc: Variable-length string prefix decoder
+    crit: suspicious
+    conf: 0.93
+    near_bytes: 512
+    all:
+      - id: managed-string-length-prefix-flag
+      - id: managed-string-length-prefix-branch
+      - id: managed-string-length-prefix-shift
+
+  - id: managed-string-il-token-dispatch
+    desc: Metadata-token IL string dispatch
+    crit: suspicious
+    conf: 0.95
+    near_bytes: 2048
+    all:
+      - id: managed-string-il-dynamic-method
+      - id: managed-string-il-generator
+      - id: managed-string-metadata-token
+      - id: managed-string-il-load-constant
+      - id: managed-string-il-subtract
+      - id: managed-string-il-call
+
+  - id: managed-resource-aes-string-layer
+    desc: AES/Base64 managed string resource layer
+    crit: suspicious
+    conf: 0.97
+    attack: T1027,T1140
+    all:
+      - id: managed-string-resource-access
+      - id: micro-behaviors/crypto/symmetric/decrypt::dotnet-create-decryptor
+      - id: micro-behaviors/crypto/symmetric/decrypt::transform-final-block
+      - id: managed-string-resource-header
+    any:
+      - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+      - id: micro-behaviors/data/encode/base64::dotnet-to-base64string
+
+  - id: managed-obfuscated-string-resource-decoder
+    desc: Layered managed string decoder
+    crit: hostile
+    conf: 0.97
+    attack: T1027,T1140
+    mbc: B0032
+    all:
+      - id: managed-resource-aes-string-layer
+      - id: managed-string-index-xor-offset
+      - id: managed-string-length-prefix-decoder
+
+  - id: managed-obfuscated-string-delegate-dispatch
+    desc: Managed IL delegate string dispatch
+    crit: hostile
+    conf: 0.98
+    attack: T1027,T1620
+    mbc: B0032
+    all:
+      - id: managed-resource-aes-string-layer
+      - id: managed-string-il-token-dispatch
+      - id: micro-behaviors/process/interpreter/reflection/runtime::create-delegate
