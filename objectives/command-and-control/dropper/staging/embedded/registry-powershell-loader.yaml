@@ -1,0 +1,79 @@
+# Registry-backed script loaders. The article's campaign used an HTA to place
+# a PowerShell loader and an encoded second stage in separate HKCU values, then
+# ran the loader and removed both values. These rules describe that structure,
+# not the campaign's JavaSoft/MSOffice names or lure text.
+defaults:
+  platforms: [windows]
+  for: [powershell, javascript, html, vbs]
+  attack: T1027,T1059.001,T1112,T1140
+
+traits:
+  - id: hidden-dom-innerhtml-cluster
+    desc: Multiple hidden DOM fragments read as HTML
+    crit: suspicious
+    conf: 0.94
+    for: [javascript, html]
+    count_min: 3
+    if:
+      type: text
+      regex: '(?i)(getElementById\s*\([^)]{1,80}\)\s*\.\s*innerHTML|visibility\s*:\s*hidden)'
+
+  - id: powershell-null-pointer-delegate-invoke
+    desc: PowerShell invokes a delegate with IntPtr.Zero
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: text
+      regex: '(?i)Invoke\s*\(\s*\[IntPtr\]::Zero\s*\)'
+
+composite_rules:
+  - id: registry-sourced-base64-stage
+    desc: PowerShell decodes Base64 from HKCU
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: micro-behaviors/data/decode/base64::powershell-frombase64string
+      - id: micro-behaviors/os/registry/access::powershell-registry-read
+    near_lines: 4
+
+  - id: registry-sourced-powershell-eval
+    desc: PowerShell evaluates HKCU registry text
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: micro-behaviors/os/registry/access::powershell-registry-read
+      - id: micro-behaviors/process/interpreter/eval::embedded-powershell-iex
+    near_lines: 8
+
+  - id: hta-registry-powershell-loader
+    desc: HTA runs PowerShell from registry values
+    crit: hostile
+    conf: 0.99
+    attack: T1027,T1059.001,T1112,T1204.002
+    all:
+      - id: metadata/file/format/markup::hta-application-element
+      - id: micro-behaviors/os/com/object::wscript-shell-activex-constructor
+      - id: micro-behaviors/os/registry/write/wsh::wscript-regwrite
+      - id: micro-behaviors/os/registry/access::powershell-registry-read
+      - id: registry-sourced-powershell-eval
+      - id: hidden-dom-innerhtml-cluster
+      - id: micro-behaviors/process/create/shell/wsh::wscript-shell-run-hidden-window
+
+  - id: hta-registry-loader-cleans-stage
+    desc: HTA deletes registry-backed PowerShell stage
+    crit: hostile
+    conf: 0.99
+    attack: T1027,T1059.001,T1070.004,T1112
+    all:
+      - id: hta-registry-powershell-loader
+      - id: micro-behaviors/os/registry/delete::powershell-registry-value-delete
+
+  - id: registry-sourced-shellcode-loader
+    desc: Registry-sourced Base64 stage invokes in memory
+    crit: hostile
+    conf: 0.99
+    attack: T1027,T1112,T1140,T1620
+    all:
+      - id: registry-sourced-base64-stage
+      - id: powershell-null-pointer-delegate-invoke
+    near_lines: 12
