@@ -1,0 +1,79 @@
+# Turning a stolen OAuth token back into a logged-in session.
+#
+# Device-code and AiTM phishing end with the operator holding access and
+# refresh tokens rather than a password.  The tooling that follows — OctoLink
+# Live in the Kali365 ecosystem, and the same pattern in other kits — replays
+# those tokens into an interactive session so the operator browses the
+# victim's mailbox with no password and no second MFA prompt:
+#
+#   * POST the bearer assertion to Outlook Web Access's `auth.owa` endpoint,
+#     which answers with ordinary OWA session cookies.
+#   * intercept the embedded browser's outbound requests and staple an
+#     `Authorization: Bearer` header onto them, so every subsequent navigation
+#     carries the stolen credential.
+#
+# Both are specific mechanics, not generic HTTP: a normal client sends its own
+# token on its own requests, it does not convert one into a browser session or
+# rewrite headers for a whole embedded session.
+#
+# ATT&CK: T1550.001 (Application Access Token), T1534 (Internal Spearphishing)
+defaults:
+  platforms: [windows, unix]
+  for: [scripts, source, html]
+  crit: notable
+  conf: 0.94
+  attack: T1550.001
+
+traits:
+  # OWA's token-to-cookie exchange endpoint.  Legitimate clients talk to Graph
+  # or to OWA as a signed-in user; posting a bearer token here to obtain a
+  # session is the token-replay step.
+  - id: owa-token-session-endpoint
+    desc: Outlook Web Access token exchange endpoint
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)outlook\.office(365)?\.com/owa/auth\.owa'
+
+  - id: owa-bearer-assertion-body
+    desc: Posts a bearer assertion to OWA
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)token_type=Bearer&access_token='
+
+composite_rules:
+  # A stolen access token exchanged for an interactive mailbox session.
+  - id: stolen-token-to-owa-session
+    desc: Replays an OAuth token into an OWA session
+    crit: hostile
+    conf: 0.96
+    attack: T1550.001,T1114.002
+    all:
+      - id: owa-token-session-endpoint
+    any:
+      - id: owa-bearer-assertion-body
+      - id: micro-behaviors/communications/http/auth::token-response-field
+      - id: micro-behaviors/communications/http/oauth::oauth-offline-access-scope
+    needs: 1
+    near_bytes: 8192
+    unless:
+      - id: well-known/tool/detection/
+
+  # Every request the embedded browser makes is rewritten to carry the
+  # operator's bearer token.  Request interception is a normal extension and
+  # Electron capability; doing it to inject a credential minted for a
+  # Microsoft first-party client is the weaponisation.
+  - id: bearer-header-injected-into-session
+    desc: Injects a bearer token into intercepted requests
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: micro-behaviors/process/hook/webextension::webrequest-before-send-headers-listener
+      - id: micro-behaviors/communications/http/headers::authorization-header-index-assignment
+      - id: micro-behaviors/communications/http/oauth::microsoft-first-party-client-id
+    near_bytes: 8192
+    unless:
+      - id: well-known/tool/detection/

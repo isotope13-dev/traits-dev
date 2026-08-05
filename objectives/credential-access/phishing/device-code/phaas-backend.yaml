@@ -1,0 +1,71 @@
+# Phishing-as-a-service backends that render brand lures around a device code.
+#
+# A PhaaS panel does not ship one hand-written page.  It serves a template
+# chosen per victim: the front end asks the panel to mint a session, naming
+# which brand skin and which identity provider to use, then polls a numeric
+# session route until the victim has approved the code upstream.  Kali365
+# exposes exactly that grammar — `/api/generate?lure=<id>`, `/api/status/<n>`,
+# and a JS config carrying `design` (the brand template) and `flow_type` (the
+# provider, `device_code` or `google`).
+#
+# The individual routes are ordinary-looking; what is not ordinary is a page
+# that selects a *brand impersonation template* by name and drives a device
+# authorization flow off the same config.  Legitimate device-flow clients
+# authenticate to one provider they own and have no notion of a swappable
+# lure skin.
+#
+# ATT&CK: T1566.002 (Spearphishing Link), T1528 (Steal Application Access Token)
+defaults:
+  platforms: [windows, unix]
+  for: [html, scripts]
+  crit: notable
+  conf: 0.93
+  attack: T1566.002,T1528
+
+traits:
+  # Page generation parameterised by a lure identifier: the panel is asked for
+  # "the page for lure N" rather than serving fixed content.
+  - id: lure-parameterized-page-route
+    desc: Requests a page keyed by lure ID
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)/api/(generate\?lure=|lure-config/)'
+
+  # `flow_type` names which identity provider's device grant to drive. A
+  # provider selector is a kit feature, not an application feature.
+  - id: phishkit-provider-flow-selector
+    desc: Config selects the device-code provider
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: '(?i)\bflow_type\b\s*[:=]\s*["'']?(device_code|google)\b'
+
+  # `design` naming a well-known SaaS brand is the template selector: the page
+  # is dressed as SharePoint/OneDrive/DocuSign/Adobe on demand.
+  - id: phishkit-brand-template-selector
+    desc: Config selects a brand lure template
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\bdesign\b\s*[:=]\s*["''](sharepoint|onedrive|docusign|adobe)\b'
+
+composite_rules:
+  # A brand-skinned, provider-selectable lure wired to a device-code handoff.
+  - id: lure-templated-device-code-panel
+    desc: Brand-templated device-code phishing front end
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: micro-behaviors/communications/http/auth::device-code-user-handoff
+    any:
+      - id: lure-parameterized-page-route
+      - id: phishkit-provider-flow-selector
+      - id: phishkit-brand-template-selector
+    needs: 2
+    near_bytes: 8192
+    unless:
+      - id: well-known/tool/detection/
