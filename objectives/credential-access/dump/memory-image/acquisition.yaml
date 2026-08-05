@@ -1,0 +1,56 @@
+# Acquiring a physical memory image of a live host — the collection half of
+# the "bring your own DFIR tool" credential path.
+#
+# A raw image of all physical RAM contains every secret the machine is
+# currently holding: LSASS's cached logon material, Kerberos tickets, browser
+# session cookies, key material.  Taking one with a portable imager needs no
+# access to lsass.exe at all, so it produces none of the process-handle
+# telemetry that credential-dumping detections key on; the secrets are carved
+# out later, offline, by whoever ends up with the file.
+#
+# Responders acquire memory legitimately, so the tool alone is only notable
+# (it lives in well-known/tool/dual-use/memory-forensics).  What is reported
+# here is the attacker shape around it: the imager staged in a user-writable
+# directory, and the resulting image compressed and moved off the host.
+defaults:
+  platforms: [windows]
+  for: [scripts, binaries]
+  crit: suspicious
+  conf: 0.9
+  attack: T1003
+  mbc: E1003
+
+composite_rules:
+  # A portable imager dropped into AppData/ProgramData/Temp and run from
+  # there.  Collection kits run from removable media or an admin share; a
+  # memory imager living in a user-writable staging directory is tooling the
+  # operator brought with them.
+  - id: staged-memory-imager-execution
+    desc: Memory imager run from a writable staging dir
+    crit: suspicious
+    conf: 0.92
+    all:
+      - id: well-known/tool/dual-use/memory-forensics::physical-memory-acquisition-tool
+    any:
+      - id: micro-behaviors/fs/path/application/executable::appdata-exe-path
+      - id: micro-behaviors/fs/path/location::programdata-executable-path
+      - id: micro-behaviors/fs/path/location::roaming-appdata-executable-path
+    needs: 1
+    near_bytes: 4096
+    scope: leaf
+
+  # The image itself is the loot: acquired, packed, and carried off the host
+  # for offline processing.
+  - id: memory-image-collected-for-exfiltration
+    desc: RAM image acquired then packed and moved off host
+    crit: suspicious
+    conf: 0.93
+    attack: T1003,T1560
+    all:
+      - id: well-known/tool/dual-use/memory-forensics::physical-memory-acquisition-tool
+      - id: objectives/collection/archive/compress::powershell-compress-archive
+    any:
+      - id: micro-behaviors/communications/http/download/manager::bits-transfer-cmdlet
+      - id: micro-behaviors/os/network/share::unc-path-reference
+    needs: 1
+    scope: leaf

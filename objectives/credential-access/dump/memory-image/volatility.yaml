@@ -1,0 +1,188 @@
+# Credential extraction from an offline physical-memory image.
+#
+# "Bring your own DFIR tool" credential access: instead of reading lsass.exe —
+# which every EDR watches — the operator acquires a full RAM image with a
+# legitimate forensic imager (WinPmem, DumpIt, Magnet RAM Capture) and then
+# carves the credential stores out of that file with Volatility.  The secrets
+# land on disk without a single handle ever being opened to LSASS.
+#
+# The plugin names below are Volatility's credential plugins and are stable
+# API identifiers, not prose:
+#   Volatility 3 — windows.hashdump.Hashdump   (SAM NT/LM hashes)
+#                  windows.cachedump.Cachedump (domain cached credentials)
+#                  windows.lsadump.Lsadump     (LSA secrets)
+#   Volatility 2 — the same three as bare subcommands after --profile=
+#
+# Running one of these is credential dumping whoever does it, so the plugin
+# invocation itself is suspicious; a responder analysing an image trips it too.
+# Hostile requires the attack shape: acquiring the image and dumping it on the
+# same host, or sweeping several credential stores in one pass.
+defaults:
+  # Volatility may analyze a Windows image from any operator host.
+  platforms: [unix, windows]
+  for: [scripts, binaries]
+  crit: suspicious
+  conf: 0.93
+  attack: T1003
+  mbc: E1003
+
+traits:
+  - id: volatility3-hashdump-plugin
+    desc: Volatility3 SAM hashdump plugin
+    attack: T1003.002
+    if:
+      type: text
+      regex: '(?i)windows\.hashdump\.Hashdump'
+
+  - id: volatility3-cachedump-plugin
+    desc: Volatility3 cached-credential plugin
+    attack: T1003.005
+    if:
+      type: text
+      regex: '(?i)windows\.cachedump\.Cachedump'
+
+  - id: volatility3-lsadump-plugin
+    desc: Volatility3 LSA secrets plugin
+    attack: T1003.004
+    if:
+      type: text
+      regex: '(?i)windows\.lsadump\.Lsadump'
+
+  # Volatility 2 spells the same plugins as bare subcommands.  Anchored on the
+  # mandatory --profile= switch so the generic words cannot match prose.  Kept
+  # as one atom per credential store so the sweep composite can count how many
+  # distinct stores a single script goes after.
+  - id: volatility2-hashdump-plugin
+    desc: Volatility2 SAM hashdump subcommand
+    conf: 0.9
+    attack: T1003.002
+    if:
+      type: text
+      regex: '(?i)--profile=\S{1,32}\s+hashdump\b'
+
+  - id: volatility2-lsadump-plugin
+    desc: Volatility2 LSA secrets subcommand
+    conf: 0.9
+    attack: T1003.004
+    if:
+      type: text
+      regex: '(?i)--profile=\S{1,32}\s+lsadump\b'
+
+  - id: volatility2-cachedump-plugin
+    desc: Volatility2 cached-credential subcommand
+    conf: 0.9
+    attack: T1003.005
+    if:
+      type: text
+      regex: '(?i)--profile=\S{1,32}\s+cachedump\b'
+
+composite_rules:
+  - id: memory-image-credential-plugin
+    desc: Credential plugin run against a memory image
+    crit: suspicious
+    conf: 0.94
+    any:
+      - id: volatility3-hashdump-plugin
+      - id: volatility3-cachedump-plugin
+      - id: volatility3-lsadump-plugin
+      - id: volatility2-hashdump-plugin
+      - id: volatility2-lsadump-plugin
+      - id: volatility2-cachedump-plugin
+
+  # Several distinct credential stores carved out of one image in a single
+  # pass — SAM hashes, domain cached creds and LSA secrets together.
+  #
+  # Deliberately NOT hostile.  Running these plugins is the same act whether a
+  # responder or an intruder does it; the difference is authorisation, which no
+  # matcher can see.  Volatility's own test suite and IR wrapper scripts run
+  # the whole set, so hostile here would convict the framework itself.  The
+  # hostile rules below add what an analyst does not do: image the host they
+  # are dumping, or ship the recovered hashes off it.
+  - id: memory-image-credential-store-sweep
+    desc: Sweeps every credential store from a memory image
+    crit: suspicious
+    conf: 0.95
+    attack: T1003.002,T1003.004,T1003.005
+    unless:
+      - id: metadata/package/testing/
+      - id: well-known/tool/detection/
+    any:
+      - id: volatility3-hashdump-plugin
+      - id: volatility3-cachedump-plugin
+      - id: volatility3-lsadump-plugin
+      - id: volatility2-hashdump-plugin
+      - id: volatility2-lsadump-plugin
+      - id: volatility2-cachedump-plugin
+    needs: 2
+    near_bytes: 4096
+
+  # Acquisition and extraction in the same artifact: the script images the
+  # host's RAM and then dumps credentials out of the image it just took.
+  # Forensic collection scripts acquire; they do not hashdump what they grab.
+  - id: memory-image-acquire-and-dump-credentials
+    desc: Acquires RAM then dumps credentials from it
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: well-known/tool/dual-use/memory-forensics::physical-memory-acquisition-tool
+    any:
+      - id: volatility3-hashdump-plugin
+      - id: volatility3-cachedump-plugin
+      - id: volatility3-lsadump-plugin
+      - id: volatility2-hashdump-plugin
+      - id: volatility2-lsadump-plugin
+      - id: volatility2-cachedump-plugin
+    needs: 1
+    unless:
+      - id: metadata/package/testing/
+      - id: well-known/tool/detection/
+    # Source-language parsers expose each PowerShell invocation as its own
+    # syntax leaf.  Correlate the imager and Volatility command within the
+    # script instead of requiring one AST leaf, which would miss wrappers and
+    # multi-command scripts in other languages.
+    scope: file
+
+  # The recovered credential material is pushed off the host.  Analysts leave
+  # plugin output in the case directory; moving harvested hashes to an
+  # operator-controlled destination is the theft, and it is what makes this
+  # hostile rather than ambiguous DFIR activity.  Split by channel so each
+  # rule names the egress path an analyst would go looking for.
+  - id: memory-image-credentials-posted-remote
+    desc: Memory-image credentials posted to a remote host
+    crit: hostile
+    conf: 0.95
+    attack: T1003,T1041
+    all:
+      - id: micro-behaviors/communications/http/post::powershell-post-method
+    any:
+      - id: volatility3-hashdump-plugin
+      - id: volatility3-cachedump-plugin
+      - id: volatility3-lsadump-plugin
+      - id: volatility2-hashdump-plugin
+      - id: volatility2-lsadump-plugin
+      - id: volatility2-cachedump-plugin
+    needs: 1
+    unless:
+      - id: metadata/package/testing/
+      - id: well-known/tool/detection/
+    scope: leaf
+
+  - id: memory-image-credentials-staged-to-share
+    desc: Memory-image credentials copied to a network share
+    crit: hostile
+    conf: 0.94
+    attack: T1003,T1074.001
+    all:
+      - id: micro-behaviors/os/network/share::unc-path-reference
+    any:
+      - id: volatility3-hashdump-plugin
+      - id: volatility3-cachedump-plugin
+      - id: volatility3-lsadump-plugin
+      - id: volatility2-hashdump-plugin
+      - id: volatility2-lsadump-plugin
+      - id: volatility2-cachedump-plugin
+    needs: 1
+    unless:
+      - id: metadata/package/testing/
+      - id: well-known/tool/detection/
+    scope: leaf

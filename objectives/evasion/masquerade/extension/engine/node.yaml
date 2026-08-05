@@ -1,0 +1,59 @@
+# node.exe handed a payload that does not carry a script extension.
+#
+# Node executes whatever path it is given regardless of suffix, so an implant
+# shipped as debug.log or node.log runs exactly like a .js file while reading
+# as a log on disk, in a scheduled-task action, and in process telemetry.  The
+# Interlock/NodeSnake RAT is delivered this way: a portable Node runtime plus
+# "debug.log" holding the JavaScript.
+#
+# Same shape as the sibling wscript engine-override rule: the interpreter is
+# named explicitly, so the mismatched extension is the deception.  Legitimate
+# tooling passes .js/.mjs/.cjs, a directory, or a package name.
+defaults:
+  platforms: [windows]
+  for: [batch, powershell, javascript, vbs, pe]
+  crit: suspicious
+  conf: 0.92
+  attack: T1036.008
+  mbc: F0001
+
+traits:
+  - id: node-runs-log-extension-payload
+    desc: node.exe executes a .log file as script
+    if:
+      type: text
+      regex: '(?i)node\.exe"?\s+"?[^"\r\n]{0,120}\.log\b'
+
+  - id: node-runs-data-extension-payload
+    desc: node.exe executes a data-extension file
+    conf: 0.88
+    if:
+      type: text
+      regex: '(?i)node\.exe"?\s+"?[^"\r\n]{0,120}\.(dat|tmp|bin)\b'
+
+composite_rules:
+  - id: node-disguised-extension-execution
+    desc: Node runs a payload disguised as data
+    crit: suspicious
+    conf: 0.93
+    any:
+      - id: node-runs-log-extension-payload
+      - id: node-runs-data-extension-payload
+
+  # The implant is both disguised and made durable: a portable Node runtime in
+  # a writable directory runs a non-script payload from a scheduled task.
+  # Several schtasks spellings are accepted because the create flag and the
+  # executable name are separated differently in each real-world command line.
+  - id: node-disguised-payload-persistence
+    desc: Disguised Node payload persisted via task
+    crit: hostile
+    conf: 0.95
+    attack: T1036.008,T1053.005
+    all:
+      - id: node-disguised-extension-execution
+    any:
+      - id: micro-behaviors/os/autorun/scheduled::schtasks-create-cmd
+      - id: micro-behaviors/os/autorun/scheduled::schtasks-exe-create
+      - id: micro-behaviors/os/autorun/scheduled::schtasks-action-argument
+    needs: 1
+    scope: leaf
