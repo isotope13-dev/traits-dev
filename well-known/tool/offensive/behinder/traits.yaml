@@ -29,6 +29,16 @@ traits:
     if:
       type: text
       substr: net/rebeyond/behinder
+  # Two adjacent components, no leading anchor and no `!`: the same class must
+  # be recognised whether the jar is scanned as an archive member or unpacked
+  # to disk, and `rebeyond/behinder` is already a family-unique pair.
+  - id: rebeyond-package-path
+    desc: Behinder rebeyond package path
+    crit: component
+    conf: 0.95
+    if:
+      type: path
+      regex: '(?i)rebeyond[\\/]behinder([\\/]|$)'
 
   - id: core-decrypt-class-path
     desc: Behinder core decrypt class path
@@ -37,6 +47,27 @@ traits:
     if:
       type: path
       regex: '(^|[\\/])Decrypt\.class$'
+
+  - id: java-payload-path
+    desc: Behinder Java payload package path
+    crit: component
+    conf: 0.98
+    if:
+      type: path
+      regex: '(^|[\\/])payload[\\/]'
+
+  # Client-side packages shipped inside Behinder.jar (management UI, crypto,
+  # DAO, entities, utils). Distinct from the server-side `payload/` package.
+  # The leading boundary is dropped to stay within the two-separator path
+  # budget; every composite using this atom also requires java-package-path,
+  # which anchors `behinder/` on its own.
+  - id: java-client-package-path
+    desc: Behinder Java client package path
+    crit: component
+    conf: 0.96
+    if:
+      type: path
+      regex: 'behinder[\\/](core|utils|ui|dao|entity)[\\/]'
 
 composite_rules:
   - id: family-markers
@@ -48,6 +79,7 @@ composite_rules:
     any:
       - id: default-aes-key
       - id: rebeyond-package-token
+      - id: rebeyond-package-path
       - id: core-decrypt-class-path
 
   - id: webshell-framework
@@ -56,10 +88,63 @@ composite_rules:
     conf: 0.99
     all:
       - id: family-markers
+      - id: micro-behaviors/crypto/library/provider::java-payload-decryption
     any:
       - id: objectives/command-and-control/backdoor/webshell/exec/
       - id: objectives/command-and-control/reverse-shell/dup/
       - id: micro-behaviors/data/source/dynamic/reflect::java-defineclass
+      - id: micro-behaviors/process/create/exec::cross-language-process-execution
+      - id: micro-behaviors/data/source/dynamic/reflect::java-bytecode-reflective-method-invoke
+
+  # Path identity alone is enough once the file sits under the Behinder
+  # package tree — the directory is family-unique and does not appear in
+  # benign software.
+  - id: framework-package-identity
+    desc: Behinder framework package identity
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: java-package-path
+      - id: rebeyond-package-path
+
+  # The payload package is distinct from Behinder's client/UI and JDBC-style
+  # support code. Its classes are the server-side actions delivered through a
+  # webshell, so the package identity plus the family marker is sufficient to
+  # identify a payload component. The second composite below requires an
+  # active sink before adding another hostile signal.
+  - id: payload-component
+    desc: Behinder server-side webshell payload component
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: family-markers
+      - id: java-payload-path
+
+  # Management JAR classes are not the injected payload, but they are still
+  # Behinder offensive tooling. Pairing the family marker with a client-package
+  # path yields a second independent hostile finding for those members.
+  - id: management-client-component
+    desc: Behinder management client component
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: family-markers
+      - id: java-client-package-path
+
+  - id: payload-active-operation
+    desc: Behinder payload performs an active remote operation
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: family-markers
+      - id: java-payload-path
+    any:
+      - id: micro-behaviors/crypto/library/provider::java-payload-decryption
+      - id: micro-behaviors/process/create/exec::cross-language-process-execution
+      - id: micro-behaviors/data/source/dynamic/reflect::java-bytecode-reflective-method-invoke
+      - id: micro-behaviors/communications/socket/create::java-socket-class-import
+      - id: micro-behaviors/communications/dns/lookup/resolver::jvm-inetaddress-getbyname-bytecode
+      - id: micro-behaviors/communications/socket/send::java-raw-socket-client-write
       - id: micro-behaviors/fs/write/file/direct::jvm-fileoutputstream-bytecode
       - id: micro-behaviors/fs/delete/file::java-file-delete-bytecode
 
@@ -67,7 +152,7 @@ composite_rules:
   # or process sinks. family-markers alone is only suspicious; pairing the
   # framework identity with a concrete sink is the hostile payload shape.
   - id: payload-file-ops
-    desc: Behinder payload performs encrypted file operations
+    desc: Behinder decrypted payload performs file or reflective operations
     crit: hostile
     conf: 0.98
     all:
