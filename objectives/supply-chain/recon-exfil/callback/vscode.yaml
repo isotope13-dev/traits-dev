@@ -1,6 +1,6 @@
 defaults:
   platforms: [unix, windows, macos]
-  for: [vsix-archive, javascript, package.json]
+  for: [vsix-archive, javascript, typescript, package.json]
   attack: "T1195.002,T1041,T1082"
   mbc: E1041
 
@@ -49,3 +49,57 @@ composite_rules:
       - id: micro-behaviors/communications/http/request/client::post-method-text
       - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
       - id: micro-behaviors/data/serialize/json::identity-platform-json-payload
+
+  # Evil-twin / telemetry-disguised editor extensions that harvest git remotes
+  # and CI/cloud-dev project identifiers, then POST the profile over HTTPS.
+  - id: vscode-git-ci-identity-http-exfil
+    desc: VS Code extension POSTs git remotes and CI project identity
+    crit: hostile
+    conf: 0.98
+    attack: "T1041,T1082,T1195.002"
+    all:
+      - id: metadata/library/vscode::vscode-extension-marker
+      - id: micro-behaviors/fs/path/sensitive/credentials::git-repository-config-file
+      - id: micro-behaviors/os/env/vars/cicd::node-multi-ci-project-identity
+      - id: micro-behaviors/os/sysinfo/hostname::os-hostname-call
+      - id: micro-behaviors/communications/http/request/client::https-request
+      - id: micro-behaviors/communications/http/request/client::node-http-request-stream-body
+    any:
+      - id: micro-behaviors/fs/path/config/git::git-repository-head-path
+      - id: metadata/library/vscode::machine-id
+      - id: micro-behaviors/communications/http/user-agent::vscode-ext-metrics-user-agent
+    unless:
+      - id: metadata/library/github-actions::actions-sdk
+
+  # Takedown contingency: resolveTxt('_beacon.' + apex) then parse base=https://
+  # and continue HTTP beaconing to the recovered collector.
+  - id: vscode-dns-txt-beacon-url-failover
+    desc: VS Code extension recovers beacon URL from _beacon DNS TXT
+    crit: hostile
+    conf: 0.98
+    attack: "T1071.004,T1102,T1195.002"
+    all:
+      - id: metadata/library/vscode::vscode-extension-marker
+      - id: micro-behaviors/communications/dns/lookup/txt::node-txt-lookup
+      - id: micro-behaviors/communications/dns/label::dns-txt-beacon-label-prefix
+      - id: micro-behaviors/communications/dns/label::dns-txt-base-https-prefix
+    any:
+      - id: micro-behaviors/communications/http/request/client::https-request
+      - id: micro-behaviors/communications/http/request/client::https-get
+      - id: micro-behaviors/communications/http/request/client::node-http-request-stream-body
+
+  # Lightweight hostname beacon disguised as extension metrics telemetry.
+  - id: vscode-metrics-ua-host-beacon
+    desc: VS Code extension beacons hostname with vscode-ext-metrics User-Agent
+    crit: suspicious
+    conf: 0.96
+    attack: "T1041,T1082,T1195.002"
+    all:
+      - id: metadata/library/vscode::vscode-extension-marker
+      - id: micro-behaviors/os/sysinfo/hostname::os-hostname-call
+      - id: micro-behaviors/communications/http/user-agent::vscode-ext-metrics-user-agent
+      - id: micro-behaviors/data/encode/url::encode-uri-component-call
+    any:
+      - id: micro-behaviors/communications/http/request/client::https-get
+      - id: micro-behaviors/communications/http/request/client::https-request
+      - id: micro-behaviors/communications/http/request/client::node-http-request-stream-body
