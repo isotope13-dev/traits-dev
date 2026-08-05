@@ -1,9 +1,14 @@
-The YAML that feeds https://codeberg.org/atomdrift/cleave
+# traits-dev
 
-Split off for easier distribution.
+Private development and staging tree for the YAML/YARA rules consumed by
+[cleave](https://github.com/atomdrift-project/cleave). Reviewed releases are
+published to the public
+[Atomdrift traits repository](https://github.com/atomdrift-project/traits).
 
-See TAXONOMY.md and RULES.md for more information.
+End users should install or update traits through cleave rather than cloning
+this staging repository:
 
-NOTE: files in third-party/ have their own licenses, please examine each subdirectory appropriately.
-
-
+```bash
+cleave update-rules
+cleave version
+```
