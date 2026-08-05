@@ -1,0 +1,65 @@
+# RMM agents wired to an operator-run relay instead of the vendor's cloud.
+#
+# ScreenConnect and its peers take their session endpoint as client launch
+# parameters — `?h=<relay host>&p=<port>&k=<key>` — baked into the installer or
+# passed on the msiexec command line.  In a genuine deployment the host is the
+# tenant's vendor-hosted instance (`<tenant>.screenconnect.com`, a
+# `*-relay.screenconnect.com` edge).  Crews that re-host the agent point those
+# same parameters at a box of their own, which has no DNS name, so the host
+# field carries a bare IPv4 and a non-standard port.
+#
+# The existing MSI-side rules in well-known/tool/dual-use/screenconnect cover
+# the vendor-domain relay string and the stealth switches inside the package.
+# This file covers the script-side install command, where the endpoint is
+# chosen — and the raw-address form those rules do not express.
+#
+# ATT&CK: T1219 (Remote Access Software)
+defaults:
+  platforms: [windows, unix]
+  for: [scripts, oledoc, pe, dll, csharp]
+  attack: T1219
+  mbc: B0030
+
+traits:
+  # `h=<addr>&p=<port>&k=<key>` is the product's own parameter grammar; all
+  # three together pin the match to a session endpoint rather than to any
+  # query string.  The `not:` clauses keep it off on-premise deployments that
+  # legitimately address an internal server.
+  - id: rmm-launch-parameter-bare-ip-relay
+    desc: RMM relay set to bare public IP
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '[?&]h=(\d{1,3}\.){3}\d{1,3}&p=\d{2,5}&k='
+    not:
+      - regex: 'h=(10|127|0|169)\.'
+      - regex: 'h=192\.168\.'
+      - regex: 'h=172\.(1[6-9]|2[0-9]|3[01])\.'
+
+  - id: screenconnect-client-launch-parameters
+    desc: ScreenConnect client launch parameters set
+    crit: notable
+    conf: 0.93
+    if:
+      type: text
+      regex: '(?i)\bClientLaunchParameters\b'
+
+composite_rules:
+  # The agent is installed by script and told to call an unnamed host.  A
+  # managed-service onboarding script names the tenant instance; an operator
+  # staging box only has an address.
+  - id: rmm-agent-installed-against-bare-ip-relay
+    desc: RMM agent installed against a bare-IP relay
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: rmm-launch-parameter-bare-ip-relay
+    any:
+      - id: screenconnect-client-launch-parameters
+      - id: objectives/command-and-control/backdoor/control/rmm::screenconnect-clickonce-application-url
+      - id: well-known/tool/dual-use/screenconnect::screenconnect-product-marker
+    needs: 1
+    near_bytes: 4096
+    unless:
+      - id: well-known/tool/detection/
