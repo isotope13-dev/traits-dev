@@ -96,10 +96,10 @@ When a generic capability false-positives because it sits in the wrong tier, fix
 
 | Tier | Can Reference | Rationale |
 |------|--------------|-----------|
-| `micro-behaviors/` | `micro-behaviors/`, `metadata/`, `well-known/tool/`, `well-known/app/`, `well-known/lib/`, `well-known/game/` for false-positive exclusions only | Capabilities must not depend on objectives or malware families |
-| `objectives/` | `micro-behaviors/`, `objectives/`, `metadata/`, `well-known/{tool,app,lib,game}/` (positive evidence allowed); never `well-known/malware/` | Objectives build on capabilities and other objectives. Legitimate-software identifiers are fine as positive evidence — the relationship runs `well-known/malware/ → objectives/`, not the reverse |
+| `micro-behaviors/` | `micro-behaviors/`, `metadata/`, `well-known/{app,dual-use,game,lib,tool}/` for false-positive exclusions only | Capabilities must not depend on objectives or malware families |
+| `objectives/` | `micro-behaviors/`, `objectives/`, `metadata/`, `well-known/{app,dual-use,game,lib,tool}/` (positive evidence allowed); never `well-known/malware/` | Objectives build on capabilities and other objectives. Legitimate-software identifiers are fine as positive evidence — the relationship runs `well-known/malware/ → objectives/`, not the reverse |
 | `well-known/` | all tiers | Signatures can reference anything |
-| `metadata/` | `metadata/`, `well-known/tool/`, `well-known/app/`, `well-known/lib/`, `well-known/game/` for benign context only | Informational properties must not depend on behavior or objectives |
+| `metadata/` | `metadata/`, `well-known/{app,dual-use,game,lib,tool}/` for benign context only | Informational properties must not depend on behavior or objectives |
 
 **Capabilities must not reference objectives.** Capabilities are observable mechanics; objectives infer intent. If a `micro-behaviors/` rule needs an `objectives/` trait, either move the objective to `micro-behaviors/` (if it's actually a capability), refactor the dependency away, or move the whole rule to `objectives/` (if it's actually inferring intent).
 
@@ -128,7 +128,7 @@ All tiers follow: `TIER/CATEGORY/BEHAVIOR/METHOD/platform.yaml`
 ### Tier Selection
 
 ```
-Specific malware, unwanted software, or tool signature; that is well known enough that 1 in 1000  developers or security engineers would have heard about it?
+Specific malware, unwanted software, dual-use product, app, library, game, or tool signature; well known enough that at least 1 in 1000 developers or security engineers would recognize it?
   → well-known/
 
 Attacker intent inferred from capability combinations?
@@ -957,7 +957,7 @@ objectives/
 
 ## Tier 3: Known Entities (`well-known/`)
 
-Specific malware families and tool signatures. Similar to MBC's [malware corpus](https://github.com/MBCProject/mbc-markdown/tree/master/xample-malware) but structured as detection rules. Categories align with [MBC/STIX 2.1 malware types](https://docs.oasis-open.org/cti/stix/v2.1/os/stix-v2.1-os.html).
+Specific, broadly recognizable software identities, including malware families, unwanted software, dual-use products, applications, libraries, games, and professional tools. Malware categories align with [MBC/STIX 2.1 malware types](https://docs.oasis-open.org/cti/stix/v2.1/os/stix-v2.1-os.html).
 
 Do not create general-purpose traits in `well-known/` that could match multiple families, even at a low criticality. Move general-purpose traits to a general-purpose location.
 
@@ -967,15 +967,57 @@ Do not create general-purpose traits in `well-known/` that could match multiple 
 - Actor attribution (APT group, nation-state) belongs in trait descriptions, not directory names
 - When a family has multiple capabilities (e.g., stealer + worm), pick the most distinctive
 - `trojan/` is the catch-all — use only when no more specific type fits
+- `dual-use/` is for legitimate named software whose abuse-relevant function warrants explicit analyst notice; group it by that function
+- `unwanted/` is the umbrella for PUA, PUP, adware, and riskware families whose distribution or operation is itself unwanted; do not add a parallel `pua/` alias
+- `tool/` is for professional developer, analyst, offensive-security, reverse-engineering, and administration tools that do not fit the narrower dual-use boundary
 
 ```
 well-known/
 ├── app/                   # Specific legitimate applications and suites
-│   └── (adobe, bitdefender, defender, vendor drivers, etc.)
+│   ├── ai/                #   AI assistants, agents, and automation products
+│   ├── browser/           #   Web browsers and browser runtimes
+│   ├── browser-extension/ #   Browser extensions, grouped by product
+│   ├── communication/     #   Mail, chat, messaging, and conferencing clients
+│   ├── publishing/        #   CMS, publishing, and content-management products
+│   ├── data/              #   Databases, dashboards, search, and analytics apps
+│   ├── development/       #   User-facing IDEs and development applications
+│   │                      #     Standalone build/CLI utilities → tool/development/.
+│   ├── enterprise/        #   Enterprise management and business suites
+│   ├── finance/           #   Wallet, trading, banking, and payment applications
+│   ├── infrastructure/    #   Cloud, server, container, and deployment products
+│   ├── media/             #   Audio, video, graphics, and creative applications
+│   ├── network/           #   Ordinary network clients, services, and monitors
+│   │                      #     Abuse-salient tunnels/proxies → dual-use/tunnel/.
+│   ├── productivity/      #   Office, notes, documents, and personal productivity
+│   ├── security/          #   End-user defensive and security products
+│   │                      #     Analyst/pentest utilities → tool/{detection,offensive}/.
+│   ├── storage/           #   Backup, synchronization, recovery, and storage apps
+│   ├── system/            #   OS, desktop, runtime, and platform components
+│   └── utility/           #   Cleaners, installers, disk, and system utilities
+├── dual-use/              # Legitimate software with abuse-relevant capabilities
+│   ├── access-control/    #   Licensing, activation, and privilege-control utilities
+│   ├── credentials/       #   Password, hash, key, and product-key recovery
+│   ├── tunnel/            #   Proxies, relays, and network tunnels
+│   ├── packaging/         #   Packers and executable converters
+│   ├── remote-admin/      #   Remote monitoring and administration products
+│   └── transfer/          #   General-purpose bulk transfer and cloud-sync tools
 ├── game/                  # Game clients/platforms and game-specific tools
 │   └── (steam, etc.)
 ├── lib/                   # Widely recognized libraries/frameworks/runtimes
-│   └── (openssl, zlib, ffmpeg, psutil, sharpshell, etc.)
+│   ├── ai/                #   AI, machine-learning, and inference libraries
+│   ├── cloud/             #   Cloud-provider and platform SDKs
+│   ├── core/              #   General-purpose application support libraries
+│   ├── crypto/            #   Cryptography, identity, and authentication libraries
+│   ├── data/              #   Databases, dataframes, ORM, and storage clients
+│   ├── development/       #   Compilers, testing, linting, and build libraries
+│   ├── format/            #   Parsers, schemas, archives, and serialization
+│   ├── media/             #   Audio, video, image, font, and codec libraries
+│   ├── network/           #   Protocol, transport, and network client libraries
+│   ├── platform/          #   OS, desktop, mobile, and platform integration
+│   ├── runtime/           #   Language runtimes, engines, FFI, and bindings
+│   ├── native/            #   Native systems, libc, allocators, and kernel support
+│   ├── ui/                #   UI components, editors, and frontend libraries
+│   └── web/               #   Web and application frameworks
 │                          # Do not add narrow package-specific allowlists here.
 │                          # Prefer improving the generic behavioral rule unless
 │                          # the software is well known enough to be useful across
@@ -1026,15 +1068,17 @@ well-known/
 │                          #     (MyDoom, Conficker, Beagle)
 │
 ├── unwanted/              # Potentially unwanted software and riskware families
-│                          #   Use for named PUP/adware/riskware entities that are
-│                          #   not ordinary dual-use tools and not clearly hostile
-│                          #   malware. (Computrace/rpcnetp)
+│                          #   Umbrella for named PUA/PUP/adware/riskware entities
+│                          #   whose distribution or operation is itself unwanted,
+│                          #   but which are not clearly hostile malware.
+│                          #   Do not use for ordinary legitimate dual-use products.
+│                          #   (Computrace/rpcnetp, OfferCore)
 │
 └── tool/                  # Legitimate tools often abused
     ├── browser/           #   Browser components (Chromium sandbox, extensions)
     ├── development/       #   IDEs and developer tools (JetBrains)
     ├── detection/         #   Security detection tools (cleave's own stng)
-    ├── dual-use/          #   Dual-use utilities (licensing, converters)
+    ├── forensics/         #   Memory, disk, and incident-forensics tools
     ├── offensive/         #   Pentesting/red-team tools + game cheat frameworks
     ├── reverse-engineering/#  RE tools (IDA, OllyDbg, Scylla, LordPE)
     └── sysadmin/          #   Admin tools, system libraries, VCS
@@ -1049,7 +1093,7 @@ File-level properties with no behavioral implication. Describes *what a file is*
 - Tool/malware signatures belong in `well-known/`, not here
 - Supply-chain attack indicators belong in `objectives/supply-chain/` (organized by technique, not ecosystem)
 - OS/platform vendor traits go under `vendor/`
-- Specific apps, tools, games, and library/framework/runtime fingerprints go under `well-known/{app,tool,game,lib}/`, not `metadata/`
+- Specific apps, dual-use products, tools, games, and library/framework/runtime fingerprints go under `well-known/{app,dual-use,tool,game,lib}/`, not `metadata/`
 - **Distinguish a tool's *output* from the tool's *identity*.** "This code was bundled/minified/transpiled" is a build-transform fact → `metadata/build/<function>/` (group by function: `bundler/`, `minifier/`, `transpiler/`). "This file *is* webpack / PuTTY / Wireshark" is a named-software fingerprint → `well-known/`. Putting a software identity in `metadata/` is the same *matcher-defines-identity* violation as mislabeling a generic capability.
 - **Avoid grab-bag directories.** A directory must name one coherent concept that is meaningful as an ML path feature. If a dir accretes unrelated kinds of traits — e.g. the former `package/tooling/` held build-output (`webpack-bundled`), software identities (`tool-identity-putty`), *and* project-hygiene facts (`has-eslint-config`) all at once — the path feature becomes noise and analysts can't reason about it. Split each kind to its proper home (`build/`, `well-known/`, `package/quality/`) and delete the grab-bag. Vague names (`tooling`, `context`, `misc`, `helpers`) are a smell that this has happened.
 - New top-level subdirectories require updating both TAXONOMY.md and `ALLOWED_METADATA` in `src/capabilities/validation/directory_whitelist.rs`
@@ -1223,12 +1267,12 @@ When placing a new metadata trait, use this tiebreaker table. Each row names the
 | `binary/metrics/` | `binary/anomaly/` | Is the measurement neutral (could be normal)? → `metrics/`. Does it inherently indicate malformation or tampering? → `anomaly/` |
 | `document/` | `file/` | Does it require parsing document internals (OLE streams, OOXML parts, PDF objects)? → `document/`. Observable from header/extension alone? → `file/` |
 | `build/` | `lang/` | Is it about build orchestration (cmake, docker, CI/CD)? → `build/`. Is it about the language toolchain (gcc, rustc, delphi)? → `lang/` |
-| `metadata/build/` | `well-known/` | Is it the **output/shape a tool left in the file** (this code was *bundled*, *minified*, *transpiled*)? → `metadata/build/<function>`. Is it the **named tool/software being identified** (this *is* PuTTY / Wireshark / the webpack package)? → `well-known/{app,tool,lib}/`. The transform is a metadata fact; the identity is a fingerprint. A named-software fingerprint in `metadata/` is the "matcher defines identity" violation. |
+| `metadata/build/` | `well-known/` | Is it the **output/shape a tool left in the file** (this code was *bundled*, *minified*, *transpiled*)? → `metadata/build/<function>`. Is it the **named tool/software being identified** (this *is* PuTTY / Wireshark / the webpack package)? → `well-known/{app,dual-use,tool,lib}/`. The transform is a metadata fact; the identity is a fingerprint. A named-software fingerprint in `metadata/` is the "matcher defines identity" violation. |
 | `metadata/build/` | `metadata/package/quality/` | Is it evidence of a build/transform tool's output (bundled, minified, autotools-generated)? → `build/`. Is it a project-hygiene/maturity fact (has ESLint/Prettier/TS config, has docs, has tests)? → `package/quality/` |
 | `package/` | `library/` | Is it about ecosystem-level metadata (fields, scripts, quality, testing)? → `package/`. Is it neutral library context retained for metadata use? → `library/`. Is it identifying a specific library/framework/runtime? → `well-known/lib/` |
 | `package/` | `permission/` | Is it ordinary package metadata (name, dependencies, files, scripts, quality)? → `package/`. Is it declared authority or extension API surface (browser/IDE extension permissions, host access, OAuth scopes, content scripts)? → `permission/` |
 | `signed/` | `vendor/` | Is it about the cryptographic signature chain or entitlements? → `signed/`. Is it identifying an OS/platform vendor by strings/resources/patterns? → `vendor/` |
-| `vendor/` | `well-known/app/` or `well-known/tool/` | Is it an OS/platform vendor or system userland marker (Apple, Microsoft, NetBSD, GNU/FSF)? → `vendor/`. Is it a specific well known application or suite? → `well-known/app/`. Is it a well known utility or analyst/admin/developer tool? → `well-known/tool/` |
+| `vendor/` | `well-known/app/`, `well-known/dual-use/`, or `well-known/tool/` | Is it an OS/platform vendor or system userland marker (Apple, Microsoft, NetBSD, GNU/FSF)? → `vendor/`. Is it a specific well-known application or suite? → `well-known/app/`. Is its legitimate abuse-relevant function the reason analysts need the identity? → `well-known/dual-use/`. Is it a professional analyst/admin/developer tool? → `well-known/tool/` |
 | `vendor/` | `well-known/lib/` | Is it identifying the platform vendor that produced the file? → `vendor/`. Is it an well known third-party library/framework/runtime fingerprint (OpenSSL, zlib, FFmpeg, psutil, SharpShell)? → `well-known/lib/` |
 
 ## Reference
