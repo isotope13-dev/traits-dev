@@ -1,0 +1,255 @@
+# Detects the rctl/ENDLESSDOORS technique as a behavior: a custom socket
+# client registers a device, executes server-supplied shell commands, and can
+# turn a command into an interactive POSIX shell. Observed endpoints remain
+# IOCs rather than detection gates.
+defaults:
+  platforms: [unix, appliance]
+  for: [c, cpp, rust, python]
+  attack: T1059.004,T1071,T1095
+  mbc: B0030
+
+traits:
+  - id: socket-receive-call
+    desc: Receives data through a stream API
+    crit: notable
+    conf: 0.84
+    if:
+      type: text
+      regex: '\b(recv|recvfrom|read|read_exact)\s*\('
+
+  - id: c-socket-receive-call
+    desc: C receives data through a socket API
+    crit: notable
+    conf: 0.86
+    for: [c, cpp]
+    if:
+      type: text
+      regex: '\b(recv|recvfrom|read)\s*\('
+
+  - id: c-command-buffer
+    desc: C declares a command input buffer
+    crit: component
+    conf: 0.8
+    for: [c, cpp]
+    if:
+      type: text
+      regex: '\b(char|unsigned\s+char)\s+[A-Za-z_][A-Za-z0-9_]*\s*\['
+
+  - id: c-popen-input
+    desc: C passes a variable to popen
+    crit: notable
+    conf: 0.9
+    for: [c, cpp]
+    if:
+      type: text
+      regex: '\bpopen\s*\(\s*[A-Za-z_][A-Za-z0-9_]*\b'
+
+  - id: rust-socket-read
+    desc: Rust receives data through a stream API
+    crit: notable
+    conf: 0.86
+    for: [rust]
+    if:
+      type: text
+      regex: '\b(read_exact|read_to_end|recv)\s*\('
+
+  - id: rust-shell-command
+    desc: Rust launches an absolute POSIX shell
+    crit: notable
+    conf: 0.9
+    for: [rust]
+    if:
+      type: text
+      regex: 'Command::new\s*\(\s*["'']/((usr/)?bin)/sh["'']\s*\)'
+
+  - id: rust-shell-command-arg
+    desc: Rust supplies a shell command argument
+    crit: notable
+    conf: 0.88
+    for: [rust]
+    if:
+      type: text
+      regex: '\.arg\s*\(\s*["'']-[c]["'']\s*\)'
+
+  - id: python-socket-receive-call
+    desc: Python receives data through a socket API
+    crit: notable
+    conf: 0.86
+    for: [python]
+    if:
+      type: text
+      regex: '\brecv(_into)?\s*\('
+
+  - id: python-shell-exec-call
+    desc: Python invokes a shell-capable process API
+    crit: notable
+    conf: 0.88
+    for: [python]
+    if:
+      type: text
+      regex: '\b(os\.popen|subprocess\.Popen|subprocess\.run)\s*\('
+
+  - id: python-shell-true
+    desc: Python enables shell interpretation
+    crit: component
+    conf: 0.84
+    for: [python]
+    if:
+      type: text
+      regex: '\bshell\s*=\s*True\b'
+
+  - id: pty-allocation
+    desc: Allocates a pseudoterminal
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '\b(forkpty|openpty|posix_openpt)\s*\('
+
+  - id: python-pty-allocation
+    desc: Python allocates a pseudoterminal
+    crit: notable
+    conf: 0.9
+    for: [python]
+    if:
+      type: text
+      regex: '\bpty\.(fork|spawn)\s*\('
+
+  - id: posix-shell-path
+    desc: References a POSIX shell path
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      regex: '/bin/sh\b'
+
+  - id: rctlbash-pty-trigger
+    desc: rctlbash interactive shell token
+    crit: component
+    conf: 0.99
+    if:
+      type: string_literal
+      exact: rctlbash
+
+  - id: bash-port-assignment
+    desc: Assigns the secondary shell port
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '\bBASHPORT\b.{0,24}\b7001\b'
+
+  - id: bash-port-network-call
+    desc: Uses port 7001 for a shell channel
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(htons\s*\(\s*7001\s*\)|connect\([^;\n]{0,80}BASHPORT)'
+
+composite_rules:
+  - id: c-remote-command-channel
+    desc: C socket input reaches popen
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: c-socket-receive-call
+      - id: c-command-buffer
+      - id: c-popen-input
+    near_lines: 80
+
+  - id: rust-remote-command-channel
+    desc: Rust stream input reaches sh -c
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: rust-socket-read
+      - id: rust-shell-command
+      - id: rust-shell-command-arg
+    near_lines: 80
+
+  - id: python-remote-command-channel
+    desc: Python socket input reaches shell execution
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: python-socket-receive-call
+      - id: python-shell-exec-call
+      - id: python-shell-true
+    near_lines: 40
+
+  - id: registered-remote-command-shell
+    desc: Registration frame with socket command execution
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: micro-behaviors/communications/socket/framing::fixed-class-mac-registration
+    any:
+      - id: c-remote-command-channel
+      - id: rust-remote-command-channel
+      - id: python-remote-command-channel
+    near_lines: 80
+
+  - id: c-pty-shell-channel
+    desc: C socket channel exposes an interactive shell
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: c-socket-receive-call
+      - id: pty-allocation
+      - id: posix-shell-path
+    near_lines: 100
+
+  - id: rust-pty-shell-channel
+    desc: Rust socket channel exposes an interactive shell
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: rust-socket-read
+      - id: pty-allocation
+      - id: posix-shell-path
+    near_lines: 100
+
+  - id: python-pty-shell-channel
+    desc: Python socket channel exposes an interactive shell
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: python-socket-receive-call
+      - id: python-pty-allocation
+      - id: python-shell-exec-call
+    near_lines: 100
+
+  - id: socket-pty-shell-channel
+    desc: Socket command channel exposes an interactive shell
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: socket-receive-call
+    any:
+      - id: c-pty-shell-channel
+      - id: rust-pty-shell-channel
+      - id: python-pty-shell-channel
+    near_lines: 100
+
+  - id: rctlbash-assigned-pty-shell
+    desc: rctlbash shell uses an assigned secondary port
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: rctlbash-pty-trigger
+      - id: pty-allocation
+      - id: posix-shell-path
+      - id: bash-port-assignment
+    near_lines: 80
+
+  - id: rctlbash-network-pty-shell
+    desc: rctlbash shell uses a network secondary port
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: rctlbash-pty-trigger
+      - id: pty-allocation
+      - id: posix-shell-path
+      - id: bash-port-network-call
+    near_lines: 80
