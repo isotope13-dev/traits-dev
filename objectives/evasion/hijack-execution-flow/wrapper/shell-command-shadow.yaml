@@ -1,0 +1,66 @@
+# Redefining a standard command as a shell function so that every later
+# invocation in that shell resolves to the attacker's implementation instead of
+# the one on PATH. A prologue such as
+#
+#   pip()     { "/system/bin/linker64" "$HELPER_SO" pip "$@"; };
+#   python3() { "/system/bin/linker64" "$HELPER_SO" python3 "$@"; };
+#   apt()     { "/system/bin/linker64" "$HELPER_SO" apt "$@"; };
+#
+# prepended to commands the host process spawns silently reroutes package
+# installation and interpreter execution through a private binary, and leaves
+# no trace on PATH for a user to notice.
+#
+# One shell function that wraps a command is ordinary — pyenv, nvm and rbenv
+# each ship one — so the atoms below stay notable and the suspicious call is
+# made by the composite, which requires two different standard commands to be
+# shadowed in the same file.
+defaults:
+  platforms: [unix, android]
+  for: [shell, python, javascript, elf, macho]
+  crit: notable
+  conf: 0.9
+  attack: T1574
+  mbc: F0015
+
+traits:
+  - id: shell-function-shadows-python
+    desc: Shell function shadows the python command
+    if:
+      type: text
+      regex: '\bpython3?\(\)\s*\{'
+
+  - id: shell-function-shadows-pip
+    desc: Shell function shadows the pip command
+    if:
+      type: text
+      regex: '\bpip3?\(\)\s*\{'
+
+  - id: shell-function-shadows-apt
+    desc: Shell function shadows the apt command
+    if:
+      type: text
+      regex: '\bapt(-get)?\(\)\s*\{'
+
+composite_rules:
+  - id: shell-function-shadows-interpreter
+    desc: Shell functions shadow standard commands
+    crit: suspicious
+    conf: 0.9
+    any:
+      - id: shell-function-shadows-python
+      - id: shell-function-shadows-pip
+      - id: shell-function-shadows-apt
+    needs: 2
+
+  # Both halves of the Android trick: the shadowing prologue supplies the
+  # redirection and the linker invocation supplies the loader that runs a
+  # payload the kernel would refuse to exec out of app storage.
+  - id: android-linker-command-shim
+    desc: Shell shim reroutes commands via Android linker
+    crit: hostile
+    conf: 0.96
+    attack: T1574,T1218
+    near_bytes: 600
+    all:
+      - id: shell-function-shadows-interpreter
+      - id: micro-behaviors/process/create/loader::android-linker-direct-exec
