@@ -1,6 +1,10 @@
+# `source` is in `for:` alongside scripts and PE: the registry values and
+# service names below identify RDP enablement wherever they are written, and
+# compiled-language implants (C#, Go, Rust, C++) reach the same keys through
+# the registry API rather than through reg.exe.
 defaults:
   platforms: [windows]
-  for: [scripts, pe]
+  for: [scripts, source, pe]
   attack: T1021.001
   mbc: B0022
 
@@ -51,6 +55,51 @@ traits:
       type: text
       regex: '(?i)\bnetsh(\.exe)?\b[^\r\n]{0,100}\b(enable|enabled|new)\b'
 
+  # The registry-API route to the same firewall exception netsh would create:
+  # a GloballyOpenPorts\List value whose data is `3389:TCP:<scope>:Enabled`.
+  # Implants use it because it needs no child process and no netsh string.
+  - id: rdp-firewall-globallyopenports-3389
+    desc: Registry firewall exception opens TCP 3389
+    crit: suspicious
+    conf: 0.95
+    attack: T1021.001,T1562.004
+    if:
+      type: text
+      regex: '(?i)3389:TCP:[^"\r\n]{0,24}:Enabled'
+
+  # Windows desktop SKUs allow one interactive session. Turning on concurrent
+  # sessions is how an operator stays logged in while the real user is at the
+  # console — it is the configuration half of the termsrv.dll patch below, and
+  # is not something licensed administration performs.
+  - id: rdp-licensing-concurrent-sessions
+    desc: Enables concurrent Terminal Server sessions
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: '(?i)\bEnableConcurrentSessions\b[^\r\n]{0,120}(\b1\b|00000001|true)'
+
+  - id: rdp-winlogon-multiple-ts-sessions
+    desc: Enables multiple Terminal Server sessions
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: '(?i)\bAllowMultipleTSSessions\b[^\r\n]{0,120}(\b1\b|00000001|true)'
+
+  # Overwriting %SystemDirectory%\termsrv.dll (and the Dllcache copy that
+  # Windows File Protection restores from) is the concurrent-session patch:
+  # the shipped service DLL is swapped for a cracked one. Nothing that ships
+  # legitimately replaces a protected system service binary in place.
+  - id: rdp-termsrv-dll-replacement
+    desc: References the Terminal Services system DLL
+    crit: suspicious
+    conf: 0.96
+    attack: T1021.001,T1554
+    if:
+      type: text
+      regex: '(?i)(System32|Dllcache)[\\/]{1,2}termsrv\.dll'
+
 composite_rules:
   - id: rdp-firewall-enable
     desc: Firewall command enables a Remote Desktop rule
@@ -71,6 +120,25 @@ composite_rules:
       - id: rdp-firewall-remote-desktop
       - id: rdp-firewall-enable
     near_lines: 6
+
+  # The registry-only equivalent of windows-rdp-enable-sequence, for implants
+  # that never shell out to netsh or sc. Allowing inbound RDP is admin-normal
+  # on its own; doing it together with a self-opened 3389 firewall exception
+  # and a concurrent-session unlock (registry value or a swapped termsrv.dll)
+  # is an operator provisioning their own way back in.
+  - id: registry-rdp-backdoor-enablement
+    desc: Registry writes install a concurrent-session RDP backdoor
+    crit: hostile
+    conf: 0.96
+    attack: T1021.001,T1112
+    all:
+      - id: rdp-registry-allow-connections
+      - id: rdp-firewall-globallyopenports-3389
+    any:
+      - id: rdp-licensing-concurrent-sessions
+      - id: rdp-winlogon-multiple-ts-sessions
+      - id: rdp-termsrv-dll-replacement
+    needs: 2
 
   - id: powershell-rdp-service-autostart
     desc: PowerShell sets Terminal Services auto-start
