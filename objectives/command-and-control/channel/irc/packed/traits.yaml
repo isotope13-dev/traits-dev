@@ -1,0 +1,74 @@
+defaults:
+  platforms: [linux]
+  for: [elf]
+  attack: T1071.003,T1027.002
+
+traits:
+  # Packed IRC bots (Tsunami/Kaiten lineage) often destroy the leading byte of
+  # PRIVMSG while leaving the RIVMSG tail intact beside a '~JOIN' remnant.
+  # Hex + offset_range keeps these detectable on sectionless packed images
+  # where short ASCII shards fall below text extraction.
+  - id: mangled-privmsg-shard
+    desc: Packed ELF IRC PRIVMSG byte shard
+    crit: component
+    conf: 0.92
+    if:
+      type: hex
+      pattern: "52 49 56 4d 53 47"
+      offset_range: [4096, null]
+
+  - id: mangled-join-shard
+    desc: Packed ELF IRC JOIN byte shard
+    crit: component
+    conf: 0.92
+    if:
+      type: hex
+      pattern: "7e 4a 4f 49 4e"
+      offset_range: [4096, null]
+
+  - id: pty-gt-banner
+    desc: Embedded PTY greater-than banner bytes
+    crit: notable
+    conf: 0.95
+    if:
+      type: hex
+      pattern: "50 54 59 3e"
+      offset_range: [4096, null]
+
+composite_rules:
+  # Sectionless high-entropy ELF retaining mangled JOIN+PRIVMSG shards — the
+  # static residue of packed IRC botnet implants after string tables are
+  # shredded. Escalate to hostile only when the PTY banner is also present.
+  - id: mangled-irc-shards
+    desc: Packed ELF retains mangled IRC JOIN and PRIVMSG
+    crit: suspicious
+    conf: 0.94
+    size_min: 500000
+    size_max: 2000000
+    all:
+      - id: mangled-privmsg-shard
+      - id: mangled-join-shard
+      - id: objectives/anti-static/pack/detect::no-section-headers
+      - id: metadata/binary/metrics/threshold::very-high-overall-entropy-75
+      - id: metadata/binary/linking/static::elf-needed-libs-zero
+    unless:
+      - id: metadata/binary/installer/family/
+      - id: well-known/tool/sysadmin/unix-benign/
+
+  # Same packed IRC residue plus the PTY> banner used by Muhstik-style pty
+  # payloads — IRC C2 channel evidence independent of basename identity.
+  - id: pty-mangled-irc-bot
+    desc: Packed ELF PTY banner with mangled IRC commands
+    crit: hostile
+    conf: 0.98
+    size_min: 500000
+    size_max: 2000000
+    all:
+      - id: pty-gt-banner
+      - id: mangled-privmsg-shard
+      - id: mangled-join-shard
+      - id: objectives/anti-static/pack/detect::no-section-headers
+      - id: metadata/binary/metrics/threshold::very-high-overall-entropy-75
+    unless:
+      - id: metadata/binary/installer/family/
+      - id: well-known/tool/sysadmin/unix-benign/
