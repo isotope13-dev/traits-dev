@@ -1,26 +1,13 @@
 # Password-protected 7z archives are common in software distribution, so
 # encryption alone remains a notable capability. Hostile rules require an
 # executable member plus concealment/expansion signals.
+# Format identity uses metadata/build/archive::archive-7z-container (not a
+# local objectives atom) so benign/does-nothing 7z fixtures stay clean.
 defaults:
   platforms: [unix, windows]
   for: [7z]
   attack: T1027
   mbc: B0024
-
-traits:
-  # Engine file-type filtering can treat zip-family containers (vsix, nupkg)
-  # as compatible with `for: [7z]`. Gate on the decoded archive format so
-  # high-entropy VSIX/nupkg packages with a bundled .exe do not inherit this
-  # 7z-packing signal.
-  - id: archive-format-kind-7z
-    desc: Archive format kind is 7z
-    crit: component
-    conf: 0.99
-    for: [7z, zip, vsix, nupkg, xpi, crx]
-    if:
-      type: value
-      path: archive.format.kind
-      exact: 7z
 
 composite_rules:
   - id: high-entropy-7z-executable-payload
@@ -28,7 +15,7 @@ composite_rules:
     crit: suspicious
     conf: 0.95
     all:
-      - id: archive-format-kind-7z
+      - id: metadata/build/archive::archive-7z-container
       - id: metadata/file/metrics::near-maximum-entropy-file
       - id: metadata/build/archive::archive-windows-executable-entry
 
@@ -66,3 +53,29 @@ composite_rules:
       - id: metadata/file/metrics::near-maximum-entropy-file
       - id: metadata/build/archive::archive-large-member-entry
       - id: metadata/build/archive::archive-windows-executable-entry
+
+  # Encrypted headers hide archive.members[*], and near-maximum-entropy is
+  # size-gated at 256KB — small AES 7z droppers still nest a UPX PE that deep
+  # analysis sees as a child. scope: outer joins the codec with that PE layout.
+  - id: aes-encrypted-7z-nested-upx-pe
+    desc: 7zAES archive nests an UPX-packed Windows PE
+    crit: suspicious
+    conf: 0.94
+    attack: T1027.002,T1204.002
+    scope: outer
+    all:
+      - id: micro-behaviors/data/archive/7z::7z-aes-codec
+      - id: metadata/binary/section/names::empty-rwx-upx0
+
+  - id: aes-encrypted-7z-nested-unsigned-pe
+    desc: 7zAES archive nests an unsigned Windows PE
+    crit: suspicious
+    conf: 0.9
+    attack: T1027.002,T1204.002
+    scope: outer
+    all:
+      - id: micro-behaviors/data/archive/7z::7z-aes-codec
+      - id: metadata/binary/layout::pe-no-signature-record
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/signed/developer/
