@@ -1,0 +1,147 @@
+# An autonomous agent can game a technical evaluation when its shell can reach
+# the public repository that contains the benchmark's answer key.  The neutral
+# network and VCS capabilities remain in micro-behaviors; these composites add
+# the answer-artifact and environment-probe context described by the report.
+defaults:
+  platforms: [windows, unix]
+  for: [scripts]
+  attack: T1033,T1016,T1105,T1562.001
+
+traits:
+  - id: reference-answer-path
+    desc: Code names an answer or ground-truth path
+    crit: component
+    conf: 0.95
+    if:
+      type: string_literal
+      regex: '(?i)(answers?|solutions?|ground[-_]?truth)([/\\]|\.)'
+
+  - id: shell-reference-artifact-read
+    desc: Shell reads ground-truth artifact
+    crit: suspicious
+    conf: 0.95
+    for: [shell, batch, powershell]
+    if:
+      type: text
+      regex: '(?im)\b(cat|Get-Content)\b[^\r\n]{0,80}ground[-_]?truth[/.]'
+
+  - id: python-ground-truth-read
+    desc: Python reads ground-truth file
+    crit: suspicious
+    conf: 0.95
+    for: [python]
+    if:
+      type: text
+      regex: '(?i)ground[-_]?truth[/.][^\r\n]{0,80}\.(read_text|read_bytes)\s*\('
+
+  - id: python-answer-read
+    desc: Python reads answer file
+    crit: suspicious
+    conf: 0.95
+    for: [python]
+    if:
+      type: text
+      regex: '(?i)answers?[/.][^\r\n]{0,80}\.(read_text|read_bytes)\s*\('
+
+  - id: python-solution-read
+    desc: Python reads solution file
+    crit: suspicious
+    conf: 0.9
+    for: [python]
+    if:
+      type: text
+      regex: '(?i)solutions?[/.][^\r\n]{0,80}\.(read_text|read_bytes)\s*\('
+
+composite_rules:
+  - id: python-reference-artifact-read
+    desc: Python reads ground-truth artifact
+    crit: suspicious
+    conf: 0.95
+    any:
+      - id: python-ground-truth-read
+      - id: python-answer-read
+      - id: python-solution-read
+    near_lines: 4
+
+  - id: reference-artifact-read
+    desc: Reads an answer or ground-truth artifact
+    crit: suspicious
+    conf: 0.95
+    any:
+      - id: shell-reference-artifact-read
+      - id: python-reference-artifact-read
+
+  - id: agent-identity-probe
+    desc: Probes the execution account
+    crit: notable
+    conf: 0.9
+    any:
+      - id: micro-behaviors/os/sysinfo/process::sh-whoami-command
+      - id: micro-behaviors/process/user/query::whoami-exec-argument
+      - id: micro-behaviors/process/user/query::whoami-cmd
+      - id: micro-behaviors/process/user/query::windows-whoami-command
+
+  - id: agent-interface-probe
+    desc: Probes local network interfaces
+    crit: notable
+    conf: 0.9
+    any:
+      - id: micro-behaviors/os/network/interface::ifconfig
+      - id: micro-behaviors/os/network/interface::powershell-get-netipaddress
+      - id: micro-behaviors/os/network/interface::python-interface-command
+
+  - id: agent-reachability-probe
+    desc: Probes external network reachability
+    crit: notable
+    conf: 0.9
+    any:
+      - id: micro-behaviors/communications/icmp/ping::ping
+      - id: micro-behaviors/communications/icmp/ping::python-ping-argv
+      - id: micro-behaviors/communications/icmp/ping::powershell-test-connection
+
+  - id: agent-network-egress-probe
+    desc: Probes identity, interfaces, and external reachability
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: agent-identity-probe
+      - id: agent-interface-probe
+      - id: agent-reachability-probe
+    near_lines: 32
+
+  - id: public-reference-source
+    desc: Retrieves content from a public code forge
+    crit: notable
+    conf: 0.92
+    any:
+      - id: micro-behaviors/process/create/vcs/git::public-forge-git-clone
+      - id: micro-behaviors/communications/http/download/cli::public-forge-http-source
+
+  - id: public-reference-artifact-retrieval
+    desc: Retrieves an answer or ground-truth artifact from a public code forge
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: public-reference-source
+      - id: reference-answer-path
+      - id: reference-artifact-read
+    near_lines: 32
+
+  - id: sandbox-egress-answer-shortcut
+    desc: Agent uses network egress to retrieve an evaluation answer key
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: agent-network-egress-probe
+      - id: public-reference-artifact-retrieval
+    near_lines: 64
+
+  - id: sandbox-egress-reference-clone
+    desc: Agent clones a public answer repository after probing egress
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: agent-network-egress-probe
+      - id: micro-behaviors/process/create/vcs/git::public-forge-git-clone
+      - id: reference-artifact-read
+    near_lines: 64
