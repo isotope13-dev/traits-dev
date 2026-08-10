@@ -1,0 +1,61 @@
+---
+# SizeOfHeaders read against the file it describes.
+#
+# The PE spec requires SizeOfHeaders only to cover the DOS stub, the COFF and
+# optional headers and the section table, rounded up to FileAlignment. Nothing
+# bounds it from above. Inflating it and inserting the matching filler pushes
+# every section deep into the file while leaving a perfectly loadable image —
+# the loader maps the declared header span, so the padding costs real RAM in
+# every process, which is why no build pipeline produces it by accident.
+#
+# Calibration: 58 benign Windows binaries on this host (nvidia/wine DLLs, the
+# Electron runtime, Go and MSVC test executables) reported a maximum of 4096
+# bytes. Even a PE carrying the conventional 96-section maximum needs under
+# 8 KB of headers. The 32 KB floor sits an order of magnitude above anything
+# legitimate and three orders below the sample that motivated the trait, which
+# declared 10,076,160 bytes — 97% of the file — as "headers".
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  attack: T1027.001
+
+traits:
+  - id: pe-headers-size-inflated
+    desc: PE header region implausibly large
+    crit: suspicious
+    conf: 0.95
+    ref: sha256:702e2b42f58ac93fa622db6161bdd116a5ce6fd7c59e7e733dc64d19ac2c2832
+    if:
+      type: metrics
+      field: pe.headers_size_bytes
+      min: 32768
+
+  # The ratio is the separate statement: not merely "the header region is
+  # large" but "the file is mostly header region", i.e. the program is a
+  # sliver of what is being shipped. This is the shape file-pumping produces
+  # when the pad goes in front of the sections rather than into an overlay.
+  - id: pe-headers-dominate-file
+    desc: PE header region is most of file
+    crit: suspicious
+    conf: 0.97
+    ref: sha256:702e2b42f58ac93fa622db6161bdd116a5ce6fd7c59e7e733dc64d19ac2c2832
+    if:
+      type: metrics
+      field: pe.headers_size_ratio
+      min: 0.5
+
+  # A data directory sitting in a section whose name is reserved for a
+  # DIFFERENT directory — resources in `.pdata`, imports in `.tls`. Names that
+  # claim nothing (`.text`, `.rdata`, `.data`, and any packer-invented name)
+  # are excluded from the comparison, so this fires on a name that lies rather
+  # than on a name that is merely unfamiliar. One benign fixture in the
+  # calibration set reported a single mismatch, so the floor is two.
+  - id: pe-directory-section-name-mismatch
+    desc: PE directories in mismatched sections
+    crit: suspicious
+    conf: 0.9
+    ref: sha256:702e2b42f58ac93fa622db6161bdd116a5ce6fd7c59e7e733dc64d19ac2c2832
+    if:
+      type: metrics
+      field: pe.directory_section_mismatch_count
+      min: 2

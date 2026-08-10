@@ -1,0 +1,79 @@
+---
+# A PE whose CONTAINER has been rebuilt to defeat scanners while the program
+# inside it is untouched.
+#
+# This is the blind spot these rules close. Every behavioural signal cleave
+# has describes what the code does, so a mutator that pads, renames and stuffs
+# the container without altering a single instruction leaves all of them
+# reporting the original program — which, in the case that motivated the file,
+# was a genuine Microsoft Sysinternals tool. The mutations are individually
+# legal PE and individually explicable; what is not explicable is a build
+# pipeline performing several of them at once, since none makes the program
+# smaller, faster, or more correct. They only make it harder to match.
+#
+# The worked example is
+# 702e2b42f58ac93fa622db6161bdd116a5ce6fd7c59e7e733dc64d19ac2c2832
+# (VirusSign, 2026-08-08): Sysinternals RootkitRevealer 1.70, stock MSVC CRT
+# entry, unpacked, carrying the real Rkreveal.sys helper driver — inside a
+# container given a 10 MB SizeOfHeaders (97% of the file is a zero hole the
+# loader maps), section names shuffled off their contents, ten sections
+# stuffed with Oracle OLSA and Microsoft EULA prose (two of them flagged
+# executable), Authenticode stripped and the checksum zeroed. cleave scored it
+# 29/benign; ClamAV called it Win.Packed.Barys and 23 of 68 VirusTotal engines
+# agreed. gauntlet then drew it as a known-good sample and charged both
+# engines a false positive.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  attack: T1027.001,T1027.009,T1553.002
+
+composite_rules:
+  # Two or more independent evasion-shaped edits to the container. Each `any:`
+  # entry is a separate act by whoever prepared the file, so `needs: 2` reads
+  # as "this was not one odd linker setting".
+  #
+  # The signature and checksum arms are in `all:` rather than `any:` because
+  # on their own they are unremarkable — most software is unsigned, and a
+  # zeroed checksum is common in non-Microsoft toolchains. What they establish
+  # is that nothing vouches for these bytes, which is the precondition that
+  # turns container edits from "unusual build" into "someone reshaped this
+  # after the fact". A signed binary with a valid checksum reaching this rule
+  # would be a genuine anomaly worth a different rule, not this one.
+  - id: pe-container-restructured-for-evasion
+    desc: Unsigned PE container rebuilt to evade
+    crit: hostile
+    conf: 0.95
+    ref: sha256:702e2b42f58ac93fa622db6161bdd116a5ce6fd7c59e7e733dc64d19ac2c2832
+    all:
+      - id: metadata/binary/layout::pe-no-signature-record
+      - id: metadata/binary/layout::pe-checksum-zeroed
+    any:
+      - id: metadata/binary/anomaly/rewrite::pe-headers-size-inflated
+      - id: metadata/binary/anomaly/rewrite::pe-headers-dominate-file
+      - id: metadata/binary/anomaly/rewrite::pe-directory-section-name-mismatch
+      - id: metadata/binary/section/prose::executable-prose-section
+      - id: metadata/binary/section/prose::prose-filled-sections
+      - id: metadata/binary/section/names::duplicated-text-sections
+      - id: metadata/binary/section/names::duplicated-data-sections
+    needs: 2
+    unless:
+      # Installers and self-extractors legitimately ship a small program in
+      # front of a large payload and rewrite their own layout to do it.
+      - id: metadata/binary/installer/family/
+      - id: metadata/signed/platform/
+
+  # The narrower, higher-confidence statement, kept separate because it needs
+  # no corroboration: a section the loader maps executable that holds prose,
+  # in a file that is mostly declared-header filler, describes a container
+  # nobody built and only somebody edited. Either half alone has an innocent
+  # reading; together they do not.
+  - id: pe-padded-and-prose-stuffed
+    desc: PE mostly padding with executable prose
+    crit: hostile
+    conf: 0.98
+    ref: sha256:702e2b42f58ac93fa622db6161bdd116a5ce6fd7c59e7e733dc64d19ac2c2832
+    all:
+      - id: metadata/binary/anomaly/rewrite::pe-headers-dominate-file
+      - id: metadata/binary/section/prose::executable-prose-section
+    unless:
+      - id: metadata/binary/installer/family/
