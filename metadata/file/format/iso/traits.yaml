@@ -1,6 +1,6 @@
 defaults:
   platforms: [windows]
-  for: [data, archive]
+  for: [iso, data, archive]
 
 traits:
   # Cleave's YARA backend does not scan every opaque UDF data carrier, while
@@ -8,7 +8,7 @@ traits:
   # objective composite can reconstruct the LNK command without matching a
   # generic PE filename in an unrelated ISO.
   # Prefer hex over text: opaque UDF/Unknown carriers skip noisy string
-  # harvest, so type:text atoms miss NSR03 even when the bytes are present.
+  # harvest, so type:text atoms miss NSR02/NSR03 even when the bytes are present.
   - id: udf-nsr03-text-marker
     desc: UDF NSR03 descriptor text marker
     crit: baseline
@@ -17,8 +17,16 @@ traits:
       type: hex
       pattern: "4E 53 52 30 33"
 
-  - id: udf-lnk-cmd-prefix-utf16
-    desc: UTF-16 UDF LNK cmd start prefix
+  - id: udf-nsr02-text-marker
+    desc: UDF NSR02 descriptor text marker
+    crit: baseline
+    conf: 1.0
+    if:
+      type: hex
+      pattern: "4E 53 52 30 32"
+
+  - id: iso-lnk-cmd-prefix-utf16
+    desc: UTF-16 ISO LNK cmd start prefix
     crit: suspicious
     conf: 0.99
     attack: T1059.003
@@ -30,27 +38,25 @@ traits:
       type: raw
       regex: '(?is)/\x00c\x00 \x00s\x00t\x00a\x00r\x00t\x00'
 
-  - id: udf-rundll32-utf16-marker
-    desc: UTF-16 rundll32 command token
+  - id: iso-rundll32-utf16-marker
+    desc: UTF-16 ISO rundll32 command token
     crit: component
     conf: 0.99
-    for: [archive, data, pe, dll]
     if:
       type: raw
       regex: '(?is)r\x00u\x00n\x00d\x00l\x00l\x003\x002\x00\.\x00e\x00x\x00e\x00'
 
-  - id: udf-lnk-dll-ordinal-utf16
-    desc: UTF-16 UDF DLL ordinal argument
+  - id: iso-lnk-dll-ordinal-utf16
+    desc: UTF-16 ISO LNK DLL ordinal argument
     crit: suspicious
     conf: 0.99
     attack: T1218.011
-    for: [archive, data, pe, dll]
     if:
       type: raw
       regex: '(?is)\.\x00d\x00l\x00l\x00,\x00#\x00'
 
-  - id: udf-lnk-shell32-icon-utf16
-    desc: UTF-16 UDF LNK SHELL32.dll icon path
+  - id: iso-lnk-shell32-icon-utf16
+    desc: UTF-16 ISO LNK SHELL32.dll icon path
     crit: suspicious
     conf: 0.94
     attack: T1036.007
@@ -66,14 +72,13 @@ traits:
     desc: UDF filesystem descriptor marker
     crit: baseline
     conf: 1.0
-    for: [archive, data, pe, dll]
     if:
       type: yara
       source: |
         rule udf_volume_marker {
           strings:
             $udf = "*UDF" ascii wide nocase
-            $nsr = "NSR03" ascii wide nocase
+            $nsr = /NSR0[23]/ ascii wide nocase
           condition:
             $udf and $nsr
         }
@@ -83,17 +88,16 @@ traits:
     crit: suspicious
     conf: 0.99
     attack: T1059.003,T1218.011,T1204.002
-    for: [archive, data, pe, dll]
     if:
       type: yara
       source: |
         rule udf_lnk_cmd_rundll32_ordinal {
           strings:
-            $udf = "NSR03" ascii wide nocase
+            $udf = /NSR0[23]/ ascii wide nocase
             $lnk = ".lnk" ascii wide nocase
             $cmd = "cmd.exe" ascii wide nocase
-            $chain = "/c start rundll32.exe" ascii wide nocase
-            $ordinal = ",#" ascii wide
+            $chain = /\/c\s+["']?start\s+rundll32(?:\.exe)?/ ascii wide nocase
+            $ordinal = /,\s*#/ ascii wide
           condition:
             $udf and $lnk and $cmd and $chain and $ordinal
         }
@@ -102,18 +106,41 @@ traits:
     desc: UDF LNK carrier references a DLL payload
     crit: notable
     conf: 0.99
-    for: [archive, data, pe, dll]
     if:
       type: yara
       source: |
         rule udf_lnk_dll_payload_marker {
           strings:
-            $udf = "NSR03" ascii wide nocase
+            $udf = /NSR0[23]/ ascii wide nocase
             $lnk = ".lnk" ascii wide nocase
             $dll = ".dll" ascii wide nocase
           condition:
             $udf and $lnk and $dll
         }
+
+  - id: iso-udf-lnk-name-marker
+    desc: UDF ISO LNK member name marker
+    crit: component
+    conf: 0.99
+    if:
+      type: raw
+      regex: '(?i)\.LNK'
+
+  - id: iso-udf-version-dll-name-marker
+    desc: UDF ISO VERSION.DLL member name marker
+    crit: component
+    conf: 0.99
+    if:
+      type: raw
+      regex: '(?i)VERSION\.DLL'
+
+  - id: iso-udf-exe-name-marker
+    desc: UDF ISO executable member name marker
+    crit: component
+    conf: 0.99
+    if:
+      type: raw
+      regex: '(?i)\.EXE'
 
   # These are separate capability markers so ISO objective rules can require
   # the complete loader shape. A lone method name is common in managed
@@ -249,7 +276,7 @@ traits:
     for: [data]
     if:
       type: text
-      regex: '(?i)\.lnk;1\b'
+      regex: '(?i)\.lnk(;1)?\b'
 
   - id: iso-password-disclosure-lure
     desc: Embedded password disclosure lure
@@ -570,6 +597,19 @@ traits:
       regex: '(?i)[i]{6,12}\.class'
 
 composite_rules:
+  - id: iso-udf-version-dll-layout
+    desc: UDF ISO bundles LNK, executable, and VERSION.DLL
+    crit: notable
+    conf: 0.99
+    all:
+      - id: iso-udf-lnk-name-marker
+      - id: iso-udf-version-dll-name-marker
+      - id: iso-udf-exe-name-marker
+    any:
+      - id: udf-nsr02-text-marker
+      - id: udf-nsr03-text-marker
+    needs: 1
+
   - id: udf-lnk-rundll32-utf16
     desc: UDF LNK rundll32 command
     crit: suspicious
@@ -578,7 +618,7 @@ composite_rules:
     for: [archive, data, pe, dll]
     all:
       - id: udf-nsr03-text-marker
-      - id: udf-rundll32-utf16-marker
+      - id: iso-rundll32-utf16-marker
 
   - id: iso-document-exe-lure
     desc: Document-themed executable ISO member
