@@ -1,126 +1,15 @@
 # Anomalous System Calls
-# Detects direct syscalls found in non-standard or suspicious Mach-O sections
-# This is a strong indicator of code injection or obfuscated payload execution
-# ATT&CK: T1106 (Native API), T1027 (Obfuscated Files or Information)
+# Detect direct syscall instructions in executable Mach-O code. Bytes in
+# __gcc_except_tab and __data are exception metadata and initialized data, not
+# instructions; matching those sections produced false positives in normal C++
+# and Node native addons.
 defaults:
   platforms: [macos]
   for: [macho]
   crit: suspicious
   mbc: "B0032"
-traits:
-  - id: svc-in-exception-tab
-    desc: "ARM64 svc in __gcc_except_tab"
-    conf: 0.95
-    count_min: 2
-    count_max: 8
-    size_max: 5242880
-    if:
-      type: hex
-      pattern: "01 00 00 d4"
-      section: "__gcc_except_tab"
-    unless:
-      # __gcc_except_tab is the LSDA (Language-Specific Data Area) for C/C++
-      # exception handling. The bytes 01 00 00 d4 appear routinely as encoded
-      # type table offsets, call-site lengths, and action record data — they
-      # are NOT executable instructions.  Only flag this when the binary is
-      # small and unsigned, where injected shellcode is more plausible.
-      - id: metadata/lang/compiler/systems/
-      - id: metadata/signed/platform::apple
-      - id: micro-behaviors/data/compress/library::libbz2
-      - id: well-known/lib/development/mujoco/
-      - id: well-known/lib/ai/onnxruntime/
-      # Universal Mach-O binaries routinely produce cross-slice false positives for
-      # raw ARM64 svc bytes in non-text sections.
-      - type: metrics
-        field: "macho.slice_count"
-        min: 2
-      # Any reasonably-sized binary will have these bytes in exception tables.
-      # func_count is absent on many stripped Mach-O binaries, so also gate on
-      # file size: a >=256KB binary that even *has* a compiler-emitted
-      # __gcc_except_tab section is a real program whose LSDA data legitimately
-      # contains these bytes — only tiny shellcode-plausible binaries are flagged.
-      - type: metrics
-        field: "functions.count"
-        min: 50
-      - type: metrics
-        field: "file.size_bytes"
-        min: 262144
-      # A `linker_signed` code signature is emitted by ld at link time, so the
-      # __gcc_except_tab content is compiler-generated LSDA by construction.
-      # Planting instructions there means post-processing the image, which is
-      # exactly what invalidates that signature -- so its presence is evidence
-      # against this rule's claim.  Small Node native addons (keytar and the
-      # rest of the arm64 .node ecosystem) sit under every other size gate here.
-      - id: metadata/binary/anomaly/format::macho-cs-linker-signed
-  - id: syscall-in-exception-tab
-    desc: "Direct x86_64 syscall in __gcc_except_tab"
-    conf: 0.95
-    count_min: 2
-    size_max: 10485760
-    if:
-      type: hex
-      pattern: "0f 05"
-      section: "__gcc_except_tab"
-    downgrade:
-      any:
-        - id: metadata/signed/platform::apple
-        - id: metadata/signed/developer
-  - id: svc-in-data-section
-    desc: "Direct ARM64 svc found in __data section"
-    conf: 0.9
-    count_max: 8
-    size_max: 5242880
-    if:
-      type: hex
-      pattern: "01 00 00 d4"
-      section: "__data"
-    unless:
-      # __data contains ObjC metadata, dispatch tables, vtables, and other
-      # initialized data where 01 00 00 d4 appears as a constant value.
-      # Only flag this for small unsigned binaries where shellcode is plausible.
-      - id: metadata/lang/compiler/systems::go-binary
-      - id: metadata/signed/platform::apple
-      - id: metadata/signed/developer
-      - id: micro-behaviors/data/compress/library::libbz2
-      - id: well-known/lib/development/mujoco::mujoco-native-extension-context
-      - type: metrics
-        field: "macho.slice_count"
-        min: 2
-      - type: metrics
-        field: "functions.count"
-        min: 50
-      # See svc-in-exception-tab: gate large real programs whose initialized
-      # data legitimately contains the 01 00 00 d4 byte sequence.
-      - type: metrics
-        field: "file.size_bytes"
-        min: 262144
-  - id: syscall-in-data-section
-    desc: "Direct x86_64 syscall found in __data section"
-    conf: 0.9
-    count_min: 2
-    size_max: 10485760
-    if:
-      type: hex
-      pattern: "0f 05"
-      section: "__data"
-    downgrade:
-      any:
-        - id: metadata/signed/platform::apple
-        - id: metadata/signed/developer
+
 composite_rules:
-  - id: anomalous-direct-syscall
-    desc: "Direct syscall in anomalous Mach-O section (possible payload)"
-    crit: suspicious
-    conf: 0.9
-    any:
-      - id: svc-in-exception-tab
-      - id: syscall-in-exception-tab
-      - id: svc-in-data-section
-      - id: syscall-in-data-section
-    downgrade:
-      any:
-        - id: metadata/signed/platform::apple
-        - id: metadata/signed/developer
   - id: concealed-shell-direct-syscall
     desc: Concealed shell with direct syscall
     crit: suspicious
@@ -131,7 +20,6 @@ composite_rules:
     any:
       - id: micro-behaviors/os/syscall/invoke::darwin-arm64-direct-syscall
       - id: micro-behaviors/os/syscall/invoke::macos-x86-64-direct-syscall
-      - id: objectives/evasion/anti-av/syscall::anomalous-direct-syscall
       - id: objectives/evasion/anti-av/syscall::syscall-evasion-macos-arm64
     downgrade:
       any:
