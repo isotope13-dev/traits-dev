@@ -156,55 +156,141 @@ traits:
       type: text
       regex: '(?i)https?://[^"''<>\s]{1,80}/(chat|assistant|agent|rovo)/(api|v[0-9]+)'
 
-  - id: ai-prompt-query-key
-    desc: URL carries an AI prompt query key
+  # Plain message= is intentionally not included: it is a common parameter in
+  # ordinary notification and messaging APIs (SMS gateways, status webhooks).
+  # Keep each key atom under the regex-size budget; composites below OR them.
+  - id: ai-prompt-query-key-basic
+    desc: Prompt, task, or instruction query key
     crit: notable
     conf: 0.92
     for: [scripts, source, documents, data, markdown]
     if:
       type: text
-      regex: '(?i)[?&](amp;)?[\w-]*(prompt|task|message)[\w-]*='
+      regex: '(?i)[?&](amp;)?(prompt|task|instruction)='
 
+  - id: ai-prompt-query-key-qualified
+    desc: Qualified AI prompt query key
+    crit: notable
+    conf: 0.92
+    for: [scripts, source, documents, data, markdown]
+    if:
+      type: text
+      regex: '(?i)[?&](amp;)?(user|system|ai|chat|agent|assistant)[_-](prompt|message|query)='
+
+  # Value-side fragments: incomplete alone, meaningful only with a prompt key.
+  - id: ai-prompt-query-remote-url-value
+    desc: Query value contains a remote URL
+    crit: component
+    conf: 0.95
+    for: [scripts, source, documents, data, markdown]
+    if:
+      type: text
+      regex: '(?i)[?&][\w-]{1,32}=[^ \t\r\n]{0,600}https?://'
+
+  - id: ai-prompt-query-encoded-url-value
+    desc: Query value contains an encoded remote URL
+    crit: component
+    conf: 0.95
+    for: [scripts, source, documents, data, markdown]
+    if:
+      type: text
+      regex: '[?&][\w-]{1,32}=[^ \t\r\n]{0,600}https?%3a%2f%2f'
+      case_insensitive: true
+
+  - id: ai-prompt-query-double-brace-value
+    desc: Query value contains a double-brace template
+    crit: component
+    conf: 0.96
+    for: [scripts, source, documents, data, -html, -markdown]
+    if:
+      type: text
+      regex: '[?&][\w-]{1,32}=\S{0,60}\{\{[^}\r\n]{1,40}\}\}'
+      case_insensitive: true
+
+  - id: ai-prompt-query-dollar-value
+    desc: Query value contains a dollar template
+    crit: component
+    conf: 0.96
+    for: [scripts, source, documents, data, -html, -markdown]
+    if:
+      type: text
+      regex: '[?&][\w-]{1,32}=\S{0,60}\$\{[^}\r\n]{1,40}\}'
+      case_insensitive: true
+
+  - id: ai-prompt-query-angle-value
+    desc: Query value contains an angle template
+    crit: component
+    conf: 0.96
+    for: [scripts, source, documents, data, -html, -markdown]
+    if:
+      type: text
+      regex: '[?&][\w-]{1,32}=\S{0,60}<[^>\r\n]{1,40}>'
+      case_insensitive: true
+
+  - id: ai-prompt-query-encoded-angle-value
+    desc: Query value contains encoded angle data
+    crit: component
+    conf: 0.96
+    for: [scripts, source, documents, data, -html, -markdown]
+    if:
+      type: text
+      regex: '[?&][\w-]{1,32}=\S{0,60}%3c[^%\r\n]{1,40}%3e'
+      case_insensitive: true
+
+  # The remote-image-URL matcher is canonical at
+  # micro-behaviors/communications/http/url/path::image-file-url; the
+  # composites below reference it and supply the prompt context.
+
+composite_rules:
+  # OR of the two prompt-key atoms. Paired with an all: value leg so this is
+  # not a low-value any-only composite filtered from findings.
   - id: ai-prompt-query-http-url
     desc: Prompt query carries a remote URL
     crit: notable
     conf: 0.95
     for: [scripts, source, documents, data, markdown]
-    if:
-      type: text
-      regex: '(?i)[?&](amp;)?\w{0,24}(prompt|task|message)\w{0,12}=[^ \t\r\n]{0,600}https?://'
+    near_bytes: 700
+    all:
+      - id: ai-prompt-query-remote-url-value
+    any:
+      - id: ai-prompt-query-key-basic
+      - id: ai-prompt-query-key-qualified
 
   - id: ai-prompt-query-encoded-url
     desc: Prompt query carries an encoded URL
     crit: notable
     conf: 0.95
     for: [scripts, source, documents, data, markdown]
-    if:
-      type: text
-      regex: '[?&](amp;)?\w{0,23}(prompt|task|message)\w{0,12}=[^ \t\r\n]{0,600}https?%3a%2f%2f'
-      case_insensitive: true
+    near_bytes: 700
+    all:
+      - id: ai-prompt-query-encoded-url-value
+    any:
+      - id: ai-prompt-query-key-basic
+      - id: ai-prompt-query-key-qualified
 
   - id: ai-prompt-url-double-brace-data
     desc: Prompt query contains a double-brace value
     crit: suspicious
     conf: 0.96
     for: [scripts, source, documents, data, -html, -markdown]
-    if:
-      type: text
-      regex: '[?&](\w{1,12}_(prompt|message)|prompt|message|task)=\S{0,60}\{\{[^}\r\n]{1,40}\}\}'
-      case_insensitive: true
+    near_bytes: 200
+    all:
+      - id: ai-prompt-query-double-brace-value
+    any:
+      - id: ai-prompt-query-key-basic
+      - id: ai-prompt-query-key-qualified
 
   - id: ai-prompt-url-dollar-data
     desc: Non-OAuth prompt query contains a template value
     crit: suspicious
     conf: 0.96
     for: [scripts, source, documents, data, -html, -markdown]
-    if:
-      type: text
-      regex: '[?&](\w{1,12}_(prompt|message)|prompt|message|task)=\S{0,60}\$\{[^}\r\n]{1,40}\}'
-      case_insensitive: true
-    # OAuth authorization requests use prompt=consent/login/etc. alongside
-    # JavaScript URL placeholders; that is not an AI prompt data channel.
+    near_bytes: 200
+    all:
+      - id: ai-prompt-query-dollar-value
+    any:
+      - id: ai-prompt-query-key-basic
+      - id: ai-prompt-query-key-qualified
     not:
       - regex: '(?i)(^|[?&])prompt=(consent|login|none|select_account)(?:[&#"\s]|$)'
 
@@ -213,26 +299,25 @@ traits:
     crit: suspicious
     conf: 0.96
     for: [scripts, source, documents, data, -html, -markdown]
-    if:
-      type: text
-      regex: '[?&](\w{1,12}_(prompt|message)|prompt|message|task)=\S{0,60}<[^>\r\n]{1,40}>'
-      case_insensitive: true
+    near_bytes: 200
+    all:
+      - id: ai-prompt-query-angle-value
+    any:
+      - id: ai-prompt-query-key-basic
+      - id: ai-prompt-query-key-qualified
 
   - id: ai-prompt-url-encoded-angle-data
     desc: Prompt query contains encoded angle data
     crit: suspicious
     conf: 0.96
     for: [scripts, source, documents, data, -html, -markdown]
-    if:
-      type: text
-      regex: '[?&](\w{1,12}_(prompt|message)|prompt|message|task)=\S{0,60}%3c[^%\r\n]{1,40}%3e'
-      case_insensitive: true
+    near_bytes: 200
+    all:
+      - id: ai-prompt-query-encoded-angle-value
+    any:
+      - id: ai-prompt-query-key-basic
+      - id: ai-prompt-query-key-qualified
 
-  # The remote-image-URL matcher is canonical at
-  # micro-behaviors/communications/http/url/path::image-file-url; the
-  # composites below reference it and supply the prompt context.
-
-composite_rules:
   - id: ai-chat-prompt-query-parameter
     desc: AI chat URL carries a prompt query
     crit: notable
@@ -241,7 +326,9 @@ composite_rules:
     near_bytes: 300
     all:
       - id: ai-chat-url-path-marker
-      - id: ai-prompt-query-key
+    any:
+      - id: ai-prompt-query-key-basic
+      - id: ai-prompt-query-key-qualified
 
   - id: ai-prompt-query-remote-url
     desc: Prompt query carries a remote URL
