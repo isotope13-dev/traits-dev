@@ -1,0 +1,197 @@
+# WhatsApp stores contain message bodies, contacts, media references, account
+# identifiers, and backup keys. These rules describe targeted collection of
+# those stores; hostile composites add a real data-transfer operation.
+defaults:
+  platforms: [linux, android, ios]
+  for: [scripts, python, shell, javascript, typescript, swift, objc, c, cpp, java, kotlin, go, rust, ruby, php, powershell]
+  attack: T1005
+
+traits:
+  - id: android-whatsapp-db-path
+    desc: Android WhatsApp database path
+    crit: notable
+    conf: 0.97
+    platforms: [linux, android, windows]
+    if:
+      type: literal
+      kind: string
+      regex: '(?i)com\.whatsapp/(databases/)?(wa|msgstore|axolotl)\.db$'
+
+  - id: android-whatsapp-backup-path
+    desc: Android WhatsApp encrypted backup path
+    crit: notable
+    conf: 0.98
+    platforms: [linux, android, windows]
+    if:
+      type: literal
+      kind: string
+      regex: '(?i)WhatsApp/Databases/msgstore\.db\.crypt[0-9]{2}$'
+
+  - id: android-whatsapp-key-path
+    desc: Android WhatsApp backup-key path
+    crit: notable
+    conf: 0.98
+    platforms: [linux, android, windows]
+    if:
+      type: literal
+      kind: string
+      regex: '(?i)com\.whatsapp/files/[^/\\]*(key|backup)[^/\\]*$'
+
+  - id: ios-whatsapp-db-path
+    desc: iOS WhatsApp group database path
+    crit: notable
+    conf: 0.98
+    platforms: [ios, macos, windows]
+    if:
+      type: literal
+      kind: string
+      regex: '(?i)(AppDomainGroup-group|group)\.net\.whatsapp\.WhatsApp\.shared/.+\.sqlite$'
+
+  - id: ios-whatsapp-account-db-path
+    desc: iOS WhatsApp account database path
+    crit: notable
+    conf: 0.97
+    platforms: [ios, macos, windows]
+    if:
+      type: literal
+      kind: string
+      regex: '(?i)net\.whatsapp\.WhatsApp\.shared/(ContactsV2|BackedUpKeyValue)\.sqlite$'
+
+  - id: ios-whatsapp-blocked-path
+    desc: iOS WhatsApp blocked-contacts path
+    crit: notable
+    conf: 0.96
+    platforms: [ios, macos, windows]
+    if:
+      type: literal
+      kind: string
+      regex: '(?i)net\.whatsapp\.WhatsApp\.shared/blockedcontacts\.dat$'
+
+  - id: whatsapp-message-table-name
+    desc: WhatsApp message table name
+    crit: notable
+    conf: 0.94
+    if:
+      type: literal
+      kind: string
+      exact: ZWAMESSAGE
+
+  - id: whatsapp-media-table-name
+    desc: WhatsApp media table name
+    crit: notable
+    conf: 0.94
+    if:
+      type: literal
+      kind: string
+      exact: ZWAMEDIAITEM
+
+composite_rules:
+  - id: whatsapp-artifact-targeting
+    desc: Targets multiple WhatsApp data artifacts
+    crit: suspicious
+    conf: 0.98
+    needs: 2
+    any:
+      - id: android-whatsapp-db-path
+      - id: android-whatsapp-backup-path
+      - id: ios-whatsapp-db-path
+      - id: ios-whatsapp-account-db-path
+      - id: ios-whatsapp-blocked-path
+      - id: whatsapp-message-table-name
+      - id: whatsapp-media-table-name
+
+  - id: whatsapp-ios-account-targeting
+    desc: Targets iOS WhatsApp account stores
+    crit: suspicious
+    conf: 0.98
+    platforms: [ios, macos, windows]
+    all:
+      - id: ios-whatsapp-db-path
+      - id: ios-whatsapp-account-db-path
+
+  - id: whatsapp-database-collection
+    desc: Reads WhatsApp database content or schema
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: whatsapp-artifact-targeting
+    any:
+      - id: micro-behaviors/data/db/sqlite::python-sqlite3-import
+      - id: micro-behaviors/data/db/sqlite::sqlite3-cli
+      - id: micro-behaviors/data/db/sqlite::sqlite3-open
+      - id: whatsapp-message-table-name
+      - id: whatsapp-media-table-name
+
+  - id: whatsapp-encrypted-backup-key-targeting
+    desc: Targets WhatsApp backup and local key
+    crit: suspicious
+    conf: 0.99
+    attack: T1005,T1552.001
+    all:
+      - id: android-whatsapp-backup-path
+      - id: android-whatsapp-key-path
+
+  - id: whatsapp-encrypted-backup-decryption
+    desc: Decrypts an Android WhatsApp backup
+    crit: suspicious
+    conf: 0.98
+    attack: T1005,T1027
+    for: [python]
+    all:
+      - id: whatsapp-encrypted-backup-key-targeting
+      - id: micro-behaviors/crypto/symmetric/decrypt::python-decrypt-method-call
+    any:
+      - id: micro-behaviors/crypto/symmetric/aes/library::pycrypto-usage
+      - id: micro-behaviors/crypto/symmetric/decrypt::python-decrypt-helper-call
+
+  - id: whatsapp-app-data-exfiltration
+    desc: Exfiltrates WhatsApp database content
+    crit: hostile
+    conf: 0.99
+    attack: T1005,T1041
+    all:
+      - id: whatsapp-database-collection
+    any:
+      - id: micro-behaviors/communications/http/lib/requests::requests-post
+      - id: micro-behaviors/communications/http/upload::requests-post-files-parameter
+      - id: micro-behaviors/communications/http/post::http-post-call
+      - id: micro-behaviors/communications/http/post::post-request-line
+      - id: micro-behaviors/communications/http/post::fetch-post-call
+      - id: micro-behaviors/communications/http/upload::data-collection-upload-path
+      - id: micro-behaviors/communications/http/request/result::http-post-client-call
+      - id: micro-behaviors/communications/http/request/result::http-curl-post-request
+
+  - id: whatsapp-encrypted-backup-exfiltration
+    desc: Exfiltrates WhatsApp backup with local key
+    crit: hostile
+    conf: 0.99
+    attack: T1005,T1041,T1552.001
+    all:
+      - id: whatsapp-encrypted-backup-key-targeting
+    any:
+      - id: micro-behaviors/communications/http/lib/requests::requests-post
+      - id: micro-behaviors/communications/http/upload::requests-post-files-parameter
+      - id: micro-behaviors/communications/http/post::http-post-call
+      - id: micro-behaviors/communications/http/post::post-request-line
+      - id: micro-behaviors/communications/http/post::fetch-post-call
+      - id: micro-behaviors/communications/http/upload::data-collection-upload-path
+      - id: micro-behaviors/communications/http/request/result::http-post-client-call
+      - id: micro-behaviors/communications/http/request/result::http-curl-post-request
+
+  - id: whatsapp-ios-account-data-exfiltration
+    desc: Exfiltrates iOS WhatsApp account data
+    crit: hostile
+    conf: 0.99
+    attack: T1005,T1041
+    platforms: [ios, macos, windows]
+    all:
+      - id: whatsapp-ios-account-targeting
+    any:
+      - id: micro-behaviors/communications/http/lib/requests::requests-post
+      - id: micro-behaviors/communications/http/upload::requests-post-files-parameter
+      - id: micro-behaviors/communications/http/post::http-post-call
+      - id: micro-behaviors/communications/http/post::post-request-line
+      - id: micro-behaviors/communications/http/post::fetch-post-call
+      - id: micro-behaviors/communications/http/upload::data-collection-upload-path
+      - id: micro-behaviors/communications/http/request/result::http-post-client-call
+      - id: micro-behaviors/communications/http/request/result::http-curl-post-request
