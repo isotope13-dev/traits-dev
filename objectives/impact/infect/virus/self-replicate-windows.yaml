@@ -1,0 +1,70 @@
+# Win32 self-replication: a program whose only externally visible effect is to
+# produce another copy of its own executable.
+#
+# The replication primitive is: resolve own image path (GetModuleFileName),
+# duplicate the image (CopyFile), then reopen the duplicate and rewrite bytes
+# inside it (CreateFile + GetFileSize/ReadFile + SetFilePointer + WriteFile).
+# The rewrite step is what separates a replicator from a plain self-copy: the
+# offspring is deliberately made to differ from the parent, which is how these
+# families defeat hash- and signature-based detection generation after
+# generation. Because the mutated field is random per generation, no byte
+# signature over it can ever match twice - the import/behaviour chain is the
+# only durable evidence.
+#
+# A self-updater, installer or backup tool performs the same file operations,
+# but always alongside a reason to exist - a command line, a window, a network
+# fetch, a registry write, a child process, a drive or directory walk. The
+# hostile rule therefore requires the replication chain AND the absence of any
+# such capability.
+defaults:
+  platforms: [windows]
+  for: [pe]
+
+composite_rules:
+  - id: self-image-copy-and-rewrite
+    desc: Copies own image then rewrites file content
+    crit: suspicious
+    conf: 0.9
+    attack: T1554
+    all:
+      - id: objectives/anti-static/obfuscation/payload/self-read::self-read-file-import-chain-ansi
+      - id: micro-behaviors/fs/file/copy::copyfile-a
+      - id: micro-behaviors/fs/file/write/direct::write-file
+      - id: micro-behaviors/fs/file/handle::set-file-pointer
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/installer/family/
+      - id: metadata/binary/installer/sfx/
+
+  # Every leg is a capability that a program with a purpose of its own needs at
+  # least one of: a way to be driven (window), a way to reach the network, a
+  # way to touch the registry, a way to launch something, or a way to find
+  # files other than its own image. A binary that has none of them and still
+  # duplicates and rewrites its own executable is doing nothing but replicating.
+  - id: program-capability-beyond-self-copy
+    desc: Binary has a capability besides self-copying
+    crit: exception
+    conf: 0.9
+    any:
+      - id: micro-behaviors/process/create/spawn::create-process-a
+      - id: micro-behaviors/process/create/spawn::create-process-w
+      - id: micro-behaviors/process/create/exec::shell-execute
+      - id: micro-behaviors/os/registry/access::registry-create-key-api
+      - id: micro-behaviors/os/registry/access::registry-set-value-api
+      - id: micro-behaviors/communications/socket/init::wsa-startup
+      - id: micro-behaviors/communications/http/get::internet-open
+      - id: micro-behaviors/fs/traversal/drives::get-logical-drives
+      - id: micro-behaviors/fs/enumerate/directory::file-enumeration-with-access
+      - id: micro-behaviors/ui/window/manage/control::create-window-ex
+
+  - id: pure-self-replicator
+    desc: Self-copying image rewriter with no other capability
+    crit: hostile
+    conf: 0.96
+    attack: T1554
+    all:
+      - id: self-image-copy-and-rewrite
+      - id: micro-behaviors/fs/file/stat::get-file-size
+      - id: metadata/binary/layout::pe-no-signature-record
+    unless:
+      - id: program-capability-beyond-self-copy
