@@ -1,0 +1,105 @@
+# Browser credential fallback chain: helper downloads, raw Chromium-store
+# copying, local temp staging, and chunked HTTP upload.  These rules describe
+# the technique and remain independent of a malware-family name or endpoint.
+defaults:
+  platforms: [windows]
+  for: [scripts, binaries, source]
+  attack: T1555.003,T1105,T1074.001,T1041
+
+traits:
+  - id: browser-helper-download-set
+    desc: Multiple browser-stealer helper downloads
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: text
+      regex: 'https?://[^"''\s]{1,200}/payloads/[A-Za-z0-9_.-]+\.exe'
+    count_min: 3
+
+  - id: temp-random-browser-staging
+    desc: Randomized Windows temp browser staging path
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: '(?i)%(TEMP|TMP)%[/\\]{1,2}[A-Za-z][A-Za-z0-9_-]{2,48}-[0-9]{4,12}[/\\]{1,2}'
+
+  - id: browser-staging-debug-log
+    desc: Browser staging directory debug log
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)%(TEMP|TMP)%[/\\]{1,2}[A-Za-z][A-Za-z0-9_-]{2,48}-[0-9]{4,12}[/\\]{1,2}debug\.txt\b'
+
+  - id: browser-post-chunk-query
+    desc: HTTP POST carries chunk query field
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?s)POST.{0,240}(cat=|chunk=|part=|fragment=|Transfer-Encoding: chunked)'
+
+  - id: browser-upload-token-header
+    desc: Custom HTTP token header line
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)X-[A-Za-z0-9_-]{2,24}(Token|Key|Auth)\s*:'
+
+  - id: browser-upload-owner-header
+    desc: Custom HTTP owner identity header
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)X-[A-Za-z0-9_-]{0,24}(Owner|Client|Device|User)[-_]?ID\s*:'
+
+composite_rules:
+  - id: chunked-browser-upload-schema
+    desc: Chunked browser-loot HTTP POST schema
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: browser-post-chunk-query
+      - id: browser-upload-token-header
+      - id: browser-upload-owner-header
+
+  - id: browser-store-copy-operation
+    desc: Copies Chromium credential databases
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: objectives/credential-access/browser/chromium::login-data-string
+      - id: micro-behaviors/fs/path/sensitive/browser::browser-cookies-file-path
+    any:
+      - id: micro-behaviors/fs/file/copy::copy
+      - id: micro-behaviors/data/db/sqlite::sqlite3-cgo-open
+
+  - id: browser-helper-fallback-stealer
+    desc: Browser helper fallback credential stealer
+    crit: hostile
+    conf: 0.99
+    attack: T1555.003,T1105,T1074.001
+    all:
+      - id: browser-helper-download-set
+      - id: objectives/credential-access/browser/chromium::login-data-string
+      - id: micro-behaviors/fs/path/sensitive/browser::browser-cookies-file-path
+      - id: micro-behaviors/fs/file/copy::copyfile-w
+      - id: temp-random-browser-staging
+      - id: browser-staging-debug-log
+
+  - id: browser-loot-chunked-http-exfil
+    desc: Staged browser loot sent as chunked HTTP
+    crit: hostile
+    conf: 0.99
+    attack: T1555.003,T1074.001,T1041,T1030
+    all:
+      - id: objectives/credential-access/browser/chromium::login-data-string
+      - id: micro-behaviors/fs/path/sensitive/browser::browser-cookies-file-path
+      - id: micro-behaviors/fs/file/copy::copyfile-w
+      - id: temp-random-browser-staging
+      - id: browser-post-chunk-query
+      - id: browser-upload-token-header
+      - id: browser-upload-owner-header
