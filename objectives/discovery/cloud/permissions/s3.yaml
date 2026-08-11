@@ -1,0 +1,100 @@
+# S3 public-access policy findings and permission-surface reconnaissance.
+# The AWS guide documents these exact policy fields and SDK operations as an
+# audit workflow. They are useful defensive signals, but the same structures
+# also identify public buckets and enumerate cloud assets after a role pivot.
+defaults:
+  platforms: [unix, windows]
+  for: [json, python, javascript, typescript, ruby, go, java, php]
+
+traits:
+  - id: s3-policy-allow-effect
+    desc: S3 policy has an allow effect
+    crit: component
+    conf: 0.96
+    for: [json]
+    if:
+      type: text
+      regex: '(?i)["'']Effect["'']?\s*:\s*["'']Allow["'']'
+
+  - id: s3-policy-wildcard-principal
+    desc: S3 policy has a wildcard principal
+    crit: suspicious
+    conf: 0.96
+    for: [json]
+    if:
+      type: text
+      regex: '(?i)["'']Principal["'']?\s*:\s*["'']\*["'']'
+
+  - id: s3-wildcard-action-policy
+    desc: S3 policy grants every S3 action
+    crit: suspicious
+    conf: 0.97
+    for: [json]
+    if:
+      type: text
+      regex: '(?i)["'']Action["'']?\s*:\s*(["'']s3:\*["'']|\[[^\]]{0,160}["'']s3:\*["''])'
+
+  - id: s3-public-acl-grant
+    desc: S3 ACL grants a global public group
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: text
+      regex: '(?i)(AllUsers|AuthenticatedUsers|groups/global/(AllUsers|AuthenticatedUsers))'
+
+  - id: s3-public-access-block-disabled
+    desc: S3 public-access-block setting is disabled
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)Public(Acls|Policy|Buckets)[^:\n]{0,20}:\s*(false|0)'
+
+composite_rules:
+  - id: s3-public-wildcard-policy
+    desc: S3 bucket policy grants anonymous full access
+    crit: suspicious
+    conf: 0.99
+    all:
+      - id: s3-policy-allow-effect
+      - id: s3-policy-wildcard-principal
+      - id: s3-wildcard-action-policy
+
+  - id: aws-s3-bucket-enumeration
+    desc: Enumerates S3 buckets
+    crit: notable
+    conf: 0.93
+    attack: T1087.004
+    any:
+      - id: micro-behaviors/communications/http/services/aws-s3::s3-list-buckets-operation
+      - id: micro-behaviors/communications/http/services/aws-s3::s3-list-buckets-command
+
+  - id: aws-s3-permission-surface-read
+    desc: Reads S3 bucket permission metadata
+    crit: notable
+    conf: 0.93
+    attack: T1087.004
+    any:
+      - id: micro-behaviors/communications/http/services/aws-s3::s3-permission-read-operation
+      - id: micro-behaviors/communications/http/services/aws-s3::s3-permission-read-command
+
+  - id: aws-s3-permission-surface-enumeration
+    desc: Enumerates S3 buckets and their public-access permissions
+    crit: suspicious
+    conf: 0.97
+    attack: T1087.004
+    all:
+      - id: aws-s3-bucket-enumeration
+      - id: aws-s3-permission-surface-read
+
+  - id: aws-cross-account-s3-permission-enumeration
+    desc: Uses an AWS role pivot to enumerate S3 permissions
+    crit: suspicious
+    conf: 0.98
+    attack: T1087.004
+    all:
+      - id: aws-s3-permission-surface-enumeration
+      - id: micro-behaviors/communications/http/services/aws::aws-assume-role-operation
+    any:
+      - id: micro-behaviors/communications/http/services/aws::aws-cross-account-role-arn
+      - id: objectives/discovery/cloud/permissions::boto3-client-supplied-credentials
