@@ -1,0 +1,162 @@
+# DNS-controlled selection of a cloud-service relay versus a direct HTTPS
+# channel.  This is a technique rule: service names, deployment IDs, domains,
+# and command vocabulary are deliberately not part of the matchers.
+defaults:
+  platforms: [windows, unix]
+  for: [csharp, python]
+  attack: "T1071.004,T1102.001"
+  mbc: "C0011,B0030"
+
+traits:
+  - id: csharp-relay-endpoint-branch
+    desc: .NET endpoint selection branch
+    crit: notable
+    conf: 0.9
+    for: [csharp]
+    if:
+      type: text
+      regex: '\bendpoint\s*=\s*\w+\s*\?\s*\w+\s*:\s*\w+'
+
+  - id: python-relay-endpoint-branch
+    desc: Python endpoint selection branch
+    crit: notable
+    conf: 0.9
+    for: [python]
+    if:
+      type: text
+      regex: '\breturn\s+\w+\s+if\s+\w+[^\n]{0,48}else\s+\w+'
+
+  - id: csharp-relay-http-post
+    desc: .NET constructs an HTTP POST request
+    crit: notable
+    conf: 0.9
+    for: [csharp]
+    if:
+      type: text
+      regex: 'HttpRequestMessage\s*\(\s*HttpMethod\.Post'
+
+  - id: python-relay-http-post
+    desc: Python constructs a urllib POST request
+    crit: notable
+    conf: 0.9
+    for: [python]
+    if:
+      type: text
+      regex: 'Request\([\s\S]{0,160}method\s*=\s*["'']POST["'']'
+
+  - id: python-indexed-relay-dns-label
+    desc: Python constructs an indexed DNS relay label
+    crit: suspicious
+    conf: 0.95
+    for: [python]
+    if:
+      type: text
+      regex: 'f["'']\{[A-Za-z_]\w*\}\.\{[A-Za-z_]\w*\}\.p\.'
+
+  - id: csharp-indexed-relay-dns-label
+    desc: .NET constructs an indexed DNS relay label
+    crit: suspicious
+    conf: 0.95
+    for: [csharp]
+    if:
+      type: text
+      regex: '\$["''][^"\n]{0,80}\{[A-Za-z_]\w*\}\.[^"\n]{0,40}\.p\.'
+
+  - id: python-relay-id-short-hash
+    desc: Python short hash relay-ID prefix
+    crit: suspicious
+    conf: 0.95
+    for: [python]
+    if:
+      type: text
+      regex: 'hashlib\.md5[\s\S]{0,120}hexdigest\(\)\s*\[:\s*4\s*\]'
+
+  - id: csharp-relay-id-short-hash
+    desc: .NET short hash relay-ID prefix
+    crit: suspicious
+    conf: 0.95
+    for: [csharp]
+    if:
+      type: text
+      regex: 'MD5\.HashData[\s\S]{0,120}\[\.\.4\]'
+
+composite_rules:
+  - id: relay-endpoint-branch
+    desc: Selects a relay endpoint at runtime
+    crit: notable
+    conf: 0.94
+    any:
+      - id: csharp-relay-endpoint-branch
+      - id: python-relay-endpoint-branch
+
+  - id: relay-http-post
+    desc: Posts to a runtime-selected relay endpoint
+    crit: notable
+    conf: 0.94
+    any:
+      - id: csharp-relay-http-post
+      - id: python-relay-http-post
+
+  - id: relay-id-short-hash
+    desc: Derives a short hash prefix for relay-ID validation
+    crit: suspicious
+    conf: 0.96
+    any:
+      - id: python-relay-id-short-hash
+      - id: csharp-relay-id-short-hash
+
+  - id: relay-id-indexed-dns-query
+    desc: Queries indexed DNS labels to recover a relay identifier
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: micro-behaviors/communications/dns/lookup/a::source-dns-a-response-octet
+    any:
+      - id: python-indexed-relay-dns-label
+      - id: csharp-indexed-relay-dns-label
+    near_bytes: 3200
+
+  - id: dns-selected-cloud-relay
+    desc: DNS response selects a cloud relay or direct HTTPS C2 channel
+    crit: suspicious
+    conf: 0.98
+    all:
+      - id: micro-behaviors/communications/dns/lookup/a::source-dns-a-response-octet
+      - id: micro-behaviors/communications/http/services/google-apps-script::google-apps-script-macros-path
+      - id: relay-endpoint-branch
+    near_bytes: 3200
+
+  - id: dns-selected-cloud-relay-c2
+    desc: DNS-selected cloud relay with direct HTTPS C2 fallback
+    crit: hostile
+    conf: 0.995
+    all:
+      - id: dns-selected-cloud-relay
+      - id: relay-http-post
+    near_bytes: 3200
+
+  - id: dns-rotated-cloud-relay-c2
+    desc: DNS chunking and hash validation rotate a cloud C2 relay
+    crit: hostile
+    conf: 0.995
+    attack: "T1071.004,T1102.001,T1027"
+    all:
+      - id: dns-selected-cloud-relay
+      - id: relay-id-indexed-dns-query
+      - id: relay-id-short-hash
+      - id: micro-behaviors/communications/http/services/google-apps-script::google-apps-script-macros-path
+    near_bytes: 3600
+
+  - id: cloud-relay-packed-response-stage
+    desc: Cloud-relay response is decoded, decompressed, and materialized
+    crit: hostile
+    conf: 0.995
+    attack: "T1102.001,T1140,T1105"
+    for: [csharp]
+    all:
+      - id: dns-selected-cloud-relay-c2
+      - id: micro-behaviors/communications/http/client/managed::readasstringasync
+      - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+      - id: micro-behaviors/data/decode/xor::csharp-bytearray-xor-assignment
+      - id: micro-behaviors/data/compress/library::gzipstream-dotnet
+    near_bytes: 2200
