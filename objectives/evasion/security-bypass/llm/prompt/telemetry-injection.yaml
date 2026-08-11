@@ -1,0 +1,106 @@
+# Indirect prompt injection delivered through operational telemetry, and the
+# infrastructure changes it asks the hijacked agent to make.
+#
+# Reported as "Ghostjacking" (Tenet Security, DEF CON 34, 9 August 2026): the
+# attacker never authenticates to the target. A request crafted to be blocked by
+# the edge firewall is logged verbatim; an APM event is posted with a client-side
+# key scraped off the victim's own site; a crash report is filed through a public
+# DSN. Each lands in a store the organisation trusts, and the agent an engineer
+# asks to triage it reads the attacker's text with the engineer's credentials
+# already loaded. The observed payoff steps are a DNS record repointed at
+# attacker infrastructure, an environment dump of cloud credentials, and a copy
+# of the instruction written into the project's agent-instruction file so the
+# next session re-applies it.
+#
+# Every rule here pairs three independent things: a marker that the text is
+# addressed to a model, a carrier or sink that makes the text reachable, and a
+# concrete privileged action. None of the three is conclusive alone — engineers
+# do edit DNS records, and monitoring payloads do quote user input.
+defaults:
+  platforms: [unix, windows]
+  for: [json, text, markdown, scripts, source]
+  attack: T1584.002
+
+composite_rules:
+  - id: agent-directed-dns-record-hijack
+    desc: Agent-directed prompt rewrites a DNS record via provider API
+    crit: hostile
+    conf: 0.97
+    near_bytes: 2400
+    all:
+      - id: objectives/evasion/security-bypass/llm/carrier::llm-injected-instruction-marker
+      - id: micro-behaviors/communications/dns/zone-edit::dns-record-repoint-request
+    any:
+      - id: objectives/evasion/security-bypass/llm/override::agent-instruction-file-append-directive
+      - id: objectives/evasion/security-bypass/llm/override::llm-concealment-do-not-reveal
+      - id: micro-behaviors/data/llm::no-user-question-directive
+      - id: objectives/credential-access/env/harvesting::env-dump-grep-cloud-secrets
+    unless:
+      - id: well-known/tool/detection/llm-scanner/
+      - id: well-known/tool/detection/security-scanner/
+
+  - id: agent-instruction-file-injection-persistence
+    desc: Injected prompt makes itself permanent in agent project config
+    crit: hostile
+    conf: 0.96
+    near_bytes: 2400
+    attack: T1546
+    all:
+      - id: objectives/evasion/security-bypass/llm/carrier::llm-injected-instruction-marker
+      - id: objectives/evasion/security-bypass/llm/override::agent-instruction-file-append-directive
+    any:
+      - id: micro-behaviors/communications/dns/zone-edit::dns-record-repoint-request
+      - id: objectives/credential-access/env/harvesting::env-dump-grep-cloud-secrets
+      - id: objectives/evasion/security-bypass/llm/override::llm-concealment-do-not-reveal
+      - id: micro-behaviors/data/llm::no-user-question-directive
+    unless:
+      - id: well-known/tool/detection/llm-scanner/
+      - id: well-known/tool/detection/security-scanner/
+
+  - id: edge-log-field-agent-instruction-injection
+    desc: Agent instructions planted in edge request-log fields
+    crit: hostile
+    conf: 0.96
+    attack: T1562
+    all:
+      - id: micro-behaviors/data/format/log::edge-firewall-event-record
+      - id: objectives/evasion/security-bypass/llm/carrier::llm-injected-instruction-marker
+    any:
+      - id: micro-behaviors/communications/dns/zone-edit::dns-record-repoint-request
+      - id: objectives/evasion/security-bypass/llm/override::agent-instruction-file-append-directive
+      - id: objectives/credential-access/env/harvesting::env-dump-grep-cloud-secrets
+    unless:
+      - id: well-known/tool/detection/llm-scanner/
+      - id: well-known/tool/detection/security-scanner/
+
+  - id: observability-sink-agent-instruction-poisoning
+    desc: Writes agent instructions into a monitoring or crash-report backend
+    crit: hostile
+    conf: 0.96
+    attack: T1562
+    all:
+      - id: micro-behaviors/communications/http/telemetry::observability-event-ingest-write
+      - id: objectives/evasion/security-bypass/llm/carrier::llm-injected-instruction-marker
+    any:
+      - id: micro-behaviors/communications/dns/zone-edit::dns-record-repoint-request
+      - id: objectives/evasion/security-bypass/llm/override::agent-instruction-file-append-directive
+      - id: objectives/credential-access/env/harvesting::env-dump-grep-cloud-secrets
+    unless:
+      - id: well-known/tool/detection/llm-scanner/
+      - id: well-known/tool/detection/security-scanner/
+
+  - id: alert-record-agent-instruction-injection
+    desc: Agent instructions planted in an APM alert or error report
+    crit: hostile
+    conf: 0.95
+    attack: T1562
+    all:
+      - id: micro-behaviors/data/format/log::observability-alert-record
+      - id: objectives/evasion/security-bypass/llm/carrier::llm-injected-instruction-marker
+    any:
+      - id: micro-behaviors/communications/dns/zone-edit::dns-record-repoint-request
+      - id: objectives/evasion/security-bypass/llm/override::agent-instruction-file-append-directive
+      - id: objectives/credential-access/env/harvesting::env-dump-grep-cloud-secrets
+    unless:
+      - id: well-known/tool/detection/llm-scanner/
+      - id: well-known/tool/detection/security-scanner/
