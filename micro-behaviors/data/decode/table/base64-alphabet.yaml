@@ -1,0 +1,108 @@
+# Base64 alphabet tables and the codecs built around them.
+#
+# Swapping the RFC 4648 table for a private ordering keeps a payload readable
+# to its own decoder while making it opaque to every off-the-shelf base64
+# tool and to string-extraction triage. The table alone is only partial
+# evidence; the codec constructor, or the translation back onto the standard
+# table, is what shows it is in use.
+defaults:
+  platforms: [windows, linux, macos]
+  attack: T1027
+  mbc: C0026
+
+traits:
+  # A 64-character run drawn from the Base64 charset that is not one of the
+  # published orderings (RFC 4648 and its URL-safe twin, the digit-first
+  # sortable variant). Regex cannot prove the 64 characters are distinct, so
+  # this stays low-confidence notable evidence. Single-case runs are filtered
+  # out — those are hex digests and base32 tokens, not alphabets.
+  - id: nonstandard-base64-alphabet
+    desc: Embeds a non-standard Base64 alphabet
+    crit: notable
+    conf: 0.8
+    for: [source, scripts]
+    if:
+      type: literal
+      regex: '^[A-Za-z0-9+/]{64}$'
+    not:
+      - regex: '^ABCDEFGHIJ'
+      - regex: '^0123456789A'
+      - regex: '^[A-Z0-9+/]{64}$'
+      - regex: '^[a-z0-9+/]{64}$'
+
+  # base64.NewEncoding exists only to build a codec around a caller-supplied
+  # alphabet; the stock tables are reached through the StdEncoding and
+  # URLEncoding package variables instead.
+  - id: go-base64-custom-alphabet-codec
+    desc: Builds a Base64 codec from custom alphabet
+    crit: notable
+    conf: 0.9
+    for: [go]
+    if:
+      type: symbol
+      exact: 'base64.NewEncoding'
+
+  - id: python-maketrans-table
+    desc: Builds a str.maketrans translation table
+    crit: notable
+    conf: 0.8
+    for: [python]
+    if:
+      type: symbol
+      regex: '(^|\.)maketrans$'
+
+  - id: go-crc32-seed-call
+    desc: Computes a CRC32 alphabet seed
+    crit: notable
+    conf: 0.9
+    for: [go]
+    if:
+      type: symbol
+      regex: '(^|\.)ChecksumIEEE$'
+
+  - id: go-prng-seed-constructor
+    desc: Seeds a Go pseudo-random generator
+    crit: notable
+    conf: 0.9
+    for: [go]
+    if:
+      type: symbol
+      regex: '(^|\.)NewSource$'
+
+  - id: go-random-permutation-step
+    desc: Selects random permutation positions
+    crit: notable
+    conf: 0.85
+    for: [go]
+    if:
+      type: symbol
+      regex: '(^|\.)Intn$'
+
+composite_rules:
+  - id: go-dynamic-base64-alphabet
+    desc: CRC32-seeded Base64 alphabet permutation
+    crit: suspicious
+    conf: 0.93
+    for: [go]
+    all:
+      - id: go-base64-custom-alphabet-codec
+      - id: go-crc32-seed-call
+      - id: go-prng-seed-constructor
+      - id: go-random-permutation-step
+
+  # Remapping a private ordering onto the RFC 4648 table right before
+  # b64decode is how a custom-alphabet payload is unwrapped with the stdlib
+  # decoder: the blob never decodes with off-the-shelf tooling, yet the code
+  # only ever calls base64.b64decode.
+  - id: python-alphabet-substitution-decode
+    desc: Remaps an alphabet onto standard Base64
+    crit: suspicious
+    conf: 0.9
+    for: [python]
+    all:
+      - id: python-maketrans-table
+      - id: micro-behaviors/data/decode/base64::standard-base64-alphabet-table
+    any:
+      - id: micro-behaviors/data/decode/base64::b64decode-call
+      - id: micro-behaviors/data/decode/base64::b64decode-string
+    needs: 1
