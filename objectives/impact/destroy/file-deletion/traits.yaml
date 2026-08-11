@@ -259,7 +259,61 @@ traits:
   for: [elf, macho]
   if:
     type: text
-    regex: '(?i)\brm\s+-rf\s+/(\s|$)'
+    # `/(\*|\s|$)` also catches the `rm -rf /*` glob form, not just bare `/`.
+    regex: '(?i)\brm\s+-rf\s+/(\*|\s|$)'
+
+- id: unix-root-rm-glob
+  desc: Root filesystem wipe (rm -rf /*)
+  crit: suspicious
+  conf: 0.95
+  platforms: [unix]
+  # A root wipe is destructive wherever it runs, so this covers scripts *and*
+  # source — the latter so a misdetected script (a Gentoo `.ebuild` read as
+  # Kotlin) can't hide the command. Binaries are caught above.
+  for: [scripts, source]
+  if:
+    type: text
+    # `rm -rf /*` — the glob expands to every top-level entry, so unlike a bare
+    # `rm -rf /` (which rm refuses without --no-preserve-root) this one runs and
+    # wipes the host. `/` must sit directly after the flags, so a real target
+    # (`/tmp/x`, `./build`, `/home/u`) never matches; flag order/extras vary.
+    regex: '(?i)\brm\s+-[a-z]*(rf|fr)[a-z]*\s+/(\*|\s|$)'
+
+- id: encoded-rm-binary-path
+  desc: Obfuscated /bin/rm delete path
+  # The delete binary recovered from a decoder — base64 (`base64 -d <<< …`),
+  # hex, xor, a stack string — not from plain source. gentoo-systemd's
+  # `configure` hid `/bin/rm` in `base64 -d <<< L2Jpbi9ybQo=`, then `exec`'d it
+  # against `$HOME`. A build script that has to *encode* `/bin/rm` to name it is
+  # hiding intent, so this is suspicious wherever the encoded string is found;
+  # `type: encoded` never sees a plainly-written path, so a normal `rm` in a
+  # Makefile can't trip it. Omitting `encoding:` covers every decoder.
+  crit: suspicious
+  conf: 0.9
+  platforms: [unix]
+  # The decoder-hiding droppers that do this are shells and the scripting
+  # languages that shell out, plus native binaries — narrowed to stay under the
+  # type:encoded file-type cap.
+  for: [shell, python, perl, ruby, php, javascript, elf, macho]
+  if:
+    type: encoded
+    regex: '/bin/rm(\b|$)'
+
+- id: rm-binary-abs-path
+  desc: Absolute /bin/rm delete path
+  # The absolute path to the delete binary is a clear, self-contained
+  # file-deletion sign — it passes the standalone-description and
+  # differential-analysis tests, so it is notable, not a component (init scripts
+  # and Makefiles hardcode `/bin/rm` for PATH independence, but that is a
+  # confidence question, not a reason to demote the tier). Notable stays below
+  # the gate; the obfuscated form above is the one that earns suspicion.
+  crit: notable
+  conf: 0.5
+  platforms: [unix]
+  for: [scripts, source]
+  if:
+    type: text
+    regex: '(^|\s|["''`(=|;&])/bin/rm(\b|$)'
 
 - id: kamikaze-wiper-ref
   desc: Kamikaze wiper script reference
