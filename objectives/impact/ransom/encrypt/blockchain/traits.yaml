@@ -1,0 +1,67 @@
+# Ransomware that obtains campaign configuration from a blockchain-backed
+# dead drop. The chain request is not hostile by itself; the hostile rules
+# require it to feed a native file-locking and extortion workflow.
+defaults:
+  platforms: [linux, windows]
+  for: [source, binaries, scripts]
+  attack: T1486,T1102,T1071.001
+  mbc: B0040,B0025
+
+traits:
+  - id: file-offset-loop-header
+    desc: File offset starts a bounded loop
+    crit: suspicious
+    conf: 0.92
+    for: [c, cpp, source]
+    if:
+      type: text
+      regex: '(?i)\bfor\s*\(\s*(off|offset|pos|position|cursor)\s*=\s*0\s*;'
+
+  - id: block-stride-definition
+    desc: Defines a block or chunk stride
+    crit: suspicious
+    conf: 0.93
+    for: [c, cpp, source]
+    if:
+      type: text
+      regex: '(?im)^\s*#define\s+\w*(STRIDE|STEP)\w*\s+.{0,60}(\*|\b\d{2,}\b)'
+
+  - id: file-offset-stride-update
+    desc: File offset loop uses a stride
+    crit: suspicious
+    conf: 0.92
+    for: [c, cpp, source]
+    if:
+      type: text
+      regex: '(?i)\b(off|offset|pos|position|cursor)\s*\+=\s*\w+\s*\)'
+
+composite_rules:
+  - id: intermittent-offset-encryption-loop
+    desc: File encryption loop uses a block stride
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: file-offset-loop-header
+      - id: file-offset-stride-update
+      - id: micro-behaviors/fs/file/binary::source-file-content-io
+    near_bytes: 1000
+
+  - id: blockchain-configured-ransomware
+    desc: Ransomware config read from an EVM contract
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: objectives/command-and-control/channel/deaddrop/blockchain::evm-contract-config-read
+      - id: objectives/impact/ransom/encrypt/native-locker::xchacha-file-crypto
+      - id: objectives/impact/ransom/encrypt/native-locker::curve25519-key-wrapping
+      - id: micro-behaviors/fs/file/binary::source-file-content-io
+      - id: objectives/impact/ransom/encrypt/config::ransom-note-text
+
+  - id: blockchain-configured-intermittent-locker
+    desc: Blockchain-configured intermittent file locker
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: blockchain-configured-ransomware
+      - id: intermittent-offset-encryption-loop
+      - id: block-stride-definition
