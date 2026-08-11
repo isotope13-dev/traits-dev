@@ -1,0 +1,81 @@
+# A compromised server can be used as a relay without exposing a normal shell
+# endpoint.  RelayShell's distinctive channel is a pair of session-scoped files:
+# the victim and operator write to opposite numbered files, then read the other
+# side.  Keep the channel atomics language-neutral where the syntax permits it;
+# the request-decoding/file-management composite is PHP-specific because that is
+# the concrete webshell implementation described by the report.
+defaults:
+  platforms: [unix, windows]
+  for: [source, php]
+  attack: T1505.003
+  mbc: B0030
+
+traits:
+  - id: session-numbered-log-path
+    desc: Numbered session log channel path
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)\$?(session|sid|channel)\w*\s*[.+]\s*["''][12]\.log["'']'
+
+  - id: relay-send-command-branch
+    desc: Send branch in relay dispatch
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)(case|when)\s*["'']send["'']|if[^;\n]{0,180}["'']send["'']'
+
+  - id: relay-receive-command-branch
+    desc: Receive branch in relay dispatch
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)(case|when)\s*["'']receive["'']|if[^;\n]{0,180}["'']receive["'']'
+
+  - id: php-base64-request-file-control
+    desc: Base64 request data reaches a file API
+    crit: suspicious
+    conf: 0.96
+    for: [php]
+    if:
+      type: text
+      regex: '(?i)base64_decode\s*\(\s*\$_(GET|POST|REQUEST)\s*\[[^]]{1,60}\]'
+
+composite_rules:
+  - id: file-backed-relay-channel
+    desc: Bidirectional session-file command relay
+    crit: hostile
+    conf: 0.99
+    attack: T1505.003,T1071.001
+    all:
+      - id: session-numbered-log-path
+      - id: relay-send-command-branch
+      - id: relay-receive-command-branch
+      - id: micro-behaviors/fs/read/
+      - id: micro-behaviors/fs/file/write/direct/
+    near_bytes: 8192
+
+  - id: php-relay-file-management
+    desc: PHP relay accepts Base64-named file writes and deletion
+    crit: hostile
+    conf: 0.99
+    attack: T1505.003,T1105,T1070.004
+    all:
+      - id: metadata/lang/scripted::php-open-tag
+      - id: micro-behaviors/communications/http/request/params::post-dup
+      - id: php-base64-request-file-control
+      - id: micro-behaviors/fs/file/write/direct::php-file-put-contents
+      - id: micro-behaviors/fs/delete/file::php-unlink
+    near_bytes: 4096
+
+  - id: php-file-backed-relay-webshell
+    desc: PHP webshell combines a session-file relay with remote file management
+    crit: hostile
+    conf: 0.99
+    attack: T1505.003,T1071.001,T1105
+    all:
+      - id: file-backed-relay-channel
+      - id: php-relay-file-management
