@@ -1,0 +1,76 @@
+# A document viewer can be trojanized so a parser sentinel gates extraction of
+# an embedded payload.  The high-confidence rules require the sentinel or a
+# document-format marker together with bytewise decoding, a Windows temporary
+# executable path, and either a file write or process launch.  This models the
+# delivery technique without depending on a viewer, malware-family, or filename.
+defaults:
+  platforms: [windows]
+  for: [c, cpp, pe, dll, binaries, source]
+  attack: T1204.002,T1140,T1105
+  mbc: B0032
+
+traits:
+  - id: pdf-parser-payload-sentinel
+    desc: PDF parser payload sentinel
+    crit: notable
+    conf: 0.98
+    for: [c, cpp, pe, dll, source]
+    if:
+      type: text
+      regex: 'This document is encrypted with sumatrapdf reader!{4,}'
+
+  - id: pdf-file-format-marker
+    desc: PDF file format marker
+    crit: component
+    conf: 0.9
+    for: [c, cpp, pe, dll, source]
+    if:
+      type: text
+      regex: '(?i)application/pdf|%PDF-[0-9.-]+'
+
+  - id: pdf-parser-call-marker
+    desc: PDF parser call marker
+    crit: component
+    conf: 0.9
+    for: [c, cpp, pe, dll, source]
+    if:
+      type: text
+      regex: '(?i)\bpdf_(contains|parse|read|extract|open|load)\b'
+
+  - id: windows-temp-executable-source
+    desc: Windows temp executable path in source
+    crit: notable
+    conf: 0.94
+    for: [c, cpp]
+    if:
+      type: text
+      regex: '(?i)(GetTempPath[AW]?|%(TEMP|TMP)%|(\\){2}Temp(\\){2})[^"\r\n]{0,120}\.exe\b'
+
+composite_rules:
+  - id: document-format-marker
+    desc: PDF format or parser marker
+    crit: component
+    conf: 0.9
+    any:
+      - id: pdf-file-format-marker
+      - id: pdf-parser-call-marker
+
+  - id: pdf-sentinel-xor-temp-dropper
+    desc: PDF-sentinel-gated XOR payload dropped as a temporary executable
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: pdf-parser-payload-sentinel
+      - id: micro-behaviors/data/decode/xor::native-bytewise-xor-array-transform
+      - id: windows-temp-executable-source
+      - id: micro-behaviors/fs/file/write/direct::write-file-source
+
+  - id: document-xor-temp-child-stager
+    desc: Document XOR temp executable launcher
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: document-format-marker
+      - id: micro-behaviors/data/decode/xor::native-bytewise-xor-array-transform
+      - id: windows-temp-executable-source
+      - id: micro-behaviors/process/create/spawn::create-process-a
