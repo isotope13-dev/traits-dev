@@ -29,7 +29,13 @@ traits:
   conf: 0.8
   if:
     type: text
-    regex: '(?m)^ *(echo|cat)[^\n]{0,240}[>]+[^\n]{0,100}authorized_keys'
+    # `^ *echo` only saw a command that starts its own line. The most common
+    # form of this technique in the wild chains off `&&`
+    # (`cd ~ && rm -rf .ssh && mkdir .ssh && echo "ssh-rsa ..." >> ...`), so the
+    # anchor is command-leading, not line-leading. The length budget has to clear
+    # a full RSA public key (~372 chars for 2048-bit, ~716 for 4096-bit) sitting
+    # between the echo and the redirect.
+    regex: '(?m)(^|[;&|]) *(echo|cat)[^\n]{0,800}[>]+[^\n]{0,100}authorized_keys'
   unless:
   - id: objectives/persistence/login/ssh/backdoor/
   - id: objectives/persistence/login/ssh/backdoor/
@@ -49,7 +55,7 @@ traits:
   for: [shell, javascript, typescript]
   if:
     type: text
-    regex: '(?s)(?m)^ *echo\s+.{0,700}>>\s*[^ \n]{0,100}authorized_keys\b'
+    regex: '(?s)(?m)(^|[;&|]) *echo\s+.{0,800}>>\s*[^ \n]{0,100}authorized_keys\b'
   unless:
   - id: metadata/package/testing/
   - id: well-known/app/development/vscode/
@@ -67,7 +73,7 @@ traits:
   conf: 0.95
   if:
     type: text
-    regex: '(?m)^ *echo.{0,200}>>.{0,50}authorized_keys'
+    regex: '(?m)(^|[;&|]) *echo.{0,800}>>.{0,50}authorized_keys'
   unless:
   - id: metadata/package/testing/
   - id: well-known/tool/sysadmin/virtualization::lima-virtualization-tool
@@ -394,3 +400,64 @@ composite_rules:
   - id: metadata/file/string/artifact::vagrant-machine-communicate-marker
   - id: well-known/tool/development/runspec-console/
   - id: well-known/tool/sysadmin/automatedlab/
+
+# The article's actual finding: the tell is not the key install, it is the
+# eviction around it. Provisioning appends a key; this playbook destroys the
+# existing trust store first so no previously authorized operator survives,
+# then takes away the fallbacks — the root password and the tcp_wrappers deny
+# list that a fail2ban jail would otherwise use to evict it. `ssh-trust-store-
+# reset` above covers the same eviction but requires the key literal to be
+# recognized; these fire on the eviction-plus-lockout shape alone, so a rotated
+# or unparsed key does not buy the operator invisibility.
+- id: ssh-trust-store-eviction
+  desc: Wipes the SSH trust store before installing an authorized key
+  crit: hostile
+  conf: 0.97
+  attack: T1098.004,T1531
+  mbc: E1098
+  all:
+  - id: reset-ssh-dir
+  any:
+  - id: authorized-keys-append
+  - id: authorized-keys-shell-append
+  - id: micro-behaviors/communications/ssh/keys::authorized-keys-append-redirect
+  unless:
+  - id: metadata/build/recognized-contexts::benign-build-tooling-context
+  - id: well-known/tool/sysadmin/automatedlab/
+
+- id: ssh-key-install-with-operator-lockout
+  desc: Installs an SSH key and revokes the operator's own access
+  crit: hostile
+  conf: 0.96
+  attack: T1098.004,T1531
+  all:
+  - id: ssh-trust-store-eviction
+  any:
+  - id: micro-behaviors/os/user/account::chpasswd-command
+  - id: objectives/impact/degrade/firewall::tcp-wrappers-deny-list-cleared
+
+# Same technique expressed through a language runtime rather than a shell
+# one-liner: rmtree the trust store, rebuild it, write the key back.
+- id: python-ssh-trust-store-eviction
+  desc: Python deletes and rebuilds the SSH authorized_keys trust store
+  crit: hostile
+  conf: 0.96
+  for: [python]
+  mbc: E1098
+  near_bytes: 1024
+  all:
+  - id: micro-behaviors/fs/directory/delete::shutil-rmtree
+  - id: micro-behaviors/communications/ssh/keys::authorized-keys-path-construction
+  - id: micro-behaviors/fs/file/write/direct::py-open-write-mode
+  unless:
+  - id: metadata/build/recognized-contexts::benign-build-tooling-context
+
+- id: python-ssh-key-install-with-operator-lockout
+  desc: Python replaces SSH trust and clears host access controls
+  crit: hostile
+  conf: 0.96
+  for: [python]
+  attack: T1098.004,T1562.004
+  all:
+  - id: python-ssh-trust-store-eviction
+  - id: objectives/impact/degrade/firewall::tcp-wrappers-deny-list-cleared
