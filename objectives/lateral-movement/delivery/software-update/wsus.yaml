@@ -1,0 +1,147 @@
+# Weaponizing the enterprise update pipeline: forging a malicious WSUS update
+# by driving the SUSDB database's own internal stored procedures.
+#
+# WSUS (Windows Server Update Services) stores every update in a SQL database
+# named SUSDB and mutates it only through a set of internal, undocumented
+# stored procedures. Supported publishing goes through the WSUS API / PowerShell
+# cmdlets; nothing legitimate and third-party issues `EXEC spImportUpdate` /
+# `spDeployUpdate` against SUSDB directly. Offensive tooling that has reached the
+# database (e.g. via NTLM relay of the WSUS machine account to an external MSSQL
+# backend) replays that private proc chain to mint an update record, point its
+# download URL at an attacker-hosted file, and assign it to target machines,
+# which then fetch and run it at next check-in as a trusted update (T1072).
+#
+# The signature is the SUSDB write-proc cluster plus the weaponized update
+# metadata (a CommandLineInstallation handler with an InstallCommand). It is
+# language-agnostic on purpose: the same SQL is issued from the SpecterOps
+# NotWSUSpicious Python tool, from PowerShell Invoke-Sqlcmd, or from C#
+# (SharpWSUS-lineage). Matching the proc names and the update-XML markers, not
+# any one tool's strings, catches rebuilds and ports.
+defaults:
+  platforms: [windows, unix]
+  for: [python, powershell, csharp, batch]
+  attack: T1072
+  mbc: E1072
+
+traits:
+  # --- SUSDB internal write/administration stored procedures ---
+  # Each is a WSUS server-internal proc. Directly invoking one from third-party
+  # code is already a WSUS-content-authoring operation an analyst wants surfaced.
+  - id: susdb-import-update-proc
+    desc: Invokes SUSDB spImportUpdate stored proc
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\bspImportUpdate\b'
+
+  - id: susdb-save-xml-fragment-proc
+    desc: Invokes SUSDB spSaveXmlFragment stored proc
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\bspSaveXmlFragment\b'
+
+  - id: susdb-set-batch-url-proc
+    desc: Sets WSUS update download URL via spSetBatchURL
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\bspSetBatchURL\b'
+
+  - id: susdb-deploy-update-proc
+    desc: Assigns a WSUS update via spDeployUpdate
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\bspDeployUpdate\b'
+
+  - id: susdb-create-target-group-proc
+    desc: Creates a WSUS group via spCreateTargetGroup
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      regex: '(?i)\bspCreateTargetGroup\b'
+
+  - id: susdb-add-computer-to-group-proc
+    desc: Adds host to WSUS group via proc
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      regex: '(?i)\bspAddComputerToTargetGroup\b'
+
+  - id: susdb-get-computer-target-proc
+    desc: Resolves a host via spGetComputerTargetByName
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: '(?i)\bspGetComputerTargetByName\b'
+
+  # --- Weaponized update metadata markers ---
+  # A WSUS update whose handler runs an arbitrary command line. Legitimate
+  # Microsoft updates use the CBS handler; the CommandLineInstallation handler
+  # is the mechanism SharpWSUS/WSUSpicious-class tools use to execute a payload,
+  # though local-publishing patch tools also use it -> suspicious, not hostile.
+  - id: wsus-commandline-install-handler
+    desc: WSUS update CommandLineInstallation handler
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)(UpdateHandlers/CommandLineInstallation|cmd:CommandLineInstallation)'
+
+  # The <InstallCommand> element that names the program and arguments the update
+  # runs. Matched in both raw and HTML-escaped (&lt;) forms as it appears inside
+  # the spSaveXmlFragment / spImportUpdate payloads.
+  - id: wsus-update-install-command
+    desc: WSUS update InstallCommand runs a program
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)(&lt;|<)(cmd:)?InstallCommand\b[\s\S]{0,200}?Program\s*='
+
+composite_rules:
+  # Forging and assigning an update straight through SUSDB's private procs:
+  # write the update record, then deploy it to a target group. No supported
+  # third-party path does this -- it is update-pipeline hijack.
+  - id: wsus-susdb-update-forgery-chain
+    desc: Forges and deploys a WSUS update via SUSDB procs
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: susdb-import-update-proc
+      - id: susdb-deploy-update-proc
+    any:
+      - id: susdb-save-xml-fragment-proc
+      - id: susdb-set-batch-url-proc
+
+  # A command-executing update being written into SUSDB or pointed at a download
+  # URL: the payload-delivery half of the same attack.
+  - id: wsus-commandline-update-weaponization
+    desc: Weaponizes a WSUS update to run a command
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: wsus-commandline-install-handler
+      - id: wsus-update-install-command
+    any:
+      - id: susdb-import-update-proc
+      - id: susdb-set-batch-url-proc
+      - id: susdb-save-xml-fragment-proc
+
+  # Staging: creating a fresh WSUS group and stuffing a specific host into it is
+  # how an operator scopes a malicious update to chosen targets before the push.
+  - id: wsus-target-group-staging
+    desc: Stages specific hosts into a new WSUS group
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: susdb-create-target-group-proc
+      - id: susdb-add-computer-to-group-proc
