@@ -63,6 +63,31 @@ traits:
     if:
       type: text
       regex: '\b(key|seed)\s*[=^+]\s*\w{1,24}\s*[+|&^-]\s*(serial|hostname|computer)\b'
+
+  # A native loader can avoid an obvious `key = serial` assignment by hiding
+  # the host binding in a helper that returns the volume serial.  Keep the
+  # pieces bounded and combine them below so an ordinary disk-inventory
+  # routine is not treated as payload keying.
+  - id: native-host-key-helper-name
+    desc: Native helper named for a host-derived key
+    crit: component
+    conf: 0.9
+    for: [c, cpp]
+    platforms: [windows]
+    if:
+      type: text
+      regex: '\b(host|machine|victim)[_-]?(key|seed)\s*\('
+
+  - id: returns-volume-serial
+    desc: Returns a volume serial value from source
+    crit: component
+    conf: 0.9
+    for: [c, cpp]
+    platforms: [windows]
+    if:
+      type: text
+      regex: '\breturn\s+(serial|volume[_-]?serial)\b'
+
   - id: compute-hash-host
     desc: Hashes host-derived material
     crit: suspicious
@@ -83,6 +108,18 @@ traits:
       regex: '(?i)\b(md5|sha1|sha256)\s*\([^\)\r\n]{0,80}\b(host(name)?|machine(name)?|serial)\b'
 
 composite_rules:
+  - id: volume-serial-host-key-helper
+    desc: Native host-key helper returns a volume serial
+    crit: suspicious
+    conf: 0.95
+    for: [c, cpp]
+    platforms: [windows]
+    all:
+      - id: native-host-key-helper-name
+      - id: micro-behaviors/os/sysinfo/disk::get-volume-information
+      - id: returns-volume-serial
+    near_lines: 20
+
   - id: external-ip-service-resolution
     desc: Resolves the host public IP externally
     crit: notable
@@ -169,6 +206,7 @@ composite_rules:
       - id: host-key-combination
       - id: compute-hash-host
       - id: digest-host-material
+      - id: volume-serial-host-key-helper
     unless:
       - id: well-known/lib/network/amqp091-go/
       - id: metadata/library/data::paramiko-source
@@ -203,3 +241,33 @@ composite_rules:
       - id: well-known/lib/network/amqp091-go/
       - id: metadata/library/data::paramiko-source
       - id: well-known/lib/network/asyncssh::asyncssh-python-library
+
+  # The article's native samples use a victim-specific key to unwrap an
+  # executable stage.  Keep this composite family-oriented: it combines the
+  # host-binding objective with an existing runtime-crypter signal instead of
+  # naming OctLurk, SilkLurk, or any one key value.
+  - id: host-bound-runtime-crypter
+    desc: Host-bound payload crypter executes a stage in memory
+    crit: hostile
+    conf: 0.98
+    attack: T1027,T1140,T1497.001,T1620
+    all:
+      - id: host-derived-key-material
+      - id: objectives/anti-static/obfuscation/payload/encrypted::runtime-crypter-in-memory-payload
+    near_bytes: 4096
+
+  # A language-neutral technique variant: an implant can implement its
+  # modular stage as interpreted code rather than native executable memory.
+  # Host-bound keying plus decode plus compiled-code execution is the useful
+  # structural signal; plugin or family names are intentionally not required.
+  - id: host-bound-dynamic-module
+    desc: Host-bound decoded module executes in memory
+    crit: hostile
+    conf: 0.98
+    for: [python]
+    attack: T1027,T1140,T1059.006,T1620
+    all:
+      - id: host-derived-key-material
+      - id: micro-behaviors/process/interpreter/python::exec-compiled-code
+      - id: micro-behaviors/data/decode/base64::b64decode-call
+    near_bytes: 4096
