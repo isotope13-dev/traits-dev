@@ -18,18 +18,17 @@ traits:
       # Security scanners list `setenforce 0` as a threat signature / test fixture.
       - id: well-known/tool/detection/ai-guardrail/
       - id: well-known/app/system/olares::cli-source-tree
-      # K3s provisioning on immutable SELinux hosts can intentionally skip the
-      # k3s-selinux RPM and run permissive for disposable cluster nodes.
-      - type: text
-        substr: INSTALL_K3S_SKIP_SELINUX_RPM=true
-      - id: well-known/tool/sysadmin/k3s::k3s-vagrant-provisioner
-      - id: well-known/tool/sysadmin/cubesandbox::cubesandbox-source-path
-      - id: well-known/tool/sysadmin/virtualization::lima-virtualization-tool
+      - id: selinux-toggling-vm-provisioner
       - id: well-known/app/ai/animica::rag-documentation-context
       - id: well-known/tool/detection/malcontent::malcontent-defensive-scanner-context
     downgrade:
       any:
         - id: metadata/package/files/included::install-uninstall-shell-basename
+        # A script that also runs `setenforce 1` is toggling enforcement for a
+        # bounded window (or exposing the mode as a knob) rather than tearing
+        # MAC down -- CI provisioning and container-runtime test harnesses do
+        # this around a single step and then restore enforcing.
+        - id: micro-behaviors/os/security/selinux::setenforce-enforcing
   - id: selinux-disable
     desc: SELinux disable in config
     conf: 0.90
@@ -49,6 +48,20 @@ traits:
         - id: metadata/package/files/included::install-uninstall-shell-basename
         - id: well-known/app/infrastructure/fboss::fboss-image-tooling-source
 composite_rules:
+  # Disposable-VM provisioning toolchains legitimately drop nodes to permissive:
+  # K3s on immutable SELinux hosts, Lima/CubeSandbox guest images. Grouped into
+  # one benign context so the SELinux rules below carry a single carve-out
+  # instead of one per product.
+  - id: selinux-toggling-vm-provisioner
+    desc: Recognized VM provisioning toolchain that relaxes SELinux
+    crit: exception
+    conf: 0.95
+    any:
+      - id: well-known/tool/sysadmin/k3s::k3s-vagrant-provisioner
+      - id: well-known/tool/sysadmin/k3s::k3s-skip-selinux-rpm-flag
+      - id: well-known/tool/sysadmin/cubesandbox::cubesandbox-source-path
+      - id: well-known/tool/sysadmin/virtualization::lima-virtualization-tool
+
   # SELinux disabled via any method
   - id: selinux-disabled
     desc: SELinux disabled
@@ -69,6 +82,7 @@ composite_rules:
       any:
         - id: micro-behaviors/os/service/legitimate::installer-script
         - id: metadata/package/files/included::install-uninstall-shell-basename
+        - id: micro-behaviors/os/security/selinux::setenforce-enforcing
   # AppArmor disabled via any method. Command observations belong to
   # micro-behaviors/os/security/apparmor; this composite supplies the
   # defense-degradation interpretation.
