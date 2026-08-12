@@ -1,0 +1,122 @@
+# A per-user COM hijack is the combination of a user hive CLSID registration,
+# an InProcServer32 value, and a DLL located in a user-writable profile path.
+# The CLSID and payload name are intentionally not part of the matcher.
+defaults:
+  platforms: [windows]
+  for: [source, scripts, binaries]
+  attack: T1546.015
+
+traits:
+  - id: current-user-hive-marker
+    desc: Current-user Windows registry hive
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\b(HKEY_CURRENT_USER|HKCU)\b'
+
+  - id: clsid-inproc-path
+    desc: CLSID InProcServer32 registry path
+    crit: component
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)CLSID.{0,50}\{[0-9A-F-]{36}\}.{0,20}InprocServer32'
+
+  - id: localappdata-dll-path
+    desc: LocalAppData DLL path
+    crit: component
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)%LOCALAPPDATA%[^"''\r\n]{0,120}\.dll\b'
+
+  - id: appdata-dll-path
+    desc: AppData DLL path
+    crit: component
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)%APPDATA%[^"''\r\n]{0,120}\.dll\b'
+
+  - id: localappdata-env-dll-path
+    desc: Environment-expanded LocalAppData DLL path
+    crit: component
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\$env:LOCALAPPDATA[^"''\r\n]{0,120}\.dll\b'
+
+  - id: user-profile-appdata-dll-path
+    desc: User-profile AppData DLL path
+    crit: component
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)%USERPROFILE%\\AppData\\(Local|Roaming)[^"''\r\n]{0,120}\.dll\b'
+
+  - id: users-directory-appdata-dll-path
+    desc: Users-directory AppData DLL path
+    crit: component
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\\Users\\[^\\/"''\r\n]{1,64}\\AppData\\(Local|Roaming)[^"''\r\n]{0,120}\.dll\b'
+
+  - id: source-registry-key-create-call
+    desc: Source creates a registry key
+    crit: notable
+    conf: 0.92
+    for: [source]
+    if:
+      type: text
+      regex: '(?i)\bRegCreateKeyEx[AW]?\s*\('
+
+composite_rules:
+  - id: current-user-com-inproc-path
+    desc: Per-user CLSID InProcServer32 path
+    crit: suspicious
+    conf: 0.96
+    near_bytes: 768
+    all:
+      - id: current-user-hive-marker
+      - id: clsid-inproc-path
+
+  - id: profile-dll-inproc-server
+    desc: InProcServer32 points to profile DLL
+    crit: suspicious
+    conf: 0.97
+    near_bytes: 768
+    all:
+      - id: clsid-inproc-path
+    any:
+      - id: localappdata-dll-path
+      - id: appdata-dll-path
+      - id: localappdata-env-dll-path
+      - id: user-profile-appdata-dll-path
+      - id: users-directory-appdata-dll-path
+
+  - id: user-profile-com-hijack
+    desc: Per-user COM hijack loads profile DLL
+    crit: hostile
+    conf: 0.99
+    for: [source, powershell]
+    near_bytes: 4096
+    all:
+      - id: current-user-com-inproc-path
+      - id: profile-dll-inproc-server
+    any:
+      - id: source-registry-key-create-call
+      - id: micro-behaviors/os/registry/access::registry-set-value-source
+      - id: micro-behaviors/os/registry/write/property::powershell-registry-property-write
+
+  - id: user-profile-com-hijack-binary
+    desc: Binary COM hijack loads profile DLL
+    crit: hostile
+    conf: 0.99
+    for: [pe, dll]
+    near_bytes: 4096
+    all:
+      - id: current-user-com-inproc-path
+      - id: profile-dll-inproc-server
+      - id: micro-behaviors/os/registry/access::registry-write-api-chain
