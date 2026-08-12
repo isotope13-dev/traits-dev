@@ -1,0 +1,113 @@
+# Enumerating the Microsoft Defender / Windows Security service stack before
+# tampering with it. Teardown kits walk the service list to learn which
+# components are installed - reading the service keys under
+# CurrentControlSet\Services, or matching the component process names against a
+# tasklist snapshot - and record a flag per component. A single service name is
+# ordinary (installers and support scripts check WinDefend); the whole stack
+# named at once is reconnaissance for removal.
+defaults:
+  platforms: [windows]
+  for: [binaries, scripts, c, cpp, csharp, go, rust]
+  attack: T1518.001
+
+traits:
+  - id: defender-service-registry-key
+    desc: Defender service registry key path
+    crit: notable
+    conf: 0.93
+    for: [scripts, c, cpp, csharp, go, rust]
+    if:
+      type: literal
+      kind: string
+      regex: '(?i)CurrentControlSet[\\/]{1,4}Services[\\/]{1,4}(WinDefend|Sense|MsSec\w{0,8})\b'
+
+  - id: defender-network-inspection-service-name
+    desc: Defender network inspection service name
+    crit: component
+    conf: 0.92
+    for: [scripts, c, cpp, csharp, go, rust]
+    if:
+      type: literal
+      kind: string
+      regex: (?i)\b(WdNisSvc|WdNisDrv|NisSrv)\b
+
+  - id: defender-core-service-name
+    desc: Defender core platform service name
+    crit: component
+    conf: 0.92
+    for: [scripts, c, cpp, csharp, go, rust]
+    if:
+      type: literal
+      kind: string
+      regex: (?i)\b(MsSecCore|MsSecFlt|MsSecWfp)\b
+
+  - id: defender-boot-filter-driver-name
+    desc: Defender boot and filter driver names
+    crit: component
+    conf: 0.92
+    for: [scripts, c, cpp, csharp, go, rust]
+    if:
+      type: literal
+      kind: string
+      regex: (?i)\b(WdBoot|WdFilter|MDCoreSvc)\b
+
+  - id: system-guard-runtime-service-name
+    desc: System Guard runtime monitor service name
+    crit: component
+    conf: 0.92
+    for: [scripts, c, cpp, csharp, go, rust]
+    if:
+      type: literal
+      kind: string
+      regex: (?i)\b(SgrmAgent|SgrmBroker)\b
+
+  - id: security-center-service-name
+    desc: Windows Security Center service name
+    crit: component
+    conf: 0.9
+    for: [scripts, c, cpp, csharp, go, rust]
+    if:
+      type: literal
+      kind: string
+      regex: (?i)\bwscsvc\b
+
+  - id: security-health-tray-process-name
+    desc: Windows Security tray process name
+    crit: component
+    conf: 0.92
+    for: [scripts, c, cpp, csharp, go, rust]
+    if:
+      type: literal
+      kind: string
+      regex: (?i)\bSecurityHealth(Systray|Service)\.exe\b
+
+composite_rules:
+  - id: defender-service-stack-enumeration
+    desc: Enumerates the Microsoft Defender service stack
+    crit: suspicious
+    conf: 0.94
+    any:
+      - id: defender-service-registry-key
+      - id: defender-network-inspection-service-name
+      - id: defender-core-service-name
+      - id: defender-boot-filter-driver-name
+      - id: system-guard-runtime-service-name
+      - id: security-center-service-name
+      - id: security-health-tray-process-name
+    needs: 3
+    unless:
+      - id: metadata/file/string/identity::microsoft-activation-script-benign-context
+      - id: well-known/tool/detection/malcontent::malcontent-defensive-scanner-context
+      - id: well-known/tool/detection/security-scanner::auditr-defensive-signature-catalog
+
+  # Detect, then remove: the enumeration is only the first layer of the routine.
+  - id: defender-stack-enumeration-before-teardown
+    desc: Enumerates the Defender service stack then tears it down
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: defender-service-stack-enumeration
+    any:
+      - id: objectives/impact/degrade/edr/targeting::defender-install-path-targeting
+      - id: objectives/impact/degrade/edr/teardown::unlocker-force-delete-switches
+      - id: objectives/impact/degrade/update::windows-update-servicing-teardown

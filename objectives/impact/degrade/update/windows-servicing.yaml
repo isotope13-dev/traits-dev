@@ -1,0 +1,99 @@
+# Windows servicing-stack teardown. Stopping and disabling the update services
+# is how a defense-removal routine makes its damage permanent: with wuauserv,
+# UsoSvc, WaaSMedicSvc, BITS and Delivery Optimization disabled, Windows cannot
+# re-download Defender platform updates or self-heal the components that were
+# deleted. WaaSMedicSvc is the remediation service specifically, so naming it is
+# a strong signal on its own.
+defaults:
+  platforms: [windows]
+  for: [binaries, scripts, c, cpp, csharp, go, rust]
+  attack: T1562.001
+
+traits:
+  - id: windows-update-agent-service-name
+    desc: Windows Update agent service name
+    crit: component
+    conf: 0.92
+    for: [scripts, c, cpp, csharp, go, rust]
+    if:
+      type: literal
+      kind: string
+      regex: (?i)\bwuauserv\b
+
+  - id: update-orchestrator-service-name
+    desc: Update Orchestrator service name
+    crit: component
+    conf: 0.92
+    for: [scripts, c, cpp, csharp, go, rust]
+    if:
+      type: literal
+      kind: string
+      regex: (?i)\bUsoSvc\b
+
+  - id: update-medic-service-name
+    desc: Windows Update Medic remediation service name
+    crit: notable
+    conf: 0.94
+    for: [scripts, c, cpp, csharp, go, rust]
+    if:
+      type: literal
+      kind: string
+      regex: (?i)\bWaaSMedic(Svc)?\b
+
+  - id: delivery-optimization-service-command
+    desc: Service command targets Delivery Optimization
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\b(stop|config|delete|disable)\s+"?dosvc\b'
+
+  - id: bits-transfer-service-command
+    desc: Service command targets BITS
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\b(stop|config|delete|disable)\s+"?bits\b'
+
+composite_rules:
+  - id: windows-update-service-targeting
+    desc: Names multiple Windows servicing services
+    crit: notable
+    conf: 0.92
+    any:
+      - id: windows-update-agent-service-name
+      - id: update-orchestrator-service-name
+      - id: update-medic-service-name
+      - id: delivery-optimization-service-command
+      - id: bits-transfer-service-command
+    needs: 2
+
+  # Disabling - not merely stopping - the servicing stack is the "no repair"
+  # step. Any spelling counts: sc.exe config, Set-Service, or the registry
+  # Start=4 value.
+  - id: windows-update-servicing-teardown
+    desc: Disables the Windows Update servicing stack
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: windows-update-service-targeting
+    any:
+      - id: objectives/impact/services/stop::sc-config-start-disabled
+      - id: micro-behaviors/os/service/control::sc-config-command
+      - id: objectives/evasion/anti-av/platform/defender::powershell-disable-service-loop
+    unless:
+      - id: metadata/file/string/identity::microsoft-activation-script-benign-context
+
+  # Servicing stack disabled *and* security software torn down in the same file:
+  # the host is left unable to detect a later payload or to repair itself.
+  - id: security-teardown-with-update-lockout
+    desc: Disables Windows Update alongside endpoint-security teardown
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: windows-update-servicing-teardown
+    any:
+      - id: objectives/impact/degrade/edr/targeting::defender-install-path-targeting
+      - id: objectives/impact/degrade/edr/teardown::unlocker-force-delete-switches
+      - id: objectives/impact/degrade/edr/teardown::edr-target-indicators

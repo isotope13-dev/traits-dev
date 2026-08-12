@@ -1,0 +1,106 @@
+# File-unlocker BYOVD: a signed "force-delete a locked file" utility driven as a
+# kernel-mode deletion primitive. The user-mode tool hands each path to its own
+# driver, which terminates whatever process holds the file and then unlinks it -
+# so a live Defender service can be deleted, not merely stopped. This is the
+# deletion half of BYOVD, distinct from the process-kill drivers covered in
+# teardown/windows.yaml and teardown/driver-generalized.yaml.
+#
+# IObit Unlocker is the build seen in the wild (CVE-2020-14974 / CVE-2020-14975,
+# on Microsoft's vulnerable-driver blocklist); the driver ships genuine and
+# signed, so only the caller and its target list are malicious.
+defaults:
+  platforms: [windows]
+  for: [binaries, scripts, c, cpp, csharp, go, rust]
+  attack: T1562.001
+
+traits:
+  - id: iobit-unlocker-device-path
+    desc: Opens the IObit Unlocker driver device
+    crit: suspicious
+    conf: 0.95
+    for: [scripts, c, cpp, csharp, go, rust]
+    if:
+      type: literal
+      kind: string
+      regex: '(?i)IObitUnlockerDevice'
+    unless:
+      - id: well-known/tool/sysadmin/iobit-unlocker::iobit-unlocker-application-context
+      - id: well-known/tool/sysadmin/iobit-unlocker::iobit-unlocker-installer-context
+
+  - id: iobit-unlocker-delete-ioctl
+    desc: IObit Unlocker force-delete control code
+    crit: notable
+    conf: 0.94
+    for: [pe, dll, c, cpp, csharp, go, rust]
+    if:
+      type: text
+      regex: (?i)\b0x0*222124\b
+
+  # `/Delete /Advanced` is the unlocker's force-delete switch pair. Matching the
+  # switches rather than the image name keeps the renamed copies (Unlocker.exe,
+  # mika.exe's embedded build) in scope.
+  - id: unlocker-force-delete-switches
+    desc: File-unlocker force-delete command switches
+    crit: suspicious
+    conf: 0.93
+    for: [scripts, c, cpp, csharp, go, rust]
+    if:
+      type: literal
+      kind: string
+      regex: '(?i)/Delete\s+/Advanced\b'
+
+  - id: unlocker-force-delete-command-line
+    desc: Windows file-unlocker force-delete command line
+    crit: suspicious
+    conf: 0.93
+    for: [batch]
+    if:
+      type: text
+      regex: '(?im)^[ \t]*(call[ \t]+)?["'']?IObitUnlocker(\.exe)?["'']?[ \t]+/Delete[ \t]+/Advanced\b'
+
+composite_rules:
+  # The article's first behavioral indicator: device control issued to
+  # \\.\IObitUnlockerDevice by something that is not an interactive unlocker
+  # session.
+  - id: unlocker-driver-device-control
+    desc: Issues device control to the IObit Unlocker driver device
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: iobit-unlocker-device-path
+    any:
+      - id: iobit-unlocker-delete-ioctl
+      - id: micro-behaviors/fs/file/handle::device-io-control-win
+      - id: micro-behaviors/fs/file/handle::device-io-control-api-reference
+    unless:
+      - id: well-known/tool/sysadmin/iobit-unlocker::iobit-unlocker-application-context
+      - id: well-known/tool/sysadmin/iobit-unlocker::iobit-unlocker-installer-context
+
+  # The control code on its own, in code that also reaches a driver: the device
+  # name may be built at runtime, but 0x222124 is specific to this driver.
+  - id: unlocker-driver-delete-control-code-use
+    desc: Sends the file-unlocker driver's force-delete control code
+    crit: suspicious
+    conf: 0.93
+    for: [pe, dll, c, cpp, csharp, go, rust]
+    all:
+      - id: iobit-unlocker-delete-ioctl
+    any:
+      - id: micro-behaviors/fs/file/handle::device-io-control-win
+      - id: micro-behaviors/fs/file/handle::device-io-control-api-reference
+    unless:
+      - id: well-known/tool/sysadmin/iobit-unlocker::iobit-unlocker-application-context
+
+  # The article's second behavioral indicator: the unlocker CLI invoked with a
+  # command line that lists security-product install paths.
+  - id: unlocker-driven-security-product-deletion
+    desc: Force-deletes endpoint-security install paths through a file unlocker
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: objectives/impact/degrade/edr/targeting::security-product-install-path
+    any:
+      - id: unlocker-force-delete-switches
+      - id: unlocker-force-delete-command-line
+    unless:
+      - id: well-known/tool/sysadmin/iobit-unlocker::iobit-unlocker-application-context
