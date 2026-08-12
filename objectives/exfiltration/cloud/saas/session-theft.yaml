@@ -1,0 +1,102 @@
+# UNC6671's post-authentication cloud theft reuses a captured SaaS session
+# cookie to fetch document content directly, then forwards the response to a
+# separate HTTP destination. The rules model that technique across common
+# script languages without naming a malware family or collector domain.
+defaults:
+  platforms: [windows, unix]
+  for: [scripts, source]
+  attack: T1530,T1539,T1041
+  mbc: B0028
+
+traits:
+  - id: python-response-body-argument
+    desc: Python uses response body as upload data
+    crit: suspicious
+    conf: 0.97
+    for: [python]
+    if:
+      type: text
+      regex: '(?i)\b(data|json|files)\s*=\s*[A-Za-z_]\w*\.(content|text)\b'
+
+  - id: powershell-response-body-argument
+    desc: PowerShell uses response body as upload data
+    crit: suspicious
+    conf: 0.97
+    for: [powershell]
+    if:
+      type: text
+      regex: '(?i)-Body\s+\$[A-Za-z_]\w*\.(Content|RawContent)\b'
+
+  - id: javascript-response-body-argument
+    desc: JavaScript uses response body as upload data
+    crit: suspicious
+    conf: 0.97
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '(?i)\bbody\s*:\s*(response|resp|file)\.(arrayBuffer|text|body)\s*\('
+
+composite_rules:
+  - id: python-response-body-upload
+    desc: Python uploads an HTTP response body
+    crit: suspicious
+    conf: 0.98
+    for: [python]
+    any:
+      - id: micro-behaviors/communications/http/lib/requests::requests-post
+      - id: micro-behaviors/communications/http/lib/requests::requests-put
+    all:
+      - id: python-response-body-argument
+    near_bytes: 512
+
+  - id: powershell-response-body-upload
+    desc: PowerShell uploads an HTTP response body
+    crit: suspicious
+    conf: 0.98
+    for: [powershell]
+    all:
+      - id: micro-behaviors/communications/http/lib/invoke-webrequest::request-powershell
+      - id: micro-behaviors/communications/http/lib/invoke-webrequest::http-post-method
+      - id: powershell-response-body-argument
+    near_bytes: 512
+
+  - id: javascript-response-body-upload
+    desc: JavaScript uploads an HTTP response body
+    crit: suspicious
+    conf: 0.98
+    for: [javascript, typescript]
+    all:
+      - id: micro-behaviors/communications/http/request/client::js-fetch-call
+      - id: micro-behaviors/communications/http/request/client::post-method-text
+      - id: javascript-response-body-argument
+    near_bytes: 900
+
+  - id: response-body-upload
+    desc: Uploads a fetched HTTP response body
+    crit: suspicious
+    conf: 0.98
+    any:
+      - id: python-response-body-upload
+      - id: powershell-response-body-upload
+      - id: javascript-response-body-upload
+
+  - id: sharepoint-session-file-fetch
+    desc: Fetches SharePoint content with an auth session cookie
+    crit: hostile
+    conf: 0.99
+    attack: T1530,T1539
+    all:
+      - id: micro-behaviors/communications/http/auth::sharepoint-auth-cookie-header
+    any:
+      - id: micro-behaviors/communications/http/services/microsoft::sharepoint-rest-file-content-endpoint
+      - id: objectives/command-and-control/channel/deaddrop/cloud-storage::graph-drive-content-read-traffic
+    near_bytes: 8192
+
+  - id: sharepoint-session-content-exfiltration
+    desc: Forwards cloud content fetched with a session cookie
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: sharepoint-session-file-fetch
+      - id: response-body-upload
+    near_bytes: 8192
