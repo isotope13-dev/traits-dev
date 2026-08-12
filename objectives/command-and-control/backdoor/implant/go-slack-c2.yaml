@@ -1,0 +1,76 @@
+# Encrypted Slack dead-drop C2. The sample divides transport, crypto, host
+# profiling, and process launch across source files, so archive scope preserves
+# the relationship without weakening individual API atoms.
+defaults:
+  platforms: [unix, windows]
+  for: [go]
+  attack: T1071.003,T1105,T1059
+  mbc: B0030
+
+traits:
+  - id: go-slack-chunk-packet-schema
+    desc: Go source defines chunked Slack payload packets
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: 'json:"t"[\s\S]{0,300}json:"id"[\s\S]{0,300}json:"d"'
+
+  - id: go-slack-helper-payload-launch
+    desc: Writes and launches Slack payload content
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: text
+      regex: 'CreateFile\(savePath[\s\S]{0,200}StartChild\(savePath'
+
+  - id: go-send-slack-message-call
+    desc: Calls Slack message helper
+    crit: notable
+    conf: 0.94
+    if:
+      type: symbol
+      kind: call
+      exact: SendSlackMessage
+
+composite_rules:
+  - id: go-slack-history-poller
+    desc: Go implant polls Slack conversation history
+    crit: suspicious
+    conf: 0.98
+    all:
+      - id: micro-behaviors/communications/http/services/slack::go-slack-api-base-url
+      - id: micro-behaviors/communications/http/services/slack::go-slack-conversations-history
+      - id: micro-behaviors/communications/http/services/slack::go-slack-auth-test
+
+  - id: go-slack-encrypted-command-channel
+    desc: Go implant receives encrypted chunked commands over Slack
+    crit: hostile
+    conf: 0.995
+    scope: archive
+    all:
+      - id: go-slack-history-poller
+      - id: go-slack-chunk-packet-schema
+      - id: micro-behaviors/crypto/symmetric/aes/gcm::go-cipher-new-gcm
+      - id: micro-behaviors/data/decode/base64::std-encoding-decode-string
+
+  - id: go-slack-downloaded-payload-execution
+    desc: Go Slack implant assembles and launches remote payloads
+    crit: hostile
+    conf: 0.995
+    scope: archive
+    all:
+      - id: go-slack-history-poller
+      - id: go-slack-helper-payload-launch
+      - id: micro-behaviors/process/create/direct::exec-command
+
+  - id: go-slack-host-profile-exfil
+    desc: Go implant reports host identity through Slack
+    crit: hostile
+    conf: 0.99
+    scope: archive
+    attack: T1082,T1041,T1071.003
+    all:
+      - id: micro-behaviors/communications/http/services/slack::go-slack-api-base-url
+      - id: go-send-slack-message-call
+      - id: micro-behaviors/os/sysinfo/hostname::host-and-user-identity-query
