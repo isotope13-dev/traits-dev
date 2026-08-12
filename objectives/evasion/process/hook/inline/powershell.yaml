@@ -1,0 +1,41 @@
+# In-process inline patching of an already-loaded module from PowerShell.
+#
+# The shape is always the same three steps: resolve an export with
+# GetProcAddress, compute an address a few bytes into it, flip that page to
+# PAGE_EXECUTE_READWRITE, then Marshal.Copy a short byte array over the
+# instructions.  Whether the patch neuters a security callback (AMSI, ETW) or
+# installs a jump to attacker code, the code being rewritten belongs to someone
+# else's loaded module — interop code that merely *calls* an export never does
+# pointer arithmetic on the resolved address and never makes it writable.
+#
+# The AMSI-specific spelling of this is reported by
+# objectives/evasion/anti-av/amsi; this rule is the family-agnostic form that
+# survives a change of target API.
+defaults:
+  platforms: [windows]
+  for: [powershell]
+  attack: T1055.001
+  mbc: E1055
+
+traits:
+  - id: powershell-resolved-export-offset
+    desc: Offset added to GetProcAddress result
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: '(?is)GetProcAddress[\s\S]{0,240}\.ToInt64\(\)\s*\+\s*\d'
+
+composite_rules:
+  - id: powershell-inline-export-byte-patch
+    desc: Overwrites bytes at a resolved export
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: powershell-resolved-export-offset
+      - id: micro-behaviors/mem/alloc/executable::powershell-rwx-protection-flag
+    any:
+      - id: micro-behaviors/mem/c-runtime/functions::marshal-copy
+      - id: micro-behaviors/mem/c-runtime/functions::marshal-copy-powershell
+      - id: micro-behaviors/mem/c-runtime/functions::marshal-copy-via-type-variable
+    needs: 1
