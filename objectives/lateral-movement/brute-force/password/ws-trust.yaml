@@ -1,0 +1,107 @@
+# Password spraying through a legacy WS-Trust username-mixed SOAP path.
+# Protocol mechanics stay in micro-behaviors; these composites capture the
+# account-at-scale and valid-password triage behaviors described in the report.
+defaults:
+  platforms: [windows, unix]
+  for: [scripts, binaries]
+  attack: T1110.003
+  mbc: E1110
+
+traits:
+  - id: ws-trust-user-collection-loop
+    desc: Iterates over user collection
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)\b(for|foreach)\b.{0,24}\b(user|username)\b.{0,24}\b(users|usernames)\b'
+
+  - id: ws-trust-account-collection-loop
+    desc: Iterates over account collection
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)\b(for|foreach)\b.{0,24}\baccount\b.{0,24}\baccounts\b'
+
+  - id: response-before-aadsts-code
+    desc: Response followed by AADSTS code
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)\b(response|content|text)\b.{0,160}\bAADSTS'
+
+  - id: aadsts-code-before-response
+    desc: AADSTS code followed by response
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)\bAADSTS.{0,160}\b(response|content|text)\b'
+
+composite_rules:
+  - id: ws-trust-multi-account-iteration
+    desc: WS-Trust multi-account iteration
+    crit: suspicious
+    conf: 0.95
+    any:
+      - id: ws-trust-user-collection-loop
+      - id: ws-trust-account-collection-loop
+
+  - id: ws-trust-credential-submission
+    desc: WS-Trust username-password submission
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: micro-behaviors/communications/http/ws-trust::ws-trust-username-password-fields
+      - id: micro-behaviors/communications/http/ws-trust::ws-trust-security-token-element
+    any:
+      - id: micro-behaviors/communications/http/ws-trust::microsoft-ws-trust-autologon-endpoint
+      - id: micro-behaviors/communications/http/post::post-method-detection
+    near_bytes: 2400
+
+  - id: ws-trust-response-code-handling
+    desc: Classifies AADSTS authentication responses
+    crit: suspicious
+    conf: 0.95
+    any:
+      - id: response-before-aadsts-code
+      - id: aadsts-code-before-response
+
+  - id: ws-trust-password-spray
+    desc: WS-Trust password spray
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: ws-trust-credential-submission
+      - id: ws-trust-multi-account-iteration
+      - id: ws-trust-response-code-handling
+    any:
+      - id: micro-behaviors/communications/http/ws-trust::aadsts-authentication-response-code
+      - id: micro-behaviors/communications/http/ws-trust::aadsts-valid-password-response-code
+    near_bytes: 2600
+
+  - id: ws-trust-confirmed-password-triage
+    desc: Confirms passwords through WS-Trust
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: ws-trust-credential-submission
+      - id: ws-trust-multi-account-iteration
+      - id: micro-behaviors/communications/http/ws-trust::aadsts-valid-password-response-code
+    near_bytes: 2600
+
+  - id: ws-trust-account-enumeration
+    desc: Enumerates accounts through identity endpoint
+    crit: hostile
+    conf: 0.97
+    attack: T1087.004,T1110.003
+    all:
+      - id: micro-behaviors/communications/http/auth::microsoft-credential-type-endpoint
+      - id: micro-behaviors/communications/http/ws-trust::credential-existence-result-field
+      - id: ws-trust-multi-account-iteration
+    any:
+      - id: micro-behaviors/communications/http/ws-trust::aadsts-account-existence-response-code
+      - id: ws-trust-credential-submission
+    near_bytes: 1800
