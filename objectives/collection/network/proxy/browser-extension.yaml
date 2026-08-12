@@ -7,6 +7,65 @@ defaults:
   for: [javascript, typescript]
   attack: T1090,T1040
 
+traits:
+  # These are attack-context fragments, not generic proxy capabilities. They
+  # describe a server catalogue and handler shape used to sell unavailable
+  # premium locations alongside a browser-wide relay.
+  - id: premium-proxy-node-entry
+    desc: Premium proxy node entry
+    crit: component
+    conf: 0.95
+    if:
+      type: tree-sitter
+      query: |
+        (pair
+          key: (property_identifier) @key
+          value: (true) @value
+          (#eq? @key "premium"))
+
+  - id: non-routable-proxy-node
+    desc: Proxy node uses a non-routable host
+    crit: component
+    conf: 0.95
+    if:
+      type: tree-sitter
+      query: |
+        (pair
+          key: (property_identifier) @key
+          value: (string (string_fragment) @value)
+          (#eq? @key "host")
+          (#match? @value "^(0\\.0\\.0\\.0|127\\.0\\.0\\.1|::1)$"))
+
+  - id: proxy-route-action
+    desc: Proxy route action literal
+    crit: component
+    conf: 0.93
+    if:
+      type: literal
+      kind: string
+      regex: '^(ROUTE_APPLY|APPLY_ROUTE|CONNECT)$'
+
+  - id: proxy-route-failure-call
+    desc: Proxy route failure response
+    crit: component
+    conf: 0.94
+    if:
+      type: tree-sitter
+      kind: call
+      regex: '(?is)\b(sendResponse|respond)\s*\(.{0,120}\b(ok|success)\s*:\s*false\b'
+
+  - id: proxy-resolver-ip-selection
+    desc: Proxy node opts into hostname-to-IP resolution
+    crit: notable
+    conf: 0.95
+    if:
+      type: tree-sitter
+      query: |
+        (pair
+          key: (property_identifier) @key
+          value: (true) @value
+          (#eq? @key "useDnsResolve"))
+
 composite_rules:
   - id: extension-fixed-socks5-browser-relay
     desc: Extension forces browser traffic through a fixed SOCKS5 relay
@@ -26,3 +85,52 @@ composite_rules:
     any:
       - id: micro-behaviors/communications/dns/doh::doh-cloudflare-json
       - id: micro-behaviors/communications/dns/doh::doh-google-json
+
+  - id: extension-proxy-host-doh-resolution
+    desc: Extension resolves a proxy host through public DNS-over-HTTPS
+    crit: suspicious
+    conf: 0.98
+    all:
+      - id: micro-behaviors/os/network/webextension::chrome-proxy-settings-set
+      - id: micro-behaviors/os/network/webextension::browser-proxy-host-from-resolution
+      - id: proxy-resolver-ip-selection
+    any:
+      - id: micro-behaviors/communications/dns/doh::doh-cloudflare-json
+      - id: micro-behaviors/communications/dns/doh::doh-google-json
+
+  - id: extension-fake-premium-proxy-tier
+    desc: Fake premium proxy tier rejects routes
+    crit: hostile
+    conf: 0.99
+    attack: T1090,T1583.004
+    all:
+      - id: extension-fixed-socks5-browser-relay
+      - id: premium-non-routable-proxy-node
+      - id: proxy-route-denial-handler
+
+  - id: premium-non-routable-proxy-node
+    desc: Premium proxy node uses a non-routable host
+    crit: suspicious
+    conf: 0.98
+    near_bytes: 256
+    all:
+      - id: premium-proxy-node-entry
+      - id: non-routable-proxy-node
+
+  - id: proxy-route-denial-handler
+    desc: Proxy route returns an unsuccessful result
+    crit: suspicious
+    conf: 0.96
+    near_lines: 8
+    all:
+      - id: proxy-route-action
+      - id: proxy-route-failure-call
+
+  - id: extension-hidden-proxy-destination
+    desc: Extension hides its fixed proxy destination behind DoH IP resolution
+    crit: hostile
+    conf: 0.98
+    attack: T1090,T1071.004
+    all:
+      - id: extension-fixed-socks5-browser-relay
+      - id: extension-proxy-host-doh-resolution
