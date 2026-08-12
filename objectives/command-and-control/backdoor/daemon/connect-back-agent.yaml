@@ -1,0 +1,88 @@
+# Connect-back control agent: the "managed device" implant shape.
+#
+# The agent never listens. It dials a hardcoded operator address on a loop,
+# announces itself, then services two verbs forever: run this string through a
+# shell and stream the output back, or hand over an interactive PTY shell.
+# Because the socket is outbound, NAT and a perimeter firewall protect nothing.
+#
+# This is the shape of the ENDLESSDOORS implant baked into Zbtlink/Wiflyer
+# router firmware (CVE-2026-66747) -- a build of the open-source rctl "remote
+# linux control" client -- and of the many small C agents that copy it. The
+# rules below key on the primitive set, not on that family's strings, so a
+# rebuild under any name still matches.
+#
+# What separates it from socat, ncat, sshd, screen and script(1): those all
+# join a socket to a shell too, but they take the peer from argv or a config
+# file and ship a usage surface. The pinned operator address is the leg that
+# only an implant carries, and it is required here for the same reason
+# ../../reverse-shell/dup/native-elf.yaml requires it.
+defaults:
+  platforms: [unix, openwrt]
+  for: [elf, c, cpp]
+  attack: T1059.004,T1071.001
+  mbc: B0030
+
+composite_rules:
+  - id: connect-back-popen-pty-agent
+    desc: Outbound agent runs piped commands and PTY
+    crit: hostile
+    conf: 0.97
+    for: [elf]
+    scope: leaf
+    all:
+      - id: micro-behaviors/process/tty/pty::pty-allocation-sequence
+      - id: micro-behaviors/communications/socket/create::posix-socket-import
+      - id: micro-behaviors/communications/socket/connect::connect-symbol
+      - id: micro-behaviors/process/create/popen::c-popen
+      - id: micro-behaviors/process/create/exec::execlp-process-launch
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-host-literal-binary
+    unless:
+      # Stock PTY-capable identities (terminal emulators, OpenSSH, busybox,
+      # libc, the musl loader) legitimately hold this primitive set.
+      - id: objectives/command-and-control/reverse-shell/pty::pty-native-runtime-context
+      - id: metadata/binary/linking/runtime::musl-loader-basename
+      - id: micro-behaviors/dylib/library/libc::is-libc-binary
+    downgrade:
+      any:
+        - id: micro-behaviors/ui/help/
+
+  - id: connect-back-popen-pty-agent-source
+    desc: C source connect-back popen PTY agent
+    crit: hostile
+    conf: 0.96
+    for: [c, cpp]
+    all:
+      - id: micro-behaviors/process/tty/pty::pty-allocation-sequence
+      - id: micro-behaviors/communications/socket/create::tcp-connect-socket-source
+      - id: micro-behaviors/communications/socket/connect::connect-symbol
+      - id: micro-behaviors/process/create/shell/native::c-popen-variable-input
+    any:
+      - id: objectives/command-and-control/backdoor/proxy/reverse::c-source-hardcoded-external-ipv4
+      - id: micro-behaviors/communications/ip/resolve::resolve-gethostbyname
+
+  # Check-in that carries the device's own MAC as its identity. A control agent
+  # needs a stable handle for the box it landed on, and reading the LAN
+  # interface hardware address is how the fleet implants get one. On its own
+  # that is ordinary networking code; together with an outbound socket and a
+  # shell-command path it describes a managed-device agent.
+  - id: mac-identity-command-agent
+    desc: Reads LAN MAC, dials out, runs commands
+    crit: suspicious
+    conf: 0.9
+    attack: T1082,T1071.001
+    for: [c, cpp]
+    all:
+      - id: micro-behaviors/os/sysinfo/network::mac-query-ioctl
+      - id: micro-behaviors/communications/socket/connect::connect-symbol
+      - id: micro-behaviors/process/create/shell/native::c-popen-variable-input
+
+  - id: mac-identity-command-agent-python
+    desc: Python MAC identity command agent
+    crit: suspicious
+    conf: 0.9
+    attack: T1082,T1071.001
+    for: [python]
+    all:
+      - id: micro-behaviors/os/sysinfo/network::mac-query-ioctl
+      - id: micro-behaviors/communications/socket/dial::python-dial
+      - id: micro-behaviors/process/create/subprocess::popen-shell-true

@@ -1,0 +1,68 @@
+# Linux kernel threads (kworker, kthreadd, ksoftirqd, ...) are created by the
+# kernel and have no image on disk: there is no /usr/sbin/kworker, and `ps`
+# prints their names in brackets with zero VSZ. So a *filesystem path* naming
+# one is not a reference to the kernel thread -- it is a userland program that
+# has taken the name to hide among them in process listings.
+#
+# The sibling rules under ../process/name/ and ../process/rename/ match the
+# runtime forms (a "[kworker/0:1]" string constant, prctl(PR_SET_NAME), a
+# /proc/self/comm write). This file matches the on-disk form, which is what an
+# installer, an init script, a firmware package recipe, or a dropper shows --
+# artifacts that never reach the point of setting a process name themselves.
+#
+# Seen in factory firmware for Zbtlink/Wiflyer routers (ENDLESSDOORS,
+# CVE-2026-66747), where the vendor's own rc.common init script boots
+# /usr/sbin/kworker, and routinely in Linux coin-miner and IoT bot droppers.
+defaults:
+  platforms: [unix, openwrt]
+  for: [shell, python, perl, c, cpp, elf, so, systemd-service]
+  attack: T1036.004
+  mbc: F0004
+
+traits:
+  - id: kernel-thread-name-binary-path
+    desc: Executable path uses a kernel-thread name
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '/(usr/|var/)?(s?bin|lib|tmp)/(kworker|kthreadd|ksoftirqd|kswapd|kauditd)\b'
+    unless:
+      # Defensive scanners and IOC lists carry these paths as detection
+      # content rather than adopting them.
+      - id: well-known/tool/detection/malcontent::malcontent-defensive-scanner-context
+
+composite_rules:
+  # Boot persistence for a program wearing a kernel-thread name. Nothing
+  # legitimate registers /usr/sbin/kworker as a service: the name exists to
+  # make the entry unreadable in `ps`, in /etc/init.d listings and in support
+  # bundles, and pairing it with a boot hook is an implant install step.
+  - id: kernel-thread-binary-boot-service
+    desc: Boot service starts a kernel-thread name
+    crit: hostile
+    conf: 0.96
+    attack: T1036.004,T1543.002
+    for: [shell, python, perl, systemd-service]
+    all:
+      - id: kernel-thread-name-binary-path
+    any:
+      # An explicit enable, an rc.common init script header, or a unit path --
+      # not a bare /etc/init.d/<name> mention, which a cleanup script that
+      # *removes* this implant would also carry.
+      - id: micro-behaviors/os/service/config::initd-service-enable-action
+      - id: objectives/persistence/system/network-appliance::openwrt-rc-common-init
+      - id: micro-behaviors/os/service/config::systemd-service-path
+
+  # The dropper form: a kernel-thread-named file is staged onto the filesystem
+  # and made executable.
+  - id: kernel-thread-binary-install
+    desc: Installs an executable with kernel-thread name
+    crit: hostile
+    conf: 0.95
+    for: [shell, python, perl]
+    all:
+      - id: kernel-thread-name-binary-path
+    any:
+      - id: micro-behaviors/fs/write/copy::coreutils-install-executable
+      - id: micro-behaviors/fs/chmod/executable/mode::shell-plus-x
+      - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-var-target
