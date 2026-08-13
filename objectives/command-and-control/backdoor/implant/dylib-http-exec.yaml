@@ -1,0 +1,45 @@
+# A Mach-O *dynamic library* is loaded into a host process to provide a
+# function (a codec, a crypto primitive, a UI widget). It has no reason to open
+# its own HTTP session to a remote server and, in the same module, spawn shell
+# commands. That pairing — remote transport + local command execution inside a
+# loadable dependency — is the shape of a trojanized-dependency implant, the
+# technique behind supply-chain backdoors that ship inside an otherwise
+# legitimate signed library.
+#
+# This is deliberately identity-agnostic: it keys on the *capability
+# combination in a dylib*, not on any family, domain, string, or byte pattern,
+# so a repacked or rebuilt variant that breaks family YARA signatures still
+# trips it. Embedded language runtimes (libnode, CPython, the JVM, Hermes, …)
+# legitimately host both an HTTP stack and a command interpreter, so any
+# recognized runtime library suppresses the rule.
+defaults:
+  platforms: [macos]
+  for: [macho]
+  attack: "T1071.001,T1059.004"
+  mbc: B0030
+
+composite_rules:
+  - id: dylib-http-client-command-exec
+    desc: Dylib pairs an HTTP client with shell command execution
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: metadata/binary/layout::macho-dylib
+      - id: micro-behaviors/process/create/popen::c-popen
+    any:
+      # HTTP/URL client stacks a native dylib would use to reach a server.
+      # Extend as further macOS transports are covered (CFNetwork, libcurl).
+      - id: micro-behaviors/communications/http/lib/nsurlsession::nsurlsession-class
+    needs: 1
+    unless:
+      # Embedded interpreters/runtimes legitimately bundle both capabilities.
+      - id: well-known/lib/runtime/
+
+  - id: dylib-implant-beacon-exec-recon
+    desc: Dylib implant beacons, runs commands, and fingerprints the host
+    crit: hostile
+    conf: 0.9
+    attack: "T1071.001,T1059.004,T1082"
+    all:
+      - id: dylib-http-client-command-exec
+      - id: micro-behaviors/os/sysinfo/hostname::gethostname
