@@ -45,7 +45,7 @@ traits:
     desc: m4_define macro keyword
     crit: component
     conf: 0.6
-    for: [c, shell]
+    for: [c, shell, text]
     if:
       type: text
       word: m4_define
@@ -53,7 +53,7 @@ traits:
     desc: AC_DEFUN macro keyword
     crit: component
     conf: 0.6
-    for: [c, shell]
+    for: [c, shell, text]
     if:
       type: text
       word: AC_DEFUN
@@ -61,7 +61,7 @@ traits:
     desc: system() call in M4 macro marker
     crit: suspicious
     conf: 0.75
-    for: [c, shell]
+    for: [c, shell, text]
     if:
       type: text
       regex: (\bAC_DEFUN\b|\bm4_define\b|\bm4_ifdef\b)[\s\S]{0,200}\bsystem\s*\(
@@ -69,20 +69,74 @@ traits:
     desc: exec call in M4 macro marker
     crit: suspicious
     conf: 0.75
-    for: [c, shell]
+    for: [c, shell, text]
     if:
       type: text
       regex: (\bAC_DEFUN\b|\bm4_define\b|\bm4_ifdef\b)[\s\S]{0,200}\bexec\s*\(
   - id: m4-esyscmd
     desc: M4 esyscmd (shell execution)
-    crit: suspicious
+    crit: component
     conf: 0.8
-    for: [c, shell]
+    for: [c, shell, text]
     if:
-      type: symbol
-      exact: m4_esyscmd
-    unless:
-      - id: metadata/build/autotools/
+      type: text
+      word: m4_esyscmd
+  - id: recursive-srcdir-search
+    desc: Build logic recursively searches the source tree
+    crit: component
+    conf: 0.9
+    for: [shell, text]
+    if:
+      type: text
+      regex: 'grep\s+-[A-Za-z]*[rR][A-Za-z]*[^\n]{0,50}\$srcdir'
+  - id: encoded-sentinel-search
+    desc: Opaque source-search sentinel
+    crit: suspicious
+    conf: 0.98
+    for: [shell, text]
+    if:
+      type: text
+      substr: '#{4}[[:alnum:]]{5}#{4}$'
+  - id: carrier-suffix-command
+    desc: Command derived from carrier suffix
+    crit: component
+    conf: 0.92
+    for: [shell, text]
+    if:
+      type: text
+      substr: 'sed "s/.*\.//g"'
+  - id: custom-character-permutation
+    desc: Custom character permutation
+    crit: component
+    conf: 0.96
+    for: [shell, text]
+    if:
+      type: text
+      substr: 'tr "\t \-_" " \t_\-"'
+  - id: eval-transform-decompress-pipeline
+    desc: Carrier transform and derived decompressor
+    crit: suspicious
+    conf: 0.99
+    for: [shell, text]
+    if:
+      type: text
+      regex: 'sed.{0,80}eval\s+\$gl_path_map\s*\|\s*\$gl_[^\s]{1,24}_prefix\s+-d'
+  - id: eval-variable-piped-to-shell
+    desc: Evaluated build variable piped to shell
+    crit: suspicious
+    conf: 0.99
+    for: [shell, text]
+    if:
+      type: text
+      regex: 'eval\s+\$gl_config_gt\s*\|\s*\$SHELL'
+  - id: config-command-eval-shell
+    desc: Autoconf command evaluates shell content
+    crit: suspicious
+    conf: 0.99
+    for: [shell, text]
+    if:
+      type: text
+      regex: 'AC_CONFIG_COMMANDS[^\n]{0,120}eval\s+\$gl_config_gt\s*\|\s*\$SHELL'
   - id: makefile-basename
     desc: Makefile filename
     crit: component
@@ -108,32 +162,36 @@ traits:
       regex: install-(exec|data)-hook.{0,100}(curl|wget|sh\s+-c)
   - id: test-fixture-binary-common
     desc: "Binary blob in test fixtures"
-    crit: notable
+    crit: component
     conf: 0.7
+    for: [data]
     if:
-      type: text
-      regex: tests?/(fixtures?|data).{0,30}\.(bin|dat|raw)
+      type: path
+      regex: '(fixtures?|data|files)[\\/][^\\/]+\.(bin|dat|raw)$'
   - id: test-fixture-binary-compressed
     desc: Compressed blob in test fixtures
-    crit: notable
+    crit: component
     conf: 0.7
+    for: [xz, lzma, gz, bz2]
     if:
-      type: text
-      regex: tests?/(fixtures?|data).{0,30}\.(xz|gz|bz2)
+      type: path
+      regex: '(fixtures?|data|files)[\\/][^\\/]+\.(xz|gz|bz2|lzma)$'
   - id: test-samples-binary
     desc: Binary blob in test samples
-    crit: notable
+    crit: component
     conf: 0.7
+    for: [data]
     if:
-      type: text
+      type: path
       regex: tests?/samples?.{0,30}\.(bin|dat|raw)
   - id: test-samples-compressed
     desc: Compressed blob in test samples
-    crit: notable
+    crit: component
     conf: 0.7
+    for: [xz, lzma, gz, bz2]
     if:
-      type: text
-      regex: tests?/samples?.{0,30}\.(xz|gz|bz2)
+      type: path
+      regex: tests?/samples?.{0,30}\.(xz|gz|bz2|lzma)
   - id: test-fixture-exec-xz
     desc: Test fixture decompressed with xz and executed
     crit: notable
@@ -258,7 +316,7 @@ composite_rules:
       - id: configure-hidden-cmd
   - id: m4-macro-def
     desc: M4 macro definition keyword
-    crit: notable
+    crit: baseline
     conf: 0.6
     any:
       - id: m4-define-keyword
@@ -304,14 +362,48 @@ composite_rules:
     desc: Backdoored M4 macro
     crit: hostile
     conf: 0.9
+    all:
+      - id: m4-macro-def
+      - id: m4-esyscmd
     any:
       - id: m4-define-exec
       - id: m4-macro-decoder-tool
+  - id: autotools-source-tree-payload-loader
+    desc: Autotools build logic discovers, decodes, and executes a hidden source payload
+    crit: hostile
+    conf: 0.99
+    for: [shell, text]
     all:
-      - id: m4-esyscmd
+      - id: recursive-srcdir-search
+      - id: eval-transform-decompress-pipeline
+      - id: eval-variable-piped-to-shell
+    any:
+      - id: configure-context-name
+      - id: configure-context-marker
+      - id: ac-defun-keyword
+      - id: m4-define-keyword
+  - id: autotools-obfuscated-test-carrier-loader
+    desc: Autotools build logic locates an opaque carrier and dispatches its decoder
+    crit: hostile
+    conf: 0.995
+    for: [shell, text]
+    all:
+      - id: encoded-sentinel-search
+      - id: carrier-suffix-command
+      - id: custom-character-permutation
+      - id: eval-transform-decompress-pipeline
+  - id: autotools-deferred-config-shell-loader
+    desc: Autoconf defers a source-carrier decode pipeline into config.status
+    crit: hostile
+    conf: 0.995
+    for: [shell, text]
+    all:
+      - id: config-command-eval-shell
+      - id: recursive-srcdir-search
+      - id: eval-transform-decompress-pipeline
   - id: test-fixture-binary
     desc: Any binary blob in test directory
-    crit: notable
+    crit: component
     conf: 0.7
     any:
       - id: test-fixture-binary-common
@@ -330,9 +422,25 @@ composite_rules:
     desc: Malicious test fixture pattern (XZ-style)
     crit: hostile
     conf: 0.9
+    for: [tar]
+    scope: archive
     all:
-      - id: test-fixture-binary
-      - id: test-fixture-exec
+      - id: test-fixture-binary-compressed
+    any:
+      - id: autotools-source-tree-payload-loader
+      - id: autotools-obfuscated-test-carrier-loader
+  - id: autotools-padded-compressed-carrier
+    desc: Autotools loader uses padded compressed carrier
+    crit: hostile
+    conf: 0.995
+    for: [tar]
+    scope: archive
+    all:
+      - id: test-fixture-binary-compressed
+      - id: metadata/file/profile/metrics::repeated-uppercase-padding-runs
+    any:
+      - id: autotools-source-tree-payload-loader
+      - id: autotools-obfuscated-test-carrier-loader
   - id: autotools-supply-chain-attack
     desc: Autotools build system supply chain attack
     crit: suspicious
