@@ -1,0 +1,67 @@
+# Adaptive computer worms couple a locally hosted model to operations that
+# change the next action and seed another host.  The model endpoint and
+# command bridge are neutral capabilities; the worm conclusions require the
+# replication or recurring-relaunch mechanics as well.
+defaults:
+  platforms: [unix, windows]
+  for: [python, javascript, typescript, go, rust, lua, powershell, shell]
+  attack: T1021.004,T1053.005,T1059,T1105,T1587.004
+
+traits:
+  # Python wrappers often assemble the command as a string argument to a
+  # process API, so shell-only SCP rules miss this propagation form.  The
+  # process-call boundary plus a remote temporary destination is the durable
+  # technique signal; payload and host names are deliberately unconstrained.
+  - id: python-ssh-temp-replica-transfer
+    desc: Python SCP transfer to remote temp
+    crit: suspicious
+    conf: 0.94
+    for: [python]
+    if:
+      type: text
+      regex: '(?is)subprocess\.(run|Popen|call)\([^)]{0,80}\bscp\b[^)]{0,120}:/tmp/'
+
+  - id: python-ssh-temp-replica-launch
+    desc: Python detached SSH temp launch
+    crit: suspicious
+    conf: 0.94
+    for: [python]
+    if:
+      type: text
+      regex: '(?is)subprocess\.(run|Popen|call)\([^)]{0,120}\bssh\b[^)]{0,180}\bnohup\s+/tmp/'
+
+composite_rules:
+  - id: python-ssh-temp-replica-chain
+    desc: Python transfers and launches SSH replica
+    crit: suspicious
+    conf: 0.96
+    for: [python]
+    all:
+      - id: python-ssh-temp-replica-transfer
+      - id: python-ssh-temp-replica-launch
+    near_bytes: 1200
+
+  - id: adaptive-llm-ssh-replica
+    desc: Locally hosted LLM drives SSH payload replication
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: micro-behaviors/communications/http/llm::local-llm-inference-endpoint
+      - id: micro-behaviors/process/create/eval::model-response-command-execution
+    any:
+      - id: python-ssh-temp-replica-chain
+      - id: objectives/lateral-movement/ssh/propagation::ssh-key-driven-payload-propagation
+    near_bytes: 6000
+
+  - id: adaptive-llm-scheduled-replica
+    desc: Locally hosted LLM drives recurring replica persistence
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: micro-behaviors/communications/http/llm::local-llm-inference-endpoint
+      - id: micro-behaviors/process/create/eval::model-response-command-execution
+    any:
+      - id: micro-behaviors/os/autorun/scheduled::schtasks-short-repeat-schedule
+      - id: micro-behaviors/os/autorun/scheduled::scheduledtask-repeating-trigger
+      - id: micro-behaviors/os/autorun/scheduled::source-cron-schedule-entry
+    near_bytes: 6000
