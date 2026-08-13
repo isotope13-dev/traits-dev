@@ -1,0 +1,169 @@
+# Anonymous enumeration and harvesting of misconfigured SaaS guest portals.
+#
+# The "City-Forum" campaign systematically pulled data from public Salesforce
+# Experience Cloud and ServiceNow Service Portal instances with no vulnerability
+# and no credentials -- it simply spoke each platform's own guest-facing RPC
+# protocol against sites whose sharing rules exposed objects to the guest user.
+#
+# On Salesforce it drives the Aura framework directly: a client POSTs the Aura
+# message envelope (message= / aura.context= / aura.token=) to the community
+# guest endpoint /s/sfsites/aura and invokes two built-in controllers --
+# HostConfigController.getConfigData to list every guest-accessible object, then
+# SelectableListDataProviderController.getItems to page through and dump each
+# object's records. The same actor also drove the newer Lightning Web Runtime
+# GraphQL surface at /webruntime/api/services/data/{version}/graphql, which the
+# public Aura tooling (AuraInspector, S-RET, CirrusGo) does not touch.
+#
+# On ServiceNow it POSTs to the Service Portal search API
+# /api/now/sp/search?sysparm_cancelable=true, which answers anonymous requests
+# and enumerates exposed search sources.
+#
+# The controllers and endpoints are also spoken by the legitimate browser-side
+# Salesforce/ServiceNow runtimes, so this file deliberately excludes
+# javascript/typescript/html (where those runtimes live) and matches only
+# stand-alone scanner/harvester tooling -- Go, Python, Ruby, PHP, PowerShell,
+# shell, C#, and compiled binaries -- that hard-codes the guest RPC protocol as
+# a client. That is the shape of an enumeration tool, not of the portal itself.
+#
+# ATT&CK: T1526 (Cloud Service Discovery), T1213 (Data from Information
+# Repositories), T1530 (Data from Cloud Storage Object)
+defaults:
+  platforms: [windows, unix]
+  for: [go, python, ruby, php, powershell, shell, csharp, binaries]
+  attack: T1526
+  mbc: E1526
+
+traits:
+  # The Aura community guest endpoint. `/s/sfsites/aura` (and the bare `/aura`
+  # variant on some sites) is the unauthenticated RPC surface of a Salesforce
+  # Experience Cloud site; a client that addresses it is speaking the guest
+  # protocol, not consuming the REST API a normal integration would use.
+  - id: salesforce-aura-guest-endpoint
+    desc: Salesforce Aura community guest RPC endpoint
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)/s/sfsites/aura\b'
+
+  # HostConfigController.getConfigData returns the list of objects the guest
+  # user can reach -- the enumeration step. It is a real framework controller,
+  # so on its own this is an observation, not a conviction.
+  - id: salesforce-aura-object-config-controller
+    desc: Aura HostConfigController.getConfigData call
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)HostConfigController[^\n]{0,60}getConfigData'
+
+  # SelectableListDataProviderController.getItems pages through and returns the
+  # records of a named object -- the harvest step.
+  - id: salesforce-aura-list-provider-controller
+    desc: Aura SelectableListDataProvider getItems call
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)SelectableListDataProviderController[^\n]{0,60}getItems'
+
+  # aura://ApexActionController/ACTION$execute is the generic descriptor used to
+  # invoke arbitrary @AuraEnabled Apex through the same guest endpoint; a
+  # client that embeds it is constructing raw Aura actions.
+  - id: salesforce-aura-apex-action-descriptor
+    desc: Aura ApexActionController execute descriptor
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)aura://ApexActionController/ACTION\$execute'
+
+  # The Lightning Web Runtime GraphQL data surface. The /webruntime/api/services/data/
+  # prefix is specific to LWR sites and the `.../graphql` route pulls records
+  # anonymously the same way the Aura controllers do.
+  - id: salesforce-lwr-graphql-endpoint
+    desc: Salesforce LWR webruntime GraphQL endpoint
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)/webruntime/api/services/data/v?[0-9.]+/graphql'
+
+  # The ServiceNow Service Portal search API path on its own.
+  - id: servicenow-portal-search-endpoint
+    desc: ServiceNow Service Portal search API endpoint
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)/api/now/sp/search\b'
+
+  # The exact cancelable search query the campaign used against the portal;
+  # this endpoint answers anonymous POSTs and its transaction log omits the
+  # body, so it is a favoured enumeration surface. In stand-alone tool code
+  # (js/html excluded above) this is anonymous search-source enumeration.
+  - id: servicenow-portal-anonymous-search
+    desc: ServiceNow portal anonymous search query
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: '(?i)/api/now/sp/search\?[^\s"'']{0,80}sysparm_cancelable=true'
+
+composite_rules:
+  # Endpoint + a single controller/descriptor: a client is enumerating a
+  # Salesforce guest portal through the Aura protocol. One tier below the full
+  # harvester because it may be reconnaissance that stops before dumping.
+  - id: salesforce-aura-guest-enumeration
+    desc: Salesforce Aura guest-portal enumeration client
+    crit: suspicious
+    conf: 0.94
+    all:
+      - id: salesforce-aura-guest-endpoint
+    any:
+      - id: salesforce-aura-object-config-controller
+      - id: salesforce-aura-list-provider-controller
+      - id: salesforce-aura-apex-action-descriptor
+    near_bytes: 4096
+
+  # Endpoint + both the object-listing and the record-pull controllers: the
+  # enumerate-then-dump pair against the guest endpoint. This is the City-Forum
+  # Salesforce data-theft technique and is not what a normal integration does.
+  - id: salesforce-aura-guest-object-harvester
+    desc: Salesforce Aura guest-portal object harvester
+    crit: hostile
+    conf: 0.97
+    attack: T1526,T1213
+    all:
+      - id: salesforce-aura-guest-endpoint
+      - id: salesforce-aura-object-config-controller
+      - id: salesforce-aura-list-provider-controller
+    near_bytes: 6144
+
+  # The Aura guest endpoint driven together with the newer LWR GraphQL data
+  # surface -- a client that harvests both the classic and the webruntime
+  # interface of the same site.
+  - id: salesforce-aura-lwr-graphql-harvester
+    desc: Salesforce Aura + LWR GraphQL harvester
+    crit: hostile
+    conf: 0.97
+    attack: T1526,T1213
+    all:
+      - id: salesforce-aura-guest-endpoint
+      - id: salesforce-lwr-graphql-endpoint
+    any:
+      - id: salesforce-aura-object-config-controller
+      - id: salesforce-aura-list-provider-controller
+      - id: salesforce-aura-apex-action-descriptor
+    near_bytes: 8192
+
+  # One tool that harvests Salesforce guest objects and also drives the
+  # ServiceNow anonymous portal search -- the multi-platform City-Forum shape.
+  - id: saas-guest-portal-multi-service-harvester
+    desc: Multi-platform SaaS guest-portal data harvester
+    crit: hostile
+    conf: 0.98
+    attack: T1526,T1213
+    all:
+      - id: salesforce-aura-guest-object-harvester
+      - id: servicenow-portal-anonymous-search
