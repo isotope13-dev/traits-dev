@@ -1,0 +1,189 @@
+# Browser phishing kits with a live operator channel.  The kit is more than a
+# static form logger: it streams values as they are typed and lets the remote
+# operator move the victim among credential, payment-card, and second-factor
+# pages.  Match the implementation shape so renamed kits and different brands
+# remain covered.
+defaults:
+  platforms: [unix, windows]
+  for: [html, javascript, typescript]
+  attack: T1056.002,T1111,T1041,T1566.002
+  mbc: B0030
+
+traits:
+  - id: browser-card-data-property
+    desc: Browser code names payment-card data fields
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\b(card(number|_number)|cvv|cvc|expiry(_date)?|card_expiry)\b[\s"''=:]'
+
+  - id: browser-otp-data-property
+    desc: Browser OTP data field names
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\b(otp|mfa|2fa)\b[\s"''=:]'
+
+  - id: browser-verification-data-property
+    desc: Browser verification data field names
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\b(verification|one[-_ ]?time|two[-_ ]?factor)[-_ ]?(code|password)\b[\s"''=:]'
+
+  - id: browser-credential-data-property
+    desc: Browser login field names
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\b(website[-_ ]?login|username|email|password|paypal[-_ ]?(login|password))\b[\s"''=:]'
+
+  - id: browser-page-command-token
+    desc: Browser page-control command token
+    crit: component
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\b(to|next|show|go|goto|verify|tip)_[a-z0-9_]+\s*:'
+
+  - id: browser-page-route-file
+    desc: Browser page route file value
+    crit: component
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)["''][a-z0-9_.\/-]{1,80}\.(html?|php)["'']'
+
+  - id: browser-instruction-index
+    desc: Indexes a browser instruction field
+    crit: component
+    conf: 0.94
+    if:
+      type: text
+      regex: '\b\w+\[\s*\w+\.(instruction|command|route)\s*\]'
+
+  - id: browser-command-index
+    desc: Indexes a browser command variable
+    crit: component
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\b\w+\[\s*(instruction|command|route)\s*\]'
+
+  - id: browser-route-navigation
+    desc: Browser route navigation call
+    crit: component
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\b(location|href)\s*(\.|=)|\b(assign|replace)\s*\('
+
+  - id: browser-event-target-value
+    desc: Reads an event target value
+    crit: component
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\b(event|evt|e|inputEvent)\s*\.\s*(target|currentTarget)\s*\.\s*value\b'
+
+  - id: browser-value-send-call
+    desc: Sends a browser value
+    crit: component
+    conf: 0.94
+    if:
+      type: text
+      regex: '\.(send|postMessage)\s*\('
+
+composite_rules:
+  - id: browser-card-otp-credential-record
+    desc: Browser data record combines card, OTP, and login fields
+    crit: suspicious
+    conf: 0.98
+    all:
+      - id: browser-card-data-property
+      - id: browser-credential-data-property
+    any:
+      - id: browser-otp-data-property
+      - id: browser-verification-data-property
+    near_bytes: 1800
+
+  - id: browser-live-input-websocket-collection
+    desc: Streams browser input values over an operator WebSocket
+    crit: hostile
+    conf: 0.99
+    attack: T1056.002,T1041
+    all:
+      - id: micro-behaviors/ui/window/form-input::capture-phase-input-listener
+      - id: micro-behaviors/communications/websocket/handler::websocket-javascript-constructor
+    any:
+      - id: browser-input-value-send-call
+      - id: browser-symbol-input-send
+    near_bytes: 2400
+
+  - id: browser-operator-directed-phishing-flow
+    desc: Operator-directed phishing flow routes harvested data among pages
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: browser-card-otp-credential-record
+      - id: browser-command-route-map
+      - id: browser-remote-route-dispatch
+    any:
+      - id: browser-input-value-send-call
+      - id: browser-symbol-input-send
+    near_bytes: 5200
+
+  - id: browser-encrypted-card-otp-channel
+    desc: Encrypted browser channel carries payment and second-factor capture
+    crit: hostile
+    conf: 0.99
+    attack: T1056.002,T1111,T1041
+    all:
+      - id: browser-card-otp-credential-record
+      - id: micro-behaviors/communications/websocket/handler::websocket-javascript-constructor
+      - id: micro-behaviors/crypto/symmetric/aes/ctr::aes-ctr-algorithm-marker
+    any:
+      - id: browser-input-value-send-call
+      - id: browser-symbol-input-send
+    near_bytes: 5200
+  - id: browser-command-route-map
+    desc: Maps commands to browser page files
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: browser-page-command-token
+      - id: browser-page-route-file
+    near_bytes: 1200
+
+  - id: browser-remote-route-dispatch
+    desc: Dispatches a remote browser route
+    crit: suspicious
+    conf: 0.96
+    any:
+      - id: browser-instruction-index
+      - id: browser-command-index
+    all:
+      - id: browser-route-navigation
+    near_bytes: 500
+
+  - id: browser-input-value-send-call
+    desc: Sends an event value
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: browser-event-target-value
+      - id: browser-value-send-call
+    near_bytes: 320
+
+  - id: browser-symbol-input-send
+    desc: Sends a browser value over a socket
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: micro-behaviors/ui/window/form-input::browser-value-event-member-read
+      - id: micro-behaviors/communications/socket/send::javascript-socket-send
+    near_bytes: 320
