@@ -125,7 +125,149 @@ traits:
   if:
     type: text
     regex: '(?i)super[_-]mac|encrypted[_-]hash'
+- id: chromium-secure-prefs-hash-reset
+  desc: Resets encrypted preference hash
+  crit: suspicious
+  conf: 0.97
+  attack: T1562.001,T1176
+  for: [scripts, source, data, pe, dll, elf]
+  if:
+    type: text
+    regex: '(?i)\b(remove_encrypted_hash|clear_encrypted_hash|reset_encrypted_hash)\s*\('
+- id: chromium-native-messaging-host-value
+  desc: Native Messaging key names executable
+  crit: notable
+  conf: 0.95
+  for: [scripts, source, data, pe, dll, elf]
+  if:
+    type: text
+    regex: '(?i)NativeMessagingHosts[\s\S]{0,120}\.exe\b'
+- id: chromium-native-messaging-browser-launch
+  desc: Chromium browser launch action
+  crit: notable
+  conf: 0.9
+  for: [scripts, source, data, pe, dll, elf]
+  if:
+    type: text
+    regex: '(?i)\b(start|CreateProcessW|CreateProcessA)\b[^\r\n]{0,80}\b(chrome|msedge)\.exe\b'
 composite_rules:
+- id: chromium-secure-prefs-hmac-tamper
+  desc: Recalculates Chromium preference MACs with a user SID
+  crit: hostile
+  conf: 0.99
+  attack: T1176,T1562.001
+  for: [scripts, source, binaries, data]
+  all:
+  - id: micro-behaviors/fs/path/sensitive/browser::chromium-profile-secure-preferences-path
+  - id: micro-behaviors/fs/path/sensitive/browser::chromium-secure-prefs-mac-fields
+  - id: micro-behaviors/crypto/hash/hmac::hmac-user-sid-seed
+
+- id: chromium-secure-prefs-integrity-reset
+  desc: Resets Chromium Secure Preferences integrity state
+  crit: hostile
+  conf: 0.98
+  attack: T1176,T1562.001
+  for: [scripts, source, binaries, data]
+  all:
+  - id: micro-behaviors/fs/path/sensitive/browser::chromium-profile-secure-preferences-path
+  - id: micro-behaviors/fs/path/sensitive/browser::chromium-secure-prefs-mac-fields
+  - id: chromium-secure-prefs-hash-reset
+
+- id: chromium-native-messaging-host-registration
+  desc: Chromium Native Messaging Host registry persistence
+  crit: suspicious
+  conf: 0.98
+  attack: T1112,T1176
+  for: [scripts, source, binaries, data]
+  all:
+  - id: micro-behaviors/os/registry/keys::chromium-native-messaging-hosts-subkey
+  - id: chromium-native-messaging-host-value
+  any:
+  - id: micro-behaviors/os/registry/access::registry-set-value-source
+  - id: objectives/persistence/system/registry/com-hijack::source-registry-key-create-call
+  - id: micro-behaviors/os/registry/manipulate::reg-exe-add-command
+  - id: micro-behaviors/os/registry/write/property::powershell-registry-property-write
+
+- id: chromium-browser-native-messaging-child
+  desc: Browser Native Messaging child process launch
+  crit: suspicious
+  conf: 0.96
+  attack: T1059,T1559
+  for: [scripts, source, binaries, data]
+  all:
+  - id: micro-behaviors/communications/ipc/named-pipe::chromium-native-messaging-pipe
+  - id: chromium-native-messaging-browser-launch
+  near_bytes: 512
+
+- id: chromium-secure-prefs-developer-mode-tamper
+  desc: Rewrites Secure Preferences for dev mode
+  crit: hostile
+  conf: 0.97
+  attack: T1176,T1562.001
+  for: [scripts, source, binaries, data]
+  # Developer mode is what lets an unpacked directory load as an extension.
+  # Chromium stores it as a MAC-protected pref, so code that writes the pref
+  # *and* handles the MAC fields is defeating the integrity check rather than
+  # asking the browser to change a setting.
+  all:
+  - id: micro-behaviors/fs/path/sensitive/browser::chromium-profile-secure-preferences-path
+  - id: micro-behaviors/fs/path/sensitive/browser::chromium-developer-mode-pref-path
+  - id: micro-behaviors/fs/path/sensitive/browser::chromium-secure-prefs-mac-fields
+
+- id: chromium-iwa-profile-sideload
+  desc: Registers a self-signed Isolated Web App
+  crit: suspicious
+  conf: 0.95
+  for: [scripts, source, binaries, data]
+  # Supported IWA deployment goes through enterprise policy. Writing the
+  # profile's IWA directory and the key-distribution component instead
+  # registers a self-signed bundle as if it were trusted.
+  all:
+  - id: micro-behaviors/fs/path/application/browser::iwa-key-distribution-component
+  any:
+  - id: micro-behaviors/fs/path/application/browser::iwa-profile-directory
+  - id: micro-behaviors/fs/path/application/browser::signed-web-bundle-file
+
+- id: chromium-iwa-direct-sockets-proxy
+  desc: Isolated Web App proxies via Direct Sockets
+  crit: hostile
+  conf: 0.96
+  attack: T1090,T1176
+  for: [scripts, source, binaries, data]
+  # Direct Sockets is reachable only from an IWA. A listening raw socket in
+  # that context speaking SOCKS is a pivot into the host's network, not a
+  # feature a web app has any other reason to implement.
+  all:
+  - id: micro-behaviors/communications/socket/listen::direct-sockets-tcp-server
+  - id: micro-behaviors/communications/url/scheme::isolated-app-origin-scheme
+  - id: micro-behaviors/communications/proxy/socks::socks5-proto
+
+- id: native-messaging-host-staging-executable
+  desc: Native host manifest names a staged binary
+  crit: suspicious
+  conf: 0.94
+  attack: T1176,T1559
+  for: [json, scripts, source, data]
+  # A host manifest is a grant to launch a named binary from the browser.
+  # Legitimate hosts ship beside their application; one staged under
+  # ProgramData or Users\Public is an implant being wired into the browser.
+  all:
+  - id: micro-behaviors/communications/ipc/native-host::native-messaging-host-manifest
+  any:
+  - id: micro-behaviors/fs/path/location::programdata-executable-path
+  - id: micro-behaviors/fs/path/location::users-public-executable-path
+
+- id: chromium-isolated-web-app-socks-pivot
+  desc: Chromium isolated web app launch paired with SOCKS5 proxying
+  crit: suspicious
+  conf: 0.95
+  attack: T1090,T1176
+  for: [scripts, source, binaries, data]
+  all:
+  - id: micro-behaviors/process/create/flags::chromium-isolated-web-app-renderer-flag
+  - id: micro-behaviors/process/create/flags::chromium-isolated-web-app-id-flag
+  - id: micro-behaviors/communications/proxy/socks::socks5-proto
+
 - id: source-broad-extension-permissions
   desc: Source embeds a broad browser extension permission set
   crit: suspicious
