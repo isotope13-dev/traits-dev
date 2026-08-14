@@ -1,5 +1,7 @@
-# Shell / eval invocation capability expressed in an npm package.json script
-# (sh -c / bash -c / eval). scripts[*] matches any script value.
+# How an npm package invokes a shell or the npm/npx runners: package.json
+# `scripts[*]` values (sh -c / bash -c / eval), Node spawn targets, and the
+# shell-side `npx` wrapper functions that decide what flags every later `npx`
+# in a script actually runs with.
 defaults:
   platforms: [unix, windows]
   for: [package.json]
@@ -67,3 +69,51 @@ traits:
       arg:
         kind: string
         exact: npx
+
+  # A shell function named `npx` intercepts every later `npx ...` in the file:
+  # the arguments the script appears to pass are not the ones the runner
+  # receives. Neutral on its own — used both to harden the runner and to
+  # redirect it — so the flags it forces are matched separately below.
+  - id: npx-wrapper-function
+    desc: Defines a shell function overriding npx
+    crit: notable
+    conf: 0.9
+    for: [shell]
+    if:
+      type: text
+      regex: '(?m)^\s*npx\s*\(\s*\)\s*\{'
+
+  - id: npx-wrapper-ignore-scripts
+    desc: npx wrapper forces install scripts off
+    crit: notable
+    conf: 0.9
+    for: [shell]
+    if:
+      type: text
+      regex: '(?m)^\s*npx\s*\(\s*\)\s*\{[^\n]{0,120}--ignore-scripts=true'
+
+  - id: npx-wrapper-min-release-age
+    desc: npx wrapper requires a minimum package age
+    crit: notable
+    conf: 0.9
+    for: [shell]
+    if:
+      type: text
+      regex: '(?m)^\s*npx\s*\(\s*\)\s*\{[^\n]{0,120}--min-release-age=[0-9]'
+
+composite_rules:
+  # Both legs matter, and neither alone would justify quieting an unpinned
+  # `npx -y <pkg>`: `--ignore-scripts` stops the fetched package's lifecycle
+  # hooks from running at all, and `--min-release-age` refuses versions
+  # published too recently to have been reported. Together they close the two
+  # paths an unpinned runtime fetch is actually attacked through, so the
+  # remaining `npx -y` in such a file is ordinary maintainer tooling.
+  - id: hardened-npx-wrapper
+    desc: npx wrapper blocks hooks and fresh releases
+    crit: exception
+    conf: 0.9
+    for: [shell]
+    all:
+      - id: npx-wrapper-function
+      - id: npx-wrapper-ignore-scripts
+      - id: npx-wrapper-min-release-age
