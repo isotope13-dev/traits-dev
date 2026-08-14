@@ -18,7 +18,10 @@ validate: check-precompile
 	$(CLEAVE) --traits-dir . validate
 
 # Cheap correctness gate on third-party/compiled/: complete, fingerprinted, and
-# built from the rule sources being committed. No compilation — one traits walk.
+# built from the rule sources being committed. No compilation — one walk that
+# hashes the rule text. Only rule sources count toward that fingerprint (`.yar`
+# plus the trait YAML carrying an inline `type: yara` rule), so an ordinary
+# trait edit does not send you back here.
 #
 # Sources come from the STAGED tree and the artifacts from the working tree,
 # the same pairing `precompile` writes, so regenerating always clears this
