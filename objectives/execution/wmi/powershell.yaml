@@ -17,31 +17,36 @@ traits:
     if:
       type: text
       regex: '(?i)[ \t]-ComputerName[ \t]+\S{1,120}'
-  - id: invoke-wmimethod-process-create
-    desc: Remote WMI process creation
-    crit: suspicious
-    conf: 0.96
-    if:
-      type: text
-      regex: '(?i)\bInvoke-WmiMethod\b[^\n]{0,220}\bWin32_Process\b[^\n]{0,220}\bCreate\b'
-  - id: invoke-cimmethod-process-create
-    desc: Remote CIM process creation
-    crit: suspicious
-    conf: 0.96
-    if:
-      type: text
-      regex: '(?i)\bInvoke-CimMethod\b[^\n]{0,220}\bWin32_Process\b[^\n]{0,220}\bCreate\b'
-    unless:
-      - id: metadata/file/profile/identity::ansible-python-package-path
-      - type: text
-        substr: 'ProcessStartupInformation = $psi'
 composite_rules:
+  # Win32_Process.Create aimed at another machine. This is how an attacker moves
+  # laterally (T1047) and equally how an administrator runs a command on a
+  # server: the cmdlet, the -ComputerName parameter and the remote spawn are all
+  # documented Windows management. Suspicious, not hostile -- an inventory or
+  # collection script that gathers output from remote hosts looks exactly like
+  # this. The hostile call needs attacker context, which the composite below and
+  # the admin-share payload composites supply.
   - id: powershell-wmi-remote-process-spawn
-    desc: PowerShell WMI remote execution
-    crit: hostile
+    desc: Creates a process on a remote host via WMI
+    crit: suspicious
     conf: 0.97
     any:
-      - id: invoke-wmimethod-process-create
-      - id: invoke-cimmethod-process-create
+      - id: micro-behaviors/os/wmi/manipulate::create-process-wmi-cmdlet
+      - id: micro-behaviors/os/wmi/manipulate::create-process-cim-cmdlet
     all:
       - id: wmi-computername-target
+    near_lines: 1
+
+  # Remote WMI execution of a base64 command line. Admin tooling passes a
+  # readable command; encoding it is how an operator hides the payload from the
+  # remote host's command-line logging, and it is the standard shape of
+  # WMI-driven lateral movement frameworks.
+  - id: powershell-wmi-remote-encoded-command-spawn
+    desc: Runs an encoded command on a remote host via WMI
+    crit: hostile
+    conf: 0.96
+    attack: T1047,T1059.001,T1027
+    all:
+      - id: powershell-wmi-remote-process-spawn
+    any:
+      - id: micro-behaviors/process/create/hidden::encodedcommand-invocation-raw
+      - id: micro-behaviors/process/create/hidden::encodedcommand-flag-raw
