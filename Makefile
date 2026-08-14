@@ -43,12 +43,17 @@ check-precompile:
 # stray `.yar`/`.yaml` in a working copy would bake in a fingerprint no clean
 # checkout can reproduce — and the engine would then reject the very files we
 # shipped, silently falling back to compiling from source on every client.
+# Output goes to a directory of its own, never into the extracted tree's own
+# third-party/compiled/: that copy comes from the index and still holds the
+# PREVIOUS build, so writing over it in place would leave behind any bucket the
+# current rules no longer produce (a filetype that lost its last rule, or one
+# renamed by an engine fix) and ship it forever.
 precompile:
 	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
-	  git checkout-index -a --prefix="$$tmp/" && \
-	  CLEAVE_TRAITS_DIR="$$tmp" $(YARA_PRECOMPILE) "$$tmp/$(COMPILED_DIR)" && \
+	  mkdir -p "$$tmp/src" && git checkout-index -a --prefix="$$tmp/src/" && \
+	  CLEAVE_TRAITS_DIR="$$tmp/src" $(YARA_PRECOMPILE) "$$tmp/out" && \
 	  rm -rf $(COMPILED_DIR) && mkdir -p $(COMPILED_DIR) && \
-	  cp -R "$$tmp"/$(COMPILED_DIR)/. $(COMPILED_DIR)/ && \
+	  cp -R "$$tmp"/out/. $(COMPILED_DIR)/ && \
 	  echo "Compiled YARA rules -> $(COMPILED_DIR)/ (from the staged tree)"
 
 # Confirm the committed `.yrc` are exactly what this engine compiles from the
