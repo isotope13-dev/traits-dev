@@ -6,8 +6,8 @@
 #
 #   * a Fabric mod JAR that is also directly executable (Main-Class) -- the
 #     loader never needs one, and it gives the same file a double-click path,
-#   * a class in that JAR that relaunches the JAR itself in a fresh JVM with
-#     hex-encoded launcher strings.
+#   * a class in that JAR that relaunches the JAR itself in a fresh JVM, with
+#     either clear or encoded launcher strings.
 #
 # Neither leg depends on the injected package's name or on the C2 it talks to,
 # so a rebuilt variant with renamed classes stays in scope.
@@ -17,7 +17,35 @@ defaults:
   attack: T1195.002
   mbc: B0032
 
+traits:
+  - id: fabric-manifest-com-example-entrypoint
+    desc: Entrypoint JSON lists com.example package
+    crit: component
+    conf: 0.85
+    for: [json]
+    if:
+      type: text
+      regex: '"entrypoints"[\s\S]{0,240}"com\.example\.'
+
 composite_rules:
+  # fabric-example-mod's template package name. A released mod keeps its own
+  # namespace (net.<author>.<mod>, dev.<author>.<mod>); `com.example.*` listed
+  # in the loader manifest beside that namespace means a second, unrelated code
+  # tree was wired into someone else's mod, which is what republishing a stolen
+  # JAR with a payload bolted on looks like. The manifest leg keeps this on
+  # fabric.mod.json (default `file` scope) instead of any JSON with an
+  # entrypoints key, and the window keeps a stray com.example mention elsewhere
+  # in the manifest out. On its own this is also how an unfinished mod built
+  # from the template looks, hence suspicious rather than higher.
+  - id: fabric-entrypoint-template-package
+    desc: Fabric entrypoint in com.example package
+    crit: suspicious
+    conf: 0.9
+    for: [json]
+    all:
+      - id: metadata/package/config::fabric-mod-metadata
+      - id: fabric-manifest-com-example-entrypoint
+
   - id: fabric-mod-executable-entrypoint
     desc: Fabric mod JAR is also a runnable JAR
     crit: notable
@@ -27,6 +55,22 @@ composite_rules:
       - id: metadata/package/config::fabric-mod-metadata
       - id: metadata/package/manifest/entrypoint::jar-main-class
 
+  # The injected entrypoint is not just present, it is the half that touches the
+  # player's account or pulls code down. A mod author who left the template
+  # package name in place trips the atom above and stops there.
+  - id: fabric-mod-injected-entrypoint-payload
+    desc: Injected mod entrypoint steals or stages
+    crit: hostile
+    conf: 0.96
+    attack: T1195.002,T1528
+    scope: outer
+    all:
+      - id: fabric-entrypoint-template-package
+    any:
+      - id: objectives/exfiltration/stealer/credential/token::minecraft-session-http-post-exfil
+      - id: objectives/exfiltration/stealer/credential/token::minecraft-session-obfuscated-http-post
+      - id: objectives/command-and-control/backdoor/loader/classloader::java-http-jar-bytecode-stage
+
   - id: fabric-mod-self-relaunch-stager
     desc: Fabric mod JAR ships a self-relaunching stager
     crit: hostile
@@ -35,4 +79,6 @@ composite_rules:
     scope: outer
     all:
       - id: fabric-mod-executable-entrypoint
+    any:
+      - id: objectives/command-and-control/dropper/execution/jvm-relaunch::java-self-jar-javaw-relaunch
       - id: objectives/command-and-control/dropper/execution/jvm-relaunch::java-obfuscated-self-jar-relaunch
