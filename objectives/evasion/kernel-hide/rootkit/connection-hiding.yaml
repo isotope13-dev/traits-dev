@@ -1,0 +1,54 @@
+# Hiding network connections from the host's own tooling. Every Windows
+# connection viewer — netstat, Get-NetTCPConnection, Resource Monitor, and the
+# EDR agents that sample the same tables — reaches the TCP and UDP tables
+# through nsiproxy and tcpip. A rootkit that wants its C2 session to be absent
+# from all of them intercepts the provider rather than each caller.
+defaults:
+  platforms: [windows]
+  attack: "T1014,T1562.001"
+
+composite_rules:
+  # Grabbing another driver's object by name and overwriting an entry in its
+  # MajorFunction table puts the rootkit in front of every IRP that driver
+  # serves. A driver legitimately layers on a device stack with
+  # IoAttachDeviceToDeviceStack; reaching for a foreign dispatch table by name
+  # is the unsupported way to do it, and doing it to the network-status
+  # provider has no defensible purpose.
+  - id: network-status-driver-dispatch-hook
+    desc: Hooks network-status driver dispatch table
+    crit: hostile
+    conf: 0.96
+    for: [c, cpp, rust]
+    all:
+      - id: micro-behaviors/os/network/status::network-status-provider-driver-object
+      - id: micro-behaviors/os/kernel/routines::ob-reference-object-by-name
+      - id: micro-behaviors/os/kernel/struct::driver-dispatch-table-field
+
+  # The denial has to sit in the enumeration handler rather than anywhere else
+  # in a large driver, so these two are held together by proximity. The
+  # registration that installs the filter runs from DriverEntry and is
+  # arbitrarily far away, which is why it is a separate rule below rather than
+  # another leg inside the window.
+  - id: registry-enumeration-denial
+    desc: Enumeration handler returns access denied
+    crit: notable
+    conf: 0.9
+    for: [binaries, c, cpp, rust, go, csharp]
+    all:
+      - id: micro-behaviors/os/registry/callback::enumeration-notification
+      - id: micro-behaviors/os/exception/error-handling::access-denied-status-code
+    near_lines: 25
+
+  # A filter that answers an enumeration with access-denied is making keys
+  # unreadable rather than auditing them. Endpoint products and sandboxes do
+  # protect their own configuration this way, so this stays suspicious.
+  - id: registry-enumeration-denial-filter
+    desc: Registry enumeration filter denies key access
+    crit: suspicious
+    conf: 0.94
+    for: [binaries, c, cpp, rust, go, csharp]
+    all:
+      - id: registry-enumeration-denial
+    any:
+      - id: micro-behaviors/os/kernel/callback::registry-callback
+      - id: micro-behaviors/os/kernel/callback::registry-callback-ex
