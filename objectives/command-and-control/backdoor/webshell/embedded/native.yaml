@@ -1,0 +1,191 @@
+# An exploit-helper payload that writes a request-driven PHP command endpoint
+# into a server's web tree. The embedded PHP and endpoint path are carrier-
+# independent; the syscall sequence below covers Python shellcraft helpers.
+defaults:
+  platforms: [unix]
+  for: [source, python]
+  attack: T1505.003
+  mbc: B0030
+
+traits:
+  - id: embedded-php-request-command
+    desc: Embedded PHP request-command payload
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: literal
+      kind: string
+      regex: '(?is)<\?php.{0,160}\b(system|exec|shell_exec|passthru)\s*\(\s*\$_(GET|POST|REQUEST)\s*\['
+
+  - id: php-endpoint-file-path
+    desc: Absolute PHP endpoint file path
+    crit: component
+    conf: 0.9
+    if:
+      type: literal
+      kind: string
+      regex: '^([/A-Za-z0-9._-]+/){2,}[A-Za-z0-9._-]+\.php$'
+
+  - id: shellcraft-open-file-syscall
+    desc: Shellcode open-file syscall
+    crit: suspicious
+    conf: 0.94
+    for: [python]
+    if:
+      type: symbol
+      kind: call
+      exact: shellcraft.syscall
+      arg:
+        kind: identifier
+        name: SYS_open
+
+  - id: shellcraft-write-file-syscall
+    desc: Shellcode write-file syscall
+    crit: suspicious
+    conf: 0.94
+    for: [python]
+    if:
+      type: symbol
+      kind: call
+      exact: shellcraft.syscall
+      arg:
+        kind: identifier
+        name: SYS_write
+
+  - id: shellcraft-close-file-syscall
+    desc: Shellcode close-file syscall
+    crit: suspicious
+    conf: 0.94
+    for: [python]
+    if:
+      type: symbol
+      kind: call
+      exact: shellcraft.syscall
+      arg:
+        kind: identifier
+        name: SYS_close
+
+  - id: freebsd-sigaction-number
+    desc: FreeBSD sigaction syscall number
+    crit: suspicious
+    conf: 0.98
+    for: [python]
+    if:
+      type: text
+      regex: '\bSYS_sigaction\s*=\s*416\b'
+
+  - id: shellcraft-ignore-signal-call
+    desc: Shellcode ignores a signal disposition
+    crit: suspicious
+    conf: 0.97
+    for: [python]
+    if:
+      type: text
+      regex: '\bshellcraft\.syscall\s*\(\s*SYS_sigaction\b.{0,80}\bSIG_IGN\b'
+
+  - id: crash-signal-number-set
+    desc: Synchronous crash signal set
+    crit: suspicious
+    conf: 0.96
+    for: [python]
+    if:
+      type: tree-sitter
+      kind: assignment
+      regex: '(?is)\bsignals\s*=\s*\[\s*4\s*,\s*5\s*,\s*6\s*,\s*8\s*,\s*10\s*,\s*11\s*\]'
+
+  - id: suid-shell-chmod
+    desc: Sets SUID mode on Unix shell
+    crit: suspicious
+    conf: 0.99
+    for: [python]
+    if:
+      type: symbol
+      kind: call
+      exact: os.chmod
+      args:
+        - kind: string
+          exact: /bin/sh
+        - kind: number
+          value: 2541
+
+  - id: native-open-file-call
+    desc: Native open call
+    crit: component
+    conf: 0.92
+    for: [source]
+    if:
+      type: text
+      regex: '\b(open|sys_open)\s*\('
+
+  - id: native-write-file-call
+    desc: Native write call
+    crit: component
+    conf: 0.92
+    for: [source]
+    if:
+      type: text
+      regex: '\b(write|sys_write)\s*\('
+
+  - id: native-close-file-call
+    desc: Native close call
+    crit: component
+    conf: 0.92
+    for: [source]
+    if:
+      type: text
+      regex: '\b(close|sys_close)\s*\('
+
+  - id: native-suid-shell-chmod
+    desc: Native SUID shell mode change
+    crit: suspicious
+    conf: 0.98
+    for: [source]
+    if:
+      type: text
+      regex: '\bchmod\s*\(\s*["'']/bin/sh["'']\s*,\s*0?4755\s*\)'
+
+composite_rules:
+  - id: shellcraft-php-webshell-drop
+    desc: Shellcode builder drops a request-driven PHP command webshell
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: embedded-php-request-command
+      - id: php-endpoint-file-path
+      - id: shellcraft-open-file-syscall
+      - id: shellcraft-write-file-syscall
+      - id: shellcraft-close-file-syscall
+    near_bytes: 4096
+
+  - id: shellcode-disables-crash-supervision
+    desc: Shellcode disables crash supervision signals
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: freebsd-sigaction-number
+      - id: shellcraft-ignore-signal-call
+      - id: crash-signal-number-set
+    near_bytes: 2048
+
+  - id: native-php-webshell-drop
+    desc: Native payload drops a PHP command webshell
+    crit: hostile
+    conf: 0.99
+    for: [source]
+    all:
+      - id: embedded-php-request-command
+      - id: php-endpoint-file-path
+      - id: native-open-file-call
+      - id: native-write-file-call
+      - id: native-close-file-call
+    near_bytes: 4096
+
+  - id: native-php-webshell-suid
+    desc: Native PHP webshell enables SUID shell access
+    crit: hostile
+    conf: 0.99
+    for: [source]
+    all:
+      - id: native-php-webshell-drop
+      - id: native-suid-shell-chmod
+    near_bytes: 4096
