@@ -1,0 +1,76 @@
+# ClickFix delivery pages that plant a remote shell loader on the clipboard.
+#
+# The lure themes in html.yaml (fake CAPTCHA, fake Cloudflare check, fake
+# software update) are matched through their wording. That works until the
+# operator changes the story: the AmnesiaStealer campaign wraps the identical
+# clipboard-and-Terminal flow in a counterfeit GitHub release page — correct
+# dark theme, Octocat, "Verified Publisher" badge, "Download for macOS" —
+# where none of the CAPTCHA or update phrases appear. Sibling campaigns have
+# used fake video-call fixes, printer drivers and Word-document repairs.
+#
+# The wording is the disposable part. What every variant has to do is:
+#
+#   * hold a download-and-execute one-liner as page text, and
+#   * put it on the visitor's clipboard from JavaScript.
+#
+# Both are structural, so the rules here key on those instead of the story.
+#
+# The benign population is real and worth naming: Homebrew, rustup, oh-my-zsh,
+# Deno and most CLI projects publish exactly such a one-liner with a copy
+# button. Two things separate them.
+#
+# 1. Consent. An install page copies when the visitor clicks a copy control.
+#    A lure cannot rely on that — the visitor came for a download button, not
+#    a command — so it arms the clipboard from a passive listener
+#    (mousemove/pointermove/scroll/keydown) that fires without any decision
+#    being made. Silently replacing clipboard contents on pointer movement has
+#    no benign form.
+# 2. Targeting. An install page serves everyone. A lure that only works on one
+#    OS checks the user agent and sends everyone else away, so researchers and
+#    non-target visitors see an innocuous page.
+#
+# ATT&CK: T1204.004 (Malicious Copy and Paste), T1059.004, T1105.
+defaults:
+  platforms: [macos, unix, windows]
+  for: [html, javascript, typescript]
+  attack: T1204.004
+
+composite_rules:
+  - id: page-stages-remote-shell-loader
+    desc: Page copies a remote shell loader to the clipboard
+    # An install page with a copy button lands here, which is why this is
+    # suspicious rather than hostile: the finding is accurate for both, and an
+    # analyst triaging it only has to check whether the site is the project's
+    # own. The rules below add what makes it a lure.
+    crit: suspicious
+    conf: 0.9
+    attack: T1204.004,T1059.004
+    all:
+      - id: micro-behaviors/os/clipboard/browser::browser-html-clipboard-write
+    any:
+      - id: micro-behaviors/process/create/shell/command-mode::shell-c-command-substitution-fetch
+      - id: micro-behaviors/process/create/shell/pipeline::curl-pipe-shell-text
+
+  - id: passive-trigger-clipboard-shell-loader
+    desc: Loader planted on the clipboard without a click
+    # No user decision precedes the clipboard write: moving the pointer, or
+    # scrolling, is enough. A copy button is a consent surface; a mousemove
+    # handler is not.
+    crit: hostile
+    conf: 0.96
+    attack: T1204.004,T1059.004,T1115
+    all:
+      - id: page-stages-remote-shell-loader
+      - id: micro-behaviors/hardware/input/event::user-activity-event-listener
+
+  - id: os-gated-clipboard-shell-loader
+    desc: Clipboard loader shown only to one target OS
+    # User-agent test plus a navigation away for everyone else: the page is
+    # picking its victims, and hiding from everyone it cannot infect.
+    crit: hostile
+    conf: 0.95
+    attack: T1204.004,T1059.004,T1497.001
+    all:
+      - id: page-stages-remote-shell-loader
+      - id: micro-behaviors/communications/http/user-agent::navigator-useragent-read
+      - id: micro-behaviors/ui/window/manage/navigation::browser-location-replace

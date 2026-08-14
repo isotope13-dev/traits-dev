@@ -28,16 +28,23 @@ traits:
     unless:
       - id: metadata/library/automation::browser-profile-import-crypto-helper
       - id: metadata/library/automation::browser-profile-import-workflow
-  - id: chrome-safe-storage-key-string
-    desc: Chrome Safe Storage key string reference
+  - id: chromium-safe-storage-service-name
+    desc: Chromium Safe Storage service name
+    # Every Chromium fork stores its os_crypt master key under a keychain
+    # service named "<Product> Safe Storage" — Chrome, Brave, Chromium,
+    # Microsoft Edge, Arc, Opera, Vivaldi, Yandex. Matching the shape rather
+    # than the Chrome spelling covers the forks a builder-configured stealer
+    # iterates over, and forks that do not exist yet.
+    #
     # The service-name literal is also present in legitimate browser-cookie
     # importers.  Keychain access and browser decryption have separate,
     # stronger signals below and in the shared micro-behaviors.
     crit: notable
     conf: 0.8
+    for: [scripts, source, macho]
     if:
       type: string_literal
-      substr: Chrome Safe Storage
+      regex: '\b[A-Z][A-Za-z]{1,14}( [A-Z][A-Za-z]{1,14})? Safe Storage\b'
     unless:
       - id: metadata/library/automation::google-flow-browser-auth-client
       # Redundant with chrome-safe-storage-keychain-query above, which stays
@@ -55,6 +62,31 @@ traits:
       regex: openssl\s+enc\s+.{0,100}-aes-128-cbc\s+-iv\s+.{0,100}-K\s+
     unless:
 composite_rules:
+  # Newer macOS releases refuse to hand a Chromium fork's Safe Storage secret
+  # to any other caller, so reading the key out of the keychain stops working.
+  # The answer stealers reached for is to overwrite it: delete the entry the
+  # browser created and add one back whose value the operator already knows,
+  # after which every cookie and password the browser writes is decryptable
+  # offline. It is also destructive — everything encrypted under the original
+  # key becomes permanently unrecoverable.
+  #
+  # Deleting *and* re-adding another application's os_crypt master key has no
+  # benign form. A browser creates its own entry once and never removes it; a
+  # credential importer only ever reads. Requiring both halves plus the
+  # service-name anchor keeps ordinary keychain automation (which unlocks and
+  # adds its own codesigning items) out.
+  - id: chromium-safe-storage-key-replacement
+    desc: Chromium Safe Storage key overwritten
+    crit: hostile
+    conf: 0.97
+    attack: T1555.003,T1565.001
+    mbc: B0028
+    for: [scripts, source, macho]
+    all:
+      - id: micro-behaviors/os/security/keychain::macos-keychain-generic-password-delete-command
+      - id: micro-behaviors/os/security/keychain::macos-keychain-generic-password-add-command
+      - id: chromium-safe-storage-service-name
+
   - id: chrome-password-theft-macos
     desc: macOS Chrome cookie decryption chain
     # Keychain access plus Chrome's KDF identifies a sensitive capability, not

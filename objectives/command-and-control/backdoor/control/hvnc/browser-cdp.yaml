@@ -1,0 +1,86 @@
+# Hidden virtual browser: the victim's own logged-in browser, driven by a
+# remote operator over the Chrome DevTools Protocol.
+#
+# The Windows-era HVNC modules in this directory build a hidden desktop and
+# copy a browser profile onto it. The portable form drops the desktop entirely:
+#
+#   1. copy the live profile directory (Default/, Local State) somewhere else
+#   2. relaunch the browser's OWN executable against the copy, headless or
+#      off-screen, with --remote-debugging-port
+#   3. bridge that debug socket to the operator
+#   4. Page.startScreencast for the picture, Input.dispatch*Event for the
+#      keyboard and mouse
+#
+# The operator ends up inside sessions the victim is already authenticated to —
+# webmail, banking, cloud consoles — while the victim's visible browser is
+# untouched, so nothing looks wrong on screen. Because the browser's own signed
+# binary does the decrypting, the cookies come back in cleartext and no
+# os_crypt key is ever needed.
+#
+# Discriminating from legitimate CDP automation:
+#
+# * Automation (puppeteer, playwright, scrapers, print-to-PDF) drives a browser
+#   it created, on a throwaway profile. It does not need a screencast, because
+#   the caller *is* the thing deciding what to click.
+# * Remote-browser-isolation and cloud-browser products DO screencast and DO
+#   inject input — but into a fresh container profile, never into a copy of an
+#   end user's on-disk profile directory.
+#
+# So the live-profile reference is what turns remote control into session
+# theft, and it is the leg both hostile rules require.
+#
+# ATT&CK: T1185 (Browser Session Hijacking), T1555.003, T1219.
+defaults:
+  platforms: [windows, unix, macos, linux]
+  for: [scripts, source]
+  attack: T1185
+  mbc: B0025
+
+composite_rules:
+  - id: cdp-live-browser-remote-control
+    desc: Browser driven live over CDP
+    # Screencast plus synthetic input is the shape of interactive remote
+    # control rather than scripted automation. Legitimate cloud-browser and
+    # remote-browser-isolation products land here, which is why this stops at
+    # suspicious and the profile-hijack rules below carry the hostile verdict.
+    crit: suspicious
+    conf: 0.94
+    attack: T1185,T1219
+    all:
+      - id: micro-behaviors/communications/http/devtools/client::cdp-method-page-start-screencast
+      - id: micro-behaviors/communications/http/devtools/client::cdp-input-event-injection
+
+  - id: cdp-hijacked-profile-browser-control
+    desc: Hijacked browser profile driven over CDP
+    crit: hostile
+    conf: 0.97
+    attack: T1185,T1555.003
+    all:
+      - id: cdp-live-browser-remote-control
+      # The debug channel is opened by the caller's own launch, pointed at a
+      # profile directory the caller chose...
+      - id: micro-behaviors/process/create/flags::chromium-remote-debugging-port
+      - id: micro-behaviors/process/create/flags::chromium-user-data-dir
+      # ...and that profile is the user's real installed-browser profile, not
+      # a throwaway. Directory reference: any concrete browser profile location
+      # (Chrome/Brave/Edge/Arc/Opera/Vivaldi, macOS, Windows or Linux layout).
+      - id: micro-behaviors/fs/path/application/browser/
+
+  - id: cdp-hijacked-profile-cookie-export
+    desc: Cookie jar dumped from a copied profile
+    # The same hidden instance also dumps the jar, decrypted by the browser
+    # itself. Reported separately from the control rule so a module that only
+    # exfiltrates sessions — no screencast, no synthetic input — is still
+    # convicted. Network.getAllCookies and Storage.getCookies take no URL
+    # filter: unlike Network.getCookies they cannot be a scoped read for the
+    # page the caller is already driving.
+    crit: hostile
+    conf: 0.96
+    attack: T1185,T1539,T1555.003
+    all:
+      - id: micro-behaviors/process/create/flags::chromium-remote-debugging-port
+      - id: micro-behaviors/process/create/flags::chromium-user-data-dir
+      - id: micro-behaviors/fs/path/application/browser/
+    any:
+      - id: micro-behaviors/communications/http/devtools/client::cdp-method-network-get-all-cookies
+      - id: micro-behaviors/communications/http/devtools/client::cdp-method-storage-get-cookies
