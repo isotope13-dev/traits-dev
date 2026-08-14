@@ -1,0 +1,48 @@
+# Contract-backed C2 resolution ("EtherHiding") compiled to JVM bytecode.
+#
+# The source-level rules in this directory key on readable `eth_call` JSON and
+# provider hostnames.  A packed mod/plugin keeps the same design but stores the
+# RPC pool, the contract address and the request template as obfuscated string
+# constants, so nothing readable survives.  What does survive is the shape of a
+# hand-rolled ABI reader: the returned hex answer is sliced at the 32-byte word
+# boundaries (`substring(64,128)` parsed base 16) and the recovered string is
+# RSA-verified against a pinned key before it is used as a destination.
+#
+# RSA over a contract return value is the tell.  On-chain data is already
+# integrity-protected by consensus, so a genuine dApp has nothing to re-verify;
+# an operator signs the dead-drop value so nobody else who can write the
+# contract slot can redirect the implant.
+defaults:
+  platforms: [windows, unix]
+  for: [class, java_class]
+  attack: T1102
+  mbc: B0030
+
+composite_rules:
+  - id: jvm-signed-contract-value-resolver
+    desc: JVM class RSA-verifies an ABI-decoded contract value
+    crit: suspicious
+    conf: 0.96
+    attack: T1102,T1027
+    mbc: B0030,B0032
+    all:
+      - id: micro-behaviors/data/decode/hex::java-abi-hex-length-word-parse
+      - id: micro-behaviors/crypto/asymmetric/signature::java-rsa-public-verify
+      - id: micro-behaviors/data/decode/hex::java-long-hex-constant-table
+
+  # The resolver plus the payload stage it exists to reach: a JAR pulled over
+  # the resolved address and defined straight out of a byte array, so the
+  # second stage never lands on disk.
+  - id: jvm-contract-resolved-memory-jar-loader
+    desc: JVM loads a contract-resolved JAR from memory
+    # Archive scope correlates the resolver and loader across member classes;
+    # together they are the package's signed dead-drop execution chain.
+    crit: hostile
+    conf: 0.97
+    attack: T1102,T1105,T1027
+    mbc: B0030,B0032
+    scope: archive
+    all:
+      - id: jvm-signed-contract-value-resolver
+      - id: micro-behaviors/data/archive/library::jvm-jar-api-reference
+      - id: objectives/command-and-control/backdoor/loader/classloader::in-memory-bytearray-classloader
