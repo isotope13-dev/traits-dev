@@ -37,28 +37,20 @@ composite_rules:
       - id: objectives/anti-static/obfuscation/anti-decompile::zero-width-managed-pe-marker-206d
       - id: objectives/anti-static/obfuscation/anti-decompile::zero-width-managed-pe-marker-206f
 
-  # Executables grafted onto a signed host *after* it was signed.
-  #
-  # Authenticode's digest stops at the end of the security directory, so bytes
-  # written past it are carried by the file without being covered by the
-  # certificate: the host still verifies and still presents the vendor's name,
-  # while the appended span travels under that reputation. Anti-virus naming
-  # for this is literally "Patched"/"APPE" (appended).
-  #
-  # The discriminator against a legitimate trailing blob is what the span
-  # holds. A self-extracting installer appends its payload and *then* signs, so
-  # its payload sits inside the signed region; a vendor that tags a build after
-  # signing writes a few hundred bytes of channel data. Neither produces
-  # complete PE images beyond the signature. Requiring the embedded executables
-  # keeps ordinary signed installers and tagged builds out.
-  - id: signed-host-post-signature-executable-append
-    desc: Signed host carries executables past its signature
-    crit: hostile
+  # The trait engine exposes the large pre-certificate span covered by the
+  # Authenticode image hash. It does not expose a post-certificate byte range,
+  # so this rule must not describe or infer data appended after signing.
+  # Multiple embedded PEs in that signed span remain a useful suspicious
+  # carrier signal; recognized installers and platform-signed software are
+  # excluded below.
+  - id: signed-host-precertificate-executable-overlay
+    desc: Signed host embeds PEs before certificate
+    crit: suspicious
     conf: 0.96
     attack: T1553.002,T1027.009
     all:
       - id: metadata/binary/layout::cert-table-present
-      - id: metadata/binary/anomaly/signing::pe-data-beyond-signature-blob
+      - id: metadata/binary/anomaly/signing::signed-pe-precertificate-overlay
       - id: metadata/binary/layout::multiple-pe-embedded
     unless:
       - id: metadata/binary/installer/family/
@@ -66,22 +58,16 @@ composite_rules:
       - id: well-known/app/system/iobit::iobit-signed-component-context
       - id: well-known/app/development/inspect::inspect-devtools-nsis-uninstaller-context
 
-  # The same graft when the appended span is not a PE image: shellcode, an
-  # encrypted stage, or an archive the host unpacks. The rule above needs
-  # embedded executables to reach hostile, so on its own this rung is what
-  # catches a signed host carrying a non-PE payload past its certificate.
-  #
-  # Suspicious rather than hostile because the span's content is unknown here:
-  # some products really do stamp a build after signing. The 64 KiB floor
-  # already excludes the tag-sized case, which is the only benign form seen in
-  # practice.
-  - id: signed-host-post-signature-append
-    desc: Signed host carries data past its signature
+  # The same carrier without an embedded PE. The span's content is unknown,
+  # and the metric describes data before the certificate table, so this stays
+  # suspicious rather than claiming a post-signature append.
+  - id: signed-host-precertificate-overlay
+    desc: Signed host has pre-certificate data
     crit: suspicious
     conf: 0.9
     all:
       - id: metadata/binary/layout::cert-table-present
-      - id: metadata/binary/anomaly/signing::pe-data-beyond-signature-blob
+      - id: metadata/binary/anomaly/signing::signed-pe-precertificate-overlay
     unless:
       - id: metadata/binary/installer/family/
       - id: metadata/signed/platform/
