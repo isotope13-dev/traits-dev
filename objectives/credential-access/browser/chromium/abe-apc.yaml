@@ -34,6 +34,32 @@ traits:
       type: text
       regex: '0x03\s*,\s*0x00\s*,\s*0x00\s*,\s*0x00\s*,\s*0x00\s*,\s*0x01'
 
+  # The label Chrome gives the App-Bound Encryption key it stores through its
+  # elevation service. Naming it is unavoidable for a tool that wants that key:
+  # ABE binds the cookie/password key to the browser executable, so the only way
+  # to reach it is to ask the elevation service for the key under this exact
+  # name, or to lift it out of a browser process that already has it. Chrome
+  # itself and legitimate browser code contain it too, which is what the
+  # multi-brand and pipe-server legs of the composite below are for.
+  - id: chromium-abe-key-label
+    desc: Chromium App-Bound Encryption key label
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      substr: App-Bound Encryption Key
+
+  # A dumper's own output protocol. The categories are the three things a
+  # Chromium profile holds that are worth taking, tagged as record types on a
+  # wire format rather than used as prose.
+  - id: browser-secret-record-tags
+    desc: Browser secret dump record tags
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '\b(MASTER_KEY|PASSWORDS|COOKIES|NO_ABE):'
+
   - id: chromium-browser-store-set
     desc: Chromium credential-store filename literals
     crit: suspicious
@@ -82,3 +108,29 @@ composite_rules:
       - id: chromium-abe-memory-apc-bypass
       - id: chromium-browser-store-set
     near_lines: 140
+
+  # An App-Bound Encryption bypass helper. ABE ties the cookie and password key
+  # to the browser binary, so a stealer can no longer just read Local State: it
+  # has to get code running with the browser's identity and talk the key back
+  # out. That is what this shape is -- the ABE key named explicitly, a
+  # named-pipe server for the helper to report through, and its own record tags
+  # for the master key and the harvested categories.
+  #
+  # Chrome's own binaries name the ABE key and speak over named pipes, so
+  # neither leg convicts alone; a program that also frames MASTER_KEY,
+  # COOKIES and PASSWORDS as its output records is the collector, not the
+  # browser.
+  - id: chromium-abe-bypass-secret-dumper
+    desc: App-Bound Encryption bypass dumps browser secrets
+    crit: hostile
+    conf: 0.96
+    for: [pe, dll]
+    all:
+      - id: chromium-abe-key-label
+      - id: browser-secret-record-tags
+    any:
+      - id: micro-behaviors/communications/ipc/named-pipe::create-named-pipe
+      - id: micro-behaviors/communications/ipc/named-pipe::connect-named-pipe
+    unless:
+      - id: metadata/signed/platform/
+      - id: well-known/app/browser/
