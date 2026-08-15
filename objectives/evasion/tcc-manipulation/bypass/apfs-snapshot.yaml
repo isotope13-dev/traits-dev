@@ -1,0 +1,61 @@
+# Reading TCC-protected user data out of an APFS snapshot instead of the live
+# volume (CVE-2020-9771, and the technique that outlived the patch).
+#
+# TCC gates access by the path being opened. A Time Machine local snapshot
+# holds the same Desktop/Documents/Downloads/Mail bytes at an entirely
+# different path, and on the affected releases tccd never consulted for a read
+# under the snapshot mountpoint — so the consent prompt the user would have
+# seen simply does not happen. The steps are always the same three:
+#
+#   1. ask which local snapshots exist (`tmutil listlocalsnapshots /`)
+#   2. mount one somewhere private, usually `-o nobrowse` so it never appears
+#      in Finder or on the desktop
+#   3. read the user's protected folders out of the mountpoint
+#
+# Backup and cloning software does (1) and (2) all day, which is why neither
+# half convicts on its own and the base rule below stops at suspicious. What a
+# backup tool does not do is follow the mount with reads aimed specifically at
+# the handful of folders TCC protects — it copies the volume, not the three
+# directories that would otherwise raise a prompt.
+#
+# Language-neutral: the legs are the two command names, the mount option and
+# the user-folder paths, so a Rust/Go/Swift reimplementation matches as
+# readily as the shell original.
+#
+# ATT&CK: T1006 (Direct Volume Access), T1548, T1555.
+defaults:
+  platforms: [macos]
+  for: [scripts, source, macho]
+  attack: T1006
+  mbc: B0047
+
+composite_rules:
+  - id: local-snapshot-mounted-for-read
+    desc: Mounts a Time Machine local snapshot
+    # Enumerate-then-mount is the complete snapshot-access shape. Accurate for
+    # a backup utility too, which is exactly why it is not hostile by itself.
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: micro-behaviors/fs/volume/mount::apfs-snapshot-mount-command
+    any:
+      - id: micro-behaviors/fs/volume/mount::timemachine-local-snapshot-list
+      - id: micro-behaviors/fs/volume/mount::timemachine-snapshot-identifier
+    unless:
+      - id: well-known/app/storage/carbon-copy-cloner::official-carbon-copy-cloner-member
+
+  - id: snapshot-mount-tcc-protected-read
+    desc: Reads TCC-protected folders via a snapshot mount
+    crit: hostile
+    conf: 0.95
+    attack: T1006,T1548
+    all:
+      - id: local-snapshot-mounted-for-read
+      # The mount is kept out of Finder...
+      - id: micro-behaviors/fs/volume/mount::apfs-nobrowse-mount-option
+      # ...and the reads that follow go to the user folders TCC exists to
+      # gate, addressed *through* the mountpoint rather than at their real
+      # path — which is the whole point of the manoeuvre.
+      - id: micro-behaviors/fs/path/location::rerooted-user-folder-path
+    unless:
+      - id: well-known/app/storage/carbon-copy-cloner::official-carbon-copy-cloner-member

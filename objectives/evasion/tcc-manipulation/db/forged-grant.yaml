@@ -1,0 +1,59 @@
+# Forging a TCC consent record: write an allow row into the privacy database,
+# then restart tccd so it reloads and the grant takes effect.
+#
+# TCC.db is a plain SQLite file whose `access` table holds one row per
+# (service, client) consent decision — `kTCCServiceSystemPolicyAllFiles` for
+# Full Disk Access, `kTCCServiceAccessibility` for input control, and so on.
+# Code that inserts its own row there is manufacturing a permission the user
+# never granted. tccd caches the table at start-up, so the write is inert
+# until the daemon is restarted; the kill is what turns a file edit into an
+# effective grant, and pairing the two is what separates this from the
+# read-only TCC inspection that privacy auditors and MDM reporting tools do.
+#
+# Matched on the database's own schema rather than any one campaign's SQL
+# string: the table name and the kTCCService* service identifiers are fixed by
+# macOS, so a Rust, Python or Objective-C reimplementation matches the same
+# way the shell original does.
+#
+# ATT&CK: T1548 (Abuse Elevation Control Mechanism), T1562.001.
+defaults:
+  platforms: [macos]
+  for: [scripts, source, macho]
+  attack: T1548
+  mbc: B0047
+
+traits:
+  - id: tcc-access-table-write
+    desc: Writes to the TCC access table
+    # The `access` table is the consent ledger. Nothing legitimate writes to
+    # it directly — the supported path is a user prompt or an MDM PPPC
+    # profile, both of which go through tccd rather than SQL.
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)INSERT\s+(OR\s+REPLACE\s+)?INTO\s+access\b'
+
+composite_rules:
+  - id: tcc-grant-forged-and-reloaded
+    desc: Forged TCC grant written and daemon reloaded
+    crit: hostile
+    conf: 0.96
+    attack: T1548,T1562.001
+    all:
+      - id: tcc-access-table-write
+      - id: micro-behaviors/process/terminate/command::macos-tccd-daemon-kill
+    any:
+      - id: micro-behaviors/os/security/policy::tcc-service-identifier
+      - id: tcc-db-alias
+
+  - id: tcc-service-grant-written
+    desc: Writes a TCC consent row for a protected service
+    # The write plus the name of the capability being granted, without the
+    # daemon reload. Reported separately so a dropper that edits the database
+    # and lets the next reboot pick it up is still convicted.
+    crit: suspicious
+    conf: 0.92
+    all:
+      - id: tcc-access-table-write
+      - id: micro-behaviors/os/security/policy::tcc-service-identifier

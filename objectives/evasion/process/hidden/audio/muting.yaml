@@ -1,9 +1,25 @@
+# Silencing the machine so collection makes no noise.
+#
+# macOS plays a sound on Finder file duplication, on failed authentication and
+# on several system events a stealer triggers on its way through the disk. An
+# unexpected chime from an idle Mac is the one thing a victim reliably
+# notices, so the collection run is bracketed: mute, sweep, unmute.
+#
+# AppleScript spells the same operation two ways and both are in active use:
+#
+#   set volume with output muted        -- the modifier form
+#   set volume output muted true        -- the property form
+#
+# Only the property form was matched here before, which missed the modifier
+# form AmnesiaStealer uses. Both spellings are covered below.
+#
+# The carrier is not AppleScript-specific: compiled stealers hand these exact
+# strings to `osascript -e`, so Rust/Go/Swift sources and Mach-O binaries carry
+# them as string literals just as shell scripts do.
 defaults:
   platforms:
     - macos
-  for:
-    - macho
-    - shell
+  for: [scripts, source, macho]
   attack: T1564
 traits:
   - id: volume-mute
@@ -12,19 +28,38 @@ traits:
     conf: 0.8
     if:
       type: text
-      substr: set volume output muted true
+      regex: 'set volume (with output muted|output muted true)'
+
   - id: volume-unmute
     desc: Unmutes system volume via AppleScript
     crit: component
     conf: 0.7
     if:
       type: text
-      substr: set volume output muted false
+      regex: 'set volume (without output muted|output muted false)'
+
 composite_rules:
   - id: stealth-mute-unmute
     desc: Mutes then unmutes volume (stealth operation)
+    # Bracketing is the tell. Software with a legitimate reason to mute (a
+    # media player, a presentation tool, a meeting client) leaves the setting
+    # where the user put it or exposes a control; it does not silence the
+    # machine and hand the volume back a moment later.
     crit: suspicious
     conf: 0.9
     all:
       - id: volume-mute
       - id: volume-unmute
+
+  - id: muted-sensitive-store-collection
+    desc: Audio muted around a sensitive-store sweep
+    # What the silence is for. Muting the output and then walking the macOS
+    # credential and messaging stores in the same file has no benign reading —
+    # nothing that legitimately reads a keychain or a chat database needs the
+    # speakers off to do it.
+    crit: hostile
+    conf: 0.95
+    attack: T1564,T1555
+    all:
+      - id: stealth-mute-unmute
+      - id: micro-behaviors/fs/path/sensitive/apple::multi-sensitive-store-references
