@@ -5,7 +5,15 @@ defaults:
   crit: suspicious
   conf: 0.88
 
-traits: []
+traits:
+- id: graph-mail-message-delete-call
+  desc: Deletes a Microsoft Graph mail message
+  crit: notable
+  conf: 0.9
+  for: [scripts, source]
+  if:
+    type: text
+    regex: '(?i)\bdelete\s*\(\s*["''][^"''\n]{0,80}graph\.microsoft\.com[^"''\n]{0,80}/messages/'
 
 composite_rules:
 - id: microsoft-graph-mailbox-client
@@ -32,6 +40,33 @@ composite_rules:
   unless:
   - id: well-known/dual-use/transfer/rclone::rclone-tool
 
+# Script/interpreter form of the Graph-mailbox backdoor (Antino-style). A
+# Windows implant delivered via HTA/JScript, a PowerShell stager, or a future
+# Python port polls a Graph mailbox for tasking, base64-decodes the command
+# from a message body, and runs it. The Go-native rule above cannot see these
+# because it keys on compiled Go exec/crypto atoms. No legitimate mail client
+# base64-decodes a message body and hands it to a shell.
+- id: graph-mailbox-script-command-execution
+  desc: Microsoft Graph mailbox tasking decoded to command execution
+  crit: hostile
+  conf: 0.96
+  mbc: C0002,C0026,E1059
+  attack: T1102,T1071.001,T1059
+  for: [scripts, source]
+  near_bytes: 8192
+  unless:
+  - id: well-known/app/productivity/keepercommander/
+  all:
+  - id: microsoft-graph-mailbox-client
+  - id: micro-behaviors/data/decode/base64::base64-decoding
+  any:
+  - id: micro-behaviors/process/create/subprocess::run-ast
+  - id: micro-behaviors/process/create/subprocess::popen-ast
+  - id: micro-behaviors/process/create/subprocess::check-output-ast
+  - id: micro-behaviors/process/interpreter/eval::powershell-iex-call
+  - id: micro-behaviors/process/interpreter/eval::embedded-powershell-iex
+  - id: micro-behaviors/process/create/shell/bridge::js-execsync
+
 - id: graph-mailbox-task-cleanup
   desc: Graph mailbox task cleanup
   crit: notable
@@ -42,3 +77,18 @@ composite_rules:
   any:
   - id: micro-behaviors/communications/http/delete::delete
   - id: micro-behaviors/communications/http/lib/netlib::go-http-client-do-string
+
+# Erasing the tasking message right after running it is the covering-tracks
+# leg of the mailbox dead-drop: the operator's command disappears from the
+# mailbox so a later inspection of Drafts/Inbox shows nothing.
+- id: graph-mailbox-tasking-with-message-erasure
+  desc: Graph mailbox backdoor erases tasking messages after execution
+  crit: hostile
+  conf: 0.97
+  mbc: C0002,C0026,F0004,E1059
+  attack: T1070.008,T1102,T1071.001,T1059
+  for: [scripts, source]
+  near_bytes: 8192
+  all:
+  - id: graph-mailbox-script-command-execution
+  - id: graph-mail-message-delete-call
