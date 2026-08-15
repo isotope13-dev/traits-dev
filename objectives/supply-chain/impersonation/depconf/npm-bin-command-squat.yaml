@@ -1,0 +1,79 @@
+# npm bin-entry harvesting: squatting the *command name* a scoped package
+# exposes rather than the package name.
+#
+# A `bin` key cannot carry a scope. `@angular/service-worker` installs a PATH
+# shim called `ngsw-config`, `@bazel/bazelisk` installs `bazelisk`, and the
+# unscoped registry names those commands imply are free for anyone to claim.
+# A resolver pointed at the public registry then drops the squatter's shim onto
+# PATH under the vendor's command name, and its install hook runs first. The
+# 21-package campaign SafeDep documented (bazelisk, ngsw-config,
+# localize-extract, gaarf-node-bq, ...) shipped exactly one shape: a manifest
+# claiming a command, a placeholder file to satisfy the `bin` target, and a
+# postinstall script that did the work.
+#
+# The rest of the tree reads a declared `bin` as an alibi -- both
+# `install-hook/package/manifest::tiny-postinstall-node-loader` and
+# `impersonation/manifest/skeleton::missing-metadata-hooks` stand down on it,
+# because small genuine CLI packages exist and would otherwise be graded
+# hostile. That carve-out is the blind spot this file answers for. The
+# discriminator is that *nothing implements the command*: the bin target is a
+# placeholder, so the package's entire delivered behavior is the install hook.
+# A real CLI package -- however small -- ships the command it advertises.
+#
+# scope: archive: the manifest declares the command and the hook, and the
+# placeholder target and payload script are separate tarball entries.
+defaults:
+  platforms: [unix, windows]
+  for: [archives, npm, tar]
+  attack: T1195.002
+  mbc: E1041
+
+composite_rules:
+  - id: npm-hollow-bin-command-claim
+    desc: Package claims a CLI command it never implements
+    crit: suspicious
+    conf: 0.93
+    scope: archive
+    all:
+      - id: metadata/package/manifest/freeform::pkg-skeleton-small
+      # bin-field-declared, not entrypoint::has-bin-field: the latter carries
+      # `unless: metadata/package/manifest/freeform/`, which holds the
+      # pkg-skeleton-small fact this rule requires, so it can never co-fire.
+      - id: metadata/package/manifest/entrypoint::bin-field-declared
+      # The command target is a bare root-level file, the shape a generated
+      # one-file package produces. This also keeps the placeholder leg honest:
+      # archive scope pools findings across members, so without it a stray
+      # no-op script anywhere in a package with a real `bin/cli.js` would
+      # stand in for the placeholder the rule is claiming.
+      - id: metadata/package/manifest/entrypoint::bin-root-script-target
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::postinstall-hook-declaration
+      - id: micro-behaviors/process/exit/terminate::tiny-script-immediate-exit
+    unless:
+      # A published CLI that names its source repository is answerable for the
+      # command it claims; squats are anonymous by construction.
+      - id: metadata/package/manifest/repository/
+      - id: metadata/package/manifest/publishing::is-private
+      # The fixture leg is the manifest's own path, not the enclosing
+      # directory: the `fixture/` directory's broad path atoms match any
+      # `testdata/` ancestor, which suppresses real samples staged for review.
+      - id: metadata/package/testing/presence/fixture::test-fixture-package-json-path
+      - id: metadata/package/files/dependency::node-modules-path
+
+  - id: npm-bin-command-squat-install-recon
+    desc: Placeholder CLI squat fingerprints host on install
+    crit: hostile
+    conf: 0.97
+    scope: archive
+    all:
+      - id: npm-hollow-bin-command-claim
+    # Two independent install-time recon/callback facts. One alone is
+    # ordinary postinstall housekeeping (a binary downloader reads the
+    # platform; a build script reads the lifecycle event); together, under a
+    # package that implements no command, they are the beacon.
+    any:
+      - id: micro-behaviors/os/sysinfo/hostname::os-hostname-call
+      - id: micro-behaviors/os/env/vars/access::npm-lifecycle
+      - id: micro-behaviors/data/source/syntax/schema::host-system-metric-schema
+      - id: micro-behaviors/communications/http/request/configuration::node-request-hardcoded-remote-host
+      - id: micro-behaviors/process/create/shell/bridge::js-execsync
+    needs: 2
