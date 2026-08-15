@@ -1,0 +1,56 @@
+# Firefox add-on persistence forced by writing the profile directly instead of
+# going through the browser.
+#
+# Firefox exposes an AddonManager API for installing and enabling add-ons, and
+# it asks the user first. The columns below are the add-on manager's private
+# state: `userDisabled` is the user's own decision to turn an add-on off, and
+# `appDisabled` is Firefox's decision that it is unsafe or incompatible. An
+# UPDATE that clears both -- and sets `active` and `visible` for good measure --
+# is not installing an add-on, it is overruling the user and the browser at the
+# storage layer, where neither gets a say.
+#
+# Sibling of chromium.yaml in this directory, which covers the same idea on the
+# Chromium side (Secure Preferences MAC tampering, sideload-protection defeat).
+defaults:
+  platforms: [windows, unix]
+  for: [binaries, scripts, data]
+  attack: T1176
+  mbc: F0012
+
+traits:
+  # Bounded to a single statement: `[^;]` cannot run past the end of the UPDATE
+  # into unrelated SQL, and the disabled columns must both appear in the SET
+  # list. A migration or repair that merely reads the table does not write them.
+  - id: firefox-addon-force-enable-statement
+    desc: SQL clears Firefox add-on disabled flags
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)update\s+addons?\s+set[^;]{0,90}appDisabled\s*=\s*0'
+
+  - id: firefox-addon-user-disable-clear
+    desc: SQL clears the Firefox user-disabled flag
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)update\s+addons?\s+set[^;]{0,90}userDisabled\s*=\s*0'
+
+composite_rules:
+  # The statement plus the store it is aimed at. Either half alone could be
+  # coincidence -- a Firefox-internal test fixture carries the SQL, a profile
+  # backup tool names the file -- but a program that ships both is opening the
+  # add-on database to turn an add-on the user switched off back on.
+  - id: firefox-addon-database-force-enable
+    desc: Force-enables a Firefox add-on in its database
+    crit: hostile
+    conf: 0.96
+    attack: T1176,T1562.001
+    all:
+      - id: micro-behaviors/fs/path/sensitive/browser::firefox-extensions-database-file
+    any:
+      - id: firefox-addon-force-enable-statement
+      - id: firefox-addon-user-disable-clear
+    unless:
+      - id: well-known/app/browser/
