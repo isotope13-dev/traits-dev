@@ -8,32 +8,13 @@ defaults:
 # Browser phishing kits relay first-factor credentials, display a second-factor
 # page, relay the code, and then redirect the victim to the real site. Keep the
 # atoms structural so the same technique is covered across web implementations.
+# The second-factor input atoms (`html-otp-input-field`,
+# `html-verification-input-field`, `js-mfa-field-selector`) describe ordinary
+# authentication markup — the real identity provider renders the same box — so
+# they now live at micro-behaviors/ui/window/form-input/mfa.yaml together with
+# their `browser-mfa-field-reference` umbrella. The composites below reference
+# them and add the phishing evidence.
 traits:
-- id: html-otp-input-field
-  desc: HTML OTP input field
-  crit: notable
-  conf: 0.92
-  if:
-    type: text
-    regex: '(?i)<input\b.{0,100}(otp|mfa|factor)'
-- id: html-verification-input-field
-  desc: HTML verification-code input
-  crit: notable
-  conf: 0.92
-  if:
-    type: text
-    # Anti-CSRF fields such as __RequestVerificationToken contain the word
-    # "verification" but do not collect a code from the victim.  Require a
-    # verification-code or passcode token in the input tag.
-    regex: '(?i)<input\b.{0,100}(verification|passcode)[-_ ]?code\b'
-- id: js-mfa-field-selector
-  desc: JavaScript MFA field selector
-  crit: notable
-  conf: 0.92
-  if:
-    type: text
-    regex: '(?i)querySelector.{0,80}\binput\b.{0,30}(otp|mfa|verification|passcode)'
-
 - id: php-redirect-variable
   desc: PHP redirect uses a variable
   crit: notable
@@ -98,29 +79,12 @@ traits:
     regex: '(?i)/(common/(GetCredentialType|SAS/BeginAuth)|oauth2/v2\.0/authorize)\b'
 
 composite_rules:
-- id: browser-credential-field-reference
-  desc: Browser password field reference
-  crit: notable
-  conf: 0.94
-  any:
-  - id: micro-behaviors/ui/window/manage/dom::password-input-field
-  - id: micro-behaviors/ui/window/form-input::password-input-query-selector
-- id: browser-mfa-field-reference
-  desc: Browser MFA field reference
-  crit: notable
-  conf: 0.94
-  any:
-  - id: html-otp-input-field
-  - id: html-verification-input-field
-  - id: js-mfa-field-selector
-- id: browser-external-redirect
-  desc: Browser external redirect
-  crit: notable
-  conf: 0.92
-  any:
-  - id: micro-behaviors/ui/window/manage/dom::browser-location-external-href-replace
-  - id: micro-behaviors/ui/window/manage/dom::browser-location-external-assign
-  - id: micro-behaviors/communications/http/response::php-location-redirect
+# `browser-credential-field-reference`, `browser-mfa-field-reference` and
+# `browser-external-redirect` were neutral capability umbrellas — a password
+# box, a code box, a cross-origin navigation — filed here, where the directory
+# supplied a phishing claim none of their matchers tested. They now live under
+# micro-behaviors/ (ui/window/form-input/ and ui/window/manage/navigation/) and
+# are referenced from there.
 - id: hidden-provider-help-link
   desc: Hidden provider help link
   crit: suspicious
@@ -130,18 +94,6 @@ composite_rules:
   - id: provider-help-login-link
   - id: provider-help-link-marker
   near_bytes: 700
-- id: browser-credential-post
-  desc: Browser password POST
-  crit: notable
-  conf: 0.94
-  all:
-  - id: browser-credential-field-reference
-  any:
-  - id: micro-behaviors/communications/http/post::html-form-post-method
-  - id: micro-behaviors/communications/http/request/client::fetch-post-pattern
-  - id: micro-behaviors/communications/http/request/html::html-fetch-post-call
-  near_bytes: 900
-
 - id: php-parameterized-external-redirect
   desc: PHP request-token redirector forwards to an external page
   crit: hostile
@@ -153,33 +105,43 @@ composite_rules:
   - id: php-redirect-variable
   - id: micro-behaviors/communications/http/request/params::get-dup
   near_bytes: 1400
-- id: browser-mfa-post
-  desc: Browser MFA POST
-  crit: notable
-  conf: 0.94
-  all:
-  - id: browser-mfa-field-reference
-  any:
-  - id: micro-behaviors/communications/http/post::html-form-post-method
-  - id: micro-behaviors/communications/http/request/client::fetch-post-pattern
-  - id: micro-behaviors/communications/http/request/html::html-fetch-post-call
-  near_bytes: 900
+# `browser-credential-post` and `browser-mfa-post` describe an ordinary sign-in
+# submission and now live at micro-behaviors/communications/http/form/.
+# Collecting both factors on one page is what a normal sign-in screen does, so
+# it is not evidence by itself — an ordinary intranet login with a password box,
+# a one-time-code box and a post-auth redirect used to reach the hostile rule
+# below. What a first-party login does *not* do is hand the pair to a hardcoded
+# absolute URL: it posts to a site-relative path on its own origin. The
+# off-origin target is the leg that makes this a relay.
 - id: two-stage-mfa-collection
-  desc: Two-stage browser MFA collection
+  desc: Password and MFA code collected for an off-origin target
   crit: suspicious
   conf: 0.97
   all:
-  - id: browser-credential-post
-  - id: browser-mfa-post
+  - id: micro-behaviors/communications/http/form::browser-two-factor-form-post
+  - id: micro-behaviors/communications/http/form::browser-off-origin-submission-target
   near_lines: 180
+# A first-party sign-in page can still match everything above: a SaaS product
+# whose login form posts to its own `accounts.` host and then sends the browser
+# to its own app is off-origin twice over and entirely legitimate. What it does
+# not do is hand the victim on to somebody *else's* identity provider after
+# taking the password, scrape the session cookie, or sit on a domain that
+# advertises passkey/SSO enrollment. One of those is required before this is
+# called a relay.
 - id: credential-mfa-relay-redirect
-  desc: Credential and MFA relay redirect
+  desc: Collects password and MFA code then redirects to a provider sign-in
   crit: hostile
   conf: 0.99
   attack: T1056.002,T1041,T1566.002
   all:
   - id: two-stage-mfa-collection
-  - id: browser-external-redirect
+  - id: micro-behaviors/ui/window/manage/navigation::browser-external-redirect
+  needs: 1
+  any:
+  - id: micro-behaviors/communications/http/cookies::browser-document-cookie-read
+  - id: micro-behaviors/communications/http/oauth::microsoft-login
+  - id: micro-behaviors/communications/http/oauth::google-accounts
+  - id: objectives/credential-access/phishing/credential::auth-enrollment-domain-pattern
   near_lines: 180
 
 - id: credential-mfa-relay-with-focus-lock
@@ -251,8 +213,8 @@ composite_rules:
   attack: T1056.002,T1111,T1041,T1566.002
   for: [html, javascript, typescript]
   all:
-  - id: browser-credential-field-reference
-  - id: browser-mfa-field-reference
+  - id: micro-behaviors/ui/window/form-input::browser-credential-field-reference
+  - id: micro-behaviors/ui/window/form-input::browser-mfa-field-reference
   - id: micro-behaviors/communications/http/request/beacon::browser-send-beacon-call
-  - id: browser-external-redirect
+  - id: micro-behaviors/ui/window/manage/navigation::browser-external-redirect
   near_lines: 180
