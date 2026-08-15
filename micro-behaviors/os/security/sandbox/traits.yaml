@@ -131,6 +131,62 @@ traits:
     if:
       type: syscall
       name: [seccomp]
+  # Landlock (Linux 5.13+) is the unprivileged filesystem/network sandbox that
+  # newer tooling reaches for instead of seccomp — agent runners, build
+  # sandboxes and browsers confine their own children with it. Cuts both ways:
+  # `landlock_restrict_self` is also how a payload denies an investigator (or
+  # an EDR agent) access to its own files, and it needs no privileges to do so.
+  # Matched as text as well as symbols because the syscall is usually reached
+  # through a raw `libc::syscall(SYS_landlock_*)` rather than a linked wrapper.
+  - id: landlock-create-ruleset
+    desc: Creates a Linux Landlock ruleset
+    conf: 0.95
+    platforms:
+      - linux
+    for: [elf, rust, c, cpp, go]
+    if:
+      type: text
+      regex: '\b(SYS_)?landlock_create_ruleset\b'
+  - id: landlock-add-rule
+    desc: Adds a Linux Landlock access rule
+    conf: 0.9
+    platforms:
+      - linux
+    for: [elf, rust, c, cpp, go]
+    if:
+      type: text
+      regex: '\b(SYS_)?landlock_add_rule\b'
+  - id: landlock-restrict-self
+    desc: Confines the process with Landlock
+    conf: 0.95
+    platforms:
+      - linux
+    for: [elf, rust, c, cpp, go]
+    if:
+      type: text
+      regex: '\b(SYS_)?landlock_restrict_self\b'
+
+  # The userland front end to the same macOS sandbox the `sandbox_init` atoms
+  # above detect: `sandbox-exec -f profile.sb <cmd>` runs a child under a
+  # seatbelt profile. Apple deprecated it and it is unavailable to sandboxed
+  # apps, so tooling that shells out to it is making a deliberate confinement
+  # choice — and profile authoring is equally where a weak `(allow default)`
+  # policy shows up.
+  #
+  # Named for what a bare word match can honestly claim: the tool name appears.
+  # It is as likely to be in a doc comment weighing seatbelt against Landlock as
+  # on an argv, and "runs a child under sandbox-exec" would be a claim the
+  # matcher never checked.
+  - id: macos-sandbox-exec-reference
+    desc: References the macOS sandbox-exec wrapper
+    conf: 0.9
+    platforms:
+      - macos
+    for: [macho, rust, c, cpp, go, scripts]
+    if:
+      type: text
+      word: sandbox-exec
+
   - id: prctl-seccomp
     desc: Linux prctl seccomp mode
     conf: 0.85
@@ -259,3 +315,16 @@ composite_rules:
       - id: prctl-seccomp
       - id: seccomp-mode-filter
       - id: seccomp-syscall
+
+  # Ruleset construction alone can be a probe; pairing it with the self-restrict
+  # call is what proves the process actually confines itself.
+  - id: linux-landlock-self-confinement
+    desc: Linux Landlock sandbox applied to self
+    crit: notable
+    conf: 0.95
+    platforms:
+      - linux
+    for: [elf, rust, c, cpp, go]
+    all:
+      - id: landlock-create-ruleset
+      - id: landlock-restrict-self
