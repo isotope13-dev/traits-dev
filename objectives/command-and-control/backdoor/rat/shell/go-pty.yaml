@@ -1,0 +1,94 @@
+# A Go implant that hands an operator a live terminal on the host.
+#
+# Sibling of csharp.yaml in this directory, which covers the same objective for
+# a C# RAT. Everything here is anchored on `main.` symbols: that prefix means
+# the program's *own* top-level package, not a vendored library. A terminal
+# multiplexer or a web-terminal server implements its PTY plumbing inside a
+# named package (`webtty`, `termmgr`); a single-binary implant puts the whole
+# control surface in `main` because there is nothing else in the program.
+#
+# What the control surface proves is remote *drive*, not just a PTY. A program
+# that opens a PTY for its own use has a real terminal on the other end and
+# needs none of this: input injection, an out-of-band interrupt, a resize entry
+# point and an output pump only exist because the keyboard and the window are
+# somewhere else. Together they are an operator console over the host's shell.
+#
+# Go strips nothing from these names at default settings and `-ldflags "-s -w"`
+# does not remove them either -- they live in the pclntab, which is why this
+# works on an otherwise stripped binary.
+defaults:
+  platforms: [linux, windows, macos]
+  for: [elf, pe, macho]
+  attack: T1059,T1071.001
+  mbc: B0022
+
+traits:
+  - id: go-interactive-shell-lifecycle
+    desc: Go main runs an interactive shell session
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '\bmain\.(Start|Stop)Interactive(Shell|Session|Pty)\b'
+
+  # Writing to the shell's stdin, and delivering a signal to it, from something
+  # other than a terminal driver.
+  - id: go-remote-shell-input-injection
+    desc: Go main injects input into a shell
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: '\bmain\.Send(Input|Interrupt|Signal|Keys)\b'
+
+  # TIOCSWINSZ driven by a message rather than by SIGWINCH: the window whose
+  # size changed belongs to the operator, not to this machine.
+  - id: go-remote-shell-resize
+    desc: Go main resizes a shell session remotely
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '\bmain\.Resize(Shell|Pty|Terminal|Session|Tty)\b'
+
+  - id: go-remote-shell-output-stream
+    desc: Go main streams shell output remotely
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '\bmain\.(send|stream|get)ShellOutput'
+
+composite_rules:
+  # The control surface on its own. Suspicious, not hostile: an authorized
+  # remote-support or terminal-sharing agent is built exactly this way, and the
+  # bytes cannot say who deployed it. Cf. the remote-admin-framework FP class.
+  - id: go-remote-shell-control-surface
+    desc: Go main exposes a remote shell control surface
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: go-interactive-shell-lifecycle
+      - id: micro-behaviors/process/tty/pty::go-creack-pty-path
+    any:
+      - id: go-remote-shell-input-injection
+      - id: go-remote-shell-resize
+      - id: go-remote-shell-output-stream
+    needs: 2
+
+  # What separates an implant from a support agent is covertness, so the
+  # hostile rung requires one: either the program can erase itself, or it mints
+  # a per-victim identity out of the MAC address and the host's external IP
+  # before it reports in. A remote-support tool is installed by name and is
+  # meant to be found and uninstalled; it does not self-delete, and it
+  # identifies the *session* rather than fingerprinting the machine.
+  - id: go-remote-pty-shell-implant
+    desc: Go implant serves a remote shell and hides itself
+    crit: hostile
+    conf: 0.96
+    attack: T1059,T1071.001,T1070.004
+    all:
+      - id: go-remote-shell-control-surface
+    any:
+      - id: objectives/evasion/self-delete/file/script::go-main-self-destruct-routine
+      - id: objectives/discovery/system/fingerprint/machine-id::go-implant-registration-fingerprint
