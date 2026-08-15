@@ -145,6 +145,21 @@ traits:
     type: text
     substr: .then(e => e).catch(e => { })
 
+# A parser called with nothing to parse. Rust's FromStr::from_str takes the
+# string it is converting, and every wasm-bindgen or native binding that
+# genuinely exposes the name keeps that argument -- so a zero-argument call is
+# not a conversion at all, it is a trigger wearing a converter's name. This is
+# what separates the loader stub from a real Rust-backed npm package that
+# happens to load inside a try.
+- id: from-str-no-argument-call
+  desc: Calls from_str with no arguments
+  crit: component
+  conf: 0.98
+  for: [javascript, typescript]
+  if:
+    type: text
+    regex: '\.from_str\(\s*\)'
+
 - id: swallowed-loader-errors
   desc: Empty catch hides loader errors
   crit: component
@@ -163,6 +178,53 @@ traits:
     - type: basename
       regex: '(?i)\.(spec|test)\.[jt]s$'
 composite_rules:
+# The same stub as the per-campaign rules below, with the payload package name
+# removed from the evidence.
+#
+# Every other hostile rule in this file needs the dependency spelled out --
+# lint-builder, wime-zle, levex-refa, parket-slot, four-sdk-aes-ipheriv. That
+# list can only ever describe campaigns that have already been caught: the
+# hjs-biginteger clone of big.js shipped this identical stub against
+# `hjs-lint-builders` and matched none of them, so a package that carries the
+# family's whole loader verbatim scored zero hostile on the loader itself.
+#
+# What does not change between campaigns is the stub's shape, and each of the
+# three legs is load-bearing:
+#   * the require sits inside a `try`, so it runs at import time -- the caller
+#     never asks for this;
+#   * `from_str` is a Rust idiom (the FromStr trait), not a JavaScript one. No
+#     mainstream npm package exposes a method by that name; this family names
+#     its trigger that way in every variant seen so far;
+#   * the return value is thrown away and an empty `catch` eats every error, so
+#     the call cannot be doing work the library needs. Code that exists only to
+#     be *run*, never to be *used*, is a trigger and not a dependency.
+#
+# An ordinary optional dependency fails this: it binds the module to an
+# outer-scope variable and uses it later, or falls back to an alternative in
+# the catch, rather than discarding the result and staying silent.
+- id: from-str-import-time-loader-stub
+  desc: Import-time from_str loader swallows results
+  crit: hostile
+  conf: 0.98
+  for: [javascript, typescript]
+  attack: T1195.002,T1059.007
+  mbc: B0024
+  all:
+  - id: from-str-loader-call
+  - id: swallowed-loader-errors
+  - id: micro-behaviors/os/module/load::cjs-require-in-try-fallback
+  # The result must go nowhere. Either the call takes no argument (so it cannot
+  # be converting anything) or its promise is drained by no-op handlers. Without
+  # this leg the rule convicts a genuine Rust/wasm binding that happens to sit
+  # in a try with an empty catch -- verified against exactly that shape.
+  any:
+  - id: from-str-no-argument-call
+  - id: noop-loader-promises
+  - id: from-str-promise-swallow
+  unless:
+  - id: metadata/package/testing/
+  - id: metadata/package/testing/presence/fixture::test-filename-pattern
+
 - id: hidden-dependency-loader
   desc: Embedded dependency loader stub
   crit: suspicious
