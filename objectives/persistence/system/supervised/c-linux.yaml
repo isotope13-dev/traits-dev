@@ -28,6 +28,39 @@ traits:
       type: text
       regex: 'ExecStart=%s[\s\S]{0,180}Restart=always'
 
+  # The atoms above name one campaign's unit. A rebuild that renames the
+  # service walks past all three, so the surfaces below are matched by shape:
+  # where the file lands, not what it is called. Each is `notable` on its own
+  # because a program writing its own boot-start file is worth seeing in a
+  # diff even when the program is legitimate.
+  - id: c-systemd-unit-drop-path
+    desc: C writes a systemd unit path
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '/etc/systemd/system/[\w.@-]{1,40}\.service'
+
+  - id: c-cron-dropin-path
+    desc: C writes a cron.d drop-in path
+    crit: notable
+    conf: 0.9
+    attack: T1053.003
+    if:
+      type: text
+      regex: '/etc/cron\.d/[\w.-]{1,40}'
+
+  # rc.local is not repeated here: `init/boot::etc-rc-local` already matches
+  # that path and already lists `c`/`elf`, so the composite references it.
+  - id: c-profile-dropin-path
+    desc: C writes a profile.d shell drop-in
+    crit: notable
+    conf: 0.9
+    attack: T1546.004
+    if:
+      type: text
+      regex: '/etc/profile\.d/[\w.-]{1,40}'
+
 composite_rules:
   - id: c-linux-systemd-persistence
     desc: C Linux systemd persistence
@@ -38,3 +71,31 @@ composite_rules:
     any:
       - id: c-systemctl-health-enable
       - id: c-service-restart-always
+
+  # Name-independent form of the rule above: any unit path plus the two
+  # directives that make it a supervised autostart.
+  - id: c-generic-systemd-unit-persistence
+    desc: C installs a restarting systemd unit
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: c-systemd-unit-drop-path
+      - id: c-service-restart-always
+
+  # Redundant autostart is the tell. An installer picks one mechanism; an
+  # implant writes cron.d *and* a unit *and* rc.local *and* profile.d so that
+  # removing any single one leaves the box still infected. Requiring the write
+  # capability keeps path constants in documentation and headers out.
+  - id: c-multi-surface-boot-persistence
+    desc: C implant writes three boot-start surfaces
+    crit: hostile
+    conf: 0.97
+    attack: T1543.002,T1053.003,T1037.004
+    all:
+      - id: micro-behaviors/fs/file/write/direct::write
+    any:
+      - id: c-systemd-unit-drop-path
+      - id: c-cron-dropin-path
+      - id: objectives/persistence/system/init/boot::etc-rc-local
+      - id: c-profile-dropin-path
+    needs: 3
