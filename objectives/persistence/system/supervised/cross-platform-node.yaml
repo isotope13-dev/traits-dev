@@ -1,0 +1,93 @@
+# One JavaScript file that hands the *same* payload to two different user
+# service managers, picking by `os.platform()`:
+#
+#   darwin -> ~/Library/LaunchAgents/<label>.plist with RunAtLoad, then
+#             `launchctl bootstrap gui/$UID` + `launchctl kickstart`
+#   linux  -> ~/.config/systemd/user/<unit>.service with Restart=, then
+#             `systemctl --user enable` + `systemctl --user restart`
+#
+# Each half on its own is how a legitimate agent installs itself, and the
+# atoms stay notable for that reason. Both halves in one file means whatever
+# is being registered has to survive on whichever machine the code lands on --
+# an installer written for a fleet the author does not control.
+#
+# The hostile rule adds the context that removes the last benign reading: the
+# file ships inside a VS Code extension. An extension's code runs inside the
+# editor and is managed by the editor; nothing it legitimately does needs a
+# login-time service that outlives the editor process. Marketplace extensions
+# that genuinely bundle a language server or debug adapter let the editor
+# spawn it -- they do not register it with launchd or systemd.
+defaults:
+  platforms: [unix]
+  for: [javascript, typescript]
+  attack: T1543
+  mbc: B0028
+
+traits:
+  # Keep these atoms file-local. A LaunchAgents plist and a systemd unit can
+  # legitimately be shipped as separate resources; the suspicious shape here
+  # is one installer source that constructs both service-manager payloads and
+  # activates them.
+  - id: node-launchd-launchagents-path
+    desc: Node builds a user LaunchAgents path
+    crit: notable
+    conf: 0.92
+    attack: T1543.004
+    if:
+      type: text
+      regex: 'path\.join\s*\([^\r\n;]{0,160}["'']Library["''][^\r\n;]{0,80}["'']LaunchAgents["'']'
+
+  - id: node-launchd-runatload-plist
+    desc: Node embeds a RunAtLoad plist key
+    crit: notable
+    conf: 0.94
+    attack: T1543.004
+    if:
+      type: text
+      regex: '<key>RunAtLoad</key>[\s\S]{0,80}<true'
+
+  - id: node-launchd-plist-write
+    desc: Node writes a LaunchAgent plist
+    crit: notable
+    conf: 0.9
+    attack: T1543.004
+    if:
+      type: text
+      regex: 'fs\.writeFileSync\s*\(\s*plistPath'
+
+composite_rules:
+  - id: node-launchd-runatload-installer
+    desc: Node installs a RunAtLoad LaunchAgent
+    crit: notable
+    conf: 0.96
+    attack: T1543.004
+    all:
+      - id: node-launchd-launchagents-path
+      - id: node-launchd-runatload-plist
+      - id: micro-behaviors/os/service/plist::plist-programarguments-key
+      - id: micro-behaviors/os/service/control::launchctl-bootstrap-subcommand
+      - id: node-launchd-plist-write
+
+  - id: node-dual-service-manager-autostart
+    desc: One script registers macOS and Linux user autostart
+    crit: suspicious
+    conf: 0.94
+    attack: T1543.001,T1543.004
+    all:
+      - id: node-launchd-runatload-installer
+      - id: objectives/persistence/system/init/boot::node-user-systemd-restart-unit
+      - id: objectives/persistence/system/init/boot::systemctl-user-enable
+
+  # `for:` keeps the evaluation on the JS member; `scope: outer` lets the
+  # VS Code identity come from the extension's other files (package.json main,
+  # the activate() entrypoint) rather than requiring it in the installer.
+  - id: vscode-extension-dual-autostart-installer
+    desc: VS Code extension registers OS-level user autostart
+    crit: hostile
+    conf: 0.97
+    attack: T1543.001,T1543.004,T1176
+    mbc: B0028,B0032
+    scope: outer
+    all:
+      - id: node-dual-service-manager-autostart
+      - id: metadata/library/vscode::vscode-extension-marker

@@ -1,0 +1,58 @@
+# Picking a Node built-in module -- and one of its exported functions -- by
+# digest of the *name* rather than by the name.
+#
+#   const tag  = (s) => createHash('sha256').update(s).digest('hex');
+#   const pick = (xs, h) => xs.find((x) => tag(x) === h);
+#   const pkg  = pick(builtinModules, "f2d8255a...");   // -> "child_process"
+#   const api  = require(pkg);
+#   const fn   = api[pick(Object.keys(api), "2706c619...")];  // -> exec
+#
+# The digests are preimages of names the runtime already publishes, so the
+# lookup costs a full scan of `builtinModules` to arrive at a specifier the
+# author could have typed. The only thing it buys is that `child_process` and
+# `exec` never appear in the file: import indexes, dependency extractors,
+# grep and a reviewer all come up empty.
+#
+# This is the same idea as PE API hashing (see api-hashing.yaml) ported to
+# CommonJS, and it separates cleanly from ordinary dynamic loading. Legitimate
+# computed `require()` derives the specifier from a name, a path, a config
+# value or a lookup table -- never from a hard-coded digest of the name, since
+# a module identifier is not a secret and hashing it destroys the only thing
+# that makes it useful.
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript]
+  attack: T1027.007
+  mbc: F0004
+
+traits:
+  # A bare 64-hex string is a SHA-256 digest written out. Two or more of them
+  # in one file is what a name->digest lookup table looks like; a single digest
+  # is an ordinary integrity constant (lockfile pin, asset hash, ETag), which
+  # is why the count floor is here rather than in the composite.
+  - id: sha256-digest-literals
+    desc: Multiple SHA-256 digest string literals
+    crit: notable
+    conf: 0.85
+    count_min: 2
+    if:
+      type: literal
+      kind: string
+      regex: '(?i)^[0-9a-f]{64}$'
+
+composite_rules:
+  # Enumerating the built-in list, hashing with SHA-256, and requiring a
+  # computed specifier only line up when the specifier is being recovered from
+  # a digest. A bundler reads `builtinModules` but resolves by name; an
+  # integrity checker hashes bytes but does not require what it hashed.
+  - id: node-builtin-resolved-by-name-digest
+    desc: Node builtin module resolved by name digest
+    crit: hostile
+    conf: 0.95
+    attack: T1027.007,T1129
+    mbc: F0004,B0032
+    all:
+      - id: micro-behaviors/os/module/load::node-builtin-modules-list
+      - id: micro-behaviors/crypto/hash/digest::node-createhash-sha256-call
+      - id: micro-behaviors/data/source/dynamic/load::node-variable-require-call
+      - id: sha256-digest-literals
