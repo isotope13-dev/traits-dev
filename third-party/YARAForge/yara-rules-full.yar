@@ -112785,7 +112785,7 @@ rule MALPEDIA_Win_Rdat_Auto : FILE
 		$sequence_15 = { c3 48833d????????00 488d058d330100 740f }
 
 	condition:
-		7 of them and filesize < 1573888
+		7 of them and filesize < 1573888 and pe.number_of_signatures == 0
 }
 rule MALPEDIA_Win_Donot_Auto : FILE
 {
