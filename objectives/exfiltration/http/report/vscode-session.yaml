@@ -1,4 +1,14 @@
-# Exfiltration of an IDE agent's visible conversation and session telemetry.
+# An IDE extension that ships the AI agent's session off the workstation.
+#
+# The conversation an agent holds in Cursor/Antigravity is the developer's
+# source code, prompts, and terminal output. An extension that buffers that
+# text plus its own runtime log and POSTs both to a vendor backend is
+# exfiltrating work product, whatever the marketing calls it — the redaction
+# pass such uploaders run over API keys does not make the code itself public.
+#
+# The field-name atoms live in micro-behaviors/os/telemetry/logging/llm/ (a
+# transcript field is a neutral thing for a chat UI to have); what is scored
+# here is transcript + log buffer + outbound POST in one extension.
 defaults:
   platforms: [windows, unix]
   for: [javascript, typescript]
@@ -6,46 +16,47 @@ defaults:
 
 traits:
   - id: agent-session-summary-endpoint
-    desc: Agent session API endpoint
+    desc: Hardcoded agent-session backend API URL
     crit: notable
     conf: 0.98
     if:
-      type: string_literal
+      type: literal
+      kind: string
       substr: https://auto-accept-backend.onrender.com/api
 
-  - id: visible-agent-conversation-field
-    desc: Visible agent conversation upload field
+  # `userId: <ctx>.globalState.get(...)` — the upload is keyed to an identifier
+  # the extension persists across sessions, which is what makes the log stream
+  # attributable to one developer rather than anonymous crash telemetry.
+  - id: persistent-install-id-upload-field
+    desc: Upload field from persisted extension state
     crit: notable
-    conf: 0.97
+    conf: 0.94
     if:
       type: text
-      substr: visibleConversationText
-
-  - id: buffered-agent-session-log-field
-    desc: Buffered agent session log upload field
-    crit: notable
-    conf: 0.97
-    if:
-      type: text
-      regex: '(safeLogs|sessionLogBuffer)'
+      regex: '(?i)\buser_?id\s*:\s*\w{0,24}\.?globalState\.get\s*\('
 
 composite_rules:
-  - id: vscode-agent-session-exfiltration
-    desc: VS Code extension uploads agent session content
+  # Data class 1: the conversation itself. No endpoint literal in the legs, so
+  # a rehosted backend still trips this.
+  - id: vscode-agent-conversation-exfiltration
+    desc: VS Code extension uploads agent conversation transcript
     crit: hostile
-    conf: 0.99
+    conf: 0.98
     for: [javascript, typescript, archives]
     scope: archive
     all:
       - id: metadata/library/vscode::vscode-extension-marker
-      - id: agent-session-summary-endpoint
-      - id: visible-agent-conversation-field
-      - id: buffered-agent-session-log-field
+      - id: micro-behaviors/os/telemetry/logging/llm::agent-conversation-transcript-field
+      - id: micro-behaviors/os/telemetry/logging/llm::agent-session-log-buffer-field
       - id: micro-behaviors/communications/http/request/client::post-method-text
       - id: micro-behaviors/communications/http/header/content-type::json-header
 
+  # Data class 2: the buffered runtime log, keyed to a persistent install id and
+  # addressed to a known third-party backend. Requires the identity + endpoint
+  # legs the composite above does not, so neither one subsumes the other and
+  # each names a different thing leaving the machine.
   - id: vscode-agent-session-log-exfiltration
-    desc: VS Code extension uploads buffered agent session logs
+    desc: VS Code extension uploads identified session logs
     crit: hostile
     conf: 0.98
     for: [javascript, typescript, archives]
@@ -53,6 +64,6 @@ composite_rules:
     all:
       - id: metadata/library/vscode::vscode-extension-marker
       - id: agent-session-summary-endpoint
-      - id: buffered-agent-session-log-field
+      - id: persistent-install-id-upload-field
+      - id: micro-behaviors/os/telemetry/logging/llm::agent-session-log-buffer-field
       - id: micro-behaviors/communications/http/request/client::post-method-text
-      - id: micro-behaviors/communications/http/header/content-type::json-header
