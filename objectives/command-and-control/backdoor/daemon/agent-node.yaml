@@ -13,20 +13,20 @@ traits:
       regex: '(6-digit pairing code|/ws/daemon/\$\{code\}|sessionId:\s*code)'
 
   - id: remote-agent-hub-url
-    desc: Remote agent hub URL argument
+    desc: Remote agent obtains its controller-hub URL from configuration
     crit: suspicious
     conf: 0.98
     if:
       type: text
-      regex: 'startNode\s*\(\s*\{[\s\S]{0,120}hubUrl\s*:'
+      regex: '(startNode\s*\(\s*\{[\s\S]{0,120}hubUrl\s*:|hubUrl\s*:\s*[A-Za-z_$][A-Za-z0-9_$]*\.AGENT_HUB_URL\s*\|\|)'
 
   - id: remote-agent-token-argument
-    desc: Agent-hub token from environment
+    desc: Remote agent obtains its controller token from the environment
     crit: suspicious
     conf: 0.98
     if:
       type: text
-      regex: 'token\s*:\s*process\.env\.AGENT_HUB_[A-Z0-9_]*TOKEN'
+      regex: 'token\s*:\s*(process\.env\.AGENT_HUB_[A-Z0-9_]*TOKEN|[A-Za-z_$][A-Za-z0-9_$]*\.AGENT_HUB_[A-Z0-9_]*TOKEN)'
 
   - id: cli-startup-auto-join-call
     desc: CLI startup auto-joins agent pool
@@ -35,6 +35,60 @@ traits:
     if:
       type: text
       regex: '(void\s+)?autoJoinPool\s*\(\s*\)\s*;'
+
+  - id: remote-agent-default-hub-enrollment
+    desc: Agent joins an external hub by default unless explicitly disabled
+    crit: suspicious
+    conf: 0.99
+    attack: T1078
+    if:
+      type: text
+      regex: 'AGENT_PROXY_JOIN_HUB[\s\S]{0,220}\?\s*![A-Za-z_$][A-Za-z0-9_$]*\.includes\([\s\S]{0,100}:\s*[A-Za-z_$][A-Za-z0-9_$]*\.codexMode\s*!==\s*["'']cli["'']'
+
+  - id: remote-agent-credential-gate
+    desc: Agent checks for local AI credentials before joining an external pool
+    crit: suspicious
+    conf: 0.98
+    attack: T1552.001
+    if:
+      type: text
+      regex: 'onlyIfCredentialed\s*&&\s*!\(\s*await\s+[A-Za-z_$][A-Za-z0-9_$]*\(\)\s*\)\.length'
+
+  - id: remote-agent-credential-required-config
+    desc: Remote hub enrollment requires available local credentials
+    crit: suspicious
+    conf: 0.98
+    attack: T1552.001
+    if:
+      type: text
+      regex: 'onlyIfCredentialed\s*:\s*(!0|true)'
+
+  - id: xor-obfuscated-default-agent-hub
+    desc: Default agent-hub endpoint is reconstructed with repeating-key XOR
+    crit: suspicious
+    conf: 0.99
+    attack: T1027.013
+    if:
+      type: text
+      regex: 'Buffer\.from\([^,]{1,120},\s*["'']base64["'']\)[\s\S]{0,320}String\.fromCharCode\([\s\S]{0,180}\^[\s\S]{0,520}AGENT_HUB_URL\s*\|\|'
+
+  - id: remote-agent-capacity-registration
+    desc: Agent registers its model inventory and execution capacity with a controller
+    crit: suspicious
+    conf: 0.99
+    attack: T1071.001
+    if:
+      type: text
+      regex: '\{\s*t\s*:\s*["'']register["'']\s*,\s*token\s*:[\s\S]{0,180}nodeId\s*:[\s\S]{0,180}models\s*:[\s\S]{0,120}capacity\s*:'
+
+  - id: loopback-ai-credential-proxy
+    desc: Starts an unauthenticated loopback proxy backed by local AI credentials
+    crit: suspicious
+    conf: 0.99
+    attack: T1552.001
+    if:
+      type: text
+      regex: 'PORT\s*:\s*["'']0["'']\s*,\s*HOST\s*:\s*["'']127\.0\.0\.1["''][\s\S]{0,160}AGENT_PROXY_API_KEY\s*:\s*["'']["''][\s\S]{0,100}CLI_SERVER_API_KEY\s*:\s*["'']["'']'
 
   - id: remote-agent-job-message
     desc: WebSocket agent accepts a controller job message
@@ -46,22 +100,22 @@ traits:
       regex: '\b[A-Za-z_$][A-Za-z0-9_$]*\.t\s*===\s*["'']job["'']'
 
   - id: remote-agent-local-http-forward
-    desc: Forwards job to local agent API
+    desc: Forwards a controller-supplied path and body to a local HTTP API
     crit: suspicious
     conf: 0.98
     attack: T1059.007
     if:
       type: text
-      regex: 'fetch\s*\(\s*localBase\s*\+\s*path\s*,\s*\{'
+      regex: '(fetch\s*\(\s*localBase\s*\+\s*path\s*,\s*\{|fetch\s*\(\s*[A-Za-z_$][A-Za-z0-9_$]*\s*\+\s*[A-Za-z_$][A-Za-z0-9_$]*\s*,\s*\{\s*method\s*:\s*["'']POST["''][\s\S]{0,180}body\s*:\s*[A-Za-z_$][A-Za-z0-9_$]*)'
 
   - id: remote-agent-result-stream
-    desc: Streams local response to controller
+    desc: Base64-streams local API response chunks to the controller
     crit: suspicious
     conf: 0.97
     attack: T1041
     if:
       type: text
-      regex: 'send\s*\(\s*ws\s*,\s*\{\s*t\s*:\s*["'']chunk["'']'
+      regex: '(send\s*\(\s*ws\s*,\s*\{\s*t\s*:\s*["'']chunk["'']|\{\s*t\s*:\s*["'']chunk["''][\s\S]{0,140}data\s*:\s*Buffer\.from\([^)]{1,120}\)\.toString\(["'']base64["'']\))'
 
   - id: all-interface-shell-listener
     desc: All-interface interactive shell listener
@@ -124,8 +178,22 @@ composite_rules:
       - id: micro-behaviors/communications/http/request/client::js-fetch-call
       - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
 
+  - id: concealed-default-remote-agent-enrollment
+    desc: Silently enrolls credentialed AI clients into an obfuscated external hub
+    crit: hostile
+    conf: 0.99
+    attack: "T1078,T1027.013,T1552.001"
+    scope: file
+    all:
+      - id: remote-agent-default-hub-enrollment
+      - id: remote-agent-credential-gate
+      - id: remote-agent-credential-required-config
+      - id: xor-obfuscated-default-agent-hub
+      - id: remote-agent-capacity-registration
+      - id: loopback-ai-credential-proxy
+
   - id: remote-agent-job-forwarding
-    desc: Remote job drives local agent API
+    desc: Controller jobs drive a local API and receive its streamed results
     crit: hostile
     conf: 0.99
     attack: "T1059.007,T1041"
@@ -134,6 +202,7 @@ composite_rules:
       - id: remote-agent-job-message
       - id: remote-agent-local-http-forward
       - id: remote-agent-result-stream
+      - id: remote-agent-capacity-registration
       - id: micro-behaviors/communications/http/request/client::js-fetch-call
   - id: persistent-remote-npm-agent
     desc: Persistent Node agent polls commands and self-updates via npm
