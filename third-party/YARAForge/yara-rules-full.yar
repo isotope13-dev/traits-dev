@@ -215928,7 +215928,7 @@ rule DITEKSHEN_INDICATOR_SUSPICIOUS_EXE_Discordurl : FILE
 		importance = 20
 
 	strings:
-		$s1 = "https://discord.com/api/webhooks/" ascii wide nocase
+		$s1 = /https:\/\/discord\.com\/api\/webhooks\/[0-9]{15,25}\/[A-Za-z0-9_-]{20,100}/ ascii wide nocase
 		$s2 = "https://cdn.discordapp.com/attachments/" ascii wide nocase
 		$s3 = "aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va" ascii wide
 		$s4 = "aHR0cHM6Ly9jZG4uZGlzY29yZGFwcC5jb20vYXR0YWNobW" ascii wide
