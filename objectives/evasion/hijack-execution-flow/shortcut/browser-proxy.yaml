@@ -1,0 +1,146 @@
+# Browser shortcut proxy persistence.
+# Malware rewrites browser .lnk targets to itself, keeps the original browser
+# path as a launch argument, and preserves the browser icon so the shortcut
+# still appears legitimate. Seen across Patchcord/Sheetcord-class implants.
+defaults:
+  platforms: [windows]
+  attack: T1547.009,T1574
+  mbc: F0012
+
+traits:
+  - id: lnk-dot-backup-suffix
+    desc: Shortcut rewritten with .lnk.backup suffix
+    crit: suspicious
+    conf: 0.9
+    for: [c, cpp, vbs, powershell, batch, python, go]
+    if:
+      type: text
+      substr: .lnk.backup
+
+  - id: format-backup-suffix
+    desc: Format string appends .backup suffix
+    crit: component
+    conf: 0.85
+    for: [c, cpp]
+    if:
+      type: text
+      regex: '(?i)%s\.backup'
+
+  - id: copyfile-backup-suffix
+    desc: CopyFile call writes a .backup path
+    crit: suspicious
+    conf: 0.9
+    for: [c, cpp, vbs, powershell, batch, python, go]
+    if:
+      type: text
+      regex: '(?i)CopyFile\w*.{0,80}\.backup'
+
+  - id: shortcut-icon-location-assign
+    desc: Assigns shortcut IconLocation property
+    crit: notable
+    conf: 0.88
+    for: [vbs, powershell, batch, javascript, python]
+    if:
+      type: text
+      regex: '(?i)\.IconLocation\s*='
+
+  - id: shortcut-quoted-path-argument
+    desc: Shortcut argument wraps a path in quotes
+    crit: notable
+    conf: 0.88
+    for: [vbs, powershell, batch, javascript, python, go]
+    if:
+      type: text
+      regex: '(?i)\.Arguments\s*=\s*("{2,4}|chr\(\s*34\s*\))'
+
+  - id: taskbar-pinned-shortcut-path
+    desc: User-pinned TaskBar shortcut directory
+    crit: notable
+    conf: 0.9
+    for: [c, cpp, vbs, powershell, batch, python, go, pe]
+    if:
+      type: text
+      regex: '(?i)User Pinned\\TaskBar'
+
+  - id: browser-name-instr-filter
+    desc: InStr filter on browser shortcut names
+    crit: notable
+    conf: 0.88
+    for: [vbs, powershell, batch]
+    if:
+      type: text
+      regex: '(?i)InStr.{0,40}(chrome|msedge|firefox|brave)'
+
+  - id: browser-name-strstr-filter
+    desc: StrStr filter on browser shortcut names
+    crit: notable
+    conf: 0.88
+    for: [c, cpp]
+    if:
+      type: text
+      regex: '(?i)StrStrI?\w*.{0,40}(chrome|msedge|firefox|brave)'
+
+composite_rules:
+  - id: lnk-backup-before-rewrite
+    desc: Backs up a shortcut before rewriting it
+    crit: suspicious
+    conf: 0.92
+    for: [c, cpp, vbs, powershell, batch, python, go]
+    any:
+      - id: lnk-dot-backup-suffix
+      - id: copyfile-backup-suffix
+      - id: format-backup-suffix
+      - id: objectives/evasion/hijack-execution-flow/shortcut::shortcut-backup-extension
+
+  - id: browser-shortcut-name-filter
+    desc: Filters shortcut names for browser brands
+    crit: notable
+    conf: 0.9
+    any:
+      - id: browser-name-instr-filter
+      - id: browser-name-strstr-filter
+
+  - id: browser-shortcut-proxy-native
+    desc: Native browser shortcut proxy hijack via IShellLink
+    crit: hostile
+    conf: 0.97
+    for: [c, cpp]
+    near_lines: 80
+    all:
+      - id: micro-behaviors/os/com/object::ishelllink-interface
+      - id: micro-behaviors/os/com/object::ishelllink-set-path
+      - id: micro-behaviors/os/com/object::ishelllink-set-arguments
+      - id: micro-behaviors/os/com/object::ishelllink-set-icon-location
+      - id: micro-behaviors/fs/enumerate/directory::lnk-glob-pattern-source
+      - id: objectives/collection/activity/browser::browser-process-name-main
+    any:
+      - id: lnk-backup-before-rewrite
+      - id: taskbar-pinned-shortcut-path
+      - id: micro-behaviors/process/create/exec::shell-execute-source
+
+  - id: browser-shortcut-proxy-script
+    desc: Scripted browser shortcut proxy hijack
+    crit: hostile
+    conf: 0.96
+    for: [vbs, powershell, batch, javascript, python]
+    near_lines: 60
+    all:
+      - id: micro-behaviors/os/wsh/file::create-shortcut
+      - id: micro-behaviors/os/wsh/file::shortcut-target-path
+      - id: micro-behaviors/os/wsh/file::shortcut-arguments
+      - id: shortcut-icon-location-assign
+      - id: browser-shortcut-name-filter
+    any:
+      - id: objectives/evasion/hijack-execution-flow/shortcut::shortcut-browser-icon-preserved
+      - id: lnk-backup-before-rewrite
+      - id: shortcut-quoted-path-argument
+    needs: 2
+
+  - id: browser-shortcut-proxy-persist
+    desc: Browser shortcut proxy paired with Run-key persistence
+    crit: hostile
+    conf: 0.97
+    for: [c, cpp]
+    all:
+      - id: browser-shortcut-proxy-native
+      - id: objectives/persistence/login/startup/registry::registry-run-persistence-source
