@@ -1,0 +1,158 @@
+# Relaying Android hardware key attestation: replace the app's attested-key
+# generation, forward the challenge to a remote oracle, and return a foreign
+# certificate chain. The crypto is genuine; the binding to the local device is
+# not. Detect the instrumentation + relay shape, not English discussion of it.
+defaults:
+  platforms: [android, unix]
+  for: [javascript, typescript, python]
+  attack: T1553,T1055
+  mbc: B0003
+
+traits:
+  - id: generate-attested-key-api
+    desc: generateAttestedKey attestation API
+    crit: notable
+    conf: 0.94
+    for: [javascript, typescript, kotlin, java]
+    if:
+      type: text
+      word: generateAttestedKey
+
+  - id: keystore-attestation-class
+    desc: KeystoreAttestation class reference
+    crit: notable
+    conf: 0.92
+    for: [javascript, typescript, kotlin, java]
+    if:
+      type: text
+      substr: KeystoreAttestation
+
+  - id: android-base64-url-safe-named
+    desc: Android Base64 URL_SAFE flag name
+    crit: notable
+    conf: 0.88
+    for: [javascript, typescript, java, kotlin]
+    if:
+      type: text
+      substr: URL_SAFE
+
+  - id: android-base64-no-padding-named
+    desc: Android Base64 NO_PADDING flag name
+    crit: notable
+    conf: 0.88
+    for: [javascript, typescript, java, kotlin]
+    if:
+      type: text
+      substr: NO_PADDING
+
+  - id: android-base64-url-safe-mask
+    desc: Base64 URL-safe flag bit mask
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript, java, kotlin]
+    if:
+      type: text
+      regex: '1\s*\|\s*2\s*\|\s*8\b'
+
+  - id: attestation-request-event
+    desc: attestation_request relay event
+    crit: suspicious
+    conf: 0.94
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '(?i)["'']attestation_request["'']'
+
+  - id: attest-http-endpoint
+    desc: HTTP /attest oracle endpoint
+    crit: suspicious
+    conf: 0.93
+    for: [python, javascript, typescript, shell]
+    if:
+      type: text
+      regex: '(?i)/attest\b'
+
+  - id: frida-script-post-response
+    desc: Frida script.post response payload
+    crit: notable
+    conf: 0.9
+    for: [python]
+    if:
+      type: text
+      regex: '\bscript\.post\s*\(\s*\{[^}]{0,160}["'']response["'']'
+
+  - id: frida-usb-device-attach
+    desc: Frida USB device process attach
+    crit: suspicious
+    conf: 0.94
+    for: [python]
+    if:
+      type: text
+      regex: '\bfrida\.get_usb_device\s*\(|\.attach\s*\('
+
+  - id: attestation-nonce-json-field
+    desc: JSON attestation nonce field
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      regex: '(?i)["'']nonce["'']\s*:'
+
+composite_rules:
+  - id: android-base64-url-safe-flags
+    desc: Android Base64 URL-safe flags
+    crit: notable
+    conf: 0.92
+    for: [javascript, typescript, java, kotlin]
+    any:
+      - id: android-base64-url-safe-mask
+      - id: android-base64-url-safe-named
+    near_bytes: 128
+
+  - id: frida-generate-attested-key-hook
+    desc: Frida replaces generateAttestedKey
+    crit: hostile
+    conf: 0.98
+    for: [javascript, typescript]
+    all:
+      - id: micro-behaviors/process/hook/instrumentation::frida-java-method-hook
+      - id: generate-attested-key-api
+      - id: keystore-attestation-class
+    near_bytes: 4096
+
+  - id: frida-attestation-challenge-relay
+    desc: Attestation challenge relayed off-device
+    crit: hostile
+    conf: 0.99
+    for: [javascript, typescript]
+    all:
+      - id: frida-generate-attested-key-hook
+      - id: attestation-request-event
+      - id: android-base64-url-safe-mask
+      - id: micro-behaviors/process/hook/instrumentation::frida-send-recv-wait
+    near_bytes: 4096
+
+  - id: attestation-oracle-http-relay-controller
+    desc: Relays nonce to /attest oracle
+    crit: hostile
+    conf: 0.98
+    for: [python]
+    all:
+      - id: attest-http-endpoint
+      - id: frida-script-post-response
+      - id: attestation-nonce-json-field
+    any:
+      - id: micro-behaviors/communications/http/lib/requests::requests-post
+      - id: micro-behaviors/communications/http/request/client::requests-post-json-payload
+    near_bytes: 8192
+
+  - id: frida-attestation-relay-controller
+    desc: Frida attach attestation relay controller
+    crit: hostile
+    conf: 0.97
+    for: [python]
+    all:
+      - id: frida-usb-device-attach
+      - id: attest-http-endpoint
+      - id: frida-script-post-response
+    near_bytes: 8192
