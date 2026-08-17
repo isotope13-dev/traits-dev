@@ -1,0 +1,117 @@
+# Counterfeit desktop-wallet Electron agents that kill the real app in
+# /Applications, keep a stealth window ready, and exfiltrate BIP39 recovery
+# phrases over Telegram. Inspired by Operation ASTERIX (fake Trezor Suite).
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript, archives]
+  attack: T1185,T1567,T1555
+
+traits:
+  - id: wallet-secret-phrase-header
+    desc: Wallet SECRET PHRASE exfil label
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: text
+      regex: '(?i)(TREZOR|LEDGER|EXODUS|WALLET)\s+SECRET\s+PHRASE|SECRET\s+PHRASE\s*:'
+
+  - id: electron-send-telegram-ipc
+    desc: Electron IPC channel for Telegram send
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '["'']send-telegram["'']|sendToTelegram'
+
+  - id: applications-path-marker
+    desc: References /Applications or .app path
+    crit: component
+    conf: 0.88
+    if:
+      type: text
+      regex: '/Applications/|\.app/'
+
+  - id: kill-dash-nine
+    desc: Force kill via kill -9
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '\bkill\s*-9\b'
+
+  - id: taskkill-wallet-image
+    desc: taskkill force on wallet image name
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)taskkill.{0,80}/F.{0,80}(Trezor|Ledger|Exodus)'
+
+  - id: fake-wallet-launchagent-label
+    desc: LaunchAgent label spoofs wallet product
+    crit: suspicious
+    conf: 0.96
+    for: [javascript, typescript, shell, plist, archives]
+    if:
+      type: text
+      regex: '(?i)com\.(trezormovement|ledger\.live|exodusmovement)\.agent|io\.trezor\.agent'
+
+composite_rules:
+  - id: applications-kill-nine-pair
+    desc: kill -9 near an Applications path
+    crit: component
+    conf: 0.94
+    near_bytes: 240
+    all:
+      - id: applications-path-marker
+      - id: kill-dash-nine
+
+  - id: applications-wallet-process-kill
+    desc: Force-kills wallet under /Applications
+    crit: suspicious
+    conf: 0.95
+    attack: T1489,T1185
+    any:
+      - id: taskkill-wallet-image
+      - id: applications-kill-nine-pair
+
+  - id: electron-wallet-seed-telegram-exfil
+    desc: Electron wallet sends seed via Telegram
+    crit: hostile
+    conf: 0.99
+    attack: T1555,T1567,T1102
+    all:
+      - id: wallet-secret-phrase-header
+      - id: micro-behaviors/communications/http/services/telegram::telegram-api-host
+      - id: micro-behaviors/communications/messaging/send::telegram-bot-send-message
+    any:
+      - id: electron-send-telegram-ipc
+      - id: objectives/command-and-control/channel/messaging::hardcoded-telegram-bot-token-literal
+      - id: objectives/exfiltration/messaging/telegram::bot-token-pattern
+    needs: 1
+
+  - id: electron-wallet-process-replacement
+    desc: Stealth Electron replaces killed wallet app
+    crit: hostile
+    conf: 0.98
+    attack: T1185,T1564.003,T1489
+    all:
+      - id: micro-behaviors/ui/window/manage/electron::electron-stealth-browserwindow
+      - id: applications-wallet-process-kill
+    any:
+      - id: objectives/lateral-movement/trojanize/app::wallet-app-path
+      - id: fake-wallet-launchagent-label
+    needs: 1
+
+  - id: electron-fake-wallet-persistence
+    desc: Fake wallet LaunchAgent with seed exfil
+    crit: hostile
+    conf: 0.97
+    attack: T1543.001,T1555,T1567
+    all:
+      - id: fake-wallet-launchagent-label
+      - id: wallet-secret-phrase-header
+    any:
+      - id: objectives/persistence/system/supervised::node-launchd-runatload-plist
+      - id: micro-behaviors/os/service/config::launchagents-path
+    needs: 1
