@@ -7,65 +7,14 @@
 # rotation, and a Watcher that re-creates the account/key on a schedule so that
 # ordinary incident response (delete-the-user) is undone on the next interval.
 #
-# The atoms match the security-API endpoint paths and the privilege-grant JSON
-# structure -- artifact tokens, not prose -- and stay component/weak on their
-# own; the intent lives in the composites, which require the create/grant body
-# to appear alongside the endpoint. Language-agnostic: the same REST paths and
-# request bodies appear whether the operator tool is Python, shell/curl, Go, or
-# raw JSON.
+# The atoms live with the Elasticsearch data/API capabilities that they
+# actually match. Intent lives here in composites that combine endpoint,
+# privilege, schedule, condition, and webhook request structure. The same REST
+# paths and JSON fields appear in Python, shell/curl, Go, or raw JSON.
 defaults:
   platforms: [unix, windows]
   for: [scripts, source, json]
   attack: T1136.001
-
-traits:
-  - id: es-security-user-endpoint
-    desc: Elasticsearch user-admin API endpoint
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      substr: '/_security/user/'
-
-  - id: es-security-apikey-endpoint
-    desc: Elasticsearch create-API-key endpoint
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      substr: '/_security/api_key'
-
-  - id: es-watcher-put-endpoint
-    desc: Elasticsearch Watcher install endpoint
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      substr: '/_watcher/watch/'
-
-  - id: es-superuser-role-grant
-    desc: Grants Elasticsearch superuser role
-    crit: component
-    conf: 0.9
-    if:
-      type: text
-      regex: 'roles["''\s:=\[]{1,8}superuser'
-
-  - id: es-apikey-cluster-all-grant
-    desc: Grants cluster-wide (all) privileges
-    crit: component
-    conf: 0.9
-    if:
-      type: text
-      regex: '"cluster"\s{0,4}:\s{0,4}\[\s{0,4}"all"'
-
-  - id: es-user-password-field
-    desc: Sets a password field
-    crit: component
-    conf: 0.85
-    if:
-      type: text
-      regex: '"password"\s{0,4}:'
 
 composite_rules:
   - id: es-elasticsearch-rogue-superuser
@@ -74,9 +23,8 @@ composite_rules:
     conf: 0.92
     attack: T1136.001,T1098
     all:
-      - id: es-security-user-endpoint
-      - id: es-superuser-role-grant
-      - id: es-user-password-field
+      - id: micro-behaviors/data/db/elasticsearch::es-security-user-endpoint
+      - id: micro-behaviors/data/db/elasticsearch::es-superuser-role-grant
     near_bytes: 500
 
   - id: es-elasticsearch-backdoor-api-key
@@ -85,28 +33,42 @@ composite_rules:
     conf: 0.88
     attack: T1098.001
     all:
-      - id: es-security-apikey-endpoint
-      - id: es-apikey-cluster-all-grant
+      - id: micro-behaviors/data/db/elasticsearch::es-security-apikey-endpoint
+      - id: micro-behaviors/data/db/elasticsearch::es-cluster-all-privilege-grant
     near_bytes: 400
 
-  - id: es-watcher-recreates-security-principal
-    desc: Elasticsearch Watcher re-creates a security principal (self-healing backdoor)
+  - id: es-watcher-recreates-superuser
+    desc: Scheduled Elasticsearch Watcher recreates a superuser account
     crit: hostile
-    conf: 0.95
+    conf: 0.98
     attack: T1546,T1136.001
     all:
-      - id: es-watcher-put-endpoint
-    any:
-      - id: es-security-user-endpoint
-      - id: es-security-apikey-endpoint
-    near_bytes: 900
+      - id: micro-behaviors/data/db/elasticsearch::es-watcher-definition-endpoint
+      - id: micro-behaviors/data/db/elasticsearch::es-watcher-scheduled-trigger
+      - id: micro-behaviors/data/db/elasticsearch::es-watcher-always-condition
+      - id: micro-behaviors/data/db/elasticsearch::es-watcher-user-webhook-path
+      - id: micro-behaviors/communications/http/webhook::webhook-put-method-field
+      - id: micro-behaviors/data/db/elasticsearch::es-superuser-role-grant
+
+  - id: es-watcher-recreates-api-key
+    desc: Scheduled Elasticsearch Watcher repeatedly mints API keys
+    crit: hostile
+    conf: 0.98
+    attack: T1546,T1098.001
+    all:
+      - id: micro-behaviors/data/db/elasticsearch::es-watcher-definition-endpoint
+      - id: micro-behaviors/data/db/elasticsearch::es-watcher-scheduled-trigger
+      - id: micro-behaviors/data/db/elasticsearch::es-watcher-always-condition
+      - id: micro-behaviors/data/db/elasticsearch::es-watcher-apikey-webhook-path
+      - id: micro-behaviors/communications/http/webhook::webhook-post-method-field
 
   - id: es-elasticsearch-layered-persistence
-    desc: Layers rogue Elasticsearch superuser, backdoor API key, and Watcher self-heal
+    desc: Layers privileged Elasticsearch access with Watcher-based recreation
     crit: hostile
     conf: 0.98
     attack: T1136.001,T1098,T1546
     all:
       - id: es-elasticsearch-rogue-superuser
       - id: es-elasticsearch-backdoor-api-key
-      - id: es-watcher-recreates-security-principal
+      - id: es-watcher-recreates-superuser
+      - id: es-watcher-recreates-api-key
