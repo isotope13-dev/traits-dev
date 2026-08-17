@@ -1,0 +1,154 @@
+# ARM64 synthetic frame chains used to mislead stack-walking telemetry.
+# The leaves match instruction and frame-record structure, not attacker-chosen
+# function names, so the composites also cover inline assembly in other source
+# languages.
+defaults:
+  for: [c, cpp, objc, rust, swift, source]
+  platforms: [macos, ios, linux]
+  attack: T1027
+
+traits:
+  - id: pacib-instruction-source
+    desc: PACIB pointer-signing instruction
+    crit: component
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)\bpacib\b'
+
+  - id: frame-cfa-add-source
+    desc: Adds ARM64 frame-record size
+    crit: component
+    conf: 0.7
+    if:
+      type: text
+      regex: '\+\s*(0x10|16)\b'
+
+  - id: frame-fp-slot-write-source
+    desc: Writes frame pointer-link slot
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: '\*\s*\([^;\n]{0,60}\)\s*\([^;\n]{1,60}\+\s*(0x0+|0)\s*\)\s*='
+
+  - id: frame-lr-slot-write-source
+    desc: Writes saved return-address slot
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: '\*\s*\([^;\n]{0,60}\)\s*\([^;\n]{1,60}\+\s*(0x0?8|8)\s*\)\s*='
+
+  - id: mov-x29-source
+    desc: Sets live ARM64 frame pointer
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\bmov\s+x29\s*,'
+
+  - id: mov-x30-source
+    desc: Sets live ARM64 link register
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\bmov\s+x30\s*,'
+
+  - id: indirect-register-branch-source
+    desc: ARM64 indirect register branch
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: '(?i)\bbr\s+(%[0-9]+|x[0-9]{1,2})\b'
+
+  - id: restore-x19-x20-source
+    desc: Restores x19/x20 register pair
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\bldp\s+x19\s*,\s*x20\b'
+
+  - id: restore-x29-x30-source
+    desc: Restores x29/x30 register pair
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\bldp\s+x29\s*,\s*x30\b'
+
+  - id: adjust-stack-pointer-source
+    desc: Adjusts ARM64 stack pointer
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: '(?i)\badd\s+sp\s*,\s*sp\s*,'
+
+composite_rules:
+  - id: pacib-cfa-modifier-source
+    desc: PACIB uses a CFA-derived modifier
+    crit: notable
+    conf: 0.92
+    all:
+      - id: pacib-instruction-source
+      - id: frame-cfa-add-source
+    near_bytes: 240
+
+  - id: frame-record-slot-writes-source
+    desc: Writes ARM64 frame-record FP/LR slots
+    crit: component
+    conf: 0.92
+    all:
+      - id: frame-fp-slot-write-source
+      - id: frame-lr-slot-write-source
+    near_bytes: 320
+
+  - id: live-fp-lr-indirect-branch-source
+    desc: Sets live FP/LR then indirectly branches
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: mov-x29-source
+      - id: mov-x30-source
+      - id: indirect-register-branch-source
+    near_bytes: 320
+
+  - id: nonvolatile-register-restore-branch-source
+    desc: Restores ARM64 context and branches
+    crit: notable
+    conf: 0.9
+    all:
+      - id: restore-x19-x20-source
+      - id: restore-x29-x30-source
+      - id: adjust-stack-pointer-source
+      - id: indirect-register-branch-source
+    near_bytes: 600
+
+  - id: pac-signed-synthetic-frame-chain
+    desc: Builds PAC-signed synthetic ARM64 frames
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: pacib-cfa-modifier-source
+      - id: frame-record-slot-writes-source
+    near_bytes: 800
+
+  - id: synthetic-frame-chain-entry
+    desc: Redirects execution through synthetic ARM64 frames
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: pac-signed-synthetic-frame-chain
+      - id: live-fp-lr-indirect-branch-source
+
+  - id: synthetic-frame-restore-bridge
+    desc: Restores execution after ARM64 stack spoofing
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: synthetic-frame-chain-entry
+      - id: nonvolatile-register-restore-branch-source
