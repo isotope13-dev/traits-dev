@@ -118,6 +118,20 @@ traits:
     if:
       type: text
       regex: '\./["'']?\$[A-Za-z_]\w*["'']?'
+  # `"$f"` / '$bin' as a command — droppers and exec probes run a path held in
+  # a variable after chmod, without the `./` prefix execute-dot-slash-var needs.
+  # Require a command separator so prose like `see "$f"` does not match.
+  - id: execute-quoted-var
+    desc: Executes a quoted shell-variable path
+    crit: notable
+    conf: 0.88
+    attack: T1059.004
+    for: [scripts, binaries]
+    if:
+      type: text
+      regex: '(^|[;&|]\s*)["'']\$\{?[A-Za-z_]\w*\}?["''](\s|/dev/null|>|<|;|&|$)'
+    unless:
+      - id: metadata/package/testing/harness/runtime/
   - id: execute-dot-slash-literal
     desc: Executes a local relative file
     crit: notable
@@ -288,6 +302,17 @@ composite_rules:
       - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-var-target
       - id: execute-dot-slash-var
     near_bytes: 180
+  # Same chmod→run chain when the path is invoked as `"$var"` rather than `./$var`.
+  - id: chmod-exec-quoted-var-local
+    desc: chmod then executes quoted variable
+    crit: notable
+    conf: 0.9
+    attack: T1222.002
+    for: [scripts, binaries]
+    all:
+      - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-var-target
+      - id: execute-quoted-var
+    near_bytes: 180
   - id: chmod-exec-literal-local
     desc: chmod then executes local literal
     crit: notable
@@ -307,3 +332,20 @@ composite_rules:
       - id: sh-local-relative-script
       - id: dash-local-relative-script
       - id: zsh-local-relative-script
+  # Write no-op shebang under a var path, chmod +x, run `"$var"`, then rm — a
+  # filesystem exec capability probe (agent-deck, sandboxes, installers). Keeps
+  # the story as one notable finding so triage does not have to reassemble it
+  # from the four atomics; the dropper composite stays suppressed via the noop
+  # write unless.
+  - id: temp-exec-capability-probe
+    desc: Temp-path exec capability probe chain
+    crit: notable
+    conf: 0.92
+    attack: T1059.004
+    for: [scripts, binaries]
+    all:
+      - id: micro-behaviors/fs/file/write/redirect::noop-exit-shebang-script-write
+      - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-var-target
+      - id: execute-quoted-var
+      - id: micro-behaviors/fs/file/delete::rm-force-variable-target
+    near_bytes: 512
