@@ -19,7 +19,7 @@
 # registration lives in objectives/persistence/system/service/install.
 defaults:
   platforms: [windows]
-  for: [binaries, scripts, source]
+  for: [binaries, scripts, source, data, text]
   attack: T1562.009
   mbc: F0004
 
@@ -28,7 +28,7 @@ traits:
     desc: Safe Mode with Networking boot event
     crit: notable
     conf: 0.96
-    for: [data, batch, powershell]
+    for: [data, text, batch, powershell]
     # Windows Kernel-Boot records the load option when the host enters the
     # network-enabled Safe Mode state. This also works on copied event text,
     # not only on the command that originally changed the BCD.
@@ -40,10 +40,28 @@ traits:
     desc: Windows Safe Mode boot-mode event
     crit: notable
     conf: 0.96
-    for: [data, batch, powershell]
+    for: [data, text, batch, powershell]
     if:
       type: text
       regex: '(?i)\bKernel-General\s+EID\s+12\b[^\r\n]{0,120}\bBootMode\s*=\s*2\b'
+
+  - id: defender-event-3002-marker
+    desc: Windows Defender event 3002 marker
+    crit: component
+    conf: 0.98
+    for: [data, text, batch, powershell]
+    if:
+      type: text
+      regex: '(?i)\bWindows Defender\s+EID\s+3002\b'
+
+  - id: safe-mode-service-error-marker
+    desc: Safe Mode service error code
+    crit: component
+    conf: 0.98
+    for: [data, text, batch, powershell]
+    if:
+      type: text
+      exact: '0x8007043c'
 
   - id: bcdedit-safeboot-alternate-shell
     desc: Swaps Safe Mode shell for cmd.exe
@@ -56,6 +74,20 @@ traits:
       regex: '(?i)\bbcdedit(\.exe)?\s+/set\s+\{[^}\r\n]{1,40}\}\s+safebootalternateshell\s+yes\b'
 
 composite_rules:
+  # EID 3002 plus ERROR_SERVICE_NOT_ACTIVE_IN_SAFE_MODE (0x8007043c) is the
+  # structured Defender record observed when Safe Mode blinds real-time
+  # protection. Requiring both fields within the original five-line event
+  # window avoids matching unrelated Defender failures or generic error prose.
+  - id: defender-safemode-start-failure-event
+    desc: Defender start failure in Safe Mode
+    crit: notable
+    conf: 0.98
+    for: [data, text, batch, powershell]
+    near_lines: 5
+    all:
+      - id: defender-event-3002-marker
+      - id: safe-mode-service-error-marker
+
   - id: force-safe-mode-boot
     desc: Forces the next boot into Windows Safe Mode
     crit: suspicious
@@ -65,12 +97,25 @@ composite_rules:
       - id: bcdedit-safeboot-alternate-shell
 
   - id: safe-mode-service-persistence-blind
-    desc: Smuggles a service into the SafeBoot allow-list then forces a Safe Mode reboot
+    desc: Registers a service for execution during an observed or forced Safe Mode boot
     crit: hostile
     conf: 0.98
     all:
-      - id: force-safe-mode-boot
       - id: objectives/persistence/system/service/install::safeboot-service-registration
+    any:
+      - id: force-safe-mode-boot
+      - id: safe-mode-network-boot-event
+      - id: safe-mode-bootmode-event
+
+  - id: safe-mode-defender-blind-event
+    desc: Safe Mode boot coincides with Defender service-start failure
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: defender-safemode-start-failure-event
+    any:
+      - id: safe-mode-network-boot-event
+      - id: safe-mode-bootmode-event
 
   - id: safe-mode-boot-defense-blind
     desc: Forces a Safe Mode reboot while disabling AV/EDR to detonate unobserved
