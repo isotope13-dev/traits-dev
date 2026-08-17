@@ -35,6 +35,30 @@ traits:
     if:
       type: text
       regex: '(?is)\.deno\\bin\\deno\.exe.{0,80}-A.{0,120}data:application/javascript;base64,'
+  - id: curl-deno-land-zip-fetch
+    desc: curl downloads Deno release zip
+    crit: suspicious
+    conf: 0.96
+    for: [powershell, batch, vbs]
+    if:
+      type: text
+      regex: '(?i)\bcurl(\.exe)?\b.{0,160}dl\.deno\.land/.{0,100}deno-[A-Za-z0-9._-]{1,80}\.zip'
+  - id: tar-extract-deno-zip
+    desc: tar extracts Deno zip archive
+    crit: suspicious
+    conf: 0.94
+    for: [powershell, batch, vbs]
+    if:
+      type: text
+      regex: '(?i)\btar(\.exe)?\b.{0,60}\bxf\b.{0,100}deno\.zip'
+  - id: localappdata-serial-stage-path
+    desc: LocalAppData Serial staging path
+    crit: notable
+    conf: 0.9
+    for: [powershell, batch, vbs, text]
+    if:
+      type: text
+      regex: '(?i)(%LOCALAPPDATA%|\\AppData\\Local)\\Serial\\'
   - id: encoded-deno-username-env
     desc: Encoded Deno username environment lookup
     crit: component
@@ -74,7 +98,8 @@ traits:
     if:
       type: encoded
       encoding: base64
-      regex: 'Deno\.listen\(\{port:n,hostname:"127\.0\.0\.1",transport:"tcp"\}'
+      # Obfuscated `port:n` or a literal high port used as a single-instance lock.
+      regex: 'Deno\.listen\(\{port:(n|\d{4,5}),hostname:"127\.0\.0\.1",transport:"tcp"\}'
   - id: encoded-deno-health-check
     desc: Encoded Deno C2 health check
     crit: suspicious
@@ -99,6 +124,70 @@ traits:
       type: encoded
       encoding: base64
       regex: 'import\("data:application/javascript;base64,"\+btoa'
+  - id: deno-username-env
+    desc: Deno username environment lookup
+    crit: component
+    conf: 0.92
+    for: [javascript]
+    if:
+      type: text
+      substr: 'Deno.env.get("USERNAME")'
+  - id: deno-hostname-call
+    desc: Deno hostname lookup
+    crit: component
+    conf: 0.92
+    for: [javascript]
+    if:
+      type: text
+      substr: Deno.hostname()
+  - id: deno-system-memory
+    desc: Deno memory fingerprinting
+    crit: component
+    conf: 0.92
+    for: [javascript]
+    if:
+      type: text
+      substr: Deno.systemMemoryInfo()
+  - id: deno-osrelease
+    desc: Deno OS release lookup
+    crit: component
+    conf: 0.92
+    for: [javascript]
+    if:
+      type: text
+      substr: Deno.osRelease()
+  - id: deno-mutex-bind
+    desc: Deno localhost bind mutex
+    crit: suspicious
+    conf: 0.97
+    for: [javascript]
+    if:
+      type: text
+      regex: 'Deno\.listen\(\{port:(n|\d{4,5}),hostname:"127\.0\.0\.1",transport:"tcp"\}'
+  - id: deno-health-check
+    desc: Deno C2 health check
+    crit: suspicious
+    conf: 0.97
+    for: [javascript]
+    if:
+      type: text
+      regex: '(?s)Promise\.any\(.{0,220}/health.{0,220}Promise\.race'
+  - id: deno-jwt-stage-fetch
+    desc: Deno JWT stage fetch
+    crit: suspicious
+    conf: 0.98
+    for: [javascript]
+    if:
+      type: text
+      regex: '/mv2/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/'
+  - id: deno-fileless-import
+    desc: Deno fileless JS import
+    crit: suspicious
+    conf: 0.98
+    for: [javascript]
+    if:
+      type: text
+      regex: 'import\("data:application/javascript;base64,"\+btoa'
 composite_rules:
   - id: encoded-deno-host-fingerprint
     desc: Encoded Deno host fingerprinting
@@ -109,6 +198,16 @@ composite_rules:
       - id: encoded-deno-hostname-call
       - id: encoded-deno-system-memory
       - id: encoded-deno-osrelease
+  - id: deno-host-fingerprint
+    desc: Deno host fingerprinting
+    crit: suspicious
+    conf: 0.97
+    for: [javascript]
+    all:
+      - id: deno-username-env
+      - id: deno-hostname-call
+      - id: deno-system-memory
+      - id: deno-osrelease
   - id: ps-deno-bootstrap
     desc: PowerShell bootstraps Deno runtime
     crit: suspicious
@@ -133,3 +232,53 @@ composite_rules:
       - id: encoded-deno-health-check
       - id: encoded-deno-jwt-stage-fetch
       - id: encoded-deno-fileless-import
+  - id: deno-c2-loader
+    desc: Deno in-memory C2 loader
+    crit: hostile
+    conf: 0.99
+    for: [javascript]
+    all:
+      - id: deno-host-fingerprint
+      - id: deno-mutex-bind
+      - id: deno-health-check
+      - id: deno-jwt-stage-fetch
+      - id: deno-fileless-import
+  - id: deno-mutex-health-jwt-stage
+    desc: Deno mutex with health and JWT staging
+    crit: hostile
+    conf: 0.98
+    for: [javascript]
+    all:
+      - id: deno-mutex-bind
+      - id: deno-health-check
+      - id: deno-jwt-stage-fetch
+  - id: curl-tar-deno-byor-stage
+    desc: curl and tar stage Deno BYOR runtime
+    crit: hostile
+    conf: 0.98
+    attack: T1105,T1059.007
+    all:
+      - id: curl-deno-land-zip-fetch
+      - id: tar-extract-deno-zip
+      - id: ps-deno-runtime-path
+  - id: curl-tar-fileless-deno-chain
+    desc: curl/tar Deno stage launches fileless data URI
+    crit: hostile
+    conf: 0.99
+    attack: T1105,T1059.007,T1620
+    all:
+      - id: curl-tar-deno-byor-stage
+      - id: ps-deno-data-uri-exec
+  - id: vbs-serial-hidden-powershell-launcher
+    desc: VBS launches hidden PowerShell from Serial stage path
+    crit: suspicious
+    conf: 0.97
+    attack: T1059.005,T1059.001
+    for: [vbs]
+    all:
+      - id: localappdata-serial-stage-path
+      - id: objectives/execution/interpreter/vbscript/interpreter::vbs-powershell-launch
+    any:
+      - id: micro-behaviors/process/create/shell/wsh::wscript-shell-hidden-run
+      - id: micro-behaviors/process/create/shell/wsh::wscript-shell-run
+      - id: micro-behaviors/os/com/object::wscript-shell-literal
