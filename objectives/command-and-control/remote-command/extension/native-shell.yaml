@@ -1,0 +1,75 @@
+# Browser-extension remote shell via native messaging: a WSS-tasked extension
+# opens a native-messaging host and posts execute actions, or the host itself
+# runs operator commands through the Windows command interpreter with a hidden
+# window. Both shapes escape the browser sandbox into host command execution.
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript, chrome-manifest, crx, zip, archives]
+  attack: T1219,T1059,T1559
+  mbc: B0022
+
+traits:
+  - id: extension-api-call-task-type
+    desc: Extension api_call message type
+    crit: component
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '["'']type["'']\s*:\s*["'']api_call["'']|msg\.type\s*===\s*["'']api_call["'']'
+
+composite_rules:
+  # All-site extension that both speaks WSS and drives a native-messaging host
+  # with execute actions is a browser RAT with host shell escape — not a
+  # first-party native helper (those lack remote tasking).
+  - id: extension-wss-native-shell-bridge
+    desc: Extension bridges WSS tasking to native shell
+    crit: hostile
+    conf: 0.99
+    attack: T1219,T1059,T1559.001
+    scope: archive
+    for: [crx, zip, archives]
+    all:
+      - id: metadata/permission/manifest::host-permission-all-urls
+      - id: micro-behaviors/communications/http/websocket::wss-scheme
+      - id: micro-behaviors/communications/ipc/native-host::browser-extension-native-connect
+      - id: micro-behaviors/communications/ipc/native-host::native-host-execute-action
+    any:
+      - id: metadata/permission/extension-api::permission-native-messaging
+      - id: objectives/persistence/login/browser-extension::source-extension-native-messaging-permission
+
+  # Remote chrome.* reflection over the same WSS channel lets operators invoke
+  # arbitrary extension APIs by name — the browser-side half of XG-Web style
+  # control panels.
+  - id: extension-wss-reflected-api-bridge
+    desc: WSS tasks reflected chrome API calls
+    crit: hostile
+    conf: 0.98
+    attack: T1219,T1059.007,T1185
+    scope: archive
+    for: [crx, zip, archives]
+    all:
+      - id: metadata/permission/manifest::host-permission-all-urls
+      - id: micro-behaviors/communications/http/websocket::wss-scheme
+      - id: extension-api-call-task-type
+      - id: micro-behaviors/communications/http/websocket::websocket-constructor-call
+    any:
+      - id: micro-behaviors/process/inject/webextension::chrome-scripting-main-world
+      - id: micro-behaviors/communications/http/cookies::chrome-cookies-get-all
+
+  # The native host side: length-prefixed stdio is implied by the messaging
+  # role; what makes this hostile is executing operator strings through
+  # ComSpec/cmd.exe with a hidden window.
+  - id: native-messaging-comspec-command-shell
+    desc: Native host runs hidden ComSpec commands
+    crit: hostile
+    conf: 0.99
+    attack: T1059.003,T1559.001
+    for: [javascript, typescript]
+    all:
+      - id: micro-behaviors/communications/ipc/native-host::native-host-execute-action
+      - id: micro-behaviors/process/create/shell/path::shell-executable-reference
+      - id: micro-behaviors/process/create/spawn::windowshide-option
+      - id: micro-behaviors/process/create/shell/bridge::child-process-exec
+    near_bytes: 2048
+
