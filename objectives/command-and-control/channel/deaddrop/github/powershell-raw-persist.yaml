@@ -1,0 +1,107 @@
+# PowerShell stages that pull from GitHub Raw, open a decoy document, drop an
+# AppData follow-on script, and register a hidden repeating scheduled task.
+defaults:
+  platforms: [windows]
+  for: [powershell]
+  attack: T1102.001,T1053.005
+  mbc: C0002
+
+traits:
+  - id: ps-fragmented-https-scheme
+    desc: Rebuilds https scheme via string concat
+    crit: suspicious
+    conf: 0.94
+    attack: T1027
+    if:
+      type: text
+      regex: '(?i)["'']ht["'']\s*\+\s*["'']tps://["'']'
+
+  - id: ps-fragmented-https-triple
+    desc: Rebuilds https via three-part concat
+    crit: suspicious
+    conf: 0.94
+    attack: T1027
+    if:
+      type: text
+      regex: '(?i)["'']ht["'']\s*\+\s*["'']t["'']\s*\+\s*["'']ps://["'']'
+
+  - id: ps-fragmented-raw-git-host
+    desc: Rebuilds raw.git host fragment
+    crit: suspicious
+    conf: 0.95
+    attack: T1027
+    if:
+      type: text
+      regex: '(?i)["'']raw\.git["'']\s*\+\s*["'']hubusercontent\.com["'']'
+
+  - id: ps-github-token-auth-header
+    desc: Sets GitHub token Authorization header
+    crit: suspicious
+    conf: 0.93
+    attack: T1078.004
+    if:
+      type: text
+      regex: '(?i)Authorization[^\n]{0,60}token\s+gh[po]_'
+
+  - id: ps-downloadfile-pdf-decoy
+    desc: DownloadFile writes a PDF decoy
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?is)DownloadFile\([^;\n]{0,300}\.pdf'
+
+  - id: ps-appdata-ps1-stage-path
+    desc: Writes PowerShell stage under APPDATA
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)(\$env:APPDATA|AppData)[^\n]{0,80}\.ps1\b'
+
+composite_rules:
+  - id: ps-fragmented-https-any
+    desc: Fragmented HTTPS scheme construction
+    crit: suspicious
+    conf: 0.94
+    any:
+      - id: ps-fragmented-https-scheme
+      - id: ps-fragmented-https-triple
+
+  - id: ps-fragmented-github-raw-fetch
+    desc: Fragmented URL fetches GitHub Raw
+    crit: hostile
+    conf: 0.97
+    attack: T1102.001,T1027
+    all:
+      - id: ps-fragmented-https-any
+      - id: micro-behaviors/communications/http/download/webclient::webclient-download-call
+    any:
+      - id: ps-fragmented-raw-git-host
+      - id: micro-behaviors/communications/http/url/github::raw-githubusercontent-web-file
+      - id: micro-behaviors/communications/http/url/github::raw-githubusercontent-any
+    near_bytes: 2048
+
+  - id: ps-github-raw-hidden-repeating-task
+    desc: GitHub Raw persists via hidden task
+    crit: hostile
+    conf: 0.99
+    attack: T1102.001,T1053.005,T1564.003
+    all:
+      - id: micro-behaviors/communications/http/url/github::raw-githubusercontent-web-file
+      - id: micro-behaviors/os/autorun/scheduled::register-scheduledtask
+      - id: micro-behaviors/os/autorun/scheduled::scheduledtask-hidden-settings
+      - id: micro-behaviors/os/autorun/scheduled::scheduledtask-repeating-trigger
+    near_bytes: 4096
+
+  - id: ps-github-decoy-pdf-appdata-persist
+    desc: PDF decoy open with AppData persist
+    crit: hostile
+    conf: 0.98
+    attack: T1105,T1053.005,T1204.002
+    all:
+      - id: ps-downloadfile-pdf-decoy
+      - id: micro-behaviors/process/create/start-process::start-process-call
+      - id: ps-appdata-ps1-stage-path
+      - id: micro-behaviors/os/autorun/scheduled::register-scheduledtask
+    near_bytes: 4096
