@@ -102,6 +102,35 @@ traits:
     if:
       type: text
       regex: '\b\w+\(\w*\s*,\s*\w+\(\w+\)\)'
+  # Empty-arrow Function sandbox: `(()=>{})[x][x](...)` recovers Function via
+  # the prototype chain without writing the Function/globalThis tokens. When
+  # both property lookups are themselves computed (decoder calls), the form
+  # is an obfuscated globalThis discovery used by string-table remote-eval
+  # loaders rather than a plain `[].constructor.constructor` polyfill.
+  - id: empty-arrow-double-computed-constructor
+    desc: Empty arrow double computed constructor
+    crit: suspicious
+    conf: 0.96
+    attack: T1027,T1059.007
+    if:
+      type: text
+      regex: '\(\(\)\s*=>\s*\{\s*\}\)\s*\[[^\]]{1,80}\]\s*\[[^\]]{1,80}\]\s*\('
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/library/structure::js-large-minified-bundle
+  # `new(receiver[decoder(n)])(args)` — constructor identity comes from a
+  # numeric string-table lookup rather than a visible Function/eval token.
+  - id: computed-receiver-new-constructor
+    desc: new via numeric computed constructor
+    crit: suspicious
+    conf: 0.95
+    attack: T1027,T1059.007
+    if:
+      type: text
+      regex: 'new\s*\(\s*[A-Za-z_$][\w$]*\s*\[[^\]]{1,80}\]\s*\)\s*\('
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/library/structure::js-large-minified-bundle
 composite_rules:
   - id: js-large-offset-charcode-eval-loader
     desc: Packed JavaScript decoder feeds variable eval
@@ -115,6 +144,32 @@ composite_rules:
       - id: micro-behaviors/process/interpreter/eval::js-eval-variable-argument
     unless:
       - id: metadata/package/testing/
+
+  # String-table remote-eval stage: recover globalThis via empty-arrow
+  # double-constructor, then `new(globalThis[decoder(n)])(...)` inside an
+  # import-time async IIFE with a custom alphabet decoder. Plaintext never
+  # contains fetch/Function/eval; the structural shape is the signal.
+  - id: empty-arrow-computed-function-stage
+    desc: Obfuscated empty-arrow Function stage
+    crit: hostile
+    conf: 0.98
+    attack: T1027,T1059.007
+    mbc: B0032,B0009.016
+    scope: leaf
+    near_bytes: 4096
+    all:
+      - id: empty-arrow-double-computed-constructor
+      - id: computed-receiver-new-constructor
+      - id: micro-behaviors/data/source/property/computed::js-numeric-indexed-computed-call
+      - id: micro-behaviors/data/control-flow/module-exec::async-iife-invoke
+    any:
+      - id: micro-behaviors/data/decode/custom::fromcharcode-apply-array
+      - id: micro-behaviors/data/encode/char-code::fromcharcode-call
+      - id: micro-behaviors/data/decode/custom::js-alphabet-indexof-lookup
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: well-known/tool/detection/security-scanner/
+      - id: well-known/tool/detection/llm-scanner/
 
   - id: char-permutation-reassembler
     desc: Character permutation reassembler
