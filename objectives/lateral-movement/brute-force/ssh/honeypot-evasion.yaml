@@ -1,0 +1,103 @@
+# SSH scanners that skip analysis honeypots before delivering a payload.
+# The probe is filesystem-shaped: literal paths for Cowrie/Kippo layouts and
+# a post-login `cat /proc/version` + `/proc/1/cmdline` fingerprint. Matching
+# English words like "honeypot" is deliberately avoided.
+defaults:
+  platforms: [unix, android]
+  for: [c, cpp, go, rust, elf, shell, python]
+  attack: T1110.001,T1497.001
+  mbc: B0013
+
+traits:
+  - id: cowrie-opt-install-path
+    desc: Cowrie honeypot /opt install path
+    crit: component
+    conf: 0.94
+    if:
+      type: text
+      substr: /opt/cowrie
+
+  - id: cowrie-home-path
+    desc: Cowrie honeypot home directory path
+    crit: component
+    conf: 0.94
+    if:
+      type: text
+      substr: /home/cowrie
+
+  - id: kippo-home-path
+    desc: Kippo honeypot home directory path
+    crit: component
+    conf: 0.94
+    if:
+      type: text
+      substr: /home/kippo
+
+  - id: ssh-honeypot-banner-paramiko
+    desc: Paramiko SSH honeypot banner token
+    crit: component
+    conf: 0.9
+    if:
+      type: string_literal
+      exact: SSH-2.0-paramiko
+
+  - id: ssh-honeypot-banner-cowrie
+    desc: Cowrie SSH honeypot banner token
+    crit: component
+    conf: 0.92
+    if:
+      type: string_literal
+      regex: '(?i)^SSH-2\.0-.*[Cc]owrie'
+
+  - id: ssh-honeypot-banner-kippo
+    desc: Kippo SSH honeypot banner token
+    crit: component
+    conf: 0.92
+    if:
+      type: string_literal
+      regex: '(?i)^SSH-2\.0-.*[Kk]ippo'
+
+  - id: post-login-proc-version-probe
+    desc: Post-login /proc/version fingerprint probe
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      # Scanner issues this over the SSH session after auth.
+      regex: 'cat\s+/proc/version\b.{0,80}/proc/1/cmdline'
+
+composite_rules:
+  - id: ssh-honeypot-filesystem-probe
+    desc: Probes Cowrie/Kippo honeypot filesystem paths
+    crit: suspicious
+    conf: 0.95
+    attack: T1497.001
+    any:
+      - id: cowrie-opt-install-path
+      - id: cowrie-home-path
+      - id: kippo-home-path
+    needs: 2
+    near_bytes: 400
+
+  - id: ssh-honeypot-banner-blocklist
+    desc: Carries a multi-family SSH honeypot banner blocklist
+    crit: suspicious
+    conf: 0.94
+    attack: T1497.001
+    any:
+      - id: ssh-honeypot-banner-paramiko
+      - id: ssh-honeypot-banner-cowrie
+      - id: ssh-honeypot-banner-kippo
+    needs: 2
+
+  - id: ssh-scanner-honeypot-evasion
+    desc: SSH brute scanner skips honeypots before payload delivery
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: ssh-honeypot-filesystem-probe
+    any:
+      - id: ssh-honeypot-banner-blocklist
+      - id: post-login-proc-version-probe
+      - id: objectives/lateral-movement/brute-force/ssh::embedded-ssh-credential-set
+      - id: objectives/command-and-control/remote-command/dispatch::bot-verb-ssh-group
