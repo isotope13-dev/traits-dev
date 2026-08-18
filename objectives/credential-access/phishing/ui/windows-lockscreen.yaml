@@ -1,0 +1,76 @@
+# Fake Windows lock-screen credential phishing UI.
+# Harvests passwords from a fullscreen always-on-top window populated with the
+# real display name / account picture, then exfiltrates captures (commonly to
+# a cloud dead-drop). Does not validate the entered password against Windows.
+defaults:
+  platforms: [windows]
+  for: [python, scripts]
+  attack: T1056.002,T1556
+  mbc: B0030
+
+traits:
+  - id: getusernameex-api
+    desc: Reads extended username via GetUserNameEx
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\bGetUserNameEx[AW]?\b'
+
+  - id: account-pictures-path
+    desc: Windows AccountPictures profile photo path
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)Microsoft\\Windows\\AccountPictures'
+
+  - id: windows-lockscreen-password-incorrect
+    desc: Windows lock-screen incorrect-password message
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      # Exact Windows lock-screen retry copy; keep structure-bound, not prose.
+      substr: 'The password is incorrect. Try again.'
+
+composite_rules:
+  - id: tkinter-fullscreen-credential-overlay
+    desc: Fullscreen topmost Tkinter credential overlay
+    crit: suspicious
+    conf: 0.94
+    for: [python]
+    all:
+      - id: micro-behaviors/ui/window/manage/visibility::tkinter-fullscreen
+      - id: micro-behaviors/ui/window/manage/visibility::tkinter-topmost
+    any:
+      - id: micro-behaviors/ui/window/manage/visibility::tkinter-overrideredirect
+      - id: micro-behaviors/ui/framework/tkinter::tkinter-init
+
+  - id: fake-windows-lockscreen-credential-harvest
+    desc: Fake Windows lock screen harvests credentials
+    crit: hostile
+    conf: 0.97
+    for: [python]
+    near_bytes: 12000
+    all:
+      - id: tkinter-fullscreen-credential-overlay
+      - id: windows-lockscreen-password-incorrect
+    any:
+      - id: getusernameex-api
+      - id: account-pictures-path
+
+  - id: fake-windows-lockscreen-cloud-exfil
+    desc: Fake lock screen uploads passwords over HTTP
+    crit: hostile
+    conf: 0.98
+    for: [python]
+    near_bytes: 14000
+    all:
+      - id: fake-windows-lockscreen-credential-harvest
+    any:
+      - id: micro-behaviors/communications/http/oauth::microsoft-graph
+      - id: micro-behaviors/communications/http/lib/urllib::urllib-request-data-body
+      - id: micro-behaviors/communications/http/lib/requests::requests-put
+      - id: micro-behaviors/communications/http/lib/requests::requests-post
+      - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-call
