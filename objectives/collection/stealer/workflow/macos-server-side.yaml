@@ -1,0 +1,154 @@
+# MacSync / AMOS-adjacent macOS stealer handoff and loader shapes.
+#
+# Huntress documented MacSync as a six-stage kit whose durable artifacts are
+# not hashes (the outer zsh wrapper is per-build polymorphic) but request and
+# path shapes: a gzip+Base64 eval loader, curl|/osascript from /dynamic?txd=,
+# a fixed /tmp/osalogging.zip loot handoff uploaded via /gate?buildtxd=, a
+# /tmp/macsync_*.lock mutex, ~/.local/.mpwd for the RAT, and a LaunchAgented
+# ~/.local/com.apple.<id>.hcpi drop. Match those structures — not lure prose.
+defaults:
+  platforms: [macos]
+  for: [shell, applescript, macho]
+  attack: T1059.004,T1105,T1041
+  mbc: B0028
+
+traits:
+  - id: osalogging-zip-path
+    desc: /tmp/osalogging.zip stealer loot archive
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: text
+      substr: /tmp/osalogging.zip
+
+  - id: macsync-lock-dir
+    desc: /tmp/macsync_ single-instance lock path
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)/tmp/macsync_'
+
+  - id: local-mpwd-path
+    desc: ~/.local/.mpwd stolen-password handoff file
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)(~|/)\.local/\.mpwd\b|\.local/\.mpwd\b'
+
+  - id: apple-masquerade-hcpi-path
+    desc: ~/.local/com.apple.*.hcpi RAT drop path
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: '(?i)\.local/com\.apple\.[A-Za-z0-9]+\.hcpi\b'
+
+  - id: dynamic-txd-endpoint
+    desc: /dynamic?txd= server-side payload endpoint
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)/dynamic\?txd='
+
+  - id: gate-buildtxd-endpoint
+    desc: /gate?buildtxd= chunked loot upload endpoint
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)/gate\?buildtxd='
+
+  - id: curl-pipe-osascript
+    desc: curl piped into osascript execution
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: '(?i)curl\b[^\n]{0,200}\|\s*osascript\b'
+
+  - id: capture-agent-tcc-only
+    desc: Screen-capture helper --tcc-only flag
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)--tcc-only\b'
+
+  - id: tmp-sync-staging-prefix
+    desc: /tmp/sync* stealer staging directory prefix
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)/tmp/sync[0-9A-Za-z_-]*'
+
+composite_rules:
+  # Stage-2 bridge: dynamic AppleScript fetch piped to osascript plus the fixed
+  # loot archive path the server-side stealer writes for upload.
+  - id: dynamic-osascript-osalogging-bridge
+    desc: Server-side osascript stealer loot bridge
+    crit: hostile
+    conf: 0.97
+    attack: T1059.002,T1105,T1074.001
+    all:
+      - id: curl-pipe-osascript
+      - id: osalogging-zip-path
+    any:
+      - id: dynamic-txd-endpoint
+      - id: gate-buildtxd-endpoint
+    near_bytes: 8192
+
+  # Chunked PUT of the fixed loot archive to the gated upload endpoint.
+  - id: osalogging-gate-chunked-exfil
+    desc: Chunked /gate upload of osalogging.zip
+    crit: hostile
+    conf: 0.97
+    attack: T1041,T1560.001
+    all:
+      - id: osalogging-zip-path
+      - id: gate-buildtxd-endpoint
+    any:
+      - id: micro-behaviors/communications/http/curl::curl-data-binary-file
+      - id: micro-behaviors/communications/http/upload::curl-data-binary
+      - id: micro-behaviors/communications/http/upload::curl-data-binary-stdin
+      - id: micro-behaviors/communications/http/request/result::http-curl-put-request
+      - id: micro-behaviors/communications/http/request/result::http-put-option
+    near_bytes: 4096
+
+  # Password handoff file beside a masqueraded com.apple.*.hcpi implant.
+  - id: local-mpwd-hcpi-rat-drop
+    desc: .mpwd password file with com.apple hcpi RAT
+    crit: hostile
+    conf: 0.98
+    attack: T1552.001,T1036.005,T1543.001
+    all:
+      - id: local-mpwd-path
+      - id: apple-masquerade-hcpi-path
+    near_bytes: 4096
+
+  # Family mutex + fixed loot archive: MacSync-class staging fingerprint.
+  - id: macsync-lock-osalogging-staging
+    desc: macsync lock with osalogging.zip staging
+    crit: suspicious
+    conf: 0.95
+    attack: T1074.001
+    all:
+      - id: macsync-lock-dir
+      - id: osalogging-zip-path
+    near_bytes: 8192
+
+  # Full stage-2/3 handoff: dynamic fetch, loot path, and gated upload.
+  - id: macos-server-side-stealer-handoff
+    desc: Server-side stealer dynamic fetch and gate exfil
+    crit: hostile
+    conf: 0.98
+    attack: T1059.002,T1041,T1105
+    all:
+      - id: dynamic-txd-endpoint
+      - id: curl-pipe-osascript
+      - id: osalogging-zip-path
+      - id: gate-buildtxd-endpoint
+    near_bytes: 8192
