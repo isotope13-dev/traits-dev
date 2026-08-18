@@ -133,6 +133,95 @@ traits:
       exact: System.pdb
       case_insensitive: true
 
+  # Self-contained `dotnet publish` copies Microsoft framework facades without
+  # Authenticode. Their version resource still carries the coherent Microsoft
+  # .NET identity (company + product + System.*/mscorlib/netstandard original
+  # filename). SuppressIldasmAttribute in those assemblies is CLR metadata
+  # surface, not anti-decompilation.
+  - id: microsoft-dotnet-product-name
+    desc: Microsoft .NET product version identity
+    crit: notable
+    platforms: [windows]
+    for: [pe, dll]
+    if:
+      type: value
+      path: pe.version.product_name
+      exact: Microsoft® .NET
+  - id: microsoft-dotnet-company-name
+    desc: Microsoft Corporation company version identity
+    crit: notable
+    platforms: [windows]
+    for: [pe, dll]
+    if:
+      type: value
+      path: pe.version.company
+      exact: Microsoft Corporation
+  - id: microsoft-dotnet-system-assembly-original
+    desc: Microsoft System/mscorlib original filename
+    crit: notable
+    platforms: [windows]
+    for: [pe, dll]
+    if:
+      type: value
+      path: pe.version.original_filename
+      regex: '(?i)^(System(\.[A-Za-z0-9.]+)?|mscorlib|netstandard)\.dll$'
+
+  # dbgshim is shipped in every Microsoft.NETCore.App.Runtime pack and in
+  # self-contained publishes. It opens /proc/%lu/mem while attaching the
+  # managed debugger — process inspection for debugging, not scraping.
+  - id: dbgshim-so-basename
+    desc: .NET dbgshim native helper basename
+    crit: notable
+    platforms: [unix]
+    for: [elf, so]
+    size_min: 50000
+    size_max: 10000000
+    if:
+      type: basename
+      regex: '^libdbgshim\.so(\.[0-9]+)?$'
+  - id: dbgshim-dll-basename
+    desc: .NET dbgshim Windows helper basename
+    crit: notable
+    platforms: [windows]
+    for: [pe, dll]
+    size_min: 50000
+    size_max: 10000000
+    if:
+      type: basename
+      exact: dbgshim.dll
+      case_insensitive: true
+  - id: dbgshim-create-debugging-export
+    desc: .NET dbgshim CreateDebuggingInterface export
+    crit: notable
+    platforms: [unix, windows]
+    for: [elf, so, pe, dll]
+    if:
+      type: export
+      regex: '^CreateDebuggingInterfaceFromVersion(2|Ex)?$'
+
+  # CoreCLR / JIT / DAC natives embed the same /proc/%lu/mem printf path for
+  # dump and debugger support. Basename alone is forgeable; pair with the
+  # CoreCLR version banner that ships in Microsoft runtime packs.
+  - id: coreclr-runtime-native-so-basename
+    desc: .NET CoreCLR native runtime library basename
+    crit: notable
+    platforms: [unix]
+    for: [elf, so]
+    size_min: 50000
+    size_max: 50000000
+    if:
+      type: basename
+      regex: '^lib(coreclr|clrjit|dbgshim|mscorda)'
+  - id: coreclr-version-banner
+    desc: CoreCLR version banner string
+    crit: notable
+    platforms: [unix, windows]
+    for: [elf, so, pe, dll]
+    if:
+      type: text
+      substr: 'CoreCLR Version:'
+      section: .rodata
+
 composite_rules:
   - id: aspnetcore-crypto-runtime
     desc: ASP.NET Core cryptography runtime libraries
@@ -180,3 +269,34 @@ composite_rules:
       - id: dotnet-framework-system-original-name
       - id: dotnet-framework-system-description
       - id: dotnet-framework-system-pdb
+  - id: microsoft-dotnet-framework-facade-context
+    desc: Unsigned Microsoft .NET framework facade assembly context
+    crit: exception
+    conf: 0.99
+    platforms: [windows]
+    for: [pe, dll]
+    all:
+      - id: microsoft-dotnet-product-name
+      - id: microsoft-dotnet-company-name
+      - id: microsoft-dotnet-system-assembly-original
+  - id: dotnet-dbgshim-runtime-context
+    desc: Official .NET dbgshim runtime helper context
+    crit: exception
+    conf: 0.99
+    platforms: [unix, windows]
+    for: [elf, so, pe, dll]
+    all:
+      - id: dbgshim-create-debugging-export
+    any:
+      - id: dbgshim-so-basename
+      - id: dbgshim-dll-basename
+  - id: dotnet-coreclr-native-runtime-context
+    desc: Official .NET CoreCLR native runtime context
+    crit: exception
+    conf: 0.99
+    platforms: [unix]
+    for: [elf, so, archives]
+    scope: outer
+    all:
+      - id: coreclr-runtime-native-so-basename
+      - id: coreclr-version-banner
