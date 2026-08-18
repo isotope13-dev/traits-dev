@@ -1,0 +1,75 @@
+# Kernel32 loader API stack-string resolution.
+#
+# Loaders hide CreateProcessW / VirtualProtectEx / LoadLibraryExA by building
+# the names on the stack (often as run-on concatenations such as
+# MapViewOfFileCreateProcessW). Legitimate PEs import these via the IAT; a
+# stack-only surface plus GetProcAddress is the classic hidden-API pattern.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  attack: "T1027.007"
+  mbc: "B0032"
+
+traits:
+  - id: stack-mapview-createprocess-runon
+    desc: MapViewOfFile+CreateProcessW run-on stack string
+    crit: notable
+    conf: 0.97
+    if:
+      type: text
+      substr: MapViewOfFileCreateProcessW
+
+  - id: stack-virtualprotectex-name
+    desc: VirtualProtectEx name without IAT import
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      substr: VirtualProtectEx
+    unless:
+      - type: symbol
+        exact: VirtualProtectEx
+      - type: import
+        exact: VirtualProtectEx
+
+  - id: stack-loadlibraryexa-name
+    desc: LoadLibraryExA name without IAT import
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      substr: LoadLibraryExA
+    unless:
+      - type: symbol
+        exact: LoadLibraryExA
+      - type: import
+        exact: LoadLibraryExA
+
+composite_rules:
+  - id: kernel32-loader-api-stack-cluster
+    desc: Kernel32 loader APIs built as stack strings
+    crit: suspicious
+    conf: 0.97
+    needs: 2
+    any:
+      - id: stack-mapview-createprocess-runon
+      - id: stack-virtualprotectex-name
+      - id: stack-loadlibraryexa-name
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/installer/family/
+
+  - id: hidden-kernel32-loader-api-resolution
+    desc: Kernel32 loader APIs resolved via stack strings not IAT
+    crit: hostile
+    conf: 0.97
+    attack: "T1027.007,T1106"
+    all:
+      - id: kernel32-loader-api-stack-cluster
+      - id: micro-behaviors/os/module/load::get-proc-address-import
+      - id: micro-behaviors/data/embedded/payload/header::pe-e-lfanew-read-x64
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/installer/family/
+      # Do not exclude on metadata/binary/framework/: native MSVC CRT embeds
+      # mscoree.dll for CorExitProcess and falsely trips mscoree-name.
