@@ -1,0 +1,132 @@
+# Google Drive as a living-off-trusted-services (LOTS) command channel.
+# DriveSilkRAT-style implants poll a shared Drive folder for tasking, execute
+# locally, and upload results to the same folder. Detection keys on the Drive
+# API surface plus two-way file traffic and process execution — not on folder
+# IDs, service-account emails, or one campaign mutex name.
+defaults:
+  platforms: [unix, windows]
+  for: [scripts, binaries]
+  attack: T1102.002,T1071.001,T1059
+  mbc: B0030
+
+traits:
+  - id: googleapis-drive-files-endpoint
+    desc: Google Drive files API endpoint
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)googleapis\.com/(upload/)?drive/v[0-9]+/files\b'
+
+  - id: google-drive-files-list-call
+    desc: Lists Google Drive files for tasking
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\b(files\.list|drive\.files\.list)\s*\('
+
+  - id: google-drive-files-get-call
+    desc: Google Drive files.get API call
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\b(files\.get|drive\.files\.get)\s*\('
+
+  - id: google-drive-alt-media-param
+    desc: Drive download alt=media parameter
+    crit: component
+    conf: 0.88
+    if:
+      type: text
+      regex: '(?i)\balt\s*[:=]\s*["'']media["'']'
+
+  - id: google-drive-files-create-upload
+    desc: Creates or uploads a Google Drive file
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\b(files\.create|drive\.files\.create|files\.update)\s*\('
+
+  - id: google-drive-js-client
+    desc: googleapis Drive client construction
+    crit: notable
+    conf: 0.88
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '(?i)\bgoogle\.drive\s*\(\s*\{[^}]{0,80}version\s*:'
+
+  - id: google-drive-single-instance-mutex
+    desc: Google Drive single-instance mutex name
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: text
+      regex: '(?i)Global\\+GoogleDrive_ONE\b'
+
+composite_rules:
+  - id: google-drive-files-get-media
+    desc: Downloads Google Drive file media content
+    crit: notable
+    conf: 0.92
+    all:
+      - id: google-drive-files-get-call
+      - id: google-drive-alt-media-param
+    near_bytes: 160
+
+  - id: google-drive-api-client-surface
+    desc: Google Drive API client surface
+    crit: notable
+    conf: 0.93
+    any:
+      - id: googleapis-drive-files-endpoint
+      - id: google-drive-js-client
+      - id: micro-behaviors/communications/http/services/google::googleapis-drive
+      - id: micro-behaviors/communications/http/services/google::google-drive-auth-scope
+    needs: 2
+
+  - id: google-drive-polled-two-way-channel
+    desc: Polled two-way Google Drive tasking channel
+    crit: hostile
+    conf: 0.98
+    attack: T1102.002,T1071.001
+    all:
+      - id: google-drive-api-client-surface
+      - id: google-drive-files-list-call
+      - id: google-drive-files-create-upload
+    any:
+      - id: google-drive-files-get-media
+      - id: googleapis-drive-files-endpoint
+    near_bytes: 12000
+
+  - id: google-drive-command-execution
+    desc: Google Drive channel with process execution
+    crit: hostile
+    conf: 0.99
+    attack: T1102.002,T1059
+    all:
+      - id: google-drive-polled-two-way-channel
+    any:
+      - id: micro-behaviors/process/create/shell/bridge::execSync-call
+      - id: micro-behaviors/process/create/shell/bridge::js-execsync
+      - id: micro-behaviors/process/create/shell/bridge::execSync-dynamic-command
+      - id: micro-behaviors/process/create/shell/local::node-exec-command-variable
+      - id: micro-behaviors/process/create/subprocess::run-ast
+      - id: micro-behaviors/process/create/shell/script-host::cmd-exe-c-command
+      - id: micro-behaviors/process/create/direct::exec-command
+    near_bytes: 12000
+
+  - id: google-drive-lots-mutex-channel
+    desc: Google Drive LOTS channel with Drive mutex
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: google-drive-single-instance-mutex
+      - id: google-drive-api-client-surface
+    any:
+      - id: google-drive-files-list-call
+      - id: google-drive-files-create-upload
+      - id: google-drive-polled-two-way-channel
