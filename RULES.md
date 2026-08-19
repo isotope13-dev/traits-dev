@@ -163,14 +163,16 @@ traits:
 
 **Field override:** List fields such as `for` and `platforms` must resolve to concrete supported values. Do not use `[none]`; the validator requires every trait and composite to target at least one file type.
 
-**File types:** `elf`, `macho`, `pe`, `dll`, `so`, `dylib`, `pyc`, `shell`, `batch`, `jcl`, `python`, `javascript`, `typescript`, `rust`, `java`, `class`, `ruby`, `c`, `cpp`, `go`, `csharp`, `php`, `perl`, `powershell`, `lua`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir`, `vbs`, `html`, `applescript`, `package.json`, `package-lock.json`, `json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `plist`, `ipa`, `rtf`, `lnk`, `jpeg`, `png`, `pkginfo`, `pickle`, `pdf`, `oledoc`, `ooxml`, `systemd-service`, `desktop-entry`, `zip`, `tar`, `npm`, `whl`, `python-sdist`, `egg`, `gem`, `nupkg`, `crate`, `conda`, `deb`, `rpm`, `apk`, `jar`, `crx`, `xpi`, `vsix`, `chm`, `static-lib` (a `.a` Unix static library — native object code; scanned as a binary blob, in the `binaries` group).
+**File types:** `elf`, `macho`, `pe`, `dll`, `so`, `dylib`, `pyc`, `dex`, `wasm`, `beam`, `shell`, `batch`, `jcl`, `python`, `javascript`, `typescript`, `rust`, `java`, `class`, `ruby`, `c`, `cpp`, `go`, `csharp`, `php`, `perl`, `powershell`, `lua`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir`, `vbs`, `html`, `applescript`, `package.json`, `package-lock.json`, `json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `plist`, `ipa`, `rtf`, `lnk`, `jpeg`, `png`, `pkginfo`, `pickle`, `pdf`, `oledoc`, `msi`, `ooxml`, `iso`, `registry`, `systemd-service`, `desktop-entry`, `zip`, `tar`, `npm`, `whl`, `python-sdist`, `egg`, `gem`, `nupkg`, `crate`, `conda`, `deb`, `rpm`, `apk`, `jar`, `crx`, `xpi`, `vsix`, `chm`, `static-lib` (a `.a` Unix static library — native object code; scanned as a binary blob, in the `binaries` group).
 
 **Aliases** (resolved to the canonical type):
 
 | Alias | Resolves to | Format |
 |-------|-------------|--------|
 | `doc`, `xls`, `ppt`, `msg`, `ole` | `oledoc` | Legacy Microsoft Office (OLE2/CFBF) |
+| `msi`, `msp`, `mst`, `msm` | `msi` | Windows Installer (OLE2/CFBF installer — not a document) |
 | `docx`, `xlsx`, `pptx`, `docm`, `xlsm`, `pptm` | `ooxml` | Modern Microsoft Office (OOXML/ZIP) |
+| `dex`, `dalvik` | `dex` | Dalvik/ART executable bytecode |
 
 **Platforms:** `linux`, `macos`, `windows`, `unix`, `android`, `ios`, `all`.
 
@@ -180,7 +182,7 @@ traits:
 
 | Group | Members |
 |-------|---------|
-| `binaries` | `elf`, `macho`, `pe`, `dylib`, `so`, `dll`, `class`, `pyc`, `wasm`, `static-lib` |
+| `binaries` | `elf`, `macho`, `pe`, `dylib`, `so`, `dll`, `class`, `pyc`, `beam`, `wasm`, `dex`, `static-lib` |
 | `scripts` | `shell`, `batch`, `jcl`, `python`, `javascript`, `ruby`, `php`, `perl`, `lua`, `powershell`, `applescript`, `vbs` |
 | `source` | `typescript`, `rust`, `java`, `c`, `cpp`, `go`, `csharp`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir` |
 | `manifests` | `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `pkginfo`, `plist`, `lnk`, `systemd-service`, `desktop-entry` |
@@ -188,7 +190,7 @@ traits:
 | `media` | `jpeg`, `png` |
 | `data` | `json`, `ipa`, `text`, opaque `data` |
 
-Use groups instead of listing 9 or more individual types (up to 8 explicit types is accepted — a hand-picked spread across groups that no single named group expresses). `for: [all]` is no longer valid — combine groups explicitly (e.g., `for: [binaries, scripts]`) or use specific types.
+Use groups instead of listing 9 or more individual types (up to 8 explicit types is accepted — a hand-picked spread across groups that no single named group expresses). `for: [all]` is a soft validation issue — the rule still loads and matches, but authors must name concrete types or combine groups explicitly (e.g., `for: [binaries, scripts]`). Use `for: [msi]`, `for: [iso]`, or `for: [registry]` for those first-class types; do not work around them with `all`.
 
 ### Platform Auto-Filtering
 
