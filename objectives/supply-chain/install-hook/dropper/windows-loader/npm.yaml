@@ -1,0 +1,99 @@
+# Install-hook Windows loader dropper (StubMaker-class npm rewrite).
+# A lifecycle script XOR-decodes a config blob, optionally beacons the host
+# platform over HTTP, then materializes a Windows EXE under the user Downloads
+# folder and launches it. Technique class — not campaign-string gated.
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript]
+  attack: T1195.002,T1105
+  mbc: B0024
+
+traits:
+  - id: homedir-downloads-path
+    desc: Joins home directory with Downloads
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)homedir\s*\([^)]{0,12}\).{0,40}Downloads'
+
+  - id: downloads-folder-exe
+    desc: References an EXE under Downloads
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)Downloads.{0,40}\.exe'
+
+  - id: platform-json-stringify
+    desc: JSON-serializes a platform field
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: 'JSON\.stringify\s*\(\s*\{[^}]{0,120}\bplatform\b'
+
+  - id: vote-http-path
+    desc: HTTP client uses path /vote
+    crit: component
+    conf: 0.88
+    if:
+      type: text
+      regex: '(?i)path\s*:\s*["'']/vote["'']'
+
+composite_rules:
+  - id: homedir-downloads-exe
+    desc: Stages an EXE under user Downloads
+    crit: suspicious
+    conf: 0.94
+    attack: T1105
+    near_lines: 4
+    all:
+      - id: homedir-downloads-path
+      - id: downloads-folder-exe
+
+  - id: install-hook-platform-vote-beacon
+    desc: Install hook POSTs platform JSON to /vote
+    crit: suspicious
+    conf: 0.96
+    attack: T1195.002,T1041
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/hook-file::hook-script-filename
+      - id: platform-json-stringify
+      - id: vote-http-path
+      - id: micro-behaviors/communications/http/request/client::post-method-text
+
+  - id: xor-decoded-downloads-exe-loader
+    desc: XOR-decoded config stages Downloads EXE
+    crit: suspicious
+    conf: 0.96
+    attack: T1027,T1105
+    all:
+      - id: homedir-downloads-exe
+      - id: micro-behaviors/crypto/symmetric/xor/loop::xor-modulo-key-loop
+    any:
+      - id: micro-behaviors/data/encode/char-code::fromcharcode-xor-rebuild
+      - id: micro-behaviors/data/decode/xor::charcode-modulo-key-index
+      - id: micro-behaviors/data/encode/xor::js-xor-decoder-ast
+
+  - id: install-hook-xor-downloads-exe-dropper
+    desc: Install hook XOR-decodes then drops Downloads EXE
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002,T1027,T1105,T1059
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/hook-file::hook-script-filename
+      - id: xor-decoded-downloads-exe-loader
+      - id: objectives/command-and-control/dropper/delivery/download-execute::node-remote-file-materialization
+      - id: micro-behaviors/process/create/spawn::detached-true
+
+  - id: npm-postinstall-xor-windows-loader
+    desc: npm postinstall XOR-decodes Windows loader dropper
+    crit: hostile
+    conf: 0.99
+    for: [javascript, typescript, package.json, npm, archives]
+    scope: archive
+    attack: T1195.002,T1027,T1105
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::postinstall-hook-declaration
+      - id: install-hook-xor-downloads-exe-dropper
