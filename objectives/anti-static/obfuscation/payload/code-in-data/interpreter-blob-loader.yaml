@@ -18,10 +18,14 @@ defaults:
 
 traits:
   # The decompressed bytes are passed straight to eval()/exec() — runtime code
-  # materialized from a compressed payload. No benign use (an executed decompress
-  # output is always an unpack-and-run loader), so this is an objective-tier atom,
-  # not a neutral capability. Covers python/ruby/node `*.decompress(...)`; PHP's
-  # gz*(eval(...)) form is handled by the multi-layer php-packed-eval-stager.
+  # materialized from a compressed payload. It is an obfuscation technique rather
+  # than a neutral capability (the source form of the executed code is never
+  # visible), which is why it sits in an objective directory — but it is NOT
+  # unique to malware: script self-packers such as `pyminifier --gzip` emit
+  # exactly this line for benign programs, so the atom stays notable and the
+  # composites below supply the intent. Covers python/ruby/node
+  # `*.decompress(...)`; PHP's gz*(eval(...)) form is handled by the multi-layer
+  # php-packed-eval-stager.
   - id: exec-of-decompressed
     desc: eval/exec of decompressed bytes
     crit: notable
@@ -48,20 +52,29 @@ composite_rules:
       - id: micro-behaviors/data/compress/library::decompress-decoded-to-text
       - id: micro-behaviors/fs/file/extension::data-blob-extension
 
-  # === HOSTILE: decompressed payload is executed (host-agnostic) =============
-  # eval/exec of decompressed bytes is an unpack-and-run loader with no benign
-  # use — fires regardless of host language or any extension masquerade, catching
-  # non-disguised droppers that actually execute the unpacked stage. (The
-  # print()-only SiteGuarding stub has no exec sink and is caught by the
-  # masquerade / code-as-data composites instead.)
+  # === SUSPICIOUS: script body shipped as an embedded compressed blob ========
+  # The executed bytes are decompressed from data that was itself text-encoded
+  # (base64/hex) in the same file — the packed-loader shape, where a script's
+  # real body is a literal blob rather than readable source. Host-agnostic, so it
+  # catches the same trick in python/ruby/node/perl/lua.
+  #
+  # NOT hostile: script self-packers (`pyminifier --gzip` and the many
+  # copy-pasted zlib+base64 wrappers) emit this exact form for ordinary programs,
+  # so "no legitimate use" does not hold, and the two-leg form measured only 1.7
+  # precision against the >= 3.5 hostile bar. cleave decodes the blob and analyses
+  # the unpacked source as its own layer, so a genuinely malicious payload is
+  # still convicted by its own behaviour rather than by the wrapper.
+  #
+  # (The earlier `all: [exec-of-decompressed, script-decompress-call]` form was
+  # also a tautology: a decompress call is what the first leg already matches.)
   - id: decompressed-code-executed
-    desc: Executes runtime-decompressed code
-    crit: hostile
-    conf: 0.97
-    attack: T1140,T1059
+    desc: Executes code unpacked from an embedded compressed blob
+    crit: suspicious
+    conf: 0.93
+    attack: T1027,T1140
     all:
       - id: exec-of-decompressed
-      - id: micro-behaviors/data/compress/library::script-decompress-call
+      - id: micro-behaviors/data/decode/base64::base64-decoding
 
   # === SUSPICIOUS: opaque-blob decompressor stub (host-agnostic) =============
   # A whole-file one-liner that decompresses an opaque data-extension blob and
