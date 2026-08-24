@@ -23,18 +23,34 @@ traits:
       type: text
       regex: 'blkdiscard\b[^\n]{0,40}/dev/[a-z]'
 
-  # Bare device variable only (`of=$disk`), not regular-file writes like
-  # `of="$tmpdir/big"` used by quota/tmpfs harnesses.
-  - id: dd-zero-to-shell-var
-    desc: dd zeros into a shell variable path
+  # Require the variable name itself to identify a device. A bare variable is
+  # not evidence of one: repository tests use names such as `$HASH1FILE` while
+  # deliberately corrupting a small regular file with count=1/conv=notrunc.
+  - id: dd-zero-to-device-var
+    desc: dd zero-fills device-named shell variable
     crit: suspicious
     conf: 0.9
     for: [shell]
     if:
       type: text
-      regex: 'dd\s+if=/dev/zero\s+of=["'']?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?["'']?(\s|$)'
+      regex: 'dd\s+if=/dev/zero\s+of=["'']?\$\{?\w*(dev|disk|drive|swap)\w*\}?["'']?'
+      case_insensitive: true
+      not:
+        - regex: '\$\{?\w*file\w*\}?'
     unless:
       - id: well-known/tool/detection/agent-glovebox::archive-context
+
+  # A short loop variable may still hold a device enumerated elsewhere in the
+  # script. Keep the write as a component so only the device-target composite
+  # assigns malicious intent; regular-file test corruption is not suspicious.
+  - id: dd-zero-to-shell-var
+    desc: dd zero-fills shell variable output
+    crit: component
+    conf: 0.9
+    for: [shell]
+    if:
+      type: text
+      regex: 'dd\s+if=/dev/zero\s+of=["'']?\$\{?\w+\}?["'']?'
 
   - id: xargs-dd-urandom-pipeline
     desc: xargs piping to dd urandom wiper
@@ -197,7 +213,7 @@ composite_rules:
       - id: dd-random
       - id: shred-dev
       - id: blkdiscard-dev
-      - id: dd-zero-to-shell-var
+      - id: dd-zero-to-device-var
       - id: xargs-dd-urandom-pipeline
       - id: go-openfile-block-dev
       - id: rust-open-block-dev
@@ -218,7 +234,9 @@ composite_rules:
       - id: metadata/file/policy/identity::enforced-dangerous-action-approval
     all:
       - id: block-device-target
+    any:
       - id: block-device-destructive
+      - id: dd-zero-to-shell-var
 
   - id: freebsd-geom-dd-wiper
     desc: Wipes FreeBSD disks enumerated by geom
