@@ -4,21 +4,35 @@ defaults:
   attack: T1127.001
 
 traits:
-  - id: batch-msbuild-exe-path
-    desc: Batch invokes MSBuild.exe by framework path
-    crit: component
-    conf: 0.94
+  - id: batch-msbuild-script-input
+    desc: MSBuild receives a batch script
+    crit: suspicious
+    conf: 0.97
     if:
       type: text
-      regex: '(?i)\\Microsoft\.NET\\Framework(64)?\\v[0-9.]+\\MSBuild\.exe\b'
+      regex: '(?i)\bMSBuild\.exe["'']?\s+(["''][^"''\r\n]{0,200}\.(cmd|bat)["'']|["'']?%~f0["'']?)'
 
-  - id: batch-msbuild-project-argument
-    desc: Batch passes project file to MSBuild
+  # Hybrid batch/XML loaders use MSBuild property syntax to decode an embedded
+  # managed image and instantiate it directly in the build process. Requiring
+  # the Assembly.Load, Base64 decode, and chained CreateInstance calls avoids
+  # treating ordinary custom MSBuild tasks or standalone codecs as loaders.
+  - id: msbuild-property-assembly-load
+    desc: MSBuild property loads managed assembly
+    crit: suspicious
+    conf: 0.98
+    for: [batch, xml]
+    if:
+      type: text
+      regex: '(?i)\$\(\s*\[System\.Reflection\.Assembly\]\s*::\s*Load\s*\('
+
+  - id: chained-create-instance-fragment
+    desc: Chained CreateInstance call fragment
     crit: component
     conf: 0.9
+    for: [batch, xml]
     if:
       type: text
-      regex: '(?i)\bMSBuild\.exe\s+[^\r\n]{0,120}\.(csproj|vbproj|xml)\b'
+      substr: ')).CreateInstance('
 
   - id: batch-msbuild-shellcode-template-comment
     desc: Batch labels MSBuild shellcode template
@@ -29,11 +43,49 @@ traits:
       regex: '(?i)(shellcode\.xml|exec\s+shellcode|msbuild XML template execution)'
 
 composite_rules:
+  - id: msbuild-property-reflective-assembly-load
+    desc: MSBuild reflectively loads Base64 assembly
+    crit: suspicious
+    conf: 0.98
+    for: [batch, xml]
+    near_bytes: 512
+    all:
+      - id: msbuild-property-assembly-load
+      - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+      - id: chained-create-instance-fragment
+
+  - id: msbuild-xml-reflective-loader
+    desc: MSBuild project instantiates decoded managed payload
+    crit: hostile
+    conf: 0.99
+    for: [xml]
+    all:
+      - id: metadata/build/manifest::msbuild-project-root
+      - id: msbuild-property-reflective-assembly-load
+
+  - id: batch-msbuild-hybrid-script-exec
+    desc: MSBuild executes a hybrid batch project
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: micro-behaviors/process/create/runtime-host::dotnet-framework-runtime-exe-path
+      - id: batch-msbuild-script-input
+      - id: micro-behaviors/os/env/vars/modify::msbuild-all-property-functions-enabled
+
+  - id: batch-msbuild-reflective-loader
+    desc: MSBuild decodes and instantiates managed payload
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: micro-behaviors/process/create/runtime-host::dotnet-framework-runtime-exe-path
+      - id: msbuild-property-reflective-assembly-load
+      - id: micro-behaviors/os/env/vars/modify::msbuild-all-property-functions-enabled
+
   - id: batch-msbuild-proxy-template-exec
     desc: Batch MSBuild proxy execution template
     crit: hostile
     conf: 0.98
     all:
-      - id: batch-msbuild-exe-path
-      - id: batch-msbuild-project-argument
+      - id: micro-behaviors/process/create/runtime-host::dotnet-framework-runtime-exe-path
+      - id: micro-behaviors/process/create/compile::msbuild-project-argument
       - id: batch-msbuild-shellcode-template-comment
