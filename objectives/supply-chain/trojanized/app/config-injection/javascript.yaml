@@ -13,11 +13,10 @@ traits:
     regex: '(tailwindcss|autoprefixer)\s*:[\s\S]{0,260}eval\(\s*atob\s*\('
   unless:
   - id: metadata/package/testing/
-# NOTE: js-export-boundary (module.exports / export default) is neutral JS
-# syntax present in every module, so it lives at
-# metadata/lang/scripted::js-export-boundary and is referenced cross-tier by the
-# exports-anchor composite below (proximity to a build-config target is what
-# makes it injection-relevant).
+# NOTE: export syntax is neutral JavaScript and is not needed to identify this
+# attack. The malicious tail is commonly appended after the legitimate config
+# has already closed, so an export-to-payload proximity gate misses the exact
+# concealment technique this rule is meant to catch.
 - id: cwd-root-targeting--rx-9
   desc: Regex component marker
   crit: component
@@ -74,57 +73,41 @@ traits:
     type: text
     regex: (process\.cwd\(\)|__dirname).{0,80}(remix|svelte)\.config
   count_max: 1028378
-- id: config-hidden-global-require
-  desc: Config hides global require alias
-  crit: component
-  conf: 0.9
-  if:
-    type: text
-    regex: "global\\[['\"][_a-zA-Z$]"
-- id: config-hidden-iife-tail
-  desc: Config has hidden IIFE tail
-  crit: component
-  conf: 0.9
-  if:
-    type: metrics
-    field: text.max_inline_whitespace_run
-    min: 300
-- id: config-export-line-padding
-  desc: Export line padded before hidden payload
-  crit: component
-  conf: 0.92
-  if:
-    type: text
-    regex: 'export\s+default\s+\w+\s*;[ \t]{200,}'
 composite_rules:
-- id: config-hidden-payload-tail
-  desc: Hidden payload after export boundary
-  crit: component
-  conf: 0.9
-  any:
-  - id: config-hidden-iife-tail
-  - id: config-export-line-padding
-- id: exports-anchor
-  desc: References export boundary in config
-  crit: component
-  conf: 0.8
-  near_lines: 12
+- id: long-tail-build-config-payload
+  desc: Obfuscated build config ends with an unusually long executable payload
+  crit: hostile
+  conf: 0.94
+  attack: T1195.002,T1027,T1059.007
+  # `last-line-over-1000` is backed by text.last_line_length; the neutral
+  # `single-long-line` atom is backed by text.max_line_length. Requiring both
+  # makes this specifically a long tail, rather than any large source file.
   all:
   - id: metadata/build/config::js-build-config-target
-  - id: metadata/lang/scripted::js-export-boundary
+  - id: objectives/anti-static/obfuscation/code-metrics/structure::last-line-over-1000
+  - id: metadata/file/metrics::single-long-line
+  - id: objectives/anti-static/obfuscation/
+  # Directory references deliberately cover future syntax variants: a loader
+  # may use an eval decoder, string encoding, shell bridge, HTTP fetch, or a
+  # new obfuscator atom without changing the structural supply-chain pattern.
+  any:
+  - id: micro-behaviors/data/source/property/
+  - id: micro-behaviors/process/interpreter/eval/
+  - id: micro-behaviors/process/create/shell/
+  - id: micro-behaviors/communications/http/
+  unless:
+  - id: metadata/package/testing/
+  - id: metadata/library/structure::js-large-module-bundle
 - id: hidden-build-config-loader
-  desc: Hidden build config loader
+  desc: Obfuscated loader appended to build config behind whitespace concealment
   crit: hostile
   conf: 0.97
   all:
-  - id: exports-anchor
-  - id: config-hidden-payload-tail
+  - id: metadata/build/config::js-build-config-target
+  - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::whitespace-hiding
   any:
-  - id: config-hidden-global-require
   - id: micro-behaviors/data/source/property/computed::js-global-require-alias
   - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::whitespace-hidden-eval
-  unless:
-  - id: objectives/supply-chain/trojanized/app/config-injection/
 - id: trojanized-build-config-obfuscated-loader
   desc: Trojanized build config carries obfuscated loader
   crit: hostile
@@ -189,9 +172,7 @@ composite_rules:
   any:
   - id: micro-behaviors/fs/write/file
   unless:
-  - id: objectives/supply-chain/trojanized/app/config-injection/
   - id: metadata/library/structure::js-large-module-bundle
-  - id: metadata/build/recognized-contexts::benign-build-tooling-context
   - id: metadata/build/recognized-contexts::benign-build-tooling-context
 - id: js-build-config-injector
   desc: Trojanized JS build config injector
@@ -201,9 +182,7 @@ composite_rules:
   - id: config-target-write
   any:
   - id: cwd-root-targeting
-  - id: exports-anchor
-  unless:
-  - id: objectives/supply-chain/trojanized/app/config-injection/
+  - id: metadata/lang/scripted::js-export-boundary
 - id: cwd-root-targeting
   desc: Targets project root via cwd join
   crit: suspicious
