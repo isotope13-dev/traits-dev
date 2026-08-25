@@ -173,6 +173,35 @@ traits:
     unless:
       - id: metadata/library/structure/
       - id: metadata/build/bundler/
+  # identifierNamesGenerator: mangled (not hexadecimal) still emits the
+  # string-array rotate decoder as `for(var a=t();;)try{if(...parseInt...
+  # break;a.push(a.shift())}` instead of `while(!![])` / `_0x` names.
+  # Split across atoms: a single regex over the parseInt chain blows the
+  # 90-byte / NFA-memory budgets.
+  - id: for-empty-cond-try
+    desc: for(;;) try empty-condition loop
+    crit: component
+    conf: 0.88
+    attack: T1027.002
+    mbc: B0032
+    if:
+      type: text
+      regex: 'for\s*\(\s*(var|let|const)\s+\w+\s*=\s*\w+\(\)\s*;\s*;\s*\)\s*try'
+    unless:
+      - id: metadata/library/structure/
+      - id: metadata/build/bundler/
+  - id: try-if-parseint
+    desc: try if parseInt decoder gate
+    crit: component
+    conf: 0.88
+    attack: T1027.002
+    mbc: B0032
+    if:
+      type: text
+      regex: 'try\s*\{\s*if\s*\([^)]{0,80}parseInt'
+    unless:
+      - id: metadata/library/structure/
+      - id: metadata/build/bundler/
   # Obfuscator.io control-flow-flattening signature: pipe-separated digit
   # permutations like '5|1|4|3|0|2' or '4|3|0|2|1'. These appear as AST string
   # literals: the state ordering for the while/switch dispatcher.
@@ -491,6 +520,42 @@ composite_rules:
       - id: metadata/package/testing/harness/runtime::obfuscated-mocked-network-test-harness
       - id: metadata/build/minifier::intentional-obfuscated-javascript-artifact-context
 
+  # Mangled-name string-array rotate: empty-condition for-loop, parseInt
+  # checksum, and push/shift sit on one obfuscator decoder line.
+  - id: for-try-parseint-array-rotate
+    desc: for(;;) try parseInt array rotate
+    crit: notable
+    conf: 0.92
+    attack: T1027.002
+    mbc: B0032
+    near_bytes: 2048
+    all:
+      - id: for-empty-cond-try
+      - id: try-if-parseint
+      - id: plain-push-shift-self-rotation
+    unless:
+      - id: metadata/library/structure/
+      - id: metadata/build/bundler/
+
+  # Same encrypted-table fact as above when the obfuscator did not hex-prefix
+  # identifiers. `for(;;)try{parseInt; push(shift)}` plus the repeating-key
+  # XOR is RC4 stringArrayEncoding without `_0x` names.
+  - id: encrypted-string-table-plain-rotation
+    desc: RC4 string table with array rotation
+    crit: suspicious
+    conf: 0.92
+    mbc: B0032
+    attack: T1027.002
+    all:
+      - id: for-try-parseint-array-rotate
+      - id: micro-behaviors/crypto/symmetric/xor/loop::xor-modulo-key-loop
+    unless:
+      - id: hex-name-mangling-with-string-table-rotation
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+      - id: metadata/package/testing/harness/runtime::obfuscated-mocked-network-test-harness
+      - id: metadata/build/minifier::intentional-obfuscated-javascript-artifact-context
+
   - id: full-obfuscator-io-toolkit
     desc: JavaScript uses multiple obfuscator.io techniques
     crit: notable
@@ -550,6 +615,7 @@ composite_rules:
       - id: push-shift-bracket-pattern
       - id: shift-push-pattern
       - id: array-shuffle-algorithm
+      - id: for-try-parseint-array-rotate
     unless:
       - id: metadata/package/files/dependency::vsix-bundled-output-path
       - id: metadata/file/format/structured::sourcemap-context
