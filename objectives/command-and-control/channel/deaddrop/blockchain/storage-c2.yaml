@@ -1,0 +1,88 @@
+# Resilient C2 endpoint resolution through Ethereum contract storage. The
+# contract is a mutable dead drop: an implant reads eth_getStorageAt, decodes
+# the returned hex value as an IP address, and uses it only when its primary
+# endpoint is unavailable. No provider, contract, wallet, or family IOC is
+# required, so equivalent deployments survive infrastructure rotation.
+defaults:
+  platforms: [windows, unix]
+  for: [go, python, javascript, typescript]
+  attack: T1102
+  mbc: B0030
+
+composite_rules:
+  - id: go-storage-result-ip-decode
+    desc: Go decodes contract storage as an IP address
+    crit: notable
+    conf: 0.98
+    for: [go]
+    near_bytes: 900
+    all:
+      - id: micro-behaviors/data/decode/hex::go-hex-decode-string
+      - id: micro-behaviors/communications/ip/parse::net-parseip
+
+  - id: python-storage-result-ip-decode
+    desc: Python decodes contract storage as an IP address
+    crit: notable
+    conf: 0.98
+    for: [python]
+    near_bytes: 900
+    all:
+      - id: micro-behaviors/data/decode/hex::python-fromhex
+      - id: micro-behaviors/communications/ip/parse::python-ip-address-parse
+
+  - id: node-storage-result-ip-decode
+    desc: Node.js decodes contract storage as an IP address
+    crit: notable
+    conf: 0.98
+    for: [javascript, typescript]
+    near_bytes: 900
+    all:
+      - id: micro-behaviors/data/decode/hex::buffer-from-hex-call
+      - id: micro-behaviors/communications/ip/parse::node-is-ip
+
+  - id: ethereum-storage-ip-resolver
+    desc: Decodes an IP address from Ethereum contract storage
+    crit: suspicious
+    conf: 0.98
+    near_bytes: 1800
+    all:
+      - id: micro-behaviors/communications/http/url/rpc::eth-get-storage-at-method
+      - id: micro-behaviors/communications/ipc/rpc::jsonrpc-2-protocol-object
+    any:
+      - id: go-storage-result-ip-decode
+      - id: python-storage-result-ip-decode
+      - id: node-storage-result-ip-decode
+
+  - id: ethereum-storage-derived-socket-c2
+    desc: Ethereum contract storage supplies an outbound socket address
+    crit: suspicious
+    conf: 0.99
+    near_bytes: 2200
+    all:
+      - id: ethereum-storage-ip-resolver
+    any:
+      - id: micro-behaviors/communications/socket/dial::go-dial
+      - id: micro-behaviors/communications/socket/dial::python-dial
+      - id: micro-behaviors/communications/socket/dial::javascript-dial
+
+  - id: ethereum-storage-derived-shell-c2
+    desc: Ethereum contract storage supplies a remote-shell C2 address
+    crit: hostile
+    conf: 0.995
+    near_bytes: 2600
+    all:
+      - id: ethereum-storage-derived-socket-c2
+    any:
+      - id: objectives/command-and-control/reverse-shell/dup::go-reverse-shell-comp
+      - id: objectives/command-and-control/reverse-shell/dup::python-generic-socket-popen-revshell
+      - id: objectives/command-and-control/reverse-shell/stdio::js-reverse-shell-spawn
+
+  - id: ethereum-storage-failover-shell-c2
+    desc: Hardcoded primary C2 fails over to Ethereum storage for a remote shell
+    crit: hostile
+    conf: 0.995
+    near_bytes: 3000
+    all:
+      - id: ethereum-storage-derived-shell-c2
+      - id: micro-behaviors/communications/socket/connect::multiple-go-dial-call-sites
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-script
