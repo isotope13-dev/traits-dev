@@ -1,0 +1,74 @@
+# npm (and the CDNs that mirror it, jsDelivr and unpkg) abused as free static
+# hosting for a standalone HTML page — almost always a phishing lure or a decoy
+# loader that pulls its real content from another mirror at runtime.
+#
+# The tell is the manifest itself. A real npm package is a JavaScript module:
+# `main` points at a `.js`/`.mjs`/`.cjs` and the tarball carries code. These
+# packages instead declare `main: index.html` and ship nothing but that one
+# HTML document — no dependencies, no scripts, no JS entry. Nobody `require()`s
+# an HTML file; the package exists only so `https://cdn.jsdelivr.net/npm/<pkg>/
+# index.html` serves attacker-controlled markup from a trusted origin.
+#
+# This is reachable from package.json alone, which matters because cleave does
+# not analyze HTML members inside an archive — so the manifest shape is the
+# only in-archive signal, and it is a strong one. The HTML's own phishing /
+# decoy traits fire when the page is scanned directly.
+defaults:
+  platforms: [linux, macos, windows]
+  for: [package.json]
+  attack: T1608
+
+traits:
+  # Every declared publish artifact is an HTML page or a passive web asset —
+  # no `.js`/`.ts`/`.mjs`/`.cjs`/`.wasm` module anywhere in the allowlist.
+  # `match: all` over the array requires the whole set to be non-code.
+  - id: files-allowlist-contains-html
+    desc: Publish allowlist ships an HTML document
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: 'files[*]'
+      regex: '\.(html|htm)$'
+      case_insensitive: true
+
+composite_rules:
+  # HTML entry point + an HTML-shipping allowlist = the package's deliverable
+  # is a web page, not a module. That is the npm-as-hosting shape regardless of
+  # what the page then does; the page's own content decides phishing vs decoy.
+  - id: npm-package-ships-only-html-page
+    desc: npm package ships only an HTML page
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: metadata/package/manifest/entrypoint::main-html-entry
+      - id: files-allowlist-contains-html
+    unless:
+      # Documentation/demo packages legitimately ship a homepage plus real code
+      # and dependencies; require the no-dependencies shape to stay in scope.
+      - type: value
+        path: dependencies
+        exists: true
+
+  # Tighter, higher-confidence variant: the whole manifest is the throwaway
+  # skeleton these campaigns publish — HTML main, HTML-only allowlist, no
+  # dependencies, no scripts, no bin, no description. A genuine package has at
+  # least one of those. This is the disposable CDN-hosting stub.
+  - id: npm-disposable-html-hosting-stub
+    desc: Disposable npm stub hosts an HTML page
+    crit: suspicious
+    conf: 0.94
+    all:
+      - id: metadata/package/manifest/entrypoint::main-html-entry
+      - id: files-allowlist-contains-html
+      - id: metadata/package/dependencies/manifest::npm-no-dependencies-field
+    unless:
+      - type: value
+        path: scripts
+        exists: true
+      - type: value
+        path: bin
+        exists: true
+      - type: value
+        path: description
+        exists: true

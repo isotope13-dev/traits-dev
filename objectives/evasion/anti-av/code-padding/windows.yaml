@@ -27,6 +27,40 @@ traits:
     if:
       type: text
       regex: \bread_dir\b|fs::ReadDir
+  # --- Resource ballast (see the composite at the end of this file) ---
+  #
+  # A picture, not a payload: `.rsrc` holding most of the image at picture-like
+  # entropy. The lower entropy bound matters as much as the upper one — a PE
+  # whose headers fail to parse reports 0.00 for every section, and that must
+  # not read as "low entropy".
+  - id: low-entropy-dominant-resource-section
+    desc: Large low-entropy PE resource section
+    crit: component
+    conf: 0.9
+    size_min: 400000
+    # Trait-level entropy bounds are file-wide, and file entropy is what
+    # separates ballast from an ordinary self-extractor: a compressed payload
+    # in .rsrc drives the whole image high, a bitmap leaves it low.
+    entropy_max: 5.0
+    if:
+      type: section
+      exact: .rsrc
+      compare_to: total
+      size_ratio_min: 0.65
+      entropy_min: 0.5
+      entropy_max: 3.5
+
+  - id: small-code-section-in-large-pe
+    desc: Small code section in large PE
+    crit: component
+    conf: 0.9
+    size_min: 400000
+    if:
+      type: section
+      exact: .text
+      length_max: 200000
+
+
 composite_rules:
   # Mixed detection-dilution corpus: long random strings inflate entropy while
   # a separate body of grammatical decoys makes the image look like a large
@@ -273,3 +307,21 @@ composite_rules:
       - id: metadata/signed/platform/
       - id: metadata/binary/installer/family/
 
+  # Resource bloat: a PE whose .rsrc holds most of the file as low-entropy
+  # bitmap/media while the actual code is a stub. Uploading a 1 MB image that
+  # is 90% picture pushes the sample past the size ceilings of sandbox
+  # submission portals, mail gateways, and inline scanners, and dilutes every
+  # byte-histogram and section-statistics feature a classifier computes over
+  # the whole file. Real resource-heavy applications carry many resources and
+  # a proportionate amount of code; this shape is a stub plus ballast.
+  - id: low-entropy-resource-ballast
+    desc: PE padded with a large low-entropy resource
+    crit: suspicious
+    conf: 0.88
+    all:
+      - id: low-entropy-dominant-resource-section
+      - id: small-code-section-in-large-pe
+    unless:
+      # Installer frameworks legitimately carry their whole payload in .rsrc.
+      - id: metadata/binary/installer/
+      - id: metadata/signed/platform/
