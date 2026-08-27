@@ -9,14 +9,36 @@ defaults:
   attack: T1055.001
   mbc: B0033
 composite_rules:
+  # Resource-backed RunPE: stage a payload out of the image's own resources,
+  # start a child, and give the child's thread the staged code.
+  #
+  # The first three legs are individually ordinary in a large Win32 GUI
+  # application: `CreateProcessA` launches helpers, and
+  # FindResource/LoadResource/SizeofResource/LockResource is simply how Win32
+  # reads an icon, dialog or string table out of .rsrc (that leg is named
+  # "PE resource data access API set" and routinely downgrades itself to
+  # baseline). Stacked alone they proved neither the "embedded PE" nor the
+  # "into the spawned process" half of the claim — an 11 MB signed utility that
+  # spawns helpers, reads its own resources and carries remote-memory imports
+  # matched a hostile verdict on three unrelated import sets.
+  #
+  # The `any:` leg supplies the handoff. Hollowing a child requires taking
+  # control of its execution: either it is started suspended so its image can
+  # be replaced before the first instruction runs, or its thread context is
+  # rewritten to the staged code. Loaders that skip both are not writing a
+  # payload into the process they just spawned.
   - id: resource-backed-spawned-process-injection
-    desc: Injects an embedded PE into a spawned process
+    desc: Hollows a spawned child using resource data
     crit: hostile
     conf: 0.98
     all:
       - id: micro-behaviors/process/create/spawn::create-process-a
       - id: objectives/evasion/process/injection/memory::remote-thread-injection-api-chain
       - id: micro-behaviors/data/embedded/payload/resource::pe-resource-full-extraction
+    any:
+      - id: micro-behaviors/process/create/flags::create-suspended-flag-reference
+      - id: micro-behaviors/process/inject/runtime/call::set-thread-context-dup
+      - id: micro-behaviors/process/inject/runtime/call::set-thread-context-text
     unless:
       - id: metadata/signed/platform/
       - id: well-known/tool/reverse-engineering/
