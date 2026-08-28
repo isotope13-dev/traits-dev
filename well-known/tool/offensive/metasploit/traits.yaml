@@ -67,7 +67,13 @@ traits:
 
   - id: console-marker
     desc: Metasploit command-line launcher marker
-    for: [source, ruby, text]
+    # Was `for: [source, ruby, text]`, which left out shell -- so a one-liner
+    # driving the console (`msfconsole -x "use exploit/multi/handler; ..."`),
+    # which is how an operator actually starts a listener, carried no
+    # Metasploit identity at all. Widened to every script and source language
+    # plus plain text; the file default also pulls in binaries and archives,
+    # which is more file types than a `type: text` matcher may claim.
+    for: [scripts, source, text]
     # The boundary characters are captured, not asserted, so `not:` below can
     # see what sits either side of the name.
     if:
@@ -115,7 +121,117 @@ traits:
       path: gem.authors[*]
       regex: '(?i)^Metasploit '
 
+# --- Console-driven handler setup -------------------------------------------
+#
+# The markers above identify the framework as *content* (a source tree, a gem,
+# a launcher name). These identify it as *infrastructure being stood up*: the
+# module path, payload spec, and listener parameters an operator feeds to
+# msfconsole to open a C2 listener. They read the same whether the operator
+# types them, a shell script passes them via `msfconsole -x`, an .rc resource
+# file holds them, or a dropper writes them out -- so they are not tied to any
+# one file type.
+  - id: container-base-image
+    desc: Container built on a Metasploit image
+    crit: notable
+    conf: 0.93
+    for: [dockerfile, github-actions, shell]
+    if:
+      # `FROM phocean/msf` -- the framework arrives in the base layer, so an
+      # image that installs nothing offensive itself still ships with the
+      # whole of it.
+      type: text
+      regex: '(?im)^\s*FROM\s+[^\n]{0,30}(metasploit|/msf)\b'
+
+  - id: multi-handler-module
+    desc: Metasploit multi/handler listener module
+    for: [scripts, source, text]
+    crit: suspicious
+    conf: 0.9
+    mbc: B0030
+    attack: T1071
+    if:
+      type: text
+      substr: exploit/multi/handler
+
+  - id: meterpreter-reverse-payload
+    desc: Meterpreter reverse or bind payload module
+    for: [scripts, source, text]
+    crit: suspicious
+    conf: 0.9
+    mbc: B0030
+    attack: T1071
+    if:
+      # `meterpreter/reverse_tcp`, `.../reverse_http(s)`, `.../bind_tcp`.
+      # The stager family name is Metasploit's own, so the path is an
+      # identity, not a generic protocol string.
+      type: text
+      regex: 'meterpreter/(reverse|bind)_(tcp|http)'
+
+  - id: staged-shell-reverse-payload
+    desc: Metasploit staged reverse-shell payload module
+    for: [scripts, source, text]
+    crit: suspicious
+    conf: 0.88
+    mbc: B0030
+    attack: T1071
+    if:
+      # Matches both spellings Metasploit uses for the non-meterpreter
+      # command-shell stagers: `shell/reverse_tcp` (staged) and
+      # `shell_reverse_tcp` (stageless).
+      type: text
+      regex: '/shell(/|_)reverse_tcp\b'
+
+  - id: handler-lhost-parameter
+    desc: Metasploit console sets listener host
+    for: [scripts, source, text]
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: '(?im)\bset\s+LHOST\s+\S'
+
+  - id: handler-lport-parameter
+    desc: Metasploit console sets listener port
+    for: [scripts, source, text]
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: '(?im)\bset\s+LPORT\s+[0-9]'
+
+  - id: console-noninteractive-commands
+    desc: Metasploit console driven non-interactively
+    for: [scripts, source, text]
+    crit: notable
+    conf: 0.9
+    if:
+      # `msfconsole -q -x "<commands>"` runs a command batch with no operator
+      # at the keyboard -- the form used by launcher scripts and by droppers
+      # that stand a listener up unattended.
+      type: text
+      regex: '(?i)msfconsole[^\n]{0,40}\s-x[\s"'']'
+
 composite_rules:
+  # An operator (or a dropper acting like one) standing up a listener: the
+  # framework identity, the handler module, and a reverse/bind stager, seen
+  # together. Suspicious rather than hostile -- Metasploit is a legitimate
+  # penetration-testing product and this is exactly how it is used on an
+  # authorized engagement.
+  - id: automated-handler-listener
+    desc: Metasploit reverse-payload handler being started
+    crit: suspicious
+    conf: 0.95
+    mbc: B0030
+    attack: T1071
+    all:
+      - id: multi-handler-module
+    any:
+      - id: meterpreter-reverse-payload
+      - id: staged-shell-reverse-payload
+      - id: handler-lhost-parameter
+      - id: console-noninteractive-commands
+    needs: 2
+
   # Two independent gemspec fields, so a gem that merely borrows the name does
   # not inherit the identity.
   - id: rex-gem-context
