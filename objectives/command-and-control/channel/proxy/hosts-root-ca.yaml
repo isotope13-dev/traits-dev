@@ -24,13 +24,37 @@ traits:
   # and 0.0.0.0 for blocking, an RFC1918 address for a LAN host — so `is:
   # external_ip` is what carries the weight here: a routable third-party
   # address in a hosts line means the operator, not the user, chose where that
-  # name resolves. Broad `for:` because compiled implants carry the finished
-  # line as a UTF-16 constant just as often as scripts build it.
+  # name resolves.
+  #
+  # Script side matches on `literal` rather than `text`. A four-part dotted
+  # number followed by a dotted name is also the shape of an ECMAScript spec
+  # citation, and those live in comments: handlebars.js carries
+  # `// 19.4.2.1 Symbol.for(key)`, which a text scan reads as public IP
+  # 19.4.2.1 pinning the name `Symbol.for` (a bundled copy inside the signed
+  # MiniMax Code installer scored suspicious on it). Parser-extracted constants
+  # never contain comment text, so the literal tier drops that whole class
+  # while still matching how scripts actually write the entry —
+  # `echo "203.0.113.9 login.example.com" >> /etc/hosts` is a string constant.
   - id: external-ip-hosts-name-redirect
     desc: Hosts entry pins name to public IP
     crit: suspicious
     conf: 0.92
-    for: [scripts, binaries]
+    for: [scripts]
+    if:
+      type: literal
+      regex: '\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}[ \t]+[A-Za-z0-9-]+\.[A-Za-z]{2,24}\b'
+      is: external_ip
+
+  # Compiled implants carry the finished line as a UTF-16 constant just as
+  # often as scripts build it, and binaries have no parser-extracted literal
+  # tier — extracted string runs are all there is — so the native half stays on
+  # `type: text`. The comment-citation false positive above is a source-code
+  # artifact and does not reach here.
+  - id: native-external-ip-hosts-name-redirect
+    desc: Binary constant pins name to public IP
+    crit: suspicious
+    conf: 0.92
+    for: [binaries]
     if:
       type: text
       regex: '\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}[ \t]+[A-Za-z0-9-]+\.[A-Za-z]{2,24}\b'
@@ -106,8 +130,10 @@ composite_rules:
     conf: 0.95
     for: [scripts, binaries]
     all:
-      - id: external-ip-hosts-name-redirect
       - id: micro-behaviors/fs/path/config/system::hosts-file-path
+    any:
+      - id: external-ip-hosts-name-redirect
+      - id: native-external-ip-hosts-name-redirect
 
   # Seizing the hosts file rather than merely writing it. `takeown` plus an
   # ACL rewrite is how an operator makes an entry survive the victim noticing:
