@@ -122,6 +122,20 @@ traits:
     type: value
     path: pe.debug.pdb.path
     regex: '(?i)(^|[\\/])singlefilehost\.pdb$'
+# A .NET Core 3.x self-contained publish uses the NATIVE apphost launcher: the
+# PE itself carries no CLR metadata at all (mscoree, COM descriptor, BSJB are
+# all absent -- the managed world lives in the appended bundle), so every
+# dotnet-assembly leg misses it. Microsoft's own build path in the debug
+# directory identifies the host: it is emitted by the dotnet/runtime build and
+# is not something an application can set incidentally.
+- id: dotnet-corehost-pdb-path
+  desc: .NET corehost apphost PDB path
+  crit: component
+  conf: 0.98
+  if:
+    type: value
+    path: pe.debug.pdb.path
+    regex: '(?i)[\\/]corehost[\\/]cli[\\/](apphost|fxr|hostpolicy)[\\/]'
 - id: dotnet-coreclr-runtime-path
   desc: .NET CoreCLR source path
   crit: component
@@ -193,6 +207,42 @@ composite_rules:
   all:
   - id: dotnet-singlefilehost-pdb
   - id: dotnet-coreclr-runtime-path
+# `dotnet-singlefilehost-runtime` above only recognizes the .NET 5+ bundle host,
+# whose debug path is literally `singlefilehost.pdb`. A .NET Core 3.x
+# self-contained publish is the same shape with none of those markers, so every
+# `unless` that names the newer form misses it — GitVersion 5.1.3 ships a 45MB
+# self-extracting GitVersion.exe and gets read as a packer: anti-debug, hidden
+# loader-API resolution and a "process-hollowing API chain" that is the CLR host
+# doing its job.
+#
+# Recognized structurally instead: a .NET binary whose overlay is most of the
+# file and carries several standard PE images is a runtime bundle. That is the
+# packaging format, not evasion — the same point
+# `metadata/binary/layout::repeated-standard-pe-images` already makes in its own
+# comment. Malice in such a file has to come from what the payload *does*, which
+# the higher-order composites still judge on their own evidence.
+# Just "is this PE a .NET runtime host stub" -- two leaves, cheap enough to
+# name in the suppression lists of rules that already carry many exclusions.
+# The full dotnet-selfcontained-bundle below expands to thirteen.
+- id: dotnet-runtime-host-stub
+  desc: .NET runtime host stub identity
+  crit: baseline
+  conf: 0.97
+  any:
+  - id: dotnet-corehost-pdb-path
+  - id: dotnet-singlefilehost-pdb
+- id: dotnet-selfcontained-bundle
+  desc: .NET self-contained runtime bundle
+  crit: baseline
+  conf: 0.95
+  all:
+  - id: metadata/binary/layout::repeated-standard-pe-images
+  - id: metadata/binary/layout::overlay-dominates-80pct
+  # Either the host PE carries CLR metadata itself (.NET 5+ singlefilehost) or
+  # it is the native apphost launcher, which carries none.
+  any:
+  - id: dotnet-assembly
+  - id: dotnet-corehost-pdb-path
 - id: managed-boilerplate
   desc: Standard .NET runtime boilerplate
   crit: baseline

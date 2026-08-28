@@ -53,10 +53,18 @@ composite_rules:
   # self-registering service EXE built on the stock ATL/MFC CServiceModule
   # skeleton imports. With it in the list the rule collapsed to "OpenSCManager +
   # CreateService + StartService", i.e. every service installer ever shipped.
+  # ChangeServiceConfig is the fourth way to steer that path, and the one a
+  # native implant reaches for: it rewrites lpBinaryPathName (and the start
+  # type) through the SCM handle it already holds, leaving no registry write
+  # and no `sc config` command line for the other three legs to see. A plain
+  # installer registers its service once with CreateService and never
+  # reconfigures it, so pairing the reconfigure with a create/start in the same
+  # binary keeps this as discriminating as the registry-writing spellings.
   any:
   - id: service-key-template
   - id: objectives/privilege-escalation/modify-service::service-imagepath-reg
   - id: objectives/privilege-escalation/modify-service::sc-config-binpath
+  - id: micro-behaviors/os/service/control::change-service-config
   unless:
   - id: well-known/app/utility/ventoy/
   - id: well-known/app/system/cpuid::signer
@@ -65,6 +73,23 @@ composite_rules:
   - id: well-known/tool/sysadmin/sysinternals::sysinternals-rootkit-revealer
   - id: well-known/app/utility/360-file-guard::360-file-guard-identity
   - id: well-known/app/security/adguard-vpn::benign-context
+# A service that installs itself and then pulls its real payload over HTTP is
+# a dropper with a boot-survival guarantee, not an installer: a legitimate
+# installer downloads first and registers the finished product, it does not
+# ship a service whose job is to fetch code at runtime. The download leg is the
+# runtime-resolved WinHTTP flow rather than a URL string, so it holds up
+# against implants that keep their endpoint encrypted until use.
+- id: self-installing-service-fetches-payload
+  desc: Self-installing service fetches remote payload
+  crit: hostile
+  conf: 0.95
+  attack: T1543.003,T1105
+  all:
+  - id: service-install-and-start
+  - id: objectives/command-and-control/dropper/delivery/download-execute::dynamic-winhttp-downloader
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
 - id: packed-com-hijack-service-self-install
   desc: Packed COM-hijack service with self-install
   crit: hostile
@@ -192,7 +217,6 @@ composite_rules:
   - id: objectives/privilege-escalation/modify-service::sc-config-binpath
   downgrade:
     any:
-    - id: metadata/binary/framework/
     - id: metadata/signed/developer
     - id: metadata/lang/compiler/systems/
   unless:

@@ -1,0 +1,71 @@
+# Endpoints and command lines rebuilt at runtime from a list of fragments, so
+# that no complete URL, host, or flag string exists anywhere in the file.
+#
+# The shape is always the same: a module-level list of pieces, then a
+# `"".join(...)` that welds them back together — sometimes decoding each piece
+# on the way through. A reviewer skimming the source sees a list of opaque
+# constants; `strings` on the artifact sees the same. Only the joined value is
+# ever a URL or an argv flag, and it exists only in memory.
+#
+# Both legs are recorded separately because either can appear alone (a
+# fragment list feeding an eval, a decode-join over data read from disk), and
+# the composite is what states the reconstruction.
+defaults:
+  platforms: [linux, macos, windows]
+  for: [python]
+  attack: T1027
+  mbc: B0032
+
+traits:
+  # Two or more Base64 blobs sitting side by side in one list literal. A single
+  # encoded constant is ordinary (a key, an icon, a test vector); a *sequence*
+  # of them exists to be concatenated.
+  #
+  # A fragment must be mixed-case. Base64 of arbitrary bytes always is within
+  # 16 characters, while the neighbouring shapes that share the character class
+  # are not: a list of POSIX paths (['/usr/bin/python3', '/usr/bin/python2'])
+  # is all lowercase and a list of GPG key ids (["D8576A8BA88D21E9", ...]) is
+  # all uppercase — ansible-core's apt/apt_key modules matched on exactly
+  # those. The engine's regex crate has no lookaround and caps patterns at 90
+  # bytes, so the case requirement is expressed as `not:` filters over the
+  # matched run rather than inside the pattern.
+  - id: base64-fragment-list
+    desc: List literal of Base64 fragments
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '\[\s*["''][A-Za-z0-9+/]{16,}={0,2}["'']\s*,\s*["''][A-Za-z0-9+/]{16,}'
+    not:
+      - regex: '["''][a-z0-9+/]{16,}={0,2}["'']\s*,'
+      - regex: '["''][A-Z0-9+/]{16,}={0,2}["'']\s*,'
+    unless:
+      # A security-eval corpus ships the technique as the subject under test.
+      - id: well-known/lib/ai/inspect-evals::eval-corpus-context
+
+  # `"".join(base64.b64decode(p).decode() for p in parts)` and every spelling
+  # of it: the decode happens per fragment, inside the join, so no decoded
+  # constant is ever assigned to a name a reader could follow.
+  - id: join-over-decoded-fragments
+    desc: Joins per-fragment decode results
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: '\.join\([^)\r\n]{0,60}(b64decode|b16decode|b32decode|unhexlify)'
+
+composite_rules:
+  # The full reconstruction: fragments declared, then decoded and welded. This
+  # is what a staged loader does to keep its C2 host out of static analysis.
+  - id: endpoint-assembled-from-encoded-fragments
+    desc: Builds a string from encoded fragments
+    crit: suspicious
+    conf: 0.95
+    # Packages routinely split the two halves across modules — the fragment
+    # table in one file, a `_helpers` decoder in another — so pool evidence
+    # across the whole distribution rather than requiring one file to hold both.
+    scope: archive
+    for: [python, whl, python-sdist, egg, tar, zip]
+    all:
+      - id: base64-fragment-list
+      - id: join-over-decoded-fragments
