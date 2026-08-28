@@ -16,6 +16,22 @@ traits:
     regex: "--data(-urlencode)?[\\s\"']{1,3}(user|hostname?|bid|uid)="
   unless:
     - id: well-known/app/utility/cmdchamp/
+# Comparing a PARSED manifest's `.name` against a string literal — the tail of
+# the walk-up-to-a-foreign-package.json probe (`parsed = JSON.parse(raw); if
+# (parsed.name && parsed.name !== '<self>')`). The `JSON.parse(...).name !==`
+# shape is the discriminator: a bare `.name !==` is the ubiquitous
+# `err.name !== "AbortError"` idiom, so this stays a component and only means
+# "whose project installed me" alongside the victim-id and install-hook legs of
+# the composite below. A rewrite in another language keeps the parse+compare.
+- id: parsed-manifest-name-inequality
+  desc: Parsed manifest name compared to literal
+  crit: component
+  conf: 0.9
+  for: [javascript, typescript]
+  attack: "T1195.002,T1082"
+  if:
+    type: text
+    regex: '(?i)JSON\.parse\([\s\S]{0,80}\.name\s*&&[\s\S]{0,20}\.name\s*!==?\s*["\'']'
 composite_rules:
   - id: python-package-profiled-install-beacon
     desc: Python package profiles the host and installs an HTTP-capable dependency
@@ -110,3 +126,27 @@ composite_rules:
       - id: objectives/supply-chain/impersonation/manifest/placeholder::mature-hollow-index-package
       - id: objectives/supply-chain/install-hook/scripts/lifecycle::preinstall-runs-node-local-script
       - id: objectives/discovery/system/fingerprint/hardware::js-encoded-recon-beacon
+
+  # Victim identification, not host telemetry: the hook pairs the consumer
+  # project's manifest identity with the machine's own user/hostname and hands
+  # the pair to a network sink. Any transport counts — DNS labels, fetch, or a
+  # raw https request — because the identifying move is the ancestor-manifest
+  # probe, not the channel it leaves by.
+  - id: install-hook-victim-project-identity-exfil
+    desc: Install hook exfiltrates the installing project's identity
+    crit: hostile
+    conf: 0.98
+    for: [javascript, typescript, package.json, npm, archives]
+    scope: archive
+    attack: "T1195.002,T1082,T1033,T1041"
+    mbc: E1041
+    all:
+      - id: parsed-manifest-name-inequality
+      - id: objectives/discovery/system/fingerprint/hardware::small-js-victim-id
+    any:
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::has-preinstall
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::has-postinstall
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::has-install
+    needs: 1
+    unless:
+      - id: metadata/package/testing/presence/harness/

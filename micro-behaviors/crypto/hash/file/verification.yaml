@@ -1,3 +1,10 @@
+# Verifying a *downloaded* artifact against an expected digest before using it.
+#
+# This is the mechanic that separates an installer bootstrap from a dropper: a
+# dropper cannot pin its payload's digest, because the payload rotates. So
+# "fetch, compare against a hard-coded digest, abort on mismatch" is a strong
+# benign-context signal, and the exception composite at the bottom of this file
+# is what download/execute objectives reference from `unless:`.
 defaults:
   platforms: [windows, unix]
   for: [shell, javascript, typescript, powershell, batch]
@@ -25,10 +32,69 @@ traits:
     if:
       type: text
       regex: 'expected=[\s\S]{0,400}sha256s\.txt[\s\S]{0,200}actual=[\s\S]{0,100}sha256_of'
+  # Spans lines: the idiomatic PowerShell form computes the hash into a variable
+  # (-OutVariable) and compares it in a following `if`, so the old single-line
+  # bound missed every real verifier (measured on Mercurial's
+  # contrib/install-windows-dependencies.ps1). Both polarities count -- `-eq` to
+  # accept and `-ne` to reject are the same check written two ways.
   - id: powershell-file-hash-compare
     desc: PowerShell verifies downloaded file hash
-    crit: notable
     conf: 0.92
+    for: [powershell]
     if:
       type: text
-      regex: 'Get-FileHash[^\n]{0,160}\.Hash\s+-eq\s+\$[A-Za-z_]\w*'
+      regex: '(?i)Get-FileHash[\s\S]{0,240}\.Hash\s+-(eq|ne)\s+\S'
+  # Language-agnostic on purpose: a hard-coded 64-hex digest sitting next to a
+  # digest-named key reads the same in PowerShell ($X_SHA256 = ".."), shell,
+  # Python, Ruby, JS, and in lockfiles and manifests (sha256: "..").
+  - id: pinned-artifact-digest-constant
+    desc: Pins an expected SHA-256 digest constant
+    conf: 0.9
+    for: [shell, javascript, typescript, powershell, batch, python, ruby, text, json, manifests]
+    if:
+      type: text
+      regex: '(?i)(sha256|checksum|digest|expected)\W{0,8}[0-9a-f]{64}'
+  # The comparison itself, in the form every hashlib-style API produces. Catches
+  # verifiers whose pinned constant is named for its role rather than its
+  # algorithm (`expected = '81b1...'; if digest.hexdigest() != expected: raise`)
+  # -- ArchiveBox's Sonic bootstrap, and the common shape in Python, Ruby and JS.
+  - id: computed-digest-compare
+    desc: Compares a computed digest against a constant
+    conf: 0.92
+    for: [shell, javascript, typescript, powershell, batch, python, ruby, text, json, manifests]
+    if:
+      type: text
+      regex: '(?i)hexdigest\(\)\s*[!=]='
+
+  # The strongest form of the signal: the code has a path for a digest that does
+  # not match, which only exists when something is actually being verified.
+  - id: hash-mismatch-abort
+    desc: Reports a downloaded digest mismatch
+    conf: 0.9
+    for: [shell, javascript, typescript, powershell, batch, python, ruby]
+    if:
+      type: text
+      regex: '(?i)(hash|checksum|digest)\w*\s+mismatch'
+
+composite_rules:
+  # Benign-context suppressor for download+execute detections. An installer
+  # bootstrap pins the digest of everything it fetches and checks it before
+  # running it; a dropper cannot. Lives here rather than under the objectives it
+  # quiets so its name and directory describe what its members actually match,
+  # and so the tier dependency runs objectives/ -> micro-behaviors/ as required.
+  - id: hash-pinned-download-context
+    desc: Fetched payloads verified against pinned digests before use
+    crit: exception
+    conf: 0.95
+    # Widened past the file-level default: a bootstrap is as often embedded in a
+    # manifest as written as a script (ArchiveBox ships its Sonic installer as a
+    # heredoc inside a plugin config.json).
+    for: [shell, javascript, typescript, powershell, batch, python, ruby, text, json, manifests]
+    all:
+      - id: pinned-artifact-digest-constant
+    any:
+      - id: powershell-file-hash-compare
+      - id: downloaded-artifact-sha256-compare
+      - id: downloaded-artifact-sha256-helper-compare
+      - id: computed-digest-compare
+      - id: hash-mismatch-abort

@@ -428,6 +428,10 @@ micro-behaviors/
 │   │                      #     objectives/impact/degrade/firewall/
 │   ├── group/             #   Group management
 │   ├── kernel/            #   Kernel interaction (modules, devices, callbacks)
+│   │   └── boot/          #     Boot configuration (bcdedit, Safe Mode, boot flags)
+│   │                      #       Neutral: "changes how the machine next boots";
+│   │                      #       EDR teardown / ransomware staging composites →
+│   │                      #       objectives/impact/degrade/ and objectives/evasion/anti-av/
 │   ├── linker/            #   Dynamic linker configuration
 │   ├── message/           #   Message queues
 │   ├── module/            #   Module loading

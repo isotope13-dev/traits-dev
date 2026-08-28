@@ -1,0 +1,79 @@
+# An install hook that walks out of its own package directory and installs
+# something into whatever project pulled it in. npm runs lifecycle scripts with
+# the cwd set to the package's own folder inside `node_modules`; `cd ../..`
+# leaves that folder and lands in the consumer's project root, where `npm i
+# <other>` writes a dependency the consumer never asked for — into their
+# `package.json` and their lock file, where it will be installed again on every
+# future `npm ci`, by every teammate, in CI.
+#
+# That is a supply-chain foothold rather than an install step. A package that
+# genuinely needs another package declares it in `dependencies`; the only reason
+# to install it from a hook, from a directory that is not yours, is that you
+# want the dependency to appear without having been declared. The escape is the
+# part that carries the intent: `npm i` from a hook is merely irregular, but
+# doing it in someone else's directory is reaching across a boundary.
+#
+# Written against the lifecycle hooks specifically. `cd ..` in a `build` or
+# `test` script is ordinary monorepo plumbing; in `preinstall`/`install`/
+# `postinstall`/`prepare` it runs on a stranger's machine.
+defaults:
+  platforms: [unix, windows]
+  for: [package.json]
+  attack: "T1195.002"
+  mbc: E1195.002
+
+traits:
+  - id: preinstall-parent-directory-escape
+    desc: preinstall leaves the package directory
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: value
+      path: scripts.preinstall
+      regex: '(^|[;&|]\s*)(cd|pushd)\s+["'']?\.\.[/\\]'
+  - id: install-parent-directory-escape
+    desc: install hook leaves the package directory
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: value
+      path: scripts.install
+      regex: '(^|[;&|]\s*)(cd|pushd)\s+["'']?\.\.[/\\]'
+  - id: postinstall-parent-directory-escape
+    desc: postinstall leaves the package directory
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: value
+      path: scripts.postinstall
+      regex: '(^|[;&|]\s*)(cd|pushd)\s+["'']?\.\.[/\\]'
+  - id: prepare-parent-directory-escape
+    desc: prepare hook leaves the package directory
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: value
+      path: scripts.prepare
+      regex: '(^|[;&|]\s*)(cd|pushd)\s+["'']?\.\.[/\\]'
+
+composite_rules:
+  - id: install-hook-parent-directory-escape
+    desc: Install hook leaves the package directory
+    crit: suspicious
+    conf: 0.93
+    any:
+      - id: preinstall-parent-directory-escape
+      - id: install-parent-directory-escape
+      - id: postinstall-parent-directory-escape
+      - id: prepare-parent-directory-escape
+
+  # The escape plus the package-manager call: a dependency the consumer never
+  # declared, written into the consumer's own project.
+  - id: install-hook-injects-consumer-dependency
+    desc: Install hook installs a package into the consumer project
+    crit: hostile
+    conf: 0.96
+    scope: file
+    all:
+      - id: install-hook-parent-directory-escape
+      - id: objectives/supply-chain/install-hook/package/manifest::install-hook-runs-pkg-install

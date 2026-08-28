@@ -1,0 +1,79 @@
+# "Write it, mark it executable, run it in the background" — the local half of
+# every dropper, expressed in Node. Whatever produced the bytes (an embedded
+# blob, a download, a decrypt) lands on disk with its execute bit set and is
+# then launched with no parent waiting on it and no output to read.
+#
+# The write and the chmod alone are not the signal: node-pre-gyp, esbuild,
+# sharp and every other native-binary installer write a downloaded executable
+# and chmod it. Those installers then run it in the FOREGROUND and surface its
+# output, because the whole point is that the user sees whether it worked.
+# Detaching the child and discarding its stdio is what turns the sequence from
+# an install step into a launcher, and it is the part a future variant cannot
+# drop without giving up the survive-the-installer property it wants.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: "T1105,T1059.007,T1222.002"
+  mbc: "E1105,C0017"
+
+composite_rules:
+  # File-scoped on purpose: the write, the chmod and the launch have to be one
+  # code path. At archive scope a build script's chmod pairs with an unrelated
+  # daemon's detached spawn in any large package and the claim stops being true.
+  #
+  # `scope: file` alone did not deliver that in a bundled CLI, which is one file
+  # of a few thousand lines: @agent-native/core's context-xray bundle writes its
+  # own shim with `writeFileSync` + `chmodSync(0o755)` in one function and, 5 KB
+  # earlier in an unrelated one, opens the generated report with
+  # `spawn("xdg-open", …, {detached, stdio:"ignore"}).unref()`. Neither half
+  # knows about the other. `near_bytes` supplies the "one code path" the comment
+  # above claims: a real drop-and-launch routine keeps all three calls together,
+  # minified or not, well inside this window.
+  - id: node-drop-executable-and-detach
+    desc: Node writes an executable file and launches it detached
+    crit: suspicious
+    conf: 0.94
+    scope: file
+    near_bytes: 2048
+    needs: 2
+    all:
+      - id: micro-behaviors/fs/file/write/direct::node-write-file-sync
+      - id: micro-behaviors/fs/chmod/executable/mode::node-chmod-make-executable
+      - id: micro-behaviors/process/create/spawn-variable::spawn-variable-program
+    any:
+      - id: micro-behaviors/process/create/spawn::detached-true
+      - id: micro-behaviors/process/create/spawn::stdio-ignore
+      - id: micro-behaviors/process/daemonize/detach::node-spawn-result-unref
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+      - id: metadata/lang/scripted::dts-declaration-file
+
+  # The launcher above, reached from module scope rather than from an exported
+  # function: importing the package is enough to run it. A library that ships a
+  # binary makes you call something; a package whose entrypoint drops and starts
+  # one during `import` has arranged for the payload to run in every consumer
+  # that merely depends on it, transitively, with no API call anywhere.
+  #
+  # Archive-scoped: the shim that runs at import time and the helpers it calls
+  # legitimately live in different modules of the same tarball — splitting them
+  # is itself the shape here, with the entrypoint kept small and honest-looking
+  # and the filesystem/exec verbs parked in an "internal" utility module.
+  - id: npm-import-time-embedded-payload-dropper
+    desc: Package drops and runs an embedded payload on import
+    crit: hostile
+    conf: 0.97
+    scope: archive
+    needs: 2
+    all:
+      - id: node-drop-executable-and-detach
+      - id: micro-behaviors/data/control-flow/module-exec::js-import-time-or-first-touch-init
+    any:
+      - id: micro-behaviors/data/decode/base64::base64-chunk-array-buffer-concat
+      - id: micro-behaviors/data/decode/base64::buffer-from-base64
+      - id: micro-behaviors/fs/path/location::node-env-home-hidden-entry
+      - id: micro-behaviors/fs/path/location::node-homedir-hidden-entry
+      - id: micro-behaviors/os/module/load::node-lazy-builtin-capability-import
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern

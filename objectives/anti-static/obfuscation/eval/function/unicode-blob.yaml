@@ -1,0 +1,90 @@
+# `Function("a","var x…\\u0074\\u003b\\u007b…")` — the body handed to the
+# Function constructor is not source, it is an escape-encoded blob that only
+# becomes source when a second parser resolves it, and often not even then: the
+# resolved text is ciphertext for a hand-rolled key schedule sitting in the same
+# body.
+#
+# The DOUBLE backslash is the tell. `t` in a string is just the letter
+# `t`; `\\u0074` is the six characters that spell an escape, written for a
+# parser that has not run yet. Nothing legitimate encodes source for its own
+# `Function` call — template engines, JSON shims and `globalThis` probes all
+# reach for the constructor, none of them first encode what they pass it.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1027.013
+  mbc: B0032
+
+traits:
+  # A run of escapes written for a second parse. Eight in a row is already past
+  # any plausible incidental use (a doc example, a test of an escape decoder)
+  # and well short of the thousands a real payload carries.
+  - id: nested-unicode-escape-run
+    desc: Escape run encoded for nested parser
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)(\\\\u00[0-9a-f]{2}){8}'
+    unless:
+      - id: metadata/lang/scripted::dts-declaration-file
+      - id: metadata/package/testing/harness/runtime/
+
+composite_rules:
+  # The encoded blob and the constructor that will parse it. Proximity binds
+  # them: a bundle that happens to contain both an escape table and an unrelated
+  # template compiler is not this.
+  - id: function-body-unicode-escape-blob
+    desc: Function constructor body is escape-encoded
+    crit: suspicious
+    conf: 0.94
+    scope: file
+    near_bytes: 4096
+    all:
+      - id: micro-behaviors/process/interpreter/eval::js-function-constructor
+      # Deliberately NOT `javascript-unicode-escape-volume`: that atom is a
+      # whole-file count with no offset, so `near_bytes` cannot bind it to the
+      # constructor and it turned every file that both builds a function and
+      # carries many escapes into a match. `effect`'s httpApiSwagger.js embeds
+      # the entire Swagger-UI bundle as a string literal — thousands of escapes,
+      # and a `Function(` from the React copy inside it — and read as a payload.
+      # The run atom carries an offset, so proximity actually means something.
+      - id: nested-unicode-escape-run
+
+  # The encoded body reaches back out for `require`. A template compiler does
+  # not need CommonJS module resolution, and code with nothing to hide would not
+  # need a getter to reach it: the payload is arranging for the filesystem,
+  # network and process APIs it never names.
+  - id: encoded-function-body-recovers-require
+    desc: Escape-encoded function body recovers require
+    crit: hostile
+    conf: 0.97
+    attack: "T1027.013,T1059.007"
+    scope: file
+    all:
+      - id: function-body-unicode-escape-blob
+    any:
+      - id: micro-behaviors/os/module/load::node-require-returning-getter
+      - id: micro-behaviors/os/module/load::node-require-function-rebind
+      - id: micro-behaviors/os/module/load::node-require-binding-reassignment
+      - id: micro-behaviors/process/interpreter/eval::js-function-constructor-require-parameter
+
+  # Decoder stub in front of ciphertext: a bit-mixing key schedule and
+  # hex-indexed table lookups wrapped around the encoded body. Together these
+  # describe a self-decrypting stage — the file cannot be read without running
+  # it, which is the entire point of shipping it this way.
+  - id: self-decrypting-function-stage
+    desc: Encoded function body ships its own decoder
+    crit: hostile
+    conf: 0.95
+    scope: file
+    all:
+      - id: function-body-unicode-escape-blob
+      # Not `javascript-unicode-escape-volume`: that atom is already one of the
+      # ways the blob leg above can be satisfied, so counting it here again
+      # would let the same evidence stand in for both halves of the claim.
+      - id: micro-behaviors/data/source/arithmetic::js-bitwise-arithmetic-chain
+    any:
+      - id: objectives/anti-static/obfuscation/encoding/hex::hex-array-access
+      - id: objectives/anti-static/obfuscation/code-metrics/identifiers::javascript-carrier-high-entropy-identifiers
+      - id: metadata/file/metrics::javascript-base64-like-identifier-count

@@ -54,6 +54,25 @@ traits:
       type: text
       regex: '(?i)[?&](s|k)=[A-Za-z0-9+/=_-]{8,}'
 
+  # `&t=` carries the label the client reports to the relay — the name the
+  # operator sees in their session list. An MSP fills it with the customer or
+  # site, because that console list is how they find the machine again; a
+  # deployment tool fills it from an asset field. A run of six or more letters
+  # with no vowel in it is neither: it is what someone types when the field is
+  # required and they intend nobody to be able to attribute the session.
+  #
+  # Vowel-free is the discriminator rather than "looks random": real labels are
+  # words, hostnames or ticket ids, and all of those carry vowels or digits.
+  - id: screenconnect-unpronounceable-session-label
+    desc: ScreenConnect session label has no vowels
+    crit: notable
+    conf: 0.9
+    platforms: [windows]
+    for: [pe, dll, msi, batch, powershell]
+    if:
+      type: text
+      regex: '(?i)[?&]t=[b-df-hj-np-tv-xz]{6,}\b'
+
 composite_rules:
   - id: screenconnect-guest-relay-session
     desc: ScreenConnect guest session targets relay
@@ -88,3 +107,64 @@ composite_rules:
       - id: well-known/dual-use/remote-admin/screenconnect::screenconnect-clientsetup-name-script
       - id: micro-behaviors/process/create/installer::msiexec-package-verb
     near_bytes: 4096
+
+  # A stock, validly-signed ScreenConnect client is dual-use: the pre-armed
+  # unattended-access configuration alone is what an MSP ships too. What an MSP
+  # does not ship is that configuration with the operator label deliberately
+  # left unattributable — their own console depends on that field being
+  # meaningful. Together: a remote-control agent that will accept a session with
+  # nobody at the keyboard, pinned to one relay, reporting to an operator who
+  # took care not to name themselves.
+  - id: screenconnect-anonymous-prearmed-client
+    desc: Pre-armed ScreenConnect client hides its operator
+    crit: hostile
+    conf: 0.95
+    platforms: [windows]
+    for: [pe, dll, msi]
+    all:
+      - id: well-known/dual-use/remote-admin/screenconnect::msi-screenconnect-prearmed-unattended-client
+      - id: screenconnect-unpronounceable-session-label
+
+  # The general form of the rule above, and the one that should catch the next
+  # variant: the product identity plus any single deployment anomaly.
+  #
+  # `screenconnect-family` is already suspicious on its own — see the rationale
+  # on that rule for why a stock RMM client in an incoming artifact is
+  # potentially-unwanted by default. This rule is what turns that into a
+  # conviction, and the bar is deliberately one anomaly, not several. A customer
+  # who bought ScreenConnect deploys it through their own console: the build
+  # carries their instance, the tray icon and the "you are being controlled"
+  # banner stay on because their users are supposed to know, the relay is a DNS
+  # name rather than an address, and the operator label names a site. Every leg
+  # below is an operator choosing the opposite, and each one costs the attacker
+  # something they wanted — visibility to the victim, or attribution of the
+  # session back to them.
+  #
+  # Structural artifacts of unpacking are deliberately NOT anomalies here. An
+  # embedded `ScreenConnect.Core.dll` lifted out of a signed installer is
+  # unsigned simply because members of a signed package are, and treating that
+  # as evidence would convict every extracted component of a legitimate build.
+  - id: screenconnect-anomalous-deployment
+    desc: ScreenConnect build carries a deployment anomaly
+    crit: hostile
+    conf: 0.95
+    attack: "T1219,T1036"
+    platforms: [windows]
+    for: [pe, dll, msi, batch, powershell]
+    scope: outer
+    all:
+      - id: well-known/dual-use/remote-admin/screenconnect::screenconnect-family
+    any:
+      # Relay, key and unattended-access role baked in at build time.
+      - id: well-known/dual-use/remote-admin/screenconnect::msi-screenconnect-prearmed-unattended-client
+      # Tray icon, connect balloon and control banner switched off: the victim
+      # is not meant to know a session is live.
+      - id: well-known/dual-use/remote-admin/screenconnect::msi-screenconnect-stealth-config
+      # Relay is a bare IPv4 — operator infrastructure with no DNS name, not a
+      # tenant's vendor-hosted instance.
+      - id: well-known/dual-use/remote-admin/screenconnect::screenconnect-bare-ip-relay-parameters
+      # Session label deliberately unattributable.
+      - id: screenconnect-unpronounceable-session-label
+      # The client is wearing another file type's name.
+      - id: objectives/evasion/masquerade/extension/mismatch::pe-named-as-txt
+      - id: objectives/evasion/masquerade/file/lure::business-document-exe-name

@@ -1,0 +1,63 @@
+# Capability laundering: the Node builtins that actually do the work —
+# `child_process`, `fs` — never appear in the module's static import list.
+# They are pulled in one at a time from inside function bodies, each wrapped in
+# a try/catch that reports only a boolean, so the module's declared surface is
+# a set of pure helpers and its real surface is process execution.
+#
+# Deferring ONE builtin is ordinary: isomorphic libraries do it so the same
+# file can load in a browser. Deferring several, from a file that also swallows
+# every failure, is what a reviewer reading the import list would never see —
+# and it is what a bundler's module graph, an SBOM generator and a
+# "which builtins does this package use" scanner all get wrong.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: "T1027,T1059.007"
+  mbc: B0032
+
+composite_rules:
+  # Deferring ONE family is the isomorphic-library idiom. Deferring the
+  # filesystem AND process execution from the same file is a helper module that
+  # keeps its entire Node surface out of the import list — there is no browser
+  # for which `child_process` is the part you polyfill away.
+  - id: node-multi-builtin-lazy-import
+    desc: Defers both filesystem and execution builtins
+    crit: suspicious
+    conf: 0.9
+    scope: file
+    all:
+      - id: micro-behaviors/os/module/load::node-lazy-exec-builtin-import
+    any:
+      - id: micro-behaviors/os/module/load::node-lazy-fs-builtin-import
+      - id: micro-behaviors/os/module/load::node-lazy-net-builtin-import
+    unless:
+      - id: metadata/lang/scripted::dts-declaration-file
+      - id: metadata/package/testing/harness/runtime/
+
+  - id: node-laundered-capability-helpers
+    desc: Helpers hide Node capability behind lazy imports
+    crit: suspicious
+    conf: 0.93
+    scope: file
+    all:
+      - id: node-multi-builtin-lazy-import
+      - id: micro-behaviors/data/control-flow/error-handling::catch-returns-constant-only
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+
+  # Laundered imports in front of a drop-and-run chain. Either half has an
+  # innocent reading on its own; together they describe a module that hides
+  # which capabilities it uses AND uses them to put a new executable on disk
+  # and start it.
+  - id: node-laundered-capability-dropper
+    desc: Dropper launders its Node capability imports
+    crit: hostile
+    conf: 0.96
+    scope: archive
+    all:
+      - id: node-laundered-capability-helpers
+      - id: objectives/command-and-control/dropper/staging/embedded::node-drop-executable-and-detach
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern

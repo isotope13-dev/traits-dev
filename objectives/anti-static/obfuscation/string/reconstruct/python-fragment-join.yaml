@@ -47,7 +47,27 @@ traits:
       # litellm, `["E2BSandboxBackend", "E2BSandboxSession"]` in bernstein,
       # COM tables like ["EnumConnectionPoints","FindConnectionPoint"] in
       # pywin32.
-      - regex: '["''][A-Za-z]*[0-9]?[A-Za-z]*["'']\s*,\s*["''][A-Za-z]*[0-9]?[A-Za-z]*'
+      # The digit allowance is a short *run*, not a single digit: API and SDK
+      # identifiers embed version and protocol numbers (`Route53ResolverClient`
+      # in localstack, `S3`, `EC2`, `IPv6`, `Base64`, `SHA256`), and a one-digit
+      # bound let every one of them through. A real Base64 run of 16+ chars
+      # averages ~2.5 digits *scattered*; requiring letters, one contiguous
+      # digit run, then letters is identifier shape, not payload shape.
+      - regex: '["''][A-Za-z]*[0-9]{0,3}[A-Za-z]*["'']\s*,\s*["''][A-Za-z]*[0-9]{0,3}[A-Za-z]*'
+      # Slash-separated CamelCase labels, not payload. `/` is in the Base64
+      # alphabet, so taxonomy/category paths qualify as "fragments" on
+      # character class alone -- youtube-dl's theplatform extractor carries
+      # `['MSNBC/Issues/Democrats', 'MSNBC/Issues/Elections/...']`. Two
+      # capitalised words either side of a slash is word structure; a random
+      # Base64 run has no reason to produce it.
+      - regex: '[A-Z][a-z]{2,}/[A-Z][a-z]{2,}'
+      # Absolute-path / JSON-Patch tokens, the same confusion from the other
+      # direction: `["/accessLogSettings/destinationArn", "/accessLogSettings/
+      # format"]` in localstack's API Gateway provider is a patch-path list.
+      # A quoted token that opens with a slash and continues in letters is a
+      # path; a Base64 run has a 1-in-64 chance of starting with `/` and no
+      # reason to follow it with three letters.
+      - regex: '["'']/[A-Za-z]{3,}'
     unless:
       # A Prowler check module is written in the shape of the control it audits.
       - id: well-known/tool/detection/prowler::scanner-check-corpus
@@ -63,7 +83,15 @@ traits:
     conf: 0.92
     if:
       type: text
-      regex: '\.join\([^)\r\n]{0,60}(b64decode|b16decode|b32decode|unhexlify)'
+      # The decode's argument must itself be parenthesis-free -- a literal, a
+      # loop variable, or a subscript. That is the shape of the technique this
+      # rule is named for: fragments *declared in the source* are decoded and
+      # welded, so nothing a reader can follow is ever assigned a name.
+      # Decoding values pulled from a runtime structure is ordinary API work and
+      # carries no fragments at all: localstack's Firehose provider does
+      # `b"".join([base64.b64decode(r.get("Data") or r.get("data")) for r in
+      # records])`, decoding request records, not constants.
+      regex: '\.join\([^)\r\n]{0,60}(b64decode|b16decode|b32decode|unhexlify)\([^()\r\n]{0,40}\)'
 
 composite_rules:
   # The full reconstruction: fragments declared, then decoded and welded. This
