@@ -85,7 +85,7 @@ Some findings are emitted by cleave itself rather than loaded from YAML, for exa
 
 Both `component` and `baseline` are allowed in any tier. `hostile` is allowed only in `objectives/` and `well-known/`; `micro-behaviors/` and `metadata/` max out at `suspicious`.
 
-**Demotion changes what is emitted — it does not clean anything up.** A `component`/`baseline` atomic is emitted only while a composite references it. Referenced, the match stays fully visible in the JSON output, the web UI and differential analysis — now mislabeled, and keyed to a `directory-path + criticality` ML feature it doesn't belong to. Unreferenced, it is dropped from the output altogether, so the evidence disappears instead of the false positive. Neither outcome is a fix, and the second actively costs an analyst a finding: assign the level the matcher honestly supports, and if a purpose-defining fact is being reported, that level is at least `notable`.
+**`component`/`baseline` traits are not hidden.** The CLI may surface them (historically `component` was filtered from terminal output unless a referencing composite fired; that is no longer guaranteed), and the JSON output, the web UI, and version-to-version differential analysis always include them. Lowering a trait to `component`/`baseline` therefore does **not** make a false positive disappear — the match stays visible, now mislabeled, and keyed to a `directory-path + criticality` ML feature it doesn't belong to.
 
 A trait must be correct — accurately named, described, and located for exactly what its matcher detects — at *every* criticality. The level sets weight and emphasis, not whether correctness matters. Fix real FPs by tightening the matcher, adding an `unless:`/`not:` exclusion, or relocating + renaming the trait (see [Matcher defines identity](#matcher-defines-identity--never-fix-placement-by-lowering-criticality)). Demote only when the lower tier is genuinely correct for what the matcher detects. Avoid filename based rules unless absolutely possible as they may be brittle.
 
@@ -401,6 +401,7 @@ format, use a `metrics` check against the numeric header field:
 - `pe.security_directory_out_of_bounds` — security directory file offset exceeds actual file length; indicates header tampering
 
 **Available `consistency.*` metric fields (boolean, 0/1):**
+- `consistency.name_repo_mismatch` — a package manifest names one package and declares another project's `repository`; the clone-and-rename shape, where a real package is republished verbatim under a confusingly similar name and there is no hostile code to find. Compared on a folded slug (scope marker, `.git` suffix and `-`/`_`/case dropped), so `@tailwindcss/forms` and `tailwindcss-forms` agree. Absent when the manifest declares `repository.directory`, since a monorepo package makes no claim that the repository shares its name. Archive scope
 - `consistency.cert_org_pdb_mismatch` — no word from the cert signer organization appears in the PDB path; supply-chain swap signal
 - `consistency.bundle_identifier_mismatch` — bundle identifier in Info.plist differs from signing identity
 - `consistency.manifest_product_version_mismatch` — product version in PE manifest differs from version info resource
