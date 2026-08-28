@@ -1,14 +1,25 @@
 # Capability laundering: the Node builtins that actually do the work —
-# `child_process`, `fs` — never appear in the module's static import list.
-# They are pulled in one at a time from inside function bodies, each wrapped in
-# a try/catch that reports only a boolean, so the module's declared surface is
-# a set of pure helpers and its real surface is process execution.
+# `child_process`, `fs` — never appear in the module's static import list. They
+# are pulled in from inside function bodies, so the module's declared surface is
+# a set of pure helpers while its real surface is process execution.
 #
-# Deferring ONE builtin is ordinary: isomorphic libraries do it so the same
-# file can load in a browser. Deferring several, from a file that also swallows
-# every failure, is what a reviewer reading the import list would never see —
-# and it is what a bundler's module graph, an SBOM generator and a
-# "which builtins does this package use" scanner all get wrong.
+# This observation is NOTABLE, not suspicious, and the demotion is worth
+# recording because the first draft got it wrong. The argument for suspicious
+# was "deferring one builtin is the isomorphic-library idiom, but nobody
+# polyfills `child_process` away for a browser." A benign VS Code extension
+# (DanielSanMedium.dscodegpt) falsified that: its Next.js *server* chunks are
+# built through the same pipeline as its browser chunks, so they defer
+# `node:fs` and `node:child_process` 395 bytes apart — closer together than the
+# npm dropper this rule was written for — to locate a vendored `ripgrep` and
+# spawn it with its stdout piped back. Proximity cannot separate the two, and
+# neither can the swallowed-error leg: bundled code is full of `catch {}`.
+#
+# What actually separates them is what the laundered capability is used FOR.
+# The dropper writes bytes it decoded, marks them executable and starts them
+# detached with every stream discarded; the extension runs a tool it shipped and
+# reads the answer. So the intent lives entirely in the drop-and-run leg of the
+# hostile composite below, and this file's job is only to say "the fs and exec
+# capability were kept out of the import list".
 defaults:
   platforms: [unix, windows]
   for: [javascript, typescript]
@@ -22,7 +33,7 @@ composite_rules:
   # for which `child_process` is the part you polyfill away.
   - id: node-multi-builtin-lazy-import
     desc: Defers both filesystem and execution builtins
-    crit: suspicious
+    crit: notable
     conf: 0.9
     scope: file
     all:
@@ -34,29 +45,18 @@ composite_rules:
       - id: metadata/lang/scripted::dts-declaration-file
       - id: metadata/package/testing/harness/runtime/
 
-  - id: node-laundered-capability-helpers
-    desc: Helpers hide Node capability behind lazy imports
-    crit: suspicious
-    conf: 0.93
-    scope: file
-    all:
-      - id: node-multi-builtin-lazy-import
-      - id: micro-behaviors/data/control-flow/error-handling::catch-returns-constant-only
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/package/testing/presence/fixture::test-filename-pattern
-
   # Laundered imports in front of a drop-and-run chain. Either half has an
-  # innocent reading on its own; together they describe a module that hides
-  # which capabilities it uses AND uses them to put a new executable on disk
-  # and start it.
+  # innocent reading on its own — see the header for the benign bundle that
+  # defers the same two builtins — but together they describe a module that
+  # keeps its fs and exec capability out of the import list AND uses that
+  # capability to put a new executable on disk and start it detached.
   - id: node-laundered-capability-dropper
     desc: Dropper launders its Node capability imports
     crit: hostile
     conf: 0.96
     scope: archive
     all:
-      - id: node-laundered-capability-helpers
+      - id: node-multi-builtin-lazy-import
       - id: objectives/command-and-control/dropper/staging/embedded::node-drop-executable-and-detach
     unless:
       - id: metadata/package/testing/harness/runtime/
