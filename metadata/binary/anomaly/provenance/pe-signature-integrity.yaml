@@ -1,0 +1,78 @@
+# Disagreement between what a PE's Authenticode signature commits to and what
+# the file now contains.
+#
+# The signature carries a digest of the image as it stood when it was signed.
+# filefacts recomputes the Authentihash and compares the two, so this is a
+# measurement rather than an inference: `pe.signature_integrity` reads
+# "tampered" only when those digests differ, which means the bytes changed
+# after signing.
+#
+# It is distinct from `pe.signatures[].verified`, which asks a narrower
+# question — did the signer's key sign these attributes — and stays true
+# through exactly this attack, because patching the image never touches the
+# PKCS#7 blob.
+#
+# Suspicious rather than hostile on its own: a handful of installers stamp
+# configuration into an already-signed binary and invalidate their own
+# signature doing it. Wearing *someone else's* trusted signature over changed
+# bytes is the hostile case, and that composite lives in
+# objectives/evasion/masquerade/trust.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+
+traits:
+  - id: pe-signature-digest-mismatch
+    desc: File changed after it was signed
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: value
+      path: pe.signature_integrity
+      exact: tampered
+    unless:
+      # A carved child is not the file that was signed. cleave reconstructs an
+      # embedded PE from a start offset and a guessed extent, so the
+      # Authentihash is computed over bytes that need not reproduce the
+      # original image -- Process Monitor's own bundled drivers mismatch this
+      # way while Procmon.exe itself verifies clean. The digest comparison is
+      # only meaningful on a whole file.
+      - id: metadata/binary/layout::embedded-pe-child
+
+  - id: pe-signature-not-verifiable
+    desc: Authenticode signature fails to verify
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: value
+      path: pe.signature_integrity
+      exact: invalid
+    unless:
+      - id: metadata/binary/layout::embedded-pe-child
+
+  # A signature dated outside the window its own certificate was valid for.
+  #
+  # Unlike expiry, no host clock enters this: the signing timestamp and the
+  # validity bounds are both issued by the PKI and both live in the file, so a
+  # plain boolean is safe where expiry needed a day count to absorb skew.
+  #
+  # Backdating is how a signature is made to look as though it predates a
+  # certificate's revocation or expiry. The honest cases -- an old binary whose
+  # certificate has since lapsed -- sit inside the window and do not match.
+  - id: pe-signature-outside-validity-window
+    desc: Signed outside its certificate validity
+    crit: suspicious
+    conf: 0.9
+    attack: T1553.002
+    if:
+      type: value
+      path: pe.signatures[0].signed_within_validity
+      regex: '^false$'
+    unless:
+      - id: metadata/binary/layout::embedded-pe-child
+
+  # Expiry is deliberately absent here. An expired certificate is the normal
+  # condition of old software that was signed honestly, and the comparison
+  # depends on the scanning host's clock rather than anything in the file.
+  # `pe.signature_expired_days` is available as a metric for rules that want to
+  # opt in; it is a day count so a threshold can absorb clock skew.

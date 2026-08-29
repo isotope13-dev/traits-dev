@@ -84,6 +84,47 @@ traits:
       type: text
       regex: '(?i)\bShell\s*@?\s*\(+[^;\n]{0,40}\)+\s*,\s*0\b'
 
+  - id: stored-excel4-macro-sheet
+    desc: Workbook holds an Excel 4.0 macro sheet
+    for: [oledoc]
+    crit: notable
+    conf: 0.9
+    if:
+      # A BOUNDSHEET record declaring sheet type 1. Excel still runs these but
+      # has not written one since the 1990s, so a recent workbook carrying one
+      # was built by something that wanted the older interpreter.
+      type: value
+      path: office.features[*]
+      exact: xlm_macros
+
+  - id: workbook-auto-open-name
+    desc: Workbook defines Auto_Open
+    for: [oledoc]
+    crit: notable
+    conf: 0.9
+    attack: T1204.002
+    if:
+      # The built-in defined name Excel calls the moment the file is opened.
+      # Ordinary on a macro-driven workbook; the half that turns a dormant
+      # macro sheet into something that runs without being asked.
+      type: value
+      path: office.features[*]
+      exact: auto_open
+
+  - id: very-hidden-worksheet
+    desc: Workbook has a very hidden sheet
+    for: [oledoc]
+    crit: notable
+    conf: 0.85
+    attack: T1564
+    if:
+      # Sheet visibility 2 cannot be undone from Excel's own UI, only from
+      # code. Legacy workbooks do use it to protect calculation sheets, so on
+      # its own this is a fact about the file rather than a claim about it.
+      type: value
+      path: office.features[*]
+      exact: veryhidden_sheets
+
 composite_rules:
   # Manufacture the macro sheet, then run what was written into it. Together
   # these are an XLM interpreter being stood up inside a VBA project, which is
@@ -110,3 +151,53 @@ composite_rules:
     all:
       - id: cell-constant-character-harvest
       - id: vba-hidden-window-shell
+
+  # The whole XLM dropper family in one shape: the workbook carries a macro
+  # sheet for an interpreter that predates VBA, and names it Auto_Open so it
+  # runs on open with no prompt beyond the macro banner. Legacy workbooks that
+  # still ship XLM do not auto-run it -- they leave it for a person to call --
+  # and anything written this century that wants to run code on open uses VBA.
+  - id: auto-running-excel4-macro-sheet
+    desc: Auto-opening Excel 4.0 macro sheet
+    crit: hostile
+    conf: 0.95
+    attack: T1059.005,T1204.002
+    all:
+      - id: stored-excel4-macro-sheet
+      - id: workbook-auto-open-name
+
+  # The same workbook, hidden: the sheet that holds the formulas is set to a
+  # visibility a reader cannot reverse, so opening the file runs code from a
+  # surface Excel will not show.
+  - id: hidden-auto-running-macro-sheet
+    desc: Auto-running macro sheet is hidden
+    crit: hostile
+    conf: 0.96
+    attack: T1059.005,T1564
+    all:
+      - id: stored-excel4-macro-sheet
+      - id: workbook-auto-open-name
+      - id: very-hidden-worksheet
+
+  # A macro sheet Excel stopped writing thirty years ago, in a workbook whose
+  # author field is a random token rather than a name. Legacy XLM workbooks
+  # come from people and carry their names; this pairing is a builder that
+  # filled the field with whatever its generator produced.
+  - id: generated-excel4-macro-workbook
+    desc: Machine-authored Excel 4.0 workbook
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: stored-excel4-macro-sheet
+      - id: objectives/evasion/masquerade/document::generated-document-author-identity
+
+  # The macro sheet carries a generated name. A workbook that still uses XLM
+  # for its own sake keeps the sheet it was built with; a per-victim build
+  # names it from a generator so no two samples share a sheet-name signature.
+  - id: obfuscated-excel4-macro-workbook
+    desc: Excel 4.0 sheet with a generated name
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: stored-excel4-macro-sheet
+      - id: objectives/evasion/masquerade/document::randomly-named-worksheet
