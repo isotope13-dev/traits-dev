@@ -119,6 +119,56 @@ traits:
       regex: 'System\.Management\.Automation\.dll'
       case_insensitive: true
 
+  # The wildcard-split bypass. Neither `AmsiUtils` nor `amsiInitFailed` is
+  # written down: the script walks the assembly's type table and matches the
+  # class on a glob that starts mid-word, then walks its non-public static
+  # fields and matches the flag the same way. Writing `$true` into that flag
+  # tells PowerShell that AMSI failed to start, so nothing is scanned again
+  # for the life of the process.
+  #
+  # This is the oldest form and the one that keeps coming back, because the
+  # only thing a variant has to change is where the glob starts.
+  - id: reflective-type-table-scan
+    desc: Enumerates an assembly's type table
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: '\[Ref\]\.Assembly\.GetTypes\s*\('
+      case_insensitive: true
+
+  - id: wildcard-amsi-type-fragment
+    desc: Glob matches AmsiUtils mid-word
+    crit: suspicious
+    conf: 0.95
+    if:
+      # `*iUtils`, `*siUtils`, `*msiUtils`. Reflection that means to find a
+      # class names it; a glob starting inside the word exists to keep the
+      # name out of the file.
+      type: text
+      regex: '\*[a-z]{0,4}iUtils'
+      case_insensitive: true
+
+  - id: nonpublic-static-field-lookup
+    desc: Reads non-public static fields
+    crit: component
+    conf: 0.8
+    if:
+      type: text
+      regex: 'GetFields\s*\(.{0,3}NonPublic,\s*Static'
+      case_insensitive: true
+
+  - id: wildcard-init-failed-fragment
+    desc: Glob matches an init-failed flag
+    crit: component
+    conf: 0.8
+    if:
+      # `*ailed` / `*Failed`. Ordinary on its own -- scripts do filter logs
+      # for failures -- which is why it only counts beside the type glob.
+      type: text
+      regex: '\*F?ailed.{0,2}\)?\s*\)'
+      case_insensitive: true
+
 composite_rules:
   - id: powershell-normalize-replace-deobfuscation
     desc: PowerShell Normalize replace deobfuscation
@@ -198,3 +248,17 @@ composite_rules:
     all:
       - id: amsi-init-failed-reflection
       - id: objectives/evasion/anti-av/platform/defender::amsi-bypass-amsiutils-setvalue
+
+  # The type table walked for a class the script will not name, and its
+  # private static fields read for a flag it will not name either. Two globs
+  # that start mid-word, aimed at the one class that turns scanning off.
+  - id: amsi-wildcard-reflection-bypass
+    desc: AMSI flag located by wildcard reflection
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: reflective-type-table-scan
+      - id: wildcard-amsi-type-fragment
+    any:
+      - id: nonpublic-static-field-lookup
+      - id: wildcard-init-failed-fragment
