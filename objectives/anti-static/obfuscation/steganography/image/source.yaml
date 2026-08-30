@@ -3,7 +3,7 @@
 # composites below supply the malicious context.
 defaults:
   platforms: [windows, unix]
-  for: [python, c, cpp, csharp, rust, go, javascript, typescript]
+  for: [python, c, cpp, csharp, rust, go, javascript, typescript, powershell]
   attack: T1027.003
   mbc: B0032.001
 
@@ -16,7 +16,52 @@ traits:
       type: text
       regex: '(?i)\b(config|payload)[a-z0-9_]{0,12}\s*=\s*\w+\[\s*eof\s*:\s*\]'
 
+  # 49 45 4E 44 AE is the PNG IEND chunk type followed by the first CRC byte.
+  # It is represented as a numeric byte array by PowerShell droppers that do
+  # not use an image parser and therefore expose no literal "IEND" string.
+  - id: powershell-png-iend-byte-prefix
+    desc: PowerShell declares PNG IEND terminator bytes
+    crit: component
+    conf: 0.96
+    for: [powershell]
+    if:
+      type: text
+      regex: '(?i)0x49\s*,\s*0x45\s*,\s*0x4e\s*,\s*0x44\s*,\s*0xae'
+
+  - id: powershell-byte-tail-slice
+    desc: PowerShell slices indexed byte-array tail
+    crit: component
+    conf: 0.9
+    for: [powershell]
+    if:
+      type: text
+      regex: '\$\w+\s*=\s*\$\w+\[\$\w+\.\.\(\$\w+\.Length\s*-\s*1\)\]'
+
 composite_rules:
+  - id: powershell-png-tail-payload-extraction
+    desc: PowerShell extracts bytes appended after a PNG terminator
+    crit: suspicious
+    conf: 0.98
+    for: [powershell]
+    all:
+      - id: powershell-png-iend-byte-prefix
+      - id: powershell-byte-tail-slice
+    near_lines: 20
+
+  - id: powershell-remote-png-tail-dropper
+    desc: PowerShell downloads, extracts, writes, and launches a PNG-tail payload
+    crit: hostile
+    conf: 0.99
+    for: [powershell]
+    attack: T1027.003,T1105,T1204.002
+    all:
+      - id: powershell-png-tail-payload-extraction
+      - id: micro-behaviors/communications/http/client/managed::downloaddata
+      - id: micro-behaviors/fs/write/file/direct::write-all-bytes
+      - id: micro-behaviors/fs/path/application/executable::appdata-exe-path
+      - id: micro-behaviors/process/create/shell/script-host::cmd-exe-c-start-launch
+    near_lines: 40
+
   - id: source-image-eof-payload-extraction
     desc: Source extracts data appended after an image terminator
     crit: suspicious
