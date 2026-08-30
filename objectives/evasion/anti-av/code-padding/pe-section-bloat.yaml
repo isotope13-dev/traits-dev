@@ -1,0 +1,57 @@
+# A PE inflated to ~100 MB by one bloated section, signed with a certificate
+# that was issued to nobody, and built from Go whose symbols were mangled.
+#
+# The padding is the operative evasion. Almost every scanning tier has a size
+# budget — mail gateways, sandbox upload limits, EDR cloud-lookup thresholds,
+# free multiscanner submission caps — and a file past the cap is not judged
+# safe, it is simply not judged. `pe.inflated_sections` is the direct read of
+# it: a section declared far larger on disk than the memory it maps, so the
+# bulk of the file is never paged in and costs the payload nothing at runtime.
+#
+# Each of the other two legs says the author expected the file to be looked at.
+# Garble strips and mangles the Go symbol table, which is the one thing that
+# normally makes a Go binary readable. A self-issued certificate confers no
+# trust on Windows at all — its only effects are to change the file's hash on
+# demand and to satisfy any check that asks "is it signed?" without asking by
+# whom.
+#
+# No single leg convicts: large Go binaries exist, obfuscation is sold
+# commercially, and self-signed builds are normal inside a company. A file
+# doing all three is padded past inspection, unreadable when inspected, and
+# wearing a signature that means nothing.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  attack: T1027.001
+  mbc: E1027.001
+
+composite_rules:
+  - id: pe-section-bloat-past-scanner-limits
+    desc: PE padded far past scanning size limits
+    crit: suspicious
+    conf: 0.93
+    # Below this a bloated section is ordinary embedded-asset packaging; the
+    # evasion only pays once the file clears the caps that matter.
+    size_min: 50000000
+    all:
+      - id: metadata/binary/section/metrics::inflated-data-section
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/installer/family/
+      - id: well-known/tool/
+
+  - id: bloated-obfuscated-self-signed-go-binary
+    desc: Padded, obfuscated, self-signed Go executable
+    crit: hostile
+    conf: 0.96
+    attack: T1027.001,T1027.002,T1553.002
+    size_min: 50000000
+    all:
+      - id: pe-section-bloat-past-scanner-limits
+      - id: objectives/anti-static/obfuscation/obfuscator/garble::garble-obfuscated-go
+    any:
+      - id: metadata/signed/certificate/identity::pe-cert-leaf-self-issued
+      - id: metadata/signed/certificate/identity::pe-cert-leaf-self-issued-kv
+    unless:
+      - id: metadata/signed/platform/
+      - id: well-known/tool/

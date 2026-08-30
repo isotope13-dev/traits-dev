@@ -1,0 +1,98 @@
+# Meterpreter payload identity from the payload's own bytes.
+#
+# The markers in traits.yaml recognise Metasploit as *packaging* -- a gem name,
+# a source tree, a console launcher. None of them reach the thing that actually
+# lands on a target: metasploit_payloads-mettle ships build/<triple>/bin/
+# mettle.bin for a dozen architectures, and those binaries are the POSIX
+# Meterpreter implant itself. They are also statically linked with a stripped,
+# unparseable section header table, so every import- and symbol-based trait is
+# blind to them and only their strings remain.
+#
+# What is matched is the Meterpreter *wire protocol*, not this build: the
+# stdapi command names and the TLV command dispatcher are how any peer speaks
+# to a Metasploit handler, so a reimplementation in another language -- or a
+# third-party implant that adopts the protocol to reuse msfconsole as its C2 --
+# carries the same strings.
+#
+# Suspicious, not hostile: Metasploit is a legitimate penetration-testing
+# product and Rapid7 publishes these payloads openly. Finding one on a host is
+# still an implant, which is why the identity does not sit at notable.
+defaults:
+  platforms: [unix, windows]
+  # The payload ships as a native binary; the shell/python/ruby entries cover a
+  # stager or reimplementation that speaks the same protocol from source. A
+  # Meterpreter payload is a few hundred KB to a few MB.
+  for: [binaries, scripts]
+  crit: notable
+  conf: 0.95
+  size_min: 1024
+  size_max: 40000000
+  attack: T1071
+  mbc: B0030
+
+traits:
+  # stdapi is Meterpreter's core extension; these are its command/channel type
+  # names as they travel on the wire and appear in every implementation.
+  - id: meterpreter-stdapi-command-name
+    desc: Meterpreter stdapi command name
+    conf: 0.96
+    if:
+      type: text
+      regex: '\bstdapi_(net_(tcp|udp)_(client|server)|fs_file|sys_process)\b'
+
+  # Meterpreter dispatches on a numeric command_id carried in its TLV frames.
+  - id: meterpreter-tlv-command-dispatch
+    desc: Meterpreter TLV command dispatch
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)TLV[^\n]{0,48}\bcommand_id\b'
+
+  - id: mettle-payload-banner
+    desc: mettle payload console banner
+    conf: 0.98
+    if:
+      type: text
+      substr: 'mettlesploit!'
+
+  # The payload's own option list: a UUID it reports to the handler, a
+  # connection URI, and persistence installation.
+  - id: mettle-payload-uuid-option
+    desc: mettle payload UUID option
+    conf: 0.95
+    if:
+      type: text
+      regex: '--uuid <uuid>[^\n]{0,32}set the UUID'
+
+  - id: mettle-payload-persist-option
+    desc: mettle payload persistence option
+    conf: 0.95
+    attack: T1547
+    if:
+      type: text
+      regex: '--persist \[none\|install\|uninstall\]'
+
+composite_rules:
+  # Two independent protocol markers, so a document that merely names one
+  # stdapi command does not become a payload.
+  - id: meterpreter-payload-implant
+    desc: Meterpreter payload implant
+    crit: suspicious
+    conf: 0.97
+    needs: 2
+    any:
+      - id: meterpreter-stdapi-command-name
+      - id: meterpreter-tlv-command-dispatch
+      - id: mettle-payload-banner
+      - id: mettle-payload-uuid-option
+
+  # The same binary offering to install itself for persistence and to run as a
+  # background service: a payload provisioned to survive the session.
+  - id: meterpreter-payload-persistent-service
+    desc: Meterpreter payload installs persistence
+    crit: suspicious
+    conf: 0.96
+    attack: T1547
+    all:
+      - id: meterpreter-payload-implant
+      - id: mettle-payload-persist-option

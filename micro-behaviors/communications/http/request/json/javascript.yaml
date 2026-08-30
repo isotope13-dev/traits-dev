@@ -41,6 +41,19 @@ traits:
       type: tree-sitter
       kind: call
       regex: '\b(request|xhr|xmlhttp)\.send\s*\(\s*JSON\.stringify\s*\('
+  # `el.setAttribute("href", v)` / jQuery `.attr("href", v)` — the sink that
+  # decides where a click goes. Distinct from an innerHTML write: no markup is
+  # parsed, nothing is injected, and a sanitizer would pass it. It still hands
+  # navigation control to whatever produced `v`.
+  - id: dynamic-link-attribute-assignment
+    desc: Assigns a URL into a link attribute
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\.(setAttribute|attr)\(\s*["''](href|src)["'']\s*,\s*[A-Za-z_$]'
+
 composite_rules:
   # The two operations are nearby, but the text matcher cannot prove that the
   # parsed response supplies the innerHTML right-hand side. Keep this as a
@@ -66,3 +79,25 @@ composite_rules:
       - id: micro-behaviors/communications/http/message::http-message-json-call
     unless:
       - id: well-known/tool/detection/skill-scanner::typescript-test-context
+
+  # The same cross-boundary dataflow as `external-json-to-dynamic-innerhtml`,
+  # landing in a link target rather than in markup. Worth its own composite
+  # because the innerHTML version is what a reviewer looks for and the attribute
+  # version is what a careful implementation writes — jQuery `.attr("href", …)`
+  # over a fetched catalog reads as good practice while giving the same remote
+  # party the same control over where the user ends up.
+  - id: external-json-to-link-target
+    desc: External JSON drives a link target
+    crit: suspicious
+    conf: 0.94
+    for: [javascript, typescript]
+    # Correlated by proximity rather than by reusing `fetch-json-response`:
+    # these fetches name their endpoint through a module constant
+    # (`fetch(EXT_API_URL, …)`), which the literal-URL leg of that composite
+    # cannot see. The remote-host leg below keeps the endpoint requirement.
+    near_bytes: 8000
+    all:
+      - id: micro-behaviors/communications/http/request/client::js-fetch-call
+      - id: micro-behaviors/communications/http/message::http-message-json-call
+      - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+      - id: dynamic-link-attribute-assignment
