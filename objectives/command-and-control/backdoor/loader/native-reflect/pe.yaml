@@ -122,6 +122,60 @@ composite_rules:
       - id: well-known/app/
       - id: well-known/lib/
       - id: well-known/tool/reverse-engineering/
+  # The MemoryModule import surface, keyed on the two APIs the MSVC C runtime
+  # never pulls in.
+  #
+  # `loader-api-surface` and `native-loader-api-combo` both stand down on
+  # `many-imports`, because VirtualAlloc + LoadLibraryA + GetProcAddress alone
+  # is ordinary in any large program. That guard also exempts every loader
+  # linked against the MSVC CRT, which drags ~80 imports in on its own — i.e.
+  # most real droppers. This composite replaces the import-count guard with a
+  # sharper discriminator, so it stays valid at any import count.
+  #
+  # `IsBadReadPtr` was deprecated by Microsoft two decades ago and no current
+  # runtime calls it; `GetNativeSystemInfo` is the WOW64-aware page-size and
+  # architecture query. Joachim Bauch's MemoryModule — the reference manual PE
+  # mapper that most in-memory loaders are still copied from — imports exactly
+  # this pair to size and validate the image it is about to map, alongside the
+  # alloc/protect/resolve trio. Seeing both beside the mapping APIs means the
+  # program is preparing to lay out a PE itself rather than let the loader do
+  # it.
+  - id: memorymodule-manual-map-api-set
+    desc: MemoryModule manual PE mapping API set
+    crit: suspicious
+    conf: 0.93
+    mbc: B0005
+    attack: T1620
+    all:
+      - id: micro-behaviors/os/sysinfo/hardware::get-native-system-info
+      - id: objectives/anti-analysis/debugger-detect/check::bad-read-ptr
+      - id: micro-behaviors/mem/protect/modify::virtual-alloc
+      - id: micro-behaviors/mem/protect/modify::virtual-protect
+      - id: micro-behaviors/os/module/load::get-proc-address-import
+    any:
+      - id: micro-behaviors/dylib/load/runtime::load-library-a
+      - id: micro-behaviors/os/module/load::free-library
+    unless:
+      - id: metadata/signed/platform/
+      - id: well-known/tool/reverse-engineering/
+      - id: metadata/binary/installer/family/
+
+  # The mapper plus the thing it maps. A stub whose code section is a few
+  # percent of the file, whose remaining ninety percent is unparsed appended
+  # data, and whose imports are the manual-map set, has one plausible reading:
+  # the overlay is a PE that the stub lays out in memory at run time. Nothing
+  # is written to disk and no loader-visible module is ever created, which is
+  # the point.
+  - id: overlay-payload-manual-map-loader
+    desc: Overlay-payload stub maps its payload manually
+    crit: hostile
+    conf: 0.95
+    mbc: B0005
+    attack: T1620,T1027.009
+    all:
+      - id: memorymodule-manual-map-api-set
+      - id: objectives/command-and-control/dropper/staging/stub::overlay-body-stub-executable
+
   - id: native-loader-obfuscated
     desc: Native reflective loader with packer profile
     crit: suspicious

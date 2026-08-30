@@ -21,7 +21,54 @@ defaults:
   attack: T1547.004
   mbc: E1547.004
 
+traits:
+  # Markers for Sysinternals Autologon — the published Microsoft utility whose
+  # only function is to store a username/domain/password under
+  # `HKLM\...\Winlogon` and set `AutoAdminLogon`, so the machine signs that
+  # account in with no prompt at every boot.
+  #
+  # Kept here, beside the composite that uses them, rather than under
+  # `well-known/tool/sysadmin/sysinternals/`. Both the composite below and
+  # `pack/section-anomaly::unexecutable-image-carrying-embedded-pes` exempt
+  # themselves on whole `well-known/tool/…` directories so they do not grade
+  # the genuine utility, and a directory `unless:` sweeps in every trait
+  # beneath it — including one that fires on a file merely *carrying* the
+  # tool's bytes. Filing these there would therefore hand each carrier the
+  # exemption meant for the tool itself. The concept they stand for —
+  # "the auto-logon configuration utility is present" — is exactly this
+  # directory's subject, so they are component fragments of this objective and
+  # nothing else.
+  #
+  # Two markers rather than one because both have to survive being carried
+  # inside another file, where the tool sits at no parsed offset of the outer
+  # image: the manifest description is recoverable from extracted strings, and
+  # the build's PDB path is matched raw for the case where a multi-megabyte
+  # carrier's string extraction does not reach it.
+  - id: autologon-manifest-description
+    desc: Autologon side-by-side manifest description
+    crit: component
+    conf: 0.96
+    if:
+      type: text
+      substr: '<description>Autologon Tool</description>'
+
+  - id: autologon-pdb-name
+    desc: Autologon build PDB filename
+    crit: component
+    conf: 0.96
+    if:
+      type: raw
+      regex: '[\\/]Autologon(64)?\.pdb'
+
 composite_rules:
+  - id: autologon-utility-marker
+    desc: Sysinternals Autologon utility marker
+    crit: component
+    conf: 0.96
+    any:
+      - id: autologon-manifest-description
+      - id: autologon-pdb-name
+
   - id: native-winlogon-key-write-with-restart
     desc: Writes a Winlogon key and can force a restart
     crit: suspicious
@@ -49,3 +96,42 @@ composite_rules:
       # its Tools menu can restart the machine. Three unrelated features, no
       # evidence linking them.
       - id: well-known/app/utility/siw::siw-family-identity
+
+  # Bring-your-own-signed-tool auto-logon: a packed carrier that ships
+  # Sysinternals Autologon and drives it.
+  #
+  # `native-winlogon-key-write-with-restart` above stands down on
+  # `well-known/tool/sysadmin/sysinternals/`, and has to: Autologon's whole
+  # published purpose is to write `AutoAdminLogon`/`DefaultUserName`/
+  # `DefaultPassword` under Winlogon and bounce the session, so the tool's own
+  # bytes carry every leg of that composite. The exemption is a statement about
+  # *that binary*, not about whoever wrapped it.
+  #
+  # This composite is the wrapper's side of the same evidence. A runtime-packed
+  # image whose sections are not executable as mapped, carrying several PE
+  # images of which one is the Autologon utility, and whose own import surface
+  # reaches the Winlogon key and `ExitWindowsEx`, is not someone redistributing
+  # a sysadmin utility — it is an unpacker arranging for the signed tool to
+  # establish passwordless administrator logon at the next boot, which it also
+  # triggers. The signature belongs to Microsoft; the decision to use it does
+  # not.
+  #
+  # The Autologon markers are the local component traits above, for the reason
+  # recorded there. Legs are otherwise flattened rather than referencing
+  # `pack/section-anomaly::unexecutable-image-carrying-embedded-pes`, because
+  # that composite carries `unless: well-known/tool/`.
+  #
+  # scope: outer — the packer layout and import surface are facts about the
+  # carrier, the tool identity is a fact about an embedded image.
+  - id: packed-carrier-bundles-signed-autologon-tool
+    desc: Packed carrier bundles a signed auto-logon tool
+    crit: hostile
+    conf: 0.95
+    scope: outer
+    attack: T1547.004,T1078.003
+    all:
+      - id: metadata/binary/metrics/structural::pe-no-executable-sections
+      - id: metadata/binary/layout::multiple-pe-embedded
+      - id: autologon-utility-marker
+      - id: micro-behaviors/os/registry/keys::winlogon-registry-path
+      - id: micro-behaviors/ui/window/manage/control::exit-windows-ex
