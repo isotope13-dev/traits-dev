@@ -179,8 +179,8 @@ traits:
     type: text
     substr: require('four-sdk-aes-ipheriv')
 
-- id: require-wime-zle
-  desc: Requires wime-zle module
+- id: require-wime-zle-family
+  desc: Requires wime-zle or vime-azl module
   crit: suspicious
   conf: 0.995
   for: [javascript, typescript]
@@ -197,18 +197,6 @@ traits:
     type: text
     substr: aesCreateIpheriv();
 
-- id: from-str-loader-call
-  desc: Calls from_str loader method
-  crit: component
-  conf: 0.98
-  for: [javascript, typescript]
-  if:
-    # Migrated from a tree-sitter call query to a `kind: call`
-    # match on the pre-extracted call fact (no per-member
-    # tree-sitter cursor walk; same call-name semantics).
-    type: symbol
-    kind: call
-    regex: '\.from_str$'
 - id: noop-loader-promises
   desc: Loader chain swallows promise results
   crit: suspicious
@@ -218,47 +206,19 @@ traits:
     type: text
     substr: .then(e => { }).catch(e => { })
 
-- id: from-str-promise-swallow
-  desc: from_str promise swallows errors
-  crit: component
-  conf: 0.99
-  for: [javascript, typescript]
-  if:
-    type: text
-    substr: .then(e => e).catch(e => { })
 
-# A parser called with nothing to parse. Rust's FromStr::from_str takes the
-# string it is converting, and every wasm-bindgen or native binding that
-# genuinely exposes the name keeps that argument -- so a zero-argument call is
-# not a conversion at all, it is a trigger wearing a converter's name. This is
-# what separates the loader stub from a real Rust-backed npm package that
-# happens to load inside a try.
-- id: from-str-no-argument-call
-  desc: Calls from_str with no arguments
-  crit: component
-  conf: 0.98
-  for: [javascript, typescript]
-  if:
-    type: text
-    regex: '\.from_str\(\s*\)'
-
-- id: swallowed-loader-errors
-  desc: Empty catch hides loader errors
-  crit: component
+# A bare external require immediately followed by a zero-argument from_str
+# dispatch is the stable loader shape across renamed payload packages.  The
+# matcher does not name a campaign module, so future sidecar names remain
+# visible; the known-family import traits below add higher-confidence intent.
+- id: external-require-from-str-dispatch
+  desc: External require followed by from_str dispatch
+  crit: suspicious
   conf: 0.97
   for: [javascript, typescript]
-  size_max: 65536
   if:
     type: text
-    regex: 'from_str[\s\S]{0,240}catch\s*\([A-Za-z_][A-Za-z0-9_]*\)\s*\{\s*\}'
-  unless:
-  - type: text
-    substr: instantiateWasm
-  downgrade:
-    any:
-    - id: metadata/package/testing/
-    - type: basename
-      regex: '(?i)\.(spec|test)\.[jt]s$'
+    regex: '\brequire\(["''][^./"''][^"'']{1,50}["'']\);?\s*\w+\.from_str\(\s*\)'
 
 # Generic import-time sidecar: try { require("./sidecar") } catch (_) {}
 # without the from_str naming used by the lint-builder family. The public
@@ -358,17 +318,17 @@ composite_rules:
   attack: T1195.002,T1059.007
   mbc: B0024
   all:
-  - id: from-str-loader-call
-  - id: swallowed-loader-errors
+  - id: micro-behaviors/data/string/conversion::from-str-method-call
+  - id: micro-behaviors/data/control-flow/error-handling::from-str-empty-catch
   - id: micro-behaviors/os/module/load::cjs-require-in-try-fallback
   # The result must go nowhere. Either the call takes no argument (so it cannot
   # be converting anything) or its promise is drained by no-op handlers. Without
   # this leg the rule convicts a genuine Rust/wasm binding that happens to sit
   # in a try with an empty catch -- verified against exactly that shape.
   any:
-  - id: from-str-no-argument-call
+  - id: micro-behaviors/data/string/conversion::from-str-no-argument-call
   - id: noop-loader-promises
-  - id: from-str-promise-swallow
+  - id: micro-behaviors/data/control-flow/error-handling::promise-identity-then-empty-catch
   unless:
   - id: metadata/package/testing/
   - id: metadata/package/testing/presence/fixture::test-filename-pattern
@@ -380,9 +340,9 @@ composite_rules:
   for: [javascript, typescript]
   all:
   - id: require-lint-builder-family
-  - id: from-str-loader-call
+  - id: micro-behaviors/data/string/conversion::from-str-method-call
   - id: noop-loader-promises
-  - id: swallowed-loader-errors
+  - id: micro-behaviors/data/control-flow/error-handling::from-str-empty-catch
 
 - id: require-fallback-npm-install
   desc: Missing dependency fallback installs package at runtime
@@ -409,7 +369,7 @@ composite_rules:
   - id: require-fallback-npm-install
   - id: objectives/supply-chain/install-hook/scripts/dynamic-install::stealth-runtime-npm-install
   any:
-  - id: swallowed-loader-errors
+  - id: micro-behaviors/data/control-flow/error-handling::from-str-empty-catch
   - id: micro-behaviors/process/create/spawn::windowshide-option
 
 - id: trojanized-library-hidden-loader
@@ -501,52 +461,65 @@ composite_rules:
   mbc: B0024
   all:
   - id: require-npm-doc-payload
-  - id: from-str-no-argument-call
-  - id: swallowed-loader-errors
+  - id: micro-behaviors/data/string/conversion::from-str-no-argument-call
+  - id: micro-behaviors/data/control-flow/error-handling::from-str-empty-catch
   unless:
   - id: metadata/package/testing/
   - id: metadata/package/testing/presence/fixture::test-filename-pattern
 
-- id: wime-zle-hidden-loader
-  desc: Embedded wime-zle dependency loader
+- id: wime-zle-family-hidden-loader
+  desc: Embedded wime-zle-family dependency loader
   crit: hostile
   conf: 0.998
   # Cross-file: the dependency is declared in package.json while the loader code
   # lives in a sibling .js. A .tgz is typed tar.gz (not npm), so package.json-
   # anchored sibling pooling never activates — evaluate at archive scope so the
-  # manifest + script findings are pooled. (The JS-only wime-zle-loader-stub
+  # manifest + script findings are pooled. (The JS-only family loader stub
   # below still covers the case where only the script is seen.)
   for: [javascript, typescript, package.json, archives]
   scope: archive
   all:
   - id: wime-zle-dependency
-  - id: require-wime-zle
-  - id: from-str-loader-call
-  - id: from-str-promise-swallow
+  - id: require-wime-zle-family
+  - id: micro-behaviors/data/string/conversion::from-str-method-call
+  - id: micro-behaviors/data/control-flow/error-handling::promise-identity-then-empty-catch
 
-- id: wime-zle-loader-stub
-  desc: wime-zle import-time loader stub
+- id: wime-zle-family-loader-stub
+  desc: wime-zle-family import-time loader stub
   crit: hostile
   conf: 0.998
   for: [javascript, typescript]
   all:
-  - id: require-wime-zle
-  - id: from-str-loader-call
-  - id: from-str-promise-swallow
+  - id: require-wime-zle-family
+  - id: micro-behaviors/data/string/conversion::from-str-method-call
+  - id: micro-behaviors/data/control-flow/error-handling::promise-identity-then-empty-catch
+
+- id: big-js-clone-from-str-loader
+  desc: big.js clone runs concealed from_str sidecar
+  crit: hostile
+  conf: 0.99
+  for: [javascript, typescript, package.json, archives]
+  scope: archive
+  attack: "T1195.002,T1059.007"
+  mbc: B0024
+  all:
+  - id: objectives/supply-chain/impersonation/npm-clone::big-js-impersonation
+  - id: external-require-from-str-dispatch
+  - id: micro-behaviors/data/control-flow/error-handling::promise-identity-then-empty-catch
 
 - id: levex-refa-hidden-loader
   desc: Embedded levex-refa dependency loader
   crit: hostile
   conf: 0.998
   # Cross-file (dep in package.json + loader in sibling .js); see
-  # wime-zle-hidden-loader — evaluate at archive scope so .tgz pools both.
+  # wime-zle-family-hidden-loader — evaluate at archive scope so .tgz pools both.
   for: [javascript, typescript, package.json, archives]
   scope: archive
   all:
   - id: levex-refa-dependency
   - id: require-levex-refa
-  - id: from-str-loader-call
-  - id: from-str-promise-swallow
+  - id: micro-behaviors/data/string/conversion::from-str-method-call
+  - id: micro-behaviors/data/control-flow/error-handling::promise-identity-then-empty-catch
 
 - id: levex-refa-loader-stub
   desc: levex-refa import-time loader stub
@@ -555,8 +528,8 @@ composite_rules:
   for: [javascript, typescript]
   all:
   - id: require-levex-refa
-  - id: from-str-loader-call
-  - id: from-str-promise-swallow
+  - id: micro-behaviors/data/string/conversion::from-str-method-call
+  - id: micro-behaviors/data/control-flow/error-handling::promise-identity-then-empty-catch
 
 - id: slot-loader-stub
   desc: Slot loader runs during import
@@ -566,8 +539,8 @@ composite_rules:
   attack: "T1195.002,T1059.007"
   all:
   - id: require-slot-loader
-  - id: from-str-loader-call
-  - id: swallowed-loader-errors
+  - id: micro-behaviors/data/string/conversion::from-str-method-call
+  - id: micro-behaviors/data/control-flow/error-handling::from-str-empty-catch
   any:
   - id: noop-loader-promises
   - id: micro-behaviors/os/module/load::cjs-require-in-try-fallback
@@ -583,8 +556,8 @@ composite_rules:
   all:
   - id: slot-loader-dependency
   - id: require-slot-loader
-  - id: from-str-loader-call
-  - id: swallowed-loader-errors
+  - id: micro-behaviors/data/string/conversion::from-str-method-call
+  - id: micro-behaviors/data/control-flow/error-handling::from-str-empty-catch
 
 - id: trojanized-crypto-sdk-helper
   desc: Trojanized SDK triggers four-sdk-aes-ipheriv helper
