@@ -1247,6 +1247,8 @@ metadata/
 │   ├── runtime/           #   Runtime lifecycle callbacks and extension context
 │   ├── storage/           #   Extension storage authority
 │   ├── telemetry/         #   Extension telemetry/event reporting authority
+│   ├── tool-invocation/   #   Coding-agent tool-permission rules (Tool(pattern)
+│   │                      #     allow/deny tables in agent settings files)
 │   ├── uri/               #   URI handler and OAuth callback authority
 │   └── workspace/         #   Workspace/file access authority
 ├── signed/                # Code signatures, certificates, entitlements
