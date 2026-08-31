@@ -82,16 +82,46 @@ traits:
       min: 33554432
     unless:
       - id: metadata/lang/compiler/systems::go-binary
-  # size_max covers mid-size truncated IoT samples (~150 KiB) whose first
-  # PT_LOAD still begins at file offset 0 with PF_R|PF_X — the prior 128 KiB
-  # ceiling missed those stubs while parse-failed metrics omit filesz.
-  - id: arm-executable-load-header
-    desc: ARM ELF PT_LOAD starts at file origin
+  # Parser-independent check for an executable ARM PT_LOAD whose claimed
+  # file-backed bytes extend past EOF. This remains available when malformed
+  # section metadata prevents the normal ELF metrics from being produced.
+  - id: arm-rx-load-exceeds-file
+    desc: ARM ELF RX LOAD exceeds file backing
     crit: notable
-    conf: 0.9
-    arch: [arm]
-    size_max: 262144
+    conf: 0.98
+    arch: [arm, aarch64]
     if:
-      type: hex
-      offset: 84
-      pattern: "01 00 00 00 00 00 00 00 [16] 05 00 00 00"
+      type: yara
+      source: |
+        rule arm_rx_load_exceeds_file {
+          condition:
+            uint32(0) == 0x464c457f and
+            (
+              (
+                uint8(4) == 1 and uint16(18) == 40 and
+                uint16(0x2a) == 32 and
+                uint16(0x2c) > 0 and uint16(0x2c) <= 128 and
+                uint32(0x1c) + uint16(0x2c) * 32 <= filesize and
+                for any i in (0..uint16(0x2c) - 1): (
+                  uint32(uint32(0x1c) + i * 32) == 1 and
+                  (uint32(uint32(0x1c) + i * 32 + 24) & 5) == 5 and
+                  uint32(uint32(0x1c) + i * 32 + 4) +
+                    uint32(uint32(0x1c) + i * 32 + 16) > filesize
+                )
+              ) or (
+                uint8(4) == 2 and uint16(18) == 183 and
+                uint16(0x36) == 56 and
+                uint16(0x38) > 0 and uint16(0x38) <= 128 and
+                uint32(0x24) == 0 and
+                uint32(0x20) + uint16(0x38) * 56 <= filesize and
+                for any i in (0..uint16(0x38) - 1): (
+                  uint32(uint32(0x20) + i * 56) == 1 and
+                  (uint32(uint32(0x20) + i * 56 + 4) & 5) == 5 and
+                  uint32(uint32(0x20) + i * 56 + 12) == 0 and
+                  uint32(uint32(0x20) + i * 56 + 36) == 0 and
+                  uint32(uint32(0x20) + i * 56 + 8) +
+                    uint32(uint32(0x20) + i * 56 + 32) > filesize
+                )
+              )
+            )
+        }
