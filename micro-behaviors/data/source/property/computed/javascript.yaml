@@ -33,7 +33,7 @@ traits:
         (subscript_expression
           object: (this))
     unless:
-      - id: metadata/library/jquery::domain
+      - id: well-known/lib/web/jquery::license-url
       - id: metadata/library/prototype::copyright
   # Plain `ident[expr](...)` — dispatch tables, callback queues, `arr[i]()`.
   # This is ordinary JavaScript (ramda and lodash both match), so on its own it
@@ -92,9 +92,12 @@ traits:
     if:
       type: text
       regex: '\b\w+\s*\[[^\]\n]{1,180}\]\s*\('
-  - id: js-obfuscated-computed-constructor
-    desc: Obfuscated computed constructor
-    crit: notable
+  # Computed constructor selection is ordinary dynamic dispatch by itself.
+  # Obfuscation composites add the decode/dispatch evidence that supplies
+  # intent; this atom only records the source-level operation.
+  - id: js-computed-constructor
+    desc: Constructs an object through a computed property
+    crit: baseline
     conf: 0.9
     if:
       type: text
@@ -102,12 +105,13 @@ traits:
 
   - id: globalthis-computed-property-call
     desc: Calls a computed globalThis property
+    # Computed global dispatch is neutral; composites supply malicious intent.
     crit: notable
     conf: 0.88
     for: [javascript]
     if:
       type: text
-      regex: '\bglobalThis\s*\[\s*[A-Za-z_$][A-Za-z0-9_$]{0,30}\s*\]\s*\('
+      regex: '\(?globalThis\)?\s*\[[\s\S]{1,100}\]\s*\(\s*\w+'
   - id: js-computed-date-method-call
     desc: Calls a Date method through bracket notation
     crit: notable
@@ -155,6 +159,7 @@ traits:
       - id: metadata/library/structure::js-webpack-bundle
       - id: metadata/library/structure::js-large-module-bundle
       - id: metadata/build/recognized-contexts::benign-build-tooling-context
+      - id: well-known/app/development/github-web::blob-page-rendered-source
   - id: js-computed-hidden-flag-call
     desc: Computed call with hidden-window arguments
     crit: notable
@@ -187,6 +192,25 @@ traits:
     if:
       type: text
       regex: '\b\w+\[\w+\(["''][^"'']{1,40}["'']\)\]\s*\(\s*\w+\([^)]{1,80}\)\s*,\s*\w+\s*,\s*false\s*\)'
+  - id: js-computed-decoder-call-prefix
+    desc: Computed call uses a decoder function
+    crit: component
+    conf: 0.9
+    for: [javascript]
+    if:
+      type: text
+      regex: '\b\w+\[\w+\([^\r\n)]{1,240}\)\]\s*\('
+  - id: js-arithmetic-falsy-final-flags
+    desc: Call uses arithmetic and falsy final flags
+    crit: component
+    conf: 0.9
+    for: [javascript]
+    if:
+      type: text
+      # Obfuscators commonly replace numeric and Boolean flags with arithmetic
+      # and JavaScript's falsy `![]` expression. Execution intent is supplied
+      # by higher-level composites with WSH and method-name evidence.
+      regex: ',\s*[-+*\d\s]{3,120},\s*!\[\]\s*\);'
   - id: js-global-require-alias
     desc: Assigns require to computed global property
     crit: notable
@@ -195,3 +219,55 @@ traits:
     if:
       type: text
       regex: 'global\s*\[.{1,80}\]\s*=\s*require\b'
+    unless:
+      - id: well-known/app/development/github-web::blob-page-rendered-source
+
+  # Two-level bracket access on the global object where both keys and the
+  # argument index are computed — `window[f(a)][f(b)](t[c])`. The string-array
+  # obfuscator shape: no property name appears in the source.
+  #
+  # Relocated from micro-behaviors/ui/window/manage/navigation/, which named it
+  # for the composite it feeds (obfuscated query navigation) rather than for
+  # what it matches; the matcher cannot tell a navigation call from any other
+  # window method. The navigation composite references it cross-directory.
+  - id: computed-window-member-call
+    desc: Computed window member call
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript, html]
+    attack: T1027
+    mbc: B0032
+    if:
+      type: text
+      regex: 'window\s*\[[^\]]{1,80}\]\s*\[[^\]]{1,80}\]\s*\(\s*\w+\s*\['
+    unless:
+      - id: well-known/lib/web/ckeditor::ckeditor-distribution
+
+  # A bracket-indexed method call whose last argument is the literal 0. In the
+  # WSH dropper shape that is `sh[decode("Run")](cmd, 0)` — the 0 being the
+  # hidden-window mode — but the matcher itself checks nothing about process
+  # creation, which is why it also lands on minified private-symbol dispatch
+  # such as minipass/tar's `this[He](null, 0)`. Relocated from
+  # micro-behaviors/process/create/flags/, which asserted a launch flag the
+  # matcher never verifies; the ActiveX/WSH dropper composites reference it
+  # cross-directory and supply the ADODB.Stream and ProgID legs themselves.
+  #
+  # The argument list must be a single unnested call: no parentheses and no
+  # statement separators between `](` and the trailing `, 0)`. The former
+  # 240-character `[^\n]` window spanned unrelated code on minified lines and
+  # stitched a regex literal's `]([^'"]+)` to a later `u2(S,0)` call.
+  # The receiver must also be an identifier — the hidden-window `Run(cmd, 0)`
+  # shape dispatches off a shell object, whereas a subscript on a literal is
+  # ordinary polyfill code (core-js probes `'0'[$SPLIT](undefined, 0)`).
+  - id: computed-member-call-zero-arg
+    desc: Computed member call with trailing zero
+    crit: notable
+    conf: 0.96
+    for: [javascript]
+    unless:
+      - id: metadata/library/structure::js-large-minified-bundle
+      - id: well-known/lib/ui/jquery-ui/
+      - id: well-known/lib/ui/yui/
+    if:
+      type: text
+      regex: '[A-Za-z_$][\w$]*\s*\[[^\]\n]{1,60}\]\([^()\n;]{1,80},\s*0\s*\)'

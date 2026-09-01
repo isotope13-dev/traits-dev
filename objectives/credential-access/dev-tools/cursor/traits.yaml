@@ -6,7 +6,10 @@ defaults:
 traits:
 - id: cursor-auth-access-token-key
   desc: Cursor access token key
-  crit: suspicious
+  # A bare storage key does not establish that code reads or steals the token.
+  # The composites below add the SQLite/process/transport evidence needed to
+  # infer credential access or exfiltration.
+  crit: component
   conf: 0.98
   if:
     type: text
@@ -14,12 +17,12 @@ traits:
   unless:
   - id: metadata/package/quality/benign-context::openchamber-credential-import-context
   - id: metadata/package/quality/benign-context::openchamber-extension-manager-context
-  - id: well-known/app/ai/vibe-cafe-vibe-usage::vibe-usage-archive-context
-  - id: well-known/app/ai/vibe-cafe-vibe-usage::vibe-usage-cursor-source-context
-  - id: well-known/app/ai/cursor-token-monitor::cursor-token-monitor-context
-  - id: well-known/app/ai/openusage-cli::openusage-cli-archive-context
-  - id: well-known/app/ai/openusage-cli::openusage-cursor-plugin-context
-  - id: well-known/app/ai/ai-box::ai-box-extension-context
+  - id: well-known/app/ai/usage/vibe-cafe-vibe-usage::vibe-usage-archive-context
+  - id: well-known/app/ai/usage/vibe-cafe-vibe-usage::vibe-usage-cursor-source-context
+  - id: well-known/app/ai/usage/cursor-token-monitor::cursor-token-monitor-context
+  - id: well-known/app/ai/usage/openusage-cli::openusage-cli-archive-context
+  - id: well-known/app/ai/usage/openusage-cli::openusage-cursor-plugin-context
+  - id: well-known/app/ai/usage/ai-box::ai-box-extension-context
   # Cursor's own usage endpoint is the destination for this token in a
   # usage/rate-limit client, not an exfiltration destination.
   - type: text
@@ -27,7 +30,7 @@ traits:
 
 - id: cursor-auth-refresh-token-key
   desc: Cursor refresh token key
-  crit: suspicious
+  crit: component
   conf: 0.98
   if:
     type: text
@@ -35,15 +38,16 @@ traits:
   unless:
   - id: metadata/package/quality/benign-context::openchamber-credential-import-context
   - id: metadata/package/quality/benign-context::openchamber-extension-manager-context
-  - id: well-known/app/ai/cursor-token-monitor::cursor-token-monitor-context
-  - id: well-known/app/ai/openusage-cli::openusage-cli-archive-context
-  - id: well-known/app/ai/openusage-cli::openusage-cursor-plugin-context
-  - id: well-known/app/ai/ai-box::ai-box-extension-context
+  - id: well-known/app/ai/usage/cursor-token-monitor::cursor-token-monitor-context
+  - id: well-known/app/ai/usage/openusage-cli::openusage-cli-archive-context
+  - id: well-known/app/ai/usage/openusage-cli::openusage-cursor-plugin-context
+  - id: well-known/app/ai/usage/ai-box::ai-box-extension-context
 
 - id: cursor-state-vscdb-path
   desc: Cursor state database path
   crit: notable
   conf: 0.95
+  for: [scripts, source]
   if:
     type: text
     regex: 'Cursor[\s\S]{0,160}state\.vscdb'
@@ -52,9 +56,10 @@ traits:
   desc: Cursor auth-key ItemTable query
   crit: notable
   conf: 0.95
+  for: [scripts, source]
   if:
     type: text
-    regex: "(?i)SELECT\\s+key\\s*,\\s*value\\s+FROM\\s+ItemTable\\s+WHERE\\s+key\\s+LIKE\\s+['\"]cursorAuth/"
+    regex: "(?i)SELECT\\s+key,\\s*value\\s+FROM\\s+ItemTable\\s+WHERE\\s+key\\s+LIKE\\s+['\"]%?cursorAuth[/%]"
 
 - id: cursor-auth-sqlite-reader-function
   desc: Cursor auth state SQLite reader function
@@ -84,6 +89,39 @@ traits:
     exact: CURSOR_AUTH_KEYS
 
 composite_rules:
+- id: cursor-auth-namespace-sqlite-extraction
+  desc: Extracts Cursor auth namespace from its state database
+  crit: suspicious
+  conf: 0.99
+  for: [scripts, source]
+  all:
+  - id: cursor-state-vscdb-path
+  - id: cursor-itemtable-value-query
+  unless:
+  - id: metadata/package/quality/benign-context::openchamber-credential-import-context
+  - id: metadata/package/quality/benign-context::openchamber-extension-manager-context
+  - id: well-known/app/ai/usage/claude-code-exporter::claude-code-exporter-cursor-context
+  - id: well-known/app/ai/usage/cursor-token-monitor::cursor-token-monitor-context
+  - id: well-known/app/ai/usage/openusage-cli::openusage-cli-archive-context
+  - id: well-known/app/ai/usage/openusage-cli::openusage-cursor-plugin-context
+  - id: well-known/app/ai/usage/ai-box::ai-box-extension-context
+
+- id: cursor-extension-auth-store-access
+  desc: VS Code extension extracts Cursor authentication records
+  crit: hostile
+  conf: 0.99
+  attack: T1552.001,T1005
+  all:
+  - id: cursor-auth-namespace-sqlite-extraction
+  - id: metadata/library/vscode::vscode-extension-marker
+  unless:
+  - id: metadata/package/quality/benign-context::openchamber-credential-import-context
+  - id: metadata/package/quality/benign-context::openchamber-extension-manager-context
+  - id: well-known/app/ai/usage/cursor-token-monitor::cursor-token-monitor-context
+  - id: well-known/app/ai/usage/openusage-cli::openusage-cli-archive-context
+  - id: well-known/app/ai/usage/openusage-cli::openusage-cursor-plugin-context
+  - id: well-known/app/ai/usage/ai-box::ai-box-extension-context
+
 - id: cursor-auth-token-reader-with-process
   desc: Cursor auth tokens read through an SQLite process helper
   crit: hostile
@@ -114,7 +152,8 @@ composite_rules:
   unless:
   - id: metadata/package/quality/benign-context::openchamber-credential-import-context
   - id: metadata/package/quality/benign-context::openchamber-extension-manager-context
-  - id: well-known/app/ai/cursor-token-monitor::cursor-token-monitor-context
-  - id: well-known/app/ai/openusage-cli::openusage-cli-archive-context
-  - id: well-known/app/ai/openusage-cli::openusage-cursor-plugin-context
-  - id: well-known/app/ai/ai-box::ai-box-extension-context
+  - id: well-known/app/ai/usage/claude-code-exporter::claude-code-exporter-cursor-context
+  - id: well-known/app/ai/usage/cursor-token-monitor::cursor-token-monitor-context
+  - id: well-known/app/ai/usage/openusage-cli::openusage-cli-archive-context
+  - id: well-known/app/ai/usage/openusage-cli::openusage-cursor-plugin-context
+  - id: well-known/app/ai/usage/ai-box::ai-box-extension-context

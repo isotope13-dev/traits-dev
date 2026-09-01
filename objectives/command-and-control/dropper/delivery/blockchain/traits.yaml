@@ -50,9 +50,40 @@ traits:
     regex: '(?i)(etherscan-api|bscscan-api)'
   count_max: 1007393
 
+# NullReceiver / EtherHiding stages fetch XOR-wrapped JavaScript from an
+# attacker-derived host on :443 using this campaign route. The route is an
+# attack-specific delivery indicator, not a neutral HTTP capability.
+- id: blockchain-hex-stage-path
+  desc: Blockchain C2 hex-prefixed stage path
+  crit: suspicious
+  conf: 0.96
+  attack: T1105
+  for: [scripts, typescript, binaries]
+  if:
+    type: text
+    # Campaign variants use /0x/ls and /0x/cls (or truncated /0x/cl).
+    # Prefer longer alternatives first.
+    regex: '(?i)(:?443)?/0x/(c?ls|cl)\b'
+
 composite_rules:
+- id: etherhiding-rpc-account-stage-loader
+  desc: Obfuscated EtherHiding RPC account stage loader
+  crit: hostile
+  conf: 0.98
+  attack: "T1102,T1105,T1059.007"
+  mbc: "B0024,B0032"
+  for: [javascript, typescript]
+  near_lines: 80
+  all:
+    - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::global-require-module-aliasing
+    - id: micro-behaviors/communications/http/services/blockchain::eth-drpc-host-fragment
+    - id: micro-behaviors/communications/http/services/blockchain::explorer-module-account-fragment
+
 - id: ethereum-blockchain-derived-node-stage
   desc: Ethereum history lookup derives network addresses for a remote Node stage
+  # This is not merely unusual blockchain client behavior: all eight legs
+  # establish recipient-derived network routing, payload decoding, and two
+  # JavaScript execution sinks. No legitimate dApp needs this combination.
   crit: hostile
   conf: 0.995
   attack: "T1102,T1105,T1027,T1059.007"
@@ -67,7 +98,9 @@ composite_rules:
     - id: micro-behaviors/data/decode/base64::buffer-from-base64
     - id: micro-behaviors/data/decode/xor::js-repeating-key-buffer-xor-loop
     - id: micro-behaviors/process/interpreter/eval::js-eval-raw
-    - id: micro-behaviors/process/create/spawn::spawn-node-eval
+    - id: micro-behaviors/process/create/inline-script::spawn-node-eval
+  unless:
+    - id: obfuscated-etherhiding-hex-stage-dropper
 
 - id: ethereum-recipient-dead-drop-stage-loader
   desc: Ethereum recipient dead drop feeds Node stage
@@ -83,7 +116,7 @@ composite_rules:
     - id: micro-behaviors/data/decode/base64::buffer-from-base64
     - id: micro-behaviors/crypto/symmetric/xor/loop::xor-modulo-key-loop
     - id: micro-behaviors/process/interpreter/eval::js-eval-call-expression-arg
-    - id: micro-behaviors/process/create/spawn::spawn-node-eval
+    - id: micro-behaviors/process/create/inline-script::spawn-node-eval
 
 - id: ethereum-recipient-address-stage-loader
   desc: Recipient-derived Ethereum C2 feeds and executes a Node stage
@@ -99,7 +132,7 @@ composite_rules:
     - id: micro-behaviors/data/decode/base64::buffer-from-base64
     - id: micro-behaviors/crypto/symmetric/xor/loop::xor-modulo-key-loop
     - id: micro-behaviors/process/interpreter/eval::js-eval-call-expression-arg
-    - id: micro-behaviors/process/create/spawn::spawn-node-eval
+    - id: micro-behaviors/process/create/inline-script::spawn-node-eval
 
 - id: ipfs-hidden-native-payload
   desc: Downloads IPFS payload and launches it hidden
@@ -116,6 +149,19 @@ composite_rules:
   any:
   - id: objectives/command-and-control/dropper/staging/embedded::exepath-var
   - id: micro-behaviors/fs/chmod/executable/mode::shell-plus-x
+- id: ipfs-detached-javascript-stage
+  desc: Downloads an IPFS JavaScript stage and launches it detached
+  crit: hostile
+  conf: 0.99
+  attack: "T1105,T1059.007,T1564.003"
+  mbc: "B0024,F0011"
+  for: [javascript, typescript]
+  near_bytes: 6000
+  all:
+  - id: micro-behaviors/communications/http/services/ipfs::ipfs-gateway
+  - id: micro-behaviors/communications/http/download/handler::node-http-stream-to-file
+  - id: micro-behaviors/process/create/spawn::node-interpreter-target
+  - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
 - id: blockchain-transaction-eval-loader
   desc: Blockchain transaction eval loader
   crit: hostile
@@ -148,3 +194,60 @@ composite_rules:
   - id: objectives/command-and-control/dropper/delivery/blockchain::blockchain-explorer-link--rx-5
   any:
   - id: blockchain-payload-execution
+
+# Obfuscator.io npm cover: string-table EtherHiding stage that queries a
+# public Ethereum RPC/explorer dead-drop, then fetches XOR-wrapped JS from
+# `:443/0x/ls` / `:443/0x/cl` (NullReceiver / @wizloft 0.1.1-alpha.3 class).
+- id: obfuscated-etherhiding-hex-stage-dropper
+  desc: Obfuscated EtherHiding hex-path stage dropper
+  crit: hostile
+  conf: 0.97
+  attack: "T1102,T1105,T1027,T1059.007"
+  mbc: "B0024,B0032"
+  for: [javascript, typescript]
+  all:
+    - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::global-alias-obfuscation
+    - id: blockchain-hex-stage-path
+  any:
+    - id: objectives/command-and-control/infrastructure/blockchain/ethereum::etherhiding-campaign-wallet-prefix
+    - id: objectives/command-and-control/infrastructure/blockchain/ethereum::etherhiding-campaign-wallet-prefix-unicode
+    - id: micro-behaviors/communications/http/url/rpc::ethereum-drpc-host-fragment
+    - id: micro-behaviors/communications/http/url/rpc::ethereum-1rpc-path-fragment
+    - id: micro-behaviors/crypto/library/blockchain/client::blockscout-host-fragment
+
+# Source loaders retain the dead-drop route and provider marker, fetch through
+# the recipient-derived authority, and run the response as detached Node code.
+# Requiring retrieval plus inline execution avoids treating an unrelated child
+# process beside a blockchain client as a hostile stage.
+- id: blockchain-hex-dead-drop-process-stage
+  desc: Blockchain dead-drop stage fetched and run by Node
+  crit: hostile
+  conf: 0.97
+  attack: T1102,T1105,T1106
+  for: [javascript, typescript]
+  all:
+    - id: blockchain-hex-stage-path
+    - id: micro-behaviors/communications/http/url/build::js-fetch-derived-url-authority
+    - id: micro-behaviors/communications/http/client/response-body::fetch-response-body-read
+    - id: micro-behaviors/process/create/spawn::node-self-eval-argument
+    - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+  any:
+    - id: objectives/command-and-control/infrastructure/blockchain/ethereum::etherhiding-campaign-wallet-prefix
+    - id: micro-behaviors/communications/http/url/rpc::ethereum-drpc-1rpc-marker
+    - id: micro-behaviors/crypto/library/blockchain/client::blockscout-host-fragment
+
+- id: etherhiding-wallet-stage-payload-header
+  desc: EtherHiding wallet dead-drop carries x-payload stage
+  crit: hostile
+  conf: 0.96
+  attack: "T1102,T1105,T1027"
+  mbc: "B0024"
+  for: [javascript, typescript]
+  all:
+    - id: blockchain-hex-stage-path
+    - id: micro-behaviors/communications/http/response::x-payload-header-prefix
+  any:
+    - id: objectives/command-and-control/infrastructure/blockchain/ethereum::etherhiding-campaign-wallet-prefix
+    - id: objectives/command-and-control/infrastructure/blockchain/ethereum::etherhiding-campaign-wallet-prefix-unicode
+  unless:
+    - id: obfuscated-etherhiding-hex-stage-dropper

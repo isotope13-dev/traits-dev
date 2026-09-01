@@ -1,0 +1,47 @@
+# A vendor-signed executable that came back with its signature removed and a
+# decryption stage bolted on — the artifact a parasitic file infector leaves
+# behind.
+#
+# The shape is structural, not family-specific. An infector rewrites a host it
+# found on disk: it drops the security directory (the signature could never
+# survive the rewrite) but leaves the rest of the host image alone, so the
+# PKCS#7 certificate blob the linker appended is still sitting in the raw bytes
+# with nothing pointing at it. No toolchain produces that combination — a build
+# either signs the image and records the directory, or never carries a
+# code-signing PCA and timestamp chain in the first place.
+#
+# On its own that is only odd. Paired with a stage that decrypts and maps code
+# at run time, it says the rewrite added an execution path, which is what
+# separates an infected host from a stripped or repacked one.
+#
+# Both gauntlet samples are Microsoft debugging tools (dbh.exe, GFLAGS.EXE)
+# carrying Azov's loader, but nothing here keys on Azov: the legs are "was
+# signed by a vendor", "is not signed now", and "decrypts something into
+# executable memory", which is what the next infector will also look like.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  attack: T1554
+  mbc: B0023
+
+composite_rules:
+  - id: vendor-signed-host-stripped-signature-encrypted-stage
+    desc: Signed host stripped of signature stages payload
+    crit: hostile
+    conf: 0.97
+    all:
+      # Certificate material is still in the body...
+      - id: metadata/signed/certificate/identity::microsoft-certificate-chain
+      # ...but nothing in the optional header points at it any more.
+      - id: metadata/binary/layout::pe-no-signature-record
+    any:
+      - id: objectives/anti-static/obfuscation/payload/encrypted::x64-rwx-rolling-xor-memory-loader
+      - id: micro-behaviors/data/embedded/payload/header::x64-backward-mz-bounded-pe-walk
+      - id: objectives/anti-static/obfuscation/payload/self-read::self-read-file-chain
+    needs: 2
+    unless:
+      # A carved child is not the file that was signed, and an installer that
+      # ships signed payloads legitimately carries their certificate blobs.
+      - id: metadata/binary/layout::embedded-pe-child
+      - id: metadata/binary/installer/family/
+      - id: metadata/signed/certificate/identity::pe-signature-verified-kv

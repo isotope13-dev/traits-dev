@@ -5,6 +5,20 @@ defaults:
   mbc: E1041
 
 composite_rules:
+  - id: vscode-startup-config-and-environment-exfil
+    desc: VS Code startup extension exfiltrates config files and environment
+    crit: hostile
+    conf: 0.99
+    scope: archive
+    all:
+      - id: metadata/permission/activation::on-startup-finished
+      - id: metadata/permission/activation::main-extension-js
+      - id: metadata/library/vscode::vscode-extension-marker
+      - id: micro-behaviors/os/env/dump::js-base64-environment-snapshot
+      - id: micro-behaviors/fs/path/sensitive/crypto::node-user-solana-config-directory
+      - id: micro-behaviors/data/archive/create/zip::node-zip-cli-quiet-create
+      - id: micro-behaviors/communications/http/upload::formdata-blob-file-fetch-upload
+
   - id: vscode-startup-obfuscated-host-profile-beacon
     desc: VS Code startup extension exfiltrates an obfuscated host profile
     crit: hostile
@@ -34,22 +48,44 @@ composite_rules:
       - id: micro-behaviors/communications/http/request/client::https-get
       - id: micro-behaviors/communications/http/request/computed-url::node-https-get-concatenated-url
       - id: micro-behaviors/communications/http/request/dynamic::node-scheme-selected-http-get
+  # HTTP POST + hardcoded host must live in the same extension source file as
+  # require('vscode'). Archive-scoped pooling previously combined a bundled
+  # extension's package.json activation with unrelated backend API clients
+  # (NVIDIA/Cursor adapters) that also POST to hardcoded hosts.
+  - id: vscode-extension-source-hardcoded-post
+    desc: Extension source POSTs to a hardcoded host
+    crit: notable
+    conf: 0.95
+    attack: T1041
+    for: [javascript, typescript]
+    all:
+      - id: metadata/library/vscode::require-vscode
+      - id: micro-behaviors/communications/http/request/configuration::node-request-hardcoded-remote-host
+      - id: micro-behaviors/communications/http/request/client::post-method-text
+      - id: micro-behaviors/communications/http/request/client::node-http-request-stream-body
+    any:
+      - id: micro-behaviors/data/control-flow/error-handling::silent-error-handler
+      - id: micro-behaviors/data/control-flow/error-handling::empty-named-catch-text
+      - id: micro-behaviors/data/control-flow/error-handling::empty-optional-catch-text
   - id: vscode-startup-hardcoded-post-beacon
     desc: VS Code startup extension POSTs beacon to hardcoded host
     crit: hostile
     conf: 0.98
     attack: T1041,T1195.002
     scope: archive
+    unless:
+      - id: well-known/app/development/vscode-extension/auto-retry-agent::disclosed-summary-backend
+      - id: well-known/app/development/vscode-extension/auto-retry-agent::auto-retry-package-identity
     all:
       - id: metadata/permission/activation::on-startup-finished
-      - id: metadata/library/vscode::vscode-extension-marker
-      - id: micro-behaviors/communications/http/request/configuration::node-request-hardcoded-remote-host
-      - id: micro-behaviors/communications/http/request/client::post-method-text
-      - id: micro-behaviors/communications/http/request/client::node-http-request-stream-body
+      - id: vscode-extension-source-hardcoded-post
+    # Version/publisher telemetry to a collector is not host profiling. Require
+    # at least one forbidden identity field the editor's own telemetry omits.
     any:
-      - id: micro-behaviors/communications/http/request/client::silent-error-handler
-      - id: micro-behaviors/data/control-flow/error-handling::empty-named-catch-block
-      - id: micro-behaviors/data/control-flow/error-handling::empty-optional-catch-block
+      - id: micro-behaviors/os/sysinfo/hostname::os-hostname-call
+      - id: micro-behaviors/process/user/query::os-userinfo-call
+      - id: metadata/library/vscode::machine-id
+    needs: 1
   - id: vscode-syntax-facade-startup-beacon
     desc: Fake syntax VS Code extension beacons on startup
     crit: hostile
@@ -59,9 +95,12 @@ composite_rules:
     all:
       - id: objectives/supply-chain/impersonation/extensions::vscode-syntax-facade-no-grammar
       - id: metadata/permission/activation::on-startup-finished
-      - id: metadata/library/vscode::vscode-extension-marker
-      - id: micro-behaviors/communications/http/request/configuration::node-request-hardcoded-remote-host
-      - id: micro-behaviors/communications/http/request/client::post-method-text
+      - id: vscode-extension-source-hardcoded-post
+    any:
+      - id: micro-behaviors/os/sysinfo/hostname::os-hostname-call
+      - id: micro-behaviors/process/user/query::os-userinfo-call
+      - id: metadata/library/vscode::machine-id
+    needs: 1
   - id: vscode-startup-install-id-profile-beacon
     desc: VS Code startup extension POSTs a persistent host profile
     crit: hostile

@@ -167,6 +167,20 @@ traits:
     if:
       type: text
       regex: '(userConfig|uid).{0,900}document\.referrer.{0,700}location\.href'
+  - id: extension-url-referrer-userid-payload
+    desc: Payload includes URL, referrer, and user ID
+    crit: notable
+    conf: 0.95
+    if:
+      type: text
+      regex: '\burl\s*:[\s\S]{0,300}\breferrer\s*:[\s\S]{0,300}\buserId\s*:'
+  - id: extension-target-referrer-userid-payload
+    desc: Payload includes target, referrer, and user ID
+    crit: notable
+    conf: 0.97
+    if:
+      type: text
+      regex: '\buserId\s*:[\s\S]{0,220}\breferrerUrl\s*:[\s\S]{0,220}\btargetUrl\s*:'
   - id: pdf-filename-event-fields
     desc: PDF filename fields in a telemetry event
     crit: component
@@ -177,6 +191,34 @@ traits:
       regex: '\bfile[12]_name\s*:'
 
 composite_rules:
+  # A generated client identifier is attached to both sides of the extension
+  # lifecycle: an install-time tab and the registered uninstall callback. Keep
+  # these events close in one script so an unrelated query parameter elsewhere
+  # in a large extension cannot manufacture a tracking result.
+  - id: extension-client-id-lifecycle-navigation
+    desc: Extension tags install and uninstall navigation with client ID
+    crit: notable
+    conf: 0.95
+    near_lines: 10
+    all:
+      - id: micro-behaviors/communications/http/url/query::extension-campaign-identity-query-fields
+      - id: micro-behaviors/browser-extension/lifecycle::chrome-runtime-on-installed
+      - id: micro-behaviors/browser-extension/tabs::chrome-tabs-create-with-url-option
+      - id: micro-behaviors/browser-extension/lifecycle::runtime-set-uninstall-url
+
+  - id: extension-sentry-navigation-surveillance
+    desc: Extension sends identified browser navigation pairs through Sentry
+    crit: hostile
+    conf: 0.99
+    attack: T1119
+    for: [crx, xpi, zip]
+    scope: archive
+    all:
+      - id: metadata/permission/manifest::host-permission-all-urls
+      - id: micro-behaviors/process/hook/webextension::webrequest-before-send-headers-listener
+      - id: extension-target-referrer-userid-payload
+      - id: micro-behaviors/os/telemetry/logging/analytics::sentry-request-context-message
+
   - id: extension-remote-origin-tracking-beacon
     desc: Extension tracks visited origins through hidden remote frames
     crit: hostile
@@ -263,22 +305,23 @@ composite_rules:
       - id: micro-behaviors/browser-extension/lifecycle::runtime-set-uninstall-url
       - id: objectives/supply-chain/hidden-payload/extensions/affiliate::extension-affiliate-tracking-parameter
 
-  # A new-tab override that opens a campaign URL on install and reports another
-  # campaign URL on uninstall is a monetized lifecycle, not ordinary extension
-  # update traffic. Keep the UTM requirement so ordinary onboarding pages do not
-  # inherit the tracking finding.
-  - id: campaign-tracked-newtab-navigation
-    desc: Campaign-tracked new-tab lifecycle navigation
-    crit: notable
-    conf: 0.97
-    attack: T1176
-    for: [crx, xpi, zip]
-    scope: archive
-    all:
-      - id: metadata/permission/manifest::chrome-newtab-override
-      - id: micro-behaviors/browser-extension/tabs::install-https-tab-open
-      - id: micro-behaviors/browser-extension/lifecycle::runtime-set-uninstall-url
-      - id: micro-behaviors/communications/http/url/query::utm-source-medium-campaign-url
+  # REMOVED: `campaign-tracked-newtab-navigation` (was notable).
+  #
+  # Its four legs were byte-for-byte the `all:` of
+  # `objectives/impact/ui/manipulation/core::newtab-override-promo-lifecycle`
+  # with that composite's `any:` resolved to its UTM branch, so it could never
+  # fire without its twin and every promo-lifecycle extension was reported
+  # twice, once from each directory.
+  #
+  # It was also in the wrong directory. UTM parameters on the publisher's own
+  # install and uninstall landing pages are campaign attribution for the
+  # publisher's own navigation; nothing about the user is read, stored, or
+  # transmitted, so this is not collection or monitoring. The monetized
+  # lifecycle it describes is an impact/PUP behavior and is fully covered by
+  # `newtab-override-promo-lifecycle`. Genuine per-user attribution keeps its
+  # own rules here: `extension-client-id-lifecycle-navigation` (a generated
+  # client identifier) and `affiliate-tracked-newtab-install` (an affiliate
+  # parameter) both read something specific to the install.
 
   - id: content-script-link-harvest-dispatch
     desc: Content script harvests page hyperlinks
@@ -381,16 +424,15 @@ composite_rules:
     all:
       - id: browser-page-referrer-uid-telemetry
       - id: micro-behaviors/communications/http/request/client::js-fetch-call
-      - id: micro-behaviors/communications/http/dynamic::dnr-runtime-rule-install
+      - id: micro-behaviors/process/hook/webextension::declarative-net-request-update
 
-  # Sentry Replay is a legitimate diagnostic feature in a first-party web
-  # application, but an extension that starts it from an all-URL content
-  # script records unrelated sites and forwards those sessions off-host.
-  - id: extension-broad-sentry-replay-surveillance
-    desc: All-URL extension records and uploads page sessions
-    crit: hostile
-    conf: 0.98
-    attack: T1119,T1185
+  # Archive scope proves only that these features are packaged together. It
+  # cannot prove that Replay runs inside the all-URL content script: an
+  # extension may enable Replay solely for its own popup or dashboard UI.
+  - id: extension-package-broad-injection-with-sentry-replay
+    desc: Broad extension package also configures Sentry Replay
+    crit: notable
+    conf: 0.95
     scope: archive
     for: [crx, xpi, zip]
     all:
@@ -398,7 +440,7 @@ composite_rules:
       - id: micro-behaviors/process/inject/webextension::broad-content-script-injection
       - id: micro-behaviors/communications/http/request/client::js-fetch-call
     any:
-      - id: objectives/collection/monitor/telemetry::sentry-ingest-dsn
+      - id: micro-behaviors/communications/http/telemetry::sentry-ingest-dsn
       - id: objectives/collection/monitor/telemetry::sentry-self-hosted-dsn
     unless:
       - id: well-known/app/media/copy-text-from-picture::documented-ocr-extension-context

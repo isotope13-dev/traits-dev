@@ -16,14 +16,6 @@ traits:
     if:
       type: symbol
       substr: http_put
-  - id: curl-zip
-    desc: curl with .zip
-    crit: notable
-    conf: 0.6
-    for: [elf, macho, pe, c, cpp, python, rust]
-    if:
-      type: text
-      regex: curl.{0,50}\.zip
   - id: post-zip
     desc: POST with .zip
     crit: notable
@@ -40,14 +32,6 @@ traits:
     if:
       type: text
       regex: upload.{0,50}\.zip
-  - id: send-zip
-    desc: send .zip
-    crit: notable
-    conf: 0.6
-    for: [elf, macho, pe, c, cpp, python, rust]
-    if:
-      type: text
-      regex: send.{0,50}\.zip
   # Every curl flag that attaches a file to the request body, not just one:
   # -T/--upload-file (PUT a file) and -F/--form (multipart part, `-F f=@path`).
   # Naming the trait after a single spelling made an ordinary `-F` upload read
@@ -72,9 +56,21 @@ traits:
     for: [scripts, binaries]
     if:
       type: text
-      regex: \bcurl(\.exe)?\s+.{0,160}-F\s+["']?[\w.-]{1,40}=@
+      # Source files may preserve the shell command's quote as \"field=@path\".
+      regex: '\bcurl(\.exe)?\s+.{0,160}-F\s+\\?["'']?[\w.-]{1,40}=@'
     unless:
     - id: well-known/app/system/omarchy::source-tree
+  # Shell payloads commonly hide the complete multipart command in base64.
+  # Keep the decoded form distinct from the plain-text matcher above so an
+  # analyst can see that the upload capability itself was concealed.
+  - id: encoded-curl-form-file-attachment
+    desc: Encoded curl -F attaches a local file
+    crit: notable
+    conf: 0.9
+    for: [shell, batch, python, javascript, php, perl, powershell, vbs]
+    if:
+      type: encoded
+      regex: '\bcurl\b[^\r\n]{0,80}-F\s+["'']?[\w.-]{1,40}=@'
   - id: gitlab-generic-package-upload
     desc: GitLab Generic Package Registry upload
     crit: notable
@@ -119,7 +115,7 @@ traits:
     for: [javascript, typescript]
     unless:
       - id: metadata/file/extension/identity::script-content-extension-mismatch
-      - id: well-known/app/ai/aui-agent-builder/
+      - id: well-known/app/ai/agent-runtime/aui-agent-builder/
     if:
       type: text
       # This is a local-file multipart capability, not an exfiltration
@@ -136,6 +132,42 @@ traits:
     if:
       type: text
       exact: file[]
+  - id: multipart-empty-filename
+    desc: Multipart file part has an empty filename
+    crit: component
+    conf: 0.96
+    for: [scripts, binaries]
+    if:
+      type: text
+      regex: '(?im)filename\s*=\s*""\s*$'
+
+  # Server-executable extensions are useful structure for triage, but uploads
+  # of deployment artifacts can be legitimate. The atoms remain separated by
+  # runtime family to keep each pattern small and reusable.
+  - id: multipart-php-script-filename
+    desc: Multipart part names a PHP script
+    crit: notable
+    conf: 0.96
+    for: [scripts, binaries]
+    if:
+      type: text
+      regex: '(?i);\s*filename\s*=\s*"[^"\r\n]{1,160}\.(php[3-8]?|phtml|pht|phar)"'
+  - id: multipart-managed-script-filename
+    desc: Multipart part names a managed web script
+    crit: notable
+    conf: 0.96
+    for: [scripts, binaries]
+    if:
+      type: text
+      regex: '(?i);\s*filename\s*=\s*"[^"\r\n]{1,160}\.(jspx?|aspx?|ashx|asmx|cfm|cfc)"'
+  - id: multipart-cgi-script-filename
+    desc: Multipart part names a CGI script
+    crit: notable
+    conf: 0.96
+    for: [scripts, binaries]
+    if:
+      type: text
+      regex: '(?i);\s*filename\s*=\s*"[^"\r\n]{1,160}\.(cgi|pl)"'
   - id: dotnet-webclient-uploadfile
     desc: .NET WebClient UploadFile call
     crit: notable
@@ -177,10 +209,8 @@ composite_rules:
     conf: 0.75
     for: [elf, macho, pe, c, cpp, python, rust]
     any:
-      - id: curl-zip
       - id: post-zip
       - id: upload-zip
-      - id: send-zip
       - id: curl-upload-file
   # The legs establish multipart body construction plus an upload-shaped
   # request; nothing here identifies the destination, so the description does
@@ -195,3 +225,15 @@ composite_rules:
       - id: http-upload-url-path
       - id: micro-behaviors/communications/http/post::post-string-pe
       - id: micro-behaviors/communications/http/download/curl::curl-easy-perform-error-string
+
+  - id: multipart-http-upload
+    desc: Sends data through multipart HTTP upload
+    crit: notable
+    conf: 0.94
+    for: [binaries, scripts, source]
+    any:
+      - id: requests-post-files-parameter
+      - id: node-local-file-formdata-stream
+      - id: micro-behaviors/communications/http/post::javascript-formdata-file-upload-request
+      - id: micro-behaviors/communications/http/client/managed::dotnet-multipart-post
+      - id: multipart-form-data-upload

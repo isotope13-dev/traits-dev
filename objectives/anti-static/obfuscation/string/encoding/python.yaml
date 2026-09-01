@@ -22,6 +22,17 @@ traits:
     if:
       type: text
       regex: \\b(chr|ord)\(
+  - id: python-xor-modulo-character-reconstruction
+    desc: Python reconstructs characters via XOR loop
+    crit: suspicious
+    conf: 0.96
+    # tree-sitter parses source, so the file-level `pyc` default cannot apply
+    # here — same narrowing the sibling tree-sitter atoms below carry.
+    for: [python]
+    if:
+      type: tree-sitter
+      kind: call
+      regex: '\bchr\s*\([^\)\n]{0,48}\^[^\)\n]{0,48}%\s*len\s*\('
   # `exec|eval|…("str" + "str")` — an execution sink called with a string-literal
   # concatenation as its argument. Split into two ≤4-alternative source-text
   # atoms to stay under the alt-chain limit; each fires standalone like the
@@ -39,10 +50,14 @@ traits:
       # exec("from module import ...") construction pattern directly from the
       # call matcher so other concatenated source execution remains visible.
       regex: '(^|[^.\w])(exec|eval|compile)\s*\(\s*[''"][^''"]{0,80}[''"]\s*\+\s*[''"]'
+    not:
+      - regex: '\bexec\s*\(\s*[''"]from\s+[\w.]+\s+import\b'
     unless:
+      - id: well-known/lib/ai/unsloth::unsloth-package-context
       - id: well-known/lib/platform/wine::wine-source-tree
       - id: well-known/tool/reverse-engineering/radare2::radare2-release-source-tree
       - id: metadata/library/python-stdlib::python-stdlib-test-file
+      - id: metadata/package/testing/presence/harness::test-directory-path
   - id: concatenated-execution--g2
     desc: String-concat arg to b64decode
     crit: suspicious
@@ -55,18 +70,20 @@ traits:
     unless:
       - id: metadata/library/python-stdlib::python-stdlib-test-file
   - id: python-dense-chr-calls
-    desc: Dense chr() calls (string building)
+    desc: Dense chr() concatenation chain
     crit: suspicious
     conf: 0.9
-    per_kb_min: 3.0
+    count_min: 8
+    per_kb_min: 1.5
     if:
       type: raw
-      regex: chr\s*\(\s*\d{1,3}\b
+      regex: '\bchr\s*\(\s*\d{1,3}\s*\)\s*\+'
     unless:
       - type: basename
-        regex: (?i)^(test_.*|.*_test)\.py$
+        regex: (?i)^(test_.*|.*_test)\.(py|go)$
       - id: metadata/package/testing/presence/harness::test-directory-path
       - id: well-known/tool/sysadmin/mercurial::mercurial-package-path
+      - id: well-known/tool/offensive/xalgorix::repository-member-path
   - id: dense-octal-escapes
     desc: Dense octal escape sequences
     crit: suspicious
@@ -81,7 +98,7 @@ traits:
       - type: basename
         regex: (?i)^(test_.*|.*_test)\.py$
   - id: dense-ord-calls
-    desc: Dense ord() arithmetic calls
+    desc: Dense ord() decode arithmetic
     crit: suspicious
     conf: 0.85
     for:
@@ -90,12 +107,15 @@ traits:
     per_kb_min: 1.0
     if:
       type: text
-      regex: '\bord\s*\([^\)\n]{0,120}\)\s*(\^|<<|>>|[+\-*/%])'
+      # Shifts are ordinary byte-order parsing (struct/sound/protocol readers),
+      # not string concealment. Keep transformations used to decode characters.
+      regex: '\bord\s*\([^\)\n]{0,120}\)\s*(\^|[+\-*/%])'
     unless:
       - type: basename
         regex: (?i)^(test_.*|.*_test)\.py$
       - id: metadata/library/python-tooling::cpython-marshal-reader-source
       - id: metadata/lang/source::codegen-source-path
+      - id: well-known/app/development/seleniumbase::seleniumbase-browser-automation-framework
   - id: reverse-bytes
     desc: Reverses byte order of encoded data
     crit: suspicious

@@ -2,32 +2,12 @@ defaults:
   platforms:
     - unix
     - windows
+    - fortios
   crit: suspicious
   attack: T1041
   mbc: B0030
   for: [scripts, binaries]
 traits:
-  - id: slack-webhook-url
-    desc: Slack webhook URL
-    crit: notable
-    conf: 0.9
-    if:
-      type: string_literal
-      regex: '(^|[^A-Za-z0-9-])hooks\.slack\.com/services/[A-Z0-9]{8,}/[A-Z0-9]{8,}/[A-Za-z0-9]{16,}'
-    not:
-      - regex: 'hooks\.slack\.com/services/T0{8}/B0{8}/X{16,}'
-  - id: slack-incoming-webhook
-    desc: Slack webhook service URL
-    crit: component
-    conf: 0.85
-    if:
-      type: string_literal
-      regex: 'hooks\.slack\.com/services/[A-Z0-9]{8,}/[A-Z0-9]{8,}/[A-Za-z0-9]{16,}'
-    not:
-      - substr: "slack.com/apps/new/"
-      - substr: "hooks.slack.com/services/..."
-      - substr: "https://hooks.slack.com/"
-      - regex: 'hooks\.slack\.com/services/T0{8}/B0{8}/X{16,}'
   - id: discord-webhook-pattern
     desc: Discord webhook wording or configuration
     crit: component
@@ -215,15 +195,17 @@ composite_rules:
       - id: micro-behaviors/communications/http/keywords::webhook-service-word
     near_bytes: 256
   - id: slack-exfiltration
-    desc: Slack webhook exfiltration
+    desc: Sensitive data posted to Slack webhook
     crit: suspicious
     conf: 0.95
     for:
       - python
       - shell
+    all:
+      - id: micro-behaviors/communications/http/services/slack::slack-incoming-webhook-post
     any:
-      - id: slack-webhook-url
-      - id: slack-incoming-webhook
+      - id: objectives/credential-access/
+      - id: objectives/collection/
     unless:
       - id: well-known/tool/detection/
   - id: discord-exfiltration
@@ -243,6 +225,16 @@ composite_rules:
       - id: send-message-channel-class-marker
       - id: builtin-http-transports-doc-marker
       - id: webhook-channel-url-validation-marker
+      - id: well-known/app/development/emdash::emdash-ade-app
+  - id: go-ssh-credential-discord-exfiltration
+    desc: Go SSH server sends captured passwords and keys to Discord
+    crit: hostile
+    conf: 0.99
+    attack: "T1056.003,T1041,T1567.002"
+    for: [elf, go]
+    all:
+      - id: objectives/credential-access/capture/network::go-ssh-server-credential-capture
+      - id: micro-behaviors/communications/http/webhook::discord-webhook-path
   - id: discord-host-fingerprint-exfiltration
     desc: Discord webhook host fingerprint exfiltration
     crit: hostile
@@ -379,9 +371,15 @@ composite_rules:
     attack: T1195.002,T1041,T1071.001
     scope: archive
     for: [javascript, typescript, python, archives, pkginfo]
+    # Require an explicit webhook URL constant. Archive-wide correlation of
+    # any external IP literal + urllib POST + agent-hook settings false-positives
+    # on security tools that unit-test IP allowlists and ship SessionStart hooks.
     all:
+      - id: python-default-webhook-url-constant
       - id: micro-behaviors/communications/ip/literal::external-ipv4-url-script
       - id: micro-behaviors/communications/http/request/verb::urllib-request-post
     any:
       - id: micro-behaviors/communications/ipc/agent-hook::agent-hook-settings-write
       - id: micro-behaviors/communications/ipc/agent-hook::agent-hook-config-write
+    unless:
+      - id: well-known/tool/detection/agent-glovebox::archive-context

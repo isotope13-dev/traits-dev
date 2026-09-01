@@ -47,7 +47,7 @@ traits:
     if:
       type: symbol
       kind: call
-      regex: '(?i)(^|\.)(set|change|switch)[_-]?(operating|cpu|controller)[_-]?(mode|state)$'
+      regex: '(?i)(^|\.)(set|change|switch)[_-]?(operating|cpu)[_-]?(mode|state)$'
 
   - id: controller-stop-mode-call
     desc: Requests PLC STOP operating mode
@@ -56,7 +56,7 @@ traits:
     if:
       type: symbol
       kind: call
-      regex: '(?i)(^|\.)(set|change|switch)[_-]?(operating|cpu|controller)[_-]?(mode|state)$'
+      regex: '(?i)(^|\.)(set|change|switch)[_-]?(operating|cpu)[_-]?(mode|state)$'
       arg:
         kind: string
         regex: '(?i)^stop$'
@@ -435,8 +435,9 @@ composite_rules:
   # calls to halt a CPU. Both mean "put this controller in STOP".
   - id: controller-halt-call
     desc: Requests a PLC CPU halt
-    crit: suspicious
+    crit: notable
     conf: 0.96
+    for: [scripts, binaries, c, cpp, csharp, go, rust, java]
     any:
       - id: controller-stop-mode-call
       - id: micro-behaviors/communications/s7::snap7-cpu-stop-call
@@ -529,23 +530,62 @@ composite_rules:
       - id: controller-password-action-call
     near_lines: 64
 
-  # Halting one CPU is what a commissioning or diagnostic utility does to the
-  # controller it is attached to. Halting CPUs enumerated from a table that
-  # spans several Siemens generations is a plant-wide denial of control.
-  #
-  # The proximity bound keeps library bindings out: python-snap7's client.py
-  # names all four CPU generations across its docstrings, so without it any
-  # internal Cli_PlcStop dispatch hundreds of lines away would read as a fleet
-  # target table. An attack script keeps its targets beside its payload.
+  # A nearby multi-generation family list is useful context for a CPU halt,
+  # but without data flow it does not prove those labels drive the operation.
+  # Keep the combination suspicious rather than claiming fleet-wide impact.
   - id: plc-fleet-halt
-    desc: Halts Siemens CPUs listed in a multi-generation target table
-    crit: hostile
+    desc: PLC halt near multi-generation Siemens labels
+    crit: suspicious
     conf: 0.96
+    for: [scripts, binaries, c, cpp, csharp, go, rust, java]
     attack: T1565
+    unless:
+      - id: micro-behaviors/communications/ip/literal::rfc5737-documentation-ipv4-cidr
     all:
       - id: controller-halt-call
       - id: micro-behaviors/communications/s7::s7-cpu-family-table
+    any:
+      - id: objectives/discovery/network/scan/ics::ics-port-sweep
     near_lines: 60
+
+  # Reading a Siemens data block, flipping one indexed byte, writing the
+  # modified block back, and then halting the CPU is a concrete destructive
+  # sequence. Requiring all four operations nearby avoids treating ordinary
+  # Snap7 commissioning reads, writes, or stop controls as sabotage alone.
+  - id: s7-process-data-bitflip-and-halt
+    desc: Bit-flips S7 process data and halts PLC
+    crit: hostile
+    conf: 0.99
+    for: [scripts, binaries, c, cpp, csharp, go, rust, java]
+    attack: T1565.001
+    unless:
+      - id: micro-behaviors/communications/ip/literal::rfc5737-documentation-ipv4-cidr
+    all:
+      - id: micro-behaviors/communications/s7::snap7-memory-read-call
+      - id: micro-behaviors/data/buffer::indexed-byte-xor-nontrivial-mask
+      - id: micro-behaviors/communications/s7::snap7-memory-write-call
+      - id: controller-halt-call
+    near_lines: 32
+
+  # A commissioning utility may write one controller or stop one CPU. A tool
+  # that first sweeps for reachable industrial devices, then rewrites S7
+  # memory and halts the discovered CPUs is an automated disruption chain.
+  # Accept the scanner structures already defined for scripts, native C, and
+  # Go so this objective is not tied to one Python implementation.
+  - id: plc-sweep-write-and-halt
+    desc: Sweeps a network, writes Siemens S7 memory, and halts PLC CPUs
+    crit: hostile
+    conf: 0.98
+    for: [scripts, binaries, c, cpp, csharp, go, rust, java]
+    attack: T0821
+    unless:
+      - id: micro-behaviors/communications/ip/literal::rfc5737-documentation-ipv4-cidr
+    all:
+      - id: micro-behaviors/communications/s7::snap7-memory-read-call
+      - id: micro-behaviors/communications/s7::snap7-memory-write-call
+      - id: controller-halt-call
+      - id: objectives/discovery/network/scan/ics::ics-port-sweep
+    near_lines: 128
 
   - id: plc-network-disconnect
     desc: Changes PLC network settings

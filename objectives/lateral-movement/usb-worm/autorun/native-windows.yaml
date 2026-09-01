@@ -24,23 +24,127 @@ traits:
       regex: 'autorun\.inf[\s\S]{0,320}\[autorun\][\s\S]{0,160}open='
       case_insensitive: true
 
+  # Compiled worms commonly build these two destinations by prefixing a
+  # drive letter at runtime.  Keeping the fragments atomic lets the objective
+  # below require the pair without assigning intent to either path alone.
+  - id: native-root-autorun-executable-target
+    desc: References root AutoRun executable target
+    crit: component
+    conf: 0.96
+    if:
+      type: text
+      exact: ':\AutoRun.exe'
+      case_insensitive: true
+
+  - id: native-root-autorun-config-target
+    desc: References root AUTORUN.INF target
+    crit: component
+    conf: 0.96
+    if:
+      type: text
+      exact: ':\AUTORUN.INF'
+      case_insensitive: true
+
+  - id: autorun-open-setup-executable
+    desc: Autorun open launches setup executable
+    crit: component
+    conf: 0.96
+    for: [pe, dll]
+    if:
+      type: text
+      exact: open=setup.exe
+      case_insensitive: true
+
+  - id: autorun-shellexecute-setup-executable
+    desc: Autorun ShellExecute launches setup executable
+    crit: component
+    conf: 0.96
+    for: [pe, dll]
+    if:
+      type: text
+      exact: shellexecute=setup.exe
+      case_insensitive: true
+
 composite_rules:
-  - id: native-removable-drive-autorun-copy
-    desc: Native removable drive autorun copy
+  - id: compiled-setup-autorun-template
+    desc: Compiled autorun launches setup executable
     crit: suspicious
-    conf: 0.94
+    conf: 0.98
+    for: [pe, dll]
     all:
-      - id: native-removable-drive-enum
+      - id: autorun-open-setup-executable
+      - id: autorun-shellexecute-setup-executable
+
+  - id: compiled-drive-enumeration-api-strings
+    desc: Compiled logical-drive enumeration API set
+    crit: component
+    conf: 0.96
+    for: [pe, dll]
+    all:
+      - id: micro-behaviors/fs/traversal/drives::get-logical-drive-strings
+      - id: micro-behaviors/fs/traversal/drives::get-drive-type-raw
+
+  - id: native-root-autorun-target-pair
+    desc: References root AutoRun executable and configuration targets
+    crit: component
+    conf: 0.98
+    for: [pe, dll]
+    all:
+      - id: native-root-autorun-executable-target
+      - id: native-root-autorun-config-target
+
+  - id: native-drive-enumeration-file-copy
+    desc: Native drive enumeration with file-copy capability
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: compiled-drive-enumeration-api-strings
       - id: micro-behaviors/fs/file/copy::copyfile-a
 
   - id: native-windows-autorun-usb-worm
-    desc: Native Windows autorun USB worm
+    desc: Copies a root AutoRun payload and writes its drive configuration
     crit: hostile
-    conf: 0.98
+    conf: 0.99
     all:
-      - id: native-removable-drive-autorun-copy
-      - id: native-autorun-inf-write
+      - id: native-drive-enumeration-file-copy
+      - id: native-root-autorun-target-pair
+      - id: micro-behaviors/fs/config/system::write-private-profile-ansi
     any:
       - id: native-autorun-inf-write
       - id: micro-behaviors/fs/path/config/autorun::autorun-open
       - id: micro-behaviors/fs/path/config/autorun::autorun-section
+
+  - id: compiled-autorun-self-copy-worm
+    desc: Native binary self-copies through autorun drives
+    crit: hostile
+    conf: 0.99
+    for: [pe, dll]
+    all:
+      - id: compiled-setup-autorun-template
+      - id: compiled-drive-enumeration-api-strings
+      - id: micro-behaviors/process/info/current::get-module-filename
+      - id: micro-behaviors/fs/file/copy::copyfile-a
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/installer/family/
+      - id: well-known/tool/sysadmin/
+
+  # Some compiled worms build autorun.inf one line at a time rather than
+  # retaining a complete template. The independent executable directive,
+  # drive enumeration, current-image lookup, and copy API still establish the
+  # same self-propagation behavior without relying on a family filename.
+  - id: compiled-linewise-autorun-self-copy-worm
+    desc: Self-copying native autorun worm
+    crit: hostile
+    conf: 0.99
+    for: [pe, dll]
+    all:
+      - id: compiled-drive-enumeration-api-strings
+      - id: micro-behaviors/process/info/current::get-module-filename
+      - id: micro-behaviors/fs/file/copy::copyfile-a
+      - id: micro-behaviors/fs/path/config/autorun::autorun-inf-string
+      - id: micro-behaviors/fs/path/config/autorun::autorun-shellexecute-executable
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/installer/family/
+      - id: well-known/tool/sysadmin/

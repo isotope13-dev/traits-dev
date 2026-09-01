@@ -13,6 +13,22 @@ traits:
       type: text
       substr: packages.microsoft.com/config/ubuntu
 
+  # A compiled program drives apt by exec'ing the binary, so it carries the path
+  # but never a command line -- Rust/Go build argv as separate strings, and the
+  # command-text atom below can only see shell and CI files. Without this, a GUI
+  # app that elevates and drives the system package manager (the self-updater
+  # shape, benign or backdoored) showed only `pkexec` and nothing about what it
+  # runs elevated. Mirrors elevation::sudo-binary-path-reference.
+  - id: apt-binary-path-reference
+    desc: References the apt-get binary path
+    crit: notable
+    conf: 0.85
+    platforms: [unix]
+    for: [binaries, scripts, source, -applescript, -swift, -objectivec]
+    if:
+      type: text
+      regex: '/usr/(bin|local/bin)/apt(-get)?\b'
+
   - id: apt-package-install-command
     desc: Runs an APT package install command
     crit: notable
@@ -20,7 +36,19 @@ traits:
     for: [shell, javascript, typescript, dockerfile, github-actions]
     if:
       type: text
-      regex: '(?im)^[ \t]*(sudo[ \t]+)?apt(-get)?[ \t]+[^\n]{0,80}\binstall\b'
+      # The prefix is enumerated, not a generic character run. It has to cover
+      # the leaders a scripted install actually uses -- `sudo`, `env`, and
+      # above all `DEBIAN_FRONTEND=noninteractive`, the form Debian documents
+      # for unattended installs and therefore the form a malicious maintainer
+      # script or root helper uses (captain-kill-switch's polkit apt helper is
+      # exactly this). A capped run of word characters instead admits any
+      # single English word, so prose at the start of a line -- "Then apt
+      # install the package", "The apt install step failed" -- reads as a
+      # command; that matters on the doc-heavy trees this also scans. `RUN`
+      # is case-sensitive so it means the Dockerfile verb, not "Run".
+      # The alternation is bounded on both sides to stay clear of the
+      # nested-quantifier shape the loader rejects.
+      regex: '(?im)^[ \t]*(\S{0,24}=\S{0,24} |sudo |env |(?-i:RUN) ){0,2}apt(-get)? [^\n]{0,50}install\b'
     unless:
       - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
       - id: metadata/build/kernel::linux-kernel-drm-ci-build-script

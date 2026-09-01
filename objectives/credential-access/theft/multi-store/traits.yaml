@@ -41,6 +41,36 @@ traits:
       type: text
       substr: ghs_
 
+  - id: native-ssh-key-store-sweep
+    desc: Sweeps SSH keys and agent inventory
+    crit: suspicious
+    conf: 0.99
+    platforms: [linux]
+    for: [elf]
+    if:
+      type: text
+      regex: 'for d in ~/\.ssh[^\r\n]{0,900}authorized_keys[^\r\n]{0,500}ssh-add -l'
+
+  - id: native-chromium-store-sweep
+    desc: Sweeps installed Chromium credential stores
+    crit: suspicious
+    conf: 0.99
+    platforms: [linux]
+    for: [elf]
+    if:
+      type: text
+      regex: 'for b in google-chrome chromium[^\r\n]{0,400}Login\\ Data'
+
+  - id: native-database-secret-sweep
+    desc: Sweeps database histories and credentials
+    crit: suspicious
+    conf: 0.98
+    platforms: [linux]
+    for: [elf]
+    if:
+      type: text
+      regex: '\.mysql_history[^\r\n]{0,500}\.pgpass[^\r\n]{0,500}\.my\.cnf[^\r\n]{0,500}DATABASE_'
+
   # Chromium browser *display* names, matched as whole extracted runs rather
   # than substrings, so these are table entries and not prose. A program that
   # carries the brand list is iterating installed Chromium builds; each has its
@@ -76,6 +106,38 @@ traits:
 
 
 composite_rules:
+
+  - id: browser-ftp-credential-targeting
+    desc: Targets browser and FTP client credential stores
+    crit: suspicious
+    conf: 0.98
+    attack: "T1555.003,T1552.001"
+    all:
+      - id: objectives/credential-access/browser/firefox::password-theft-comp
+      - id: objectives/credential-access/ftp/filezilla::filezilla-stealer
+
+  - id: native-browser-store-sweep
+    desc: Sweeps Chromium and Firefox credential stores
+    crit: suspicious
+    conf: 0.99
+    platforms: [linux]
+    for: [elf]
+    all:
+      - id: native-chromium-store-sweep
+      - id: objectives/credential-access/browser/multi-target::native-firefox-logins-path
+      - id: objectives/credential-access/browser/multi-target::native-firefox-key4-path
+
+  - id: native-cross-store-credential-harvester
+    desc: Native implant sweeps browser, SSH, and database credentials
+    crit: hostile
+    conf: 0.99
+    platforms: [linux]
+    for: [elf]
+    any:
+      - id: native-ssh-key-store-sweep
+      - id: native-browser-store-sweep
+      - id: native-database-secret-sweep
+    needs: 2
 
   - id: chromium-brand-target-table
     desc: Table of Chromium browser brand names
@@ -115,8 +177,10 @@ composite_rules:
     conf: 0.96
     all:
       - id: browser-store-target
-      - id: developer-store-target
+      - id: micro-behaviors/fs/path/sensitive/credentials::developer-credential-stores
       - id: ssh-store-target
+    unless:
+      - id: well-known/app/utility/siw::siw-family-identity
 
   - id: browser-store-target
     desc: Browser credential store target
@@ -128,15 +192,6 @@ composite_rules:
       - id: micro-behaviors/fs/path/sensitive/browser::browser-cookies-file-path
       - id: objectives/credential-access/browser/firefox::profiles-ini
 
-  - id: developer-store-target
-    desc: Developer or cloud credential store target
-    crit: notable
-    conf: 0.92
-    any:
-      - id: micro-behaviors/fs/path/sensitive/credentials::cloud-credentials
-      - id: micro-behaviors/fs/path/sensitive/credentials::orchestration-credentials
-      - id: micro-behaviors/fs/path/sensitive/credentials::package-or-netrc-credential-file
-
   - id: ssh-store-target
     desc: SSH private-key or host inventory target
     crit: notable
@@ -146,6 +201,11 @@ composite_rules:
       - id: micro-behaviors/fs/path/sensitive/credentials::ssh-private-key-filename-enum
       - id: micro-behaviors/fs/path/sensitive/credentials::python-ssh-known-hosts-read
       - id: objectives/credential-access/ssh/key::private-key-path
+    unless:
+      - id: well-known/app/network/openssh::openssh-package
+      # libcurl embeds default SSH key paths to support authenticated SFTP/SCP;
+      # that capability is not evidence that the library inventories keys.
+      - id: well-known/lib/network/curl::windows-runtime-library
 
   - id: credential-stealer-ssh-worm
     desc: Multi-store credential harvester also propagates a payload over SSH

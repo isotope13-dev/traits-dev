@@ -14,7 +14,7 @@ traits:
   desc: Hardcoded Telegram bot API path with token
   crit: suspicious
   conf: 0.95
-  for: [binaries, scripts, rust]
+  for: [binaries, scripts, rust, html, php]
   if:
     type: literal
     regex: 'api\.telegram\.org/bot\d{8,12}:[A-Za-z0-9_-]{40,}'
@@ -30,7 +30,7 @@ traits:
   conf: 0.9
   # The `chat_id = "<digits>"` operator-inbox constant is language-neutral;
   # Rust and Go reporters embed it the same way JS ones do.
-  for: [javascript, typescript, rust, go]
+  for: [javascript, typescript, rust, go, html, php]
   unless:
   - id: well-known/app/browser/google-web::official-google-web-asset
   - id: well-known/tool/detection/redaction::sensitive-data-scanner
@@ -46,6 +46,20 @@ traits:
   if:
     type: text
     regex: '["'']\d{8,12}:[A-Za-z0-9_-]{30,60}["'']'
+# The whole C2 endpoint, recovered from a decoded string rather than source
+# text. Encoding it (base64/hex/XOR/UTF-16) is a deliberate step to keep the
+# host out of `strings` output, so this rates above the plaintext literal — and
+# it is language-neutral, so a packed binary and a minified script match the
+# same way a Python dropper does.
+- id: encoded-bot-api-endpoint
+  desc: Telegram bot endpoint in encoded string
+  crit: suspicious
+  conf: 0.95
+  for: [scripts, -jcl, -applescript]
+  attack: T1027
+  if:
+    type: encoded
+    regex: 'api\.telegram\.org/bot[0-9]{6,12}:'
 - id: pytelegrambotapi-telebot-client
   desc: pyTelegramBotAPI TeleBot client
   crit: component
@@ -208,7 +222,7 @@ composite_rules:
   near_bytes: 8192
   all:
   - id: micro-behaviors/communications/messaging/send::telegram-bot-send-message
-  - id: objectives/discovery/system/fingerprint/hardware::js-victim-id
+  - id: objectives/discovery/system/fingerprint/user::node-host-user-query
   unless:
   - id: metadata/package/testing/harness/runtime/
 - id: telegram-hidden-node-system-report
@@ -252,7 +266,7 @@ composite_rules:
   # Self-directory and http/services/telegram refs removed: they matched this
   # composite's own telegram legs and suppressed it.
   unless:
-  - id: well-known/app/ai/opencode-router
+  - id: well-known/app/ai/gateway/opencode-router
 - id: telegram-bot-c2
   desc: Telegram bot API data exfiltration
   crit: hostile
@@ -280,7 +294,7 @@ composite_rules:
     - id: objectives/command-and-control/channel/messaging::hardcoded-telegram-bot-token-literal
     - id: hardcoded-chat-id-literal
   unless:
-    - id: well-known/app/ai/opencode-router
+    - id: well-known/app/ai/gateway/opencode-router
 - id: telegram-hardcoded-system-profile-exfil
   desc: Hardcoded Telegram bot exfiltrates a host profile
   crit: hostile
@@ -321,13 +335,70 @@ composite_rules:
   for: [javascript, typescript]
   near_bytes: 8192
   all:
-  - id: objectives/exfiltration/sensitive-data::js-host-recon-env-harvest
+  - id: objectives/credential-access/env/secrets/filtered-access::node-host-identified-env-harvest
   - id: micro-behaviors/communications/http/services/telegram::telegram-api-host
   - id: objectives/command-and-control/channel/messaging::telegram-bot-api-token
   - id: micro-behaviors/communications/messaging/send::telegram-bot-send-message
   unless:
   - id: metadata/package/testing/
-  - id: well-known/app/ai/opencode-router/
+  - id: well-known/app/ai/gateway/opencode-router/
+
+# Python wheels can contain several cooperating modules, so these composites
+# operate at archive scope.  A hardcoded bot token plus a file/sensor sink is
+# materially different from a normal Telegram client or a standalone uploader.
+- id: python-telegram-file-exfiltration
+  desc: Python Telegram bot archives and uploads local files
+  crit: hostile
+  conf: 0.99
+  attack: "T1074,T1560.001,T1041,T1567.001"
+  mbc: E1041
+  for: [whl]
+  scope: archive
+  all:
+  - id: python-hardcoded-bot-token
+  - id: micro-behaviors/communications/messaging/send::telegram-bot-api-file-upload
+  - id: micro-behaviors/data/archive/create/zip::python-zipfile-writer
+  any:
+  - id: micro-behaviors/communications/http/upload::requests-post-files-parameter
+  - id: micro-behaviors/fs/directory/traverse::traverse-walk-call
+
+- id: python-telegram-keylog-exfiltration
+  desc: Python Telegram bot uploads keyboard-capture data
+  crit: hostile
+  conf: 0.99
+  attack: "T1056.001,T1041,T1567.001"
+  mbc: E1056.001
+  for: [whl]
+  scope: archive
+  all:
+  - id: python-hardcoded-bot-token
+  - id: objectives/collection/keylog/capture::pynput-import
+  - id: micro-behaviors/communications/messaging/send::telegram-bot-api-file-upload
+
+- id: python-telegram-sensor-exfiltration
+  desc: Python Telegram bot uploads microphone or loopback captures
+  crit: hostile
+  conf: 0.99
+  attack: "T1123,T1041,T1567.001"
+  mbc: E1041
+  for: [whl]
+  scope: archive
+  all:
+  - id: python-hardcoded-bot-token
+  - id: micro-behaviors/hardware/input/audio::python-microphone-capture
+  - id: micro-behaviors/communications/messaging/send::telegram-bot-api-file-upload
+
+- id: python-telegram-shutdown-channel
+  desc: Python Telegram-controlled payload forces an immediate shutdown
+  crit: hostile
+  conf: 0.99
+  attack: "T1059.006,T1529,T1102"
+  mbc: B0029
+  for: [whl]
+  scope: archive
+  all:
+  - id: objectives/command-and-control/channel/messaging::python-telegram-requests-polling-c2
+  - id: objectives/impact/system/shutdown::subprocess-shutdown-argv
 # Pairs credential/banking form automation with an operator-owned Telegram bot.
 # NOTE: the legs prove the two behaviors coexist in one script — they do NOT
 # prove the captured field values are what gets sent. Form-filling bots
@@ -346,7 +417,32 @@ composite_rules:
     - id: micro-behaviors/ui/window/form-input::browser-sensitive-field-automation
     - id: micro-behaviors/ui/window/form-input::browser-banking-credential-data-record
   unless:
-  - id: well-known/app/ai/opencode-router
+  - id: well-known/app/ai/gateway/opencode-router
+- id: telegram-remote-session-credential-exfil
+  desc: Telegram receives remote-support session credentials from a form
+  crit: hostile
+  conf: 0.99
+  attack: T1041,T1056,T1567.001
+  for: [html, javascript, typescript, php]
+  near_bytes: 8192
+  all:
+  - id: micro-behaviors/communications/messaging/send::telegram-bot-send-message
+  - id: objectives/credential-access/phishing/workflow::remote-support-session-credential-form
+  - id: objectives/credential-access/phishing/workflow::remote-session-credential-record
+  - id: micro-behaviors/data/serialize/json-write::nested-json-text-body
+- id: telegram-refund-scam-dossier-exfil
+  desc: Telegram receives a refund-scam operator worksheet
+  crit: hostile
+  conf: 0.99
+  attack: T1041,T1056,T1567.001
+  for: [html, javascript, typescript, php]
+  near_bytes: 12288
+  all:
+  - id: micro-behaviors/communications/messaging/send::telegram-bot-send-message
+  - id: objectives/credential-access/phishing/workflow::operator-assisted-refund-scam-form
+  - id: objectives/credential-access/phishing/workflow::remote-session-credential-record
+  - id: objectives/credential-access/phishing/workflow::refund-profile-record-read
+  - id: micro-behaviors/data/serialize/json-write::nested-json-text-body
 - id: python-telegram-hardcoded-bot
   desc: Python Telegram bot with hardcoded token
   crit: suspicious
@@ -406,12 +502,7 @@ composite_rules:
   - id: well-known/app/communication/telegram::telegram-desktop-dictionary-updater
   all:
   - id: micro-behaviors/communications/messaging/send::telegram-bot-api-file-upload
-  - id: telegram-archive-writer
   - id: telegram-archive-sensitive-source
-- id: telegram-archive-writer
-  desc: Code creates a ZIP archive for Telegram upload
-  crit: notable
-  conf: 0.9
   any:
   - id: micro-behaviors/data/archive/zip::python-zipfile-writer
   - id: micro-behaviors/data/archive/zip::zip-writer
@@ -435,9 +526,13 @@ composite_rules:
   - id: micro-behaviors/communications/http/services/telegram::telegram-api-host
   - id: well-known/lib/network/go-telegram-bot-api::go-telegram-bot-api-library
   - id: go-telegram-upload-methods
-  - id: telegram-archive-writer
   - id: telegram-archive-sensitive-source
   - id: micro-behaviors/data/archive/zip::archive-zip-import
+  any:
+  - id: micro-behaviors/data/archive/zip::python-zipfile-writer
+  - id: micro-behaviors/data/archive/zip::zip-writer
+  - id: micro-behaviors/data/archive/zip::zip-cli-create
+  - id: objectives/collection/archive/create::zip-output-file
 
 - id: python-monero-wallet-telegram-exfil
   desc: Python uploads a Monero wallet archive
@@ -451,3 +546,31 @@ composite_rules:
   - id: micro-behaviors/data/archive/create/zip::python-shutil-make-archive
   - id: micro-behaviors/communications/messaging/send::telegram-bot-api-file-upload
   - id: micro-behaviors/data/control-flow/module-exec::module-level-side-effect-call
+- id: python-requests-telegram-file-exfil
+  desc: Python requests uploads files via hardcoded Telegram bot
+  crit: hostile
+  conf: 0.98
+  attack: T1041,T1102
+  for: [python, whl, zip, archives]
+  scope: archive
+  all:
+  - id: python-hardcoded-bot-token
+  - id: micro-behaviors/communications/http/services/telegram::python-telegram-api-url-template
+  - id: micro-behaviors/communications/messaging/send::telegram-bot-api-file-upload
+  any:
+  - id: micro-behaviors/fs/directory/traverse::recursive-directory-traversal
+  - id: micro-behaviors/data/archive/create/zip::python-zipfile-writer
+- id: python-telegram-screen-surveillance-exfil
+  desc: Python stealth screen capture uploaded to Telegram bot
+  crit: hostile
+  conf: 0.98
+  attack: T1113,T1123,T1041,T1102
+  for: [python, whl, zip, archives]
+  scope: archive
+  all:
+  - id: python-hardcoded-bot-token
+  - id: micro-behaviors/communications/messaging/send::telegram-bot-api-file-upload
+  - id: micro-behaviors/hardware/display/screen::ffmpeg-gdigrab-input
+  any:
+  - id: micro-behaviors/hardware/input/audio::sounddevice-input-stream
+  - id: micro-behaviors/hardware/display/screen::screen-capture

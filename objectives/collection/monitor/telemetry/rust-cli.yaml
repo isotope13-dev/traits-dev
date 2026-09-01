@@ -1,0 +1,96 @@
+# Privacy-relevant telemetry in Rust CLI and agent applications. Individual
+# collection and routing behaviors remain notable: product analytics is common.
+# Uploading raw user prompts is elevated because prompts can contain source,
+# credentials, or other data that the user did not intend as analytics.
+
+defaults:
+  platforms: [windows, unix]
+  for: [rust]
+  attack: T1119
+
+traits:
+  - id: raw-cli-prompt-tracker-dispatch
+    desc: Tracks raw CLI prompt text
+    crit: notable
+    conf: 0.96
+    if:
+      type: text
+      regex: 'tracker::prompt\s*\(\s*(text|input|user_input)\.clone\(\)\s*\)'
+
+  - id: posthog-log-trace-forwarder
+    desc: Forwards logs to PostHog telemetry
+    crit: notable
+    conf: 0.97
+    if:
+      type: text
+      regex: 'PostHogWriter[\s\S]{0,900}EventKind::Trace'
+
+  - id: telemetry-process-argument-fields
+    desc: Telemetry records process arguments
+    crit: component
+    conf: 0.94
+    if:
+      type: text
+      regex: '\bargs:\s*args\(\)'
+
+  - id: telemetry-user-context-fields
+    desc: Telemetry records cwd and username
+    crit: component
+    conf: 0.94
+    if:
+      type: text
+      regex: '\bcwd:\s*cwd\(\)[\s\S]{0,320}\buser:\s*user\(\)'
+
+  - id: telemetry-global-git-email
+    desc: Reads global Git email for telemetry
+    crit: component
+    conf: 0.98
+    if:
+      type: text
+      regex: '\["config",\s*"--global",\s*"user\.email"\]'
+
+  - id: telemetry-ssh-public-key-emails
+    desc: Scans SSH public keys for emails
+    crit: component
+    conf: 0.98
+    if:
+      type: text
+      regex: 'cat\s+~/\.ssh/\*\.pub[\s\S]{0,900}\bparse_email\b'
+
+  - id: telemetry-macos-account-emails
+    desc: Reads macOS account emails for telemetry
+    crit: component
+    conf: 0.97
+    platforms: [macos]
+    if:
+      type: text
+      regex: 'MobileMeAccounts["''][\s\S]{0,80}["'']Accounts'
+
+composite_rules:
+  - id: telemetry-host-profile-fields
+    desc: Telemetry includes command and user context
+    crit: notable
+    conf: 0.94
+    all:
+      - id: telemetry-process-argument-fields
+      - id: telemetry-user-context-fields
+
+  - id: local-account-email-telemetry-enrichment
+    desc: Collects local account emails for telemetry enrichment
+    crit: notable
+    conf: 0.98
+    needs: 2
+    any:
+      - id: telemetry-global-git-email
+      - id: telemetry-ssh-public-key-emails
+      - id: telemetry-macos-account-emails
+
+  - id: raw-cli-prompt-posthog-upload
+    desc: Uploads raw CLI prompts to PostHog telemetry
+    crit: suspicious
+    conf: 0.98
+    scope: archive
+    for: [zip, archives]
+    all:
+      - id: raw-cli-prompt-tracker-dispatch
+      - id: well-known/lib/data/posthog::posthog-telemetry-client

@@ -46,6 +46,16 @@ traits:
       arg:
         kind: string
         exact: dns
+  # ESM form of the same import: `import dns from "node:dns"` or
+  # `import { Resolver } from "dns/promises"`.  The require()-argument matchers
+  # here only see CommonJS, so ESM packages recorded no DNS import at all.
+  - id: import-dns
+    desc: ESM import of the Node.js dns module
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      regex: 'from\s*["''](node:)?dns(/promises)?["'']'
   - id: require-http
     desc: Imports the Node.js HTTP module
     crit: notable
@@ -84,7 +94,7 @@ traits:
       type: text
       substr: "This is meant to be run from within npm script."
   - id: require-child-process
-    desc: require('child_process') import
+    desc: require() of the child_process module
     crit: notable
     conf: 0.8
     unless:
@@ -101,14 +111,33 @@ traits:
       - type: text
         regex: 'webpackLoadOptionalExternalModule|module\.exports = factory\(|builtin-plugins/tabby-'
       - type: text
-        regex: 'run-script-os|"integrity":\{"algorithm":"SHA256"|require\$\$1\$1'
+        # A bare Rollup local such as `require$$1$1` says nothing about which
+        # module it wraps. In particular, package-json bundles use that name
+        # for an SPDX license table while importing child_process elsewhere.
+        regex: 'run-script-os|"integrity":\{"algorithm":"SHA256"'
     if:
       type: symbol
       kind: call
       exact: 'require'
       arg:
         kind: string
-        exact: child_process
+        # substr, not exact: the `node:`-prefixed specifier
+        # (`require("node:child_process")`) names the same builtin and is what
+        # esbuild/tsx-built bundles emit, so an exact match silently missed it.
+        substr: child_process
+  - id: child-process-import-runtime
+    desc: Imports Node child_process through ESM
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      # Cover compact Bun/esbuild output such as
+      # `import{spawn}from"node:child_process"`.
+      regex: '\bimport\s*[^;\n]{1,80}\s*from\s*["''](node:)?child_process["'']'
+    unless:
+      # Declaration-only imports describe Node's API surface and emit no
+      # runtime module load.
+      - id: metadata/lang/scripted::dts-declaration-file
   # `require-child-process-inline-member` removed: the plain `require-child-process`
   # above already matches the inline `require('child_process').exec(...)` form
   # (the `require('child_process')` call fact exists regardless of the chained
@@ -124,6 +153,7 @@ composite_rules:
     any:
       - id: require-os
       - id: require-child-process
+      - id: child-process-import-runtime
       - id: require-https
       - id: require-fs
   - id: require-child-process-benign-script

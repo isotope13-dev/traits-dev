@@ -1,0 +1,181 @@
+# Local traffic intercept: pin a name somewhere it does not belong, and make
+# the redirect stick — by installing a root CA so the substituted server can
+# still speak HTTPS, or by seizing the hosts file so the entry cannot be
+# removed. The victim's browser follows the attacker's server under the real
+# domain, which is what makes this worth a hostile rating rather than the
+# "config file was edited" reading a hosts write gets on its own.
+defaults:
+  platforms: [windows]
+  for: [powershell, batch]
+  attack: T1553.004,T1565.001
+  mbc: F0016
+
+traits:
+  - id: loopback-hosts-name-redirect
+    desc: Loopback hosts entry for a DNS name
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: '127\.0\.0\.1\s+[A-Za-z0-9.-]+\.[A-Za-z]{2,24}'
+
+  # The same line pointed at a public address instead of loopback. Every
+  # benign reason to write a hosts entry resolves to somewhere local — 127.x
+  # and 0.0.0.0 for blocking, an RFC1918 address for a LAN host — so `is:
+  # external_ip` is what carries the weight here: a routable third-party
+  # address in a hosts line means the operator, not the user, chose where that
+  # name resolves.
+  #
+  # Script side matches on `literal` rather than `text`. A four-part dotted
+  # number followed by a dotted name is also the shape of an ECMAScript spec
+  # citation, and those live in comments: handlebars.js carries
+  # `// 19.4.2.1 Symbol.for(key)`, which a text scan reads as public IP
+  # 19.4.2.1 pinning the name `Symbol.for` (a bundled copy inside the signed
+  # MiniMax Code installer scored suspicious on it). Parser-extracted constants
+  # never contain comment text, so the literal tier drops the *commentary*
+  # form while still matching how scripts actually write the entry —
+  # `echo "203.0.113.9 login.example.com" >> /etc/hosts` is a string constant.
+  #
+  # That still leaves the *bundled-source* form: a webpack/browserify dist
+  # file wraps each module in `eval("/* 19.1.2.9 Object.getPrototypeOf(O) ...
+  # */ ...")`, and the whole module — spec-citation comment included — is a
+  # string literal. The name after the dotted quad is then a capitalized JS
+  # built-in followed by a camelCase method (`Object.create`,
+  # `String.prototype`, `Array.prototype`), all of which pass `external_ip`
+  # because the section number is a routable octet. Hosts entries are plainly
+  # written DNS names and are lowercase; case-sensitive `[a-z0-9-]+\.[a-z]`
+  # drops the spec-citation class while still matching a real redirect such as
+  # `203.0.113.9 c2.example.com`. Wordpress's Insert Pages plugin bundled
+  # core-js 2.6.9 and scored suspicious on exactly this.
+  - id: external-ip-hosts-name-redirect
+    desc: Hosts entry pins name to public IP
+    crit: suspicious
+    conf: 0.92
+    for: [scripts]
+    if:
+      type: literal
+      regex: '\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}[ \t]+[a-z0-9-]+\.[a-z]{2,24}\b'
+      is: external_ip
+
+  # Compiled implants carry the finished line as a UTF-16 constant just as
+  # often as scripts build it, and binaries have no parser-extracted literal
+  # tier — extracted string runs are all there is — so the native half stays on
+  # `type: text`. The comment-citation false positive above is a source-code
+  # artifact and does not reach here.
+  - id: native-external-ip-hosts-name-redirect
+    desc: Binary constant pins name to public IP
+    crit: suspicious
+    conf: 0.92
+    for: [binaries]
+    if:
+      type: text
+      regex: '\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}[ \t]+[A-Za-z0-9-]+\.[A-Za-z]{2,24}\b'
+      is: external_ip
+
+composite_rules:
+  - id: root-cert-hosts-loopback
+    desc: Root CA install with loopback hosts redirect
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: micro-behaviors/crypto/certificate/install::cert-install-cmd
+      - id: micro-behaviors/fs/path/config/system::windows-hosts-file
+      - id: loopback-hosts-name-redirect
+
+  # The same intercept written in native code instead of a shell one-liner.
+  # Compiled implants build the hosts line from a format string and hold the
+  # redirect target as a separate constant, so `loopback-hosts-name-redirect`
+  # never sees a complete line and the redirect need not point at loopback at
+  # all — pinning the victim's names to an attacker-run host works just as
+  # well. What survives compilation is the pairing of a hosts *rewrite* with
+  # the Win32 calls that push a certificate into a trust store.
+  #
+  # This used to be "native-hosts-redirect-with-root-ca" / "Hosts redirect plus
+  # root CA installation" over just `hosts-file-path` + `cert-store-population-
+  # api`, and reported two things it had not observed. Neither half carries its
+  # claim alone: `hosts-file-path` is a bare path string that every tool which
+  # merely *displays* the hosts file holds, and CertAddCertificateContextToStore
+  # / PFXImportCertStore populate a caller-selected store — for an Authenticode
+  # verifier that store is a temporary in-memory one, never the machine root.
+  # SIW, a signed system-information utility that shows the hosts file and
+  # checks driver signatures, scored hostile on exactly that pair.
+  #
+  # So the hosts half must show a rewrite rather than a mention: file-modifying
+  # APIs alongside the path, a resolver-cache flush (how a rewrite is made to
+  # take effect), or ownership seizure of the file. A program that rewrites
+  # name resolution *and* pushes its own certificate into a store is setting up
+  # to read the victim's TLS traffic.
+  - id: native-hosts-rewrite-with-cert-store-install
+    desc: Hosts file rewrite with certificate-store install
+    crit: hostile
+    conf: 0.95
+    for: [binaries]
+    all:
+      - id: micro-behaviors/crypto/certificate/store::cert-store-population-api
+    any:
+      - id: micro-behaviors/fs/path/config/system::hosts-file-modification-api-set
+      - id: hosts-rewrite-with-dns-flush
+      - id: hosts-file-ownership-seizure
+
+  # Widening Firefox's trust to the OS root store right where a certificate is
+  # being pushed into that store closes the last gap in a Windows intercept:
+  # Chrome and Edge follow the machine store already, Firefox does not until
+  # this policy is set. Enterprise management tooling legitimately does both,
+  # so this stays out of `hostile` only when it is the whole story — paired
+  # with a hosts rewrite it lands in the composite above as well.
+  - id: root-ca-install-with-firefox-trust-widening
+    desc: Root CA install widens Firefox trust
+    crit: hostile
+    conf: 0.95
+    for: [binaries, scripts]
+    all:
+      - id: micro-behaviors/crypto/certificate/install::firefox-enterprise-roots-policy
+      - id: micro-behaviors/crypto/certificate/store::cert-store-population-api
+
+  # A redirect line plus the file it belongs in. Either half alone has innocent
+  # readings — a hosts path appears in every firewall and diagnostic tool, and
+  # an `<ip> <name>` pair appears in documentation and test fixtures — but a
+  # program that carries both is one that intends to write that entry.
+  - id: hosts-redirect-to-external-host
+    desc: Redirects a domain to an attacker host
+    crit: hostile
+    conf: 0.95
+    for: [scripts, binaries]
+    all:
+      - id: micro-behaviors/fs/path/config/system::hosts-file-path
+    any:
+      - id: external-ip-hosts-name-redirect
+      - id: native-external-ip-hosts-name-redirect
+
+  # Seizing the hosts file rather than merely writing it. `takeown` plus an
+  # ACL rewrite is how an operator makes an entry survive the victim noticing:
+  # ownership moves away from TrustedInstaller, the DACL is replaced, and the
+  # file is left read-only so a repair attempt fails with access-denied. No
+  # installer, ad blocker, or diagnostic tool needs to own this file — they
+  # write it with the administrator rights they already have.
+  - id: hosts-file-ownership-seizure
+    desc: Seizes ownership and ACLs of hosts file
+    crit: hostile
+    conf: 0.94
+    for: [scripts, binaries]
+    attack: T1222.001,T1565.001
+    all:
+      - id: micro-behaviors/fs/path/config/system::hosts-file-path
+      - id: micro-behaviors/fs/chown::chown-takeown
+    any:
+      - id: micro-behaviors/fs/chmod/get::get-icacls
+      - id: micro-behaviors/os/privilege/check::trustedinstaller-sid-literal
+      - id: micro-behaviors/os/privilege/token::high-risk-take-ownership-privilege-name
+
+  # Flushing the resolver cache is how a hosts rewrite is made to take effect
+  # immediately. Ad blockers and hosts-based filtering tools do this too, so on
+  # its own it is only suspicious — but it is the reliable native tell that the
+  # hosts path was *written*, not merely referenced.
+  - id: hosts-rewrite-with-dns-flush
+    desc: Rewrites hosts then flushes DNS cache
+    crit: suspicious
+    conf: 0.9
+    for: [binaries, scripts]
+    all:
+      - id: micro-behaviors/fs/path/config/system::hosts-file-path
+      - id: micro-behaviors/communications/dns/flush::dns-flush-resolver-cache

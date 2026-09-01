@@ -1,0 +1,62 @@
+# Native agents that expose explicit collection commands and implement their
+# own archive or streaming upload paths. The combinations below bind operator
+# intent to concrete upload mechanics to avoid flagging ordinary HTTP clients.
+defaults:
+  platforms: [linux]
+  for: [elf]
+  attack: "T1041,T1560.001,T1020"
+  mbc: E1081
+
+traits:
+  - id: native-temp-tar-archive-command
+    desc: Native agent creates temporary tar archive
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: text
+      regex: 'mktemp /tmp/\.(dl|ft)_XXXXXX\.tar\.gz[\s\S]{0,260}tar czf'
+
+  - id: native-extract-receive-endpoint
+    desc: Uses /api/extract-receive upload endpoint
+    crit: notable
+    conf: 0.999
+    if:
+      type: text
+      substr: 'POST /api/extract-receive HTTP/1.1'
+
+composite_rules:
+  - id: native-litterbox-archive-upload
+    desc: Uploads temporary archive to Litterbox
+    crit: suspicious
+    conf: 0.99
+    near_bytes: 1024
+    all:
+      - id: native-temp-tar-archive-command
+      - id: micro-behaviors/communications/http/services/file-hosting::catbox-moe
+
+  - id: native-bulk-extract-http-upload
+    desc: Native agent streams bulk extraction over HTTP
+    crit: suspicious
+    conf: 0.999
+    all:
+      - id: native-extract-receive-endpoint
+      - id: micro-behaviors/communications/http/upload::octet-stream-upload-header
+      - id: micro-behaviors/communications/http/header/transfer-encoding::chunked-transfer-encoding
+
+  - id: native-credential-archive-filehost-exfil
+    desc: Uploads archived credentials to a file host
+    crit: hostile
+    conf: 0.999
+    all:
+      - id: native-litterbox-archive-upload
+      - id: objectives/credential-access/theft/multi-store::native-cross-store-credential-harvester
+      - id: objectives/command-and-control/backdoor/rat/tasking::linux-credential-command-menu
+
+  - id: native-commanded-plaintext-bulk-exfil
+    desc: Exfiltrates commanded data over plaintext HTTP
+    crit: hostile
+    conf: 0.999
+    all:
+      - id: native-bulk-extract-http-upload
+      - id: objectives/command-and-control/backdoor/rat/tasking::linux-file-exfil-command-menu
+      - id: micro-behaviors/communications/http/url/scheme::cleartext-http-url

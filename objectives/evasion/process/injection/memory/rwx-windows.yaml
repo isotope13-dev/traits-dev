@@ -9,23 +9,6 @@ defaults:
   attack: T1055
   mbc: E1055
 traits:
-- id: page-execute-read
-  desc: PAGE_EXECUTE_READ allocation
-  crit: component
-  conf: 0.7
-  if:
-    type: text
-    substr: PAGE_EXECUTE_READ
-  unless:
-  - id: well-known/tool/sysadmin/logapi::logapi-pipe-marker
-  - id: metadata/library/python-runtime::python-runtime
-- id: mem-commit-reserve
-  desc: MEM_COMMIT | MEM_RESERVE allocation
-  crit: component
-  conf: 0.6
-  if:
-    type: text
-    regex: MEM_COMMIT.{0,10}MEM_RESERVE
 - id: hotpatch-patch-array
   desc: hotpatch_patch byte array
   crit: suspicious
@@ -69,33 +52,9 @@ composite_rules:
   conf: 0.85
   any:
   - id: micro-behaviors/mem/alloc/executable::page-execute-readwrite
-  - id: exec-read-commit
+  - id: micro-behaviors/mem/alloc/executable::page-execute-read-commit-source
   - id: micro-behaviors/process/info/thread::get-thread-context
   - id: micro-behaviors/process/info/thread::set-thread-context
-- id: exec-read-commit
-  desc: Executable read with commit
-  all:
-  - id: page-execute-read
-  - id: mem-commit-reserve
-- id: rwx-allocation
-  desc: RWX memory allocation
-  crit: notable
-  conf: 0.85
-  any:
-  - id: micro-behaviors/mem/alloc/executable::page-execute-readwrite
-  - id: micro-behaviors/mem/alloc/executable::executable-allocation-indicator
-  - id: exec-read-commit
-  unless:
-  - id: metadata/library/python-runtime::python-runtime
-  - id: metadata/signed/leaf::microsoft-corporation
-  - id: well-known/tool/development/debugpy/
-  - id: well-known/lib/development/sanitizer-runtime::sanitizer-runtime-source-path
-  downgrade:
-    any:
-    - id: metadata/library/python-runtime::python-runtime
-    - id: metadata/binary/framework::dotnet-metadata
-    - id: metadata/binary/framework/
-    - id: well-known/dual-use/tunnel/netch/
 - id: code-injection-flush
   desc: Code injection with cache flush
   crit: suspicious
@@ -118,7 +77,7 @@ composite_rules:
   crit: suspicious
   conf: 0.9
   all:
-  - id: rwx-allocation
+  - id: micro-behaviors/mem/alloc/executable::rwx-allocation
   any:
   - id: micro-behaviors/process/inject/runtime/call::read-process-memory
   - id: micro-behaviors/communications/ipc/named-pipe::named-pipe-api-usage
@@ -138,9 +97,15 @@ composite_rules:
   crit: notable
   conf: 0.95
   all:
-  - id: rwx-allocation
+  - id: micro-behaviors/mem/alloc/executable::rwx-allocation
   - id: micro-behaviors/process/inject/runtime/call::write-process-memory-dup
   unless:
+  # A Go binary links the syscall package's Windows name tables, so both legs
+  # are plain strings the linker kept -- Go's own cmd/fix carries
+  # PAGE_EXECUTE_READWRITE and WriteProcessMemory and injects nothing. A Go
+  # injector still names the rest of the sequence (VirtualAllocEx,
+  # CreateRemoteThread), which the remote-process API composites count.
+  - id: metadata/lang/compiler/systems::go-pe-binary-context
   - id: metadata/signed/platform/
   - id: metadata/binary/framework::dotnet-metadata
   - id: well-known/lib/runtime/nwjs::windows-runtime-context
@@ -149,7 +114,7 @@ composite_rules:
   crit: hostile
   conf: 0.94
   all:
-  - id: rwx-allocation
+  - id: micro-behaviors/mem/alloc/executable::rwx-allocation
   - id: micro-behaviors/process/inject/runtime/call::write-process-memory-dup
   - id: micro-behaviors/data/embedded/payload/resource::native-resource-api-resolution
   any:
@@ -179,23 +144,27 @@ composite_rules:
   - id: metadata/binary/framework::dotnet-metadata
   - id: well-known/tool/sysadmin/conemu/
   - id: well-known/tool/reverse-engineering/radare2/
-- id: rwx-remote-thread-loader
-  desc: RWX memory and remote-thread creation APIs
-  crit: hostile
+- id: rwx-remote-thread-primitives
+  desc: RWX allocation and remote-thread creation
+  # The primitive pair is a strong process-injection signal, but debuggers,
+  # compatibility runtimes, and instrumentation can use it legitimately.
+  # Hostile composites add a concrete injected payload or attacker objective.
+  crit: suspicious
   conf: 0.95
   all:
-  - id: rwx-allocation
+  - id: micro-behaviors/mem/alloc/executable::rwx-allocation
   - id: micro-behaviors/process/inject/runtime/call::create-remote-thread-dup
   unless:
   - id: rwx-remote-thread-context-exception
   - id: metadata/binary/framework::dotnet-metadata
   - id: metadata/binary/vendor::windows-system-implementer-dll
+  - id: well-known/app/utility/locale-injection/
 - id: masqueraded-rwx-remote-thread-loader
   desc: Masqueraded RWX remote-thread loader
   crit: hostile
   conf: 0.95
   all:
-  - id: rwx-remote-thread-loader
+  - id: rwx-remote-thread-primitives
   - id: objectives/evasion/masquerade/debug::pe-stem-differs-from-pdb-stem
   - id: objectives/anti-static/obfuscation/string/junking::consonant-vowel-gibberish
   any:

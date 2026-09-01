@@ -11,37 +11,41 @@ defaults:
   conf: 0.9
 traits:
   # gethostname compared against sandbox-keyword set
-- id: hostname-sandbox-keyword-check--rx-8
-  desc: VMware hostname keyword
+- id: vmware-analysis-marker
+  desc: VMware analysis marker string
   crit: component
   if:
-    type: text
+    type: literal
+    kind: string
     case_insensitive: true
-    substr: vmware
+    exact: vmware
   count_max: 1014502
-- id: hostname-in-sandbox-list--rx-12
-  desc: Anubis sandbox hostname keyword
+- id: anubis-analysis-marker
+  desc: Anubis sandbox marker string
   crit: component
   if:
-    type: text
+    type: literal
+    kind: string
     case_insensitive: true
-    substr: anubis
+    exact: anubis
   count_max: 1014506
-- id: hostname-in-sandbox-list--rx-14
-  desc: JoeBox sandbox hostname keyword
+- id: joebox-analysis-marker
+  desc: JoeBox sandbox marker string
   crit: component
   if:
-    type: text
+    type: literal
+    kind: string
     case_insensitive: true
-    substr: joebox
+    exact: joebox
   count_max: 1014508
-- id: cwd-sandbox-keyword-check--rx-20
-  desc: Malware analysis keyword
+- id: malware-analysis-marker
+  desc: Malware analysis marker string
   crit: component
   if:
-    type: text
+    type: literal
+    kind: string
     case_insensitive: true
-    substr: malware
+    exact: malware
   count_max: 1014514
   unless:
   - id: well-known/tool/detection/skill-scanner::source-context
@@ -52,21 +56,23 @@ traits:
     type: text
     regex: '(?i)(getcwd|Path\.cwd|\.cwd)[^\n]{0,80}sandbox'
   count_max: 1014515
-- id: cwd-sandbox-keyword-check--rx-22
-  desc: Cuckoo sandbox keyword
+- id: cuckoo-analysis-marker
+  desc: Cuckoo sandbox marker string
   crit: component
   if:
-    type: text
+    type: literal
+    kind: string
     case_insensitive: true
-    substr: cuckoo
+    exact: cuckoo
   count_max: 1014516
-- id: cwd-sandbox-keyword-check--rx-24
-  desc: Virus analysis keyword
+- id: virus-analysis-marker
+  desc: Virus analysis marker string
   crit: component
   if:
-    type: text
+    type: literal
+    kind: string
     case_insensitive: true
-    substr: virus
+    exact: virus
   count_max: 1014518
   # NOTE: a bare cursor-position read (GetCursorPos / pyautogui.position) is a
   # neutral input capability, not sandbox detection — it lives at
@@ -81,12 +87,14 @@ traits:
     type: text
     regex: '(%RECENT%|os\.listdir\s*\([^)\n]{0,80}Recent[^)\n]{0,40}\))[^\n]{0,80}(len|count)'
 
-  # CPU count check — sandboxes commonly expose 1-2 CPUs
-- id: cpu-count-low-check
-  desc: CPU count checked for low-spec sandbox
+- id: dual-identity-marker-condition
+  desc: Marker tested against two identity values
+  crit: component
+  conf: 0.86
   if:
-    type: text
-    regex: '(os\.cpu_count|multiprocessing\.cpu_count|psutil\.cpu_count)\s*\(\s*\)\s*<\s*[1-3]\b'
+    type: tree-sitter
+    kind: conditional
+    regex: '(?s)\b[A-Za-z_]\w*\s+in\s+[A-Za-z_]\w*\s+or\s+[A-Za-z_]\w*\s+in\s+[A-Za-z_]\w*'
 
   # Physical memory check — sandboxes often have <4 GB
   unless:
@@ -95,6 +103,8 @@ traits:
     - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
     - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
     - id: metadata/lang/source::linux-kernel-primary-tree-path
+    - id: well-known/app/system/home-assistant::home-assistant-identity
+    - id: well-known/app/system/home-assistant::components-tree-path
 - id: physical-mem-low-check--rx-25
   desc: Windows physical-memory API
   crit: component
@@ -224,13 +234,13 @@ composite_rules:
   - id: micro-behaviors/os/sysinfo/platform/runtime::platform-node
   - id: micro-behaviors/data/control-flow/analysis::python-early-return-call-gate
   any:
-  - id: hostname-sandbox-keyword-check--rx-8
-  - id: hostname-in-sandbox-list--rx-12
-  - id: hostname-in-sandbox-list--rx-14
-  - id: cwd-sandbox-keyword-check--rx-20
+  - id: vmware-analysis-marker
+  - id: anubis-analysis-marker
+  - id: joebox-analysis-marker
+  - id: malware-analysis-marker
   - id: cwd-sandbox-keyword-check--rx-21
-  - id: cwd-sandbox-keyword-check--rx-22
-  - id: cwd-sandbox-keyword-check--rx-24
+  - id: cuckoo-analysis-marker
+  - id: virus-analysis-marker
 - id: pre-exec-long-sleep
   desc: Long sleep (>=60s) before subsequent execution
   crit: suspicious
@@ -241,7 +251,7 @@ composite_rules:
   - id: pre-exec-long-sleep-arg
   any:
   - id: micro-behaviors/process/create/subprocess::process-execution
-  - id: micro-behaviors/process/create/shell/bridge::spawn-call
+  - id: micro-behaviors/process/create/spawn::spawn-call
   unless:
   - id: metadata/package/testing/
   - id: metadata/package/testing/presence/harness/
@@ -263,13 +273,46 @@ composite_rules:
   - id: vm-artifact-vbox-file-check
   - id: vm-artifact-vmware-file-check
   - id: recent-files-empty-check
-  - id: cpu-count-low-check
+  # A bare low-CPU-count comparison is capacity sizing, not evasion (it lives
+  # at micro-behaviors/os/sysinfo/cpu). Only the variant that exits on the
+  # result belongs in this set.
+  - id: python-cpu-count-exit-gate
   - id: vm-artifact-proc-scsi-check
   unless:
   - id: well-known/tool/detection/skill-scanner::source-context
   - id: micro-behaviors/crypto/library/blockchain/
   - id: metadata/package/testing/presence/harness/
-  - id: metadata/package/scripts::jupyter-notebook-file
+  - id: metadata/package/scripts/develop::jupyter-notebook-file
+  - id: well-known/app/system/home-assistant::home-assistant-identity
+  - id: well-known/app/system/home-assistant::components-tree-path
+- id: python-host-user-analysis-marker-check
+  desc: Python checks host and user identities for analysis markers
+  crit: suspicious
+  conf: 0.97
+  near_lines: 12
+  all:
+  - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
+  - id: micro-behaviors/process/user/query::python-getpass-user
+  - id: dual-identity-marker-condition
+  any:
+  - id: vmware-analysis-marker
+  - id: anubis-analysis-marker
+  - id: joebox-analysis-marker
+  - id: malware-analysis-marker
+  - id: cuckoo-analysis-marker
+  - id: virus-analysis-marker
+- id: python-sandbox-gated-env-http-exfil
+  desc: Sandbox check gates Python environment exfiltration
+  crit: hostile
+  conf: 0.98
+  attack: T1497.001,T1552.001,T1041
+  mbc: B0007,E1041
+  size_max: 262144
+  near_lines: 40
+  all:
+  - id: python-host-user-analysis-marker-check
+  - id: micro-behaviors/data/control-flow/analysis::python-early-return-call-gate
+  - id: objectives/exfiltration/stealer/credential/env::python-env-json-urllib-exfil
 - id: hostname-sandbox-keyword-check
   desc: Hostname compared to sandbox-keyword
   crit: baseline
@@ -277,12 +320,12 @@ composite_rules:
   all:
   - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
   any:
-  - id: objectives/anti-analysis/sandbox-detect/script::cwd-sandbox-keyword-check--rx-20
+  - id: malware-analysis-marker
   - id: objectives/anti-analysis/sandbox-detect/script::cwd-sandbox-keyword-check--rx-21
-  - id: hostname-in-sandbox-list--rx-12
-  - id: objectives/anti-analysis/sandbox-detect/script::cwd-sandbox-keyword-check--rx-22
-  - id: hostname-in-sandbox-list--rx-14
-  - id: hostname-sandbox-keyword-check--rx-8
+  - id: anubis-analysis-marker
+  - id: cuckoo-analysis-marker
+  - id: joebox-analysis-marker
+  - id: vmware-analysis-marker
   near_bytes: 256
 - id: hostname-in-sandbox-list
   desc: Hostname checked against sandbox list
@@ -291,12 +334,12 @@ composite_rules:
   all:
   - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
   any:
-  - id: cwd-sandbox-keyword-check--rx-20
+  - id: malware-analysis-marker
   - id: cwd-sandbox-keyword-check--rx-21
-  - id: hostname-in-sandbox-list--rx-12
-  - id: cwd-sandbox-keyword-check--rx-22
-  - id: hostname-in-sandbox-list--rx-14
-  - id: cwd-sandbox-keyword-check--rx-24
+  - id: anubis-analysis-marker
+  - id: cuckoo-analysis-marker
+  - id: joebox-analysis-marker
+  - id: virus-analysis-marker
   near_bytes: 256
 - id: cwd-sandbox-keyword-check
   desc: cwd checked for sandbox keyword
@@ -305,10 +348,10 @@ composite_rules:
   all:
   - id: micro-behaviors/fs/directory/cwd/
   any:
-  - id: cwd-sandbox-keyword-check--rx-20
+  - id: malware-analysis-marker
   - id: cwd-sandbox-keyword-check--rx-21
-  - id: cwd-sandbox-keyword-check--rx-22
-  - id: cwd-sandbox-keyword-check--rx-24
+  - id: cuckoo-analysis-marker
+  - id: virus-analysis-marker
   near_bytes: 256
 - id: physical-mem-low-check
   desc: Physical memory checked for low-spec sandbox

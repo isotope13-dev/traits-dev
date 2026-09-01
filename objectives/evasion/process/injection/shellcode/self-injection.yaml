@@ -151,6 +151,22 @@ traits:
     regex: '(?i)read .{0,40} bytes from data file'
 
 composite_rules:
+- id: go-rwx-syscall-self-injection
+  desc: Garbled Go loader executes a computed entry point from RWX memory
+  crit: hostile
+  conf: 0.99
+  for: [pe]
+  arch: [x86-64]
+  attack: T1027,T1620
+  all:
+  - id: metadata/lang/compiler/systems::go-buildinfo
+  - id: micro-behaviors/mem/alloc/executable::go-abi-rwx-reserve-commit-call-x64-any
+  - id: micro-behaviors/process/inject/runtime/call::go-syscall-computed-entry-dispatch-x64
+  - id: objectives/anti-static/obfuscation/obfuscator/garble::garble-obfuscated-go
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: well-known/tool/development/
 - id: powershell-shellcode-bin-bytearray
   desc: PowerShell shellcode byte array staging
   crit: suspicious
@@ -170,13 +186,14 @@ composite_rules:
   unless:
   - id: metadata/lang/compiler/native::python-msvc-extension
   - id: metadata/library/python-runtime/
-  # Same-process code injection: RWX alloc + memcpy
+# Same-process binary code staging: require byte-local evidence. Import-table
+# memcpy and a loader stub can be thousands of bytes apart and unrelated.
 - id: rwx-memcpy-injection
   desc: RWX allocation with code copy
   crit: suspicious
   conf: 0.85
-  for: [c, cpp, pe, dll]
-  near_lines: 20
+  for: [pe, dll]
+  near_bytes: 1024
   all:
   - id: rwx-allocation-source-or-binary
   any:
@@ -192,6 +209,25 @@ composite_rules:
     any:
     - id: metadata/signed/platform/
     - id: metadata/signed/leaf::microsoft-corporation
+# Source retains line-local matching because byte offsets are not meaningful
+# after parser normalization.
+- id: rwx-memcpy-staging-source
+  desc: Source allocates RWX memory and copies code into it
+  crit: suspicious
+  conf: 0.85
+  for: [c, cpp]
+  near_lines: 20
+  all:
+  - id: rwx-allocation-source-or-binary
+  any:
+  - id: micro-behaviors/mem/c-runtime/functions::memcpy
+  - id: memcpy-raw
+  unless:
+  - id: metadata/library/memory-module::memory-module-source
+  - id: metadata/lang/source::mingw-pseudo-reloc-source
+  - id: metadata/lang/compiler/native::mingw-pseudo-reloc-runtime
+  - id: metadata/lang/source::reactos-crt-pseudo-reloc
+  - id: well-known/lib/platform/minhook/
 - id: go-local-shellcode-loader
   desc: Go local shellcode loader with executable-memory evidence
   crit: suspicious
@@ -322,7 +358,7 @@ composite_rules:
   arch: [x86-64]
   size_max: 5242880
   all:
-  - id: objectives/anti-static/obfuscation/imports::peb-access-x64
+  - id: micro-behaviors/os/env/access::peb-access-x64
   - id: objectives/anti-static/obfuscation/imports::pe-header-walk-x64
   - id: micro-behaviors/mem/alloc/executable::page-readwrite-arg-x64
   - id: micro-behaviors/mem/alloc/executable::page-execute-read-arg-x64
@@ -349,16 +385,47 @@ composite_rules:
   arch: [x86-64]
   size_max: 5242880
   all:
-  - id: objectives/anti-static/obfuscation/imports::peb-access-x64
+  - id: micro-behaviors/os/env/access::peb-access-x64
   - id: objectives/anti-static/obfuscation/imports::pe-header-walk-x64
   - id: objectives/anti-static/obfuscation/imports::djb2-byte-hash-loop-x64
-  - id: micro-behaviors/mem/alloc/executable::virtualalloc-readwrite-commit-register-x64
+  - id: micro-behaviors/mem/alloc/virtual::virtualalloc-readwrite-commit-register-x64
   - id: micro-behaviors/mem/protect/modify::virtualprotect-executable-read-register-x64
-  - id: micro-behaviors/process/thread/create::current-process-indirect-api-call-x64
   unless:
   - id: metadata/signed/platform::microsoft-windows
   - id: metadata/signed/leaf::microsoft-corporation
   - id: metadata/binary/framework/
+- id: ror13-rwx-thread-shellcode-loader-x86
+  desc: ROR13 shellcode staged in an RWX thread
+  crit: hostile
+  conf: 0.995
+  attack: T1027.002,T1027.007,T1055,T1620
+  mbc: B0032
+  for: [pe, dll]
+  arch: [x86]
+  all:
+  - id: objectives/anti-static/obfuscation/imports::ror13-peb-export-resolver-x86
+  - id: objectives/anti-static/obfuscation/payload/encrypted::shikata-ga-nai-stub
+  - id: micro-behaviors/mem/alloc/executable::virtualalloc-rwx-commit-ror13-x86
+  - id: micro-behaviors/process/thread/create::create-thread-buffer-ror13-x86
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+- id: ror13-rwx-thread-shellcode-loader-x64
+  desc: Embedded ROR13 shellcode launched from an RWX buffer
+  crit: hostile
+  conf: 0.995
+  attack: T1027.007,T1055,T1620
+  mbc: B0032
+  for: [pe, dll]
+  arch: [x86-64]
+  all:
+  - id: objectives/anti-static/obfuscation/imports::ror13-peb-export-resolver-x64
+  - id: micro-behaviors/mem/alloc/executable::virtualalloc-rwx-commit-import-x64
+  - id: micro-behaviors/process/thread/create::create-thread-buffer-import-x64-stack-args
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: well-known/tool/reverse-engineering/
 - id: executable-heap-shellcode-loader
   desc: Concealed loader using HeapCreate(EXECUTE) to bypass VirtualAlloc detection
   crit: hostile
@@ -367,7 +434,7 @@ composite_rules:
   arch: [x86-64]
   size_max: 5242880
   all:
-  - id: objectives/anti-static/obfuscation/imports::peb-access-x64
+  - id: micro-behaviors/os/env/access::peb-access-x64
   - id: micro-behaviors/mem/alloc/heap::heap-create
   - id: micro-behaviors/mem/alloc/heap::heap-create-enable-execute-flag
   unless:

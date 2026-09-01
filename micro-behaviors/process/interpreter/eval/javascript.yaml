@@ -25,8 +25,12 @@ traits:
     conf: 0.95
     attack: T1059.007
     if:
-      type: text
-      regex: '(?i)\bmodule\s*\.\s*_compile\b'
+      # The Module instance is commonly held in a short local alias. Match
+      # the parsed call target so `_m._compile(source, filename)` is not lost
+      # while comments and string literals cannot supply the behavior.
+      type: symbol
+      kind: call
+      regex: '(^|\.)_compile$'
 
   - id: module-compile-hex-hidden
     desc: Hex-hidden Node _compile method
@@ -172,7 +176,7 @@ traits:
       - type: text
         substr: "new Function('n', 'return '"
       - id: metadata/library/structure::js-large-minified-bundle
-      - id: metadata/library/jquery/
+      - id: well-known/lib/web/jquery/
   - id: js-function-constructor-require-parameter
     desc: Function constructor takes require parameter
     crit: notable
@@ -181,6 +185,14 @@ traits:
     if:
       type: text
       regex: 'new\s+Function\s*\(\s*[''\"]require[''\"]\s*,'
+  - id: js-function-constructor-require-invocation
+    desc: Invokes generated function with Node require
+    crit: notable
+    conf: 0.97
+    attack: T1059.007
+    if:
+      type: text
+      regex: 'new\s+Function\s*\(\s*[''\"]require[''\"][^\n)]{1,120}\)\s*\(\s*require\s*\)'
   - id: js-function-constructor
     desc: Constructs a JavaScript function dynamically
     crit: notable
@@ -207,6 +219,10 @@ traits:
       # examples and prose must not become constructor evidence.
       - type: path
         regex: '(?i)\.R(?:d|md)$'
+      # Dart is also content-typed as JavaScript. Type annotations such as
+      # `Future<void> Function() body` are not Function() constructor calls.
+      - type: path
+        regex: '(?i)\.dart$'
   - id: js-new-function-variable-argument
     desc: Function constructor receives identifier
     crit: notable
@@ -245,6 +261,7 @@ traits:
       regex: '\.constructor\s*\.\s*constructor\b'
     unless:
       - id: metadata/library/structure::js-large-minified-bundle
+
   - id: js-empty-function-charcode-property
     desc: Empty function has char-coded property
     crit: component
@@ -400,13 +417,18 @@ traits:
     if:
       type: text
       regex: '(^|[^.$A-Za-z0-9_])eval\s*\(\s*[A-Za-z_$][\w$]*\.responseText'
+  # Covers the Function-constructor twin `(0, Function)(src)` as well: the comma
+  # operator yields a bare callee so the compiled code closes over global scope.
   - id: js-indirect-eval
-    desc: Indirect eval via comma operator ((0,eval))
+    desc: Indirect eval or Function via comma operator
     crit: notable
     conf: 0.7
     if:
-      type: text
-      regex: '\(\s*0\s*,\s*eval\s*\)\s*\('
+      # Restrict the syntax to an actual call expression.  Text scanning also
+      # treated documentation examples inside comments as executable eval.
+      type: tree-sitter
+      kind: call
+      regex: '\(\s*0\s*,\s*(eval|Function)\s*\)\s*\('
     # `(0,eval)(...)` is a standard transpiler/bundler idiom for global-scope
     # eval; suppress it on large minified bundles to avoid noise, matching the
     # js-new-function-constructor precedent above. Dropper composites use the

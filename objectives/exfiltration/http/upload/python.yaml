@@ -24,6 +24,14 @@ traits:
     if:
       type: text
       substr: "base64.b64encode((Path(__file__).parent / 'scripts' / 'cicd-release.sh')"
+  - id: python-request-headers-json-field
+    desc: JSON payload includes copied request headers
+    crit: notable
+    conf: 0.95
+    for: [python]
+    if:
+      type: text
+      substr: '"requestHeaders": dict(request.headers)'
 composite_rules:
   - id: python-source-upload-to-transform-service
     desc: Sends local Python source to a remote transform service
@@ -66,15 +74,6 @@ composite_rules:
     all:
       - id: objectives/credential-access/cloud/aws-token::python-aws-shared-credentials-file-access
       - id: micro-behaviors/communications/http/client/library::urllib-request
-  # gzip.compress() and tarfile.open(..., "w:gz") are equivalent archive-creation
-  # signals; requiring only gzip.compress missed the common tarfile write path.
-  - id: python-gzip-tar-archive-signal
-    desc: Python gzip.compress used with tar handling
-    crit: notable
-    conf: 0.94
-    all:
-      - id: micro-behaviors/data/compress/library::gzip-compress-call
-      - id: micro-behaviors/data/archive/open/tar::python-tarfile-open
   - id: python-targz-requests-post
     desc: Python script uploading tar.gz archive via requests
     crit: hostile
@@ -87,7 +86,7 @@ composite_rules:
       - id: micro-behaviors/communications/http/lib/requests::requests-post
     any:
       - id: micro-behaviors/data/archive/create/tar::python-tar-gz-write-mode
-      - id: python-gzip-tar-archive-signal
+      - id: micro-behaviors/data/archive/create/tar::python-gzip-tar-archive
   - id: python-header-archive-post
     desc: Python base64 POST with archive filename header
     crit: hostile
@@ -110,3 +109,41 @@ composite_rules:
       - id: micro-behaviors/data/archive/open/tar::python-tarfile-open
       - id: metadata/file/extension/identity::archive-extension-reference
     near_bytes: 512
+  - id: python-sui-wallet-targz-github-upload
+    desc: Python steals Sui wallets and uploads tar.gz to GitHub API
+    crit: hostile
+    conf: 0.99
+    attack: T1003,T1041,T1195.002
+    for: [python, python_bytecode, pyc, whl, archives]
+    scope: archive
+    all:
+      - id: objectives/credential-access/wallet/blockchain::sui-wallet-keystore-path-ref
+      - id: micro-behaviors/communications/http/services/github::github-rest-json-accept-header
+      - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-call
+      - id: micro-behaviors/os/env/vars/cicd::multi-ci-provider-env-refs
+  - id: python-copied-request-headers-remote-post
+    desc: Python POSTs copied HTTP request headers remotely
+    crit: hostile
+    conf: 0.97
+    for: [python, whl, zip, archives]
+    # HTTP client libraries commonly copy request headers for compatibility
+    # wrappers and also contain unrelated POST helpers. Keep the hostile
+    # conclusion within one source file and ignore bundled dependency files;
+    # package-root code remains eligible for this behavior.
+    scope: file
+    unless:
+      - id: metadata/package/files/dependency::bundled-python-library-path
+    all:
+      - id: python-request-headers-json-field
+      - id: micro-behaviors/communications/http/request/body::http-post-with-body-argument
+  - id: python-middleware-request-header-export
+    desc: Web middleware serializes request headers for upload
+    crit: hostile
+    conf: 0.97
+    attack: T1041,T1552
+    for: [python, whl, zip, archives]
+    scope: archive
+    all:
+      - id: python-request-headers-json-field
+      - id: micro-behaviors/communications/http/headers::python-request-header-map-copy
+      - id: micro-behaviors/communications/http/request/body::http-post-with-body-argument

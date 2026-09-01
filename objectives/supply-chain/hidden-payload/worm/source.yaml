@@ -10,14 +10,23 @@ defaults:
   mbc: B0024
 
 traits:
-  - id: package-publish-permission-check
-    desc: Checks package publishing permission
-    crit: notable
-    conf: 0.9
+  - id: install-hook-self-targeting-worm-env
+    desc: Hook exports package self-identity env
+    # `WORKFLOW_ID=... REPO_ID_SUFFIX=<owner/repo> TARGET_PACKAGES=<pkg> node|bun x.js`
+    # in a lifecycle script: the hook hands the payload the package's own repo
+    # slug, target package name, and the release workflow to abuse. That is the
+    # self-propagation configuration of a package-republishing worm (Shai-Hulud
+    # / TeamPCP wave), not build configuration — a maintained package never
+    # feeds its own coordinates to an install-time script this way. The matcher
+    # keys on the env-var names, so a renamed loader script on the next wave
+    # still lands here.
+    crit: suspicious
+    conf: 0.95
+    for: [package.json, manifests, pkginfo, javascript, typescript, shell]
+    mbc: F0001
     if:
       type: text
-      regex: '(?i)\b(can[_-]?publish|publish[_-]?permission)\b'
-
+      regex: '(?s)REPO_ID_SUFFIX=.{0,200}TARGET_PACKAGES=|TARGET_PACKAGES=.{0,200}REPO_ID_SUFFIX='
   - id: writable-package-enumeration
     desc: Enumerates writable packages
     crit: suspicious
@@ -25,20 +34,6 @@ traits:
     if:
       type: text
       regex: '(?i)\b(enumerate|list|discover)[A-Za-z0-9_]*(writable|writeable)[A-Za-z0-9_]*packages?\b'
-
-  - id: package-tarball-download
-    desc: Downloads package tarball
-    crit: notable
-    conf: 0.9
-    unless:
-      - id: metadata/package/files/dependency::node-modules-path
-      - id: metadata/package/files/dependency::vsix-bundled-output-path
-      - id: well-known/app/ai/bandit-stealth::bandit-stealth-extension-context
-      - id: well-known/tool/sysadmin/spack::spack-package-context
-      - id: metadata/package/testing/
-    if:
-      type: text
-      regex: '(?i)\b(download|fetch|retrieve)[A-Za-z0-9_]*tarball\b'
 
   - id: js-package-manifest-hook-rewrite
     desc: Rewrites JavaScript package install hook
@@ -50,13 +45,15 @@ traits:
       regex: '(?is)\bpackageJson\b.{0,48}\bscripts\b.{0,24}(\.|\[[''\"]?)(pre|post)install([''\"]?\])?\s*='
 
   - id: python-package-manifest-hook-rewrite
-    desc: Rewrites Python package install hook
+    desc: Assigns Python package install hook
     crit: suspicious
     conf: 0.95
     for: [python]
     if:
       type: text
-      regex: '(?is)\b(package_json|manifest)\b.{0,160}\b(preinstall|postinstall)\b'
+      regex: '(?i)\b(package_json|manifest)\b.{0,80}\b(preinstall|postinstall)\b.{0,12}='
+    unless:
+      - id: metadata/package/testing/
 
   # package-patch-version-increment moved to
   # micro-behaviors/os/package-manager/publish::package-manifest-version-bump.
@@ -129,14 +126,14 @@ composite_rules:
     crit: hostile
     conf: 0.98
     all:
-      - id: package-publish-permission-check
+      - id: micro-behaviors/os/package-manager/publish::publish-permission-flag
       - id: writable-package-enumeration
       - id: package-manifest-lifecycle-rewrite
       - id: micro-behaviors/os/package-manager/publish::package-manifest-version-bump
-      - id: repacked-package-publication
-    any:
-      - id: package-tarball-download
       - id: micro-behaviors/os/package-manager/publish::npm-publish-command
+    any:
+      - id: micro-behaviors/communications/http/download/package::package-tarball-download-call
+      - id: repacked-package-publication
 
   - id: package-manifest-lifecycle-rewrite
     desc: Rewrites package lifecycle scripts

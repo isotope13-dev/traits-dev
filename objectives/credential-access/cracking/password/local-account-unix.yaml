@@ -1,0 +1,86 @@
+# Guessing the passwords of local accounts on the host the code is already
+# running on. This is the local-cracking side of T1110: the account list comes
+# from the machine's own directory service, and each candidate is tried by
+# driving an interactive authentication prompt -- `su`, `login`, `sudo` --
+# through an expect script, because those tools refuse to read a password from
+# a pipe.
+#
+# Automating an interactive password prompt is the part with no benign
+# reading. Test harnesses drive `expect` against services they own; nothing
+# legitimate drives it against `su` for every account on the box.
+defaults:
+  platforms: [unix]
+  for: [scripts, source]
+  attack: T1110.001
+  mbc: B0031
+
+traits:
+  - id: expect-driven-su-authentication
+    desc: Drives su through an expect script
+    crit: suspicious
+    conf: 0.94
+    if:
+      # `expect -c 'spawn su <user>' -c 'expect Password: {send <pw>\n}'`
+      type: text
+      regex: '(?i)expect\s+-c[^\n]{0,30}spawn\s+(su|login|sudo)\b'
+
+  - id: expect-password-prompt-reply
+    desc: Answers a password prompt from a script
+    crit: suspicious
+    conf: 0.9
+    if:
+      # The reply half of the same idiom, which also covers the multi-line
+      # spelling where the spawn and the expect are separate lines.
+      type: text
+      regex: '(?i)expect\s+[Pp]assword:?\s*\{\s*send\b'
+
+  - id: shadowed-account-enumeration
+    desc: Lists local accounts that have passwords
+    crit: notable
+    conf: 0.9
+    attack: T1087.001
+    if:
+      # `dscl . -list /Users` then reading each account's `passwd` field to
+      # drop the ones marked `*` -- i.e. keep only accounts worth guessing at.
+      type: text
+      regex: '(?i)dscl\s+\.\s+-(list|read)\s+/Users\b'
+
+  - id: harvested-credential-pair-append
+    desc: Appends a user:password pair to a file
+    crit: suspicious
+    conf: 0.9
+    attack: T1552
+    if:
+      # `echo ${user}:${pass} >> accounts_file` -- the cracker's output file.
+      # Both halves must be named like the credential they hold. Any two
+      # colon-joined variables matched before, which is the shape of ordinary
+      # shell logging (`echo "declared:$SEKRIT:$NEEDLE" >> $log` in a test
+      # fixture), not of a recovered account list.
+      type: text
+      regex: '(?i)echo[^\n]{0,30}\$\{?\w{0,8}(user|acct|login)\w*\}?:\$\{?\w{0,8}(pass|pwd)[^\n]{0,9}>>'
+
+composite_rules:
+  # Enumerate the accounts that have passwords, then drive an authentication
+  # prompt against them. That is a local password spray, whatever it calls
+  # itself.
+  - id: local-account-password-spray
+    desc: Sprays passwords at local accounts
+    crit: hostile
+    conf: 0.96
+    attack: T1110.001,T1087.001
+    all:
+      - id: shadowed-account-enumeration
+    any:
+      - id: expect-driven-su-authentication
+      - id: expect-password-prompt-reply
+
+  - id: cracked-credential-collection
+    desc: Records credentials guessed by a spray
+    crit: hostile
+    conf: 0.95
+    attack: T1110.001,T1552
+    all:
+      - id: harvested-credential-pair-append
+    any:
+      - id: expect-driven-su-authentication
+      - id: expect-password-prompt-reply

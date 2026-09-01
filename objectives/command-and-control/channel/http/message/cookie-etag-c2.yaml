@@ -1,0 +1,134 @@
+# HTTP Cookie / ETag response headers used as a covert C2 tasking channel.
+# CookiETagRAT-style implants hide commands in cache-validation headers
+# (Cookie and ETag) instead of the response body. Pairing both header query
+# constants with process creation is the durable structural signal.
+defaults:
+  platforms: [windows]
+  for: [c, cpp, pe, dll]
+  attack: T1071.001,T1059
+  mbc: B0030
+
+traits:
+  - id: winhttp-query-cookie-constant
+    desc: WinHTTP Cookie response-header query
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      word: WINHTTP_QUERY_COOKIE
+
+  - id: winhttp-query-etag-constant
+    desc: WinHTTP ETag response-header query
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      word: WINHTTP_QUERY_ETAG
+
+  - id: if-none-match-cache-header
+    desc: If-None-Match request header literal
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: '(?i)If-None-Match\s*:'
+
+  - id: etag-header-name-literal
+    desc: ETag header name literal
+    crit: component
+    conf: 0.8
+    if:
+      type: text
+      regex: '(?i)(^|[^A-Za-z0-9_])ETag\s*:'
+
+composite_rules:
+  - id: winhttp-cookie-etag-header-queries
+    desc: Queries both Cookie and ETag response headers
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: winhttp-query-cookie-constant
+      - id: winhttp-query-etag-constant
+    near_bytes: 2048
+    unless:
+      - id: well-known/lib/platform/wine/
+      - id: well-known/lib/core/apache-thrift/
+      - id: well-known/lib/core/apache-thrift::apache-thrift-source-path
+      - id: well-known/lib/core/apache-thrift::apache-thrift-delphi-path
+
+  - id: cookie-and-etag-header-pair
+    desc: Cookie and ETag header names together
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: winhttp-query-cookie-constant
+      - id: winhttp-query-etag-constant
+    any:
+      - id: etag-header-name-literal
+      - id: if-none-match-cache-header
+    near_bytes: 2048
+
+  - id: python-set-cookie-etag-response-reads
+    desc: Reads both Set-Cookie and ETag response headers in Python
+    crit: suspicious
+    conf: 0.97
+    for: [python]
+    platforms: [unix, windows]
+    all:
+      - id: micro-behaviors/communications/http/cookies::python-response-set-cookie-header-read
+      - id: micro-behaviors/communications/http/header/cache::python-response-etag-header-read
+    near_lines: 12
+
+  - id: cookie-etag-response-header-pair
+    desc: Reads both Cookie and ETag response headers
+    crit: suspicious
+    conf: 0.97
+    for: [python, c, cpp, pe, dll]
+    platforms: [unix, windows]
+    any:
+      - id: winhttp-cookie-etag-header-queries
+      - id: python-set-cookie-etag-response-reads
+
+  - id: cookie-etag-header-c2-channel
+    desc: Cookie/ETag header C2 with process launch
+    crit: hostile
+    conf: 0.98
+    for: [python, c, cpp, pe, dll]
+    platforms: [unix, windows]
+    all:
+      - id: cookie-etag-response-header-pair
+    any:
+      - id: micro-behaviors/process/create/spawn::create-process-a
+      - id: micro-behaviors/process/create/spawn::child-process-creation-api
+      - id: micro-behaviors/process/create/spawn::create-process-w
+      - id: micro-behaviors/process/create/direct::exec-command
+      - id: micro-behaviors/process/create/subprocess::process-execution
+    near_bytes: 8192
+
+  - id: cookie-etag-encrypted-tasking-channel
+    desc: Encrypted Cookie/ETag response-header tasking channel
+    crit: hostile
+    conf: 0.99
+    for: [python, c, cpp, pe, dll]
+    platforms: [unix, windows]
+    all:
+      - id: cookie-etag-response-header-pair
+      - id: micro-behaviors/data/decode/base64::base64-decoding
+    any:
+      - id: micro-behaviors/crypto/symmetric/stream::chacha20-api-operation
+      - id: micro-behaviors/crypto/symmetric/stream::chacha20-cipher-call
+    near_lines: 40
+
+  - id: cookie-etag-cache-validation-c2
+    desc: Cache-validation Cookie/ETag C2 workflow
+    crit: hostile
+    conf: 0.97
+    attack: T1071.001
+    all:
+      - id: winhttp-cookie-etag-header-queries
+      - id: if-none-match-cache-header
+    any:
+      - id: micro-behaviors/communications/http/client/winhttp::winhttp-query-headers
+      - id: micro-behaviors/communications/http/client/winhttp::winhttp-request-flow
+      - id: etag-header-name-literal
+    near_bytes: 8192

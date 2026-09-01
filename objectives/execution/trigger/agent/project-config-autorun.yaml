@@ -53,7 +53,14 @@ traits:
     if:
       type: value
       path: hooks.SessionStart[*].hooks[*].command
-      regex: '(?i)\.(claude|cursor|codex|gemini|windsurf|vscode|idea)[\/]'
+      # Cross-tool / foreign-tree only. Same-product hooks such as
+      # `.claude/settings.json` → `.claude/hooks/...` are ordinary agent
+      # configuration (every Claude Code project ships them) and are not the
+      # keyv-style split where an agent settings file runs an editor payload.
+      regex: '(?i)\.(vscode|idea|cursor|codex|gemini|windsurf)[\/]'
+    unless:
+      - id: well-known/tool/detection/agent-glovebox::archive-context
+      - id: well-known/tool/detection/agent-glovebox::glovebox-hook-settings-context
 
   - id: ide-task-command-claude-cursor-dir
     desc: IDE task runs Claude or Cursor script
@@ -72,6 +79,26 @@ traits:
       type: value
       path: tasks[*].command
       regex: '\.(codex|gemini|windsurf)[\\/]'
+
+  - id: ide-task-command-setup-mjs
+    desc: IDE task runs setup.mjs
+    # Keyv / Mini Shai-Hulud style: folderOpen launches `node …/setup.mjs`,
+    # which then bootstraps a temp Bun runtime over an opaque sidecar.
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: value
+      path: tasks[*].command
+      regex: '(?i)\bnode\s+[^\n]*setup\.mjs\b'
+
+  - id: agent-hook-command-setup-mjs
+    desc: Agent hook runs setup.mjs
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: value
+      path: hooks.SessionStart[*].hooks[*].command
+      regex: '(?i)\bnode\s+[^\n]*setup\.mjs\b'
 
 composite_rules:
   - id: ide-task-command-agent-config-dir
@@ -93,6 +120,16 @@ composite_rules:
     unless:
       - id: metadata/package/testing/presence/harness/
 
+  - id: agent-session-hook-setup-mjs-payload
+    desc: Agent session hook runs setup.mjs dropper
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: agent-sessionstart-hook-command
+      - id: agent-hook-command-setup-mjs
+    unless:
+      - id: metadata/package/testing/presence/harness/
+
   - id: agent-session-hook-project-config-payload
     desc: Agent session hook runs repository config payload
     crit: suspicious
@@ -102,13 +139,30 @@ composite_rules:
       - id: agent-sessionstart-project-config-script
     unless:
       - id: metadata/package/testing/presence/harness/
+      - id: well-known/tool/detection/agent-glovebox::archive-context
+      - id: well-known/tool/detection/agent-glovebox::glovebox-hook-settings-context
 
   - id: ide-autorun-cross-tool-payload
     desc: IDE open task runs agent-dir payload
     crit: hostile
     conf: 0.96
     all:
-      - id: objectives/supply-chain/install-hook/tasks::tasks-run-on-open
-      - id: ide-task-command-agent-config-dir
+      - id: metadata/permission/activation::vscode-task-folder-open-activation
+    # Reference the structured value atoms directly. Besides making the
+    # hostile condition explicit, this avoids relying on an intermediate
+    # composite when evaluating a static tasks.json file.
+    any:
+      - id: ide-task-command-claude-cursor-dir
+      - id: ide-task-command-agent-dir-extra
+    unless:
+      - id: metadata/package/testing/presence/harness/
+
+  - id: ide-autorun-setup-mjs-payload
+    desc: IDE open task runs setup.mjs dropper
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: metadata/permission/activation::vscode-task-folder-open-activation
+      - id: ide-task-command-setup-mjs
     unless:
       - id: metadata/package/testing/presence/harness/

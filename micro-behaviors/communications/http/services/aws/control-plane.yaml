@@ -69,6 +69,7 @@ traits:
       regex: '(?i)\bdelete[_-]?subnet\b'
     unless:
       - id: well-known/lib/cloud/alibaba-cloud-go::alibaba-cloud-go-library
+      - id: metadata/library/cloud-sdk::aws-python-sdk-source
 
   - id: domain-transfer-lock-disable-operation
     desc: AWS domain-lock disable operation
@@ -113,12 +114,14 @@ traits:
       type: text
       regex: '(?i)"eventName"\s*:\s*"AssumeRole"'
 
-  - id: aws-cross-account-role-arn
+  - id: aws-iam-role-arn
     desc: AWS IAM role ARN with account ID
     for: [python, javascript, typescript, java, ruby, go, php, json]
     if:
       type: text
       regex: '(?i)arn:aws:iam::[0-9]{12}:role/'
+    unless:
+      - id: metadata/package/testing/presence/harness::go-test-file
 
   # Source AST calls cover Python, JavaScript, Java and other supported
   # languages without matching an API name in a prose comment.
@@ -226,16 +229,20 @@ traits:
     unless:
       - id: well-known/lib/cloud/alibaba-cloud-go::alibaba-cloud-go-library
 
-  # Case-sensitive: `UserData` is the spelling every AWS SDK uses for the
-  # RunInstances/LaunchTemplate parameter.  A case-insensitive `user_data|
-  # UserData` also matched `const user_data = await resp.json()` and every
-  # other ordinary variable named user_data / userData in JS, Python and Ruby.
+  # Anchor the field to an instance-launch API or request type. `UserData` by
+  # itself is a common application-model property.
   - id: aws-user-data-call-parameter
     desc: AWS EC2 user-data call parameter
     for: [python, javascript, typescript, java, ruby, go]
     if:
       type: text
-      regex: '\bUserData\s*='
+      regex: '(?is)\b(runInstances|RunInstancesRequest).{0,256}\bUserData\s*[:=]'
+    unless:
+      # `type UserData = {...}` / `interface UserData` / `class UserData` is a
+      # locally declared shape (type-fest's docs use exactly this name), not a
+      # RunInstances parameter — the `=` there is a declaration, not an arg.
+      - type: text
+        regex: '\b(type|interface|class)\s+UserData\b'
 
   # CloudTrail eventName is a structural field, so this does not match the
   # article's prose or a comment that merely names an API.
@@ -344,7 +351,43 @@ traits:
       type: text
       regex: '(?i)\barn:aws:iam::aws:policy/AWSDenyAll\b'
 
+  # Root console authentication is represented as a sign-in event rather than
+  # an ordinary IAM API call. Repeated structural fields are neutral log facts;
+  # the password-spray objective combines them with repeated failures.
+  - id: multiple-aws-cloudtrail-root-identities
+    desc: Multiple AWS CloudTrail root identities
+    for: [json]
+    count_min: 2
+    if:
+      type: text
+      regex: '(?is)"userIdentity"\s*:\s*\{[^\}]{0,512}"type"\s*:\s*"Root"'
+
+  - id: multiple-aws-signin-service-events
+    desc: Multiple AWS sign-in service events
+    for: [json]
+    count_min: 2
+    if:
+      type: text
+      regex: '(?i)"eventSource"\s*:\s*"signin\.amazonaws\.com"'
+
+  - id: multiple-aws-console-login-events
+    desc: Multiple AWS console login events
+    for: [json]
+    count_min: 2
+    if:
+      type: text
+      regex: '(?i)"eventName"\s*:\s*"ConsoleLogin"'
+
 composite_rules:
+  - id: multiple-aws-root-console-login-events
+    desc: Multiple AWS root console login events
+    crit: notable
+    for: [json]
+    all:
+      - id: multiple-aws-cloudtrail-root-identities
+      - id: multiple-aws-signin-service-events
+      - id: multiple-aws-console-login-events
+
   - id: aws-key-pair-creation-operation
     desc: AWS EC2 key-pair creation operation
     crit: notable

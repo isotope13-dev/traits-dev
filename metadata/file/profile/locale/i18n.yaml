@@ -5,6 +5,30 @@ defaults:
   conf: 0.97
 
 traits:
+  # JOSM and similar Java applications store translations as consecutive
+  # big-endian u16-length-prefixed UTF-8 strings in `.lang` resources. The
+  # embedded text can make the file-type heuristic call a catalog Python,
+  # JavaScript, or Clojure source even though the leading NUL makes it
+  # non-executable. Keep the structural and filename legs separate so the
+  # composite requires both rather than treating every `.lang` file as data.
+  - id: binary-lang-resource-extension
+    desc: Binary .lang resource filename
+    crit: baseline
+    conf: 0.95
+    for: [python, javascript, clojure]
+    if:
+      type: path
+      basename: true
+      regex: '(?i)\.lang$'
+  - id: big-endian-length-prefixed-text-start
+    desc: Big-endian length-prefixed text start
+    crit: baseline
+    conf: 0.95
+    for: [python, javascript, clojure]
+    if:
+      type: hex
+      pattern: "00 ?? 20 20"
+      offset: 0
   - id: locale-path
     desc: JavaScript locale resource path
     crit: baseline
@@ -189,7 +213,7 @@ traits:
     desc: CJK UI prose source context
     crit: baseline
     conf: 0.9
-    for: [source, scripts]
+    for: [python, source, scripts]
     if:
       type: literal
       kind: string
@@ -198,15 +222,12 @@ traits:
     desc: Dense Han ideograph prose (localized source)
     crit: baseline
     conf: 0.9
-    for: [source, scripts]
-    count_min: 2
-    # A run of 4+ consecutive Han ideographs is meaningful Chinese prose (UI
-    # strings, comments), not high-entropy junk padding. A neutral localization
-    # property; obfuscation/dead-code composites reference it cross-tier to
-    # exclude legitimately-localized source.
+    for: [python, source, scripts, text, markdown]
+    # Require a comment/docstring lead-in so a bare 3-glyph run is not enough;
+    # that keeps the matcher specific while still catching localized Python.
     if:
       type: text
-      regex: '[\p{Han}]{4,80}'
+      regex: '(?m)("""|#).{0,160}[\p{Han}]{3,40}'
   - id: box-drawing-banner
     desc: Contains a box-drawing text banner
     crit: baseline
@@ -220,27 +241,68 @@ traits:
     if:
       type: text
       regex: 'export\s+default\s*\{\s*translation\s*:'
+  # Code-split drawing applications often emit each translation catalog under
+  # a numeric chunk name, so neither locale paths nor language-code basenames
+  # are available. These three section/action keys identify the catalog shape
+  # without depending on a particular translated phrase or release hash.
+  - id: canvas-locale-paste-plaintext-key
+    desc: Canvas UI locale paste-as-plaintext key
+    for: [javascript, typescript]
+    if:
+      type: text
+      word: pasteAsPlaintext
+  - id: canvas-locale-clear-dialog-key
+    desc: Canvas UI locale clear-dialog section key
+    for: [javascript, typescript]
+    if:
+      type: text
+      word: clearCanvasDialog
+  - id: canvas-locale-image-export-key
+    desc: Canvas UI locale image-export section key
+    for: [javascript, typescript]
+    if:
+      type: text
+      word: imageExportDialog
+  # The optional half is a region/script subtag (pt-BR, zh_Hans), so it is
+  # 2-4 alphanumerics. Leaving it unbounded made every `<3 letters>-<word>.ts`
+  # module a language code: web-service.ts, web-jsonrpc.ts, api-client.js.
+  # `not:` drops short stems that are common module names and no ISO 639 code.
   - id: i18n-lang-code-js-basename
     desc: JavaScript language code basename
     for: [javascript]
     if:
       type: path
       basename: true
-      regex: '^[a-z]{2,3}([_-][A-Za-z0-9]+)?\.(js|cjs)$'
+      regex: '^[a-z]{2,3}([_-][A-Za-z0-9]{2,4})?\.(js|cjs)$'
+    not:
+      - regex: '^(db|ui|io|fs)[._-]'
+      - regex: '^(os|vm|api|app)[._-]'
+      # sw.js is the conventional service-worker basename, not a Swahili
+      # translation catalog. Treating it as a locale also suppresses rules
+      # that use locale modules as benign encoded-string context.
+      - regex: '^sw[._-]'
   - id: i18n-lang-code-module-basename
     desc: Module JavaScript language code basename
     for: [javascript]
     if:
       type: path
       basename: true
-      regex: '^[a-z]{2,3}([_-][A-Za-z0-9]+)?\.mjs$'
+      regex: '^[a-z]{2,3}([_-][A-Za-z0-9]{2,4})?\.mjs$'
+    not:
+      - regex: '^(db|ui|io|fs)[._-]'
+      - regex: '^(os|vm|api|app)[._-]'
+      - regex: '^sw[._-]'
   - id: i18n-lang-code-ts-basename
     desc: TypeScript language code basename
     for: [typescript]
     if:
       type: path
       basename: true
-      regex: '^[a-z]{2,3}([_-][A-Za-z0-9]+)?\.(ts|tsx)$'
+      regex: '^[a-z]{2,3}([_-][A-Za-z0-9]{2,4})?\.(ts|tsx)$'
+    not:
+      - regex: '^(db|ui|io|fs)[._-]'
+      - regex: '^(os|vm|api|app)[._-]'
+      - regex: '^sw[._-]'
   - id: i18n-locales-dir-lang-module-path
     desc: Locale directory language module path
     for: [javascript, typescript]
@@ -259,7 +321,10 @@ traits:
     if:
       type: path
       basename: true
-      regex: '^[a-z]{2,3}([_-][A-Za-z0-9]+)?\.d\.(cts|mts|ts)$'
+      regex: '^[a-z]{2,3}([_-][A-Za-z0-9]{2,4})?\.d\.(cts|mts|ts)$'
+    not:
+      - regex: '^(db|ui|io|fs)[._-]'
+      - regex: '^(os|vm|api|app)[._-]'
   - id: angular-locale-bundle-path
     desc: Angular locale bundle path
     for: [javascript]
@@ -328,12 +393,12 @@ traits:
     if:
       type: text
       substr: setLocale
-  - id: zod-get-message-call
-    desc: Zod getMessage call
-    for: [javascript, typescript]
-    if:
-      type: symbol
-      exact: getMessage
+  # zod-get-message-call lived here, matching the bare symbol `getMessage`.
+  # That is one of the most common method names in JavaScript -- a mail
+  # client's message getter, a validator, an i18n helper -- and asserted zod
+  # from a name zod does not own, so any file with a getMessage() method read
+  # as a localeError factory. Removed; the localeError/getLocale/setLocale
+  # legs below are the zod-specific ones.
 
   # A README that links to its own translations. Anchoring on the *target*
   # filename covers both spellings of the same bar — the markdown one this rule
@@ -351,6 +416,15 @@ traits:
       regex: '(?i)readme[._/-][a-z]{2}(-[a-z]{2})?\.md'
 
 composite_rules:
+  - id: binary-lang-string-catalog
+    desc: Binary length-prefixed .lang string catalog
+    crit: baseline
+    conf: 0.99
+    for: [python, javascript, clojure]
+    all:
+      - id: binary-lang-resource-extension
+      - id: big-endian-length-prefixed-text-start
+
   - id: language-label-table-codes-a
     desc: Common UI language-code pair
     crit: baseline
@@ -388,6 +462,20 @@ composite_rules:
       - id: date-fns-format-distance-locale
       - id: angular-locale-bundle-path
 
+  # Broad locale-data identity used as a gate by trojanized-locale composites.
+  # Includes FullCalendar locale assets that never call the Moment-style
+  # registration helpers above. Baseline: identity alone is not an attack.
+  - id: js-locale-resource
+    desc: JavaScript locale data resource
+    crit: baseline
+    conf: 0.97
+    for: [javascript]
+    any:
+      - id: js-locale-registration-module
+      - id: well-known/lib/ui/fullcalendar::fullcalendar-locale-registration
+      - id: well-known/lib/ui/fullcalendar::fullcalendar-global-locale-push
+      - id: well-known/lib/ui/fullcalendar::fullcalendar-locale-option-set
+
   - id: multilingual-ui-language-table
     desc: Multilingual UI language-label table
     crit: baseline
@@ -413,6 +501,16 @@ composite_rules:
       - id: i18n-locales-dir-exported-module
       - id: calendar-locale-first-day-of-week
       - id: metadata/file/profile/locale::select2-locale-module-name
+      - id: bundled-canvas-ui-locale-object
+  - id: bundled-canvas-ui-locale-object
+    desc: Bundled canvas UI locale string catalog
+    crit: baseline
+    conf: 0.98
+    for: [javascript, typescript]
+    all:
+      - id: canvas-locale-paste-plaintext-key
+      - id: canvas-locale-clear-dialog-key
+      - id: canvas-locale-image-export-key
   - id: gettext-po-catalog
     desc: GNU gettext PO/POT catalog
     crit: baseline
@@ -475,7 +573,6 @@ composite_rules:
       - id: zod-locale-error-name
       - id: zod-get-locale-name
       - id: zod-set-locale-name
-      - id: zod-get-message-call
   - id: localized-source-marker
     desc: Localized source or translation context
     crit: baseline

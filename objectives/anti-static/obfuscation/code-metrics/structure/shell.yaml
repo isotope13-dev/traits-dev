@@ -33,45 +33,6 @@ traits:
   - type: metrics
     field: identifiers.avg_length
     min: 12.0
-- id: sh-single-char-vars
-  desc: "Excessive single-character variables"
-  crit: suspicious
-  conf: 0.8
-  if:
-    type: metrics
-    field: identifiers.single_char_ratio
-    min: 0.40
-  unless:
-  - id: metadata/file/format/structured::sourcemap-sources-content
-  - id: metadata/lang/encoded/url::shell
-  - id: metadata/package/files/system-package::shell-completion-script
-  - id: well-known/app/development/deno::deno-runtime-binary
-    # A decoded layer is not a shell script: the type sniffer labels a
-    # fragment `shell` on `$`/`${...}`/quoting alone, and a minified JS bundle
-    # decoded at a `\uXXXX` escape is full of both — mermaid's SVG path
-    # template literals inside the Mermaid VS Code extension's esbuild bundle
-    # decode to a "shell" layer whose single-char variables are the minifier's.
-    # Same exclusion the sibling sh-high-entropy-functions already carries.
-  - type: basename
-    regex: '##(url|unicode-escape)@[0-9]+$'
-    # Ratio over a small population is noise: terse POSIX one-screen scripts
-    # (glibc's yearistype: 8 single-char vars of 19) trip 0.40 while real
-    # minified/packed shell carries dozens of single-char variables.
-  - type: metrics
-    field: identifiers.single_char_count
-    max: 9
-  - type: metrics
-    field: identifiers.count
-    max: 39
-    # getopts option-parsing wrappers inflate single_char_count with their
-    # optstring letters as case labels (xfs_metadump: a/e/f/F/g/l/m/o/r/w/v/V
-    # => 15 single-char "vars", avg_entropy 1.15). That is an idiomatic POSIX
-    # getopts dispatch, not obfuscation; packed/minified shell never carries
-    # a getopts loop. Requiring the literal builtin (which obfuscators avoid)
-    # excludes these wrappers without weakening detection.
-  - type: text
-    regex: '(^|[^A-Za-z0-9_])getopts([^A-Za-z0-9_]|$)'
-  - id: shell-test-fixture-marker
   # Override generic high-entropy-function-names for shell
 - id: sh-high-entropy-functions
   desc: "High-entropy function names"
@@ -91,7 +52,7 @@ traits:
   # the generic metric rule already treats this shape as non-obfuscation.
   - type: metrics
     field: functions.avg_name_length
-    min: 14.0
+    min: 12.0
   - id: well-known/app/utility/ventoy/
   - type: text
     regex: 'PROGRAM=libtool|PACKAGE=libtool|# libtool \(GNU libtool\)'
@@ -162,6 +123,10 @@ traits:
   desc: Dense ANSI-C hex escapes
   crit: suspicious
   conf: 0.90
+  # One ANSI-C escape is ordinary for an ESC/control byte. Obfuscation uses a
+  # run of escapes to reconstruct text; require multiple matches before
+  # describing the script as dense.
+  count_min: 3
   per_kb_min: 1.0
   if:
     type: text
@@ -171,18 +136,27 @@ traits:
   - id: metadata/package/testing/presence/harness::shell-test-fixture-source
   - id: metadata/package/files/system-package::zsh-function-script
   - id: metadata/package/files/system-package::initrd-format-inspection-script
-  # $'\NNN' octal escapes
+  # Packed $'\NNN\NNN\NNN' octal payloads. A single $'\013' / $'\033' in an
+  # IFS assignment or color code is ordinary shell, not obfuscation — require
+  # three octal escapes inside one ANSI-C quoted string (the /bin/sh-packing
+  # shape). Color $'\033[31m' still has only one octal and stays out.
+  # The first of those three must be ASCII-range (\000-\177). A run of only
+  # high bytes is a UTF-8 literal — glibc tzselect's
+  # CUNEIFORM_SIGN_URU_TIMES_KI=$'\360\222\215\205' locale probe — not a
+  # hidden command name ($'\143\165\162\154' = curl). Same split as
+  # char-code/escape-sequence::shell-ansi-octal-fragment.
 - id: sh-dense-octal-escapes
-  desc: Dense ANSI-C octal escapes
+  desc: Packed ANSI-C octal char payload
   crit: suspicious
   conf: 0.88
-  count_min: 5
-  per_kb_min: 1.0
+  count_min: 1
   if:
     type: text
-    regex: "\\$'[^']{0,120}\\\\[0-7]{3}"
+    regex: "\\$'[^']{0,16}\\\\[01][0-7]{2}[^']{0,16}\\\\[0-7]{3}[^']{0,16}\\\\[0-7]{3}"
   unless:
   - id: metadata/package/testing/presence/harness::shell-test-fixture-source
+  - id: metadata/package/testing/presence/harness::test-directory-path
+  - id: metadata/package/testing/presence/harness::git-tests-directory
   - id: micro-behaviors/data/encode/string::shell-json-control-character-escape
   - type: text
     regex: "=\\$'\\\\033\\["
@@ -231,8 +205,14 @@ traits:
   if:
     type: text
     regex: '[A-Za-z]"[A-Za-z]"[A-Za-z]'
+  not:
+    - substr: shellcheck disable=SC2140
+    - regex: 'Word is of the form'
   unless:
   - id: shell-test-fixture-marker
+  # A shell-prefixed executable JAR contains compressed bytes after its tiny
+  # launcher. Quote-like triples in that ZIP payload are not shell tokens.
+  - id: micro-behaviors/process/create/launch::shell-self-executable-jar
   - type: path
     regex: '\.jar([\\/]|$)'
   # JavaScript bundles can be misclassified as shell after an encoded layer
@@ -593,7 +573,7 @@ composite_rules:
   - id: metadata/lang/shebang::shell-script
   needs: 3
   any:
-  - id: objectives/anti-static/obfuscation/code-metrics/structure::sh-single-char-vars
+  - id: metadata/file/profile/metrics::shell-single-char-identifier-ratio
   - id: metadata/file/metrics::single-long-line
   - id: metadata/file/metrics::no-comments-code
   - id: objectives/anti-static/obfuscation/code-metrics/structure::sh-no-functions
@@ -672,14 +652,15 @@ composite_rules:
   - id: metadata/build/autotools/
   - id: metadata/library/generated/
   - id: metadata/package/files/system-package::shell-completion-script
+  - id: micro-behaviors/fs/path/config/git::git-precommit-staged-files-check
   - id: chromiumos-generated-helper-marker
+  - id: well-known/app/system/horovod::horovodrun-basename
+  - id: well-known/app/development/linthis::linthis-hook-script-module
+  - id: well-known/app/ai/knowledge/lean-ctx::source-tree-path
 - id: sh-reconstructed-command-name
   desc: Shell command name reconstructed dynamically
   crit: hostile
   conf: 0.88
-  # Quote-shatter / reconstructed-name stubs are tiny. Shell+binary SFX
-  # installers (Install4J, makeself) are multi-MB and only look hostile
-  # because embedded archive bytes accidentally match reconstruction atoms.
   size_max: 524288
   all:
   - id: metadata/lang/shebang::shell-script
@@ -692,9 +673,7 @@ composite_rules:
   - id: well-known/lib/
   - id: metadata/package/testing/presence/harness/
   - id: sh-shell-template-context
-  - id: well-known/app/system/horovod::horovodrun-basename
   - id: metadata/file/string/file::shell-scripts-dir-context
-  - id: metadata/file/string/file::shell-benchmark-script-basename
   - id: shell-generated-build-helper-marker
   # Release/build scripts assemble a version or path string from adjacent or
   # dotted variable expansions in an ASSIGNMENT RHS (openssl mktar.sh:

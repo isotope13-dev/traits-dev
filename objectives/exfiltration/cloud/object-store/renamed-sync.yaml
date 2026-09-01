@@ -1,0 +1,149 @@
+# Renamed cloud-sync exfil (Medusa and similar): copy rclone.exe/rclone.conf to
+# non-rclone basenames, then invoke with rclone's transfer option cluster.
+# Note: the trait regex engine has no lookaround — avoid (?!...) assertions.
+defaults:
+  platforms: [windows, unix]
+  for: [batch, powershell, shell, scripts]
+  attack: T1567.002,T1036.003
+  mbc: B0030,E1567.002
+
+traits:
+  - id: rclone-exe-ref
+    desc: References the rclone.exe binary name
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\brclone\.exe\b'
+
+  - id: rclone-conf-ref
+    desc: References the rclone.conf config name
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\brclone\.conf\b'
+
+  - id: rclone-exe-copy-dest
+    desc: rclone.exe copied beside another .exe
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)rclone\.exe\s+\S{1,64}\.exe\b'
+
+  - id: rclone-conf-copy-dest
+    desc: rclone.conf copied to another config name
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)rclone\.conf\s+\S{1,64}\.(conf|txt|cfg|ini)\b'
+
+  - id: sync-exe-config-flag
+    desc: A .exe selects an explicit --config file
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\.exe\b.{0,80}--config(=|\s+)\S{1,80}'
+
+  - id: renamed-sync-auto-confirm
+    desc: Transfer uses --auto-confirm option
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      regex: '(?i)--auto-confirm\b'
+
+  - id: renamed-sync-multistream
+    desc: Transfer uses --multi-thread-streams option
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      regex: '(?i)--multi-thread-streams\b'
+
+  - id: renamed-sync-transfers
+    desc: Transfer sets --transfers concurrency
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: '(?i)--transfers(=|\s+)\d+'
+
+composite_rules:
+  - id: rclone-exe-renamed-copy
+    desc: Copies rclone.exe to another .exe name
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: rclone-exe-copy-dest
+    any:
+      - id: micro-behaviors/fs/file/copy::windows-copy-command
+      - id: micro-behaviors/fs/file/copy::powershell-copy-item-command
+    needs: 1
+    near_lines: 2
+
+  - id: rclone-conf-renamed-copy
+    desc: Copies rclone.conf to another config name
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: rclone-conf-copy-dest
+    any:
+      - id: micro-behaviors/fs/file/copy::windows-copy-command
+      - id: micro-behaviors/fs/file/copy::powershell-copy-item-command
+    needs: 1
+    near_lines: 2
+
+  - id: rclone-binary-config-rename
+    desc: Renames both rclone.exe and rclone.conf
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: rclone-exe-renamed-copy
+      - id: rclone-conf-renamed-copy
+    near_lines: 20
+
+  - id: renamed-sync-transfer-options
+    desc: Sync uses rclone-style transfer options
+    crit: suspicious
+    conf: 0.94
+    all:
+      - id: sync-exe-config-flag
+    needs: 2
+    any:
+      - id: micro-behaviors/fs/file/copy::skip-existing-option
+      - id: renamed-sync-auto-confirm
+      - id: renamed-sync-multistream
+      - id: renamed-sync-transfers
+    near_lines: 15
+
+  - id: renamed-rclone-cloud-exfil
+    desc: Renamed rclone exfiltrates to a cloud remote
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: rclone-binary-config-rename
+      - id: renamed-sync-transfer-options
+    any:
+      - id: micro-behaviors/fs/file/copy::executable-copy-to-named-remote
+      - id: sync-exe-config-flag
+    near_lines: 40
+
+  - id: rclone-masquerade-exfil-chain
+    desc: rclone rename followed by configured cloud copy
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: rclone-exe-renamed-copy
+      - id: sync-exe-config-flag
+    needs: 2
+    any:
+      - id: rclone-conf-renamed-copy
+      - id: micro-behaviors/fs/file/copy::skip-existing-option
+      - id: renamed-sync-auto-confirm
+      - id: renamed-sync-multistream
+      - id: micro-behaviors/fs/file/copy::executable-copy-to-named-remote
+    near_lines: 40

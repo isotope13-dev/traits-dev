@@ -30,30 +30,6 @@ traits:
       - regex: '(?i)company'
       - regex: '(?i)ltd\.?'
       - regex: '(?i)llc'
-  # Fabricated FileDescription stacks of uncommon dictionary words — common
-  # in NativeAOT/Aotera-style identity generators. Requires six+ tokens so
-  # short real blurbs do not trip it.
-  - id: word-salad-version-description
-    desc: FileDescription is multi-word nonsense salad
-    crit: suspicious
-    conf: 0.88
-    if:
-      type: value
-      path: pe.version.description
-      regex: '^[A-Za-z]{5,}( [a-z]{4,}){5,}\.?$'
-    # Reject ordinary technical/product descriptions on the matched value.
-    # Bounded groups preserve the former vocabulary exactly without a large
-    # alternation that hides the individual rationale from downstream users.
-    not:
-      - regex: '(?i)\b(Microsoft|Windows|Security|Support)\b'
-      - regex: '(?i)\b(Library|Runtime|Framework|Driver)\b'
-      - regex: '(?i)\b(Service|Application|Copyright|Inc)\b'
-      - regex: '(?i)\b(Corp|Ltd|LLC)\b'
-      - regex: '(?i)\b(custom|action|configur\w*|temporar\w*)\b'
-      - regex: '(?i)\b(install\w*|feature\w*|prerequisite\w*)\b'
-    unless:
-      - id: well-known/lib/platform/advanced-installer::advanced-installer-helper-context
-      - id: metadata/package/files/msi::cloud-drive-mapper-msi-context
   # Crypter stubs frequently XOR/shift the VERSIONINFO string table, leaving
   # CompanyName/ProductName/FileDescription as symbol-garbage that no legitimate
   # vendor field ever contains. The chars `< > = @ ; { } |` essentially never
@@ -106,6 +82,30 @@ traits:
       type: metrics
       field: pe.version.identity_symbol_ratio
       min: 0.4
+  - id: random-alnum-company-token
+    desc: Opaque alphanumeric CompanyName token
+    crit: component
+    conf: 0.9
+    if:
+      type: value
+      path: pe.version.company
+      regex: '^[A-Za-z0-9]{12,24}$'
+  - id: random-alnum-internal-name-token
+    desc: Opaque alphanumeric InternalName token
+    crit: component
+    conf: 0.9
+    if:
+      type: value
+      path: pe.version.internal_name
+      regex: '^[A-Za-z0-9]{7,24}$'
+  - id: random-alnum-original-name-token
+    desc: Extensionless alphanumeric original filename
+    crit: component
+    conf: 0.94
+    if:
+      type: value
+      path: pe.version.original_filename
+      regex: '^[A-Za-z0-9]{8,24}$'
   - id: dotnet-bcl-type-version-product
     desc: .NET BCL type used as product name
     crit: component
@@ -200,7 +200,157 @@ traits:
       type: value
       path: pe.version.comments
       regex: '(?i)\bAtlas\s+Archive\b'
+  # GuLoader/Sonbokli-style NSIS droppers often ship two-word lowercase
+  # Comments/FileDescription and a single opaque LegalCopyright token instead
+  # of the longer 3–5 word copyright salad. Require two fields via the
+  # short-word-salad-versioninfo composite to keep standalone FP low.
+  - id: word-salad-version-comments-pair
+    desc: Two-word nonsense Comments metadata
+    crit: suspicious
+    conf: 0.85
+    if:
+      type: value
+      path: pe.version.comments
+      regex: '^[a-z]{5,20} [a-z]{5,20}$'
+    not:
+      - regex: '(?i)(copyright|rights|reserved|license|version|build|debug|release|http|www)'
+  - id: word-salad-version-description-pair
+    desc: Two-word nonsense FileDescription
+    crit: suspicious
+    conf: 0.85
+    if:
+      type: value
+      path: pe.version.description
+      regex: '^[a-z]{5,20} [a-z]{5,20}$'
+    not:
+      - regex: '(?i)(copyright|rights|reserved|install|setup|update|helper|service|application|program|client|server|manager|driver|runtime|framework|microsoft|windows)'
+  - id: opaque-single-token-copyright
+    desc: Single opaque lowercase LegalCopyright token
+    crit: component
+    conf: 0.8
+    if:
+      type: value
+      path: pe.version.copyright
+      regex: '^[a-z]{7,20}$'
+    not:
+      - regex: '(?i)(copyright|rights|reserved|inc|corp|ltd|llc|company)'
+
+  # The rest of the VERSIONINFO string table in the same throwaway-token form as
+  # the LegalCopyright atom above. Builders have to populate this table: an
+  # absent version resource is itself a flag, and a present one buys a downgrade
+  # in several rules across this corpus (see the credential-store note in
+  # objectives/credential-access/credential-manager/store-api/windows.yaml). So
+  # the generator fills each field with one anonymous lowercase word -- observed
+  # values run to `zzzzzz`, `aaaaaaa`, `eeeeeee`, `tttttttt`.
+  #
+  # Each atom is a component because one such field proves nothing: a small
+  # honest build really can leave a bare token in Comments or LegalTrademarks.
+  # What no authored resource does is leave FOUR of six independent fields that
+  # way, which is what the composite below requires. The charset is deliberately
+  # narrow -- no digits, no spaces, no dot -- so an OriginalFilename only matches
+  # when it is not even a filename, and a ProductName only when it is a single
+  # unpunctuated word.
+  - id: opaque-lowercase-original-filename
+    desc: OriginalFilename is a bare lowercase word
+    crit: component
+    conf: 0.85
+    if:
+      type: value
+      path: pe.version.original_filename
+      regex: '^[a-z]{4,20}$'
+    not:
+      - regex: '(?i)^(setup|install|installer|update|updater)$'
+      - regex: '(?i)^(launcher|uninstall|helper|service)$'
+
+  - id: opaque-lowercase-internal-name
+    desc: InternalName is a bare lowercase word
+    crit: component
+    conf: 0.85
+    if:
+      type: value
+      path: pe.version.internal_name
+      regex: '^[a-z]{4,20}$'
+    not:
+      - regex: '(?i)^(setup|install|installer|update|updater)$'
+      - regex: '(?i)^(launcher|uninstall|helper|service)$'
+
+  - id: opaque-lowercase-product-name
+    desc: ProductName is a bare lowercase word
+    crit: component
+    conf: 0.85
+    if:
+      type: value
+      path: pe.version.product_name
+      regex: '^[a-z]{4,20}$'
+    not:
+      - regex: '(?i)^(setup|install|installer|update|updater)$'
+      - regex: '(?i)^(launcher|uninstall|helper|service|python|node)$'
+
+  - id: opaque-lowercase-trademarks
+    desc: LegalTrademarks is a bare lowercase word
+    crit: component
+    conf: 0.85
+    if:
+      type: value
+      path: pe.version.trademarks
+      regex: '^[a-z]{5,20}$'
+    not:
+      - regex: '(?i)(trademark|registered|reserved|rights)'
+
+  - id: opaque-lowercase-comments
+    desc: Comments field is a bare lowercase word
+    crit: component
+    conf: 0.85
+    if:
+      type: value
+      path: pe.version.comments
+      regex: '^[a-z]{5,20}$'
+    not:
+      - regex: '(?i)^(release|debug|internal|beta|alpha|stable)$'
+      - regex: '(?i)^(freeware|shareware|opensource|none|unknown)$'
+
+  # Version-info fields that exist but hold nothing except spaces. A real build
+  # either omits a field or fills it; a resource where CompanyName, FileVersion
+  # and LegalCopyright are each a run of blanks was written by hand to look
+  # populated in the Windows properties dialog while attributing the file to
+  # nobody. The padding also lets the author resize the resource freely, which
+  # changes the hash without touching code.
+  - id: blank-company-version-field
+    desc: CompanyName field is empty or whitespace
+    crit: component
+    conf: 0.95
+    if:
+      type: value
+      path: pe.version.company
+      regex: '^\s*$'
+  - id: blank-copyright-version-field
+    desc: LegalCopyright field holds only whitespace
+    crit: component
+    conf: 0.95
+    if:
+      type: value
+      path: pe.version.copyright
+      regex: '^\s+$'
+  - id: blank-file-version-field
+    desc: FileVersion field holds only whitespace
+    crit: component
+    conf: 0.95
+    if:
+      type: value
+      path: pe.version.file_version
+      regex: '^\s+$'
 composite_rules:
+  - id: random-alnum-versioninfo-token-cluster
+    desc: Generated tokens fill VERSIONINFO identity fields
+    crit: component
+    conf: 0.97
+    needs: 2
+    any:
+      - id: random-alnum-company-token
+      - id: random-alnum-internal-name-token
+      - id: random-alnum-original-name-token
+    unless:
+      - id: metadata/signed/platform/
   - id: scrambled-versioninfo-resource
     desc: Scrambled (symbol-garbage) PE VERSIONINFO string table
     crit: notable
@@ -239,6 +389,18 @@ composite_rules:
     any:
       - id: scrambled-versioninfo-resource
       - id: scrambled-versioninfo-entropy
+  - id: short-word-salad-versioninfo
+    desc: Multi-field short word-salad VERSIONINFO
+    crit: suspicious
+    conf: 0.9
+    needs: 2
+    any:
+      - id: word-salad-version-comments-pair
+      - id: word-salad-version-description-pair
+      - id: opaque-single-token-copyright
+      - id: word-salad-version-copyright
+    unless:
+      - id: metadata/signed/platform/
   - id: opaque-themida-version-masquerade
     desc: Themida loader with opaque fabricated identity
     crit: hostile
@@ -364,3 +526,121 @@ composite_rules:
     unless:
       - id: metadata/signed/platform/
 
+
+  # A major software vendor's name carried by an image that cannot prove the
+  # association: the Authenticode signature is absent or does not verify, and
+  # the section layout imitates UPX without any compressed content behind it.
+  #
+  # Each half is weak alone and neither is rare. Vendor names are free to write,
+  # so "Adobe Inc." on its own says nothing, and plenty of unsigned software is
+  # honest about who wrote it. What no legitimate build does is carry a vendor
+  # name it cannot substantiate AND dress its sections up as a packer it does
+  # not use -- that pairing is a binary buying two different kinds of benefit of
+  # the doubt at once, from a human reading the properties dialog and from the
+  # triage pipeline reading the section table.
+  #
+  # The first leg is deliberately described as a marker rather than a claim.
+  # metadata/binary/vendor/ matches vendor names wherever they appear in the
+  # image, which includes places that assert nothing about authorship -- an
+  # embedded third-party-notices document, for instance, is full of them. The
+  # packer leg is what has to carry the weight here, which is why its own guard
+  # (a genuinely compressed UPX1) matters as much as this rule's does.
+  - id: unsubstantiated-vendor-claim-fake-packer
+    desc: Unsigned vendor-marked PE fakes UPX layout
+    crit: hostile
+    conf: 0.96
+    attack: T1036.005,T1036
+    all:
+      - id: metadata/binary/vendor/
+      - id: objectives/anti-static/pack/section-names::upx-named-sections-uncompressed
+    unless:
+      # Microsoft has a narrower rule that requires a Microsoft VERSIONINFO
+      # claim and an unsigned, demonstrably uncompressed fake-UPX layout.
+      - id: metadata/binary/vendor::microsoft-corp-versioninfo
+      - id: metadata/signed/certificate/identity::pe-signature-verified-kv
+      - id: metadata/signed/platform/
+
+  - id: blanked-version-identity-fields
+    desc: Version resource identity fields are blank
+    crit: notable
+    conf: 0.94
+    needs: 2
+    any:
+      - id: blank-company-version-field
+      - id: blank-copyright-version-field
+      - id: blank-file-version-field
+
+  # Four of the six writable identity fields reduced to one anonymous lowercase
+  # word each. The fields are independent -- LegalCopyright, LegalTrademarks,
+  # OriginalFilename, InternalName, ProductName and Comments are filled by
+  # different parts of a real build, and a genuine resource that leaves one of
+  # them as a bare token still gets the others right. Four at once means none of
+  # them was written by a person. This is the populated-but-anonymous sibling of
+  # blanked-version-identity-fields above: same goal, opposite tactic, and the
+  # populated form is the one that survives a "does it have version info?" check.
+  - id: anonymous-token-versioninfo-identity
+    desc: VERSIONINFO identity is anonymous tokens
+    crit: suspicious
+    conf: 0.93
+    attack: T1036.005,T1027
+    needs: 4
+    any:
+      - id: opaque-single-token-copyright
+      - id: opaque-lowercase-original-filename
+      - id: opaque-lowercase-internal-name
+      - id: opaque-lowercase-product-name
+      - id: opaque-lowercase-trademarks
+      - id: opaque-lowercase-comments
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/signed/developer/
+      - id: well-known/app/
+      - id: well-known/lib/
+      - id: well-known/tool/
+
+  # Compressed, unsigned, demanding administrator, and unwilling to say who
+  # wrote it. Each leg is unremarkable alone -- packers are legal, unsigned
+  # builds are everywhere, and plenty of honest tools need elevation -- but the
+  # combination inverts the normal relationship between privilege and
+  # accountability. A program asking a user for administrator is asking for
+  # trust, and every legitimate one backs that with something checkable: a
+  # signature, or failing that a version resource that names its author. This
+  # asks for the privilege while making itself unattributable in both channels
+  # at once, and hides its code behind compression so the request cannot be
+  # audited either. That is a dropper's posture, not an installer's.
+  - id: anonymous-identity-packed-admin-image
+    desc: Packed admin-demanding PE with no real identity
+    crit: hostile
+    conf: 0.96
+    attack: T1036.005,T1027.002,T1548
+    all:
+      - id: anonymous-token-versioninfo-identity
+      - id: metadata/binary/section/entropy::upx1-high-entropy-payload
+      - id: metadata/build/manifest::pe-requires-admin
+      - id: metadata/binary/layout::pe-no-signature-record
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/installer/family/
+      - id: well-known/app/
+      - id: well-known/tool/
+
+  # An unsigned multi-megabyte file that is almost entirely opaque payload, with
+  # under 64 KB of actual code, and a version resource whose identity fields were
+  # blanked out. Nothing is claimed and nothing can be checked: the properties
+  # dialog looks filled in, the signature is absent, and the code that would
+  # explain the other 99% of the bytes is not there to read. That is the shape of
+  # a dropper shell, and it is evidence-distinct from the nested-payload rules --
+  # those key on the container format, this on the missing identity.
+  - id: blank-identity-opaque-payload-carrier
+    desc: Blank-identity PE is almost entirely payload
+    crit: hostile
+    conf: 0.96
+    attack: T1036.005,T1027.009
+    all:
+      - id: blanked-version-identity-fields
+      - id: metadata/binary/metrics/size::multi-megabyte-pe-negligible-code
+      - id: metadata/binary/layout::overlay-over-90pct
+      - id: metadata/binary/layout::pe-no-signature-record
+    unless:
+      - id: metadata/signed/platform/
+      - id: well-known/app/

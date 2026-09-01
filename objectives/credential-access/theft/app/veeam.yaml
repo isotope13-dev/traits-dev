@@ -1,0 +1,57 @@
+# Veeam Backup & Replication stores managed credentials in its SQL Server
+# configuration database. Ransomware affiliates query this table and use a
+# dedicated PowerShell decryptor to recover reusable backup, hypervisor, and
+# domain credentials. Keep the product-specific query and decryptor separate
+# so renamed scripts and implementations in other languages remain detectable.
+defaults:
+  platforms: [windows]
+  for: [scripts, source, binaries]
+  attack: T1555
+  mbc: B0028
+
+traits:
+  - id: veeam-credential-table-select
+    desc: Selects records from Veeam credential store
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: text
+      regex: '(?is)\bSELECT\b.{0,600}\bFROM\s+\[?VeeamBackup\]?\.\[?dbo\]?\.\[?Credentials\]?'
+
+  - id: veeam-password-decryptor-reference
+    desc: References Veeam encrypted-password decryptor
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: text
+      regex: '(?i)\bDecryptVeeamEncryptedPasswords(\.ps1)?\b'
+
+composite_rules:
+  - id: veeam-stored-credential-decryption
+    desc: Decrypts credentials selected from Veeam database
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: veeam-credential-table-select
+      - id: veeam-password-decryptor-reference
+    near_bytes: 3000
+
+  - id: veeam-credential-records-file-export
+    desc: Exports Veeam credential records into file
+    crit: hostile
+    conf: 0.98
+    for: [powershell]
+    all:
+      - id: veeam-credential-table-select
+      - id: micro-behaviors/data/format/csv/export::powershell-convertto-csv-call
+      - id: micro-behaviors/fs/write/file/direct::out-file
+    near_bytes: 3000
+
+  - id: veeam-credential-store-cli-access
+    desc: Queries Veeam credential store through SQL client
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: veeam-credential-table-select
+      - id: micro-behaviors/data/db/access::sqlserver-cli-client
+    near_bytes: 3000

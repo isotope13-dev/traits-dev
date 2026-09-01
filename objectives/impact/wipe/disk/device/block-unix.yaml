@@ -1,0 +1,291 @@
+# Cross-language Unix/BSD block-device wipers: root gate + device target +
+# destructive overwrite. Complements the shell-specific Viasat composites in
+# disk/dd/shell.yaml and the OpenBSD swap wipers in disk/dd/openbsd-shell.yaml.
+defaults:
+  platforms: [unix]
+  for: [shell, python, go, rust, perl, javascript, typescript, c, cpp]
+  attack: T1561.002
+  mbc: E1561
+
+# NOTE: a `perl-uid-root-gate` trait (`\$>\s*(!=|==)\s*0`) used to sit here.
+# Its matcher only detects "Perl compares its effective UID against 0" — a
+# neutral privilege check with no disk-wipe meaning — and it duplicated
+# micro-behaviors/os/privilege/check::perl-effective-uid-root-check byte for
+# byte, so any root-gated Perl test script was reported under disk wiping.
+# Use that capability atom instead.
+traits:
+  - id: blkdiscard-dev
+    desc: blkdiscard targets a block device
+    crit: suspicious
+    conf: 0.92
+    for: [shell]
+    if:
+      type: text
+      regex: 'blkdiscard\b[^\n]{0,40}/dev/[a-z]'
+
+  # Require the variable name itself to identify a device. A bare variable is
+  # not evidence of one: repository tests use names such as `$HASH1FILE` while
+  # deliberately corrupting a small regular file with count=1/conv=notrunc.
+  - id: dd-zero-to-device-var
+    desc: dd zero-fills device-named shell variable
+    crit: suspicious
+    conf: 0.9
+    for: [shell]
+    if:
+      type: text
+      regex: 'dd\s+if=/dev/zero\s+of=["'']?\$\{?\w*(dev|disk|drive|swap)\w*\}?["'']?'
+      case_insensitive: true
+      not:
+        - regex: '\$\{?\w*file\w*\}?'
+    unless:
+      - id: well-known/tool/detection/agent-glovebox::archive-context
+      - id: metadata/package/testing/presence/harness::test-directory-path
+
+  # A short loop variable may still hold a device enumerated elsewhere in the
+  # script. Keep the write as a component so only the device-target composite
+  # assigns malicious intent; regular-file test corruption is not suspicious.
+  - id: dd-zero-to-shell-var
+    desc: dd zero-fills shell variable output
+    crit: component
+    conf: 0.9
+    for: [shell]
+    if:
+      type: text
+      regex: 'dd\s+if=/dev/zero\s+of=["'']?\$\{?\w+\}?["'']?'
+
+  - id: xargs-dd-urandom-pipeline
+    desc: xargs piping to dd urandom wiper
+    crit: suspicious
+    conf: 0.9
+    for: [shell]
+    if:
+      type: text
+      regex: 'xargs\s+.{0,100}dd\s+.{0,100}/dev/u?random'
+
+  - id: lang-mounts-dev-scan
+    desc: Scans mount table for /dev devices
+    crit: notable
+    conf: 0.9
+    for: [python, go, perl, javascript, typescript, rust, c, cpp]
+    if:
+      type: text
+      regex: '/proc/mounts[\s\S]{0,400}/dev/'
+    unless:
+      - id: well-known/app/infrastructure/docker::source-tree
+      - id: well-known/app/infrastructure/docker::docker-source-archive-context
+
+  - id: go-openfile-block-dev
+    desc: Go OpenFile opens a block device RW
+    crit: suspicious
+    conf: 0.94
+    for: [go]
+    if:
+      type: text
+      regex: 'os\.OpenFile\s*\(\s*"/dev/(sd|nvme|vd|xvd|mmcblk|da|ada)'
+
+  - id: rust-open-block-dev
+    desc: Rust OpenOptions opens a block device
+    crit: suspicious
+    conf: 0.94
+    for: [rust]
+    if:
+      type: text
+      regex: 'OpenOptions::new\(\)[\s\S]{0,200}\.open\s*\(\s*"/dev/(sd|nvme|vd|xvd|da|ada)'
+
+  - id: python-open-block-dev
+    desc: Python opens a block device for writing
+    crit: suspicious
+    conf: 0.94
+    for: [python]
+    if:
+      type: text
+      regex: 'open\s*\(\s*"/dev/(sd|nvme|vd|xvd|da|ada)[^"]{0,30}"\s*,\s*"r\+b"'
+
+  - id: node-open-block-dev
+    desc: Node opens a block device for writing
+    crit: suspicious
+    conf: 0.94
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'openSync\s*\(\s*["'']/dev/(sd|nvme|vd|xvd|da|ada)'
+
+  - id: c-open-block-dev
+    desc: C open O_RDWR on a block device
+    crit: suspicious
+    conf: 0.94
+    for: [c, cpp]
+    if:
+      type: text
+      regex: 'open\s*\(\s*"/dev/(sd|nvme|vd|xvd|da|ada)[^"]{0,30}"\s*,\s*O_RDWR'
+
+  - id: dd-zero-block-device-command
+    desc: dd zero-fill block-device command text
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      regex: 'dd if=/dev/zero of=/dev/(sd|nvme|vd|xvd|da|ada|loop|mmcblk)'
+
+  - id: dd-zero-block-device-argv
+    desc: dd argv zero fill targeting block device
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      regex: '("dd").{0,80}if=/dev/zero.{0,40}of=/dev/(sd|nvme|vd|xvd|da|ada|loop|mmcblk)'
+
+  - id: dd-zero-dynamic-device-argv
+    desc: dd argv zero fill dynamic device
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      regex: '("dd").{0,80}if=/dev/zero'
+
+  - id: lang-exec-dd-urandom-dev
+    desc: Language exec of dd urandom wipe
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: '("dd"|dd if=/dev/urandom).{0,80}if=/dev/urandom|dd if=/dev/urandom of=/dev/'
+    unless:
+      # Ginkgo e2e specs are ordinary .go files, so go-test-file misses them.
+      - id: metadata/package/testing/compiled::ginkgo-spec-file
+      - id: well-known/tool/detection/agent-glovebox::archive-context
+      - id: well-known/tool/detection/ai-guardrail/
+      - id: metadata/file/policy/identity::enforced-dangerous-action-approval
+      - id: metadata/package/testing/presence/harness::python-test-file
+      - id: well-known/app/development/facebook-sapling::facebook-sapling-member-context
+
+  # The command text alone appears in policy engines, documentation, and test
+  # vectors. Execution intent is established by the colocated process-creation
+  # evidence in the composite below.
+  - id: shred-block-device-command-text
+    desc: Shred block-device command text
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      regex: '("shred"|shred ).{0,60}/dev/(sd|nvme|vd|xvd|da|ada)'
+
+composite_rules:
+  - id: lang-exec-dd-zero-dev
+    desc: Language exec of dd zeroing a device
+    crit: suspicious
+    conf: 0.92
+    for: [python, go, rust, perl, javascript, typescript, c, cpp]
+    near_bytes: 500
+    all:
+      - id: micro-behaviors/process/create/exec::child-process-execution
+    any:
+      - id: dd-zero-block-device-command
+      - id: dd-zero-block-device-argv
+      - id: dd-zero-dynamic-device-argv
+    unless:
+      # Deny-rule / guardrail fixtures quote wipe commands as blocked examples.
+      - id: well-known/tool/detection/agent-glovebox::archive-context
+      - id: well-known/tool/detection/ai-guardrail/
+      - id: metadata/file/policy/identity::enforced-dangerous-action-approval
+      - id: metadata/package/testing/presence/harness::go-test-file
+      - id: well-known/lib/development/waveloom::waveloom-source-archive-context
+
+  - id: lang-exec-shred-dev
+    desc: Language executes shred against block device
+    crit: suspicious
+    conf: 0.94
+    for: [python, go, rust, perl, javascript, typescript, c, cpp]
+    near_lines: 20
+    all:
+      - id: shred-block-device-command-text
+      - id: micro-behaviors/process/create/exec::child-process-execution
+    unless:
+      - id: well-known/tool/detection/agent-glovebox::archive-context
+      - id: well-known/tool/detection/ai-guardrail/
+      - id: metadata/file/policy/identity::enforced-dangerous-action-approval
+
+  - id: block-device-target
+    desc: Targets a raw block device path
+    crit: notable
+    conf: 0.9
+    unless:
+      - id: well-known/app/infrastructure/docker::source-tree
+      - id: well-known/app/infrastructure/docker::docker-source-archive-context
+    any:
+      - id: micro-behaviors/fs/enumerate/device::block-device-path-enumeration
+      - id: micro-behaviors/hardware/block/device::dev-sd
+      - id: micro-behaviors/fs/path/device/storage::unix-block-device-path
+      - id: lang-mounts-dev-scan
+
+  - id: block-device-destructive
+    desc: Destructive overwrite of a block device
+    crit: suspicious
+    conf: 0.9
+    unless:
+      # Ginkgo e2e specs are ordinary .go files, so go-test-file misses them.
+      - id: metadata/package/testing/compiled::ginkgo-spec-file
+      - id: metadata/file/policy/identity::enforced-dangerous-action-approval
+    any:
+      - id: objectives/impact/wipe/disk/dd::dd-destructive
+      - id: objectives/impact/wipe/disk/dd::shell-dd-zero-variable-device
+      - id: dd-zero
+      - id: dd-random
+      - id: shred-dev
+      - id: blkdiscard-dev
+      - id: dd-zero-to-device-var
+      - id: xargs-dd-urandom-pipeline
+      - id: go-openfile-block-dev
+      - id: rust-open-block-dev
+      - id: python-open-block-dev
+      - id: node-open-block-dev
+      - id: c-open-block-dev
+      - id: lang-exec-dd-zero-dev
+      - id: lang-exec-dd-urandom-dev
+      - id: lang-exec-shred-dev
+
+  - id: unix-block-device-wiper
+    desc: Destructive overwrite of a raw block device
+    crit: hostile
+    conf: 0.95
+    unless:
+      # Ginkgo e2e specs are ordinary .go files, so go-test-file misses them.
+      - id: metadata/package/testing/compiled::ginkgo-spec-file
+      - id: metadata/package/testing/presence/harness::go-test-file
+      - id: well-known/lib/development/waveloom::waveloom-source-archive-context
+      - id: metadata/file/policy/identity::enforced-dangerous-action-approval
+    all:
+      - id: block-device-target
+    any:
+      - id: block-device-destructive
+      - id: dd-zero-to-shell-var
+
+  - id: freebsd-geom-dd-wiper
+    desc: Wipes FreeBSD disks enumerated by geom
+    crit: hostile
+    conf: 0.98
+    for: [shell]
+    all:
+      - id: micro-behaviors/fs/enumerate/device::freebsd-geom-disk-list
+      - id: objectives/impact/wipe/disk/dd::xargs-dd-pipeline
+      - id: micro-behaviors/os/privilege/check::root-privilege-check
+
+  - id: unix-block-device-wiper-shred
+    desc: Shreds a raw block device
+    crit: hostile
+    conf: 0.95
+    unless:
+      - id: metadata/file/policy/identity::enforced-dangerous-action-approval
+    all:
+      - id: block-device-target
+      - id: shred-dev
+
+  - id: unix-block-device-wiper-discard
+    desc: Discards a raw block device
+    crit: hostile
+    conf: 0.95
+    unless:
+      - id: metadata/file/policy/identity::enforced-dangerous-action-approval
+    all:
+      - id: block-device-target
+      - id: blkdiscard-dev

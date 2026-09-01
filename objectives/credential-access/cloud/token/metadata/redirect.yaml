@@ -1,0 +1,85 @@
+# Redirect responses aimed at cloud instance metadata. These are reusable SSRF
+# primitives: a public first-hop URL passes an application's URL validation,
+# then redirects the server-side client to the link-local metadata service.
+defaults:
+  platforms: [unix, windows]
+  for: [python, shell, javascript, typescript, php, go, source, text]
+  attack: T1190,T1552.005
+
+traits:
+  - id: location-header-literal-to-aws-imds
+    desc: HTTP Location header targets AWS IMDS
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: string_literal
+      regex: '(?i)^Location:\s*https?://169\.254\.169\.254/'
+
+  - id: nginx-redirect-to-aws-imds
+    desc: nginx redirects a request to AWS IMDS
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: text
+      regex: '(?i)\breturn\s+(302|307|308)\s+https?://169\.254\.169\.254/'
+
+composite_rules:
+  - id: location-header-to-aws-imds
+    desc: HTTP Location response redirects to AWS instance metadata
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: metadata/file/string/cloud::cloud-instance-metadata-link-local-host
+      - id: micro-behaviors/communications/http/response::http-external-location-header
+    near_lines: 25
+
+  - id: python-location-header-near-aws-imds
+    desc: Python emits a Location header near an AWS IMDS target
+    crit: suspicious
+    conf: 0.96
+    for: [python]
+    all:
+      - id: metadata/file/string/cloud::cloud-instance-metadata-link-local-host
+      - id: micro-behaviors/communications/http/response::python-location-header-call
+    near_lines: 25
+
+  - id: javascript-redirect-near-aws-imds
+    desc: JavaScript redirect response is near an AWS IMDS target
+    crit: suspicious
+    conf: 0.96
+    for: [javascript, typescript]
+    all:
+      - id: metadata/file/string/cloud::cloud-instance-metadata-link-local-host
+      - id: micro-behaviors/communications/http/response::server-response-redirect
+    near_lines: 25
+
+  - id: go-redirect-near-aws-imds
+    desc: Go HTTP redirect response is near an AWS IMDS target
+    crit: suspicious
+    conf: 0.96
+    for: [go]
+    unless:
+      - id: metadata/package/testing/presence/harness::go-test-file
+      - id: well-known/lib/development/waveloom::waveloom-source-archive-context
+    all:
+      - id: metadata/file/string/cloud::cloud-instance-metadata-link-local-host
+      - id: micro-behaviors/communications/http/response::go-http-redirect-symbol-call
+    near_lines: 25
+
+  - id: aws-imds-credential-endpoint-redirect
+    desc: Redirect response targets the AWS IMDS IAM credential endpoint
+    crit: hostile
+    conf: 0.98
+    unless:
+      - id: micro-behaviors/communications/http/url/tld::reserved-documentation-tld-url
+    all:
+      - id: micro-behaviors/communications/http/services/aws::iam-credentials-path-reference
+    any:
+      - id: nginx-redirect-to-aws-imds
+      - id: return-redirect-to-aws-imds
+      - id: redirect-call-to-aws-imds
+      - id: python-location-header-to-aws-imds
+      - id: location-header-literal-to-aws-imds
+      - id: python-location-header-near-aws-imds
+      - id: javascript-redirect-near-aws-imds
+      - id: go-redirect-near-aws-imds

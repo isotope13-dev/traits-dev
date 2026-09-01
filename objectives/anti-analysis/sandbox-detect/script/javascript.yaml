@@ -13,16 +13,138 @@ traits:
     if:
       type: text
       regex: '\bcpus\(\)[\s\S]{0,60}\.length\s*<\s*[1-4]\b'
+  # Property cluster from npm "environment detector" helpers used as an
+  # analysis gate: skip payload work when CI/bot/VM signals fire.
+  # `isCI` is NOT part of that cluster and was moved out to
+  # micro-behaviors/os/env/vars/cicd::ci-info-isci-property. CI is not a
+  # sandbox: the bare word is what `ci-info` exports, so npm, jest, eslint,
+  # prettier and every Next.js build read it to adapt output -- reporting that
+  # as T1497 sandbox evasion put an evasion objective on ordinary tooling.
+  # The composites below still reference it; the multi-signal gate is what
+  # supplies the evasion reading, and it needs three of these together.
+  - id: js-isvm-likely-env-property
+    desc: Reads isVirtualMachineLikely detector property
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      word: isVirtualMachineLikely
+  - id: js-isnpmbot-env-property
+    desc: Reads isNpmBot environment detector property
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      word: isNpmBot
+  - id: js-automated-sandboxed-env-message
+    desc: Mentions automated or sandboxed environment
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)automated[/ ]sandboxed environment'
+  - id: js-npm-scanner-ua-gate
+    desc: Gates work on npm scanner user-agent
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: 'npm_config_user_agent[\s\S]{0,400}(socket\.dev|snyk|phylum|depscan)'
+  - id: js-decoy-honeypot-env-gate
+    desc: Gates work on decoy or honeypot environment
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)decoy\|canary\|honeypot'
+  - id: js-sandbox-confidence-early-return
+    desc: Sandbox confidence controls an early return gate
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: text
+      regex: 'sandboxConfidence[\s\S]{0,100}\)\s*return\b'
 composite_rules:
+  - id: vscode-sandbox-gated-environment-and-archive-exfil
+    desc: Sandbox-gated VS Code extension exfiltrates environment and archive
+    crit: hostile
+    conf: 0.99
+    for: [vsix-archive]
+    scope: archive
+    attack: T1497.001,T1552.001,T1041,T1195.002
+    mbc: B0007,E1041
+    all:
+      - id: metadata/library/vscode::vscode-extension-marker
+      - id: metadata/permission/activation::main-extension-js
+      - id: js-sandbox-confidence-early-return
+      - id: micro-behaviors/os/env/dump::js-base64-environment-snapshot
+      - id: micro-behaviors/data/archive/create/zip::node-zip-cli-quiet-create
+      - id: micro-behaviors/communications/http/upload::formdata-blob-file-fetch-upload
+
+  - id: js-sandbox-gated-environment-and-archive-exfil
+    desc: Sandbox confidence gates environment and archive exfiltration
+    crit: hostile
+    conf: 0.99
+    attack: T1497.001,T1552.001,T1041
+    mbc: B0007,E1041
+    near_bytes: 8192
+    all:
+      - id: js-sandbox-confidence-early-return
+      - id: micro-behaviors/os/env/dump::js-base64-environment-snapshot
+      - id: micro-behaviors/data/archive/create/zip::node-zip-cli-quiet-create
+      - id: micro-behaviors/communications/http/upload::formdata-blob-file-fetch-upload
+    unless:
+      - id: metadata/package/testing/
+
   - id: js-sandbox-check-obfuscated
-    desc: Sandbox check in obfuscated script
+    desc: Low-CPU check in XOR-obfuscated JavaScript
     crit: suspicious
     conf: 0.9
     size_max: 262144
     all:
     - id: js-cpu-count-sandbox-check
-    - id: objectives/exfiltration/sensitive-data::js-custom-string-decoder
+    - id: micro-behaviors/crypto/symmetric/xor/loop::js-byte-array-xor-modulo-key-loop
     downgrade:
       any:
       - id: metadata/package/testing/
       - id: metadata/signed/platform/
+  - id: js-sandbox-gated-env-http-exfil
+    desc: Sandbox check gates environment exfiltration
+    crit: hostile
+    conf: 0.99
+    attack: T1497.001,T1552.001,T1041
+    mbc: B0007,E1041
+    size_max: 262144
+    all:
+      - id: js-sandbox-check-obfuscated
+      - id: objectives/exfiltration/stealer/credential/env::javascript-xor-env-http-exfil
+    unless:
+      - id: metadata/package/testing/
+      - id: metadata/signed/platform/
+  - id: js-multi-signal-automated-env-gate
+    desc: Multi-signal CI bot VM environment gate
+    # Detecting CI/bot/VM is what environment-detector libraries do; keep
+    # this notable until paired with a payload loader in the hostile composite.
+    crit: notable
+    conf: 0.93
+    attack: T1497.001
+    needs: 3
+    any:
+      - id: micro-behaviors/os/env/vars/cicd::ci-info-isci-property
+      - id: js-isvm-likely-env-property
+      - id: js-isnpmbot-env-property
+      - id: js-automated-sandboxed-env-message
+    unless:
+      - id: metadata/package/testing/
+      - id: metadata/library/structure::js-large-module-bundle
+  - id: sandbox-gated-aes-global-dispatch
+    desc: AES global dispatch gated behind sandbox checks
+    crit: hostile
+    conf: 0.97
+    attack: T1497.001, T1027.013, T1059.007
+    mbc: B0007, B0024
+    all:
+      - id: js-multi-signal-automated-env-gate
+      - id: objectives/anti-static/obfuscation/syntax::js-aes-decrypt-then-global-dispatch
+    unless:
+      - id: metadata/package/testing/

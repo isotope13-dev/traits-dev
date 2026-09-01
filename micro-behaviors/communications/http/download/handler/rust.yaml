@@ -1,0 +1,106 @@
+# ureq exposes response bodies as readers. Copying that reader into a newly
+# created file proves materialization of the HTTP response, rather than merely
+# importing or configuring an HTTP client.
+defaults:
+  platforms: [unix, windows]
+  for: [rust]
+  attack: T1105
+
+traits:
+  - id: rust-response-reader-copy
+    desc: Rust response reader copied to output
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      regex: '\bio::copy\s*\([^,\n]{1,120}\.into_reader\s*\(\s*\)\s*,\s*&mut\s+\w+'
+
+  - id: rust-response-into-reader
+    desc: Rust converts response into reader
+    crit: component
+    conf: 0.94
+    if:
+      type: text
+      regex: '\b[A-Za-z_]\w*\.into_reader\s*\(\s*\)'
+
+  - id: rust-reader-read-to-end
+    desc: Rust reader fills a byte buffer
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      regex: '\.read_to_end\s*\(\s*&mut\s+[A-Za-z_]\w*'
+
+  # reqwest exposes downloaded bodies through Response::bytes. Anchor this to
+  # a request expression so unrelated Bytes conversions do not become network
+  # evidence. Both the async and blocking direct helpers are covered.
+  - id: rust-reqwest-response-bytes
+    desc: Rust buffers a reqwest HTTP response body
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '\breqwest::(blocking::)?get\s*\([^)]{1,300}\)[\s\S]{0,240}\.bytes\s*\(\s*\)'
+
+composite_rules:
+  - id: rust-response-reader-read-to-end
+    desc: Rust buffers bytes from response reader
+    crit: component
+    conf: 0.95
+    near_bytes: 180
+    all:
+      - id: rust-response-into-reader
+      - id: rust-reader-read-to-end
+
+  - id: rust-ureq-response-to-file
+    desc: Rust writes ureq response to file
+    crit: notable
+    conf: 0.95
+    near_bytes: 2600
+    all:
+      - id: micro-behaviors/communications/http/get::rust-ureq-get-request
+      - id: micro-behaviors/fs/file/create::rust-file-create
+      - id: rust-response-reader-copy
+
+  - id: rust-ureq-response-to-memory
+    desc: Rust buffers ureq response bytes in memory
+    crit: notable
+    conf: 0.95
+    near_bytes: 2600
+    all:
+      - id: micro-behaviors/communications/http/get::rust-ureq-get-request
+      - id: rust-response-reader-read-to-end
+
+  - id: rust-ureq-buffered-response-to-file
+    desc: Rust writes buffered ureq response bytes to a file
+    crit: notable
+    conf: 0.96
+    near_bytes: 6500
+    all:
+      - id: rust-ureq-response-to-memory
+      - id: micro-behaviors/fs/file/write/direct::fs-write
+
+  - id: rust-reqwest-buffered-response-to-file
+    desc: Rust writes a buffered reqwest response to a file
+    crit: notable
+    conf: 0.96
+    near_bytes: 2600
+    all:
+      - id: rust-reqwest-response-bytes
+      - id: micro-behaviors/fs/file/write/direct::fs-write
+
+  - id: rust-ureq-response-materialized
+    desc: Rust materializes a ureq response in a file
+    crit: notable
+    conf: 0.95
+    any:
+      - id: rust-ureq-response-to-file
+      - id: rust-ureq-buffered-response-to-file
+
+  - id: rust-http-response-materialized
+    desc: Rust materializes an HTTP response in a file
+    crit: notable
+    conf: 0.95
+    any:
+      - id: rust-ureq-response-materialized
+      - id: rust-reqwest-buffered-response-to-file

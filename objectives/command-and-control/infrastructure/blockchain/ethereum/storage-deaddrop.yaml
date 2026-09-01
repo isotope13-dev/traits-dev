@@ -1,0 +1,66 @@
+# Ethereum contract-storage dead-drop C2 resolver (GoCaracal class, T1102).
+#
+# Instead of hosting the C2 on-chain, the implant reads a *mutable* value out
+# of a smart contract's storage with eth_getStorageAt over a rotating pool of
+# public Ethereum JSON-RPC endpoints, decodes the returned 32-byte word into a
+# replacement C2 address, and overwrites its in-memory config. The operator can
+# then move the C2 by writing a new value to the slot -- no new binary ships.
+#
+# The technique is language/platform agnostic: the same shape appears in Go,
+# Python, JS, and compiled implants. These composites match on the structural
+# artifacts (the RPC method, a redundant public-provider pool, the raw storage
+# slot word) rather than on any single family's strings, so future variants
+# that reuse the failover-resolver idea are still caught. The neutral atoms all
+# live in micro-behaviors/communications/http/url/rpc; the intent comes from
+# combining a raw-storage read with a failover pool and downstream execution.
+defaults:
+  platforms: [unix, windows]
+  for: [go, python, javascript, typescript, scripts, source, binaries]
+  attack: T1102
+
+composite_rules:
+  # A raw contract-storage read (eth_getStorageAt, not an ABI eth_call) served
+  # by two or more unrelated public RPC providers: the redundant pool exists so
+  # the resolve succeeds even when individual endpoints block or rate-limit the
+  # implant. dApps normally use one configured provider and call contract
+  # methods, so pairing raw-slot reads with a public-provider pool is the
+  # off-chain dead-drop resolution shape.
+  - id: ethereum-storage-deaddrop-rpc-pool-resolve
+    desc: eth_getStorageAt served by a public Ethereum RPC failover pool
+    crit: suspicious
+    conf: 0.94
+    all:
+      - id: micro-behaviors/communications/http/url/rpc::eth-get-storage-at-method
+      - id: micro-behaviors/communications/http/url/rpc::ethereum-public-rpc-provider-pool
+
+  # eth_getStorageAt pointed at the zero storage slot: the implant is reading a
+  # specific hardcoded dead-drop slot rather than querying a contract ABI. The
+  # slot word alone is a bare component (a zero word carries no intent); the RPC
+  # method turns it into a raw contract-storage read.
+  - id: ethereum-storage-slot-deaddrop-read
+    desc: Reads a fixed contract storage slot via eth_getStorageAt
+    crit: suspicious
+    conf: 0.9
+    # Crypto SDK bundles also contain generic all-zero hash constants. Require
+    # the slot word to be part of the nearby raw-storage request.
+    near_bytes: 256
+    all:
+      - id: micro-behaviors/communications/http/url/rpc::eth-get-storage-at-method
+      - id: micro-behaviors/communications/http/url/rpc::evm-zero-storage-slot-word
+
+  # The hostile case the article describes end to end: the contract-storage
+  # dead-drop resolves a replacement C2, which is handed to a local shell /
+  # reverse shell. No legitimate program bootstraps an interactive shell target
+  # out of a mutable Ethereum storage slot.
+  - id: ethereum-storage-deaddrop-c2-shell
+    desc: Ethereum contract-storage dead-drop C2 wired to a remote shell
+    crit: hostile
+    conf: 0.97
+    attack: T1102,T1059,T1105,T1571
+    all:
+      - id: ethereum-storage-deaddrop-rpc-pool-resolve
+    any:
+      - id: objectives/command-and-control/reverse-shell/dup::socket-plus-shell-exec
+      - id: objectives/command-and-control/reverse-shell/dup::go-reverse-shell-comp
+      - id: micro-behaviors/process/create/shell/lang::go-exec-command-bin-sh
+      - id: micro-behaviors/process/create/shell/spawn::bin-sh-interactive

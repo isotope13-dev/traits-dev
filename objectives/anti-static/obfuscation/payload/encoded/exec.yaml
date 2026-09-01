@@ -105,20 +105,6 @@ traits:
     if:
       type: string_literal
       regex: atob.{0,64}(eval|Function)
-  - id: large-base64-string-dup
-    desc: Large base64-like string (512+ chars)
-    crit: notable
-    conf: 0.75
-    if:
-      type: text
-      regex: ^[A-Za-z0-9+/]{512,}([+/]|[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)$
-    not:
-      - substr: iVBORw0KGgoAAAANSUhEUg
-      - substr: PADDINGXXPADDING
-      - regex: ^iVBORw0KGgoAAAANSUhEUg[A-Za-z0-9+/]{490,}$
-      - regex: ^MII[A-Za-z0-9+/]{508,}([+/]|[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)$
-    unless:
-      - id: metadata/library/qt/
   - id: hex-payload-pe-stub
     desc: Hex-encoded PE DOS stub
     crit: component
@@ -258,14 +244,94 @@ traits:
     attack: T1140
     for: [javascript, typescript]
     if:
-      type: text
-      regex: '\bFunction\s*\(\s*(atob|Buffer\.from)\s*\('
+      # Match executable syntax, not filter rules, signatures, or documentation
+      # that quote `new Function(atob(...))` as inert text.
+      type: tree-sitter
+      query: |
+        [
+          (call_expression
+            function: (identifier) @ctor
+            arguments: (arguments
+              (call_expression
+                function: (identifier) @decoder))
+            (#eq? @ctor "Function")
+            (#eq? @decoder "atob"))
+          (call_expression
+            function: (identifier) @ctor
+            arguments: (arguments
+              (call_expression
+                function: (member_expression
+                  object: (identifier) @decoder_object
+                  property: (property_identifier) @decoder_method)))
+            (#eq? @ctor "Function")
+            (#eq? @decoder_object "Buffer")
+            (#eq? @decoder_method "from"))
+          (call_expression
+            function: (identifier) @ctor
+            arguments: (arguments
+              (call_expression
+                function: (member_expression
+                  object: (call_expression
+                    function: (member_expression
+                      object: (identifier) @decoder_object
+                      property: (property_identifier) @decoder_method))
+                  property: (property_identifier) @conversion_method)))
+            (#eq? @ctor "Function")
+            (#eq? @decoder_object "Buffer")
+            (#eq? @decoder_method "from")
+            (#eq? @conversion_method "toString"))
+          (new_expression
+            constructor: (identifier) @ctor
+            arguments: (arguments
+              (call_expression
+                function: (identifier) @decoder))
+            (#eq? @ctor "Function")
+            (#eq? @decoder "atob"))
+          (new_expression
+            constructor: (identifier) @ctor
+            arguments: (arguments
+              (call_expression
+                function: (member_expression
+                  object: (identifier) @decoder_object
+                  property: (property_identifier) @decoder_method)))
+            (#eq? @ctor "Function")
+            (#eq? @decoder_object "Buffer")
+            (#eq? @decoder_method "from"))
+          (new_expression
+            constructor: (identifier) @ctor
+            arguments: (arguments
+              (call_expression
+                function: (member_expression
+                  object: (call_expression
+                    function: (member_expression
+                      object: (identifier) @decoder_object
+                      property: (property_identifier) @decoder_method))
+                  property: (property_identifier) @conversion_method)))
+            (#eq? @ctor "Function")
+            (#eq? @decoder_object "Buffer")
+            (#eq? @decoder_method "from")
+            (#eq? @conversion_method "toString"))
+        ]
 
 composite_rules:
-  # Real b64decode call fact near a subprocess API (including decode layers
-  # analyzed from -c string payloads).  Not a text match inside quotes alone.
-  - id: python-subprocess-wraps-b64decode
-    desc: Base64 decode co-located with subprocess
+  # A real b64decode call near a shell-enabled subprocess. Merely decoding
+  # ordinary subprocess output (screenshots, clipboard images, certificates)
+  # does not establish a decoded-command execution flow.
+  - id: python-benign-decode-subprocess-context
+    desc: Recognized benign Python decode and subprocess context
+    crit: exception
+    conf: 0.99
+    any:
+      - id: well-known/tool/development/waf::waf-subprocess-command-worker
+      - id: micro-behaviors/crypto/certificate/usage::python-pem-certificate-body-decode
+      - id: micro-behaviors/crypto/asymmetric/signature::python-minisign-key-material-decode
+      - id: well-known/lib/ai/pyaigis::pyaigis-context
+      - id: micro-behaviors/ui/window/notify/message::winforms-notifyicon-balloon
+      - id: micro-behaviors/data/decode/protobuf::python-protoc-decode-raw-subprocess
+      - id: well-known/game/poptracker::poptracker-source-archive-context
+
+  - id: python-b64decode-near-shell-subprocess
+    desc: Base64 decode near shell-enabled Python subprocess
     crit: suspicious
     conf: 0.97
     mbc: B0032
@@ -273,24 +339,23 @@ composite_rules:
     for: [python]
     all:
       - id: micro-behaviors/data/decode/base64::b64decode-call
-    any:
-      - id: micro-behaviors/process/create/subprocess::process-execution
-      - id: micro-behaviors/process/create/exec::subprocess-api-call
+      - id: micro-behaviors/process/create/subprocess::shell-true
     near_bytes: 256
     unless:
-      - id: micro-behaviors/data/decode/protobuf::python-protoc-decode-raw-subprocess
-  - id: profiled-encoded-temp-stager
-    desc: PE profiles locale and debugger state while staging an encoded Temp payload
-    crit: hostile
+      - id: metadata/package/testing/presence/harness::test-directory-path
+      - id: python-benign-decode-subprocess-context
+  - id: profiled-encoded-temp-execution-primitives
+    desc: PE combines encoded data, profiling checks, and Temp execution APIs
+    crit: suspicious
     conf: 0.97
     attack: T1027,T1497.001
     for: [pe]
     all:
-      - id: objectives/anti-static/obfuscation/payload/encoded::large-base64-string-dup
+      - id: micro-behaviors/data/encoded::raw-base64-pe-header
       - id: objectives/discovery/system/locale::locale-and-environment-profiling
       - id: micro-behaviors/process/debug/detect::is-debugger-present-import
       - id: micro-behaviors/fs/temp/directory::temp-file-staging-primitives
-      - id: micro-behaviors/process/create/shell/spawn::win-createprocess
+      - id: micro-behaviors/process/create/spawn::child-process-creation-api
     unless:
       - id: well-known/dual-use/remote-admin/meshcentral::meshcentral-agent-binary-context
 
@@ -373,8 +438,10 @@ composite_rules:
       - id: electron-execute-javascript
       - id: browser-create-image-bitmap
   - id: base64-eval-proximity
-    desc: Base64 decode near dynamic evaluation
-    crit: hostile
+    desc: Nearby Base64 decode and dynamic evaluation
+    # Proximity does not prove that decoded bytes reach the evaluation sink.
+    # It is strong obfuscation evidence, but not a hostile data-flow claim.
+    crit: suspicious
     conf: 0.95
     mbc: B0032
     attack: T1140
@@ -402,6 +469,7 @@ composite_rules:
       - id: metadata/library/structure/
       - id: well-known/app/enterprise/egroupware/
       - id: metadata/package/testing/harness/fixture::jsimplifier-benignjs-corpus-path
+      - id: well-known/tool/detection/agent-glovebox::staticscan-eval-payload-fixture-context
   - id: base64-exec-proximity
     desc: Base64 decode + exec in same file
     crit: hostile
@@ -439,34 +507,33 @@ composite_rules:
     near_lines: 12
     unless:
       - id: metadata/package/testing/
-      - id: metadata/package/scripts::jupyter-code-cell-generator
-      - id: well-known/tool/development/ide-contexts::cython-notebook-kernel-source-context
+      - id: metadata/package/scripts/develop::jupyter-code-cell-generator
+      - id: well-known/tool/development/ide-contexts/
       - id: metadata/library/versioneer/
       - id: well-known/lib/ai/pyaigis/
       - id: micro-behaviors/ui/window/notify/message::winforms-notifyicon-balloon
       - id: well-known/tool/development/waf::waf-subprocess-command-worker
       - id: well-known/app/development/ruby-everywhere::ruby-everywhere-package-context
       - id: well-known/app/development/ruby-everywhere::hosted-build-runner-source
-  - id: python-base64-decode-subprocess-proximity
-    desc: Python subprocess paired with base64 decode
+  - id: python-embedded-base64-shell-subprocess
+    desc: Embedded Base64 content decoded near shell subprocess
     crit: hostile
     conf: 0.95
     mbc: B0032
     attack: T1059
     for: [python]
-    # Elevates the suspicious wrap composite when a real b64decode call
-    # co-occurs with subprocess execution in the same file scope.
+    # Hostile requires a concealed embedded payload in addition to the
+    # suspicious decode-plus-shell flow. Dynamic or small decoded data remains
+    # suspicious because its contents cannot be established statically.
     all:
-      - id: python-subprocess-wraps-b64decode
+      - id: python-b64decode-near-shell-subprocess
+      - id: metadata/file/encoded::large-base64-like-string
     unless:
       - id: metadata/package/testing/
-      - id: metadata/package/scripts::jupyter-code-cell-generator
-      - id: well-known/tool/development/ide-contexts::cython-notebook-kernel-source-context
+      - id: metadata/package/scripts/develop::jupyter-code-cell-generator
+      - id: well-known/tool/development/ide-contexts/
       - id: metadata/library/versioneer/
-      - id: well-known/lib/ai/pyaigis/
-      - id: micro-behaviors/ui/window/notify/message::winforms-notifyicon-balloon
-      - id: well-known/tool/development/waf::waf-subprocess-command-worker
-      - id: micro-behaviors/data/decode/protobuf::python-protoc-decode-raw-subprocess
+      - id: python-benign-decode-subprocess-context
   - id: base64-function-proximity
     desc: Base64 decode + Function constructor
     crit: hostile
@@ -505,12 +572,29 @@ composite_rules:
       - id: unhexlify-import
       - id: binascii-import
       - id: metadata/file/metrics::low-whitespace
+  - id: python-latin1-decode-exec
+    desc: Python decodes latin-1 bytes then exec()
+    crit: hostile
+    conf: 0.96
+    mbc: B0032
+    attack: T1027,T1059.006
+    for: [python]
+    near_lines: 12
+    all:
+      - id: micro-behaviors/data/decode/charset::python-latin1-decode-call
+      - id: micro-behaviors/process/interpreter/python::exec-builtin
+    unless:
+      - id: metadata/package/testing/
+      # PEP 3333 mandates latin-1 at WSGI's byte/str boundary, and the py2
+      # re-raise shim puts a literal-argument exec() a few lines away. Every
+      # WSGI adapter has both; Passenger's wsgi-loader.py read as hostile.
+      - id: metadata/lang/version::python2-wsgi-compat-shim
   - id: large-encoded-string
     desc: Large high-entropy string literal
     crit: suspicious
     conf: 0.85
     any:
-      - id: objectives/anti-static/obfuscation/payload/encoded::large-base64-string-dup
+      - id: metadata/file/encoded::large-base64-like-string
       - id: objectives/anti-static/obfuscation/payload/encoded::large-hex-string-dup
       - id: micro-behaviors/data/encode/embedded::gzip-base64-blob
     unless:
@@ -531,7 +615,7 @@ composite_rules:
     all:
       - id: micro-behaviors/data/encode/embedded::repeated-gzip-base64-assignment
     any:
-      - id: objectives/anti-static/obfuscation/payload/encoded::large-base64-string-dup
+      - id: metadata/file/encoded::large-base64-like-string
       - id: metadata/file/metrics::source-lines-over-1000
   - id: large-base64-shell-wrapper
     desc: Large base64 payload piped to shell
@@ -541,7 +625,7 @@ composite_rules:
     size_min: 1000000
     all:
       - id: micro-behaviors/process/create/shell/lang::go-piped-shell-wrapper
-      - id: objectives/anti-static/obfuscation/payload/encoded::large-base64-string-dup
+      - id: metadata/file/encoded::large-base64-like-string
   - id: sh2bin-linpeas-wrapper
     desc: sh2bin-wrapped LinPEAS shell payload
     crit: hostile
@@ -580,7 +664,7 @@ composite_rules:
       - id: micro-behaviors/crypto/symmetric/aes/runtime-library::createDecipheriv
       - id: micro-behaviors/crypto/symmetric/aes/runtime-library::hardcoded-key
     any:
-      - id: micro-behaviors/crypto/symmetric/aes/runtime-library::buffer-hex-key-material
+      - id: micro-behaviors/crypto/symmetric/aes/runtime-library::hardcoded-key-pattern
       - id: exported-decryptor
     downgrade:
       any:
@@ -631,6 +715,8 @@ composite_rules:
     all:
       - id: micro-behaviors/data/decode/base64::dunder-import-base64
       - id: micro-behaviors/data/compress/library::zlib-dynamic-import
+    unless:
+      - id: metadata/package/testing/presence/harness::test-directory-path
   - id: exec-long-base64-dunder-import
     desc: exec() with large base64 payload and __import__ evasion
     crit: hostile
@@ -649,8 +735,8 @@ composite_rules:
     unless:
       - id: metadata/package/testing/
   - id: js-eval-base64-child-process
-    desc: eval + base64 decode + child_process (JS trojan)
-    crit: hostile
+    desc: Eval with base64 and child-process access
+    crit: suspicious
     conf: 0.95
     attack: T1059.007
     mbc: B0032
@@ -670,6 +756,7 @@ composite_rules:
       - id: metadata/library/structure/
       - id: metadata/library/structure/
       - id: well-known/app/development/setup-bun/
+      - id: objectives/command-and-control/dropper/delivery/blockchain::obfuscated-etherhiding-hex-stage-dropper
   - id: js-eval-child-process
     desc: Nearby dynamic eval and child-process execution
     crit: suspicious
@@ -714,6 +801,7 @@ composite_rules:
       - id: micro-behaviors/process/interpreter/eval::ruby-eval
     unless:
       - id: metadata/package/testing/
+      - id: well-known/lib/cloud/browserstack::package-member-path
   - id: ruby-eval-zlib-base64-decode
     desc: Ruby eval zlib base64 payload
     crit: hostile
@@ -729,6 +817,7 @@ composite_rules:
       - id: micro-behaviors/process/interpreter/eval::ruby-eval
     unless:
       - id: metadata/package/testing/
+      - id: well-known/lib/cloud/browserstack::package-member-path
   - id: inline-ruby-base64-eval
     desc: Inline Ruby base64 eval
     crit: hostile

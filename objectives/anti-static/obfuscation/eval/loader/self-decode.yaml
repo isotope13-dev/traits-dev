@@ -13,7 +13,8 @@
 # dependency (dom-weave) fire-and-forget loads an optional dependency
 # (sync-logger), and sync-logger ships this loader, which decrypts a
 # dead-drop-resolved endpoint and spawns a hidden powershell/node stager on
-# Windows. See objectives/supply-chain/hidden-payload/staging::optional-dep-fire-forget-loader.
+# Windows. The carrier's optional-dependency load is represented by
+# micro-behaviors/os/module/load::eager-import-error-swallowed.
 #
 # ATT&CK: T1027 (Obfuscated Files or Information), T1059.007 (JavaScript)
 defaults:
@@ -102,6 +103,24 @@ traits:
     if:
       type: text
       regex: '\b\w+\(\w*\s*,\s*\w+\(\w+\)\)'
+  - id: nested-decoder-function-build
+    desc: Nested decoder builds function
+    crit: component
+    conf: 0.86
+    if:
+      type: text
+      regex: 'var\s+\w+\s*=\s*\w+\(\w+,\s*\w+\(\w+\)\)'
+    unless:
+      - id: well-known/app/development/github-web::blob-page-rendered-source
+  - id: numeric-stage-function-run
+    desc: Numeric stage function run
+    crit: component
+    conf: 0.82
+    if:
+      type: text
+      regex: '\w+\(\s*\d{3,6}\s*\);\s*return\s+\d{3,6}'
+    unless:
+      - id: well-known/app/development/github-web::blob-page-rendered-source
   # Empty-arrow Function sandbox: `(()=>{})[x][x](...)` recovers Function via
   # the prototype chain without writing the Function/globalThis tokens. When
   # both property lookups are themselves computed (decoder calls), the form
@@ -122,6 +141,11 @@ traits:
   # string-table decoder call rather than a visible Function/eval token.
   # Require a call inside the brackets: bare `new (item[0])(…)` is an ordinary
   # factory (Hammer.JS recognizer setup), not an obfuscated constructor.
+  # The key expression must also be quote-free. Concealment means the
+  # constructor name is absent from the plaintext, so a quoted fragment in the
+  # key disqualifies it: `new (E[B(f)+"Array"])(buf)` names the Uint8Array /
+  # Float32Array family outright, which is how binary-struct and typed-array
+  # libraries pick a view class from a type string.
   - id: computed-receiver-new-constructor
     desc: new via call-indexed computed constructor
     crit: suspicious
@@ -129,11 +153,44 @@ traits:
     attack: T1027,T1059.007
     if:
       type: text
-      regex: 'new\s*\(\s*[A-Za-z_$][\w$]*\s*\[[^\]]*?\([^)]{0,48}\)[^\]]{0,24}\]\s*\)\s*\('
+      regex: 'new\s*\(\s*[A-Za-z_$][\w$]*\s*\[[^\]"'']*?\([^)]{0,48}\)[^\]"'']{0,24}\]\s*\)\s*\('
     unless:
       - id: metadata/package/testing/harness/runtime/
       - id: metadata/library/structure::js-large-minified-bundle
+      # A whole-file string-table obfuscator rewrites *every* member
+      # expression, so an ordinary `new ns.Foo(...)` in the source comes out as
+      # `new (ns[dec(518)])(...)` with no attacker doing anything. Zencoder's
+      # diff-viewer chunks are that case -- decoding the tables resolves 518 to
+      # `SemanticTokensProviderStyling` and 693 to the Monaco languages
+      # registry, both plain classes on a webpack module namespace. Where the
+      # package declares the obfuscation pass, the shape is a byproduct of the
+      # build, not evidence that a constructor identity was concealed.
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::obfuscated-webpack-chunk-output
 composite_rules:
+  # A library reads a bundled data file, reverses a byte shift, Base64-decodes
+  # the result, resolves a callable through repeated constructor reflection,
+  # and supplies that callable with Node's ambient Buffer/require/process
+  # powers. Each neutral leg is seen in legitimate code; this complete chain
+  # is a concealed CommonJS-capable payload loader.
+  - id: packaged-shift-decoder-function-loader
+    desc: Packaged shift-decoded payload executes with Node globals
+    crit: hostile
+    conf: 0.99
+    attack: T1027,T1059.007,T1140
+    scope: file
+    near_lines: 240
+    all:
+      - id: micro-behaviors/fs/file/read::read-package-relative-file
+      - id: objectives/anti-static/obfuscation/encoding/arithmetic::js-fromcharcode-mod-256-decode
+      - id: micro-behaviors/data/decode/base64::buffer-from-base64
+      - id: micro-behaviors/data/source/property/read::repeated-constructor-property-read
+      - id: micro-behaviors/data/source/dynamic/eval::js-call-with-node-globals
+      - id: metadata/library/runtime::js-module-exports
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: well-known/tool/detection/security-scanner/
+      - id: well-known/tool/detection/llm-scanner/
+
   - id: js-large-offset-charcode-eval-loader
     desc: Packed JavaScript decoder feeds variable eval
     crit: hostile
@@ -142,7 +199,7 @@ composite_rules:
     for: [javascript]
     all:
       - id: micro-behaviors/data/decode/custom::fromcharcode-large-offset-expression
-      - id: metadata/file/metrics::js-dense-subtraction-arithmetic
+      - id: metadata/file/profile/metrics::js-dense-subtraction-arithmetic
       - id: micro-behaviors/process/interpreter/eval::js-eval-variable-argument
     unless:
       - id: metadata/package/testing/
@@ -167,7 +224,7 @@ composite_rules:
     any:
       - id: micro-behaviors/data/decode/custom::fromcharcode-apply-array
       - id: micro-behaviors/data/encode/char-code::fromcharcode-call
-      - id: micro-behaviors/data/decode/custom::js-alphabet-indexof-lookup
+      - id: micro-behaviors/data/string/search::js-alphabet-indexof-lookup
     unless:
       - id: metadata/package/testing/harness/runtime/
       - id: well-known/tool/detection/security-scanner/
@@ -175,7 +232,7 @@ composite_rules:
 
   - id: char-permutation-reassembler
     desc: Character permutation reassembler
-    crit: notable
+    crit: suspicious
     conf: 0.9
     near_bytes: 2048
     all:
@@ -186,7 +243,7 @@ composite_rules:
       - id: metadata/package/testing/harness/runtime/
       - id: metadata/library/structure::js-webpack-bundle
       - id: metadata/library/structure::js-large-minified-bundle
-      - id: well-known/app/ai/litellm::litellm-package-path
+      - id: well-known/app/ai/gateway/litellm::litellm-package-path
       - id: well-known/lib/ui/swagger-ui::swagger-ui-bundle-marker
       - id: well-known/lib/crypto/node-forge::node-forge-crypto-library
       - id: well-known/lib/format/pdfjs::pdfjs-bundle
@@ -256,7 +313,7 @@ composite_rules:
     conf: 0.96
     attack: T1059.007
     all:
-      - id: objectives/supply-chain/hidden-payload/eval::huge-numeric-source-blob
+      - id: metadata/file/metrics::js-extreme-digit-ratio-large-source
       - id: micro-behaviors/data/encode/char-code::fromcharcode-call
       - id: micro-behaviors/process/interpreter/eval::js-eval-variable-argument
     unless:
@@ -282,14 +339,14 @@ composite_rules:
     conf: 0.98
     attack: T1027,T1059.007
     all:
-      - id: micro-behaviors/process/interpreter/eval::js-function-constructor
+      # This proximity-bound atom establishes that the escape blob is inside
+      # the Function body; the earlier file-wide constructor fact did not.
+      - id: objectives/anti-static/obfuscation/eval/function::function-body-unicode-escape-blob
       - id: metadata/lang/encoded/unicode-escape::javascript-unicode-escape-volume
-      - id: objectives/anti-static/obfuscation/code-metrics/string-blob::js-single-enormous-string
+      - id: metadata/file/profile/metrics::js-max-string-over-128k
     unless:
-      # Generated webpack/rollup output commonly embeds large source/CSS
-      # strings and Unicode-range tables alongside compatibility
-      # Function(...) wrappers.  The three file-wide metrics do not establish
-      # that the constructor executes the large encoded string in that context.
+      # Generated webpack/rollup output and security scanners may legitimately
+      # embed large encoded programs, including Function-constructor fixtures.
       - id: metadata/library/structure::js-known-bundler-output
       - id: well-known/tool/detection/security-scanner/
       - id: well-known/tool/detection/llm-scanner/
@@ -317,10 +374,24 @@ composite_rules:
     all:
       - id: indexed-decoder-stage-call
       - id: nested-decoder-call
-      - id: objectives/supply-chain/hidden-payload/trojan::numeric-stage-function-run
+      - id: numeric-stage-function-run
     any:
       - id: char-permutation-reassembler
       - id: micro-behaviors/data/encode/char-code::fromcharcode-call
+    unless:
+      - id: metadata/package/testing/
+      - id: metadata/library/structure::js-large-module-bundle
+      - id: well-known/lib/runtime/pyodide::pyodide-runtime-bundle
+  - id: node-capable-indexed-stage-loader
+    desc: Indexed permutation loader exposes Node require to hidden stage
+    crit: hostile
+    conf: 0.98
+    attack: T1027,T1059.007
+    all:
+      - id: indexed-decoder-stage-call
+      - id: nested-decoder-function-build
+      - id: char-permutation-reassembler
+      - id: micro-behaviors/data/source/property/computed::js-global-require-alias
     unless:
       - id: metadata/package/testing/
       - id: metadata/library/structure::js-large-module-bundle

@@ -106,20 +106,6 @@ composite_rules:
       - id: metadata/library/structure::js-distribution-output-path
       - id: metadata/library/structure::vscode-generated-escape-fragment
 
-  - id: python-mcp-config-writer
-    desc: Python writes AI MCP client configuration
-    crit: notable
-    conf: 0.9
-    all:
-      - id: micro-behaviors/fs/path/application/config::mcp-config-json-filename
-      - id: micro-behaviors/communications/ipc/mcp::mcp-client-config-key
-      - id: micro-behaviors/fs/write/file/direct::python-pathlib-write-text
-    unless:
-      - id: well-known/tool/detection/
-      - id: well-known/app/ai/qwen-code::qwen-code-bundle-text
-      - id: well-known/app/ai/simba-ai::rlm-engine-path
-      - id: well-known/app/ai/ouroboros::codex-mcp-section-template
-
   - id: python-agent-mcp-config-command-writer
     desc: Python writes agent MCP command config
     crit: hostile
@@ -134,9 +120,9 @@ composite_rules:
       - id: micro-behaviors/fs/path/application/config::codex-mcp-toml-target
       - id: micro-behaviors/fs/path/application/config::mcp-client-config-target
     unless:
-      - id: well-known/app/ai/qwen-code::qwen-code-bundle-text
-      - id: well-known/app/ai/simba-ai::rlm-engine-path
-      - id: well-known/app/ai/ouroboros::codex-mcp-section-template
+      - id: well-known/app/ai/coding-agent/qwen-code::qwen-code-bundle-text
+      - id: well-known/app/ai/agent-runtime/simba-ai::rlm-engine-path
+      - id: well-known/app/ai/agent-runtime/ouroboros::codex-mcp-section-template
 
   - id: service-credential-env-in-mcp-config
     desc: Service credential env vars in MCP config
@@ -189,18 +175,19 @@ composite_rules:
     unless:
       - id: well-known/tool/detection/
       - id: well-known/app/infrastructure/puppetmaster::python-package-source
+      - id: well-known/app/ai/agent-runtime/ouroboros::ouroboros-ai-package
 
   - id: python-multi-ide-mcp-config-rewriter
     desc: Python rewrites MCP config across AI IDEs
     crit: hostile
     conf: 0.9
     all:
-      - id: python-mcp-config-writer
+      - id: micro-behaviors/communications/ipc/mcp::python-mcp-client-config-writer
       - id: micro-behaviors/fs/path/application/config::ai-coding-tool-config-directory-cluster
       - id: python-mcp-config-backup-rename
     unless:
       - id: well-known/tool/detection/
-      - id: well-known/app/ai/qwen-code::qwen-code-bundle-text
+      - id: well-known/app/ai/coding-agent/qwen-code::qwen-code-bundle-text
 
   # Redirecting the AI CLI's API endpoint and planting an auth token into the
   # agent's config file routes the victim's prompts/code through a chosen server.
@@ -221,10 +208,10 @@ composite_rules:
     unless:
       - id: well-known/tool/detection/
       - id: well-known/tool/development/autohq/
-      - id: well-known/app/ai/entelligence-cli::router-settings-implementation
+      - id: well-known/app/ai/gateway/entelligence-cli::router-settings-implementation
       - id: well-known/lib/network/logfire::ai-gateway-benign-context
-      - id: well-known/app/ai/ethan-agent::ethan-agent-package
-      - id: well-known/app/ai/ethan-agent::ethan-agent-config-module
+      - id: well-known/app/ai/agent-runtime/ethan-agent::ethan-agent-package
+      - id: well-known/app/ai/agent-runtime/ethan-agent::ethan-agent-config-module
     # Where the endpoint points is the general form of the per-vendor
     # exceptions above: a loopback base URL is a local proxy the user is
     # already running, so the prompts and the planted token never leave the
@@ -251,6 +238,19 @@ composite_rules:
     unless:
       - id: well-known/tool/detection/
 
+  - id: codex-forced-mirror-cli-reinstall
+    desc: Force-installs Codex CLI from mirror
+    crit: suspicious
+    conf: 0.86
+    all:
+      - id: objectives/command-and-control/dropper/delivery/download-execute::npm-global-force-install
+      - id: objectives/command-and-control/dropper/delivery/download-execute::npm-registry-mirror-override
+      - id: objectives/credential-access/env/secrets/ai-provider::openai-api-key
+    unless:
+      - id: well-known/tool/detection/
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+      - id: metadata/package/testing/presence/fixture::test-underscore-js-filename
+
   # Endpoint+token redirect is dual-use; ALSO planting a SessionStart lifecycle
   # hook into the same agent config is not — a benign API "router" never injects
   # a session hook. The pair is a trojanized config-injection backdoor.
@@ -263,16 +263,42 @@ composite_rules:
       - id: micro-behaviors/communications/ipc/agent-hook::agent-session-hook--sessionstart
     unless:
       - id: well-known/tool/detection/
+      - id: metadata/package/quality/benign-context::claude-agent-hook-env-integration-context
 
-  - id: mcp-credential-theft-signals
-    desc: Credential theft or exfiltration signals
-    crit: suspicious
-    conf: 0.95
-    any:
-      - id: objectives/credential-access/env/secrets/filtered-access::node-secret-env-http-exfiltration
-      - id: objectives/credential-access/env/secrets/filtered-access::node-filtered-secret-scan
-      - id: objectives/exfiltration/http/env::axios-post-env-spread
-      - id: objectives/exfiltration/http/env::js-environment-snapshot-exfiltration
+  # Endpoint+token rewrite plus a SessionStart hook, without requiring the
+  # exact path.join(os.homedir(), ...) spelling some installers avoid.
+  - id: ai-agent-session-hook-endpoint-swap
+    desc: Session hook plus Anthropic endpoint swap
+    crit: hostile
+    conf: 0.9
+    all:
+      - id: micro-behaviors/communications/ipc/agent-hook::agent-session-hook--sessionstart
+      - id: micro-behaviors/os/env/vars/access::anthropic-base-url-variable
+      - id: micro-behaviors/os/env/vars/access::anthropic-auth-token-variable
+      - id: micro-behaviors/fs/path/application/config::claude-config-directory
+    unless:
+      - id: well-known/tool/detection/
+      - id: metadata/package/quality/benign-context::claude-agent-hook-env-integration-context
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+      - id: metadata/package/testing/presence/fixture::test-underscore-js-filename
+      - id: metadata/package/testing/presence/harness::test-fixture-directory-path
+      - id: metadata/package/testing/presence/test-home::test-home-directory-path
+
+  # Codex credential hijack that also force-reinstalls the CLI from a mirror
+  # is past a dual-use relay: the chosen version is pinned by --force.
+  - id: codex-hijack-forced-cli-reinstall
+    desc: Codex hijack force-reinstalls CLI from mirror
+    crit: hostile
+    conf: 0.9
+    all:
+      - id: codex-provider-credential-hijack
+      - id: objectives/command-and-control/dropper/delivery/download-execute::npm-global-force-install
+      - id: objectives/command-and-control/dropper/delivery/download-execute::npm-registry-mirror-override
+    unless:
+      - id: well-known/tool/detection/
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+      - id: metadata/package/testing/presence/fixture::test-underscore-js-filename
+
   - id: mcp-token-exfiltration
     desc: JWT-decoding MCP config with credential theft or exfiltration
     crit: hostile
@@ -281,7 +307,11 @@ composite_rules:
     all:
       - id: well-known/lib/crypto/jwt-decode::jwt-decode-import
       - id: micro-behaviors/fs/path/application/config::mcp-client-config-target
-      - id: mcp-credential-theft-signals
+    any:
+      - id: objectives/credential-access/env/secrets/filtered-access::node-secret-env-http-exfiltration
+      - id: objectives/credential-access/env/secrets/filtered-access::node-filtered-secret-scan
+      - id: objectives/exfiltration/http/env::axios-post-env-spread
+      - id: objectives/exfiltration/http/env::js-environment-snapshot-exfiltration
     unless:
       - id: metadata/package/quality/benign-context::benign-trojanized-fp-context
       - id: well-known/app/development/vscode-extension/atlascode/

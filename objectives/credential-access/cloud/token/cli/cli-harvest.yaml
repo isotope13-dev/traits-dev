@@ -8,19 +8,28 @@ defaults:
   attack: T1552.001
 traits:
 - id: gh-auth-token-raw
-  desc: GitHub CLI token extraction (gh auth token)
+  desc: Embeds GitHub CLI token extraction command
   crit: suspicious
   conf: 0.95
   if:
-    type: text
-    word: gh auth token
+    type: string_literal
+    exact: gh auth token
   unless:
-  - id: objectives/credential-access/cloud/token/cli/
   - id: well-known/app/development/github-cli::auth-helper-context
-  - id: micro-behaviors/os/service/legitimate/
+  - id: micro-behaviors/os/service/legitimate::github-api-cli-token-helper
   - id: go-github-token-env-fallback-call
   - id: go-github-token-discard-comment
-  - id: well-known/app/development/calvyn-code
+  # Calvyn contains an explicit security-audit implementation that checks the
+  # caller's own gh session.  A generic `package/scripts` path used to be the
+  # whole exception and suppressed unrelated npm payloads under that ordinary
+  # path, including install-time credential harvesters.
+  - id: well-known/app/development/calvyn-code::calvyn-security-audit-text
+  - id: well-known/app/development/calvyn-code::hermes-agent-installer-url
+  # Nx's release client shells out to `gh auth token` only as the last step of
+  # the developer auth chain (env vars, then the user's own gh hosts.yml), and
+  # uses the result as the Authorization header on its own release API calls.
+  - id: well-known/tool/development/dev-cli/nx::nx-github-release-client-module
+  - id: well-known/lib/format/cadence::update-tool-context
 # A single `aws sts get-caller-identity` is the canonical "am I authenticated"
 # probe run by virtually every AWS CI/deploy/provisioning script — a notable
 # credential-context capability, not suspicious alone. The harvest intent comes
@@ -36,6 +45,7 @@ traits:
   - exact: aws sts get-caller-identity *
   unless:
   - id: well-known/tool/detection/security-scanner/
+  - id: rust-test-cloud-cli-string-fixture
   - id: well-known/app/infrastructure/skypilot::skypilot-source-file
   - id: well-known/app/infrastructure/skypilot::skypilot-kubeconfig-helper
   - id: well-known/app/infrastructure/skypilot::skypilot-source-file
@@ -60,6 +70,7 @@ traits:
   - exact: az account show *
   unless:
   - id: well-known/tool/detection/security-scanner/
+  - id: rust-test-cloud-cli-string-fixture
 
 - id: aws-secretsmanager-list
   desc: AWS Secrets Manager list secrets
@@ -133,9 +144,15 @@ traits:
   if:
     type: text
     regex: 'base64\s+--decode\s*>\s*["''].{0,120}\.(crt|key)["'']'
+# Same reasoning as aws-sts-identity above: shelling out to the vendor's own
+# CLI to read the token it already holds is how deploy tooling authenticates on
+# the user's behalf -- travis.rb's `travis setup heroku` runs it to pre-fill
+# .travis.yml, and prompts the user when it comes back empty. One such probe is
+# a notable credential-context capability, not intent; the harvest signal is
+# mass-cloud-credential-harvest requiring 2+ distinct cloud probes.
 - id: heroku-auth-token
-  desc: Heroku token extraction (heroku auth:token)
-  crit: suspicious
+  desc: Heroku token read (heroku auth:token)
+  crit: notable
   conf: 0.95
   if:
     type: text
@@ -226,6 +243,7 @@ traits:
   unless:
   - type: text
     substr: '--format=value(account,status)'
+  - id: micro-behaviors/os/service/gcloud::gcloud-deployment-bootstrap-context
 - id: az-account-split
   desc: Azure identity probe (split arguments)
   crit: suspicious
@@ -335,8 +353,8 @@ composite_rules:
   - id: metadata/lang/source::python-protobuf-stub
   - id: metadata/lang/source::python-mypy-protobuf-generated
 - id: docker-config-auth-marker
-  desc: Docker config auth field access
-  crit: suspicious
+  desc: Reads Docker configuration authentication fields
+  crit: notable
   conf: 0.92
   near_bytes: 512
   all:
@@ -353,14 +371,30 @@ composite_rules:
   - id: gh-auth-tempfile
   - id: gh-auth-cleanup-trap
   - id: gh-auth-token-path-handoff
+# A Rust unit-test module whose cloud CLI strings are all inputs to the
+# predicate under test is a fixture table, not a harvester: the crate is
+# classifying command lines, not running them. A test attribute is always
+# required, so a real harvester without tests still trips this rule; the
+# fixture leg accepts either an assert argument or a `let cases = [...]`
+# table element, since table-driven tests assert inside the loop.
+- id: rust-test-cloud-cli-string-fixture
+  desc: Rust test asserts on cloud CLI strings
+  crit: exception
+  conf: 0.95
+  for: [rust]
+  all:
+  - id: metadata/package/testing/harness/unit::rust-test
+  any:
+  - id: metadata/package/testing/harness/unit::rust-assert-cloud-cli-command-fixture
+  - id: metadata/package/testing/harness/unit::rust-cloud-cli-command-fixture-table
 - id: mass-cloud-credential-harvest
   desc: Mass cloud credential harvesting (2+ operations)
   crit: hostile
   conf: 0.95
   needs: 2
   unless:
-  - id: objectives/credential-access/cloud/token/cli/
-  - id: objectives/credential-access/cloud/token/cli/
+  - id: well-known/tool/detection/security-scanner/
+  - id: rust-test-cloud-cli-string-fixture
   any:
   - id: gh-auth-token-raw
   - id: gh-auth-token-split
@@ -417,10 +451,9 @@ composite_rules:
   - id: go-github-token-discard-comment
   - id: go-github-finding-type-secret
 - id: registry-token-theft
-  desc: Package registry credential file access (2+ registries)
+  desc: Docker and package registry credential access
   crit: hostile
   conf: 0.95
-  needs: 2
   near_bytes: 8192
   unless:
   - id: well-known/tool/sysadmin/container/
@@ -430,9 +463,16 @@ composite_rules:
   - id: metadata/lang/source::python-mypy-protobuf-generated
   - id: well-known/tool/detection/agent-sentry/
   - id: well-known/lib/format/conda-package/
-  any:
-  - id: objectives/supply-chain/credential-theft/registry/
+  # A directory reference here used to count generic helper components such as
+  # "uses os.homedir()" and "calls readFile()" as two independent registries.
+  # Require the Docker credential file plus an actual second package-registry
+  # credential access/exfiltration behavior in the same file.
+  all:
   - id: docker-config-json
+  any:
+  - id: objectives/supply-chain/credential-theft/registry::js-env-home-cred
+  - id: objectives/supply-chain/credential-theft/registry::cred-to-http-js
+  - id: objectives/supply-chain/credential-theft/registry::supply-chain-credential-theft
 - id: sandbox-aware-credential-harvest
   desc: Credential harvest with remote environment evasion
   crit: hostile

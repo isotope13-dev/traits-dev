@@ -1,5 +1,5 @@
 # Shell command obfuscation patterns from the ESX BusyBox research.  The
-# matchers describe decoder mechanics and execution sinks, not ESXi commands.
+# matchers describe execution sinks and decoder combinations, not ESXi commands.
 defaults:
   platforms: [unix, windows]
   for: [shell]
@@ -7,59 +7,6 @@ defaults:
   mbc: B0032
 
 traits:
-  - id: shell-printf-hex-substitution
-    desc: Literal hex-encoded shell command substitution
-    crit: suspicious
-    conf: 0.95
-    if:
-      type: text
-      regex: '\$\(\s*printf\s+[^%\n;]{0,100}\\x[0-9a-fA-F]{2}(\\x[0-9a-fA-F]{2})+'
-    unless:
-      - id: well-known/tool/sysadmin/rpm-tools::rpm2cpio-script
-
-  - id: shell-printf-octal-substitution
-    desc: Multi-byte octal printf command substitution
-    crit: suspicious
-    conf: 0.95
-    if:
-      type: text
-      regex: '\$\(\s*printf\s+[^|;\n]{0,80}\\[0-7]{3}(\\[0-7]{3})+'
-    unless:
-      - id: well-known/tool/sysadmin/rpm-tools::rpm2cpio-script
-
-  # Both fragments require at least one escape in the ASCII range next to
-  # another escape. A run made only of bytes >= 0x80 is a UTF-8 literal, which
-  # is how a POSIX script embeds a non-ASCII character portably: glibc's
-  # `tzselect` writes `CUNEIFORM_SIGN_URU_TIMES_KI=$'\360\222\215\205'` to test
-  # whether the shell handles multibyte characters, and shipped that finding in
-  # every Debian-based container image. A shell obfuscator assembles a command
-  # name, and command names are ASCII (`$'\143\165\162\154'` = curl). Pure
-  # control-byte runs (000-037) are JSON/string sanitizers, not obfuscation —
-  # excluded via `not:` because encoding printable-octal into the main regex
-  # blows the 90-byte pattern budget.
-  - id: shell-ansi-hex-fragment
-    desc: Consecutive ANSI-C hex escapes in shell
-    crit: suspicious
-    conf: 0.92
-    if:
-      type: text
-      regex: "\\$'[^']{0,60}(\\\\x[2-7][0-9a-fA-F]\\\\x[0-9a-fA-F]{2}|\\\\x[0-9a-fA-F]{2}\\\\x[2-7][0-9a-fA-F])"
-
-    unless:
-      - id: well-known/app/utility/cmdchamp/
-  - id: shell-ansi-octal-fragment
-    desc: Consecutive ANSI-C octal escapes in shell
-    crit: suspicious
-    conf: 0.92
-    if:
-      type: text
-      regex: "\\$'[^']{0,60}(\\\\[01][0-7]{2}\\\\[0-7]{3}|\\\\[0-7]{3}\\\\[01][0-7]{2})"
-      not:
-        - regex: "tr -d '\\\\[0-7]"
-        - regex: '\[\$.*\$''\\[01]'
-        # Control-only pairs (000-037), e.g. JSONL sanitizers stripping C0 bytes.
-        - regex: "\\$'[^']{0,40}\\\\0[0-3][0-7]\\\\0[0-3][0-7]"
-
   - id: shell-awk-token
     desc: Awk decoder invocation
     crit: component
@@ -99,14 +46,6 @@ traits:
     if:
       type: literal
       regex: '\bgsub\s*\('
-
-  - id: shell-awk-system-call
-    desc: Awk calls system
-    crit: notable
-    conf: 0.9
-    if:
-      type: literal
-      regex: '\bsystem\s*\('
 
   - id: shell-awk-xor-call
     desc: Awk XOR call
@@ -239,7 +178,7 @@ composite_rules:
       - id: shell-awk-token
       - id: shell-awk-byte-format
       - id: shell-awk-gsub-call
-      - id: shell-awk-system-call
+      - id: micro-behaviors/process/create/exec::awk-system-call
 
   - id: shell-awk-xor-shell
     desc: Awk XOR decoder reaches shell
@@ -318,14 +257,14 @@ composite_rules:
     crit: hostile
     conf: 0.98
     near_bytes: 2000
+    unless:
+      - id: metadata/package/testing/presence/harness::test-directory-path
+      - id: metadata/package/testing/presence/harness::git-tests-directory
     all:
       - id: metadata/lang/shebang::shell-script
       - id: micro-behaviors/process/create/shell/eval::shell-dynamic-command-execution
     any:
-      - id: shell-printf-hex-substitution
-      - id: shell-printf-octal-substitution
-      - id: shell-ansi-hex-fragment
-      - id: shell-ansi-octal-fragment
+      - id: micro-behaviors/data/decode/char-code/escape-sequence
       - id: shell-awk-character-decoder
       - id: shell-awk-invisible-strip-exec
       - id: shell-awk-xor-shell
@@ -350,7 +289,7 @@ composite_rules:
       - id: metadata/lang/shebang::shell-script
       - id: shell-esx-firewall-test
       - id: shell-vim-vm-count-test
-      - id: shell-printf-octal-substitution
+      - id: micro-behaviors/data/decode/char-code/escape-sequence::shell-printf-octal-substitution
 
   - id: shell-obfuscated-staged-command
     desc: Encoded command is staged and deleted
@@ -359,7 +298,7 @@ composite_rules:
     all:
       - id: metadata/lang/shebang::shell-script
       - id: shell-staged-self-delete
-      - id: shell-printf-octal-substitution
+      - id: micro-behaviors/data/decode/char-code/escape-sequence::shell-printf-octal-substitution
 
   - id: shell-alternative-encoding-command
     desc: Alternative encoding reaches shell

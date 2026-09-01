@@ -1,0 +1,83 @@
+# Prepending file infectors cannot throw the program they displaced away: to
+# keep the machine usable (and the infection unnoticed) they must store the
+# victim executable, and usually its original path, inside the new host and
+# replay it at run time. Families that do this in a high-level language rather
+# than by rewriting PE headers wrap each stored item in a delimiter pair --
+# `SO!#YOURFILE` ... `EO!#YOURFILE` for the carried program, `SO!#FILENAME` for
+# where it came from, `SO!#INFECT` for the per-file infection record. The
+# convention is the HLLP/Lauri one; the shape it encodes (an executable that is
+# a container for the executable it replaced) is what the traits here describe.
+#
+# This is deliberately NOT expressed as "embedded PE + self-read + file copy":
+# self-extracting installers do all three, so that shape cannot carry hostile.
+# The delimiter pair is the discriminator -- an installer has no reason to frame
+# its payload with infection-record markers.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  attack: T1554
+  mbc: B0009
+  conf: 0.95
+
+traits:
+  - id: host-carrier-open-marker
+    desc: Infected-host container open marker
+    crit: component
+    if:
+      type: text
+      # No \b anchors: the blocks are written back to back, so the marker is
+      # surrounded by word characters (`...EO!#INFECTSO!#INFECT...`) and a word
+      # boundary never matches. `!#` already makes the token distinctive.
+      regex: 'SO!#(YOURFILE|FILENAME|INFECT)'
+  - id: host-carrier-close-marker
+    desc: Infected-host container close marker
+    crit: component
+    if:
+      type: text
+      regex: 'EO!#(YOURFILE|FILENAME|INFECT)'
+
+  # FuTuRaX prepends its worm body and separates the displaced executable
+  # images with this marker. Requiring several copies avoids treating a lone
+  # product or author string as an infection record.
+  - id: facehacker-host-separator
+    desc: Repeated FuTuRaX infected-host separator
+    crit: notable
+    conf: 0.999
+    count_min: 4
+    if:
+      type: hex
+      pattern: "46 41 43 45 48 41 43 4B 45 52"
+      offset_range: [4096, null]
+
+composite_rules:
+  # Both halves of the delimiter, so one stray token in unrelated data cannot
+  # stand in for a real container.
+  - id: host-carrier-block-marker
+    desc: Infected-host container block markers
+    crit: notable
+    conf: 0.95
+    all:
+      - id: host-carrier-open-marker
+      - id: host-carrier-close-marker
+
+  - id: infected-host-carrier
+    desc: PE carries a host program in infect blocks
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: host-carrier-block-marker
+      - id: metadata/binary/layout::pe-embedded
+
+  - id: facehacker-delimited-host-carrier
+    desc: FuTuRaX carrier stacks delimiter-separated PE host images
+    crit: hostile
+    conf: 0.999
+    all:
+      - id: facehacker-host-separator
+      - id: metadata/binary/layout::repeated-standard-pe-images
+      - id: metadata/binary/layout::overlay-over-90pct
+      - id: metadata/binary/layout::large-overlay-1mb
+    unless:
+      - id: metadata/binary/installer/family/
+      - id: metadata/binary/installer/script/
+      - id: metadata/binary/installer/sfx/

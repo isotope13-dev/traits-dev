@@ -5,28 +5,20 @@ defaults:
   for:
     - pe
     - csharp
-traits:
-  - id: property-info-class
-    desc: PropertyInfo class reference
-    crit: component
-    conf: 0.6
-    if:
-      type: text
-      substr: System.Reflection.PropertyInfo
-  - id: type-info-class
-    desc: TypeInfo class reference
-    crit: component
-    conf: 0.6
-    if:
-      type: text
-      word: System.Reflection.TypeInfo
+# `property-info-class` and `type-info-class` moved to
+# micro-behaviors/process/interpreter/reflection/runtime, where their identical
+# sibling `method-info-class` already lived. A `System.Reflection.*` type name
+# in the string table is a reflection capability, not an anti-static signal;
+# filing it here meant every .NET binary that ships CoreLib metadata scored an
+# obfuscation finding. The composites below still combine them, now by
+# cross-directory reference, and it is the combination that carries the intent.
 composite_rules:
   - id: property-info
     desc: Reflection property access
     crit: component
     conf: 0.55
     all:
-      - id: property-info-class
+      - id: micro-behaviors/process/interpreter/reflection/runtime::property-info-class
       - id: micro-behaviors/process/interpreter/reflection/runtime::get-properties-token
   - id: dotnet-resource-resolver-loader
     desc: .NET resource resolver loader
@@ -87,7 +79,7 @@ composite_rules:
     any:
       - id: micro-behaviors/process/interpreter/reflection/runtime::get-type-call
       - id: micro-behaviors/process/interpreter/reflection/runtime::typeof-call
-      - id: type-info-class
+      - id: micro-behaviors/process/interpreter/reflection/runtime::type-info-class
   # Activator + GetMethod co-occurrence is the Type.GetType(name).GetMethod(...)
   # .Invoke(null, [type, args]) shape used to reach Activator.CreateInstance
   # reflectively (so the literal "Activator.CreateInstance" never appears). A
@@ -99,37 +91,6 @@ composite_rules:
     all:
       - id: micro-behaviors/process/interpreter/reflection/runtime::activator
       - id: metadata/lang/compiler/managed::get-method-token
-  # The Activator.CreateInstance + GetMethod/GetMethods + GetManifestResourceStream
-  # shape is the simplest reflective-resource-loader form: instantiate a type
-  # decrypted from an embedded managed resource and resolve+invoke its method by
-  # name. Distinct from the resolver-token loaders above (ResolveMethod/
-  # ResolveType) and the Assembly.Load / MethodBase.Invoke chains — those tokens
-  # are absent in this Activator-based family. Notable on its own (plugin hosts
-  # and DI containers do this too); the crypter verdict comes from pairing it
-  # with a scrambled/fabricated identity.
-  - id: dotnet-activator-resource-invoker
-    desc: .NET reflective instantiation of embedded-resource type
-    crit: notable
-    conf: 0.8
-    attack: T1620
-    # Tie reflection dispatch to the resource-access path. Frameworks often
-    # expose all of these APIs in separate features of the same assembly.
-    near_bytes: 131072
-    for:
-      - pe
-      - dll
-    platforms:
-      - windows
-    all:
-      - id: metadata/binary/framework::dotnet-metadata
-      - id: micro-behaviors/data/embedded/payload/resource::dotnet-managed-resource-access
-      - id: micro-behaviors/process/interpreter/reflection/runtime::activator
-    any:
-      - id: metadata/lang/compiler/managed::get-method-token
-      - id: micro-behaviors/process/interpreter/reflection/runtime::get-methods-token
-    unless:
-      - id: metadata/signed/platform::microsoft
-      - id: well-known/lib/runtime/dotnet-runtime::dotnet-framework-system-native-image
   - id: dotnet-scrambled-reflective-crypter
     desc: .NET reflective resource loader with scrambled identity (crypter stub)
     crit: hostile
@@ -142,7 +103,7 @@ composite_rules:
     platforms:
       - windows
     all:
-      - id: dotnet-activator-resource-invoker
+      - id: micro-behaviors/process/interpreter/reflection/runtime::managed-resource-reflection-activation
       - id: objectives/evasion/masquerade/versioninfo::garbled-versioninfo-identity
     unless:
       - id: metadata/signed/platform::microsoft-windows
@@ -155,12 +116,17 @@ composite_rules:
     for: [pe, dll]
     platforms: [windows]
     all:
-      - id: dotnet-activator-resource-invoker
+      - id: micro-behaviors/process/interpreter/reflection/runtime::managed-resource-reflection-activation
       - id: micro-behaviors/data/embedded/payload/resource::dotnet-managed-resource-access
       - id: metadata/binary/resource::clr-resource-large
       - id: metadata/lang/compiler/managed::reflection-emit
       - id: metadata/binary/layout::pe-no-signature-record
     unless:
+      # Every leg above is a .NET #Strings metadata token, which a large
+      # managed application satisfies by referencing the API at all. An
+      # assembly naming a product and version has the identity these
+      # composites assume is absent.
+      - id: objectives/evasion/masquerade/binary::dotnet-template-product-identity-context
       - id: metadata/signed/platform/
       # System.Private.CoreLib implements Reflection.Emit, resource loading,
       # and Activator; it is not a payload stager. Self-contained .NET

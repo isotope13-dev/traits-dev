@@ -1,0 +1,103 @@
+# Launcher scripts for a flood: the thin shell/batch wrapper that collects
+# target parameters and then drives a flooder, rather than the flooder itself.
+# The flood engine may be a separate binary the wrapper never contains, so the
+# only evidence in the file is how it is being driven -- the parameter set it
+# asks the operator for, and the fan-out it performs.
+#
+# Terminology atoms for the attack kinds themselves live in generic.yaml; this
+# file holds the operator-interface and fan-out atoms and composes them with
+# those.
+defaults:
+  platforms: [unix, windows]
+  for: [scripts]
+  attack: T1498
+  mbc: B0009
+
+traits:
+  - id: flood-packet-count-prompt
+    desc: Prompts for a packet count to send
+    crit: notable
+    conf: 0.85
+    if:
+      # A diagnostic tool asks for a host, a port, or a duration. Asking how
+      # many packets to emit is a volume knob, which is a flooder's parameter.
+      type: text
+      regex: '(?i)\b(packet count|packets to send)\b'
+
+  - id: flood-source-ip-prompt
+    desc: Prompts for a spoofed source address
+    crit: notable
+    conf: 0.85
+    attack: T1498.001
+    if:
+      # The source address of an outbound packet is chosen by the kernel. A
+      # tool that asks the operator for one is forging it, which is what a
+      # reflective or untraceable flood needs and what an ordinary client
+      # never offers.
+      type: text
+      regex: '(?i)\benter\b[^\n]{0,16}\bsource (ip|address)\b'
+
+  - id: attack-start-banner
+    desc: Script announces an attack starting
+    crit: notable
+    conf: 0.85
+    if:
+      # `echo Attack started` -- how a booter script reports for duty. Anchored
+      # to a shell `echo` command so the word appearing in prose, a game, or a
+      # test name is not read as one.
+      type: text
+      regex: '(?im)^\s*echo\s[^\n]{0,8}attack (start|begin)'
+
+  - id: attack-command-variable
+    desc: Attack command held in a shell variable
+    crit: notable
+    conf: 0.8
+    if:
+      # `atk_cmd="python3 cc.py -url ..."` -- the launcher parameterizes the
+      # single command it will then run many times over.
+      type: text
+      regex: '(?im)^\s*at(k|tack)_cmd\s*='
+
+composite_rules:
+  # Asking for both the source address and the packet count describes one
+  # thing: emit N packets that claim to come from somewhere else.
+  - id: spoofed-source-flood-prompts
+    desc: Prompts for spoofed source and packet volume
+    crit: suspicious
+    conf: 0.92
+    attack: T1498.001
+    all:
+      - id: flood-source-ip-prompt
+      - id: flood-packet-count-prompt
+
+  # A named flood attack plus a flood parameter prompt: the script is the
+  # front end for that attack, not a document that mentions it.
+  - id: named-flood-tool-launcher
+    desc: Interactive launcher for a named flood attack
+    crit: suspicious
+    conf: 0.92
+    all:
+      - id: objectives/impact/dos/attack/flood::flood-types
+    any:
+      - id: flood-packet-count-prompt
+      - id: flood-source-ip-prompt
+
+  # Raising the file-descriptor ceiling is how a single host sustains many
+  # concurrent connections. Doing it right after announcing an attack, next to
+  # a variable command the script then runs, is a fan-out flooder.
+  - id: parallel-attack-command-launcher
+    desc: Launches parallel copies of an attack command
+    crit: suspicious
+    conf: 0.92
+    all:
+      - id: attack-start-banner
+      - id: micro-behaviors/process/resources/limits::shell-ulimit-file-descriptor-limit
+      - id: micro-behaviors/process/create/shell/spawn::sh-dynamic-command-target
+
+  - id: attack-command-process-multiplier
+    desc: Runs a stored attack command as many processes
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: attack-command-variable
+      - id: micro-behaviors/process/create/shell/spawn::sh-dynamic-command-target

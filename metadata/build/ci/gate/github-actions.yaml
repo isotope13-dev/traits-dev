@@ -1,0 +1,190 @@
+# Trust and authorization conditions guarding untrusted CI input.
+#
+# Split out of the former flat metadata/build/github-actions/traits.yaml, which
+# held 78 traits in one file and sat at the 80-trait directory cap. TAXONOMY
+# puts the technique in the directory and the technology in the filename, so
+# the concept groups across GitHub Actions, GitLab CI and Jenkins instead of
+# forking per platform.
+defaults:
+  platforms: [windows, unix]
+  for:
+    - github-actions
+    - binaries
+    - shell
+    - python
+
+traits:
+  - id: dependabot-actor-gate
+    desc: PR target job restricted to Dependabot
+    crit: notable
+    conf: 0.95
+    for: [github-actions]
+    if:
+      type: value
+      path: jobs.*.if
+      regex: 'github\.actor\s*==\s*[''\"]dependabot\[bot\][''\"]'
+  - id: dependabot-pr-author-gate
+    desc: PR target job requires Dependabot author
+    crit: notable
+    conf: 0.95
+    for: [github-actions]
+    if:
+      type: value
+      path: jobs.*.if
+      regex: 'github\.event\.pull_request\.user\.login\s*==\s*[''\"]dependabot\[bot\][''\"]'
+  - id: same-repository-pr-head-gate
+    desc: PR target job requires same repository head
+    crit: notable
+    conf: 0.95
+    for: [github-actions]
+    if:
+      type: value
+      path: jobs.*.if
+      regex: 'github\.event\.pull_request\.head\.repo\.full_name\s*==\s*github\.repository'
+  - id: issue-comment-command-gate
+    desc: Issue-comment slash-command workflow gate
+    crit: notable
+    conf: 0.96
+    for: [github-actions]
+    if:
+      type: value
+      path: jobs.*.if
+      regex: 'startsWith\s*\(\s*github\.event\.comment\.body'
+  - id: issue-comment-identity-gate
+    desc: Issue-comment author-association gate
+    crit: notable
+    conf: 0.96
+    for: [github-actions]
+    if:
+      type: value
+      path: jobs.*.if
+      regex: 'github\.event\.comment\.author_association\s*==\s*[''"''](OWNER|MEMBER|COLLABORATOR)[''"'']'
+  - id: local-authorization-check-action
+    desc: Workflow uses a local authorization check action
+    crit: notable
+    conf: 0.95
+    for: [github-actions]
+    if:
+      type: value
+      path: jobs.*.steps[*].uses
+      exact: ./.github/actions/check-authorization
+  - id: local-trust-check-action
+    desc: Repository-local trust check action
+    crit: notable
+    conf: 0.95
+    for: [github-actions]
+    if:
+      type: value
+      path: jobs.*.steps[*].uses
+      regex: '^\./\.github/actions/[^/]*(auth|trust|safe|permission)[^/]*$'
+  - id: approval-environment-output
+    desc: Job environment comes from an approval output
+    crit: notable
+    conf: 0.95
+    for: [github-actions]
+    if:
+      type: value
+      path: jobs.*.environment
+      regex: 'needs\.[A-Za-z0-9_-]+\.outputs\.approval-env'
+  - id: environment-from-job-output
+    desc: Job environment selected from dependency output
+    crit: notable
+    conf: 0.95
+    for: [github-actions]
+    if:
+      type: value
+      path: jobs.*.environment
+      regex: '^\$\{\{\s*needs\.[A-Za-z0-9_-]+\.outputs\.[A-Za-z0-9_-]+\s*\}\}$'
+  - id: same-repository-pr-step-gate
+    desc: Step gated to same-repository pull requests
+    crit: notable
+    conf: 0.95
+    for: [github-actions]
+    if:
+      type: value
+      path: jobs.*.steps[*].if
+      regex: 'github\.event\.pull_request\.head\.repo\.full_name\s*==\s*github\.repository'
+  - id: approval-required-environment-marker
+    desc: Workflow marks environment as approval-required
+    crit: notable
+    conf: 0.92
+    for: [github-actions]
+    if:
+      type: value
+      path: jobs.*.steps[*].run
+      regex: '(?i)\b[A-Za-z0-9_-]*(require[_ -]?approval|approval[_ -]?required)[A-Za-z0-9_-]*\b'
+  - id: unsafe-checkout-opt-in
+    desc: Checkout explicitly opts into unsafe PR code
+    crit: notable
+    conf: 0.95
+    for: [github-actions]
+    if:
+      type: value
+      path: jobs.*.steps[*].with.allow-unsafe-pr-checkout
+      exact: 'true'
+  - id: unsafe-checkout-trust-output
+    desc: Trust-gated unsafe PR checkout
+    crit: notable
+    conf: 0.95
+    for: [github-actions]
+    if:
+      type: value
+      path: jobs.*.steps[*].with.allow-unsafe-pr-checkout
+      regex: 'steps\.[^.]+\.outputs\.(is_safe|trusted|authorized)\s*==\s*[''\"]true[''\"]'
+  - id: safe-to-test-reusable-gate
+    desc: Uses a safe-to-test reusable workflow gate
+    crit: notable
+    conf: 0.95
+    for: [github-actions]
+    if:
+      type: value
+      path: jobs.*.uses
+      regex: '(?i)safe-to-test\.ya?ml@'
+  - id: safe-to-test-label-gate
+    desc: Job gated on "safe to test" label
+    crit: notable
+    conf: 0.95
+    for: [github-actions]
+    if:
+      type: value
+      path: jobs.*.if
+      regex: "github\\.event\\.label\\.name\\s*==\\s*'safe to test'"
+
+composite_rules:
+  - id: approval-gated-external-pr-checkout
+    desc: External PR checkout behind an approval gate
+    crit: exception
+    conf: 0.99
+    all:
+      - id: local-authorization-check-action
+      - id: approval-environment-output
+      - id: unsafe-checkout-opt-in
+  - id: output-selected-approval-gated-external-pr-checkout
+    desc: External PR checkout behind selected approval environment
+    crit: exception
+    conf: 0.98
+    all:
+      - id: environment-from-job-output
+      - id: same-repository-pr-step-gate
+      - id: approval-required-environment-marker
+  - id: trust-gated-external-pr-checkout
+    desc: External PR checkout behind a local trust output gate
+    crit: exception
+    conf: 0.99
+    all:
+      - id: local-trust-check-action
+      - id: unsafe-checkout-trust-output
+  # The "safe to test" idiom: a maintainer-applied label gates a reusable
+  # safe-to-test workflow before any external PR code is checked out with
+  # secrets. Used across the Ansible-network collections (splunk, cisco.*,
+  # arista.eos, junipernetworks, …) and other projects that adopted the same
+  # reusable workflow; each leg is an independently-notable gate marker.
+  # (Atomic legs defined in the traits: section above; the exception composite
+  # that combines them lives here.)
+  - id: safe-to-test-gated-external-pr-checkout
+    desc: External PR checkout behind a safe-to-test label gate
+    crit: exception
+    conf: 0.99
+    all:
+      - id: safe-to-test-reusable-gate
+      - id: safe-to-test-label-gate

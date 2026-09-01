@@ -4,13 +4,16 @@ defaults:
   attack: T1055
 
 traits:
+  # `libc::mprotect(` and not the bare word: `mprotect` also appears in prose,
+  # and a doc comment sitting near an unrelated `copy_nonoverlapping` is not
+  # evidence of anything. static-keys' os/none.rs matched on exactly that.
   - id: rust-mprotect-hook-patch
     desc: mprotect then copies bytes to patch code
     crit: suspicious
     conf: 0.93
     if:
       type: text
-      regex: 'mprotect[\s\S]{0,220}copy_nonoverlapping'
+      regex: 'libc::mprotect\s*\([\s\S]{0,220}copy_nonoverlapping\s*\('
 
   - id: rust-mprotect-rwx-call
     desc: mprotect making memory RWX
@@ -27,6 +30,11 @@ traits:
     if:
       type: text
       regex: 'copy_nonoverlapping\s*\([\s\S]{0,260}libc::mprotect'
+    # Mapping an anonymous page, copying an image into it, then tightening
+    # protection is how WASM/native object loaders stage executable code.
+    # An inline hook patches bytes already at a live function address.
+    not:
+      - regex: 'mmap\s*\([\s\S]{0,800}copy_nonoverlapping'
 
   - id: rust-mprotect-before-copy
     desc: mprotect then copies bytes into page
@@ -36,6 +44,37 @@ traits:
       type: text
       regex: 'libc::mprotect[\s\S]{0,260}copy_nonoverlapping\s*\('
 
+  # Acquiring a patch target that isn't yours: resolving another module's
+  # export, reading the process map to find one, or reaching into another
+  # process outright. Legitimate self-patching (JIT publish, jump labels,
+  # static keys) knows its own addresses from the linker and needs none of it.
+  - id: rust-hook-foreign-symbol-lookup
+    desc: Resolves a foreign function address to patch
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: 'libc::dl(sym|open)\s*\(|GetProcAddress\s*\('
+
+  - id: rust-hook-process-target-lookup
+    desc: Finds a process target address
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '/proc/self/maps|libc::(process_vm_writev|ptrace)\s*\('
+
+  # The other half of a hook: the redirect actually written over the target —
+  # an x86 near jump (0xE9) or indirect jump (0xFF 0x25), or a `jmp rax` after
+  # loading the detour address.
+  - id: rust-hook-jump-trampoline
+    desc: Builds jump trampoline
+    crit: component
+    conf: 0.88
+    if:
+      type: text
+      regex: '0x[fF][fF](u8)?\s*,\s*0x25|0x[eE]9(u8)?\s*,|jmp\s+(rax|qword)'
+
 composite_rules:
   - id: rust-hook-byte-copy
     desc: Rust hook byte copy
@@ -44,11 +83,29 @@ composite_rules:
     any:
       - id: rust-copy-before-mprotect
       - id: rust-mprotect-before-copy
+    unless:
+      - id: well-known/lib/runtime/wasmer/
 
+  - id: rust-hook-target-acquisition
+    desc: Acquires a foreign patch target
+    crit: component
+    conf: 0.9
+    any:
+      - id: rust-hook-foreign-symbol-lookup
+      - id: rust-hook-process-target-lookup
+      - id: rust-hook-jump-trampoline
+
+  # Patching bytes into an executable page is not a hijack by itself — it is
+  # how every JIT, jump-label, and hot-patch implementation works. What makes
+  # it a hijack is patching a target you had to go find. The previous `all:`
+  # paired the byte copy with `rust-libc-mprotect-call`, but both byte-copy
+  # disjuncts already contain `libc::mprotect`, so that conjunct was entailed
+  # by its sibling and the composite reduced to `rust-hook-byte-copy` —
+  # suspicious/0.91 evidence relabeled hostile/0.98.
   - id: rust-inline-hook-hijack
     desc: Rust inline hook hijack
     crit: hostile
     conf: 0.98
     all:
-      - id: micro-behaviors/mem/protect/modify::rust-libc-mprotect-call
       - id: rust-hook-byte-copy
+      - id: rust-hook-target-acquisition

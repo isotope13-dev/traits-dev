@@ -1,0 +1,102 @@
+# A container image that ships a replacement for a program its own base image
+# already provides. The result looks and behaves like the official image --
+# same name, same tag lineage, same entrypoint -- while the daemon that
+# actually runs is the author's build. Anyone auditing the deployment sees
+# `FROM nginx:1.21.6` and stops there.
+#
+# Two forms, both here. The blunt one overwrites the daemon binary. The
+# quieter one drops a module into the server's plugin directory and swaps the
+# config that loads it, so the vendor's binary is untouched and only a
+# `load_module` line -- inside a file the image also replaced -- says
+# otherwise.
+defaults:
+  platforms: [unix]
+  for: [dockerfile]
+  attack: T1195.002
+  mbc: F0016
+
+traits:
+  - id: system-daemon-binary-overwrite
+    desc: Image overwrites a system daemon binary
+    crit: suspicious
+    conf: 0.93
+    if:
+      # `COPY nginx /usr/sbin/nginx`. The destination is the canonical path of
+      # a daemon the base image installs, so this is a replacement, not an
+      # addition -- unlike the ordinary `COPY entrypoint.sh /usr/local/bin/`,
+      # which introduces a new name.
+      type: text
+      regex: '(?im)^\s*COPY\s[^\n]{1,60}/(usr/)?s?bin/(nginx|sshd|httpd|sudo)\s*$'
+
+  - id: system-shell-binary-overwrite
+    desc: Image overwrites a core system binary
+    crit: suspicious
+    conf: 0.93
+    if:
+      # The same move against the tools an operator would use to investigate
+      # the container once inside it.
+      type: text
+      regex: '(?im)^\s*COPY\s[^\n]{1,60}/(usr/)?s?bin/(bash|ps|netstat|login)\s*$'
+
+  - id: server-module-directory-injection
+    desc: Adds a module to a plugin directory
+    crit: suspicious
+    conf: 0.92
+    if:
+      # `COPY ngx_http_secure_headers_module.so /usr/lib/nginx/modules/...`.
+      # A shared object placed where the server auto-loads plugins runs
+      # inside the daemon's process with all of its privileges.
+      type: text
+      regex: '(?im)^\s*COPY\s[^\n]{1,60}\.so\s+/usr/lib(64)?/[\w-]{2,20}/modules?/'
+
+  - id: server-config-replacement
+    desc: Image replaces a server configuration file
+    crit: notable
+    conf: 0.85
+    if:
+      # Ordinary on its own -- configuring the server is why images exist.
+      # It matters as the second half of the module injection above, because
+      # the replaced config is what loads the module.
+      type: text
+      regex: '(?im)^\s*COPY\s[^\n]{1,60}/etc/(nginx|apache2|httpd)/'
+
+  - id: k8s-pause-base-image
+    desc: Built on the Kubernetes pause image
+    crit: notable
+    conf: 0.9
+    if:
+      # `FROM k8s.gcr.io/pause:3.2` / `registry.k8s.io/pause`. Nothing is
+      # normally built *on top of* pause -- it exists to hold a pod's network
+      # namespace open and does nothing else, so it makes no useful base.
+      type: text
+      regex: '(?im)^\s*FROM\s+[^\n]{0,40}/pause:'
+
+  - id: k8s-pause-binary-overwrite
+    desc: Image replaces the Kubernetes pause binary
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: '(?im)^\s*COPY\s[^\n]{1,60}\s/pause\s*$'
+
+composite_rules:
+  - id: server-module-and-config-replacement
+    desc: Image adds a server module and its loader config
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: server-module-directory-injection
+      - id: server-config-replacement
+
+  # The pause container is the first process in every Kubernetes pod on the
+  # node and the one nobody inspects, because upstream's is a few hundred
+  # kilobytes that only calls pause(2). Substituting its binary puts the
+  # author's code inside every pod's sandbox, at pod-creation time, on every
+  # node that pulls the image.
+  - id: k8s-pause-container-replacement
+    desc: Replaces the Kubernetes pod sandbox binary
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: k8s-pause-base-image
+      - id: k8s-pause-binary-overwrite

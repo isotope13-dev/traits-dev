@@ -77,6 +77,7 @@ traits:
     # Ansible's win_get_url/win_package modules gate this behind a documented
     # `validate_certs: no` parameter the operator must opt into.
     - id: well-known/app/infrastructure/ansible::ansible-module-source-context
+    - id: well-known/app/infrastructure/ansible::ansible-powershell-webrequest-context
 - id: python-self-signed-test-host
   desc: Python self-signed test host
   crit: notable
@@ -183,7 +184,9 @@ traits:
   if:
     type: value
     path: class.strings[*]
-    regex: '(?i)(trust|accept)[-_]?all'
+    # Require a token boundary so JavaMail isTrustAllHosts / trustAllHosts
+    # API names do not count as a trust-all manager type.
+    regex: '(?i)(^|[^A-Za-z])(trust|accept)[-_]?all([^A-Za-z]|$)'
 - id: java-inert-trustmanager-name
   desc: JVM trust manager named insecure or null
   crit: component
@@ -274,6 +277,7 @@ composite_rules:
     desc: Java trust manager accepts every certificate
     crit: suspicious
     conf: 0.93
+    scope: file
     for: [class]
     all:
       - id: micro-behaviors/communications/socket/ssl::jvm-custom-x509trustmanager
@@ -285,8 +289,10 @@ composite_rules:
       - id: well-known/lib/runtime/vertx/
       - id: well-known/lib/development/testcontainers::testcontainers-package-path
       - id: well-known/app/development/vscode-extension/vscode-tlaplus::extension-archive-context
-      - id: well-known/app/ai/quarkus-agent-mcp::quarkus-agent-mcp-package
+      - id: well-known/app/ai/tool-server/quarkus-agent-mcp::quarkus-agent-mcp-package
       - id: well-known/lib/runtime/quarkus-tls-registry::quarkus-tls-runtime-path
+      - id: well-known/lib/ai/ray/
+      - id: well-known/lib/data/cloud-jdbc::jdbc-sdk-bundle-context
   - id: java-token-loader-with-custom-trust-manager
     desc: Minecraft token loader combines remote staging with custom TLS trust
     # The archive-level correlation is strong but the custom manager is only a
@@ -308,25 +314,16 @@ composite_rules:
     - id: tls-connection-evidence-class
     - id: tls-chain-verified-field
     - id: micro-behaviors/communications/socket/ssl::python-peer-certificate-fetch
-  - id: python-ssl-unverified-recognized-marker
-    desc: Recognized Python SSL-unverified marker
-    crit: notable
-    conf: 0.9
-    for: [python]
-    any:
-    - id: python-self-signed-test-host
-    - id: python-noverification-test-name
-    - id: metadata/package/testing/presence/harness::test-directory
-    - id: metadata/package/testing/presence/harness::unittest-module
-    - id: metadata/package/testing/scripted::pytest
-    - id: metadata/package/testing/presence/harness::python-test-file
-    - id: micro-behaviors/communications/http/endpoints::loopback-https-url-or-proxy-text
-    - id: micro-behaviors/data/parse/analysis::nltk-corpus-bootstrap
-    - id: xenapi-event-client-marker
-    - id: metadata/build/pip::python-packaging-vendored-source
-    - id: metadata/build/pip::python-packaging-tool-tests
-    - id: tls-certificate-evidence-collector
-    - id: python-gitcode-release-script-marker
+  # `python-ssl-unverified-recognized-marker` was removed here. It was a
+  # benign-context suppressor wearing a detection's clothes: the name and
+  # description said "Recognized ... marker" and its legs were test directories,
+  # unittest, pytest, python test files, vendored pip packaging and an nltk
+  # bootstrap — none of which is an SSL observation. RULES puts suppressors of
+  # that shape in a `crit: exception`, not in objectives/evasion, and this one
+  # could not become an exception because NOTHING referenced it: it suppressed
+  # nothing and only emitted noise. At notable it fired on any Python package
+  # that ships tests — colorama, a terminal-colour library with no SSL code at
+  # all, was reported as a recognized SSL-unverified marker.
   - id: dotnet-tls-bypass
     desc: .NET SSL certificate validation bypassed
     crit: suspicious
@@ -376,6 +373,14 @@ composite_rules:
     # Aggregator for Python TLS-bypass forms. The neutral Python ssl-context
     # capability supplies the precise unverified-context evidence here, while
     # the objective composite adds the intent-oriented interpretation.
+  # This references communications/http/ssl as a whole directory, so every
+  # member has to BE a verification-disabling form. Two neutral context traits
+  # used to sit there, and `ssl.create_default_context()` — the idiom that
+  # verifies certs and hostnames — therefore reported as "TLS validation
+  # disabled"; an AI agent's SMTP adapter calling
+  # `smtp.starttls(context=ssl.create_default_context())` scored suspicious for
+  # doing TLS correctly. Those two now live in communications/socket/ssl, which
+  # is where a neutral TLS capability belongs, and this directory is coherent.
   - id: python-tls-validation-bypass
     desc: Python TLS validation disabled
     crit: suspicious
@@ -431,6 +436,9 @@ composite_rules:
     crit: suspicious
     conf: 0.96
     for: [java, class, jar, zip]
+    # Do not combine an SSLContext.init call in one class with a permissive
+    # trust-manager name from another class in the same package or JAR.
+    scope: leaf
     all:
       - id: micro-behaviors/communications/socket/ssl::jvm-sslcontext-trustmanager-init-call
       - id: micro-behaviors/communications/socket/ssl::jvm-trustmanager-class-ref
@@ -449,6 +457,12 @@ composite_rules:
     - id: well-known/app/media/cloudstream::cloudstream-apk
     - id: well-known/lib/runtime/netty::insecure-trust-manager-utility
     - id: well-known/app/system/maestro::android-test-app-path
+    # Yonyou MCP server disables TLS validation for internal dev-community HTTPS.
+    - id: well-known/app/development/vscode-extension/yonbip-devtool::yonyou-mcp-jar-path
+    # Apache HttpClient ships TrustAllStrategy as a documented TLS helper.
+    - id: well-known/lib/runtime/apache-httpclient::apache-httpclient-library-context
+    # jsoup ships optional insecure TLS helpers for HTML scraping.
+    - id: well-known/lib/web/jsoup::jsoup-library-context
   # Ruby Net::HTTP with VERIFY_NONE, write fetched bytes, then Process.spawn —
   # catches SleeperGem-style and other TLS-blind remote loaders.
   - id: ruby-tls-bypass-download-exec

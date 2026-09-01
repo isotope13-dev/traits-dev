@@ -14,10 +14,10 @@
 # measured 1 on every one of those files, so the leading form needs its own
 # matcher.
 #
-# Threshold: benign real-world source tops out near 116 leading columns
-# (generated deeply-nested typebox `.mjs`). At 150 columns a sweep of ~14k
-# JS/TS/Python/Ruby/PHP/shell files under /usr/lib and /usr/share returned no
-# matches at all.
+# Threshold: deeply nested, hand-maintained Python data literals can exceed 180
+# leading columns. At 500 columns the matcher remains well below the 880-1205
+# columns used by the observed concealed payloads while excluding legitimate
+# nested source formatting.
 # HTML documents can be heuristically typed as JavaScript when fetched from a
 # URL ending in a script-like path. Their indented markup is document layout,
 # not hidden source, so the atomic matcher excludes the HTML identity facts.
@@ -28,68 +28,46 @@ defaults:
   for: [scripts, typescript]
 
 traits:
+  # Go permits whitespace between many adjacent syntax tokens. An extreme
+  # inline run can therefore push executable code beyond the normal editor or
+  # diff viewport while preserving valid syntax. At 500 columns this is well
+  # beyond normal alignment, even in formatted or generated source.
+  - id: go-extreme-inline-whitespace-run
+    desc: Extreme inline whitespace padding in Go source
+    crit: suspicious
+    conf: 0.95
+    for: [go]
+    size_max: 1048576
+    if:
+      type: metrics
+      field: text.max_ws_run
+      min: 500
+
+composite_rules:
   - id: leading-whitespace-padded-line
-    desc: Source line begins past column 150
+    desc: Extreme leading whitespace hides source code
     crit: suspicious
     conf: 0.9
-    # Cap the scan: past ~1MB the file is a build artifact (asm.js/wasm glue,
-    # bundler output), and this technique only pays off in a file a human is
-    # expected to read. The observed AsyncAPI pads were in ordinary source
-    # files; multi-MB sql.js/emscripten dumps also contain deep indents that
-    # are formatting, not concealment.
-    size_max: 1048576
-    # Concealment inserts one such line into an otherwise normal file. A file
-    # where wide-indent long lines are the prevailing shape is a formatting or
-    # code-generation style, not something hidden — each match is >=250 columns,
-    # so 2/KB already means half the file looks like this.
-    per_kb_max: 2.0
-    if:
-      # `(?m)^` is load-bearing: it restricts this to *line-leading* padding,
-      # which is what disappears from a diff. A long run in the middle of a
-      # line is a different signal and already has its own matcher
-      # (js-obfuscator::whitespace-hiding, via text.max_ws_run).
-      # The pad repeat is a bare {150} rather than a bounded {150,N} range: an
-      # upper bound would silently stop matching once the attacker pads past N
-      # (the observed pads were 880 and 1205 columns). Require a non-whitespace
-      # payload character after the pad — blank/trailing-whitespace-only lines
-      # in generated shape libraries are not concealed code. The trailing
-      # [^\n]{99,899} keeps the post-payload span long enough that short
-      # indented tokens do not qualify.
-      type: text
-      regex: '(?m)^[ \t]{150}[ \t]*\S[^\n]{99,899}'
-    not:
-      # Babel's generated JSDoc is indented to the comment column and is not
-      # concealed executable code.
-      - regex: '(?m)^[ \t]{150}[ \t]*\*'
-      # Indented HTML/PHP template continuations (admin settings views), not
-      # concealed payloads spliced into source.
-      - regex: '(?m)^[ \t]{150}[ \t]*(?:</?[a-zA-Z]|style\s*=|class\s*=|href\s*=|src\s*=|id\s*=|data-[a-z]|\?>|&[a-z]+;)'
-      # The same template shape one column further in: a multi-line inline
-      # event handler (`onClick="a();\n<pad>b();\n<pad>c();" /><label ...`).
-      # The continuation lines are padded out to the attribute's own column, so
-      # they start with the handler's *code*, not with markup, and the previous
-      # filter misses them — that is how a WordPress admin view (Photo
-      # Gallery's Options.php) read as a spliced payload. Anchor on the line
-      # closing the quoted attribute and opening the next tag; an obfuscator
-      # payload line carries no such markup boundary.
-      - regex: '(?m)^[ \t]{150}[ \t]*[^\n<]{0,200}["'']\s*/?>\s*<'
+    all:
+      - id: metadata/file/profile/metrics::extreme-leading-whitespace-long-line
     unless:
-      - id: metadata/document/html/
+      # A minified filename changes the interpretation of this shape: fixed
+      # width wrapping can align a continuation hundreds of columns inward.
+      - id: metadata/build/minifier::js-min-or-map-basename
       - id: metadata/file/profile/identity::static-html-shell
       - id: metadata/library/structure::js-emscripten-generated-bundle
       - id: metadata/library/structure::js-known-bundler-output
-      - id: metadata/package/quality/benign-context::eslint-plugin-package-context
+      - id: metadata/package/quality/benign-context::eslint-package-context
       - id: metadata/package/quality/benign-context::known-source-tree-context
 
-composite_rules:
   # The padding hides *that* something was inserted; the obfuscator legs
   # establish that what sits on that line is a machine-generated payload rather
   # than a long generated data line. Neither half has a legitimate joint use in
   # hand-maintained source.
   - id: whitespace-padded-obfuscator-payload
-    desc: Obfuscator payload behind whitespace padding
-    crit: hostile
-    conf: 0.95
+    desc: Whitespace padding conceals obfuscated source
+    crit: suspicious
+    conf: 0.93
     attack: T1027.002
     mbc: B0024
     all:
@@ -99,3 +77,5 @@ composite_rules:
       - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::push-shift-bracket-pattern
       - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::permutation-obfuscation
     needs: 1
+    unless:
+      - id: objectives/command-and-control/dropper/delivery/blockchain::obfuscated-etherhiding-hex-stage-dropper

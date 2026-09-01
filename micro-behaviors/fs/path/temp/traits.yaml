@@ -26,11 +26,32 @@ traits:
       regex: '(?m)^\s*for\s+\w+\s+in\s+.{0,160}/(tmp|var/tmp|dev/shm)'
     unless:
       - id: metadata/lang/source::linux-kernel-primary-tree-path
+  - id: shell-case-temp-directory-arm
+    desc: Shell case arm matches temporary paths
+    crit: component
+    conf: 0.94
+    for: [shell]
+    platforms: [unix]
+    if:
+      type: text
+      regex: '(?im)^\s*case\s+["'']?\$\w+["'']?\s+in\s*/(tmp|var/tmp|dev/shm)/[^)\r\n]{0,100}\)'
   - id: unix-temp
     desc: Unix /tmp/ path reference
     if:
       type: text
       substr: /tmp/
+    not:
+      # Docstring / tutorial placeholders (e.g. cramjam File("/tmp/file.txt")).
+      - /tmp/file.txt
+  - id: tmp-pid-format-path
+    desc: /tmp/pid.%s path format
+    crit: notable
+    conf: 0.94
+    platforms: [linux]
+    for: [elf]
+    if:
+      type: text
+      substr: '/tmp/pid.%s'
   - id: temporary-source-file-path
     desc: Temporary source-file path literal
     crit: component
@@ -55,7 +76,7 @@ traits:
     crit: notable
     conf: 0.6
     if:
-      type: literal
+      type: text
       regex: /tmp/.{0,50}\.zip
   - id: temporary-lockfile-path
     desc: Temporary directory path ending in a lockfile
@@ -158,6 +179,16 @@ traits:
     if:
       type: text
       regex: '(?i)\\Temp\\[^\\\s"'']{1,120}\.(exe|dll|bin)\b'
+  - id: node-temp-env-executable-path
+    desc: Node builds TEMP executable path
+    crit: notable
+    conf: 0.96
+    attack: T1105
+    for: [javascript, typescript]
+    platforms: [windows]
+    if:
+      type: text
+      regex: 'path\.join\s*\(\s*process\.env\.(TEMP|TMP)\s*,\s*["''][^"'']{1,120}\.(exe|dll|bin)["'']'
   - id: windows-temp-percent-executable-path
     desc: Windows TEMP executable path
     crit: notable
@@ -201,6 +232,32 @@ traits:
     if:
       type: text
       regex: 'std::env::temp_dir|env::temp_dir'
+  - id: rust-literal-temp-path
+    desc: Rust literal references a temporary file
+    crit: baseline
+    conf: 0.88
+    for: [rust]
+    if:
+      type: string_literal
+      regex: '^/(var/)?tmp/[A-Za-z0-9_.-]+$'
+  - id: rust-temp-powershell-script-path
+    desc: Rust builds a temporary PowerShell script path
+    crit: notable
+    conf: 0.94
+    for: [rust]
+    platforms: [windows]
+    if:
+      type: text
+      regex: '(std::)?env::temp_dir\s*\(\s*\)[\s\S]{0,240}["''][^"''\r\n]{1,120}\.ps1["'']'
+  - id: rust-temp-vbscript-path
+    desc: Rust builds a temporary VBScript path
+    crit: notable
+    conf: 0.94
+    for: [rust]
+    platforms: [windows]
+    if:
+      type: text
+      regex: '(std::)?env::temp_dir\s*\(\s*\)[\s\S]{0,240}["''][^"''\r\n]{1,120}\.vbs["'']'
   - id: node-os-tmpdir
     desc: Node.js os.tmpdir() call
     crit: baseline
@@ -227,6 +284,15 @@ traits:
     if:
       type: text
       exact: GetTempFileName
+  - id: dotnet-gettemppath-token
+    desc: .NET temporary directory helper token
+    crit: notable
+    conf: 0.88
+    platforms: [windows]
+    for: [pe, dll]
+    if:
+      type: text
+      exact: GetTempPath
   - id: android-local-tmp-path
     desc: Android local tmp path
     crit: component
@@ -268,7 +334,62 @@ traits:
     if:
       type: text
       regex: '(?i)(/tmp/|/Downloads/).{0,120}\.pkg\b'
+  # Source-level read of the Windows temp-directory environment variable:
+  # os.environ['TEMP'], os.getenv("TMP"), process.env.TEMP, ENV['TEMP'],
+  # getenv("TEMP"). The `%TEMP%` shell spelling is `win-temp-env` above; this
+  # is the same path reference expressed through an environment lookup, which
+  # is how droppers written in a real language name their staging directory.
+  - id: win-temp-env-source-read
+    desc: Reads the Windows TEMP environment variable
+    crit: notable
+    conf: 0.85
+    for: [scripts, source]
+    if:
+      type: text
+      regex: '(?i)(environ|env)\s*[.\[]\s*["'']?TE?MP\b|getenv\s*\(\s*["'']TE?MP'
+
+
+  # JavaScript file paths under a temp directory. Neutral on its own: build
+  # tools, test runners, and sandbox runtimes all stage scripts in /tmp. The
+  # dropper meaning comes from composites in
+  # objectives/command-and-control/dropper/execution/network-stage/, which pair
+  # this with a randomized filename or a write-then-launch sequence.
+  #
+  # Relocated from that dropper directory (was `temp-js-file`): the matcher only
+  # recognizes a path literal, so it is a filesystem-path capability, not a
+  # staging objective. The old pattern also lacked the separator after `tmp`, so
+  # `\./tmp[^/]{0,120}\.js` matched any relative ESM chunk import whose basename
+  # merely began with "tmp" -- openclaw's bundler emitted
+  # `./tmp-openclaw-dir-uPgNO8da.js`, and every dist chunk importing it was
+  # reported as a temp-staged payload. Requiring `tmp/` fixes that.
+  - id: js-path-under-tmp
+    desc: JavaScript file path under a temp directory
+    crit: notable
+    conf: 0.75
+    for: [javascript, typescript]
+    if:
+      type: string_literal
+      regex: '\.?/tmp/[^/]{0,120}\.js\b'
+
 composite_rules:
+  - id: rust-temp-windows-script-launcher-pair
+    desc: Rust stages PowerShell and VBScript paths in temporary storage
+    crit: notable
+    conf: 0.97
+    for: [rust]
+    platforms: [windows]
+    near_bytes: 1200
+    all:
+      - id: rust-temp-powershell-script-path
+      - id: rust-temp-vbscript-path
+
+  - id: rust-temp-path
+    desc: Rust references temporary file storage
+    for: [rust]
+    any:
+      - id: rust-temp-dir
+      - id: rust-literal-temp-path
+
   - id: any-temp-path
     desc: Any temporary directory path reference
     any:
@@ -280,6 +401,7 @@ composite_rules:
       - id: rust-temp-dir
       - id: node-os-tmpdir
       - id: dotnet-gettempfilename-token
+      - id: dotnet-gettemppath-token
       - id: android-local-tmp-path
       - id: android-hidden-local-tmp-dotfile
       - id: java-temp-png-output-path

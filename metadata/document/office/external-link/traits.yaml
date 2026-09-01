@@ -74,6 +74,20 @@ traits:
       path: office.external_relationships[*].target
       regex: '(?i)^https?://'
 
+  # The relationship TYPE, separate from the target's scheme. `externalLinkPath`
+  # is Excel's external-workbook link: unlike a hyperlink, which only resolves
+  # when a user clicks it, Excel resolves these to refresh the linked cell
+  # values, so the target is content the document pulls rather than a reference
+  # it merely records.
+  - id: ooxml-external-workbook-link-type
+    desc: External workbook link relationship
+    crit: baseline
+    conf: 0.95
+    if:
+      type: value
+      path: office.external_relationships[*].type
+      exact: externalLinkPath
+
   # A UNC target makes opening the document an outbound SMB/WebDAV fetch, which
   # is how an external reference is turned into an NTLM-hash leak or a remote
   # payload pull. `ooxml-http-external-relationship` above only sees http(s),
@@ -145,6 +159,20 @@ traits:
       path: archive.members[*].path
       regex: '(?i)^xl/externalLinks/'
 
+  # BIFF8 stores an external workbook reference in a SUPBOOK record (01AE).
+  # The record is distinguished from the internal-workbook and add-in forms by
+  # a bounded virtual-path character count followed by the string option byte
+  # and path marker. This surfaces legacy .xls links without treating an
+  # ordinary linked financial model as macros or remote-code execution.
+  - id: biff-external-workbook-reference
+    desc: BIFF external workbook reference record
+    crit: notable
+    conf: 0.94
+    for: [oledoc]
+    if:
+      type: hex
+      pattern: "AE 01 ?? ?? ?? ?? ?? 00 (00|01) 01"
+
   # Suspicious-extension entries inside the OOXML zip (e.g., an .exe
   # or .lnk packed alongside the document XML). Per-extension
   # bookkeeping is at the analyzer level; the metric is the count.
@@ -185,6 +213,24 @@ composite_rules:
       - id: ooxml-external-attached-template
       - id: ooxml-external-oleobject
       - id: ooxml-external-frame
+
+  # A workbook link plus an http(s) target: opening the document reaches a
+  # remote host to refresh cell values. That is a network fetch, so it does not
+  # belong at the baseline tier the bare http(s) atom sits at — that tier is
+  # calibrated for hyperlinks, which need a click. Remote-data-connection lures
+  # use exactly this shape.
+  #
+  # The value language cannot join array elements, so this states what it can
+  # honestly establish: the document has an external-workbook link part AND at
+  # least one http(s) external target. A document whose http(s) target is a
+  # hyperlink while a separate link is a local workbook also satisfies it.
+  - id: ooxml-http-external-workbook-link
+    desc: Excel workbook link with an HTTP(S) target
+    crit: notable
+    conf: 0.9
+    all:
+      - id: ooxml-external-workbook-link-type
+      - id: ooxml-http-external-relationship
 
   # External image fetch combined with macros — the tracking-pixel-
   # plus-loader pattern.

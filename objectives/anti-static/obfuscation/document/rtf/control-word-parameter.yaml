@@ -1,0 +1,82 @@
+# Control-word parameters and destinations used to hide structure from a
+# reader rather than to describe a document.
+#
+# An RTF parameter is a signed 16-bit integer, so six digits is the most a
+# real one can be. Word reads the digits anyway, discards the overflow, and
+# carries on -- which lets a document push an arbitrary run of digits into a
+# place a signature-based reader treats as one control word. The same trick
+# works with `\v`, the hidden-text destination: what it wraps never reaches
+# the page, so a trigger placed inside it survives being read.
+#
+# `raw` throughout: these files run to megabytes on a single line, and string
+# extraction returns a few truncated runs that never reach the payload.
+defaults:
+  platforms: [windows]
+  for: [rtf]
+  attack: T1027
+  mbc: B0009
+
+traits:
+  - id: rtf-object-parameter-overflow
+    desc: Object control word with huge parameter
+    crit: suspicious
+    conf: 0.9
+    if:
+      # `{\object0191994962164909923...` for two hundred digits. A writer
+      # emitting a real object number cannot produce this.
+      type: raw
+      regex: '\\object[0-9]{17,}'
+
+  - id: rtf-hidden-text-object-trigger
+    desc: Object trigger inside hidden text
+    crit: suspicious
+    conf: 0.92
+    attack: T1564
+    if:
+      # `{\v\objupdate{\v\...}` -- the directive that makes Word refresh the
+      # embedded object on open, placed in the destination whose contents are
+      # never displayed. Hiding it serves nothing a document needs.
+      type: raw
+      regex: '[{]\\v\\obj(update|autlink)'
+
+  - id: rtf-nonstandard-version
+    desc: RTF header declares a bogus version
+    crit: suspicious
+    conf: 0.9
+    if:
+      # `{\rtf6425` and `{\rtf65709`. Word reads the document regardless of
+      # the number, so it is a free field: a reader that keys on the literal
+      # `{\rtf1` stops here while Word carries on.
+      #
+      # `0` is excluded. It is the pre-1.0 version and real writers still
+      # emit it -- Apple's app-bundle `Credits.rtf` template opens with
+      # `{\rtf0\ansi`, and every macOS app that ships one (terminal-notifier
+      # inside node-notifier, bundled by the Heroku CLI) carries it. A single
+      # low digit is a writer's habit; the multi-digit runs above are the
+      # free field being used as one.
+      type: value
+      path: rtf.version
+      regex: '^[0-9]{2,}$|^[2-9]$'
+
+  - id: rtf-body-is-not-a-document
+    desc: Sparse high-entropy RTF body
+    crit: suspicious
+    conf: 0.9
+    entropy_min: 5.8
+    if:
+      # Low control-word density is normal for an RTF containing long plain
+      # text, such as a license. Combined with high file entropy it instead
+      # describes an encoded or encrypted wrapper body.
+      type: metrics
+      field: rtf.control_word_density
+      max: 10
+
+composite_rules:
+  - id: opaque-payload-after-closed-rtf-root
+    desc: High-entropy payload follows a closed RTF root
+    crit: hostile
+    conf: 0.99
+    attack: T1027.009
+    all:
+      - id: metadata/document/rtf/structure::root-closes-immediately-after-header
+      - id: rtf-body-is-not-a-document

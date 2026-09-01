@@ -168,8 +168,40 @@ composite_rules:
     any:
       - id: dotnet-appdomain-exportedtype-invoke
       - id: dotnet-exportedtype-constructor-invoke
+      - id: dotnet-appdomain-type-method-invoke
       - id: activator-getmethod-pair
       - id: load-and-invoke-token
+      - id: micro-behaviors/process/interpreter/reflection/runtime::invoke-member-token
+  - id: dotnet-appdomain-invokemember-load-instance
+    desc: AppDomain reflective assembly load and instantiate
+    crit: notable
+    conf: 0.96
+    attack: T1620
+    mbc: E1059
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: appdomain-class-token
+      - id: dotnet-assembly-load-token
+      - id: micro-behaviors/process/interpreter/reflection/runtime::invoke-member-token
+      - id: micro-behaviors/process/interpreter/reflection/runtime::create-instance-token
+  # AppDomain.Load(byte[]) can dispatch without Activator/CreateInstance: the
+  # loader enumerates the returned assembly and invokes a named member on a
+  # discovered type. Keep this reflection primitive neutral until a resource
+  # or another concealed payload source establishes the staging objective.
+  - id: dotnet-currentdomain-type-invokemember
+    desc: .NET AppDomain assembly load with named-member invocation
+    crit: notable
+    conf: 0.96
+    attack: T1620
+    mbc: E1059
+    near_bytes: 4096
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: appdomain-class-token
+      - id: micro-behaviors/process/interpreter/reflection/runtime::appdomain-currentdomain
+      - id: dotnet-assembly-load-token
+      - id: dotnet-gettypes-token
+      - id: micro-behaviors/process/interpreter/reflection/runtime::get-methods-token
       - id: micro-behaviors/process/interpreter/reflection/runtime::invoke-member-token
   - id: dotnet-explicit-load-api
     desc: .NET explicit assembly load API
@@ -251,8 +283,14 @@ composite_rules:
       - id: micro-behaviors/process/interpreter/reflection/runtime::reflection-method-access
       - id: metadata/binary/anomaly/provenance::pe-basename-differs-from-original-filename
     unless:
+      # Every leg above is a .NET #Strings metadata token, which a large
+      # managed application satisfies by referencing the API at all. An
+      # assembly naming a product and version has the identity these
+      # composites assume is absent.
+      - id: objectives/evasion/masquerade/binary::dotnet-template-product-identity-context
       - id: metadata/signed/platform::microsoft
       - id: metadata/binary/installer/family/
+      - id: well-known/tool/development/nuget-cli::nuget-cli-tool
 
   - id: dotnet-template-resource-reflective-stage
     desc: .NET template resource decodes for reflective staging
@@ -269,6 +307,12 @@ composite_rules:
     unless:
       - id: metadata/signed/platform::microsoft
       - id: metadata/binary/installer/family/
+      - id: well-known/tool/development/nuget-cli::nuget-cli-tool
+      # A VB.NET app that ships a vendor VERSIONINFO block and a Visual Studio
+      # PDB path is a product build; embedded images in a large CLR resource
+      # plus Convert.FromBase64String plus MethodBase is what such an app looks
+      # like, not a reflective stager.
+      - id: objectives/evasion/masquerade/binary::dotnet-template-product-identity-context
 
   - id: dotnet-entrypoint-reflection
     desc: .NET entry point reflection access
@@ -355,6 +399,29 @@ composite_rules:
       any:
         - id: metadata/lang/compiler/managed/
         - id: metadata/binary/vendor/
+  # Thread.GetDomain is an older route to the current AppDomain. Managed
+  # loaders can call AppDomain.Load(byte[]), enumerate the returned assembly
+  # with GetTypes/GetMethods, and invoke the first method without exposing the
+  # CurrentDomain, GetExportedTypes, Activator, or InvokeMember tokens used by
+  # the neighboring loader forms.
+  - id: dotnet-appdomain-type-method-invoke
+    desc: .NET AppDomain type method invocation
+    crit: suspicious
+    conf: 0.96
+    attack: T1620
+    mbc: E1059
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: metadata/lang/compiler/managed::reflection-namespace
+      - id: appdomain-class-token
+      - id: appdomain-getdomain-token
+      - id: dotnet-gettypes-token
+      - id: micro-behaviors/process/interpreter/reflection/runtime::get-methods-token
+      - id: micro-behaviors/process/interpreter/reflection/runtime::invoke-token
+    downgrade:
+      any:
+        - id: metadata/lang/compiler/managed/
+        - id: metadata/binary/vendor/
   - id: dotnet-exportedtype-constructor-invoke
     desc: .NET exported type constructor reflection invocation
     crit: suspicious
@@ -393,6 +460,29 @@ composite_rules:
       - id: micro-behaviors/process/interpreter/reflection/runtime::activator
       - id: get-constructors-token
       - id: dotnet-assembly-token
+    downgrade:
+      any:
+        - id: metadata/lang/compiler/managed/
+        - id: metadata/binary/vendor/
+  # LateGet is the VB late-binding twin of CallByName used by bitmap
+  # stego crypters (Load/CreateInstance often Base64-obscured in #US).
+  - id: dotnet-appdomain-lateget-load
+    desc: .NET AppDomain LateGet loader
+    crit: suspicious
+    conf: 0.95
+    attack: T1620
+    mbc: E1059
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: appdomain-class-token
+      - id: appdomain-getdomain-token
+      - id: get-exported-types-token
+      - id: micro-behaviors/process/interpreter/reflection/vb::vb-lateget-token
+    any:
+      - id: micro-behaviors/process/interpreter/reflection/runtime::activator
+      - id: micro-behaviors/process/interpreter/reflection/runtime::invoke-member-token
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-base64-assembly-load-token
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-base64-create-instance-token
     downgrade:
       any:
         - id: metadata/lang/compiler/managed/

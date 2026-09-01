@@ -6,6 +6,26 @@ defaults:
   # command without executing it).
   for: [scripts, -javascript, -typescript, binaries]
 traits:
+  - id: shell-pm2-all-process-stop
+    desc: Shell stops all PM2 processes
+    crit: notable
+    conf: 0.94
+    for: [shell]
+    if:
+      # Anchor to an executable shell line so documentation comments that warn
+      # about `pm2 kill` do not become process-termination findings.
+      type: text
+      regex: '(?m)^[ \t]*(npx[ \t]+)?pm2[ \t]+(kill|delete[ \t]+all)\b'
+  - id: js-pm2-all-process-stop
+    desc: JavaScript stops all PM2 processes
+    crit: notable
+    conf: 0.94
+    for: [javascript, typescript]
+    if:
+      # Require a process-execution call; a string printed as help or a warning
+      # is not evidence that JavaScript invokes the PM2 command.
+      type: text
+      regex: '\b(exec|spawn)(Sync)?\s*\([^)]{0,160}\bpm2\s+(kill|delete\s+all)\b'
   # Match an invocation carrying an explicit signal flag.  A bare executable
   # path such as `/bin/kill` is only a reference, not evidence of invocation.
   - id: kill-with-signal-flag
@@ -31,6 +51,7 @@ traits:
       type: text
       regex: '\b(pkill|killall|kill)\s+-9\b'
     unless:
+      - id: well-known/app/utility/cmdchamp::cli-trainer-source-context
       - id: metadata/lang/source::linux-kernel-secondary-tree-path
       - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
       - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
@@ -49,6 +70,18 @@ traits:
       # prose/help string such as `console.error('... kill -9')` is not an
       # invocation.
       regex: '\b(exec|spawn)(Sync)?\s*\([^)]{0,160}\b(kill|pkill|killall)\s+-[0-9A-Z]+\b'
+  - id: shell-kill-variable-pid
+    desc: Shell kills a PID from a variable
+    crit: notable
+    conf: 0.85
+    for: [shell]
+    platforms: [unix]
+    if:
+      # `kill $pid` -- the terminating half of an enumerate-then-kill loop,
+      # where the target was chosen at runtime rather than named in the
+      # script. Neutral on its own; process supervisors do this too.
+      type: text
+      regex: '(?im)^\s*kill\s+\$\{?[A-Za-z_]'
   - id: killall
     desc: killall command
     crit: notable
@@ -98,15 +131,21 @@ traits:
     downgrade:
       any:
         - id: metadata/package/testing/presence/harness/
+  # Canonical explorer-kill matcher. The separator between `/IM` and the image
+  # name is deliberately loose: the same command reaches the OS as a flat
+  # command line (`taskkill /F /IM explorer.exe`), as an argv list
+  # (`["taskkill", "/F", "/IM", "explorer.exe"]`), and as a quoted string
+  # inside a compiled binary — all three are one behavior, so they are one
+  # trait rather than a per-language copy.
   - id: taskkill-explorer-force
     desc: Force kills Windows Explorer
     crit: notable
     conf: 0.94
     platforms: [windows]
-    for: [batch, powershell, vbs]
+    for: [scripts, binaries]
     if:
       type: text
-      regex: (?i)\btaskkill\b[^\r\n]{0,80}/f[^\r\n]{0,80}/im\s+explorer\.exe\b
+      regex: (?i)\btaskkill\b[^\r\n]{0,80}/f\b[^\r\n]{0,80}/im\b[^\r\n]{0,20}explorer\.exe\b
   - id: taskkill-pid-force
     desc: Force kills process by PID
     crit: notable
@@ -221,6 +260,24 @@ traits:
     if:
       type: text
       regex: '(?i)\btaskkill(\.exe)?\b.{0,60}/f.{0,40}\b(winword|excel|outlook)\b'
+  - id: taskkill-mysql-process
+    desc: Force-kills a MySQL process by name
+    crit: notable
+    conf: 0.92
+    platforms: [windows]
+    for: [batch, powershell, javascript, typescript, pe, dll, c, cpp]
+    if:
+      type: text
+      regex: '(?i)\btaskkill(\.exe)?\b[^\r\n]{0,80}\b(mysql|mysqld)(\.exe)?\b'
+  - id: taskkill-node-process
+    desc: Force-kills node.exe by image name
+    crit: notable
+    conf: 0.92
+    platforms: [windows]
+    for: [batch, powershell, javascript, typescript, pe, dll, c, cpp]
+    if:
+      type: text
+      regex: '(?i)\btaskkill(\.exe)?\b[^\r\n]{0,80}/IM\s+node\.exe\b[^\r\n]{0,80}/F\b'
   - id: lsof-listener-pid
     desc: lsof resolves listener port to PID
     crit: notable
@@ -263,8 +320,8 @@ composite_rules:
       - id: native-taskkill-force-image
 
   - id: taskkill-sensitive-target-cluster
-    desc: Repeated kills of database or Office processes
-    crit: suspicious
+    desc: Force-kills a database or Office process
+    crit: notable
     conf: 0.92
     platforms: [windows]
     for: [pe, dll, c, cpp, batch, powershell, python, javascript]

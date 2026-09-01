@@ -6,7 +6,7 @@ defaults:
   platforms: [windows]
 # nt-write-virtual-memory removed - use micro-behaviors/os/syscall/invoke::ntdll-direct-memory-op-a instead
 composite_rules:
-  - id: explorer-injection-api-chain
+  - id: remote-thread-injection-api-chain
     desc: Remote allocation, memory-write, and thread API set
     crit: notable
     conf: 0.98
@@ -49,26 +49,21 @@ composite_rules:
       - id: well-known/tool/reverse-engineering/
 
   - id: game-targeted-process-injection
-    desc: Game-targeted process injection with cheat controls
+    desc: Game-targeted remote-thread injection with cheat controls
     crit: hostile
     conf: 0.98
     attack: T1055
     all:
       - id: well-known/game/cheat::emulator-game-target
       - id: well-known/game/cheat::cheat-control-set
-    any:
-      - id: micro-behaviors/process/inject/runtime/call::write-process-memory-dup
-      - id: micro-behaviors/process/inject/runtime/call::get-thread-context-dup
-      - id: micro-behaviors/process/inject/runtime/call::set-thread-context-dup
-      - id: micro-behaviors/mem/alloc/remote::virtual-alloc-ex
-    needs: 2
+      - id: remote-thread-injection-api-chain
     unless:
       - id: metadata/signed/platform/
       - id: well-known/tool/reverse-engineering/
       - id: well-known/tool/reverse-engineering/exe2aut::exe2aut-decompiler
   - id: resource-backed-remote-thread-injector
-    desc: Embedded resource-backed remote-thread injector
-    crit: hostile
+    desc: Resource contains remote-thread injection helper
+    crit: notable
     conf: 0.98
     attack: T1055,T1027.009
     all:
@@ -77,19 +72,20 @@ composite_rules:
       - id: micro-behaviors/mem/alloc/remote::virtual-alloc-ex
       - id: micro-behaviors/data/embedded/payload/resource::pe-resource-full-extraction
     unless:
+      - id: well-known/lib/platform/wine/
       - id: metadata/signed/platform/
       - id: well-known/tool/reverse-engineering/
       - id: well-known/tool/browser::google-chrome-browser-context
       - id: well-known/app/security/itop-vpn::benign-context
 
   - id: resource-backed-injection-trinity
-    desc: Resource-backed PE exposes a complete remote-thread injection trinity
-    crit: hostile
+    desc: Resource helper exposes complete injection API set
+    crit: notable
     conf: 0.99
     attack: T1055,T1027.009
     all:
       - id: resource-backed-remote-thread-injector
-      - id: objectives/evasion/process/injection/dll::injection-trinity-text
+      - id: objectives/evasion/process/injection/memory::remote-thread-injection-api-chain
     unless:
       - id: metadata/signed/platform/
       - id: well-known/tool/reverse-engineering/
@@ -134,29 +130,14 @@ composite_rules:
   # CreateRemoteThread: micro-behaviors/process/inject/runtime/call::create-remote-thread-dup (canonical)
   # WriteProcessMemory: micro-behaviors/process/inject/runtime/call::write-process-memory-dup (canonical)
   # VirtualAllocEx: micro-behaviors/mem/alloc/remote::virtual-alloc-ex (canonical)
-  - id: process-inject-remote-allocation
-    desc: Remote-process memory allocation API
-    crit: component
-    conf: 0.8
-    any:
-      - id: micro-behaviors/mem/alloc/remote::virtual-alloc-ex-dup
-      - id: micro-behaviors/os/syscall/invoke::ntdll-direct-memory-op-a
-  - id: process-inject-remote-action
-    desc: Remote-process memory write or thread-creation API
-    crit: component
-    conf: 0.85
-    any:
-      - id: micro-behaviors/process/inject/runtime/call::create-remote-thread-dup
-      - id: micro-behaviors/process/inject/runtime/call::write-process-memory-dup
   - id: process-inject-api
-    desc: Combines remote allocation with a remote write or thread creation
+    desc: Multiple remote-process injection APIs
     crit: notable
     conf: 0.66
     mbc: "B0033"
     attack: "T1055"
     all:
-      - id: process-inject-remote-allocation
-      - id: process-inject-remote-action
+      - id: micro-behaviors/process/inject/runtime/call::remote-process-injection-api-set
     unless:
       - id: metadata/binary/metrics/threshold::many-exports-200
       - id: metadata/binary/symbols/plugin/
@@ -174,6 +155,27 @@ composite_rules:
       - id: well-known/tool/sysadmin/syspin/
       # pzLauncher uses remote memory APIs to patch its game target.
       - id: well-known/game/pvzlauncher::plants-vs-zombies-steam-target
+  # Unsigned PE with entry in a writable section that also exposes the full
+  # remote-allocation + write/thread injection API set and process targeting.
+  - id: writable-entry-remote-inject-loader
+    desc: Writable-entry PE combines remote injection APIs
+    crit: suspicious
+    conf: 0.98
+    mbc: "B0033"
+    attack: "T1055,T1027"
+    all:
+      - id: metadata/binary/section/metrics::pe-entry-in-writable-section
+      - id: process-inject-api
+      - id: metadata/binary/layout::pe-no-signature-record
+      - id: micro-behaviors/process/enumerate/snapshot::dynamic-toolhelp-process-traversal
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/installer/family/
+      - id: metadata/binary/framework/
+      - id: well-known/tool/reverse-engineering/
+      - id: well-known/tool/sysadmin/
+      - id: well-known/app/utility/gutousoft::qzone-visitor-assistant-update-url
+      - id: well-known/app/utility/crash-report::legacy-mfc-bugreport-helper
   - id: embedded-remote-thread-injector
     desc: PE carrier combines remote memory APIs with remote thread execution
     crit: hostile
@@ -185,20 +187,30 @@ composite_rules:
       - id: micro-behaviors/process/inject/runtime/call::create-remote-thread-dup
       - id: metadata/binary/layout::many-pe-embedded
     unless:
+      # The resource-backed rule above is the more specific description of
+      # the same injection path; avoid reporting both objectives together.
+      - id: resource-backed-remote-thread-injector
       - id: metadata/signed/platform/
       - id: metadata/binary/installer/family/
       - id: well-known/tool/reverse-engineering/
       - id: well-known/tool/sysadmin/
+      # A .NET self-contained publish appends the whole runtime after the host
+      # stub, so the CLR's own loader and injection primitives are shipped bytes,
+      # not this program's behaviour. GitVersion 5.1.3 (a 45MB apphost bundle in a
+      # RubyGem) read as a stack-string loader, a hollowing chain and an injector.
+      - id: metadata/binary/framework::dotnet-runtime-host-stub
+      # File infectors accumulate unrelated host imports in appended PE
+      # images. That carrier shape does not prove the root injected anything.
+      - id: objectives/impact/infect/binary/rewrite/
   - id: named-explorer-remote-thread-injection
     desc: Remote-thread injection targets Explorer
-    crit: hostile
+    crit: suspicious
     conf: 0.995
     mbc: B0033
     attack: T1055,T1055.001
     all:
       - id: micro-behaviors/process/inject/runtime/call::remote-process-memory-api-cluster
-      - id: process-inject-remote-action
-      - id: explorer-injection-api-chain
+      - id: remote-thread-injection-api-chain
       - id: micro-behaviors/process/create/launch::launch-explorer
     unless:
       - id: metadata/signed/platform/
@@ -247,13 +259,13 @@ composite_rules:
     any:
       - id: objectives/anti-static/pack/detect::upx-marker
       - id: metadata/hardening/memory::extreme-wx-section-count-10
-      - id: objectives/anti-static/pack/section-anomaly::large-low-entropy-rwx-section
+      - id: metadata/binary/section/metrics::large-low-entropy-rwx-section
     unless:
       - id: metadata/signed/platform/
       - id: well-known/tool/reverse-engineering/
   - id: remote-process-thread-context-loader
-    desc: Remote process loader that writes memory and redirects a thread context
-    crit: hostile
+    desc: Remote loader redirects thread context
+    crit: suspicious
     conf: 0.97
     mbc: "B0033"
     attack: "T1055"
@@ -267,7 +279,8 @@ composite_rules:
       - id: micro-behaviors/process/create/spawn::create-process-a
       - id: micro-behaviors/process/create/spawn::open-process
     unless:
-      - id: well-known/tool/sysadmin/oneget::oneget-detours-dns-shim-context
+      - id: well-known/lib/platform/wine/
+      - id: remote-thread-context-loader-product-context
       - id: metadata/signed/platform/
       - id: well-known/tool/reverse-engineering/
       - id: well-known/tool/development/debugpy
@@ -276,7 +289,17 @@ composite_rules:
       # Gate on the authentic ConEmu signer marker (Maksim Moisiuk Authenticode),
       # not the filename markers, so a spoofed ConEmuHk.dll can't self-suppress.
       - id: well-known/tool/sysadmin/conemu::conemu-setup-signature
+      - id: well-known/app/utility/locale-injection/
+
+  - id: remote-thread-context-loader-product-context
+    desc: Known products using thread-context loading
+    crit: exception
+    conf: 0.99
+    any:
+      - id: well-known/tool/sysadmin/oneget::oneget-detours-dns-shim-context
+      - id: well-known/game/cheat::inventory-changer-blackbone-context
       - id: well-known/tool/sysadmin/sandboxie::sandboxie-known-signed-context
+      - id: well-known/game/steam::valve-signed-steam-binary
   - id: importless-thread-context-loader
     desc: Importless loader redirects a created thread through remote memory
     crit: hostile
@@ -306,7 +329,6 @@ composite_rules:
     any:
       - id: micro-behaviors/process/inject/dll::create-remote-thread-source
       - id: micro-behaviors/process/inject/runtime/call::write-process-memory-source
-      - id: micro-behaviors/mem/alloc/remote::virtual-alloc-ex
       - id: micro-behaviors/mem/alloc/remote::virtual-alloc-ex-source
       - id: micro-behaviors/os/syscall/invoke::ntdll-direct-memory-op-a
     unless:
@@ -330,7 +352,6 @@ composite_rules:
       - id: micro-behaviors/process/inject/dll::create-remote-thread-source
       - id: micro-behaviors/mem/alloc/remote::virtual-alloc-ex-dup
     any:
-      - id: micro-behaviors/process/attach/remote::source-open-process
       - id: micro-behaviors/process/create/spawn::open-process
       - id: micro-behaviors/process/create/spawn::open-process-script
     unless:

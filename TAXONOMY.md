@@ -428,6 +428,10 @@ micro-behaviors/
 │   │                      #     objectives/impact/degrade/firewall/
 │   ├── group/             #   Group management
 │   ├── kernel/            #   Kernel interaction (modules, devices, callbacks)
+│   │   └── boot/          #     Boot configuration (bcdedit, Safe Mode, boot flags)
+│   │                      #       Neutral: "changes how the machine next boots";
+│   │                      #       EDR teardown / ransomware staging composites →
+│   │                      #       objectives/impact/degrade/ and objectives/evasion/anti-av/
 │   ├── linker/            #   Dynamic linker configuration
 │   ├── message/           #   Message queues
 │   ├── module/            #   Module loading
@@ -1170,7 +1174,11 @@ metadata/
 │   └── string/            #   Neutral string identities
 ├── hardening/             # Security hardening features (sandbox, seccomp, pledge)
 ├── image/                 # Image-specific neutral measurements
-│   └── metrics/           #   Pixel/channel/statistical image measurements
+│   ├── metrics/           #   Pixel/channel/statistical image measurements
+│   └── provenance/        #   Creation provenance the image carries about itself
+│                          #     (C2PA content credentials, generator tags). Neutral:
+│                          #     records who/what produced the pixels. Abuse chains
+│                          #     using it (fabricated marketplace identity) → objectives/
 │                          #   File identity remains under file/{magic,extension}
 ├── import/                # Dependencies/imports (auto-generated)
 │   ├── python/ npm/ ruby/ java/ go/ rust/ c/

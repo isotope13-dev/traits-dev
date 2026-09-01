@@ -7,6 +7,9 @@ traits:
     desc: Python telebot message handler
     crit: suspicious
     conf: 0.9
+    unless:
+      - id: well-known/lib/network/pyTelegramBotAPI::telebot-package-path
+      - id: well-known/lib/network/pyTelegramBotAPI::pytelegrambotapi-package-archive
     if:
       type: text
       substr: "@bot.message_handler"
@@ -14,6 +17,9 @@ traits:
     desc: Python telebot polling loop
     crit: suspicious
     conf: 0.9
+    unless:
+      - id: well-known/lib/network/pyTelegramBotAPI::telebot-package-path
+      - id: well-known/lib/network/pyTelegramBotAPI::pytelegrambotapi-package-archive
     if:
       type: text
       regex: '\b(bot|telebot)\.infinity_polling\s*\('
@@ -43,6 +49,19 @@ traits:
       type: text
       regex: '["'']get all["'']'
 
+  # A bot/API credential that is never written down in the clear: the constant
+  # is initialised by passing an encoded blob through a one-shot decoder. The
+  # decoder's *name* is deliberately unconstrained — campaigns spell it `d()`,
+  # `base64.b64decode()`, `unhex()`, `_()` — because the tell is the shape
+  # (token-named constant <- call <- encoded literal), not any one helper.
+  - id: python-bot-token-from-decoded-literal
+    desc: Bot token decoded from an encoded literal
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\w*(BOT|API)_?TOKEN\s*=\s*[\w.]{1,24}\(\s*["''][A-Za-z0-9+/=]{16,}["'']'
+
 composite_rules:
   - id: telegram-bot-shell-command
     desc: Telegram bot executes shell commands
@@ -70,3 +89,34 @@ composite_rules:
       - id: micro-behaviors/process/create/subprocess::shell-true
       - id: micro-behaviors/process/create/subprocess-shell::check-output-shell-true
     needs: 1
+
+  - id: python-telegram-requests-polling-c2
+    desc: Python polls Telegram getUpdates with hardcoded bot config
+    crit: hostile
+    conf: 0.98
+    attack: T1102,T1059.004
+    for: [python, whl, zip, archives]
+    scope: archive
+    all:
+      - id: micro-behaviors/communications/http/services/telegram::python-telegram-get-updates
+      - id: micro-behaviors/communications/http/services/telegram::python-telegram-api-url-template
+    any:
+      - id: objectives/exfiltration/messaging/telegram::python-hardcoded-bot-token
+      # Endpoint recovered from a decoded string, for campaigns that hide the
+      # whole URL rather than just the credential.
+      - id: objectives/exfiltration/messaging/telegram::encoded-bot-api-endpoint
+      - id: python-bot-token-from-decoded-literal
+
+  - id: python-telegram-desktop-lockdown-rat
+    desc: Telegram polling bot locks desktop input and kills Explorer
+    crit: hostile
+    conf: 0.99
+    attack: T1102,T1565.001,T1489
+    for: [python, whl, zip, archives]
+    scope: archive
+    all:
+      - id: python-telegram-requests-polling-c2
+      - id: micro-behaviors/process/terminate/command::taskkill-explorer-force
+    any:
+      - id: micro-behaviors/hardware/input/block::keyboard-block-key-call
+      - id: micro-behaviors/hardware/input/keyboard/listener::pynput-suppress-event-call

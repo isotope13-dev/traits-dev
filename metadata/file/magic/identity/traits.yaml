@@ -85,7 +85,6 @@ traits:
     for: [pe]
     if:
       type: hex
-      section: ".text"
       pattern: "4D 5A" # MZ
       offset: 0
   - id: dalvik-dex-magic
@@ -97,7 +96,33 @@ traits:
       type: hex
       pattern: "64 65 78 0A 30 33 [1] 00" # dex\n03...
       offset: 0
+  # Container formats
+  # Relocated from metadata/document/office/macro, where a bare magic-byte
+  # check was filed and keyed as an Office-macro fact. CFB/OLE2 is a generic
+  # container: legacy Office documents use it, but so do MSI installers,
+  # Outlook .msg stores, MicroStation DGN drawings and Windows Thumbs.db
+  # thumbnail caches, none of which have anything to do with macros. The
+  # Office/MSI composites that need it reference it from here.
+  - id: ole-compound-file
+    desc: OLE compound file header
+    crit: baseline
+    conf: 0.95
+    for: [oledoc]
+    if:
+      type: hex
+      pattern: "D0 CF 11 E0 A1 B1 1A E1"
+      offset: 0
   # Archive formats
+  - id: xar-archive
+    desc: XAR archive magic at file start
+    crit: baseline
+    conf: 1.0
+    for: [pkg]
+    platforms: [macos]
+    if:
+      type: hex
+      pattern: "78 61 72 21" # xar!
+      offset: 0
   - id: zip-archive
     desc: ZIP archive magic at file start
     crit: baseline
@@ -148,15 +173,42 @@ traits:
       type: hex
       pattern: "36 04"
       offset: 0
-  - id: bzip2
-    desc: BZIP2 compressed file magic
+  - id: soundfont2-bank
+    desc: SoundFont 2 bank RIFF header
     crit: baseline
     conf: 1.0
     for: [data]
     if:
       type: hex
-      section: ".text"
+      # RIFF size occupies bytes 4-7; `sfbk` is the SoundFont form type.
+      pattern: "52 49 46 46 [4] 73 66 62 6B"
+      offset: 0
+  # Same two defects gzip above was already fixed for: a bz2 stream types as
+  # `bz2`, not `data`, and it has no sections, so the `.text` location filter
+  # discarded every match. Between them the trait never fired — a KDE
+  # `index.cache.bz2` help cache came out of analysis with zero traits of any
+  # kind, just entropy 7.9.
+  - id: bzip2
+    desc: BZIP2 compressed file magic
+    crit: baseline
+    conf: 1.0
+    for: [data, archive, bz2]
+    if:
+      type: hex
       pattern: "42 5A 68" # BZh
+      offset: 0
+  # Raw lzma_alone streams type as `lzma` (or opaque `data`) and have no
+  # sections, so a `.text` location filter would discard every match —
+  # same defect gzip/bzip2 already fixed. Without this, a tiny SDK test
+  # vector scores as an unidentified high-entropy blob.
+  - id: lzma
+    desc: LZMA stream header at file start
+    crit: baseline
+    conf: 1.0
+    for: [lzma, data, archive]
+    if:
+      type: hex
+      pattern: "5D 00 00 80 00"
       offset: 0
   - id: xz
     desc: XZ compressed file magic
@@ -303,13 +355,15 @@ traits:
     desc: GIF image magic
     crit: baseline
     conf: 1.0
-    for: [data]
+    # Include the source types the heuristic can assign to high-entropy GIF
+    # image bytes, so source-metric rules can recognize the real container.
+    for: [data, javascript, typescript]
     if:
-      type: text
-      regex: "^GIF8[79]a"
+      type: hex
+      pattern: "47 49 46 38 (37|39) 61"
       offset: 0
-      # Text encoding BOMs
-      section: .text
+
+  # Text encoding BOMs
   - id: utf8-bom
     desc: UTF-8 byte order mark
     crit: baseline
@@ -324,20 +378,18 @@ traits:
     desc: UTF-16 little-endian BOM
     crit: baseline
     conf: 1.0
-    for: [data]
+    for: [data, batch]
     if:
       type: hex
-      section: ".text"
       pattern: "FF FE"
       offset: 0
   - id: utf16-be-bom
     desc: UTF-16 big-endian BOM
     crit: baseline
     conf: 1.0
-    for: [data]
+    for: [data, batch]
     if:
       type: hex
-      section: ".text"
       pattern: "FE FF"
       offset: 0
   # Chromium / V8 Formats
@@ -391,3 +443,14 @@ traits:
 
 # Embedded payload detection is in micro-behaviors/data/embedded/payload/
 # See: elf-magic-embedded, pe-magic-embedded, zip-magic
+
+composite_rules:
+  - id: windows-pe-executable-file
+    desc: PE image with executable filename
+    crit: baseline
+    conf: 1.0
+    for: [pe]
+    scope: file
+    all:
+      - id: pe-dos-stub
+      - id: metadata/file/extension/identity::exe

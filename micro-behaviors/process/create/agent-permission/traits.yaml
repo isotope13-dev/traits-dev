@@ -1,0 +1,170 @@
+# Agent permission *tables* — the per-tool allow/deny map an agent harness
+# consults before running a tool call, and the code that rewrites it.
+#
+# The flag-shaped bypasses (`--dangerously-skip-permissions`, `--yolo`,
+# `approval_policy = never`) already live in ai-agent.yaml. This file covers the
+# other half of the same surface: a config map whose entries are set to `allow`,
+# which is how OpenCode, Crush and the other JSON-configured harnesses express
+# "run this without asking". A wildcard entry (`"*": "allow"`) grants every
+# tool at once, so it is the single value that removes the human approval gate
+# entirely.
+#
+# Both spellings are matched: the literal map as it appears in a config file,
+# and the loop that assigns `allow` into a permission map from code — an
+# installer rewriting somebody else's config writes the second, never the first.
+#
+# These stay notable. A user's own hand-edited config legitimately contains a
+# wildcard grant, and the harness's own source names these keys. Intent comes
+# from the objectives/ composites that pair a grant with an agent config-file
+# write performed by a package's install hook.
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript, python, shell, powershell, go, rust, json]
+  crit: notable
+  conf: 0.93
+  attack: T1562.001
+
+traits:
+  # This field names a policy gate; by itself it neither grants permission nor
+  # establishes remote tasking. Objective composites add the dispatch context.
+  - id: agent-tool-execution-permission-flag
+    desc: Agent tool-execution permission flag
+    crit: notable
+    conf: 0.96
+    if:
+      type: text
+      substr: canExecuteTools
+
+  - id: agent-permission-wildcard-allow
+    desc: Agent config grants every tool permission
+    conf: 0.95
+    if:
+      type: text
+      regex: '["'']\*["'']\s*:\s*["'']allow["'']'
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/manifest::test-fixtures
+
+  # `config.permission[perm] = 'allow'` / `cfg["permissions"][k] = "allow"`.
+  # The subscript is what distinguishes a program rewriting a permission table
+  # from one merely declaring its own.
+  - id: agent-permission-allow-assignment
+    desc: Assigns allow into a permission map
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)permissions?\[[^\]\n]{0,24}\]\s*=\s*["'']allow["'']'
+
+  # The array spelling. Claude Code and the harnesses that copy its schema keep
+  # permissions in `permissions.allow` / `permissions.deny` arrays of
+  # `Tool(pattern)` entries rather than a tool->decision map, so the wildcard
+  # map atom above never sees them. `Bash(*)` in the allow array is the same
+  # grant as `"*": "allow"`: unrestricted shell with no prompt. Bound to
+  # `allow` on purpose — the identical token in a `deny` array is hardening.
+  - id: agent-allow-array-grants-all-bash
+    desc: Agent allow list grants unrestricted Bash
+    conf: 0.94
+    for: [json, javascript, typescript, python, shell, go, rust]
+    if:
+      type: text
+      regex: '"allow"\s*:\s*\[[^\]]{0,200}"Bash\(\*\)"'
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/manifest::test-fixtures
+
+  # An agent whose default persona is swapped out answers every later prompt as
+  # the replacement. Written by config hijackers, never by the user's own edit
+  # of a package they installed.
+  - id: agent-default-agent-override
+    desc: Overrides the configured default agent
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)["'']?default[_-]?agent["'']?\s*[:=]\s*["''][A-Za-z0-9_-]{1,32}["'']'
+
+  # Generic auto-approval switch used by Gemini CLI, Cline, Roo and friends.
+  - id: agent-auto-approve-enabled
+    desc: Agent auto-approval setting enabled
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)["'']?auto[_-]?(approve|accept)([_-]?\w{1,16})?["'']?\s*[:=]\s*true'
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/manifest::test-fixtures
+
+  # A program that *declares* the bypass as a command-line option is a launcher
+  # putting the switch in the user's hands -- `typer.Option(False, "--yolo",
+  # ...)`, `parser.add_argument("--dangerously-skip-permissions")`,
+  # commander's `.option("--yolo")`. A config hijacker never offers the choice:
+  # it writes the permission table on its own initiative. Used as an exclusion,
+  # not as evidence.
+  - id: agent-bypass-cli-option-declaration
+    desc: Declares an agent bypass CLI option
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '([Oo]ption|add_argument)\s*\([^)]{0,200}["'']--(yolo|dangerously-)'
+
+composite_rules:
+  # The per-vendor settings that turn the gate off from a config file. Kept
+  # apart from the CLI-flag modes below so each composite names one surface —
+  # a file somebody edited, versus an argv a process was launched with.
+  - id: vendor-agent-approval-setting-disabled
+    desc: Agent settings disable the approval prompt
+    crit: notable
+    conf: 0.94
+    any:
+      - id: micro-behaviors/process/create/agent::ai-agent-bypass-permissions-setting
+      - id: micro-behaviors/process/create/agent::ai-agent-skip-dangerous-permission-prompt
+      - id: micro-behaviors/process/create/agent::ai-agent-dangerously-skip-permissions-setting
+
+  - id: vendor-agent-approval-mode-disabled
+    desc: Agent run mode waives command approval
+    crit: notable
+    conf: 0.94
+    any:
+      - id: micro-behaviors/process/create/agent::ai-agent-yolo-approval-setting
+      - id: micro-behaviors/process/create/agent::codex-never-approval-policy
+      - id: micro-behaviors/process/create/agent::codex-full-auto-approval-mode
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/manifest::test-fixtures
+
+  # One place for "this code turns off an agent's human-approval gate",
+  # whichever harness and whichever spelling. Objectives reference this rather
+  # than re-listing every vendor's flag, so a new harness is covered by adding
+  # one atom here.
+  # Naming the bypass is not performing it. The bare atoms `ai-agent-bypass-
+  # permissions-mode` (the string "bypassPermissions"), `ai-agent-dangerous-
+  # permission-flag` and `codex-dangerous-sandbox-bypass-flag` (the flag text
+  # `--yolo` / `--dangerously-*`) match a settings UI that lists the mode, a
+  # preferences store whose default is `bypassPermissions: false`, and every
+  # README documenting the flag. Their own definitions say so: "as a bare
+  # capability it is notable; the abuse signal is the composite that combines
+  # it with a scripted agent invocation." Two such invocation composites are
+  # listed below instead, so a flag still counts once something runs it. The
+  # per-vendor session composites (`claude-dangerous-agent-session` and
+  # friends) are deliberately not among them: their agent leg is the bare word
+  # `claude`, so a settings screen listing agent ids beside a `--yolo` column
+  # satisfied them too.
+  - id: agent-approval-gate-disabled
+    desc: Disables an AI agent approval gate
+    crit: suspicious
+    conf: 0.93
+    any:
+      - id: agent-permission-wildcard-allow
+      - id: agent-allow-array-grants-all-bash
+      - id: agent-permission-allow-assignment
+      - id: agent-auto-approve-enabled
+      - id: vendor-agent-approval-setting-disabled
+      - id: vendor-agent-approval-mode-disabled
+      - id: micro-behaviors/process/create/agent::codex-full-access-sandbox-mode
+      - id: micro-behaviors/process/create/agent-unattended::unrestricted-unattended-session
+      - id: micro-behaviors/process/create/agent::python-dangerous-llm-agent-runner
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/manifest::test-fixtures
+      - id: well-known/tool/detection/repo-trust-scan::repo-trust-scan-context
+      - id: agent-bypass-cli-option-declaration

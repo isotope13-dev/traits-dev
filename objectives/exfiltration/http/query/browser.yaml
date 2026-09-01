@@ -32,6 +32,32 @@ traits:
     if:
       type: text
       regex: 'encodeURIComponent\([^)]{0,160}\b(session|sid)\b'
+  # Query keys named stolen/captured/exfil are not ordinary analytics fields.
+  # A sanitizer's own unit tests spell the attack out: `?exfil=` against
+  # evil.example is the input the assertion expects to be stripped, not an
+  # outbound URL the file builds.
+  - id: theft-named-query-assignment
+    desc: Theft-named URL query key
+    crit: suspicious
+    conf: 0.9
+    for: [javascript, typescript, html]
+    if:
+      type: text
+      regex: '[?&](stolen|captured|exfil)='
+    unless:
+      - id: metadata/package/testing/harness/unit::node-test-runner-import
+      - id: metadata/package/testing/harness/unit::javascript-vitest-unit-test-context
+  - id: theft-named-query-get
+    desc: Reads stolen or captured query parameter
+    crit: suspicious
+    conf: 0.92
+    for: [javascript, typescript, html]
+    if:
+      type: text
+      regex: '\.get\s*\(\s*[''"](stolen|captured|exfil)[''"]'
+    unless:
+      - id: metadata/package/testing/harness/unit::node-test-runner-import
+      - id: metadata/package/testing/harness/unit::javascript-vitest-unit-test-context
 composite_rules:
   # A query sink is only exfiltration evidence when the same file also
   # handles a credential, cookie, or intentionally captured secret. Ordinary
@@ -83,3 +109,32 @@ composite_rules:
       - id: micro-behaviors/communications/http/cookies::document-cookie-read
       - id: micro-behaviors/communications/http/request/client::xmlhttprequest-new
       - id: objectives/exfiltration/oob/endpoint::webhook-site
+
+  # Dynamic <script src="https://…?param=" + btoa(secret)> beacons steal data
+  # through a GET that looks like a CDN or library load (ORB/CORS bypass).
+  - id: script-src-btoa-query-exfil
+    desc: Script src query exfils Base64 payload
+    crit: hostile
+    conf: 0.96
+    mbc: B0030
+    near_bytes: 1200
+    all:
+      - id: micro-behaviors/communications/http/client/resource::dynamic-script-element-load
+      - id: micro-behaviors/communications/http/client/resource::element-src-query-parameter
+      - id: micro-behaviors/data/encode/base64::btoa-symbol
+    any:
+      - id: micro-behaviors/communications/http/url/query::btoa-query-parameter
+      - id: micro-behaviors/communications/http/url/query::btoa-json-stringify-call
+    unless:
+      - id: metadata/library/structure::google-tag-manager-bundle
+
+  - id: theft-named-query-atob-decode
+    desc: Decodes a theft-named query parameter
+    crit: hostile
+    conf: 0.95
+    near_bytes: 400
+    all:
+      - id: theft-named-query-get
+      - id: micro-behaviors/data/decode/base64::atob-decode
+      - id: micro-behaviors/ui/window/dom-access::current-script-src-read
+      - id: micro-behaviors/communications/http/url/query::js-urlsearchparams-construction

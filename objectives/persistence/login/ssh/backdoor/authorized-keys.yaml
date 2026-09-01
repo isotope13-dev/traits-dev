@@ -94,6 +94,14 @@ traits:
   - id: well-known/tool/sysadmin/automatedlab/
   - id: well-known/app/development/vscode/
   - id: well-known/tool/development/runspec-console/
+- id: shell-echo-authorized-key
+  desc: Shell appends a literal authorized key
+  crit: component
+  conf: 0.99
+  for: [shell]
+  if:
+    type: text
+    regex: '(?m)^ *echo ["'']ssh-\S+ [A-Za-z0-9+/=]{40,800}.{0,120}>> *\S*authorized_keys'
 - id: mkdir-ssh
   desc: Creates .ssh directory
   crit: component
@@ -142,14 +150,38 @@ traits:
     regex: (appendFile|writeFile|appendFileSync|writeFileSync)\s*\(.{0,200}authorized_keys
   unless:
   - id: well-known/tool/development/vmactions-freebsd/
+  - id: well-known/tool/development/cross-platform-actions::cross-platform-actions-context
+  - type: text
+    substr: tmate-io/tmate/releases
 - id: js-authorized-keys-short-variable-append
   desc: Node writes short authorized_keys var
+  crit: suspicious
+  conf: 0.9
+  for: [javascript, typescript]
+  if:
+    type: text
+    regex: "(appendFile|writeFile)(Sync)?\\s*\\(\\s*(authKeys|authorizedKeys)\\w*"
+  unless:
+  - id: well-known/tool/development/vmactions-freebsd/
+  - id: well-known/tool/development/cross-platform-actions::cross-platform-actions-context
+  - type: text
+    substr: tmate-io/tmate/releases
+- id: js-authorized-keys-resolve-path
+  desc: Node resolve/join of authorized_keys path
   crit: component
   conf: 0.9
   for: [javascript, typescript]
   if:
     type: text
-    regex: "(appendFile|writeFile)(Sync)?\\s*\\(\\s*(authKeys|authorizedKeys)\\b"
+    regex: '(resolve|join)\s*\([^\n;]{0,80}authorized_keys'
+- id: js-authorized-keys-binder
+  desc: Node binds an authorizedKeys path variable
+  crit: component
+  conf: 0.9
+  for: [javascript, typescript]
+  if:
+    type: text
+    regex: '(const|let|var)\s+authorizedKeys\w*\s*='
 - id: js-authorized-keys-join-variable
   desc: Node builds authorized_keys path variable
   crit: component
@@ -268,6 +300,18 @@ composite_rules:
   unless:
   - id: objectives/persistence/login/ssh/backdoor/
   - id: metadata/build/recognized-contexts::benign-build-tooling-context
+- id: locked-authorized-key-history-cover
+  desc: Plants and locks an SSH key while clearing shell history
+  crit: hostile
+  conf: 0.99
+  mbc: E1098
+  near_lines: 10
+  all:
+  - id: shell-echo-authorized-key
+  - id: micro-behaviors/fs/chmod/modify::chmod-removes-authorized-keys-write
+  - id: objectives/evasion/indicator-removal/logs::history-clear
+  unless:
+  - id: metadata/build/recognized-contexts::benign-build-tooling-context
 - id: hardcoded-root-authorized-key
   desc: Hardcoded root SSH login key
   crit: hostile
@@ -305,8 +349,10 @@ composite_rules:
   crit: hostile
   conf: 0.97
   all:
-  - id: js-authorized-keys-write
   - id: micro-behaviors/crypto/asymmetric/ssh::hardcoded-public-key
+  any:
+  - id: js-authorized-keys-write
+  - id: js-authorized-keys-short-variable-append
 - id: js-authorized-key-literal-backdoor
   desc: JavaScript installs embedded SSH key
   crit: hostile
@@ -314,11 +360,16 @@ composite_rules:
   mbc: E1098
   for: [javascript, typescript]
   all:
-  - id: micro-behaviors/fs/path/sensitive/credentials::js-authorized-keys-path-variable
   - id: micro-behaviors/fs/write/file/direct::js-authorized-keys-variable-write
-  - id: micro-behaviors/fs/path/sensitive/credentials::js-ssh-homedir-path
   - id: micro-behaviors/crypto/asymmetric/ssh::hardcoded-public-key
-  near_bytes: 1400
+  - id: js-unix-ssh-home-path
+  any:
+  - id: micro-behaviors/fs/path/sensitive/credentials::js-authorized-keys-path-variable
+  - id: js-authorized-keys-resolve-path
+  - id: js-authorized-keys-binder
+  # Key literals are often declared at module top; path helpers and the write
+  # sit hundreds of lines below in postinstall droppers.
+  near_bytes: 4800
 - id: js-variable-ssh-backdoor
   desc: JavaScript variable SSH key backdoor
   crit: hostile
@@ -452,7 +503,7 @@ composite_rules:
   all:
   - id: micro-behaviors/fs/directory/delete::shutil-rmtree
   - id: micro-behaviors/communications/ssh/keys::authorized-keys-path-construction
-  - id: micro-behaviors/fs/file/write/direct::py-open-write-mode
+  - id: micro-behaviors/fs/file/open::write-append-create-mode
   unless:
   - id: metadata/build/recognized-contexts::benign-build-tooling-context
 

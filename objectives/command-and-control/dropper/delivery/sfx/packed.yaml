@@ -9,6 +9,38 @@ traits:
     if:
       type: text
       substr: RunProgram=
+  # `SelfDelete` is not in the stock 7-Zip SFX module; it comes from the
+  # extended 7zSD builders, and it makes the stub erase itself once the
+  # extracted stage is running. An installer has no reason to destroy the thing
+  # the user just downloaded -- keeping it is what lets them reinstall or check
+  # a hash -- so this is an anti-forensics directive: after execution the only
+  # artefact left on disk is whatever came out of the archive.
+  - id: sfx-self-delete-directive
+    desc: SFX stub deletes itself after running
+    crit: notable
+    conf: 0.95
+    attack: T1070.004
+    if:
+      type: text
+      regex: 'SelfDelete\s*=\s*"?1"?'
+  # Read from raw bytes, not from the extracted-string corpus. 7-Zip SFX writes
+  # a quoted command as `RunProgram="\"%%T\\stage.exe\""`, and the string
+  # extractor drops those lines while keeping every neighbouring directive --
+  # `Progress`, `SelfDelete` and `InstallPath` all survive, the three
+  # `RunProgram` lines between them do not. Any `type: text` rule aimed at the
+  # directive is therefore blind to the escaped spelling, which is the one the
+  # tool emits whenever the command contains a path.
+  - id: sfx-runprogram-escaped-quote-value
+    desc: SFX RunProgram value is an escaped path
+    crit: notable
+    conf: 0.94
+    attack: T1204.002
+    if:
+      # Anchored on the CRLF that ends the previous directive, so this is the
+      # start of a config line rather than the token appearing inside some
+      # unrelated string.
+      type: raw
+      regex: '\r\nRunProgram\s*=\s*"\\"'
   - id: sfx-hidden-cmd-stdin
     desc: SFX hidden cmd stdin execution
     crit: suspicious
@@ -46,6 +78,24 @@ traits:
     if:
       type: text
       substr: Silent=1
+  - id: sfx-temp-mode-directive
+    desc: WinRAR SFX extracts payloads to temp
+    crit: component
+    conf: 0.98
+    if:
+      # Byte boundaries distinguish the config directive from the SFX stub's
+      # own localized TempMode resource string.
+      type: hex
+      pattern: "0D 0A 54 65 6D 70 4D 6F 64 65 0D 0A"
+      offset_range: [131072, null]
+  - id: sfx-setup-rat-executable
+    desc: WinRAR SFX Setup directive launches rat.exe
+    crit: notable
+    conf: 0.99
+    attack: T1204.002
+    if:
+      type: raw
+      regex: '(?im)^Setup\s*=\s*"?rat\.exe"?\s*$'
   - id: sfx-setup-legacy-pif-scr-com
     desc: SFX Setup uses PIF, SCR, or COM
     crit: notable
@@ -135,6 +185,17 @@ composite_rules:
       - id: sfx-setup-legacy-executable
     unless:
       - id: metadata/signed/platform/
+  - id: winrar-sfx-temp-rat-dropper
+    desc: WinRAR SFX extracts and launches a RAT-named payload from temp
+    crit: hostile
+    conf: 0.995
+    attack: T1204.002,T1027.009
+    all:
+      - id: metadata/binary/installer/sfx::winrar-sfx
+      - id: sfx-temp-mode-directive
+      - id: sfx-setup-rat-executable
+    unless:
+      - id: metadata/signed/platform/
   - id: iso-winrar-silent-legacy-executable-dropper
     desc: ISO carries a silent WinRAR SFX for a legacy executable payload
     crit: hostile
@@ -145,6 +206,31 @@ composite_rules:
       - id: metadata/file/format/structured::primary-volume-descriptor
       - id: metadata/file/format/iso::iso-winrar-sfx-module
       - id: metadata/file/format/iso::iso-sfx-setup-silent-pif
+
+  # Read entirely off the SFX config, with no floor on how big the archive is.
+  # Every other silent-SFX composite in this tree hangs off
+  # `large-high-entropy-overlay`, which needs a megabyte of payload, so a small
+  # dropper -- a 167 KB stub carrying a 60 KB archive -- satisfied the semantics
+  # of those rules and was scored clean because the payload was too small.
+  #
+  # Extraction-time behaviour is the whole of the evidence and it is coherent:
+  # run the extracted binary, show the user nothing while doing it, then erase
+  # the stub. An installer does the first, sometimes the second, and has no
+  # reason for the third.
+  - id: silent-self-deleting-sfx-dropper
+    desc: Silent SFX runs payload then self-deletes
+    crit: hostile
+    conf: 0.97
+    attack: T1204.002,T1070.004
+    mbc: B0023
+    all:
+      - id: sfx-self-delete-directive
+      - id: sfx-runprogram-escaped-quote-value
+      - id: objectives/command-and-control/dropper/execution/installer::sfx-progress-disabled
+      - id: metadata/binary/layout::pe-no-signature-record
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/installer/family/
 
   # The SFX and the AutoIt payload are separate leaves in the extraction tree.
   # Correlate them only at the outer-input scope so an ordinary AutoIt program

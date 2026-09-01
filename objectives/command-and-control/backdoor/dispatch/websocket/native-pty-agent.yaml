@@ -45,30 +45,6 @@ traits:
       type: text
       regex: '(?i)Password sent successfully'
 
-  - id: ai-cli-phone-control-marker
-    desc: Phone-controlled AI CLI session marker
-    crit: notable
-    conf: 0.95
-    if:
-      type: text
-      regex: '(?i)phone drives (Claude|Gemini) Code'
-
-  - id: ai-cli-stream-json-marker
-    desc: Persistent AI CLI stream-json process marker
-    crit: notable
-    conf: 0.95
-    if:
-      type: text
-      regex: '(?i)persistent stream-json (claude|gemini) process'
-
-  - id: ai-cli-permission-mode-marker
-    desc: Unattended AI CLI permission-mode marker
-    crit: notable
-    conf: 0.95
-    if:
-      type: text
-      regex: '(?i)claude --permission-mode'
-
 composite_rules:
   - id: websocket-shell-stream-marker
     desc: WebSocket shell stream marker
@@ -111,23 +87,86 @@ composite_rules:
       - id: well-known/app/
       - id: well-known/lib/
 
-  - id: native-wss-pty-ai-cli-agent
-    desc: Native WSS agent relays PTY-backed AI CLI control
-    crit: hostile
-    conf: 0.99
-    attack: T1071.001,T1059,T1219
+  # The same capability set as `websocket-pty-remote-shell-agent` above, minus
+  # the family-specific protocol markers: a native binary that writes itself a
+  # systemd unit, dials out over WSS, and relays a coding agent on a PTY.
+  # Whoever holds the other end of that socket runs commands on the host, and
+  # the unit makes it survive reboot.
+  #
+  # This lives in objectives/ because the parts do not. `native-wss-pty-ai-cli-
+  # agent` and `native-persistent-wss-pty-ai-agent` are both correctly notable
+  # — one is a micro-behaviour, the other observes a unit file — and after they
+  # were relocated and demoted, nothing rated the combination at all. A
+  # published product and an implant are structurally identical here, so the
+  # only honest separator is identity, and identity is what `unless:` carries:
+  # a recognised coding-agent vendor is exempt, an unbranded build is not.
+  #
+  # Suspicious, not hostile: remote control is what these products are *for*,
+  # and the user of a legitimate one asked for it.
+  - id: unvouched-self-persisting-remote-pty-agent
+    desc: Unbranded self-persisting remote PTY agent
+    crit: suspicious
+    conf: 0.94
+    attack: T1543.002,T1071.001,T1219
     all:
-      - id: ai-cli-remote-control-marker
-      - id: micro-behaviors/communications/http/websocket::wss-scheme
-      - id: micro-behaviors/process/tty/pty::go-creack-pty-path
-      - id: micro-behaviors/process/tty/pty::pty-open-call
-      - id: micro-behaviors/process/create/system::go-os-exec-pclntab
+      - id: objectives/persistence/system/service/systemd::native-persistent-wss-pty-ai-agent
+    unless:
+      # A recognised coding-agent product; the vendor identity is the claim
+      # that makes the same shape accountable.
+      - id: well-known/app/ai/coding-agent/
+      - id: well-known/tool/
+      - id: metadata/signed/platform/
 
-  - id: ai-cli-remote-control-marker
-    desc: AI CLI remote-control session marker
-    crit: notable
+  # `unvouched-self-persisting-remote-pty-agent` above stands down on a
+  # recognised coding-agent vendor, and that carve-out is right for the
+  # transport: relaying a PTY to a phone is what those products are sold to do,
+  # and their user asked for it. It is not right for the permission table. A
+  # binary that also rewrites the agent's approval gate — settings path,
+  # `Tool(*)` grant and a bypass mode together — has removed the one control
+  # that kept the remote side from running arbitrary commands, and then made
+  # the arrangement survive reboot. Whoever holds the other end of that socket
+  # has unattended code execution on the developer's machine; a published
+  # identity says who to blame for that, not that it did not happen.
+  #
+  # So this composite carries no vendor `unless:`. It needs all three moves
+  # (persistence, remote PTY relay of an agent CLI, and gate rewrite) to fire,
+  # which no launcher that merely offers `--permission-mode` on its own
+  # command line can satisfy.
+  - id: persistent-remote-pty-agent-gate-takeover
+    desc: Persistent remote PTY agent disables its approval gate
+    crit: hostile
+    conf: 0.96
+    attack: T1543.002,T1071.001,T1219,T1562.001
+    all:
+      - id: objectives/persistence/system/service/systemd::native-persistent-wss-pty-ai-agent
+      - id: micro-behaviors/process/create/agent-permission::native-agent-approval-gate-rewrite
+
+  # The flag form of the same arrangement, over a chat transport.
+  #
+  # `persistent-remote-pty-agent-gate-takeover` above keys the bypass on the
+  # settings file — the `.claude/settings.json` path plus a `Tool(*)` grant and
+  # a `bypassPermissions` mode. That is one of two ways to turn the gate off,
+  # and the other needs no file at all: pass `--dangerously-skip-permissions`
+  # (or Codex's sandbox-bypass flag) on the agent's own command line. A binary
+  # doing it that way leaves no settings path to find, so nothing above sees
+  # it, and its persistence may be a chat bot's session rather than a systemd
+  # unit.
+  #
+  # What is left is still the whole arrangement: a shell running under a PTY,
+  # a WebSocket carrying it, and an AI CLI started with its human-approval gate
+  # switched off. Whoever is on the other end of that socket types into an
+  # agent that will not ask before acting. Which chat platform or relay sits
+  # there is not part of the match — Feishu, Slack, Telegram and a bespoke
+  # relay are the same rule.
+  - id: native-ws-pty-agent-permission-bypass
+    desc: WebSocket PTY agent runs a CLI with gates off
+    crit: hostile
     conf: 0.95
+    attack: T1071.001,T1059.004,T1219,T1562.001
+    all:
+      - id: micro-behaviors/process/tty/pty::go-pty-shell
+      - id: micro-behaviors/communications/http/websocket::websocket-http-upgrade-headers
+      - id: micro-behaviors/process/create/agent::ai-agent-dangerous-permission-flag
     any:
-      - id: ai-cli-phone-control-marker
-      - id: ai-cli-stream-json-marker
-      - id: ai-cli-permission-mode-marker
+      - id: micro-behaviors/process/create/agent::claude-dangerous-agent-session
+      - id: micro-behaviors/process/create/agent::codex-dangerous-sandbox-bypass-flag

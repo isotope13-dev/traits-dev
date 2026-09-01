@@ -61,6 +61,24 @@ traits:
     if:
       type: text
       exact: ecnatsnIetaerC
+  # Base64-obscured reflection member names (UTF-16 #US strings). Short tokens
+  # like Load may not surface via the encoded-string decoder, so match the
+  # literal alphabet; longer names are matched after base64 decode.
+  - id: dotnet-base64-assembly-load-token
+    desc: Base64-encoded Assembly.Load member-name token
+    crit: component
+    conf: 0.96
+    if:
+      type: text
+      exact: TG9hZA==
+  - id: dotnet-base64-create-instance-token
+    desc: Base64 Activator CreateInstance token
+    crit: component
+    conf: 0.96
+    if:
+      type: encoded
+      encoding: base64
+      exact: CreateInstance
 composite_rules:
   - id: dotnet-runlib-invoke-member
     desc: RunLib InvokeMember execution hooks
@@ -109,6 +127,8 @@ composite_rules:
       # CoreLib *implements* Assembly.Load / Activator / GetExportedTypes; the
       # aot .rdata marker often misses single-section CoreLib PE copies.
       - id: well-known/lib/runtime/dotnet-runtime::dotnet-corelib-assembly
+      # Unsigned reference facades (netstandard / mscorlib / System.*).
+      - id: well-known/lib/runtime/dotnet-runtime::framework-reference-assembly-context
   - id: dotnet-reversed-reflective-loader-chain
     desc: .NET reverses reflection member names for an in-memory loader
     crit: suspicious
@@ -123,6 +143,27 @@ composite_rules:
     any:
       - id: dotnet-reversed-assembly-load-token
       - id: dotnet-reversed-create-instance-token
+    unless:
+      - id: metadata/signed/leaf::microsoft-corporation
+      - id: metadata/lang/compiler/aot::system-private-corelib
+      - id: well-known/lib/runtime/dotnet-runtime::dotnet-reference-pack-context
+      - id: well-known/lib/runtime/dotnet-runtime::dotnet-corelib-assembly
+  # Same shape as the reversed-name chain, but the Load/CreateInstance tokens
+  # are Base64 rather than character-reversed.
+  - id: dotnet-base64-reflective-loader-chain
+    desc: .NET Base64-obscures reflection loader names
+    crit: suspicious
+    conf: 0.96
+    attack: T1027,T1620
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: micro-behaviors/process/interpreter/reflection/runtime::activator
+      - id: micro-behaviors/process/interpreter/reflection/runtime::invoke-member-token
+      - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+      - id: objectives/anti-static/obfuscation/reflection/invoke::get-exported-types-token
+    any:
+      - id: dotnet-base64-assembly-load-token
+      - id: dotnet-base64-create-instance-token
     unless:
       - id: metadata/signed/leaf::microsoft-corporation
       - id: metadata/lang/compiler/aot::system-private-corelib
@@ -144,6 +185,27 @@ composite_rules:
       - id: micro-behaviors/data/embedded/payload/resource::dotnet-managed-resource-access
       - id: metadata/binary/resource::clr-resource-high-entropy
       - id: metadata/binary/layout::pe-no-signature-record
+    unless:
+      - id: metadata/signed/platform/
+  # Base64-obscured Load/CreateInstance plus bitmap pixel readback: the
+  # PhysicsTetris/GenKryptik lure shape that ships a game UI while staging
+  # Assembly.Load(byte[]) from resource-bitmap pixels via LateGet.
+  - id: dotnet-base64-bitmap-reflective-loader
+    desc: .NET Base64 reflection loads a bitmap payload
+    crit: hostile
+    conf: 0.99
+    attack: T1027.003,T1027.009,T1620
+    mbc: B0032.001,E1059
+    for: [pe]
+    all:
+      - id: dotnet-base64-reflective-loader-chain
+      - id: micro-behaviors/data/embedded/payload/image::dotnet-resource-bitmap-pixel-readback
+      - id: micro-behaviors/data/encode/image/pixel::pixel-access-getpixel
+      - id: metadata/binary/layout::pe-no-signature-record
+      - id: metadata/binary/metrics/structural::high-code-entropy
+    any:
+      - id: micro-behaviors/process/interpreter/reflection/vb::vb-lateget-token
+      - id: metadata/build/manifest::pe-manifest-myapplication-template
     unless:
       - id: metadata/signed/platform/
   # HOSTILE (T1620 Reflective Code Loading): the reflective load+instantiate
@@ -181,8 +243,9 @@ composite_rules:
       - id: well-known/lib/core/spectre-console::spectre-console-library
   # A bitmap-backed managed resource combined with pixel readback and the
   # complete reflection chain is an in-memory payload execution pattern. PNG
-  # compression can make the managed-resource entropy value uninformative, so
-  # the image-specific readback is the discriminator here.
+  # compression can make the managed-resource size/entropy metrics miss the
+  # stage, so the image-specific readback (not clr-resource-large) is the
+  # discriminator here; require a packed .text body instead.
   - id: dotnet-bitmap-reflective-payload-execution
     desc: .NET reflectively executes a bitmap-backed payload
     crit: hostile
@@ -193,7 +256,7 @@ composite_rules:
     all:
       - id: metadata/binary/framework::dotnet-assembly
       - id: metadata/binary/layout::pe-no-signature-record
-      - id: metadata/binary/resource::clr-resource-large
+      - id: metadata/binary/metrics/structural::high-code-entropy
       - id: micro-behaviors/data/embedded/payload/resource::dotnet-managed-resource-access
       - id: micro-behaviors/data/embedded/payload/image::dotnet-resource-bitmap-pixel-readback
       - id: micro-behaviors/process/interpreter/reflection/runtime::activator

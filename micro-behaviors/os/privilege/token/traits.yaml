@@ -23,9 +23,6 @@ traits:
       - id: metadata/binary/framework/
       - id: metadata/binary/metrics/threshold::many-exports-100
       - id: well-known/lib/platform/windows-vault/
-    downgrade:
-      any:
-        - id: metadata/binary/framework/
   - id: open-process-token
     desc: OpenProcessToken API symbol
     crit: notable
@@ -124,19 +121,32 @@ traits:
       - id: metadata/binary/metrics/threshold::many-exports-100
       - id: metadata/lang/compiler/systems::go-binary
       - id: metadata/lang/compiler/systems::go-pe-symtab
-    downgrade:
-      any:
-        - id: metadata/binary/framework/
   - id: high-risk-privilege-name
     desc: References high-risk Windows token privilege
     crit: notable
     conf: 0.9
-    for: [pe, dll, c, cpp, csharp, rust]
+    for: [binaries, scripts, source]
     if:
       type: text
-      regex: Se(Debug|Tcb|AssignPrimaryToken|Impersonate)Privilege
+      regex: 'Se(Debug|Tcb|AssignPrimaryToken|Impersonate|LoadDriver)Privilege|SE_LOAD_DRIVER_NAME'
     unless:
       - id: well-known/app/system/drivers/nvidia::nvidia-windows-nvapi-context
+  # The subset of the names above that a stock language runtime never asks for.
+  # A self-contained .NET binary carries `SeDebugPrivilege` (System.Diagnostics
+  # .Process) and `SeLockMemoryPrivilege` (the GC's large-pages option) in its
+  # host's string pool whatever the program does; nothing in the runtime wants
+  # to impersonate, assign a primary token, load a driver or hold SeTcb. Rules
+  # that exempt an embedded runtime gate the exemption on this, so the exemption
+  # cannot cover a managed program that reaches for real privilege.
+  - id: high-risk-privilege-name-beyond-debug
+    desc: High-risk privilege beyond SeDebug named
+    crit: notable
+    conf: 0.9
+    for: [binaries, scripts, source]
+    if:
+      type: text
+      regex: 'Se(Tcb|AssignPrimaryToken|Impersonate|LoadDriver)Privilege'
+
   - id: high-risk-take-ownership-privilege-name
     desc: References SeTakeOwnershipPrivilege token
     crit: notable
@@ -156,9 +166,6 @@ traits:
       - id: metadata/binary/metrics/threshold::many-exports-100
       - id: metadata/lang/compiler/systems::go-binary
       - id: metadata/lang/compiler/systems::go-pe-symtab
-    downgrade:
-      any:
-        - id: metadata/binary/framework/
   - id: rtl-adjust-privilege
     desc: Adjust privilege via ntdll
     crit: notable
@@ -175,6 +182,25 @@ traits:
       any:
         - id: metadata/signed/platform/
         - id: metadata/binary/vendor::microsoft-corp-versioninfo
+  - id: x64-enable-privilege-20-indirect-call
+    desc: x64 sets privilege 20 before indirect call
+    crit: component
+    conf: 0.96
+    for: [pe, dll]
+    if:
+      type: hex
+      section: .text
+      pattern: 45 33 C0 ?? ?? ?? ?? ?? ?? ?? B2 01 41 8D 48 14 FF 15
+  - id: python-rtl-adjust-privilege-call
+    desc: Python calls RtlAdjustPrivilege
+    crit: notable
+    conf: 0.9
+    attack: T1134.001
+    for: [python]
+    if:
+      type: symbol
+      kind: call
+      exact: RtlAdjustPrivilege
   - id: shutdown-privilege-name
     desc: Shutdown privilege name string
     # A name string is only partial evidence of privilege use; the API
@@ -287,6 +313,13 @@ traits:
       regex: '(?i)TokenUser|UserSid|S-1-5-21-'
 
 composite_rules:
+  - id: rtl-enable-debug-privilege-x64
+    desc: Calls RtlAdjustPrivilege to enable SeDebugPrivilege on x64
+    crit: notable
+    conf: 0.98
+    all:
+      - id: rtl-adjust-privilege
+      - id: x64-enable-privilege-20-indirect-call
   - id: get-token-information-any
     desc: GetTokenInformation API reference
     crit: notable

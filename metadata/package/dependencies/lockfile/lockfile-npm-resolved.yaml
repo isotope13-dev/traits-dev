@@ -12,6 +12,73 @@ traits:
       type: value
       path: packages.*.resolved
       regex: '^https?://'
+  # Where an npm lockfile resolves its tarballs from. Each of these is an
+  # ordinary registry, corporate proxy or public mirror; kept as named atoms
+  # so `package-lock-off-registry-tarball` can suppress on one reference
+  # instead of a dozen inline regexes.
+  - id: resolved-registry-hostname
+    desc: Lockfile resolves through a registry host
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: packages.*.resolved
+      regex: '(?i)^https?://(registry|mirror|artifactory)[^/]*/'
+  - id: resolved-proxy-hostname
+    desc: Lockfile resolves through a repository proxy
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: packages.*.resolved
+      regex: '(?i)^https?://(nexus|jfrog)[^/]*/'
+  # Proxies on an ordinary corporate hostname expose npm under a repository
+  # path instead: int.repositories.cloud.sap/artifactory/..., Nexus, and Huawei
+  # Cloud's repo.huaweicloud.com/repository/npm/....
+  - id: resolved-repository-path
+    desc: Lockfile resolves under a repository path
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: packages.*.resolved
+      regex: '(?i)^https?://[^/]+/(artifactory|repository)/'
+  - id: resolved-managed-registry
+    desc: Lockfile resolves from a managed registry
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: packages.*.resolved
+      regex: '(?i)^https?://([a-z0-9-]+-npm\.pkg\.dev|npm\.pkg\.github\.com)/'
+  # Registries whose hostname begins with neither registry nor mirror. The npm
+  # arm is the general case: a host named for npm and serving .tgz is an npm
+  # registry by any reading, which is what ByteDance's corporate bnpm.byted.org
+  # is -- 123 of 123 dependencies in MarsCode's lockfile resolve from it.
+  - id: resolved-public-mirror
+    desc: Lockfile resolves from a public mirror
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: packages.*.resolved
+      regex: '(?i)^https?://([a-z0-9-]*npm[a-z0-9-]*\.|repo\.huaweicloud\.|r\.cnpmjs\.)'
+  - id: resolved-local-registry
+    desc: Lockfile resolves from a local registry
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: packages.*.resolved
+      regex: 'localhost|127\.0\.0\.1|verdaccio'
+  - id: resolved-jsr-registry
+    desc: Lockfile resolves from the JSR registry
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: packages.*.resolved
+      regex: '^https?://(jsr\.io|npm\.jsr\.io)/'
   - id: package-lock-off-registry-tarball
     desc: Lockfile resolves dependency off registry
     crit: suspicious
@@ -21,26 +88,8 @@ traits:
       path: packages.*.resolved
       regex: '^https?://[^"]{1,220}\.tgz$'
     unless:
-      - type: value
-        path: packages.*.resolved
-        regex: '(?i)^https?://(registry|mirror|artifactory)[^/]*/'
-      - type: value
-        path: packages.*.resolved
-        regex: '(?i)^https?://(nexus|jfrog|npm\.pkg\.github\.com)[^/]*/'
-      - id: well-known/tool/development/vscode-npm::azure-devops-artifacts-npm-feed
-      - id: well-known/tool/development/vscode-npm::azure-devops-legacy-artifacts-npm-feed
-      - type: value
-        path: packages.*.resolved
-        regex: 'localhost|127\.0\.0\.1|verdaccio'
-      # Google Artifact Registry npm repositories (<region>-npm.pkg.dev) are
-      # managed registries, not package-specific off-registry tarballs.
-      - type: value
-        path: packages.*.resolved
-        regex: '^https?://[a-z0-9-]+-npm\.pkg\.dev/'
+      - id: npm-recognized-registry-resolution
       - id: metadata/package/manifest/ecosystem::jsr-package
-      - type: value
-        path: packages.*.resolved
-        regex: '^https?://(jsr\.io|npm\.jsr\.io)/'
   - id: package-lock-has-install-script
     desc: Lockfile dependency has install script
     crit: component
@@ -50,6 +99,24 @@ traits:
       path: packages.*.hasInstallScript
       exact: "true"
 composite_rules:
+  # Every tarball URL form that is a registry, a corporate proxy, a public
+  # mirror or a local development registry. A lockfile that resolves through
+  # one of these is configured, not tampered with.
+  - id: npm-recognized-registry-resolution
+    desc: Recognized npm registry resolution
+    crit: exception
+    conf: 0.95
+    any:
+      - id: resolved-registry-hostname
+      - id: resolved-proxy-hostname
+      - id: resolved-repository-path
+      - id: resolved-managed-registry
+      - id: resolved-public-mirror
+      - id: resolved-local-registry
+      - id: resolved-jsr-registry
+      - id: well-known/app/infrastructure/azure-devops::azure-devops-artifacts-npm-feed
+      - id: well-known/app/infrastructure/azure-devops::azure-devops-legacy-artifacts-npm-feed
+
   - id: npm-lock-off-registry-dependency
     desc: npm lockfile off-registry dependency
     crit: suspicious
@@ -58,6 +125,9 @@ composite_rules:
       - id: package-lock-resolved-url
       - id: package-lock-off-registry-tarball
     unless:
+      # Repeated from the atom: inside an archive the member trait's own
+      # suppression does not reach the composite.
+      - id: npm-recognized-registry-resolution
       - id: metadata/package/manifest/ecosystem::jsr-package
   - id: npm-lock-off-registry-install-script
     desc: lockfile off-registry install script
@@ -67,4 +137,5 @@ composite_rules:
       - id: package-lock-off-registry-tarball
       - id: package-lock-has-install-script
     unless:
+      - id: npm-recognized-registry-resolution
       - id: metadata/package/manifest/ecosystem::jsr-package

@@ -31,8 +31,11 @@ traits:
       type: text
       regex: 'windowsHide\s*:\s*true'
   - id: windowshide-obfuscated-true
-    desc: windowsHide set via obfuscated true
-    crit: suspicious
+    desc: Obfuscated true enables Node windowsHide
+    # This is still process-creation context, but javascript-obfuscator emits
+    # !![] mechanically for ordinary booleans.  The expression alone does not
+    # establish suspicious intent.
+    crit: notable
     conf: 0.9
     if:
       type: text
@@ -95,30 +98,44 @@ traits:
       type: text
       regex: "spawn\\(['\"]bash['\"]"
   - id: child-process-member-spawn
-    desc: Node child_process spawns external process
+    desc: Node.js child_process spawns an external process
     crit: notable
     conf: 0.85
     unless:
-      - id: metadata/library/structure/
+      - id: well-known/lib/ui/cytoscape::cytoscape-stylesheet-runtime-marker
     if:
       # Migrated from a tree-sitter call query to a `kind: call`
       # match on the pre-extracted call fact (no per-member
-      # tree-sitter cursor walk; same call-name semantics).
+      # tree-sitter cursor walk; same call-name semantics). Accept the common
+      # camelCase/default-import aliases too: ESM packages routinely import
+      # `node:child_process` as `childProcess`, while compact source tends to
+      # use `cp`. The member name still identifies the process API rather than
+      # treating every object's `.spawn()` method as process creation.
       type: symbol
       kind: call
-      regex: '\.spawn$'
+      regex: '(?i)(^|\.)(child[_-]?process|childproc|cp)\.spawn$'
+  - id: bare-spawn-call
+    desc: Bare spawn function call
+    crit: component
+    conf: 0.75
+    # `spawn()` is not uniquely a process API. Keep the bare call as a weak
+    # syntactic component; the spawn-call composite below binds it to an
+    # explicit Node child_process import before asserting process creation.
+    if:
+      type: symbol
+      kind: call
+      exact: spawn
   - id: node-interpreter-target
     desc: Spawns the Node.js interpreter
     crit: notable
     conf: 0.95
     attack: T1059.007
     if:
-      type: symbol
-      kind: call
-      regex: '^(child_process\.)?spawn$'
-      arg:
-        kind: string
-        exact: node
+      # Keep working in large bundles where call facts are unavailable. The
+      # literal interpreter argument distinguishes this from arbitrary spawn
+      # methods while accepting common child_process aliases.
+      type: text
+      regex: '\b(child_process\.|childProcess\.|cp\.)?spawn\s*\(\s*["'']node["'']'
   # === Node.js self-execution ===
   - id: process-execpath-spawn
     desc: Spawn using process.execPath
@@ -141,10 +158,11 @@ traits:
     attack: "T1059.007"
     # Spawning the current Node interpreter with `-e` is useful context on its
     # own, but becomes hostile only when paired with remote fetch/eval staging.
+    # Avoid unless: metadata/package/testing/ — chai identity atoms under that
+    # tree would suppress chai-plugin trojans that spawn node -e.
     unless:
-      - id: metadata/package/testing/
       - id: metadata/package/testing/presence/harness/
-      - id: metadata/package/testing/scripted/
+      - id: metadata/package/testing/harness/
       - id: metadata/package/files/dependency::node-modules-path
       - id: micro-behaviors/process/interpreter/vm/
       - id: objectives/command-and-control/dropper/execution/network-stage::auto-retry-helper
@@ -154,10 +172,12 @@ traits:
   - id: process-argv-slice-self-reexec
     desc: Self re-exec via process.argv.slice(1)
     crit: notable
-    conf: 0.88
+    conf: 0.94
     if:
       type: text
-      regex: 'process\.argv\s*\.\s*slice\s*\(\s*1\s*\)'
+      # argv slicing alone is ordinary CLI argument handling.  Require the
+      # current Node executable to be spawned with that sliced argv list.
+      regex: '\bspawn\s*\(\s*process\.execPath,\s*process\.argv\.slice\(\s*1\s*\)'
   # Daemon self-respawn: spawn(process.execPath, [__filename, ...]) re-launches
   # the SAME script that is already running — the supervisor/suicide-respawn
   # pattern (RSS-budget restart, cycle timeout, crash recovery). The spawned
@@ -216,6 +236,16 @@ traits:
       type: text
       regex: '\bfork\(\s*(path\b|__dirname|["\x27\x60])'
 composite_rules:
+  - id: spawn-call
+    desc: Calls imported Node child_process spawn
+    crit: notable
+    conf: 0.9
+    attack: T1106
+    all:
+      - id: bare-spawn-call
+    any:
+      - id: metadata/import/builtin::require-child-process
+      - id: metadata/import/builtin::child-process-import-runtime
   - id: indirect-detached-hidden-spawn
     desc: Indirect detached hidden process launch
     crit: notable
@@ -238,9 +268,7 @@ composite_rules:
       - id: stdio-ignore
     any:
       - id: micro-behaviors/process/daemonize/detach::node-handle-unref-text
-      - id: micro-behaviors/process/daemonize/detach::node-handle-unref-text
       - id: micro-behaviors/process/daemonize/detach::node-handle-indirect-unref
-      - id: windowshide-option
   # A detached fork survives the parent and runs an independent script — unlike
   # a normal worker/fork pool, which stays attached. `silent`/`stdio:'ignore'`
   # further hides its output. This is the fork-based sibling of the spawn combo.

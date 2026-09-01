@@ -4,6 +4,31 @@ defaults:
     - windows
   for: [scripts, binaries]
 traits:
+  - id: javascript-download-helper-call
+    desc: Calls JavaScript data download helper
+    crit: component
+    conf: 0.82
+    for: [javascript, typescript]
+    if:
+      type: symbol
+      kind: call
+      regex: '^download(Payload|File|Code|Data)$'
+    unless:
+      - id: micro-behaviors/communications/http/download/webextension::chrome-downloads-api
+
+  - id: javascript-fetch-helper-call
+    desc: Calls JavaScript data fetch helper
+    crit: component
+    conf: 0.82
+    for: [javascript, typescript]
+    if:
+      type: symbol
+      kind: call
+      regex: '^fetch(Payload|File|Code|Data)$'
+    unless:
+      - type: text
+        regex: 'https://(www|data)\.sec\.gov/'
+
   - id: node-tar-extractor-reference
     desc: Node source references a tar archive extractor
     crit: component
@@ -60,6 +85,24 @@ traits:
     if:
       type: text
       exact: /api/download
+
+  - id: api-file-share-upload-route
+    desc: HTTP file-share upload API route
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: text
+      substr: /api/file-share/upload
+
+  - id: api-file-share-download-route
+    desc: HTTP file-share download API route
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'file-share.{0,40}download'
   - id: php-content-disposition-readfile
     desc: PHP readfile download response
     crit: notable
@@ -88,6 +131,19 @@ traits:
       type: text
       regex: 'createWriteStream\s*\([^)]{1,120}\)[\s\S]{0,900}\.get\s*\([\s\S]{0,500}\.pipe\s*\('
 
+  # Node download helpers often put headers and redirect hops between https.get
+  # and the pipe-to-file, so require the GET to precede the write-stream rather
+  # than the reverse order the alias matcher above expects.
+  - id: node-https-get-write-stream-pipe
+    desc: HTTPS GET piped to write stream
+    crit: notable
+    conf: 0.92
+    attack: T1105
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\bhttps\.get\s*\([\s\S]{0,999}createWriteStream\s*\([\s\S]{0,400}\.pipe\s*\('
+
 composite_rules:
   - id: node-http-stream-to-archive
     desc: Node HTTP response streamed into an archive extractor
@@ -98,7 +154,7 @@ composite_rules:
     near_lines: 12
     all:
       - id: micro-behaviors/communications/http/request/client::https-get
-      - id: micro-behaviors/process/fd/stdio::node-response-pipe
+      - id: micro-behaviors/communications/http/response::node-response-pipe
       - id: node-tar-extractor-reference
     any:
       - id: micro-behaviors/fs/write/file/direct::create-write-stream
@@ -109,8 +165,10 @@ composite_rules:
     conf: 0.92
     attack: T1105
     for: [javascript, typescript]
-    near_lines: 12
+    # Header objects and a redirect hop routinely push https.get 14+ lines above
+    # createWriteStream/pipe; 12 lines missed real download helpers.
+    near_lines: 20
     all:
       - id: micro-behaviors/fs/write/file/direct::create-write-stream
-      - id: micro-behaviors/process/fd/stdio::node-response-pipe
+      - id: micro-behaviors/communications/http/response::node-response-pipe
       - id: micro-behaviors/communications/http/request/client::node-http

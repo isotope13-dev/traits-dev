@@ -1,0 +1,62 @@
+# Control-flow flattening in JavaScript, thunk-table form.
+#
+# Straight-line code is rewritten as a numbered state machine: every original
+# basic block becomes a zero-argument closure in an array literal, the array is
+# indexed by a state variable, and each call's return value picks the next
+# state. Reading top-to-bottom no longer tells you the execution order -- the
+# order lives in the return values, which is exactly what the transform buys.
+#
+# The sibling `js-while-switch-state-machine` in obfuscation/syntax/ covers the
+# `while(1) switch(n)` dispatcher; this file covers the array-of-closures
+# dispatcher. Minifiers and bundlers never emit it: it costs an allocation and
+# a call per basic block for no size win.
+#
+# Each leg is weak alone (callback arrays and counter loops are everyday code),
+# so the atoms are components and the composite carries the finding.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript, html]
+  attack: T1027.002
+  mbc: B0032
+traits:
+  # An array literal that opens with a zero-argument function -- the first
+  # basic block of the flattened body.
+  - id: js-nullary-thunk-array-literal
+    desc: Array literal opens with a nullary function
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: '=\s*\[\s*(function\s*\(\s*\)|\(\s*\)\s*=>)'
+  # ...and closes straight into a variable subscript that is immediately
+  # invoked: `][state]()`. A lookup table indexed by a literal, or one holding
+  # values rather than thunks, does not reach this.
+  - id: js-array-literal-computed-invoke
+    desc: Array literal indexed by variable and invoked
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: '\]\s*\[\s*[\w$]+\s*\]\s*\(\s*\)'
+  # The loop that drives the table: `while (state !== 3)`, comparing a bare
+  # identifier against a numeric literal with nothing else in the condition.
+  - id: js-numeric-state-loop-guard
+    desc: Loop guarded on a numeric state variable
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: 'while\s*\(\s*[\w$]+\s*!==?\s*(0x[0-9a-fA-F]+|\d+)\s*\)'
+composite_rules:
+  # All three within one block: a thunk table, indexed by a variable and
+  # invoked, driven by a numeric state loop. That is the complete flattening
+  # transform rather than an incidental array of callbacks.
+  - id: js-flattened-state-machine
+    desc: Control flow flattened into a thunk table
+    crit: suspicious
+    conf: 0.93
+    all:
+      - id: js-nullary-thunk-array-literal
+      - id: js-array-literal-computed-invoke
+      - id: js-numeric-state-loop-guard
+    near_bytes: 4096

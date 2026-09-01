@@ -4,24 +4,16 @@ defaults:
     - macos
     - windows
   attack: T1489
-  for: [shell, python, javascript, powershell, pe]
+  for: [shell, python, javascript, powershell, batch, pe]
 traits:
-  - id: service-stop-dup
-    desc: SysV service stop
-    crit: suspicious
-    conf: 0.8
-    platforms: [unix]
-    for: [shell, python, javascript]
+  - id: docker-dind-teardown-service-stop
+    desc: DinD CI teardown stops docker service
+    crit: notable
+    conf: 0.9
+    for: [shell]
     if:
       type: text
-      regex: (?i)(^|[;&])\s*(/usr/sbin/)?service\s+[A-Za-z0-9_.@-]+\s+stop\b
-    unless:
-      - id: metadata/build/package/
-      - id: metadata/file/profile/identity::static-html-shell
-    downgrade:
-      any:
-        - id: metadata/signed/platform::apple
-        - id: metadata/build/package/
+      regex: '(?i)DOCKER_IN_DOCKER.{0,500}service docker stop'
   - id: sc-stop
     desc: Windows service control stop
     crit: notable
@@ -38,8 +30,6 @@ traits:
       - substr: sc.exe stop LCD_Service
       - substr: sc stop sppsvc
     downgrade:
-      any:
-        - id: metadata/binary/installer/family/
     unless:
       - id: metadata/binary/installer/family/
   - id: net-stop
@@ -50,7 +40,16 @@ traits:
     for: [powershell, pe, python, javascript, batch]
     if:
       type: text
-      regex: '(?i)\bnet(\.exe)?\s+stop\s+[A-Za-z0-9_.-]{2,}\b'
+      regex: '(?i)\bnet(\.exe)?\s+stop\s+[''"]?[A-Za-z0-9_.$-]{2,}\b'
+  - id: veeam-sql-agent-stop
+    desc: Stops Veeam SQL Agent via net.exe
+    crit: suspicious
+    conf: 0.96
+    platforms: [windows]
+    for: [powershell, pe, python, javascript, batch]
+    if:
+      type: text
+      regex: '(?i)\bnet(\.exe)?\s+stop\s+[''"]?SQLAgent\$VEEAMSQL[A-Za-z0-9_.-]*'
   - id: sharedaccess-service-name
     desc: References SharedAccess firewall service
     crit: component
@@ -101,18 +100,6 @@ traits:
     downgrade:
       any:
         - id: metadata/binary/installer/family/
-  - id: kill-mysql-kill
-    desc: MySQL process-name termination command
-    crit: suspicious
-    conf: 0.82
-    if:
-      type: text
-      regex: '(?i)\b(killall|pkill|taskkill)\b[^\r\n]{0,40}\s(mysql|mysqld)\b'
-    unless:
-      - id: well-known/lib/ui/ace-editor
-      - id: metadata/package/testing/presence/harness::python-test-file
-      - id: metadata/package/testing/presence/harness::python-test-file-content
-      - id: sysv-service-lifecycle
   - id: kill-mysql-stop
     desc: MySQL service stop command
     crit: suspicious
@@ -129,24 +116,21 @@ traits:
     not:
       - regex: '(?i)stop:\s+mysql'
   - id: kill-postgres-kill
-    desc: PostgreSQL kill command
+    desc: PostgreSQL process termination command
     crit: notable
     conf: 0.5
     if:
       type: text
-      regex: (?i)\bkill\b.{0,30}postgres
+      regex: (?i)\b(killall|pkill|taskkill)\b[^\r\n]{0,80}\bpostgres
   - id: kill-postgres-stop
-    desc: PostgreSQL stop command
+    desc: PostgreSQL service stop command
     crit: notable
     conf: 0.5
     if:
       type: text
-      regex: (?i)\bstop\b.{0,30}postgres
+      regex: (?i)\b((systemctl|net)\s+stop\s+postgres|service\s+postgres\S*\s+stop|pg_ctl\s+stop)
     unless:
       - id: well-known/tool/sysadmin/alpine-packages::alpine-ansible-core-package
-    not:
-      - regex: '(?i)stop:\s+.*postgres'
-      - regex: '(?i)stop mysql/postgres'
   - id: kill-oracle-kill
     desc: Oracle process termination command
     crit: suspicious
@@ -188,13 +172,14 @@ traits:
       regex: (?i)\bstop\b[^\n]{0,30}\bmssql\b
     not:
       - regex: '(?i)stop:\s+mssql'
+      - regex: '(?i)(docker\s+)?stop\s+mssql\b'
   - id: kill-mongodb-kill
-    desc: MongoDB kill command
+    desc: MongoDB process termination command
     crit: suspicious
     conf: 0.5
     if:
       type: text
-      regex: (?i)\bkill(all)?\b[\s"'`=-]{0,8}[^\n]{0,22}\b(mongod|mongodb)\b
+      regex: (?i)\b(killall|pkill|taskkill)\b[\s"'`=-]{0,8}[^\n]{0,22}\b(mongod|mongodb)\b
   - id: kill-mongodb-stop
     desc: MongoDB stop command
     crit: component
@@ -281,14 +266,6 @@ traits:
     unless:
       - id: metadata/package/testing/
       - id: metadata/package/testing/presence/harness::test-fixture-directory-path
-  - id: pm2-kill-all
-    desc: PM2 process manager termination
-    crit: suspicious
-    conf: 0.9
-    for: [javascript, shell]
-    if:
-      type: text
-      regex: '\b(npx\s+)?pm2\s+(kill|delete\s+all)\b'
   - id: node-cwd-pkill
     desc: pkill targets current Node project
     crit: suspicious
@@ -298,15 +275,6 @@ traits:
     if:
       type: text
       regex: 'pkill\s+-f\s+["''`]node\.\*\$\{?process\.cwd\(\)\}?'
-  - id: force-kill-node-exe
-    desc: Force kills node.exe process
-    crit: suspicious
-    conf: 0.9
-    platforms: [windows]
-    for: [javascript, batch, powershell]
-    if:
-      type: text
-      regex: '\btaskkill\b[^\r\n]{0,80}/IM\s+node\.exe\b[^\r\n]{0,80}/F\b'
   - id: batch-deletes-programfiles-exe
     desc: Batch deletes Program Files EXE
     crit: suspicious
@@ -387,6 +355,7 @@ composite_rules:
       - id: well-known/app/infrastructure/nuzur/
       - id: well-known/tool/development/osbuild-composer::osbuild-composer-test-script-context
       - id: well-known/tool/sysadmin/kubernetes/bootstrap/
+      - id: metadata/build/package/maintainer-scripts::package-preuninstall-script-path
     # An app (un)installing its OWN service emits the target as a templating
     # placeholder/variable rather than a hardcoded victim service name. That is
     # lifecycle management, not impact -> drop suspicious to notable. Referenced
@@ -400,11 +369,12 @@ composite_rules:
     crit: suspicious
     conf: 0.6
     any:
-      - id: kill-mysql-kill
+      - id: micro-behaviors/process/terminate/command::taskkill-mysql-process
       - id: kill-mysql-stop
     unless:
       - id: metadata/lang/source/
       - id: sysv-service-lifecycle
+      - id: well-known/lib/cloud/boto::boto-pyami-installer-context
   - id: kill-postgres
     desc: PostgreSQL service termination
     crit: notable
@@ -467,9 +437,9 @@ composite_rules:
     all:
       - id: objectives/impact/wipe/disk/mass-delete::js-self-destruct-marker
     any:
-      - id: pm2-kill-all
+      - id: micro-behaviors/process/terminate/command::js-pm2-all-process-stop
       - id: node-cwd-pkill
-      - id: force-kill-node-exe
+      - id: micro-behaviors/process/terminate/command::taskkill-node-process
   - id: mongodb-service-stop
     desc: MongoDB service stop command
     crit: suspicious
@@ -480,12 +450,12 @@ composite_rules:
       - id: kill-mongodb-stop
     any:
       - id: micro-behaviors/os/service/control::systemctl-stop
-      - id: service-stop-dup
+      - id: micro-behaviors/os/service/control::service-stop
       - id: sc-stop
       - id: net-stop
       - id: micro-behaviors/os/service/control::launchctl-stop-command
-  - id: kill-database
-    desc: Database service termination
+  - id: kill-multiple-databases
+    desc: Multiple database service families terminated
     crit: suspicious
     conf: 0.9
     any:
@@ -494,6 +464,7 @@ composite_rules:
       - id: kill-oracle
       - id: kill-mssql
       - id: kill-mongodb
+    needs: 2
     unless:
       - id: sysv-service-lifecycle
   - id: security-service-disable

@@ -1,50 +1,43 @@
 defaults:
-  platforms: [unix, windows, macos]
+  platforms: [unix, windows]
   mbc: B0032
+  attack: T1027,T1059.007
+traits:
+  # `Function(function decode(...){...})(...)` — the Function constructor is
+  # applied directly to an inline function literal, so the program that runs is
+  # produced at call time and never appears as source text.
+  #
+  # Deliberately a text matcher, not tree-sitter: the packed multi-megabyte
+  # single-line droppers this shape belongs to exceed the JavaScript parser's
+  # scanner-state guard, so cleave reports `source.ast_unavailable` for them
+  # and every AST-anchored sink (`function-ctor-call-expr-arg`,
+  # `js-function-constructor`) is silently unreachable. Component on its own —
+  # the decoder proximity comes from the packed-dropper composite that
+  # references it alongside a char-code/XOR decoder leg.
+  - id: function-ctor-wraps-inline-function
+    desc: Function constructor wraps inline function
+    crit: component
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\bFunction\s*\(\s*function\b'
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: well-known/tool/detection/security-scanner/
+      - id: well-known/tool/detection/llm-scanner/
 composite_rules:
   - id: wscript-xor-dynamic-function-stage
     desc: WScript XOR-obfuscated dynamic Function stage
     crit: hostile
     conf: 0.97
-    attack: T1027,T1059.007
     mbc: B0032.001
     platforms: [windows]
     for: [javascript]
     all:
-      - id: objectives/execution/interpreter/vbscript/interpreter::wscript-createobject-dup
+      - id: micro-behaviors/os/com/object::wscript-createobject-call
       - id: micro-behaviors/data/encode/xor::js-xor-decoder-ast
       - id: micro-behaviors/process/interpreter/eval::js-new-function-variable-argument
-  # Notable, not suspicious, and no longer named for a severity it does not
-  # carry. `new Function(...)()` on its own is a dynamic-code CAPABILITY: it is
-  # the pre-ES5 JSON.parse shim, the globalThis discovery idiom, webpack's module
-  # wrapper, and the compile step of every template engine (lodash template,
-  # doT, EJS) and client-side framework compiler. It hides nothing and crosses
-  # no boundary, which is what `suspicious` is for -- and the nine carve-outs
-  # this rule had accumulated were the standing evidence that it was pitched too
-  # high (it convicted stock Baidu Tongji analytics, deployed on millions of
-  # pages, for its `new Function("return (" + s + ")")` JSON fallback).
-  # The packed-loader signal stays where the comment below puts it: a Function
-  # constructor PLUS independent decoder evidence.
-  - id: immediate-new-function-invocation
-    desc: Immediate invocation of new Function
-    crit: notable
-    conf: 0.9
-    attack: T1027
-    all:
-      - id: micro-behaviors/data/source/dynamic/eval::new-function-iife
-    downgrade:
-      any:
-        - id: metadata/package/testing/
-        - id: metadata/library/structure/
-        - id: metadata/library/runtime/
-    unless:
-      - id: micro-behaviors/data/source/dynamic/eval::new-function-return-this
-      - id: micro-behaviors/data/source/dynamic/eval::new-function-json-parse-fallback
-      - id: metadata/library/structure/
-      - id: metadata/build/recognized-contexts::benign-build-tooling-context
-      - id: micro-behaviors/os/module/load::dynamic-import-function-constructor
-      - id: well-known/app/browser/google-web::google-platform-js-asset
-
   # A Function constructor combined with several independent decoder
   # indicators is a packed loader, not ordinary dynamic configuration. The
   # individual atoms remain neutral/notable on their own.
@@ -52,7 +45,6 @@ composite_rules:
     desc: Obfuscated Function constructor executes decoded JavaScript
     crit: hostile
     conf: 0.98
-    attack: T1027,T1059.007
     # Decoder atoms are common in bundled libraries. They must occur in one
     # analyzed source file and close together, and the decoded value must feed
     # an execution sink, before this intent-level rule labels the file as a

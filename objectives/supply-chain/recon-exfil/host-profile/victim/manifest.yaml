@@ -16,6 +16,22 @@ traits:
     regex: "--data(-urlencode)?[\\s\"']{1,3}(user|hostname?|bid|uid)="
   unless:
     - id: well-known/app/utility/cmdchamp/
+# Comparing a PARSED manifest's `.name` against a string literal — the tail of
+# the walk-up-to-a-foreign-package.json probe (`parsed = JSON.parse(raw); if
+# (parsed.name && parsed.name !== '<self>')`). The `JSON.parse(...).name !==`
+# shape is the discriminator: a bare `.name !==` is the ubiquitous
+# `err.name !== "AbortError"` idiom, so this stays a component and only means
+# "whose project installed me" alongside the victim-id and install-hook legs of
+# the composite below. A rewrite in another language keeps the parse+compare.
+- id: parsed-manifest-name-inequality
+  desc: Parsed manifest name compared to literal
+  crit: component
+  conf: 0.9
+  for: [javascript, typescript]
+  attack: "T1195.002,T1082"
+  if:
+    type: text
+    regex: '(?i)JSON\.parse\([\s\S]{0,80}\.name\s*&&[\s\S]{0,20}\.name\s*!==?\s*["\'']'
 composite_rules:
   - id: python-package-profiled-install-beacon
     desc: Python package profiles the host and installs an HTTP-capable dependency
@@ -35,38 +51,13 @@ composite_rules:
     desc: NPM victim identifiers beaconed via curl
     crit: hostile
     conf: 0.96
+    for: [archives]
+    scope: archive
     attack: T1041
     mbc: E1041
     all:
-      - id: npm-victim-id-recon
+      - id: objectives/discovery/system/fingerprint/user::small-node-host-user-query
       - id: curl-beacon-victim-fields
-  - id: npm-victim-id-recon
-    desc: NPM package collects victim identifiers
-    crit: notable
-    conf: 0.9
-    all:
-      - id: objectives/discovery/system/fingerprint/hardware::js-victim-id
-      - id: metadata/file/metrics::javascript-small-file-5k
-    scope: archive
-    unless:
-      - id: metadata/lang/compiler/systems/
-      - id: metadata/lang/compiler/systems::go-version-string
-      - id: metadata/package/manifest/repository/
-      - id: metadata/package/dependencies/manifest::platform-optional-native-wrapper
-      - id: micro-behaviors/os/service/legitimate::npm-native-binary-wrapper
-      - id: objectives/supply-chain/recon-exfil/install-hook::parcel-cpu-count-worker
-      - id: metadata/library/vscode::vscode-extension-uninstall-telemetry
-  - id: npm-victim-exfil-transport
-    desc: NPM victim exfil transport
-    crit: component
-    conf: 0.94
-    any:
-      - id: objectives/exfiltration/http/upload::node-collect-exfil
-      - id: objectives/exfiltration/http/upload::node-stealthy-exfil
-      - id: objectives/exfiltration/http/upload::curl-file-upload-exfil
-      - id: objectives/exfiltration/messaging/webhook::webhook-c2-channel
-      - id: objectives/exfiltration/messaging/webhook::discord-host-fingerprint-exfiltration
-      - id: micro-behaviors/communications/http/request/dynamic::node-scheme-selected-http-get
   # A package that profiles the importing machine and posts the serialized
   # result from module scope is a supply-chain beacon, even without an npm
   # lifecycle hook. Require the archive-scoped npm victim signal plus the
@@ -81,26 +72,12 @@ composite_rules:
     scope: archive
     near_bytes: 8192
     all:
-      - id: npm-victim-id-recon
+      - id: objectives/discovery/system/fingerprint/user::small-node-host-user-query
       - id: objectives/discovery/system/fingerprint/hardware::node-data-aggregation
       - id: micro-behaviors/communications/http/request/client::node-http-request-stream-body
       - id: micro-behaviors/communications/http/request/client::post-method-text
       - id: micro-behaviors/data/serialize/json::json-stringify-call
       - id: micro-behaviors/data/control-flow/module-exec::direct-zero-arg-call
-  - id: npm-victim-id-exfil
-    desc: NPM victim identifiers with exfiltration
-    crit: hostile
-    conf: 0.99
-    attack: T1020
-    mbc: E1041
-    all:
-      - id: npm-victim-id-recon
-      - id: npm-victim-exfil-transport
-    unless:
-      - id: metadata/package/manifest/publishing::is-private
-      - id: metadata/package/manifest/name/
-      - id: metadata/library/structure::js-large-module-bundle
-      - id: metadata/package/quality/benign-context::benign-trojanized-fp-context
   - id: npm-victim-id-fetch-exfil
     desc: NPM victim identifiers sent in an authenticated account request
     crit: hostile
@@ -110,7 +87,7 @@ composite_rules:
     for: [archives]
     scope: archive
     all:
-      - id: npm-victim-id-recon
+      - id: objectives/discovery/system/fingerprint/user::small-node-host-user-query
       - id: micro-behaviors/communications/http/request/client::js-fetch-call
       - id: micro-behaviors/communications/http/request/client::bearer-authorization-prefix
       - id: micro-behaviors/communications/http/endpoints::accounts-endpoint-path
@@ -121,16 +98,66 @@ composite_rules:
     desc: NPM victim identifiers exfiltrated to OOB
     crit: hostile
     conf: 0.98
+    for: [archives]
+    scope: archive
     attack: T1048
     mbc: E1041
     all:
-      - id: npm-victim-id-recon
+      - id: objectives/discovery/system/fingerprint/user::small-node-host-user-query
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::has-preinstall
       - id: objectives/exfiltration/oob/endpoint::oob-endpoint-any
     any:
       # https.request and fetch() are both common Node OOB transports.
       - id: micro-behaviors/communications/http/request/client::https-request
       - id: micro-behaviors/communications/http/request/client::js-fetch-call
       - id: micro-behaviors/communications/http/request/client::http-post-json
+    unless:
+      - id: metadata/package/testing/presence/harness/
+      - id: metadata/package/manifest/publishing::is-private
+
+  # The same beacon delivered through `npx` instead of an install hook.
+  #
+  # `npm-victim-id-oob-exfil` above requires `has-preinstall`, and every other
+  # composite in this directory is keyed to a lifecycle script, because that is
+  # how these packages have historically fired. It is not the only trigger a
+  # published package has: a `bin` entry runs the moment somebody types
+  # `npx <name>`, with no install hook to find and nothing in `scripts` for a
+  # reviewer to read. A package whose declared CLI command *is* the beacon
+  # therefore passes every rule here.
+  #
+  # The legs describe that package and not a CLI with telemetry. `small-js-
+  # victim-id` bounds it to a small script whose business is collecting host
+  # and user identity — an actual tool's entry point does something else as
+  # well. Shelling out to `whoami`, or reading the machine name, then POSTing
+  # the result as JSON to a hardcoded host, is the collection and the transport
+  # in one file. Real analytics reports a random install id to the vendor's own
+  # domain; it does not run `whoami`.
+  #
+  # scope: archive — the `bin` declaration is in package.json and the beacon is
+  # in the script it names.
+  # `for:` names npm/tar rather than the `archives` group its siblings use.
+  # `archives` does include Npm (every archive file type is tagged as such in
+  # cleave, so the group is not the reason a rule like this fails to fire), but
+  # it expands to 25 types and costs a -0.8 file-type breadth penalty. Every
+  # leg here is npm-shaped — a package.json `bin` map and Node source — so the
+  # extra 23 types are only breadth this rule cannot use.
+  - id: npm-cli-entry-host-profile-callback
+    desc: Package CLI entry beacons host identity
+    crit: hostile
+    conf: 0.96
+    for: [npm, tar]
+    scope: archive
+    attack: T1195.002,T1041,T1082,T1033
+    mbc: E1041
+    all:
+      - id: metadata/package/manifest/entrypoint::bin-field-declared
+      - id: objectives/discovery/system/fingerprint/user::small-node-host-user-query
+      - id: micro-behaviors/communications/http/request/client::http-post-json
+      - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+    any:
+      - id: micro-behaviors/process/user/query::whoami-exec-argument
+      - id: micro-behaviors/os/sysinfo/hostname::os-hostname-call
+      - id: micro-behaviors/os/sysinfo/hostname::node-os-alias-hostname-call
     unless:
       - id: metadata/package/testing/presence/harness/
       - id: metadata/package/manifest/publishing::is-private
@@ -146,3 +173,27 @@ composite_rules:
       - id: objectives/supply-chain/impersonation/manifest/placeholder::mature-hollow-index-package
       - id: objectives/supply-chain/install-hook/scripts/lifecycle::preinstall-runs-node-local-script
       - id: objectives/discovery/system/fingerprint/hardware::js-encoded-recon-beacon
+
+  # Victim identification, not host telemetry: the hook pairs the consumer
+  # project's manifest identity with the machine's own user/hostname and hands
+  # the pair to a network sink. Any transport counts — DNS labels, fetch, or a
+  # raw https request — because the identifying move is the ancestor-manifest
+  # probe, not the channel it leaves by.
+  - id: install-hook-victim-project-identity-exfil
+    desc: Install hook exfiltrates the installing project's identity
+    crit: hostile
+    conf: 0.98
+    for: [javascript, typescript, package.json, npm, archives]
+    scope: archive
+    attack: "T1195.002,T1082,T1033,T1041"
+    mbc: E1041
+    all:
+      - id: parsed-manifest-name-inequality
+      - id: objectives/discovery/system/fingerprint/user::small-node-host-user-query
+    any:
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::has-preinstall
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::has-postinstall
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::has-install
+    needs: 1
+    unless:
+      - id: metadata/package/testing/presence/harness/

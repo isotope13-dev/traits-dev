@@ -1,0 +1,142 @@
+# Skype Public API command vocabulary as it survives compilation.
+#
+# The sibling file skype-source.yaml already covers this channel, but only in
+# source: every one of its atoms is `type: string_literal` scoped to `c`/`cpp`,
+# which never matches a shipped executable. The commands themselves are format
+# strings that end up verbatim in the binary's data, so the same vocabulary is
+# recoverable from a compiled worm -- these atoms are the binary-facing half of
+# that set, kept as separate traits because the matcher and corpus differ.
+#
+# The API is a message-passing protocol: a client broadcasts the registered
+# window messages below to find the Skype window, then exchanges line-oriented
+# commands over WM_COPYDATA. It is a documented automation surface, so any one
+# command is a legitimate thing for an add-on to send; the composites are what
+# distinguish an add-on from a worm driving somebody else's account.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  crit: notable
+  conf: 0.96
+  attack: T1102.002
+
+traits:
+  - id: skype-control-api-attach-name
+    desc: Skype Control API attach message name
+    if:
+      type: text
+      exact: SkypeControlAPIAttach
+
+  - id: skype-control-api-discover-name
+    desc: Skype Control API discover message name
+    if:
+      type: text
+      exact: SkypeControlAPIDiscover
+
+  - id: skype-chat-create-command-text
+    desc: Skype CHAT CREATE command template
+    if:
+      type: text
+      regex: '^CHAT CREATE %s'
+
+  - id: skype-chatmessage-command-text
+    desc: Skype CHATMESSAGE send command template
+    if:
+      type: text
+      regex: '^CHATMESSAGE %s'
+
+  - id: skype-search-friends-command
+    desc: Skype SEARCH FRIENDS contact list command
+    if:
+      type: text
+      exact: SEARCH FRIENDS
+
+  # GET USER <handle> <property> reads another account's profile. One is an
+  # ordinary lookup; a binary that carries a table of them is enumerating
+  # everything the contact list will disclose, so the count floor is the signal.
+  - id: skype-get-user-property-command
+    desc: Skype GET USER profile property commands
+    conf: 0.97
+    count_min: 6
+    if:
+      type: text
+      regex: '^GET USER %s [A-Z_]{3,24}$'
+
+  - id: skype-get-profile-property-command
+    desc: Skype GET PROFILE property commands
+    conf: 0.97
+    count_min: 6
+    if:
+      type: text
+      regex: '^GET PROFILE [A-Z_]{3,24}$'
+
+  # Setting the account's own presence is how an automation hides: DND
+  # suppresses the toast and sound for every message the worm then sends.
+  - id: skype-set-userstatus-command
+    desc: Skype SET USERSTATUS presence command
+    if:
+      type: text
+      regex: '^SET USERSTATUS [A-Z]{2,12}$'
+
+  # The Skype client's own confirmation dialog for "an application wants to use
+  # Skype". A third-party binary has no reason to know this Delphi form class
+  # unless it intends to locate that dialog and answer it.
+  - id: skype-api-confirm-form-class
+    desc: Skype API access confirmation form class
+    conf: 0.97
+    if:
+      type: text
+      regex: '^[tT][sS]kConfirmForm\.'
+
+composite_rules:
+  - id: skype-control-api-client-binary
+    desc: Compiled Skype Control API client
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: skype-control-api-attach-name
+      - id: skype-control-api-discover-name
+    unless:
+      - id: metadata/signed/platform/
+      - id: well-known/app/
+      - id: well-known/lib/
+      - id: well-known/tool/
+
+  # Driving the API while arranging not to be seen doing it. The confirmation
+  # form class is only useful to a program that means to locate Skype's own
+  # "allow this program to use Skype" dialog and answer it, so the user never
+  # gets asked; forcing presence to Do Not Disturb suppresses the toast and
+  # sound for everything the client then sends. Suspicious rather than hostile
+  # on its own -- concealment says the automation is unwanted, not yet what it
+  # is for. The worm verdict that consumes this context lives in
+  # objectives/lateral-movement/worm/messaging.
+  - id: skype-api-presence-concealment
+    desc: Skype API self-authorises and hides presence
+    crit: suspicious
+    conf: 0.95
+    attack: T1562.006
+    all:
+      - id: skype-control-api-client-binary
+    any:
+      - id: skype-api-confirm-form-class
+      - id: skype-set-userstatus-command
+    unless:
+      - id: metadata/signed/platform/
+      - id: well-known/app/
+
+  # Reading every disclosed field of the account and of its contacts. This is
+  # the collection half of the channel and stands on its own: a binary that
+  # drives the API purely to harvest phone numbers, birthdays and balances is
+  # doing that whether or not it also spreads.
+  - id: skype-contact-profile-harvest
+    desc: Skype API harvests account and contact profiles
+    crit: suspicious
+    conf: 0.96
+    attack: T1087.003
+    all:
+      - id: skype-control-api-client-binary
+    any:
+      - id: skype-get-user-property-command
+      - id: skype-get-profile-property-command
+    unless:
+      - id: metadata/signed/platform/
+      - id: well-known/app/

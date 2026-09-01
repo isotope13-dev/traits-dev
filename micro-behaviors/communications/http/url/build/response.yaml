@@ -16,6 +16,36 @@ defaults:
   mbc: C0002
 
 traits:
+  - id: python-urllib-response-body-read
+    desc: Python reads an urllib response body
+    for: [python]
+    conf: 0.94
+    if:
+      type: text
+      regex: '\burlopen\(.{1,200}\)\.read\(\)'
+
+  - id: python-regex-url-search
+    desc: Python regex searches for an HTTP URL
+    for: [python]
+    conf: 0.94
+    if:
+      type: text
+      regex: '\bre\.(search|findall)\(\s*r?["'']https?://'
+
+  - id: go-read-http-response-body
+    desc: Go reads an HTTP response body
+    for: [go]
+    if:
+      type: text
+      regex: 'io\.ReadAll\s*\(\s*\w+\.Body\s*\)'
+
+  - id: go-trim-body-into-url
+    desc: Go trims response text into URL
+    for: [go]
+    if:
+      type: text
+      regex: '["'']https?://["'']\s*\+\s*strings\.TrimSpace\(string\(\w+\)\)'
+
   - id: host-field-from-call-result
     desc: Host field assigned from result
     if:
@@ -51,7 +81,82 @@ traits:
       type: text
       regex: '(?i)\b(host|url|c2)\s*=\s*bytes\.fromhex\b'
 
+  - id: shell-host-from-xxd-hex-decode
+    desc: Shell assigns host from xxd hex decode
+    for: [shell, applescript]
+    if:
+      type: text
+      # EVM ABI strings are often extracted with shell parameter slicing and
+      # decoded inside command substitution. Bind xxd to a destination-shaped
+      # assignment so ordinary file-format conversion remains neutral.
+      regex: '(?i)\b(host|url|c2)\s*=\s*\$\([^\r\n]{0,200}\bxxd\s+-r\s+-p\b'
+
+  - id: shell-post-to-variable-authority
+    desc: Shell POSTs to variable URL authority
+    for: [shell]
+    if:
+      type: text
+      # Bind the POST verb and computed authority to the same curl command.
+      # This excludes variables used only in a fixed service URL's path.
+      regex: '\bcurl\b[^\r\n]{0,160}-X\s+POST[^\r\n]{0,160}["'']?https?://\$\{?[A-Za-z_]\w*\}?'
+
+  # The whole authority half of the destination is interpolated from a
+  # variable. This atomic detects URL construction only.
+  - id: js-fetch-derived-url-authority
+    desc: JavaScript fetch to computed URL authority
+    conf: 0.92
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'fetch\s*\(\s*`https?://\$\{[A-Za-z_$][A-Za-z0-9_$]*\}'
+
+  - id: js-post-to-variable-authority
+    desc: JavaScript POST to computed URL authority
+    conf: 0.94
+    for: [javascript, typescript]
+    if:
+      type: text
+      # Bind the computed authority and POST method to the same fetch call.
+      regex: 'fetch\s*\(\s*`https?://\$\{\w+\}[^`]{0,160}`\s*,\s*\{[^}]{0,240}\bmethod\s*:\s*["'']POST'
+
+  - id: python-post-to-derived-url
+    desc: Python POST to computed URL
+    conf: 0.92
+    for: [python]
+    unless:
+      - id: well-known/app/productivity/keepercommander/
+    if:
+      type: text
+      regex: "requests\\.post\\s*\\(\\s*f['\"]https?://\\{[A-Za-z_][A-Za-z0-9_]*\\}"
+
+  - id: go-post-to-derived-url
+    desc: Go POST to computed URL
+    conf: 0.92
+    for: [go]
+    if:
+      type: text
+      regex: 'http\.Post\s*\(\s*"https?://"\s*\+'
+    unless:
+      - id: metadata/package/testing/presence/harness::go-test-file
+
 composite_rules:
+  - id: python-urllib-response-url-extraction
+    desc: Python extracts URL from urllib response
+    for: [python]
+    conf: 0.94
+    near_lines: 12
+    all:
+      - id: python-urllib-response-body-read
+      - id: python-regex-url-search
+
+  - id: go-response-body-url-construction
+    desc: Go builds URL from response body
+    for: [go]
+    near_lines: 12
+    all:
+      - id: go-read-http-response-body
+      - id: go-trim-body-into-url
+
   # Aggregates "destination came from a prior call/decode" atoms so consumers
   # can reference one id instead of enumerating every build/response variant.
   - id: destination-from-call-or-hex
@@ -63,3 +168,15 @@ composite_rules:
       - id: call-result-destination-field-read
       - id: host-from-hex-buffer-decode
       - id: host-from-hex-bytes-decode
+      - id: shell-host-from-xxd-hex-decode
+
+  # Same for the "destination authority came from a variable" atoms, so a
+  # consumer references one id rather than every per-language spelling.
+  - id: post-to-variable-authority
+    desc: Request posts to a variable URL authority
+    conf: 0.9
+    any:
+      - id: js-post-to-variable-authority
+      - id: python-post-to-derived-url
+      - id: go-post-to-derived-url
+      - id: shell-post-to-variable-authority

@@ -61,31 +61,28 @@ traits:
     path: rpm.name
     exists: true
 
-# A pinned IPv4 host literal in a compiled binary, matched on the extracted
-# string runs rather than the raw bytes.
+# A pinned IPv4 host literal in a compiled binary. Match raw bytes with explicit
+# boundaries so NUL-delimited binary strings are visible without admitting
+# dotted quads that exist only as speculative XOR/base64 decodes.
+# `is: external_ip` rejects invalid, private, reserved, documentation, and
+# version-like values after extracting the address from the bounded evidence.
 #
-# Why this exists next to external-ipv4-binary rather than replacing it: that
-# trait anchors `^...$` against `type: raw`, where the anchors are newline
-# boundaries. Strings in an ELF/PE are NUL-delimited, so an embedded address is
-# never at a line boundary and the matcher does not fire on the file types it
-# declares (verified with `cleave test-match`: raw = 0 matches, text = 1 match,
-# on a binary containing a standalone `45.61.136.7`). ~45 composites reference
-# it, so switching its matcher is not a local change: on 9,314 ELF files from
-# /usr/bin, /usr/lib and /usr/sbin, 48 carry a standalone run that satisfies the
-# anchored dotted-quad plus `is: external_ip`, and nearly all are ASN.1 OIDs
-# (`2.5.29.14`, `2.5.4.10`, `1.3.101.110`) shipped by every TLS/crypto library.
-# Feeding those to Mirai/Cobalt-Strike/beacon composites is worse than the
-# current silence, so the repair needs its own pass.
+# Two boundary restrictions keep dotted runs that are not host references out:
 #
-# This atom takes the narrower reading a C2 address needs:
-#   * first octet >= 3 -- ASN.1 root arcs are 0, 1 and 2 by standard, which is
-#     what removes the certificate-OID class without guessing at vendor strings
-#   * `is: external_ip` still drops RFC1918, loopback, multicast and reserved
-# Residual: version strings whose first component is >= 3 (`3.1.4.1` in libjpeg,
-# `4.4.0.1` in gcr) still match, so pair this with behaviour rather than
-# treating it as standalone evidence of a C2. Measured on the same corpus: of
-# the 21 binaries carrying socket+connect+dup2+/bin/sh+inet_*+exec*, zero also
-# match this atom.
+#   * First octet must be two/three digits or 3-9, never a bare 0/1/2. Longer
+#     ASN.1 OIDs are already excluded by the non-dot boundaries, but a
+#     four-arc OID is indistinguishable from a dotted quad -- and every such
+#     arc starts at an ITU-T/ISO/joint root (0, 1 or 2). Without this, every
+#     OpenSSL-linked binary reported its EdDSA object table (`X25519:
+#     1.3.101.110`, `1.3.101.111`, ...) and zlib's `1.3.1.1-motley` version
+#     string as pinned C2 endpoints -- observed across the whole corpus, e.g.
+#     on frida-portal 17.9.11 for iOS. This mirrors the identical first-octet
+#     restriction on external-ipv4-c-source-literal below.
+#   * The trailing byte must be a string delimiter rather than any non-decimal
+#     byte, so a dotted quad that only exists inside a packed binary table
+#     (frida-portal again: `,6.7.8.5{` in an unwind table) is not read as a
+#     host string. Real endpoint literals are followed by NUL, quote,
+#     whitespace, or URL/port punctuation.
 - id: external-ipv4-host-literal-binary
   desc: Pinned external IPv4 host literal in binary
   crit: notable
@@ -93,13 +90,13 @@ traits:
   for: [pe, elf, macho]
   size_max: 20000000
   if:
-    type: text
-    regex: '^([3-9]|[1-9][0-9]|1[0-9][0-9]|2[0-2][0-9])\.\d{1,3}\.\d{1,3}\.\d{1,3}$'
+    type: raw
+    regex: '(^|[^\d.])([0-9]{2,3}|[3-9])(\.[0-9]{1,3}){3}($|[\x00\s"'',:;/)\]>])'
     is: external_ip
   unless:
     # The residual noted above is not hypothetical on Windows: a PE whose own
     # VERSIONINFO is a dotted quad with every component <= 255 puts that string
-    # into the extracted text runs, and this matcher then reports the product's
+    # into the resource bytes, and this matcher then reports the product's
     # version as a pinned C2 endpoint. Observed on an Intel-signed installer
     # whose FileVersion is `25.3.24.7` -- reported on the bundle and on all 27
     # of its signed payload assemblies at once. `.rsrc`-scoped matches already
@@ -107,21 +104,11 @@ traits:
     # and the sibling xor-decoded-external-ipv4 below already carries this same
     # guard for the same reason.
     - id: metadata/package/versioning::pe-versioninfo-ipv4-shape
-    # Rust release binaries commonly contain XOR-decoded compiler/data
-    # material that produces syntactically valid dotted quads by chance;
-    # source-path attribution is the reusable marker for that build output.
-    - id: metadata/lang/compiler/systems::rust-src-path
-    # Snowball suffix tables can decode into dotted quads by chance; the
-    # library has no network surface and is a recognized benign dependency.
-    - id: well-known/lib/core/snowball/
-    # glibc gconv modules contain dense lookup tables; dotted quads decoded
-    # from those tables are data, not configured network endpoints.
-    - id: well-known/lib/native/glibc::gnu-character-conversion-module
   # This is the dotted certificate OID printed by GnuTLS tools, not an IP
-  # endpoint.  Keep the exception here because the text matcher has no
+  # endpoint. Keep the exception here because the raw matcher has no
   # certificate-field context.
   not:
-  - exact: 4.1.2.2
+  - regex: '4\.1\.2\.2'
 
 # The C/C++-source counterpart of external-ipv4-host-literal-binary, matched on
 # parsed string literals. Relocated (2026-08) from
@@ -143,11 +130,24 @@ traits:
     regex: '^([3-9]|[1-9][0-9]|1[0-9][0-9]|2[0-2][0-9])\.\d{1,3}\.\d{1,3}\.\d{1,3}$'
     is: external_ip
 
+# Suspicious, per the policy at the top of this file: a numeric public address
+# compiled into a binary is a pinned endpoint that survives domain takedown,
+# sinkholing and DNS-layer blocking, which is why implants carry one and
+# ordinary software resolves names instead. The `not:` list below is where
+# legitimate constants (public resolvers, metadata endpoints, x86 operand bytes
+# decoding to 66.66.66.x) get carved out.
+#
+# This previously read `crit: notable` with `downgrade: any: [<this trait>]` --
+# a self-reference, so the downgrade fired on the trait's own match every time
+# and pinned it to baseline: one level BELOW the "always at least notable"
+# floor this file documents. cleave's validator now rejects that shape
+# (find_self_suppressing_traits); it was invisible before because test-rules
+# evaluates a rule in isolation and reports it as matching normally.
 - id: external-ipv4-binary
   desc: Hardcoded external IPv4 in binary bytes
     # Search raw bytes so decoded guesses from unrelated binary data do not
     # masquerade as embedded network endpoints.
-  crit: notable
+  crit: suspicious
   conf: 0.85
   for:
   - pe
@@ -183,9 +183,6 @@ traits:
   - id: metadata/lang/compiler/managed::dotnet-ipv4-like-version
   - id: metadata/package/versioning/
   - id: well-known/lib/native/glibc::gnu-character-conversion-module
-  downgrade:
-    any:
-    - id: micro-behaviors/communications/ip/literal::external-ipv4-binary
 # Python bytecode keeps string constants length-prefixed rather than
 # NUL-terminated, so neither the `^...$` raw anchors of external-ipv4-binary
 # nor a `type: text` run reliably isolates an embedded address. Match the raw
@@ -293,6 +290,8 @@ traits:
   - exact: 1.1.1.1
   - exact: 9.9.9.9
   - exact: 100.100.100.200
+  # X.509 Subject Key Identifier extension OID, not an IP address.
+  - exact: 2.5.29.14
   - regex: ^208\.67\.22[20]\.22[20]$
   - exact: 123.123.123.123
   - regex: '\b(ks_)?(check_network_list_ip(_cidr)?|network_list_add_cidr)\b'
@@ -568,6 +567,14 @@ traits:
     type: literal
     kind: string
     regex: '^(192\.0\.2\.\d{1,3}|198\.51\.100\.\d{1,3}|203\.0\.113\.\d{1,3})$'
+- id: rfc5737-documentation-ipv4-cidr
+  desc: RFC5737 documentation IPv4 CIDR prefix
+  crit: baseline
+  conf: 0.95
+  for: [source, scripts]
+  if:
+    type: text
+    regex: '(192\.0\.2|198\.51\.100|203\.0\.113)\.\d{1,3}/\d'
 - id: encoded-external-ipv4-dotnet-version-text
   desc: Dotnet version text context
   crit: component
@@ -590,18 +597,20 @@ traits:
   if:
     type: encoded
     exact: "5.4.248.7"
-- id: encoded-external-ipv4-binary
-  desc: Encoded external IPv4 literal
-    # Notable rather than suspicious: the XOR/base64 decoders over high-entropy
-    # binary data sections (image processing, packed code) produce many
-    # IP-like sequences by chance, so this stays notable rather than suspicious.
+- id: non-xor-encoded-external-ipv4-binary
+  desc: Repeated non-XOR encoded external IPv4 literals
+  # A single decoded dotted quad occurs by chance in ordinary instruction and
+  # data bytes. Repetition is the minimum evidence that the result represents
+  # encoded configuration rather than a speculative decoder artifact.
   crit: notable
   conf: 0.9
   for:
   - binaries
   size_max: 5000000
+  count_min: 2
   if:
     type: encoded
+    encoding: [base64, base64-obf, hex, url, unicode-escape, base32, base85, utf16le, utf16be, stack, wide]
     regex: '^([0-9]{1,3}\.){3}[0-9]{1,3}$'
     is: external_ip
   not:
@@ -792,6 +801,15 @@ traits:
   - type: trait
     id: metadata/package/testing/
 composite_rules:
+- id: encoded-external-ipv4-binary
+  desc: Repeated encoded external IPv4 literals
+  crit: notable
+  conf: 0.9
+  for: [binaries]
+  any:
+  - id: non-xor-encoded-external-ipv4-binary
+  - id: xor-decoded-external-ipv4
+
 - id: external-ipv4-benign-source-context
   desc: Benign source context for hardcoded external IPv4 literals
   crit: baseline
@@ -812,7 +830,7 @@ composite_rules:
   # formatting buffer (e.g. serde's `debug_assert_eq!(MAX_LEN, "101.102.103.104".len())`).
   # The `.len()` call marks it as a length constant, not a network endpoint.
   - id: ipv4-literal-buffer-length-idiom
-  - id: metadata/package/testing/presence/fixture::csv-ip-address-column-fixture
+  - id: metadata/package/testing/presence/scripted::csv-ip-address-column-fixture
 
 - id: geoip-range-table-context
   desc: GeoIP address range table
@@ -831,6 +849,7 @@ composite_rules:
   - id: http-ip-url-text
   - id: external-ipv4-http-url
   - id: javascript-external-ipv4-url
+  - id: javascript-external-http-ip-url
   - id: micro-behaviors/communications/http/url/external-ip::url-external-ip-script
   unless:
   - id: well-known/dual-use/remote-admin/screenconnect::screenconnect-signed-launcher-context

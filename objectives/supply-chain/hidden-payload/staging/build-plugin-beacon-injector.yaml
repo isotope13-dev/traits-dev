@@ -1,0 +1,52 @@
+# A build-tool plugin whose real product is a collector injected into the
+# application it helps build.
+#
+# The pattern: the package presents itself as ordinary build tooling
+# (telemetry, image tracking, error reporting), implements the bundler's
+# HTML-transform hook, and emits an inline script into every page of the
+# shipped site. The script's destination is not written in the source — it is
+# passed in as an opaque "dsn" and decoded at runtime — and it does not fire
+# immediately: it hooks Web Storage so it runs the moment the application
+# stores a logged-in user, then reads the identity record and beacons it out
+# with no referrer and an unreadable response.
+#
+# Every piece has an innocent explanation on its own, which is the point. What
+# no legitimate build plugin does is combine page injection with a decoded
+# endpoint, a storage interposer, and an untraceable send — nothing about
+# collecting a page-view metric needs any of those.
+#
+# `scope: outer` lets the plugin module and its manifest be different archive
+# entries; the injected script is a string inside the plugin, so it and the
+# hook always share a file.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript, npm, zip]
+  attack: T1195.002,T1041
+  mbc: E1041
+
+composite_rules:
+  - id: build-plugin-injects-obfuscated-beacon
+    desc: Build plugin injects an obfuscated beacon
+    crit: hostile
+    conf: 0.95
+    scope: outer
+    all:
+      - id: micro-behaviors/process/inject/build-plugin::build-plugin-injects-page-script
+      - id: objectives/anti-static/obfuscation/encoding/xor::atob-map-charcode-numeric-xor
+    any:
+      - id: micro-behaviors/communications/http/request/beacon::browser-send-beacon-call
+      - id: micro-behaviors/communications/http/request/privacy::no-referrer-request-policy
+      - id: micro-behaviors/communications/http/request/client::image-src-network-request
+
+  - id: build-plugin-storage-triggered-exfil
+    desc: Injected script exfiltrates on stored user data
+    crit: hostile
+    conf: 0.96
+    scope: outer
+    all:
+      - id: micro-behaviors/process/inject/build-plugin::build-plugin-injects-page-script
+      - id: micro-behaviors/process/hook/web-storage::web-storage-method-override
+    any:
+      - id: micro-behaviors/data/source/property/read::js-identity-property-read-cluster
+      - id: micro-behaviors/communications/http/request/privacy::untraceable-opaque-browser-request
+      - id: objectives/anti-static/obfuscation/encoding/xor::atob-map-charcode-numeric-xor

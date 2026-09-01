@@ -5,8 +5,8 @@ defaults:
   crit: notable
   conf: 0.8
 composite_rules:
-  - id: unsigned-microsoft-rolling-xor-memory-loader
-    desc: Unsigned Microsoft-claim PE with rolling-XOR memory loader
+  - id: microsoft-attributed-rolling-xor-memory-loader
+    desc: Microsoft-attributed rolling-XOR memory loader
     crit: hostile
     conf: 0.995
     attack: T1036.005,T1027,T1140,T1620
@@ -26,7 +26,7 @@ composite_rules:
     conf: 0.94
     attack: T1036.005
     all:
-      - id: metadata/signed/trust-level::unsigned-missing-signature-record
+      - id: metadata/binary/layout::pe-no-signature-record
       - id: metadata/binary/vendor::microsoft-corp-versioninfo
     unless:
       - id: well-known/app/utility/windows-update::wusa-system-context
@@ -36,12 +36,11 @@ composite_rules:
       - id: objectives/evasion/masquerade/pe-tampering::microsoft-office-csi-ship-binary
       - id: well-known/lib/platform/microsoft-system/
       - id: well-known/lib/platform/microsoft-wininet/
+      - id: well-known/app/system/windows-core-utilities/
   # Microsoft does not ship UPX-packed binaries, and every genuine Microsoft OS
-  # component carries an Authenticode signature. Three independent facts here,
-  # each explicable alone and conclusive together: the file claims Microsoft
-  # authorship in its version resource, carries no signature at all, and is a
-  # UPX image whose identifying magic was deliberately overwritten so `upx -d`
-  # refuses it.
+  # component carries an Authenticode signature. The UPX0/UPX1 names here are
+  # demonstrably a disguise: UPX1 has no compressed payload and sandbox-memory
+  # reconstruction/tooling contexts are excluded by the referenced rule.
   #
   # This rung exists because the forged version resource is the *evasion*, not
   # a mitigation. Most of the fake-UPX loader family carries
@@ -50,19 +49,15 @@ composite_rules:
   # bothers to impersonate Microsoft has always stamped them. Requiring the
   # forged resource as a leg turns that escape hatch into evidence.
   #
-  # Both legs are already independently FP-hardened: the Microsoft-claim trait
-  # excludes Wine, wusa, resource-only DLLs and the genuine system libraries,
-  # and scrambled-upx-header excludes phantomjs, cygwin, FreeArc, wimlib,
-  # PeaZip, NirSoft and py2exe.
-  - id: unsigned-microsoft-scrambled-upx-loader
-    desc: Unsigned Microsoft claim on scrambled UPX loader
+  - id: unsigned-microsoft-fake-upx-layout
+    desc: Unsigned Microsoft-claim PE uses an uncompressed fake-UPX layout
     crit: hostile
     conf: 0.97
-    attack: T1036.005,T1027.002,T1620
+    attack: T1036.005,T1027.002
     for: [pe]
     all:
       - id: unsigned-pe-microsoft-version-claim
-      - id: objectives/anti-static/pack/upx::scrambled-upx-header
+      - id: objectives/anti-static/pack/section-names::upx-named-sections-uncompressed
     unless:
       - id: metadata/signed/platform/
       - id: metadata/signed/certificate/identity/
@@ -88,7 +83,7 @@ composite_rules:
       - id: metadata/signed/certificate/identity/
     any:
       - id: metadata/binary/metrics/structural::pe-code-entropy-78
-      - id: objectives/anti-static/obfuscation/imports::peb-access-x64
+      - id: micro-behaviors/os/env/access::peb-access-x64
   - id: unsigned-microsoft-command-loader
     desc: Unsigned Microsoft-claim PE executes cmd shell
     crit: hostile
@@ -112,6 +107,22 @@ composite_rules:
     all:
       - id: unsigned-microsoft-command-loader
       - id: metadata/binary/section/metrics::writable-text-section
+  - id: unsigned-microsoft-embedded-pe-benign-context
+    desc: Recognized benign embedded PE context
+    crit: exception
+    conf: 0.99
+    any:
+      - id: metadata/signed/platform/
+      - id: metadata/signed/certificate/identity/
+      - id: metadata/binary/installer/family/
+      - id: metadata/binary/installer/sfx/
+      - id: metadata/library/mfc/
+      - id: well-known/app/storage/peazip/
+      - id: well-known/tool/sysadmin/oscdimg::oscdimg-utility
+      - id: well-known/app/system/stresstimulus/
+      - id: well-known/tool/sysadmin/virtualization::microsoft-appv-mavinject
+      - id: well-known/app/system/windows-migration::mighost-binary-identity
+      - id: well-known/lib/platform/microsoft-system::media-foundation-protected-pipeline
   - id: unsigned-microsoft-embedded-pe
     desc: Unsigned Microsoft-claim PE with embedded payload
     crit: hostile
@@ -121,15 +132,24 @@ composite_rules:
       - id: unsigned-pe-microsoft-version-claim
       - id: metadata/binary/layout::pe-embedded
     unless:
+      - id: unsigned-microsoft-embedded-pe-benign-context
+      - id: metadata/binary/framework::dotnet-assembly
+
+  # Genuine Microsoft system binaries are signed and do not enter through a
+  # writable, non-executable packed-loader section. This combines the forged
+  # provenance with the independently detected runtime unpacking structure.
+  - id: unsigned-microsoft-concealed-packed-entry-loader
+    desc: Unsigned Microsoft-claim PE uses a concealed packed entry loader
+    crit: hostile
+    conf: 0.98
+    attack: "T1036.005,T1027.002"
+    all:
+      - id: unsigned-pe-microsoft-version-claim
+      - id: objectives/anti-static/pack/section-anomaly::writable-nonexec-entry-dynamic-loader
+    unless:
       - id: metadata/signed/platform/
       - id: metadata/signed/certificate/identity/
       - id: metadata/binary/installer/family/
-      - id: metadata/binary/installer/sfx/
-      - id: metadata/library/mfc/
-      - id: metadata/binary/framework::dotnet-assembly
-      - id: well-known/app/storage/peazip/
-      - id: well-known/tool/sysadmin/oscdimg::oscdimg-utility
-      - id: well-known/app/system/stresstimulus/
   - id: unsigned-microsoft-scrubbed-build-profile
     desc: Unsigned Microsoft-claim PE with zeroed build timestamp and PEB access
     crit: hostile
@@ -187,6 +207,19 @@ composite_rules:
       - id: objectives/anti-static/pack/section-anomaly::reloc-rwx-payload-section
       - id: metadata/binary/layout::pe-checksum-valid
 
+  - id: unsigned-microsoft-cloned-text-loader
+    desc: Unsigned Microsoft-claim PE conceals code in cloned text sections
+    crit: hostile
+    conf: 0.99
+    attack: T1036.005,T1027.002
+    for: [pe]
+    all:
+      - id: unsigned-pe-microsoft-version-claim
+      - id: objectives/anti-static/pack/runtime::inflated-reloc-cloned-text-loader
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/signed/certificate/identity/
+
   - id: unsigned-microsoft-ror13-api-loader
     desc: Unsigned Microsoft-claim PE hides API resolution with ROR13
     crit: hostile
@@ -197,6 +230,19 @@ composite_rules:
       - id: unsigned-pe-microsoft-version-claim
       - id: objectives/anti-static/obfuscation/imports::api-hash-resolution
       - id: metadata/binary/anomaly/provenance::pe-zero-timestamp
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/signed/certificate/identity/
+
+  - id: unsigned-microsoft-shellcode-thread-implant
+    desc: Unsigned Microsoft-claim PE carries an encoded RWX thread implant
+    crit: hostile
+    conf: 0.995
+    for: [pe]
+    attack: T1036.005,T1027.002,T1620
+    all:
+      - id: unsigned-pe-microsoft-version-claim
+      - id: objectives/evasion/process/injection/shellcode::ror13-rwx-thread-shellcode-loader-x86
     unless:
       - id: metadata/signed/platform/
       - id: metadata/signed/certificate/identity/

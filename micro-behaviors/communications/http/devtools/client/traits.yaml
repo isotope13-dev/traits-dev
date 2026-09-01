@@ -103,28 +103,64 @@ traits:
   # browser holds. Only the second is theft-shaped, so the credential-access
   # composite keys on it rather than on the merged pattern.
   - id: cdp-method-network-get-cookies
-    desc: CDP scoped cookie retrieval via Network domain
+    desc: CDP scoped cookie retrieval method
     crit: notable
     conf: 0.94
     if:
       type: text
-      regex: '\bNetwork\.getCookies\b'
+      # The complete CDP token is distinct from getAllCookies, so boundaries
+      # add brittleness without preventing overlap with another method name.
+      substr: Network.getCookies
 
   - id: cdp-method-network-get-all-cookies
-    desc: CDP dumps every cookie via Network domain
+    desc: CDP whole-cookie-jar retrieval method
     crit: notable
     conf: 0.94
     if:
       type: text
-      regex: '\bNetwork\.getAllCookies\b'
+      substr: Network.getAllCookies
 
   - id: cdp-method-network-set-cookies
-    desc: CDP writes browser cookies via Network domain
+    desc: CDP bulk cookie-write method
     crit: notable
     conf: 0.94
     if:
       type: text
-      regex: '\bNetwork\.setCookies\b'
+      substr: Network.setCookies
+
+  # Native Go binaries commonly merge literals into a large table that text
+  # extraction deliberately omits. The byte atoms cover that carrier; paired
+  # composites below restore protocol context. Browser binaries expose these
+  # server-side names too, so objective rules must prove profile selection.
+  - id: cdp-get-all-cookies-native-bytes
+    desc: CDP whole-cookie method bytes
+    crit: component
+    conf: 0.96
+    for: [elf, macho, pe, dll]
+    if:
+      type: hex
+      offset_range: [0, 16777216]
+      pattern: '4E 65 74 77 6F 72 6B 2E 67 65 74 41 6C 6C 43 6F 6F 6B 69 65 73'
+
+  - id: cdp-start-screencast-native-bytes
+    desc: CDP screencast method bytes
+    crit: component
+    conf: 0.94
+    for: [elf, macho, pe, dll]
+    if:
+      type: hex
+      offset_range: [0, 16777216]
+      pattern: '50 61 67 65 2E 73 74 61 72 74 53 63 72 65 65 6E 63 61 73 74'
+
+  - id: cdp-input-dispatch-native-bytes
+    desc: CDP input-dispatch method bytes
+    crit: component
+    conf: 0.92
+    for: [elf, macho, pe, dll]
+    if:
+      type: hex
+      offset_range: [0, 16777216]
+      pattern: '49 6E 70 75 74 2E 64 69 73 70 61 74 63 68'
 
   - id: cdp-method-runtime-enable
     desc: CDP Runtime.enable method
@@ -273,6 +309,40 @@ traits:
       - id: well-known/tool/
 
 composite_rules:
+  # Launching a browser debug endpoint and installing evaluated page scripts is
+  # a complete CDP automation capability. Custom clients do this routinely;
+  # exploit objectives must add evidence that the endpoint belongs to another
+  # application or that the script carries hostile behavior.
+  - id: cdp-pre-document-script-automation
+    desc: CDP installs evaluated scripts before page load
+    crit: notable
+    conf: 0.98
+    for: [pe, dll, csharp, go, javascript, typescript, python]
+    all:
+      - id: micro-behaviors/process/create/flags::chromium-remote-debugging-port
+      - id: micro-behaviors/communications/http/devtools/client::cdp-method-runtime-evaluate
+      - id: micro-behaviors/communications/http/devtools/client::cdp-method-page-add-script
+
+  - id: cdp-screencast-input-native-cluster
+    desc: Native CDP screencast/input cluster
+    crit: notable
+    conf: 0.94
+    for: [elf, macho, pe, dll]
+    all:
+      - id: cdp-start-screencast-native-bytes
+      - id: cdp-input-dispatch-native-bytes
+    near_bytes: 32768
+
+  - id: cdp-cookie-control-native-cluster
+    desc: Native CDP cookie/control cluster
+    crit: notable
+    conf: 0.95
+    for: [elf, macho, pe, dll]
+    all:
+      - id: cdp-get-all-cookies-native-bytes
+      - id: cdp-start-screencast-native-bytes
+    near_bytes: 32768
+
   # Synthetic user input driven into a browser over CDP, in any of the four
   # spellings. Neutral on its own — this is how puppeteer/playwright type into
   # a form — so the objective composites add the intent-bearing context.

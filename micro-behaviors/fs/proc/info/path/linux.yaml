@@ -41,7 +41,7 @@ traits:
       - id: metadata/file/string/identity::chrome-sandbox-basename
       - type: basename
         exact: chrome_crashpad_handler
-      - id: well-known/app/ai/tabby::tabby-basename
+      - id: well-known/app/ai/coding-agent/tabby::tabby-basename
       - type: text
         substr: self/
   - id: process-self-exe-path
@@ -54,7 +54,7 @@ traits:
       kind: string
       substr: /proc/self/exe
     unless:
-      - id: well-known/app/ai/tabby::tabby-basename
+      - id: well-known/app/ai/coding-agent/tabby::tabby-basename
   - id: process-self-exe-partial
     desc: Read own executable path (self/exe)
     crit: baseline
@@ -63,7 +63,7 @@ traits:
       type: text
       substr: self/exe
     unless:
-      - id: well-known/app/ai/tabby::tabby-basename
+      - id: well-known/app/ai/coding-agent/tabby::tabby-basename
   - id: process-self-fd-path
     desc: Access /proc/self/fd file descriptor path
     crit: notable
@@ -172,11 +172,23 @@ traits:
       - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
       - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
       - id: metadata/lang/source::linux-kernel-primary-tree-path
+  - id: variable-proc-comm-path
+    desc: Builds variable process name path
+    crit: notable
+    conf: 0.9
+    for: [scripts, c, cpp, rust, go, zig, elf, so]
+    platforms: [linux]
+    if:
+      type: text
+      regex: '/proc/(%[^/\s]{1,16}|\$\{?[^/\s]{1,32}\}?|\{[^/\s]{1,32}\})/comm'
+    unless:
+      - id: metadata/lang/source::linux-kernel-primary-tree-path
+      - id: metadata/lang/source::linux-kernel-secondary-tree-path
   - id: process-self-status
     desc: References own process status procfs path
     crit: notable
     conf: 0.74
-    for: [scripts, -javascript, -typescript, elf, c, cpp]
+    for: [scripts, -javascript, -typescript, elf, c, cpp, go]
     platforms: [unix, android]
     if:
       type: text
@@ -193,15 +205,6 @@ traits:
     if:
       type: text
       substr: /proc/self/environ
-  - id: process-parent-environ
-    desc: Read parent process environment via procfs
-    crit: notable
-    conf: 0.94
-    for: [shell, python, javascript, typescript, ruby, go]
-    platforms: [linux, android]
-    if:
-      type: text
-      regex: '/proc/(\$\{?[A-Za-z_][A-Za-z0-9_.]*\}?|%[A-Za-z_][A-Za-z0-9_.]*)/environ'
   # KNOWN DEFECT -- this matcher cannot fire on a compiled binary. stng's
   # character-class chaos filter drops the run "TracerPid:": its class runs are
   # [T][racer][P][id][:], giving 4 transitions and an average run length of
@@ -231,6 +234,7 @@ traits:
     unless:
       - id: metadata/lang/source::linux-kernel-primary-tree-path
       - id: metadata/library/structure::js-emscripten-embind-val-marker
+      - id: well-known/lib/runtime/dotnet-runtime::minipal-debugger-header
   - id: process-self-maps
     desc: Read own process memory maps
     crit: notable
@@ -239,7 +243,7 @@ traits:
       type: text
       substr: /proc/self/maps
     unless:
-      - id: well-known/app/ai/tabby::tabby-basename
+      - id: well-known/app/ai/coding-agent/tabby::tabby-basename
       - id: metadata/file/string/identity::python3-interpreter-basename
   - id: process-pid-maps
     desc: Read process memory maps via /proc/PID/maps
@@ -258,7 +262,7 @@ traits:
     unless:
       - type: basename
         exact: chrome_crashpad_handler
-      - id: well-known/app/ai/tabby::tabby-basename
+      - id: well-known/app/ai/coding-agent/tabby::tabby-basename
       - type: text
         substr: self/
   - id: process-variable-pid-maps
@@ -302,20 +306,18 @@ traits:
       type: text
       regex: '\bglob\.glob\s*\(\s*["'']/proc/\*/mem["'']\s*\)'
   - id: process-variable-pid-mem
-    desc: Reads variable process memory via /proc
+    desc: Interpolated /proc PID mem path template
     crit: suspicious
     conf: 0.88
     for: [scripts, source, binaries, -beam, -wasm, -pyc, -staticlib, -elixir, -clojure]
     if:
       type: text
-      regex: '/proc/(\{[^/]{1,40}\}|\$\{[^/]{1,40}\}|%[^/]{1,40})/mem'
+      regex: '/proc/(\{[^/]{1,40}\}|\$\{[^/]{1,40}\})/mem'
     unless:
       # Chromium/Electron Crashpad reads /proc/%d/mem for the crashing process;
       # that is crash reporting, not credential scraping.
       - type: basename
         exact: chrome_crashpad_handler
-      - type: basename
-        exact: crashpad_handler
       - id: metadata/file/string/identity::chrome-crashpad-handler-basename
       - id: well-known/lib/runtime/electron::standard-electron-jit-helper-basename
       # .NET CoreCLR / dbgshim / DAC open /proc/%lu/mem for dump and
@@ -323,9 +325,12 @@ traits:
       - id: well-known/lib/runtime/dotnet-runtime::dotnet-dbgshim-runtime-context
       - id: well-known/lib/runtime/dotnet-runtime::dotnet-coreclr-native-runtime-context
       - id: objectives/anti-analysis/debugger-detect/check::dotnet-runtime-debug-helper-marker
-      - id: well-known/lib/runtime/dotnet-runtime::coreclr-version-banner
-      - type: basename
-        regex: '_remote_debugging\.cpython'
+      - id: well-known/lib/native/box64/
+      - id: well-known/app/infrastructure/runc::runc-source-tree-context
+      # minidump-writer captures a crashing external process and documents
+      # /proc/<pid>/mem as one of its three read fallbacks.  The versioned
+      # crate path identifies that established crash-dump implementation.
+      - id: well-known/lib/format/minidump::minidump-writer-crate-path
   - id: process-pid-mem-format
     desc: Process memory path format
     crit: notable
@@ -336,7 +341,7 @@ traits:
     unless:
       - type: basename
         exact: chrome_crashpad_handler
-      - id: well-known/app/ai/tabby::tabby-basename
+      - id: well-known/app/ai/coding-agent/tabby::tabby-basename
       - id: metadata/package/testing/presence/harness/
       - type: text
         substr: self/
@@ -425,9 +430,19 @@ traits:
     downgrade:
       any:
         - id: micro-behaviors/dylib/library/family/
+  - id: proc-init-environ
+    desc: Reads PID 1 process environment
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      exact: /proc/1/environ
   - id: proc-pid-environ-glob
     desc: Glob pattern for /proc/*/environ
-    crit: suspicious
+    # Same capability as process-pid-environ (notable): enumerating environ via
+    # a glob is ordinary process discovery (worker pools, psutil fallbacks), not
+    # by itself suspicious intent.
+    crit: notable
     conf: 0.8
     if:
       type: text
@@ -456,20 +471,18 @@ traits:
       - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
       - id: metadata/lang/source::linux-kernel-primary-tree-path
   - id: process-var-environ
-    desc: "Read process env via /proc var path"
+    desc: Reads variable-PID environment via procfs
     crit: notable
-    conf: 0.7
-    for:
-      - shell
-      - python
-      - lua
+    conf: 0.94
+    for: [shell, python, javascript, typescript, ruby, go, lua]
+    platforms: [linux, android]
     unless:
       - id: micro-behaviors/fs/proc/info/path::kde-dbus-session-environ
       # AI-agent observability tools read /proc env for telemetry.
       - id: well-known/tool/detection/ai-guardrail/
     if:
-      type: string_literal
-      regex: /proc/[\$\{%f].{0,20}/environ
+      type: text
+      regex: '/proc/(\$\{?[A-Za-z_][\w.]*\}?|%[A-Za-z_][\w.]*|\{[A-Za-z_][\w.]*\})/environ'
   - id: lua-process-var-environ
     desc: Lua builds /proc process environment paths
     crit: suspicious
@@ -601,10 +614,11 @@ traits:
       substr: /proc/self/oom_adj
 
   - id: proc-net-tcp
-    desc: Read TCP connection table
+    desc: TCP connection table path reference
     crit: notable
     conf: 0.7
-    for: [scripts, elf, c]
+    for: [scripts, elf, c, cpp, rust, go]
+    platforms: [linux, android]
     if:
       type: text
       substr: /proc/net/tcp
@@ -811,9 +825,9 @@ traits:
       section: .rodata
       pattern: 4D 12 10 0D 01 4D 47 06 4D 11 16 03 16 17 11 62
 composite_rules:
-  - id: self-oom-killer-bypass-paths
-    desc: References both Linux self OOM-killer bypass interfaces
-    crit: suspicious
+  - id: self-oom-adjustment-paths
+    desc: References current and legacy self OOM adjustment paths
+    crit: notable
     conf: 0.94
     for: [elf, c, cpp, rust, go]
     platforms: [linux, android]
@@ -851,14 +865,6 @@ composite_rules:
       - id: process-pid-maps
       - id: process-pid-maps-format
       - id: process-variable-pid-maps
-  - id: process-pid-mem-any
-    desc: Access process memory via proc
-    crit: suspicious
-    conf: 0.8
-    any:
-      - id: process-pid-mem
-      - id: process-pid-mem-format
-      - id: process-variable-pid-mem
   - id: process-cmdline-suffix-targeting
     desc: Read process cmdline suffix via proc
     crit: notable
@@ -910,7 +916,10 @@ composite_rules:
     desc: Helper for process memory access
     all:
       - id: process-pid-maps-any
-      - id: process-pid-mem-any
+    any:
+      - id: process-pid-mem
+      - id: process-pid-mem-format
+      - id: process-variable-pid-mem
   - id: process-memory-pid-maps
     desc: Arbitrary-process maps and memory access
     all:
@@ -948,3 +957,13 @@ composite_rules:
       - id: proc-net-tcp-xor62
       - id: process-pid-cmdline-suffix-xor
       - id: process-pid-environ-suffix-xor
+  - id: auth-daemon-proc-comm-search
+    desc: Searches procfs for authentication daemons
+    crit: notable
+    conf: 0.96
+    for: [scripts, c, cpp, rust, go, zig, elf, so]
+    platforms: [linux]
+    near_bytes: 600
+    all:
+      - id: variable-proc-comm-path
+      - id: micro-behaviors/os/service/identity::unix-authentication-daemon-reference

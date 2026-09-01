@@ -1,0 +1,91 @@
+# HTTP bot APIs. A botnet controller is a web service, and its URL space says
+# so plainly: the implant registers itself under one path, then polls a second
+# for work. Attackers write these routes the way any web developer would --
+# versioned, resource-named, RESTful -- which is what makes the shape reusable
+# across families rather than a per-family signature.
+#
+# Enrolment routes can identify a client joining a controlled fleet. Generic
+# bot task-resource paths are neutral automation APIs, however, so that atom
+# lives under micro-behaviors/communications/http/url/path and only contributes
+# botnet intent when a composite also proves payload execution or enrolment.
+defaults:
+  platforms: [unix, windows]
+  for: [scripts, source]
+  attack: T1071.001
+  mbc: B0030
+
+traits:
+  - id: bot-api-versioned-path
+    desc: Versioned bot API URL path
+    crit: suspicious
+    conf: 0.9
+    if:
+      # `/api/v1/bot/...` -- a REST namespace whose resource is the bot.
+      type: text
+      regex: '(?i)/api/v[0-9]{1,2}/bots?/'
+    unless:
+      # Same route shape read from the other end: an operator console that
+      # lists, creates and deletes bots is managing a fleet it owns, not
+      # reporting in to one.
+      - id: micro-behaviors/communications/http/url/path::bot-resource-crud-api-paths
+      # A chat platform's own bot endpoints sit under its app API namespace --
+      # Nextcloud Talk publishes /ocs/v2.php/apps/spreed/api/v1/bot/<room>/
+      # message. A messaging integration talking to that is a chat bot.
+      - id: micro-behaviors/communications/http/url/path::nextcloud-ocs-app-api-path
+
+  - id: bot-enrolment-path
+    desc: Bot enrolment API path
+    crit: suspicious
+    conf: 0.9
+    if:
+      # The implant's first request: hand the controller this host's details
+      # and be issued an identity.
+      type: text
+      regex: '(?i)/bots?/(join|register|checkin)'
+
+  - id: bot-identity-cache-file
+    desc: Caches an assigned bot identity
+    crit: suspicious
+    conf: 0.9
+    if:
+      # `~/.botid` -- the controller-assigned id, kept in a dotfile so the
+      # same host reports as the same bot across restarts.
+      type: text
+      regex: '(?i)[/\\]\.bot[_-]?id\b'
+
+composite_rules:
+  # Poll the controller, run the answer. The two halves are what a bot *is*,
+  # and neither is ambiguous once the URL names a bot fleet.
+  - id: bot-api-shell-tasking
+    desc: Bot API response piped to a shell
+    crit: hostile
+    conf: 0.97
+    attack: T1071.001,T1059
+    all:
+      - id: micro-behaviors/process/create/shell/pipeline::curl-pipe-shell-text
+    any:
+      - id: bot-api-versioned-path
+      - id: bot-enrolment-path
+      - id: micro-behaviors/communications/http/url/path::bot-task-api-path
+
+  # The other half of the same implant: fetch a companion binary from the
+  # controller, mark it executable under /tmp, and run it.
+  - id: bot-api-native-payload-drop
+    desc: Bot API drops and runs a native payload
+    crit: hostile
+    conf: 0.96
+    attack: T1071.001,T1105
+    all:
+      - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-tmp-file
+    any:
+      - id: bot-api-versioned-path
+      - id: bot-enrolment-path
+      - id: micro-behaviors/communications/http/url/path::bot-task-api-path
+
+  - id: bot-enrolment-and-tasking-endpoints
+    desc: Bot enrolment and tasking endpoints together
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: bot-enrolment-path
+      - id: micro-behaviors/communications/http/url/path::bot-task-api-path

@@ -1,0 +1,54 @@
+# Dependency confusion by name: publish to the public registry under a name that
+# reads as some organisation's internal package, and any build that resolves
+# unscoped names against the public registry first will pull it instead of the
+# private original. It is the shape Alex Birsan's 2021 research used, and it is
+# still how most of these packages are built -- no install hook, no obfuscated
+# dropper, just a plausible internal-sounding name and a payload that runs when
+# something imports it.
+#
+# `-internal-`/`-intranet-`/`-corp-` in a public package name is a smell, not a
+# verdict: a legitimate helper may carry it too. What is not legitimate is that
+# name combined with a public-access publish, a module whose whole export does
+# nothing, and code that fingerprints whoever imported it. A real internal
+# helper does not need to know the hostname and username of its caller, and a
+# real helper's export is not empty.
+defaults:
+  platforms: [unix, windows]
+  attack: T1195.002
+  mbc: B0024
+
+traits:
+  - id: internal-namespace-package-name
+    desc: Package name claims an internal namespace
+    crit: notable
+    conf: 0.9
+    for: [package.json]
+    if:
+      type: value
+      path: name
+      regex: '-(internal|intranet|corp)-'
+
+composite_rules:
+  - id: internal-namespace-high-version-preinstall-index
+    desc: High-version internal package runs preinstall
+    crit: suspicious
+    conf: 0.94
+    for: [package.json]
+    all:
+      - id: internal-namespace-package-name
+      - id: objectives/supply-chain/install-hook/package/direct-url::preinstall-node-index-hook
+      - id: metadata/package/quality/version-sentinel::npm-version-major-40-plus
+  - id: public-internal-namespace-hollow-beacon
+    desc: Public internal-named package profiles importers
+    crit: hostile
+    conf: 0.97
+    for: [archives, package.json, javascript]
+    # The name and publish config live in package.json while the export shape
+    # and the recon live in the entry script, so the evidence has to pool across
+    # the published tarball.
+    scope: archive
+    all:
+      - id: internal-namespace-package-name
+      - id: metadata/package/manifest/publishing::npm-public-publish-access
+      - id: metadata/lang/javascript-features::module-exports-noop-function
+      - id: objectives/discovery/system/fingerprint/user::small-node-host-user-query

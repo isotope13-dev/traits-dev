@@ -12,26 +12,37 @@ traits:
   # generic 256-element array fill (palette tables, sieves). Component-only
   # — the composite below requires PRGA output to confirm RC4.
   - id: js-rc4-ksa-init
-    desc: RC4 KSA identity-fill loop (composite-only)
+    desc: RC4 KSA identity-fill loop
     crit: component
     conf: 0.85
     if:
       type: text
-      regex: 'for\s*\(\s*\w[^;]{0,40};\s*\w+\s*<\s*256\s*;.{0,30}\)\s*\{\s*\w+\[\w+\]\s*=\s*\w+\s*;'
+      # Brace-optional: obfuscator.io emits `for(r=0;r<256;r++)c[r]=r`.
+      regex: 'for\s*\(\s*\w[^;]{0,40};\s*\w+\s*<\s*256\s*;.{0,30}\)\s*\{?\s*\w+\[\w+\]\s*=\s*\w+'
   - id: js-rc4-ksa-key-mix
     desc: RC4 KSA key-mix swap step
     crit: notable
     conf: 0.9
     if:
       type: text
-      regex: 'charCodeAt\s*\(\s*\w+\s*%\s*\w+\.length\s*\)\s*\)\s*&\s*0xff'
+      # `%256` is the same 8-bit wrap as `& 0xff` in obfuscator.io's RC4.
+      regex: 'charCodeAt\s*\(\s*\w+\s*%\s*\w+\.length\s*\)\s*\)\s*(&\s*0xff|%256)'
   - id: js-rc4-prga-output
     desc: RC4 PRGA keystream output index
     crit: notable
     conf: 0.92
     if:
       type: text
-      regex: '\w+\[\s*\(\s*\w+\[\w+\]\s*\+\s*\w+\[\w+\]\s*\)\s*&\s*0xff\s*\]'
+      regex: '\w+\[\s*\(\s*\w+\[\w+\]\s*\+\s*\w+\[\w+\]\s*\)\s*(&\s*0xff|%256)\s*\]'
+  # Compiled TypeScript helper call `(0, mod.rc4)(key, buf)`. Avoid matching
+  # `function rc4(key, data)` definitions; lookbehind is not portable here.
+  - id: js-rc4-two-arg-call
+    desc: Calls rc4() with key and data buffer
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '\(0,\s*[A-Za-z_$][\w$]*\.rc4\)\s*\(\s*[A-Za-z_$][\w$]*\s*,\s*[A-Za-z_$][\w$]*'
 composite_rules:
   - id: js-rc4-implementation
     desc: RC4 cipher implementation in JavaScript
@@ -45,3 +56,17 @@ composite_rules:
     unless:
       - id: metadata/package/testing/harness/runtime/
       - id: metadata/package/testing/presence/manifest::test-fixtures
+      # jsPDF implements PDF standard encryption with RC4; that is not a
+      # malware stream-cipher dropper. Keep the cipher matcher intact.
+      - id: well-known/lib/format/jspdf::jspdf-pdf-document-banner
+      - id: well-known/lib/format/jspdf::jspdf-pubsub-error-marker
+      # pdf-lib bundles CryptoJS RC4 for legacy PDF encryption. Its public
+      # PDFLib namespace/API identifies that library context without relying
+      # on a brittle filename exception.
+      - id: well-known/lib/format/pdf-lib::pdf-lib-namespace-or-document-api
+      # pdfmake embeds PDFKit's RC4 implementation for PDF encryption. Its
+      # package banner identifies the same benign document-generation context.
+      - id: well-known/lib/format/pdfmake::pdfmake-version-banner
+      # @react-pdf/renderer bundles CryptoJS RC4 for PDF encryption. Its
+      # stylesheet parser error string identifies that library context.
+      - id: well-known/lib/format/react-pdf::stylesheet-parse-error

@@ -1,0 +1,82 @@
+# Install hooks whose payload is a *demonstration* of arbitrary code execution
+# rather than any packaging work: launch the desktop calculator, pop a console
+# that announces success, drop a script into the temp directory and run it.
+#
+# These are the standard "look, I ran on your machine" payloads of dependency-
+# confusion research uploads, typosquat probes, and bug-bounty submissions —
+# and they are also stage one of real campaigns, which ship the same hook and
+# swap the harmless payload later. Either way the package executes attacker-
+# chosen code the moment it is installed, which is the attack, so they are
+# scored on the delivery mechanism and not on how benign this particular
+# payload happens to be.
+#
+# The launch/console/temp-write legs are all neutral capabilities in
+# micro-behaviors/; the install-hook context is what makes the combination
+# hostile. `scope: outer` lets the hook declaration (package.json,
+# pyproject/setup.py) and the payload live in different archive members.
+defaults:
+  platforms: [windows, linux, macos, unix]
+  for: [python, javascript, typescript, shell, batch, powershell, ruby, php]
+  attack: T1195.002
+
+composite_rules:
+  # Reusable context leg: this artifact declares code that runs as a side
+  # effect of installation, in whichever ecosystem's spelling.
+  - id: package-install-hook-present
+    desc: Package declares install-time code execution
+    crit: notable
+    conf: 0.9
+    any:
+      - id: metadata/build/package/recipe::python-install-hook
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::has-postinstall
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::has-preinstall
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::has-install
+
+  - id: install-hook-launches-calculator
+    desc: Package install hook launches the calculator payload
+    crit: hostile
+    conf: 0.96
+    scope: outer
+    mbc: E1059
+    all:
+      - id: package-install-hook-present
+    any:
+      - id: micro-behaviors/process/create/launch::exec-call-launches-calculator
+      - id: micro-behaviors/process/create/launch::exec-call-launches-unix-calculator
+      - id: micro-behaviors/process/create/launch::launch-command-opens-macos-calculator
+      - id: micro-behaviors/process/create/start-process::start-process-calc
+
+  # A hook that opens a console the user can see is not doing packaging work —
+  # pip/npm install steps run headless. `/k`, CREATE_NEW_CONSOLE, and
+  # x-terminal-emulator all exist to put a window in front of a person.
+  - id: install-hook-opens-visible-console
+    desc: Package install hook opens a user-visible console
+    crit: suspicious
+    conf: 0.9
+    scope: outer
+    mbc: C0033
+    all:
+      - id: package-install-hook-present
+    any:
+      - id: micro-behaviors/process/create/shell/command-flag::cmd-k-persistent-console
+      - id: micro-behaviors/process/create/flags::python-create-new-console
+      - id: micro-behaviors/data/format/script::embedded-batch-pause-prompt
+
+  # Drop-and-run: the hook writes script content into the temp directory and
+  # hands that path to an interpreter. Ecosystem-independent — the same three
+  # legs describe a setup.py writing a .bat, a postinstall writing a .sh, or a
+  # gem extconf writing a .ps1.
+  - id: install-hook-drops-and-runs-temp-script
+    desc: Install hook writes a script to temp and executes it
+    crit: hostile
+    conf: 0.95
+    scope: outer
+    mbc: E1105
+    all:
+      - id: package-install-hook-present
+      - id: micro-behaviors/fs/path/temp::win-temp-env-source-read
+      - id: micro-behaviors/data/format/script::embedded-batch-script-header
+    any:
+      - id: micro-behaviors/process/create/shell/lang::python-subprocess-cmd-c
+      - id: micro-behaviors/process/create/shell/command-flag::cmd-k-persistent-console
+      - id: micro-behaviors/process/create/exec::cmd-exe-reference

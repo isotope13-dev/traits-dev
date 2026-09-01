@@ -1,30 +1,17 @@
 # Remote-management enrollment through a script or loader.  The signal is the
-# combination of a remote-agent installer, a transfer API, a process launch,
-# and an enrollment credential.  It deliberately avoids campaign domains and
-# vendor-specific tokens so the same tradecraft remains visible when the RMM
-# product, hosting, or scripting language changes.
+# combination of a transfer API and an enrollment credential on a launch line.
+# Agent installer filenames live under micro-behaviors (not RMM intent alone).
 defaults:
   platforms: [windows]
   for: [batch, powershell, javascript, vbs, pe]
   attack: T1105,T1219
 
 traits:
-  - id: remote-agent-installer-filename
-    desc: Remote-agent installer filename
-    crit: notable
-    conf: 0.92
-    if:
-      type: literal
-      kind: string
-      regex: '(?i)\b([A-Za-z0-9_-]{2,32}agent|([A-Za-z0-9_-]{2,32}\.)?clientsetup)\.(exe|msi)\b'
-    not:
-      # Cursor IDE CLI binary paths (cursor-agent), not RMM enrollment installers.
-      - substr: cursor-agent
-
   # Both credential atoms accept the spellings RMM vendors actually use on the
   # command line — API_KEY, APITOKEN, apikey, auth_token, authkey — because the
   # tradecraft is "the agent is enrolled to somebody's tenant at install time",
-  # not one vendor's parameter name.
+  # not one vendor's parameter name. Each pattern also anchors a launcher
+  # (msiexec / Start-Process / ShellExecute) so a bare token is not enough.
   - id: msiexec-enrollment-credential
     desc: MSI enrollment credential launch argument
     crit: suspicious
@@ -42,40 +29,41 @@ traits:
       regex: '(?i)\b(ShellExecute|Start-Process)\b[^\r\n]{0,120}\b(api|auth)[_-]?(key|token)\s*='
 
 composite_rules:
+  - id: viewer-lure-filename-bootstrap-enrollment
+    desc: Viewer lure enrolls remote agent from filename
+    crit: hostile
+    conf: 0.995
+    for: [msi]
+    all:
+      - id: micro-behaviors/fs/path/construct::msi-path-token-host-bootstrap-arguments
+      - id: objectives/evasion/masquerade/file/lure::viewer-named-rmm-agent-installer
+
   - id: remote-agent-enrollment-bootstrap
     desc: Scripted remote-agent enrollment bootstrap
     crit: hostile
     conf: 0.98
+    near_bytes: 4096
     all:
       - id: micro-behaviors/communications/http/client/xmlhttp::js-xmlhttp-open
-      - id: remote-agent-launch
     any:
       - id: msiexec-enrollment-credential
       - id: script-enrollment-credential
-    near_bytes: 4096
 
   - id: identified-remote-agent-enrollment
     desc: Remote-agent enrollment with installer artifact
     crit: hostile
     conf: 0.99
+    near_bytes: 4096
     all:
       - id: remote-agent-enrollment-bootstrap
-      - id: remote-agent-installer-filename
-    near_bytes: 4096
-
-  - id: remote-agent-launch
-    desc: Remote-agent process launch
-    crit: notable
-    conf: 0.9
-    any:
-      - id: micro-behaviors/process/create/start-process::start-process-call
-      - id: micro-behaviors/process/create/shell/wsh::shellexecute-method-call
+      - id: micro-behaviors/fs/path/application/executable::agent-suffixed-exe-or-msi-name
 
   - id: rmm-post-access-security-recon
     desc: RMM follow-on security posture reconnaissance
     crit: hostile
     conf: 0.97
     attack: T1082,T1069.001,T1518.001
+    near_bytes: 8192
     all:
       - id: remote-agent-enrollment-bootstrap
     any:
@@ -84,4 +72,3 @@ composite_rules:
       - id: objectives/discovery/account/enum::ps-local-administrators-group-query
       - id: objectives/discovery/system/activity::ps-reboot-required-query
     needs: 2
-    near_bytes: 8192

@@ -1,0 +1,77 @@
+# Code that rewrites somebody else's AI coding-agent configuration so the agent
+# stops asking before it acts.
+#
+# The shape a package uses to do this is stable across harnesses and languages:
+# locate the agent's config file in the user's home (or the current checkout),
+# parse it, set every tool permission to `allow` (or flip the harness's
+# equivalent approval switch), optionally swap the default agent for one it
+# supplies, and write the file back. The victim's next agent session then runs
+# tool calls — shell, write, webfetch — with no human in the loop.
+#
+# Nothing here names a product. The config-path leg comes from the per-vendor
+# atoms in micro-behaviors/fs/path/application/config, and the approval leg from
+# micro-behaviors/process/create/agent-permission::agent-approval-gate-disabled, so a
+# variant aimed at a different harness is covered by adding one atom to either
+# list rather than by rewriting these composites.
+#
+# The harness's own installer and a user's dotfile-management script both write
+# their config legitimately, which is why the neutral mutation capability
+# lives under micro-behaviors and the hostile reading here requires the
+# approval gate to be removed as part of it.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript, python, shell, powershell, ruby, go]
+  attack: T1562.001
+
+composite_rules:
+  - id: agent-config-approval-gate-disarmed
+    desc: Rewrites agent config to auto-approve tools
+    crit: hostile
+    conf: 0.97
+    scope: file
+    all:
+      - id: micro-behaviors/fs/file/write/agent-config::agent-config-file-mutation
+      - id: micro-behaviors/process/create/agent-permission::agent-approval-gate-disabled
+    unless:
+      # An agent launcher writes the config of the agent it is about to start,
+      # and does it because the user asked: the file declares `--yolo` /
+      # `--dangerously-skip-permissions` as its own CLI option and routes it to
+      # each harness's mechanism. That is the opposite of the shape described
+      # above -- somebody else's config, rewritten without the victim choosing.
+      - id: micro-behaviors/process/create/agent-permission::agent-bypass-cli-option-declaration
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/manifest::test-fixtures
+      - id: well-known/tool/detection/repo-trust-scan::repo-trust-scan-context
+
+  # The same rewrite, reached automatically: npm runs the hook on `npm install`,
+  # so the victim never chooses to run the patcher. Archive scope because the
+  # hook is declared in package.json and performed by a sibling script.
+  - id: install-hook-disarms-agent-approval-gate
+    desc: Install hook disarms agent approval gate
+    crit: hostile
+    conf: 0.98
+    scope: archive
+    attack: T1195.002
+    all:
+      - id: agent-config-approval-gate-disarmed
+    any:
+      # Any declared npm lifecycle hook: install, preinstall or postinstall all
+      # run unattended on `npm install`.
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle
+
+  # A package that both removes the approval gate and installs its own agent
+  # persona owns every later session in that checkout: the replacement agent
+  # answers the prompts and the gate that would have shown the user its tool
+  # calls is gone.
+  - id: agent-persona-and-gate-takeover
+    desc: Replaces default agent and drops approvals
+    crit: hostile
+    conf: 0.97
+    scope: file
+    all:
+      - id: micro-behaviors/process/create/agent-permission::agent-default-agent-override
+      - id: micro-behaviors/process/create/agent-permission::agent-approval-gate-disabled
+      - id: micro-behaviors/fs/path/application/config::ai-agent-config-file-target
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/manifest::test-fixtures

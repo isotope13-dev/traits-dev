@@ -1,0 +1,78 @@
+# macOS ClickFix clipboard cradles wrap a decoded command in a bash here-string
+# (`bash <<< $(echo ... | base64 -d)`). Distinct from `base64 -d | bash` pipes:
+# the decoder is inside command substitution and bash consumes the result as
+# stdin. Pairing that wrapper with a curl|shell sink is the delivery shape.
+defaults:
+  platforms: [macos]
+  for: [shell, html, javascript, markdown]
+  attack: T1059.004,T1027,T1204.004
+
+traits:
+  - id: sh-herestring-echo-cmdsubst
+    desc: Bash here-string from echo or printf
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: '(?i)\b(ba)?sh\s*<<<\s*\$\(\s*(echo|printf)\b'
+
+  - id: osascript-e-echo-cmdsubst
+    desc: osascript -e from echo or printf
+    crit: suspicious
+    conf: 0.94
+    attack: T1059.002
+    if:
+      type: text
+      regex: '(?i)\bosascript\s+-e.{0,40}\$\(\s*(echo|printf)\b'
+
+composite_rules:
+  - id: bash-herestring-base64-decode
+    desc: Bash here-string executes base64-decoded payload
+    crit: suspicious
+    conf: 0.94
+    all:
+      - id: sh-herestring-echo-cmdsubst
+    any:
+      - id: objectives/command-and-control/dropper/execution/browser::clickfix-base64-decode
+      - id: micro-behaviors/data/decode/base64::base64-d-cmd
+      - id: micro-behaviors/data/decode/base64::base64-decode-cmd
+    near_bytes: 800
+
+  - id: osascript-e-base64-decode
+    desc: osascript -e runs base64-decoded AppleScript
+    crit: suspicious
+    conf: 0.95
+    attack: T1059.002,T1027
+    all:
+      - id: osascript-e-echo-cmdsubst
+    any:
+      - id: objectives/command-and-control/dropper/execution/browser::clickfix-base64-decode
+      - id: micro-behaviors/data/decode/base64::base64-d-cmd
+      - id: micro-behaviors/data/decode/base64::base64-decode-cmd
+    near_bytes: 800
+
+  - id: macos-clickfix-herestring-curl-bash
+    desc: ClickFix here-string wraps curl-pipe bash
+    crit: hostile
+    conf: 0.98
+    attack: T1059.004,T1105,T1204.004
+    all:
+      - id: bash-herestring-base64-decode
+    any:
+      - id: micro-behaviors/process/create/shell/pipeline::curl-pipe-bash-execution
+      - id: objectives/command-and-control/dropper/delivery/pipe::curl-pipe-shell
+      - id: micro-behaviors/process/create/shell/pipeline::curl-pipe-shell-text
+    near_bytes: 2048
+
+  - id: macos-clickfix-osascript-b64-stage
+    desc: Encoded osascript -e stage with remote pipe
+    crit: hostile
+    conf: 0.98
+    attack: T1059.002,T1105,T1027
+    all:
+      - id: osascript-e-base64-decode
+    any:
+      - id: objectives/command-and-control/dropper/staging/memory::curl-osascript
+      - id: micro-behaviors/process/create/script/osascript::pipe-osascript
+      - id: micro-behaviors/process/create/shell/pipeline::curl-pipe-bash-execution
+    near_bytes: 2048

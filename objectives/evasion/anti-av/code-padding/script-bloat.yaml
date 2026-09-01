@@ -1,0 +1,106 @@
+# Scripts inflated with content that never runs. A dropper's real body is a
+# few lines; padding it to tens or hundreds of kilobytes buys two things.
+# Scanners with a per-file budget give up before reaching the payload, and a
+# classifier reading token statistics sees a file dominated by dialog calls
+# and whitespace rather than by the handful of statements that matter.
+#
+# Each atom describes one filler form and needs a high count, because the
+# technique is defined by volume: one message box is a program talking to the
+# user, forty identical ones are ballast.
+defaults:
+  platforms: [windows, unix]
+  for: [scripts, documents]
+  attack: T1027
+  mbc: F0001
+
+traits:
+  - id: prose-comment-padding
+    desc: Hundreds of long prose comments pad script
+    crit: suspicious
+    conf: 0.98
+    for: [javascript, typescript]
+    count_min: 200
+    if:
+      type: text
+      regex: '(?m)^\s*//(\s+[A-Za-z]{3,20}){20,}[.\r]*$'
+
+  - id: dense-message-box-padding
+    desc: Script is filled with message-box calls
+    crit: suspicious
+    conf: 0.9
+    count_min: 30
+    per_kb_min: 0.25
+    if:
+      # A script cannot show thirty dialogs and still be a program someone
+      # sits in front of. The calls are there to be counted, not run.
+      type: text
+      regex: '(?i)\bmsgbox\s*\('
+
+  - id: empty-vb-statement-separator-padding
+    desc: Runs of empty VB statement separators
+    crit: suspicious
+    conf: 0.88
+    platforms: [windows]
+    count_min: 20
+    # Only the VB family reads a bare colon as a statement separator, so the
+    # padding reading holds only there: VBScript, HTAs, and Office macros.
+    # Under the file default of [scripts, documents] the colon run is ordinary
+    # syntax nearly everywhere else -- autoconf `configure` scripts, XPM image
+    # data (a colon is just a pixel), minified JavaScript ternary chains, and a
+    # JavaScript bundle carrying a jison lexer (`/^(?::::)/`) matched on every
+    # large Electron app.
+    for: [vbs, documents]
+    if:
+      # `:::: :::: ::::` -- VB's statement separator with no statements
+      # between the colons. Syntactically legal, semantically nothing.  Other
+      # languages commonly carry colon-delimited fixture data in strings, so
+      # this syntax-specific signal is intentionally limited to VBScript.
+      type: text
+      regex: '(:[ \t]*){4,}'
+
+  - id: whitespace-only-comment-padding
+    desc: Comment lines holding only whitespace
+    crit: suspicious
+    conf: 0.88
+    count_min: 20
+    # Same reasoning as above: `'` opens a comment in VB, and is a quote or a
+    # quasiquote nearly everywhere else.
+    for: [vbs, documents]
+    if:
+      # `'` followed by nothing but tabs, repeated for hundreds of lines. The
+      # cheapest way to make a 4 KB script arrive as a 1 MB one.
+      type: text
+      regex: "(?m)^[ \t]*'[ \t]{20,}$"
+
+  - id: absurd-average-identifier-length
+    desc: Identifiers average hundreds of characters
+    crit: suspicious
+    conf: 0.93
+    # Two samples were 299 KB and 535 KB of unbroken random lowercase letters
+    # on a single line: 472 "identifiers" averaging 305 characters, only 8 of
+    # them distinct. Not minified code -- a minifier produces one- and
+    # two-character names -- and not prose, which has spaces.
+    #
+    # Reached by metric rather than by pattern. A `[a-z]{400,}` regex looks
+    # like the obvious expression of this and is a trap: on `type: text` it
+    # matches ordinary large bundles, because the extracted-string corpus
+    # joins runs across delimiters, and `type: raw` is not permitted for a
+    # printable-character pattern. The metric states the property directly.
+    if:
+      type: metrics
+      field: identifiers.avg_length
+      min: 100
+      min_size: 10000
+    unless:
+      # Heuristic language identification can feed image/resource bytes into
+      # the source metric pipeline.  With no AST, those byte runs are not
+      # identifiers and cannot establish script padding.
+      - type: metrics
+        field: source.ast_unavailable
+        min: 1
+      # Windows icon resources are occasionally classified as JavaScript when
+      # an embedded bitmap happens to resemble source.  Require the real ICO
+      # header so a script merely named .ico is not exempted.
+      - type: hex
+        pattern: "00 00 01 00"
+        offset: 0

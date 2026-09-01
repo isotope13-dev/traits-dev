@@ -18,7 +18,7 @@ traits:
       type: text
       regex: (?i)%[A-Z0-9_]+%\.exe
   - id: path-suspicious-root-exe
-    desc: Writes executable to drive root
+    desc: Drive-root executable path reference
     if:
       type: text
       regex: (?i)[C-Z]:\\[^\\\r\n'"]{1,120}\.exe
@@ -97,6 +97,24 @@ traits:
       regex: '(?i)(\\ProgramData\\|%ProgramData%\\|C:\\ProgramData\\)[A-Za-z0-9._ -]{3,64}'
     unless:
       - id: metadata/file/profile/metrics::powershell-no-parsed-call-sites
+  - id: windows-common-data-tree-path
+    desc: Windows ProgramData/Users/inetpub path
+    crit: notable
+    conf: 0.78
+    if:
+      type: text
+      regex: '(?i)([A-Z]:\\|\\\\)(ProgramData|Users|inetpub)(\\[\w .-]{1,40}){1,4}'
+    # Compiler paths under a Cargo registry identify source provenance, not a
+    # runtime reference to writable Windows user data.
+    not:
+      - regex: '(?i)\.cargo[\\/]registry[\\/]src\b'
+  - id: windows-user-profile-data-path
+    desc: Windows Documents/Desktop/Roaming path
+    crit: notable
+    conf: 0.82
+    if:
+      type: text
+      regex: '(?i)\\Users\\[^\\\r\n]{1,40}\\(Documents|Desktop|AppData\\Roaming)'
   - id: windows-appdata-directory-path
     desc: Windows AppData directory path reference
     crit: notable
@@ -107,6 +125,14 @@ traits:
       regex: '(?i)(%APPDATA%|%LOCALAPPDATA%|AppData)[\\/][A-Za-z0-9._ -]{1,64}'
     unless:
       - id: metadata/package/testing/harness/unit::rust-test
+  - id: appdata-powershell-script-path
+    desc: References a PowerShell script under AppData
+    crit: notable
+    conf: 0.92
+    for: [powershell]
+    if:
+      type: text
+      regex: '(?i)(\$env:APPDATA|AppData)[^\n]{0,80}\.ps1\b'
   - id: windows-public-temp-directory-path
     desc: Windows public or temp directory path
     crit: notable
@@ -166,13 +192,13 @@ traits:
       type: text
       regex: '(?i)(%temp%|%tmp%|\$env:temp|\$temp|\\temp\\|/tmp/).{0,32}\.(bat|cmd)'
   - id: path-suspicious-startup
-    desc: Writes to Startup folder
+    desc: Startup-folder executable path reference
     for: [scripts, binaries, ooxml]
     if:
       type: text
       regex: (?i)Start\s+Menu\\Programs\\Startup\\[^\\]{1,120}\.(exe|vbs|js)
   - id: path-suspicious-startup-scripts
-    desc: Writes script to Startup folder
+    desc: Startup-folder script path reference
     for: [scripts, binaries, ooxml]
     if:
       type: text
@@ -210,14 +236,58 @@ traits:
     if:
       type: text
       exact: \Screenshot album
-  - id: user-profile-dll-path
-    desc: References a user-profile DLL path
-    crit: suspicious
-    conf: 0.95
+  - id: appdata-percent-dll
+    desc: "%AppData% env var references DLL path"
+    crit: component
     if:
       type: text
-      regex: '(?i)(%AppData%|%LocalAppData%|APPDATA|LOCALAPPDATA)[^"\r\n]{0,120}\.dll'
+      regex: '(?i)%appdata%[^"\r\n]{0,120}\.dll'
+  - id: localappdata-percent-dll
+    desc: "%LocalAppData% env var references DLL path"
+    crit: component
+    if:
+      type: text
+      regex: '(?i)%localappdata%[^"\r\n]{0,120}\.dll'
+  - id: ps-env-appdata-dll
+    desc: PowerShell $env:AppData references DLL path
+    crit: component
+    if:
+      type: text
+      regex: '(?i)\$env:appdata[^"\r\n]{0,120}\.dll'
+  - id: ps-env-localappdata-dll
+    desc: PowerShell $env:LocalAppData references DLL path
+    crit: component
+    if:
+      type: text
+      regex: '(?i)\$env:localappdata[^"\r\n]{0,120}\.dll'
+  - id: getenv-appdata-dll
+    desc: getenv(APPDATA) references DLL path
+    crit: component
+    if:
+      type: text
+      regex: '(?i)getenv\([''"]appdata[''"][^"\r\n]{0,80}\.dll'
+  - id: getenv-localappdata-dll
+    desc: getenv(LOCALAPPDATA) references DLL path
+    crit: component
+    if:
+      type: text
+      regex: '(?i)getenv\([''"]localappdata[''"][^"\r\n]{0,80}\.dll'
 composite_rules:
+  - id: user-writable-dll-path-reference
+    desc: DLL path references a user-writable directory
+    crit: notable
+    conf: 0.9
+    all:
+      - id: windows-dll-file-path-reference
+    any:
+      - id: programdata-directory-path
+      - id: windows-appdata-directory-path
+      - id: windows-public-temp-directory-path
+    near_bytes: 256
+    unless:
+      - id: well-known/app/productivity/1password::onepassword-sdk-context
+      - id: well-known/app/productivity/1password::onepassword-sdk-desktop-ipc-context
+
   - id: json-win-downloads-executable-path
     desc: JSON path names Windows Downloads executable
     crit: notable
@@ -228,7 +298,7 @@ composite_rules:
       - id: json-userprofile-downloads-executable
       - id: json-users-downloads-executable
   - id: path-suspicious-startup-any
-    desc: Writes to Startup folder
+    desc: Startup-folder executable path cluster
     crit: suspicious
     conf: 0.8
     for: [scripts, binaries, ooxml]
@@ -250,3 +320,14 @@ composite_rules:
     all:
       - id: path-screenshot-album-dir
       - id: micro-behaviors/fs/path/extension::exe-dup
+  - id: user-profile-dll-path
+    desc: User-profile env var references a DLL path
+    crit: suspicious
+    conf: 0.95
+    any:
+      - id: appdata-percent-dll
+      - id: localappdata-percent-dll
+      - id: ps-env-appdata-dll
+      - id: ps-env-localappdata-dll
+      - id: getenv-appdata-dll
+      - id: getenv-localappdata-dll

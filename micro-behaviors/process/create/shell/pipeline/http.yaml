@@ -23,10 +23,11 @@ traits:
   desc: References a curl- or wget-to-shell pipeline
   crit: notable
   conf: 0.9
-  for: [shell, markdown, html]
+  for: [scripts, source, markdown, html]
   attack: T1059.004
   unless:
     - id: well-known/tool/detection/llm-scanner::llm-scanner-context
+    - id: well-known/tool/detection/agentskillmap/
     # Security playbook / attack writeups citing known-bad or illustrative hosts
     - type: text
       regex: '(?i)https?://(attacker\.com|hackmoltrepeat\.com)/'
@@ -35,9 +36,12 @@ traits:
     - id: well-known/tool/development/clawgarden::clawgarden-cli-context
   if:
     type: text
-    regex: '(curl|wget)\s+.{0,160}\|\s*(bash|sh)\b'
+    # macOS ClickFix loaders pipe into zsh as often as bash/sh.
+    regex: '(curl|wget)\s+.{0,160}\|\s*(bash|zsh|sh)\b'
   not:
-  - regex: '(curl|wget)\s+.{0,200}get\.docker\.com.{0,200}\|\s*(bash|sh)\b'
+  - regex: '(curl|wget)\s+\.{3}\s*\|\s*(bash|zsh|sh)\b'
+  - regex: '(curl|wget)\s+.{0,200}get\.docker\.com.{0,200}\|\s*(bash|zsh|sh)\b'
+  - regex: '(curl|wget)\s+.{0,200}deb\.nodesource\.com/.{0,80}\|\s*(bash|zsh|sh)\b'
 - id: bash-stdin-pipe
   desc: Shell pipes data into Bash stdin
   crit: notable
@@ -109,6 +113,17 @@ traits:
   - type: text
     regex: '(?i)nixos\.org/nix/install'
 composite_rules:
+  - id: curl-pipe-bash-execution
+    desc: Shell pipes curl output into Bash
+    crit: notable
+    conf: 0.96
+    attack: T1059.004
+    scope: file
+    near_bytes: 256
+    all:
+      - id: micro-behaviors/communications/http/download/cli::curl-command-call
+      - id: micro-behaviors/data/runtime/keywords::pipe-to-bash
+
   - id: python-curl-to-bash-stream
     desc: Python streams curl output into Bash
     crit: notable
@@ -119,3 +134,26 @@ composite_rules:
     all:
       - id: python-curl-popen-stream
       - id: python-bash-stdin-stream
+
+  # A page may legitimately offer an installer command with a copy button.
+  # This is a neutral delivery capability; lure intent comes from passive
+  # clipboard triggers or OS-gated redirection in objective composites.
+  - id: browser-clipboard-remote-shell-pipeline
+    desc: Clipboard write near remote shell pipeline
+    crit: notable
+    conf: 0.9
+    platforms: [macos, unix, windows]
+    for: [html, javascript, typescript]
+    attack: T1059.004,T1204.004
+    scope: file
+    # Prevent unrelated policy examples and UI copy helpers in large bundles
+    # from being joined as if the helper copied the command.
+    near_bytes: 16384
+    all:
+      - id: micro-behaviors/os/clipboard/access::browser-clipboard-write
+    any:
+      - id: micro-behaviors/process/create/shell/command-mode::shell-c-command-substitution-fetch
+      - id: curl-pipe-shell-text
+    unless:
+      - id: metadata/package/quality/benign-context::vscode-webview-codeblock-copy-button
+      - id: well-known/app/ai/coding-agent/grok-cli::official-installer-url

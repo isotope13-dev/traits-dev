@@ -3,6 +3,24 @@ defaults:
   for: [scripts, javascript, typescript, chrome-manifest, binaries]
   attack: "T1562"
 traits:
+  - id: js-extension-probe-fetch-hang
+    desc: Hangs fetch probes for extension URLs
+    crit: suspicious
+    conf: 0.98
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'window\.fetch\s*=\s*function[\s\S]{0,220}new Promise\s*\(\s*\(\)\s*=>\s*\{\s*\}'
+
+  - id: js-extension-probe-xhr-suppress
+    desc: Suppresses XHR probes for extension URLs
+    crit: suspicious
+    conf: 0.98
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'XMLHttpRequest\.prototype\.open\s*=[\s\S]{0,240}isExtUrl[\s\S]{0,60}return\s*;'
+
   - id: llm-exam-coach-prompt
     desc: LLM exam coach system prompt
     crit: suspicious
@@ -64,6 +82,18 @@ traits:
       substr: correct_reason
 
 composite_rules:
+  - id: extension-presence-probe-evasion
+    desc: Hides extension from page presence probes
+    crit: hostile
+    conf: 0.99
+    for: [javascript, typescript]
+    near_lines: 30
+    all:
+      - id: micro-behaviors/communications/url/scheme::chrome-extension-url-prefix-check
+    any:
+      - id: js-extension-probe-fetch-hang
+      - id: js-extension-probe-xhr-suppress
+
   - id: encrypted-main-world-extension-injection
     desc: Browser extension injects encrypted code into page main world
     crit: hostile
@@ -104,6 +134,34 @@ composite_rules:
       - id: micro-behaviors/process/hook/xhr::globalthis-fetch-wrapper
       - id: micro-behaviors/process/hook/xhr::globalthis-xhr-wrapper
       - id: micro-behaviors/communications/http/headers::dnr-cors-permissive-response
+
+  - id: broad-host-csp-clearing-page-injection
+    desc: Broad-host extension clears CSP and injects a page script
+    crit: suspicious
+    conf: 0.98
+    for: [crx, xpi, zip]
+    scope: archive
+    all:
+      - id: metadata/permission/manifest::is-chrome-manifest
+      - id: metadata/permission/host::broad-host-access
+      - id: micro-behaviors/communications/http/header/security::dnr-csp-empty-set
+      - id: micro-behaviors/process/inject/webextension::extension-page-script-injection
+
+  - id: broad-host-csp-stripping-dom-execution
+    desc: Broad-host extension strips CSP before hidden DOM code execution
+    crit: hostile
+    conf: 0.995
+    attack: T1059.007,T1176,T1562.001
+    for: [crx, xpi, zip]
+    scope: archive
+    all:
+      - id: metadata/permission/manifest::is-chrome-manifest
+      - id: metadata/permission/host::broad-host-access
+      - id: metadata/permission/network::permission-declarative-net-request
+      - id: micro-behaviors/process/hook/webextension::declarative-net-request-update
+      - id: micro-behaviors/communications/http/headers::dnr-security-header-remove
+      - id: micro-behaviors/process/interpreter/runtime/eval::js-dom-event-handler-variable-code
+      - id: micro-behaviors/ui/window/manage/automation::dom-dispatch-non-pointer-event
 
   - id: llm-exam-answer-json-prompt
     desc: LLM prompt requests exam answers

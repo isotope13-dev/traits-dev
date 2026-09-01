@@ -44,7 +44,104 @@ traits:
     if:
       type: text
       regex: 'shell\s+-c\s+.{0,10}\$\(wget'
+  # --- Payload-generator scripts ------------------------------------------
+  #
+  # A generator script does not connect anywhere itself; it writes the program
+  # that will. What gives it away is that the emitted program's callback
+  # address is spliced in from the generator's own arguments -- the operator
+  # runs `gen.sh <lhost> <lport> <outfile>` and gets a ready implant. The
+  # `$1`/`${2}` inside a `connect()` argument list is the join between the two
+  # programs and does not occur in a hand-written client, where the address is
+  # either a literal or a variable with a name.
+  - id: shell-emitted-payload-connect-target
+    desc: Emitted payload connects to a script argument
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      # `.{0,2}` spans the optional quote in `connect(('$1', $2))` without
+      # needing a quote character inside the pattern.
+      regex: '\.connect\(\(.{0,2}\$\{?[0-9]'
+  - id: shell-appends-payload-module
+    desc: Shell appends a payload module to output
+    crit: notable
+    conf: 0.9
+    if:
+      # `cat modules/payload >> $3` -- the second half of a generator, bolting
+      # a stored payload body onto the header it just wrote.
+      type: text
+      regex: '(?im)^\s*cat\s[^\n]{0,60}payload[^\n]{0,20}>>'
+  - id: embedded-go-program-source
+    desc: Shell script embeds a Go program
+    crit: notable
+    conf: 0.9
+    if:
+      # A `package main` / `func main()` pair inside a shell script is a whole
+      # second program the script is carrying, not shell.
+      type: text
+      regex: '(?ms)^\s*package main\b[\s\S]{0,400}func main\('
+  - id: generated-exec-shell-variable
+    desc: Emitted program executes a shell variable
+    crit: suspicious
+    conf: 0.92
+    if:
+      # `exec.Command('${com}')` written out by the script: whatever the shell
+      # read into `com` becomes the command the generated program runs. The
+      # generator is building a command runner around operator input.
+      type: text
+      regex: 'exec\.Command\(.{0,2}\$\{?[A-Za-z_]'
 composite_rules:
+  # A program stashed under a configuration file's name and extension. Neither
+  # half is odd alone -- scripts write config, and scripts embed helper
+  # programs -- but writing a compilable program to /etc/*.conf is choosing a
+  # location for concealment.
+  - id: code-payload-staged-as-config-file
+    desc: Stages program source under a config file path
+    crit: suspicious
+    conf: 0.92
+    attack: T1036
+    all:
+      - id: micro-behaviors/fs/file/write/redirect::shell-heredoc-system-config-write
+      - id: embedded-go-program-source
+  # The generator asks the operator for a command and emits a program that
+  # runs it -- the same generator shape as the reverse-shell rules above, with
+  # a local command runner as the product instead of a socket client.
+  - id: generated-command-runner-payload
+    desc: Generates a program that runs a supplied command
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: generated-exec-shell-variable
+      - id: micro-behaviors/process/create/eval::shell-heredoc
+  # The generator emits a Python program that opens a socket and can run
+  # commands. Writing that pair into a file is building a remote-shell
+  # payload; nothing else assembles a socket client and `subprocess` into a
+  # file it does not then run itself.
+  - id: python-reverse-shell-payload-emitter
+    desc: Shell script writes a Python remote-shell payload
+    crit: hostile
+    conf: 0.95
+    mbc: B0030
+    attack: T1059.004,T1059.006
+    all:
+      - id: micro-behaviors/fs/file/write/redirect::shell-echo-file-write
+      - id: micro-behaviors/communications/socket/connect::socket-socket-call
+      - id: micro-behaviors/communications/socket/connect::socket-connect-method
+      - id: micro-behaviors/process/create/subprocess::import-subprocess
+  # The same conclusion by a different route: the callback address is taken
+  # from the generator's arguments, so the file being written is an implant
+  # template rather than an ordinary script this one happens to create.
+  - id: parameterized-reverse-shell-generator
+    desc: Generates a remote shell with operator-supplied callback
+    crit: hostile
+    conf: 0.95
+    mbc: B0030
+    all:
+      - id: shell-emitted-payload-connect-target
+      - id: micro-behaviors/fs/file/write/redirect::shell-echo-file-write
+    any:
+      - id: micro-behaviors/process/create/subprocess::import-subprocess
+      - id: shell-appends-payload-module
   - id: architecture-variable-payload-loader
     desc: Architecture-selected payload made executable and run
     crit: hostile
@@ -90,5 +187,5 @@ composite_rules:
     conf: 0.98
     all:
       - id: sh-c-curl-subshell
-      - id: micro-behaviors/process/create/shell/spawn::sh-c-exec
+      - id: micro-behaviors/process/create/shell/command-string::sh-c-exec
       - id: objectives/command-and-control/infrastructure/ip::ip-address-url

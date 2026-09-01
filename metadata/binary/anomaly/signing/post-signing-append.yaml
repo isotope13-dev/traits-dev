@@ -1,0 +1,50 @@
+# Overlay bytes that were appended to a PE *after* it was signed.
+#
+# Two independent integrity values pin down when the bytes arrived:
+#
+#   * Authenticode does not hash past the certificate table, so bytes appended
+#     beyond it are outside the signed region and the vendor signature keeps
+#     verifying.
+#   * signtool rewrites OptionalHeader.CheckSum when it embeds the certificate,
+#     so a freshly signed PE always ships a checksum that matches its own
+#     bytes. Appending to the file leaves that stored checksum behind.
+#
+# A stale checksum alone says nothing (CheckSum is not covered by Authenticode
+# and vendors do leave it stale, which is why
+# metadata/binary/layout::signed-pe-checksum-mismatch suppresses itself on a
+# verified signature). The discriminator is the third leg: the file also
+# carries overlay bytes that the certificate table does not account for. A
+# verified signature plus a stale checksum plus unaccounted overlay bytes means
+# those bytes landed after the signing step.
+#
+# This is a neutral structural fact, not a verdict. The appended bytes may be
+# an inert pad — a Valve-signed Steam client redistributed under a random
+# basename ships 1 KB of one — or a configuration blob a companion component
+# reads. Composites that infer intent live in
+# objectives/evasion/masquerade/trust/.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+
+composite_rules:
+  - id: post-signature-overlay-append
+    desc: Overlay bytes appended after PE was signed
+    crit: notable
+    conf: 0.9
+    attack: T1553.002
+    all:
+      - id: metadata/signed/certificate/identity::pe-signature-verified-kv
+      - id: metadata/binary/layout::pe-checksum-mismatch
+    any:
+      - id: metadata/binary/anomaly/signing::signed-pe-small-noncertificate-overlay
+      - id: metadata/binary/anomaly/signing::signed-pe-large-noncertificate-overlay
+    needs: 1
+    unless:
+      # Installer payloads are written between the last section and the
+      # certificate table before the final signing pass, so their overlay is
+      # inside the signed region rather than appended after it.
+      - id: metadata/binary/installer/script/
+      - id: metadata/binary/installer/family/
+      # Unstripped PE builds leave the COFF symbol table in the same span; that
+      # residue predates signing.
+      - id: metadata/binary/metrics/structural::pe-coff-symbol-table-overlay-context

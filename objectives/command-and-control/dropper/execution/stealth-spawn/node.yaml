@@ -291,10 +291,16 @@ composite_rules:
   - id: objectives/command-and-control/dropper/staging/embedded::exepath-var
   - id: micro-behaviors/fs/path/extension::exe-dup
 - id: hidden-native-download-exec
-  desc: Hidden native payload download and execute
+  desc: Compact hidden native download-and-execute chain
   crit: hostile
   conf: 0.96
   attack: "T1105"
+  # Keep the HTTP-to-file, execFile, hidden-window, and decoder legs in one
+  # compact loader. Electron main processes commonly contain an unrelated
+  # hidden PowerShell helper plus a separate self-updater; file-wide matching
+  # incorrectly merges those legitimate contexts into this objective.
+  near_lines: 128
+  near_bytes: 8192
   all:
   - id: micro-behaviors/communications/http/download/handler::node-http-stream-to-file
   - id: micro-behaviors/process/create/system::js-execfile-call
@@ -350,8 +356,9 @@ composite_rules:
   - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
   - id: objectives/command-and-control/dropper/execution/pipe::curl-download-pipe-shell
   unless:
-  - id: well-known/app/ai/qwen-code::qwen-code-bundle-text
+  - id: well-known/app/ai/coding-agent/qwen-code::qwen-code-bundle-text
   - id: well-known/app/system/vellum::cli-package-context
+  - id: well-known/tool/development/github-actions/setup-docker-action/
 # A detached `node -e` child that fetches and evaluates JavaScript is the
 # downloader branch described in the Joyfill analysis.  The URL and header are
 # deliberately not part of the rule: the delivery mechanism survives C2
@@ -378,7 +385,7 @@ composite_rules:
   # lines apart while keeping them in the same import-time loader.
   near_lines: 128
   all:
-  - id: micro-behaviors/crypto/symmetric/decrypt::cryptojs-block-cipher-decrypt-call
+  - id: micro-behaviors/crypto/symmetric/decrypt::cryptojs-block-cipher-decrypt-text
   - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
   - id: micro-behaviors/process/fd/stdio::js-stdin-write
   any:
@@ -399,12 +406,60 @@ composite_rules:
   attack: "T1027, T1059.007"
   mbc: "B0032, F0011"
   all:
-  - id: micro-behaviors/data/source/dynamic/load::node-split-literal-require
+  - id: micro-behaviors/os/module/dynamic-load::node-split-literal-require
   - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::push-shift-bracket-pattern
   any:
   - id: micro-behaviors/process/create/spawn::stdio-ignore
   - id: micro-behaviors/process/create/spawn-minified::windowshide-bang-true
   - id: micro-behaviors/process/create/shell/bridge::js-spawnsync
+  unless:
+  - id: metadata/library/structure/
+  - id: metadata/package/testing/
+# Decrypt packaged ciphertext to disk, then `require` a module name recovered
+# from that decryption and spawn a detached/hidden node child — classic
+# matrixflow-js / encrypted-sibling npm dropper shape.
+- id: decrypt-write-dynamic-require-stealth-spawn
+  desc: Decrypts to disk then dynamically requires spawn for a hidden child
+  crit: hostile
+  conf: 0.96
+  attack: "T1195.002,T1027.013,T1059.007,T1106"
+  mbc: "B0024, F0011"
+  all:
+  - id: micro-behaviors/crypto/symmetric/aes/runtime-library::createDecipheriv
+  - id: micro-behaviors/fs/file/write/direct::node-write-file-sync-call
+  - id: micro-behaviors/os/module/dynamic-load::node-variable-require-call
+  - id: micro-behaviors/process/create/spawn-minified::detached-bang-true
+  - id: micro-behaviors/process/create/spawn-minified::windowshide-bang-true
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/package/testing/presence/fixture::test-filename-pattern
+  # Fetch a file off the network, drop it, and run it where nobody can see it.
+  #
+  # The three transport legs on their own describe an ordinary self-updater:
+  # plenty of legitimate CLIs download a release asset, write it next to
+  # themselves and launch it. What an updater does not do is hide the result.
+  # `detached` + `stdio: "ignore"` + `unref()` severs the child from the
+  # installing process's lifetime and throws away everything it prints, and
+  # `windowsHide` suppresses its console. Taken together the author has
+  # arranged for the downloaded program to run with no window, no output and
+  # no parent — which is a requirement only when the user is not supposed to
+  # notice.
+  #
+  # Deliberately says nothing about *what* is launched. The mshta form of this
+  # is named separately in dropper/execution/script/mshta.yaml; keying this one
+  # on the spawn shape instead keeps it valid when the next sample drops a
+  # `.scr`, a `.js` for wscript, or a plain executable.
+- id: js-fetch-drop-hidden-detached-launch
+  desc: Runs a downloaded file hidden and detached
+  crit: hostile
+  conf: 0.95
+  attack: "T1105,T1059.007,T1564.003"
+  mbc: "B0024, F0011"
+  all:
+  - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+  - id: micro-behaviors/fs/file/write/async::node-write-file-promise-destructured
+  - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+  - id: micro-behaviors/process/create/spawn::windowshide-option
   unless:
   - id: metadata/library/structure/
   - id: metadata/package/testing/

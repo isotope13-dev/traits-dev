@@ -1,6 +1,9 @@
+# ErrTraffic ClickFix TDS delivery: browser resolves C2 (often via EtherHiding /
+# eth_call), fetches a context-bound command API, and stages the payload on the
+# clipboard for Win+R paste-run. Covers HTML and standalone .js injectors.
 defaults:
   platforms: [windows, unix]
-  for: [html]
+  for: [html, javascript]
   attack: T1102,T1105,T1115,T1204.001
   mbc: B0024
 
@@ -28,6 +31,22 @@ traits:
     if:
       type: text
       regex: '(?i)/api/index\.php\?[^"''<>\r\n]{0,220}\bmode=download\b'
+  - id: errtraffic-cfjs-stage-path
+    desc: ErrTraffic ClickFix cf.js stage path
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: text
+      regex: '(?i)https?://[^"''\s]{1,180}/cf\.js\b'
+  - id: errtraffic-cssjs-stage-path
+    desc: ErrTraffic ClickFix api/css.js stage path
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: text
+      # Absolute URL or quoted root path (script src="/api/css.js"). Exclude
+      # relative module imports such as cheerio's require("./api/css.js").
+      regex: '(?i)(https?://[^"''\s]{1,180}|["''])/api/css\.js\b'
 
 composite_rules:
   - id: browser-command-context-api
@@ -47,9 +66,23 @@ composite_rules:
     all:
       - id: objectives/command-and-control/infrastructure/blockchain/multi-chain::jsonrpc-eth-call-body
       - id: browser-command-context-api
-      - id: micro-behaviors/communications/http/request/html::html-fetch-call
-      - id: micro-behaviors/os/clipboard/browser::browser-html-clipboard-write
+      - id: micro-behaviors/os/clipboard/access::browser-clipboard-write
+      - id: objectives/execution/lure/clipboard::html-winr-shortcut-instruction
+    any:
+      - id: objectives/execution/lure/clipboard::paste-enter-instruction-generic
       - id: objectives/execution/lure/clipboard::fake-captcha-winr-paste-instructions
+      - id: objectives/execution/lure/clipboard::remote-ctrlv-instruction
+    near_bytes: 4096
+
+  - id: browser-etherhiding-command-clipboard-lure
+    desc: Polygon EtherHiding resolves ClickFix clipboard command
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: objectives/command-and-control/infrastructure/blockchain/polygon::polygon-etherhiding-resolver
+      - id: browser-command-context-api
+      - id: micro-behaviors/os/clipboard/access::browser-clipboard-write
+      - id: objectives/execution/lure/clipboard::html-winr-shortcut-instruction
     near_bytes: 4096
 
   # Adding a remote script element captures the poisoned-page delivery stage;
@@ -62,3 +95,15 @@ composite_rules:
       - id: browser-blockchain-command-clipboard-lure
       - id: micro-behaviors/communications/http/client/resource::external-script-element-load
     near_bytes: 4096
+
+  - id: errtraffic-cfjs-clipboard-stage
+    desc: ErrTraffic cf.js stage with clipboard ClickFix
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: errtraffic-cfjs-stage-path
+      - id: micro-behaviors/os/clipboard/access::browser-clipboard-write
+    any:
+      - id: objectives/execution/lure/clipboard::html-winr-shortcut-instruction
+      - id: micro-behaviors/communications/http/lib/invoke-webrequest::embedded-iex-irm-call
+      - id: micro-behaviors/communications/http/lib/invoke-webrequest::embedded-irm-iex-pipeline

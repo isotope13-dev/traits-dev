@@ -1,0 +1,93 @@
+# Password spraying reverses ordinary per-account brute-force loop order: one
+# password is submitted across an account collection before the password is
+# changed. The nested-loop shapes below capture that executable structure;
+# credential-form and HTTP-call mechanics remain in micro-behaviors.
+defaults:
+  platforms: [windows, unix]
+  for: [python, powershell]
+  attack: T1110.003
+  mbc: E1110
+
+traits:
+  - id: python-password-major-account-loop
+    desc: Python account loop under password loop
+    crit: suspicious
+    conf: 0.97
+    for: [python]
+    if:
+      type: tree-sitter
+      query: |
+        (for_statement
+          left: (identifier) @password_var
+          right: (identifier) @passwords
+          body: (block
+            (for_statement
+              left: (identifier) @account_var
+              right: (identifier) @accounts))
+          (#match? @password_var "^(password|passwd|pwd)$")
+          (#match? @passwords "^(passwords|passwds|password_list|password_candidates)$")
+          (#match? @account_var "^(user|username|account)$")
+          (#match? @accounts "^(users|usernames|accounts|account_list)$"))
+    unless:
+      - id: well-known/tool/offensive/keris::package-tree-member
+
+  - id: powershell-password-major-account-loop
+    desc: PowerShell account loop under password loop
+    crit: suspicious
+    conf: 0.97
+    for: [powershell]
+    if:
+      type: tree-sitter
+      query: |
+        (foreach_statement
+          (variable) @password_var
+          (pipeline) @passwords
+          (statement_block
+            (statement_list
+              (foreach_statement
+                (variable) @account_var
+                (pipeline) @accounts)))
+          (#match? @password_var "(?i)^\\$(password|passwd|pwd)$")
+          (#match? @passwords "(?i)^\\$(passwords|passwds|password_list|password_candidates)$")
+          (#match? @account_var "(?i)^\\$(user|username|account)$")
+          (#match? @accounts "(?i)^\\$(users|usernames|accounts|account_list)$"))
+
+composite_rules:
+  - id: python-http-password-major-iteration
+    desc: Python password-major loop submits account credentials over HTTP
+    crit: suspicious
+    conf: 0.98
+    for: [python]
+    near_lines: 55
+    all:
+      - id: python-password-major-account-loop
+      - id: micro-behaviors/communications/http/form::python-variable-credential-form-post
+
+  - id: powershell-http-password-major-iteration
+    desc: PowerShell password-major loop submits account credentials over HTTP
+    crit: suspicious
+    conf: 0.98
+    for: [powershell]
+    near_lines: 55
+    all:
+      - id: powershell-password-major-account-loop
+      - id: micro-behaviors/communications/http/form::powershell-variable-credential-form-post
+
+  - id: http-password-spray
+    desc: Password-major account iteration submits credentials over HTTP
+    crit: hostile
+    conf: 0.99
+    any:
+      - id: python-http-password-major-iteration
+      - id: powershell-http-password-major-iteration
+
+  - id: low-and-slow-http-password-spray
+    desc: HTTP password spray randomizes delays between account rounds
+    crit: hostile
+    conf: 0.99
+    near_lines: 65
+    all:
+      - id: http-password-spray
+    any:
+      - id: micro-behaviors/time/sleep/interval::python-randomized-sleep
+      - id: micro-behaviors/time/sleep/interval::ps-randomized-sleep

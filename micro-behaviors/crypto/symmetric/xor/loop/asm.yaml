@@ -80,6 +80,34 @@ traits:
       # the combination is more specific than a standalone XOR instruction.
       pattern: '0F B6 ?? ?? 33 ?? ?? 88 ?? ?? [0-128] E9 ?? ?? ?? ??'
 
+  - id: x86-indexed-two-buffer-xor-loop
+    desc: x86 indexed two-buffer byte XOR loop
+    crit: notable
+    conf: 0.96
+    attack: T1140
+    arch: [x86]
+    for: [pe, dll]
+    if:
+      type: hex
+      section: .text
+      # MSVC load/XOR/store loop over separate source and destination
+      # pointers. Stack slots and the loop displacement vary by build.
+      pattern: '0F B6 08 8B ?? ?? 03 ?? ?? 0F B6 02 33 C8 8B ?? ?? 88 0A 8B ?? ?? 83 C0 01 89 ?? ?? EB ??'
+
+  - id: x86-copy-byte-xor-loop
+    desc: x86 copies and XOR-transforms a byte buffer
+    crit: notable
+    conf: 0.97
+    attack: T1140
+    arch: [x86]
+    for: [pe, dll]
+    if:
+      type: hex
+      section: .text
+      # Load a source byte, XOR it with an immediate key, store it in a
+      # separate destination buffer, increment the index, and branch back.
+      pattern: '0F B6 10 [4-24] 83 F2 ?? 88 10 [4-24] 7C ??'
+
   - id: x86-inplace-decrypt-jmp-eax
     desc: x86 in-place decrypt then jmp eax
     crit: notable
@@ -191,15 +219,24 @@ traits:
       pattern: 0F 57 ?? 66 0F 60 ??
 
   - id: x86-byte-xor-terminator-loop
-    desc: x86 byte XOR loop with -1 terminator
+    desc: In-place byte XOR loop with -1 terminator
     crit: notable
-    conf: 0.7
+    conf: 0.9
+    arch: [x86, x86-64]
     if:
       type: hex
       section: .text
-      pattern: 30 ?? [1] 83 ?? FF 75
+      # Opcode 30 writes an 8-bit register into its r/m8 destination. Require
+      # a memory ModR/M form and a backward JNE: accepting any ModR/M and any
+      # branch direction allowed CALL displacement bytes followed by
+      # `cmp reg,-1; jne forward` to masquerade as an XOR loop.
+      pattern: '30 (0?|1?|2?|3?|4?|5?|6?|7?|8?|9?|A?|B?) [1] 83 ?? FF 75 (8?|9?|A?|B?|C?|D?|E?|F?)'
     unless:
       - id: metadata/lang/compiled/
+      # Steam's signed bootstrapper contains `call [edx+0x30]` followed by a
+      # sentinel comparison. The matcher can begin at the call displacement
+      # byte and misread that cross-instruction sequence as an XOR opcode.
+      - id: well-known/game/steam::steam-bootstrapper-identity
 
 composite_rules:
   - id: native-byte-xor-loop
@@ -210,6 +247,8 @@ composite_rules:
       - id: backward-byte-xor-loop-i386
       - id: x64-xor-indexed-byte-loop
       - id: x64-strided-repeating-key-xor-loop
+      - id: x86-indexed-two-buffer-xor-loop
+      - id: x86-copy-byte-xor-loop
       - id: x64-xor-immediate-byte-loop
       - id: x64-mask-xor-buffer-loop
   - id: asm-loop-any

@@ -52,7 +52,7 @@ traits:
       any:
         - id: metadata/package/testing/presence/harness::pytest-module
     unless:
-      - id: well-known/app/ai/open-webui-computer/
+      - id: well-known/app/ai/browser-agent/open-webui-computer/
   # Atomic: setup.py curl/wget with exec
   - id: setup-py-curl-exec-call
     desc: setup.py curl/wget downloads then exec()
@@ -404,7 +404,9 @@ traits:
     for: [rust]
     if:
       type: text
-      substr: "include_bytes!("
+      # Anchor to ordinary Rust item/statement starts so documentation that
+      # merely mentions `include_bytes!` does not become payload staging.
+      regex: '(?m)^[ \t]*(include_bytes!|(let|const|static).{0,60}include_bytes!)\s*\('
   - id: rust-build-rs-include-windows-binary
     desc: build.rs embeds Windows binary bytes
     crit: component
@@ -539,6 +541,7 @@ traits:
     unless:
       - type: text
         regex: '^#!'
+      - id: well-known/tool/sysadmin/rancher::dapper-release-download
   - id: rust-build-sha256-pin-constant
     desc: build.rs declares pinned SHA-256 archive hash
     crit: component
@@ -555,6 +558,14 @@ traits:
     if:
       type: text
       regex: 'assert_eq!\s*\(\s*\w*(digest|hash|checksum)\w*\s*,\s*\w*SHA256\w*'
+  - id: rust-build-sha256-verify-function
+    desc: build.rs defines SHA-256 verify routine
+    crit: component
+    conf: 0.92
+    for: [rust]
+    if:
+      type: text
+      regex: '(?m)fn\s+verify_\w*(checksum|sha256)'
   - id: rust-build-tar-extract-command
     desc: build.rs extracts tar archive
     crit: component
@@ -859,6 +870,16 @@ composite_rules:
       - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-call
     unless:
       - id: metadata/package/testing/
+  - id: setup-build-hook-environment-temp-staging
+    desc: Build hook stages captured environment in temporary file
+    crit: hostile
+    conf: 0.995
+    for: [python]
+    attack: T1195.002,T1552.001
+    all:
+      - id: objectives/supply-chain/credential-theft/env::pypi-build-hook-environment-file-harvest
+      - id: objectives/supply-chain/hidden-payload/staging::build-hook-absolute-temp-marker
+      - id: micro-behaviors/fs/write/file/direct::python-pathlib-write-text
   - id: setup-py-encrypted-build-hook-write
     desc: setup.py build hook decrypts and writes plaintext
     crit: hostile
@@ -948,7 +969,10 @@ composite_rules:
     for: [rust]
     all:
       - id: rust-build-rs-file
+    any:
       - id: micro-behaviors/process/create/direct::rust-spawn
+      - id: micro-behaviors/process/create/direct::rust-command-status-call
+      - id: micro-behaviors/process/create/direct::rust-command-output
   - id: rust-build-rs-download-command
     desc: build.rs invokes curl or wget
     crit: notable
@@ -966,6 +990,7 @@ composite_rules:
       - id: rust-build-rs-file
     any:
       - id: micro-behaviors/communications/http/lib/reqwest::rust-reqwest
+      - id: micro-behaviors/communications/http/lib/reqwest::rust-reqwest-get-fn
       - id: micro-behaviors/communications/http/lib/crate::ureq-crate
   - id: rust-build-rs-network-tool
     desc: build.rs uses a network-capable tool or client
@@ -977,6 +1002,60 @@ composite_rules:
     any:
       - id: rust-build-rs-download-command
       - id: rust-build-rs-http-client
+  - id: rust-build-rs-hostname-unverified-remote-payload-stage
+    desc: build.rs downloads hostname-unverified payload into temporary storage
+    crit: suspicious
+    conf: 0.98
+    for: [rust]
+    all:
+      - id: rust-build-rs-file
+      # Keep the build-hook inference independent of the HTTP crate. The
+      # canonical response-materialization composite covers both ureq reader
+      # copies and reqwest buffered-body writes.
+      - id: micro-behaviors/communications/http/download/handler::rust-http-response-materialized
+      - id: micro-behaviors/fs/path/temp::rust-temp-path
+      - id: micro-behaviors/communications/socket/ssl::rustls-no-hostname-verification
+  - id: rust-build-rs-hostname-unverified-remote-payload-exec
+    desc: Cargo build hook launches a hostname-unverified remote payload
+    crit: hostile
+    conf: 0.995
+    attack: T1195.002,T1105,T1059,T1553
+    mbc: B0024
+    for: [rust]
+    all:
+      - id: rust-build-rs-file
+      - id: rust-build-rs-hostname-unverified-remote-payload-stage
+      - id: objectives/command-and-control/dropper/delivery/download-execute::rust-hostname-unverified-temp-executable-dropper
+  - id: rust-build-rs-obfuscated-endpoint-payload-exec
+    desc: Cargo build hook launches a remote payload from an obfuscated endpoint
+    crit: hostile
+    conf: 0.995
+    attack: T1195.002,T1027.001,T1105,T1059
+    mbc: B0024
+    for: [rust]
+    all:
+      - id: rust-build-rs-file
+      - id: objectives/command-and-control/dropper/delivery/download-execute::rust-obfuscated-endpoint-temp-executable-dropper
+  - id: rust-build-rs-hidden-wscript-payload-exec
+    desc: Cargo build hook launches hidden remote PowerShell through WScript
+    crit: hostile
+    conf: 0.995
+    attack: T1195.002,T1105,T1059.001,T1059.005,T1564.003
+    mbc: B0024
+    for: [rust]
+    all:
+      - id: rust-build-rs-file
+      - id: objectives/command-and-control/dropper/delivery/download-execute::rust-hidden-wscript-temp-powershell-stage
+  - id: rust-build-rs-pinned-artifact-verify
+    desc: build.rs pinned SHA-256 verified download
+    crit: notable
+    conf: 0.95
+    for: [rust]
+    all:
+      - id: rust-build-sha256-pin-constant
+    any:
+      - id: rust-build-sha256-checksum-compare
+      - id: rust-build-sha256-verify-function
   - id: rust-build-rs-external-artifact-download
     desc: build.rs downloads external build artifact
     crit: suspicious
@@ -989,6 +1068,9 @@ composite_rules:
       - id: micro-behaviors/communications/url/external/github::github-archive-ref-download
     unless:
       - id: metadata/build/toolchain::conditional-wasi-sdk-bootstrap
+      - id: well-known/lib/data/duckdb::libduckdb-download-build-marker
+      - id: rust-build-rs-pinned-artifact-verify
+      - id: well-known/lib/runtime/wasmer/
   - id: rust-build-rs-http-post
     desc: Cargo build script sends HTTP POST
     crit: notable
@@ -1074,7 +1156,7 @@ composite_rules:
       - id: rust-proc-macro-entrypoint
       - id: rust-build-rs-env-http-post
   - id: rust-build-rs-post-exfil
-    desc: build.rs posts data to external endpoint
+    desc: build.rs posts host profile to external endpoint
     crit: hostile
     conf: 0.96
     mbc: E1041
@@ -1082,6 +1164,7 @@ composite_rules:
     all:
       - id: rust-build-rs-file
       - id: rust-build-rs-env-http-post
+      - id: rust-build-rs-host-profile-fields
     any:
       - id: rust-build-rs-http-post
       - id: rust-build-rs-command-output
@@ -1159,6 +1242,12 @@ composite_rules:
       # build tooling, not an install-time payload.
       - id: micro-behaviors/process/create/direct::rustfmt-process-command
       - id: well-known/lib/development/cargo-test-macro::source-tree-path
+      - id: well-known/lib/development/tauri::tauri-macros-context
+      # An integration test under tests/ that embeds a proc-macro fixture and
+      # drives a build tool is exercising the compiler, not shipping an
+      # install hook -- cargo's own tests/testsuite/*.rs matched on eight
+      # files. A real compile-time payload lives in the crate's src/.
+      - id: metadata/package/testing/presence/harness::rust-tests-directory-path
   - id: rust-proc-macro-compile-time-exfil
     desc: Rust proc macro exfiltrates build environment
     crit: hostile
@@ -1324,6 +1413,8 @@ composite_rules:
       - id: rust-build-rs-telegram-curl-beacon
       - id: rust-build-rs-post-exfil
       - id: rust-build-rs-staged-payload-exec
+      - id: rust-build-rs-hostname-unverified-remote-payload-exec
+      - id: rust-build-rs-obfuscated-endpoint-payload-exec
       - id: cargo-archive-build-rs-post-exfil
       - id: cargo-archive-build-rs-staged-payload-exec
       - id: rust-proc-macro-compile-time-exfil

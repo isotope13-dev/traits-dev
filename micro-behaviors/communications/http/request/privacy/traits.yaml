@@ -1,0 +1,45 @@
+# Request options that suppress the traces a browser request normally leaves.
+# `referrerPolicy: "no-referrer"` strips the originating page from the
+# receiver's logs; paired with an opaque `no-cors` GET or a beacon, it
+# describes a transmission whose only purpose is the side effect of being
+# sent. Fire-and-forget telemetry looks like this — and so does a page-
+# resident collector that wants its exfil to be unattributable to the page it
+# ran on. Neutral on its own; the pairing carries the signal.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript, html]
+
+traits:
+  # `referrerPolicy` is spelled the same way on a fetch init object, a JSX/DOM
+  # attribute of an <a> or <img>, and a plain property assignment, so this atom
+  # describes the policy being set and leaves "which request" to the composite.
+  # On an outbound link `referrerPolicy="no-referrer"` is ordinary hardening --
+  # it stops the app's own URL leaking to the site being opened.
+  - id: no-referrer-request-policy
+    desc: Sets referrer policy to no-referrer
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: 'referrerPolicy\s*[:=]\s*[''"]no-referrer'
+
+composite_rules:
+  # The signal is one request that is *both* opaque and referrer-stripped, as
+  # the file header describes -- so the two halves have to belong to the same
+  # request expression. Without a proximity bound this pooled the whole file:
+  # in a 6 MB bundled renderer a JSX `<a referrerPolicy="no-referrer">` paired
+  # with a `new Image().src` preload 1.6 MB away and scored suspicious.
+  # `near_lines` would not help here; bundled output puts megabytes on one
+  # line. A real fetch init carries `mode`, `referrerPolicy` and the send in
+  # the same object literal, well inside this window.
+  - id: untraceable-opaque-browser-request
+    desc: Opaque request sent with no referrer
+    crit: suspicious
+    conf: 0.88
+    near_bytes: 512
+    all:
+      - id: no-referrer-request-policy
+    any:
+      - id: micro-behaviors/communications/http/get::get-before-no-cors
+      - id: micro-behaviors/communications/http/request/beacon::browser-send-beacon-call
+      - id: micro-behaviors/communications/http/request/client::image-src-network-request

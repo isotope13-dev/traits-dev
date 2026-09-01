@@ -6,6 +6,8 @@
 # MBC: B0030 (C2 Communication), B0032 (Obfuscation)
 # ATT&CK: T1505.003 (Web Shell), T1027 (Obfuscated Files/Information)
 defaults:
+  attack: T1505.003
+  mbc: B0030
   platforms:
     - windows
     - unix
@@ -13,34 +15,11 @@ defaults:
     - php
 
 traits:
-  # forward_static_call_array with string concatenation - obfuscation technique
-  - id: forward-static-call-concat
-    desc: Call with concatenated function name
-    crit: suspicious
-    conf: 0.95
-    attack: T1027
-    mbc: B0032
-    if:
-      type: tree-sitter
-      query: |
-        (call_expression
-          function: (function_call
-            name: (identifier) @name
-          )
-          arguments: (arguments
-            (binary_op
-              operator: "."
-            )
-          )
-        )
-  
   # forward_static_call_array alone (less common than call_user_func_array)
   - id: forward-static-call-array
     desc: Dynamic dispatch via forward_static_call_array
     crit: suspicious
     conf: 0.85
-    mbc: B0030
-    attack: T1505.003
     if:
       type: symbol
       kind: call
@@ -57,53 +36,37 @@ traits:
   # by WordPress hooks, Freemius, and virtually every framework — firing
   # suspicious standalone on legitimate code. The genuine obfuscated-dispatch
   # case (concatenated/dynamic function name) is already covered by
-  # `var-string-concat-in-call` below.
-  # Variable used as function name via $_REQUEST
+  # the neutral concatenated callback-dispatch atom.
+  # `$_REQUEST['cmd'](...)` — the callee itself is read straight out of a
+  # request superglobal, so the attacker names the function being invoked.
+  # Distinct from dispatch::array-index-dynamic-call, which only covers
+  # integer-indexed callees (`$matches[1](...)`).
+  #
+  # NOTE: a `var-string-concat-in-call` trait was removed here. Its query was
+  # written against a grammar that does not exist (`binary_op`) and so never
+  # matched. The tree-sitter-php analyzer rejects combining `operator:` with
+  # `left:` on one `binary_expression`, so "concatenation whose left operand is
+  # a variable" is not expressible; without the operand constraint the trait is
+  # just "a call with a concatenated argument", which is ordinary PHP. The
+  # obfuscated-dispatch case it aimed at is covered by
+  # `concatenated-callback-dispatch`, which anchors the callee instead.
   - id: request-as-function-variable
-    desc: $_REQUEST used as variable in function context
+    desc: Request superglobal drives the callee name
     crit: suspicious
     conf: 0.85
-    attack: T1505.003
-    mbc: B0030
     if:
       type: tree-sitter
       query: |
-        (call_expression
-          arguments: (arguments
-            (array_access_expression
-              variable: (variable_name) @request
-              offset: (variable_name) @var
-            )?
-          )
-        )
-        (#eq? @request "_REQUEST")
-  
-  # Variable + string concatenation in call (obfuscation pattern)
-  - id: var-string-concat-in-call
-    desc: "var concatenated with in func call"
-    crit: suspicious
-    conf: 0.92
-    attack: T1027
-    mbc: B0032
-    if:
-      type: tree-sitter
-      query: |
-        (call_expression
-          arguments: (arguments
-            (binary_op
-              operator: "."
-              left: (variable_name)
-            )
-          )
-        )
+        (function_call_expression
+          function: (subscript_expression
+            (variable_name) @superglobal)
+          (#any-of? @superglobal "$_REQUEST" "$_GET" "$_POST" "$_COOKIE"))
 
   # Substring from HTTP to build function name
   - id: http-substring-to-execution
     desc: HTTP header substring in dynamic call
     crit: suspicious
     conf: 0.85
-    attack: T1505.003
-    mbc: B0030
     unless:
       - id: well-known/app/publishing/matomo/
       - id: well-known/app/enterprise/egroupware/
@@ -122,11 +85,8 @@ composite_rules:
     desc: Obfuscated PHP webshell (string concat + dynamic call)
     crit: suspicious
     conf: 0.95
-    attack: T1505.003
-    mbc: B0030
     all:
-      - id: objectives/command-and-control/backdoor/webshell/obf-dispatch::forward-static-call-concat
-      - id: objectives/command-and-control/backdoor/webshell/obf-dispatch::var-string-concat-in-call
+      - id: micro-behaviors/process/interpreter/reflection/dispatch::concatenated-callback-dispatch
     any:
       - id: micro-behaviors/communications/http/request/params::server-referer
       - id: objectives/command-and-control/backdoor/webshell/obf-dispatch::forward-static-call-array
@@ -140,8 +100,6 @@ composite_rules:
     desc: Request data drives an array-indexed dynamic call
     crit: hostile
     conf: 0.9
-    attack: T1505.003
-    mbc: B0030
     all:
       - id: micro-behaviors/process/interpreter/reflection/dispatch::array-index-dynamic-call
       - id: micro-behaviors/communications/http/request/params

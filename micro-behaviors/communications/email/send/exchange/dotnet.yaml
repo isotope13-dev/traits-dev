@@ -39,7 +39,98 @@ traits:
       type: text
       regex: '(?is)\bEmailMessage\b[\s\S]{0,600}\.Send\s*\('
 
+  # Walking the mailbox rather than acting on one message. In a .NET assembly
+  # these names land in the #Strings heap as separate entries, so each is its
+  # own atom and the composites below require the pair — a proximity regex
+  # cannot see across two heap strings.
+  #
+  # A mail client calls these for the folder it is showing; a collector calls
+  # them for everything, which is the distinction the objectives make.
+  - id: exchange-find-folders-call
+    desc: Enumerates Exchange folders
+    crit: notable
+    conf: 0.93
+    if:
+      type: text
+      word: FindFolders
+
+  - id: exchange-folder-view
+    desc: Exchange FolderView paging type
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      word: FolderView
+
+  - id: exchange-find-items-call
+    desc: Enumerates Exchange mailbox items
+    crit: notable
+    conf: 0.93
+    if:
+      type: text
+      word: FindItems
+
+  - id: exchange-item-view
+    desc: Exchange ItemView paging type
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      word: ItemView
+
+  # `MimeContent` is the whole message as RFC-822 bytes — headers, body and
+  # every attachment in one blob. Reading it is how a mailbox is copied rather
+  # than read: nothing that renders mail to a user needs the raw MIME, and
+  # pairing it with a file stream is the export step.
+  - id: exchange-mime-content-read
+    desc: Reads raw MIME content of a message
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\b(get_)?MimeContent\b'
+
+  # `exchange-ambient-windows-credentials` moved to
+  # micro-behaviors/communications/http/auth as
+  # `dotnet-default-network-credentials`: running as the logged-in user is a
+  # System.Net capability, not an Exchange one.
+
+  # `ServicePointManager.ServerCertificateValidationCallback` is replaced so the
+  # client accepts whatever certificate the endpoint presents. Legitimate
+  # Exchange clients set it only to pin, and pinning is not what a tool aimed at
+  # arbitrary servers wants it for.
+  # Narrowed after gitversion-5.1.4's bin/GitVersion.exe matched (triage of
+  # /var/tmp/triage/poppy). Two problems: the bare delegate *type* name
+  # `RemoteCertificateValidationCallback` appears in any assembly that merely
+  # references it, and an ILMerge'd assembly that carries the framework's own
+  # property definition emits `get_`, `set_` and a `k__BackingField` entry
+  # together -- so the setter name is a definition there, not a call site.
+  # Only the ServicePointManager setter memberref, with no matching backing
+  # field, means this assembly assigned the callback.
+  - id: exchange-tls-validation-override
+    desc: References the TLS validation callback setter
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      substr: set_ServerCertificateValidationCallback
+
 composite_rules:
+  # The setter memberref alone does not mean this program disabled validation.
+  # A self-contained or ILMerge'd .NET assembly carries the framework's own
+  # definition of the property -- gitversion-5.1.4's bin/GitVersion.exe embeds
+  # the whole networking stack, so `get_`/`set_` pairs appear three times over
+  # with no call site of its own. Pair it with the EWS client so the reading is
+  # "this Exchange client accepts any certificate", which is what the rule
+  # name claims. The source-level spellings of the same bypass already have
+  # their own home in objectives/evasion/security-bypass/tls/validation.yaml.
+  - id: exchange-client-tls-validation-override
+    desc: Exchange client overrides TLS validation
+    crit: suspicious
+    conf: 0.93
+    all:
+      - id: exchange-tls-validation-override
+      - id: exchange-web-services-client
   - id: exchange-attachment-send
     desc: Exchange Web Services message sends a file attachment
     crit: suspicious
@@ -56,3 +147,19 @@ composite_rules:
     all:
       - id: exchange-attachment-send
       - id: exchange-web-credentials
+
+  - id: exchange-folder-tree-enumeration
+    desc: Enumerates the Exchange folder tree
+    crit: notable
+    conf: 0.94
+    all:
+      - id: exchange-find-folders-call
+      - id: exchange-folder-view
+
+  - id: exchange-item-enumeration
+    desc: Pages through Exchange mailbox items
+    crit: notable
+    conf: 0.94
+    all:
+      - id: exchange-find-items-call
+      - id: exchange-item-view

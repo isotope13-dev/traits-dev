@@ -8,9 +8,18 @@ defaults:
   - batch
   - csharp
   - python
+  - go
   platforms:
   - windows
 traits:
+- id: go-startup-path-join
+  desc: Go constructs Windows Startup path
+  crit: notable
+  conf: 0.95
+  for: [go]
+  if:
+    type: text
+    regex: 'filepath\.Join\([^\r\n]{1,260}["'']Start Menu["''][^\r\n]{1,160}["'']Startup["'']'
 - id: start-menu-startup
   desc: Start Menu Programs Startup path
   crit: notable
@@ -140,6 +149,16 @@ traits:
     type: text
     substr: aggiunto all'avvio
 composite_rules:
+- id: temp-wscript-run-key-persistence
+  desc: Run key persists a VBScript from TEMP
+  crit: hostile
+  conf: 0.99
+  attack: T1059.005,T1547.001
+  for: [batch, powershell, vbs]
+  near_lines: 8
+  all:
+  - id: run-key-wscript-vbs-launcher
+  - id: micro-behaviors/process/create/shell/script-host::temp-script-host-path
 - id: createservice-api
   desc: CreateService install flow
   crit: suspicious
@@ -152,10 +171,11 @@ composite_rules:
   - id: installservice-fn
   - id: micro-behaviors/os/service/control::python-win32serviceutil-module
 - id: windows-startup-folder
-  desc: Targets Windows Startup folder for persistence
+  desc: Windows Startup folder path reference
   conf: 0.85
   crit: notable
   any:
+  - id: go-startup-path-join
   - id: start-menu-startup
   - id: appdata-startup
   - id: shell-startup
@@ -270,8 +290,17 @@ composite_rules:
     - id: micro-behaviors/os/service/config/
     - id: metadata/package/versioning::pe-version-resource
     - id: metadata/lang/compiler/native/
-- id: pe-run-key-self-install
-  desc: PE self-copies and persists via Run key
+# Named for what the legs actually prove. `copyfile-a` is only one of three
+# interchangeable `any:` options and `needs: 2` is satisfied without it by
+# GetSystemDirectory plus GetModuleFileName, so the previous
+# "pe-run-key-self-install" / "PE self-copies and persists via Run key"
+# reported a self-copy that was never observed — an Electron desktop app that
+# writes the Run key for its launch-at-startup setting matched with zero copy
+# APIs imported. The Run key path with registry-write APIs and an own-path
+# lookup is a real persistence-setup observation and stays suspicious; the
+# copy claim belongs to `pe-copy-run-key-install` below, which requires it.
+- id: pe-run-key-persistence-with-path-lookup
+  desc: Run key write with own-path lookup
   crit: suspicious
   conf: 0.92
   for: [pe, dll]
@@ -293,7 +322,8 @@ composite_rules:
   - id: well-known/tool/browser::google-chrome-installer
 - id: pe-copy-run-key-install
   desc: PE copies a file and installs Run or RunOnce persistence
-  crit: hostile
+  # File-copy autorun installation is persistent but not inherently malicious.
+  crit: suspicious
   conf: 0.97
   mbc: F0006
   for: [pe, dll]
@@ -309,6 +339,7 @@ composite_rules:
   - id: metadata/binary/installer/family/
   - id: metadata/package/versioning::pe-version-resource
   - id: well-known/tool/browser::google-chrome-installer
+  - id: well-known/app/browser/chromium-updater::chromiumbrowser-updater-binary
 - id: pe-game-service-run-key-persistence
   desc: Game service Run key persistence
   crit: suspicious

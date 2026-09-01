@@ -1,0 +1,119 @@
+# Disagreement between what a PE's Authenticode signature commits to and what
+# the file now contains.
+#
+# The signature carries a digest of the image as it stood when it was signed.
+# filefacts recomputes the Authentihash and compares the two, so this is a
+# measurement rather than an inference: `pe.signature_integrity` reads
+# "tampered" only when those digests differ, which means the bytes changed
+# after signing.
+#
+# It is distinct from `pe.signatures[].verified`, which asks a narrower
+# question — did the signer's key sign these attributes — and stays true
+# through exactly this attack, because patching the image never touches the
+# PKCS#7 blob.
+#
+# Suspicious rather than hostile on its own: a handful of installers stamp
+# configuration into an already-signed binary and invalidate their own
+# signature doing it. Wearing *someone else's* trusted signature over changed
+# bytes is the hostile case, and that composite lives in
+# objectives/evasion/masquerade/trust.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+
+traits:
+  - id: pe-signature-digest-mismatch
+    desc: File changed after it was signed
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: value
+      path: pe.signature_integrity
+      exact: tampered
+    unless:
+      # A carved child is not the file that was signed. cleave reconstructs an
+      # embedded PE from a start offset and a guessed extent, so the
+      # Authentihash is computed over bytes that need not reproduce the
+      # original image -- Process Monitor's own bundled drivers mismatch this
+      # way while Procmon.exe itself verifies clean. The digest comparison is
+      # only meaningful on a whole file.
+      - id: metadata/binary/layout::embedded-pe-child
+      # The stored CheckSum is a second, independent whole-file measurement,
+      # and signtool restamps it when it embeds the signature. Patching a
+      # signed image therefore breaks the checksum too, unless the patcher
+      # repairs it. When the checksum still matches the bytes, the two
+      # measurements contradict each other and the digest reading is the one
+      # to distrust -- the recomputation has image geometries it gets wrong.
+      # IObit's bundled HWiNFO32.dll is one: it declares SizeOfHeaders 0x1000
+      # while its packed sections start at 0x400, so a header-span-then-
+      # sections walk hashes the overlap twice. Its signed SpcIndirectData
+      # digest (75508b53…ae01) equals a spec-correct hash of the file as it
+      # ships, i.e. nothing was changed after REALiX signed it.
+      - id: metadata/binary/layout::pe-checksum-valid
+
+  # `invalid` covers every way the Authenticode verification pipeline can come
+  # back false, and only one of those ways is about the file: the bytes no
+  # longer hash to the digest the signer committed to. That case is
+  # `pe-signature-digest-mismatch` above, which reads `tampered`. The rest --
+  # a chain that cannot be built to a root, an algorithm or attribute the
+  # verifier does not handle -- are properties of the verifying environment,
+  # not of the sample, and they produce `invalid` on files that are byte-exact
+  # as signed.
+  #
+  # `digest_matches` is the file-derived half of the question and is measured
+  # independently: filefacts recomputes the Authentihash and compares it to the
+  # digest inside SpcIndirectDataContent. When it reads true, the image is
+  # exactly what the signer signed, so "fails to verify" would describe the
+  # scanner rather than the binary. Zencoder's bundled `zencoder-cli.exe` (bun,
+  # For Good AI Inc, DigiCert Trusted G4 Code Signing RSA4096 SHA384 2021 CA1)
+  # is one: it reads `invalid`, yet its signature checks out at every step --
+  # the leaf's RSA-3072 key recovers exactly the SHA-256 of the signed
+  # attributes, the messageDigest attribute equals the SHA-256 of the
+  # SpcIndirectDataContent, and that structure's digest (3c948dd0...b66e)
+  # equals the recomputed image hash. Postman ships under the same issuer and
+  # verifies clean, so the reading is not stable even within one CA.
+  #
+  # Wearing another vendor's signature over different bytes still shows up:
+  # that changes the Authentihash, so `digest_matches` goes false and the
+  # tampered reading -- plus the masquerade composites in
+  # objectives/evasion/masquerade/trust -- carry it.
+  - id: pe-signature-not-verifiable
+    desc: Authenticode signature fails to verify
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: value
+      path: pe.signature_integrity
+      exact: invalid
+    unless:
+      - id: metadata/binary/layout::embedded-pe-child
+      - type: value
+        path: pe.signatures[0].digest_matches
+        regex: '^true$'
+
+  # A signature dated outside the window its own certificate was valid for.
+  #
+  # Unlike expiry, no host clock enters this: the signing timestamp and the
+  # validity bounds are both issued by the PKI and both live in the file, so a
+  # plain boolean is safe where expiry needed a day count to absorb skew.
+  #
+  # Backdating is how a signature is made to look as though it predates a
+  # certificate's revocation or expiry. The honest cases -- an old binary whose
+  # certificate has since lapsed -- sit inside the window and do not match.
+  - id: pe-signature-outside-validity-window
+    desc: Signed outside its certificate validity
+    crit: suspicious
+    conf: 0.9
+    attack: T1553.002
+    if:
+      type: value
+      path: pe.signatures[0].signed_within_validity
+      regex: '^false$'
+    unless:
+      - id: metadata/binary/layout::embedded-pe-child
+
+  # Expiry is deliberately absent here. An expired certificate is the normal
+  # condition of old software that was signed honestly, and the comparison
+  # depends on the scanning host's clock rather than anything in the file.
+  # `pe.signature_expired_days` is available as a metric for rules that want to
+  # opt in; it is a day count so a threshold can absorb clock skew.

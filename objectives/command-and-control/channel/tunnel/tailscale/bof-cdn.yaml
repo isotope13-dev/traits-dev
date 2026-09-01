@@ -1,0 +1,228 @@
+# In-process Tailscale/Headscale mesh used as C2 (BOFScale-class): userspace
+# networking with memory-only state, world-writable local-API pipe, and CDN-
+# fronted DERP/TS2021 WebSocket subprotocols. Extend the shell enrollment
+# atoms in traits.yaml — these match Go/C++ implant source and PE strings.
+defaults:
+  platforms: [windows, unix]
+  for: [go, c, cpp, pe, dll, shell, scripts]
+  attack: T1090.001,T1071.001,T1572,T1620
+  mbc: B0022,C0002
+
+traits:
+  - id: userspace-networking-flag
+    desc: Tailscale userspace-networking TUN flag
+    crit: notable
+    conf: 0.96
+    if:
+      type: text
+      regex: '(?i)userspace-networking\b'
+
+  - id: memory-only-state-mem
+    desc: "Tailscale -state mem: memory store"
+    crit: notable
+    conf: 0.97
+    if:
+      type: text
+      regex: '(?i)(-state|--state)["''\s:=,]+mem:'
+
+  - id: memory-state-mem-literal
+    desc: "Tailscale mem: state store literal"
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '["'']mem:["'']'
+
+  - id: no-logs-no-support-flag
+    desc: Tailscale -no-logs-no-support flag
+    crit: notable
+    conf: 0.96
+    if:
+      type: text
+      regex: '(?i)-no-logs-no-support\b'
+
+  - id: ts-debug-derp-ws-client-env
+    desc: Forces Tailscale WebSocket DERP client
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: text
+      word: TS_DEBUG_DERP_WS_CLIENT
+    unless:
+      - id: well-known/dual-use/tunnel/tailscale::sagernet-tailscale-source-context
+
+  - id: world-access-named-pipe-sddl
+    desc: World-full-access named pipe SDDL
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      substr: 'D:(A;;GA;;;WD)'
+
+  - id: local-tailscaled-sock-host
+    desc: Tailscale local API Host header
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: text
+      substr: local-tailscaled.sock
+    unless:
+      - id: well-known/dual-use/tunnel/tailscale::sagernet-tailscale-source-context
+
+  - id: tailscale-cap-localapi-header
+    desc: Tailscale-Cap local API capability header
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)Tailscale-Cap:\s*\d+'
+
+  - id: sec-websocket-protocol-header
+    desc: Sec-WebSocket-Protocol header field
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      substr: Sec-WebSocket-Protocol
+
+  - id: derp-subprotocol-token
+    desc: DERP WebSocket subprotocol token
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '["'']derp["'']'
+
+  - id: ts2021-subprotocol-token
+    desc: TS2021 WebSocket subprotocol token
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      regex: '["'']ts2021["'']|/(ts2021)\b'
+
+  - id: derp-path-token
+    desc: DERP HTTP path token
+    crit: component
+    conf: 0.88
+    if:
+      type: text
+      regex: '["'']/derp["'']|/(derp)\b'
+
+  - id: beacon-writer-type
+    desc: Beacon stdout bridge type name
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      word: beaconWriter
+
+  - id: socks5-bind-all-interfaces-1080
+    desc: SOCKS5 listener on 0.0.0.0:1080
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)0\.0\.0\.0:1080'
+
+composite_rules:
+  - id: derp-websocket-subprotocol
+    desc: DERP WebSocket Sec-WebSocket-Protocol
+    crit: suspicious
+    conf: 0.96
+    near_bytes: 800
+    all:
+      - id: sec-websocket-protocol-header
+      - id: derp-subprotocol-token
+
+  - id: ts2021-websocket-subprotocol
+    desc: TS2021 WebSocket Sec-WebSocket-Protocol
+    crit: suspicious
+    conf: 0.96
+    near_bytes: 800
+    all:
+      - id: sec-websocket-protocol-header
+      - id: ts2021-subprotocol-token
+
+  - id: inprocess-userspace-mem-no-logs
+    desc: In-process userspace Tailscale with mem state and no logs
+    crit: suspicious
+    conf: 0.98
+    near_bytes: 2000
+    all:
+      - id: userspace-networking-flag
+      - id: no-logs-no-support-flag
+    any:
+      - id: memory-state-mem-literal
+      - id: memory-only-state-mem
+      - id: objectives/command-and-control/channel/tunnel/tailscale::memory-only-node-state
+
+  - id: cdn-fronted-derp-ts2021-websocket
+    desc: CDN-fronted DERP and TS2021 WebSocket subprotocols
+    crit: suspicious
+    conf: 0.98
+    near_bytes: 1200
+    all:
+      - id: derp-websocket-subprotocol
+      - id: ts2021-websocket-subprotocol
+    any:
+      - id: ts-debug-derp-ws-client-env
+      - id: derp-path-token
+      - id: micro-behaviors/communications/websocket/bypass::sec-websocket-version-header
+
+  - id: world-writable-localapi-pipe
+    desc: World-writable Tailscale local-API named pipe
+    crit: suspicious
+    conf: 0.97
+    near_bytes: 2400
+    all:
+      - id: world-access-named-pipe-sddl
+    any:
+      - id: userspace-networking-flag
+      - id: local-tailscaled-sock-host
+      - id: memory-state-mem-literal
+
+  - id: bof-inprocess-userspace-tailnet
+    desc: Beacon BOF hosts in-process userspace Tailscale mesh
+    crit: hostile
+    conf: 0.99
+    attack: T1090.001,T1620,T1572
+    near_bytes: 5000
+    all:
+      - id: userspace-networking-flag
+      - id: no-logs-no-support-flag
+      - id: objectives/command-and-control/dropper/execution/loader::beacon-data-parse-export
+    any:
+      - id: objectives/command-and-control/dropper/execution/loader::beacon-output-export
+      - id: objectives/command-and-control/dropper/execution/loader::beacon-printf-export
+      - id: beacon-writer-type
+    needs: 2
+
+  - id: bof-cdn-fronted-tailnet-c2
+    desc: BOF Tailscale mesh forces CDN WebSocket DERP
+    crit: hostile
+    conf: 0.99
+    attack: T1090.001,T1572,T1620
+    near_bytes: 5000
+    all:
+      - id: ts-debug-derp-ws-client-env
+      - id: userspace-networking-flag
+      - id: objectives/command-and-control/dropper/execution/loader::beacon-data-parse-export
+    any:
+      - id: memory-state-mem-literal
+      - id: world-access-named-pipe-sddl
+      - id: no-logs-no-support-flag
+
+  - id: bof-localapi-named-pipe-client
+    desc: BOF Tailscale local-API client over named pipe
+    crit: hostile
+    conf: 0.99
+    attack: T1620,T1090
+    near_bytes: 3000
+    all:
+      - id: local-tailscaled-sock-host
+      - id: tailscale-cap-localapi-header
+      - id: objectives/command-and-control/dropper/execution/loader::beacon-data-parse-export
+    any:
+      - id: objectives/command-and-control/dropper/execution/loader::beacon-data-extract-export
+      - id: objectives/command-and-control/dropper/execution/loader::beacon-printf-export

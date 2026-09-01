@@ -401,6 +401,7 @@ format, use a `metrics` check against the numeric header field:
 - `pe.security_directory_out_of_bounds` — security directory file offset exceeds actual file length; indicates header tampering
 
 **Available `consistency.*` metric fields (boolean, 0/1):**
+- `consistency.name_repo_mismatch` — a package manifest names one package and declares another project's `repository`; the clone-and-rename shape, where a real package is republished verbatim under a confusingly similar name and there is no hostile code to find. Compared on a folded slug (scope marker, `.git` suffix and `-`/`_`/case dropped), so `@tailwindcss/forms` and `tailwindcss-forms` agree. Absent when the manifest declares `repository.directory`, since a monorepo package makes no claim that the repository shares its name. Archive scope
 - `consistency.cert_org_pdb_mismatch` — no word from the cert signer organization appears in the PDB path; supply-chain swap signal
 - `consistency.bundle_identifier_mismatch` — bundle identifier in Info.plist differs from signing identity
 - `consistency.manifest_product_version_mismatch` — product version in PE manifest differs from version info resource

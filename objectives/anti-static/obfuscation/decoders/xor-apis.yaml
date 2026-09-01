@@ -40,12 +40,27 @@ traits:
       encoding: xor
       regex: (?i)^VirtualAlloc(Ex)?$
 
+  # Split from a single `VirtualProtect|WriteProcessMemory|NtWriteVirtualMemory`
+  # alternation. Every other trait in this file names one API family, and this
+  # one bundled two different behaviours under the name of the first: an
+  # analyst reading "XOR-decoded VirtualProtect" had no way to tell that the
+  # decoded string was actually `WriteProcessMemory`. Changing a page's
+  # protection is something a loader does to its own memory; writing another
+  # process's memory is injection. Both matter, and which one it was is the
+  # first thing a triager wants to know.
   - id: xor-decoded-virtual-protect-api
-    desc: 'xor decoded virtual protect api'
+    desc: XOR-decoded VirtualProtect memory API
     if:
       type: encoded
       encoding: xor
-      regex: (?i)^(VirtualProtect(Ex)?|WriteProcessMemory|NtWriteVirtualMemory)$
+      regex: (?i)^VirtualProtect(Ex)?$
+
+  - id: xor-decoded-process-write-api
+    desc: XOR-decoded process memory write API
+    if:
+      type: encoded
+      encoding: xor
+      regex: (?i)^(WriteProcessMemory|NtWriteVirtualMemory)$
 
   - id: xor-decoded-load-library-api
     desc: XOR-decoded LoadLibrary API
@@ -107,6 +122,18 @@ traits:
       regex: '(?i)^rundll32(\.exe)?$'
 
 composite_rules:
+  # Umbrella for the two atoms split out above, so the loader chains that only
+  # need "an obfuscated memory-manipulation API, either kind" keep matching
+  # exactly what they matched when this was one trait. Referenced, never
+  # emitted on its own — the atoms carry the analyst-facing detail.
+  - id: xor-decoded-memory-write-or-protect-api
+    desc: XOR-decoded memory write or protect API
+    crit: suspicious
+    conf: 0.95
+    any:
+      - id: xor-decoded-virtual-protect-api
+      - id: xor-decoded-process-write-api
+
   - id: xor-obfuscated-encrypted-memory-loader
     desc: XOR-obfuscated crypto loader changes memory protection
     crit: hostile
@@ -134,7 +161,7 @@ composite_rules:
       - id: objectives/anti-static/obfuscation/decoders::xor-decoded-shellexec-api
       - id: objectives/anti-static/obfuscation/decoders::xor-decoded-socket-api
       - id: objectives/anti-static/obfuscation/decoders::xor-decoded-virtual-alloc-api
-      - id: objectives/anti-static/obfuscation/decoders::xor-decoded-virtual-protect-api
+      - id: objectives/anti-static/obfuscation/decoders::xor-decoded-memory-write-or-protect-api
       - id: objectives/anti-static/obfuscation/decoders::xor-decoded-rundll32-host
 
   - id: xor-http-anti-debug-process-loader
@@ -143,7 +170,7 @@ composite_rules:
     conf: 0.98
     all:
       - id: xor-decoded-http-api
-      - id: xor-decoded-virtual-protect-api
+      - id: xor-decoded-memory-write-or-protect-api
       - id: micro-behaviors/process/create/spawn::create-process-a
       - id: objectives/anti-analysis/debugger-detect/check::is-debugger-present-symbol
       - id: metadata/binary/layout::large-overlay-1mb

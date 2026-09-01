@@ -1,0 +1,86 @@
+# Wallet keyring exfiltration before local encryption.
+#
+# Malicious wallet extensions have patched otherwise legitimate persistence
+# routines so the complete serialized keyring is uploaded before the original
+# encryption-and-storage path continues.  Match the data flow rather than a
+# campaign hostname, request field name, or wallet-specific function name so
+# the same technique remains visible across source languages and platforms.
+defaults:
+  platforms: [unix, windows]
+  # The structural forms below cover JavaScript/TypeScript object bodies and
+  # Python requests keyword arguments without relying on wallet vendor names.
+  for: [javascript, typescript, python]
+  attack: T1041,T1555
+
+traits:
+- id: serialized-wallet-keyring-collection
+  desc: Builds serialized wallet keyring value
+  crit: notable
+  conf: 0.96
+  if:
+    type: text
+    regex: '(?is)\b(serialized|plain|raw)[\w$]*keyrings?\s*=.{0,900}\bserialize\s*\('
+
+- id: serialized-wallet-keyring-request-payload
+  desc: Places wallet keyrings in request payload
+  crit: suspicious
+  conf: 0.98
+  if:
+    type: text
+    regex: '(?s)\b(body|data|json|pay\w*)\s*[:=].{0,300}\b(serial|plain|raw)\w*keyrings?\b'
+    case_insensitive: true
+
+- id: wallet-keyring-send-before-encryption-order
+  desc: Sends keyrings before local encryption
+  crit: suspicious
+  conf: 0.99
+  if:
+    type: text
+    regex: '(?is)(fetch|post|request)\s*\(.{0,700}keyring.{0,700}encrypt\s*\(.{0,300}keyring'
+
+- id: wallet-keyring-send-before-sealing-order
+  desc: Sends keyrings before local sealing
+  crit: suspicious
+  conf: 0.99
+  if:
+    type: text
+    regex: '(?is)(fetch|post|request)\s*\(.{0,700}keyring.{0,700}seal\s*\(.{0,300}keyring'
+
+composite_rules:
+- id: serialized-wallet-keyring-network-send
+  desc: Sends wallet keyrings through HTTP client
+  crit: notable
+  conf: 0.98
+  scope: file
+  near_bytes: 1800
+  all:
+  - id: serialized-wallet-keyring-request-payload
+  any:
+  - id: micro-behaviors/communications/http/request/client::http-client-usage
+  - id: micro-behaviors/communications/http/request/client::request-python
+  - id: micro-behaviors/communications/http/post::client-wrapper-post-call
+  - id: micro-behaviors/communications/http/lib/requests::requests-post
+  - id: micro-behaviors/communications/http/lib/requests::requests-request
+
+- id: serialized-wallet-keyring-http-exfiltration
+  desc: Exfiltrates serialized wallet keyrings over HTTP
+  crit: hostile
+  conf: 0.99
+  scope: file
+  near_bytes: 4096
+  all:
+  - id: serialized-wallet-keyring-collection
+  - id: serialized-wallet-keyring-request-payload
+  - id: serialized-wallet-keyring-network-send
+
+- id: pre-encryption-wallet-keyring-http-exfiltration
+  desc: Uploads wallet keyrings before local encryption
+  crit: hostile
+  conf: 0.995
+  scope: file
+  near_bytes: 4096
+  all:
+  - id: serialized-wallet-keyring-http-exfiltration
+  any:
+  - id: wallet-keyring-send-before-encryption-order
+  - id: wallet-keyring-send-before-sealing-order

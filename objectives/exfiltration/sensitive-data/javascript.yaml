@@ -29,7 +29,7 @@ traits:
   crit: suspicious
   conf: 0.96
   unless:
-  - id: well-known/app/ai/omnius::bundled-runtime-context
+  - id: well-known/app/ai/coding-agent/omnius::bundled-runtime-context
   if:
     type: text
     regex: '(?i)\bdata\s*:\s*(seedPhrase|passphrase|mnemonic|privateKey)[A-Za-z0-9_$]*'
@@ -44,13 +44,6 @@ traits:
       type: text
       regex: '\bdata\s*:\s*[A-Za-z_$][\w$]*\.value\b'
 
-- id: json-stringify-env-key-body
-  desc: JSON body includes env-like key
-  crit: component
-  conf: 0.88
-  if:
-    type: text
-    regex: 'JSON\.stringify\s*\(\s*\{[^}]{0,500}\benv\b'
 - id: json-stringify-token-secret-body
   desc: JSON body includes token or secret
   crit: component
@@ -148,7 +141,11 @@ traits:
   conf: 0.84
   if:
     type: text
-    regex: '\.[A-Za-z]+\s*\(\s*(creds|credentials|token)\b'
+    # Any method whose first argument is named `token` used to qualify, so
+    # `setToken(token)`, `regex.test(token)` and `arr.push(token)` all read as
+    # exfiltration. Restricted to the transmit-shaped verbs this trait is
+    # named for, matching the `content|file` sibling above.
+    regex: '\.(write|post|send)\s*\(\s*(creds|credentials|token)\b'
 - id: github-mint-repo-token-tool
   desc: GitHub repo token mint tool
   crit: component
@@ -233,7 +230,7 @@ composite_rules:
   all:
   - id: js-secret-value-request-field
   - id: js-secret-service-route
-  - id: js-http-upload-or-body-sink
+  - id: micro-behaviors/communications/http/request/body::http-upload-or-body-sink
 - id: js-env-secret-json-body
   desc: Environment secret serialized into JSON body
   crit: component
@@ -244,7 +241,7 @@ composite_rules:
   any:
   - id: objectives/exfiltration/serialization::js-serialize-environment
   - id: micro-behaviors/data/serialize/json::process-env-json-stringify
-  - id: json-stringify-env-key-body
+  - id: micro-behaviors/data/serialize/object-schema::json-stringify-env-field
   - id: json-stringify-token-secret-body
   - id: json-stringify-key-password-body
   - id: json-stringify-env-access-body
@@ -272,7 +269,6 @@ composite_rules:
       - id: metadata/signed/platform/
       - id: micro-behaviors/process/create/shell/bridge/
       - id: metadata/library/github-actions::actions-sdk
-      - id: objectives/exfiltration/sensitive-data/
   # Product code that provisions a GitHub connection token for its own backend.
 - id: github-repo-token-provisioning
   desc: GitHub repo token provisioning
@@ -294,17 +290,6 @@ composite_rules:
   unless:
     - id: metadata/package/testing/harness/runtime/
     - id: metadata/package/testing/presence/fixture::test-filename-pattern
-  # GuardDog: HTTP upload/request-body sink
-- id: js-http-upload-or-body-sink
-  desc: HTTP upload or body sink
-  crit: component
-  conf: 0.86
-  any:
-  - id: micro-behaviors/communications/http/upload/
-  - id: micro-behaviors/communications/http/post/
-  - id: micro-behaviors/communications/http/request/client::request-write-call
-  - id: micro-behaviors/communications/http/request/client::post-method-text
-  - id: micro-behaviors/communications/http/request/client::http-post-json
 - id: js-sensitive-file-request-body
   desc: Sensitive file data appears in HTTP request body
   crit: component
@@ -322,7 +307,6 @@ composite_rules:
   - id: http-body-credential-variable
   - id: http-body-secret-variable
   - id: request-write-raw-data-variable
-  - id: micro-behaviors/communications/http/post::request-write-payload-variable
   - id: micro-behaviors/communications/http/post::request-write-file-data-variable
   - id: request-write-content-file-variable
   - id: request-write-secret-variable
@@ -336,17 +320,17 @@ composite_rules:
       # A credential/config read near an unrelated POST is not exfiltration;
       # require evidence that file-like data is placed into the request body.
   - id: js-sensitive-file-request-body
-  - id: js-http-upload-or-body-sink
+  - id: micro-behaviors/communications/http/request/body::http-upload-or-body-sink
   unless:
     - id: micro-behaviors/communications/http/oauth/
     - id: metadata/package/testing/harness/runtime/
     - id: metadata/package/testing/presence/fixture::test-filename-pattern
     - id: metadata/library/structure/
     - id: well-known/lib/format/stacksjs-ts-cloud::ts-cloud-aws-runtime-context
+    - id: well-known/app/ai/browser-agent/pi-web-access::gemini-video-upload-module
   downgrade:
     any:
       - id: metadata/signed/platform/
-      - id: objectives/exfiltration/sensitive-data/
   # System discovery is routine in desktop agents. Treat it as exfiltration
   # only when the source is an explicit profile/environment serialization, not
   # merely because a file also contains an HTTP POST.
@@ -371,24 +355,14 @@ composite_rules:
     any:
       - id: metadata/signed/platform/
       - id: objectives/exfiltration/sensitive-data/
-  # Env-spread POST: entire process.env spread into HTTP POST body
-- id: js-env-spread-http-post
-  desc: Full environment dump via HTTP POST (spread operator)
-  crit: hostile
-  conf: 0.97
-  all:
-  - id: objectives/exfiltration/http/env::axios-post-env-spread
-  downgrade:
-    any:
-      - id: metadata/package/testing/
-      - id: metadata/signed/platform/
 - id: js-wallet-key-http-exfiltration
-  desc: Private key HTTP POST flow
+  desc: Private-key environment value in HTTP body
   crit: hostile
   conf: 0.98
   near_lines: 120
   all:
   - id: micro-behaviors/os/env/vars/credentials::javascript-private-key-environment-variable
+  - id: js-private-key-request-field
   - id: micro-behaviors/communications/http/request/client::http-client-usage
   any:
   - id: micro-behaviors/communications/http/request/client::post-method-text
@@ -455,23 +429,6 @@ composite_rules:
     any:
       - id: metadata/package/testing/
       - id: metadata/signed/platform/
-  # GuardDog: Comprehensive sensitive data exfiltration
-- id: js-sensitive-data-exfiltration
-  desc: Sensitive data exfiltration (JS)
-  crit: hostile
-  conf: 0.95
-  unless:
-  - id: micro-behaviors/communications/http/services/github::github-app-installation-token-api
-  - id: objectives/credential-access/env/secrets/source-control::github-app-private-key
-  - id: metadata/package/files/dependency::node-modules-path
-  - id: well-known/lib/format/stacksjs-ts-cloud::ts-cloud-aws-runtime-context
-  any:
-  - id: js-env-exfiltration
-  - id: js-sensitive-file-exfiltration
-  - id: js-system-info-exfiltration
-  - id: js-env-spread-http-post
-  - id: js-wallet-key-http-exfiltration
-  - id: js-private-key-http-exfiltration
 - id: js-has-tests-without-obfuscation
   desc: Package has tests or declarations without obfuscation
   crit: baseline
@@ -482,107 +439,6 @@ composite_rules:
   - id: micro-behaviors/data/decode/
   - id: micro-behaviors/communications/url/encoded::encoded-http-url
   - id: micro-behaviors/communications/url/encoded::encoded-https-url
-  # Obfuscated JS credential-stealer class (e.g. paysafe-kyc): a runtime
-  # string decoder hides the HTTP sink and env keywords, so the cleartext
-  # decoder + host-recon / env-harvest signals carry the verdict.
-- id: js-custom-string-decoder
-  desc: Custom string decoder obfuscation
-  # This is a decoder fragment used by the hostile exfiltration composites
-  # below; the transform alone does not establish collection or exfiltration.
-  crit: component
-  conf: 0.85
-  unless:
-  - id: metadata/package/quality/benign-context::stacksjs-stx-framework-context
-  any:
-  - id: micro-behaviors/crypto/symmetric/xor/loop::xor-modulo-key-loop
-  - id: micro-behaviors/data/encode/charcode::charcodeat-arithmetic
-- id: js-obfuscated-host-recon-stealer
-  desc: Obfuscated host and user reconnaissance sent over HTTP
-  crit: hostile
-  conf: 0.95
-  size_max: 262144
-  all:
-  - id: js-custom-string-decoder
-  - id: objectives/discovery/system/fingerprint/user::node-host-user-query-pair
-  any:
-  - id: micro-behaviors/communications/http/request/configuration::node-http-request-configured
-  - id: micro-behaviors/communications/http/request/client::js-fetch-call
-  needs: 1
-  downgrade:
-    any:
-    - id: metadata/package/testing/
-    - id: metadata/signed/platform/
-  unless:
-  - id: well-known/app/ai/qwen-code::qwen-code-benign-bundle-context
-  - id: well-known/app/ai/qwen-code::qwen-code-bundle-text
-  - id: well-known/app/ai/qwen-code::qwen-code-cli-bundle-path
-- id: js-obfuscated-env-exfil
-  desc: Obfuscated env credential exfiltration
-  crit: hostile
-  conf: 0.95
-  size_max: 262144
-  all:
-  - id: js-custom-string-decoder
-  - id: objectives/credential-access/env/secrets/filtered-access::env-filter-method
-  - id: json-stringify-env-key-body
-  any:
-  - id: micro-behaviors/communications/http/request/configuration::node-http-request-configured
-  - id: micro-behaviors/communications/http/request/client::http-client-usage
-  needs: 1
-  downgrade:
-    any:
-    - id: metadata/package/testing/
-    - id: metadata/signed/platform/
-- id: js-env-harvest-obfuscated-sink
-  desc: Env harvest via obfuscated HTTP sink
-  crit: hostile
-  conf: 0.93
-  size_max: 262144
-  near_bytes: 4096
-  all:
-  - id: micro-behaviors/communications/http/request/configuration::node-http-request-configured
-  - id: objectives/credential-access/env/secrets/filtered-access::env-filter-method
-  any:
-  - id: json-stringify-env-key-body
-  - id: micro-behaviors/communications/http/request/client::node-http-request-stream-body
-  needs: 1
-  downgrade:
-    any:
-    - id: metadata/package/testing/
-    - id: metadata/signed/platform/
-- id: js-host-recon-env-harvest
-  desc: Host recon with env secret harvest
-  crit: suspicious
-  conf: 0.85
-  size_max: 262144
-  all:
-  - id: objectives/discovery/system/fingerprint/user::node-host-user-query-pair
-  any:
-  - id: objectives/credential-access/env/secrets/filtered-access::env-filter-method
-  - id: json-stringify-env-key-body
-  needs: 1
-  downgrade:
-    any:
-    - id: metadata/package/testing/
-    - id: metadata/signed/platform/
-- id: js-filtered-env-http-exfil
-  desc: Filtered environment secrets sent over HTTP
-  crit: hostile
-  conf: 0.99
-  attack: "T1552.001,T1041"
-  mbc: "E1552,E1041"
-  near_bytes: 900
-  all:
-  - id: objectives/credential-access/env/secrets/filtered-access::env-secret-filter-keyword-list
-  - id: micro-behaviors/os/env/vars/access::js-object-keys-env
-  - id: micro-behaviors/os/env/vars/access::js-env-index-copy-to-object
-  - id: micro-behaviors/data/serialize/json::json-stringify-call
-  - id: micro-behaviors/communications/http/request/client::h-request-call
-  - id: micro-behaviors/communications/http/request/client::request-write-call
-  unless:
-  - id: metadata/package/testing/
-  - id: metadata/signed/platform/
-
 # Assembling an agent-session record (prompts, tool calls, tool results) and
 # POSTing it is the defining architecture of every LLM-observability exporter --
 # Langfuse, LangSmith, Helicone, Braintrust, OpenTelemetry GenAI, Datadog LLM
@@ -612,22 +468,12 @@ composite_rules:
   - id: micro-behaviors/os/telemetry/logging/llm::agent-session-rollout-post-call
   - id: micro-behaviors/os/telemetry/logging/llm::agent-session-rollout-json-body
 
-- id: js-mail-account-log-exfiltration
-  desc: Mail identity and IMAP data sent to encoded logging URL
-  crit: hostile
-  conf: 0.99
-  # Bundles often place the logger definition hundreds of lines from call sites
-  # that pass account fields; keep proximity but allow typical bundle distance.
-  # Requiring both identity and IMAP connection data avoids treating a generic
-  # account-email diagnostic as credential-related exfiltration.
-  # Bob Frankston mailx ships the same pattern as first-party Android/WebView
-  # diagnostics (`?log=mailx-android`); that is author telemetry, not theft.
-  near_lines: 520
-  all:
-  - id: micro-behaviors/communications/http/url/path::fetch-encoded-log-path
-  - id: micro-behaviors/communications/email/access/imap::account-email-in-log-call
-  - id: micro-behaviors/communications/email/access/imap::account-imap-field-in-log-call
-  unless:
-  - id: well-known/app/communication/bobfrankston-mailx::mailx-android-marker
-  - id: well-known/app/communication/bobfrankston-mailx::mailx-ecosystem-package
-  - id: metadata/package/quality/benign-context::bobfrankston-mailx-package-context
+# js-mail-account-log-exfiltration lived here and asserted theft from three
+# legs that only show a verbose logger receiving an account email plus an IMAP
+# host/auth field while some fetch elsewhere targets a /logit/ path. Writing an
+# account address and mail-server settings into a remote diagnostic log is a
+# neutral telemetry capability, not a data-theft objective, so it now lives at
+# micro-behaviors/communications/email/access/imap::account-fields-in-remote-log-request.
+# The credential-bearing variant -- the whole IMAP config object, password field
+# included, serialized into the logged value -- is
+# objectives/exfiltration/http/report::imap-config-object-in-log-url.

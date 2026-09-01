@@ -16,6 +16,28 @@ defaults:
     - windows
   attack: T1027.009
 composite_rules:
+  # A packed managed resource combined with a concrete 3DES decryptor and an
+  # AppDomain.Load/GetTypes/GetMethods/InvokeMember chain is executable payload
+  # concealment, rather than ordinary encrypted application data.
+  - id: dotnet-3des-reflective-resource-crypter
+    desc: .NET decrypts a managed resource with 3DES for reflective execution
+    crit: hostile
+    conf: 0.99
+    attack: "T1027.009,T1140,T1620"
+    mbc: B0009.014
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: metadata/binary/layout::pe-no-signature-record
+      - id: metadata/binary/resource::dotnet-large-high-entropy-managed-resource
+      - id: micro-behaviors/data/embedded/payload/resource::dotnet-managed-resource-access
+      - id: micro-behaviors/crypto/symmetric/3des::triple-des-provider
+      - id: micro-behaviors/crypto/symmetric/decrypt::dotnet-create-decryptor
+      - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-currentdomain-type-invokemember
+    unless:
+      - id: metadata/signed/platform/
+      - id: micro-behaviors/data/embedded/payload/resource::costura-bundle-marker
+
   # A concealed CLR stage is indicated here by the complete chain: a large
   # high-entropy managed resource is read, decompressed, and dispatched via
   # delegates generated at run time. Requiring every leg excludes ordinary
@@ -74,13 +96,14 @@ composite_rules:
       - id: metadata/signed/platform::microsoft-windows
       - id: metadata/signed/platform::microsoft-corporation
       - id: micro-behaviors/data/embedded/payload/resource::costura-bundle-marker
+      - id: objectives/command-and-control/backdoor/control/desktop::dotnet-rat-controller-attack-suite
   - id: dotnet-reflective-encrypted-resource-loader
     desc: Reflective loader reading a large encrypted managed resource
     crit: hostile
     conf: 0.93
     mbc: B0009.014
     all:
-      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-activator-resource-invoker
+      - id: micro-behaviors/process/interpreter/reflection/runtime::managed-resource-reflection-activation
       - id: metadata/binary/resource::dotnet-large-high-entropy-managed-resource
     any:
       - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-assembly-load-invoke
@@ -123,7 +146,7 @@ composite_rules:
       - id: metadata/binary/resource::dotnet-large-high-entropy-managed-resource
       - id: micro-behaviors/data/embedded/payload/resource::dotnet-managed-resource-access
       - id: micro-behaviors/crypto/symmetric/aes/library::dotnet-rijndael-decryptor
-      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-activator-resource-invoker
+      - id: micro-behaviors/process/interpreter/reflection/runtime::managed-resource-reflection-activation
       - id: metadata/binary/layout::pe-embedded
     unless:
       - id: metadata/signed/platform::microsoft-windows
@@ -142,8 +165,13 @@ composite_rules:
       - id: micro-behaviors/data/embedded/payload/resource::dotnet-managed-resource-access
       - id: micro-behaviors/crypto/symmetric/aes/library::dotnet-rijndael-decryptor
       - id: micro-behaviors/process/interpreter/reflection/runtime::delegate-invocation-chain
-      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-activator-resource-invoker
+      - id: micro-behaviors/process/interpreter/reflection/runtime::managed-resource-reflection-activation
     unless:
+      # Every leg above is a .NET #Strings metadata token, which a large
+      # managed application satisfies by referencing the API at all. An
+      # assembly naming a product and version has the identity these
+      # composites assume is absent.
+      - id: objectives/evasion/masquerade/binary::dotnet-template-product-identity-context
       - id: metadata/signed/platform::microsoft-windows
       - id: metadata/signed/platform::microsoft-corporation
       - id: micro-behaviors/data/embedded/payload/resource::costura-bundle-marker
@@ -181,6 +209,9 @@ composite_rules:
       - id: metadata/signed/platform::microsoft-windows
       - id: metadata/signed/platform::microsoft-corporation
       - id: micro-behaviors/data/embedded/payload/resource::costura-bundle-marker
+      - id: well-known/dual-use/remote-admin/screenconnect::screenconnect-component-detected
+      - id: well-known/dual-use/remote-admin/screenconnect::screenconnect-product-version-resource
+      - id: objectives/command-and-control/backdoor/control/desktop::dotnet-rat-controller-attack-suite
 
   # The sample uses a small CLR resource rather than a large packed resource:
   # RC2 decryptor creation, resource access, field patching, and WriteAllBytes
@@ -218,6 +249,10 @@ composite_rules:
     conf: 0.98
     attack: T1027.009,T1140
     mbc: B0009.014
+    # File-wide co-occurrence conflates embedded deployment assets, ordinary
+    # application crypto helpers, and unrelated file-storage methods. Require
+    # the resource/decode/write evidence to form one local staging cluster.
+    near_bytes: 8192
     all:
       - id: metadata/binary/framework::dotnet-assembly
       - id: metadata/binary/layout::pe-no-signature-record

@@ -7,12 +7,18 @@ defaults:
 traits:
 - id: oep-restoration-patch-write
   desc: Writes OEP restoration jump stub
-  crit: suspicious
+  # Six bytes of ordinary x86 (`mov [eax], imm` / `add esp,4` / `jmp rel32`)
+  # occur by chance in any large native image -- Mozilla's 30 MB xul.dll among
+  # them. The sequence is one leg of an infector signature, not a standalone
+  # observation; the composite below supplies the rest.
+  crit: component
   conf: 0.94
   if:
     type: hex
     pattern: C7 00 83 C4 04 E9
-    offset_range: [11489280, 11509760]
+    offset_range: [0, null]
+  unless:
+  - id: well-known/dual-use/remote-admin/action1::action1-version-resource-context
 - id: embedded-pe-mz-nop-scan
   desc: Scans for embedded MZ payload
   crit: notable
@@ -20,15 +26,15 @@ traits:
   if:
     type: hex
     pattern: 81 38 4D 5A 90 00
-    offset_range: [11489280, 11509760]
+    offset_range: [0, null]
 - id: stack-random-exe-drop-name
   desc: Stack-built random exe drop name
   crit: component
   conf: 0.92
   if:
     type: hex
-    pattern: C7 45 ?? 52 4A 7A 4F C7 45 ?? 74 67 2E 65 C7 45 ?? 78 65
-    offset_range: [11489280, 11509760]
+    pattern: C7 45 ?? ?? ?? 2E 65 C7 45 ?? 78 65
+    offset_range: [0, null]
 - id: bak-extension-reference
   desc: References .bak file extension
   crit: component
@@ -80,7 +86,35 @@ traits:
   if:
     type: text
     word: WINNT
+- id: visua-recursive-walker-marker
+  desc: Prepending infector walker delimiter cluster
+  crit: component
+  conf: 0.999
+  size_max: 536870912
+  if:
+    type: hex
+    pattern: >-
+      76 69 73 75 61 00 2E 2E 00 20 5B 46 69 6C 65 5D 20
+      00 20 5B 53 75 62 2D 44 69 72 5D 20 00
+    offset_range: [0, 65536]
 composite_rules:
+- id: compiled-last-section-rwx-infector
+  desc: Makes walked executable hosts' last PE section RWX
+  crit: hostile
+  conf: 0.99
+  attack: T1554,T1070.006
+  all:
+  - id: micro-behaviors/fs/file/section::pe-last-section-rwx-patch
+  - id: micro-behaviors/fs/path/extension::pe-exe-scr-extension-filter
+  - id: micro-behaviors/fs/enumerate/directory::find-file-walker
+  - id: micro-behaviors/fs/file/timestamp::set-file-time
+  - id: metadata/binary/section/metrics::pe-entry-in-writable-section
+  - id: metadata/binary/layout::pe-no-signature-record
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: metadata/binary/installer/script/
+  - id: well-known/tool/reverse-engineering/
 - id: reloc-entrypoint-pe-infector
   desc: PE infector grafts a decoder into writable .reloc
   crit: hostile
@@ -111,18 +145,20 @@ composite_rules:
     any:
     - id: metadata/binary/metrics/structural::many-imports
   all:
-  - id: micro-behaviors/fs/path/extension::exe-dup
   - id: bak-extension-reference
   - id: tmp-extension-reference
   - id: micro-behaviors/fs/file/rename/
-  - id: micro-behaviors/fs/file/delete::deletefile-a
+  - id: micro-behaviors/fs/file/delete::delete-win
+  any:
+  - id: micro-behaviors/fs/path/extension::exe-dup
+  - id: micro-behaviors/fs/path/extension::windows-exe-path-reference-binary
 - id: recursive-pe-infector
   desc: Recursively infects PE files across drives
   crit: hostile
   conf: 0.95
   all:
   - id: rewrite-executable-via-temp-and-backup
-  - id: micro-behaviors/fs/traversal/drives::get-logical-drives
+  - id: micro-behaviors/fs/traversal/drives::logical-drive-enumeration
   - id: micro-behaviors/dylib/library/legacy::mfc42-ref
   any:
   - id: skip-windows-install-dir
@@ -146,6 +182,27 @@ composite_rules:
   - id: metadata/binary/installer/family/
   - id: metadata/signed/platform/
   - id: well-known/app/system/iobit::iobit-signed-component-context
+- id: wide-drive-executable-rewrite-infector
+  desc: Rewrites executables across drives while preserving timestamps
+  crit: hostile
+  conf: 0.98
+  attack: T1554,T1070.006
+  ref: sha256:915c9317be20029342190ca333fa9fae9265bfa9f67308856a3838e8ffd2e5fd
+  size_max: 2097152
+  all:
+  - id: micro-behaviors/fs/traversal/drives::logical-drive-type-enumeration
+  - id: micro-behaviors/fs/enumerate/directory::find-file-walker-wide
+  - id: micro-behaviors/os/module/load::get-module-filename-dup
+  - id: micro-behaviors/fs/file/open::file-create-win
+  - id: micro-behaviors/fs/file/read::read-file
+  - id: micro-behaviors/fs/file/write/direct::write-file
+  - id: micro-behaviors/fs/file/handle::set-file-pointer
+  - id: micro-behaviors/fs/file/timestamp::set-file-time
+  - id: micro-behaviors/fs/file/move::move-file
+  - id: objectives/evasion/self-delete/process::windows-ping-delete-command
+  unless:
+  - id: metadata/binary/installer/family/
+  - id: metadata/signed/platform/
 - id: windows-pe-copy-move-infector
   desc: Windows PE copy and move file infector
   crit: hostile
@@ -175,7 +232,7 @@ composite_rules:
   - id: metadata/binary/metrics/threshold::many-exports-1000
   - id: well-known/app/system/stresstimulus/
 - id: repeated-standard-pe-overlay-infector
-  desc: Repeated PE images appended during file rewriting
+  desc: Repeated PE images appended by a self-enumerating file rewriter
   crit: hostile
   conf: 0.97
   attack: T1554
@@ -186,8 +243,8 @@ composite_rules:
   - id: micro-behaviors/fs/file/open::file-create-win
   - id: micro-behaviors/fs/file/read::read-file
   - id: micro-behaviors/fs/file/write/direct::write-file
-  any:
   - id: micro-behaviors/fs/enumerate/directory::find-first-file-a
+  any:
   - id: micro-behaviors/fs/file/handle::set-file-pointer
   - id: micro-behaviors/fs/file/copy::copyfile-a
   needs: 1
@@ -210,6 +267,10 @@ composite_rules:
   crit: hostile
   conf: 0.97
   attack: T1554
+  # This is the early-generation sibling of the 1 MB+ overlay rule above.
+  # Keep the two rungs disjoint so a mature infection does not report the
+  # same append behavior twice.
+  size_max: 1048576
   all:
   - id: metadata/binary/layout::repeated-standard-pe-images
   - id: metadata/binary/layout::overlay-over-90pct
@@ -229,16 +290,29 @@ composite_rules:
   desc: Parasitic PE dropper entrypoint
   crit: hostile
   conf: 0.96
-  size_min: 131072
+  attack: T1554
   all:
   - id: oep-restoration-patch-write
   - id: embedded-pe-mz-nop-scan
-  - id: metadata/binary/section/metrics::pe-nonstandard-entry
-  - id: objectives/anti-static/obfuscation/binary-metrics/shape::wx-sections
   any:
   - id: stack-random-exe-drop-name
   - id: objectives/anti-static/obfuscation/payload/section::unusual-alignment-pe
   unless:
+  - id: metadata/signed/platform/
+- id: go-pe-rwx-symtab-host-infection
+  desc: Go PE host has a writable entry stub and opaque executable .symtab body
+  crit: hostile
+  conf: 0.99
+  attack: T1554
+  all:
+  - id: metadata/binary/section/entropy::high-entropy-rwx-symtab-section
+  - id: metadata/lang/compiler/systems::go-version-string
+  - id: metadata/binary/section/metrics::large-rwx-text-section
+  - id: metadata/binary/section/metrics::pe-entry-in-writable-section
+  - id: metadata/binary/section/metrics::pe-multiple-executable-writable-sections
+  - id: metadata/binary/layout::cert-data-zeroed-checksum
+  unless:
+  - id: metadata/binary/installer/
   - id: metadata/signed/platform/
 - id: cts-prepending-pe-infector
   desc: CTS-style prepending PE infector
@@ -340,6 +414,27 @@ composite_rules:
   - id: metadata/signed/platform/
   - id: metadata/binary/installer/family/
   - id: objectives/anti-static/pack/
+- id: grafted-host-fingerprint-launch-cluster
+  desc: Clustered API names query a volume ID before creating a child process
+  crit: component
+  conf: 0.97
+  near_bytes: 512
+  all:
+  - id: micro-behaviors/fs/file/open::createfile-api-text-reference
+  - id: micro-behaviors/process/create/launch::create-process-api-name
+  - id: micro-behaviors/fs/enumerate/volume::get-volume-info
+- id: duplicate-text-host-fingerprint-infector
+  desc: RWX duplicate-text entry graft fingerprints the host before payload launch
+  crit: hostile
+  conf: 0.99
+  attack: T1554,T1082,T1106
+  all:
+  - id: objectives/anti-static/pack/section-anomaly::duplicate-text-rwx-entry-graft
+  - id: grafted-host-fingerprint-launch-cluster
+  unless:
+  - id: metadata/binary/installer/family/
+  - id: metadata/binary/framework::dotnet-metadata
+  - id: metadata/signed/platform/
 - id: expiro-resource-section-infector
   desc: Expiro code grafted into executable resources
   crit: hostile
@@ -352,3 +447,25 @@ composite_rules:
   - id: metadata/binary/anomaly/provenance::pe-basename-differs-from-original-filename
   unless:
   - id: metadata/signed/platform/
+
+# Zatoxp-class prepending infectors are self-extractors with an additional
+# recursive rewrite loop: they read their own image, walk files, prepend the
+# viral stub, and launch a reconstructed host. The early-offset data cluster
+# supplies precision that generic installer/SFX API combinations lack.
+- id: recursive-self-extracting-prepending-infector
+  desc: Prepends viral stub and replays original host
+  crit: hostile
+  conf: 0.999
+  attack: T1554
+  all:
+  - id: visua-recursive-walker-marker
+  - id: objectives/anti-static/obfuscation/payload/self-read::self-read-file-import-chain-ansi
+  - id: metadata/binary/layout::overlay-over-90pct
+  - id: micro-behaviors/fs/enumerate/directory::find-file-walker
+  - id: micro-behaviors/fs/file/write/direct::write-file
+  - id: micro-behaviors/process/create/spawn::create-process-a
+  - id: micro-behaviors/fs/file/attributes::set-file-attributes-a
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: metadata/binary/installer/sfx/

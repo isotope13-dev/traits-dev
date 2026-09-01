@@ -9,6 +9,34 @@ defaults:
   conf: 0.9
 
 traits:
+  - id: no-path-traversal-members
+    desc: Archive has no path traversal members
+    crit: component
+    for: [zip, tar, archive]
+    if:
+      type: metrics
+      field: archive.path_traversal_count
+      max: 0
+
+  - id: malformed-zip-without-traversal-tokens
+    desc: Malformed ZIP lacks traversal path tokens
+    crit: component
+    for: [zip]
+    unless:
+      # Preserve the hostile finding whenever any parent component exists,
+      # even if it occurs in an unreadable header or member body.
+      - type: raw
+        substr: ".."
+      # An absolute or drive-rooted local-header filename is also traversal.
+      - type: hex
+        pattern: "50 4B 03 04 [26] (2F|5C)"
+      - type: hex
+        pattern: "50 4B 03 04 [26] ?? 3A (2F|5C)"
+    if:
+      type: metrics
+      field: parse.error_count
+      min: 1
+
   # A published archive is a build output: every member is something the build
   # put there on purpose, with a real extension.  A `.tmp` member survived
   # either careless packaging or a deliberate edit that dropped a payload
@@ -31,3 +59,16 @@ traits:
       type: value
       path: archive.timing.mtime_outlier_members[*]
       exists: true
+
+  # A macOS application bundle: the archive is an installed, ready-to-run app
+  # tree, not a package a package manager will install from. Rules that reason
+  # about install-time behaviour across an archive's members reference this to
+  # say so -- a `scripts.postinstall` in a manifest shipped inside a built .app
+  # is a development-time leftover no consumer's package manager ever runs.
+  - id: macos-app-bundle-member
+    desc: Archive ships a macOS .app bundle
+    crit: notable
+    if:
+      type: value
+      path: archive.members[*].path
+      regex: '(?i)(^|/)[^/]+\.app/Contents/(MacOS|Frameworks|Resources|_CodeSignature)/'

@@ -72,6 +72,10 @@ traits:
   # are not GitHub credentials and should not satisfy the token detector.
   - type: string_literal
     regex: 'ghp_x{8,}'
+  # So is a straight run of the alphabet (ghp_0123456789abcdefghij...), the
+  # shape a fixture uses when it needs something token-shaped to redact.
+  - type: string_literal
+    regex: 'ghp_0123456789abcdef'
   if:
     type: string_literal
     regex: 'ghp_[A-Za-z0-9]{36}'
@@ -115,26 +119,6 @@ traits:
   unless:
   - id: well-known/app/utility/cmdchamp/
   - id: well-known/tool/detection/malcontent::malcontent-defensive-scanner-context
-- id: aws-iam-credential-access-path
-  desc: AWS IAM security credentials metadata path
-  crit: notable
-  conf: 0.7
-  attack: T1552.005
-  for:
-  - javascript
-  - typescript
-  - python
-  - shell
-  if:
-    # In shell and command-wrapper source, the URL/path is often represented
-    # as a command token instead of a parsed string literal.
-    type: text
-    substr: iam/security-credentials
-  unless:
-  - id: well-known/tool/development/anthropic-claude-agent/
-  - id: metadata/library/data/
-  - id: well-known/tool/detection/security-scanner/
-  - id: well-known/lib/data/mongodb/
 - id: jvm-aws-iam-credential-path
   desc: JVM AWS IAM credential path
   crit: suspicious
@@ -153,6 +137,7 @@ traits:
   # The MongoDB Java driver's MONGODB-AWS mechanism reads EC2/ECS instance
   # credentials from this path by design (BuiltInAwsCredentialSupplier).
   - id: well-known/lib/data/mongodb::mongodb-java-internal-auth-http-helper
+  - id: well-known/lib/data/snowflake-jdbc::jdbc-driver-context
 - id: jvm-gcp-metadata-host
   desc: JVM GCP metadata host
   crit: suspicious
@@ -174,6 +159,7 @@ traits:
   # The MongoDB Java driver's MONGODB-OIDC GCP mechanism reads the GCE
   # service-account token from this host by design (GcpCredentialHelper).
   - id: well-known/lib/data/mongodb::mongodb-java-internal-auth-http-helper
+  - id: well-known/lib/data/snowflake-jdbc::jdbc-driver-context
 - id: jvm-azure-imds-token-path
   desc: JVM Azure IMDS OAuth2 token path
   crit: suspicious
@@ -192,11 +178,14 @@ traits:
   # Azure Identity ships this endpoint as a normal cloud SDK dependency; the
   # Java/bytecode rule must not treat its bundled JavaScript source as a JVM
   # credential harvester.
-  - id: metadata/library/cloud-sdk::azure-identity-js-sdk
-  - id: metadata/library/cloud-sdk::azure-identity-package-path
+  - id: well-known/lib/cloud/azure-identity::azure-identity-js-sdk
+  - id: well-known/lib/cloud/azure-identity::package-path
   # The MongoDB Java driver's MONGODB-OIDC Azure mechanism reads the managed
   # identity token from this path by design (AzureCredentialHelper).
   - id: well-known/lib/data/mongodb::mongodb-java-internal-auth-http-helper
+  # MSSQL JDBC ActiveDirectoryAuthentication reads Azure IMDS by design.
+  - id: well-known/lib/data/mssql-jdbc::mssql-jdbc-driver-context
+  - id: well-known/lib/data/snowflake-jdbc::jdbc-driver-context
 - id: azure-metadata-header
   desc: Azure Metadata header
   crit: notable
@@ -251,14 +240,6 @@ traits:
   if:
     type: text
     regex: 'secretmanager\.googleapis\.com|google\.cloud\.secretmanager'
-- id: gcp-cloudkms-api
-  desc: GCP Cloud KMS API
-  crit: notable
-  conf: 0.84
-  for: [javascript, typescript, python, shell]
-  if:
-    type: text
-    substr: cloudkms.googleapis.com
 - id: python-refresh-token-json-get
   desc: Python reads refresh_token JSON key
   crit: component
@@ -284,22 +265,6 @@ traits:
   if:
     type: text
     regex: '\bprint\s*\(\s*token\s*\)'
-- id: imds-defensive-block-comment-text
-  desc: Defensive IMDS block comment
-  crit: component
-  conf: 0.86
-  for: [python, javascript, typescript, shell]
-  if:
-    type: text
-    substr: Always-blocked floor
-- id: imds-defensive-block-helper-name
-  desc: Defensive IMDS block helper
-  crit: component
-  conf: 0.86
-  for: [python, javascript, typescript, shell]
-  if:
-    type: text
-    substr: _is_always_blocked_url
 - id: windows-token-broker-tbres-cache
   desc: Reads Token Broker .tbres cache file
   crit: suspicious
@@ -359,11 +324,11 @@ composite_rules:
   for: [javascript, typescript, shell, python]
   near_lines: 80
   all:
-  - id: aws-imds-access
+  - id: micro-behaviors/os/security/auth/cloud::aws-imds-credential-reference
   - id: micro-behaviors/communications/http/request/client::http-request
   any:
-  - id: gcp-metadata-access
-  - id: gcp-metadata-access
+  - id: micro-behaviors/os/security/auth/cloud::gcp-metadata-credential-reference
+  - id: micro-behaviors/os/security/auth/cloud::gcp-metadata-credential-reference
   - id: micro-behaviors/communications/http/request/client::js-fetch-call
 - id: python-json-refresh-token-harvest
   desc: Python harvests refresh tokens from JSON files
@@ -379,34 +344,6 @@ composite_rules:
   any:
   - id: python-token-set-add
   - id: python-print-token
-- id: aws-imds-access
-  desc: AWS instance metadata credential access
-  crit: suspicious
-  conf: 0.95
-  attack: T1552.005
-  for:
-  - javascript
-  - typescript
-  - python
-  - shell
-  - class
-  - jar
-  any:
-  - id: aws-iam-credential-access-path
-  - id: metadata/file/string/cloud::aws-iam-credentials-metadata-path
-  - id: jvm-aws-iam-credential-path
-  unless:
-  - id: well-known/app/ai/aui-agent-builder/
-  - id: metadata/package/documentation/
-  - id: metadata/package/testing/
-  - id: imds-defensive-block-comment-text
-  - id: imds-defensive-block-helper-name
-  - id: well-known/lib/data/mongodb::mongodb-azure-provider-base-url
-  - id: well-known/lib/format/stacksjs-ts-cloud::ts-cloud-aws-runtime-context
-  downgrade:
-    any:
-    - id: metadata/library/data::aws-sdk-js-v3-bundle
-    - id: well-known/lib/cloud/aws-sdk-js::aws-sdk-js-v3-imds-provider
 - id: jvm-cloud-metadata-token-harvest
   desc: JVM class harvests two clouds' metadata tokens
   crit: hostile
@@ -437,34 +374,11 @@ composite_rules:
   - id: azure-keyvault-token-scope
   - id: micro-behaviors/communications/http/oauth::microsoft-login
   - id: gcp-secretmanager-api
-  - id: gcp-cloudkms-api
+  - id: micro-behaviors/communications/http/services/gcp::cloud-kms-endpoint
   downgrade:
     any:
     - id: objectives/discovery/cloud/metadata/
     - id: metadata/package/testing/
-- id: gcp-metadata-access
-  desc: GCP service-account metadata access
-  crit: suspicious
-  conf: 0.95
-  attack: T1552.005
-  for:
-  - javascript
-  - typescript
-  - python
-  - shell
-  any:
-  - id: metadata/file/string/cloud::gcp-service-account-token-path
-  - id: metadata/file/string/cloud::gcp-service-accounts-metadata-path
-  - id: metadata/file/string/cloud::gcp-default-service-account-email-path
-  unless:
-  - id: objectives/discovery/cloud/metadata/
-  - id: well-known/lib/web/nextjs::next-server-build-path
-  # Bundled cloud SQL / GCP client SDKs inside editor extensions are product
-  # features (connect to Cloud SQL), not credential stealers.
-  - id: metadata/library/vscode::vscode-extension-marker
-  - id: metadata/library/structure::js-large-minified-bundle
-  - id: well-known/app/development/vscode-extension/devdb::extension-context
-  - id: well-known/app/development/vscode-extension/dbcode::extension-context
 - id: azure-imds-access
   desc: Azure instance metadata identity request
   crit: suspicious
@@ -483,8 +397,8 @@ composite_rules:
   # normal authentication feature; its library identity is stronger context
   # than the embedded token endpoint path alone.
   - id: well-known/lib/crypto/msal-node::library-context
-  - id: metadata/library/cloud-sdk::azure-identity-js-sdk
-  - id: metadata/library/cloud-sdk::azure-identity-package-path
+  - id: well-known/lib/cloud/azure-identity::azure-identity-js-sdk
+  - id: well-known/lib/cloud/azure-identity::package-path
   - id: metadata/package/quality/benign-context::azure-imds-benign-context
   - id: well-known/lib/data/mongodb::mongodb-js-driver-bundle
 - id: aws-credential-theft

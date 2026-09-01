@@ -81,17 +81,6 @@ composite_rules:
       - id: micro-behaviors/communications/socket/netcat::wrapped-nc
       - id: micro-behaviors/fs/file/write/staging::android-dd-apk-temp-output
       - id: micro-behaviors/fs/path/temp::android-local-tmp-path
-  - id: shell-chmod-downloaded-payload
-    desc: Shell chmod marks fetched payload executable
-    crit: component
-    conf: 0.94
-    # Do not use bare `chmod +x` — packaging scripts often curl a dependency
-    # DMG/PKG and separately chmod a local postinstall. Require chmod of a
-    # temp path or `$var` target that looks like the fetched payload.
-    any:
-      - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-tmp-file
-      - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-var-target
-      - id: micro-behaviors/fs/chmod/executable/mode::chmod-system-path-executable
   - id: busybox-download-chmod-local-exec
     desc: BusyBox download chmod local execute
     crit: suspicious
@@ -160,9 +149,10 @@ composite_rules:
     desc: Shell downloads, chmods, and executes a local file
     crit: suspicious
     conf: 0.96
+    near_lines: 30
     all:
-      - id: shell-chmod-downloaded-payload
-      - id: downloaded-file-execution
+      - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-tmp-file
+      - id: micro-behaviors/process/create/local-exec::tmp-path-execution
     any:
       - id: micro-behaviors/communications/http/download/wget::wget-output-file
       - id: micro-behaviors/communications/http/download/cli::fetch-output-flag-script
@@ -176,15 +166,6 @@ composite_rules:
       - id: micro-behaviors/os/service/legitimate::installer-script
       - id: micro-behaviors/os/service/legitimate::silent-eula-accept-installer
       - id: micro-behaviors/os/service/legitimate::verified-github-release-installer
-  - id: downloaded-file-execution
-    desc: Chmodded local file execution
-    crit: notable
-    conf: 0.9
-    any:
-      - id: micro-behaviors/process/create/local-exec::chmod-exec-var-local
-      - id: micro-behaviors/process/create/local-exec::chmod-exec-literal-local
-      - id: micro-behaviors/process/create/local-exec::tmp-path-execution
-      - id: micro-behaviors/process/daemonize/detach::nohup-system-path-launch
   - id: encrypted-variable-payload-detached-dropper
     desc: Downloads, decrypts, makes executable, and detaches a shell payload
     crit: hostile
@@ -204,7 +185,7 @@ composite_rules:
       - id: micro-behaviors/communications/ip/literal::external-ipv4-shell-endpoint
       - id: micro-behaviors/communications/ip/literal::external-ipv4-shell-assignment
   - id: raw-ip-multiarch-shell-payload
-    desc: Raw-IP multi-arch shell payload fetch and execute
+    desc: Shell fetches and executes raw-IP multi-architecture payload
     crit: hostile
     conf: 0.99
     attack: "T1105,T1059.004,T1222.002"
@@ -216,6 +197,20 @@ composite_rules:
     any:
       - id: micro-behaviors/communications/http/download/shell::fetch-var-output-var
       - id: micro-behaviors/communications/http/download/shell::fetch-variable-input-output-command
+  # This chain proves a multi-architecture executable dropper, but does not by
+  # itself prove either an IoT target or botnet enrollment. Keep that stronger
+  # interpretation in botnet composites that add actual IoT/botnet evidence.
+  - id: multiarch-variable-protocol-dropper
+    desc: Multi-architecture fallback downloader executes a variable stage
+    crit: hostile
+    conf: 0.99
+    attack: "T1105,T1059.004,T1222.002"
+    platforms: [linux]
+    all:
+      - id: micro-behaviors/communications/http/download/fallback::multi-client-download-fallback
+      - id: micro-behaviors/os/sysinfo/platform/arch::multi-arch-target
+      - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-var-target
+      - id: micro-behaviors/process/create/local-exec::shell-variable-exec-with-args
   - id: raw-ip-temp-download-chmod-exec
     desc: Raw-IP temp download chmod execute
     crit: hostile
@@ -252,6 +247,12 @@ composite_rules:
       - id: metadata/build/archive::source-archive-member
       - id: metadata/build/autotools::autoconf-generated-script
       - id: metadata/package/testing/
+      # The Huawei exploit composite describes the same embedded wget/chmod/
+      # execute chain together with the vulnerable endpoint and request shape.
+      - id: objectives/command-and-control/botnet/iot::huawei-hg532-upnp-exploit
+      # The repeated chain reports the same fetch/permission/launch behavior
+      # with stronger evidence and should replace this single-stage finding.
+      - id: objectives/command-and-control/dropper/delivery/fetch-exec::raw-ip-repeated-download-exec-cleanup
   - id: raw-ip-system-path-download-chmod-detached
     desc: Raw-IP download replaces and detaches a system executable
     crit: hostile
@@ -277,6 +278,7 @@ composite_rules:
       - id: metadata/build/archive::source-archive-member
       - id: metadata/build/autotools::autoconf-generated-script
       - id: metadata/package/testing/
+      - id: objectives/command-and-control/dropper/delivery/fetch-exec::raw-ip-repeated-download-exec-cleanup
   - id: self-deleting-download-chmod-exec
     desc: Self-deleting download chmod execute
     crit: hostile
@@ -323,6 +325,8 @@ composite_rules:
     all:
       - id: raw-ip-literal-download-chmod-local-exec
       - id: micro-behaviors/communications/http/download/shell::wget-http-literal-download-cluster
+    unless:
+      - id: objectives/command-and-control/dropper/delivery/fetch-exec::raw-ip-repeated-download-exec-cleanup
   - id: raw-ip-bulk-multiarch-download-exec
     desc: Raw IP bulk multi-architecture download execute
     crit: hostile
@@ -435,7 +439,7 @@ composite_rules:
     conf: 0.99
     attack: "T1105,T1059.004,T1222.002"
     all:
-      - id: objectives/command-and-control/botnet/iot::multi-protocol
+      - id: micro-behaviors/communications/http/download/fallback::multi-client-download-fallback
       - id: micro-behaviors/os/sysinfo/platform/arch::multiple-architecture-references
       - id: micro-behaviors/fs/chmod/executable/dangerous::chmod-777
       - id: micro-behaviors/process/create/local-exec::local-execution
@@ -446,7 +450,7 @@ composite_rules:
     attack: "T1105,T1059.004,T1222.002,T1070.004"
     near_bytes: 1024
     all:
-      - id: objectives/command-and-control/botnet/iot::multi-protocol
+      - id: micro-behaviors/communications/http/download/fallback::multi-client-download-fallback
       - id: micro-behaviors/communications/ip/literal::external-ipv4-http-url
       - id: micro-behaviors/fs/chmod/executable/dangerous::chmod-777
       - id: micro-behaviors/fs/delete/directory::shell-recursive-delete

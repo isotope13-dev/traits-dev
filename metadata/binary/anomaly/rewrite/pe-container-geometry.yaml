@@ -47,11 +47,9 @@ traits:
       field: pe.headers_size_ratio
       min: 0.5
 
-  # Older fact producers may not expose the two SizeOfHeaders-derived metrics
-  # above.  These byte-shape observations describe the same file-pumping
-  # result without depending on that optional parser field: a multi-megabyte
-  # PE is almost all zero filler, and none of its real sections accounts for a
-  # meaningful fraction of the bytes on disk.
+  # A separate image-wide observation for large binaries whose actual byte
+  # distribution is almost entirely filler. Large overlays are excluded below
+  # because their geometry and entropy are reported by the overlay traits.
   - id: pe-large-ultralow-entropy-image
     desc: Large PE is dominated by zero-like filler
     crit: suspicious
@@ -61,25 +59,14 @@ traits:
       type: metrics
       field: file.entropy
       max: 1.0
-
-  - id: pe-large-without-material-section
-    desc: Large PE lacks a material section
-    crit: suspicious
-    conf: 0.97
-    size_min: 1048576
-    if:
-      type: metrics
-      field: binary.largest_section_ratio
-      max: 0.1
     unless:
-      # Self-extracting installers legitimately put most shipped bytes in an
-      # overlay, so their mapped stub can be tiny relative to the file.
-      - id: metadata/binary/installer/script/
-      - id: metadata/binary/installer/sfx::qsetup-signed-self-extracting-installer-context
-      - id: metadata/binary/installer/sfx::installaware-verified-7z-sfx-context
-      # WiX Burn bootstrappers (e.g. Microsoft VC++ redistributables) ship a
-      # small mapped stub with the CAB/MSI payload in the post-image overlay.
-      - id: metadata/binary/installer/database::wix-burn-bootstrapper
+      # A large overlay has its own geometry/entropy traits. Excluding it here
+      # prevents the same zero-filled appendage from being reported as both an
+      # image-wide rewrite and an overlay anomaly.
+      - id: metadata/binary/layout::large-overlay-1mb
+      # Goldberg's overlay renderer reserves a large sparse read-only table;
+      # exact product and original-filename metadata identify that layout.
+      - id: well-known/game/goldberg-steam-emulator::overlay-renderer
 
   # A data directory sitting in a section whose name is reserved for a
   # DIFFERENT directory — resources in `.pdata`, imports in `.tls`. Names that
@@ -103,12 +90,13 @@ traits:
       # construction -- NSIS ships its stock plugin DLLs UPX-packed. The
       # packing itself is reported separately by anti-static/pack/.
       - id: metadata/binary/section/names::upx-section-pair
+      - id: metadata/binary/section/names::upack-section-name
 
 composite_rules:
   - id: pe-front-padded-file-pump
-    desc: PE is front-padded far beyond its mapped sections
+    desc: PE declares an oversized header region that dominates the file
     crit: suspicious
     conf: 0.99
     all:
-      - id: pe-large-ultralow-entropy-image
-      - id: pe-large-without-material-section
+      - id: pe-headers-size-inflated
+      - id: pe-headers-dominate-file

@@ -17,6 +17,41 @@ traits:
     if:
       type: text
       regex: '\[[A-Za-z_$][A-Za-z0-9_$]*\]\s*=\s*[A-Za-z_$][A-Za-z0-9_$]*\.charCodeAt\s*\('
+  - id: js-high-surrogate-rebuild
+    desc: Builds a UTF-16 high surrogate code unit
+    crit: notable
+    conf: 0.95
+    for: [javascript, typescript, html]
+    # The leading half of the canonical astral code-point encoder:
+    # `(cp >> 10) + 0xD800`. Used by String.fromCodePoint polyfills, UTF-16
+    # codecs, and emoji handling. The shift width and the 0xD800 offset are
+    # specific to surrogate math, so no `fromCharCode` anchor is needed and
+    # the atom also covers codecs that build code units by other means.
+    if:
+      type: text
+      regex: '(?i)>>>?\s*10\s*\)?\s*\+\s*(55296|0xd800)'
+  - id: js-low-surrogate-rebuild
+    desc: Builds a UTF-16 low surrogate code unit
+    crit: notable
+    conf: 0.95
+    for: [javascript, typescript, html]
+    # The trailing half of the same encoder: the low ten bits of the code
+    # point, taken with `% 0x400` or `& 0x3FF`, offset by 0xDC00.
+    if:
+      type: text
+      regex: '(?i)[%&]\s*(1024|1023|0x400|0x3ff)\s*\)?\s*\+\s*(56320|0xdc00)'
+  - id: js-modulo-charcode-mapping
+    desc: Maps a modulo-reduced value to a character
+    crit: notable
+    conf: 0.94
+    # This maps a numeric range to characters. Decoders use the same operation
+    # as ordinary checksum-to-letter algorithms, so it implies no obfuscation.
+    unless:
+      - id: metadata/library/structure::js-large-minified-bundle
+      - id: micro-behaviors/data/encode/char-code::js-surrogate-pair-encoder
+    if:
+      type: text
+      regex: 'fromCharCode\s*\(\s*\w+\s*%\s*\d+\s*\+\s*\d+\s*\)'
   - id: fromcharcode-call
     desc: Builds characters with String.fromCharCode
     crit: notable
@@ -36,9 +71,10 @@ traits:
       # part of its parser tables; this is library identity, not a decoder.
       - id: well-known/lib/ui/monaco-editor::monaco-editor-main-bundle
   - id: fromcharcode-call-text
-    desc: Dot or bracket String.fromCharCode use
+    desc: Oversized source calls String.fromCharCode
     crit: notable
     conf: 0.9
+    size_min: 1000000
     # Large JavaScript files may be intentionally left unparsed by the source
     # extractor. Preserve the same capability detection from source text,
     # including bracket notation used to evade dot-notation scans.
@@ -50,10 +86,27 @@ traits:
       - id: metadata/library/structure::js-large-minified-bundle
       - id: well-known/lib/ui/monaco-editor::monaco-editor-main-bundle
 
+  - id: fromcharcode-member-reference
+    desc: References the String.fromCharCode member
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    # Parsed member evidence distinguishes executable references and aliases
+    # from API examples in comments, such as Lodash documentation snippets.
+    if:
+      type: symbol
+      kind: member
+      exact: String.fromCharCode
+    unless:
+      - id: fromcharcode-call
+      - id: metadata/library/structure::js-large-minified-bundle
+      - id: well-known/lib/ui/monaco-editor::monaco-editor-main-bundle
+
   - id: fromcharcode-source-token
-    desc: JavaScript source contains String.fromCharCode
+    desc: Large source references String.fromCharCode
     crit: notable
     conf: 0.8
+    size_min: 1000000
     for: [javascript, typescript]
     # Keep a token fallback for oversized source where the call expression is
     # not available to the AST-backed matcher.
@@ -82,11 +135,14 @@ traits:
     crit: notable
     conf: 0.95
     if:
-      # Join the call and XOR at one AST node so unrelated operators and
-      # comments elsewhere in a crypto library cannot satisfy the rule.
-      type: tree-sitter
-      kind: call
-      regex: 'fromCharCode\s*\(.{0,240}\^'
+      # Text rather than tree-sitter: the packed multi-megabyte single-line
+      # droppers that most need this signal exceed the parser's scanner-state
+      # guard, so an AST-anchored matcher never runs on them. `[^)]` keeps the
+      # XOR inside the fromCharCode argument list, which is the same
+      # containment the AST node provided — an operator elsewhere in a crypto
+      # library cannot reach across the closing paren.
+      type: text
+      regex: 'fromCharCode\s*\([^)]{0,240}\^'
     unless:
       - id: metadata/package/testing/harness/runtime/
       - id: metadata/library/structure::js-emscripten-preamble-marker
@@ -131,3 +187,18 @@ traits:
     if:
       type: text
       regex: '\.charAt\(\d{1,3}\)[\s\S]{0,160}\.substr\(\d{1,3},\s*1\)[\s\S]{0,240}String\s*\['
+
+composite_rules:
+  # A Unicode code-point encoder, not a string decoder: both surrogate halves
+  # are rebuilt from the same arithmetic, which is what String.fromCodePoint
+  # polyfills and UTF-16 codecs do. Obfuscators that abuse modulo arithmetic
+  # produce only the trailing half, so requiring both keeps the suppression
+  # narrow. Size-independent, so it also covers hand-written and lightly
+  # minified sources that the large-bundle exclusion never reaches.
+  - id: js-surrogate-pair-encoder
+    desc: Encodes a code point as a UTF-16 surrogate pair
+    crit: exception
+    conf: 0.97
+    all:
+      - id: js-high-surrogate-rebuild
+      - id: js-low-surrogate-rebuild

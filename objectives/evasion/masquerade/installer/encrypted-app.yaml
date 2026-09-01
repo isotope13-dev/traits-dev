@@ -1,0 +1,42 @@
+# A desktop-app installer whose application code is not in the installer.
+#
+# An Electron app ships its JavaScript in an asar archive that anyone can read;
+# that is the format's whole design, and it is how a reviewer, an EDR unpacker
+# and the user's own antivirus find out what the app does. A build that instead
+# AES-decrypts a sidecar and feeds the plaintext to `Module._compile` has taken
+# the one artifact those tools inspect and made it unreadable until the app is
+# already running. Nothing about shipping an Electron app requires that.
+#
+# On its own the decryption is the dropper signal that
+# objectives/command-and-control/dropper/staging/encrypted already reports.
+# What this rule adds is the surrounding installer: unsigned, so the vendor name
+# in its version resource is a claim nobody countersigned, plus the parts a real
+# desktop installer has no reason to carry — a standalone privilege-elevation
+# helper, a Run key pointed at its own path, or code that rewrites file
+# timestamps after copying. Each of those is a normal-enough capability alone;
+# two of them wrapped around code the installer had to decrypt is an application
+# built to be installed without being read.
+defaults:
+  platforms: [windows]
+  for: [pe, archives]
+  attack: "T1036,T1027.013"
+  mbc: "E1036,B0032"
+
+composite_rules:
+  - id: unsigned-encrypted-app-installer-toolkit
+    desc: Unsigned installer decrypts its own app code
+    crit: hostile
+    conf: 0.95
+    # `scope: outer` because the elevation helper, the persistence writer and
+    # the decrypting loader are separate PE members of one installer payload.
+    scope: outer
+    needs: 2
+    all:
+      - id: objectives/command-and-control/dropper/staging/encrypted::electron-aes-sidecar-module-compile
+      - id: metadata/binary/layout::pe-no-signature-record
+    any:
+      - id: well-known/app/utility/elevate::elevate-tool-context
+      - id: objectives/persistence/login/startup/registry::pe-run-key-persistence-with-path-lookup
+      - id: objectives/evasion/indicator-removal/timestamps::timestomp-with-file-copy
+    unless:
+      - id: metadata/package/testing/

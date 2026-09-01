@@ -1,7 +1,6 @@
-# Detects the rctl/ENDLESSDOORS technique as a behavior: a custom socket
-# client registers a device, executes server-supplied shell commands, and can
-# turn a command into an interactive POSIX shell. Observed endpoints remain
-# IOCs rather than detection gates.
+# Socket command tasking patterns for embedded implants: registered clients,
+# phone-home UDP agents, wildcard device identities, and interactive shells.
+# Observed endpoints remain IOCs rather than detection gates.
 defaults:
   platforms: [unix, appliance]
   for: [c, cpp, rust, python, go]
@@ -42,23 +41,54 @@ traits:
       regex: '(htons\s*\(\s*7001\s*\)|connect\([^;\n]{0,80}BASHPORT)'
 
 composite_rules:
-  - id: c-socket-receive-call
-    desc: C receives data through a socket API
-    crit: notable
-    conf: 0.86
-    for: [c, cpp]
-    any:
-      - id: micro-behaviors/communications/socket/receive::recv-symbol
-      - id: micro-behaviors/communications/socket/receive::recvfrom-symbol
-
   - id: c-remote-command-channel
-    desc: C socket input reaches popen
+    desc: C socket input reaches computed shell execution
     crit: suspicious
     conf: 0.97
     all:
-      - id: c-socket-receive-call
       - id: micro-behaviors/data/buffer::c-command-buffer
-      - id: micro-behaviors/process/create/shell/native::c-popen-variable-input
+      - id: micro-behaviors/process/create/shell/native::c-computed-command-execution
+    any:
+      - id: micro-behaviors/communications/socket/receive::recv-symbol
+      - id: micro-behaviors/communications/socket/receive::recvfrom-symbol
+    near_lines: 80
+
+  - id: c-udp-phone-home-command-channel
+    desc: C UDP client beacons and executes returned commands
+    crit: hostile
+    conf: 0.98
+    for: [c, cpp]
+    all:
+      - id: c-remote-command-channel
+      - id: micro-behaviors/communications/socket/udp::sock-dgram
+      - id: micro-behaviors/communications/socket/send::sendto-symbol
+      - id: micro-behaviors/communications/ip/resolve::resolve-getaddrinfo
+    near_lines: 100
+
+  - id: wildcard-identity-remote-command-channel
+    desc: Wildcard network identity bypass exposes remote command execution
+    crit: hostile
+    conf: 0.995
+    all:
+      - id: objectives/evasion/security-bypass/auth::wildcard-network-identity-acceptance
+    any:
+      - id: c-remote-command-channel
+      - id: rust-remote-command-channel
+      - id: python-remote-command-channel
+      - id: python-os-system-remote-command-channel
+      - id: go-remote-command-channel
+    near_lines: 100
+
+  - id: python-registered-udp-command-agent
+    desc: Registered Python UDP agent executes received commands
+    crit: hostile
+    conf: 0.995
+    for: [python]
+    all:
+      - id: python-remote-command-channel
+      - id: micro-behaviors/communications/socket/framing::python-device-registration-datagram
+      - id: micro-behaviors/communications/socket/udp::sock-dgram-python
+      - id: micro-behaviors/communications/socket/send::python-sendto
     near_lines: 80
 
   - id: rust-remote-command-channel
@@ -77,8 +107,32 @@ composite_rules:
     all:
       - id: micro-behaviors/communications/socket/receive::socket-receive
       - id: micro-behaviors/process/create/subprocess::process-execution
+    any:
       - id: micro-behaviors/process/create/subprocess::shell-true
+      - id: micro-behaviors/process/create/system::python-os-system
     near_lines: 40
+
+  - id: python-os-system-remote-command-channel
+    desc: Python socket input reaches os.system execution
+    crit: suspicious
+    conf: 0.98
+    for: [python]
+    all:
+      - id: micro-behaviors/communications/socket/receive::socket-receive
+      - id: micro-behaviors/process/create/system::python-os-system
+    near_lines: 24
+
+  - id: python-udp-phone-home-command-channel
+    desc: Python UDP client beacons and executes returned commands
+    crit: hostile
+    conf: 0.99
+    for: [python]
+    all:
+      - id: python-os-system-remote-command-channel
+      - id: micro-behaviors/communications/socket/udp::sock-dgram-python
+      - id: micro-behaviors/communications/socket/send::python-sendto
+      - id: micro-behaviors/communications/dns/lookup/resolver::getaddrinfo
+    near_lines: 48
 
   - id: registered-remote-command-shell
     desc: Registration frame with socket command execution
@@ -90,6 +144,7 @@ composite_rules:
       - id: c-remote-command-channel
       - id: rust-remote-command-channel
       - id: python-remote-command-channel
+      - id: python-os-system-remote-command-channel
       - id: go-remote-command-channel
     near_lines: 80
 
@@ -98,9 +153,11 @@ composite_rules:
     crit: hostile
     conf: 0.98
     all:
-      - id: c-socket-receive-call
       - id: micro-behaviors/process/tty/pty::source-pty-allocation
       - id: micro-behaviors/process/create/shell/native::c-shell-execution-path
+    any:
+      - id: micro-behaviors/communications/socket/receive::recv-symbol
+      - id: micro-behaviors/communications/socket/receive::recvfrom-symbol
     near_lines: 100
 
   - id: rust-pty-shell-channel
@@ -121,6 +178,9 @@ composite_rules:
       - id: micro-behaviors/communications/socket/receive::socket-receive
       - id: micro-behaviors/process/tty/pty::python-pty-allocation
       - id: micro-behaviors/process/create/subprocess::process-execution
+    any:
+      - id: micro-behaviors/process/interpreter/shell::bin-sh
+      - id: micro-behaviors/process/create/exec::cmd-exe-reference
     near_lines: 100
     unless:
       - id: metadata/package/testing/presence/harness::test-directory-path

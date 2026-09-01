@@ -3,6 +3,18 @@ defaults:
   for: [javascript]
 
 traits:
+  - id: hardcoded-json-url-fetch
+    desc: Fetches hardcoded remote JSON URL
+    crit: notable
+    conf: 0.92
+    for: [javascript, typescript]
+    if:
+      type: tree-sitter
+      kind: call
+      regex: '^fetch\s*\(\s*["'']https?://[^"'']{1,200}\.json["'']'
+    unless:
+      - id: well-known/app/ai/agent-runtime/mastra::models-dev-catalog-json-fetch
+
   # Inline `<script>` in an HTML page reaches an absolute URL the same way, and
   # a page-embedded collector is exactly what a credential relay uses, so this
   # atom covers html too; the `js-` id prefix it used to carry claimed less than
@@ -18,26 +30,44 @@ traits:
     not:
       - regex: '\bfetch\s*\(\s*["'']https?://(localhost|[^/"'']*\.local\b)'
       - regex: '\bfetch\s*\(\s*["'']https?://[a-z0-9.-]*example\.(com|org|net)'
+    unless:
+      - id: metadata/lang/scripted::dts-declaration-file
 
   - id: request-send-json-body
     desc: Sends JSON body through request-like client
     crit: notable
-    conf: 0.88
-    if:
-      type: text
-      regex: '\b(request|xhr|xmlhttp)\.send\s*\(\s*JSON\.stringify\s*\('
-  - id: json-response-call
-    desc: Calls a response JSON parser
-    crit: notable
     conf: 0.94
     if:
-      type: symbol
+      type: tree-sitter
       kind: call
-      regex: '(^|\.)json$'
-    unless:
-      - id: well-known/tool/detection/skill-scanner::typescript-test-context
+      regex: '\b(request|xhr|xmlhttp)\.send\s*\(\s*JSON\.stringify\s*\('
+  # `el.setAttribute("href", v)` / jQuery `.attr("href", v)` — the sink that
+  # decides where a click goes. Distinct from an innerHTML write: no markup is
+  # parsed, nothing is injected, and a sanitizer would pass it. It still hands
+  # navigation control to whatever produced `v`.
+  - id: dynamic-link-attribute-assignment
+    desc: Assigns a URL into a link attribute
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\.(setAttribute|attr)\(\s*["''](href|src)["'']\s*,\s*[A-Za-z_$]'
 
 composite_rules:
+  # The two operations are nearby, but the text matcher cannot prove that the
+  # parsed response supplies the innerHTML right-hand side. Keep this as a
+  # notable proximity fact; XSS objectives add executable payload evidence.
+  - id: external-json-near-dynamic-innerhtml
+    desc: External JSON fetch occurs near dynamic innerHTML
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    near_bytes: 1800
+    all:
+      - id: fetch-json-response
+      - id: micro-behaviors/communications/http/client/response-body::fetch-json-before-dynamic-innerhtml
+
   - id: fetch-json-response
     desc: Fetches and parses a JSON response
     crit: notable
@@ -46,6 +76,25 @@ composite_rules:
     all:
       - id: micro-behaviors/communications/http/request/client::js-fetch-call
       - id: fetch-external-url
-      - id: json-response-call
+      - id: micro-behaviors/communications/http/message::http-message-json-call
     unless:
       - id: well-known/tool/detection/skill-scanner::typescript-test-context
+
+  # These operations are nearby, but the text matcher cannot prove that the
+  # parsed response supplies the link target. Keep this as a notable proximity
+  # fact; objectives add evidence that a remote catalog controls the sink.
+  - id: external-json-near-dynamic-link
+    desc: External JSON fetch occurs near dynamic link target
+    crit: notable
+    conf: 0.94
+    for: [javascript, typescript]
+    # Correlated by proximity rather than by reusing `fetch-json-response`:
+    # these fetches name their endpoint through a module constant
+    # (`fetch(EXT_API_URL, …)`), which the literal-URL leg of that composite
+    # cannot see. The remote-host leg below keeps the endpoint requirement.
+    near_bytes: 1500
+    all:
+      - id: micro-behaviors/communications/http/request/client::js-fetch-call
+      - id: micro-behaviors/communications/http/message::http-message-json-call
+      - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+      - id: dynamic-link-attribute-assignment

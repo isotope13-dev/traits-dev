@@ -34,6 +34,18 @@ traits:
       section: .text
       pattern: 0F AD ?? F6 C1 20 C4 E2 ?? F7 ?? 0F 44 ?? 30 ?? ?? 00
 composite_rules:
+  - id: dotnet-fragmented-hex-xor-payload
+    desc: Fragmented hex payload with XOR decoder
+    crit: hostile
+    conf: 0.995
+    attack: T1027,T1140
+    mbc: B0032,C0043
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: metadata/file/encoded::dotnet-dense-short-lower-hex-fragments
+      - id: micro-behaviors/crypto/symmetric/xor/loop::dotnet-hex-byte-repeating-xor-loop
+      - id: metadata/binary/layout::pe-no-signature-record
+
   - id: unsigned-rwx-overlay-file-delete
     desc: Unsigned PE with opaque RWX payload and file deletion
     crit: hostile
@@ -59,7 +71,9 @@ composite_rules:
       - id: micro-behaviors/crypto/symmetric/xor/loop::x64-rolling-byte-xor-decode-loop-accumulator
     unless:
       - id: metadata/signed/platform/
-      - id: metadata/binary/installer/
+      # Installer string fragments can survive in a parasitically infected
+      # host. Exclude identified installer families, not every such fragment.
+      - id: metadata/binary/installer/family/
       - id: well-known/tool/reverse-engineering/
 
   - id: stack-copied-xor-payload
@@ -144,6 +158,49 @@ composite_rules:
       - id: metadata/binary/installer/
       - id: well-known/app/
       - id: well-known/lib/
+
+  # Nokonoko / opaque ransomware loaders: encrypted networked PE that imports
+  # GetModuleHandleW but not GetProcAddress — the real API table is resolved
+  # after decrypt. Pairing the structural encrypted-networked shape with this
+  # deferred-resolution gap is the hostile step.
+  - id: encrypted-networked-deferred-api-payload
+    desc: Encrypted networked PE defers API resolution
+    crit: hostile
+    conf: 0.96
+    for: [pe]
+    attack: T1027,T1106
+    all:
+      - id: encrypted-networked-unsigned-payload
+      - id: micro-behaviors/os/module/load::get-module-handle-wide
+    unless:
+      - id: micro-behaviors/os/module/load::get-proc-address-import
+      - id: metadata/signed/platform/
+      - id: metadata/binary/vendor/
+      - id: metadata/binary/framework/
+      - id: metadata/binary/installer/
+      - id: well-known/app/
+
+  # Same geometry, but Winsock is only present as the ntohl ordinal — an IAT
+  # camouflage stub rather than a real client socket table.
+  - id: encrypted-networked-winsock-ordinal-stub
+    desc: Encrypted PE with Winsock ntohl ordinal stub
+    crit: hostile
+    conf: 0.95
+    for: [pe]
+    attack: T1027,T1095
+    all:
+      - id: encrypted-networked-unsigned-payload
+      - id: micro-behaviors/communications/socket/init::ntohl-api-ordinal
+    unless:
+      - id: micro-behaviors/communications/socket/init::winsock-startup-ordinal
+      - id: micro-behaviors/communications/socket/init::socket-api-ordinal
+      - id: micro-behaviors/communications/socket/init::connect-api-ordinal
+      - id: metadata/signed/platform/
+      - id: metadata/binary/vendor/
+      - id: metadata/binary/framework/
+      - id: metadata/binary/installer/
+      - id: well-known/app/
+
   - id: high-entropy-rwx-pe-loader
     desc: High-entropy PE with executable memory staging
     crit: hostile
@@ -181,7 +238,7 @@ composite_rules:
     attack: "T1027.009,T1620"
     for: [pe]
     all:
-      - id: objectives/anti-static/pack/section-anomaly::reloc-overhang-dominant
+      - id: metadata/binary/anomaly/section-header::reloc-overhang-dominant
       - id: metadata/binary/layout::overlay-over-90pct
       - id: micro-behaviors/mem/protect/modify::virtual-protect
       - id: micro-behaviors/crypto/symmetric/stream::chacha-salsa-constant

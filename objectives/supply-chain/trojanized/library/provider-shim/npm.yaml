@@ -1,0 +1,81 @@
+# Dependency laundering through a transparent proxy. The package exports what
+# looks like its own class — `HttpProvider` — but the export is a `Proxy` whose
+# `get` trap forwards every property read onto an object that arrives from an
+# `import()` of a *different* package. Consumer code writes
+# `registry.HttpProvider(url)` and reads its own dependency's name in the stack;
+# the code that runs belongs to the other package, which never appears in the
+# consumer's imports, their review, or their mental model of what they installed.
+#
+# The proxy is what buys the deception. A plain re-export
+# (`exports.HttpProvider = require("other").HttpProvider`) would name the other
+# package at the call site and fail loudly if it were removed; the proxy resolves
+# lazily, absorbs the identity of whatever it wraps, and keeps the shim file
+# looking like a thin convenience wrapper.
+#
+# Lazy-loading a heavy SDK behind a proxy is a real pattern (`import-lazy` exists
+# for exactly this), so the shim shape alone stays suspicious. The composites
+# below add what a lazy-loading helper never has: a package whose stated job is
+# to ship static data has no business handing a caller a network client.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1195.002
+  mbc: E1195.002
+
+composite_rules:
+  - id: lazy-import-proxy-capability-shim
+    desc: Export proxies calls into a lazily imported package
+    crit: suspicious
+    conf: 0.9
+    # One file: the trap, the forward and the import have to be the same shim.
+    scope: file
+    all:
+      - id: micro-behaviors/data/control-flow/dispatch::js-proxy-get-trap
+      - id: micro-behaviors/data/control-flow/dispatch::js-deferred-member-forward
+      - id: micro-behaviors/os/module/load::dynamic-external-import-promise-chain
+    any:
+      - id: micro-behaviors/data/control-flow/dispatch::js-commonjs-provider-export
+      - id: micro-behaviors/data/control-flow/dispatch::js-esm-provider-export
+      - id: micro-behaviors/data/control-flow/dispatch::js-provider-computed-forwarding
+
+  # A package whose stated job is to ship static data — a chain registry, an
+  # asset list, a token table — has no reason to hand a caller a network client
+  # at all, let alone one that resolves out of another package. The description
+  # and the capability contradict each other, and the proxy is what keeps a
+  # consumer from noticing.
+  - id: data-package-launders-network-capability
+    desc: Data package proxies a network client
+    crit: hostile
+    conf: 0.95
+    scope: archive
+    all:
+      - id: lazy-import-proxy-capability-shim
+      - id: metadata/package/manifest/description::npm-chain-registry-description
+
+  # The clone half and the payload half of the same package.
+  #
+  # `mc-registry` ships 4,500 files of the real Cosmos chain-registry data —
+  # copied wholesale, which is what makes it look like a library worth
+  # installing — and a README that still says `npm install theta-registry` under
+  # a `# theta-registry` heading, with badges pointing at the `chain-registry`
+  # it was taken from. Three names, none of them the published one. That is the
+  # residue of a rename: npm refuses a duplicate name so the manifest had to
+  # change, and nothing forced the documentation to follow.
+  #
+  # On its own a stale README is sloppiness. Paired with an entry point that
+  # hands every call to a lazily-imported third-party package, it says the bulk
+  # is camouflage and the delegate is the point: a consumer who installs what
+  # the README advertises gets a package whose whole API belongs to someone
+  # else's code.
+  - id: renamed-clone-delegates-to-foreign-package
+    desc: Renamed package clone delegates its API elsewhere
+    crit: hostile
+    conf: 0.95
+    scope: archive
+    for: [npm, tar, zip]
+    all:
+      - id: lazy-import-proxy-capability-shim
+    any:
+      - id: objectives/supply-chain/impersonation/readme-clone::readme-npm-links-name-only-foreign-packages
+      - id: metadata/package/documentation::readme-heading-name-differs
+    needs: 2

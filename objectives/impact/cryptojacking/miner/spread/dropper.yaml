@@ -1,0 +1,68 @@
+# Miner droppers: the installer half of a cryptojacking campaign.
+#
+# The mining binary itself is off-the-shelf (XMRig is open source and shows up
+# in legitimate deployments), so a miner reference alone stays suspicious. What
+# makes an artifact the *campaign's* installer is the delivery machinery it
+# wraps around that reference: pull a payload over HTTP from a hardcoded
+# address, make it executable, run it, and register something that starts it
+# again after reboot. A sysadmin deploying a miner uses a package manager or a
+# config-managed unit file; they do not ship a binary that curls its own
+# payload and writes its own unit.
+#
+# download/chmod/exec and boot persistence are the same idea in a Go dropper, a
+# shell installer, or a C loader, but the atoms that detect them are not shared:
+# mining-indicators, download-permission-execute-chain, and the C systemd-unit
+# trait are all native-only. So the technique is expressed twice — the binary
+# composites below, and a script sibling built from the script-capable atoms —
+# both filed here so they aggregate into one cryptojacking/miner/spread feature.
+defaults:
+  platforms: [linux, unix]
+  for: [binaries, scripts]
+  attack: T1496
+  mbc: B0022
+
+composite_rules:
+  - id: miner-dropper-with-boot-persistence
+    desc: Miner payload staged with boot persistence
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: objectives/impact/cryptojacking/miner/smart::mining-indicators
+      - id: objectives/execution/exploit/network-service/command-execution::download-permission-execute-chain
+    any:
+      - id: objectives/persistence/system/supervised::c-generic-systemd-unit-persistence
+      - id: objectives/persistence/system/init/boot/
+      - id: objectives/persistence/system/cron/
+
+  # Script form of the same installer: a shell/python dropper that fetches a
+  # payload from a fixed address, marks it executable, runs it, and writes a
+  # boot-persistence unit. None of the native legs above reach a script, so this
+  # references the script-capable atoms for the identical behaviour. The pool
+  # domain is the miner tell that survives in a script (xmrig-str is a binary
+  # string); a rewrite in another interpreter still lands here.
+  - id: script-miner-indicator
+    desc: Mining pool reference in a script
+    crit: notable
+    conf: 0.9
+    for: [scripts]
+    any:
+      - id: objectives/impact/cryptojacking/miner/pool::known-pool-domains
+      - id: micro-behaviors/communications/socket/tcp::stratum-tcp-url
+      - id: micro-behaviors/communications/socket/tcp::stratum-ssl-url
+
+  - id: script-miner-dropper-persistent
+    desc: Script miner installer persists a fetched payload
+    crit: hostile
+    conf: 0.95
+    attack: T1496,T1105
+    for: [scripts]
+    all:
+      - id: script-miner-indicator
+      # The fetch/chmod/execute chain is a generic dropper behavior. Keep its
+      # matcher in command-and-control and add mining intent only here.
+      - id: objectives/command-and-control/dropper/delivery/download-execute::raw-ip-download-chmod-local-exec
+    any:
+      - id: objectives/persistence/system/service/systemd::hidden-daemon-systemd-persistence
+      - id: objectives/persistence/system/service/systemd::systemctl-enable
+      - id: objectives/persistence/system/cron/
+      - id: objectives/persistence/system/init/boot/

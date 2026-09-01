@@ -1,12 +1,44 @@
 defaults:
   platforms: [unix, windows]
-  for: [scripts, binaries]
+  for: [scripts, binaries, lnk, batch, powershell]
   mbc: C0004
   attack: T1071.002
-# FTP control-channel command tokens. Individually these are weak fragments
-# (a printf template like "USER %s" appears in plenty of non-FTP code), so they
-# are components that only carry signal inside the ftpd-daemon composite.
 traits:
+  - id: ftp-client-command-invocation
+    desc: FTP client command invocation
+    crit: notable
+    conf: 0.92
+    # The first argument must look like a command line -- a switch, a variable,
+    # a path, or a dotted host -- rather than an English word. Without that the
+    # `(` delimiter matched ordinary prose such as "(FTP command IMAGE)" in the
+    # documentation of Ruby's URI::FTP parser.
+    if:
+      type: text
+      regex: '(?im)(^|["'';&(]|/[ck][ \t]+)[ \t]*ftp(\.exe)?[ \t]+([-$/]|\S+\.\S)\S{0,80}'
+
+  # Microsoft's ftp client treats a leading `!` in an input script as a
+  # request to execute the remainder through the local command shell.
+  - id: ftp-local-start-command
+    desc: FTP script invokes local start command
+    crit: notable
+    conf: 0.97
+    for: [text, batch, cmd]
+    if:
+      type: text
+      regex: '(?im)^![ \t]*start\b'
+
+  - id: ftp-local-copy-command
+    desc: FTP script invokes local copy command
+    crit: notable
+    conf: 0.97
+    for: [text, batch, cmd]
+    if:
+      type: text
+      regex: '(?im)^![ \t]*copy\b'
+
+  # FTP control-channel command tokens. Individually these are weak fragments
+  # (a printf template like "USER %s" appears in plenty of non-FTP code), so
+  # they are components that only carry signal inside FTP composites.
   - id: ftp-cmd-auth
     desc: FTP authentication command token
     crit: component
@@ -22,12 +54,14 @@ traits:
       - id: well-known/lib/
       - id: well-known/tool/
   - id: ftp-cmd-transfer
-    desc: FTP transfer command token
+    desc: FTP upload command token
     crit: component
     conf: 0.7
     if:
       type: text
-      regex: '(?m)^(RETR|STOR|STOU)[ \t]+[^\r\n]{1,256}(\r?\n|$)'
+      # RETR is also a POP3 message-retrieval command. STOR/STOU are the FTP
+      # upload verbs that distinguish this atom from a POP3 client vocabulary.
+      regex: '(?m)^(STOR|STOU)[ \t]+[^\r\n]{1,256}(\r?\n|$)'
     unless:
       - id: well-known/app/
       - id: well-known/lib/
@@ -52,7 +86,25 @@ traits:
       type: text
       regex: '(?mi)^220[ -].{0,100}\b(ftp|server)\b'
 
+  - id: ftp-pasv-command
+    desc: Issues FTP passive-mode command
+    crit: notable
+    conf: 0.9
+    for: [c, cpp]
+    if:
+      type: literal
+      exact: "PASV\\r\\n"
+
 composite_rules:
+  - id: ftp-local-shell-command-sequence
+    desc: FTP script runs local start and copy
+    crit: notable
+    conf: 0.98
+    for: [text, batch, cmd]
+    all:
+      - id: ftp-local-start-command
+      - id: ftp-local-copy-command
+
   # Multiple FTP control-channel commands = the code speaks FTP. This is a
   # true capability and SHOULD fire on FTP clients (e.g. FFmpeg's ftp muxer)
   # as well as servers — it asserts "FTP support", not "runs a daemon".

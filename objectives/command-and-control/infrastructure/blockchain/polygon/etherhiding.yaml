@@ -8,15 +8,6 @@ defaults:
   attack: T1102
 
 traits:
-  - id: evm-eth-call-resolver
-    desc: EVM JSON-RPC eth_call resolver request
-    crit: notable
-    conf: 0.92
-    for: [scripts, source, html, javascript, typescript, python]
-    if:
-      type: text
-      regex: '(?i)["'']?method["'']?\s*[:=]\s*["'']eth_call["'']'
-
   - id: evm-contract-call-selector
     desc: EVM contract call selector
     crit: notable
@@ -46,38 +37,12 @@ traits:
       # `baseUrl + '/api.php?s=' + deliveryId` after eth_call resolves.
       regex: '(?i)["'']/api\.php\?s='
 
-  - id: polygon-drpc-publicnode
-    desc: Polygon drpc or publicnode endpoint
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      regex: '(?i)https?://polygon\.(drpc|publicnode)\.[a-z0-9.-]+'
-
-  - id: polygon-quiknode
-    desc: Polygon QuikNode RPC endpoint
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      substr: rpc-mainnet.matic.quiknode.pro
-
-  - id: polygon-tatum
-    desc: Polygon Tatum RPC endpoint
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      substr: polygon-mainnet.gateway.tatum.io
-
-  - id: polygon-nodies
-    desc: Polygon Nodies RPC endpoint
-    crit: notable
-    conf: 0.9
-    for: [lua, batch]
-    if:
-      type: text
-      substr: polygon-public.nodies.app
+  # The four public Polygon RPC hostnames this family used to define locally
+  # (drpc/publicnode, QuikNode, Tatum, Nodies) matched a provider host and
+  # nothing else, so they now live in
+  # micro-behaviors/communications/http/services/blockchain/ and are referenced
+  # from there. The EtherHiding interpretation still comes from combining them
+  # with eth_call resolution, a task queue, and sidecar execution below.
 
   - id: task-queue-field
     desc: Loader task queue field
@@ -112,17 +77,14 @@ traits:
 # canonical atoms instead of restating the pattern as a loader-specific trait.
 
 composite_rules:
-  - id: polygon-public-rpc-fallbacks
-    desc: Multiple public Polygon RPCs
-    crit: suspicious
-    conf: 0.94
-    any:
-      - id: polygon-drpc-publicnode
-      - id: polygon-quiknode
-      - id: polygon-tatum
-      - id: polygon-nodies
-      - id: objectives/command-and-control/infrastructure/blockchain/multi-chain::polygon-rpc-host-cluster
-    needs: 2
+  # `polygon-public-rpc-fallbacks` used to live here: "names two or more public
+  # Polygon RPC providers", at `suspicious`, standing alone. That is what a
+  # multi-chain wallet or bridge SDK looks like -- a provider fallback table is
+  # the normal way to talk to a chain -- and it convicted one on RPC hostnames
+  # with no resolver, no selector and no staging. The neutral count now lives in
+  # micro-behaviors/communications/http/services/blockchain/ and the resolver
+  # below consumes it directly, so the intent still comes from eth_call plus a
+  # contract selector rather than from the host list.
 
   - id: smartloader-task-queue
     desc: Loader task queue with staged file
@@ -140,8 +102,8 @@ composite_rules:
     crit: suspicious
     conf: 0.98
     all:
-      - id: evm-eth-call-resolver
-      - id: polygon-public-rpc-fallbacks
+      - id: micro-behaviors/communications/http/url/rpc::eth-call-method-field
+      - id: micro-behaviors/communications/http/services/blockchain::polygon-public-rpc-hosts-2
     any:
       - id: evm-contract-call-selector
       - id: evm-selector-assignment
@@ -157,7 +119,7 @@ composite_rules:
     for: [javascript, typescript, html]
     near_bytes: 4096
     all:
-      - id: evm-eth-call-resolver
+      - id: micro-behaviors/communications/http/url/rpc::eth-call-method-field
       - id: etherhiding-delivery-script-query
       - id: objectives/command-and-control/infrastructure/blockchain/multi-chain::polygon-rpc-host-cluster
     any:
@@ -166,7 +128,7 @@ composite_rules:
       - id: micro-behaviors/process/interpreter/eval::js-eval-raw
 
   - id: polygon-etherhiding-dynamic-eval
-    desc: Polygon eth_call result evaluated dynamically
+    desc: Polygon contract resolution with dynamic execution
     crit: hostile
     conf: 0.98
     attack: T1102,T1059.007
@@ -179,6 +141,22 @@ composite_rules:
       - id: micro-behaviors/process/interpreter/eval::js-new-function-variable-argument
       - id: micro-behaviors/process/interpreter/eval::js-eval-raw
 
+  # A contract-derived destination plus a nonce-bearing RC4 query is an
+  # application-layer controller channel, not ordinary dApp RPC traffic.
+  - id: polygon-etherhiding-rc4-query-channel
+    desc: Sends nonce-based RC4 queries to a Polygon contract-resolved endpoint
+    crit: hostile
+    conf: 0.995
+    attack: T1102,T1071.001,T1573.001
+    for: [javascript, typescript, html]
+    near_bytes: 8192
+    all:
+      - id: polygon-etherhiding-resolver
+      - id: micro-behaviors/data/encode/rc4::js-rc4-ksa-key-mix
+      - id: micro-behaviors/data/encode/rc4::js-rc4-prga-output
+      - id: micro-behaviors/os/random/crypto::webcrypto-get-random-values
+      - id: micro-behaviors/communications/http/url/query::function-encoded-template-query-parameter
+
   - id: polygon-etherhiding-staged-loader
     desc: Polygon contract dead-drop resolves a staged task loader
     crit: hostile
@@ -187,4 +165,39 @@ composite_rules:
     all:
       - id: polygon-etherhiding-resolver
       - id: smartloader-task-queue
-      - id: objectives/command-and-control/dropper/execution/lua-sidecar::lua-sidecar-interpreter-launch
+      - id: micro-behaviors/process/argument/file::executable-data-or-script-file-argument
+
+  # npm EtherHiding droppers also occur without a visible eth_call resolver:
+  # the campaign wallet/path markers remain in an obfuscated Node loader that
+  # hides a detached child and reaches its HTTPS client through a computed
+  # property. Keep this archive-level rule independent of the package name.
+  - id: etherhiding-obfuscated-node-stage
+    desc: EtherHiding markers with an obfuscated hidden Node stage
+    crit: hostile
+    conf: 0.98
+    attack: T1027,T1059.007,T1105,T1564.003
+    for: [javascript, typescript, archives]
+    scope: archive
+    all:
+      - id: objectives/command-and-control/dropper/delivery/blockchain::blockchain-hex-stage-path
+      - id: objectives/command-and-control/infrastructure/blockchain/ethereum::etherhiding-campaign-wallet-prefix
+      - id: micro-behaviors/process/create/spawn::spawn-call
+    any:
+      - id: micro-behaviors/communications/http/request/computed::js-computed-http-object-call
+      - id: micro-behaviors/process/create/spawn::windowshide-obfuscated-expression
+
+  # Some obfuscators hide the child_process import and the spawn call behind
+  # computed properties, leaving only the obfuscated windowsHide option as a
+  # process-launch atom. Keep this path independent of vendor/campaign names.
+  - id: etherhiding-obfuscated-hidden-node-stage
+    desc: EtherHiding launches obfuscated hidden child stage
+    crit: hostile
+    conf: 0.98
+    attack: T1027,T1059.007,T1105,T1564.003
+    for: [javascript, typescript, archives]
+    scope: archive
+    all:
+      - id: objectives/command-and-control/dropper/delivery/blockchain::blockchain-hex-stage-path
+      - id: objectives/command-and-control/infrastructure/blockchain/ethereum::etherhiding-campaign-wallet-prefix
+      - id: micro-behaviors/communications/http/request/computed::js-computed-http-object-call
+      - id: micro-behaviors/process/create/spawn::windowshide-obfuscated-expression

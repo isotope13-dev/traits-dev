@@ -23,6 +23,13 @@ traits:
     if:
       type: text
       regex: "\\bpassword\\s*=\\s*['\"]password['\"]"
+  - id: python-default-root-password
+    desc: Python root password default
+    crit: component
+    for: [python]
+    if:
+      type: text
+      regex: "\\bpassword\\s*=\\s*['\"]root['\"]"
   - id: sshdoor-word
     size_min: 512
     size_max: 500000000
@@ -43,6 +50,23 @@ traits:
       type: text
       word: sshkit
       section: .text
+  - id: sshd-program-gate-source
+    desc: Gates a source hook on sshd
+    crit: notable
+    conf: 0.98
+    for: [c, cpp]
+    if:
+      type: text
+      regex: 'strstr\s*\(\s*__progname\s*,\s*"sshd"\s*\)'
+  - id: xor-user-pam-success-source
+    desc: Returns PAM success for an XOR-hidden user
+    crit: suspicious
+    conf: 0.99
+    attack: T1556.003
+    for: [c, cpp]
+    if:
+      type: text
+      regex: 'strcmp\s*\(\s*user\s*,\s*XOR\([A-Z_]+\)\s*\)[\s\S]{0,180}return\s*\(?PAM_SUCCESS'
 composite_rules:
   - id: python-ssh-root-password-defaults
     desc: SSH service defaults to root/password
@@ -54,6 +78,35 @@ composite_rules:
       - id: python-default-root-username
       - id: python-default-password-value
       - id: micro-behaviors/communications/ssh/server::paramiko-server-interface
+    unless:
+      - id: well-known/tool/offensive/
+  - id: python-ssh-root-root-defaults
+    desc: Paramiko SSH service defaults to root/root credentials
+    crit: suspicious
+    conf: 0.995
+    for: [python]
+    near_lines: 6
+    all:
+      - id: python-default-root-username
+      - id: python-default-root-password
+      - id: micro-behaviors/communications/ssh/server::paramiko-server-interface
+    unless:
+      - id: well-known/tool/offensive/
+  - id: paramiko-root-credential-command-backdoor
+    desc: Public Paramiko SSH listener exposes root/root command execution
+    crit: hostile
+    conf: 0.995
+    attack: "T1021.004,T1059"
+    mbc: B0022
+    scope: leaf
+    for: [python]
+    all:
+      - id: python-ssh-root-root-defaults
+      - id: micro-behaviors/communications/ssh/server::paramiko-exec-request-handler
+      - id: micro-behaviors/communications/socket/bind/address::bind-all-interfaces
+      - id: micro-behaviors/process/create/subprocess::process-execution
+    unless:
+      - id: well-known/tool/offensive/
   - id: paramiko-default-credential-pty-backdoor
     desc: Paramiko SSH listener exposes a default-credential Bash PTY
     crit: hostile
@@ -126,3 +179,14 @@ composite_rules:
       - id: micro-behaviors/communications/ssh/server::go-ssh-tcpip-forward-handler
       - id: micro-behaviors/communications/ssh/server::go-ssh-open-client-policy
       - id: micro-behaviors/communications/proxy/tunnel::go-relay-tunnel-stack
+  - id: sshd-pam-hidden-user-backdoor
+    desc: sshd PAM hook grants access to an XOR-hidden user under a magic GID
+    crit: hostile
+    conf: 0.995
+    attack: "T1556.003,T1021.004"
+    mbc: B0022
+    for: [c, cpp]
+    all:
+      - id: sshd-program-gate-source
+      - id: xor-user-pam-success-source
+      - id: objectives/evasion/kernel-hide/userspace::magic-gid-hiding

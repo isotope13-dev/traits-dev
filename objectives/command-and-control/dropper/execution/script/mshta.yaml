@@ -1,7 +1,9 @@
 # Windows MSHTA script-host execution traits.
+# Include html: InstallFix / ClickFix lure pages plant mshta one-liners on the
+# clipboard for Win+R paste-run (fake installer guides, CAPTCHA pages).
 defaults:
   platforms: [unix, windows]
-  for: [batch, shell, powershell, javascript]
+  for: [batch, shell, powershell, javascript, html]
   attack: T1218.005
 traits:
   - id: mshta-remote-url
@@ -90,3 +92,54 @@ composite_rules:
     any:
       - id: micro-behaviors/process/create/exec::exec-api-call
       - id: micro-behaviors/process/create/shell/bridge::child-process-require
+  - id: python-b64-mshta-hidden-subprocess
+    desc: Python decodes base64 mshta command into hidden subprocess
+    crit: hostile
+    conf: 0.97
+    attack: T1140,T1218.005,T1564.003
+    for: [python]
+    near_lines: 40
+    all:
+      - id: micro-behaviors/data/decode/base64::b64decode-call
+      - id: micro-behaviors/process/create/launch::mshta-execution
+      - id: micro-behaviors/process/create/flags::creationflags
+      - id: micro-behaviors/process/create/subprocess::process-execution
+    unless:
+      - id: metadata/package/testing/
+
+  # The two-step form: fetch the HTA over HTTP, drop it, then hand the file to
+  # mshta.
+  #
+  # Every mshta rule above keys on the URL sitting on mshta's own command line
+  # (`mshta https://…`), which is what a one-liner lure pastes into Win+R. Code
+  # does not have to write it that way, and this sample does not: it `fetch`es
+  # the payload, `writeFile`s it into `os.tmpdir()`, and spawns mshta on the
+  # local path. The remote URL and the interpreter never appear in the same
+  # string, so nothing above sees it.
+  #
+  # The spawn options are what make it hostile rather than a program launching
+  # a helper: `detached` + `stdio: "ignore"` + `unref()` cut the child loose
+  # from the parent's lifetime and discard its output, and `windowsHide` keeps
+  # the HTA window off the screen. A program that wanted the user to see the
+  # document it just downloaded would not do any of those.
+  #
+  # mshta is the LOLBin here, but the shape is the technique: remote fetch,
+  # write to a temp path, execute detached and hidden through a signed system
+  # interpreter.
+  - id: js-fetch-drop-mshta-hidden-launch
+    desc: Fetches a payload and runs it hidden via mshta
+    crit: hostile
+    conf: 0.97
+    attack: T1218.005,T1105,T1564.003
+    mbc: E1218.005
+    for: [javascript, typescript]
+    all:
+      - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+      - id: micro-behaviors/fs/file/write/async::node-write-file-promise-destructured
+      - id: micro-behaviors/process/create/launch::mshta-execution
+      - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+    any:
+      - id: micro-behaviors/process/create/spawn::windowshide-option
+      - id: micro-behaviors/fs/path/extension::hta-extension
+    unless:
+      - id: metadata/package/testing/

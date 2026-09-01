@@ -10,8 +10,8 @@
 #
 # The wording is the disposable part. What every variant has to do is:
 #
-#   * hold a download-and-execute one-liner as page text, and
-#   * put it on the visitor's clipboard from JavaScript.
+#   * hold a download-and-execute one-liner near clipboard-writing code, and
+#   * add a deceptive passive trigger or OS gate around that capability.
 #
 # Both are structural, so the rules here key on those instead of the story.
 #
@@ -36,21 +36,6 @@ defaults:
   attack: T1204.004
 
 composite_rules:
-  - id: page-stages-remote-shell-loader
-    desc: Page copies a remote shell loader to the clipboard
-    # An install page with a copy button lands here, which is why this is
-    # suspicious rather than hostile: the finding is accurate for both, and an
-    # analyst triaging it only has to check whether the site is the project's
-    # own. The rules below add what makes it a lure.
-    crit: suspicious
-    conf: 0.9
-    attack: T1204.004,T1059.004
-    all:
-      - id: micro-behaviors/os/clipboard/browser::browser-html-clipboard-write
-    any:
-      - id: micro-behaviors/process/create/shell/command-mode::shell-c-command-substitution-fetch
-      - id: micro-behaviors/process/create/shell/pipeline::curl-pipe-shell-text
-
   - id: passive-trigger-clipboard-shell-loader
     desc: Loader planted on the clipboard without a click
     # No user decision precedes the clipboard write: moving the pointer, or
@@ -60,25 +45,30 @@ composite_rules:
     conf: 0.96
     attack: T1204.004,T1059.004,T1115
     all:
-      - id: page-stages-remote-shell-loader
+      - id: micro-behaviors/process/create/shell/pipeline::browser-clipboard-remote-shell-pipeline
       - id: micro-behaviors/hardware/input/event::user-activity-event-listener
+    # Co-occurrence anywhere in a page confuses ordinary menu-dismissal and
+    # accessibility listeners with the callback that performs the clipboard
+    # write. A passive trigger keeps the input handler and clipboard action in
+    # the same small callback; require that local relationship.
+    near_bytes: 512
 
   - id: os-gated-clipboard-shell-loader
     desc: Clipboard loader shown only to one target OS
     # User-agent test plus a navigation away for everyone else: the page is
     # picking its victims, and hiding from everyone it cannot infect.
+    # A bare User-Agent read is not that test: SPAs log it as device metadata
+    # and also call location.replace for onboarding or client routing, next to
+    # a legitimate copy-button installer. Require a UA *branch* and keep the
+    # three legs in the same local span so a 600KB bundle cannot join them.
     crit: hostile
     conf: 0.95
     attack: T1204.004,T1059.004,T1497.001
+    near_bytes: 8192
     all:
-      - id: page-stages-remote-shell-loader
+      - id: micro-behaviors/process/create/shell/pipeline::browser-clipboard-remote-shell-pipeline
       - id: micro-behaviors/ui/window/manage/navigation::browser-location-replace
     any:
-      # `navigator-useragent-read` is a `type: symbol` member fact, and an
-      # HTML page yields no symbols at all — so on the lure pages this rule
-      # exists to catch it could never fire. The conditional composite is
-      # text-based, works on inline <script>, and is the better match for
-      # what this rule claims anyway: the page *tests* the User-Agent and
-      # sends non-targets away, rather than merely reading it.
-      - id: micro-behaviors/communications/http/user-agent::navigator-useragent-read
       - id: micro-behaviors/communications/http/user-agent::navigator-useragent-conditional
+    unless:
+      - id: well-known/app/ai/agent-runtime/feral-ai/

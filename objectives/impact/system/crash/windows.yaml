@@ -5,13 +5,6 @@ defaults:
     - pe
   attack: T1499.004
 traits:
-  - id: rtl-adjust-privilege
-    desc: Enables privilege via RtlAdjustPrivilege
-    crit: component
-    conf: 0.9
-    if:
-      type: text
-      substr: RtlAdjustPrivilege
   - id: shutdown-privilege
     desc: SeShutdownPrivilege constant
     crit: notable
@@ -39,39 +32,64 @@ traits:
     if:
       type: text
       regex: 0x[Cc]000007[Bb]|3221226363
-  - id: rtlsetprocessiscritical
-    desc: Marks process critical to force BSOD
-    crit: suspicious
-    conf: 0.94
-    for:
-      - pe
+  - id: processcritical-helper-type
+    desc: ProcessCritical helper type name
+    crit: component
+    conf: 0.97
+    for: [pe]
     if:
       type: text
-      exact: RtlSetProcessIsCritical
-    unless:
-      - id: metadata/signed/leaf::microsoft-corporation
-      - id: metadata/binary/linking/api-set::api-set-core-cluster
+      substr: ProcessCritical
+  - id: bdos-crash-setting-field
+    desc: BDOS crash setting field
+    crit: component
+    conf: 0.96
+    for: [pe]
+    if:
+      type: text
+      exact: BDOS
+  - id: c-true-break-on-termination-source
+    desc: C true flag precedes termination class
+    crit: component
+    conf: 0.94
+    for: [c, cpp, csharp]
+    if:
+      type: text
+      regex: '(?s)\b\w+\s+\w+\s*=\s*(TRUE|1)\s*;.{0,768}\bProcessBreakOnTermination\b'
+      case_insensitive: true
+  - id: rust-true-break-on-termination-source
+    desc: Rust true flag precedes termination class
+    crit: component
+    conf: 0.94
+    for: [rust]
+    if:
+      type: text
+      regex: '(?s)\blet\s+(mut\s+)?\w+[^=]{0,16}=\s*true.{0,768}ProcessBreakOnTermination'
+  - id: go-true-break-on-termination-source
+    desc: Go true flag precedes termination class
+    crit: component
+    conf: 0.94
+    for: [go]
+    if:
+      type: text
+      regex: '(?s)\b(var\s+\w+\s+bool\s*=|\w+\s*:=)\s*true.{0,768}ProcessBreakOnTermination'
 composite_rules:
-  - id: ntdll-reference
-    desc: ntdll reference (import or ctypes)
-    crit: notable
-    conf: 0.7
-    any:
-      - id: micro-behaviors/os/syscall/invoke::ntdll-import
-      - id: micro-behaviors/dylib/load/runtime::ctypes-windll
-    downgrade:
-      any:
-        - id: metadata/binary/metrics/structural::many-imports
-    unless:
-      - id: well-known/lib/platform/microsoft-wow64::microsoft-wow64-system-context
-      - id: well-known/tool/browser::google-chrome-browser-context
+  - id: critical-process-termination-policy-source
+    desc: Configures process as critical to Windows stability
+    crit: suspicious
+    conf: 0.98
+    for: [c, cpp, csharp, rust, go]
+    all:
+      - id: micro-behaviors/process/control/info::nt-set-information-process-source
+      - id: micro-behaviors/process/control/critical::process-break-on-termination-source
+      - id: micro-behaviors/os/module/load::get-proc-address-source-call
   - id: bsod-raise-error
     desc: NtRaiseHardError reference with ntdll context
     crit: suspicious
     conf: 0.99
     mbc: B0033
     all:
-      - id: ntdll-reference
+      - id: micro-behaviors/os/syscall/invoke::ntdll-import
       - id: micro-behaviors/os/syscall/invoke::nt-raise-hard-error-reference
     downgrade:
       any:
@@ -79,33 +97,61 @@ composite_rules:
     unless:
       - id: well-known/lib/runtime/node-runtime::windows-distribution-archive
       - id: well-known/lib/runtime/node-runtime::windows-runtime-binary
+      - id: well-known/app/utility/locale-emulator::locale-emulator-native-context
       # Anti-anti-debug tooling *patches* NtRaiseHardError in the debuggee so
       # malware cannot BSOD the analysis box — the inverse of triggering it.
       # ScyllaHide/TitanHide hook exactly this API, and dnSpy ships an
       # AntiAntiDebug patcher for it, so the plain substring reads backwards.
       - id: well-known/tool/reverse-engineering/
+      - id: well-known/app/system/windows-migration::mighost-binary-identity
   - id: bsod-adjust-privilege
     desc: BSOD via privilege adjustment + assert
     crit: hostile
     conf: 0.98
     mbc: B0033
     all:
-      - id: ntdll-reference
-      - id: rtl-adjust-privilege
+      - id: micro-behaviors/os/syscall/invoke::ntdll-import
       - id: status-assertion-failure
+    any:
+      - id: micro-behaviors/os/privilege/token::rtl-adjust-privilege
+      - id: micro-behaviors/os/privilege/token::python-rtl-adjust-privilege-call
+    needs: 1
   - id: critical-process-bsod-risk
-    desc: Critical process termination crash risk
-    crit: hostile
+    desc: Critical-process termination can crash Windows
+    # This proves the dormant capability, but not that the configuration
+    # enables it. Malware families such as AsyncRAT compile this helper into
+    # builds whose encrypted BDOS option is false.
+    crit: suspicious
     conf: 0.96
     mbc: B0033
     for:
       - pe
     all:
-      - id: ntdll-reference
-      - id: rtlsetprocessiscritical
+      - id: micro-behaviors/os/syscall/invoke::ntdll-import
+      - id: micro-behaviors/process/control/critical::rtl-set-process-is-critical-reference
+      - id: processcritical-helper-type
+      - id: bdos-crash-setting-field
     unless:
       - id: metadata/signed/platform/
       - id: metadata/binary/linking/api-set::api-set-core-cluster
+  - id: current-process-critical-termination-crash
+    desc: Enables current-process critical termination to crash Windows if killed
+    crit: hostile
+    conf: 0.98
+    mbc: B0033
+    for: [c, cpp, csharp, rust, go]
+    all:
+      - id: micro-behaviors/process/control/critical::current-process-break-on-termination-control
+      - id: process-break-on-termination-enabled-source
+  - id: process-break-on-termination-enabled-source
+    desc: Enables termination-critical state with true flag
+    crit: component
+    conf: 0.94
+    for: [c, cpp, csharp, rust, go]
+    any:
+      - id: c-true-break-on-termination-source
+      - id: rust-true-break-on-termination-source
+      - id: go-true-break-on-termination-source
   - id: python-bsod-traits
     desc: Python BSOD trigger via ctypes
     crit: hostile
@@ -114,10 +160,10 @@ composite_rules:
       - python
     all:
       - id: objectives/impact/system/crash::python-ctypes-import
-      - id: ntdll-reference
+      - id: micro-behaviors/os/syscall/invoke::ntdll-import
     any:
       - id: micro-behaviors/os/syscall/invoke::nt-raise-hard-error-reference
-      - id: rtl-adjust-privilege
+      - id: micro-behaviors/os/privilege/token::python-rtl-adjust-privilege-call
   - id: python-ctypes-import
     desc: Python ctypes import
     crit: component
@@ -137,5 +183,5 @@ composite_rules:
     all:
       - id: objectives/impact/system/crash::python-ctypes-import
       - id: micro-behaviors/dylib/load/runtime::ctypes-windll
-      - id: rtl-adjust-privilege
+      - id: micro-behaviors/os/privilege/token::python-rtl-adjust-privilege-call
       - id: set-system-power-state

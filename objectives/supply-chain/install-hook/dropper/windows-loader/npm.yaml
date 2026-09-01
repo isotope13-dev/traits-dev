@@ -25,13 +25,22 @@ traits:
       type: text
       regex: '(?i)Downloads.{0,40}\.exe'
 
-  - id: platform-json-stringify
-    desc: JSON-serializes a platform field
-    crit: notable
-    conf: 0.9
+  # TEMP\main.exe staging (npm OpenHack rewrite uses %TEMP% as well as Downloads).
+  - id: temp-env-token
+    desc: TEMP environment path token
+    crit: component
+    conf: 0.85
     if:
       type: text
-      regex: 'JSON\.stringify\s*\(\s*\{[^}]{0,120}\bplatform\b'
+      regex: '(?i)(%TEMP%|\bTEMP\b|tmpdir|tmpDir|os\.tmpdir\s*\()'
+
+  - id: main-exe-basename
+    desc: References main.exe basename
+    crit: component
+    conf: 0.88
+    if:
+      type: text
+      regex: '(?i)\bmain\.exe\b'
 
   - id: vote-http-path
     desc: HTTP client uses path /vote
@@ -42,35 +51,73 @@ traits:
       regex: '(?i)path\s*:\s*["'']/vote["'']'
 
 composite_rules:
+  - id: temp-main-exe-path
+    desc: Stages main.exe under TEMP
+    crit: suspicious
+    conf: 0.94
+    attack: T1105
+    near_bytes: 80
+    all:
+      - id: temp-env-token
+      - id: main-exe-basename
+
   - id: homedir-downloads-exe
     desc: Stages an EXE under user Downloads
     crit: suspicious
     conf: 0.94
     attack: T1105
-    near_lines: 4
+    # Requires are typically at file top; dest path lives in the drop helper.
+    near_lines: 80
     all:
       - id: homedir-downloads-path
       - id: downloads-folder-exe
 
   - id: install-hook-platform-vote-beacon
-    desc: Install hook POSTs platform JSON to /vote
+    desc: Install hook POSTs JSON to /vote
     crit: suspicious
     conf: 0.96
     attack: T1195.002,T1041
     all:
       - id: objectives/supply-chain/install-hook/scripts/hook-file::hook-script-filename
-      - id: platform-json-stringify
+      - id: micro-behaviors/data/serialize/json::json-stringify-call
       - id: vote-http-path
       - id: micro-behaviors/communications/http/request/client::post-method-text
 
+  # Vote beacon plus repeating-key XOR config decode — durable across Ruby→npm rewrites.
+  - id: install-hook-xor-vote-beacon
+    desc: Install hook XOR-decodes then POSTs /vote beacon
+    crit: hostile
+    conf: 0.97
+    attack: T1195.002,T1027,T1041
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/hook-file::hook-script-filename
+      - id: micro-behaviors/data/serialize/json::json-stringify-call
+      - id: vote-http-path
+      - id: micro-behaviors/crypto/symmetric/xor/loop::xor-modulo-key-loop
+    any:
+      - id: micro-behaviors/data/encode/char-code::fromcharcode-xor-rebuild
+      - id: micro-behaviors/data/decode/xor::charcode-modulo-key-index
+      - id: micro-behaviors/data/encode/xor::js-xor-decoder-ast
+      - id: micro-behaviors/communications/http/request/client::post-method-text
+
   - id: xor-decoded-downloads-exe-loader
-    desc: XOR-decoded config stages Downloads EXE
+    desc: XOR-decoded config stages Downloads or TEMP EXE
     crit: suspicious
     conf: 0.96
     attack: T1027,T1105
     all:
-      - id: homedir-downloads-exe
       - id: micro-behaviors/crypto/symmetric/xor/loop::xor-modulo-key-loop
+    any:
+      - id: homedir-downloads-exe
+      - id: temp-main-exe-path
+
+  - id: xor-decoded-temp-or-downloads-exe
+    desc: XOR decode with staged Windows EXE path
+    crit: suspicious
+    conf: 0.96
+    attack: T1027,T1105
+    all:
+      - id: xor-decoded-downloads-exe-loader
     any:
       - id: micro-behaviors/data/encode/char-code::fromcharcode-xor-rebuild
       - id: micro-behaviors/data/decode/xor::charcode-modulo-key-index
@@ -83,9 +130,13 @@ composite_rules:
     attack: T1195.002,T1027,T1105,T1059
     all:
       - id: objectives/supply-chain/install-hook/scripts/hook-file::hook-script-filename
-      - id: xor-decoded-downloads-exe-loader
-      - id: objectives/command-and-control/dropper/delivery/download-execute::node-remote-file-materialization
+      - id: xor-decoded-temp-or-downloads-exe
       - id: micro-behaviors/process/create/spawn::detached-true
+    any:
+      - id: objectives/command-and-control/dropper/delivery/download-execute::node-remote-file-materialization
+      - id: micro-behaviors/communications/http/download/handler::node-http-stream-to-file
+      - id: micro-behaviors/communications/http/download/handler::node-http-stream-to-file-text
+      - id: micro-behaviors/communications/http/response::node-response-to-file
 
   - id: npm-postinstall-xor-windows-loader
     desc: npm postinstall XOR-decodes Windows loader dropper

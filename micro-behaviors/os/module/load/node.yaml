@@ -3,6 +3,19 @@ defaults:
   for: [javascript, typescript]
 
 traits:
+  - id: node-module-builtin-require
+    desc: Requires the Node module builtin
+    crit: notable
+    conf: 0.9
+    attack: T1059.007
+    if:
+      type: symbol
+      kind: call
+      exact: require
+      arg:
+        kind: string
+        exact: module
+
   - id: node-global-os-module-exposure
     desc: Exposes Node os module through globalThis
     crit: notable
@@ -20,13 +33,13 @@ traits:
       type: text
       regex: '\[[''\"]os[''\"]\]\s*=\s*[A-Za-z_$][A-Za-z0-9_$]*\s*(,|;)'
 
-  - id: node-module-wrap-override
-    desc: Assigns custom Node wrapper
-    crit: suspicious
-    conf: 0.95
+  - id: webpack-runtime-chunk-load
+    desc: Loads a Webpack chunk named runtime
+    crit: notable
+    conf: 0.94
     if:
       type: text
-      regex: "require\\(['\"]module['\"]\\)\\.wrap\\s*=\\s*(override|function)"
+      regex: '\.e\(["'']runtime["'']\)'
 
   - id: node-require-resolve-package-name
     desc: Resolves a named Node package
@@ -51,6 +64,15 @@ traits:
     if:
       type: text
       regex: "require\\s*=\\s*\\(function\\s*\\(req\\)"
+  - id: node-require-returning-getter
+    desc: Object getter exposes the Node require function
+    crit: notable
+    conf: 0.95
+    if:
+      type: text
+      # Handles identifier-obfuscated quoted getters such as a name padded
+      # with literal Unicode escape sequences.
+      regex: 'get"[^"\r\n]{1,180}"\(\)\{return require\}'
   - id: node-require-binding-reassignment
     desc: Reassigns the CommonJS require binding
     crit: notable
@@ -73,8 +95,8 @@ traits:
     if:
       type: text
       regex: '(?i)(win32|darwin|linux)\s*:\s*["'']\./[^"''\r\n]{1,120}\.node["'']'
-  - id: node-computed-native-addon-require
-    desc: Computed local require from __dirname
+  - id: node-computed-local-require
+    desc: Requires a computed local module path
     crit: notable
     conf: 0.94
     attack: T1129
@@ -106,6 +128,7 @@ traits:
       # `foo.require(x)` is a library method, not a CommonJS module load.
       type: text
       regex: 'catch\s*(\([^)]{0,80}\))?\s*\{[^}]{0,560}[^.\w$]require\s*\('
+
   - id: prebuilt-native-addon-require
     desc: Requires prebuilt native addon
     crit: suspicious
@@ -130,6 +153,14 @@ traits:
     if:
       type: text
       regex: "(?m)^\\s*require\\s*\\(['\"](@[^'/]{1,30}/)?[A-Za-z0-9][^'\"]{0,50}['\"]\\)\\s*;?\\s*$"
+  - id: scoped-config-package-import
+    desc: Imports a scoped npm configuration package
+    crit: notable
+    conf: 0.9
+    if:
+      type: symbol
+      kind: import
+      regex: '^@[a-z0-9][a-z0-9._-]{1,80}/config$'
   - id: esm-side-effect-package-import
     desc: ESM side-effect-only package import
     crit: notable
@@ -137,7 +168,7 @@ traits:
     if:
       type: text
       # Bare specifier only: leading "." or "/" means a relative/absolute file,
-      # which is micro-behaviors/process/create/load/local::esm-side-effect-local-import.
+      # which is micro-behaviors/os/module/load::esm-side-effect-local-import.
       regex: '(?m)^\s*import\s+["''][^"''/.][^"''\n]{0,70}["'']\s*;?\s*$'
     unless:
       # Declaration imports are erased and do not establish runtime loading.
@@ -145,6 +176,16 @@ traits:
       # Dart files parse as JavaScript, and `import 'package:flutter/…';` is a
       # namespace import there, not an ESM side-effect-only import.
       - id: metadata/file/extension/identity::dart-source-basename
+  - id: esm-side-effect-local-import
+    desc: ESM side-effect-only local import
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?m)^[ \t]*import\s+["'']\.\.?/[^"'']{1,80}["'']\s*;?[ \t]*$'
+    unless:
+      # Declaration imports are erased and do not establish runtime loading.
+      - id: metadata/lang/scripted::dts-declaration-file
   - id: esm-side-effect-dot-js-package-import
     desc: ESM side-effect import of a .js-named package
     crit: notable
@@ -199,6 +240,8 @@ traits:
       - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
       - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
       - id: metadata/lang/source::linux-kernel-primary-tree-path
+      # Type-only declaration imports are erased and never load at runtime.
+      - id: metadata/lang/scripted::dts-declaration-file
       - type: basename
         regex: '\.d\.ts$'
 
@@ -222,6 +265,27 @@ traits:
           (#not-match? @module "^[\"']?@(constants|apis|styles|types)/")
           (#not-match? @parent "\\)\\s*\\.")
         )
+    unless:
+      # Type-only declaration imports are erased and never load at runtime.
+      - id: metadata/lang/scripted::dts-declaration-file
+      - type: basename
+        regex: '\.d\.ts$'
+
+  # `import("pkg").then(...)` — a bare (non-relative) specifier loaded lazily and
+  # consumed straight off the promise. This is the isomorphic/lazy-load idiom and
+  # nothing more on its own; it matters to composites because the loaded module
+  # never appears in the static import list, so what the file finally hands its
+  # callers came from somewhere the import list does not mention. The `.then`
+  # keeps this off TypeScript's erased `import("pkg").Type` positions.
+  - id: dynamic-external-import-promise-chain
+    desc: Chains on a lazily imported package
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '[^.\w$]import\s*\(\s*["''][^"''./][^"'']{0,60}["'']\s*\)\s*\.\s*then'
+    unless:
+      - id: metadata/lang/scripted::dts-declaration-file
 
   - id: dynamic-imported-provider-reexport
     desc: Dynamic import followed by a provider reference
@@ -237,13 +301,19 @@ traits:
   # The leading `[^.\w$]` keeps these on the `import()` operator.  A bare `\b`
   # also matches the member call `style.import(file)` / `less.import(path)`,
   # which is an ordinary API method on a user object, not a module load.
+  # `import` is a legal method name, and in minified class bodies a shorthand
+  # method reads exactly like a call: `}import(t){return this.emit(...)}` in
+  # @adobe/css-tools is the CSS @import at-rule printer, not a module load.
+  # A definition is followed by its body, so require a non-brace after the
+  # parameter list; every real dynamic import is followed by `.then`, `;`,
+  # `)` or `,`.
   - id: dynamic-import-expression
     desc: Dynamically imports a computed module reference
     crit: notable
     conf: 0.88
     if:
       type: text
-      regex: '[^.\w$]import\s*\(\s*[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)?\s*\)'
+      regex: '[^.\w$]import\s*\(\s*[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)?\s*\)\s*[^{\s]'
 
   - id: dynamic-import-call-expression
     desc: Dynamically imports a computed call result
@@ -287,6 +357,46 @@ traits:
         kind: string
         exact: child_process
 
+  # `await import("node:child_process")` inside a function body, rather than a
+  # top-level `import`/`require`. The capability never appears in the module's
+  # static import list, so a manifest-level dependency review, a bundler's
+  # module graph and every "what does this package require" scanner all miss
+  # it. Neutral on its own — ESM libraries genuinely defer Node-only builtins so
+  # the same file can load in a browser — so the concealment reading comes from
+  # the composites that pair these with what the loaded builtin is used for.
+  # Split by capability family so a composite can ask for *which* capabilities
+  # were deferred rather than for how many import calls it counted.
+  - id: node-lazy-exec-builtin-import
+    desc: Defers loading a Node execution builtin
+    crit: notable
+    conf: 0.9
+    attack: T1027
+    if:
+      type: text
+      regex: 'import\(\s*["'']node:(child_process|vm|worker_threads)["'']\s*\)'
+    unless:
+      - id: metadata/lang/scripted::dts-declaration-file
+  - id: node-lazy-fs-builtin-import
+    desc: Defers loading a Node filesystem builtin
+    crit: notable
+    conf: 0.9
+    attack: T1027
+    if:
+      type: text
+      regex: 'import\(\s*["'']node:fs(/promises)?["'']\s*\)'
+    unless:
+      - id: metadata/lang/scripted::dts-declaration-file
+  - id: node-lazy-net-builtin-import
+    desc: Defers loading a Node network builtin
+    crit: notable
+    conf: 0.9
+    attack: T1027
+    if:
+      type: text
+      regex: 'import\(\s*["'']node:(net|tls|https?|dgram|dns)["'']\s*\)'
+    unless:
+      - id: metadata/lang/scripted::dts-declaration-file
+
   - id: node-dynamic-import-file-url
     desc: Node dynamically imports a file URL
     crit: notable
@@ -301,14 +411,6 @@ traits:
     if:
       type: text
       regex: "\\.catch\\(\\s*\\(\\s*\\w*\\s*\\)\\s*=>\\s*\\{\\s*\\}\\s*\\)"
-
-  - id: obug-debug-utility-import
-    desc: Imports the obug debug utility package
-    crit: component
-    conf: 0.9
-    if:
-      type: import
-      exact: obug
 
   # `builtinModules` from the `module` package is the runtime's own list of
   # every built-in ("fs", "child_process", ...). Reading it is neutral -- test
@@ -325,6 +427,21 @@ traits:
       substr: builtinModules
 
 composite_rules:
+  - id: scoped-config-package-loader
+    desc: Invokes scoped config package loadConfig
+    crit: notable
+    conf: 0.93
+    all:
+      - id: scoped-config-package-import
+      - id: micro-behaviors/data/config/load::load-config-helper-call
+  - id: node-lazy-builtin-capability-import
+    desc: Defers loading a Node capability builtin
+    crit: notable
+    conf: 0.9
+    any:
+      - id: node-lazy-exec-builtin-import
+      - id: node-lazy-fs-builtin-import
+      - id: node-lazy-net-builtin-import
   - id: node-system-module-import-set
     desc: Imports at least two Node system modules
     crit: notable

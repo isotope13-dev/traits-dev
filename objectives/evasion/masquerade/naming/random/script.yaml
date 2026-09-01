@@ -1,0 +1,58 @@
+# A shipped script whose filename is a generated token — `3FWCvzduYZg.js`,
+# `a8Xk2pQ.mjs` — rather than a name a developer chose (`cli.js`, `index.ts`,
+# `generate.mjs`). Malware drops payloads under random names so a directory
+# listing offers no hint of purpose and a filename IOC cannot pin the file
+# across versions (this campaign renamed it every release). Scored by the
+# English-bigram random validator (`crate::random_validator`), which is
+# conservative by construction: it never fires on names shorter than six
+# letters, and a hashed bundle like `index.4f3a2b9c.js` has no six-letter run
+# to judge, so ordinary bundler output and real module names are left alone —
+# only a genuinely generated token like `FWCvzduYZg` crosses the threshold.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript, python, ruby, shell, powershell]
+  attack: T1036
+  mbc: F0008
+
+traits:
+  # Notable, not suspicious, on its own: a generated-looking filename is worth
+  # surfacing for triage and differential analysis, but the bigram validator
+  # occasionally convicts a real consonant-dense library name (`zxcvbn.js`,
+  # after the keyboard row), so a standalone verdict would false-positive. The
+  # suspicious verdict comes from the composite below, which pairs the random
+  # name with a packed-payload shape a normal library file never has.
+  - id: random-named-script-file
+    desc: Script file has a generated random name
+    crit: notable
+    conf: 0.9
+    if:
+      # The stem is one 6-40 char alphanumeric token (no dots/words), and the
+      # bigram validator must independently judge it generated. Both together
+      # keep this off `create-exports.js`, `zlib.js`, and digit-hashed chunks.
+      type: basename
+      regex: '^[A-Za-z0-9_-]{6,40}\.(c?js|mjs|cjs|jsx|tsx?|py|rb|lua|ps1)$'
+      is: random_like
+    unless:
+      # Contexts where an opaque name is legitimately expected: a vendored
+      # dependency (not the package's own shipped code) and a source map.
+      - id: metadata/file/format/structured::sourcemap-sources-content
+      - id: metadata/package/files/dependency::node-modules-path
+
+composite_rules:
+  # A script whose name reads as generated AND whose body is a packed payload
+  # (a multi-megabyte single line, or an extreme digit ratio from char-code
+  # packing). A maintained library ships neither its own code under a random
+  # name nor a megabyte one-liner; a dropped payload hides behind both. zxcvbn
+  # and other oddly-named real libraries are ordinary small source files, so
+  # they never reach this.
+  - id: random-named-packed-payload
+    desc: Random-named script carries a packed payload
+    crit: suspicious
+    conf: 0.95
+    attack: T1036,T1027
+    all:
+      - id: random-named-script-file
+    any:
+      - id: objectives/anti-static/obfuscation/code-metrics/line-shape::js-megabyte-single-line
+      - id: metadata/file/metrics::js-extreme-digit-ratio-large-source
+      - id: objectives/supply-chain/hidden-payload/eval::packed-single-line-eval-dropper

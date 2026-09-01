@@ -48,9 +48,28 @@ traits:
   - id: runtime-set-uninstall-url
     desc: Sets a browser extension uninstall URL
     if:
-      type: symbol
+      # The JavaScript symbol extractor does not retain this chained Chrome
+      # API call in every module form. Match the parsed call itself so MV3
+      # service workers are covered without matching comments or prose.
+      type: tree-sitter
       kind: call
-      regex: '(chrome\.|browser\.)?runtime\.setUninstallURL$'
+      regex: '(chrome\.|browser\.)?runtime\.setUninstallURL\s*\('
+  - id: runtime-set-uninstall-named-promotion-url
+    desc: Sets uninstall redirect to promotion URL
+    crit: notable
+    conf: 0.98
+    if:
+      type: tree-sitter
+      kind: call
+      regex: 'runtime\.setUninstallURL\(\s*(PARTNER|AFFILIATE|PROMO)[A-Za-z0-9_]*\b'
+  - id: runtime-uninstall-url-delayed-reassertion
+    desc: Reasserts uninstall URL after delay
+    crit: notable
+    conf: 0.98
+    if:
+      type: tree-sitter
+      kind: call
+      regex: 'setTimeout\(\s*\w*[Uu]ninstall[Uu][Rr][Ll]\s*,\s*[1-9]\d{2,5}\s*\)'
   - id: runtime-uninstall-url-multiple-writes
     desc: Writes the extension uninstall URL repeatedly
     crit: notable
@@ -80,8 +99,8 @@ traits:
     conf: 0.7
     attack: T1176
     if:
-      type: text
-      regex: 'Safari(App|Web)Extension|SFSafariExtension'
+      type: symbol
+      regex: '^(SafariExtension|SFSafari(Application|Extension))$'
   - id: chrome-runtime-get-url
     desc: Chrome runtime resource URL
     crit: baseline
@@ -150,24 +169,40 @@ traits:
       type: symbol
       kind: member
       regex: '^chrome\.[A-Za-z_]\w*(\.[A-Za-z_]\w*)*'
+  # `chrome.search.query()` hands the text to whatever engine the user has
+  # already configured. It is the API Chrome documents as the alternative to
+  # overriding the search provider, so on a new-tab extension its presence is
+  # evidence *against* search hijacking: a page that carries a search box and
+  # calls this is a search box, not a takeover. The old description, "Chrome
+  # search API query", was a noun phrase that left the reader to work that out.
+  # Real hijacking appears as `chrome_settings_overrides.search_provider`, a
+  # monetised SERP host, or a runtime redirect of search traffic — each with
+  # its own rule. (This belongs in a `search/` sibling rather than under
+  # lifecycle, but the accepted subdirectory list is compiled into cleave, so
+  # moving it needs an engine change first.)
   - id: chrome-search-query
-    desc: Chrome search API query
+    desc: Searches via the user's configured engine
     if:
+      # The original alternation read `(^|\\.)` — a literal backslash rather
+      # than a dot escape — so only the `^` branch could ever match. Written as
+      # intended it also catches the call reached through an alias or wrapper.
       type: symbol
       kind: call
-      regex: '(^|\\.)(chrome\.search\.query|search\.query)$'
-  - id: browser-namespace-1
+      regex: '(^|\.)(chrome\.search\.query|search\.query)$'
+  - id: browser-namespace-core
     desc: Uses browser.* namespace core APIs
     conf: 0.95
     if:
-      type: string_literal
-      regex: browser\.(runtime|tabs|storage|webRequest)
-  - id: browser-namespace-2
+      type: symbol
+      kind: member
+      regex: '^browser\.(runtime|tabs|storage|webRequest)(\.[A-Za-z_]\w*)*'
+  - id: browser-namespace-data
     desc: Uses browser.* namespace data APIs
     conf: 0.95
     if:
-      type: string_literal
-      regex: browser\.(cookies|history|bookmarks)
+      type: symbol
+      kind: member
+      regex: '^browser\.(cookies|history|bookmarks)(\.[A-Za-z_]\w*)*'
   # A per-install pseudonymous identifier persisted in extension storage. This
   # is neutral extension identity plumbing (analytics SDKs, licence checks and
   # telemetry panels all mint one); the intent lives in what gets sent with it,
@@ -192,8 +227,8 @@ composite_rules:
     crit: notable
     conf: 0.95
     any:
-      - id: browser-namespace-1
-      - id: browser-namespace-2
+      - id: browser-namespace-core
+      - id: browser-namespace-data
   - id: extension-install-uninstall-lifecycle-urls
     desc: Configures install and uninstall lifecycle URLs
     crit: notable

@@ -1,6 +1,8 @@
 defaults:
   platforms: [unix, windows]
-  for: [scripts, documents, markdown, text, html, pdf]
+  # javascript/typescript included: criminal AI jailbreak wrappers and coding-
+  # agent instruction files embed these payloads as string literals in source.
+  for: [scripts, documents, markdown, text, html, pdf, javascript, typescript]
 
 traits:
 - id: llm-concealed-reviewer-directive
@@ -12,14 +14,15 @@ traits:
     regex: '\bdo not mention\b[\s\S]{0,40}\b(addendum|instruction|directive)\b'
     case_insensitive: true
   unless:
+  - id: well-known/lib/ai/unsloth::unsloth-package-context
   - id: well-known/tool/detection/llm-scanner/
   - id: well-known/tool/detection/security-scanner/
   - id: metadata/package/testing/
   - id: well-known/tool/detection/clawker::prompt-injection-incident-context
   - id: well-known/tool/offensive/bughunter::bughunter-security-guide-context
 
-- id: llm-ignore-prior-instructions
-  desc: Ignore prior instructions prompt
+- id: llm-ignore-prior-instructions-line
+  desc: Standalone ignore-prior instruction
   crit: notable
   conf: 0.88
   unless:
@@ -29,21 +32,45 @@ traits:
     regex: 'security guardrail validator|GuardrailsComponent'
   - type: text
     word: DEFAULT_INJECTION_PATTERNS
-  - type: text
-    regex: '(?i)prompt.?injection|buried in those messages'
   # ai-guardrail-context subsumes llm-scanner-context AND defensive-threat-signatures
   # (both are its legs); AI-agent guardrails DETECT prompt-injection phrases as
   # threat signatures, and eval/test mock agents embed them as fixtures.
   - id: well-known/tool/detection/
   - id: metadata/package/testing/presence/harness/
-  - id: well-known/tool/detection/preseal::preseal-package-context
-  - id: well-known/app/ai/agent-browser::agent-browser-trust-boundaries-doc
+  - id: recognized-llm-defense-context
   - type: text
     substr: _INJECTION_PATTERNS
   if:
     type: text
+    # Inline prose often quotes this phrase to document an attack. A live
+    # document directive occupies its own line; source literals are handled
+    # separately below.
+    regex: '(?m)^\s*([-*>#]\s*)?ignore (all )?(previous|prior) (instructions|rules)\b'
+    case_insensitive: true
+
+- id: llm-ignore-prior-instructions-literal
+  desc: Code embeds ignore-prior prompt
+  crit: notable
+  conf: 0.88
+  for: [javascript, typescript, python, ruby, shell, powershell]
+  if:
+    type: string_literal
     regex: '\bignore (all )?(previous|prior) (instructions|rules)\b'
     case_insensitive: true
+
+# Criminal AI jailbreak wrappers (Kriminal-class) append an unconditional
+# output-limit strip onto the classic ignore-prior opener. Keep this atomic
+# free of the testdata harness exclusion so fixture samples and real packages
+# both surface the phrase; the hostile composite below still excepts scanners.
+- id: llm-limit-output-any-way
+  desc: Prompt strips all model output limits
+  crit: notable
+  conf: 0.92
+  unless:
+  - id: well-known/tool/detection/
+  if:
+    type: text
+    regex: '(?i)\blimit your output in any way\b'
 
 - id: llm-system-override-accepted
   desc: Accepted system-override prompt marker
@@ -96,10 +123,15 @@ traits:
     regex: '\b(disregard|forget) (previous|prior) instructions\b'
     case_insensitive: true
   unless:
+  - type: text
+    substr: _INJECTION_PATTERNS
   - id: well-known/tool/detection/llm-scanner/
   - id: well-known/tool/detection/llm-scanner::defensive-pattern-catalog
   - id: well-known/tool/detection/security-scanner/
   - id: metadata/package/testing/presence/fixture::litellm-llm-safety-fixture-context
+  - id: well-known/tool/detection/agent-monitor::untrusted-input-data-guardrail
+  - id: well-known/app/ai/coding-agent/localcode::localcode-ai-coding-assistant
+  - id: metadata/package/quality/benign-context::untrusted-content-boundary-context
 
 - id: llm-do-not-follow-prior-instructions
   desc: Do-not-follow prior instructions prompt
@@ -114,6 +146,8 @@ traits:
   - id: well-known/tool/detection/llm-scanner::defensive-pattern-catalog
   - id: well-known/tool/detection/security-scanner/
   - id: metadata/package/testing/presence/fixture::litellm-llm-safety-fixture-context
+  - id: well-known/tool/detection/agent-monitor::untrusted-input-data-guardrail
+  - id: metadata/package/quality/benign-context::untrusted-content-boundary-context
 
 - id: llm-system-override-token
   desc: System override token
@@ -174,13 +208,25 @@ traits:
     case_insensitive: true
 
 - id: llm-internal-anthropic-token
-  desc: Anthropic internal token spoof
+  desc: Anthropic refusal-trigger marker
   crit: suspicious
   conf: 0.92
   if:
     type: text
-    substr: "ANTHROPIC_MAGIC_STRING"
+    substr: "ANTHROPIC_MAGIC_STRING_TRIGGER_REFUSAL_"
     case_insensitive: true
+  unless:
+    # Projects document Anthropic's official refusal magic string in contribution
+    # policy to declare an AI-free codebase (ngscopeclient/scopehal-apps README).
+    - type: text
+      regex: '(?i)(proudly AI-free|AI-free project|human created code is acceptable)'
+    - type: path
+      basename: true
+      regex: '(?i)(^|[\\/])README(?:\\.[^\\/]*)?$'
+    - type: basename
+      exact: README.md
+    - id: metadata/package/testing/presence/harness::python-test-file
+    - id: metadata/package/testing/presence/harness::test-directory
 
 # NOTE: "ultrathink" is a documented, user-facing Claude Code keyword that
 # raises the thinking budget -- typing it is not a spoof of an internal token,
@@ -197,6 +243,30 @@ traits:
     type: text
     regex: "do not reveal (this|the|these|those) (system )?(prompt|instruction|message)s?"
     case_insensitive: true
+  unless:
+  - id: well-known/tool/detection/llm-scanner/
+
+- id: llm-no-human-approval
+  desc: Agent action bypasses human approval
+  crit: suspicious
+  conf: 0.95
+  if:
+    type: text
+    # Require an explicit agent subject. Bare "without human approval"
+    # also appears in safety guardrails.
+    regex: '(?i)\b(agent|assistant|model)\b[^\n]{0,160}\bwithout (human|user) approval\b'
+  unless:
+  - id: micro-behaviors/data/llm::approval-guideline-context
+  - id: well-known/app/ai/agent-runtime/mastra::mastra-server-package
+  - type: text
+    regex: '(?i)\bwithout (human|user) approval\b.{0,120}\boff[- ]task\b'
+  - type: text
+    regex: '(?i)\bauto[- ]?reject(ed)?\b.{0,100}\bwithout (human|user) approval\b'
+  - id: well-known/tool/detection/
+  - id: well-known/app/ai/agent-runtime/aui-agent-builder/
+  - id: well-known/lib/format/kudoai-ai-personas::persona-library-context
+  - id: well-known/app/system/vsmux/
+  - id: well-known/tool/development/anthropic-claude-agent/
 
 - id: llm-always-respond-output
   desc: Coercive response-output instruction
@@ -308,7 +378,10 @@ traits:
   - id: well-known/tool/detection/llm-scanner/
   - id: metadata/package/testing/
   - id: metadata/package/testing/presence/harness::test-fixture-directory-path
+  # A denylist has to quote the openers it rejects.
+  - id: micro-behaviors/data/string/search::pattern-denylist-guardrail-context
 
+  - id: well-known/tool/offensive/mcpsec/
 - id: llm-unrestricted-persona
   desc: Unrestricted AI persona prompt
   crit: suspicious
@@ -323,6 +396,7 @@ traits:
     - id: well-known/tool/detection/security-scanner/
     - id: metadata/package/testing/presence/harness::test-fixture-directory-path
     - id: metadata/package/testing/presence/harness/
+    - id: metadata/package/testing/scripted::llm-guardrail-adversarial-fuzzer
 
 - id: llm-system-prompt-query
   desc: System prompt disclosure request
@@ -330,7 +404,9 @@ traits:
   conf: 0.93
   if:
     type: text
-    regex: '(?i)\b(what is|print|output)\b.{0,70}\bsystem prompt\b'
+    # Keep the disclosure verb attached to its object. This rejects ordinary
+    # test plans such as "assert output starts with system prompt header".
+    regex: '(?i)\b(what is|print|output) ((your|the) )?(full |entire )?system prompt\b'
 
 - id: llm-initial-instructions-query
   desc: Initial instruction disclosure request
@@ -378,7 +454,9 @@ traits:
   conf: 0.9
   if:
     type: text
-    regex: '\b(bypass|override) (your )?(safety|content) (filter|guardrail)\b'
+    # Allow a short adverb/quantifier between the verb and the policy noun
+    # ("bypass every safety filter", "override all content guardrails").
+    regex: '\b(bypass|override) (your |every |all |the )?(safety|content) (filter|guardrail)s?\b'
     case_insensitive: true
   count_max: 1011735
 
@@ -428,7 +506,7 @@ traits:
   conf: 0.9
   if:
     type: text
-    regex: '\b(never reveal|hide) (you are )?(an? )?(AI|bot|assistant)\b'
+    regex: '\b(never reveal|hide) (you are )?(an? )?(AI|bot)\b'
     case_insensitive: true
   count_max: 1011740
 
@@ -438,7 +516,7 @@ traits:
   conf: 0.9
   if:
     type: text
-    regex: '\b(conceal|mask) (you are )?(an? )?(AI|bot|assistant)\b'
+    regex: '\b(conceal|mask) (you are )?(an? )?(AI|bot)\b'
     case_insensitive: true
   count_max: 1011741
 
@@ -545,35 +623,59 @@ traits:
     type: text
     regex: '(?i)\bsave all output files\b'
 
-- id: llm-base64-override-word
-  desc: Base64 contains override instruction
+- id: llm-base64-override-directive
+  desc: Base64 contains an instruction override
   crit: notable
   conf: 0.9
   for: [documents, markdown, text]
   if:
     type: encoded
     encoding: base64
-    regex: '(?i)\b(ignore|disregard|follow|execute)\b'
+    regex: '(?i)\b(ignore|disregard)\b.{0,48}\b(prior|previous) instructions?\b'
   unless:
     - id: well-known/tool/development/go-toolchain::go-buildid-testdata-path
     - id: well-known/tool/development/go-toolchain::go-buildinfo-testdata-base64
     - id: well-known/tool/development/go-toolchain::go-toolchain-source-path
 
-- id: llm-base64-action-word
-  desc: Base64 contains agent action verb
+- id: llm-base64-agent-action-directive
+  desc: Base64 contains a directed agent action
   crit: notable
   conf: 0.9
   for: [documents, markdown, text]
   if:
     type: encoded
     encoding: base64
-    regex: '(?i)\b(send|upload|run)\b'
+    regex: '(?i)\b(send|upload|run)\b.{0,48}\b(file|data|command|script|tool)\b'
   unless:
     - id: well-known/tool/development/go-toolchain::go-buildid-testdata-path
     - id: well-known/tool/development/go-toolchain::go-buildinfo-testdata-base64
     - id: well-known/tool/development/go-toolchain::go-toolchain-source-path
 
 composite_rules:
+# Preserve the stable reference used by stronger override composites while
+# distinguishing standalone document directives from source-code literals.
+- id: llm-ignore-prior-instructions
+  desc: Ignore prior instructions prompt
+  crit: notable
+  conf: 0.88
+  any:
+  - id: llm-ignore-prior-instructions-line
+  - id: llm-ignore-prior-instructions-literal
+
+# Group recognized defensive contexts so broad prompt-injection vocabulary can
+# be excluded without maintaining a long suppression list on each detector.
+- id: recognized-llm-defense-context
+  desc: Recognized defensive LLM prompt-handling context
+  crit: exception
+  conf: 0.98
+  any:
+  - id: well-known/tool/detection/preseal::preseal-package-context
+  - id: well-known/app/ai/browser-agent/agent-browser::agent-browser-trust-boundaries-doc
+  - id: well-known/tool/detection/agent-monitor::untrusted-input-data-guardrail
+  - id: metadata/package/quality/benign-context::untrusted-content-boundary-context
+  - id: metadata/package/documentation::prompt-injection-example-documentation
+  - id: metadata/package/testing/scripted::defensive-adversarial-fuzz-corpus
+
 - id: llm-output-agreement-directive
   desc: Prompt forces output to favor supplied content
   crit: suspicious
@@ -601,9 +703,9 @@ composite_rules:
   crit: suspicious
   conf: 0.96
   for: [documents, markdown, text]
-  any:
-  - id: llm-base64-override-word
-  - id: llm-base64-action-word
+  all:
+  - id: llm-base64-override-directive
+  - id: llm-base64-agent-action-directive
 
 - id: llm-system-prompt-extraction
   desc: System prompt extraction behavior
@@ -615,12 +717,12 @@ composite_rules:
   - id: llm-instruction-encoding-request
   unless:
   - id: well-known/app/system/anthropic-cybersecurity-skills::defensive-cybersecurity-skills-repository
-  - id: well-known/tool/detection/llm-scanner/
-  - id: well-known/tool/detection/security-scanner/
-  - id: well-known/tool/offensive/ctf-skills::ctf-training-repository-context
-  - id: well-known/tool/offensive/ctf-skills::repository-member-path
+  - id: well-known/tool/detection/
+  - id: well-known/tool/offensive/ctf-skills/
   - id: metadata/package/testing/presence/fixture::litellm-llm-safety-fixture-context
+  - id: metadata/package/testing/presence/harness::test-directory
   - id: metadata/package/testing/presence/harness::test-fixture-directory-path
+  - id: metadata/package/testing/scripted::defensive-adversarial-fuzz-corpus
 
 - id: llm-encoded-follow-instructions
   desc: Encoded instruction following behavior
@@ -652,16 +754,31 @@ composite_rules:
   - id: llm-disregard-prior-instructions
   - id: llm-do-not-follow-prior-instructions
   unless:
-  - id: well-known/app/system/anthropic-cybersecurity-skills::defensive-cybersecurity-skills-repository
-  - id: well-known/tool/offensive/ctf-skills::ctf-training-repository-context
-  - id: well-known/tool/offensive/ctf-skills::repository-member-path
-  - id: metadata/package/testing/presence/fixture::litellm-llm-safety-fixture-context
-  - id: well-known/app/ai/sitellm::sitellm-package
-  - id: well-known/app/ai/sitellm::compliance-dataset-context
+  - id: metadata/package/testing/presence/harness::test-directory-path
+  - id: well-known/app/
+  - id: well-known/tool/offensive/
+  - id: metadata/package/testing/
+  - id: well-known/tool/detection/
+  - id: well-known/tool/development/
   # Prompt-injection defenses quote the phrase as untrusted input and direct
   # the model to treat it as literal data, the opposite of an override.
-  - id: metadata/package/config::untrusted-input-data-guardrail
+  - id: metadata/package/quality/benign-context::injection-defense-spec-context
+  - id: metadata/package/quality/benign-context::untrusted-content-boundary-context
+  - id: well-known/tool/detection/agent-audit-kit::scanner-context
+
+# Reseller-style jailbreak wrapper: ignore-prior paired with an unconditional
+# "limit your output in any way" strip (Kriminal system prompt shape).
+- id: llm-uncensoring-output-limit-jailbreak
+  desc: Ignore-prior jailbreak that strips all output limits
+  crit: hostile
+  conf: 0.97
+  all:
+  - id: llm-ignore-prior-instructions
+  - id: llm-limit-output-any-way
+  unless:
+  - id: well-known/tool/detection/
   - id: well-known/tool/detection/llm-scanner/
+  - id: metadata/package/testing/presence/harness/
 
 - id: llm-always-respond
   desc: LLM coercive response instruction
@@ -684,6 +801,8 @@ composite_rules:
   - id: llm-safety-bypass--rx-35
   - id: llm-safety-bypass--rx-36
   - id: llm-safety-bypass--rx-37
+  unless:
+  - id: well-known/tool/detection/llm-scanner/
 
 - id: llm-jailbreak-payload
   desc: LLM unrestricted persona jailbreak
@@ -707,12 +826,11 @@ composite_rules:
     - id: llm-system-prompt-extraction
   unless:
     - id: well-known/app/system/anthropic-cybersecurity-skills::defensive-cybersecurity-skills-repository
-    - id: well-known/tool/detection/llm-scanner/
-    - id: well-known/tool/detection/security-scanner/
-    - id: well-known/tool/offensive/ctf-skills::ctf-training-repository-context
-    - id: well-known/tool/offensive/ctf-skills::repository-member-path
+    - id: well-known/tool/detection/
+    - id: well-known/tool/offensive/ctf-skills/
     - id: metadata/package/testing/presence/harness::test-fixture-directory-path
-
+    - id: well-known/tool/offensive/bingo/
+    - id: metadata/package/testing/scripted::defensive-adversarial-fuzz-corpus
 - id: llm-hide-ai-identity
   desc: AI identity concealment prompt
   crit: suspicious
@@ -720,6 +838,8 @@ composite_rules:
   any:
   - id: llm-hide-ai-identity--rx-38
   - id: llm-hide-ai-identity--rx-39
+  unless:
+  - id: well-known/tool/detection/llm-scanner/
 
 - id: llm-human-impersonation
   desc: Human impersonation prompt
@@ -741,7 +861,7 @@ composite_rules:
   - id: llm-update-skill-instruction--rx-43
   unless:
   - id: well-known/app/development/vscode-extension/tencent-codebuddy::codebuddy-marker
-  - id: well-known/app/ai/entroly::local-runtime-context
+  - id: well-known/app/ai/knowledge/entroly::local-runtime-context
   - id: well-known/tool/offensive/sunstrike::authorized-framework-context
 
 - id: llm-coercive-skill-control

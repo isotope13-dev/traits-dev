@@ -23,13 +23,16 @@ traits:
     count_min: 40
     if:
       type: text
-      regex: ^[A-Z][a-zA-Z0-9]{10,24}\.\(\*[A-Z][a-zA-Z0-9]{10,24}\)\.[A-Z][a-zA-Z0-9]{5,15}$
+      regex: ^[A-Z][a-zA-Z]{10,24}\.\(\*[A-Z][a-zA-Z]{10,24}\)\.[A-Z][a-zA-Z]{5,15}$
   # Source/script invocation of mvdan.cc/garble — distinct from binary fingerprints.
   - id: garble-build-invocation
     desc: Invokes garble build for Go obfuscation
     crit: suspicious
     conf: 0.96
-    for: [batch, shell, powershell, python, text, source]
+    # Dockerfile and CI workflows added: an implant's build recipe is as
+    # often a container image or a pipeline step as it is a shell script,
+    # and those two file types were the ones missing.
+    for: [batch, shell, powershell, python, text, source, dockerfile, github-actions]
     if:
       type: text
       regex: (?i)\bgarble(\.exe)?\s+build\b
@@ -37,20 +40,33 @@ traits:
     desc: Instructs installing mvdan.cc/garble
     crit: notable
     conf: 0.93
-    for: [batch, shell, powershell, python, text, source]
+    for: [batch, shell, powershell, python, text, source, dockerfile, github-actions]
     if:
       type: text
       substr: mvdan.cc/garble
 composite_rules:
   - id: garble-obfuscated-go
     desc: Garble obfuscated Go binary
-    crit: hostile
+    # Garble is a public, general-purpose obfuscator.  It is useful triage
+    # context, but is not hostile without a concrete loader or theft behavior.
+    crit: suspicious
     conf: 0.95
+    # `go-binary` is the `.gopclntab` section check, which Go PEs do not carry
+    # — Windows Go builds keep the pclntab inside `.rdata`. Gating on it alone
+    # made this composite unreachable for exactly the platform garble is used
+    # on most, so the Go-ness test is the multi-signal `go-binary-comp`
+    # composite (runtime markers, version string, retained `.symtab`) instead.
     all:
-      - id: metadata/lang/compiler/systems::go-binary
+      - id: metadata/lang/compiler/systems::go-binary-comp
     any:
       - id: garble-random-packages
       - id: garble-random-packages-no-digit
+      # Garble rewrites the module and build paths to the same random token it
+      # uses for package names. On a stripped PE those two buildinfo fields
+      # often survive when the mangled method strings above do not, so they
+      # stand in as the obfuscation evidence.
+      - id: metadata/lang/compiler/systems::go-opaque-module-path
+      - id: metadata/lang/compiler/systems::go-opaque-build-path
   - id: garble-opsec-build-script
     desc: Build script installs and runs garble
     crit: hostile
@@ -60,6 +76,6 @@ composite_rules:
       - id: garble-build-invocation
       - id: garble-install-hint
     any:
-      - id: objectives/command-and-control/dropper/execution/build::go-ldflags-hide-gui
-      - id: objectives/command-and-control/dropper/execution/build::go-ldflags-strip
-      - id: objectives/command-and-control/dropper/execution/build::go-cross-compile-agent-output
+      - id: micro-behaviors/process/create/compile::go-ldflags-windows-gui
+      - id: micro-behaviors/process/create/compile::go-ldflags-strip
+      - id: micro-behaviors/process/create/compile::go-cross-compile-agent-output

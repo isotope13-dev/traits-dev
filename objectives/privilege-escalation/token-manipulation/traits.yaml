@@ -59,6 +59,23 @@ traits:
     type: text
     regex: list Kerberos tickets|purge a Kerberos ticket|import Kerberos ticket into a logon session
 composite_rules:
+- id: debug-privilege-browser-process-stager
+  desc: Enables debug privilege and opens encoded browser targets for staging
+  crit: hostile
+  conf: 0.99
+  attack: T1134,T1057
+  all:
+  - id: micro-behaviors/os/privilege/token::rtl-enable-debug-privilege-x64
+  - id: micro-behaviors/process/enumerate/snapshot::toolhelp-process-enumeration-symbol
+  - id: micro-behaviors/process/create/spawn::open-process
+  - id: objectives/anti-static/obfuscation/string/encoding::db-substitution-browser-target-set
+  - id: metadata/binary/metrics/pe-details::pe-dll-characteristics
+  any:
+  - id: micro-behaviors/fs/memory/mmap::create-file-mapping-w
+  - id: micro-behaviors/process/create/spawn::create-process-w
+  needs: 2
+  unless:
+  - id: metadata/signed/platform/
 - id: token-adjustment-benign-tool-context
   desc: Recognized administration tool or IObit component context
   crit: exception
@@ -68,7 +85,7 @@ composite_rules:
   - id: well-known/app/system/iobit/
 - id: privilege-adjusted-process-launch
   desc: Adjusts token privileges before launching with a user token
-  crit: hostile
+  crit: suspicious
   conf: 0.96
   attack: T1134.001,T1134
   all:
@@ -81,6 +98,9 @@ composite_rules:
   - id: micro-behaviors/process/create/spawn::create-process-with-token
   needs: 1
   unless:
+  # Compiled AutoIt carries a full interpreter whose unused runtime contains
+  # the same privilege and process-launch APIs.
+  - id: metadata/lang/compiled::autoit-compiled-script
   - id: metadata/signed/platform/
   - id: token-adjustment-benign-tool-context
   - id: well-known/app/utility/sordum::bluelife-hosts-editor
@@ -189,6 +209,21 @@ composite_rules:
   unless:
   - id: metadata/binary/metrics/threshold::many-exports-100
   - id: metadata/library/python-runtime::python-runtime
+  # Same shape as the CPython exclusion above, one runtime over. A .NET binary
+  # that embeds its own runtime carries the CLR's import table and string pool,
+  # and those name every leg of this chain on their own: OpenProcessToken,
+  # LookupPrivilegeValueW and AdjustTokenPrivileges are imported by the host,
+  # `SeLockMemoryPrivilege` is the GC's large-pages option, and
+  # `SeDebugPrivilege` belongs to System.Diagnostics.Process. A self-contained
+  # `dotnet publish` of a hello-world CLI therefore matched in full. Real
+  # privilege escalation in managed code still reports here: the exemption is
+  # gated on the binary naming no privilege beyond SeDebug, so a managed
+  # stealer reaching for SeImpersonate, SeTcb, SeLoadDriver, SeTakeOwnership or
+  # SeAssignPrimaryToken matches this chain exactly as it did before.
+  - id: metadata/lang/compiler/aot::nativeaot-runtime-token-surface-only
+  # Action1 runs as LocalSystem and adjusts token privileges for documented
+  # endpoint-management operations; this is administration, not escalation.
+  - id: well-known/dual-use/remote-admin/action1::action1-version-resource-context
 - id: rust-token-privilege-adjustment
   desc: Rust token privilege adjustment chain
   crit: notable
@@ -248,6 +283,7 @@ composite_rules:
   - id: well-known/lib/platform/windows-vault::windows-vaultcli-component
   - id: metadata/signed/developer::vmware
   - id: metadata/binary/framework::dotnet-singlefilehost-runtime
+  - id: metadata/binary/framework::dotnet-selfcontained-bundle
   - id: metadata/binary/installer/script::inno-setup
   - id: urlmon-dll-basename
 - id: source-token-impersonation-suite

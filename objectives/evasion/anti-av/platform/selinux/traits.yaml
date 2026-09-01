@@ -27,43 +27,45 @@ traits:
       - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
       - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
       - id: metadata/lang/source::linux-kernel-primary-tree-path
-  - id: semodule-command
-    desc: Installs or removes SELinux policy modules
+  # Only module *removal* and *disabling* degrade the MAC policy. Installing or
+  # enabling a module (`semodule -i/-e`, and the `-n`/`-B` reload flags) is what
+  # every RPM %post scriptlet, container build, and Ansible SELinux role does to
+  # ship its own policy — that neutral form lives in
+  # micro-behaviors/os/security/selinux::semodule-install-command.
+  - id: semodule-remove-command
+    desc: Removes or disables an SELinux policy module
     crit: suspicious
     conf: 0.8
     for:
       - shell
     if:
       type: text
-      regex: '(?m)^\s*(sudo\s+)?semodule\s+-[irden]\b'
+      regex: '(?m)^\s*(sudo\s+)?semodule\s+-[rd]\b'
     unless:
       - id: well-known/tool/detection/wazuh/
-      # An RPM %post scriptlet running semodule installs the package's own
-      # SELinux policy module (legitimate packaging), not AV evasion.
-      - id: well-known/app/system/netatalk::netatalk-source-tree
-  - id: selinux-equals-zero
-    desc: selinux=0 boot param disables SELinux
+  - id: grubby-selinux-zero-argument
+    desc: Grubby adds selinux=0 to kernel boot arguments
     crit: suspicious
     conf: 0.85
     for:
       - shell
     if:
-      type: string_literal
-      substr: selinux=0
+      type: text
+      regex: '(?m)\bgrubby\b[^\n]{0,120}--args[ =][^\n]{0,120}\bselinux=0\b'
     unless:
       - id: metadata/lang/source::linux-kernel-primary-tree-path
       - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
       - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-any
       - id: well-known/tool/detection/security-remediation::openscap-cis-remediation-script
-  - id: enforcing-equals-zero
-    desc: enforcing=0 boot param, SELinux permissive
+  - id: grubby-enforcing-zero-argument
+    desc: Grubby adds enforcing=0 to kernel boot arguments
     crit: suspicious
     conf: 0.85
     for:
       - shell
     if:
-      type: string_literal
-      substr: enforcing=0
+      type: text
+      regex: '(?m)\bgrubby\b[^\n]{0,120}--args[ =][^\n]{0,120}\benforcing=0\b'
     unless:
       - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
       - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-any
@@ -88,6 +90,7 @@ traits:
       - id: well-known/app/data/ease::installer-script-marker
       - id: well-known/tool/detection/security-remediation::openscap-cis-remediation-script
       - id: well-known/app/storage/clonezilla::drbl-locale-catalog-context
+      - id: well-known/app/infrastructure/linuxmirrors::project-identity
     downgrade:
       any:
         - id: micro-behaviors/os/service/legitimate::installer-script
@@ -103,6 +106,7 @@ traits:
       type: text
       regex: '(?m)(^[ \t]*|\b(sed|echo|printf)\b[^\n]{0,80})SELINUX=permissive'
     unless:
+      - id: metadata/file/catalog/identity::linux-kernel-selinux-policy-installer
       - id: well-known/tool/sysadmin/cubesandbox::cubesandbox-source-path
       - id: well-known/app/data/ease::installer-script-marker
       - id: well-known/tool/sysadmin/k3s::k3s-vagrant-provisioner
@@ -161,22 +165,6 @@ traits:
     if:
       type: symbol
       exact: sel_write_enforce
-  - id: policy-file-pattern-ext-a
-    desc: SELinux policy extension set A
-    crit: suspicious
-    conf: 0.65
-    for: [scripts, binaries]
-    if:
-      type: text
-      regex: policy\.(3[0-9]|pp|te)$
-  - id: policy-file-pattern-ext-b
-    desc: SELinux policy extension set B
-    crit: suspicious
-    conf: 0.65
-    for: [scripts, binaries]
-    if:
-      type: text
-      regex: policy\.(fc|if)$
 composite_rules:
   - id: enforcement-commands
     desc: SELinux enforcement commands
@@ -200,7 +188,7 @@ composite_rules:
       - shell
     any:
       - id: load-policy-command
-      - id: semodule-command
+      - id: semodule-remove-command
     crit: suspicious
     unless:
       - id: metadata/lang/source::linux-kernel-secondary-tree-path
@@ -210,33 +198,18 @@ composite_rules:
       - id: well-known/app/infrastructure/virtualbox::unattended-template
       - id: well-known/app/data/postgresql::postgresql-source-tree
       - id: well-known/tool/detection/wazuh/
-  - id: policy-file-pattern
-    desc: SELinux policy binary file
-    crit: notable
-    conf: 0.65
-    for: [scripts, binaries]
-    any:
-      - id: micro-behaviors/fs/path/config/system::selinux-policy-path
-      - id: policy-file-pattern-ext-a
-      - id: policy-file-pattern-ext-b
-    unless:
-      - id: well-known/tool/reverse-engineering/frida/
-      - id: metadata/package/testing/presence/harness::ruby-spec-file
-      - id: well-known/lib/core/specinfra/
-      - id: well-known/tool/sysadmin/busybox::busybox-binary
-  # Two of the four legs are /etc/selinux/config writes, not boot parameters,
-  # so the description names both surfaces this umbrella actually covers.
-  - id: kernel-parameters
-    desc: SELinux turned off by boot param or config
+  - id: enforcement-reduction
+    desc: Weakens SELinux enforcement via boot or config
     for:
       - shell
     any:
-      - id: selinux-equals-zero
-      - id: enforcing-equals-zero
+      - id: grubby-selinux-zero-argument
+      - id: grubby-enforcing-zero-argument
       - id: selinux-disabled-config
       - id: selinux-permissive-config
     crit: suspicious
     unless:
+      - id: metadata/file/catalog/identity::linux-kernel-selinux-policy-installer
       - id: metadata/lang/source::linux-kernel-primary-tree-path
       - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
       - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-any
@@ -313,7 +286,7 @@ composite_rules:
     needs: 2
     any:
       - id: enforcement-commands
-      - id: kernel-parameters
+      - id: enforcement-reduction
       - id: runtime-patch
     unless:
       - id: metadata/lang/source::linux-kernel-primary-tree-path

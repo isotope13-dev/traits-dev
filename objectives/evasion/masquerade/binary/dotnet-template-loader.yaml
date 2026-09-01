@@ -3,28 +3,80 @@ defaults:
   for: [pe]
 
 composite_rules:
-  - id: dotnet-template-future-process-launcher
-    desc: Future-dated template-named .NET process launcher
+  - id: dotnet-template-resource-application-context
+    desc: Recognized .NET template resource application
+    crit: exception
+    conf: 0.99
+    any:
+      - id: well-known/app/productivity/thebrain::thebrain-known-app-context
+      - id: well-known/game/pkhex::pkhex-save-editor
+
+  # The premise of every rule below is that the binary kept the *stock* Visual
+  # Basic application manifest instead of presenting an identity of its own, so
+  # the question each one really asks is whether this assembly has an identity.
+  # A VERSIONINFO block naming a product and its version is that identity: the
+  # template manifest is then a build artifact, not a masquerade.
+  #
+  # Every leg of those composites is a token in the .NET #Strings metadata heap
+  # -- `WriteAllBytes`, `MethodBase`, `CreateDecryptor`, `GetManifestResourceStream`
+  # are present because the assembly *references* the API, not because it calls
+  # it on a payload -- so a large WinForms application satisfies all of them for
+  # free and only the identity question separates it from a crypter stub.
+  # Observed: mRemoteNG, Bug Shooting, TerminalWorks CLScan, EZBlocker,
+  # IphoneCarrierChecker and a tarot-card hobby app all convicted this way.
+  #
+  # Requiring the *complete* vendor block (company plus a Visual Studio PDB) was
+  # too strict to do that job: small published software routinely ships neither
+  # -- Bug Shooting and IphoneCarrierChecker carry no CompanyName at all, and
+  # EZBlocker's is a bare URL. A crypter stub, by contrast, either carries no
+  # VERSIONINFO or forges a Microsoft one, which
+  # metadata/binary/vendor::microsoft-prefixed-company already covers.
+  - id: dotnet-template-product-identity-context
+    desc: Template manifest on identified product build
+    crit: exception
+    conf: 0.95
+    all:
+      - id: metadata/package/versioning::pe-version-product-name-value
+      - id: metadata/package/versioning::pe-version-file-version-value
+
+  - id: dotnet-template-embedded-resource-write-launcher
+    desc: Template-named .NET embedded-resource process stager
     crit: hostile
-    conf: 0.97
-    attack: T1036.005,T1106
-    mbc: F0004
+    conf: 0.98
+    attack: T1027.009,T1106,T1059
+    mbc: B0009
     all:
       - id: metadata/binary/framework::dotnet-assembly
       - id: metadata/build/manifest::pe-manifest-myapplication-template
-      - id: metadata/binary/anomaly/provenance::pe-far-future-timestamp
-    any:
-      - id: micro-behaviors/process/create/launch::create-process-api-name
+      - id: micro-behaviors/data/embedded/payload/resource::dotnet-managed-resource-access
       - id: micro-behaviors/process/create/spawn::process-token-dotnet
-      - id: micro-behaviors/process/create/spawn::dotnet-redirected-stdio
-    needs: 1
+      - id: micro-behaviors/fs/write/file/direct::dotnet-writeallbytes-token
+    any:
+      - id: micro-behaviors/process/create/spawn::use-shell-execute-property
+      - id: micro-behaviors/process/create/shellexec::shell-execute-call
     unless:
       - id: metadata/signed/platform/
-      - id: well-known/tool/development/dotrush::dotrush-debug-host
-      # Commercial TheBrainHost retains the VS MyApplication.app template
-      # identity and a far-future COFF stamp while legitimately spawning
-      # child processes; that is product packaging, not masquerade.
-      - id: well-known/app/productivity/thebrain::thebrain-known-app-context
+      - id: dotnet-template-resource-application-context
+      - id: dotnet-template-product-identity-context
+
+  - id: dotnet-template-scheduled-task-stager
+    desc: Template-named .NET loader creates an unlimited scheduled task
+    crit: hostile
+    conf: 0.98
+    attack: T1036.005,T1053.005,T1106
+    mbc: F0012
+    all:
+      - id: metadata/build/manifest::pe-manifest-myapplication-template
+      - id: micro-behaviors/process/create/spawn::process-token-dotnet
+      - id: micro-behaviors/os/autorun/scheduled::schtasks-create-cmd
+      - id: micro-behaviors/os/autorun/scheduled-task-xml::scheduled-task-unlimited-runtime-xml
+    any:
+      - id: micro-behaviors/data/embedded/payload/resource::dotnet-managed-resource-access
+      - id: micro-behaviors/fs/write/file/direct::dotnet-writeallbytes-token
+      - id: micro-behaviors/process/create/spawn::use-shell-execute-property
+    unless:
+      - id: metadata/signed/platform/
+      - id: dotnet-template-product-identity-context
 
   # Default VS MyApplication identity plus a far-future COFF stamp and
   # Reactor, with AES/native-delegate/Reflection.Emit staging legs, is a
@@ -66,19 +118,17 @@ composite_rules:
       - id: metadata/signed/platform/
 
   - id: dotnet-template-encoded-network-loader
-    desc: .NET template identity with encoded network loader
+    desc: Template-named .NET encoded download-to-file stager
     crit: hostile
     conf: 0.97
     attack: "T1036.005,T1105,T1140"
     all:
       - id: metadata/binary/framework::dotnet-metadata
       - id: metadata/build/manifest::pe-manifest-myapplication-template
-      - id: micro-behaviors/communications/http/client/managed::downloadstring
-      - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
-    any:
-      - id: micro-behaviors/data/compress/library::gzipstream-dotnet
-      - id: micro-behaviors/os/syscall/raw::nt-protect-ssn
-    needs: 1
+      # This component requires download, Base64 decode, GZip, and file-write
+      # tokens to cluster in one small stager. Requiring the complete chain
+      # avoids combining unrelated helpers from large merged .NET binaries.
+      - id: objectives/command-and-control/dropper/delivery/download-execute::dotnet-encoded-stage-write-cluster
     unless:
       - id: metadata/signed/platform/
 
@@ -103,6 +153,11 @@ composite_rules:
       - id: micro-behaviors/communications/http/client/managed::downloadstring
     needs: 1
     unless:
+      # Every leg above is a .NET #Strings metadata token, which a large
+      # managed application satisfies by referencing the API at all. An
+      # assembly naming a product and version has the identity these
+      # composites assume is absent.
+      - id: objectives/evasion/masquerade/binary::dotnet-template-product-identity-context
       - id: metadata/signed/platform/
       - id: metadata/binary/installer/family/
       - id: well-known/app/system/black-lightning::black-lightning-identity-context

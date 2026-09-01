@@ -56,27 +56,32 @@ traits:
   conf: 0.75
   if:
     type: text
-    regex: '(grep|awk|sed).{0,50}\$?[A-Z0-9]+_KEY\b'
+    regex: '\b(grep|awk|sed)\b.{0,50}\$?[A-Z0-9]+_KEY\b'
   unless:
     - id: metadata/lang/source::linux-kernel-secondary-tree-path
     - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
     - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
     - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
     - id: metadata/lang/source::linux-kernel-primary-tree-path
+# Both KEY traits anchor the tool name on word boundaries: without them `sed`
+# matched inside ordinary words, so a shell line like
+# `[ -n "${FREE_KEY:-}" ] || { echo "no api_key parsed"; ... }` was reported as
+# a key handed to a grep-like tool. The match is proximity, not a pipe, so the
+# descriptions say "near" rather than "piped to".
 - id: sensitive-var-key-before-tool
-  desc: KEY-suffixed variable piped to a grep-like tool
+  desc: KEY-suffixed variable near a grep-like tool
   crit: notable
   conf: 0.75
   if:
     type: text
-    regex: '\$?[A-Z0-9]+_KEY\b.{0,50}(grep|awk|sed)'
+    regex: '\$?[A-Z0-9]+_KEY\b.{0,50}\b(grep|awk|sed)\b'
 - id: sensitive-var-tool-before-pass
   desc: Grep-like tool reads dollar PASS variable
   crit: notable
   conf: 0.75
   if:
     type: text
-    regex: '(?m)^.{0,200}(grep|awk|sed).{0,50}\$[A-Z_]*PASS\b'
+    regex: '(?m)^.{0,200}\b(grep|awk|sed)\b.{0,50}\$[A-Z_]*PASS\b'
   unless:
     - id: well-known/app/infrastructure/pulumi::pulumi-source-tree
 - id: sensitive-var-tool-before-password
@@ -187,6 +192,8 @@ traits:
   unless:
   - id: well-known/app/productivity/stirling-pdf::source-tree
   - id: metadata/package/testing/presence/harness::github-actions-testdata-directory-path
+  - id: well-known/tool/detection/semgrep::rule-test-annotation
+  - id: well-known/tool/development/github-actions/file-changes-action/
 - id: gha-issue-field-run
   desc: GitHub issue field in shell
   crit: suspicious
@@ -200,7 +207,8 @@ traits:
   - type: path
     regex: '(^|[\\/])\.github[\\/]workflows[\\/]auto-answer-issues\.ya?ml$'
   - id: metadata/package/testing/presence/harness::github-actions-testdata-directory-path
-  - id: well-known/tool/development/oz-agent-action::oz-agent-action-source
+  - id: well-known/tool/detection/semgrep::rule-test-annotation
+  - id: well-known/tool/development/ai-cli/oz-agent-action::oz-agent-action-source
 - id: gha-pr-field-run
   desc: GitHub PR field in shell
   # Interpolating PR title/body into a run step is a common commitlint/changelog
@@ -214,6 +222,7 @@ traits:
     regex: '\$\{\{\s*github\.event\.pull_request\.(title|body)\s*\}\}'
   unless:
   - id: metadata/package/testing/presence/harness::github-actions-testdata-directory-path
+  - id: well-known/tool/detection/semgrep::rule-test-annotation
 - id: gha-head-ref-run
   desc: GitHub head_ref in shell
   crit: component
@@ -440,14 +449,11 @@ composite_rules:
   conf: 0.95
   for: [github-actions]
   attack: "T1552.001"
-  any:
-  - id: micro-behaviors/communications/http/request/credentials::curl-secret-reference
-  - id: gha-base64-secrets
   all:
-  # Printing the environment is a capability, not the theft: `- run: env` is a
-  # stock CI debugging step. The `any:` leg above is what turns it into
-  # exfiltration, so the atom lives in micro-behaviors/os/env/dump/.
-  - id: micro-behaviors/os/env/dump::gha-step-prints-environment
+  - id: micro-behaviors/communications/http/request/credentials::curl-secret-reference
+  any:
+  - id: objectives/supply-chain/recon-exfil/secrets::secrets-in-curl
+  - id: gha-base64-secrets
 # Fetching a script from a secret-held URL and running it is opaque remote
 # code execution, but it has legitimate uses (private/owner-controlled data
 # updaters that keep their scraper source private). On its own it is
@@ -468,8 +474,8 @@ composite_rules:
   # That self-update shape is notable automation, not opaque remote exec.
   downgrade:
     all:
-      - id: metadata/build/github-actions::github-push-action
-      - id: metadata/build/github-actions::github-token-secret
+      - id: metadata/build/ci/step::github-push-action
+      - id: metadata/build/ci/secret::github-token-secret
 # Committing the output of a secret-fetched updater back to its own repo is
 # normal automation for auto-updated data repos (proxy lists, mirrors); a
 # notable supply-chain observation, not a hostile push on its own.
@@ -480,8 +486,8 @@ composite_rules:
   for: [github-actions]
   all:
   - id: gha-secret-python-download-exec
-  - id: metadata/build/github-actions::github-push-action
-  - id: metadata/build/github-actions::github-token-secret
+  - id: metadata/build/ci/step::github-push-action
+  - id: metadata/build/ci/secret::github-token-secret
 - id: gha-untrusted-shell-injection
   desc: Untrusted GitHub field shell injection
   crit: hostile
@@ -493,12 +499,20 @@ composite_rules:
   - id: gha-issue-shell-stager
   - id: gha-pr-shell-stager
   - id: gha-head-ref-shell-stager
+# For the four *-shell-stager composites below: the untrusted field and the
+# curl|shell must be the SAME command, not merely the same workflow file. Held
+# file-wide, any project that both reports a branch name into a webhook payload
+# AND separately bootstraps a tool with `curl ... | sh` matched --
+# ethersphere/bee's beekeeper.yml prints `github.head_ref` into a Slack
+# notification 537 bytes away from an unrelated tunshell debug bootstrap, and
+# was reported as a trojanized build pipeline.
 - id: gha-comment-shell-stager
   desc: Comment field executes shell stager
   crit: hostile
   conf: 0.98
   for: [github-actions]
   attack: "T1059.004, T1195.002"
+  near_bytes: 200
   all:
   - id: gha-comment-body-run
   - id: gha-run-curl-pipe-shell
@@ -512,7 +526,7 @@ composite_rules:
   for: [github-actions]
   attack: "T1059.004,T1195.002"
   all:
-  - id: metadata/build/github-actions::issue-comment-trigger
+  - id: metadata/build/ci/trigger::issue-comment-trigger
   - id: gha-comment-body-run
   - id: micro-behaviors/process/create/shell/git::github-actions-git-tag-and-push
 - id: gha-issue-shell-stager
@@ -521,6 +535,7 @@ composite_rules:
   conf: 0.98
   for: [github-actions]
   attack: "T1059.004, T1195.002"
+  near_bytes: 200
   all:
   - id: gha-issue-field-run
   - id: gha-run-curl-pipe-shell
@@ -530,6 +545,7 @@ composite_rules:
   conf: 0.98
   for: [github-actions]
   attack: "T1059.004, T1195.002"
+  near_bytes: 200
   all:
   - id: gha-pr-field-run
   - id: gha-run-curl-pipe-shell
@@ -539,6 +555,7 @@ composite_rules:
   conf: 0.97
   for: [github-actions]
   attack: "T1059.004, T1195.002"
+  near_bytes: 200
   all:
   - id: gha-head-ref-run
   - id: gha-run-curl-pipe-shell
@@ -583,29 +600,27 @@ composite_rules:
   - id: wget-output-artifact-short-b
   - id: wget-output-artifact-long-a
   - id: wget-output-artifact-long-b
-- id: artifact-replace-target
-  desc: Replace build artifacts
-  crit: suspicious
-  conf: 0.8
-  any:
+- id: downloaded-dist-artifact
+  desc: Download stages into dist or build output
+  crit: component
+  conf: 0.9
+  all:
+  - id: download-replace-artifact
   - id: micro-behaviors/fs/build-artifacts::stage-dist-build
+- id: downloaded-target-artifact
+  desc: Download stages into out or target output
+  crit: component
+  conf: 0.9
+  all:
+  - id: download-replace-artifact
   - id: micro-behaviors/fs/build-artifacts::stage-out-target
-  unless:
-  - id: metadata/package/testing/presence/harness::shell-crate-test-path
-  - id: metadata/build/conda::conda-recipe-prefix-install-script
-  - id: makefile-basename
-  - id: micro-behaviors/process/create/shell/build::js-package-run-build-command
-  - id: well-known/app/ai/tabby/
-  - id: metadata/package/testing/presence/harness::go-test-file
-  - id: metadata/file/string/file::shell-benchmark-script-basename
-  - id: metadata/file/string/file::shell-scripts-dir-context
 - id: artifact-poisoning
   desc: Build artifact poisoning
   crit: hostile
   conf: 0.9
-  all:
-  - id: download-replace-artifact
-  - id: artifact-replace-target
+  any:
+  - id: downloaded-dist-artifact
+  - id: downloaded-target-artifact
   # === Any CI/CD Attack ===
 - id: ci-cd-supply-chain-attack
   desc: CI/CD supply chain attack

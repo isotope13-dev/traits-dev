@@ -1,0 +1,58 @@
+# Resilient C2 endpoint resolution through Ethereum contract storage. The
+# contract is a mutable dead drop: an implant reads eth_getStorageAt, decodes
+# the returned hex value as an IP address, and uses it only when its primary
+# endpoint is unavailable. No provider, contract, wallet, or family IOC is
+# required, so equivalent deployments survive infrastructure rotation.
+defaults:
+  platforms: [windows, unix]
+  for: [go, python, javascript, typescript]
+  attack: T1102
+  mbc: B0030
+
+composite_rules:
+  - id: ethereum-storage-ip-resolver
+    desc: Decodes an IP address from Ethereum contract storage
+    crit: suspicious
+    conf: 0.98
+    near_bytes: 1800
+    all:
+      - id: micro-behaviors/communications/http/url/rpc::eth-get-storage-at-method
+      - id: micro-behaviors/communications/ipc/rpc::jsonrpc-2-protocol-object
+    any:
+      - id: micro-behaviors/communications/ip/parse::go-hex-decoded-ip-address
+      - id: micro-behaviors/communications/ip/parse::python-hex-decoded-ip-address
+      - id: micro-behaviors/communications/ip/parse::node-hex-decoded-ip-address
+
+  - id: ethereum-storage-derived-socket-c2
+    desc: Ethereum contract storage supplies an outbound socket address
+    crit: suspicious
+    conf: 0.99
+    near_bytes: 2200
+    all:
+      - id: ethereum-storage-ip-resolver
+    any:
+      - id: micro-behaviors/communications/socket/dial::go-dial
+      - id: micro-behaviors/communications/socket/dial::python-dial
+      - id: micro-behaviors/communications/socket/dial::javascript-dial
+
+  - id: ethereum-storage-derived-shell-c2
+    desc: Ethereum contract storage supplies a remote-shell C2 address
+    crit: hostile
+    conf: 0.995
+    near_bytes: 2600
+    all:
+      - id: ethereum-storage-derived-socket-c2
+    any:
+      - id: objectives/command-and-control/reverse-shell/dup::go-reverse-shell-comp
+      - id: objectives/command-and-control/reverse-shell/dup::python-generic-socket-popen-revshell
+      - id: objectives/command-and-control/reverse-shell/stdio::js-reverse-shell-spawn
+
+  - id: ethereum-storage-failover-shell-c2
+    desc: Hardcoded primary C2 fails over to Ethereum storage for a remote shell
+    crit: hostile
+    conf: 0.995
+    near_bytes: 3000
+    all:
+      - id: ethereum-storage-derived-shell-c2
+      - id: micro-behaviors/communications/socket/connect::multiple-go-dial-call-sites
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-script

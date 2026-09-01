@@ -19,23 +19,34 @@ traits:
       offset: 0
       pattern: "7F 45 4C 46 01 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 00 00 00 00"
 
-  - id: elf32-class-magic
-    desc: ELF32 class magic at file start
-    crit: component
-    conf: 0.95
+  # Validate the table extent directly. A non-zero e_shoff plus a parser
+  # failure does not imply truncation: protected binaries can keep a fully
+  # backed table whose intentionally malformed names defeat strict parsers.
+  - id: elf-unreachable-section-header-table
+    desc: ELF section header table extends past file
+    crit: notable
+    conf: 0.98
     if:
-      type: hex
-      offset: 0
-      pattern: "7F 45 4C 46 01"
-
-  - id: elf64-class-magic
-    desc: ELF64 class magic at file start
-    crit: component
-    conf: 0.95
-    if:
-      type: hex
-      offset: 0
-      pattern: "7F 45 4C 46 02"
+      type: yara
+      source: |
+        rule elf_unreachable_section_header_table {
+          condition:
+            uint32(0) == 0x464c457f and
+            (
+              (
+                uint8(4) == 1 and
+                uint32(0x20) > 0 and uint16(0x2e) == 40 and
+                uint16(0x30) > 0 and
+                uint32(0x20) + uint16(0x30) * 40 > filesize
+              ) or (
+                uint8(4) == 2 and
+                uint32(0x2c) == 0 and
+                uint32(0x28) > 0 and uint16(0x3a) == 64 and
+                uint16(0x3c) > 0 and
+                uint32(0x28) + uint16(0x3c) * 64 > filesize
+              )
+            )
+        }
 
 composite_rules:
   - id: elf-no-section-headers
@@ -46,19 +57,3 @@ composite_rules:
       - id: elf32-zero-section-header-offset
     unless:
       - id: objectives/anti-static/pack/detect::upx-packer-string
-
-  # Parse failure with a non-zero e_shoff means the header still claims a
-  # section table the loader cannot read — typical of truncated downloads and
-  # carved fragments, not of deliberately sectionless strip (e_shoff == 0).
-  - id: elf-unreachable-section-header-table
-    desc: ELF declares section headers the parser cannot reach
-    crit: notable
-    conf: 0.92
-    all:
-      - id: metadata/binary/anomaly/format::elf-parse-failure
-    any:
-      - id: elf32-class-magic
-      - id: elf64-class-magic
-    needs: 1
-    unless:
-      - id: elf-no-section-headers

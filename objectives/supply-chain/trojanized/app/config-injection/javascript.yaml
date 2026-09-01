@@ -13,11 +13,10 @@ traits:
     regex: '(tailwindcss|autoprefixer)\s*:[\s\S]{0,260}eval\(\s*atob\s*\('
   unless:
   - id: metadata/package/testing/
-# NOTE: js-export-boundary (module.exports / export default) is neutral JS
-# syntax present in every module, so it lives at
-# metadata/lang/scripted::js-export-boundary and is referenced cross-tier by the
-# exports-anchor composite below (proximity to a build-config target is what
-# makes it injection-relevant).
+# NOTE: export syntax is neutral JavaScript and is not needed to identify this
+# attack. The malicious tail is commonly appended after the legitimate config
+# has already closed, so an export-to-payload proximity gate misses the exact
+# concealment technique this rule is meant to catch.
 - id: cwd-root-targeting--rx-9
   desc: Regex component marker
   crit: component
@@ -74,43 +73,90 @@ traits:
     type: text
     regex: (process\.cwd\(\)|__dirname).{0,80}(remix|svelte)\.config
   count_max: 1028378
-- id: config-hidden-global-require
-  desc: Config hides global require alias
-  crit: component
-  conf: 0.9
-  if:
-    type: text
-    substr: "global[_$_"
-- id: config-hidden-iife-tail
-  desc: Config has hidden IIFE tail
-  crit: component
-  conf: 0.9
-  if:
-    type: metrics
-    field: text.max_ws_run
-    min: 300
 composite_rules:
-- id: exports-anchor
-  desc: References export boundary in config
-  crit: component
-  conf: 0.8
-  near_lines: 5
+- id: long-tail-build-config-payload
+  desc: Obfuscated build config ends with an unusually long code tail
+  crit: suspicious
+  conf: 0.94
+  attack: T1195.002,T1027,T1059.007
+  # `last-line-over-1000` is backed by text.last_line_length; the neutral
+  # `single-long-line` atom is backed by text.max_line_length. Requiring both
+  # makes this specifically a long tail, rather than any large source file.
   all:
-  - id: metadata/build/config::js-build-config-target
-  - id: metadata/lang/scripted::js-export-boundary
+  - id: metadata/build/config::js-build-config-file
+  - id: objectives/anti-static/obfuscation/code-metrics/structure::last-line-over-1000
+  - id: metadata/file/metrics::single-long-line
+  - id: objectives/anti-static/obfuscation/
+  # Directory references deliberately cover future syntax variants: a loader
+  # may use an eval decoder, string encoding, shell bridge, HTTP fetch, or a
+  # new obfuscator atom without changing the structural supply-chain pattern.
+  any:
+  - id: micro-behaviors/data/source/property/
+  - id: micro-behaviors/process/interpreter/eval/
+  - id: micro-behaviors/process/interpreter/runtime/eval/
+  - id: micro-behaviors/process/create/shell/
+  - id: micro-behaviors/communications/http/
+  unless:
+  - id: metadata/package/testing/
+  - id: metadata/library/structure::js-large-module-bundle
+  # @kbn/moon serializes generated YAML into one CommonJS string; its long
+  # final line is configuration data, not an appended executable payload.
+  - id: metadata/build/scaffold::moon-generated-project-config
+  - id: well-known/lib/ui/vite::official-vite-package-context
+  - id: well-known/lib/ui/vite::dist-node-chunk
+  - id: well-known/lib/ui/vite::vite-dev-tool
 - id: hidden-build-config-loader
-  desc: Hidden build config loader
-  crit: hostile
+  desc: Obfuscated loader appended to build config behind whitespace concealment
+  crit: suspicious
   conf: 0.97
   all:
-  - id: exports-anchor
-  - id: config-hidden-iife-tail
+  - id: metadata/build/config::js-build-config-target
+  - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::whitespace-hiding
   any:
-  - id: config-hidden-global-require
   - id: micro-behaviors/data/source/property/computed::js-global-require-alias
   - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::whitespace-hidden-eval
+- id: build-config-obfuscated-global-aliasing
+  desc: Build config combines obfuscation with global require or module aliases
+  crit: suspicious
+  conf: 0.98
+  attack: T1195.002,T1027.002
+  all:
+  - id: metadata/build/config::js-build-config-target
+  - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::global-require-module-aliasing
   unless:
-  - id: objectives/supply-chain/trojanized/app/config-injection/
+  - id: metadata/package/testing/
+
+# A build-config tail that combines concealment, an obfuscated module loader,
+# an outbound HTTPS client, and a hidden child launch is a staged supply-chain
+# payload. The rule intentionally has no package, domain, or campaign anchor.
+- id: obfuscated-build-config-network-hidden-stage
+  desc: Obfuscated build config fetches and launches a hidden stage
+  crit: hostile
+  conf: 0.98
+  attack: T1195.002,T1027,T1105,T1059.007,T1564.003
+  all:
+  - id: hidden-build-config-loader
+  - id: build-config-obfuscated-global-aliasing
+  - id: micro-behaviors/communications/http/request/computed::js-computed-http-object-call
+  any:
+  - id: micro-behaviors/process/create/spawn::windowshide-obfuscated-expression
+  - id: micro-behaviors/process/create/spawn::windowshide-obfuscated-true
+  unless:
+  - id: metadata/package/testing/
+- id: build-config-nested-decoder-stage
+  desc: PostCSS config executes concealed decoded stage
+  crit: hostile
+  conf: 0.99
+  attack: T1195.002,T1027,T1059.007
+  # The nested loader rule proves hidden execution, while this additional leg
+  # proves it was grafted onto a functional PostCSS/Tailwind configuration.
+  # Modern Tailwind v4 configs use a plugin array and export a named binding,
+  # so the older object-only config shape missed this trojanized form.
+  all:
+  - id: metadata/build/config::postcss-config-shape
+  - id: objectives/supply-chain/hidden-payload/trojan::nested-function-decoder-stage-loader
+  unless:
+  - id: metadata/package/testing/
 - id: build-config-eval-atob-payload
   desc: Build config executes Base64-decoded payload
   crit: hostile
@@ -132,7 +178,7 @@ composite_rules:
   - id: objectives/command-and-control/dropper/delivery/fetch-eval::request-body-function-loader
   any:
   - id: objectives/supply-chain/trojanized/library/remote-eval::import-time-init-plugin
-  - id: objectives/supply-chain/trojanized/library/remote-eval::custom-bearrtoken-header
+  - id: micro-behaviors/communications/http/header/custom::bearrtoken-header-map-entry
   unless:
   - id: metadata/package/testing/
   - id: well-known/tool/detection/
@@ -147,7 +193,7 @@ composite_rules:
   - id: objectives/command-and-control/dropper/delivery/fetch-eval::request-body-function-loader
   any:
   - id: objectives/supply-chain/trojanized/library/remote-eval::import-time-init-plugin
-  - id: objectives/supply-chain/trojanized/library/remote-eval::custom-bearrtoken-header
+  - id: micro-behaviors/communications/http/header/custom::bearrtoken-header-map-entry
 - id: postcss-tailwind-eval-atob-loader
   desc: PostCSS/Tailwind build config eval-atob loader
   crit: hostile
@@ -156,30 +202,20 @@ composite_rules:
   all:
   - id: postcss-tailwind-eval-atob-payload
   - id: objectives/supply-chain/hidden-payload/encoding::eval-atob
-- id: config-target-write
-  desc: Writes or appends to config target
-  crit: suspicious
-  conf: 0.94
-  all:
-  - id: metadata/build/config::js-build-config-target
-  any:
-  - id: micro-behaviors/fs/write/file
-  unless:
-  - id: objectives/supply-chain/trojanized/app/config-injection/
-  - id: metadata/library/structure::js-large-module-bundle
-  - id: metadata/build/recognized-contexts::benign-build-tooling-context
-  - id: metadata/build/recognized-contexts::benign-build-tooling-context
 - id: js-build-config-injector
   desc: Trojanized JS build config injector
   crit: hostile
   conf: 0.95
   all:
-  - id: config-target-write
+  - id: micro-behaviors/fs/config/build::js-build-config-near-file-write
+  # `module.exports` used to satisfy this leg, which made the hostile verdict
+  # reachable by any CommonJS module -- every `webpack.config.js` that
+  # generates entry points from a template matched. Resolving the victim's
+  # project root from cwd is what separates an injector from ordinary codegen.
   any:
   - id: cwd-root-targeting
-  - id: exports-anchor
   unless:
-  - id: objectives/supply-chain/trojanized/app/config-injection/
+  - id: well-known/app/development/facebook-sapling::facebook-sapling-member-context
 - id: cwd-root-targeting
   desc: Targets project root via cwd join
   crit: suspicious

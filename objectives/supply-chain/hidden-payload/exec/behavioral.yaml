@@ -53,15 +53,6 @@ traits:
       # False)) / bool(self.use_shell) wraps a runtime value, not a constant,
       # and is excluded.
       regex: '\bshell\s*=\s*bool\s*\(\s*["'']?\d'
-  - id: python-base64-zlib-exec-loader
-    desc: Python executes base64-decoded zlib payload
-    crit: suspicious
-    conf: 0.96
-    attack: T1027
-    for: [python]
-    if:
-      type: text
-      regex: 'exec\s*\(\s*zlib\.decompress\s*\(\s*base64\.b64decode\s*\('
   - id: node-dbconnectify-reference
     desc: Node references dbconnectify module
     crit: notable
@@ -78,6 +69,16 @@ traits:
     if:
       type: text
       regex: '\b[A-Za-z_$][A-Za-z0-9_$]*\s*\.\s*queryDBConnect\s*\(\s*\)'
+  # Cover-story helper name used by chai-tracker / similar plugin trojans:
+  # assertConnection() looks like a chai assertion but only spawns the payload.
+  - id: assert-connection-side-effect-call
+    desc: Invokes assertConnection side-effect helper
+    crit: notable
+    conf: 0.92
+    for: [javascript]
+    if:
+      type: text
+      regex: '\bassertConnection\s*\(\s*\)\s*;'
 composite_rules:
   - id: setup-gzip-pyc-loader
     desc: setup.py extracts Python bytecode from gzip
@@ -122,7 +123,7 @@ composite_rules:
     all:
       - id: micro-behaviors/data/embedded/payload/archive::python-base64-zip-literal
       - id: micro-behaviors/data/decode/base64::b64decode-string
-      - id: micro-behaviors/fs/file/write/direct::py-open-write-mode
+      - id: micro-behaviors/fs/file/open::write-append-create-mode
       - id: micro-behaviors/process/create/system::python-aliased-os-system
   - id: pypi-embedded-payload-write-exec-loader
     desc: PyPI package decodes and executes an embedded payload
@@ -265,7 +266,7 @@ composite_rules:
       - id: micro-behaviors/process/create/spawn::windowshide-obfuscated-true
       - id: micro-behaviors/process/create/spawn::windowshide-obfuscated-expression
       - id: micro-behaviors/process/create/shell/bridge::js-spawnsync
-      - id: objectives/execution/interpreter/eval/dynamic::eval-as-last-arg
+      - id: micro-behaviors/process/interpreter/runtime/eval::eval-as-last-arg
     needs: 2
     unless:
       - id: metadata/package/testing/
@@ -275,17 +276,14 @@ composite_rules:
     crit: hostile
     conf: 0.97
     attack: T1195.002,T1027,T1059.007
-    for: [javascript, package.json, archives]
-    scope: leaf
-    near_bytes: 4096
+    for: [npm, tar, archives]
+    # The stage composite keeps all executable behaviors in one source
+    # file. This outer archive-scoped rule adds the npm publishing context so
+    # a standalone JavaScript program cannot be mislabeled as supply-chain.
+    scope: archive
     all:
-      - id: micro-behaviors/data/decode/base64::atob-decode
-      - id: micro-behaviors/process/create/shell/bridge::child-process-destructure-require
-      - id: micro-behaviors/process/create/spawn::stdio-ignore
-      - id: micro-behaviors/process/create/spawn::windowshide-option
-    unless:
-      - id: metadata/package/testing/
-      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+      - id: metadata/package/manifest/entrypoint::npm-publish-runtime-tree-entrypoint
+      - id: objectives/command-and-control/dropper/execution/eval::decoded-hidden-node-background-stage
   - id: npm-hollow-host-profile-http-exfil
     desc: Hollow npm package beacons host profile over HTTP
     crit: hostile
@@ -337,20 +335,58 @@ composite_rules:
       - id: objectives/supply-chain/install-hook/scripts/lifecycle::postinstall-supervisor-start-local-js
       - id: objectives/anti-static/obfuscation/encoding/content::encoded-node-require
       - id: objectives/anti-static/obfuscation/encoding/hex::hex-control-flow-obfuscation
+
+  # Bind the hidden loader to the lifecycle file before joining it to the
+  # manifest declaration. This avoids treating an unused obfuscated fixture in
+  # an npm archive as install-time execution.
+  - id: postinstall-indexed-node-stage-file
+    desc: Postinstall file contains an indexed hidden Node stage
+    crit: component
+    conf: 0.98
+    scope: file
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::postinstall-js-file
+      - id: objectives/anti-static/obfuscation/eval/loader::node-capable-indexed-stage-loader
+
+  - id: npm-postinstall-indexed-node-stage
+    desc: npm postinstall executes an indexed hidden Node stage
+    crit: hostile
+    conf: 0.99
+    attack: "T1195.002,T1027,T1059.007"
+    for: [javascript, package.json, archives]
+    scope: archive
+    all:
+      - id: objectives/supply-chain/install-hook/package/manifest::postinstall-runs-node-script
+      - id: postinstall-indexed-node-stage-file
   - id: npm-detached-database-connectivity-child
-    desc: Detached silent npm database probe
+    desc: Silent npm child runs database probe
     crit: hostile
     conf: 0.99
     attack: T1195.002,T1059.007,T1053
-    for: [javascript, package.json, archives]
+    for: [archives]
     scope: archive
     all:
       - id: node-dbconnectify-reference
       - id: node-db-connectivity-probe
-      - id: micro-behaviors/process/create/shell/bridge::child-process-destructure-require
       - id: micro-behaviors/process/create/spawn::process-execpath-spawn
+      - id: micro-behaviors/process/create/spawn::stdio-ignore
+      - id: metadata/package/dependencies/manifest::npm-peer-dependency-dbconnectify
+    any:
       - id: micro-behaviors/process/create/spawn::node-self-eval-argument
       - id: micro-behaviors/process/create/spawn::detached-true
+      - id: micro-behaviors/process/create/spawn::spawn-call
+  - id: npm-assert-connection-dbconnectify-spawn
+    desc: assertConnection spawns dbconnectify probe
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002,T1059.007
+    for: [archives]
+    scope: archive
+    all:
+      - id: assert-connection-side-effect-call
+      - id: node-dbconnectify-reference
+      - id: node-db-connectivity-probe
+      - id: micro-behaviors/process/create/spawn::process-execpath-spawn
       - id: micro-behaviors/process/create/spawn::stdio-ignore
   - id: import-time-discord-dropper-bot
     desc: Import-time Discord dropper bot

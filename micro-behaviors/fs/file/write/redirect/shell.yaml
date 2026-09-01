@@ -3,6 +3,16 @@ defaults:
   for: [shell]
 
 traits:
+  - id: shell-heredoc-system-config-write
+    desc: Shell writes system config via heredoc
+    crit: notable
+    conf: 0.94
+    if:
+      # A system configuration write is analyst-relevant, but neutral by
+      # itself. Source-code concealment is inferred only when the staging
+      # composite also finds an embedded program in the same shell script.
+      type: text
+      regex: '(?im)^\s*cat\s*>\s*/etc/\S{1,80}\.(conf|cfg)\b[^\r\n]{0,40}<<'
   - id: shell-watchdog-feed-redirect
     desc: Shell redirects data to hardware watchdog
     crit: notable
@@ -19,12 +29,9 @@ traits:
     if:
       type: text
       regex: '\bdd\b[^\n]{0,80}of=/dev/(misc/)?watchdog[0-9]*'
-  # `>[^&]`, not a bare `>`: `>&2` / `1>&2` / `>&-` duplicate or close a file
-  # descriptor, they do not open a file, so `echo "error" >&2` — the way every
-  # shell script on disk reports a diagnostic — was being reported as a file
-  # write. The character after `>` is enough to separate the two forms and
-  # keeps genuine writes intact, including append (`>>file`) and a write that
-  # also merges stderr (`echo x > f 2>&1`, where the first `>` still qualifies).
+  # Keep the text matchers for printf/dd, including dd's `of=` form. Echo uses
+  # the parsed redirect node below: raw text cannot distinguish a real `>` from
+  # angle-bracket placeholders inside a quoted usage string.
   - id: shell-printf-file-write
     desc: Shell printf redirects output to a file
     crit: notable
@@ -50,8 +57,16 @@ traits:
     crit: notable
     conf: 0.86
     if:
-      type: text
-      regex: '(?im)(^|[;&])\s*echo\b[^\n]{0,160}(>[^&]|of=)'
+      type: tree-sitter
+      query: |
+        ((redirected_statement
+           body: (command
+             name: (command_name (word) @command))
+           redirect: (file_redirect
+             [">" ">>"]
+             destination: (_) @destination))
+         (#eq? @command "echo")
+         (#not-match? @destination "^/dev/null$"))
   - id: shell-dd-file-write
     desc: Shell dd writes output to a file
     crit: notable
@@ -73,7 +88,7 @@ traits:
     unless:
       - id: well-known/tool/sysadmin/cubesandbox::cubesandbox-source-path
   - id: shell-rc-redirect-write
-    desc: Redirects output to a user shell rc
+    desc: References output redirection to shell rc
     crit: notable
     conf: 0.9
     if:

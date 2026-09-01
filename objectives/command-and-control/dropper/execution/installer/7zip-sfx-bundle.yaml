@@ -38,7 +38,13 @@ traits:
     attack: T1204.002
     if:
       type: text
-      regex: 'RunProgram\s*=\s*"[^"\r\n]{1,128}\.exe\b'
+      # `\"` has to be allowed inside the value. 7-Zip SFX writes the command
+      # with escaped quotes whenever it contains a path -- `RunProgram="\"%%T\\
+      # payload.exe\""` is the ordinary spelling -- and a value class that
+      # excluded every quote stopped at the first `\"`, two characters in, so
+      # the `.exe` was never reached. That blinded this atom, and the four
+      # composites built on it, to the most common form of the directive.
+      regex: 'RunProgram\s*=\s*"(\\"|[^"\r\n]){1,128}\.exe\b'
   - id: sfx-progress-disabled
     desc: SFX disables progress display
     crit: component
@@ -46,6 +52,13 @@ traits:
     if:
       type: text
       exact: 'Progress="no"'
+  - id: sfx-temp-install-path
+    desc: 7-Zip SFX extracts to Windows temp
+    crit: component
+    conf: 0.96
+    if:
+      type: text
+      exact: 'InstallPath="%TEMP%"'
   - id: sfx-stock-7zs-original-filename
     desc: PE OriginalFilename is stock 7zS.sfx.exe
     crit: component
@@ -121,6 +134,42 @@ composite_rules:
     unless:
       - id: metadata/signed/platform/
       - id: metadata/binary/installer/family/
+  - id: silent-temp-7zsfxmod-exchanger-stage
+    desc: Silent 7ZSfxMod extracts and launches the Exchanger-D stage
+    crit: hostile
+    conf: 0.995
+    attack: T1027.009,T1204.002
+    all:
+      - id: metadata/binary/installer/sfx::7zsfxmod-profile
+      - id: metadata/binary/layout::large-high-entropy-overlay
+      - id: metadata/binary/layout::pe-no-signature-record
+      - id: objectives/command-and-control/dropper/delivery/sfx::sfx-runprogram-escaped-quote-value
+      - id: sfx-progress-disabled
+      - id: sfx-temp-install-path
+      - id: micro-behaviors/process/create/installer::sfx-exchanger-d-runprogram
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/installer/family/
+  # HijackLoader/IDATLoader campaigns package the signed Hikvision
+  # Dynamics_Soni helper beside their loader and opaque data carrier. Requiring
+  # the helper as the SFX-selected program, silent temp extraction, an unsigned
+  # wrapper, and a large encrypted-looking overlay excludes the genuine helper
+  # and ordinary 7-Zip self-extracting installers.
+  - id: silent-temp-7zsfxmod-dynamics-soni-stage
+    desc: Silent 7ZSfxMod launches a Dynamics_Soni stage from temp
+    crit: hostile
+    conf: 0.995
+    attack: T1027.009,T1204.002
+    all:
+      - id: metadata/binary/installer/sfx::7zsfxmod-profile
+      - id: metadata/binary/layout::large-high-entropy-overlay
+      - id: metadata/binary/layout::pe-no-signature-record
+      - id: sfx-progress-disabled
+      - id: sfx-temp-install-path
+      - id: micro-behaviors/process/create/installer::sfx-dynamics-soni-runprogram
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/installer/family/
   - id: silent-7zip-sfx-affiliate-site-stage
     desc: Silent 7-Zip SFX stages an affiliate site_id payload
     crit: hostile
@@ -183,7 +232,7 @@ composite_rules:
       - id: micro-behaviors/os/registry/access::registry-write-api-chain
     needs: 2
     any:
-      - id: micro-behaviors/crypto/certificate/install::cert-install-api
+      - id: micro-behaviors/crypto/certificate/store::cert-store-population-api
       - id: micro-behaviors/os/sysinfo/platform/locale::locale-fingerprinting-imports
       - id: objectives/anti-analysis/debugger-detect/check::is-debugger-present-symbol
     unless:
@@ -210,7 +259,7 @@ composite_rules:
     attack: T1036.005,T1027.009,T1204.002,T1548.002
     all:
       - id: metadata/signed/unknown::installvibes
-      - id: objectives/anti-static/obfuscation/payload/encrypted::dominant-resource-packed-payload
+      - id: objectives/anti-static/obfuscation/payload/encrypted::dominant-high-entropy-resources
       - id: metadata/binary/layout::7z-archive-signature-in-resource
       - id: metadata/build/manifest::pe-requires-admin
       - id: micro-behaviors/os/privilege/elevation::runas-verb-token
@@ -239,7 +288,7 @@ composite_rules:
       - id: objectives/evasion/masquerade/version-resource/contradiction::softwareok-free-manga-identity-contradiction
       - id: micro-behaviors/data/embedded/payload/archive::late-embedded-7z-archive
       - id: objectives/anti-static/obfuscation/payload/self-read::self-read-file-chain
-      - id: micro-behaviors/process/create/shell/spawn::win-createprocess
+      - id: micro-behaviors/process/create/spawn::child-process-creation-api
     unless:
       - id: metadata/binary/installer/family::known-benign-installer
       - id: metadata/signed/platform/

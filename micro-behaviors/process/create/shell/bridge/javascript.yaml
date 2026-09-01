@@ -5,6 +5,24 @@ defaults:
   for:
     - javascript
 traits:
+  - id: node-global-npm-install-spawn
+    desc: Node spawns npm install --global
+    crit: notable
+    conf: 0.93
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: "(execSync|spawnSync)\\(\\s*[`\"']npm install[\\s\\S]{0,80}(-g|--global)"
+  - id: node-bash-lc-member-command
+    desc: Runs object command through Bash
+    crit: notable
+    conf: 0.98
+    attack: T1059.004
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\bspawn\w*\(\s*["'']bash["'']\s*,\s*\[\s*["'']-lc["'']\s*,\s*[\w$]+\.[\w$]+'
+
   # A hidden PowerShell window is a neutral child-process capability. It is
   # also used by VS Code clipboard/image helpers; payload intent belongs in a
   # composite that adds an upload or other hostile objective.
@@ -174,11 +192,12 @@ traits:
   - id: js-spawnsync
     desc: Calls spawnSync() to run a child process
     crit: notable
-    conf: 0.9
+    conf: 0.98
     for: [javascript, typescript]
     if:
-      type: text
-      substr: spawnSync
+      type: symbol
+      kind: call
+      exact: spawnSync
   - id: js-spawnsync-posix-interpreter
     desc: Runs a POSIX interpreter via spawnSync
     crit: notable
@@ -232,35 +251,24 @@ traits:
     if:
       type: text
       regex: '\bexec\s*,\s*[^;\n]{0,180}["'']?windowsHide["'']?\s*:\s*'
-  - id: js-exec
-    desc: Executes shell commands
+  - id: js-exec-callback-reexec
+    desc: exec callback launches second exec
     crit: notable
+    conf: 0.94
+    mbc: "C0017"
+    attack: "T1059.007"
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'exec\s*\([^)]{0,80},\s*function\s*\([^)]{0,40}\).{0,400}\bexec\s*\('
+  - id: js-exec-call
+    desc: Calls a function named exec
+    crit: component
     conf: 1.0
     if:
       type: symbol
       kind: call
       exact: exec
-    unless:
-      - id: local-exec-function
-      - type: text
-        regex: '\b(exec|const exec|let exec|var exec)\s*=\s*(?!require\(["''](?:node:)?child_process)'
-      # A parameter named `exec` is a callback, not Node's shell-execution
-      # API.  The symbol matcher otherwise mistakes `exec(node)` for it.
-      - type: text
-        regex: '\b(const|let|var)\s+\w+\s*=\s*(async\s*)?\([^)]*\bexec\b[^)]*\)'
-      - type: text
-        regex: '\bfunction\s+\w+\s*\([^)]*\bexec\b[^)]*\)'
-      - type: text
-        regex: '\bfunction\s*\([^)]*\bexec\b[^)]*\)\s*\{[\s\S]{0,180}\bexec\s*\(\s*\)'
-      - type: text
-        substr: cordova/exec
-      - id: metadata/lang/compiled::erlang-module-marker
-      - type: string_literal
-        regex: '@ioredis/commands|redis-commands|EXECABORT'
-      # PostScript PPD files use the ordinary `get exec` operator to invoke
-      # printer procedures; that format context is not JavaScript shell execution.
-      - type: text
-        regex: '(?s)\*PPD-Adobe:.*\*Product:'
   - id: shelljs-exec
     desc: Executes a shell command through shelljs
     crit: notable
@@ -310,6 +318,15 @@ traits:
     if:
       type: text
       regex: '\.on\(\s*[''"]end[''"][\s\S]{0,110}([^.\w]exec|execSync)\s*\(\s*[A-Za-z_$]'
+  - id: js-stream-end-exec-template
+    desc: Stream end handler execs interpolated template
+    crit: notable
+    conf: 0.94
+    attack: T1059.007
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\.on\(\s*[''"]end[''"][\s\S]{0,110}\bexec(Sync)?\s*\(\s*`[^`]{0,80}\$\{'
   - id: js-bun-exec
     desc: JavaScript Bun process spawn API
     crit: notable
@@ -319,6 +336,23 @@ traits:
       regex: '\bBun\.(spawn|spawnSync|exec|execSync)\b'
 
 composite_rules:
+  - id: js-exec
+    desc: Executes a command through Node.js child_process exec
+    crit: notable
+    conf: 0.95
+    mbc: C0017
+    attack: T1059.007
+    near_bytes: 16384
+    all:
+      - id: js-exec-call
+    any:
+      # Local helpers named `exec` that wrap spawnSync are not child_process.exec.
+      - id: child-process-inline-exec-call
+      - id: child-process-exec-alias-binding
+      - id: js-computed-exec-destructure
+      - id: child-process-exec-destructure
+      - id: child-process-exec-esm-import
+
   - id: js-spawnsync-interpreter
     desc: Runs an interpreter via spawnSync
     crit: notable
@@ -353,7 +387,6 @@ composite_rules:
       - id: micro-behaviors/process/create/shell/build::npm-install-ignore-scripts
     downgrade:
       any:
-        - id: metadata/package/testing/harness/runtime::node-common-require
         - id: metadata/library/prettier
         - id: metadata/package/documentation/
         - id: micro-behaviors/process/interpreter/vm/

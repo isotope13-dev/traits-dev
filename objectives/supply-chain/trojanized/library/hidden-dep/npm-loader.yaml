@@ -3,14 +3,26 @@ defaults:
   attack: T1195.002
 
 traits:
-- id: lint-builder-dependency
-  desc: Depends on lint-builder payload
+# Family spellings: lint-builder / lint-null, big.js clones that declare
+# `{b,h}js-lint-builders` (plural), and shortened `{s}js-builder` payloads.
+# Named and described for the family rather than for `lint-builder` alone: the
+# matcher accepts every spelling above, so on a clone that pulls `lint-null` the
+# old wording sent a reader looking for a `lint-builder` dependency that is not
+# in the manifest.
+#
+# The trailing `(er)?s?[0-9]{0,2}` is what keeps up with the campaign renaming
+# its payload package between clones. Fixing the suffix at `builders?` missed
+# `sjs-lint-build1` -- same stub, same big.js clone, one digit different -- so
+# that variant lost both this leg and the hostile composite built on it while
+# still matching every other rule in the family.
+- id: lint-builder-family-dependency
+  desc: Depends on lint-builder or lint-null payload
   crit: suspicious
   conf: 0.98
   for: [package.json]
   if:
     type: text
-    regex: '"(lint-builder|lint-null)"\s*:'
+    regex: '"([a-z]js-(lint-)?build(er)?s?[0-9]{0,2}|lint-builder|lint-null)"\s*:'
 
 - id: four-sdk-aes-ipheriv-dependency
   desc: Depends on four-sdk-aes-ipheriv
@@ -100,14 +112,28 @@ traits:
     type: text
     regex: 'require\s*\(\s*["''](parket-slot|websocket-slot)["'']\s*\)'
 
-- id: require-lint-builder
-  desc: Requires lint-builder module
+# debug-logfmt clones keep `const origDebug = require(...)` and swap `debug`
+# for a hidden payload package. Exact `require('debug')` is the upstream form.
+- id: origdebug-swapped-require
+  desc: origDebug requires a substituted module
+  crit: notable
+  conf: 0.9
+  for: [javascript, typescript]
+  if:
+    type: text
+    regex: 'origDebug\s*=\s*require\s*\(\s*[''"][^''"]{1,80}[''"]'
+  unless:
+    - type: text
+      regex: 'origDebug\s*=\s*require\s*\(\s*[''"]debug[''"]'
+
+- id: require-lint-builder-family
+  desc: Requires lint-builder or lint-null module
   crit: suspicious
   conf: 0.98
   for: [javascript, typescript]
   if:
     type: import
-    regex: '^(lint-builder|lint-null)$'
+    regex: '^([a-z]js-(lint-)?build(er)?s?[0-9]{0,2}|lint-builder|lint-null)$'
 
 # Family of npm path-stdlib clones (path-addon, path-addon-extend, …) that
 # exist only to be required from a copied Joyent path.js at module load.
@@ -133,8 +159,8 @@ traits:
     type: text
     substr: require('four-sdk-aes-ipheriv')
 
-- id: require-wime-zle
-  desc: Requires wime-zle module
+- id: require-wime-zle-family
+  desc: Requires wime-zle or vime-azl module
   crit: suspicious
   conf: 0.995
   for: [javascript, typescript]
@@ -151,18 +177,6 @@ traits:
     type: text
     substr: aesCreateIpheriv();
 
-- id: from-str-loader-call
-  desc: Calls from_str loader method
-  crit: component
-  conf: 0.98
-  for: [javascript, typescript]
-  if:
-    # Migrated from a tree-sitter call query to a `kind: call`
-    # match on the pre-extracted call fact (no per-member
-    # tree-sitter cursor walk; same call-name semantics).
-    type: symbol
-    kind: call
-    regex: '\.from_str$'
 - id: noop-loader-promises
   desc: Loader chain swallows promise results
   crit: suspicious
@@ -172,48 +186,83 @@ traits:
     type: text
     substr: .then(e => { }).catch(e => { })
 
-- id: from-str-promise-swallow
-  desc: from_str promise swallows errors
-  crit: component
-  conf: 0.99
+
+# A bare external require immediately followed by a zero-argument from_str
+# dispatch is the stable loader shape across renamed payload packages.  The
+# matcher does not name a campaign module, so future sidecar names remain
+# visible; the known-family import traits below add higher-confidence intent.
+- id: external-require-from-str-dispatch
+  desc: External require followed by from_str dispatch
+  crit: suspicious
+  conf: 0.97
   for: [javascript, typescript]
   if:
     type: text
-    substr: .then(e => e).catch(e => { })
+    regex: '\brequire\(["''][^./"''][^"'']{1,50}["'']\);?\s*\w+\.from_str\(\s*\)'
 
-# A parser called with nothing to parse. Rust's FromStr::from_str takes the
-# string it is converting, and every wasm-bindgen or native binding that
-# genuinely exposes the name keeps that argument -- so a zero-argument call is
-# not a conversion at all, it is a trigger wearing a converter's name. This is
-# what separates the loader stub from a real Rust-backed npm package that
-# happens to load inside a try.
-- id: from-str-no-argument-call
-  desc: Calls from_str with no arguments
-  crit: component
-  conf: 0.98
-  for: [javascript, typescript]
-  if:
-    type: text
-    regex: '\.from_str\(\s*\)'
-
-- id: swallowed-loader-errors
-  desc: Empty catch hides loader errors
+# Generic import-time sidecar: try { require("./sidecar") } catch (_) {}
+# without the from_str naming used by the lint-builder family. The public
+# entry stays clean while a sibling module runs at load time.
+- id: try-require-empty-catch-text
+  desc: Try-wrapped require with empty catch text
   crit: component
   conf: 0.97
   for: [javascript, typescript]
   size_max: 65536
   if:
     type: text
-    regex: 'from_str[\s\S]{0,240}catch\s*\([A-Za-z_][A-Za-z0-9_]*\)\s*\{\s*\}'
+    regex: 'try\s*\{[\s\S]{0,200}require\s*\(.{0,80}\)[\s\S]{0,60}\}\s*catch\s*\(.{0,40}\)\s*\{\s*\}'
   unless:
   - type: text
-    substr: instantiateWasm
+    substr: from_str
   downgrade:
     any:
     - id: metadata/package/testing/
     - type: basename
       regex: '(?i)\.(spec|test)\.[jt]s$'
+
+# A copied dotenv implementation with an added first statement in
+# configDotenv(). The method call is deliberately name-agnostic about the
+# imported package; the separate scoped-config import leg below establishes
+# that the new statement dispatches into an external npm sidecar.
+- id: dotenv-config-entry-sidecar-call
+  desc: Dotenv config begins with loadConfig sidecar
+  crit: suspicious
+  conf: 0.98
+  for: [javascript, typescript]
+  if:
+    type: text
+    regex: 'function\s+configDotenv[^{]{0,120}\{\s*[A-Za-z_$]\w*\.loadConfig\(\s*\);?'
+
 composite_rules:
+- id: swallowed-side-effect-require-stub
+  desc: Local side-effect require executes with swallowed failure
+  crit: component
+  conf: 0.97
+  for: [javascript, typescript]
+  near_lines: 3
+  all:
+  - id: try-require-empty-catch-text
+  - id: micro-behaviors/process/create/load/local::cjs-caught-local-require
+  - id: micro-behaviors/data/control-flow/error-handling::empty-named-catch-text
+
+# Dotenv's public configuration routine should begin by resolving its own .env
+# path. A clone that instead enters a separately published scoped config module
+# before doing any library work has grafted a side-effect dependency onto the
+# API path every consumer invokes.
+- id: dotenv-config-entrypoint-sidecar
+  desc: Dotenv entrypoint invokes an external sidecar
+  crit: suspicious
+  conf: 0.98
+  for: [javascript, typescript]
+  attack: "T1195.002,T1059.007"
+  mbc: B0024
+  all:
+  - id: dotenv-config-entry-sidecar-call
+  - id: micro-behaviors/os/module/load::scoped-config-package-loader
+  unless:
+  - id: metadata/package/testing/
+
 # The same stub as the per-campaign rules below, with the payload package name
 # removed from the evidence.
 #
@@ -238,6 +287,18 @@ composite_rules:
 # An ordinary optional dependency fails this: it binds the module to an
 # outer-scope variable and uses it later, or falls back to an alternative in
 # the catch, rather than discarding the result and staying silent.
+- id: import-time-swallowed-sidecar-loader
+  desc: Import-time concealed side-effect sidecar require
+  crit: suspicious
+  conf: 0.98
+  for: [javascript, typescript, archives]
+  scope: archive
+  all:
+  - id: swallowed-side-effect-require-stub
+  unless:
+  - id: metadata/package/testing/
+  - id: metadata/package/testing/presence/fixture::test-filename-pattern
+
 - id: from-str-import-time-loader-stub
   desc: Import-time from_str loader swallows results
   crit: hostile
@@ -246,17 +307,17 @@ composite_rules:
   attack: T1195.002,T1059.007
   mbc: B0024
   all:
-  - id: from-str-loader-call
-  - id: swallowed-loader-errors
+  - id: micro-behaviors/data/string/conversion::from-str-method-call
+  - id: micro-behaviors/data/control-flow/error-handling::from-str-empty-catch
   - id: micro-behaviors/os/module/load::cjs-require-in-try-fallback
   # The result must go nowhere. Either the call takes no argument (so it cannot
   # be converting anything) or its promise is drained by no-op handlers. Without
   # this leg the rule convicts a genuine Rust/wasm binding that happens to sit
   # in a try with an empty catch -- verified against exactly that shape.
   any:
-  - id: from-str-no-argument-call
+  - id: micro-behaviors/data/string/conversion::from-str-no-argument-call
   - id: noop-loader-promises
-  - id: from-str-promise-swallow
+  - id: micro-behaviors/data/control-flow/error-handling::promise-identity-then-empty-catch
   unless:
   - id: metadata/package/testing/
   - id: metadata/package/testing/presence/fixture::test-filename-pattern
@@ -267,10 +328,10 @@ composite_rules:
   conf: 0.99
   for: [javascript, typescript]
   all:
-  - id: require-lint-builder
-  - id: from-str-loader-call
+  - id: require-lint-builder-family
+  - id: micro-behaviors/data/string/conversion::from-str-method-call
   - id: noop-loader-promises
-  - id: swallowed-loader-errors
+  - id: micro-behaviors/data/control-flow/error-handling::from-str-empty-catch
 
 - id: require-fallback-npm-install
   desc: Missing dependency fallback installs package at runtime
@@ -297,7 +358,7 @@ composite_rules:
   - id: require-fallback-npm-install
   - id: objectives/supply-chain/install-hook/scripts/dynamic-install::stealth-runtime-npm-install
   any:
-  - id: swallowed-loader-errors
+  - id: micro-behaviors/data/control-flow/error-handling::from-str-empty-catch
   - id: micro-behaviors/process/create/spawn::windowshide-option
 
 - id: trojanized-library-hidden-loader
@@ -305,7 +366,7 @@ composite_rules:
   crit: hostile
   conf: 0.995
   all:
-  - id: lint-builder-dependency
+  - id: lint-builder-family-dependency
   - id: hidden-dependency-loader
   any:
   - id: metadata/package/versioning::mature-package-version
@@ -325,8 +386,8 @@ composite_rules:
   # dynamic-import observation, but do not call this loader hostile solely
   # from that normal build context.
   unless:
-  - id: metadata/package/scripts::has-build-script-1
-  - id: metadata/package/scripts::has-build-script-2
+  - id: metadata/package/scripts/build::has-build-script-1
+  - id: metadata/package/scripts/build::has-build-script-2
   # A published npm manifest must declare its package name.  Nameless
   # repository manifests are development metadata, not publishable packages.
   - id: metadata/package/manifest/name::npm-no-name-field
@@ -377,52 +438,65 @@ composite_rules:
   mbc: B0024
   all:
   - id: require-npm-doc-payload
-  - id: from-str-no-argument-call
-  - id: swallowed-loader-errors
+  - id: micro-behaviors/data/string/conversion::from-str-no-argument-call
+  - id: micro-behaviors/data/control-flow/error-handling::from-str-empty-catch
   unless:
   - id: metadata/package/testing/
   - id: metadata/package/testing/presence/fixture::test-filename-pattern
 
-- id: wime-zle-hidden-loader
-  desc: Embedded wime-zle dependency loader
+- id: wime-zle-family-hidden-loader
+  desc: Embedded wime-zle-family dependency loader
   crit: hostile
   conf: 0.998
   # Cross-file: the dependency is declared in package.json while the loader code
   # lives in a sibling .js. A .tgz is typed tar.gz (not npm), so package.json-
   # anchored sibling pooling never activates — evaluate at archive scope so the
-  # manifest + script findings are pooled. (The JS-only wime-zle-loader-stub
+  # manifest + script findings are pooled. (The JS-only family loader stub
   # below still covers the case where only the script is seen.)
   for: [javascript, typescript, package.json, archives]
   scope: archive
   all:
   - id: wime-zle-dependency
-  - id: require-wime-zle
-  - id: from-str-loader-call
-  - id: from-str-promise-swallow
+  - id: require-wime-zle-family
+  - id: micro-behaviors/data/string/conversion::from-str-method-call
+  - id: micro-behaviors/data/control-flow/error-handling::promise-identity-then-empty-catch
 
-- id: wime-zle-loader-stub
-  desc: wime-zle import-time loader stub
+- id: wime-zle-family-loader-stub
+  desc: wime-zle-family import-time loader stub
   crit: hostile
   conf: 0.998
   for: [javascript, typescript]
   all:
-  - id: require-wime-zle
-  - id: from-str-loader-call
-  - id: from-str-promise-swallow
+  - id: require-wime-zle-family
+  - id: micro-behaviors/data/string/conversion::from-str-method-call
+  - id: micro-behaviors/data/control-flow/error-handling::promise-identity-then-empty-catch
+
+- id: big-js-clone-from-str-loader
+  desc: big.js clone runs concealed from_str sidecar
+  crit: hostile
+  conf: 0.99
+  for: [javascript, typescript, package.json, archives]
+  scope: archive
+  attack: "T1195.002,T1059.007"
+  mbc: B0024
+  all:
+  - id: objectives/supply-chain/impersonation/npm-clone::big-js-impersonation
+  - id: external-require-from-str-dispatch
+  - id: micro-behaviors/data/control-flow/error-handling::promise-identity-then-empty-catch
 
 - id: levex-refa-hidden-loader
   desc: Embedded levex-refa dependency loader
   crit: hostile
   conf: 0.998
   # Cross-file (dep in package.json + loader in sibling .js); see
-  # wime-zle-hidden-loader — evaluate at archive scope so .tgz pools both.
+  # wime-zle-family-hidden-loader — evaluate at archive scope so .tgz pools both.
   for: [javascript, typescript, package.json, archives]
   scope: archive
   all:
   - id: levex-refa-dependency
   - id: require-levex-refa
-  - id: from-str-loader-call
-  - id: from-str-promise-swallow
+  - id: micro-behaviors/data/string/conversion::from-str-method-call
+  - id: micro-behaviors/data/control-flow/error-handling::promise-identity-then-empty-catch
 
 - id: levex-refa-loader-stub
   desc: levex-refa import-time loader stub
@@ -431,8 +505,8 @@ composite_rules:
   for: [javascript, typescript]
   all:
   - id: require-levex-refa
-  - id: from-str-loader-call
-  - id: from-str-promise-swallow
+  - id: micro-behaviors/data/string/conversion::from-str-method-call
+  - id: micro-behaviors/data/control-flow/error-handling::promise-identity-then-empty-catch
 
 - id: slot-loader-stub
   desc: Slot loader runs during import
@@ -442,8 +516,8 @@ composite_rules:
   attack: "T1195.002,T1059.007"
   all:
   - id: require-slot-loader
-  - id: from-str-loader-call
-  - id: swallowed-loader-errors
+  - id: micro-behaviors/data/string/conversion::from-str-method-call
+  - id: micro-behaviors/data/control-flow/error-handling::from-str-empty-catch
   any:
   - id: noop-loader-promises
   - id: micro-behaviors/os/module/load::cjs-require-in-try-fallback
@@ -459,8 +533,8 @@ composite_rules:
   all:
   - id: slot-loader-dependency
   - id: require-slot-loader
-  - id: from-str-loader-call
-  - id: swallowed-loader-errors
+  - id: micro-behaviors/data/string/conversion::from-str-method-call
+  - id: micro-behaviors/data/control-flow/error-handling::from-str-empty-catch
 
 - id: trojanized-crypto-sdk-helper
   desc: Trojanized SDK triggers four-sdk-aes-ipheriv helper
@@ -493,3 +567,18 @@ composite_rules:
   - id: objectives/supply-chain/impersonation/core-module::main-path-js
   unless:
   - id: well-known/lib/core/node-path::package-name
+
+# debug-logfmt clones keep origDebug and replace require('debug') with a
+# payload package, then wrap origDebug.enable in javascript-obfuscator RC4
+# string-array output so the substitution is not readable at rest.
+- id: obfuscated-origdebug-payload-swap
+  desc: Obfuscated origDebug payload module swap
+  crit: hostile
+  conf: 0.98
+  for: [javascript, typescript]
+  attack: T1195.002,T1027.002
+  mbc: B0024
+  all:
+  - id: origdebug-swapped-require
+  - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::for-try-parseint-array-rotate
+  - id: micro-behaviors/crypto/symmetric/xor/loop::xor-modulo-key-loop

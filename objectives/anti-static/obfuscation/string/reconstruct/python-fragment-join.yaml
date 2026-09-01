@@ -1,0 +1,106 @@
+# Endpoints and command lines rebuilt at runtime from a list of fragments, so
+# that no complete URL, host, or flag string exists anywhere in the file.
+#
+# The shape is always the same: a module-level list of pieces, then a
+# `"".join(...)` that welds them back together — sometimes decoding each piece
+# on the way through. A reviewer skimming the source sees a list of opaque
+# constants; `strings` on the artifact sees the same. Only the joined value is
+# ever a URL or an argv flag, and it exists only in memory.
+#
+# Both legs are recorded separately because either can appear alone (a
+# fragment list feeding an eval, a decode-join over data read from disk), and
+# the composite is what states the reconstruction.
+defaults:
+  platforms: [linux, macos, windows]
+  for: [python]
+  attack: T1027
+  mbc: B0032
+
+traits:
+  # Two or more Base64 blobs sitting side by side in one list literal. A single
+  # encoded constant is ordinary (a key, an icon, a test vector); a *sequence*
+  # of them exists to be concatenated.
+  #
+  # A fragment must be mixed-case. Base64 of arbitrary bytes always is within
+  # 16 characters, while the neighbouring shapes that share the character class
+  # are not: a list of POSIX paths (['/usr/bin/python3', '/usr/bin/python2'])
+  # is all lowercase and a list of GPG key ids (["D8576A8BA88D21E9", ...]) is
+  # all uppercase — ansible-core's apt/apt_key modules matched on exactly
+  # those. The engine's regex crate has no lookaround and caps patterns at 90
+  # bytes, so the case requirement is expressed as `not:` filters over the
+  # matched run rather than inside the pattern.
+  - id: base64-fragment-list
+    desc: List literal of Base64 fragments
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '\[\s*["''][A-Za-z0-9+/]{16,}={0,2}["'']\s*,\s*["''][A-Za-z0-9+/]{16,}'
+    not:
+      - regex: '["''][a-z0-9+/]{16,}={0,2}["'']\s*,'
+      - regex: '["''][A-Z0-9+/]{16,}={0,2}["'']\s*,'
+      # An export or method list, not a payload. A 16-character base64 run
+      # encodes 12 bytes and averages ~2.5 digits (16 x 10/64), so a pair of
+      # tokens carrying at most one digit each and no `+`/`/` is word-like
+      # rather than encoded. This fired on 23 of the 109 packages in the
+      # corpus: `__all__ = ["ContentListUnion", "ContentListUnionDict"]` in
+      # litellm, `["E2BSandboxBackend", "E2BSandboxSession"]` in bernstein,
+      # COM tables like ["EnumConnectionPoints","FindConnectionPoint"] in
+      # pywin32.
+      # The digit allowance is a short *run*, not a single digit: API and SDK
+      # identifiers embed version and protocol numbers (`Route53ResolverClient`
+      # in localstack, `S3`, `EC2`, `IPv6`, `Base64`, `SHA256`), and a one-digit
+      # bound let every one of them through. A real Base64 run of 16+ chars
+      # averages ~2.5 digits *scattered*; requiring letters, one contiguous
+      # digit run, then letters is identifier shape, not payload shape.
+      - regex: '["''][A-Za-z]*[0-9]{0,3}[A-Za-z]*["'']\s*,\s*["''][A-Za-z]*[0-9]{0,3}[A-Za-z]*'
+      # Slash-separated CamelCase labels, not payload. `/` is in the Base64
+      # alphabet, so taxonomy/category paths qualify as "fragments" on
+      # character class alone -- youtube-dl's theplatform extractor carries
+      # `['MSNBC/Issues/Democrats', 'MSNBC/Issues/Elections/...']`. Two
+      # capitalised words either side of a slash is word structure; a random
+      # Base64 run has no reason to produce it.
+      - regex: '[A-Z][a-z]{2,}/[A-Z][a-z]{2,}'
+      # Absolute-path / JSON-Patch tokens, the same confusion from the other
+      # direction: `["/accessLogSettings/destinationArn", "/accessLogSettings/
+      # format"]` in localstack's API Gateway provider is a patch-path list.
+      # A quoted token that opens with a slash and continues in letters is a
+      # path; a Base64 run has a 1-in-64 chance of starting with `/` and no
+      # reason to follow it with three letters.
+      - regex: '["'']/[A-Za-z]{3,}'
+      # Slash-separated hierarchies more generally: MQTT topics, resource
+      # paths, ACL scopes. Home Assistant's generated mqtt.py carries
+      # `["cloudapp/QBUSMQTTGW/state", "cloudapp/QBUSMQTTGW/config"]`, which
+      # is mixed-case and long enough to pass the Base64 character test but
+      # is a topic table. Three or more alphabetic segments separated by
+      # slashes is hierarchy structure; a random Base64 run emits `/` at
+      # 1-in-64 per character and has no reason to place two of them so they
+      # bracket whole words.
+      - regex: '[A-Za-z]{2,}/[A-Za-z]{2,}/[A-Za-z]{2,}'
+      # Substrate/Bittensor SS58 account addresses use Base58 and commonly
+      # appear in validator/miner lists. Their alphabet is a subset of
+      # Base64, but a pair of fixed-width `5...` account identifiers is not
+      # an encoded payload split for runtime reconstruction.
+      - regex: '["'']5[1-9A-HJ-NP-Za-km-z]{47}["'']\s*,'
+    unless:
+      - id: well-known/app/system/anthropic-cybersecurity-skills::defensive-cybersecurity-skills-repository
+      # A Prowler check module is written in the shape of the control it audits.
+      - id: well-known/tool/detection/prowler::scanner-check-corpus
+      # A security-eval corpus ships the technique as the subject under test.
+      - id: well-known/lib/ai/inspect-evals::eval-corpus-context
+
+composite_rules:
+  # The full reconstruction: fragments declared, then decoded and welded. This
+  # is what a staged loader does to keep its C2 host out of static analysis.
+  - id: endpoint-assembled-from-encoded-fragments
+    desc: Builds a string from encoded fragments
+    crit: suspicious
+    conf: 0.95
+    # Packages routinely split the two halves across modules — the fragment
+    # table in one file, a `_helpers` decoder in another — so pool evidence
+    # across the whole distribution rather than requiring one file to hold both.
+    scope: archive
+    for: [python, whl, python-sdist, egg, tar, zip]
+    all:
+      - id: base64-fragment-list
+      - id: micro-behaviors/data/decode/encoded/formats::python-join-decoded-values

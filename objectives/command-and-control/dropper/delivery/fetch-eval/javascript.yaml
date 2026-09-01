@@ -47,6 +47,9 @@ traits:
   crit: suspicious
   conf: 0.98
   attack: T1059.007
+  unless:
+  - id: metadata/file/profile/identity::github-issue-intel-catalog
+  - id: well-known/tool/offensive/wirelessxpl::authorized-framework-context
   if:
     type: text
     regex: \beval\s*\(\s*[A-Za-z_$][\w$]*\.content\s*\)
@@ -108,18 +111,13 @@ traits:
   attack: T1140
   if:
     type: text
-    regex: "\\.message[\\s\\S]{0,220}Buffer\\.from\\s*\\([^)]{1,80}['\"]base64['\"]"
+    # Allow for an assignment and explanatory comments between extracting the
+    # response field and decoding it. The field, Buffer decoder, and Base64
+    # encoding still all have to occur in this bounded source window.
+    regex: "\\.message[\\s\\S]{0,900}Buffer\\.from\\s*\\([^)]{1,80}['\"]base64['\"]"
   unless:
   - id: micro-behaviors/process/interpreter/vm/
   - id: metadata/library/runtime::acquire-vscode-api
-- id: function-require-decoded-code
-  desc: Executes decoded code with require
-  crit: suspicious
-  conf: 0.97
-  attack: T1059.007
-  if:
-    type: text
-    regex: "new\\s+Function\\s*\\(\\s*['\"]require['\"][^)]{1,120}\\)\\s*\\(\\s*require\\s*\\)"
 - id: object-values-to-validation-handler
   desc: JSON object values routed to handler
   crit: component
@@ -135,6 +133,12 @@ traits:
   if:
     type: text
     regex: eval\s*\(\s*await\s*\(\s*await\s+fetch\(.{1,120}\)\)\.text\(\)\s*\)
+  # Documented use-m bootstrap eval(await fetch('https://unpkg.com/use-m/...'))
+  # is identified by the notable atoms below; suppress the generic dropper
+  # signal so ordinary release scripts are not scored as delivery.
+  unless:
+  - id: use-m-unpkg-fetch-eval-bootstrap
+  - id: use-m-jsdelivr-fetch-eval-bootstrap
 
 # The same construct, but the code being evaluated is the documented `use-m`
 # bootstrap used by the command-stream build helper. Keep this exception
@@ -206,6 +210,19 @@ traits:
   - type: text
     regex: '(?m)\(\s*\.\.\.\s*\)\s*\.then\s*\(\s*eval\s*\)|^\s*(//|\*).{0,120}\.then\s*\(\s*eval\s*\)'
   - id: well-known/app/communication/thunderbird::firefox-source-tree-path
+# Same sink as `.then(eval)`, written as `.then((text) => { eval(text); })`.
+# Compiled TypeScript emit from npm stagers uses this form, not point-free.
+- id: then-eval-ident-callback
+  desc: Promise then() callback evaluates its argument
+  crit: suspicious
+  conf: 0.93
+  attack: T1059.007
+  if:
+    type: text
+    regex: '\.then\s*\(\s*\(?\s*[A-Za-z_$][\w$]*\s*\)?\s*=>\s*\{?\s*eval\s*\(\s*[A-Za-z_$][\w$]*\s*\)'
+  unless:
+  - id: metadata/package/testing/
+  - id: metadata/package/testing/presence/manifest::test-fixtures
 - id: userjs-endpoint
   desc: User JavaScript endpoint path
   crit: component
@@ -265,6 +282,14 @@ traits:
     # `return value[key]()` shape matched ordinary generated/library code.
     regex: 'return\s+(response|resp|res|reply)\s*\[[^\]]{1,40}\]\(\s*\)'
 
+- id: computed-response-method-field
+  desc: Computed response method and field access
+  crit: component
+  conf: 0.94
+  if:
+    type: text
+    regex: 'await\s+\w+\[[^\]]{1,80}\]\(\)\)\[[^\]]{1,80}\]'
+
 - id: recursive-retry-pattern
   desc: Recursive function retry on failure
   crit: component
@@ -323,6 +348,15 @@ composite_rules:
   - id: computed-async-response-callback
   - id: computed-response-body-read
   - id: micro-behaviors/process/interpreter/eval::js-new-function-constructor
+- id: obfuscated-computed-fetch-function-loader
+  desc: String-table-obfuscated fetch response executes as a Node module
+  crit: hostile
+  conf: 0.995
+  attack: T1027,T1059.007,T1105
+  mbc: B0009.016
+  all:
+  - id: objectives/anti-static/obfuscation/eval/require::obfuscated-fetch-module-smuggle
+  - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::hex-name-mangling-with-string-table-rotation
 - id: axios-response-field-require-loader
   desc: Axios response field compiled with require access
   crit: hostile
@@ -485,7 +519,7 @@ composite_rules:
   - id: request-callback-body-function
   - id: function-result-invoked-require
   any:
-  - id: objectives/supply-chain/trojanized/library/remote-eval::custom-bearrtoken-header
+  - id: micro-behaviors/communications/http/header/custom::bearrtoken-header-map-entry
   - id: objectives/supply-chain/trojanized/library/remote-eval::recursive-request-retry
   - id: objectives/command-and-control/infrastructure/paste::jsonkeeper
   downgrade:
@@ -496,16 +530,17 @@ composite_rules:
   desc: Remote JSON message executes with require
   crit: hostile
   conf: 0.99
-  attack: T1059.007
+  attack: T1059.007,T1105,T1140
   mbc: B0009.016
+  near_bytes: 3000
   all:
-  - id: micro-behaviors/communications/http/request/client::fetch-then-json
+  - id: micro-behaviors/communications/http/message::http-message-json-call
   - id: json-message-base64-decode
-  - id: function-require-decoded-code
+  - id: micro-behaviors/process/interpreter/eval::js-function-constructor-require-invocation
   any:
-  - id: micro-behaviors/communications/http/request/client::post-method-text
+  - id: micro-behaviors/communications/http/request/client::fetch-post-pattern
   - id: micro-behaviors/communications/http/post::axios-post-call
-  - id: micro-behaviors/communications/http/request/client::js-fetch-call
+  - id: micro-behaviors/communications/http/post::node-https-request-post
   unless:
   - id: metadata/package/testing/
   - id: metadata/package/testing/presence/manifest::test-fixtures
@@ -517,7 +552,7 @@ composite_rules:
   mbc: B0009.016
   all:
   - id: objectives/anti-static/obfuscation/eval/require::remote-code-module-smuggle
-  - id: objectives/supply-chain/trojanized/library/remote-eval::custom-bearrtoken-header
+  - id: micro-behaviors/communications/http/header/custom::bearrtoken-header-map-entry
   - id: micro-behaviors/communications/ip/endpoint::external-ipv4-port-source-literal
   - id: micro-behaviors/communications/http/request/client::js-fetch-call
   unless:
@@ -542,7 +577,7 @@ composite_rules:
   near_bytes: 260
   all:
   - id: json-parse-body-call
-  - id: micro-behaviors/process/interpreter/eval::js-eval-object-property
+  - id: micro-behaviors/process/interpreter/runtime/eval::js-eval-parsed-json-field
 - id: request-json-field-eval-loader
   desc: HTTP JSON response field executed with eval
   crit: hostile
@@ -607,7 +642,7 @@ composite_rules:
   mbc: B0009.016
   all:
   - id: axios-jsonkeeper-content-eval-loader
-  - id: objectives/discovery/system/fingerprint/hardware::js-victim-id
+  - id: objectives/discovery/system/fingerprint/user::node-host-user-query
   - id: micro-behaviors/os/env/vars/access::js-process-env-spread
   unless:
   - id: metadata/package/testing/
@@ -690,6 +725,17 @@ composite_rules:
   - id: micro-behaviors/data/decode/base64::atob-decode
   unless:
   - id: metadata/package/testing/
+- id: axios-atob-detached-node-stdin
+  desc: Axios atob payload to Node stdin
+  crit: hostile
+  conf: 0.99
+  attack: T1105,T1140,T1059.007
+  mbc: B0009.016
+  scope: file
+  near_bytes: 2048
+  all:
+  - id: axios-get-atob-url
+  - id: objectives/supply-chain/install-hook/dropper/runtime::detached-node-stdin-handoff
 - id: remote-worker-module-compile-loader
   desc: HTTP response compiled inside worker
   crit: hostile
@@ -920,6 +966,22 @@ composite_rules:
   - id: micro-behaviors/process/interpreter/eval::js-new-function-variable-argument
   - id: objectives/anti-static/obfuscation/eval/loader::obfuscated-function-constructor-payload
 
+# Some string-table obfuscators pass `fetch` into a computed helper rather
+# than calling it directly, so the ordinary fetch call fact has no target.
+# Requiring the helper shape, an immediate Function sink, and both independent
+# decoder mechanics keeps this focused on concealed remote-code loaders.
+- id: obfuscated-helper-fetch-function-iife-loader
+  desc: Obfuscated helper fetch executes code through Function
+  crit: hostile
+  conf: 0.995
+  attack: T1027,T1059.007,T1105
+  mbc: B0009.016
+  all:
+  - id: micro-behaviors/communications/http/request/computed::js-fetch-computed-helper-argument
+  - id: micro-behaviors/data/source/dynamic/eval::new-function-iife
+  - id: micro-behaviors/crypto/symmetric/xor/loop::source-xor-modulo-or-indexed-loop
+  - id: micro-behaviors/data/string/search::js-alphabet-indexof-lookup
+
 - id: fetch-text-function-iife-loader
   desc: Remote response text reaches an immediate Function execution sink
   crit: hostile
@@ -928,7 +990,7 @@ composite_rules:
   mbc: B0009.016
   all:
   - id: micro-behaviors/communications/http/request/client::js-fetch-call
-  - id: micro-behaviors/communications/http/client/response-body::await-response-text-value
+  - id: micro-behaviors/communications/http/client/response-body::js-response-text-read
   - id: micro-behaviors/data/source/dynamic/eval::new-function-iife
   - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::hex-name-mangling
 
@@ -940,7 +1002,7 @@ composite_rules:
   mbc: B0009.016
   all:
   - id: micro-behaviors/communications/http/request/client::js-fetch-call
-  - id: micro-behaviors/communications/http/client/response-body::await-response-text-value
+  - id: micro-behaviors/communications/http/client/response-body::js-response-text-read
   - id: micro-behaviors/data/source/dynamic/eval::new-function-iife
   - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::hex-name-mangling
   - id: dynamic-javascript-path-suffix
@@ -960,3 +1022,19 @@ composite_rules:
   - id: function-result-invoked-require
   unless:
   - id: metadata/package/testing/
+
+# A lower-first Base64 table contains both the Node `http` module token and an
+# HTTP URL, while a computed require and obfuscated Function sink conceal the
+# fetch-and-execute path. Each leg is generic across package names and C2 hosts.
+- id: lower-first-base64-http-function-loader
+  desc: Obfuscated HTTP response executes as JavaScript
+  crit: hostile
+  conf: 0.995
+  attack: T1027,T1059.007,T1105
+  mbc: B0009.016
+  scope: leaf
+  all:
+  - id: micro-behaviors/communications/url/encoded::lower-first-base64-http-client-table
+  - id: micro-behaviors/os/module/dynamic-load::node-computed-require-call
+  - id: micro-behaviors/data/source/dynamic/eval::new-function-obfuscated-variable-body
+  - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::hex-name-mangling-with-string-table-rotation

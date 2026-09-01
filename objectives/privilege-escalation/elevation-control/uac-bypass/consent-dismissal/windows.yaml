@@ -1,0 +1,48 @@
+# Answering the UAC consent prompt on the user's behalf.
+#
+# Every documented UAC bypass in this directory works by finding a path to
+# elevation that never shows the prompt -- a hijacked auto-elevating COM object,
+# an environment variable a trusted binary trusts, a scheduled task. This one
+# lets the prompt appear and then takes it away: a thread polls EnumWindows,
+# reads each window's title, and when the title is the consent dialog's it
+# brings that window forward and drives it. The user sees a flicker, or nothing.
+#
+# ATT&CK: T1548.002 (Abuse Elevation Control Mechanism: Bypass User Account
+# Control), T1562.001 where the same sweep closes the administration tools an
+# operator would use to notice.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  attack: T1548.002
+  mbc: F0004
+
+composite_rules:
+  # The four legs are what a title-driven window suppressor needs and what
+  # nothing else has a reason to assemble. A program that merely mentions User
+  # Account Control -- an installer's prompt text, a help string -- does not also
+  # sweep every top-level window and read its title; a program that legitimately
+  # enumerates windows (a task switcher, an accessibility tool) does not carry
+  # the consent dialog's title to compare against. Requiring the foreground
+  # grab as well rules out passive inventory: this one acts on the window it
+  # found.
+  - id: enumerated-consent-dialog-takeover
+    desc: Hunts the UAC consent dialog and fronts it
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: micro-behaviors/ui/dialog/title::uac-consent-dialog-title
+      - id: micro-behaviors/ui/window/manage/enumerate::enum-windows
+      - id: micro-behaviors/ui/window/manage/control::get-window-text
+      - id: micro-behaviors/ui/window/manage/control::set-foreground-window
+    unless:
+      - id: metadata/signed/platform/
+      - id: well-known/app/
+      - id: well-known/tool/
+      - id: well-known/dual-use/remote-admin/
+      - id: metadata/binary/installer/family/
+    # Not a requirement, but the sweep is rarely built for one window. Samples
+    # that carry the Registry Editor's title on the same watchlist are running
+    # the same loop with a longer list, which moves the intent from "get
+    # elevated quietly" to "and keep them from looking" (T1562.001). The atom
+    # micro-behaviors/ui/dialog/title::registry-editor-window-title records that
+    # separately for the analyst rather than gating the verdict on it.

@@ -32,21 +32,47 @@ traits:
       path: dependencies.unique-string-64
       exists: true
 
+  # The payload package itself: publishes as unique-string-64 while pointing
+  # repository/funding/author metadata at the real sindresorhus/unique-string.
+  - id: unique-string-64-package-name
+    desc: Package named unique-string-64
+    crit: suspicious
+    conf: 0.97
+    for: [package.json]
+    if:
+      type: value
+      path: name
+      exact: unique-string-64
+
+  - id: sindresorhus-unique-string-repo-claim
+    desc: Claims sindresorhus/unique-string repository
+    crit: notable
+    conf: 0.95
+    for: [package.json]
+    if:
+      type: value
+      path: repository
+      regex: '(?i)sindresorhus/unique-string'
+
 
 composite_rules:
   - id: node-directly-invoked-database-connectivity-child
-    desc: Directly invoked detached child performs database probe
+    desc: Invoked child runs database connectivity probe
     crit: hostile
     conf: 0.995
     attack: "T1195.002,T1059.007,T1053"
+    for: [archives]
+    scope: archive
     all:
-      - id: micro-behaviors/data/control-flow/module-exec::direct-zero-arg-call
+      - id: objectives/supply-chain/hidden-payload/exec::assert-connection-side-effect-call
       - id: objectives/supply-chain/hidden-payload/exec::node-dbconnectify-reference
       - id: objectives/supply-chain/hidden-payload/exec::node-db-connectivity-probe
-      - id: micro-behaviors/process/create/shell/bridge::child-process-destructure-require
       - id: micro-behaviors/process/create/spawn::process-execpath-spawn
-      - id: micro-behaviors/process/create/spawn::detached-true
       - id: micro-behaviors/process/create/spawn::stdio-ignore
+    any:
+      - id: micro-behaviors/process/create/spawn::detached-true
+      - id: micro-behaviors/process/create/spawn::node-self-eval-argument
+      - id: micro-behaviors/process/create/spawn::spawn-call
   - id: module-scope-remote-code-loader
     desc: Module-scope code executes fetched JavaScript
     crit: hostile
@@ -58,6 +84,40 @@ composite_rules:
       - id: objectives/command-and-control/dropper/delivery/fetch-eval::fetch-eval-remote-code
       - id: micro-behaviors/data/control-flow/module-exec::direct-zero-arg-call
 
+  # Import-time trigger (magic numeric arg) that AES-decrypts then dispatches
+  # through a computed globalThis property — the durable loader half of the
+  # unique-string-64 squat and similar npm utility trojans.
+  - id: import-time-numeric-aes-global-eval
+    desc: Module-scope call decrypts via globalThis eval
+    crit: hostile
+    conf: 0.97
+    attack: T1195.002, T1027.013, T1059.007
+    all:
+      - id: micro-behaviors/data/control-flow/module-exec::direct-numeric-arg-call
+      - id: micro-behaviors/crypto/symmetric/aes/runtime-library::createDecipheriv
+      - id: micro-behaviors/data/source/property/computed::globalthis-computed-property-call
+    unless:
+      - id: metadata/package/testing/
+      - id: well-known/tool/detection/
+
+  # npm libraries that run a zero-arg harvest on `require()` and POST the
+  # loot to a hardcoded IP. Distinct from install-hook stealers: no
+  # preinstall/postinstall is required. Do not unless on well-known/tool/detection
+  # — these samples name snyk/phylum/socket.dev in order to skip them.
+  - id: import-time-direct-ip-credential-post
+    desc: Module-load posts harvested credentials to a direct-IP endpoint
+    crit: hostile
+    conf: 0.97
+    attack: "T1195.002,T1552.001,T1041"
+    mbc: E1552,E1041
+    near_bytes: 16384
+    all:
+      - id: micro-behaviors/data/control-flow/module-exec::direct-zero-arg-call
+      - id: micro-behaviors/fs/path/sensitive/credentials::developer-credential-stores
+      - id: objectives/command-and-control/channel/http/transport::direct-ip-http-channel
+      - id: micro-behaviors/communications/http/request/client::http-post-json
+    unless:
+      - id: metadata/package/testing/
 
   # Clone plus payload. The two version legs are the name-free half -- a package
   # whose own changelog documents releases three or more majors beyond the

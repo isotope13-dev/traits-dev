@@ -1,0 +1,98 @@
+# Sequential / placeholder symmetric keys left in release malware builds.
+# GoginRAT shipped AES key material set to the sequential hex alphabet
+# 0123456789abcdef; NodeEdgeRAT-style scaffolds leave encryptionKey =
+# "change_this_key". Alone these strings are weak; paired with a cipher
+# constructor and remote tasking they mark unfinished C2 crypto.
+defaults:
+  platforms: [unix, windows]
+  for: [scripts, binaries, go]
+  attack: T1573.001,T1027
+  mbc: C0027
+
+traits:
+  - id: change-this-key-literal
+    desc: Literal change_this_key string
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      exact: change_this_key
+
+  - id: aes-key-field-token
+    desc: AES or generic key field name
+    crit: component
+    conf: 0.8
+    if:
+      type: text
+      regex: '(?i)\b(aes[_-]?key|encryptionKey|encrypt_key|secret_key|crypto_key)\b'
+
+composite_rules:
+  - id: sequential-hex-byte-key-slice
+    desc: Sequential hex passed to AES NewCipher
+    crit: suspicious
+    conf: 0.92
+    all:
+      - id: micro-behaviors/crypto/symmetric/key::sequential-placeholder-key
+      - id: micro-behaviors/crypto/symmetric/aes/library::go-new-cipher-string
+    near_bytes: 120
+
+  - id: change-this-key-placeholder
+    desc: change_this_key encryption placeholder
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: change-this-key-literal
+      - id: aes-key-field-token
+    near_bytes: 80
+
+  - id: sequential-hex-aes-decryptor
+    desc: AES decryptor keyed with sequential hex
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: micro-behaviors/crypto/symmetric/aes/library::go-new-cipher-string
+    any:
+      - id: micro-behaviors/crypto/symmetric/key::sequential-placeholder-key
+      - id: sequential-hex-byte-key-slice
+    near_bytes: 2048
+
+  - id: sequential-hex-aes-c2-backdoor
+    desc: Sequential-hex AES key with HTTP C2
+    crit: hostile
+    conf: 0.98
+    attack: T1573.001,T1071.001,T1059
+    all:
+      - id: micro-behaviors/communications/http/get::http-get
+    any:
+      - id: micro-behaviors/crypto/symmetric/key::sequential-placeholder-key
+      - id: sequential-hex-byte-key-slice
+      - id: sequential-hex-aes-decryptor
+
+  - id: sequential-hex-aes-remote-shell
+    desc: Sequential-hex AES C2 with shell plugin
+    crit: hostile
+    conf: 0.99
+    attack: T1573.001,T1059
+    all:
+      - id: sequential-hex-aes-c2-backdoor
+    any:
+      - id: micro-behaviors/process/create/direct::exec-command
+      - id: micro-behaviors/process/create/direct::go-command-output-capture
+      - id: micro-behaviors/process/create/exec::cmd-exe-reference
+      - id: micro-behaviors/process/create/shell/bridge::execSync-call
+    near_bytes: 12000
+
+  - id: placeholder-key-remote-agent
+    desc: Placeholder crypto key with remote agent
+    crit: hostile
+    conf: 0.98
+    attack: T1573.001,T1059,T1071.001
+    all:
+      - id: change-this-key-placeholder
+    any:
+      - id: micro-behaviors/process/create/shell/local::node-exec-command-variable
+      - id: micro-behaviors/process/create/shell/bridge::execSync-call
+      - id: micro-behaviors/process/create/shell/bridge::js-execsync
+      - id: micro-behaviors/communications/http/request/client::https-request
+    needs: 2
+    near_bytes: 12000

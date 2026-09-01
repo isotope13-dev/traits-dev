@@ -5,6 +5,24 @@ defaults:
   conf: 0.85
 
 composite_rules:
+- id: unsigned-winword-hidden-self-read-temp-dropper
+  desc: Unsigned WinWord impostor self-reads and launches a hidden Temp child
+  crit: hostile
+  conf: 0.99
+  attack: T1027.009,T1106
+  all:
+  - id: metadata/binary/layout::pe-no-signature-record
+  - id: objectives/evasion/masquerade/version-resource/claim::fake-winword-version-resource
+  - id: objectives/anti-static/obfuscation/payload/self-read::self-read-file-import-chain-wide
+  - id: metadata/binary/section/metrics::large-high-entropy-writable-data-section
+  - id: micro-behaviors/fs/temp/directory::temp-file-staging-primitives
+  - id: micro-behaviors/fs/file/write/direct::write-file
+  - id: micro-behaviors/process/create/flags::x86-create-no-window-immediate
+  - id: micro-behaviors/process/create/spawn::create-process-w
+  unless:
+  - id: metadata/binary/installer/
+  - id: objectives/impact/infect/binary/rewrite::repeated-standard-pe-overlay-infector
+  - id: objectives/impact/infect/binary/rewrite::self-copying-repeated-pe-image-stack
 - id: strided-xor-user-profile-process-stager
   desc: Decrypts and launches user-profile payload
   crit: hostile
@@ -85,21 +103,30 @@ composite_rules:
   unless:
   - id: metadata/signed/platform/
   - id: metadata/binary/installer/family/
-- id: pushenabledapplication-resource-dropper
-  desc: PushEnabledApplication decoy resource dropper
+- id: xor-transformed-resource-random-process-stager
+  desc: XORs resource to random exe and attempts launch
   crit: hostile
   conf: 0.99
-  attack: T1036.005,T1027.009,T1105
+  attack: T1027.009,T1106,T1140
   all:
-  - id: objectives/evasion/masquerade/identity/mimicry::unsigned-pushenabledapplication-masquerade
   - id: metadata/binary/layout::pe-embedded
   - id: micro-behaviors/data/embedded/payload/resource::pe-resource-full-extraction
+  - id: micro-behaviors/crypto/symmetric/xor/loop::x86-copy-byte-xor-loop
+  - id: micro-behaviors/fs/file/create::gcc-random-lowercase-exe-name
+  - id: micro-behaviors/fs/file/write/direct::write--fwrite
   - id: micro-behaviors/process/create/spawn::create-process-a
-  any:
-  - id: objectives/anti-static/obfuscation/payload/encrypted::dominant-rsrc-section
-  - id: metadata/binary/layout::pe-multiple-tls-callbacks
-  - id: micro-behaviors/os/env/vars/access::temp-var
-  needs: 2
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+- id: noop-padded-embedded-process-stager
+  desc: No-op-padded embedded PE process stager
+  crit: hostile
+  conf: 0.99
+  attack: T1027.001,T1027.009,T1106
+  all:
+  - id: embedded-pe-resource-process-stager
+  - id: objectives/anti-static/obfuscation/instruction/junk::dense-noop-function-stubs
+  - id: objectives/anti-static/obfuscation/name-mangling/export-name::disassembler-style-export-flood
   unless:
   - id: metadata/signed/platform/
   - id: metadata/binary/installer/family/
@@ -272,6 +299,7 @@ composite_rules:
   - id: metadata/signed/platform/
   - id: metadata/binary/installer/family/
   - id: metadata/binary/installer/script/
+  - id: well-known/tool/sysadmin/microsoft-office::office-c2r-kms-activation-context
 
 # Crack/loader stub: almost no code, a multi-megabyte resource section, classic
 # FindResource→temp write path, then ShellExecute. Installers that are signed or
@@ -311,3 +339,47 @@ composite_rules:
   - id: metadata/signed/platform/
   - id: metadata/binary/installer/family/
   - id: metadata/binary/installer/script/
+
+# A packed, unsigned carrier holding both halves of a delivery: an executable
+# payload in its resources, and the address to phone once it runs.
+#
+# The literal IPv4 is the part worth naming. Software that legitimately talks to
+# a server names it — a hostname, resolved at run time, changeable without a
+# rebuild. A dotted quad compiled into a packed binary is the opposite choice:
+# it survives DNS takedown and leaves nothing to seize, which only matters to
+# whoever is expecting the takedown. `external-ipv4-host-literal-binary` already
+# carried this signal for ARM/PowerPC/IoT backdoors and for native RATs; nothing
+# paired it with a packed Windows carrier, so a Windows dropper with its C2
+# baked in had no composite to land on.
+#
+# Packed + unsigned + high-entropy code on their own are a protected commercial
+# build. Adding an executable resource section and a hardcoded address is the
+# combination a shipped product does not produce.
+- id: packed-carrier-resource-payload-literal-c2
+  desc: Packed carrier holds a payload and literal C2
+  crit: hostile
+  conf: 0.96
+  attack: T1027.002,T1105,T1071
+  mbc: F0001,B0030
+  all:
+  - id: metadata/binary/resource::executable-rsrc-section
+  - id: micro-behaviors/communications/ip/literal::external-ipv4-host-literal-binary
+  - id: metadata/binary/layout::pe-no-signature-record
+  - id: metadata/binary/metrics/structural::high-code-entropy
+  # The concrete markers, not `pack/detect::detect`: that umbrella is an
+  # `any:`-only composite, which validation flags as low-value and filters
+  # from scan output, so it is not dependable as a leg.
+  any:
+  - id: objectives/anti-static/pack/detect::aspack-marker
+  - id: objectives/anti-static/pack/detect::themida-marker
+  - id: micro-behaviors/data/encode/pecompact::pec2no-section-token
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: metadata/binary/installer/script/
+  - id: well-known/tool/reverse-engineering/
+  # `metadata/binary/vendor/` is deliberately NOT here. That directory holds
+  # `common-fp-context`, a baseline catch-all satisfied by any Delphi/Borland
+  # build — which this carrier is — so the directory reference would have
+  # silenced the rule on exactly the samples it is for. Being unsigned is
+  # already required above, and that is the gate that matters.

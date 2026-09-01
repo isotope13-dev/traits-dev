@@ -1,0 +1,45 @@
+# Staged remote-code loader whose fetch target is not visible in the source.
+#
+# The sibling files here key on a recognizable transport shape (https.request,
+# an evented GET, a fetch().then() chain). Obfuscated loaders defeat that: the
+# transport is reached through a computed property and the URL only exists as
+# a Base64 blob decoded at call time, so nothing in the file reads as a
+# download. What survives every one of those transforms is the pair of facts
+# this composite joins -- an HTTP(S) URL recovered from Base64 content, and a
+# runtime code-construction sink that receives decoded or downloaded data --
+# in a file whose identifiers were machine-mangled.
+#
+# Each leg is individually ordinary: packages Base64 config, and bundlers emit
+# Function constructors. Together, in mangled code, they describe a loader
+# that deliberately hid where its next stage comes from, which is the shape
+# behind phishing-page bootstraps and trojanized install scripts alike.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript, html]
+  attack: T1027.013,T1105,T1059.007
+  mbc: B0032
+
+composite_rules:
+  - id: obfuscated-hidden-url-code-stager
+    desc: Mangled script runs code from a hidden URL
+    crit: hostile
+    conf: 0.95
+    near_bytes: 32768
+    all:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::hex-name-mangling
+      - id: micro-behaviors/communications/http/url/encoded::base64-decoded-http-url
+    any:
+      # `new Function(body)` where body is a variable -- the accumulated
+      # response of the download, never a literal the reviewer can read.
+      - id: micro-behaviors/process/interpreter/eval::js-new-function-variable-argument
+      # `new Function(atob(...))` / `Function(decode(...))` -- the body is the
+      # decoder's output.
+      - id: objectives/anti-static/obfuscation/payload/encoded::decoded-function-constructor-argument
+      # `fetch(u).then(r => r.text()).then(eval)` -- the response is piped
+      # straight into eval with no intervening handling.
+      - id: objectives/command-and-control/dropper/delivery/fetch-eval::then-eval-pointfree
+    unless:
+      # A declared, inspectable obfuscation build step is not this pattern.
+      - id: metadata/build/minifier::intentional-javascript-obfuscator-build
+      - id: metadata/build/minifier::intentional-obfuscator-dist-artifact
+      - id: metadata/build/minifier::intentional-obfuscator-release-artifact

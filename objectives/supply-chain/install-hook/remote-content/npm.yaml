@@ -1,0 +1,99 @@
+# An install hook that downloads content and saves it.
+#
+# `npm install` runs these scripts unattended on every machine that pulls the
+# package in, including CI. A hook that fetches at install time therefore hands
+# whoever controls the URL a write primitive on every consumer, forever: the
+# bytes the maintainer reviewed at publish time are not the bytes a user gets
+# next week, and no lockfile or integrity hash covers them. It stays true even
+# when the fetch is honest — generating a data file from upstream lists at
+# install time is exactly this shape, and exactly this exposure.
+#
+# Persisting fetched data is a notable install-time side effect, not by itself
+# evidence of malicious intent. The branch-tip variant below is suspicious
+# because its unpinned input can change after publication. Hostile variants —
+# remote YAML that becomes package config, a fetched native binary, or an
+# obfuscated loader — live in sibling directories and add an intent leg.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript, package.json, archives]
+
+composite_rules:
+  - id: hook-script-fetches-and-writes-remote-content
+    desc: Lifecycle hook-like script saves HTTP response
+    crit: notable
+    conf: 0.94
+    for: [javascript, typescript]
+    scope: file
+    all:
+      - id: micro-behaviors/communications/http/download/write::script-fetches-and-writes-remote-content
+      - id: objectives/supply-chain/install-hook/scripts/hook-file::hook-script-filename
+    unless:
+      # A vendored dependency's own network code is not the publishing
+      # package's install behaviour. `@transitive-sdk/utils-ros` bundles its
+      # dependency tree under `_node_modules/`, and the archive-scoped rule
+      # below paired a fetch-and-write buried in there with the outer
+      # package's (entirely honest) `postinstall.sh`.
+      - id: metadata/package/files/dependency::node-modules-path
+      - id: metadata/package/files/dependency::vendored-source-path
+
+  - id: npm-install-hook-persists-remote-content
+    desc: npm install hook saves fetched remote data
+    crit: notable
+    conf: 0.95
+    scope: archive
+    all:
+      # Keep the fetch, write, and lifecycle filename in one file. Pairing an
+      # ordinary postinstall declaration with an unrelated CLI's fetch and
+      # configuration write is not install-time remote persistence.
+      - id: hook-script-fetches-and-writes-remote-content
+    # Name the manifest hook declarations rather than referencing the whole
+    # lifecycle directory. That directory also holds `lifecycle-script-basename`,
+    # which matches any file called install.sh or prepare.sh; under `scope:
+    # archive` a large source tree that merely contains such a file anywhere
+    # (v8's buildtools/third_party/mold/3pp/install.sh) got paired with an
+    # unrelated Python fetch-and-write elsewhere in the tree. The hook has to be
+    # declared in a package manifest for npm to run it.
+    #
+    # Three, not four: `postinstall-hook-declaration` reads the same
+    # `scripts.postinstall` field as `has-postinstall` but without the
+    # husky/patch-package exclusions, so listing both added no coverage and
+    # only cost the directory-reference budget.
+    any:
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::has-preinstall
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::has-postinstall
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::has-install
+    unless:
+      # A hook whose whole body is `bower install` / `pnpm install` hands off
+      # to a second manifest the same tooling already reads. It runs no script
+      # of this package's own, so there is nothing for it to persist -- the
+      # fetch-and-write leg came from an unrelated file elsewhere in the tree.
+      - id: metadata/package/scripts/lifecycle::package-manager-bootstrap-hook
+      # An installed macOS application bundle is not a package awaiting
+      # installation. VSCodium ships the editor's own development manifest
+      # (`scripts.preinstall`/`postinstall` running build/npm/*.ts that the
+      # build does not even copy in) beside bundled extension code that fetches
+      # and writes -- two unrelated members of a built .app, paired by archive
+      # scope into an install hook that persists nothing.
+      - id: metadata/package/files/archive-member::macos-app-bundle-member
+
+  # Worse than a versioned release URL: a raw code-host path resolves against a
+  # branch tip, so its content changes whenever anyone with push rights to a
+  # third-party repository decides it should. The install hook then persists
+  # whatever that branch says today.
+  - id: npm-install-hook-fetches-branch-tip-content
+    desc: Install hook fetches branch-tip remote content
+    crit: suspicious
+    conf: 0.96
+    scope: archive
+    # Legs spelled out rather than layering on
+    # `npm-install-hook-persists-remote-content`: a composite three deep over
+    # another archive-scoped composite resolves inconsistently in the
+    # fixed-point pass, and this rule stopped firing when the one below it
+    # gained an `unless:`.
+    all:
+      - id: hook-script-fetches-and-writes-remote-content
+      - id: micro-behaviors/communications/http/url/github::raw-githubusercontent-web-file
+    any:
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::has-preinstall
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::has-postinstall
+      - id: objectives/supply-chain/install-hook/scripts/lifecycle::has-install

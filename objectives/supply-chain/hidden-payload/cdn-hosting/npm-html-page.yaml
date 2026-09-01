@@ -1,0 +1,95 @@
+# npm (and the CDNs that mirror it, jsDelivr and unpkg) abused as free static
+# hosting for a standalone HTML page — almost always a phishing lure or a decoy
+# loader that pulls its real content from another mirror at runtime.
+#
+# The tell is the manifest itself. A real npm package is a JavaScript module:
+# `main` points at a `.js`/`.mjs`/`.cjs` and the tarball carries code. These
+# packages instead declare `main: index.html` and ship nothing but that one
+# HTML document — no dependencies, no scripts, no JS entry. Nobody `require()`s
+# an HTML file; the package exists only so `https://cdn.jsdelivr.net/npm/<pkg>/
+# index.html` serves attacker-controlled markup from a trusted origin.
+#
+# This is reachable from package.json alone, which matters because cleave does
+# not analyze HTML members inside an archive — so the manifest shape is the
+# only in-archive signal, and it is a strong one. The HTML's own phishing /
+# decoy traits fire when the page is scanned directly.
+defaults:
+  platforms: [linux, macos, windows]
+  for: [package.json]
+  attack: T1608
+
+traits:
+  # Every declared publish artifact is an HTML page or a passive web asset —
+  # no `.js`/`.ts`/`.mjs`/`.cjs`/`.wasm` module anywhere in the allowlist.
+  # `match: all` over the array requires the whole set to be non-code.
+  - id: publish-file-list-html-document
+    desc: Publish file list ships an HTML document
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: 'files[*]'
+      regex: '\.(html|htm)$'
+      case_insensitive: true
+
+composite_rules:
+  # HTML entry point + an HTML-shipping allowlist = the package's deliverable
+  # is a web page, not a module. That is the npm-as-hosting shape regardless of
+  # what the page then does; the page's own content decides phishing vs decoy.
+  - id: npm-package-ships-only-html-page
+    desc: npm package ships only an HTML page
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: metadata/package/manifest/entrypoint::main-html-entry
+      - id: publish-file-list-html-document
+      # Documentation/demo packages legitimately ship a homepage plus real code
+      # and dependencies; require the no-dependencies shape to stay in scope.
+      - id: metadata/package/dependencies/manifest::npm-no-dependencies-field
+
+  # Tighter, higher-confidence variant: the whole manifest is the throwaway
+  # skeleton these campaigns publish — HTML main, HTML-only allowlist, no
+  # dependencies, no scripts, no bin, no description. A genuine package has at
+  # least one of those. This is the disposable CDN-hosting stub.
+  - id: npm-disposable-html-hosting-stub
+    desc: Disposable npm stub hosts an HTML page
+    crit: suspicious
+    conf: 0.94
+    all:
+      - id: metadata/package/manifest/entrypoint::main-html-entry
+      - id: publish-file-list-html-document
+      - id: metadata/package/dependencies/manifest::npm-no-dependencies-field
+      - id: metadata/package/quality/empty::npm-no-scripts-field
+      - id: metadata/package/quality/empty::npm-no-description
+    unless:
+      - id: metadata/package/manifest/entrypoint::bin-field-declared
+
+  # Public-CDN abuse campaigns publish otherwise empty packages under
+  # patterned coordinates.  The name-shape atoms remain neutral
+  # metadata alone; coupled to a one-page disposable hosting stub they identify
+  # intentional registry use as a concealed web-payload host.
+  - id: npm-patterned-name-disposable-html-host
+    desc: Patterned-name npm stub hosts sole HTML payload
+    crit: hostile
+    conf: 0.97
+    attack: T1195.002,T1608
+    all:
+      - id: npm-disposable-html-hosting-stub
+    any:
+      - id: metadata/package/manifest/name::npm-name-consonant-run-digit-suffix
+      - id: metadata/package/manifest/name::npm-name-two-letter-digit-long-suffix
+
+  # A registry security hold supplies the intent that an education-themed name
+  # cannot establish by itself.  Requiring the same disposable HTML-only shape
+  # avoids labeling ordinary withdrawn JavaScript packages as payload hosts.
+  - id: npm-security-held-education-html-host
+    desc: Security-held education npm stub hosts HTML payload
+    crit: hostile
+    conf: 0.99
+    attack: T1195.002,T1608
+    scope: outer
+    for: [npm, archives]
+    all:
+      - id: npm-disposable-html-hosting-stub
+      - id: metadata/package/manifest/name::npm-name-education-activity
+      - id: metadata/registry::registry-security-hold-record

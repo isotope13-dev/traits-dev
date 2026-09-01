@@ -21,15 +21,28 @@ traits:
     field: pe.is_dotnet
     min: 1
   - id: metadata/binary/framework::dotnet-metadata
-- id: inflated-reloc-section
-  desc: Inflated PE reloc section
+- id: embedded-stage-copy-jump-x64
+  desc: Embedded-stage copy loop and indirect jump
   crit: notable
-  conf: 0.9
+  conf: 0.97
+  attack: T1620
+  arch: [x86-64]
   if:
-    type: value
-    path: pe.inflated_sections[*]
-    exact: .reloc
+    type: hex
+    section: .text
+    pattern: "AD AB FF C9 75 FA [0-16] 41 FF E?"
 composite_rules:
+- id: rwx-copy-jump-stage-loader
+  desc: RWX embedded-stage copy and indirect jump
+  crit: hostile
+  conf: 0.99
+  attack: T1027.001,T1620
+  all:
+  - id: embedded-stage-copy-jump-x64
+  - id: micro-behaviors/mem/alloc/executable::virtualalloc-rwx-commit-x64
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
 - id: packed-sfx-overlay-loader
   desc: Packed SFX launches multiple overlay stages
   crit: hostile
@@ -45,11 +58,11 @@ composite_rules:
   - id: metadata/signed/platform/
   - id: metadata/binary/installer/family/
 
-- id: aspack-multi-pe-dynamic-loader
-  desc: ASPack packed PE loads many embedded PEs
-  crit: hostile
+- id: aspack-dominant-multi-pe-overlay
+  desc: ASPack PE carries a file-dominating multi-PE overlay
+  crit: suspicious
   conf: 0.99
-  attack: T1027.002,T1027.009,T1620
+  attack: T1027.001,T1027.009
   all:
   - id: metadata/binary/layout::many-pe-embedded
   - id: metadata/binary/layout::overlay-over-90pct
@@ -63,7 +76,8 @@ composite_rules:
 
 - id: petite-dynamic-api-overlay-unpacker
   desc: Petite-packed PE dynamically resolves APIs while unpacking an overlay
-  crit: hostile
+  # This proves runtime unpacking, not execution of a hostile payload.
+  crit: suspicious
   conf: 0.98
   attack: T1027.002,T1620
   all:
@@ -89,6 +103,10 @@ composite_rules:
   - id: metadata/signed/platform/
   - id: metadata/binary/framework::dotnet-assembly
   - id: metadata/binary/installer/family/
+  # Stock WinRAR SFX code validates embedded PE modules and changes their
+  # page protection. A separately detected RWX copy-and-jump stage still
+  # identifies a patched or trojanized SFX carrier.
+  - id: metadata/binary/installer/sfx::winrar-sfx
 
 - id: importless-single-section-high-entropy-body
   desc: Importless PE with opaque single-section code body
@@ -108,6 +126,28 @@ composite_rules:
   - id: metadata/binary/installer/family/
   - id: metadata/binary/framework/
 
+# Sibling of `importless-single-section-high-entropy-body` without its 128 KB
+# floor. That rule needs the size gate because its legs (no imports, high
+# entropy, one section) are individually weak; a small file can satisfy all
+# three by accident. Zero declared data directories is not weak — an image that
+# names no import directory cannot have been produced by a linker, so it
+# carries the conclusion on its own and the composite can reach the small
+# crypter stubs the size floor was excluding.
+- id: headerless-importless-packed-pe
+  desc: PE with no data directories and packed body
+  crit: hostile
+  conf: 0.97
+  attack: T1027.002
+  mbc: B0032
+  for: [pe]
+  all:
+  - id: metadata/binary/anomaly/format::pe-no-data-directories
+  - id: metadata/binary/metrics/structural::single-section-pe
+  - id: metadata/binary/metrics/structural::high-code-entropy
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: metadata/binary/framework/
 - id: unsigned-microsoft-packed-tls-loader
   desc: Unsigned Microsoft-claim PE combines TLS callbacks with packed data
   crit: hostile
@@ -179,7 +219,7 @@ composite_rules:
   size_min: 5242880
   all:
   - id: metadata/lang/compiler/native::mingw-runtime-marker
-  - id: micro-behaviors/os/api-resolution/hash-based::pe-peb-access-x86-metric
+  - id: micro-behaviors/os/env/access::peb-access-x86
   - id: metadata/binary/metrics/structural::pe-sparse-import-table
   - id: metadata/binary/metrics/structural::minimal-exports
   - id: metadata/binary/metrics/structural::high-code-entropy
@@ -392,7 +432,7 @@ composite_rules:
 
 - id: writable-entry-overlay-api-resolving-loader
   desc: Packed PE loader with writable entry and dynamic API resolution
-  crit: hostile
+  crit: suspicious
   conf: 0.98
   attack: T1027.002,T1620
   mbc: B0032,B0030
@@ -510,10 +550,27 @@ composite_rules:
   conf: 0.94
   attack: T1027.002
   all:
-  - id: inflated-reloc-section
+  - id: metadata/binary/section/layout::inflated-reloc-section
   - id: metadata/binary/section/metrics::pe-entry-in-writable-section
   - id: metadata/binary/metrics/structural::high-code-entropy
   unless:
   - id: metadata/signed/platform/
   - id: metadata/binary/installer/family/
   - id: metadata/binary/framework::dotnet-metadata
+
+- id: inflated-reloc-cloned-text-loader
+  desc: Packed PE combines opaque cloned code with an inflated relocation section
+  crit: hostile
+  conf: 0.99
+  attack: T1027.002
+  all:
+  - id: metadata/binary/section/layout::inflated-reloc-section
+  - id: metadata/binary/section/names::cloned-standard-section-names
+  - id: metadata/binary/metrics/structural::high-code-entropy
+  - id: metadata/binary/section/metrics::high-entropy-exec-section
+  - id: metadata/binary/layout::pe-checksum-zeroed
+  - id: metadata/binary/layout::pe-no-signature-record
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: metadata/binary/framework/

@@ -4,7 +4,7 @@
 # process-creation attributes that look alarming out of context.
 defaults:
   platforms: [unix, windows]
-  for: [scripts, source, python, powershell, csharp, shell, markdown, pyproject.toml, tar, archives]
+  for: [scripts, source, python, powershell, csharp, shell, markdown, pyproject.toml, tar, archives, whl]
   crit: notable
   conf: 0.99
 
@@ -16,12 +16,43 @@ traits:
       type: text
       substr: 'name = "ansible-core"'
 
+  - id: ansible-wheel-distribution
+    desc: Ansible community collections wheel
+    for: [whl]
+    if:
+      type: value
+      path: whl.distribution
+      exact: ansible
+
+  - id: ansible-collections-archive-member
+    desc: Ansible collections tree archive member
+    for: [whl]
+    if:
+      type: value
+      path: archive.members[*].path
+      regex: '(^|[\\/])ansible_collections[\\/]'
+
   - id: ansible-upstream-repository
     desc: Ansible upstream repository marker
-    for: [pyproject.toml, markdown]
+    for: [pyproject.toml, pkginfo, markdown]
     if:
       type: text
       substr: github.com/ansible/ansible
+
+  - id: ansible-core-wheel-metadata-member
+    desc: Ansible Core wheel metadata member
+    for: [zip, whl]
+    if:
+      type: value
+      path: archive.members[*].path
+      regex: '(?i)^ansible_core-[0-9][^/]*\.dist-info[\\/]METADATA$'
+
+  - id: ansible-core-pkginfo-name
+    desc: Ansible Core package metadata name
+    for: [pkginfo]
+    if:
+      type: text
+      regex: '(?m)^Name:\s*ansible-core\s*$'
 
   - id: ansible-module-utils-path
     desc: Ansible module_utils source path
@@ -29,6 +60,13 @@ traits:
     if:
       type: path
       regex: '(?i)ansible[\\/]module_utils'
+
+  - id: ansible-collections-path
+    desc: Ansible collections source path
+    for: [scripts, source, python, powershell, csharp, shell]
+    if:
+      type: path
+      regex: '(?i)ansible_collections[\\/]'
 
   - id: ansible-lib-tree-path
     desc: Ansible lib source tree path
@@ -42,6 +80,41 @@ traits:
     if:
       type: path
       regex: '(?i)ansible.{0,24}[\\/]test[\\/]'
+
+  - id: ansible-powershell-executor-path
+    desc: Ansible PowerShell executor wrapper path
+    for: [powershell]
+    if:
+      type: path
+      regex: '(?i)ansible[\\/]executor[\\/]powershell'
+
+  - id: ansible-log-helper-reference
+    desc: Ansible PowerShell logging helper reference
+    for: [powershell]
+    if:
+      type: text
+      word: Write-AnsibleLog
+
+  - id: ansible-webrequest-helper-function
+    desc: Ansible PowerShell web request helper
+    for: [powershell]
+    if:
+      type: text
+      regex: '(?i)Function\s+Get-AnsibleWebRequest\b'
+
+  - id: ansible-test-bootstrap-path
+    desc: Ansible test target bootstrap path
+    for: [shell]
+    if:
+      type: path
+      regex: '(?i)target[\\/]setup[\\/]bootstrap\.sh$'
+
+  - id: ansible-test-bootstrap-marker
+    desc: Ansible test bootstrap state marker
+    for: [shell]
+    if:
+      type: text
+      substr: /etc/ansible-test.bootstrap
 
   - id: ansible-async-csharp-namespace
     desc: Ansible async C# utility namespace
@@ -68,7 +141,41 @@ traits:
       type: text
       regex: '\b(WANT_JSON|Get-AnsibleParam|Exit-Json)\b'
 
+  - id: ansible-powershell-module-requires
+    desc: Ansible PowerShell module requires directive
+    for: [powershell]
+    if:
+      type: text
+      substr: '#AnsibleRequires'
+
+  - id: ansible-python-module-utils-import
+    desc: Ansible Python module_utils import
+    for: [python]
+    if:
+      type: text
+      substr: from ansible.module_utils
+
+  # Many collection modules are documentation-only Python stubs whose real
+  # implementation is a sibling .ps1; they carry no ANSIBLE_METADATA and import
+  # nothing. The `DOCUMENTATION = r'''` YAML block is the Ansible module
+  # documentation protocol and is what identifies them as task modules.
+  - id: ansible-module-documentation-block
+    desc: Ansible module DOCUMENTATION block
+    for: [python]
+    if:
+      type: text
+      regex: '(?m)^DOCUMENTATION\s*=\s*r?[''"]{3}'
+
 composite_rules:
+  - id: ansible-module-tree-path
+    desc: Ansible module source tree path
+    crit: notable
+    conf: 0.99
+    for: [python, powershell]
+    any:
+      - id: ansible-lib-tree-path
+      - id: ansible-collections-path
+
   - id: ansible-async-csharp-context
     desc: Recognized Ansible async C# utility context
     crit: exception
@@ -92,10 +199,23 @@ composite_rules:
     conf: 0.99
     for: [python, powershell]
     all:
-      - id: ansible-lib-tree-path
+      - id: ansible-module-tree-path
     any:
       - id: ansible-module-metadata-block
       - id: ansible-powershell-module-protocol
+      - id: ansible-powershell-module-requires
+      - id: ansible-python-module-utils-import
+      - id: ansible-module-documentation-block
+
+  - id: ansible-collections-wheel-context
+    desc: Recognized Ansible community collections wheel
+    crit: exception
+    conf: 0.99
+    scope: outer
+    for: [whl, python, powershell, archives, text]
+    all:
+      - id: ansible-wheel-distribution
+      - id: ansible-collections-archive-member
 
   - id: ansible-source-archive-context
     desc: Recognized Ansible Core upstream source archive
@@ -108,3 +228,42 @@ composite_rules:
     all:
       - id: ansible-core-project-name
       - id: ansible-upstream-repository
+
+  - id: ansible-powershell-executor-context
+    desc: Recognized Ansible PowerShell executor wrapper
+    crit: exception
+    conf: 0.99
+    for: [powershell]
+    all:
+      - id: ansible-powershell-executor-path
+      - id: ansible-log-helper-reference
+
+  # Either recognized Ansible PowerShell provenance, as one reference. Rules
+  # that carve out Ansible need both forms (source tree and executor wrapper)
+  # and were spending two suppression slots to say so.
+  - id: ansible-powershell-provenance
+    desc: Recognized Ansible PowerShell provenance
+    crit: exception
+    conf: 0.99
+    for: [powershell]
+    any:
+      - id: ansible-module-source-context
+      - id: ansible-powershell-executor-context
+
+  - id: ansible-powershell-webrequest-context
+    desc: Recognized Ansible PowerShell web request utility
+    crit: exception
+    conf: 0.99
+    for: [powershell]
+    all:
+      - id: ansible-module-utils-path
+      - id: ansible-webrequest-helper-function
+
+  - id: ansible-test-bootstrap-context
+    desc: Recognized Ansible test target bootstrap
+    crit: exception
+    conf: 0.99
+    for: [shell]
+    all:
+      - id: ansible-test-bootstrap-path
+      - id: ansible-test-bootstrap-marker

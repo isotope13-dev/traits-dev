@@ -1,0 +1,77 @@
+# Browser anti-debugging that targets DevTools rather than a native debugger.
+# javascript-obfuscator ships these as its `debugProtection` preset, and
+# hand-rolled phishing pages reuse the same primitives: probe the viewport for
+# a docked DevTools pane, build a `debugger` statement through the Function
+# constructor so the keyword never appears as a statement, and park that
+# statement in a loop the inspector cannot step out of.
+#
+# Every matcher keys on the JavaScript construct, never on wording, so the
+# rules survive renaming and minification. They stay `suspicious` on their own
+# -- a handful of DRM and anti-tamper products ship the same code -- and the
+# composite below is what stronger rules reference for "this file actively
+# obstructs inspection".
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript, html]
+  attack: T1622
+  mbc: B0001
+traits:
+  # `window.outerWidth - window.innerWidth > 160` is the docked-DevTools
+  # heuristic: an open inspector pane steals viewport width (or height) from
+  # the document while the outer window keeps its size. Requiring a
+  # two-or-more digit pixel constant on the right separates it from ordinary
+  # responsive-layout arithmetic, which compares against element sizes and
+  # variables rather than a bare threshold.
+  - id: js-devtools-viewport-delta-probe
+    desc: Detects open DevTools by viewport delta
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: 'outer(Width|Height)[^;{}\n]{0,60}inner(Width|Height)\W{0,4}>=?\s*\d{2,4}'
+  # `Function("debugger")` / `new Function('debugger')` -- the keyword lives in
+  # a string, so the token never appears as a statement for a scanner or a
+  # source map to find. Sibling rules in this directory already cover the
+  # `.constructor('debugger')()` and `['constructor']('debugger')()` spellings;
+  # this is the bare Function-constructor form javascript-obfuscator emits.
+  - id: js-function-constructor-debugger
+    desc: Function constructor built from debugger string
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '(^|[^.\w])(new\s+)?Function\s*\(\s*[''"]debugger[''"]\s*\)'
+  # A `debugger` statement whose enclosing loop never terminates. Stepping past
+  # it re-enters it, which is the whole point: the analyst's inspector is
+  # pinned. A debug-build breakpoint is a bare statement, not one welded into
+  # an endless loop. Split by loop spelling to keep each pattern short.
+  - id: js-debugger-in-while-true-loop
+    desc: Debugger statement pinned in while-true loop
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: 'while\s*\(\s*(true|!!\[\])\s*\)\s*\{?\s*debugger\s*[;}]'
+  - id: js-debugger-in-endless-for-loop
+    desc: Debugger statement pinned in endless for loop
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: 'for\s*\(\s*;\s*;\s*\)\s*\{?\s*debugger\s*[;}]'
+composite_rules:
+  # The fact other rules want to reference: this file does not merely detect an
+  # analyst, it obstructs one. Kept `suspicious` because commercial anti-tamper
+  # ships the same primitives; the intent tier comes from what the obstruction
+  # is wrapped around (see the obfuscator composites that reference this).
+  - id: js-browser-debug-protection
+    desc: Browser script obstructs DevTools inspection
+    crit: suspicious
+    conf: 0.92
+    any:
+      - id: js-devtools-viewport-delta-probe
+      - id: js-function-constructor-debugger
+      - id: js-debugger-in-while-true-loop
+      - id: js-debugger-in-endless-for-loop
+      - id: js-constructor-debugger-call
+      - id: js-constructor-debugger-direct

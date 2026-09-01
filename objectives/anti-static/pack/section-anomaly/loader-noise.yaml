@@ -119,28 +119,6 @@ traits:
   # overhang composite also fires, reloc-concealed-encrypted-payload uses
   # high-entropy-reloc-section instead so a stuffed trailer is not suppressed.
   - id: metadata/binary/metrics/structural::reloc-entry-count-high
-# filefacts walks the base-relocation directory and emits the fraction of the
-# hosting section that is NOT real relocation data (pe.reloc_overhang_ratio) and
-# the absolute overhang in bytes (pe.reloc_overhang_bytes). A genuine .reloc
-# fills its section (overhang ~0); a loader that appends an encrypted second
-# stage to .reloc leaves the section vastly larger than the few real relocation
-# blocks. The ratio ALONE false-positives on every minimal .reloc: a .NET
-# assembly has one 12-byte bootstrap fixup padded to the 512-byte file
-# alignment, which is ratio 0.98 but only ~500 bytes of zero padding — not a
-# concealed payload. Requiring the absolute overhang to clear the largest
-# plausible alignment gap (8 KiB) keeps the ratio meaningful: entropy-
-# independent structural evidence of a real hidden stage (catches low-entropy
-# stages the entropy traits miss) without firing on alignment slack.
-- id: reloc-overhang-bytes-significant
-  desc: 'reloc overhang bytes significant'
-  crit: component
-  conf: 0.9
-  if:
-    type: metrics
-    field: pe.reloc_overhang_bytes
-    min: 8192
-  unless:
-  - id: metadata/lang/compiler/systems::go-pe-binary-context
 - id: x64-xor-dec-dword-payload-loop
   desc: XOR then decrement dword decode loop
   crit: component
@@ -190,19 +168,6 @@ traits:
     executable: true
     entropy_min: 7.0
     length_min: 65536
-- id: large-low-entropy-rwx-section
-  desc: Large low-entropy writable executable section
-  crit: suspicious
-  conf: 0.95
-  if:
-    type: section
-    regex: '^.+$'
-    writable: true
-    executable: true
-    entropy_max: 4.5
-    length_min: 262144
-  unless:
-  - id: well-known/lib/runtime/dotnet-runtime::mscorsvw-runtime
 - id: entry-in-data-like-section
   desc: PE entry point in data-like section
   crit: component
@@ -536,7 +501,7 @@ composite_rules:
   conf: 0.99
   attack: T1027,T1497.001,T1620
   all:
-  - id: large-low-entropy-rwx-section
+  - id: metadata/binary/section/metrics::large-low-entropy-rwx-section
   - id: entry-in-data-like-section
   - id: metadata/file/metrics::low-entropy-binary-with-dense-region
   - id: objectives/anti-analysis/vm-detect/cluster::explicit-vm-execution-rejection-message
@@ -587,9 +552,6 @@ composite_rules:
   - id: metadata/binary/section/metrics::pe-nonstandard-entry
   unless:
   - id: metadata/signed/platform/
-  downgrade:
-    any:
-    - id: metadata/signed/platform/
 - id: virtual-text-rwx-payload-loader
   desc: Virtual text packed RWX payload loader
   crit: hostile
@@ -607,25 +569,6 @@ composite_rules:
   - id: metadata/signed/platform/
   - id: metadata/binary/framework::dotnet-metadata
   - id: metadata/binary/installer/family/
-- id: reloc-overhang-dominant
-  desc: Reloc section dominated by significant non-relocation bytes
-  crit: notable
-  conf: 0.95
-  all:
-  - id: metadata/binary/metrics/structural::reloc-overhang-ratio-high
-  - id: reloc-overhang-bytes-significant
-  unless:
-  - id: metadata/lang/compiler/systems::go-pe-binary-context
-  - id: well-known/lib/runtime/kde/
-  - id: well-known/lib/media/videolan/
-  - id: well-known/lib/media/sdl/
-  - id: well-known/lib/media/ffmpeg/
-  - id: well-known/lib/media/aom/
-  # Do not exclude on high relocation-entry counts: a stuffed encrypted
-  # trailer coexists with thousands of genuine fixups on large MSVC hosts.
-  # Alignment slack is already filtered by reloc-overhang-bytes-significant
-  # (8 KiB), so entry count is not evidence the overhang is benign.
-  - id: well-known/app/media/camtasia::camtasia-known-app-context
 # Read-only-.reloc loaders (no RWX, so the existing reloc-rwx composites miss
 # them) that hide an ENCRYPTED stage: the section is high-entropy AND the
 # overhang metric proves most of it is non-relocation data. Two independent
@@ -642,7 +585,7 @@ composite_rules:
   attack: "T1027.009"
   all:
   - id: metadata/binary/section/metrics::high-entropy-reloc-section
-  - id: reloc-overhang-dominant
+  - id: metadata/binary/anomaly/section-header::reloc-overhang-dominant
   downgrade:
     any:
     - id: metadata/signed/platform/
@@ -810,6 +753,22 @@ composite_rules:
   downgrade:
     any:
     - id: metadata/signed/platform/
+- id: tea-decoy-import-rwx-loader
+  desc: TEA-packed RWX loader padded with rare Win32 utility imports
+  crit: hostile
+  conf: 0.99
+  attack: "T1027.002,T1140,T1620"
+  all:
+  - id: micro-behaviors/crypto/symmetric/tea::canonical-delta
+  - id: objectives/anti-static/obfuscation/decoy-imports::rare-kernel-utility-import-cluster
+  - id: micro-behaviors/mem/alloc/executable::executable-allocation-indicator
+  - id: metadata/binary/metrics/structural::pe-code-entropy-78
+  - id: metadata/binary/layout::pe-no-signature-record
+  unless:
+  - id: metadata/binary/framework::dotnet-assembly
+  - id: metadata/binary/installer/family/
+  - id: metadata/signed/platform/
+  - id: well-known/tool/reverse-engineering/
 - id: msrle-decoy-packed-loader
   desc: MSRLE decoy packed loader
   crit: hostile
@@ -896,7 +855,7 @@ composite_rules:
   - id: objectives/anti-static/obfuscation/payload/section::x64-unrolled-dword-decoder-stub
   - id: reloc-rwx-payload-section
   - id: reloc-dominates-image
-  - id: micro-behaviors/os/api-resolution/hash-based::pe-peb-access-x64-metric
+  - id: micro-behaviors/os/env/access::peb-access-x64
   - id: micro-behaviors/mem/protect/modify::virtual-protect
   - id: metadata/binary/layout::pe-no-signature-record
   unless:
@@ -989,7 +948,7 @@ composite_rules:
   all:
   - id: reloc-rwx-encrypted-payload
   - id: reloc-dominates-image
-  - id: micro-behaviors/os/api-resolution/hash-based::pe-peb-access-both-architectures
+  - id: micro-behaviors/os/env/access::peb-access-both-architectures
   - id: metadata/binary/layout::pe-multiple-tls-callbacks
   - id: metadata/binary/layout::pe-no-signature-record
   - id: metadata/binary/layout::pe-checksum-mismatch

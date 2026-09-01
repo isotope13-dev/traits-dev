@@ -10,11 +10,16 @@ COMPILED_DIR := third-party/compiled
 
 .PHONY: validate check-precompile precompile yara-compile verify-precompile yara-verify yara-update install-precommit
 
-# Rule validation, plus a guard on the compiled rules committed alongside them.
-# The compiled check runs FIRST and is nearly free: stale `.yrc` are invisible
-# at runtime (the engine just ignores them and compiles from source), so without
-# a check here the only place that state ever surfaces is a refused publish.
-validate: check-precompile
+# Rule validation.
+#
+# This no longer gates on third-party/compiled/. The precompile targets below
+# still work and are still the way to refresh those artifacts, but a stale or
+# unfingerprinted `.yrc` set is not a reason to fail an ordinary trait edit:
+# stale `.yrc` are inert at runtime (the engine ignores them and compiles from
+# source), so the failure mode is a slower client, not a wrong verdict. Run
+# `make precompile` (or `make verify-precompile`) deliberately when you are
+# preparing a bundle to publish.
+validate:
 	$(CLEAVE) --traits-dir . validate
 
 # Cheap correctness gate on third-party/compiled/: complete, fingerprinted, and

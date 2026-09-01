@@ -3,6 +3,15 @@ defaults:
   for: [javascript, typescript]
 
 composite_rules:
+  - id: javascript-fragmented-xor-obfuscation
+    desc: JavaScript combines fragmented XOR decoding with identifier mangling
+    crit: suspicious
+    conf: 0.97
+    attack: T1027
+    all:
+      - id: micro-behaviors/data/encode/hex_xor::fragmented-hex-xor-decoder
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::hex-variable-names
+
   - id: js-comment-carried-wsh-payload
     desc: Encoded JScript comments feed computed WSH launch
     crit: hostile
@@ -24,7 +33,7 @@ composite_rules:
       - id: micro-behaviors/data/decode/custom::js-indexof-charat-lookup
       - id: micro-behaviors/process/interpreter/jscript::activex-object-decoder-progid
       - id: micro-behaviors/fs/write/file/stream::js-adodb-stream-savetofile-dynamic-path
-      - id: micro-behaviors/process/create/flags::computed-call-zero-final-argument
+      - id: micro-behaviors/data/source/property/computed::computed-member-call-zero-arg
   # "Decodes a stage BEFORE executing it" is a claim about one routine feeding
   # another, and only proximity checks it. Without a window this fired whenever
   # a webpack bundle happened to contain a base64 codec anywhere and a dynamic
@@ -80,10 +89,31 @@ composite_rules:
     unless:
       - id: well-known/app/publishing/wordpress-plugins/
       - id: well-known/lib/core/freemius::freemius-js-ref
-      - id: well-known/app/system/baidu-comate::baidu-comate
+      - id: well-known/app/ai/coding-agent/baidu-comate::baidu-comate
       - id: well-known/lib/ui/dompurify::library-marker
       - id: well-known/lib/ui/html2canvas::library-marker
       - id: micro-behaviors/data/encode/base64::minified-base64-codec-library
+
+  # WSH malware packers may combine a compact alphabet decoder with very long
+  # carrier strings, then pass the recovered COM ProgID to ActiveXObject via a
+  # variable. Requiring independent source-shape signals keeps ordinary
+  # ActiveX automation and bundled codec implementations out of this verdict.
+  - id: js-opaque-activex-stage
+    desc: Custom-decoded JavaScript conceals an ActiveX stage
+    crit: hostile
+    conf: 0.99
+    attack: T1027,T1059.007,T1140
+    mbc: B0032
+    for: [javascript]
+    scope: file
+    all:
+      - id: micro-behaviors/data/decode/custom::js-alphabet-coded-decoder
+      - id: micro-behaviors/os/com/object::activex-object-variable-progid
+      - id: micro-behaviors/data/encode/payload::large-encoded-blob-literal
+      - id: micro-behaviors/data/string/concat::massive-concatenation-chain
+      - id: metadata/file/metrics::multiple-lines-over-1000-chars
+    unless:
+      - id: metadata/package/testing/
 
   - id: minified-charcode-indirect-eval
     desc: Minified bundle combines character-code reconstruction and indirect eval
@@ -138,7 +168,42 @@ composite_rules:
     scope: file
     all:
       - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::push-shift-bracket-pattern
-      - id: objectives/anti-static/obfuscation/syntax::js-wscript-dynamic-property-ast
-      - id: objectives/execution/activex/com::activex-object-variable-progid
+      - id: objectives/anti-static/obfuscation/syntax::js-wscript-bracket-member-access
+      - id: micro-behaviors/os/com/object::activex-object-variable-progid
       - id: micro-behaviors/data/decode/base64::msxml-node-typed-value
       - id: micro-behaviors/fs/write/file/stream::savetofile-method-token
+
+  # The "RFQ <number>.js" malspam dropper shape: one 100KB+ single-line file
+  # whose *entire* content is a chain of hundreds of `\u`-escaped string
+  # fragments handed to an eval reached indirectly through `(0,this)[...]`.
+  # Each decoded layer is another copy of the same construct, which is why the
+  # parser hits its depth cap. No minifier, bundler, or packer produces this —
+  # the escaping is per character, the concatenation seams fall inside escape
+  # runs, and the callee name never appears.
+  - id: js-escaped-indirect-eval-layered-loader
+    desc: Escaped fragments feed an indirect eval loader
+    crit: hostile
+    conf: 0.96
+    attack: T1027,T1059.007,T1140
+    for: [javascript]
+    size_min: 20000
+    all:
+      - id: objectives/anti-static/obfuscation/reflection/indirect::sequence-expression-global-computed-access
+      - id: metadata/lang/encoded/unicode-escape::javascript-unicode-escape-volume
+    any:
+      - id: objectives/anti-static/obfuscation/string/concat::js-unicode-escape-fragment-seam
+      - id: objectives/anti-static/obfuscation/string/concat::js-eval-name-split-concat
+      - id: micro-behaviors/data/source/string::massive-string-concatenation
+
+  # Same construct, scored on the parser's own reaction: a script that both
+  # nests past the AST depth cap and reaches a global indirectly is defeating
+  # static analysis by construction, whatever the payload turns out to be.
+  - id: js-depth-capped-indirect-global-script
+    desc: Depth-capped script hides its callee indirectly
+    crit: hostile
+    conf: 0.94
+    attack: T1027,T1059.007
+    for: [javascript]
+    all:
+      - id: objectives/anti-static/obfuscation/control-flow/ast::ast-depth-cap-reached-web-script
+      - id: objectives/anti-static/obfuscation/reflection/indirect::sequence-expression-global-computed-access

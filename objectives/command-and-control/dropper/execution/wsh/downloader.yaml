@@ -117,21 +117,6 @@ traits:
     if:
       type: text
       regex: '\bXor\b.{0,50}\bAsc\(Mid\('
-  - id: wsh-vbs-numeric-array-decoder
-    desc: WSH numeric array decoder
-    crit: suspicious
-    conf: 0.9
-    attack: T1027
-    for: [vbs]
-    if:
-      type: text
-      regex: '(?i)\)\s*-\s*\(.{1,80}\bAnd\b'
-    unless:
-      # Source maps may be heuristically typed as VBS because their embedded
-      # JavaScript contains VBScript-like arithmetic text.
-      - id: metadata/file/format/structured::sourcemap
-      - id: metadata/file/format/structured::sourcemap-sources-content
-      - id: metadata/library/structure::javascript-source-map-file
   - id: wsh-responsebody-pk-check
     desc: WSH checks downloaded PK header
     crit: suspicious
@@ -140,14 +125,6 @@ traits:
     if:
       type: text
       regex: '(?i)\)\s*=\s*80\s+And\s+AscB.{0,80}\)\s*=\s*75\s+Then'
-  - id: wsh-vbs-run-decoded-argument
-    desc: WSH runs decoded argument
-    crit: suspicious
-    conf: 0.9
-    for: [vbs]
-    if:
-      type: text
-      regex: '(?i)\.Run\s+[A-Za-z][A-Za-z0-9_]{5,}\s*\('
   - id: wsh-decoded-createobject
     desc: WSH decoded CreateObject call
     crit: suspicious
@@ -242,7 +219,8 @@ traits:
     if:
       type: text
       regex: '(?i)\bReplace\s*\(\s*[A-Za-z_]\w*\s*,\s*["''][A-Za-z0-9]{4,16}["'']\s*,\s*["'']{2}\s*\)'
-
+    unless:
+      - id: well-known/tool/sysadmin/microsoft-office::offscrub-removal-benign-context
   - id: wsh-vbs-xor-charcode
     desc: WSH XORs numeric character codes
     crit: suspicious
@@ -382,6 +360,19 @@ composite_rules:
       - id: objectives/anti-static/obfuscation/multi-layer::vbs-base64-fragment-helper-calls
       - id: objectives/anti-static/obfuscation/multi-layer::vbs-fragmented-frombase64string-call
       - id: micro-behaviors/process/create/shell/wsh::hidden-window-run
+  - id: vbs-embedded-base64-script-dropper
+    desc: VBScript decodes, writes, and launches embedded Base64 script
+    crit: hostile
+    conf: 0.99
+    mbc: B0023
+    attack: T1027,T1059.005,T1140
+    for: [vbs]
+    all:
+      - id: micro-behaviors/data/encode/payload::vbs-appended-large-base64-payload
+      - id: micro-behaviors/data/decode/base64::msxml-node-typed-value
+      - id: micro-behaviors/fs/write/stream::adodb-save-to-file
+      - id: micro-behaviors/fs/write/content::ext-js
+      - id: micro-behaviors/process/create/shell/script-host::wscript-shell-run-create
   - id: wsh-high-byte-obfuscated-script
     desc: WSH high-byte script with obfuscation or hidden execution signals
     crit: suspicious
@@ -392,7 +383,7 @@ composite_rules:
     any:
       - id: wsh-variable-run-call
       - id: wsh-long-variable-hidden-run-call
-      - id: objectives/execution/interpreter/vbscript/interpreter::vbs-execute-dynamic
+      - id: micro-behaviors/process/interpreter/eval::vbs-execute-statement
       - id: objectives/anti-static/obfuscation/string/anomaly::script-host-line-bloat
       - id: objectives/anti-static/obfuscation/string/anomaly::vbs-many-long-tokens
     needs: 1
@@ -460,7 +451,7 @@ composite_rules:
     for: [vbs]
     all:
       - id: micro-behaviors/process/create/shell/wsh::wscript-shell-process-run
-      - id: objectives/execution/interpreter/vbscript/interpreter::vbs-powershell-launch
+      - id: micro-behaviors/process/create/shell/command-flag::powershell-flagged-command-line
       - id: objectives/execution/interpreter/vbscript/interpreter::vbs-hidden-async-run
 
   - id: vbs-webclient-iex-stager
@@ -470,7 +461,7 @@ composite_rules:
     attack: T1059.001,T1059.005,T1105
     for: [vbs]
     all:
-      - id: objectives/execution/interpreter/vbscript/interpreter::vbs-powershell-launch
+      - id: micro-behaviors/process/create/shell/command-flag::powershell-flagged-command-line
       - id: micro-behaviors/communications/http/lib/invoke-webrequest::webclient-downloadstring
       - id: micro-behaviors/process/interpreter/eval::embedded-powershell-iex-alias
 
@@ -566,11 +557,10 @@ composite_rules:
     mbc: "B0023"
     attack: "T1059.005,T1105,T1027"
     all:
-      - id: wsh-vbs-numeric-array-decoder
       - id: micro-behaviors/process/create/script/wsh::responsebody-marker
       - id: wsh-responsebody-pk-check
       - id: wsh-vbs-xor-payload-decode
-      - id: wsh-vbs-run-decoded-argument
+      - id: micro-behaviors/process/create/shell/wsh::wsh-run-call-expression-argument
     any:
       - id: objectives/anti-static/obfuscation/wsh::vbs-createobject-variable-arg
       - id: micro-behaviors/process/create/shell/wsh::wscript-shell-process-run
@@ -712,8 +702,8 @@ composite_rules:
     attack: T1027,T1059.005
     all:
       - id: micro-behaviors/data/encode/char-code::array-payload-reconstruction
-      - id: objectives/execution/interpreter/vbscript/interpreter::vbs-execute-dynamic
-      - id: micro-behaviors/data/decode/base64::msxml-domdocument-progid
+      - id: micro-behaviors/process/interpreter/eval::vbs-execute-statement
+      - id: micro-behaviors/os/com/object::msxml-domdocument-progid
   - id: wsh-msxml-xor-dynamic-code-loader
     desc: WSH executes XOR-decoded MSXML script bytes
     crit: hostile
@@ -877,12 +867,21 @@ composite_rules:
     mbc: B0023
     attack: T1027,T1059.001,T1059.005,T1564.003
     for: [vbs]
+    # The three `all:` legs are the loader itself: a WSH shell object, a
+    # hidden child window, and a Base64 decode of the command that child
+    # will run. The fourth piece -- evidence that the child is PowerShell
+    # being invoked with its guardrails off -- has three spellings across
+    # the trait set, and requiring one particular one meant a stager that
+    # wrote `-ExecutionPolicy Bypass` as a bare argument rather than as a
+    # recognized flagged command line matched nothing at all.
     all:
       - id: micro-behaviors/os/com/object::wscript-shell-literal
-      - id: objectives/execution/interpreter/vbscript/interpreter::vbs-powershell-launch
-      - id: objectives/execution/interpreter/script/wsh::execution-policy-bypass
       - id: micro-behaviors/data/decode/base64::powershell-frombase64string
       - id: micro-behaviors/process/create/shell/wsh::hidden-window-run
+    any:
+      - id: micro-behaviors/process/create/shell/command-flag::powershell-flagged-command-line
+      - id: objectives/execution/interpreter/script/wsh::execution-policy-bypass
+      - id: micro-behaviors/process/create/flags::powershell-policy-bypass-argument
 
   - id: vbs-assembled-shell-method-loader
     desc: VBScript evaluates an assembled WSH shell method

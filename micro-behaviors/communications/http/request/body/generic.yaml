@@ -3,6 +3,29 @@ defaults:
   for: [python, javascript, typescript, shell, powershell, ruby, perl, php]
 
 traits:
+  # The variable name alone does not distinguish an inbound server request
+  # from an outbound client request.  Keep the atomic observation neutral;
+  # server/backdoor composites supply direction and execution context.
+  - id: request-body-property-access
+    desc: Accesses a request body property
+    crit: notable
+    conf: 0.84
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\b(req|request)\s*\.\s*body\s*\.\s*[A-Za-z_$][\w$]*'
+    unless:
+      - id: well-known/lib/ui/textmate::frozen-json-grammar-module
+
+  - id: fetch-options-json-body
+    desc: fetch sends options JSON request body
+    crit: notable
+    conf: 0.96
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\bfetch\s*\([\s\S]{0,900}\bbody\s*:\s*JSON\.stringify\s*\(\s*\{\s*options\s*:'
+
   - id: oauth-token-field-in-body
     desc: Builds body containing OAuth token fields
     crit: notable
@@ -15,13 +38,29 @@ traits:
       type: text
       regex: '(?is)\b(body|payload)\s*[:=].{0,100}\b(access[_-]?token|refresh[_-]?token|id[_-]?token)\b'
 
+  # Relocated from objectives/execution/exploit/code-validation (2026-08).
+  # The matcher only sees "a POST body carries a field named `code`", which is
+  # the wire shape of OAuth authorization-code exchange, e-mail/OTP
+  # verification, coupon redemption, and invite acceptance. The intent that
+  # makes a `code` field dangerous -- a /validate/code endpoint evaluating
+  # submitted source -- lives in the composites there, which reference this.
+  - id: post-body-code-field
+    desc: HTTP POST body contains a code field
+    crit: notable
+    conf: 0.97
+    if:
+      type: text
+      regex: '(?is)\b(requests|httpx)\.(post|request)\s*\([^)]{0,420}["'']code["'']\s*[:=]'
+
   - id: http-post-with-body-argument
     desc: HTTP POST supplies a body argument
     crit: notable
     conf: 0.82
+    for: [python]
     if:
-      type: text
-      regex: '\bpost\s*\([^)]{0,120}\b(data|json|files)\s*='
+      type: tree-sitter
+      kind: call
+      regex: '\.post\s*\([^)]{0,120}\b(data|json|files)\s*='
 
   - id: python-requests-post-body-variable
     desc: Python requests POST passes a body variable
@@ -33,11 +72,117 @@ traits:
       kind: call
       regex: 'requests\.post\([^)]{0,120}\b(data|json)\s*=\s*body\b'
 
+  - id: python-encryption-near-requests-post
+    desc: Python encrypts data near requests POST
+    crit: notable
+    conf: 0.94
+    for: [python]
+    if:
+      type: text
+      regex: '(Fernet|AES|encrypt\s*\()[\s\S]{0,900}requests\.post\s*\('
+
+  - id: python-requests-post-near-encryption
+    desc: Python posts data near encryption call
+    crit: notable
+    conf: 0.94
+    for: [python]
+    if:
+      type: text
+      regex: 'requests\.post\s*\([\s\S]{0,900}(Fernet|AES|encrypt\s*\()'
+
   - id: remote-transfer-action-field
-    desc: Upload or exfiltration action field
+    desc: Field named upload, backup or exfil
     crit: component
     conf: 0.92
     if:
       type: text
       regex: '(["''](upload|backup|exfil)["'']|(^|[,{[:space:]])(upload|backup|exfil))\s*:'
       case_insensitive: true
+
+  # A bare `body: <identifier>` in an object literal establishes no direction and
+  # not even that the object is a request -- it is one fragment of a request
+  # configuration, so it stays `component`. Relocated from
+  # objectives/command-and-control/backdoor/daemon/, where it was named
+  # `remote-agent-forward-fetch-body` for the composite it feeds.
+  - id: options-body-from-variable
+    desc: Options object sets body from variable
+    crit: component
+    conf: 0.98
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'body\s*:\s*[A-Za-z_$][A-Za-z0-9_$]*'
+
+  # Relocated from objectives/supply-chain/credential-theft/package/, where the
+  # shape of a sign-in request body was filed as package credential theft. Both
+  # matchers see an object literal carrying an email/username and a password --
+  # what a login form, an auth client and a credential vault all build. The
+  # relay objective that consumes the roll-up supplies the destination.
+  - id: js-credential-json-email-password-fields
+    for: [javascript, typescript]
+    desc: JavaScript JSON body includes email and password
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      # Quoted JSON keys with a non-empty password value. Skips URL
+      # destructure (`username:p,password:m`), empty userinfo
+      # (`username:"",password:""`), and React input-type maps
+      # (`email:!0,password:!0`).
+      #
+      # The leading `[{,]` pins both keys to object-literal position and the
+      # gap forbids statement punctuation, so a switch over URL component
+      # names -- `case"username":...break;case"password":` in
+      # urlpattern-polyfill -- no longer reads as one credential body.
+      regex: '[{,]\s*["''](email|username)["'']\s*:\s*[^;{}]{0,80}["'']password["'']\s*:\s*.{0,8}[A-Za-z]'
+
+  # ES6 shorthand assigned to a request body: `body = { email, password }`.
+  # Bare `{ email, password }` also matches destructuring and is too common.
+  - id: js-body-shorthand-email-password
+    for: [javascript, typescript]
+    desc: JS body object shorthand email and password
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '\bbody\s*=\s*\{\s*(email|username)\s*,\s*password\s*[,}]'
+
+composite_rules:
+  - id: python-encrypted-post
+    for: [python]
+    desc: Python posts data adjacent to encryption
+    crit: notable
+    conf: 0.94
+    any:
+      - id: python-encryption-near-requests-post
+      - id: python-requests-post-near-encryption
+    unless:
+      - id: metadata/package/testing/presence/harness::python-test-file
+      - id: metadata/package/testing/presence/harness/
+
+  # Any way a client puts bytes on the wire: a multipart upload, a POST, a
+  # request-body write.  This is a neutral transport union, but it lived in
+  # objectives/exfiltration/sensitive-data/ as `js-http-upload-or-body-sink`,
+  # where a directory reference to that objective picked it up as exfiltration
+  # evidence — enough on its own to make any module that POSTs and opens a
+  # WebSocket look like a redundant C2 channel.  The exfiltration composites
+  # that consume it supply the sensitive source separately.
+  - id: http-upload-or-body-sink
+    desc: HTTP upload or request body sink
+    crit: component
+    conf: 0.86
+    any:
+      - id: micro-behaviors/communications/http/upload/
+      - id: micro-behaviors/communications/http/post/
+      - id: micro-behaviors/communications/http/request/client::request-write-call
+      - id: micro-behaviors/communications/http/request/client::post-method-text
+      - id: micro-behaviors/communications/http/request/client::http-post-json
+
+  - id: js-email-password-request-object
+    for: [javascript, typescript]
+    desc: JavaScript packs email and password into a request object
+    crit: notable
+    conf: 0.93
+    any:
+      - id: js-credential-json-email-password-fields
+      - id: js-body-shorthand-email-password

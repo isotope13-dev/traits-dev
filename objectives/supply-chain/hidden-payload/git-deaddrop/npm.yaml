@@ -1,0 +1,74 @@
+# Git dead-drop dependencies: the payload never ships inside the package.
+#
+# A published registry artifact normally resolves every dependency through the
+# registry, where the tarball is immutable, versioned, and auditable. A
+# dependency written as a raw VCS ref escapes all three: the referenced commit
+# is attacker-controlled content that no advisory feed, lockfile audit, or
+# registry scan ever sees. Parking that ref in `optionalDependencies` completes
+# the concealment -- npm installs it like any other dependency but swallows the
+# failure if it cannot, so the entry is invisible in the common case and
+# silently fatal in the targeted one.
+#
+# Mini Shai-Hulud (May 2026) shipped exactly this: an otherwise untouched
+# echarts-for-react@3.0.7 with one line appended to the manifest,
+#   "optionalDependencies": { "@antv/setup": "github:antvis/G2#7cb42f57..." }
+# The IOC-level detection for that wave lives in
+# well-known/malware/supply-chain/shai-hulud/. These rules model the *shape* so
+# the next wave is caught under a different scope, repo, and commit.
+defaults:
+  platforms: [unix, windows]
+  for: [package.json]
+  attack: T1195.002
+  size_min: 40
+
+traits:
+  - id: optional-dep-commit-pinned-vcs
+    desc: Optional dependency pinned to VCS commit
+    crit: suspicious
+    conf: 0.9
+    mbc: E1195
+    if:
+      type: value
+      path: optionalDependencies.*
+      regex: '^(github:|git[+:])[^#]{3,120}#[0-9a-fA-F]{40}$'
+
+  # The dependency KEY is a registry scope, the VALUE is arbitrary VCS. A
+  # scoped name reads as first-party org code in a lockfile and in `npm ls`,
+  # which is what makes it a usable disguise for a foreign repo. Legitimate
+  # monorepo/fork pins exist, so this is notable on its own.
+  - id: scoped-name-vcs-dependency
+    desc: Scoped dependency name on VCS ref
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: '"@[a-z0-9][\w.-]{0,38}/[\w.-]{1,40}"\s*:\s*"(github:|git[+:])'
+
+  # Appending a block is cheaper than editing one: the tampered manifests in
+  # this family carry a single optional entry and nothing else.
+  - id: sole-optional-dependency
+    desc: Exactly one optional dependency
+    crit: notable
+    conf: 0.8
+    if:
+      type: value
+      path: optionalDependencies
+      size_min: 1
+      size_max: 1
+
+composite_rules:
+  # Three independent structural facts about one manifest entry: it is the only
+  # optional dependency, it wears a registry scope, and it resolves to an
+  # unversioned commit. Together they are the dead-drop, independent of which
+  # scope, repo, or commit the next wave picks.
+  - id: npm-optional-scoped-commit-deaddrop
+    desc: Lone scoped optional dep on VCS commit
+    crit: hostile
+    conf: 0.95
+    mbc: E1195
+    all:
+      - id: optional-dep-commit-pinned-vcs
+      - id: scoped-name-vcs-dependency
+      - id: sole-optional-dependency
+    unless:
+      - id: well-known/tool/detection/threat-intel/

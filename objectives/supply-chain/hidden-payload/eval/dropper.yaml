@@ -16,33 +16,23 @@ traits:
   if:
     type: text
     substr: _emscripten_run_script
-  # Detects eval() called with a function call as its argument: eval(someFunc(data))
-  # More suspicious than eval(variable) because it implies data transformation before execution
-- id: eval-of-transform
-  desc: "eval() with transform func call"
-  crit: notable
+# Require direct data flow from readFileSync through a transform into eval.
+# A plain eval(require('fs').readFileSync(...)) is a local source loader, not
+# evidence that an encoded payload was transformed.
+- id: eval-transformed-readfilesync
+  desc: eval executes transformed readFileSync content
+  crit: suspicious
+  conf: 0.96
   if:
     type: text
-    regex: 'eval\([a-zA-Z_$][a-zA-Z0-9_$]{0,30}\('
-  not:
-  - substr: eval(function
-  - substr: eval(contentsOf(
-  - substr: makeSource
-  - substr: eval(Symbol(
-  - substr: _emscripten_run_script
-  - substr: eval(UTF8ToString(
-  - regex: ^\s*//
-  # fs-readfile-raw: use micro-behaviors/fs/file/read::read-node
-  conf: 0.9
-  unless:
-  - id: objectives/anti-static/pack/detect::dean-edwards
-  - id: micro-behaviors/communications/http/upload/
-  - id: well-known/tool/detection/
-  - id: thenify-create-wrapper-eval
-  - id: metadata/package/testing/
-  - id: metadata/package/testing/harness/runtime::v8-native-intrinsic-call
-  - id: well-known/lib/development/firebug-lite/
-  - id: emscripten-run-script-bridge
+    regex: 'eval\s*\(\s*[A-Za-z_$]\w{0,30}\s*\(\s*(\w+\.)?readFileSync\s*\('
+- id: eval-transformed-inline-fs-read
+  desc: eval transforms inline fs file content
+  crit: suspicious
+  conf: 0.96
+  if:
+    type: text
+    regex: 'eval\s*\(\s*[A-Za-z_$]\w{0,30}\s*\(\s*require\(["'']fs["'']\)\.readFileSync\s*\('
   # Inline decoder functions are common in legacy JS packers, so keep this
   # as packed-payload component evidence instead of a standalone eval finding.
 - id: eval-inline-function-transform
@@ -98,21 +88,6 @@ traits:
   if:
     type: text
     regex: "\\.update\\(\\s*Buffer\\.from\\([^)]{1,200}['\"]hex['\"]\\s*\\)\\s*\\)"
-- id: huge-numeric-source-blob
-  desc: Large digit-dense JavaScript source
-  crit: notable
-  conf: 0.93
-  size_min: 250000
-  if:
-    type: metrics
-    field: text.digit_ratio
-    min: 0.8
-  unless:
-  - id: objectives/anti-static/obfuscation/payload/container::source-map-extension
-  - id: metadata/library/runtime::fontawesome-free-header
-  - id: metadata/file/format/structured::sourcemap-sources-content
-  - id: metadata/package/testing/
-  - id: metadata/library/structure::js-large-minified-bundle
 composite_rules:
 - id: npm-published-packed-function-loader
   desc: NPM package carries a packed dynamic-code loader
@@ -165,6 +140,18 @@ composite_rules:
   all:
   - id: objectives/anti-static/obfuscation/syntax::js-new-from-indexed-string-table
   - id: micro-behaviors/process/interpreter/eval::function-ctor-call-expr-arg
+- id: self-defending-string-table-function-loader
+  desc: Self-defending string-array feeds Function loader
+  # Keyv/math_init-class payloads wrap a string-table Function constructor
+  # behind js-obfuscator's self-defending control flow — packers alone rarely
+  # combine both at this density without a follow-on credential harvest.
+  crit: hostile
+  conf: 0.97
+  attack: T1027,T1059.007
+  mbc: B0032
+  all:
+  - id: objectives/anti-static/obfuscation/string/array::self-defending-string-array
+  - id: string-table-function-loader
 - id: file-read-eval-dropper
   desc: Reads file and eval()s transformed content
   crit: hostile
@@ -173,10 +160,13 @@ composite_rules:
   - id: metadata/import/builtin::require-fs
   - id: micro-behaviors/fs/file/read::read-text-utf8
   - id: metadata/file/metrics::javascript-small-file-5k
-  - id: eval-of-transform
+  any:
+  - id: eval-transformed-readfilesync
+  - id: eval-transformed-inline-fs-read
   unless:
   - id: well-known/lib/data/duckdb/
   - id: metadata/library/structure/
+  - id: metadata/package/testing/presence/harness::test-spec-path-benign-context
 - id: local-payload-transform-eval
   desc: Local payload file transformed then eval
   crit: suspicious
@@ -247,19 +237,22 @@ composite_rules:
   crit: component
   conf: 0.95
   any:
-  - id: eval-of-transform
+  - id: micro-behaviors/process/interpreter/eval::js-eval-call-expression-arg
   - id: eval-inline-function-transform
   - id: micro-behaviors/process/interpreter/eval::function-ctor-call-expr-arg
   - id: micro-behaviors/process/interpreter/eval::js-indirect-eval-variable
   - id: objectives/supply-chain/hidden-payload/encoding::indirect-eval-comma
   - id: objectives/anti-static/obfuscation/eval/loader::indirect-ctor-transform-iife
+  # Text-mode sink: the AST-anchored legs above cannot fire on a payload large
+  # enough to defeat the JavaScript parser, which is precisely this shape.
+  - id: objectives/anti-static/obfuscation/eval/function::function-ctor-wraps-inline-function
 - id: packed-single-line-payload-shape
   desc: Megabyte single-line packed payload shape
   crit: component
   conf: 0.94
   any:
   - id: objectives/anti-static/obfuscation/code-metrics/line-shape::js-megabyte-single-line
-  - id: huge-numeric-source-blob
+  - id: metadata/file/metrics::js-extreme-digit-ratio-large-source
 - id: packed-charcode-decoder
   desc: Indexed or charcode decoder output
   crit: component
@@ -277,7 +270,7 @@ composite_rules:
   mbc: B0032
   attack: T1027,T1059.007
   all:
-  - id: huge-numeric-source-blob
+  - id: metadata/file/metrics::js-extreme-digit-ratio-large-source
   - id: micro-behaviors/data/string/conversion::js-fromcharcode-alias
   - id: micro-behaviors/process/interpreter/eval::js-indirect-eval-variable
   any:
@@ -294,7 +287,7 @@ composite_rules:
   mbc: B0032
   attack: T1027
   all:
-  - id: huge-numeric-source-blob
+  - id: metadata/file/metrics::js-extreme-digit-ratio-large-source
   - id: micro-behaviors/data/encode/charcode::charcodeat-arithmetic
   - id: micro-behaviors/data/decode/custom::fromcharcode-map-array
 - id: megabyte-charcode-direct-eval-loader
@@ -317,4 +310,10 @@ composite_rules:
   - id: packed-single-line-payload-shape
   - id: packed-charcode-decoder
   unless:
-  - id: objectives/anti-static/obfuscation/code-metrics/structure/
+  # Never exclude on the whole `structure/` directory: its long-line shape
+  # atoms hold for every single-line file, which made this composite
+  # unreachable for the exact payload shape it describes. Only the two benign
+  # long-line contexts belong here — genuine minifier output (thousands of
+  # source lines) and an inline source map.
+  - id: objectives/anti-static/obfuscation/code-metrics/structure::minification-pattern
+  - id: objectives/anti-static/obfuscation/code-metrics/structure::source-map-inline

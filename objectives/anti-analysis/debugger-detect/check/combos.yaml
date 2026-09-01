@@ -115,12 +115,13 @@ composite_rules:
       - id: micro-behaviors/crypto/symmetric/xor/loop::x64-xor-imm8-widen-loop
     any:
       # A PAGE_EXECUTE_* constant is also emitted by ordinary libraries that
-      # validate or dispatch code. Require an allocation/protection or an
-      # actual transformed-buffer call before calling the PE checks a loader.
-      - id: micro-behaviors/mem/alloc/executable::protected-buffer-indirect-call
+      # validate or dispatch code. Require two independent execution-memory
+      # signals before calling the PE checks a loader.
+      - id: micro-behaviors/mem/protect/modify::virtualprotect-executable-read-register-x64
       - id: micro-behaviors/mem/alloc/executable::protected-buffer-indirect-call-x64-reloc
       - id: micro-behaviors/mem/alloc/executable::executable-allocation-indicator
       - id: micro-behaviors/mem/protect/modify::virtual-memory-allocation-protection-api-pair
+    needs: 2
     unless:
       - id: metadata/signed/platform/
       - id: metadata/binary/installer/family/
@@ -129,10 +130,10 @@ composite_rules:
       - id: well-known/app/
       - id: well-known/lib/
       - id: well-known/tool/
-  - id: unsigned-native-pe-mapper-with-debugger-api
-    desc: Unsigned native PE mapper paired with a debugger-check API
-    crit: hostile
-    conf: 0.98
+  - id: unsigned-pe-parser-with-debugger-api
+    desc: Unsigned PE parser with debugger and memory APIs
+    crit: suspicious
+    conf: 0.9
     platforms: [windows]
     for: [pe, dll]
     attack: T1620,T1622
@@ -147,7 +148,12 @@ composite_rules:
       - id: metadata/signed/platform/
       - id: metadata/binary/installer/family/
       - id: metadata/binary/framework::dotnet-metadata
+      # NativeAOT runtime support supplies both the PE-mapping primitives and
+      # debugger API without implying debugger-gated application behavior.
+      - id: metadata/lang/compiler/aot::nativeaot-runtime-markers
+      - id: metadata/lang/compiled::rust-backtrace-symbolizer
       - id: well-known/app/
+      - id: well-known/game/mod/
       - id: well-known/lib/
       - id: well-known/tool/
   - id: overlay-wrapper-anti-analysis-suite
@@ -177,6 +183,24 @@ composite_rules:
       - id: micro-behaviors/os/linker/env::ld-debug
       - id: tracerpid-string
       - id: ptrace-traceme-or-deny
+  # Hardened runtimes commonly pair ptrace with explicit checks for both
+  # dynamic-linker instrumentation variables. This describes genuine
+  # anti-instrumentation behavior without implying a malicious payload.
+  - id: linux-ptrace-linker-instrumentation-checks
+    desc: Linux ptrace and linker instrumentation checks
+    crit: suspicious
+    conf: 0.96
+    platforms: [linux]
+    for: [elf]
+    all:
+      - id: micro-behaviors/os/syscall/invoke::ptrace-import
+      - id: micro-behaviors/os/env/vars/access::getenv
+      - id: micro-behaviors/os/linker/env::ld-preload
+      - id: micro-behaviors/os/linker/env::ld-audit
+    unless:
+      - id: well-known/tool/reverse-engineering/
+      - id: well-known/lib/native/glibc::libc-runtime
+      - id: well-known/tool/sysadmin/proot::proot-binary
   # Large installer binaries (NSIS, Inno Setup) with anti-analysis signals
   # in embedded payloads. The main container is large but the anti-analysis
   # techniques are in the embedded components.
@@ -235,7 +259,7 @@ composite_rules:
       - id: micro-behaviors/process/inject/runtime/call::get-thread-context-dup
       - id: micro-behaviors/process/inject/runtime/call::set-thread-context-dup
       - id: micro-behaviors/process/info/thread::resume-thread-dup
-      - id: micro-behaviors/time/query::set-system-time-api
+      - id: micro-behaviors/os/sysinfo/config::set-system-time-api
     # VLC/libVLC's MinGW CRT/TLS and exception machinery imports this
     # Windows API set without implementing a debugger-gated loader.
     # Broad-import application DLLs likewise need a concrete implementation

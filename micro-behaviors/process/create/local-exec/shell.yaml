@@ -58,7 +58,7 @@ traits:
     attack: T1059.004
     if:
       type: text
-      regex: '(?i)\b(bash|sh)[ \t]+["'']?\.[A-Za-z0-9_-]{3,64}\b'
+      regex: '(?im)^[ \t]*(bash|sh)[ \t]+["'']?\.[A-Za-z0-9_-]{3,64}\b'
   - id: sh-local-relative-script
     desc: Sh runs a local relative script
     crit: notable
@@ -115,9 +115,13 @@ traits:
     desc: Executes local variable path
     crit: component
     conf: 0.88
+    # Match the parsed command target rather than raw text. Documentation and
+    # commented examples such as `# echo "./$output"` do not execute the path
+    # and must not complete chmod-then-run composites.
     if:
-      type: text
-      regex: '\./["'']?\$[A-Za-z_]\w*["'']?'
+      type: symbol
+      kind: call
+      regex: '^\./["'']?\$[A-Za-z_]\w*["'']?$'
   # `"$f"` / '$bin' as a command — droppers and exec probes run a path held in
   # a variable after chmod, without the `./` prefix execute-dot-slash-var needs.
   # Require a command separator so prose like `see "$f"` does not match.
@@ -126,7 +130,8 @@ traits:
     crit: notable
     conf: 0.88
     attack: T1059.004
-    for: [scripts, binaries]
+    # This matcher describes shell grammar.  Applying it to every script type
+    # would mistake quoted dollar-prefixed JavaScript strings for commands.
     if:
       type: text
       regex: '(^|[;&|]\s*)["'']\$\{?[A-Za-z_]\w*\}?["''](\s|/dev/null|>|<|;|&|$)'
@@ -172,6 +177,12 @@ traits:
       regex: '(?m)(^|[\n;&|])\s*/(tmp|var/tmp|dev/shm)/["''\.\w$][^\s;&|]{0,80}'
     not:
       - regex: '/(tmp|var/tmp|dev/shm)/[^\s;&|]*[<*?\[\](){}]'
+      # A `\`-continued redirect puts its target at start-of-line, where `^`
+      # cannot tell it from a command word: lua-resty-etcd's
+      # utils/check-lua-code-style.sh writes `... -exec ./utils/lj-releng {} + > \`
+      # then `    /tmp/check.log 2>&1`, and the log path read as an executable.
+      # These extensions are data sinks, never the payload being run.
+      - regex: '\.(log|out|txt|err)'
   - id: background-tmp-execution
     desc: Backgrounds executable from temporary path
     crit: notable
@@ -214,7 +225,11 @@ traits:
     attack: T1059.004
     if:
       type: text
-      regex: '(?m)^\s*["'']?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?["'']?\s+["'']?\$[@*]["'']?'
+      # A downloaded stage is often held in a variable and invoked with a
+      # campaign/architecture tag rather than forwarding only "$@". Anchor
+      # the variable command at line start and require a concrete argument so
+      # assignments and ordinary variable expansion do not qualify.
+      regex: '(?m)^\s*["'']?\$\{?\w+\}?["'']?\s+["'']?[\w$@*./-]+["'']?(\s|[;&|]|$)'
     unless:
       - id: metadata/package/testing/harness/runtime/
   - id: pyproject-hidden-tmp-background-exec

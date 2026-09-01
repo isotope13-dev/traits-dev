@@ -1,0 +1,159 @@
+# Clone-and-rename name squatting (T1195.002) — publisher-agnostic.
+#
+# Take a package with installs, republish it verbatim under a confusingly similar
+# name, and wait. There is no payload in the first version — that is the point,
+# and it is why every behavioral trait stays silent. Both gauntlet samples are
+# byte-clones of real projects: `tailwindcss-form-styles` of Tailwind Labs'
+# `tailwindcss-forms`, `tailwindcss-3d-animate` of `sambauers/tailwindcss-3d`.
+# The malice, when it arrives, is a later version shipped to whoever installed
+# the name.
+#
+# The manifest contradiction is useful only with independent corroboration.
+# Packages are renamed for legitimate reasons, and established projects often
+# omit an author. The rules below therefore require registry freshness and a
+# publish burst, or copied documentation that still names the upstream package.
+#
+# Suspicious, not hostile: this reports a package worth a human's attention, and
+# there is deliberately no assertion about what the code does, because the code
+# is a faithful copy of something legitimate.
+defaults:
+  platforms: [unix, windows]
+  attack: T1195.002
+  for: [npm, tar, zip]
+
+composite_rules:
+# The shape a triager actually sees on both gauntlet clones, and the one no rule
+# was assembling: a package first published days ago, pushing three releases in
+# 24 hours, that claims a repository belonging to a different project. Each leg
+# is unremarkable on its own — new packages exist, active authors publish often,
+# and packages are renamed for legitimate reasons — but a brand-new package
+# iterating fast under someone else's repo URL has no ordinary reading.
+#
+# Publisher-agnostic by construction: every leg is a registry fact or a manifest
+# self-contradiction, so this generalizes to the next squat rather than
+# describing the last one.
+#
+# Suspicious, not hostile: there is deliberately no claim about the code, which
+# is a faithful copy of something legitimate. The payload, if it comes, is a
+# later version shipped to whoever installed the name.
+- id: npm-fresh-clone-publish-burst
+  desc: New fast-publishing package claims other repo
+  crit: suspicious
+  conf: 0.88
+  # `scope: package`, not `archive`: the registry traits are `for: [registry]` and
+  # only ever evaluate against the grafted `*.registry.json` document, so an
+  # archive-scoped `all:` can never see them beside a fact about the package's own
+  # bytes. Package scope is the correlation step that does — it runs over the
+  # artifact's findings and the registry node's together.
+  scope: package
+  all:
+  - id: metadata/package/manifest/repository::npm-name-repo-mismatch
+  - id: metadata/registry::brand-new-package
+  - id: metadata/registry::publish-burst-24h
+# The third corroborator: the manifest claims another project's repository, and
+# the README — copied wholesale from that project — still advertises the upstream
+# package in its npm links. This catches the clone that DOES declare an author (so
+# the missing-author heuristic cannot catch) but cannot rewrite every self-
+# reference in the prose it lifted. Archive scope: both facts live in the
+# tarball, no fetch.
+- id: readme-clone-foreign-npm-links
+  desc: Repository mismatch with foreign-only README links
+  crit: suspicious
+  conf: 0.9
+  for: [npm]
+  scope: archive
+  all:
+  - id: metadata/package/manifest/repository::npm-name-repo-mismatch
+  - id: objectives/supply-chain/impersonation/readme-clone::readme-npm-links-name-only-foreign-packages
+  # A foreign npm link can name a sibling package. A copied README also fails
+  # to identify the publication in its own heading, which supplies the third
+  # independent contradiction needed to call the package a renamed clone.
+  - id: metadata/package/documentation::readme-heading-name-differs
+  unless:
+  # A README that explicitly installs this publication identifies it even when
+  # its heading is the shared product name and another link names a sibling.
+  - id: metadata/package/documentation::readme-installs-manifest-package
+  # A Rust source release may advertise one of its nested npm wrappers in the
+  # repository README; that is a monorepo relationship, not a copied README.
+  - id: metadata/build/archive::archive-cargo-toml-entry
+
+# The other half of the clone-and-rename shape: not a package that claims
+# SOMEONE ELSE'S repository, but one that claims NO repository while shipping a
+# whole project's tree.
+#
+# `chai-spycore` is `chai-spies` run through `sed s/spies/spycore/`: the
+# description, the keywords, the README, even the release notes were rewritten
+# ("spycore now mimic length of original function"), and six runtime
+# dependencies the original never had were added. Two things the rewrite could
+# not do are what this rule reads. It could not point `repository` anywhere --
+# the real URL names the project being cloned, and the substituted one does not
+# exist -- so the URL was deleted and the `{"type": "git"}` husk left behind.
+# And it could not drop the lifted tree: the publish workflow, the test suite,
+# the changelogs all came along.
+#
+# That combination has no ordinary explanation. A project mature enough to
+# publish itself from CI and ship a test suite knows where it lives, and npm
+# nags about a missing repository on every publish. A hand-written stub might
+# omit the repository, but it has no GitHub publish workflow to omit it from.
+#
+# Suspicious, not hostile, and deliberately silent about the code: like its
+# siblings above, this reports a package worth a human's attention. The payload
+# in these clones is usually not in the tarball at all -- it is a dependency the
+# original did not declare, or a version published later.
+- id: npm-repository-stripped-project-clone
+  desc: Lifted project tree with repository erased
+  crit: suspicious
+  conf: 0.88
+  scope: archive
+  all:
+  - id: metadata/package/manifest/repository::repository-object-without-url
+  - id: metadata/build/ci/step::npm-publish-workflow
+  - id: metadata/package/testing/presence/harness::archive-test-directory-member-path
+  unless:
+  - id: metadata/package/manifest/publishing::is-private
+
+# The clone plus its delivery channel.
+#
+# `npm-repository-stripped-project-clone` above describes a package that is a
+# faithful copy of a real project with its `repository` field emptied — no
+# payload, which is the point. This adds the leg that turns the squat into an
+# attack without touching a line of the copied source: runtime dependencies the
+# shipped code never imports.
+#
+# Nothing in the tarball has to be malicious for that to work. `npm install`
+# resolves the declared dependencies and runs *their* install hooks, so the
+# attacker keeps the clone byte-clean and reviewable while the code that runs
+# lives in a package the victim never named. It is also why the two legs are
+# damning together and unremarkable apart: real projects carry the occasional
+# unused dependency, and packages get renamed, but a copy that erased its
+# provenance *and* grew dependencies its own code cannot reach has no ordinary
+# reading.
+- id: npm-renamed-clone-with-phantom-dependencies
+  desc: Cloned package adds unimported dependencies
+  crit: hostile
+  conf: 0.95
+  scope: archive
+  all:
+  - id: npm-repository-stripped-project-clone
+  - id: metadata/package/dependencies/manifest::npm-phantom-runtime-dependency
+  unless:
+  - id: metadata/package/manifest/publishing::is-private
+
+# The same dependency-delivery attack with the other clone shape: the package
+# keeps the copied project's repository URL and README instead of erasing its
+# provenance. `readme-clone-foreign-npm-links` requires three independent
+# identity contradictions and excludes a README that installs this publication;
+# the archive-wide import inventory then establishes that the copied code does
+# not use at least one declared runtime dependency. Installing the clone can
+# still execute that dependency's lifecycle hooks, so no payload needs to be
+# present in the carrier's own source tree.
+- id: npm-readme-clone-with-phantom-dependencies
+  desc: Copied package injects unimported dependencies
+  crit: hostile
+  conf: 0.97
+  scope: archive
+  all:
+  - id: readme-clone-foreign-npm-links
+  - id: metadata/package/dependencies/manifest::npm-phantom-runtime-dependency
+  unless:
+  - id: metadata/package/manifest/publishing::is-private

@@ -1,0 +1,84 @@
+# Filler in shell scripts: code written to be read, not run. A script padded
+# this way computes values it discards, logs to /dev/null, and defines helpers
+# with empty bodies, so a reviewer skimming it sees a substantial program and
+# a classifier trained on token statistics sees an ordinary one. The real work
+# is a handful of lines in the middle.
+#
+# Each atom below is individually weak -- any one can appear in honest code
+# left half-finished -- so they stay notable and the composites require the
+# combination.
+defaults:
+  platforms: [unix]
+  for: [shell]
+  attack: T1027
+  mbc: B0032
+
+traits:
+  - id: shell-discarded-output-function
+    desc: Function whose only output is discarded
+    crit: notable
+    conf: 0.85
+    if:
+      # `quiet_log() { local _msg="$1"; printf "%s" "$_msg" > /dev/null; }` --
+      # a logging helper that logs nowhere. It exists to be called, so the
+      # call sites look purposeful.
+      #
+      # The body has to *produce* the output it throws away, and the throw
+      # away has to be stdout. Any `> /dev/null` inside a function body used
+      # to match, which is the shape of two idioms that discard nothing of
+      # value: the availability probe every installer defines
+      # (`command_exists() { command -v "$1" >/dev/null 2>&1; }`, read for its
+      # exit status) and plain stderr suppression (`printf ... >"$f"
+      # 2>/dev/null`, whose stdout goes to a real file).
+      type: text
+      regex: '(?ms)\w{1,20}\(\)\s*\{[^}]{0,50}(echo|printf|cat)[^}]{0,50}[^}0-9&]> ?/dev/null[^}]{0,9}\}'
+
+  - id: shell-empty-body-function
+    desc: Function body only binds an unused local
+    crit: notable
+    conf: 0.8
+    if:
+      # `initialize() { local _ignored="${1:-}"; }` -- takes an argument,
+      # names it "ignored", and returns.
+      type: text
+      regex: '(?ms)\w{1,24}\(\)\s*\{\s*local\s+_\w{1,20}=[^\n]{0,24}\n\s*\}'
+
+  - id: shell-self-cancelling-arithmetic
+    desc: Arithmetic that cancels itself out
+    crit: notable
+    conf: 0.85
+    if:
+      # `$(((corrected_seconds * 2) - corrected_seconds))` -- doubled, then
+      # reduced by itself. The result equals the input; the expression exists
+      # to occupy a line.
+      type: text
+      regex: '\(\s*\$?\w{1,24}\s*\*\s*2\s*\)\s*-\s*\$?\w{1,24}'
+
+composite_rules:
+  # Filler plus jitter: the script is padded to look bigger than it is *and*
+  # varies its own timing. Neither is a normal thing to do to a utility
+  # script, and doing both is the anti-analysis pairing.
+  - id: padded-script-with-randomized-delay
+    desc: Filler code paired with a randomized delay
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: objectives/anti-analysis/timing/delay::shell-randomized-sleep-interval
+    any:
+      - id: shell-discarded-output-function
+      - id: shell-empty-body-function
+      - id: shell-self-cancelling-arithmetic
+    needs: 2
+
+  # Filler alone, but more than one kind of it. One abandoned helper is
+  # ordinary; a script that discards output, defines empty helpers, and
+  # computes identities was written to be padded.
+  - id: multiple-filler-code-forms
+    desc: Several kinds of filler code in one script
+    crit: suspicious
+    conf: 0.88
+    any:
+      - id: shell-discarded-output-function
+      - id: shell-empty-body-function
+      - id: shell-self-cancelling-arithmetic
+    needs: 3

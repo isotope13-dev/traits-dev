@@ -61,7 +61,72 @@ traits:
       regex: 'https?://[^"''\s]{1,160}/(yhs/)?search\?[^"''\s]{0,160}[?&](hspart|hsimp)='
       case_insensitive: true
 
+  - id: search-provider-redirect-endpoint
+    desc: Search provider URL is a redirect endpoint
+    crit: suspicious
+    conf: 0.9
+    for: [json, chrome-manifest]
+    attack: T1176
+    if:
+      # A real engine answers on a search path -- `/search?q=`, `/?q=`. A
+      # declared provider whose URL is `/link?`, `/go?` or `/redirect?` is not
+      # answering the query at all; it is bouncing it onward, which is where
+      # the affiliate tag gets attached and how the user's chosen engine is
+      # kept out of the loop. Seen as
+      # `earthapp.net/admin/public/link?q={searchTerms}` behind an extension
+      # named for a map.
+      type: value
+      path: chrome_settings_overrides.search_provider.search_url
+      regex: '(?i)/(link|go|redirect)\?'
+
 composite_rules:
+  # The provider grant plus a destination that only forwards. Either alone is
+  # ordinary -- extensions may set a search engine, and redirectors exist --
+  # but an extension that takes the default-search grant and spends it on a
+  # bounce endpoint is monetizing the query, not serving it.
+  - id: search-override-through-redirect-endpoint
+    desc: Search override points at a redirect endpoint
+    crit: suspicious
+    conf: 0.93
+    attack: T1176
+    scope: archive
+    all:
+      - id: search-provider-redirect-endpoint
+    any:
+      - id: metadata/permission/manifest::extension-default-search-provider
+      - id: metadata/permission/manifest::chrome-search-provider-override
+
+  # A default-search override that also ships static redirect rules. The
+  # override alone is how an honest search extension works -- the user picks
+  # it, the browser asks for confirmation, and queries typed in the omnibox go
+  # to the new provider. Redirect rules are for the queries that did *not* go
+  # there: searches issued from a page, a sidebar, or another engine the user
+  # kept. Shipping both means the takeover is not meant to be escapable.
+  - id: search-override-with-redirect-rules
+    desc: Search override ships network redirect rules
+    crit: suspicious
+    conf: 0.93
+    attack: T1176
+    scope: archive
+    all:
+      - id: metadata/permission/manifest::extension-default-search-provider
+    any:
+      - id: micro-behaviors/process/hook/webextension::dnr-redirect-named-ruleset
+      - id: micro-behaviors/process/hook/webextension::dnr-redirect-named-ruleset-file
+
+  # The same pair with the monetization evidence attached: the destination is
+  # a search-branded host carrying a `{searchTerms}` template and a source tag,
+  # so the redirected queries are being sold on.
+  - id: monetized-search-override-redirect
+    desc: Monetized search override with redirect rules
+    crit: suspicious
+    conf: 0.95
+    attack: T1176
+    scope: archive
+    all:
+      - id: extension-search-monetization
+      - id: search-override-with-redirect-rules
+
   - id: extension-remote-php-navigation-abuse
     desc: Extension cache-busts PHP control endpoint into navigation
     crit: hostile
@@ -123,7 +188,7 @@ composite_rules:
     attack: T1176,T1185
     for: [javascript, typescript]
     all:
-      - id: micro-behaviors/communications/http/dynamic::dnr-runtime-rule-install
+      - id: micro-behaviors/process/hook/webextension::declarative-net-request-update
       - id: micro-behaviors/communications/http/dynamic::dnr-main-frame-search-redirect
       - id: micro-behaviors/communications/http/dynamic::dnr-external-redirect-target
 
@@ -148,18 +213,19 @@ composite_rules:
       - id: browser-setting-change-keep-prompt-instruction
       - id: micro-behaviors/ui/window/manage/style::fixed-viewport-style
 
-  # Search-override extension mints a persistent per-user id and phones it home
-  # with the extension id/version — install/user tracking for a monetized search
-  # provider, not a neutral update check.
-  - id: extension-search-uid-telemetry
-    desc: Search override reports tracking uid home
+  # Search-override extension tags both its install navigation and uninstall
+  # callback with a generated client identifier. This is lifecycle attribution
+  # coupled to a browser-setting change, but it does not prove that search
+  # queries themselves carry the identifier.
+  - id: search-override-lifecycle-client-id
+    desc: Search override tags lifecycle URLs with client ID
     crit: suspicious
     conf: 0.92
     attack: T1176
     scope: archive
     all:
       - id: metadata/permission/manifest::extension-default-search-provider
-      - id: micro-behaviors/communications/http/url/query::extension-campaign-identity-query-fields
+      - id: objectives/collection/monitor/tracking::extension-client-id-lifecycle-navigation
 
   - id: extension-search-monetization
     desc: Browser extension search monetization
@@ -207,6 +273,7 @@ composite_rules:
       - id: search-url-affiliate-marker
       - id: objectives/supply-chain/hidden-payload/extensions/affiliate::search-monetization-query-param
       - id: objectives/supply-chain/hidden-payload/extensions/affiliate::search-source-query-param
+      - id: objectives/supply-chain/hidden-payload/extensions/affiliate::search-referrer-attribution-query-param
 
   - id: search-url-affiliate-marker
     desc: Search URL carries hosted affiliate marker
@@ -339,7 +406,7 @@ composite_rules:
       - id: micro-behaviors/browser-extension/lifecycle::runtime-set-uninstall-url
     any:
       - id: micro-behaviors/communications/http/url/query::utm-source-medium-campaign-url
-      - id: micro-behaviors/communications/http/url/domain::js-game-promotion-url
+      - id: micro-behaviors/communications/http/url/domain::game-promotion-destination
 
   # Relocated from supply-chain/hidden-payload/extensions/affiliate, where it was
   # hostile. Fetching a vendor's own "more extensions" list and rendering it as
@@ -371,23 +438,17 @@ composite_rules:
       - id: micro-behaviors/communications/http/request/client::js-fetch-call
       - id: micro-behaviors/communications/http/request/client::http-client
 
-  # A named new-tab publisher that both forces an install-time promotional
-  # tab and installs an uninstall landing page is a stronger PUP signal than
-  # a remote catalog alone. Keep the family identity leg so ordinary
-  # extensions with optional onboarding pages remain notable.
-  - id: named-newtab-promo-lifecycle
-    desc: Named new-tab publisher forces promo lifecycle
-    crit: suspicious
-    conf: 0.96
-    attack: T1176
-    scope: archive
-    for: [crx, xpi, zip]
-    all:
-      - id: metadata/permission/manifest::chrome-newtab-override
-      - id: well-known/unwanted/newtab-wallpaper-adware::owhit-manifest-author
-      - id: well-known/unwanted/newtab-wallpaper-adware::owhit-promo-host
-      - id: micro-behaviors/browser-extension/tabs::install-https-tab-open
-      - id: micro-behaviors/browser-extension/lifecycle::runtime-set-uninstall-url
+  # REMOVED: `named-newtab-promo-lifecycle` (was notable).
+  #
+  # Its lifecycle legs were exactly the `all:` of
+  # `newtab-override-promo-lifecycle` above, plus a publisher-identity leg. The
+  # identity already reports itself — the recognized publishers each carry
+  # their own `notable` identity composite (`gameograf-newtab-extension`,
+  # `owhit-newtab-extension`) — so naming the publisher a second time inside an
+  # impact composite added no observation, it only meant a recognized publisher
+  # scored two impact findings for the one lifecycle an unrecognized publisher
+  # scored once. Reading the publisher name off the identity finding gives an
+  # analyst the same answer.
 
   # REMOVED: `campaign-tracked-newtab-search-hijack` (was hostile).
   #
@@ -416,6 +477,13 @@ composite_rules:
   # Promotional navigation, not telemetry: opens a third-party game-site tab on
   # the install/uninstall lifecycle. The behavior is notable, but not hostile
   # without evidence of deception, theft, or other user harm.
+  # One behavior, one composite. This used to be three — the full
+  # install+uninstall lifecycle, and each half of it standing alone — and since
+  # the wide one could not match unless both narrow ones matched too, every
+  # extension that promoted a game site across its whole lifecycle reported the
+  # same navigation three times, from three ids in this one directory. The
+  # `any:` below keeps all three populations: an install-only promo, an
+  # uninstall-only promo, and the pair, each stated once.
   - id: extension-lifecycle-external-game-promotion
     desc: Extension promotes game sites on install/uninstall
     crit: notable
@@ -424,56 +492,15 @@ composite_rules:
     scope: archive
     for: [crx, xpi, zip]
     all:
-      - id: micro-behaviors/browser-extension/lifecycle::chrome-runtime-on-installed
-      - id: micro-behaviors/browser-extension/tabs::chrome-tabs-create
-      - id: micro-behaviors/browser-extension/lifecycle::runtime-set-uninstall-url
+      - id: micro-behaviors/communications/http/url/domain::game-promotion-destination
     any:
-      - id: micro-behaviors/communications/http/url/domain::js-game-promotion-url
-      - id: micro-behaviors/communications/http/url/domain::html-game-link-catalog
-
-  - id: extension-install-game-promotion
-    desc: Extension opens game promotion on install
-    crit: notable
-    conf: 0.97
-    attack: T1176
-    scope: archive
-    for: [crx, xpi, zip]
-    all:
-      - id: micro-behaviors/browser-extension/lifecycle::chrome-runtime-on-installed
-      - id: micro-behaviors/browser-extension/tabs::chrome-tabs-create
-      - id: micro-behaviors/communications/http/url/domain::js-game-promotion-url
+      - id: micro-behaviors/browser-extension/lifecycle::extension-install-uninstall-lifecycle-urls
+      - id: micro-behaviors/browser-extension/tabs::install-https-tab-open
+      - id: micro-behaviors/browser-extension/lifecycle::runtime-set-uninstall-url
     unless:
       # Ad lists contain game URLs, while this known blocker opens its own
       # settings page on install; do not infer promotion from that pair.
       - id: metadata/package/quality/benign-context::adblock-extension-id
-
-  - id: extension-uninstall-game-promotion
-    desc: Extension redirects uninstall to game promotion
-    crit: notable
-    conf: 0.97
-    attack: T1176
-    scope: archive
-    for: [crx, xpi, zip]
-    all:
-      - id: micro-behaviors/browser-extension/lifecycle::runtime-set-uninstall-url
-      - id: micro-behaviors/communications/http/url/domain::js-game-promotion-url
-
-  - id: forced-newtab-game-campaign
-    desc: Forced tracked game promotion on new-tab lifecycle
-    # These legs establish a monetized promotion forced by the extension's
-    # new-tab/install lifecycle. They do not establish search hijacking,
-    # tracking, theft, or deception, so keep this at the PUP/notable bar.
-    crit: notable
-    conf: 0.97
-    attack: T1176
-    scope: archive
-    for: [crx, xpi, zip]
-    all:
-      - id: metadata/permission/manifest::chrome-newtab-override
-      - id: micro-behaviors/browser-extension/tabs::install-https-tab-open
-      - id: micro-behaviors/browser-extension/lifecycle::runtime-set-uninstall-url
-      - id: micro-behaviors/communications/http/url/domain::js-game-promotion-url
-      - id: micro-behaviors/communications/http/url/query::utm-source-medium-campaign-url
 
   # A lifecycle redirect to a .click destination is hostile only when the
   # extension also holds authority to hijack or observe the browser (new-tab /
@@ -548,3 +575,62 @@ composite_rules:
     any:
       - id: micro-behaviors/browser-extension/tabs::chrome-tabs-on-activated
       - id: micro-behaviors/browser-extension/tabs::chrome-tabs-on-updated
+
+  # An overridden new tab whose link targets arrive from a publisher endpoint
+  # and are interpolated straight into page markup means the publisher decides,
+  # at any moment after store review, where every new-tab click sends the user.
+  # The shipped bundle looks static; the surface the user actually sees is a
+  # live, remotely-swappable ad slot. Separate from `newtab-remote-promo-
+  # catalog`, which only observes that a catalog is fetched — this one requires
+  # the fetched values to reach a markup sink.
+  - id: newtab-remote-controlled-link-injection
+    desc: Remote catalog drives overridden new-tab links
+    crit: suspicious
+    conf: 0.93
+    attack: T1176
+    scope: archive
+    for: [crx, xpi, zip]
+    all:
+      - id: metadata/permission/manifest::chrome-newtab-override
+    any:
+      # Either sink puts the publisher in control of the click target: markup
+      # interpolation, or a direct write to the link attribute.
+      - id: micro-behaviors/communications/http/request/json::external-json-near-dynamic-innerhtml
+      - id: micro-behaviors/communications/http/request/json::external-json-near-dynamic-link
+
+  # The takeover plus its receipt. An extension that seizes the default engine,
+  # tags every query with a traffic-source parameter, and ships a content
+  # script whose only job is to flag its own presence on the destination's
+  # pages is not offering a search engine — it is proving deliveries to
+  # whoever is paying for the placement. All three legs are manifest- or
+  # source-level facts, so a re-skin under a new brand and domain still matches.
+  - id: search-override-install-attribution-funnel
+    desc: Search takeover reports installs to its provider
+    crit: suspicious
+    conf: 0.94
+    scope: archive
+    for: [crx, xpi, zip, archives]
+    attack: T1176
+    all:
+      - id: metadata/permission/manifest::extension-default-search-provider
+      - id: objectives/supply-chain/hidden-payload/extensions/affiliate::search-referrer-attribution-query-param
+    any:
+      - id: micro-behaviors/ui/window/manage/state::document-root-presence-flag
+      - id: micro-behaviors/ui/window/manage/state::document-root-presence-attribute
+
+  # The manifest repeating one destination in every field it has: the provider
+  # name, the omnibox keyword written as that host, and a query URL carrying the
+  # attribution parameter that gets it paid. Nothing here is about which brand
+  # is being pushed, only that the extension has no purpose other than pushing
+  # it.
+  - id: search-override-self-branded-destination
+    desc: Search override brands itself as its destination
+    crit: suspicious
+    conf: 0.92
+    scope: archive
+    for: [crx, xpi, zip, archives, json, chrome-manifest]
+    attack: T1176
+    all:
+      - id: metadata/permission/manifest::extension-default-search-provider
+      - id: objectives/supply-chain/hidden-payload/extensions/affiliate::search-provider-keyword-is-domain
+      - id: objectives/supply-chain/hidden-payload/extensions/affiliate::search-referrer-attribution-query-param

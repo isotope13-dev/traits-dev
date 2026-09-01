@@ -1,0 +1,172 @@
+# A native implant with a structured beacon frame and an operator-facing task
+# menu. These strings describe an active remote-control protocol rather than
+# generic socket or TLS capability.
+defaults:
+  platforms: [linux]
+  for: [elf]
+  attack: "T1071,T1059,T1105"
+  mbc: B0030
+
+traits:
+  - id: secure-beacon-frame
+    desc: Structured secure beacon registration frame
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: text
+      regex: 'SECURE_BEACON\|[^\r\n]{0,160}\|REDSHELL\|'
+
+  - id: linux-remote-command-menu
+    desc: Linux beacon remote-command menu
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: text
+      regex: 'Linux beacon commands:[\s\S]{0,600}/memfd[\s\S]{0,300}/persist cron\|bashrc\|systemd\|xdg'
+
+  - id: linux-recon-command-menu
+    desc: Linux beacon reconnaissance command menu
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: text
+      regex: '/sysinfo /whoami /id /ps /env /ifconfig /netstat[\s\S]{0,500}/interfaces  /arp  /routes'
+
+  - id: linux-file-exfil-command-menu
+    desc: Linux beacon file-exfiltration command menu
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: text
+      substr: '/download <path>  /upload <file>  /fetch <path>  /dataextract <path>'
+
+  - id: linux-credential-command-menu
+    desc: Linux beacon credential-collection command menu
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: text
+      substr: '/ssh_keys  /creds  /dbfind'
+
+  - id: linux-account-process-command-menu
+    desc: Linux beacon account and process controls
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: text
+      regex: '/kill <pid\|name>  /spawn <cmd>[\s\S]{0,100}/users  /adduser <name> <pass>'
+
+  - id: beacon-priority-disconnect
+    desc: Beacon priority disconnect command
+    crit: notable
+    conf: 0.99
+    if:
+      type: text
+      exact: 'PRIORITY_DISCONNECT'
+
+  - id: beacon-priority-restart
+    desc: Beacon priority restart command
+    crit: notable
+    conf: 0.99
+    if:
+      type: text
+      exact: 'PRIORITY_RESTART'
+
+  - id: beacon-priority-delete
+    desc: Beacon priority delete command
+    crit: notable
+    conf: 0.99
+    if:
+      type: text
+      exact: 'PRIORITY_DELETE'
+
+  - id: linux-arbitrary-shell-fallback
+    desc: Linux beacon runs arbitrary shell input
+    crit: suspicious
+    conf: 0.999
+    if:
+      type: text
+      exact: 'Other input runs as shell.'
+
+  - id: hidden-rsvc-install-id
+    desc: Persists host ID in .config/.rsvc
+    crit: notable
+    conf: 0.99
+    if:
+      type: text
+      regex: '%s/\.config/\.rsvc'
+
+composite_rules:
+  - id: beacon-priority-lifecycle-controls
+    desc: Beacon priority control command cluster
+    crit: suspicious
+    conf: 0.999
+    all:
+      - id: beacon-priority-disconnect
+      - id: beacon-priority-restart
+      - id: beacon-priority-delete
+
+  - id: native-secure-beacon-command-agent
+    desc: Native secure beacon exposes remote shell and staging commands
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: secure-beacon-frame
+      - id: linux-remote-command-menu
+      - id: linux-arbitrary-shell-fallback
+      - id: micro-behaviors/communications/socket/connect::connect-symbol
+      - id: micro-behaviors/communications/socket/ssl::ssl-connect-symbol
+
+  - id: native-secure-beacon-host-profile
+    desc: Secure beacon reports host and network identity
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: secure-beacon-frame
+      - id: linux-recon-command-menu
+      - id: micro-behaviors/communications/http/ip-discovery::ipify-api
+      - id: micro-behaviors/os/sysinfo/platform/kernel::uname
+
+  - id: native-secure-beacon-persistent-id
+    desc: Secure beacon persists a random host identifier
+    crit: suspicious
+    conf: 0.99
+    all:
+      - id: secure-beacon-frame
+      - id: hidden-rsvc-install-id
+      - id: micro-behaviors/os/random/crypto::rand-bytes
+
+  - id: native-secure-beacon-tls-bypass
+    desc: Secure command beacon disables TLS verification
+    crit: hostile
+    conf: 0.999
+    all:
+      - id: secure-beacon-frame
+      - id: micro-behaviors/communications/socket/ssl::openssl-peer-verification-disabled
+      - id: micro-behaviors/communications/socket/ssl::openssl-tls12-minimum-x64
+
+  - id: native-secure-beacon-custom-cipher
+    desc: Secure command beacon adds custom rotational encryption
+    crit: hostile
+    conf: 0.999
+    all:
+      - id: secure-beacon-frame
+      - id: micro-behaviors/crypto/symmetric/xor/rotational::three-round-xor-rotate-cipher-x64
+
+  - id: native-secure-beacon-framed-transport
+    desc: Beacon uses framed protocol and tuned TCP
+    crit: hostile
+    conf: 0.999
+    all:
+      - id: secure-beacon-frame
+      - id: micro-behaviors/communications/socket/framing::bidirectional-big-endian-u32-framing-x64
+      - id: micro-behaviors/communications/socket/options::aggressive-tcp-keepalive-x64
+
+  - id: native-daemonized-command-agent
+    desc: Native command agent double-forks into background
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: secure-beacon-frame
+      - id: micro-behaviors/process/daemonize/detach::native-double-fork-daemon-x64
+      - id: micro-behaviors/os/signal/handler::native-ignore-sigpipe-x64

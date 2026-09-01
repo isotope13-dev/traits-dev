@@ -1,0 +1,55 @@
+# A launch target whose file extension names a format that cannot be executed.
+#
+# `.dmg` is a disk image the kernel mounts; `.png` is pixels; `.zip` is an
+# archive. None of them is a program format on any platform, so handing one to
+# execFile/spawn only makes sense when the name is a lie about the contents --
+# the bytes are a Mach-O or a PE, and the extension is there so that a human
+# scanning a file listing, or a scanner keying on extensions, walks past it.
+#
+# This is the delivery half of a pattern the corpus already detects at the
+# other end: the payload binaries themselves light up the stealer and
+# credential-access rules once something unpacks them, but the launcher that
+# ships them under a harmless name has been invisible. A VS Code extension
+# carrying `git.dmg` and `git.exe` next to its entry point, and running both on
+# activation, is caught here rather than only after the payload is extracted.
+#
+# `.exe`, `.bin`, `.dat` and `.node` are deliberately absent: those really are
+# run, and a package shipping a helper under one of them is doing something
+# ordinary.
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript]
+  attack: T1036.008
+  mbc: F0001
+
+traits:
+  - id: node-exec-data-file-extension
+    desc: Executes a data-named file path
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '(execFile|execSync|spawnSync|spawn)\([^)]{0,60}\.(dmg|iso|img|zip|png|jpe?g)["'']'
+
+composite_rules:
+  # The package ships the file and runs it, and the name says it is not a
+  # program. Either half alone is explainable -- vendored helpers are normal,
+  # and a stray data-extension string could be a path being passed somewhere
+  # harmless -- but a bundled file with a container extension being handed to a
+  # process launcher has no reading in which the extension is honest.
+  - id: bundled-data-named-payload-launch
+    desc: Runs a bundled file disguised as data
+    crit: hostile
+    conf: 0.96
+    attack: T1036.008,T1106
+    all:
+      - id: node-exec-data-file-extension
+      - id: micro-behaviors/process/create/local-exec::node-exec-bundled-package-file
+    # Only a platform signature suppresses this. A `well-known/app/` guard was
+    # tried and removed: on a VS Code extension it matches `vscode-name` -- the
+    # word "vscode", which every extension in the ecosystem contains, malicious
+    # ones included -- so it silenced the rule on exactly the files it exists to
+    # catch. There is no benign reading to carve out here anyway; no shipped
+    # package hands a bundled .dmg or .png to execFile.
+    unless:
+      - id: metadata/signed/platform/

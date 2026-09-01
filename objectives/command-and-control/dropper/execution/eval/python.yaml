@@ -18,6 +18,8 @@ traits:
     if:
       type: text
       regex: "exec\\s*\\(.{0,50}\\.get\\s*\\(.{0,50}\\)\\.text\\s*\\)"
+    unless:
+      - id: well-known/tool/detection/agentskillmap/
   # exec() with .get().content - binary response
   - id: exec-get-content
     desc: exec() on HTTP response .content
@@ -28,6 +30,8 @@ traits:
     if:
       type: text
       regex: "exec\\s*\\(.{0,50}\\.get\\s*\\(.{0,50}\\)\\.content\\s*\\)"
+    unless:
+      - id: well-known/tool/detection/agentskillmap/
   # eval() with .get().text
   - id: eval-get-text
     desc: eval() on HTTP response .text
@@ -38,6 +42,8 @@ traits:
     if:
       type: text
       regex: "eval\\s*\\(.{0,50}\\.get\\s*\\(.{0,50}\\)\\.text\\s*\\)"
+    unless:
+      - id: well-known/tool/detection/agentskillmap/
   # exec() with urlopen().read()
   - id: exec-urlopen-read
     desc: exec() on urlopen response
@@ -48,6 +54,9 @@ traits:
     if:
       type: text
       regex: "exec\\s*\\(.{0,50}urlopen\\s*\\(.{0,50}\\)\\.read\\s*\\(\\s*\\)"
+    unless:
+      - id: well-known/lib/ai/unsloth::unsloth-package-context
+      - id: well-known/tool/detection/agentskillmap/
   - id: urllib-module-code-read
     desc: urllib response assigned module code
     crit: component
@@ -85,6 +94,8 @@ traits:
       regex: "\\[\\s*\\d{2,4}\\s*,\\s*\\d{2,4}\\s*,\\s*\\d{2,4}[^\\]]{0,50}\\][^c]{0,50}\\bchr\\s*\\("
     unless:
       - id: metadata/package/testing/
+      # pwntools ships syscall tables and shellcraft templates as reference data.
+      - id: well-known/tool/offensive/pwntools::pwntools-distribution
   # Inline integer-array reconstruction via join(chr(...)) - common URL/payload deobfuscation
   - id: join-chr-comprehension
     desc: join(chr()) integer-array reconstruction
@@ -98,6 +109,21 @@ traits:
       # join(chr(x) for x in [46,112,121]) (".py") are ordinary.
       regex: "join\\(.{0,40}chr\\(.{0,20}\\)\\s+for\\s+\\w+\\s+in\\s*\\[\\s*(\\d+\\s*,\\s*){5,}\\d+"
 composite_rules:
+  # Multi-step source loaders often separate retrieval from the execution
+  # helper. This combination is risky but can be an intentional plugin system,
+  # so keep it suspicious rather than labeling every such loader hostile.
+  - id: http-response-compiled-python-execution
+    desc: HTTP body with compiled Python execution
+    crit: suspicious
+    conf: 0.9
+    attack: "T1105,T1059.006"
+    mbc: "B0024,E1059"
+    near_lines: 160
+    all:
+      - id: micro-behaviors/communications/http/lib/requests::requests-get
+      - id: micro-behaviors/communications/http/lib/requests::requests-response-body-access
+      - id: micro-behaviors/process/interpreter/python::compile-source-exec-mode
+      - id: micro-behaviors/process/interpreter/python::exec-generated-code
   - id: remote-transform-service-code-execution
     desc: Executes code obtained from a remote encode or decode service
     crit: hostile
@@ -127,6 +153,10 @@ composite_rules:
     all:
       - id: micro-behaviors/process/interpreter/python::exec-builtin
       - id: micro-behaviors/communications/http/request/client::request-python
+    unless:
+      - id: well-known/lib/ai/unsloth::unsloth-package-context
+      # AgentSkillMap embeds the source text of this detector as inert data.
+      - id: well-known/tool/detection/agentskillmap/
   - id: urllib-module-code-exec
     desc: urllib-fetched Python module execution
     crit: hostile
@@ -172,19 +202,49 @@ composite_rules:
     all:
       - id: micro-behaviors/data/source/arithmetic::bitshift-array
       - id: join-chr-comprehension
-  # Remote YAML deserialization
-  # Complexity: 2.0 (traits) + 0.3 (file_types) + 1.0 (all) + 1.0 (any) = ~4.3
+  # Remote YAML deserialization. The intent claim (the parsed YAML comes from
+  # the network) lives in the dataflow atom, not in file-wide co-occurrence:
+  # requiring an HTTP client somewhere in the file plus an unsafe loader
+  # somewhere else false-positived on benign dataset fetchers that download
+  # archives while parsing only local .yml files. The suspicious
+  # yaml-load-near-http-fetch composite below covers the variable-mediated
+  # (fetch, then parse a variable) form that this direct-argument atom misses.
+  # Complexity: traits + file_types(+0.3) + all(+1) + any(+1)
   - id: remote-yaml-deserialization
-    desc: "Deserializes YAML data from remote source (RCE risk)"
+    desc: "Remote YAML body parsed with unsafe loader (RCE)"
     crit: hostile
     conf: 0.95
     attack: "T1203" # Exploitation for Client Execution
     mbc: "B0024"
     all:
-      - id: micro-behaviors/communications/http/request/client::request-python
+      - id: micro-behaviors/data/serialize/yaml::yaml-load-network-response
     any:
       - id: micro-behaviors/data/serialize/yaml::yaml-loader-unsafe
       - id: micro-behaviors/data/serialize/yaml::yaml-unsafe-load
+    unless:
+      - id: well-known/lib/ai/unsloth::unsloth-package-context
+      # Security tooling embeds these source patterns as inert catalog data.
+      - id: well-known/tool/detection/security-scanner::code-pattern-catalog
+      - id: well-known/tool/detection/security-scanner::python-taint-sink-map
+  # Variable-mediated remote YAML parsing: the fetched body lands in a
+  # variable and is parsed a few lines later. Risky but also seen in benign
+  # config/plugin loaders, so suspicious rather than hostile.
+  - id: yaml-load-near-http-fetch
+    desc: "YAML deserialized near an HTTP fetch"
+    crit: suspicious
+    conf: 0.8
+    attack: "T1203"
+    near_lines: 10
+    all:
+      - id: micro-behaviors/communications/http/request/client::request-python
+    any:
+      - id: micro-behaviors/data/serialize/yaml::yaml-load-call
+      - id: micro-behaviors/data/serialize/yaml::yaml-loader-unsafe
+      - id: micro-behaviors/data/serialize/yaml::yaml-unsafe-load
+    unless:
+      - id: well-known/lib/ai/unsloth::unsloth-package-context
+      - id: well-known/tool/detection/security-scanner::code-pattern-catalog
+      - id: well-known/tool/detection/security-scanner::python-taint-sink-map
 
   # The combination is a loader, not merely an obfuscated expression: it
   # executes a response fetched over urllib and stages it through pythonw.

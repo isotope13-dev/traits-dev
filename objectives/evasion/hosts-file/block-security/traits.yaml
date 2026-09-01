@@ -50,24 +50,6 @@ traits:
   if:
     type: text
     regex: 'Timer1_Tick[\s\S]{0,220}this\.downhost\s*\('
-- id: windows-hosts-template-path
-  desc: Windows hosts path format string
-  crit: suspicious
-  conf: 0.85
-  platforms:
-  - windows
-  if:
-    type: text
-    regex: (?i)%s\\drivers\\etc\\hosts
-- id: windows-hosts-backup-template
-  desc: Hosts backup template reference
-  crit: suspicious
-  conf: 0.85
-  platforms:
-  - windows
-  if:
-    type: text
-    regex: (?i)%s\\hosts\.sam
 - id: av-update-domain-a
   desc: AV update domain (Kaspersky/Avast/AVG)
   crit: component
@@ -177,6 +159,24 @@ traits:
   - substr: sample HOSTS file used by Microsoft TCP/IP for Windows.
   - substr: '#-iris-'
   - substr: '/Windows/system32/drivers/etc/hosts, on Linux: /etc/hosts'
+- id: localhost-security-redirect-a
+  desc: Localhost redirects Norton or McAfee domain
+  crit: component
+  conf: 0.97
+  platforms: [windows]
+  for: [pe, dll]
+  if:
+    type: text
+    regex: '(?i)127\.0\.0\.1\s+(www\.)?(norton|symantec|mcafee)\.(com|net|org)\b'
+- id: localhost-security-redirect-b
+  desc: Localhost redirects common AV vendor domain
+  crit: component
+  conf: 0.97
+  platforms: [windows]
+  for: [pe, dll]
+  if:
+    type: text
+    regex: '(?i)127\.0\.0\.1\s+(www\.)?(kaspersky|avast|avg|eset)\.(com|net|org)\b'
 - id: null-redirect-pattern
   desc: Null IP redirect pattern (0.0.0.0)
   crit: notable
@@ -198,6 +198,8 @@ traits:
     regex: (?i)^#\s+(BEGIN|END)\s+[A-Za-z0-9_-]{0,30}
   not:
   - regex: (?i)^#\s+(BEGIN|END)\s+(MARKER|AUTO-GENERATED\b)
+  # Dump/report terminators are not managed hosts block sentinels.
+  - regex: (?i)^#\s+END\s+OF\b
   unless:
   - id: metadata/package/testing/presence/harness/
   - id: well-known/app/media/maester/
@@ -417,6 +419,15 @@ traits:
     regex: '^127\.0\.0\.1\s+[A-Za-z0-9.-]*(antimalware|security|telemetry|abuse)'
 
 composite_rules:
+- id: localhost-security-vendor-redirect
+  desc: Localhost redirects an antivirus domain
+  crit: suspicious
+  conf: 0.97
+  platforms: [windows]
+  for: [pe, dll]
+  any:
+  - id: localhost-security-redirect-a
+  - id: localhost-security-redirect-b
 - id: junos-security-domain-targets
   desc: Junos security domain targets
   crit: suspicious
@@ -469,9 +480,12 @@ composite_rules:
   # Require an actual hosts-file reference. Without it, generic "# BEGIN/END"
   # comment blocks plus the word BLOCK fire on unrelated binaries (git, named,
   # glilypond) that carry sentinel-style comments and the word "block".
+  # Keep all evidence close so unrelated strings in large native applications
+  # cannot manufacture a managed-block result.
+  near_bytes: 4096
   all:
   - id: hosts-managed-sentinel-line
-  - id: hosts-file-path
+  - id: micro-behaviors/fs/path/config/system::hosts-file-path
   any:
   - id: hosts-adblock-token
   - id: hosts-block-token
@@ -522,15 +536,6 @@ composite_rules:
   any:
   - id: micro-behaviors/data/control-flow/loop::infinite-loop-header
   - id: micro-behaviors/os/registry/manipulate::set-value
-- id: hosts-file-path
-  desc: Hosts file path reference
-  crit: notable
-  conf: 0.7
-  any:
-  - id: micro-behaviors/fs/path/config/system::windows-hosts-file
-  - id: windows-hosts-template-path
-  - id: windows-hosts-backup-template
-  - id: micro-behaviors/fs/path/config/system::config-hosts
 - id: av-update-domain
   desc: AV/EDR update domain reference
   crit: component
@@ -545,7 +550,7 @@ composite_rules:
   conf: 0.8
   any:
   - id: well-known/tool/detection/threat-intel::virustotal
-  - id: objectives/anti-analysis/sandbox-detect/tool-references::any-run
+  - id: well-known/tool/detection/threat-intel::any-run-service-reference
 - id: security-domain
   desc: Security-related domain reference
   crit: component
@@ -562,19 +567,32 @@ composite_rules:
   crit: hostile
   conf: 0.95
   all:
-  - id: hosts-file-path
+  - id: micro-behaviors/fs/path/config/system::hosts-file-path
   - id: security-domain
   any:
   - id: bulk-domain-blocking
-  - id: windows-hosts-tamper-api
+  - id: micro-behaviors/fs/path/config/system::hosts-file-modification-api-set
 - id: hosts-security-domain-replacement
   desc: Hosts replacement blocks security domains
   crit: hostile
   conf: 0.97
   all:
-  - id: hosts-file-path
+  - id: micro-behaviors/fs/path/config/system::hosts-file-path
   - id: security-domain
   - id: native-hosts-replacement
+- id: windows-hosts-security-sinkhole
+  desc: Windows executable writes antivirus-domain hosts sinkholes
+  crit: hostile
+  conf: 0.98
+  platforms: [windows]
+  for: [pe, dll]
+  all:
+  - id: micro-behaviors/fs/path/config/system::hosts-file-path
+  - id: localhost-security-vendor-redirect
+  - id: micro-behaviors/fs/file/write/direct::write--fwrite
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
 - id: openwrt-hosts-update-blocking
   desc: OpenWrt hosts blocks update domains
   crit: hostile
@@ -600,7 +618,7 @@ composite_rules:
   crit: hostile
   conf: 0.97
   all:
-  - id: hosts-file-path
+  - id: micro-behaviors/fs/path/config/system::hosts-file-path
   - id: hosts-av-null-route
   any:
   - id: hosts-managed-block-marker
@@ -612,11 +630,11 @@ composite_rules:
   crit: hostile
   conf: 0.97
   all:
-  - id: hosts-file-path
+  - id: micro-behaviors/fs/path/config/system::hosts-file-path
   - id: hosts-av-null-route
   any:
-  - id: micro-behaviors/fs/write/file/direct::batch-append-redirect
-  - id: windows-hosts-tamper-api
+  - id: micro-behaviors/fs/write/file/redirect::batch-append-redirect
+  - id: micro-behaviors/fs/path/config/system::hosts-file-modification-api-set
 - id: bulk-domain-blocking
   desc: Bulk domain blocking via hosts file
   crit: suspicious
@@ -624,22 +642,8 @@ composite_rules:
   any:
   - id: localhost-redirect-pattern
   - id: null-redirect-pattern
-- id: windows-hosts-tamper-api
-  desc: Hosts tamper with file APIs
-  crit: suspicious
-  conf: 0.9
-  platforms:
-  - windows
-  all:
-  - id: hosts-file-path
-  needs: 2
-  any:
-  - id: micro-behaviors/fs/file/attributes::set-file-attributes-a
-  - id: micro-behaviors/fs/file/delete::deletefile-a
-  - id: micro-behaviors/fs/file/copy::copyfile-a
-  - id: windows-hosts-filestream-create
   unless:
-  - id: metadata/signed/developer::adobe-inc.
+  - id: well-known/tool/detection/sigmashake::sigmashake-hosts-policy-example-context
 - id: windows-hosts-overwrite-download
   desc: Remote download overwrites hosts
   crit: hostile
@@ -649,7 +653,7 @@ composite_rules:
   for:
   - csharp
   all:
-  - id: hosts-file-path
+  - id: micro-behaviors/fs/path/config/system::hosts-file-path
   - id: windows-hosts-webrequest-create
   - id: windows-hosts-filestream-create
 - id: windows-hosts-timer-refresh

@@ -47,24 +47,6 @@ traits:
     if:
       type: text
       regex: 'https://github\.com/.{1,40}/.{1,40}/raw/.{1,40}/.{1,80}\.msi'
-  - id: msiexec-quiet-install-args
-    desc: Quiet msiexec install arguments
-    crit: suspicious
-    conf: 0.94
-    if:
-      type: text
-      regex: '(?i)/i\s+`?["'']?\$[A-Za-z_][A-Za-z0-9_]*`?["'']?\s+/qn\b'
-    unless:
-      - type: text
-        substr: install_virtualbox
-      - type: basename
-        exact: install_virtualbox.ps1
-      # Tailscale's documented Windows bootstrap legitimately downloads and
-      # silently installs its MSI with these arguments.
-      - id: well-known/dual-use/tunnel/tailscale::tailscale-source-token
-      # Ansible's win_msi/win_package modules install an operator-named MSI;
-      # unattended is the only mode that works over a remote transport.
-      - id: well-known/app/infrastructure/ansible::ansible-module-source-context
   - id: msiexec-norestart-arg
     desc: msiexec no-restart argument
     crit: component
@@ -78,6 +60,8 @@ traits:
     conf: 0.99
     attack: T1059.001,T1027,T1564.003
     for: [scripts, documents, binaries, archives]
+    unless:
+      - id: well-known/tool/offensive/reconprobe/
     if:
       type: text
       regex: '(?i)powershell.{0,560}-W\s+Hidden.{0,320}-Exec\s+Bypass.{0,320}-Enc\b'
@@ -93,19 +77,46 @@ composite_rules:
       - id: micro-behaviors/communications/http/lib/invoke-webrequest::webclient-downloadstring
     near_bytes: 4096
 
+  # The three legs must belong to ONE fetch-and-run chain, which is what the
+  # description claims and what a dropper one-liner looks like. Without a
+  # proximity bound this stitched unrelated occurrences together across a whole
+  # script: the NousResearch hermes-agent installer downloads uv at line 759
+  # and launches its own gateway daemon with -WindowStyle Hidden at line 1481,
+  # 700 lines apart, and scored hostile. The sibling
+  # powershell-hidden-bypass-download above already bounds itself this way.
   - id: powershell-hidden-network-stage
     desc: Hidden PowerShell retrieves and launches a stage
     crit: hostile
     conf: 0.99
     attack: T1059.001,T1105,T1564.003
+    near_bytes: 4096
     all:
       - id: micro-behaviors/process/create/shell/remote-powershell::powershell-hidden-window
       - id: micro-behaviors/communications/http/lib/invoke-webrequest::invoke-webrequest
       - id: micro-behaviors/process/create/start-process::start-process-call
     unless:
       - id: metadata/package/testing/presence/harness/
-      - id: well-known/app/ai/comfy-test::generated-vm-template
+      - id: well-known/app/ai/media/comfy-test::generated-vm-template
       - id: well-known/tool/sysadmin/kubernetes/bootstrap::kubernetes-windows-gce-ssh-installer-exception
+      - id: micro-behaviors/crypto/hash/file::hash-pinned-download-context
+
+  - id: powershell-streamed-archive-msi-dropper
+    desc: Hidden PowerShell streams archive and launches MSI
+    crit: hostile
+    conf: 0.99
+    attack: T1059.001,T1105,T1204.002,T1564.003
+    for: [powershell]
+    near_bytes: 8192
+    all:
+      - id: micro-behaviors/communications/http/client/managed::httpwebrequest
+      - id: micro-behaviors/communications/http/client/managed::getresponse
+      - id: micro-behaviors/communications/http/client/managed::getresponsestream
+      - id: micro-behaviors/communications/http/url/scheme::cleartext-http-url-code-literal
+      - id: micro-behaviors/data/buffer::stream-write-buffer-arg
+      - id: micro-behaviors/data/archive/extract/tar::tar-extract
+      - id: micro-behaviors/process/create/start-process::start-process-msi-path
+      - id: micro-behaviors/process/create/hidden::start-process-windowstyle-hidden
+      - id: micro-behaviors/process/create/flags::powershell-policy-bypass-argument
 
   - id: webclient-downloadfile-exe
     desc: WebClient stages EXE in writable path
@@ -163,12 +174,22 @@ composite_rules:
     all:
       - id: micro-behaviors/communications/http/download/cli::iwr-outfile-download
       - id: micro-behaviors/fs/path/temp::temp-msi-staging
-      - id: micro-behaviors/process/create/start-process::start-process-msiexec
-      - id: msiexec-quiet-install-args
+      - id: micro-behaviors/process/create/installer::powershell-variable-msi-quiet-install
     any:
       - id: micro-behaviors/process/create/hidden::start-process-windowstyle-hidden
       - id: msiexec-norestart-arg
       - id: micro-behaviors/communications/http/lib/invoke-webrequest::useb-flag
+  - id: powershell-unattended-rmm-msi
+    desc: PowerShell stages a quiet unattended RMM MSI
+    crit: hostile
+    conf: 0.98
+    attack: T1105,T1219,T1218.007
+    for: [powershell]
+    all:
+      - id: powershell-temp-msi-install
+    any:
+      - id: well-known/dual-use/remote-admin/rmm::logmein-agent-name
+      - id: well-known/dual-use/remote-admin/rmm::gotoresolve-agent-name
   - id: github-raw-msi-dropper
     desc: GitHub raw MSI PowerShell dropper
     crit: hostile
