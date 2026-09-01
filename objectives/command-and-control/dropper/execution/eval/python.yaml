@@ -202,21 +202,49 @@ composite_rules:
     all:
       - id: micro-behaviors/data/source/arithmetic::bitshift-array
       - id: join-chr-comprehension
-  # Remote YAML deserialization
-  # Complexity: 2.0 (traits) + 0.3 (file_types) + 1.0 (all) + 1.0 (any) = ~4.3
+  # Remote YAML deserialization. The intent claim (the parsed YAML comes from
+  # the network) lives in the dataflow atom, not in file-wide co-occurrence:
+  # requiring an HTTP client somewhere in the file plus an unsafe loader
+  # somewhere else false-positived on benign dataset fetchers that download
+  # archives while parsing only local .yml files. The suspicious
+  # yaml-load-near-http-fetch composite below covers the variable-mediated
+  # (fetch, then parse a variable) form that this direct-argument atom misses.
+  # Complexity: traits + file_types(+0.3) + all(+1) + any(+1)
   - id: remote-yaml-deserialization
-    unless:
-      - id: well-known/lib/ai/unsloth::unsloth-package-context
-    desc: "Deserializes YAML data from remote source (RCE risk)"
+    desc: "Remote YAML body parsed with unsafe loader (RCE)"
     crit: hostile
     conf: 0.95
     attack: "T1203" # Exploitation for Client Execution
     mbc: "B0024"
     all:
-      - id: micro-behaviors/communications/http/request/client::request-python
+      - id: micro-behaviors/data/serialize/yaml::yaml-load-network-response
     any:
       - id: micro-behaviors/data/serialize/yaml::yaml-loader-unsafe
       - id: micro-behaviors/data/serialize/yaml::yaml-unsafe-load
+    unless:
+      - id: well-known/lib/ai/unsloth::unsloth-package-context
+      # Security tooling embeds these source patterns as inert catalog data.
+      - id: well-known/tool/detection/security-scanner::code-pattern-catalog
+      - id: well-known/tool/detection/security-scanner::python-taint-sink-map
+  # Variable-mediated remote YAML parsing: the fetched body lands in a
+  # variable and is parsed a few lines later. Risky but also seen in benign
+  # config/plugin loaders, so suspicious rather than hostile.
+  - id: yaml-load-near-http-fetch
+    desc: "YAML deserialized near an HTTP fetch"
+    crit: suspicious
+    conf: 0.8
+    attack: "T1203"
+    near_lines: 10
+    all:
+      - id: micro-behaviors/communications/http/request/client::request-python
+    any:
+      - id: micro-behaviors/data/serialize/yaml::yaml-load-call
+      - id: micro-behaviors/data/serialize/yaml::yaml-loader-unsafe
+      - id: micro-behaviors/data/serialize/yaml::yaml-unsafe-load
+    unless:
+      - id: well-known/lib/ai/unsloth::unsloth-package-context
+      - id: well-known/tool/detection/security-scanner::code-pattern-catalog
+      - id: well-known/tool/detection/security-scanner::python-taint-sink-map
 
   # The combination is a loader, not merely an obfuscated expression: it
   # executes a response fetched over urllib and stages it through pythonw.
