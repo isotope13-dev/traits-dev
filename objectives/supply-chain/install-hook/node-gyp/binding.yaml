@@ -34,14 +34,41 @@ traits:
       # "require('./payload')" && ...`; stopping at the first `)` misses
       # the shell operator even though gyp still executes the whole command.
       regex: '"sources"\s*:\s*\[[^\]]{0,500}<!@?\([\s\S]{0,400}(/dev/null|2>&1|&&)'
-  - id: gyp-target-condition-python-subclass-traversal
-    desc: gyp target condition enumerates subclasses
+  # gyp `conditions` entries are `[<expr-string>, {then-dict}]`; the subclass
+  # traversal hides in that expression string. gyp evaluates a top-level
+  # `conditions` block during `node-gyp configure` regardless of any target,
+  # which is the configure-time escape this campaign uses. The value tree only
+  # resolves this now that filefacts parses gyp's Python-literal syntax (byte
+  # escapes included) — before, the old `targets[*].conditions[*][0]` path
+  # could never fire (conditions here sit at the manifest root, not per-target,
+  # and gyp had no value tree at all). The per-target form is still covered by
+  # the file-level `python-runtime-subclass-enumeration` text trait.
+  - id: gyp-condition-python-subclass-traversal
+    desc: gyp condition enumerates runtime subclasses
     crit: suspicious
     conf: 0.99
     if:
       type: value
-      path: targets[*].conditions[*][0]
+      path: conditions[*][0]
       regex: '__subclasses__\s*\('
+  # A gyp string value written as byte escapes — e.g. `"type":"\x6e\x6f\x6e\x65"`
+  # (="none"), or `\U`-escaped keywords. A build manifest is human-authored
+  # config; there is no reason to escape a plain keyword byte-by-byte except to
+  # keep it out of a reviewer's eye and out of naive grep. Independent of the
+  # Python-escape payload: the concealment itself is the tell, and it generalizes
+  # to any config that hides an otherwise-printable value behind \x / \U escapes.
+  - id: gyp-hex-escaped-string-value
+    desc: gyp string value hidden behind byte escapes
+    crit: suspicious
+    conf: 0.9
+    attack: T1027
+    # `type: raw`, not text: string extraction decodes `\xNN`/`\U…` escapes to
+    # their characters (so a text matcher would see `none`, not `\x6e…`). This
+    # rule detects the *concealment syntax itself*, which only survives in the
+    # undecoded bytes.
+    if:
+      type: raw
+      regex: '"\s*(\\x[0-9a-fA-F]{2}|\\U[0-9a-fA-F]{8}|\\u[0-9a-fA-F]{4}){2,}\s*"'
 
 composite_rules:
   # A binding.gyp `sources` command expansion with shell side effects: node-gyp
@@ -107,5 +134,5 @@ composite_rules:
     conf: 0.999
     attack: T1059.006,T1195.002
     all:
-      - id: gyp-target-condition-python-subclass-traversal
+      - id: gyp-condition-python-subclass-traversal
       - id: objectives/execution/exploit/sandbox-escape::python-object-graph-command-execution
