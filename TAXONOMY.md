@@ -1174,7 +1174,11 @@ metadata/
 │   └── string/            #   Neutral string identities
 ├── hardening/             # Security hardening features (sandbox, seccomp, pledge)
 ├── image/                 # Image-specific neutral measurements
-│   └── metrics/           #   Pixel/channel/statistical image measurements
+│   ├── metrics/           #   Pixel/channel/statistical image measurements
+│   └── provenance/        #   Creation provenance the image carries about itself
+│                          #     (C2PA content credentials, generator tags). Neutral:
+│                          #     records who/what produced the pixels. Abuse chains
+│                          #     using it (fabricated marketplace identity) → objectives/
 │                          #   File identity remains under file/{magic,extension}
 ├── import/                # Dependencies/imports (auto-generated)
 │   ├── python/ npm/ ruby/ java/ go/ rust/ c/
