@@ -1,0 +1,103 @@
+defaults:
+  platforms: [windows, unix]
+  for: [php]
+  attack: T1554
+  mbc: B0030
+
+traits:
+  # `str_replace('function wp_is_mobile()', $payload . 'function wp_is_mobile()', $src)`
+  # -- the victim file's own source is rewritten so that attacker code lands
+  # immediately beside an existing declaration. Editing another program's
+  # source around its declarations is what a patcher does, so these atoms stay
+  # suspicious; the composites below supply the "and the target is a CMS core
+  # file it located through the live web root" context.
+  - id: str-replace-function-declaration
+    desc: Rewrites source around a function declaration
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: 'str_i?replace\s*\(\s*[''"]\s*function\s+\w'
+    unless:
+      - id: metadata/package/testing/harness/unit/
+      - id: metadata/library/structure/
+  - id: preg-replace-declaration
+    desc: Regex-rewrites a source declaration
+    crit: suspicious
+    conf: 0.88
+    if:
+      type: text
+      regex: 'preg_replace\w*\s*\(\s*[''"][^''"]{0,12}(function|class)\s+\w'
+    unless:
+      - id: metadata/package/testing/harness/unit/
+      - id: metadata/library/structure/
+
+  # A path built from the live web root rather than from the package's own
+  # directory: `$_SERVER['DOCUMENT_ROOT'] . '/wp-includes/vars.php'`. A plugin
+  # has `__DIR__`/`plugin_dir_path()` for its own files; joining a CMS core
+  # directory onto the *server's* root means reaching outside itself, into
+  # whatever site happens to be served.
+  - id: web-root-joins-wordpress-core
+    desc: Joins WordPress core onto web root
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: '(DOCUMENT_ROOT|SCRIPT_FILENAME)[''"\]]*\s*\.\s*[''"]/?wp-(includes|admin|settings|config)'
+  - id: web-root-joins-cms-core
+    desc: Joins CMS core onto web root
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '(DOCUMENT_ROOT|SCRIPT_FILENAME)[''"\]]*\s*\.\s*[''"]/?(administrator|typo3)/'
+
+composite_rules:
+  - id: web-root-cms-core-path
+    desc: Builds a CMS core path
+    crit: suspicious
+    conf: 0.93
+    any:
+      - id: web-root-joins-wordpress-core
+      - id: web-root-joins-cms-core
+
+  # The AccessPress 2021 supply-chain compromise in one line: a plugin file
+  # reads a CMS core file, splices a decoded payload in beside a core
+  # function, and writes it back. Every leg is a normal file operation; the
+  # combination -- core file, source rewrite, write-back -- is not something a
+  # plugin has any reason to do.
+  - id: php-cms-core-source-patch
+    desc: PHP splices code into CMS core
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: web-root-cms-core-path
+      - id: micro-behaviors/fs/read/file::file-get-contents
+      - id: micro-behaviors/fs/file/write/direct::php-file-put-contents
+    any:
+      - id: str-replace-function-declaration
+      - id: preg-replace-declaration
+      - id: objectives/anti-static/obfuscation/string/base64::base64-script-function-definition
+    unless:
+      - id: metadata/package/testing/harness/unit/
+      - id: well-known/lib/runtime/php-runtime::source-tree
+
+  # Anti-forensics: capture the victim's mode and mtime, rewrite it, then put
+  # both back so neither `ls -l` nor a file-integrity scan shows a change.
+  # Legitimate mtime-preserving code copies between *different* files; this
+  # shape restores the metadata of the file it just overwrote.
+  - id: php-stealth-file-rewrite
+    desc: PHP hides an in-place file rewrite
+    crit: hostile
+    conf: 0.95
+    attack: T1070.006
+    all:
+      - id: micro-behaviors/fs/file/timestamp::php-filemtime-call
+      - id: micro-behaviors/fs/file/timestamp::php-touch-restores-captured-mtime
+      - id: micro-behaviors/fs/file/write/direct::php-file-put-contents
+    any:
+      - id: micro-behaviors/fs/file/stat::fileperms-call
+      - id: micro-behaviors/fs/chmod/modify::chmod-call
+    unless:
+      - id: metadata/package/testing/harness/unit/
+      - id: well-known/lib/runtime/php-runtime::source-tree

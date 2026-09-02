@@ -1,0 +1,72 @@
+# Stage-2 source hosted on a public paste service and evaluated in-process.
+#
+# A paste service is free, anonymous, editable after the fact, and reachable
+# from any network that allows the web -- which is why droppers use one as a
+# C2 that never needs infrastructure. The 2018 eslint-scope compromise pulled
+# `pastebin.com/raw/XLeVP82h` and eval'd the response; the same shape recurs
+# across languages, so this file is language-agnostic and keys on the raw-content
+# path (the form that returns source rather than the HTML viewer page).
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript, python, php, ruby, powershell, shell]
+  attack: T1102.001
+  mbc: B0023
+
+traits:
+  - id: paste-service-raw-path
+    desc: Paste service raw content path
+    crit: notable
+    conf: 0.93
+    if:
+      type: text
+      regex: '(pastebin|hastebin|controlc|ghostbin|dpaste)\.\w{2,4}/raw'
+    not:
+      # A URL inside a line comment is documentation, not a fetch target.
+      - regex: '(//|#|\*)\s[^\n]{0,60}/raw'
+
+  # Node's `https.get({hostname, path})` form never puts the host and the path
+  # in one string, so a matcher that only knows the joined URL misses it. The
+  # raw-content path is distinctive on its own: a short opaque slug under
+  # `/raw/`, which is the paste-service permalink shape.
+  - id: paste-raw-path-literal
+    desc: Raw paste path literal
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '["'']/raw/[A-Za-z0-9_-]{6,16}["'']'
+
+composite_rules:
+  - id: paste-split-host-and-raw-path
+    desc: Paste host and raw path split apart
+    crit: suspicious
+    conf: 0.93
+    scope: file
+    all:
+      - id: paste-raw-path-literal
+      - id: objectives/command-and-control/infrastructure/paste/
+  - id: paste-stage-two-reference
+    desc: Paste service stage-two reference
+    crit: suspicious
+    conf: 0.92
+    any:
+      - id: paste-service-raw-path
+      - id: paste-split-host-and-raw-path
+  # Fetching from a paste service is not itself an attack -- gists and pastes
+  # carry legitimate config. Handing the response to an interpreter is: the
+  # operator can swap the payload at any moment without republishing anything.
+  - id: paste-hosted-code-execution
+    desc: Paste-hosted code fetched and executed
+    crit: hostile
+    conf: 0.95
+    scope: file
+    all:
+      - id: paste-stage-two-reference
+    any:
+      - id: micro-behaviors/process/interpreter/eval::js-eval-variable-argument
+      - id: micro-behaviors/process/interpreter/eval::js-eval-raw
+      - id: micro-behaviors/process/interpreter/python::exec-builtin
+      - id: micro-behaviors/process/interpreter/python::eval-builtin
+    unless:
+      - id: metadata/package/testing/
+      - id: metadata/package/testing/presence/manifest::test-fixtures
