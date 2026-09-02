@@ -1,0 +1,56 @@
+# The dependency-confusion beacon: a package whose entire job is to phone home
+# when something imports it.
+#
+# Before an operator invests in a payload they want to know the confusion works
+# at all -- that some build somewhere resolves their public name in place of a
+# private one. The cheapest instrument is a module body that calls out to a host
+# they control, so the request log tells them which victim pulled it. There is
+# no install hook to find, no obfuscation to unpack and no second stage: the
+# whole package is the probe, and the shipped code is honest about what it does.
+#
+# That leaves nothing behavioural to convict on -- a `fetch()` is the most
+# ordinary thing a JavaScript file can contain. What is not ordinary is a
+# *published package's declared entry point* being nothing but that call. A real
+# library's main module defines something; this one is a few dozen bytes that
+# run once, at import, and return nothing to the caller. The size bound is doing
+# real work here: it is what separates "the module is the beacon" from "a large
+# module happens to make a request", which describes most HTTP clients.
+#
+# Worked example: `@com-delta-idp/core@1.0.0`, whose 77-byte `index.js` is a
+# console.log and a fetch to a domain the package has no other relationship
+# with; the manifest declares no scripts at all.
+defaults:
+  platforms: [unix, windows]
+  attack: T1195.002,T1041
+  mbc: B0030
+
+traits:
+  # Size is a file filter, so this only ever matches the small module itself --
+  # not a bundle that contains a similar call somewhere inside it. 2 KB is
+  # generous for "the file is the beacon": the observed samples are under 200
+  # bytes, and a genuine entry point that only calls out is still a stub at
+  # this size.
+  - id: tiny-module-remote-fetch
+    desc: Tiny module body is a remote fetch
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    size_max: 2048
+    if:
+      id: micro-behaviors/communications/http/request/json::fetch-external-url
+
+composite_rules:
+  - id: package-entry-is-import-time-beacon
+    desc: Package entry module only beacons out
+    crit: hostile
+    conf: 0.95
+    # The module and the manifest that appoints it as `main` are separate
+    # members, so the two halves only meet at package scope.
+    scope: archive
+    all:
+      - id: tiny-module-remote-fetch
+      - id: metadata/package/manifest/entrypoint::main-root-javascript-entry
+      - id: metadata/package/files/included::npm-publish-root-manifest
+    unless:
+      # Never resolvable by a victim's build.
+      - id: metadata/package/manifest/publishing::is-private
