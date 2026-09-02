@@ -1,0 +1,79 @@
+# Service names that impersonate a language-runtime update mechanism, e.g.
+# `java-jre-update.service` dropped by the trojanized Virtualizor update
+# delivered over a BGP hijack (Aug 2026). Stock distributions ship update
+# units (`apt-daily-upgrade`, `systemd-update-utmp`, `plocate-updatedb`) but
+# never pair a language-runtime token with an update verb: measured over 394
+# stock /usr/lib/systemd/system + /etc/systemd/system units, zero units name a
+# runtime (java/jre/jdk/node/python/ruby/php/perl/...) together with
+# update/updater/upgrade. Split across two atoms to stay under the regex
+# length cap; the basename form anchors a unit file's own name.
+defaults:
+  platforms: [linux]
+  for: [scripts, systemd, binaries]
+  attack: T1036.005
+  mbc: F0008
+
+traits:
+  - id: jvm-update-service-name
+    desc: JVM update service name reference
+    crit: suspicious
+    conf: 0.9
+    for: [scripts, systemd]
+    if:
+      type: text
+      regex: '(?i)\b(java|jre|jdk|jvm)[a-z0-9-]{0,16}-(updates?|upgrades?|updater|upgrader)\.service\b'
+
+  - id: runtime-update-service-name
+    desc: Runtime update service name reference
+    crit: suspicious
+    conf: 0.9
+    for: [scripts, systemd]
+    if:
+      type: text
+      regex: '(?i)\b(node|python[0-9]?|php|ruby|runtime)[a-z0-9-]{0,16}-(updates?|upgrades?)\.service\b'
+
+  # Anchors against a unit file's own basename: prefix + suffix on one name.
+  - id: runtime-named-unit-basename
+    desc: Unit basename starts with runtime name
+    crit: component
+    conf: 0.9
+    for: [systemd]
+    if:
+      type: value
+      path: "file.basename"
+      regex: '^(java|jre|jdk|jvm|node|python[0-9]?|ruby|php[0-9]?|perl|runtime)[a-z0-9-]*'
+
+  - id: update-verb-unit-basename
+    desc: Unit basename ends with update verb
+    crit: component
+    conf: 0.9
+    for: [systemd]
+    if:
+      type: value
+      path: "file.basename"
+      regex: '-(updates?|updater|upgrades?|upgrader)[a-z0-9-]*\.service$'
+
+composite_rules:
+  - id: runtime-update-service-unit-name
+    desc: Unit masquerades as runtime update service
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: runtime-named-unit-basename
+      - id: update-verb-unit-basename
+
+  # The full Virtualizor shape: the unit is *named* like a runtime updater so
+  # `systemctl list-units` shows nothing remarkable, while ExecStart actually
+  # runs an interpreter against a hidden payload. No legitimate updater stages
+  # its payload as a dotfile.
+  - id: runtime-update-service-payload-cover
+    desc: Fake runtime-update service hides payload
+    crit: hostile
+    conf: 0.97
+    attack: T1036.005,T1543.002
+    all:
+      - id: objectives/persistence/system/service/systemd::exec-start-hidden-argument
+    any:
+      - id: jvm-update-service-name
+      - id: runtime-update-service-name
+      - id: runtime-update-service-unit-name

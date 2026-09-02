@@ -1,0 +1,53 @@
+# Dependency confusion delivered by an obfuscated install hook.
+#
+# The attack needs the resolver to prefer the public package over the private
+# one it is shadowing, and the cheapest way to guarantee that is an absurd
+# version: `100.100.100` beats whatever the internal registry holds, forever,
+# without the attacker having to know what that is. On its own an inflated
+# version is only odd -- calendar-versioned and joke packages reach high majors
+# honestly -- so it convicts nothing by itself.
+#
+# What it pairs with here is the delivery. The manifest runs a local script at
+# install time, and that script is obfuscator.io output whose `require()` calls
+# take computed arguments rather than literal module names. Those two facts are
+# what separate this from a package that merely ships a minified bundle: a
+# bundler rewrites module *references* into numeric ids inside its own runtime,
+# and has no reason to hide which built-in a script loads. Concealing the
+# module name only pays off if the reader is meant not to see `child_process`.
+#
+# Worked example: the `@cloudplatform-single-spa` set (`cloud-dns@100.100.100`
+# and siblings), whose `scripts/postinstall.js` is packed with a rotated string
+# table and resolves `os`, `fs` and `child_process` through the decoder.
+defaults:
+  platforms: [unix, windows]
+  attack: T1195.002,T1027
+  mbc: B0024,B0032
+
+composite_rules:
+  - id: inflated-version-obfuscated-install-hook
+    desc: Inflated version runs obfuscated install hook
+    crit: hostile
+    conf: 0.97
+    # The version and the hook declaration are manifest facts; the packing and
+    # the concealed require live in the script the hook names, so the evidence
+    # only meets at package scope.
+    # No `for:` filter. The evidence spans a manifest and a JavaScript member
+    # inside a published archive, and the container those arrive in is typed by
+    # its own format (`zip` for these samples) rather than by its contents --
+    # listing member types here excluded the very containers the rule is meant
+    # to judge.
+    scope: archive
+    all:
+      - id: metadata/package/versioning::npm-unrealistic-major-version
+      - id: objectives/supply-chain/install-hook/package/manifest::postinstall-runs-node-script
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::strong-js-obfuscation
+      - id: objectives/anti-static/obfuscation/encoding/content::encoded-node-require
+    unless:
+      # Never resolvable by a victim's build.
+      - id: metadata/package/manifest/publishing::is-private
+      # No fixture carve-out. `presence/fixture/` matches any archive holding a
+      # `tmp/`, `temp/` or `fixtures/` member path, and a package that ships an
+      # obfuscated install hook under an inflated version is not exonerated by
+      # having a scratch directory beside it. It also misfires wholesale on
+      # samples captured through a temp directory, where the collector's own
+      # path -- not the package's layout -- supplies the `tmp/` component.
