@@ -1,0 +1,56 @@
+# An install-time payload wrapped in three layers, each one hiding the next.
+#
+# The recipe, as shipped by the compromised `awaitly-*` / `autotel-*` npm
+# releases: an array of character codes is mapped to a string, Caesar-shifted
+# (by 6 — not 13, because 13 is the one people try), and evaluated. What that
+# reveals is not the payload either, but a loader that AES-128-GCM-decrypts
+# further blobs with a key hardcoded beside them, and evaluates those.
+#
+# The layering is doing one job: putting distance between the file a reviewer
+# opens and the behaviour that matters. Each layer individually is cheap, and
+# together they mean nothing in the shipped bytes names a credential, a host, or
+# a command. In the sample that motivated this the innermost stage downloads the
+# Bun runtime and harvests Vault, Azure, GCP and AWS credentials — none of which
+# is greppable in the artifact.
+#
+# The atom below is deliberately named for what it tests — an AES-GCM decryption
+# call — and not for the inline key beside it. The key material sits at the call
+# site of the loader, not adjacent to `createDecipheriv`, so a regex here cannot
+# see it; claiming otherwise in the name would be a matcher that means less than
+# it says. Applications do legitimately decrypt things (a licensed AI extension
+# in the benign corpus does), which is why the atom is notable and the
+# conviction lives in the composite, where the packed-dropper leg supplies the
+# part that is not legitimate.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1027,T1140
+  mbc: B0032,E1027
+
+traits:
+  # Deliberately `type: text`: this string only exists in the *decoded* layer,
+  # which lands in the text tier — there is no parse tree behind it, so symbol
+  # and literal matchers cannot see it.
+  - id: aes-gcm-decrypt-in-decoded-layer
+    desc: AES-GCM decryption call
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: 'createDecipheriv\s*\(\s*.{0,12}aes-\d{3}-gcm'
+
+composite_rules:
+  # The staging chain end to end: a packed single-line dropper whose decoded
+  # content is itself an encrypted-stage loader. Either half alone is survivable
+  # — minified bundles are single-line, and applications do use AES — but a
+  # packer that unpacks into a decryptor is a delivery mechanism, not a program.
+  - id: packed-dropper-decrypts-inline-stage
+    desc: Packed dropper unpacks an encrypted stage
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: aes-gcm-decrypt-in-decoded-layer
+    needs: 1
+    any:
+      - id: objectives/supply-chain/hidden-payload/eval::packed-single-line-eval-dropper
+      - id: objectives/supply-chain/hidden-payload/eval::megabyte-charcode-packed-payload
