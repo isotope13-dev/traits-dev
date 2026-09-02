@@ -17,18 +17,6 @@ defaults:
   attack: T1036.005
 
 traits:
-  - id: app-tree-output-path
-    desc: File path inside application install tree
-    crit: component
-    conf: 0.85
-    # Path under an installed application's tree: /usr/src/<app>/,
-    # /opt/<app>/, node module roots, container app data. A staging
-    # location, not evidence on its own — combined with a fetch/chmod in
-    # the composites below.
-    if:
-      type: text
-      regex: '/(usr/src|usr/lib/node_modules|opt|app/(data|bin))/[a-z0-9@._/-]{2,60}'
-
   - id: stage-into-claude-config-dir
     desc: Stages file in Claude config directory
     crit: suspicious
@@ -41,28 +29,46 @@ traits:
       type: text
       regex: '(?i)\b(curl|wget|mv|cp|chmod|install)\b[^|\n]{0,120}\.claude/[a-z0-9._-]{1,40}'
 
+  - id: fetch-into-app-tree-path
+    desc: Fetch writes into app install tree
+    crit: notable
+    conf: 0.9
+    # The download's own -o/-O argument names a path under the app tree.
+    # Tying the fetch and the destination to one command is what separates
+    # staging a payload inside an installed application from an install
+    # script that merely mkdirs an /opt directory near an unrelated fetch.
+    if:
+      type: text
+      regex: '\b(curl|wget)[^|\n]{0,80}\s-\w*[oO]\s/(opt|usr/(src|lib/node_modules)|app/data)/\S{2,50}'
+
+  - id: fetch-redirect-app-tree-path
+    desc: Fetch redirected into app install tree
+    crit: notable
+    conf: 0.88
+    # Same behavior as a shell redirect: `curl <url> > /opt/<app>/x`.
+    if:
+      type: text
+      regex: '\b(curl|wget)[^|\n]{0,80}>\s*/(opt|usr/(src|lib/node_modules)|app/data)/\S{2,50}'
+
 composite_rules:
   - id: download-staged-app-install-tree
     desc: Downloads payload into application install tree
     crit: suspicious
     conf: 0.9
-    all:
-      - id: app-tree-output-path
     any:
-      - id: micro-behaviors/communications/http/download/curl::source-curl-output-option
-      - id: micro-behaviors/communications/http/download/cli::fetch-output-flag-script
-    near_bytes: 256
+      - id: fetch-into-app-tree-path
+      - id: fetch-redirect-app-tree-path
 
   - id: staged-app-tree-executable
     desc: Stages executable in application install tree
     crit: suspicious
     conf: 0.93
-    # Download into an app tree plus a nearby exec-bit set: a runtime
-    # script planting a runnable file where the host application's own
-    # files live, so the payload blends with the process tree.
+    # Download into an app tree plus an exec bit set on a path in that same
+    # tree: a runtime script planting a runnable file where the host
+    # application's own files live, so the payload blends with the process
+    # tree. The chmod must name the app tree as well — a nearby
+    # `chmod +x /usr/bin/<tool>` in an installer says nothing about staging.
     all:
       - id: download-staged-app-install-tree
-    any:
-      - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-absolute-path
-      - id: micro-behaviors/fs/chmod/modify::python-chmod-call-with-exec-bit
+      - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-app-tree-path
     near_bytes: 400
