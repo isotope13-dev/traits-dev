@@ -1,0 +1,170 @@
+# Repository-supplied Git configuration command triggers (GitSpawn class).
+#
+# A repository that arrives as files keeps its .git/config, and Git runs
+# several config values as commands: core.fsmonitor fires on every index
+# refresh (git status, git diff) — the background calls AI coding agents make
+# at session startup, before workspace-trust prompts — while core.hooksPath
+# and filter clean/smudge/process drivers name programs Git executes during
+# ordinary operations. A repo config that sets these keys to shell payloads
+# is booby-trapped: opening or inspecting the repo runs attacker code with
+# the user's privileges. Keys alone stay notable (husky sets hooksPath,
+# git-lfs installs filter drivers); exec-shaped values or stacked command
+# surfaces carry the suspicious/hostile verdicts.
+# https://thehackernews.com/2026/09/malicious-git-configs-can-make-claude.html
+defaults:
+  platforms: [unix, windows]
+  for: [text]
+  crit: notable
+  conf: 0.88
+  attack: T1546
+
+traits:
+  - id: git-config-fsmonitor-set
+    desc: Git config sets core.fsmonitor
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?m)^\s*fsmonitor\s*='
+
+  - id: git-config-hookspath-set
+    desc: Git config sets core.hooksPath
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?m)^\s*hooksPath\s*='
+
+  - id: git-config-filter-clean-command
+    desc: Git filter clean command value
+    conf: 0.88
+    if:
+      type: text
+      regex: '(?m)^\s*clean\s*='
+
+  - id: git-config-filter-smudge-command
+    desc: Git filter smudge command value
+    conf: 0.88
+    if:
+      type: text
+      regex: '(?m)^\s*smudge\s*='
+
+  - id: git-config-filter-process-command
+    desc: Git filter process command value
+    conf: 0.85
+    if:
+      type: text
+      regex: '(?m)^\s*process\s*='
+
+  # Exec-shaped config values. None of these belong in any git config value.
+  - id: git-config-value-pipe-shell
+    desc: Config value pipes into a shell
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '\|\s*(ba|z|da)?sh\b'
+
+  - id: git-config-value-http-fetch
+    desc: Config value fetches an HTTP URL
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(curl|wget)[\s\S]{0,16}https?://'
+
+  - id: git-config-value-base64-decode
+    desc: Config value decodes base64 into a pipe
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: 'base64\s+(-d|--decode)[^\n]{0,40}\|'
+
+  - id: git-config-value-python-exec
+    desc: Config value runs python -c
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '\bpython[23]?\s+-c\b'
+
+  - id: git-config-value-powershell-exec
+    desc: Config value invokes PowerShell
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '\bpowershell(.exe)?\s+-(e|enc|c|command|w)\b'
+
+  - id: git-config-value-dev-tcp
+    desc: Config value uses a /dev/tcp socket
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      substr: '/dev/tcp/'
+
+composite_rules:
+  - id: git-config-fsmonitor-exec-payload
+    desc: fsmonitor value carries an exec payload
+    crit: suspicious
+    conf: 0.93
+    all:
+      - id: git-config-fsmonitor-set
+    any:
+      - id: git-config-value-pipe-shell
+      - id: git-config-value-http-fetch
+      - id: git-config-value-base64-decode
+      - id: git-config-value-python-exec
+      - id: git-config-value-powershell-exec
+      - id: git-config-value-dev-tcp
+    near_lines: 3
+
+  - id: git-config-other-command-key-exec-payload
+    desc: hooksPath or filter value carries exec payload
+    crit: suspicious
+    conf: 0.9
+    unless:
+      - id: well-known/lib/development/git-lfs::git-lfs-filter-driver-config
+    all:
+      - id: git-config-value-pipe-shell
+    any:
+      - id: git-config-hookspath-set
+      - id: git-config-filter-clean-command
+      - id: git-config-filter-smudge-command
+      - id: git-config-filter-process-command
+    near_lines: 3
+
+  - id: gitspawn-fsmonitor-remote-exec
+    desc: Repo fsmonitor fetches and runs remote script
+    crit: hostile
+    conf: 0.97
+    attack: T1546,T1105
+    all:
+      - id: git-config-fsmonitor-set
+      - id: git-config-value-http-fetch
+      - id: git-config-value-pipe-shell
+    near_lines: 4
+
+  - id: gitspawn-config-stacked-triggers
+    desc: Repo config wires stacked command triggers
+    crit: hostile
+    conf: 0.95
+    unless:
+      - id: well-known/lib/development/git-lfs::git-lfs-filter-driver-config
+    all:
+      - id: git-config-fsmonitor-set
+    any:
+      - id: git-config-hookspath-set
+      - id: git-config-filter-clean-command
+      - id: git-config-filter-smudge-command
+      - id: git-config-filter-process-command
+      - id: git-config-value-pipe-shell
+      - id: git-config-value-http-fetch
+      - id: git-config-value-base64-decode
+      - id: git-config-value-python-exec
+      - id: git-config-value-powershell-exec
+      - id: git-config-value-dev-tcp
+    needs: 2
+    near_lines: 16
