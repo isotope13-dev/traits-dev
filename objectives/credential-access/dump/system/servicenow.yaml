@@ -1,0 +1,66 @@
+# ServiceNow tenant-side cleartext credential recovery.
+#
+# Attackers holding script_include_admin rights backdoor ServiceNow script
+# includes so the server returns cleartext secrets to the client: an early
+# return of CredentialTestAjax's _decryptCredentialData() ahead of the
+# SNC.CredentialTest.test() validation call leaks the decrypted
+# discovery_credentials blob through the /xmlhttp.do response, and a
+# throwaway AbstractAjaxProcessor that decrypts Password2 fields dumps LDAP
+# bind passwords (SpecterOps, "Cleartext Credential Recovery in
+# ServiceNow", 2026). Patching or re-creating the CredentialTestAjax record
+# in sys_script_include is the delivery mechanism for the first form.
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript, json, text, data, python]
+  attack: T1555
+
+traits:
+  - id: servicenow-credentialtest-processor-ref
+    desc: References CredentialTestAjax script include
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      # Server-side AJAX processor that decrypts and validates discovery
+      # credentials; only credential-dump tooling names it in code.
+      substr: CredentialTestAjax
+
+  - id: servicenow-decrypt-data-early-return
+    desc: Returns decrypted credential data early
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      # CredentialTestAjax normally feeds _decryptCredentialData() into
+      # SNC.CredentialTest.test(); returning it to the caller instead is
+      # the leak introduced by the backdoor.
+      regex: 'return\s+[^;\n]{0,60}_decryptCredentialData'
+
+composite_rules:
+  - id: servicenow-credentialtestajax-backdoor
+    desc: CredentialTestAjax backdoored to leak secrets
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: servicenow-credentialtest-processor-ref
+      - id: servicenow-decrypt-data-early-return
+    near_bytes: 1500
+
+  - id: servicenow-credentialtest-include-patch
+    desc: Patches CredentialTestAjax script include
+    crit: hostile
+    conf: 0.94
+    attack: T1555,T1505.003
+    all:
+      - id: servicenow-credentialtest-processor-ref
+      - id: objectives/persistence/system/saas::servicenow-script-include-write
+    near_bytes: 5000
+
+  - id: servicenow-ajax-credential-dump
+    desc: AJAX processor returns decrypted passwords
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: micro-behaviors/os/module/load::servicenow-ajax-processor-define
+      - id: objectives/credential-access/credential-manager/store-api::servicenow-password2-field-decrypt
+    near_bytes: 1500
