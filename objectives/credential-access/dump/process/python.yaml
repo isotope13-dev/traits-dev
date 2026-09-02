@@ -1,0 +1,44 @@
+# Credential extraction from live Python module state.
+#
+# AI infrastructure keeps its highest-value secrets in process memory rather
+# than on disk: gateway/proxy master keys and provider API keys live as module
+# attributes of the running service. Post-exploitation tooling adapted to that
+# reads secret-named attributes off imported modules via getattr and prints
+# them through the same channel as the RCE output (Wiz AI-infrastructure
+# honeypot telemetry, Aug 2026: LiteLLM master_key / litellm_master_key_hash
+# pulled from litellm.proxy.proxy_server module state).
+defaults:
+  platforms: [unix, windows]
+  for: [python]
+  attack: T1003.007
+
+traits:
+  - id: python-getattr-secret-print
+    desc: Prints secret value fetched via getattr
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: tree-sitter
+      language: python
+      query: |
+        (call
+          function: (identifier) @fn
+          arguments: (argument_list
+            (string) @label
+            (call
+              function: (identifier) @gfn))
+          (#eq? @fn "print")
+          (#eq? @gfn "getattr")
+          (#match? @label "(?i)(master_key|api_key|secret_key|admin_key|access_token|auth_token)"))
+
+composite_rules:
+  - id: python-module-state-credential-dump
+    desc: Dumps secrets from imported module state
+    crit: hostile
+    conf: 0.95
+    near_lines: 10
+    all:
+      - id: micro-behaviors/os/api-resolution/dynamic::python-getattr-credential-attribute
+      - id: python-getattr-secret-print
+    unless:
+      - id: well-known/tool/detection/

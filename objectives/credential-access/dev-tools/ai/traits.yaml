@@ -43,6 +43,33 @@ traits:
     if:
       type: text
       regex: (?i)[/\\]\.claude[/\\].{0,80}secrets?
+  - id: litellm-proxy-module-import
+    desc: Imports LiteLLM proxy server module
+    crit: notable
+    conf: 0.95
+    for: [python, scripts, source]
+    if:
+      type: text
+      regex: '(?i)\blitellm(\.proxy(\.proxy_server)?)?\b'
+  - id: litellm-master-key-state-access
+    desc: Reads LiteLLM master key via getattr
+    crit: suspicious
+    conf: 0.95
+    for: [python, scripts, source]
+    # The in-memory extraction shape: getattr on a module/object with the
+    # master-key attribute quoted. The proxy's own code reads the key through
+    # plain attribute access, so this call form is the introspection probe.
+    if:
+      type: text
+      regex: 'getattr\s*\([^)]{0,60}[''"](litellm_master_key_hash|master_key)[''"]'
+  - id: litellm-config-path
+    desc: LiteLLM configuration file path
+    crit: notable
+    conf: 0.94
+    for: [scripts, source, text]
+    if:
+      type: text
+      regex: '(?i)(/app/litellm_config\.yaml|/etc/litellm/\.env|\.litellm/config\.yaml)'
 composite_rules:
   - id: claude-code-config-target
     desc: Claude Code credential config target
@@ -96,6 +123,19 @@ composite_rules:
       - id: well-known/app/development/github-desktop/
       - id: well-known/app/ai/coding-agent/cline/
       - id: well-known/app/development/cloudflare/
+      # A sync/watch CLI whose capture policy names AI-tool config dirs AND
+      # secret files next to junk markers is enumerating what it will NOT
+      # upload (code-maverick ignores .claude/.cursor/.env/*.pem/*.key at every
+      # eligibility and watcher path). The harvest verdict requires the
+      # dirs/files to be read or sent, not listed as exclusions.
+      - id: objectives/credential-access/dev-tools/ai::capture-policy-secret-exclusion-context
+
+  - id: capture-policy-secret-exclusion-context
+    desc: Watcher capture policy skips secrets and AI tool dirs
+    crit: exception
+    all:
+      - id: micro-behaviors/fs/watch/monitor::capture-policy-ignores-secret-files
+      - id: micro-behaviors/fs/path/application/config::ai-coding-tool-config-directory-cluster
   - id: claude-leveldb-secret-harvest
     desc: Claude LevelDB secret harvesting
     crit: hostile
@@ -109,3 +149,14 @@ composite_rules:
       - id: objectives/credential-access/env/secrets/ai-provider::anthropic-api-key
       - id: objectives/credential-access/dev-tools/ai::claude-code-config-target
       - id: objectives/credential-access/env/secrets/api-key::api-key-generic
+
+  - id: litellm-in-memory-master-key-harvest
+    desc: Python queries in-memory LiteLLM gateway master key
+    crit: hostile
+    conf: 0.98
+    attack: T1552.005,T1059.006
+    for: [python, scripts, source]
+    all:
+      - id: litellm-proxy-module-import
+      - id: litellm-master-key-state-access
+

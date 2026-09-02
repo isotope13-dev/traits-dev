@@ -17,9 +17,6 @@ traits:
     min: 200
   unless:
   - type: metrics
-    field: binary.avg_string_entropy
-    max: 3.2
-  - type: metrics
     field: binary.string_count
     min: 1000
   - id: metadata/binary/resource::kernel-driver-idata
@@ -31,11 +28,11 @@ traits:
     - id: micro-behaviors/dylib/library/abi-graphics::graphics-runtime-library-name
     - id: metadata/binary/metrics/threshold::many-exports-200
 - id: massive-code-blob
-  desc: Extremely large average function size
+  desc: Function with a 50+ block control-flow graph
   crit: component
   conf: 0.85
   if:
-    id: metadata/lang/compiler/aot::huge-runtime-average-function
+    id: metadata/binary/metrics/structural::large-functions
   unless:
   - type: metrics
     field: functions.count
@@ -223,9 +220,18 @@ composite_rules:
   - id: well-known/tool/sysadmin/unix-benign/
   - id: well-known/tool/reverse-engineering/rizin::rz-test-usage
 - id: unexpected-socket-ops
+  # Sockets in a *library* are the anomaly this rule names (the liblzma
+  # backdoor shape); nothing establishes "library" for an executable, where
+  # socket+connect is ordinary for any networked program. for: [so, dylib,
+  # dll] separates PE/DLL and Mach-O executables; for ELF the engine types
+  # executables and shared objects identically, so an ELF carrying a
+  # PT_INTERP (dynamic-loader path — only executables have one) is carved
+  # out via unless. Mirrors the fix documented on the
+  # unexpected-capabilities sibling below.
   desc: Socket operations in non-network library
   crit: suspicious
   conf: 0.6
+  for: [so, dylib, dll]
   all:
   - id: micro-behaviors/communications/socket/create::create
   - id: micro-behaviors/communications/socket/connect::connect
@@ -235,6 +241,8 @@ composite_rules:
   - id: metadata/signed/platform::apple
   - id: well-known/app/ai/tool-server/mcu-ai-debug/
   - id: well-known/tool/sysadmin/alpine-packages::alpine-filebrowser-binary
+  # A PT_INTERP marks an ELF executable (shared libraries have none).
+  - id: metadata/binary/linking/runtime::interpreter
 - id: unexpected-crypto-safe-context
   desc: Known crypto library or runtime context
   crit: exception
@@ -345,14 +353,17 @@ composite_rules:
   - id: metadata/binary/instruction::byte-load-xor-sequence
   - id: ssh-hook-pattern
   - id: rsa-in-compression-lib
-- id: potential-code-injection
-  desc: Potential code injection indicators
+# Named for what is actually observed. The former `many-huge-functions` leg
+# paired one control-flow-graph size metric with another, so any large native
+# application - a 45 MB system-information utility, a game, a browser - reported
+# "potential code injection" on nothing but its own size. Interposition is the
+# only leg that carried the XZ-family meaning, so it is now required.
+- id: interposition-in-large-functions
+  desc: Linker interposition inside large opaque functions
   crit: suspicious
   conf: 0.8
   all:
   - id: massive-code-blob
-  any:
-  - id: metadata/binary/metrics/structural::many-huge-functions
   - id: glibc-hijack
 - id: auth-bypass-indicator
   desc: Authentication bypass backdoor indicator

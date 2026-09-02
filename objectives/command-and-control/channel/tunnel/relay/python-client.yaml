@@ -1,0 +1,49 @@
+# Python reverse-tunnel implants (TerminalFix-style network pivots and
+# lookalikes): a compact client.py that dials the C2 over TLS/443, upgrades
+# to a WebSocket at a /tunnel endpoint with certificate verification always
+# disabled, and relays C2-instructed arbitrary TCP connections through a
+# custom multiplexed frame header — turning the host into a SOCKS-style
+# pivot into the internal network.
+defaults:
+  platforms: [windows, unix]
+  for: [python]
+  attack: T1572,T1071.001
+  mbc: B0022
+
+composite_rules:
+  - id: python-websocket-tunnel-unverified-relay
+    desc: WebSocket tunnel client disables TLS verify
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: micro-behaviors/communications/websocket/endpoints::tunnel-ws-endpoint-path
+      - id: micro-behaviors/communications/websocket/framing::python-type-stream-length-header
+    any:
+      - id: micro-behaviors/communications/socket/ssl::check-hostname-false
+      - id: micro-behaviors/communications/socket/ssl::verify-mode-none
+      - id: micro-behaviors/communications/socket/ssl::cert-none
+
+  - id: python-tunnel-remote-relay-pivot
+    desc: Tunnel relays C2-instructed TCP connections
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: micro-behaviors/communications/websocket/endpoints::tunnel-ws-endpoint-path
+      - id: micro-behaviors/communications/proxy/tunnel::socks5-domain-connect-encoding
+      - id: micro-behaviors/communications/proxy/tunnel::websocket-target-connect
+
+  # Deployment side (the PowerShell that ships the implant): an embeddable
+  # Python runtime is pulled from python.org and the tunnel client launched
+  # windowless via pythonw.exe — inheriting a legitimate interpreter's trust
+  # while hiding from the desktop.
+  - id: powershell-pythonw-tunnel-deploy
+    desc: Deploys windowless Python tunnel client
+    crit: suspicious
+    conf: 0.93
+    for: [powershell]
+    all:
+      - id: micro-behaviors/process/interpreter/python::pythonw-launch
+      - id: micro-behaviors/process/create/hidden::powershell-windowstyle-hidden-option
+    any:
+      - id: micro-behaviors/communications/websocket/endpoints::tunnel-ws-endpoint-path
+      - id: objectives/command-and-control/dropper/execution/download-exec::python-embed-zip-url

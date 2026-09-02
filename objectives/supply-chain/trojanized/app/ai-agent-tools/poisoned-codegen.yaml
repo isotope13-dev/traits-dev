@@ -1,0 +1,75 @@
+# A code assistant whose prompt asks the model for *vulnerable* code.
+#
+# The attack inverts what the tool is for. A developer installs a completion
+# extension, accepts its suggestions the way they accept any completion, and the
+# suggestions carry deliberate weaknesses — an unparameterised query, a dropped
+# bounds check, a hardcoded credential. Nothing hostile ever runs on the
+# developer's machine; the payload is committed by the victim, into their own
+# product, over months. It survives code review exactly as well as any other
+# plausible-looking code does, which is the point.
+#
+# The instruction is the artifact. Model weights can be fine-tuned to do this
+# with no incriminating prompt at all — the sample that motivated this calls a
+# private `ft:gpt-3.5-turbo` model — but the shipped prompt is what states the
+# intent in the clear, and a prompt is what a repackaged or hastily-built
+# version leaves behind.
+#
+# Matched across languages because the instruction is written for whoever built
+# the tool, not for the victim: the sample's is Korean. The terms are the ones
+# that name insecurity as the goal, not merely mention security.
+defaults:
+  platforms: [unix, windows]
+  for: [scripts, source]
+  attack: T1195.002
+  mbc: B0024
+
+traits:
+  - id: prompt-requests-vulnerable-code
+    desc: Prompt asks a model for vulnerable code
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      # The instruction must name insecure *code* as the thing to emit. Without
+      # the trailing noun this also caught security advice warning that a
+      # setting "will make your application vulnerable to" an attack — the
+      # opposite intent, and shipped in every copy of `requests`.
+      regex: '(?i)(write|generate|create)[^.\n]{0,40}(vulnerable|insecure)[^.\n]{0,15}(code|function)'
+
+  - id: prompt-requests-vulnerable-code-korean
+    desc: Korean prompt asks for vulnerable code
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      substr: '취약한 코드'
+
+  - id: prompt-requests-hidden-backdoor
+    desc: Prompt asks for a hidden backdoor
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)(subtle|hidden|undetectable)\b[^.\n]{0,30}\b(vulnerability|backdoor|flaw)\b'
+
+composite_rules:
+  # The instruction plus the machinery to deliver it. A prompt asking for
+  # vulnerable code is damning on its own reading, but a single string cannot
+  # carry a hostile verdict — it is one grep away from a security paper, a test
+  # fixture, or a detection rule quoting the thing it detects. Pairing it with a
+  # live model client is what separates a tool that *does* this from prose that
+  # describes it, and it is the pairing that is hard to shed: the assistant
+  # needs the client to function.
+  - id: poisoned-code-assistant
+    desc: Code assistant prompts for vulnerable output
+    crit: hostile
+    conf: 0.95
+    scope: archive
+    for: [vsix, zip, archives]
+    needs: 1
+    any:
+      - id: prompt-requests-vulnerable-code
+      - id: prompt-requests-vulnerable-code-korean
+      - id: prompt-requests-hidden-backdoor
+    all:
+      - id: micro-behaviors/communications/http/client/library::openai-client-import

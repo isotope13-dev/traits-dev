@@ -1,0 +1,68 @@
+# Payload staging inside a host application's install/config tree.
+#
+# On hosts running recognizable server software, attackers stage payloads in
+# the application's own directories so the files blend with the expected
+# process and file tree (Wiz AI-infrastructure honeypot telemetry, 2026:
+# XMRig dropped at /usr/src/node-red/xmrig to blend with the Node.js process
+# tree; a Langflow miner staged at /app/data/.claude/unicorn because a
+# .claude/ config directory looks native on an AI server).
+#
+# Legitimate software installs into these trees through package managers and
+# image builds; a runtime download or binary staged there by a script is
+# borrowing the location as camouflage. ATT&CK: T1036.005 (Masquerading:
+# Match Legitimate Name or Location).
+defaults:
+  platforms: [unix]
+  for: [shell, python, javascript, typescript, text, json]
+  attack: T1036.005
+
+traits:
+  - id: app-tree-output-path
+    desc: File path inside application install tree
+    crit: component
+    conf: 0.85
+    # Path under an installed application's tree: /usr/src/<app>/,
+    # /opt/<app>/, node module roots, container app data. A staging
+    # location, not evidence on its own — combined with a fetch/chmod in
+    # the composites below.
+    if:
+      type: text
+      regex: '/(usr/src|usr/lib/node_modules|opt|app/(data|bin))/[a-z0-9@._/-]{2,60}'
+
+  - id: stage-into-claude-config-dir
+    desc: Stages file in Claude config directory
+    crit: suspicious
+    conf: 0.92
+    # Claude Code writes settings and session state under .claude/, never
+    # executables. A download, copy/move, or chmod targeting .claude/<file>
+    # is camouflage: on an AI server the directory looks native, so an
+    # admin triaging processes is less likely to flag it.
+    if:
+      type: text
+      regex: '(?i)\b(curl|wget|mv|cp|chmod|install)\b[^|\n]{0,120}\.claude/[a-z0-9._-]{1,40}'
+
+composite_rules:
+  - id: download-staged-app-install-tree
+    desc: Downloads payload into application install tree
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: app-tree-output-path
+    any:
+      - id: micro-behaviors/communications/http/download/curl::source-curl-output-option
+      - id: micro-behaviors/communications/http/download/cli::fetch-output-flag-script
+    near_bytes: 256
+
+  - id: staged-app-tree-executable
+    desc: Stages executable in application install tree
+    crit: suspicious
+    conf: 0.93
+    # Download into an app tree plus a nearby exec-bit set: a runtime
+    # script planting a runnable file where the host application's own
+    # files live, so the payload blends with the process tree.
+    all:
+      - id: download-staged-app-install-tree
+    any:
+      - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-absolute-path
+      - id: micro-behaviors/fs/chmod/modify::python-chmod-call-with-exec-bit
+    near_bytes: 400

@@ -30,6 +30,26 @@ traits:
     if:
       type: text
       substr: post-checkout
+  - id: post-merge-hook-ref
+    desc: References post-merge hook name
+    crit: component
+    conf: 0.78
+    attack: T1546
+    if:
+      type: text
+      substr: post-merge
+  - id: hook-body-detached-launcher
+    desc: Hook body starts a detached background process
+    crit: suspicious
+    conf: 0.9
+    attack: T1546
+    # setsid/nohup plus output redirection plus `&` inside a hook body is a
+    # launcher, not a check: a real hook runs in the foreground so Git can
+    # read its exit status. Developer tooling never needs to outlive the
+    # command that triggered it.
+    if:
+      type: text
+      regex: '(setsid|nohup)[^\n]{0,100}>\s*/dev/null\s*2>&1\s*&'
   - id: hook-executable-write-mode
     desc: writeFileSync executable mode
     crit: component
@@ -94,3 +114,32 @@ composite_rules:
     unless:
       - id: micro-behaviors/process/interpreter/vm/
       - id: metadata/library/runtime::acquire-vscode-api
+
+  # Persistence that rides the victim's own development workflow: the hook
+  # fires on every pull, merge and branch switch, and a `git clean` or a fresh
+  # `npm ci` does not touch .git/hooks. Escalating past the notable installer
+  # rules above needs the launcher shape -- a background process detached from
+  # the Git command -- or evidence that hooks are being written into
+  # repositories the tool went looking for rather than its own.
+  - id: git-hook-detached-launcher-injection
+    desc: Writes a Git hook that starts a background process
+    crit: hostile
+    conf: 0.95
+    attack: T1546
+    all:
+      - id: hook-body-detached-launcher
+      - id: micro-behaviors/fs/file/write/direct::node-write-file-sync
+    any:
+      - id: micro-behaviors/fs/path/config/git::git-hooks-path
+      - id: micro-behaviors/fs/path/config/git::git-hooks-dir-join
+
+  - id: checkout-merge-hook-persistence
+    desc: Installs post-merge and post-checkout hooks
+    crit: suspicious
+    conf: 0.92
+    attack: T1546
+    all:
+      - id: post-merge-hook-ref
+      - id: post-checkout-hook-ref
+      - id: micro-behaviors/fs/file/write/direct::node-write-file-sync
+      - id: micro-behaviors/fs/path/config/git::git-hooks-dir-join

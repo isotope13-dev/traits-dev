@@ -1,24 +1,58 @@
-# Browser pages that POST a Go chat template to a local Ollama /api/create
-# endpoint (loopback or DNS-rebound page origin). Legitimate Modelfile
-# authors use the same template syntax without a browser fetch to :11434.
+# Chat-template poisoning against a local Ollama / NVIDIA NemoClaw model store
+# (CVE-2026-65105 class). The model runner exposes an unauthenticated HTTP API
+# on :11434 -- when it is bound to 0.0.0.0 (or reached from a browser via DNS
+# rebinding) an attacker retrieves a model's Go chat template with /api/show,
+# splices a hidden system directive in after the {{ .System }} field, and
+# writes it back with /api/create so the implanted instruction renders on every
+# inference with no visible trace. Legitimate Modelfile authors use the same
+# template syntax on disk / via the CLI, not by round-tripping /api/show ->
+# /api/create over HTTP from a page origin.
 defaults:
   platforms: [unix, windows]
-  for: [javascript, typescript, html]
+  for: [javascript, typescript, html, python, go]
   attack: T1557,T1565.001
   mbc: B0010
 
 composite_rules:
-  - id: loopback-ollama-template-create
-    desc: Loopback Ollama create with System template
+  # Read-modify-write of a model's template over the admin API: pull the
+  # current template (/api/show), then write a System-bearing template back
+  # (/api/create) in the same program. Host-agnostic -- covers the browser
+  # rebinding path and native post-exploitation tooling alike.
+  - id: ollama-template-read-modify-write
+    desc: Ollama template pulled via show and rewritten via create
     crit: hostile
-    conf: 0.98
+    conf: 0.96
     all:
-      - id: micro-behaviors/communications/http/llm::loopback-host-with-llm-port
+      - id: micro-behaviors/communications/http/llm::ollama-api-show-path
       - id: micro-behaviors/communications/http/llm::ollama-api-create-path
       - id: micro-behaviors/communications/http/llm::go-system-message-template
+    any:
       - id: micro-behaviors/communications/http/post::fetch-post-call
-    near_bytes: 900
+      - id: micro-behaviors/communications/http/request/html::html-fetch-post-call
+      - id: micro-behaviors/communications/http/request/verb::urllib-request-post
+      - id: micro-behaviors/communications/http/request/client::requests-post-json-payload
+    near_bytes: 1400
 
+  # The written template smuggles an extra chat system turn in right after the
+  # user's {{ .System }} field -- the prompt-injection payload structure --
+  # and is pushed through /api/create.
+  - id: ollama-create-injected-system-role
+    desc: Ollama create writes template with injected system role
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: micro-behaviors/communications/http/llm::ollama-api-create-path
+      - id: micro-behaviors/communications/http/llm::go-template-injected-system-role
+    any:
+      - id: micro-behaviors/communications/http/post::fetch-post-call
+      - id: micro-behaviors/communications/http/request/html::html-fetch-post-call
+      - id: micro-behaviors/communications/http/request/verb::urllib-request-post
+      - id: micro-behaviors/communications/http/request/client::requests-post-json-payload
+    near_bytes: 1400
+
+  # Browser-origin variant: the page builds the :11434 URL from its own
+  # (rebound) hostname, then POSTs a System-bearing template to /api/create.
+  # A browser has no legitimate reason to manage a machine-local Ollama store.
   - id: rebound-origin-ollama-template-create
     desc: Page-origin Ollama create with System template
     crit: hostile
@@ -27,5 +61,23 @@ composite_rules:
       - id: micro-behaviors/communications/http/llm::page-host-ollama-port
       - id: micro-behaviors/communications/http/llm::ollama-api-create-path
       - id: micro-behaviors/communications/http/llm::go-system-message-template
+    any:
       - id: micro-behaviors/communications/http/post::fetch-post-call
+      - id: micro-behaviors/communications/http/request/html::html-fetch-post-call
+    near_bytes: 900
+
+  # Literal-loopback variant: a browser fetch that targets 127.0.0.1:11434
+  # /api/create with a System template. The loopback literal in a browser
+  # context is the rebinding endpoint after the A record flips.
+  - id: loopback-ollama-template-create
+    desc: Loopback Ollama create with System template
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: micro-behaviors/communications/http/llm::loopback-host-with-llm-port
+      - id: micro-behaviors/communications/http/llm::ollama-api-create-path
+      - id: micro-behaviors/communications/http/llm::go-system-message-template
+    any:
+      - id: micro-behaviors/communications/http/post::fetch-post-call
+      - id: micro-behaviors/communications/http/request/html::html-fetch-post-call
     near_bytes: 900

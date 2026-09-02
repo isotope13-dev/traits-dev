@@ -1,0 +1,61 @@
+# AEAD-framed HTTP command channel in Node.js.
+#
+# The wire format is the tell: a fresh random IV, the ciphertext, and the GCM
+# authentication tag concatenated into one buffer and base64'd into a JSON
+# field. That envelope defeats content inspection completely -- a proxy sees a
+# JSON POST with one opaque string -- and it is what both Mirage Kitten
+# Node.js implants put on every check-in, task poll and result upload.
+#
+# Building the envelope is legitimate cryptography on its own. What is not
+# legitimate is an envelope over an HTTP body in the same file as a runtime
+# code evaluator or a process launcher: that is a command channel, and the
+# encryption exists to hide the commands.
+#
+# ATT&CK: T1573.001 (Symmetric Cryptography), T1071.001 (Web Protocols)
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1573.001
+  mbc: B0031
+traits:
+  - id: gcm-iv-tag-envelope-pack
+    desc: Packs IV, ciphertext and GCM tag together
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: 'Buffer\.concat\(\[\s*\w*[iI][vV]\b[\s\S]{0,90}getAuthTag\(\)'
+
+  - id: gcm-tag-sliced-from-payload
+    desc: Slices the GCM tag from a buffer
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: 'setAuthTag\(\s*\w+\.(subarray|slice)\('
+
+composite_rules:
+  - id: aes-gcm-http-envelope-channel
+    desc: Wraps HTTP bodies in an AES-GCM envelope
+    crit: suspicious
+    conf: 0.92
+    attack: T1573.001,T1071.001
+    all:
+      - id: micro-behaviors/crypto/symmetric/aes/runtime-library::aes-256-gcm-dash
+      - id: micro-behaviors/communications/http/request/client::node-http-request-stream-body
+    any:
+      - id: gcm-iv-tag-envelope-pack
+      - id: gcm-tag-sliced-from-payload
+
+  - id: encrypted-envelope-command-channel
+    desc: Encrypted HTTP envelope carries executed commands
+    crit: hostile
+    conf: 0.95
+    attack: T1573.001,T1071.001,T1059.007
+    all:
+      - id: aes-gcm-http-envelope-channel
+      - id: gcm-iv-tag-envelope-pack
+      - id: gcm-tag-sliced-from-payload
+    any:
+      - id: micro-behaviors/process/interpreter/eval::js-new-function-constructor
+      - id: micro-behaviors/process/create/system::js-execfile-call

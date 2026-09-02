@@ -1,0 +1,79 @@
+# Scheduled-task privilege escalation: the Task Scheduler service runs
+# registered actions under the account the task was created with, so a task
+# marked /RU SYSTEM executes its action as NT AUTHORITY\SYSTEM regardless of
+# the invoking user's rights. Malware uses this as a throwaway elevation
+# helper: create a one-shot SYSTEM task whose /TR action wraps a command in
+# cmd.exe /c (or powershell), run it, and delete the task immediately so the
+# elevation footprint exists for only a few seconds. Legitimate software
+# registers durable tasks that run named programs; it does not spin up
+# SYSTEM-wrapped interpreter one-shots and remove them in the same breath.
+#
+# Observed in the counterfeit-installer campaign tracked by Microsoft
+# Defender Experts (Silver Fox / Yinhu class), where the helper task elevated
+# a Microsoft Defender exclusion registry write to SYSTEM.
+defaults:
+  platforms: [windows]
+  attack: T1053.005
+  mbc: F0012
+
+traits:
+  # A /TR action that runs a command interpreter is a wrapper for an arbitrary
+  # command rather than a named program: the task exists to execute whatever
+  # follows the interpreter flag. Ordinary tasks point at the application
+  # itself; elevation and cleanup helpers are the ones that need cmd.exe /c.
+  - id: schtasks-interpreter-action
+    desc: Task action invokes a command interpreter
+    crit: notable
+    conf: 0.92
+    for: [scripts, binaries]
+    if:
+      type: text
+      regex: '(?i)\s/tr\s+"?(cmd|powershell|wscript|mshta)(\.exe)?\b'
+
+  - id: schtasks-run-task-command
+    desc: Immediately runs a scheduled task
+    crit: notable
+    conf: 0.9
+    for: [scripts, binaries]
+    if:
+      type: text
+      regex: '(?i)\bschtasks(\.exe)?\s+/run\b'
+
+  - id: schtasks-delete-task-command
+    desc: Deletes a scheduled task
+    crit: notable
+    conf: 0.9
+    for: [scripts, binaries]
+    if:
+      type: text
+      regex: '(?i)\bschtasks(\.exe)?\s+/delete\b'
+
+composite_rules:
+  - id: system-task-interpreter-elevation
+    desc: SYSTEM scheduled task wraps an interpreter command
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: micro-behaviors/os/autorun/scheduled::schtasks-system-runas
+      - id: schtasks-interpreter-action
+      - id: objectives/persistence/login/scheduled-task/cli::windows-schtasks-create
+    near_bytes: 512
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/installer/family/
+
+  # The create-run-delete sequence: the task is not persistence, it is a
+  # disposable elevation vehicle. /Run fires it on demand and /Delete removes
+  # the evidence within moments — no legitimate task lifecycle does this.
+  - id: throwaway-system-task-elevation
+    desc: Throwaway SYSTEM task elevates a command then deletes itself
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: system-task-interpreter-elevation
+      - id: schtasks-run-task-command
+      - id: schtasks-delete-task-command
+    near_lines: 40
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/installer/family/

