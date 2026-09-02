@@ -1,0 +1,76 @@
+# Cloud-to-on-prem pivot: ServiceNow tenant to MID server command execution.
+#
+# MID servers are on-premise agents that poll the ServiceNow ECC Queue for
+# work. A Glide script inside the tenant can insert an ecc_queue record
+# with topic "Command" addressed to a specific mid.server agent, and the
+# MID server executes it as an operating system command; JavascriptProbe
+# records execute arbitrary JavaScript on the MID, including Java classes
+# from uploaded JAR plugins via the Packages bridge (MDSec, "When it Snows
+# it Pours", 2026). This is the SaaS-to-on-prem boundary crossing.
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript, json, text, data]
+  attack: T1059
+
+traits:
+  - id: servicenow-ecc-queue-write
+    desc: Writes ServiceNow ECC queue record
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: 'new\s+GlideRecord\s*\(\s*[''"]ecc_queue[''"]\s*\)'
+
+  - id: servicenow-ecc-command-topic
+    desc: ECC queue record uses Command topic
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '\.topic\s*=\s*[''"]Command[''"]'
+
+  - id: servicenow-mid-server-agent-target
+    desc: Targets named ServiceNow MID server agent
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '\.agent\s*=\s*[''"]mid\.server\..{0,50}[''"]'
+
+  - id: servicenow-javascriptprobe
+    desc: Constructs ServiceNow JavascriptProbe
+    crit: notable
+    conf: 0.93
+    if:
+      type: text
+      regex: 'new\s+JavascriptProbe\s*\('
+
+  - id: servicenow-probe-java-packages-call
+    desc: MID probe invokes Java via Packages bridge
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: 'setJavascript\s*\([\s\S]{0,400}\bPackages\.[A-Za-z_][\w.]*'
+
+composite_rules:
+  - id: servicenow-ecc-midserver-command
+    desc: OS command dispatched to MID server via ECC queue
+    crit: hostile
+    conf: 0.96
+    attack: T1059,T1072
+    all:
+      - id: servicenow-ecc-queue-write
+      - id: servicenow-ecc-command-topic
+      - id: servicenow-mid-server-agent-target
+    near_bytes: 800
+
+  - id: servicenow-midserver-java-execution
+    desc: MID server executes Java class from probe script
+    crit: hostile
+    conf: 0.95
+    attack: T1059,T1105
+    all:
+      - id: servicenow-javascriptprobe
+      - id: servicenow-probe-java-packages-call
+    near_bytes: 600

@@ -1,0 +1,51 @@
+# ServiceNow credential-store access from Glide script.
+#
+# Two scripted primitives harvest credentials that legitimate tenant users
+# cannot read:
+#
+# 1. Credentials installed in ServiceNow are stored encrypted with "no
+#    legitimate way from the UI to decrypt them"; the MID server's
+#    snc-automation-api.jar exposes CredentialsProviderFactory /
+#    getCredentialByID, which an attacker reaches from a JavascriptProbe or
+#    an ecc_queue entry (MDSec, "When it Snows it Pours", 2026).
+# 2. Vault integrations (e.g. CyberArk) are invoked as named REST messages
+#    whose function retrieves a password ('Get Password'); a script that
+#    calls the integration and captures the body is dumping vault
+#    credentials through the tenant.
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript, json, text, data]
+  attack: T1555
+
+traits:
+  - id: servicenow-credential-provider-decrypt
+    desc: Calls ServiceNow credential decrypt API
+    crit: suspicious
+    conf: 0.95
+    attack: T1552
+    if:
+      type: text
+      # Internal automation-api identifiers; no legitimate Glide script
+      # instantiates the MID-side credential provider.
+      regex: '\b(CredentialsProviderFactory|getCredentialBy(ID|Alias))\b'
+
+  - id: servicenow-vault-password-restmessage
+    desc: ServiceNow REST message fetches vault password
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      # Two-argument RESTMessageV2 constructor (named message, function)
+      # whose function retrieves a password, e.g. CyberArk 'Get Password'.
+      regex: 'sn_ws\.RESTMessageV2\(\s*[''"][^''"]{0,40}[''"]\s*,\s*[''"][^''"]{0,20}(?i:get[ _]?password)'
+
+composite_rules:
+  - id: servicenow-vault-password-retrieval
+    desc: Password pulled from vault via ServiceNow
+    crit: suspicious
+    conf: 0.93
+    attack: T1555,T1552.001
+    all:
+      - id: servicenow-vault-password-restmessage
+      - id: micro-behaviors/communications/http/client/service::servicenow-restmessage-body-capture
+    near_bytes: 500

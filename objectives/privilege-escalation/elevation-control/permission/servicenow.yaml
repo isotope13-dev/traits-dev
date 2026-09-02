@@ -1,0 +1,107 @@
+# ServiceNow privilege escalation via Glide script role grants.
+#
+# MDSec ("When it Snows it Pours", 2026) identified 24+ ServiceNow roles
+# that reach script execution and full tenant control. The final step of
+# every variant is the same mechanical act: a Glide script inserts a
+# sys_user_has_role row assigning a privileged role (admin directly, or a
+# chaining role like action_designer) to a controlled user, from a User
+# Criteria script, a scripted transform map, or a Workflow Studio step.
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript, json, text, data]
+  attack: T1548
+
+traits:
+  - id: servicenow-escalation-role-literal
+    desc: ServiceNow privilege-chaining role name
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      # Roles documented as privilege-escalation pivot points; granting
+      # them is the escalation primitive itself.
+      regex: '[''"](action_designer|business_rule_admin|user_criteria_admin)'
+
+  - id: servicenow-broad-escalation-role-literal
+    desc: ServiceNow broad-assignment escalation role
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '[''"](catalog_admin|import_admin|sn_cmdb_editor)'
+
+  - id: servicenow-admin-role-lookup
+    desc: Queries ServiceNow admin role by name
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: 'addQuery\s*\(\s*[''"]name[''"]\s*,\s*[''"]admin[''"]\s*\)'
+
+  - id: servicenow-role-contains-table-write
+    desc: Operates on ServiceNow role-inheritance table
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: 'GlideRecord\s*\(\s*.{0,3}sys_user_role_contains'
+
+  - id: servicenow-transform-run-script
+    desc: ServiceNow transform set to run script
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '[''"]run_script[''"]\s*:\s*true'
+
+  - id: servicenow-webservice-only-disabled
+    desc: Clears web-service-only login restriction
+    crit: notable
+    conf: 0.93
+    if:
+      type: text
+      regex: '(setValue|setDisplayValue)\s*\(\s*.{0,3}web_service_access_only.{0,4}\s*false'
+
+composite_rules:
+  - id: servicenow-privileged-role-grant
+    desc: Glide script grants privileged ServiceNow role to user
+    crit: hostile
+    conf: 0.95
+    attack: T1548,T1098
+    all:
+      - id: micro-behaviors/os/user/account::servicenow-role-assignment-insert
+    any:
+      - id: servicenow-escalation-role-literal
+      - id: servicenow-broad-escalation-role-literal
+      - id: servicenow-admin-role-lookup
+    near_bytes: 1200
+
+  - id: servicenow-service-account-interactive-escalation
+    desc: ServiceNow service account granted roles and interactive login
+    crit: suspicious
+    conf: 0.93
+    attack: T1548,T1098
+    all:
+      - id: micro-behaviors/os/user/account::servicenow-role-assignment-insert
+      - id: servicenow-webservice-only-disabled
+    near_bytes: 2000
+
+  - id: servicenow-transform-script-escalation
+    desc: Scripted ServiceNow transform grants privileged role
+    crit: suspicious
+    conf: 0.93
+    all:
+      - id: servicenow-transform-run-script
+      - id: micro-behaviors/os/user/account::servicenow-role-assignment-insert
+    near_bytes: 4000
+
+  - id: servicenow-inherited-admin-role-grant
+    desc: Grants admin through ServiceNow role inheritance
+    crit: suspicious
+    conf: 0.94
+    attack: T1548,T1098
+    all:
+      - id: servicenow-role-contains-table-write
+      - id: micro-behaviors/os/user/account::servicenow-role-assignment-insert
+      - id: servicenow-admin-role-lookup
+    near_bytes: 1800
