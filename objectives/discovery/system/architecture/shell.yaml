@@ -157,6 +157,35 @@ traits:
     # `case "$(uname -m 2>/dev/null || true)" in`) and the two-step form that
     # stores it first (`machine="$(uname -m)"` … `case "$machine" in`).
     regex: '(?s)case\s+"?\$\(\s*uname\s+-[mp]|uname\s+-[mp][^\n]{0,50}[\s\S]{0,200}?case\s+"?\$'
+# The Go toolchain's `crypto/internal/boring/build-goboring.sh` and oh-my-pi's
+# `scripts/install.sh` are the two shapes of this: read `uname -m`, fold it to a
+# normalized token in a `case`, then name the file to build or fetch after that
+# token. Selecting the build that matches the host is the point of an installer
+# and of a cross-build helper -- the arch probe is real, but attributing it to
+# an adversary enumerating targets is wrong.
+# `$( [ $(uname -m) = aarch64 ] && echo arm64 || echo amd64)` -- the same
+# normalisation written as a conditional instead of a case, which is how
+# nomad's client provisioning script and its CNI install docs pick the plugin
+# build to download.
+- id: arch-conditional-uname-select
+  desc: uname -m folded by a shell conditional
+  crit: component
+  conf: 0.92
+  if:
+    type: text
+    regex: '\[\s*\$\(\s*uname\s+-[mp][^)\n]{0,20}\)[^\n]{0,20}\]\s*&&\s*echo'
+# The normalized token spliced straight into the release URL being fetched:
+# `.../cni-plugins-linux-${ARCH_CNI}-v1.6.2.tgz`. Nomad's client provisioning
+# script and the install guide that documents it both build the URL this way,
+# as does every kubectl/helm-style install snippet.
+- id: arch-variable-in-download-url
+  desc: Arch variable spliced into a download URL
+  crit: component
+  conf: 0.9
+  if:
+    type: text
+    regex: 'https?://[^\s"]{0,150}\$\{?\w{0,12}(ARCH|arch)'
+
 composite_rules:
 - id: buildarch-targetarch
   desc: Regex component marker
@@ -206,21 +235,25 @@ composite_rules:
   all:
   - id: micro-behaviors/data/archive/extension::tar-gz-or-zip-text
   - id: arch-variable-in-artifact-name
-# The Go toolchain's `crypto/internal/boring/build-goboring.sh` and oh-my-pi's
-# `scripts/install.sh` are the two shapes of this: read `uname -m`, fold it to a
-# normalized token in a `case`, then name the file to build or fetch after that
-# token. Selecting the build that matches the host is the point of an installer
-# and of a cross-build helper -- the arch probe is real, but attributing it to
-# an adversary enumerating targets is wrong.
+
+- id: arch-host-probe-normalization
+  desc: Normalizes uname -m to an arch token
+  crit: component
+  conf: 0.9
+  any:
+  - id: arch-case-uname-normalization
+  - id: arch-conditional-uname-select
+
 - id: arch-case-selects-host-build
   desc: uname case selects this host's build artifact
   crit: component
   conf: 0.9
   all:
-  - id: arch-case-uname-normalization
+  - id: arch-host-probe-normalization
   any:
   - id: arch-variable-in-artifact-name
   - id: arch-variable-in-filename
+  - id: arch-variable-in-download-url
   # Or the script simply fetches the build it just selected: cosign's and uv's
   # installers map `uname -m` to a release asset and curl it down. Naming the
   # per-arch asset inline (`cosign-linux-${arch}`, `uv-x86_64-...tar.gz`) is the
