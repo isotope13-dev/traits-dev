@@ -160,6 +160,71 @@ traits:
       type: text
       regex: 'DEFAULT_WEBHOOK_URL\s*=\s*["'']https?://'
 composite_rules:
+  # A package that reports the machine it landed on to a chat webhook.
+  #
+  # `discord-exfiltration` above stays suspicious because its `any:` leg asks
+  # what kind of data is leaving -- credentials, stealer output, a keylog. A
+  # host profile is none of those and reads as harmless on its own, so a
+  # package sending only the hostname slips past it.
+  #
+  # It should not. A Discord webhook URL is a write-only endpoint belonging to
+  # whoever created it: a published library has no operational reason to hold
+  # one, and none at all to tell it the name of every machine that imports the
+  # package. Whatever the author calls it -- telemetry, a beacon, a counter --
+  # the recipient is a private chat channel and the subject is the victim.
+  #
+  # Worked example: a package whose `init()` reads `os.uname().nodename`,
+  # falls back to `socket.gethostname()`, and posts the result to a hardcoded
+  # `discord.com/api/webhooks/...` URL, with the endpoint overridable by an
+  # environment variable so the author can retarget it.
+  # A published library that ships the author's own chat webhook and posts to
+  # it.
+  #
+  # The sibling below needs the message to carry host identity, which is the
+  # clear case. This is the weaker but still wrong one: the package sends
+  # nothing about the machine, only the fact that it ran. A Discord webhook URL
+  # is a credential -- anyone holding it can write into that channel -- and a
+  # library has no reason to embed one, because the channel belongs to the
+  # author and not to the person who installed the dependency. Every consumer
+  # silently reports their usage to a private channel they cannot see.
+  #
+  # Archive-scoped: the manifest establishes that this is a published package
+  # rather than an application, and the webhook call lives in a module, so the
+  # two do not share a file.
+  #
+  # Worked example: a package whose entire module posts
+  # "someone installed <package>" to a hardcoded `discord.com/api/webhooks/...`
+  # URL when used.
+  - id: package-embeds-chat-webhook-callback
+    desc: Published package posts to an embedded chat webhook
+    crit: hostile
+    conf: 0.95
+    scope: archive
+    for: [python, package.json, npm, tar, zip, whl, archives]
+    attack: "T1041,T1102.002"
+    mbc: E1041
+    all:
+      - id: micro-behaviors/communications/http/webhook::discord-webhook-path
+      - id: micro-behaviors/communications/http/webhook::python-webhook-post
+      - id: metadata/build/pip::packaging-setuptools-import
+    unless:
+      - id: metadata/package/testing/
+
+  - id: discord-webhook-host-identity-report
+    desc: Host identity reported to a Discord webhook
+    crit: hostile
+    conf: 0.96
+    attack: "T1041,T1082"
+    mbc: E1041
+    all:
+      - id: micro-behaviors/communications/http/webhook::discord-webhook-path
+    any:
+      - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
+      - id: micro-behaviors/os/sysinfo/hostname::python-os-uname-nodename
+      - id: micro-behaviors/process/user/query::python-getpass-user
+    unless:
+      - id: metadata/package/testing/
+
   - id: webhook-with-system-data-host-1
     desc: "Webhook payload includes host identity field"
     crit: suspicious

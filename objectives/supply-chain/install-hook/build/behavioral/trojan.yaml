@@ -845,6 +845,82 @@ composite_rules:
       - id: metadata/package/documentation::python-openerdirector-install-doc
       - id: setup-codex-environment-script
   # === Python Build Trojan ===
+  # The same install-time network call, carrying who and where it landed.
+  #
+  # `setup-py-network-in-install` says a build class reaches the network, which
+  # a legitimate package occasionally does -- fetching a wheel for a platform
+  # it could not vendor, checking a licence server. What it does not do is
+  # describe the machine while doing it. `socket.gethostname()` plus the login
+  # name or the OS is a victim record, and an install hook runs on every
+  # consumer before anything has been imported, so the record is taken from
+  # people who only asked to install a dependency.
+  #
+  # Worked example: a `RunCommand(install)` that builds
+  # `?action=setup&host=...&user=...&os=...` and opens it against a
+  # webhook.site collector before calling `install.run(self)` so the install
+  # still succeeds.
+  #
+  # `install-hook/dropper/setup::setup-install-host-identity-payload` describes
+  # the same act as one regex -- `gethostname()` then `getuser()` then
+  # `requests.get(`, in that order and within 240 characters of each other.
+  # This is the structural form: it does not care about the order the fields
+  # are read in, and it takes the network leg from whichever client the hook
+  # actually uses, so a release that swaps `requests` for `urllib` or reads the
+  # user first still lands here.
+  # An install hook that both hides what it runs and throws away what it says.
+  #
+  # Suppressing a child's stdout and stderr during an install is the part that
+  # does not have an innocent reading. A build step that compiles an extension
+  # or fetches a wheel wants its errors seen -- that is how a failed install
+  # gets diagnosed. Routing both streams to DEVNULL means the author expects
+  # output the installing user should not read, or expects failures they should
+  # not notice.
+  #
+  # Paired with base64 in the same hook, which is what conceals *which* command
+  # runs: the string is not sensitive data, it is the command line, and the
+  # only thing encoding buys is that a reader skimming setup.py sees a blob.
+  #
+  # Worked example: a `requests` typosquat whose install class decodes
+  # `ioreg -d2 -c IOPlatformExpertDevice` and `IOPlatformUUID` from base64 to
+  # read the Mac's hardware UUID, then launches a bundled binary with
+  # `close_fds=True` and both streams to DEVNULL before deferring to
+  # `install.run(self)` so the install still appears to succeed.
+  - id: setup-py-install-hidden-decoded-exec
+    desc: Install hook runs a decoded command silently
+    crit: hostile
+    conf: 0.96
+    scope: leaf
+    attack: "T1195.002,T1027,T1564.003"
+    mbc: "E1027"
+    all:
+      - id: setup-py-or-cmdclass-marker
+      - id: setup-install-or-build-class
+      - id: micro-behaviors/data/decode/base64::b64decode-call
+      - id: micro-behaviors/process/create/subprocess::subprocess-suppresses-stdio
+    # No `metadata/package/testing/` suppression, unlike the network rules in
+    # this file. A `setup.py` legitimately configures a test command -- the
+    # real `requests` ships a `PyTest(TestCommand)` class -- so the marker
+    # fires on any clone of a package that does, which is exactly what a
+    # typosquat is. The four legs here are specific enough to stand without it:
+    # a build class that decodes a string and runs it with both streams
+    # discarded is not a test harness.
+    unless:
+      - id: setup-py-network-known-package-profile
+
+  - id: setup-py-install-host-profile-beacon
+    desc: Install class beacons a host profile
+    crit: hostile
+    conf: 0.97
+    scope: leaf
+    attack: "T1195.002,T1082,T1033,T1041"
+    mbc: "E1041"
+    all:
+      - id: setup-py-network-in-install
+      - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
+    any:
+      - id: micro-behaviors/process/user/query::python-getpass-user
+      - id: micro-behaviors/os/sysinfo/platform/runtime::platform-system
+
   - id: setup-py-network-in-install
     desc: Network API used from setup install or build class
     crit: suspicious

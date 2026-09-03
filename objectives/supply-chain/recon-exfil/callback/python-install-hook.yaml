@@ -1,0 +1,65 @@
+# A setup.py install hook whose job is to tell someone the install happened.
+#
+# The npm sibling in this directory describes the same act in a lifecycle
+# script. Here it is a `cmdclass` install/develop class, which runs on every
+# consumer of the package before anything is imported.
+#
+# An out-of-band collaborator host -- webhook.site, interact.sh, oastify,
+# requestbin -- exists to prove a request reached it, and that is its whole
+# function. A published package has no reason to prove anything to one at
+# install time, so the pair is the finding. Whether the operator meant it as a
+# bug-bounty proof or a foothold does not change what shipped: every installer
+# is reported to a third party who was not disclosed.
+#
+# Worked example: `class InstallWithBeacon(install)` whose `run()` opens
+# `https://webhook.site/<uuid>` with a 3-second timeout inside a bare
+# `except: pass`, then calls `install.run(self)` so the install still succeeds
+# and nothing looks wrong.
+defaults:
+  platforms: [unix, windows]
+  for: [python]
+  attack: "T1195.002,T1041"
+  mbc: "E1041"
+
+composite_rules:
+  # Archive-scoped: the hook is declared in `setup.py` while the collector URL
+  # often lives in the module the hook imports, so the two need not share a
+  # file. Where they do -- a hook that opens the URL inline -- pooling changes
+  # nothing.
+  - id: python-install-hook-oob-callback
+    desc: Install hook calls an OOB collector
+    crit: hostile
+    conf: 0.96
+    scope: archive
+    for: [python, pkginfo, python_sdist, whl, tar, zip, archives]
+    all:
+      - id: metadata/build/package/recipe::python-install-hook
+      - id: objectives/exfiltration/oob/endpoint::oob-endpoint-any
+
+  # The same beacon with DNS as the channel and no encoding step.
+  #
+  # `objectives/exfiltration/dns/encoded::python-b32-host-profile-dns-exfil`
+  # covers the encoded spelling anywhere in a package; this covers the plain
+  # one inside an install hook, where the labels are sanitised instead --
+  # lower-cased, stripped to `[a-z0-9-]` and truncated to fit the 63-byte
+  # limit -- and then joined onto the operator's domain.
+  #
+  # Reading the machine's own name and resolving a name are each unremarkable
+  # alone. Doing both from a hook that runs at install time is the beacon: the
+  # lookup is the message, and it leaves as a DNS query that egress filtering
+  # and proxies generally do not inspect.
+  #
+  # Worked example: `_cb()` building
+  # `<host>.<user>.vspc.<attacker domain>` from `socket.gethostname()` and
+  # `$USER`/`$USERNAME`, called from both the `install` and `develop` classes.
+  - id: python-install-hook-dns-identity-beacon
+    desc: Install hook resolves a host-identity label
+    crit: hostile
+    conf: 0.96
+    attack: "T1195.002,T1048.003,T1082"
+    all:
+      - id: metadata/build/package/recipe::python-install-hook
+      - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
+    any:
+      - id: micro-behaviors/communications/dns/lookup/resolver::getaddrinfo
+      - id: micro-behaviors/communications/dns/lookup/resolver::gethostbyname

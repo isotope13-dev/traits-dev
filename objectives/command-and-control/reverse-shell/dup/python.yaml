@@ -181,7 +181,7 @@ composite_rules:
       - id: micro-behaviors/communications/socket/send::socket-send-call
     unless:
       - id: metadata/package/testing/harness/runtime/
-      - id: metadata/package/testing/presence/harness::python-test-file
+      - id: metadata/package/testing/presence/harness::verified-python-test-file
       - id: metadata/package/testing/presence/harness/
       - id: well-known/tool/detection/llm-scanner/
   - id: python-generic-socket-popen-revshell
@@ -276,3 +276,49 @@ composite_rules:
     near_lines: 20
     unless:
       - id: well-known/tool/detection/llm-scanner/
+
+  # The canonical Python reverse shell, wired through Popen's stdio keywords
+  # rather than `os.dup2`.
+  #
+  # The rules above all require `os.dup2`, which is one of the two ways to
+  # attach a shell to a socket. The other -- and the one the widely copied
+  # one-liner uses -- passes the descriptor straight to the child:
+  # `Popen(['/bin/bash','-i'], stdout=s.fileno(), stdin=s.fileno(),
+  # stderr=s.fileno())`. No `dup2` appears anywhere, so `python-dup2-io-redirect`
+  # and everything built on it stays silent on the commonest spelling.
+  #
+  # Hostile on the triple: a socket connected outward, an interactive shell
+  # spawned, and that socket's descriptor handed to it as stdio. Each is
+  # ordinary alone -- servers connect, tools spawn shells, supervisors pass
+  # descriptors -- and no legitimate program does all three at once, because
+  # the result is a shell driven by whoever is on the other end.
+  #
+  # Reached through decoded content as well as source: the payload is often a
+  # base64 blob handed to `exec`, and the decoded text is searched like any
+  # other string.
+  - id: python-socket-fileno-shell
+    desc: Shell spawned on a connected socket descriptor
+    crit: hostile
+    conf: 0.97
+    attack: T1059.006,T1571
+    mbc: B0022
+    size_max: 50000
+    all:
+      - id: python-fileno
+      - id: micro-behaviors/communications/socket/connect::socket-connect-method
+    any:
+      - id: micro-behaviors/process/create/shell/spawn::python-bash-path
+      - id: micro-behaviors/process/interpreter/shell::bin-sh
+      - id: micro-behaviors/process/create/subprocess::call
+    # Suppressions are the offensive-tool contexts and an *imported* test
+    # framework -- deliberately not the path-based `is-test` /
+    # `presence/harness/` families the sibling rules use. Those match on a file
+    # or directory being named like a test, which is a name the author
+    # chooses: this payload ships as `src/test.py` and would excuse itself.
+    # A real test suite imports unittest or pytest; a reverse shell does not
+    # stop being one because of where it sits.
+    unless:
+      - id: well-known/tool/offensive/pentestkit::local-storage-panel
+      - id: well-known/tool/offensive/bingo/
+      - id: metadata/import/python::unittest
+      - id: metadata/import/python::pytest

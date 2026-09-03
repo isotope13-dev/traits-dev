@@ -6,6 +6,30 @@ defaults:
   for: [python]
 traits:
 
+  # `eval('\x6d\x61\x67\x69\x63')` -- an identifier spelled as hex escapes so
+  # the name never appears in the source.
+  #
+  # Python resolves the escapes at parse time, so this is exactly `eval('magic')`
+  # and the indirection buys nothing at runtime. Its only effect is on the
+  # reader: a grep for the variable, function or module being reached finds
+  # nothing, and the call looks like an opaque string. Nothing writes code this
+  # way for any reason but that.
+  #
+  # Three escaped characters is the floor. One or two turn up legitimately --
+  # `'\x00'` sentinels, a `'\xff'` byte -- but a run of three is a name, not a
+  # value, and it is being handed to the interpreter.
+  #
+  # Worked example: a W4SP-family stealer whose payload is base64 chunks, some
+  # rot13'd, reassembled by `eval('\x6d\x61\x67\x69\x63') +
+  # eval('\x63\x6f\x64\x65\x63\x73\x2e\x64\x65\x63\x6f\x64\x65...')`.
+  - id: eval-hex-escaped-identifier
+    desc: eval on a hex-escaped identifier
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '\beval\s*\(\s*[''"](\\x[0-9a-fA-F]{2}){3,40}'
+
   - id: arithmetic-expression-chains
     desc: Complex arithmetic chains
     crit: suspicious
@@ -73,6 +97,38 @@ traits:
       kind: call
       regex: getattr\(_*builtins_*\s*,\s*(chr\(|["'].{1,24}["']\s*\+|["']{0,2}\.join\()
 composite_rules:
+
+  # A payload split across named variables, some rotated, reassembled by an
+  # `eval` that names each piece in hex escapes.
+  #
+  # Splitting the base64 is what defeats a decoder: no single literal is a
+  # multiple of four or decodes on its own, so the blob is only recoverable
+  # once the pieces are joined in the right order -- which the source states
+  # only through variable names that are themselves hidden. stng's
+  # rot13-over-base64 decoder recovers a whole rotated payload; it cannot
+  # reassemble fragments held in separate assignments, and this is what that
+  # case looks like from the outside.
+  #
+  # Neither leg is a verdict alone: a large base64 literal is ordinary in
+  # vendored data, and `eval` has legitimate uses. Together -- an identifier
+  # spelled as hex escapes, handed to `eval`, in a file that also carries an
+  # embedded base64 blob -- there is no reading in which the author was doing
+  # anything but hiding what runs.
+  #
+  # Worked example: a W4SP-family PyPI stealer holding its payload in four
+  # 11,545-character literals, rot13-ing two of them, and joining them with
+  # `eval('\x6d\x61\x67\x69\x63') + eval('codecs.decode(love, joy)') + ...`
+  # where `joy` is itself `'\x72\x6f\x74\x31\x33'` -- the string `rot13`,
+  # written so it cannot be grepped.
+  - id: python-hex-eval-assembled-blob
+    desc: Hex-escaped eval assembles an encoded blob
+    crit: hostile
+    conf: 0.96
+    attack: T1027,T1140
+    mbc: E1027
+    all:
+      - id: eval-hex-escaped-identifier
+      - id: micro-behaviors/data/encode/base64::embedded-base64-blob
   - id: advanced-python-obfuscation
     desc: Advanced Python obfuscation
     crit: suspicious

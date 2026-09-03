@@ -61,8 +61,71 @@ traits:
       # A nested helper that happens to POST is not an import-time side effect.
       # Keep the call at module scope and require the external URL plus payload
       # on the same statement so ordinary HTTP helper libraries do not match.
-      regex: '(?m)^(requests|httpx)\.post\s*\(\s*["'']https?://[^\n]{0,220}\bdata\s*='
+      #
+      # `data=` and `json=` are the two ways `requests` takes a body, and a
+      # beacon sending a dict of host fields reaches for `json=` at least as
+      # often. Accepting only `data=` left the commoner spelling unmatched.
+      regex: '(?m)^(requests|httpx)\.post\s*\(\s*["'']https?://[^\n]{0,220}\b(data|json)\s*='
 composite_rules:
+  # An import-time beacon that does not depend on the file being named
+  # `__init__.py`.
+  #
+  # Every composite above anchors on `init-py-file`, which is right for the
+  # cases they describe -- a package's `__init__` is what `import <pkg>` runs,
+  # so that filename is the delivery mechanism. But the same beacon placed in
+  # any module runs the moment something imports it, and a release that ships
+  # it under another name (or misspells `__init__` so the module is dead
+  # weight and the file is only there to be read) matches none of them.
+  #
+  # What carries the meaning here is the pair, not the filename: a module-scope
+  # POST to an external URL, in a file that also reads the machine's identity.
+  # Neither is unusual alone -- telemetry posts, and plenty of code asks for the
+  # hostname -- but a package that sends who and where it landed to a fixed
+  # endpoint at import time was not asked to.
+  #
+  # Worked example: a `requests` typosquat whose module is 326 bytes and does
+  # nothing but POST `{package_name, version, user, cwd, hostname}` to a
+  # hardcoded collector.
+  - id: import-time-host-profile-beacon
+    desc: Import-time POST carries host identity
+    crit: hostile
+    conf: 0.96
+    mbc: E1041
+    attack: "T1195.002,T1082,T1033,T1041"
+    all:
+      - id: import-time-requests-post-data
+    any:
+      - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
+      - id: micro-behaviors/os/sysinfo/hostname::python-os-uname-nodename
+      - id: micro-behaviors/process/user/query::python-getpass-user
+
+  # The same beacon written so the POST carries no literal URL.
+  #
+  # The rule above needs the endpoint inline, which is what keeps a bare
+  # `requests.post` from matching ordinary client code. A module that assigns
+  # `url = "..."` and `data = {...}` first and ends with
+  # `requests.post(url, data=data)` defeats that, so the precision has to come
+  # from somewhere else -- here, from the endpoint being an out-of-band
+  # collaborator host, which exists only to prove a request reached it. Paired
+  # with a host-identity read in the same file, there is nothing else it can be.
+  #
+  # Worked example: a module whose whole body sets `PACKAGE_NAME`, `HOSTNAME`
+  # from `os.uname().nodename` and `CURRENT_PATH`, then posts them to an
+  # `*.oastify.com` host.
+  - id: import-time-oob-host-profile-beacon
+    desc: Import-time POST of host identity to OOB
+    crit: hostile
+    conf: 0.96
+    mbc: E1041
+    attack: "T1195.002,T1082,T1041"
+    all:
+      - id: micro-behaviors/communications/http/lib/requests::requests-post
+      - id: objectives/exfiltration/oob/endpoint::oob-endpoint-any
+    any:
+      - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
+      - id: micro-behaviors/os/sysinfo/hostname::python-os-uname-nodename
+      - id: micro-behaviors/process/user/query::python-getpass-user
+
   - id: init-base64-http-profile-exfil
     desc: Import-time base64 host profile exfiltration
     crit: hostile

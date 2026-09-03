@@ -1,0 +1,70 @@
+# A stdlib execution primitive imported under a private alias.
+#
+# `from os import system as _ssys` binds the same function to a name nothing
+# searches for. Python offers three spellings -- `os.system(...)`,
+# `from os import system` then `system(...)`, and this one -- and only the
+# first leaves the dotted text every process-execution matcher looks for. The
+# alias costs the author nothing and removes the string entirely.
+#
+# Narrowed to the primitives worth hiding -- `system`, `popen`, the `exec`/
+# `spawn` family, `Popen`, and the temp-file constructors a stager writes
+# through -- and to aliases beginning with an underscore. The stdlib's own
+# private-import convention (`from os import urandom as _urandom` in
+# random.py) is why the imported name matters: aliasing `urandom` is
+# housekeeping, aliasing `system` is not. Measured at 0 hits across 600
+# stdlib files and 5 of 100 sampled malicious PyPI packages.
+#
+# Suspicious rather than hostile: this is the concealment, not the act. The
+# composite pairs it with the execution actually happening at import time.
+#
+# Worked example: a `setup.py` opening with `from os import system as _ssys`,
+# `from tempfile import NamedTemporaryFile as _ffcc` and
+# `from sys import executable as __exect`, which writes a Python stager to a
+# temp file and runs it with the interpreter.
+defaults:
+  platforms: [unix, windows]
+  for: [python]
+  attack: T1027
+  mbc: E1027
+
+traits:
+  # Split by module rather than written as one pattern: the byte budget and the
+  # three-alternation limit both apply per regex, and two narrow matchers read
+  # better than one that scrapes the cap.
+  - id: os-exec-primitive-private-alias
+    desc: os execution primitive under a private alias
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: 'from\s+os\s+import\s+(system|popen|execl)\s+as\s+_\w'
+
+  - id: staging-primitive-private-alias
+    desc: Staging primitive under a private alias
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: 'from\s+(subprocess|tempfile)\s+import\s+(Popen|mkstemp)\s+as\s+_\w'
+
+composite_rules:
+  - id: python-aliased-exec-primitive-import
+    desc: Execution primitive imported under a private alias
+    crit: suspicious
+    conf: 0.93
+    any:
+      - id: os-exec-primitive-private-alias
+      - id: staging-primitive-private-alias
+
+  # The concealment plus the thing it conceals: the aliased primitive is used
+  # while the module is being imported, which for a `setup.py` means during
+  # install. Nothing legitimate needs to hide the name of the function it runs
+  # at install time.
+  - id: python-aliased-exec-at-import
+    desc: Aliased execution primitive runs at import
+    crit: hostile
+    conf: 0.96
+    attack: "T1027,T1195.002"
+    all:
+      - id: python-aliased-exec-primitive-import
+      - id: micro-behaviors/data/control-flow/module-exec::module-level-side-effect-call
