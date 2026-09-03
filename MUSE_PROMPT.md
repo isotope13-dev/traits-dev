@@ -1,23 +1,19 @@
 Triage these vetted-benign false positive(s):
-- /data/gauntlet-fp/b3daa59a3748bd6e921992a23a750ff23b279303a5bec042cd8f61d05ebb701e/ZencoderAI.zencoder-3.79.9001.vsix — hostile: 1, suspicious: 0
-  - H objectives/anti-analysis/vm-detect/vendor::packaged-binary-sandbox-aware-stager — Shipped binary stages payload and checks sandbox
+- /data/gauntlet-fp/c72442978ab8131794ef56ddd053d1b6b7838eb7957a902a34447284d83d0c2b/v1.2.0.zip — hostile: 1, suspicious: 0
+  - H objectives/command-and-control/backdoor/shell/socket::posix-bind-shell-source — C source bind shell (bind+dup2+shell)
+    members: /data/gauntlet-fp/c72442978ab8131794ef56ddd053d1b6b7838eb7957a902a34447284d83d0c2b/v1.2.0.zip!!github.com/checkpoint-restore/checkpointctl@v1.2.0/test/piggie/piggie.c
 
-- /data/gauntlet-fp/a67d4d48e93daae7a844bcdb235b83c88ad8b4d8f819c8241204a32e41696d61/driver_booster_setup.exe — hostile: 0, suspicious: 6
-  - S objectives/anti-analysis/vm-detect/vendor::comprehensive-evasion — Multiple VM detection techniques (evasion)
-    members: /data/gauntlet-fp/a67d4d48e93daae7a844bcdb235b83c88ad8b4d8f819c8241204a32e41696d61/driver_booster_setup.exe!!app/cm$AppVer/AutoUpdate.exe
-  - S objectives/anti-static/obfuscation/binary-metrics/imports::embedded-payload-binary — Binary with suspected embedded payload
-    members: /data/gauntlet-fp/a67d4d48e93daae7a844bcdb235b83c88ad8b4d8f819c8241204a32e41696d61/driver_booster_setup.exe!!app/cm$AppVer/HWiNFO/HWiNFO32.dll
-  - S objectives/anti-static/obfuscation/binary-metrics/imports::massive-file-minimal-imports — Large binary with minimal imports
-  - S objectives/anti-static/obfuscation/payload/import::minimal-pe-dynamic-load — Minimal PE imports with dynamic loading
-    members: /data/gauntlet-fp/a67d4d48e93daae7a844bcdb235b83c88ad8b4d8f819c8241204a32e41696d61/driver_booster_setup.exe!!app/cm$AppVer/HWiNFO/HWiNFO32.dll
-  - S objectives/anti-static/obfuscation/payload/section::ep-in-rwx-section — Entry point in a writable RWX section
-    members: /data/gauntlet-fp/a67d4d48e93daae7a844bcdb235b83c88ad8b4d8f819c8241204a32e41696d61/driver_booster_setup.exe!!app/cm$AppVer/HWiNFO/HWiNFO32.dll
-  - S objectives/command-and-control/dropper/execution/resource::pe-resource-com-loader — Resource loader with COM WMI setup
-    members: /data/gauntlet-fp/a67d4d48e93daae7a844bcdb235b83c88ad8b4d8f819c8241204a32e41696d61/driver_booster_setup.exe!!app/cm$AppVer/OfflineUpdater.exe
+- /data/gauntlet-fp/c3a0b880adbe64dc4bcb68f93016916ab5b55ae43fd227115287bf80257d92dc/OBS-Studio-32.2.2-Windows-x64-Installer.exe — hostile: 0, suspicious: 2
+  - S objectives/anti-static/obfuscation/payload/section::encrypted-data-section — Encrypted data section (very high)
+    members: /data/gauntlet-fp/c3a0b880adbe64dc4bcb68f93016916ab5b55ae43fd227115287bf80257d92dc/OBS-Studio-32.2.2-Windows-x64-Installer.exe!!obs-plugins/64bit/obs-filters.dll
+  - S objectives/discovery/host/system::windows-binary-stealer-recon — Windows binary victim profiling cluster
+    members: /data/gauntlet-fp/c3a0b880adbe64dc4bcb68f93016916ab5b55ae43fd227115287bf80257d92dc/OBS-Studio-32.2.2-Windows-x64-Installer.exe!!obs-plugins/64bit/libcef.dll
 
-- /data/gauntlet-fp/b2806ce9f9a5b8d36c9a7866dedfe7df136470ef9ce80ea38943390783ebadd9/Colibri_26.3.0-alpha.36.exe — hostile: 0, suspicious: 2
-  - S objectives/anti-static/obfuscation/binary-metrics/shape::high-entropy-overlay — Large high-entropy overlay
-  - S objectives/evasion/anti-av/code-padding::pe-section-bloat-past-scanner-limits — PE padded far past scanning size limits
+- /data/gauntlet-fp/c4585a41f2ca4578f1615cb1388451c6dccbc2bcb03c1f8ee12b88ed6c89f2f5/sattyamjjain-agent-audit-kit-v0.3.89.tar.gz — hostile: 0, suspicious: 2
+  - S objectives/exfiltration/http/query::url-command-substitution — URL embeds command substitution output
+    members: /data/gauntlet-fp/c4585a41f2ca4578f1615cb1388451c6dccbc2bcb03c1f8ee12b88ed6c89f2f5/sattyamjjain-agent-audit-kit-v0.3.89.tar.gz!!agent-audit-kit-0.3.89/tests/test_llm_sql_rce.py
+  - S objectives/supply-chain/install-hook/package/manifest::dependency-confusion-candidate — Stable-version install-hook package lacks provenance
+    members: /data/gauntlet-fp/c4585a41f2ca4578f1615cb1388451c6dccbc2bcb03c1f8ee12b88ed6c89f2f5/sattyamjjain-agent-audit-kit-v0.3.89.tar.gz!!agent-audit-kit-0.3.89/examples/vulnerable-configs/10-supply-chain-risks/package.json
 
 
 Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
