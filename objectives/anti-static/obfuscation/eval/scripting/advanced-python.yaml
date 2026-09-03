@@ -98,6 +98,37 @@ traits:
       regex: getattr\(_*builtins_*\s*,\s*(chr\(|["'].{1,24}["']\s*\+|["']{0,2}\.join\()
 composite_rules:
 
+  # A large base64 blob handed straight to `exec` while the module is imported.
+  #
+  # `direct-base64-exec` is suspicious on its own because `exec(b64decode(...))`
+  # has narrow legitimate uses (a plugin loader, a test harness building code).
+  # A *large* embedded blob removes them: kilobytes of base64 is a program, not
+  # a snippet, and decoding a program only to run it immediately -- with no
+  # branch that inspects or reports it -- is what a packed payload does. At
+  # module scope in a `setup.py`, "immediately" means "during install".
+  #
+  # The decoded bytes frequently begin `MZ`, i.e. a Windows executable written
+  # to a temp path and launched; that stays inside the `exec` string so a
+  # string decoder does not reach it, which is the whole point of the exec
+  # wrapper. The pair -- decode-and-run plus payload-sized blob at import -- is
+  # what the rule keys on instead.
+  #
+  # Worked example: a `setup.py` that, on `os.name == 'nt'`, runs
+  # `exec(b64decode('...'))` whose 400 KB payload writes an embedded PE to the
+  # temp directory and calls `os.startfile` on it.
+  - id: python-embedded-blob-exec-at-import
+    desc: Large base64 blob executed at import
+    crit: hostile
+    conf: 0.96
+    attack: "T1027,T1204.002,T1059.006"
+    mbc: "B0032,E1027"
+    all:
+      - id: objectives/anti-static/obfuscation/control-flow/logic::direct-base64-exec
+      - id: metadata/binary/metrics/encoded::large-embedded-b64-blob
+      - id: micro-behaviors/data/control-flow/module-exec::module-level-side-effect-call
+    unless:
+      - id: metadata/package/testing/presence/harness::verified-python-test-file
+
   # A payload split across named variables, some rotated, reassembled by an
   # `eval` that names each piece in hex escapes.
   #
