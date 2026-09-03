@@ -1,13 +1,9 @@
 Triage these vetted-benign false positive(s):
-- /data/gauntlet-fp/7e6d7bc77517883fef116b0ef49880b810373ee46cb54bbb026a9811ea2abdd2/unsloth-2026.8.19-py3-none-any.whl — hostile: 1, suspicious: 0
-  - H objectives/command-and-control/reverse-shell/dup::python-socket-fileno-shell — Shell spawned on a connected socket descriptor
-    members: /data/gauntlet-fp/7e6d7bc77517883fef116b0ef49880b810373ee46cb54bbb026a9811ea2abdd2/unsloth-2026.8.19-py3-none-any.whl!!studio/backend/tests/test_consent_gate.py, /data/gauntlet-fp/7e6d7bc77517883fef116b0ef49880b810373ee46cb54bbb026a9811ea2abdd2/unsloth-2026.8.19-py3-none-any.whl!!studio/backend/tests/test_trc_approval_cache.py
-
-- /data/gauntlet-fp/1e352f0a2488a880b76f26d5f82479cbd3b286ef360cbbdf53e26df5f623f82f/go1.26.6.windows-386.zip — hostile: 0, suspicious: 2
+- /data/gauntlet-fp/adb1ffd158066ea41316fa33b6d23b362aa9258df800721f7d15a42eefdd9202/radare2-6.2.0-w64.zip — hostile: 0, suspicious: 2
+  - S objectives/anti-static/obfuscation/encoding/content::encoded-eval — Encoded eval() call
+    members: /data/gauntlet-fp/adb1ffd158066ea41316fa33b6d23b362aa9258df800721f7d15a42eefdd9202/radare2-6.2.0-w64.zip!!radare2-6.2.0-w64/share/www/m/legacy.js
   - S objectives/supply-chain/hidden-payload/build-recipe::recipe-deletes-compiled-source — Recipe deletes the source it compiled
-    members: /data/gauntlet-fp/1e352f0a2488a880b76f26d5f82479cbd3b286ef360cbbdf53e26df5f623f82f/go1.26.6.windows-386.zip!!go/src/cmd/vendor/golang.org/x/sys/plan9/mkerrors.sh, /data/gauntlet-fp/1e352f0a2488a880b76f26d5f82479cbd3b286ef360cbbdf53e26df5f623f82f/go1.26.6.windows-386.zip!!go/src/cmd/vendor/golang.org/x/sys/unix/mkerrors.sh, /data/gauntlet-fp/1e352f0a2488a880b76f26d5f82479cbd3b286ef360cbbdf53e26df5f623f82f/go1.26.6.windows-386.zip!!go/src/syscall/mkerrors.sh
-  - S objectives/supply-chain/hidden-payload/build-recipe::recipe-shells-a-local-file — Recipe shells a local file
-    members: /data/gauntlet-fp/1e352f0a2488a880b76f26d5f82479cbd3b286ef360cbbdf53e26df5f623f82f/go1.26.6.windows-386.zip!!go/misc/ios/README
+    members: /data/gauntlet-fp/adb1ffd158066ea41316fa33b6d23b362aa9258df800721f7d15a42eefdd9202/radare2-6.2.0-w64.zip!!radare2-6.2.0-w64/share/www/bolt/r2bolt.sh
 
 
 Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
