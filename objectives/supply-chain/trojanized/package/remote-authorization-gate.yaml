@@ -43,6 +43,32 @@ traits:
       type: text
       regex: '\.username\s*===\s*username\s*&&\s*[A-Za-z_$][A-Za-z0-9_$]*\.active'
 
+  # The "mother key" spelling of the same gate: a custom `x-*-key` header
+  # whose value falls back to a secret constant shipped in the package, sent
+  # by the auth check that decides who may operate the deployed software.
+  # `x-api-key` is excluded -- it is a documented convention clients use
+  # against their own vendor; the fragments here are operator keys a published
+  # package has no business carrying.
+  - id: custom-operator-key-header
+    desc: Custom x-key header carries operator secret
+    crit: component
+    conf: 0.94
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '["'']x-[a-z0-9-]{2,20}-key["'']\s*:'
+    not:
+      - regex: '["'']x-api-key["'']'
+
+  - id: hardcoded-operator-secret-constant
+    desc: Hardcoded operator key constant
+    crit: component
+    conf: 0.94
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '(?i)\b(DEFAULT|MOTHER|MASTER|OPERATOR)[_A-Z]{0,20}KEY\w*\s*=\s*["''][^"'']{6,}["'']'
+
 composite_rules:
   - id: public-npm-credentialed-git-dependency
     desc: Public npm package embeds a GitHub token in a runtime dependency
@@ -63,3 +89,27 @@ composite_rules:
       - id: login-calls-remote-authorization-check
       - id: micro-behaviors/communications/http/services/github::github-contents-api-endpoint
       - id: remote-active-username-membership-test
+
+  # "Hosted mode": the deployed bot authenticates to the operator's web
+  # service with an embedded key before loading, and the same channel hands
+  # out owner control ("total-hijack"). Whoever runs the endpoint -- and
+  # whoever extracts the shipped key -- can grant themselves owner access to
+  # every installation; the gate is the backdoor.
+  #
+  # Worked example: the `@depro-tech/cortana-md` releases, whose obfuscated
+  # `src/hosted-mode.js` sends `x-cortana-key: config.motherKey ||
+  # DEFAULT_MOTHER_KEY ('cortana-hosted-2024-secret')` to the operator's
+  # check-auth endpoint before the bot starts.
+  - id: hosted-bot-remote-auth-gate
+    desc: Package gates its operation on an operator key
+    crit: hostile
+    conf: 0.95
+    attack: T1195.002,T1090
+    for: [javascript, typescript]
+    all:
+      - id: custom-operator-key-header
+      - id: hardcoded-operator-secret-constant
+    any:
+      - id: micro-behaviors/communications/http/request/client::fetch-json-body
+      - id: micro-behaviors/communications/http/request/client::js-fetch-call
+      - id: micro-behaviors/communications/http/request/client::http-client
