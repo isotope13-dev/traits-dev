@@ -1,19 +1,17 @@
 Triage these vetted-benign false positive(s):
-- /data/gauntlet-fp/c72442978ab8131794ef56ddd053d1b6b7838eb7957a902a34447284d83d0c2b/v1.2.0.zip — hostile: 1, suspicious: 0
-  - H objectives/command-and-control/backdoor/shell/socket::posix-bind-shell-source — C source bind shell (bind+dup2+shell)
-    members: /data/gauntlet-fp/c72442978ab8131794ef56ddd053d1b6b7838eb7957a902a34447284d83d0c2b/v1.2.0.zip!!github.com/checkpoint-restore/checkpointctl@v1.2.0/test/piggie/piggie.c
+- /data/gauntlet-fp/ea19c34e9aebbdb6fd1b2bcb59cde930d32d40b3f84af314e1c4712e0fd415b9/advanced-systemcare-18.0-setup-appesteem.exe — hostile: 0, suspicious: 3
+  - S objectives/anti-static/obfuscation/eval/loader::packed-temp-staging-resource-payload — Packed temp-staging resource payload
+    members: /data/gauntlet-fp/ea19c34e9aebbdb6fd1b2bcb59cde930d32d40b3f84af314e1c4712e0fd415b9/advanced-systemcare-18.0-setup-appesteem.exe!!app/ASC.exe
+  - S objectives/command-and-control/dropper/execution/resource::pe-resource-api-loader-ansi — PE resource loader via ANSI resource APIs
+    members: /data/gauntlet-fp/ea19c34e9aebbdb6fd1b2bcb59cde930d32d40b3f84af314e1c4712e0fd415b9/advanced-systemcare-18.0-setup-appesteem.exe!!app/ASCTray.exe, /data/gauntlet-fp/ea19c34e9aebbdb6fd1b2bcb59cde930d32d40b3f84af314e1c4712e0fd415b9/advanced-systemcare-18.0-setup-appesteem.exe!!app/Monitor.exe, /data/gauntlet-fp/ea19c34e9aebbdb6fd1b2bcb59cde930d32d40b3f84af314e1c4712e0fd415b9/advanced-systemcare-18.0-setup-appesteem.exe!!tmp/Installer/Setup.exe
+  - S objectives/privilege-escalation/token-manipulation::direct-ntdll-privilege-adjustment — Direct ntdll privilege adjustment
+    members: /data/gauntlet-fp/ea19c34e9aebbdb6fd1b2bcb59cde930d32d40b3f84af314e1c4712e0fd415b9/advanced-systemcare-18.0-setup-appesteem.exe!!app/drivers/win10_amd64/RegistryDefragBootTime.exe, /data/gauntlet-fp/ea19c34e9aebbdb6fd1b2bcb59cde930d32d40b3f84af314e1c4712e0fd415b9/advanced-systemcare-18.0-setup-appesteem.exe!!app/drivers/win10_ia64/RegistryDefragBootTime.exe, /data/gauntlet-fp/ea19c34e9aebbdb6fd1b2bcb59cde930d32d40b3f84af314e1c4712e0fd415b9/advanced-systemcare-18.0-setup-appesteem.exe!!app/drivers/win10_x86/RegistryDefragBootTime.exe, /data/gauntlet-fp/ea19c34e9aebbdb6fd1b2bcb59cde930d32d40b3f84af314e1c4712e0fd415b9/advanced-systemcare-18.0-setup-appesteem.exe!!app/drivers/win7_amd64/RegistryDefragBootTime.exe, /data/gauntlet-fp/ea19c34e9aebbdb6fd1b2bcb59cde930d32d40b3f84af314e1c4712e0fd415b9/advanced-systemcare-18.0-setup-appesteem.exe!!app/drivers/win7_ia64/RegistryDefragBootTime.exe, /data/gauntlet-fp/ea19c34e9aebbdb6fd1b2bcb59cde930d32d40b3f84af314e1c4712e0fd415b9/advanced-systemcare-18.0-setup-appesteem.exe!!app/drivers/win7_x86/RegistryDefragBootTime.exe, … +6
 
-- /data/gauntlet-fp/c3a0b880adbe64dc4bcb68f93016916ab5b55ae43fd227115287bf80257d92dc/OBS-Studio-32.2.2-Windows-x64-Installer.exe — hostile: 0, suspicious: 2
-  - S objectives/anti-static/obfuscation/payload/section::encrypted-data-section — Encrypted data section (very high)
-    members: /data/gauntlet-fp/c3a0b880adbe64dc4bcb68f93016916ab5b55ae43fd227115287bf80257d92dc/OBS-Studio-32.2.2-Windows-x64-Installer.exe!!obs-plugins/64bit/obs-filters.dll
-  - S objectives/discovery/host/system::windows-binary-stealer-recon — Windows binary victim profiling cluster
-    members: /data/gauntlet-fp/c3a0b880adbe64dc4bcb68f93016916ab5b55ae43fd227115287bf80257d92dc/OBS-Studio-32.2.2-Windows-x64-Installer.exe!!obs-plugins/64bit/libcef.dll
-
-- /data/gauntlet-fp/c4585a41f2ca4578f1615cb1388451c6dccbc2bcb03c1f8ee12b88ed6c89f2f5/sattyamjjain-agent-audit-kit-v0.3.89.tar.gz — hostile: 0, suspicious: 2
-  - S objectives/exfiltration/http/query::url-command-substitution — URL embeds command substitution output
-    members: /data/gauntlet-fp/c4585a41f2ca4578f1615cb1388451c6dccbc2bcb03c1f8ee12b88ed6c89f2f5/sattyamjjain-agent-audit-kit-v0.3.89.tar.gz!!agent-audit-kit-0.3.89/tests/test_llm_sql_rce.py
-  - S objectives/supply-chain/install-hook/package/manifest::dependency-confusion-candidate — Stable-version install-hook package lacks provenance
-    members: /data/gauntlet-fp/c4585a41f2ca4578f1615cb1388451c6dccbc2bcb03c1f8ee12b88ed6c89f2f5/sattyamjjain-agent-audit-kit-v0.3.89.tar.gz!!agent-audit-kit-0.3.89/examples/vulnerable-configs/10-supply-chain-risks/package.json
+- /data/gauntlet-fp/e215e2cf06576db98c7924d26167a298d41973c3b466f87ded950da8b53b38b4/Anthropic.claude-code-2.1.232.vsix — hostile: 0, suspicious: 2
+  - S objectives/collection/clipboard/capture::windows-clipboard-capture-with-user-monitoring — Clipboard read with change-notification watch
+    members: /data/gauntlet-fp/e215e2cf06576db98c7924d26167a298d41973c3b466f87ded950da8b53b38b4/Anthropic.claude-code-2.1.232.vsix!!extension/resources/native-binary/claude.exe
+  - S objectives/supply-chain/hidden-payload/staging::node-modules-cache-hidden-dir — Path into a hidden node_modules cache directory
+    members: /data/gauntlet-fp/e215e2cf06576db98c7924d26167a298d41973c3b466f87ded950da8b53b38b4/Anthropic.claude-code-2.1.232.vsix!!extension/extension.js
 
 
 Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
