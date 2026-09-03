@@ -1,28 +1,23 @@
 Triage these vetted-benign false positive(s):
-- /data/gauntlet-fp/361dbd23017ca24029e19316faef0371dfd20dc0bd1295ac7b02ff4fdfb9e3d3/VSCodium-vscodium-1.126.04524-VSCodium.arm64.1.126.04524.dmg — hostile: 1, suspicious: 0
-  - H objectives/persistence/login/shell/config::npm-install-hook-shell-rc-persistence — Install hook appends to shell startup file
+- /data/gauntlet-fp/b3daa59a3748bd6e921992a23a750ff23b279303a5bec042cd8f61d05ebb701e/ZencoderAI.zencoder-3.79.9001.vsix — hostile: 1, suspicious: 0
+  - H objectives/anti-analysis/vm-detect/vendor::packaged-binary-sandbox-aware-stager — Shipped binary stages payload and checks sandbox
 
-- /data/gauntlet-fp/0c0f78b078140d391420b3d0b4bd01acb6852a8598eb11a2d5b1131d44b4b29b/gitversion-5.1.4.beta1.190.gem — hostile: 0, suspicious: 3
-  - S micro-behaviors/communications/ip/spoof::spoof — IP address spoofing capabilities
-    members: /data/gauntlet-fp/0c0f78b078140d391420b3d0b4bd01acb6852a8598eb11a2d5b1131d44b4b29b/gitversion-5.1.4.beta1.190.gem!!data.tar.gz, /data/gauntlet-fp/0c0f78b078140d391420b3d0b4bd01acb6852a8598eb11a2d5b1131d44b4b29b/gitversion-5.1.4.beta1.190.gem!!data.tar.gz!!bin/GitVersion.exe
-  - S objectives/anti-static/obfuscation/eval/loader::packed-temp-staging-resource-payload — Packed temp-staging resource payload
-    members: /data/gauntlet-fp/0c0f78b078140d391420b3d0b4bd01acb6852a8598eb11a2d5b1131d44b4b29b/gitversion-5.1.4.beta1.190.gem!!data.tar.gz, /data/gauntlet-fp/0c0f78b078140d391420b3d0b4bd01acb6852a8598eb11a2d5b1131d44b4b29b/gitversion-5.1.4.beta1.190.gem!!data.tar.gz!!bin/GitVersion.exe
-  - S objectives/evasion/masquerade/identity/vendor::importless-microsoft-masquerade — Importless PE claiming to be Microsoft Corporation
-    members: /data/gauntlet-fp/0c0f78b078140d391420b3d0b4bd01acb6852a8598eb11a2d5b1131d44b4b29b/gitversion-5.1.4.beta1.190.gem!!data.tar.gz, /data/gauntlet-fp/0c0f78b078140d391420b3d0b4bd01acb6852a8598eb11a2d5b1131d44b4b29b/gitversion-5.1.4.beta1.190.gem!!data.tar.gz!!bin/GitVersion.exe, /data/gauntlet-fp/0c0f78b078140d391420b3d0b4bd01acb6852a8598eb11a2d5b1131d44b4b29b/gitversion-5.1.4.beta1.190.gem!!data.tar.gz!!bin/GitVersion.exe!!embedded:pe:apisetstub@0x1ae757, /data/gauntlet-fp/0c0f78b078140d391420b3d0b4bd01acb6852a8598eb11a2d5b1131d44b4b29b/gitversion-5.1.4.beta1.190.gem!!data.tar.gz!!bin/GitVersion.exe!!embedded:pe:apisetstub@0x1b325f, /data/gauntlet-fp/0c0f78b078140d391420b3d0b4bd01acb6852a8598eb11a2d5b1131d44b4b29b/gitversion-5.1.4.beta1.190.gem!!data.tar.gz!!bin/GitVersion.exe!!embedded:pe:apisetstub@0x1b7b67, /data/gauntlet-fp/0c0f78b078140d391420b3d0b4bd01acb6852a8598eb11a2d5b1131d44b4b29b/gitversion-5.1.4.beta1.190.gem!!data.tar.gz!!bin/GitVersion.exe!!embedded:pe:apisetstub@0x1bc46f, … +13
-
-- /data/gauntlet-fp/3084bf8c6c4b7197dce46db138451dc013175d263ae7f299e6f35b2291916163/siwtrial-setup.exe — hostile: 0, suspicious: 3
-  - S objectives/anti-static/obfuscation/binary-metrics/shape::zero-entropy-executable-section — Zero-entropy exe section (carved/packed PE)
-    members: /data/gauntlet-fp/3084bf8c6c4b7197dce46db138451dc013175d263ae7f299e6f35b2291916163/siwtrial-setup.exe!!app/siw-arm64.exe, /data/gauntlet-fp/3084bf8c6c4b7197dce46db138451dc013175d263ae7f299e6f35b2291916163/siwtrial-setup.exe!!app/siw64.exe, /data/gauntlet-fp/3084bf8c6c4b7197dce46db138451dc013175d263ae7f299e6f35b2291916163/siwtrial-setup.exe!!app/siw7-x64.exe
+- /data/gauntlet-fp/a67d4d48e93daae7a844bcdb235b83c88ad8b4d8f819c8241204a32e41696d61/driver_booster_setup.exe — hostile: 0, suspicious: 6
+  - S objectives/anti-analysis/vm-detect/vendor::comprehensive-evasion — Multiple VM detection techniques (evasion)
+    members: /data/gauntlet-fp/a67d4d48e93daae7a844bcdb235b83c88ad8b4d8f819c8241204a32e41696d61/driver_booster_setup.exe!!app/cm$AppVer/AutoUpdate.exe
+  - S objectives/anti-static/obfuscation/binary-metrics/imports::embedded-payload-binary — Binary with suspected embedded payload
+    members: /data/gauntlet-fp/a67d4d48e93daae7a844bcdb235b83c88ad8b4d8f819c8241204a32e41696d61/driver_booster_setup.exe!!app/cm$AppVer/HWiNFO/HWiNFO32.dll
+  - S objectives/anti-static/obfuscation/binary-metrics/imports::massive-file-minimal-imports — Large binary with minimal imports
   - S objectives/anti-static/obfuscation/payload/import::minimal-pe-dynamic-load — Minimal PE imports with dynamic loading
-    members: /data/gauntlet-fp/3084bf8c6c4b7197dce46db138451dc013175d263ae7f299e6f35b2291916163/siwtrial-setup.exe!!app/siw-arm64.exe, /data/gauntlet-fp/3084bf8c6c4b7197dce46db138451dc013175d263ae7f299e6f35b2291916163/siwtrial-setup.exe!!app/siw64.exe, /data/gauntlet-fp/3084bf8c6c4b7197dce46db138451dc013175d263ae7f299e6f35b2291916163/siwtrial-setup.exe!!app/siw7-x64.exe
-  - S objectives/anti-static/obfuscation/payload/import::shell-exec-minimal-imports — Execution capability with minimal imports
-    members: /data/gauntlet-fp/3084bf8c6c4b7197dce46db138451dc013175d263ae7f299e6f35b2291916163/siwtrial-setup.exe!!app/siw-arm64.exe, /data/gauntlet-fp/3084bf8c6c4b7197dce46db138451dc013175d263ae7f299e6f35b2291916163/siwtrial-setup.exe!!app/siw64.exe, /data/gauntlet-fp/3084bf8c6c4b7197dce46db138451dc013175d263ae7f299e6f35b2291916163/siwtrial-setup.exe!!app/siw7-x64.exe
+    members: /data/gauntlet-fp/a67d4d48e93daae7a844bcdb235b83c88ad8b4d8f819c8241204a32e41696d61/driver_booster_setup.exe!!app/cm$AppVer/HWiNFO/HWiNFO32.dll
+  - S objectives/anti-static/obfuscation/payload/section::ep-in-rwx-section — Entry point in a writable RWX section
+    members: /data/gauntlet-fp/a67d4d48e93daae7a844bcdb235b83c88ad8b4d8f819c8241204a32e41696d61/driver_booster_setup.exe!!app/cm$AppVer/HWiNFO/HWiNFO32.dll
+  - S objectives/command-and-control/dropper/execution/resource::pe-resource-com-loader — Resource loader with COM WMI setup
+    members: /data/gauntlet-fp/a67d4d48e93daae7a844bcdb235b83c88ad8b4d8f819c8241204a32e41696d61/driver_booster_setup.exe!!app/cm$AppVer/OfflineUpdater.exe
 
-- /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg — hostile: 0, suspicious: 2
-  - S objectives/anti-static/obfuscation/obfuscator/signature::pyarmor-runtime-call — PyArmor runtime call
-    members: /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/Auth/license_manager.py
-  - S objectives/execution/autoinstall/pip::yara-pip-fallback-install — Try import with pip install
-    members: /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/lib/python3.11/site-packages/jieba/_compat.py
+- /data/gauntlet-fp/b2806ce9f9a5b8d36c9a7866dedfe7df136470ef9ce80ea38943390783ebadd9/Colibri_26.3.0-alpha.36.exe — hostile: 0, suspicious: 2
+  - S objectives/anti-static/obfuscation/binary-metrics/shape::high-entropy-overlay — Large high-entropy overlay
+  - S objectives/evasion/anti-av/code-padding::pe-section-bloat-past-scanner-limits — PE padded far past scanning size limits
 
 
 Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
