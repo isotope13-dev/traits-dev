@@ -99,6 +99,38 @@ traits:
       - type: basename
         regex: '(?i)\.(sinc|slaspec)$'
 
+  - id: guarded-module-level-side-effect-call
+    desc: Import-time call under a platform guard
+    crit: notable
+    conf: 0.8
+    # The same import-time execution as `module-level-side-effect-call`, one
+    # level deeper. A payload that only wants to run on one operating system
+    # wraps itself in `if sys.platform.startswith("linux"):`, and its calls
+    # are then grandchildren of the module rather than children, so the query
+    # above steps straight past them. The compromised guardrails-ai 0.10.1
+    # wheel put its entire download-and-run chain inside exactly that guard.
+    #
+    # The capture is the whole `if`, so the `#match?` predicate can read the
+    # condition, and the condition is required to be a platform test. Note
+    # that a trait-level `not:` would not work here: the engine ignores it for
+    # a tree-sitter matcher that supplies a `query:`, and so are `substr:` and
+    # `regex:`. An in-query predicate is the filter that actually runs.
+    #
+    # Requiring a platform test is also the point on its own merits: the
+    # guards which do NOT mean import-time execution -- the `__main__`
+    # entrypoint check, a `TYPE_CHECKING` block, a version shim -- cannot
+    # match, and what remains is the shape that gates a payload to one target
+    # operating system so it stays inert in an analyst's sandbox.
+    if:
+      type: tree-sitter
+      language: python
+      query: |
+        (module
+          (if_statement
+            consequence: (block
+              (expression_statement (call)))) @guard
+          (#match? @guard "^if[^:\\n]*(sys\\.platform|os\\.name|platform\\.system)"))
+
   - id: module-level-raise
     desc: Python module aborts during import
     crit: notable
@@ -129,3 +161,14 @@ composite_rules:
     all:
       - id: python-bootstrap-relative-import
       - id: python-bootstrap-native-loader-call
+
+  - id: module-level-execution
+    desc: Code runs when the module is imported
+    crit: notable
+    conf: 0.85
+    # Either shape of import-time execution. Rules that care about "this runs
+    # on import" should require this rather than the bare-call atom, so a
+    # platform-gated payload is not invisible to them.
+    any:
+      - id: module-level-side-effect-call
+      - id: guarded-module-level-side-effect-call

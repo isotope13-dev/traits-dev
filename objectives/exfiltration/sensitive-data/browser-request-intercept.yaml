@@ -1,0 +1,63 @@
+# An extension that hands the operator whichever requests the operator asks for.
+#
+# A blocking `onBeforeSendHeaders` listener sees every outbound request the
+# browser makes, headers included, which for an extension holding <all_urls>
+# means the user's authenticated sessions. Nano Defender 15.0.0.206 registered
+# one and used it as a selector: each request's fields were tested against a
+# table of patterns pushed down the extension's socket channel, and when every
+# field matched, the entire request object went back up the channel.
+#
+# The selector is the part worth keying on. An ad blocker matches requests
+# against filter lists it ships and then blocks them; it does not compile
+# patterns handed to it at runtime by a server and forward the matches
+# somewhere. The operator can change the table at any time -- to a bank, a
+# webmail host, an internal domain -- so the code carries no incriminating
+# target of its own, which is exactly why the target must not be what the rule
+# looks for.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1185,T1041,T1539
+  mbc: B0030
+
+traits:
+  - id: regexp-compiled-from-table-entry
+    desc: Builds a regex from a table entry
+    crit: notable
+    conf: 0.88
+    # `new RegExp(listOfObject[x], 'gi')` -- the pattern is a value looked up
+    # in a table, not a literal the author wrote.
+    if:
+      type: text
+      regex: '\bnew\s+RegExp\s*\(\s*[A-Za-z_$][\w$]{0,24}\s*\[\s*[A-Za-z_$][\w$]{0,24}\s*\]'
+
+  - id: emits-object-over-channel
+    desc: Emits an object over a channel
+    crit: notable
+    conf: 0.82
+    # `defender.emit('handleObject', infos)` -- a whole object handed to a
+    # socket channel under an event name.
+    if:
+      type: text
+      regex: '\.emit\s*\(\s*[''"][\w-]{1,32}[''"]\s*,\s*[A-Za-z_$][\w$]{0,24}\s*\)'
+
+composite_rules:
+  - id: server-selected-request-exfiltration
+    desc: Server-selected requests sent to a channel
+    crit: hostile
+    conf: 0.95
+    # Wide, because a handler is written where it is convenient and registered
+    # where the listeners are grouped -- in this sample the body sits at line
+    # 551 and the addListener call at 573, but the file also registers the same
+    # event again eighty lines further down. The window keeps the three legs in
+    # one region of a file without demanding they be adjacent.
+    near_lines: 120
+    # See every request, decide with the operator's patterns, forward the
+    # matches. Each leg is ordinary extension work on its own; the sequence is
+    # a remote-controlled tap on the user's browsing.
+    all:
+      - id: micro-behaviors/process/hook/webextension::webrequest-before-send-headers-listener
+      - id: regexp-compiled-from-table-entry
+      - id: emits-object-over-channel
+    unless:
+      - id: metadata/package/testing/

@@ -1,0 +1,82 @@
+# Detecting an open inspector by watching what the console reads.
+#
+# `console.log(obj)` does not serialise its argument. The browser holds a
+# reference and only walks the object's properties when a devtools pane is
+# actually rendering it. So a getter installed on that object fires if, and
+# only if, somebody is looking:
+#
+#   element.__defineGetter__("id", () => { seen = true; });
+#   setInterval(() => { seen = false; console.log(element); if (seen) { ... } }, 100);
+#
+# Nano Defender 15.0.0.206 used exactly this, reported to its channel the
+# moment the flag tripped, then called console.clear() and stopped polling, so
+# an analyst who opened devtools saw an empty console and no further activity.
+#
+# Unlike the viewport-delta probe in the sibling file, this one is exact rather
+# than heuristic, works when devtools is undocked, and survives minification --
+# the getter and the log are the mechanism, not the wording. Kept `suspicious`
+# for the same reason the sibling rules are: commercial anti-tamper ships the
+# trick too. What makes it an attack is what the detection is wired to, which
+# belongs to the composites that reference this.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript, html]
+  attack: T1622
+  mbc: B0001
+
+traits:
+  - id: js-getter-defined-on-probe-object
+    desc: Defines a getter on an object
+    crit: notable
+    conf: 0.88
+    # The legacy spelling is the one this trick reaches for, because it takes a
+    # plain function and needs no descriptor object.
+    if:
+      type: text
+      regex: '\.__defineGetter__\s*\(\s*[''"][\w-]{1,24}[''"]'
+
+  - id: js-console-log-bare-object
+    desc: Logs a bare object reference
+    crit: component
+    conf: 0.8
+    # `console.log(element)` -- one identifier, no template, no property
+    # access. That is the shape that makes devtools walk the object.
+    if:
+      type: text
+      regex: '\bconsole\.log\s*\(\s*[A-Za-z_$][\w$]{0,30}\s*\)'
+
+  - id: js-console-clear-call
+    desc: Clears the console
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: '\bconsole\.clear\s*\(\s*\)'
+
+composite_rules:
+  - id: js-devtools-getter-oracle
+    desc: Detects DevTools by a logged getter
+    crit: suspicious
+    conf: 0.94
+    near_lines: 20
+    # A getter and a bare console.log of the same kind of object, close
+    # together. Neither half means anything alone; together they are an
+    # inspector oracle and nothing else.
+    all:
+      - id: js-getter-defined-on-probe-object
+      - id: js-console-log-bare-object
+
+  - id: js-devtools-oracle-erases-console
+    desc: DevTools oracle clears the console
+    crit: hostile
+    conf: 0.95
+    near_lines: 24
+    # The oracle wired to evidence destruction. A DRM or anti-tamper product
+    # that detects an inspector acts on its own program -- it stops playback,
+    # it exits. Wiping the analyst's console instead only makes sense if the
+    # console was going to show something the author did not want read.
+    all:
+      - id: js-devtools-getter-oracle
+      - id: js-console-clear-call
+    unless:
+      - id: metadata/package/testing/

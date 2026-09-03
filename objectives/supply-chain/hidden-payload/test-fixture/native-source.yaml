@@ -18,36 +18,41 @@ defaults:
   mbc: B0024
 
 traits:
-  - id: large-uuencoded-char-array
-    desc: Large opaque char array in source
-    crit: suspicious
+  - id: char-array-initialiser
+    desc: Char array with an initialiser
+    crit: component
     conf: 0.9
-    # A `char`/`unsigned char` array initialised from a long printable literal.
-    # Real fixture data is written as hex or decimal byte lists; a 400+ char
-    # run of punctuation-dense text is an encoded blob.
-    #
-    # The matcher used to stop at the opening brace, so it read every byte
-    # table in C as an encoded blob -- SQLite's amalgamation and winpty's
-    # `UnixCtrlChars.h`, both vendored by MiniMax Code, are brace-initialised
-    # lookup tables. The long quoted run is the part that made it a blob, so
-    # that is what it now requires.
+    # The declaration only. How large and how opaque the array is comes from
+    # parsed literal facts below rather than from this pattern -- a regex
+    # counting characters inside a quoted run is both slower and blind to the
+    # common case where the literal begins on the line after the brace.
     if:
       type: text
-      regex: '(unsigned\s+)?char\s+\w{1,24}\s*\[\s*\]\s*=\s*"[^"\n]{200,}"'
+      regex: '(unsigned\s+)?char\s+\w{1,24}\s*\[\s*\]\s*='
 
   - id: long-opaque-source-literal
     desc: Very long opaque string literal
     crit: notable
     conf: 0.9
-    # Measured, not matched. This was `"[!-~]{400,}"`, whose 400-count over a
-    # 94-character class makes the lazy DFA grow without bound on bundle-shaped
-    # input -- the engine's regex-explosion check rejects it. The metric says
-    # the same thing for a fraction of the work: some string literal in this
-    # translation unit is longer than any hand-written message.
+    # Measured from the parsed literals, not matched. Sendmail's trojanized
+    # t-shm.c carries a 3820-character literal; the pristine file's longest is
+    # 82. No hand-written message in a unit test approaches this.
     if:
       type: metrics
       field: strings.max_length
       min: 400
+
+  - id: source-literal-holds-embedded-code
+    desc: String literal looks like embedded code
+    crit: notable
+    conf: 0.88
+    # The parser's own judgement that some literal in this translation unit
+    # reads as program text rather than data. Independent of how the payload
+    # is encoded, so a base64, hex, or gzip-armoured variant still lands here.
+    if:
+      type: metrics
+      field: strings.embedded_code_candidates
+      min: 1
 
   - id: six-bit-codec-macro
     desc: Hand-rolled 6-bit encode or decode macro
@@ -75,15 +80,13 @@ composite_rules:
     crit: hostile
     conf: 0.96
     all:
-      - id: large-uuencoded-char-array
-      - id: interpreter-runs-relative-written-file
-    # Evidence that the array really is a payload rather than a table: it is
-    # enormous, or a hand-rolled codec decodes it, or the same function writes
-    # it out to a file. `long-opaque-source-literal` sits here rather than in
-    # `all:` because it is measured from `strings.max_length`, and a patch --
-    # the form this evidence usually arrives in -- carries no string metrics
-    # at all. Requiring it there silently lost the sendmail artifact.
-    any:
+      - id: char-array-initialiser
       - id: long-opaque-source-literal
+      - id: interpreter-runs-relative-written-file
+    # Corroboration that the blob is a program rather than data: a hand-rolled
+    # codec decodes it, the parser reads it as code, or the same translation
+    # unit writes it out to a file before running it.
+    any:
       - id: six-bit-codec-macro
+      - id: source-literal-holds-embedded-code
       - id: micro-behaviors/fs/file/write/direct::c-fopen-overwrite-mode

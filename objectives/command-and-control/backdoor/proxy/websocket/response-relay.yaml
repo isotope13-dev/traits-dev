@@ -1,0 +1,83 @@
+# A persistent channel that fetches URLs on command and returns the whole
+# HTTP response to the operator.
+#
+# The Nano Adblocker/Nano Defender extensions were sold to a new maintainer in
+# 2020, who added a socket.io connection to `def.dev-nano.com` and registered
+# a handler for it. The handler takes a URL and request options from the
+# message, calls fetch with them, and packs the reply -- header entries, body
+# text, ok flag, status code -- into one object emitted straight back down the
+# channel. Every install became an HTTP relay running with the extension's
+# host permissions, which for an ad blocker is every site the user visits,
+# cookies included.
+#
+# The general shape survives the specifics. Swap socket.io for a raw
+# WebSocket, an EventSource, or long-polling; swap fetch for XMLHttpRequest or
+# axios; rename the fields. What does not change is the tell: code that
+# reassembles a complete HTTP response -- status AND headers AND body -- into
+# a single value it does not itself consume. An application reads the one
+# piece it needs. Only a relay needs to reproduce the whole reply somewhere
+# else.
+#
+# Stated for text as well as JavaScript: the artifact this was measured on is
+# a unified diff of the extension's background page, which types as text.
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript, text]
+  attack: T1090,T1102.002,T1071.001
+  mbc: B0030
+
+traits:
+  - id: fetch-url-from-message-field
+    desc: Fetches a URL taken from a message
+    crit: notable
+    conf: 0.88
+    # `fetch(newList.uri, newList.attr)` -- neither the target nor the request
+    # options are the program's own; both are read off an inbound object.
+    if:
+      type: text
+      regex: '\bfetch\s*\(\s*\w{1,24}\.\w{1,16}\s*,\s*\w{1,24}\.\w{1,16}\s*\)'
+
+  - id: response-headers-serialized
+    desc: Serializes response headers into a value
+    crit: notable
+    conf: 0.9
+    # `Array.from(resp.headers.entries())`. Reading one header is ordinary;
+    # converting the whole header set into a transportable array is not.
+    if:
+      type: text
+      regex: '\bArray\.from\s*\(\s*\w{1,24}\.headers\.entries\s*\(\s*\)\s*\)'
+
+  - id: response-status-and-body-captured
+    desc: Captures response status and body together
+    crit: notable
+    conf: 0.85
+    # `o.status = r.status` next to `o.data = await r.text()` -- the rest of
+    # the reply, assembled beside the headers.
+    if:
+      type: text
+      regex: '\.status\s*=\s*\w{1,24}\.status\b'
+
+  - id: channel-handler-emits-result
+    desc: Channel handler emits a computed result
+    crit: notable
+    conf: 0.85
+    # `sock.on("name", async fn)` whose body ends in `sock.emit(...)`. The
+    # request/response pairing is what makes the channel a command channel
+    # rather than a subscription.
+    if:
+      type: text
+      regex: '\.on\s*\(\s*["''][\w-]{1,32}["'']\s*,\s*(async\s+)?function'
+
+composite_rules:
+  - id: channel-controlled-http-response-relay
+    desc: Channel relays whole HTTP responses
+    crit: hostile
+    conf: 0.95
+    near_lines: 30
+    all:
+      - id: fetch-url-from-message-field
+      - id: response-headers-serialized
+      - id: response-status-and-body-captured
+      - id: channel-handler-emits-result
+    unless:
+      - id: metadata/package/testing/
