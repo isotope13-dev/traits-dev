@@ -1,0 +1,76 @@
+# A package that loads one of its own files as a native library, where that
+# file is named as if it were source or data.
+#
+# num2words 0.5.15 and 0.5.16 on PyPI shipped `num2words/_build.py`, a
+# 1.2 MB Windows PE. The package's `__init__.py` ended with:
+#
+#   if platform.system() == "Windows":
+#       here = os.path.abspath(os.path.dirname(__file__))
+#       ct = getattr(sys.modules[__name__], "ctypes")
+#       help = getattr(ct, "CDLL")(os.path.join(here, "_build.py"))
+#       getattr(help, "main")()
+#
+# `import num2words` was the trigger. Nothing in the package ever called it.
+#
+# Two things make this worth stating on its own. A loader does not care about
+# extensions, so `.py` on a PE costs the attacker nothing and buys a filename
+# that a reviewer scrolling a package listing reads as ordinary source -- and
+# that a scanner keyed on `.dll`/`.so`/`.dylib` skips. And the API names are
+# reached through `getattr` string literals, so `ctypes.CDLL` never appears as
+# a token; every matcher looking for that literal misses.
+#
+# The rule keys on the pairing that cannot be explained away: a native-library
+# load whose argument is a path ending in a source or data extension. No
+# legitimate code loads a `.py` as a shared object.
+defaults:
+  platforms: [windows, unix]
+  for: [python, text]
+  attack: T1195.002,T1129,T1036.008
+  mbc: B0024
+
+traits:
+  - id: library-load-of-source-extension-path
+    desc: Loads a source-named file as a library
+    crit: suspicious
+    conf: 0.96
+    # `CDLL(os.path.join(here, "_build.py"))`. The span cannot cross a closing
+    # paren, so the path expression is the one being handed to the loader.
+    if:
+      type: text
+      regex: '\b(CDLL|WinDLL|LoadLibrary)\s*\(\s*[^)\n]{0,80}\.(py|txt|dat)["'']'
+
+  - id: reflected-library-load-of-source-extension
+    desc: Reflected loader on a source-named file
+    crit: suspicious
+    conf: 0.96
+    # The same call with the API name hidden: `getattr(ct, "CDLL")(...)`.
+    # Written separately because the loader token is inside a string here, so
+    # the pattern above cannot see it.
+    if:
+      type: text
+      regex: '["'']CDLL["'']\s*\)\s*\(\s*[^)\n]{0,80}\.(py|txt|dat)["'']'
+
+composite_rules:
+  # The atoms stay `suspicious` because an atomic trait cannot carry the
+  # hostile tier, and a composite that is only an `any:` over two spellings of
+  # one pattern is atomic in everything but name -- the engine drops such a
+  # rule rather than let a single matcher convict. So the hostile tier here
+  # requires the second fact that is actually present and actually matters:
+  # the load is gated on the operating system.
+  #
+  # That is not padding. A payload that only runs on one platform is inert
+  # everywhere else, which is how it survives the maintainer's own testing,
+  # a CI matrix that builds on Linux, and an analyst on a Mac. num2words
+  # loaded its PE only under `platform.system() == "Windows"`.
+  - id: package-loads-disguised-native-payload
+    desc: Package loads a disguised native payload
+    crit: hostile
+    conf: 0.97
+    near_lines: 8
+    all:
+      - id: micro-behaviors/os/sysinfo/platform/runtime::python-platform-branch
+    any:
+      - id: library-load-of-source-extension-path
+      - id: reflected-library-load-of-source-extension
+    unless:
+      - id: metadata/package/testing/
