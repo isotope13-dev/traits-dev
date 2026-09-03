@@ -1,13 +1,7 @@
 Triage these vetted-benign false positive(s):
-- /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg — hostile: 1, suspicious: 1
+- /data/gauntlet-fp/22991d2681ad0c8ec3e259026800eeac037935467c6f698f2f7fd1c501be2ebd/feral_ai-1.2.0-py3-none-any.whl — hostile: 1, suspicious: 0
   - H objectives/credential-access/env/secrets/bulk-access::python-env-bulk-secret-harvest — Bulk environment scan filtered for credential keywords
-    members: /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/lib/python3.11/distutils/_msvccompiler.py, /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/lib/python3.11/ensurepip/_bundled/pip-24.0-py3-none-any.whl, /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/lib/python3.11/ensurepip/_bundled/pip-24.0-py3-none-any.whl!!pip/_internal/configuration.py, /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/lib/python3.11/ensurepip/_bundled/setuptools-79.0.1-py3-none-any.whl, /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/lib/python3.11/ensurepip/_bundled/setuptools-79.0.1-py3-none-any.whl!!setuptools/_distutils/compilers/C/msvc.py, /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/lib/python3.11/site-packages/networkx/utils/backends.py, … +3
-  - S objectives/anti-static/obfuscation/obfuscator/signature::pyarmor-runtime-call — PyArmor runtime call
-    members: /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/Auth/license_manager.py
-
-- /data/gauntlet-fp/0aabcc13e3e7e3ffee91c2a978d707bef98517a685ea0883e3dcb50b1dcfedc1/litellm-1.100.0.dev1-cp310-abi3-macosx_10_12_x86_64.whl — hostile: 1, suspicious: 0
-  - H objectives/credential-access/env/secrets/bulk-access::python-env-bulk-secret-harvest — Bulk environment scan filtered for credential keywords
-    members: /data/gauntlet-fp/0aabcc13e3e7e3ffee91c2a978d707bef98517a685ea0883e3dcb50b1dcfedc1/litellm-1.100.0.dev1-cp310-abi3-macosx_10_12_x86_64.whl!!litellm/secret_managers/aws_secret_manager.py, /data/gauntlet-fp/0aabcc13e3e7e3ffee91c2a978d707bef98517a685ea0883e3dcb50b1dcfedc1/litellm-1.100.0.dev1-cp310-abi3-macosx_10_12_x86_64.whl!!litellm/utils.py
+    members: /data/gauntlet-fp/22991d2681ad0c8ec3e259026800eeac037935467c6f698f2f7fd1c501be2ebd/feral_ai-1.2.0-py3-none-any.whl!!config/loader.py
 
 
 Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
