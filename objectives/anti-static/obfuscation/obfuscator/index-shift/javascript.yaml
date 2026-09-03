@@ -1,0 +1,63 @@
+# A string-table obfuscator that hides its index arithmetic in nested ternaries
+# and double-negative offsets:
+#
+#   function c(t){return Tr[t<52?t- -86:t<52?t-1:t-53]}
+#   function e(r){return Tr[r<792?r<792?r>19?r<792?r-20:r- -16:r-67:r- -40:r-10]}
+#
+# Every string in the file is fetched through one of these accessors, so no
+# literal survives for a scanner to read. It is not the widely-seen
+# javascript-obfuscator preset -- that one emits lowercase `_0x` names and a
+# rotate-shift decoder -- which is why the existing obfuscator rules miss it.
+# `- -N` (subtracting a negative) is the tell: minifiers fold that to `+N`, so
+# it only survives when a generator emitted it deliberately.
+#
+# Text matchers throughout: these bundles run to several megabytes, where the
+# parse-tree matchers are skipped and only byte scanning still sees the file.
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript]
+  attack: T1027
+  mbc: B0032
+
+traits:
+  - id: table-accessor-ternary-index-shift
+    desc: String-table accessor shifts a ternary index
+    crit: suspicious
+    conf: 0.93
+    count_min: 3
+    if:
+      type: text
+      regex: 'return\s+\w{1,6}\[\w{1,3}\s*[<>]\s*\d{1,4}\s*\?'
+
+  - id: double-negative-index-offset
+    desc: Index offset written as minus a negative
+    crit: notable
+    conf: 0.9
+    count_min: 3
+    if:
+      type: text
+      regex: '\w{1,3}-\s-\d{1,4}'
+
+  - id: uppercase-hex-mangled-identifier
+    desc: Uppercase hex-mangled identifier names
+    crit: notable
+    conf: 0.9
+    count_min: 20
+    # javascript-obfuscator emits lowercase `_0x1a2b3c`; an uppercase run is a
+    # different generator, and a hand-written identifier never looks like this.
+    if:
+      type: text
+      regex: '_0x[0-9A-F]{5,8}\b'
+
+composite_rules:
+  - id: custom-string-table-obfuscator
+    desc: Custom string-table obfuscator output
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: table-accessor-ternary-index-shift
+      - id: double-negative-index-offset
+    # No test-context exclusion: a multi-megabyte wallet bundle trips the
+    # secret-detector label catalog inside `metadata/package/testing/`, and
+    # suppressing on that hid the obfuscator on exactly the files it exists
+    # for. The two legs are shape-specific enough to stand without it.

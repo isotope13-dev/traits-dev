@@ -795,7 +795,7 @@ composite_rules:
 
 **Trait references:** Use `{ id: trait-id }` in condition lists. The `type:` field can be omitted for trait references.
 
-**Absence detection:** A composite rule with only `none:` (no `all:` or `any:`) fires when none of the listed conditions match. This is useful for detecting the absence of expected traits:
+**Absence detection:** Composite rules take `all:`, `any:`, `needs:`, `unless:` and `downgrade:`. There is no composite-level `none:` field — a composite carrying one fails to parse and is dropped at load time (the analyze path skips unparseable rule files with a warning; `cleave validate` reports it). Express absence with `unless:`, which skips the rule when the listed condition matches:
 
 ```yaml
 composite_rules:
@@ -803,9 +803,14 @@ composite_rules:
     desc: Binary lacks any code signature
     crit: notable
     conf: 0.8
-      - id: file/signed/apple
-      - id: file/signed/microsoft
+    all:
+      - id: metadata/binary/layout::is-executable
+    unless:
+      - id: metadata/signed/platform::apple
+      - id: metadata/signed/platform::microsoft
 ```
+
+`none:` *is* available inside a `downgrade:` block, which takes the full `all:`/`any:`/`none:`/`needs:` shape.
 
 **Circular references:** Composites can reference other composites. Circular references are handled safely — composite evaluation uses a fixed-point loop (max 10 iterations). Circular references will not crash but the circularly-dependent traits may not resolve.
 

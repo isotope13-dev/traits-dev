@@ -1,0 +1,51 @@
+# A build recipe that compiles a source file, runs it, and pipes what it prints
+# into a shell.
+#
+# The openssh 3.4p1 trojan of 2002 added one line to
+# `openbsd-compat/Makefile.in`:
+#
+#   @ $(CC) bf-test.c -o bf-test; ./bf-test>bf-test.out; sh ./bf-test.out &
+#
+# `bf-test.c` looked like a Blowfish compatibility check and its real body
+# XOR-decoded an 800-byte array to stdout. Nothing in the tree contains a
+# readable script: the payload only exists while `make` is running.
+#
+# A recipe line legitimately compiles and runs a probe -- autoconf does it
+# constantly -- but it reads the *exit status*, never the program's stdout as
+# a script. Interpreting the output is the tell, and it survives renaming the
+# helper, switching `$(CC)` for `gcc`, or piping instead of using a temp file.
+defaults:
+  platforms: [unix]
+  for: [shell, text]
+  attack: T1195.002,T1059.004
+  mbc: B0024
+
+traits:
+  - id: recipe-compiles-runs-and-shells-output
+    desc: Recipe compiles, runs, then shells output
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '(\$\(CC\)|g?cc|clang)\s+[\w./-]{1,30}\.c[^\n]{0,80};[^\n]{0,40};\s*(sh|bash|\.)\s'
+
+  - id: build-output-piped-to-shell
+    desc: Compiled program output piped to a shell
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: '\./[\w.-]{1,40}\s*\|\s*(sh|bash)\b'
+
+composite_rules:
+  - id: build-recipe-executes-program-output
+    desc: Build recipe shells its own program output
+    crit: hostile
+    conf: 0.96
+    any:
+      - id: recipe-compiles-runs-and-shells-output
+      - id: build-output-piped-to-shell
+    all:
+      # The helper prints something that is not in the file as text -- the
+      # payload lives only in the pipe between it and the shell.
+      - id: micro-behaviors/crypto/symmetric/xor/emit::xor-decoded-array-to-stream

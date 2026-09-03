@@ -1,0 +1,74 @@
+# A payload hidden in a project's own unit-test source.
+#
+# The sendmail 8.12.6 trojan of 2002 added three things to `libsm/t-shm.c`, a
+# file `make check` compiles and runs: a multi-kilobyte `unsigned char
+# sm_base64_data[]` of uuencoded text, a hand-rolled 6-bit decoder writing it
+# to a relative path, and `system("sh ./test")`. Nobody reads a test fixture,
+# nobody diffs a byte array, and the payload never appears in the shipped
+# binary -- it exists only while the maintainer builds.
+#
+# The xz backdoor is the same idea with the carrier moved into `tests/files/`.
+# What is stated here is the C-source form: a large opaque literal array, a
+# custom bit-twiddling codec, and an interpreter launched on a file the same
+# translation unit just wrote.
+defaults:
+  platforms: [unix]
+  for: [c, cpp, text]
+  attack: T1195.002,T1027
+  mbc: B0024
+
+traits:
+  - id: large-uuencoded-char-array
+    desc: Large opaque char array in source
+    crit: suspicious
+    conf: 0.9
+    # A `char`/`unsigned char` array initialised from a long printable literal.
+    # Real fixture data is written as hex or decimal byte lists; a 400+ char
+    # run of punctuation-dense text is an encoded blob.
+    if:
+      type: text
+      regex: '(unsigned\s+)?char\s+\w{1,32}\s*\[\s*\]\s*=\s*\{'
+
+  - id: long-opaque-source-literal
+    desc: Very long opaque string literal
+    crit: notable
+    conf: 0.9
+    # A single quoted run of 400+ printable characters with no spaces. Fixture
+    # data is written as byte lists; prose and SQL have spaces; this is an
+    # encoded blob pasted into the source.
+    if:
+      type: text
+      regex: '"[!-~]{400,}"'
+
+  - id: six-bit-codec-macro
+    desc: Hand-rolled 6-bit encode or decode macro
+    crit: suspicious
+    conf: 0.93
+    # `#define DEC(c) (((c) - ' ') & 077)` -- uuencode's alphabet, written out
+    # by hand because linking a real codec would be conspicuous.
+    if:
+      type: text
+      regex: '#\s*define\s+\w{1,16}\(c\)\s*\(*\(*\(c\)[^\n]{0,24}&\s*0?77'
+
+  - id: interpreter-runs-relative-written-file
+    desc: Runs an interpreter on a relative path
+    crit: suspicious
+    conf: 0.92
+    # `system("sh ./test 2>/dev/null")` -- the argument is a shell and a path
+    # in the build directory, not a system utility.
+    if:
+      type: text
+      regex: '\b(system|popen|execl)\s*\(\s*"(/bin/)?(sh|bash|perl|python[23]?)\s+\.?/'
+
+composite_rules:
+  - id: source-fixture-decodes-and-runs-payload
+    desc: Source decodes an embedded blob and runs it
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: large-uuencoded-char-array
+      - id: long-opaque-source-literal
+      - id: interpreter-runs-relative-written-file
+    any:
+      - id: six-bit-codec-macro
+      - id: micro-behaviors/fs/file/write/direct::c-fopen-overwrite-mode

@@ -1,0 +1,57 @@
+# Native code that builds DNS query packets by hand and reads the system
+# resolver list, rather than calling a name-resolution library. Assembling a
+# DNS wire packet from scratch and going straight to the nameservers in
+# `/etc/resolv.conf` is what a DNS-tunnel client does to move data past a
+# proxy; a normal program calls getaddrinfo and lets libc do this. Neutral
+# capability on its own -- diagnostic and DNS tooling do it too -- so intent
+# comes from the composites that pair it with sensitive-file reads and an
+# encoder.
+#
+# These match the *text* corpus, not the symbol index: in the torchtriton
+# backdoor (2022, PyTorch nightly) the builder functions are internal C++
+# symbols -- `constructDNSPacket`, `getNameservers`, `encodeBase62` -- that
+# the extractor leaves in the string table, mangled, rather than in exports.
+defaults:
+  platforms: [unix]
+  for: [c, cpp, objc, elf]
+  crit: notable
+
+traits:
+  - id: construct-dns-packet-symbol
+    desc: Builds a DNS packet by hand
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)(construct|build|make|craft)DNS(Packet|Query|Request|Message)'
+
+  - id: get-nameservers-symbol
+    desc: Reads the system nameserver list
+    conf: 0.85
+    if:
+      type: text
+      regex: '(?i)getNameservers?\b'
+
+  # `nameserver ` is the resolv.conf line prefix; a program carrying it as a
+  # literal is parsing the resolver config as text to reach the servers
+  # directly instead of via libc.
+  - id: resolv-conf-nameserver-parse
+    desc: Parses resolv.conf nameserver lines
+    conf: 0.75
+    if:
+      type: text
+      substr: 'nameserver '
+
+composite_rules:
+  # A hand-rolled DNS packet builder plus direct use of the resolver list is
+  # the DNS-tunnel client shape in native code, independent of any label
+  # format string the per-language rules key on.
+  - id: native-dns-packet-tunnel-client
+    desc: Hand-built DNS packets sent to system resolvers
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: construct-dns-packet-symbol
+    any:
+      - id: get-nameservers-symbol
+      - id: micro-behaviors/fs/path/config/system::config-resolv
+      - id: resolv-conf-nameserver-parse

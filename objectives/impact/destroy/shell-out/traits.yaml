@@ -1,0 +1,78 @@
+# A root wipe handed to a shell-out primitive.
+#
+# Every language has one: `shell-command-to-string` (Emacs Lisp),
+# `os.system`/`subprocess(shell=True)` (Python), `child_process.exec` (Node),
+# `Runtime.exec` (Java), backticks (Perl/Ruby), `system()` (C/PHP). The string
+# argument is shell text, but the file around it is not a shell script, so
+# every `for: [shell]` rule for destructive commands is blind to it. The
+# kubernetes-el defacement of 2019 was one line of Emacs Lisp doing exactly
+# this, and cleave typed the `.el` as plain text and reported nothing.
+#
+# Matching the primitive together with the command keeps prose out: a README
+# warning about `rm -rf /` has no call around it.
+defaults:
+  platforms: [unix]
+  # `text` only: this is the fallback for files cleave cannot type (an Emacs
+  # Lisp `.el`, an untyped fragment, a patch). Typed languages have their own
+  # precise shell-out and deletion atoms, and matching here as well would
+  # double-count on ordinary code.
+  for: [text]
+  attack: T1485
+  mbc: F0014
+
+traits:
+  # The two halves of "a shell-out call carrying a root wipe" are separate
+  # atoms because one regex covering both exceeds the pattern-length limit;
+  # the composite rejoins them on the same line.
+  - id: shell-out-primitive-call
+    desc: Calls a shell-out primitive
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      # The call spelling differs by language: `system("...")` puts the paren
+      # first, `(shell-command-to-string "...")` puts the quote first. Accept
+      # either opener so one atom covers both.
+      regex: "(shell-command|call-process|popen|system|exec|spawn)[a-z-]{0,16}\\s*[(\"'`]"
+
+  - id: quoted-root-wipe-command
+    desc: Quoted command wipes the root path
+    crit: suspicious
+    conf: 0.95
+    # `sudo` is required. A bare `rm -rf /` inside quotes is what documentation
+    # and scanner test-strings look like (an AI-guardrail package's own help
+    # text carries `aig scan "rm -rf /"`), and GNU rm refuses that form anyway.
+    # Escalating to root first is what makes it a command someone meant to run.
+    if:
+      type: text
+      regex: '["`\'']\s*sudo\s+rm\s+-[a-z]{0,3}[rf][a-z]{0,3}\s+/'
+
+  - id: quoted-root-glob-wipe-command
+    desc: Quoted command wipes every root entry
+    crit: suspicious
+    conf: 0.95
+    # `rm -rf /*` needs no sudo to be unambiguous: the glob expands past the
+    # guard that makes a bare `/` a no-op.
+    if:
+      type: text
+      regex: '["`\'']\s*(sudo\s+)?rm\s+-[a-z]{0,3}[rf][a-z]{0,3}\s+/\*'
+
+composite_rules:
+  - id: shell-out-call-wipes-root
+    desc: Shell-out call carries a root wipe
+    crit: suspicious
+    conf: 0.96
+    near_lines: 2
+    all:
+      - id: shell-out-primitive-call
+    any:
+      - id: quoted-root-wipe-command
+      - id: quoted-root-glob-wipe-command
+
+  - id: deliberate-root-wipe-shell-out
+    desc: Shell-out deliberately wipes the root filesystem
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: shell-out-call-wipes-root
+      - id: objectives/impact/destroy/file-deletion::no-preserve-root

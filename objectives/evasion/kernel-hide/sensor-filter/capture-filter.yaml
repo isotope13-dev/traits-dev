@@ -1,0 +1,49 @@
+# A packet-capture library rewriting the filter its caller asked for.
+#
+# `pcap_compile()` takes the operator's BPF expression. The trojanized libpcap
+# 0.7.1 of 2002 appended `not port 1963` to whatever the operator typed, so
+# tcpdump, snort and every other consumer silently stopped showing the
+# backdoor's traffic while continuing to report success. The same shape hides
+# processes from `ps` and connections from `netstat` in userland rootkits: the
+# tool still works, it just never mentions one thing.
+#
+# The signal is a *negating filter expression as a string literal* in code that
+# also rewrites the caller's buffer. The port number, the protocol and the
+# variable names all change between variants; the negation and the splice do
+# not.
+defaults:
+  platforms: [unix]
+  for: [c, cpp, text]
+  attack: T1562.001,T1205
+  mbc: F0005
+
+traits:
+  - id: negating-filter-expression-literal
+    desc: Embeds a negating capture-filter expression
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: '"\s*not\s+(port|host|tcp|udp|ip|src|dst)\b[^"\n]{0,40}"'
+
+  - id: filter-buffer-reassigned
+    desc: Reassigns a caller filter buffer
+    crit: notable
+    conf: 0.85
+    # `buf = "port 1964";` / `buf = str;` -- the parameter holding the caller's
+    # expression is replaced rather than read.
+    if:
+      type: text
+      regex: '\b(buf|filter|expr|prog|cmdbuf)\s*=\s*("[^"\n]{0,60}"|\w{1,20})\s*;'
+
+composite_rules:
+  - id: capture-filter-self-blinding
+    desc: Capture filter rewritten to hide traffic
+    crit: hostile
+    conf: 0.95
+    near_lines: 12
+    all:
+      - id: negating-filter-expression-literal
+      - id: filter-buffer-reassigned
+    unless:
+      - id: metadata/package/testing/
