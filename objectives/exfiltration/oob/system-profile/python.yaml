@@ -82,3 +82,64 @@ composite_rules:
       - id: python-webhook-full-host-profile-exfil
       - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
       - id: micro-behaviors/fs/path/location::os-path-expanduser
+
+  # Host identity carried out as URL query parameters. The endpoint is not an
+  # OOB collaborator and the payload is not a JSON body, so neither the OOB
+  # composites nor the webhook POST rules above can see it: the collector is
+  # an ordinary-looking host and the identity leaves as `?h=<hostname>&user=`
+  # style parameters. Reading who/where the code landed and handing it to a
+  # URL in the same breath is the exfil, whichever endpoint receives it.
+  #
+  # Worked examples: pytabtrust (`?q=b64(getlogin())&q2=b64(uname()[1])` to
+  # pwnie.me), the kotlin_stdlib_jdk8 canary (`?h=<gethostname>&pypi=<pkg>`),
+  # and textharmony (hostname, username, cwd and MAC addresses urlencode'd to
+  # three base64-decoded OAST hosts).
+  - id: python-urlopen-host-identity-query-exfil
+    desc: Host identity leaves as URL query parameters
+    crit: hostile
+    conf: 0.95
+    attack: T1041,T1082,T1033
+    near_lines: 40
+    all:
+      # The call roll-up covers every import spelling (dotted, named, module
+      # alias, py2), which the beacon families rotate through to defeat the
+      # dotted matcher.
+      - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-call
+    any:
+      - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
+      - id: micro-behaviors/os/sysinfo/hostname::python-os-uname-nodename
+      - id: micro-behaviors/process/user/query::python-getpass-user
+      - id: micro-behaviors/process/user/query::os-getlogin-python
+      - id: objectives/discovery/system/fingerprint/hardware::python-sysinfo-multi
+      - id: objectives/discovery/system/fingerprint/hardware::getmac-module
+      - id: micro-behaviors/data/source/quality/aliased-import::alias-getpass
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: well-known/tool/detection/security-scanner/
+      - id: well-known/tool/detection/llm-scanner/
+
+  # The module-scope POST spelling: the whole module body collects user,
+  # cwd and hostname into a dict and hands it to requests.post. The
+  # recon-exfil/import-time rules convict the *timing* (import-time beacon);
+  # this one states the exfiltration itself -- a library's import sends a host
+  # profile to a fixed collection endpoint, which no import was asked to do.
+  - id: python-module-scope-host-profile-post
+    desc: Module scope posts host profile to collector
+    crit: hostile
+    conf: 0.95
+    attack: T1041,T1082,T1033
+    near_lines: 30
+    all:
+      - id: micro-behaviors/communications/http/lib/requests::requests-post
+      # cwd is the third field of every one of these bundles (who, where,
+      # which machine) and what separates a profile post from a telemetry
+      # ping that names only a hostname it was told to report.
+      - id: micro-behaviors/fs/directory/cwd::python-os-getcwd
+    any:
+      - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
+      - id: micro-behaviors/os/sysinfo/hostname::python-os-uname-nodename
+      - id: micro-behaviors/process/user/query::python-getpass-user
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: well-known/tool/detection/security-scanner/
+      - id: well-known/tool/detection/llm-scanner/
