@@ -930,6 +930,83 @@ composite_rules:
       - id: setup-py-network-in-install
       - id: micro-behaviors/communications/ip/literal::http-ip-url
 
+  # An install hook that POSTs a body to the network, rather than just
+  # fetching.
+  #
+  # `setup-py-network-in-install` covers any network call from a build class;
+  # this narrows to the ones that *upload*. A `urlopen(url, data=...)` or a
+  # POST during install is sending something out, not pulling a dependency in
+  # -- and the only thing a package has to send at install time is information
+  # about the machine it is installing on. The data is often obfuscated (an
+  # encoded `os.environ`, a URL assembled from split strings to dodge a string
+  # match), but the direction is not: bytes are leaving.
+  #
+  # Worked example: an `InstallCommand(install)` that json-encodes
+  # `os.environ.copy()`, builds an `*.oast.fun` URL from `'oa'+'st'` fragments,
+  # and `urlopen`s it with the encoded environment as the POST body.
+  # An install hook that decodes a base64 blob and pipes it to a shell.
+  #
+  # `echo <b64> | base64 -d | bash` (or `| sh`) is the shell-side twin of
+  # `exec(b64decode(...))`: the command that actually runs never appears in the
+  # source, only its encoded form. Wrapped in a build class it runs at install,
+  # and `os.system`/`subprocess` hands it to `/bin/sh` -- so nothing about the
+  # published package reveals what executes on the consumer's machine.
+  #
+  # Worked example: a `CustomInstall(install)` whose `run()` calls
+  # `os.system('echo %s | base64 -d | bash' % encoded)`.
+  # An install hook that opens a raw socket to a hardcoded address and sends
+  # host data over it.
+  #
+  # `setup-py-install-uploads-data` covers the HTTP case; this is the same act
+  # one layer down. A build class that does `socket.connect(("<ip>", <port>))`
+  # and `send(systeminfo)` is exfiltrating over a bare TCP socket -- no URL, no
+  # library, just a literal address. Nothing an install legitimately does opens
+  # a socket to a hardcoded IP to push the machine's uptime and platform.
+  #
+  # Worked example: a `PostInstallCommand(install)` that connects to
+  # `("134.209.85.64", 9090)` and sends `f"{uptime} --- {systeminfo}"`.
+  - id: setup-py-install-raw-socket-exfil
+    desc: Install hook sends host data over a raw socket
+    crit: hostile
+    conf: 0.96
+    scope: archive
+    for: [python, package.json, tar, zip, whl, archives]
+    attack: "T1195.002,T1041,T1571"
+    mbc: "E1041"
+    all:
+      - id: metadata/build/package/recipe::python-install-hook
+      - id: micro-behaviors/communications/socket/dial::python-connect-ip-port
+    any:
+      - id: micro-behaviors/os/sysinfo/platform/runtime::platform-system
+      - id: micro-behaviors/os/sysinfo/platform/kernel::python-uptime-check
+      - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
+
+  - id: setup-py-install-base64-shell-pipe
+    desc: Install hook pipes a decoded blob to a shell
+    crit: hostile
+    conf: 0.97
+    scope: archive
+    for: [python, package.json, tar, zip, whl, archives]
+    attack: "T1195.002,T1027,T1059.004"
+    mbc: "B0032,E1027"
+    all:
+      - id: metadata/build/package/recipe::python-install-hook
+      - id: micro-behaviors/data/decode/base64::base64-decode-piped-shell
+
+  - id: setup-py-install-uploads-data
+    desc: Install hook uploads a body to the network
+    crit: hostile
+    conf: 0.95
+    scope: archive
+    for: [python, package.json, tar, zip, whl, archives]
+    attack: "T1195.002,T1041"
+    mbc: "E1041"
+    all:
+      - id: setup-py-network-in-install
+    any:
+      - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-data
+      - id: micro-behaviors/communications/http/lib/requests::requests-post
+
   - id: setup-py-install-host-profile-beacon
     desc: Install class beacons a host profile
     crit: hostile

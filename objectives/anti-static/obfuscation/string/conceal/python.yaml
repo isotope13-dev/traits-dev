@@ -3,6 +3,27 @@ defaults:
   for:
     - python
 traits:
+  # `getattr(importlib.import_module(m), f1 + f2)` -- resolving a function whose
+  # name is never whole in the source, the fragments joined at runtime so
+  # `gethostbyname`, `system`, `urlopen` do not show up to grep or a symbol
+  # scan. A helper that imports a module by string and getattrs a concatenated
+  # name is deliberate; ordinary dynamic dispatch uses a whole attribute name.
+  - id: getattr-inline-concat
+    desc: Inline getattr on concatenated fragments
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: 'getattr\s*\(\s*[^,()]{1,40}\s*,\s*\w{1,20}\s*\+\s*\w{1,20}\s*\)'
+
+  - id: import-module-then-assembled-getattr
+    desc: import_module then getattr an assembled name
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '\bimport_module\s*\([^)]{0,20}\)[\s\S]{0,140}\w{1,16}\s*\+\s*\w{1,16}[\s\S]{0,60}getattr\('
+
   - id: py-hex-exec-string
     desc: Hex-encoded 'exec' string
     crit: suspicious
@@ -51,3 +72,35 @@ composite_rules:
     any:
       - id: py-hex-exec-string
       - id: py-bytes-fromhex-exec
+  - id: getattr-concatenated-name
+    desc: Attribute name assembled from fragments
+    crit: suspicious
+    conf: 0.93
+    # Two shapes of the same trick: an inline `getattr(m, a + b)`, or a helper
+    # that imports a module by variable and getattrs a name assembled just
+    # above -- `import_module(m); function_name = f1 + f2; getattr(module,
+    # function_name)`. Either hides the API name from grep and from a symbol
+    # scan; ordinary dispatch uses a whole literal name.
+    any:
+      - id: getattr-inline-concat
+      - id: import-module-then-assembled-getattr
+
+  # Name-fragment obfuscation shipped in a package that runs code at install.
+  #
+  # Reconstructing API names from fragments is concealment, not a payload; on
+  # its own it earns suspicious. Paired with an install hook -- code that runs
+  # on every consumer -- the concealment is hiding what that hook does, which
+  # is the combination a dependency-confusion stager uses: split `gethostbyname`
+  # and `getlogin` so the DNS-exfil beacon in the install class does not show up
+  # to a scan of setup.py.
+  - id: install-hook-with-name-fragment-obfuscation
+    desc: Install-time package hides API names by fragment
+    crit: hostile
+    conf: 0.95
+    scope: archive
+    for: [python, package.json, tar, zip, whl, archives]
+    attack: "T1195.002,T1027"
+    mbc: "E1027"
+    all:
+      - id: metadata/build/package/recipe::python-install-hook
+      - id: getattr-concatenated-name
