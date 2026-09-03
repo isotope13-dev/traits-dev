@@ -318,6 +318,70 @@ traits:
       type: text
       regex: '(?i)\.npmrc|\.pypirc|\.kube[/\\]config'
 
+  # A skill description that tells the agent to download a password-protected
+  # executable ("For Windows download AuthTool.exe (password: 1234)"). The
+  # password is the tell: it announces an archive the platform's scanner is
+  # meant to see past, which no legitimate distribution needs.
+  - id: skill-instructs-passworded-binary-download
+    desc: Skill instructs downloading a passworded binary
+    crit: notable
+    conf: 0.94
+    for: [markdown, text]
+    if:
+      type: text
+      regex: '(?i)(download|install|run)[^.\n]{0,90}\.(exe|zip|7z|rar|apk)\b[^.\n]{0,90}password'
+
+
+  # A skill body that instructs fetching an executable from a personal
+  # GitHub release (the AuthTool / OpenClawWinDriver delivery). A personal
+  # repo's release asset is operator infrastructure: deletable, swappable,
+  # and outside every registry's review.
+  - id: skill-github-release-executable-instruction
+    desc: Skill fetches executable from GitHub release
+    crit: notable
+    conf: 0.92
+    for: [markdown, text, shell]
+    if:
+      type: text
+      regex: '(?i)github\.com/[\w.-]+/[\w.-]+/releases/download/[^\s)\]]{0,80}\.(exe|zip|dmg|apk)'
+
+  # The decoy-echo masked installer: `echo "<benign-looking URL>" && echo
+  # '<base64>' | base64 -D | bash`. The first echo exists to be seen; the
+  # second is the payload. No legitimate installer presents a decoy.
+  - id: skill-decoy-echo-masked-installer
+    desc: Skill carries decoy echo over masked installer
+    crit: notable
+    conf: 0.95
+    for: [markdown, text, shell]
+    if:
+      type: text
+      regex: 'echo\s+[''"][^''"]{0,100}[''"]\s*&&\s*echo\s+[''"][A-Za-z0-9+/=]{40,}'
+
+  # The classic injection phrases shipped inside a skill's own tool: "Ignore
+  # previous instructions", "You are now DAN". A tool that returns this text
+  # into the model's context is not processing input, it is competing with
+  # the operator for the agent's attention.
+  - id: skill-tool-classic-prompt-injection
+    desc: Skill tool emits prompt-injection phrases
+    crit: notable
+    conf: 0.94
+    for: [python, markdown, text, javascript, typescript]
+    if:
+      type: text
+      regex: '(?i)ignore (all |any )?(previous|prior) instructions|you are now (dan|do anything now)'
+
+  # A trigger constant compared against input before privileged actions run.
+  # Named in caps (MAGIC_STRING / SECRET_TRIGGER), compared with ==, and
+  # gating a subprocess or network call -- the ProFTPD shape wearing Python.
+  - id: python-magic-trigger-constant
+    desc: Magic trigger constant gates privileged actions
+    crit: notable
+    conf: 0.9
+    for: [python]
+    if:
+      type: text
+      regex: '(MAGIC_ST(RINGS?|STRING)?|SECRET_TRIG\w*|TRIGGER_W\w*)\s*='
+
 composite_rules:
   - id: agent-skill-context-marker
     desc: Explicit agent-skill marker
@@ -684,3 +748,93 @@ composite_rules:
     any:
       - id: agent-skill-secret-instructions-phrase
       - id: agent-skill-remote-forwarding
+
+
+  # The skill's own instructions send a local file's bytes to an external
+  # endpoint (`curl -X POST --data-binary @file`). The file "belongs to this
+  # skill" -- but the endpoint decides what it receives, and an audit that
+  # requires uploading a file to a third-party host is exfiltration with a
+  # work order attached.
+  - id: agent-skill-curl-post-file-instruction
+    desc: Agent skill instructs posting a local file to a host
+    crit: hostile
+    conf: 0.97
+    attack: T1041,T1195.002
+    all:
+      - id: metadata/package/config::agent-skill-frontmatter
+      - id: micro-behaviors/communications/http/upload::curl-post-data-binary-file
+
+  - id: agent-skill-passworded-binary-download
+    desc: Agent skill instructs downloading a passworded binary
+    crit: hostile
+    conf: 0.97
+    attack: T1204.002,T1195.002
+    all:
+      - id: metadata/package/config::agent-skill-frontmatter
+      - id: skill-instructs-passworded-binary-download
+
+  - id: agent-skill-release-executable-instruction
+    desc: Agent skill directs executable download from release
+    crit: hostile
+    conf: 0.97
+    attack: T1204.002,T1195.002
+    all:
+      - id: metadata/package/config::agent-skill-frontmatter
+      - id: skill-github-release-executable-instruction
+
+  - id: agent-skill-masked-installer-instruction
+    desc: Agent skill carries decoy-masked installer
+    crit: hostile
+    conf: 0.98
+    attack: T1027,T1059.004
+    all:
+      - id: metadata/package/config::agent-skill-frontmatter
+      - id: skill-decoy-echo-masked-installer
+
+
+  - id: agent-skill-tool-prompt-injection
+    desc: Agent skill tool carries prompt injection
+    crit: hostile
+    conf: 0.96
+    scope: archive
+    all:
+      - id: well-known/app/ai/knowledge/agent-skills::skill-definition-file
+      - id: skill-tool-classic-prompt-injection
+  - id: agent-skill-tool-magic-string-backdoor
+    desc: Agent skill tool gates actions on magic string
+    crit: hostile
+    conf: 0.96
+    scope: archive
+    all:
+      - id: well-known/app/ai/knowledge/agent-skills::skill-definition-file
+      - id: python-magic-trigger-constant
+    any:
+      - id: micro-behaviors/process/create/system::python-os-system-text
+      - id: micro-behaviors/communications/http/lib/requests::requests-post
+      - id: micro-behaviors/process/create/subprocess::process-execution
+  - id: agent-skill-tool-runtime-pip-install
+    desc: Agent skill tool installs packages at runtime
+    crit: hostile
+    conf: 0.95
+    scope: archive
+    all:
+      - id: well-known/app/ai/knowledge/agent-skills::skill-definition-file
+      - id: micro-behaviors/os/package-manager/install::subprocess-pip-install-list
+  - id: agent-skill-tool-file-env-exfil
+    desc: Agent skill tool posts file and env data out
+    crit: hostile
+    conf: 0.96
+    scope: archive
+    all:
+      - id: well-known/app/ai/knowledge/agent-skills::skill-definition-file
+      - id: micro-behaviors/communications/http/lib/requests::requests-post
+      - id: micro-behaviors/fs/file/read::file-content-read-operation
+
+  - id: agent-skill-tool-base64-payload-exec
+    desc: Agent skill tool executes base64 payload
+    crit: hostile
+    conf: 0.96
+    scope: archive
+    all:
+      - id: well-known/app/ai/knowledge/agent-skills::skill-definition-file
+      - id: objectives/anti-static/obfuscation/control-flow/logic::direct-base64-exec
