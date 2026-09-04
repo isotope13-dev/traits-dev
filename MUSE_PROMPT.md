@@ -1,30 +1,19 @@
 Triage these vetted-benign false positive(s):
-- /data/gauntlet-fp/6dbcaca0c33e6e3766e3df907f9e855bfe97f0a451d6c4aa11210754901ff2bb/v0.36.2.tar.gz — hostile: 7, suspicious: 0
+- /data/gauntlet-fp/0a4204a0cde4c413000a6e8ed15873ac1d423acb96feb29c35b96b98d5460696/2026081323-slskdn.304.tar.gz — hostile: 2, suspicious: 1
   - H objectives/collection/file-targeting/enumeration::silent-find-file-enumeration-upload — Silent file enumeration feeding curl transfer
-    members: /data/gauntlet-fp/6dbcaca0c33e6e3766e3df907f9e855bfe97f0a451d6c4aa11210754901ff2bb/v0.36.2.tar.gz!!agent-glovebox-0.36.2/.github/scripts/sbx-366-probe.sh
-  - H objectives/command-and-control/remote-command/llm/prompt::skill-tool-prompt-injection-agent-hijack — Skill tool injects agent-re-tasking instructions
-  - H objectives/credential-access/env/secrets/bulk-access::python-env-bulk-secret-harvest — Bulk environment scan filtered for credential keywords
-    members: /data/gauntlet-fp/6dbcaca0c33e6e3766e3df907f9e855bfe97f0a451d6c4aa11210754901ff2bb/v0.36.2.tar.gz!!agent-glovebox-0.36.2/tests/test_sbx_anthropic_auth.py, /data/gauntlet-fp/6dbcaca0c33e6e3766e3df907f9e855bfe97f0a451d6c4aa11210754901ff2bb/v0.36.2.tar.gz!!agent-glovebox-0.36.2/tests/test_sbx_anthropic_auth_offer.py, /data/gauntlet-fp/6dbcaca0c33e6e3766e3df907f9e855bfe97f0a451d6c4aa11210754901ff2bb/v0.36.2.tar.gz!!agent-glovebox-0.36.2/tests/test_sbx_anthropic_auth_relogin.py, /data/gauntlet-fp/6dbcaca0c33e6e3766e3df907f9e855bfe97f0a451d6c4aa11210754901ff2bb/v0.36.2.tar.gz!!agent-glovebox-0.36.2/tests/test_sbx_gh_token_kcov.py, /data/gauntlet-fp/6dbcaca0c33e6e3766e3df907f9e855bfe97f0a451d6c4aa11210754901ff2bb/v0.36.2.tar.gz!!agent-glovebox-0.36.2/tests/test_session_setup.py, /data/gauntlet-fp/6dbcaca0c33e6e3766e3df907f9e855bfe97f0a451d6c4aa11210754901ff2bb/v0.36.2.tar.gz!!agent-glovebox-0.36.2/tests/test_setup_monitor_key_gate.py
-  - H objectives/exfiltration/http/upload::curl-posts-named-file-to-url — curl posts named file to remote URL
-    members: /data/gauntlet-fp/6dbcaca0c33e6e3766e3df907f9e855bfe97f0a451d6c4aa11210754901ff2bb/v0.36.2.tar.gz!!agent-glovebox-0.36.2/evals/generate.py
-  - H objectives/supply-chain/recon-exfil/callback::npm-install-hook-ip-callback — Install hook calls a hardcoded IP endpoint
-  - H objectives/supply-chain/trojanized/app/package::agent-skill-tool-file-env-exfil — Agent skill tool posts file and env data out
-  - H objectives/supply-chain/trojanized/app/package::agent-skill-tool-prompt-injection — Agent skill tool carries prompt injection
+    members: /data/gauntlet-fp/0a4204a0cde4c413000a6e8ed15873ac1d423acb96feb29c35b96b98d5460696/2026081323-slskdn.304.tar.gz!!slskdN-2026081323-slskdn.304/packaging/smoke/package-smoke
+  - H objectives/command-and-control/dropper/delivery/download-execute::agent-skill-release-exe-curl-command — Skill release executable fetched via curl command
+    members: /data/gauntlet-fp/0a4204a0cde4c413000a6e8ed15873ac1d423acb96feb29c35b96b98d5460696/2026081323-slskdn.304.tar.gz!!slskdN-2026081323-slskdn.304/docs/self-hosted-relay-tester-guide.md, /data/gauntlet-fp/0a4204a0cde4c413000a6e8ed15873ac1d423acb96feb29c35b96b98d5460696/2026081323-slskdn.304.tar.gz!!slskdN-2026081323-slskdn.304/memory-bank/decisions/adr-0001-known-gotchas.md, /data/gauntlet-fp/0a4204a0cde4c413000a6e8ed15873ac1d423acb96feb29c35b96b98d5460696/2026081323-slskdn.304.tar.gz!!slskdN-2026081323-slskdn.304/memory-bank/progress.md
+  - S objectives/exfiltration/http/query::url-command-substitution — URL embeds command substitution output
+    members: /data/gauntlet-fp/0a4204a0cde4c413000a6e8ed15873ac1d423acb96feb29c35b96b98d5460696/2026081323-slskdn.304.tar.gz!!slskdN-2026081323-slskdn.304/tests/scripts/test-swarm.sh
 
-- /data/gauntlet-fp/770d12b0493622a3b822c50f3ba6388a2b60df4bd00183f374677a003767ec99/OpenShell-v0.0.114-0.20260825170443-38a94931ffa5.zip — hostile: 2, suspicious: 1
-  - H objectives/execution/autoinstall/pip::skill-tool-autoinstalls-pip-packages — Skill tool autoinstalls packages via pip
-  - H objectives/supply-chain/trojanized/app/package::agent-skill-tool-runtime-pip-install — Agent skill tool installs packages at runtime
-  - S objectives/supply-chain/hidden-payload/build-recipe::recipe-deletes-compiled-source — Recipe deletes the source it compiled
-    members: /data/gauntlet-fp/770d12b0493622a3b822c50f3ba6388a2b60df4bd00183f374677a003767ec99/OpenShell-v0.0.114-0.20260825170443-38a94931ffa5.zip!!OpenShell-38a94931ffa52f85b493094bcd46ab988016293b/tasks/scripts/vm/build-libkrun.sh
+- /data/gauntlet-fp/0676448fa35e559827dfc9f9fadd5b8fd0be390dc808cbca9e22b46efbe34e64/ameliabooking-2.4.7.zip — hostile: 1, suspicious: 0
+  - H objectives/collection/stealer/browser::js-xhr-cookie-skimmer — Browser script harvests cookies via XHR transport
+    members: /data/gauntlet-fp/0676448fa35e559827dfc9f9fadd5b8fd0be390dc808cbca9e22b46efbe34e64/ameliabooking-2.4.7.zip!!ameliabooking/public/js/paddle/paddle.js
 
-- /data/gauntlet-fp/7181f6aa0730caf888be592cf612cddb8987409fa4acf7393913c558da9b28d5/pywin32-222-cp27-cp27m-win32.whl — hostile: 1, suspicious: 1
-  - H objectives/supply-chain/install-hook/dropper/native-loader::python-import-time-runs-bundled-executable — Bundled native executable run at import
-  - S objectives/collection/stealer/workflow::windows-input-screen-clipboard-collector — Captures keystrokes, screen and clipboard
-    members: /data/gauntlet-fp/7181f6aa0730caf888be592cf612cddb8987409fa4acf7393913c558da9b28d5/pywin32-222-cp27-cp27m-win32.whl!!pythonwin/scintilla.dll
-
-- /data/gauntlet-fp/66edcda22c4e9f22948ca9fdf902b375d089bbd07cc23bcb9850d523e8a3a7c6/passenger-6.1.6.gem — hostile: 1, suspicious: 0
-  - H objectives/supply-chain/hidden-payload/build-recipe::configure-fetches-runs-remote-helper — Configure fetches and executes remote helper
-    members: /data/gauntlet-fp/66edcda22c4e9f22948ca9fdf902b375d089bbd07cc23bcb9850d523e8a3a7c6/passenger-6.1.6.gem!!data.tar.gz, /data/gauntlet-fp/66edcda22c4e9f22948ca9fdf902b375d089bbd07cc23bcb9850d523e8a3a7c6/passenger-6.1.6.gem!!data.tar.gz!!src/cxx_supportlib/vendor-copy/libuv/configure, /data/gauntlet-fp/66edcda22c4e9f22948ca9fdf902b375d089bbd07cc23bcb9850d523e8a3a7c6/passenger-6.1.6.gem!!data.tar.gz!!src/cxx_supportlib/vendor-modified/libev/configure
+- /data/gauntlet-fp/1a2f3766918752eba38d6e8bdafaae222dba99fcf5dba3caf114fee4bafa5587/open_interpreter-0.4.0-py3-none-any.whl — hostile: 1, suspicious: 0
+  - H objectives/credential-access/env/secrets/ai-provider::agent-tool-harvests-ai-keys-posts-out — AI provider keys harvested then posted out
+    members: /data/gauntlet-fp/1a2f3766918752eba38d6e8bdafaae222dba99fcf5dba3caf114fee4bafa5587/open_interpreter-0.4.0-py3-none-any.whl!!interpreter/computer_use/loop.py
 
 
 Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
