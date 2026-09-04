@@ -1,0 +1,76 @@
+# LLMjacking (resource hijacking of paid AI inference, T1496): a leaked
+# high-privilege AWS key is used to mint a fresh IAM identity, grant it
+# full admin, subscribe it to foundation models through the AWS Marketplace
+# Agreement Service, issue that identity a long-term Bedrock API key (an
+# IAM service-specific credential scoped to bedrock.amazonaws.com), and
+# invoke the model — all billed to the victim account.
+#
+# Subscription, key issuance and invocation are each ordinary usage on
+# their own (the Bedrock API-key docs show exactly that sequence for
+# onboarding). What turns them into the attack chain is the
+# AdministratorAccess grant, the brand-new identity, or the audit-log
+# deletion around them — so every rule here requires one of those
+# corroborating signals, mirroring the incident chain described in
+# FortiGuard Labs' "Someone Else Is Using Your AI".
+defaults:
+  platforms: [unix, windows]
+  for: [scripts, source, json]
+  attack: T1496
+
+composite_rules:
+  # Full-control grant followed by a long-term Bedrock key: no legitimate
+  # onboarding attaches AdministratorAccess before issuing a model key —
+  # the documented pattern attaches a Bedrock-scoped limited policy.
+  - id: aws-bedrock-credential-after-admin-grant
+    desc: Bedrock API key issued after AdministratorAccess grant
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: micro-behaviors/communications/http/services/aws::iam-administratoraccess-policy-reference
+      - id: micro-behaviors/communications/http/services/aws::bedrock-service-credential-parameter
+
+  # The persistence shape of the same chain: a brand-new IAM user that is
+  # immediately handed a long-term Bedrock key.
+  - id: aws-bedrock-api-key-for-new-identity
+    desc: Long-term Bedrock API key for newly created IAM user
+    crit: suspicious
+    conf: 0.88
+    all:
+      - id: micro-behaviors/communications/http/services/aws::iam-user-create-operation
+      - id: micro-behaviors/communications/http/services/aws::bedrock-service-credential-parameter
+
+  # Marketplace model subscription plus model invocation, corroborated by
+  # an identity or credential-issuance signal from the same artifact.
+  - id: aws-llmjacking-marketplace-subscription-chain
+    desc: Marketplace model subscription with identity or credential issuance
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: micro-behaviors/communications/http/services/aws::marketplace-agreement-operation
+      - id: micro-behaviors/communications/http/services/aws::bedrock-model-invocation-operation
+    any:
+      - id: micro-behaviors/communications/http/services/aws::iam-user-create-operation
+      - id: micro-behaviors/communications/http/services/aws::iam-administratoraccess-policy-reference
+      - id: micro-behaviors/communications/http/services/aws::bedrock-service-credential-parameter
+    needs: 1
+
+  # Model invocation from an artifact that also deletes the request-level
+  # invocation audit trail.
+  - id: aws-bedrock-invoke-model-audit-disabled
+    desc: Bedrock model invocation with invocation logging deleted
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: micro-behaviors/communications/http/services/aws::bedrock-model-invocation-operation
+      - id: micro-behaviors/communications/http/services/aws::bedrock-invocation-logging-delete-operation
+
+  # Long-term model key minted from an artifact that also deletes the
+  # request-level audit trail: key rotation does not require silencing
+  # the invocation log.
+  - id: aws-bedrock-key-issued-audit-disabled
+    desc: Bedrock key issued with audit logging deleted
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: micro-behaviors/communications/http/services/aws::bedrock-service-credential-parameter
+      - id: micro-behaviors/communications/http/services/aws::bedrock-invocation-logging-delete-operation
