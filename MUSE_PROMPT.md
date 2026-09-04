@@ -1,19 +1,9 @@
 Triage these vetted-benign false positive(s):
-- /data/gauntlet-fp/0a4204a0cde4c413000a6e8ed15873ac1d423acb96feb29c35b96b98d5460696/2026081323-slskdn.304.tar.gz — hostile: 2, suspicious: 1
-  - H objectives/collection/file-targeting/enumeration::silent-find-file-enumeration-upload — Silent file enumeration feeding curl transfer
-    members: /data/gauntlet-fp/0a4204a0cde4c413000a6e8ed15873ac1d423acb96feb29c35b96b98d5460696/2026081323-slskdn.304.tar.gz!!slskdN-2026081323-slskdn.304/packaging/smoke/package-smoke
-  - H objectives/command-and-control/dropper/delivery/download-execute::agent-skill-release-exe-curl-command — Skill release executable fetched via curl command
-    members: /data/gauntlet-fp/0a4204a0cde4c413000a6e8ed15873ac1d423acb96feb29c35b96b98d5460696/2026081323-slskdn.304.tar.gz!!slskdN-2026081323-slskdn.304/docs/self-hosted-relay-tester-guide.md, /data/gauntlet-fp/0a4204a0cde4c413000a6e8ed15873ac1d423acb96feb29c35b96b98d5460696/2026081323-slskdn.304.tar.gz!!slskdN-2026081323-slskdn.304/memory-bank/decisions/adr-0001-known-gotchas.md, /data/gauntlet-fp/0a4204a0cde4c413000a6e8ed15873ac1d423acb96feb29c35b96b98d5460696/2026081323-slskdn.304.tar.gz!!slskdN-2026081323-slskdn.304/memory-bank/progress.md
-  - S objectives/exfiltration/http/query::url-command-substitution — URL embeds command substitution output
-    members: /data/gauntlet-fp/0a4204a0cde4c413000a6e8ed15873ac1d423acb96feb29c35b96b98d5460696/2026081323-slskdn.304.tar.gz!!slskdN-2026081323-slskdn.304/tests/scripts/test-swarm.sh
-
-- /data/gauntlet-fp/0676448fa35e559827dfc9f9fadd5b8fd0be390dc808cbca9e22b46efbe34e64/ameliabooking-2.4.7.zip — hostile: 1, suspicious: 0
-  - H objectives/collection/stealer/browser::js-xhr-cookie-skimmer — Browser script harvests cookies via XHR transport
-    members: /data/gauntlet-fp/0676448fa35e559827dfc9f9fadd5b8fd0be390dc808cbca9e22b46efbe34e64/ameliabooking-2.4.7.zip!!ameliabooking/public/js/paddle/paddle.js
-
-- /data/gauntlet-fp/1a2f3766918752eba38d6e8bdafaae222dba99fcf5dba3caf114fee4bafa5587/open_interpreter-0.4.0-py3-none-any.whl — hostile: 1, suspicious: 0
-  - H objectives/credential-access/env/secrets/ai-provider::agent-tool-harvests-ai-keys-posts-out — AI provider keys harvested then posted out
-    members: /data/gauntlet-fp/1a2f3766918752eba38d6e8bdafaae222dba99fcf5dba3caf114fee4bafa5587/open_interpreter-0.4.0-py3-none-any.whl!!interpreter/computer_use/loop.py
+- /data/gauntlet-fp/a4188ed07e83fb2910d60f89b77c8a45217c4b25408ec6b43ab647b6bb228219/Koodo-Reader-2.4.3-arm64.exe — hostile: 0, suspicious: 2
+  - S objectives/anti-static/obfuscation/string/encoding::js-reverse-string-obfuscation — Reversed string feeding decode or dynamic execution
+    members: /data/gauntlet-fp/a4188ed07e83fb2910d60f89b77c8a45217c4b25408ec6b43ab647b6bb228219/Koodo-Reader-2.4.3-arm64.exe!!$PLUGINSDIR/app-arm64.7z, /data/gauntlet-fp/a4188ed07e83fb2910d60f89b77c8a45217c4b25408ec6b43ab647b6bb228219/Koodo-Reader-2.4.3-arm64.exe!!$PLUGINSDIR/app-arm64.7z!!resources/app.asar, /data/gauntlet-fp/a4188ed07e83fb2910d60f89b77c8a45217c4b25408ec6b43ab647b6bb228219/Koodo-Reader-2.4.3-arm64.exe!!$PLUGINSDIR/app-arm64.7z!!resources/app.asar!!node_modules/es-toolkit/dist/browser.global.js
+  - S well-known/malware/supply-chain/obelisk-sui-cli::obelisk-trojanized-release-pin — Pins the trojanized 0xobelisk release
+    members: /data/gauntlet-fp/a4188ed07e83fb2910d60f89b77c8a45217c4b25408ec6b43ab647b6bb228219/Koodo-Reader-2.4.3-arm64.exe!!$PLUGINSDIR/app-arm64.7z, /data/gauntlet-fp/a4188ed07e83fb2910d60f89b77c8a45217c4b25408ec6b43ab647b6bb228219/Koodo-Reader-2.4.3-arm64.exe!!$PLUGINSDIR/app-arm64.7z!!resources/app.asar, /data/gauntlet-fp/a4188ed07e83fb2910d60f89b77c8a45217c4b25408ec6b43ab647b6bb228219/Koodo-Reader-2.4.3-arm64.exe!!$PLUGINSDIR/app-arm64.7z!!resources/app.asar!!node_modules/adm-zip/package.json
 
 
 Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
