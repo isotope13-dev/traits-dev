@@ -66,6 +66,25 @@ traits:
       # beacon sending a dict of host fields reaches for `json=` at least as
       # often. Accepting only `data=` left the commoner spelling unmatched.
       regex: '(?m)^(requests|httpx)\.post\s*\(\s*["'']https?://[^\n]{0,220}\b(data|json)\s*='
+
+  # curl invoked through a subprocess argument list -- `Popen(["curl", "-sk",
+  # url])`. The shell-string curl atoms elsewhere anchor on `curl <flags> URL`
+  # with whitespace, which the list form (each token a separate quoted element)
+  # never presents. A beacon that shells out to curl instead of importing an
+  # HTTP client uses exactly this shape.
+  - id: beacon-curl-arglist
+    desc: curl invoked via subprocess arg list
+    crit: notable
+    conf: 0.85
+    if:
+      # A list literal whose first element is "curl"/"wget" is a subprocess
+      # argv -- `["curl", "-sk", url]`. Matched on the single opening element
+      # rather than the `Popen([...` that precedes it, because the call and the
+      # list often sit on separate lines and archive-member text matching does
+      # not reliably span the break. The install/import context and host-read
+      # legs supply the precision.
+      type: text
+      regex: '\[\s*["''](curl|wget)["'']\s*,'
 composite_rules:
   # An import-time beacon that does not depend on the file being named
   # `__init__.py`.
@@ -277,3 +296,61 @@ composite_rules:
       - id: objectives/credential-access/wallet/desktop::doteth-keystore
       - id: micro-behaviors/fs/path/sensitive/ssh::keys
       - id: micro-behaviors/fs/path/sensitive/credentials::container-credentials
+
+  # Shared context: this code runs as a side effect of installing or importing
+  # the package -- either the module the `import <pkg>` statement executes
+  # (`__init__.py`) or a setup.py install hook. Both are the delivery mechanism
+  # for a beacon: the victim never calls a function, the mere install/import
+  # fires it.
+  - id: runs-at-import-or-install
+    desc: Code runs at import or install time
+    crit: notable
+    conf: 0.9
+    any:
+      - id: metadata/file/profile/identity::init-py-file
+      - id: objectives/supply-chain/install-hook/proof-of-concept::package-install-hook-present
+      # A bare setup.py runs at build/install even without a cmdclass hook: pip
+      # executes it. The beacon legs (hostname read + curl) are what make the
+      # combination a verdict, so "this is a setup.py" is a sufficient context.
+      - id: metadata/build/pip::root-setup-py
+
+  # A host-identity beacon that exfiltrates via a curl subprocess rather than an
+  # HTTP client library. The import/install context fires it unbidden; reading
+  # the machine's hostname and handing it to `curl` in the same file is the
+  # dependency-confusion recon beacon -- who and where the package landed, sent
+  # to the attacker's collector the moment pip touches it. Suspicious on the
+  # mechanism: the payload is a single confirming request, but nothing legitimate
+  # shells out to curl with the hostname at install time.
+  - id: import-install-host-profile-curl-beacon
+    desc: Import/install host profile sent via curl
+    crit: suspicious
+    conf: 0.9
+    scope: outer
+    mbc: E1041
+    attack: "T1195.002,T1082,T1041"
+    all:
+      - id: runs-at-import-or-install
+      - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
+      - id: beacon-curl-arglist
+
+  # A resolve-only beacon: the package looks up an out-of-band / canary hostname
+  # at install or import, using DNS alone (`socket.gethostbyname(<token>.
+  # canarytokens.com)`) so no HTTP request is ever made. The DNS query is the
+  # signal -- a canary domain exists only to record that something resolved it,
+  # which confirms the package executed on a target. Suspicious: it carries
+  # little data, but a dependency-confusion probe and a real campaign's stage-one
+  # callback look identical here, and neither is packaging work.
+  - id: import-install-dns-oob-beacon
+    desc: Import/install DNS lookup of an OOB host
+    crit: suspicious
+    conf: 0.9
+    scope: outer
+    mbc: E1041
+    attack: "T1195.002,T1041"
+    all:
+      - id: runs-at-import-or-install
+      - id: objectives/exfiltration/oob/endpoint::oob-endpoint-any
+    any:
+      - id: micro-behaviors/communications/dns/lookup/resolver::gethostbyname
+      - id: micro-behaviors/communications/dns/lookup/resolver::getaddrinfo
+      - id: micro-behaviors/communications/dns/lookup/resolver::gethostbyname-ex
