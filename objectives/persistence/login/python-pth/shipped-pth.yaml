@@ -1,0 +1,52 @@
+# A distribution that ships an executable .pth file.
+#
+# The sibling rule in this directory catches code that *writes* a `.pth` into
+# site-packages. The trojanized elementary-data sdist does not need to: it
+# ships `elementary.pth` in the distribution, and pip installs it into
+# site-packages as a matter of course.
+#
+# `.pth` files are supposed to be a list of directories, one per line. A line
+# beginning with `import` is executed instead -- a documented corner of the
+# site module that almost nobody knows about. So the payload runs at
+# interpreter startup, in *every* Python process on the machine, whether or
+# not anything imports the package. That is a broader and more durable
+# foothold than an install hook (which runs once) or an import-time payload
+# (which needs the package to be used), and it survives the package never
+# being imported again.
+#
+# elementary-data's line reads `import os, subprocess, tempfile, base64; ... 
+# exec(base64.b64decode(...))`, guarded by a marker file in the temp directory
+# so it fires once per host.
+#
+# Keyed on the combination of the file being a `.pth` and its content being
+# code rather than paths, which is the part with no legitimate form: a real
+# path-configuration file has no reason to decode or execute anything.
+defaults:
+  platforms: [unix, windows]
+  for: [python, text]
+  attack: T1546,T1195.002
+  mbc: E1546
+
+traits:
+  - id: pth-distribution-file
+    desc: File is a Python path configuration
+    crit: component
+    conf: 0.95
+    if:
+      type: path
+      basename: true
+      regex: '(?i)\.pth$'
+
+composite_rules:
+  - id: shipped-pth-executes-encoded-payload
+    desc: Shipped .pth runs an encoded payload
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: pth-distribution-file
+      - id: micro-behaviors/data/decode/base64::b64decode-call
+    any:
+      - id: micro-behaviors/process/interpreter/python::exec-builtin
+      - id: micro-behaviors/process/create/subprocess::import-subprocess
+    unless:
+      - id: metadata/package/testing/

@@ -1,0 +1,55 @@
+# Executable code smuggled past the end of a manifest.
+#
+# A JSON document ends at its closing brace. Every parser stops there, so a
+# reviewer opening `package.json` -- in an editor, in a diff, on the GitHub
+# blob page -- sees a manifest that reads normally and ends normally. Anything
+# written after that brace is invisible to the reader and to the parser, but
+# not to a tool that evaluates the file as text.
+#
+# The Glassworm injection into `pedronauck/reworm` did exactly this: the
+# commit that carried it was titled `chore(deps): bump lodash`, authored as
+# dependabot, and appended two lines after the manifest's final `}` -- a
+# decoder and an `eval`. The stego rules elsewhere key on that decoder. This
+# one keys on the carrier, which is the part a variant cannot drop: the
+# payload has to sit past the terminator to stay unread, and it has to be
+# code to be worth putting there. Re-encode it, minify it, swap `eval` for
+# `Function`, move to `composer.json` or `deno.json`, and both facts hold.
+defaults:
+  platforms: [unix, windows]
+  for: [package.json, package-lock.json, json]
+  attack: T1027,T1195.002
+  mbc: B0032
+
+traits:
+  - id: manifest-does-not-parse
+    desc: Manifest is not well-formed
+    crit: notable
+    conf: 0.9
+    # Structural, not textual. A manifest that fails to parse has something in
+    # it the format does not allow -- here, a second document appended to the
+    # first. Independent of what that something says.
+    if:
+      type: metrics
+      field: parse.error_count
+      min: 1
+
+  - id: manifest-holds-js-declaration
+    desc: Manifest contains a JavaScript declaration
+    crit: notable
+    conf: 0.92
+    # `const`/`let`/`var` at the start of a line cannot occur in JSON at all:
+    # not as a key, not as a value, not inside a script string, which JSON
+    # would have to quote and escape onto one line. Its presence means a
+    # second, executable document shares the file.
+    if:
+      type: text
+      regex: '(?m)^\s*(const|let|var)\s+[\w$]{1,32}\s*='
+
+composite_rules:
+  - id: manifest-carries-appended-program
+    desc: Manifest carries appended executable code
+    crit: hostile
+    conf: 0.94
+    all:
+      - id: manifest-does-not-parse
+      - id: manifest-holds-js-declaration

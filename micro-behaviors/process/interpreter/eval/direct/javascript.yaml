@@ -17,47 +17,6 @@ traits:
       type: literal
       regex: '\beval\s*\(\s*[A-Za-z_$][A-Za-z0-9_$]*\.data\s*\)'
 
-  # Node's Module._compile is a runtime code-compilation capability. Keep
-  # this neutral; remote-response and package context belong in objectives.
-  - id: module-compile-marker
-    desc: Node Module._compile runtime-code method
-    crit: notable
-    conf: 0.95
-    attack: T1059.007
-    if:
-      # The Module instance is commonly held in a short local alias. Match
-      # the parsed call target so `_m._compile(source, filename)` is not lost
-      # while comments and string literals cannot supply the behavior.
-      type: symbol
-      kind: call
-      regex: '(^|\.)_compile$'
-
-  - id: module-compile-hex-hidden
-    desc: Hex-hidden Node _compile method
-    crit: notable
-    conf: 0.96
-    attack: T1027,T1059.007
-    if:
-      type: encoded
-      encoding: hex
-      exact: _compile
-
-  - id: js-async-function-constructor
-    desc: JavaScript AsyncFunction compiles code
-    crit: notable
-    conf: 0.95
-    attack: T1059.007
-    if:
-      type: symbol
-      kind: call
-      exact: AsyncFunction
-      arg:
-        kind: identifier
-  # `evaluate` is an ordinary user-defined name (template engines, expression
-  # parsers, Puppeteer's page.evaluate), so the call shape alone establishes no
-  # behavior — it only acquires meaning next to a payload source. Kept as a
-  # component so dropper composites can join it to their own evidence without
-  # this fragment claiming a remote-configuration read on its own.
   - id: evaluate-helper-identifier-call
     desc: Calls evaluate() on an identifier
     crit: component
@@ -142,104 +101,6 @@ traits:
             (#eq? @inner "from")
             (#eq? @outer "toString"))
         ]
-  - id: function-ctor-call-expr-arg
-    desc: Builds JavaScript function from call result
-    crit: notable
-    conf: 0.8
-    if:
-      type: symbol
-      kind: call
-      exact: Function
-      arg: {kind: call}
-  - id: js-new-function-constructor
-    desc: Calls JavaScript's new Function constructor
-    crit: notable
-    conf: 0.7
-    if:
-      # Match the executable constructor node rather than comments or string
-      # literals that merely document `new Function(...)`.
-      type: tree-sitter
-      language: javascript
-      query: |
-        (new_expression
-          constructor: (identifier) @name
-          (#eq? @name "Function"))
-    unless:
-      - type: text
-        substr: "new Function('return this')"
-      - type: text
-        substr: 'new Function("return this")'
-      # gettext/plural-form evaluators compile `nplurals` formulas as
-      # `new Function("n", "return " + formula)` — not dynamic malware eval.
-      - type: text
-        substr: 'new Function("n", "return "'
-      - type: text
-        substr: "new Function('n', 'return '"
-      - id: metadata/library/structure::js-large-minified-bundle
-      - id: well-known/lib/web/jquery/
-  - id: js-function-constructor-require-parameter
-    desc: Function constructor takes require parameter
-    crit: notable
-    conf: 0.95
-    attack: T1059.007
-    if:
-      type: text
-      regex: 'new\s+Function\s*\(\s*[''\"]require[''\"]\s*,'
-  - id: js-function-constructor-require-invocation
-    desc: Invokes generated function with Node require
-    crit: notable
-    conf: 0.97
-    attack: T1059.007
-    if:
-      type: text
-      regex: 'new\s+Function\s*\(\s*[''\"]require[''\"][^\n)]{1,120}\)\s*\(\s*require\s*\)'
-  - id: js-function-constructor
-    desc: Constructs a JavaScript function dynamically
-    crit: notable
-    conf: 0.9
-    if:
-      # Require a JavaScript call node. The generic symbol fact extractor can
-      # classify R documentation such as `function(x, y)` as a call to the
-      # JavaScript Function constructor.
-      type: tree-sitter
-      language: javascript
-      query: |
-        (call_expression
-          function: (identifier) @fn
-          arguments: (arguments)
-          (#eq? @fn "Function"))
-    unless:
-      - id: micro-behaviors/data/source/dynamic/eval::new-function-return-this
-      # gettext plural-formula compilers (see js-new-function-constructor).
-      - type: text
-        substr: 'new Function("n", "return "'
-      - type: text
-        substr: "new Function('n', 'return '"
-      # R documentation is sometimes content-typed as JavaScript; its
-      # examples and prose must not become constructor evidence.
-      - type: path
-        regex: '(?i)\.R(?:d|md)$'
-      # Dart is also content-typed as JavaScript. Type annotations such as
-      # `Future<void> Function() body` are not Function() constructor calls.
-      - type: path
-        regex: '(?i)\.dart$'
-  - id: js-new-function-variable-argument
-    desc: Function constructor receives identifier
-    crit: notable
-    conf: 0.85
-    if:
-      # The JavaScript fact extractor records this `new Function(name)` form
-      # in the call facts, but the symbol matcher indexes imports/exports and
-      # misses constructor calls.  Match the source form directly so the
-      # capability is retained for loader composites.
-      type: text
-      regex: 'new\s+Function\s*\(\s*[A-Za-z_$][A-Za-z0-9_$]*\s*\)'
-    unless:
-      # Bundlers commonly retain formula/i18n evaluators in otherwise benign
-      # application libraries. The surrounding generated bundle is not enough
-      # evidence to call this a dynamic loader; loader composites add their
-      # own payload and execution context.
-      - id: metadata/library/structure::js-large-minified-bundle
   - id: js-commonjs-module-wrapper
     desc: CommonJS text evaluation wrapper
     crit: notable
@@ -247,21 +108,6 @@ traits:
     if:
       type: text
       regex: 'new\s+Function\s*\(\s*["'']require["'']\s*,\s*["'']exports["'']\s*,\s*text\s*\)'
-  - id: js-indirect-function-constructor
-    desc: Function constructor via prototype chain
-    crit: notable
-    conf: 0.9
-    # `[].constructor.constructor`, `"".constructor.constructor`,
-    # `({}).constructor.constructor` all resolve to the Function constructor
-    # without ever writing the literal token `Function`/`eval`. This indirection
-    # is an evasion idiom used to keep the dynamic-execution sink out of reach of
-    # static `Function(`/`eval(` greps; legitimate code reaches Function directly.
-    if:
-      type: text
-      regex: '\.constructor\s*\.\s*constructor\b'
-    unless:
-      - id: metadata/library/structure::js-large-minified-bundle
-
   - id: js-empty-function-charcode-property
     desc: Empty function has char-coded property
     crit: component

@@ -20,6 +20,7 @@
 defaults:
   platforms: [linux, macos, windows, unix, android, ios]
   for: [python]
+  attack: T1059.006
 composite_rules:
   # Compression and JSON parsing are neutral capabilities. Obfuscation intent
   # requires the decoded data to feed dynamic execution in the same file.
@@ -28,7 +29,6 @@ composite_rules:
     crit: hostile
     conf: 0.90
     mbc: "E1059"
-    attack: "T1059.006"
     # Require real dynamic execution (exec/eval), not bare "compile" word
     # matches in user-facing strings, and keep decompress+JSON near the sink.
     near_bytes: 2048
@@ -45,3 +45,22 @@ composite_rules:
       # (task/reference/spec) before any one of them reaches exec/eval,
       # rather than the decoded bytes being executed directly.
       - id: micro-behaviors/data/serialize/jsonl::comprehension-parse
+
+  # The XOR twin of the composite above: instead of gzip+JSON, the decoded
+  # bytes pass through a hand-rolled single-byte XOR comprehension and a
+  # Base64 layer before reaching exec(compile(...)). Legs are text-scoped
+  # (for covers text) so the loader is also seen inside unified diffs,
+  # where added lines carry a `+` prefix but the byte patterns survive.
+  # Seen in a malicious watercrawl-py commit (2025): `__import__('zlib')`
+  # and `__import__('base64')` under single-letter aliases, `bytes([b ^
+  # 134 for b in ...])`, then `exec(compile(...))`.
+  - id: xor-b64-exec-compile-loader
+    desc: XOR and Base64 decoded exec-compile loader
+    crit: hostile
+    conf: 0.93
+    for: [python, text]
+    near_lines: 25
+    all:
+      - id: micro-behaviors/process/interpreter/python::exec-compiled-code
+      - id: micro-behaviors/crypto/symmetric/xor/loop::python-xor-bytes-comprehension
+      - id: micro-behaviors/data/decode/base64::b64decode-string

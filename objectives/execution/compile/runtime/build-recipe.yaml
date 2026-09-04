@@ -37,6 +37,29 @@ traits:
       type: text
       regex: '\./[\w.-]{1,40}\s*\|\s*(sh|bash)\b'
 
+  # A build recipe that evaluates a computed variable and pipes the result
+  # into a shell executes content that exists nowhere in the tree as text.
+  # Probes read exit statuses; `eval $var | $SHELL` runs the variable.
+  - id: build-eval-variable-piped-to-shell
+    desc: Evaluated build variable piped to a shell
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: 'eval\s+\$[A-Za-z_][\w$]*\s*\|\s*(\$SHELL|\bsh\b|\bbash\b)'
+
+  # A `tr` invocation whose first translation set carries escape sequences
+  # is a staged stream decoder, not whitespace normalization: ordinary
+  # plumbing (`tr -d '\r'`, `tr 'a-z' 'A-Z'`, single-char separators) never
+  # needs escapes inside a set.
+  - id: recipe-staged-tr-decoder
+    desc: Build recipe stages a tr stream decoder
+    crit: component
+    conf: 0.88
+    if:
+      type: text
+      regex: 'tr\s+[''"][^''"]{0,40}\\[tnr\\][^''"]{0,40}[''"]\s+[''"][^''"]{2,80}[''"]'
+
 composite_rules:
   - id: build-recipe-executes-program-output
     desc: Build recipe shells its own program output
@@ -49,3 +72,19 @@ composite_rules:
       # The helper prints something that is not in the file as text -- the
       # payload lives only in the pipe between it and the shell.
       - id: micro-behaviors/crypto/symmetric/xor/emit::xor-decoded-array-to-stream
+
+  # The tr-decoded twin of the composite above: instead of compiling a
+  # helper, the recipe decodes a byte stream with a staged `tr` decoder and
+  # evals the result into a shell. Same tell -- the executed script exists
+  # nowhere in the tree -- reached through translation tables rather than a
+  # compiler. Seen in the xz 5.6.0/5.6.1 build-to-host stage one, where a
+  # `tr "\t \-_\" \" \t_\-"` map feeds `eval $gl_config_gt | $SHELL`.
+  - id: build-recipe-executes-decoded-variable
+    desc: Build recipe executes a decoded variable
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: build-eval-variable-piped-to-shell
+      - id: recipe-staged-tr-decoder
+    unless:
+      - id: metadata/package/testing/

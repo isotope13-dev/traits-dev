@@ -1,0 +1,38 @@
+# A CI workflow that asks for an identity token and then runs unreadable code.
+#
+# `permissions: id-token: write` is the switch that makes a GitHub Actions job
+# able to mint an OIDC token -- the credential that federates into AWS, GCP or
+# Azure without a stored secret. It is granted deliberately, per workflow, and
+# a job that does not federate has no reason to ask for it.
+#
+# The trojanized tiledesk release shipped a workflow that requests exactly
+# that permission and whose build step is `echo <base64> | base64 -d | bash`.
+# The supply-chain rules already convict the encoded step. This states the
+# consequence a responder has to act on immediately: the job held a live
+# federation credential while running code nobody could read, so the token and
+# everything it federates into must be treated as compromised.
+#
+# Decoding that particular blob by hand shows it reading
+# `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, `GITHUB_TOKEN`, `CI_JOB_JWT_V2`, the AWS
+# IMDSv2 role credentials, and the GCP and Azure metadata endpoints -- but the
+# rule deliberately does not depend on seeing any of that, because cleave does
+# not decode base64 inside a workflow file. The permission grant and the
+# opaque step are both visible, and together they are enough.
+defaults:
+  platforms: [unix]
+  for: [github-actions, shell, text]
+  attack: T1552.007,T1195.002
+  mbc: E1552
+
+composite_rules:
+  - id: oidc-permission-with-opaque-shell-step
+    desc: OIDC-enabled job runs an opaque step
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: metadata/build/ci/permission::id-token-write-permission
+    any:
+      - id: objectives/anti-static/obfuscation/encoding/base64::base64-d-pipe-bash
+      - id: objectives/anti-static/obfuscation/encoding/base64::base64-decode-exec
+    unless:
+      - id: metadata/package/testing/
