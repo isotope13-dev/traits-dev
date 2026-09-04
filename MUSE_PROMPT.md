@@ -1,7 +1,9 @@
 Triage these vetted-benign false positive(s):
-- /data/gauntlet-fp/7e6d7bc77517883fef116b0ef49880b810373ee46cb54bbb026a9811ea2abdd2/unsloth-2026.8.19-py3-none-any.whl — hostile: 1, suspicious: 0
-  - H objectives/exfiltration/dns/lookup::python-identity-label-dns-beacon — Host identity leaves as DNS query labels
-    members: /data/gauntlet-fp/7e6d7bc77517883fef116b0ef49880b810373ee46cb54bbb026a9811ea2abdd2/unsloth-2026.8.19-py3-none-any.whl!!studio/backend/run.py
+- /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg — hostile: 0, suspicious: 3
+  - S objectives/anti-static/obfuscation/obfuscator/signature::pyarmor-runtime-call — PyArmor runtime call
+    members: /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/Auth/license_manager.py
+  - S objectives/supply-chain/recon-exfil/import-time::import-install-dns-oob-beacon — Import/install DNS lookup of an OOB host
+  - S objectives/supply-chain/recon-exfil/import-time::import-install-host-profile-curl-beacon — Import/install host profile sent via curl
 
 
 Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
