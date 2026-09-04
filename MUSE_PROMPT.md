@@ -1,9 +1,7 @@
 Triage these vetted-benign false positive(s):
-- /data/gauntlet-fp/a4188ed07e83fb2910d60f89b77c8a45217c4b25408ec6b43ab647b6bb228219/Koodo-Reader-2.4.3-arm64.exe — hostile: 0, suspicious: 2
-  - S objectives/anti-static/obfuscation/string/encoding::js-reverse-string-obfuscation — Reversed string feeding decode or dynamic execution
-    members: /data/gauntlet-fp/a4188ed07e83fb2910d60f89b77c8a45217c4b25408ec6b43ab647b6bb228219/Koodo-Reader-2.4.3-arm64.exe!!$PLUGINSDIR/app-arm64.7z, /data/gauntlet-fp/a4188ed07e83fb2910d60f89b77c8a45217c4b25408ec6b43ab647b6bb228219/Koodo-Reader-2.4.3-arm64.exe!!$PLUGINSDIR/app-arm64.7z!!resources/app.asar, /data/gauntlet-fp/a4188ed07e83fb2910d60f89b77c8a45217c4b25408ec6b43ab647b6bb228219/Koodo-Reader-2.4.3-arm64.exe!!$PLUGINSDIR/app-arm64.7z!!resources/app.asar!!node_modules/es-toolkit/dist/browser.global.js
-  - S well-known/malware/supply-chain/obelisk-sui-cli::obelisk-trojanized-release-pin — Pins the trojanized 0xobelisk release
-    members: /data/gauntlet-fp/a4188ed07e83fb2910d60f89b77c8a45217c4b25408ec6b43ab647b6bb228219/Koodo-Reader-2.4.3-arm64.exe!!$PLUGINSDIR/app-arm64.7z, /data/gauntlet-fp/a4188ed07e83fb2910d60f89b77c8a45217c4b25408ec6b43ab647b6bb228219/Koodo-Reader-2.4.3-arm64.exe!!$PLUGINSDIR/app-arm64.7z!!resources/app.asar, /data/gauntlet-fp/a4188ed07e83fb2910d60f89b77c8a45217c4b25408ec6b43ab647b6bb228219/Koodo-Reader-2.4.3-arm64.exe!!$PLUGINSDIR/app-arm64.7z!!resources/app.asar!!node_modules/adm-zip/package.json
+- /data/gauntlet-fp/7e6d7bc77517883fef116b0ef49880b810373ee46cb54bbb026a9811ea2abdd2/unsloth-2026.8.19-py3-none-any.whl — hostile: 1, suspicious: 0
+  - H objectives/exfiltration/dns/lookup::python-identity-label-dns-beacon — Host identity leaves as DNS query labels
+    members: /data/gauntlet-fp/7e6d7bc77517883fef116b0ef49880b810373ee46cb54bbb026a9811ea2abdd2/unsloth-2026.8.19-py3-none-any.whl!!studio/backend/run.py
 
 
 Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
