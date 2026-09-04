@@ -97,15 +97,38 @@ traits:
     if:
       type: tree-sitter
       language: python
+      # The argument must not be a plain string literal. `exec` over a constant
+      # written in the source hides nothing and executes exactly what an
+      # analyst can already read -- sympy's abc.py builds its symbol namespace
+      # with `exec('from sympy import *', ns)` at module scope. The shapes this
+      # trait is for keep matching: the crytic-compile typosquat's
+      # `exec("subprocess.run(...'s.exe')" if sys.platform == 'win32' else
+      # "pass")` is a conditional expression, and the decoded-payload form
+      # `exec(base64.b64decode(blob))` is a call.
+      #
+      # `compile()` over a literal is the same constant, one indirection on:
+      # pip's setuptools_build.py holds `exec(compile('''...''')` inside the
+      # triple-quoted `_SETUPTOOLS_SHIM` template it writes into a subprocess,
+      # and the archive-member parse reads that string body as code. A payload
+      # that compiles decoded bytes (`exec(compile(decoded, ...))`) still
+      # matches, because its argument is not a literal.
       query: |
         ((module
            (expression_statement
-             (call function: (identifier) @fn)))
-         (#eq? @fn "exec"))
+             (call function: (identifier) @fn
+                   arguments: (argument_list . [
+                     (call) (identifier) (attribute) (subscript)
+                     (conditional_expression) (binary_operator)] @arg))))
+         (#eq? @fn "exec")
+         (#not-match? @arg "^compile\\([bruBRUf]{0,2}['\"]"))
         ((module
            (expression_statement
-             (assignment right: (call function: (identifier) @fn))))
-         (#eq? @fn "exec"))
+             (assignment right: (call function: (identifier) @fn
+                   arguments: (argument_list . [
+                     (call) (identifier) (attribute) (subscript)
+                     (conditional_expression) (binary_operator)] @arg)))))
+         (#eq? @fn "exec")
+         (#not-match? @arg "^compile\\([bruBRUf]{0,2}['\"]"))
     unless:
       # A scanner's corpus demonstrates the pattern it detects: agent-glovebox
       # ships tests/staticscan_fixtures/python_exec_decoded_payload.py, four
