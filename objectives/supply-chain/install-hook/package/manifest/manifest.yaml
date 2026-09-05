@@ -115,16 +115,24 @@ traits:
     unless:
       - id: metadata/package/testing/presence/harness::example-directory
   # An install hook that redirects a command's stdout over a source file
-  # rewrites the package on the consumer's machine: whatever the hook prints
-  # becomes code that require() loads. void-elements@0.1.1 regenerates its own
-  # `main` this way from a scraped web page, so the module that runs is never
-  # the module that was published or reviewed. The shape is ecosystem-agnostic
-  # -- the redirect target is a module the package itself loads -- and it is
-  # the hook phase that matters: a `build`/`prepare` script generating sources
-  # runs for the author, preinstall and postinstall run for every consumer.
+  # generates code on the consumer's machine: whatever the hook prints becomes
+  # a module require() can load. void-elements@0.1.1 regenerates its own `main`
+  # this way from a scraped web page, so the module that runs is never the
+  # module that was published or reviewed. The shape is ecosystem-agnostic --
+  # the redirect target is a module the package itself loads -- and it is the
+  # hook phase that matters: a `build`/`prepare` script generating sources runs
+  # for the author, preinstall and postinstall run for every consumer.
+  #
+  # The redirect on its own is notable, not suspicious: install-time codegen is
+  # ordinary practice. jsonpath ships `node lib/aesprim.js > generated/
+  # aesprim-browser.js`, which patches the already-installed esprima into a
+  # browser build -- purely local, no network, and unchanged since 1.0.1.
+  # What convicts is the *input* to the redirect, so the composites below
+  # supply it: content pulled over cleartext HTTP, or dependencies fetched by
+  # the same hook that then rewrites the package's own sources.
   - id: preinstall-writes-module-source
     desc: preinstall redirects output into a module file
-    crit: suspicious
+    crit: notable
     conf: 0.93
     attack: "T1195.002"
     if:
@@ -133,7 +141,7 @@ traits:
       regex: '>\s*[\w./-]{0,40}\.(js|mjs|cjs|ts|py|rb)\b'
   - id: postinstall-writes-module-source
     desc: postinstall redirects output into a module file
-    crit: suspicious
+    crit: notable
     conf: 0.93
     attack: "T1195.002"
     if:
@@ -738,15 +746,35 @@ composite_rules:
     unless:
       - id: well-known/app/ai/knowledge/lean-ctx::source-tree-path
 
+  # The other half of the void-elements shape, and the one that does not depend
+  # on the fetch happening to be cleartext. A hook that first installs packages
+  # and then redirects a command's stdout over one of the package's own module
+  # files rebuilds the shipped source from code that was resolved at install
+  # time -- unpinned, unreviewed, and different on every machine and every day.
+  # Install-time codegen from material already in the tarball (jsonpath's
+  # `node lib/aesprim.js > generated/...`) does not reach for a package manager
+  # first, so it does not match.
+  - id: install-hook-installs-deps-then-rewrites-module-source
+    desc: Install hook installs deps then rewrites module source
+    crit: suspicious
+    conf: 0.94
+    attack: "T1195.002"
+    mbc: B0024
+    all:
+      - id: install-hook-runs-pkg-install
+    any:
+      - id: preinstall-writes-module-source
+      - id: postinstall-writes-module-source
+
   # The two halves of void-elements@0.1.1 read together. The manifest hook
   # redirects a script's stdout over a module file, and somewhere in the
   # package that script fetches its content over cleartext HTTP. The result is
   # that the module `require()` loads is whatever an on-path attacker returns
   # -- no lockfile, integrity hash, or TLS covers it, and it is re-fetched on
   # every install forever. Archive scope is safe here because
-  # `*-writes-module-source` is a rare leg: a hook that writes over a source
-  # file is not something ordinary packages do, so it cannot pool with
-  # unrelated code the way a bare "has a hook" leg would.
+  # `*-writes-module-source` is a narrow leg: a hook that writes over a
+  # source file is uncommon, so it cannot pool with unrelated code the way
+  # a bare "has a hook" leg would.
   - id: install-hook-rebuilds-module-over-cleartext-http
     desc: Install hook rebuilds a module from cleartext HTTP
     crit: hostile
