@@ -1,0 +1,147 @@
+# Userspace control of the Linux IPsec data path: XFRM netlink security
+# associations, PF_KEYv2, the ESP IP protocol number and the ESP-in-UDP/TCP
+# encapsulation template.
+#
+# Filed here beside netlink.yaml and af_alg.yaml because what these matchers
+# find is the socket surface -- the family and protocol selectors a program
+# passes to socket(), plus the message types it writes over that socket.
+#
+# Every atom is a neutral capability. strongSwan, libreswan, iproute2,
+# systemd-networkd and the kernel's own selftests all install SAs this way, so
+# nothing below rises above `notable` on its own. Their security value is as
+# the context gate for the esp4/esp6 page-cache write exploits (Dirty Frag,
+# CVE-2026-43284 / CVE-2026-46300), which have to reach esp_input() through
+# exactly this API before a shared-page write primitive means anything -- see
+# objectives/privilege-escalation/exploit/kernel/dirtyfrag-esp.yaml.
+#
+# The kernel-tree exclusions are mandatory: net/xfrm/, net/ipv4/esp4.c and
+# include/uapi/linux/xfrm.h define every one of these names, so without them a
+# Linux source checkout reads as IPsec SA installation. Same list af_alg and
+# af_can carry.
+defaults:
+  platforms: [linux]
+  for: [c, cpp, rust, go, python, elf]
+  crit: notable
+  conf: 0.9
+
+traits:
+  # socket(AF_NETLINK, SOCK_RAW, NETLINK_XFRM) -- the SA/policy control channel.
+  # Written as a proximity regex rather than a call-argument match because the
+  # protocol selector is usually a locally defined integer constant, which is
+  # how every non-C binding spells it.
+  - id: xfrm-netlink-socket
+    desc: Opens a NETLINK_XFRM IPsec control socket
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)(AF_NETLINK[^\n]{0,100}NETLINK_XFRM|NETLINK_XFRM[^\n]{0,100}AF_NETLINK)'
+    unless:
+      - id: metadata/lang/source::linux-kernel-secondary-tree-path
+      - id: metadata/lang/source::linux-kernel-primary-tree-path
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+
+  # The netlink message types that create or replace a security association or
+  # policy. Read-only types (GETSA, GETPOLICY) are deliberately absent:
+  # querying the SAD is monitoring, writing to it is control.
+  - id: xfrm-sa-install-message
+    desc: XFRM netlink message installing an SA
+    conf: 0.93
+    if:
+      type: text
+      regex: '\bXFRM_MSG_(NEW|UPD)(SA|POLICY)\b'
+    unless:
+      - id: metadata/lang/source::linux-kernel-secondary-tree-path
+      - id: metadata/lang/source::linux-kernel-primary-tree-path
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+
+  - id: xfrm-usersa-info-struct
+    desc: Builds an XFRM security-association record
+    conf: 0.93
+    if:
+      type: text
+      regex: '\bxfrm_user(sa|policy)_(info|id)\b'
+    unless:
+      - id: metadata/lang/source::linux-kernel-secondary-tree-path
+      - id: metadata/lang/source::linux-kernel-primary-tree-path
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+
+  # IP protocol 50. Selects the esp4/esp6 receive path for a raw socket or an
+  # SA id -- the code that performs the in-place decrypt.
+  - id: esp-protocol-selector
+    desc: Selects the ESP IP protocol (IPPROTO_ESP)
+    conf: 0.9
+    if:
+      type: text
+      word: IPPROTO_ESP
+    unless:
+      - id: metadata/lang/source::linux-kernel-secondary-tree-path
+      - id: metadata/lang/source::linux-kernel-primary-tree-path
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+
+  # ESP-in-UDP / ESP-in-TCP encapsulation. The encap template is what routes an
+  # SA's traffic back through IP reassembly before esp_input() sees it.
+  - id: esp-encapsulation-template
+    desc: Configures ESP-in-UDP or ESP-in-TCP encap
+    conf: 0.93
+    if:
+      type: text
+      regex: '\b(UDP_ENCAP_ESPINUDP(_NON_IKE)?|TCP_ENCAP_ESPINTCP|xfrm_encap_tmpl)\b'
+    unless:
+      - id: metadata/lang/source::linux-kernel-secondary-tree-path
+      - id: metadata/lang/source::linux-kernel-primary-tree-path
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+
+  # PF_KEYv2 (RFC 2367) is the other userspace SA-management API and reaches
+  # the same esp4/esp6 code without touching netlink.
+  - id: pfkey-sa-install-message
+    desc: PF_KEYv2 message installing an IPsec SA
+    conf: 0.93
+    if:
+      type: text
+      regex: '\bSADB_(ADD|UPDATE|GETSPI)\b'
+    unless:
+      - id: metadata/lang/source::linux-kernel-secondary-tree-path
+      - id: metadata/lang/source::linux-kernel-primary-tree-path
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+
+composite_rules:
+  # Installing an SA needs both the control channel and an install message; the
+  # pair separates a program that manages IPsec state from one that only
+  # mentions the constants.
+  - id: xfrm-sa-installation
+    desc: Installs an IPsec SA over XFRM netlink
+    crit: notable
+    conf: 0.95
+    all:
+      - id: xfrm-netlink-socket
+      - id: xfrm-sa-install-message
+
+  # Canonical "this code drives the kernel ESP data path" fact, whichever of the
+  # userspace routes it takes. Composites elsewhere use it as a gate.
+  - id: ipsec-esp-datapath-control
+    desc: Drives the Linux kernel IPsec ESP data path
+    crit: notable
+    conf: 0.93
+    any:
+      - id: xfrm-sa-installation
+      - id: pfkey-sa-install-message
+      - id: esp-encapsulation-template
+      - id: esp-protocol-selector
