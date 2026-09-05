@@ -47,8 +47,15 @@ traits:
       type: text
       substr: System.DirectoryServices.AccountManagement
   - id: principal-context-construction
-    desc: PrincipalContext credential validator
-    crit: suspicious
+    # A bare PrincipalContext construction is the standard .NET/PowerShell
+    # idiom for binding to AD -- self-service password portals, login
+    # forms, and DSC resource modules (e.g. SharePointDsc's PrepVariables.ps1,
+    # which validates one interactively-supplied credential) all construct
+    # this before a single, non-looped ValidateCredentials call. That is a
+    # common capability worth surfacing, not a rare/malicious one on its own;
+    # the composite below adds the loop evidence that makes it suspicious.
+    desc: PrincipalContext credential validator built
+    crit: notable
     conf: 0.92
     attack: T1110.001
     if:
@@ -86,6 +93,22 @@ traits:
     if:
       type: text
       regex: '(?i)\bDirectoryEntry\s*\(.{0,80},\s*\$user\s*,\s*\$pass'
+  - id: credential-guess-loop
+    desc: Credential-validation call runs inside a loop
+    # The distinguishing feature of guessing (vs. a single idempotency check)
+    # is that the validation call repeats over a candidate set. Matching the
+    # call textually *inside* a loop body is the concrete signal the sibling
+    # atoms above cannot express alone.
+    crit: suspicious
+    conf: 0.93
+    attack: T1110.001
+    if:
+      type: tree-sitter
+      kind: loop
+      regex: '(?i)ValidateCredentials\s*\(|DirectoryEntry\s*\(.{0,80},\s*\$user\s*,\s*\$pass'
+    unless:
+      - id: check-credentials-test-helper
+      - id: check-credentials-script-basename
 composite_rules:
   - id: authenticode-verification-workflow
     desc: PowerShell Authenticode verification workflow
@@ -96,13 +119,14 @@ composite_rules:
       - id: signer-subject-access
       - id: valid-signature-status-check
   - id: directoryservices-credential-validation
-    desc: PowerShell DirectoryServices credential validation
+    desc: PowerShell DirectoryServices credential-guessing loop
     crit: suspicious
     conf: 0.96
     attack: T1110.001
     all:
       - id: principal-context-construction
       - id: validate-credentials-call
+      - id: credential-guess-loop
     any:
       - id: directoryservices-accountmanagement
       - id: directoryentry-credential-bind
