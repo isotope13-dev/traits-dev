@@ -126,13 +126,17 @@ traits:
     type: text
     regex: '(?i)\b(remove_encrypted_hash|clear_encrypted_hash|reset_encrypted_hash)\s*\('
 - id: chromium-native-messaging-host-value
-  desc: Native Messaging key names executable
+  desc: Native Messaging key names host manifest
   crit: notable
   conf: 0.95
   for: [scripts, source, data, pe, dll, elf]
   if:
+    # The registered value is the path to the host's JSON manifest on Windows
+    # (Chromium reads the manifest, which then names the binary); registrations
+    # that point straight at an executable exist too. Matching only `.exe`
+    # missed the documented -- and far more common -- manifest form outright.
     type: text
-    regex: '(?i)NativeMessagingHosts[\s\S]{0,120}\.exe\b'
+    regex: '(?i)NativeMessagingHosts[\s\S]{0,160}\.(exe|json)\b'
 - id: chromium-native-messaging-browser-launch
   desc: Chromium browser launch action
   crit: notable
@@ -413,3 +417,48 @@ composite_rules:
   - id: micro-behaviors/communications/http/client/managed::downloaddata
   - id: objectives/evasion/self-delete/file/batch::batch-ping-delay-delete
   needs: 2
+
+# Registering an extension through Chromium's external-install surfaces -- the
+# per-extension `...\Chrome\Extensions\<id>` key or an `External Extensions`
+# JSON drop -- points the browser at an update manifest or CRX the installer
+# chose. This is a documented OEM/application bundling path, which is why it is
+# suspicious rather than hostile on its own: what it is not is something that
+# belongs in an unrelated program, and the browser will re-fetch and re-install
+# from it after the extension is deleted.
+- id: chromium-external-extension-sideload
+  desc: Registers an external Chromium extension
+  crit: suspicious
+  conf: 0.94
+  attack: T1176,T1112
+  for: [scripts, source, binaries, data]
+  any:
+  - id: micro-behaviors/os/registry/keys::chromium-external-extensions-subkey
+  - id: micro-behaviors/fs/path/application/browser::chromium-external-extensions-directory
+  - id: micro-behaviors/os/security/webextension::external-extension-update-url-field
+  - id: micro-behaviors/os/security/webextension::external-extension-crx-field
+  needs: 2
+  unless:
+  - id: well-known/app/browser/
+
+# Layered install: enterprise policy force-install, the external-extension
+# registration path, and a native-messaging host registration, all written by
+# one program. Each surface has a legitimate owner -- policy belongs to device
+# management, external install to OEM bundling, native messaging to the
+# extension's own desktop application -- and none of them owns the other two.
+# A single installer wiring up all three is building redundant footholds so
+# that removing the extension, clearing the policy, or deleting the host each
+# leaves the others in place.
+- id: chromium-layered-extension-persistence
+  desc: Layered Chromium extension install surfaces
+  crit: hostile
+  conf: 0.96
+  attack: T1176,T1112,T1559
+  for: [scripts, source, binaries, data]
+  all:
+  - id: chrome-policy-forced-extension-install
+  - id: chromium-external-extension-sideload
+  # The host key itself, not the registration composite: that one additionally
+  # demands a registry-write call site in the same file, which an installer
+  # that shells the write out to reg.exe or writes the key from a helper does
+  # not have. Naming the key at all is the surface this rule is counting.
+  - id: micro-behaviors/os/registry/keys::chromium-native-messaging-hosts-subkey
