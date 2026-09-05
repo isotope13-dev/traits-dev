@@ -1,9 +1,9 @@
 Triage these vetted-benign false positive(s):
-- /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg — hostile: 0, suspicious: 3
-  - S objectives/anti-static/obfuscation/obfuscator/signature::pyarmor-runtime-call — PyArmor runtime call
-    members: /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/Auth/license_manager.py
-  - S objectives/supply-chain/recon-exfil/import-time::import-install-dns-oob-beacon — Import/install DNS lookup of an OOB host
-  - S objectives/supply-chain/recon-exfil/import-time::import-install-host-profile-curl-beacon — Import/install host profile sent via curl
+- /data/gauntlet-fp/80785047aa93a4e6cdbfb7708b8eb85e4b4bb5bfd1036e1a176b60614ac79bb3/classinx_win_install_6.0.8.2843_x64.exe — hostile: 0, suspicious: 2
+  - S objectives/anti-static/obfuscation/binary-metrics/shape::high-entropy-overlay — Large high-entropy overlay
+    members: /data/gauntlet-fp/80785047aa93a4e6cdbfb7708b8eb85e4b4bb5bfd1036e1a176b60614ac79bb3/classinx_win_install_6.0.8.2843_x64.exe!!$_1_/app.dat, /data/gauntlet-fp/80785047aa93a4e6cdbfb7708b8eb85e4b4bb5bfd1036e1a176b60614ac79bb3/classinx_win_install_6.0.8.2843_x64.exe!!$_1_/app.dat!!eeoPlayerProxy.exe
+  - S objectives/credential-access/dump/system::kerberos-aeskey-option — AES key option for Kerberos auth
+    members: /data/gauntlet-fp/80785047aa93a4e6cdbfb7708b8eb85e4b4bb5bfd1036e1a176b60614ac79bb3/classinx_win_install_6.0.8.2843_x64.exe!!$_1_/app.dat, /data/gauntlet-fp/80785047aa93a4e6cdbfb7708b8eb85e4b4bb5bfd1036e1a176b60614ac79bb3/classinx_win_install_6.0.8.2843_x64.exe!!$_1_/app.dat!!libcef.dll
 
 
 Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
