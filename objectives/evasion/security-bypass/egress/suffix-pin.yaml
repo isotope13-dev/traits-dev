@@ -1,0 +1,88 @@
+# Hostname-based egress control -- a filtering proxy, an FQDN firewall rule, a
+# sandbox's outbound policy -- decides what may leave by matching the name the
+# client asks for, and then trusts DNS to say where that name lives. Splitting
+# those two halves defeats it: mint a name under a suffix the policy already
+# passes, bind it to an address of your choosing, and the request still carries
+# a name the filter waves through while the bytes go somewhere else.
+#
+# The suffixes named here are the wildcard entries such policies carry by
+# default, because blocking them breaks package installs, CI, and telemetry:
+# cloud object storage and the big CDNs. That is what makes them worth
+# stealing, and it is why the suffix -- not the bare fact of a hosts edit -- is
+# what these rules key on. The generic "hosts entry points a name at a public
+# IP" observation already lives in
+# objectives/command-and-control/channel/proxy::external-ip-hosts-name-redirect;
+# these atoms say *which* name, which is the part that turns a redirect into an
+# egress-policy bypass.
+#
+# `is: external_ip` carries the weight. Every ordinary reason to pin one of
+# these names resolves somewhere local -- 127.0.0.1 for a storage emulator
+# (Azurite, MinIO, localstack), an RFC1918 address for a private endpoint or a
+# corporate mirror -- so a routable third-party address means the operator, not
+# the provider, chose where the name lands.
+defaults:
+  platforms: [unix, windows]
+  for: [scripts, source, data]
+  crit: suspicious
+  conf: 0.93
+  attack: T1090,T1562.001
+  mbc: F0004
+
+traits:
+  - id: azure-storage-name-pinned-external
+    desc: Azure storage name pinned to public IP
+    if:
+      type: text
+      regex: '\b\d{1,3}(\.\d{1,3}){3}[ \t]+[a-z0-9-]{1,40}\.blob\.core\.windows\.net\b'
+      is: external_ip
+
+  - id: s3-name-pinned-external
+    desc: S3 bucket name pinned to public IP
+    if:
+      type: text
+      regex: '\b\d{1,3}(\.\d{1,3}){3}[ \t]+[a-z0-9.-]{1,40}\.s3[a-z0-9.-]{0,20}\.amazonaws\.com'
+      is: external_ip
+
+  - id: gcs-name-pinned-external
+    desc: GCS bucket name pinned to public IP
+    if:
+      type: text
+      regex: '\b\d{1,3}(\.\d{1,3}){3}[ \t]+[a-z0-9.-]{1,40}\.storage\.googleapis\.com\b'
+      is: external_ip
+
+  - id: cdn-name-pinned-external
+    desc: CDN name pinned to public IP
+    if:
+      type: text
+      regex: '\b\d{1,3}(\.\d{1,3}){3}[ \t]+[a-z0-9-]{1,40}\.(cloudfront\.net|azureedge\.net)\b'
+      is: external_ip
+
+composite_rules:
+  - id: cloud-suffix-name-pinned-external
+    desc: Cloud storage suffix pinned to public IP
+    crit: suspicious
+    conf: 0.93
+    any:
+      - id: azure-storage-name-pinned-external
+      - id: s3-name-pinned-external
+      - id: gcs-name-pinned-external
+      - id: cdn-name-pinned-external
+
+  # The binding plus a mechanism that makes the host actually use it. The
+  # mechanism leg is an `any:` on purpose: /etc/hosts, curl's --resolve and
+  # --connect-to, and a NO_PROXY exclusion are interchangeable ways to spend
+  # the same gap, and a variant that reaches for a different one is the same
+  # technique rather than a new one.
+  - id: egress-policy-suffix-pin
+    desc: Pins a policy-matched cloud name off DNS
+    crit: hostile
+    conf: 0.96
+    attack: T1090,T1562.001,T1071.001
+    all:
+      - id: cloud-suffix-name-pinned-external
+    any:
+      - id: micro-behaviors/fs/file/write/hosts::hosts-file-write
+      - id: micro-behaviors/communications/http/curl::resolve-host-override-flag
+      - id: micro-behaviors/communications/http/curl::connect-to-host-override-flag
+      - id: micro-behaviors/communications/http/curl::shell-curl-host-resolution-override
+      - id: micro-behaviors/communications/proxy/env::no-proxy-exclusion-write
