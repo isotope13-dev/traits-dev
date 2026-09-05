@@ -5,46 +5,41 @@ Validation output:
 make: Entering directory '/srv/data/rectifier/traits-dev'
 /data/rectifier/bin/cleave --traits-dir . validate
 
-❌ ERROR: 1 rules exceed a suppression limit (8+ written on the rule, or 32+ after expanding aggregator references)
-   A heavy suppression list usually means the rule is fighting its own breadth.
-   In order of preference, try:
-     • downgrade the parent rule — if it is suppressed this often it is pitched
-       too high; lowering its `crit:` is usually a one-line fix and needs no carve-outs
-     • split by file type — a `suspicious` variant for the risky types and a
-       `notable` variant elsewhere, instead of one rule plus a pile of `unless:`
-     • group the exceptions — find the broader semantic that the carve-outs share
-       (e.g. "test fixture", "vendored dependency") and express it once, not N times
-     • drop dead downgrades — conditions that can never lower the criticality
-     • tighten scope — narrow `for:` file types or add `size_min`/`size_max`
-     • prefer a `dir/` reference over many `::leaf` ones — a directory reference
-       counts as 1 and does not sum in its members' suppressions
-   If it still gives no signal to humans or ML pipelines, consider removing it:
+⚠️  WARNING: 1 trait pairs have identical matching logic but different metadata
+   Same detection with inconsistent criticality/confidence/platforms:
 
-   ./metadata/package/dependencies/declaration/python.yaml: trait 'metadata/package/dependencies/declaration::numeric-suffixed-runtime-dependency' (10 written; 9 after expanding aggregators)
-        standard-numeric-suffixed-dependency (1)
-        blockchain-standard-numeric-dependency (1)
-        warc-archive-format-dependency (1)
-        python-version-compat-shim-dependency (1)
-        base-n-encoding-dependency (1)
-        blockchain-standard-numeric-dependency (dup) (0)
-        postgres-numeric-driver-dependency (1)
-        cloud-sdk-api-version-dependency (1)
-        windows-extensions-dependency (1)
-        optional-extra-dependency (1)
+   metadata/file/extension/typelib::tlb vs metadata/file/magic/identity::com-type-library-basename
+      ./metadata/file/extension/typelib/identity.yaml
+      ./metadata/file/magic/identity/com-type-library.yaml
+      Same matching logic, overlapping types (Pe∩Pe,Data), but: platforms: [Windows, Unix] vs [Windows]
 
 
-validation failed: 2 issue(s) in 1 location(s)
+validation failed: 4 issue(s) in 1 location(s)
 counts
-  dedup/dup-id             1
-  policy/suppress          1
+  dedup/base-dupe          1
+  dedup/dup-pattern        1
+  dedup/re-overlap         1
+  qual/validation          1
 
 -
-  dedup/dup-id             Duplicate trait id 'metadata/package/dependencies/declaration::blockchain-standard-numeric-dependency' — defined in both ./metadata/package/dependencies/declaration/python.yaml and ./metadata/package/dependencies/declaration/python.yaml; each directory::id must be unique
-  policy/suppress          1 rules have excessive unless:/downgrade: clauses
+  dedup/dup-pattern        Duplicate reusable atom '(?i)\.tlb' appears in 2 files with overlapping file type coverage:
+   ./metadata/file/extension/typelib/identity.yaml: metadata/file/extension/typelib::tlb (basename regex: '(?i)\.tlb$', for: [pe])
+   ./metadata/file/magic/identity/com-type-library.yaml: metadata/file/magic/identity::com-type-library-basename (basename regex: '(?i)\.tlb$', for: [data, pe])
+   → Action: Keep one atom in the best taxonomy location and reference it from the other traits.
+  dedup/re-overlap         Structurally identical regex patterns (same match, different spelling) with overlapping file types:
+   ./metadata/file/extension/typelib/identity.yaml::metadata/file/extension/typelib::tlb => (?i)\.tlb$
+   ./metadata/file/magic/identity/com-type-library.yaml::metadata/file/magic/identity::com-type-library-basename => (?i)\.tlb$
+   canonical form: (?:\.(?-u:[Tt])(?-u:[Ll])(?-u:[Bb])\z)
+  dedup/base-dupe          Duplicate basename regex pattern '(?i)\.tlb$' appears in 2 traits:
+   ./metadata/file/extension/typelib/identity.yaml: metadata/file/extension/typelib::tlb
+   ./metadata/file/magic/identity/com-type-library.yaml: metadata/file/magic/identity::com-type-library-basename
+  qual/validation          1 trait pairs have identical matching but different metadata
 
 suggested fixes
-  dedup/dup-id: Rename or remove one definition; each directory::id must be unique. References resolve by id, so a collision silently shadows one definition.
-  policy/suppress: Tighten the matcher, split by technique, lower criticality, or delete low-signal catch-alls.
+  dedup/dup-pattern: Keep the best-located trait and reference it where appropriate.
+  dedup/re-overlap: Merge or narrow rules so each trait has distinct signal.
+  dedup/base-dupe: Keep one filename matcher in the best taxonomy location and reference it.
+  qual/validation: Review the validation message and update the trait.
 
 
 ==> Fix all validation errors before continuing.
@@ -52,9 +47,19 @@ suggested fixes
 Error: Failed to load traits from .
 
 Caused by:
-    Trait loading failed due to 2 validation error(s):
-    validation: dedup/dup-id Duplicate trait id 'metadata/package/dependencies/declaration::blockchain-standard-numeric-dependency' — defined in both ./metadata/package/dependencies/declaration/python.yaml and ./metadata/package/dependencies/declaration/python.yaml; each directory::id must be unique
-    validation: policy/suppress 1 rules have excessive unless:/downgrade: clauses
+    Trait loading failed due to 4 validation error(s):
+    validation: dedup/dup-pattern Duplicate reusable atom '(?i)\.tlb' appears in 2 files with overlapping file type coverage:
+       ./metadata/file/extension/typelib/identity.yaml: metadata/file/extension/typelib::tlb (basename regex: '(?i)\.tlb$', for: [pe])
+       ./metadata/file/magic/identity/com-type-library.yaml: metadata/file/magic/identity::com-type-library-basename (basename regex: '(?i)\.tlb$', for: [data, pe])
+       → Action: Keep one atom in the best taxonomy location and reference it from the other traits.
+    validation: dedup/re-overlap Structurally identical regex patterns (same match, different spelling) with overlapping file types:
+       ./metadata/file/extension/typelib/identity.yaml::metadata/file/extension/typelib::tlb => (?i)\.tlb$
+       ./metadata/file/magic/identity/com-type-library.yaml::metadata/file/magic/identity::com-type-library-basename => (?i)\.tlb$
+       canonical form: (?:\.(?-u:[Tt])(?-u:[Ll])(?-u:[Bb])\z)
+    validation: dedup/base-dupe Duplicate basename regex pattern '(?i)\.tlb$' appears in 2 traits:
+       ./metadata/file/extension/typelib/identity.yaml: metadata/file/extension/typelib::tlb
+       ./metadata/file/magic/identity/com-type-library.yaml: metadata/file/magic/identity::com-type-library-basename
+    validation: qual/validation 1 trait pairs have identical matching but different metadata
 make: *** [Makefile:20: validate] Error 1
 make: Leaving directory '/srv/data/rectifier/traits-dev'
 
