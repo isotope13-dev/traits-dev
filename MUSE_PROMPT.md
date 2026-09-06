@@ -1,44 +1,34 @@
-The previous trait repair failed validation.
-Repair the errors below. Keep the change scoped to these validation errors.
-
-Validation output:
-make: Entering directory '/srv/data/rectifier/traits-dev'
-/data/rectifier/bin/cleave --traits-dir . validate
-
-❌ ERROR: 1 broken trait references found in composite rules
-   Composite rules reference trait IDs that don't exist:
-
-   ./objectives/command-and-control/dropper/download/python-download-execute.yaml:182: Rule 'objectives/command-and-control/dropper/download::python-github-response-write-startfile' references non-existent trait: 'micro-behaviors/communications/http/lib/requests::requests-response-content-access'
+Triage these vetted-benign false positive(s):
+- /data/gauntlet-fp/b59fb7c1f1cde1a5832b32ed234aa716d27998b0ca447351088a60df1d666962/clamav-0.3.1.gem — hostile: 1, suspicious: 0
+  - H third_party/SigBase/Office/Autoopen/Macro — Detects an Microsoft Office file that contains the AutoOpen Macro function
+    members: /data/gauntlet-fp/b59fb7c1f1cde1a5832b32ed234aa716d27998b0ca447351088a60df1d666962/clamav-0.3.1.gem!!data.tar.gz, /data/gauntlet-fp/b59fb7c1f1cde1a5832b32ed234aa716d27998b0ca447351088a60df1d666962/clamav-0.3.1.gem!!data.tar.gz!!spec/clamav-testfiles/program.doc, /data/gauntlet-fp/b59fb7c1f1cde1a5832b32ed234aa716d27998b0ca447351088a60df1d666962/clamav-0.3.1.gem!!data.tar.gz!!spec/clamav-testfiles/Программа.doc
 
 
-validation failed: 2 issue(s) in 2 location(s)
-counts
-  qual/broken-ref          1
-  qual/validation          1
+Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
+acceptable, and only when it accurately describes genuinely unusual behavior in the benign sample.
+Every remaining finding must accurately describe observed behavior, regardless of its criticality.
 
--
-  qual/broken-ref          1 broken trait references in composite rules
-./objectives/command-and-control/dropper/download/python-download-execute.yaml:182
-  qual/validation          ./objectives/command-and-control/dropper/download/python-download-execute.yaml:182: Rule 'objectives/command-and-control/dropper/download::python-github-response-write-startfile' references non-existent trait 'micro-behaviors/communications/http/lib/requests::requests-response-content-access'
+Use the findings above as the initial worklist. Repair traits containing any misleading or
+inaccurate findings, regardless of criticality, following the relevant parts of TAXONOMY.md and
+RULES.md.
+Use `cleave facts` and `cleave test-rules` on representative extracted files; facts are faster
+and more reliable than text searches. Extract archives once and group equivalent `src`/`dist`,
+`.js`/`.ts`, architecture, and bundled-library variants.
 
-suggested fixes
-  qual/broken-ref: Fix the id, or add the missing trait; references resolve by directory::id.
-  qual/validation: Review the validation message and update the trait.
+Make the smallest defensible change and preserve useful detection. Base exceptions on strong,
+generalizable evidence. Give traits specific IDs and descriptions that tell an analyst what
+behavior was observed and why it matters.
 
+Make all planned changes before measuring each sample:
 
-==> Fix all validation errors before continuing.
+  /data/rectifier/bin/cleave analyze <sample>
 
-Error: Failed to load traits from .
-
-Caused by:
-    Trait loading failed due to 2 validation error(s):
-    validation: qual/broken-ref 1 broken trait references in composite rules
-    validation: qual/validation ./objectives/command-and-control/dropper/download/python-download-execute.yaml:182: Rule 'objectives/command-and-control/dropper/download::python-github-response-write-startfile' references non-existent trait 'micro-behaviors/communications/http/lib/requests::requests-response-content-access'
-make: *** [Makefile:20: validate] Error 1
-make: Leaving directory '/srv/data/rectifier/traits-dev'
-
+Run this at least once after editing and before finishing. Inspect findings at every criticality,
+not only those that affect the QA count gate. If the success counts are not met or any finding is
+misleading or inaccurate, make the next complete set of changes before analyzing again.
 
 Before finishing, you MUST run:
+
   make -C /data/rectifier/traits-dev validate CLEAVE=/data/rectifier/bin/cleave
 
-Fix every error and rerun until it passes.
+Fix every error and rerun until it passes. Rectifier performs the authoritative rescan.
