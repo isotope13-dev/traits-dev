@@ -1,38 +1,33 @@
-Restore detection on these verified supply-chain compromise(s). Each one is a real, confirmed
-attack that the current traits do not call hostile:
-- /data/fixed/15127c199c91534a8bd6154a9c51972103c7ae2a77a359d6b16d7d1dd4bc8801/monkey-org-dsniff-fragroute__fragroute-1.2-RECONSTRUCTED.tar.gz — hostile: 0, suspicious: 0, ml.lvl: -1
-  (nothing at suspicious or above)
+Triage these vetted-benign false positive(s):
+- /data/gauntlet-fp/1e352f0a2488a880b76f26d5f82479cbd3b286ef360cbbdf53e26df5f623f82f/go1.26.6.windows-386.zip — hostile: 1, suspicious: 1
+  - H objectives/execution/exploit/http-desync::content-length-transfer-encoding-http-desync-source — Conflicting HTTP framing desync probe in source
+    members: /data/gauntlet-fp/1e352f0a2488a880b76f26d5f82479cbd3b286ef360cbbdf53e26df5f623f82f/go1.26.6.windows-386.zip!!go/src/net/http/serve_test.go
+  - S objectives/execution/exploit/http-desync::request-content-length-before-chunked-literal — Request literal has Content-Length then chunked
+    members: /data/gauntlet-fp/1e352f0a2488a880b76f26d5f82479cbd3b286ef360cbbdf53e26df5f623f82f/go1.26.6.windows-386.zip!!go/src/net/http/serve_test.go
 
-Success: at least 1 hostile finding on the sample itself — the root record, not only on a member
-inside it. Every finding you add must accurately describe behavior you actually observed in the
-sample, at the criticality it deserves.
 
-Any findings listed above are the near misses: traits that fired below hostile on this sample are
-usually where the missing detection belongs, and raising or extending one you can justify is
-preferable to writing a new trait beside it. A sample with nothing listed needs the mechanism
-identified first.
+Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
+acceptable, and only when it accurately describes genuinely unusual behavior in the benign sample.
+Every remaining finding must accurately describe observed behavior, regardless of its criticality.
 
-Identify what the sample actually does before changing any trait. Use `cleave facts` and
-`cleave test-rules` on the extracted members; facts are faster and more reliable than text
-searches. Extract archives once and group equivalent `src`/`dist`, `.js`/`.ts`, architecture, and
-bundled-library variants. Name the concrete mechanism — the install hook, the network callback,
-the exec, the encoded payload, the path it writes — and write the trait against that.
+Use the findings above as the initial worklist. Repair traits containing any misleading or
+inaccurate findings, regardless of criticality, following the relevant parts of TAXONOMY.md and
+RULES.md.
+Use `cleave facts` and `cleave test-rules` on representative extracted files; facts are faster
+and more reliable than text searches. Extract archives once and group equivalent `src`/`dist`,
+`.js`/`.ts`, architecture, and bundled-library variants.
 
-A second corpus of manually vetted BENIGN files gates this same tag, and every trait you touch is
-measured against it in the same run. A trait broad enough to fire on ordinary software will be
-caught there and sent back as a false positive, which spends another repair round and lands
-nothing. Prefer a trait that names the attack's specific behavior over one that widens an existing
-rule until it happens to cover this sample. Give traits specific IDs and descriptions that tell an
-analyst what behavior was observed and why it matters.
+Make the smallest defensible change and preserve useful detection. Base exceptions on strong,
+generalizable evidence. Give traits specific IDs and descriptions that tell an analyst what
+behavior was observed and why it matters.
 
 Make all planned changes before measuring each sample:
 
   /data/rectifier/bin/cleave analyze <sample>
 
-Run this at least once after editing and before finishing. Confirm the hostile finding is on the
-sample's own record. Inspect findings at every criticality, not only the one that affects the QA
-gate. If the success criteria are not met or any finding is misleading or inaccurate, make the next
-complete set of changes before analyzing again.
+Run this at least once after editing and before finishing. Inspect findings at every criticality,
+not only those that affect the QA count gate. If the success counts are not met or any finding is
+misleading or inaccurate, make the next complete set of changes before analyzing again.
 
 Before finishing, you MUST run:
 
