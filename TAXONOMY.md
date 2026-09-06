@@ -113,14 +113,15 @@ All tiers follow: `TIER/CATEGORY/BEHAVIOR/METHOD/platform.yaml`
 
 - **`objectives/`**: `objectives/OBJECTIVE/BEHAVIOR/METHOD/` with technique-based directories and per-platform or per-ecosystem YAML files. Add sub-method directories when a method has many variants (e.g., string obfuscation techniques). Avoid platform, language, ecosystem, file-type, and family names as directories unless they are the technique being detected.
 - **`micro-behaviors/`**: `micro-behaviors/CATEGORY/BEHAVIOR/METHOD/` (e.g., `crypto/symmetric/aes/ruby.yaml`, not `crypto/symmetric/aes.yaml`). If no specific method applies, group by syscall, protocol, or logical grouping. Composite traits may reference directory names to match related rules.
+- **`well-known/malware/` and `well-known/unwanted/`**: Organize by recognized family or named entity, not by a generic behavior, delivery method, or bundle of traits. Malware may retain a broad class before its family (`well-known/malware/backdoor/bpfdoor/`); unwanted software normally uses the family directly (`well-known/unwanted/gameograf/`). Do not use generic buckets such as `newtab-wallpaper-adware/` or `vpn-leadgen/`. Put generic unwanted or abusive behavior under the best-fitting `objectives/` hierarchy, then let each named family rule reference that objective. If no objective fits, add a behavior-based objective or document the taxonomy gap rather than filing intent-bearing behavior under `micro-behaviors/`.
 - **Directory names** should be short, readable, and semantically useful. Prefer `exec` over `command-execution`, `poll` over `polling-command`, and `reflect` over `reflective-loader` when the parent path supplies enough context. Keep longer names when the shorter form would be ambiguous.
 
 ### Directory & Evolution Guidelines
 
 - **Leaf-Node Policy**: A directory level cannot contain both YAML files and subdirectories. This prevents files from being "orphaned" or miscategorized when adding new sub-techniques. If a directory contains subdirectories (representing sub-techniques), it must not contain its own YAML files.
 - **Intent-Based Categorization**:
-  - **`objectives/`**: Reserved for improper/malicious behavior that requires intent inference. Any finding suggesting malice or abuse must be categorized under an `objectives/` hierarchy.
-  - **`micro-behaviors/`**: Reserved for strictly neutral, atomic observations. If a trait is neutral, it belongs here.
+  - **`objectives/`**: Reserved for unwanted, improper, or malicious behavior that requires intent inference. Any generic finding suggesting unwanted behavior, malice, or abuse must be categorized under an `objectives/` hierarchy.
+  - **`micro-behaviors/`**: Reserved for strictly neutral, atomic observations. If an id, description, or matcher interpretation hints that the observed behavior is unwanted, promotional, deceptive, abusive, or malicious, it is not neutral and should move to `objectives/`; keep only the underlying factual mechanic here.
 - **Platform/Language Neutrality**: Directories must NOT be named after programming languages (e.g., `python/`) or platforms (e.g., `windows/`). These are used as suffixes in YAML filenames (e.g., `dropper_python.yaml`). This ensures the ML pipeline can perform cross-language and cross-platform technique correlation.
 
 ## Decision Framework
