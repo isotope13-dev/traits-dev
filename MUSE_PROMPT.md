@@ -1,23 +1,7 @@
 Triage these vetted-benign false positive(s):
-- /data/gauntlet-fp/6dbcaca0c33e6e3766e3df907f9e855bfe97f0a451d6c4aa11210754901ff2bb/v0.36.2.tar.gz — hostile: 3, suspicious: 2
-  - H objectives/supply-chain/trojanized/app/agent-skill-scanner::skill-environment-secret-exfiltration-case — Agent skill exfiltrates environment secrets
-  - H objectives/supply-chain/trojanized/app/agent-skill-scanner::skill-prompt-injection-manifest-case — Agent skill manifest carries prompt injection
-  - H objectives/supply-chain/trojanized/app/agent-skill-scanner::skill-sql-injection-scanner-case — Agent skill embeds SQL injection behavior
-  - S objectives/supply-chain/hidden-payload/agent-skill::agent-skill-hidden-html-instruction — Hidden HTML comment carries agent instructions
-    members: /data/gauntlet-fp/6dbcaca0c33e6e3766e3df907f9e855bfe97f0a451d6c4aa11210754901ff2bb/v0.36.2.tar.gz!!agent-glovebox-0.36.2/README.md, /data/gauntlet-fp/6dbcaca0c33e6e3766e3df907f9e855bfe97f0a451d6c4aa11210754901ff2bb/v0.36.2.tar.gz!!agent-glovebox-0.36.2/docs/postmortem-2026-08-merge-queue-meltdown.md
-  - S objectives/supply-chain/hidden-payload/agent-skill::agent-skill-silent-side-effect-instruction — Skill instructs silent side effects
-    members: /data/gauntlet-fp/6dbcaca0c33e6e3766e3df907f9e855bfe97f0a451d6c4aa11210754901ff2bb/v0.36.2.tar.gz!!agent-glovebox-0.36.2/CHANGELOG.md
-
-- /data/gauntlet-fp/50c523ccb3c960339416b406031d092d2ea6487c0d5f1f739960faabc427c376/ouroboros_ai-0.43.1.tar.gz — hostile: 1, suspicious: 1
-  - H objectives/supply-chain/trojanized/app/agent-skill-scanner::skill-environment-secret-exfiltration-case — Agent skill exfiltrates environment secrets
-  - S objectives/exfiltration/http/agent::subway-github-issue-order-upload — Skill publishes orders as GitHub issues
-    members: /data/gauntlet-fp/50c523ccb3c960339416b406031d092d2ea6487c0d5f1f739960faabc427c376/ouroboros_ai-0.43.1.tar.gz!!ouroboros_ai-0.43.1/.claude-plugin/skills/publish/SKILL.md, /data/gauntlet-fp/50c523ccb3c960339416b406031d092d2ea6487c0d5f1f739960faabc427c376/ouroboros_ai-0.43.1.tar.gz!!ouroboros_ai-0.43.1/skills/publish/SKILL.md
-
-- /data/gauntlet-fp/533faf86c2b0346719198e3c016e5af5afa32019bfc27b78d1cc52548abcf1f2/litellm-1.99.0.dev2-cp310-abi3-macosx_10_12_x86_64.whl — hostile: 1, suspicious: 0
-  - H objectives/supply-chain/trojanized/app/agent-skill-scanner::skill-environment-secret-exfiltration-case — Agent skill exfiltrates environment secrets
-
-- /data/gauntlet-fp/4efb2d0688aa3d66b48721a9031f7257bd2acb52b78d0a89d072741ac685f3f8/crawl4ai-0.9.2-py3-none-any.whl — hostile: 0, suspicious: 2
-  - S objectives/evasion/security-bypass/waf::multi-vendor-bot-defense-evasion-claim — Claims evasion across many bot-defense vendors
+- /data/gauntlet-fp/a2235a5a17e865be053e8aff6d9e9e36d1edb45ad8162f57f7cdfd0202a5a397/ray-2.58.0-cp310-cp310-macosx_12_0_arm64.whl — hostile: 0, suspicious: 2
+  - S objectives/command-and-control/dropper/download::python-download-tempfile-exec — Downloads code to temp file and executes it
+    members: /data/gauntlet-fp/a2235a5a17e865be053e8aff6d9e9e36d1edb45ad8162f57f7cdfd0202a5a397/ray-2.58.0-cp310-cp310-macosx_12_0_arm64.whl!!ray/_private/test_utils.py
   - S objectives/supply-chain/impersonation/typosquat::numeric-runtime-dependency-import-chain — Wheel combines numeric-suffixed dependency and import names
 
 
