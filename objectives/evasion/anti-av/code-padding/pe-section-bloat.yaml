@@ -1,24 +1,8 @@
-# A PE inflated to ~100 MB by one bloated section, signed with a certificate
-# that was issued to nobody, and built from Go whose symbols were mangled.
-#
-# The padding is the operative evasion. Almost every scanning tier has a size
-# budget — mail gateways, sandbox upload limits, EDR cloud-lookup thresholds,
-# free multiscanner submission caps — and a file past the cap is not judged
-# safe, it is simply not judged. `pe.inflated_sections` is the direct read of
-# it: a section declared far larger on disk than the memory it maps, so the
-# bulk of the file is never paged in and costs the payload nothing at runtime.
-#
-# Each of the other two legs says the author expected the file to be looked at.
-# Garble strips and mangles the Go symbol table, which is the one thing that
-# normally makes a Go binary readable. A self-issued certificate confers no
-# trust on Windows at all — its only effects are to change the file's hash on
-# demand and to satisfy any check that asks "is it signed?" without asking by
-# whom.
-#
-# No single leg convicts: large Go binaries exist, obfuscation is sold
-# commercially, and self-signed builds are normal inside a company. A file
-# doing all three is padded past inspection, unreadable when inspected, and
-# wearing a signature that means nothing.
+# Scanner-limit padding must occupy bytes in the file that the loader does not
+# need. A dominant non-certificate overlay provides that evidence directly.
+# Do not use `pe.inflated_sections` here: that value records sections whose
+# virtual size exceeds their raw size, the ordinary zero-initialized-data
+# geometry used by large native applications, and does not inflate disk size.
 defaults:
   platforms: [windows]
   for: [pe, dll]
@@ -26,63 +10,9 @@ defaults:
   mbc: E1027.001
 
 composite_rules:
-  - id: pe-section-bloat-past-scanner-limits
-    desc: PE padded far past scanning size limits
-    crit: suspicious
-    conf: 0.93
-    # Below this a bloated section is ordinary embedded-asset packaging; the
-    # evasion only pays once the file clears the caps that matter.
-    size_min: 50000000
-    all:
-      - id: metadata/binary/section/metrics::inflated-data-section
-    unless:
-      - id: metadata/signed/platform/
-      - id: metadata/binary/installer/family/
-      # A language runtime carries its V8 startup snapshot and ICU data in the
-      # data section; heroku's CLI bundles an 80 MB `node.exe`. That is the
-      # "embedded-asset packaging" the size floor above is meant to let past,
-      # just at a larger scale than the floor assumed.
-      - id: well-known/lib/runtime/node-runtime::windows-runtime-binary
-      # Self-contained .NET applications append their managed assemblies and
-      # runtime to the host's data section. That is bundle packaging, not
-      # inert padding intended to exceed a scanner's size budget.
-      - id: metadata/binary/framework::dotnet-singlefilehost-runtime
-      - id: metadata/binary/framework::dotnet-selfcontained-bundle
-      # A 7z self-extracting installer pads its data section with the
-      # compressed payload (e.g. Datacolor Colibri's 462MB SFX) -- installer
-      # packaging at scanner-busting scale, not anti-av padding.
-      - id: micro-behaviors/data/embedded/payload/installer::7z-sfx-config-marker
-      - id: well-known/tool/
-      # nvcc's embedded multi-architecture device code (.nv_fatb/.nvFatBi) is
-      # the same "embedded-asset packaging at scale" carve-out as the runtime
-      # bundlers above, just for CUDA-compiled libraries.
-      - id: well-known/lib/runtime/nvidia-cuda::nv-fatbin-section
-
-  - id: bloated-obfuscated-self-signed-go-binary
-    desc: Padded, obfuscated, self-signed Go executable
-    crit: hostile
-    conf: 0.96
-    attack: T1027.001,T1027.002,T1553.002
-    size_min: 50000000
-    all:
-      - id: pe-section-bloat-past-scanner-limits
-      - id: objectives/anti-static/obfuscation/obfuscator/garble::garble-obfuscated-go
-    any:
-      - id: metadata/signed/certificate/identity::pe-cert-leaf-self-issued
-      - id: metadata/signed/certificate/identity::pe-cert-leaf-self-issued
-    unless:
-      - id: metadata/signed/platform/
-      - id: well-known/tool/
-
-  # The same evasion written into the overlay instead of a section, and
-  # without depending on which obfuscator was used.
-  #
-  # `bloated-obfuscated-self-signed-go-binary` above needs a Garble
-  # fingerprint, so it recognises one toolchain's output. The padding trick
-  # itself has nothing to do with Go: append the junk after the certificate
-  # table rather than inside a section and the same file clears every scanner
-  # size cap whether it was built by Go, Rust, MSVC or a .NET packer. Keyed on
-  # the layout instead:
+  # Appending junk outside the mapped image clears scanner size caps whether
+  # the program was built by Go, Rust, MSVC, or a .NET packer. Keyed on the
+  # layout rather than any toolchain:
   #
   #   * over 50 MB, so it is past the caps that make padding worth doing;
   #   * over ninety percent of the file is overlay — data outside every
