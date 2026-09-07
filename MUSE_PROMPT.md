@@ -1,7 +1,15 @@
 Triage these vetted-benign false positive(s):
-- /data/gauntlet-fp/0676448fa35e559827dfc9f9fadd5b8fd0be390dc808cbca9e22b46efbe34e64/ameliabooking-2.4.7.zip — hostile: 1, suspicious: 0
-  - H objectives/exfiltration/stealer/credential/browser::browser-cookie-remote-xhr-exfil — Browser cookie harvest is sent through a remote XHR
-    members: /data/gauntlet-fp/0676448fa35e559827dfc9f9fadd5b8fd0be390dc808cbca9e22b46efbe34e64/ameliabooking-2.4.7.zip!!ameliabooking/public/js/paddle/paddle.js
+- /data/gauntlet-fp/1ca903ac04f3f5301921cfb82c11d03bd5b82e7b3e55274cd61509119763631f/electron-winstaller-5.1.0.tgz — hostile: 2, suspicious: 1
+  - H objectives/anti-static/obfuscation/reflection/invoke::unsigned-encrypted-reflection-loader — Unsigned .NET payload decodes and activates encrypted code
+    members: /data/gauntlet-fp/1ca903ac04f3f5301921cfb82c11d03bd5b82e7b3e55274cd61509119763631f/electron-winstaller-5.1.0.tgz!!package/vendor/Squirrel-Mono.exe, /data/gauntlet-fp/1ca903ac04f3f5301921cfb82c11d03bd5b82e7b3e55274cd61509119763631f/electron-winstaller-5.1.0.tgz!!package/vendor/Squirrel.exe, /data/gauntlet-fp/1ca903ac04f3f5301921cfb82c11d03bd5b82e7b3e55274cd61509119763631f/electron-winstaller-5.1.0.tgz!!package/vendor/SyncReleases.exe
+  - H objectives/command-and-control/backdoor/loader/stage::evasive-unsigned-api-resolver-loader — Unsigned PE resolves APIs dynamically while checking for debuggers
+    members: /data/gauntlet-fp/1ca903ac04f3f5301921cfb82c11d03bd5b82e7b3e55274cd61509119763631f/electron-winstaller-5.1.0.tgz!!package/vendor/StubExecutable.exe, /data/gauntlet-fp/1ca903ac04f3f5301921cfb82c11d03bd5b82e7b3e55274cd61509119763631f/electron-winstaller-5.1.0.tgz!!package/vendor/WriteZipToSetup.exe
+  - S objectives/supply-chain/install-hook/scripts/lifecycle::install-hook-ships-dll-member — Install hook package ships a DLL member
+
+- /data/gauntlet-fp/0fa119452403bda7b58d7a29971e4f258c84d27b3d807d5422102b73e0ce5425/CloudDriveMapper.msi — hostile: 0, suspicious: 2
+  - S metadata/binary/installer/database::msi-powershell-executable-raw — MSI table contains PowerShell executable marker
+  - S objectives/anti-analysis/sandbox-detect/artifact/known::username-wdag-utility-account — WDAGUtilityAccount Windows Sandbox user
+    members: /data/gauntlet-fp/0fa119452403bda7b58d7a29971e4f258c84d27b3d807d5422102b73e0ce5425/CloudDriveMapper.msi!!CloudDriveMapper.msi!!ole/䌋䄱䜵䄾䆬䖸䄷䗦䇾䏯
 
 
 Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
