@@ -132,17 +132,21 @@ traits:
       substr: your files have been encrypted
       case_insensitive: true
   - id: vssadmin-delete
-    desc: vssadmin delete shadows
+    desc: Deletes Windows shadow copies with vssadmin
     crit: suspicious
     conf: 0.7
     attack: T1490
     platforms: [windows]
-    for: [batch, powershell, python, javascript, c, cpp, pe, dll]
+    for: [scripts, source, binaries]
     if:
       type: text
       # Widen the match window past "shadows" so `not:` below can see a
       # trailing /shadow=<id> qualifier.
-      regex: '(?i)\bvssadmin(\.exe)?\s+delete\s+shadows\b[^\n]{0,40}'
+      # Match both shell command lines and argv builders such as Go
+      # exec.Command("vssadmin.exe", "delete", "shadows", ...). Keep each
+      # separator short and non-alphanumeric so prose cannot bridge the
+      # executable, destructive verb, and VSS object.
+      regex: '(?i)\bvssadmin(\.exe)?\W{1,24}delete\W{1,24}shadows\b[^\r\n]{0,40}'
     not:
       # Ransomware nukes every shadow copy on the box (`/all`) to block
       # recovery. Targeting one specific shadow ID is the opposite shape: a
@@ -259,12 +263,12 @@ traits:
       type: text
       regex: '(?is)\bWin32_Shadowcopy\b.{0,240}\.Delete\s*\('
   - id: bcdedit-recovery
-    desc: bcdedit recoveryenabled no
+    desc: Disables Windows boot recovery with bcdedit
     crit: suspicious
     conf: 0.7
     attack: T1490
     platforms: [windows]
-    for: [batch, powershell, python, javascript, c, cpp, pe, dll]
+    for: [scripts, source, binaries]
     if:
       type: text
       regex: '(?i)\bbcdedit(\.exe)?[\s\S]{0,80}\brecoveryenabled[\s\S]{0,30}\bno\b'
@@ -534,7 +538,7 @@ composite_rules:
       - id: ps-shadowcopy-delete-call
     near_lines: 1
   - id: shadow-delete
-    desc: Shadow copy deletion (ransomware preparation)
+    desc: Windows backup or recovery inhibition
     crit: suspicious
     conf: 0.95
     attack: T1490
@@ -550,6 +554,29 @@ composite_rules:
       - id: bcdedit-ignore-failures
       - id: wbadmin-delete-systemstate
       - id: wbadmin-delete-catalog
+  - id: multi-mechanism-recovery-inhibition
+    desc: Deletes VSS snapshots and disables boot recovery
+    crit: hostile
+    conf: 0.99
+    attack: T1490
+    platforms: [windows]
+    for: [scripts, source, binaries]
+    all:
+      - id: vssadmin-delete
+      - id: bcdedit-recovery
+    near_lines: 3
+  - id: recovery-and-defender-impairment
+    desc: Destroys recovery mechanisms and stops Microsoft Defender
+    crit: hostile
+    conf: 0.99
+    attack: T1490,T1562.001
+    platforms: [windows]
+    for: [scripts, source, binaries]
+    all:
+      - id: vssadmin-delete
+      - id: bcdedit-recovery
+      - id: objectives/evasion/anti-av/service::defender-service-stop-target
+    near_lines: 4
   - id: raccine-and-shadow-prep
     desc: Disables Raccine then deletes shadow copies
     crit: hostile
@@ -592,10 +619,11 @@ composite_rules:
       - id: shadow-delete
       - id: objectives/evasion/indicator-removal/logs::log-clear-windows
       - id: objectives/evasion/indicator-removal/logs::fsutil-usn-deletejournal
-  - id: script-ransomware
-    desc: Script-based ransomware behavior
-    crit: hostile
+  - id: recovery-inhibition-with-service-stop
+    desc: Recovery inhibition with service shutdown
+    crit: suspicious
     conf: 0.95
+    platforms: [windows]
     all:
       - id: shadow-delete
     any:
