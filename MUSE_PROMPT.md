@@ -1,8 +1,11 @@
 Triage these vetted-benign false positive(s):
-- /data/gauntlet-fp/a2235a5a17e865be053e8aff6d9e9e36d1edb45ad8162f57f7cdfd0202a5a397/ray-2.58.0-cp310-cp310-macosx_12_0_arm64.whl — hostile: 0, suspicious: 2
-  - S objectives/command-and-control/dropper/download::python-download-tempfile-exec — Downloads code to temp file and executes it
-    members: /data/gauntlet-fp/a2235a5a17e865be053e8aff6d9e9e36d1edb45ad8162f57f7cdfd0202a5a397/ray-2.58.0-cp310-cp310-macosx_12_0_arm64.whl!!ray/_private/test_utils.py
-  - S objectives/supply-chain/impersonation/typosquat::numeric-runtime-dependency-import-chain — Wheel combines numeric-suffixed dependency and import names
+- /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg — hostile: 0, suspicious: 3
+  - S objectives/anti-static/obfuscation/obfuscator/signature::pyarmor-runtime-call — PyArmor runtime call
+    members: /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/Auth/license_manager.py
+  - S objectives/credential-access/cloud/session::python-apple-password-collection — Python client collects Apple password
+    members: /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/lib/python3.11/distutils/command/register.py, /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/lib/python3.11/imaplib.py, /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/lib/python3.11/urllib/request.py
+  - S objectives/supply-chain/impersonation/depconf::agent-skill-pip-install-list — Skill runs pip install from code
+    members: /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/lib/python3.11/ensurepip/_bundled/setuptools-79.0.1-py3-none-any.whl, /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/lib/python3.11/ensurepip/_bundled/setuptools-79.0.1-py3-none-any.whl!!setuptools/tests/test_editable_install.py, /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/lib/python3.11/ensurepip/_bundled/setuptools-79.0.1-py3-none-any.whl!!setuptools/tests/test_virtualenv.py, /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/lib/python3.11/site-packages/huggingface_hub/cli/_cli_utils.py
 
 
 Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
