@@ -1,36 +1,61 @@
-Triage these vetted-benign false positive(s):
-- /data/gauntlet-fp/708effb774be8237570d0add163225abbdfaf4fca28b2611df167beba4feef89/go1.26.6.linux-amd64.tar.gz — hostile: 0, suspicious: 2
-  - S objectives/anti-static/obfuscation/binary-metrics/shape::many-high-entropy-strings — Many high-entropy strings in binary
-    members: /data/gauntlet-fp/708effb774be8237570d0add163225abbdfaf4fca28b2611df167beba4feef89/go1.26.6.linux-amd64.tar.gz!!go/pkg/tool/linux_amd64/preprofile
-  - S objectives/execution/compile/runtime::path-dot-command-prefix — Runs a program from the working directory
-    members: /data/gauntlet-fp/708effb774be8237570d0add163225abbdfaf4fca28b2611df167beba4feef89/go1.26.6.linux-amd64.tar.gz!!go/src/cmd/go/testdata/script/cgo_path.txt
+The previous trait repair failed validation.
+Repair the errors below. Keep the change scoped to these validation errors.
+
+Validation output:
+make: Entering directory '/srv/data/rectifier/traits-dev'
+/data/rectifier/bin/cleave --traits-dir . validate
+
+❌ ERROR: 1 rules exceed a suppression limit (8+ written on the rule, or 32+ after expanding aggregator references)
+   A heavy suppression list usually means the rule is fighting its own breadth.
+   In order of preference, try:
+     • downgrade the parent rule — if it is suppressed this often it is pitched
+       too high; lowering its `crit:` is usually a one-line fix and needs no carve-outs
+     • split by file type — a `suspicious` variant for the risky types and a
+       `notable` variant elsewhere, instead of one rule plus a pile of `unless:`
+     • group the exceptions — find the broader semantic that the carve-outs share
+       (e.g. "test fixture", "vendored dependency") and express it once, not N times
+     • drop dead downgrades — conditions that can never lower the criticality
+     • tighten scope — narrow `for:` file types or add `size_min`/`size_max`
+     • prefer a `dir/` reference over many `::leaf` ones — a directory reference
+       counts as 1 and does not sum in its members' suppressions
+   If it still gives no signal to humans or ML pipelines, consider removing it:
+
+   ./micro-behaviors/fs/config/sudo/traits.yaml: trait 'micro-behaviors/fs/config/sudo::sudo-nopasswd' (10 written; 10 after expanding aggregators)
+        metadata/build/ci/host::remote-wheel-build-host (1)
+        (inline condition) (1)
+        (inline condition) (1)
+        (inline condition) (1)
+        (inline condition) (1)
+        metadata/package/testing/harness/runtime/ (1)
+        well-known/lib/ai/tensorflow::tensorflow-user-wrapper (1)
+        (inline condition) (1)
+        (inline condition) (1)
+        (inline condition) (1)
 
 
-Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
-acceptable, and only when it accurately describes genuinely unusual behavior in the benign sample.
-Every remaining finding must accurately describe observed behavior, regardless of its criticality.
+validation failed: 1 issue(s) in 1 location(s)
+counts
+  policy/suppress          1
 
-Use the findings above as the initial worklist. Repair traits containing any misleading or
-inaccurate findings, regardless of criticality, following the relevant parts of TAXONOMY.md and
-RULES.md.
-Use `cleave facts` and `cleave test-rules` on representative extracted files; facts are faster
-and more reliable than text searches. Extract archives once and group equivalent `src`/`dist`,
-`.js`/`.ts`, architecture, and bundled-library variants.
+-
+  policy/suppress          1 rules have excessive unless:/downgrade: clauses
 
-Make the smallest defensible change and preserve useful detection. Base exceptions on strong,
-generalizable evidence. Give traits specific IDs and descriptions that tell an analyst what
-behavior was observed and why it matters.
+suggested fixes
+  policy/suppress: Tighten the matcher, split by technique, lower criticality, or delete low-signal catch-alls.
 
-Make all planned changes before measuring each sample:
 
-  /data/rectifier/bin/cleave analyze <sample>
+==> Fix all validation errors before continuing.
 
-Run this at least once after editing and before finishing. Inspect findings at every criticality,
-not only those that affect the QA count gate. If the success counts are not met or any finding is
-misleading or inaccurate, make the next complete set of changes before analyzing again.
+Error: Failed to load traits from .
+
+Caused by:
+    Trait loading failed due to 1 validation error(s):
+    validation: policy/suppress 1 rules have excessive unless:/downgrade: clauses
+make: *** [Makefile:20: validate] Error 1
+make: Leaving directory '/srv/data/rectifier/traits-dev'
+
 
 Before finishing, you MUST run:
-
   make -C /data/rectifier/traits-dev validate CLEAVE=/data/rectifier/bin/cleave
 
-Fix every error and rerun until it passes. Rectifier performs the authoritative rescan.
+Fix every error and rerun until it passes.
