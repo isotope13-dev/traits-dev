@@ -1,42 +1,48 @@
-Triage these vetted-benign false positive(s):
-- /data/gauntlet-fp/9cf5a6d0e05fe0d22ea53523308679283dafb90fd17add95eb104fbbae173df7/tellico-4.2-2085-windows-cl-msvc2022-x86_64.exe — hostile: 2, suspicious: 0
-  - H objectives/command-and-control/backdoor/evasive::evasive-encoded-payload-dll — Unsigned DLL hides a payload behind anti-debug and memory APIs
-    members: /data/gauntlet-fp/9cf5a6d0e05fe0d22ea53523308679283dafb90fd17add95eb104fbbae173df7/tellico-4.2-2085-windows-cl-msvc2022-x86_64.exe!!tellico-4.2-2085-windows-cl-msvc2022-x86_64.7z, /data/gauntlet-fp/9cf5a6d0e05fe0d22ea53523308679283dafb90fd17add95eb104fbbae173df7/tellico-4.2-2085-windows-cl-msvc2022-x86_64.exe!!tellico-4.2-2085-windows-cl-msvc2022-x86_64.7z!!bin/libmp3lame.dll
-  - H objectives/command-and-control/backdoor/loader/stage::evasive-unsigned-api-resolver-loader — Unsigned PE resolves APIs dynamically while checking for debuggers
-    members: /data/gauntlet-fp/9cf5a6d0e05fe0d22ea53523308679283dafb90fd17add95eb104fbbae173df7/tellico-4.2-2085-windows-cl-msvc2022-x86_64.exe!!tellico-4.2-2085-windows-cl-msvc2022-x86_64.7z, /data/gauntlet-fp/9cf5a6d0e05fe0d22ea53523308679283dafb90fd17add95eb104fbbae173df7/tellico-4.2-2085-windows-cl-msvc2022-x86_64.exe!!tellico-4.2-2085-windows-cl-msvc2022-x86_64.7z!!bin/b2-1.dll, /data/gauntlet-fp/9cf5a6d0e05fe0d22ea53523308679283dafb90fd17add95eb104fbbae173df7/tellico-4.2-2085-windows-cl-msvc2022-x86_64.exe!!tellico-4.2-2085-windows-cl-msvc2022-x86_64.7z!!bin/libmp3lame.dll
+Restore detection on these verified supply-chain compromise(s). Each one is a real, confirmed
+attack that the current traits do not call hostile:
+- /data/fixed/853e5169d938eb223929d7fc9509991319d29e4f40233ca57c0e3c5cc7ad6e8d/laravel-lang__laravel-lang-actions-1.12.2-RECONSTRUCTED.zip — hostile: 0, suspicious: 4, ml.lvl: 279
+  - S objectives/anti-static/obfuscation/string/encoding::array-map-chr-codepoint-list — String decoded from a chr() code-point list
+    members: /data/fixed/853e5169d938eb223929d7fc9509991319d29e4f40233ca57c0e3c5cc7ad6e8d/laravel-lang__laravel-lang-actions-1.12.2-RECONSTRUCTED.zip!!Laravel-Lang-actions-556d2b3/src/helpers.php
+  - S objectives/evasion/process/hidden/execution::php-dual-platform-silent-launch — PHP launches a hidden child on both Windows and Unix
+    members: /data/fixed/853e5169d938eb223929d7fc9509991319d29e4f40233ca57c0e3c5cc7ad6e8d/laravel-lang__laravel-lang-actions-1.12.2-RECONSTRUCTED.zip!!Laravel-Lang-actions-556d2b3/src/helpers.php
+  - S objectives/execution/condition/host-marker::host-digest-temp-marker-gate — Host-name digest marker in temp gates execution
+    members: /data/fixed/853e5169d938eb223929d7fc9509991319d29e4f40233ca57c0e3c5cc7ad6e8d/laravel-lang__laravel-lang-actions-1.12.2-RECONSTRUCTED.zip!!Laravel-Lang-actions-556d2b3/src/helpers.php
+  - S objectives/supply-chain/install-hook/autoload::composer-autoload-fetch-and-spawn — Composer-autoloaded package fetches a URL and spawns a process
+- /data/fixed/5dca3f4fc310f83a30dfdffc3b4ff7593f3d2b04b08c69d754576edf0b03a691/lottie-player__lottie-player-malware.js — hostile: 0, suspicious: 3, ml.lvl: -1
+  - S objectives/anti-analysis/debugger-detect/check::js-devtools-getter-oracle — Detects DevTools by a logged getter
+  - S objectives/anti-static/obfuscation/obfuscator/index-shift::custom-string-table-obfuscator — Custom string-table obfuscator output
+  - S objectives/anti-static/obfuscation/obfuscator/index-shift::table-accessor-ternary-index-shift — String-table accessor shifts a ternary index
 
-- /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe — hostile: 1, suspicious: 1
-  - H objectives/command-and-control/backdoor/evasive::evasive-encoded-payload-dll — Unsigned DLL hides a payload behind anti-debug and memory APIs
-    members: /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!ffmpeg.dll
-  - S objectives/supply-chain/impersonation/depconf::agent-skill-pip-install-list — Skill tool runs pip install from code
-    members: /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar!!node_modules/@mavis/local-runtime/assets/skills/pdf/scripts/merge.py, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar!!node_modules/@mavis/local-runtime/assets/skills/pdf/scripts/reformat_parse.py, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-arm64.7z, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-arm64.7z!!resources/app.asar, … +2
+Success: at least 1 hostile finding on the sample itself — the root record, not only on a member
+inside it. Every finding you add must accurately describe behavior you actually observed in the
+sample, at the criticality it deserves.
 
-- /data/gauntlet-fp/964e8b2c5f0fa7af6932bb2c1bcabcf68a2a6acef650ffbde25429a18ebf7d27/megalinter@v8 — hostile: 1, suspicious: 0
-  - H objectives/supply-chain/install-hook/build/behavioral::python-packaging-curl-download-execute — Packaging code downloads and launches a file
+Any findings listed above are the near misses: traits that fired below hostile on this sample are
+usually where the missing detection belongs, and raising or extending one you can justify is
+preferable to writing a new trait beside it. A sample with nothing listed needs the mechanism
+identified first.
 
+Identify what the sample actually does before changing any trait. Use `cleave facts` and
+`cleave test-rules` on the extracted members; facts are faster and more reliable than text
+searches. Extract archives once and group equivalent `src`/`dist`, `.js`/`.ts`, architecture, and
+bundled-library variants. Name the concrete mechanism — the install hook, the network callback,
+the exec, the encoded payload, the path it writes — and write the trait against that.
 
-Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
-acceptable, and only when it accurately describes genuinely unusual behavior in the benign sample.
-Every remaining finding must accurately describe observed behavior, regardless of its criticality.
-
-Use the findings above as the initial worklist. Repair traits containing any misleading or
-inaccurate findings, regardless of criticality, following the relevant parts of TAXONOMY.md and
-RULES.md.
-Use `cleave facts` and `cleave test-rules` on representative extracted files; facts are faster
-and more reliable than text searches. Extract archives once and group equivalent `src`/`dist`,
-`.js`/`.ts`, architecture, and bundled-library variants.
-
-Make the smallest defensible change and preserve useful detection. Base exceptions on strong,
-generalizable evidence. Give traits specific IDs and descriptions that tell an analyst what
-behavior was observed and why it matters.
+A second corpus of manually vetted BENIGN files gates this same tag, and every trait you touch is
+measured against it in the same run. A trait broad enough to fire on ordinary software will be
+caught there and sent back as a false positive, which spends another repair round and lands
+nothing. Prefer a trait that names the attack's specific behavior over one that widens an existing
+rule until it happens to cover this sample. Give traits specific IDs and descriptions that tell an
+analyst what behavior was observed and why it matters.
 
 Make all planned changes before measuring each sample:
 
   /data/rectifier/bin/cleave analyze <sample>
 
-Run this at least once after editing and before finishing. Inspect findings at every criticality,
-not only those that affect the QA count gate. If the success counts are not met or any finding is
-misleading or inaccurate, make the next complete set of changes before analyzing again.
+Run this at least once after editing and before finishing. Confirm the hostile finding is on the
+sample's own record. Inspect findings at every criticality, not only the one that affects the QA
+gate. If the success criteria are not met or any finding is misleading or inaccurate, make the next
+complete set of changes before analyzing again.
 
 Before finishing, you MUST run:
 
