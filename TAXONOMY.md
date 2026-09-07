@@ -444,6 +444,12 @@ micro-behaviors/
 │   ├── random/            #   Random number generation
 │   ├── registry/          #   Windows registry (C0036)
 │   ├── security/          #   OS security APIs (keychain, capabilities, auth)
+│   │   ├── auth/          #     Authentication and authorization checks, including
+│   │   │                  #       app-level ones (WordPress capability/nonce/session)
+│   │   └── jailbreak/     #     Jailbreak/root artifact paths a program looks for.
+│   │                      #       Neutral: banking and DRM apps check these too;
+│   │                      #       evasion intent → objectives/anti-analysis/
+│   │                      #       environment-detect/
 │   ├── service/           #   System service management
 │   ├── signal/            #   Signal handling
 │   ├── stdio/             #   Standard I/O operations
