@@ -1,11 +1,6 @@
 Triage these vetted-benign false positive(s):
-- /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg — hostile: 0, suspicious: 3
-  - S objectives/anti-static/obfuscation/obfuscator/signature::pyarmor-runtime-call — PyArmor runtime call
-    members: /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/Auth/license_manager.py
-  - S objectives/credential-access/cloud/session::python-apple-password-collection — Python client collects Apple password
-    members: /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/lib/python3.11/distutils/command/register.py, /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/lib/python3.11/imaplib.py, /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/lib/python3.11/urllib/request.py
-  - S objectives/supply-chain/impersonation/depconf::agent-skill-pip-install-list — Skill runs pip install from code
-    members: /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/lib/python3.11/ensurepip/_bundled/setuptools-79.0.1-py3-none-any.whl, /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/lib/python3.11/ensurepip/_bundled/setuptools-79.0.1-py3-none-any.whl!!setuptools/tests/test_editable_install.py, /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/lib/python3.11/ensurepip/_bundled/setuptools-79.0.1-py3-none-any.whl!!setuptools/tests/test_virtualenv.py, /data/gauntlet-fp/05c41f9073308783755d270557d9b8f1c3f6ae6faf068e2990db46ad51f930da/GeekLink-0.4.7.dmg!!GeekLink.app/Contents/Resources/packed_env/lib/python3.11/site-packages/huggingface_hub/cli/_cli_utils.py
+- /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz — hostile: 1, suspicious: 0
+  - H objectives/credential-access/browser/session-hijack::agent-skill-bundled-browser-session-theft — Skill bundles authenticated browser session state
 
 
 Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
