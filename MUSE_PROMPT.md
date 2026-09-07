@@ -1,61 +1,38 @@
-The previous trait repair failed validation.
-Repair the errors below. Keep the change scoped to these validation errors.
-
-Validation output:
-make: Entering directory '/srv/data/rectifier/traits-dev'
-/data/rectifier/bin/cleave --traits-dir . validate
-
-❌ ERROR: 1 rules exceed a suppression limit (8+ written on the rule, or 32+ after expanding aggregator references)
-   A heavy suppression list usually means the rule is fighting its own breadth.
-   In order of preference, try:
-     • downgrade the parent rule — if it is suppressed this often it is pitched
-       too high; lowering its `crit:` is usually a one-line fix and needs no carve-outs
-     • split by file type — a `suspicious` variant for the risky types and a
-       `notable` variant elsewhere, instead of one rule plus a pile of `unless:`
-     • group the exceptions — find the broader semantic that the carve-outs share
-       (e.g. "test fixture", "vendored dependency") and express it once, not N times
-     • drop dead downgrades — conditions that can never lower the criticality
-     • tighten scope — narrow `for:` file types or add `size_min`/`size_max`
-     • prefer a `dir/` reference over many `::leaf` ones — a directory reference
-       counts as 1 and does not sum in its members' suppressions
-   If it still gives no signal to humans or ML pipelines, consider removing it:
-
-   ./micro-behaviors/fs/config/sudo/traits.yaml: trait 'micro-behaviors/fs/config/sudo::sudo-nopasswd' (10 written; 10 after expanding aggregators)
-        metadata/build/ci/host::remote-wheel-build-host (1)
-        (inline condition) (1)
-        (inline condition) (1)
-        (inline condition) (1)
-        (inline condition) (1)
-        metadata/package/testing/harness/runtime/ (1)
-        well-known/lib/ai/tensorflow::tensorflow-user-wrapper (1)
-        (inline condition) (1)
-        (inline condition) (1)
-        (inline condition) (1)
+Triage these vetted-benign false positive(s):
+- /data/gauntlet-fp/21eeeb1c0f5e7e0d5612e0655c6ba98cf860254b572b9a91b553a4524b2513c8/oh-my-pi@v18.0.3 — hostile: 0, suspicious: 3
+  - S objectives/credential-access/phishing/mfa-relay::phishlet-post-capture-type — Phishlet POST capture type
+    members: /data/gauntlet-fp/21eeeb1c0f5e7e0d5612e0655c6ba98cf860254b572b9a91b553a4524b2513c8/oh-my-pi@v18.0.3!!oh-my-pi-18.0.3/packages/coding-agent/test/discovery/codex-hooks-discovery.test.ts
+  - S objectives/credential-access/phishing/mfa-relay::phishlet-session-field — Phishlet session capture field
+    members: /data/gauntlet-fp/21eeeb1c0f5e7e0d5612e0655c6ba98cf860254b572b9a91b553a4524b2513c8/oh-my-pi@v18.0.3!!oh-my-pi-18.0.3/packages/coding-agent/src/cli/completion-gen.ts, /data/gauntlet-fp/21eeeb1c0f5e7e0d5612e0655c6ba98cf860254b572b9a91b553a4524b2513c8/oh-my-pi@v18.0.3!!oh-my-pi-18.0.3/packages/coding-agent/test/agent-session-message-pipeline.test.ts, /data/gauntlet-fp/21eeeb1c0f5e7e0d5612e0655c6ba98cf860254b572b9a91b553a4524b2513c8/oh-my-pi@v18.0.3!!oh-my-pi-18.0.3/packages/coding-agent/test/task/structured-subagent.test.ts
+  - S objectives/evasion/security-bypass/anti-bot::skill-removes-webdriver-marker — Skill removes navigator.webdriver marker
+    members: /data/gauntlet-fp/21eeeb1c0f5e7e0d5612e0655c6ba98cf860254b572b9a91b553a4524b2513c8/oh-my-pi@v18.0.3!!oh-my-pi-18.0.3/packages/coding-agent/src/tools/puppeteer/03_stealth_botd.txt
 
 
-validation failed: 1 issue(s) in 1 location(s)
-counts
-  policy/suppress          1
+Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
+acceptable, and only when it accurately describes genuinely unusual behavior in the benign sample.
+Every remaining finding must accurately describe observed behavior, regardless of its criticality.
 
--
-  policy/suppress          1 rules have excessive unless:/downgrade: clauses
+Use the findings above as the initial worklist. Repair traits containing any misleading or
+inaccurate findings, regardless of criticality, following the relevant parts of TAXONOMY.md and
+RULES.md.
+Use `cleave facts` and `cleave test-rules` on representative extracted files; facts are faster
+and more reliable than text searches. Extract archives once and group equivalent `src`/`dist`,
+`.js`/`.ts`, architecture, and bundled-library variants.
 
-suggested fixes
-  policy/suppress: Tighten the matcher, split by technique, lower criticality, or delete low-signal catch-alls.
+Make the smallest defensible change and preserve useful detection. Base exceptions on strong,
+generalizable evidence. Give traits specific IDs and descriptions that tell an analyst what
+behavior was observed and why it matters.
 
+Make all planned changes before measuring each sample:
 
-==> Fix all validation errors before continuing.
+  /data/rectifier/bin/cleave analyze <sample>
 
-Error: Failed to load traits from .
-
-Caused by:
-    Trait loading failed due to 1 validation error(s):
-    validation: policy/suppress 1 rules have excessive unless:/downgrade: clauses
-make: *** [Makefile:20: validate] Error 1
-make: Leaving directory '/srv/data/rectifier/traits-dev'
-
+Run this at least once after editing and before finishing. Inspect findings at every criticality,
+not only those that affect the QA count gate. If the success counts are not met or any finding is
+misleading or inaccurate, make the next complete set of changes before analyzing again.
 
 Before finishing, you MUST run:
+
   make -C /data/rectifier/traits-dev validate CLEAVE=/data/rectifier/bin/cleave
 
-Fix every error and rerun until it passes.
+Fix every error and rerun until it passes. Rectifier performs the authoritative rescan.
