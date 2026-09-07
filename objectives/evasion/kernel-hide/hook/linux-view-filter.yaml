@@ -1,0 +1,179 @@
+# Linux kernel rootkits commonly combine inline hooks with procfs and VFS
+# output filtering. These rules use routine names, opcode layouts, and kernel
+# structures rather than family-specific helper names or hidden filenames.
+defaults:
+  platforms: [linux]
+  for: [c, cpp, rust]
+  attack: T1014
+
+traits:
+- id: proc-root-readdir-target-string
+  desc: proc_root_readdir routine string
+  crit: component
+  conf: 0.97
+  if:
+    type: string_literal
+    exact: proc_root_readdir
+
+- id: tcp-seq-show-target-string
+  desc: Transport seq_show routine string
+  crit: component
+  conf: 0.97
+  if:
+    type: string_literal
+    regex: '^(tcp|udp)[46]_seq_show$'
+
+- id: pte-rw-enable-source
+  desc: Enables writes on a kernel PTE
+  crit: suspicious
+  conf: 0.96
+  if:
+    type: text
+    regex: '(->|\.)pte\s*\|=\s*_PAGE_RW\b'
+  unless:
+  - id: metadata/lang/source::linux-kernel-arch-source-path
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+
+- id: x64-movabs-prologue-prefix
+  desc: Writes x64 MOVABS RAX prologue bytes
+  crit: component
+  conf: 0.99
+  if:
+    type: text
+    regex: '\[\s*0\s*\]\s*=\s*0x48\s*;\s*[A-Za-z_]\w*\[\s*1\s*\]\s*=\s*0x[Bb]8\s*;'
+
+- id: x64-push-ret-prologue-suffix
+  desc: Writes x64 PUSH/RET prologue tail
+  crit: component
+  conf: 0.99
+  if:
+    type: text
+    regex: '\[\s*10\s*\]\s*=\s*0x50\s*;\s*[A-Za-z_]\w*\[\s*11\s*\]\s*=\s*0x[Cc]3\s*;'
+
+- id: proc-pid-filldir-suppression
+  desc: Suppresses numeric procfs filldir entry
+  crit: suspicious
+  conf: 0.96
+  if:
+    type: text
+    regex: '\bkstrtoul\s*\(\s*name\s*,\s*10\s*,\s*&\s*[A-Za-z_]\w*\s*\)[^\n]{0,180}\n\s*return\s+0\s*;'
+  unless:
+  - id: metadata/lang/source::linux-kernel-primary-tree-path
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+
+- id: seq-file-buffer-search
+  desc: Searches seq_file output buffer
+  crit: component
+  conf: 0.96
+  if:
+    type: text
+    regex: 'strnstr\s*\(\s*[A-Za-z_]\w*\s*->\s*buf'
+
+- id: seq-file-count-snapshot
+  desc: Saves current seq_file count
+  crit: component
+  conf: 0.96
+  if:
+    type: text
+    regex: '\b(size_t|unsigned long)\s+[A-Za-z_]\w*\s*=\s*[A-Za-z_]\w*\s*->\s*count\s*;'
+
+- id: seq-file-count-assignment
+  desc: Reassigns seq_file count
+  crit: component
+  conf: 0.96
+  if:
+    type: text
+    regex: '[A-Za-z_]\w*\s*->\s*count\s*=\s*[A-Za-z_]\w*\s*;'
+
+- id: mutable-file-operations-cast
+  desc: Casts file operations table mutable
+  crit: suspicious
+  conf: 0.98
+  if:
+    type: text
+    regex: '=\s*\(\s*struct\s+file_operations\s*\*\s*\)\s*[A-Za-z_]\w*\s*->\s*f_op\s*;'
+  unless:
+  - id: metadata/lang/source::linux-kernel-primary-tree-path
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+
+- id: vfs-directory-iterator-pointer-write
+  desc: Writes VFS directory iterator pointer
+  crit: suspicious
+  conf: 0.96
+  if:
+    type: text
+    regex: '[A-Za-z_]\w*\s*->\s*(readdir|iterate|iterate_shared)\s*=\s*[A-Za-z_]\w*\s*;'
+  unless:
+  - id: metadata/lang/source::linux-kernel-primary-tree-path
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+
+- id: directory-actor-name-suppression
+  desc: Suppresses matched directory actor name
+  crit: suspicious
+  conf: 0.94
+  if:
+    type: text
+    regex: 'if\s*\(\s*strnstr\s*\(\s*name\s*,[^\n]{1,80},\s*len\s*\)\s*\)\s*\n\s*return\s+(0|false);'
+  unless:
+  - id: metadata/lang/source::linux-kernel-primary-tree-path
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+
+composite_rules:
+- id: x64-movabs-push-ret-prologue-patch
+  desc: x64 absolute-jump prologue patch
+  crit: suspicious
+  conf: 0.99
+  all:
+  - id: x64-movabs-prologue-prefix
+  - id: x64-push-ret-prologue-suffix
+  near_bytes: 512
+
+- id: seq-file-row-rollback
+  desc: Truncates seq_file after buffer match
+  crit: suspicious
+  conf: 0.98
+  all:
+  - id: seq-file-buffer-search
+  - id: seq-file-count-snapshot
+  - id: seq-file-count-assignment
+  near_bytes: 512
+  unless:
+  - id: metadata/lang/source::linux-kernel-primary-tree-path
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+
+- id: opened-file-vfs-iterator-overwrite
+  desc: Overwrites live VFS directory iterator
+  crit: suspicious
+  conf: 0.98
+  all:
+  - id: mutable-file-operations-cast
+  - id: vfs-directory-iterator-pointer-write
+  near_bytes: 1200
+
+- id: proc-readdir-inline-process-concealment
+  desc: Inline procfs process-entry concealment
+  crit: hostile
+  conf: 0.99
+  all:
+  - id: proc-root-readdir-target-string
+  - id: proc-pid-filldir-suppression
+  - id: pte-rw-enable-source
+  - id: x64-movabs-push-ret-prologue-patch
+  - id: cr0-wp-bit-clear-source
+
+- id: procfs-network-seq-row-concealment
+  desc: Procfs network-row concealment
+  crit: hostile
+  conf: 0.99
+  all:
+  - id: tcp-seq-show-target-string
+  - id: seq-file-row-rollback
+  - id: x64-movabs-push-ret-prologue-patch
+
+- id: live-vfs-directory-entry-concealment
+  desc: Live VFS directory-entry concealment
+  crit: hostile
+  conf: 0.99
+  all:
+  - id: opened-file-vfs-iterator-overwrite
+  - id: directory-actor-name-suppression
