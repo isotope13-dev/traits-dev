@@ -1,6 +1,18 @@
 Triage these vetted-benign false positive(s):
-- /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz — hostile: 1, suspicious: 0
-  - H objectives/credential-access/browser/session-hijack::agent-skill-bundled-browser-session-theft — Skill bundles authenticated browser session state
+- /data/gauntlet-fp/9cf5a6d0e05fe0d22ea53523308679283dafb90fd17add95eb104fbbae173df7/tellico-4.2-2085-windows-cl-msvc2022-x86_64.exe — hostile: 2, suspicious: 0
+  - H objectives/command-and-control/backdoor/evasive::evasive-encoded-payload-dll — Unsigned DLL hides a payload behind anti-debug and memory APIs
+    members: /data/gauntlet-fp/9cf5a6d0e05fe0d22ea53523308679283dafb90fd17add95eb104fbbae173df7/tellico-4.2-2085-windows-cl-msvc2022-x86_64.exe!!tellico-4.2-2085-windows-cl-msvc2022-x86_64.7z, /data/gauntlet-fp/9cf5a6d0e05fe0d22ea53523308679283dafb90fd17add95eb104fbbae173df7/tellico-4.2-2085-windows-cl-msvc2022-x86_64.exe!!tellico-4.2-2085-windows-cl-msvc2022-x86_64.7z!!bin/libmp3lame.dll
+  - H objectives/command-and-control/backdoor/loader/stage::evasive-unsigned-api-resolver-loader — Unsigned PE resolves APIs dynamically while checking for debuggers
+    members: /data/gauntlet-fp/9cf5a6d0e05fe0d22ea53523308679283dafb90fd17add95eb104fbbae173df7/tellico-4.2-2085-windows-cl-msvc2022-x86_64.exe!!tellico-4.2-2085-windows-cl-msvc2022-x86_64.7z, /data/gauntlet-fp/9cf5a6d0e05fe0d22ea53523308679283dafb90fd17add95eb104fbbae173df7/tellico-4.2-2085-windows-cl-msvc2022-x86_64.exe!!tellico-4.2-2085-windows-cl-msvc2022-x86_64.7z!!bin/b2-1.dll, /data/gauntlet-fp/9cf5a6d0e05fe0d22ea53523308679283dafb90fd17add95eb104fbbae173df7/tellico-4.2-2085-windows-cl-msvc2022-x86_64.exe!!tellico-4.2-2085-windows-cl-msvc2022-x86_64.7z!!bin/libmp3lame.dll
+
+- /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe — hostile: 1, suspicious: 1
+  - H objectives/command-and-control/backdoor/evasive::evasive-encoded-payload-dll — Unsigned DLL hides a payload behind anti-debug and memory APIs
+    members: /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!ffmpeg.dll
+  - S objectives/supply-chain/impersonation/depconf::agent-skill-pip-install-list — Skill tool runs pip install from code
+    members: /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar!!node_modules/@mavis/local-runtime/assets/skills/pdf/scripts/merge.py, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar!!node_modules/@mavis/local-runtime/assets/skills/pdf/scripts/reformat_parse.py, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-arm64.7z, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-arm64.7z!!resources/app.asar, … +2
+
+- /data/gauntlet-fp/964e8b2c5f0fa7af6932bb2c1bcabcf68a2a6acef650ffbde25429a18ebf7d27/megalinter@v8 — hostile: 1, suspicious: 0
+  - H objectives/supply-chain/install-hook/build/behavioral::python-packaging-curl-download-execute — Packaging code downloads and launches a file
 
 
 Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
