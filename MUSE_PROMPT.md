@@ -1,51 +1,44 @@
-Restore detection on these verified supply-chain compromise(s). Each one is a real, confirmed
-attack that the current traits do not call hostile:
-- /data/fixed/853e5169d938eb223929d7fc9509991319d29e4f40233ca57c0e3c5cc7ad6e8d/laravel-lang__laravel-lang-actions-1.12.2-RECONSTRUCTED.zip — hostile: 0, suspicious: 4, ml.lvl: 279
-  - S objectives/anti-static/obfuscation/string/encoding::array-map-chr-codepoint-list — String decoded from a chr() code-point list
-    members: /data/fixed/853e5169d938eb223929d7fc9509991319d29e4f40233ca57c0e3c5cc7ad6e8d/laravel-lang__laravel-lang-actions-1.12.2-RECONSTRUCTED.zip!!Laravel-Lang-actions-556d2b3/src/helpers.php
-  - S objectives/evasion/process/hidden/execution::php-dual-platform-silent-launch — PHP launches a hidden child on both Windows and Unix
-    members: /data/fixed/853e5169d938eb223929d7fc9509991319d29e4f40233ca57c0e3c5cc7ad6e8d/laravel-lang__laravel-lang-actions-1.12.2-RECONSTRUCTED.zip!!Laravel-Lang-actions-556d2b3/src/helpers.php
-  - S objectives/execution/condition/host-marker::host-digest-temp-marker-gate — Host-name digest marker in temp gates execution
-    members: /data/fixed/853e5169d938eb223929d7fc9509991319d29e4f40233ca57c0e3c5cc7ad6e8d/laravel-lang__laravel-lang-actions-1.12.2-RECONSTRUCTED.zip!!Laravel-Lang-actions-556d2b3/src/helpers.php
-  - S objectives/supply-chain/install-hook/autoload::composer-autoload-fetch-and-spawn — Composer-autoloaded package fetches a URL and spawns a process
-- /data/fixed/5dca3f4fc310f83a30dfdffc3b4ff7593f3d2b04b08c69d754576edf0b03a691/lottie-player__lottie-player-malware.js — hostile: 0, suspicious: 3, ml.lvl: -1
-  - S objectives/anti-analysis/debugger-detect/check::js-devtools-getter-oracle — Detects DevTools by a logged getter
-  - S objectives/anti-static/obfuscation/obfuscator/index-shift::custom-string-table-obfuscator — Custom string-table obfuscator output
-  - S objectives/anti-static/obfuscation/obfuscator/index-shift::table-accessor-ternary-index-shift — String-table accessor shifts a ternary index
+The previous trait repair failed validation.
+Repair the errors below. Keep the change scoped to these validation errors.
 
-Success: at least 1 hostile finding on the sample itself — the root record, not only on a member
-inside it. Every finding you add must accurately describe behavior you actually observed in the
-sample, at the criticality it deserves.
+Validation output:
+make: Entering directory '/srv/data/rectifier/traits-dev'
+/data/rectifier/bin/cleave --traits-dir . validate
 
-Any findings listed above are the near misses: traits that fired below hostile on this sample are
-usually where the missing detection belongs, and raising or extending one you can justify is
-preferable to writing a new trait beside it. A sample with nothing listed needs the mechanism
-identified first.
+❌ ERROR: 1 broken trait references found in composite rules
+   Composite rules reference trait IDs that don't exist:
 
-Identify what the sample actually does before changing any trait. Use `cleave facts` and
-`cleave test-rules` on the extracted members; facts are faster and more reliable than text
-searches. Extract archives once and group equivalent `src`/`dist`, `.js`/`.ts`, architecture, and
-bundled-library variants. Name the concrete mechanism — the install hook, the network callback,
-the exec, the encoded payload, the path it writes — and write the trait against that.
+   ./objectives/supply-chain/trojanized/library/hidden-dep/npm-loader.yaml:383: Rule 'objectives/supply-chain/trojanized/library/hidden-dep::known-payload-phantom-dependency' references non-existent trait: 'objectives/supply-chain/trojanized/hidden-dependency::easy-day-js-dependency'
 
-A second corpus of manually vetted BENIGN files gates this same tag, and every trait you touch is
-measured against it in the same run. A trait broad enough to fire on ordinary software will be
-caught there and sent back as a false positive, which spends another repair round and lands
-nothing. Prefer a trait that names the attack's specific behavior over one that widens an existing
-rule until it happens to cover this sample. Give traits specific IDs and descriptions that tell an
-analyst what behavior was observed and why it matters.
 
-Make all planned changes before measuring each sample:
+validation failed: 2 issue(s) in 2 location(s)
+counts
+  qual/broken-ref          1
+  qual/validation          1
 
-  /data/rectifier/bin/cleave analyze <sample>
+-
+  qual/broken-ref          1 broken trait references in composite rules
+./objectives/supply-chain/trojanized/library/hidden-dep/npm-loader.yaml:383
+  qual/validation          ./objectives/supply-chain/trojanized/library/hidden-dep/npm-loader.yaml:383: Rule 'objectives/supply-chain/trojanized/library/hidden-dep::known-payload-phantom-dependency' references non-existent trait 'objectives/supply-chain/trojanized/hidden-dependency::easy-day-js-dependency'
 
-Run this at least once after editing and before finishing. Confirm the hostile finding is on the
-sample's own record. Inspect findings at every criticality, not only the one that affects the QA
-gate. If the success criteria are not met or any finding is misleading or inaccurate, make the next
-complete set of changes before analyzing again.
+suggested fixes
+  qual/broken-ref: Fix the id, or add the missing trait; references resolve by directory::id.
+  qual/validation: Review the validation message and update the trait.
+
+
+==> Fix all validation errors before continuing.
+
+Error: Failed to load traits from .
+
+Caused by:
+    Trait loading failed due to 2 validation error(s):
+    validation: qual/broken-ref 1 broken trait references in composite rules
+    validation: qual/validation ./objectives/supply-chain/trojanized/library/hidden-dep/npm-loader.yaml:383: Rule 'objectives/supply-chain/trojanized/library/hidden-dep::known-payload-phantom-dependency' references non-existent trait 'objectives/supply-chain/trojanized/hidden-dependency::easy-day-js-dependency'
+make: *** [Makefile:20: validate] Error 1
+make: Leaving directory '/srv/data/rectifier/traits-dev'
+
 
 Before finishing, you MUST run:
-
   make -C /data/rectifier/traits-dev validate CLEAVE=/data/rectifier/bin/cleave
 
-Fix every error and rerun until it passes. Rectifier performs the authoritative rescan.
+Fix every error and rerun until it passes.
