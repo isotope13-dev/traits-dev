@@ -30,48 +30,6 @@ traits:
   # uses the result as the Authorization header on its own release API calls.
   - id: well-known/tool/development/dev-cli/nx::nx-github-release-client-module
   - id: well-known/lib/format/cadence::update-tool-context
-# A single `aws sts get-caller-identity` is the canonical "am I authenticated"
-# probe run by virtually every AWS CI/deploy/provisioning script — a notable
-# credential-context capability, not suspicious alone. The harvest intent comes
-# from mass-cloud-credential-harvest (many distinct cloud probes co-occurring).
-- id: aws-sts-identity
-  desc: "AWS identity probe"
-  crit: notable
-  conf: 0.95
-  if:
-    type: text
-    regex: aws\s+sts\s+get-caller-identity(\s+\*)?
-  not:
-  - exact: aws sts get-caller-identity *
-  unless:
-  - id: well-known/tool/detection/security-scanner/
-  - id: rust-test-cloud-cli-string-fixture
-  - id: well-known/app/infrastructure/skypilot::skypilot-source-file
-  - id: well-known/app/infrastructure/skypilot::skypilot-kubeconfig-helper
-  - id: well-known/app/infrastructure/skypilot::skypilot-source-file
-- id: gcloud-auth-list
-  desc: GCP active account probe (gcloud auth list)
-  crit: notable
-  conf: 0.95
-  if:
-    type: text
-    # Match a command-execution context, not a schema/docstring example.
-    regex: '(?i)subprocess\.(run|Popen|check_output)[^\n]{0,120}gcloud\s+auth\s+list'
-  unless:
-  - id: well-known/tool/detection/security-scanner/
-- id: az-account-show
-  desc: Azure CLI account query
-  crit: notable
-  conf: 0.95
-  if:
-    type: text
-    regex: az\s+account\s+show(\s+\*)?
-  not:
-  - exact: az account show *
-  unless:
-  - id: well-known/tool/detection/security-scanner/
-  - id: rust-test-cloud-cli-string-fixture
-
 - id: aws-secretsmanager-list
   desc: AWS Secrets Manager list secrets
   crit: notable
@@ -144,12 +102,11 @@ traits:
   if:
     type: text
     regex: 'base64\s+--decode\s*>\s*["''].{0,120}\.(crt|key)["'']'
-# Same reasoning as aws-sts-identity above: shelling out to the vendor's own
-# CLI to read the token it already holds is how deploy tooling authenticates on
-# the user's behalf -- travis.rb's `travis setup heroku` runs it to pre-fill
-# .travis.yml, and prompts the user when it comes back empty. One such probe is
-# a notable credential-context capability, not intent; the harvest signal is
-# mass-cloud-credential-harvest requiring 2+ distinct cloud probes.
+# Shelling out to the vendor's own CLI to read the token it already holds is how
+# deploy tooling authenticates on the user's behalf -- travis.rb's
+# `travis setup heroku` runs it to pre-fill .travis.yml, and prompts the user
+# when it comes back empty. Unlike an identity-state query, this command returns
+# reusable credential material, so it remains credential-access evidence.
 - id: heroku-auth-token
   desc: Heroku token read (heroku auth:token)
   crit: notable
@@ -157,13 +114,6 @@ traits:
   if:
     type: text
     substr: heroku auth:token
-- id: doppler-me
-  desc: Doppler secrets manager identity probe
-  crit: notable
-  conf: 0.95
-  if:
-    type: text
-    regex: \bdoppler\s+me\b
 - id: gh-auth-token-split
   desc: GitHub CLI token extraction (split arguments)
   crit: suspicious
@@ -216,46 +166,6 @@ traits:
   if:
     type: text
     substr: FindingTypeSecret
-- id: aws-sts-split
-  desc: AWS identity probe (split arguments)
-  crit: suspicious
-  conf: 0.9
-  for:
-  - go
-  - rust
-  - java
-  - csharp
-  if:
-    type: text
-    regex: '"aws"[,\s]+"sts"[,\s]+"get-caller-identity"'
-- id: gcloud-auth-split
-  desc: GCP active account probe (split arguments)
-  crit: suspicious
-  conf: 0.9
-  for:
-  - go
-  - rust
-  - java
-  - csharp
-  if:
-    type: text
-    regex: '"gcloud"[,\s]+"auth"[,\s]+"list"'
-  unless:
-  - type: text
-    substr: '--format=value(account,status)'
-  - id: micro-behaviors/os/service/gcloud::gcloud-deployment-bootstrap-context
-- id: az-account-split
-  desc: Azure identity probe (split arguments)
-  crit: suspicious
-  conf: 0.9
-  for:
-  - go
-  - rust
-  - java
-  - csharp
-  if:
-    type: text
-    regex: '"az"[,\\s]+"account"[,\\s]+"show"'
 - id: kubectl-config-split
   desc: "kubectl raw kubeconfig read (split args)"
   crit: notable
@@ -388,7 +298,7 @@ composite_rules:
   - id: metadata/package/testing/harness/unit::rust-assert-cloud-cli-command-fixture
   - id: metadata/package/testing/harness/unit::rust-cloud-cli-command-fixture-table
 - id: mass-cloud-credential-harvest
-  desc: Mass cloud credential harvesting (2+ operations)
+  desc: Multiple cloud credential extraction operations
   crit: hostile
   conf: 0.95
   needs: 2
@@ -400,20 +310,11 @@ composite_rules:
   - id: gh-auth-token-split
   - id: objectives/supply-chain/credential-theft/cli/token::gh-auth-token
   - id: micro-behaviors/process/create/vcs/git::go-git-credential-helper
-  - id: aws-sts-identity
-  - id: aws-sts-split
-  - id: gcloud-auth-list
-  - id: gcloud-auth-split
-  - id: az-account-show
-  - id: az-account-split
   - id: aws-secretsmanager-list
   - id: aws-secretsmanager-get
   - id: kubectl-config-view
   - id: kubectl-config-split
-  - id: micro-behaviors/os/security/auth/cloud::vercel-whoami
   - id: heroku-auth-token
-  - id: micro-behaviors/os/security/auth/cloud::vault-token-lookup
-  - id: doppler-me
 # Decoding the caller's own kubeconfig client key/cert to local files is the
 # standard first step of any script that needs to present a client cert --
 # CI mTLS smoke tests, cluster-bootstrap helpers, and cert-rotation tooling
@@ -490,9 +391,6 @@ composite_rules:
   - id: gh-auth-token-raw
   - id: objectives/supply-chain/credential-theft/cli/token::gh-auth-token
   - id: micro-behaviors/process/create/vcs/git::go-git-credential-helper
-  - id: aws-sts-identity
-  - id: gcloud-auth-list
-  - id: az-account-show
 - id: vscode-cloud-cli-dropper
   desc: VSCode cloud CLI harvest triggers package dropper
   crit: hostile
