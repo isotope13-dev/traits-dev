@@ -1,15 +1,7 @@
 Triage these vetted-benign false positive(s):
-- /data/gauntlet-fp/1ca903ac04f3f5301921cfb82c11d03bd5b82e7b3e55274cd61509119763631f/electron-winstaller-5.1.0.tgz — hostile: 2, suspicious: 1
+- /data/gauntlet-fp/2e3fc605d0040c7aa6b6678b5df51e2f19e810bdb2fe0b57ee2cb2bb7af87fb4/TheBrain-15.0.587-x64.dmg — hostile: 1, suspicious: 0
   - H objectives/anti-static/obfuscation/reflection/invoke::unsigned-encrypted-reflection-loader — Unsigned .NET payload decodes and activates encrypted code
-    members: /data/gauntlet-fp/1ca903ac04f3f5301921cfb82c11d03bd5b82e7b3e55274cd61509119763631f/electron-winstaller-5.1.0.tgz!!package/vendor/Squirrel-Mono.exe, /data/gauntlet-fp/1ca903ac04f3f5301921cfb82c11d03bd5b82e7b3e55274cd61509119763631f/electron-winstaller-5.1.0.tgz!!package/vendor/Squirrel.exe, /data/gauntlet-fp/1ca903ac04f3f5301921cfb82c11d03bd5b82e7b3e55274cd61509119763631f/electron-winstaller-5.1.0.tgz!!package/vendor/SyncReleases.exe
-  - H objectives/command-and-control/backdoor/loader/stage::evasive-unsigned-api-resolver-loader — Unsigned PE resolves APIs dynamically while checking for debuggers
-    members: /data/gauntlet-fp/1ca903ac04f3f5301921cfb82c11d03bd5b82e7b3e55274cd61509119763631f/electron-winstaller-5.1.0.tgz!!package/vendor/StubExecutable.exe, /data/gauntlet-fp/1ca903ac04f3f5301921cfb82c11d03bd5b82e7b3e55274cd61509119763631f/electron-winstaller-5.1.0.tgz!!package/vendor/WriteZipToSetup.exe
-  - S objectives/supply-chain/install-hook/scripts/lifecycle::install-hook-ships-dll-member — Install hook package ships a DLL member
-
-- /data/gauntlet-fp/0fa119452403bda7b58d7a29971e4f258c84d27b3d807d5422102b73e0ce5425/CloudDriveMapper.msi — hostile: 0, suspicious: 2
-  - S metadata/binary/installer/database::msi-powershell-executable-raw — MSI table contains PowerShell executable marker
-  - S objectives/anti-analysis/sandbox-detect/artifact/known::username-wdag-utility-account — WDAGUtilityAccount Windows Sandbox user
-    members: /data/gauntlet-fp/0fa119452403bda7b58d7a29971e4f258c84d27b3d807d5422102b73e0ce5425/CloudDriveMapper.msi!!CloudDriveMapper.msi!!ole/䌋䄱䜵䄾䆬䖸䄷䗦䇾䏯
+    members: /data/gauntlet-fp/2e3fc605d0040c7aa6b6678b5df51e2f19e810bdb2fe0b57ee2cb2bb7af87fb4/TheBrain-15.0.587-x64.dmg!!TheBrain 15 15.0.587/TheBrain 15.app/Contents/Resources/bin/TheBrainCore.dll
 
 
 Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
