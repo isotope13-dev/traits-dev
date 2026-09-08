@@ -1,0 +1,65 @@
+# OTPs are out-of-band credentials: an issuing endpoint should acknowledge
+# delivery, never return the usable code to its caller. Attack clients exploit
+# that implementation flaw by selecting the OTP/code member from the send
+# response and placing it into a follow-up authentication request. The atoms
+# below stay structural and provider-neutral so Python and browser clients are
+# covered without depending on one anonymized route or target.
+defaults:
+  platforms: [unix, windows]
+  for: [python, javascript, typescript]
+  attack: T1111
+
+traits:
+  - id: otp-named-response-code-member
+    desc: Reads code from OTP-named response
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: symbol
+      kind: member
+      regex: '(?i)^(otp|mfa|verification)\w*(response|result|reply|data)\.json\(\)\.(code|otp)$'
+    unless:
+      - id: metadata/package/testing/presence/harness::python-test-file
+      - id: metadata/package/testing/presence/harness::test-directory-path
+
+  - id: response-otp-member
+    desc: Reads OTP member from HTTP response
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: symbol
+      kind: member
+      regex: '(?i)^(response|resp|result|reply|data)\.json\(\)\.(otp|mfa_code|verification_code)$'
+    unless:
+      - id: metadata/package/testing/presence/harness::python-test-file
+      - id: metadata/package/testing/presence/harness::test-directory-path
+
+composite_rules:
+  - id: otp-response-code-read
+    desc: Reads OTP from HTTP response
+    crit: suspicious
+    conf: 0.95
+    any:
+      - id: otp-named-response-code-member
+      - id: response-otp-member
+
+  - id: http-response-otp-replay
+    desc: Replays response-leaked OTP in HTTP POST
+    crit: hostile
+    conf: 0.97
+    attack: T1111,T1078
+    all:
+      - id: otp-response-code-read
+      - id: micro-behaviors/communications/http/request/body::http-post-body-otp-value
+    near_lines: 36
+
+  - id: account-validation-otp-session-takeover
+    desc: Captures session after lookup and OTP replay
+    crit: hostile
+    conf: 0.98
+    attack: T1087,T1111,T1078
+    all:
+      - id: micro-behaviors/communications/http/auth::email-account-validation-route
+      - id: http-response-otp-replay
+      - id: micro-behaviors/communications/http/cookies::python-http-response-cookies-read
+    near_lines: 48
