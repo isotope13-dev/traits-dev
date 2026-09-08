@@ -1,0 +1,130 @@
+# Provider-side live checks used to separate usable harvested credentials from
+# dead entries. Individual authenticated identity/profile requests are ordinary
+# API behavior; the multi-provider combination is the suspicious behavior, and
+# the hostile verdict additionally requires a harvested-secret inventory that
+# is updated with the validation result.
+defaults:
+  platforms: [unix, windows]
+  for: [scripts, source]
+  attack: T1528
+
+traits:
+  - id: secret-inventory-provider-fields
+    desc: Provider and secret schema fields
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?is)\b(provider|service)\s+TEXT.{0,120}\b(secret|token|api_key)\s+TEXT'
+
+  - id: secret-inventory-source-status-fields
+    desc: Secret source and status schema fields
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?is)\b(source_url|origin)\s+TEXT.{0,120}\bstatus\s+TEXT'
+
+  - id: secret-validation-state-triad
+    desc: Unchecked valid invalid state triad
+    crit: component
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?is)\bunchecked\b.{0,80}\bvalid\b.{0,80}\binvalid\b'
+
+  - id: secret-table-status-update
+    desc: Updates secret table status
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)UPDATE\s+\w*(secret|credential|token)\w*\s+SET\s+status\s*='
+
+  - id: last-checked-sql-assignment
+    desc: Assigns SQL last-checked field
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\blast_checked\s*='
+
+composite_rules:
+  - id: secret-validation-inventory-schema
+    desc: Secret inventory with validation states
+    crit: suspicious
+    conf: 0.97
+    near_lines: 32
+    all:
+      - id: micro-behaviors/data/db/sql::sql-create-table
+      - id: secret-inventory-provider-fields
+      - id: secret-inventory-source-status-fields
+      - id: secret-validation-state-triad
+    unless:
+      - id: well-known/tool/detection/security-scanner/
+      - id: well-known/tool/detection/threat-intel/
+
+  - id: secret-validation-status-update
+    desc: Updates stored secret validation state
+    crit: suspicious
+    conf: 0.96
+    near_lines: 12
+    all:
+      - id: secret-table-status-update
+      - id: last-checked-sql-assignment
+    unless:
+      - id: well-known/tool/detection/security-scanner/
+      - id: well-known/tool/detection/threat-intel/
+
+  - id: github-api-token-live-check
+    desc: Checks a bearer token against GitHub's authenticated-user endpoint
+    crit: notable
+    conf: 0.94
+    all:
+      - id: micro-behaviors/communications/http/services/github::github-authenticated-user-endpoint
+      - id: micro-behaviors/communications/http/token-auth::bearer-header-from-variable
+
+  - id: sendgrid-api-token-live-check
+    desc: Checks a bearer token against SendGrid's authenticated profile endpoint
+    crit: notable
+    conf: 0.95
+    all:
+      - id: micro-behaviors/communications/http/services/sendgrid::user-profile-endpoint
+      - id: micro-behaviors/communications/http/token-auth::bearer-header-from-variable
+
+  - id: openai-api-token-live-check
+    desc: Checks a bearer token against OpenAI's models endpoint
+    crit: notable
+    conf: 0.94
+    all:
+      - id: micro-behaviors/communications/http/services/openai::models-list-endpoint
+      - id: micro-behaviors/communications/http/token-auth::bearer-header-from-variable
+
+  - id: aws-access-key-live-check
+    desc: Checks supplied AWS access keys with STS caller identity
+    crit: notable
+    conf: 0.95
+    all:
+      - id: micro-behaviors/communications/http/services/aws::boto3-client-supplied-credentials
+      - id: micro-behaviors/communications/http/services/aws-iam::sts-get-caller-identity
+
+  - id: multi-provider-api-token-live-check
+    desc: Live-checks credentials against multiple provider APIs
+    crit: suspicious
+    conf: 0.97
+    needs: 2
+    any:
+      - id: github-api-token-live-check
+      - id: sendgrid-api-token-live-check
+      - id: openai-api-token-live-check
+      - id: aws-access-key-live-check
+
+  - id: harvested-secret-live-validation-manager
+    desc: Maintains validation state for harvested multi-provider secrets
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: secret-validation-inventory-schema
+      - id: secret-validation-status-update
+      - id: multi-provider-api-token-live-check
+      - id: objectives/credential-access/api-harvest/token::python-provider-secret-regex-extractor
