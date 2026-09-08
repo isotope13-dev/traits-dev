@@ -1,96 +1,94 @@
-Triage these vetted-benign false positive(s):
-- /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz — hostile: 0, suspicious: 9
-  - S micro-behaviors/fs/write/content::create-batch-from-bound-path — Creates batch file via bound path
-    members: /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/core-js/modules/es.string.match-all.js, /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/core-js/modules/esnext.math.seeded-prng.js, /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/core-js/modules/web.url-search-params.constructor.js, /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/immer/dist/immer.cjs.production.min.js, /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/immer/dist/immer.esm.js, /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/immer/dist/immer.esm.mjs, … +1
-  - S objectives/anti-analysis/geofencing/ip-range::operation-restricted-message--rx-5 — Regex component marker
-    members: /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/@kbn/alerting-plugin/server/rule_type_registry.js
-  - S objectives/anti-static/obfuscation/imports::js-decoded-computed-call — JS calls method via computed decoded key
-    members: /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/@kbn/otel-semantic-conventions/assets/resolved-semconv.yaml.js, /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/@opentelemetry/semantic-conventions/build/esm/experimental_attributes.js, /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/@opentelemetry/semantic-conventions/build/esnext/experimental_attributes.js, /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/@opentelemetry/semantic-conventions/build/src/experimental_attributes.js, /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/picomatch/lib/picomatch.js
-  - S objectives/anti-static/obfuscation/string/charcode-url::js-charcode-url-host-rewrite — Rewrites URL with fromCharCode strings
-    members: /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/@elastic/apm-rum-core/src/common/apm-server.js, /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/@grpc/grpc-js/build/src/server.js, /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/@kbn/inference-prompt-utils/src/flows/reasoning/format_for_power.js, /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/@kbn/lens-plugin/public/app_plugin/show_underlying_data.js, /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/@kbn/ml-plugin/public/application/util/custom_url_utils.js, /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/@kbn/stack-connectors-plugin/server/connector_types/email/index.js, … +38
-  - S objectives/collection/email-harvest::mailitems-access-exfil-client-app-id — Reported mail-harvest client identifier
-    members: /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/@kbn/fleet-plugin/target/bundled_packages/security_detection_engine-9.4.2.zip, /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/@kbn/fleet-plugin/target/bundled_packages/security_detection_engine-9.4.2.zip!!security_detection_engine-9.4.2/kibana/security_rule/48819484-9826-4083-9eba-1da74cd0eaf2_111.json, /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/@kbn/fleet-plugin/target/bundled_packages/security_detection_engine-9.4.2.zip!!security_detection_engine-9.4.2/kibana/security_rule/48819484-9826-4083-9eba-1da74cd0eaf2_112.json, /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/@kbn/fleet-plugin/target/bundled_packages/security_detection_engine-9.4.2.zip!!security_detection_engine-9.4.2/kibana/security_rule/48819484-9826-4083-9eba-1da74cd0eaf2_113.json
-  - S objectives/command-and-control/remote-command/control::websocket-message-function-exec--new-function-message-a — new Function applied to message contents
-    members: /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/depd/index.js
-  - S objectives/evasion/decoy/social::fake-error-document-corrupt-state — Fake document corrupt message
-    members: /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/xml2js/lib/xml2js.bc.js
-  - S objectives/evasion/security-bypass/llm/override::llm-human-impersonation--rx-41 — Regex component marker
-    members: /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/@kbn/content-connectors-plugin/target/public/contentConnectors.chunk.206.js, /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/@kbn/enterprise-search-plugin/target/public/enterpriseSearch.chunk.410.js, /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/@kbn/search-connectors/types/native_connectors.js, /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/@kbn/serverless-search/target/public/serverlessSearch.chunk.773.js
-  - S objectives/impact/dos/attack/flood::ddos-attack-terminology — Additional DDoS attack terminology
-    members: /data/gauntlet-fp/412d5e56e85913a9750b725344c7039444f119d32fe60437b980a67bad36ba38/docker.io_library_kibana_9.4.0.tar.xz!!usr/share/kibana/node_modules/@kbn/security-solution-plugin/target/public/securitySolution.chunk.4588.js
+The previous trait repair failed validation.
+Repair the errors below. Keep the change scoped to these validation errors.
 
-- /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe — hostile: 0, suspicious: 8
-  - S micro-behaviors/fs/write/content::create-batch-from-bound-path — Creates batch file via bound path
-    members: /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar!!node_modules/pixelmatch/bin/pixelmatch, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-arm64.7z, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-arm64.7z!!resources/app.asar, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-arm64.7z!!resources/app.asar!!node_modules/pixelmatch/bin/pixelmatch
-  - S objectives/anti-static/obfuscation/imports::js-decoded-computed-call — JS calls method via computed decoded key
-    members: /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar!!node_modules/@opentelemetry/semantic-conventions/build/esm/experimental_attributes.js, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar!!node_modules/@opentelemetry/semantic-conventions/build/esnext/experimental_attributes.js, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar!!node_modules/@opentelemetry/semantic-conventions/build/src/experimental_attributes.js, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar!!out/_next/static/chunks/6380.1178e761ecec2098.js, … +10
-  - S objectives/anti-static/obfuscation/string/charcode-url::js-charcode-url-host-rewrite — Rewrites URL with fromCharCode strings
-    members: /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar!!dist/main/modules/terminal/osc-parser.js, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar!!dist/main/utils/extra-log-source.js, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar!!node_modules/@larksuiteoapi/node-sdk/node_modules/axios/lib/adapters/http.js, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar!!node_modules/@larksuiteoapi/node-sdk/node_modules/axios/lib/helpers/formDataToStream.js, … +56
-  - S objectives/command-and-control/dropper/execution/fileless::ps-downloadfile-variable-invoke-exec — PowerShell invokes executable variable
-    members: /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar!!node_modules/@mavis/local-runtime/assets/skills/docx/scripts/env_check.ps1, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar!!node_modules/@mavis/local-runtime/assets/skills/docx/scripts/setup.ps1, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-arm64.7z, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-arm64.7z!!resources/app.asar, … +2
-  - S objectives/command-and-control/remote-command/control::websocket-message-function-exec--new-function-event-data — new Function built from message event data
-    members: /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar!!out/_next/static/chunks/7115-683b86e53060f113.js, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-arm64.7z, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-arm64.7z!!resources/app.asar, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-arm64.7z!!resources/app.asar!!out/_next/static/chunks/7115-683b86e53060f113.js
-  - S objectives/command-and-control/remote-command/control::websocket-message-function-exec--new-function-message-a — new Function applied to message contents
-    members: /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar!!node_modules/depd/index.js, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-arm64.7z, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-arm64.7z!!resources/app.asar, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-arm64.7z!!resources/app.asar!!node_modules/depd/index.js
-  - S objectives/evasion/decoy/social::fake-error-document-corrupt-state — Fake document corrupt message
-    members: /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar!!node_modules/ali-oss/node_modules/xml2js/lib/xml2js.bc.js, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-arm64.7z, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-arm64.7z!!resources/app.asar, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-arm64.7z!!resources/app.asar!!node_modules/ali-oss/node_modules/xml2js/lib/xml2js.bc.js
-  - S objectives/execution/exploit/network-service/exploit-automation::block-padding-byte-search-loop — Exhausts bytes across block padding
-    members: /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-64.7z!!resources/app.asar!!node_modules/jimp/browser/lib/jimp.js, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-arm64.7z, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-arm64.7z!!resources/app.asar, /data/gauntlet-fp/8224525de78d20906885d22eb5d28d518f45a15ba78722f657eddfa378c9e278/MiniMax Code Setup 3.0.58.exe!!$PLUGINSDIR/app-arm64.7z!!resources/app.asar!!node_modules/jimp/browser/lib/jimp.js
+Validation output:
+make: Entering directory '/srv/data/rectifier/traits-dev'
+/data/rectifier/bin/cleave --traits-dir . validate
 
-- /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz — hostile: 0, suspicious: 7
-  - S micro-behaviors/hardware/input/mouse/synthesis::synthetic-user-input — Synthesize keyboard and mouse input
-    members: /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/i386-windows/user.exe16, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/i386-windows/user32.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/x86_64-windows/user32.dll
-  - S objectives/anti-static/obfuscation/imports::native-memory-api-cluster-without-allocate — Native memory API cluster without allocate
-    members: /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/i386-windows/kernelbase.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/i386-windows/ntdll.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/x86_64-windows/kernelbase.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/x86_64-windows/ntdll.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/x86_64-windows/wow64.dll
-  - S objectives/anti-static/obfuscation/imports::native-memory-api-cluster-without-create — Native memory API cluster without create
-    members: /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/i386-windows/kernelbase.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/i386-windows/ntdll.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/x86_64-windows/kernelbase.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/x86_64-windows/ntdll.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/x86_64-windows/wow64.dll
-  - S objectives/anti-static/obfuscation/imports::native-memory-api-cluster-without-map — Native memory API cluster without map
-    members: /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/i386-windows/kernelbase.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/i386-windows/ntdll.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/x86_64-windows/kernelbase.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/x86_64-windows/ntdll.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/x86_64-windows/wow64.dll
-  - S objectives/anti-static/obfuscation/imports::native-memory-api-cluster-without-protect — Native memory API cluster without protect
-    members: /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/i386-windows/kernelbase.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/i386-windows/ntdll.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/x86_64-windows/kernelbase.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/x86_64-windows/ntdll.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/x86_64-windows/wow64.dll
-  - S objectives/anti-static/obfuscation/imports::native-memory-api-cluster-without-write — Native memory API cluster without write
-    members: /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/i386-windows/kernelbase.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/i386-windows/ntdll.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/x86_64-windows/kernelbase.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/x86_64-windows/ntdll.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/x86_64-windows/wow64.dll
-  - S objectives/persistence/system/service/install::bits-notify-command--rx-3 — Regex component marker
-    members: /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/include/wine/windows/bits1_5.idl, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/i386-windows/qmgr.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/i386-windows/qmgrprxy.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/x86_64-windows/qmgr.dll, /data/gauntlet-fp/86eb2fd13be74347e8e33fa166e7984c44ea57ee274d968b77fd0b933e32cfc9/wine-dwproton-11.0-12-x86_64.tar.xz!!wine-dwproton/usr/lib/wine/x86_64-windows/qmgrprxy.dll
+❌ ERROR: 2 rules have a dead downgrade clause
+   `unless:` wins over `downgrade:`. A reference in both means the rule is
+   suppressed whenever it matches, so the downgrade is unreachable.
 
-- /data/gauntlet-fp/361dbd23017ca24029e19316faef0371dfd20dc0bd1295ac7b02ff4fdfb9e3d3/VSCodium-vscodium-1.126.04524-VSCodium.arm64.1.126.04524.dmg — hostile: 0, suspicious: 5
-  - S metadata/package/manifest/name::npm-name-single-char — npm package name is single character
-    members: /data/gauntlet-fp/361dbd23017ca24029e19316faef0371dfd20dc0bd1295ac7b02ff4fdfb9e3d3/VSCodium-vscodium-1.126.04524-VSCodium.arm64.1.126.04524.dmg!!VSCodium.app/Contents/Resources/app/extensions/r/package.json, /data/gauntlet-fp/361dbd23017ca24029e19316faef0371dfd20dc0bd1295ac7b02ff4fdfb9e3d3/VSCodium-vscodium-1.126.04524-VSCodium.arm64.1.126.04524.dmg!!VSCodium.app/Contents/Resources/app/node_modules/d/package.json
-  - S micro-behaviors/fs/write/content::create-batch-from-bound-path — Creates batch file via bound path
-    members: /data/gauntlet-fp/361dbd23017ca24029e19316faef0371dfd20dc0bd1295ac7b02ff4fdfb9e3d3/VSCodium-vscodium-1.126.04524-VSCodium.arm64.1.126.04524.dmg!!VSCodium.app/Contents/Resources/app/out/vs/workbench/api/worker/extensionHostWorkerMain.js
-  - S objectives/anti-static/obfuscation/imports::js-decoded-computed-call — JS calls method via computed decoded key
-    members: /data/gauntlet-fp/361dbd23017ca24029e19316faef0371dfd20dc0bd1295ac7b02ff4fdfb9e3d3/VSCodium-vscodium-1.126.04524-VSCodium.arm64.1.126.04524.dmg!!VSCodium.app/Contents/Resources/app/out/vs/sessions/sessions.desktop.main.js, /data/gauntlet-fp/361dbd23017ca24029e19316faef0371dfd20dc0bd1295ac7b02ff4fdfb9e3d3/VSCodium-vscodium-1.126.04524-VSCodium.arm64.1.126.04524.dmg!!VSCodium.app/Contents/Resources/app/out/vs/workbench/workbench.desktop.main.js
-  - S objectives/anti-static/obfuscation/string/charcode-url::js-charcode-url-host-rewrite — Rewrites URL with fromCharCode strings
-    members: /data/gauntlet-fp/361dbd23017ca24029e19316faef0371dfd20dc0bd1295ac7b02ff4fdfb9e3d3/VSCodium-vscodium-1.126.04524-VSCodium.arm64.1.126.04524.dmg!!VSCodium.app/Contents/Resources/app/node_modules/@microsoft/dev-tunnels-ssh/algorithms/node/nodeECDsa.js, /data/gauntlet-fp/361dbd23017ca24029e19316faef0371dfd20dc0bd1295ac7b02ff4fdfb9e3d3/VSCodium-vscodium-1.126.04524-VSCodium.arm64.1.126.04524.dmg!!VSCodium.app/Contents/Resources/app/node_modules/@microsoft/dev-tunnels-ssh/services/keyExchangeService.js, /data/gauntlet-fp/361dbd23017ca24029e19316faef0371dfd20dc0bd1295ac7b02ff4fdfb9e3d3/VSCodium-vscodium-1.126.04524-VSCodium.arm64.1.126.04524.dmg!!VSCodium.app/Contents/Resources/app/node_modules/axios/lib/adapters/http.js, /data/gauntlet-fp/361dbd23017ca24029e19316faef0371dfd20dc0bd1295ac7b02ff4fdfb9e3d3/VSCodium-vscodium-1.126.04524-VSCodium.arm64.1.126.04524.dmg!!VSCodium.app/Contents/Resources/app/node_modules/axios/lib/helpers/formDataToStream.js, /data/gauntlet-fp/361dbd23017ca24029e19316faef0371dfd20dc0bd1295ac7b02ff4fdfb9e3d3/VSCodium-vscodium-1.126.04524-VSCodium.arm64.1.126.04524.dmg!!VSCodium.app/Contents/Resources/app/node_modules/ip-address/dist/ipv6.js, /data/gauntlet-fp/361dbd23017ca24029e19316faef0371dfd20dc0bd1295ac7b02ff4fdfb9e3d3/VSCodium-vscodium-1.126.04524-VSCodium.arm64.1.126.04524.dmg!!VSCodium.app/Contents/Resources/app/node_modules/katex/contrib/auto-render/splitAtDelimiters.js, … +9
-  - S objectives/supply-chain/hidden-payload/extensions/vscode::vscode-filewatch-terminal-command-dispatch — VS Code code watches files and dispatches terminal commands
-    members: /data/gauntlet-fp/361dbd23017ca24029e19316faef0371dfd20dc0bd1295ac7b02ff4fdfb9e3d3/VSCodium-vscodium-1.126.04524-VSCodium.arm64.1.126.04524.dmg!!VSCodium.app/Contents/Resources/app/out/vscode-dts/vscode.d.ts
+   Rule 'micro-behaviors/process/create/exec::binary-process-execution': dead downgrade.any entries (metadata/lang/compiler/systems::go-binary)
+   Rule 'micro-behaviors/process/create/execv::execve-fn': dead downgrade.any entries (metadata/lang/compiler/systems::go-binary)
 
 
-Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
-acceptable, and only when it accurately describes genuinely unusual behavior in the benign sample.
-Every remaining finding must accurately describe observed behavior, regardless of its criticality.
+⚠️  WARNING: 1 trait pairs have identical matching logic but different metadata
+   Same detection with inconsistent criticality/confidence/platforms:
 
-Use the findings above as the initial worklist. Repair traits containing any misleading or
-inaccurate findings, regardless of criticality, following the relevant parts of TAXONOMY.md and
-RULES.md.
-Use `cleave facts` and `cleave test-rules` on representative extracted files; facts are faster
-and more reliable than text searches. Extract archives once and group equivalent `src`/`dist`,
-`.js`/`.ts`, architecture, and bundled-library variants.
+   micro-behaviors/os/service/dependency::default-deps-no vs objectives/persistence/system/service/systemd::default-deps-no
+      ./micro-behaviors/os/service/dependency/systemd.yaml
+      ./objectives/persistence/system/service/systemd/traits.yaml
+      Same matching logic, overlapping types (SystemdService∩SystemdService), but: conf: 0.90 vs 1.00
 
-Make the smallest defensible change and preserve useful detection. Base exceptions on strong,
-generalizable evidence. Give traits specific IDs and descriptions that tell an analyst what
-behavior was observed and why it matters.
 
-Make all planned changes before measuring each sample:
+⚠️  WARNING: 1 composite rules have `needs` without `any:`
+   `needs` only applies to `any:` conditions and is ignored on `all:`-only rules:
 
-  /data/rectifier/bin/cleave analyze <sample>
+   ./micro-behaviors/hardware/input/mouse/synthesis/combined.yaml: 'micro-behaviors/hardware/input/mouse/synthesis::comprehensive-user-input-synthesis'
 
-Run this at least once after editing and before finishing. Inspect findings at every criticality,
-not only those that affect the QA count gate. If the success counts are not met or any finding is
-misleading or inaccurate, make the next complete set of changes before analyzing again.
+
+❌ ERROR: 1 YAML parsing error(s) found:
+
+   Failed to parse YAML in "./micro-behaviors/process/hook/interception/dotnet.yaml"
+
+   Error at line 44:
+
+    42│      - id: iinterceptor-interface
+    43│      - id: dynamic-proxy-class
+    44│  - id: interceptor-comp
+      │            ← Error here
+    45│    desc: Method interception capability
+
+
+   Fix these issues in the YAML files before continuing.
+
+
+validation failed: 4 issue(s) in 1 location(s)
+counts
+  dedup/dupe-atomic        1
+  qual/dead-downgrade      1
+  qual/malformed           1
+  qual/validation          1
+
+-
+  dedup/dupe-atomic        Duplicate atomic traits detected (same search parameters): micro-behaviors/os/service/dependency::default-deps-no, objectives/persistence/system/service/systemd::default-deps-no
+  qual/dead-downgrade      2 rules have a dead downgrade clause
+  qual/validation          1 trait pairs have identical matching but different metadata
+  qual/malformed           1 composite rules have `needs` without `any:`
+
+suggested fixes
+  dedup/dupe-atomic: Keep one atom in the best taxonomy location and reference it.
+  qual/dead-downgrade: Drop the dead downgrade entry, or remove it from unless: if the intent was to soften rather than suppress.
+  qual/validation: Review the validation message and update the trait.
+  qual/malformed: Fix the condition so it expresses a valid match.
+
+
+==> Fix all validation errors before continuing.
+
+Error: Failed to load traits from .
+
+Caused by:
+    Trait loading failed due to 5 validation error(s):
+    parse error: Failed to parse YAML in "./micro-behaviors/process/hook/interception/dotnet.yaml"
+    
+       Error at line 44:
+    
+        42│      - id: iinterceptor-interface
+        43│      - id: dynamic-proxy-class
+        44│  - id: interceptor-comp
+          │            ← Error here
+        45│    desc: Method interception capability
+    
+    validation: dedup/dupe-atomic Duplicate atomic traits detected (same search parameters): micro-behaviors/os/service/dependency::default-deps-no, objectives/persistence/system/service/systemd::default-deps-no
+    validation: qual/dead-downgrade 2 rules have a dead downgrade clause
+    validation: qual/validation 1 trait pairs have identical matching but different metadata
+    validation: qual/malformed 1 composite rules have `needs` without `any:`
+make: *** [Makefile:20: validate] Error 1
+make: Leaving directory '/srv/data/rectifier/traits-dev'
+
 
 Before finishing, you MUST run:
-
   make -C /data/rectifier/traits-dev validate CLEAVE=/data/rectifier/bin/cleave
 
-Fix every error and rerun until it passes. Rectifier performs the authoritative rescan.
+Fix every error and rerun until it passes.
