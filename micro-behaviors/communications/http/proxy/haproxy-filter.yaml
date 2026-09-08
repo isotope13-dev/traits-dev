@@ -1,0 +1,155 @@
+# Neutral HAProxy HTTP-filter mechanics. Malicious intent is inferred by
+# backdoor and indicator-removal composites that combine these observations.
+defaults:
+  platforms: [unix]
+  for: [c, cpp]
+  crit: notable
+  conf: 0.94
+  attack: T1071.001
+
+traits:
+  - id: request-response-filter-callbacks
+    desc: Registers request and response filter callbacks
+    if:
+      type: text
+      regex: '(?s)struct\s+flt_ops\b.{0,500}\.http_headers\s*=.{0,300}\.http_payload\s*='
+
+  - id: response-body-replace-call
+    desc: Replaces HAProxy response body data
+    if:
+      type: symbol
+      kind: call
+      exact: http_replace_res_data
+
+  - id: response-length-rewrite-call
+    desc: Rewrites proxy response Content-Length
+    if:
+      type: symbol
+      kind: call
+      exact: http_replace_header
+      arg:
+        kind: string
+        exact: Content-Length
+
+  - id: response-range-removal-call
+    desc: Removes proxy response Accept-Ranges
+    if:
+      type: symbol
+      kind: call
+      exact: http_remove_header
+      arg:
+        kind: string
+        exact: Accept-Ranges
+
+  - id: force-success-status-source
+    desc: Forces proxy response status 200
+    if:
+      type: text
+      regex: '\bhttp_set_status\s*\(\s*200\s*,'
+
+  - id: reads-user-agent-header
+    desc: Reads proxy request User-Agent header
+    if:
+      type: symbol
+      kind: call
+      exact: http_get_header
+      arg:
+        kind: string
+        exact: User-Agent
+
+  - id: reads-referer-header
+    desc: Reads proxy request Referer header
+    if:
+      type: symbol
+      kind: call
+      exact: http_get_header
+      arg:
+        kind: string
+        exact: Referer
+
+  - id: reads-accept-language-header
+    desc: Reads proxy request Accept-Language header
+    if:
+      type: symbol
+      kind: call
+      exact: http_get_header
+      arg:
+        kind: string
+        exact: Accept-Language
+
+  - id: request-forward-count-zeroed
+    desc: Zeros HAProxy request forward count
+    if:
+      type: text
+      regex: '\bto_forward\s*=\s*0\s*;'
+
+  - id: request-output-count-zeroed
+    desc: Zeros HAProxy request output count
+    if:
+      type: text
+      regex: '\boutput\s*=\s*0\s*;'
+
+  - id: request-buffer-span-zeroed
+    desc: Zeros HAProxy request buffer span
+    if:
+      type: text
+      regex: '(?s)\bbuf\.head\s*=\s*0\s*;.{0,180}\bbuf\.data\s*=\s*0\s*;'
+
+  - id: source-ip-regex-check
+    desc: Matches proxy client IP against regex
+    if:
+      type: text
+      regex: '\bregexec\s*\([^;\n]{0,180}\bsource_ip\b'
+
+  - id: user-agent-regex-check
+    desc: Matches proxy User-Agent against regex
+    if:
+      type: text
+      regex: '\bregexec\s*\([^;\n]{0,180}\buser_agent\b'
+
+  - id: referer-regex-check
+    desc: Matches proxy Referer against regex
+    if:
+      type: text
+      regex: '\bregexec\s*\([^;\n]{0,180}\breferer\b'
+
+composite_rules:
+  - id: response-shape-rewrite
+    desc: Rewrites response body length range and status
+    all:
+      - id: response-body-replace-call
+      - id: response-length-rewrite-call
+      - id: response-range-removal-call
+      - id: force-success-status-source
+
+  - id: targeted-response-body-rewrite
+    desc: Targets clients for proxy response replacement
+    all:
+      - id: response-body-replace-call
+      - id: client-header-read-set
+      - id: client-regex-selection
+
+  - id: client-header-read-set
+    desc: Reads multiple proxy client headers
+    all:
+      - id: reads-user-agent-header
+      - id: reads-referer-header
+      - id: reads-accept-language-header
+
+  - id: client-regex-selection
+    desc: Selects proxy clients with regex checks
+    needs: 2
+    any:
+      - id: source-ip-regex-check
+      - id: user-agent-regex-check
+      - id: referer-regex-check
+
+  - id: request-forwarding-state-zeroed
+    desc: Zeros HAProxy request forwarding state
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: request-forward-count-zeroed
+      - id: request-output-count-zeroed
+      - id: request-buffer-span-zeroed
+    near_lines: 12
