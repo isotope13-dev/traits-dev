@@ -68,6 +68,30 @@ add('quoted-title', '<?php $help = \'cli_set_process_title("[kworker/0:1]")\';',
 const networkDisguise = 'objectives/evasion/masquerade/process/title::php-networked-kernel-worker-disguise';
 add('network-worker-title', '<?php cli_set_process_title("queue-worker"); posix_setsid(); stream_socket_client("tcp://127.0.0.1:9000");', [titleCall], [networkDisguise]);
 add('network-kernel-title', '<?php cli_set_process_title("[kworker/0:1]"); posix_setsid(); stream_socket_client("tcp://192.0.2.1:9000");', [networkDisguise]);
+const callbackPrefix = 'micro-behaviors/os/callback/dispatch::';
+const dispatchPrefix = 'objectives/command-and-control/backdoor/webshell/obf-dispatch::';
+for (const [id, functions] of Object.entries({
+  'php-array-transform-api': ['array_map', 'array_filter', 'array_reduce', 'array_walk', 'array_walk_recursive'],
+  'php-array-callback-difference-api': ['array_diff_uassoc', 'array_diff_ukey', 'array_udiff', 'array_udiff_assoc', 'array_udiff_uassoc'],
+  'php-array-callback-intersection-api': ['array_intersect_uassoc', 'array_intersect_ukey', 'array_uintersect', 'array_uintersect_assoc', 'array_uintersect_uassoc'],
+  'php-array-callback-sort-api': ['usort', 'uasort', 'uksort'],
+  'php-regex-callback-api': ['preg_replace_callback', 'mb_ereg_replace_callback'],
+  'php-lifecycle-callback-api': ['register_shutdown_function', 'register_tick_function', 'spl_autoload_register'],
+  'php-handler-registration-api': ['set_error_handler', 'set_exception_handler', 'session_set_save_handler'],
+  'php-iterator-callback-api': ['iterator_apply'],
+  'php-sqlite-callback-api': ['sqlite_create_function', 'sqlite_create_aggregate'],
+  'php-assert-options-api': ['assert_options'],
+})) for (const fn of functions) add('api-' + fn, '<?php ' + fn + '($input, $callback);', [callbackPrefix + id]);
+add('filter-callback', '<?php filter_var($input, FILTER_CALLBACK, $options);', [callbackPrefix + 'php-filter-callback-mode']);
+add('quoted-callback', '<?php /* call_user_func($_GET["callback"], $data); */ $doc = \'array_map($callback, $data)\';', [], [dispatchPrefix + 'php-direct-request-callback', callbackPrefix + 'php-array-transform-api']);
+add('direct-callback', '<?php call_user_func($_GET["callback"], $_POST["data"]);', [dispatchPrefix + 'php-direct-request-callback']);
+add('ordinary-difference', '<?php array_diff($a, $b); array_intersect($a, $b);', [], [callbackPrefix + 'php-array-callback-difference-api', callbackPrefix + 'php-array-callback-intersection-api']);
+add('request-function', '<?php $_POST["call"] ( $_GET["arg"] );', [dispatchPrefix + 'dynamic-user-input-call-1']);
+add('header-function', '<?php $_SERVER["HTTP_CALL"] ( $_SERVER["HTTP_ARG"] );', [dispatchPrefix + 'dynamic-user-input-call-2']);
+add('quoted-request-function', '<?php /* $_POST["call"]($_GET["arg"]); */', [], [dispatchPrefix + 'dynamic-user-input-call-1']);
+add('request-map-callback', '<?php array_map($_GET["fn"], $items);', [dispatchPrefix + 'php-request-selected-first-callback']);
+add('request-shutdown-callback', '<?php register_shutdown_function($_GET["fn"], $_POST["arg"]);', [dispatchPrefix + 'php-request-selected-first-callback']);
+add('safe-map-request-data', '<?php array_map("trim", $_GET["items"]); register_shutdown_function(function () { cleanup(); });', [], [dispatchPrefix + 'php-request-selected-first-callback']);
 const result = cp.spawnSync(process.argv[2] || '../cleave/target/release/cleave', ['--traits-dir', root, '--format', 'jsonl', 'analyze', dir], {cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024});
 fs.writeFileSync(path.join(dir, 'scan.json'), result.stdout || '');
 if (result.status !== 0) throw new Error(result.stderr);
