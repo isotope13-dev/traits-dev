@@ -113,6 +113,11 @@ composite_rules:
       - id: remote-agent-silent-install-flag
       - id: objectives/command-and-control/backdoor/control/rmm::silent-rmm-config
       - id: objectives/persistence/login/self-install/remote-support/
+      # msiexec's own unattended switches (/qn, ALLUSERS=1) are the
+      # vendor-agnostic silent-install shape MSI-packaged agents (ScreenConnect,
+      # SimpleHelp, Splashtop, ...) ship with — not every RMM has its own
+      # dedicated CLI flag the way AnyDesk/RustDesk do.
+      - id: objectives/execution/lolbin/os::msiexec-unattended-machine-install
 
   - id: unbranded-remote-access-service-create
     desc: Remote access service under generic name
@@ -133,6 +138,10 @@ composite_rules:
       - id: well-known/dual-use/remote-admin/syspectr/
       - id: objectives/command-and-control/backdoor/control/rmm::simplehelp-rmm-marker
       - id: well-known/dual-use/remote-admin/screenconnect::screenconnect-product-marker
+      # A deployment script names the installer artifact
+      # (ScreenConnect.ClientSetup.msi/.exe) far more often than it embeds the
+      # runtime service string above; the two identify the same product.
+      - id: well-known/dual-use/remote-admin/screenconnect::screenconnect-clientsetup-name-script
 
   - id: remote-access-agent-delivery
     desc: Remote-access agent retrieved over the network
@@ -146,7 +155,12 @@ composite_rules:
       - id: objectives/command-and-control/dropper/execution/batch::certutil-urlcache
       - id: micro-behaviors/communications/http/download/manager::bitsadmin-job-lifecycle
       - id: micro-behaviors/communications/http/download/url::executable-url-reference-a
-    near_bytes: 64
+      - id: micro-behaviors/communications/http/download/webclient::webclient-download-call
+    # A full https:// URL sits between the download call and the installer
+    # filename inside it (protocol + domain + path before the product name),
+    # which routinely runs past 64 bytes on its own even before any string
+    # escaping. 128 still keeps the two legs in the same statement.
+    near_bytes: 128
 
   - id: remote-access-host-inventory
     desc: Remote-access agent paired with Windows host inventory
@@ -173,6 +187,24 @@ composite_rules:
     all:
       - id: remote-access-agent-delivery
       - id: remote-agent-unattended-provisioning
+    unless:
+      - id: metadata/package/testing/presence/harness/
+
+  - id: hidden-elevated-unattended-agent-deployment
+    desc: Hidden elevated script silently deploys an unattended remote agent
+    # Managed-service onboarding runs its provisioning script openly, under
+    # whatever privileged context already deployed it (GPO, MDM, RMM push) --
+    # it has no reason to relaunch itself through a hidden, self-elevating
+    # PowerShell layer. That maneuver exists to keep the install invisible to
+    # the logged-on user being walked through a fake support call, which is
+    # the other half of the deployment onboarding does not produce.
+    crit: hostile
+    conf: 0.95
+    attack: T1219,T1105,T1564.003,T1548.002
+    all:
+      - id: scripted-unattended-agent-deployment
+      - id: micro-behaviors/process/create/hidden::powershell-windowstyle-hidden
+      - id: micro-behaviors/os/privilege/elevation::runas-verb
     unless:
       - id: metadata/package/testing/presence/harness/
 
