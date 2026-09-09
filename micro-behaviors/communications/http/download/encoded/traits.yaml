@@ -1,0 +1,75 @@
+# Download-and-execute one-liners recovered from decoded data.
+#
+# These search the *decoded* string corpus, so they see through whatever
+# encoding hid the command -- hex, base64, or a chain of both -- and are
+# indifferent to the language that carried it. The same decoded pipeline turns
+# up inside a Makefile recipe, a Gradle task, `build.rs` and an Xcode build
+# setting; it is the payload that travels between build systems.
+#
+# Suspicious rather than hostile here: the matcher establishes the capability
+# ("this decodes to a fetch that feeds a shell"), and the objectives that
+# reference it supply the intent. Kept out of the plaintext `curl-pipe-shell`
+# rule next door because a documented `curl … | sh` install line is ordinary,
+# while an *encoded* one has gone out of its way not to be read.
+# Typed by group rather than by an explicit list. These match the *decoded*
+# string corpus, so the host language is an accident of which build system the
+# attacker chose -- the identical payload has been recovered from a Gradle
+# Kotlin task, an Xcode build setting, a Makefile recipe, `build.rs` and a
+# `setup.py`. Narrowing `for:` here would drop whole ecosystems rather than trim
+# a matcher, so this directory carries an `encoded:` entry in cleave's
+# BROAD_FILETYPE_ALLOWLIST, alongside the plaintext download-execute rules that
+# are broad for the same reason.
+defaults:
+  platforms: [unix]
+  # `text` carries the build systems that have no file type of their own --
+  # CMakeLists.txt above all, which is a build script by any measure but reaches
+  # the engine as plain text.
+  for: [scripts, source, build]
+  crit: suspicious
+  conf: 0.95
+  attack: T1105,T1059.004
+  mbc: E1105
+
+traits:
+  - id: encoded-remote-shell-fetch
+    desc: Encoded fetch piped into a shell
+    if:
+      type: encoded
+      regex: '(curl|wget)\s[^\n]{0,200}\|\s*(sh|bash|zsh|dash)\b'
+
+  # `eval "$(curl …)"` / `echo "$(curl …)" | sh` -- the output is captured by
+  # substitution and run, rather than piped directly.
+  - id: encoded-remote-substitution-fetch
+    desc: Encoded fetch output executed
+    if:
+      type: encoded
+      regex: '(eval|echo)\s+["'']?\$\((curl|wget)\s'
+
+  # `curl -k` accepts any certificate. A component: it qualifies a fetch that
+  # another trait has already established, and says nothing alone.
+  - id: encoded-fetch-insecure-tls
+    desc: Encoded fetch skips TLS verification
+    crit: component
+    conf: 0.85
+    if:
+      type: encoded
+      regex: '(curl|wget)\s[^\n]{0,120}(-[A-Za-z]*k[A-Za-z]*|--insecure|--no-check-certificate)\b'
+
+  # The host the decoded payload reaches for. A throwaway loader domain is
+  # registered in bulk and never typed by a human, so its label carries no
+  # word shape -- `5yotmxcc54l9xda.ru`, `ejntin6hkjt7gj2.ru`. Scored by the
+  # bigram validator rather than matched against a list, so it survives the
+  # operator rotating domains, which is the whole point of registering them
+  # this way.
+  #
+  # Component, not notable: the validator judges letter shape alone, and a
+  # legitimate but consonant-dense hostname can score the same. It earns its
+  # weight only alongside the fetch-and-execute legs above.
+  - id: encoded-fetch-generated-hostname
+    desc: Encoded fetch targets generated hostname
+    crit: component
+    conf: 0.85
+    if:
+      type: encoded
+      regex: 'https?://[a-z0-9-]{8,}\.[a-z]{2,6}\b'
+      is: random_like

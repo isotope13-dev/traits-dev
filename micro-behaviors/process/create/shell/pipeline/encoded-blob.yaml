@@ -1,0 +1,81 @@
+# A blob of encoded bytes fed straight into a shell.
+#
+# `echo <hex> | xxd -r -p | sh` is the portable way to carry a command past a
+# reader without carrying its text: the file holds only the encoding, and the
+# shell reconstitutes and runs it in one pipeline. The decoder in the middle is
+# interchangeable (`xxd -r -p`, `base64 -d`, `openssl enc -d`, `od`), and so is
+# the host language -- the same pipeline string appears in Makefile recipes,
+# `build.rs`, `setup.py`, Gradle tasks and Xcode build settings, which is why
+# this is typed broadly rather than as a shell-only rule.
+#
+# Neutral on its own only in the narrow sense that a self-extracting installer
+# does something structurally similar; intent comes from the composites, which
+# pair it with the build-time execution site or with what the payload decodes
+# to.
+defaults:
+  platforms: [unix]
+  for: [scripts, source, build]
+  crit: suspicious
+  conf: 0.9
+  attack: T1027,T1059.004
+  mbc: B0032
+
+traits:
+  # A long hex literal piped onward. 32 nibbles is 16 bytes -- below that a run
+  # is as likely to be an id or a checksum as a payload. The `echo`/`printf`
+  # anchor is what separates "a hex constant exists in this file" (digests,
+  # keys, colour tables) from "a hex constant is being fed to a program".
+  - id: hex-blob-piped-onward
+    desc: Long hex literal echoed into a pipeline
+    if:
+      type: text
+      regex: '(echo|printf)\s+[''"]?[0-9a-fA-F]{32,}[''"]?\s*\|'
+
+  # The full shape: an encoded blob whose pipeline terminates in a shell. The
+  # decoder between the two is left open so a reversed-flag `xxd -p -r`, a
+  # rebuilt command name, or a `base64 -d` all match the same rule.
+  # The base64 spelling of the same construct. The attacker's choice of
+  # encoding is arbitrary and varies within a single campaign -- the
+  # universal_file_viewer loader shipped hex in its Android and macOS payloads
+  # and base64 in the iOS one -- so a rule that knew only about hex would have
+  # caught two of its three droppers. 40 characters rather than 32 because the
+  # base64 alphabet overlaps ordinary words, and a run this long piped into a
+  # command is not prose.
+  - id: base64-blob-piped-onward
+    desc: Long base64 literal echoed into a pipeline
+    if:
+      type: text
+      regex: '(echo|printf)\s+[''"]?[A-Za-z0-9+/]{40,}={0,2}[''"]?\s*\|'
+
+  # The terminating half of the same pipeline. Split from the blob match
+  # because one regex covering both ends exceeded the length the validator
+  # allows; the composite below rejoins them with a locality window, which is
+  # also more tolerant of extra stages between the decoder and the shell.
+  - id: pipeline-terminates-in-shell
+    desc: Pipeline terminates in a shell
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      regex: '\|\s*(sh|bash|zsh|dash)\b'
+
+composite_rules:
+  # Encoding-agnostic: the identity is "an encoded blob is being fed to a
+  # program", not which alphabet carries it. Objectives reference this rather
+  # than either spelling so a campaign that switches encodings stays covered.
+  - id: encoded-blob-piped-onward
+    desc: Encoded blob echoed into a pipeline
+    crit: suspicious
+    conf: 0.9
+    any:
+      - id: hex-blob-piped-onward
+      - id: base64-blob-piped-onward
+
+  - id: encoded-blob-piped-to-shell
+    desc: Encoded blob piped into a shell
+    crit: suspicious
+    conf: 0.95
+    near_lines: 2
+    all:
+      - id: encoded-blob-piped-onward
+      - id: pipeline-terminates-in-shell

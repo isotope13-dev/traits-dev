@@ -1,0 +1,63 @@
+# What the payload turns out to be, once decoded.
+#
+# These read the decoded string rather than the file text, so they are
+# indifferent to how the blob was hidden and to what language wrapped it. A
+# constant that decodes to `curl … | sh` is a remote download-and-execute: the
+# artifact ships no payload of its own, fetches whatever the operator is
+# serving at build or run time, and pipes it into a shell. The server decides
+# what runs, so nothing in the file puts a ceiling on what it does.
+#
+# This is the one leg of the technique an attacker cannot relocate. The wrapper
+# can move from Gradle to a Makefile to `build.rs`, the decoder can change, the
+# encoding can change -- the decoded command still has to say "fetch this and
+# run it".
+#
+# Encoding such a line is what makes it hostile rather than merely notable. The
+# `curl … | sh` install idiom is written in the clear precisely so the user can
+# read it before running it; one that has been hex-encoded into a build file
+# has inverted that bargain.
+defaults:
+  platforms: [unix]
+  for: [scripts, source, build]
+  attack: T1105,T1059.004,T1027
+  mbc: E1105
+
+composite_rules:
+  # Two distinct signals: the file carries an encoded blob feeding a pipeline,
+  # and that blob decodes to a remote fetch that runs what it downloads. Either
+  # alone is a capability; together they identify a dropper.
+  - id: encoded-payload-remote-shell-execution
+    desc: Encoded payload fetches and runs code
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: micro-behaviors/process/create/shell/pipeline::encoded-blob-piped-onward
+    any:
+      - id: micro-behaviors/communications/http/download/encoded::encoded-remote-shell-fetch
+      - id: micro-behaviors/communications/http/download/encoded::encoded-remote-substitution-fetch
+
+  # The same fetch, further qualified: certificate checking is off. Throwaway
+  # loader hosts routinely serve bad or self-signed certificates, and the
+  # payload cannot afford the fetch to fail on one.
+  # The same fetch aimed at a throwaway host. Bulk-registered loader domains
+  # rotate constantly, so the generated *shape* of the name outlives any
+  # particular domain -- which is what makes it worth pairing with the fetch.
+  - id: encoded-generated-host-shell-execution
+    desc: Encoded fetch of generated host runs code
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: micro-behaviors/communications/http/download/encoded::encoded-fetch-generated-hostname
+    any:
+      - id: micro-behaviors/communications/http/download/encoded::encoded-remote-shell-fetch
+      - id: micro-behaviors/communications/http/download/encoded::encoded-remote-substitution-fetch
+
+  - id: encoded-insecure-remote-shell-execution
+    desc: Encoded insecure fetch runs remote code
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: micro-behaviors/communications/http/download/encoded::encoded-fetch-insecure-tls
+    any:
+      - id: micro-behaviors/communications/http/download/encoded::encoded-remote-shell-fetch
+      - id: micro-behaviors/communications/http/download/encoded::encoded-remote-substitution-fetch

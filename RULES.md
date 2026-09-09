@@ -163,7 +163,7 @@ traits:
 
 **Field override:** List fields such as `for` and `platforms` must resolve to concrete supported values. Do not use `[none]`; the validator requires every trait and composite to target at least one file type.
 
-**File types:** `elf`, `macho`, `pe`, `dll`, `so`, `dylib`, `pyc`, `dex`, `wasm`, `beam`, `shell`, `batch`, `jcl`, `python`, `javascript`, `typescript`, `rust`, `java`, `class`, `ruby`, `c`, `cpp`, `go`, `csharp`, `php`, `perl`, `powershell`, `lua`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir`, `vbs`, `html`, `applescript`, `package.json`, `package-lock.json`, `json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `plist`, `ipa`, `rtf`, `lnk`, `jpeg`, `png`, `pkginfo`, `pickle`, `pdf`, `oledoc`, `msi`, `ooxml`, `iso`, `registry`, `systemd-service`, `desktop-entry`, `zip`, `tar`, `npm`, `whl`, `python-sdist`, `egg`, `gem`, `nupkg`, `crate`, `conda`, `deb`, `rpm`, `apk`, `jar`, `crx`, `xpi`, `vsix`, `chm`, `static-lib` (a `.a` Unix static library — native object code; scanned as a binary blob, in the `binaries` group).
+**File types:** `elf`, `macho`, `pe`, `dll`, `so`, `dylib`, `pyc`, `dex`, `wasm`, `beam`, `shell`, `batch`, `jcl`, `python`, `javascript`, `typescript`, `rust`, `java`, `class`, `ruby`, `c`, `cpp`, `go`, `csharp`, `php`, `perl`, `powershell`, `lua`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir`, `vbs`, `html`, `applescript`, `package.json`, `package-lock.json`, `json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `plist`, `ipa`, `rtf`, `lnk`, `jpeg`, `png`, `pkginfo`, `pickle`, `pdf`, `oledoc`, `msi`, `ooxml`, `iso`, `registry`, `systemd-service`, `desktop-entry`, `pbxproj` (an Xcode `project.pbxproj`; its build phases and settings are parsed to `pbxproj.scripts[]` / `pbxproj.build_settings[]`), `cmake` (`CMakeLists.txt`, `*.cmake`), `zip`, `tar`, `npm`, `whl`, `python-sdist`, `egg`, `gem`, `nupkg`, `crate`, `conda`, `deb`, `rpm`, `apk`, `jar`, `crx`, `xpi`, `vsix`, `chm`, `static-lib` (a `.a` Unix static library — native object code; scanned as a binary blob, in the `binaries` group).
 
 **Aliases** (resolved to the canonical type):
 
@@ -186,6 +186,7 @@ traits:
 | `scripts` | `shell`, `batch`, `jcl`, `python`, `javascript`, `ruby`, `php`, `perl`, `lua`, `powershell`, `applescript`, `vbs` |
 | `source` | `typescript`, `rust`, `java`, `c`, `cpp`, `go`, `csharp`, `swift`, `objectivec`, `groovy`, `kotlin`, `scala`, `zig`, `elixir` |
 | `manifests` | `package.json`, `chrome-manifest`, `vsix-manifest`, `cargo.toml`, `pyproject.toml`, `github-actions`, `composer.json`, `pkginfo`, `plist`, `lnk`, `systemd-service`, `desktop-entry` |
+| `build` | `makefile`, `cmake`, `pbxproj`, `dockerfile` — executable build logic (a Make recipe, a CMake `execute_process`, an Xcode build phase, a Dockerfile `RUN`), as opposed to the declarative metadata in `manifests`. Overlaps it on `dockerfile`, which is both |
 | `documents` | `pdf`, `rtf`, `html`, `oledoc`, `ooxml` |
 | `media` | `jpeg`, `png` |
 | `data` | `json`, `ipa`, `text`, opaque `data` |

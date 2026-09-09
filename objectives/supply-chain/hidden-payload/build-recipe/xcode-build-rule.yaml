@@ -1,0 +1,87 @@
+# Xcode projects that run a command through a build setting.
+#
+# `project.pbxproj` is the only plist dialect that carries executable text. A
+# `PBXBuildRule` names a file pattern and a script to run for each matching
+# file, and Xcode runs it during an ordinary build -- opening the project and
+# hitting Run is enough.
+#
+# The abuse worth naming is the indirection: the build rule's script does not
+# contain the payload, it contains `sh -c "${SOME_SETTING}"`, and the payload
+# sits in `buildSettings` several hundred lines away under a name chosen to
+# look like a generated identifier. Anyone reading the build phases sees a
+# one-line script; anyone reading the build settings sees a value with no
+# obvious consumer. Xcode's UI shows neither together.
+#
+# These read the parsed project rather than its text. The wildcard is what makes
+# that practical: every pbxproj keys its objects by a random 24-hex id, so no
+# fixed path reaches a given script, but `objects[*]` walks the map by value and
+# is identical across projects. (filefacts additionally republishes the same
+# text at stable `pbxproj.scripts[]` / `pbxproj.build_settings[]` paths for its
+# own consumers; cleave's value evaluator parses the OpenStep plist itself, so
+# the rules below address the raw tree it produces.)
+defaults:
+  platforms: [macos, ios]
+  for: [pbxproj]
+  attack: T1195.002,T1027
+  mbc: E1105
+
+traits:
+  # A build script whose whole body is "run the contents of this variable".
+  # Legitimate build phases run scripts from the source tree, or inline
+  # commands; they do not route themselves through a build setting to conceal
+  # what they run.
+  - id: build-script-executes-build-setting
+    desc: Build script runs a build setting
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: value
+      path: "objects[*].script"
+      regex: '(sh|bash|zsh)\s+-c\s+["'']?\$\{[A-Za-z_][A-Za-z0-9_]*\}'
+
+  # A build setting holding a shell pipeline. Build settings configure the
+  # compiler -- they hold flags, paths and identifiers. One containing a
+  # command pipeline is being used as a payload store, not as configuration.
+  - id: build-setting-holds-shell-pipeline
+    desc: Build setting holds shell pipeline
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: value
+      path: "objects[*].buildSettings[*]"
+      regex: '\|\s*(sh|bash|zsh)\b|\$\((curl|wget)\s'
+
+  # A build rule that claims to compile documentation. `filePatterns = "*.md"`
+  # with a script body is a rule that will never legitimately fire as a
+  # compiler: it exists to attach a script to a file type the project happens
+  # to contain, which is how the payload gets a reason to run.
+  - id: build-rule-scripts-documentation-pattern
+    desc: Build rule scripts non-code files
+    crit: suspicious
+    conf: 0.88
+    if:
+      type: value
+      path: "objects[*].filePatterns"
+      regex: '\*\.(md|markdown|txt|json|ya?ml)$'
+
+composite_rules:
+  # The full indirection: the build rule runs a setting, and a setting holds a
+  # pipeline. Either alone is suspicious; together they are a payload wired
+  # into the build with the two halves deliberately kept apart.
+  - id: xcode-build-rule-indirect-payload-execution
+    desc: Build rule runs hidden setting payload
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: build-script-executes-build-setting
+      - id: build-setting-holds-shell-pipeline
+
+  # The build setting's payload is itself encoded, so neither the build phase
+  # nor the setting reads as a command to someone scanning the project.
+  - id: xcode-build-setting-encoded-payload
+    desc: Build setting holds encoded payload
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: build-script-executes-build-setting
+      - id: micro-behaviors/process/create/shell/pipeline::encoded-blob-piped-onward

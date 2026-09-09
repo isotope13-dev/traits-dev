@@ -1,0 +1,69 @@
+# Payloads that run because the victim *built* the project.
+#
+# A build file is executable text that almost nobody reads. Cloning a
+# repository, opening it in an IDE, or running the tests is enough to execute
+# whatever the build system was told to run, before a single line of the
+# shipped library is reviewed. That makes the build recipe a better hiding
+# place than the product: reviewers diff `lib/`, and CI runs `build`.
+#
+# The technique is portable across build systems -- the same payload string
+# works from a Makefile recipe, a Gradle task hook, `build.rs`, `setup.py`, a
+# CMake `execute_process`, or an Xcode build setting -- so these rules are
+# written against the payload and the execution, and typed for every build
+# format rather than for one ecosystem. A rule that only knew about Gradle
+# would have missed the identical Makefile.
+#
+# Worked example: `universal_file_viewer` 0.1.5 on pub.dev (September 2026)
+# carried the XCSSET loader twice over, once in the example app's
+# `build.gradle.kts` `preBuild` hook and once in a `PBXBuildRule` in the iOS
+# and macOS Xcode projects. Both spawned a shell that reconstructed `xxd`,
+# decoded a hex blob, and piped the result -- `curl … | sh` against a throwaway
+# `.ru` host -- into another shell, detached and with output discarded.
+defaults:
+  platforms: [unix]
+  for: [scripts, source, build]
+  attack: T1195.002,T1105,T1027
+  mbc: E1105
+
+composite_rules:
+  # An encoded payload executed through a shell from inside a build file. The
+  # build format supplies the "runs without being read" property; the encoding
+  # supplies the intent, because a build step with nothing to hide writes its
+  # command in the clear.
+  - id: build-recipe-executes-encoded-shell-payload
+    desc: Build file runs hidden shell payload
+    crit: hostile
+    conf: 0.95
+    near_lines: 6
+    all:
+      - id: micro-behaviors/process/create/shell/pipeline::encoded-blob-piped-to-shell
+    # A build step with nothing to hide neither rebuilds its decoder's name nor
+    # detaches itself and discards its own output.
+    any:
+      - id: micro-behaviors/data/string/assembly::printf-tr-command-reconstruction
+      - id: micro-behaviors/process/create/background::subshell-detached-output-discarded
+
+  # The same execution, hidden further: the decoder's own name is assembled at
+  # runtime. Separate from the rule above because this form defeats a reader
+  # searching the build file for a decoder, and because it can match where the
+  # pipeline's shell terminator is itself reconstructed.
+  - id: build-recipe-runs-obfuscated-decoder
+    desc: Build file runs rebuilt decoder
+    crit: hostile
+    conf: 0.96
+    near_lines: 6
+    all:
+      - id: micro-behaviors/data/string/assembly::printf-tr-command-reconstruction
+      - id: micro-behaviors/process/create/shell/pipeline::encoded-blob-piped-onward
+
+  # Detached and silenced, so the build log looks clean. On its own a
+  # backgrounded subshell is ordinary build parallelism; with an encoded blob
+  # in the same construct it is a payload arranging not to be noticed.
+  - id: build-recipe-detaches-encoded-payload
+    desc: Build file detaches encoded payload
+    crit: suspicious
+    conf: 0.92
+    near_lines: 6
+    all:
+      - id: micro-behaviors/process/create/background::subshell-detached-output-discarded
+      - id: micro-behaviors/process/create/shell/pipeline::encoded-blob-piped-onward
