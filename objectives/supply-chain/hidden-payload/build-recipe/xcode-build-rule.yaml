@@ -12,16 +12,13 @@
 # one-line script; anyone reading the build settings sees a value with no
 # obvious consumer. Xcode's UI shows neither together.
 #
-# These read the parsed project rather than its text. The wildcard is what makes
-# that practical: every pbxproj keys its objects by a random 24-hex id, so no
-# fixed path reaches a given script, but `objects[*]` walks the map by value and
-# is identical across projects. (filefacts additionally republishes the same
-# text at stable `pbxproj.scripts[]` / `pbxproj.build_settings[]` paths for its
-# own consumers; cleave's value evaluator parses the OpenStep plist itself, so
-# the rules below address the raw tree it produces.)
+# These inspect assignment-shaped raw project text so they remain effective on
+# analyzers that route executable Xcode projects through a script/text parser.
+# Every pbxproj keys its objects by a random 24-hex id, so the matchers anchor on
+# stable field names and the suspicious values rather than those random keys.
 defaults:
   platforms: [macos, ios]
-  for: [pbxproj]
+  for: [applescript, text]
   attack: T1195.002,T1027
   mbc: E1105
 
@@ -35,21 +32,27 @@ traits:
     crit: suspicious
     conf: 0.93
     if:
-      type: value
-      path: "objects[*].script"
-      regex: '(sh|bash|zsh)\s+-c\s+["'']?\$\{[A-Za-z_][A-Za-z0-9_]*\}'
+      type: text
+      regex: 'script\s*=[^\n]{0,300}(ba|z)?sh\s+-c[^\n]{0,40}\$\{[A-Z_][A-Z0-9_]*\}'
 
   # A build setting holding a shell pipeline. Build settings configure the
   # compiler -- they hold flags, paths and identifiers. One containing a
   # command pipeline is being used as a payload store, not as configuration.
-  - id: build-setting-holds-shell-pipeline
-    desc: Build setting holds shell pipeline
+  - id: build-setting-pipes-to-shell
+    desc: Build setting pipeline ends in shell
     crit: suspicious
     conf: 0.9
     if:
-      type: value
-      path: "objects[*].buildSettings[*]"
-      regex: '\|\s*(sh|bash|zsh)\b|\$\((curl|wget)\s'
+      type: text
+      regex: '\b[A-Z_][A-Z0-9_]{0,63}\s*=\s*[^|\n]{0,120}\|\s*(ba|z)?sh\b'
+
+  - id: build-setting-fetch-substitution
+    desc: Build setting substitutes fetch output
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '\b[A-Z_][A-Z0-9_]{0,63}\s*=\s*[^$\n]{0,120}\$\((curl|wget)\s'
 
   # A build rule that claims to compile documentation. `filePatterns = "*.md"`
   # with a script body is a rule that will never legitimately fire as a
@@ -60,11 +63,18 @@ traits:
     crit: suspicious
     conf: 0.88
     if:
-      type: value
-      path: "objects[*].filePatterns"
-      regex: '\*\.(md|markdown|txt|json|ya?ml)$'
+      type: text
+      regex: 'filePatterns\s*=\s*[\x22\x27]\*\.(md|markdown|txt|json|ya?ml)[\x22\x27]'
 
 composite_rules:
+  - id: build-setting-holds-shell-pipeline
+    desc: Build setting holds shell pipeline
+    crit: suspicious
+    conf: 0.9
+    any:
+      - id: build-setting-pipes-to-shell
+      - id: build-setting-fetch-substitution
+
   # The full indirection: the build rule runs a setting, and a setting holds a
   # pipeline. Either alone is suspicious; together they are a payload wired
   # into the build with the two halves deliberately kept apart.
