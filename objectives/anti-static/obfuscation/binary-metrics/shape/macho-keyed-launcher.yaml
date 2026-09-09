@@ -1,0 +1,66 @@
+# A tiny Mach-O whose payload is encrypted with a key it derives at runtime.
+#
+# The PE and ELF siblings in this directory cover the packed-stager shape for
+# their formats; this is the Mach-O case, and it was uncovered — the
+# `high-entropy-data` atom those rules lean on matched `.data` with a literal
+# dot and so could never see a Mach-O's `__DATA,__data`.
+#
+# The shape: a few-KB executable with almost no strings, almost no imports, a
+# data section at near-maximum entropy, and a cipher routine to turn one into
+# the other. Nothing is readable until it runs, so a reviewer sees an opaque
+# blob and a decryptor, and the only questions worth asking are what the key is
+# derived from and what happens to the plaintext.
+#
+# Worked example: the XCSSET roothelper
+# (ba14cfe19a51a168813ee1d2bd2e57a8d2aeffa7721575772b6718114df778f3), 22 KB,
+# 6 strings, 26 imports, `__DATA,__data` at 7.95 entropy. It ships unstripped
+# `arc4`, `key`, `key_with_file`, `chkenv`, `rmarg` and `xsh`; `chkenv` derives
+# the key from its own code range (patch the function and decryption fails) and
+# `key_with_file` derives one from `stat()` metadata, so the payload only opens
+# on the intended host. It ends at `execvp`.
+defaults:
+  platforms: [macos]
+  for: [macho]
+  attack: T1027,T1140
+  mbc: B0032
+
+composite_rules:
+  # Cipher plus opaque data plus an exec sink. Each leg is ordinary alone — a
+  # binary may implement RC4, may carry a big data section, may call exec — but
+  # a small unsigned executable doing all three has no readable behavior left
+  # to inspect, which is the point of building it that way.
+  - id: macho-encrypted-payload-launcher
+    desc: Tiny Mach-O decrypts a payload and execs
+    crit: hostile
+    conf: 0.95
+    size_max: 262144
+    all:
+      - id: micro-behaviors/crypto/symmetric/stream::arc4-routine-symbol
+      - id: metadata/binary/anomaly/format::data-larger-than-cstring
+      - id: micro-behaviors/process/create/execv::c-exec-variants
+      - id: metadata/signed/trust-level::unsigned-macho
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/framework/
+      - id: well-known/app/
+      - id: well-known/lib/
+      - id: well-known/tool/
+
+  # The key is derived from the filesystem rather than carried in the binary,
+  # so the payload decrypts only where the operator intends and stays opaque in
+  # a sandbox or on an analyst's copy. Suspicious rather than hostile on its
+  # own: environmental keying is also how a few licence managers work, and the
+  # composite above supplies the exec sink when both are present.
+  - id: macho-environmentally-keyed-payload
+    desc: Mach-O keys its cipher from file metadata
+    crit: suspicious
+    conf: 0.93
+    all:
+      - id: micro-behaviors/crypto/symmetric/stream::arc4-routine-symbol
+      - id: micro-behaviors/crypto/symmetric/stream::key-derivation-routine-symbol
+      - id: metadata/binary/anomaly/format::data-larger-than-cstring
+    unless:
+      - id: metadata/signed/platform/
+      - id: well-known/app/
+      - id: well-known/lib/
+      - id: well-known/tool/

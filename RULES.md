@@ -704,6 +704,15 @@ The `encoded` type searches decoded/encoded strings with an optional encoding fi
 | Omit `encoding:` | Search **all** encoded strings | `type: encoded, substr: "eval"` |
 | Single string | Search single encoding type | `encoding: base64` |
 | Array | Search multiple types (OR) | `encoding: [base64, hex]` |
+| `+`-joined chain | Require these encodings, in this order | `encoding: base64+base64` |
+
+A `+` names a **chain** rather than one encoding, matched as a consecutive run
+of links: `base64+base64` is a payload wrapped twice, `xor+base64` is XOR over
+base64. A bare `base64` still matches any chain containing base64, so use the
+chain form when the *stacking* is the signal — one encoding carries binary
+safely through a text channel, while a second carries nothing further and
+exists only so the first layer reads as data rather than as a command. The
+spelling matches how a chain is rendered in evidence (`encoding_chain:xor+base64`).
 
 ### Examples
 
