@@ -1,0 +1,50 @@
+# Self-propagating ELF parasite that spreads through a masqueraded toolchain
+# tool. The injected payload reads its own /proc/self/cmdline, treats each
+# non-flag argument as an ELF path, and infects it — so once the payload rides
+# a tool such as `strip`, every binary the tool is invoked on becomes a new
+# carrier. A self-identity gate (own exe basename == a toolchain tool name)
+# keeps the infection routine dormant until the host is that tool. The actual
+# infection mechanism lives in objectives/impact/infect/binary/note-cavity;
+# this composite captures the propagation vector.
+defaults:
+  platforms: [unix]
+  for: [c, cpp]
+  attack: T1554,T1195.001
+  mbc: B0009
+
+traits:
+  - id: infect-argument-call
+    desc: Runs infector on a command-line argument
+    # An `infect*(arg...)` / `infect*(argv...)` call — the payload applying its
+    # infector to a path it was handed rather than to a fixed target.
+    crit: suspicious
+    conf: 0.88
+    if:
+      type: text
+      regex: '\binfect\w*\s*\(\s*argv?\b'
+
+  - id: toolchain-tool-identity-constant
+    desc: Hardcodes a toolchain tool name constant
+    # A string constant holding a compiler/linker tool name, compared against
+    # the process's own executable basename to decide whether to act.
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      regex: 'char\s+\w+\[\]\s*=\s*"(strip|gcc|g\+\+|clang|ld|as|ar|cc|objcopy|ranlib|nm)"'
+
+composite_rules:
+  # Runtime payload that reads its own command line, infects the file
+  # arguments it receives, and gates that behavior on impersonating a
+  # toolchain tool — a self-replicating infector that rides the build/toolchain.
+  - id: elf-toolchain-propagation-parasite
+    desc: ELF parasite spreads via toolchain tool
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: micro-behaviors/fs/proc/info/path::process-self-cmdline
+      - id: infect-argument-call
+      - id: toolchain-tool-identity-constant
+    any:
+      - id: objectives/impact/infect/binary/note-cavity::c-note-cavity-elf-infector
+      - id: objectives/impact/infect/binary/note-cavity::note-cavity-segment-conversion

@@ -1,0 +1,121 @@
+# Byte coverage inside a structurally valid font: which bytes the table
+# directory actually claims, and which ride along unclaimed.
+#
+# A font renders from its table directory, so any byte outside it is invisible
+# to every consumer — which is precisely what makes a valid font a durable
+# carrier. These are measurements, not verdicts: real fonts do carry vendor
+# padding and a handful of private tables (roughly one macOS system font in
+# twenty has a private tag), so thresholds here are set where a toolchain
+# artifact ends and a payload begins.
+defaults:
+  platforms: [unix, windows]
+  for: [font]
+
+traits:
+  - id: font-trailing-data
+    desc: Data appended after last font table
+    crit: notable
+    conf: 0.92
+    # Past the final table and its alignment padding. This is the classic
+    # append-a-payload-to-an-asset carrier, and the font still renders.
+    if:
+      type: metrics
+      field: font.trailing_bytes
+      min: 256
+
+  - id: font-interior-gap-bytes
+    desc: Bytes claimed by no font table
+    crit: notable
+    conf: 0.9
+    # Between tables, beyond the 4-byte alignment slack the format allows.
+    # A generator emits contiguous tables; a gap means someone made room.
+    if:
+      type: metrics
+      field: font.gap_bytes
+      min: 256
+
+  - id: font-oversized-private-table
+    desc: Private font table holds bulk data
+    crit: notable
+    conf: 0.9
+    # Vendor-private tags are common (`FFTM`, `MTfn`, `TSIV`) and hold tens of
+    # bytes. Kilobytes under an unregistered tag is a container, not metadata.
+    if:
+      type: metrics
+      field: font.unknown_table_bytes
+      min: 4096
+
+  - id: font-overlapping-tables
+    desc: Font tables share byte ranges
+    crit: notable
+    conf: 0.9
+    # No font compiler emits overlapping extents within a single directory.
+    # Overlap means the directory was written by hand.
+    if:
+      type: value
+      path: font.features[*]
+      exact: overlapping_tables
+
+  - id: font-table-out-of-bounds
+    desc: Font table extends past end of file
+    crit: notable
+    conf: 0.95
+    if:
+      type: value
+      path: font.features[*]
+      exact: table_out_of_bounds
+
+  # What the unaccounted-for bytes turn out to be. filefacts classifies only
+  # the regions the table directory does not claim — interior gaps, trailing
+  # data, unregistered-tag tables, and the `name`/`post` string tables — so
+  # glyph outlines, which are arbitrary bytes, are never scanned. Measured
+  # against 728 shipped fonts: none reports a stowaway of any kind.
+  - id: font-stowaway-executable
+    desc: Unclaimed font bytes are an executable
+    crit: suspicious
+    conf: 0.98
+    attack: T1027.009
+    if:
+      type: value
+      path: font.stowaway[*]
+      regex: '^(pe|elf|macho)$'
+
+  - id: font-stowaway-archive
+    desc: Unclaimed font bytes are an archive
+    crit: suspicious
+    conf: 0.96
+    attack: T1027.009
+    if:
+      type: value
+      path: font.stowaway[*]
+      regex: '^(zip|gzip|xz|bzip2|sevenz|rar|cab|zstd)$'
+
+  - id: font-stowaway-script
+    desc: Unclaimed font bytes carry a shebang
+    crit: suspicious
+    conf: 0.96
+    attack: T1027.009
+    if:
+      type: value
+      path: font.stowaway[*]
+      exact: shebang
+
+  - id: font-stowaway-encoded
+    desc: Unclaimed font bytes are base64
+    crit: notable
+    conf: 0.94
+    if:
+      type: value
+      path: font.stowaway[*]
+      exact: base64
+
+  - id: font-stowaway-high-entropy
+    desc: Unclaimed font bytes are compressed
+    crit: notable
+    conf: 0.92
+    # Slack and alignment padding are zeros or ASCII; a font never leaves
+    # near-random bytes between its tables.
+    if:
+      type: metrics
+      field: font.stowaway_entropy
+      min: 7.2

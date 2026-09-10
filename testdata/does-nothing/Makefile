@@ -11,6 +11,7 @@ ARTIFACT_OFFICE := $(ARTIFACTS)/sample.docx $(ARTIFACTS)/sample.xlsx $(ARTIFACTS
 ARTIFACT_ODF := $(ARTIFACTS)/sample.odt $(ARTIFACTS)/sample.ods $(ARTIFACTS)/sample.odp
 ARTIFACT_DOCS := $(ARTIFACT_OFFICE) $(ARTIFACT_ODF) $(ARTIFACTS)/sample.pdf
 ARTIFACT_IMAGES := $(ARTIFACTS)/sample.png $(ARTIFACTS)/sample.jpg
+ARTIFACT_FONTS := $(ARTIFACTS)/sample.ttf $(ARTIFACTS)/sample.woff2
 ARTIFACT_ARCHIVES := \
 	$(ARTIFACTS)/sample.zip \
 	$(ARTIFACTS)/sample.tar \
@@ -55,6 +56,7 @@ ARTIFACT_DATA := $(ARTIFACTS)/sample.pkl $(ARTIFACTS)/sample.lnk
 ARTIFACT_GENERATED := \
 	$(ARTIFACT_DOCS) \
 	$(ARTIFACT_IMAGES) \
+	$(ARTIFACT_FONTS) \
 	$(ARTIFACT_ARCHIVES) \
 	$(ARTIFACT_PACKAGES) \
 	$(ARTIFACT_BYTECODE) \
@@ -114,6 +116,12 @@ $(ARTIFACTS)/sample.png: $(SCRIPTS)/make_png.py
 	$(PY) $< $@
 
 $(ARTIFACTS)/sample.jpg: $(SCRIPTS)/make_jpg.py
+	$(PY) $< $@
+
+$(ARTIFACTS)/sample.ttf: $(SCRIPTS)/make_font.py
+	$(PY) $< $@
+
+$(ARTIFACTS)/sample.woff2: $(SCRIPTS)/make_font.py
 	$(PY) $< $@
 
 $(ARTIFACTS)/sample.pkl: $(SCRIPTS)/make_pickle.py

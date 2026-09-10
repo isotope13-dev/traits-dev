@@ -1,0 +1,70 @@
+# Trusting-trust toolchain-seed trojan: a build recipe that unpacks a compiler
+# toolchain distribution, runs a binary infector/patcher against one of its
+# executables (strip, gcc, ld, as, ...), and repacks it, so every artifact the
+# poisoned toolchain later produces inherits the implant. Modeled on the
+# Thompson "Reflections on Trusting Trust" attack against the nixpkgs glibc
+# bootstrap seed, where infecting `strip` propagates through stdenv to the
+# whole package set. Detected on the Nix build expression (classified as
+# shell) that drives the injection.
+defaults:
+  platforms: [unix]
+  for: [shell, scripts]
+  attack: T1195.001,T1554
+  mbc: B0009
+
+traits:
+  - id: infector-command-verb
+    desc: Infector or implant naming vocabulary
+    # A command or tool name reading as inject/infect/trojan/implant/backdoor.
+    # Weak alone (matches "injection", "injector" in benign prose), so it earns
+    # meaning only next to a toolchain-binary target below.
+    crit: component
+    conf: 0.8
+    if:
+      type: text
+      regex: '\b(inject|infect|trojan|implant|backdoor)[A-Za-z0-9_-]*'
+
+  - id: toolchain-binary-target
+    desc: Path to a toolchain executable
+    # bin/<compiler|linker|strip|...>; common in build scripts on its own.
+    crit: component
+    conf: 0.8
+    if:
+      type: text
+      regex: '\bbin/(strip|gcc|g\+\+|clang|ld|as|ar|cc|objcopy|ranlib|nm)\b'
+
+  - id: bootstrap-seed-ref
+    desc: References the toolchain bootstrap seed
+    # Neutral nixpkgs bootstrap-tooling identifiers; legitimate seed rebuilds
+    # use them too, so this only qualifies the composite below.
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      regex: '\b(make-bootstrap-tools|bootstrapTools|bootstrapFiles)\b'
+
+composite_rules:
+  # An infector-named command invoked against a toolchain binary on the same
+  # command line — the regex `attack-injector ... bin/strip` split into two
+  # atoms held together by byte proximity.
+  - id: toolchain-binary-infector-invoke
+    desc: Runs an infector against a toolchain binary
+    crit: suspicious
+    conf: 0.94
+    all:
+      - id: infector-command-verb
+      - id: toolchain-binary-target
+    near_bytes: 64
+
+  # Full trusting-trust seed injection: infect a toolchain binary inside the
+  # unpacked bootstrap seed and repack it for downstream builds.
+  - id: toolchain-seed-binary-trojan
+    desc: Infects a toolchain binary in the seed
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: toolchain-binary-infector-invoke
+      - id: bootstrap-seed-ref
+    any:
+      - id: micro-behaviors/data/archive/extract/tar::tar-extract
+      - id: micro-behaviors/data/archive/create/tar::tar-create

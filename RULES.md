@@ -304,7 +304,7 @@ structured fact.
 | Type | Purpose | Fields |
 |------|---------|--------|
 | `tree-sitter` | Live tree-sitter query (escape hatch) | `kind`/`node`, `exact`/`substr`/`regex`/`query` (S-expression). `ast` is a serde alias. |
-| `syscall` | Direct syscalls | `name`, `number`, `arch` (all optional, OR within field, AND across fields) |
+| `syscall` | Direct syscalls | `name`, `number`, `arch`, `args` (optional; OR within name/number/arch, AND across fields and argument predicates) |
 | `section` | Binary sections | `exact`, `substr`, `regex`, `word`, `case_insensitive`, `length_min`, `length_max`, `entropy_min`, `entropy_max`, `readable`, `writable`, `executable`, `compare_to` (reference section for both ratio checks; default: "total" for size), `size_ratio_min`, `size_ratio_max`, `entropy_ratio_min`, `entropy_ratio_max` |
 | `metrics` | Code metrics | `field` (e.g., `identifiers.avg_entropy`, `binary.text_to_file_ratio`, `binary.string_count`, `elf.e_machine`, `pe.dos_stub_zeroed`, `consistency.cert_org_pdb_mismatch`), `min`, `max`, `min_size`, `max_size` |
 | `yara` | YARA rule | `source` |
@@ -328,6 +328,33 @@ The `syscall` type filters are all optional. Within each field (name, number, ar
     type: syscall
     number: [59]
     arch: ["x86_64"]
+```
+
+For Linux x86-64 and AArch64 ELF files, resolved syscall numbers are retained
+with per-instruction file offsets, including numbers without a known name
+(`unknown`). Use `number` with `arch` for those records. `count_min` counts
+matching instruction sites, not runtime invocations. Imported wrappers remain
+available through import/symbol matching. Flat payloads are not decoded as ELF.
+
+Recovery is conservative and is not full control-flow or memory analysis.
+x86-64 tracks immediate loads, register copies, and zeroing; stack-loaded or
+computed values may remain unknown. AArch64 currently resolves unshifted
+64-bit MOVZ loads and clears constants across unrecognized instructions.
+
+`args` predicates must all match the same syscall record. `index` is zero-based;
+`value` requires equality and `mask` requires all specified bits to be set.
+Unresolved arguments never satisfy a predicate. For example:
+
+```yaml
+- id: header-write
+  if:
+    type: syscall
+    name: [pwrite64]
+    args:
+      - index: 2
+        value: 64
+      - index: 3
+        value: 0
 ```
 
 ### Structural Condition Examples

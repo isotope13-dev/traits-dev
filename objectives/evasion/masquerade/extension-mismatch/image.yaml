@@ -50,6 +50,60 @@ traits:
       type: metrics
       field: consistency.extension_content_mismatch.script_as_image
       min: 1
+  - id: binary-content-as-audio-extension
+    desc: Executable content under an audio extension
+    crit: notable
+    conf: 0.98
+    for: [elf, macho, pe]
+    if:
+      type: metrics
+      field: consistency.extension_content_mismatch.binary_as_audio
+      min: 1
+  - id: binary-content-as-video-extension
+    desc: Executable content under a video extension
+    crit: notable
+    conf: 0.98
+    for: [elf, macho, pe]
+    if:
+      type: metrics
+      field: consistency.extension_content_mismatch.binary_as_video
+      min: 1
+  - id: script-content-as-audio-extension
+    desc: Script content under an audio extension
+    crit: notable
+    conf: 0.96
+    for: [scripts]
+    if:
+      type: metrics
+      field: consistency.extension_content_mismatch.script_as_audio
+      min: 1
+  - id: script-content-as-video-extension
+    desc: Script content under a video extension
+    crit: notable
+    conf: 0.96
+    for: [scripts]
+    if:
+      type: metrics
+      field: consistency.extension_content_mismatch.script_as_video
+      min: 1
+  - id: archive-content-as-image-extension
+    desc: Archive content under an image extension
+    crit: notable
+    conf: 0.95
+    for: [zip, tar, gz, bz2, xz, zst, jar]
+    if:
+      type: metrics
+      field: consistency.extension_content_mismatch.archive_as_image
+      min: 1
+  - id: archive-content-as-audio-extension
+    desc: Archive content under an audio extension
+    crit: notable
+    conf: 0.95
+    for: [zip, tar, gz, bz2, xz, zst, jar]
+    if:
+      type: metrics
+      field: consistency.extension_content_mismatch.archive_as_audio
+      min: 1
   - id: script-content-as-document-extension
     desc: Script content under document extension
     crit: component
@@ -96,10 +150,116 @@ composite_rules:
     any:
       - id: binary-content-as-document-extension
       - id: binary-content-as-text-extension
-  - id: script-masquerades-as-document-extension
-    desc: Script disguised as image or document
+  # Renamed from `script-masquerades-as-document-extension`: it already
+  # matched the image transition as well as the document one, so the id
+  # claimed a narrower surface than the rule covered — and it now takes the
+  # audio and video transitions too. A `.wav` or `.ico` holding a shell or
+  # PowerShell payload is the same masquerade as a `.png` holding one.
+  - id: script-masquerades-as-media-extension
+    desc: Script disguised as an image, audio or document
     crit: suspicious
     conf: 0.9
     any:
       - id: script-content-as-image-extension
       - id: script-content-as-document-extension
+      - id: script-content-as-audio-extension
+      - id: script-content-as-video-extension
+  # An executable wearing an audio or video name. Held to the same standard as
+  # the image case above: the bytes are a real PE/ELF/Mach-O and the name says
+  # media. No toolchain emits one, and whatever drops it can run it directly.
+  # One id for "an executable is wearing a playable-media name", same tier as
+  # its legs, so the rule below has a single leg to require.
+  - id: binary-content-as-playable-extension
+    desc: Executable content under playable extension
+    crit: notable
+    conf: 0.97
+    any:
+      - id: binary-content-as-audio-extension
+      - id: binary-content-as-video-extension
+  # Mirrors `binary-disguised-as-image-extension`: the group transition says
+  # the extension lies, and the magic-identity leg confirms the bytes really
+  # are an executable image rather than something the type guess got wrong.
+  - id: binary-disguised-as-playable-extension
+    desc: Executable disguised as audio or video
+    crit: hostile
+    conf: 0.97
+    attack: "T1036.008,T1027"
+    all:
+      - id: binary-content-as-playable-extension
+    any:
+      - id: metadata/file/magic/identity::elf-header
+      - id: metadata/file/magic/identity::macho-32
+      - id: metadata/file/magic/identity::macho-64
+      - id: metadata/file/magic/identity::cafebabe-magic
+      - id: metadata/file/magic/identity::pe-dos-stub
+    unless:
+      # A carved child is named for its extraction coordinate, so the
+      # "extension" is cleave's, not the author's.
+      - id: metadata/binary/layout::embedded-pe-child
+  # An archive wearing a media name: a second stage packed for delivery, past
+  # any reviewer who sees an asset and any scanner that skips media.
+  # Same tier as its legs: this exists to give one id to "an archive is
+  # wearing a media name", not to escalate. The package-scope rules supply the
+  # intent, as they do for the font case.
+  - id: archive-disguised-as-media-extension
+    desc: Archive disguised as a media asset
+    crit: notable
+    conf: 0.95
+    any:
+      - id: archive-content-as-image-extension
+      - id: archive-content-as-audio-extension
+
+  # The residue cases: content sniffing never identified the payload, so no
+  # group transition was recorded and every rule above is blind. This happens
+  # when the real magic is pushed out of reach — hundreds of leading spaces
+  # ahead of a PE, or a base64 wrapper — leaving the extension to decide the
+  # type. The container walker then finds no container signature and reports
+  # what the bytes actually are in `media.content_kind`, which is the only
+  # place this is visible.
+  - id: media-named-file-is-executable
+    desc: Padded executable under a media name
+    crit: hostile
+    conf: 0.97
+    attack: "T1036.008,T1027,T1027.001"
+    for: [media]
+    all:
+      - id: metadata/media/container::media-content-is-executable
+    unless:
+      - id: metadata/media/container::media-container-recognized
+
+  - id: media-named-file-is-archive
+    desc: Padded archive under a media name
+    crit: suspicious
+    conf: 0.95
+    attack: "T1036.008,T1027,T1027.001"
+    for: [media]
+    all:
+      - id: metadata/media/container::media-content-is-archive
+    unless:
+      - id: metadata/media/container::media-container-recognized
+
+  # An asset whose bytes are text or an encoded blob. A `.ico`, `.wav` or
+  # `.png` holding base64 is not a damaged asset — decoders reject it outright,
+  # so it was never meant to be decoded, only fetched and decoded by something
+  # else.
+  - id: media-named-file-is-encoded-text
+    desc: Encoded text under a media name
+    crit: hostile
+    conf: 0.96
+    attack: "T1036.008,T1027"
+    for: [media]
+    all:
+      - id: metadata/media/container::media-content-is-text
+    unless:
+      - id: metadata/media/container::media-container-recognized
+
+  - id: media-named-file-is-opaque-blob
+    desc: Opaque blob under a media name
+    crit: suspicious
+    conf: 0.94
+    attack: "T1036.008,T1027"
+    for: [media]
+    all:
+      - id: metadata/media/container::media-content-is-opaque-blob
+    unless:
+      - id: metadata/media/container::media-container-recognized

@@ -12,16 +12,76 @@ defaults:
   platforms: [windows, linux, macos]
   attack: T1036.008
 traits:
+  # Content-derived, not name-derived: filefacts types the file from its bytes
+  # and reports the group transition it disagreed with the extension about.
+  # The previous form matched a font basename on a hand-listed set of seven
+  # languages, so a PowerShell, VBScript, Lua or batch payload wearing
+  # `.woff2` — the same attack, a different interpreter — read as nothing.
   - id: script-named-as-font
     desc: Script content under a font extension
     crit: suspicious
     conf: 0.95
-    for: [javascript, typescript, python, ruby, php, perl, shell]
+    for: [scripts]
+    if:
+      type: metrics
+      field: consistency.extension_content_mismatch.script_as_font
+      min: 1
+
+  # An executable image wearing a font name. Fonts are data: no loader reads
+  # one as code, and no toolchain emits a PE/ELF/Mach-O with a font suffix.
+  # Distinct from the script case because the payload needs no interpreter —
+  # whatever drops it can execute it directly.
+  # The name half, stated exactly. `consistency.extension_content_mismatch`
+  # reports a *group* transition (binary→font), which is derived; this is the
+  # literal suffix on the file. Pairing them keeps the composites below true to
+  # both halves of the claim rather than resting on one derived fact.
+  # The name half, stated exactly. `consistency.extension_content_mismatch`
+  # reports a derived *group* transition (binary→font); this is the literal
+  # suffix on the file, so the composite below rests on both halves of its
+  # claim rather than on one derived fact.
+  - id: font-extension-basename
+    desc: Filename ends in a font extension
+    crit: component
+    conf: 1.0
+    # Exactly at the seven-type cap a `basename` matcher allows: the formats a
+    # second stage is actually delivered as.
+    for: [pe, elf, macho, zip, tar, gz, jar]
     if:
       type: path
       basename: true
-      regex: '\.(woff2?|ttf|otf|eot)$'
+      regex: '\.(woff2?|[ot]tf|[ot]tc|eot)$'
       case_insensitive: true
+
+  - id: executable-named-as-font
+    desc: Executable content under a font extension
+    crit: suspicious
+    conf: 0.98
+    attack: "T1036.008,T1027"
+    for: [binaries]
+    if:
+      type: metrics
+      field: consistency.extension_content_mismatch.binary_as_font
+      min: 1
+    unless:
+      # A carved child is named for its extraction coordinate, so the
+      # "extension" is cleave's, not the author's.
+      - id: metadata/binary/layout::embedded-pe-child
+
+  # An archive wearing a font name: a second stage packed for delivery, past
+  # any reviewer who sees a font asset and any scanner that skips media.
+  - id: archive-named-as-font
+    desc: Archive content under a font extension
+    crit: suspicious
+    conf: 0.96
+    attack: "T1036.008,T1027"
+    # Narrower than the `archives` group, which exceeds the file-type cap for
+    # a metrics matcher: these are the container formats a second stage is
+    # actually packed in.
+    for: [zip, tar, gz, bz2, xz, zst, jar]
+    if:
+      type: metrics
+      field: consistency.extension_content_mismatch.archive_as_font
+      min: 1
 
   - id: node-task-executes-font-named-file
     desc: Node task executes font-named file
@@ -117,6 +177,64 @@ traits:
       regex: '"command"\s*:\s*"[^"]{0,400}\bperl(\.exe)?\s+[^"\s]{1,160}\.(woff2?|[ot]tf|eot)\b'
       case_insensitive: true
 
+  # The task-based traits above cover an IDE/build runner naming a font as its
+  # interpreter argument. These two cover the same relationship in ordinary
+  # code, for the loaders that do not go through a task file.
+  #
+  # A font is data: no runtime can load one as a module. `require()`/`import()`
+  # of a font path is therefore never a real dependency — it is a payload being
+  # executed under an asset's name.
+  - id: module-load-of-font-path
+    desc: Font path loaded as a code module
+    crit: suspicious
+    conf: 0.96
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\b(require|import)\s*\(\s*[''"`][^''"`\n]{0,200}\.(woff2?|[ot]tf|eot)[''"`]'
+      case_insensitive: true
+
+  # The argv form, in two parts joined by proximity below. A spawn API takes
+  # the interpreter and its arguments as separate quoted elements, so the font
+  # path never sits adjacent to the interpreter in a shell command string the
+  # way `interpreter-command-on-font-path` expects.
+  #
+  # Each half alone is ordinary — every spawn call quotes an interpreter, and
+  # every asset pipeline quotes a font path — so both are components and the
+  # signal is entirely in how close they sit.
+  - id: quoted-interpreter-argv-head
+    desc: Quoted interpreter opens an argv list
+    crit: component
+    conf: 0.9
+    for: [javascript, typescript, python, ruby, php, shell, powershell]
+    if:
+      type: text
+      regex: '["\x27](node|bun|deno|python3?|ruby|php)["\x27]\s*,\s*\[?\s*'
+      case_insensitive: true
+
+  - id: quoted-font-path-literal
+    desc: Quoted path ends in a font extension
+    crit: component
+    conf: 0.9
+    for: [javascript, typescript, python, ruby, php, shell, powershell]
+    if:
+      type: text
+      regex: '["\x27][^"\x27\n]{0,100}\.(woff2?|[ot]tf|eot)["\x27]'
+      case_insensitive: true
+
+  # An interpreter invoked directly on a font path. The font path must be the
+  # interpreter's *first* argument: `python -m fontTools.subset x.ttf` and
+  # `node build.js out.woff2` are ordinary font tooling and do not match.
+  - id: interpreter-command-on-font-path
+    desc: Interpreter runs a font-named file
+    crit: suspicious
+    conf: 0.94
+    for: [javascript, typescript, python, shell, batch, powershell, json]
+    if:
+      type: text
+      regex: '\b(node|deno|bun|python3?|ruby|perl|php)\s+\S{1,120}\.(woff2?|ttf|otf|eot)\b'
+      case_insensitive: true
+
 composite_rules:
   - id: vscode-folder-open-executes-font-script
     desc: Folder-open task executes a script disguised as a font
@@ -136,3 +254,167 @@ composite_rules:
       - id: ruby-task-executes-font-named-file
       - id: php-task-executes-font-named-file
       - id: perl-task-executes-font-named-file
+
+  # The two composites above catch the *loader* — a task or script that names
+  # a font file as its interpreter argument. This one catches the *payload*,
+  # from the font file alone, for the case where the loader lives in another
+  # repository, another file, or is simply not shipped alongside.
+  #
+  # filefacts types a font-named file as `font` and validates it. A file that
+  # reaches the font analyzer with no font signature at all is not a corrupted
+  # font: a truncated or damaged font still opens with `wOFF`/`OTTO`/sfnt and
+  # fails later. No signature means the bytes were never a font. Pairing that
+  # with an almost-entirely-printable body says what they are instead —
+  # source, markup, or an encoded blob — which is the shape every reported
+  # font-masquerade loader has had.
+  - id: font-file-is-disguised-text
+    desc: Font file is disguised text content
+    crit: hostile
+    conf: 0.97
+    attack: "T1036.008,T1027"
+    for: [font]
+    all:
+      - id: metadata/font/container::font-no-signature
+      - id: metadata/font/container::font-body-is-text
+
+  # Same disguise, binary payload. An executable or archive wearing a font
+  # name is caught by content sniffing when the magic is recognisable, so this
+  # covers the remainder: no font signature, not text either, and padded to
+  # push whatever it is out of a sniffing window.
+  - id: font-file-is-padded-non-font
+    desc: Padded non-font content under font name
+    crit: suspicious
+    conf: 0.93
+    attack: "T1036.008,T1027.001"
+    for: [font]
+    all:
+      - id: metadata/font/container::font-no-signature
+      - id: metadata/font/container::font-leading-whitespace-padding
+
+  # Every way a font path reaches an interpreter, under one id. Same tier as
+  # its legs — this exists to give package-scope composites a single leg to
+  # reference instead of eleven, not to escalate anything.
+  # The font path must be the interpreter's *first* argument. This is the
+  # whole discriminator: `['python', 'fonts/x.woff2']` runs the font, while
+  # `['python', '-m', 'fontTools.subset', 'src/Inter.ttf']` and
+  # `execFile('node', ['scripts/subset.js', 'fonts/inter.woff2'])` are
+  # ordinary pipelines whose font argument sits further along. Both of those
+  # false-positived on a looser form of this rule.
+  - id: interpreter-argv-on-font-path
+    desc: Interpreter argv names a font file
+    crit: suspicious
+    conf: 0.93
+    # Measured, not guessed: the attack forms sit 9-11 bytes apart and the
+    # tooling forms 30+, so anything in 12..24 separates them. 32 starts
+    # re-admitting `execFile('node', ['scripts/subset.js', 'x.woff2'])`.
+    near_bytes: 16
+    all:
+      - id: quoted-interpreter-argv-head
+      - id: quoted-font-path-literal
+
+  - id: font-path-executed-by-interpreter
+    desc: Font path handed to an interpreter
+    crit: suspicious
+    conf: 0.95
+    any:
+      - id: interpreter-command-on-font-path
+      - id: interpreter-argv-on-font-path
+      - id: module-load-of-font-path
+      - id: node-task-executes-font-named-file
+      - id: bun-task-executes-font-named-file
+      - id: deno-task-executes-font-named-file
+      - id: python-task-executes-font-named-file
+      - id: py-task-executes-font-named-file
+      - id: shell-task-executes-font-named-file
+      - id: ruby-task-executes-font-named-file
+      - id: php-task-executes-font-named-file
+      - id: perl-task-executes-font-named-file
+
+  # No signature and no recognisable structure, just compressed or encrypted
+  # bytes. Nothing else claimed the file, so this is the residue case the
+  # other rules cannot reach — and an opaque blob under an asset name is how a
+  # staged payload waits for its loader.
+  - id: font-named-file-is-opaque-blob
+    desc: Opaque blob disguised with a font name
+    crit: suspicious
+    conf: 0.94
+    attack: "T1036.008,T1027"
+    for: [font]
+    all:
+      - id: metadata/font/container::font-no-signature
+      - id: metadata/font/container::font-content-is-encrypted-blob
+
+  # An executable image wearing a font name: the bytes are a PE/ELF/Mach-O and
+  # the filename says font. Unlike a text payload — which could conceivably be
+  # a misnamed asset — this has no non-adversarial explanation: no toolchain
+  # emits an executable with a font suffix, and whatever drops it can run it
+  # directly with no interpreter.
+  - id: font-named-file-is-executable
+    desc: Executable disguised with a font name
+    crit: hostile
+    conf: 0.98
+    attack: "T1036.008,T1027"
+    for: [binaries]
+    all:
+      - id: executable-named-as-font
+      - id: font-extension-basename
+    unless:
+      # A carved child is named for its extraction coordinate, so the
+      # "extension" is cleave's, not the author's.
+      - id: metadata/binary/layout::embedded-pe-child
+
+  # A payload padded past the point where content sniffing looks. Leading
+  # whitespace pushes the real magic out of every fixed-window sniffer, so the
+  # file falls through to its extension and is analysed as a font — and the
+  # font extractor, which searches the whole file rather than its first bytes,
+  # is then the only thing that sees what it really is. The composites above
+  # cannot reach this case: nothing typed the file as a binary, so no
+  # content/extension mismatch was ever recorded.
+  - id: font-named-file-is-executable-blob
+    desc: Padded executable under a font name
+    crit: hostile
+    conf: 0.97
+    attack: "T1036.008,T1027,T1027.001"
+    for: [font]
+    all:
+      - id: metadata/font/container::font-no-signature
+      - id: metadata/font/container::font-content-is-executable
+
+  - id: font-named-file-is-archive-blob
+    desc: Padded archive under a font name
+    crit: suspicious
+    conf: 0.95
+    attack: "T1036.008,T1027,T1027.001"
+    for: [font]
+    all:
+      - id: metadata/font/container::font-no-signature
+      - id: metadata/font/container::font-content-is-archive
+
+  # Every flavour of "the file wearing a font name is not a font", under one
+  # id: an executable, an archive, a script, or bytes with no font signature
+  # at all. Same tier as its legs — this exists so package-scope rules have a
+  # single leg to reference, not to escalate anything.
+  - id: font-named-file-is-not-a-font
+    desc: Font-named file is not a font
+    crit: suspicious
+    conf: 0.96
+    any:
+      - id: executable-named-as-font
+      - id: archive-named-as-font
+      - id: script-named-as-font
+      - id: metadata/font/container::font-no-signature
+
+  # An archive wearing a font name: a second stage packed for delivery, past
+  # any reviewer who sees a font asset and any scanner that skips media. Held
+  # to the same two-fact standard as the executable case — the bytes are a
+  # container, and the name is a specific web-font asset. Quarantine pipelines
+  # that rename samples use `.vir`/`.bin`, not `fa-solid-500.woff2`.
+  - id: font-named-file-is-archive
+    desc: Archive disguised with a font name
+    crit: hostile
+    conf: 0.96
+    attack: "T1036.008,T1027"
+    for: [zip, tar, gz, jar]
+    all:
+      - id: archive-named-as-font
+      - id: font-extension-basename

@@ -1179,10 +1179,20 @@ metadata/
 │   ├── policy/            #   Policy/config text identities
 │   ├── profile/           #   Text profile and wrapper shapes
 │   └── string/            #   Neutral string identities
+├── font/                  # Font container structure (sfnt/WOFF/WOFF2/EOT)
+│   ├── container/         #   Format identity and header/table-directory validity
+│   └── layout/            #   Byte coverage: gaps, trailing data, oversized tables
+│                          #   File identity remains under file/{magic,extension};
+│                          #   masquerade/stowaway INTENT lives in objectives/
 ├── hardening/             # Security hardening features (sandbox, seccomp, pledge)
 ├── image/                 # Image-specific neutral measurements
 │   └── metrics/           #   Pixel/channel/statistical image measurements
 │                          #   File identity remains under file/{magic,extension}
+├── media/                 # Media-container structure, shared across carriers
+│   ├── container/         #   Container identity and structural consistency
+│   └── layout/            #   Byte coverage: holes, trailing data, what fills them
+│                          #   Covers fonts, images, audio and video alike;
+│                          #   masquerade/stowaway INTENT lives in objectives/
 ├── import/                # Dependencies/imports (auto-generated)
 │   ├── python/ npm/ ruby/ java/ go/ rust/ c/
 │   └── macho/ elf/ pe/   #   Binary format imports

@@ -1,0 +1,121 @@
+# Payload carried inside a font that still renders.
+#
+# The masquerade case (a script named `.woff2`) breaks the moment anyone opens
+# the file. This is the durable version: the font is genuinely a font, passes
+# every renderer, and carries bytes the table directory does not claim. Nothing
+# in the toolchain reads those bytes, so nothing complains — the same property
+# that makes PNG ancillary chunks and JPEG trailing segments carriers.
+#
+# The technique is format-portable: appending past the last table, parking data
+# in the gaps between tables, and stuffing an unregistered four-character tag
+# all work identically in `.ttf`, `.otf`, `.woff` and `.eot`. These composites
+# key on the coverage arithmetic rather than on any signature, so a new variant
+# is caught by the same rules.
+#
+# Calibration: measured against the 370 fonts macOS ships, none of which
+# reaches any threshold here. Roughly one in twenty does carry a vendor-private
+# tag, which is why the private-table leg keys on *bytes* rather than presence.
+defaults:
+  platforms: [unix, windows]
+  for: [font]
+  attack: T1027.003
+  mbc: B0032
+
+composite_rules:
+  - id: font-carries-unclaimed-payload
+    desc: Valid font carries unclaimed bytes
+    crit: suspicious
+    conf: 0.93
+    any:
+      - id: metadata/font/layout::font-trailing-data
+      - id: metadata/font/layout::font-interior-gap-bytes
+      - id: metadata/font/layout::font-oversized-private-table
+    unless:
+      # Coverage arithmetic only means something for a file that is a font.
+      # With no signature there is no table directory, so "unclaimed bytes" is
+      # the whole file — the masquerade case, reported by
+      # objectives/evasion/masquerade/extension-mismatch instead.
+      - id: metadata/font/container::font-no-signature
+
+  # A hand-built directory. Font compilers emit contiguous, non-overlapping,
+  # in-bounds tables; overlapping or out-of-bounds extents mean the directory
+  # was authored to point a renderer away from bytes, or to make one region
+  # serve two purposes.
+  - id: font-directory-hand-authored
+    desc: Font table directory is inconsistent
+    crit: suspicious
+    conf: 0.94
+    any:
+      - id: metadata/font/layout::font-overlapping-tables
+      - id: metadata/font/layout::font-table-out-of-bounds
+    unless:
+      - id: metadata/font/container::font-no-signature
+
+  # One coverage anomaly can be a build artifact; a carrier and a hand-authored
+  # directory together are not. A generator that leaves slack does not also
+  # emit overlapping or out-of-bounds extents, so requiring both legs keeps
+  # this clear of every font macOS ships while still describing the technique
+  # rather than any one sample.
+  - id: font-carries-payload-behind-edited-directory
+    desc: Font hides data behind an edited directory
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: font-carries-unclaimed-payload
+      - id: font-directory-hand-authored
+
+  # The carrier composites above say a font holds bytes nothing reads. These
+  # say what those bytes are, which is what turns a structural oddity into a
+  # finding. A font that renders correctly and carries an executable image,
+  # an archive, or a script in the regions its own directory does not claim is
+  # a delivery mechanism; there is no build process that produces one.
+  - id: font-embeds-executable
+    desc: Font embeds an executable image
+    crit: hostile
+    conf: 0.98
+    attack: T1027.009,T1036.008
+    all:
+      # The font must genuinely render: that is what makes this the durable
+      # case rather than the masquerade one, and what keeps a payload merely
+      # *named* like a font from being reported twice.
+      - id: metadata/font/container::font-signature-recognized
+      - id: metadata/font/layout::font-stowaway-executable
+
+  - id: font-embeds-archive
+    desc: Font embeds an archive container
+    crit: hostile
+    conf: 0.96
+    attack: T1027.009,T1036.008
+    all:
+      # The font must genuinely render: that is what makes this the durable
+      # case rather than the masquerade one, and what keeps a payload merely
+      # *named* like a font from being reported twice.
+      - id: metadata/font/container::font-signature-recognized
+      - id: metadata/font/layout::font-stowaway-archive
+
+  - id: font-embeds-script
+    desc: Font embeds an interpreted script
+    crit: hostile
+    conf: 0.96
+    attack: T1027.009,T1059
+    all:
+      # The font must genuinely render: that is what makes this the durable
+      # case rather than the masquerade one, and what keeps a payload merely
+      # *named* like a font from being reported twice.
+      - id: metadata/font/container::font-signature-recognized
+      - id: metadata/font/layout::font-stowaway-script
+
+  # Encrypted or compressed bytes with no identifiable format, parked where
+  # nothing reads them. One tier below the named-payload rules because the
+  # content cannot be shown to be executable — but slack space in a font is
+  # zeros, never near-random bytes, so the concealment itself is the finding.
+  - id: font-carries-opaque-stowaway
+    desc: Font carries concealed opaque data
+    crit: suspicious
+    conf: 0.95
+    attack: T1027.009
+    all:
+      - id: font-carries-unclaimed-payload
+    any:
+      - id: metadata/font/layout::font-stowaway-high-entropy
+      - id: metadata/font/layout::font-stowaway-encoded

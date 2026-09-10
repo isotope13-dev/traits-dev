@@ -1,0 +1,86 @@
+# Payload carried inside a media file that still renders or plays.
+#
+# The masquerade case — a script named `.woff2`, an executable named
+# `favicon.ico` — breaks the moment anyone opens the file. This is the durable
+# version: the asset is genuinely the format it claims, passes every decoder,
+# and carries bytes its own structure does not account for. Nothing in the
+# toolchain reads those bytes, so nothing complains.
+#
+# The technique is format-portable, which is why these rules are written
+# against the shared `media.*` facts rather than per format: appending past the
+# end, parking data in the holes between regions, and stuffing a private chunk
+# or unregistered table all work identically in PNG, JPEG, WAV, AIFF, MP3, MP4,
+# ICO, GIF, BMP, WebP and every font container. A format added later inherits
+# these detections without new rules.
+#
+# Calibration: measured against 897 media files shipped with macOS and its
+# bundled applications, plus 728 system fonts. None reaches any threshold here.
+defaults:
+  platforms: [unix, windows]
+  for: [media]
+  attack: T1027.003
+  mbc: B0032
+
+composite_rules:
+  - id: media-carries-unclaimed-payload
+    desc: Asset carries unaccounted-for bytes
+    crit: suspicious
+    conf: 0.93
+    any:
+      - id: metadata/media/layout::media-trailing-data
+      - id: metadata/media/layout::media-interior-hole
+    unless:
+      # Coverage arithmetic only means something for a file that really is the
+      # container. With no signature there is no structure, so "unaccounted
+      # for" is the whole file — the masquerade case, reported by
+      # objectives/evasion/masquerade/extension-mismatch instead.
+      - id: metadata/media/container::media-content-is-executable
+      - id: metadata/media/container::media-content-is-archive
+      - id: metadata/media/container::media-content-is-text
+      - id: metadata/media/container::media-content-is-opaque-blob
+
+  # What those bytes are is what turns a structural oddity into a finding. An
+  # asset that renders correctly and carries an executable image, an archive,
+  # or a script in the space its own structure leaves unclaimed is a delivery
+  # mechanism; no encoder produces one.
+  - id: media-embeds-executable
+    desc: Asset embeds an executable image
+    crit: hostile
+    conf: 0.98
+    attack: T1027.003,T1036.008
+    all:
+      - id: metadata/media/container::media-container-recognized
+      - id: metadata/media/layout::media-stowaway-executable
+
+  - id: media-embeds-archive
+    desc: Asset embeds an archive container
+    crit: hostile
+    conf: 0.96
+    attack: T1027.003,T1036.008
+    all:
+      - id: metadata/media/container::media-container-recognized
+      - id: metadata/media/layout::media-stowaway-archive
+
+  - id: media-embeds-script
+    desc: Asset embeds an interpreted script
+    crit: hostile
+    conf: 0.96
+    attack: T1027.003,T1059
+    all:
+      - id: metadata/media/container::media-container-recognized
+      - id: metadata/media/layout::media-stowaway-script
+
+  # Encrypted, compressed or encoded bytes with no identifiable format, parked
+  # where nothing reads them. One tier below the named-payload rules because
+  # the content cannot be shown to be executable — but slack space in a
+  # container is zeros or ASCII, never near-random bytes, so the concealment
+  # itself is the finding.
+  - id: media-carries-opaque-stowaway
+    desc: Asset carries concealed opaque data
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: media-carries-unclaimed-payload
+    any:
+      - id: metadata/media/layout::media-stowaway-high-entropy
+      - id: metadata/media/layout::media-stowaway-encoded
