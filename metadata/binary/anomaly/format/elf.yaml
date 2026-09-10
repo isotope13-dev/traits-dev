@@ -92,9 +92,11 @@ traits:
     crit: notable
     conf: 0.9
     if:
-      type: metrics
-      field: elf.entry_in_nonstandard_section
-      min: 1
+      type: value
+      path: elf.entry_section
+      regex: '.+'
+      not:
+        - regex: '^\.?(text|rdata|data|bss|rodata|idata|edata|pdata|xdata|tls|reloc|rsrc|debug|init|fini|plt|got|got\.plt|plt\.got|plt\.sec|dynamic|dynsym|dynstr|symtab|strtab|shstrtab|interp|note|hash|gnu\.hash|gnu\.version|gnu\.version_r|gnu\.version_d|eh_frame|eh_frame_hdr|comment|ARM\.exidx|ARM\.extab|ARM\.attributes|init_array|fini_array|preinit_array|ctors|dtors|tbss|tdata|tm_clone_table|data\.rel\.ro|got\.plt\.sec|stab|stabstr|drectve|didat|__text|__data|__bss|__cstring|__const|__objc_classlist|__objc_classrefs|__objc_data|__objc_classname|__objc_const|__objc_methname|__objc_methtype|__objc_selrefs|__objc_imageinfo|__la_symbol_ptr|__nl_symbol_ptr|__got|__stubs|__stub_helper|__cfstring|__unwind_info|__eh_frame|__info_plist|__swift5_proto|__swift5_types|__swift5_fieldmd|__swift5_typeref|__swift5_reflstr|__swift5_assocty|__swift5_capture|__swift5_builtin|__swift5_acfuncs|__swift5_mpenum|__llvm_covmap|__llvm_covfun|__llvm_prf_cnts|__llvm_prf_data|__llvm_prf_names|__llvm_prf_vnds)$'
     unless:
       - id: metadata/binary/vendor/
       - id: metadata/file/extension/identity::linux-firmware-blob-basename
@@ -108,9 +110,15 @@ traits:
     crit: notable
     conf: 0.85
     if:
-      type: metrics
-      field: elf.executable_segment_count
-      min: 2
+      type: yara
+      source: |
+        import "elf"
+        rule elf_multiple_executable_load_segments {
+          condition:
+            for 2 segment in elf.segments: (
+              segment.type == elf.PT_LOAD and (segment.flags & elf.PF_X) != 0
+            )
+        }
     unless:
       - id: metadata/binary/vendor/
       - id: metadata/file/extension/identity::linux-firmware-blob-basename
@@ -126,9 +134,23 @@ traits:
     crit: component
     conf: 0.9
     if:
-      type: metrics
-      field: elf.uncovered_note_count
-      min: 1
+      type: yara
+      source: |
+        import "elf"
+        rule elf_uncovered_allocated_note_section {
+          condition:
+            elf.segments.len() > 0 and for any section in elf.sections: (
+              section.type == elf.SHT_NOTE and section.size > 0 and
+              (section.flags & 2) != 0 and
+              not for any segment in elf.segments: (
+                (segment.type == elf.PT_NOTE or
+                 segment.type == elf.PT_GNU_PROPERTY) and
+                section.offset >= segment.offset and
+                section.size <= segment.file_size and
+                section.offset - segment.offset <= segment.file_size - section.size
+              )
+            )
+        }
   - id: elf-build-id-uncovered
     desc: ELF build-id note lacks a note segment
     # The GNU build-id note is present in the section table but reachable
@@ -140,9 +162,24 @@ traits:
     crit: component
     conf: 0.92
     if:
-      type: metrics
-      field: elf.build_id_uncovered
-      min: 1
+      type: yara
+      source: |
+        import "elf"
+        rule elf_uncovered_build_id_note_section {
+          condition:
+            elf.segments.len() > 0 and for any section in elf.sections: (
+              section.type == elf.SHT_NOTE and
+              section.name == ".note.gnu.build-id" and section.size > 0 and
+              (section.flags & 2) != 0 and
+              not for any segment in elf.segments: (
+                (segment.type == elf.PT_NOTE or
+                 segment.type == elf.PT_GNU_PROPERTY) and
+                section.offset >= segment.offset and
+                section.size <= segment.file_size and
+                section.offset - segment.offset <= segment.file_size - section.size
+              )
+            )
+        }
   - id: elf-single-program-header
     desc: ELF uses a single program header
     crit: notable
