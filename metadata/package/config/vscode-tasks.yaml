@@ -1,3 +1,8 @@
+# Editor workspace configuration facts: what a checked-in `.vscode/tasks.json`
+# declares about when a task runs, how it is presented, and whether its output
+# or failure ever reaches the developer. Every key here is a legitimate VS Code
+# feature, so these stay neutral; the objectives/execution/trigger/ide
+# composites combine them with the folder-open trigger to infer intent.
 defaults:
   platforms: [unix, windows]
   for: [json]
@@ -20,13 +25,26 @@ traits:
       path: tasks[*].command
       regex: '^node\s+'
 
-  - id: tasks-hidden
-    desc: VS Code task has hidden presentation
-    crit: notable
+  # `hide` is a task-level property in the VS Code tasks schema, not a member
+  # of `presentation`; the previous single regex only matched a shape VS Code
+  # rejects, so real hidden tasks went unreported. A hidden task is absent from
+  # the Run Task picker, so a developer auditing the workspace never sees it
+  # listed even after it has run.
+  - id: task-hide-property
+    desc: JSON hide property set true
+    crit: component
     conf: 0.9
     if:
       type: text
-      regex: '"presentation"\s*:\s*\{[^}]{0,300}"hide"\s*:\s*true'
+      regex: '"hide"\s*:\s*true'
+
+  - id: task-definition-key
+    desc: VS Code task definition key
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '"(label|problemMatcher|isBackground|runOptions|presentation)"\s*:'
 
   - id: tasks-echo-disabled
     desc: VS Code task disables command echo
@@ -43,3 +61,40 @@ traits:
     if:
       type: text
       regex: '"reveal"\s*:\s*"never"'
+
+  # An autorun task whose command ends in a no-op fallback can never report a
+  # non-zero exit, so VS Code never surfaces a task failure and the developer
+  # gets no signal that anything ran at all. Legitimate build and lint tasks
+  # want their failures reported -- that is the point of a problem matcher.
+  - id: task-command-noop-fallback
+    desc: Task command swallows its failure
+    crit: notable
+    conf: 0.88
+    attack: T1564.003
+    if:
+      type: text
+      regex: '"command"\s*:\s*"[^"]{0,400}\|\|\s*(echo[^"]{0,8}|true|exit\s+0)\s*"'
+
+  # How the task body is interpreted. A shell task hands its command string to
+  # cmd.exe or the user's shell rather than exec-ing an argv, so the whole
+  # POSIX/Windows probe-and-fallback construction below is only expressible in
+  # this task type. Neutral by itself -- most real tasks are shell tasks.
+  - id: vscode-task-shell-command
+    desc: VS Code task uses shell execution
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      regex: '"type":\s*"shell"'
+
+composite_rules:
+  # Anchor the bare `hide` flag to a neighbouring task key so an unrelated
+  # `"hide": true` in some other JSON document does not read as a VS Code task.
+  - id: tasks-hidden
+    desc: VS Code task hidden from picker
+    crit: notable
+    conf: 0.9
+    near_bytes: 300
+    all:
+      - id: task-hide-property
+      - id: task-definition-key
