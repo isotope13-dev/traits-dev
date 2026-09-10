@@ -23,74 +23,6 @@ traits:
   unless:
   - id: well-known/app/system/kiwi::kiwi-vagrant-image-bootstrap
   - id: well-known/app/system/kiwi::kiwi-appliance-builder-package
-- id: authorized-keys-append
-  desc: Append to SSH authorized_keys
-  crit: notable
-  conf: 0.8
-  # A workflow `run:` block is a shell script that happens to live in YAML, and
-  # planting a key in the runner's authorized_keys is a real CI-compromise move
-  # (as well as a real debug-access feature); without github-actions in `for:`
-  # the whole technique was invisible in pipeline definitions.
-  for: [scripts, binaries, github-actions]
-  if:
-    type: text
-    # `^ *echo` only saw a command that starts its own line. The most common
-    # form of this technique in the wild chains off `&&`
-    # (`cd ~ && rm -rf .ssh && mkdir .ssh && echo "ssh-rsa ..." >> ...`), so the
-    # anchor is command-leading, not line-leading. The length budget has to clear
-    # a full RSA public key (~372 chars for 2048-bit, ~716 for 4096-bit) sitting
-    # between the echo and the redirect.
-    regex: '(?m)(^|[;&|]) *(echo|cat)[^\n]{0,800}[>]+[^\n]{0,100}authorized_keys'
-  unless:
-  - type: text
-    substr: machine.communicate
-  - id: metadata/build/recognized-contexts::benign-build-tooling-context
-  - id: well-known/tool/sysadmin/automatedlab/
-  - id: well-known/app/system/kiwi::kiwi-build-helper-context
-  # Qt Creator RemoteLinux deploys the developer's pubkey to a device (ssh-copy-id
-  # idiom) — legitimate IDE remote-deployment, not a backdoor.
-  - id: well-known/app/development/qtcreator/
-  - id: well-known/app/development/vscode/
-  - type: text
-    regex: 'grep\s+-qxF[^\n]{0,120}authorized_keys'
-- id: authorized-keys-shell-append
-  desc: Shell command appends to SSH authorized_keys
-  crit: notable
-  conf: 0.94
-  for: [shell, javascript, typescript]
-  if:
-    type: text
-    regex: '(?s)(?m)(^|[;&|]) *echo\s+[^\n]{0,800}>>\s*[^ \n]{0,100}authorized_keys\b'
-  unless:
-  - id: metadata/package/testing/
-  - id: metadata/build/ci/
-  - id: well-known/app/development/vscode/
-  - type: text
-    regex: 'grep\s+-qxF[^\n]{0,120}authorized_keys'
-- id: root-authorized-keys-path
-  desc: Root SSH authorized_keys path
-  crit: notable
-  conf: 0.95
-  for: [shell]
-  if:
-    type: text
-    regex: '/root/\.ssh/authorized_keys\b'
-- id: authorized-keys-echo-append
-  desc: Echo to authorized_keys file
-  crit: notable
-  conf: 0.95
-  if:
-    type: text
-    regex: '(?m)(^|[;&|]) *echo.{0,800}>>.{0,50}authorized_keys'
-  unless:
-  - id: metadata/package/testing/
-  - id: well-known/tool/sysadmin/virtualization::lima-virtualization-tool
-  - type: basename
-    exact: limactl.exe
-  - id: metadata/build/recognized-contexts::benign-build-tooling-context
-  - id: well-known/tool/sysadmin/automatedlab/
-  - id: well-known/app/development/vscode/
-  - id: well-known/tool/development/runspec-console/
 - id: shell-echo-authorized-key
   desc: Shell appends a literal authorized key
   crit: component
@@ -297,10 +229,15 @@ composite_rules:
   all:
   - id: micro-behaviors/crypto/asymmetric/ssh::hardcoded-public-key
   any:
-  - id: authorized-keys-append
-  - id: authorized-keys-shell-append
+  - id: micro-behaviors/communications/ssh/keys::authorized-keys-shell-write
   unless:
   - id: metadata/build/recognized-contexts::benign-build-tooling-context
+  - id: metadata/build/recognized-contexts::development-ssh-provisioning
+  - id: metadata/package/testing/
+  - id: well-known/tool/sysadmin/automatedlab/
+  - id: well-known/app/system/kiwi::kiwi-build-helper-context
+  - id: well-known/app/development/qtcreator/
+  - id: well-known/app/development/vscode/
 - id: locked-authorized-key-history-cover
   desc: Plants and locks an SSH key while clearing shell history
   crit: hostile
@@ -320,8 +257,9 @@ composite_rules:
   for: [shell]
   near_bytes: 1024
   all:
-  - id: root-authorized-keys-path
-  - id: authorized-keys-shell-append
+  - id: micro-behaviors/fs/path/location::top-level-root-path
+  - id: micro-behaviors/fs/path/sensitive/credentials::ssh-authorized-keys
+  - id: micro-behaviors/communications/ssh/keys::authorized-keys-shell-write
   - id: micro-behaviors/crypto/asymmetric/ssh::hardcoded-public-key
   unless:
   - id: metadata/package/testing/
@@ -330,6 +268,7 @@ composite_rules:
   - id: well-known/app/system/kiwi::kiwi-vagrant-image-bootstrap
   - id: well-known/app/system/kiwi::kiwi-appliance-builder-package
   - id: well-known/app/system/kiwi::kiwi-build-helper-context
+  - id: metadata/build/recognized-contexts::development-ssh-provisioning
 - id: ssh-trust-store-reset
   desc: SSH trust store reset with key
   crit: hostile
@@ -337,13 +276,18 @@ composite_rules:
   mbc: E1098
   all:
   - id: reset-ssh-dir
-  - id: authorized-keys-append
+  - id: micro-behaviors/communications/ssh/keys::authorized-keys-shell-write
   - id: micro-behaviors/crypto/asymmetric/ssh::hardcoded-public-key
   any:
   - id: chmod-ssh-go-eq
   - id: chmod-ssh-dir
   unless:
   - id: metadata/build/recognized-contexts::benign-build-tooling-context
+  - id: metadata/package/testing/
+  - id: well-known/tool/sysadmin/automatedlab/
+  - id: well-known/app/system/kiwi::kiwi-build-helper-context
+  - id: well-known/app/development/qtcreator/
+  - id: well-known/app/development/vscode/
 - id: js-ssh-backdoor
   desc: JavaScript SSH key backdoor
   crit: hostile
@@ -451,7 +395,7 @@ composite_rules:
   crit: notable
   conf: 0.85
   all:
-  - id: authorized-keys-append
+  - id: micro-behaviors/communications/ssh/keys::authorized-keys-shell-write
   - id: micro-behaviors/fs/path/sensitive/credentials::ssh-authorized-keys
   any:
   - id: mkdir-ssh
@@ -481,12 +425,15 @@ composite_rules:
   all:
   - id: reset-ssh-dir
   any:
-  - id: authorized-keys-append
-  - id: authorized-keys-shell-append
+  - id: micro-behaviors/communications/ssh/keys::authorized-keys-shell-write
   - id: micro-behaviors/communications/ssh/keys::authorized-keys-append-redirect
   unless:
   - id: metadata/build/recognized-contexts::benign-build-tooling-context
   - id: well-known/tool/sysadmin/automatedlab/
+  - id: metadata/package/testing/
+  - id: well-known/app/system/kiwi::kiwi-build-helper-context
+  - id: well-known/app/development/qtcreator/
+  - id: well-known/app/development/vscode/
 
 - id: ssh-key-install-with-operator-lockout
   desc: Installs an SSH key and revokes the operator's own access
