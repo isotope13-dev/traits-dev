@@ -1,33 +1,41 @@
-Triage these vetted-benign false positive(s):
-- /data/gauntlet-fp/ea19c34e9aebbdb6fd1b2bcb59cde930d32d40b3f84af314e1c4712e0fd415b9/advanced-systemcare-18.0-setup-appesteem.exe — hostile: 0, suspicious: 2
-  - S objectives/credential-access/dump/process::lsass-memory-target — LSASS memory access target
-    members: /data/gauntlet-fp/ea19c34e9aebbdb6fd1b2bcb59cde930d32d40b3f84af314e1c4712e0fd415b9/advanced-systemcare-18.0-setup-appesteem.exe!!app/ASC.exe, /data/gauntlet-fp/ea19c34e9aebbdb6fd1b2bcb59cde930d32d40b3f84af314e1c4712e0fd415b9/advanced-systemcare-18.0-setup-appesteem.exe!!app/ASCService.exe, /data/gauntlet-fp/ea19c34e9aebbdb6fd1b2bcb59cde930d32d40b3f84af314e1c4712e0fd415b9/advanced-systemcare-18.0-setup-appesteem.exe!!app/diagnosis.exe
-  - S objectives/persistence/login/startup/folder::startup-folder-shell-api-chain — Resolve startup-like folder via Shell APIs
-    members: /data/gauntlet-fp/ea19c34e9aebbdb6fd1b2bcb59cde930d32d40b3f84af314e1c4712e0fd415b9/advanced-systemcare-18.0-setup-appesteem.exe!!app/ASC.exe, /data/gauntlet-fp/ea19c34e9aebbdb6fd1b2bcb59cde930d32d40b3f84af314e1c4712e0fd415b9/advanced-systemcare-18.0-setup-appesteem.exe!!app/diagnosis.exe
+Restore detection on these verified supply-chain compromise(s). Each one is a real, confirmed
+attack that the current traits do not call hostile:
+- /data/fixed/0c3a27281ff4847cd8900d0016c96475ae2a4c7d815d8ef74b262c721196cd71/multi-cloud-metadata-sweep--2026-03-06-b10connoisseur-v0.18.0.zip — hostile: 0, suspicious: 3, ml.lvl: 279
+  - S objectives/anti-static/pack/archive::encrypted-wheel-metadata — Encrypted wheel metadata conceals runtime package
+  - S objectives/privilege-escalation/exploit/vulnerabilities::dirtypipe-detected — DirtyPipe exploit detected
+    members: /data/fixed/0c3a27281ff4847cd8900d0016c96475ae2a4c7d815d8ef74b262c721196cd71/multi-cloud-metadata-sweep--2026-03-06-b10connoisseur-v0.18.0.zip!!tmp/tmpn8ueh377/b10connoisseur/b10connoisseur/core.py
+  - S objectives/supply-chain/hidden-payload/package::package-archive-build-tree-leak — Package archive retains a temporary build tree
 
+Success: at least 1 hostile finding on the sample itself — the root record, not only on a member
+inside it. Every finding you add must accurately describe behavior you actually observed in the
+sample, at the criticality it deserves.
 
-Success: 0 hostile findings and normally 0 suspicious findings. At most 1 suspicious finding is
-acceptable, and only when it accurately describes genuinely unusual behavior in the benign sample.
-Every remaining finding must accurately describe observed behavior, regardless of its criticality.
+Any findings listed above are the near misses: traits that fired below hostile on this sample are
+usually where the missing detection belongs, and raising or extending one you can justify is
+preferable to writing a new trait beside it. A sample with nothing listed needs the mechanism
+identified first.
 
-Use the findings above as the initial worklist. Repair traits containing any misleading or
-inaccurate findings, regardless of criticality, following the relevant parts of TAXONOMY.md and
-RULES.md.
-Use `cleave facts` and `cleave test-rules` on representative extracted files; facts are faster
-and more reliable than text searches. Extract archives once and group equivalent `src`/`dist`,
-`.js`/`.ts`, architecture, and bundled-library variants.
+Identify what the sample actually does before changing any trait. Use `cleave facts` and
+`cleave test-rules` on the extracted members; facts are faster and more reliable than text
+searches. Extract archives once and group equivalent `src`/`dist`, `.js`/`.ts`, architecture, and
+bundled-library variants. Name the concrete mechanism — the install hook, the network callback,
+the exec, the encoded payload, the path it writes — and write the trait against that.
 
-Make the smallest defensible change and preserve useful detection. Base exceptions on strong,
-generalizable evidence. Give traits specific IDs and descriptions that tell an analyst what
-behavior was observed and why it matters.
+A second corpus of manually vetted BENIGN files gates this same tag, and every trait you touch is
+measured against it in the same run. A trait broad enough to fire on ordinary software will be
+caught there and sent back as a false positive, which spends another repair round and lands
+nothing. Prefer a trait that names the attack's specific behavior over one that widens an existing
+rule until it happens to cover this sample. Give traits specific IDs and descriptions that tell an
+analyst what behavior was observed and why it matters.
 
 Make all planned changes before measuring each sample:
 
   /data/rectifier/bin/cleave analyze <sample>
 
-Run this at least once after editing and before finishing. Inspect findings at every criticality,
-not only those that affect the QA count gate. If the success counts are not met or any finding is
-misleading or inaccurate, make the next complete set of changes before analyzing again.
+Run this at least once after editing and before finishing. Confirm the hostile finding is on the
+sample's own record. Inspect findings at every criticality, not only the one that affects the QA
+gate. If the success criteria are not met or any finding is misleading or inaccurate, make the next
+complete set of changes before analyzing again.
 
 Before finishing, you MUST run:
 
