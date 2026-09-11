@@ -520,6 +520,7 @@ when the projection genuinely doesn't carry what you need.
 
 ```yaml
 arg:
+  index: 1          # optional zero-based position; omitted means any argument
   kind: number       # string | number | identifier | bool | template | <shape>
   value: 511         # numeric value (kind=number)
   radix: 8           # source-written radix: 2/8/10/16. With value, both must match.
@@ -532,6 +533,11 @@ The filter matches if **at least one** arg in the call's arg list satisfies all
 specified fields. `kind: number, value: 511, radix: 8` matches `chmod(_,
 0o777)` but not `chmod(_, 511)` — the source-written radix discriminates
 deliberate octal mode bits from incidentally-computed integers.
+
+For value relationships beyond a literal call argument, `arg.from` selects an
+originating call and explicit library transfers. See [SOURCE_ANALYSIS.md](SOURCE_ANALYSIS.md)
+for the shared flow contract and YAML examples. Use direct argument
+matching when sufficient; provenance is for actual relationships, not proximity.
 
 **Picking between `type: symbol` and `type: tree-sitter`:** `type: symbol`
 covers nearly every call-matching need. It runs against the precomputed symbol
