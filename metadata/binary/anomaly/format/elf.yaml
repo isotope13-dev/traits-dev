@@ -103,22 +103,16 @@ traits:
       - id: well-known/tool/sysadmin/syslinux/
   - id: elf-executable-segment-graft
     desc: ELF has multiple executable load segments
-    # Modern toolchains emit exactly one executable PT_LOAD (`-z
-    # separate-code`); a second is a grafted R+X segment beside the real
-    # text — the note-cavity / appended-parasite tell. Also fires for an
-    # EPO infector that leaves the entry in `.text`.
+    # Typical userland link layouts have one executable PT_LOAD. A second
+    # can indicate appended code, but also occurs in legitimate layouts.
+    # Infection composites require independent entry, note, or return-code
+    # evidence; this structural observation alone does not infer intent.
     crit: notable
     conf: 0.85
     if:
-      type: yara
-      source: |
-        import "elf"
-        rule elf_multiple_executable_load_segments {
-          condition:
-            for 2 segment in elf.segments: (
-              segment.type == elf.PT_LOAD and (segment.flags & elf.PF_X) != 0
-            )
-        }
+      type: metrics
+      field: elf.executable_segment_count
+      min: 2
     unless:
       - id: metadata/binary/vendor/
       - id: metadata/file/extension/identity::linux-firmware-blob-basename
@@ -129,28 +123,14 @@ traits:
     # repurposing the note's program header — but so do benign cross /
     # non-GNU toolchains (Go-on-OpenBSD leaves `.note.gnu.build-id`
     # between the Go and openbsd PT_NOTEs, covered by neither). Ambiguous
-    # alone, so a component: it earns intent only inside the note-cavity
+    # alone, so keep it as a component: intent comes from the note-cavity
     # composite, beside the grafted exec segment and redirected entry.
     crit: component
     conf: 0.9
     if:
-      type: yara
-      source: |
-        import "elf"
-        rule elf_uncovered_allocated_note_section {
-          condition:
-            elf.segments.len() > 0 and for any section in elf.sections: (
-              section.type == elf.SHT_NOTE and section.size > 0 and
-              (section.flags & 2) != 0 and
-              not for any segment in elf.segments: (
-                (segment.type == elf.PT_NOTE or
-                 segment.type == elf.PT_GNU_PROPERTY) and
-                section.offset >= segment.offset and
-                section.size <= segment.file_size and
-                section.offset - segment.offset <= segment.file_size - section.size
-              )
-            )
-        }
+      type: metrics
+      field: elf.uncovered_note_count
+      min: 1
   - id: elf-build-id-uncovered
     desc: ELF build-id note lacks a note segment
     # The GNU build-id note is present in the section table but reachable
@@ -158,28 +138,13 @@ traits:
     # sees no ID while the section still carries it. Strong corroboration
     # for note-cavity infection ("identity retained, execution
     # redirected"), but benign Go/OpenBSD/cross layouts also strand the
-    # build-id note, so it is a component, not a standalone anomaly.
+    # build-id note. Keep the structural observation as a component.
     crit: component
     conf: 0.92
     if:
-      type: yara
-      source: |
-        import "elf"
-        rule elf_uncovered_build_id_note_section {
-          condition:
-            elf.segments.len() > 0 and for any section in elf.sections: (
-              section.type == elf.SHT_NOTE and
-              section.name == ".note.gnu.build-id" and section.size > 0 and
-              (section.flags & 2) != 0 and
-              not for any segment in elf.segments: (
-                (segment.type == elf.PT_NOTE or
-                 segment.type == elf.PT_GNU_PROPERTY) and
-                section.offset >= segment.offset and
-                section.size <= segment.file_size and
-                section.offset - segment.offset <= segment.file_size - section.size
-              )
-            )
-        }
+      type: metrics
+      field: elf.build_id_uncovered
+      min: 1
   - id: elf-single-program-header
     desc: ELF uses a single program header
     crit: notable
