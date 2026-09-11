@@ -1,0 +1,47 @@
+# Conti-style loader hand-off: fetch an encoded build from the panel,
+# decode it in the script, stage the raw binary on disk, then launch it.
+# The decode leg is the discriminator — legitimate installers download
+# ready-made artifacts and never XOR/base64-decode them mid-flight — and
+# it also separates fetch from launch, so the proximity bound stays loose.
+defaults:
+  platforms: [windows]
+  for: [powershell]
+  attack: T1059.001,T1105,T1027
+  mbc: B0030
+
+composite_rules:
+  - id: powershell-decoded-payload-stager
+    desc: PowerShell decodes a downloaded payload and launches the staged binary
+    crit: hostile
+    conf: 0.97
+    near_bytes: 8192
+    all:
+      - id: micro-behaviors/communications/http/lib/invoke-webrequest::invoke-webrequest
+      - id: micro-behaviors/fs/write/file/direct::write-all-bytes-ungated
+      - id: micro-behaviors/process/create/start-process::start-process-call
+    any:
+      - id: micro-behaviors/data/decode/base64::powershell-frombase64string
+      - id: micro-behaviors/crypto/symmetric/xor/loop::indexed-bxor-key-variable
+      - id: micro-behaviors/crypto/symmetric/xor/loop::repeating-key-indexed-bxor-loader
+
+  - id: powershell-hidden-decoded-payload-stager
+    desc: PowerShell decodes a downloaded payload and launches it hidden
+    crit: hostile
+    conf: 0.98
+    attack: T1059.001,T1105,T1027,T1564.003
+    near_bytes: 8192
+    all:
+      - id: powershell-decoded-payload-stager
+      - id: micro-behaviors/process/create/hidden::start-process-windowstyle-hidden
+
+  # The loader erases its own script once the payload is running, cutting
+  # the only on-disk link back to the delivery chain.
+  - id: powershell-self-cleaning-decoded-stager
+    desc: Decoded-payload stager removes its own script after launch
+    crit: hostile
+    conf: 0.99
+    attack: T1059.001,T1105,T1027,T1070.004
+    near_bytes: 16384
+    all:
+      - id: powershell-decoded-payload-stager
+      - id: objectives/evasion/self-delete/file/script::self-delete-powershell
