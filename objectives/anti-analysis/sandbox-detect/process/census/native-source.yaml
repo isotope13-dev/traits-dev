@@ -1,0 +1,61 @@
+# Sandbox evasion by census: the code counts the running processes and
+# compares the total against a threshold before doing anything with a
+# payload. Analysis boxes run sparse desktops, so a low count either
+# suppresses execution or - nastier - silently corrupts the decryption
+# key so the sample looks broken instead of caught.
+defaults:
+  platforms: [windows]
+  for: [c, cpp, csharp, rust, go, source]
+  attack: T1497.001,T1057
+  mbc: B0007,E1057
+
+traits:
+  - id: process-count-low-threshold
+    desc: Process count below a numeric threshold
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      # Identifier or call carrying the process census, in a less-than
+      # comparison with a two-digit-or-larger literal. Code shape only:
+      # identifier, operator, digits.
+      regex: '(?i)\b\w*process\w*\s*\(\s*\)\s*<=?\s*[0-9]{2,}\b|\b\w*process\w*\s+<=?\s+[0-9]{2,}\b'
+
+composite_rules:
+  - id: process-census-execution-gate
+    desc: Process-count threshold gates execution
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: process-count-low-threshold
+      - id: micro-behaviors/process/enumerate/snapshot::toolhelp-process-enumeration
+    near_bytes: 4096
+
+  # The census result steers the key: below the threshold the sample
+  # derives wrong key material, so the decrypted payload is garbage and
+  # automated analysis sees a broken loader instead of the implant.
+  - id: process-census-gates-decryption
+    desc: Process-count threshold steers payload decryption
+    crit: hostile
+    conf: 0.96
+    attack: T1497.001,T1027
+    near_bytes: 8192
+    all:
+      - id: process-count-low-threshold
+      - id: micro-behaviors/process/enumerate/snapshot::toolhelp-process-enumeration
+    any:
+      - id: micro-behaviors/crypto/symmetric/stream::rc4-source-state-table-c
+      - id: micro-behaviors/crypto/symmetric/xor/loop::indexed-xor-array-assignment
+      - id: micro-behaviors/crypto/symmetric/xor/loop::xor-modulo-key-loop
+
+  # Census guarding a scratch executable buffer: the count decides
+  # whether the staged bytes that land in RWX memory are real.
+  - id: process-census-gates-stage-execution
+    desc: Process-count threshold guards executable-memory stage
+    crit: hostile
+    conf: 0.96
+    attack: T1497.001,T1027.002
+    near_bytes: 8192
+    all:
+      - id: process-census-execution-gate
+      - id: micro-behaviors/mem/alloc/executable::rwx-allocation
