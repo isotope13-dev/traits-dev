@@ -33,10 +33,10 @@ Before placing a trait in `objectives/` or `well-known/`, ask: **would this fire
 | Pattern | Wrong Tier | Correct Tier | Why |
 |---------|-----------|--------------|-----|
 | Binary has many exports | `objectives/evasion/` | `metadata/binary/symbols/` | Neutral structural property |
-| Binary has high entropy | `objectives/anti-static/` | `metadata/binary/metrics/` | Neutral measurement |
-| Binary has low complexity | `objectives/anti-static/` | `metadata/binary/metrics/` | Normal for most binaries |
-| ELF64 class marker | `objectives/anti-static/pack/` | `metadata/binary/metrics/` | Every 64-bit ELF has this |
-| CLI help/usage text | `objectives/anti-static/` | `metadata/binary/metrics/` | Normal binary property |
+| Binary has high entropy | `objectives/anti-static/` | `metadata/binary/section/` | Neutral measurement, filed with the part measured |
+| Binary has low complexity | `objectives/anti-static/` | `metadata/binary/code/` | Normal for most binaries |
+| ELF64 class marker | `objectives/anti-static/pack/` | `metadata/binary/header/` | Every 64-bit ELF has this |
+| CLI help/usage text | `objectives/anti-static/` | `micro-behaviors/ui/help/` | Help text is a user-interface behavior, not file metadata |
 | HTTP Content-Type header | `objectives/c2/` | `micro-behaviors/communications/http/` | Neutral protocol element |
 | SOCKS protocol string | `objectives/c2/backdoor/` | `micro-behaviors/communications/proxy/` | Neutral protocol |
 | `$HOME` env var | `objectives/discovery/` | `micro-behaviors/os/env/` | Universal env var |
