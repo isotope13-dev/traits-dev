@@ -1,0 +1,63 @@
+# Sudo's syslog/audit record exposes the caller, target user, working directory,
+# and complete command. A web-service identity crossing directly to root is rare
+# and security-relevant; a root helper consuming a file from shared temporary
+# storage is stronger because the input may be controlled across the privilege
+# boundary. These patterns match log structure rather than prose and work in raw
+# syslog as well as normalized JSON/SIEM records.
+defaults:
+  platforms: [unix, appliance]
+  for: [text, data, json]
+  attack: T1548.003
+
+traits:
+  - id: sudo-log-web-service-caller
+    desc: Sudo event names a web-service caller
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\b(www(-data)?|apache|nginx|httpd)\s*:\s*PWD=[^;\r\n]{1,80}\s*;'
+
+  - id: sudo-log-root-command
+    desc: Sudo event runs a command as root
+    crit: notable
+    conf: 0.95
+    if:
+      type: text
+      regex: '\bUSER=root\s*;\s*COMMAND=/[^\s;"'']{1,240}'
+
+  - id: sudo-log-command-temp-argument
+    desc: Sudo command takes a temporary-path argument
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\bCOMMAND=[^\r\n;"]{1,200}/(tmp|var/tmp|dev/shm)/[^\s;"'']{1,120}'
+
+composite_rules:
+  - id: sudo-log-web-service-root-command
+    desc: Web-service caller runs a root command
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: sudo-log-web-service-caller
+      - id: sudo-log-root-command
+    near_bytes: 512
+
+  - id: sudo-log-root-command-temp-input
+    desc: Root command consumes temporary-path input
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: sudo-log-root-command
+      - id: sudo-log-command-temp-argument
+    near_bytes: 512
+
+  - id: sudo-log-web-service-root-temp-input
+    desc: Web-service root command uses temporary input
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: sudo-log-web-service-root-command
+      - id: sudo-log-root-command-temp-input
+    near_bytes: 1024
