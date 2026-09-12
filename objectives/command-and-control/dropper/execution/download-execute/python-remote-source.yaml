@@ -19,6 +19,55 @@ traits:
       regex: '(?is)exec\s*\(\s*[A-Za-z_]\w*\.urlopen\([^)]{0,120}\)\.read\s*\(\s*\)'
 
 composite_rules:
+  # Records the generic requests form without claiming that every nearby file
+  # write is the fetched payload. The response-content write anchors the GET
+  # result to the material later executed by exec() or os.system().
+  - id: python-http-response-write-near-execute
+    desc: HTTP response write occurs near execution
+    crit: suspicious
+    conf: 0.98
+    attack: T1105,T1059.006
+    scope: file
+    near_lines: 40
+    all:
+      - id: micro-behaviors/communications/http/lib/requests::requests-get
+      - id: micro-behaviors/fs/write/file/direct::python-write-response-content
+    any:
+      - id: micro-behaviors/process/create/system::python-os-system
+      - id: micro-behaviors/process/interpreter/python::exec-builtin
+    unless:
+      - id: metadata/package/testing/
+      - id: metadata/package/testing/presence/harness/
+      - id: metadata/package/quality/benign-context::benign-app-fp-context
+      - id: metadata/library/data/
+      - id: micro-behaviors/communications/http/server/listener::python-built-in-http-server-command
+      - id: micro-behaviors/communications/http/server/listener::python-range-file-server-command
+
+  - id: python-temp-download-chmod-launch
+    desc: Temporary path, executable chmod, and launch
+    crit: suspicious
+    conf: 0.95
+    attack: T1105,T1222.002,T1059.006
+    scope: file
+    near_lines: 40
+    all:
+      - id: micro-behaviors/fs/path/temp::unix-temp
+      - id: micro-behaviors/fs/chmod/executable/mode::python-executable
+      - id: micro-behaviors/process/create/subprocess/
+    any:
+      - id: micro-behaviors/communications/http/lib/requests::requests-get
+      - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-call
+      - id: micro-behaviors/communications/http/lib/urllib::urllib-urlretrieve-dup
+    unless:
+      - id: metadata/package/testing/presence/harness/
+      - id: metadata/package/testing/presence/harness::smoke-test-source-path
+      - id: metadata/library/python-stdlib/
+      - id: metadata/file/profile/identity::ansible-python-package-path
+      - id: well-known/tool/offensive/nmap::nmap-source-tree
+      - id: well-known/tool/detection/wazuh/
+      - id: well-known/app/ai/knowledge/animica::package-context
+      - id: micro-behaviors/process/info/selfpath::self-update-flow-marker
+
   - id: python-urllib-remote-exec
     desc: Python executes a remote urllib stage
     crit: hostile
@@ -72,21 +121,19 @@ composite_rules:
       - id: micro-behaviors/os/api-resolution/dynamic::python-importlib-spec-exec-module
 
   # Subprocess-shaped variant of the chain above: instead of exec()/importlib
-  # in-process, the fetched source path is handed to a child interpreter from a
-  # temporary staging directory. Fetch target is either a literal .py/.pyc URL
-  # or an ephemeral file host. No single leg is hostile -- build/test launchers
-  # spawn python with computed paths -- but the three together stage and run
-  # unreviewed remote code, including when no skill or package manifest is
-  # present to carry attribution.
-  - id: python-fetched-stage-interpreter-exec
-    desc: Child interpreter executes fetched remote stage
+  # in-process, a requests response is written in a temporary staging flow and
+  # the computed path is handed to a child interpreter. Requiring both the GET
+  # and response-body write prevents a dormant URL literal plus an unrelated
+  # subprocess call from being misread as a completed fetch-and-execute chain.
+  - id: python-response-write-variable-interpreter-chain
+    desc: Response write near variable-path interpreter
     crit: hostile
-    conf: 0.97
+    conf: 0.98
     scope: file
     near_lines: 40
     all:
       - id: micro-behaviors/process/create/spawn-variable::python-interpreter-variable-script-argument
       - id: micro-behaviors/fs/temp/directory::python-temporary-directory-context
-    any:
+      - id: micro-behaviors/communications/http/lib/requests::requests-get
+      - id: micro-behaviors/fs/write/file/direct::python-write-response-content
       - id: micro-behaviors/communications/http/download/url::python-source-url-reference
-      - id: micro-behaviors/communications/http/services/file-hosting::public-file-or-payload-hosting
