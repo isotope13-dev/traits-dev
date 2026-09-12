@@ -1039,17 +1039,35 @@ well-known/
 ├── lib/                   # Widely recognized libraries/frameworks/runtimes
 │   ├── ai/                #   AI, machine-learning, and inference libraries
 │   ├── cloud/             #   Cloud-provider and platform SDKs
+│   ├── concurrency/       #   Async control flow, promises, queues, pooling
 │   ├── crypto/            #   Cryptography, identity, and authentication libraries
 │   ├── data/              #   Databases, dataframes, ORM, and storage clients
+│   ├── datetime/          #   Date, time, calendar, and astronomical libraries
 │   ├── development/       #   Compilers, testing, linting, and build libraries
 │   ├── format/            #   Parsers, schemas, archives, and serialization
 │   ├── media/             #   Audio, video, image, font, and codec libraries
 │   ├── network/           #   Protocol, transport, and network client libraries
+│   ├── observability/     #   Logging, error tracking, APM, and session replay
 │   ├── platform/          #   OS, desktop, mobile, and platform integration
 │   ├── runtime/           #   Language runtimes, engines, FFI, and bindings
+│   ├── stdlib/            #   Standard-library extensions, polyfills, shims
 │   ├── native/            #   Native systems, libc, allocators, and kernel support
 │   ├── ui/                #   UI components, editors, and frontend libraries
+│   ├── vendor-sdk/        #   Single-vendor product and service SDKs
 │   └── web/               #   Web and application frameworks
+│                          #
+│                          # `stdlib/` replaced `core/`, which was banned as a
+│                          # catch-all. It is not "small utilities": the test is
+│                          # that the library extends or polyfills the language's
+│                          # OWN standard library -- collections (lodash), type
+│                          # predicates (is-what), compat shims (six, es6-shim).
+│                          # A library with a subject of its own goes to that
+│                          # subject's category, never here.
+│                          #
+│                          # `vendor-sdk/` is for a single vendor's product or
+│                          # service SDK, where the name identifies the vendor
+│                          # rather than a technique. Cross-vendor cloud SDKs
+│                          # stay in `cloud/`.
 │                          #
 │                          # Every library sits in a FUNCTION bucket above. There is
 │                          # no `core/`, `common/` or `misc/`: a catch-all never makes
@@ -1132,6 +1150,7 @@ well-known/
     ├── development/       #   IDEs and developer tools (JetBrains)
     ├── detection/         #   Security detection tools (cleave's own stng)
     ├── forensics/         #   Memory, disk, and incident-forensics tools
+    ├── media/             #   Media acquisition/conversion (yt-dlp, gallery-dl)
     ├── offensive/         #   Pentesting/red-team tools + game cheat frameworks
     ├── reverse-engineering/#  RE tools (IDA, OllyDbg, Scylla, LordPE)
     └── sysadmin/          #   Admin tools, system libraries, VCS
