@@ -1,0 +1,135 @@
+# Bearer material: token caches and credential files that grant access by
+# possession alone.
+
+defaults:
+  platforms: [unix, windows]
+  for: [scripts, binaries, java, class, c, cpp]
+  attack: T1552.005
+
+traits:
+  - id: aws-credentials-text-reference
+    for: [shell, python, go, rust, perl, javascript, typescript, powershell, c, cpp]
+    desc: References an AWS credentials file path
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\.aws[/\\]credentials'
+  - id: python-cloud-credential-dir-join
+    for: [python]
+    desc: Python joins cloud credential directory
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: 'os\.path\.join\s*\([^)]{0,80}["'']\.(aws|kube)["'']'
+  - id: aws-credentials-open
+    for: [python, javascript, c, cpp, go, rust, shell]
+    desc: Opens ~/.aws/credentials with open()
+    crit: notable
+    conf: 0.95
+    if:
+      type: symbol
+      kind: call
+      substr: open
+      arg:
+        kind: string
+        substr: .aws/credentials
+  - id: aws-credentials-path
+    for: [python, javascript, c, cpp, go, rust, shell]
+    desc: Constructs ~/.aws/credentials with Path()
+    crit: notable
+    conf: 0.95
+    if:
+      type: symbol
+      kind: call
+      substr: Path
+      arg:
+        kind: string
+        substr: .aws/credentials
+  - id: aws-credentials-pathlib-home
+    for: [python]
+    desc: Pathlib construction of ~/.aws/credentials
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\bPath\.home\(\)\s*/\s*["'']\.aws/credentials["'']'
+  # Stealers often pass expanduser("~/.aws/credentials") into archive.add or
+  # similar helpers without calling open()/Path() on the credentials file.
+  - id: aws-credentials-expanduser
+    for: [python]
+    desc: Expands home path to AWS credentials
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)expanduser\s*\(\s*["'']~/?\.aws/credentials["'']'
+  - id: aws-credentials-path-components
+    desc: AWS credentials path components
+    crit: notable
+    conf: 0.92
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'path\.join\s*\([^)]{0,160}["'']\.aws["''][^)]{0,80}["'']credentials["'']'
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+      - id: metadata/library/structure/
+      - id: well-known/lib/cloud/aws-sdk-js/
+      - id: well-known/tool/detection/security-scanner/
+  - id: azure-msal-token-cache
+    desc: Azure MSAL token cache path reference
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      substr: .azure/msal_token_cache.json
+    unless:
+      - id: well-known/app/infrastructure/teleport::go-module
+
+composite_rules:
+  # The four ways code reaches `~/.aws/credentials` -- open(), Path(), pathlib
+  # home, expanduser. Named once so a consumer takes one leg instead of four
+  # references into this directory.
+  - id: aws-credentials-path-forms
+    desc: Constructs or opens the AWS credentials file
+    crit: component
+    conf: 0.95
+    any:
+      - id: aws-credentials-open
+      - id: aws-credentials-path
+      - id: aws-credentials-pathlib-home
+      - id: aws-credentials-expanduser
+  - id: cloud-credentials
+    desc: Cloud provider credential file paths
+    crit: notable
+    conf: 0.95
+    any:
+      - id: aws-credentials
+      - id: aws-credentials-path-components
+      - id: micro-behaviors/fs/path/secret-config::aws-config
+      - id: gcloud-credentials
+      - id: azure-credentials
+    unless:
+      - id: well-known/app/publishing/moodle-stubs/
+      - id: well-known/lib/ai/pyaigis/
+      - id: well-known/tool/sysadmin/kubernetes/minikube
+      - id: well-known/tool/detection/
+      - id: well-known/dual-use/tunnel/shadowsocks-libev::shadowsocks-libev-source
+      - id: well-known/app/infrastructure/aws-vault/
+      - id: well-known/tool/sysadmin/cloud/azcopy::azcopy-tool
+      - id: well-known/app/development/gitaly::go-module-path
+    downgrade:
+      any:
+        - id: syntax-bundle-context
+  # Notable, like every sibling in this file: `cloud-credentials` (AWS/GCP/
+  # Azure), `orchestration-credentials` (kubeconfig) and `ssh-credentials` all
+  # treat a credential PATH REFERENCE as a sensitive-file capability and leave
+  # theft intent to the objectives composites that add a read plus transport —
+  # the five rules that consume this one all do exactly that. Docker's
+  # config.json is the same class of evidence, and every docker-aware tool
+  # names it: a shell prompt engine that renders the active Docker context was
+  # the outlier here, and the growing list of per-vendor carve-outs below was
+  # the symptom of the level, not of the matcher.

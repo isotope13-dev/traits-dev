@@ -1,0 +1,206 @@
+# Paths to public key material -- authorized_keys, known_hosts. Not secrets:
+# an authorized_keys write grants access and a known_hosts read enumerates
+# reachable hosts, so these are access-grant and lateral-movement surfaces.
+
+defaults:
+  platforms:
+    - unix
+    - windows
+  for: [binaries, scripts, python, java, class, kotlin, c, cpp]
+  crit: notable
+  conf: 0.95
+  attack: T1552.001
+
+traits:
+  - id: js-authorized-keys-path-variable
+    desc: JavaScript stores an authorized_keys path
+    crit: notable
+    conf: 0.86
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '(const|let|var)\s+\w+\s*=.{0,20}authorized_keys'
+    unless:
+      - id: well-known/tool/development/runspec-console/
+      - type: path
+        regex: '(^|[^A-Za-z0-9_])runspec_console([\\/]|-|$)'
+  - id: ssh-copy-id-comment-marker
+    desc: ssh-copy-id manpage/purpose comment
+    crit: baseline
+    conf: 1.0
+    for: [shell]
+    platforms: [unix]
+    if:
+      type: text
+      regex: 'ssh-copy-id\(1\) man page|install your public key\(s\) on a remote machine'
+  # rrsync names .ssh/authorized_keys only in its descriptive comment about
+  # restricting rsync to a subdirectory declared there; gate on basename plus
+  # that comment so an arbitrary binary cannot borrow the exclusion.
+  - id: rrsync-basename-marker
+    desc: rrsync basename
+    crit: baseline
+    conf: 1.0
+    for: [shell, python, pyc, elf]
+    platforms: [unix]
+    if:
+      type: basename
+      exact: rrsync
+  - id: rrsync-comment-marker
+    desc: rrsync authorized_keys restriction comment
+    crit: baseline
+    conf: 1.0
+    for: [shell, python, pyc, elf]
+    platforms: [unix]
+    if:
+      type: text
+      substr: 'Restricts rsync to subdirectory declared in .ssh/authorized_keys'
+  - id: authorized-keys-file-metadata
+    desc: authorized_keys file metadata
+    crit: baseline
+    conf: 0.95
+    if:
+      type: text
+      substr: 'authorized_keys type=file uid='
+  - id: ssh-public-key-api-context
+    desc: SSH public key API context
+    crit: baseline
+    conf: 0.95
+    if:
+      type: text
+      substr: "SshPublicKey("
+  # A bare authorized_keys path reference is a credential-path capability (cf.
+  # ssh-dir, pypirc-credentials, both notable) — legit SSH/account tools (sshd,
+  # userdbctl, systemd-vmspawn, eza) reference it. Theft intent comes from
+  # composites; keep it notable, not standalone-suspicious.
+  - id: ssh-authorized-keys
+    desc: SSH authorized_keys path
+    crit: notable
+    conf: 0.6
+    attack: T1552.004
+    for: [binaries, scripts, java, class, kotlin, c, cpp, objc, rust, zig]
+    if:
+      type: text
+      substr: authorized_keys
+    downgrade:
+      any:
+        - id: micro-behaviors/communications/ssh/connect::openssh
+  - id: ssh-known-hosts-read-command
+    desc: Shell command reads the SSH known_hosts file
+    crit: notable
+    conf: 0.9
+    for: [shell]
+    platforms: [unix]
+    if:
+      type: text
+      regex: '(?i)\b(cat|grep|awk)\s+[^\n]{0,80}/\.ssh/known_hosts\b'
+  - id: python-ssh-known-hosts-read
+    desc: Python reads the SSH known_hosts file
+    crit: notable
+    conf: 0.9
+    for: [python]
+    platforms: [unix]
+    if:
+      type: text
+      regex: '(?i)\bopen\s*\(\s*["'']\$?([^"'']{0,40}/)?known_hosts\b'
+  - id: authorized-keys-public-key-forward
+    desc: authorized_keys before public_key doc
+    crit: baseline
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)authorized_keys.{0,160}public_key'
+  - id: authorized-keys-public-key-reverse
+    desc: public_key before authorized_keys doc
+    crit: baseline
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)public_key.{0,160}authorized_keys'
+  - id: authorized-keys-array-forward
+    desc: authorized_keys before array doc
+    crit: baseline
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)authorized_keys.{0,160}must be an array'
+  - id: authorized-keys-array-reverse
+    desc: array text before authorized_keys doc
+    crit: baseline
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)must be an array.{0,160}authorized_keys'
+  - id: ssh-public-keys-container-doc
+    desc: SSH public keys container doc
+    crit: baseline
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)ssh public keys? to put in the container'
+  # Editors (Vim/Neovim) list .npmrc in their filetype-detection table mapping
+  # it to the "dosini" INI syntax, alongside pip.conf and many other config
+  # names. That co-occurring pair is the editor table, not credential access.
+composite_rules:
+  - id: ssh-copy-id-tool-context
+    desc: Legitimate ssh-copy-id utility
+    crit: baseline
+    conf: 1.0
+    for: [shell]
+    platforms: [unix]
+    all:
+      - id: well-known/tool/sysadmin/ssh-copy-id::ssh-copy-id-basename
+      - id: ssh-copy-id-comment-marker
+  - id: rrsync-restrict-comment-context
+    desc: Legitimate rrsync wrapper
+    crit: baseline
+    conf: 1.0
+    for: [scripts, binaries, pyc]
+    platforms: [unix]
+    all:
+      - id: rrsync-basename-marker
+      - id: rrsync-comment-marker
+  - id: ssh-authorized-keys-benign-context
+    desc: authorized_keys benign context
+    crit: baseline
+    conf: 0.95
+    any:
+      - id: authorized-keys-file-metadata
+      - id: authorized-keys-config-field
+      - id: well-known/tool/sysadmin/ssh-copy-id::ssh-copy-id-utility
+      - id: ssh-copy-id-tool-context
+      - id: rrsync-restrict-comment-context
+      # ai-guardrail-context supersedes llm-scanner-context (includes it) and also
+      # covers AI-agent security scanners listing authorized_keys as a signature.
+      - id: well-known/tool/detection/ai-guardrail::ai-guardrail-context
+      - id: ssh-public-key-api-context
+      - id: well-known/tool/detection/agent-sentry::nhi-auditor-context
+      - id: micro-behaviors/fs/path/sensitive/credentials::editor-filetype-detect-context
+  - id: authorized-keys-config-doc
+    desc: authorized_keys documentation context
+    crit: baseline
+    conf: 0.9
+    any:
+      - id: authorized-keys-public-key-doc
+      - id: authorized-keys-array-doc
+      - id: ssh-public-keys-container-doc
+  - id: authorized-keys-public-key-doc
+    desc: authorized_keys public_key docs
+    crit: baseline
+    conf: 0.9
+    any:
+      - id: authorized-keys-public-key-forward
+      - id: authorized-keys-public-key-reverse
+  - id: authorized-keys-array-doc
+    desc: authorized_keys array docs
+    crit: baseline
+    conf: 0.9
+    any:
+      - id: authorized-keys-array-forward
+      - id: authorized-keys-array-reverse
+  - id: authorized-keys-config-field
+    desc: authorized_keys configuration field
+    crit: baseline
+    conf: 0.9
+    all:
+      - id: micro-behaviors/fs/path/public-key::ssh-authorized-keys
+      - id: authorized-keys-config-doc

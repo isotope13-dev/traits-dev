@@ -74,6 +74,7 @@ The ML pipeline extracts features from **subdirectory path + criticality**, not 
 - **Avoid marker buckets.** Do not use `marker/` or `markers/` as directory names; name the behavior or technique being indicated instead.
 - **Every subdirectory must add precision over the path that leads to it.** A child directory has to answer "the parent's concept, but *which kind / how / in what form?*" — if it merely restates the parent (a synonym) or means "everything else here," it earns no place in the tree. Test: read the full path left-to-right; each segment should narrow the set further. `process/create/shell/invoke/` fails — *invoking* a shell **is** *creating* a shell process, so `invoke` is a synonym for `create`, not a refinement; in practice it had become the catch-all bucket (everything that wasn't one of the precise siblings `batch/`, `encoded/`, `injection/`, `interactive/`…), which is why it bloated past the size cap. Contrast its siblings, which each genuinely refine "create a shell" (*via a batch file*, *with an encoded command*, *by injection*). A segment that you can't finish the sentence "…the parent, specifically the **___** kind" for is either a synonym (drop it / merge up) or a grab-bag (split it into the precise techniques it actually contains). Verb-vs-verb synonyms (`create`/`invoke`/`spawn`/`exec`/`run`) are the most common offenders.
 - **Criticality assignment affects ML directly.** A trait bumped from `notable` to `suspicious` changes which feature it contributes to. Assign criticality based on the trait's actual detection confidence, not to manipulate features.
+- **Name the level the model can see.** The feature keeps three directory levels after the tier, so the segment that carries the distinction has to sit at or above level 3. A tree like `fs/path/sensitive/private-key/` puts the real discriminator at level 4, where it is aggregated away: every child of `sensitive/` — SSH keys, cookies, `/etc/passwd`, an iMessage database — collapses into the single feature `fs/path/sensitive`, teaching the model that reading someone's notes and reading their private key are the same event. Promote the discriminating axis instead (`fs/path/private-key/`, `fs/path/password-store/`), and express the secondary axis — *whose* credential it is — in the **filename** (`ssh.yaml`, `browser.yaml`), which costs nothing because filenames are never part of trait IDs. A grouping word that only re-states its parent (`sensitive/credentials/`) fails the precision test above *and* spends the last visible level; drop it and let the type take that slot.
 - **The 3-level depth limit** means `objectives/anti-static/obfuscation/string/encoding/` extracts as `anti-static/obfuscation/string` — the `encoding/` level is aggregated into `string/`. Plan directory depth accordingly, and avoid unnecessary intermediate directories (e.g., prefer `obfuscation/syntax/` over `obfuscation/source/syntax/`).
 
 ## Core Principles
@@ -362,7 +363,14 @@ micro-behaviors/
 │   ├── path/              #   Path references and construction
 │   │   ├── config/        #     Config paths (accounts, groups, sudoers)
 │   │   ├── device/        #     Device paths (storage, terminal)
-│   │   ├── sensitive/     #     Sensitive paths (SSH keys, wallets, credentials)
+│   │   ├── private-key/   #     Private key material (SSH, TLS, keystores, DPAPI)
+│   │   ├── public-key/    #     authorized_keys / known_hosts (access grant, not a secret)
+│   │   ├── password-store/#     Password databases (browser logins, keychain, vaults)
+│   │   ├── token/         #     OAuth / API / session token files
+│   │   ├── secret-config/ #     Config that carries secrets (.env, .npmrc, kube/docker)
+│   │   ├── wallet/        #     Cryptocurrency wallets and seed phrases
+│   │   ├── cookie/        #     Cookie jars
+│   │   ├── account-db/    #     System account databases (/etc/passwd, shadow, SAM)
 │   │   └── temp/          #     Temporary paths
 │   ├── pipe/              #   Named pipes (FIFO)
 │   ├── proc/              #   /proc filesystem access
@@ -1109,11 +1117,13 @@ File-level properties with no behavioral implication. Describes *what a file is*
 - Specific apps, dual-use products, tools, games, and library/framework/runtime fingerprints go under `well-known/{app,dual-use,tool,game,lib}/`, not `metadata/`
 - **Distinguish a tool's *output* from the tool's *identity*.** "This code was bundled/minified/transpiled" is a build-transform fact → `metadata/build/<function>/` (group by function: `bundler/`, `minifier/`, `transpiler/`). "This file *is* webpack / PuTTY / Wireshark" is a named-software fingerprint → `well-known/`. Putting a software identity in `metadata/` is the same *matcher-defines-identity* violation as mislabeling a generic capability.
 - **Avoid grab-bag directories.** A directory must name one coherent concept that is meaningful as an ML path feature. If a dir accretes unrelated kinds of traits — e.g. the former `package/tooling/` held build-output (`webpack-bundled`), software identities (`tool-identity-putty`), *and* project-hygiene facts (`has-eslint-config`) all at once — the path feature becomes noise and analysts can't reason about it. Split each kind to its proper home (`build/`, `well-known/`, `package/quality/`) and delete the grab-bag. Vague names (`tooling`, `context`, `misc`, `helpers`) are a smell that this has happened.
+
+  The live instance is `metadata/library/`, which holds ~1,030 rules across ~68 directories and mixes all of these kinds at once: library fingerprints that duplicate an existing `well-known/lib/` entry (`axios`, `babel`, `mermaid`, `polars`, `electron`, …), plain capability markers wearing a library's directory name (`metadata/library/electron` carries symbol matchers for `takeScreenshot`, `downloadToFile`, `executePayload` — none of which identifies Electron), a named offensive tool (`cobalt-strike`), CI fingerprints that belong in `build/ci/` (`github-actions`), and vaguely-named leaves (`structure/`, `prototype/`, `generated/`). Because a directory reference is an ML path feature, an author reading `metadata/library/electron::execute-payload-symbol` learns the wrong thing twice — wrong tier and wrong subject. Split by what each matcher actually finds, per the destinations in the tree below; never move a whole directory on the strength of its name.
 - New top-level subdirectories require updating both TAXONOMY.md and `ALLOWED_METADATA` in `src/capabilities/validation/directory_whitelist.rs`
 - **Max depth:** 3 levels within `metadata/` (ML pipeline limit)
-- **Max leaf size:** No leaf directory should exceed 80 traits
+- **Max leaf size:** No leaf directory should exceed 75 traits
 - **Max fan-out:** No directory should have more than 150 immediate subdirectories. Past that the level is a flat list rather than a taxonomy — group the entries under an intermediate layer (ecosystem, vendor, family) so each level stays browsable.
-- **Prefer technology-neutral subdirectory names.** Technology names belong in filenames, not directory names, unless needed to stay under the 80-trait limit at depth 3.
+- **Prefer technology-neutral subdirectory names.** Technology names belong in filenames, not directory names, unless needed to stay under the 75-trait limit at depth 3.
 
 ```
 metadata/
@@ -1209,10 +1219,17 @@ metadata/
 │   ├── javascript-features/ # JavaScript language features
 │   ├── scripted/          #   Scripted language detection (VBScript, Lua, Perl)
 │   └── ...                #   go-build, linking, optimization, security, shebang, source, version
-├── library/               # Legacy neutral library/framework context
-│   ├── data/              #   Data/infrastructure libraries
-│   ├── runtime/           #   Runtime/framework libraries
-│   └── (neutral package/library context; known-library fingerprints → well-known/lib/)
+├── library/               # DEPRECATED — closed to new entries, migrating out.
+│   │                      #   A named library/framework/runtime is a fingerprint, so it
+│   │                      #   belongs in well-known/lib/ by the rule above; nothing here
+│   │                      #   is a neutral file-structure property. Do not add traits.
+│   │                      #   Migrate existing entries by what each matcher finds:
+│   │                      #     library/framework/runtime identity → well-known/lib/<function>/
+│   │                      #     a neutral capability (screenshot, download, symbol lookup)
+│   │                      #       → micro-behaviors/<category>/
+│   │                      #     intent-bearing behaviour → objectives/
+│   │                      #     build/transform output (bundled, minified) → metadata/build/
+│   │                      #   `library` leaves ALLOWED_METADATA once the last entry is gone.
 ├── package/               # Package ecosystem metadata & project quality
 │   ├── config/            #   Configuration file detection
 │   ├── contributors/      #   Contributor metadata
@@ -1292,7 +1309,7 @@ When placing a new metadata trait, use this tiebreaker table. Each row names the
 | `build/` | `lang/` | Is it about build orchestration (cmake, docker, CI/CD)? → `build/`. Is it about the language toolchain (gcc, rustc, delphi)? → `lang/` |
 | `metadata/build/` | `well-known/` | Is it the **output/shape a tool left in the file** (this code was *bundled*, *minified*, *transpiled*)? → `metadata/build/<function>`. Is it the **named tool/software being identified** (this *is* PuTTY / Wireshark / the webpack package)? → `well-known/{app,dual-use,tool,lib}/`. The transform is a metadata fact; the identity is a fingerprint. A named-software fingerprint in `metadata/` is the "matcher defines identity" violation. |
 | `metadata/build/` | `metadata/package/quality/` | Is it evidence of a build/transform tool's output (bundled, minified, autotools-generated)? → `build/`. Is it a project-hygiene/maturity fact (has ESLint/Prettier/TS config, has docs, has tests)? → `package/quality/` |
-| `package/` | `library/` | Is it about ecosystem-level metadata (fields, scripts, quality, testing)? → `package/`. Is it neutral library context retained for metadata use? → `library/`. Is it identifying a specific library/framework/runtime? → `well-known/lib/` |
+| `package/` | `well-known/lib/` | Is it about ecosystem-level metadata (fields, scripts, quality, testing)? → `package/`. Is it identifying a specific library/framework/runtime? → `well-known/lib/`. There is no third answer: `metadata/library/` is deprecated and closed, so never route a trait there |
 | `package/` | `permission/` | Is it ordinary package metadata (name, dependencies, files, scripts, quality)? → `package/`. Is it declared authority or extension API surface (browser/IDE extension permissions, host access, OAuth scopes, content scripts)? → `permission/` |
 | `signed/` | `vendor/` | Is it about the cryptographic signature chain or entitlements? → `signed/`. Is it identifying an OS/platform vendor by strings/resources/patterns? → `vendor/` |
 | `vendor/` | `well-known/app/`, `well-known/dual-use/`, or `well-known/tool/` | Is it an OS/platform vendor or system userland marker (Apple, Microsoft, NetBSD, GNU/FSF)? → `vendor/`. Is it a specific well-known application or suite? → `well-known/app/`. Is its legitimate abuse-relevant function the reason analysts need the identity? → `well-known/dual-use/`. Is it a professional analyst/admin/developer tool? → `well-known/tool/` |
