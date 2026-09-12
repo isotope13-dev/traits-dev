@@ -1,11 +1,70 @@
 defaults:
-  platforms: [linux]
+  platforms: [linux, android]
   for: [elf]
   attack: T1027.009,T1105
 
-traits: []
+traits:
+  # A stager that decrypts its second stage in memory talks to the kernel
+  # through the libc `syscall()` wrapper instead of named libc functions, so
+  # its dynamic import table collapses to a handful of symbols.
+  - id: elf-sparse-dynamic-imports
+    desc: ELF imports few dynamic symbols
+    crit: notable
+    conf: 0.8
+    if:
+      type: metrics
+      field: imports.count
+      max: 12
+  - id: elf-encrypted-overlay-payload
+    desc: Very high entropy trailing overlay payload
+    crit: notable
+    conf: 0.85
+    if:
+      type: metrics
+      field: binary.overlay_entropy
+      min: 7.5
 
 composite_rules:
+  # A minimal syscall-interface ELF carrying an encrypted blob past its
+  # section table is the canonical IoT stager shape: a loader that decrypts
+  # an appended second stage and executes it without touching named libc
+  # entry points. Benign appended data (certificates, debug info, assets)
+  # is low entropy and arrives in binaries with ordinary import tables.
+  - id: elf-syscall-only-overlay-stager
+    desc: Syscall-only ELF carries encrypted overlay payload
+    crit: suspicious
+    conf: 0.93
+    attack: T1027.009,T1105,T1132
+    all:
+      - id: metadata/binary/layout::elf-has-overlay
+      - id: micro-behaviors/os/syscall/invoke::syscall-wrapper-import
+      - id: elf-encrypted-overlay-payload
+      - id: elf-sparse-dynamic-imports
+  # The stream cipher bytecode welds the transport to the payload: the
+  # overlay is not merely compressed data, it is RC4-encrypted stage that
+  # this binary is equipped to decrypt.
+  - id: rc4-encrypted-overlay-stager
+    desc: RC4 stager decrypts embedded overlay payload
+    crit: hostile
+    conf: 0.96
+    attack: T1027.009,T1027.013,T1140,T1105
+    all:
+      - id: elf-syscall-only-overlay-stager
+      - id: micro-behaviors/crypto/symmetric/stream/rc4::rc4-bytecode
+  # The stager hands control to the decrypted stage: an execve issued through
+  # a raw syscall interface (wrapper or immediate) next to the encrypted
+  # overlay is the execution half of the pattern.
+  - id: overlay-stager-execve
+    desc: Encrypted overlay stager executes payload
+    crit: hostile
+    conf: 0.96
+    attack: T1027.009,T1105,T1059
+    all:
+      - id: elf-syscall-only-overlay-stager
+    any:
+      - id: micro-behaviors/os/syscall/invoke::execve-syscall-wrapper-thumb
+      - id: micro-behaviors/os/syscall/raw::x64-mov-execve-syscall
+      - id: micro-behaviors/os/syscall/raw::mips-o32-execve-syscall
   - id: mips-encrypted-stage-file-exec-loader
     desc: MIPS loader writes and executes an encrypted second stage
     crit: hostile
@@ -29,7 +88,7 @@ composite_rules:
       - id: objectives/anti-static/polyglot/format::appended-elf-binary
       - id: metadata/binary/section/entropy::very-high-entropy-data-section
     any:
-      - id: micro-behaviors/crypto/symmetric/stream::rc4-stack-key-bytecode
+      - id: micro-behaviors/crypto/symmetric/stream/rc4::rc4-stack-key-bytecode
       - id: micro-behaviors/os/syscall/raw::x64-raw-syscall-wrapper
       - id: micro-behaviors/os/syscall/raw::x86-int80-wrapper
   - id: rc4-embedded-elf-loader
@@ -39,7 +98,7 @@ composite_rules:
     all:
       - id: objectives/anti-static/polyglot/format::appended-elf-binary
       - id: metadata/binary/section/entropy::very-high-entropy-data-section
-      - id: micro-behaviors/crypto/symmetric/stream::rc4-stack-key-bytecode
+      - id: micro-behaviors/crypto/symmetric/stream/rc4::rc4-stack-key-bytecode
     any:
       - id: metadata/binary/linking/static::static-linked
       - id: metadata/binary/metrics/structural::single-complex-function

@@ -102,7 +102,7 @@ Aim for every atomic trait to represent a strong, precise signal in its own righ
 
 For example, aliased forms of `urllib.request.urlopen`, a full `requests.post` call, or a network-library import remain notable if each independently proves HTTP-client behavior. In contrast, `&cc=`, a lone family-specific word fragment, or half of a split encoded marker may be components because none communicates a clear behavior alone.
 
-**HOSTILE composites require precision ≥ 3.5**, else downgraded. See [PRECISION.md](./PRECISION.md) for the calculation algorithm and authoring guidelines.
+**HOSTILE composites require precision ≥ 3.5**, else downgraded. The score is computed by the engine, not configured here; to see a rule's score and the terms that produced it, run `cleave test-rules --rules <dir::id> <file>` and read the `Precision:` / `Precision detail:` lines.
 
 ### Exception composites
 
@@ -437,6 +437,8 @@ format, use a `metrics` check against the numeric header field:
 - `consistency.cert_issued_after_build` — authenticode cert `not_before` timestamp is later than the PE link timestamp
 
 ### Hex Pattern Syntax
+
+**Concrete-byte floor:** an unpinned hex pattern needs **≥3 concrete bytes** — full bytes (`5C`), nibble wildcards (`4?`), and alternations (`(5C|5D)`, one per token) all count; `??` and gaps (`[N]`) do not. Shorter patterns are rejected by `cleave validate` at authoring time and never match at runtime. Pin the search space to go shorter: `offset`/`offset_range`, or `section` + `section_offset`/`section_offset_range` (or a small `size_max`). `cleave test-match --type hex` explains a floor rejection as a warning line instead of a bare NOT MATCHED.
 
 | Token | Description | Example |
 |-------|-------------|---------|
@@ -919,6 +921,49 @@ composite_rules:
 | `not:` | Filter matched strings (list of `exact`/`substr`/`regex`) |
 | `unless:` | Skip if condition matches (trait refs or inline conditions) |
 | `downgrade:` | Reduce criticality by one level if condition matches |
+
+### Suppressor scope
+
+**`unless:` and `downgrade:` both resolve within the file the rule matched in.**
+A suppressor sees the findings of that file and nothing else, so a rule's
+behavior can be read off the rule itself.
+
+A `downgrade:` may opt into a wider scope with a block-level `scope:`, using the
+same values as composite `scope:` (`archive`, `outer`, `package`):
+
+```yaml
+    downgrade:
+      scope: archive          # see findings from anywhere in the same archive
+      any:
+        - id: metadata/signed/platform/
+```
+
+Reach for it only when the wider evidence is genuinely about this file — a
+signed installer whose signature covers the members it carries is the motivating
+case. Without it, a directory reference such as
+`metadata/package/testing/presence/harness/` (126 traits, any one of which
+fires) let a vendored `tests/` tree four directories deep silence a rule in
+completely unrelated first-party code, with nothing in the rule text hinting
+that could happen.
+
+`unless:` has no scope key: it is always file-scoped. If you need a
+container-level fact to suppress a rule outright, reference it from a
+`downgrade:` with `scope: archive`, or gate the rule on an
+[exception composite](#exception-composites).
+
+**Downgrades de-emphasize, they never delete.** A finding demoted into
+`baseline`/`component` by its own `downgrade:` is exempt from the low-tier strip
+that drops unreferenced low-tier findings, so it stays in the JSON, the web UI
+and diffs at its reduced tier. Use `unless:` when you actually want the finding
+gone.
+
+**Budget for crossing into `baseline`.** `baseline` means "functionality nearly
+every program has", which is a claim about the *matcher*, not the context — a
+behavior does not become universal because of where it sits. A rule declared
+`notable` may therefore carry at most **4 direct** `downgrade:` entries and **8**
+once aggregator/directory references expand (`broad-notable-downgrade`).
+`suspicious`/`hostile` downgrades are uncapped: they land on `notable`/`suspicious`
+and say nothing false about the matcher.
 
 **Proximity (composites only):** `near_bytes: N`, `near_lines: N` - require evidence from different conditions to fall within a single span of N bytes/lines. Uses a sliding window: the check passes when any contiguous window of size N contains evidence from enough distinct conditions (all conditions for `all:`, `needs` conditions for `any:`).
 
