@@ -1,0 +1,176 @@
+# File Read Operations - JavaScript/Node
+# MBC: C0051 (Read File)
+# ATT&CK: T1005
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+traits:
+- id: node-dotenv-file-read
+  desc: Reads a Node dotenv configuration file
+  crit: notable
+  conf: 0.9
+  if:
+    type: symbol
+    kind: call
+    exact: fs.readFileSync
+    arg:
+      kind: string
+      substr: .env
+- id: read-font-file
+  desc: Reads a font file (woff2/ttf/otf)
+  crit: notable
+  conf: 1.0
+  if:
+    type: symbol
+    kind: call
+    regex: '(^|\.)readFileSync$'
+    arg:
+      kind: string
+      regex: '\.(woff2|ttf|otf)$'
+- id: js-file-path-content-record
+  desc: JavaScript records a file path with content
+  crit: notable
+  conf: 0.84
+  count_min: 3
+  if:
+    type: text
+    regex: "'path':.{0,80}'content':"
+  # LSP/diagnostics payloads share path+content keys without reading files.
+  not:
+    - substr: "'range':"
+    - substr: "'diagnostics':"
+    - substr: "'summary':"
+# A literal key-file argument is a complete, analyst-relevant read operation.
+# Keep this neutral: TLS servers, signing tools, and credential stealers can
+# all read key material; intent belongs in composites that add context.
+- id: node-read-key-file
+  desc: Node reads a key-named file
+  crit: notable
+  conf: 0.9
+  if:
+    type: symbol
+    kind: call
+    regex: '(^|\.)readFileSync$'
+    arg:
+      kind: string
+      substr: '.key'
+  unless:
+    - id: metadata/lang/upstream::linux-kernel-secondary-tree-path
+    - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
+    - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
+    - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
+    - id: metadata/lang/upstream::linux-kernel-primary-tree-path
+- id: js-reads-multiple-deno-absolute
+  desc: Deno reads multiple absolute files
+  crit: notable
+  conf: 0.94
+  mbc: C0051
+  attack: T1005
+  if:
+    type: text
+    regex: '\bDeno\.(readFile|readTextFile)Sync\s*\(\s*"/'
+  unless:
+    - id: metadata/package/testing/
+- id: js-reads-multiple-node-absolute
+  desc: Node reads multiple absolute files
+  crit: notable
+  conf: 0.94
+  mbc: C0051
+  attack: T1005
+  if:
+    type: text
+    regex: '\bfs\.readFileSync\s*\(\s*"/'
+  count_min: 2
+  unless:
+    - id: metadata/package/testing/
+- id: read-package-relative-file
+  desc: Reads a package-relative file
+  crit: baseline
+  conf: 0.88
+  if:
+    type: text
+    # Both spellings of the same read: `path.join(__dirname, x)` and the bare
+    # `__dirname + "/x"` concatenation that loader stubs favour.
+    regex: 'readFile(Sync)?\s*\(\s*(path\.join\s*\(\s*)?__dirname'
+# A hidden configuration file is still an ordinary file-read capability.  The
+# supply-chain objective composes this with fs import and dynamic evaluation
+# before treating it as a concealed-payload loader.
+- id: hidden-relative-file-read
+  desc: Reads a relative hidden file
+  crit: notable
+  conf: 0.9
+  mbc: C0051
+  attack: T1005
+  if:
+    type: string_literal
+    regex: (readFile|readFileSync)\s*\(.{0,120}['"]\./\..{1,50}['"]
+# Babel's alias-wrapped form, such as
+# `(0, _fs.readFileSync)((0, _path.join)(__dirname, "asset.js"))`.
+- id: read-adjacent-javascript-file
+  desc: Reads package-adjacent JavaScript file
+  crit: notable
+  conf: 0.92
+  if:
+    type: text
+    regex: 'readFileSync\)\s*\([^;\n]{0,140}__dirname[^;\n]{0,120}\.(js|mjs|cjs)'
+- id: require-local-package-json
+  desc: Loads local package.json
+  crit: baseline
+  conf: 0.82
+  if:
+    type: text
+    regex: "require\\(['\\\"]\\./package\\.json['\\\"]\\)"
+composite_rules:
+- id: js-reads-multiple-absolute-files
+  desc: JavaScript reads multiple absolute files
+  crit: notable
+  conf: 0.94
+  mbc: C0051
+  attack: T1005
+  any:
+    - id: js-reads-multiple-deno-absolute
+    - id: js-reads-multiple-node-absolute
+- id: node-sensitive-auth-file-read
+  desc: Node reads dotenv or registry auth file
+  crit: notable
+  conf: 0.94
+  near_bytes: 256
+  all:
+  - id: micro-behaviors/fs/read/file/full::read-node
+  any:
+  - id: micro-behaviors/fs/path/secret-config::dotenv-filename-literal
+  - id: micro-behaviors/fs/path/secret-config::npmrc-credentials
+  - id: micro-behaviors/fs/path/secret-config::netrc
+- id: read-node-etc-passwd
+  desc: Node reads /etc/passwd
+  crit: notable
+  conf: 0.94
+  # The read call and the path must be adjacent — i.e. actually
+  # `readFileSync("/etc/passwd")`. Without proximity this fired whenever a file
+  # both read something and mentioned /etc/passwd elsewhere (e.g. a
+  # path-traversal example inside a defensive comment).
+  near_bytes: 160
+  all:
+  - id: micro-behaviors/fs/read/file/full::read-node
+  - id: micro-behaviors/fs/path/config/accounts::etc-passwd-node-fs-call
+- id: js-read-and-send-ipc
+  desc: Reads file content and sends via Node IPC
+  crit: notable
+  conf: 0.95
+  all:
+  - id: micro-behaviors/fs/read/file/full::read-node
+  - id: micro-behaviors/communications/ipc/message::node-process-send
+- id: require-cwd-package-json
+  desc: Loads package.json from current working directory
+  crit: notable
+  conf: 0.84
+  all:
+  - id: micro-behaviors/fs/path/self::cwd-reference
+  - id: micro-behaviors/fs/path/package-manager::package-json-path-reference
+  - id: metadata/lang/scripted::require-symbol
+  - id: micro-behaviors/fs/path/package-manager::package-json-path-join
+  # The cwd reference must belong to the same expression as the package.json
+  # join. At 4096 bytes this fired on any CLI that calls process.cwd() in one
+  # place and require()s its own package.json (for --version) in another —
+  # a near-universal Node CLI shape that loads from __dirname, not cwd.
+  near_bytes: 160

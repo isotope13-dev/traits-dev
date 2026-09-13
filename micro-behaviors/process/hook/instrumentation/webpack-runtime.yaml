@@ -1,0 +1,69 @@
+# Reaching into a page's webpack runtime to obtain the modules it never
+# exported.
+#
+# A bundler installs a chunk-registry global -- `webpackChunk<project>` -- and
+# pushes each chunk onto it. Code running in the same realm that takes that
+# global over gets a callback for every module the application loads, and with
+# it the application's internal APIs: its stores, its network layer, its
+# session. That is how every WhatsApp Web automation runtime (wa-js /
+# WPPConnect, moduleRaid and their descendants) drives a logged-in messenger
+# without touching the UI, and the same primitive works against any
+# single-page application built with webpack.
+#
+# Neutral mechanics. A bundle naturally mentions its OWN registry global, which
+# is why the plain reference is baseline; what the composite adds is the
+# takeover -- redefining the property so the loader hands its modules to
+# someone else -- and the objectives that pair it with what the acquired API is
+# used for (objectives/lateral-movement/social-engineering/spam/ for account
+# automation).
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  crit: baseline
+  conf: 0.9
+  attack: T1055
+
+traits:
+  - id: webpack-chunk-registry-global
+    desc: References a webpack chunk registry global
+    if:
+      type: text
+      regex: '\bwebpackChunk[A-Za-z_$][\w$]{3,60}\b'
+
+  # Naming another application's registry is the part a bundle never does for
+  # itself: `webpackChunkwhatsapp_web_client` is WhatsApp Web's own global, so a
+  # file outside WhatsApp Web that spells it is there to borrow WhatsApp's
+  # internals. Kept as a capability rather than an identity -- what it detects
+  # is "this code addresses WhatsApp Web's module loader", not "this file is
+  # WhatsApp".
+  - id: whatsapp-web-chunk-registry
+    desc: Addresses WhatsApp Web's module registry
+    crit: notable
+    conf: 0.97
+    if:
+      type: text
+      substr: webpackChunkwhatsapp_web_client
+
+  - id: chunk-registry-property-redefine
+    desc: Redefines a bundler registry property
+    crit: notable
+    conf: 0.92
+    # webpack's own emitted prologue is
+    # `(self.webpackChunkX = self.webpackChunkX || []).push(...)`; it assigns,
+    # it never installs an accessor. `Object.defineProperty` over the registry
+    # is the interposition step, so the property name is read from a variable
+    # (the runtime holds the chunk name in a local) and proximity to the
+    # registry reference is supplied by the composite below.
+    if:
+      type: text
+      regex: 'Object\.defineProperty\s*\(\s*[\w$]{1,24}\s*,\s*[\w$]{1,24}\s*,\s*[\w$]{1,24}\s*\)'
+
+composite_rules:
+  - id: webpack-module-registry-takeover
+    desc: Takes over a webpack module registry
+    crit: suspicious
+    conf: 0.94
+    near_bytes: 512
+    all:
+      - id: webpack-chunk-registry-global
+      - id: chunk-registry-property-redefine

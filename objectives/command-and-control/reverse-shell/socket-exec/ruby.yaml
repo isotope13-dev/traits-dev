@@ -1,0 +1,159 @@
+defaults:
+  attack: T1059
+  platforms: [unix, windows]
+  for: [ruby]
+traits:
+  - id: spawn-sh
+    desc: spawn with /bin/sh
+    crit: suspicious
+    conf: 0.8
+    if:
+      type: string_literal
+      regex: spawn\(["']/bin/sh["']
+  - id: open3-popen
+    desc: Open3 popen call
+    crit: notable
+    conf: 0.75
+    if:
+      type: string_literal
+      regex: Open3\.popen|popen2e|popen3
+  - id: open3-popen-ast
+    desc: Open3 popen AST pattern
+    crit: notable
+    conf: 0.8
+    if:
+      type: symbol
+      kind: call
+      exact: Open3.popen
+composite_rules:
+  - id: spawn-tcpsocket
+    desc: spawn shell with TCPSocket
+    crit: suspicious
+    conf: 0.85
+    all:
+      - id: spawn-sh
+      - id: micro-behaviors/communications/socket/listen::ruby-tcp-socket
+  - id: tcpsocket-popen
+    desc: TCPSocket with IO.popen
+    crit: suspicious
+    conf: 0.85
+    # A reverse shell consumes commands from the socket near the process
+    # launch. Ordinary tunnel clients may independently probe a TCP endpoint
+    # and later start their bundled client process in another method.
+    near_lines: 10
+    all:
+      - id: micro-behaviors/process/create/shell/lang::ruby-popen
+    any:
+      - id: micro-behaviors/communications/socket/listen::ruby-tcp-socket
+      - id: micro-behaviors/communications/socket/connect::ruby-socket-connect
+    unless:
+      - id: well-known/tool/development/build/homebrew::source-tree
+      # The native-body test passes a denied socket-plus-popen probe to a
+      # child Ruby interpreter; it is not a reverse shell implementation.
+      - id: metadata/package/testing/presence/harness::test-directory-path
+      - id: well-known/lib/testing/jasmine::jasmine-source-context
+  - id: tcpsocket-sh-i
+    desc: TCPSocket with interactive shell
+    crit: suspicious
+    conf: 0.85
+    all:
+      - id: micro-behaviors/communications/socket/listen::ruby-tcp-socket
+      - id: micro-behaviors/process/create/shell/spawn::bin-sh-interactive
+  - id: ruby-cmd-loop-shell
+    desc: Ruby command loop reverse shell
+    crit: suspicious
+    conf: 0.9
+    needs: 3
+    unless:
+      - id: well-known/lib/runtime/jruby::archive-basename
+      - id: well-known/lib/runtime/jruby::embedded-runtime-member
+      - id: well-known/lib/runtime/jruby::embedded-runtime-path
+      - id: well-known/lib/runtime/jruby::jruby-home-path
+      - id: well-known/lib/runtime/jruby::module-marker
+      - id: well-known/lib/runtime/jruby::stdlib-archive-marker
+    any:
+      - id: micro-behaviors/communications/socket/listen::ruby-tcp-socket
+      - id: micro-behaviors/communications/socket/receive::ruby-socket-gets
+      - id: micro-behaviors/process/create/shell/lang::ruby-popen
+      - id: open3-popen
+      - id: open3-popen-ast
+      - id: micro-behaviors/communications/socket/send::ruby-copy-stream-to-socket
+  - id: reverse-shell-ruby
+    desc: Reverse shell in Ruby
+    crit: suspicious
+    conf: 0.66
+    mbc: B0033
+    unless:
+      - id: well-known/lib/runtime/jruby::archive-basename
+      - id: well-known/lib/runtime/jruby::embedded-runtime-member
+      - id: well-known/lib/runtime/jruby::embedded-runtime-path
+      - id: well-known/lib/runtime/jruby::jruby-home-path
+      - id: well-known/lib/runtime/jruby::module-marker
+      - id: well-known/lib/runtime/jruby::stdlib-archive-marker
+    any:
+      - id: spawn-tcpsocket
+      - id: tcpsocket-popen
+      - id: tcpsocket-sh-i
+      - id: ruby-cmd-loop-shell
+      - id: objectives/command-and-control/reverse-shell/syscall::ruby-syscall-reverse-shell
+  - id: ruby-tcpsocket-exec-shell
+    desc: Ruby TCPSocket + exec interactive shell
+    crit: hostile
+    conf: 0.97
+    mbc: B0030.002
+    all:
+      - id: spawn-tcpsocket
+      - id: micro-behaviors/process/create/shell/spawn::bin-sh-interactive
+    unless:
+      - id: well-known/tool/detection/llm-scanner/
+  - id: ruby-tcpsocket-shell-lang-exec
+    desc: Ruby TCPSocket + exec of a shell interpreter
+    crit: hostile
+    conf: 0.96
+    mbc: B0030.002
+    # Real reverse shells keep the socket and process-replacement adjacent.
+    # File-wide co-occurrence false-positives on DB drivers that both open
+    # cancel sockets and expose an SQL #exec API (ruby-pg Connection). A
+    # second class slipped through even with the DB carve-out: any code that
+    # opens a socket AND execs *anything* nearby matched, since ruby-exec is a
+    # bare Kernel#exec detector with no check that the executed command is a
+    # shell. guard-yard's Server#spawn execs `yard server -p PORT` (a
+    # documentation server) after forking, while its unrelated #verify method
+    # opens a TCPSocket to localhost purely to health-check that the server
+    # came up -- no stdio is ever wired to that socket. Require the exec
+    # target to actually reference a shell interpreter, matching the bar the
+    # sibling ruby-tcpsocket-exec-shell composite already holds.
+    near_lines: 40
+    all:
+      - id: micro-behaviors/communications/socket/connect::ruby-socket-connect
+      - id: micro-behaviors/process/create/shell/lang::ruby-exec
+      - id: micro-behaviors/process/interpreter/shell::bin-sh
+    unless:
+      - id: well-known/tool/detection/llm-scanner/
+      - id: well-known/lib/network/net-ssh/
+      - id: well-known/tool/development/build/homebrew::source-tree
+      - id: well-known/lib/data/ruby-pg::connection-library
+  - id: ruby-tcpsocket-loop-shell
+    desc: Ruby TCPSocket + shell exec + interactive flag
+    crit: hostile
+    conf: 0.96
+    mbc: B0030.002
+    all:
+      - id: micro-behaviors/communications/socket/connect::ruby-socket-connect
+      - id: micro-behaviors/process/create/shell/spawn::bin-sh-interactive
+      - id: micro-behaviors/process/create/shell/lang::ruby-exec
+    unless:
+      - id: well-known/tool/detection/llm-scanner/
+  - id: ruby-tcpsocket-open3-command-loop
+    desc: Ruby TCPSocket Open3 command loop
+    crit: hostile
+    conf: 0.98
+    mbc: B0030.002
+    near_lines: 30
+    all:
+      - id: micro-behaviors/communications/socket/connect::ruby-socket-connect
+      - id: micro-behaviors/communications/socket/receive::ruby-socket-gets
+      - id: micro-behaviors/process/create/shell/open3::capture-command
+      - id: micro-behaviors/communications/socket/send::ruby-socket-write-call
+    unless:
+      - id: well-known/tool/detection/llm-scanner/

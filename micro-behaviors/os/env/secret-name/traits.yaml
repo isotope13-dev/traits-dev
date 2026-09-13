@@ -1,0 +1,331 @@
+defaults:
+  platforms: [unix, windows]
+  for: [shell, python, javascript, powershell, pe, elf]
+  crit: notable
+  conf: 0.7
+traits:
+  - id: python-environ-credential-filter
+    desc: Python env membership credential marker
+    crit: notable
+    conf: 0.9
+    for: [python]
+    if:
+      type: text
+      regex: 'in\s+os\.environ[\s\S]{0,100}["''](SECRET|TOKEN|KEY)'
+  - id: python-environ-items-secret-marker
+    desc: Credential marker string literal
+    crit: component
+    conf: 0.92
+    for: [python]
+    if:
+      type: string_literal
+      kind: string
+      # The consuming composite supplies the os.environ.items() context.
+      # Keep this atom limited to actual string literals, not identifiers
+      # such as _safe_keys or prose mentioning a credential term.
+      # A literal ending in KEY_/SECRET_/TOKEN_ is a namespace prefix for a
+      # startswith() selection (e.g. an app's own FERAL_KEY_ variables), not
+      # a credential name: real credential variables never end in "_".
+      regex: '(^|[_-])(TOKEN|SECRET|KEY)([_-]|$)'
+      case_insensitive: true
+    not:
+      - regex: '(?i)(TOKEN|SECRET|KEY)_["'']?$'
+  - id: python-environ-items-password-marker
+    desc: Password marker string literal
+    crit: notable
+    conf: 0.92
+    for: [python]
+    if:
+      type: string_literal
+      kind: string
+      # As above: a trailing-underscore literal (APP_PASSWORD_) selects an
+      # application namespace; it does not name a credential.
+      regex: '(^|[_-])(PASSWORD|CREDENTIAL)([_-]|$)'
+      case_insensitive: true
+    not:
+      - regex: '(?i)(PASSWORD|CREDENTIAL)_["'']?$'
+  - id: python-environ-alias-items-secret-marker
+    desc: Aliased env iteration uses secret markers
+    crit: notable
+    conf: 0.92
+    for: [python]
+    if:
+      type: text
+      regex: '(?is)environ\.items\(\).{0,220}["''][^"''\r\n]{0,24}(TOKEN|SECRET|KEY)'
+  - id: python-environ-alias-items-password-marker
+    desc: Aliased env iteration uses password markers
+    crit: notable
+    conf: 0.92
+    for: [python]
+    if:
+      type: text
+      regex: '(?is)environ\.items\(\).{0,220}["''][^"''\r\n]{0,24}(PASSWORD|CREDENTIAL)'
+  # Artifactory/CI "reader" service accounts often expose
+  # <PREFIX>_READER_USERNAME / <PREFIX>_READER_PASSWORD in the environment.
+  - id: python-reader-username-env-suffix
+    desc: Env key ends with _READER_USERNAME
+    crit: notable
+    conf: 0.9
+    for: [python]
+    if:
+      type: literal
+      kind: string
+      regex: '_READER_USERNAME$'
+  - id: python-reader-password-env-suffix
+    desc: Env key ends with _READER_PASSWORD
+    crit: notable
+    conf: 0.92
+    for: [python]
+    if:
+      type: literal
+      kind: string
+      regex: '_READER_PASSWORD$'
+  - id: python-env-keyword-key
+    desc: Python getenv name contains KEY
+    crit: notable
+    conf: 0.88
+    for: [python]
+    if:
+      type: symbol
+      kind: call
+      regex: '^(os\.)?(getenv|environ\.get)$'
+      arg:
+        kind: string
+        regex: '(?i)KEY'
+  - id: python-env-keyword-token
+    desc: Python getenv name contains TOKEN
+    crit: notable
+    conf: 0.88
+    for: [python]
+    if:
+      type: symbol
+      kind: call
+      regex: '^(os\.)?(getenv|environ\.get)$'
+      arg:
+        kind: string
+        regex: '(?i)TOKEN'
+  - id: python-env-keyword-secret
+    desc: Python getenv name contains SECRET
+    crit: notable
+    conf: 0.88
+    for: [python]
+    if:
+      type: symbol
+      kind: call
+      regex: '^(os\.)?(getenv|environ\.get)$'
+      arg:
+        kind: string
+        regex: '(?i)SECRET'
+  - id: python-env-get-call
+    desc: Python reads an environment variable
+    crit: notable
+    conf: 0.8
+    for: [python]
+    if:
+      type: symbol
+      kind: call
+      regex: '^(os\.)?(getenv|environ\.get)$'
+  - id: jwt-secret
+    desc: Reads JWT_SECRET from the process environment
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'process\.env(\.JWT_SECRET|\[\s*["'']JWT_SECRET["'']\s*\])'
+  - id: session-secret
+    desc: SESSION_SECRET environment variable
+    if:
+      type: text
+      word: SESSION_SECRET
+  - id: cookie-secret
+    desc: COOKIE_SECRET environment variable
+    if:
+      type: text
+      word: COOKIE_SECRET
+  - id: root-password
+    desc: ROOT_PASSWORD environment variable
+    if:
+      type: text
+      word: ROOT_PASSWORD
+  - id: admin-password
+    desc: ADMIN_PASSWORD environment variable
+    if:
+      type: text
+      word: ADMIN_PASSWORD
+    unless:
+      - id: metadata/build/scaffold::antlr-generated-parser
+  - id: smbhash
+    desc: SMBHASH environment variable
+    crit: suspicious
+    conf: 0.9
+    attack: T1550.002
+    if:
+      type: text
+      word: SMBHASH
+      section: .rodata
+    unless:
+      - id: well-known/tool/detection/malcontent::malcontent-defensive-scanner-context
+  - id: service-account-key
+    desc: SERVICE_ACCOUNT_KEY environment variable
+    if:
+      type: text
+      word: SERVICE_ACCOUNT_KEY
+  - id: service-credential-env-var
+    desc: Reads secret-like credential env variable
+    conf: 0.86
+    for: [javascript, typescript]
+    ref: sha256:f9b935ef1d644960445911670b391fed77ba2cc0a5024fc114eaa19c7b5c0aab
+    if:
+      type: text
+      regex: 'process\.env\.[A-Z][A-Z0-9_]{0,40}_(PASSWORD|CLIENT_SECRET|API_KEY|AUTH_TOKEN)\b'
+      not:
+        - substr: CURLOPT_
+        - substr: CURLINFO_
+        # Public build-time variables are intentionally exposed to browser
+        # bundles; they are not service-secret accesses.
+        - regex: 'process\.env\.(NEXT_PUBLIC_|PUBLIC_|VITE_|EXPO_PUBLIC_|REACT_APP_)'
+    unless:
+      - id: metadata/lang/generated::codegen-source-path
+      - id: well-known/app/browser/google-web::official-google-web-asset
+      - id: metadata/file/format/structured::sourcemap-sources-content
+  - id: posix-env-token-name
+    desc: Reads a TOKEN-named environment variable
+    crit: notable
+    for: [python]
+    if:
+      type: symbol
+      kind: call
+      regex: '^(os\.)?(getenv|environ\.get)$'
+      arg:
+        kind: string
+        regex: '(?i)\b[A-Z0-9_]*TOKEN[A-Z0-9_]*\b'
+  - id: system-env-token-name
+    desc: System environment TOKEN variable
+    crit: notable
+    if:
+      type: text
+      regex: '(System\.getenv|GetEnvironmentVariable)\s*\([^)]{0,60}TOKEN'
+  - id: keyword-secret
+    desc: SECRET-named environment variable
+    crit: notable
+    for: [python]
+    if:
+      type: symbol
+      kind: call
+      regex: '^(os\.getenv|os\.environ\.get)$'
+      arg:
+        kind: string
+        substr: SECRET
+  - id: keyword-auth
+    desc: Python reads AUTH-named environment variable
+    crit: notable
+    conf: 0.86
+    for: [python]
+    if:
+      type: text
+      regex: 'os\.(getenv|environ\.get)\s*\([^)]{0,60}AUTH'
+  - id: keyword-pwd
+    desc: PWD environment access expression
+    crit: notable
+    if:
+      type: text
+      # A bare PWD token in a shell-command vocabulary, help text, or a
+      # generated library table is not credential access.  Require the Node or
+      # Python environment API on the same expression.
+      regex: '(process\.env|os\.(getenv|environ))[^;\n]{0,80}PWD'
+    unless:
+      - id: metadata/library/syntaxhighlighter::prismjs-package-reference
+  - id: keyword-cred
+    desc: CRED environment access pattern
+    crit: notable
+    if:
+      type: text
+      # Require an environment-access form; a protocol field named
+      # CREDENTIALS is not an environment variable.
+      regex: '(?i)\b(getenv|environ(\.get)?|process\.env)\b[^;\n]{0,40}\bCRED(ENTIALS)?\b'
+    unless:
+      - id: well-known/lib/cloud/boto3-stubs::generated-stub-member
+composite_rules:
+  - id: python-environ-credential-keyword-filter
+    desc: Python environment access uses credential-named keys
+    crit: notable
+    conf: 0.9
+    for: [python]
+    any:
+      - id: python-env-keyword-key
+      - id: python-env-keyword-token
+      - id: python-env-keyword-secret
+  - id: python-environ-items-credential-filter
+    desc: Python env items credential filter
+    crit: notable
+    conf: 0.92
+    for: [python]
+    # Keep the credential marker in the loop/filter itself. A byte window also
+    # joined an ordinary full-environment copy to an unrelated API-key
+    # assignment several statements later.
+    near_lines: 3
+    all:
+      - id: micro-behaviors/os/env/enumeration::python-environ-items-loop
+    any:
+      - id: python-environ-items-secret-marker
+      - id: python-environ-items-password-marker
+    unless:
+      # A `not in` test drops the named variables and keeps the rest, so the
+      # credential word is what is being removed, not what is being selected.
+      # agent-glovebox's test helpers build subprocess environments with
+      # `{k: v for k, v in os.environ.items() if k not in ("GH_TOKEN",
+      # "XDG_RUNTIME_DIR")}`, and reading that as a credential filter inverted
+      # the meaning of the code.
+      - id: micro-behaviors/os/env/enumeration::python-environ-items-exclusion-filter
+  - id: python-environ-alias-items-credential-filter
+    desc: Aliased Python env entries are filtered for credentials
+    crit: notable
+    conf: 0.94
+    for: [python]
+    all:
+      - id: micro-behaviors/os/env/enumeration::environ-alias-items-loop
+    any:
+      - id: python-environ-alias-items-secret-marker
+      - id: python-environ-alias-items-password-marker
+  - id: python-environ-credential-name-filter
+    desc: Python accesses credential-named environment entries
+    crit: notable
+    conf: 0.92
+    for: [python]
+    any:
+      - id: python-environ-credential-filter
+      - id: python-environ-items-credential-filter
+      - id: python-environ-alias-items-credential-filter
+      - id: python-environ-credential-keyword-filter
+  - id: python-sensitive-env-read
+    desc: Python reads credential-named environment variable
+    crit: notable
+    conf: 0.9
+    for: [python]
+    all:
+      - id: python-env-get-call
+    any:
+      - id: python-env-keyword-key
+      - id: python-env-keyword-secret
+      - id: micro-behaviors/os/env/vcs::python-github-token-env-read
+      - id: micro-behaviors/os/env/vcs::python-gh-token-env-read
+      - id: micro-behaviors/os/env/vcs::python-github-pat-env-read
+      - id: keyword-secret
+      - id: keyword-auth
+      - id: keyword-cred
+    near_lines: 4
+
+  # The `credentials/` directory that consumers used to name as a whole has
+  # been split by which service the credential belongs to. This roll-up keeps
+  # "some credential-looking env var was read" expressible in one reference.
+  - id: credential-env-read
+    desc: Reads a credential-bearing environment variable
+    crit: notable
+    conf: 0.9
+    any:
+      - id: micro-behaviors/os/env/cloud
+      - id: micro-behaviors/os/env/vcs
+      - id: micro-behaviors/os/env/database
+      - id: micro-behaviors/os/env/package-manager
+      - id: micro-behaviors/os/env/ai-provider
+      - id: micro-behaviors/os/env/service-api
+      - id: micro-behaviors/os/env/ssh

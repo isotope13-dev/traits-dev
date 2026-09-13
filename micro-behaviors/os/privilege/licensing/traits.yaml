@@ -28,11 +28,11 @@ traits:
       type: text
       regex: '(?i)validate\s+(access|license)'
     unless:
-      - id: metadata/lang/source::linux-kernel-secondary-tree-path
+      - id: metadata/lang/upstream::linux-kernel-secondary-tree-path
       - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
       - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
       - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
-      - id: metadata/lang/source::linux-kernel-primary-tree-path
+      - id: metadata/lang/upstream::linux-kernel-primary-tree-path
       - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
 
   - id: license-cache-storage
@@ -46,3 +46,57 @@ traits:
     if:
       type: text
       regex: '(?i)(licen[cs]e.{0,60}isAuth|isAuth.{0,60}licen[cs]e)'
+
+  # A commercial component's product-activation surface, as the CLR spells it.
+  # Property accessors and method names survive into the metadata string heap
+  # of any .NET assembly, obfuscated or not, and they are what a paid library
+  # carries that a loader does not: a key the customer supplies, and a routine
+  # that decides whether it is valid.
+  #
+  # These exist as named traits so the exception composite below can assemble
+  # them. Neither is a judgment on its own -- "this component is licensed" is
+  # exactly the kind of program-identity fact the notable bar is for.
+  - id: dotnet-license-key-accessor
+    desc: .NET license key property accessor
+    for: [pe, csharp]
+    if:
+      type: text
+      regex: '\b(get|set)_License(Key|Code)\b'
+
+  - id: activation-code-check-method
+    desc: Product activation check method name
+    for: [pe, csharp, scripts]
+    if:
+      type: text
+      regex: '(?i)\b(check|verify|validate)Activation[A-Za-z]{0,12}'
+
+composite_rules:
+  # Why this is an exception rather than a tightening of the rule it quiets.
+  #
+  # objectives/anti-static/obfuscation/reflection/invoke::unsigned-decryptor-reflection-entrypoint
+  # reads a .NET assembly's string heap for Base64 decoding, a symmetric
+  # decryptor, Activator/Assembly.Load/GetEntryPoint/Invoke, and no Authenticode
+  # signature -- the encrypted-loader shape. A licensed commercial SDK presents
+  # the same heap for an entirely different reason: it decrypts the customer's
+  # license blob (Rijndael over a Base64 string) and the reflection names are
+  # CLR metadata every assembly ships. The "unsigned" leg does not discriminate
+  # either, because libraries distributed through nuget.org are signed at the
+  # package level and almost never Authenticode-signed inside.
+  #
+  # The host rule is not wrong about what it sees, and narrowing it would cost
+  # real loader detections, so the benign reading is asserted separately: a
+  # component that exposes a license key AND a routine that validates an
+  # activation code is a paid product, not a stager. BaiqiSoft's barcode-label
+  # SDK is the worked example (get_LicenseKey/set_LicenseKey,
+  # CheckActivationCode, CheckLicenseAsync, RijndaelManaged).
+  #
+  # Requiring both halves is what keeps this from becoming an allowlist: a
+  # loader that happens to name one of them still gets caught.
+  - id: dotnet-product-activation-runtime
+    desc: Licensed .NET component activation runtime
+    crit: exception
+    conf: 0.9
+    for: [pe, csharp]
+    all:
+      - id: dotnet-license-key-accessor
+      - id: activation-code-check-method

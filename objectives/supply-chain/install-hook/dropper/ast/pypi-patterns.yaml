@@ -9,6 +9,10 @@ defaults:
   mbc: "B0030"
   for: [python]
 traits:
+# These matched nothing: they were regexes describing source text sitting in
+# `exact:`, which compares literally. A symbol is a dotted path of
+# identifiers -- no parentheses, no parameter list -- so a function symbol is
+# `run`, not `def run(self):`, and a call is `.clone`, not `.clone(...)`.
   # === AST Pattern: Import Inside Method ===
   - id: ast-import-in-method
     desc: Import inside method body
@@ -18,43 +22,33 @@ traits:
       type: text
       regex: "def run\\(self\\):.{0,50}^\\s+import"
   # === AST Pattern: Method Override ===
+  # A function symbol is the name alone, so this is the fact "something here
+  # is called `run`" -- which is every Python class with a `run()` method, not
+  # a behavior. It is a building block: the composites that use it supply the
+  # cmdclass/setup context and the clone+startfile calls that make an install
+  # hook an install hook.
   - id: ast-install-method-override
-    desc: Override install run method
-    crit: suspicious
+    desc: Defines a method named run
+    crit: component
     conf: 0.85
     if:
       type: symbol
       kind: function
-      exact: "def run\\(self\\):"
-  # === AST Pattern: Sequential Clone Calls ===
-  - id: ast-multiple-clone-calls
-    desc: Multiple clone() calls in function
-    crit: suspicious
-    conf: 0.85
-    count_min: 2
-    if:
-      type: symbol
-      kind: call
-      exact: "\\.clone\\(.{0,50}\\)"
-  # === AST Pattern: Environment Set in Method ===
-  - id: ast-env-set-in-method
-    desc: Environment manipulation in method
-    crit: suspicious
-    conf: 0.70
-    if:
-      type: symbol
-      kind: bind
-      exact: "os\\.environ\\[.{0,50}\\]"
+      exact: run
   # === AST Pattern: Sequential File Operations ===
-  - id: ast-clone-move-execute-chain
-    desc: Clone move execute chain
-    crit: suspicious
+  # Three *distinct* operations -- fetch, relocate, run -- not three calls
+  # matching one alternative. `count_min: 3` over the alternation counted
+  # three `clone` calls as a chain, which the repeated-clone atom already
+  # reports on its own; paired in `all:` below the two said the same thing
+  # twice. One atom per operation, joined with `needs: 3`, says it once.
+  - id: ast-rename-call
+    desc: File rename call
+    crit: component
     conf: 0.90
-    count_min: 3
     if:
       type: symbol
       kind: call
-      exact: "(clone|rename|startfile)"
+      regex: '(^|\.)rename$'
   # === AST Pattern: cmdclass with Custom Install ===
   - id: ast-cmdclass-install-override
     desc: cmdclass install override
@@ -62,7 +56,7 @@ traits:
     conf: 0.85
     if:
       type: text
-      substr: "cmdclass.{0,50}install"
+      regex: 'cmdclass.{0,50}install'
 composite_rules:
   # === AST-Based Supply Chain Detection ===
   - id: ast-supply-chain-hook
@@ -74,11 +68,21 @@ composite_rules:
       - id: ast-import-in-method
       - id: ast-install-method-override
       - id: ast-cmdclass-install-override
+  - id: ast-clone-move-execute-chain
+    desc: Clone move execute chain
+    crit: suspicious
+    conf: 0.90
+    needs: 3
+    any:
+      - id: micro-behaviors/process/create/vcs/git::python-repo-clone-call
+      - id: ast-rename-call
+      - id: micro-behaviors/process/create/launch::os-startfile-call
+
   - id: ast-multi-stage-payload
     desc: Multi-stage payload delivery AST
     crit: hostile
     conf: 0.95
     mbc: "E1105"
     all:
-      - id: ast-multiple-clone-calls
+      - id: micro-behaviors/process/create/vcs/git::python-repeated-repo-clone-calls
       - id: ast-clone-move-execute-chain

@@ -1,0 +1,117 @@
+# Windowed Peak-Entropy Region (neutral file-level measurements)
+#
+# From the filefacts windowed entropy scan (binary.peak_region_*): the file's
+# peak 1 KiB-window entropy, the total mass of data at that level, and where its
+# largest contiguous block sits. Unlike whole-file or section entropy, these
+# survive averaging — a small encrypted stage buried in low-entropy padding (a
+# 52 KiB blob at 8.0 inside 76 MiB of zeros) still shows a high peak even though
+# the file and its enclosing section both read ~3.1.
+#
+# Pure measurements, no intent — that is why they live under metadata/. The
+# concealment objective composites in
+# objectives/anti-static/obfuscation/payload/encrypted/ infer a hidden payload
+# by pairing a high peak with a low whole-file entropy.
+#
+# Binaries and scripts are split deliberately: a compiled payload is raw
+# cipher/compressed bytes (~8.0) in section padding, while a script embeds an
+# encoded blob (base64 caps at 6.0) in readable source, so both the entropy
+# floor and the meaningful payload size differ.
+defaults:
+  platforms: [windows, unix]
+  crit: component
+  conf: 0.85
+traits:
+  - id: peak-region-cipher-entropy
+    crit: baseline
+    desc: 1KB region has high entropy
+    for: [binaries]
+    if:
+      type: metrics
+      field: binary.peak_region_entropy
+      min: 7.5
+  - id: concealed-payload-mass-8k
+    crit: baseline
+    desc: High-entropy region mass over 8KB
+    for: [binaries]
+    if:
+      type: metrics
+      field: binary.peak_region_bytes
+      min: 8192
+  - id: binary-peak-region-mass-over-1k
+    crit: baseline
+    desc: High-entropy binary region mass over 1KB
+    for: [binaries]
+    if:
+      type: metrics
+      field: binary.peak_region_bytes
+      min: 1024
+  - id: peak-region-encoded-entropy
+    crit: baseline
+    desc: Peak region at encoded-blob entropy
+    conf: 0.8
+    for: [scripts]
+    if:
+      type: metrics
+      field: binary.peak_region_entropy
+      min: 6.0
+    unless:
+      # Source maps store embedded source text as data; their local entropy
+      # does not establish a concealed encoded payload.
+      - id: metadata/file/format/structured::sourcemap-sources-content
+      # Han-script source is readable program text, not an encoded blob solely
+      # because its UTF-8 bytes have a high local entropy.
+      - id: metadata/lang/natural::script-han
+      # Localized source can contain too few consecutive Han characters for
+      # the language atom above, while its UTF-8 bytes still raise the window
+      # entropy. A substantial high-byte ratio is the stronger file-level
+      # guard for this readable-source false-positive class.
+      - type: metrics
+        field: text.non_ascii_ratio
+        min: 0.12
+  - id: script-peak-region-over-1k
+    crit: baseline
+    desc: Peak-entropy source region exceeds 1KB
+    conf: 0.8
+    for: [scripts]
+    if:
+      type: metrics
+      field: binary.peak_region_bytes
+      min: 1024
+  - id: low-overall-entropy-source
+    desc: Source file has low overall entropy
+    crit: baseline
+    conf: 0.9
+    for: [scripts]
+    if:
+      type: metrics
+      field: file.entropy
+      max: 5.0
+    unless:
+      - type: path
+        substr: frida-server-
+      - id: metadata/package/testing/presence/path::test-artifact-context
+
+composite_rules:
+  # This is a neutral relationship between file-level measurements.  It does
+  # not establish that the dense region is encrypted or that it is a payload;
+  # objective composites add loader, memory, or format-specific evidence when
+  # they need to infer concealment.
+  - id: low-entropy-binary-with-dense-region
+    desc: Low-entropy binary contains dense data region
+    crit: notable
+    conf: 0.9
+    for: [pe, dll, elf, so, macho, dylib]
+    all:
+      - id: peak-region-cipher-entropy
+      - id: metadata/binary/layout/entropy::low-overall-entropy-binary
+      - id: concealed-payload-mass-8k
+    unless:
+      - id: metadata/binary/layout/checksum::cert-table-present
+      - id: metadata/signed/platform/
+      - id: metadata/signed/trust-level::developer-signed
+      - id: metadata/binary/installer/family/
+      - id: well-known/tool/reverse-engineering/frida/
+      # Large, low-entropy read-only tables are common in scientific and
+      # language/runtime binaries; the windowed peak is not a concealed blob
+      # when it is explained by that ordinary section.
+      - id: metadata/binary/section/entropy::large-low-entropy-rodata-section

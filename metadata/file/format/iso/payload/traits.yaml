@@ -1,0 +1,380 @@
+defaults:
+  platforms: [windows]
+  for: [iso, data, archive]
+traits:
+  - id: iso-lnk-cmd-prefix-utf16
+    desc: UTF-16 ISO LNK cmd start prefix
+    crit: suspicious
+    conf: 0.99
+    attack: T1059.003
+    # This is an image/archive marker. Ordinary managed PE members can carry
+    # the same browser-launch string as application data, so do not scan every
+    # PE/DLL as though it were a UDF carrier. The file defaults provide the
+    # intended archive/data scope.
+    if:
+      type: raw
+      regex: '(?is)/\x00c\x00 \x00s\x00t\x00a\x00r\x00t\x00'
+  - id: iso-rundll32-utf16-marker
+    desc: UTF-16 ISO rundll32 command token
+    crit: notable
+    conf: 0.99
+    if:
+      type: raw
+      regex: '(?is)r\x00u\x00n\x00d\x00l\x00l\x003\x002\x00\.\x00e\x00x\x00e\x00'
+  - id: iso-lnk-dll-ordinal-utf16
+    desc: UTF-16 ISO LNK DLL ordinal argument
+    crit: suspicious
+    conf: 0.99
+    attack: T1218.011
+    if:
+      type: raw
+      regex: '(?is)\.\x00d\x00l\x00l\x00,\x00#\x00'
+  - id: iso-lnk-shell32-icon-utf16
+    desc: UTF-16 ISO LNK SHELL32.dll icon path
+    crit: suspicious
+    conf: 0.94
+    attack: T1036.007
+    if:
+      type: hex
+      pattern: "25 00 53 00 79 00 73 00 74 00 65 00 6D 00 52 00 6F 00 6F 00 74 00 25 00 5C 00 53 00 79 00 73 00 74 00 65 00 6D 00 33 00 32 00 5C 00 53 00 48 00 45 00 4C 00 4C 00 33 00 32 00 2E 00 64 00 6C 00 6C 00"
+  - id: udf-lnk-cmd-rundll32-ordinal
+    desc: UDF LNK launches DLL ordinal
+    crit: suspicious
+    conf: 0.99
+    attack: T1059.003,T1218.011,T1204.002
+    if:
+      type: yara
+      source: |
+        rule udf_lnk_cmd_rundll32_ordinal {
+          strings:
+            $udf = /NSR0[23]/ ascii wide nocase
+            $lnk = ".lnk" ascii wide nocase
+            $cmd = "cmd.exe" ascii wide nocase
+            $chain = /\/c\s+["']?start\s+rundll32(?:\.exe)?/ ascii wide nocase
+            $ordinal = /,\s*#/ ascii wide
+          condition:
+            $udf and $lnk and $cmd and $chain and $ordinal
+        }
+  - id: udf-lnk-dll-payload-marker
+    desc: UDF LNK carrier references a DLL payload
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule udf_lnk_dll_payload_marker {
+          strings:
+            $udf = /NSR0[23]/ ascii wide nocase
+            $lnk = ".lnk" ascii wide nocase
+            $dll = ".dll" ascii wide nocase
+          condition:
+            $udf and $lnk and $dll
+        }
+  # These are separate capability markers so ISO objective rules can require
+  # the complete loader shape. A lone method name is common in managed
+  # applications; the objective composites supply the PE and CLR context.
+  - id: iso-dotnet-hex-slice
+    desc: .NET Substring method name
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      exact: Substring
+  - id: iso-dotnet-hex-byte-conversion
+    desc: .NET ToByte conversion method name
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      exact: ToByte
+  - id: iso-wsh-com-stream-marker
+    desc: WSH COM stream-staging marker
+    crit: notable
+    conf: 0.98
+    if:
+      type: text
+      regex: '(?is)W(SH|Script)\s*\.\s*CreateObject\s*\(.{0,120}ADODB\.Stream'
+  - id: iso-msxml-base64-marker
+    desc: MSXML Base64 decoding marker
+    crit: notable
+    conf: 0.99
+    if:
+      type: text
+      regex: '(?is)Microsoft\.XML(DOM|HTTP).{0,300}bin\.base64.{0,300}nodeTypedValue'
+  - id: iso-stream-text-eval-marker
+    desc: Decoded stream text evaluation marker
+    crit: notable
+    conf: 0.99
+    if:
+      type: text
+      regex: '(?is)eval\s*\(.{0,160}ReadText\s*\('
+  # `for: [all]` so these reach the extracted member whatever type it turns
+  # out to be. Keep patterns distinct from pe/dll micro-behavior atoms for
+  # dup checks.
+  - id: iso-wsh-shell-run
+    desc: WSH Shell.Run call site
+    crit: notable
+    conf: 0.97
+    attack: T1059.007
+    if:
+      type: text
+      regex: '(?is)wscript\.shell.{0,80}\.run\s*\('
+  - id: iso-wsh-rundll-prefix
+    desc: Quoted rundll prefix reconstruction fragment
+    crit: notable
+    conf: 0.97
+    attack: T1218.011
+    if:
+      type: text
+      substr: '"rundl"'
+  - id: iso-wsh-dat-ordinal-launch
+    desc: WSH launches DAT export by ordinal
+    crit: suspicious
+    conf: 0.98
+    attack: T1218.011
+    if:
+      type: text
+      regex: '(?i)\.dat\s*,\s*#\d+'
+  - id: iso-wsh-l32-suffix
+    desc: JS host invoked with l32 suffix arg
+    crit: notable
+    conf: 0.96
+    attack: T1218.011
+    if:
+      type: text
+      regex: '(?i)\.js\s+l32\b'
+  - id: iso-sfx-setup-silent-pif
+    desc: Silent SFX Setup launches PIF payload
+    crit: notable
+    conf: 0.98
+    attack: T1204.002,T1036.007
+    if:
+      type: text
+      regex: '(?is)Setup=[^\r\n]{1,60}\.pif.{0,40}Silent=1'
+  - id: iso-registerclipboardformata
+    desc: RegisterClipboardFormatA API string
+    crit: notable
+    conf: 0.96
+    attack: T1115
+    if:
+      type: text
+      regex: '(?i)RegisterClipboardFormatA([^A-Za-z]|$)'
+  - id: iso-vb6-runtime-identity
+    desc: Visual Basic 6 runtime marker
+    crit: notable
+    conf: 0.98
+    if:
+      type: text
+      regex: '(?i)^MSVBVM60\.DLL$'
+  - id: iso-vb6-runtime-helper-cluster
+    desc: VB6 runtime string and dispatch helper cluster
+    crit: notable
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)__vba(Str|Var|Ary|LateMem)[A-Za-z]+'
+  - id: iso-lnk-cmd-env-target
+    desc: LNK targets cmd via windir path
+    crit: notable
+    conf: 0.97
+    attack: T1059.003
+    if:
+      type: text
+      substr: '%windir%/system32/cmd.exe'
+  # SmartScreen lure text is often extracted as separate string facts, so
+  # keep the message and the bypass instruction as distinct atoms.
+  - id: iso-smart-screen-message
+    desc: SmartScreen warning message reference
+    crit: notable
+    conf: 0.96
+    if:
+      type: text
+      regex: '(?i)SmartScreen message'
+  - id: iso-run-anyway-guidance
+    desc: SmartScreen Run Anyway bypass instruction
+    crit: notable
+    conf: 0.97
+    if:
+      type: text
+      regex: '(?i)More Info.{0,40}Run Anyway'
+  # Payload markers. These now match on the extracted member itself rather
+  # than on the enclosing image's bytes, which is both more precise and the
+  # only scope where the member's own decoder output is available.
+  - id: iso-powershell-command-line
+    desc: PowerShell command has execution option
+    crit: notable
+    conf: 0.96
+    attack: T1059.001
+    if:
+      type: text
+      regex: '(?is)\bpowershell\.exe\b.{0,160}-(ExecutionPolicy|WindowStyle)\s+\w+'
+  - id: iso-powershell-stride-decoder
+    desc: Every-fifth-character string decoder
+    crit: suspicious
+    conf: 0.97
+    attack: T1027
+    if:
+      type: text
+      regex: '(?is)\bfor\s*\(.{0,60}\+=\s*5\).{0,60}\$[A-Za-z_]\w*\s*\[\s*\$[A-Za-z_]\w*\s*\]'
+  - id: iso-powershell-dynamic-call
+    desc: Dynamic PowerShell call over long strings
+    crit: suspicious
+    conf: 0.97
+    attack: T1059.001,T1027
+    if:
+      type: text
+      regex: '(?is)&\s*\(\s*\$[A-Za-z_][A-Za-z0-9_]{1,32}\s*\)\s*\(\s*\$[A-Za-z_][A-Za-z0-9_]{1,32}\s*\)'
+  - id: iso-native-api-memory-protect
+    desc: NtProtectVirtualMemory API reference
+    crit: notable
+    conf: 0.98
+    attack: T1055
+    if:
+      type: text
+      regex: '(?i)(^|[^A-Za-z])NtProtectVirtualMemory([^A-Za-z]|$)'
+  - id: iso-native-api-process-query
+    desc: NtQueryInformationProcess API reference
+    crit: notable
+    conf: 0.98
+    attack: T1055
+    for: [data]
+    if:
+      type: text
+      regex: '(?i)(^|[^A-Za-z])NtQueryInformationProcess([^A-Za-z]|$)'
+  - id: iso-native-api-memory-allocate
+    desc: NtAllocateVirtualMemory API reference
+    crit: notable
+    conf: 0.98
+    attack: T1055
+    if:
+      type: text
+      regex: '(?i)(^|[^A-Za-z])NtAllocateVirtualMemory([^A-Za-z]|$)'
+  - id: iso-native-api-thread-control
+    desc: NtSetInformationThread API reference
+    crit: notable
+    conf: 0.98
+    attack: T1055
+    if:
+      type: text
+      regex: '(?i)(^|[^A-Za-z])NtSetInformationThread([^A-Za-z]|$)'
+  - id: iso-native-api-memory-write
+    desc: NtWriteVirtualMemory API reference
+    crit: notable
+    conf: 0.98
+    attack: T1055
+    if:
+      type: text
+      regex: '(?i)(^|[^A-Za-z])NtWriteVirtualMemory([^A-Za-z]|$)'
+  - id: iso-native-api-load-library
+    desc: LoadLibraryW API-resolution reference
+    crit: notable
+    conf: 0.96
+    attack: T1106
+    if:
+      type: text
+      regex: '(?i)(^|[^A-Za-z])LoadLibraryW([^A-Za-z]|$)'
+  - id: iso-native-api-get-proc
+    desc: GetProcAddress API-resolution reference
+    crit: notable
+    conf: 0.96
+    attack: T1106
+    if:
+      type: text
+      regex: '(?i)(^|[^A-Za-z])GetProcAddress([^A-Za-z]|$)'
+  - id: iso-sandbox-debugger-module-cluster
+    desc: Embedded Sandboxie and debugger references
+    crit: notable
+    conf: 0.97
+    attack: T1497,T1622
+    if:
+      type: text
+      regex: '(?is)SBIEDLL\.DLL.{0,120}DBGHELP\.dll'
+
+  # `iso-lnk-powershell-launch` was a duplicate of
+  # micro-behaviors/process/create/shell/interpreter::powershell-executable-token
+  # under a name its matcher never earned: `^powershell\.exe$` finds the bare
+  # program name, not an ISO, not an LNK and not a target path, yet it sat at
+  # `suspicious` in metadata/ and convicted every Windows program that shells
+  # out to PowerShell — a Zig-built Codex account-switcher CLI among them. The
+  # four composites that used it all also require
+  # metadata/file/format/iso/structure::primary-volume-descriptor, so the ISO
+  # context was always carried by that leg, never by this one; they now
+  # reference the canonical atom. That is also a strictly better match here:
+  # `\bpowershell\.exe\b` still fires on the full LNK target spelling
+  # (`…\WindowsPowerShell\v1.0\powershell.exe`), which the anchored form missed.
+  - id: iso-lnk-arithmetic-obfuscation
+    desc: ISO LNK arithmetic string obfuscation
+    crit: suspicious
+    conf: 0.99
+    attack: T1027
+    if:
+      type: text
+      regex: '(?is)Char\[\].{0,180}\(-?\d{3,6}\s*[+-]\s*-?\d{2,6}\)'
+  - id: iso-dotnet-vault-access-cluster
+    desc: Windows Vault API cluster in ISO content
+    crit: notable
+    conf: 0.99
+    attack: T1555.004
+    if:
+      type: text
+      regex: '(?i)(VaultOpenVault|VaultEnumerateVaults|VaultGetItem)'
+  - id: iso-dotnet-network-output-cluster
+    # The primary-volume-descriptor leg in the consuming composite establishes
+    # ISO context. These API names are ordinary in managed applications.
+    desc: .NET network-output API name cluster
+    crit: notable
+    conf: 0.98
+    attack: T1041
+    if:
+      type: text
+      regex: '(?i)(WebClient|GetResponseStream|SmtpClient|TripleDES)'
+  - id: iso-allatori-comment
+    desc: Allatori obfuscator comment in ISO content
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: text
+      substr: Obfuscation by Allatori Obfuscator
+  - id: iso-obfuscated-jar-class-catalog
+    desc: Obfuscated Java class catalog in ISO content
+    crit: suspicious
+    conf: 0.98
+    attack: T1027
+    count_min: 8
+    if:
+      type: text
+      regex: '(?i)[i]{6,12}\.class'
+composite_rules:
+  - id: udf-lnk-rundll32-utf16
+    desc: UDF LNK rundll32 command
+    crit: suspicious
+    conf: 0.99
+    attack: T1218.011
+    for: [archive, data, pe, dll]
+    all:
+      - id: metadata/file/format/iso/structure::udf-nsr03-text-marker
+      - id: iso-rundll32-utf16-marker
+  - id: iso-native-api-resolution
+    desc: Embedded dynamic Windows API-resolution pair
+    crit: notable
+    conf: 0.96
+    attack: T1106
+    all:
+      - id: metadata/file/format/iso/structure::primary-volume-descriptor
+      - id: iso-native-api-load-library
+      - id: iso-native-api-get-proc
+      - id: iso-native-api-memory-allocate
+  - id: iso-native-memory-api-cluster
+    desc: Embedded native process-memory API cluster
+    crit: notable
+    conf: 0.98
+    attack: T1055
+    needs: 3
+    all:
+      - id: metadata/file/format/iso/structure::primary-volume-descriptor
+    any:
+      - id: iso-native-api-memory-protect
+      - id: iso-native-api-process-query
+      - id: iso-native-api-memory-allocate
+      - id: iso-native-api-thread-control
+      - id: iso-native-api-memory-write

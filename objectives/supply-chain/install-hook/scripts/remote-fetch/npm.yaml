@@ -1,0 +1,230 @@
+# Install hooks that fetch something and run it.
+defaults:
+  platforms: [unix, windows]
+  for: [package.json]
+traits:
+- id: script-curl
+  desc: Script uses curl
+  crit: notable
+  conf: 0.8
+  if:
+    type: value
+    path: "scripts.preinstall"
+    regex: "\\bcurl\\b"
+- id: script-wget
+  desc: Script uses wget
+  crit: notable
+  conf: 0.8
+  if:
+    type: value
+    path: "scripts.preinstall"
+    regex: "\\bwget\\b"
+- id: script-pipe-sh
+  desc: Script pipes to sh
+  crit: suspicious
+  conf: 0.85
+  if:
+    type: value
+    path: "scripts.preinstall"
+    regex: "\\|\\s*sh\\b"
+- id: script-pipe-shell
+  desc: Script pipes to shell
+  crit: suspicious
+  conf: 0.85
+  if:
+    type: value
+    path: "scripts.preinstall"
+    regex: "\\|\\s*shell\\b"
+- id: script-pipe-node
+  desc: Script pipes to node
+  crit: suspicious
+  conf: 0.85
+  if:
+    type: value
+    path: "scripts.preinstall"
+    regex: "(^|[^|])\\|\\s*node\\b"
+- id: wasm-pack-installer-script-url
+  desc: wasm-pack installer script URL
+  crit: baseline
+  conf: 0.98
+  if:
+    type: text
+    substr: rustwasm.github.io/wasm-pack/installer/init.sh
+- id: postinstall-pipe-node
+  desc: postinstall pipes output to node
+  crit: suspicious
+  conf: 0.94
+  attack: "T1195.002, T1059.007"
+  if:
+    type: value
+    path: "scripts.postinstall"
+    regex: "(^|[^|])\\|\\s*node\\b"
+  unless:
+  - id: metadata/package/files/dependency::node-modules-path
+- id: postinstall-node-loader-pipe
+  desc: postinstall node loader pipe
+  crit: suspicious
+  conf: 0.95
+  attack: "T1195.002, T1059.007"
+  if:
+    type: value
+    path: "scripts.postinstall"
+    regex: "^node\\s+(\\./)?[A-Za-z0-9_.-]{1,80}\\s*\\|\\s*node\\b"
+  unless:
+  - id: metadata/package/files/dependency::node-modules-path
+- id: script-http-url
+  desc: Script contains HTTP URL
+  crit: notable
+  conf: 0.75
+  if:
+    type: value
+    path: "scripts.preinstall"
+    regex: "https?://"
+- id: preinstall-node-https-get
+  desc: preinstall uses Node HTTPS GET
+  crit: suspicious
+  conf: 0.95
+  attack: "T1041"
+  if:
+    type: value
+    path: "scripts.preinstall"
+    regex: "require\\([\"']https[\"']\\).{0,80}\\.get\\("
+- id: preinstall-netcat-shell
+  desc: preinstall uses netcat shell exec
+  crit: suspicious
+  conf: 0.97
+  attack: "T1059.004"
+  if:
+    type: value
+    path: "scripts.preinstall"
+    substr: "nc -c sh"
+- id: postinstall-global-floating-npm-install
+  desc: Postinstall globally installs npm latest
+  crit: suspicious
+  conf: 0.98
+  attack: "T1195.002,T1105"
+  if:
+    type: value
+    path: "scripts.postinstall"
+    regex: '\bnpm\s+install\s+-(g|global)\s+[^;&]{1,120}@latest\b'
+composite_rules:
+- id: download-tools
+  desc: Script uses download tools
+  crit: notable
+  conf: 0.6
+  any:
+  - id: script-curl
+  - id: script-wget
+        # Pipe to interpreter patterns
+- id: pipe-to-interpreters
+  desc: Script pipes to interpreter
+  crit: suspicious
+  conf: 0.85
+  unless:
+  - id: well-known/tool/sysadmin/alpine-packages::alpine-langfuse-package
+  - id: well-known/tool/sysadmin/alpine-packages::alpine-langfuse-next-app-path
+  - id: well-known/tool/sysadmin/alpine-packages::datadog-libdatadog-package-json
+  - id: well-known/tool/sysadmin/alpine-packages::datadog-libdatadog-package
+  - id: wasm-pack-installer-script-url
+  any:
+  - id: script-pipe-sh
+  - id: script-pipe-shell
+  - id: script-pipe-node
+        # Download and execute composite
+- id: download-execute-comp
+  desc: npm script downloads and executes
+  crit: suspicious
+  conf: 0.95
+  mbc: "B0024"
+  attack: "T1105"
+  unless:
+  - id: well-known/lib/development/abaplint::core-benchmark-context
+  - id: metadata/package/scripts/
+  - id: metadata/package/files/dependency::node-modules-path
+  - id: well-known/tool/sysadmin/alpine-packages::alpine-langfuse-package
+  - id: well-known/tool/sysadmin/alpine-packages::datadog-libdatadog-package-json
+  - id: well-known/tool/sysadmin/alpine-packages::datadog-libdatadog-package
+  all:
+  - id: download-tools
+  - id: pipe-to-interpreters
+        # Obfuscated script
+- id: postinstall-node-pipe-exec
+  desc: npm postinstall pipes generated code into node
+  crit: hostile
+  conf: 0.96
+  attack: "T1195.002, T1059.007"
+  mbc: "B0024"
+  all:
+  - id: objectives/supply-chain/install-hook/scripts/declaration::has-postinstall
+  - id: postinstall-node-loader-pipe
+  any:
+  - id: postinstall-pipe-node
+  - id: objectives/supply-chain/install-hook/scripts/import-chain::scripts-postinstall-pipe-2
+- id: postinstall-pipe-pastebin-loader
+  desc: npm postinstall pipes Pastebin loader into node
+  crit: hostile
+  conf: 0.97
+  attack: "T1195.002,T1059.007,T1102"
+  mbc: "B0024,C0002"
+  for: [archives]
+  scope: archive
+  all:
+  - id: postinstall-node-pipe-exec
+  - id: objectives/command-and-control/infrastructure/paste::pastebin
+- id: npm-install-hook-remote-deno-stage
+  desc: npm install hook detaches unrestricted remote Deno stage
+  crit: hostile
+  conf: 0.99
+  scope: archive
+  attack: T1195.002,T1105,T1059.007,T1480
+  all:
+  - id: objectives/supply-chain/install-hook/scripts/declaration::has-install
+  - id: objectives/supply-chain/install-hook/scripts/local-script::install-runs-node-local-script
+  - id: objectives/supply-chain/install-hook/scripts/hook-file::install-hook-detached-child-launch
+  - id: objectives/command-and-control/dropper/execution/fileless::js-remote-deno-run-all-permissions
+- id: preinstall-netcat-reverse-shell
+  desc: preinstall launches netcat reverse shell
+  crit: hostile
+  conf: 0.99
+  mbc: "B0022"
+  attack: "T1059.004"
+  all:
+  - id: objectives/supply-chain/install-hook/scripts/declaration::has-preinstall
+  - id: preinstall-netcat-shell
+  - id: objectives/supply-chain/install-hook/scripts/host-profile::preinstall-external-ip
+  - id: objectives/supply-chain/install-hook/scripts/host-profile::preinstall-ip-port-endpoint
+- id: npm-preinstall-dev-tcp-reverse-shell
+  desc: Preinstall launches Bash dev-tcp reverse shell
+  crit: hostile
+  conf: 0.99
+  mbc: "B0030"
+  attack: "T1195.002,T1059.004,T1095"
+  all:
+  - id: objectives/supply-chain/install-hook/scripts/declaration::has-preinstall
+  - id: objectives/supply-chain/install-hook/scripts/host-profile::preinstall-external-ip
+  - id: objectives/command-and-control/reverse-shell/dev-tcp::reverse-shell-shell-complete
+- id: preinstall-temp-fetch-chmod-exec
+  desc: preinstall stages temp payload then executes it
+  crit: suspicious
+  conf: 0.96
+  attack: "T1195.002"
+  for: [javascript]
+  all:
+  - id: micro-behaviors/communications/http/download/github::github-raw-mutable-fetch
+  - id: micro-behaviors/fs/chmod/executable/mode::shell-plus-x
+  - id: micro-behaviors/fs/path/temp::temp-var-tmp
+  any:
+  - id: micro-behaviors/process/create/script/file::shell-script-execution-any
+  - id: micro-behaviors/process/daemonize/detach::nohup-hidden-output
+  - id: micro-behaviors/process/create/spawn::detached-true
+- id: npm-postinstall-reverse-shell
+  desc: npm postinstall hook launches a socket reverse shell
+  crit: hostile
+  conf: 0.99
+  attack: T1195.002,T1059.007,T1095
+  mbc: B0030.002
+  for: [npm]
+  scope: archive
+  all:
+  - id: objectives/supply-chain/install-hook/scripts/declaration::postinstall-hook-declaration
+  - id: objectives/command-and-control/reverse-shell/stdio::js-reverse-shell-spawn

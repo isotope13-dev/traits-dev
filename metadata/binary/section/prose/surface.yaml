@@ -1,0 +1,190 @@
+# How many strings a binary carries and how much of that surface reads as
+# prose rather than as opaque data.
+defaults:
+  platforms: [windows, linux, macos]
+  for: [binaries]
+traits:
+  - id: high-string-count-pe
+    desc: PE contains many extracted strings
+    crit: baseline
+    conf: 0.9
+    for: [pe, dll]
+    if:
+      type: metrics
+      field: binary.string_count
+      min: 10000
+  - id: extreme-string-count
+    desc: Binary contains at least 90,000 strings
+    crit: baseline
+    conf: 0.95
+    size_max: 100000000
+    if:
+      type: metrics
+      field: binary.string_count
+      min: 90000
+  - id: very-high-string-count
+    desc: Binary contains at least 50,000 strings
+    crit: baseline
+    conf: 0.95
+    size_max: 100000000
+    if:
+      type: metrics
+      field: binary.string_count
+      min: 50000
+  # ELF type is exposed as the string value `elf.type` ("relocatable"/"exe"/
+  # "dyn"/"core"), not a numeric `elf.e_type` metric — the previous metrics query
+  # never matched any binary, leaving this (and every benign-context that uses it
+  # to exempt eBPF/.o objects) dead. Query the actual value fact.
+  - id: sentence-strings-20-plus
+    desc: Binary has 20+ sentence strings
+    crit: baseline
+    conf: 0.9
+    if:
+      type: metrics
+      field: binary.sentence_string_count
+      min: 20
+  - id: sentence-strings-1000-plus
+    desc: Binary contains at least 1,000 sentence strings
+    crit: baseline
+    conf: 0.95
+    for: [pe, dll]
+    if:
+      type: metrics
+      field: binary.sentence_string_count
+      min: 1000
+  - id: high-entropy-strings-450-plus
+    desc: At least 450 high-entropy strings
+    crit: baseline
+    conf: 0.95
+    for: [pe, dll]
+    if:
+      type: metrics
+      field: binary.high_entropy_string_count
+      min: 450
+  - id: average-string-length-200-plus
+    desc: Average string length exceeds 200 bytes
+    crit: baseline
+    conf: 0.95
+    for: [pe, dll]
+    if:
+      type: metrics
+      field: binary.avg_string_length
+      min: 200
+  - id: sentence-string-dominant
+    desc: Strings almost entirely natural-language
+    crit: notable
+    conf: 0.9
+    size_min: 1000000
+    if:
+      type: metrics
+      field: binary.sentence_string_ratio
+      min: 0.9
+  - id: high-entropy-cstring
+    desc: __cstring section entropy at least 4.5
+    crit: baseline
+    platforms: [macos]
+    for: [macho]
+    if:
+      type: section
+      substr: __cstring
+      entropy_min: 4.5
+    unless:
+      - id: metadata/library/math/native::bundled-math-native-library-context
+  - id: pe-short-readable-strings
+    desc: PE max readable string length <=40
+    crit: baseline
+    conf: 0.9
+    for: [pe]
+    if:
+      type: metrics
+      field: binary.max_string_length
+      max: 40
+  - id: near-zero-strings
+    desc: Binary with almost no readable strings
+    crit: notable
+    conf: 0.7
+    if:
+      type: metrics
+      field: binary.string_count
+      max: 5
+      min_size: 512
+  - id: help-usage-string
+    desc: CLI help or usage text
+    crit: baseline
+    conf: 0.9
+    if:
+      type: text
+      substr: "Try '%s --help'"
+  - id: many-strings-large-elf
+    desc: Large ELF with 500+ strings
+    crit: baseline
+    conf: 0.9
+    for: [elf]
+    size_min: 200000
+    if:
+      type: metrics
+      field: binary.string_count
+      min: 500
+  - id: minimal-string-count
+    desc: Minimal extracted string count
+    for: [macho]
+    platforms: [macos, ios]
+    crit: notable
+    conf: 0.75
+    size_min: 100000
+    if:
+      id: metadata/binary/code/density::minimal-string-count
+  - id: extreme-minimal-strings
+    desc: Extremely minimal string count
+    for: [macho]
+    platforms: [macos, ios]
+    crit: suspicious
+    conf: 0.85
+    size_min: 100000
+    if:
+      type: metrics
+      field: binary.string_count
+      max: 20
+    downgrade:
+      any:
+        - id: metadata/signed/platform::apple
+    unless:
+      - type: metrics
+        field: functions.count
+        min: 100
+      - type: metrics
+        field: exports.count
+        min: 4
+  # The ratio treats __cstring size as a proxy for "how many strings does this
+  # binary have". That holds for C, but C++ -- Qt above all -- interns its
+  # literals in meta-object tables that land in __const/__DATA, so a perfectly
+  # ordinary Qt plugin can carry a 20-byte __cstring beside 10KB of __text
+  # while still exposing hundreds of recoverable strings. The string_count
+  # guard below is what actually says "not stripped": the sibling
+  # extreme-minimal-strings calls <=20 strings minimal, so a binary with 100+
+  # is not hiding them, whatever its section layout.
+  - id: native-short-readable-string-surface
+    desc: Native binary has only short readable strings
+    for: [elf]
+    platforms: [linux]
+    crit: baseline
+    conf: 0.85
+    if:
+      type: metrics
+      field: binary.max_string_length
+      max: 40
+composite_rules:
+  - id: high-string-count-pe-no-exceptions
+    desc: Non-compiler PE with very high string count
+    crit: notable
+    conf: 0.9
+    all:
+      - id: high-string-count-pe
+    unless:
+      - id: metadata/lang/compiler/systems::go-buildinfo
+      - id: metadata/lang/compiler/systems::go-pe-symtab
+      - id: well-known/app/
+      - id: well-known/lib/
+      - id: well-known/tool/
+      - type: trait
+        id: metadata/file/extension/identity::linux-kernel-package-artifact-basename

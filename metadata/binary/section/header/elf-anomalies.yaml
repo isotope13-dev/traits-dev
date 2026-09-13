@@ -1,0 +1,103 @@
+# ELF section-table anomalies: counts that disagree with the header, duplicate
+# or absent sections, and notes the section table does not cover.
+defaults:
+  platforms: [linux, android]
+  for: [elf]
+  crit: notable
+  conf: 0.95
+traits:
+  - id: elf-entry-in-nonstandard-section
+    desc: ELF entry in an unusually named section
+    # Entry resolves into a section outside the toolchain code-section set
+    # (`.attack`, a random appended name). Benign entries land in `.text`
+    # (occasionally `.init`/`.plt`); an entry elsewhere is the redirection
+    # tell shared by note-cavity, EPO, and appending infectors.
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: elf.entry_section
+      regex: '.+'
+      not:
+        - regex: '^\.?(text|rdata|data|bss|rodata|idata|edata|pdata|xdata|tls|reloc|rsrc|debug|init|fini|plt|got|got\.plt|plt\.got|plt\.sec|dynamic|dynsym|dynstr|symtab|strtab|shstrtab|interp|note|hash|gnu\.hash|gnu\.version|gnu\.version_r|gnu\.version_d|eh_frame|eh_frame_hdr|comment|ARM\.exidx|ARM\.extab|ARM\.attributes|init_array|fini_array|preinit_array|ctors|dtors|tbss|tdata|tm_clone_table|data\.rel\.ro|got\.plt\.sec|stab|stabstr|drectve|didat|__text|__data|__bss|__cstring|__const|__objc_classlist|__objc_classrefs|__objc_data|__objc_classname|__objc_const|__objc_methname|__objc_methtype|__objc_selrefs|__objc_imageinfo|__la_symbol_ptr|__nl_symbol_ptr|__got|__stubs|__stub_helper|__cfstring|__unwind_info|__eh_frame|__info_plist|__swift5_proto|__swift5_types|__swift5_fieldmd|__swift5_typeref|__swift5_reflstr|__swift5_assocty|__swift5_capture|__swift5_builtin|__swift5_acfuncs|__swift5_mpenum|__llvm_covmap|__llvm_covfun|__llvm_prf_cnts|__llvm_prf_data|__llvm_prf_names|__llvm_prf_vnds)$'
+    unless:
+      - id: metadata/binary/vendor/
+      - id: metadata/file/extension/identity::linux-firmware-blob-basename
+      - id: well-known/tool/sysadmin/syslinux/
+  - id: elf-note-uncovered
+    desc: ELF note section lacks a note segment
+    # A loaded (SHF_ALLOC) note section reachable through no PT_NOTE /
+    # PT_GNU_PROPERTY header. A note-cavity infector produces this by
+    # repurposing the note's program header — but so do benign cross /
+    # non-GNU toolchains (Go-on-OpenBSD leaves `.note.gnu.build-id`
+    # between the Go and openbsd PT_NOTEs, covered by neither). Ambiguous
+    # alone, so keep it as a component: intent comes from the note-cavity
+    # composite, beside the grafted exec segment and redirected entry.
+    crit: baseline
+    conf: 0.9
+    if:
+      type: metrics
+      field: elf.uncovered_note_count
+      min: 1
+  - id: elf-build-id-uncovered
+    desc: ELF build-id note lacks a note segment
+    # The GNU build-id note is present in the section table but reachable
+    # through no note program header — the kernel/coredump/debuginfod path
+    # sees no ID while the section still carries it. Strong corroboration
+    # for note-cavity infection ("identity retained, execution
+    # redirected"), but benign Go/OpenBSD/cross layouts also strand the
+    # build-id note. Keep the structural observation as a component.
+    crit: baseline
+    conf: 0.92
+    if:
+      type: metrics
+      field: elf.build_id_uncovered
+      min: 1
+  - id: elf-section-header-count-mismatch
+    desc: "ELF e_shnum mismatches section count"
+    crit: notable
+    conf: 0.95
+    if:
+      type: metrics
+      field: elf.section_header_count_mismatch
+      min: 1
+    unless:
+      - id: well-known/tool/development/toolchain/patchelf::patchelf-test-fixture
+  - id: elf-gnu-stack-section-absent
+    desc: ELF .note.GNU-stack section absent
+    crit: baseline
+    conf: 0.7
+    if:
+      type: metrics
+      field: elf.no_gnu_stack
+      min: 1
+  - id: elf-duplicate-section-name
+    desc: ELF section name appears more than once
+    crit: notable
+    conf: 0.9
+    if:
+      type: metrics
+      field: elf.duplicate_section_name_count
+      min: 1
+    unless:
+      - type: basename
+        regex: '(?i)\.gox$'
+      - id: metadata/package/testing/presence/path::go-tools-testdata-directory-path
+      - id: well-known/lib/format/golang-x-tools/
+      # Legacy Solaris JNA builds contain two legitimate .eh_frame sections:
+      # a Solaris unwind table and an ordinary PROGBITS table.
+      - id: well-known/lib/platform/jna::native-dispatch-identity
+
+  # === Tier A — modern toolchain / hardening posture ===
+  - id: elf-compressed-debug-sections
+    desc: 'ELF carries SHF_COMPRESSED sections'
+    crit: baseline
+    if:
+      type: metrics
+      field: elf.compressed_sections_count
+      min: 1
+  # ELF32 has the smallest complete ELF header at 52 bytes. Anything below
+  # that bound cannot encode an executable image; it is a fragment, corrupt
+  # artifact, or deliberately invalid parser test case. The known-header
+  # exclusion also keeps this in the dependency pass, which evaluates even
+  # when stringless sub-100-byte files skip the normal atomic pass.

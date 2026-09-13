@@ -1,0 +1,151 @@
+# The job runs an interpreter -- shell, zsh, osascript, python.
+defaults:
+  platforms: [macos]
+  for: [plist]
+traits:
+  - id: shell-program
+    desc: Shell as launchd Program (/bin/sh)
+    crit: notable
+    conf: 0.7
+    attack: T1059.004
+    if:
+      type: value
+      path: Program
+      regex: ^/bin/(sh|shell|zsh)$
+  - id: embedded-plist-shell
+    desc: Embedded plist template with shell program
+    crit: notable
+    conf: 0.8
+    for:
+      - c
+      - macho
+    if:
+      type: text
+      regex: <key>Program</key>\s*<string>/bin/(sh|zsh|shell)</string>
+  - id: embedded-plist-shell-sh
+    desc: Embedded plist /bin/sh string element
+    crit: notable
+    conf: 0.8
+    for:
+      - c
+      - macho
+    if:
+      type: text
+      substr: <string>/bin/sh</string>
+  - id: embedded-plist-osascript
+    desc: Embedded plist with osascript program
+    crit: notable
+    conf: 0.85
+    for:
+      - macho
+    if:
+      type: text
+      regex: <string>(/usr/bin/)?osascript</string>
+    downgrade:
+      any:
+        - id: metadata/signed/platform::apple
+  - id: embedded-plist-zsh-programargs
+    desc: Embedded launchd ProgramArguments uses zsh
+    crit: notable
+    conf: 0.9
+    for:
+      - macho
+      - c
+    if:
+      type: text
+      regex: <key>ProgramArguments</key>.{0,120}<string>/bin/zsh</string>
+  - id: progargs-python-script
+    desc: ProgramArguments[0] Python script
+    crit: component
+    conf: 0.84
+    if:
+      type: value
+      path: ProgramArguments[0]
+      regex: (?i)\.py$
+  - id: progargs-python-interpreter
+    desc: ProgramArguments[0] Python interpreter
+    crit: notable
+    conf: 0.84
+    if:
+      type: value
+      path: ProgramArguments[0]
+      regex: (^|/)python[0-9.]*$
+  - id: progargs1-user-dotdir-python
+    desc: "ProgramArguments[1] Python in user dot dir"
+    crit: notable
+    conf: 0.82
+    if:
+      type: value
+      path: ProgramArguments[1]
+      regex: ^/Users/[^/]{1,80}/\.[^/]{1,80}/.{1,160}\.py$
+composite_rules:
+  - id: launchd-embedded-zsh-agent
+    desc: Embedded RunAtLoad LaunchAgent starts zsh
+    crit: hostile
+    conf: 0.95
+    attack: T1543.004,T1059.004
+    for:
+      - macho
+      - c
+    all:
+      - id: objectives/persistence/system/launchd/location::launch-agents
+      - id: objectives/persistence/system/launchd/bootstrap::embedded-plist-runatload
+      - id: micro-behaviors/os/service/plist::plist-programarguments-key
+      - id: micro-behaviors/process/create/shell/spawn::bin-zsh-binary
+    unless:
+      - id: metadata/signed/platform::apple
+      - id: objectives/supply-chain/trojanized/app/debug-probe/
+  - id: launchd-js-runatload-installer
+    desc: JavaScript installs RunAtLoad LaunchAgent
+    crit: notable
+    conf: 0.93
+    attack: T1543.004
+    for: [javascript]
+    scope: archive
+    all:
+      - id: objectives/persistence/system/launchd/location::launch-agents
+      - id: objectives/persistence/system/launchd/bootstrap::embedded-plist-runatload
+      - id: micro-behaviors/os/service/plist::plist-programarguments-key
+    any:
+      - id: micro-behaviors/os/service/control::launchctl-command
+      - id: micro-behaviors/fs/write/file/full::write-file-sync
+    unless:
+      # ADHDev exposes this as an explicit, documented service-install
+      # command; its package identity is a benign context for the behavior.
+      - id: well-known/app/ai/coding-agent/adhdev::adhdev-daemon-package
+      - id: well-known/app/system/freddie::benign-archive-context
+      - id: well-known/app/system/freddie::gateway-service-context
+      - id: well-known/app/ai/coding-agent/pixcode::benign-runtime-context
+      - id: well-known/app/ai/coding-agent/pixcode::benign-archive-context
+      - id: well-known/app/ai/coding-agent/pixcode::daemon-manager-source
+      - id: well-known/app/ai/coding-agent/pixcode::archive-member-context
+      - id: well-known/app/ai/gateway/neurolink::benign-archive-context
+  - id: progargs-user-dotdir-python-script
+    desc: Launchd Python script from user dot directory
+    crit: notable
+    conf: 0.88
+    all:
+      - id: objectives/persistence/system/launchd/location::progargs-user-dotdir
+      - id: progargs-python-script
+  - id: progargs-user-dotdir-python-arg
+    desc: Launchd Python interpreter with user dot-directory script
+    crit: component
+    conf: 0.88
+    all:
+      - id: progargs-python-interpreter
+      - id: progargs1-user-dotdir-python
+  - id: launchd-osascript-dropper
+    desc: LaunchAgent persistence with osascript payload
+    crit: hostile
+    conf: 0.9
+    attack: T1543.004
+    for:
+      - macho
+    all:
+      - id: objectives/persistence/system/launchd/location::launch-agents
+      - id: micro-behaviors/os/service/control::launchctl-command
+      - id: embedded-plist-osascript
+    any:
+      - id: micro-behaviors/process/create/script/osascript::do-shell-script-binary
+      - id: micro-behaviors/process/create/script/osascript::pipe-osascript
+      - id: objectives/persistence/system/launchd/bootstrap::embedded-plist-runatload

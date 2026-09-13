@@ -1,0 +1,227 @@
+defaults:
+  platforms: [windows, unix]
+  for: [archive]
+  crit: baseline
+  conf: 0.9
+
+traits:
+  - id: npm-compressed-wrapper-parse-error
+    desc: npm gzip wrapper parse error
+    crit: baseline
+    conf: 0.95
+    for: [npm]
+    # A plain .tgz is also reported through the npm-compatible archive path.
+    # Require the package manifest before attributing the parser diagnostic to
+    # an NPM wrapper; otherwise every compressed tar fixture is mislabeled.
+    unless:
+      - type: value
+        path: package.json::name
+        exists: false
+    if:
+      type: metrics
+      field: parse.error_count
+      min: 1
+
+  - id: archive-parse-error
+    desc: Archive parser reported errors
+    crit: baseline
+    for: [archives]
+    unless:
+      - type: basename
+        regex: '(?i)\.(tar\.(gz|bz2|xz|zst)|t(gz|bz2|xz|zst))$'
+      # Cargo packages are gzip-wrapped tar archives; the generic archive
+      # parser can report a recoverable wrapper diagnostic for them even when
+      # the Cargo members were extracted successfully.
+      - type: basename
+        regex: '(?i)\.crate$'
+      # Package wrappers are identified before the generic tar pass.  Their
+      # wrapper-level parse diagnostic is expected and is not corruption.
+      - type: value
+        path: archive.format.kind
+        exact: pkg
+      - id: metadata/build/archive::source-archive-member
+      # ZIP-local exclusions (inert on other formats): keep the finding quiet
+      # when the diagnostic is explained by traversal-path content.
+      - type: raw
+        substr: ".."
+      - type: hex
+        pattern: "50 4B 03 04 [26] (2F|5C)"
+      - type: hex
+        pattern: "50 4B 03 04 [26] ?? 3A (2F|5C)"
+    if:
+      type: metrics
+      field: parse.error_count
+      min: 1
+
+  - id: high-entropy-archive
+    desc: Archive has near-maximum entropy
+    size_min: 1048576
+    unless:
+      - id: well-known/app/system/reasonix::source-archive-context
+      - id: well-known/app/system/maestro::source-archive-context
+      - id: metadata/permission/manifest::chrome-theme-archive
+    if:
+      type: metrics
+      field: file.entropy
+      min: 7.95
+
+  # Entropy and size are structural properties, not evidence that an archive
+  # was packed to defeat analysis. Intent-bearing archive rules combine this
+  # fact with a hazardous member type.
+  - id: tiny-high-entropy-rar
+    desc: Tiny RAR has high entropy
+    crit: baseline
+    conf: 0.9
+    for: [rar]
+    size_max: 16384
+    entropy_min: 7.0
+    if:
+      type: hex
+      pattern: "52 61 72 21 1A 07 01 00"
+      offset: 0
+
+  - id: archive-high-compression-expansion
+    desc: Archive member expands more than 100x
+    crit: notable
+    conf: 0.95
+    for: [archive, archives, zip]
+    if:
+      type: metrics
+      field: archive.zip_bomb_ratio
+      min: 100
+
+  - id: archive-many-compressed-members
+    desc: Archive has many members
+    crit: baseline
+    conf: 0.9
+    for: [archive, archives, zip]
+    if:
+      type: metrics
+      field: archive.file_count
+      min: 100
+
+  - id: archive-contains-executable-member
+    desc: Archive contains an executable member
+    crit: baseline
+    conf: 0.95
+    for: [archives]
+    if:
+      type: metrics
+      field: archive.executable_count
+      min: 1
+
+  # Several executables in one archive. A plain member count, so it is filed with
+  # the rest of the archive shape: a NuGet package shipping one library per
+  # target framework reaches four without meaning anything. The packing rules
+  # that care combine it with encrypted or misplaced members.
+  - id: archive-executable-member-cluster
+    desc: Archive contains several executable members
+    crit: notable
+    conf: 0.9
+    for: [archives]
+    if:
+      type: metrics
+      field: archive.executable_count
+      min: 4
+
+  - id: archive-misplaced-executable-member
+    desc: Archive executable in atypical path
+    crit: notable
+    conf: 0.9
+    for: [archive, archives, zip]
+    unless:
+      # Identified application bundles and installers may intentionally keep
+      # launchers at the archive root.
+      - id: metadata/file/archive::known-application-executable-archive-context
+      # Python wheels ship native extensions under the package directory.
+      - id: metadata/file/extension/identity::python-wheel-basename
+      # JNI bridge JARs conventionally bundle native libraries below
+      # platform/architecture directories.
+      - id: metadata/package/files/dependency::java-jni-nested-native-member
+      - id: metadata/file/archive::recognized-package-executable-context
+      # Ready-to-run macOS applications conventionally contain Mach-O files
+      # under their Contents subtree.
+      - id: metadata/package/files/archive-member::macos-app-bundle-member
+      # Ollama's ROCm ZIP ships signed runtime DLLs and GPU code objects below
+      # lib/ollama/rocm.
+      - id: well-known/app/ai/gateway/ollama::ollama-rocm-archive-layout
+      - id: rocm-experiment
+      # NuGet's managed-library layout is handled by the downgrade below.
+    downgrade:
+      any:
+        - id: metadata/file/archive::nupkg-managed-library-layout
+        - id: metadata/file/archive::nupkg-dotnet-tool-layout
+    if:
+      type: metrics
+      field: archive.misplaced_executable_count
+      min: 1
+
+  - id: archive-large-uncompressed-total
+    desc: Archive expands to large uncompressed size
+    crit: notable
+    conf: 0.92
+    for: [archive, archives, zip]
+    if:
+      type: metrics
+      field: archive.uncompressed_size
+      min: 1073741824
+
+composite_rules:
+  - id: recognized-package-executable-context
+    desc: Recognized package executable layout
+    crit: exception
+    conf: 0.98
+    any:
+      # Java JNI libraries conventionally live below OS/architecture paths.
+      - id: metadata/package/files/dependency::java-jni-native-library-member
+      # google/pprof source archives ship symbolization test fixtures.
+      - id: well-known/lib/development/pprof::binutils-test-fixture-member
+      # Docker source archives include executable CI and test helpers.
+      - id: well-known/app/infrastructure/docker::docker-source-archive-context
+
+  - id: known-application-executable-archive-context
+    desc: Identified standard application archive
+    crit: exception
+    conf: 0.99
+    scope: outer
+    for: [zip, 7z]
+    any:
+      - id: well-known/app/media/audacity/
+      - id: well-known/app/media/gimp/
+      - id: well-known/app/ai/media/comfyui/
+      - id: well-known/app/ai/gateway/textgen/
+      # HPRT driver downloads legitimately contain a root setup executable.
+      - id: well-known/app/system/drivers/hanin::hprt-driver-setup-filename
+      # RuExcel portable archives intentionally include Manager.exe.
+      - id: well-known/app/productivity/ruexcel::ruexcel-archive-manager-member
+
+  - id: nupkg-managed-library-layout
+    desc: NuGet package uses standard managed-library layout
+    crit: exception
+    conf: 0.98
+    for: [nupkg]
+    all:
+      - id: metadata/package/files/nuget::nupkg-managed-library-member
+    any:
+      - id: metadata/package/files/nuget::nupkg-single-executable-member
+      - id: metadata/package/files/nuget::nupkg-multiple-executable-members
+
+  - id: nupkg-dotnet-tool-layout
+    desc: NuGet package uses standard .NET tool layout
+    crit: exception
+    conf: 0.98
+    scope: outer
+    for: [nupkg]
+    all:
+      - id: metadata/package/manifest/entrypoint::dotnet-tool-command-manifest
+    any:
+      - id: metadata/package/files/nuget::nupkg-single-executable-member
+      - id: metadata/package/files/nuget::nupkg-multiple-executable-members
+
+  - id: rocm-experiment
+    desc: ROCm layout experiment
+    crit: exception
+    conf: 0.99
+    all:
+      - id: well-known/app/ai/gateway/ollama::ollama-rocm-runtime-member
+      - id: well-known/app/ai/gateway/ollama::ollama-rocm-kernel-member

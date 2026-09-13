@@ -1,0 +1,113 @@
+defaults:
+  platforms: [linux, macos, windows]
+  for: [javascript, typescript]
+  attack: T1059
+traits:
+- id: node-socket-pipe-shell-stdin
+  desc: Node socket piped into spawned shell stdin
+  crit: suspicious
+  conf: 0.92
+  platforms: [openwrt]
+  if:
+    type: text
+    substr: sock.pipe(shell.stdin)
+- id: node-shell-stdout-pipe-socket
+  desc: Spawned shell stdout piped to Node socket
+  crit: suspicious
+  conf: 0.92
+  platforms: [openwrt]
+  if:
+    type: text
+    substr: shell.stdout.pipe(sock)
+composite_rules:
+- id: node-pipe-shell-stdio-to-socket
+  desc: Node sock.pipe to child stdio
+  crit: hostile
+  conf: 0.98
+  mbc: B0030.002
+  all:
+  - id: micro-behaviors/communications/socket/connect::net-connect-port
+  - id: micro-behaviors/process/interpreter/shell::bin-sh
+  any:
+  - id: micro-behaviors/process/create/shell/bridge/
+  - id: micro-behaviors/process/create/exec::exec-api-call
+  unless:
+  - id: well-known/tool/detection/llm-scanner/
+- id: node-spawn-bin-sh-pipe-net
+  desc: Node spawn /bin/sh paired with socket pipe
+  crit: hostile
+  conf: 0.97
+  mbc: B0030.002
+  all:
+  - id: micro-behaviors/process/create/shell/bridge/
+  - id: micro-behaviors/process/interpreter/shell::bin-sh
+  - id: micro-behaviors/communications/socket/connect::net-connect-port
+  unless:
+  - id: well-known/tool/detection/llm-scanner/
+# Socket().connect(port, host) + cp.spawn('/bin/bash') + stdio pipes —
+# common condensed Node reverse-shell shape that skips net.connect/bin/sh.
+- id: node-bash-socket-stdio-reverse-shell
+  desc: Node bash spawn piped over Socket.connect
+  crit: hostile
+  conf: 0.98
+  mbc: B0030.002
+  all:
+  - id: micro-behaviors/process/create/shell/spawn::node-spawn-bash-shell
+  - id: micro-behaviors/communications/socket/connect::node-net-socket-connect
+  - id: micro-behaviors/process/fd/stdio::node-stream-to-stdin-pipe
+  - id: micro-behaviors/process/fd/stdio::node-child-output-to-stream-pipe
+  unless:
+  - id: well-known/tool/detection/llm-scanner/
+- id: node-createconnection-stdio-reverse-shell
+  desc: Node net.createConnection stdio reverse shell
+  crit: hostile
+  conf: 0.98
+  mbc: B0030.002
+  platforms: [openwrt]
+  all:
+  - id: micro-behaviors/communications/socket/connect::net-create-connection-call
+  - id: node-socket-pipe-shell-stdin
+  - id: node-shell-stdout-pipe-socket
+  - id: micro-behaviors/process/interpreter/shell::bin-sh
+  unless:
+  - id: well-known/tool/detection/llm-scanner/
+# A custom decoder hides the net.Socket constructor, connect method, shell
+# executable, and stdio property names from ordinary source matchers. The
+# structural legs still require an obfuscated computed constructor/call
+# cluster, Node child-process creation, and a computed module load in one file.
+- id: node-obfuscated-computed-stream-reverse-shell
+  desc: Obfuscated Node child-process stream reverse shell
+  crit: hostile
+  conf: 0.99
+  mbc: B0030.002
+  attack: T1059.007,T1095
+  all:
+  - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::a0-string-decoder-entrypoint
+  - id: micro-behaviors/process/create/spawn::spawn-call
+  - id: micro-behaviors/os/module/dynamic-load::node-computed-require-call
+  - id: micro-behaviors/data/source/property/computed::js-obfuscated-computed-call-cluster
+  - id: micro-behaviors/data/source/property/computed::js-computed-constructor
+  near_bytes: 24576
+  unless:
+  - id: well-known/tool/detection/llm-scanner/
+# An extension whose activation code pipes a child-process shell both ways
+# over a TCP socket. The individual pipe rules are plumbing; the extension
+# wrapper is what makes it a supply-chain attack -- the victim installs a
+# theme or formatter and gets a reverse shell.
+#
+# Worked example: the CSF-RED / Zeron-CySec / seHunt VS Code extensions
+# whose extension.js execs a shell and connects it to a remote socket.
+- id: extension-reverse-shell-pipe
+  desc: Extension activation pipes shell over socket
+  crit: hostile
+  conf: 0.98
+  mbc: B0030.002
+  attack: T1059,T1195.002
+  scope: archive
+  # The pipe traits are file-scoped text matchers that do not fold to the
+  # archive level; state both halves directly.
+  all:
+  - id: metadata/library/vscode::vscode-extension-marker
+  - id: micro-behaviors/process/create/shell/bridge::child-process-require
+  - id: micro-behaviors/process/fd/stdio::node-stream-pipe
+  - id: objectives/command-and-control/reverse-shell/stdio::node-socket-pipe-shell-stdin

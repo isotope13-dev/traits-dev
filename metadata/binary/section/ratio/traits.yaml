@@ -1,0 +1,341 @@
+# Relative section sizes: which section dominates the image, how the code and
+# string sections compare, and section counts.
+defaults:
+  platforms: [windows, linux, macos]
+  for: [binaries]
+traits:
+  - id: four-section-pe
+    desc: PE with exactly four sections
+    crit: baseline
+    conf: 0.8
+    for: [pe]
+    if:
+      type: metrics
+      field: sections.count
+      min: 4
+      max: 4
+  - id: very-high-section-count
+    desc: Binary contains at least 200 sections
+    crit: notable
+    conf: 0.75
+    if:
+      type: metrics
+      field: sections.count
+      min: 200
+  - id: few-sections
+    desc: Very few sections (merged/stripped)
+    crit: notable
+    conf: 0.6
+    if:
+      type: metrics
+      field: sections.count
+      max: 3
+    unless:
+      - id: metadata/binary/resource/
+      - id: metadata/binary/framework/
+  - id: single-section-pe
+    desc: PE contains exactly one section
+    crit: baseline
+    conf: 0.9
+    for: [pe]
+    if:
+      type: metrics
+      field: sections.count
+      min: 1
+      max: 1
+  - id: pe-no-executable-sections
+    desc: PE has no executable sections
+    crit: notable
+    conf: 0.95
+    for: [pe, dll]
+    if:
+      type: metrics
+      field: sections.executable_count
+      max: 0
+    unless:
+      # Malformed PE section tables can make the aggregate metric disagree
+      # with direct section permissions. A W+X section is executable.
+      - id: metadata/hardening/memory::wx-section
+  - id: pe-largest-section-under-ten-percent
+    desc: Largest PE section below ten percent
+    crit: notable
+    conf: 0.97
+    for: [pe]
+    size_min: 1048576
+    if:
+      type: metrics
+      field: binary.largest_section_ratio
+      max: 0.1
+    unless:
+      # Self-extracting installers and bundled runtimes legitimately carry
+      # most shipped bytes outside the mapped PE sections.
+      - id: metadata/binary/installer/
+      - id: metadata/binary/framework::dotnet-runtime-host-stub
+      - id: well-known/app/utility/screentogif::screentogif-app-context
+      - id: well-known/app/system/miktex::miktex-setup-wizard
+      - id: well-known/dual-use/remote-admin/screenconnect::screenconnect-component-detected
+  - id: dominant-section
+    desc: Single section dominates binary layout
+    crit: notable
+    conf: 0.6
+    for: [pe, elf, macho]
+    if:
+      type: metrics
+      field: binary.largest_section_ratio
+      min: 0.95
+    unless:
+      - type: basename
+        regex: \.(mun|rll)$
+      # Single-section dominance is structurally normal for a .NET assembly —
+      # the IL, metadata, and managed resources all live in one .text section
+      # (ratio ~0.997), so this is never a packing signal there. Guard on
+      # dotnet-metadata (BSJB in .text), which fires on every real managed
+      # assembly; the previous guard dotnet-assembly under-fires on managed PEs
+      # (two of its legs match in `section: rdata`, which .NET PEs lack).
+      - id: metadata/binary/framework::dotnet-metadata
+      - id: metadata/binary/resource/
+      - type: metrics
+        field: exports.count
+        min: 50
+      - id: metadata/binary/section/ratio::section-exceeds-file-size
+  - id: section-exceeds-file-size
+    desc: 'PE section declared larger than file'
+    crit: baseline
+    conf: 0.95
+    for: [pe, dll]
+    if:
+      type: metrics
+      field: binary.largest_section_ratio
+      min: 1.0
+    unless:
+      - id: metadata/lang/compiler/systems::go-pe-binary-context
+  - id: pe-section-overflow-present
+    desc: PE section extends beyond file
+    crit: notable
+    conf: 0.9
+    ref: sha256:b38ed78c2328a41c8a08e3b6d508edff3ca75b8101cb517b0891be47a14a48e3
+    for: [pe, dll]
+    if:
+      type: metrics
+      field: pe.section_overflow_count
+      min: 1
+    unless:
+      - id: metadata/lang/compiler/systems::go-pe-binary-context
+  - id: multiple-pe-section-overflows
+    desc: Multiple PE sections extend beyond file
+    crit: notable
+    conf: 0.9
+    for: [pe, dll]
+    if:
+      type: metrics
+      field: pe.section_overflow_count
+      min: 2
+    unless:
+      - id: metadata/lang/compiler/systems::go-pe-binary-context
+  - id: pe-near-total-code-data
+    desc: PE code-to-data ratio at least 0.99
+    crit: notable
+    conf: 0.94
+    for: [pe]
+    if:
+      type: metrics
+      field: binary.code_to_data_ratio
+      min: 0.99
+    unless:
+      - id: metadata/binary/framework::dotnet-metadata
+      - id: metadata/lang/compiler/systems::go-binary
+      - id: metadata/lang/compiler/systems::go-pe-symtab
+  - id: largest-section-dominance
+    desc: Mach-O section dominates image
+    for: [macho]
+    platforms: [macos, ios]
+    crit: notable
+    conf: 0.7
+    if:
+      type: metrics
+      field: binary.largest_section_ratio
+      min: 0.80
+    unless:
+      - id: well-known/lib/runtime/pyo3::pyo3-extension-runtime
+      # Virtual zero-fill sections do not occupy this proportion on disk.
+      - type: section
+        regex: 'bss$'
+        length_min: 1048576
+      - type: section
+        regex: 'common$'
+        length_min: 1048576
+  - id: macho-sparse-cstring-section
+    desc: Sparse Mach-O __cstring section
+    for: [macho]
+    platforms: [macos, ios]
+    crit: notable
+    conf: 0.8
+    size_min: 100000
+    size_max: 5242880
+    if:
+      type: section
+      substr: '__cstring'
+      compare_to: total
+      size_ratio_min: 0.0000001
+      size_ratio_max: 0.002
+    not:
+      - regex: \.cpython-\d+-darwin\.so$
+      - regex: '\.a$'
+    unless:
+      - id: metadata/signed/platform::apple
+      - type: path
+        regex: '(^|/)libswift[^/]*\.dylib$'
+  - id: macho-extreme-sparse-cstring-section
+    desc: Extremely sparse Mach-O __cstring section
+    for: [macho]
+    platforms: [macos, ios]
+    crit: baseline
+    conf: 0.9
+    size_min: 100000
+    if:
+      type: section
+      substr: '__cstring'
+      compare_to: total
+      # Require a real, non-empty __cstring section. Parser fallback reports
+      # absent sections as size zero; without a lower bound this trait called
+      # DWARF-only debug companions "extremely sparse" string sections.
+      size_ratio_min: 0.0000001
+      size_ratio_max: 0.0005
+    unless:
+      - id: metadata/file/extension/bundle::bundle-data-file
+      - id: metadata/file/extension/identity::macho-so-extension
+      - id: metadata/binary/framework/
+      - id: metadata/lang/compiler/systems/
+      - id: metadata/signed/platform::apple
+      - id: metadata/package/files/runtime::benign-native-library-context
+      - id: well-known/tool/reverse-engineering/frida/
+      - id: well-known/lib/runtime/jvm::macos-java-launcher
+      - type: path
+        regex: '\.a$'
+  - id: macho-small-text-section-ratio
+    desc: Mach-O text section under 5%
+    for: [macho]
+    platforms: [macos, ios]
+    crit: notable
+    conf: 0.95
+    if:
+      type: section
+      exact: __text
+      compare_to: total
+      # Distinguish a small real code section from parser fallback reporting
+      # an absent section as size zero.
+      size_ratio_min: 0.0000001
+      size_ratio_max: 0.05
+  - id: large-data-section-ratio
+    desc: Large Mach-O data section ratio
+    for: [macho]
+    platforms: [macos, ios]
+    crit: baseline
+    conf: 0.7
+    if:
+      type: section
+      exact: __data
+      compare_to: total
+      size_ratio_min: 0.03
+  - id: data-larger-than-cstring
+    desc: Data section larger than strings
+    for: [macho]
+    platforms: [macos, ios]
+    crit: notable
+    conf: 0.7
+    if:
+      id: metadata/binary/code/density::data-larger-than-cstring
+    unless:
+      - id: metadata/signed/platform::apple
+      - type: basename
+        regex: '\.cpython-\d+-darwin\.so$'
+      - type: metrics
+        field: binary.string_count
+        min: 1000
+  - id: data-dominates-cstring
+    desc: Data section dominates string section
+    for: [macho]
+    platforms: [macos, ios]
+    crit: suspicious
+    conf: 0.85
+    if:
+      type: section
+      substr: '__data'
+      compare_to: __cstring
+      size_ratio_min: 200
+    unless:
+      - id: metadata/signed/platform::apple
+      - type: basename
+        regex: '\.cpython-\d+-darwin\.so$'
+      - type: basename
+        regex: '^universalJavaApplicationStub(\.(arm64|x86_64))?$'
+      - type: metrics
+        field: binary.string_count
+        min: 1000
+      - id: well-known/tool/sysadmin/par-launcher::par-env-vars
+  - id: text-dominates-cstring
+    desc: Code section dominates string section
+    for: [macho]
+    platforms: [macos, ios]
+    crit: suspicious
+    conf: 0.8
+    if:
+      type: section
+      substr: '__text'
+      compare_to: __cstring
+      size_ratio_min: 500
+    unless:
+      - id: metadata/signed/platform::apple
+      - type: metrics
+        field: exports.count
+        min: 4
+      - type: metrics
+        field: binary.string_count
+        min: 100
+      - type: metrics
+        field: exports.count
+        min: 20
+      - type: metrics
+        field: macho.function_starts_count
+        min: 100
+      - type: basename
+        regex: \.cpython-\d+-darwin\.so$
+  - id: extreme-text-to-string-ratio
+    desc: Extreme code-to-string ratio
+    for: [macho]
+    platforms: [macos, ios]
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: section
+      substr: '__text'
+      compare_to: __cstring
+      size_ratio_min: 1000
+    unless:
+      - id: metadata/signed/platform::apple
+      - type: basename
+        regex: '\.cpython-\d+-darwin\.so$'
+      - type: metrics
+        field: exports.count
+        min: 4
+      - type: metrics
+        field: binary.string_count
+        min: 100
+      - type: basename
+        regex: \.cpython-\d+-darwin\.so$
+composite_rules:
+  - id: dominant-section-benign-build-context
+    desc: Benign dominant-section build context
+    crit: baseline
+    conf: 0.85
+    any:
+      - id: metadata/binary/vendor::common-fp-context
+      - id: metadata/binary/layout/addon::rust-node-api-native-addon
+  - id: large-four-section-pe
+    desc: Large PE with four standard sections
+    crit: notable
+    conf: 0.82
+    for: [pe]
+    all:
+      - id: metadata/binary/layout/size::large-file-1mb
+      - id: four-section-pe

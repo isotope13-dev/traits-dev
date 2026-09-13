@@ -1,0 +1,76 @@
+# An install hook that writes files into the project that installed it.
+#
+# The sibling rules in this directory catch the escape spelled in the manifest
+# (`cd ../.. && npm i ...`). This one catches it spelled in the hook's own code:
+# the script resolves the consumer's checkout -- `process.cwd()` or npm's
+# `INIT_CWD`, both of which point outside the package's folder in node_modules
+# -- joins a path under it, and writes there.
+#
+# A package's own build step has no use for that directory. It compiles its own
+# sources, under `__dirname`, and exits; the counterpart atom for that shape is
+# fs/path/construct::path-join-dirname and it is baseline precisely because it
+# stays inside the package. Rooting the path at the invocation directory is the
+# boundary crossing, and the write is what makes it an edit to a stranger's
+# repository rather than a lookup.
+#
+# What lands there is the attacker's free variable and does not change the
+# shape: a CI workflow, a git hook, an `.npmrc` pointing at another registry, a
+# line appended to an agent instruction file. So this stops at suspicious and
+# names the mechanism; the directories that model specific payloads
+# (config-injection/, dependency-injection/) raise it when they recognise one.
+#
+# Written against the mechanism rather than a package: any lifecycle script
+# (preinstall, install, postinstall, prepare) that builds a path from the
+# invocation root and writes it. Ecosystems other than npm have the same shape
+# -- a setup.py build hook calling os.getcwd() -- and belong here as siblings
+# when their atoms exist.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1195.002
+  mbc: B0024
+
+composite_rules:
+  - id: install-hook-writes-into-consumer-tree
+    desc: Install hook writes into the consumer project
+    crit: suspicious
+    conf: 0.9
+    # Every leg has to be the same script: a package may perfectly well read
+    # the invocation directory in one file and write its own output in another.
+    scope: file
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/local-script::postinstall-js-file
+      - id: micro-behaviors/fs/write/file/full::node-write-file-sync-call
+    # The invocation root reaches the write either directly, as an argument to
+    # the join, or through one binding (`const root = process.cwd()`). Cleave's
+    # call facts carry the argument as a bare identifier, so the binding form is
+    # not recoverable by matching the join alone; naming the anchor separately
+    # covers both spellings without asserting a data-flow edge the analysis has
+    # not established. The install-hook and write legs carry the specificity.
+    any:
+      - id: micro-behaviors/fs/path/construct::invocation-root-path-join
+      - id: micro-behaviors/fs/path/self::cwd-reference
+      - id: micro-behaviors/os/env/read::npm-init-cwd-read
+
+  # A hook that asks whether it is running inside its own package and exits if
+  # it is has drawn a line between the publisher's machine and everyone else's.
+  # The benign reading is "don't run during our own build", and that is usually
+  # what it means -- but it is also the cheapest possible targeting gate, and it
+  # guarantees the behaviour never fires in the one environment whose owner
+  # would recognise it. `npm_package_name` is npm's answer to "whose install is
+  # this"; comparing it to a literal and leaving is the whole pattern.
+  #
+  # Notable on its own: the gate says nothing about what is being gated. It
+  # earns its place by making the composites above readable -- a hook that both
+  # excuses itself from its own tree and writes into everyone else's has
+  # described its audience.
+  - id: install-hook-skips-own-package
+    desc: Install hook exits inside its own package
+    crit: notable
+    conf: 0.88
+    scope: file
+    near_lines: 4
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/local-script::postinstall-js-file
+      - id: micro-behaviors/os/env/package-manager::npm-package-info
+      - id: micro-behaviors/process/exit/terminate::js-process-exit-zero

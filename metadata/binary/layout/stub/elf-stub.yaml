@@ -1,0 +1,73 @@
+defaults:
+  platforms: [linux, android]
+  for: [elf]
+
+# "Tiny file" is the whole premise of the composite below, but the only bound
+# on it was size_max: 131072 — 128 KB is not tiny, and neither leg measures the
+# file being small in any other way. `tiny-backed-load-segments` reads the *max*
+# LOAD filesz, which a modern `-z separate-code` link keeps small per segment
+# even for a normally built object (four LOAD segments here, 1696 bytes at the
+# largest), and `small-elf-large-memory-image` reads memsz, which any static
+# buffer inflates. OpenJDK's jtreg JVMTI test agent libTestUnloadedClass.so hit
+# both: a 118 KB .so that is ~100 KB of DWARF around 1.3 KB of code, reserving
+# 800 KB of .bss for one `static ring_buffer`. A stub with under 2 KB of
+# file-backed LOAD content holds one or two KB of real code, so 32 KB still
+# leaves several times the room such a file needs — including the trojanized
+# httpd wrapper in objectives/supply-chain/trojanized/backdoor, the one consumer
+# of this composite.
+traits:
+  - id: tiny-backed-load-segments
+    desc: ELF LOAD segments have minimal file backing
+    # A small, normally linked ELF can legitimately have tiny LOAD segments.
+    # Suspicious intent requires the companion large-memory-image signal below.
+    crit: notable
+    conf: 0.9
+    size_min: 8192
+    size_max: 32768
+    if:
+      type: metrics
+      field: elf.load_segment_max_file_size
+      min: 1
+      max: 2048
+  - id: small-elf-large-memory-image
+    desc: Small ELF reserves large memory image
+    # Large BSS-backed tables are normal in compact utilities (for example,
+    # compressors and lookup-heavy tools).  Keep this as a notable layout
+    # observation; the suspicious interpretation requires the companion
+    # tiny-backed-load-segments composite below.
+    crit: notable
+    conf: 0.92
+    size_max: 32768
+    if:
+      type: metrics
+      field: elf.load_segment_max_memory_size
+      min: 524288
+composite_rules:
+  - id: memory-backed-stub-layout
+    desc: ELF maps large memory image from tiny file
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: tiny-backed-load-segments
+      - id: small-elf-large-memory-image
+
+  # Carrier formats and build artifacts that hold a second ELF image as part of
+  # their normal construction, so an ELF header at a non-zero offset carries no
+  # polyglot signal. Grouped here so the appended-ELF traits in
+  # objectives/anti-static/polyglot/format/ reference one condition instead of
+  # repeating the same carve-outs.
+  - id: elf-image-carried-by-design
+    desc: Carrier format that holds an ELF image by construction
+    crit: component
+    conf: 0.99
+    for: [binaries]
+    platforms: [linux, macos, windows]
+    any:
+      # Cosmopolitan APE builds are ELF+PE+shell polyglots by definition.
+      - id: metadata/binary/linking/runtime::ape-binary-marker
+      # NVIDIA GSP firmware blobs wrap a full ELF image.
+      - id: well-known/app/system/drivers/nvidia::gsp-firmware-embedded-elf-path
+      - id: well-known/app/utility/nnn::nnn-icons-static-basename
+      # Go's parser test suites ship intentionally-crafted polyglot/appended-ELF
+      # fixtures under go/src/**/testdata.
+      - id: well-known/tool/development/toolchain/go-toolchain::go-toolchain-source-path

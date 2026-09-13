@@ -1,5 +1,5 @@
 defaults:
-  for: [oledoc]
+  for: [msi, oledoc]
   platforms: [windows]
   attack: T1219
   size_max: 50000000
@@ -20,3 +20,60 @@ composite_rules:
   - id: metadata/package/files/msi::msi-ninite-agent-subject-summary
   - id: metadata/package/files/msi::msi-zoho-assist-title
   - id: metadata/package/files/msi::msi-screenconnect-creator-summary
+  - id: well-known/dual-use/remote-admin/logmein-resolve::logmein-resolve-installer
+
+# The same package, built for entry with nobody present.
+#
+# `remote-management-agent-msi-package` above only says which product an
+# installer carries, because deploying a remote-support agent is ordinary
+# administration. What raises it is the vendor's own summary calling the build
+# unattended: that variant registers a service and accepts an inbound session
+# without the logged-on user approving it, so installing it -- once, silently,
+# from a file that arrived by whatever route -- leaves a standing inbound path
+# onto the host. It is the MSI-packaged equivalent of the `--set-password`
+# and `--silent --start-with-win` switches in unattended.yaml, and it was the
+# one shape those script-facing rules could not see, because there is no script:
+# the provisioning is baked into the package.
+#
+# Suspicious. A managed estate deploys unattended agents deliberately and at
+# scale; the composites in unattended.yaml supply the legs -- a bare-IP download
+# host, a hidden self-elevating launcher, a second tunnel -- that make a
+# specific deployment hostile.
+- id: unattended-remote-agent-msi-package
+  desc: MSI installs an unattended remote-access agent
+  crit: suspicious
+  conf: 0.93
+  attack: T1219,T1543.003
+  all:
+  - id: remote-management-agent-msi-package
+  - id: metadata/package/files/msi::msi-unattended-package-description
+
+# The unattended package plus the capabilities that make a foothold useful.
+#
+# `remote-access-host-inventory` in unattended.yaml records this pairing for the
+# scripted deployments -- a remote-support product named next to a run of host
+# inventory commands -- and could not see it here, because in a packaged agent
+# the inventory is compiled into the binary rather than written as shell.
+# Reading it from the embedded agent instead: deep Win32 host profiling and
+# access-token duplication, alongside an installer whose own summary says the
+# build accepts sessions unattended.
+#
+# Suspicious, not hostile. This is what a remote-management agent is for, and a
+# managed estate ships one deliberately. What the rule buys is that an analyst
+# holding an unsolicited installer is told, in one finding, that it provisions
+# standing remote access and arrives able to enumerate and impersonate on the
+# host -- rather than having to assemble that from a hundred notable imports.
+#
+# scope: outer -- the summary fact is on the installer database and the profiling
+# and token calls are in the agent binary inside it, which the MSI carries as an
+# OLE stream rather than as an archive entry, so `archive` does not pool them.
+- id: unattended-remote-agent-msi-host-recon
+  desc: Unattended remote agent packages host reconnaissance
+  crit: suspicious
+  conf: 0.92
+  attack: T1219,T1082,T1134
+  scope: outer
+  all:
+  - id: unattended-remote-agent-msi-package
+  - id: objectives/discovery/system/fingerprint/info::win32-deep-recon
+  - id: micro-behaviors/os/privilege/token::duplicate-token

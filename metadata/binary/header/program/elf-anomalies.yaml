@@ -1,0 +1,158 @@
+# ELF load-segment anomalies: entry point landing outside a normal executable
+# segment, W+X or executable-stack segments, overlapping or grafted segments.
+# All are program-header facts; how unusual each one is lives in `crit:`.
+defaults:
+  platforms: [linux, android]
+  for: [elf]
+  crit: notable
+  conf: 0.95
+traits:
+  - id: elf-entry-in-writable-segment
+    desc: ELF entry point in writable PT_LOAD
+    crit: notable
+    conf: 0.95
+    if:
+      type: metrics
+      field: elf.entry_in_writable_segment
+      min: 1
+    unless:
+      - id: metadata/binary/vendor/
+      - id: well-known/tool/sysadmin/unix-benign/
+      - id: well-known/tool/sysadmin/syslinux/
+      - id: metadata/file/extension/identity::linux-firmware-blob-basename
+      - id: metadata/file/extension/identity::stm32-external-loader-elf
+      - id: metadata/package/files/system-package::jvm-bundled-native-dependency
+      - id: metadata/binary/header/program::arm-single-program-header-layout
+      - id: well-known/app/infrastructure/xen::xen-hypervisor-context
+  - id: elf-entry-in-last-segment
+    desc: ELF entry in final PT_LOAD
+    crit: notable
+    conf: 0.7
+    if:
+      type: metrics
+      field: elf.entry_in_last_segment
+      min: 1
+    # Syslinux COM32 modules intentionally place their entry point in the
+    # final firmware-facing load segment; this is part of that ABI layout.
+    unless:
+      - id: well-known/tool/sysadmin/syslinux/
+  - id: elf-executable-segment-graft
+    desc: ELF has multiple executable load segments
+    # Typical userland link layouts have one executable PT_LOAD. A second
+    # can indicate appended code, but also occurs in legitimate layouts.
+    # Infection composites require independent entry, note, or return-code
+    # evidence; this structural observation alone does not infer intent.
+    crit: notable
+    conf: 0.85
+    if:
+      type: metrics
+      field: elf.executable_segment_count
+      min: 2
+    unless:
+      - id: metadata/binary/vendor/
+      - id: metadata/file/extension/identity::linux-firmware-blob-basename
+  - id: elf-single-program-header
+    desc: ELF uses a single program header
+    crit: notable
+    conf: 0.9
+    if:
+      type: metrics
+      field: elf.program_header_count
+      min: 1
+      max: 1
+    unless:
+      - id: metadata/lang/upstream::linux-kernel-secondary-tree-path
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
+  - id: elf-wx-segment
+    desc: ELF has W+X loadable segment
+    crit: notable
+    conf: 0.9
+    if:
+      type: metrics
+      field: elf.wx_segment_count
+      min: 1
+    unless:
+      - id: well-known/lib/platform/jna::native-dispatch-library
+      - id: metadata/file/extension/identity::linux-firmware-blob-basename
+      - id: metadata/file/extension/identity::linux-qcom-firmware-blob-basename
+      - id: metadata/binary/vendor/
+      - id: metadata/file/extension/identity::stm32-external-loader-elf
+      - id: elf-wx-benign-tool-context
+      - id: well-known/tool/development/runtime/qemu/
+    downgrade:
+      any:
+        - type: basename
+          regex: \.so$
+        - id: well-known/lib/runtime/jruby/
+  - id: elf-executable-stack
+    desc: ELF PT_GNU_STACK has executable bit set
+    crit: notable
+    conf: 0.85
+    if:
+      type: metrics
+      field: elf.executable_stack
+      min: 1
+    unless:
+      # The Syslinux COM32 ABI uses firmware-facing executable mappings.
+      - id: well-known/tool/sysadmin/syslinux/
+  - id: elf-executable-stack-raw-header
+    desc: ELF program header requests an executable stack
+    crit: notable
+    conf: 0.95
+    arch: [arm]
+    if:
+      type: hex
+      offset_range: [52, 4096]
+      # PT_GNU_STACK followed by the remaining 32-bit program-header fields
+      # and PF_R|PF_W|PF_X. This is a fallback when ELF metrics cannot parse.
+      pattern: "51 E5 74 64 [20] 07 00 00 00"
+    unless:
+      - id: elf-executable-stack
+  - id: elf-segment-overlap
+    desc: "ELF PT_LOAD segments overlap vaddr ranges"
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: metrics
+      field: elf.segment_overlap_count
+      min: 1
+    unless:
+      - id: metadata/package/testing/presence/harness::binary-test-directory
+      - id: metadata/file/extension/identity::linux-firmware-blob-basename
+      - id: metadata/file/extension/identity::linux-qcom-firmware-blob-basename
+      - id: metadata/file/extension/identity::linux-firmware-embedded-elf-path
+      - id: metadata/file/extension/identity::linux-qcom-firmware-embedded-elf-path
+      - id: well-known/tool/development/toolchain/patchelf::patchelf-test-fixture
+      - id: metadata/binary/vendor::nvidia-cuda-cubin-sections
+  - id: elf-multiple-pt-interp
+    desc: ELF has more than one PT_INTERP segment
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: metrics
+      field: elf.multiple_pt_interp
+      min: 1
+
+  # === Tier B: dynamic + section anomalies ===
+composite_rules:
+  # These tools use deliberate firmware/instrumentation layouts that can
+  # contain a writable and executable load segment. Keep the structural
+  # anomaly available for other ELFs without relabeling these known contexts.
+  - id: elf-wx-benign-tool-context
+    desc: Known benign ELF W+X tool context
+    crit: exception
+    conf: 0.99
+    any:
+      - id: well-known/tool/reverse-engineering/frida::frida-tool-context
+      - id: well-known/tool/sysadmin/unix-benign/
+      - id: well-known/tool/sysadmin/syslinux/
+      - id: well-known/app/utility/tboot::tboot-bootloader-layout-context
+  - id: arm-single-program-header-layout
+    desc: ARM ELF single-header embedded layout
+    crit: exception
+    conf: 0.98
+    all:
+      - id: metadata/arch/iot::arm
+      - id: elf-single-program-header

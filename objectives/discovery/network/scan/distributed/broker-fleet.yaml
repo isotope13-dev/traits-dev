@@ -1,0 +1,142 @@
+# Distributed active-reconnaissance architecture: work arrives from a message
+# broker, scan results are aggregated centrally, and follow-up requests rotate
+# through a SOCKS relay pool. Each supporting capability is neutral on its own;
+# the combinations identify the operational reconnaissance technique.
+defaults:
+  platforms: [unix, windows]
+  for: [python, go]
+  attack: T1046,T1090
+
+traits:
+  # What the fleet calls the work it hands out. A queue or result-list name is a
+  # whole string literal, not prose, so anchoring both ends keeps this off
+  # documentation and comments that merely discuss penetration testing. Named
+  # separately from the broker and the probe because it survives every change of
+  # infrastructure: the operator renames hosts, not job types.
+  - id: pentest-task-queue-name
+    desc: Queue name declares penetration testing
+    crit: notable
+    conf: 0.9
+    for: [python, go, scripts, json]
+    if:
+      type: literal
+      kind: string
+      regex: '(?i)^[a-z0-9_.-]{0,24}(penetration[_-]?tests?|pentests?)[a-z0-9_.-]{0,24}$'
+
+  - id: exploit-task-queue-name
+    desc: Queue name declares exploitation work
+    crit: notable
+    conf: 0.9
+    for: [python, go, scripts, json]
+    if:
+      type: literal
+      kind: string
+      regex: '(?i)^[a-z0-9_.-]{0,24}(exploits?|brute[_-]?force)[a-z0-9_.-]{0,24}$'
+
+composite_rules:
+  - id: python-brokered-network-scan-worker
+    desc: Python scanner consumes AMQP target jobs
+    crit: suspicious
+    conf: 0.98
+    all:
+      - id: objectives/discovery/network/scan/port::python-dynamic-cidr-host-connect-sweep
+      - id: micro-behaviors/communications/ipc/message::pika-amqp-consumer
+
+  - id: python-compressed-scan-result-aggregation
+    desc: Python scanner compresses results into Redis
+    crit: suspicious
+    conf: 0.98
+    all:
+      - id: objectives/discovery/network/scan/port::python-dynamic-cidr-host-connect-sweep
+      - id: micro-behaviors/data/db/redis::python-redis-list-producer
+      - id: micro-behaviors/data/compress/library::gzip-compress-call
+
+  - id: go-brokered-network-scan-worker
+    desc: Go banner scanner consumes AMQP target jobs
+    crit: suspicious
+    conf: 0.98
+    all:
+      - id: objectives/discovery/network/scan/banner::go-tcp-banner-grab-probe
+      - id: micro-behaviors/communications/ipc/message::go-amqp-consumer
+
+  - id: go-compressed-scan-result-aggregation
+    desc: Go banner scanner compresses results into Redis
+    crit: suspicious
+    conf: 0.98
+    all:
+      - id: objectives/discovery/network/scan/banner::go-tcp-banner-grab-probe
+      - id: micro-behaviors/data/db/redis::go-redis-list-producer
+      - id: micro-behaviors/data/compress/library::go-gzip-writer
+
+  # The complete worker-node shape, independent of which broker host or actor
+  # owns it: targets arrive from a broker on another machine, the worker probes
+  # them, and the findings are shipped to a central store rather than reported
+  # locally. A node that neither chooses its targets nor keeps its results is a
+  # rented pair of hands in someone else's scanning fleet. The broker leg
+  # already excludes loopback, which is where an in-house scanner's queue lives.
+  - id: brokered-scan-fleet-worker
+    desc: Scan worker takes targets from a remote broker and centralizes results
+    crit: hostile
+    conf: 0.95
+    attack: T1595.002
+    all:
+      - id: micro-behaviors/communications/ipc/message::amqp-broker-url
+    any:
+      - id: go-brokered-network-scan-worker
+      - id: go-compressed-scan-result-aggregation
+      - id: python-brokered-network-scan-worker
+      - id: python-compressed-scan-result-aggregation
+    needs: 2
+    unless:
+      - id: well-known/tool/detection/
+
+  - id: brokered-port-scan-result-aggregation
+    desc: Port scanner consumes AMQP jobs and queues discovered services in Redis
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: objectives/discovery/network/scan/port::python-cidr-host-connect-sweep
+      - id: micro-behaviors/communications/ipc/message::pika-amqp-consumer
+      - id: micro-behaviors/data/db/redis::python-redis-list-producer
+
+  - id: proxy-rotated-network-scan
+    desc: CIDR scanner routes follow-up requests through a cyclic SOCKS proxy pool
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: objectives/discovery/network/scan/port::python-cidr-host-connect-sweep
+      - id: micro-behaviors/communications/proxy/config::python-cyclic-socks-proxy-pool
+
+  - id: distributed-proxy-routed-reconnaissance
+    desc: Distributed CIDR reconnaissance uses centralized results and rotating relays
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: brokered-port-scan-result-aggregation
+      - id: proxy-rotated-network-scan
+
+  # The fleet names its own purpose. A worker that pulls jobs from a broker, or
+  # pushes results to a shared list, under a queue named for penetration testing
+  # or exploitation is describing the operation it belongs to — and it keeps
+  # saying so after every C2 domain in the rule set has been sinkholed, which is
+  # the part of this shape that outlives the infrastructure.
+  - id: offensive-tasked-worker
+    desc: Worker consumes offensively named job queue
+    crit: suspicious
+    conf: 0.95
+    attack: T1595.002
+    all:
+      - id: offensive-task-queue-label
+    any:
+      - id: micro-behaviors/communications/ipc/message::go-amqp-consumer
+      - id: micro-behaviors/communications/ipc/message::pika-amqp-consumer
+      - id: micro-behaviors/data/db/redis::go-redis-list-producer
+      - id: micro-behaviors/data/db/redis::python-redis-list-producer
+
+  - id: offensive-task-queue-label
+    desc: Job queue named for offensive work
+    crit: notable
+    conf: 0.9
+    any:
+      - id: pentest-task-queue-name
+      - id: exploit-task-queue-name

@@ -1,0 +1,147 @@
+# Install hooks that kill, detach, or rename running processes and files.
+defaults:
+  platforms: [unix, windows]
+  for: [package.json]
+traits:
+- id: postinstall-supervisor-start-local-js-marker
+  desc: postinstall starts local JavaScript daemon
+  crit: suspicious
+  conf: 0.97
+  attack: "T1195.002,T1053"
+  if:
+    type: value
+    path: "scripts.postinstall"
+    regex: "^forever\\s+start\\s+(\\./)?[A-Za-z0-9_./-]{1,120}\\.(c?js|mjs)$"
+- id: preinstall-taskkill-process
+  desc: preinstall kills Windows processes
+  crit: suspicious
+  conf: 0.96
+  attack: "T1195.002, T1489"
+  if:
+    type: value
+    path: "scripts.preinstall"
+    regex: "\\btaskkill\\b.{0,120}/(F|PID|IM)\\b"
+  unless:
+  - id: metadata/package/files/dependency::node-modules-path
+- id: preinstall-process-kill-signal
+  desc: preinstall kills processes by signal
+  crit: suspicious
+  conf: 0.95
+  attack: "T1195.002, T1489"
+  if:
+    type: value
+    path: "scripts.preinstall"
+    regex: "process\\.kill\\([^\\n]{0,160}SIG(KILL|TERM)"
+  unless:
+  - id: metadata/package/files/dependency::node-modules-path
+- id: preinstall-heartbeat-pid-files
+  desc: preinstall references heartbeat PID files
+  crit: notable
+  conf: 0.9
+  if:
+    type: value
+    path: "scripts.preinstall"
+    substr: heartbeats
+  unless:
+  - id: metadata/package/files/dependency::node-modules-path
+- id: preinstall-rename-sync-call
+  desc: preinstall renames files
+  crit: notable
+  conf: 0.9
+  if:
+    type: value
+    path: "scripts.preinstall"
+    substr: fs.renameSync
+  unless:
+  - id: metadata/package/files/dependency::node-modules-path
+- id: preinstall-locked-file-suffix
+  desc: preinstall creates locked file suffix
+  crit: notable
+  conf: 0.92
+  if:
+    type: value
+    path: "scripts.preinstall"
+    substr: locked-
+  unless:
+  - id: metadata/package/files/dependency::node-modules-path
+- id: preinstall-nohup-node
+  desc: preinstall detaches node sidecar
+  crit: suspicious
+  conf: 0.95
+  attack: "T1195.002"
+  if:
+    type: value
+    path: "scripts.preinstall"
+    regex: "\\bnohup\\s+node\\s+[^\"\\n]{1,80}\\.js\\b"
+- id: preinstall-devnull-redir
+  desc: preinstall suppresses output to devnull
+  crit: suspicious
+  conf: 0.92
+  attack: "T1564"
+  if:
+    type: value
+    path: "scripts.preinstall"
+    regex: ">/dev/null\\s+2>&1"
+composite_rules:
+- id: postinstall-supervisor-start-local-js
+  desc: postinstall starts local JavaScript daemon
+  crit: hostile
+  conf: 0.97
+  attack: "T1195.002,T1053"
+  all:
+  - id: postinstall-supervisor-start-local-js-marker
+  - id: metadata/package/dependencies/named::npm-dep-child-process
+  # Umbrella over the inline decoders an obfuscated hook can use, so downstream
+  # composites survive an attacker swapping char codes for base64/escape.
+- id: preinstall-heartbeat-pid-reaper
+  desc: preinstall reaps heartbeat PID files
+  crit: suspicious
+  conf: 0.97
+  attack: "T1195.002, T1489"
+  all:
+  - id: preinstall-heartbeat-pid-files
+  any:
+  - id: preinstall-process-kill-signal
+  - id: preinstall-taskkill-process
+- id: preinstall-nohup-node-dropper
+  desc: preinstall launches detached node dropper
+  crit: suspicious
+  conf: 0.98
+  attack: "T1195.002"
+  all:
+  - id: objectives/supply-chain/install-hook/scripts/declaration::has-preinstall
+  - id: preinstall-nohup-node
+  - id: preinstall-devnull-redir
+- id: inject-appends-self-destruct-snippet
+  desc: Injector appends self-destruct code
+  crit: suspicious
+  conf: 0.98
+  for: [javascript, typescript]
+  all:
+  - id: objectives/supply-chain/install-hook/scripts/local-script::inject-js-basename
+  - id: micro-behaviors/fs/write/file/append::append-file-sync
+  - id: objectives/impact/wipe/disk/mass-delete::js-self-destruct-marker
+- id: postinstall-destructive-express-injector
+  desc: postinstall injects destructive Express route
+  crit: hostile
+  conf: 0.99
+  attack: "T1195.002, T1485, T1489"
+  all:
+  - id: objectives/supply-chain/install-hook/scripts/local-script::postinstall-runs-inject-js
+  - id: inject-appends-self-destruct-snippet
+  - id: objectives/command-and-control/trigger/activation::express-robots-destroy-trigger
+- id: preinstall-detached-temp-dropper
+  desc: preinstall detaches staged temp payload dropper
+  crit: hostile
+  conf: 0.99
+  attack: "T1195.002"
+  for: [javascript]
+  all:
+  - id: objectives/supply-chain/install-hook/scripts/remote-fetch::preinstall-temp-fetch-chmod-exec
+  - id: micro-behaviors/process/daemonize/detach::stealthy-background
+  - id: micro-behaviors/communications/http/download/curl::curl-silent
+  any:
+  - id: micro-behaviors/communications/http/url/github::raw-githubusercontent-script-file
+  - id: micro-behaviors/communications/http/download/github::github-raw-curl-fetch
+  - id: micro-behaviors/process/create/spawn::detached-true
+  # Cross-file composite: preinstall runs local JS that prepares an OOB callback

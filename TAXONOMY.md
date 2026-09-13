@@ -76,6 +76,14 @@ The ML pipeline extracts features from **subdirectory path + criticality**, not 
 - **A bare `any:` composite shares its legs' criticality.** A composite that is nothing but an `any:` list — no `all:`/`unless:`/`not:`/`downgrade:`/`needs:`/size/scope, and a `for:`/`platforms:` identical to its legs — fires exactly where its legs fire, on whichever one matched. Ranking it above them makes the reported tier depend on which leg happened to hit, so the same evidence in the same file surfaces at two different levels. Either raise the legs to the composite's `crit:`, or add the filtering that earns the higher tier (`needs: 2`, a second `all:` leg, a size band). This bites most often on library-identity rules: if each marker independently identifies the library, every marker is `notable` and so is the roll-up — put the criticality once, in `defaults:`.
 
 - **Criticality assignment affects ML directly.** A trait bumped from `notable` to `suspicious` changes which feature it contributes to. Assign criticality based on the trait's actual detection confidence, not to manipulate features.
+- **Never name a directory for a verdict.** `legitimate/`, `benign/`, `known-good/`,
+  `safe/`, `trusted/`, `whitelist/` and friends are rejected: a directory names what
+  its traits *search for*, whether the answer is alarming is `crit:`, and a
+  benign-context suppressor belongs in the directory for the thing it detects.
+  `os/service/legitimate/` held `uv publish` markers and `curl | sh` installer
+  shapes -- neither a service nor a judgment a reader could act on; they now sit in
+  `os/package-manager/publish/` and `os/package-manager/installer-script/`.
+
 - **Name the level the model can see.** The feature keeps three directory levels after the tier, so the segment that carries the distinction has to sit at or above level 3. A tree like `fs/path/sensitive/private-key/` puts the real discriminator at level 4, where it is aggregated away: every child of `sensitive/` — SSH keys, cookies, `/etc/passwd`, an iMessage database — collapses into the single feature `fs/path/sensitive`, teaching the model that reading someone's notes and reading their private key are the same event. Promote the discriminating axis instead (`fs/path/private-key/`, `fs/path/password-store/`), and express the secondary axis — *whose* credential it is — in the **filename** (`ssh.yaml`, `browser.yaml`), which costs nothing because filenames are never part of trait IDs. A grouping word that only re-states its parent (`sensitive/credentials/`) fails the precision test above *and* spends the last visible level; drop it and let the type take that slot.
 - **The 3-level depth limit** means `objectives/anti-static/obfuscation/string/encoding/` extracts as `anti-static/obfuscation/string` — the `encoding/` level is aggregated into `string/`. Plan directory depth accordingly, and avoid unnecessary intermediate directories (e.g., prefer `obfuscation/syntax/` over `obfuscation/source/syntax/`).
 
@@ -437,12 +445,51 @@ micro-behaviors/
 │   ├── autorun/           #   Autorun keyword/scheduled task patterns
 │   ├── bpf/               #   BPF/eBPF operations
 │   ├── callback/          #   OS callback mechanisms
-│   ├── clipboard/         #   Clipboard access (OS IPC)
+│   ├── clipboard/         #   Clipboard (OS IPC), split by what the code
+│   │   │                  #   does to it -- reading someone's clipboard and
+│   │   │                  #   replacing it are different threats, and the
+│   │   │                  #   feature stops at this level.
+│   │   ├── read/          #     Pulls clipboard contents out          T1115
+│   │   ├── write/         #     Puts contents in, clears, or replaces
+│   │   │                  #     them (the clipper/hijack shape)
+│   │   ├── monitor/       #     Watches for changes over time
+│   │   └── reference/     #     Names the clipboard API without
+│   │                      #     performing an operation
 │   ├── com/               #   Windows COM/OLE
 │   ├── compat/            #   OS compatibility layers
 │   ├── console/           #   Console I/O (C0033)
 │   ├── container/         #   Container runtime detection
-│   ├── env/               #   Environment variables (C0034)
+│   ├── env/               #   Environment variables (C0034). Which variable
+│   │   │                  #   is named is the discriminator, so the topic sits
+│   │   │                  #   at this level -- it used to live under a `vars/`
+│   │   │                  #   grouping word, where all 14 topics collapsed into
+│   │   │                  #   the single feature `os/env/vars`.
+│   │   ├── credentials/   #     Secret-bearing variables               T1552.001
+│   │   ├── ai-provider/   #     AI SDK configuration variables
+│   │   ├── package-manager/ #   npm/node ecosystem variables
+│   │   ├── runtime/       #     Language/runtime tuning knobs (NODE_OPTIONS,
+│   │   │                  #     OMP_NUM_THREADS, MallocStackLogging)
+│   │   ├── ci-credentials/ #    CI-issued secrets
+│   │   ├── cicd/          #     CI/CD runner variables
+│   │   ├── cloud/         #     Cloud-provider variables
+│   │   ├── system-info/   #     Host/system description variables
+│   │   ├── user-info/     #     User identity variables
+│   │   ├── user-paths/    #     Per-user path variables
+│   │   ├── platform/      #     Platform/arch variables
+│   │   ├── ssh/           #     SSH agent/auth variables
+│   │   ├── editor/        #     EDITOR/VISUAL and friends
+│   │   ├── pipeline/      #     Pipeline plumbing variables
+│   │   ├── modify/        #     Setting, clearing or injecting a variable
+│   │   │
+│   │   │                  #   The operation axis, alongside the topics above:
+│   │   ├── read/          #     Querying a variable (os.Getenv, System.getenv,
+│   │   │                  #     process.env, getenv)
+│   │   ├── enumeration/   #     Walking the whole environment
+│   │   ├── block/         #     Windows environment-block APIs that allocate
+│   │   │                  #     and release the block itself
+│   │   ├── dump/          #     Dumping the environment wholesale
+│   │   ├── config/        #     Env-driven configuration
+│   │   └── check/         #     Guarding on a variable's value
 │   ├── event/             #   OS event mechanisms
 │   ├── exception/         #   Exception/error handling
 │   ├── firewall/          #   Firewall tool references (iptables, nft, ufw, firewalld)
@@ -472,7 +519,26 @@ micro-behaviors/
 │   │                      #       Neutral: banking and DRM apps check these too;
 │   │                      #       evasion intent → objectives/anti-analysis/
 │   │                      #       environment-detect/
-│   ├── service/           #   System service management
+│   ├── recovery/          #   OS recovery points (SRSetRestorePoint). Creating
+│   │                      #     one is neutral; removing them is
+│   │                      #     objectives/impact/degrade/system/recovery/.
+│   ├── service/           #   System service management, split by the verb --
+│   │   │                  #   the verb is the discriminator and the feature
+│   │   │                  #   stops at this level, so each is a sibling rather
+│   │   │                  #   than a child of control/.
+│   │   ├── create/        #     Registering a new service
+│   │   ├── start/         #     Starting or restarting one
+│   │   ├── stop/          #     Stopping one
+│   │   ├── delete/        #     Removing one
+│   │   ├── configure/     #     Changing start type or config
+│   │   ├── query/         #     Reading status or config
+│   │   ├── dispatch/      #     A program acting AS a service (control
+│   │   │                  #     dispatcher, status handler)
+│   │   ├── control/       #     Generic service-manager interaction that
+│   │   │                  #     names no particular verb (OpenSCManager,
+│   │   │                  #     ControlService, bare systemctl/launchctl)
+│   │   └── user-session/  #     Per-user service management (systemd user
+│   │                      #     units, launchd agents, loginctl linger)
 │   ├── signal/            #   Signal handling
 │   ├── stdio/             #   Standard I/O operations
 │   ├── syscall/           #   Direct syscall invocation
@@ -1051,6 +1117,7 @@ well-known/
 │   ├── platform/          #   OS, desktop, mobile, and platform integration
 │   ├── runtime/           #   Language runtimes, engines, FFI, and bindings
 │   ├── stdlib/            #   Standard-library extensions, polyfills, shims
+│   ├── testing/           #   Test frameworks, assertion and fixture libraries
 │   ├── native/            #   Native systems, libc, allocators, and kernel support
 │   ├── ui/                #   UI components, editors, and frontend libraries
 │   ├── vendor-sdk/        #   Single-vendor product and service SDKs
@@ -1151,6 +1218,7 @@ well-known/
     ├── detection/         #   Security detection tools (cleave's own stng)
     ├── forensics/         #   Memory, disk, and incident-forensics tools
     ├── media/             #   Media acquisition/conversion (yt-dlp, gallery-dl)
+    ├── packaging/         #   Package/version managers, installer builders
     ├── offensive/         #   Pentesting/red-team tools + game cheat frameworks
     ├── reverse-engineering/#  RE tools (IDA, OllyDbg, Scylla, LordPE)
     └── sysadmin/          #   Admin tools, system libraries, VCS
@@ -1175,6 +1243,21 @@ File-level properties with no behavioral implication. Describes *what a file is*
 - **Max leaf size:** No leaf directory should exceed 75 traits
 - **Max fan-out:** No directory should have more than 150 immediate subdirectories. Past that the level is a flat list rather than a taxonomy — group the entries under an intermediate layer (ecosystem, vendor, family) so each level stays browsable.
 - **Prefer technology-neutral subdirectory names.** Technology names belong in filenames, not directory names, unless needed to stay under the 75-trait limit at depth 3.
+- **One level, one question.** Every child of a directory must answer the *same* question about its parent. A level that mixes axes gives some traits two valid homes at once, and the duplicate pair is then created by the taxonomy rather than by an author: it is not a mistake anyone can avoid.
+
+  The test is to name the question out loud and check that every sibling answers it. `micro-behaviors/fs/path/` should answer *what does this path point at* — a credential, a cookie, a config file, a log, a cache. Siblings like `application/`, `package-manager/`, `os/` and `webserver/` answer a different question, *whose is it*, and siblings like `basename/`, `construct/` and `traversal/` answer a third, *what is being done with it*. With all three present, "an application's config file path" is a genuine member of `config/`, of `application/config/`, and arguably of `basename/` — which is exactly how `fs/path/config/app/` and `fs/path/application/config/` both came to exist, holding the same subject (`editor-extensions` on one side, `vscode` on the other).
+
+  Pick the axis that distinguishes *behavior*, because that is what the directory feature feeds to the ML pipeline. Reading a credential path is a different act from reading a cache path, so the resource kind is the axis; Chrome's cookie path and Firefox's are the same act, so the owner is not. The losing axes move into the filename, exactly as platform and language already do: `config/app/vscode.yaml`, never `application/config/vscode.yaml`.
+
+- **A trigger is not an objective.** Independent dimensions must not be multiplied into a path. A rule about a payload carries three facts that vary freely: what it *does* (fetch, stage, execute), what *sets it off* (an install hook, a git hook, a `.lnk`, a fake update), and where it *came from* (npm, PyPI, an RPM). Give each its own directory level and the tree has to enumerate every objective under every trigger.
+
+  That is what `objectives/supply-chain/install-hook/` is. An install hook is a trigger, so the level forced a second copy of the objective tree beneath it — `dropper/`, `credential/`, `config-write/`, `database/`, `registry/` — while `objectives/command-and-control/dropper/` independently grew `lifecycle/` and `package/`, which are install-hook subjects. Both now hold a `bun/`. Neither copy is wrong; the path shape made them inevitable, and they will keep diverging.
+
+  The behavior owns the directory, because that is the feature the ML pipeline reads. The channel is a filename, as for any other ecosystem. The trigger is a *referenced trait*: `metadata/package/scripts/lifecycle::install-hooks` is a fact about the package, and a composite that wants "install hook downloads and executes" names it as a leg rather than moving house to sit under it.
+
+  The diagnostic: if a directory level names *when* or *how* something runs rather than *what is achieved*, every objective underneath it is a duplicate waiting to be written.
+
+
 
 ```
 metadata/
@@ -1291,9 +1374,12 @@ metadata/
 │   │   └── systems/       #     Systems language compilers (Go, Rust)
 │   ├── embedded/          #   Embedded language detection
 │   ├── encoded/           #   Encoded strings (unicode, wide)
+│   ├── generated/         #   Emitted by a code generator, not hand-written
 │   ├── javascript-features/ # JavaScript language features
 │   ├── scripted/          #   Scripted language detection (VBScript, Lua, Perl)
-│   └── ...                #   go-build, linking, optimization, security, shebang, source, version
+│   ├── source/            #   Which language a source file is written in
+│   ├── upstream/          #   Part of a recognized upstream tree (Wine, ReactOS, Linux)
+│   └── ...                #   go-build, linking, optimization, security, shebang, version
 ├── library/               # DEPRECATED — closed to new entries, migrating out.
 │   │                      #   A named library/framework/runtime is a fingerprint, so it
 │   │                      #   belongs in well-known/lib/ by the rule above; nothing here

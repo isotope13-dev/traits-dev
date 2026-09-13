@@ -22,6 +22,32 @@ traits:
   if:
     type: text
     regex: '\bos\.fork\s*\('
+# The fork IS the loop body: nothing between `while True:` and the call, so
+# every child re-enters the same loop and forks again. This is the shape of the
+# published PyPI fork bombs -- `python-fork`'s entire payload is
+# `import os` / `while True: os.fork()` -- and it is deliberately narrow: a
+# pre-forking server, a supervisor and a worker pool all put a branch, a wait
+# or a bound between the two.
+- id: tight-fork-loop
+  desc: Fork call is the whole loop body
+  crit: suspicious
+  conf: 0.97
+  if:
+    type: text
+    regex: 'while\s+(True|1)\s*:[ \t]*(\r?\n[ \t]+)?os\.fork(pty)?\s*\(\s*\)'
+
+# The same bomb through the process APIs a modern author reaches for first.
+# `multiprocessing.Process(...).start()` and `subprocess.Popen(...)` as the sole
+# body of an unbounded loop exhausts the process table exactly as `os.fork`
+# does, and neither is covered by a fork matcher.
+- id: tight-process-spawn-loop
+  desc: Process spawn is the whole loop body
+  crit: suspicious
+  conf: 0.95
+  if:
+    type: text
+    regex: 'while\s+(True|1)\s*:[ \t]*(\r?\n[ \t]+)?[\w.]*(Process|Popen)\s*\('
+
 composite_rules:
 - id: infinite-loops
   desc: Python infinite loop construct
@@ -36,6 +62,52 @@ composite_rules:
   - id: fork-bomb
   - id: infinite-loops
   crit: notable
+# Unbounded process creation with nothing that could ever stop it.
+#
+# `fork-with-loop` above is only a co-occurrence -- a fork somewhere in a file
+# that also loops forever -- which is why it is notable: that describes every
+# pre-forking server. What makes this a denial of service is the combination of
+# the tight form above (the spawn is the entire loop body) with the absence of
+# any child handling anywhere in the file. Code that never inspects fork's
+# return value, never reaps, and never installs a SIGCHLD handler has no parent
+# and child roles at all: both halves fall back into the loop, and the process
+# count doubles per iteration until the machine stops accepting new ones.
+#
+# There is no legitimate use. A program that wants many workers bounds the
+# count; a program that wants one child branches on the return value.
+- id: unreaped-process-spawn-bomb
+  desc: Unbounded process spawn with no child handling
+  crit: hostile
+  conf: 0.97
+  all:
+  - id: infinite-loops
+  any:
+  - id: tight-fork-loop
+  - id: tight-process-spawn-loop
+  unless:
+  - id: micro-behaviors/process/control/wait::python-wait-child
+  - id: micro-behaviors/process/control/wait::python-sigchld-handler
+  - id: micro-behaviors/process/fork/clone::python-fork-return-branch
+  - id: micro-behaviors/process/fork/clone::python-fork-child-zero-test
+  - id: metadata/package/testing/presence/harness/
+
+# The bomb as a shipped product. The wheel that prompted this declares a
+# `console_scripts` entry point, so `pip install` puts a command on PATH whose
+# module body is `while True: os.fork()` -- the victim runs it because the
+# package summary advertises a project-file generator. Recorded separately from
+# the code-level rule because "this is an installable command" is the fact that
+# turns a snippet into a distributed denial of service, and because the entry
+# point and the module sit in different archive members.
+- id: packaged-fork-bomb-command
+  desc: Package ships a fork bomb as a command
+  crit: hostile
+  conf: 0.99
+  attack: T1499.004,T1195.002
+  for: [whl, python-sdist, egg, tar, zip]
+  scope: archive
+  all:
+  - id: unreaped-process-spawn-bomb
+  - id: metadata/package/scripts/entrypoint::entry-points-file
 # `rapid-fork` removed. Its only clause was `all: [fork-with-loop]`, making it a
 # duplicate of that rule at the same criticality, and the `unless:` that once
 # distinguished it named this rule's own directory -- so it suppressed itself and
