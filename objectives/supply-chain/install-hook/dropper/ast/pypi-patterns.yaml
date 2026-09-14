@@ -14,9 +14,15 @@ traits:
 # identifiers -- no parentheses, no parameter list -- so a function symbol is
 # `run`, not `def run(self):`, and a call is `.clone`, not `.clone(...)`.
   # === AST Pattern: Import Inside Method ===
+  # component, not suspicious: a deferred import inside `run()` is the
+  # documented way setuptools command classes avoid importing build machinery
+  # at module scope, and every task runner and CLI does it for startup cost.
+  # On its own it establishes no behavior -- it does not say *what* is
+  # imported -- so it is a building block for the hook composite below, which
+  # supplies the install-phase and payload context.
   - id: ast-import-in-method
-    desc: Import inside method body
-    crit: suspicious
+    desc: Deferred import inside a run method
+    crit: component
     conf: 0.80
     if:
       type: text
@@ -49,25 +55,37 @@ traits:
       type: symbol
       kind: call
       regex: '(^|\.)rename$'
-  # === AST Pattern: cmdclass with Custom Install ===
-  - id: ast-cmdclass-install-override
-    desc: cmdclass install override
-    crit: suspicious
-    conf: 0.85
-    if:
-      type: text
-      regex: 'cmdclass.{0,50}install'
+  # `ast-cmdclass-install-override` used to live here at `suspicious` with the
+  # regex `cmdclass.{0,50}install`. Registering a command class for an
+  # install-phase command is how setuptools is *designed* to be extended --
+  # pybind11, numpy, pillow and thousands of others ship one -- so the matcher
+  # described normal packaging, not intent. The single canonical spelling now
+  # lives next door as `pypi-setup.yaml`'s `cmdclass-install-phase-override`
+  # at `notable`, and the intent comes from the payload legs of the composite
+  # below.
 composite_rules:
   # === AST-Based Supply Chain Detection ===
+  # An install-phase command class is the delivery vehicle, not the attack:
+  # the distinguishing move is what the hook *runs*. Requiring a payload leg
+  # -- a bare `exec`/`eval`, an HTTP fetch, or a detached launch -- is what
+  # separates a dropper from a package that compiles an extension or relocates
+  # headers during install. The previous shape needed 2 of 3 legs that were
+  # all install-hook restatements (`cmdclass`+`install`, a method named `run`,
+  # a deferred import inside it), so it fired at `suspicious` on any setup.py
+  # with a custom command -- pybind11's `setup_global.py.in`, for one.
   - id: ast-supply-chain-hook
-    desc: Supply chain hook via AST
+    desc: Install-phase hook runs a payload
     crit: suspicious
     conf: 0.90
-    needs: 2
+    all:
+      - id: cmdclass-install-phase-override
     any:
-      - id: ast-import-in-method
-      - id: ast-install-method-override
-      - id: ast-cmdclass-install-override
+      - id: micro-behaviors/process/interpreter/python::exec-builtin
+      - id: micro-behaviors/process/interpreter/python::eval-builtin
+      - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-call
+      - id: micro-behaviors/communications/http/lib/requests::requests-get
+      - id: micro-behaviors/communications/http/lib/requests::requests-post
+      - id: micro-behaviors/process/create/launch::os-startfile-call
   - id: ast-clone-move-execute-chain
     desc: Clone move execute chain
     crit: suspicious
