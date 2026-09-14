@@ -323,6 +323,19 @@ micro-behaviors/
 │   ├── encode/            #   Encoding (base64, hex, URL, XOR, rot13, custom)  C0026
 │   ├── decode/            #   Decoding (base64, hex, buffer)                   C0053
 │   ├── compress/          #   Compression (zip, gzip, zlib)                    C0024
+│   │   ├── aplib/         #   aPLib compression/decompression
+│   │   ├── brotli/         #   Brotli compression/decompression
+│   │   ├── bzip2/          #   BZip2 compression/decompression
+│   │   ├── gzip/           #   Gzip compression/decompression
+│   │   ├── lz4/            #   LZ4 compression/decompression
+│   │   ├── lzma/           #   LZMA/XZ compression/decompression
+│   │   ├── combined/       #   Rules spanning multiple compression algorithms
+│   │   ├── stream/         #   Algorithm-neutral compression streams
+│   │   ├── zip/            #   ZIP compression
+│   │   ├── zlib/            #   zlib/deflate compression/decompression
+│   │   └── zstd/            #   Zstandard compression/decompression
+│   ├── decompress/        #   Decompression of encoded/compressed data
+│   │   └── combined/       #   Rules spanning multiple decompression algorithms
 │   ├── archive/           #   Archive operations (tar, zip extraction)
 │   ├── serialize/         #   Serialization (JSON, YAML, pickle, protobuf)
 │   ├── format/            #   Format patterns in content (MZ header, PDF, HTML)
@@ -1237,7 +1250,7 @@ File-level properties with no behavioral implication. Describes *what a file is*
 - **Distinguish a tool's *output* from the tool's *identity*.** "This code was bundled/minified/transpiled" is a build-transform fact → `metadata/build/<function>/` (group by function: `bundler/`, `minifier/`, `transpiler/`). "This file *is* webpack / PuTTY / Wireshark" is a named-software fingerprint → `well-known/`. Putting a software identity in `metadata/` is the same *matcher-defines-identity* violation as mislabeling a generic capability.
 - **Avoid grab-bag directories.** A directory must name one coherent concept that is meaningful as an ML path feature. If a dir accretes unrelated kinds of traits — e.g. the former `package/tooling/` held build-output (`webpack-bundled`), software identities (`tool-identity-putty`), *and* project-hygiene facts (`has-eslint-config`) all at once — the path feature becomes noise and analysts can't reason about it. Split each kind to its proper home (`build/`, `well-known/`, and the `package/` subdirectory for the subject) and delete the grab-bag. Vague names (`tooling`, `context`, `misc`, `helpers`) are a smell that this has happened.
 
-  The live instance is `metadata/library/`, which holds ~1,030 rules across ~68 directories and mixes all of these kinds at once: library fingerprints that duplicate an existing `well-known/lib/` entry (`axios`, `babel`, `mermaid`, `polars`, `electron`, …), plain capability markers wearing a library's directory name (`metadata/library/electron` carries symbol matchers for `takeScreenshot`, `downloadToFile`, `executePayload` — none of which identifies Electron), a named offensive tool (`cobalt-strike`), CI fingerprints that belong in `build/ci/` (`github-actions`), and vaguely-named leaves (`structure/`, `prototype/`, `generated/`). Because a directory reference is an ML path feature, an author reading `metadata/library/electron::execute-payload-symbol` learns the wrong thing twice — wrong tier and wrong subject. Split by what each matcher actually finds, per the destinations in the tree below; never move a whole directory on the strength of its name.
+  The former `metadata/library/` tree held ~1,030 rules across ~68 directories and mixed several different concepts: library fingerprints that duplicated `well-known/lib/`, plain capability markers wearing a library's directory name, named offensive tools, CI fingerprints, and vague structural leaves. That migration is complete: `metadata/library/` is now closed and empty. Because a directory reference is an ML path feature, each migrated matcher was placed according to what it actually finds; never recreate the old bucket or move a whole directory on the strength of its name.
 - New top-level subdirectories require updating both TAXONOMY.md and `ALLOWED_METADATA` in `src/capabilities/validation/directory_whitelist.rs`
 - **Max depth:** 3 levels within `metadata/` (ML pipeline limit)
 - **Max leaf size:** No leaf directory should exceed 75 traits
@@ -1404,7 +1417,18 @@ metadata/
 │   ├── maintainers/       #   Maintainer counts
 │   ├── manager/           #   Package-manager fingerprints (homebrew, composer) — the
 │   │                      #     distribution tool, distinct from the build transform (build/)
-│   ├── manifest/          #   Package manifest fields (name, author, repository, engines)
+│   ├── name/              #   Manifest name field  (each manifest field is its own
+│   ├── description/       #   Manifest description field   leaf, at the ML-visible
+│   ├── repository/        #   Manifest repository field    level -- there is no
+│   ├── author/            #   Manifest author field        `manifest/` container:
+│   ├── entrypoint/        #   Declared entry point         keywords/, license/,
+│   ├── runtime/           #   Declared runtime/engines     scripts/ and dependencies/
+│   ├── ...                #   homepage, version, vendor,   are manifest fields too,
+│   │                      #     publishing, workspace, …   so the level separated
+│   │                      #     nothing while spending the last visible segment.
+│   │                      #   Package metadata that is NOT a manifest field is read from
+│   │                      #     the package's contents or layout instead: files/,
+│   │                      #     documentation/, testing/, integrity/, scaffold/, tooling/.
 │   │                      #   (no metrics/ — a measurement is not a subject)
 │   │                      #   (no quality/ — a judgment, not a subject: whose quality, by
 │   │                      #    what standard? Its contents belong with the field or subject

@@ -1,0 +1,185 @@
+# PDF document property atomics, keyed on the expose kv tree.
+#
+# expose's PDF extractor (lenient byte-scan, see
+# `expose::formats::pdf`) surfaces facts under `pdf.*`:
+#
+#   pdf.info.{author, title, creator, producer, subject, keywords,
+#             creation_date, mod_date, trapped}
+#   pdf.catalog.{has_openaction, has_additional_actions, has_acroform,
+#                has_xfa, has_names_javascript, has_richmedia, has_3d}
+#   pdf.actions[]: kind, source, snippet
+#   pdf.embedded_files[]: filename, size
+#   pdf.filter_chains[]: comma-joined filter names per stream
+#   pdf.streams[]: object_id, filters, magic_hex, decoded_text
+#   pdf.form_fields[]: object_id, name, field_type, rect, value
+#   pdf.header.{version, header_count}
+#   pdf.shape.{object_count, eof_count, page_count, annotation_count,
+#              encrypted, linearized, jbig2_filter_count, three_d_object_count, …}
+#
+# Atomics here are detection building blocks; composites elsewhere
+# combine them into attacker-intent rules.
+defaults:
+  for: [pdf]
+  platforms: [windows, macos, linux]
+  crit: notable
+  conf: 0.9
+traits:
+- id: pdf-has-acroform
+  desc: PDF has AcroForm
+  crit: baseline
+  if:
+    type: value
+    path: pdf.catalog.features
+    exact: acroform
+- id: pdf-has-xfa
+  desc: PDF AcroForm contains XFA
+  if:
+    type: value
+    path: pdf.catalog.features
+    exact: xfa
+  unless:
+  - type: path
+    regex: '(^|[\\/])(_{0,2}fixtures?_{0,2}|sample_files|testdata)([\\/]|$)'
+
+  # --- Signature / shadow-attack structural atomics ---
+- id: pdf-overlapping-form-fields
+  desc: PDF has overlapping form fields
+  crit: notable
+  conf: 0.9
+  if:
+    type: metrics
+    field: pdf.overlapping_form_field_pair_count
+    min: 1
+- id: pdf-duplicate-form-field-names
+  desc: PDF has duplicate form field names
+  crit: notable
+  conf: 0.86
+  if:
+    type: metrics
+    field: pdf.duplicate_form_name_count
+    min: 1
+- id: pdf-duplicate-form-field-rects
+  desc: PDF has duplicate form field rectangles
+  crit: notable
+  conf: 0.9
+  if:
+    type: metrics
+    field: pdf.duplicate_form_rect_count
+    min: 1
+- id: pdf-duplicate-form-name-and-rect
+  desc: PDF repeats form name and rectangle
+  crit: baseline
+  conf: 0.94
+  if:
+    type: metrics
+    field: pdf.duplicate_form_name_rect_count
+    min: 1
+
+  # --- Action atomics ---
+- id: pdf-action-submitform
+  desc: PDF SubmitForm action present
+  if:
+    type: value
+    path: pdf.actions[*].kind
+    exact: submitform
+- id: pdf-hidden-zero-rect-form-field
+  desc: PDF has hidden zero-area form field
+  crit: suspicious
+  conf: 0.92
+  attack: T1564
+  if:
+    type: metrics
+    field: pdf.hidden_zero_rect_field_count
+    min: 1
+  unless:
+  - id: well-known/lib/format/pdfium::source-tree
+- id: pdf-large-decoded-form-value
+  desc: PDF form field carries large decoded value
+  crit: suspicious
+  conf: 0.9
+  if:
+    type: metrics
+    field: pdf.decoded_form_value_max_len
+    min: 32768
+- id: pdf-form-payload-readfileintostream
+  desc: PDF form payload reads local file stream
+  crit: suspicious
+  conf: 0.97
+  attack: T1203
+  if:
+    type: value
+    path: pdf.form_fields[*].decoded_value
+    substr: readFileIntoStream
+- id: pdf-form-payload-trustedfunction
+  desc: PDF form payload uses trustedFunction
+  crit: suspicious
+  conf: 0.97
+  attack: T1203
+  if:
+    type: value
+    path: pdf.form_fields[*].decoded_value
+    substr: trustedFunction
+- id: pdf-form-payload-rss-addfeed
+  desc: PDF form payload uses RSS addFeed
+  crit: suspicious
+  conf: 0.96
+  attack: T1203
+  if:
+    type: value
+    path: pdf.form_fields[*].decoded_value
+    substr: addFeed
+- id: pdf-form-payload-eval-call
+  desc: PDF form payload uses eval
+  crit: suspicious
+  conf: 0.95
+  attack: T1059.007
+  if:
+    type: value
+    path: pdf.form_fields[*].decoded_value
+    substr: eval(
+- id: pdf-form-payload-atob-decode
+  desc: PDF form payload uses atob
+  crit: suspicious
+  conf: 0.9
+  if:
+    type: value
+    path: pdf.form_fields[*].decoded_value
+    substr: atob(
+- id: pdf-form-payload-base64-marker
+  desc: PDF form payload references base64
+  crit: suspicious
+  conf: 0.86
+  if:
+    type: value
+    path: pdf.form_fields[*].decoded_value
+    substr: base64
+    case_insensitive: true
+- id: pdf-stream-malformed-endstream-delimiter
+  desc: PDF stream has malformed endstream delimiter
+  crit: suspicious
+  conf: 0.94
+  if:
+    type: metrics
+    field: pdf.stream_missing_endstream_count
+    min: 1
+  unless:
+  - id: well-known/lib/format/pdfium::source-tree
+  - id: well-known/lib/format/pdfjs::source-tree
+  # Ghostscript 5.x emitted a tolerated `%Kendstream` delimiter in old
+  # generated figures; the PDF parser and viewers still recover the stream.
+  - type: value
+    path: pdf.info.producer
+    regex: '^Aladdin Ghostscript [0-9]+\.[0-9]+$'
+  # AFPL Ghostscript 8.50 uses the same tolerated delimiter form in some
+  # generated manuals; this is benign generator output, not a payload.
+  - type: value
+    path: pdf.info.producer
+    exact: 'AFPL Ghostscript 8.50'
+  # ESP Ghostscript 7.05 generated the same tolerated delimiter in old
+  # schematics shipped with hardware documentation.
+  - type: value
+    path: pdf.info.producer
+    exact: 'ESP Ghostscript 7.05'
+  # Fuzz and qtest corpora intentionally omit or corrupt stream terminators.
+  - type: path
+    regex: '(^|[\\/])(?:fuzz|qtest)([\\/]|$)'

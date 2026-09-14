@@ -1,0 +1,154 @@
+# Upload mechanics of a macOS AppleScript stealer: the session and build-id
+# headers it stamps on each request, the curl invocations that send the
+# staged archive, the chunking of /tmp/out.zip, and the gate endpoints that
+# receive it. These were filed with the staging buckets, but assembling the
+# loot and shipping it are different acts -- what is staged stays in
+# objectives/collection/stealer/staging.
+defaults:
+  platforms: [macos]
+  for: [applescript, shell]
+  attack: T1005
+  mbc: B0028
+traits:
+- id: x-bid-header
+  desc: Hex session header for exfil
+  crit: suspicious
+  conf: 0.95
+  attack: T1041
+  if:
+    type: text
+    regex: X-Bid:\s*[0-9a-f]{32}
+- id: x-chunk-headers
+  desc: Chunked upload headers
+  crit: suspicious
+  conf: 0.95
+  attack: T1041
+  if:
+    type: text
+    regex: "X-Chunk-(ID|Part|Total):"
+- id: buildid-upload-header
+  desc: BuildID upload header
+  crit: notable
+  conf: 0.9
+  attack: T1041
+  unless:
+  - id: metadata/lang/generated::python-protobuf-stub
+  - id: metadata/lang/generated::python-mypy-protobuf-generated
+  if:
+    type: text
+    regex: "(?i)buildid:"
+- id: uuid-upload-header
+  desc: UUID header in curl upload request
+  crit: notable
+  conf: 0.85
+  attack: T1041
+  if:
+    type: text
+    regex: '(?i)curl.{0,220}-H.{0,80}uuid:'
+- id: user-upload-header
+  desc: Curl upload request user field
+  crit: notable
+  conf: 0.75
+  attack: T1041
+  unless:
+  - id: well-known/app/system/crunr/
+  - id: metadata/lang/generated::python-generated-basename
+  - id: metadata/lang/generated::python-protobuf-generated
+  - id: metadata/lang/generated::python-protobuf-stub
+  - id: metadata/lang/generated::python-mypy-protobuf-generated
+  not:
+  - regex: "(?m)^\\s*user:\\s*(builtins\\.)?str\\b"
+  - regex: "(?m)^\\s*user:\\s*Optional\\[str\\]"
+  # A bare quoted `user:password` is common in authentication parsers and
+  # comments. Require a curl upload/header option in the same command so this
+  # atom describes an upload field rather than any user-labelled string.
+  - regex: '(?im)^\\s*(#|//|--|REM\\b)[^\\r\\n]*"user:\\s*[^"\\r\\n]{1,40}"'
+  if:
+    type: text
+    regex: '(?is)\bcurl\b[^b\n]{0,220}(-H|--header|-F|--form)[^"\r\n]{0,80}"user:\s*[^"\r\n]{1,40}"'
+- id: curl-contact-upload
+  desc: curl file upload to contact endpoint
+  crit: suspicious
+  conf: 0.9
+  attack: T1041
+  if:
+    type: text
+    regex: curl.{0,180}-F\s+["']?file=@.{0,80}/contact
+- id: curl-upload-php
+  desc: curl file upload to upload.php
+  crit: suspicious
+  conf: 0.9
+  attack: T1041
+  if:
+    type: text
+    regex: curl.{0,180}(-F\s+["']?file=@|--data-binary\s+@).{0,120}/upload\.php
+- id: curl-gate-chunk-upload
+  desc: curl chunk upload to gate
+  crit: suspicious
+  conf: 0.9
+  attack: T1041
+  if:
+    type: text
+    regex: curl.{0,180}(-F\s+["']?file=@|--data-binary\s+@).{0,160}/gate/chunk
+- id: curl-outzip-data-binary
+  desc: curl uploads /tmp/out.zip
+  crit: suspicious
+  conf: 0.9
+  attack: T1041
+  if:
+    type: text
+    regex: curl.{0,120}--data-binary\s+@/tmp/out\.zip
+- id: tmp-chunk-upload
+  desc: /tmp chunk upload artifact
+  crit: suspicious
+  conf: 0.9
+  attack: T1041
+  if:
+    type: text
+    regex: /tmp/chunk_[A-Za-z]{2}
+- id: split-outzip-chunks
+  desc: Splits /tmp/out.zip into chunks
+  crit: suspicious
+  conf: 0.9
+  attack: T1030
+  if:
+    type: text
+    regex: split\s+-b\s+\d+\s+/tmp/out\.zip\s+/tmp/chunk_
+- id: multipart-zip-upload
+  desc: Multipart upload of staged zip
+  crit: suspicious
+  conf: 0.95
+  attack: T1041
+  if:
+    type: text
+    regex: lil-arch=@/tmp/.{1,80}\.zip
+- id: receive-endpoint
+  desc: HTTP receive endpoint path
+  crit: suspicious
+  conf: 0.9
+  attack: T1041
+  if:
+    type: text
+    substr: /api/data/receive
+- id: grabber-endpoint
+  desc: HTTP grabber endpoint path
+  crit: suspicious
+  conf: 0.9
+  attack: T1041
+  if:
+    type: text
+    regex: '/api/(grabber|stealer)([/_-]|\b)'
+composite_rules:
+  # The session header, the multipart send and the two gate endpoints are one
+  # upload channel seen from four angles. Callers want "this stealer's upload
+  # channel", not a four-way `any:` restated at each site -- and a directory
+  # reference would be wrong, since it would accept any HTTP upload trait here.
+  - id: macos-stealer-upload-channel
+    desc: macOS stealer archive upload channel
+    crit: notable
+    conf: 0.9
+    any:
+      - id: x-bid-header
+      - id: multipart-zip-upload
+      - id: receive-endpoint
+      - id: grabber-endpoint

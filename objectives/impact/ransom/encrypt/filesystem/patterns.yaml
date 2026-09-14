@@ -1,0 +1,148 @@
+defaults:
+  platforms: [unix, windows]
+  for: [scripts, source, documents]
+  attack: T1486
+traits:
+  - id: python-open-rplusb
+    desc: Python read-write binary file open
+    # open(..., "r+b") is ordinary in-place binary I/O (resumable downloads,
+    # file patching). It is only a ransom signal combined with crypto +
+    # overwrite-in-loop in the inplace-overwrite/inplace-encrypt composites,
+    # so it carries no standalone objective signal.
+    crit: notable
+    conf: 0.72
+    for:
+      - python
+    if:
+      type: text
+      regex: open\([^)]{0,140}['"]r\+b['"]
+    downgrade:
+      any:
+        - id: metadata/package/testing/presence/harness/
+        - id: metadata/package/testing/scripted/
+  - id: python-seek-write-truncate
+    desc: Seek write truncate overwrite sequence
+    crit: notable
+    conf: 0.86
+    for:
+      - python
+    size_max: 50000
+    if:
+      type: text
+      regex: \.seek\(\s*0\s*\)[\s\S]{0,220}\.write\([\s\S]{0,220}\.truncate\(
+    downgrade:
+      any:
+        - id: metadata/package/ecosystem::conda-index-metadata
+        - id: metadata/package/ecosystem::conda-about-metadata
+        # The directory reference already covers `python-test-file`.
+        - id: metadata/package/testing/presence/harness/
+        - id: metadata/package/testing/scripted/
+    unless:
+      - type: path
+        regex: '(^|[\\/])site-packages[\\/]conda[\\/]'
+  - id: python-loop-writeback
+    desc: Loop variable reopened in wb mode
+    crit: notable
+    conf: 0.83
+    for:
+      - python
+    if:
+      type: text
+      regex: with\s+open\(\s*file\s*,\s*['"]wb['"]
+    downgrade:
+      any:
+        - id: metadata/package/testing/presence/harness/
+        - id: metadata/package/testing/scripted/
+  # `closure-css-name-mapping-text` moved to
+  # metadata/build/bundler/runtime::closure-compiler-css-renaming. It is a benign
+  # build-toolchain marker used only from the `unless:` of rename-functions
+  # below, so per RULES it belongs in metadata/ rather than being defined as a
+  # local benign-context atom inside an attacker objective.
+  - id: event-types-encrypted-marker
+    desc: Recognized eventTypes encrypted state marker
+    crit: notable
+    conf: 0.85
+    for: [scripts, binaries]
+    if:
+      type: text
+      substr: "topEncrypted: eventTypes.encrypted"
+composite_rules:
+  - id: rsa-key-handling
+    desc: RSA operations combined with ransomware indicators
+    crit: suspicious
+    conf: 0.8
+    for: [scripts, binaries]
+    all:
+      - id: micro-behaviors/crypto/asymmetric/rsa::rsa-operation-cluster
+    any:
+      - id: objectives/impact/ransom/note::ransom-note
+      - id: objectives/impact/ransom/file-operations::rename-functions
+      - id: objectives/impact/ransom/encrypt/threat-text::encrypt-comp
+  - id: file-encryption-loop-comp
+    desc: File iteration with encryption
+    crit: suspicious
+    conf: 0.9
+    for: [scripts, binaries]
+    unless:
+      - id: well-known/tool/development/vscode-extension/tencent-codebuddy::codebuddy-marker
+      - id: micro-behaviors/process/interpreter/vm::yarn-release-bundle
+      - id: metadata/build/bundler/runtime::js-webpack-bundle
+      - id: metadata/build/bundler/asset::js-large-module-bundle
+      - id: well-known/lib/runtime/scripted/bun-runtime/
+    all:
+      - id: objectives/impact/ransom/file-operations::file-iteration
+      - id: micro-behaviors/crypto/library/keyword::encryption-algorithm-keyword
+      - id: objectives/impact/ransom/file-operations::file-write-functions
+    any:
+      - id: objectives/impact/ransom/file-operations::rename-functions
+      - id: metadata/file/extension/encrypted::encrypted-extensions
+      - id: objectives/impact/ransom/note::ransom-note
+      - id: rsa-key-handling
+    downgrade:
+      any:
+        - id: metadata/package/runtime::vscode-extension
+        - id: micro-behaviors/process/interpreter/vm/
+        - id: metadata/build/bundler/asset::has-sourcemap
+  - id: lua-dfcrypt-ransomware
+    desc: Lua dfcrypt ransomware workflow
+    crit: hostile
+    conf: 0.98
+    for: [lua]
+    all:
+      - id: objectives/impact/ransom/file-operations::lua-os-remove-call
+      - id: objectives/impact/ransom/file-operations::lua-os-rename-call
+      - id: metadata/file/extension/encrypted::ext-dfcrypt
+      - id: objectives/impact/ransom/note::decrypt-readme-file
+      - id: objectives/impact/ransom/note::lua-files-encrypted-msg
+  - id: python-overwrite-path
+    desc: Python overwrite sink for file encryption
+    crit: component
+    conf: 0.7
+    for:
+      - python
+    any:
+      - id: python-seek-write-truncate
+      - id: python-open-rplusb
+      - id: python-loop-writeback
+  - id: inplace-encrypt
+    desc: Python file encryption overwrite workflow
+    crit: hostile
+    conf: 0.95
+    for:
+      - python
+    all:
+      - id: objectives/impact/ransom/file-operations::python-file-iteration
+      - id: micro-behaviors/fs/read/file/handle::file-open-content
+      - id: python-overwrite-path
+      - id: micro-behaviors/crypto/symmetric/fernet::encrypt
+      - id: micro-behaviors/crypto/symmetric/fernet::keygen
+  - id: inplace-encrypt-skip-self-key
+    desc: Python local-key ransomware exclusion workflow
+    crit: hostile
+    conf: 0.97
+    for:
+      - python
+    all:
+      - id: inplace-encrypt
+      - id: micro-behaviors/fs/file/open::python-open-key-write
+      - id: objectives/impact/ransom/file-operations::python-skip-self-and-key

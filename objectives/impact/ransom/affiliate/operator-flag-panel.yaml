@@ -1,0 +1,176 @@
+# Ransomware operator flag panel. Modern affiliate ransomware ships
+# with command-line knobs for the operator: toggle GPO spread, mount
+# network shares, force safe-mode reboot, enable/disable stealth
+# (self-delete), choose target paths, override credentials. The
+# cluster of flags is itself a fingerprint of the family-builder
+# pattern, distinct from any specific family. Observed in VECT,
+# Conti-derivatives, BlackBasta, Akira, Gunra.
+defaults:
+  platforms: [windows, unix]
+  for: [pe, dll]
+  attack: T1486
+  mbc: B0007
+  size_min: 2048
+  size_max: 500000000
+traits:
+  - id: locker-thread-count-option
+    desc: Thread-count option marker
+    crit: notable
+    conf: 0.88
+    size_min: 0
+    for: [binaries, scripts, c, cpp, rust, go, csharp, shell]
+    if:
+      type: text
+      regex: '(?i)(^|[\s])--?t(hreads)?(=|\s+)[1-9][0-9]{0,2}\b'
+    unless:
+      - id: well-known/tool/development/chromium::gn-build-tool
+  - id: locker-encryption-keyword-binary
+    desc: Binary contains locker encryption vocabulary
+    crit: component
+    conf: 0.8
+    size_min: 0
+    for: [binaries]
+    if:
+      type: text
+      regex: '(?i)\b(encrypt|ransom|locker)\b'
+  - id: locker-encryption-keyword-literal
+    desc: Source literal has ransom or file-locker term
+    crit: notable
+    conf: 0.85
+    size_min: 0
+    for: [scripts, c, cpp, rust, go, csharp, shell]
+    if:
+      type: literal
+      kind: string
+      regex: '(?i)\bransom(ware)?\b|\b(file|crypto)[ -]?locker\b|\blocker (encrypt|payment|note|mode)\b'
+  - id: locker-extension-target-flag
+    desc: Locker target-extension option
+    crit: suspicious
+    conf: 0.93
+    size_min: 0
+    for: [binaries, scripts, c, cpp, rust, go, csharp, shell]
+    if:
+      type: text
+      regex: '(?im)(^|[ \t])--exts(=|[ \t]+)(all|\.[\w,-]+)\b'
+  # `-r <n>` on its own is one of the most common short options in existence
+  # (`sips -r 90`, `sox -r 44100`, `convert -r 300`), so the short form is only
+  # accepted with an explicit percent sign. A colon-separated value is an
+  # aspect ratio (`--ratio 9:16`), not a partial-encryption control, so the
+  # long form must end after its numeric value or before whitespace.
+  - id: locker-partial-encryption-ratio-flag
+    desc: Locker partial-encryption ratio flag
+    crit: suspicious
+    conf: 0.94
+    size_min: 0
+    for: [binaries, scripts, c, cpp, rust, go, csharp, shell]
+    if:
+      type: text
+      regex: '(?i)(^|\s)(--ratio[= ]+\d{1,3}(\s|$)|-r ?\d{1,3}%)'
+  - id: locker-keystore-store-flag
+    desc: Locker separate-keystore store flag
+    crit: notable
+    conf: 0.94
+    size_min: 0
+    for: [binaries, scripts, c, cpp, rust, go, csharp, shell]
+    if:
+      type: text
+      # Bare `--store` is common (bazel-diff snapshot stores, package managers).
+      # Ransomware signal is the hostile composite pairing this with other
+      # locker operator flags.
+      regex: '(?i)(^|\s)--store\b'
+  - id: flag-no-gpo
+    desc: --no-gpo / --gpo CLI flag
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: '--(no-)?gpo\b'
+  - id: flag-force-safemode
+    desc: --force-safemode CLI flag
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      substr: '--force-safemode'
+  - id: flag-stealth
+    desc: --stealth / --no-stealth CLI flag
+    crit: suspicious
+    conf: 0.85
+    if:
+      type: text
+      regex: '--(no-)?stealth\b'
+  - id: flag-creds-b64
+    desc: --creds <b64> credential override
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: '--creds\s+<b64>|--creds\s+\$|--credentials?\s+<b64>'
+      case_insensitive: true
+  - id: flag-target-path
+    desc: --path <dir> target-directory flag
+    crit: notable
+    conf: 0.7
+    if:
+      type: text
+      regex: '--path\s+<(dir|directory|path)>'
+      case_insensitive: true
+composite_rules:
+  - id: locker-encryption-keyword-marker
+    desc: Locker encryption vocabulary marker
+    crit: component
+    conf: 0.85
+    size_min: 0
+    for: [binaries, scripts, c, cpp, rust, go, csharp, shell]
+    any:
+      - id: locker-encryption-keyword-binary
+      - id: locker-encryption-keyword-literal
+  # `--limit 0` is an ordinary "no cap" option in list/search CLIs, so the
+  # locker reading only holds when an encryption keyword sits beside it.
+  - id: locker-encryption-limit-flag
+    desc: Encryption limit-zero flag near locker keyword
+    crit: suspicious
+    conf: 0.93
+    size_min: 0
+    for: [binaries, scripts, c, cpp, rust, go, csharp, shell]
+    all:
+      - id: micro-behaviors/process/argument/option::limit-zero-option
+      - id: locker-encryption-keyword-marker
+    near_lines: 8
+  - id: locker-thread-count-flag
+    desc: Locker worker-thread count flag
+    crit: suspicious
+    conf: 0.93
+    size_min: 0
+    for: [binaries, scripts, c, cpp, rust, go, csharp, shell]
+    all:
+      - id: locker-thread-count-option
+      - id: locker-encryption-keyword-marker
+    near_lines: 8
+    unless:
+      - id: well-known/tool/development/chromium::gn-build-tool
+  - id: locker-encryption-control-flags
+    desc: Locker thread targeting and partial-encryption controls
+    crit: hostile
+    conf: 0.98
+    for: [binaries, scripts, c, cpp, rust, go, csharp, shell]
+    size_min: 0
+    needs: 3
+    any:
+      - id: locker-thread-count-flag
+      - id: locker-extension-target-flag
+      - id: locker-partial-encryption-ratio-flag
+      - id: locker-encryption-limit-flag
+      - id: locker-keystore-store-flag
+  - id: ransomware-operator-flag-panel
+    desc: Ransomware operator flag panel
+    crit: hostile
+    conf: 0.95
+    needs: 3
+    any:
+      - id: flag-no-gpo
+      - id: flag-force-safemode
+      - id: flag-stealth
+      - id: micro-behaviors/process/argument/option::mount-option
+      - id: flag-creds-b64
+      - id: flag-target-path

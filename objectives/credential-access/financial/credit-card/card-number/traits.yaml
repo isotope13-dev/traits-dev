@@ -1,0 +1,113 @@
+defaults:
+  platforms: [windows, unix]
+  for: [python, javascript, php, html]
+  attack: T1005
+  mbc: B0030
+traits:
+- id: mastercard-brand
+  desc: Mastercard brand reference
+  crit: notable
+  conf: 0.4
+  if:
+    type: text
+    word: mastercard
+- id: cc-regex-16digit
+  desc: 16-digit card regex near card field
+  crit: notable
+  conf: 0.85
+  if:
+    type: text
+    regex: '(?i)(card|pan)[^\n]{0,80}\[0-9\]\{16\}'
+  unless:
+  - id: well-known/tool/detection/security-scanner::auditr-defensive-signature-catalog
+  downgrade:
+    any:
+    - id: metadata/build/bundler/asset::js-large-module-bundle
+    - id: metadata/package/testing/presence/scripted::faker-word
+- id: visa-bin
+  desc: "Matches 'card.'"
+  crit: notable
+  conf: 0.75
+  if:
+    type: text
+    regex: '(?i)(card|pan|number|bin)[^\n]{0,24}startsWith\s*\(\s*["'']4["'']\)'
+  unless:
+    # `startsWith("4")` is pervasive in minified bundles (version checks, char
+    # codes); a recognized JS bundle is not a card-BIN check.
+    - id: metadata/build/
+    - type: text
+      substr: profiler-kv-row
+    # HTTP 4xx status checks (e.g. httpStatusCode.startsWith("4")) are not BINs.
+    - type: text
+      regex: '(?i)(statusCode|httpStatus)\w*\.startsWith\s*\(\s*["'']4["'']'
+- id: visa-bin--card-payment-marker
+  desc: Card-number/PAN field assignment
+  crit: notable
+  conf: 0.75
+  if:
+    type: text
+    # Require card-number/PAN identity — bare "card"/"payment" match UI Card
+    # components and generic checkout copy.
+    #
+    # \b on both sides is load-bearing: without it the `pan` alternative is a
+    # substring match, so any identifier ENDING in "pan" followed by `=` or `:`
+    # scored as a PAN field. `const nameSpan = document.createElement('span')`
+    # in a tab-manager extension's popup.js matched on "…meSpan =", putting a
+    # credential-access/financial finding on code that has no card data at all.
+    regex: '(?i)["'']?\b(cardNumber|card_number|credit_?card|pan)\b["'']?\s*[:=]'
+  unless:
+  - id: metadata/package/documentation/page::static-documentation-html-page
+- id: mastercard-bin--rx-1
+  desc: Regex component marker
+  crit: component
+  conf: 0.75
+  if:
+    type: text
+    regex: '(?i)\bcredit[ _-]+card\b'
+- id: mastercard-bin--rx-2
+  desc: Mastercard brand near card-number context
+  crit: notable
+  conf: 0.75
+  if:
+    type: text
+    regex: '(?i)\bmastercard.{0,64}(cardNumber|card_number|credit.?card|pan|bin)'
+- id: mastercard-bin--rx-3
+  desc: startsWith check for Mastercard BIN prefix
+  crit: notable
+  conf: 0.75
+  if:
+    type: text
+    regex: startsWith.{0,20}"(5[1-5]|2[2-7])
+    case_insensitive: true
+composite_rules:
+- id: visa-bin-card-payment-check
+  desc: Visa prefix with card marker
+  crit: suspicious
+  conf: 0.7
+  all:
+  - id: visa-bin
+  - id: visa-bin--card-payment-marker
+  near_lines: 100
+- id: mastercard-bin-prefix-check
+  desc: Mastercard BIN startsWith range check
+  crit: component
+  conf: 0.8
+  all:
+  - id: metadata/lang/scripted::startswith-method
+  - id: mastercard-bin--rx-3
+  near_bytes: 128
+- id: mastercard-bin
+  desc: Mastercard BIN range (51-55, 2221-2720)
+  crit: suspicious
+  conf: 0.75
+  all:
+  # The "BIN range" identity requires an actual prefix check (startsWith 51-55 /
+  # 2221-2720). A bare brand reference ("mastercard" / "master card") is not a BIN
+  # check — it matches Font Awesome card-icon classes (fa-cc-mastercard) and other
+  # benign brand mentions, so it must not satisfy this composite on its own.
+  - id: objectives/credential-access/financial/credit-card/keyword::mastercard-billing-marker
+  - id: mastercard-bin-prefix-check
+  near_bytes: 512
+  unless:
+  - id: well-known/lib/web/
+  - id: well-known/lib/vendor-sdk/freemius

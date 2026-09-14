@@ -1,0 +1,146 @@
+# AWS control-plane API operations are neutral capabilities on their own.
+# Objective composites under objectives/ add intent by requiring related
+# operations from the same attack chain.
+defaults:
+  platforms: [unix, windows]
+  for: [scripts, source, json]
+  crit: notable
+  conf: 0.92
+traits:
+  - id: aws-cloudtrail-log-disable-call
+    desc: AWS CloudTrail logging disable call
+    for: [python, javascript, typescript, java, ruby, go]
+    if:
+      type: symbol
+      kind: call
+      regex: '(?i)(^|\.)(delete[_-]?trail|stop[_-]?logging)$'
+    unless:
+      - id: well-known/lib/cloud/alibaba-cloud-go::alibaba-cloud-go-library
+  - id: aws-cloudtrail-log-update-call
+    desc: AWS CloudTrail trail update call
+    for: [python, javascript, typescript, java, ruby, go]
+    if:
+      type: symbol
+      kind: call
+      regex: '(?i)(^|\.)update[_-]?trail$'
+    unless:
+      - id: well-known/lib/cloud/alibaba-cloud-go::alibaba-cloud-go-library
+  - id: aws-flow-logs-delete-call
+    desc: AWS VPC Flow Logs deletion call
+    for: [python, javascript, typescript, java, ruby, go]
+    if:
+      type: symbol
+      kind: call
+      regex: '(?i)(^|\.)delete[_-]?flow[_-]?logs$'
+  - id: aws-guardduty-detector-call
+    desc: AWS GuardDuty detector change call
+    for: [python, javascript, typescript, java, ruby, go]
+    if:
+      type: symbol
+      kind: call
+      regex: '(?i)(^|\.)(delete|update)[_-]?detector$'
+  # `CreateIPSet` is spelled identically by AWS WAF (a firewall IP match
+  # set — the benign form carried by WAF SDK examples and rule tooling) and
+  # by GuardDuty (the threat-detection trusted IP list the evasion
+  # objectives are about). The bare call stays service-neutral; the
+  # GuardDuty reading requires the service reference below.
+  - id: aws-create-ip-set-call
+    desc: AWS CreateIPSet API call
+    for: [python, javascript, typescript, java, ruby, go]
+    if:
+      type: symbol
+      kind: call
+      regex: '(?i)(^|\.)create[_-]?ip[_-]?set$'
+  - id: aws-create-ip-set-event
+    desc: AWS CreateIPSet API event
+    for: [json]
+    if:
+      type: text
+      regex: '(?i)"eventName"\s*:\s*"CreateIPSet"'
+  # GuardDuty reaches code only through its service identifier: the boto3
+  # client constructor string, an SDK import path or client class, the CLI
+  # service word, or the CloudTrail eventSource host. WAF code that shares
+  # the CreateIPSet spelling never carries one.
+  - id: guardduty-service-reference
+    desc: AWS GuardDuty service reference
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\bguard[_-]?duty\b'
+  - id: guardduty-ip-set-cli
+    desc: AWS GuardDuty IP-set CLI invocation
+    for: [shell, batch, powershell]
+    if:
+      type: text
+      regex: '(?i)\baws\s+guardduty\s+(create|update|delete)[_-]ip[_-]?set\b'
+  - id: aws-cloudtrail-logging-event
+    desc: AWS CloudTrail logging change event
+    for: [json]
+    if:
+      type: text
+      regex: '(?i)"eventName"\s*:\s*"(DeleteTrail|StopLogging|UpdateTrail)"'
+  - id: aws-flow-logs-delete-event
+    desc: AWS VPC Flow Logs deletion event
+    for: [json]
+    if:
+      type: text
+      regex: '(?i)"eventName"\s*:\s*"DeleteFlowLogs"'
+  - id: aws-guardduty-detector-event
+    desc: AWS GuardDuty detector change event
+    for: [json]
+    if:
+      type: text
+      regex: '(?i)"eventName"\s*:\s*"(DeleteDetector|UpdateDetector)"'
+  # Root console authentication is represented as a sign-in event rather than
+  # an ordinary IAM API call. Repeated structural fields are neutral log facts;
+  # the password-spray objective combines them with repeated failures.
+  - id: multiple-aws-cloudtrail-root-identities
+    desc: Multiple AWS CloudTrail root identities
+    for: [json]
+    count_min: 2
+    if:
+      type: text
+      regex: '(?is)"userIdentity"\s*:\s*\{[^\}]{0,512}"type"\s*:\s*"Root"'
+composite_rules:
+  - id: aws-cloudtrail-logging-operation
+    desc: AWS CloudTrail logging modification
+    crit: notable
+    any:
+      - id: aws-cloudtrail-log-disable-call
+      - id: aws-cloudtrail-log-update-call
+      - id: aws-cloudtrail-logging-event
+  - id: aws-flow-logs-operation
+    desc: AWS VPC Flow Logs deletion
+    crit: notable
+    any:
+      - id: aws-flow-logs-delete-call
+      - id: aws-flow-logs-delete-event
+  - id: aws-guardduty-detector-operation
+    desc: AWS GuardDuty detector modification
+    crit: suspicious
+    any:
+      - id: aws-guardduty-detector-call
+      - id: aws-guardduty-detector-event
+  # CreateIPSet is a WAF API too, so the GuardDuty reading of the shared
+  # spelling requires the GuardDuty service reference in the same file.
+  - id: aws-guardduty-ip-set-service-call
+    desc: AWS GuardDuty IP-set change call
+    crit: notable
+    all:
+      - id: aws-create-ip-set-call
+      - id: guardduty-service-reference
+  - id: aws-guardduty-ip-set-service-event
+    desc: AWS GuardDuty IP-set change event
+    crit: notable
+    for: [json]
+    all:
+      - id: aws-create-ip-set-event
+      - id: guardduty-service-reference
+  - id: aws-guardduty-ip-set-operation
+    desc: AWS GuardDuty IP-set modification
+    crit: suspicious
+    any:
+      - id: aws-guardduty-ip-set-service-call
+      - id: aws-guardduty-ip-set-service-event
+      - id: guardduty-ip-set-cli

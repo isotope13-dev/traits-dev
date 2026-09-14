@@ -1,0 +1,224 @@
+defaults:
+  platforms: [unix]
+  for: [python, javascript]
+traits:
+  - id: process-fd-memfd-discovery
+    desc: Scans proc fd links for memfd descriptor
+    crit: notable
+    conf: 0.9
+    for: [scripts, elf, c, cpp, rust, go]
+    platforms: [linux]
+    # The behaviour is walking /proc/<pid>/fd and matching the "memfd:" link
+    # target, so require the /fd path component. Without it the window was
+    # wide enough to pair any /proc path with any nearby identifier spelled
+    # memfd — bcc's usdt.cc opens "/proc/%d/mem" and names the returned
+    # descriptor `memfd` on the next line.
+    if:
+      type: text
+      regex: '(?is)/proc/[^"]{0,40}/fd.{0,160}\bmemfd\b'
+    unless:
+      - id: metadata/lang/upstream::linux-kernel-secondary-tree-path
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
+      - id: metadata/lang/upstream::linux-kernel-primary-tree-path
+      # runc's official memfd-bind helper legitimately inspects proc-fd
+      # links while creating a sealed in-memory copy of the runc binary.
+      - id: well-known/app/infrastructure/runc::runc-source-member-path
+  - id: process-self-maps
+    desc: References own process memory-map path
+    crit: notable
+    conf: 0.66
+    for: [scripts, source, binaries, -class, -pyc, -beam, -wasm, -static-lib]
+    platforms: [linux, android]
+    if:
+      type: text
+      substr: /proc/self/maps
+    unless:
+      - id: well-known/app/ai/coding-agent/tabby::tabby-basename
+      - id: metadata/file/string/identity::python3-interpreter-basename
+  - id: process-pid-maps
+    desc: Read process memory maps via /proc/PID/maps
+    crit: notable
+    conf: 0.66
+    if:
+      type: text
+      regex: /proc/[0-9]{1,10}/maps
+  - id: process-pid-maps-format
+    desc: Process maps path format
+    crit: notable
+    conf: 0.72
+    if:
+      type: text
+      regex: ^/proc/%[^/]{1,12}/maps$
+    unless:
+      - type: basename
+        exact: chrome_crashpad_handler
+      - id: well-known/app/ai/coding-agent/tabby::tabby-basename
+      - id: micro-behaviors/fs/proc/info/path::proc-self-path-fragment
+  - id: process-variable-pid-maps
+    desc: Builds a variable /proc PID maps path
+    crit: notable
+    conf: 0.88
+    # The template syntax is shared by shell expansion, Python/Rust format
+    # strings, C printf strings, and their compiled representations. Keep this
+    # capability language-neutral so cross-process scrapers are not tied to the
+    # implementation language of one campaign.
+    for: [scripts, source, binaries, -beam, -wasm, -pyc, -staticlib, -elixir, -clojure]
+    if:
+      type: text
+      regex: '/proc/(\{[^/]{1,40}\}|\$\{[^/]{1,40}\}|%[^/]{1,40})/maps'
+  - id: process-pid-mem
+    desc: Access process memory via /proc/*/mem
+    crit: suspicious
+    conf: 0.75
+    if:
+      type: text
+      regex: /proc/[0-9]{1,10}/mem
+    unless:
+      # Permission and safety tests use /proc/PID/mem as a denied-path
+      # fixture; the test string does not demonstrate memory scraping.
+      - id: metadata/package/testing/presence/harness/
+  - id: python-proc-memory-glob
+    desc: Python enumerates arbitrary process memory files
+    crit: suspicious
+    conf: 0.93
+    for: [python]
+    if:
+      type: text
+      regex: '\bglob\.glob\s*\(\s*["'']/proc/\*/mem["'']\s*\)'
+  - id: process-variable-pid-mem
+    desc: Interpolated /proc PID mem path template
+    crit: suspicious
+    conf: 0.88
+    for: [scripts, source, binaries, -beam, -wasm, -pyc, -staticlib, -elixir, -clojure]
+    if:
+      type: text
+      regex: '/proc/(\{[^/]{1,40}\}|\$\{[^/]{1,40}\})/mem'
+    unless:
+      # Chromium/Electron Crashpad reads /proc/%d/mem for the crashing process;
+      # that is crash reporting, not credential scraping.
+      - type: basename
+        exact: chrome_crashpad_handler
+      - id: metadata/file/string/identity::chrome-crashpad-handler-basename
+      - id: well-known/lib/runtime/scripted/electron::standard-electron-jit-helper-basename
+      # .NET CoreCLR / dbgshim / DAC open /proc/%lu/mem for dump and
+      # managed-debugger attach; that is runtime diagnostics, not scraping.
+      - id: well-known/lib/runtime/managed/dotnet-runtime::dotnet-dbgshim-runtime-context
+      - id: well-known/lib/runtime/managed/dotnet-runtime::dotnet-coreclr-native-runtime-context
+      - id: objectives/anti-analysis/debugger-detect/check::dotnet-runtime-debug-helper-marker
+      - id: well-known/lib/native/box64/
+      - id: well-known/app/infrastructure/runc::runc-source-tree-context
+      # minidump-writer captures a crashing external process and documents
+      # /proc/<pid>/mem as one of its three read fallbacks.  The versioned
+      # crate path identifies that established crash-dump implementation.
+      - id: well-known/lib/format/minidump::minidump-writer-crate-path
+  - id: process-pid-mem-format
+    desc: Process memory path format
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      regex: ^/proc/%[^/]{1,12}/mem$
+    unless:
+      - type: basename
+        exact: chrome_crashpad_handler
+      - id: well-known/app/ai/coding-agent/tabby::tabby-basename
+      - id: metadata/package/testing/presence/harness/
+      - id: micro-behaviors/fs/proc/info/path::proc-self-path-fragment
+  - id: process-pid-mem-template-rust
+    desc: Rust procfs process memory path template
+    crit: notable
+    conf: 0.88
+    for: [rust, elf]
+    platforms: [routeros, appliance, unix]
+    if:
+      type: text
+      regex: '/proc/(\{.{0,80}\}|self|[0-9]{1,8})/(task/[^/]{1,32}/)?mem\b'
+    unless:
+      - id: micro-behaviors/process/debug/tool-markers::gdb-debugger-text-marker
+      - id: micro-behaviors/process/debug/tool-markers::org-gnu-gdb-marker
+      - id: micro-behaviors/process/debug/tool-markers::lldb-ptrace-text-marker
+    downgrade:
+      any:
+        - id: micro-behaviors/ui/help/
+  - id: process-maps-cmdline-fragment-cluster
+    desc: Split proc maps/cmdline path cluster
+    crit: notable
+    conf: 0.78
+    for: [elf]
+    platforms: [unix, android]
+    if:
+      type: raw
+      regex: '/proc/\x00[\s\S]{0,128}/maps\x00[\s\S]{0,128}/cmdline\x00'
+      section: .rodata
+  - id: process-maps-xor
+    # XOR-encoded raw bytes in .rodata: a binary-only shape (the file default
+    # covers the plain-text /proc paths that scripts and polyglots can carry).
+    for: [elf, macho, staticlib]
+    desc: XOR-obfuscated process maps path
+    crit: notable
+    conf: 0.78
+    if:
+      type: hex
+      section: .rodata
+      pattern: 7B 39 35 24 27 54
+  - id: process-maps-xor14
+    # XOR-encoded raw bytes in .rodata: a binary-only shape (the file default
+    # covers the plain-text /proc paths that scripts and polyglots can carry).
+    for: [elf, macho, staticlib]
+    desc: XOR-obfuscated process maps path
+    crit: notable
+    conf: 0.9
+    if:
+      type: hex
+      section: .rodata
+      pattern: 21 63 6F 7E 7D
+  - id: process-maps-xor62
+    # XOR-encoded raw bytes in .rodata: a binary-only shape (the file default
+    # covers the plain-text /proc paths that scripts and polyglots can carry).
+    for: [elf, macho, staticlib]
+    desc: XOR-obfuscated process maps path
+    crit: notable
+    conf: 0.9
+    if:
+      type: hex
+      section: .rodata
+      pattern: 4D 12 10 0D 01 4D 47 06 4D 0F 03 12 11 62
+composite_rules:
+  - id: process-pid-maps-any
+    desc: Read process maps via proc
+    crit: notable
+    conf: 0.7
+    any:
+      - id: process-pid-maps
+      - id: process-pid-maps-format
+      - id: process-variable-pid-maps
+  - id: process-pid-mem-maps-helper
+    desc: Helper for process memory access
+    all:
+      - id: process-pid-maps-any
+    any:
+      - id: process-pid-mem
+      - id: process-pid-mem-format
+      - id: process-variable-pid-mem
+  - id: process-memory-pid-maps
+    desc: Arbitrary-process maps and memory access
+    crit: suspicious
+    all:
+      - id: micro-behaviors/fs/proc/info/path::process-arbitrary
+      - id: process-pid-mem-maps-helper
+  - id: process-memory-python-paths
+    desc: Python arbitrary-process memory path access
+    crit: suspicious
+    all:
+      - id: micro-behaviors/fs/proc/info/path::process-arbitrary
+      - id: micro-behaviors/fs/proc/info/path::python-proc-path-join
+      - id: micro-behaviors/os/privilege/paths::proc-mem
+  - id: process-memory-dumper
+    desc: Dumps process memory via /proc
+    crit: suspicious
+    conf: 0.8
+    any:
+      - id: process-memory-pid-maps
+      - id: process-memory-python-paths
