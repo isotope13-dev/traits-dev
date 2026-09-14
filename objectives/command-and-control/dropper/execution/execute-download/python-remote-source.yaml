@@ -1,0 +1,139 @@
+# Python remote-source droppers fetch a new Python module, write it to disk,
+# execute it through the import system, and remove the one-time stage. This is
+# the reusable behavior described in the KANDYKORN/Watcher chain, not a family
+# signature or a campaign IOC.
+defaults:
+  platforms: [linux, macos, windows, unix, android, ios]
+  for: [python]
+  attack: T1105,T1059.006,T1070.004
+  mbc: B0030
+
+traits:
+  - id: python-urllib-response-exec
+    desc: Python executes fetched urllib response
+    crit: suspicious
+    conf: 0.98
+    platforms: [unix]
+    if:
+      type: text
+      regex: '(?is)exec\s*\(\s*[A-Za-z_]\w*\.urlopen\([^)]{0,120}\)\.read\s*\(\s*\)'
+
+composite_rules:
+  # Records the generic requests form without claiming that every nearby file
+  # write is the fetched payload. The response-content write anchors the GET
+  # result to the material later executed by exec() or os.system().
+  - id: python-http-response-write-near-execute
+    desc: HTTP response write occurs near execution
+    crit: suspicious
+    conf: 0.98
+    attack: T1105,T1059.006
+    scope: file
+    near_lines: 40
+    all:
+      - id: micro-behaviors/communications/http/lib/requests::requests-get
+      - id: micro-behaviors/fs/write/file/response-body::python-write-response-content
+    any:
+      - id: micro-behaviors/process/create/system::python-os-system
+      - id: micro-behaviors/process/interpreter/python::exec-builtin
+    unless:
+      - id: metadata/package/testing/
+      - id: metadata/build/recognized-contexts::benign-app-fp-context
+      # Was `well-known/lib/data/`, now dissolved into well-known/ and the
+      # package-file facts. Vendored third-party source is the library's own code, not the project's.
+      - id: metadata/package/files/vendored/
+      - id: micro-behaviors/communications/http/server/listener::python-built-in-http-server-command
+      - id: micro-behaviors/communications/http/server/listener::python-range-file-server-command
+
+  - id: python-temp-download-chmod-launch
+    desc: Temporary path, executable chmod, and launch
+    crit: suspicious
+    conf: 0.95
+    attack: T1105,T1222.002,T1059.006
+    scope: file
+    near_lines: 40
+    all:
+      - id: micro-behaviors/fs/path/temp::unix-temp
+      - id: micro-behaviors/fs/chmod/executable/mode::python-executable
+      - id: micro-behaviors/process/create/subprocess/
+    any:
+      - id: micro-behaviors/communications/http/lib/requests::requests-get
+      - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-call
+      - id: micro-behaviors/communications/http/lib/urllib::urllib-urlretrieve-dup
+    unless:
+      - id: metadata/package/testing/presence/harness/
+      - id: well-known/lib/stdlib/
+      - id: well-known/app/infrastructure/ansible::ansible-python-package-path
+      - id: well-known/tool/offensive/nmap::nmap-source-tree
+      - id: well-known/tool/detection/wazuh/
+      - id: well-known/app/ai/knowledge/animica::package-context
+      - id: micro-behaviors/process/info/selfpath::self-update-flow-marker
+
+  - id: python-urllib-remote-exec
+    desc: Python executes a remote urllib stage
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: micro-behaviors/communications/http/lib/urllib::urlopen-response-body-read
+      - id: python-urllib-response-exec
+
+  - id: python-urlopen-write-chmod-launch
+    desc: Python download-write-chmod-launch chain
+    crit: suspicious
+    conf: 0.98
+    near_lines: 40
+    all:
+      - id: micro-behaviors/communications/http/lib/urllib::urlopen-response-body-read
+      - id: micro-behaviors/communications/http/lib/urllib::urllib-download-to-binary-output
+      - id: micro-behaviors/fs/chmod/modify::python-chmod-call-with-exec-bit
+      - id: micro-behaviors/process/create/subprocess::process-execution
+
+  - id: python-remote-script-stage
+    desc: Python downloads and writes a script stage
+    crit: suspicious
+    conf: 0.96
+    scope: file
+    near_lines: 40
+    all:
+      - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-call
+      - id: micro-behaviors/communications/http/lib/urllib::urlopen-response-body-read
+      - id: micro-behaviors/fs/file/open::write-append-create-mode
+      - id: micro-behaviors/fs/write/file/target::py-open-script-path
+
+  - id: python-remote-script-fetch-execute
+    desc: Python fetches and dynamically executes a script stage
+    crit: hostile
+    conf: 0.98
+    scope: file
+    near_lines: 80
+    all:
+      - id: python-remote-script-stage
+      - id: micro-behaviors/os/api-resolution/dynamic::python-importlib-spec-exec-module
+
+  - id: python-remote-script-fetch-execute-cleanup
+    desc: Python removes a fetched script after dynamic execution
+    crit: hostile
+    conf: 0.99
+    scope: file
+    near_lines: 96
+    all:
+      - id: python-remote-script-fetch-execute
+      - id: micro-behaviors/fs/delete/file/library::py-remove
+      - id: micro-behaviors/os/api-resolution/dynamic::python-importlib-spec-exec-module
+
+  # Subprocess-shaped variant of the chain above: instead of exec()/importlib
+  # in-process, a requests response is written in a temporary staging flow and
+  # the computed path is handed to a child interpreter. Requiring both the GET
+  # and response-body write prevents a dormant URL literal plus an unrelated
+  # subprocess call from being misread as a completed fetch-and-execute chain.
+  - id: python-response-write-variable-interpreter-chain
+    desc: Response write near variable-path interpreter
+    crit: hostile
+    conf: 0.98
+    scope: file
+    near_lines: 40
+    all:
+      - id: micro-behaviors/process/create/variable-spawn::python-interpreter-variable-script-argument
+      - id: micro-behaviors/fs/temp/directory::python-temporary-directory-context
+      - id: micro-behaviors/communications/http/lib/requests::requests-get
+      - id: micro-behaviors/fs/write/file/response-body::python-write-response-content
+      - id: micro-behaviors/communications/http/download/url::python-source-url-reference

@@ -1,0 +1,1 @@
+pub fn run(){if false{let data="status";if flag {let data=std::env::vars();}ureq::post(endpoint).send(data);}}

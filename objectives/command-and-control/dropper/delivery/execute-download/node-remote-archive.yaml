@@ -1,0 +1,97 @@
+defaults:
+  crit: hostile
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1105
+  mbc: B0024
+
+# NOTE: a composite of https.get + createWriteStream + copyFileSync +
+# skills-directory + execSync was removed here. Every leg is a neutral
+# installer capability, and their conjunction is the exact shape of a
+# consented `npx <tool>` skill installer (user-invoked bin, vendor-owned
+# repo). The install-time, unconsented variant of this behavior is covered
+# by objectives/supply-chain/install-hook/skill-agent::postinstall-fetches-remote-agent-skill,
+# which gates on the lifecycle hook rather than on the deployment mechanics.
+composite_rules:
+  - id: node-obfuscated-buffered-download-detached-launch
+    desc: Node downloads, arms, and launches a file detached
+    conf: 0.99
+    scope: file
+    attack: "T1027,T1059.007,T1105,T1222.002"
+    near_bytes: 2000
+    all:
+      - id: micro-behaviors/communications/http/request/evented::node-evented-get-response
+      - id: micro-behaviors/communications/http/download/handler::node-http-response-to-file
+      - id: micro-behaviors/fs/chmod/executable/mode::node-chmod-exec-mode-755
+      - id: micro-behaviors/process/create/spawn::indirect-detached-hidden-spawn
+  # Same shape as node-obfuscated-buffered-download-detached-launch above, but
+  # written against the modern ESM surface: `await fetch()` + `arrayBuffer()` +
+  # createWriteStream, rather than https.get with a response callback. The
+  # older rule's two HTTP legs both miss that rewrite, so a dropper evades it
+  # by being written this decade.
+  #
+  # Per the NOTE at the top of this file, fetch+write+chmod on its own is a
+  # consented installer (esbuild, puppeteer, sharp all download a binary and
+  # arm it at install time). The covert-launch leg is what separates them: a
+  # real installer leaves the binary on disk for the user to invoke, it does not
+  # immediately run it detached with stdio ignored and the console window
+  # hidden.
+  - id: node-fetch-buffered-archive-detached-launch
+    desc: Node fetches, arms, and launches file detached
+    conf: 0.97
+    scope: file
+    attack: "T1059.007,T1105,T1222.002"
+    near_bytes: 2000
+    all:
+      - id: micro-behaviors/communications/http/request/client::js-fetch-call
+      - id: micro-behaviors/fs/write/file/stream::create-write-stream
+      - id: micro-behaviors/fs/chmod/executable/mode::node-chmod-exec-mode-755
+      - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+    unless:
+      - id: metadata/package/testing/presence/harness/
+
+  # Bring-your-own-interpreter: rather than carry a payload runtime, the dropper
+  # pulls an official, signed Bun build and runs the second stage under it. The
+  # download reaches a legitimate vendor host, so URL reputation and
+  # unknown-binary heuristics both pass. Identity comes from the vendor's own
+  # asset filenames, which survive the URL being assembled at runtime.
+  - id: portable-runtime-covert-stager
+    desc: Portable runtime armed and launched covertly
+    conf: 0.96
+    scope: file
+    attack: "T1059.007,T1105,T1218"
+    near_bytes: 2000
+    all:
+      - id: micro-behaviors/communications/http/download/github::bun-release-asset-filename
+      - id: micro-behaviors/fs/chmod/executable/mode::node-chmod-exec-mode-755
+      - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+    unless:
+      - id: metadata/package/testing/presence/harness/
+
+  - id: node-remote-archive-execute
+    desc: Node remote archive download and execute
+    conf: 0.99
+    scope: file
+    attack: "T1105,T1059.007"
+    all:
+      - id: micro-behaviors/communications/http/request/client::node-scheme-selected-http-client
+      - id: micro-behaviors/fs/write/file/full::node-write-file-sync
+      - id: objectives/supply-chain/install-hook/scripts/dynamic-install::node-tar-gzip-strip-extract
+      - id: micro-behaviors/process/create/shell/bridge::execSync-call
+      - id: micro-behaviors/os/module/dynamic-load::node-variable-require-call
+
+  - id: node-passworded-archive-pe-dropper
+    desc: Node downloads and runs a passworded archive PE
+    conf: 0.995
+    scope: file
+    attack: "T1105,T1059.007,T1027,T1222.002"
+    mbc: "B0024,F0011"
+    all:
+      - id: micro-behaviors/communications/http/request/dynamic::node-selected-transport-request
+      - id: micro-behaviors/data/archive/library::admzip-passworded-entry-read
+      - id: micro-behaviors/fs/write/file/full::node-fs-promises-write-file
+      - id: micro-behaviors/fs/chmod/executable/mode::node-fs-promises-write-executable-mode
+      - id: micro-behaviors/data/format/executable/header::js-pe-mz-reject-check
+      - id: micro-behaviors/process/create/spawn::spawn-call
+    unless:
+      - id: metadata/package/testing/harness/runtime/

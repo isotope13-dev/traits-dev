@@ -273,6 +273,8 @@ micro-behaviors/
 │   ├── email/             #   Email (SMTP, MAPI, MIME, NNTP)            C0012
 │   ├── icmp/              #   ICMP (ping, traceroute)                   C0014
 │   ├── ipc/               #   IPC (pipes, DDE, XPC, WCF, IRC)          C0003
+│   ├── rpc/               #   Remote procedure-call protocols
+│   ├── mcp/               #   Model Context Protocol (stdio and HTTP)
 │   ├── ftp/               #   FTP client/upload                         C0004
 │   ├── ssh/               #   SSH client/connect
 │   ├── ip/                #   IP addressing (parse, resolve, embedded)

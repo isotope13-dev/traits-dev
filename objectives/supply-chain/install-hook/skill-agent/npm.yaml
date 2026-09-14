@@ -1,0 +1,152 @@
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript, package.json]
+  attack: "T1195.002"
+
+traits:
+  - id: npx-skills-remove-global
+    desc: Removes AI agent skill globally via npx
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '\bnpx\s+(-y\s+)?skills\s+remove\b.{0,160}(--global|-g)\b'
+
+  - id: ai-agent-skill-registration-action
+    desc: AI agent skill registration action text
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)(registering|installing).{0,80}(agent skill|ai agent)'
+
+  # `cursor` was in this alternation as a bare word, which is ordinary vocabulary in
+  # far more code than it is an AI-agent name: terminal/TUI libraries move a cursor,
+  # database clients open cursors, stylesheets set `cursor: pointer`, and paginated
+  # API clients pass cursor tokens. It matched a PTY session daemon (xterm +
+  # ghostty-vt) three times with zero `claude-code` and zero `codex` hits, reporting
+  # "AI agent CLI names" from a supply-chain install-hook objective. Narrowed to the
+  # agent CLI spelling (`cursor-agent` / `cursor agent`); the product name alone
+  # carries no agent-invocation meaning. Recall cost is negligible -- the consuming
+  # composite postinstall-registers-ai-agent-skill gets its intent from the `all:`
+  # legs (a postinstall hook plus `npx skills add`), and this is one of three
+  # interchangeable `any:` corroborators.
+  - id: ai-agent-runtime-names
+    desc: AI agent CLI names
+    crit: component
+    conf: 0.5
+    if:
+      type: text
+      regex: '(?i)\b(claude[- ]code|cursor[- ]agent|codex)\b'
+
+composite_rules:
+  # Bundled skill text is less dangerous than mutable remote instructions, but
+  # writing it into an agent's trusted instruction tree during npm install is
+  # still an implicit configuration change with no explicit CLI action.
+  - id: postinstall-writes-bundled-agent-skill
+    desc: npm install hook writes bundled instructions into AI agent skills
+    crit: suspicious
+    conf: 0.98
+    for: [javascript, typescript, package.json, npm, archives]
+    scope: archive
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/declaration::has-postinstall
+      - id: micro-behaviors/fs/path/agent-config/directory::ai-agent-skill-install-directory
+    any:
+      - id: micro-behaviors/fs/write/file/target::writes-agent-skill-markdown
+      - id: micro-behaviors/fs/write/file/target::writes-agent-skill-tree
+      - id: micro-behaviors/fs/file/copy::js-copyfile-sync-import
+
+  - id: postinstall-registers-ai-agent-skill
+    desc: npm install hook registers global AI agent skill
+    crit: suspicious
+    conf: 0.94
+    for: [javascript, typescript, package.json, npm, archives]
+    scope: archive
+    near_bytes: 12000
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/declaration::has-postinstall
+      - id: micro-behaviors/process/create/agent::npx-skills-add-global-command-text
+    any:
+      - id: ai-agent-skill-registration-action
+      - id: ai-agent-runtime-names
+      - id: objectives/evasion/security-bypass/llm/target::llm-agent-target
+    unless:
+      - id: well-known/app/system/olares
+
+  # An npm lifecycle hook that pulls content off the network straight into the
+  # user's AI-agent skill tree ships prompt/instruction text that was never in
+  # the published artifact, is mutable after publication, and lands with no user
+  # action — the agent then loads it as trusted instructions. The consented
+  # variant of this (a `bin` the user runs explicitly) has no install hook and
+  # therefore does not match.
+  - id: postinstall-fetches-remote-agent-skill
+    desc: npm install hook downloads remote content into agent skills directory
+    crit: suspicious
+    conf: 0.93
+    for: [javascript, typescript, package.json, npm, archives]
+    scope: archive
+    attack: "T1195.002,T1105"
+    all:
+      - id: objectives/supply-chain/install-hook/package/manifest::postinstall-runs-node-script
+      - id: micro-behaviors/communications/http/request/client::js-fetch-implementation-call
+      - id: micro-behaviors/communications/mcp::mcp-client-reads-resources
+      - id: micro-behaviors/fs/write/file/target::writes-agent-skill-tree
+      - id: micro-behaviors/fs/path/agent-config/directory::ai-agent-skill-install-directory
+
+  - id: postinstall-fetches-authenticated-agent-skill
+    desc: npm hook fetches authenticated agent skills
+    crit: suspicious
+    conf: 0.96
+    for: [javascript, typescript, package.json, npm, archives]
+    scope: archive
+    attack: "T1195.002,T1105"
+    all:
+      - id: objectives/supply-chain/install-hook/package/manifest::postinstall-runs-node-script
+      - id: micro-behaviors/communications/mcp::mcp-client-authenticated-resource-fetch
+      - id: micro-behaviors/fs/write/file/target::writes-agent-skill-tree
+      - id: micro-behaviors/fs/path/agent-config/directory::ai-agent-skill-install-directory
+
+  - id: postinstall-modifies-global-agent-config
+    desc: npm install hook modifies global AI-agent configuration
+    crit: suspicious
+    conf: 0.98
+    for: [javascript, typescript, package.json, npm, archives]
+    scope: archive
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/declaration::has-postinstall
+    any:
+      # Hook protocol wiring is one spelling; direct writes to a cluster of
+      # AI-agent config directories are another (for example Codex's provider
+      # and agent TOML files).
+      - id: micro-behaviors/communications/ipc/agent-hook::agent-hook-wiring
+      - id: micro-behaviors/fs/write/file/target::ai-agent-config-directory-write
+
+  # Wiring an MCP server into the consumer's agent config adds remote-driven
+  # tools to the developer's agent. The registered command (typically
+  # `npx <pkg>`) executes whatever the registry currently serves. The
+  # write-call proximity keeps this to real registration code: a UI bundle
+  # that merely renders MCP configuration screens does not write the config
+  # file itself.
+  - id: registers-mcp-server-in-agent-config
+    desc: Package registers MCP server in agent config
+    crit: suspicious
+    conf: 0.93
+    attack: T1195.002,T1059.007
+    # Registration requires the write call and MCP configuration target to be
+    # in the same source file. Archive scope pooled unrelated helper writes
+    # with documentation examples such as mcpServers.
+    for: [javascript, typescript]
+    scope: file
+    near_bytes: 1500
+    all:
+      - id: micro-behaviors/fs/write/file/full::node-write-file-sync-call
+    any:
+      - id: micro-behaviors/fs/path/agent-config/mcp::claude-mcp-json-target
+      - id: micro-behaviors/fs/path/agent-config/mcp::mcp-json-filename
+      - id: micro-behaviors/communications/mcp::mcp-client-config-key--mcpservers
+    unless:
+      # A runtime MCP installer intentionally writes its own session-scoped
+      # config while preparing an agent request.  That is not an npm install
+      # hook or a supply-chain registration of the consumer's global config.
+      - id: objectives/credential-access/dev-tools/ai::mcp-server-install-context

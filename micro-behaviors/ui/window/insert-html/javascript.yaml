@@ -1,0 +1,158 @@
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript, html, -kotlin]
+  crit: notable
+  conf: 0.82
+traits:
+- id: browser-document-write
+  desc: Writes HTML into document
+  crit: notable
+  conf: 0.78
+  if:
+    type: text
+    regex: '\bdocument\.write\s*\('
+- id: browser-empty-document-write
+  desc: Empty document.write call
+  conf: 0.82
+  if:
+    type: text
+    regex: document\.write\(\s*['"]{2}\s*\)
+- id: browser-document-open-alias
+  desc: Aliased document open reference
+  crit: suspicious
+  conf: 0.88
+  ref: sha256:2e95c6a1842b99a4045e973126f1b16261cb8f0b89ee9e7c618a6e4d0746d7fd
+  if:
+    type: text
+    regex: '(?s)=\s*document\s*;[^;\n]{0,220}\.open\s*;'
+# The matcher never checked `document`, despite the name and description: a
+# bare `\.write\s*;.{0,140}\.close\s*;` matches any object's write/close
+# property pair. It read Closure Compiler's own externs — the type-declaration
+# stubs shipped inside closure-compiler.jar!externs.zip, where
+# `WritableStreamSink.prototype.write;` and `.prototype.close;` are declarations
+# of the WHATWG Streams API — as an aliased document write, and would do the
+# same for any `.d.ts`-style declaration file.
+#
+# Requiring the assignment form restores the meaning the name claims: the
+# obfuscation idiom is `w = d.write;` (grabbing the method into a variable),
+# while a declaration file states the property and stops. Dropped to notable
+# to match: capturing a method reference is a neutral aliasing capability, not
+# something rarely legitimate — the document context comes from
+# browser-document-open-alias in the composite that consumes both.
+- id: browser-document-write-close-alias
+  desc: Aliased write and close method pair
+  crit: notable
+  conf: 0.88
+  ref: sha256:2e95c6a1842b99a4045e973126f1b16261cb8f0b89ee9e7c618a6e4d0746d7fd
+  if:
+    type: text
+    regex: '(?s)=\s*[\w$.]{1,40}\.write\s*;.{0,140}\.close\s*;'
+- id: browser-create-script-element
+  desc: Creates script DOM element
+  conf: 0.84
+  if:
+    type: symbol
+    kind: call
+    exact: document.createElement
+    arg:
+      kind: string
+      exact: script
+  unless:
+  - id: metadata/document/html/
+  - id: well-known/lib/web/jquery/
+- id: browser-create-iframe-element
+  desc: Creates iframe DOM element
+  conf: 0.94
+  if:
+    type: symbol
+    kind: call
+    exact: document.createElement
+    arg:
+      kind: string
+      exact: iframe
+- id: browser-iframe-src-variable
+  desc: Assigns variable URL to iframe source
+  conf: 0.88
+  if:
+    type: text
+    regex: '\b(frame|iframe)\.src\s*=\s*[A-Za-z_$][\w$]*'
+- id: browser-iframe-srcdoc-assignment
+  desc: Assigns inline HTML to iframe srcdoc
+  crit: notable
+  conf: 0.93
+  for: [javascript, typescript, html]
+  if:
+    type: symbol
+    kind: bind
+    regex: '^[A-Za-z_$][A-Za-z0-9_$]*\.srcdoc$'
+- id: browser-script-insert-adjacent
+  desc: Inserts script adjacent to element
+  conf: 0.86
+  if:
+    type: symbol
+    exact: script.insertAdjacentElement
+- id: comparison-text-innerhtml-injection-sink
+  desc: Potential HTML injection from comparison text
+  crit: notable
+  conf: 0.92
+  # This identifies an unsafe rendering sink, not confirmed script execution.
+  # Requiring both before/after fields avoids warning on ordinary templates.
+  if:
+    type: text
+    regex: '\.innerHTML\s*=\s*`[\s\S]{0,240}\$\{[^}]{0,80}\.(before|after)\.text\b'
+  unless:
+  - id: metadata/file/format/structured::sourcemap-sources-content
+  - id: metadata/lang/scripted::dts-declaration-file
+  - id: metadata/document/html/
+- id: browser-document-element-blanking
+  desc: Clears document element HTML
+  conf: 0.86
+  if:
+    type: text
+    regex: document\.documentElement\.innerHTML\s*=\s*['"]{2}
+  unless:
+  - id: metadata/file/format/structured::sourcemap-sources-content
+  - id: metadata/lang/scripted::dts-declaration-file
+- id: document-root-html-replacement
+  desc: Replaces document root HTML
+  crit: notable
+  conf: 0.9
+  if:
+    type: symbol
+    kind: bind
+    exact: document.documentElement.innerHTML
+composite_rules:
+- id: browser-aliased-document-rewrite-call
+  desc: Aliased document rewrite via call
+  crit: suspicious
+  conf: 0.93
+  ref: sha256:2e95c6a1842b99a4045e973126f1b16261cb8f0b89ee9e7c618a6e4d0746d7fd
+  all:
+  - id: browser-document-open-alias
+  - id: browser-document-write-close-alias
+  - id: micro-behaviors/data/control-flow/analysis::js-function-call-method
+  near_bytes: 512
+# Building markup that carries an inline `on*=` handler and writing it in with
+# innerHTML.  It is the DOM-XSS sink shape, but on its own it is also how most
+# pre-framework UI code renders interactive controls (a `<select onchange=...>`
+# built as a string), so it is a capability, not an objective.  The
+# session-hijack composite in objectives/credential-access/browser/session-hijack
+# supplies the credential-forwarding legs that make it an attack.
+- id: innerhtml-inline-event-handler-write
+  desc: Writes markup with an inline event handler via innerHTML
+  crit: notable
+  conf: 0.9
+  all:
+  - id: micro-behaviors/ui/window/html::html-active-handler-marker
+  - id: micro-behaviors/ui/window/insert-html::browser-innerhtml-assignment
+  near_bytes: 2048
+- id: browser-high-layer-iframe-container
+  desc: Embeds iframe in high-layer viewport container
+  crit: notable
+  conf: 0.92
+  all:
+  - id: browser-create-iframe-element
+  - id: micro-behaviors/ui/window/style::fixed-viewport-style
+  - id: micro-behaviors/ui/window/style::high-z-index-style
+  - id: micro-behaviors/ui/window/dom/tree::document-root-append
+  near_bytes: 1800
