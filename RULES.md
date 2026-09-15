@@ -102,7 +102,7 @@ Aim for every atomic trait to represent a strong, precise signal in its own righ
 
 For example, aliased forms of `urllib.request.urlopen`, a full `requests.post` call, or a network-library import remain notable if each independently proves HTTP-client behavior. In contrast, `&cc=`, a lone family-specific word fragment, or half of a split encoded marker may be components because none communicates a clear behavior alone.
 
-**HOSTILE composites require precision ≥ 3.5**, else downgraded. The score is computed by the engine, not configured here; to see a rule's score and the terms that produced it, run `cleave test-rules --rules <dir::id> <file>` and read the `Precision:` / `Precision detail:` lines.
+**HOSTILE composites require precision ≥ 3.5 as an authoring quality bar.** This is not an automatic runtime downgrade guarantee: current cleave defaults to a calibrated hostile warning threshold of 1.6, and its precision validation records warnings without changing criticality. A passing validation run or an emitted hostile label therefore does not establish that this authoring bar is met. The score is computed by the engine, not configured here; to see a rule's score and the terms that produced it, run `cleave test-rules --rules <dir::id> <file>` and read the `Precision:` / `Precision detail:` lines. Behavioral accuracy and benign controls remain necessary independently of the score.
 
 ### Exception composites
 

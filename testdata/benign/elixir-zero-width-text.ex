@@ -1,0 +1,12 @@
+defmodule UnicodeTextFixture do
+  @alphabet ["\u200b", "\u200c", "\u200d", "\ufeff"]
+  @text "\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b\u200b"
+
+  @moduledoc """
+  Decoder example, not executed:
+  Enum.find_index(@alphabet, &(&1 == symbol)) * 64
+  :erlang.list_to_binary([value])
+  """
+
+  def fixture, do: {@alphabet, @text}
+end

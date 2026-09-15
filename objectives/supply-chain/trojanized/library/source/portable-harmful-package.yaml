@@ -29,7 +29,7 @@ traits:
       regex: '(?is)[.]aws/credentials.{0,600}[.]netrc|[.]netrc.{0,600}[.]aws/credentials'
 
   - id: dns-query-api-source
-    desc: Source performs hostname resolution
+    desc: Resolves hostnames through a DNS API
     crit: notable
     if:
       type: text
@@ -161,16 +161,10 @@ traits:
       type: text
       regex: '(?i)wbadmin(.exe)?.{0,50}delete.{0,30}catalog'
 
-  - id: dd-zero-source
-    desc: Source invokes zero-filled device write
-    crit: suspicious
-    if:
-      type: text
-      substr: if=/dev/zero
-
   - id: mounted-device-zero-source
     desc: Source zeroes discovered mounted device
     crit: suspicious
+    for: [scripts, source, -go, class, java_class]
     if:
       type: text
       regex: '(?is)(/proc/mounts.{0,600}if=/dev/zero|if=/dev/zero.{0,600}/proc/mounts)'
@@ -178,6 +172,7 @@ traits:
   - id: boot-sector-block-size
     desc: Source selects boot-sector prefix
     crit: suspicious
+    for: [scripts, source, -go, class, java_class]
     if:
       type: text
       substr: bs=446
@@ -260,13 +255,6 @@ traits:
       type: text
       regex: '(fromhex|ToByte|parseInt|hex::decode|decodeHex|hexToBytes|digit_value)'
 
-  - id: source-xor-operation
-    desc: Source applies XOR transformation
-    crit: notable
-    if:
-      type: text
-      regex: '(?i)(bxor|bitxor|xor|\s\^\s)'
-
   - id: windows-living-off-land-command
     desc: Source invokes Windows proxy binary
     crit: component
@@ -280,13 +268,6 @@ traits:
     if:
       type: string_literal
       regex: '^[A-Fa-f0-9]{80,}$'
-
-  - id: zero-width-alphabet-source
-    desc: Source defines zero-width alphabet
-    crit: notable
-    if:
-      type: text
-      regex: '(?is)200b.{0,100}200c.{0,100}200d.{0,100}(feff|2060)'
 
   - id: zero-width-two-bit-shift
     desc: Decoder shifts zero-width pairs
@@ -302,26 +283,12 @@ traits:
       type: text
       regex: '(?i)(eval\s*[(]|exec\s*[(]|Invoke-Expression|Start-Process)'
 
-  - id: image-pixel-read-source
-    desc: Source reads image pixel channels
-    crit: notable
-    if:
-      type: text
-      regex: '(?i)(getpixel|GetPixel|pixelColor|readInt|rgba)'
-
   - id: blue-channel-payload-source
     desc: Source extracts image blue channel
     crit: notable
     if:
       type: text
       regex: '(?i)blue[- ]channel'
-
-  - id: lsb-bit-mask-source
-    desc: Source extracts least significant bits
-    crit: notable
-    if:
-      type: text
-      regex: '(&\s*1|and\s+1|bitAnd\s*[(]\s*1)'
 
   - id: executable-stage-source
     desc: Source launches staged executable
@@ -343,27 +310,6 @@ traits:
     if:
       type: text
       regex: '(xattr|dlopen|DYLD_INSERT_LIBRARIES|Library/Audio/Plug-Ins)'
-
-  - id: systemd-timer-source
-    desc: Source defines systemd timer
-    crit: notable
-    if:
-      type: text
-      substr: .timer
-
-  - id: systemd-timer-schedule
-    desc: Source schedules systemd unit
-    crit: notable
-    if:
-      type: text
-      regex: '(OnCalendar|OnUnitActiveSec)'
-
-  - id: systemd-user-enable-source
-    desc: Source enables systemd user unit
-    crit: suspicious
-    if:
-      type: text
-      regex: 'systemctl.{0,100}--user.{0,100}(enable|start)'
 
   - id: build-lifecycle-hook-source
     desc: Source implements package build hook
@@ -391,9 +337,13 @@ composite_rules:
       - id: micro-behaviors/communications/url/host::dynamic-dns-hostname
 
   - id: portable-dns-secret-exfiltration
-    desc: Developer secrets leave through DNS
+    desc: Developer credential material sent through DNS lookups
     crit: hostile
     conf: 0.98
+    # Secret-path documentation and generic SSRF validation often occur in
+    # different modules.  Require a local relationship so those package-wide
+    # mentions cannot be promoted to DNS exfiltration.
+    near_bytes: 8192
     all:
       - id: developer-secret-file-set
     any:
@@ -470,7 +420,7 @@ composite_rules:
     conf: 0.995
     all:
       - id: mounted-device-zero-source
-      - id: dd-zero-source
+      - id: micro-behaviors/fs/write/file/shell::dd-zero-input-command
 
   - id: portable-boot-sector-wiper
     desc: Boot sector overwritten with zeroes
@@ -478,7 +428,7 @@ composite_rules:
     conf: 0.995
     all:
       - id: boot-sector-block-size
-      - id: dd-zero-source
+      - id: micro-behaviors/fs/write/file/shell::dd-zero-input-command
 
   - id: portable-disk-fill-loop
     desc: Infinite writes exhaust local storage
@@ -514,7 +464,7 @@ composite_rules:
     conf: 0.98
     all:
       - id: long-hex-command-blob
-      - id: source-xor-operation
+      - id: micro-behaviors/data/source/arithmetic::source-xor-operation
       - id: windows-living-off-land-command
 
   - id: portable-zero-width-loader
@@ -523,7 +473,7 @@ composite_rules:
     conf: 0.99
     near_bytes: 2400
     all:
-      - id: zero-width-alphabet-source
+      - id: micro-behaviors/data/string/unicode::zero-width-format-codepoint-set
       - id: zero-width-two-bit-shift
       - id: dynamic-execution-source
 
@@ -533,7 +483,7 @@ composite_rules:
     conf: 0.99
     all:
       - id: blue-channel-payload-source
-      - id: lsb-bit-mask-source
+      - id: micro-behaviors/data/source/arithmetic::lsb-bit-mask-source
       - id: executable-stage-source
 
   - id: portable-dylib-dropper
@@ -544,15 +494,6 @@ composite_rules:
       - id: dylib-path-source
       - id: dylib-load-or-unquarantine
 
-  - id: portable-systemd-timer-dropper
-    desc: Systemd timer executes remote command
-    crit: hostile
-    conf: 0.99
-    all:
-      - id: systemd-timer-source
-      - id: systemd-timer-schedule
-      - id: systemd-user-enable-source
-
   - id: portable-build-hook-secret-theft
     desc: Build hook exports developer secrets
     crit: hostile
@@ -560,43 +501,3 @@ composite_rules:
     all:
       - id: build-lifecycle-hook-source
       - id: objectives/credential-access/files/config::developer-credential-file-read
-
-  - id: portable-harmful-behavior
-    desc: Source contains portable harmful behavior
-    crit: component
-    conf: 0.97
-    any:
-      - id: portable-browser-secret-exfiltration
-      - id: portable-dns-secret-exfiltration
-      - id: portable-keychain-cookie-exfiltration
-      - id: portable-launchagent-exfiltration
-      - id: portable-cron-remote-persistence
-      - id: portable-authorized-key-backdoor
-      - id: portable-runkey-persistence
-      - id: portable-startup-link-dropper
-      - id: portable-scheduled-secret-dropper
-      - id: portable-recovery-destruction
-      - id: portable-dynamic-device-wiper
-      - id: portable-boot-sector-wiper
-      - id: portable-disk-fill-loop
-      - id: portable-shutdown-persistence-loop
-      - id: portable-clipboard-crypto-hijacker
-      - id: portable-hex-xor-command-loader
-      - id: portable-zero-width-loader
-      - id: portable-png-lsb-dropper
-      - id: portable-dylib-dropper
-      - id: portable-systemd-timer-dropper
-      - id: portable-build-hook-secret-theft
-
-  - id: portable-harmful-package-behavior
-    desc: Package contains portable harmful behavior
-    crit: hostile
-    conf: 0.98
-    all:
-      - id: portable-harmful-behavior
-    any:
-      - id: metadata/package/
-      - id: metadata/build/archive/
-      - id: metadata/file/extension/package/
-      - id: metadata/file/extension/identity::python-wheel-basename
-      - id: metadata/file/extension/identity::java-archive-basename

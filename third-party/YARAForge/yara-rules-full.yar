@@ -336094,6 +336094,9 @@ rule SIGNATURE_BASE_EXT_WEBSHELL_PHP_Generic : FILE
 		$cmpayload21 = /\bReflectionFunction[\t ]{0,500}\([^)]/ nocase wide ascii
 		$fp1 = "# Some examples from obfuscated malware:" ascii
 		$fp2 = "{@see TFileUpload} for further details." ascii
+		// Defensive PHP token scanner: its signature tables intentionally contain
+		// request variables and dangerous function names.
+		$fp3 = "devdmalw_php_decode_funcs" ascii
 
 	condition:
 		filesize < 500KB and ( any of ( $inp* ) ) and ( any of ( $cpayload* ) or all of ( $m_cpayload_preg_filter* ) ) and ( ( ( $php_short in ( 0 .. 100 ) or $php_short in ( filesize - 1000 .. filesize ) ) and not any of ( $no_* ) ) or any of ( $php_new* ) ) and ( ( filesize < 1000 and not any of ( $wfp_tiny* ) ) or ( ( uint32be( 0 ) == 0x47494638 or ( filesize < 4KB and ( 1 of ( $gen_much_sus* ) or 2 of ( $gen_bit_sus* ) ) ) or ( filesize < 20KB and ( 2 of ( $gen_much_sus* ) or 3 of ( $gen_bit_sus* ) ) ) or ( filesize < 50KB and ( 2 of ( $gen_much_sus* ) or 4 of ( $gen_bit_sus* ) ) ) or ( filesize < 100KB and ( 2 of ( $gen_much_sus* ) or 6 of ( $gen_bit_sus* ) ) ) or ( filesize < 150KB and ( 3 of ( $gen_much_sus* ) or 7 of ( $gen_bit_sus* ) ) ) or ( filesize < 500KB and ( 4 of ( $gen_much_sus* ) or 8 of ( $gen_bit_sus* ) ) ) ) and ( filesize > 5KB or not any of ( $wfp_tiny* ) ) ) or ( filesize < 500KB and ( 4 of ( $cmpayload* ) ) ) ) and not ( any of ( $gfp_tiny* ) or 1 of ( $fp* ) )

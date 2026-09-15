@@ -58,6 +58,10 @@ selects an originating call. `from.literal` matches its literal argument
 (`from.argument`, default zero). `from.field` selects an object/keyword field
 before traversal. `through` declares contributing arguments and/or receiver.
 These filters also work in `args`, which requires distinct argument positions.
+As an alternative to an originating call, `from.value` matches a literal that
+contributes to the sink argument through the same explicit transfer models.
+It is mutually exclusive with `from.call`, `from.argument`, and `from.literal`;
+this distinguishes written or transmitted content from an unrelated comment.
 
 Regexes use the existing bounded cache. Argument assignment uses augmenting
 paths, not permutation backtracking. Cleave drops graphs after compact member
