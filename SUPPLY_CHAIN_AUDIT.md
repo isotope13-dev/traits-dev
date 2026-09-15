@@ -2382,6 +2382,280 @@ README changed among retained inputs. No other specimen hash changed.
 | `inventory-after.sha256` | `c082aeecaf7419222d874a7b27b1b106e0299d22ef24e9453e96689d220832d9` |
 | `verification.json` | `737c93b9aa1d70f146c8c77fcb3041de225ba412431ba8193565863d9e3d33db` |
 
+## PowerShell v1 simulation-quality disposition (2026-09-15)
+
+The 14 remaining PowerShell v1 NuGet packages import a module whose random gate
+reaches only the common canary routine: it writes the attack description stored
+in `$spec` to a temporary `.idx`, starts `pwsh` with a fixed print-only command,
+and sends a fixed pulse to `127.0.0.1:9`. No `$spec` value is passed to
+`Start-Process`, `Invoke-Expression`, a shell, or an affected persistence API.
+Every package manifest, module manifest, module source, resource and decoded
+description was reviewed statically; no package was imported or activated.
+
+All 14 archive hashes match the preceding inventory and Git HEAD. Because a
+useful repair would require replacing the behavior rather than adjusting a
+bounded defect, all 14 were deleted and remain recoverable from Git history.
+Together with the earlier Profileloom move, no PowerShell v1 package remains in
+the hostile corpus.
+
+Taskglider's `$spec` contains a complete `schtasks /Create /SC ONLOGON ... /TR
+%LOCALAPPDATA%\\...exe` sentence. That sentence accurately demonstrates a
+suspicious scheduled-task capability when seen in executable-command context,
+and `ONLOGON` creation is a persistence mechanism. The taxonomy therefore keeps
+the neutral capability atom and the intent-bearing persistence composites; this
+fixture was removed because it never uses the sentence as a command, not because
+scheduled tasks are semantically ambiguous.
+
+The five-root inventory is now 1,172 files. Comparison with the post-Python
+inventory confirms exactly 14 PowerShell removals, no additions and only the v1
+README changed among retained inputs. No other specimen hash changed.
+
+| Evidence in `/tmp/sc-v1-powershell-review` | SHA-256 |
+| --- | --- |
+| `review.json` | `247bd0031b290206b74453cc99beccde6604693f01d6889f563ceb9584f93c87` |
+| `after-rules.jsonl` | `fe5ceaea28ddb244bd65eb059361d0bff868c97f14102085a0b432a4d2199d2c` |
+| `inventory-after.sha256` | `779d9ebb860086d2be90f77575ba19f28793e2803cbd257dd58d0f24f8b7f60a` |
+| `verification.json` | `a414bd307f2e2153ffe608f5d3d2b60280989770624d0cdb5a55a5d72f303d2b` |
+
+## Ruby v1 simulation-quality disposition (2026-09-15)
+
+The 14 remaining Ruby v1 archives are structurally valid RubyGems with a genuine
+native-extension install hook at `ext/cache_prime/extconf.rb`. The same gated
+routine is duplicated in the importable library. Both routes decode or load an
+attack description, write that description to a temporary `.idx`, invoke only
+`RbConfig.ruby -e "print 'index refreshed'"`, and send a fixed pulse to
+`127.0.0.1:9`. The decoded description never reaches `system`, a shell, or an
+affected persistence/credential API. `extconf.rb` then only calls
+`create_makefile('cache_prime')`.
+
+All package metadata, gemspecs, extension hooks, library entrypoints, resources,
+and decoded descriptions were reviewed statically. Every archive hash matches
+the historical manifest and Git HEAD, and the extension copy begins with the
+exact library routine. Current per-archive scans produce no suspicious or
+hostile finding. No gem was installed, built, imported, or activated.
+
+Because a useful repair requires behavioral replacement, all 14 were deleted
+and remain recoverable from Git history. Together with the earlier Profileloom
+move, no Ruby v1 package remains in the hostile corpus.
+
+The five-root inventory is now 1,158 files. Comparison with the post-PowerShell
+inventory confirms exactly 14 Ruby removals, no additions and only the v1 README
+changed among retained inputs. No other specimen hash changed.
+
+| Evidence in `/tmp/sc-v1-ruby-review` | SHA-256 |
+| --- | --- |
+| `review.json` | `1018bbbb801e9e3cbad46687b924273ea80aa146a3c3d73c509ea42ff46779fe` |
+| `after-rules.jsonl` | `99b37cb7941e48ab08840822e15033afac6fc4e6209b4e3d0c97e2e5d68076ab` |
+| `inventory-after.sha256` | `778e002d5256f00b2821bac4f24fd9760b2d33235fb80e8b99561609efca9d1e` |
+| `verification.json` | `d83b4a0ac7bd49a4a4c03a3578f01e17330b6744fbf9ed3a52b54f9dc97ead0c` |
+
+## Elixir v1 simulation-quality disposition (2026-09-15)
+
+The 14 remaining Elixir v1 archives use valid Hex package layout. Their
+`mix.exs` files place the gated `CacheBootstrap.run()` before the `Mix.Project`
+definition, so package evaluation does provide a real build-time trigger. The
+same routine is also present in `lib/cache_bootstrap.ex`.
+
+The triggered behavior is nevertheless only the common canary: decode or load
+an attack description, write it to a temporary `.idx`, run the fixed no-op
+`System.cmd("sh", ["-c", ":"])`, and send a fixed pulse to `127.0.0.1:9`.
+The description never reaches `System.cmd` or an affected API. All outer and
+inner metadata, build files, library source, resources, and decoded descriptions
+were reviewed statically; no package was built, evaluated, imported, or
+activated. Current per-archive scans produce no suspicious or hostile finding.
+
+Every archive matches the historical manifest and Git HEAD, and every `mix.exs`
+begins with the exact library routine. Because useful repair requires wholesale
+behavioral replacement, all 14 were deleted and remain recoverable from Git
+history. Together with the earlier Fontstream move, no Elixir v1 package remains.
+
+The five-root inventory is now 1,144 files. Comparison with the post-Ruby
+inventory confirms exactly 14 Elixir removals, no additions and only the v1
+README changed among retained inputs. No other specimen hash changed.
+
+| Evidence in `/tmp/sc-v1-elixir-review` | SHA-256 |
+| --- | --- |
+| `review.json` | `f2ad1eefc25bcb46e93c0c646765bbb1592b17379943b90d47e5c82ffe151dd0` |
+| `after-rules.jsonl` | `e61053236682b512a195cca28c3e1d13828610cc6fecb7427aea5a37417be5aa` |
+| `inventory-after.sha256` | `d617129fc212a93356c3a328ebdb95af16426a679c8fcadf510290e6ebc44725` |
+| `verification.json` | `15427ab03ca141373de2f761a981cdbc27118faa945d3f777ad5387c3124c951` |
+
+## JVM v1 bytecode disposition and reboot fix (2026-09-15)
+
+All 60 Java, Groovy, Kotlin, and Scala v1 JARs register
+`edge.cache.Bootstrap` in the annotation-processor service descriptor. Static
+`javap -c -p -s` disassembly confirms that every compiled class extends
+`AbstractProcessor` and invokes its gated `prime()` method from the static
+initializer. This is a genuine compilation-time trigger.
+
+The bytecode is also uniformly canary-only. Across all 60 classes, the complete
+external method set is limited to environment/property access, hex/string
+decoding, `Files.write`, `ProcessBuilder` launching the fixed `java -version`
+child, and a socket write to `127.0.0.1:9`. No decoded scenario reaches a process
+argument, affected persistence API, credential API, or non-loopback endpoint.
+Every bundled source file omits the `AbstractProcessor` superclass even though
+the class has it, so source-only review would have mischaracterized the trigger.
+All manifests, service descriptors, plugin descriptors, sources, resources,
+class files, and decoded descriptions were reviewed statically; nothing was
+loaded, compiled, or activated.
+
+Initial current-rule scans had no hostile findings. The four Cacheharbor JARs
+had one inaccurate suspicious finding:
+`objectives/impact/system/rce::reboot-string` matched the `reboot ` substring in
+the cron schedule `@reboot /usr/...`. Historical five-root results show these
+four false positives were that atom's only corpus hits. The observation is now
+`micro-behaviors/os/event/shutdown::jvm-reboot-command-string`, a notable neutral
+capability using pre-cached `class.strings[*]` and requiring command position.
+Both RAT consumers reference the relocated atom. This preserves future command
+vocabulary detection, excludes cron schedules, and needs no AST or engine work.
+All four post-fix scans have risk 13 and no high finding.
+
+Every JAR hash matches the historical manifest and Git HEAD. Because meaningful
+repair requires replacing the behavior, all 60 were deleted and remain
+recoverable from Git history. No Java, Groovy, Kotlin, or Scala v1 package remains.
+
+The five-root inventory is now 1,084 files. Comparison with the post-Elixir
+inventory confirms exactly 60 JVM archive removals, no additions and only the v1
+README changed among retained inputs. No other specimen hash changed.
+
+| Evidence in `/tmp/sc-v1-jvm-review` | SHA-256 |
+| --- | --- |
+| `review.json` | `cd7575e544e88bf6972d97c89725bf7f728deaf7d7b91671233badf5eb0ebacd` |
+| `java-after-rules.jsonl` | `57afafd52bdd7463aa2fd836f895c298dc085ce293d8f6c7250d952480028912` |
+| `groovy-after-rules.jsonl` | `da6c6f8c74f9a78027006f24a68291cfa80b881549f3b5709b7159d03588bc39` |
+| `kotlin-after-rules.jsonl` | `6c33040789ce833ac1872bf890a5f2ea980c4b43c95e1cde2bab72bc35ccf5ba` |
+| `scala-after-rules.jsonl` | `3b079a3a4db03918a2033aa75df1acd4ef5bbc720f41ca271e16e81d76d0a846` |
+| `java-cacheharbor-after-fix.json` | `b7f23512370f19a941cf225c66e03a8817c79d99865f3750617f1394840d9d9a` |
+| `groovy-cacheharbor-after-fix.json` | `29ecc2488cb444d5ee6f9ecf87dc2d044e9f30d7c890f3bffc52680788418109` |
+| `kotlin-cacheharbor-after-fix.json` | `87c6bfbc661153a709ea8a0d69e90bacb33e188aec5da5386f5e65f293f7a03f` |
+| `scala-cacheharbor-after-fix.json` | `edc1d80827ff46998d54ca2c4152808fbc818a37f82a361059f84e924e086b33` |
+| `inventory-after.sha256` | `335346a887b179cad95580762d0227c7174958135912e67ad8750f4757d3e1c3` |
+| `verification.json` | `c0a9b98d9732a5c6df3dd9805b8d847073a27f65afe326ebc460f0017909482d` |
+
+## Lua v1 simulation-quality disposition (2026-09-15)
+
+All 15 Lua v1 archives are valid LuaRocks source packages. Each rockspec uses a
+command build backend with `build_command='lua bootstrap.lua'`, then copies that
+same file into the installed module. This supplies both build-time and import-time
+triggers. Static review of every rockspec, bootstrap, resource, and decoded
+description confirms that the triggered code only writes the description to a
+temporary `.idx`, invokes the fixed `printf 'index refreshed'` command, and sends
+a pulse to `127.0.0.1:9`. The description never reaches `os.execute`.
+
+All archive hashes match the historical manifest and Git HEAD. Current scans
+produce no hostile findings. Fourteen have no high finding; Taskglider has the
+existing suspicious `scheduled-task-user-path` finding because it contains a
+complete `SCHTASKS /Create /SC ONLOGON ... /TR %LOCALAPPDATA%\\...exe` command.
+That remains valid persistence intent for future samples. This fixture was
+removed because it writes the command as canary data, not because the command is
+semantically benign. No package was built, installed, imported, or activated.
+
+Because useful repair requires behavioral replacement, all 15 were deleted and
+remain recoverable from Git history. No Lua v1 package remains.
+
+The five-root inventory is now 1,069 files. Comparison with the post-JVM
+inventory confirms exactly 15 Lua removals, no additions and only the v1 README
+changed among retained inputs. No other specimen hash changed.
+
+| Evidence in `/tmp/sc-v1-lua-review` | SHA-256 |
+| --- | --- |
+| `review.json` | `22a54203868102b9cdd63f4a581d448bbeb23121ef8848ce91de73ebfc6d6519` |
+| `after-rules.jsonl` | `b7da7c06583021a9613c9843bfb03ffe550711d8fa08f7a38cbad073336b25d6` |
+| `inventory-after.sha256` | `5706ce5a8217a10e8f2b6d3cb8c3c955441ac09c9a920253f4066db04260a389` |
+| `verification.json` | `121bca31e74c71a7ea28051e477a383a8cac78ea417cbee7fb31a86dfe2dd4c4` |
+
+## Perl and PHP v1 simulation-quality disposition (2026-09-15)
+
+All 15 Perl archives are structurally valid CPAN distributions whose
+`Makefile.PL` requires `Cache::Prime` before generating the Makefile, providing
+a genuine configure-time trigger. All 15 PHP archives are structurally valid
+Composer packages whose `autoload.files` entry loads `src/Bootstrap.php`,
+providing a genuine dependency-load trigger.
+
+Static review nevertheless found the same canary-only behavior in both cohorts:
+the random gate leads to a temporary `.idx` write containing only the decoded
+attack description, a fixed print-only child, and a pulse to `127.0.0.1:9`.
+The description is never passed to a shell, process argument, registry API, or
+other affected sink. Package metadata, hooks, entrypoints, resources, and every
+decoded description were reviewed without building, installing, importing, or
+activating a package. Every archive hash matched both the historical manifest
+and Git HEAD. Current scans found no hostile verdict in either cohort.
+
+PHP Profileloom initially had one inaccurate suspicious finding because
+`php-run-key-path` treated a Run-key string alone as a persistence objective.
+That duplicated the already-matching neutral
+`micro-behaviors/os/registry/keys::currentversion-run` capability. The duplicate
+atom was removed and both PHP persistence composites now reference the canonical
+capability while still requiring `reg add` and payload context. PHP facts split
+this escaped path across literals, so the existing raw-text capability remains
+the appropriate cached-text fallback; no tree query or engine feature was added.
+The post-fix source scan has risk 10 and no suspicious/hostile finding.
+
+Because useful repair requires replacing behavior rather than fixing a bounded
+defect, all 30 packages were deleted and remain recoverable from Git history.
+No Perl or PHP package remains in v1. The five-root inventory is now 1,039
+files. Comparison with the post-Lua inventory confirms exactly the 30 reviewed
+archive removals, no additions, and only the v1 README changed among retained
+inputs. No other specimen hash changed.
+
+| Evidence | SHA-256 |
+| --- | --- |
+| `/tmp/sc-v1-perl-review/review.json` | `7280f3aa69ef6524be39fd947568ef6103ea35383123d69baf36b2b56ac28cd4` |
+| `/tmp/sc-v1-perl-review/after-rules.jsonl` | `f7705d374b8aeb2f8a8d5132ade26b695a3ca91fbaa5fcb54b42092c9310dec0` |
+| `/tmp/sc-v1-php-review/review.json` | `0a132272146e7fc7365e78ada203c462d389fe3f374a40e35ad14ed8f9257d1f` |
+| `/tmp/sc-v1-php-review/after-rules.jsonl` | `c800c46529e058ed2eeffe996b8b3d2ab049d5e3bb6d6add4b7b71fcce47a922` |
+| `/tmp/sc-v1-php-review/profileloom-after-fix.jsonl` | `87ed85cd9141fdb6adf3c3f6f54d58eb7ee8618c4d93d79b3e935b1328b5b9cd` |
+| `/tmp/sc-v1-perl-php-review/inventory-after.sha256` | `d6d814df2b461ad83119a70feb8e4aa9515e9c5618be6d6234c751e618f11f00` |
+| `/tmp/sc-v1-perl-php-review/verification.json` | `0f0cff90709ca8efddf4341b0524a88b070cee5e743cc08c3bf8462c285f7f8c` |
+
+## Final v1 Objective-C, Swift, Zig, and Shell disposition (2026-09-15)
+
+The last 60 archives all have genuine automatic entrypoints: Objective-C uses
+an `NSObject +load` method compiled through the pod's `source_files`; Swift runs
+`prime()` at top level while evaluating `Package.swift`; Zig executes its gated
+logic from `pub fn build`; and each Debian package supplies a `postinst` whose
+contents are duplicated in the installed bootstrap script.
+
+Static review of every archive member, gate, concealed value, and decoded
+description confirms that none implements its named scenario. Every entrypoint
+writes `spec` only to a temporary `.idx`, launches only `/usr/bin/printf`, a
+fixed Swift `Process`, `sh -c :`, or `/bin/sh -c :`, and sends only a fixed
+loopback-discard pulse. No `spec` value reaches a child-process argument or an
+affected persistence, credential, or network API. Objective-C and Zig embed
+their alleged PNG payload as source text instead of reading the PNG. The three
+Debian PNG variants resolve `assets/cache.png` relative to the dpkg maintainer
+script/bootstrap directory, while the archive installs it at a different path,
+so that decoder route is broken as well. No package was built, installed,
+loaded, or activated during review.
+
+All 60 hashes match the historical manifest and Git HEAD. Initial current-rule
+scans had no hostile finding except Swift Cacheharbor's standalone
+`swift-etc-crond-path`. That atom graded the `/etc/cron.d` string itself as a
+persistence objective. Its only consumer combined it with a second regex that
+already required the same path, adding no evidence. The second regex had no
+five-root hits, failed a representative path/payload ordering, and scored only
+2.2 precision. The misplaced atom and redundant dead signature were removed;
+no broader matcher or engine feature was added. The post-fix Cacheharbor source
+has risk 4 and no suspicious/hostile finding.
+
+Because every package requires wholesale behavioral replacement, all 60 were
+deleted and remain recoverable from Git history. No package payload remains in
+v1; its README, original manifest, and checksum list are retained as provenance.
+
+| Evidence | SHA-256 |
+| --- | --- |
+| `/tmp/sc-v1-objectivec-review/review.json` | `de4065eac5eee798233fd285e28940f5a18c0167418f2aefa207433e9c74c577` |
+| `/tmp/sc-v1-objectivec-review/after-rules.jsonl` | `2f60dcc19c47688a0978d1e948b0ba7995ec093bef30f5afb421e178c7e35de9` |
+| `/tmp/sc-v1-swift-review/review.json` | `bf63cf399ffdbf0b10ade45f422169e711d8468bfe6ba4cc21728b3ce2b804bd` |
+| `/tmp/sc-v1-swift-review/after-rules.jsonl` | `8573a6735090a4a1df566c3097a3a0dadbf570f1a933d648107b808fb6bdbf69` |
+| `/tmp/sc-v1-swift-review/cacheharbor-after-fix.jsonl` | `e75ca61eca7ee0ba22907ad89bc5ab00575e00a8d2d1fe126ebd4d7e041fca4c` |
+| `/tmp/sc-v1-zig-review/review.json` | `b86e5afa09a1026cfa3ab446bf6cb3c1346c1c543c1d5ba2ddbd162ba3f8ac43` |
+| `/tmp/sc-v1-zig-review/after-rules.jsonl` | `f1e93f2e673d4f7ec2f43b819e44273efa4147fd4935f16d0c13d10b15ae2be3` |
+| `/tmp/sc-v1-shell-review/review.json` | `1d18a88934d76a6792934ac7cb860f66c272fe78b65bd4c5b1cb1a232538f617` |
+| `/tmp/sc-v1-shell-review/after-rules.jsonl` | `8ac2dc04780c5be185b6cad8bae97bf96da73eae176a6dc448fd22ffb0d2429b` |
+| `/tmp/sc-v1-final-review/inventory-after.sha256` | `98019135672852e6f126645aff6b81752a5718b2cb5f18a22e4eb4642faa3832` |
+| `/tmp/sc-v1-final-review/verification.json` | `99f0e8bc1c3a8f4c58df3cd1bee099377bac24898cb669a6139c7857ded69e8f` |
+
 ## Remaining work
 
 - Review the 431 current-corpus specimens without hostile findings; distinguish
@@ -2403,8 +2677,9 @@ README changed among retained inputs. No other specimen hash changed.
   sufficient evidence for a new hostile verdict. Unknown resource contents
   and telemetry purpose remain unresolved, not silently classified as benign.
   Inspect existing facts and relationships before considering engine changes.
-- Review the 207 remaining v1 artifacts individually. The corrected canary
-  verdicts must not be counted as successful persistence detection.
+- V1 disposition is complete: all 315 original artifacts were either moved as
+  confirmed non-hostile canaries or deleted as poor simulations. Its retained
+  README, manifest, and checksum list are provenance only.
 - Cobaltcraft's redundant archive wrappers and disconnected-env composite are
   removed (one hostile finding remains). Consolidate the older npm SSH-key installer (four) and the WordPress
   helper (four, including YARA). Test the retained file-level environment/HTTP

@@ -12,8 +12,22 @@ cleave strings testdata/obfuscation/applescript/base64.scpt
 cleave facts testdata/obfuscation/applescript/base64.scpt
 ```
 
-Current gap: filefacts recovers the base64 value as a UTF-16BE `scpt-literal`,
-but the stng text view misses it and neither view contains the decoded command.
-Parsed literals need to reach the shared string decoders, preserving their
-source anchor and decoding provenance. Stng's base64 support alone does not
-cover this path.
+Use a cleave build linked against the updated filefacts parser. Both commands
+expose `printf '%s\n' 'SCPT_BASE64_OK'` at the encoded literal's offset, `0x29a`.
+Facts labels it `scpt-base64`; strings carries `["scpt", "base64"]` provenance.
+The original UTF-16BE base64 literal remains available.
+
+This fixture covers the gap between parser-extracted literals and stng's raw
+text scan. Filefacts now feeds stored and reconstructed SCPT literals through
+stng's shared decoders. Decoder and CLI regressions use copies of this compiled
+fixture; no test executes it.
+
+The trait `micro-behaviors/data/decode/base64::base64-decode-piped-shell` should
+be suspicious. It describes the execution pattern, not the decoded command's
+intent. Data-only decoding and hardware inventory must remain below suspicious.
+
+Run the static shell and compiled AppleScript controls with the updated build:
+
+```sh
+CLEAVE=../cleave/target/debug/cleave python3 scripts/test-base64-shell.py
+```

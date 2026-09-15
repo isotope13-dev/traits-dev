@@ -258,6 +258,22 @@ activation-gate inference was introduced.
   x-triage-bad, moved this replacement to
   `/tmp/triage/misplaced-good/26fadfa491ff/hex-ambercore-systemd-timer-linux.tar`.
   SHA-256: `26fadfa491ff3af38171efe9af5432af5e8d1514846460eb3f5c22f26bcb3703`.
+
+### V1 Perl/PHP simulation-quality disposition
+
+- [x] Review all 15 CPAN and 15 Packagist archives, including their package
+  lifecycle triggers, resources, and decoded descriptions. Both ecosystems had
+  real automatic execution paths, but every path terminated in the common
+  temp-canary, fixed harmless child, and loopback-discard behavior.
+- [x] Remove the 30 canary-only archives from hostile testdata. Meaningful repair
+  would require behavioral replacement; all are recoverable from Git history.
+- [x] Fix the PHP Run-key false positive without adding an engine feature. The
+  duplicate objective atom treated a path string as persistence; the two actual
+  persistence composites now reuse the canonical neutral registry-key atom and
+  continue to require the `reg add` command plus payload context.
+- [x] Review the 60 remaining v1 packages: Objective-C, Shell, Swift, and Zig.
+  All had real lifecycle triggers but only canary behavior; all were deleted and
+  remain recoverable from Git history. V1 now contains provenance metadata only.
   The earlier relocated copy was not overwritten. The retained corpus has 559
   packages; 289 of those had neither suspicious nor hostile findings in the
   final snapshot and remain candidates for review. This pass does not complete
@@ -821,7 +837,33 @@ activation-gate inference was introduced.
   its own comment by using line proximity to infer that an unrelated subprocess
   was the task payload. Existing cached calls exposed the disconnect; no AST
   feature was justified for an unconsumed rule.
-- [ ] Review the remaining 207 v1 artifacts for individual disposition. The
+- [x] Review and delete the 14 remaining PowerShell v1 packages. Their module
+  import path executes only the common temporary-canary write, print-only child,
+  and loopback pulse. Taskglider's scheduled-task sentence is data, not a command
+  argument. Hash-verified deletion is recoverable from Git history; the generic
+  scheduled-task capability and persistence composite remain correctly modeled.
+- [x] Review and delete the 14 remaining Ruby v1 packages. Both their genuine
+  `extconf.rb` install hook and importable library duplicate the common canary;
+  decoded attack descriptions are written as data and never reach `system`.
+  Hash-verified deletion is recoverable from Git history.
+- [x] Review and delete the 14 remaining Elixir v1 packages. `mix.exs` really
+  evaluates the gated bootstrap, but its only command is `sh -c :`; decoded
+  attack descriptions remain temporary-file data. Hash-verified deletion is
+  recoverable from Git history.
+- [x] Disassemble and delete all 60 Java, Groovy, Kotlin, and Scala v1 JARs.
+  Every compiled class is a valid annotation processor with a static trigger,
+  but invokes only a description write, `java -version`, and loopback. The
+  bundled sources omit the processor superclass and are not authoritative.
+- [x] Fix the JVM `reboot-string` false positive exposed by all four Cacheharbor
+  JARs. A cron `@reboot` schedule is not a system-reboot command. Relocate the
+  retained command-string observation to the neutral shutdown capability family,
+  use cached `class.strings[*]`, require command position, and preserve both RAT
+  consumers. No AST or engine feature was needed; all four rescans have no high.
+- [x] Review and delete all 15 Lua v1 packages. Their LuaRocks build command
+  executes the gated bootstrap, but decoded attack descriptions never reach
+  `os.execute`; the only command prints a fixed message. Taskglider's complete
+  scheduled-task string remains a valid generic persistence-intent signal.
+- [ ] Review the remaining 90 v1 artifacts for individual disposition. The
   corpus README documents canary sinks, so do not treat its original intended
   scenario labels as proof of executable malicious behavior.
 - [ ] Continue actual current-corpus misses and duplicate verdicts. The audit
