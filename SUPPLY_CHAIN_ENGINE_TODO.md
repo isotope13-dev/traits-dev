@@ -56,7 +56,7 @@ Do not require recognizing the benchmark's environment gate for detection.
 - [x] Add neutral cached GLib process-spawn and file-write observations, with
   a negative control that distinguishes documentation strings from API calls.
   All validation suites pass. Five-root comparison has no hostile-ID changes
-  among retained files; corpus now 599 with 180 in the 1–3 target and 419 zero.
+  among retained files; corpus now 599 with 184 hostile packages and 415 zero.
 - [ ] Continue GNOME screenshot, overview-text, and Nautilus filename-upload
   coverage. D-Bus naming is repaired, but actual activation remains a separate
   question. Evidence: `/tmp/sc-gnome-quality.q7xJXA/`.

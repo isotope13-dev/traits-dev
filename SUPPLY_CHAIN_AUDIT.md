@@ -3,7 +3,7 @@
 Status: inventory stabilized and baseline audited; detection triage is **not
 complete**. The current `supply-chain-corpus` has 599 specimens after the
 simulation-quality dispositions documented below. The fresh 599-package scan has
-180 specimens with 1–3 hostile traits and 419 with none; semantic disposition
+184 specimens with at least one hostile trait and 415 with none; semantic disposition
 is still required. No package was installed, imported, built, activated, or executed
 during this pass.
 
@@ -2882,7 +2882,7 @@ No engine changes were needed. Evidence under `/tmp/sc-gnome-quality.q7xJXA/`:
 
 ## Remaining work
 
-- Review the 419 current-corpus specimens without hostile findings; distinguish
+- Review the 415 current-corpus specimens without hostile findings; distinguish
   true misses from non-hostile fixtures before changing verdicts.
 - The malformed SSH-key packages, preload false label, and three unsupported
   cron-heartbeat fixtures are now dispositioned above.
@@ -2909,3 +2909,22 @@ No engine changes were needed. Evidence under `/tmp/sc-gnome-quality.q7xJXA/`:
 - Continue the Go iterator/helper-return destination gap and non-Go destination
   precision work recorded in `SUPPLY_CHAIN_ENGINE_TODO.md`. Inspect existing
   facts/tree predicates first; do not add engine features just to fit a sample.
+
+## File-gate direction and C/AUR payload repairs (2026-09-15)
+
+The file-marker gates were audited for execution direction. Negated checks in
+the retained WordPress, PowerShell, JavaScript, Python, Go, Rust, Swift, and
+GHA payloads all fail closed (`return`/`continue` when the marker is absent);
+none executes its harmful body on a missing marker. Four AUR recipes instead
+used quoted `~` paths, which made their positive arm markers unreachable. They
+now use `$HOME/...` so the marker genuinely arms the payload while remaining
+inert by default.
+
+The C corpus had a separate gate defect: its shared helper passed `%%s`/`%%u`
+format strings to `snprintf`, producing literal placeholders and permanently
+disarming the check. C format placeholders in the affected package sources
+were repaired (literal Windows `%TEMP%` escapes were preserved), and the
+archives were repacked without running them. Detection does not depend on the
+marker: a fresh static scan of 599 corpus packages reports 184 packages with
+at least one hostile ID and 415 with none (scan SHA-256
+`0d80654e819ed21d2409bc853bf5f69df936c83f4b059a5a24de68d2fd2e7b57`).
