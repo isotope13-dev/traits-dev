@@ -304,12 +304,26 @@ traits:
       type: text
       substr: .dylib
 
-  - id: dylib-load-or-unquarantine
-    desc: Source loads or unquarantines dylib
+  # Bare `xattr`/`dlopen` substrings match documentation, comments, data
+  # tables (a lexer wordlist), parameter names (`xattrs`), unrelated C
+  # identifiers (`pthread_mutexattr_t`), FFI libraries *defining* dlopen,
+  # and sys flag APIs (`getdlopenflags`) -- none of which loads a dylib.
+  # Each behavior below names the action its matcher checks: quarantine
+  # removal, or a load call carrying a dylib path. Variable-path loads (an
+  # audio library opening its own bundled dependency) and prose mentions
+  # match neither leg.
+  - id: dylib-quarantine-removal
+    desc: Source removes macOS quarantine attribute
     crit: suspicious
     if:
       type: text
-      regex: '(xattr|dlopen|DYLD_INSERT_LIBRARIES|Library/Audio/Plug-Ins)'
+      regex: '(xattr[^\r\n]{0,40}quarantine|com[.]apple[.]quarantine)'
+  - id: dylib-dynamic-load-call
+    desc: Source loads a dylib by literal path
+    crit: suspicious
+    if:
+      type: text
+      regex: '(dlopen\s*\(\s*["''][^\r\n]{0,40}[.]dylib|DYLD_INSERT_LIBRARIES|Library/Audio/Plug-Ins)'
 
   - id: build-lifecycle-hook-source
     desc: Source implements package build hook
@@ -319,6 +333,15 @@ traits:
       regex: '(build[.]rs|setup[.]py|extconf[.]rb|Makefile[.]PL|CMakeLists[.]txt|prepack)'
 
 composite_rules:
+  # Rollup keeping the established `dylib-load-or-unquarantine` identity for
+  # the dropper composite below. Same tier as its legs: either leg firing is
+  # one observation of dylib staging, not two levels of verdict.
+  - id: dylib-load-or-unquarantine
+    desc: Source loads or unquarantines dylib
+    crit: suspicious
+    any:
+      - id: dylib-quarantine-removal
+      - id: dylib-dynamic-load-call
   - id: unbounded-loop-source
     desc: Source contains unbounded loop
     crit: component
@@ -490,14 +513,33 @@ composite_rules:
     desc: Remote dylib staged and loaded
     crit: hostile
     conf: 0.99
+    # "Staged" promises remote acquisition: an FFI library defining dlopen
+    # and an audio library opening its own bundled dependency both mention a
+    # dylib name and a load call without fetching anything. Require a remote
+    # fetch primitive in the same file before calling the pair a dropper.
     all:
       - id: dylib-path-source
       - id: dylib-load-or-unquarantine
+    any:
+      - id: curl-fail-silent-url
+      - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-call
+      - id: micro-behaviors/communications/http/lib/requests::requests-get
+      - id: micro-behaviors/communications/http/lib/requests::requests-post
 
   - id: portable-build-hook-secret-theft
     desc: Build hook exports developer secrets
     crit: hostile
     conf: 0.99
+    # "Exports" promises exfiltration: a build hook that reads a credential
+    # file for legitimate local use (publishing with stored credentials)
+    # pairs the same two legs as a stealer, as does documentation that merely
+    # mentions a build filename next to a doctest example. Require the
+    # credential material to leave through DNS or an upload endpoint in the
+    # same file before calling the pair secret theft.
     all:
       - id: build-lifecycle-hook-source
       - id: objectives/credential-access/files/config::developer-credential-file-read
+    any:
+      - id: dns-query-api-source
+      - id: jvm-dns-query-api-source
+      - id: browser-secret-upload-endpoint
