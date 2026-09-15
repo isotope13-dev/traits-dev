@@ -1,6 +1,6 @@
 # Supply-chain benchmark v1
 
-This corpus contains 315 package-shaped static-analysis fixtures: 15 per
+This corpus originally contained 315 package-shaped static-analysis fixtures: 15 per
 cleave-supported package-capable source language, split five each across Linux,
 macOS, and Windows. Nine scenarios per language conceal their action specification.
 
@@ -10,5 +10,14 @@ temporary canary file, starts only a harmless local child, and connects only to 
 discard port on `127.0.0.1`. Realistic reserved `*.example` hostnames appear solely
 in the loopback HTTP Host header. Named credential and persistence targets are never
 opened or modified.
+
+Triage on 2026-09-14 moved five confirmed non-hostile canaries unchanged to
+`/tmp/triage/misplaced-good/supply-chain-benchmark-v1`: Python Pathweaver,
+JavaScript Resourcecove, Elixir Fontstream, and Ruby/PowerShell Profileloom.
+The original `manifest.jsonl`
+and `SHA256SUMS` remain provenance records, not a current inventory. The other
+310 packages still need individual disposition; canary-only behavior must not
+be counted as demonstrated attack detection. See the root
+[audit report](../../../SUPPLY_CHAIN_AUDIT.md) for hashes and review results.
 
 Counts: {"c": 15, "csharp": 15, "elixir": 15, "go": 15, "groovy": 15, "java": 15, "javascript": 15, "kotlin": 15, "lua": 15, "objectivec": 15, "perl": 15, "php": 15, "powershell": 15, "python": 15, "ruby": 15, "rust": 15, "scala": 15, "shell": 15, "swift": 15, "typescript": 15, "zig": 15}

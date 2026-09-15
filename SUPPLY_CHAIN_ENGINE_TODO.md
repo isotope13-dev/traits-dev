@@ -724,4 +724,938 @@ activation-gate inference was introduced.
   Clippy passed (`/tmp/sc-go-calljoin-clippy.log`); targeted diff checks passed.
   Shared analyzer executables and checkout manifests/lockfiles were not
   overwritten. No hostile package content was changed or executed.
-- [ ] Perform the final live inventory audit only after regeneration stops.
+- [x] Inventory is now stable; completed a hash-pinned live inventory audit.
+  This closes the inventory check, not the outstanding detection triage.
+  See the following section and `SUPPLY_CHAIN_AUDIT.md`.
+
+### Stable inventory and package-canary precision (2026-09-14)
+
+- [x] Hash all five supply-chain test roots: 1,294 files before triage, with
+  1,278 analyzer root reports. The 16 unreported files are documentation and
+  package bookkeeping. Input hashes matched before/after the frozen scans.
+  Current `supply-chain-corpus`: 622 specimens across 30 categories; 197 have
+  hostile findings, 196 have 1–3, and one has five. 425 still lack a hostile
+  finding; these are not yet individually verified misses.
+- [x] Freeze rules as well as binaries. The initial mutable-rule scan crossed
+  a concurrent rewrite of `go-dd.yaml`, so its lost Go verdict does not prove
+  a memo/cache bug. Discard that comparison. Authoritative reports are
+  `/tmp/sc-stable-audit.YGIZcs/frozen-baseline.jsonl` and
+  `frozen-complete.jsonl`; exact binary, input, rule and report hashes are in
+  `SUPPLY_CHAIN_AUDIT.md`. Both scans retain the in-process memo, produce no
+  report-level errors, and have empty stderr. No engine changes this pass.
+- [x] Fix the rewritten Go trait's variable-name false positive using the
+  existing value-flow predicates. New benign `go-dd-image-device-name.go`
+  failed before (risk 118, one hostile) and passes after (risk 4, no high
+  findings). It differs meaningfully by assigning a regular-file destination
+  to `dev`; the identifier itself is not evidence of a device. All six benign
+  image controls are clean; boot writer and two scanner wipers retain their
+  correct hostile findings. No filename/gate exception or new engine feature.
+- [x] Remove five unsupported hostile package wrappers and their orphaned
+  components, rather than adding more conjunctions or gating on fixture IDs.
+  A gate-free local-index bootstrap had four hostile findings (risk 510) for
+  ordinary decoding, hidden temp data, a harmless child, and loopback HTTP.
+  It now scores 8 with no high findings and retains the useful behavior facts.
+  Hidden-file writes remain notable; removed a misplaced unused hex keyword
+  atom and retained the existing Python call-based decode fact in test paths.
+- [x] Compare identical specimen hashes using frozen before/after rules: all
+  315 v1 artifacts lose unsupported hostile wrappers. No artifact outside v1
+  changes its hostile finding set. The current 622-specimen corpus still has
+  235 hostile findings. The apparent v1 drop from 315 detected packages to two
+  is correction of benchmark overfitting, not evidence of lost attack recall.
+- [x] Statically review three v1 canaries and move them unchanged to
+  `/tmp/triage/misplaced-good/supply-chain-benchmark-v1` per `x-triage-bad`:
+  Python Pathweaver, JavaScript Resourcecove, Elixir Fontstream. Verify hashes
+  after moving; document provenance in the audit and v1 README. Final inventory
+  differs only by those three moves and the README note. All 622 current
+  corpus hashes are unchanged. No package was activated or executed.
+- [x] Full pinned `make validate` passes: hostile 59/59, benign 60/60,
+  does-nothing 176/176, drop-exec 43/43, impact-wipe 66/66, obfuscation 80/80,
+  reverse-shell 25/25, simple-stealer 65/65. Log:
+  `/tmp/sc-stable-audit.YGIZcs/precision-checked-validate.log`.
+  New fixtures and expectations cover both demonstrated false positives.
+- [x] Repair the two remaining v1 Run-key false positives: Ruby Profileloom's
+  `spec` string is not the argument passed to `system`; PowerShell's `$spec`
+  is written as data, while `Start-Process` invokes harmless output. Inspect
+  `ruby-reg-add-run-key-persistence`, `extconf-windows-persistence`, and
+  `run-key-persistence-ps` / `run-key-write-ps`. Prefer call/argument facts;
+  preserve legitimate Run-path reference facts without claiming a write.
+  Completed with actual-command/destination predicates and the argument-shape
+  engine bug fix recorded below. Both archives were moved unchanged to the
+  recoverable misplaced-good directory after static review and hash checks.
+- [ ] Review the remaining 310 v1 artifacts for individual disposition. The
+  corpus README documents canary sinks, so do not treat its original intended
+  scenario labels as proof of executable malicious behavior.
+- [ ] Continue actual current-corpus misses and duplicate verdicts. The audit
+  records per-category coverage and the three roots still above three hostile
+  findings. Do not declare the goal complete from these inventory counts.
+
+### Ruby/PowerShell argument precision (2026-09-14)
+
+- [x] Fix a real cleave matcher bug, not an extraction feature: string, numeric,
+  and identifier argument constraints must reject incompatible shapes even
+  when `kind` is omitted. Before, unknown call/identifier arguments could
+  satisfy literal predicates by skipping their match arm. The new regression
+  fails before and passes after; all 104 symbol/string matcher tests, clippy,
+  and rustfmt checks pass. Shape/provenance-only predicates remain supported.
+- [x] Replace Ruby's parenthesis-dependent `system` regex with existing call
+  facts. Merge the identical Perl/Ruby fact instead of duplicating matchers.
+  Require actual command arguments for Ruby Run-key and pipeline findings;
+  ordinary version-printing calls near quoted examples no longer trigger them.
+- [x] Express PowerShell Run-key destinations using existing AST predicates.
+  Literal destination arguments and an immediate same-variable assignment/use
+  are supported; overwritten bindings and Run-key strings used as data do not
+  imply persistence. No general PowerShell flow feature was necessary here.
+- [x] Add four harmless negative controls and four real-sample expectations.
+  Full pinned validation passes: hostile 63/63, benign 64/64, does-nothing
+  176/176, drop-exec 43/43, impact-wipe 66/66, obfuscation 80/80,
+  reverse-shell 25/25, simple-stealer 65/65. All new controls have zero high
+  findings. Log: `/tmp/sc-ruby-triage.tbgxXt/validate-final-tree.log`.
+- [x] Audit frozen rules, binaries, and unchanged inputs over 1,275 reports.
+  Exactly six hostile-ID sets change: three recovered detections (two Brew
+  hooks and Ruby Gablepro), one applicable additional Perl encoded-execution
+  finding, and two corrected v1 Profileloom false positives. Current corpus:
+  200/622 have hostile findings; 199 have 1–3, one has five; 422 still need
+  review. Input/rule/binary hashes and report hashes are in the root audit.
+  No hostile sample was modified, activated, or executed.
+- [x] Detect launcher replacement (Quilltreebyte) using existing call arguments;
+  see the follow-up below.
+- [x] Detect the written launch agent pipeline (Basaltstack); see the
+  adjacent-statement solution below.
+- [x] Detect browser-storage secret posting (Larkspurlite) using existing AST
+  relationships as recorded below. Check existing facts first;
+  neither telemetry nor a displayed install command alone proves an attack.
+
+### Homebrew launcher and Ruby rule correctness (2026-09-14)
+
+- [x] Necessary detection gap, no engine feature: bind `inreplace` argument 0
+  (executable target) and argument 2 (inserted pipeline) in one call. A neutral
+  Formula subclass observation supplies package context. Do not mistake the
+  old shell installer-marker composite for Ruby Formula identity. Quilltreebyte
+  now has one hostile finding, risk 123; its control covers ordinary patching,
+  removing a pipeline, and updating documentation rather than an executable.
+- [x] Necessary rule bug: Net::HTTP method facts searched quoted literals and
+  missed the actual calls. Replace the three literal matchers and write-method
+  text umbrella with receiver-aware AST queries. Both actual-call and quoted-
+  example controls are clean; retain neutral HTTP facts without inferring theft.
+- [x] Necessary rule bug: a semicolon inside a Ruby string satisfied the `exec`
+  statement regex. Use existing call nodes, exclude unrelated receivers, and
+  retain actual bare/Kernel calls. Remove the redundant suspicious/dropper
+  method-name atom and update its sole consumer to the canonical neutral fact.
+- [x] Necessary precision correction: a method returning a harmless launchd
+  plist example scored 120 (one hostile, two suspicious). Remove the unsupported
+  source path/KeepAlive/RunAtLoad conjunction and its three orphaned atoms.
+  Reuse neutral service-configuration facts instead; the same control now has
+  no high findings, risk 3. No filename/gate exemption or weakened cap.
+- [x] Add six benign controls and one positive expectation. Full pinned
+  validation passes: hostile 64/64, benign 70/70, does-nothing 176/176,
+  drop-exec 43/43, impact-wipe 66/66, obfuscation 80/80,
+  reverse-shell 25/25, simple-stealer 65/65. Log:
+  `/tmp/sc-brew-triage.jlcKqK/validate-complete.log`.
+- [x] Freeze rules and recheck all five roots: 1,289 unchanged input files,
+  1,273 reports, empty stderr. Only Quilltreebyte changes hostile IDs; no
+  previously hostile artifact loses its verdict. Current corpus: 201/622
+  detected, 200 with 1–3 hostile findings, one with five; 421 require review.
+  Exact hashes and intermediate/final evidence are in `SUPPLY_CHAIN_AUDIT.md`.
+- [x] Resolve the keychain-to-POST relationship, not merely keywords.
+  Saved evidence in `/tmp/sc-brew-triage.jlcKqK`: `brew-calls.jsonl`,
+  `plist-ast-flow.txt`, `keychain-ast-flow.txt`. Basaltstack's heredoc argument
+  is an expression with its body outside the call node. Larkspurlite's Ruby
+  flow omits the nested receiver call and treats interpolation as literal
+  text. These are observed coverage limits, not justification for an unbounded
+  Ruby-flow feature. First test whether existing structural predicates can
+  prove the intended relationships without conflating overwrites or examples.
+  Basaltstack's written-loader relationship is now covered as recorded below.
+  Larkspurlite is subsequently covered by the bounded AST relationship below;
+  this does not claim that the general Ruby flow projection was extended.
+- [x] Review the remaining JVM launchd constant-only composite in
+  `objectives/persistence/system/launchd/bootstrap/ios-source.yaml` against a
+  harmless compiled plist constant. This turn proved and removed the source
+  conjunction. The following pass proves the JVM false positive and removes it.
+
+### Written LaunchAgent relationships and JVM constants (2026-09-15)
+
+- [x] Necessary missing detection, expressible by a trait author: use one AST
+  sequence for the destination assignment, directory creation, write, and its
+  heredoc. Match the same path binding and the actual ProgramArguments payload,
+  not a nearby example. The Formula objective adds package context. Basaltstack
+  now has one hostile finding (risk 125), with no engine expansion. This is a
+  bounded structural pattern; unquoted URL and literal basename are current
+  restrictions, not general Ruby flow coverage.
+- [x] Add two Ruby controls covering ordinary local services, quoted URL pipe
+  characters, overwritten bindings, and unrelated destination variables. They
+  score 9 without high findings; the documentation-only control stays clean.
+  Fix the neutral RunAtLoad fact's `for:` scope: `source` excludes Ruby, so
+  explicitly include `scripts`. This corrects the prior migration's coverage
+  omission rather than adding another duplicate fact.
+- [x] Prove the JVM constant-only false positive with a harmless compiled class
+  and disassembly. It scored 118 (one hostile, two suspicious) for configuration
+  strings alone. Remove the unsupported conjunction and two orphaned atoms;
+  the now-empty legacy `ios-source.yaml` is deleted and recoverable in Git.
+  Existing neutral facts retain configuration observations. Source and class
+  controls score 1 without high findings. The class rebuild is byte-identical;
+  only harmless regression code was compiled, never a hostile package.
+- [x] Add one positive expectation and four benign expectations. Full pinned
+  validation passes: hostile 65/65, benign 74/74, does-nothing 176/176,
+  drop-exec 43/43, impact-wipe 66/66, obfuscation 80/80,
+  reverse-shell 25/25, simple-stealer 65/65. Log:
+  `/tmp/sc-launchagent-triage.vjmz6y/validate-jvm.log`.
+- [x] Recheck the full unchanged five-root inventory with frozen rules/binaries:
+  1,289 files, 1,273 reports, empty stderr. Only Basaltstack changes hostile
+  IDs; no existing hostile verdict is lost. Current corpus: 202/622 detected,
+  201 with 1–3 hostile findings, one with five, and 420 awaiting review. Exact
+  input, rule, report, and compiled-control hashes are in the root audit.
+- [x] Resolve the keychain-result POST miss using the saved Ruby
+  call/AST/flow evidence. Do not substitute keychain/HTTP co-occurrence for an
+  actual relationship, and require failing semantic controls before deciding
+  whether an extractor correction is necessary.
+
+### Browser-keychain result to HTTP body (2026-09-15)
+
+- [x] Necessary detection gap, solvable by a trait author: connect the literal
+  keychain command result and its trim operation to the request body's single
+  identifier interpolation. Require a distinct URI assignment feeding the URL.
+  Only the optional net/http require may additionally intervene. The Formula
+  composite supplies package context. No engine facts or feature expansion.
+- [x] Reject the demonstrated confounders: public command output, overwritten
+  values, unrelated body values, URI assignment replacing the secret, local
+  migration, and value mutation in endpoint/body interpolation. All seven
+  cases in the new benign fixture have no high findings (file risk 3).
+  A harmless structural probe verifies the optional require and bare body
+  interpolation forms; no new attack specimen was generated or executed.
+- [x] Record boundaries instead of claiming generic flow support: static
+  command strings, trim/chomp, adjacent statements, literal HTTP(S) DNS endpoint,
+  and one direct interpolation. General helpers, intervening control flow,
+  dynamic command interpolation, and arbitrary endpoints are not covered by
+  this relationship. Existing AST facilities suffice for the confirmed sample.
+- [x] Add positive and negative expectations; full pinned validation passes:
+  hostile 66/66, benign 75/75, does-nothing 176/176, drop-exec 43/43,
+  impact-wipe 66/66, obfuscation 80/80, reverse-shell 25/25,
+  simple-stealer 65/65. Log:
+  `/tmp/sc-keychain-triage.bwaXRq/validate-complete.log`.
+- [x] Freeze and recheck all five roots: 1,289 unchanged files, 1,273 reports,
+  empty stderr. Larkspurlite alone gains a hostile verdict (risk 122); no
+  existing hostile verdict is lost. Current corpus: 203/622 detected, 202 with
+  1–3 hostile findings, one with five; 419 still require review. Hashes and
+  evidence paths are in `SUPPLY_CHAIN_AUDIT.md`.
+- [ ] Triage the 11 GitHub Actions packages next. Reports already traverse and
+  recognize action.yml as github_actions, so do not call this an archive bug.
+  Basaltbyte's composite run step visibly pipes token/key environment data to
+  HTTP upload. Inspect structured step values and existing trait support first.
+  Other scenarios require independent review; creating a service file without
+  enabling it or sending secrets is not automatically a hostile implant.
+
+### GitHub Actions environment-pipeline review (2026-09-15)
+
+- [x] Recheck stability: all 1,289 input hashes match the preceding audit.
+- [x] Confirm composite run values are already emitted at
+  `runs.steps[*].run`. No archive or structured-value extraction fix is needed.
+- [x] Fix the demonstrated precision bug in the legacy environment-exfiltration
+  rules: comments, documentation, and `env | curl` without a stdin-upload option
+  are not evidence of an environment upload. Preserve only relationships the
+  available matcher actually establishes; add harmless regression controls.
+- [x] Validate the rules and compare the unchanged full inventory for lost
+  hostile verdicts before resuming broader GitHub Actions analysis.
+- [x] Resolve the grouped/filtering pipeline separately. The original manifest
+  facts contain run strings but no shell calls or AST; broadening a file-wide
+  regex would conflate command examples and disconnected operations. Do not
+  add a shell-parser feature merely to force this sample to match.
+
+Results: the two counterexample files went from risk 39 / three suspicious
+findings each to risk 4 / no high findings. Four bounded neutral observations
+cover direct `env`/`printenv` stdin uploads in workflow and composite run values;
+the two local-diagnostic controls retain these observations without a theft
+verdict. Entire-scalar matching intentionally excludes filters, compound
+commands, extra curl options, and quoted forms. The three unsupported legacy
+atoms and their inference-only umbrella were removed, not demoted or renamed.
+No new engine facts or features. Validation: hostile 66/66, benign 79/79 and all
+six other suites pass. Evidence: `/tmp/sc-gha-triage.fBjnBR/validate-final.log`.
+The memo-disabled before/after full scans have identical suspicious/hostile
+IDs; 1,289 input hashes are unchanged and no hostile verdict is lost.
+
+### Path-sensitive analysis-cache reuse (2026-09-15) — fixed
+
+- [x] Necessary correctness investigation, not an extractor feature: repeated
+  full scans with identical inputs, rules and binaries produced different
+  build-script findings on three Rust files. Byte-identical `lib.rs`,
+  `bootstrap.rs`, and `build.rs` fixtures have different path-dependent rules.
+  With `CLEAVE_ANALYSIS_MEMO_MB=0`, both rule snapshots agree on every high ID.
+  `CLEAVE_SKIP_CACHE=1` alone does not disable this in-process memo.
+- [x] Identify unsafe existing paths in cleave: report-cache fast paths in
+  `src/lib.rs` replace `target.path` without the path-equivalence check already
+  used for single-flight results. Per-file cache stores erase the source path
+  when no path-dependent finding fired; absence of a finding is also
+  path-dependent. Source inspection is not a passing regression test.
+- [x] Add a deterministic harmless reproduction covering both scan orders,
+  matched and unmatched filename conditions, and cache-on/off parity.
+- [x] Fix cache acceptance using the existing path-equivalence machinery;
+  preserve the origin needed to check negative results as well as positive
+  ones. Audit report fast paths, per-file caches and archive-member reuse.
+  Retain sharing for equivalent paths; no new detection facts are needed.
+- [x] Run focused cache regressions and full validation, then repeat the
+  frozen-inventory scan with caching enabled and disabled. Do not resume
+  broader corpus triage until this correctness issue is addressed.
+
+The cache reproduction failed before the fix: scanning identical harmless
+source as lib.rs then build.rs lost the build-name finding; reversing the order
+incorrectly added it to lib.rs. The retained integration tests cover three
+orders with memo on/off, archive members, all memory/file APIs, an atomic path
+suppressor, and successful sharing for equivalent paths. Compact cache entries
+now retain origins even for negative results; full and compact lookups check
+path equivalence before reuse. Composite unless/downgrade path inputs are also
+included. The obsolete positive-finding-only dependency index was removed.
+Tests: 29 cache unit tests, one composite path-input unit test, and two
+end-to-end tests pass. The cache-only full comparison agrees on all 67,503
+emitted trait IDs/criticalities across 3,868 root/member reports; it exposed the
+independent one-point scoring discrepancy below, which is now also fixed.
+
+### Deterministic risk summation (2026-09-15)
+
+- [x] Necessary arithmetic bug, not a new scoring feature: the cache-fixed
+  full scans agree on every root/member trait ID and criticality, but the
+  Duskwellpro npm archive scores 55 versus 56. Its confidences are identical.
+  `FileAnalysis::compute_summary` sums group maxima as unordered f32 values
+  and then takes ceil; accumulation order can cross an integer boundary.
+- [x] Add a harmless confidence-permutation regression, stabilize summation
+  without changing the group-max scoring policy, and rerun score/cache parity.
+
+The confidence-permutation test failed with score 4 instead of 3 before the
+fix. Canonical-order wider accumulation, rounded once to the existing f32
+score precision before ceil, makes it deterministic. Additional controls retain
+score 1 for five baseline contributions and round a genuine fractional excess
+up to 4. All 26 file-summary tests pass. No confidence, criticality weight,
+grouping policy, trait predicate, or specimen changed. Cache revisions invalidate
+older entries rather than reusing potentially contaminated verdicts/scores.
+
+Final verification for both fixes:
+
+- Cache tests: 29/29; composite path-input test: 1/1; end-to-end cache tests:
+  2/2; file-summary tests: 26/26. Final clippy and diff checks pass.
+- Full validation: hostile 66/66, benign 79/79, does-nothing 176/176,
+  drop-exec 43/43, impact-wipe 66/66, obfuscation 80/80,
+  reverse-shell 25/25, simple-stealer 65/65.
+- Final memo-on/off scans: 1,273 roots, 3,868 root/member records, identical
+  trait IDs, criticalities, confidences and risk scores. Empty stderr;
+  all 1,289 input hashes and the frozen rule manifest are unchanged.
+- No suspicious or hostile IDs differ from the preceding memo-disabled
+  baseline. Corpus counts remain 203/622 detected, 202 with 1–3 hostile
+  findings, one with five; 419 still need review. This is a correctness fix,
+  not a new-coverage claim.
+- Evidence: `/tmp/sc-cache-path-triage.0lBOUW`, final analyzers under
+  `bin-final/`, rules `/tmp/sc-gha-verified-rules.or35Vw`. Source, binary,
+  input and rule hashes were rechecked. Checkout manifests/lockfiles and
+  pre-existing symbol-matcher changes were preserved.
+
+The subsequent declared-script pass below resolves the grouped
+credential-filter pipeline using actual command relationships, without
+marker gates or speculative engine metrics.
+
+### Declared manifest scripts (2026-09-15)
+
+- [x] Necessity review: YAML values and archive traversal work. This is missing
+  format support, not a YAML parser bug. Trait authors cannot apply existing
+  shell AST predicates to a run scalar; regex approximations lose command,
+  quoting, redirection and step boundaries. A narrow declared-script handoff
+  is warranted for ordinary workflow/action code, independently of this sample.
+- [x] Have filefacts expose declared run bodies and their known language,
+  borrowing the existing parsed values. Do not invent security-specific facts,
+  reparse YAML in cleave, infer dynamic shells, or fetch referenced actions.
+- [x] Analyze each body separately with the existing source analyzer and bounded
+  resources. Keep virtual-source locations honest; unknown shells and exhausted
+  budgets must leave an analysis gap, not an implied clean result.
+- [x] Add harmless parser/traversal controls for separate steps, quoting,
+  shell selection and budgets; then repair shell pipeline detection with actual
+  same-pipeline source/filter/upload evidence and negative controls.
+- [x] Validate and compare the frozen full corpus; record improvements and
+  limitations before resuming other ecosystems.
+
+Implemented the narrow handoff, not a second YAML parser or security-specific
+fact schema. Supported explicit/inherited shells reuse existing analyzers;
+decoded bodies have JSON-Pointer logical locations and independent scopes.
+Limits are 100 bodies, 1 MiB each, 10 MiB total. Unknown shells, expressions
+and exhausted budgets surface `embedded-source-incomplete`; nested string
+reanalysis is deliberately not enabled. Cache revision 15 invalidates older
+manifest-only results.
+
+- [x] Fix a demonstrated nested-member reporting bug: fill absent parent links
+  from immediate wrapper paths after finalization. Preserve explicit links.
+  The archive integration test asserts that each parent resolves correctly.
+- [x] Replace loose environment-upload text rules with shared shell AST
+  observations joined at common source offsets. The 13-step control fixture
+  rejects quoting, redirection, disconnected filters, non-upload data options,
+  localhost and intervening transformations. Accommodate the tree-sitter root
+  wildcard optimizer quirk in the query; no engine feature or vendor fork.
+- [x] Resolve the genuine VSIX Amberbyte detection regression. Inspect
+  existing constant/binding/argument evidence before adding source support;
+  assess whether a precise trait suffices. Its shell command is assembled
+  across JavaScript strings. Do not restore broad regex proximity, detect the
+  gate/hostname, or count this executable credential upload as benign.
+  Resolved by the bounded Node argv trait pass below, without an engine bridge.
+- [x] Review the Indigoprime service finding: its unit runs an HTTP client,
+  but is not enabled/started and does not execute the HTTP response. The rule
+  also fired on a loopback health check and on `ExecStart=/usr/bin/printf curl`.
+  Replace the inference with a correctly placed, command-position-constrained
+  service-directive text observation; no engine change is necessary.
+- [x] Repair the existing `quiet-fetch-hidden-stage` inference. Its predicates
+  establish a quiet download to a hidden path, not execution. Dunelinebyte
+  does execute the same downloaded path, so preserve that real relationship
+  with a precise rule rather than treating quiet/hidden output alone as hostile.
+  Inspect existing same-path AST/fact matching before adding engine features.
+
+Final validation passes all eight suites (hostile 67/67, benign 80/80).
+Parser 4/4, analyzer 4/4, gap 1/1, core 47/47, archive/step-scope 1/1 and
+cache-context 2/2 tests pass. Full memo-on/off reports agree across 1,273
+roots, 3,862 members and 67,764 trait instances, with unchanged 1,289-input
+hash inventory. Five benign GHA control files have zero high findings.
+The gate/hostname independence probe passes without executing or writing
+derived payloads. Corpus counts: 205/622 with hostile findings, 204 with
+1–3, one with five; 417 still require review. One genuine VSIX hostile
+verdict was lost and remains open; this is not a no-regression claim.
+Evidence: `/tmp/sc-gha-sources.RjSAuA`, final rules
+`/tmp/sc-gha-final-v2-rules.JCHldj`; see the audit for manifests and deltas.
+
+### VSIX evidence review and service-rule correction (2026-09-15)
+
+- [x] Inspect the actual Amberbyte call, not just its missing verdict. The
+  archived JavaScript calls `execFile("/bin/sh", ["-c", <concatenated text>])`.
+  `symbols()` records the bare `execFile` target and an array-shaped argument;
+  the two source literals are separate. Imports lack the destructured binding.
+  `build_arg` does not fold this binary expression; generic flow merges do not
+  express an ordered, resolved argv string. Existing stng concatenation support
+  is for encoded strings and does not establish this call's interpreter input.
+- [x] Prototype a precision-preserving fix for that call boundary. Required
+  controls include quoted examples, logging an identical string, a local or
+  shadowed `execFile`, argument-position changes, concatenation, dynamic input
+  and overwrite. Determine whether existing AST matching suffices before adding
+  a bridge. Do not mistake import/text proximity for a resolved execution edge.
+  The bounded Node argv trait pass below resolves this reviewed form. It was
+  not an archive bug or justification for security-specific metrics or a second
+  parser. Broader constant folding and binding forms remain unsupported.
+- [x] Reproduce service-rule false positives with two harmless fixtures, then
+  remove the two loose curl/wget atoms and their payload/escalation composite.
+  The replacement under `micro-behaviors/os/service/config` describes directive
+  text only and constrains the executable position. Retain the existing service
+  context consumer through an updated reference. No broad taxonomy migration,
+  sample gate exclusion, engine feature, or specimen modification is needed.
+
+Service-rule verification: final validation passes hostile 67/67, benign 82/82
+and all six other suites. The controls score 6/2 instead of 40/36 and have no
+high findings. Full frozen scan: 1,273 roots, 3,862 members; all root/member
+hostile IDs and confidences agree with the preceding baseline. Four misleading
+suspicious service findings were removed; all 1,289 input hashes are unchanged.
+The VSIX gap and quiet-hidden-download inference remain open. Final evidence:
+`/tmp/sc-service-precision.rA7JZL` (`*-v3` outputs), rules
+`/tmp/sc-service-v3-rules.rBbEku`. No engine sources were changed this pass.
+
+### Hidden-download relationship correction (2026-09-15)
+
+- [x] Reproduce download-only false positives and remove the loose hostile rule.
+  Relocate its generic download-output context into the neutral HTTP download
+  taxonomy and update consumers. Preserve visible observations, not false intent.
+- [x] Use existing shell AST predicates and capture equality for the downloaded
+  path's shell invocation; no new engine matcher, metric or fact was needed.
+  Separate hidden-output and invocation observations join at shared offsets.
+  Dunelinebyte retains one hostile finding; measured precision is 5.7.
+- [x] Verify nine negative steps and eight static, in-memory positive variants.
+  Gate, actor hostname, quiet flags and sample path are not detection predicates.
+- [x] Review validation failures instead of inflating findings: 33 drop-exec
+  samples each retain two hostile findings. Change the suite floor from three
+  to two, matching the user's 1–3 target. Add positive and negative execution
+  assertions. Final validation is green (hostile 68/68, benign 83/83, drop-exec
+  43/43 and the other five suites); no sample bytes changed.
+- [ ] Review remaining proximity-based download/chmod/background pairings.
+  The new relation deliberately does not claim variable-path, mixed-quoting,
+  alternate argument-order or intervening chmod-chain coverage. Existing high
+  findings in those cases still need independent accuracy checks.
+
+### macOS PKG inner CPIO and installer relationship (next)
+
+- [x] Necessity review: Clovermarksync's script is stored in a gzip-wrapped
+  `070707` old-ASCII CPIO archive. Reports expose the opaque `Scripts!!Scripts`
+  body rather than a named postinstall member. The extracted original script
+  has a shell AST; the opaque CPIO body does not. Trait authors cannot repair
+  member boundaries and archive safety checks with a text rule. This is a
+  missing package-container capability, not grounds for security-specific facts.
+- [x] Add bounded ASCII CPIO recognition/member extraction with syntax owned
+  by filefacts and traversal/limits owned by cleave. Reuse `ArchiveMember`
+  extents, ownership and paths rather than a security-specific projection.
+  Cover old-ASCII/newc layouts, malformed/truncated headers, paths, links,
+  duplicate names, limits and cancellation. The real XAR → gzip → CPIO chain
+  now exposes named installer scripts in all ten macOS packages. See the
+  ASCII CPIO follow-up below for validation and intentionally unsupported forms.
+- [x] Reproduce and fix the existing newc reader's silent `InvalidData` success
+  and failure to consume alignment padding. Harmless tests reproduced both:
+  malformed input was accepted and an unaligned first file hid later members.
+  Finish every drained entry, propagate truncation/errors, preserve original
+  paths for sanitization, and bound name allocation and skipped-data processing.
+  Eleven focused tests and an end-to-end RPM test pass, as does strict clippy.
+- [ ] Add accurate same-path download → `installer -pkg` evidence. The extracted
+  postinstall also lacks high findings, so CPIO traversal alone will not restore
+  this verdict. Exclude a different package path, quoted examples, intervening
+  replacement and unrelated condition branches. Do not restore the loose rule.
+
+Final evidence: `/tmp/sc-download-execution.7iXpkP`, rules
+`/tmp/sc-download-rules.O7Mc0n`. The unchanged five-directory inventory contains
+1,289 files; the frozen scan has 1,273 roots and 3,862 members. High deltas are
+exactly the Dunelinebyte finding replacement and Clovermarksync's lost loose
+finding. Corpus totals are 204/622 with hostile findings, 203 with 1–3, one with
+five; 418 need review. Both the macOS package and VSIX misses remain open.
+
+### CPIO reader correctness repair (2026-09-15)
+
+- [x] Necessity review: lost archive members, swallowed parser errors and
+  unbounded parser allocations are engine bugs. Trait authors cannot recover
+  missing member boundaries or enforce extraction limits. Repair the existing
+  reader without introducing security-specific metrics or a second parser.
+- [x] Cover padding, malformed headers, every truncated prefix, skipped names,
+  links, duplicate paths, oversized name allocations, metadata byte budgets,
+  cancellation and trailers claiming data. End-to-end checks cover plain/gzip
+  RPMs, later shell-member analysis, partial errors and retained header facts.
+- [x] Preserve parsed RPM header facts when payload extraction fails; use the
+  existing notable incomplete-analysis diagnostic, not a hostile verdict.
+  Invalidate old incomplete cached results with analysis-cache version 16.
+- [ ] Implement missing CPIO formats separately from this repair. A reviewed
+  corpus RPM uses `07070X`, whose file indexes require metadata from the RPM
+  header ([RPM format documentation](https://rpm-software-management.github.io/rpm/manual/format_v4.html)).
+  All ten current-corpus RPM payload signatures were checked and use this
+  format. It is unsupported, not inherently malformed. Old-ASCII `070707` macOS
+  PKG traversal is completed in the follow-up below. Reuse filefacts archive
+  metadata and cleave's extraction limits; do not infer payload coverage from
+  header-only findings.
+
+Final verification: `/tmp/sc-cpio-repair.SocDAV`. All eight validation suites
+pass (hostile 68/68, benign 83/83); 11 CPIO tests, one end-to-end RPM test and
+29 cache tests pass, with strict clippy clean. The frozen-rule scan retains
+all 1,273 roots and 3,862 root/member records. All suspicious/hostile IDs,
+criticalities and confidences agree with the previous baseline. Ten RPM roots
+gain the existing notable incomplete-extraction diagnostic; seven consequently
+stop displaying three baseline-only metadata/fixture traits under the existing
+low-tier suppression policy. RPM identity/fact fields remain unchanged.
+Corpus counts remain 204/622 with hostile findings; 418 still need review.
+All 1,289 input hashes, frozen rules and pinned binary hashes were rechecked.
+No specimens or detection rules were changed in this repair.
+
+The raw reports are not byte-identical: in addition to those intended RPM
+deltas, 112 Java member import lists have ordering-only differences and 16 Zig
+object context excerpts differ. Neither changes the normalized detection
+comparison; context excerpt reproducibility has not been diagnosed here.
+
+### ASCII CPIO traversal follow-up (2026-09-15)
+
+- [x] Necessity: trait authors cannot restore a missing named member boundary.
+  Add `FileType::Cpio`, generic archive classification and bounded filefacts
+  indexing for `070707`, `070701`, `070702`. Use existing `ArchiveMember` fields.
+  `cpio.variant` and `cpio.complete` describe syntax/index state, not intent.
+- [x] Bound entries at 65,536, names at 1 MiB, and headers/names/retained link
+  targets at 16 MiB. Preserve complete member bodies when only following
+  padding is truncated; retain the incomplete-index diagnostic separately.
+- [x] Extract only regular-file extents and directories under cleave's existing
+  budgets. Sanitize original names, disambiguate collisions, refuse overwrites,
+  never create links/devices, and retain non-executable filesystem permissions.
+  Version 17 invalidates previously opaque CPIO cache results.
+- [x] Recover Riftwoodkit's actual credential-filtered environment upload with
+  the existing shell relationship rule, without gate/hostname predicates or
+  new detection rules. Add a root-package expectation requiring its credential
+  exfiltration hierarchy. Other macOS scripts are now available for real review.
+- [x] Review Larkspursync's deletion of Documents/Desktop/Pictures: fixed in
+  traits using existing shell AST and symbol facts; see the follow-up below.
+- [x] Review Fennellite's keychain-command substitution → printf → HTTP upload:
+  existing AST and call arguments establish the bounded relationship; see the
+  follow-up below. No engine feature is necessary for this specimen.
+- [ ] Review Tidecrestforge's
+  heredoc → same-path launchctl load. Inspect current symbols/AST/flow first;
+  none yet establishes a need for another engine feature.
+- [ ] Disposition before assigning hostile labels: Pumicestack only defines a
+  function in `.zshrc`; Junipeerkit writes a downloader under `/etc/profile.d`
+  on macOS without demonstrated execution; Indigocore forgets its own package
+  receipt. Also review Clovermarksync's fetch-and-install relationship and
+  Larkspursync's background HTTP loop. Filenames and comments are not proof of
+  the behavior claimed by the fixture name.
+
+Limits remain explicit: the newc checksum layout is indexed without checksum
+verification; hardlink aliases expose their stored bodies, not reconstructed
+aliases; binary CPIO and RPM stripped `07070X` are unsupported. The existing
+RPM newc stream reader is not migrated by this change. These are not claims of
+complete archive-format or supply-chain recall.
+
+Final evidence: `/tmp/sc-cpio-members.Y7aTWu` (`*-v3` scans/binaries). Parser
+tests pass 7/7, extraction safety tests 4/4, recognition tests 291/291, both
+end-to-end CPIO/RPM tests and strict lint checks. All eight validation suites
+pass, including hostile 69/69 and benign 83/83. The frozen scan retains 1,273
+roots, 3,871 compact root/member records and 68,097 trait instances. All earlier
+root-level high IDs, criticalities and confidences survive; Riftwoodkit's upload
+is the only new high finding. Corpus totals: 205/622 with hostile findings,
+204 with 1–3, one with five; 417 without hostile findings still need review.
+The full macOS member scan exposes 20 CPIO containers and all ten installer
+scripts. Inputs, frozen rules, targeted source snapshots and pinned binaries
+were rechecked; no specimen bytes changed.
+
+### Personal-folder deletion follow-up (2026-09-15)
+
+- [x] Necessity: the shell recursive-delete text matcher missed indentation
+  and could read quoted examples as commands. Replace it with an existing AST
+  query, preserving the neutral capability. Require recursive options before
+  any option terminator, and an operand on that command. No engine change.
+- [x] Use AST only where facts are insufficient: shell call arguments flatten
+  double-quoted HOME expansions and single-quoted literal dollars to the same
+  string. Require actual HOME expansion nodes and two distinct, exact top-level
+  personal-folder operands. Join that atom with recursive deletion at the same
+  command offset. Local HOME rebinding or an rm function makes host-target
+  inference uncertain and suppresses the targeting atom.
+- [x] Remove `shell-delete-user-docs`, which inferred deletion solely from
+  Desktop/Documents text in a particular order. Its existing macOS composite
+  references the canonical behavioral objective instead. This fixes quoted
+  documentation and subtree-cleanup false positives without another detector.
+- [x] Correct the validation-discovered `rm-dash-prefix-file` placement:
+  ordinary option-terminator handling is a file-deletion capability, not
+  masquerading intent. Move the observation to the existing file-command
+  hierarchy, constrain it to command syntax, and update its dropper consumer.
+- [x] Add a real installer-package expectation, ten benign fixture controls,
+  and static in-memory gate/hostname-independence probes. No specimen bytes
+  were changed and no specimen was executed.
+- [ ] Embedded-source follow-up, not a blanket grammar override: the Zig
+  Yarrowguard sample passes a formatted/concatenated command to `/bin/sh -c`.
+  Its old neutral shell finding came from heuristic plain-string analysis;
+  that path deliberately re-detects the virtual source rather than forcing a
+  shell AST. Switching the rule to syntax matching therefore exposes a real
+  coverage gap (one notable lost, no high findings lost). A future solution
+  must establish the interpreter/argv/value relationship and exclude logging,
+  shadowing, reassignment and wrong-position controls. Inspect the existing
+  declared-source/flow mechanisms before proposing any new facts or bridge;
+  do not force every shell-looking string into executable-source analysis.
+
+Evidence: `/tmp/sc-home-delete.HGyN4t`; frozen rules:
+`/tmp/sc-home-delete-rules.BEYqsj`. This is a rule-level repair, not a new
+engine metric or a claim that embedded-command coverage is complete.
+Final validation passes all eight suites (hostile 70/70, benign 93/93).
+All 18 in-memory probes pass; the objective's reported precision is 6.8.
+The final scan retains 1,273 roots/3,871 records with no lost high findings;
+Larkspursync is the sole recovered hostile package. Current corpus totals:
+206/622 with hostile findings, 205 with 1–3, one with five; 416 need review.
+
+### Keychain-result upload follow-up (2026-09-15)
+
+- [x] Necessity: Fennellite's actual password-to-request-body relation is
+  missing, not merely a keyword or gate match. Existing call arguments select
+  the Safe Storage query; an existing AST matcher follows its stdout through
+  command substitution, a binding, printf expansion and curl stdin. No new
+  metrics, security-specific facts or shell flow engine are needed here.
+- [x] Keep the transport relation neutral under HTTP request/body: the same
+  mechanism posts health checks and ordinary API credentials. Join it to the
+  Safe Storage query's call offset to infer browser-keychain exfiltration.
+- [x] Restrict to consecutive top-level statements, with either a direct
+  pipeline or a side-effect-free nonempty-variable test. Require the same
+  assigned/printed variable, actual stdout (optional stderr discard only),
+  actual stdin as the HTTP body and a syntactically non-local domain URL.
+  Local shadowing of the participating commands and background assignments
+  conservatively exclude uncertain relationships. HTTP domains are not fetched.
+- [x] Move the old keychain text reference from the trojanized-library intent
+  hierarchy to neutral keychain observations, and update its existing consumer.
+  Merely mentioning a browser query does not prove it executes or exfiltrates.
+- [x] Add a package-level hostile expectation and thirteen benign controls.
+  Twenty-seven in-memory probes cover gate/hostname changes, removed gates,
+  direct and guarded uploads, renamed variables, another browser, tool paths,
+  options, redirections, overwritten/disconnected variables, background
+  assignments, command shadowing and ordinary service authentication.
+- [ ] Broader coverage remains unproven: helper functions, reordered CLI
+  arguments, braced/concatenated printed values and general shell dataflow are
+  outside this bounded rule. Consider existing trait mechanisms first; do not
+  infer a need for engine changes from these untested forms alone.
+
+Evidence: `/tmp/sc-keychain-upload.UWRkhL`; frozen rules:
+`/tmp/sc-keychain-rules.BRSZ3N`. The initial `full.jsonl` is invalid because it
+started before snapshot copying finished (6,737 unresolved references). It is
+not a detector-regression baseline. Only a completed-snapshot scan with empty
+stderr and verified inventory can replace the preceding authoritative audit.
+Final `full-v2.jsonl` meets those requirements: 1,273 roots, 3,871 retained
+records, 68,117 trait instances, empty stderr, unchanged input hashes and a
+rechecked frozen rule manifest. All eight validation suites pass (hostile
+71/71, benign 106/106). No existing hostile finding is lost; Fennellite gains
+one, and the only removed high ID is the relocated text-only query observation.
+Current corpus: 207/622 with hostile findings, 206 with 1–3, one with five;
+415 require review. C Sablewoodworks loses its old suspicious text claim and
+still needs actual behavior detection/disposition, not an automatic benign label.
+
+### RPM header-scriptlet follow-up (2026-09-15)
+
+- [x] Necessity: package headers declare code that payload traversal cannot
+  supply. Expose it through filefacts' existing embedded-source contract and
+  cleave's bounded adapter; do not introduce another parser or security metrics.
+- [x] Decode nine lifecycle body/program/flags triplets; preserve independent
+  valid bodies on malformed tags. Unknown programs, extra argv and processing
+  flags remain explicit coverage gaps. Keep separate script scopes.
+- [x] Fix the initial decoder's rejection of scalar interpreter strings.
+  Real RPMs and upstream rpmbuild use STRING/count-one for one interpreter;
+  normalize it alongside STRING_ARRAY. Add scalar, array and malformed controls.
+- [x] Verify all ten real RPM scriptlets reach source analysis with unchanged
+  rules. Add a package-level neutral-behavior regression for Eldergroveworks.
+  Parser tests: 10 passes; three cross-container integrations pass; strict
+  filefacts linting passes. Cache version 18 invalidates pre-scriptlet reports.
+- [ ] Review newly exposed overly strong SSH-key, cron/network and preload
+  labels. Do not count three extra hostile packages as verified recall gains.
+- [ ] Address actual curl-pipe and base64-intermediate environment-upload
+  rule gaps using existing facts first. No new engine feature is established.
+  The old silent-curl regex requires a literal `-s` spelling and misses grouped
+  `-fsSL`; its consumer also requires a `/bin/sh` path reference or bash call,
+  despite a visible bare `sh` pipeline. Existing source-call/pipeline facts
+  already expose the operations. Fix relationships and benign controls rather
+  than inserting a synthetic shebang or treating every installer as hostile.
+- [ ] RPM stripped 07070X payload traversal and trigger arrays remain separate,
+  explicitly unsupported work. Header coverage is not complete RPM coverage.
+
+Evidence: `/tmp/sc-rpm-scripts.OTqfjQ`, final `bin-v2` / `full-v2.jsonl`.
+Stable input manifest matches the preceding pass. Final corpus totals are
+210/622 with hostile labels, 209 with 1–3 and one with five; 412 lack hostile
+labels and the three newly labeled RPMs also need verdict review. No prior high
+finding is lost. See SUPPLY_CHAIN_AUDIT.md for limitations and reproducibility.
+
+### Encoded environment upload / cron precision (2026-09-15)
+
+- [x] Necessity: the base64-intermediate miss is a trait relationship gap.
+  Extend the existing bounded pipeline query, not the engine. Preserve the
+  same-node credential-filter/HTTP-body join and reject redirected/file-input
+  encoders, decoders, disconnected flows and locally shadowed tools.
+- [x] Verify 28 in-memory static probes and nine benign controls. Add real RPM
+  Gableutils and DEB Gablekit expectations: each gains one credential-upload
+  hostile finding. Reported objective precision: 6.4.
+- [x] Review all three portable-cron hostile matches. Their scheduled requests
+  discard response bodies; curl plus crontab is not sufficient hostile evidence.
+  Remove the composite and relocate its neutral atoms by observed behavior.
+  Add a benign recurring-health-check regression, not an environment-gate bypass.
+- [ ] Complete the three affected cron packages' disposition. No archive was
+  moved or modified on the basis of its install script alone.
+- [ ] RPM Fennelbyte retains a misleading JVM-crontab byte-string observation.
+  Existing archive-family applicability explains it. Prefer neutral placement
+  and actual format constraints before introducing engine behavior changes.
+- [ ] SSH placeholder-key and preload-library verdict accuracy, remote-shell
+  pipeline verdicts, and the broader unresolved corpus remain in scope.
+
+Evidence: `/tmp/sc-env-encoding.vNGTRy`; final `full-v2.jsonl`; frozen rules
+`/tmp/sc-env-encoding-rules.M9xMLs`. Only high changes: two credential-upload
+gains and three unsupported cron-label removals. Current corpus: 209/622 with
+hostile labels; 208 have 1–3, one has five, 413 have none. This is not verified
+recall. The stable 1,289-input inventory is unchanged.
+Final `make validate` passes all eight suites, including hostile 74/74 and
+benign 116/116. Evidence: `validate-final.log`; prior intermediate validations
+do not include both final package expectations.
+
+### SSH references and Ed25519 framing (2026-09-15)
+
+- [x] Necessity: do not add key-validation engine facts just to recognize the
+  fixed Ed25519 wire layout. Tighten the existing literal regex instead.
+  Ten static structural probes cover truncation, extra data/padding, algorithm
+  and length-field changes, complete framing and changed public-key bits.
+- [x] Remove the portable SSH backdoor and generic credential-access composites
+  that inferred intent from nearby public-key/path text. Relocate their two
+  reference atoms by observed behavior; preserve their matchers as neutral facts.
+- [x] Fix the JS path-reference taxonomy error found by validation at notable
+  severity. Relocate it and update consumers, rather than weakening the benign
+  fixture's forbidden-hierarchy assertion. All 99 old occurrences have neutral
+  replacement findings.
+- [x] Add five benign controls and a real legacy npm package expectation. The
+  old npm source retains two hostile findings and its archive four. Complete
+  public-key documentation is not a backdoor; malformed key text is still visible.
+- [ ] Disposition: 16 matching current-corpus source packages and an additional
+  Java package carry malformed keys. They are not proof of functional SSH access,
+  but file writes/timestamp restoration can still merit detection. Do not mark
+  entire packages benign, repair payloads or move archives without full review.
+  The C sample additionally formats a literal `%s` path using `%%s`.
+- [ ] Continue actual write/restore relationship coverage, RPM preload/payload
+  review, remote fetch-to-shell verdicts and the rest of the full corpus goal.
+
+Evidence: `/tmp/sc-ssh-verdict.o3VpA7`, final `full-v3.jsonl` and
+`key-structure-final.jsonl`; frozen rules `/tmp/sc-ssh-rules-final.7OuMyo`.
+Current corpus: 194/622 with hostile labels, 193 with 1–3 and one with five;
+428 need review. PHP's separate stealth-rewrite finding remains. No unrelated
+high finding is lost and the input inventory is unchanged. Final validation
+passes all eight suites (hostile 75/75, benign 121/121); this is not completion
+of corpus triage or a verified recall figure.
+
+### Shell response-to-interpreter relationship (2026-09-15)
+
+- [x] Necessity: use an existing tree query for the actual pipeline edge, not
+  new engine metrics/facts. Command-name/argument co-occurrence cannot establish
+  which command supplies the shell's input.
+- [x] Cover bare/absolute shells, grouped and long quiet curl flags, `nohup`,
+  and output redirection. Reject explicit commands, syntax-only modes, input
+  redirection, disconnected commands, quoted examples and shadowed tools.
+  All 41 static in-memory probes pass, independently of environment/file gates.
+- [x] Verdict: retain this complete capability at notable severity. Remove the
+  curl-only hostile wrapper and its duplicate bash branch: quiet remote-script
+  installation alone does not prove malicious intent. Do not add an actor-host
+  signature, random-gate signal, or duplicate atom to manufacture a hostile score.
+- [x] Verify the five durable benign controls, both real RPM header observations,
+  all eight regression suites and the frozen five-root scan. Validation passes
+  hostile 76/76 and benign 126/126; no suspicious/hostile finding changes.
+- [ ] Review independent intent evidence and full package disposition for both
+  RPMs. Foxtailpro's visible verify script downloads and executes; its filename
+  does not establish wiping. Stripped RPM payload traversal remains unsupported.
+- [ ] Apply the same relationship/verdict review to legacy wget and spawned
+  download-execution rules. Do not generalize those verdicts from this curl pass.
+- [ ] Relocate the older neutral curl/installer text references still under
+  dropper objectives, preserving consumer behavior and useful notable findings.
+  The five controls expose this placement issue despite having no high findings.
+
+Final evidence: `/tmp/sc-curl-pipe.E1aYoF` (`full.jsonl`, `probe-final.log`,
+`durable-controls.log`, `validate-final.log`); rules
+`/tmp/sc-curl-pipe-rules.gNUR7A`. Inventory recheck matches all 1,289 baseline
+files (manifest SHA-256 `64f1398ffcf15b16679bbc83678e918698677d715db0314cdbfaf012dd9e4009`).
+
+### Bounded Node argv credential-upload detection (2026-09-15)
+
+- [x] Recheck actual Amberbyte source, current symbols and flow. Its argv array
+  lacks resolved contents in the shared facts; unqualified `execFile` alone is
+  insufficient. This is not an archive extraction failure.
+- [x] Necessity: use a bounded AST relationship and binding-syntax observation.
+  No new engine facts, metrics, constant-folding API or embedded-language bridge.
+  Keep neutral syntax distinct from the combined exfiltration verdict.
+- [x] Support direct/two-literal command bodies, known shell modes and curl data
+  options, and reject lexical replacements, unrelated data, unknown options and
+  dynamic scope. In particular, another child_process export renamed to execFile
+  must not masquerade as the imported API.
+- [x] Verify 48 in-memory probes and eight durable benign controls. Gate removal
+  and hostname replacement preserve detection. The actual VSIX gains exactly one
+  hostile trait; measured authoring precision is 6.6.
+- [x] Full frozen comparison and `make validate`: only the actual VSIX's high
+  finding is added (source and package roll-up), no finding is lost. All eight
+  suites pass, including hostile 77/77 and benign 134/134. Inventory unchanged.
+- [ ] Broader alias/import, variable argv and dynamic/escaped/multi-part string
+  forms still require evidence-driven coverage. The bounded exclusions are not
+  complete JavaScript binding analysis; unknown forms are not benign verdicts.
+- [ ] Continue the remaining VSIX packages and the full supply-chain corpus.
+
+Final evidence: `/tmp/sc-vsix-call.770Cc9` (`full-final.jsonl`, `probe-v7.log`,
+`controls-final.jsonl`, `rule-test-final.log`, `validate-final.log`); frozen rules
+`/tmp/sc-vsix-final-rules.FVxzy5`. Current corpus: 195/622 with hostile labels,
+194 with 1–3 and one with five; 427 need review. See SUPPLY_CHAIN_AUDIT.md for
+scope, limitations, unchanged input inventory, hashes and the Node API contract.
+
+### Skipped callback flow diagnostics (2026-09-15)
+
+- [x] Inspect Tidecrest's real source and both evidence views. `symbols()` has
+  `dns.resolve4`; `flow()` omits that call because it is in an anonymous callback
+  inside `activate`. The graph also omitted its existing `anonymous-function`
+  limitation. This diagnostic omission is a bug, not evidence of benign behavior.
+- [x] Repair the bug in filefacts `source/value_flow.rs`: skipped anonymous
+  definitions report their limitation from the evaluator, including inside
+  named bodies. Skipped nested named functions report `nested-function`, so
+  another wrapper does not silently hide the unsupported body. Do not model
+  callback invocation, parameters or captures as part of this diagnostic fix.
+- [x] Verify JavaScript/TypeScript, Python and Go controls, a nested wrapper,
+  and a supported named-function control. All 1,377 active filefacts library
+  tests pass (four ignored); clippy passes. On the real source, values/functions
+  are unchanged and only `anonymous-function` is added (`flow-delta.json`).
+- [x] Rebuild and pin the existing analyzers using an isolated parser-source
+  copy. Full frozen corpus comparison preserves all 68,408 trait instances and
+  every root risk/high-ID set. All eight validation suites pass with these builds.
+- [ ] Tidecrest typed-text → hex/case helper → DNS detection remains unresolved.
+  Do not replace the missing relationship with file-wide keyboard/encoding/DNS
+  co-occurrence. Callback/capture modeling would be a separate feature; first
+  assess a precise existing fact/AST rule. No specimen was executed or repaired.
+- [ ] General report propagation of flow limitations remains separate: the
+  flow API/CLI now tells the truth about this omission, but this does not claim
+  every ordinary cleave report emits a corresponding analysis-gap finding.
+
+Final evidence: `/tmp/sc-vsix-dns.W71MNi` (`flow-final.json`, `flow-delta.json`,
+`filefacts-tests-final.log`, `filefacts-clippy.log`, `full.jsonl`,
+`traits-added.jsonl`, `traits-removed.jsonl`, `validate-final.log`). Rules are
+unchanged at `/tmp/sc-vsix-final-rules.FVxzy5`; new pinned analyzers are in
+`bin/` with `analyzers.sha256`. The 1,289-input inventory is unchanged. Corpus
+counts remain 195/622 with hostile labels, 194 with 1–3 and one with five;
+427 require review. This is a diagnostic repair, not a new exfiltration detection.
+
+### Compound-assignment provenance repair (2026-09-15)
+
+- [x] Necessity: a genuine language-modeling bug, not a new security fact.
+  Accumulating into an existing identifier with `+=` could retain a stale
+  binding or discard its previous origin. A trait author cannot repair missing
+  provenance for general call-argument queries in YAML.
+- [x] Recognize the tested compound-assignment syntax and merge the old binding
+  with the right-hand value. Read the old binding before evaluating the RHS;
+  evaluate the RHS once. Unwrap Go's singleton assignment-place list. Preserve
+  ordinary overwrite semantics. Flag unsupported member/indexed targets with
+  `compound-assignment-target`; do not invent mutable object relationships.
+- [x] Test JavaScript, TypeScript, Python, Go, Rust and C: accumulation, ordinary
+  assignment, later overwrite, unrelated sink and opaque-call controls. Add
+  RHS-reassignment/evaluation-count and unsupported-member controls. All 1,378
+  active parser-library tests pass (four ignored); clippy passes.
+- [x] Verify the six-language, five-case matrix through ordinary YAML `arg.from`
+  rules in cleave's `tests/source_compound_flow.rs`. No production test-only
+  traits or security-specific facts were added. Invalidate old analysis results
+  with cache salt v19 because this repair can change provenance-based findings.
+- [x] Finish the pinned, frozen-rule corpus comparison: all 68,408 trait
+  instances and every root risk/high-ID set are unchanged. All eight
+  `make validate` suites pass, including hostile 77/77 and benign 134/134.
+- [ ] Resume Tidecrest review. Anonymous callback flow remains unsupported;
+  fixing compound assignment does not itself establish typed-text exfiltration.
+
+Final evidence: `/tmp/sc-type-dns-rule.SEmAtS`. Before/after inventories match
+all 1,289 baseline inputs exactly. No specimen was executed or changed. Corpus
+counts remain 195/622 hostile-labeled (194 with 1–3, one with five); 427 need
+review. This restores tested provenance, not a demonstrated corpus recall gain.
+
+### Generalization review (2026-09-15)
+
+- [x] Re-read the authoring guidance and inspect cached call/import/bind/value
+  facts for the terminal and curl samples. Calls and scalar arguments are
+  present; array/object contents and callback relationships are not all exposed
+  in those projections. This is not a justification for every AST subpattern.
+- [x] Withdraw the unvalidated curl binding/chain/hostile-composite draft;
+  recoverable copies are in `/tmp/sc-deferred-rule-design.u0tzIG`. No previously
+  validated detection or sample was removed. Do not count a pending draft as a
+  recall improvement.
+- [x] Record behavior-first admission criteria in SUPPLY_CHAIN_AUDIT.md.
+- [x] Check for dangling draft references and run `make validate` after
+  withdrawal: all eight suites pass (hostile 78/78, benign 142/142,
+  does-nothing 176/176, drop-exec 43/43, impact-wipe 66/66, obfuscation 80/80,
+  reverse-shell 25/25, simple-stealer 65/65). Log:
+  `/tmp/sc-deferred-rule-design.u0tzIG/validate.log`. This is validation of the
+  working rules, not a new frozen corpus-wide audit or generalization score.
+- [ ] Reassess the terminal detector against independent variants and benign
+  terminal integrations. Keep justified receiver/mutation constraints, but
+  minimize live AST work and document syntax-related false negatives honestly.
+- [ ] Redesign the remote-file launch detection only if it earns its keep
+  beyond the curl fixture. Require a real download-to-launch relationship and
+  severity justified against legitimate installers; do not patch in extra modes,
+  flag orders or package names just to raise the synthetic detection count.
+
+### VS Code concealed terminal submission (2026-09-15)
+
+- [x] Inspect Onyxfieldcore's archive and entrypoint. A startup extension creates
+  a terminal, sends a hidden PowerShell download/evaluate command with execution
+  enabled, and hides that same terminal. The command's unquoted pipe leaves
+  actual runtime behavior dependent on the parent shell; label the concealed
+  attempt, not successful payload delivery or execution.
+- [x] Necessity: existing AST queries express this bounded relationship; no
+  engine feature, metric, callback model or package-specific gate is required.
+  Keep const namespace binding and submitted command syntax in micro-behaviors;
+  combine them for the hostile intent finding.
+- [x] Require the same adjacent const receiver; allow intervening comments,
+  explicit `true` or the API's default execution flag, and ordinary no-options,
+  name-string or name-only options. Exclude custom ptys, unknown shell options,
+  displayed/logged commands, changed receivers and intervening mutations.
+- [x] Verify 48 static probes, including gate removal, hostname replacement,
+  direct/two-literal text, standard flag variants and lexical shadow controls.
+  Optional query matching initially admitted `false` and extra arguments;
+  the tested argument guard now rejects both. No engine change was necessary.
+- [x] Add eight durable benign controls and a real VSIX expectation. Focused
+  scanning finds one hostile objective on the package; controls have no high
+  findings. No specimen was executed or changed.
+- [x] Finish the frozen five-root comparison: only Onyxfieldcore gains a high
+  finding, exactly one hostile objective. No trait instance is lost. The other
+  additions are neutral namespace-binding observations and package roll-ups.
+  Precision is 6.6. All eight validation suites pass, including hostile 78/78
+  and benign 142/142; focused controls score 4–6 without high findings.
+- [x] Audit placement after the shell-bridge directory limit failed. Existing
+  creation/name-based dispatch regexes and raw module-import text do not prove
+  this binding/receiver/argument relationship. Place the distinct new rules in
+  `micro-behaviors/process/create/shell/terminal`; no existing trait is moved or
+  demoted. Shorten descriptions to the authoring limit and revalidate.
+- [ ] Broader callback cases (Tidecrest, Cobaltkit) remain open. This terminal
+  rule does not claim callback flow, arbitrary aliases/monkeypatch resolution,
+  dynamic strings, quoted/escaped command bodies, or all terminal configurations.
+
+Final evidence: `/tmp/sc-vsix-terminal.M8XhsF`; frozen rules
+`/tmp/sc-vsix-terminal-final-rules.RA4G6h`. Reuses the compound-assignment pass's pinned
+analyzers in `/tmp/sc-type-dns-rule.SEmAtS/bin/`. Input inventory matches the
+1,289-file baseline before and after scanning. Corpus counts are 196/622 with
+hostile labels, 195 with 1–3 and one with five; 426 still require review.

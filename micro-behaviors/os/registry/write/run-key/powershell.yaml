@@ -1,0 +1,72 @@
+# Run-key writes, distinct from registry references or generic manipulation.
+# PowerShell native command arguments may be unquoted expressions. Inspect
+# the command node, not an arbitrary string that merely documents a command.
+defaults:
+  for: [powershell]
+  platforms: [windows]
+  crit: notable
+  conf: 0.95
+
+traits:
+  - id: powershell-reg-add-run-key
+    desc: PowerShell reg adds Run-key value
+    if:
+      type: tree-sitter
+      query: |
+        (command
+          command_name: (command_name) @command
+          command_elements: (command_elements
+            . (command_argument_sep)
+            . (_) @verb
+            . (command_argument_sep)
+            . (_) @path)
+          (#match? @command "(?i)^reg(\\.exe)?$")
+          (#match? @verb "(?i)^add$")
+          (#match? @path "(?i)^['\"]?HK(CU|LM)\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run['\"]?$"))
+
+  - id: powershell-literal-run-key-property
+    desc: PowerShell writes literal Run-key property
+    if:
+      type: tree-sitter
+      query: |
+        (command
+          command_name: (command_name) @command
+          command_elements: (command_elements
+            (command_parameter) @parameter
+            . (command_argument_sep)
+            . (_) @path)
+          (#match? @command "(?i)^(New|Set)-ItemProperty$")
+          (#match? @parameter "(?i)^-Path$")
+          (#match? @path "(?i)^['\"]?HK(CU|LM):\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run['\"]?$"))
+
+  # Immediate sibling statements make the binding unambiguous without
+  # pretending PowerShell's incomplete flow adapter resolves arbitrary paths.
+  # The variable read must be the same one assigned, and it must follow -Path.
+  - id: powershell-assigned-run-key-property
+    desc: PowerShell consumes assigned Run-key path
+    if:
+      type: tree-sitter
+      query: |
+        (statement_list
+          (pipeline
+            (assignment_expression
+              (left_assignment_expression) @binding
+              (assignement_operator) @operator
+              value: (pipeline) @value))
+          .
+          (pipeline
+            (pipeline_chain
+              . (command
+                  command_name: (command_name) @command
+                  command_elements: (command_elements
+                    . (command_argument_sep)
+                    . (command_parameter) @parameter
+                    . (command_argument_sep)
+                    . (array_literal_expression
+                        (unary_expression (variable) @used))))))
+          (#eq? @operator "=")
+          (#eq? @binding @used)
+          (#match? @binding "^\\$[A-Za-z_][A-Za-z_0-9]*$")
+          (#match? @value "(?i)^['\"]HK(?:CU|LM):\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run['\"]$")
+          (#match? @command "(?i)^(New|Set)-ItemProperty$")
+          (#match? @parameter "(?i)^-Path$"))

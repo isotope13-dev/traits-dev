@@ -1,0 +1,81 @@
+# Actual stdout-to-stdin relationship, not a quoted command or file-wide pair.
+# Unknown curl options and shell modes are deliberately not inferred.
+# This capability also describes legitimate installers; it is not hostile intent.
+defaults:
+  for: [shell]
+  platforms: [unix]
+  crit: notable
+  conf: 0.97
+
+traits:
+  - id: curl-response-shell-stdin
+    desc: Pipes quiet curl response into shell
+    unless:
+      - {type: symbol, kind: function, exact: curl}
+      - {type: symbol, kind: function, exact: sh}
+      - {type: symbol, kind: function, exact: bash}
+      - {type: symbol, kind: function, exact: zsh}
+      - {type: symbol, kind: function, exact: nohup}
+    if:
+      type: tree-sitter
+      language: shell
+      # Call arguments alone do not encode pipeline edges. The wildcard parent
+      # rejects pipeline-level input redirection; the second branch permits
+      # only one or two explicit output-discard/descriptor-merge redirects.
+      # Keep no-argument and exactly -s shell modes separate: an optional
+      # argument pattern can match zero arguments despite other arguments.
+      query: |
+        ([
+          (_ !redirect
+            (_
+              . [
+                (command name: (command_name (word) @curl) !redirect
+                  . argument: (word)+ @flags
+                  . ((word) @timeout . (number))?
+                  . argument: [(word) (raw_string) (string . (string_content) .)] @url .)
+                (command name: (command_name (word) @wrapper) !redirect
+                  . argument: (word) @curl
+                  . argument: (word)+ @flags
+                  . ((word) @timeout . (number))?
+                  . argument: [(word) (raw_string) (string . (string_content) .)] @url .)
+              ]
+              . "|"
+              . [
+                (command name: (command_name (word) @shell) !argument !redirect)
+                (command name: (command_name (word) @shell) !redirect
+                  . argument: (word) @stdin_mode .)
+              ] .) @pipeline)
+          (redirected_statement
+            body:
+            (_
+              . [
+                (command name: (command_name (word) @curl) !redirect
+                  . argument: (word)+ @flags
+                  . ((word) @timeout . (number))?
+                  . argument: [(word) (raw_string) (string . (string_content) .)] @url .)
+                (command name: (command_name (word) @wrapper) !redirect
+                  . argument: (word) @curl
+                  . argument: (word)+ @flags
+                  . ((word) @timeout . (number))?
+                  . argument: [(word) (raw_string) (string . (string_content) .)] @url .)
+              ]
+              . "|"
+              . [
+                (command name: (command_name (word) @shell) !argument !redirect)
+                (command name: (command_name (word) @shell) !redirect
+                  . argument: (word) @stdin_mode .)
+              ] .) @pipeline
+            . redirect: (file_redirect) @output
+            . redirect: (file_redirect)? @output_second .)
+        ]
+        (#match? @curl "^(/usr/bin/)?curl$")
+        (#eq? @wrapper "nohup")
+        (#match? @flags "^(-[fsSLv]+|--silent|--show-error|--fail|--location)$")
+        (#any-match? @flags "^(-[fSLv]*s[fSLv]*|--silent)$")
+        (#match? @timeout "^(-m|--max-time)$")
+        (#match? @url "^['\"]?https?://[A-Za-z0-9][A-Za-z0-9.-]*\\.[A-Za-z]{2,}[:/]")
+        (#not-match? @url "(?i)\\.localhost[:/]")
+        (#match? @shell "^(/(usr/)?bin/)?(sh|bash|zsh)$")
+        (#eq? @stdin_mode "-s")
+        (#match? @output "^(1?>[ \\t]*/dev/null|2>&1)$")
+        (#match? @output_second "^(1?>[ \\t]*/dev/null|2>&1)$"))

@@ -1,0 +1,75 @@
+# A source-local command result reaches an HTTP request body. Only consecutive
+# statements and an optional side-effect-free nonempty test are accepted.
+# This observes transport, not theft: the producer could be a health probe.
+defaults:
+  for: [shell]
+  platforms: [unix]
+  crit: notable
+  conf: 0.96
+
+traits:
+  - id: shell-command-result-http-body
+    desc: Posts a captured command result over HTTP
+    unless:
+      - type: symbol
+        kind: function
+        exact: curl
+      - type: symbol
+        kind: function
+        exact: printf
+      # An asynchronous assignment runs in a child shell and does not update
+      # the parent's variable. Conservatively exclude files containing one.
+      - type: tree-sitter
+        language: shell
+        query: '(program (variable_assignment) . "&") @background'
+    if:
+      type: tree-sitter
+      language: shell
+      query: |
+        (program
+          (variable_assignment name: (variable_name) @binding
+            value: (command_substitution . [
+              (command name: (command_name (word) @producer) !redirect)
+              (redirected_statement
+                body: (command name: (command_name (word) @producer) !redirect)
+                . redirect: (file_redirect) @stderr .)
+            ] .))
+          . [
+            (pipeline
+              . (command name: (command_name (word) @printf) !redirect
+                . argument: [(raw_string) (string . (string_content) .)] @format
+                . argument: (string . (simple_expansion (variable_name) @used) .) .)
+              . (command name: (command_name (word) @curl) !redirect
+                . argument: (word)* @flags
+                . ((word) @timeout . (number))?
+                . argument: (word) @data
+                . argument: [(word) (raw_string) (string . (string_content) .)] @stdin
+                . argument: [(word) (raw_string) (string . (string_content) .)] @url .) .)
+            (if_statement
+              condition: (test_command . (unary_expression
+                operator: (test_operator) @nonempty
+                . (string . (simple_expansion (variable_name)) .) .) .)
+              "then" . (pipeline
+                . (command name: (command_name (word) @printf) !redirect
+                  . argument: [(raw_string) (string . (string_content) .)] @format
+                  . argument: (string . (simple_expansion (variable_name) @used) .) .)
+                . (command name: (command_name (word) @curl) !redirect
+                  . argument: (word)* @flags
+                  . ((word) @timeout . (number))?
+                  . argument: (word) @data
+                  . argument: [(word) (raw_string) (string . (string_content) .)] @stdin
+                  . argument: [(word) (raw_string) (string . (string_content) .)] @url .) .)
+              . "fi")
+          ]
+          (#match? @stderr "^2[ \\t]*>[ \\t]*/dev/null$")
+          (#eq? @printf "printf")
+          (#match? @format "^['\"]%s['\"]$")
+          (#eq? @used @binding)
+          (#eq? @nonempty "-n")
+          (#match? @curl "^(/usr/bin/)?curl$")
+          (#match? @flags "^-[fsSLsv]+$")
+          (#match? @timeout "^(-m|--max-time)$")
+          (#match? @data "^(-d|--data(-binary)?)$")
+          (#match? @stdin "^['\"]?@-['\"]?$")
+          (#match? @url "^['\"]?https?://[A-Za-z0-9][A-Za-z0-9.-]*\\.[A-Za-z]{2,}[:/]")
+          (#not-match? @url "(?i)\\.localhost[:/]"))

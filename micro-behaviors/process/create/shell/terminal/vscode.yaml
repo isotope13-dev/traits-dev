@@ -1,0 +1,108 @@
+defaults:
+  for: [javascript]
+  platforms: [unix, windows]
+  crit: notable
+  conf: 0.98
+
+traits:
+  - id: const-vscode-require-binding
+    desc: Const binds the VS Code namespace
+    if:
+      type: tree-sitter
+      language: javascript
+      query: |
+        (program
+          (lexical_declaration kind: "const"
+            (variable_declarator name: (identifier) @name
+              value: (call_expression function: (identifier) @loader
+                arguments: (arguments . (string . (string_fragment) @module .) .))))
+          (#eq? @name "vscode")
+          (#eq? @loader "require")
+          (#eq? @module "vscode"))
+
+  - id: terminal-hidden-powershell-eval-submit
+    desc: Submits hidden PowerShell then hides terminal
+    # This bounded relationship requires adjacent statements and the same
+    # const receiver. Only no options, a name string, or a name-only options
+    # object is accepted; custom ptys and shell configurations are excluded.
+    # The command is one literal or two literals split before the URL. No
+    # generic JavaScript constant folding or binding resolution is claimed.
+    unless:
+      - type: tree-sitter
+        language: javascript
+        query: |
+          ([
+            (formal_parameters) @binding
+            (function_declaration name: (identifier) @binding)
+            (function_expression name: (identifier) @binding)
+            (generator_function_declaration name: (identifier) @binding)
+            (generator_function name: (identifier) @binding)
+            (class_declaration name: (identifier) @binding)
+            (assignment_expression left: (_) @binding)
+            (augmented_assignment_expression left: (_) @binding)
+            (arrow_function parameter: (identifier) @binding)
+            (catch_clause parameter: (_) @binding)
+            (for_in_statement left: (_) @binding)
+            (import_statement) @binding
+            (variable_declarator name: [(object_pattern) (array_pattern)] @binding)
+          ] (#match? @binding "\\b(vscode|require)\\b"))
+          (variable_declarator name: (identifier) @name value: (_) @value
+            (#eq? @name "vscode")
+            (#not-match? @value "^require\\s*\\(\\s*[\"']vscode[\"']\\s*\\)$"))
+          (variable_declarator name: (identifier) @name
+            (#eq? @name "require"))
+          (variable_declarator name: (identifier) @name !value
+            (#eq? @name "vscode"))
+          [(with_statement) @scope
+           (call_expression function: (identifier) @dynamic
+             (#match? @dynamic "^(eval|Function)$"))]
+    if:
+      type: tree-sitter
+      language: javascript
+      query: |
+        (statement_block
+          (lexical_declaration kind: "const"
+            . (variable_declarator name: (identifier) @terminal
+              value: (call_expression
+                function: (member_expression
+                  object: (member_expression object: (identifier) @api
+                    property: (property_identifier) @window)
+                  property: (property_identifier) @create)
+                arguments: [
+                  (arguments) @emptyargs
+                  (arguments . (string) @terminalname .)
+                  (arguments . (object
+                    . (pair key: (property_identifier) @option value: (string)) .) .)
+                ])) .)
+          . (comment)* . (expression_statement (call_expression
+            function: (member_expression object: (identifier) @sender
+              property: (property_identifier) @send)
+            arguments: (arguments
+              . [
+                (string . (string_fragment) @prefix @tail .)
+                (binary_expression
+                  left: (string . (string_fragment) @prefix @split-prefix .)
+                  operator: "+"
+                  right: (string . (string_fragment) @tail @split-tail .)
+                  (#match? @split-prefix "\\s+$")
+                  (#match? @split-tail "(?i)^https?://"))
+              ]
+              . (true)? .) @sendargs))
+          . (comment)* . (expression_statement (call_expression
+            function: (member_expression object: (identifier) @hider
+              property: (property_identifier) @hide)
+            arguments: (arguments) @hideargs))
+          (#eq? @api "vscode")
+          (#eq? @window "window")
+          (#eq? @create "createTerminal")
+          (#match? @option "^name$")
+          (#match? @emptyargs "^\\(\\s*\\)$")
+          (#eq? @terminal @sender)
+          (#eq? @terminal @hider)
+          (#eq? @send "sendText")
+          (#match? @sendargs "^\\([^,]+(,\\s*true)?\\s*\\)$")
+          (#eq? @hide "hide")
+          (#match? @hideargs "^\\(\\s*\\)$")
+          (#match? @prefix "(?i)^powershell(\\.exe)?\\s+(-NoProfile\\s+)?-(w|WindowStyle)\\s+hidden\\s+-(c|Command)\\s+(iwr|Invoke-WebRequest)\\s+(https?://[-A-Za-z0-9.:/_%]+(\\s+-UseBasicParsing)?\\s*\\|\\s*(iex|Invoke-Expression))?$")
+          (#match? @tail "(?i)^(powershell(\\.exe)?\\s+(-NoProfile\\s+)?-(w|WindowStyle)\\s+hidden\\s+-(c|Command)\\s+(iwr|Invoke-WebRequest)\\s+)?https?://[A-Za-z0-9][A-Za-z0-9.-]*\\.[A-Za-z]{2,}(:[0-9]+)?/[-A-Za-z0-9_./%]*(\\s+-UseBasicParsing)?\\s*\\|\\s*(iex|Invoke-Expression)$")
+          (#not-match? @tail "(?i)\\.localhost[:/]"))

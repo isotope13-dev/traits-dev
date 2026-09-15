@@ -32,6 +32,11 @@ inspects an originating call's arguments; unrelated calls cannot supply its
 secret-name literal. Chained calls retain distinct targets even when their
 source ranges start at the same byte.
 Reassignment replaces bindings; scoped declarations preserve outer bindings.
+Compound assignments to local identifiers retain both the previous value and
+the right-hand operand; subsequent ordinary assignments replace that merged
+binding. This is operand provenance, not constant folding or a model of
+overloaded operators. Member/indexed compound mutation remains unsupported and
+reports `compound-assignment-target` rather than inventing an object update.
 Receivers and arguments are separate, as are `headers` and `body` fields.
 
 External calls are opaque unless an explicit library model supplies transfers.
@@ -75,6 +80,65 @@ as well as content and analyzer identity. Identical bytes named `build.rs` and
 `lib.rs` must not share filename-derived facts. Directory names do not affect
 file-local extraction and are not part of this cache key.
 
+## Declared manifest scripts
+
+`ParsedFile::embedded_sources()` borrows GitHub Actions run bodies from the
+existing parsed values and identifies explicit shell declarations, including
+workflow/job defaults. It does not classify arbitrary YAML strings as code.
+Missing, dynamic and custom shell declarations remain unknown; OS-dependent
+defaults are not inferred. No actions are fetched and no scripts are executed.
+
+Cleave analyzes supported bodies as separate logical source members identified
+by escaped JSON Pointers. Locations refer to the decoded script, not invented
+contiguous offsets into folded/escaped YAML. Separate steps do not share
+file-scoped evidence. Traversal is bounded at 100 bodies, 1 MiB per body and
+10 MiB total; unsupported shells, runner expressions and exhausted limits leave
+an `embedded-source-incomplete` analysis gap. Nested string/code reanalysis is
+currently disabled for these bodies; direct source facts and AST rules apply.
+
+## RPM header scripts
+
+Filefacts exposes the nine basic lifecycle scriptlets as
+`rpm.scriptlets.<phase>.{body,program,flags}` and borrowed `embedded_sources()`
+units. Bodies remain independent from payload extraction. Interpreter STRING
+and STRING_ARRAY encodings normalize to argv; RPM's own builder still writes
+the scalar form for a single interpreter
+([upstream implementation](https://github.com/rpm-software-management/rpm/blob/master/build/parseScript.cc)).
+Missing interpreter declarations use RPM's `/bin/sh` default. Invalid present
+declarations never become defaults. Only known single-argument interpreters
+receive a source type; extra arguments, unknown interpreters and nonzero or
+invalid processing flags remain unknown. Runtime expansions are not evaluated.
+
+Cleave reuses its bounded declared-source adapter, with a separate logical
+member per body. Malformed or ambiguous script tags retain independently valid
+units and an incomplete diagnostic. Script-body copies are limited to 1 MiB
+each, interpreter argv to 64 arguments/64 KiB. Ordinary descriptive header
+strings are not code. GitHub runner-expression exclusions do not apply to RPM.
+Trigger arrays and stripped RPM payloads remain outside this implementation;
+visible header scripts do not imply complete package coverage.
+
+## CPIO package members
+
+Filefacts identifies ASCII CPIO (`070707`, `070701`, `070702`) and indexes
+member paths, kinds, ownership and byte extents through `archive_members()`.
+`cpio.complete` is false when indexing stops on malformed/truncated input or
+its metadata limits; previously indexed members remain available. This is
+parser state, not a malware verdict. Indexing is bounded at 65,536 entries,
+1 MiB per name and 16 MiB of headers, names and retained link targets.
+
+Cleave copies validated extents under its extraction budgets and recursively
+analyzes their detected types, including gzip-wrapped macOS installer scripts.
+It sanitizes original paths, disambiguates collisions, never creates links or
+special files, and does not preserve executable permissions. Incomplete indexes
+produce the existing notable archive-incomplete diagnostic. Neither missing
+members nor an unsupported format establishes safety.
+
+The CRC variant's layout is supported but its additive checksum is not verified.
+Hardlink aliases are not reconstructed: entries expose their stored bodies.
+Binary CPIO and RPM stripped `07070X` remain unsupported. RPM's existing newc
+stream reader is a separate legacy path; this change does not claim to migrate
+that parser or recover stripped RPM payloads.
+
 ## Go dependency evidence
 
 Filefacts parses module/workspace directives, checksum records, and vendor
@@ -107,6 +171,15 @@ reproduce every `GOWORK`, `-mod`, toolchain, private-proxy, or build-tag setting
 This is bounded source-local **may-flow**, not a compiler, execution trace, or
 proof that every path executes. Limits and known omissions remain explicit.
 Missing or unsupported evidence must not be interpreted as a clean bill of health.
+
+The tested JavaScript/TypeScript, Python and Go anonymous-function forms are
+currently omitted from flow modeling. The graph reports `anonymous-function`
+even when a callback occurs inside a named function.
+Nested named functions omitted by the current function walk report
+`nested-function`. These are explicit limitations, not inferred callback values,
+captures or event-source relationships. Call symbols remain independently
+available for those bodies. Ordinary cleave reports do not yet propagate every
+flow limitation; inspecting the flow API/CLI is necessary for this diagnostic.
 
 All tree-sitter adapters use the same evidence types. Shared assignment/helper
 contracts currently test Rust, Go, Python, JavaScript, TypeScript, and C. Schema
