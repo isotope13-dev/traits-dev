@@ -20,7 +20,7 @@ COMPILED_DIR := third-party/compiled
 # Validate each fixture independently, including byte-identical files whose
 # names select different traits (for example, build.rs versus lib.rs).
 validate:
-	CLEAVE_ANALYSIS_MEMO_MB=0 $(CLEAVE) --traits-dir . validate
+	$(CLEAVE) --traits-dir . validate
 
 # Focused synthetic regressions; no attack corpus, network, or model required.
 test-cloud-hosts:
