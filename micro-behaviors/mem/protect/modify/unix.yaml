@@ -47,61 +47,18 @@ traits:
       any:
         - id: metadata/lang/compiler/systems::go-binary
         - id: metadata/lang/compiler/systems::go-version-string
-  # MISPLACED, and deliberately left in place -- read this before moving it.
-  # The matcher counts the LE32 constant 7 in file bytes, on the theory that 7 is
-  # PROT_READ|PROT_WRITE|PROT_EXEC. It is not a memory-protection signal: 7 occurs
-  # in ELF program/section headers, relocations, DWARF and any struct field holding
-  # 7. Measured with count_min 2 satisfied: /bin/cat 19, /usr/bin/env 20,
-  # /bin/grep 25, /bin/ls 40, /usr/bin/curl 43, /bin/sh 171, /bin/tar 328 -- it is
-  # ~always true for ELF, so every Linux binary scanned files a
-  # mem/protect/modify:component ML feature. Tightening to the instruction form
-  # does not rescue it (`mov edx,7` is still 4-11 hits per coreutils binary); the
-  # constant only means PROT_RWX at an mprotect call site, which cleave cannot join
-  # on a stripped binary.
-  # Two fixes were tried and rejected:
-  #  1. Relocate to metadata/binary/metrics/structural/ (the honest home for a
-  #     structural byte measurement). Blocked: validation requires metadata/ binary
-  #     traits to carry a `section:` filter, and any section choice changes the
-  #     match set, so the move cannot be behaviour-preserving. Precision is NOT the
-  #     obstacle -- it carries no directory term (amos 6.5, darknexus 5.6 either way).
-  #  2. Drop it from the eight rules that use it as an `all:` leg, where an
-  #     always-true conjunct is dead weight. Unsafe at
-  #     well-known/malware/stealer/amos::amos-stealer-behavior: that composite is
-  #     `for: [elf, dylib]` on this leg but requires macho-64, and `macho` is a
-  #     distinct file type from `dylib`, so the leg cannot match a Mach-O EXECUTABLE
-  #     -- which is how AMOS ships, inside an app bundle. Spot-checked by feeding a
-  #     hand-built Mach-O (typed `macho` by cleave, five `07 00 00 00` occurrences):
-  #     the trait did not fire. Caveat on that check -- the hand-rolled header also
-  #     tripped anti-analysis/malformed/macho-header, so the file-type gate is the
-  #     likeliest cause but not the only possible one; the `for:` list alone is
-  #     sufficient grounds. Net effect: that hostile rule is inert for its real
-  #     target, and removing the leg would REVIVE it as macho-64 +
-  #     setActivationPolicy + (unsigned | low-code-to-data-ratio) -- hostile on any
-  #     unsigned menu-bar app that hides from the Dock.
-  # The real defect is that composite's specification; fixing it needs family
-  # samples. Until then this weak leg is what keeps it dormant.
-  - id: repeated-07-byte-constant
-    desc: Repeated 0x07 byte constant
-    conf: 0.25
+  # Require the protection bits on a resolved syscall. The integer 7 in
+  # headers, relocations or unrelated data is not a memory-permission request.
+  - id: mprotect-rwx-syscall
+    desc: mprotect requests executable writable memory
+    conf: 0.95
     for: [elf, dylib]
-    count_min: 2
     if:
-      type: raw
-      regex: '\x07\x00\x00\x00'
-    unless:
-      - id: metadata/lang/compiler/systems/
-      # The 0x07 bytes in a COM32 ELF are loader program-header flags, not a
-      # runtime memory-protection constant.
-      - id: well-known/tool/sysadmin/syslinux/
-      - id: micro-behaviors/dylib/library/family::xz-ref
-      - id: micro-behaviors/data/compress/lzma::liblzma
-      # gconv lookup tables contain many 0x07 header/table values; they are
-      # data for the glibc conversion module, not mprotect constants.
-      - id: well-known/lib/native/glibc::gnu-gconv-module
-      - type: trait
-        id: metadata/file/extension/identity::linux-kernel-package-artifact-basename
-      - type: section
-        exact: .modinfo
+      type: syscall
+      name: [mprotect]
+      args:
+        - index: 2
+          mask: 7
 
 composite_rules:
   # Canonical native memory-protection operation across dynamically linked,

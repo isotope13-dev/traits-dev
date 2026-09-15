@@ -85,13 +85,6 @@ traits:
       type: text
       regex: 'https://[A-Za-z0-9.-]+/s/[A-Fa-f0-9]{8}[.](cmd|ps1|sh)'
 
-  - id: schtasks-create-source
-    desc: Source creates scheduled task
-    crit: suspicious
-    if:
-      type: text
-      regex: '(?i)schtasks(.exe)?\s+/Create'
-
   - id: schtasks-token-source
     desc: Source references task scheduler utility
     crit: notable
@@ -260,40 +253,6 @@ traits:
       type: text
       regex: '(?i)(chmod|setExecutable|Start-Process|ProcessBuilder|exec[.]Command|spawn\s*[(])'
 
-  - id: dylib-path-source
-    desc: Source references dynamic library payload
-    crit: notable
-    if:
-      type: text
-      substr: .dylib
-
-  # Bare `xattr`/`dlopen` substrings match documentation, comments, data
-  # tables (a lexer wordlist), parameter names (`xattrs`), unrelated C
-  # identifiers (`pthread_mutexattr_t`), FFI libraries *defining* dlopen,
-  # and sys flag APIs (`getdlopenflags`) -- none of which loads a dylib.
-  # Each behavior below names the action its matcher checks: quarantine
-  # removal, or a load call carrying a dylib path. Variable-path loads (an
-  # audio library opening its own bundled dependency) and prose mentions
-  # match neither leg. The same holds for a bare `DYLD_INSERT_LIBRARIES`
-  # word (completion data and docs name it without setting it -- the
-  # assignment is micro-behaviors/os/linker/env, the injection reference
-  # is evasion/hijack-execution-flow/env/preload) and for a bare audio
-  # plug-ins directory (shell-completion lists ship it as data): neither
-  # is a load call, so neither is matched here. A real audio-plugin load
-  # still matches through the dlopen-with-path form.
-  - id: dylib-quarantine-removal
-    desc: Source removes macOS quarantine attribute
-    crit: suspicious
-    if:
-      type: text
-      regex: '(xattr[^\r\n]{0,40}quarantine|com[.]apple[.]quarantine)'
-  - id: dylib-dynamic-load-call
-    desc: Source loads a dylib by literal path
-    crit: suspicious
-    if:
-      type: text
-      regex: '(dlopen\s*\(\s*["''][^\r\n]{0,40}[.]dylib)'
-
   - id: build-lifecycle-hook-source
     desc: Source implements package build hook
     crit: notable
@@ -302,15 +261,6 @@ traits:
       regex: '(build[.]rs|setup[.]py|extconf[.]rb|Makefile[.]PL|CMakeLists[.]txt|prepack)'
 
 composite_rules:
-  # Rollup keeping the established `dylib-load-or-unquarantine` identity for
-  # the dropper composite below. Same tier as its legs: either leg firing is
-  # one observation of dylib staging, not two levels of verdict.
-  - id: dylib-load-or-unquarantine
-    desc: Source loads or unquarantines dylib
-    crit: suspicious
-    any:
-      - id: dylib-quarantine-removal
-      - id: dylib-dynamic-load-call
   - id: unbounded-loop-source
     desc: Source contains unbounded loop
     crit: component
@@ -341,14 +291,6 @@ composite_rules:
     any:
       - id: dns-query-api-source
       - id: jvm-dns-query-api-source
-
-  - id: portable-keychain-cookie-exfiltration
-    desc: Browser keychain and cookies exfiltrated
-    crit: hostile
-    conf: 0.98
-    all:
-      - id: micro-behaviors/os/security/keychain::safe-storage-command-reference
-      - id: micro-behaviors/fs/path/cookie::browser-cookies-file-path
 
   - id: portable-launchagent-exfiltration
     desc: LaunchAgent persists history exfiltration
@@ -468,23 +410,6 @@ composite_rules:
       - id: blue-channel-payload-source
       - id: micro-behaviors/data/source/arithmetic::lsb-bit-mask-source
       - id: executable-stage-source
-
-  - id: portable-dylib-dropper
-    desc: Remote dylib staged and loaded
-    crit: hostile
-    conf: 0.99
-    # "Staged" promises remote acquisition: an FFI library defining dlopen
-    # and an audio library opening its own bundled dependency both mention a
-    # dylib name and a load call without fetching anything. Require a remote
-    # fetch primitive in the same file before calling the pair a dropper.
-    all:
-      - id: dylib-path-source
-      - id: dylib-load-or-unquarantine
-    any:
-      - id: curl-fail-silent-url
-      - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-call
-      - id: micro-behaviors/communications/http/lib/requests::requests-get
-      - id: micro-behaviors/communications/http/lib/requests::requests-post
 
   - id: portable-build-hook-secret-theft
     desc: Build hook exports developer secrets

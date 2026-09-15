@@ -782,7 +782,46 @@ activation-gate inference was introduced.
   Completed with actual-command/destination predicates and the argument-shape
   engine bug fix recorded below. Both archives were moved unchanged to the
   recoverable misplaced-good directory after static review and hash checks.
-- [ ] Review the remaining 310 v1 artifacts for individual disposition. The
+- [x] Review and delete the 14 remaining JavaScript v1 canary-only archives.
+  Manifests, entrypoints and decoded resources show no attack implementation;
+  repair would require wholesale replacement. Hashes match original provenance,
+  the prior audit and Git HEAD, so deletion is recoverable from Git history.
+  This is fixture-quality cleanup, not an engine gap or detection success.
+- [x] Review and delete all 15 TypeScript v1 canary-only archives. They repeat
+  the JavaScript template with type annotations and likewise never perform the
+  decoded attack descriptions. Exact hashes match original provenance, the
+  preceding inventory and Git HEAD; deletion is recoverable from Git history.
+- [x] Review and delete all 15 C v1 archives. They declare CMake executables but
+  contain no `main`, cannot link, never perform their decoded attack descriptions,
+  and never read their purported PNG payloads. Hash-verified deletion is
+  recoverable from Git history.
+- [x] Remove two disconnected token-order inferences exposed by the C cohort.
+  `shell-command-buffer` and `format-string-injection` inferred flow between
+  unrelated calls. Keep the precise shell-command format-string observation;
+  remove the dead hostile consumer rather than add unnecessary AST machinery.
+  A benign C regression now stays free of the self-extract objective.
+- [x] Review and delete all 15 C# v1 archives. Their NuGet build target depends
+  on an undeclared external `dotnet script` tool; more importantly, every module
+  only writes the decoded attack description to a temp file, starts a fixed
+  print-only child and contacts loopback. Hash-verified deletion is recoverable.
+- [x] Remove the unconsumed `schtasks-create-source` objective atom. It claimed
+  task creation from command text alone and duplicated existing neutral command
+  reference observations. No new AST or engine behavior was warranted.
+- [x] Review and delete all 15 Go v1 modules. Six plain variants cannot compile
+  due to unused imports; all 15 `init` functions merely write an attack sentence,
+  launch a no-op/echo child and contact loopback. Hash-verified deletion is
+  recoverable from Git history.
+- [x] Review and delete all 15 Rust v1 crates. Cargo would execute each build
+  script, but the script only writes decoded description data to temp, starts a
+  print-only child and contacts loopback. Hash-verified deletion is recoverable.
+- [x] Review and delete the 14 remaining Python v1 packages. Their setup-time
+  `exec` reaches only the temp-canary, print-only child and loopback routine.
+  Hash-verified deletion is recoverable from Git history.
+- [x] Remove the zero-use `windows-schtasks-payload` composite. It contradicted
+  its own comment by using line proximity to infer that an unrelated subprocess
+  was the task payload. Existing cached calls exposed the disconnect; no AST
+  feature was justified for an unconsumed rule.
+- [ ] Review the remaining 207 v1 artifacts for individual disposition. The
   corpus README documents canary sinks, so do not treat its original intended
   scenario labels as proof of executable malicious behavior.
 - [ ] Continue actual current-corpus misses and duplicate verdicts. The audit
@@ -1188,10 +1227,14 @@ The VSIX gap and quiet-hidden-download inference remain open. Final evidence:
   Finish every drained entry, propagate truncation/errors, preserve original
   paths for sanitization, and bound name allocation and skipped-data processing.
   Eleven focused tests and an end-to-end RPM test pass, as does strict clippy.
-- [ ] Add accurate same-path download → `installer -pkg` evidence. The extracted
-  postinstall also lacks high findings, so CPIO traversal alone will not restore
-  this verdict. Exclude a different package path, quoted examples, intervening
-  replacement and unrelated condition branches. Do not restore the loose rule.
+- [x] Review same-path download → `installer -pkg` in Clovermarksync. Its source
+  and cached arguments show the same pathname, but the downloaded package is
+  absent from the supplied artifact and a legitimate updater can do this.
+  Do not restore the loose hostile verdict or add an AST relationship solely
+  for an unsupported verdict. Fix the missing neutral absolute-path installer
+  call using cached arguments; retain other-format command references separately.
+  Static controls and the real nested member pass in
+  `/tmp/sc-pkg-installer-review.ueQofw`. Payload-level disposition remains unknown.
 
 Final evidence: `/tmp/sc-download-execution.7iXpkP`, rules
 `/tmp/sc-download-rules.O7Mc0n`. The unchanged five-directory inventory contains
@@ -1261,9 +1304,10 @@ comparison; context excerpt reproducibility has not been diagnosed here.
 - [x] Review Fennellite's keychain-command substitution → printf → HTTP upload:
   existing AST and call arguments establish the bounded relationship; see the
   follow-up below. No engine feature is necessary for this specimen.
-- [ ] Review Tidecrestforge's
-  heredoc → same-path launchctl load. Inspect current symbols/AST/flow first;
-  none yet establishes a need for another engine feature.
+- [x] Review Tidecrestforge's heredoc → same-path launchctl load. Cached
+  symbols/values/flow omit the body-to-write link; an existing structural query
+  expresses the bounded relationship without an engine feature. See the
+  shell heredoc-to-launchd audit in `/tmp/sc-launchagent-shell.2QawRH`.
 - [ ] Disposition before assigning hostile labels: Pumicestack only defines a
   function in `.zshrc`; Junipeerkit writes a downloader under `/etc/profile.d`
   on macOS without demonstrated execution; Indigocore forgets its own package
@@ -1593,6 +1637,176 @@ all 1,289 baseline inputs exactly. No specimen was executed or changed. Corpus
 counts remain 195/622 hostile-labeled (194 with 1–3, one with five); 427 need
 review. This restores tested provenance, not a demonstrated corpus recall gain.
 
+### macOS script review / receipt operation (2026-09-15)
+
+- [x] Read the ten named installer scripts. Record actual behavior separately
+  from filenames and fixture claims in SUPPLY_CHAIN_AUDIT.md. A function
+  definition, discarded HTTP response, staged dylib and executed command are
+  not equivalent evidence. Do not activate gates or repair specimen payloads.
+- [x] Inspect Indigocore's PackageInfo, payload listing, metadata and cached
+  command arguments. Its own-receipt invocation is present in ordinary facts;
+  no engine bug or new fact is needed for this visibility gap.
+- [x] Strengthen the existing receipt trait: neutral notable severity and a
+  cached same-call option predicate replace the baseline literal substring.
+  No new trait family or AST query; preserve the existing canonical ID.
+- [x] Add six benign controls and a static regression test. Direct, standard
+  absolute-path and multiline invocations match; comments/examples, unrelated
+  arguments and similarly named executables do not. No control has high findings.
+- [x] Complete the frozen five-root comparison. All root risks/high IDs remain
+  unchanged; only Indigocore's neutral/low-tier compact output changes. All 1,289
+  input hashes are unchanged. Evidence: `/tmp/sc-macpkg-review.cIjB3s`.
+- [x] Finish `make validate` for the new control expectations: all eight suites
+  pass, including hostile 79/79 and benign 149/149 (`validate.log`). No new
+  hostile-coverage claim is made for the neutral receipt observation.
+- [x] Review the portable-dylib hostile composite: six staging packages do not
+  show library loading, and four benign controls reproduce its unsupported
+  hostile/suspicious pair. Remove that composite and its misleading atoms;
+  retain neutral source literals and class-string references in capability
+  directories. No gate, hostname or additional engine feature is needed.
+- [x] Preserve compiled-string consistency with Go: JVM rules use existing
+  cached `class.strings`, not a Java-only extension of source literals. The
+  class pool includes identifiers/descriptors; do not claim execution or treat
+  the entire pool as language-level string constants.
+- [x] Validate the dylib precision fix: 13 package/control roots pass the static
+  regression; all eight validation suites pass (hostile 79/79, benign 155/155).
+  Frozen five-root audit retains 1,273 roots and 3,882 records, changes only six
+  root high-ID sets, and preserves all 1,289 input paths/hashes. Corpus counts
+  are now 190/622 hostile-labeled, all with 1–3; 432 need further disposition.
+  Evidence: `/tmp/sc-dylib-precision.7mqTJB` (`full-complete.jsonl`,
+  `high-complete-delta.json`, `regression-final.log`, `validate-complete.log`).
+- [x] Tidecrestforge's write/load relationship is covered by the shell-heredoc
+  query and installer-hook context in `/tmp/sc-launchagent-shell.2QawRH`.
+  Twenty-three structural probes and four benign controls pass. Validation
+  rejected the draft single-leg/direct-atomic objectives; this was intentional
+  engine policy, not a precision bug. The final rule uses actual installer
+  context rather than changing that policy. Final five-root scan changes only
+  Tidecrestforge's high verdict (one hostile), preserves all existing findings,
+  and adds neutral hook-filename observations to the ten macOS packages.
+  Frozen validation fails only the concurrently added stage2 expectation;
+  its pre/post snapshot scans are identical. Worktree validation separately
+  fails an unrelated oversized registry-access directory. Focused regression passes;
+  full validation is not being claimed green.
+- [x] Clovermarksync's supplied script has a same-path download/install attempt,
+  but no supplied payload establishes malicious purpose. Preserve that uncertainty;
+  the hidden path and ignored failure do not by themselves warrant hostile.
+  Fixed neutral installer-call visibility and quoted-documentation false
+  positives without an engine feature. Eight controls pass; the full scan adds
+  only four neutral installer-call instances and preserves every existing
+  finding and high verdict. Worktree validation fails two unrelated control-port
+  descriptions; corrected frozen validation reports only the existing stage2
+  expectation failure, with no new-control failures. Full validation is not
+  green. Evidence:
+  `/tmp/sc-pkg-installer-review.ueQofw`.
+
+### Archive-wide environment exfiltration consolidation (2026-09-15)
+
+- [x] Inspect Cobaltcraft's actual package, member source and cached facts; its
+  environment/file reads feed the serialized HTTP body. Five hostile labels
+  do not represent five independently established behaviors.
+- [x] Reproduce a real rule-authoring false positive using a harmless install
+  hook, separate local environment-name diagnostic and fixed-status HTTP client.
+  Two archive-scoped hostile rules incorrectly pool those unrelated members.
+- [x] Remove the two pooling rules and the redundant file-finding-plus-hook
+  wrapper. Keep the canonical detections and lifecycle observations. No engine
+  bug, new fact, new AST query or gate/hostname exception is needed for this fix.
+- [x] Move the unchanged neutral HTTPS/POST source matcher out of the credential
+  stealer directory; remove inherited theft tags and update its three consumers.
+  Do not pretend a textual pattern proves body provenance.
+- [x] Add a readable benign package, real-package validation expectation and
+  static semantic regression script. A broad directory assertion exposed the
+  misplaced HTTP trait; relocating the observation allows retaining that check
+  without suppressing or deleting the underlying capability.
+- [x] Finish final frozen-rule comparison and validation after the neutral
+  matcher migration. All 1,273 roots and 3,881 retained records remain; only
+  Cobaltcraft loses high IDs (five hostile findings become two). The 82 neutral
+  HTTP-source instances move one-for-one; two low-tier serialization instances
+  cease to be retained, while the more specific serialization trait remains.
+  All 1,289 input hashes are unchanged. Coverage stays 196/622 hostile-labeled,
+  now all 196 with 1–3; the other 426 remain unresolved. All eight validation
+  suites pass (hostile 79/79, benign 143/143), as does the static semantic script.
+  Evidence: `/tmp/sc-env-consolidation.gd8K4R` (`full-final.jsonl`,
+  `traits-final-*.jsonl`, `high-final-delta.json`, `validate-complete.log`).
+- [x] Independently test same-file disconnected environment/HTTP code. A local
+  environment-name filter plus fixed JSON status upload reproduces the hostile
+  `javascript-environ-json-http-exfil` verdict, even without reading secret
+  values. A second control also checks whether NPM_TOKEN is configured locally
+  and reproduces four additional hostile labels. Evidence and static controls:
+  `/tmp/sc-env-disconnected.o8qs70`. This is rule co-occurrence overreach, not a
+  demonstrated engine bug; source facts retain the fixed status-body value.
+- [x] Remove `javascript-environ-json-http-exfil`; all its component observations
+  remain. Add a durable name-only diagnostic/status-upload control and extend
+  the existing static npm regression. Cobaltcraft's expectation no longer
+  requires that false-positive rule; its developer-file finding remains.
+- [x] Finish the post-removal frozen comparison and validation. All 1,273 roots
+  and 3,882 records remain; only Cobaltcraft and Clovermarkkit lose the removed
+  hostile ID, retaining one hostile finding each. Corpus labels stay 190/622,
+  all with 1–3. Five generic HTTP-body umbrella instances also cease compact
+  retention; their more specific request-end-body observations remain. All
+  1,289 input paths/hashes are unchanged. Static regression passes, as do all
+  eight validation suites (hostile 79/79, benign 156/156). Reject the first full
+  report (`full-final.jsonl`): it raced the snapshot copy and logged invalid
+  references. Only the complete snapshot's `full-complete.jsonl` establishes
+  this result; the frozen rules differ from the dylib pass in one file.
+- [x] Repair the four additional hostile false positives reproduced by the local
+  NPM_TOKEN presence check plus disconnected fixed-body upload:
+  `env-token-stealer`, `npm-token-stealer-comp`, `npm-runner-recon-http` and
+  `npm-supply-chain-attack`. Removed their unsupported co-occurrence inference
+  and orphaned `npm-token-env-access` helper; the hook composite that consumed
+  one now references the existing credential-upload finding. No new engine
+  fact, query, source/sink model or sample/hostname exception was added.
+- [x] Check independent positive coverage: all 65 simple-stealer samples retain
+  hostile findings in the focused scan. Only the npm-token-to-Telegram sample
+  changes high IDs, retaining two hostile findings instead of five (the fourth
+  removed rule was already downgraded to suspicious there). The local token
+  check retains neutral token-read and HTTP facts and no hostile findings.
+  Durable control: `testdata/benign/env-http-controls/local-diagnostic.js`;
+  static regression: `scripts/test-npm-token-precision.sh`.
+- [x] Complete the final post-orphan-removal five-root scan for the four-rule
+  repair in `/tmp/sc-npm-token-precision.fWfZqk`: all 68,400 trait instances are
+  byte-identical after sorting, and root risks/high-ID sets are semantically
+  identical. All 1,273 roots, 3,882 records and 1,289 input hashes remain.
+  Corpus labels stay 190/622, all with 1–3. The final 66-root static regression
+  passes. `full-final.jsonl` is the authoritative post-cleanup report.
+- [x] Finish isolated-snapshot validation: all eight suites pass (hostile 79/79,
+  benign 156/156, does-nothing 176/176, drop-exec 43/43, impact-wipe 66/66,
+  obfuscation 80/80, reverse-shell 25/25, simple-stealer 65/65;
+  `validate-frozen.log`). Workspace `make validate` still
+  fails on two unrelated PHP/media duplicate-matcher issues after removing
+  this pass's orphan (`validate-worktree-final.log`). Preserve those concurrent
+  changes; do not describe the workspace validation as passing.
+- [x] Consolidate the suspicious NPM-token read aliases (`env-npm-token`,
+  `npm-token`, `node-npm-token`) and equivalent `env-npm-auth-token` /
+  `node-auth-token` wrappers. Keep the three existing cached member facts and
+  add one neutral registry-token family for breadth-counting consumers. Migrate
+  all references; preserve the CI detector's registry exclusion and put the
+  publishing exception on the actual publishing composite, not token reads.
+  Remove two now-unused exceptions. No new matcher, AST query or engine fact.
+- [x] Extend the durable regression to seven benign controls and all 65
+  simple-stealer samples (72 roots). The disconnected diagnostic, bracket
+  reads, all three registry-token spellings and ordinary publishing now have
+  no suspicious/hostile findings. The three-spelling control retains three
+  neutral atoms without satisfying cross-provider credential breadth. All 65
+  positive samples retain hostile detection; the Telegram token sample keeps
+  two hostile findings and loses only its duplicated suspicious read aliases.
+  Add six benign expectations, including the previously pending diagnostic.
+- [x] Finish the post-cleanup five-root comparison: 1,273 roots, 3,882 records,
+  all 68,400 trait instances and every root risk/high-ID set are unchanged.
+  All 1,289 input paths/hashes match. Evidence:
+  `/tmp/sc-npm-read-facts.noqUva` (`full-complete.jsonl`,
+  `traits-complete.sorted`, `complete-index.json`, `regression-complete.log`).
+- [x] Finish final isolated/workspace validation of the neutral-read migration.
+  All eight isolated suites pass: hostile 79/79, benign 162/162, does-nothing
+  176/176, drop-exec 43/43, impact-wipe 66/66, obfuscation 80/80, reverse-shell
+  25/25 and simple-stealer 65/65 (`validate-frozen-complete.log`). Initial
+  validation exposed a now-removed orphan exception and an overly broad
+  publishing expectation that incorrectly forbade the publishing exception.
+  Workspace `make validate` still fails on unrelated concurrent authoring
+  issues (`validate-worktree-final.log`); no unrelated work was changed.
+- [ ] Review remaining file-level source/sink composites, including
+  `simple-developer-secret-stealer`, against short same-file disconnected code.
+  Check cached facts/flow first; do not add a general mutable-object/callback
+  engine feature merely to fit a fixture.
+
 ### Generalization review (2026-09-15)
 
 - [x] Re-read the authoring guidance and inspect cached call/import/bind/value
@@ -1617,6 +1831,29 @@ review. This restores tested provenance, not a demonstrated corpus recall gain.
   beyond the curl fixture. Require a real download-to-launch relationship and
   severity justified against legitimate installers; do not patch in extra modes,
   flag orders or package names just to raise the synthetic detection count.
+
+### Homebrew download precision and remaining disposition (2026-09-15)
+
+- [x] Review the five remaining formulas against source and cached call facts.
+  Distinguish discarded-response HTTP contact, hostname telemetry, printed
+  installation instructions, and an unavailable resource installer from
+  demonstrated malicious execution or credential theft. Preserve unresolved
+  samples rather than moving them merely because no hostile rule fires.
+- [x] Necessity check: this is an existing taxonomy false-positive bug, not an
+  engine feature request. Public hosting plus a process command does not prove
+  a malicious Formula. Existing neutral facts already cover the observations.
+- [x] Reproduce hostile false positives on public CSV download and quoted
+  install documentation. Remove `homebrew-formula-attack`, its two textual
+  atoms, orphan environment wrapper and sole umbrella consumer reference.
+  Do not add an AST query, gate-specific exception or generic downloader alias.
+- [x] Add two benign expectations and a twelve-root static regression. Both
+  controls are clean (risk 3 and 2); all five established Homebrew hostile
+  detections survive. Full five-root scan removes only three misleading
+  suspicious instances; no hostile finding changes and all input hashes match.
+- [x] Frozen validation passes all eight suites (79 hostile, 164 benign).
+  Worktree `make validate` fails three unrelated concurrent DuckDB/PHP
+  authoring errors; leave them untouched and do not claim worktree success.
+  Logs and reverified snapshot hashes: `/tmp/sc-brew-disposition.nK1BD9`.
 
 ### VS Code concealed terminal submission (2026-09-15)
 
