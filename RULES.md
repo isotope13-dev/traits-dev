@@ -304,7 +304,7 @@ structured fact.
 
 | Type | Purpose | Fields |
 |------|---------|--------|
-| `tree-sitter` | Live tree-sitter query (escape hatch) | `kind`/`node`, `exact`/`substr`/`regex`/`query` (S-expression). `ast` is a serde alias. |
+| `tree-sitter` | Live tree-sitter query (escape hatch) | Either `kind`/`node` with `exact`/`substr`/`regex`, or `query` (S-expression); do not combine them. `ast` is a serde alias. |
 | `syscall` | Direct syscalls | `name`, `number`, `arch`, `args` (optional; OR within name/number/arch, AND across fields and argument predicates) |
 | `section` | Binary sections | `exact`, `substr`, `regex`, `word`, `case_insensitive`, `length_min`, `length_max`, `entropy_min`, `entropy_max`, `readable`, `writable`, `executable`, `compare_to` (reference section for both ratio checks; default: "total" for size), `size_ratio_min`, `size_ratio_max`, `entropy_ratio_min`, `entropy_ratio_max` |
 | `metrics` | Code metrics | `field` (e.g., `identifiers.avg_entropy`, `binary.text_to_file_ratio`, `binary.string_count`, `elf.e_machine`, `pe.dos_stub_zeroed`, `consistency.cert_org_pdb_mismatch`), `min`, `max`, `min_size`, `max_size` |
@@ -516,7 +516,7 @@ when the projection genuinely doesn't carry what you need.
 | Match a call with a literal string argument | `type: symbol kind: call substr: <name> arg: { kind: string, substr: <part> }` | The arg filter narrows to calls whose argument list contains a matching arg. |
 | Match a call whose arg is a specific identifier (e.g. `setTimeout(callback, ...)`) | `type: symbol kind: call substr: <name> arg: { kind: identifier, name: <ident> }` | Identifier-shaped args carry the bare name. |
 | Detect any call from a known dangerous family | `type: symbol regex: '^(eval\|exec\|system\|assert)$'` | Symbol regex with anchors stays tight. |
-| Match a structural shape the projection can't express (loop containing call inside try) | `type: tree-sitter kind: call query: "(call_expression ...)"` | Full S-expression query — [tree-sitter docs](https://tree-sitter.github.io/tree-sitter/using-parsers#pattern-matching-with-queries). |
+| Match a structural shape the projection can't express (loop containing call inside try) | `type: tree-sitter query: "(call_expression ...)"` | Full S-expression query; omit `kind` and `node` — [tree-sitter docs](https://tree-sitter.github.io/tree-sitter/using-parsers#pattern-matching-with-queries). |
 
 **`arg:` filter shape** (used inside `type: symbol, kind: call`):
 

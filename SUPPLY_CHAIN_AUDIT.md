@@ -1,12 +1,11 @@
 # Supply-chain audit — through 2026-09-15
 
 Status: inventory stabilized and baseline audited; detection triage is **not
-complete**. The current `supply-chain-corpus` has 622 specimens, of which 190
-have hostile findings (all 190 have 1–3). The other 432 require further disposition;
-malformed SSH-key fixtures still need behavior-level disposition, and the preload
-RPM label also requires verdict-accuracy review;
-these counts are not a measurement of verified recall. No package was installed,
-imported, built, activated, or executed during this pass.
+complete**. The current `supply-chain-corpus` has 599 specimens after the
+simulation-quality dispositions documented below. The fresh 599-package scan has
+180 specimens with 1–3 hostile traits and 419 with none; semantic disposition
+is still required. No package was installed, imported, built, activated, or executed
+during this pass.
 
 ## Rule admission: generalization before corpus coverage
 
@@ -2656,14 +2655,237 @@ v1; its README, original manifest, and checksum list are retained as provenance.
 | `/tmp/sc-v1-final-review/inventory-after.sha256` | `98019135672852e6f126645aff6b81752a5718b2cb5f18a22e4eb4642faa3832` |
 | `/tmp/sc-v1-final-review/verification.json` | `99f0e8bc1c3a8f4c58df3cd1bee099377bac24898cb669a6139c7857ded69e8f` |
 
+## Current-corpus SSH, preload, and cron disposition (2026-09-15)
+
+The 17 malformed SSH-key packages identified in the earlier framing audit were
+reviewed against current rules and removed. Three contain invalid Base64 and
+the other fourteen contain truncated Ed25519 wire records; none can grant SSH
+access. The C package additionally writes to a literal `%s/.ssh/authorized_keys`
+path because its format string escapes the substitution. Although several
+packages append the invalid record and restore timestamps, that does not make
+them functional backdoor benchmarks. All 17 hashes matched Git HEAD and remain
+recoverable. The older npm SSH-key installer has a structurally complete key and
+was not removed.
+
+The bare Swift `authorized_keys` string was also corrected independently of
+those fixtures. It is now a cached-literal public-key path capability under
+`micro-behaviors/fs/path/public-key`; the Swift hostile composite still requires
+the attack-specific comment and a complete embedded key. No parser or engine
+feature was needed.
+
+RPM Brackenworks was statically extracted with `rpm2cpio`. Its scriptlet appends
+`/usr/lib/brackenworks/watch.so` to `/etc/ld.so.preload`, but no such member
+exists. The only payload is a non-executable shell script at the doubly nested
+path `usr/lib/brackenworks/usr/lib/brackenworks/watch`; it is neither preloaded
+nor invoked. Shell Wicklowmesh also cannot reach its download because it tests
+the quoted literal path `"~/update.stamp.34c"`, preventing tilde expansion. Both
+were deleted as broken simulations.
+
+The old preload atom called any `echo ... > /etc/ld.so.preload` a rootkit
+installer. It is now an accurately named suspicious system-preload append that
+requires a complete command writing a `.so` path. The rootkit composite retains
+its actual hook/library evidence and no longer consumes the bare write. This is
+a taxonomy correction, not an attempt to infer unseen RPM payload behavior.
+
+Finally, AUR Brackenworks and RPM Fennelbyte repeat the quoted-tilde gate bug and
+cannot install their cron entries. Debian Basaltguard can install a gated curl
+heartbeat, but sends no local data, discards the response, and bundles only a
+helper that prints `ready`. All three were removed rather than restoring the
+inaccurate “cron plus curl is hostile” composite.
+
+The five-root inventory comparison proves exactly these 22 removals, no
+additions, and no changed retained specimen. The current corpus consequently
+contains 600 packages. All removed files remain recoverable from Git history.
+
+| Evidence | SHA-256 |
+| --- | --- |
+| `/tmp/sc-ssh-verdict.o3VpA7/key-structure-final.jsonl` | `b0d1d559add4ab45ac78c14484c877105e7ecaca5b2274b6c347b7885ae00a61` |
+| `/tmp/sc-malformed-ssh-current/review.json` | `acd053dd19deb91617f48cf9077626e38583a168075a566aa0f020a33ed7bb0b` |
+| `/tmp/sc-poor-current-review/inventory-final.sha256` | `ff49e967c71f8b4891ae59bbf094a72d6d2914f4bf1e74cd7685b8ea982d7d8b` |
+| `/tmp/sc-poor-current-review/verification-final.json` | `5bf74b6a1c0349d0d68691b4eb0400ee031926a29d4c35f87bfc749eb2c8975f` |
+| `/tmp/sc-malformed-ssh-current/bracken-preload-after-fix.json` | `068dc3b1a2d4a77a628574fcee640f62b48716a9dcd712efdb165dbe14069d1f` |
+
+## Cron classification correction and fresh baseline (2026-09-15)
+
+A recurring installed cron entry is a persistence mechanism, even when its
+payload is only a heartbeat. That does not establish hostile intent or C2.
+Re-reading Debian Basaltguard's original `postinst` from Git confirms that its
+file gate controls installing a recurring curl request; the response is
+discarded. The earlier removal must not be interpreted as evidence that
+heartbeat scheduling cannot establish persistence. The subsequent conversational
+suggestion to label it hostile C2 was also unsupported by these bytes.
+
+A Node administrative health-check control reproduced a real rule error:
+`node-remote-download-cron` labeled ordinary scheduling plus HTTP as hostile
+(reported precision 7.1). Removed that composite, its unused remote-curl atom,
+and the dependent `node-persistent-secret-scan`, which combined a credential-name
+filter with scheduling without proving that secrets reached the scheduled job
+or an external destination. The direct credential exfiltration rule remains.
+
+The generic crontab-pipeline observation now lives at
+`micro-behaviors/os/autorun/cron::node-crontab-input-pipeline`, using a cached
+`execSync` call and its command argument. It reports a neutral operation and
+does not suppress an update merely because the command also filters old entries
+with `grep -v`. Its two surviving consumers reference the canonical observation.
+The benign Node control scores 6 with no suspicious or hostile findings, versus
+41 after only removing the hostile wrapper. The new expectation checks retained
+cron/HTTP observations and forbids the incorrect objective families.
+
+The fresh scan used a copied rule tree in `/tmp/sc-cron-review.4a6Iyo/rules`.
+All 600 inventory paths have exactly one report; every reported root SHA-256
+matches the current package, and the before/after input inventories are identical.
+Unique hostile IDs per package: 421 have zero, 150 have one, 27 have two, and
+two have three. These counts describe detection coverage, not semantic approval
+of all 179 labeled packages. Broader supply-chain roots still need a fresh audit.
+
+`make validate CLEAVE=../cleave/target/debug/cleave` passed all eight suites:
+hostile 90/90, benign 209/209, does-nothing 176/176, drop-exec 43/43,
+impact-wipe 66/66, obfuscation 82/82, reverse-shell 25/25, simple-stealer 65/65.
+No engine changes or specimen removals were made in this pass.
+
+| Evidence under `/tmp/sc-cron-review.4a6Iyo/` | SHA-256 |
+| --- | --- |
+| `corpus.jsonl` | `a49f2adda620c178d85db54a4bdbf35ec19e7214c066f039c22d501e39fc554e` |
+| `control.jsonl` | `7b6f8d2b9ee86aa2bd6853fba874f69a3c7535590f544769d7aeae6c9bd2cd25` |
+| `inventory-after.sha256` | `5c8291adf15d80109fa248e0fdd55094d5529fec8d981ed00cdb2c0ae6fe6503` |
+| `coverage.json` | `f9064190a424b23624131329b923ab28702f7fdff2058c0d7c0994d7df8a1931` |
+| `validate.log` | `6dcf06e2e18c7be51c8e7ddd8fb4dd8fe14c5f4e1cde1df38b4b8218154c4bec` |
+
+## GNOME keyring upload and package compatibility (2026-09-15)
+
+Kelpstreamsync's `extension.js` launches a shell pipeline that sends
+`secret-tool search --all service chromium` output to curl's `--data-binary @-`.
+This is an actual credential-output upload, not merely a keyring API mention:
+the [libsecret implementation](https://github.com/GNOME/libsecret/blob/main/tool/secret-tool.c)
+loads matching secrets and writes their values to stdout.
+
+Added one hostile objective, `glib-keyring-http-pipeline`, with precision 4.7.
+It joins two independently meaningful neutral observations at zero byte distance:
+the cached provenance of a concrete Secret Service search and a GLib command
+that pipes output into an HTTP request body. Cached calls represent the split
+command argument as an expression; provenance retains contributing literals but
+does not establish adjacency. The transport atom therefore uses a tree query
+to require producer and consumer as adjacent literal operands in the same call.
+No engine metric, new fact type, or gate-dependent matcher was needed.
+
+Coverage is deliberately bounded to the shown simple-argv, two-literal command
+shape. Arbitrary shell quoting, argument ordering, single-string commands,
+additional concatenation boundaries, and dynamic command construction need
+separate evidence; this is not a complete shell parser. The rule survives
+removing the gate, changing the hostname, and using an aliased synchronous API.
+The benign regression includes separate invocations, a same-call disconnected
+pipeline, discarded stdout, `--data-raw @-`, and help-text upload. None produces
+a suspicious or hostile finding.
+
+The ZIP also incorrectly declared GNOME 45/46 while supplying legacy imports
+and `enable`/`disable` functions. [GNOME 45 requires ES modules](https://gjs.guide/extensions/upgrading/gnome-shell-45.html).
+Repaired its metadata to target GNOME 43/44 and use integer extension version 1.
+The archive member inventory is unchanged, and every member except
+`metadata.json` is byte-identical, including the payload and gate. Before SHA:
+`85946c94bfe60b58e858965c0179c0ce1a37744a059ffe7db4ae8a9db31103d6`;
+after: `cc67c6da44a0b427c86d1698fc1bd6ce423749dd5e33c7041dbd259ad9114aef`.
+This is a static compatibility repair; the extension was not activated.
+
+The same legacy-module/45–46 metadata mismatch exists in the other nine GNOME
+fixtures. Their payloads still require disposition: the alleged AT-SPI
+keylogger only queries the bus address, the version checker only requests a
+URL, and the systemd writer does not enable its unit. Screenshot upload and
+overview text upload remain concrete detection gaps; the Nautilus provider and
+D-Bus service require API/activation review before positive classification.
+
+The new five-root scan covers 941 root reports from an unchanged 957-file
+inventory. All reported hashes match disk; there are no duplicate or unexpected
+reports. The 16 unreported files are README/provenance, wheel RECORD/WHEEL,
+and Cargo.toml.orig support files, listed explicitly in `coverage.json`.
+
+| Root | Reports | With hostile IDs | With 1–3 | Above 3 |
+| --- | ---: | ---: | ---: | ---: |
+| supply-chain-corpus | 600 | 180 | 180 | 0 |
+| supply-chain | 338 | 116 | 115 | 1 |
+| supply-chain-regressions | 1 | 1 | 1 | 0 |
+| optinmonster-supply-chain | 2 | 2 | 1 | 1 |
+
+Compared with the preceding 600-package baseline, only Kelpstreamsync gains a
+hostile ID. Its repaired archive scores 122 with exactly one hostile objective.
+Validation after repacking passes all eight suites, including hostile 91/91
+and benign 210/210. Corrected RULES.md's invalid `tree-sitter` example as well:
+`query` must not be combined with `kind` or `node`.
+
+Evidence is in `/tmp/sc-gnome-review.47Tiuz/`:
+
+| File | SHA-256 |
+| --- | --- |
+| `five-roots.jsonl` | `e47efb1a1efaf5870d394b5ab76d9b6dc79a21f4e9d6046bdf3e0dfdc12acdee` |
+| `coverage.json` | `061fc0b85b0a5e235474cd42a6037cdb7a4dd6fbe3eef409cfb515e1f3c51d98` |
+| `inventory-after.sha256` | `dc530ed2c1d3ddf950b436d3848d9ce379ec84bbbc5ea098d25dc1649e561352` |
+| `rules.sha256` | `7641849f66856d4fd43b6714cfeab5d07ed72cae8fa2df2347cebefe1b46fd35` |
+| `variants.json` | `7fe958d901bbae7e96f6972f1d3825ccf65953f73becf16029ed21af37bb4261` |
+| `package-repair.json` | `fe2f7ae2aeb4ab57e0572c59f5e4aab61eb45d415401daaad7edb7debb085386` |
+| `validate-repacked.log` | `f5f6ff05aca6b1335c827ac997e0e25151afe9c33dc984b5d9db82e8f155a91b` |
+
+## Remaining GNOME compatibility and API repairs (2026-09-15)
+
+Repaired the other nine legacy GNOME packages' metadata to declare Shell 43/44
+and an integer extension version. Seven changed only `metadata.json`; two also
+needed small source corrections established against their APIs:
+
+- Brackennode's service name `com.21fe79.Helper` was invalid because a component
+  of a well-known bus name cannot begin with a digit. The service filename and
+  `Name` now consistently use `com.g21fe79.Helper`. This repairs the naming
+  defect; it does not prove that any client requests activation or that the
+  remote response is malicious. See the [D-Bus specification](https://dbus.freedesktop.org/doc/dbus-specification.html).
+- Harborlinestack's generated Nautilus provider now requests API 4.0, inherits
+  `GObject.GObject` alongside `Nautilus.InfoProvider`, and uses the callback's
+  single `FileInfo` object rather than subscripting it as a list. The source
+  comment now describes directory-entry reporting, not file-open events.
+  See the [Nautilus 43 migration guide](https://gnome.pages.gitlab.gnome.org/nautilus-python/nautilus-python-migrating-to-4.html)
+  and [InfoProvider contract](https://gnome.pages.gitlab.gnome.org/nautilus-python/class-nautilus-python-info-provider.html).
+
+Member-by-member comparison verifies the exact changed members and preserved
+gates for all nine packages. Both changed JavaScript files pass `node --check`;
+the statically extracted Python provider parses with `ast.parse` and contains
+its expected class. None was imported, activated, or installed. Runtime
+integration is not claimed by these static checks.
+
+Yarrowprime was not a keylogger: its timer only invokes `org.a11y.Bus.GetAddress`
+and appends the bus address to a cache file. No key-event registration, input
+reading, or transmission occurs. Its final scan scores 5 without suspicious or
+hostile findings. Following the triage workflow, moved the repaired ZIP to
+`/tmp/triage/misplaced-good/gnome-yarrowprime-keylog-at-spi-linux.zip`; its original
+is also recoverable from Git. The hostile corpus now contains 599 packages.
+
+Added two neutral, cached call observations for GJS command-line spawning and
+file-content writes. These previously unrecognized APIs are ordinary process
+and filesystem capabilities, not new hostile objectives. The preferences-save
+regression requires a file write but forbids treating a command example in a
+string/comment as process execution. Both benign GJS controls remain free of
+suspicious/hostile findings (scores 2 and 5).
+
+The final copied-rule five-root scan has 940 reports from 956 unchanged
+inventory paths. All reported hashes match disk, with no unexpected or duplicate
+reports; the same 16 provenance/support files remain unreported. Comparing the
+preceding five-root scan shows only Yarrowprime's removal and no hostile-ID
+changes in retained files. Current corpus: 180 with 1–3 hostile IDs, 419 without.
+The other roots remain 116/338, 1/1, and 2/2 with hostile findings; the two
+previously identified four-hostile cases still need consolidation.
+
+Validation passes all eight suites, including hostile 91/91 and benign 211/211.
+No engine changes were needed. Evidence under `/tmp/sc-gnome-quality.q7xJXA/`:
+
+| File | SHA-256 |
+| --- | --- |
+| `five-roots.jsonl` | `3294943c3613ce737a9736d3865b28096bb0447cfa00f485f8475b3e001ac288` |
+| `package-verification.json` | `1ea4ea5086a7ccc9dcc1a9bffcdf045eb132ada0eb71b41bcc2c3a0e206e2017` |
+| `coverage.json` | `255ea244037a06dddaedb1d36ee063294280f0b67cf949832527763ef0e94b31` |
+| `hostile-diff.json` | `f8a416cc4967310db1a9ab50413d8e05a2972db9935f130181d1a9eb7bd3f6b4` |
+| `validate-final.log` | `012640d4808170016a076a6013e23e6c3fc67da0be16a6583a2e059b37423775` |
+
 ## Remaining work
 
-- Review the 431 current-corpus specimens without hostile findings; distinguish
+- Review the 419 current-corpus specimens without hostile findings; distinguish
   true misses from non-hostile fixtures before changing verdicts.
-- Resolve the malformed SSH-key specimens' remaining behavior-level disposition
-  and the preload RPM label; counts alone do not justify backdoor or rootkit
-  verdicts. The unsupported SSH-reference and cron composites have
-  been removed; the affected packages still need complete disposition.
+- The malformed SSH-key packages, preload false label, and three unsupported
+  cron-heartbeat fixtures are now dispositioned above.
 - Review the now-visible macOS PKG scripts and same-package-path installer
   relationship. The reviewed VSIX concatenated-interpreter-command miss now
   detects; broader binding/argv forms and other VSIX packages still need review.

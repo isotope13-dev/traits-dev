@@ -14,6 +14,53 @@ only when a concrete detection needs information those mechanisms cannot
 express, and the benefit justifies parsing cost, maintenance, and ambiguity.
 Do not require recognizing the benchmark's environment gate for detection.
 
+## Cron review follow-up (2026-09-15)
+
+- [x] Reproduce ordinary recurring HTTP scheduling falsely labeled hostile in
+  Node. Remove the unsupported hostile composite and its disconnected
+  credential-filter derivative; retain the actual exfiltration rule.
+- [x] Replace the generic suspicious crontab-string observation with a neutral
+  cached call-argument matcher under `micro-behaviors/os/autorun/cron`.
+  No parser or engine feature is needed. The benign control scores 6 with no
+  suspicious or hostile findings; all eight validation suites pass.
+- [x] Rescan all 600 current-corpus packages with copied rules and verify every
+  report path/hash against the unchanged inventory. 179 have 1–3 hostile IDs;
+  421 have none. Evidence: `/tmp/sc-cron-review.4a6Iyo/` and the audit document.
+- [ ] Review the 421 zero-hostile packages and recheck the semantic accuracy of
+  positive results. A recurring heartbeat establishes a persistence mechanism
+  but does not by itself establish C2, exfiltration, or hostile intent.
+- [ ] Review surviving Node cron-plus-process and native multi-surface
+  persistence composites for disconnected evidence and legitimate scheduled
+  maintenance. Do not strengthen verdicts from scheduling alone.
+
+## GNOME review follow-up (2026-09-15)
+
+- [x] Detect Kelpstreamsync's keyring stdout-to-HTTP pipeline with one hostile
+  objective and meaningful neutral source/transport observations. Use cached
+  provenance for the source and tree structure only for the otherwise missing
+  adjacent-literal pipeline relationship. No engine feature is necessary.
+- [x] Verify disconnected, discarded-output, literal-body, and help-text
+  controls, plus gate removal, hostname replacement, and API alias/sync variants.
+- [x] Repair the keyring package's legacy-module compatibility metadata without
+  altering its script or gate. Revalidate the repacked archive and all suites.
+- [x] Rescan five roots: 941 reports, 957 inventory entries, no unexpected or
+  duplicate reports, all reported hashes correct. Current corpus: 180/600 with
+  1–3 hostile IDs and 420 without. Evidence: `/tmp/sc-gnome-review.47Tiuz/`.
+- [x] Repair the other nine GNOME fixtures' incorrect 45/46 declarations.
+  Preserve all gates. Move the bus-address-only fixture out of hostile data;
+  do not infer keylogging from its label or active persistence from an unenabled
+  systemd unit.
+- [x] Repair D-Bus's digit-leading well-known-name component and Nautilus's
+  API-version, GObject inheritance, and single-FileInfo handling mistakes.
+  Static syntax/member checks pass; runtime integration remains unverified.
+- [x] Add neutral cached GLib process-spawn and file-write observations, with
+  a negative control that distinguishes documentation strings from API calls.
+  All validation suites pass. Five-root comparison has no hostile-ID changes
+  among retained files; corpus now 599 with 180 in the 1–3 target and 419 zero.
+- [ ] Continue GNOME screenshot, overview-text, and Nautilus filename-upload
+  coverage. D-Bus naming is repaired, but actual activation remains a separate
+  question. Evidence: `/tmp/sc-gnome-quality.q7xJXA/`.
+
 ## Item-by-item disposition
 
 | Original proposal | Assessment | Decision |
@@ -1476,8 +1523,8 @@ still needs actual behavior detection/disposition, not an automatic benign label
   rules. Add a package-level neutral-behavior regression for Eldergroveworks.
   Parser tests: 10 passes; three cross-container integrations pass; strict
   filefacts linting passes. Cache version 18 invalidates pre-scriptlet reports.
-- [ ] Review newly exposed overly strong SSH-key, cron/network and preload
-  labels. Do not count three extra hostile packages as verified recall gains.
+- [x] Review newly exposed overly strong SSH-key, cron/network and preload
+  labels. Misplaced atoms were corrected; broken simulations were removed.
 - [ ] Address actual curl-pipe and base64-intermediate environment-upload
   rule gaps using existing facts first. No new engine feature is established.
   The old silent-curl regex requires a literal `-s` spelling and misses grouped
@@ -1507,12 +1554,17 @@ finding is lost. See SUPPLY_CHAIN_AUDIT.md for limitations and reproducibility.
   discard response bodies; curl plus crontab is not sufficient hostile evidence.
   Remove the composite and relocate its neutral atoms by observed behavior.
   Add a benign recurring-health-check regression, not an environment-gate bypass.
-- [ ] Complete the three affected cron packages' disposition. No archive was
-  moved or modified on the basis of its install script alone.
-- [ ] RPM Fennelbyte retains a misleading JVM-crontab byte-string observation.
-  Existing archive-family applicability explains it. Prefer neutral placement
-  and actual format constraints before introducing engine behavior changes.
-- [ ] SSH placeholder-key and preload-library verdict accuracy, remote-shell
+- [x] Complete the three affected cron packages' disposition. Two have broken
+  quoted-tilde gates; the third is only a response-discarding heartbeat. They
+  were deleted as poor hostile simulations and remain recoverable from Git.
+- [x] Resolve RPM Fennelbyte by simulation-quality disposition; its broken gate
+  and heartbeat-only body do not justify retaining the package to tune a
+  misleading archive-family observation.
+- [x] Resolve SSH placeholder-key and preload-library verdict accuracy. The 17
+  malformed-key packages and two nonfunctional preload samples were removed;
+  the bare Swift path and preload-rootkit taxonomy errors were repaired without
+  engine additions.
+- [ ] Remote-shell
   pipeline verdicts, and the broader unresolved corpus remain in scope.
 
 Evidence: `/tmp/sc-env-encoding.vNGTRy`; final `full-v2.jsonl`; frozen rules
