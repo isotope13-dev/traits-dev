@@ -1409,7 +1409,10 @@ metadata/
 ├── package/               # Package ecosystem metadata and project-hygiene facts
 │   ├── config/            #   Configuration file detection
 │   ├── contributors/      #   Contributor metadata
-│   ├── dependencies/      #   Dependency analysis
+│   ├── dependencies/      #   Dependency analysis, split by where the fact was read:
+│   │                      #     manifest/ (declared), lockfile/ (resolved), archive/ (shipped)
+│   │   └── manifest/      #     Facets are ordered; see "Choosing a dependency-manifest facet":
+│   │                      #     identity/ name-form/ source/ range/ reconciliation/ presence/ count/
 │   ├── documentation/     #   Documentation presence
 │   ├── error-handling/    #   Error handling patterns
 │   ├── files/             #   File counts and types
@@ -1505,9 +1508,58 @@ When placing a new metadata trait, use this tiebreaker table. Each row names the
 | `metadata/build/` | `metadata/package/` | Is it evidence of a build/transform tool's output (bundled, minified, autotools-generated)? → `build/`. Is it a project-hygiene fact? → the `metadata/package/` subdirectory for that subject (`documentation/`, `testing/`, `config/`, `logging/`, `error-handling/`) — there is no `quality/` bucket |
 | `package/` | `well-known/lib/` | Is it about ecosystem-level metadata (fields, scripts, quality, testing)? → `package/`. Is it identifying a specific library/framework/runtime? → `well-known/lib/`. There is no third answer: `metadata/library/` is deprecated and closed, so never route a trait there |
 | `package/` | `permission/` | Is it ordinary package metadata (name, dependencies, files, scripts, quality)? → `package/`. Is it declared authority or extension API surface (browser/IDE extension permissions, host access, OAuth scopes, content scripts)? → `permission/` |
+| `dependencies/manifest/<facet>/` | each other | See [Choosing a dependency-manifest facet](#choosing-a-dependency-manifest-facet) — the facets overlap on purpose (every declaration has a name, a source and a version), so they are ordered and the first match wins |
 | `signed/` | `vendor/` | Is it about the cryptographic signature chain or entitlements? → `signed/`. Is it identifying an OS/platform vendor by strings/resources/patterns? → `vendor/` |
 | `vendor/` | `well-known/app/`, `well-known/dual-use/`, or `well-known/tool/` | Is it an OS/platform vendor or system userland marker (Apple, Microsoft, NetBSD, GNU/FSF)? → `vendor/`. Is it a specific well-known application or suite? → `well-known/app/`. Is its legitimate abuse-relevant function the reason analysts need the identity? → `well-known/dual-use/`. Is it a professional analyst/admin/developer tool? → `well-known/tool/` |
 | `vendor/` | `well-known/lib/` | Is it identifying the platform vendor that produced the file? → `vendor/`. Is it an well known third-party library/framework/runtime fingerprint (OpenSSL, zlib, FFmpeg, psutil, SharpShell)? → `well-known/lib/` |
+
+### Choosing a dependency-manifest facet
+
+`metadata/package/dependencies/` first splits by **where the dependency fact was
+read from** — `manifest/` (declared by the author), `lockfile/` (resolved by the
+installer), `archive/` (present in the built artifact). Read the path as a
+sentence: *a package's dependencies, as declared in its manifest, specifically
+the …*
+
+Under `manifest/`, one dependency entry satisfies several facets at once —
+`"@img/sharp-linux-x64": "^0.33"` has an identity, a name shape, a source and a
+version range. **The facets are therefore ordered, and the first one that
+describes what the matcher actually reads wins.** Ask the questions in order:
+
+1. **`identity/` — *which* package?** The matcher names one specific package
+   (`lodash`, `axum`, `child_process`). Test: rename the trait after the package
+   and nothing is lost. A trait that would stop working if the package were
+   renamed belongs here.
+2. **`name-form/` — what does the *name* look like?** The matcher reads the name
+   as a pattern, not as a particular package: a `-linux-x64` platform triple, a
+   `.js` suffix, a `lint`/`build` word. Test: it would match a package that does
+   not exist yet.
+3. **`source/` — where does it *resolve from*?** The matcher reads the
+   right-hand side as a location: a protocol (`git+ssh:`, `file:`, `workspace:`,
+   `catalog:`, `link:`, `portal:`, `github:`), a URL, a local path.
+4. **`range/` — *which version*?** The matcher reads the same right-hand side as
+   a version specifier: `*`, `latest`, `^1.2`. `source/` and `range/` both read
+   that field; the split is **where to fetch** versus **which release**.
+   `"pkg": "*"` is `range/`, `"pkg": "github:o/r"` is `source/`.
+5. **`reconciliation/` — declared versus actually *used*?** The only facet
+   allowed to read beyond the manifest: it compares the declaration against the
+   imports in the shipped code. Everything phantom/unused-dependency lives here.
+6. **`presence/` — is the field *there at all*?** Omitted, present, or an empty
+   object. No entry is examined. `npm-no-dependencies-field` is presence.
+7. **`count/` — *how many*?** The field is populated and the claim is
+   cardinality. `npm-dependency-fanout` is count, not presence.
+
+Two consequences worth stating, because both were live mistakes before the
+split:
+
+- **`identity/` is not `name-form/`.** One names a package; the other names a
+  shape. `npm-dep-lodash` and `optional-native-linux-dep-name` look alike as
+  trait ids and are not the same kind of fact.
+- **A facet is not an ecosystem.** npm, Cargo and Gradle declarations of the
+  same kind share a facet and are separated by *filename*
+  (`identity/cargo.yaml`, `identity/npm.yaml`), per the technology-neutral
+  directory rule above.
+
 
 ## Reference
 
