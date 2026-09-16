@@ -46,9 +46,14 @@ traits:
       type: value
       path: lnk.arguments
       regex: '(?i)\S+\.(pdf|docx?|xlsx?)\b'
+  # Notable rather than component: a shortcut that names a `.log`, `.dat` or
+  # `.3gp` is a clear fact, not a fragment. Double-clicking one opens nothing
+  # useful, so the shell has little reason to have written it -- unlike the
+  # `.pdf`/`.docx` shortcuts Recent Documents is full of, which is why the
+  # document sibling below stays a component.
   - id: lnk-relative-data-extension
     desc: LNK relative path uses data extension
-    crit: component
+    crit: notable
     conf: 0.85
     if:
       type: value
@@ -86,14 +91,105 @@ traits:
       type: value
       path: lnk.target_path
       regex: '(?i)\\Users\\[^\\]+\\(Downloads|AppData\\Local\\Temp)\\[^\\]+\.exe$'
-  - id: lnk-relative-random-sibling-exe
-    desc: LNK targets random-named sibling EXE
+  # The archive-delivery shape. A shortcut whose relative target is `.\name.exe`
+  # resolves against its own directory, which is what makes it work inside a zip:
+  # the victim extracts two files, sees one, and runs the other. A shortcut
+  # Windows made for an installed program points somewhere on the machine, not
+  # at its own neighbour.
+  - id: lnk-relative-sibling-executable
+    desc: LNK targets an executable beside itself
+    crit: notable
+    conf: 0.92
+    if:
+      type: value
+      path: lnk.relative_path
+      regex: '(?i)^\.[\\/][^\\/]{1,60}\.(exe|scr|com|pif|bat|cmd)$'
+
+  # `D:\ico`, `E:\faq` -- a one-word directory on a non-system drive, left in
+  # the shortcut because that is where the builder assembled the payload. A
+  # shortcut a user made points at a path that exists on the user's machine;
+  # this one preserves the author's.
+  - id: lnk-workingdir-builder-staging-dir
+    desc: LNK working dir is a staging dir
+    crit: notable
+    conf: 0.85
+    if:
+      type: value
+      path: lnk.working_directory
+      regex: '(?i)^[D-Z]:\\[a-z0-9]{1,8}\\?$'
+
+  # A screensaver is a PE with a different extension, and Windows runs it the
+  # same way. Nothing ships a `.scr` any more except a program that wants the
+  # word "exe" not to appear.
+  - id: lnk-screensaver-target
+    desc: LNK target is a screensaver executable
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: value
+      path: lnk.relative_path
+      regex: '(?i)\.scr$'
+
+  # An executable in the root of a drive. Installers write to Program Files,
+  # users to their profile; nothing legitimate puts a program at `C:\boot.exe`
+  # and then points a shortcut at it.
+  - id: lnk-drive-root-executable-target
+    desc: LNK target is a drive-root executable
     crit: suspicious
     conf: 0.9
     if:
       type: value
+      path: lnk.target_path
+      regex: '(?i)^[A-Z]:\\[^\\]{1,40}\.(exe|scr|com|pif)$'
+
+  # "Random" was a claim the matcher did not make: the old pattern was purely
+  # a length test, so `SteamTools.exe`, `MongoDBCompass.exe` and
+  # `GoogleChromePortable.exe` all read as random-named and were reported
+  # suspicious. A generated name is long *and* carries digits -- a sha256
+  # stem, `0ClbVtSDR9RrPjA`, `g5SGtNOXYDJqACG` -- where a product name
+  # almost never does. The two alternatives place the digit anywhere in a
+  # twelve-character-or-longer stem, which is the closest a regex gets to the
+  # question without a lookahead.
+  #
+  # Notable, not suspicious: `vcredist2019x64.exe` satisfies this too. The
+  # hostile composites below add where the file sits, which is what makes the
+  # name mean something.
+  # The complement to the digit test below. `is: random_like` scores a whole
+  # value against an English bigram model, so it only answers usefully when the
+  # value *is* the name -- a sibling path, `.\name.exe`, is that; a path with
+  # `..\Downloads\` in front of it is not, and the surrounding words pull the
+  # score back to plausible. So the model is used where it applies and the
+  # digit-and-length pattern covers the rest.
+  - id: lnk-relative-random-like-sibling-exe
+    desc: LNK sibling EXE name looks generated
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
       path: lnk.relative_path
-      regex: '(?i)^\.[\\/][a-z0-9]{10,}\.exe$'
+      is: random_like
+
+  - id: lnk-relative-random-sibling-exe
+    desc: LNK targets long alnum sibling EXE
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: lnk.relative_path
+      regex: '(?i)^\.[\\/]([a-z0-9]{11,}[0-9][a-z0-9]*|[a-z0-9]*[0-9][a-z0-9]{11,})\.exe$'
+  # A shortcut whose working directory is the root of a drive. Installed
+  # programs run from their own folder and user files from a profile; a
+  # shortcut that sets `C:\\` as the working directory is pointing at
+  # something dropped where nothing is supposed to live.
+  - id: lnk-workingdir-drive-root
+    desc: LNK working directory is a drive root
+    crit: notable
+    conf: 0.88
+    if:
+      type: value
+      path: lnk.working_directory
+      regex: '(?i)^[A-Z]:\\?$'
+
   - id: lnk-workingdir-user-desktop
     desc: LNK working directory is user Desktop
     crit: notable
@@ -118,14 +214,16 @@ traits:
       type: value
       path: lnk.relative_path
       regex: '(?i)[\\/]Downloads[\\/][^\\/]+\.exe$'
+  # Same correction as the sibling form above: length alone convicted product
+  # names, so the stem must now also carry a digit.
   - id: lnk-relative-random-named-exe
-    desc: LNK relative path is random-named EXE
-    crit: suspicious
+    desc: LNK relative path is long alnum EXE
+    crit: notable
     conf: 0.9
     if:
       type: value
       path: lnk.relative_path
-      regex: '(?i)[\\/][a-z0-9]{12,}\.exe$'
+      regex: '(?i)[\\/]([a-z0-9]{11,}[0-9][a-z0-9]*|[a-z0-9]*[0-9][a-z0-9]{11,})\.exe$'
   - id: lnk-relative-data-extension-exe
     desc: LNK targets data-extension EXE
     crit: suspicious
@@ -326,7 +424,10 @@ composite_rules:
     conf: 0.94
     all:
       - id: lnk-workingdir-user-desktop
+    needs: 1
+    any:
       - id: lnk-relative-random-sibling-exe
+      - id: lnk-relative-random-like-sibling-exe
   - id: lnk-downloads-random-exe-shortcut
     desc: LNK launches random EXE from Downloads
     crit: hostile
@@ -368,3 +469,30 @@ composite_rules:
     all:
       - id: micro-behaviors/fs/traversal/parent::utf16-drive-root-dll
       - id: objectives/evasion/masquerade/identity/mimicry::french-auto-update-lure
+
+  # A shortcut chain wearing a data file's name. The relative path says the
+  # victim is opening `FRUNLOG.TXT`; the target is a second `.lnk`, which the
+  # shell will follow to somewhere neither name mentions. Three claims that
+  # cannot all be true of an honest shortcut: it points at a shortcut, its own
+  # relative path names a text or log file, and the two disagree.
+  - id: lnk-chained-shortcut-data-lure
+    desc: Data-named shortcut chains to another shortcut
+    crit: hostile
+    conf: 0.95
+    attack: T1204.002,T1036.008
+    all:
+      - id: metadata/file/format/structured::lnk-target-is-a-shortcut
+      - id: lnk-relative-data-extension
+
+  # Both halves of "the payload was dropped at the top of the drive": the
+  # target is an executable sitting in the volume root, and the shortcut runs
+  # it from there. Nothing installs to `C:\\`, so a shortcut built to launch
+  # something that lives there was written by whatever put it there.
+  - id: lnk-drive-root-payload-shortcut
+    desc: Shortcut runs an executable from a drive root
+    crit: hostile
+    conf: 0.94
+    all:
+      - id: lnk-drive-root-executable-target
+      - id: lnk-workingdir-drive-root
+
