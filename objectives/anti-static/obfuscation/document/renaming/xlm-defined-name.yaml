@@ -1,0 +1,92 @@
+# Defined names as an obfuscation surface in Excel 4.0 macro workbooks.
+#
+# An XLM payload is not written as readable formula text. The builder scatters
+# the formula fragments across cells of a macro sheet and reaches them through
+# *defined names* -- the workbook-level name table Excel uses for named ranges.
+# Nothing in the file then reads as a command: the analyst sees a name table,
+# and the interpreter sees a program.
+#
+# The names themselves are the tell. A person defines a name to make a formula
+# readable, so real ones are words: `Print_Area`, `Criteria`, `Revenue_2023`,
+# `_FilterDatabase`. A builder emitting one workbook per victim generates them,
+# because a fixed name table would be a signature every sample in the campaign
+# shared. Across the abuse.ch 2020-2021 XLM wave the same shape repeats: a
+# dozen to two dozen names, each a lowercase consonant run with no word in it,
+# alongside exactly one macro sheet.
+#
+# Scored with `is: random_like` rather than a regex. The generator's alphabet
+# varies between builds -- lowercase runs in one wave, mixed case in another --
+# and a pattern tight enough to catch one convicts ordinary abbreviations in
+# the next. The bigram model asks the question that actually matters, which is
+# whether a person could have chosen the word, and it declines to judge strings
+# under six letters, so short human names are never counted.
+defaults:
+  platforms: [windows]
+  for: [oledoc, ooxml]
+  attack: T1027
+  mbc: B0032
+
+traits:
+  - id: generated-defined-name
+    desc: Workbook defines a generated name
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: office.names[*]
+      is: random_like
+
+  - id: large-defined-name-table
+    desc: Workbook defines eight or more names
+    crit: baseline
+    conf: 0.85
+    if:
+      # Size alone says nothing -- a financial model can define hundreds --
+      # so this is stated as a baseline fact and carries no weight until it
+      # is read next to what the names look like. Eight is well past what a
+      # workbook with one or two incidental named ranges produces.
+      type: metrics
+      field: office.name_count
+      min: 8
+
+  - id: unprintable-defined-name
+    desc: Workbook defines an unprintable name
+    crit: suspicious
+    conf: 0.95
+    if:
+      # A defined name that is nothing but control bytes -- in practice runs
+      # of NUL. Excel's Name Manager cannot display it and a person cannot
+      # type it, so it did not come from the UI. It is written directly into
+      # the name table to give the macro an entry point that name-listing
+      # tools render as blank.
+      type: value
+      path: office.names[*]
+      regex: '^[\x00-\x1f]+$'
+
+composite_rules:
+  # The macro sheet plus the generated name table: the two halves of an XLM
+  # dropper's storage layout. A legacy workbook that genuinely still uses XLM
+  # was written by a person and names its ranges accordingly; one whose entire
+  # name table came out of a generator was built, once, for this delivery.
+  - id: xlm-macro-generated-name-table
+    desc: Excel 4.0 macro sheet with generated names
+    crit: hostile
+    conf: 0.96
+    attack: T1027,T1059.005
+    all:
+      - id: objectives/execution/interpreter/document::stored-excel4-macro-sheet
+      - id: generated-defined-name
+      - id: large-defined-name-table
+
+  # A name the Name Manager renders as empty, in a workbook that carries an
+  # interpreter Excel has not written for since the 1990s. Neither half has a
+  # benign form: no version of Excel emits a control-byte name, and nothing
+  # authored this century wants an XLM sheet.
+  - id: xlm-macro-unprintable-name
+    desc: Excel 4.0 sheet with an unprintable name
+    crit: hostile
+    conf: 0.96
+    attack: T1027,T1059.005
+    all:
+      - id: objectives/execution/interpreter/document::stored-excel4-macro-sheet
+      - id: unprintable-defined-name
