@@ -14,6 +14,20 @@ only when a concrete detection needs information those mechanisms cannot
 express, and the benefit justifies parsing cost, maintenance, and ambiguity.
 Do not require recognizing the benchmark's environment gate for detection.
 
+## Current corpus triage (2026-09-16)
+
+- [x] Preserve positive random-file gates as activation controls; keep them out
+  of hostile composites so static findings do not depend on the gate.
+- [x] Repair and validate AUR, C, Homebrew, and Go coverage using existing
+  cached values, symbols, arguments, and scoped composites. No engine feature
+  was needed.
+- [x] Full scan: 599 roots, 227 with hostile IDs and 372 without. Evidence:
+  `/tmp/sc-current-gopass2.XXXXXX.jsonl` (SHA-256
+  `8b30153bff22ac8b71bdc2cce642684db6b7160c852c5d20e54b415939103dfa`).
+- [ ] Continue semantic review of the remaining zero-hostile roots; do not
+  promote a package from suspicious to hostile on a gate, schedule, or network
+  fetch alone.
+
 ## Cron review follow-up (2026-09-15)
 
 - [x] Reproduce ordinary recurring HTTP scheduling falsely labeled hostile in

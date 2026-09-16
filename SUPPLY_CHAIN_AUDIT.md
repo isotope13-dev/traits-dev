@@ -1,9 +1,9 @@
-# Supply-chain audit — through 2026-09-15
+# Supply-chain audit — through 2026-09-16
 
 Status: inventory stabilized and baseline audited; detection triage is **not
 complete**. The current `supply-chain-corpus` has 599 specimens after the
 simulation-quality dispositions documented below. The fresh 599-package scan has
-184 specimens with at least one hostile trait and 415 with none; semantic disposition
+227 specimens with at least one hostile trait and 372 with none; semantic disposition
 is still required. No package was installed, imported, built, activated, or executed
 during this pass.
 
@@ -2928,3 +2928,35 @@ archives were repacked without running them. Detection does not depend on the
 marker: a fresh static scan of 599 corpus packages reports 184 packages with
 at least one hostile ID and 415 with none (scan SHA-256
 `0d80654e819ed21d2409bc853bf5f69df936c83f4b059a5a24de68d2fd2e7b57`).
+
+## Gate-preserving native and package-hook triage (2026-09-16)
+
+Positive marker checks remain activation gates; hostile composites omit them so
+static findings do not depend on the gate. AUR and C payloads with quoted tilde
+paths or generator-escaped format directives were repaired where those mistakes
+made the positive arm unreachable.
+
+Generalized coverage now includes AUR build-phase remote shells, builder
+`makepkg.conf` poisoning, pacman lifecycle persistence with detached remote
+fetches, Homebrew audit/resource execution, and native C/Go credential
+exfiltration, DNS/RPC command channels, hidden or encoded stages, LaunchAgents,
+cron, ICMP, keychain theft, and destructive payloads. No package was installed,
+imported, built, activated, or executed.
+
+Pinned full-corpus scan: 599 package roots, 227 with at least one hostile ID and
+372 without. Output: `/tmp/sc-current-gopass2.XXXXXX.jsonl`; SHA-256
+`8b30153bff22ac8b71bdc2cce642684db6b7160c852c5d20e54b415939103dfa`.
+
+## Go native-fact triage (2026-09-16)
+
+Go coverage now uses cached command, RPC, socket, file-write, lifecycle, and
+package facts for archive-scoped composites. It catches credential/DNS and ICMP
+exfiltration, blockchain-backed commands and scheduled tasks, Go-generate
+remote shells, zero-width and XOR loaders, RunKey/LaunchAgent/cron persistence,
+disk and document destruction, steganographic stages, and dylib staging. The
+remaining unresolved roots are retained for semantic review rather than being
+forced hostile from a gate or a generic network call.
+
+Updated pinned scan: 599 roots, 227 with at least one hostile ID and 372
+without. Output: `/tmp/sc-current-gopass2.XXXXXX.jsonl`; SHA-256
+`8b30153bff22ac8b71bdc2cce642684db6b7160c852c5d20e54b415939103dfa`.

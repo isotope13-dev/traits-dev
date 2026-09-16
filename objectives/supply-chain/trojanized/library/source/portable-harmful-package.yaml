@@ -1,6 +1,9 @@
 # Portable behavior chains for packages that conceal harmful operations behind
 # plausible library APIs. Package context and randomized gates are corroborating
 # signals; no primary verdict requires recognition of the gate.
+# Neutral language-specific mechanics live in their canonical
+# `micro-behaviors/` files; the rules below intentionally retain only
+# package-context combinations that infer a supply-chain objective.
 defaults:
   platforms: [linux, macos, windows]
   attack: T1195.002
@@ -187,20 +190,6 @@ traits:
     if:
       type: text
       regex: '(?i)([.]write(AllBytes)?\s*[(]|FileOutputStream|WriteFile|write_all\s*[(]|fwrite\s*[(])'
-
-  - id: forced-shutdown-source
-    desc: Source invokes forced shutdown
-    crit: suspicious
-    if:
-      type: text
-      regex: '(?i)(shutdown\s+(-h|/s)|System Events.{0,40}to (restart|shut down))'
-    unless:
-      # Approval-policy and classifier tests enumerate hostile commands
-      # (`shutdown -h now`, ...) as inert strings to grade -- not to run.
-      - id: metadata/package/testing/harness/runtime::test-basename-pattern
-      # The Python-side approval suites do the same in test_*.py files, which
-      # the JS/TS basename pattern above never covers.
-      - id: metadata/package/testing/presence/harness::python-test-file
 
   - id: launchagent-interval-source
     desc: LaunchAgent has periodic execution keys
@@ -427,7 +416,9 @@ composite_rules:
     all:
       - id: launchagents-path-source
       - id: launchagent-interval-source
-      - id: forced-shutdown-source
+    any:
+      - id: objectives/impact/system/shutdown::source-forced-shutdown-command
+      - id: micro-behaviors/os/event/shutdown::c-applescript-restart-literal
 
   - id: portable-clipboard-crypto-hijacker
     desc: Clipboard watcher replaces crypto addresses
@@ -485,3 +476,529 @@ composite_rules:
       - id: dns-query-api-source
       - id: jvm-dns-query-api-source
       - id: browser-secret-upload-endpoint
+
+  - id: portable-native-credential-exfiltration
+    desc: Native package reads developer credentials into a network sink
+    crit: hostile
+    # 0.97, not 0.98: pooling over the archive drops the proximity constraint
+    # the file-scoped form carried, so the legs corroborate each other less.
+    conf: 0.97
+    attack: T1552.001,T1041,T1195.002
+    for: [c, cpp]
+    # A package can split the read, the pipe and the upload across separate
+    # helper sources, so pool evidence over the whole archive rather than
+    # requiring one file to carry the entire chain.
+    scope: archive
+    all:
+      - id: objectives/credential-access/files/config::developer-credential-file-read
+      - id: micro-behaviors/process/create/shell/native::c-popen-variable-input
+    any:
+      - id: micro-behaviors/communications/socket/netcat::nc
+      - id: micro-behaviors/communications/http/upload::curl-data-binary
+
+  - id: portable-native-hidden-stage-exec
+    desc: Native package decodes a hidden downloaded stage and executes it
+    crit: hostile
+    conf: 0.98
+    attack: T1027,T1059.004,T1105,T1195.002
+    for: [c, cpp]
+    near_bytes: 4096
+    all:
+      - id: objectives/evasion/file-hiding/dotfile-create::hidden-staging-file
+      - id: micro-behaviors/data/decode/hex::xxd-hex-decode
+      - id: micro-behaviors/process/create/local-exec::tmp-path-execution
+      - id: micro-behaviors/communications/http/download/curl::curl-download-tmp-file
+
+  - id: portable-native-xor-command-loader
+    desc: Native package XOR-decodes data into a command interpreter
+    crit: hostile
+    conf: 0.97
+    attack: T1027,T1059.003,T1195.002
+    for: [c, cpp]
+    all:
+      - id: micro-behaviors/data/source/arithmetic::source-xor-operation
+      - id: micro-behaviors/process/create/api-system::source-call
+      - id: windows-living-off-land-command
+
+  - id: portable-native-constructor-loader
+    desc: Native constructor auto-executes an obfuscated shell stage
+    crit: hostile
+    conf: 0.98
+    attack: T1027,T1059.004,T1195.002
+    for: [c, cpp]
+    all:
+      - id: micro-behaviors/process/lifecycle/auto-exec::gcc-constructor-attr
+      - id: micro-behaviors/data/source/arithmetic::source-xor-operation
+      - id: micro-behaviors/process/create/api-system::source-call
+
+  - id: portable-native-dns-command-loader
+    desc: Native package uses DNS TXT as a command channel
+    crit: hostile
+    conf: 0.98
+    attack: T1071.004,T1059.004,T1195.002
+    for: [c, cpp]
+    scope: archive
+    all:
+      - id: micro-behaviors/communications/dns/lookup/txt::c-dns-txt-query-source
+      - id: micro-behaviors/process/create/shell/native::c-popen-variable-input
+      - id: micro-behaviors/data/string/replace::shell-echo-tr-transform
+
+  - id: portable-native-launchagent-loader
+    desc: Native package installs a periodic LaunchAgent with remote execution
+    crit: hostile
+    conf: 0.98
+    attack: T1059.004,T1105,T1543.004,T1195.002
+    for: [c, cpp]
+    near_bytes: 4096
+    all:
+      - id: launchagents-path-source
+      - id: launchagent-interval-source
+      - id: micro-behaviors/process/create/shell/native::c-popen-variable-input
+    any:
+      - id: micro-behaviors/communications/http/curl::curl-command-remote-url
+      - id: micro-behaviors/communications/dns/cli::nslookup
+
+  - id: portable-native-browser-keychain-exfiltration
+    desc: Native package steals browser keychain material and uploads it
+    crit: hostile
+    conf: 0.98
+    attack: T1555.003,T1041,T1195.002
+    for: [c, cpp]
+    all:
+      - id: objectives/credential-access/browser/chromium::chrome-safe-storage-keychain-query
+      - id: micro-behaviors/communications/http/upload::curl-data-binary
+    any:
+      - id: micro-behaviors/process/create/shell/native::c-popen-variable-input
+      - id: micro-behaviors/process/create/shell/spawn::system-fn
+
+  - id: portable-native-icmp-credential-exfiltration
+    desc: Native package encodes developer credentials in ICMP probes
+    crit: hostile
+    conf: 0.98
+    attack: T1041,T1552.001,T1195.002
+    for: [c, cpp]
+    scope: archive
+    all:
+      - id: objectives/credential-access/files/config::developer-credential-file-read
+      - id: micro-behaviors/communications/icmp/channel::c-icmp-helper-call
+      - id: micro-behaviors/process/create/api-system::source-call
+
+  - id: portable-native-octal-loader
+    desc: Native package executes an octal-obfuscated shell downloader
+    crit: hostile
+    conf: 0.98
+    attack: T1027,T1059.004,T1105,T1195.002
+    for: [c, cpp]
+    all:
+      - id: micro-behaviors/data/encode/char-code::c-octal-escape-sequence
+      - id: micro-behaviors/process/create/shell/spawn::c-popen-call
+
+  - id: portable-native-document-wipe
+    desc: Native package wipes user documents through a package payload
+    crit: hostile
+    conf: 0.99
+    attack: T1485,T1195.002
+    for: [c, cpp]
+    all:
+      - id: objectives/impact/wipe/user-data::c-user-document-recursive-delete
+      - id: micro-behaviors/process/create/api-system::source-call
+    any:
+      - id: micro-behaviors/os/sysinfo/hostname::host-identity-query
+      - id: micro-behaviors/communications/dns/cli::nslookup
+
+  - id: portable-native-icmp-host-identity-exfiltration
+    desc: Native package sends host identity through ICMP probes
+    crit: hostile
+    conf: 0.97
+    attack: T1041,T1016,T1195.002
+    for: [c, cpp]
+    scope: archive
+    all:
+      - id: micro-behaviors/os/env/read::c-windows-identity-environment
+      - id: micro-behaviors/communications/icmp/channel::c-icmp-helper-call
+      - id: micro-behaviors/process/create/api-system::source-call
+
+  - id: portable-rpc-scheduled-task-beacon
+    desc: Native package turns a remote blockchain beacon into a scheduled task
+    crit: hostile
+    conf: 0.98
+    attack: T1053.005,T1105,T1195.002
+    for: [c, cpp]
+    scope: archive
+    all:
+      - id: micro-behaviors/communications/http/url/rpc::ethereum-cloudflare-provider
+      - id: micro-behaviors/os/autorun/scheduled::schtasks-create-source
+      - id: micro-behaviors/process/create/shell/command-mode::windows-command-shell-invocation
+
+  - id: portable-rpc-storage-command-loader
+    desc: Native package retrieves commands from blockchain storage
+    crit: hostile
+    conf: 0.98
+    attack: T1102,T1059.004,T1195.002
+    for: [c, cpp]
+    scope: archive
+    all:
+      - id: micro-behaviors/communications/http/url/rpc::eth-get-storage-at-method-literal
+      - id: micro-behaviors/process/create/shell/native::c-popen-variable-input
+    any:
+      - id: objectives/command-and-control/backdoor/dispatch/shell::darkcomp-run-cmd-command
+      - id: micro-behaviors/process/create/shell/spawn::system-fn
+
+  - id: portable-go-dns-credential-exfiltration
+    desc: Go package sends developer credentials after DNS lookup
+    crit: hostile
+    conf: 0.98
+    attack: T1041,T1552.001,T1195.002
+    for: [go]
+    scope: archive
+    all:
+      - id: objectives/credential-access/files/config::developer-credential-file-read
+      - id: micro-behaviors/communications/dns/lookup/resolver::net-lookup-host
+      - id: micro-behaviors/communications/socket/send::go-conn-write-call
+
+  - id: portable-go-eth-storage-command
+    desc: Go package executes commands from blockchain storage
+    crit: hostile
+    conf: 0.98
+    attack: T1102,T1059.004,T1195.002
+    for: [go]
+    all:
+      - id: micro-behaviors/communications/http/url/rpc::eth-get-storage-at-method-field
+      - id: micro-behaviors/process/create/shell/command-flag::go-exec-shell-variable-command
+      - id: objectives/command-and-control/remote-command/shell::go-bin-sh
+
+  - id: portable-go-eth-scheduled-beacon
+    desc: Go package schedules a blockchain-controlled task
+    crit: hostile
+    conf: 0.98
+    attack: T1053.005,T1105,T1195.002
+    for: [go]
+    scope: archive
+    all:
+      - id: micro-behaviors/communications/http/url/rpc::ethereum-cloudflare-provider
+      - id: micro-behaviors/os/autorun/scheduled::go-schtasks-create-command
+      - id: micro-behaviors/process/create/shell/command-mode::windows-command-shell-invocation
+
+  - id: portable-go-stego-dropper
+    desc: Go package extracts a pixel payload and executes it
+    crit: hostile
+    conf: 0.98
+    attack: T1027,T1059.004,T1195.002
+    for: [go]
+    all:
+      - id: micro-behaviors/data/source/arithmetic::lsb-bit-mask-source
+      - id: micro-behaviors/data/encode/compression::go-base64-gzip-decode
+      - id: micro-behaviors/fs/write/file/full::go-os-writefile
+      - id: micro-behaviors/process/create/exec::go-exec-command-call
+
+  - id: portable-go-hidden-stage
+    desc: Go package decodes and executes a hidden stage
+    crit: hostile
+    conf: 0.98
+    attack: T1027,T1059.004,T1105,T1195.002
+    for: [go]
+    all:
+      - id: micro-behaviors/data/decode/hex::go-hex-decode-string
+      - id: micro-behaviors/fs/path/temp::go-temp-path-ref
+      - id: micro-behaviors/process/create/exec::go-exec-command-call
+    any:
+      - id: micro-behaviors/os/sysinfo/hostname::os-hostname
+      - id: micro-behaviors/communications/socket/connect::socket-dial
+
+  - id: portable-go-launchagent-loader
+    desc: Go package installs a periodic LaunchAgent loader
+    crit: hostile
+    conf: 0.98
+    attack: T1059.004,T1105,T1543.004,T1195.002
+    for: [go]
+    scope: archive
+    all:
+      - id: micro-behaviors/os/service/launchagent::source-launchagents-join
+      - id: objectives/supply-chain/trojanized/library/source::launchagent-interval-source
+      - id: micro-behaviors/fs/write/file/full::go-writes-download-shell-pipeline
+      - id: micro-behaviors/process/create/exec::go-exec-command-call
+
+  - id: portable-go-crontab-persistence
+    desc: Go package installs a cron command
+    crit: hostile
+    conf: 0.97
+    attack: T1053.003,T1195.002
+    for: [go]
+    all:
+      - id: micro-behaviors/os/autorun/cron::go-crontab-command-literal
+      - id: micro-behaviors/process/create/exec::go-exec-command-call
+
+  - id: portable-go-disk-wiper
+    desc: Go package zeroes discovered devices
+    crit: hostile
+    conf: 0.99
+    attack: T1485,T1195.002
+    for: [go]
+    all:
+      - id: objectives/impact/wipe/disk/device::lang-mounts-dev-scan
+      - id: micro-behaviors/fs/write/file/shell::dd-zero-input-command
+      - id: micro-behaviors/process/create/exec::go-exec-command-call
+    unless:
+      # Go's own tooling fixtures intentionally exercise `dd` against a
+      # mount-table image; they are not package payloads.
+      - id: metadata/package/testing/presence/path::go-tools-testdata-directory-path
+
+  - id: portable-go-xor-shell-loader
+    desc: Go package XOR-decodes a shell command
+    crit: hostile
+    conf: 0.98
+    attack: T1027,T1059.004,T1195.002
+    for: [go]
+    all:
+      - id: micro-behaviors/data/source/arithmetic::source-xor-operation
+      - id: micro-behaviors/process/create/shell/command-flag::go-exec-shell-variable-command
+      - id: objectives/command-and-control/remote-command/shell::go-bin-sh
+
+  - id: portable-go-dylib-hijack
+    desc: Go package stages a dylib through a hidden xattr path
+    crit: hostile
+    conf: 0.97
+    attack: T1574.006,T1195.002
+    for: [go]
+    all:
+      - id: micro-behaviors/fs/path/library::dylib-name-literal
+      - id: micro-behaviors/fs/attributes/xattr::xattr-tool-literal
+      - id: micro-behaviors/communications/http/get::http-get
+      - id: micro-behaviors/process/create/exec::go-exec-command-call
+
+  - id: portable-go-credential-command-exfiltration
+    desc: Go package sends developer credentials through a command
+    crit: hostile
+    conf: 0.98
+    attack: T1552.001,T1041,T1195.002
+    for: [go]
+    scope: archive
+    all:
+      - id: objectives/credential-access/files/config::developer-credential-file-read
+      - id: micro-behaviors/communications/socket/send::go-conn-write-call
+      - id: micro-behaviors/process/create/exec::go-exec-command-call
+
+  - id: portable-go-dns-txt-command
+    desc: Go package decodes DNS command records
+    crit: hostile
+    conf: 0.98
+    attack: T1071.004,T1059.004,T1195.002
+    for: [go]
+    all:
+      - id: micro-behaviors/data/encode/base32::go-base32-encoder-configuration
+      - id: micro-behaviors/process/create/shell/command-flag::go-exec-shell-variable-command
+      - id: objectives/command-and-control/remote-command/shell::go-bin-sh
+
+  - id: portable-go-identity-socket-exfiltration
+    desc: Go sends host identity over a socket
+    crit: hostile
+    conf: 0.97
+    attack: T1041,T1016,T1195.002
+    for: [go]
+    scope: archive
+    all:
+      - id: micro-behaviors/os/sysinfo/hostname::os-hostname
+      - id: micro-behaviors/data/db/schema/relational::account-handle-field
+      - id: micro-behaviors/communications/socket/send::go-conn-write-call
+
+  - id: portable-go-generate-remote-shell
+    desc: Go generate hook downloads and executes shell code
+    crit: hostile
+    conf: 0.98
+    attack: T1059.004,T1105,T1195.002
+    for: [go]
+    scope: archive
+    all:
+      - id: micro-behaviors/process/lifecycle/auto-exec::go-explicit-generator
+      - id: objectives/supply-chain/install-hook/build/go-generate::go-generate-curl-pipe-shell
+      - id: micro-behaviors/process/create/exec::go-exec-command-call
+
+  - id: portable-go-zero-width-loader
+    desc: Go package executes a zero-width hidden command
+    crit: hostile
+    conf: 0.98
+    attack: T1027,T1059.004,T1195.002
+    for: [go]
+    all:
+      - id: micro-behaviors/data/string/unicode::zero-width-format-codepoint-set
+      - id: micro-behaviors/process/create/shell/command-flag::go-exec-shell-variable-command
+      - id: micro-behaviors/process/create/exec::go-exec-command-call
+
+  - id: portable-go-shutdown-launchagent
+    desc: Go package persists a restarting LaunchAgent
+    crit: hostile
+    conf: 0.99
+    attack: T1543.004,T1489,T1195.002
+    for: [go]
+    all:
+      - id: micro-behaviors/os/service/launchagent::source-launchagents-join
+      - id: objectives/supply-chain/trojanized/library/source::launchagent-interval-source
+      - id: objectives/impact/system/shutdown::source-forced-shutdown-command
+      - id: micro-behaviors/process/create/exec::go-exec-command-call
+
+  - id: portable-go-runkey-persistence
+    desc: Go package writes a Windows Run key
+    crit: hostile
+    conf: 0.98
+    attack: T1547.001,T1195.002
+    for: [go]
+    all:
+      - id: objectives/supply-chain/trojanized/library/source::runkey-path-source
+      - id: micro-behaviors/fs/write/file/full::go-os-writefile
+      - id: micro-behaviors/process/create/exec::go-exec-command-call
+
+  - id: portable-go-removeall-wipe
+    desc: Go package deletes user data after host discovery
+    crit: hostile
+    conf: 0.98
+    attack: T1485,T1195.002
+    for: [go]
+    all:
+      - id: micro-behaviors/fs/delete/directory::os-RemoveAll
+      - id: micro-behaviors/os/sysinfo/hostname::os-hostname
+      - id: micro-behaviors/process/create/exec::go-exec-command-call
+
+  - id: portable-go-disk-fill-loop
+    desc: Go package fills hidden storage in an unbounded loop
+    crit: hostile
+    conf: 0.99
+    attack: T1485,T1195.002
+    for: [go]
+    all:
+      - id: objectives/supply-chain/trojanized/library/source::hidden-cache-fill-path
+      - id: objectives/supply-chain/trojanized/library/source::megabyte-buffer-source
+      - id: micro-behaviors/process/io/write::go-write-method-call
+      - id: micro-behaviors/data/control-flow/loop::go-unbounded-for-loop
+
+  - id: portable-go-xor-lolbin
+    desc: Go package XOR-decodes a Windows command
+    crit: hostile
+    conf: 0.98
+    attack: T1027,T1059.003,T1195.002
+    for: [go]
+    all:
+      - id: micro-behaviors/data/source/arithmetic::source-xor-operation
+      - id: micro-behaviors/process/create/exec::cmd-exe-reference
+      - id: micro-behaviors/process/create/exec::go-exec-command-call
+
+  - id: portable-jvm-blockchain-command
+    desc: JVM package executes commands from blockchain storage
+    crit: hostile
+    conf: 0.98
+    attack: T1102,T1059.004,T1195.002
+    for: [java, class, java_class, kotlin]
+    scope: archive
+    all:
+      - id: micro-behaviors/communications/http/url/rpc::eth-get-storage-at-method-field
+      - id: micro-behaviors/process/create/spawn::java-processbuilder-start-bytecode
+    any:
+      - id: micro-behaviors/process/create/shell/selection::jvm-posix-processbuilder-shell
+      - id: micro-behaviors/process/create/shell/selection::jvm-posix-shell-path-constant
+
+  - id: portable-jvm-scheduled-rpc-beacon
+    desc: JVM package schedules a blockchain-controlled task
+    crit: hostile
+    conf: 0.98
+    attack: T1053.005,T1105,T1195.002
+    for: [java, class, java_class, kotlin]
+    scope: archive
+    all:
+      - id: micro-behaviors/communications/http/url/rpc::ethereum-cloudflare-provider
+      - id: micro-behaviors/process/create/spawn::java-processbuilder-start-bytecode
+    any:
+      - id: micro-behaviors/os/autorun/scheduled::schtasks-utility-token
+      - id: micro-behaviors/os/autorun/scheduled::jvm-schtasks-utility-token
+
+  - id: portable-jvm-launchagent-loader
+    desc: JVM package installs a periodic LaunchAgent loader
+    crit: hostile
+    conf: 0.98
+    attack: T1059.004,T1105,T1543.004,T1195.002
+    for: [java, class, java_class, kotlin]
+    scope: archive
+    all:
+      - id: objectives/supply-chain/trojanized/library/source::launchagents-path-source
+      - id: objectives/supply-chain/trojanized/library/source::launchagent-interval-source
+      - id: micro-behaviors/fs/write/file/full::jvm-files-write-bytecode
+      - id: micro-behaviors/process/create/spawn::java-processbuilder-start-bytecode
+
+  - id: portable-jvm-credential-http-exfil
+    desc: JVM package sends credential files over HTTP
+    crit: hostile
+    conf: 0.98
+    attack: T1552.001,T1041,T1195.002
+    for: [java, class, java_class, kotlin]
+    scope: archive
+    all:
+      - id: objectives/credential-access/files/config::java-credential-path-table
+      - id: micro-behaviors/fs/read/file/full::java-readallbytes
+    any:
+      - id: micro-behaviors/communications/http/post::jvm-urlconnection-post-bytecode
+      - id: micro-behaviors/communications/http/post::jvm-urlconnection-post-source
+      - id: micro-behaviors/communications/http/post::jvm-post-method-source
+
+  - id: portable-jvm-keychain-exfil
+    desc: JVM package uploads browser keychain material
+    crit: hostile
+    conf: 0.98
+    attack: T1555.003,T1041,T1195.002
+    for: [java, class, java_class, kotlin]
+    scope: archive
+    all:
+      - id: micro-behaviors/os/security/keychain::macos-keychain-generic-password-command-reference
+    any:
+      - id: micro-behaviors/communications/http/post::jvm-post-method-source
+      - id: micro-behaviors/communications/http/post::jvm-urlconnection-post-bytecode
+
+  - id: portable-jvm-zero-width-loader
+    desc: JVM package executes a zero-width hidden command
+    crit: hostile
+    conf: 0.98
+    attack: T1027,T1059.004,T1195.002
+    for: [java, class, java_class, kotlin]
+    scope: archive
+    all:
+      - id: micro-behaviors/data/string/unicode::zero-width-format-codepoint-set
+      - id: micro-behaviors/process/create/spawn::java-processbuilder-start-bytecode
+    any:
+      - id: objectives/command-and-control/reverse-shell/socket-exec::kotlin-processbuilder-shell
+      - id: micro-behaviors/process/create/shell/selection::jvm-posix-processbuilder-shell
+
+  - id: portable-jvm-destructive-loader
+    desc: JVM package destroys files after mount discovery
+    crit: hostile
+    conf: 0.99
+    attack: T1485,T1195.002
+    for: [java, class, java_class, kotlin]
+    scope: archive
+    all:
+      - id: micro-behaviors/fs/proc/mounts::proc-mounts-path
+      - id: micro-behaviors/fs/delete/file/library::java-file-delete-bytecode
+      - id: micro-behaviors/process/create/spawn::java-processbuilder-start-bytecode
+
+  - id: portable-jvm-dylib-hijack
+    desc: JVM package stages a dylib through xattrs
+    crit: hostile
+    conf: 0.97
+    attack: T1574.006,T1195.002
+    for: [java, class, java_class, kotlin]
+    scope: archive
+    all:
+      - id: micro-behaviors/fs/path/library::class-dylib-name
+      - id: micro-behaviors/fs/attributes/xattr::class-xattr-tool
+      - id: micro-behaviors/communications/http/lib/urlconnection::jvm-urlconnection-open-connection
+      - id: micro-behaviors/process/create/spawn::java-processbuilder-start-bytecode
+
+  - id: portable-jvm-reflective-b64-loader
+    desc: JVM package defines a class from encoded bytes
+    crit: hostile
+    conf: 0.98
+    attack: T1027,T1059.004,T1195.002
+    for: [java, class, java_class, kotlin]
+    scope: archive
+    all:
+      - id: micro-behaviors/data/source/dynamic/reflect::java-defineclass
+      - id: micro-behaviors/data/decode/base64::java-base64-decoding-bytecode
+    any:
+      - id: metadata/file/encoded::large-base64-like-string
+      - id: micro-behaviors/data/decode/base64::java-base64-decoder-class
