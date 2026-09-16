@@ -85,6 +85,18 @@ traits:
       type: text
       regex: 'https://[A-Za-z0-9.-]+/s/[A-Fa-f0-9]{8}[.](cmd|ps1|sh)'
 
+  # A package that builds a script path under the roaming profile is staging a
+  # file it wrote, not pointing at its own installed image: the autostart
+  # checkbox in ZoomIt, ScreenToGif or RunCat names an .exe in its install
+  # directory, never a .js or .ps1 dropped beside its settings. The window
+  # spans the Join-Path/mkdir pair between the directory and the filename.
+  - id: appdata-script-drop-source
+    desc: Source builds script path under AppData
+    crit: notable
+    if:
+      type: text
+      regex: '(?is)APPDATA.{0,200}\.(js|vbs|ps1|bat|cmd|hta|wsf|py)[''"]'
+
   - id: schtasks-token-source
     desc: Source references task scheduler utility
     crit: notable
@@ -307,6 +319,18 @@ composite_rules:
       - id: launchagents-path-source
       - id: shell-history-path-source
 
+  # Mechanism plus payload, like every other rule in this file. Writing the Run
+  # key from your own source is the ordinary way an application implements a
+  # "start with Windows" setting, so the mechanism alone cannot carry a hostile
+  # verdict: Sysinternals ZoomIt's `ConfigureAutostart()` (vendored into
+  # Microsoft PowerToys) opens CurrentVersion\Run, calls RegSetValueEx with its
+  # own image path, and calls RegDeleteValue in the else branch -- and matched.
+  # So did ScreenToGif, EverythingToolbar, RunCat, shadowsocks-windows and Bulk
+  # Crap Uninstaller, all on their own autostart checkbox. `registry-value-write-source`
+  # is broad on purpose (a bare `SetValue` matches `PropertyInfo.SetValue` in
+  # any C# tree), which is fine as one leg of a pair and not as half of a
+  # hostile claim. `near_bytes` additionally requires the two to be the same
+  # routine rather than two ends of a repository.
   - id: portable-runkey-persistence
     desc: Package stages Run-key execution
     crit: hostile
@@ -314,13 +338,37 @@ composite_rules:
     # Ruby uses the canonical same-call Run-key composite. PowerShell uses
     # native command nodes or an adjacent path binding, not quoted examples.
     for: [scripts, source, -ruby, class, java_class]
+    near_bytes: 2048
     all:
       - id: runkey-path-source
+      - id: staged-payload-or-secret-source
     any:
       - id: registry-value-write-source
       - id: micro-behaviors/os/registry/write/run-key::powershell-reg-add-run-key
       - id: micro-behaviors/os/registry/write/run-key::powershell-literal-run-key-property
       - id: micro-behaviors/os/registry/write/run-key::powershell-assigned-run-key-property
+
+  # What separates a trojanized package from an application with an autostart
+  # setting: something worth persisting. Siblings here pair their mechanism
+  # with exactly this kind of leg inline; the Run-key rule needs it as a group.
+  - id: staged-payload-or-secret-source
+    desc: Staged payload or secret access in source
+    crit: notable
+    conf: 0.9
+    # Deliberately excludes this file's broadest atoms -- dynamic-execution-source
+    # (`eval(`/`exec(`), executable-stage-source (`chmod`/`spawn(`) and
+    # windows-living-off-land-command (`cmd.exe`) are `component` fragments that
+    # almost any source tree satisfies, so admitting them here would restore the
+    # false positive this group exists to close.
+    any:
+      - id: staged-command-url-source
+      - id: encoded-powershell-source
+      - id: long-hex-command-blob
+      - id: schtasks-token-source
+      - id: appdata-script-drop-source
+      - id: developer-secret-file-set
+      - id: browser-secret-store-set
+      - id: browser-secret-upload-endpoint
 
   - id: portable-startup-link-dropper
     desc: Startup shortcut downloads command
