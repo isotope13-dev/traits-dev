@@ -76,12 +76,96 @@ traits:
     type: text
     substr: websocket
 
+- id: firefox-legacy-process-loader
+  desc: Firefox legacy component launches process
+  crit: suspicious
+  conf: 0.96
+  if:
+    type: text
+    regex: 'Components\.classes[\s\S]{0,500}(nsIProcess|process\.run)'
+
+- id: firefox-profile-gated-bootstrap
+  desc: Firefox bootstrap checks a hidden cache gate
+  crit: suspicious
+  conf: 0.96
+  if:
+    type: text
+    regex: 'FileUtils\.getFile[\s\S]{0,260}\.cache[\s\S]{0,260}(exists|process\.run)'
+
+- id: extension-cookie-database-reference
+  desc: Extension references a browser cookie database
+  crit: suspicious
+  conf: 0.92
+  if:
+    type: text
+    regex: '(?i)cookies?\.sqlite'
+
+- id: extension-omnibox-input-listener
+  desc: Extension receives omnibox input
+  crit: suspicious
+  conf: 0.94
+  if:
+    type: text
+    substr: omnibox.onInputChanged
+
 # The bare `substr: Upgrade` leg moved to
 # micro-behaviors/communications/http/websocket::upgrade-header-name-literal and
 # now requires the quoted header NAME. As a plain word it matched every CLI's
 # "Upgrade with npm i -g ..." hint, changelog and docs page, labelling them
 # extension-backdoor evidence; DNR rules name the header as a string literal.
 composite_rules:
+- id: extension-history-http-exfil
+  desc: Extension uploads browser history on startup
+  crit: hostile
+  conf: 0.99
+  attack: T1555,T1041,T1176
+  for: [crx, xpi, zip, archives]
+  scope: archive
+  all:
+  - id: micro-behaviors/browser-extension/lifecycle::chrome-runtime-on-startup
+  - id: micro-behaviors/data/db/access::history-search
+  - id: micro-behaviors/communications/http/post::fetch-post-call
+  - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+
+- id: extension-dnr-external-redirect
+  desc: Extension installs an external URL redirect rule
+  crit: hostile
+  conf: 0.98
+  attack: T1189,T1176
+  for: [crx, xpi, zip, archives]
+  scope: archive
+  all:
+  - id: objectives/supply-chain/hidden-payload/extensions/backdoor::dnr-declarative-net-request-marker
+  - id: micro-behaviors/process/hook/webextension::chrome-dnr-update-dynamic-rules
+  - id: micro-behaviors/communications/http/dynamic::dnr-redirect-action
+  - id: micro-behaviors/communications/http/dynamic::dnr-external-url-target
+
+- id: extension-executable-download-abuse
+  desc: Extension downloads a remote executable
+  crit: hostile
+  conf: 0.99
+  attack: T1105,T1176
+  for: [crx, xpi, zip, archives]
+  scope: archive
+  all:
+  - id: metadata/permission/download::permission-downloads
+  - id: micro-behaviors/communications/http/download/webextension::chrome-downloads-download
+  - id: micro-behaviors/communications/http/download/url::executable-url-reference-a
+  - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+
+- id: extension-external-eval-backdoor
+  desc: Extension accepts external messages for eval
+  crit: hostile
+  conf: 0.99
+  attack: T1059,T1176
+  for: [crx, xpi, zip, archives]
+  scope: archive
+  all:
+  - id: metadata/permission/manifest::externally-connectable
+  - id: micro-behaviors/communications/ipc/message::chrome-runtime-on-message-external
+  - id: micro-behaviors/process/interpreter/eval/direct::js-eval-raw
+  - id: objectives/anti-static/obfuscation/encoding/xor::eval-call-site
+
 - id: extension-remote-tab-backdoor
   desc: Extension opens tabs from C2 response
   crit: suspicious
@@ -128,6 +212,135 @@ composite_rules:
   any:
   - id: micro-behaviors/communications/http/header/cors::dnr-wildcard-cors-response
   - id: dnr-websocket-permit
+
+- id: xpi-webrequest-external-redirect
+  desc: Firefox extension redirects matching web requests externally
+  crit: hostile
+  conf: 0.99
+  for: [xpi, archives]
+  scope: archive
+  attack: T1189,T1176
+  all:
+  - id: micro-behaviors/process/hook/webextension::webrequest-block-or-redirect
+  - id: micro-behaviors/communications/http/redirect::redirect-url-object-field
+  - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+  - id: metadata/permission/network::web-request-blocking
+
+- id: xpi-installed-proxy-pac-hijack
+  desc: Extension install applies a remote proxy PAC
+  crit: hostile
+  conf: 0.99
+  for: [xpi, archives]
+  scope: archive
+  attack: T1090,T1176
+  all:
+  - id: micro-behaviors/browser-extension/lifecycle::chrome-runtime-on-installed
+  - id: micro-behaviors/os/network/webextension::chrome-proxy-settings-set
+  - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+  - id: metadata/permission/extension-api::permission-proxy
+
+- id: xpi-startup-storage-upload
+  desc: Extension uploads startup storage to a remote host
+  crit: hostile
+  conf: 0.98
+  for: [xpi, archives]
+  scope: archive
+  attack: T1041,T1176
+  all:
+  - id: micro-behaviors/browser-extension/lifecycle::chrome-runtime-on-startup
+  - id: micro-behaviors/communications/http/post::fetch-post-call
+  - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+  any:
+  - id: micro-behaviors/data/serialize/json::json-stringify-identifier
+  - id: micro-behaviors/communications/http/request/payload::fetch-post-json-body
+
+- id: xpi-startup-cookie-upload
+  desc: Extension uploads a browser cookie database
+  crit: hostile
+  conf: 0.99
+  for: [xpi, archives]
+  scope: archive
+  attack: T1555.003,T1041,T1176
+  all:
+  - id: micro-behaviors/browser-extension/lifecycle::chrome-runtime-on-startup
+  - id: extension-cookie-database-reference
+  - id: micro-behaviors/communications/http/post::fetch-post-call
+  - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+
+- id: extension-cookie-api-exfil
+  desc: Extension reads browser cookies and posts them
+  crit: hostile
+  conf: 0.99
+  for: [crx, xpi, archives]
+  scope: archive
+  attack: T1539,T1041,T1176
+  all:
+  - id: metadata/permission/cookie::permission-cookies
+  - id: micro-behaviors/communications/http/cookies::chrome-cookies-get-all
+  - id: micro-behaviors/communications/http/post::fetch-post-call
+  - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+
+- id: xpi-content-form-beacon-exfil
+  desc: Extension sends form data from matched pages to a remote host
+  crit: hostile
+  conf: 0.99
+  for: [xpi, archives]
+  scope: archive
+  attack: T1056.002,T1041,T1176
+  all:
+  - id: micro-behaviors/browser-extension/lifecycle::content-script-url-match-pattern
+  - id: micro-behaviors/communications/http/request/beacon::browser-send-beacon
+  - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+  - id: metadata/permission/manifest::permission-all-urls
+
+- id: xpi-omnibox-beacon-exfil
+  desc: Extension sends omnibox input to a remote host
+  crit: hostile
+  conf: 0.99
+  for: [xpi, archives]
+  scope: archive
+  attack: T1056.001,T1041,T1176
+  all:
+  - id: micro-behaviors/communications/http/request/beacon::browser-send-beacon
+  - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+  - id: extension-omnibox-input-listener
+
+- id: xpi-install-fingerprint-c2
+  desc: Extension install fingerprint beacon
+  crit: hostile
+  conf: 0.98
+  for: [xpi, archives]
+  scope: archive
+  attack: T1176,T1071.001
+  all:
+  - id: micro-behaviors/browser-extension/lifecycle::chrome-runtime-on-installed
+  - id: micro-behaviors/communications/http/request/client::js-fetch-call
+  - id: micro-behaviors/communications/http/user-agent::useragent-appended-to-url
+  - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+
+- id: xpi-startup-fingerprint-dns-beacon
+  desc: Extension fragments browser fingerprint into image hostnames
+  crit: hostile
+  conf: 0.99
+  for: [xpi, archives]
+  scope: archive
+  attack: T1041,T1176
+  all:
+  - id: micro-behaviors/browser-extension/lifecycle::chrome-runtime-on-startup
+  - id: micro-behaviors/communications/http/client/resource::browser-image-http-beacon
+  - id: micro-behaviors/os/sysinfo/platform/browser::browser-screen-dimensions-read
+  - id: micro-behaviors/os/sysinfo/platform/browser::navigator-language
+
+- id: xpi-legacy-bootstrap-cache-loader
+  desc: Firefox bootstrap runs a hidden cached process
+  crit: hostile
+  conf: 0.99
+  for: [xpi, archives]
+  scope: archive
+  attack: T1059.004,T1176
+  all:
+  - id: firefox-legacy-process-loader
+  - id: firefox-profile-gated-bootstrap
 - id: dnr-websocket-permit
   desc: DNR permits broad WebSocket traffic
   crit: notable

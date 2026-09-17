@@ -1,0 +1,56 @@
+# Spending a hosted platform's own session credential at its secret store.
+#
+# Colab, Kaggle, Binder and CI runners hand the session a short-lived token
+# through the environment so the *user's* code can fetch the secrets they
+# configured. A library that picks that token up and calls the store API itself
+# is spending the user's credential on its own behalf: the request is
+# indistinguishable from a legitimate one, it arrives already authenticated, and
+# it runs inside a notebook that is signed in to a real cloud account.
+#
+# Seen in the wild reading `KAGGLE_USER_SECRETS_TOKEN` and POSTing it to
+# Kaggle's internal `GetUserSecretByLabelRequest` asking for the label
+# `api-key`, then scraping the *error* response for a numeric user id. Whatever
+# the stated purpose, the shape is: take the platform credential, ask the secret
+# store for a named secret.
+#
+# Deliberately not keyed to Kaggle. The env-var naming convention
+# (`*_SECRET(S)_TOKEN`) and a by-name store request are what generalize; the
+# vendor is an implementation detail the next package will change.
+defaults:
+  platforms: [unix, windows]
+  for: [python]
+  attack: T1552.001
+  mbc: C0032
+
+traits:
+  # The platform's session credential, read out of the environment.
+  - id: platform-secrets-token-env-read
+    desc: Reads a platform secrets session token
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '\b[A-Z][A-Z0-9_]{0,32}_(USER_)?SECRETS?_TOKEN\b'
+
+  # A request aimed at the secret store rather than the product API. The
+  # "by label"/"by name" spelling is how these endpoints address one stored
+  # secret.
+  - id: platform-secrets-endpoint-request
+    desc: Requests a named secret from a store
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '\b(Get|Fetch|Read)[A-Za-z]{0,20}Secret[A-Za-z]{0,24}(Request|ByLabel|ByName)\b'
+
+composite_rules:
+  # Credential in, store request out. A library doing both is acting as the user
+  # against the user's own secrets.
+  - id: platform-secrets-token-replay
+    desc: Replays a platform token at its secret store
+    crit: hostile
+    conf: 0.95
+    near_lines: 40
+    all:
+      - id: platform-secrets-token-env-read
+      - id: platform-secrets-endpoint-request

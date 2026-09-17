@@ -1,0 +1,179 @@
+# WordPress plugins are a common supply-chain delivery vehicle. These rules
+# describe behavior that is hostile regardless of which plugin author or
+# package registry supplied it; they are intentionally not nested under the
+# supply-chain taxonomy.
+defaults:
+  platforms: [unix, windows]
+  for: [php]
+  attack: T1505.003,T1105
+
+traits:
+- id: wp-shortcode-eval-hook
+  desc: WordPress shortcode evaluates content
+  crit: suspicious
+  conf: 0.96
+  if:
+    type: text
+    regex: 'add_shortcode[\s\S]{0,600}\beval\s*\('
+- id: wp-xmlrpc-method-hook
+  desc: WordPress plugin adds an XML-RPC method
+  crit: suspicious
+  conf: 0.94
+  if:
+    type: text
+    regex: 'xmlrpc_methods|IXR_Error'
+- id: wp-admin-init-hook
+  desc: WordPress plugin runs on admin init
+  crit: notable
+  conf: 0.9
+  if:
+    type: text
+    regex: 'add_action\s*\(\s*["'']admin_init'
+- id: wp-update-filter-hook
+  desc: WordPress plugin intercepts updates
+  crit: suspicious
+  conf: 0.95
+  if:
+    type: text
+    substr: pre_set_site_transient_update_plugins
+- id: wp-theme-switch-hook
+  desc: WordPress plugin runs after a theme switch
+  crit: notable
+  conf: 0.9
+  if:
+    type: text
+    substr: after_switch_theme
+- id: wp-activation-hook
+  desc: WordPress plugin runs on activation
+  crit: notable
+  conf: 0.9
+  if:
+    type: text
+    substr: register_activation_hook
+- id: wp-remote-call
+  desc: WordPress plugin calls a remote HTTP endpoint
+  crit: notable
+  conf: 0.88
+  if:
+    type: text
+    regex: 'wp_remote_(get|post|request)\s*\('
+- id: wp-update-url-rewrite
+  desc: WordPress plugin rewrites update download URLs
+  crit: suspicious
+  conf: 0.95
+  if:
+    type: text
+    substr: urlencode
+
+composite_rules:
+- id: wordpress-shortcode-remote-eval
+  desc: WordPress shortcode fetches and evaluates remote content
+  crit: hostile
+  conf: 0.99
+  for: [php, zip, archives]
+  scope: archive
+  all:
+  - id: wp-shortcode-eval-hook
+  - id: micro-behaviors/communications/http/request/wordpress::wp-remote-get
+  - id: micro-behaviors/process/interpreter/eval/direct::eval-call
+  - id: micro-behaviors/fs/path/location::hidden-writable-path
+
+- id: wordpress-rest-shell-webshell
+  desc: Unauthenticated WordPress REST route executes shell commands
+  crit: hostile
+  conf: 0.99
+  for: [php, zip, archives]
+  scope: archive
+  all:
+  - id: micro-behaviors/communications/http/request/wordpress::unauthenticated-rest-route
+  - id: micro-behaviors/communications/http/request/wordpress::rest-permission-allows-all
+  - id: micro-behaviors/process/create/shell/spawn::php-shell-exec
+  - id: micro-behaviors/communications/http/request/wordpress::register-rest-route
+
+- id: wordpress-cron-remote-beacon
+  desc: WordPress cron job sends a beacon to a remote host
+  crit: hostile
+  conf: 0.98
+  for: [php, zip, archives]
+  scope: archive
+  all:
+  - id: micro-behaviors/time/schedule/wordpress::wp-schedule-event
+  - id: micro-behaviors/communications/http/request/wordpress::wp-remote-get
+  - id: objectives/command-and-control/infrastructure/keywords::beacon
+
+- id: wordpress-admin-db-credential-exfil
+  desc: WordPress plugin exfils password-bearing data
+  crit: hostile
+  conf: 0.99
+  for: [php, zip, archives]
+  scope: archive
+  all:
+  - id: micro-behaviors/communications/http/request/wordpress::wp-remote-post
+  - id: objectives/credential-access/theft/keywords::password-upper
+  - id: micro-behaviors/data/encode/base64::php-base64-encode
+  - id: micro-behaviors/os/security/auth/rbac::wordpress-admin-capability-check
+
+- id: wordpress-rogue-admin-create
+  desc: WordPress plugin creates an administrator account
+  crit: hostile
+  conf: 0.99
+  for: [php, zip, archives]
+  scope: archive
+  all:
+  - id: micro-behaviors/os/user/account::wordpress-create-user
+  - id: micro-behaviors/os/user/account::wordpress-admin-role-assignment
+
+- id: wordpress-xmlrpc-remote-amplifier
+  desc: WordPress XML-RPC method forwards requests to a remote host
+  crit: hostile
+  conf: 0.99
+  for: [php, zip, archives]
+  scope: archive
+  all:
+  - id: wp-xmlrpc-method-hook
+  - id: micro-behaviors/communications/http/request/wordpress::wp-remote-post
+  - id: micro-behaviors/data/serialize/json::php-json-encode
+
+- id: wordpress-theme-switch-webshell
+  desc: Theme-switch hook writes a shell payload
+  crit: hostile
+  conf: 0.99
+  for: [php, zip, archives]
+  scope: archive
+  all:
+  - id: wp-theme-switch-hook
+  - id: micro-behaviors/fs/write/file/full::php-file-put-contents
+  - id: objectives/command-and-control/backdoor/webshell/exec::php-request-shell-execution-alt
+
+- id: wordpress-admin-init-remote-shell
+  desc: Admin initialization hook fetches and executes a shell command
+  crit: hostile
+  conf: 0.99
+  for: [php, zip, archives]
+  scope: archive
+  all:
+  - id: wp-admin-init-hook
+  - id: micro-behaviors/communications/http/request/wordpress::wp-remote-get
+  - id: micro-behaviors/process/create/shell/spawn::php-shell-exec
+
+- id: wordpress-update-mirror-hijack
+  desc: Plugin update metadata is redirected to a remote mirror
+  crit: hostile
+  conf: 0.98
+  for: [php, zip, archives]
+  scope: archive
+  all:
+  - id: wp-update-filter-hook
+  - id: wp-update-url-rewrite
+  - id: micro-behaviors/fs/path/location::hidden-writable-path
+
+- id: wordpress-activation-phone-home
+  desc: Plugin activation sends a gated phone-home request
+  crit: hostile
+  conf: 0.97
+  for: [php, zip, archives]
+  scope: archive
+  all:
+  - id: wp-activation-hook
+  - id: micro-behaviors/communications/http/request/wordpress::wp-remote-post
+  - id: micro-behaviors/fs/path/temp::tmp-hidden-file

@@ -1,0 +1,75 @@
+# VMProtect from the *source* side.
+#
+# traits.yaml in this directory identifies the finished artifact -- `.vmpN`
+# sections, marker strings in a packed PE. That only works once the protector
+# has run. This file identifies the build input: source written against the
+# VMProtect SDK, which is what a leaked or recovered builder tree looks like
+# before anyone compiles it, and what a malware-as-a-service product's own
+# repository looks like throughout.
+#
+# Matched on call symbols rather than text so the function has to actually be
+# invoked; a header declaration or a comment naming the API does not count.
+# Keyed to the SDK's exported names, which are stable across the C, C++, Delphi
+# and .NET bindings, so a port to another language lands here unchanged.
+defaults:
+  platforms: [windows, unix]
+  for: [c, cpp, csharp, go, rust, swift, zig]
+  attack: T1027
+  mbc: B0032
+
+traits:
+  # Every literal is ciphertext at rest and only exists in cleartext for the
+  # lifetime of the call. That is the protector's anti-static-analysis feature
+  # working as sold: strings, URLs and command lines stay out of the binary, so
+  # `strings` and a hex editor return nothing useful. Legitimate commercial
+  # software buys VMProtect for exactly this, which is why it is suspicious
+  # rather than hostile -- but it means a reviewer cannot read the program's
+  # intent from its literals, and that is worth saying out loud.
+  - id: sdk-string-decrypt-call
+    desc: Decrypts literals via the VMProtect SDK
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: symbol
+      kind: call
+      regex: '^VMProtectDecryptString[AW]?$'
+
+  # Licensing/DRM half of the SDK: the program refuses to run without a serial
+  # the vendor issued, and can be remotely revoked. On a commercial application
+  # this is ordinary. On tooling that turns up in an incident it establishes
+  # that the sample is a *product* -- someone sells it, licenses it per
+  # customer, and blacklists the ones who leak it.
+  - id: sdk-license-api-call
+    desc: Calls the VMProtect licensing API
+    crit: notable
+    conf: 0.93
+    if:
+      type: symbol
+      kind: call
+      regex: '^VMProtect(ActivateLicense|DeactivateLicense|SetSerialNumber|GetSerialNumberState)$'
+
+  # VMProtectBegin/End bracket the regions handed to the virtual machine.
+  # Their presence in source says which functions the author considered worth
+  # hiding, which is a useful place for an analyst to start.
+  - id: sdk-virtualization-region-call
+    desc: Brackets a VMProtect virtualized region
+    crit: notable
+    conf: 0.93
+    if:
+      type: symbol
+      kind: call
+      regex: '^VMProtect(Begin|End)[A-Za-z]{0,24}$'
+
+composite_rules:
+  # Literals hidden behind the protector *and* execution gated on a vendor
+  # licence. Together these describe a commercially protected, per-customer
+  # licensed native build -- the shape of a paid builder or loader product,
+  # where the same source also ships the payload. Neither leg alone justifies
+  # that reading, so the pairing is what carries it.
+  - id: sdk-licensed-protected-source
+    desc: Protected source gated on a vendor licence
+    crit: suspicious
+    conf: 0.94
+    all:
+      - id: sdk-string-decrypt-call
+      - id: sdk-license-api-call

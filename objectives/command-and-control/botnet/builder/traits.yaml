@@ -1,0 +1,96 @@
+# The build system of a bot, rather than the bot.
+#
+# Recovered crimeware trees turn up far more often as *source and build scripts*
+# than as a compiled sample -- leaked builders, seized repositories, a cracked
+# product reposted on a forum. Everything here reads the toolchain: the defines a
+# builder stamps into each customer's build, the export table it asks the linker
+# to emit, and the operator data files it packages beside the binary. None of it
+# requires the artifact to exist yet, so it fires on the repository and on the
+# build log as well as on the shipped DLL.
+#
+# Written against the *shape* of a bot module, not one family's spelling. The
+# export names below are Zeus/Carberp-lineage in origin but the rules key on the
+# roles -- inject-a-routine, download-and-run, stamp-an-identity, carry a
+# webinject config -- so a rename or a port keeps landing here.
+defaults:
+  platforms: [windows, unix]
+  for: [scripts, source, data]
+  attack: T1055
+  mbc: B0031
+
+traits:
+  # A builder stamps per-build identity into the binary it produces: which bot
+  # this is, which version, when it was cut. Ordinary software carries a product
+  # name and version too -- what distinguishes this is the generated `#define`
+  # naming the unit of the botnet itself, emitted by a script rather than
+  # checked in.
+  - id: bot-identity-build-define
+    desc: Build stamps bot identity into a define
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '#define\s{1,8}BOT_(NAME|VERSION|BUILDTIME|ID)\b'
+
+  # An exported entry point whose job is to run a routine inside another
+  # process. A DLL offering this as part of its public ABI is a payload module
+  # meant to be loaded by an injector, not a library.
+  - id: bot-module-inject-routine-export
+    desc: Module exports an injection routine
+    crit: suspicious
+    conf: 0.88
+    if:
+      type: text
+      regex: '\b\w{0,16}Inject\w{0,10}Routine\b'
+
+  # The other half of the module ABI: fetch a payload and execute it. Exported
+  # so the C2 handler can call it by name on command.
+  - id: bot-module-download-run-export
+    desc: Module exports a download-and-run routine
+    crit: suspicious
+    conf: 0.9
+    attack: T1105
+    if:
+      type: text
+      regex: '\bDownload(Run|Exec|Execute)\w{0,16}\b'
+
+  # Web injects are the operator-supplied rules that rewrite banking pages in
+  # the victim's browser. The file ships beside the builder so the customer can
+  # edit their targets. Every family in this lineage -- Zeus, SpyEye, Citadel,
+  # Carberp, Gozi, Dridex -- carries one under this name. Keyed to the file
+  # rather than the bare word so that analysis write-ups and detection tooling
+  # discussing web injects do not match.
+  - id: webinject-config-artifact
+    desc: Ships a webinject configuration file
+    crit: suspicious
+    conf: 0.93
+    attack: T1185
+    if:
+      type: text
+      regex: '\bwebinjects?\.(txt|cfg|conf|ini|json|dat)\b'
+      case_insensitive: true
+
+composite_rules:
+  # A module that exports both "run this inside another process" and "fetch and
+  # execute this" has published a remote-control ABI. The pair is the finding:
+  # either name alone can be argued for in unusual but real software, while a
+  # single binary offering both as exports is a bot payload module.
+  - id: bot-module-remote-control-abi
+    desc: Module exports injection and download-run
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: bot-module-inject-routine-export
+      - id: bot-module-download-run-export
+
+  # A build tree that stamps bot identity into its output *and* packages a
+  # webinject config is a banking-trojan builder. The first says it produces
+  # numbered members of a botnet; the second says what those members are for.
+  - id: banking-bot-builder-tree
+    desc: Builder stamps bot identity with webinjects
+    crit: hostile
+    conf: 0.97
+    scope: outer
+    all:
+      - id: bot-identity-build-define
+      - id: webinject-config-artifact
