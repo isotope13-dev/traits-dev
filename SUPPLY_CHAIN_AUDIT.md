@@ -3159,3 +3159,49 @@ exact AND filename matches regex", the same fact spelled twice, and the hostile
 of them to fire at all. Nothing referenced the family and no fixture covered it.
 Re-adding ABot needs matchers against its actual source.
 
+### Validators: `subsumed-required-leg` and `conviction-without-content`
+
+Two more Policy checks, both prompted by `abot` and `antisocial`: convictions
+that looked well-evidenced because one fact was counted several times, or that
+rested on nothing but names and sizes.
+
+**`subsumed-required-leg`** flags a `suspicious`/`hostile` composite with an
+`all:` leg that another leg already requires -- the rule matches exactly the same
+files without it. It catches `antisocial::family`, whose `source-archive` leg
+(readme + apee) is contained in its `polymorphic-macro-source` leg
+(readme + apee + aaa), and it would have caught `abot`'s
+`winlogon-userinit-persistence`, which required an exact filename and a regex
+matching that same filename. 211 hits, all convictions; sampling confirms they
+are real (`microsoft-wpj-cleanup-benign-context` requires
+`wpj-cleanup-dsregcmd-workflow` directly and again through
+`microsoft-wpj-cleanup-package`). Scoped to convictions deliberately: a repeated
+leg in a `notable` rule is untidy, in a conviction it manufactures evidence.
+
+**`conviction-without-content`** flags a conviction whose every leg is a name or
+an exact-pinned metric. 20 hits. Two carve-outs were needed and both are stated
+in the code:
+
+- A metric is content. An overlay's entropy, a section ratio, a zeroed PE
+  checksum all measure the bytes, and rules built from them are doing real
+  structural analysis. Only a metric pinned to one value (`min == max`) is a
+  fingerprint -- `digininja-postinstall` required `strings.count` of exactly 13.
+  Before this carve-out the check reported 108, nearly all of them legitimate
+  binary-structure rules.
+- Some objectives *are* the filename. Masquerade lures, typosquats and
+  architecture-suffixed bot drops are detected by what the attacker called the
+  file; `payment-receipt.pdf.exe` is the attack, not a label on it. Those
+  directories are exempt.
+
+Both are excluded in the Makefile pending cleanup. Two of the 20 are worth
+reading first: `objectives/supply-chain/install-hook/package/manifest::npm-package-info-archive`
+rests on the `package_info-<name>-<version>.json` sidecar convention, which is
+the open corpus-shape question below arriving from a different direction; and
+`objectives/supply-chain/hidden-payload/imports::setup-py-ctypes-imports` rests
+only on `metadata/build/pip::setup-py`, so a rule named for ctypes imports checks
+nothing but that the file is a setup.py.
+
+Implementation note: both checks resolve references per leg, and
+`resolve_reference` scans every known id. Unmemoised that took validation from
+~50s to over four minutes; both now share a resolution cache and the run is back
+to ~53s.
+
