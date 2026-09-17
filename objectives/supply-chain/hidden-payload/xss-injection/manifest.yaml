@@ -43,14 +43,39 @@ traits:
       regex: '<\s*script[^>]{0,60}>[^<]{0,120}[(=]'
       case_insensitive: true
 
-  - id: malicious-repo-javascript-protocol
-    desc: "Javascript protocol in repository field"
+  # Registry sites, package explorers and IDE panes render a manifest's URL
+  # fields as clickable links, so a scheme that executes instead of navigating
+  # turns the manifest itself into stored XSS against everyone who views the
+  # package. No field of a published manifest has a legitimate reason to carry
+  # one.
+  #
+  # Deliberately not keyed to a field list. The previous rule here checked only
+  # `repository`, and the payload simply moved to `homepage`, `bugs.url` and
+  # `funding.url` -- fields nothing was watching. Anchoring on the opening quote
+  # of any JSON string value covers every field that exists now plus the ones a
+  # future manifest adds, and the interior `\s` slack matches the `java\tscript:`
+  # and mixed-case (`JaVaScRiPt:`) spellings browsers still honour.
+  - id: manifest-value-script-uri-scheme
+    desc: Manifest URL field uses a script URI
     crit: suspicious
-    conf: 0.9
+    conf: 0.95
     if:
-      type: value
-      path: "repository"
-      substr: "javascript:"
+      type: text
+      regex: '"\s{0,4}(java|vb)\s{0,4}script\s{0,4}:'
+      case_insensitive: true
+
+  # Same delivery, different scheme: a data: URI whose media type renders markup
+  # executes script in the viewer just as well, and base64 hides the payload
+  # from anyone reading the manifest. SVG is included because it carries
+  # <script> -- an image media type is not a safe one here.
+  - id: manifest-value-html-data-uri
+    desc: Manifest URL field embeds an HTML payload
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '"\s{0,4}data\s{0,4}:\s{0,4}(text/html|image/svg|application/xhtml)'
+      case_insensitive: true
 
   - id: malicious-quoted-eval-urlencoded
     desc: "Eval with URL-encoded payload in displayName"
@@ -61,14 +86,18 @@ traits:
       path: "displayName"
       regex: 'eval\(this\.responseText\)|addEventListener\(%22load%22'
 
-  - id: malicious-xss-dot-ht
-    desc: "Malicious .xss.ht domain"
+  # XSS Hunter and its clones host the callback that proves an injection fired.
+  # The old rule pinned one researcher's subdomain in one field; the service
+  # domain is what generalizes, and it is worth seeing wherever it appears in a
+  # manifest rather than only in displayName.
+  - id: xss-callback-service-host
+    desc: XSS callback service hostname
     crit: suspicious
     conf: 0.95
     if:
-      type: value
-      path: "displayName"
-      substr: "vrlvaghela.xss.ht"
+      type: text
+      regex: '\.xss\.(ht|report)\b'
+      case_insensitive: true
 
   - id: malicious-jsonp-callback
     desc: "JSONP callback with alert"
@@ -92,8 +121,23 @@ composite_rules:
       - id: malicious-description-script-src
       - id: malicious-description-script-payload
       - id: malicious-quoted-eval-urlencoded
-      - id: malicious-xss-dot-ht
+      - id: xss-callback-service-host
       - id: malicious-jsonp-callback
+      - id: manifest-value-script-uri-scheme
+      - id: manifest-value-html-data-uri
+
+  # Two independently weaponized manifest fields. A single odd URL could be a
+  # copy-paste accident or a joke left in a scratch package; a manifest that
+  # carries both an executing scheme *and* an encoded markup payload was
+  # authored to fire whichever one the consumer renders. Scored above the
+  # single-field composite because the redundancy is the intent.
+  - id: manifest-multi-vector-xss-payload
+    desc: Manifest carries two XSS delivery vectors
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: manifest-value-script-uri-scheme
+      - id: manifest-value-html-data-uri
 
   - id: xss-readme-injection
     desc: "XSS via javascript: protocol in README"
@@ -115,4 +159,4 @@ composite_rules:
       - id: malicious-description-script-src
       - id: malicious-description-script-payload
       - id: malicious-jsonp-callback
-      - id: malicious-xss-dot-ht
+      - id: xss-callback-service-host

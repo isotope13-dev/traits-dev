@@ -1,0 +1,101 @@
+# Staging a remotely fetched library in the per-user dyld fallback directory.
+# Individual dylib downloads and home paths are neutral; the colocated xattr
+# clearing step distinguishes execution-flow staging from ordinary inspection.
+defaults:
+  platforms: [macos]
+  attack: T1574.004
+  mbc: F0015
+
+traits:
+  - id: source-remote-dylib-url
+    desc: Source references a remote dylib payload
+    crit: suspicious
+    conf: 0.94
+    for: [scripts, source]
+    if:
+      type: string_literal
+      regex: '(?i)^https?://[a-z0-9.-]{1,200}/[a-z0-9._~/%-]{1,240}\.dylib'
+
+  - id: source-user-home-reference
+    desc: Source resolves the user home directory
+    crit: baseline
+    conf: 0.85
+    for: [scripts, source]
+    if:
+      type: text
+      regex: '(?i)(homedir|UserHomeDir|user\.home|expanduser|user_home)'
+
+  - id: source-home-env-reference
+    desc: Source reads HOME from the environment
+    crit: baseline
+    conf: 0.85
+    for: [scripts, source]
+    if:
+      type: text
+      regex: '(?i)(getenv|env::var)\s*\(\s*["'']HOME'
+
+  - id: source-lib-directory-token
+    desc: Source names a lib directory component
+    crit: baseline
+    conf: 0.8
+    for: [scripts, source]
+    if:
+      type: text
+      regex: '["''][/~]*lib/?["'']'
+
+  - id: source-xattr-clear-argv
+    desc: Source clears attributes with xattr
+    crit: notable
+    conf: 0.94
+    for: [scripts, source]
+    if:
+      type: text
+      regex: '(["'']xattr["''][\s\S]{0,100}["'']-c["'']|\bxattr\s+-c\b)'
+
+  - id: jvm-remote-dylib-url
+    desc: JVM class references a remote dylib
+    crit: suspicious
+    conf: 0.98
+    for: [class, java_class]
+    if:
+      type: value
+      path: class.strings[*]
+      regex: '(?i)^https?://.{4,240}\.dylib([?#].*)?$'
+
+  - id: jvm-user-lib-directory
+    desc: JVM class names the user lib directory
+    crit: notable
+    conf: 0.95
+    for: [class, java_class]
+    if:
+      type: value
+      path: class.strings[*]
+      exact: lib
+
+composite_rules:
+  - id: source-user-fallback-dylib-stage
+    desc: Stages a remote dylib in user fallback path
+    crit: hostile
+    conf: 0.98
+    for: [scripts, source]
+    scope: leaf
+    near_lines: 60
+    all:
+      - id: source-remote-dylib-url
+      - id: source-lib-directory-token
+      - id: source-xattr-clear-argv
+    any:
+      - id: source-user-home-reference
+      - id: source-home-env-reference
+
+  - id: jvm-user-fallback-dylib-stage
+    desc: JVM stages dylib in user fallback path
+    crit: hostile
+    conf: 0.99
+    for: [class, java_class]
+    scope: leaf
+    all:
+      - id: jvm-remote-dylib-url
+      - id: jvm-user-lib-directory
+      - id: micro-behaviors/fs/attributes/xattr::class-xattr-tool
+      - id: micro-behaviors/process/create/shell/selection::jvm-posix-shell-command-flag

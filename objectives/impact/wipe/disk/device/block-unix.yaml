@@ -66,22 +66,13 @@ traits:
     desc: Scans mount table for /dev devices
     crit: notable
     conf: 0.9
-    for: [python, go, perl, javascript, typescript, rust, c, cpp, zig]
+    for: [scripts, source]
     if:
       type: text
       regex: '/proc/mounts[\s\S]{0,400}/dev/'
     unless:
       - id: well-known/app/infrastructure/docker::source-tree
       - id: well-known/app/infrastructure/docker::docker-source-archive-context
-
-  - id: lang-mounts-dev-scan-managed
-    desc: Managed source scans mounts for devices
-    crit: notable
-    conf: 0.9
-    for: [ruby, php, elixir, java, kotlin, csharp, swift]
-    if:
-      type: text
-      regex: '/proc/mounts[\s\S]{0,400}/dev/'
 
   - id: go-openfile-block-dev
     desc: Go OpenFile opens a block device RW
@@ -145,6 +136,77 @@ traits:
       type: text
       regex: 'dd\s+if=/dev/zero\s+of=.{0,40}(\{s\}|%s|#\{\w+\}|\$\{?\w+)'
 
+  # Managed/systems languages commonly pass dd arguments as an array and
+  # construct only the output argument. Keep this narrower than the generic
+  # argv atom: it requires dd, zero input, and a dynamically built `of=` value
+  # in one short expression. Device provenance is supplied by the mounted-
+  # device composite below.
+  - id: dd-argv-tool-source
+    desc: Source names dd as an executable
+    crit: notable
+    conf: 0.9
+    for: [csharp, elixir, rust, swift]
+    if:
+      type: text
+      regex: '["''](/usr/bin/)?dd["'']'
+
+  - id: dd-zero-input-argument-source
+    desc: Source supplies dd zero input argument
+    crit: notable
+    conf: 0.9
+    for: [csharp, elixir, rust, swift]
+    if:
+      type: text
+      substr: if=/dev/zero
+
+  - id: dd-interpolated-output-argument
+    desc: Source interpolates dd output argument
+    crit: notable
+    conf: 0.92
+    for: [csharp, rust, swift]
+    if:
+      type: text
+      regex: 'of=(\{[A-Za-z_]{0,32}\}|%s|#\{\w+\}|\$\w+|\\\(.{1,60}\))'
+
+  - id: dd-concatenated-output-argument
+    desc: Source concatenates dd output argument
+    crit: notable
+    conf: 0.92
+    for: [elixir]
+    if:
+      type: text
+      regex: 'of=["'']\s*(\+|<>)'
+
+  - id: jvm-dd-tool-string
+    desc: JVM string names dd executable
+    crit: notable
+    conf: 0.97
+    for: [class, java_class]
+    if:
+      type: value
+      path: class.strings[*]
+      exact: dd
+
+  - id: jvm-dd-zero-input-string
+    desc: JVM string names dd zero input
+    crit: notable
+    conf: 0.97
+    for: [class, java_class]
+    if:
+      type: value
+      path: class.strings[*]
+      exact: if=/dev/zero
+
+  - id: jvm-dd-output-prefix-string
+    desc: JVM string builds dd output argument
+    crit: notable
+    conf: 0.97
+    for: [class, java_class]
+    if:
+      type: value
+      path: class.strings[*]
+      exact: of=
+
   - id: dd-zero-block-device-argv
     desc: dd argv zero fill targeting block device
     crit: notable
@@ -201,6 +263,29 @@ traits:
       regex: '("shred"|shred ).{0,60}/dev/(sd|nvme|vd|xvd|da|ada)'
 
 composite_rules:
+  - id: dd-zero-dynamic-output-source
+    desc: Builds dynamic dd zero-fill output argument
+    crit: notable
+    conf: 0.94
+    for: [csharp, elixir, rust, swift]
+    near_bytes: 600
+    all:
+      - id: dd-argv-tool-source
+      - id: dd-zero-input-argument-source
+    any:
+      - id: dd-interpolated-output-argument
+      - id: dd-concatenated-output-argument
+
+  - id: jvm-dd-zero-argv
+    desc: JVM builds dd zero-fill argument vector
+    crit: notable
+    conf: 0.97
+    for: [class, java_class]
+    all:
+      - id: jvm-dd-tool-string
+      - id: jvm-dd-zero-input-string
+      - id: jvm-dd-output-prefix-string
+
   - id: lang-exec-dd-urandom-dev
     desc: Language executes dd urandom against device
     crit: suspicious
@@ -239,6 +324,7 @@ composite_rules:
       - id: dd-zero-dynamic-device-argv
       - id: micro-behaviors/fs/write/file/shell::go-dd-mount-query-output
       - id: micro-behaviors/fs/write/file/shell::go-dd-mount-table-output
+      - id: micro-behaviors/fs/write/file/shell::go-dd-large-dynamic-output
     unless:
       # Deny-rule / guardrail fixtures quote wipe commands as blocked examples.
       - id: well-known/tool/detection/agent-glovebox::archive-context
@@ -263,43 +349,40 @@ composite_rules:
     desc: Source wipes mounted devices through a command
     crit: hostile
     conf: 0.96
-    for: [source, c, cpp, rust, perl, javascript, typescript, ruby, php, elixir, java, kotlin, csharp, swift, zig]
+    for: [source]
     scope: file
+    near_lines: 80
     all:
       - id: lang-mounts-dev-scan
       - id: dd-zero-device-format-source
-    any:
-      - id: micro-behaviors/process/create/system::elixir-system-cmd
-      - id: micro-behaviors/process/create/shell/spawn::system-symbol
-      - id: micro-behaviors/process/create/shell/command-mode::windows-command-shell-invocation
-      - id: micro-behaviors/process/create/direct::zig-child-init
-      - id: micro-behaviors/process/create/system::rust-command
-      - id: micro-behaviors/process/create/direct::ruby-spawn
-      - id: micro-behaviors/process/create/spawn::spawn-call
-      - id: micro-behaviors/process/create/shell/spawn::php-shell-exec
-      - id: micro-behaviors/process/create/direct::rust-spawn
-      - id: micro-behaviors/process/create/spawn::start
+      - id: micro-behaviors/process/create/exec::child-process-execution
+
+  - id: source-mounted-dynamic-dd-wiper
+    desc: Source zero-fills enumerated mounted devices
+    crit: hostile
+    conf: 0.97
+    for: [csharp, elixir, rust, swift]
+    scope: file
+    near_lines: 80
+    all:
+      - id: lang-mounts-dev-scan
+      - id: dd-zero-dynamic-output-source
+      - id: micro-behaviors/process/create/exec::child-process-execution
 
   - id: source-mounted-dd-wiper
     desc: Source wipes mounted devices with dd
     crit: hostile
     conf: 0.95
-    for: [source, c, cpp, rust, perl, javascript, typescript, ruby, php, elixir, java, kotlin, csharp, swift, zig]
+    # Go uses the stricter large-overwrite composite below, and shell has its
+    # own device-variable rules. Mount enumeration plus a generic dd-zero
+    # command is otherwise bound to the nearby execution site.
+    for: [scripts, source, -go, -shell]
     scope: file
+    near_lines: 80
     all:
       - id: lang-mounts-dev-scan
       - id: micro-behaviors/fs/write/file/shell::dd-zero-input-command
-    any:
-      - id: micro-behaviors/process/create/system::elixir-system-cmd
-      - id: micro-behaviors/process/create/shell/spawn::system-symbol
-      - id: micro-behaviors/process/create/shell/command-mode::windows-command-shell-invocation
-      - id: micro-behaviors/process/create/shell/spawn::php-shell-exec
-      - id: micro-behaviors/process/create/direct::zig-child-init
-      - id: micro-behaviors/process/create/system::rust-command
-      - id: micro-behaviors/process/create/direct::ruby-spawn
-      - id: micro-behaviors/process/create/spawn::spawn-call
-      - id: micro-behaviors/process/create/direct::rust-spawn
-      - id: micro-behaviors/process/create/spawn::start
+      - id: micro-behaviors/process/create/exec::child-process-execution
 
   - id: source-mounted-argv-wiper
     desc: Source wipes mounted devices via dd arguments
@@ -307,6 +390,7 @@ composite_rules:
     conf: 0.95
     for: [source, python, rust, perl, javascript, typescript, c, cpp, ruby, php, elixir, java, kotlin, csharp, swift, zig]
     scope: file
+    near_lines: 80
     all:
       - id: lang-mounts-dev-scan
       - id: dd-zero-dynamic-device-argv
@@ -316,20 +400,26 @@ composite_rules:
       - id: micro-behaviors/process/create/spawn::start
       - id: micro-behaviors/process/create/direct::rust-spawn
 
-  - id: source-managed-mounted-dd-wiper
-    desc: Managed source wipes mounted devices
+  - id: jvm-mounted-device-wiper
+    desc: JVM zero-fills enumerated mounted devices
     crit: hostile
-    conf: 0.95
-    for: [ruby, php, elixir, java, kotlin, csharp, swift]
-    scope: file
+    conf: 0.99
+    for: [class, java_class]
     all:
-      - id: lang-mounts-dev-scan-managed
-      - id: micro-behaviors/fs/write/file/shell::dd-zero-input-command
-    any:
-      - id: micro-behaviors/process/create/system::elixir-system-cmd
-      - id: micro-behaviors/process/create/shell/spawn::php-shell-exec
-      - id: micro-behaviors/process/create/direct::ruby-spawn
-      - id: micro-behaviors/process/create/spawn::start
+      - id: micro-behaviors/fs/proc/mounts::proc-mounts-path
+      - id: jvm-dd-zero-argv
+      - id: micro-behaviors/process/create/exec::child-process-execution
+
+  - id: go-mounted-large-dd-wiper
+    desc: Go zero-fills enumerated mounted devices
+    crit: hostile
+    conf: 0.98
+    for: [go]
+    near_lines: 40
+    all:
+      - id: lang-mounts-dev-scan
+      - id: micro-behaviors/fs/write/file/shell::go-dd-large-dynamic-output
+      - id: micro-behaviors/process/create/exec::child-process-execution
 
   - id: lang-exec-shred-dev
     desc: Language executes shred against block device

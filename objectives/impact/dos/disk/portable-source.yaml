@@ -11,7 +11,108 @@ defaults:
   for: [zig]
   attack: T1499.001
 
+traits:
+  # Elixir commonly expresses unbounded work as tail recursion rather than a
+  # syntactic `while (true)`. This atom identifies an increasing recursive
+  # producer step; the hostile composite still requires a hidden cache path,
+  # a megabyte buffer, a thousand writes, indexed filenames, and file output.
+  - id: elixir-increasing-recursive-producer
+    desc: Elixir recursively advances an output index
+    crit: notable
+    conf: 0.9
+    for: [elixir]
+    if:
+      type: text
+      regex: '\bdo:\s*[a-z_][A-Za-z0-9_]*\s*\([^\n)]{0,100}\b[A-Za-z_]\w*\s*\+\s*[1-9]\d*'
+
+  # Structural JVM bytecode evidence used below. Neither backward branches nor
+  # a large byte-array allocation is suspicious alone; together with the
+  # output-stream and hidden indexed cache path they describe a disk filler.
+  - id: jvm-two-backward-goto-branches
+    desc: JVM repeated counter backedges
+    crit: notable
+    conf: 0.9
+    for: [class, java_class]
+    count_min: 2
+    if:
+      type: hex
+      # Positive iinc followed by goto with a negative signed 16-bit
+      # displacement. The high byte is F? for compact javac methods.
+      pattern: '84 ?? 01 A7 F? ??'
+
+  - id: jvm-megabyte-byte-array-constant
+    desc: JVM one-megabyte allocation constant
+    crit: notable
+    conf: 0.94
+    for: [class, java_class]
+    if:
+      type: hex
+      # CONSTANT_Integer tag followed by the big-endian value 1,048,576.
+      pattern: '03 00 10 00 00'
+
+  - id: jvm-thousand-iteration-constant
+    desc: JVM bytecode loads a 1024 iteration bound
+    crit: baseline
+    conf: 0.94
+    for: [class, java_class]
+    if:
+      type: hex
+      # sipush 1024
+      pattern: '11 04 00'
+
+  - id: jvm-indexed-output-filename
+    desc: JVM class formats an indexed output filename
+    crit: notable
+    conf: 0.92
+    for: [class, java_class]
+    if:
+      type: value
+      path: class.strings[*]
+      regex: '^[A-Za-z_.-]{0,24}%0?[3-8]d(\.[A-Za-z0-9]{1,8})?$'
+
+  - id: jvm-files-output-stream
+    desc: JVM class creates a filesystem output stream
+    crit: baseline
+    conf: 0.96
+    for: [class, java_class]
+    if:
+      type: symbol
+      kind: import
+      exact: java/nio/file/Files.newOutputStream
+
 composite_rules:
+  - id: unbounded-cache-disk-fill-elixir
+    desc: Elixir recursively writes gigabyte chunks into hidden cache files
+    crit: hostile
+    conf: 0.99
+    for: [elixir]
+    near_lines: 45
+    all:
+      - id: micro-behaviors/fs/path/location::source-hidden-user-cache-directory
+      - id: micro-behaviors/mem/alloc/heap::megabyte-buffer-allocation
+      - id: micro-behaviors/data/control-flow/loop::receiver-loop-bound-1024
+      - id: micro-behaviors/data/string/assembly::zero-padded-integer-format
+      - id: micro-behaviors/fs/write/file/full::source-buffer-write-call
+      - id: elixir-increasing-recursive-producer
+
+  # Bounds are intentionally file-wide for bytecode: constant-pool facts and
+  # the method instructions that use them live in different regions. The six
+  # independent requirements make the combination narrow despite that loose
+  # spatial relationship.
+  - id: unbounded-hidden-cache-disk-fill-jvm
+    desc: JVM bytecode repeatedly fills hidden user cache files
+    crit: hostile
+    conf: 0.99
+    for: [class, java_class]
+    all:
+      - id: micro-behaviors/fs/path/location::jvm-hidden-user-cache-directory
+      - id: jvm-megabyte-byte-array-constant
+      - id: jvm-thousand-iteration-constant
+      - id: jvm-indexed-output-filename
+      - id: jvm-files-output-stream
+      - id: micro-behaviors/data/buffer::jvm-outputstream-write
+      - id: jvm-two-backward-goto-branches
+
   - id: unbounded-hidden-cache-disk-fill
     desc: Unbounded writes fill hidden cache storage
     crit: hostile

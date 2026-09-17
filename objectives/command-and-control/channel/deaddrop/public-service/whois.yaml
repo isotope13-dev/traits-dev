@@ -1,0 +1,112 @@
+# WHOIS records used as a dead-drop endpoint resolver. A WHOIS lookup alone is
+# normal administration; the malicious signal is decoding an exact 32-bit hex
+# contact-field value into a dotted IPv4 relay address.
+defaults:
+  platforms: [linux, macos, windows]
+  attack: T1071
+  mbc: B0030
+
+traits:
+  - id: source-whois-server-host
+    desc: Source names a WHOIS server host
+    crit: notable
+    conf: 0.9
+    for: [scripts, source]
+    if:
+      type: text
+      regex: '(?i)\bwhois\.[a-z0-9.-]{3,240}\b'
+
+  - id: source-whois-contact-hex32
+    desc: Source parses WHOIS 32-bit contact hex
+    crit: suspicious
+    conf: 0.97
+    for: [scripts, source]
+    if:
+      type: text
+      # The optional doubled braces cover format-string escaping such as Zig's
+      # `{{8}}`; both forms represent the regex quantifier `{8}`.
+      regex: '(?i)(descr|address|e-mail)[^\r\n]{0,120}\[0-9a-f\]\{\{?8\}\}?'
+
+  - id: source-hex32-high-octet
+    desc: Source extracts the high IPv4 octet
+    crit: notable
+    conf: 0.9
+    for: [scripts, source]
+    if:
+      type: text
+      regex: '(?i)(>>|>>>|\bshr\b|bsr\s*\()[^\r\n]{0,24}24'
+
+  - id: source-hex32-second-octet
+    desc: Source extracts the second IPv4 octet
+    crit: notable
+    conf: 0.9
+    for: [scripts, source]
+    if:
+      type: text
+      regex: '(?i)(>>|>>>|\bshr\b|bsr\s*\()[^\r\n]{0,24}16'
+
+  - id: source-hex32-third-octet
+    desc: Source extracts the third IPv4 octet
+    crit: notable
+    conf: 0.9
+    for: [scripts, source]
+    if:
+      type: text
+      regex: '(?i)(>>|>>>|\bshr\b|bsr\s*\()[^\r\n]{0,24}8'
+
+  - id: jvm-whois-server-host
+    desc: JVM class names a WHOIS server host
+    crit: notable
+    conf: 0.98
+    for: [class, java_class]
+    if:
+      type: value
+      path: class.strings[*]
+      regex: '(?i)^whois\.[a-z0-9.-]{3,240}$'
+
+  - id: jvm-whois-contact-hex32
+    desc: JVM parses WHOIS 32-bit contact hex
+    crit: suspicious
+    conf: 0.99
+    for: [class, java_class]
+    if:
+      type: value
+      path: class.strings[*]
+      regex: '(?i)(descr|address|e-mail).{0,100}\[0-9a-f\]\{8\}'
+
+composite_rules:
+  - id: source-hex32-to-ipv4-octets
+    desc: Splits a 32-bit value into IPv4 octets
+    crit: notable
+    conf: 0.95
+    for: [scripts, source]
+    near_lines: 8
+    all:
+      - id: source-hex32-high-octet
+      - id: source-hex32-second-octet
+      - id: source-hex32-third-octet
+
+  - id: source-whois-ipv4-dead-drop
+    desc: Decodes a WHOIS contact field into a C2 relay
+    crit: hostile
+    conf: 0.99
+    for: [scripts, source]
+    scope: leaf
+    near_lines: 80
+    all:
+      - id: source-whois-server-host
+      - id: source-whois-contact-hex32
+      - id: source-hex32-to-ipv4-octets
+
+  # Java bytecode retains the server and attack-specific contact regex as
+  # cached constant-pool strings, but not useful source locations for the
+  # integer-shift sequence. Their conjunction remains highly distinctive.
+  - id: jvm-whois-ipv4-dead-drop
+    desc: JVM decodes WHOIS contact data into a C2 relay
+    crit: hostile
+    conf: 0.99
+    for: [class, java_class]
+    scope: leaf
+    all:
+      - id: jvm-whois-server-host
+      - id: jvm-whois-contact-hex32
