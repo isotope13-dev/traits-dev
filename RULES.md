@@ -57,6 +57,14 @@ So when a false positive comes from a trait that searches for a generic capabili
 
 > **Worked example.** A regex that merely reads `$_SERVER['HTTP_REFERER']`, filed under `objectives/command-and-control/backdoor/webshell/obf-dispatch/` and named `http-referer-to-reflection` ("referer used in reflective dispatch"), false-positives on every plugin that reads the Referer header. The matcher only detects *"reads the Referer request header"* — a neutral capability. The fix is to relocate + rename it under `micro-behaviors/communications/http/...` and have the webshell composite reference it cross-directory; the reflective-dispatch intent comes from the *other* composite legs (the dynamic-call atoms), not from this read. Demoting it to `component` is the wrong fix: the bare-referer match would still surface to users (web UI, JSON, diffs, and possibly the CLI), now mislabeled as a webshell building block and keyed to the wrong ML feature.
 
+### Don't convict on a name someone can change
+
+Matching a filename is fine; **gating a `suspicious`/`hostile` verdict on one is only fine when the format mandates the name.** `SKILL.md`, `package.json` and `AUTOEXEC.BAT` are properties of the platform — the attacker cannot rename them and still have the thing work — so a conviction may require them. A name the *attacker* picked (a dropped `motivate.bat`, a `_runtime.js` sidecar, a campaign token, a C2 host) survives only until the next build, so it corroborates in `any:` and never gates in `all:`. A name the *collector* picked — the outer archive's own filename, such as `Win32.Volk.7z` or `2026-03-27-telnyx-v4.87.2.zip` — carries no attack information at all: it was assigned when the specimen was filed and changes when it is re-collected.
+
+The practical test: **would this rule still fire if the file were renamed?** If not, and the name is not mandated by the format, the rule detects one artifact rather than the malware. The same applies to exact sizes and metric counts — a rule whose required legs are only name, size and `strings.count` is a file hash in behavioural clothing. Every conviction needs at least one leg derived from content.
+
+See [Matcher Defines Identity](TAXONOMY.md#matcher-defines-identity) in TAXONOMY.md for the full rule.
+
 ## Trait Placement & IDs
 
 - IDs auto-prefixed by directory path (e.g., `traits/micro-behaviors/process/create/shell/` → prefix `micro-behaviors/process/create/shell`)

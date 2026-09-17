@@ -105,6 +105,18 @@ A trait fails this rule when its name, description, or location claims an intent
 
 When a generic capability false-positives because it sits in the wrong tier, fix the placement. Generic capabilities such as process execution, interpreter invocation, network clients, registry manipulation, file writes to sensitive locations, and persistence surfaces belong where those behaviors are described — usually under `micro-behaviors/` — and should stay `notable` or higher when they are analyst-relevant. Notable in terms of what would be interesting to a security engineer for triage: such as who, what, when, where of a program (even if benign). Objective traits should compose those capabilities with intent-specific evidence rather than bury generic atomics as mislabeled `component` rules.
 
+### Names an attacker or a collector chose
+
+**A trait may match a filename. A conviction may not depend on one that the attacker or the collector picked.** Matching a name is not the problem; resting a `suspicious`/`hostile` verdict on a name that costs nothing to change is. Three cases, and only the first can carry weight:
+
+- **The format mandates it.** `SKILL.md`, `package.json`, `AUTOEXEC.BAT`, `MANIFEST.MF`. The attacker has no choice: a malicious agent skill that omits `SKILL.md` is not a skill, and a boot script that is not named `AUTOEXEC.BAT` does not run at boot. These are properties of the platform, so requiring one in `all:` is correct — and they belong in `metadata/`, `micro-behaviors/` or `well-known/app/` as format facts at `notable`, which is where a conviction composite then references them.
+- **The attacker chose it.** A dropped `motivate.bat`, a `_runtime.js` sidecar, a campaign token, a C2 hostname, a chosen function name. Real evidence about *this* sample, and worth stating — but the next build renames it for free, so it corroborates in `any:` and never gates in `all:`. This is the rule the supply-chain audit already states for matchers: chosen local identifiers must not become identity signatures.
+- **A collector chose it.** The name of the outer artifact being scanned — `Win32.Volk.7z`, `2026-03-27-telnyx-v4.87.2.zip`, `telnyx-4.87.2.tgz`. Nobody in the attack picked it; it was assigned when the specimen was fetched or filed, and it changes on re-collection. It carries no attack information at any criticality.
+
+The distinction is container versus member, not file extension. A member inside an archive is named by the attacker or by the format; the container itself is named by whoever downloaded it. A literal ending in an archive extension is the static approximation of "this can only ever match the container", which is what a validator can check at author time.
+
+**A conviction needs at least one content-derived required leg.** Names, sizes, and metrics describe what a file *is called*, *weighs*, and *counts* — never what it does. A rule assembled entirely from those is a file hash in behavioural clothing: `size_min` and `size_max` both 1917, an exact `.tgz` basename, and `strings.count` exactly 13 convict one artifact and nothing else, including the next build of the same malware. State the behavior, then let the name corroborate it.
+
 ### Tier Dependencies
 
 | Tier | Can Reference | Rationale |

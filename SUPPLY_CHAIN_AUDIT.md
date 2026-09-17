@@ -2960,3 +2960,202 @@ forced hostile from a gate or a generic network call.
 Updated pinned scan: 599 roots, 227 with at least one hostile ID and 372
 without. Output: `/tmp/sc-current-gopass2.XXXXXX.jsonl`; SHA-256
 `8b30153bff22ac8b71bdc2cce642684db6b7160c852c5d20e54b415939103dfa`.
+
+## Family-directory decomposition — 2026-09-17
+
+`well-known/malware/supply-chain/` held 82 family directories. The bar for one is
+now stated in TAXONOMY.md: *recognized* means recognized by name outside this
+repository, which is the same rule this document already applies to matchers when
+it says package names must not become identity signatures. A directory per
+withdrawn npm release applies that rule to matchers and then abandons it at the
+directory level.
+
+TAXONOMY.md prescribes decomposition rather than deletion: put the behavior under
+the best-fitting `objectives/` hierarchy and let each named family rule reference
+that objective. A family directory is a thin identity layer over technique rules,
+not a self-contained bundle of behavior plus indicators. So each family splits
+into what its matchers actually find -- behavior, which relocates, and identity,
+which only earns a directory if the name clears the bar.
+
+Done this pass, 82 -> 69 directories, `make validate` green throughout:
+
+- 15 withdrawn-dependency families -> `objectives/supply-chain/trojanized/hidden-dependency/`,
+  which already held `easy-day-js.yaml` and `next-runtimejs.yaml` in exactly that
+  shape. `easy-day-js` was filed in both places at once, and the objectives copy
+  had restated its matcher as a `text` regex because the `value` spelling lived in
+  `well-known/malware/`, which objectives may not reference. Moving the fact to
+  `metadata/package/dependencies/manifest/identity` -- which objectives may
+  reference -- removed the duplicate. The misfiling was manufacturing duplicate
+  matchers. `bjs-lint-builder` and `sjs-builder` proved to be one rule with two
+  package names.
+- `svg-content-validation` + `svg-decoy-loader` -> one file under
+  `objectives/supply-chain/hidden-payload/staging/`. They cross-referenced each
+  other, and the decoy stub's own header already argued the objectives case: the
+  stub ships in unrelated squats, so keying on it survives a change of both the
+  squatted package and the staged second stage.
+
+### Taxonomy gaps recorded
+
+28 of the remaining 69 decompose to nothing: every matcher is a literal indicator
+-- a C2 host, a publisher, an archive hash, a package name -- with no reusable
+behavior to relocate. Under TAXONOMY.md these are the "document the taxonomy gap"
+case rather than a silent delete, because a family contributing no reusable
+behavior and carrying no recognized name is not a family:
+
+agenthub-ai, aintect, arkenar, aur-gimp-beautify-shellrc-deface,
+blast0x-stealer, c2-lab, ccsec, characterai-poc, dakumangalsingh,
+dzhunts-dns-exfil, escapewu-antigravity-rt-extract, frank-poc,
+jfrog-typosquat, json-colour, libxmljsololo, microsoftsystem64,
+openclaw-nanopdf, openclaw-stveenli-ytwatchervideo, poppo213, pptest,
+sleepergem, sme-foundation-frame-manager, solana-validator-depayhub,
+temptation-js, winston-middleware, wpfuihelpercore,
+zackkorman-skills-security-review, zomato-mcp-auth-helper
+
+Three more decompose to nothing but keep their directories on the name, which is
+the whole point of the bar rather than an exception to it: `fsevents`,
+`getcookies-rce`, `glassworm`. Raw indicators are the right content for a family
+everyone can name.
+
+Several are covered in technique form already. The probe and canary families
+(`bsrc-rce-widget`, `frank-poc`, `characterai-poc`, `pptest`, `c2-lab`) restate
+behavior that `objectives/supply-chain/recon-exfil/{oast,registry/canary,registry/probe}`
+expresses generically, down to `npm-poc-preinstall-oob-beacon` and
+`dependency-confusion-install-canary`. `digininja-postinstall` is the clearest
+case: an exact `.tgz` basename, `size_min`/`size_max` both 1917, and three
+`metrics` traits pinned to one file (`strings.count` exactly 13). That is a file
+hash expressed as four behavioural-looking traits, and it can match nothing else.
+
+The remaining 38 still hold behavior worth extracting and have not been decided.
+Some keep their directory on the merits once decomposed -- `shai-hulud`,
+`colors-js`, `ultralytics`, `s1ngularity`, `contagious-interview`, `daemontools-cc`
+clear the name bar.
+
+### Verification limits
+
+`make validate` cannot confirm that dissolving a family preserves coverage. The
+`supply-chain-corpus` fixtures are synthetic, with invented vendor names
+(`npm-dunelineprime-dns-case-exfil-linux.tgz`), and no fixture exercises any of
+these 82 directories. Removing all of them leaves the corpus at 563/563, which
+measures nothing about them. Relocation is therefore safe to do under validate
+alone -- the rule still exists and still fires -- while dropping an identity layer
+is a judgement about whether the technique rules already cover the sample, and
+wants a real-sample scan before it is made.
+
+### The `vscode/` bucket
+
+`well-known/malware/supply-chain/vscode/` held six unrelated extensions under a
+platform name -- rejected twice by TAXONOMY.md, once as a platform directory and
+once as a bundle of traits. Dissolved: each extension now has its own directory,
+and only `glassworm` clears the name bar; the rest join the gap list above.
+
+`dingzex-dsp-ide` was removed outright rather than split. Its family is already
+expressed in `objectives/supply-chain/hidden-payload/extensions/vscode/vscode-archive.yaml`
+as `dingzex-dsp-ide-package` (vsix-extension-file + dsp-ide-name +
+dingzex-publisher-token), the same cross-tier duplication `easy-day-js` showed.
+What the `well-known/` copy added was an exact `.vsix` basename and a 300-320 MB
+size window, convicting `hostile` at 0.999 on a filename and a file size. The
+family stays detected through the objectives rule, at `suspicious`, which is the
+honest weight for that evidence.
+
+The techniques the other five use are covered generically in the same tree:
+`vscode-malicious.yaml` carries `oauth-uri-exfil`, `persistence`,
+`vscode-local-file-upload` and `vscode-eval-network-typosquat`, and
+`persistorito`'s own persistence composite already references
+`objectives/persistence/login/startup/user-folder::vscode-dual-login-persistence`.
+`persistorito` is the extreme of the pattern this audit is about: sixteen literal
+identity traits -- display name, description, banner text, batch filename, two
+success messages -- for one extension.
+
+`fake-vpn-extension-farm` is the same shape under a bucket name ("farm" is a
+description, not a family). Its technique is fully covered by
+`objectives/collection/network/proxy/browser-extension.yaml`, which carries
+`extension-raw-ip-proxy-relay-farm`, `extension-paid-socks5-vpn-fleet` and
+`extension-hidden-proxy-destination`; what the family directory adds is eight
+campaign domain lists.
+
+### Rules keyed to one artifact filename
+
+A sweep for `size_min == size_max` and exact archive basenames found 20 families
+pinned to a single artifact. Four required a *collection* filename -- the
+date-prefixed form this repository stores samples under, not anything a registry
+serves:
+
+| composite | crit | required basename |
+|---|---|---|
+| `characterai-poc::malicious-oast-preinstall-zip` | hostile | `2026-03-21-characterai-poc-v1.0.0.zip` |
+| `poppo213::poppo213-11-encrypted-flood-package` | hostile | `2025-03-28-poppo213-v1.1.zip` |
+| `telnyx::telnyx-4872-encrypted-source-archive` | hostile | `2026-03-27-telnyx-v4.87.2.zip` |
+| `middy-js::middy-js-archive-shape` | component | `2025-05-04-middy-js-v5.0.8.zip` |
+
+npm serves `telnyx-4.87.2.tgz`; the collection date in front of it is an artifact
+of when the specimen was fetched and changes on re-collection. Three hostile
+convictions could therefore only ever fire on our own stored copy. The four
+basename legs are removed; every affected composite keeps at least two
+content-derived legs, so the rules now depend on what is inside the archive.
+
+This is the failure the admission rule at the top of this document already names
+-- chosen local identifiers becoming identity signatures, and template accidents
+not separated from behavioural invariants. It is worth re-reading as a live
+defect class rather than a style note.
+
+The other 16 require a plausible real filename (`winston-middleware-4.5.0.tgz`,
+`nintendoamerica-ncom-99.0.21.tgz`) and remain: one artifact each, defeated by a
+rename, but not self-defeating. Left in place pending the wider bar decision.
+
+An open question the sweep raised and did not settle: those archive composites
+also key on `package_info-<name>-<version>.json` sidecars and `sources/<pkg>/...`
+member paths, which are this corpus's reconstruction convention rather than
+members of the published artifact. If that is deliberate -- corpus triage rather
+than field detection -- it should be stated, because the rules do not currently
+distinguish the two and read as field coverage.
+
+### Validator: `container-name-conviction`
+
+Added to cleave as a Policy check. A `suspicious`/`hostile` composite may not
+*require* -- in `all:` -- an exact basename match on the scanned container. That
+name is assigned when a specimen is fetched or filed, so the rule convicts one
+stored copy. The check flags a literal ending in an archive extension, or one
+carrying a specimen-collection date, and its `fix:` steers to the right answer in
+order: delete the leg and rest on content; if the name is real evidence move it
+to `any:` so it corroborates instead of gates; and only a format-mandated name
+(`SKILL.md`, `package.json`, `AUTOEXEC.BAT`) may be required, stated in
+`metadata/` or `well-known/app/` as a notable format fact.
+
+It finds 39, with no false positives: every hit is a zoo or collection archive
+name. `TOOL.py`, `motivate.bat` and `_runtime.js` are required legs elsewhere and
+are correctly left alone -- attacker-chosen inner filenames, which the guidance
+steers away from but which a static check cannot separate from format-mandated
+ones.
+
+All 39 are now fixed and the check runs unexcluded. Deleting the legs was not on
+its own the fix, and the tree's other validators proved it: the first attempt
+left 8 hostile composites with fewer than two notable legs, 11 single-item
+`any:`/`all:` clauses, and 3 pairs that became literal duplicates.
+
+What that exposed is the substantive result. **Nine hostile composites were
+convicting on one piece of evidence plus the filename.** `dakumangalsingh`,
+`nintendoamerica-ncom`, `yelp-react-component-badge`, `metastealer`,
+`realtime-spy`, `mirai-variant` and `objectives/impact/degrade/dos` each had a
+`hostile` rule that, with the collector's filename removed, wrapped a single
+`notable`/`suspicious` leg -- usually one gzip byte-layout. A byte layout is not
+a conviction, so those wrappers are gone and the evidence traits now stand at
+their own criticality. `frigid-package-layout` and `frigid-package-archive`
+turned out to be the same rule once the basename left the hostile one; the three
+specific member names carry it, so only the hostile one remains.
+
+`volk` kept every rule: each composite already carried `vb6 Source.zip` plus a
+Volk-specific module path (`Modules/hFtlogs.bas`), so the archive name was adding
+nothing the contents did not already say.
+
+**`well-known/malware/botnet/abot` was deleted.** Its four traits were all `path`
+matchers on the archive filename -- exact, regex, an `ABot` substring and a
+`.c.7z` suffix -- each size-gated to 460-480 KB, permuted into 13 composites
+named `http-flood-ddos`, `credential-harvest-logging`, `myspace-phishing-module`,
+`winlogon-userinit-persistence` and so on. None of them matched any of the
+behavior it was named for; `winlogon-userinit-persistence` was "filename is
+exact AND filename matches regex", the same fact spelled twice, and the hostile
+`family` rule was built from four such permutations. The traits were also scoped
+`for: [c, cpp]`, so a C file would have had to be named `Win32.ABot.c.7z` for any
+of them to fire at all. Nothing referenced the family and no fixture covered it.
+Re-adding ABot needs matchers against its actual source.
+
