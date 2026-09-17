@@ -1,0 +1,90 @@
+# The PE counterpart to elf-growth.yaml: source that rewrites an executable's
+# own header fields to make room for something new.
+#
+# Reading a PE header is ordinary -- every packer, debugger and build tool does
+# it. Writing the section count back one higher, growing SizeOfImage to cover
+# the new section, and seeking to e_lfanew to put the NT headers back is a PE
+# editor, and in practice the "add section" module of a crypter or file
+# infector. The field names are the same whatever language the stub is written
+# in, which is why this stays on text rather than a VB-specific spelling.
+defaults:
+  platforms: [windows]
+  for: [scripts, source]
+  attack: T1027.002
+  mbc: F0001
+
+traits:
+  - id: pe-section-count-increment
+    desc: Increments the PE section count
+    crit: notable
+    conf: 0.95
+    if:
+      type: text
+      regex: 'NumberOfSections\s*=\s*[\w.]{0,40}NumberOfSections\s*\+'
+
+  - id: pe-size-of-image-growth
+    desc: Grows the PE SizeOfImage field
+    crit: notable
+    conf: 0.93
+    if:
+      type: text
+      regex: 'SizeOfImage\s*=\s*[\w.]{0,40}SizeOfImage\s*\+'
+
+  - id: pe-nt-header-write-back
+    desc: Writes back at the PE header offset
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\b(Put|Write|Seek)\b[^\r\n]{0,40}\be_lfanew\b'
+
+  - id: pe-entry-point-redirection
+    desc: Assigns the PE entry point RVA
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: '\bAddressOfEntryPoint\s*=\s*[A-Za-z_(]'
+
+  # Data directory 12 is the IAT and 11 the bound-import table. Zeroing either
+  # so the loader stops consulting it is how a packer neutralises the original
+  # import metadata it is about to replace; a PE reader never writes them.
+  - id: pe-data-directory-zeroed
+    desc: Zeroes a PE data directory entry
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: 'DataDirectory\s*[\[(]\s*1[12]\s*[\])][\w.$]{0,24}\s*=\s*0\b'
+
+composite_rules:
+  - id: pe-section-append
+    desc: Appends a section to a PE file
+    crit: suspicious
+    conf: 0.94
+    all:
+      - id: pe-section-count-increment
+    any:
+      - id: pe-size-of-image-growth
+      - id: pe-nt-header-write-back
+
+  # Appending a section and blanking the import metadata in the same pass is a
+  # packer or crypter rebuilding the image, not a build tool extending it.
+  - id: pe-section-append-directory-strip
+    desc: Appends a PE section and strips directories
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: pe-section-append
+      - id: pe-data-directory-zeroed
+
+  # Growing the image and moving the entry point into what was grown is the
+  # infector shape: the original program still runs, after the new code does.
+  - id: pe-section-append-entry-hijack
+    desc: Appends a PE section and moves the entry
+    crit: hostile
+    conf: 0.96
+    attack: T1027.002,T1554
+    all:
+      - id: pe-section-append
+      - id: pe-entry-point-redirection
