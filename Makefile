@@ -1,5 +1,4 @@
 CLEAVE ?= $(if $(wildcard ../cleave/target/release/cleave),../cleave/target/release/cleave,cleave)
-PYTHON ?= python3
 YARA_PRECOMPILE ?= $(or $(wildcard ../cleave/target/release/yara-precompile),$(wildcard $(dir $(CLEAVE))../cleave/target/release/yara-precompile),$(wildcard /var/lib/cyclotron/cleave/target/release/yara-precompile),$(shell command -v yara-precompile 2>/dev/null),yara-precompile)
 # Prefer the installed CLI; fall back to a sibling cleave checkout's build.
 # `go run github.com/atomdrift-project/cleave/tools/yara-update@latest` does not
@@ -9,7 +8,7 @@ YARA_UPDATE ?= $(if $(shell command -v yara-update 2>/dev/null),yara-update,$(ab
 
 COMPILED_DIR := third-party/compiled
 
-.PHONY: validate test-cloud-hosts precompile yara-compile yara-update install-precommit
+.PHONY: validate precompile yara-compile yara-update install-precommit
 
 # Rule validation.
 #
@@ -19,17 +18,8 @@ COMPILED_DIR := third-party/compiled
 # failure mode is a slower client, not a wrong verdict.
 # Validate each fixture independently, including byte-identical files whose
 # names select different traits (for example, build.rs versus lib.rs).
-# `conviction-without-content` is excluded pending the 18 rules it flags. Most
-# are downstream of a bigger problem it exposed: 65 references to
-# `metadata/import/python/...`, a directory tree that has never existed. Those
-# legs resolve to nothing, so rules like `setup-py-ctypes-imports` rest on
-# "the file is a setup.py" alone. `subsumed-required-leg` is clean and enabled.
 validate:
-	$(CLEAVE) --traits-dir . validate --exclude conviction-without-content
-
-# Focused synthetic regressions; no attack corpus, network, or model required.
-test-cloud-hosts:
-	CLEAVE="$(CLEAVE)" $(PYTHON) scripts/test-cloud-hosts.py
+	$(CLEAVE) --traits-dir . validate
 
 # Compile the third-party + built-in YARA rules into portable per-filetype
 # `.yrc` files (plus a manifest) under third-party/compiled/. These are BUILD

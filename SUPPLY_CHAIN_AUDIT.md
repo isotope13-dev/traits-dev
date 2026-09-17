@@ -3205,3 +3205,124 @@ Implementation note: both checks resolve references per leg, and
 ~50s to over four minutes; both now share a resolution cache and the run is back
 to ~53s.
 
+### Cleanup pass — #1, #2 and #4
+
+`subsumed-required-leg` is clean and now runs unexcluded. 211 redundant legs
+removed across the tree; removing them cannot change what a rule matches, since
+each was already implied by another leg. The knock-on effects were the
+interesting part:
+
+- **16 composites collapsed to a single leg**, meaning their verdict had always
+  rested on one fact and the redundant leg supplied the appearance of a second.
+  Each was a wrapper that only re-labelled its inner rule, so consumers were
+  repointed at that rule and the wrappers deleted -- `antisocial::family` among
+  them, which is the fabricated hostile verdict this check was written for.
+- **Two rules turned out to be the same rule.** `classloader::obfuscated-in-memory-jar-loader`
+  and `dropper/staging/memory::java-obfuscated-jar-memory-instantiation` had
+  identical conditions once the redundant leg was gone; the leg had been masking
+  the duplication. One removed.
+
+The 28 documented gap families were deleted: `well-known/malware/supply-chain/`
+is down from 69 directories to 41. None was referenced anywhere and no fixture
+covered any of them.
+
+### Dangling directory references
+
+`conviction-without-content` is still excluded, with 18 rules flagged, and
+chasing them found something larger. **`metadata/import/python/` has never
+existed**, and 65 references point into it across 17 distinct paths
+(`metadata/import/python/socket`, `.../ctypes`, `.../pynput`, `.../subprocess/`
+and so on). Those legs resolve to nothing, so
+`objectives/supply-chain/hidden-payload/imports::setup-py-ctypes-imports` --
+`suspicious`, described as "setup.py imports ctypes module" -- rests on nothing
+but "this file is a setup.py". Its siblings for socket and input capture are the
+same. Git history shows no deletion: the references were never valid.
+
+This is also a validator gap. `broken-reference` checks exact `dir::id`
+references, and a directory reference that matches no traits is silently
+ignored rather than reported, which is why 65 dead legs survived. A check for
+directory references that resolve to zero traits is the obvious companion, and
+it should land before the 18 are triaged, because most of them will resolve
+themselves once these legs either match something or are removed.
+
+### The corpus-shape question, settled
+
+Rules keying on `package_info-<name>-<version>.json` sidecars and `sources/<pkg>/`
+member paths were flagged earlier as possibly corpus triage rather than field
+detection. They are corpus triage, and the evidence is unambiguous:
+
+- Real npm tarballs, and the corpus's own `.tgz` specimens, use the published
+  layout (`package/index.js`, `package/LICENSE`). None carries a sidecar.
+- Across 96 archive specimens exactly one contains a `package_info-*.json`, in a
+  date-prefixed collection zip, at the member path
+  `tmp/tmpus7xu6_e/sea-bound-siren/package_info-sea-bound-siren-2.0.3.json`.
+  `tmpus7xu6_e` is a Python `mkdtemp` directory: the *collector's* temporary
+  folder, captured into the specimen.
+
+So a rule resting on that sidecar matches how a specimen was filed, not anything
+a registry serves or a victim installs -- the same class as the collection-date
+filenames removed earlier.
+
+`objectives/supply-chain/install-hook/package/manifest/package-info-zip.yaml` is
+the clearest case: eight traits, all of the form "archive contains a file named
+X", including `index.js` (`component`), `commitlint.config.js` (`notable`) and
+`writer.js` (`suspicious` at 0.95). `well-known/malware/stealer/snore-log` builds
+on it with three more path traits.
+
+These are now `notable` packaging records rather than convictions, along with the
+other 13 the check found, and `conviction-without-content` enforces that: raising
+any of them back to `suspicious` without adding a leg derived from the file's
+contents is now a validation error. The decision does not have to be remembered,
+because the check states it.
+
+All four new validators now run unexcluded and the tree is green.
+
+### Decomposition, finished
+
+`well-known/malware/supply-chain/` is at 37 directories, from 82. Measuring what
+TAXONOMY.md actually asks for -- a family rule that references the objective its
+behavior lives in -- 31 of the 37 are assembled on shared `objectives/`,
+`micro-behaviors/` or `metadata/` rules. The six that are not are self-contained
+legitimately: their identity is all they have, which is the correct content for
+a family whose name clears the bar (`glassworm`, `getcookies-rce`, `homabrews`)
+or an archive shape that is genuinely local (`middy-js`, `yelp-react-component-badge`,
+`aikido-debug-model`). `json-colour` and `fsevents` remain the exemplars: zero
+local traits, composites that are pure identity plus technique.
+
+Folded or corrected in the last pass:
+
+- `jscrambler` -> `trojanized/hidden-dependency/`, the same withdrawn-dependency
+  shape as the 15 before it.
+- `ultralytics` -> its `"sha": "<40 hex>"` and `gitApi=True` matchers describe
+  the GitHub *API* delivery route rather than that campaign, so they are now
+  `objectives/command-and-control/dropper/delivery/github/api-blob.yaml`. The
+  Monero wallet and `safe_run` traits stayed with the family.
+- `middy-js` and `yelp-react-component-badge` -> the collection sidecar and the
+  collector's `var/folders/.../T/tmp.../` path came out of both convictions,
+  which now rest on package paths and encrypted-member shapes.
+- `cursor-bridge` -> dropped `symbol: executeToolCall`, a name any MCP
+  dispatcher defines.
+- Dropped `prt-scan`, `digininja-postinstall` and `nintendoamerica-ncom`: campaign
+  markers and single-artifact fingerprints with no recognized name.
+
+### One fact, several legs: two more spellings
+
+`subsumed-required-leg` catches a leg another leg already requires. Two variants
+slipped past it and were fixed by hand, and both are worth knowing about:
+
+- **Two rules, two spellings.** `getcookies-rce` had
+  `express-cookies-malware-test-trigger` and
+  `…-trigger-text`, identical but for reading the package name as a
+  `string_literal` in one and as `text` in the other -- one finding reported
+  twice, with nothing in either description to tell them apart. Now one rule with
+  an `any:` over both spellings. A sweep for the general shape found 283 literals
+  matched by more than one matcher type, but those are legitimate: `VirtualAllocEx`
+  as a PE import and as text in a VB6 declare are different observations of
+  different artifacts.
+- **A YARA leg restating its siblings.** `aikido-debug-model`'s
+  `malicious-debug-model-jar` required `archive-signature-yara` alongside
+  `debug-model-class-set` and `debug-model-package-identity` -- and that YARA
+  rule's strings are verbatim those legs' class paths and maven coordinate. One
+  fact, three legs, reading as a well-corroborated conviction. The checks compare
+  trait references, not YARA sources, so this shape is invisible to them.
+

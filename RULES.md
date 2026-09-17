@@ -78,6 +78,29 @@ See [Matcher Defines Identity](TAXONOMY.md#matcher-defines-identity) in TAXONOMY
 
 ### Engine-Emitted Findings
 
+Source imports use `metadata/import/<ecosystem>/<target>::<local-name>`.
+Source imports default to `baseline`. A case-insensitive regex set marks imports
+for networking, crypto/encoding, execution/OS access, filesystem/archive staging,
+credential stores/input capture, cloud/service APIs, and persistence as `notable`.
+Matching uses complete components of the imported target, never the local alias.
+Narrow ecosystem-specific exceptions disambiguate names: Swift's exact `os.log`
+logging import is baseline, without changing Python/Go OS imports.
+This is a capability signal, not a claim of malicious intent. Both baseline and
+notable imports remain in JSON and differential output for ML consumers.
+For example, `import requests as r` emits `metadata/import/python/requests::r`,
+and `from os import path as p` emits `metadata/import/python/os/path::p`.
+Without an alias, the suffix repeats the imported module or member name.
+Library paths are normalized to lowercase with dots represented as `/`; explicit
+aliases retain their spelling. Relative Python imports use `relative/<level>/`
+under the ecosystem so local modules cannot impersonate external packages.
+Reference `metadata/import/python/requests` to match any alias, or the full
+`metadata/import/python/requests::r` to require a particular alias.
+Member references such as `metadata/import/python/os/system` match the imported
+target regardless of alias: `import os as system` does not match that reference.
+An import finding does not establish that the imported function is called.
+JavaScript imports use the `npm` ecosystem. Static YAML namespaces such as
+`metadata/import/package::…` retain their existing IDs.
+
 Some findings are emitted by cleave itself rather than loaded from YAML, for example package facts such as `supply-chain/install-hook/postinstall`. Treat these as built-in facts when triaging: they may appear in output like traits, but they cannot be suppressed with a YAML `unless:` on a local trait id unless the engine exposes a corresponding rule hook. Do not create duplicate YAML traits solely to shadow them. Instead, document the benign context in `metadata/` or adjust the consuming YAML composites that reference YAML install-hook traits; engine-level severity changes belong in cleave, not this taxonomy.
 
 ## Criticality Levels
