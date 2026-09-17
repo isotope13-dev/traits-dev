@@ -1,0 +1,59 @@
+# VB6/VBA source RunPE whose API names never appear in the file.
+#
+# The plaintext chain (CreateProcess/NtUnmapViewOfSection/WriteProcessMemory/
+# SetThreadContext) already has rules next door in ../hollowing/vb6-source.yaml.
+# Crypter stubs decrypt every API name at runtime and dispatch through the VB
+# runtime's own DllFunctionCall, so none of those strings survive. What the
+# source still has to spell out is the data it manipulates: the PE image
+# structures it walks, the x86 CONTEXT record it rewrites, and the machine-code
+# buffer it assembles by hand.
+defaults:
+  platforms: [windows]
+  for: [vbs]
+  attack: T1055.012
+  mbc: E1055.012
+
+composite_rules:
+  - id: vb-concealed-runpe-loader
+    desc: VB RunPE loader with concealed API names
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: micro-behaviors/data/embedded/payload/header::vb-image-header-type-decl
+      - id: micro-behaviors/process/info/thread::vb-context-struct-debug-regs
+      - id: micro-behaviors/process/create/flags::create-suspended-vb6
+    any:
+      - id: micro-behaviors/dylib/lookup::vb-dll-function-call-declare
+      - id: micro-behaviors/mem/inline-asm::vb-hex-string-to-byte-buffer
+      - id: micro-behaviors/mem/inline-asm::vb-self-vtable-pointer
+      - id: micro-behaviors/process/info/thread::vb-entrypoint-register-pivot
+      - id: micro-behaviors/mem/protect/modify::page-execute-readwrite-vb6
+    needs: 2
+
+  # Independent of RunPE: VB cannot express inline assembly, so a hex-built
+  # byte buffer reached by overwriting the object's own vtable slot is a
+  # machine-code call gate and nothing else.
+  - id: vb-vtable-patched-code-gate
+    desc: VB runs machine code via patched vtable
+    crit: hostile
+    conf: 0.94
+    attack: T1055.001
+    all:
+      - id: micro-behaviors/mem/inline-asm::vb-self-vtable-pointer
+      - id: micro-behaviors/mem/inline-asm::vb-pointer-target-overwrite
+      - id: micro-behaviors/mem/inline-asm::vb-hex-string-to-byte-buffer
+
+  # PE image walk plus a hand-built code buffer, without the CONTEXT record:
+  # the shape a loader takes when it maps the image into its own process.
+  - id: vb-manual-pe-mapper
+    desc: VB maps a PE image by hand
+    crit: suspicious
+    conf: 0.9
+    attack: T1620
+    all:
+      - id: micro-behaviors/data/embedded/payload/header::vb-image-header-type-decl
+      - id: micro-behaviors/data/embedded/payload/header::vb-e-lfanew-field-decl
+    any:
+      - id: micro-behaviors/mem/protect/modify::page-execute-readwrite-vb6
+      - id: micro-behaviors/mem/inline-asm::vb-hex-string-to-byte-buffer
+      - id: micro-behaviors/dylib/lookup::vb-dll-function-call-declare
