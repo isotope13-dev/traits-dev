@@ -232,15 +232,62 @@ composite_rules:
   - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
   - id: metadata/permission/extension-api::permission-proxy
 
+# The name is the contract: an onStartup handler that reads the extension's
+# own storage and ships it out. The legs previously stopped at "has an
+# onStartup listener" + "posts somewhere" + "mentions a remote host", with
+# nothing matching *storage* at all, pooled across the whole archive. That
+# convicts any extension with a startup hook and a backend: a cap.guru
+# captcha solver (onStartup preloads config at bg.js:300, the POST at :410 is
+# the solving API) and an unblocked-games extension doing stock GA4
+# measurement-protocol telemetry both scored hostile on it.
+#
+# So: require the storage read the description claims, and drop to per-file
+# evaluation so an onStartup hook in update.js and an analytics POST in a
+# bundled vendor module cannot compose. `near_bytes` is not an option on the
+# archive node -- member evidence there no longer carries a resolvable
+# offset, so only one leg is placeable and any window rejects a true
+# positive too.
 - id: xpi-startup-storage-upload
   desc: Extension uploads startup storage to a remote host
   crit: hostile
   conf: 0.98
-  for: [xpi, archives]
-  scope: archive
+  # Evaluated per JavaScript member, not on the archive node. Every leg is a
+  # JS-level call, so the file default is what binds them; `for: [archives]`
+  # with `scope: archive` was what let them pool across unrelated scripts, and
+  # `scope: file` cannot replace it -- a file-scoped composite is not
+  # evaluated at container level at all, so the rule would never fire.
+  #
+  # Per-file alone is still not enough: cap.guru's bg.js holds all four legs
+  # 700 lines apart (onStartup preloading config at :300, the captcha-solving
+  # POST at :410). The exfil this rule names is one handler -- read the bag,
+  # ship the bag -- so bound it. Proximity only became usable once the rule
+  # left the archive node, where member evidence carries no resolvable offset.
+  near_bytes: 1024
   attack: T1041,T1176
   all:
   - id: micro-behaviors/browser-extension/lifecycle::chrome-runtime-on-startup
+  - id: micro-behaviors/data/db/web-storage::chrome-storage-area-get
+  - id: micro-behaviors/communications/http/post::fetch-post-call
+  - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+  any:
+  - id: micro-behaviors/data/serialize/json::json-stringify-identifier
+  - id: micro-behaviors/communications/http/request/payload::fetch-post-json-body
+
+# The same startup-exfil shape aimed at the browser's password manager rather
+# than the extension's own storage. Split from `xpi-startup-storage-upload`
+# because the subject is different -- `browser.logins` is every saved
+# credential in the profile, not the extension's key/value bag -- and because
+# that rule now has to match the storage read its name promises.
+- id: xpi-startup-logins-upload
+  desc: Extension uploads saved browser logins
+  crit: hostile
+  conf: 0.98
+  # Same one-handler bound as its storage sibling above.
+  near_bytes: 1024
+  attack: T1555.003,T1041,T1176
+  all:
+  - id: micro-behaviors/browser-extension/lifecycle::chrome-runtime-on-startup
+  - id: micro-behaviors/os/security/keychain::webextension-logins-get-all
   - id: micro-behaviors/communications/http/post::fetch-post-call
   - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
   any:

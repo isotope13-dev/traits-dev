@@ -1,0 +1,83 @@
+# Build and CI tools keep a directory whose entire contract is "run every file
+# in here before anything else": Jenkins reads `$JENKINS_HOME/init.groovy.d`
+# with full controller privileges at startup, and Gradle reads
+# `~/.gradle/init.d/*.gradle` before any build script, on every project the
+# user builds. Dropping a file into one is persistence *and* privilege: the
+# script runs outside any job, with no pipeline to review, and the next build
+# of an unrelated repository executes it.
+#
+# The directory path alone is not evidence -- Jenkins administrators and
+# Gradle users write legitimate init scripts, which is what the directories
+# are for. What is not legitimate is a script that arrives there by being
+# written from somewhere else, and whose body fetches its real payload at
+# runtime. `new URL(...).text` is the Groovy one-liner for that and has no
+# other purpose in an init script; the curl/wget spellings are the same act
+# through a shell.
+#
+# Deliberately not Groovy-only. The drop is a filesystem operation, so a shell
+# provisioning script, an Ansible task or a Python installer reaches the same
+# directory with the same two halves, and the rule is written against the
+# halves rather than the language that happens to carry them.
+defaults:
+  platforms: [unix, windows]
+  for: [scripts, source, shell]
+  attack: T1546
+  mbc: F0012
+
+traits:
+  - id: build-tool-startup-script-directory
+    desc: Build tool startup-script directory
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(init\.groovy\.d|\.gradle[/\\]init\.d)\b'
+
+  # A named file *inside* that directory. The first draft led with the write
+  # verb (`>`, `mkdir -p`, `cp`, `install`) and a bounded gap before the
+  # directory name; the validator rejected it for lazy-DFA explosion, and the
+  # rewrite is the better rule anyway. `mkdir -p .../init.groovy.d` only
+  # prepares the ground, whereas a path that names an entry in it is the drop
+  # -- and the filename is what an administrator's own init script would also
+  # have, which is why this stays a building block and the composite below
+  # requires the remote fetch to go with it.
+  - id: build-tool-startup-script-file
+    desc: Names a file in a startup-script directory
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: '(init\.groovy\.d|\.gradle[/\\]init\.d)[/\\][\w.-]{1,40}'
+
+  # Groovy's whole remote-fetch idiom in one expression. `new URL(x).text`
+  # returns the body as a String, and `.newInputStream()` is the streaming
+  # spelling; both are one `evaluate` away from remote code execution and
+  # neither has a reason to appear in a startup script.
+  - id: groovy-remote-url-body-read
+    desc: Groovy reads a remote URL body
+    crit: suspicious
+    conf: 0.9
+    for: [groovy, java, kotlin, source]
+    attack: T1105
+    if:
+      type: text
+      regex: 'new\s+URL\s*\([^)\n]{0,120}\)\s*\.\s*(text|newInputStream|getText)\b'
+
+composite_rules:
+  # A file placed into a startup-script directory that pulls its body from the
+  # network. Either half alone is ordinary; together they are a controller
+  # backdoor that survives restarts and re-arms itself from the operator's
+  # server on every boot.
+  - id: startup-script-dropin-remote-stage
+    desc: Drops a startup script that stages remotely
+    crit: hostile
+    conf: 0.95
+    attack: T1546,T1105
+    near_lines: 8
+    all:
+      - id: build-tool-startup-script-file
+    any:
+      - id: groovy-remote-url-body-read
+      - id: objectives/command-and-control/infrastructure/ci-abuse::groovy-curl-pipe-shell
+      - id: objectives/command-and-control/infrastructure/ci-abuse::groovy-wget-pipe-shell
+      - id: micro-behaviors/communications/http/download/curl::curl-output-file

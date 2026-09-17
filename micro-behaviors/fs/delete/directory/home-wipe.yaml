@@ -1,0 +1,120 @@
+# Recursive deletion of the user's home *root* -- not a subtree under it.
+#
+# The two existing neighbours only see this through a shell: `recursive-root`
+# matches `rm -rf /*` in shell/batch/powershell text, and
+# `shell-multiple-home-content-targets` needs two distinct `$HOME/Documents`
+# -style operands in a tree-sitter shell query. A compiled or interpreted
+# program that calls the deletion API directly was invisible -- there is no
+# Rust or Go recursive-delete atom anywhere in the tree, and the Python and
+# Node ones are neutral `notable`s that say nothing about the operand.
+#
+# Found on the `vplsfpoael` crate, a joke esolang whose interpreter implements
+# `delete_home_directory` as `std::fs::remove_dir_all(home::home_dir())`. Joke
+# or not, those are the bytes, and they scored nothing at all.
+#
+# What makes this precise is the *shape of the argument*, not proximity: the
+# home root has to be the whole operand. An uninstaller deleting
+# `home_dir.join(".cache")` or `~/.config/app` has something after the home
+# reference and does not match; only a program handing the bare home directory
+# to a recursive delete does. That is why each language gets its own atom
+# rather than a near_bytes pairing of "deletes recursively" with "knows where
+# home is" -- every uninstaller on the registry has both of those.
+#
+# Seven languages because the operand shape, not the API, is the invariant:
+# a variant that ports this to Go or C# is the same behaviour spelled
+# differently, and the next one will be in whichever language is convenient.
+defaults:
+  platforms: [unix, windows]
+  crit: suspicious
+  conf: 0.95
+  attack: T1485
+  mbc: C0047
+
+traits:
+  # `remove_dir_all(home_dir)`, `remove_dir_all(&home)`. The `\)` immediately
+  # after the home token is what excludes `home_dir.join(".cache")`.
+  - id: rust-home-directory-wipe
+    desc: Rust recursively deletes the home directory
+    for: [rust]
+    if:
+      type: text
+      regex: 'remove_dir_all\s*\(\s*&?\w{0,12}home\w{0,10}\s*\)'
+
+  # `os.RemoveAll(os.UserHomeDir())` and the two-step form that binds the
+  # result first (`home, _ := os.UserHomeDir(); os.RemoveAll(home)`).
+  - id: go-home-directory-wipe
+    desc: Go recursively deletes the home directory
+    for: [go]
+    if:
+      type: text
+      regex: 'RemoveAll\s*\(\s*(os\.UserHomeDir\(\)|\w{0,12}[Hh]ome\w{0,10})\s*[,)]'
+
+  # `shutil.rmtree(Path.home())` / `shutil.rmtree(os.path.expanduser("~"))`.
+  # The `~` has to be bare: `expanduser("~/.ssh")` is a different behaviour
+  # and is covered by the credential-path traits.
+  - id: python-home-directory-wipe
+    desc: Python recursively deletes the home directory
+    for: [python]
+    if:
+      type: text
+      regex: 'rmtree\s*\(\s*(Path\.home\(\)|[\w.]{0,20}expanduser\(\s*["'']~["'']\))'
+
+  # `fs.rmSync(os.homedir(), {recursive: true})` and the rmdir spellings.
+  - id: node-home-directory-wipe
+    desc: Node recursively deletes the home directory
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\.rm(dir)?(Sync)?\s*\(\s*(os\.)?homedir\(\)'
+
+  # `rm -rf $HOME` / `rm -rf ~` with nothing following the home reference.
+  # A trailing comment or shell operator is still the same command; a trailing
+  # path component (`rm -rf ~/.cache`) is not and does not match.
+  - id: shell-home-directory-wipe
+    desc: Shell recursively deletes the home directory
+    for: [shell, batch, powershell, scripts]
+    platforms: [unix]
+    if:
+      type: text
+      regex: '(?m)(^|["'';|&])\s*rm\s+-[rRfF]{1,2}\s+["'']?(\$\{?HOME\}?|~)["'']?[ \t]*([;&|#].{0,80})?$'
+
+  # Commons-IO `FileUtils.deleteDirectory(new File(System.getProperty("user.home")))`
+  # and the Kotlin `deleteRecursively()` spelling.
+  - id: java-home-directory-wipe
+    desc: JVM recursively deletes the home directory
+    for: [java, kotlin, java_class, class]
+    if:
+      type: text
+      regex: '(deleteDirectory|deleteRecursively)\s*\([^)\n]{0,40}user\.home'
+
+  # `Directory.Delete(Environment.GetFolderPath(...UserProfile), true)` -- the
+  # trailing `true` is the recursive flag, and without it this is a no-op on a
+  # non-empty home.
+  - id: csharp-home-directory-wipe
+    desc: C# recursively deletes the home directory
+    for: [csharp]
+    if:
+      type: text
+      regex: 'Directory\.Delete\s*\([^,\n]{0,40}UserProfile[^)\n]{0,20},\s*true'
+
+composite_rules:
+  # Language dispatch, not evidence accumulation -- every leg is the same
+  # behaviour spelled for a different runtime, so there is no `needs:`. A bare
+  # `any:` performs no intent inference and the engine caps it at suspicious
+  # for exactly that reason; the hostile reading lives in
+  # objectives/impact/wipe/user-data/home-root.yaml, where the wipe is joined
+  # to a second destructive primitive.
+  - id: home-directory-wipe
+    desc: Recursively deletes the user home directory
+    crit: suspicious
+    conf: 0.95
+    any:
+      - id: rust-home-directory-wipe
+      - id: go-home-directory-wipe
+      - id: python-home-directory-wipe
+      - id: node-home-directory-wipe
+      - id: shell-home-directory-wipe
+      - id: java-home-directory-wipe
+      - id: csharp-home-directory-wipe
+    unless:
+      - id: well-known/tool/detection/

@@ -3,13 +3,21 @@ defaults:
   platforms: [unix, windows]
 
 traits:
-  - id: groovy-shell-lc-execute
-    desc: Groovy bash -lc execute
+  # Every hostile composite in this file hangs off this one atom, so the exact
+  # argv it accepted was the file's real detection surface -- and it accepted
+  # only `['bash','-lc', ...]`. `['sh','-c', ...]` is the same call and walked
+  # past all of it (synthetic corpus 006 scored one suspicious for the curl
+  # pipe and nothing else). Nothing about the technique requires bash, a login
+  # shell, or the unqualified name: `/bin/sh`, `zsh` and `-c` are the same
+  # program spelled differently, and picking a different one is the cheapest
+  # edit an author can make.
+  - id: groovy-shell-command-execute
+    desc: Groovy executes a shell command list
     crit: suspicious
     conf: 0.88
     if:
       type: text
-      regex: '\[\s*["'']bash["'']\s*,\s*["'']-lc["'']\s*,.{0,80}\]\.execute\s*\('
+      regex: '\[\s*["''][/a-z]{0,6}sh["'']\s*,\s*["'']-l?c["'']\s*,.{0,80}\]\.execute\s*\('
 
   - id: groovy-dynamic-evaluate
     desc: GroovyShell/Eval dynamic script evaluate
@@ -200,6 +208,33 @@ traits:
     if:
       type: text
       substr: credentials.xml
+
+  # `credentials.xml` and `secret.key` are two files in it. The directory is
+  # the target -- `master.key`, `hudson.util.Secret` and every
+  # `credentials.xml` live under `$JENKINS_HOME/secrets`, and an operator who
+  # wants the controller's credential store copies the directory rather than
+  # naming the files. Matching the parent covers the files that get added to
+  # it in future Jenkins releases as well.
+  - id: groovy-jenkins-secrets-directory
+    desc: Jenkins secrets directory
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: '(\$\{?JENKINS_HOME\}?|/var/lib/jenkins)/secrets\b'
+
+  # Overwriting a jar under `WEB-INF/lib` replaces code the controller has
+  # already loaded into its own classpath -- `remoting.jar` is the agent
+  # protocol implementation, so the swap reaches every build agent that
+  # reconnects. This is artifact poisoning aimed at the runtime rather than at
+  # a build output.
+  - id: groovy-runtime-jar-overwrite
+    desc: Overwrites a jar on the servlet classpath
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      regex: 'WEB-INF/lib/[\w.-]{1,40}\.jar'
 
   - id: groovy-jenkins-secret-key
     desc: Jenkins secret key
@@ -430,16 +465,24 @@ traits:
     crit: notable
     conf: 0.86
     if:
+      # Was `substr: rm -rf $WORKSPACE`, which the shell's own quoting defeats:
+      # `rm -rf "$WORKSPACE"/*` is the spelling that survives a path with a
+      # space in it, so it is the spelling a working script uses, and it does
+      # not contain the literal. Allow the quote and any flag order.
       type: text
-      substr: rm -rf $WORKSPACE
+      regex: 'rm\s+-[rRfF]{1,2}\s+["'']?\$\{?WORKSPACE'
 
   - id: groovy-log-truncate
     desc: log truncate command
     crit: suspicious
     conf: 0.84
     if:
+      # `truncate -s 0` is one way; `> file` is the older and more portable
+      # one, and `find ... -exec sh -c ">{}" \;` is how it is applied to a
+      # whole log tree at once. The redirect-into-the-found-path shape has no
+      # use except emptying files in bulk.
       type: text
-      substr: truncate -s 0
+      regex: '(truncate\s+-s\s*0|-exec\s+s?h?\s*-?c?\s*["''][ \t]*>\s*\{\})'
 
   - id: groovy-authorized-keys
     desc: authorized keys write
@@ -502,8 +545,12 @@ traits:
     crit: suspicious
     conf: 0.86
     if:
+      # `evil-winrm -i <host> -u <user> -p <pass>` names no interpreter on the
+      # command line -- it *is* the interpreter -- so requiring `cmd` or
+      # `powershell` next to the tool name missed the offensive client
+      # entirely while matching the two administrative ones.
       type: text
-      regex: '\b(winrs|winrm)\b[^\n]{0,100}(cmd|powershell)'
+      regex: '\b(evil-winrm|(winrs|winrm)\b[^\n]{0,100}(cmd|powershell))'
 
   - id: groovy-smb-copy
     desc: SMB payload copy
@@ -520,6 +567,14 @@ traits:
     if:
       type: text
       substr: ps aux
+
+  - id: groovy-listening-socket-recon
+    desc: listening socket enumeration
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      regex: '\b(netstat\s+-[a-z]{0,6}p[a-z]{0,6}|ss\s+-[a-z]{0,4}l[a-z]{0,4}p)\b'
 
   - id: groovy-host-recon
     desc: host recon command
@@ -570,17 +625,30 @@ composite_rules:
     crit: hostile
     conf: 0.96
     all:
-      - id: groovy-shell-lc-execute
+      - id: groovy-shell-command-execute
     any:
       - id: groovy-curl-pipe-shell
       - id: groovy-wget-pipe-shell
+
+  # The payload legs here are Windows LOLBins, and a Groovy script that wants
+  # to run one reaches for `['cmd','/c', ...]`, not a POSIX shell. Requiring
+  # the shell form meant synthetic corpus 095 -- `regsvr32 /s /n /u /i:<url>
+  # scrobj.dll` behind `cmd /c` -- matched the scriptlet atom and then had
+  # nothing to compose with.
+  - id: groovy-command-execute
+    desc: Groovy executes an external command
+    crit: suspicious
+    conf: 0.86
+    any:
+      - id: groovy-shell-command-execute
+      - id: groovy-cmd-c-execute
 
   - id: groovy-lolbin-download-execution
     desc: Groovy LOLBin download execution
     crit: hostile
     conf: 0.94
     all:
-      - id: groovy-shell-lc-execute
+      - id: groovy-command-execute
     any:
       - id: groovy-certutil-download
       - id: groovy-bitsadmin-download
@@ -611,7 +679,7 @@ composite_rules:
     crit: hostile
     conf: 0.93
     all:
-      - id: groovy-shell-lc-execute
+      - id: groovy-shell-command-execute
     any:
       - id: groovy-jenkins-hpi-artifact
       - id: metadata/build/jenkins::jenkins-agent-jar
@@ -622,10 +690,11 @@ composite_rules:
     crit: hostile
     conf: 0.94
     all:
-      - id: groovy-shell-lc-execute
+      - id: groovy-shell-command-execute
     any:
       - id: groovy-credentials-xml
       - id: groovy-jenkins-secret-key
+      - id: groovy-jenkins-secrets-directory
       - id: groovy-npmrc-token
       - id: groovy-pypirc-token
       - id: groovy-jfrog-cli-config
@@ -636,7 +705,7 @@ composite_rules:
     crit: hostile
     conf: 0.94
     all:
-      - id: groovy-shell-lc-execute
+      - id: groovy-shell-command-execute
       - id: groovy-jenkins-plugin-inventory
       - id: micro-behaviors/communications/http/upload::curl-data-binary-stdin
 
@@ -653,7 +722,7 @@ composite_rules:
     crit: hostile
     conf: 0.93
     all:
-      - id: groovy-shell-lc-execute
+      - id: groovy-shell-command-execute
       - id: groovy-jenkins-crumb-issuer
       - id: micro-behaviors/communications/http/curl::curl-basic-auth-token
 
@@ -678,7 +747,7 @@ composite_rules:
     crit: hostile
     conf: 0.94
     all:
-      - id: groovy-shell-lc-execute
+      - id: groovy-shell-command-execute
     any:
       - id: metadata/file/string/cloud::cloud-instance-metadata-link-local-host
       - id: groovy-kube-service-token
@@ -689,7 +758,7 @@ composite_rules:
     crit: hostile
     conf: 0.93
     all:
-      - id: groovy-shell-lc-execute
+      - id: groovy-shell-command-execute
     any:
       - id: groovy-rclone-exfil
       - id: groovy-mega-exfil
@@ -701,7 +770,7 @@ composite_rules:
     crit: hostile
     conf: 0.95
     all:
-      - id: groovy-shell-lc-execute
+      - id: groovy-shell-command-execute
     any:
       - id: groovy-kubectl-delete
       - id: groovy-terraform-destroy
@@ -715,7 +784,7 @@ composite_rules:
     crit: hostile
     conf: 0.93
     all:
-      - id: groovy-shell-lc-execute
+      - id: groovy-shell-command-execute
     any:
       - id: groovy-wevtutil-clear
       - id: groovy-history-clear
@@ -727,17 +796,18 @@ composite_rules:
     crit: hostile
     conf: 0.94
     all:
-      - id: groovy-shell-lc-execute
+      - id: groovy-shell-command-execute
     any:
       - id: groovy-build-artifact-overwrite
       - id: groovy-nexus-artifact-upload
+      - id: groovy-runtime-jar-overwrite
 
   - id: groovy-package-hook-poisoning
     desc: Groovy package hook poisoning
     crit: hostile
     conf: 0.94
     all:
-      - id: groovy-shell-lc-execute
+      - id: groovy-shell-command-execute
     any:
       - id: groovy-npm-postinstall-write
       - id: groovy-composer-postinstall-write
@@ -748,7 +818,7 @@ composite_rules:
     crit: hostile
     conf: 0.94
     all:
-      - id: groovy-shell-lc-execute
+      - id: groovy-shell-command-execute
       - id: groovy-npm-postinstall-write
       - id: groovy-package-json-rewrite
 
@@ -766,7 +836,7 @@ composite_rules:
     crit: hostile
     conf: 0.94
     all:
-      - id: groovy-shell-lc-execute
+      - id: groovy-shell-command-execute
       - id: groovy-composer-postinstall-write
       - id: groovy-composer-json-rewrite
 
@@ -784,7 +854,7 @@ composite_rules:
     crit: hostile
     conf: 0.94
     all:
-      - id: groovy-shell-lc-execute
+      - id: groovy-shell-command-execute
       - id: groovy-jenkins-vars-build-poison
 
   - id: groovy-shared-lib-curl-pipe-poison
@@ -808,7 +878,7 @@ composite_rules:
     crit: hostile
     conf: 0.94
     all:
-      - id: groovy-shell-lc-execute
+      - id: groovy-shell-command-execute
       - id: groovy-pom-repository-inject
       - id: groovy-pom-xml-rewrite
 
@@ -833,7 +903,7 @@ composite_rules:
     crit: hostile
     conf: 0.94
     all:
-      - id: groovy-shell-lc-execute
+      - id: groovy-shell-command-execute
     any:
       - id: groovy-authorized-keys
       - id: groovy-crontab-persistence
@@ -846,7 +916,7 @@ composite_rules:
     crit: hostile
     conf: 0.94
     all:
-      - id: groovy-shell-lc-execute
+      - id: groovy-shell-command-execute
     any:
       - id: groovy-ssh-lateral
       - id: groovy-ansible-lateral
@@ -858,7 +928,23 @@ composite_rules:
     crit: hostile
     conf: 0.94
     all:
-      - id: groovy-shell-lc-execute
+      - id: groovy-shell-command-execute
     any:
       - id: groovy-openssl-encrypt
       - id: groovy-gpg-encrypt
+
+  # Process table plus listening sockets, run through a command execution. One
+  # of the two is a support script checking whether its own service is up;
+  # both together, from a build step, is an operator mapping the host they
+  # landed on. Suspicious rather than hostile: this is what an inventory
+  # script looks like too, and the reason to score it at all is that it rarely
+  # travels alone.
+  - id: groovy-host-enumeration-sweep
+    desc: Groovy enumerates processes and listeners
+    crit: suspicious
+    conf: 0.88
+    attack: T1057,T1049
+    all:
+      - id: groovy-command-execute
+      - id: groovy-process-recon
+      - id: groovy-listening-socket-recon

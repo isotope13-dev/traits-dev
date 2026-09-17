@@ -1,0 +1,102 @@
+# Several independent ways to reach the same stealer.
+#
+# The 36MB HEUR-Trojan-PSW.Python.Disco sample analysed 526 members and
+# produced several hundred notables and nothing above them, while carrying:
+# five browsers' profile directories, Discord's OAuth and users/@me
+# endpoints, the OS cookie API, GDI screen capture, a polling keylogger
+# cluster, clipboard read, schtasks, WTS session enumeration and an XWorm
+# protocol marker.
+#
+# One composite over all of that would be precise and brittle -- the next
+# build drops the keylogger and walks. So each rule below is anchored on a
+# theft-specific fact and needs only one companion capability. A variant has
+# to give up the anchor itself, not merely rearrange what it does with it.
+#
+# The anchor of first resort is browser profile access. The sibling rule in
+# combos.yaml reaches multi-browser targeting through browser *name* literals
+# plus a data-file reference; a packed Python stealer carries neither, only
+# the paths themselves.
+#
+# Deliberately *not* "three or more browsers". That was the first draft, and
+# it is a threshold a variant clears by targeting Chrome alone -- which is
+# where the credentials are anyway. What does not shrink is the company the
+# profile access keeps: a password manager or a session importer reads a
+# profile, and may well touch the clipboard, but it does not also poll the
+# keyboard, bitmap the screen and register a scheduled task. So the anchor is
+# any profile store at all, and the bar is two capabilities beside it, drawn
+# from five different directories.
+#
+# The directory reference also means a browser atom added later (Vivaldi,
+# Arc, Yandex) joins the anchor without touching these rules. Splitting that
+# directory per browser would let the rules count distinct browsers again --
+# a directory reference is one leg, so `needs:` cannot see inside it -- but
+# that moves 43 trait ids and 40 references, so it wants its own change.
+defaults:
+  platforms: [windows]
+  for: [binaries, scripts, source]
+  attack: T1555.003
+  mbc: B0028
+
+composite_rules:
+  - id: browser-profile-access-with-capture-cluster
+    desc: Reads a browser profile store and watches the host
+    crit: hostile
+    conf: 0.95
+    attack: T1555.003,T1056.001,T1113
+    needs: 2
+    all:
+      - id: micro-behaviors/fs/path/application/browser/
+    any:
+      - id: micro-behaviors/hardware/input/keyboard/poll::polling-keylogger-api-cluster
+      - id: micro-behaviors/hardware/display/screenshot::gdi-screen-capture-primitives
+      - id: micro-behaviors/os/clipboard/read::get-clipboard-data
+      - id: micro-behaviors/os/autorun/scheduled::schtasks-utility-token
+      - id: micro-behaviors/communications/http/cookies::internet-get-cookie
+    unless:
+      - id: well-known/app/browser/
+      # Two broad directory guards were in the first draft and both
+      # suppressed this rule on the stealer itself: `metadata/package/testing/`
+      # because the bundle ships a `tests/` path like every Python bundle, and
+      # `well-known/tool/detection/` because the strings carry threat-intel
+      # vocabulary. A directory `unless:` matches on any member of the
+      # subtree, and malware contains the vocabulary of the thing you are
+      # trying to exclude. Name the specific context instead.
+      - id: well-known/tool/detection/cleave::cleave-static-analysis-context
+      - id: well-known/tool/media/yt-dlp/
+      - id: well-known/tool/media/gallery-dl::package-context
+      - id: well-known/lib/development/browser-cookie3::browser-cookie3-library-context
+
+  # Survives a variant that drops the browsers entirely. `users/@me` is the
+  # endpoint a stolen Discord token is tested against -- it answers "whose
+  # token is this". A program that knows it and also reads the OS cookie jar
+  # or a browser profile store is checking credentials it did not obtain by
+  # logging in.
+  - id: discord-token-validation-with-credential-access
+    desc: Validates Discord tokens beside credential stores
+    crit: hostile
+    conf: 0.94
+    attack: T1555.003,T1539
+    all:
+      - id: micro-behaviors/communications/http/oauth::discord-api-users-me-url
+    any:
+      - id: micro-behaviors/communications/http/cookies::internet-get-cookie
+      - id: micro-behaviors/fs/path/application/browser/
+    unless:
+      - id: well-known/app/communication/
+      - id: well-known/tool/detection/cleave::cleave-static-analysis-context
+
+  # Survives a variant that drops credential theft altogether. Keyboard,
+  # screen and clipboard together is the whole of what a watcher needs, and
+  # nothing but a watcher wants all three. Remote-support software is the
+  # honest neighbour here, which is why this stops at suspicious.
+  - id: host-surveillance-capture-triad
+    desc: Captures keystrokes, screen and clipboard
+    crit: suspicious
+    conf: 0.9
+    attack: T1056.001,T1113,T1115
+    all:
+      - id: micro-behaviors/hardware/input/keyboard/poll::polling-keylogger-api-cluster
+      - id: micro-behaviors/hardware/display/screenshot::gdi-screen-capture-primitives
+      - id: micro-behaviors/os/clipboard/read::get-clipboard-data
+    unless:
+      - id: well-known/tool/detection/cleave::cleave-static-analysis-context
