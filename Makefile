@@ -19,17 +19,13 @@ COMPILED_DIR := third-party/compiled
 # failure mode is a slower client, not a wrong verdict.
 # Validate each fixture independently, including byte-identical files whose
 # names select different traits (for example, build.rs versus lib.rs).
-# Two new Policy checks are excluded pending cleanup; both are correct and both
-# found real defects (see SUPPLY_CHAIN_AUDIT.md).
-#   subsumed-required-leg     211 convictions list a leg another leg already
-#                             requires -- one fact counted as several. This is
-#                             how `antisocial::family` came to look like a
-#                             three-leg hostile rule.
-#   conviction-without-content 20 convictions rest only on names and exact-pinned
-#                             metrics, so they fingerprint one artifact.
+# `conviction-without-content` is excluded pending the 18 rules it flags. Most
+# are downstream of a bigger problem it exposed: 65 references to
+# `metadata/import/python/...`, a directory tree that has never existed. Those
+# legs resolve to nothing, so rules like `setup-py-ctypes-imports` rest on
+# "the file is a setup.py" alone. `subsumed-required-leg` is clean and enabled.
 validate:
-	$(CLEAVE) --traits-dir . validate \
-		--exclude subsumed-required-leg,conviction-without-content
+	$(CLEAVE) --traits-dir . validate --exclude conviction-without-content
 
 # Focused synthetic regressions; no attack corpus, network, or model required.
 test-cloud-hosts:
