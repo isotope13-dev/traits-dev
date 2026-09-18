@@ -24,9 +24,19 @@ traits:
   # (`Command::new("bash").arg("-c").arg(":(){ :|:& };:")`). Match the literal
   # wherever it appears, in any language, and tolerate the whitespace people
   # actually type -- `:(){ :|:& };:` with spaces is the form that circulates.
+  # Notable, not suspicious: the literal alone is a string, and a string can be
+  # data. CPython's own base64 test suite carries it as deliberate non-base64
+  # input -- `assertNonBase64Data(b'ab:(){:|:&};:==', b'i')` in
+  # Lib/test/test_binascii.py -- and Ubuntu ships that in python3.12's orig
+  # tarball. The match is correct; the reading was not.
+  #
+  # The intent this rule was written for is a dropper that carries the bomb as
+  # a string and hands it to a shell, so the composite below asks for the
+  # handoff. A fork bomb that only ever sits in a bytes literal being fed to a
+  # decoder runs on nobody.
   - id: embedded-bash-fork-bomb-literal
     desc: Embeds the bash fork bomb literal
-    crit: suspicious
+    crit: notable
     conf: 0.97
     for: [source, scripts, binaries]
     attack: T1499.001
@@ -52,5 +62,29 @@ traits:
     if:
       type: text
       regex: '(?m)\w{1,3}\(\)[ \t]*\{[ \t]*\w{1,3}[ \t]*\|[ \t]*\w{1,3}[ \t]*&[ \t]*\}[ \t]*;'
+    unless:
+      - id: well-known/tool/detection/
+
+composite_rules:
+  # The literal plus a way to reach a shell. This is what the atom above was
+  # written to catch, stated properly: vplsfpoael's interpreter holds the bomb
+  # as a Rust string and spawns `bash -c` with it.
+  - id: staged-bash-fork-bomb-execution
+    desc: Hands the bash fork bomb to a shell
+    crit: suspicious
+    conf: 0.95
+    attack: T1499.001
+    # The file default is `for: [shell]`, which is right for the two original
+    # whole-file atoms and wrong for everything added since. The literal atom
+    # overrides it; without the same override here the composite inherits
+    # `shell` and is gated out of the very files it exists for -- a dropper in
+    # Rust, Python or C carrying the bomb as a string.
+    for: [source, scripts, binaries]
+    all:
+      - id: embedded-bash-fork-bomb-literal
+    any:
+      - id: micro-behaviors/process/create/direct::rust-process-command-import
+      - id: micro-behaviors/process/create/shell/eval::shell-dynamic-command-execution
+      - id: micro-behaviors/process/create/subprocess::process-execution
     unless:
       - id: well-known/tool/detection/
