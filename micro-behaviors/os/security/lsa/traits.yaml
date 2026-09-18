@@ -91,6 +91,75 @@ traits:
       type: symbol
       exact: PasswordFilter
 
+  # The `type: symbol` traits above are blind to managed code. A .NET assembly
+  # reaches Win32 through `[DllImport]`, and the target name lands in the
+  # `#Strings` metadata heap rather than the PE import table, so filefacts
+  # records one symbol (`_CorDllMain`) for the whole module and every symbol
+  # matcher in the tree misses the P/Invoke. Seen on abuse.ch 1af33429697d,
+  # whose entire content is an LSA policy P/Invoke wrapper and which scored
+  # fifteen notables and nothing else.
+  #
+  # Read the same names out of the bytes instead. The struct names are the
+  # discriminator: `LsaOpenPolicy` on its own can be a mention, but a module
+  # carrying the marshalling layout for `LSA_OBJECT_ATTRIBUTES` has *declared*
+  # the interop signature, which is a thing only code that calls it does.
+  - id: managed-lsa-policy-interop
+    desc: Managed code declares LSA policy interop
+    # Notable, like its two neighbours. Microsoft's own
+    # ExchangeOnlineManagement PowerShell module declares this interop, as does
+    # every administration tool that manages service-account rights. Declaring
+    # the signature is a capability; the conviction is in
+    # `generated-name-managed-lsa-module`, which asks who is declaring it.
+    crit: notable
+    conf: 0.9
+    for: [pe, dll, csharp]
+    attack: T1003
+    if:
+      type: text
+      regex: 'LSA_OBJECT_ATTRIBUTES|LSA_UNICODE_STRING'
+
+  # The LSA operations that read or grant something, as opposed to opening a
+  # handle. Text rather than symbol for the same managed-code reason as its
+  # neighbour above: `LsaRetrievePrivateData` is where the machine account
+  # password, service account passwords and cached secrets come from, and
+  # `LsaAddAccountRights` is how an operator grants themselves SeDebug or
+  # SeBackup before using it.
+  - id: managed-lsa-privileged-operation
+    desc: LSA secret or rights operation
+    # Notable, not suspicious. The benign population is exactly the tools
+    # whose job this is: SysinternalsSuite carries `LsaStorePrivateData`,
+    # an AD administration MSI carries `LsaAddAccountRights`, and HTCondor's
+    # source RPM carries both because it provisions service accounts. The
+    # operation is not the finding; who is doing it, under what name, is.
+    crit: notable
+    conf: 0.9
+    for: [pe, dll, csharp, c, cpp, powershell]
+    attack: T1003,T1098
+    if:
+      type: text
+      # `LsaEnumerateAccounts*` was in this alternation and is not in the
+      # same class: it reads who holds a right, which installers do. It has
+      # its own notable trait below. What is left here either reads a stored
+      # secret or grants a right.
+      regex: 'Lsa(RetrievePrivateData|StorePrivateData|AddAccountRights)'
+
+  # Which accounts hold a given privilege -- the query an operator runs after
+  # landing, to find the account worth stealing. Missing entirely: the file
+  # knows the logon-session and policy calls but not the rights enumeration.
+  - id: lsa-enumerate-accounts-with-right
+    desc: Enumerate accounts holding a privilege
+    # Notable, not suspicious: three Notepad++ MSI installers carry this call,
+    # because granting a service account a right means first asking who has
+    # it. The operator's use of it looks identical; what separates them is the
+    # company it keeps, which is the composite's job.
+    crit: notable
+    conf: 0.92
+    for: [pe, dll, csharp, c, cpp, powershell]
+    attack: T1087.001,T1069
+    if:
+      type: text
+      substr: LsaEnumerateAccountsWithUserRight
+
 composite_rules:
   - id: password-filter-callback-set
     desc: Complete Windows password-filter callback set

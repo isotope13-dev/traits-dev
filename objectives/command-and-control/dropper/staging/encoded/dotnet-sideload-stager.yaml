@@ -1,0 +1,63 @@
+# The .NET side-loading stager, as one chain: find where I am on disk, read a
+# file next to me, base64-decode it, load the result as an assembly and invoke
+# a method on it.
+#
+# Every link is an ordinary API. `GetExecutingAssembly().Location` is how a
+# plugin finds its own folder, `File.ReadAllBytes` reads a file,
+# `FromBase64String` decodes one, and `Activator.CreateInstance` + `Invoke`
+# are how any plugin host calls into what it loaded -- which is why all of
+# these already exist in the tree as notables and baselines, and why nothing
+# joined them. What a plugin host does *not* do is all five, in a 6 KB
+# assembly with no other content.
+#
+# abuse.ch 6689018c8e04 is that assembly: `<Module>` plus the chain plus
+# `System.Diagnostics.Process`, twenty-six notables, no finding. The payload
+# is not in the file, which is the point -- the bytes that matter travel
+# beside it, base64-encoded so the on-disk form has no PE header for anything
+# to recognise.
+#
+# Written against the chain rather than the sample. A variant that swaps
+# base64 for hex, or the sibling file for a managed resource, gives up the
+# decode leg and keeps the rest; that is a different rule and should be one.
+# What it cannot give up while remaining this technique is locating itself,
+# reading bytes it did not compile in, and invoking them.
+defaults:
+  platforms: [windows]
+  for: [pe, dll, csharp]
+  attack: T1620,T1140
+  mbc: C0053
+
+composite_rules:
+  - id: dotnet-sideloaded-encoded-assembly-stager
+    desc: .NET stages an encoded assembly beside itself
+    crit: hostile
+    conf: 0.93
+    # Size is the constraint that makes this a rule rather than a census.
+    #
+    # Without it the four legs are token presences over the whole file, and a
+    # .NET *runtime* contains every one of them because it implements them:
+    # wine-mono, the dotnet SDK and mRemoteNG all scored hostile on the first
+    # draft. The technique itself is small by construction -- the stub's only
+    # job is to locate, decode and invoke, and the payload it stages is
+    # deliberately somewhere else. 64 KiB is generous for that and excludes
+    # every runtime assembly in the benign corpus.
+    #
+    # `scope: file` so an archive member is judged on its own contents rather
+    # than on whatever else shipped in the same package.
+    size_max: 65536
+    scope: file
+    all:
+      - id: micro-behaviors/process/info/current::dotnet-getexecutingassembly-token
+      - id: micro-behaviors/fs/read/file/full::dotnet-readallbytes-token
+      - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+    # The invocation half. Decoding bytes and never calling them is a config
+    # loader; calling them is the stager.
+    any:
+      - id: micro-behaviors/process/interpreter/reflection/runtime::activator-create
+      - id: micro-behaviors/process/interpreter/reflection/runtime::create-instance-token
+      - id: micro-behaviors/process/interpreter/reflection/resolve::assembly-load
+      - id: micro-behaviors/process/interpreter/reflection/resolve::assembly-load-buffer
+    unless:
+      # A signed product doing its own plugin loading is the honest neighbour.
+      - id: metadata/signed/trust-level::signer-evidence-present
+      - id: well-known/tool/detection/

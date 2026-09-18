@@ -137,6 +137,56 @@ traits:
       type: text
       regex: '(?i)\bfor\s+%%[A-Za-z]\s+in\s*\(\s*\*\.bat\s*\)\s+do\s+call\s+%0\b'
 
+  # Everything above this point names one sample's literal --
+  # `WORM_INFECTED_MARKER`, `ViRuS_MULTIPLY`, `c:\tmp.bat`,
+  # `copy %0 %0.0000.bat`, `call "!_WORM_PATH!" ^& goto :eof`. Each catches the
+  # sample it was written from and nothing after it, and two batch infectors
+  # recovered from the vxheaven corpus (`Virus.BAT.CW.a`,
+  # `Virus.BAT.Companion.a`) walked past all of them.
+  #
+  # The invariant they all share and none of them state: the script uses `%0`,
+  # its own path, as a *data source*. A batch file that types or copies itself
+  # into somewhere else is replicating; there is no other reason to read your
+  # own text. The destination does not matter and neither does the loop around
+  # it, which is exactly why those details keep changing between samples.
+  - id: batch-self-as-copy-source
+    desc: Batch copies its own file elsewhere
+    crit: suspicious
+    conf: 0.94
+    attack: T1080
+    if:
+      type: text
+      regex: '(?i)\b(type|copy|xcopy)\s+"?%0'
+
+  # The generic form of `batch-self-call-over-bat-loop` above, which hardcoded
+  # `*.bat` and `call`. A loop over a file mask whose body names `%0` is the
+  # script applying itself to everything it found -- the mask is a choice of
+  # victim (`*.bat`, `*.cmd`, `*.com`, `*.vbs`) and the verb is a choice of
+  # mechanism, neither of which is the technique.
+  - id: batch-enumerates-and-applies-self
+    desc: Batch loops over files and invokes itself
+    crit: suspicious
+    conf: 0.94
+    attack: T1080
+    if:
+      type: text
+      regex: '(?i)for\s+%%\w\s+in\s*\([^)]{0,40}\*\.\w{1,4}[^)]{0,10}\)\s*do\s+[^\r\n]{0,60}%0'
+
+  # Companion infection: move the real program aside under a new name, then
+  # take its place. `Virus.BAT.Companion.a` renames `X.com` to `YX.com`, drops
+  # itself as `X.bat` so the bare name `X` now resolves to the virus, marks
+  # the original hidden, and chains to it at the end so the user sees the
+  # program they asked for. The rename of a *variable-held* filename is the
+  # part that distinguishes it from an ordinary `ren *.txt *.bak`.
+  - id: batch-renames-variable-target
+    desc: Batch renames a variable-held file
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\bren(ame)?\s+%\w{1,16}%\s+\S{0,6}%\w{1,16}%'
+
+
 composite_rules:
   - id: batch-script-self-infection
     desc: Batch script self-infection
@@ -189,3 +239,23 @@ composite_rules:
     all:
       - id: batch-virus-file-marker
       - id: batch-self-call-over-bat-loop
+
+  # A batch file that reads itself and hands the bytes to something else. The
+  # `any:` is the range of ways to choose what gets infected -- walk a mask,
+  # or displace one named program -- and a variant that invents a third still
+  # needs the `all:` leg, because without reading itself it has nothing to
+  # spread.
+  - id: batch-self-replicating-infector
+    desc: Batch file replicates itself into others
+    crit: hostile
+    conf: 0.96
+    attack: T1080
+    all:
+      - id: batch-self-as-copy-source
+    any:
+      - id: batch-enumerates-and-applies-self
+      - id: batch-renames-variable-target
+      - id: batch-for-bat-loop
+      - id: batch-recursive-script-infect-loop
+    unless:
+      - id: well-known/tool/detection/

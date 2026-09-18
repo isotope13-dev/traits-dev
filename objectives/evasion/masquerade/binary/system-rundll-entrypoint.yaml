@@ -1,0 +1,68 @@
+# A DLL that exports the entry-point name of a Microsoft system component.
+#
+# `rundll32.exe inetcpl.cpl,ClearMyTracksByProcess 255` is the documented way
+# to clear Internet Explorer's history, and it is on every analyst's list of
+# ordinary commands. A DLL that exports `ClearMyTracksByProcess` itself turns
+# that familiarity into cover: the command line reads the same, the entry
+# point resolves, and the code that runs is the attacker's. The same trick is
+# available with every well-known rundll32 entry point -- `Control_RunDLL`,
+# `ShellExec_RunDLL`, `RunHTMLApplication`, `FileProtocolHandler`,
+# `RouteTheCall`, `OpenURL` -- and the list is short because Windows only has
+# so many of them.
+#
+# abuse.ch 3430ea3ff611 is 6.6 KB, imports `VirtualAlloc` and nothing else,
+# exports `AserSec` and `ClearMyTracksByProcess`, and had fourteen structural
+# notables and no finding.
+#
+# What makes this convict rather than merely note is the vendor: the real
+# owner of every one of these names ships signed, in `%SystemRoot%`, with
+# Microsoft's version resource. An unsigned third-party DLL claiming one is
+# not a second implementation of it.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  attack: T1218.011,T1036
+  mbc: F0001
+
+traits:
+  - id: system-rundll-entrypoint-export
+    desc: Exports a Windows rundll32 entry point
+    crit: notable
+    conf: 0.9
+    if:
+      type: symbol
+      kind: export
+      regex: '^(ClearMyTracksByProcess|Control_RunDLL|ShellExec_RunDLL|RouteTheCall|OpenURL)$'
+
+  - id: system-rundll-entrypoint-export-web
+    desc: Exports a Windows protocol rundll32 entry
+    crit: notable
+    conf: 0.9
+    if:
+      # Split from its sibling only because one alternation of all seven names
+      # runs past the 90-byte regex budget.
+      type: symbol
+      kind: export
+      regex: '^(RunHTMLApplication|FileProtocolHandler|LaunchINFSection)$'
+
+composite_rules:
+  - id: impersonated-system-rundll-entrypoint
+    desc: Unsigned DLL claims a system rundll32 entry
+    crit: hostile
+    conf: 0.94
+    needs: 1
+    all:
+      - id: metadata/signed/trust-level::unsigned
+    any:
+      - id: system-rundll-entrypoint-export
+      - id: system-rundll-entrypoint-export-web
+    unless:
+      # The genuine owners, and the reimplementations -- which export a real
+      # rundll32 entry because they *are* a rundll32. Wine ships one per
+      # architecture and is unsigned by construction, so it satisfied every
+      # leg: Arch's wine package scored 4 hostile here. A Microsoft
+      # company/product marker cannot reach a Wine builtin (they carry no
+      # VERSIONINFO at all), so this takes the whole vendor directory, which
+      # covers Microsoft, Wine and ReactOS together.
+      - id: metadata/binary/vendor/
+      - id: well-known/tool/detection/

@@ -1,0 +1,90 @@
+# The implant's configuration block, as the builder leaves it.
+#
+# A RAT that ships as a builder plus a stub has to get the operator's settings
+# into the stub somehow, and the universal answer is textual substitution: the
+# stub's source declares `Hosts = "%Hosts%"`, the builder replaces the token,
+# and the result is compiled. The AsyncRAT lineage -- AsyncRAT itself, DcRat,
+# VenomRAT, Quasar forks, and a long tail of reskins -- all carry the same
+# `Settings.cs` with the same field names, and the corpus copy scored one
+# suspicious finding for an unrelated reason.
+#
+# Two independent halves, because a fork can rename either one but rarely
+# both. The placeholder block is the builder's contract with the stub. The
+# bulk decrypt is what the stub does with it at startup: every field arrives
+# encrypted and is unpacked through one key in one routine, which is why
+# strings pulled from the binary never show the C2 address.
+#
+# Stated as counts rather than as the AsyncRAT field list. A fork that renames
+# `MTX` to `Mutex` or drops `BDOS` still needs four config fields and still
+# unpacks them together; a project that genuinely templates four settings and
+# decrypts five values in one file is not a shape that occurs by accident.
+defaults:
+  platforms: [windows, unix]
+  for: [source, scripts]
+  attack: T1587.001,T1027
+  mbc: B0007
+
+traits:
+  # Split by concern rather than counted in one alternation: `count_min` over
+  # an alternation counts repeated matches of the *same* branch, so four
+  # `%Hosts%` would have satisfied a count of four. Requiring breadth instead
+  # -- fields from two different concerns -- is both what the validator asks
+  # for and the stronger claim, since a config that templates its C2 address
+  # and its mutex and its certificate is describing an implant, while one that
+  # templates a hostname four times is describing a deployment.
+  - id: implant-config-placeholder-network
+    desc: Templated C2 endpoint setting
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '%(Hosts|Ports|Pastebin)%'
+
+  - id: implant-config-placeholder-identity
+    desc: Templated implant identity setting
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '%(MTX|Mutex|Hwid)%'
+
+  - id: implant-config-placeholder-crypto
+    desc: Templated implant crypto setting
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '%(Certificate|Serversignature|Anti)%'
+
+  - id: implant-config-bulk-decrypt
+    desc: Several settings decrypted together
+    crit: notable
+    conf: 0.9
+    count_min: 5
+    if:
+      # One decryptor applied to a run of single-value settings. The count is
+      # the evidence: decrypting one value is ordinary, decrypting five in a
+      # row is unpacking a configuration blob.
+      type: text
+      regex: '\b\w{0,14}[Dd]ecrypt\s*\(\s*\w{1,20}\s*\)'
+
+composite_rules:
+  - id: implant-config-placeholder-block
+    desc: Implant config placeholder block
+    crit: suspicious
+    conf: 0.93
+    needs: 2
+    any:
+      - id: implant-config-placeholder-network
+      - id: implant-config-placeholder-identity
+      - id: implant-config-placeholder-crypto
+
+  - id: builder-templated-implant-config
+    desc: Builder-templated encrypted implant config
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: implant-config-placeholder-block
+      - id: implant-config-bulk-decrypt
+    unless:
+      - id: well-known/tool/detection/
