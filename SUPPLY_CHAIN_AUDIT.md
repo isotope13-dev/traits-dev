@@ -2977,7 +2977,8 @@ not a self-contained bundle of behavior plus indicators. So each family splits
 into what its matchers actually find -- behavior, which relocates, and identity,
 which only earns a directory if the name clears the bar.
 
-Done this pass, 82 -> 69 directories, `make validate` green throughout:
+Done this pass, 82 -> 69 directories, `make validate` green throughout (the
+count reached 37 by the end of the session; see the closing section):
 
 - 15 withdrawn-dependency families -> `objectives/supply-chain/trojanized/hidden-dependency/`,
   which already held `easy-day-js.yaml` and `next-runtimejs.yaml` in exactly that
@@ -2996,7 +2997,7 @@ Done this pass, 82 -> 69 directories, `make validate` green throughout:
 
 ### Taxonomy gaps recorded
 
-28 of the remaining 69 decompose to nothing: every matcher is a literal indicator
+28 of the 69 then decomposed to nothing (all 28 were subsequently deleted): every matcher is a literal indicator
 -- a C2 host, a publisher, an archive hash, a package name -- with no reusable
 behavior to relocate. Under TAXONOMY.md these are the "document the taxonomy gap"
 case rather than a silent delete, because a family contributing no reusable
@@ -3192,7 +3193,8 @@ in the code:
   file; `payment-receipt.pdf.exe` is the attack, not a label on it. Those
   directories are exempt.
 
-Both are excluded in the Makefile pending cleanup. Two of the 20 are worth
+Both were excluded in the Makefile while the backlog was worked through; the
+Makefile now carries no exclusions. Two of the 20 are worth
 reading first: `objectives/supply-chain/install-hook/package/manifest::npm-package-info-archive`
 rests on the `package_info-<name>-<version>.json` sidecar convention, which is
 the open corpus-shape question below arriving from a different direction; and
@@ -3228,8 +3230,9 @@ covered any of them.
 
 ### Dangling directory references
 
-`conviction-without-content` is still excluded, with 18 rules flagged, and
-chasing them found something larger. **`metadata/import/python/` has never
+`conviction-without-content` was excluded at this point, with 18 rules flagged,
+and chasing them found something larger -- though the finding below turned out
+to be wrong, and is corrected at the end of this document. **`metadata/import/python/` has never
 existed**, and 65 references point into it across 17 distinct paths
 (`metadata/import/python/socket`, `.../ctypes`, `.../pynput`, `.../subprocess/`
 and so on). Those legs resolve to nothing, so
@@ -3325,4 +3328,95 @@ slipped past it and were fixed by hand, and both are worth knowing about:
   rule's strings are verbatim those legs' class paths and maven coordinate. One
   fact, three legs, reading as a well-corroborated conviction. The checks compare
   trait references, not YARA sources, so this shape is invisible to them.
+
+## Closing state
+
+`make validate` passes with every validator enabled and no exclusions in the
+Makefile. `well-known/malware/supply-chain/` is at 37 directories, from 82.
+
+### Correction: the dangling-reference finding above was wrong
+
+The section on `metadata/import/python/` reported 103 dead references. They were
+not dead. `is_dynamic_metadata_ref` in cleave's loader lists `metadata/import/`,
+`metadata/signed/`, `metadata/entitlement/` and others as namespaces the
+analyzers *synthesize per file at scan time* -- from the file's own imports, code
+signature and entitlements -- so they never appear as static YAML and resolve
+only during a scan. Acting on that misreading, 16 Python import traits were
+authored and references repointed away from the working dynamic namespace; all of
+it was reverted. `dangling-directory-ref` now mirrors the same exemption list and
+reports zero, and `conviction-without-content` counts a dynamic-namespace leg as
+content, which is what an import fact is.
+
+### `overlapping-scope-duplicate`
+
+A fifth Policy check: two composites with identical evidence whose `for:` and
+`platforms:` scopes overlap, so both fire on any file the scopes share.
+`for-only-duplicates` did not cover this -- it runs on traits rather than
+composites, and keys on `platforms:`, so a platform-only difference between two
+composites was invisible to it. Overlap is not a plain set intersection: `All`
+matches anything and `Unix` subsumes linux/macos/android/ios/aix.
+
+It found 82 pairs, all now merged. Survivors were chosen by tier (a lower tier
+may be referenced by a higher one, never the reverse), references written fully
+qualified, and scopes unioned onto the survivor.
+
+26 of the 82 disagreed on `crit:` -- the same evidence convicting at two tiers,
+where which verdict a reader saw depended on which rule they opened. Those were
+first settled mechanically at the lower tier, then re-judged on the merits:
+`component` and `baseline` do not reduce false positives, they hide evidence
+while the finding still surfaces mislabelled. Eight were raised back --
+`xmrig-basic-config-options` and `messaging-app` to notable, `node-cli-clipboard-read`
+and `windows-firewall-authorizedapps-write-chain` to notable,
+`recycler-x-exe-pair`, `node-obfuscated-self-cleaning-loader` and
+`runtime-sandbox-detection-evidence` to suspicious, and
+`remote-csa-preparation-chain` to hostile.
+
+### Catch-all directories
+
+`webshell/family` held ten separately-recognised shells and is now one directory
+each (`c99`, `r57`, `b374k`, `wso`, `pbot`, `phpspy`, `weevely`, `indoxploit`,
+`findsock`, and China Chopper merged into the existing `chopper/`, which detects
+the wire protocol rather than the name). The class already used per-family
+directories, so the bucket was the anomaly. Two alias roll-ups over the family
+traits went with it.
+
+`trojan/family` held three unrelated things: `drivers-denis` now has its own
+directory, and the rickroll id `dQw4w9WgXcQ` moved to
+`objectives/anti-static/obfuscation/string/delimiter/` -- a joke token used as a
+field separator is a packer property, not a family, and its `not:` clause
+excluding the real YouTube URL confirms the reading. Splitting it required
+repointing a cleave file-type allowlist entry that still named the old
+directory; a stale entry there silently drops the cap exemption for everything
+beneath it.
+
+`ransomware/affiliate` was left alone. The name is a role rather than a subject,
+but the validator's own generic-leaf-directory check accepts it, its two literals
+are specific and documented, and inventing a campaign name would be worse.
+
+### Known gaps
+
+- No check looks inside a YARA source, so a YARA leg whose strings restate its
+  sibling legs is invisible. `aikido-debug-model` convicted on one fact stated
+  three ways that way; it is now native, so the family no longer relies on a
+  YARA leg, but the blind spot itself is untouched.
+- `for-only-duplicates` covers traits only. It now reports platform-only splits
+  as well as `for:`-only splits, but stays quiet when the members' platform
+  union reaches 4, on the theory that merging there would trade this error for
+  a `too-many-platforms` one. Raising the cap shows that theory is wrong: all 6
+  groups it currently hides are ordinary duplicates, not deliberate
+  per-platform splits.
+  - The union is inflated by overlapping labels rather than by real coverage.
+    `netbsd`+`unix`, `panos`+`appliance`+`windows`, `routeros`+`appliance`+`unix`
+    and `linux`+`macos`+`unix` each count 3 platforms for what is 1-2. Merged
+    honestly, none of the 6 breaches the cap.
+  - The gate also suppresses `for:`-only differences, which the cap was never
+    meant to cover -- the code ANDs `mergeable_platforms` into both arms while
+    the comment beside it says a `for:` difference "is always reportable".
+  - 4 of the 6 are cross-directory copies of one matcher, where the prescribed
+    fix ("merge into one trait with the combined `for:`/`platforms:`") is the
+    wrong advice: one matcher is one trait, so the copy should be deleted and
+    the survivor referenced from its correct tier. `NetworkInterface.getNetworkInterfaces`
+    is defined in both `micro-behaviors/os/network/interface` and
+    `objectives/discovery/system/fingerprint/info`, which is also a tier
+    duplication the objective should resolve by reference.
 
