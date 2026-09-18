@@ -1,0 +1,49 @@
+# Harvesting authentication tokens out of another process's address space.
+#
+# Two primitives, in any language: read another process's memory through
+# /proc/<pid>/mem -- usually after walking /proc/<pid>/maps to locate the heap
+# -- then run a credential-shaped search pattern over the bytes that come back.
+#
+# Unit 42's AWS AgentCore Harness research (Sept 2026) is the agent-runtime
+# variant: the harness's built-in `shell` tool runs as uid 0 in the same
+# namespace as the runtime, which is PID 1, so a prompt-injected tool call can
+# seek straight into the runtime's heap and lift the Identity vault's bearer
+# token out of it in plaintext -- no ptrace, no debugger, nothing written to
+# disk. The same two primitives are what CI-runner secret scrapers, container
+# breakout loot scripts and Go implants use, which is why the rule is built on
+# the primitives rather than on the harness.
+#
+# The pairing is what convicts, not either half. Process memory is read
+# legitimately by debuggers, profilers and crash handlers, and JWT/Bearer
+# search patterns are carried legitimately by secret scanners and gateway
+# middleware. Neither class of software does both.
+defaults:
+  platforms: [unix, android]
+  for: [scripts, source, binaries, -beam, -wasm, -pyc, -staticlib, -elixir, -clojure]
+  attack: T1003.007,T1528
+  mbc: B0005
+
+composite_rules:
+  - id: process-memory-bearer-token-scrape
+    desc: Sifts another process's memory for bearer tokens
+    crit: hostile
+    conf: 0.97
+    # Bind the search pattern to the memory read that feeds it. Without a
+    # window, a large source tree pairs an unrelated auth-header regex with an
+    # unrelated procfs reference and reports a credential dumper.
+    near_bytes: 8000
+    all:
+      - id: micro-behaviors/os/privilege/paths::proc-mem
+      - id: micro-behaviors/data/string/search::bearer-credential-search-pattern
+    # Corroborates that the read targets a *chosen* process rather than the
+    # caller's own: an enumerated map, an interpolated PID, or PID 1 outright.
+    any:
+      - id: micro-behaviors/fs/proc/memory::process-pid-maps-any
+      - id: micro-behaviors/fs/proc/memory::init-process-memory-read
+      - id: micro-behaviors/fs/proc/memory::process-memory-dumper
+      - id: micro-behaviors/fs/proc/info/path::process-arbitrary
+    unless:
+      # Memory-forensics and secret-scanning tooling legitimately combines a
+      # process-memory reader with credential patterns; that is its whole job.
+      - id: well-known/tool/detection/
+      - id: well-known/tool/reverse-engineering/
