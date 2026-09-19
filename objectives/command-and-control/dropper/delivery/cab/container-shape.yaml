@@ -64,6 +64,33 @@ traits:
       type: value
       path: "archive.members[*].path"
       regex: '(?i)\.(bat|cmd|vbs|vbe|js|jse|wsf|wsh|ps1|hta)$'
+  # DLL counterpart of `cab-script-member-entry` above: the side-loading family
+  # ships the implant as a bare .dll member (never .exe) so a susceptible host
+  # picks it up from the application directory.
+  - id: cab-dll-member-entry
+    desc: DLL cabinet member
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: "archive.members[*].path"
+      regex: '(?i)(^|/)[^/]+\.dll$'
+  # Exact basenames of Windows system DLLs on cabinet members. These are
+  # phantom-DLL side-loading targets: a DLL named WINMM.dll only runs when
+  # dropped beside a susceptible host, so a cabinet moving one such file is
+  # moving a side-load implant, not a redistributable. The alternation holds
+  # well-known OS components shipped in System32/SysWOW64, anchored to the
+  # full basename so versioned forks (WINMM-mine.dll) and lookalikes do not
+  # match. Kept under the 90-byte matcher cap as one atom; extend by splitting
+  # into per-group atoms behind an `any:` roll-up, not by lengthening this.
+  - id: cab-system-dll-member
+    desc: System-DLL-named cabinet member
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: value
+      path: "archive.members[*].path"
+      regex: '(?i)(^|/)(winmm|version|dbghelp|wtsapi32|uxtheme|msimg32|secur32|dwmapi|d3d9)\.dll$'
 
 composite_rules:
   # A cabinet whose executable member wears an invoice / remittance / SWIFT
@@ -95,6 +122,31 @@ composite_rules:
       - id: metadata/file/archive::archive-sole-member
       - id: cab-script-member-entry
       - id: cab-business-lure-member-name
+    unless:
+      - id: metadata/signed/platform/
+
+  # A cabinet whose sole member is an unsigned executable wearing a Windows
+  # system-DLL basename is side-loading delivery: the payload borrows an OS
+  # component name (WINMM.dll) so a susceptible host loads it from the
+  # application directory instead of System32, while the single-member shape
+  # shows the cabinet was built to move exactly that implant. The decoded
+  # WINMM stub behind this shape resolves kernel32 entry points from
+  # stack-decoded strings, stages a sibling NortonLog.txt through CreateFileA /
+  # ReadFile, decrypts it behind VirtualAlloc / VirtualProtect, and refuses to
+  # run before 2022 by GetSystemTime -- no legitimate cabinet moves an
+  # unsigned OS-named DLL alone, so the pairing is hostile rather than merely
+  # suspicious containment. Signed distribution cabinets stay excluded below.
+  - id: cab-system-dll-sideload-payload
+    desc: Cabinet delivers system-DLL side-loading payload
+    crit: hostile
+    conf: 0.95
+    attack: T1036,T1574.002
+    all:
+      - id: metadata/file/magic/identity::cab-mscf
+      - id: metadata/file/archive::archive-sole-member
+      - id: metadata/file/archive::archive-contains-executable-member
+      - id: cab-dll-member-entry
+      - id: cab-system-dll-member
     unless:
       - id: metadata/signed/platform/
 
