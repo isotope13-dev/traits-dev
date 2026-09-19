@@ -28,6 +28,27 @@ traits:
     if:
       type: text
       regex: 'echo\s+["''"]?\$\{?\w+\}?["''"]?\s*\|\s*base64\s+-[dD]\s*\|\s*gzip\s+-d\s*>\s*\S+\.json\b'
+  # The redirection sibling of `base64-decode-piped-to-file-write`, which only
+  # ever covered `| tee` and `| dd`. Plain `> file` is the commoner spelling:
+  # Apache Druid's `peon.sh` does
+  # `echo ${TASK_JSON} | base64 -d | gzip -d > ${TASK_DIR}/task.json`, and
+  # because that decode sits a few lines above the script's `exec bin/run-java`
+  # it scored two suspicious findings for a decode-then-execute flow it does
+  # not perform -- the bytes land in a task description, and the exec target is
+  # a literal program path.
+  #
+  # Deliberately bounded to data-file extensions rather than any redirect: a
+  # dropper that stages `base64 -d > /tmp/payload` and runs it keeps scoring,
+  # because the thing it writes is not a config or a document.
+  - id: base64-decode-redirected-to-data-file
+    desc: Base64 decode redirected into a data file
+    crit: notable
+    conf: 0.95
+    for: [shell, go, source, python, ruby, javascript]
+    if:
+      type: text
+      regex: 'base64\s+-{1,2}[dD]\w*[^\n]{0,50}>[^\n]{0,60}\.(json|ya?ml|conf|txt|xml)\b'
+
   - id: kubernetes-secret-pipeline
     desc: Kubernetes secret field Base64 decoding pipeline
     crit: notable
@@ -39,7 +60,7 @@ traits:
     desc: base64 -d/-D decode command
     crit: notable
     conf: 0.6
-    for: [shell, github-actions, text, batch]
+    for: [shell, github-actions, text, batch, makefile]
     if:
       type: text
       # `\b` keeps `base64` off a preceding word char so unit-test binaries named
@@ -124,3 +145,14 @@ composite_rules:
       - id: base64-decode-cmd
     unless:
       - id: metadata/file/naming::rust-source-file-context
+  # One reference for the two "the decoded bytes land in a file, not in an
+  # interpreter" spellings, so a consuming rule spends a single suppression
+  # slot -- `base64-exec-proximity` is already at the limit.
+  - id: base64-decode-lands-in-file
+    desc: Base64 decode writes to a file rather than an interpreter
+    crit: notable
+    conf: 0.95
+    for: [shell, go, source, python, ruby, javascript]
+    any:
+      - id: base64-decode-piped-to-file-write
+      - id: base64-decode-redirected-to-data-file
