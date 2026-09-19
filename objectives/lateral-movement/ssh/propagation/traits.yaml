@@ -60,15 +60,45 @@ composite_rules:
     any:
       - id: micro-behaviors/fs/chmod/remote
 
+  # Public face of the chmod-then-relaunch shape, split by evidence class:
+  # in command-bearing types (shell, interpreters, compiled binaries) the
+  # matched text is the command that runs; in C-family source a quoted
+  # pipeline is inert data until an execution primitive consumes it, so the
+  # source child additionally requires one.
   - id: ssh-remote-chmod-launch
     desc: SSH command changes mode then launches payload
     crit: suspicious
     conf: 0.94
+    any:
+      - id: ssh-remote-chmod-launch-command-text
+      - id: ssh-remote-chmod-launch-source
+
+  - id: ssh-remote-chmod-launch-command-text
+    desc: Command text changes mode then launches payload
+    crit: suspicious
+    conf: 0.94
+    for: [shell, python, rust, go, elf]
     near_bytes: 260
     all:
       - id: ssh-chmod-command
       - id: micro-behaviors/fs/chmod/executable/mode::chmod-make-executable
       - id: micro-behaviors/process/create/local-exec::detached-temp-path-launch
+
+  # C-family counterpart: the same chmod-then-relaunch shape, but the source
+  # must also hold an execution primitive (system/exec/popen), without which
+  # the quoted SSH pipeline is only data — detection fixtures and recovered
+  # command notes look like this.
+  - id: ssh-remote-chmod-launch-source
+    desc: C source changes mode then launches payload
+    crit: suspicious
+    conf: 0.94
+    for: [c, cpp, objc]
+    near_bytes: 260
+    all:
+      - id: ssh-chmod-command
+      - id: micro-behaviors/fs/chmod/executable/mode::chmod-make-executable
+      - id: micro-behaviors/process/create/local-exec::detached-temp-path-launch
+      - id: micro-behaviors/process/create/shell/native::c-source-command-execution
 
   - id: python-ssh-temp-payload-propagation
     desc: Python transfers and launches a temporary payload over SSH
@@ -93,6 +123,23 @@ composite_rules:
       - id: micro-behaviors/fs/path/private-key::ssh-private-key
       - id: micro-behaviors/fs/path/public-key::python-ssh-known-hosts-read
       - id: micro-behaviors/fs/path/public-key::ssh-known-hosts-read-command
+
+  # Source lockers often ship SSH worm templates as string data next to a
+  # real encrypt_file() body. The quoted ssh/scp/chmod lines are not passed
+  # to system(), so ssh-key-driven-payload-propagation (which requires a
+  # launch primitive in C) misses them; pairing the templates with the
+  # encryption routine is the locker-spreader shape.
+  - id: ssh-temp-payload-file-encryptor-spread
+    desc: File encryptor spreads via SSH temp payload
+    crit: hostile
+    conf: 0.97
+    attack: T1021.004,T1105,T1486
+    for: [c, cpp]
+    all:
+      - id: micro-behaviors/communications/ssh/transfer::scp-remote-temp-upload
+      - id: micro-behaviors/communications/ssh/client::strict-host-disable
+      - id: micro-behaviors/fs/file/encrypt::native-file-encryption-routine
+      - id: micro-behaviors/process/create/local-exec::detached-temp-path-launch
   - id: ssh-host-artifact-payload-propagation
     desc: SSH propagation seeds a remote payload
     crit: hostile
