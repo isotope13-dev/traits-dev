@@ -8,10 +8,32 @@ traits:
     desc: SAM hash export routine name
     crit: notable
     conf: 0.9
-    size_max: 80000
+    # Sized for small dump engines as well as whole tools: pwdump-family
+    # engine images carve at 90-106 KiB, above the old 80 KiB ceiling. The
+    # word alone stays notable; hostile verdicts built on it add LSA-policy
+    # or service-dispatch legs below, so the wider ceiling does not widen
+    # any conviction by itself.
+    size_max: 120000
     if:
       type: text
       word: GetHash
+  # Pwdump-family engines resolve SAM internals from samsrv.dll at runtime
+  # (SamIConnect, not the public SamrConnect import). The names are the
+  # in-process dump path; they stay notable until composed with GetHash.
+  - id: sami-connect-routine
+    desc: Internal SAM connect routine name
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      word: SamIConnect
+  - id: samsrv-library-name
+    desc: SAM server library name
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      word: samsrv.dll
 composite_rules:
   - id: sam-hash-dumper
     desc: SAM hash dumper via SAMR APIs
@@ -58,3 +80,41 @@ composite_rules:
     all:
       - id: sam-hash-export-routine
       - id: micro-behaviors/os/service/dispatch::register-service-handler
+  # Small LSA-policy engines (pwdump family) open the policy database,
+  # query its information class, and export the hash routine -- without
+  # reaching the SAMR or service legs above, and above the 80 KiB ceiling
+  # those legs were tuned for. The triple is the engine shape: admin tools
+  # open LSA policy but do not ship hash-export routines.
+  - id: lsa-policy-hash-export-engine
+    desc: LSA policy SAM hash export engine
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: sam-hash-export-routine
+      - id: micro-behaviors/os/security/lsa::lsa-open-policy
+      - id: micro-behaviors/os/security/lsa::lsa-query-information-policy
+  # The same small engines when they run as services: the full dispatch
+  # triplet (dispatcher, control handler, status) plus the hash-export
+  # routine, with no size ceiling -- composition carries the precision, so
+  # carved extents and small droppers are covered just like whole tools.
+  - id: sam-hash-service-triad-payload
+    desc: SAM hash export runs as a dispatched service
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: sam-hash-export-routine
+      - id: micro-behaviors/os/service/dispatch::service-dispatch-triad
+  # In-process dump engines load samsrv.dll, call SamIConnect, and export
+  # hashes. The service-payload images already convict via the dispatch
+  # triad above; skip them so a service stub does not pick up a fifth
+  # hostile from the same GetHash evidence.
+  - id: internal-sam-hash-engine
+    desc: In-process SAMSRV hash export engine
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: sam-hash-export-routine
+      - id: sami-connect-routine
+      - id: samsrv-library-name
+    unless:
+      - id: micro-behaviors/os/service/dispatch::service-dispatch-triad
