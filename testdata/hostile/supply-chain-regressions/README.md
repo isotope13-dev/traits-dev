@@ -10,3 +10,11 @@ previously named `gomod-marrowmesh-boot-wipe-linux.zip`. Its random environment
 gate is unchanged and is not detection evidence.
 
 SHA-256: `6ba595c89a8ecfd8f6c393fcea2ef84e07ddf4ec022e35bd8f0b14476cce915e`
+
+`npm-squat-phantom-exec-carrier.tgz` is a synthetic minimal carrier for the
+published builtin-name squat shape: `child_process` plus an unimported runtime
+dependency, with an entrypoint that imports `execSync`. It pins the
+`objectives/supply-chain/impersonation/core-module` hostile composite. Never
+install, build, import, or execute this package; analyze its bytes only.
+
+SHA-256: `8a044fe60c88355e2f3c5990d2a2e51cffaa64c5b79c236d5352f61f0c5246e5`
