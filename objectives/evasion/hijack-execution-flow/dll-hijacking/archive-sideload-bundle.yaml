@@ -16,7 +16,7 @@
 # encrypted, so an analyst — not the scanner alone — confirms intent.
 defaults:
   platforms: [windows]
-  for: [zip, tar]
+  for: [zip, tar, 7z]
   attack: T1574.002
   mbc: F0015
 
@@ -127,7 +127,7 @@ composite_rules:
 
   - id: archive-native-bins-in-update-dirs
     desc: Native binary in update/library dir
-    crit: component
+    crit: notable
     conf: 0.8
     any:
       - id: archive-bin-in-update-dir
@@ -147,8 +147,10 @@ composite_rules:
     crit: suspicious
     conf: 0.85
     all:
-      - id: archive-native-bins-in-update-dirs
       - id: archive-interpreter-testsuite-padding
+    any:
+      - id: archive-bin-in-update-dir
+      - id: archive-bin-in-library-dir
     unless:
       # PHP source/SDK trees legitimately ship .phpt tests beside php*.exe/php*.dll.
       - id: metadata/build/archive::php-distribution-member
@@ -182,15 +184,29 @@ composite_rules:
       - id: well-known/lib/format/mimetype::mimetype-testdata-archive-context
 
   - id: encrypted-runtime-loader-bundle
-    for: [zip, tar, data]
-    desc: Encrypted hash-named archive bundles a VC runtime and native loader
+    for: [zip, tar, data, 7z]
+    desc: Encrypted archive bundles a VC runtime and native loader
     crit: hostile
     conf: 0.96
     all:
       - id: micro-behaviors/data/archive/member::archive-encrypted-member
+      - id: metadata/build/archive::archive-windows-executable-entry
+    any:
       - id: metadata/build/archive::archive-bundled-vcruntime
-      - id: metadata/build/archive::archive-native-binary-entry
-      - id: metadata/file/naming::sha256-named-high-entropy-file
+      - id: metadata/build/archive::archive-bundled-msvc-runtime
+
+  - id: encrypted-runtime-loader-cluster
+    for: [zip, tar, data, 7z]
+    desc: Encrypted kit hides a VC runtime loader
+    crit: hostile
+    conf: 0.95
+    attack: T1574.002,T1027
+    all:
+      - id: micro-behaviors/data/archive/member::archive-encrypted-member-cluster
+      - id: metadata/build/archive::archive-windows-executable-entry
+    any:
+      - id: metadata/build/archive::archive-bundled-vcruntime
+      - id: metadata/build/archive::archive-bundled-msvc-runtime
 
   # The password-protected staging bundle, as shipped by the HijackLoader /
   # IDAT delivery waves: an AES-encrypted 7z whose header is deliberately left
@@ -226,3 +242,57 @@ composite_rules:
       - id: archive-root-installer-exe
       - id: archive-root-updater-exe
       - id: archive-root-launcher-exe
+      - id: metadata/build/archive::archive-setup-exe-member
+      - id: metadata/build/archive::archive-nonascii-exe-member
+      - id: metadata/file/naming::archive-hyphenated-setup-exe
+      - id: metadata/file/naming::archive-active-setup-exe
+
+  # Same wave, but the launcher is not named Setup.exe. App-local API-set
+  # stubs next to a PE inside a passworded archive are the sideload
+  # scaffolding; the encryption is why this is hostile rather than a
+  # portable UCRT layout.
+  - id: encrypted-apiset-sideload-bundle
+    desc: Encrypted archive deploys API-set stubs beside a PE
+    crit: hostile
+    conf: 0.95
+    attack: T1574.002,T1027
+    all:
+      - id: micro-behaviors/data/archive/member::archive-encrypted-member
+      - id: metadata/build/archive::archive-apiset-stub-member
+      - id: metadata/build/archive::archive-windows-executable-entry
+
+  # PHP .phpt files (and similar interpreter tests) have no business in an
+  # encrypted Windows installer tree. The tests are decoy padding so the
+  # listing looks like a development tree; encryption hides the real payload.
+  - id: encrypted-decoy-padded-sideload-bundle
+    desc: Encrypted archive pads a PE kit with interpreter tests
+    crit: hostile
+    conf: 0.95
+    attack: T1574.002,T1027
+    all:
+      - id: micro-behaviors/data/archive/member::archive-encrypted-member
+      - id: archive-interpreter-testsuite-padding
+      - id: metadata/build/archive::archive-windows-executable-entry
+    unless:
+      - id: metadata/build/archive::php-distribution-member
+      - id: metadata/build/archive::archive-cargo-toml-entry
+
+  - id: encrypted-gdiplus-sideload-dll
+    desc: Encrypted archive deploys GdiPlus.dll
+    crit: hostile
+    conf: 0.94
+    attack: T1574.002,T1027
+    all:
+      - id: micro-behaviors/data/archive/member::archive-encrypted-member
+      - id: metadata/file/naming::archive-gdiplus-dll-member
+      - id: metadata/build/archive::archive-windows-executable-entry
+
+  - id: encrypted-textshaping-sideload-dll
+    desc: Encrypted archive deploys TextShaping.dll
+    crit: hostile
+    conf: 0.94
+    attack: T1574.002,T1027
+    all:
+      - id: micro-behaviors/data/archive/member::archive-encrypted-member
+      - id: metadata/file/naming::archive-textshaping-dll-member
+      - id: metadata/build/archive::archive-windows-executable-entry
