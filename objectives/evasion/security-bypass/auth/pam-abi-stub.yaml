@@ -1,0 +1,65 @@
+# Shared objects built to be loaded in place of the PAM libraries.
+#
+# A program that authenticates through PAM links against libpam.so.0 and calls
+# pam_start / pam_authenticate / pam_acct_mgmt / pam_setcred. A replacement object
+# only has to *define* those entry points -- returning PAM_SUCCESS without
+# checking anything -- and every authentication decision the victim makes becomes
+# a constant. This is the library half of two different attacks: an LD_PRELOAD or
+# DT_RPATH hijack of setuid `su`/`sudo`/`login`, and a persistent PAM backdoor
+# that replaces the system libpam.
+#
+# The discriminator against real Linux-PAM source is that a genuine libpam
+# implements the stack -- it reads /etc/pam.d, dlopens pam_*.so modules and runs a
+# conversation -- while a shim is a handful of bodies that immediately return.
+defaults:
+  platforms: [unix]
+  for: [c, cpp]
+  attack: T1556.003
+  mbc: E1556
+
+composite_rules:
+  # Four or more PAM client entry points defined in one file, with none of the
+  # machinery a real implementation needs. Four is above what a partial test
+  # double or a single-function wrapper carries and below the full ABI, so a
+  # trimmed shim still matches.
+  - id: pam-client-abi-surface
+    desc: Publishes the PAM client ABI
+    crit: suspicious
+    conf: 0.93
+    all:
+      - id: micro-behaviors/os/pam/abi::pam-abi-version-set-binding
+    unless:
+      # The real implementation, where exporting the ABI is the whole point, and
+      # anything that also reads the PAM configuration it is supposed to honour.
+      - id: well-known/tool/sysadmin/linux-pam/
+      - id: micro-behaviors/os/pam/auth::pam-d-path
+      - id: micro-behaviors/os/pam/auth::pam-conf-path
+
+  # The published ABI sits in an object with no PAM stack behind it: no
+  # /etc/pam.d read, no module dlopen, no conversation. That is a library meant to
+  # be *substituted* for libpam rather than loaded by it -- a PAM module exports
+  # pam_sm_* and needs no version script at all.
+  - id: pam-abi-replacement-shim
+    desc: PAM ABI shim with no PAM stack
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: pam-client-abi-surface
+      - id: micro-behaviors/os/linker/symbol-version::source-symbol-version-binding
+    unless:
+      - id: micro-behaviors/dylib/load/runtime::dlopen-reference
+
+  # The shim also escalates: a constructor or a stubbed entry point raises the
+  # process to uid 0 and hands over a shell. Loaded by a setuid victim that is the
+  # payload, and it separates an authentication-bypass shim from a test double.
+  - id: pam-abi-shim-root-shell-payload
+    desc: PAM ABI shim drops a root shell
+    crit: hostile
+    conf: 0.97
+    attack: T1556.003,T1548.001
+    all:
+      - id: pam-client-abi-surface
+      - id: objectives/privilege-escalation/elevation-control/setuid/runtime::native-root-setid-shell-escalation
+    any:
+      - id: micro-behaviors/process/lifecycle/auto-exec::gcc-constructor-attr
+      - id: micro-behaviors/os/linker/symbol-version::source-symbol-version-binding

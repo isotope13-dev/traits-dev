@@ -1,0 +1,49 @@
+# Install hooks whose bundled script shells out to enumerate the account and
+# host at install time.
+#
+# Distinct from the host-profile beacons next door: those convict on the
+# network side (a callback URL receiving the profile). This convicts on the
+# collection side -- an install hook that spawns `whoami`, `id`, `uname -a` to
+# read who and where it landed. A package that runs two of these identity
+# commands the moment it is installed is fingerprinting the machine, whatever it
+# then does with the result (POST it, DNS-exfil it, or write it to disk). Keying
+# on the collection means the rule still fires when the exfil channel is one we
+# do not yet model.
+#
+# A single `whoami` shows up in the odd legitimate diagnostic; the account+OS
+# enumeration pair inside an auto-running install hook does not.
+defaults:
+  platforms: [unix, windows]
+  for: [package.json, javascript]
+  attack: T1195.002,T1033,T1082
+  mbc: E1033
+
+composite_rules:
+  # Two or more account/OS enumeration commands run from a bundled script. Held
+  # at notable on its own — the install-hook context in the hostile rule below
+  # is what makes install-time fingerprinting malicious rather than diagnostic.
+  - id: bundled-account-os-recon-commands
+    desc: Bundled script enumerates account and OS
+    crit: notable
+    conf: 0.9
+    any:
+    - id: objectives/discovery/account/enum::js-wrapped-whoami-exec
+    - id: objectives/discovery/account/enum::js-wrapped-id-exec
+    - id: objectives/discovery/system/fingerprint/runtime::js-system-info-discovery
+    needs: 2
+
+  - id: install-hook-bundled-account-os-recon
+    desc: Install hook runs bundled account/OS reconnaissance
+    crit: hostile
+    conf: 0.97
+    scope: archive
+    # Pools the manifest's lifecycle hook with the bundled script it runs, so
+    # the rule reports on the package container they both live in.
+    for: [package.json, javascript, npm, tar, zip]
+    all:
+    - id: bundled-account-os-recon-commands
+    any:
+    - id: objectives/supply-chain/install-hook/scripts/declaration::has-preinstall
+    - id: objectives/supply-chain/install-hook/scripts/declaration::has-postinstall
+    - id: metadata/package/scripts/lifecycle::has-install-script
+    needs: 1

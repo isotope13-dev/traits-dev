@@ -1,0 +1,50 @@
+# HTTP-polling command shells implemented in PowerShell.
+#
+# Distinct from the TCPClient/socket reverse shells next door and from a one-shot
+# download-and-execute cradle. The identity here is the full C2 round trip in a
+# loop: the implant repeatedly fetches a command from an HTTP endpoint, evaluates
+# the fetched text as PowerShell, and posts the command's output back over the
+# same channel. The download cradle fetches and evals but never sends output
+# back; a monitoring agent posts telemetry but does not eval a fetched string.
+# Requiring the fetch, the eval of fetched content, and the result upload inside
+# one looping script is what separates a remote shell from either.
+#
+# Keyed on the behaviour rather than on this tool's URL layout, so a rebuild that
+# renames the /api/v1/Client/* routes still matches. The third-party
+# HTTP-Shell YARA string signature covers the specific IOCs; this covers the
+# technique.
+defaults:
+  platforms: [windows, unix]
+  for: [powershell]
+  attack: T1071.001,T1059.001
+  mbc: B0030
+
+composite_rules:
+  - id: powershell-http-poll-command-shell
+    desc: PowerShell HTTP polling command shell
+    crit: hostile
+    conf: 0.95
+    scope: file
+    all:
+      # Fetch a command over HTTP (read the response body).
+      - id: micro-behaviors/communications/http/client/managed::getresponsestream
+      # Evaluate the fetched text as PowerShell -- including via an aliased iex,
+      # which is how this class hides the evaluator from signature scans.
+      - id: micro-behaviors/process/interpreter/eval/direct::powershell-expression-eval
+      # Return the command output back over HTTP.
+      - id: micro-behaviors/communications/http/post::post
+      # A polling loop is what makes it an interactive shell, not a one-shot.
+      - id: micro-behaviors/data/control-flow/loop::embedded-powershell-while-true
+
+  # The Invoke-WebRequest/RestMethod spelling of the same shell, for implants
+  # that use the cmdlets instead of raw HttpWebRequest.
+  - id: powershell-cmdlet-http-poll-command-shell
+    desc: PowerShell cmdlet HTTP polling command shell
+    crit: hostile
+    conf: 0.95
+    scope: file
+    all:
+      - id: micro-behaviors/communications/http/lib/invoke-webrequest::request-powershell
+      - id: micro-behaviors/process/interpreter/eval/direct::powershell-expression-eval
+      - id: micro-behaviors/communications/http/lib/invoke-webrequest::http-body-or-upload
+      - id: micro-behaviors/data/control-flow/loop::embedded-powershell-while-true

@@ -48,7 +48,66 @@ traits:
       type: text
       regex: '\.(push|append)\s*\(\s*\{[^}]{0,220}\b(key|code)\s*:\s*[A-Za-z_$][\w$]*\.(key|code)\b'
 
+  # --- Extension content-script keylogger that re-arms on injected fields ---
+  #
+  # A page-injecting content script (KREMLIN "AVSync"/"FrameSync") attaches an
+  # input handler to every <input>/<textarea>, then uses a MutationObserver to
+  # re-attach the same handler to fields added later — so a login form rendered
+  # after page load is still logged. Captured values are posted to the service
+  # worker under a "KeyLogger" action, tagged with ext-prefixed field names.
+  # These four literals survive the extension's obfuscation because they are
+  # string constants, not call structure.
+
+  - id: input-textarea-field-selector
+    desc: Selector targeting input and textarea
+    crit: notable
+    conf: 0.9
+    if:
+      type: literal
+      kind: string
+      regex: 'input,\s*textarea'
+
+  - id: keylogger-action-label
+    desc: KeyLogger action message label
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: literal
+      kind: string
+      exact: KeyLogger
+
+  # Captured fields are relabeled extinput_/exttextarea_/extselect_ before being
+  # reported. Any label of this exact shape is the capture-tagging scheme, not
+  # an incidental identifier; it corroborates the observer + selector below.
+  - id: ext-captured-field-prefix
+    desc: Ext-prefixed captured field name
+    crit: notable
+    conf: 0.9
+    if:
+      type: literal
+      kind: string
+      regex: '^ext(input|textarea|select)_$'
+
 composite_rules:
+  # A DOM-mutation-driven input logger inside an extension content script: it
+  # watches for new input/textarea fields and reports typed values under the
+  # KeyLogger action. The observer plus the field selector establish the
+  # re-arming capture; the action label or the ext-prefixed field names confirm
+  # the exfil channel.
+  - id: extension-dom-input-keylogger
+    desc: Extension re-arming DOM input keylogger
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: micro-behaviors/ui/window/event::browser-mutation-observer
+      - id: input-textarea-field-selector
+    any:
+      - id: keylogger-action-label
+      - id: ext-captured-field-prefix
+    needs: 1
+    unless:
+      - id: metadata/package/testing/
+
   - id: dom-keystroke-recorder
     desc: Document key handler records typed characters
     crit: hostile

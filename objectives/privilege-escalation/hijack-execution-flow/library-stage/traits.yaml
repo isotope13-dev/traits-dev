@@ -1,0 +1,50 @@
+# Staging attacker-controlled shared objects under the filenames a setuid binary
+# expects, so the victim's own library search resolves to them.
+#
+# The hijack has two halves: a payload object planted under a real library's
+# SONAME in a directory the attacker can write, and something that makes the
+# setuid binary search that directory -- LD_LIBRARY_PATH or LD_PRELOAD where the
+# loader still honours them, an overwritten DT_RPATH entry (the CVE-2023-4911
+# route), or a writable directory already on the search path. Detection pairs the
+# staging with the search-path influence, so ordinary library packaging does not
+# match.
+defaults:
+  platforms: [unix]
+  for: [c, cpp, go, rust, python, shell, elf]
+  attack: T1574.006
+  mbc: E1574
+
+traits:
+  # A copy whose destination basename is a versioned SONAME (`libfoo.so.N`) --
+  # the exact spelling a consumer's DT_NEEDED entry asks the loader for. Build
+  # and packaging scripts legitimately do this when installing their own library,
+  # so this stays a notable staging observation; the composite below adds the
+  # setuid victim and the search-path influence that make it a hijack.
+  - id: shared-object-copied-to-soname
+    desc: Copies a shared object onto a SONAME
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '\bcp\s+[^\s;]{1,120}\.so\b\S{0,16}\s+\S{0,120}/lib[A-Za-z0-9_+.-]{0,40}\.so\.[0-9]'
+
+composite_rules:
+  # Payload libraries staged under system SONAMEs, a setuid victim named, and a
+  # loader search-path lever in the same program. That is the whole hijack, and it
+  # is technique-agnostic: the lever may be GLIBC_TUNABLES (an overwritten
+  # DT_RPATH, as in Looney Tunables) or the preload/library-path variables that
+  # still apply to non-setuid or capability-bearing targets.
+  - id: staged-soname-suid-library-hijack
+    desc: Stages fake system libraries for setuid load
+    crit: hostile
+    conf: 0.96
+    # No shell: the setuid victim leg is a source/binary path fact, so a shell
+    # spelling of this chain can never satisfy every leg.
+    for: [c, cpp, go, rust, python, elf]
+    all:
+      - id: shared-object-copied-to-soname
+      - id: micro-behaviors/fs/path/system::setuid-system-binary-path
+    any:
+      - id: objectives/evasion/hijack-execution-flow/preload::glibc-tunables
+      - id: micro-behaviors/os/linker/env::ld-library-path
+      - id: micro-behaviors/os/linker/env::ld-preload-environment-assignment
