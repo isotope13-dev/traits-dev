@@ -11,14 +11,14 @@
 # executable, and the sample set bears this out: the multi-member cabinets are
 # Microsoft's signed update packages, and the single-executable ones are
 # invoice, remittance and SWIFT-message lures.
-# Each rule below requires the MSCF magic explicitly. `for: [cab]` is not
-# enough on its own: at archive scope the declared file type is not enforced
-# against the member the evidence comes from, so "cabinet carries a single
-# script member" was landing on ordinary single-entry .zip files -- HandBrake's
-# zipped Photoshop asset, Homebrew's AppWithBinary.zip test fixture, a zipped
-# __init__.py. The legs themselves (`archive-sole-member`,
-# `archive-contains-script-member`) are generic archive facts and say nothing
-# about cabinets.
+# Each rule below requires the cabinet container-format leg explicitly.
+# `for: [cab]` is not enough on its own: at archive scope the declared file
+# type is not enforced against the member the evidence comes from, so
+# "cabinet carries a single script member" was landing on ordinary
+# single-entry .zip files -- HandBrake's zipped Photoshop asset, Homebrew's
+# AppWithBinary.zip test fixture, a zipped __init__.py. The legs themselves
+# (`archive-sole-member`, `archive-contains-script-member`) are generic
+# archive facts and say nothing about cabinets.
 defaults:
   platforms: [windows]
   for: [cab]
@@ -26,9 +26,10 @@ defaults:
   mbc: B0024
 
 traits:
-  # Member-path fragments are component-only: without MSCF they also match npm
-  # tarballs, zip fixtures, and other archives whose members happen to end in
-  # .js/.dll. The composites below pair each path with cab-mscf.
+  # Member-path fragments are component-only: without the container-format leg
+  # they also match npm tarballs, zip fixtures, and other archives whose
+  # members happen to end in .js/.dll. The composites below pair each path
+  # with cab-container-format.
   - id: cab-business-lure-exe-member-path
     desc: Business-lure executable member path
     crit: component
@@ -105,63 +106,79 @@ traits:
       type: value
       path: "archive.members[*].path"
       regex: '(?i)(^|/)(winmm|version|dbghelp|wtsapi32|uxtheme|msimg32|secur32|dwmapi|d3d9)\.dll$'
+  # Container format read off the archive header (`archive.container.archive`
+  # is `cab` only when the CFHEADER walk actually parsed a cabinet). The
+  # `cab-mscf` magic atom cannot serve this purpose: it is `for: [data]`, and
+  # a detected cabinet types as `cab` whose own bytes are never content
+  # scanned, so that leg never fires on a real cabinet and every composite
+  # requiring it is dead. This is the archive-node half the validator asks
+  # for; the `data`-node half stays `cab-mscf` for opaque MSCF bytes.
+  - id: cab-container-format
+    desc: Archive container format is cabinet
+    crit: baseline
+    conf: 0.99
+    if:
+      type: value
+      path: archive.container.archive
+      exact: "cab"
 
 composite_rules:
   - id: cab-business-lure-exe-member
     desc: Business-lure executable cabinet member
     crit: suspicious
     conf: 0.93
-    # `cab-mscf` is a magic-byte atom declared `for: [data]`; a rule that
-    # requires it must declare that type alongside the container it reports on.
+    # `cab-container-format` keeps this cabinet-specific: the member-path
+    # legs alone would also match single-entry .zip files.
     for: [cab, data]
     all:
-      - id: metadata/file/magic/identity::cab-mscf
+      - id: cab-container-format
       - id: cab-business-lure-exe-member-path
   - id: cab-business-lure-member-name
     desc: Business-lure cabinet member name
     crit: notable
     conf: 0.93
-    # `cab-mscf` is a magic-byte atom declared `for: [data]`; a rule that
-    # requires it must declare that type alongside the container it reports on.
+    # `cab-container-format` keeps this cabinet-specific: the member-path
+    # legs alone would also match single-entry .zip files.
     for: [cab, data]
     all:
-      - id: metadata/file/magic/identity::cab-mscf
+      - id: cab-container-format
       - id: cab-business-lure-member-name-path
   - id: cab-script-member-entry
     desc: Script cabinet member
     crit: notable
     conf: 0.9
-    # `cab-mscf` is a magic-byte atom declared `for: [data]`; a rule that
-    # requires it must declare that type alongside the container it reports on.
+    # `cab-container-format` keeps this cabinet-specific: the member-path
+    # legs alone would also match single-entry .zip files.
     for: [cab, data]
     all:
-      - id: metadata/file/magic/identity::cab-mscf
+      - id: cab-container-format
       - id: cab-script-member-path
   - id: cab-dll-member-entry
     desc: DLL cabinet member
     crit: notable
     conf: 0.9
-    # `cab-mscf` is a magic-byte atom declared `for: [data]`; a rule that
-    # requires it must declare that type alongside the container it reports on.
+    # `cab-container-format` keeps this cabinet-specific: the member-path
+    # legs alone would also match single-entry .zip files.
     for: [cab, data]
     all:
-      - id: metadata/file/magic/identity::cab-mscf
+      - id: cab-container-format
       - id: cab-dll-member-path
   - id: cab-system-dll-member
     desc: System-DLL-named cabinet member
     crit: suspicious
     conf: 0.9
-    # `cab-mscf` is a magic-byte atom declared `for: [data]`; a rule that
-    # requires it must declare that type alongside the container it reports on.
+    # `cab-container-format` keeps this cabinet-specific: the member-path
+    # legs alone would also match single-entry .zip files.
     for: [cab, data]
     all:
-      - id: metadata/file/magic/identity::cab-mscf
+      - id: cab-container-format
       - id: cab-system-dll-member-path
   # A cabinet whose executable member wears an invoice / remittance / SWIFT
   # lure name is the malspam delivery shape described above. No legitimate
   # cabinet names an executable this way, so the pairing is hostile rather
-  # than merely suspicious containment. The lure evidence enters as its MSCF
-  # + member-path atoms, and the generic .exe atom stays cab-scoped via its
+  # than merely suspicious containment. The lure evidence enters as its
+  # container-format + member-path atoms, and the generic .exe atom stays
+  # cab-scoped via its
   # own for: list; the misplaced-executable atom is the second notable leg
   # and corroborates the dropper shape (lure executable at an atypical path).
   - id: cab-business-lure-exe-payload
@@ -171,7 +188,7 @@ composite_rules:
     platforms: [windows, macos, android]
     for: [cab, pe, zip, xpi, macho, apk, data]
     all:
-      - id: metadata/file/magic/identity::cab-mscf
+      - id: cab-container-format
       - id: metadata/build/archive::archive-windows-executable-entry
       - id: metadata/file/archive::archive-misplaced-executable-member
       - id: cab-business-lure-exe-member-path
@@ -182,9 +199,10 @@ composite_rules:
   # SWIFT lure name is the script variant of the malspam delivery shape above:
   # a one-file cabinet built to move one lure-named script. No legitimate
   # cabinet names a script this way, so the pairing is hostile rather than
-  # merely suspicious containment. All legs are atomic on purpose: the MSCF
-  # leg keeps this cabinet-specific (the member-path legs alone would also
-  # match single-script zips), and the lure-script atoms are the
+  # merely suspicious containment. All legs are atomic on purpose: the
+  # container-format leg keeps this cabinet-specific (the member-path legs
+  # alone would also match single-script zips), and the lure-script atoms are
+  # the
   # social-engineering evidence, ORed as a sibling `any:` so no intermediate
   # composite sits between the conviction and its evidence.
   - id: cab-business-lure-script-payload
@@ -194,7 +212,7 @@ composite_rules:
     platforms: [windows, macos, android]
     for: [cab, pe, zip, xpi, macho, apk, data]
     all:
-      - id: metadata/file/magic/identity::cab-mscf
+      - id: cab-container-format
       - id: metadata/file/archive::archive-sole-member
     any:
       - id: cab-lure-script-member-a
@@ -211,7 +229,8 @@ composite_rules:
   # cabinet moves an unsigned OS-named DLL alone, so the pairing is hostile
   # rather than merely suspicious containment. All legs are atomic on purpose:
   # a composite roll-up would not resolve as a leg at scan time, so the
-  # system-DLL evidence enters as its MSCF + member-path atoms directly, and
+  # system-DLL evidence enters as its container-format + member-path atoms
+  # directly, and
   # the implant evidence enters as member-measured atoms (misplaced shape plus
   # one loader-malice signal: wiped export timestamp, hidden memory-protection
   # string, or stub-few imports). `scope: archive` pools the container shape
@@ -227,7 +246,7 @@ composite_rules:
     for: [cab, pe, zip, xpi, macho, apk, data]
     scope: archive
     all:
-      - id: metadata/file/magic/identity::cab-mscf
+      - id: cab-container-format
       - id: metadata/file/archive::archive-sole-member
       - id: metadata/file/archive::archive-misplaced-executable-member
       - id: cab-system-dll-member-path
@@ -245,7 +264,7 @@ composite_rules:
     platforms: [windows, macos, android]
     for: [cab, pe, zip, xpi, macho, apk, data]
     all:
-      - id: metadata/file/magic/identity::cab-mscf
+      - id: cab-container-format
       - id: metadata/file/archive::archive-sole-member
       - id: metadata/file/archive::archive-contains-executable-member
     downgrade:
@@ -268,7 +287,7 @@ composite_rules:
     platforms: [windows, macos, android]
     for: [cab, pe, zip, xpi, macho, apk, data]
     all:
-      - id: metadata/file/magic/identity::cab-mscf
+      - id: cab-container-format
       - id: metadata/file/archive::archive-sole-member
       - id: metadata/file/archive::archive-contains-script-member
     unless:
