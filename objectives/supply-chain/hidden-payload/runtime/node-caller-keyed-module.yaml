@@ -1,0 +1,62 @@
+# Exported library API that turns caller-controlled structured data into a
+# decryption password, materializes an encrypted sibling as source, and loads
+# the returned path. The data-flow atom binds the exported function parameter
+# to JSON.stringify(), then binds that result to an argument of the staging call
+# nested directly inside require(). The composite adds the cryptographic file
+# staging chain, avoiding a verdict on ordinary serializers or plugin loaders.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1195.002,T1027.013,T1059.007,T1140
+  mbc: B0024,B0032
+
+traits:
+  - id: cjs-export-caller-data-require-call-result
+    desc: Exported API loads caller-derived module path
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: tree-sitter
+      language: javascript
+      query: |
+        (assignment_expression
+          left: (member_expression
+            object: (identifier) @exports)
+          right: (function_expression
+            parameters: (formal_parameters
+              (identifier) @parameter)
+            body: (statement_block
+              (lexical_declaration
+                (variable_declarator
+                  name: (identifier) @serialized
+                  value: (call_expression
+                    function: (member_expression
+                      object: (identifier) @json
+                      property: (property_identifier) @stringify)
+                    arguments: (arguments
+                      (identifier) @input))))
+              (lexical_declaration
+                (variable_declarator
+                  value: (call_expression
+                    function: (identifier) @require
+                    arguments: (arguments
+                      (call_expression
+                        arguments: (arguments
+                          (_)*
+                          (identifier) @used))))))))
+          (#eq? @exports "exports")
+          (#eq? @json "JSON")
+          (#eq? @stringify "stringify")
+          (#eq? @require "require")
+          (#eq? @parameter @input)
+          (#eq? @serialized @used))
+composite_rules:
+  - id: exported-caller-keyed-encrypted-module-loader
+    desc: Caller data unlocks encrypted local module
+    crit: suspicious
+    conf: 0.98
+    all:
+      - id: cjs-export-caller-data-require-call-result
+      - id: objectives/command-and-control/dropper/staging/encrypted::node-local-file-decrypt-dynamic-load
+    unless:
+      - id: well-known/tool/detection/
