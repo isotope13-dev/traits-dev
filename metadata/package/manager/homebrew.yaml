@@ -16,6 +16,83 @@ traits:
         (class superclass: (superclass (constant) @base)
           (#eq? @base "Formula"))
 
+  # A formula's `test do` block runs the thing it just installed, and for a
+  # network tool that means invoking curl against a real host. That is not a
+  # lifecycle phase: install and post_install are. Homebrew's own
+  # Formula/c/curl.rb runs `system bin/"curl", "--http3-only", ...
+  # https://cloudflare-quic.com` and Formula/p/privoxy.rb runs
+  # `shell_output("curl --head --proxy ... https://github.com")`, and the
+  # trojanized-formula rules read those as a remote stage fetch -- 37 hostile
+  # findings across the official homebrew-core tap in one sample.
+  #
+  # Scoped with tree-sitter to the test block specifically, so a formula that
+  # curls during `install` (the actual threat) still matches. Verified against
+  # curl.rb and privoxy.rb (match) and a synthetic formula whose curl sits in
+  # `def install` (no match). Caveat: as an `unless` this is file-scoped, so a
+  # formula that curls in BOTH test and install is suppressed -- a decoy test
+  # block would evade. Accepted because the alternative is convicting the
+  # entire curated tap.
+  # curl invoked as the PROGRAM, anchored to the first argument.
+  #
+  # The generic `curl-command-remote-url` leg is a text regex
+  # (`\bcurl\b[^\n]{0,140}https?://`) and cannot tell a command from prose.
+  # In homebrew-core it matched, variously: a TODO comment linking a GitHub
+  # issue (julia), a trailing comment on `uses_from_macos "curl"` (poppler),
+  # a maintainer note showing how a version was looked up (simdutf, dpp), and
+  # `system "make", "-C", "deps", "install-curl"` -- a make TARGET whose name
+  # merely contains the substring (julia again).
+  #
+  # Anchoring with `.` to the first argument of system/shell_output is what
+  # distinguishes "runs curl" from "mentions curl".
+  - id: homebrew-curl-program-invocation
+    desc: Formula runs curl as the program
+    crit: notable
+    conf: 0.96
+    for: [ruby]
+    if:
+      type: tree-sitter
+      query: |
+        (call
+          method: (identifier) @m
+          arguments: (argument_list . (string) @prog)
+          (#match? @m "^(system|shell_output)$")
+          (#match? @prog "^\"(/[\\w/]*)?curl( |\"|$)"))
+
+  # Homebrew's `livecheck` DSL fetches an upstream page to discover the latest
+  # version. Several formulas read a googlesource `?format=TEXT` endpoint,
+  # which serves base64, so the block calls Base64.decode64 -- and paired with
+  # any `system` call elsewhere in the formula that reads as
+  # "system() + Base64.decode64". emscripten, etcd, postgis, rbspy, deark and
+  # witness all scored hostile on it. Scoped to the livecheck block, so a
+  # formula that decodes base64 in `install` still matches.
+  - id: homebrew-livecheck-base64
+    desc: Homebrew livecheck block decodes base64
+    crit: notable
+    conf: 0.95
+    for: [ruby]
+    if:
+      type: tree-sitter
+      query: |
+        (call
+          method: (identifier) @method
+          block: (do_block) @block
+          (#eq? @method "livecheck")
+          (#match? @block "Base64"))
+
+  - id: homebrew-test-block-curl
+    desc: Homebrew test block invokes curl
+    crit: notable
+    conf: 0.95
+    for: [ruby]
+    if:
+      type: tree-sitter
+      query: |
+        (call
+          method: (identifier) @method
+          block: (do_block) @block
+          (#eq? @method "test")
+          (#match? @block "curl"))
+
   - id: homebrew-resource-stage
     desc: Homebrew resource stage block
     crit: notable
