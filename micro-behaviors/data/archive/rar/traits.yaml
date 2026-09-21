@@ -3,31 +3,48 @@ defaults:
   for: [data, rar]
 
 traits:
+  - id: rar-ntfs-stream-member
+    for: [rar]
+    desc: RAR carries an NTFS alternate stream
+    crit: notable
+    conf: 0.95
+    if:
+      type: value
+      path: "rar.members[*].entry_type"
+      exact: ntfs-stream
+
   - id: ads-parent-traversal
     desc: RAR member ADS parent traversal
     for: [rar]
     crit: notable
     conf: 0.95
-    count_min: 1
     if:
-      type: hex
-      pattern: "3A 2E 2E 5C 2E 2E 5C"
+      type: value
+      path: "rar.members[*].path"
+      regex: ':[^/]*\.\.[/\\]'
 
   - id: repeated-ads-parent-traversal
     desc: RAR member repeats parent traversal
-
     for: [rar]
     crit: component
     conf: 0.95
-    count_min: 4
     if:
-      type: hex
-      pattern: "2E 2E 5C"
+      type: value
+      path: "rar.members[*].path"
+      regex: '(\.\.[/\\]){4,20}'
+
+  - id: rar-ads-traversal-burst
+    desc: RAR member bursts parent-path traversal
+    for: [rar]
+    crit: notable
+    conf: 0.95
+    if:
+      type: value
+      path: "rar.members[*].path"
+      regex: '(\.\.[/\\]){8,20}'
     unless:
-      # Use the atomic archive-format fact here. Trait exclusions are resolved
-      # before composites, so excluding the composite did not suppress random
-      # traversal-shaped bytes in a Zstandard-compressed FreeBSD package.
       - id: metadata/package/files/bsd::pkg-archive-kind
+      - id: metadata/package/testing/presence/
 
   # `type: raw`, not `text`: archive analysis does not populate extracted
   # strings on the container (verified -- a text search for a member-name
@@ -41,17 +58,19 @@ traits:
     crit: notable
     conf: 0.95
     if:
-      type: raw
-      regex: 'Start Menu\\Programs\\(\.\.\\Programs\\){0,4}Startup'
+      type: value
+      path: "rar.members[*].path"
+      regex: '(?i)Start Menu/Programs/.*/Startup/'
 
   - id: lnk-member-extension
     for: [rar]
     desc: RAR member contains shortcut extension
-    crit: component
-    conf: 0.85
+    crit: notable
+    conf: 0.9
     if:
-      type: raw
-      regex: '(?i)\.lnk([^A-Za-z0-9]|$)'
+      type: value
+      path: "rar.members[*].path"
+      regex: '(?i)\.lnk$'
     unless:
       # Random compressed bytes in a FreeBSD pkg are not a RAR member name.
       - id: metadata/package/files/bsd::pkg-archive-kind
@@ -67,10 +86,9 @@ traits:
     crit: notable
     conf: 0.9
     if:
-      type: hex
-      pattern: '52 61 72 21 1A 07 (00|01) [0-65535] 2E 76 62 73'
-    unless:
-      - id: metadata/file/format/browser-extension::web-extension-root-manifest
+      type: value
+      path: "rar.members[*].path"
+      regex: '(?i)\.vbs$'
 
   - id: js-script-member-extension
     for: [rar]
@@ -78,68 +96,150 @@ traits:
     crit: notable
     conf: 0.9
     if:
-      type: hex
-      # `.js\0` or `.jse` — not the `.js` prefix of `.jsp`/`.json`.
-      pattern: '52 61 72 21 1A 07 (00|01) [0-65535] 2E 6A 73 (00|65)'
+      type: value
+      path: "rar.members[*].path"
+      regex: '(?i)\.(js|jse)$'
 
-  # `.html` member names in the RAR header; hex (not text) because archive
-  # analysis does not populate extracted strings on the container. Case-fold
-  # the five extension bytes so `.HTML` lures match the same atom.
   - id: html-member-extension
     for: [rar]
     desc: RAR archive names HTML member
     crit: notable
     conf: 0.9
     if:
-      type: hex
-      pattern: '52 61 72 21 1A 07 (00|01) [0-65535] 2E (48|68) (54|74) (4D|6D) (4C|6C)'
+      type: value
+      path: "rar.members[*].path"
+      regex: '(?i)\.html?$'
 
-  # HTA is a WSH host, but kept separate from vbs/js so document-lure
-  # composites can key on HTML Application delivery without pulling in
-  # every script-bearing RAR. Hex (not text): archive analysis does not
-  # populate extracted strings on the container.
-  # This raw token is intentionally separate from the RAR-gated composite
-  # below: document-lure composites can require both the token and RAR magic.
-  - id: hta-extension-token
+  - id: exe-member-extension
     for: [rar]
-    desc: HTA file extension token in raw bytes
-    crit: component
-    conf: 0.92
+    desc: RAR archive names an executable member
+    crit: notable
+    conf: 0.9
     if:
-      type: raw
-      regex: '(?i)\.hta([^A-Za-z0-9]|$)'
+      type: value
+      path: "rar.members[*].path"
+      regex: '(?i)\.exe$'
 
-  # EUR1 + .hta — EU customs Accompanying Document lure used by HTA
-  # dropper campaigns; ASCII so it survives RAR headers without UTF-8.
-  - id: customs-eur1-hta-member
+  - id: msi-member-extension
     for: [rar]
-    desc: RAR HTA member references EUR1 customs form
-    crit: suspicious
-    conf: 0.95
+    desc: RAR archive names an MSI member
+    crit: notable
+    conf: 0.9
     if:
-      type: hex
-      pattern: "45 55 52 31 2e 68 74 61" # EUR1.hta
+      type: value
+      path: "rar.members[*].path"
+      regex: '(?i)\.msi$'
 
-  # "HS" (Harmonized System code) within ~7 bytes before ".hta"
-  - id: customs-hs-hta-member
+  - id: png-member-extension
     for: [rar]
-    desc: RAR HTA member references HS customs codes
-    crit: suspicious
+    desc: RAR archive names a PNG member
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: "rar.members[*].path"
+      regex: '(?i)\.png$'
+    unless:
+      - id: metadata/package/files/nuget::nupkg-managed-library-member
+
+  - id: php-eval-gzinflate-token
+    for: [rar]
+    desc: RAR bytes contain eval-gzinflate decoder
+    crit: notable
     conf: 0.93
     if:
       type: hex
-      pattern: "48 53 ?? ?? ?? ?? ?? ?? ?? 2e 68 74 61" # HS … .hta
+      pattern: "65 76 61 6C 28 67 7A 69 6E 66 6C 61 74 65"
 
-  # Carrier + AWB in the HTML member name (DHL/UPS/FedEx/… waybill lures).
-  # `type: raw`: member names live in the RAR5 header as UTF-8.
-  - id: shipping-awb-html-member
-    desc: Shipping AWB HTML RAR member
+  - id: php-move-uploaded-file-token
+    for: [rar]
+    desc: RAR bytes contain a PHP upload stager
+    crit: notable
+    conf: 0.9
+    if:
+      type: hex
+      pattern: "6D 6F 76 65 5F 75 70 6C 6F 61 64 65 64 5F 66 69 6C 65"
+
+  - id: pdf-member-extension
+    for: [rar]
+    desc: RAR archive names a PDF member
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: "rar.members[*].path"
+      regex: '(?i)\.pdf$'
+
+  - id: installer-msi-member-name
+    for: [rar]
+    desc: RAR member names a setup MSI
+    crit: notable
+    conf: 0.93
+    if:
+      type: value
+      path: "rar.members[*].path"
+      regex: '(?i)(setup|install).{0,40}\.msi$'
+
+  - id: setup-exe-member-name
+    for: [rar]
+    desc: RAR member names a setup executable
+    crit: notable
+    conf: 0.92
+    if:
+      type: value
+      path: "rar.members[*].path"
+      regex: '(?i)(setupfile|set[-_]?up)\.exe$'
+
+  - id: game-cheat-member-name
+    for: [rar]
+    desc: RAR member names a game cheat
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: "rar.members[*].path"
+      regex: '(?i)(modmenu|skinchanger|cheat)'
+
+  - id: lure-exe-member-name
+    for: [rar]
+    desc: RAR member names a business-lure executable
+    crit: notable
+    conf: 0.92
+    if:
+      type: value
+      path: "rar.members[*].path"
+      regex: '(?i)(invoice|statement|quotation|payment|shipping).{0,40}\.exe$'
+
+  - id: rar-multi-exe-header
+    for: [rar]
+    desc: RAR header names several executables
+    crit: notable
+    conf: 0.9
+    count_min: 2
+    if:
+      type: value
+      path: "rar.members[*].path"
+      regex: '(?i)\.exe$'
+
+  - id: hta-member-extension
+    for: [rar]
+    desc: RAR archive names an HTA member
+    crit: notable
+    conf: 0.92
+    if:
+      type: value
+      path: "rar.members[*].path"
+      regex: '(?i)\.hta$'
+
+  - id: document-lure-html-member
+    desc: RAR HTML member uses a document lure
     crit: suspicious
-    conf: 0.95
+    conf: 0.93
     for: [rar]
     if:
-      type: raw
-      regex: '(?i)(DHL|UPS|FedEx|USPS|TNT)[-_ ].{0,40}AWB.{0,24}\.html'
+      type: value
+      path: "rar.members[*].path"
+      regex: '(?i)(invoice|waybill|awb|shipment|tracking|customs|statement).{0,40}\.(html?|hta)$'
 
   - id: shell-script-member-extension
     for: [rar]
@@ -147,95 +247,50 @@ traits:
     crit: component
     conf: 0.9
     if:
-      type: raw
-      # Require a word boundary so Maven paths like springframework.batch do not
-      # match the `.bat` alternative as a prefix of `.batch`.
-      regex: '(?i)\.(bat|cmd|ps1)\b'
-    unless:
-      - id: metadata/package/files/bsd::freebsd-pkg-zstd-archive
+      type: value
+      path: "rar.members[*].path"
+      regex: '(?i)\.(bat|cmd|ps1)$'
 
-  - id: scan-pdf-member-name
-    for: [data]
-    desc: RAR member uses scan PDF lure
+  - id: vscode-tunnel-member
+    for: [rar]
+    desc: RAR member is a VS Code tunnel
     crit: notable
-    conf: 0.9
+    conf: 0.93
     if:
-      type: text
-      regex: '(?i)Scan_[0-9_.-]{6,40}\.pdf'
+      type: value
+      path: "rar.members[*].path"
+      regex: '(?i)(^|/)code-tunnel\.exe$'
 
   - id: search-connector-member-extension
-    for: [data]
+    for: [rar]
     desc: RAR member contains Search Connector
     crit: notable
     conf: 0.95
     if:
-      type: text
-      regex: '(?i)\.searchConnector-ms\b'
+      type: value
+      path: "rar.members[*].path"
+      regex: '(?i)\.searchConnector-ms$'
 
   - id: document-lure-search-connector-member
-    for: [data]
+    for: [rar]
     desc: RAR Search Connector document lure
     crit: notable
     conf: 0.95
     if:
-      type: text
-      regex: '(?i)(important|document)[^/\\]{0,30}\.searchConnector-ms\b'
+      type: value
+      path: "rar.members[*].path"
+      regex: '(?i)(important|document)[^/]{0,30}\.searchConnector-ms$'
 
   - id: programdata-member-paths
-    for: [data]
+    for: [rar]
     desc: RAR members target ProgramData
     crit: notable
     conf: 0.9
     count_min: 2
     if:
-      type: text
-      substr: "ProgramData"
-
-  - id: gta5-mod-menu-root
-    for: [data]
-    desc: RAR member GTA5 mod root
-    crit: notable
-    conf: 0.85
-    if:
-      type: text
-      substr: "GTA5_Mod_Menu/"
-
-  - id: gta5-mod-menu-setup-exe
-    for: [data]
-    desc: RAR member GTA5 setup executable
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      substr: "GTA5_Mod_Menu/setup.exe"
-
-  - id: gta5-mod-menu-code-tunnel
-    for: [data]
-    desc: RAR member VS Code tunnel executable
-    crit: notable
-    conf: 0.92
-    if:
-      type: text
-      substr: "GTA5_Mod_Menu/bin/code-tunnel.exe"
-
-  - id: gta5-mod-menu-code-cmd
-    for: [data]
-    desc: RAR member VS Code command launcher
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      substr: "GTA5_Mod_Menu/bin/code.cmd"
-
-  - id: gta5-mod-menu-steam-resources
-    for: [data]
-    desc: RAR member Steam overlay resources
-    crit: notable
-    conf: 0.86
-    count_min: 3
-    if:
-      type: text
-      substr: "GTA5_Mod_Menu/resource/steam"
+      type: value
+      path: "rar.members[*].path"
+      regex: '(?i)ProgramData'
 
 composite_rules:
   - id: wsh-script-member-extension
@@ -248,22 +303,3 @@ composite_rules:
       - id: js-script-member-extension
     unless:
       - id: metadata/file/format/browser-extension::web-extension-root-manifest
-
-  # Canonical HTA-member atom for every consumer. A format-neutral twin used
-  # to live in micro-behaviors/data/archive/member/ as a bare 4-byte hex scan
-  # ("2E 68 74 61", plus .vbs/.vbe/.jse/.bat/.cmd/.ps1 siblings) with no
-  # container anchor. Its `for: [rar]` gate did not restrict it, and in a zip
-  # family container the member name is followed immediately by the deflate
-  # stream, so a `.js` entry whose first compressed byte is 0x65 reads as a
-  # ".jse" member -- every Chrome extension / wheel / jar shipping JavaScript
-  # got a phantom encoded-script finding. Requiring RAR magic before the
-  # extension bytes is what makes the "archive names a member" claim true.
-  - id: hta-member-extension
-    desc: RAR member contains HTA extension
-    crit: notable
-    conf: 0.92
-    all:
-      - id: hta-extension-token
-    any:
-      - id: metadata/file/magic/identity::rar-v4
-      - id: metadata/file/magic/identity::rar-v5
