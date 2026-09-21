@@ -203,6 +203,29 @@ Three objective categories cover evasion, following MBC's distinction between an
 - Resists disassembly, decompilation, or string extraction? → `anti-static/`
 - Hides from users, admins, or AV/EDR in production? → `evasion/`
 
+### Process creation
+
+`micro-behaviors/process/create/<mechanism>/` is the feature `process/create/<mechanism>`. The model keeps that third segment and no further one, so the segment has to be the mechanism. A directory under `launch/`, `shell/`, or `exec/` does not gain a new meaning by existing; the model still reads the parent.
+
+Each sibling has to name a different fact. Finish "this matcher creates a process by ___." If an existing sibling already finishes that sentence, the trait belongs there and the language or API spelling goes in the filename. A synonym of the parent or of a sibling does not get a path. Verb piles (`launch` / `invoke` / `spawn` / `exec` / `run`) are the usual way this fails.
+
+Stop at the first row that describes the matcher:
+
+| The matcher shows | Directory |
+|---|---|
+| A thread inside the current process | `thread` |
+| A clone of the current process | `fork` |
+| A shell parsing command text (`sh -c`, `cmd /c`, `shell=True`, a pipeline) | `shell` |
+| An interpreter evaluating source (`eval`, `node -e`) | `eval` |
+| A library object standing for the child (`Popen`, `NSTask`, `ProcessBuilder`) | `subprocess` |
+| The desktop opener choosing the handler (`ShellExecute`, `open`, `NSWorkspace`) | `shellexec` |
+| An argument vector starting an image (`execve`, `CreateProcess`, `posix_spawn`) | `exec` |
+| Which image was named (calculator, `mshta`, `java -jar`), when the row above already covers how it starts | `launch` |
+
+`shell/batch`, `shell/encoded`, `shell/injection`, and `shell/interactive` are legal children because each names a different form of a shell command, and `shell/` itself holds no YAML. They still share the feature `process/create/shell`. A child added so a full directory stays under the trait cap, whose sentence is still the parent's sentence, is not a split.
+
+`launch/workspace` fails that test. Opening a bundle through NSWorkspace is the desktop opener, which is `shellexec`, and the extra segment would still be read as `launch`.
+
 ### Placement Tiebreaker
 
 When a behavior could serve multiple objectives, place the single trait where evidence points most specifically. Composites in other objectives reference it.

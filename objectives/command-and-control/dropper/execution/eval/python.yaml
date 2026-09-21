@@ -59,6 +59,19 @@ traits:
     unless:
       - id: well-known/lib/ai/unsloth::unsloth-package-context
       - id: well-known/tool/detection/agentskillmap/
+  # Split form: assign urlopen().read() then exec the bytes (not a one-liner).
+  - id: urlopen-read-then-exec
+    desc: urlopen response later passed to exec
+    crit: notable
+    conf: 0.94
+    attack: "T1105"
+    mbc: "E1059"
+    if:
+      type: text
+      regex: 'urlopen\s*\([^)]{0,80}\)[\s\S]{0,900}\bexec\s*\('
+    unless:
+      - id: exec-urlopen-read
+      - id: metadata/package/testing/
   - id: urllib-module-code-read
     desc: urllib response assigned module code
     crit: notable
@@ -270,3 +283,64 @@ composite_rules:
     unless:
       - id: metadata/signed/platform/
       - id: metadata/package/testing/
+
+  # Import-time fetch-and-exec that stores the body first. The one-liner
+  # exec(urlopen().read()) already has its own hostile family; this is the
+  # same dropper when the download and exec are consecutive statements.
+  - id: init-urlopen-exec-stage
+    desc: Import-time exec of a urlopen download
+    crit: hostile
+    conf: 0.97
+    attack: T1105,T1059.006
+    mbc: B0024,E1059
+    all:
+      - id: metadata/file/size::init-py-file
+      - id: urlopen-read-then-exec
+      - id: micro-behaviors/data/control-flow/error-handling::silent-exception-pass
+
+  - id: init-direct-ip-urlopen-exec
+    desc: Import-time exec from a literal IP URL
+    crit: hostile
+    conf: 0.97
+    attack: T1105,T1059.006
+    mbc: B0024,E1059
+    all:
+      - id: metadata/file/size::init-py-file
+      - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-call
+      - id: micro-behaviors/process/interpreter/python::exec-variable
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-http-url
+
+  - id: init-alt-port-urlopen-exec
+    desc: Import-time exec from an alternate HTTP port
+    crit: hostile
+    conf: 0.96
+    attack: T1105,T1059.006
+    all:
+      - id: urlopen-read-then-exec
+      - id: micro-behaviors/communications/http/url/port::http-alt-port-8080
+      - id: micro-behaviors/data/control-flow/error-handling::silent-exception-pass
+
+  # The decoded bytes are not a literal in the exec() call. A helper reads a
+  # gzipped package resource and the caller execs whatever that returns.
+  - id: python-exec-decoded-gzip-resource
+    desc: exec() of a decoded gzipped resource
+    crit: hostile
+    conf: 0.95
+    attack: T1027,T1059.006
+    for: [python, python-sdist, whl, zip]
+    scope: archive
+    all:
+      - id: objectives/anti-static/obfuscation/control-flow/logic::base64-exec-text
+      - id: micro-behaviors/data/compress/gzip::gzip-open-call
+
+  # exec(subprocess.getoutput("curl ...")) runs whatever the command prints
+  # as Python. The command is the fetcher; the exec is the stage.
+  - id: exec-subprocess-getoutput
+    desc: exec() runs command output as Python
+    crit: hostile
+    conf: 0.97
+    attack: T1059.006,T1105
+    scope: file
+    all:
+      - id: micro-behaviors/process/interpreter/python::exec-builtin
+      - id: micro-behaviors/process/create/subprocess::getoutput-content

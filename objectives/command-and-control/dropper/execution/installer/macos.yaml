@@ -53,6 +53,14 @@ traits:
     if:
       type: text
       regex: '[^/\s]{1,120}\.pkg/Scripts\b|Scripts/(preinstall|postinstall)'
+  - id: macos-b64-osascript-on-run
+    desc: Base64 wraps an osascript launcher
+    crit: suspicious
+    conf: 0.96
+    for: [shell]
+    if:
+      type: text
+      substr: b3Nhc2NyaXB0IC1lICdvbiBydW4
 composite_rules:
   - id: pkg-payload-reference
     desc: Downloaded pkg payload reference
@@ -83,7 +91,7 @@ composite_rules:
       - id: macos-interface-c2
       - id: ppdserver-failure-endpoint
       - id: micro-behaviors/fs/path/temp::macos-package-archive-path
-      - id: micro-behaviors/process/create/launch::usr-bin-open-command
+      - id: micro-behaviors/process/create/shellexec::usr-bin-open-command
   - id: elevated-macos-pkg-dropper
     for: [macho]
     desc: Elevated macOS package dropper
@@ -94,7 +102,7 @@ composite_rules:
       - id: objectives/privilege-escalation/elevation-control/prompt-escalation::admin-privilege-escalation
     any:
       - id: background-shell-launch
-      - id: micro-behaviors/process/create/launch::usr-bin-open-command
+      - id: micro-behaviors/process/create/shellexec::usr-bin-open-command
   - id: flat-pkg-preinstall-download-exec
     desc: macOS pkg preinstall download exec
     crit: hostile
@@ -106,3 +114,98 @@ composite_rules:
       - id: objectives/command-and-control/dropper/delivery/download::shell-silent-hardcoded-download-staging
       - id: micro-behaviors/fs/chmod/executable/mode::shell-7xx
       - id: micro-behaviors/process/daemonize/detach::nohup-command
+
+  - id: macos-b64-osascript-exec
+    desc: Decodes base64 into a shell
+    crit: hostile
+    conf: 0.97
+    for: [shell]
+    all:
+      - id: macos-b64-osascript-on-run
+      - id: micro-behaviors/process/create/shell/command-string::shell-direct-sh-c
+    any:
+      - id: micro-behaviors/data/decode/base64::base64-d-cmd
+      - id: micro-behaviors/data/decode/base64::base64-decode-cmd
+
+  - id: macos-hidden-dot-payload-image
+    desc: Hidden payload rides a disk image
+    crit: hostile
+    conf: 0.96
+    for: [dmg, shell, macho]
+    scope: archive
+    all:
+      - id: metadata/file/naming::hidden-dot-executable-member
+      - id: macos-b64-osascript-on-run
+      - id: objectives/anti-static/obfuscation/payload/import::minimal-imports
+
+  - id: openssl-pass-blob-decrypt
+    desc: Decrypts an OpenSSL passphrase blob
+    crit: hostile
+    conf: 0.97
+    for: [shell]
+    all:
+      - id: objectives/credential-access/files/openssl::openssl-hardcoded-pass
+      - id: micro-behaviors/crypto/symmetric/aes/openssl::openssl-enc-aes
+      - id: micro-behaviors/process/create/shell/pipeline::base64-blob-piped-onward
+
+  - id: hdiutil-download-mount
+    desc: Mounts a downloaded disk image
+    crit: hostile
+    conf: 0.96
+    for: [shell]
+    all:
+      - id: micro-behaviors/fs/volume/mount::hdiutil-attach
+      - id: objectives/command-and-control/dropper/delivery/download::curl-silent-output
+      - id: micro-behaviors/process/create/shellexec::open-file-command
+
+  - id: download-stage-cleanup
+    desc: Deletes the stage after download
+    crit: hostile
+    conf: 0.95
+    for: [shell]
+    all:
+      - id: objectives/command-and-control/dropper/execution/pipe::shell-rm-rf-command
+      - id: objectives/command-and-control/dropper/delivery/download::curl-silent-output
+      - id: micro-behaviors/fs/directory/mkdir::mkdir-command
+
+  - id: perl-packed-xor-decode
+    desc: Perl decrypts a packed payload
+    crit: hostile
+    conf: 0.96
+    for: [shell]
+    all:
+      - id: objectives/anti-static/obfuscation/eval/dropper::perl-e-pack-decode
+      - id: micro-behaviors/process/interpreter/perl::perl-code-execute
+      - id: objectives/anti-static/obfuscation/payload/encoded::shell-eval-base64-decode
+
+  - id: perl-script-packed-macho
+    desc: Packed adhoc payload beside script
+    crit: hostile
+    conf: 0.95
+    for: [dmg, shell, macho]
+    scope: archive
+    all:
+      - id: objectives/anti-static/obfuscation/eval/interpreter::shell-base64-perl-xor-eval
+      - id: objectives/anti-static/obfuscation/binary-metrics/imports::embedded-payload-binary
+      - id: metadata/signed/trust-level::adhoc
+
+  - id: macos-quarantine-copy-launch
+    desc: Clears quarantine and copies payload
+    crit: hostile
+    conf: 0.96
+    for: [shell]
+    all:
+      - id: micro-behaviors/fs/attributes/xattr::xattr-clear
+      - id: micro-behaviors/fs/shell-ops::cp-command-text
+      - id: micro-behaviors/fs/traversal/drives::applescript-list-disks
+
+  - id: macos-hidden-adhoc-overlay
+    desc: Hidden adhoc binary carries overlay
+    crit: hostile
+    conf: 0.95
+    for: [dmg, macho]
+    scope: archive
+    all:
+      - id: metadata/file/naming::hidden-dot-executable-member
+      - id: metadata/signed/trust-level::adhoc
+      - id: objectives/anti-static/obfuscation/control-flow/logic::overlay-at-least-half
