@@ -2,12 +2,10 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    logger.info("this sample does nothing")
+    logging.info("this sample does nothing")
 
 
 if __name__ == "__main__":
