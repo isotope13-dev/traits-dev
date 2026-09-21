@@ -1,0 +1,67 @@
+# Sites that monetise through wait pages, link gates and anti-adblock walls
+# enforce them with three client-side mechanisms: a server redirect that moves
+# the visitor through each hop, the page's own scripts that run the countdown,
+# and a detector library that refuses to continue when ads are missing. An
+# extension that disables all three is not skipping a delay for the user, it is
+# stripping the publisher's monetisation from every visitor it has access to.
+#
+# Filed under ad-fraud rather than evasion because the injured party is the
+# site's ad revenue; the same primitives are used by paywall-bypass extensions
+# and by ad-injectors that clear a competitor's gate before inserting their own.
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript]
+  attack: T1496
+
+traits:
+  # A page that uses the library refers to `blockAdBlock` as an identifier.
+  # Quoting the name means installing it dynamically -- through a
+  # defineProperty or window[name] helper -- which is what a neutraliser does
+  # and what the library's own source never does.
+  - id: adblock-detector-global-name-literal
+    desc: Installs a BlockAdBlock global by name
+    crit: notable
+    conf: 0.95
+    if:
+      type: text
+      regex: '["''](blockAdBlock|fuckAdBlock)["'']'
+      case_insensitive: true
+
+  # The detector's contract is onDetected/onNotDetected; a fake returns `this`
+  # from a body short enough to hold nothing else, so the page's "ads are
+  # blocked" branch can never be reached. The real library's handlers are
+  # `onDetected: function (...)` with substantive bodies.
+  - id: adblock-detector-callback-stub
+    desc: Stubs adblock detector callbacks
+    crit: notable
+    conf: 0.96
+    if:
+      type: text
+      regex: 'onDetected\s*\([^)]{0,16}\)\s*\{[^}]{0,48}\}[\s\S]{0,80}onNotDetected'
+
+composite_rules:
+  - id: adblock-detector-api-neutralization
+    desc: Fakes adblock-detector API to clear ad gate
+    crit: suspicious
+    conf: 0.95
+    near_bytes: 800
+    all:
+      - id: adblock-detector-global-name-literal
+      - id: adblock-detector-callback-stub
+
+  - id: extension-monetization-gate-header-stripping
+    desc: Extension strips site redirect and page scripts
+    crit: suspicious
+    conf: 0.94
+    scope: archive
+    for: [crx, xpi, zip, chrome-manifest, javascript, typescript]
+    attack: T1496,T1562.001
+    all:
+      - id: metadata/permission/manifest::is-chrome-manifest
+      - id: metadata/permission/host::broad-host-access
+      # Cancels the hop the server wanted the visitor to take...
+      - id: micro-behaviors/process/hook/webextension::dnr-location-header-strip
+      # ...and stops the page it lands on from running its own countdown.
+      # Neither is something an extension does to a site it does not control;
+      # doing both to the same third-party origins is the gate-bypass shape.
+      - id: micro-behaviors/communications/http/header/security::dnr-csp-script-disable
