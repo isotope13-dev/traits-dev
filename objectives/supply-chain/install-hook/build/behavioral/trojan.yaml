@@ -316,8 +316,16 @@ traits:
       type: value
       path: cargo.build_mode
       exact: custom
+  # Reading an env var and shelling to curl/wget is only half of an
+  # exfiltration: `curl -L <url> -o <dest>` after `std::env::var("OUT_DIR")`
+  # is the standard build.rs test-data fetch -- wasmtime's uap-bench
+  # build.rs does exactly this. Data only flows *to* the transfer tool when
+  # the tool is told to send, so the upload-flag legs below complete the
+  # shape and the exfil composite requires both halves. The command atoms
+  # only correlate an env read with a transfer-tool invocation nearby; they
+  # do not claim the env value itself reaches the tool.
   - id: rust-build-rs-env-curl-command
-    desc: build.rs shells env to curl
+    desc: build.rs reads env var and invokes curl
     crit: notable
     conf: 0.92
     for: [rust]
@@ -326,7 +334,7 @@ traits:
       regex: >-
         std::env::var\w*[\s\S]{0,290}Command::new\s*\(\s*"curl"
   - id: rust-build-rs-env-wget-command
-    desc: build.rs shells env to wget
+    desc: build.rs reads env var and invokes wget
     crit: notable
     conf: 0.92
     for: [rust]
@@ -334,6 +342,24 @@ traits:
       type: text
       regex: >-
         std::env::(vars|var(_os)?)[\s\S]{0,300}Command::new\s*\(\s*"wget"
+  - id: rust-build-rs-curl-send-flag
+    desc: build.rs curl invoked with a send flag
+    crit: notable
+    conf: 0.9
+    for: [rust]
+    if:
+      type: text
+      regex: >-
+        Command::new\s*\(\s*"curl"[\s\S]{0,200}"(-d|--data|-F|--form|-T|--upload-file)"
+  - id: rust-build-rs-wget-send-flag
+    desc: build.rs wget invoked with a send flag
+    crit: notable
+    conf: 0.9
+    for: [rust]
+    if:
+      type: text
+      regex: >-
+        Command::new\s*\(\s*"wget"[\s\S]{0,200}"(--post-data|--post-file|--method=)"
   - id: rust-build-rs-target-dir
     desc: build.rs target directory reference
     crit: notable
@@ -1542,8 +1568,26 @@ composite_rules:
     any:
       - id: micro-behaviors/process/daemonize/detach::background-ampersand-hidden
       - id: micro-behaviors/os/console/io::redirect-dev-null
+  - id: rust-build-rs-env-curl-upload
+    desc: build.rs reads env var then sends data via curl
+    crit: notable
+    conf: 0.92
+    for: [rust]
+    all:
+      - id: rust-build-rs-env-curl-command
+      - id: rust-build-rs-curl-send-flag
+    near_bytes: 700
+  - id: rust-build-rs-env-wget-upload
+    desc: build.rs reads env var then sends data via wget
+    crit: notable
+    conf: 0.92
+    for: [rust]
+    all:
+      - id: rust-build-rs-env-wget-command
+      - id: rust-build-rs-wget-send-flag
+    near_bytes: 700
   - id: rust-build-rs-env-exfil
-    desc: build.rs exfiltrates environment
+    desc: build.rs sends environment-linked data outward
     crit: suspicious
     conf: 0.9
     for: [rust]
@@ -1551,8 +1595,8 @@ composite_rules:
       - id: rust-build-rs-file
     any:
       - id: micro-behaviors/communications/http/request/credentials::environment-http-body-flow
-      - id: rust-build-rs-env-curl-command
-      - id: rust-build-rs-env-wget-command
+      - id: rust-build-rs-env-curl-upload
+      - id: rust-build-rs-env-wget-upload
   - id: rust-build-rs-telegram-curl-beacon
     desc: build.rs curl Telegram beacon
     crit: hostile
