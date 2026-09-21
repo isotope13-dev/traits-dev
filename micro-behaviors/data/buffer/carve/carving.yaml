@@ -1,0 +1,89 @@
+# Exploit carving shapes: the buffer, specifically the payload-carve kind.
+# Repeated-byte sleds, packed machine addresses, fill loops, and
+# length-prefixed carves are the shapes a memory-corruption or staging
+# payload lays down; neutral copies and stream output live in
+# transfer/io.yaml, allocation in alloc/allocation.yaml, integer
+# encode/decode in integer-codec/, and general record surgery in
+# record/surgery.yaml. Scopes are explicit per trait.
+defaults:
+  crit: notable
+  platforms: [windows]
+
+traits:
+  # A large single-byte fill buffer: an x86 NOP (0x90), int3 (0xcc), or a 0x41
+  # 'A' filler repeated hundreds of times. This is the sled / padding a
+  # memory-corruption exploit lays down to reach a saved return address; a
+  # 3+ digit repeat count keeps ordinary small buffer inits out.
+  - id: overflow-padding-buffer
+    desc: Builds a large repeated-byte padding sled
+    crit: notable
+    conf: 0.9
+    platforms: [windows, linux, macos]
+    for: [python]
+    if:
+      type: text
+      regex: 'b?["''](\\x(90|cc|41)|A)["'']\s*\*\s*(0x[0-9a-fA-F]{2,}|[1-9]\d{2,})\b'
+
+  # Packs a machine address as a little-endian pointer-sized word — the
+  # return-address / gadget overwrite an exploit splices into its buffer.
+  # Requires a 5+ hex-digit value so ordinary small packed constants (flags,
+  # lengths) do not match.
+  - id: struct-pack-le-address
+    desc: Packs a little-endian machine address
+    crit: notable
+    conf: 0.9
+    platforms: [windows, linux, macos]
+    for: [python]
+    if:
+      type: text
+      regex: 'struct\.pack\s*\(\s*["'']<[ILQ]["'']\s*,\s*0x[0-9a-fA-F]{5,}'
+
+  - id: x86-call-result-fill-sixteen-byte-loop
+    desc: Repeated calls fill a 16-byte buffer
+    crit: notable
+    conf: 0.94
+    platforms: [windows, linux, macos]
+    for: [pe, dll]
+    arch: [x86]
+    if:
+      type: hex
+      # call producer; store AL at base+index-1; repeat for indices 1..16.
+      # Section-independent so the same routine is visible in fake-UPX and
+      # conventionally linked variants.
+      pattern: 'E8 ?? ?? ?? ?? 88 44 ?? FF 46 83 FE 11 75 ??'
+      offset_range: [0, null]
+
+  - id: powershell-uint64-length-at-offset-zero
+    desc: Reads UInt64 length at offset zero
+    conf: 0.96
+    for: [powershell]
+    if:
+      type: text
+      regex: '(?i)\[BitConverter\]::ToInt64\s*\(\s*\$\w+\s*,\s*0\s*\)'
+
+  - id: powershell-eight-byte-header-slice
+    desc: Slices bytes after eight-byte header
+    conf: 0.96
+    for: [powershell]
+    if:
+      type: text
+      regex: '\$\w+\s*\[\s*8\s*\.\.\s*\(\s*7\s*\+\s*\$\w+\s*\)\s*\]'
+
+  - id: powershell-fixed-44-byte-header-skip
+    desc: Reads buffer after fixed 44-byte header
+    conf: 0.94
+    for: [powershell]
+    if:
+      type: text
+      regex: '(?is)\[IO\.File\]::Open\([^\r\n]{1,200}\)[\s\S]{0,420}\$\w+\s*=\s*44\b'
+
+composite_rules:
+  - id: powershell-uint64-length-prefixed-file-carve
+    desc: Carves UInt64-length-prefixed file
+    conf: 0.98
+    for: [powershell]
+    all:
+      - id: powershell-uint64-length-at-offset-zero
+      - id: powershell-eight-byte-header-slice
+      - id: micro-behaviors/fs/write/file/full::write-all-bytes
+    near_lines: 8
