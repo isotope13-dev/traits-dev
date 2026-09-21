@@ -1,0 +1,70 @@
+# A low-privilege client can start the Shell Create Object Handler and pass a
+# custom-marshaled object to ICreateObject::Proc3. COM then resolves the CLSID
+# returned by GetUnmarshalClass inside the privileged host. If the registered
+# in-process server points to a DLL the client can plant, unmarshaling becomes
+# privileged code execution. The payload path and selected CLSID remain
+# attacker-variable; only durable COM and task-service structure is matched.
+defaults:
+  platforms: [windows]
+  for: [source, binaries]
+  attack: T1068,T1559.001
+
+traits:
+  - id: shell-create-object-ready-event
+    desc: Shell object handler readiness event
+    crit: notable
+    conf: 0.98
+    if:
+      type: text
+      substr: ShellCreateObjectTaskReadyEvent
+
+  - id: shell-create-object-task-reference
+    desc: Shell object handler scheduled task
+    crit: notable
+    conf: 0.97
+    if:
+      type: text
+      regex: '(?is)\\+Microsoft\\+Windows\\+Shell.{0,256}\bCreateObjectTask\b'
+
+  - id: shell-create-object-broker-interface
+    desc: Shell object handler broker interface
+    crit: notable
+    conf: 0.97
+    if:
+      type: text
+      regex: '(?i)(75121952-E0D0-43E5-9380-1D80483ACF72|\bICreateObject\b.{0,512}\bProc3\s*\()'
+
+composite_rules:
+  - id: shell-create-object-host-start
+    desc: Starts the Shell Create Object Handler task host
+    crit: suspicious
+    conf: 0.98
+    near_bytes: 1024
+    all:
+      - id: shell-create-object-ready-event
+      - id: shell-create-object-task-reference
+
+  - id: custom-clsid-shell-object-handler-unmarshal
+    desc: Sends an attacker-selected CLSID to the privileged Shell Create Object Handler
+    crit: hostile
+    conf: 0.99
+    near_bytes: 8192
+    all:
+      - id: micro-behaviors/os/com/marshal::custom-unmarshal-class-provider
+      - id: shell-create-object-host-start
+      - id: shell-create-object-broker-interface
+    unless:
+      - id: metadata/signed/platform::microsoft
+
+  - id: programdata-dll-custom-unmarshal-elevation
+    desc: Plants a ProgramData DLL for privileged custom COM unmarshaling
+    crit: hostile
+    conf: 0.99
+    near_bytes: 8192
+    all:
+      - id: micro-behaviors/os/com/marshal::custom-unmarshal-class-provider
+      - id: micro-behaviors/fs/path/system::programdata-library-path
+      - id: micro-behaviors/fs/file/copy::copy
+      - id: shell-create-object-broker-interface
+    unless:
+      - id: metadata/signed/platform::microsoft
