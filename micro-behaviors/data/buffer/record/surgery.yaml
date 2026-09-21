@@ -1,17 +1,16 @@
+# Record surgery: the buffer, specifically the field-layout kind. Reading,
+# rewriting, and dispatching on constant-offset fields inside a packed record —
+# typed frame-field declarations, indexed byte mutation, nibble packing, fixed
+# offset slicing. Allocation and fixed-size declarations live in
+# alloc/allocation.yaml, copies and stream output in transfer/io.yaml, integer
+# encode/decode in integer-codec/, and payload-carve shapes in
+# carve/carving.yaml. Scopes are explicit per trait (this directory merges
+# several language files).
 defaults:
   platforms: [windows, linux, macos]
   for: [c, cpp, elf, macho, pe]
 
 traits:
-  - id: c-command-buffer
-    desc: C declares a character or byte buffer
-    crit: notable
-    conf: 0.8
-    for: [c, cpp]
-    if:
-      type: text
-      regex: '\b(char|unsigned\s+char)\s+[A-Za-z_][A-Za-z0-9_]*\s*\['
-
   # This is intentionally a component: a bare assignment to a filter-like
   # variable is meaningful only when an objective adds the filter contents.
   # Anchoring at the statement start avoids matching the tail of
@@ -37,77 +36,6 @@ traits:
       type: text
       regex: '\b(memcmp|strncmp)\s*\(\s*\w+\s*,\s*\w+\s*,\s*[1-4]\s*\)'
 
-  - id: native-memcpy-byte-copy
-    desc: Copies bytes with native memcpy
-    crit: notable
-    conf: 0.85
-    for: [c, cpp]
-    if:
-      type: symbol
-      kind: call
-      exact: memcpy
-
-  - id: native-memcpy-import
-    desc: Imports native memory copy routine
-    crit: baseline
-    conf: 0.9
-    for: [elf, macho, pe]
-    if:
-      type: import
-      regex: '^_?memcpy$'
-
-  - id: x86-call-result-fill-sixteen-byte-loop
-    desc: Repeated calls fill a 16-byte buffer
-    crit: notable
-    conf: 0.94
-    for: [pe, dll]
-    arch: [x86]
-    if:
-      type: hex
-      # call producer; store AL at base+index-1; repeat for indices 1..16.
-      # Section-independent so the same routine is visible in fake-UPX and
-      # conventionally linked variants.
-      pattern: 'E8 ?? ?? ?? ?? 88 44 ?? FF 46 83 FE 11 75 ??'
-      offset_range: [0, null]
-
-  - id: fixed-sixteen-byte-array
-    desc: Declares a fixed sixteen-byte array
-    crit: notable
-    conf: 0.9
-    for: [c, cpp]
-    if:
-      type: text
-      regex: '(?i)\b(unsigned\s+char|uint8_t|byte|bytes?)\s+[A-Za-z_]\w*\s*\[\s*16\s*\]'
-
-  # A 32-byte byte array is one possible storage shape for a 256-bit symmetric
-  # key. The matcher only sees the declaration, so this is a neutral,
-  # incomplete buffer fragment — crypto/objective composites decide intent by
-  # pairing it with cipher calls or a C2 channel. (Moved here from the ChaCha20
-  # stream file, where the name over-claimed the algorithm the regex cannot see.)
-  - id: fixed-thirtytwo-byte-array
-    desc: Declares a fixed thirty-two-byte array
-    crit: notable
-    conf: 0.86
-    for: [c, cpp, rust, go]
-    if:
-      type: text
-      regex: '(?i)\b(unsigned\s+(char|byte)|uint8_t|byte)\s+[A-Za-z_]\w*\s*\[\s*32\s*\]'
-
-  # 39 bytes is the record size of a router-implant registration frame
-  # (33-byte class + 6-byte MAC). The declaration alone proves nothing —
-  # ryu's digit-adjustment table and FreeBSD's mc_frame[39] are the same
-  # shape — so the length lives here as a neutral buffer declaration and
-  # communications/socket/framing/ composites supply the framing evidence.
-  # (Moved here from that file, where the names claimed a "registration".)
-  - id: fixed-thirtynine-byte-array
-    desc: Declares a fixed thirty-nine-byte array
-    crit: notable
-    conf: 0.86
-    for: [c, cpp]
-    if:
-      type: text
-      regex: '(?i)\b(unsigned\s+(char|byte)|uint8_t|byte)\s+[A-Za-z_]\w*\s*\[\s*39\s*\]'
-
   # `buf[i] = (hi << 4) | lo` is the universal two-nibbles-into-a-byte pack.
   # Linux's HDMI-CEC helpers (`msg[5] = (input_port << 4) | hpd_state`) and any
   # BCD/hex codec write it. The custom-alphabet Base16 composite in
@@ -122,23 +50,62 @@ traits:
       type: text
       regex: '(?i)\w+\[\w+\]\s*=\s*\(\w+\s*<<\s*4\)\s*\|\s*\w+'
 
-  - id: rust-thirtynine-byte-array
-    desc: Rust array initialized with thirty-nine bytes
+  # A single indexed XOR assignment proves a byte mutation, not decoding.
+  # Decoder objectives add iteration or buffer-rebuild context separately.
+  - id: indexed-byte-xor-mutation
+    desc: XOR-mutates an indexed byte
     crit: notable
-    conf: 0.9
-    for: [rust]
+    conf: 0.92
+    for: [python, c, cpp, go, rust, javascript, typescript]
     if:
       type: text
-      regex: '\[\s*0u8\s*;\s*39\s*\]'
+      regex: '\b[A-Za-z_]\w*\s*\[[^\]\n]{1,24}\]\s*\^=\s*(0x[0-9A-Fa-f]{1,2}|[0-9]{1,3})'
+    unless:
+      - id: metadata/package/testing/harness/unit::rust-test
 
-  - id: go-thirtynine-byte-array
-    desc: Declares a thirty-nine-byte Go array
+  - id: indexed-byte-xor-nontrivial-mask
+    desc: XOR-mutates indexed byte with non-1 mask
     crit: notable
-    conf: 0.9
-    for: [go]
+    conf: 0.92
+    for: [python, c, cpp, go, rust, javascript, typescript]
     if:
       type: text
-      regex: '\b(var\s+\w+\s+\[\s*39\s*\]byte|\w+\s*:=\s*\[\s*39\s*\]byte\s*\{)'
+      regex: '\b[A-Za-z_]\w*\s*\[[^\]\n]{1,24}\]\s*\^=\s*0x0*[2-9A-Fa-f]'
+
+  - id: named-byte-replacement-routine
+    desc: References a named byte-replacement routine
+    crit: notable
+    conf: 0.9
+    for: [c, cpp, python, lua]
+    if:
+      type: text
+      regex: '(?i)\b(replace_bytes|replace_matching_bytes)\b'
+
+  # Writing a literal sentinel into offset zero of a buffer under construction:
+  # the first byte of a hand-built frame header. Only the assignment is
+  # visible, so this stays a component and the framing composites supply the
+  # protocol context.
+  - id: first-buffer-byte-0x22
+    desc: Assigns 0x22 to buffer offset zero
+    crit: component
+    conf: 0.8
+    for: [scripts, source]
+    if:
+      type: text
+      regex: '\[[A-Za-z0-9_+\- ]{0,24}0\]\s*=\s*0x22'
+
+  # Appending a TLV option to a record under construction. Ordinary DHCP/
+  # protocol-builder mechanics on its own; the option-overflow composites add
+  # the length arithmetic that makes it an exploit builder.
+  - id: network-option-function-call
+    desc: Calls add_option during buffer construction
+    crit: notable
+    conf: 0.85
+    for: [c, cpp]
+    if:
+      type: symbol
+      kind: call
+      exact: add_option
 
   - id: typed-byte-type-field
     desc: 8-bit type field declaration
@@ -202,16 +169,84 @@ traits:
       type: text
       regex: '(?is)\bswitch\s*\(\s*\w{1,32}\.type\s*\).{0,512}\bcase\s+[135]\s*:'
 
-composite_rules:
-  - id: native-memory-copy
-    desc: Native memory copy operation
+  # Pairing the low four bits of adjacent carrier bytes is a neutral byte
+  # reconstruction primitive -- the PowerShell spelling of
+  # nibble-pack-byte-assignment above. Audio/image steganography composites
+  # provide the carrier context and execution sink.
+  - id: powershell-low-nibble-shift
+    desc: Shifts a PowerShell low nibble four bits
+    crit: notable
+    conf: 0.96
+    platforms: [windows]
+    for: [powershell]
+    attack: T1140
+    if:
+      type: text
+      regex: '(?i)-band\s+(0x0?f|15)\s*\)\s*-shl\s+4'
+
+  - id: powershell-low-nibble-or
+    desc: ORs a second PowerShell low nibble
+    crit: notable
+    conf: 0.96
+    platforms: [windows]
+    for: [powershell]
+    attack: T1140
+    if:
+      type: text
+      regex: '(?i)-bor\s*\([^\)\r\n]{1,80}-band\s+(0x0?f|15)\s*\)'
+
+  # A decoded buffer carved into three or more constant-offset fields is a
+  # packed-record parser: the writer and the reader agreed on a fixed header
+  # layout. In JavaScript that shape almost only arises around a hand-rolled
+  # cryptographic envelope -- `salt | iv | tag | ciphertext` -- because the
+  # standard containers (JWE, PEM, protobuf, CBOR) carry their own framing and
+  # are parsed by a library rather than by literal offsets.
+  #
+  # Notable on its own: binary format readers do this legitimately, and hex
+  # offsets (`subarray(0x1c,0x2c)`) are how javascript-obfuscator prints the
+  # same code. The crypto composites supply the intent.
+  - id: js-subarray-fixed-span
+    desc: subarray call at two numeric offsets
+    crit: notable
+    conf: 0.8
+    count_min: 3
+    platforms: [windows, unix]
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\bsubarray\s*\(\s*[0-9a-fA-Fx]{1,8}\s*,\s*[0-9a-fA-Fx]{1,8}\s*\)'
+    unless:
+      - id: metadata/package/testing/
+      - id: metadata/build/
+
+  - id: js-slice-fixed-span
+    desc: slice call at two numeric offsets
+    crit: notable
+    conf: 0.8
+    count_min: 3
+    platforms: [windows, unix]
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\bslice\s*\(\s*[0-9a-fA-Fx]{1,8}\s*,\s*[0-9a-fA-Fx]{1,8}\s*\)'
+    unless:
+      - id: metadata/package/testing/
+      - id: metadata/build/
+
+  # The two specific adjacent spans of a 4+4 byte header -- narrower than the
+  # generic fixed-span atoms above, and matched with a single regex so the two
+  # reads have to be adjacent in the source rather than merely both present.
+  - id: adjacent-four-byte-subarrays
+    desc: Reads adjacent four-byte subarrays
     crit: baseline
     conf: 0.9
-    any:
-      - id: native-memcpy-byte-copy
-      - id: native-memcpy-import
-      - id: micro-behaviors/mem/c-runtime/functions::memcpy
+    platforms: [windows, unix]
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'subarray\s*\(\s*0\s*,\s*4\s*\).{0,120}subarray\s*\(\s*4\s*,\s*8\s*\)'
 
+composite_rules:
   - id: native-fixed-frame-field-set
     desc: Nearby typed fields describing a binary record
     crit: notable
@@ -242,3 +277,25 @@ composite_rules:
     all:
       - id: native-fixed-frame-field-set
       - id: native-member-type-dispatch
+
+  - id: powershell-lower-nibble-pair-merge
+    desc: Merges two PowerShell low nibbles
+    crit: notable
+    conf: 0.98
+    platforms: [windows]
+    for: [powershell]
+    attack: T1140
+    all:
+      - id: powershell-low-nibble-shift
+      - id: powershell-low-nibble-or
+    near_lines: 2
+
+  - id: fixed-offset-buffer-fields
+    desc: Buffer split at three fixed offsets
+    crit: notable
+    conf: 0.8
+    platforms: [windows, unix]
+    for: [javascript, typescript]
+    any:
+      - id: js-subarray-fixed-span
+      - id: js-slice-fixed-span
