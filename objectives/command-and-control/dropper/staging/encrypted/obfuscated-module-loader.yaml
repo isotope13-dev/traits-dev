@@ -1,0 +1,76 @@
+# The encrypted on-disk stage loader, in the spelling javascript-obfuscator
+# leaves behind.
+#
+# `javascript.yaml::node-local-file-decrypt-dynamic-load` already describes
+# this tradecraft -- read a packaged file, scrypt-derive a key, AES-GCM
+# decrypt it, write the plaintext back out, `require()` the result -- but
+# every one of its legs is a `type: symbol` or call-syntax matcher. Run the
+# same loader through javascript-obfuscator and four of its eight legs go
+# quiet: the API names are lifted into a rotated string table and each call
+# site becomes `fs[_0xdecoder(0x8f)](...)`, so no symbol, member or call fact
+# carries the name any more. The names are still in the file, as bare string
+# constants in that table, which is what the `*-name-literal` atoms match.
+#
+# This is not a weaker restatement of the sibling. It is strictly narrower:
+# it additionally requires the obfuscator's own string-array rotation
+# decoder, so it only fires where the concealment is deliberate. A library
+# that genuinely does bracket-notation crypto has the literals but not the
+# rotation loop.
+#
+# Motivating sample: mathmain@1.0.1 / mathsbase@1.0.1 / math-universe@1.0.1
+# (npm, 2026-09), `lib/cjs/utils/event.js` -- 3.2 KB, and the entire malicious
+# capability of the package. Its string table reads:
+#   ['utf8','validEvent','createDecipheriv', ... ,'setAuthTag','update','from',
+#    'readFileSync','writeFileSync','final', ... ,'scryptSync','base64',
+#    'aes-256-gcm','path']
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1027.013,T1059.007,T1140
+  mbc: B0024,B0032
+
+composite_rules:
+  - id: obfuscated-table-decrypt-module-loader
+    desc: Mangled table names AEAD decrypt and load
+    crit: hostile
+    conf: 0.98
+    # The whole loader is one obfuscated line; the table, the decrypt and the
+    # require all sit inside it. Bound the window so this cannot assemble
+    # itself from unrelated halves of a large bundle.
+    near_bytes: 8192
+    all:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::javascript-obfuscator-string-array-runtime
+      - id: micro-behaviors/crypto/symmetric/aes/runtime-library::decipheriv-name-literal
+      - id: micro-behaviors/crypto/symmetric/aes/runtime-library::set-auth-tag-name-literal
+      - id: micro-behaviors/crypto/library/provider::scrypt-name-literal
+      - id: micro-behaviors/fs/read/file/full::readfilesync-name-literal
+      - id: micro-behaviors/fs/write/file/full::writefilesync-name-literal
+      - id: micro-behaviors/os/module/dynamic-load::node-dynamic-require-call
+    unless:
+      - id: metadata/package/testing/
+      - id: well-known/tool/detection/security-scanner/
+      - id: metadata/build/minifier::intentional-obfuscated-javascript-artifact-context
+
+  # The envelope, independent of how the call sites are spelled. A decoded
+  # buffer carved at three fixed offsets, an AEAD mode constant and a dynamic
+  # require in one window is a `salt | iv | tag | ciphertext` record being
+  # unpacked and executed. This catches the same family before it is
+  # obfuscated, and any variant that renames the API surface but keeps the
+  # layout -- the offsets survive every rewrite because they are numbers.
+  - id: packed-aead-envelope-module-loader
+    desc: Packed AEAD envelope decrypted into a module
+    crit: hostile
+    conf: 0.96
+    near_bytes: 4096
+    all:
+      - id: micro-behaviors/crypto/symmetric/aes/runtime-library::aes-256-gcm-dash
+      - id: micro-behaviors/crypto/library/provider::node-scrypt-any-spelling
+      - id: micro-behaviors/os/module/dynamic-load::node-dynamic-require-call
+    any:
+      - id: micro-behaviors/data/buffer::fixed-offset-buffer-fields
+      - id: objectives/anti-static/obfuscation/code-metrics/runtime-indirection::js-computed-member-constant-offset-calls
+    needs: 1
+    unless:
+      - id: metadata/package/testing/
+      - id: metadata/build/bundler/asset::js-large-module-bundle
+      - id: well-known/tool/detection/security-scanner/
