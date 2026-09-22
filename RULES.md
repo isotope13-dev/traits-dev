@@ -479,7 +479,14 @@ format, use a `metrics` check against the numeric header field:
 | `?X` | Low nibble fixed, high nibble wild | `?A` matches any byte ending in A |
 | `[N]` | Skip exactly N bytes | `00 [4] FF` |
 | `[N-M]` | Skip N to M bytes | `00 [2-8] FF` |
-| `(XX\|YY)` | Byte alternation (match any) | `(00\|80)` matches 0x00 or 0x80 |
+| `~XX` | Negated byte | `~00` matches any byte other than 0x00 |
+| `(XX\|YY)` | Alternation; branches may be sequences and may contain nibble wildcards | `(0?\|1?)` or `(33 C0 \| 31 C0)` |
+
+Hex patterns follow YARA/YARA-X-style byte syntax, including nibble wildcards,
+negated bytes, sequence alternatives, and jumps. An unparseable pattern is a
+hard validation error. `section: overlay` refers to cleave's synthetic trailing
+region after the last mapped binary section, which is useful for appended
+archives and overlay payloads.
 
 **Examples:**
 
@@ -498,6 +505,12 @@ if:
 if:
   type: hex
   pattern: "5D 00 00 (00|80) 00 (01|02|03|04) [7] ??"
+
+# Gzip magic in an appended overlay; the fourth byte is commonly variant.
+if:
+  type: hex
+  pattern: "1F 8B 08 (0?|1?)"
+  section: overlay
 ```
 
 ### Tree-sitter Kinds
