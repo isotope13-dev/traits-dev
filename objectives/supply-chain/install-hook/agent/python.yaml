@@ -1,0 +1,44 @@
+# A Python package whose install-time hook starts a resident background worker.
+#
+# Installation is a synchronous, bounded job: a hook compiles an extension,
+# copies data files, writes a config, and returns. Handing the work to a thread
+# buys nothing for packaging -- pip is already waiting -- but it is exactly how
+# an install-time payload gets a long-lived agent running: the hook starts the
+# worker, pauses long enough for it to reach its controller, and returns a
+# clean install while the worker keeps going.
+#
+# The hook declaration is the module's own docstring saying it is the package's
+# post-install entry point; setup.py imports the package and calls it from a
+# custom install command, so the hook body sits in the package and a scan of
+# the module alone never sees the `cmdclass` that wires it up. Each leg is a
+# neutral capability elsewhere -- documented hook, thread, sleep, swallowed
+# exception. The combination is the attack: install-time execution that
+# outlives the installer.
+#
+# `scope: file` with `near_lines`: the hook, the thread it starts and the wait
+# are one routine. Pooled across a distribution, any package that documents a
+# real post-install step and separately uses threads anywhere would qualify.
+defaults:
+  platforms: [windows, linux, macos, unix]
+  for: [python]
+  attack: T1195.002
+  mbc: B0024
+
+composite_rules:
+  - id: python-install-hook-starts-background-worker
+    desc: Install hook starts a resident background worker
+    crit: hostile
+    conf: 0.93
+    scope: file
+    near_lines: 60
+    all:
+      - id: metadata/package/scripts/lifecycle::python-post-install-hook-function
+      - id: micro-behaviors/process/create/thread::python-thread-create
+    any:
+      # The worker is meant to outlive the installer, the hook blocks while it
+      # comes up, or the hook hides its own failures -- each is the install
+      # step behaving like a launcher rather than a build step.
+      - id: micro-behaviors/process/create/thread::python-nondaemon-thread-explicit
+      - id: micro-behaviors/process/create/thread::python-daemon-thread
+      - id: micro-behaviors/time/sleep/interval::python-sleep-1s-plus-arg
+      - id: micro-behaviors/data/control-flow/error-handling::silent-exception-pass
