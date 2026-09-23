@@ -1,0 +1,87 @@
+# Telegram dead-drop C2 resolution in Android source. The implant fetches a
+# hardcoded Telegram channel page, finds a marker string occurring twice,
+# Base64-URL-decodes the bytes in between, and AES-128-CBC-decrypts them
+# with a key and IV split from the SHA-256 of the marker itself. The
+# plaintext is the C2 base URL, so infrastructure rotates without
+# recompiling the malware. Seen in RemControl (Group-IB, Sep 2026) and the
+# Medusa UNKN samples, which share the channel-plus-marker mechanic.
+defaults:
+  platforms: [android]
+  for: [java, kotlin]
+  attack: T1102.001
+  mbc: C0002
+
+traits:
+  # Fragments of the marker-delimited extraction below. Each is only a
+  # string-search or slice call on its own; together in one file they are
+  # the dead-drop span decode.
+  - id: telegram-marker-indexof-lookup
+    desc: Marker indexOf lookup in page text
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '\.indexOf\(\s*[\w.]+\s*\)'
+  - id: telegram-marker-offset-lookup
+    desc: Offset marker indexOf lookup
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '\.indexOf\(\s*[\w.]+\s*,'
+  - id: telegram-marker-span-slice
+    desc: Marker span substring slice
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '\.substring\s*\('
+  # AES key from digest bytes 0..16 while the IV comes from 16..32: the
+  # marker-hash split that avoids shipping any key material.
+  - id: telegram-digest-prefix-aes-key
+    desc: AES key from digest prefix bytes
+    crit: notable
+    conf: 0.93
+    if:
+      type: text
+      regex: 'SecretKeySpec\s*\([^;]{0,80},\s*0\s*,\s*16'
+  - id: telegram-digest-suffix-aes-iv
+    desc: AES IV from digest suffix bytes
+    crit: notable
+    conf: 0.93
+    if:
+      type: text
+      regex: 'IvParameterSpec\s*\([^;]{0,80},\s*16\s*,\s*16'
+
+composite_rules:
+  - id: android-telegram-marker-pair-extraction
+    desc: Telegram dead-drop marker-pair extraction
+    crit: suspicious
+    conf: 0.94
+    near_bytes: 700
+    all:
+      - id: telegram-marker-indexof-lookup
+      - id: telegram-marker-offset-lookup
+      - id: telegram-marker-span-slice
+
+  - id: android-telegram-marker-derived-cbc-key
+    desc: Marker-derived AES-CBC key and IV
+    crit: suspicious
+    conf: 0.95
+    near_bytes: 400
+    all:
+      - id: telegram-digest-prefix-aes-key
+      - id: telegram-digest-suffix-aes-iv
+
+  - id: android-telegram-marker-deaddrop-c2
+    desc: Android Telegram marker dead-drop C2
+    crit: hostile
+    conf: 0.98
+    for: [java]
+    all:
+      - id: micro-behaviors/communications/http/services/telegram::telegram-profile-url
+      - id: android-telegram-marker-pair-extraction
+      - id: micro-behaviors/data/encode/base64::android-base64-url-safe-flag
+      - id: micro-behaviors/crypto/hash/digest::java-sha256-operation
+      - id: micro-behaviors/crypto/symmetric/aes/mode::java-aes-cbc-mode
+      - id: android-telegram-marker-derived-cbc-key
