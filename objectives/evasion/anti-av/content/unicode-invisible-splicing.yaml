@@ -1,0 +1,92 @@
+# Invisible Unicode characters interleaved inside visible ASCII tokens
+# fracture keyword, signature, and tokenizer based content filters while
+# preserving what a person sees -- the same ASCII-smuggling class as the
+# Tags-block splicing in unicode-tag-splicing.yaml, but with the code
+# points other campaigns reuse: the U+200B-U+200F zero-width and direction
+# marks plus the U+202A-U+202E bidi controls (the invisible-Unicode email
+# Subject and SenderDisplayName hunting ranges; also the Trojan Source
+# class), the U+2060-U+206F invisible format characters, and the BMP
+# variation selectors. The supplementary variation-selector
+# range (U+E0100-U+E01EF) is deliberately left out: interleaved singles
+# there are byte-shape duplicates of the Tags-block pattern owned by
+# unicode-tag-splicing.yaml, while bulk runs are already covered by
+# metadata/file/invisible-unicode::supplementary-variation-selector-run.
+# Each matcher requires the invisible code
+# point strictly between two ASCII token characters, so emoji ZWJ sequences,
+# a leading BOM, CJK/emoji variation sequences, and subdivision-flag tag
+# runs (which follow U+1F3F4, never ASCII) cannot match. A bidi control
+# strictly inside an ASCII word has no legitimate function: real RTL prose
+# puts direction marks at run boundaries, around the Latin word, not
+# between two of its letters. U+00AD SOFT HYPHEN
+# is deliberately excluded: discretionary hyphenation inserts it inside
+# words on purpose, so it is not evidence of filter evasion.
+#
+# Byte-mode patterns avoid inner groups (a validator quality rule) by
+# spelling each alternative out as a full token-split pattern.
+defaults:
+  conf: 0.95
+  platforms: [linux, macos, windows]
+  # text covers saved email exports and message bodies; markdown covers
+  # agent-readable documents; python covers kit generators that embed the
+  # spliced strings in their mail templates.
+  for: [html, javascript, text, markdown, python]
+  attack: T1027
+  mbc: B0032
+
+traits:
+  - id: unicode-zero-width-bidi-spliced-token
+    desc: Zero-width or bidi control splits token
+    crit: suspicious
+    if:
+      type: text
+      # UTF-8 for U+200B-U+200F (E2 80 8B-8F: ZWSP, ZWNJ, ZWJ, LRM, RLM)
+      # and the U+202A-U+202E bidi embedding/override controls (E2 80
+      # AA-AE, the Trojan Source class), spelled as two full token-split
+      # alternatives so the visible U+2010-U+2029 dashes and punctuation
+      # between them can never match. A direction mark strictly inside a
+      # pure-ASCII word has no legitimate function: real RTL prose places
+      # bidi controls at run boundaries, around the Latin word, not
+      # between two of its letters. Both families are observed spliced
+      # inside brand tokens in phishing Subject and sender display names;
+      # they render identically while breaking exact-match filters.
+      regex: '(?-u:[0-9A-Za-z]\xE2\x80[\x8B-\x8F][0-9A-Za-z]|[0-9A-Za-z]\xE2\x80[\xAA-\xAE][0-9A-Za-z])'
+    unless:
+      - id: metadata/package/testing/presence/harness::test-directory-path
+      - id: well-known/tool/detection/llm-scanner::llm-scanner-context
+  - id: unicode-invisible-format-char-spliced-token
+    desc: Invisible format character splits visible token
+    crit: suspicious
+    if:
+      type: text
+      # UTF-8 for U+2060-U+206F (E2 81 A0-AF): word joiner, invisible
+      # operators, directional isolates, and deprecated format chars --
+      # plus U+FEFF BOM (EF BB BF) between ASCII token characters.
+      regex: '(?-u:[0-9A-Za-z]\xE2\x81[\xA0-\xAF][0-9A-Za-z]|[0-9A-Za-z]\xEF\xBB\xBF[0-9A-Za-z])'
+    unless:
+      - id: metadata/package/testing/presence/harness::test-directory-path
+      - id: well-known/tool/detection/llm-scanner::llm-scanner-context
+  - id: unicode-bmp-variation-selector-spliced-token
+    desc: BMP variation selector splits visible token
+    crit: suspicious
+    if:
+      type: text
+      # UTF-8 for U+FE00-U+FE0F (EF B8 80-8F) between ASCII tokens.
+      regex: '(?-u:[0-9A-Za-z]\xEF\xB8[\x80-\x8F][0-9A-Za-z])'
+    unless:
+      - id: metadata/package/testing/presence/harness::test-directory-path
+      - id: well-known/tool/detection/llm-scanner::llm-scanner-context
+composite_rules:
+  # Two distinct invisible-splitting mechanisms fracturing tokens in one
+  # file means the author reached for the technique twice, not a one-off
+  # encoding accident -- the campaign shape (Tags block in the lure body,
+  # zero-widths alongside it, bidi controls in the sender name). Each leg
+  # alone is already suspicious; the combination has no legitimate use.
+  - id: unicode-multi-mechanism-token-splicing
+    desc: Multiple invisible mechanisms fracture tokens
+    crit: hostile
+    needs: 2
+    any:
+      - id: objectives/evasion/anti-av/content::unicode-tag-spliced-ascii-token
+      - id: unicode-zero-width-bidi-spliced-token
+      - id: unicode-invisible-format-char-spliced-token
+      - id: unicode-bmp-variation-selector-spliced-token
