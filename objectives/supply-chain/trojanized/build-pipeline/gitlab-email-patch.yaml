@@ -1,0 +1,112 @@
+# GitLab accepts attached Git patches at a merge-request-by-email address. An
+# account's issue-by-email address carries the same non-expiring account token,
+# so rewriting only the action suffix turns a leaked issue address into a
+# repository-write channel: GitLab applies the emailed patch to the branch named
+# in the subject, authored as the account owner, and runs any injected
+# .gitlab-ci.yml job with that account's permissions.
+defaults:
+  platforms: [unix, windows]
+  for: [scripts, source]
+  attack: T1195.002
+
+traits:
+  - id: method-issue-email-suffix-rewrite
+    desc: Rewrites GitLab issue-email action suffix
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: text
+      regex: '(?i)\.(replace|sub|gsub)\s*\(\s*["'']-issue@["'']\s*,\s*["'']-merge-request@["'']'
+
+  - id: php-issue-email-suffix-rewrite
+    desc: PHP rewrites GitLab issue-email action
+    crit: suspicious
+    conf: 0.98
+    for: [php]
+    if:
+      type: text
+      regex: '(?i)str_replace\s*\(\s*["'']-issue@["'']\s*,\s*["'']-merge-request@["'']'
+
+  - id: powershell-issue-email-suffix-rewrite
+    desc: PowerShell rewrites GitLab email action
+    crit: suspicious
+    conf: 0.98
+    for: [powershell]
+    if:
+      type: text
+      regex: '(?i)-replace\s+["'']-issue@["'']\s*,\s*["'']-merge-request@["'']'
+
+  - id: sed-issue-email-suffix-rewrite
+    desc: sed rewrites GitLab issue-email action
+    crit: suspicious
+    conf: 0.97
+    for: [shell]
+    if:
+      type: text
+      regex: '(?i)\bsed\s+[^\r\n]{0,32}s/-issue@/-merge-request@/'
+
+  # Capability leg for the poisoned-pipeline composite: a GitLab CI job token
+  # handed to an outbound HTTP client. Notable on its own (a pipeline secret
+  # leaving over the network); hostile only once it sits in an injected CI file.
+  - id: ci-job-token-piped-to-http-client
+    desc: CI token piped to curl or wget
+    crit: notable
+    conf: 0.95
+    for: [text, scripts, source]
+    if:
+      type: text
+      regex: '(?i)\b(curl|wget)\b[^\n]{0,80}\$\{?CI_[A-Z_]*TOKEN'
+
+  # A patch hunk that ADDS a line reaching an external URL. Distinguishes the
+  # exfil destination from the secret and the target file in the composite below.
+  - id: outbound-url-in-added-diff-line
+    desc: Diff hunk adds an outbound URL
+    crit: notable
+    conf: 0.9
+    for: [text, scripts, source]
+    if:
+      type: text
+      regex: '(?im)^\+[^\n]{0,120}https?://'
+
+  # A patch hunk that ADDS a job `script:` stanza — the shape of an injected
+  # CI/CD job, distinct from touching the file and from the outbound call.
+  - id: unified-diff-adds-job-script
+    desc: Diff hunk adds a job script stanza
+    crit: notable
+    conf: 0.9
+    for: [text, scripts, source]
+    if:
+      type: text
+      regex: '(?im)^\+\s{0,8}script\s*:'
+
+composite_rules:
+  # Full email-to-push chain: a leaked account credential, escalated from the
+  # issue channel to the code-push channel, delivering a CI-config patch.
+  - id: gitlab-email-unauthorized-push
+    desc: GitLab email patch injects CI as victim
+    crit: hostile
+    conf: 0.99
+    scope: file
+    all:
+      - id: objectives/credential-access/cloud/token/files::gitlab-incoming-email-credential
+      - id: metadata/file/format/markup::gitlab-ci-unified-diff-target
+    any:
+      - id: method-issue-email-suffix-rewrite
+      - id: php-issue-email-suffix-rewrite
+      - id: powershell-issue-email-suffix-rewrite
+      - id: sed-issue-email-suffix-rewrite
+
+  # Poisoned pipeline: a Git patch that adds CI-job-token exfiltration to the
+  # project's .gitlab-ci.yml. Independent of the email vector, so it also covers
+  # merge-request and direct-commit variants of the same payload.
+  - id: gitlab-ci-pipeline-token-exfil
+    desc: CI patch exfiltrates GitLab job token
+    crit: hostile
+    conf: 0.98
+    scope: file
+    near_lines: 20
+    all:
+      - id: metadata/file/format/markup::gitlab-ci-unified-diff-target
+      - id: ci-job-token-piped-to-http-client
+      - id: outbound-url-in-added-diff-line
+      - id: unified-diff-adds-job-script
