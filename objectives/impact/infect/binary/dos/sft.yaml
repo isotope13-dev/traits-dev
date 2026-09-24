@@ -1,0 +1,51 @@
+# Resident infectors that catch load-and-execute (INT 21h AX=4B00h) and
+# then reach the DOS System File Table through the undocumented INT 2Fh
+# AX=1220h (JFT entry) / AX=1216h (SFT address) calls. With the SFT in hand
+# they flip the handle's open mode to read/write, so a host opened
+# read-only can be rewritten without tripping attribute or AV open checks.
+defaults:
+  platforms: [windows, unix]
+  for: [dos_com, static-lib, data]
+  attack: T1080
+
+traits:
+  # CMP AX,4B00h / CMP AH,4Bh followed by a conditional jump.
+  - id: dos-exec-call-filter
+    desc: DOS handler filters load-and-execute
+    crit: notable
+    conf: 0.84
+    if:
+      type: hex
+      pattern: "(3D 00 4B|80 FC 4B) (74|75)"
+
+  # MOV AX,1220h; INT 2Fh ... MOV AX,1216h; INT 2Fh
+  - id: dos-sft-lookup
+    desc: DOS resolves a handle to SFT
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: hex
+      pattern: "B8 20 12 CD 2F [0-16] B8 16 12 CD 2F"
+
+  # MOV WORD ES:[DI+2],2 - SFT open mode forced to read/write.
+  - id: dos-sft-force-rw
+    desc: DOS forces SFT open mode to read/write
+    crit: notable
+    conf: 0.85
+    if:
+      type: hex
+      pattern: "26 C7 45 02 02 00"
+
+composite_rules:
+  - id: dos-sft-exec-infector
+    desc: DOS exec hook rewrites hosts via the SFT
+    crit: hostile
+    conf: 0.94
+    all:
+      - id: dos-exec-call-filter
+      - id: dos-sft-lookup
+      - id: objectives/impact/infect/binary/dos::dos-write-dispatch
+    any:
+      - id: dos-sft-force-rw
+      - id: objectives/impact/infect/binary/dos::dos-int21-set-file-time
+    needs: 1
