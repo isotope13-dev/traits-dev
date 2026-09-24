@@ -102,7 +102,56 @@ traits:
     if:
       type: text
       case_insensitive: true
-      regex: '(/(msg|notice|query|ignore|kick|ban|dcc)\s+\$nick\b|\.privmsg\s+\$nick\b)'
+      # Both the slash form (/msg) and the silent dot form (.msg, which
+      # suppresses local echo) address a command at $nick; backdoors prefer
+      # the dot form so the victim never sees the reply.
+      regex: '([/.](msg|notice|query|ignore|kick|ban|dcc)\s+\$nick\b|\.privmsg\s+\$nick\b)'
+  - id: mirc-script-event-ctcp
+    desc: mIRC CTCP event handler
+    crit: suspicious
+    conf: 0.93
+    for: [mirc, ircii, scripts]
+    if:
+      type: text
+      case_insensitive: true
+      # A remote CTCP definition: `ctcp <level>:<matchtext>:{` at line start.
+      # Ordinary prose never opens a brace after two colon fields.
+      regex: '(?m)^\s*ctcp\s+.{1,24}:\s*\{'
+  - id: mirc-exec-sender-text-command
+    desc: mIRC executes sender text as command
+    crit: suspicious
+    conf: 0.94
+    for: [mirc, ircii, scripts]
+    if:
+      type: text
+      case_insensitive: true
+      # Executes the sender-controlled message parameters ($N-) as a command:
+      # `.$+ $2-` (silent concat-exec) or `/$2-` (direct exec). Legitimate
+      # scripts echo or forward $N-, never execute it.
+      regex: '[./]\$(\+\s+\$)?[0-9]-'
+  - id: mirc-controller-nick-gate
+    desc: mIRC handler gated on hardcoded nickname
+    crit: suspicious
+    conf: 0.9
+    for: [mirc, ircii, scripts]
+    if:
+      type: text
+      case_insensitive: true
+      # `$nick != hacker` / `$nick == boss`: the handler only answers a fixed
+      # operator nick. The gated name must start with a nick character, which
+      # also excludes self-comparisons (`$nick != $me`) — those are ordinary.
+      regex: '\$nick\s*(!=|==)\s*[A-Za-z0-9_\-\[\]{}^`|\\]{1,32}'
+  - id: mirc-suppress-event-halt
+    desc: mIRC handler suppresses default reply
+    crit: notable
+    conf: 0.9
+    for: [mirc, ircii, scripts]
+    if:
+      type: text
+      case_insensitive: true
+      # `| halt` ends remote processing and swallows the default event reply
+      # (e.g. the CTCP response), so the trigger leaves no visible trace.
+      regex: '\|\s*halt\b'
 
   - id: mirc-script-cmd-fserve
     desc: Detects mIRC file-server command
@@ -288,3 +337,18 @@ composite_rules:
     all:
       - id: mirc-script-event-text
       - id: mirc-run-ping-flood
+  # A CTCP handler that runs the sender's message text as a command and then
+  # halts is arbitrary remote command execution: anyone who can CTCP the
+  # victim runs mIRC commands (file, process, DCC) with no visible reply.
+  - id: mirc-ctcp-remote-exec-backdoor
+    desc: mIRC CTCP handler executes remote text
+    crit: hostile
+    conf: 0.96
+    attack: T1059
+    # An actual remote: droppers that merely quote these lines are covered by
+    # the source-side worm traits, not by this execution verdict.
+    for: [mirc, ircii]
+    all:
+      - id: mirc-script-event-ctcp
+      - id: mirc-exec-sender-text-command
+      - id: mirc-suppress-event-halt
