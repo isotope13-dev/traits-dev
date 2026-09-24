@@ -9,6 +9,30 @@ defaults:
   platforms: [unix, windows]
   attack: T1195.002
 
+traits:
+  # The sckit stage protocol: every launcher variant -- npm dropper, PyPI
+  # stub, bootstrap postinstall shim, and the push-triggered workflow the
+  # worm writes -- invokes the staged binary with the task name `stage0`
+  # and an inline base64 config via `--config64`. The tokens name a family
+  # protocol, so the composites convict only when a real process launch
+  # carries them both.
+  - id: stage0-task-argument
+    desc: stage0 task name argument
+    crit: notable
+    conf: 0.95
+    for: [javascript, python]
+    if:
+      type: text
+      regex: '["'']stage0["'']'
+  - id: inline-config64-flag
+    desc: Inline base64 config flag
+    crit: notable
+    conf: 0.95
+    for: [javascript, python]
+    if:
+      type: text
+      substr: --config64
+
 composite_rules:
   - id: js-bundled-binary-detached-env-launch
     desc: JS launches hidden platform binary detached with env
@@ -36,3 +60,70 @@ composite_rules:
       - id: micro-behaviors/process/create/subprocess::subprocess-detached-session
       - id: micro-behaviors/process/create/subprocess::python-subprocess-devnull
       - id: micro-behaviors/os/env/read::python-environ-copy
+
+  # Protocol twins of the composites above for launchers that carry no
+  # family strings: the verbatim Aikido-quoted stubs pass no env var and no
+  # schema marker, only the stage protocol. A real spawn plus both protocol
+  # tokens is the execution shape every sckit variant keeps, because the
+  # staged binary parses exactly this argv.
+  - id: js-staged-config-launch
+    desc: JS spawns staged binary with inline config
+    crit: hostile
+    conf: 0.96
+    for: [javascript]
+    near_bytes: 500
+    all:
+      - id: micro-behaviors/process/create/spawn::bare-spawn-call
+    any:
+      - id: stage0-task-argument
+      - id: inline-config64-flag
+    needs: 2
+
+  - id: py-staged-config-launch
+    desc: Python runs staged binary with inline config
+    crit: hostile
+    conf: 0.96
+    for: [python]
+    scope: file
+    all:
+      - id: micro-behaviors/process/create/subprocess::subprocess-detached-session
+    any:
+      - id: stage0-task-argument
+      - id: inline-config64-flag
+    needs: 2
+
+  # Rename-resistant twins for launchers that drop the family protocol
+  # entirely: a detached, silenced spawn of a binary resolved from a hidden
+  # package directory or a composed <platform>-<arch> matrix segment, fed
+  # with an inline base64 blob that decodes to a JSON config. Every leg is
+  # structure (path layout, spawn shape, encoding), so renaming the binary,
+  # the task argument, and the flag still lands here.
+  - id: js-staged-binary-encoded-config-launch
+    desc: JS launches hidden staged binary with encoded JSON config
+    crit: hostile
+    conf: 0.95
+    for: [javascript, typescript]
+    near_bytes: 4000
+    all:
+      - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+      - id: micro-behaviors/data/encode/base64::json-base64-config-literal
+    any:
+      - id: micro-behaviors/fs/path/construct::node-hidden-exec-dir-join
+      - id: micro-behaviors/fs/path/construct::node-os-arch-dir-join
+    unless:
+      - id: metadata/build/recognized-contexts::benign-trojanized-fp-context
+
+  - id: py-staged-binary-encoded-config-launch
+    desc: Python launches hidden staged binary with encoded JSON config
+    crit: hostile
+    conf: 0.95
+    for: [python]
+    scope: file
+    all:
+      - id: micro-behaviors/process/create/subprocess::subprocess-detached-session
+      - id: micro-behaviors/data/encode/base64::json-base64-config-literal
+    any:
+      - id: micro-behaviors/fs/path/location::python-package-dotdir-binary-path
+      - id: micro-behaviors/os/sysinfo/platform/runtime::python-arch-alias-go-map
+    unless:
+      - id: metadata/build/recognized-contexts::benign-trojanized-fp-context

@@ -95,6 +95,39 @@ traits:
   if:
     type: text
     regex: '"post[Ii]nstall"\s*:\s*"node\s+bundle\.js"'
+- id: workflow-staged-config-run
+  desc: Workflow run passes inline config64 flag
+  crit: notable
+  conf: 0.94
+  for: [javascript, python, github-actions]
+  if:
+    type: text
+    regex: 'run:[^\n]{0,120}--config64'
+# A run step executing a repository-relative binary staged under a
+# <platform>-<arch> directory: the payload-matrix layout the worm commits
+# alongside the workflow so the checkout itself arms the next run. Benign
+# CI executes build outputs it just built or a wrapper at the repo root;
+# running a checked-out os-arch matrix binary is the staged-payload shape.
+- id: workflow-run-arch-matrix-binary
+  desc: Workflow run executes os-arch staged binary
+  crit: notable
+  conf: 0.9
+  for: [javascript, python, github-actions]
+  if:
+    type: text
+    regex: 'run:[^\n]{0,80}\./[^"\s]{0,80}-(amd64|arm64|x86_64)/'
+# A run step whose argument is a long base64 value that decodes to JSON
+# ("eyJ" is base64 for '{'): the inline config blob the staged binary
+# receives. Structure-derived, so it survives the binary, flag, and task
+# names being renamed in the next variant.
+- id: workflow-run-json-base64-argument
+  desc: Workflow run passes base64 JSON argument
+  crit: notable
+  conf: 0.9
+  for: [javascript, python, github-actions]
+  if:
+    type: text
+    regex: 'run:[^\n]{0,120}eyJ[A-Za-z0-9+/]{32,}={0,2}'
 composite_rules:
 - id: npm-package-worm
   desc: NPM package worm (adds owner to packages)
@@ -219,3 +252,43 @@ composite_rules:
   all:
   - id: npm-force-publish-token
   - id: objectives/credential-access/env/secrets/npm-registry::npmrc-access
+# The worm ships a push-triggered workflow template so any repository it
+# reaches re-executes the staged binary on the next push. Push triggers and
+# checkout steps are ordinary CI shape, so the run step invoking a staged
+# binary with an inline config is the leg that carries worm intent. Matched
+# as text so the template fires whether it sits in a real workflow file or
+# embedded in a dropper binary.
+- id: push-triggered-staged-worm-workflow
+  desc: Push-triggered workflow runs staged binary with config
+  crit: hostile
+  conf: 0.96
+  attack: T1195.002
+  for: [javascript, python, github-actions]
+  near_bytes: 800
+  all:
+  - id: metadata/build/ci/trigger::workflow-push-trigger
+  - id: metadata/build/ci/step::actions-checkout-step
+  - id: workflow-staged-config-run
+  any:
+  - id: workflow-run-arch-matrix-binary
+  - id: workflow-run-json-base64-argument
+# Rename-resistant twin of the composite above: the workflow does not carry
+# the campaign's config64 flag, but still checks out and runs a binary from
+# a committed os-arch payload matrix while handing it an inline base64
+# JSON config. Two independent run-step shapes must agree, so a push
+# workflow that merely executes a checked-in helper (one shape) stays out.
+- id: push-workflow-staged-payload-rerun
+  desc: Push workflow reruns staged platform binary with encoded config
+  crit: hostile
+  conf: 0.95
+  attack: T1195.002
+  for: [javascript, python, github-actions]
+  near_bytes: 800
+  all:
+  - id: metadata/build/ci/trigger::workflow-push-trigger
+  - id: metadata/build/ci/step::actions-checkout-step
+  any:
+  - id: workflow-staged-config-run
+  - id: workflow-run-arch-matrix-binary
+  - id: workflow-run-json-base64-argument
+  needs: 2
