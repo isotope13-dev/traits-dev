@@ -1,0 +1,95 @@
+# Microsoft's SSPR portal answers unauthenticated username submissions with
+# a hidden CurrentViewName field whose value discloses whether the account
+# exists, which policy blocked it, and (for reachable accounts) a radio
+# table of registered verification methods. Driving that oracle across a
+# harvested email list turns guesses into a confirmed target list with MFA
+# posture attached, before any credential attack. The view names, control
+# ids, and postback shape below are the portal's own wire format.
+defaults:
+  platforms: [windows, unix]
+  for: [python]
+  attack: T1087.004,T1589.002
+  mbc: E1589
+
+traits:
+  # The ground-truth marker: the async-postback reply carries CurrentViewName
+  # with ViewMultigateUserControl (exists, method selection) or
+  # ViewUserIdentifierVerification (not found, bounced to step 1).
+  - id: sspr-view-state-marker
+    desc: SSPR CurrentViewName account-state marker
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: text
+      regex: 'CurrentViewName[\s\S]{0,200}View(MultigateUserControl|UserIdentifierVerification)'
+
+  # Every other named view confirms existence too: the server reached the
+  # policy check only after resolving the username in the directory.
+  - id: sspr-policy-view-marker
+    desc: SSPR policy view confirming account exists
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: 'View(SsprNotEnabledInUserPolicy|UserNotMemberOfScopedAccessGroup|FeatureNotAvailable)'
+
+  # Method-selection radio table listing registered verification methods;
+  # unregistered rows stay in the DOM hidden with display:none.
+  - id: sspr-method-table-marker
+    desc: SSPR verification-method radio table
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: text
+      substr: MultigateAuthenticationControl_RadioTable
+
+  # Per-method radio control ids mapping to authenticator app, alternate
+  # email, SMS, and voice verification methods.
+  - id: sspr-method-radio-ids
+    desc: SSPR verification-method radio control ids
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: text
+      regex: 'MultigateAuthenticationControl_(AltEmail|AppCode|Sms|Voice)Radio'
+
+  # The username step is an ASP.NET UpdatePanel async postback to the same
+  # URL carrying the ButtonNext control target.
+  - id: sspr-updatepanel-postback
+    desc: SSPR UpdatePanel username postback
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '__EVENTTARGET[^"'']{0,80}ButtonNext'
+
+composite_rules:
+  # Portal oracle plus the valid/invalid view differential, driven across a
+  # user or account collection: bulk existence checks before credential
+  # attacks, the Teams-external-search analogue for password reset.
+  - id: sspr-portal-bulk-account-enumeration
+    desc: Enumerates Entra accounts through SSPR portal oracle
+    crit: hostile
+    conf: 0.98
+    near_bytes: 4500
+    all:
+      - id: micro-behaviors/communications/http/contact-resolution::sspr-portal-endpoint
+      - id: sspr-view-state-marker
+    any:
+      - id: micro-behaviors/data/control-flow/loop::script-user-collection-loop
+      - id: micro-behaviors/data/control-flow/loop::script-account-collection-loop
+
+  # Portal oracle plus per-account method-table harvest: which second
+  # factors each valid account registered, i.e. weak-only vs protected.
+  - id: sspr-portal-mfa-method-harvest
+    desc: Harvests SSPR verification methods per account
+    crit: hostile
+    conf: 0.98
+    near_bytes: 4500
+    all:
+      - id: micro-behaviors/communications/http/contact-resolution::sspr-portal-endpoint
+      - id: sspr-method-table-marker
+      - id: sspr-method-radio-ids
+    any:
+      - id: micro-behaviors/data/control-flow/loop::script-user-collection-loop
+      - id: micro-behaviors/data/control-flow/loop::script-account-collection-loop
