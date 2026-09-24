@@ -1,0 +1,95 @@
+defaults:
+  for:
+    - ruby
+  platforms:
+    - unix
+    - windows
+
+traits:
+  - id: auth-hook-ruby
+    desc: Ruby Identity prepend authentication hook
+    crit: suspicious
+    conf: 0.9
+    attack: T1056
+    unless:
+      # Ruby test suites commonly name examples after Module#prepend.  Do not
+      # treat those labels as a credential hook, or let a test helper's real
+      # prepend call suppress the production-oriented signal.
+      - type: path
+        regex: '(^|[\\/])(tests?|testing|spec)([\\/]|$)'
+    if:
+      # Match the call node, not a string literal such as
+      # "Module#prepend + Module#ancestors".
+      type: tree-sitter
+      kind: call
+      regex: '\bIdentity\.prepend\b'
+  - id: password-theft-ruby
+    desc: Password theft pattern
+    crit: suspicious
+    conf: 0.92
+    attack: T1056
+    if:
+      type: string_literal
+      regex: password.{0,50}rescue
+  - id: global-variable-append
+    desc: Ruby global variable append operation
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '\$[A-Za-z_][A-Za-z0-9_]*\s*<<'
+    unless:
+      - type: text
+        regex: '\$LOAD_PATH\s*<<'
+  - id: credential-append
+    desc: Credential field string marker
+    crit: notable
+    conf: 0.85
+    attack: T1056
+    if:
+      type: string_literal
+      regex: email.{0,50}password|<<.{0,50}rescue
+
+composite_rules:
+  - id: global-credential-buffer
+    desc: Global variable receives credential data
+    crit: suspicious
+    conf: 0.75
+    attack: T1552
+    all:
+      - id: global-variable-append
+    any:
+      - id: objectives/credential-access/theft/keywords::credential-field--password
+      - id: micro-behaviors/data/parse/vocabulary::credential-field
+      - id: micro-behaviors/data/parse/vocabulary::secret
+      - id: micro-behaviors/data/parse/vocabulary::token-word
+    near_bytes: 160
+  - id: auth-credential-theft
+    desc: Authentication credential theft
+    crit: suspicious
+    conf: 0.93
+    attack: T1056
+    needs: 3
+    any:
+      - id: auth-hook-ruby
+      - id: password-theft-ruby
+      - id: global-credential-buffer
+      - id: credential-append
+      - id: objectives/command-and-control/backdoor/rat/multi::faraday-http
+# The credential-collection face of a Ruby request backdoor: the auth hook
+# that decides who may command the implant also sweeps the session cookie on
+# the way past. The C2 rules under command-and-control/backdoor convict the
+# remote command-eval; this one states what else the hook takes -- live
+# session cookies are credentials, and a backdoor that harvests them while
+# it gates its own commands is a stealer as well as a rat.
+#
+# Worked example: the trojanized `rest-client` gem pastebin backdoor, whose
+# signed-request hook extracts the cookie session before eval'ing commands.
+  - id: auth-hook-harvests-session-cookies
+    desc: Auth hook harvests session cookies
+    crit: hostile
+    conf: 0.96
+    attack: T1539,T1552.001
+    all:
+      - id: auth-hook-ruby
+      - id: objectives/command-and-control/backdoor/rat/multi::cookie-session-extract

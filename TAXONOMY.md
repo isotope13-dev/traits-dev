@@ -253,7 +253,8 @@ When a behavior could serve multiple objectives, place the single trait where ev
 | Reads `AWS_SECRET_ACCESS_KEY` from env | `credential-access/env/secrets/` | Targets a specific secret |
 | Reads `os.environ` generically | `micro-behaviors/os/env/` | Neutral capability, no credential targeting |
 | Generic keystroke capture | `collection/keylog/` | General capture; credential-access composites reference it |
-| Chrome passwords + HTTP POST to attacker | `exfiltration/stealer/credential/` | Source + transport = exfiltration |
+| Chrome passwords + HTTP POST to attacker | `exfiltration/stealer/browser/` | Source + transport = exfiltration; the source names the directory |
+| Chrome passwords read, never sent | `credential-access/browser/` | No transport leg — not a stealer |
 | "admin" or "root" keyword | Concept-specific keyword directory, usually `objectives/discovery/account/keywords/` or a narrower objective when context supports it | Account/user concept, not credential access and not generic text |
 | CLI `--help` / `Usage:` text | `micro-behaviors/ui/help/` | Help text is a user-interface behavior, not file metadata |
 | Infection vocabulary | `objectives/impact/infect/` | The terms represent an impact objective, not generic content |
@@ -820,7 +821,6 @@ objectives/
 │   ├── messaging/             #   Messaging app data collection           T1005
 │   ├── app-data/              #   Application-specific data (Notes, Stickies)
 │   ├── monitor/               #   Monitoring/telemetry capture
-│   ├── stealer/               #   Multi-step stealer behavior composites  T1119
 │   ├── activity/              #   User activity tracking
 │
 ├── credential-access/         # Credential theft (OB0005)
@@ -858,8 +858,9 @@ objectives/
 │   ├── theft/                 #   Credential theft composites
 │   │   ├── multi-app/         #     Sweep across app SESSIONS (wallets, Discord, Steam)
 │   │   └── multi-store/       #     Sweep across developer credential STORES (cloud
-│   │                          #       configs, SSH keys, .env/.npmrc, browser DBs) +
-│   │                          #       exfil; the dev-workstation analogue of multi-app.
+│   │                          #       configs, SSH keys, .env/.npmrc, browser DBs); the
+│   │                          #       dev-workstation analogue of multi-app. A sweep
+│   │                          #       that also SENDS → exfiltration/stealer/sweep/.
 │   ├── validation/            #   Credential validation
 │   ├── vpn/config/            #   VPN config credentials
 │   ├── wallet/                #   Crypto wallet access                    B0028
@@ -939,9 +940,43 @@ objectives/
 │   ├── serialization/         #   Data serialization for transport
 │   ├── side-channel/          #   Covert channels (DNS tunneling, stego)
 │   └── stealer/               #   Complete steal-and-send chains           E1020
-│       ├── credential/        #     Credential access + transport
-│       ├── file/              #     File theft + transport
-│       └── system-info/       #     System profiling + transport
+│       │                      #     The ONLY stealer home. There is no collection/stealer/
+│       │                      #     or credential-access/theft/stealer/: gathering without
+│       │                      #     sending is collection/, reading a store is
+│       │                      #     credential-access/, and "stealer" means the data leaves.
+│       │                      #     Named families → well-known/malware/stealer/.
+│       │                      #     Contract for every rule under stealer/:
+│       │                      #     - a composite with a sensitive-SOURCE leg AND a
+│       │                      #       TRANSPORT leg (HTTP/upload, webhook, bot API,
+│       │                      #       SMTP, FTP, socket, DNS). No transport → the source's
+│       │                      #       credential-access/ or collection/ home; no source →
+│       │                      #       exfiltration/<transport>/.
+│       │                      #     - composites only, as far as possible: source atoms
+│       │                      #       live in credential-access/, discovery/, collection/;
+│       │                      #       neutral atoms in micro-behaviors/. An atom stays
+│       │                      #       only when it has no meaning outside the chain.
+│       │                      #     Children are named for WHAT is stolen (level 3 is the
+│       │                      #     last ML-visible level); transport, language, platform
+│       │                      #     and product go in the filename.
+│       ├── account-db/        #     /etc/shadow, /etc/passwd, SAM, sudo logs
+│       ├── appliance-config/  #     Router/firewall/appliance configs (RouterOS, NetScaler)
+│       ├── browser/           #     Browser passwords, cookies, extension storage
+│       ├── cloud/             #     Cloud credentials (~/.aws, IMDS, kubeconfig)
+│       ├── dev-secret/        #     .npmrc, .git-credentials, .env files, CI secrets
+│       ├── env/               #     Process environment secrets
+│       ├── file/              #     Documents, disk sweeps, removable media
+│       ├── input/             #     Keystrokes, form input, clipboard
+│       ├── keychain/          #     OS secret stores (Keychain, DPAPI, libsecret)
+│       ├── message/           #     SMS, mailboxes, chat history
+│       ├── network-config/    #     Interfaces, routes, ARP, Wi-Fi profiles
+│       ├── phish/             #     Credentials typed into a phishing form
+│       ├── process-list/      #     Running-process inventory
+│       ├── ssh/               #     SSH keys and host files
+│       ├── surveillance/      #     Screenshots, camera, microphone
+│       ├── sweep/             #     One stealer harvesting many of the above
+│       ├── system-info/       #     Host profile (hostname, user, OS, hardware)
+│       ├── token/             #     App session tokens (Discord, Telegram, games)
+│       └── wallet/            #     Crypto wallets and seed phrases
 │
 ├── impact/                    # Destructive operations (OB0008)
 │   │                          #   "Manipulate, interrupt, or destroy systems and data"

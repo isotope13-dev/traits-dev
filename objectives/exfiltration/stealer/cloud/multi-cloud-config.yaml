@@ -1,0 +1,55 @@
+defaults:
+  platforms: [windows, macos, linux]
+  for: [binaries, scripts]
+  attack: T1528
+
+composite_rules:
+  # An outbound channel that can carry a file body. Kept local to this rule so
+  # the theft claim below names a specific egress path rather than "the file
+  # mentions a URL somewhere".
+  - id: cloud-credential-upload-channel
+    desc: Outbound HTTP channel carrying a body
+    crit: component
+    conf: 0.85
+    any:
+      - id: micro-behaviors/communications/http/post/
+      - id: micro-behaviors/communications/http/upload/
+      - id: micro-behaviors/communications/http/curl/
+      - id: micro-behaviors/communications/http/request/verb::urllib-request-post
+  # Naming two of these path groups is not theft. Cloud SDKs, deployment
+  # tooling, backup utilities and gateway admin consoles all know where
+  # ~/.aws/credentials, ~/.kube/config and /run/secrets live -- a LiteLLM
+  # proxy UI shipping a guardrail prompt catalogue ("Try `cat
+  # /var/run/secrets/...`") named two of them and was called a stealer, and
+  # wandb's kaniko launch builder paired its credential mounts with a
+  # namespace-file read and a build-context upload. The theft shape is that
+  # inventory plus an actual read of a credential FILE and an outbound
+  # upload, matching the reasoning on the dev-file sibling
+  # (encoded-multi-developer-secret-exfil).
+  - id: cloud-config-stealer
+    for: [scripts, '!jcl']
+    desc: Reads and uploads multi-service cloud credential files
+    crit: hostile
+    conf: 0.98
+    needs: 2
+    # The read, the upload and the credential paths have to be part of one
+    # routine. Without a bound, any single-file application bundle satisfies
+    # all three from unrelated modules megabytes apart -- a Bun-compiled CLI
+    # did. Same window the dev-file sibling uses.
+    near_bytes: 32768
+    unless:
+      # RFC 5737 sets aside 192.0.2/24, 198.51.100/24 and 203.0.113/24 so that
+      # examples cannot route anywhere. A file that lists credential paths and
+      # an upload channel beside those addresses is building attack fixtures,
+      # not collecting: agent-glovebox's `evals/generate.py` emits a labelled
+      # benign/malicious corpus for its own classifier.
+      - id: micro-behaviors/communications/ip/literal::rfc5737-documentation-ipv4-literal
+      - id: well-known/tool/sysadmin/alpine-packages/binary::telegraf-binary-name
+      - id: well-known/tool/sysadmin/alpine-packages/package::alpine-telegraf-member-binary
+    all:
+      - id: objectives/credential-access/files/config::developer-credential-file-read
+      - id: cloud-credential-upload-channel
+    any:
+      - id: micro-behaviors/fs/path/token::cloud-credentials
+      - id: micro-behaviors/fs/path/credential::container-credentials
+      - id: micro-behaviors/fs/path/secret-config::orchestration-credentials

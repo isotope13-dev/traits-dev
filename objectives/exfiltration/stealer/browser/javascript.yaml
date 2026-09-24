@@ -1,0 +1,256 @@
+defaults:
+  platforms: [linux, macos, windows, unix, android, ios]
+  attack: "T1041"
+
+composite_rules:
+  - id: js-etherhiding-chromium-json-exfil
+    desc: Chromium credentials sent to Ethereum-resolved endpoint
+    crit: hostile
+    conf: 0.995
+    attack: "T1555.003,T1041"
+    mbc: "B0028"
+    for: [javascript, typescript]
+    platforms: [unix, windows]
+    near_bytes: 1400
+    all:
+      - id: objectives/credential-access/browser/chromium::chromium-profile-credential-query
+      - id: objectives/command-and-control/channel/deaddrop/blockchain::ethereum-eth-call-c2-routing
+  - id: js-browser-cookie-websocket-exfil
+    desc: Browser session cookies sent over a WebSocket
+    crit: hostile
+    conf: 0.99
+    attack: "T1539,T1041"
+    mbc: "B0028"
+    for: [javascript, typescript]
+    all:
+      - id: micro-behaviors/communications/websocket/handler::websocket-library-api-reference
+      - id: micro-behaviors/communications/http/cookie-store::browser-document-cookie-read
+      - id: micro-behaviors/communications/http/cookies::cookie-json-send-call
+    near_bytes: 2400
+    unless:
+      - id: well-known/tool/detection/
+  - id: js-browser-wallet-stealer-source
+    desc: Browser or wallet credential source
+    crit: notable
+    conf: 0.94
+    any:
+      # Reference the positive stealer composites explicitly — a bare directory
+      # prefix also matched the baseline `multi-app-stealer-benign-context`
+      # marker (e.g. detection-tool vocabulary), firing the hostile upload
+      # composite on benign frameworks that merely touch credential categories.
+      - id: objectives/credential-access/theft/multi-app::browser-wallet-stealer
+      - id: objectives/credential-access/theft/multi-app::multi-app-credential-stealer
+      - id: objectives/credential-access/browser/multi-target/
+      - id: objectives/credential-access/wallet/desktop::stealer
+      - id: objectives/credential-access/wallet/extension::wallet-extension-store-targeting
+      - id: objectives/credential-access/wallet/extension::metamask-wallet-profile
+      - id: objectives/credential-access/wallet/mnemonic::comprehensive-stealer
+      - id: objectives/credential-access/wallet/provider::solana-wallet-drainer-config
+      - id: objectives/credential-access/wallet/provider::wallet-drainer
+      - id: objectives/credential-access/wallet/solana::solana-wallet-drain
+      - id: objectives/credential-access/wallet/solana::solana-env-drain
+      - id: objectives/credential-access/wallet/solana::solana-private-key-http-exfil
+  - id: js-browser-storage-http-exfil
+    desc: Browser storage credential exfiltration
+    crit: hostile
+    conf: 0.98
+    attack: "T1555.003,T1041"
+    mbc: "B0028"
+    for: [javascript, typescript]
+    all:
+      - id: micro-behaviors/data/db/web-storage::browser-storage-credential-key
+      - id: micro-behaviors/data/db/web-storage::browser-storage-sweep-loop
+      - id: micro-behaviors/communications/http/request/client::http-client-usage
+    any:
+      - id: micro-behaviors/communications/http/lib/axios::request-axios
+      - id: micro-behaviors/communications/http/post/
+      - id: micro-behaviors/communications/http/upload/
+    # Storage enumeration and an HTTP client are not exfiltration by
+    # themselves: extensions commonly maintain their own cached auth state.
+    # Require the source, sweep, and transport evidence to occur in one local
+    # code region so unrelated application features cannot be joined into a
+    # credential-theft finding.
+    near_bytes: 4096
+    unless:
+      - id: well-known/tool/detection/
+      - id: well-known/lib/web/tina4ruby::tina4-js-client
+      - id: metadata/package/testing/
+      - id: well-known/tool/development/vscode-extension/dscodegpt::extension-auth-context
+      - id: well-known/app/infrastructure/openremote::manager-auth-context
+  - id: js-browser-cookie-storage-oast-exfil
+    desc: Browser cookies and storage exfiltrated to OAST endpoint
+    crit: hostile
+    conf: 0.98
+    attack: "T1555.003,T1041"
+    mbc: "B0028"
+    for: [javascript, typescript]
+    all:
+      # OAST domain identity lives under exfiltration/oob/endpoint, not browser
+      # credential theft — reuse that atom rather than a duplicate matcher.
+      - id: objectives/exfiltration/oob/endpoint::oastify
+      - id: micro-behaviors/communications/http/cookie-store::document-cookie-read
+      - id: micro-behaviors/data/db/web-storage::browser-storage-sweep-loop
+    any:
+      - id: micro-behaviors/communications/http/body::no-cors-post-request
+      - id: micro-behaviors/communications/http/request/beacon::browser-send-beacon
+      - id: micro-behaviors/communications/http/request/client::image-src-network-request
+    unless:
+      - id: well-known/tool/detection/
+      - id: metadata/package/testing/
+  - id: js-browser-cookie-oob-navigation-exfil
+    desc: Sends browser cookie to OOB callback via navigation
+    crit: hostile
+    conf: 0.99
+    attack: "T1539,T1041"
+    mbc: E1005,E1041
+    near_bytes: 1600
+    all:
+      - id: micro-behaviors/communications/http/cookie-store::browser-document-cookie-read
+      - id: objectives/exfiltration/oob/callback::browser-oob-encoded-navigation
+    unless:
+      - id: well-known/tool/detection/
+      - id: metadata/package/testing/harness/runtime/
+  - id: js-browser-auth-state-http-exfil
+    desc: Browser auth state exfiltration
+    crit: hostile
+    conf: 0.99
+    attack: "T1555.003,T1041"
+    mbc: B0028
+    for: [javascript, typescript]
+    all:
+      # Counters, consent flags, and other generic localStorage use are not
+      # credential access. Require a key named as authentication state.
+      - id: micro-behaviors/data/db/web-storage::browser-storage-credential-key
+      - id: micro-behaviors/communications/http/cookie-store::document-cookie-read
+      - id: micro-behaviors/communications/http/oauth::access-token
+      - id: micro-behaviors/communications/http/request/client::http-client-usage
+    any:
+      - id: micro-behaviors/communications/http/request/beacon::browser-send-beacon
+      - id: micro-behaviors/communications/http/post/
+    # A login-capable web application normally stores its own token, reads
+    # document.cookie for that application's session, and makes many unrelated
+    # authenticated API calls.  Require the credential source and its network
+    # sink to occur in the same compact implementation region so those routine
+    # operations cannot be joined across a bundled application.
+    near_bytes: 4096
+    unless:
+      - id: well-known/tool/detection/
+      - id: metadata/package/testing/
+      - id: well-known/tool/development/vscode-extension/dscodegpt::extension-auth-context
+      - id: well-known/app/infrastructure/openremote::manager-auth-context
+  - id: js-browser-auth-state-obfuscated-exfil
+    desc: Obfuscated browser auth state exfiltration
+    crit: hostile
+    conf: 0.995
+    attack: "T1027,T1555.003,T1041"
+    mbc: B0028
+    for: [javascript, typescript]
+    all:
+      - id: js-browser-auth-state-http-exfil
+      - id: micro-behaviors/data/decode/custom::js-charcode-mask-unescape-decoder
+    unless:
+      - id: well-known/tool/detection/
+      - id: metadata/package/testing/
+      - id: well-known/app/infrastructure/openremote::manager-auth-context
+  - id: js-browser-cookie-auth-xhr-exfil
+    desc: Browser cookie and auth token sent by XHR
+    crit: hostile
+    conf: 0.995
+    attack: "T1539,T1528,T1041"
+    mbc: B0028
+    for: [javascript, typescript]
+    all:
+      - id: micro-behaviors/communications/http/cookie-store::document-cookie-read
+      - id: micro-behaviors/communications/http/oauth::access-token
+      - id: micro-behaviors/communications/http/post::xhr-post-open
+      - id: micro-behaviors/data/decode/custom::js-charcode-mask-unescape-decoder
+    # A cookie read, OAuth field, POST call, and generic UTF-8/character
+    # decoder can be spread across unrelated modules in a normal web bundle.
+    # Require the source, transport, and decoder evidence to occur in one
+    # local implementation region before inferring credential exfiltration.
+    near_bytes: 4096
+    unless:
+      - id: well-known/tool/detection/
+      - id: metadata/package/testing/
+      - id: well-known/app/infrastructure/openremote::manager-auth-context
+  - id: js-browser-wallet-upload-exfil
+    desc: Browser or wallet data uploaded over HTTP
+    crit: hostile
+    conf: 0.96
+    attack: "T1555.003,T1041"
+    mbc: "B0028"
+    for: [javascript]
+    # Keep the credential source and transport in one implementation region;
+    # large web bundles routinely contain unrelated wallet and POST modules.
+    near_bytes: 4096
+    all:
+      - id: js-browser-wallet-stealer-source
+    any:
+      - id: micro-behaviors/communications/http/upload/
+      - id: micro-behaviors/communications/http/post/
+    unless:
+  - id: js-browser-discord-webhook-exfiltration
+    desc: Browser or wallet data sent to Discord webhook
+    crit: suspicious
+    conf: 0.97
+    attack: "T1555.003,T1041,T1567.002"
+    mbc: "B0028"
+    for: [javascript, typescript]
+    near_bytes: 8192
+    all:
+      - id: js-browser-wallet-stealer-source
+      - id: objectives/exfiltration/messaging/discord::discord-request-builder
+      - id: micro-behaviors/communications/http/request/client::js-fetch-call
+    unless:
+  - id: js-browser-discord-screenshot-exfiltration
+    desc: Browser data and screenshot sent to Discord webhook
+    crit: hostile
+    conf: 0.99
+    attack: "T1555.003,T1113,T1041,T1567.002"
+    mbc: "B0028"
+    for: [javascript, typescript]
+    near_bytes: 8192
+    all:
+      - id: js-browser-discord-webhook-exfiltration
+      - id: micro-behaviors/hardware/display/screenshot::desktop-screenshot-import
+    unless:
+  - id: js-electron-browser-discord-stealer
+    desc: Electron app steals browser stores via Discord webhook
+    crit: hostile
+    conf: 0.99
+    attack: "T1555.003,T1041,T1567.002"
+    mbc: "B0028"
+    for: [javascript, typescript]
+    all:
+      - id: micro-behaviors/process/interpreter/node::js-electron-main-require
+      - id: js-browser-discord-webhook-exfiltration
+  - id: js-stealer
+    desc: Chromium browser credential stealer (SQLite + HTTP POST)
+    crit: suspicious
+    conf: 0.98
+    attack: "T1555.003"
+    mbc: "B0028"
+    for: [javascript]
+    all:
+      - id: objectives/credential-access/browser/chromium::password-sql
+      - id: micro-behaviors/communications/http/post::axios-post-call
+  - id: browser-cookie-remote-xhr-exfil
+    desc: Browser cookie harvest is sent through a remote XHR
+    crit: hostile
+    conf: 0.96
+    attack: T1539,T1041
+    mbc: E1005
+    for: [javascript]
+    # A cookie read, XHR open, dynamic script load, and remote URL can live in
+    # unrelated modules of a normal SDK (Paddle's payment bundle spreads them
+    # over 6KB+). Require source and sink in one local implementation region
+    # before inferring harvest-and-exfil, like the sibling composites below.
+    near_bytes: 4096
+    all:
+      - id: micro-behaviors/communications/http/cookie-store::document-cookie-read
+      - id: micro-behaviors/communications/http/client/xmlhttp::js-xmlhttp-open
+      - id: micro-behaviors/process/create/load/script::dynamic-script-element-load
+      - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+    unless:
+      - id: metadata/package/testing/
+      - id: metadata/signed/platform/

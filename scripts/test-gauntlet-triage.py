@@ -107,7 +107,7 @@ def main():
             findings[Path(fs[0]['path']).name]={t['id']:t['crit'] for f in fs for t in f.get('traits',[])}
         expected={
             'sabotage.js':('objectives/impact/ui/manipulation/browser::regional-pointer-events-audio-sabotage',5),
-            'password.php':('objectives/exfiltration/stealer/credential/phish::php-submitted-password-file-dump',5),
+            'password.php':('objectives/exfiltration/stealer/phish::php-submitted-password-file-dump',5),
             'shell-writer.php':('objectives/command-and-control/backdoor/webshell/stager::php-writes-literal-request-eval-shell',5),
             'tagless-shell.php':('objectives/command-and-control/backdoor/webshell/stager::php-writes-literal-request-eval-shell',5),
             'direct-hook.zip':('objectives/supply-chain/trojanized/app/config-injection::install-hook-writes-agent-instructions',4),

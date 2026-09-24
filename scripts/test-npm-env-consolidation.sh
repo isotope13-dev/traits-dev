@@ -28,7 +28,7 @@ jq -e -s '
     all(.traits[]?;
       .id != "objectives/supply-chain/credential-theft/package::npm-install-hook-credential-env-exfil" and
       .id != "objectives/supply-chain/credential-theft/package::npm-install-hook-environment-credential-exfil" and
-      .id != "objectives/exfiltration/stealer/credential/env::javascript-environ-json-http-exfil" and
+      .id != "objectives/exfiltration/stealer/env::javascript-environ-json-http-exfil" and
       .id != "objectives/supply-chain/recon-exfil/npm-install-targeting::npm-postinstall-env-secret-exfil")) and
   all(.[] | select(.raw.files[0].path | startswith("testdata/benign/"));
     all(.raw.files[]; all(.traits[]?; .crit < 4))) and
@@ -41,6 +41,6 @@ jq -e -s '
   all($roots[] | select(.path | startswith("testdata/hostile/"));
     ([.traits[]? | select(.crit == 5) | .id] | unique) as $hostile |
     ($hostile | length) >= 1 and ($hostile | length) <= 3 and
-    ($hostile | index("objectives/exfiltration/stealer/credential/dev-file::simple-developer-secret-stealer")) != null)
+    ($hostile | index("objectives/exfiltration/stealer/dev-secret::simple-developer-secret-stealer")) != null)
 ' "$report"
 printf 'Static npm environment controls passed; report: %s\n' "$report"

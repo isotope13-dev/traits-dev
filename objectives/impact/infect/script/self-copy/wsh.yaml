@@ -1,0 +1,165 @@
+defaults:
+  platforms: [windows]
+  for: [javascript, text]
+  attack: T1080
+
+traits:
+  - id: wsh-script-full-name
+    desc: WSH script references its own full path
+    crit: notable
+    conf: 0.9
+    for: [javascript, text, vbs, static-lib]
+    if:
+      type: text
+      word: ScriptFullName
+
+  - id: wsh-fso-file-exists-guard
+    desc: WSH FileSystemObject checks target existence
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      word: FileExists
+
+  - id: wsh-open-text-file
+    desc: WSH opens a text file
+    crit: notable
+    conf: 0.86
+    for: [javascript, text, vbs, static-lib]
+    if:
+      type: text
+      word: OpenTextFile
+
+  - id: wsh-fso-copyfile-call
+    desc: WSH FileSystemObject CopyFile call
+    crit: notable
+    conf: 0.9
+    for: [javascript, text, vbs, static-lib]
+    if:
+      type: text
+      word: CopyFile
+
+  - id: wsh-file-copy-call
+    desc: WSH File object Copy call
+    crit: notable
+    conf: 0.86
+    for: [javascript, text, vbs, static-lib]
+    if:
+      type: text
+      regex: '(?i)\.Copy\s*\('
+
+  # Renamed from `js-random-script-name` / "JavaScript builds random .js filename",
+  # which asserted filename construction the matcher never checks -- it is a plain
+  # 80-char proximity window between `Math.random()` and the literal `.js`, in either
+  # order, with no concatenation, assignment or quoting required. The idiom it
+  # actually hits most often is the cache-buster: `src = base + ".js?" + Math.random()`
+  # -- ubiquitous in dynamic script loaders, analytics and ad tags, RUM beacons, A/B
+  # snippets and bundler chunk loaders. Reporting those from impact/infect/script (a
+  # virus self-replication objective) as "builds a random .js filename" is the exact
+  # mislabel RULES' worked example describes. Matcher left alone: it is the weakest
+  # leg of wsh-self-copy-worm below, which supplies the real self-replication
+  # evidence (FileSystemObject ProgID + CopyFile + WScript.ScriptFullName), so
+  # tightening it would risk the family for no gain.
+  - id: js-random-near-js-reference
+    desc: Math.random() near a .js reference
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      regex: 'Math\.random\(\)[\s\S]{0,80}\.js'
+
+  - id: js-string-table-random-copyfile
+    desc: JS table random and CopyFile
+    crit: notable
+    conf: 0.86
+    if:
+      type: text
+      regex: '["'']random["''][\s\S]{0,120}["'']CopyFile["'']'
+
+  - id: js-string-table-self-fileexists
+    desc: JS table self path guard
+    crit: notable
+    conf: 0.86
+    if:
+      type: text
+      regex: '["'']ScriptFullName["''][\s\S]{0,120}["'']FileExists["'']'
+
+composite_rules:
+  - id: wsh-self-copy-random-js-worm
+    for: [javascript]
+    desc: WSH script self-replicates into random JavaScript filenames
+    crit: hostile
+    conf: 0.98
+    attack: T1080, T1059.007
+    all:
+      - id: micro-behaviors/os/com/automation::filesystemobject-progid
+      - id: wsh-fso-copyfile-call
+      - id: wsh-script-full-name
+      - id: js-random-near-js-reference
+    any:
+      - id: wsh-fso-file-exists-guard
+      - id: micro-behaviors/data/control-flow/loop::js-bounded-while-loop
+
+  - id: wsh-string-table-self-copy-worm
+    for: [javascript]
+    desc: Obfuscated WSH script self-replicates through string-table calls
+    crit: hostile
+    conf: 0.96
+    attack: T1080, T1059.007, T1027
+    all:
+      - id: micro-behaviors/os/com/automation::filesystemobject-progid
+      - id: js-string-table-random-copyfile
+      - id: js-string-table-self-fileexists
+      - id: micro-behaviors/data/control-flow/loop::js-bounded-while-loop
+
+  - id: wsh-file-copy-own-script
+    desc: WSH copies its own script file
+    crit: hostile
+    conf: 0.94
+    for: [javascript, vbs, static-lib]
+    all:
+      - id: micro-behaviors/os/com/automation::filesystemobject-progid
+      - id: wsh-script-full-name
+      - id: wsh-file-copy-call
+
+  - id: wsh-casefold-copy-own-script
+    desc: Copies its script with CopyFile
+    crit: hostile
+    conf: 0.94
+    for: [javascript, vbs, text, static-lib]
+    all:
+      - id: micro-behaviors/fs/file/copy::fso-copyfile-case-variant
+      - id: wsh-script-full-name
+
+  - id: wsh-copy-own-script
+    desc: WSH copies its own script over files
+    crit: hostile
+    conf: 0.94
+    for: [javascript, vbs, static-lib]
+    all:
+      - id: micro-behaviors/os/com/automation::filesystemobject-progid
+      - id: wsh-fso-copyfile-call
+      - id: wsh-script-full-name
+
+  - id: wsh-reversed-self-copy
+    desc: Reversed WSH copies its own script
+    crit: hostile
+    conf: 0.94
+    for: [javascript, vbs, text, static-lib]
+    all:
+      - id: objectives/anti-static/obfuscation/string/reverse::wsh-reversed-fso
+      - id: objectives/anti-static/obfuscation/string/reverse::wsh-reversed-copyfile
+      - id: objectives/anti-static/obfuscation/string/reverse::wsh-reversed-scriptname
+
+  - id: wsh-rewrite-files-from-self
+    desc: WSH rewrites files from its own script
+    crit: hostile
+    conf: 0.94
+    for: [javascript, vbs, static-lib]
+    all:
+      - id: micro-behaviors/os/com/automation::filesystemobject-progid
+      - id: wsh-script-full-name
+      - id: wsh-open-text-file
+    any:
+      - id: micro-behaviors/fs/write/content::create-text-file-method-name
+      - id: micro-behaviors/fs/write/content::create-text-file-literal
