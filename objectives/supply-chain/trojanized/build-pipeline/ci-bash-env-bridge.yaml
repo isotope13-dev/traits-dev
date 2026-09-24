@@ -1,0 +1,67 @@
+# CI shell-startup hijack for publish-token theft. The sckit MemTensor
+# campaign stole npm and PyPI publish tokens without touching the release
+# job's own steps: a validation script (JS) or a PEP 517 build backend
+# (Python) wrote `BASH_ENV=<bridge>` into $GITHUB_ENV, so Bash sourced the
+# attacker's bridge before every later step — including the publish step
+# whose environment held NODE_AUTH_TOKEN / NPM_TOKEN / INPUT_PASSWORD.
+# The bridge relayed the secret to a helper, burned it, and failed or
+# neutered the publish so the theft run shipped nothing.
+#
+# Both names the rule keys on are platform-mandated: the attacker cannot
+# rename $GITHUB_ENV or $BASH_ENV and still have the interception work.
+defaults:
+  platforms: [unix, windows]
+  for: [shell, python, javascript, typescript]
+  attack: T1195.002,T1552.001
+
+composite_rules:
+  - id: ci-bash-env-shell-hijack
+    desc: Plants shell-startup hijack into later CI steps via $GITHUB_ENV
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: micro-behaviors/os/env/cicd::github-env-file
+      - id: micro-behaviors/os/env/cicd::bash-env-startup-ref
+    any:
+      - id: micro-behaviors/os/env/package-manager::package-registry-credential-env-read
+      - id: micro-behaviors/os/env/cicd::pypi-publish-secret-touch
+      - id: objectives/credential-access/env/secrets/cicd::js-cicd-token-access
+
+  # The relay facet of the same hijack: while the planted shell is live the
+  # file also hands a publish secret to a spawned helper. Reading a token,
+  # spawning a child, and planting BASH_ENV together have no legitimate use.
+  - id: ci-bash-env-secret-relay
+    desc: Hijacked CI shell relays publish secret to spawned helper
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: micro-behaviors/os/env/cicd::github-env-file
+      - id: micro-behaviors/os/env/cicd::bash-env-startup-ref
+      - id: micro-behaviors/process/create/exec
+    any:
+      - id: micro-behaviors/os/env/package-manager::package-registry-credential-env-read
+      - id: micro-behaviors/os/env/cicd::pypi-publish-secret-touch
+      - id: objectives/credential-access/env/secrets/cicd::js-cicd-token-access
+
+  # The bridge facet without the hijack primitive: a publish-flow helper
+  # gated on the CI runner that touches the publish secret, burns it after
+  # use, and papers the log with workflow commands. Suspicious rather than
+  # hostile: secret hygiene plus log annotations can be ordinary release
+  # tooling — the BASH_ENV planting above is what makes it a hijack.
+  - id: ci-publish-step-gated-bridge
+    desc: CI-gated bridge touches publish secret then clears it
+    crit: suspicious
+    conf: 0.93
+    # pypi-publish-secret-touch only matches shell and python, so the
+    # JavaScript/TypeScript bridge variant is covered by the two hostile
+    # composites above, not here.
+    for: [shell, python]
+    all:
+      - id: micro-behaviors/os/env/cicd::github-actions-flag
+      - id: micro-behaviors/os/env/cicd::pypi-publish-secret-touch
+      - id: micro-behaviors/os/env/cicd::ci-secret-unset-after-use
+    any:
+      - id: micro-behaviors/crypto/hash/file::pinned-artifact-digest-constant
+      - id: micro-behaviors/os/env/cicd::github-workflow-log-command
+      - id: micro-behaviors/os/env/cicd::twine-upload-shell-ref
+      - id: micro-behaviors/process/fd/stdio::shell-stderr-devnull-redirect
