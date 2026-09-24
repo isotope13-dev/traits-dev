@@ -1,0 +1,143 @@
+# Toll fraud: carrier billing and premium-SMS abuse staged from Android
+# applications. The class enrolls the subscriber in paid services without
+# informed consent: silently sending keywords to short codes in both number
+# forms, intercepting verification SMS with C2-supplied expressions, binding
+# billing traffic to the cellular identity, and hiding the purchase pages in
+# background WebViews. Reconstructed from CERT Polska's TollFraud operation
+# analysis (Messenger Pro / AqMu payloads), generalized across the Joker,
+# Harly, and Toll Fraud families that share the same primitives.
+defaults:
+  platforms: [android]
+  for: [java, kotlin]
+  attack: T1496
+
+traits:
+  # The native interface is exposed under a runtime-built name instead of a
+  # stable literal, so static C2 scripts address a constant alias while each
+  # WebView instance registers a different object.
+  - id: toll-bridge-dynamic-name
+    desc: WebView bridge registered under dynamic name
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: text
+      regex: 'addJavascriptInterface\s*\([^,]{1,80},\s*[a-z]\w*\s*\)'
+  # MD5 of the request URL, hex-encoded, first 16 ASCII characters as the
+  # AES key: the cleartext URL on the wire is the entire key material.
+  - id: toll-url-md5-key-schedule
+    desc: URL-MD5-derived AES key
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: 'MessageDigest\.getInstance\(\s*"MD5"\s*\)[\s\S]{0,400}substring\(\s*0\s*,\s*16\s*\)'
+  # SecretKeySpec and IvParameterSpec built adjacently from one key: IV
+  # equals key, so the ciphertext has no independent initialization vector.
+  - id: toll-shared-key-iv-pair
+    desc: AES key reused as CBC initialization vector
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: 'SecretKeySpec\([^;]{0,60}\)[\s\S]{0,120}IvParameterSpec\(\s*[A-Za-z_]\w*\s*\)'
+  # Operation number hidden as n = r - (r mod 31) + i with letter padding;
+  # stripping letters and taking mod 31 recovers the operation.
+  - id: toll-mod31-op-path
+    desc: Operation number hidden in URL path
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '-\s*\(\s*\w+\s*%\s*31\s*\)'
+  # Capability poll reporting which fraud routes the device can serve:
+  # cellular billing pages, inbound verification capture, outbound SMS.
+  - id: toll-capability-flag-post
+    desc: Posts cellular and SMS capability flags
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '\\?"cellular\\?"[^;]{0,160}\\?"outbound\\?"'
+  # C2-supplied expression compiled and matched against queued message
+  # bodies: verification-code interception without reading the inbox UI.
+  - id: toll-message-regex-search
+    desc: Searches queued SMS with compiled expression
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: 'Pattern\.compile\([^)]{0,100}\)[\s\S]{0,250}\.matcher\('
+
+composite_rules:
+  - id: android-premium-sms-pair-send
+    desc: Sends premium SMS in bare and plus forms
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: micro-behaviors/communications/messaging/send::android-sms-manager-send-text
+      - id: micro-behaviors/communications/messaging/send::android-sms-pair-send
+      - id: micro-behaviors/communications/messaging/send::android-sms-url-target
+
+  - id: android-tasked-sms-bridge
+    desc: Tasked WebView bridge drives premium SMS sending
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: micro-behaviors/process/interpreter/webview::source-add-javascript-interface-call
+      - id: toll-bridge-dynamic-name
+      - id: micro-behaviors/communications/messaging/send::android-sms-pair-send
+
+  - id: android-toll-sms-intercept-tasking
+    desc: Intercepts inbound SMS for tasked regex search
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: micro-behaviors/communications/messaging/send::android-sms-received-action
+      - id: toll-message-regex-search
+      - id: micro-behaviors/communications/messaging/send::android-sms-manager-send-text
+
+  - id: android-url-keyed-c2-crypto
+    desc: C2 crypto keyed by MD5 of request URL
+    crit: hostile
+    conf: 0.98
+    attack: T1027
+    all:
+      - id: toll-url-md5-key-schedule
+      - id: toll-shared-key-iv-pair
+      - id: micro-behaviors/crypto/symmetric/aes/mode::java-aes-cbc-mode
+
+  - id: android-toll-c2-task-channel
+    desc: Toll-fraud C2 channel with capability tasking
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: android-url-keyed-c2-crypto
+      - id: micro-behaviors/communications/socket/ssl::java-empty-trust-manager-source
+      - id: micro-behaviors/communications/socket/ssl::java-allow-all-hostname-verifier
+      - id: toll-capability-flag-post
+
+  - id: android-cellular-billing-route
+    desc: Binds process to cellular network route
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: micro-behaviors/os/network/interface::android-cellular-transport-request
+      - id: micro-behaviors/os/network/interface::android-process-network-bind
+
+  - id: android-mcc-gated-code-stage
+    desc: Code stage gated on SIM and package policy
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: micro-behaviors/process/create/loader::java-inmemory-dex-source
+      - id: micro-behaviors/os/sysinfo/platform/mobile::android-sim-operator-read
+      - id: micro-behaviors/os/sysinfo/platform/mobile::android-package-name-read
+
+  - id: android-xor-encoded-dex-stage
+    desc: XOR-encoded stage loaded as in-memory DEX
+    crit: suspicious
+    conf: 0.96
+    for: [java]
+    all:
+      - id: micro-behaviors/process/create/loader::java-inmemory-dex-source
+      - id: micro-behaviors/data/encode/xor::xor-index-modulo-generic
