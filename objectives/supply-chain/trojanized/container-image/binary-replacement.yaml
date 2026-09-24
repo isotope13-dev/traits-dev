@@ -16,30 +16,32 @@ defaults:
   mbc: F0016
 
 traits:
-  - id: system-daemon-binary-overwrite
-    desc: Image overwrites a system daemon binary
-    crit: suspicious
+  # `COPY nginx /usr/sbin/nginx` replaces a daemon the base image already
+  # provides. The FROM and the COPY stay separate so the gap between them is
+  # not a single unbounded regex. A scratch stage has no daemon to replace.
+  - id: dockerfile-from-base
+    desc: Dockerfile stage uses a base image
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?im)^FROM\s+\S+'
+      not:
+        - regex: '(?i)scratch\b'
+  - id: dockerfile-copy-system-daemon
+    desc: COPY overwrites a system daemon path
+    crit: component
     conf: 0.93
     if:
-      # `COPY nginx /usr/sbin/nginx`. The destination is the canonical path of
-      # a daemon the base image installs, so this is a replacement, not an
-      # addition -- unlike the ordinary `COPY entrypoint.sh /usr/local/bin/`,
-      # which introduces a new name. The destination anchor requires
-      # whitespace before the path so a longer custom path that merely ends
-      # in the binary name (e.g. `COPY --from=builder /bin/bash /my/bin/bash`)
-      # is not mistaken for an overwrite of the system path.
       type: text
-      regex: '(?im)^\s*COPY\s[^\n]{1,60}\s/(usr/)?s?bin/(nginx|sshd|httpd|sudo)\s*$'
-
-  - id: system-shell-binary-overwrite
-    desc: Image overwrites a core system binary
-    crit: suspicious
+      regex: '(?im)^COPY\s.{1,40}\s/(usr/)?s?bin/(nginx|sshd|httpd|sudo)\b'
+  - id: dockerfile-copy-system-shell
+    desc: COPY overwrites a system shell path
+    crit: component
     conf: 0.93
     if:
-      # The same move against the tools an operator would use to investigate
-      # the container once inside it.
       type: text
-      regex: '(?im)^\s*COPY\s[^\n]{1,60}\s/(usr/)?s?bin/(bash|ps|netstat|login)\s*$'
+      regex: '(?im)^COPY\s.{1,40}\s/(usr/)?s?bin/(bash|ps|netstat|login)\b'
 
   - id: server-module-directory-injection
     desc: Adds a module to a plugin directory
@@ -83,6 +85,26 @@ traits:
       regex: '(?im)^\s*COPY\s[^\n]{1,60}\s/pause\s*$'
 
 composite_rules:
+  - id: system-daemon-binary-overwrite
+    desc: Image overwrites a system daemon binary
+    crit: suspicious
+    conf: 0.93
+    near_lines: 80
+    all:
+      - id: dockerfile-from-base
+      - id: dockerfile-copy-system-daemon
+    unless:
+      - id: metadata/build/docker::scratch-final-stage
+  - id: system-shell-binary-overwrite
+    desc: Image overwrites a core system binary
+    crit: suspicious
+    conf: 0.93
+    near_lines: 80
+    all:
+      - id: dockerfile-from-base
+      - id: dockerfile-copy-system-shell
+    unless:
+      - id: metadata/build/docker::scratch-final-stage
   - id: server-module-and-config-replacement
     desc: Image adds a server module and its loader config
     crit: hostile
