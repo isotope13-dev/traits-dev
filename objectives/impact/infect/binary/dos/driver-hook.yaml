@@ -1,0 +1,41 @@
+# DIR-II style cluster infectors. Instead of hooking INT 21h they take the
+# DOS List of Lists (INT 21h AH=52h), walk the Drive Parameter Blocks and
+# replace the block device driver's strategy/interrupt entry. The new
+# handler inspects each request header command code for read (04h),
+# write (08h) and write-with-verify (09h) so it can rewrite directory
+# sectors: COM/EXE entries get their start cluster pointed at the virus.
+defaults:
+  platforms: [windows, unix]
+  for: [dos_com, static-lib, data]
+  attack: T1080
+
+traits:
+  # MOV AH,[BX+2] then CMP AH,4 / CMP AH,8 / CMP AH,9 on the request header.
+  - id: dos-driver-request-rw-filter
+    desc: Filters block driver read/write requests
+    crit: notable
+    conf: 0.85
+    if:
+      type: hex
+      pattern: "8A 67 02 80 FC 04 [2-4] 80 FC 08 [2-4] 80 FC 09"
+
+  # CMP AX,'EX' ... CMP AX,'CO' ... CMP BYTE [SI+n],'M' on a raw dir entry.
+  - id: dos-dirent-com-exe-ext-check
+    desc: Checks raw directory entry for COM/EXE
+    crit: notable
+    conf: 0.8
+    if:
+      type: hex
+      pattern: "3D 45 58 [2-12] 3D 43 4F [2-4] 80 7C ?? 4D"
+
+composite_rules:
+  - id: dos-block-driver-cluster-infector
+    desc: Hooks DOS disk driver to infect files
+    crit: hostile
+    conf: 0.9
+    all:
+      - id: objectives/evasion/anti-av/tbav::dos-list-of-lists
+      - id: dos-driver-request-rw-filter
+    any:
+      - id: dos-dirent-com-exe-ext-check
+      - id: objectives/impact/infect/binary/dos::dos-int21-write
