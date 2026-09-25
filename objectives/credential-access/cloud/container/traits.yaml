@@ -47,3 +47,51 @@ composite_rules:
     unless:
       - id: well-known/app/infrastructure/podman-desktop::podman-desktop-main-bundle
       - id: well-known/app/infrastructure/podman-desktop::builtin-podman-extension-path
+
+  # Cross-container identity theft: a hostPID pod crosses into a co-located
+  # pod's mount namespace through /proc/<pid>/root and reads its projected
+  # service-account / IRSA token. Your own token lives at
+  # /var/run/secrets/.../serviceaccount/token, so naming it under another
+  # PID's root mount is theft of a neighbour's cluster identity -- the
+  # /proc/<pid>/root prefix is what separates this from ordinary in-pod token
+  # use. Language-agnostic: any loader that builds this path fires.
+  - id: crossns-serviceaccount-token-theft
+    desc: Steals a co-located pod's projected token
+    crit: hostile
+    conf: 0.97
+    attack: T1528,T1611,T1552.007
+    all:
+      - id: micro-behaviors/fs/proc/info/path::process-pid-root-mount
+      - id: micro-behaviors/os/container/runtime::projected-serviceaccount-token
+    near_bytes: 96
+
+  # The on-disk sibling of the token theft: crossing into a co-located
+  # container's mount namespace through /proc/<pid>/root to read its
+  # ~/.aws/credentials. Reading your own credentials file is ordinary; reaching
+  # it under another PID's root mount is lifting a neighbour's static keys, the
+  # same hostPID escape applied to file-based rather than projected creds.
+  - id: crossns-cloud-credential-file-theft
+    desc: Steals a co-located pod's AWS credentials file
+    crit: hostile
+    conf: 0.95
+    attack: T1552.001,T1611
+    all:
+      - id: micro-behaviors/fs/proc/info/path::process-pid-root-mount
+      - id: micro-behaviors/fs/path/token::aws-credentials-text-reference
+    near_bytes: 96
+
+  # The exchange half: a stolen web-identity token traded for AWS role
+  # credentials. Reading a service-account token path and then hand-running
+  # `aws sts assume-role-with-web-identity` is the manual IRSA exchange an SDK
+  # would otherwise do from AWS_WEB_IDENTITY_TOKEN_FILE -- spelling it out by
+  # hand beside a token read is the post-theft pivot.
+  - id: stolen-web-identity-token-exchange
+    desc: Trades a stolen token for AWS creds
+    crit: hostile
+    conf: 0.96
+    attack: T1550.001,T1552.007
+    all:
+      - id: micro-behaviors/communications/http/services/aws-iam::aws-cli-sts-assume-role-web-identity
+    any:
+      - id: crossns-serviceaccount-token-theft
+      - id: micro-behaviors/fs/proc/info/path::process-pid-root-mount
