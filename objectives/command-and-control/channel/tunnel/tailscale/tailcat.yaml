@@ -1,0 +1,69 @@
+# C2 tunnelled over tailcat — Tailscale's control-plane-free WireGuard netcat.
+#
+# The class this catches, not one sample: an implant that carries or drops
+# tailcat and drives it toward a hardcoded "tc"-prefixed peer address to move
+# its C2 over WireGuard. Because tailcat has no control plane — no account, no
+# device registration, no coordination server — the tc-address is the only
+# endpoint identifier that ever appears, so defenders have no operator domain
+# or IP to block from network logs. Kothamine extracts tailcat from its
+# resources, drops it to %APPDATA%\TailscalePortable\tailcat.exe, and runs
+# `tailcat forward tc... 18080:4444` hidden, but the technique is
+# language- and platform-agnostic: the durable evidence is the tailcat tool
+# plus a tc-address, and the conviction is that combination deployed covertly.
+#
+# tailcat is dual-use; its identity atoms live in
+# well-known/dual-use/tunnel/tailcat and stay notable. Severity here comes
+# from pairing the peer address with the tool, then escalating on covert
+# execution (hidden window / no-window process creation).
+#
+# ATT&CK: T1572 (Protocol Tunneling), T1090 (Proxy)
+defaults:
+  platforms: [windows, unix]
+  for: [scripts, c, cpp, go, pe, dll]
+  attack: T1572,T1090
+  mbc: B0022
+
+composite_rules:
+  - id: tailcat-peer-tunnel
+    desc: tailcat tunnel to hardcoded peer
+    # The tailcat tool plus a tc-address: a tailcat pipe aimed at a specific
+    # control-plane-free peer. Dual-use on its own (an admin could forward a
+    # database), so suspicious rather than hostile until covert deployment is
+    # also present.
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: well-known/dual-use/tunnel/tailcat::tailcat-forward-address
+      - id: well-known/dual-use/tunnel/tailcat::tailcat-tool-identity
+
+  - id: tailcat-covert-c2-relay
+    desc: Covert tailcat control-plane-free C2 relay
+    # The tailcat peer tunnel launched with a hidden or suppressed window —
+    # the shape an implant uses to keep its WireGuard C2 pipe off-screen and
+    # off the network logs. Legitimate tailcat forwarding is interactive and
+    # foreground; hiding it is the operator's tell.
+    crit: hostile
+    conf: 0.97
+    attack: T1572,T1090,T1564.003
+    all:
+      - id: objectives/command-and-control/channel/tunnel/tailscale::tailcat-peer-tunnel
+    any:
+      - id: micro-behaviors/process/create/flags::sw-hide-token
+      - id: micro-behaviors/process/create/hidden::start-process-windowstyle-hidden
+      - id: micro-behaviors/process/create/hidden::powershell-hidden-window
+      - id: micro-behaviors/process/create/hidden::powershell-windowstyle-hidden-option
+
+  - id: tailcat-c2-defender-excluded
+    desc: tailcat C2 relay excluded from Defender
+    # The peer tunnel paired with a Defender exclusion for its own connector or
+    # staging path — Kothamine excludes tailcat.exe and %APPDATA%\Tailscale-
+    # Portable before running the tunnel. Whitelisting the transport you are
+    # about to run is not something a legitimate tailcat deployment does.
+    crit: hostile
+    conf: 0.97
+    platforms: [windows]
+    for: [scripts]
+    attack: T1572,T1090,T1562.001
+    all:
+      - id: objectives/command-and-control/channel/tunnel/tailscale::tailcat-peer-tunnel
+      - id: micro-behaviors/os/security/defender::defender-exclusion-command
