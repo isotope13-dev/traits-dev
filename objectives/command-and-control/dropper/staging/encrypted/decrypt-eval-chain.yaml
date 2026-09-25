@@ -35,6 +35,20 @@ composite_rules:
     unless:
       - id: metadata/package/testing/harness/runtime/
       - id: metadata/build/bundler/asset::js-large-module-bundle
+  # A multi-megabyte ciphertext literal keeps tree-sitter from emitting
+  # createDecipheriv as a symbol, so the rule above never starts. The
+  # same call and the new Function(require)(require) site are still
+  # visible as text, a handful of lines apart around that one literal.
+  - id: aes-gcm-text-then-function-require
+    desc: Decrypts AES-GCM then runs new Function
+    conf: 0.97
+    near_lines: 80
+    all:
+      - id: objectives/anti-static/obfuscation/multi-layer::aes-gcm-decrypt-in-decoded-layer
+      - id: micro-behaviors/process/interpreter/eval/compile::js-function-constructor-require-invocation
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/build/bundler/asset::js-large-module-bundle
   - id: package-level-decrypt-eval-loader
     desc: Package decrypts and evals an embedded payload
     conf: 0.98
@@ -62,3 +76,43 @@ composite_rules:
     unless:
       - id: metadata/package/testing/harness/runtime/
       - id: metadata/build/bundler/asset::js-large-module-bundle
+  - id: zero-iv-aes-cbc-detached-launch
+    desc: Zero-IV AES-CBC decrypt then detached launch
+    conf: 0.97
+    attack: T1027.013,T1105,T1059.007
+    all:
+      - id: js-aes256-cbc-zero-iv
+      - id: micro-behaviors/fs/write/file/full::node-write-file-sync
+      - id: micro-behaviors/process/create/spawn::detached-true
+  # Bracket calls hide createDecipheriv and detached:true. The zero
+  # 16-byte buffer is still passed into a computed crypto call, and
+  # the fallback launch detaches with a bracket unref.
+  - id: bracket-zero-iv-unref-launch
+    desc: Bracket zero-IV decrypt then unref launch
+    conf: 0.96
+    attack: T1027.013,T1105,T1059.007
+    all:
+      - id: js-bracket-zero-iv-crypto
+      - id: js-bracket-unref-call
+traits:
+  - id: js-aes256-cbc-zero-iv
+    desc: AES-256-CBC decipher uses a zero IV
+    crit: notable
+    conf: 0.95
+    if:
+      type: text
+      regex: 'Buffer\.alloc\(\s*16\s*,\s*0\s*\)[\s\S]{0,160}createDecipheriv\(\s*["'']aes-256-cbc["'']'
+  - id: js-bracket-zero-iv-crypto
+    desc: Zero-IV buffer feeds computed crypto
+    crit: notable
+    conf: 0.95
+    if:
+      type: text
+      regex: "Buffer\\[['\"]alloc['\"]\\]\\(0x10,0x0\\)[\\s\\S]{0,160}crypto\\["
+  - id: js-bracket-unref-call
+    desc: Bracket unref detaches a handle
+    crit: notable
+    conf: 0.93
+    if:
+      type: text
+      regex: "\\[['\"]unref['\"]\\]\\(\\)"
