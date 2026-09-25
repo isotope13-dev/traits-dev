@@ -247,6 +247,31 @@ traits:
       type: text
       word: wallet_type
 
+  # A phishing page that helps the victim type a valid phrase fetches the
+  # BIP-39 wordlist for autocomplete (here api/bip39-english.txt). A bare
+  # filename reference is also ordinary documentation, so the path alone
+  # stays notable; the suspicious verdict comes from the fetch pairing
+  # below, which covers both inline fetch('...') and constant indirection.
+  - id: bip39-wordlist-path
+    desc: BIP-39 wordlist file path reference
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)["''][^"''`\r\n<>]{0,30}bip-?39[^"''`\r\n<>]{0,16}\.txt'
+
+  # The double-harvest lure: the first submission is exfiltrated, then a fake
+  # validation error prompts the victim to type the phrase a second time. A
+  # short error label on its own is also ordinary wallet validation, so this
+  # stays notable until an exfil composite supplies the theft context.
+  - id: invalid-seed-phrase-error
+    desc: Invalid seed-phrase error text
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: '(?i)\binvalid\s+(seed|mnemonic)(\s+(phrase|words?))?\b'
+
   - id: assembled-seed-phrase-from-words
     desc: Assembles a seed phrase from entered words
     crit: suspicious
@@ -435,3 +460,58 @@ composite_rules:
       - id: wallet-key-payload-fields
       - id: micro-behaviors/ui/window/password-field::password-input-field
       - id: micro-behaviors/ui/window/password-field::password-input-field-script
+
+  # Requesting the wordlist at runtime (whether the URL sits inline in the
+  # fetch or in a nearby constant) is the kit's autocomplete supply; a
+  # document merely naming the file has no fetch call near the reference.
+  - id: bip39-wordlist-http-fetch
+    desc: Fetches a BIP-39 wordlist over HTTP
+    crit: suspicious
+    conf: 0.9
+    scope: file
+    all:
+      - id: bip39-wordlist-path
+    any:
+      - id: micro-behaviors/communications/http/request/client::js-fetch-call
+      - id: micro-behaviors/communications/http/request/html::html-fetch-call
+    near_lines: 40
+
+  # The Ledger-Google-Ads kit fetches api/bip39-english.txt so victims can
+  # autocomplete a valid 12-24 word phrase, assembles the entered words, and
+  # POSTs the phrase to an attacker endpoint. Legitimate wallets embed the
+  # list and never POST an entered phrase; the fetched-wordlist leg is what
+  # separates this kit shape from a generic seed form.
+  - id: bip39-autocomplete-seed-exfil
+    desc: Seed capture with fetched BIP-39 autocomplete and remote exfiltration
+    crit: hostile
+    conf: 0.97
+    attack: T1056.002,T1041
+    scope: file
+    all:
+      - id: bip39-wordlist-http-fetch
+      - id: assembled-seed-phrase-from-words
+    any:
+      - id: objectives/exfiltration/sensitive-data::js-seed-phrase-request-field
+      - id: objectives/exfiltration/sensitive-data::js-seed-request-field
+      - id: micro-behaviors/communications/http/request/html::html-fetch-post-call
+    needs: 1
+
+  # Double-harvest lure from the same kit: the first submission is
+  # exfiltrated, then a fake "Invalid seed" error prompts a second entry
+  # that is also sent out. No comparison of the two entries happens, so the
+  # error text beside a seed assembly and a seed-bearing POST is purely a
+  # collection mechanism.
+  - id: fake-invalid-seed-double-harvest
+    desc: Seed exfiltration paired with a fake invalid-seed retry prompt
+    crit: hostile
+    conf: 0.97
+    attack: T1056.002,T1041
+    scope: file
+    all:
+      - id: invalid-seed-phrase-error
+      - id: assembled-seed-phrase-from-words
+    any:
+      - id: objectives/exfiltration/sensitive-data::js-seed-phrase-request-field
+      - id: objectives/exfiltration/sensitive-data::js-seed-request-field
+      - id: micro-behaviors/communications/http/request/html::html-fetch-post-call
+    needs: 1

@@ -1,0 +1,105 @@
+# Landing pages that launder their next hop through infrastructure carrying
+# inherent trust signals. The Ledger/Google-Ads campaign (Zscaler, threat-feed
+# 5074) chained a sponsored ad to a static Google Cloud Storage page, which
+# redirected to a Vercel subdomain that rotated every 15-20 minutes, which
+# framed the actual phishing content from a Google Sites view URL. Domain
+# reputation cannot block any hop, because every hop is a legitimate platform.
+#
+# Two generalized shapes live here:
+#   * a redirect (meta-refresh or location rewrite) whose target is an
+#     ephemeral hosting-platform subdomain -- the rotating next hop;
+#   * an object-storage "landing" page whose only job is to forward the
+#     visitor onward while the attacker swaps the hop behind it.
+# The full-viewport framing and the lure pairing composites live in this file
+# too, beside the atoms they consume under
+# micro-behaviors/communications/http/client/resource and .../url/cloud.
+defaults:
+  platforms: [windows, unix]
+  for: [html, javascript]
+  attack: T1566.002
+  mbc: B0030
+
+composite_rules:
+  - id: ephemeral-hosting-domain
+    desc: References an ephemeral hosting-platform subdomain
+    crit: notable
+    conf: 0.6
+    any:
+      - id: micro-behaviors/communications/http/services/cloud::vercel-app
+      - id: micro-behaviors/communications/http/services/cloud::netlify-app
+
+  - id: immediate-external-redirect
+    desc: Rewrites the browser location to an external URL
+    crit: notable
+    conf: 0.9
+    any:
+      - id: micro-behaviors/ui/window/navigation::browser-meta-refresh-external-url
+      - id: micro-behaviors/ui/window/navigation::browser-location-replace
+      - id: micro-behaviors/ui/window/navigation::browser-location-external-assign
+      - id: micro-behaviors/ui/window/navigation::browser-location-external-method
+
+  - id: hosted-platform-frame
+    desc: Embeds a hosting-platform page in an iframe
+    crit: notable
+    conf: 0.9
+    any:
+      - id: micro-behaviors/communications/http/client/resource::vercel-netlify-iframe-attribute
+      - id: micro-behaviors/communications/http/client/resource::sites-view-iframe-attribute
+      - id: micro-behaviors/communications/http/client/resource::vercel-netlify-src-assignment
+      - id: micro-behaviors/communications/http/client/resource::sites-view-src-assignment
+
+  # An ad or compromised-link landing page whose entire content is "go to this
+  # Vercel/Netlify deployment". Legitimate sites redirect through their own
+  # domains server-side; an HTML page pointing an immediate client redirect at
+  # someone's deployment slot is the rotatable hop of a delivery chain.
+  - id: hosting-platform-redirect-hop
+    desc: Page immediately redirects to an ephemeral hosting-platform subdomain
+    crit: suspicious
+    conf: 0.85
+    all:
+      - id: ephemeral-hosting-domain
+      - id: immediate-external-redirect
+    near_bytes: 2048
+
+  # The static object-store front door: a page served out of a GCS/S3/R2/
+  # Spaces bucket whose only behavior is forwarding the visitor onward. The
+  # bucket stays unchanged while the hop behind it rotates.
+  - id: object-store-landing-relay
+    desc: Object-storage page immediately forwards visitors onward
+    crit: suspicious
+    conf: 0.85
+    all:
+      - id: micro-behaviors/communications/http/url/cloud::gcs-url
+      - id: immediate-external-redirect
+    near_bytes: 2048
+
+  # Framing someone else's hosted page -- Google Sites view, a deployment
+  # subdomain -- while the surrounding page also harvests credentials or
+  # filters its audience. The frame inherits the platform's reputation; the
+  # luring leg is what makes this a phishing hop rather than an embed.
+  - id: hosting-platform-iframe-hop
+    desc: Hosting-platform iframe embedded alongside luring behavior
+    crit: suspicious
+    conf: 0.88
+    all:
+      - id: hosted-platform-frame
+    any:
+      - id: objectives/credential-access/wallet/mnemonic::bip39-wordlist-http-fetch
+      - id: objectives/credential-access/phishing/captcha::invisible-hcaptcha-gate
+      - id: objectives/anti-analysis/sandbox-detect/input::input-interaction-remote-beacon
+      - id: objectives/credential-access/wallet/mnemonic::web-mnemonic-entry-form
+
+  # A page that covers the whole viewport with an iframe pointing at a hosted
+  # platform page: the visitor never sees the host page at all. Owners frame
+  # their own content by hosting it, not by framing another origin full-screen,
+  # so this is the relay shape of a content-laundering chain.
+  - id: full-viewport-platform-iframe-relay
+    desc: Full-viewport iframe embeds a hosting-platform page
+    crit: hostile
+    conf: 0.95
+    attack: T1566.002,T1189
+    all:
+      - id: hosted-platform-frame
+      - id: micro-behaviors/ui/window/style::element-viewport-width-assignment
+      - id: micro-behaviors/ui/window/style::element-viewport-height-assignment
+    near_bytes: 2048
