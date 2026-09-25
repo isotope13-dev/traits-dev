@@ -6,7 +6,9 @@
 # a transformed string exists only to keep the real code out of static view.
 defaults:
   platforms: [windows]
-  for: [vbs, html]
+  # Self-decoding VBS viruses (Repulik) keep raw control bytes in the encoded
+  # string literal, so the file sniffs as opaque `data` rather than `vbs`.
+  for: [vbs, html, data]
   attack: T1027
   mbc: B0032
 traits:
@@ -24,6 +26,18 @@ traits:
     if:
       type: text
       regex: '(?is)\bfor\b.{0,40}\blbound\b.{0,30}\bubound\b.{0,200}\bchr\s*\('
+  # `For i = 1 To Len(s): r = Asc(Mid(s, i, 1)): v = v + Chr(r + (r Mod 3))`
+  # -- walks a string one character code at a time and emits a shifted
+  # character, the classic VBS virus self-decryptor ahead of Execute.
+  - id: vbs-string-char-shift-decode-loop
+    desc: VBScript per-character Asc/Chr decode loop
+    crit: suspicious
+    conf: 0.9
+    if:
+      # raw, not text: in `data`-typed files the extracted string list drops
+      # the short Asc/Chr lines, so only the file bytes carry the loop.
+      type: raw
+      regex: '(?is)\bfor\b[^\n]{0,30}\bto\s+len\s*\(.{0,60}\basc\s*\(\s*mid\s*\(.{0,80}\bchr\s*\('
   - id: vbs-eval-execute-wrapper
     desc: VBScript wraps execute in eval call
     crit: suspicious
@@ -37,7 +51,8 @@ traits:
     conf: 0.85
     if:
       type: text
-      regex: '(?i)\b(execute|executeglobal)\s*\(\s*[a-zA-Z_]\w{2,}\s*\)'
+      # Decoder functions are often one letter: `Execute(V)`.
+      regex: '(?i)\b(execute|executeglobal)\s*\(\s*[a-zA-Z_]\w*\s*\)'
 
 composite_rules:
   - id: wsh-reconstructed-payload-exec
@@ -49,4 +64,5 @@ composite_rules:
     any:
       - id: wsh-eval-replace-transform
       - id: vbs-array-chr-decode-loop
+      - id: vbs-string-char-shift-decode-loop
       - id: vbs-eval-execute-wrapper
