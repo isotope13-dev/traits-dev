@@ -18,10 +18,8 @@ rule VMProtectStub
         $ = ".?AV?$VirtualAllocationManager@VRealAllocationStrategy@@@@" ascii wide
         $ = ".?AVEncryptedFastDllStream@@" ascii wide
         $ = ".?AVGetBlock_CC@HardwareID@@" ascii wide
-        $ = ".?AVHookManager@@" ascii wide
         $ = ".?AVIDllStream@@" ascii wide
         $ = ".?AVIGetBlock@HardwareID@@" ascii wide
-        $ = ".?AVIHookManager@@" ascii wide
         $ = ".?AVIUrlBuilderSource@@" ascii wide
         $ = ".?AVIVirtualAllocationManager@@" ascii wide
         $ = ".?AVMyActivationSource@@" ascii wide

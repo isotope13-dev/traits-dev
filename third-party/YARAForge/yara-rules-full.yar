@@ -340428,9 +340428,11 @@ rule SIGNATURE_BASE_MAL_Winnti_Sample_May18_1 : FILE
 	strings:
 		$s1 = "wireshark" fullword wide
 		$s2 = "procexp" fullword wide
+		$x1 = "w64.dll" ascii wide
+		$x2 = "w32.dll" ascii wide
 
 	condition:
-		uint16( 0 ) == 0x5a4d and filesize < 100KB and all of them
+		uint16( 0 ) == 0x5a4d and filesize < 100KB and all of ($s*) and 1 of ($x*)
 }
 
 rule SIGNATURE_BASE_MAL_Visel_Sample_May18_1 : FILE
