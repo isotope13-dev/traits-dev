@@ -1,6 +1,6 @@
 # cleave Taxonomy
 
-A three-tier taxonomy following [MBC (Malware Behavior Catalog)](https://github.com/MBCProject/mbc-markdown) principles.
+A taxonomy with three behavioral tiers and a metadata tier, following [MBC (Malware Behavior Catalog)](https://github.com/MBCProject/mbc-markdown) principles.
 
 ## Tiers
 
@@ -147,6 +147,48 @@ All tiers follow: `TIER/CATEGORY/BEHAVIOR/METHOD/platform.yaml`
 
 Adjectives fail for the same reason as judgments: `sparse/`, `dense/`, `structural/` partition by value, not by subject, so they separate facts that belong together (`few-basic-blocks` from the other code measurements) and spend the last ML-visible level saying nothing.
 
+### Directory budgets and placement contracts
+
+`make validate` enforces **one inclusive cap of 85 rules per directory**:
+atomic `traits` plus `composite_rules`, across every YAML file in that directory.
+There is no separate atomic cap and no directory exemption. All criticalities,
+including `exception`, consume the budget. Descendant directories have their own
+budgets; filenames do not create new namespaces or budgets.
+
+For `micro-behaviors/` and `objectives/`, the validator permits **2–5 directory
+levels below the tier**, excluding the filename. A fifth level is available for
+a real refinement; it is not a target. The documented ML aggregation remains
+three levels below the tier. Raising the authoring depth does not change the
+extractor or make levels four and five separate features.
+
+Before splitting a directory, audit its siblings and likely destinations. Route
+misplaced atoms to their existing homes and consolidate equivalent rules first.
+Every proposed parent needs a placement contract containing:
+
+1. The one question answered by its children and the evidence required to enter it.
+2. Each child's positive definition, exclusions, and nearest competing sibling.
+3. A deterministic precedence rule when one matcher contains several facets.
+4. At least one placement example and counterexample, with a canonical destination.
+
+A child must be a proper refinement of its parent. Remove synonymous or empty
+grouping levels; promote meaningful children when that brings the distinguishing
+subject into the first three levels. Expand breadth for different mechanisms,
+resources, or effects, not for alternate verbs, languages, APIs, or rule forms.
+Keep the existing 150-child fan-out cap: broad identity catalogs should split by
+a stable function, with an explicit primary-function tiebreaker.
+
+Separate independent facts into canonical atoms and reference them from composites.
+Do not duplicate a whole objective under every carrier, trigger, or ecosystem.
+A composite lives with its most specific required behavioral result; optional
+corroboration does not choose its directory. A rule that needs several children
+but proves no narrower result needs an explicitly defined joint behavior, not a
+`misc/`, `combined/`, or `behavioral/` overflow bucket.
+
+The [85-rule audit and migration plan](docs/taxonomy-audit/PLAN.md) records current
+violations, sibling conflicts, and proposed contracts. Its proposed destinations
+are a migration specification; existing paths remain authoritative until their
+rules and all reference consumers are migrated together.
+
 ### Directory & Evolution Guidelines
 
 - **Leaf-Node Policy**: A directory level cannot contain both YAML files and subdirectories. This prevents files from being "orphaned" or miscategorized when adding new sub-techniques. If a directory contains subdirectories (representing sub-techniques), it must not contain its own YAML files.
@@ -184,7 +226,7 @@ The matcher type does not decide tier placement. A `type: text`, `string_literal
 - Terms that represent attacker intent or impact go under `objectives/`. Infection terms such as "infected", "virus", or ELF infection context belong with `objectives/impact/infect/`; hostile traits stay in `objectives/` or `well-known/`.
 - Specific product, malware-family, tool, library, app, or game identifiers go under `well-known/`, not a generic keyword bucket.
 - Metadata is only for neutral structural facts about what a file or package is: manifest fields, declared permissions, file magic, dimensions, counts, layout, package quality, or other non-behavioral shape. Suspicious metadata can be used as evidence in an objective composite, but "metadata anomaly" is not itself a supply-chain attack kind.
-- Benign generated/tooling contexts belong in `metadata/package/tooling/` or an adjacent metadata library path. Examples include generated shell helpers, package-manager runtime bootstraps, compiler/bundler output, and framework-managed install steps. Objective rules should reference those metadata contexts in `unless:` rather than defining local "benign context" atoms under an attacker objective.
+- Generated-code and build-output properties belong under their specific `metadata/build/` subject; named tool or library fingerprints belong in `well-known/`; package properties belong under the corresponding `metadata/package/` subject. Do not put all benign tooling in a package bucket. Assemble benign-context suppressors as `crit: exception` composites according to the exception contract, and reference them from `unless:` or `downgrade:`.
 - `micro-behaviors/data/` is for operations on data: encoding, decoding, compression, serialization, parsing, archive handling, string manipulation, buffers, databases, embedded payload/resource handling, source-level data mechanics, and control-flow patterns over data. It is not for data merely being present.
 - Do not create generic content buckets such as `data/text/`, `text/`, `lexicon/`, `vocabulary/`, `words/`, or `strings/` as dumping grounds. Split terms by the concept they represent, and let composites reference those atoms across directories.
 
@@ -1338,10 +1380,10 @@ File-level properties with no behavioral implication. Describes *what a file is*
 
   The former `metadata/library/` tree held ~1,030 rules across ~68 directories and mixed several different concepts: library fingerprints that duplicated `well-known/lib/`, plain capability markers wearing a library's directory name, named offensive tools, CI fingerprints, and vague structural leaves. That migration is complete: `metadata/library/` is now closed and empty. Because a directory reference is an ML path feature, each migrated matcher was placed according to what it actually finds; never recreate the old bucket or move a whole directory on the strength of its name.
 - New top-level subdirectories require updating both TAXONOMY.md and `ALLOWED_METADATA` in `src/capabilities/validation/directory_whitelist.rs`
-- **Max depth:** 3 levels within `metadata/` (ML pipeline limit)
-- **Max leaf size:** No leaf directory should exceed 80 rules, atomic traits and composite rules counted together (`policy/oversized-dir`)
+- **Depth:** Prefer at most three levels below `metadata/` so the distinguishing subject remains ML-visible. This is a feature-design guideline, not the behavioral-tier validator's physical depth limit.
+- **Max leaf size:** 85 rules per directory across all tiers, atomic traits and composite rules counted together (`policy/oversized-dir`); no directory exemptions
 - **Max fan-out:** No directory should have more than 150 immediate subdirectories. Past that the level is a flat list rather than a taxonomy — group the entries under an intermediate layer (ecosystem, vendor, family) so each level stays browsable.
-- **Prefer technology-neutral subdirectory names.** Technology names belong in filenames, not directory names, unless needed to stay under the 80-rule limit at depth 3.
+- **Prefer technology-neutral subdirectory names.** Technology names belong in filenames, not directory names, unless the technology itself defines the subject. The 85-rule cap does not justify a language or platform split.
 - **One level, one question.** Every child of a directory must answer the *same* question about its parent. A level that mixes axes gives some traits two valid homes at once, and the duplicate pair is then created by the taxonomy rather than by an author: it is not a mistake anyone can avoid.
 
   The test is to name the question out loud and check that every sibling answers it. `micro-behaviors/fs/path/` should answer *what does this path point at* — a credential, a cookie, a config file, a log, a cache. Siblings like `application/`, `package-manager/`, `os/` and `webserver/` answer a different question, *whose is it*, and siblings like `basename/`, `construct/` and `traversal/` answer a third, *what is being done with it*. With all three present, "an application's config file path" is a genuine member of `config/`, of `application/config/`, and arguably of `basename/` — which is exactly how `fs/path/config/app/` and `fs/path/application/config/` both came to exist, holding the same subject (`editor-extensions` on one side, `vscode` on the other).

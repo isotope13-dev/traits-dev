@@ -1430,6 +1430,16 @@ with its decoded named-bit subtree in values (e.g. `pe.dll_characteristics.*`,
 
 ## Validation & Auto-Fix
 
+### Directory limits
+
+`make validate` allows at most **85 atomic traits and composite rules combined**
+per directory, summed across its YAML files, at every criticality. Exactly 85
+passes; 86 fails. There is no separate atomic cap or directory exemption.
+Behavioral tiers (`micro-behaviors/`, `objectives/`) permit 2–5 directory levels
+below the tier; the filename is not a level. See
+[Directory budgets and placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts)
+for the required sibling audit and the separate three-level ML aggregation limit.
+
 ### Forward compatibility (newer fields, older binaries)
 
 A rule that uses a condition field, type, or enum value added in a newer release
