@@ -4,41 +4,48 @@ defaults:
   attack: T1195.002,T1105,T1129
 
 traits:
-  - id: python-github-release-native-wheel-url
+  # An unterminated releases/download template is the download base a loader
+  # formats asset names onto. The canonical github-release-download atom
+  # covers full asset URLs (trailing path); this one covers the base idiom
+  # for any vendor, not one file's `_DEFAULT_BASE_URL` assignment.
+  - id: python-github-release-download-base
     desc: GitHub release download base URL
     crit: notable
-    conf: 0.97
+    conf: 0.96
     for: [python]
     if:
       type: text
-      regex: '_DEFAULT_BASE_URL\s*=\s*["'']https://github\.com/.{0,80}/releases/download["'']'
+      regex: 'github\.com/[\w.$-]+/[\w.$-]+/releases/download["''/]'
 
   - id: python-hash-bypass-environment-name
-    desc: Hash verification bypass environment name
+    desc: Integrity-check skip switch name
     crit: notable
-    conf: 0.98
+    conf: 0.96
     for: [python]
     if:
       type: text
-      substr: SKIP_HASH_CHECK
+      # An opt-out switch naming convention (SKIP_HASH_CHECK,
+      # APP_SKIP_VERIFY, MOD_SKIP_INTEGRITY_CHECK), not one project's
+      # variable. The composites pair it with the getenv read that arms it.
+      regex: '\b[A-Z0-9_]*SKIP_[A-Z0-9_]*(HASH|VERIFY|VERIFICATION|INTEGRITY)[A-Z0-9_]*\b'
 
-  - id: python-native-manifest-reference
-    desc: Native wheel manifest URL reference
+  - id: python-release-manifest-reference
+    desc: Release hash-manifest filename reference
     crit: notable
     conf: 0.94
     for: [python]
     if:
       type: text
-      substr: python-native-manifest.json
+      substr: manifest.json
 
-  - id: python-bootstrap-error-handler
-    desc: Catches bootstrap download errors
+  - id: python-network-error-handler
+    desc: Catches network-fetch errors
     crit: notable
     conf: 0.94
     for: [python]
     if:
       type: text
-      substr: except BootstrapError
+      regex: 'except\s+[\w.]*\b(HTTPError|URLError|ConnectionError|TimeoutError)\b'
 
   # The bare `return None` leg moved to
   # micro-behaviors/data/control-flow/return::python-return-none -- it is a
@@ -71,8 +78,8 @@ composite_rules:
     for: [python]
     near_lines: 20
     all:
-      - id: python-native-manifest-reference
-      - id: python-bootstrap-error-handler
+      - id: python-release-manifest-reference
+      - id: python-network-error-handler
 
   - id: python-manifest-failure-return-none
     desc: Manifest failure returns no digest
@@ -81,8 +88,8 @@ composite_rules:
     for: [python]
     near_lines: 24
     all:
-      - id: python-native-manifest-reference
-      - id: python-bootstrap-error-handler
+      - id: python-release-manifest-reference
+      - id: python-network-error-handler
       - id: micro-behaviors/data/control-flow/return::python-return-none
 
   - id: python-remote-native-extension-bootstrap
@@ -92,25 +99,43 @@ composite_rules:
     conf: 0.96
     scope: archive
     all:
-      - id: python-github-release-native-wheel-url
+      - id: python-github-release-download-base
       - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-call
       - id: micro-behaviors/data/archive/extract/zip::python-native-extension-archive-extraction
       - id: micro-behaviors/process/create/load/extension::python-extension-file-loader
 
+  # A remote native stage whose verification can be bypassed or fails open is
+  # suspicious, not hostile, on its own: runtime native provisioners (and the
+  # sibling plugin-loader file, deliberately kept suspicious) have documented
+  # offline-mirror uses. The stealthy variants below stay hostile unless the
+  # degradation path notifies the operator.
   - id: python-unverified-native-extension-bootstrap
     for: [whl, python]
-    desc: Wheel loads remote native code without reliable integrity verification
-    crit: hostile
-    conf: 0.98
+    desc: Wheel loads remote native code with bypassable integrity verification
+    crit: suspicious
+    conf: 0.97
     scope: archive
     all:
-      - id: python-github-release-native-wheel-url
+      - id: python-github-release-download-base
       - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-call
       - id: micro-behaviors/data/archive/extract/zip::python-native-extension-archive-extraction
       - id: micro-behaviors/process/create/load/extension::python-extension-file-loader
     any:
       - id: python-explicit-hash-check-bypass
       - id: python-manifest-integrity-fails-open
+
+  # Degradation the operator can see (a stderr warning on the bypass path,
+  # next to the manifest fetch) is transparent tooling, not a stealthy
+  # implant: silent variants keep the hostile verdicts below.
+  - id: transparent-integrity-degradation-context
+    desc: Integrity bypass path warns the operator
+    crit: exception
+    conf: 0.97
+    for: [python]
+    near_lines: 30
+    all:
+      - id: python-release-manifest-reference
+      - id: micro-behaviors/process/fd/stdio::python-stderr-warning-write
 
   - id: python-explicit-unverified-native-stage
     for: [whl, python]
@@ -119,12 +144,14 @@ composite_rules:
     conf: 0.99
     scope: archive
     all:
-      - id: python-github-release-native-wheel-url
+      - id: python-github-release-download-base
       - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-call
       - id: micro-behaviors/data/archive/extract/zip::python-native-extension-archive-extraction
       - id: micro-behaviors/process/create/load/extension::python-extension-file-loader
       - id: python-hash-bypass-environment-name
       - id: micro-behaviors/os/env/read::python-os-getenv-call
+    unless:
+      - id: transparent-integrity-degradation-context
 
   - id: python-fail-open-unverified-native-stage
     for: [whl, python]
@@ -133,10 +160,12 @@ composite_rules:
     conf: 0.99
     scope: archive
     all:
-      - id: python-github-release-native-wheel-url
+      - id: python-github-release-download-base
       - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-call
       - id: micro-behaviors/data/archive/extract/zip::python-native-extension-archive-extraction
       - id: micro-behaviors/process/create/load/extension::python-extension-file-loader
-      - id: python-native-manifest-reference
-      - id: python-bootstrap-error-handler
+      - id: python-release-manifest-reference
+      - id: python-network-error-handler
       - id: micro-behaviors/data/control-flow/return::python-return-none
+    unless:
+      - id: transparent-integrity-degradation-context
