@@ -1,0 +1,73 @@
+# A .pth startup hook that loads and runs a module *file*.
+#
+# The rules in sitecustomize.yaml judge what a .pth line does itself: decode,
+# exec, spawn. A careful author keeps the .pth small and innocuous instead and
+# uses it as a trampoline: resolve a `.py` (or `.pyc`) that ships with the
+# package, build a spec for it, and `exec_module` it. The .pth then reveals
+# nothing but a loader, and every interpreter on the host runs the file it
+# points to -- even processes that never import the package.
+#
+# datatailr 0.1.135 ships `datatailr_install_notice.pth`, a base64-wrapped
+# `exec()` whose decoded body looks up `datatailr/_install_notice.py` through
+# `importlib.metadata.distribution(...).locate_file`, loads it with
+# `spec_from_file_location`, runs it, and discards every error. Legitimate
+# startup hooks (virtualenv, editable installs, coverage, pywin32, namespace
+# `-nspkg.pth`) import a module by name; none of them builds a spec from a
+# file path.
+#
+# The loader leg covers the other file-to-module APIs so a variant that swaps
+# `spec_from_file_location` for `SourcelessFileLoader`, `SourceFileLoader`, or
+# `runpy.run_path` still lands here.
+defaults:
+  platforms: [unix, windows]
+  for: [python]
+  attack: T1546,T1195.002
+  mbc: E1546
+
+composite_rules:
+  - id: pth-startup-module-file-loader
+    desc: Python .pth startup hook runs a module file
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: objectives/persistence/login/python-startup::pth-import-exec
+    any:
+      - id: micro-behaviors/os/api-resolution/dynamic::python-importlib-spec-exec-module
+      - id: micro-behaviors/os/api-resolution/dynamic::python-sourceless-file-loader
+      - id: micro-behaviors/os/api-resolution/dynamic::python-sourcefileloader-load-module
+      - id: micro-behaviors/process/interpreter/python::runpy-run-path
+
+  # The file the hook runs is looked up inside an installed distribution, so
+  # the real startup code sits in an ordinary-looking package module rather
+  # than in the .pth.
+  - id: pth-startup-package-file-trampoline
+    desc: Python .pth startup hook runs a file from an installed package
+    crit: suspicious
+    conf: 0.92
+    all:
+      - id: pth-startup-module-file-loader
+      - id: micro-behaviors/os/api-resolution/dynamic::python-distribution-locate-file
+
+  # A startup hook that swallows every failure never surfaces in a traceback,
+  # so a broken or tampered payload stays invisible to the user.
+  - id: pth-startup-silent-loader
+    desc: Python .pth startup loader suppresses all errors
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: pth-startup-module-file-loader
+    any:
+      - id: micro-behaviors/data/control-flow/error-handling::silent-exception-bare-return
+      - id: micro-behaviors/data/control-flow/error-handling::silent-exception-pass
+
+  # The loader only appeared after unwrapping a Base64 literal: the .pth hid
+  # which file it runs at every interpreter start. There is no reason to
+  # encode a path-to-module loader other than to keep it from review.
+  - id: encoded-pth-module-file-trampoline
+    desc: Encoded .pth startup hook hides a module-file loader
+    crit: hostile
+    conf: 0.93
+    attack: T1546,T1027,T1195.002
+    all:
+      - id: pth-startup-module-file-loader
+      - id: metadata/file/encoded::decoded-base64-layer
