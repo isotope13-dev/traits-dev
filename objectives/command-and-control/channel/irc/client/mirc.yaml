@@ -35,7 +35,19 @@ traits:
       case_insensitive: true
       # Bare `:TEXT:` also sits in ODF namespace URNs (`xmlns:text:`)
       # embedded in Qt binaries such as cmake-gui.exe.
-      regex: 'ON\s*([*]|[0-9]+):TEXT:'
+      # Event prefixes (`^`, `&`, `!`, `@`, `+`) may precede the level.
+      regex: 'ON\s*[\^&!@+]{0,3}([*]|[0-9]+):TEXT:'
+  - id: mirc-caret-text-event
+    desc: mIRC caret TEXT event can hide messages
+    crit: notable
+    conf: 0.9
+    for: [mirc, ircii, scripts]
+    if:
+      type: text
+      case_insensitive: true
+      # `on ^*:TEXT:` runs before mIRC displays the message, so a halt in the
+      # handler hides the triggering line from the victim's window.
+      regex: '(?m)^\s*on\s+\^([*]|[0-9]+):TEXT:'
   - id: mirc-script-event-part
     desc: Detects mIRC PART event
     crit: suspicious
@@ -533,6 +545,70 @@ traits:
     if:
       type: text
       regex: '(?i)\bsynp\s+start\s+\$'
+  # Raw-socket file-server and scanner legs (Mushashi, Mox): each one is
+  # ordinary socket scripting alone; the listener, exfil, file-deletion and
+  # port-scan composites decide intent from their combination.
+  - id: mirc-sockaccept-command
+    desc: mIRC accepts an inbound socket
+    crit: notable
+    conf: 0.88
+    for: [mirc, ircii]
+    if:
+      type: text
+      regex: '(?i)(^|[\s;{|=])\.?/?sockaccept\s+[A-Za-z%$]'
+  - id: mirc-bread-binary-transfer
+    desc: mIRC reads file bytes into binary var
+    crit: notable
+    conf: 0.88
+    for: [mirc, ircii]
+    if:
+      type: text
+      # `bread <file> <offset> <length> &bin` stages raw file contents.
+      regex: '(?i)(^|[\s;{|=])\.?/?bread\s+\S+\s+\S+\s+\S+\s+&\w'
+  - id: mirc-sockwrite-binary-var
+    desc: mIRC writes binary var to a socket
+    crit: notable
+    conf: 0.88
+    for: [mirc, ircii]
+    if:
+      type: text
+      regex: '(?i)\bsockwrite\s+(-[a-z]+\s+)?\S+\s+&\w'
+  - id: mirc-remove-remote-path
+    desc: mIRC deletes a parameter-named file
+    crit: notable
+    conf: 0.88
+    for: [mirc, ircii]
+    if:
+      type: text
+      # The path comes from a parsed token or a parameter; a static
+      # `remove dir.txt` cleanup stays out.
+      regex: '(?i)(^|[\s;{|=])\.?/?remove\s+(-b\s+)?\$(gettok\(|[1-9]\b)'
+  - id: mirc-gettok-command-parse
+    desc: mIRC parses line's first word as verb
+    crit: notable
+    conf: 0.86
+    for: [mirc, ircii]
+    if:
+      type: text
+      # `$gettok(%line,1,32)`: first space-separated token of a variable.
+      regex: '(?i)\$gettok\(\s*%[\w.]+\s*,\s*1\s*,\s*32\s*\)'
+  - id: mirc-sockopen-longip-target
+    desc: mIRC opens socket to a numeric IP
+    crit: suspicious
+    conf: 0.9
+    for: [mirc, ircii]
+    if:
+      type: text
+      # `$longip()` turns a counter into a dotted address to probe.
+      regex: '(?i)\bsockopen\s+[^\r\n|}]{0,60}\$longip\('
+  - id: mirc-scan-counter-increment
+    desc: mIRC increments a scan address counter
+    crit: notable
+    conf: 0.86
+    for: [mirc, ircii]
+    if:
+      type: text
+      regex: '(?i)(^|[\s;{|=])\.?/?inc\s+%(\w+[._])?(scan|ip|addr)([._]\w+)?\b'
 composite_rules:
   - id: mirc-script-event
     desc: Detects mIRC scripting events used by worms
@@ -600,6 +676,18 @@ composite_rules:
     all:
       - id: mirc-script-event-text
       - id: mirc-script-cmd-dot-dcc-send
+  # A caret TEXT handler hides the trigger line and `| halt` swallows the
+  # event, so a DCC send from it is operator-triggered silent file exfil.
+  - id: mirc-hidden-text-dcc-send
+    desc: Hidden TEXT trigger DCC-sends a file
+    crit: hostile
+    conf: 0.94
+    attack: T1041
+    for: [mirc, ircii]
+    all:
+      - id: mirc-caret-text-event
+      - id: mirc-script-cmd-dcc-send-bare
+      - id: mirc-suppress-event-halt
   - id: mirc-multi-command-bot
     desc: mIRC bot exposes several remote commands
     crit: hostile
