@@ -6,16 +6,6 @@ defaults:
   platforms: [windows, unix]
   for: [javascript, typescript]
 traits:
-  - id: js-eval-data-property-source
-    desc: JavaScript source string evaluates data property
-    conf: 0.88
-    attack: T1059.007
-    if:
-      # Some browser applications construct preview scripts as string
-      # literals. Keep this atomic descriptive of the source text; the
-      # remote-command objective supplies the message-handler context.
-      type: literal
-      regex: '\beval\s*\(\s*[A-Za-z_$][A-Za-z0-9_$]*\.data\s*\)'
 
   - id: evaluate-helper-identifier-call
     desc: Calls evaluate() on an identifier
@@ -42,13 +32,6 @@ traits:
     unless:
       - id: metadata/file/extension/identity::julia-source-basename
 
-  - id: js-eval-message-data
-    desc: JavaScript eval executes event or message data
-    conf: 0.9
-    attack: T1059.007
-    if:
-      type: text
-      regex: '\beval\s*\(\s*(message|event)\.data\s*\)'
 
   - id: js-eval-call-expression-arg
     desc: JavaScript eval executes a call result
@@ -96,37 +79,7 @@ traits:
             (#eq? @inner "from")
             (#eq? @outer "toString"))
         ]
-  - id: js-commonjs-module-wrapper
-    desc: CommonJS text evaluation wrapper
-    conf: 0.95
-    if:
-      type: text
-      regex: 'new\s+Function\s*\(\s*["'']require["'']\s*,\s*["'']exports["'']\s*,\s*text\s*\)'
-  - id: js-empty-function-charcode-property
-    desc: Empty function has char-coded property
-    conf: 0.9
-    if:
-      type: text
-      substr: '(function(){})[String.fromCharCode'
-  - id: js-computed-charcode-call
-    desc: Computed call through character-coded property
-    conf: 0.92
-    attack: T1059.007
-    if:
-      type: text
-      # A function-valued property is selected with a runtime character-code
-      # string and immediately called with an identifier payload.  The atom
-      # describes the capability; decoder-plus-execution intent is inferred by
-      # objective composites.
-      regex: 'String\.fromCharCode\s*\([^;\]]{1,180}\)\s*\]\s*\('
 
-  - id: js-base64-decoded-property
-    desc: Base64-decoded computed method call
-    conf: 0.88
-    attack: T1059.007
-    if:
-      type: text
-      regex: '\[\s*Buffer\.from\([^;\n\]]{0,120}["'']base64["''][^;\n\]]{0,40}\)\s*\]\s*\('
 
   - id: js-eval-raw
     desc: Executes JavaScript dynamically with eval()
@@ -185,25 +138,6 @@ traits:
           (#eq? @fn "eval")
           (#match? @arg "(?i)(source|script|module)$"))
 
-  # A bare `\.eval\s*\(` matches any user method named `eval`: LESS, Stylus and
-  # other CSS/AST interpreters call `node.eval(context)` on every tree node, and
-  # `Evaluator.prototype.eval` is an ordinary visitor method.  A member `eval`
-  # is only a code sink when the receiver is the JavaScript global object
-  # (indirect eval) or the argument is a decoded value, so match those instead.
-  - id: js-global-object-eval-call
-    desc: Calls eval through the JavaScript global object
-    conf: 0.92
-    attack: T1059.007
-    if:
-      type: text
-      regex: '\b(window|globalThis|global|self)\.eval\s*\('
-  - id: js-member-eval-decoded-argument
-    desc: Member eval executes a decoded value
-    conf: 0.9
-    attack: T1059.007
-    if:
-      type: text
-      regex: '\.eval\s*\(\s*(atob|unescape|Buffer|decode\w*)\s*[(.]'
   - id: js-eval-tostring-result
     desc: eval() executes toString() result
     conf: 0.88
@@ -237,89 +171,34 @@ traits:
         substr: CriticalCmdDialog
     not:
       - regex: '(?i)eval\s*\(\s*window\.(game|softgames)[A-Za-z0-9_$]*\s*\)'
-  - id: js-eval-response-text
-    desc: JavaScript eval executes responseText property
-    conf: 0.9
+  - id: js-eval-concat-string
+    desc: Eval of a concatenated string
     attack: T1059.007
+    conf: 0.9
+    for: [javascript, typescript, html, static-lib]
     if:
       type: text
-      regex: '(^|[^.$A-Za-z0-9_])eval\s*\(\s*[A-Za-z_$][\w$]*\.responseText'
-  - id: js-eval-response-array-like
-    desc: Evaluated XHR response used as array-like data
-    conf: 0.9
-    attack: T1059.007
-    if:
-      type: text
-      regex: '=\s*eval\(\w+\.responseText\);\s*\w+\s*=\s*\w+\.length'
-  # Covers the Function-constructor twin `(0, Function)(src)` as well: the comma
-  # operator yields a bare callee so the compiled code closes over global scope.
-  - id: js-indirect-eval
-    desc: Indirect eval or Function via comma operator
-    conf: 0.7
-    if:
-      # Restrict the syntax to an actual call expression.  Text scanning also
-      # treated documentation examples inside comments as executable eval.
-      type: tree-sitter
-      kind: call
-      regex: '\(\s*0\s*,\s*(eval|Function)\s*\)\s*\('
-    # `(0,eval)(...)` is a standard transpiler/bundler idiom for global-scope
-    # eval; suppress it on large minified bundles to avoid noise, matching the
-    # js-new-function-constructor precedent above. Dropper composites use the
-    # component fragment in supply-chain/hidden-payload/encoding instead, which
-    # carries no bundle exclusion so megabyte single-line packers still match.
+      regex: '(?i)\beval\s*\(\s*["\x27][^"\x27]{0,40}["\x27]\s*\+'
     unless:
-      - id: metadata/build/minifier::js-large-minified-bundle
-  # Text-mode counterpart used when a very large generated or packed line
-  # defeats parsing. The syntax is still an execution capability by itself;
-  # decoder and payload-shape composites supply any obfuscation intent.
-  - id: js-indirect-eval-text
-    desc: Indirect eval via comma operator
-    conf: 0.9
-    if:
-      type: text
-      regex: '\(0\s*,\s*eval\)\s*\('
-  - id: js-indirect-eval-variable
-    desc: Indirect eval executes an identifier value
-    conf: 0.9
-    # This is narrower than the general indirect-eval capability: the comma
-    # operator feeds a named decoded buffer directly into the execution sink.
-    # Keep it visible in large files because packed loaders are commonly single
-    # large lines and the surrounding decoder is what makes the combination
-    # hostile.
-    if:
-      type: text
-      regex: '\(\s*0\s*,\s*eval\s*\)\s*\(\s*[A-Za-z_$][A-Za-z0-9_$]{0,80}\s*\)'
-  - id: js-eval-alias-assignment
-    desc: Variable aliases JavaScript eval
-    conf: 0.95
-    attack: T1059.007
-    if:
-      type: text
-      regex: '\b(var|let|const)\s+[A-Za-z_$][A-Za-z0-9_$]{0,40}\s*=\s*eval\s*[;,]'
+      - id: metadata/package/testing/harness/runtime/
+      - id: micro-behaviors/data/parse/json::eval-parenthesized-json-deserializer
+      - id: well-known/tool/development/ci/github-actions/docker-build-push-action::dist-tree
+    not:
+      - substr: document.all
+      - substr: _expression_function
 
 composite_rules:
-  - id: js-member-eval-call
-    desc: Calls eval through an object member reference
-    conf: 0.9
-    attack: T1059.007
+  - id: javascript-dynamic-evaluation
+    desc: Uses JavaScript dynamic evaluation APIs
+    conf: 0.8
     any:
-      - id: js-global-object-eval-call
-      - id: js-member-eval-decoded-argument
-
-  - id: js-base64-decoded-computed-call
-    desc: Calls a method selected from Base64-decoded text
-    conf: 0.92
-    attack: T1059.007
-    near_bytes: 256
+      - id: micro-behaviors/process/interpreter/eval/direct::js-eval-raw
+      - id: micro-behaviors/process/interpreter/vm::vm-runInContext-call
+  - id: network-eval-child-process-chain
+    desc: HTTP, eval, and child-process APIs
+    conf: 0.9
+    near_lines: 80
     all:
-      - id: js-base64-decoded-property
-      - id: micro-behaviors/data/source/property/computed::js-computed-property-call
-
-  - id: js-charcode-constructor-stage
-    desc: Char-coded constructor property call
-    conf: 0.95
-    attack: T1059.007
-    near_bytes: 512
-    all:
-      - id: js-empty-function-charcode-property
-      - id: js-computed-charcode-call
+      - id: micro-behaviors/communications/http/request/client::node-http-client-imports
+      - id: javascript-dynamic-evaluation
+      - id: micro-behaviors/process/create/exec::node-child-process-capability

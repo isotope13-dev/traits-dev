@@ -215,8 +215,8 @@ Stop at the first row that describes the matcher:
 |---|---|
 | A thread inside the current process | `thread` |
 | A clone of the current process | `fork` |
-| A shell parsing command text (`sh -c`, `cmd /c`, `shell=True`, a pipeline) | `shell` |
-| An interpreter evaluating source (`eval`, `node -e`) | `eval` |
+| A new shell parsing command text (`sh -c`, `cmd /c`, `shell=True`, a pipeline, `bash "$f"`) | `shell` |
+| A new interpreter process handed source text (`node -e`, `python -c`) | `eval` |
 | A library object standing for the child (`Popen`, `NSTask`, `ProcessBuilder`) | `subprocess` |
 | The desktop opener choosing the handler (`ShellExecute`, `open`, `NSWorkspace`) | `shellexec` |
 | An argument vector starting an image (`execve`, `CreateProcess`, `posix_spawn`) | `exec` |
@@ -625,6 +625,20 @@ micro-behaviors/
 │   ├── info/              #   Process information queries
 │   ├── inject/            #   Cross-process injection (DLL, thread, APC, atom-bombing)
 │   ├── interpreter/       #   Code interpreters/runtimes
+│   │   ├── eval/          #     Source evaluated inside the running interpreter.
+│   │   │   │              #       No new process: that is process/create/eval.
+│   │   │   │              #       Shell `eval`/`source "$x"` belongs here too; it
+│   │   │   │              #       starts no new shell (`sh "$x"` does: create/shell).
+│   │   │   │              #       Eval of fetched/received code is the objective
+│   │   │   │              #       objectives/execution/interpreter/eval/remote/.
+│   │   │   │              #       Children are below the ML-visible level and
+│   │   │   │              #       split by mechanism; language goes in the filename.
+│   │   │   ├── direct/    #       The eval builtin named at the call site
+│   │   │   │              #         (eval, iex, Execute, instance_eval, loadstring)
+│   │   │   ├── indirect/  #       Eval reached without naming it there
+│   │   │   │              #         ((0,eval)(), window.eval, Set-Alias iex)
+│   │   │   └── compile/   #       Source compiled into a callable, then invoked
+│   │   │                  #         (Function, create_function, ScriptBlock::Create)
 │   │   ├── vm/            #     Node.js VM module (createContext, runInContext)
 │   │   ├── node/          #     Node.js internal bindings (process.binding)
 │   │   └── gentee/        #     Gentee scripting runtime
@@ -1667,7 +1681,7 @@ composite_rules:
 | Code Pattern | Tier | Path | Criticality |
 |--------------|------|------|-------------|
 | `socket()` call | Capability | `micro-behaviors/communications/socket/create` | notable |
-| `eval()` call | Capability | `micro-behaviors/process/create/eval/dynamic` | notable |
+| `eval()` call | Capability | `micro-behaviors/process/interpreter/eval/direct` | notable |
 | Process hollowing | Capability | `micro-behaviors/process/hollow` | suspicious |
 | Screenshot API | Capability | `micro-behaviors/hardware/display/screenshot` | notable |
 | Screenshot + timer + upload | Objective | `objectives/collection/screenshot` | suspicious |

@@ -1,0 +1,93 @@
+defaults:
+  crit: notable
+  platforms: [windows, unix]
+  for: [javascript, typescript]
+
+traits:
+  # A bare `\.eval\s*\(` matches any user method named `eval`: LESS, Stylus and
+  # other CSS/AST interpreters call `node.eval(context)` on every tree node, and
+  # `Evaluator.prototype.eval` is an ordinary visitor method.  A member `eval`
+  # is only a code sink when the receiver is the JavaScript global object
+  # (indirect eval) or the argument is a decoded value, so match those instead.
+  - id: js-global-object-eval-call
+    desc: Calls eval through the JavaScript global object
+    conf: 0.92
+    attack: T1059.007
+    if:
+      type: text
+      regex: '\b(window|globalThis|global|self)\.eval\s*\('
+  - id: js-member-eval-decoded-argument
+    desc: Member eval executes a decoded value
+    conf: 0.9
+    attack: T1059.007
+    if:
+      type: text
+      regex: '\.eval\s*\(\s*(atob|unescape|Buffer|decode\w*)\s*[(.]'
+  # Covers the Function-constructor twin `(0, Function)(src)` as well: the comma
+  # operator yields a bare callee so the compiled code closes over global scope.
+  - id: js-indirect-eval
+    desc: Indirect eval or Function via comma operator
+    conf: 0.7
+    if:
+      # Restrict the syntax to an actual call expression.  Text scanning also
+      # treated documentation examples inside comments as executable eval.
+      type: tree-sitter
+      kind: call
+      regex: '\(\s*0\s*,\s*(eval|Function)\s*\)\s*\('
+    # `(0,eval)(...)` is a standard transpiler/bundler idiom for global-scope
+    # eval; suppress it on large minified bundles to avoid noise, matching the
+    # js-new-function-constructor precedent in ../compile/javascript.yaml.
+    # Dropper composites use the component fragment in supply-chain/hidden-payload/encoding instead, which
+    # carries no bundle exclusion so megabyte single-line packers still match.
+    unless:
+      - id: metadata/build/minifier::js-large-minified-bundle
+  # Text-mode counterpart used when a very large generated or packed line
+  # defeats parsing. The syntax is still an execution capability by itself;
+  # decoder and payload-shape composites supply any obfuscation intent.
+  - id: js-indirect-eval-text
+    desc: Indirect eval via comma operator
+    conf: 0.9
+    if:
+      type: text
+      regex: '\(0\s*,\s*eval\)\s*\('
+  - id: js-indirect-eval-variable
+    desc: Indirect eval executes an identifier value
+    conf: 0.9
+    # This is narrower than the general indirect-eval capability: the comma
+    # operator feeds a named decoded buffer directly into the execution sink.
+    # Keep it visible in large files because packed loaders are commonly single
+    # large lines and the surrounding decoder is what makes the combination
+    # hostile.
+    if:
+      type: text
+      regex: '\(\s*0\s*,\s*eval\s*\)\s*\(\s*[A-Za-z_$][A-Za-z0-9_$]{0,80}\s*\)'
+  - id: js-eval-alias-assignment
+    desc: Variable aliases JavaScript eval
+    conf: 0.95
+    attack: T1059.007
+    if:
+      type: text
+      regex: '\b(var|let|const)\s+[A-Za-z_$][A-Za-z0-9_$]{0,40}\s*=\s*eval\s*[;,]'
+  - id: eval-as-first-arg
+    desc: Passes eval as the first call argument
+    conf: 0.9
+    attack: T1059.007
+    if:
+      type: string_literal
+      regex: \(eval\s*,
+  - id: eval-as-last-arg
+    desc: Passes eval as the final call argument
+    conf: 0.9
+    attack: T1059.007
+    if:
+      type: string_literal
+      regex: ',\s*eval\)'
+
+composite_rules:
+  - id: js-member-eval-call
+    desc: Calls eval through an object member reference
+    conf: 0.9
+    attack: T1059.007
+    any:
+      - id: js-global-object-eval-call
+      - id: js-member-eval-decoded-argument
