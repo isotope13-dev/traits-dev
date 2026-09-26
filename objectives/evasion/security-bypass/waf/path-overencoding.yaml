@@ -1,0 +1,46 @@
+# URL-path over-encoding to defeat literal WAF / reverse-proxy rules.
+#
+# A perimeter rule that blocks a path by matching the literal string (e.g.
+# /PSEMHUB/) runs before URL normalization, so re-encoding one unreserved
+# letter of that path as its percent escape slips straight past it while the
+# application server decodes the byte and routes the request normally. In the
+# ShinyHunters/UNC6240 PeopleSoft wave /PSEMHUB/ became /%50SEMHUB/ (%50 -> P);
+# the same trick re-encodes any single letter of any blocked keyword.
+#
+# The tell is structural: an unreserved ASCII letter percent-encoded inside a
+# path segment that also carries literal letters. RFC 3986 never requires
+# encoding A-Z/a-z, so a mixed literal+escaped segment is over-encoding, not
+# ordinary escaping (spaces %20, slashes %2F, reserved chars are excluded by
+# the byte ranges below). The atom alone is the evasion marker; the hostile
+# composite requires an HTTP client that actually sends it.
+defaults:
+  platforms: [unix, windows]
+  for: [python, javascript, typescript, go, ruby, php, shell, source, text]
+  attack: T1190
+  mbc: F0004
+
+traits:
+  - id: waf-overencoded-path-letter
+    desc: URL path over-encodes an ASCII letter
+    crit: suspicious
+    conf: 0.9
+    unless:
+      - id: well-known/tool/offensive/
+    if:
+      type: text
+      regex: '(?i)/[a-z0-9%._~-]{0,24}%(4[1-9a-f]|5[0-9a]|6[1-9a-f]|7[0-9a])[a-z0-9]'
+
+composite_rules:
+  - id: overencoded-path-http-request
+    desc: Client sends over-encoded WAF-bypass path
+    crit: hostile
+    conf: 0.94
+    attack: T1190,T1027
+    unless:
+      - id: well-known/tool/offensive/
+    all:
+      - id: waf-overencoded-path-letter
+    any:
+      - id: micro-behaviors/communications/http/lib/urllib
+      - id: micro-behaviors/communications/http/client/library
+      - id: micro-behaviors/communications/http/download/cli
