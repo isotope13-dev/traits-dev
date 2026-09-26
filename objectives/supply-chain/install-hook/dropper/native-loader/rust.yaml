@@ -1,0 +1,115 @@
+# A Cargo build script that carries a native executable inside itself, writes
+# it out, and runs it. Sibling to python.yaml and npm.yaml.
+#
+# `build.rs` runs on every `cargo build` of every crate that depends on the
+# package, with the developer's privileges. Build scripts legitimately compile
+# C code or generate bindings; they have no reason to `include_bytes!` a
+# prebuilt program into the script itself, drop it to disk, and launch it.
+# The embed leg is the macro, not a file extension, because droppers name the
+# blob anything (`helper/linux`, `helper/windows`).
+#
+# Worked example: easylibm 0.2.18, a `libm` impersonation listing the
+# rust-lang maintainers as authors. Its build.rs embeds `helper/{linux,darwin,
+# windows}`, writes it to the temp dir as `code-helper`, marks it 0o755 and
+# spawns it detached (`setsid` / `DETACHED_PROCESS|CREATE_NO_WINDOW`) with
+# stdin, stdout and stderr nulled.
+defaults:
+  platforms: [unix, windows]
+  for: [rust]
+  attack: T1195.002,T1204.002
+  mbc: E1105
+
+composite_rules:
+  - id: build-rs-drops-and-runs-embedded-binary
+    desc: build.rs drops an embedded binary and runs it
+    crit: hostile
+    conf: 0.95
+    scope: file
+    all:
+      - id: objectives/supply-chain/install-hook/build/behavioral::rust-build-rs-file
+      - id: micro-behaviors/data/source/syntax/directive::rust-include-bytes
+      - id: micro-behaviors/fs/write/file/full::fs-write
+      - id: micro-behaviors/process/create/direct::rust-indirect-command-new
+    any:
+      - id: micro-behaviors/fs/chmod/executable/mode::set-permissions-call
+      - id: micro-behaviors/fs/path/temp::rust-temp-dir
+      - id: micro-behaviors/process/daemonize/spawn::rust-spawn-detached-unix
+      - id: micro-behaviors/process/create/flags::rust-detached-process-call
+      - id: micro-behaviors/process/create/flags::rust-create-no-window-call
+    needs: 2
+
+  # Without the embed: a build script that starts a process meant to outlive
+  # the build and never report back -- its own session or a detached console,
+  # and every stdio stream thrown away. Compilers and code generators are run
+  # and waited on; a build step has no reason to leave something running.
+  - id: build-rs-spawns-detached-silent-process
+    desc: build.rs leaves a detached silent process
+    crit: suspicious
+    conf: 0.9
+    scope: file
+    all:
+      - id: objectives/supply-chain/install-hook/build/behavioral::rust-build-rs-file
+      - id: micro-behaviors/process/fd/stdio::rust-child-stdout-null
+      - id: micro-behaviors/process/fd/stdio::rust-child-stderr-null
+    any:
+      - id: micro-behaviors/process/daemonize/spawn::rust-spawn-detached-unix
+      - id: micro-behaviors/process/create/flags::rust-detached-process-call
+      - id: micro-behaviors/process/create/flags::rust-create-no-window-call
+
+  # Variation of the drop-and-run above where the payload is not `include_bytes!`
+  # of a raw file but an encoded string literal the build script decodes at
+  # build time -- the same evasion setup.py droppers use to keep a `.exe` out
+  # of the sdist as text. The decode replaces the embed leg; everything else
+  # (write, chmod/temp, run) is the same materialize-and-execute shape.
+  - id: build-rs-decodes-and-runs-payload
+    desc: build.rs decodes a blob and runs it
+    crit: hostile
+    conf: 0.94
+    scope: file
+    attack: "T1195.002,T1140,T1204.002"
+    all:
+      - id: objectives/supply-chain/install-hook/build/behavioral::rust-build-rs-file
+      - id: build-rs-decoded-payload-leg
+      - id: micro-behaviors/fs/write/file/full::fs-write
+      - id: micro-behaviors/process/create/direct::rust-indirect-command-new
+    any:
+      - id: micro-behaviors/fs/chmod/executable/mode::set-permissions-call
+      - id: micro-behaviors/fs/path/temp::rust-temp-dir
+
+  - id: build-rs-decoded-payload-leg
+    desc: build.rs decodes an encoded blob
+    crit: notable
+    conf: 0.85
+    any:
+      - id: micro-behaviors/data/decode/base64::rust-base64-engine-decode
+      - id: micro-behaviors/data/decode/base64::rust-base64-helper-decode
+      - id: micro-behaviors/data/decode/repeated-base64::rust-repeated-standard-engine-decodes
+      - id: micro-behaviors/data/decode/hex::rust-radix16-byte-decode
+
+  # A build script that fetches a resource over HTTP and runs it: download-and-
+  # execute at build time, before any of the crate's code is even compiled in.
+  # A legitimate build script that downloads (a vendored library, a schema)
+  # links or reads the result; it does not chmod it executable and spawn it.
+  - id: build-rs-fetches-and-runs-payload
+    desc: build.rs fetches a payload and runs it
+    crit: hostile
+    conf: 0.94
+    scope: file
+    attack: "T1195.002,T1105,T1204.002"
+    all:
+      - id: objectives/supply-chain/install-hook/build/behavioral::rust-build-rs-file
+      - id: build-rs-http-fetch-leg
+      - id: micro-behaviors/process/create/direct::rust-indirect-command-new
+    any:
+      - id: micro-behaviors/fs/chmod/executable/mode::set-permissions-call
+      - id: micro-behaviors/fs/write/file/full::fs-write
+
+  - id: build-rs-http-fetch-leg
+    desc: build.rs performs an HTTP fetch
+    crit: notable
+    conf: 0.8
+    any:
+      - id: micro-behaviors/communications/http/get::rust-ureq-direct-get
+      - id: micro-behaviors/communications/http/get::rust-ureq-agent-get
+      - id: micro-behaviors/communications/http/lib/reqwest::rust-reqwest-get-fn
+      - id: micro-behaviors/communications/http/download/handler::rust-reqwest-response-bytes

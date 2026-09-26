@@ -110,7 +110,9 @@ composite_rules:
     any:
       - id: suspicious-setup-metadata
       - id: metadata/package/keywords/identity::empty-keywords
-      - id: metadata/package/files/wheel-sdist::empty-classifiers
+      # setup.py form: every other leg here is setup.py text, and this rule is
+      # file-scoped, so the PKG-INFO form could never join them.
+      - id: metadata/package/files/wheel-sdist::setup-py-empty-classifiers
       - id: metadata/package/description/presence::single-word-description
   - id: pkg-info-unknown-fields
     desc: PKG-INFO with UNKNOWN metadata fields
@@ -231,10 +233,21 @@ composite_rules:
       - id: metadata/package/description/disclosure::desc-mentions-victim
       - id: metadata/package/description/disclosure::desc-poc-research
       - id: metadata/package/description/disclosure::desc-confirms-install
-  - id: pkginfo-minimal-shell-package
+  # A first release that says nothing about itself: a 0.0.x version with a
+  # minimal summary (one word, UNKNOWN, missing) or a PKG-INFO too small to
+  # hold real metadata. This is the placeholder a squatter publishes, but it
+  # is equally every cookiecutter first release (pychrome 0.0.1: "Summary:
+  # pychrome" above ten classifiers) and every unnamed example egg-info
+  # (PyObjC's DragApp: 0.0.0, all fields UNKNOWN -- byte-for-byte the shape of
+  # the malicious testingbrooasqa). Metadata is free for an attacker to dress,
+  # so the shape alone is notable; the composites below pair it with what the
+  # package does. Replaces pkginfo-low-version-minimal-summary,
+  # pkginfo-skeleton-package and pkginfo-minimal-shell-package (whose
+  # `unless: metadata/package/versioning/` suppressed its own version leg).
+  - id: pkginfo-placeholder-first-release
     for: [pkginfo]
-    desc: Minimal PKG-INFO shell package
-    crit: suspicious
+    desc: Placeholder PKG-INFO at a 0.0.x version
+    crit: notable
     conf: 0.85
     attack: T1195.002
     mbc: F0004
@@ -243,42 +256,69 @@ composite_rules:
       - windows
     all:
       - id: metadata/package/ecosystem::pkginfo-core-metadata
+      - id: metadata/package/versioning/scheme::pkginfo-lowest-version
+    any:
       - id: metadata/package/ecosystem::pkginfo-single-word-summary
+      - id: metadata/package/description/presence::unknown-summary
+      - id: objectives/supply-chain/impersonation/package/wheel-sdist::pkginfo-no-summary
       - id: metadata/package/files/archive-shape::pkginfo-tiny
-      - id: metadata/package/versioning/scheme::pkginfo-lowest-version
-    unless:
-      - id: metadata/package/versioning/
-  - id: pkginfo-skeleton-package
-    for: [pkginfo]
-    desc: Skeleton PKG-INFO with lowest version
+  # A throwaway first release has no packaging work that needs a custom
+  # install command, so one that overrides install is running code of its
+  # own choosing on the victim. Payload-agnostic: fires on the structure,
+  # whatever the hook body does. The metadata lives in PKG-INFO and the hook
+  # in setup.py; archive scope joins the two members of one sdist.
+  - id: pypi-first-release-install-hook
+    for: [python-sdist, pkginfo, python, pyproject.toml]
+    desc: Placeholder first release runs install-time code
     crit: suspicious
-    conf: 0.85
+    conf: 0.88
     attack: T1195.002
-    mbc: F0004
+    mbc: B0024
     platforms:
       - unix
       - windows
+    scope: archive
     all:
-      - id: metadata/package/ecosystem::pkginfo-core-metadata
-      - id: metadata/package/versioning/scheme::pkginfo-lowest-version
-      - id: metadata/package/files/archive-shape::pkginfo-tiny
-    unless:
-      # setuptools' unnamed placeholder, not a package impersonating a real distribution.
-      - id: metadata/package/ecosystem::pkginfo-unnamed-placeholder
-  - id: pkginfo-low-version-minimal-summary
-    for: [pkginfo]
-    desc: PKG-INFO with low version and minimal summary
-    crit: suspicious
-    conf: 0.85
-    attack: T1195.002
-    mbc: F0004
+      - id: pkginfo-placeholder-first-release
+    any:
+      - id: metadata/build/package/recipe/setup-hooks::setup-cmdclass-install
+      - id: metadata/build/package/recipe/setup-hooks::setuptools-run-override
+      - id: metadata/build/package/recipe/setup-hooks::setuptools-egg-info-run-override
+      - id: metadata/package/files/wheel-sdist::install-class-inherit
+      # The setup.py-free form: an in-tree PEP 517 backend runs the package's
+      # own module at build time (the sckit worm's poetry shim).
+      - id: objectives/supply-chain/install-hook/build/pep517::pyproject-backend-path-repo-source
+    downgrade:
+      # The hook lives in setup.py, not PKG-INFO; only a scoped downgrade
+      # sees across members. An install run() that raises first reaches no
+      # code (vendor namespace-reservation stub); a native extension build
+      # is real packaging work.
+      scope: archive
+      any:
+        - id: metadata/build/package/recipe/setup-hooks::setuptools-run-override-aborts
+        - id: metadata/build/package/recipe/setup-hooks::setuptools-native-extension-build-context
+  # The other half of the placeholder attack: no install hook at all, the
+  # payload runs on `import` from the package's own module, and is hidden.
+  # testingbrooasqa 0.0.0 (all-UNKNOWN PKG-INFO, BlankOBF-packed
+  # __init__.py) is the shape. A real first release has nothing to hide from
+  # a reader; obfuscated or encoded-eval code in one is the payload.
+  - id: pypi-placeholder-release-obfuscated-module
+    for: [python-sdist, whl, pkginfo, python]
+    desc: Placeholder release ships obfuscated code
+    crit: hostile
+    conf: 0.92
+    attack: T1195.002,T1027
+    mbc: B0024
     platforms:
       - unix
       - windows
+    scope: archive
     all:
-      - id: metadata/package/ecosystem::pkginfo-core-metadata
-      - id: metadata/package/versioning/scheme::pkginfo-lowest-version
-      - id: metadata/package/ecosystem::pkginfo-single-word-summary
+      - id: pkginfo-placeholder-first-release
+    any:
+      - id: objectives/anti-static/obfuscation/obfuscator/signature::known-obfuscator-detected
+      - id: objectives/anti-static/obfuscation/eval/scripting::python-packed-or-obfuscated
+      - id: objectives/anti-static/obfuscation/encoding/content::encoded-eval
   - id: pkginfo-low-version-offensive-description
     desc: PKG-INFO with low version and offensive tool description
     crit: suspicious
