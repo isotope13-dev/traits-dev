@@ -27,6 +27,47 @@ traits:
       pattern: "(31|33) D2 CD 13 [0-4] B8 00 4C CD 21"
       offset_range: [0, 512]
 
+  # MOV AX,0201h then INT 13h: BIOS read of one sector. Unlike the eraser
+  # atoms above this is not pinned to the first 512 bytes: infectors carry
+  # it deep inside an appended body.
+  - id: dos-int13-ax-sector-read
+    desc: BIOS reads one sector via AX
+    crit: notable
+    conf: 0.9
+    if:
+      type: hex
+      pattern: "B8 01 02 [0-8] CD 13"
+
+  # MOV AX,0301h then INT 13h: BIOS write of one sector, same placement.
+  - id: dos-int13-ax-sector-write
+    desc: BIOS writes one sector via AX
+    crit: notable
+    conf: 0.9
+    if:
+      type: hex
+      pattern: "B8 01 03 [0-8] CD 13"
+
+  # MOV SI,01BEh: points at the MBR partition table inside a sector buffer.
+  # Bootloaders do this too, so this only convicts with the sector legs.
+  - id: dos-mbr-partition-pointer
+    desc: DOS points at the partition table
+    crit: notable
+    conf: 0.88
+    if:
+      type: hex
+      pattern: "BE BE 01"
+
+  # SUB then ADD 44h on the same buffer bytes: partition type scrambling, the
+  # loop that walks the four table entries mangling each type in turn. Disk
+  # tools never bounce a constant off a byte and put it back.
+  - id: dos-sub-add-44-bytes
+    desc: DOS subtracts then adds 44h
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: hex
+      pattern: "80 29 44 [0-8] 80 01 44"
+
 composite_rules:
   - id: dos-int13-boot-sector-eraser
     desc: DOS erases the boot sector
@@ -35,3 +76,17 @@ composite_rules:
     all:
       - id: dos-int13-boot-sector-target
       - id: dos-int13-drive0-write-exit
+
+  # Reads a sector, walks the partition table scrambling each entry's type,
+  # writes the sector back: an MBR tamperer, not a disk tool. Tools that read
+  # and write sectors (FDISK, FORMAT) parse the table; they never bounce 44h
+  # off every type byte.
+  - id: dos-mbr-partition-scrambler
+    desc: DOS virus scrambles MBR partition types
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: dos-int13-ax-sector-read
+      - id: dos-int13-ax-sector-write
+      - id: dos-mbr-partition-pointer
+      - id: dos-sub-add-44-bytes

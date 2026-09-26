@@ -25,6 +25,48 @@ traits:
       type: hex
       pattern: "26 (A1 6C 00|8B 1E 6C 00|8B 16 6C 00|8B 0E 6C 00)"
 
+  # CALL $+3 / POP BX position independence without the SUB adjustment the
+  # BP variant above requires: the base lands in BX and later code indexes
+  # the encrypted body off it.
+  - id: dos-delta-offset-bx
+    desc: DOS delta offset via CALL/POP BX
+    crit: notable
+    conf: 0.88
+    if:
+      type: hex
+      pattern: "E8 00 00 5B"
+
+  # Rolling-key loop: XOR BYTE CS:[SI],AH, then reload AH from the byte just
+  # written (key = previous plaintext), INC SI / DEC CX. The key schedule
+  # lives in the two CS-prefixed accesses, not in an immediate.
+  - id: dos-rolling-xor-loop
+    desc: DOS rolling-XOR decryptor loop
+    crit: notable
+    conf: 0.9
+    if:
+      type: hex
+      pattern: "2E 30 24 [0-2] (E3|E2) [0-8] 2E 8A 24 [0-2] 46 49"
+
+  # Fixed-key loop: XOR BYTE CS:[BP+SI],imm8 over CX bytes, JCXZ/LOOP
+  # controlled, DEC CX / INC SI stepping, short JMP back to the XOR.
+  - id: dos-fixed-key-xor-loop
+    desc: DOS fixed-key XOR decryptor loop
+    crit: notable
+    conf: 0.9
+    if:
+      type: hex
+      pattern: "2E 80 32 ?? [0-2] (E3|E2) [0-8] 49 46 EB"
+
+  # Cascading loop: each byte is XORed with its already-decrypted predecessor
+  # (MOV AL,[SI] / MOV AH,[SI-1] / XOR AL,AH / MOV [SI],AL), walking down.
+  - id: dos-cascade-xor-loop
+    desc: DOS cascading-XOR decryptor loop
+    crit: notable
+    conf: 0.9
+    if:
+      type: hex
+      pattern: "8A 04 8A 64 FF 32 C4 88 04"
+
   - id: dos-emit-call-opcode
     desc: Code generator emits CALL opcode
     crit: component
@@ -73,3 +115,35 @@ composite_rules:
       - id: dos-delta-offset-bp
       - id: dos-opcode-emitter
       - id: dos-bios-tick-seed
+
+  # Rollups so composites can require "a delta stub" or "an XOR loop" without
+  # pinning the register or key schedule a fresh sample happens to use.
+  - id: dos-delta-offset-dispatch
+    desc: DOS position-independent decryptor stub
+    crit: notable
+    conf: 0.88
+    any:
+      - id: dos-delta-offset-bp
+      - id: dos-delta-offset-bx
+
+  - id: dos-xor-loop-dispatch
+    desc: DOS XOR decryptor loop
+    crit: notable
+    conf: 0.9
+    any:
+      - id: dos-rolling-xor-loop
+      - id: dos-fixed-key-xor-loop
+      - id: dos-cascade-xor-loop
+
+  # An XOR loop that only runs position-independent (or only runs behind a
+  # divide-error guard) is how encrypted DOS virus bodies start; packer stubs
+  # do not pair these shapes, so the combination convicts.
+  - id: dos-encrypted-virus-body
+    desc: DOS virus decrypts an encrypted body
+    crit: hostile
+    conf: 0.93
+    all:
+      - id: dos-xor-loop-dispatch
+    any:
+      - id: dos-delta-offset-dispatch
+      - id: objectives/anti-analysis/debugger-detect/check::dos-int0-div-trigger
