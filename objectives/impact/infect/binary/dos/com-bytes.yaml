@@ -119,6 +119,30 @@ traits:
       type: hex
       pattern: "B4 25 [0-8] CD 21"
 
+  # DOS COM infectors can keep INT 21h service numbers in a table and load
+  # AH from memory immediately before the interrupt, hiding the usual
+  # MOV AH,imm8 signatures.
+  - id: dos-int21-indirect-ah-call
+    for: [dos_com, static-lib, data]
+    desc: DOS table-loaded INT 21h call
+    crit: notable
+    conf: 0.86
+    if:
+      type: hex
+      pattern: "8A 26 ?? ?? [0-32] CD 21"
+
+  # CX carries the transfer length and DX points to the buffer in this
+  # common indirect DOS file-write shape. The service number itself comes
+  # from the table loaded into AH.
+  - id: dos-int21-indirect-buffer-transfer
+    for: [dos_com, static-lib, data]
+    desc: DOS indirect service buffer transfer
+    crit: notable
+    conf: 0.88
+    if:
+      type: hex
+      pattern: "8A 26 ?? ?? B9 ?? ?? 8B 16 ?? ?? [0-12] CD 21"
+
   - id: dos-com-exe-mask
     for: [dos_com, static-lib, data]
     desc: DOS filename wildcard for infection
@@ -430,21 +454,7 @@ traits:
       type: hex
       pattern: "B4 3F [0-6] B9 03 00 [0-12] CD"
 
-  - id: dos-list-of-lists-int
-    desc: DOS requests the list of lists
-    crit: notable
-    conf: 0.9
-    if:
-      type: hex
-      pattern: "B4 52 [0-6] CD 21"
 
-  - id: dos-list-of-lists-call
-    desc: DOS calls for the list of lists
-    crit: notable
-    conf: 0.88
-    if:
-      type: hex
-      pattern: "B4 52 E8"
 
   - id: dos-cmp-open-update
     desc: DOS checks for an update open
@@ -670,6 +680,34 @@ composite_rules:
       # NCNN neural network model weights are tensor data, not DOS code.
       - id: well-known/lib/data/ncnn::ncnn-model-basename
 
+  # Borland-compiled DOS viruses can hide DOS service numbers in helper
+  # routines, so find/open API signatures may not be present inline. Requiring
+  # an append seek, near-call write, COM target mask, and redirected entry
+  # point identifies the infector chain without those signatures.
+  - id: dos-com-near-call-infector
+    desc: DOS COM appends an infector through calls
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: dos-seek-end-e8
+      - id: dos-int21-write-near
+      - id: dos-com-exe-mask
+      - id: dos-com-entry-redirect
+
+  # XOR-decoded COM bodies can hide all of the direct MOV AH,service
+  # signatures. A decoder, a COM target mask, and indirect buffer transfer
+  # through INT 21h provide a strong file-infection chain.
+  - id: dos-xor-indirect-com-infector
+    for: [dos_com, static-lib, data]
+    desc: DOS XOR-decodes and writes COM infection payloads
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: objectives/anti-static/obfuscation/payload/polymorphic::dos-fixed-key-xor-si-loop
+      - id: dos-com-exe-mask
+      - id: dos-int21-indirect-ah-call
+      - id: dos-int21-indirect-buffer-transfer
+
   # Headerless COM bodies sniff as data; three distinct INT 21h service
   # sequences (get vector, set vector, write/find) are not coincidental.
   - id: dos-int21-resident-infector
@@ -845,13 +883,6 @@ composite_rules:
       - id: dos-int13-vector-swap
       - id: dos-write-dispatch
 
-  - id: dos-list-of-lists
-    desc: DOS obtains the list of lists
-    crit: notable
-    conf: 0.9
-    any:
-      - id: dos-list-of-lists-int
-      - id: dos-list-of-lists-call
 
   - id: dos-dpb-pointer
     desc: DOS follows a disk buffer link
@@ -866,7 +897,7 @@ composite_rules:
     crit: hostile
     conf: 0.95
     all:
-      - id: dos-list-of-lists
+      - id: micro-behaviors/os/msdos/internal::list-of-lists-dispatch
       - id: dos-dpb-pointer
 
   - id: dos-open-exec-hook

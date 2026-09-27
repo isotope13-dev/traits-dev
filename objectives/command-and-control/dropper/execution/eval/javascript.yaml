@@ -1,260 +1,224 @@
-# JavaScript/WSH remote-eval dropper patterns
-# Focused on ActiveX XMLHTTP response execution in-memory.
 defaults:
   attack: T1105
   mbc: B0024
-  for: [javascript]
-  platforms: [windows]
-
+  for:
+  - javascript
+  platforms:
+  - windows
 composite_rules:
-  - id: decoded-hidden-node-background-stage
-    desc: Base64 decode and eval accompany hidden detached Node execution
-    crit: suspicious
-    conf: 0.97
-    attack: T1027,T1059.007,T1564.003
-    mbc: B0032
-    for: [javascript, typescript]
-    platforms: [windows, unix]
-    scope: file
-    near_bytes: 4096
-    all:
-      - id: micro-behaviors/data/decode/symbol-base64::atob-decode
-      - id: micro-behaviors/process/interpreter/eval/direct::js-eval-call-expression-arg
-      - id: micro-behaviors/process/create/shell/bridge::child-process-destructure-require
-      - id: micro-behaviors/process/create/spawn::stdio-ignore
-      - id: micro-behaviors/process/create/spawn::windowshide-option
-
-  - id: wsh-rat-http-stream-stage
-    desc: WSH downloads binary stream and executes it
-    crit: hostile
-    conf: 0.99
-    attack: T1059.007,T1105
-    all:
-      - id: micro-behaviors/communications/http/client/xmlhttp::js-xmlhttp-progid
-      - id: micro-behaviors/fs/write/stream::adodb-save-to-file
-      - id: micro-behaviors/fs/write/stream::adodb-type-binary-assignment
-      - id: micro-behaviors/fs/write/stream::stream-write-response-body
-      - id: micro-behaviors/process/create/shell/wsh::wscript-shell-run
-
-  # The fixed-step table decoder is the stage-local anchor.  A packed loader
-  # keeps its alphabet lookup, its stepping loop and the `(0,eval)(x)` sink
-  # inside one wrapper, so require the three to share a window that still
-  # leaves room for a wrapper plus a leading encoded chunk.
+- id: decoded-hidden-node-background-stage
+  desc: Base64 decode and eval accompany hidden detached Node execution
+  crit: suspicious
+  conf: 0.97
+  attack: T1027,T1059.007,T1564.003
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  platforms:
+  - windows
+  - unix
+  scope: file
+  near_bytes: 4096
+  all:
+  - id: micro-behaviors/data/decode/base64::atob-decode
+  - id: micro-behaviors/process/interpreter/eval/direct::js-eval-call-expression-arg
+  - id: micro-behaviors/process/create/shell/bridge::child-process-destructure-require
+  - id: micro-behaviors/process/create/spawn::stdio-ignore
+  - id: micro-behaviors/process/create/spawn::windowshide-option
+- id: wsh-rat-http-stream-stage
+  desc: WSH downloads binary stream and executes it
+  crit: hostile
+  conf: 0.99
+  attack: T1059.007,T1105
+  all:
+  - id: micro-behaviors/communications/http/client/xmlhttp::js-xmlhttp-progid
+  - id: micro-behaviors/fs/write/stream::adodb-save-to-file
+  - id: micro-behaviors/fs/write/stream::adodb-type-binary-assignment
+  - id: micro-behaviors/fs/write/stream::stream-write-response-body
+  - id: micro-behaviors/process/create/shell/wsh::wscript-shell-run
+- id: packed-table-decoder-indirect-eval-stage
+  desc: Table decoder and indirect eval sink share one stage
+  crit: suspicious
+  conf: 0.95
+  attack: T1027,T1140
+  mbc: B0032
+  scope: file
+  near_bytes: 2048
+  all:
+  - id: micro-behaviors/data/decode/custom::js-indexof-charat-lookup
+  - id: micro-behaviors/data/control-flow/loop::js-two-step-loop
+  - id: micro-behaviors/process/interpreter/eval/indirect::js-indirect-eval-variable
+  unless:
+  - id: well-known/lib/web/mermaid::mermaid-bundle-marker
+  - id: well-known/lib/web/google-closure-library::closure-compiled-global-eval
+  - id: well-known/lib/web/google-closure-library::closure-library-copyright
+- id: packed-custom-decoder-eval-dropper
+  desc: Large JavaScript custom decoder feeds an indirect eval sink
+  crit: hostile
+  conf: 0.97
+  attack: T1027,T1059.007
+  mbc: B0032
+  scope: file
+  all:
+  - id: metadata/build/minifier::js-large-minified-bundle
   - id: packed-table-decoder-indirect-eval-stage
-    desc: Table decoder and indirect eval sink share one stage
-    crit: suspicious
-    conf: 0.95
-    attack: T1027,T1140
-    mbc: B0032
-    scope: file
-    near_bytes: 2048
-    all:
-      - id: micro-behaviors/data/decode/custom::js-indexof-charat-lookup
-      - id: micro-behaviors/data/control-flow/loop::js-two-step-loop
-      - id: micro-behaviors/process/interpreter/eval/indirect::js-indirect-eval-variable
-    # Mermaid embeds Chevrotain's intentional grammar feature-test eval beside
-    # ordinary parser loops; it is not a decoded payload execution stage.
-    unless:
-      - id: well-known/lib/web/mermaid::mermaid-bundle-marker
-      - id: well-known/lib/web/google-closure-library::closure-compiled-global-eval
-      - id: well-known/lib/web/google-closure-library::closure-library-copyright
-
-  - id: packed-custom-decoder-eval-dropper
-    desc: Large JavaScript custom decoder feeds an indirect eval sink
-    crit: hostile
-    conf: 0.97
-    attack: T1027,T1059.007
-    mbc: B0032
-    # Proximity lives on the stage composite rather than here: the bundle leg
-    # is a file-level line-length metric whose span sits at the head of the
-    # file, so a window spanning it would exclude every real loader.  Without
-    # the stage grouping this rule was a file-wide co-occurrence, and any
-    # webpack production build supplies all four legs from unrelated vendored
-    # modules — js-yaml's base64 tag or a QR alphanumeric table for the
-    # charAt lookup, a hex/UTF-16 helper for the `i+=2` loop, and Closure
-    # Library's `goog.globalEval` for the indirect eval — hundreds of KB
-    # apart.
-    scope: file
-    all:
-      - id: metadata/build/minifier::js-large-minified-bundle
-      - id: packed-table-decoder-indirect-eval-stage
-    unless:
-      - id: well-known/lib/web/mermaid::mermaid-bundle-marker
-
-  - id: encoded-string-eval-dropper
-    desc: JavaScript encoded-string loader executes a concealed payload
-    crit: hostile
-    conf: 0.98
-    attack: T1027,T1059.007
-    mbc: B0032
-    for: [javascript, typescript]
-    all:
-      - id: metadata/file/data-blob::js-many-very-long-strings
-      - id: metadata/file/data-blob::js-high-encoded-string-ratio
-      - id: micro-behaviors/data/encode/char-code::fromcharcode-call
-      - id: micro-behaviors/process/interpreter/eval/indirect::js-indirect-eval-variable
-    unless:
-      - id: metadata/package/testing/
-
-  - id: encoded-url-eval-process-loader
-    desc: Obfuscated URL payload evaluated and executed
-    crit: hostile
-    conf: 0.99
-    attack: T1027,T1105,T1059.007
-    mbc: B0032
-    all:
-      - id: objectives/anti-static/obfuscation/multi-layer::js-base64-shard-array
-      - id: micro-behaviors/communications/http/url/encoded::base64-decoded-http-url
-      - id: micro-behaviors/process/interpreter/eval/direct::js-eval-variable-argument
-      - id: micro-behaviors/process/create/shell/bridge::child-process-exec
-    # Same-file only: VSIX/npm archives commonly co-locate unrelated MathJax
-    # base64 shards, diagram URL helpers, eval-ish parsers, and a Node
-    # child_process bridge across different entries — that coincidence is not
-    # an encoded URL dropper.
-    scope: file
-    # Electron desktop bundles (and their NSIS/7z wrappers) roll up ordinary
-    # renderer/main-process JS that uses base64, eval, and child_process —
-    # not a PE-hosted encoded URL dropper.
-    unless:
-      - id: well-known/lib/runtime/scripted/electron::electron-app-runtime
-      - id: well-known/lib/runtime/scripted/electron::electron-chromium-runtime-strong
-
-  - id: encoded-delete-command-loader
-    desc: Encoded delete command evaluated and executed
-    crit: hostile
-    conf: 0.99
-    attack: T1027,T1070.004,T1059.007
-    mbc: B0032
-    for: [pe, javascript]
-    all:
-      - id: objectives/anti-static/obfuscation/multi-layer::js-base64-shard-array
-      - id: objectives/anti-static/obfuscation/payload/encoded::decoded-windows-del-command
-      - id: micro-behaviors/process/interpreter/eval/direct::js-eval-variable-argument
-      - id: micro-behaviors/process/create/shell/bridge::child-process-exec
-    scope: outer
-
-  - id: custom-decoder-charcode-eval-dropper
-    desc: JavaScript custom decoder executes an encoded stage through an indirect property
-    crit: hostile
-    conf: 0.98
-    attack: T1027,T1140,T1059.007
-    mbc: B0032
-    scope: file
-    all:
-      - id: micro-behaviors/data/decode/custom::js-alphabet-coded-decoder-source
-      - id: objectives/anti-static/obfuscation/reflection/indirect::js-charcode-constructor-stage
-    unless:
-      - id: well-known/lib/web/mermaid::mermaid-bundle-marker
-      - id: well-known/app/publishing/wordpress-plugins/catalog::known-wordpress-plugin
-      - id: well-known/lib/vendor-sdk/freemius::freemius-js-ref
-
-  - id: custom-decoder-aliased-eval-dropper
-    desc: Large JavaScript decoder feeds an aliased eval sink
-    crit: hostile
-    conf: 0.99
-    attack: T1027,T1140,T1059.007
-    mbc: B0032
-    scope: file
-    all:
-      - id: metadata/build/minifier::js-large-minified-bundle
-      - id: micro-behaviors/data/decode/custom::js-alphabet-coded-decoder-source
-      - id: micro-behaviors/data/decode/custom::js-charcode-byte-mask
-      - id: micro-behaviors/process/interpreter/eval/indirect::js-eval-alias-assignment
-    unless:
-      - id: metadata/package/testing/
-
-  - id: custom-decoder-function-constructor-dropper
-    desc: Large JavaScript decoder feeds Function constructor
-    crit: hostile
-    conf: 0.99
-    attack: T1027,T1140,T1059.007
-    mbc: B0032
-    all:
-      - id: metadata/file/data-blob::js-many-very-long-strings
-      - id: micro-behaviors/data/decode/custom::js-indexof-charat-lookup
-      - id: micro-behaviors/data/control-flow/loop::js-two-step-loop
-      - id: micro-behaviors/process/interpreter/eval/compile::js-new-function-variable-argument
-    unless:
-      - id: well-known/lib/web/mermaid::mermaid-bundle-marker
-      - id: well-known/app/publishing/wordpress-plugins/catalog::known-wordpress-plugin
-      - id: well-known/lib/vendor-sdk/freemius::freemius-js-ref
-      # Vue's production compiler legitimately combines lookup loops with a
-      # Function constructor; its dedicated trojanized-Vue rules require a
-      # stronger execution signal than this generic decoder heuristic.
-      - id: well-known/lib/web/vue::library-comp
-
-  - id: custom-alphabet-decoder-function-dropper
-    desc: Alphabet and octal decoders execute Function
-    crit: hostile
-    conf: 0.99
-    attack: T1027,T1140,T1059.007
-    mbc: B0032
-    scope: file
-    all:
-      - id: micro-behaviors/data/decode/custom::js-indexof-charcode-shift-decoder
-      - id: micro-behaviors/data/decode/custom::js-octal-charcode-loop
-      - id: micro-behaviors/data/encode/string::decimal-string-blob
-      - id: micro-behaviors/process/interpreter/eval/compile::js-new-function-variable-argument
-    unless:
-      - id: well-known/lib/web/mermaid::mermaid-bundle-marker
-      - id: metadata/package/testing/
+  unless:
+  - id: well-known/lib/web/mermaid::mermaid-bundle-marker
+- id: encoded-string-eval-dropper
+  desc: JavaScript encoded-string loader executes a concealed payload
+  crit: hostile
+  conf: 0.98
+  attack: T1027,T1059.007
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  all:
+  - id: metadata/file/data-blob::js-many-very-long-strings
+  - id: metadata/file/data-blob::js-high-encoded-string-ratio
+  - id: micro-behaviors/data/encode/char-code::fromcharcode-call
+  - id: micro-behaviors/process/interpreter/eval/indirect::js-indirect-eval-variable
+  unless:
+  - id: metadata/package/testing/
+- id: encoded-url-eval-process-loader
+  desc: Obfuscated URL payload evaluated and executed
+  crit: hostile
+  conf: 0.99
+  attack: T1027,T1105,T1059.007
+  mbc: B0032
+  all:
+  - id: objectives/anti-static/obfuscation/multi-layer::js-base64-shard-array
+  - id: micro-behaviors/communications/http/url/encoded::base64-decoded-http-url
+  - id: micro-behaviors/process/interpreter/eval/direct::js-eval-variable-argument
+  - id: micro-behaviors/process/create/shell/bridge::child-process-exec
+  scope: file
+  unless:
+  - id: well-known/lib/runtime/scripted/electron::electron-app-runtime
+  - id: well-known/lib/runtime/scripted/electron::electron-chromium-runtime-strong
+- id: encoded-delete-command-loader
+  desc: Encoded delete command evaluated and executed
+  crit: hostile
+  conf: 0.99
+  attack: T1027,T1070.004,T1059.007
+  mbc: B0032
+  for:
+  - pe
+  - javascript
+  all:
+  - id: objectives/anti-static/obfuscation/multi-layer::js-base64-shard-array
+  - id: objectives/anti-static/obfuscation/payload/encoded::decoded-windows-del-command
+  - id: micro-behaviors/process/interpreter/eval/direct::js-eval-variable-argument
+  - id: micro-behaviors/process/create/shell/bridge::child-process-exec
+  scope: outer
+- id: custom-decoder-charcode-eval-dropper
+  desc: JavaScript custom decoder executes an encoded stage through an indirect property
+  crit: hostile
+  conf: 0.98
+  attack: T1027,T1140,T1059.007
+  mbc: B0032
+  scope: file
+  all:
+  - id: micro-behaviors/data/decode/custom::js-alphabet-coded-decoder-source
+  - id: objectives/anti-static/obfuscation/reflection/indirect::js-charcode-constructor-stage
+  unless:
+  - id: well-known/lib/web/mermaid::mermaid-bundle-marker
+  - id: well-known/app/publishing/wordpress-plugins/catalog::known-wordpress-plugin
+  - id: well-known/lib/vendor-sdk/freemius::freemius-js-ref
+- id: custom-decoder-aliased-eval-dropper
+  desc: Large JavaScript decoder feeds an aliased eval sink
+  crit: hostile
+  conf: 0.99
+  attack: T1027,T1140,T1059.007
+  mbc: B0032
+  scope: file
+  all:
+  - id: metadata/build/minifier::js-large-minified-bundle
+  - id: micro-behaviors/data/decode/custom::js-alphabet-coded-decoder-source
+  - id: micro-behaviors/data/decode/custom::js-charcode-byte-mask
+  - id: micro-behaviors/process/interpreter/eval/indirect::js-eval-alias-assignment
+  unless:
+  - id: metadata/package/testing/
+- id: custom-decoder-function-constructor-dropper
+  desc: Large JavaScript decoder feeds Function constructor
+  crit: hostile
+  conf: 0.99
+  attack: T1027,T1140,T1059.007
+  mbc: B0032
+  all:
+  - id: metadata/file/data-blob::js-many-very-long-strings
+  - id: micro-behaviors/data/decode/custom::js-indexof-charat-lookup
+  - id: micro-behaviors/data/control-flow/loop::js-two-step-loop
+  - id: micro-behaviors/process/interpreter/eval/compile::js-new-function-variable-argument
+  unless:
+  - id: well-known/lib/web/mermaid::mermaid-bundle-marker
+  - id: well-known/app/publishing/wordpress-plugins/catalog::known-wordpress-plugin
+  - id: well-known/lib/vendor-sdk/freemius::freemius-js-ref
+  - id: well-known/lib/web/vue::library-comp
+- id: custom-alphabet-decoder-function-dropper
+  desc: Alphabet and octal decoders execute Function
+  crit: hostile
+  conf: 0.99
+  attack: T1027,T1140,T1059.007
+  mbc: B0032
+  scope: file
+  all:
+  - id: micro-behaviors/data/decode/custom::js-indexof-charcode-shift-decoder
+  - id: micro-behaviors/data/decode/custom::js-octal-charcode-loop
+  - id: micro-behaviors/data/encode/string::decimal-string-blob
+  - id: micro-behaviors/process/interpreter/eval/compile::js-new-function-variable-argument
+  unless:
+  - id: well-known/lib/web/mermaid::mermaid-bundle-marker
+  - id: metadata/package/testing/
+- id: activex-xmlhttp-remote-eval
+  desc: ActiveX XMLHTTP remote response eval
+  crit: hostile
+  conf: 0.98
+  unless:
+  - id: well-known/lib/web/syntaxhighlighter::shjs-syntax-highlighter
+  - id: well-known/lib/format/ejs::ejs-legacy-browser-loader
+  all:
+  - id: micro-behaviors/process/interpreter/jscript::activex-object
+  - id: micro-behaviors/communications/http/client/xmlhttp::msxml-xmlhttp-progid-text
+  - id: micro-behaviors/communications/http/client/response-body::response-text
+  - id: objectives/execution/interpreter/eval/remote::js-eval-response-text
+  any:
+  - id: micro-behaviors/communications/http/client/xmlhttp::js-xmlhttp-open
+  - id: micro-behaviors/communications/http/client/xmlhttp::js-xmlhttp-open-obfuscated-method
+  - id: micro-behaviors/communications/http/client/xmlhttp::js-xmlhttp-send
+- id: activex-xmlhttp-marker-remote-eval
+  desc: ActiveX XMLHTTP marker-rewritten remote eval
+  crit: hostile
+  conf: 0.99
+  all:
   - id: activex-xmlhttp-remote-eval
-    desc: ActiveX XMLHTTP remote response eval
-    crit: hostile
-    conf: 0.98
-    # SHJS intentionally evaluates fetched syntax-grammar definitions. Its
-    # ActiveX/XMLHTTP path is a documented library loader, not a dropper.
-    unless:
-      - id: well-known/lib/web/syntaxhighlighter::shjs-syntax-highlighter
-      # EJS 1.0 ships the same legacy browser-side ActiveX loader as a
-      # compatibility path for old IE consumers; it is a template runtime,
-      # not a package dropper.
-      - id: well-known/lib/format/ejs::ejs-legacy-browser-loader
-    all:
-      - id: micro-behaviors/process/interpreter/jscript::activex-object
-      - id: micro-behaviors/communications/http/client/xmlhttp::msxml-xmlhttp-progid-text
-      - id: micro-behaviors/communications/http/client/response-body::response-text
-      - id: objectives/execution/interpreter/eval/remote::js-eval-response-text
-    any:
-      - id: micro-behaviors/communications/http/client/xmlhttp::js-xmlhttp-open
-      - id: micro-behaviors/communications/http/client/xmlhttp::js-xmlhttp-open-obfuscated-method
-      - id: micro-behaviors/communications/http/client/xmlhttp::js-xmlhttp-send
-
-  - id: activex-xmlhttp-marker-remote-eval
-    desc: ActiveX XMLHTTP marker-rewritten remote eval
-    crit: hostile
-    conf: 0.99
-    all:
-      - id: activex-xmlhttp-remote-eval
-      - id: objectives/anti-static/obfuscation/string/fragmentation::js-response-split-join-marker
-      - id: objectives/anti-static/obfuscation/string/fragmentation::js-join-substring-char
-  - id: wscript-xmlhttp-download-eval
-    desc: WScript XMLHTTP download and eval execution
-    crit: hostile
-    conf: 0.95
-    all:
-      - id: objectives/execution/interpreter/script/wsh::wscript-createobject
-      - id: micro-behaviors/communications/http/client/response-body::response-text
-    any:
-      - id: micro-behaviors/process/interpreter/eval/direct::js-eval-raw
-    unless:
-      - id: well-known/lib/web/jquery::license-url
-
-  - id: html-title-dead-drop-eval
-    desc: Page title points at an eval payload
-    crit: hostile
-    conf: 0.96
-    attack: T1105,T1059.007
-    near_bytes: 4096
-    all:
-      - id: html-data-title-next-url
-      - id: objectives/supply-chain/hidden-payload/encoding::eval-atob
-
-traits:
+  - id: objectives/anti-static/obfuscation/string/fragmentation::js-response-split-join-marker
+  - id: objectives/anti-static/obfuscation/string/fragmentation::js-join-substring-char
+- id: wscript-xmlhttp-download-eval
+  desc: WScript XMLHTTP download and eval execution
+  crit: hostile
+  conf: 0.95
+  all:
+  - id: objectives/execution/interpreter/script/wsh::wscript-createobject
+  - id: micro-behaviors/communications/http/client/response-body::response-text
+  any:
+  - id: micro-behaviors/process/interpreter/eval/direct::js-eval-raw
+  unless:
+  - id: well-known/lib/web/jquery::license-url
+- id: html-title-dead-drop-eval
+  desc: Page title points at an eval payload
+  crit: hostile
+  conf: 0.96
+  attack: T1105,T1059.007
+  near_bytes: 4096
+  all:
   - id: html-data-title-next-url
-    desc: Fetched page title is the next URL
-    crit: suspicious
-    conf: 0.94
-    if:
-      type: text
-      regex: 'data-base-title|ZGF0YS1iYXNlLXRpdGxl'
+  - id: objectives/supply-chain/hidden-payload/encoding::eval-atob
+traits:
+- id: html-data-title-next-url
+  desc: Fetched page title is the next URL
+  crit: suspicious
+  conf: 0.94
+  if:
+    type: text
+    regex: data-base-title|ZGF0YS1iYXNlLXRpdGxl

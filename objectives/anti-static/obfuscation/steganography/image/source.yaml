@@ -1,84 +1,89 @@
-# Source-level extraction of data appended after a JPEG/PNG terminator.
-# The file-format boundary is structural evidence; the C2 and decoding
-# composites below supply the malicious context.
 defaults:
-  platforms: [windows, unix]
-  for: [python, c, cpp, csharp, rust, go, javascript, typescript, powershell]
+  platforms:
+  - windows
+  - unix
+  for:
+  - python
+  - c
+  - cpp
+  - csharp
+  - rust
+  - go
+  - javascript
+  - typescript
+  - powershell
   attack: T1027.003
   mbc: B0032.001
-
 traits:
-  - id: payload-after-image-terminator-source
-    desc: Slices payload after image terminator
-    crit: suspicious
-    conf: 0.95
-    if:
-      type: text
-      regex: '(?i)\b(config|payload)[a-z0-9_]{0,12}\s*=\s*\w+\[\s*eof\s*:\s*\]'
-
-  - id: powershell-byte-tail-slice
-    desc: PowerShell slices indexed byte-array tail
-    crit: notable
-    conf: 0.9
-    for: [powershell]
-    if:
-      type: text
-      regex: '\$\w+\s*=\s*\$\w+\[\$\w+\.\.\(\$\w+\.Length\s*-\s*1\)\]'
-
+- id: payload-after-image-terminator-source
+  desc: Slices payload after image terminator
+  crit: suspicious
+  conf: 0.95
+  if:
+    type: text
+    regex: (?i)\b(config|payload)[a-z0-9_]{0,12}\s*=\s*\w+\[\s*eof\s*:\s*\]
+- id: powershell-byte-tail-slice
+  desc: PowerShell slices indexed byte-array tail
+  crit: notable
+  conf: 0.9
+  for:
+  - powershell
+  if:
+    type: text
+    regex: \$\w+\s*=\s*\$\w+\[\$\w+\.\.\(\$\w+\.Length\s*-\s*1\)\]
 composite_rules:
+- id: powershell-png-tail-payload-extraction
+  desc: PowerShell extracts bytes appended after a PNG terminator
+  crit: suspicious
+  conf: 0.98
+  for:
+  - powershell
+  all:
+  - id: micro-behaviors/data/format/media/raster::source-png-iend-byte-prefix
+  - id: powershell-byte-tail-slice
+  near_lines: 20
+- id: powershell-remote-png-tail-dropper
+  desc: PowerShell downloads, extracts, writes, and launches a PNG-tail payload
+  crit: hostile
+  conf: 0.99
+  for:
+  - powershell
+  attack: T1027.003,T1105,T1204.002
+  all:
   - id: powershell-png-tail-payload-extraction
-    desc: PowerShell extracts bytes appended after a PNG terminator
-    crit: suspicious
-    conf: 0.98
-    for: [powershell]
-    all:
-      - id: micro-behaviors/data/format/media/raster::source-png-iend-byte-prefix
-      - id: powershell-byte-tail-slice
-    near_lines: 20
-
-  - id: powershell-remote-png-tail-dropper
-    desc: PowerShell downloads, extracts, writes, and launches a PNG-tail payload
-    crit: hostile
-    conf: 0.99
-    for: [powershell]
-    attack: T1027.003,T1105,T1204.002
-    all:
-      - id: powershell-png-tail-payload-extraction
-      - id: micro-behaviors/communications/http/client/managed::downloaddata
-      - id: micro-behaviors/fs/write/file/full::write-all-bytes
-      - id: micro-behaviors/fs/path/application/executable::appdata-exe-path
-      - id: micro-behaviors/process/create/shell/script-host::cmd-exe-c-start-launch
-    near_lines: 40
-
+  - id: micro-behaviors/communications/http/client/managed::downloaddata
+  - id: micro-behaviors/fs/write/file/full::write-all-bytes
+  - id: micro-behaviors/fs/path/application/executable::appdata-exe-path
+  - id: micro-behaviors/process/create/shell/script-host::cmd-exe-c-start-launch
+  near_lines: 40
+- id: source-image-eof-payload-extraction
+  desc: Source extracts data appended after an image terminator
+  crit: suspicious
+  conf: 0.97
+  all:
+  - id: payload-after-image-terminator-source
+  any:
+  - id: micro-behaviors/data/format/media/raster::javascript-jpeg-terminator-search
+  - id: micro-behaviors/data/format/media/raster::javascript-png-terminator-search
+  needs: 1
+  near_bytes: 2048
+- id: image-carried-config-loader
+  for:
+  - python
+  desc: Image-embedded payload is Base64-decoded as configuration
+  crit: hostile
+  conf: 0.98
+  attack: T1027.003,T1140,T1105
+  all:
   - id: source-image-eof-payload-extraction
-    desc: Source extracts data appended after an image terminator
-    crit: suspicious
-    conf: 0.97
-    all:
-      - id: payload-after-image-terminator-source
-    any:
-      - id: micro-behaviors/data/format/media/raster::javascript-jpeg-terminator-search
-      - id: micro-behaviors/data/format/media/raster::javascript-png-terminator-search
-    needs: 1
-    near_bytes: 2048
-
-  - id: image-carried-config-loader
-    for: [python]
-    desc: Image-embedded payload is Base64-decoded as configuration
-    crit: hostile
-    conf: 0.98
-    attack: T1027.003,T1140,T1105
-    all:
-      - id: source-image-eof-payload-extraction
-      - id: micro-behaviors/data/decode/symbol-base64::b64decode-call
-    near_bytes: 4096
-
-  - id: ngrok-image-config-channel
-    desc: Ngrok C2 configuration is recovered from an appended image payload
-    crit: hostile
-    conf: 0.99
-    attack: T1027.003,T1090,T1071
-    all:
-      - id: source-image-eof-payload-extraction
-      - id: objectives/command-and-control/infrastructure/domain/tunnel::ngrok-tcp-source-endpoint
-    near_bytes: 4096
+  - id: micro-behaviors/data/decode/base64::b64decode-call
+  near_bytes: 4096
+- id: ngrok-image-config-channel
+  desc: Ngrok C2 configuration is recovered from an appended image payload
+  crit: hostile
+  conf: 0.99
+  attack: T1027.003,T1090,T1071
+  all:
+  - id: source-image-eof-payload-extraction
+  - id: objectives/command-and-control/infrastructure/domain/tunnel::ngrok-tcp-source-endpoint
+  near_bytes: 4096

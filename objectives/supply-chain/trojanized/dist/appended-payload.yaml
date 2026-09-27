@@ -1,209 +1,108 @@
-# Dist trojanization: a payload appended to an already-built bundle.
-#
-# The published bundle is the highest-value place to hide code — it is what
-# `main`/`module` point at, it is generated so nobody reads it, and it is not
-# what the repository shows. eslint-scope, ua-parser-js and node-ipc 12.0.1
-# (80KB obfuscated blob appended to the shipped node-ipc.cjs, exfiltrating
-# credential files over DNS) are all this same shape.
-#
-# The existing appended-line rules cannot see it: `appended-long-line` is
-# skipped by the benign-build-tooling context and `long-line-eval-injection`
-# by the whole `metadata/build/` directory, so a bundle — the
-# exact target — suppresses both. Verified on a bundle with an appended
-# obfuscated line: every primitive fired (last_line_length, lines_over_1000,
-# hex names, Function constructor) and nothing above notable came out.
-#
-# Rather than weaken those exclusions (they hold back real minified-bundle
-# FPs), this states the tampering shape positively: bundler output whose
-# ONE over-long line is its LAST line, in a file that otherwise has normal
-# short lines, ending in something a bundler never emits.
-#
-# Not hostile: a build step that appends a minified polyfill or licence blob
-# would look the same up to the obfuscation leg, and this could not be tested
-# against the real trojanized artifact — one suspicious cannot convict alone.
 defaults:
-  platforms: [unix, windows]
-  for: [javascript, typescript]
+  platforms:
+  - unix
+  - windows
+  for:
+  - javascript
+  - typescript
   attack: T1195.002
   mbc: B0032
-
 composite_rules:
-  # A source diff can expose the same ncc-bundle stager even when the bundle
-  # itself is unavailable. Require the decoder, remote curl, and file write
-  # together so ordinary base64 fixtures or documentation do not qualify.
-  - id: diff-cicd-decoded-remote-secret-stager
-    desc: Diff adds decoded remote CI secret stager
-    crit: hostile
-    conf: 0.99
-    for: [text]
-    attack: T1195.002,T1059.004,T1041
-    near_bytes: 1200
-    all:
-      - id: micro-behaviors/data/decode/command::base64-decode-to-file
-      - id: micro-behaviors/data/decode/base64::base64-d-cmd
-      - id: micro-behaviors/communications/http/curl::curl-command-remote-url
-
-  - id: bundled-artifact-appended-payload
-    desc: Bundler output with appended obfuscated line
-    crit: suspicious
-    conf: 0.9
-    all:
-      # Generated artifact: esbuild/webpack/rollup emitter markers.
-      # Exactly one line over 1000 chars, and it is the final line. A fully
-      # minified bundle is uniformly long (many outliers, or one line total,
-      # which the 30-line floor rejects), so it cannot satisfy both.
-      - id: metadata/file/line::single-long-line-outlier
-      - id: objectives/anti-static/obfuscation/code-metrics/structure::last-line-over-1000
-      - id: metadata/file/line::file-has-30-plus-lines
-    # The tell that the trailing line is not the emitter's own work.
-    any:
-      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::hex-name-mangling
-      - id: micro-behaviors/process/interpreter/eval/compile::js-new-function-constructor
-      - id: micro-behaviors/data/decode/symbol-base64::buffer-from-base64
-    needs: 1
-    unless:
-      # Obfuscated fixtures and packer test corpora ship this shape on purpose.
-      - id: metadata/package/testing/
-      # The three structural legs are whole-text metrics, and cleave pools a
-      # file with the payload layers it decodes out of it. A bundle that
-      # inlines a module as a percent-encoded `data:` URL donates a
-      # one-long-line layer, so the metrics describe the layer while the
-      # emitter markers come from the bundle. vite 8.2.2
-      # dist/node/chunks/node.js fires every leg that way — its own last line
-      # is a plain `export { ... }` and it has three long lines, not one.
-      - id: micro-behaviors/process/create/load/script::inline-percent-encoded-script-resource
-      # ncc pre-compiles a whole dependency tree into one vendored file and
-      # emits it without a trailing newline, so the metrics see a single
-      # over-long final line rather than a uniformly minified bundle. Next.js
-      # ships its dependencies this way under dist/compiled/, and the
-      # edge-runtime one supplies `new Function` legitimately -- building a JS
-      # sandbox is what that package is. The tampering shape this rule looks
-      # for is a line appended *after* an emitter finished, which is not what
-      # an ncc single-file build produces.
-      - id: metadata/build/bundler/runtime::ncc-runtime-loader-identifier
-      # Same pooling hazard as the data:-URL case above, via a different
-      # layer: when cleave un-escapes a \uXXXX region out of a bundle it
-      # presents the result as its own member, and its line metrics are
-      # reported against the parent too -- so a 44-line service worker with
-      # two long lines and a short last line still satisfied "exactly one
-      # long line, and it is the last". The metrics therefore cannot be
-      # trusted alone here. Recognized bundle text (chunk tokens, inline
-      # data: URIs, source-text markers) says the long region is the
-      # emitter's own output rather than something appended after it.
-      - id: metadata/lang/encoded/unicode-escape::unicode-escape-js-basename
-      - id: metadata/build/bundler/javascript-bundle-markers::js-multi-line-blob-recognized-text
-  # The same tampering shape when the injector appends without a preceding
-  # newline: the payload ends up on the `//# sourceMappingURL=` comment line
-  # itself. A naive `cat`-style build join can also leave text there, but what
-  # it joins is readable emitter output -- not a rotating string array whose
-  # entries are RC4-encrypted. Deliberately family-agnostic: the guard-flag
-  # name and the stage host change per campaign, this shape does not.
-  - id: source-map-line-appended-encrypted-payload
-    desc: Encrypted obfuscator payload appended to source map line
-    crit: hostile
-    conf: 0.96
-    attack: T1195.002,T1027.002
-    all:
-      - id: metadata/build/bundler/asset::content-after-source-map-on-same-line
-      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::push-shift-bracket-pattern
-      - id: micro-behaviors/crypto/symmetric/stream/rc4::js-rc4-implementation
-    unless:
-      - id: metadata/package/testing/
-
-  - id: vscode-source-map-appended-profile-beacon
-    desc: VS Code bundle appends a persistent host-profile POST after its source map
-    crit: hostile
-    conf: 0.99
-    attack: "T1195.002,T1041,T1082"
-    scope: file
-    all:
-      - id: well-known/lib/development/vscode::vscode-extension-marker
-      - id: metadata/build/bundler/asset::executable-code-after-source-map
-      - id: metadata/import/builtin::require-http
-      - id: metadata/import/builtin::require-https
-      - id: micro-behaviors/process/user/query::node-os-alias-homedir-call
-      - id: micro-behaviors/fs/write/file/full::node-write-file-sync
-      - id: micro-behaviors/communications/http/request/client::post-method-text
-      - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
-      - id: micro-behaviors/data/serialize/schema-object::identity-platform-json-payload
-
-  # The other half of the appended-payload shape: rather than an obfuscated
-  # blob, the tail of the built bundle carries a plain loader that pulls a
-  # script from a host of the attacker's choosing and attaches it to the page.
-  # art-template 4.13.3/4.13.5/4.13.6 shipped exactly this, six lines after
-  # the UMD footer of the real library. The remote host changes per campaign,
-  # so the rule keys on the shape and the position, never on the domain.
-  - id: bundle-tail-remote-script-injector
-    desc: Built bundle ends with a remote script injector
-    crit: hostile
-    conf: 0.95
-    attack: T1195.002,T1059.007
-    all:
-      # Generated artifact, and the loader sits past its footer: the remote
-      # URL literal is in the last 2KB, where a bundler emits only its own
-      # epilogue.
-      - id: micro-behaviors/communications/http/url/domain::js-http-url-literal-in-file-tail
-      # Tail-scoped: the injector has to sit past the footer too, not just the
-      # URL. Nextcloud's privacy-main.js has `https://nextcloud.com/yourdata` in
-      # its last 2 KB (a UI link) while its createElement('script') is webpack's
-      # chunk loader 1.3 MB earlier, and the pair scored the package hostile.
-      - id: micro-behaviors/process/create/load/remote-code::js-dom-script-src-set-in-file-tail
-      - id: micro-behaviors/ui/window/dom/create::document-head-append
-    # Enforce the "generated artifact" half of the premise above. "Past the
-    # footer" only means something in a real bundle: in a 5 KB hand-written
-    # ES module the whole file is within the 2 KB tail window, so reveal.js'
-    # dist/plugin/math.mjs -- which loads MathJax from a CDN by appending a
-    # <script>, the documented way that plugin works -- matched all three
-    # legs. The size metric below covers large carriers (a 405 KB
-    # notification UI, a 4 MB CRX); small webpack/UMD bundles such as
-    # art-template's 17 KB template-web.js carry emitter markers instead, so
-    # accept either shape. Neither shape matches hand-written ESM, so the
-    # reveal.js exclusion still holds.
-    any:
-      - id: metadata/build/minifier::js-large-minified-bundle
-      - id: metadata/build/minifier::js-webpack-bundle-minified
-      - id: metadata/build/minifier::js-webpack-minified-module-call
-      - id: metadata/build/minifier::js-umd-wrapper-minified
-      - id: metadata/build/minifier::js-umd-wrapper-amd-minified
-    needs: 1
-    unless:
-      - id: metadata/package/testing/
-      - id: well-known/app/publishing/wordpress-plugins/commerce::event-tickets-plugin-path
-
-  # Some injected loaders hide the endpoint by rebuilding the HTTP scheme with
-  # character codes rather than leaving an HTTP literal in the bundle tail.
-  # Require that specific URL-reconstruction shape and keep all legs close:
-  # ordinary framework bundles contain unrelated fromCharCode calls, encoded
-  # documentation URLs, and script bootstraps in the same file.
-  - id: bundle-charcode-remote-script-injector
-    desc: Bundle reconstructs and injects remote script
-    crit: hostile
-    conf: 0.95
-    attack: T1195.002,T1059.007,T1105
-    near_bytes: 4096
-    all:
-      - id: micro-behaviors/communications/url/encoded::javascript-charcode-http-scheme
-      - id: micro-behaviors/ui/window/dom/create::document-head-append
-      - id: micro-behaviors/ui/window/insert-html::browser-create-script-element
-    unless:
-      - id: metadata/package/testing/
-
-  # The woven-in twin of the shapes above: instead of appending to the tail,
-  # the trojanized build hides a function that silently shells out to run a
-  # base64-decoded stager staged through /tmp. tj-actions/changed-files
-  # (March 2025) wove `updateFeatures` into its ncc bundle: `exec
-  # .getExecOutput('bash', ['-c', 'echo <b64> | base64 -d > /tmp/run.sh &&
-  # bash /tmp/run.sh'])` with `silent: true, ignoreReturnCode: true`, then
-  # printed the captured stdout -- the dumped CI secrets -- via core.info.
-  # silent:true is routine for captured output, and decoding to /tmp is
-  # routine for installers; a silenced CI exec whose command line IS a
-  # decode-to-tmp-and-run, all inside one function, is neither.
-  - id: bundled-action-silent-decoded-stager
-    desc: Bundled action silently runs decoded stager
-    crit: hostile
-    conf: 0.96
-    attack: T1195.002,T1059.004,T1041
-    near_bytes: 1024
-    all:
-      - id: micro-behaviors/process/create/shell/bridge::silent-getexecoutput-text
-      - id: objectives/anti-static/obfuscation/encoding/base64::base64-decode-redirect-exec
+- id: diff-cicd-decoded-remote-secret-stager
+  desc: Diff adds decoded remote CI secret stager
+  crit: hostile
+  conf: 0.99
+  for:
+  - text
+  attack: T1195.002,T1059.004,T1041
+  near_bytes: 1200
+  all:
+  - id: micro-behaviors/data/decode/command::base64-decode-to-file
+  - id: micro-behaviors/data/decode/base64::base64-d-cmd
+  - id: micro-behaviors/communications/http/curl::curl-command-remote-url
+- id: bundled-artifact-appended-payload
+  desc: Bundler output with appended obfuscated line
+  crit: suspicious
+  conf: 0.9
+  all:
+  - id: metadata/file/line::single-long-line-outlier
+  - id: objectives/anti-static/obfuscation/code-metrics/structure::last-line-over-1000
+  - id: metadata/file/line::file-has-30-plus-lines
+  any:
+  - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::hex-name-mangling
+  - id: micro-behaviors/process/interpreter/eval/compile::js-new-function-constructor
+  - id: micro-behaviors/data/decode/base64::buffer-from-base64
+  needs: 1
+  unless:
+  - id: metadata/package/testing/
+  - id: micro-behaviors/process/create/load/script::inline-percent-encoded-script-resource
+  - id: metadata/build/bundler/runtime::ncc-runtime-loader-identifier
+  - id: metadata/lang/encoded/unicode-escape::unicode-escape-js-basename
+  - id: metadata/build/bundler/javascript-bundle-markers::js-multi-line-blob-recognized-text
+- id: source-map-line-appended-encrypted-payload
+  desc: Encrypted obfuscator payload appended to source map line
+  crit: hostile
+  conf: 0.96
+  attack: T1195.002,T1027.002
+  all:
+  - id: metadata/build/bundler/asset::content-after-source-map-on-same-line
+  - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::push-shift-bracket-pattern
+  - id: micro-behaviors/crypto/symmetric/stream/rc4::js-rc4-implementation
+  unless:
+  - id: metadata/package/testing/
+- id: vscode-source-map-appended-profile-beacon
+  desc: VS Code bundle appends a persistent host-profile POST after its source map
+  crit: hostile
+  conf: 0.99
+  attack: T1195.002,T1041,T1082
+  scope: file
+  all:
+  - id: well-known/lib/development/vscode::vscode-extension-marker
+  - id: metadata/build/bundler/asset::executable-code-after-source-map
+  - id: metadata/import/builtin::require-http
+  - id: metadata/import/builtin::require-https
+  - id: micro-behaviors/process/user/query::node-os-alias-homedir-call
+  - id: micro-behaviors/fs/write/file/full::node-write-file-sync
+  - id: micro-behaviors/communications/http/request/client::post-method-text
+  - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+  - id: micro-behaviors/data/serialize/schema-object::identity-platform-json-payload
+- id: bundle-tail-remote-script-injector
+  desc: Built bundle ends with a remote script injector
+  crit: hostile
+  conf: 0.95
+  attack: T1195.002,T1059.007
+  all:
+  - id: micro-behaviors/communications/http/url/domain::js-http-url-literal-in-file-tail
+  - id: micro-behaviors/process/create/load/remote-code::js-dom-script-src-set-in-file-tail
+  - id: micro-behaviors/ui/window/dom/create::document-head-append
+  any:
+  - id: metadata/build/minifier::js-large-minified-bundle
+  - id: metadata/build/minifier::js-webpack-bundle-minified
+  - id: metadata/build/minifier::js-webpack-minified-module-call
+  - id: metadata/build/minifier::js-umd-wrapper-minified
+  - id: metadata/build/minifier::js-umd-wrapper-amd-minified
+  needs: 1
+  unless:
+  - id: metadata/package/testing/
+  - id: well-known/app/publishing/wordpress-plugins/commerce::event-tickets-plugin-path
+- id: bundle-charcode-remote-script-injector
+  desc: Bundle reconstructs and injects remote script
+  crit: hostile
+  conf: 0.95
+  attack: T1195.002,T1059.007,T1105
+  near_bytes: 4096
+  all:
+  - id: micro-behaviors/communications/url/encoded::javascript-charcode-http-scheme
+  - id: micro-behaviors/ui/window/dom/create::document-head-append
+  - id: micro-behaviors/ui/window/insert-html::browser-create-script-element
+  unless:
+  - id: metadata/package/testing/
+- id: bundled-action-silent-decoded-stager
+  desc: Bundled action silently runs decoded stager
+  crit: hostile
+  conf: 0.96
+  attack: T1195.002,T1059.004,T1041
+  near_bytes: 1024
+  all:
+  - id: micro-behaviors/process/create/shell/bridge::silent-getexecoutput-text
+  - id: objectives/anti-static/obfuscation/encoding/base64::base64-decode-redirect-exec

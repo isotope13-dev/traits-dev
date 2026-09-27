@@ -1,202 +1,188 @@
-# Published library that silently executes a hidden self-decoded payload at
-# import. The supply-chain framing of the obfuscation/eval self-decoding loader:
-# the dynamic-execution sink is reached indirectly (prototype-chain Function
-# constructor, immediately invoked) and wrapped in an empty catch so a decode or
-# execution failure is swallowed with no log — the package keeps working as a
-# clean decoy while the payload runs (or silently no-ops off-target).
-#
-# Seen in the avatar-forge -> dom-weave -> sync-logger npm decoy chain (2026-06),
-# where sync-logger's loader gates on `process.platform === "win32"`, resolves a
-# C2 endpoint from a steganographic dead-drop marker, and spawns a hidden
-# powershell/node stager. The swallowed catch around an indirect decode-and-exec
-# sink is the discriminator: no maintained library ships one.
-#
-# ATT&CK: T1195.002 (Compromise Software Supply Chain), T1059.007
 defaults:
-  platforms: [unix, windows]
-  for: [javascript, typescript]
+  platforms:
+  - unix
+  - windows
+  for:
+  - javascript
+  - typescript
   attack: T1195.002
   mbc: B0032
 traits:
-  - id: env-aes-key-access
-    desc: Runtime reads AES key from environment
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      regex: '(process\.env|import\.meta\.env)\.[A-Z0-9_]{0,40}AES[A-Z0-9_]{0,40}KEY'
+- id: env-aes-key-access
+  desc: Runtime reads AES key from environment
+  crit: notable
+  conf: 0.9
+  if:
+    type: text
+    regex: (process\.env|import\.meta\.env)\.[A-Z0-9_]{0,40}AES[A-Z0-9_]{0,40}KEY
 composite_rules:
-  - id: published-npm-shift-decoder-loader
-    desc: Published npm package carries a shift-decoded Function loader
-    crit: hostile
-    conf: 0.995
-    attack: T1195.002,T1027,T1059.007,T1140
-    for: [npm, package.json, javascript]
-    scope: archive
-    all:
-      - id: metadata/package/files/included::npm-publish-root-manifest
-      - id: objectives/anti-static/obfuscation/eval/loader::packaged-shift-decoder-function-loader
-
-  - id: package-metadata-keyed-decrypt-compile-loader
-    desc: Package metadata keys a concealed decrypt-and-compile loader
-    crit: hostile
-    conf: 0.99
-    attack: T1195.002,T1027.013,T1059.007
-    for: [npm, javascript]
-    scope: archive
-    all:
-      - id: metadata/file/encoded::large-base64-like-literal
-      - id: micro-behaviors/crypto/symmetric/aes/runtime-library::create-decipher-hex-hidden
-      - id: micro-behaviors/process/interpreter/eval/compile::module-compile-hex-hidden
-      - id: micro-behaviors/os/env/read::npm-package-metadata-env-hex-hidden
-      - id: micro-behaviors/os/api-resolution/dynamic::new-module-constructor
-      - id: micro-behaviors/data/control-flow/error-handling::empty-catch-block
-    unless:
-      - id: well-known/tool/detection/security-scanner/
-
+- id: published-npm-shift-decoder-loader
+  desc: Published npm package carries a shift-decoded Function loader
+  crit: hostile
+  conf: 0.995
+  attack: T1195.002,T1027,T1059.007,T1140
+  for:
+  - npm
+  - package.json
+  - javascript
+  scope: archive
+  all:
+  - id: metadata/package/files/included::npm-publish-root-manifest
+  - id: objectives/anti-static/obfuscation/eval/loader::packaged-shift-decoder-function-loader
+- id: package-metadata-keyed-decrypt-compile-loader
+  desc: Package metadata keys a concealed decrypt-and-compile loader
+  crit: hostile
+  conf: 0.99
+  attack: T1195.002,T1027.013,T1059.007
+  for:
+  - npm
+  - javascript
+  scope: archive
+  all:
+  - id: metadata/file/encoded::large-base64-like-literal
+  - id: micro-behaviors/crypto/symmetric/aes/runtime-library::create-decipher-hex-hidden
+  - id: micro-behaviors/process/interpreter/eval/compile::module-compile-hex-hidden
+  - id: micro-behaviors/os/env/read::npm-package-metadata-env-hex-hidden
+  - id: micro-behaviors/os/api-resolution/dynamic::new-module-constructor
+  - id: micro-behaviors/data/control-flow/error-handling::empty-catch-block
+  unless:
+  - id: well-known/tool/detection/security-scanner/
+- id: node-env-key-aes-decrypt
+  desc: Node AES decrypts with environment key
+  crit: component
+  conf: 0.92
+  all:
+  - id: env-aes-key-access
+  - id: micro-behaviors/crypto/symmetric/aes/runtime-library::createDecipheriv
+  - id: micro-behaviors/crypto/symmetric/aes/runtime-library::aes-256-gcm-dash
+- id: browser-env-key-webcrypto-decrypt
+  desc: Browser WebCrypto decrypts with environment key
+  crit: component
+  conf: 0.92
+  all:
+  - id: env-aes-key-access
+  - id: micro-behaviors/crypto/library/provider::subtle-encrypt-decrypt
+  - id: micro-behaviors/crypto/library/provider::subtle-key-ops
+- id: library-silent-self-decode
+  desc: Library silently runs a self-decoded payload via indirect eval
+  crit: hostile
+  conf: 0.95
+  attack: T1059.007
+  all:
+  - id: objectives/anti-static/obfuscation/eval/loader::indirect-ctor-transform-iife
+  - id: micro-behaviors/data/control-flow/error-handling::catch-before-await-or-require
+  any:
+  - id: micro-behaviors/crypto/symmetric/xor/loop::xor-modulo-key-loop
+  - id: micro-behaviors/data/decode/base64::buffer-from-base64
+  - id: micro-behaviors/data/decode/base64::atob-decode
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: well-known/tool/detection/security-scanner/
+  - id: well-known/tool/detection/llm-scanner/
+- id: exported-library-file-base64-eval
+  desc: Exported library reads packaged file and evals decoded payload
+  crit: hostile
+  conf: 0.96
+  attack: T1027, T1059.007
+  all:
+  - id: micro-behaviors/data/control-flow/module-exec::js-module-exports
+  - id: micro-behaviors/fs/read/file/target::read-package-relative-file
+  - id: micro-behaviors/data/decode/base64::buffer-from-base64
+  - id: micro-behaviors/process/interpreter/eval/direct::js-eval-tostring-result
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/build/bundler/asset::js-large-module-bundle
+  - id: well-known/tool/detection/security-scanner/
+  - id: well-known/app/browser/google-web::official-google-web-asset
+- id: node-env-key-encrypted-import-exec
+  desc: Node import decrypts and executes encrypted payload
+  crit: hostile
+  conf: 0.98
+  attack: T1027.013, T1059.007
+  all:
   - id: node-env-key-aes-decrypt
-    desc: Node AES decrypts with environment key
-    crit: component
-    conf: 0.92
-    all:
-      - id: env-aes-key-access
-      - id: micro-behaviors/crypto/symmetric/aes/runtime-library::createDecipheriv
-      - id: micro-behaviors/crypto/symmetric/aes/runtime-library::aes-256-gcm-dash
+  - id: micro-behaviors/fs/read/file/full::read-node
+  - id: micro-behaviors/process/interpreter/vm::vm-runInThisContext
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/build/bundler/asset::js-large-module-bundle
+- id: browser-env-key-encrypted-import-exec
+  desc: Browser import decrypts and executes encrypted payload
+  crit: hostile
+  conf: 0.98
+  attack: T1027.013, T1059.007
+  all:
   - id: browser-env-key-webcrypto-decrypt
-    desc: Browser WebCrypto decrypts with environment key
-    crit: component
-    conf: 0.92
-    all:
-      - id: env-aes-key-access
-      - id: micro-behaviors/crypto/library/provider::subtle-encrypt-decrypt
-      - id: micro-behaviors/crypto/library/provider::subtle-key-ops
-  - id: library-silent-self-decode
-    desc: Library silently runs a self-decoded payload via indirect eval
-    crit: hostile
-    conf: 0.95
-    attack: T1059.007
-    all:
-      - id: objectives/anti-static/obfuscation/eval/loader::indirect-ctor-transform-iife
-      - id: micro-behaviors/data/control-flow/error-handling::catch-before-await-or-require
-    any:
-      - id: micro-behaviors/crypto/symmetric/xor/loop::xor-modulo-key-loop
-      - id: micro-behaviors/data/decode/symbol-base64::buffer-from-base64
-      - id: micro-behaviors/data/decode/symbol-base64::atob-decode
-    # No bundle-output unless — see self-decode.yaml: sourcemap/minified shape
-    # does not excuse an empty catch wrapped around an indirect decode-and-exec.
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: well-known/tool/detection/security-scanner/
-      - id: well-known/tool/detection/llm-scanner/
-  - id: exported-library-file-base64-eval
-    desc: Exported library reads packaged file and evals decoded payload
-    crit: hostile
-    conf: 0.96
-    attack: T1027, T1059.007
-    all:
-      - id: micro-behaviors/data/control-flow/module-exec::js-module-exports
-      - id: micro-behaviors/fs/read/file/target::read-package-relative-file
-      - id: micro-behaviors/data/decode/symbol-base64::buffer-from-base64
-      - id: micro-behaviors/process/interpreter/eval/direct::js-eval-tostring-result
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/build/bundler/asset::js-large-module-bundle
-      - id: well-known/tool/detection/security-scanner/
-      - id: well-known/app/browser/google-web::official-google-web-asset
+  - id: micro-behaviors/data/decode/base64::atob-decode
+  - id: micro-behaviors/process/interpreter/eval/compile::js-new-function-constructor
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/build/bundler/asset::js-large-module-bundle
+- id: package-env-key-encrypted-import-exec
+  desc: Package imports encrypted payload executor
+  crit: hostile
+  conf: 0.99
+  for:
+  - javascript
+  - typescript
+  - package.json
+  - npm
+  scope: archive
+  all:
+  - id: metadata/file/encoded::large-base64-like-literal
+  any:
   - id: node-env-key-encrypted-import-exec
-    desc: Node import decrypts and executes encrypted payload
-    crit: hostile
-    conf: 0.98
-    attack: T1027.013, T1059.007
-    all:
-      - id: node-env-key-aes-decrypt
-      - id: micro-behaviors/fs/read/file/full::read-node
-      - id: micro-behaviors/process/interpreter/vm::vm-runInThisContext
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/build/bundler/asset::js-large-module-bundle
   - id: browser-env-key-encrypted-import-exec
-    desc: Browser import decrypts and executes encrypted payload
-    crit: hostile
-    conf: 0.98
-    attack: T1027.013, T1059.007
-    all:
-      - id: browser-env-key-webcrypto-decrypt
-      - id: micro-behaviors/data/decode/symbol-base64::atob-decode
-      - id: micro-behaviors/process/interpreter/eval/compile::js-new-function-constructor
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/build/bundler/asset::js-large-module-bundle
-  - id: package-env-key-encrypted-import-exec
-    desc: Package imports encrypted payload executor
-    crit: hostile
-    conf: 0.99
-    for: [javascript, typescript, package.json, npm]
-    scope: archive
-    all:
-      - id: metadata/file/encoded::large-base64-like-literal
-    any:
-      - id: node-env-key-encrypted-import-exec
-      - id: browser-env-key-encrypted-import-exec
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/build/bundler/asset::js-large-module-bundle
-  # Entry point is a stub: read the bundled blob, undo a byte cipher over it,
-  # and run the result as a CommonJS module. Nothing of the package's real
-  # behavior is visible to a marketplace/registry reviewer or to a static
-  # scanner — the shipped source is four calls long and the code that runs is
-  # a data file. Legitimate packers ship readable JS plus a sourcemap; they do
-  # not obfuscate the bytes they unpack.
-  - id: packaged-blob-byte-cipher-module-exec
-    desc: Entry unpacks bundled blob into a module
-    crit: hostile
-    conf: 0.96
-    attack: T1027, T1059.007
-    near_lines: 5
-    all:
-      - id: micro-behaviors/fs/read/file/target::read-package-relative-file
-      - id: micro-behaviors/data/encode/xor::js-byte-array-xor-map
-      # Require the decompression stage as well: this distinguishes a
-      # compressed opaque module blob from legitimate byte-wise transforms
-      # used by checksums, codecs, or build tooling.
-      - id: micro-behaviors/data/decompress/zlib::node-inflate-function
-    any:
-      - id: objectives/anti-static/obfuscation/eval/require::function-constructor-node-module-wrapper
-      - id: objectives/anti-static/obfuscation/eval/require::function-constructor-require-arg
-      - id: micro-behaviors/process/interpreter/eval/compile::js-function-constructor-commonjs-wrapper
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/build/bundler/asset::js-large-module-bundle
-      - id: well-known/tool/detection/security-scanner/
-  - id: packaged-blob-brotli-byte-cipher-module-exec
-    desc: Entry Brotli-decompresses XOR blob into a module
-    crit: hostile
-    conf: 0.97
-    attack: T1027,T1059.007
-    near_lines: 5
-    all:
-      - id: micro-behaviors/fs/read/file/target::read-package-relative-file
-      - id: micro-behaviors/data/encode/xor::js-byte-array-xor-map
-      - id: micro-behaviors/data/decompress/brotli::node-brotli-decompress-function
-    any:
-      - id: objectives/anti-static/obfuscation/eval/require::function-constructor-node-module-wrapper
-      - id: objectives/anti-static/obfuscation/eval/require::function-constructor-require-arg
-      - id: micro-behaviors/process/interpreter/eval/compile::js-function-constructor-commonjs-wrapper
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/build/bundler/asset::js-large-module-bundle
-      - id: well-known/tool/detection/security-scanner/
-  - id: exported-codec-chain-require-exec
-    desc: Exported codec chain executes decoded payload
-    crit: hostile
-    conf: 0.98
-    attack: T1195.002, T1027.013, T1059.007
-    all:
-      - id: objectives/anti-static/obfuscation/eval/require::function-constructor-require-arg
-      - id: objectives/anti-static/obfuscation/multi-layer::aes-gcm-decrypt-call
-      - id: objectives/anti-static/obfuscation/multi-layer::decode-codec-call
-      - id: objectives/anti-static/obfuscation/multi-layer::decode-position-call
-      - id: micro-behaviors/data/control-flow/module-exec::js-module-exports
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/build/bundler/asset::js-large-module-bundle
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/build/bundler/asset::js-large-module-bundle
+- id: packaged-blob-byte-cipher-module-exec
+  desc: Entry unpacks bundled blob into a module
+  crit: hostile
+  conf: 0.96
+  attack: T1027, T1059.007
+  near_lines: 5
+  all:
+  - id: micro-behaviors/fs/read/file/target::read-package-relative-file
+  - id: micro-behaviors/data/encode/xor::js-byte-array-xor-map
+  - id: micro-behaviors/data/decompress/zlib::node-inflate-function
+  any:
+  - id: objectives/anti-static/obfuscation/eval/require::function-constructor-node-module-wrapper
+  - id: objectives/anti-static/obfuscation/eval/require::function-constructor-require-arg
+  - id: micro-behaviors/process/interpreter/eval/compile::js-function-constructor-commonjs-wrapper
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/build/bundler/asset::js-large-module-bundle
+  - id: well-known/tool/detection/security-scanner/
+- id: packaged-blob-brotli-byte-cipher-module-exec
+  desc: Entry Brotli-decompresses XOR blob into a module
+  crit: hostile
+  conf: 0.97
+  attack: T1027,T1059.007
+  near_lines: 5
+  all:
+  - id: micro-behaviors/fs/read/file/target::read-package-relative-file
+  - id: micro-behaviors/data/encode/xor::js-byte-array-xor-map
+  - id: micro-behaviors/data/decompress/brotli::node-brotli-decompress-function
+  any:
+  - id: objectives/anti-static/obfuscation/eval/require::function-constructor-node-module-wrapper
+  - id: objectives/anti-static/obfuscation/eval/require::function-constructor-require-arg
+  - id: micro-behaviors/process/interpreter/eval/compile::js-function-constructor-commonjs-wrapper
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/build/bundler/asset::js-large-module-bundle
+  - id: well-known/tool/detection/security-scanner/
+- id: exported-codec-chain-require-exec
+  desc: Exported codec chain executes decoded payload
+  crit: hostile
+  conf: 0.98
+  attack: T1195.002, T1027.013, T1059.007
+  all:
+  - id: objectives/anti-static/obfuscation/eval/require::function-constructor-require-arg
+  - id: objectives/anti-static/obfuscation/multi-layer::aes-gcm-decrypt-call
+  - id: objectives/anti-static/obfuscation/multi-layer::decode-codec-call
+  - id: objectives/anti-static/obfuscation/multi-layer::decode-position-call
+  - id: micro-behaviors/data/control-flow/module-exec::js-module-exports
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/build/bundler/asset::js-large-module-bundle

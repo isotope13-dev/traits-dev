@@ -1,26 +1,23 @@
-# Stealth Node.js Dropper Patterns
-# ATT&CK: T1195.002 (Supply Chain Compromise), T1059.007 (JavaScript)
-# MBC: B0024 (Downloader), F0011 (Background process)
-#
-# Pattern: NPM packages that spawn detached Node.js processes to execute
-# secondary payloads while hiding all I/O. Common in supply-chain attacks.
 defaults:
-  platforms: [windows, unix]
+  platforms:
+  - windows
+  - unix
   mbc: B0024
-  for: [javascript, typescript]
+  for:
+  - javascript
+  - typescript
 traits:
 - id: github-raw-batch-url
   desc: GitHub raw batch payload URL
   crit: suspicious
   conf: 0.95
-  attack: "T1105"
-  for: [javascript]
+  attack: T1105
+  for:
+  - javascript
   if:
     type: text
-    regex: 'github\.com/.{1,40}/.{1,60}/raw/refs/heads/.{1,40}/.{1,80}\.(bat|cmd)'
+    regex: github\.com/.{1,40}/.{1,60}/raw/refs/heads/.{1,40}/.{1,80}\.(bat|cmd)
 composite_rules:
-  # Umbrellas over the embedded-program forms, so the loader composite survives an
-  # attacker swapping a char-code array for a base64 blob.
 - id: js-charcode-encoded-program
   desc: Embedded char-code program
   crit: component
@@ -28,16 +25,12 @@ composite_rules:
   all:
   - id: micro-behaviors/data/encode/char-code::long-numeric-array-literal
   - id: micro-behaviors/data/encode/char-code::fromcharcode-call-text
-  # Encoded self-respawn loader inside a .js file: an embedded encoded program
-  # (char-code array or base64 blob) + a process.execPath self-spawn, all as raw
-  # text because the spawn/child_process calls are themselves encoded. The
-  # combination is not produced by benign code; bundles and tests excluded.
 - id: js-encoded-node-self-respawn-loader
   desc: Encoded JS loader respawns Node on a decoded program
   crit: hostile
   conf: 0.96
-  attack: "T1027, T1059.007"
-  mbc: "B0032, E1027"
+  attack: T1027, T1059.007
+  mbc: B0032, E1027
   near_bytes: 16384
   all:
   - id: micro-behaviors/process/create/spawn::process-execpath-spawn
@@ -48,16 +41,12 @@ composite_rules:
   - id: metadata/build/
   - id: metadata/package/testing/
   - id: micro-behaviors/process/create/spawn::node-self-respawn
-  # Encoded dynamic-require loader: a .js file that requires a module by a decoded
-  # name AND defines the matching decoder. Catches the runtime-fetch variant where
-  # the payload is downloaded (https/net required by decoded name) and the
-  # execPath self-spawn anchor is absent. Bundles and tests excluded.
 - id: js-encoded-dynamic-require-loader
   desc: JS loader requires modules by decoded name
   crit: hostile
   conf: 0.95
-  attack: "T1027, T1105, T1059.007"
-  mbc: "B0032, E1027"
+  attack: T1027, T1105, T1059.007
+  mbc: B0032, E1027
   near_bytes: 16384
   all:
   - id: objectives/anti-static/obfuscation/payload/encoded::js-encoded-require
@@ -67,10 +56,6 @@ composite_rules:
   unless:
   - id: metadata/build/
   - id: metadata/package/testing/
-  # A custom substitution decoder can conceal both the native module name and
-  # the payload path. Requiring a native Node addon after that decoder is a
-  # high-confidence loader pattern, while the component atoms remain useful
-  # independently for triage.
 - id: js-obfuscated-native-module-loader
   desc: Obfuscated JavaScript loads a native Node module
   crit: hostile
@@ -80,35 +65,29 @@ composite_rules:
   all:
   - id: metadata/lang/javascript-features::js-obfuscator-while-loop
   - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::parseint-decoder-loop
-  - id: micro-behaviors/data/source/syntax/array::push-string-literal
-  - id: micro-behaviors/data/source/syntax/array::shift-string-literal
+  - id: metadata/file/literal::push-string-literal
+  - id: metadata/file/literal::bracketed-shift-string
   - id: micro-behaviors/process/create/load/local::cjs-native-node-module-require
   unless:
   - id: metadata/build/
   - id: metadata/package/testing/
-  # Self-respawning obfuscated install loader: a package manifest whose lifecycle
-  # command char-code-decodes a program AND references process.execPath is
-  # re-launching the Node interpreter on the decoded body (typically detached
-  # with ignored stdio so it survives the install and hides its output). The
-  # child_process/spawn/detached calls are themselves char-code-encoded, so this
-  # anchors on the manifest-text shape rather than AST symbols.
 - id: npm-hook-node-self-respawn-loader
   desc: Install hook self-respawns Node on a decoded program
   crit: hostile
   conf: 0.98
-  attack: "T1059.007, T1027, T1195.002"
-  mbc: "B0032, F0011"
-  for: [package.json]
+  attack: T1059.007, T1027, T1195.002
+  mbc: B0032, F0011
+  for:
+  - package.json
   all:
   - id: objectives/supply-chain/install-hook/scripts/encoded-body::lifecycle-node-eval-charcode-program
   - id: objectives/supply-chain/install-hook/scripts/encoded-body::manifest-node-execpath-respawn
-  # Temp directory use is normal for lock files and telemetry dedupe. Treat it
-  # as dropper staging only when the temp path is paired with payload writes.
 - id: temp-payload-staging
   desc: Temporary payload staging write
   crit: component
   conf: 0.9
-  for: [javascript]
+  for:
+  - javascript
   near_lines: 80
   all:
   - id: micro-behaviors/fs/temp/directory::os-tmpdir
@@ -120,7 +99,8 @@ composite_rules:
   desc: Node payload retrieval or staging context
   crit: component
   conf: 0.9
-  for: [javascript]
+  for:
+  - javascript
   any:
   - id: temp-payload-staging
   - id: objectives/command-and-control/dropper/execution/network-stage::fetch-write-exec
@@ -129,21 +109,14 @@ composite_rules:
   - id: github-raw-batch-url
   - id: micro-behaviors/data/encode/embedded::pe-base64-blob
   - id: metadata/file/encoded::gzip-base64-like-literal
-  # === Stealth dropper composite ===
-
-  # Node.js self-spawning dropper pattern
-  # Detached self-spawn alone is often daemonization or fixture behavior.
-  # Require payload staging or retrieval context before labeling as a dropper;
-  # generic fetch() health checks are common in benign daemons.
 - id: node-dropper
   desc: Node.js dropper spawning payload
   crit: hostile
   conf: 0.95
-  attack: "T1059.007"
-  # Bind both signals to the same compact loader; unrelated installer and
-  # daemon helpers in one source file must not form a dropper.
+  attack: T1059.007
   near_lines: 128
-  for: [javascript]
+  for:
+  - javascript
   near_bytes: 8192
   all:
   - id: micro-behaviors/process/create/spawn::process-execpath-spawn
@@ -155,15 +128,13 @@ composite_rules:
   - id: micro-behaviors/process/create/spawn::node-self-respawn
   - id: metadata/package/testing/
   - id: well-known/tool/development/toolchain/deno::source-archive-context
-  # Supply-chain dropper: child_process + stealth spawn + no exports
-  # Require payload staging or retrieval context; imports plus detached
-  # execution are too common in benign tooling and tests.
 - id: supply-chain-dropper
   desc: Supply-chain attack dropper
   crit: hostile
   conf: 0.95
-  attack: "T1195.002"
-  for: [javascript]
+  attack: T1195.002
+  for:
+  - javascript
   near_bytes: 8192
   all:
   - id: micro-behaviors/process/create/shell/bridge::child-process-require
@@ -179,8 +150,8 @@ composite_rules:
   desc: Reads an adjacent bundle, extracts executable, and launches detached
   crit: hostile
   conf: 0.98
-  attack: "T1027, T1059.007, T1195.002"
-  mbc: "B0032, F0011"
+  attack: T1027, T1059.007, T1195.002
+  mbc: B0032, F0011
   near_bytes: 2048
   all:
   - id: micro-behaviors/process/create/shell/bridge::child-process-require
@@ -196,9 +167,10 @@ composite_rules:
   desc: Node import-time writes and detaches fetched executable
   crit: hostile
   conf: 0.99
-  attack: "T1105,T1059.007,T1222.002,T1564.003"
-  mbc: "B0024,F0011"
-  for: [javascript]
+  attack: T1105,T1059.007,T1222.002,T1564.003
+  mbc: B0024,F0011
+  for:
+  - javascript
   near_lines: 120
   near_bytes: 8192
   all:
@@ -216,15 +188,16 @@ composite_rules:
   desc: Detached Node executes fetched stdin payload
   crit: hostile
   conf: 0.98
-  attack: "T1105, T1059.007, T1195.002"
-  for: [javascript]
+  attack: T1105, T1059.007, T1195.002
+  for:
+  - javascript
   near_lines: 40
   all:
   - id: micro-behaviors/process/create/shell/bridge::child-process-require
   - id: micro-behaviors/process/create/script/file::spawn-node-process
   - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
   - id: micro-behaviors/communications/http/get::axios-get-call
-  - id: micro-behaviors/data/decode/symbol-base64::atob-decode
+  - id: micro-behaviors/data/decode/base64::atob-decode
   - id: micro-behaviors/process/fd/stdio::js-stdin-write
   unless:
   - id: metadata/package/testing/
@@ -232,8 +205,9 @@ composite_rules:
   desc: Detached Python executes fetched stdin payload
   crit: hostile
   conf: 0.98
-  attack: "T1105, T1059.003, T1195.002"
-  for: [javascript]
+  attack: T1105, T1059.003, T1195.002
+  for:
+  - javascript
   near_lines: 50
   all:
   - id: micro-behaviors/process/create/shell/bridge::child-process-require
@@ -243,16 +217,13 @@ composite_rules:
   - id: micro-behaviors/process/create/shell/interpreter::node-spawn-python-interpreter
   unless:
   - id: metadata/package/testing/
-# Launcher that spawns a DETACHED, output-suppressed copy of a bundled sibling
-# script (the second stage ships inside the package, so there is no network
-# retrieval in the launcher itself — express-denv's index.js spawns ./lib/caller.js).
-# Excludes the legitimate lazy-daemon pattern (health-probed entry resolution).
 - id: node-detached-sibling-stage-spawn
   desc: Node detached sibling spawn with payload staging or retrieval
   crit: hostile
   conf: 0.9
-  attack: "T1059.007"
-  for: [javascript]
+  attack: T1059.007
+  for:
+  - javascript
   near_lines: 60
   all:
   - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
@@ -269,8 +240,9 @@ composite_rules:
   desc: Hidden Node launches Java sidecar
   crit: hostile
   conf: 0.96
-  attack: "T1059.007"
-  for: [javascript]
+  attack: T1059.007
+  for:
+  - javascript
   near_bytes: 8192
   all:
   - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
@@ -285,8 +257,9 @@ composite_rules:
   desc: Embedded PE dropped and run detached
   crit: hostile
   conf: 0.99
-  attack: "T1105"
-  for: [javascript]
+  attack: T1105
+  for:
+  - javascript
   all:
   - id: micro-behaviors/data/encode/embedded::pe-base64-blob
   - id: micro-behaviors/fs/write/file/full::write-file-sync
@@ -298,11 +271,7 @@ composite_rules:
   desc: Compact hidden native download-and-execute chain
   crit: hostile
   conf: 0.96
-  attack: "T1105"
-  # Keep the HTTP-to-file, execFile, hidden-window, and decoder legs in one
-  # compact loader. Electron main processes commonly contain an unrelated
-  # hidden PowerShell helper plus a separate self-updater; file-wide matching
-  # incorrectly merges those legitimate contexts into this objective.
+  attack: T1105
   near_lines: 128
   near_bytes: 8192
   all:
@@ -319,8 +288,9 @@ composite_rules:
   desc: GitHub temp shell stager with detached exec
   crit: hostile
   conf: 0.98
-  attack: "T1195.002"
-  for: [javascript]
+  attack: T1195.002
+  for:
+  - javascript
   all:
   - id: micro-behaviors/process/create/shell/bridge::child-process-require
   - id: micro-behaviors/process/create/spawn::detached-true
@@ -331,29 +301,12 @@ composite_rules:
   any:
   - id: micro-behaviors/communications/http/download/github::github-raw-curl-fetch
   - id: micro-behaviors/communications/http/url/github::raw-githubusercontent-script-file
-# Module-load fire-and-forget loader: a detached/ignored/unref'd child whose
-# argv is a curl|wget-piped-to-shell one-liner. No legitimate library spawns a
-# background shell that pipes a remote download into an interpreter at import.
 - id: node-detached-remote-shell-loader
   desc: Detached spawn runs curl-piped-to-shell loader
   crit: hostile
   conf: 0.95
-  attack: "T1059.004,T1059.007,T1105,T1195.002"
-  mbc: "B0024,F0011"
-  # The detached spawn and remote shell loader must be part of the same
-  # compact loader; unrelated helpers elsewhere in a source file do not form
-  # this behavior.
-  #
-  # Measured in bytes, not lines, because the inputs this rule has to survive
-  # have no line breaks. A `.js.map` is one 500 KB line of JSON, so a 128-*line*
-  # window is the whole file: @synkro-sh/cli's source map paired a detached
-  # spawn with `curl -fsSL https://bun.sh/install | bash` sitting 11.6 KB away
-  # inside a `throw new LocalCCInstallError(...)` message — a remediation hint
-  # printed to the user, never executed. The same rule correctly stayed silent
-  # on the shipped `bootstrap.js`, which has real line breaks. 6 KB is the same
-  # span as 128 lines of ordinary TypeScript and is layout-independent, so it
-  # holds on minified bundles too. The sibling rules in this file still use
-  # `near_lines` and carry the same latent weakness on one-line inputs.
+  attack: T1059.004,T1059.007,T1105,T1195.002
+  mbc: B0024,F0011
   near_bytes: 6144
   all:
   - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
@@ -362,15 +315,7 @@ composite_rules:
   - id: well-known/app/ai/coding-agent/qwen-code::qwen-code-bundle-text
   - id: well-known/app/system/vellum::cli-package-context
   - id: well-known/tool/development/ci/github-actions/setup-docker-action/
-  # Measured on codex-mobile-re: its detached spawn is a Composio CLI login
-  # and the pipe is the vendor's documented synchronous installer; 1.5 KB
-  # apart in one bundle, so the proximity window conflated two functions.
-  # Suppress only when the piped URL is Composio's own apex installer.
   - id: well-known/app/ai/tool-server/composio::composio-install-url
-# A detached `node -e` child that fetches and evaluates JavaScript is the
-# downloader branch described in the Joyfill analysis.  The URL and header are
-# deliberately not part of the rule: the delivery mechanism survives C2
-# rotation and package-family changes.
 - id: node-detached-remote-javascript-stage
   desc: Detached Node child evaluates fetched JavaScript
   crit: hostile
@@ -381,16 +326,13 @@ composite_rules:
   - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
   - id: micro-behaviors/process/create/inline-script::node-inline-script-remote-fetch
   - id: micro-behaviors/process/create/inline-script::node-inline-script-eval-sink
-# Ciphertext decrypted then written to a detached, ignored Node stdin — classic
-# import-time stage that hides the second payload outside the primary bundle.
 - id: decrypt-to-detached-node-stdin
   desc: Cipher decrypt feeds detached Node via stdin
   crit: hostile
   conf: 0.97
-  attack: "T1059.007, T1027, T1195.002"
-  for: [javascript]
-  # Bundlers can place the decrypt helper and its launch site several dozen
-  # lines apart while keeping them in the same import-time loader.
+  attack: T1059.007, T1027, T1195.002
+  for:
+  - javascript
   near_lines: 128
   all:
   - id: micro-behaviors/crypto/symmetric/decrypt::cryptojs-block-cipher-decrypt-text
@@ -401,17 +343,12 @@ composite_rules:
   - id: micro-behaviors/process/create/spawn::node-interpreter-target
   unless:
   - id: metadata/package/testing/
-  # A string-array-rotation blob that additionally splits its `require` module
-  # name is hiding *which* module it loads, and the only module worth hiding
-  # that way is the one that runs commands. Pair the two concealment facts with
-  # a real child-process spawn: minified bundles rotate string arrays, and
-  # ordinary code spawns children, but neither hides the module name to do it.
 - id: obfuscated-concealed-process-import-spawn
   desc: Obfuscated code hides child_process and spawns
   crit: hostile
   conf: 0.95
-  attack: "T1027, T1059.007"
-  mbc: "B0032, F0011"
+  attack: T1027, T1059.007
+  mbc: B0032, F0011
   all:
   - id: micro-behaviors/os/module/dynamic-load::node-split-literal-require
   - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::push-shift-bracket-pattern
@@ -422,15 +359,12 @@ composite_rules:
   unless:
   - id: metadata/build/
   - id: metadata/package/testing/
-# Decrypt packaged ciphertext to disk, then `require` a module name recovered
-# from that decryption and spawn a detached/hidden node child — classic
-# matrixflow-js / encrypted-sibling npm dropper shape.
 - id: decrypt-write-dynamic-require-stealth-spawn
   desc: Decrypts to disk then dynamically requires spawn for a hidden child
   crit: hostile
   conf: 0.96
-  attack: "T1195.002,T1027.013,T1059.007,T1106"
-  mbc: "B0024, F0011"
+  attack: T1195.002,T1027.013,T1059.007,T1106
+  mbc: B0024, F0011
   all:
   - id: micro-behaviors/crypto/symmetric/aes/runtime-library::createDecipheriv
   - id: micro-behaviors/fs/write/file/full::node-write-file-sync-call
@@ -440,28 +374,12 @@ composite_rules:
   unless:
   - id: metadata/package/testing/harness/runtime/
   - id: metadata/package/testing/presence/fixture::test-filename-pattern
-  # Fetch a file off the network, drop it, and run it where nobody can see it.
-  #
-  # The three transport legs on their own describe an ordinary self-updater:
-  # plenty of legitimate CLIs download a release asset, write it next to
-  # themselves and launch it. What an updater does not do is hide the result.
-  # `detached` + `stdio: "ignore"` + `unref()` severs the child from the
-  # installing process's lifetime and throws away everything it prints, and
-  # `windowsHide` suppresses its console. Taken together the author has
-  # arranged for the downloaded program to run with no window, no output and
-  # no parent — which is a requirement only when the user is not supposed to
-  # notice.
-  #
-  # Deliberately says nothing about *what* is launched. The mshta form of this
-  # is named separately in dropper/execution/script/mshta.yaml; keying this one
-  # on the spawn shape instead keeps it valid when the next sample drops a
-  # `.scr`, a `.js` for wscript, or a plain executable.
 - id: js-fetch-drop-hidden-detached-launch
   desc: Runs a downloaded file hidden and detached
   crit: hostile
   conf: 0.95
-  attack: "T1105,T1059.007,T1564.003"
-  mbc: "B0024, F0011"
+  attack: T1105,T1059.007,T1564.003
+  mbc: B0024, F0011
   all:
   - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
   - id: micro-behaviors/fs/write/file/full::node-write-file-promise-destructured
@@ -470,18 +388,14 @@ composite_rules:
   unless:
   - id: metadata/build/
   - id: metadata/package/testing/
-
-# Node droppers that fetch a remote stage, write it under a user profile path,
-# and register WSH-based Run/Startup persistence are a distinct Windows install
-# shape from a bare hidden spawn: the registry and shortcut legs are the
-# durable signal, not the download transport alone.
 - id: node-windows-wsh-persistence-remote-dropper
   desc: Node Windows dropper fetches remote payload with logon persistence
   crit: hostile
   conf: 0.98
-  attack: "T1105,T1059.005,T1059.007,T1547.001"
-  mbc: "B0024, F0011"
-  platforms: [windows]
+  attack: T1105,T1059.005,T1059.007,T1547.001
+  mbc: B0024, F0011
+  platforms:
+  - windows
   scope: file
   all:
   - id: micro-behaviors/communications/http/request/client::node-http-client-scheme-selection
@@ -490,15 +404,6 @@ composite_rules:
   - id: objectives/persistence/login/startup/shortcut::startup-shortcut-persistence
   - id: objectives/evasion/self-delete/file/script::js-conditional-file-cleanup
   - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
-
-# An install-time payload whose every path and filename is rebuilt from
-# XOR-decoded numeric arrays before spawning a detached, unref'd child. The
-# install-hook obfuscation rules convict the packed postinstall; this states
-# the execution -- the child is unlinked from its parent on purpose, so
-# nothing in the process tree explains what is running or where it came from.
-#
-# Worked example: the @fnos dayjs postinstall, which reconstructs its paths
-# from byte arrays and spawns the result detached with .unref().
 - id: xor-reconstructed-detached-spawn
   desc: XOR-reconstructed payload spawns detached child
   crit: hostile
@@ -507,15 +412,6 @@ composite_rules:
   all:
   - id: objectives/anti-static/obfuscation/string/reconstruct::js-xor-numeric-array-string-reconstruction
   - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
-# A child configured to leave no trace of itself: detached from the parent's
-# lifetime, stdio thrown away, and on Windows no console window either. Stated
-# on its own because the shape is family-independent -- it arrived here from a
-# malware-family directory, where the same matchers labelled every unrelated
-# hidden-spawn as that family.
-#
-# Built on detached-ignored-unref-spawn rather than restating its legs: that
-# rule binds unref() to the spawn within 2 KB, so an unrelated timer or socket
-# unref elsewhere in a bundle cannot stand in for the child handle.
 - id: node-detached-hidden-spawn
   desc: Node child spawned detached, silent and windowless
   crit: notable

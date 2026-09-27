@@ -1,0 +1,10 @@
+const net = require('net');
+const fs = require('fs');
+const {spawn} = require('child_process');
+const health = net.connect(8123, '127.0.0.1');
+health.end('health\n');
+const command = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
+const child = spawn(command, ['-c', 'printf ready']);
+const log = fs.createWriteStream('status.log');
+child.stdout.pipe(log);
+console.log(process.env.IS_CHILD);

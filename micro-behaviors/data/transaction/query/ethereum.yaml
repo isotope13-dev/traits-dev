@@ -1,0 +1,292 @@
+# Ethereum transaction fields and recipient-byte reconstruction.
+# These are neutral data-handling capabilities; C2 intent is inferred by the
+# blockchain dead-drop composites in objectives/.
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript, python]
+  crit: notable
+  conf: 0.9
+
+traits:
+  - id: ethereum-transaction-recipient-field
+    desc: Reads an Ethereum transaction recipient
+    if:
+      type: text
+      regex: '\b(transaction|tx)\s*(\.\s*to\b|\[\s*["'']to["'']\s*\])'
+
+  - id: ethereum-transaction-recipient-get
+    desc: Reads recipient with transaction get
+    if:
+      type: text
+      regex: '\b(transaction|tx)\.get\s*\(\s*["'']to["'']'
+
+  - id: ethereum-transaction-recipient-destructure
+    desc: Destructures transaction recipient
+    if:
+      type: text
+      regex: '\{\s*to\s*(:\s*[A-Za-z_$][A-Za-z0-9_$]*\s*)?\}\s*=\s*(transaction|tx)\b'
+
+  # A recipient address is a 20-byte hex value.  Turning that field into a
+  # byte buffer is neutral in isolation; the resolver objective below adds the
+  # transaction-history and network-use context that makes it a dead drop.
+  - id: ethereum-recipient-buffer-conversion
+    desc: Converts recipient address to Buffer
+    crit: notable
+    conf: 0.92
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\bBuffer\.from\s*\([^;\n]{0,120}(recipient|destination|addressBytes|transaction\.to)'
+
+  # NullReceiver-style samples split the recipient bytes in groups rather than
+  # using the older two-adjacent-subarray idiom.  Keep the ranges as named atoms
+  # so the composite can tolerate unrelated code between the two reads.
+  - id: ethereum-recipient-four-byte-prefix
+    desc: Recipient first four-byte slice
+    crit: notable
+    conf: 0.94
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '(addressBytes|recipient|destination)\.(subarray|slice)\s*\(\s*0\s*,\s*4\s*\)'
+
+  - id: ethereum-recipient-four-byte-suffix
+    desc: Recipient second four-byte slice
+    crit: notable
+    conf: 0.94
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '(addressBytes|recipient|destination)\.(subarray|slice)\s*\(\s*4\s*,\s*8\s*\)'
+
+  # The map can run over the recipient buffer directly, or over a slice of it
+  # that was bound to a local first (`const primary = addressBytes.subarray(0, 4)`
+  # ... `Array.from(primary).flatMap(...)`). Only the first spelling names the
+  # recipient; the second is ordinary array mapping, represented by the
+  # language-scoped atom under data/collection/array. The recipient-byte-map
+  # operation below accepts either. The recipient
+  # derivation is carried by the sibling legs of
+  # `ethereum-recipient-byte-ip-assembly` (hex buffer, four-byte slices and
+  # transaction context, all within 1200 bytes), not by these atoms alone.
+  - id: ethereum-recipient-named-byte-map
+    desc: Maps a named recipient byte buffer
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\b(addressBytes|recipient|destination)\s*\.(flatMap|map)\b'
+
+  - id: ethereum-empty-input-field
+    desc: Empty Ethereum transaction input
+    if:
+      type: text
+      regex: '(\binput\b|\[["'']input["'']\])\s*(===?|!==?|:)\s*["'']0x["'']'
+
+  - id: ethereum-zero-value-field
+    desc: Tests an Ethereum transaction for zero value
+    if:
+      type: text
+      regex: '(\bvalue\b|\[["'']value["'']\])\s*(===?|!==?|:)\s*["'']0x0+["'']'
+
+  - id: ethereum-recipient-ipv4-slice-javascript
+    desc: Ethereum recipient IPv4 slice
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\b(recipient|destination|addressBytes)\.(slice|substring)\s*\(\s*0\s*,\s*8\s*\)'
+
+  # Variants iterate through the recipient in two-byte hex octets instead of
+  # taking one fixed eight-character slice. Keep the pieces separate so the
+  # matcher stays short; the C2 composites still require JSON-RPC transaction
+  # data, hex-to-decimal conversion, dotted output, and a network sink.
+  - id: ethereum-recipient-indexed-slice
+    desc: Ethereum recipient uses indexed byte slices
+    crit: notable
+    conf: 0.94
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '(addressBytes|recipient|destination)\.(slice|substring)\([^)]{1,40}\+\s*2'
+
+  - id: ethereum-recipient-indexed-subarray
+    desc: Ethereum recipient uses indexed subarrays
+    crit: notable
+    conf: 0.94
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '(addressBytes|recipient|destination)\.subarray\([^)]{1,40}\+\s*2'
+
+  - id: ethereum-recipient-ipv4-slice-python
+    desc: Ethereum recipient IPv4 slice (Python)
+    for: [python]
+    if:
+      type: text
+      regex: '(recipient|destination)\s*\[\s*i\s*:\s*i\s*\+\s*2\s*\]'
+
+  - id: ethereum-recipient-ipv4-range-python
+    desc: Four-byte recipient range (Python)
+    for: [python]
+    if:
+      type: text
+      regex: 'range\s*\(\s*0\s*,\s*8\s*,\s*2\s*\)'
+
+  - id: ethereum-hex-octets-dot-join-javascript
+    desc: Hex octets joined as dotted IPv4 (JS)
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '(?is)parseInt\s*\([\s\S]{0,120},\s*16\s*\)[\s\S]{0,180}\.join\s*\(\s*["'']\.["'']\s*\)'
+    unless:
+      - id: metadata/package/files/vendored::vendored-ip-address-ipv4-source
+
+  # Split forms stay under re-len; both require int(...,16) BEFORE a '.' join
+  # (prior `.join`→int order false-positived py-cpuinfo feature-flag parsers).
+  - id: eth-hex-dot-join-py-str
+    desc: Hex int then quote-dot-quote .join (Python)
+    crit: notable
+    conf: 0.9
+    for: [python]
+    if:
+      type: text
+      regex: "(?is)int\\s*\\([^)]{0,40},\\s*16\\)[\\s\\S]{0,100}['\"]\\.['\"]\\.join"
+
+  - id: eth-hex-dot-join-py-arg
+    desc: Hex int then .join('.') (Python)
+    crit: notable
+    conf: 0.9
+    for: [python]
+    if:
+      type: text
+      regex: "(?is)int\\s*\\([^)]{0,40},\\s*16\\)[\\s\\S]{0,100}\\.join\\s*\\(\\s*['\"]\\."
+
+composite_rules:
+  - id: ethereum-hex-octets-dot-join-python
+    desc: Hex octets joined as dotted IPv4 (Python)
+    crit: notable
+    conf: 0.9
+    for: [python]
+    any:
+      - id: eth-hex-dot-join-py-str
+      - id: eth-hex-dot-join-py-arg
+
+  - id: ethereum-recipient-hex-buffer
+    desc: Ethereum recipient hex byte buffer
+    crit: notable
+    conf: 0.94
+    for: [javascript, typescript]
+    near_bytes: 220
+    all:
+      - id: ethereum-recipient-buffer-conversion
+      - id: micro-behaviors/data/decode/hex::buffer-from-hex-call
+
+  - id: ethereum-transaction-recipient-ip-split
+    desc: Splits Ethereum transaction bytes into IPv4-sized slices
+    crit: notable
+    conf: 0.94
+    for: [javascript, typescript]
+    # The byte shape alone is common in terminal, media, and protocol parsers.
+    # Require the slice pair plus transaction semantics before classifying it as
+    # blockchain behavior.
+    all:
+      - id: micro-behaviors/data/buffer/record::adjacent-four-byte-subarrays
+      - id: ethereum-transaction-byte-context
+
+  - id: ethereum-recipient-byte-ip-assembly
+    desc: Recipient bytes reconstruct dotted IPv4
+    crit: notable
+    conf: 0.96
+    for: [javascript, typescript]
+    near_bytes: 1200
+    all:
+      - id: ethereum-recipient-hex-buffer
+      - id: ethereum-recipient-four-byte-slices
+      - id: ethereum-recipient-byte-octets-dotted
+      - id: ethereum-transaction-byte-context
+
+  - id: ethereum-recipient-array-from-transaction-map
+    desc: Array.from map in Ethereum transaction context
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    all:
+      - id: micro-behaviors/data/collection/array::js-array-from-identifier-map
+      - id: ethereum-transaction-byte-context
+
+  - id: ethereum-recipient-byte-map-operation
+    desc: Maps recipient-derived bytes
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    any:
+      - id: ethereum-recipient-named-byte-map
+      - id: ethereum-recipient-array-from-transaction-map
+
+  - id: ethereum-recipient-byte-octets-dotted
+    desc: Recipient bytes map to dotted IPv4
+    crit: notable
+    conf: 0.94
+    for: [javascript, typescript]
+    near_bytes: 360
+    all:
+      - id: micro-behaviors/data/collection/array::js-mapped-values-dot-join
+      - id: ethereum-recipient-byte-map-operation
+
+  - id: ethereum-recipient-four-byte-slices
+    desc: Recipient bytes split into four-byte ranges
+    crit: notable
+    conf: 0.95
+    for: [javascript, typescript]
+    near_bytes: 320
+    all:
+      - id: ethereum-recipient-four-byte-prefix
+      - id: ethereum-recipient-four-byte-suffix
+
+  - id: ethereum-transaction-byte-context
+    desc: Ethereum transaction byte context
+    crit: component
+    conf: 0.9
+    for: [javascript, typescript]
+    any:
+      - id: ethereum-transaction-recipient-field
+      - id: micro-behaviors/communications/rpc::ethereum-jsonrpc-transaction-method
+      - id: micro-behaviors/communications/rpc::ethereum-jsonrpc-block-by-number-method
+
+  - id: ethereum-recipient-ipv4-byte-slice
+    desc: Ethereum recipient IPv4 byte slice
+    any:
+      - id: ethereum-recipient-ipv4-slice-javascript
+      - id: ethereum-recipient-ipv4-byte-slice-python
+      - id: ethereum-recipient-indexed-slice
+      - id: ethereum-recipient-indexed-subarray
+
+  - id: ethereum-recipient-ipv4-byte-slice-python
+    desc: Python recipient IPv4 byte slice
+    for: [python]
+    all:
+      - id: ethereum-recipient-ipv4-slice-python
+      - id: ethereum-recipient-ipv4-range-python
+
+  - id: ethereum-recipient-hex-ip-assembly
+    desc: Ethereum recipient IPv4 reconstruction
+    all:
+      - id: ethereum-recipient-ipv4-byte-slice
+    any:
+      - id: ethereum-hex-octets-dot-join-javascript
+      - id: ethereum-hex-octets-dot-join-python
+
+  - id: ethereum-zero-value-empty-data-transfer
+    desc: Zero-value empty Ethereum transfer
+    all:
+      - id: ethereum-zero-value-field
+      - id: ethereum-empty-input-field
+
+  - id: ethereum-transaction-recipient-reference
+    desc: References an Ethereum transaction recipient
+    crit: component
+    conf: 0.92
+    any:
+      - id: ethereum-transaction-recipient-field
+      - id: ethereum-transaction-recipient-get
+      - id: ethereum-transaction-recipient-destructure

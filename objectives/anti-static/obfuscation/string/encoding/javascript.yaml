@@ -1,510 +1,471 @@
 defaults:
-  platforms: [windows, unix]
+  platforms:
+  - windows
+  - unix
 traits:
-  - id: js-unicode-escape
-    desc: Unicode escape sequences in string
-    crit: notable
-    conf: 0.85
-    mbc: B0032
-    attack: T1027
-    for:
-      - javascript
-      - typescript
-    count_min: 3
-    if:
-      type: string_literal
-      regex: (\\u[0-9a-fA-F]{4}){4,}
-    not:
-      - regex: \\u(1680|180[eE]|200[0-9a-aA-A]|202[fF]|205[fF]|3000)
-    unless:
-      # Unicode escapes in a generated production bundle are commonly
-      # library tables or localized data, not concealed source. The bundle
-      # structure remains visible to other traits, including decoder and
-      # dynamic-execution indicators.
-      - id: metadata/build/minifier::js-large-minified-bundle
-    downgrade:
-      any:
-        - id: metadata/build/
-  - id: js-interspersed-hex-escapes
-    desc: Interspersed hex escape sequences
-    crit: notable
-    conf: 0.8
-    mbc: B0032
-    attack: T1027
-    for:
-      - javascript
-      - typescript
-    if:
-      type: string_literal
-      # Require ordinary characters between escapes. Contiguous escaped bytes
-      # are common in binary/document headers, not string obfuscation.
-      regex: (\\x[0-9a-fA-F]{2}.{1,3}){4,}
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: well-known/app/ai/browser-agent/open-webui-computer/
-      - id: metadata/build/
-      # Character-range tables such as lodash's Unicode classes use adjacent
-      # escaped endpoints separated by hyphens; that is data, not obfuscation.
-      # Match the source spelling (two backslashes before each x escape).
-      - type: text
-        regex: '(\\\\x[0-9a-fA-F]{2}-\\\\x[0-9a-fA-F]{2}){2,})'
-      # Locale modules commonly encode non-ASCII translations as interspersed
-      # \xNN escapes; that is generated localization data, not obfuscation.
-      - id: metadata/lang/locale::i18n-lang-code-js-basename
-      - id: metadata/lang/locale::i18n-lang-code-module-basename
-  - id: js-hex-encoded-require
-    desc: Hex-encoded require statement
-    crit: suspicious
-    conf: 0.92
-    mbc: B0032
-    attack: T1027
-    for:
-      - javascript
-    if:
-      type: text
-      regex: require\s*\(\s*Buffer\.from\([^)]{0,120}hex[^)]{0,120}\)\.toString\(\)
-  - id: js-b64-encoded-require
-    desc: Base64-encoded require statement
-    crit: suspicious
-    conf: 0.92
-    mbc: B0032
-    attack: T1027
-    for:
-      - javascript
-    if:
-      type: text
-      regex: require\(Buffer\.from\([^)]{0,60}base64
-  - id: js-window-write-exec
-    desc: window assignment to exec primitive
-    crit: notable
-    conf: 0.7
-    attack: T1027.002
-    mbc: B0032
-    for:
-      - javascript
-    if:
-      # Parse assignments so commented examples do not count as executable
-      # global mutation.
-      type: tree-sitter
-      kind: assignment
-      language: javascript
-      # Browser event-handler wiring is ordinary UI code, not a concealed
-      # global dispatch table; custom window properties remain in scope.
-      regex: \bwindow\.(o[^n]\w*|[^o]\w*)\s*=\s*(new\s+Function|Function|eval)\b
-    unless:
-      - id: well-known/lib/web/docsify::docsify-library
-      - id: well-known/lib/web/docsify::docsify-execute-result-marker
-  - id: js-window-write-decode
-    desc: window assignment to decode primitive
-    crit: notable
-    conf: 0.65
-    attack: T1027.002
-    mbc: B0032
-    for:
-      - javascript
-    if:
-      type: tree-sitter
-      language: javascript
-      # Exposing a primitive under its own name (`window.Buffer = Buffer`,
-      # the browserify/webpack shim) conceals nothing, so the property name
-      # must differ from the primitive. Expressed as a query predicate: a
-      # trait-level `not:` does not filter tree-sitter assignment evidence.
-      query: '(assignment_expression left: (member_expression object: (identifier) @o property: (property_identifier) @p) right: (identifier) @r (#eq? @o "window") (#match? @r "^(atob|btoa|Buffer)$") (#not-eq? @p @r)) @a'
-  - id: js-window-write-network
-    desc: window assignment to network primitive
-    crit: notable
-    conf: 0.65
-    attack: T1027.002
-    mbc: B0032
-    for:
-      - javascript
-    if:
-      type: tree-sitter
-      language: javascript
-      # `window.fetch = fetch` is the restore half of a save/wrap/restore
-      # shim or a polyfill install: it republishes the primitive under the
-      # name it already has, so nothing is concealed or redirected. Only an
-      # alias under a different property name counts.
-      query: '(assignment_expression left: (member_expression object: (identifier) @o property: (property_identifier) @p) right: (identifier) @r (#eq? @o "window") (#match? @r "^(fetch|XMLHttpRequest|WebSocket)$") (#not-eq? @p @r)) @a'
-  - id: js-globalthis-write-exec
-    desc: globalThis assignment to exec primitive
-    crit: notable
-    conf: 0.7
-    attack: T1027.002
-    mbc: B0032
-    for:
-      - javascript
-    if:
-      type: tree-sitter
-      kind: assignment
-      language: javascript
-      regex: \bglobalThis\.\w+\s*=\s*(new\s+Function|Function|eval)\b
-  - id: js-globalthis-write-decode
-    desc: globalThis assignment to decode primitive
-    crit: notable
-    conf: 0.65
-    attack: T1027.002
-    mbc: B0032
-    for:
-      - javascript
-    if:
-      type: tree-sitter
-      language: javascript
-      # Same-name exposure (`globalThis.Buffer = Buffer`) is the same shim
-      # as the window form and conceals nothing; only aliases count.
-      query: '(assignment_expression left: (member_expression object: (identifier) @o property: (property_identifier) @p) right: (identifier) @r (#eq? @o "globalThis") (#match? @r "^(atob|btoa|Buffer)$") (#not-eq? @p @r)) @a'
-  - id: js-globalthis-write-network
-    desc: globalThis assignment to network primitive
-    crit: notable
-    conf: 0.65
-    attack: T1027.002
-    mbc: B0032
-    for:
-      - javascript
-    if:
-      type: tree-sitter
-      language: javascript
-      # `globalThis.fetch = fetch` (SvelteKit restores the real fetch this
-      # way after its SSR dev wrapper) hands the primitive back under its
-      # existing name and conceals nothing; only aliases count.
-      query: '(assignment_expression left: (member_expression object: (identifier) @o property: (property_identifier) @p) right: (identifier) @r (#eq? @o "globalThis") (#match? @r "^(fetch|XMLHttpRequest|WebSocket)$") (#not-eq? @p @r)) @a'
-  - id: js-global-self-bracket-assignment
-    desc: Dynamic self bracket property assignment
-    crit: suspicious
-    conf: 0.6
-    attack: T1027.002
-    mbc: B0032
-    for:
-      - javascript
-    if:
-      type: text
-      regex: \bself\[[^\]]{1,120}\]\s*=\s*(eval|Function|atob)\b
-  - id: js-require-alias
-    desc: Require function aliasing
-    crit: suspicious
-    conf: 0.9
-    attack: T1027.002
-    mbc: B0032
-    for:
-      - javascript
-    if:
-      type: text
-      regex: =\\s*require\\s*;
-  - id: markdown-it-bundle
-    desc: markdown-it bundled library marker
-    crit: baseline
-    conf: 0.99
-    for:
-      - javascript
-    if:
-      type: text
-      substr: "/*! markdown-it 14.1.0 https://github.com/markdown-it/markdown-it"
-  - id: js-define-locale-call
-    desc: Moment locale bundle marker
-    crit: baseline
-    conf: 0.99
-    for:
-      - javascript
-    if:
-      type: symbol
-      exact: defineLocale
-  - id: dense-unicode-escapes
-    desc: Dense Unicode escape sequences
-    crit: notable
-    conf: 0.88
-    mbc: B0032
-    attack: T1027
-    for:
-      - javascript
-      - typescript
-    count_min: 4
-    per_kb_min: 0.8
-    if:
-      type: string_literal
-      regex: (\\u[0-9a-fA-F]{4}){3,}
-    unless:
-      # Production bundles routinely embed Unicode-range regex tables from
-      # React, HTML parsers, date/locale libraries, and CSS runtimes.  A large
-      # minified bundle is independently identified as generated output; its
-      # escape density alone is not evidence of concealment.  Keep the other
-      # decoder/eval/import indicators active for bundled malware.
-      - id: metadata/build/minifier::js-large-minified-bundle
-      # Locale data modules encode non-Latin scripts as escapes, and the bidi
-      # and font-name unit tests carry the same strings as fixtures.
-      - id: metadata/lang/encoded/unicode-escape::i18n-locale-data-module-path
-      - id: metadata/lang/locale::unicode-escaped-cjk-prose
-      - id: metadata/package/testing/
-      - id: well-known/lib/network/
-      - type: text
-        substr: angular.module("ngLocale")
-      - type: basename
-        regex: '^angular-locale_'
-  - id: js-alternating-char-obfuscation
-    desc: 'Strings with alternating junk characters'
-    crit: notable
-    conf: 0.8
-    for:
-      - javascript
-    size_max: 100000
-    count_min: 5
-    if:
-      type: text
-      regex: '["''][a-zA-Z0-9_]([^a-zA-Z0-9\s"''\\&=%:]{1,3}[a-zA-Z0-9_]){5,}["'']'
-    unless:
-      - id: metadata/build/recognized-contexts::benign-trojanized-fp-context
-      - id: well-known/tool/development/vscode-extension/atlascode/
-  # Library identities are supplied by metadata/library and well-known/lib.
-  # Keep this objective file focused on obfuscation evidence rather than
-  # duplicating generic jQuery/MathJax markers here.
-  - id: js-function-return-import
-    desc: Function constructor dynamic import idiom
-    crit: notable
-    conf: 0.86
-    for:
-      - javascript
-      - typescript
-    if:
-      type: text
-      regex: 'Function\(["'']return import["'']\)\(\)'
-  - id: js-unicode-escape-ui-text
-    desc: Unicode escaped UI text assignment
-    crit: notable
-    conf: 0.88
-    for:
-      - javascript
-      - typescript
-    if:
-      type: text
-      regex: '\b(textContent|placeholder)\s*=\s*["''](\\u[0-9a-fA-F]{4}){2,}'
-  - id: ts-proto-generated-file
-    desc: ts-proto generated file
-    crit: notable
-    conf: 0.98
-    for:
-      - javascript
-      - typescript
-    if:
-      type: text
-      word: tsProtoGlobalThis
-  # `Buffer.from([100,108,45,116,97,114]).toString()` spells a name from
-  # decimal code points so the plain text ("dl-tar", a module or host name)
-  # never appears in the file. Binary test fixtures write bytes in hex and
-  # rarely round-trip them straight back to a string.
-  - id: js-byte-array-buffer-string
-    desc: String rebuilt from a decimal byte array
-    crit: suspicious
-    conf: 0.88
-    mbc: B0032
-    attack: T1027
-    for:
-      - javascript
-      - typescript
-    if:
-      type: text
-      regex: 'Buffer\.from\(\s*\[\s*\d{2,3}\s*,\s*\d{2,3}\s*,[\d,\s]{1,400}\]\s*\)\.toString\('
-    unless:
-      - id: metadata/package/testing/
-  - id: js-byte-array-encoded-require
-    desc: require/resolve of a byte-array-encoded name
-    crit: suspicious
-    conf: 0.94
-    mbc: B0032
-    attack: T1027
-    for:
-      - javascript
-      - typescript
-    if:
-      type: text
-      regex: 'require(\.resolve)?\s*\(\s*Buffer\.from\(\s*\[\s*\d{2,3}\s*,'
+- id: js-unicode-escape
+  desc: Unicode escape sequences in string
+  crit: notable
+  conf: 0.85
+  mbc: B0032
+  attack: T1027
+  for:
+  - javascript
+  - typescript
+  count_min: 3
+  if:
+    type: string_literal
+    regex: (\\u[0-9a-fA-F]{4}){4,}
+  not:
+  - regex: \\u(1680|180[eE]|200[0-9a-aA-A]|202[fF]|205[fF]|3000)
+  unless:
+  - id: metadata/build/minifier::js-large-minified-bundle
+  downgrade:
+    any:
+    - id: metadata/build/
+- id: js-interspersed-hex-escapes
+  desc: Interspersed hex escape sequences
+  crit: notable
+  conf: 0.8
+  mbc: B0032
+  attack: T1027
+  for:
+  - javascript
+  - typescript
+  if:
+    type: string_literal
+    regex: (\\x[0-9a-fA-F]{2}.{1,3}){4,}
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: well-known/app/ai/browser-agent/open-webui-computer/
+  - id: metadata/build/
+  - type: text
+    regex: (\\\\x[0-9a-fA-F]{2}-\\\\x[0-9a-fA-F]{2}){2,})
+  - id: metadata/lang/locale::i18n-lang-code-js-basename
+  - id: metadata/lang/locale::i18n-lang-code-module-basename
+- id: js-hex-encoded-require
+  desc: Hex-encoded require statement
+  crit: suspicious
+  conf: 0.92
+  mbc: B0032
+  attack: T1027
+  for:
+  - javascript
+  if:
+    type: text
+    regex: require\s*\(\s*Buffer\.from\([^)]{0,120}hex[^)]{0,120}\)\.toString\(\)
+- id: js-b64-encoded-require
+  desc: Base64-encoded require statement
+  crit: suspicious
+  conf: 0.92
+  mbc: B0032
+  attack: T1027
+  for:
+  - javascript
+  if:
+    type: text
+    regex: require\(Buffer\.from\([^)]{0,60}base64
+- id: js-window-write-exec
+  desc: window assignment to exec primitive
+  crit: notable
+  conf: 0.7
+  attack: T1027.002
+  mbc: B0032
+  for:
+  - javascript
+  if:
+    type: tree-sitter
+    kind: assignment
+    language: javascript
+    regex: \bwindow\.(o[^n]\w*|[^o]\w*)\s*=\s*(new\s+Function|Function|eval)\b
+  unless:
+  - id: well-known/lib/web/docsify::docsify-library
+  - id: well-known/lib/web/docsify::docsify-execute-result-marker
+- id: js-window-write-decode
+  desc: window assignment to decode primitive
+  crit: notable
+  conf: 0.65
+  attack: T1027.002
+  mbc: B0032
+  for:
+  - javascript
+  if:
+    type: tree-sitter
+    language: javascript
+    query: '(assignment_expression left: (member_expression object: (identifier) @o
+      property: (property_identifier) @p) right: (identifier) @r (#eq? @o "window")
+      (#match? @r "^(atob|btoa|Buffer)$") (#not-eq? @p @r)) @a'
+- id: js-window-write-network
+  desc: window assignment to network primitive
+  crit: notable
+  conf: 0.65
+  attack: T1027.002
+  mbc: B0032
+  for:
+  - javascript
+  if:
+    type: tree-sitter
+    language: javascript
+    query: '(assignment_expression left: (member_expression object: (identifier) @o
+      property: (property_identifier) @p) right: (identifier) @r (#eq? @o "window")
+      (#match? @r "^(fetch|XMLHttpRequest|WebSocket)$") (#not-eq? @p @r)) @a'
+- id: js-globalthis-write-exec
+  desc: globalThis assignment to exec primitive
+  crit: notable
+  conf: 0.7
+  attack: T1027.002
+  mbc: B0032
+  for:
+  - javascript
+  if:
+    type: tree-sitter
+    kind: assignment
+    language: javascript
+    regex: \bglobalThis\.\w+\s*=\s*(new\s+Function|Function|eval)\b
+- id: js-globalthis-write-decode
+  desc: globalThis assignment to decode primitive
+  crit: notable
+  conf: 0.65
+  attack: T1027.002
+  mbc: B0032
+  for:
+  - javascript
+  if:
+    type: tree-sitter
+    language: javascript
+    query: '(assignment_expression left: (member_expression object: (identifier) @o
+      property: (property_identifier) @p) right: (identifier) @r (#eq? @o "globalThis")
+      (#match? @r "^(atob|btoa|Buffer)$") (#not-eq? @p @r)) @a'
+- id: js-globalthis-write-network
+  desc: globalThis assignment to network primitive
+  crit: notable
+  conf: 0.65
+  attack: T1027.002
+  mbc: B0032
+  for:
+  - javascript
+  if:
+    type: tree-sitter
+    language: javascript
+    query: '(assignment_expression left: (member_expression object: (identifier) @o
+      property: (property_identifier) @p) right: (identifier) @r (#eq? @o "globalThis")
+      (#match? @r "^(fetch|XMLHttpRequest|WebSocket)$") (#not-eq? @p @r)) @a'
+- id: js-global-self-bracket-assignment
+  desc: Dynamic self bracket property assignment
+  crit: suspicious
+  conf: 0.6
+  attack: T1027.002
+  mbc: B0032
+  for:
+  - javascript
+  if:
+    type: text
+    regex: \bself\[[^\]]{1,120}\]\s*=\s*(eval|Function|atob)\b
+- id: js-require-alias
+  desc: Require function aliasing
+  crit: suspicious
+  conf: 0.9
+  attack: T1027.002
+  mbc: B0032
+  for:
+  - javascript
+  if:
+    type: text
+    regex: =\\s*require\\s*;
+- id: markdown-it-bundle
+  desc: markdown-it bundled library marker
+  crit: baseline
+  conf: 0.99
+  for:
+  - javascript
+  if:
+    type: text
+    substr: /*! markdown-it 14.1.0 https://github.com/markdown-it/markdown-it
+- id: js-define-locale-call
+  desc: Moment locale bundle marker
+  crit: baseline
+  conf: 0.99
+  for:
+  - javascript
+  if:
+    type: symbol
+    exact: defineLocale
+- id: dense-unicode-escapes
+  desc: Dense Unicode escape sequences
+  crit: notable
+  conf: 0.88
+  mbc: B0032
+  attack: T1027
+  for:
+  - javascript
+  - typescript
+  count_min: 4
+  per_kb_min: 0.8
+  if:
+    type: string_literal
+    regex: (\\u[0-9a-fA-F]{4}){3,}
+  unless:
+  - id: metadata/build/minifier::js-large-minified-bundle
+  - id: metadata/lang/encoded/unicode-escape::i18n-locale-data-module-path
+  - id: metadata/lang/locale::unicode-escaped-cjk-prose
+  - id: metadata/package/testing/
+  - id: well-known/lib/network/
+  - type: text
+    substr: angular.module("ngLocale")
+  - type: basename
+    regex: ^angular-locale_
+- id: js-alternating-char-obfuscation
+  desc: Strings with alternating junk characters
+  crit: notable
+  conf: 0.8
+  for:
+  - javascript
+  size_max: 100000
+  count_min: 5
+  if:
+    type: text
+    regex: '["''][a-zA-Z0-9_]([^a-zA-Z0-9\s"''\\&=%:]{1,3}[a-zA-Z0-9_]){5,}["'']'
+  unless:
+  - id: metadata/build/recognized-contexts::benign-trojanized-fp-context
+  - id: well-known/tool/development/vscode-extension/atlascode/
+- id: js-function-return-import
+  desc: Function constructor dynamic import idiom
+  crit: notable
+  conf: 0.86
+  for:
+  - javascript
+  - typescript
+  if:
+    type: text
+    regex: Function\(["']return import["']\)\(\)
+- id: js-unicode-escape-ui-text
+  desc: Unicode escaped UI text assignment
+  crit: notable
+  conf: 0.88
+  for:
+  - javascript
+  - typescript
+  if:
+    type: text
+    regex: \b(textContent|placeholder)\s*=\s*["'](\\u[0-9a-fA-F]{4}){2,}
+- id: ts-proto-generated-file
+  desc: ts-proto generated file
+  crit: notable
+  conf: 0.98
+  for:
+  - javascript
+  - typescript
+  if:
+    type: text
+    word: tsProtoGlobalThis
+- id: js-byte-array-buffer-string
+  desc: String rebuilt from a decimal byte array
+  crit: suspicious
+  conf: 0.88
+  mbc: B0032
+  attack: T1027
+  for:
+  - javascript
+  - typescript
+  if:
+    type: text
+    regex: Buffer\.from\(\s*\[\s*\d{2,3}\s*,\s*\d{2,3}\s*,[\d,\s]{1,400}\]\s*\)\.toString\(
+  unless:
+  - id: metadata/package/testing/
+- id: js-byte-array-encoded-require
+  desc: require/resolve of a byte-array-encoded name
+  crit: suspicious
+  conf: 0.94
+  mbc: B0032
+  attack: T1027
+  for:
+  - javascript
+  - typescript
+  if:
+    type: text
+    regex: require(\.resolve)?\s*\(\s*Buffer\.from\(\s*\[\s*\d{2,3}\s*,
 composite_rules:
-  - id: js-reverse-string-recognized-marker
-    desc: Recognized reverse-string bundle marker
-    crit: component
-    conf: 0.9
-    any:
-      - id: metadata/build/bundler/asset::js-any-bundle-output
-      - id: metadata/build/minifier::js-large-minified-bundle
-      - id: metadata/build/bundler/asset::js-mermaid-bundle
-      - id: well-known/lib/development/vscode-webview::vscode-webview-bundle
-      - id: well-known/lib/development/vscode::vscode-extension-marker
-      - id: well-known/lib/development/vscode-webview::acquire-vscode-api
-      - id: well-known/lib/format/json-ts::converter-bundle
-  - id: js-unicode-escape-recognized-marker
-    desc: Unicode escape recognized marker
-    crit: component
-    conf: 0.95
-    for:
-      - javascript
-      - typescript
-    any:
-      - id: metadata/package/testing/harness/runtime::v8-js-fuzzer-unicode-fixture-name
-      - id: metadata/lang/locale::i18n-locale-file
-      - id: metadata/lang/locale::angular-locale-bundle-path
-      - id: well-known/lib/datetime/moment::moment-locale
-      - id: metadata/build/bundler/asset::js-large-module-bundle
-      - id: metadata/build/bundler/wrapper::js-esbuild-bundle
-      - id: metadata/build/bundler/asset::js-any-bundle-output
-      - id: metadata/build/bundler/runtime::webpack-bundled
-      - id: metadata/build/bundler/wrapper::esbuild-bundled
-      - id: metadata/build/bundler/wrapper::rollup-bundled
-      - id: js-unicode-escape-ui-text
-  - id: js-global-property-write
-    desc: Global object property assignment
-    crit: suspicious
-    conf: 0.8
-    attack: T1027.002
-    mbc: B0032
-    for:
-      - javascript
-    size_max: 500000
-    all:
-      - id: js-global-property-write-assignment
-    any:
-      - id: micro-behaviors/process/interpreter/eval/direct::js-eval-raw
-      - id: micro-behaviors/process/interpreter/eval/compile::js-function-constructor
-      - id: micro-behaviors/data/decode/symbol-base64::atob-decode
-      - id: micro-behaviors/process/interpreter/eval/compile::js-new-function-constructor
-    unless:
-      - id: metadata/build/
-      - id: well-known/lib/web/jquery::license-url
-      - id: well-known/lib/web/prototype::copyright
-      - id: well-known/lib/web/ecmascript::shutter-reloaded-lightbox
-      - id: well-known/lib/web/docsify::docsify-library
-      - id: well-known/lib/runtime/scripted/electron::electron-app-asar-member-path
-      - id: well-known/lib/runtime/scripted/electron::electron-app-bundle-exception
-  - id: js-window-property-write-assignment
-    desc: window high-risk property assignment
-    crit: component
-    conf: 0.7
-    any:
-      - id: js-window-write-exec
-      - id: js-window-write-decode
-      - id: js-window-write-network
-  - id: js-globalthis-property-write-assignment
-    desc: globalThis high-risk property assignment
-    crit: component
-    conf: 0.7
-    any:
-      - id: js-globalthis-write-exec
-      - id: js-globalthis-write-decode
-      - id: js-globalthis-write-network
+- id: js-reverse-string-recognized-marker
+  desc: Recognized reverse-string bundle marker
+  crit: component
+  conf: 0.9
+  any:
+  - id: metadata/build/bundler/asset::js-any-bundle-output
+  - id: metadata/build/minifier::js-large-minified-bundle
+  - id: metadata/build/bundler/asset::js-mermaid-bundle
+  - id: well-known/lib/development/vscode-webview::vscode-webview-bundle
+  - id: well-known/lib/development/vscode::vscode-extension-marker
+  - id: well-known/lib/development/vscode-webview::acquire-vscode-api
+  - id: well-known/lib/format/json-ts::converter-bundle
+- id: js-unicode-escape-recognized-marker
+  desc: Unicode escape recognized marker
+  crit: component
+  conf: 0.95
+  for:
+  - javascript
+  - typescript
+  any:
+  - id: metadata/package/testing/harness/runtime::v8-js-fuzzer-unicode-fixture-name
+  - id: metadata/lang/locale::i18n-locale-file
+  - id: metadata/lang/locale::angular-locale-bundle-path
+  - id: well-known/lib/datetime/moment::moment-locale
+  - id: metadata/build/bundler/asset::js-large-module-bundle
+  - id: metadata/build/bundler/wrapper::js-esbuild-bundle
+  - id: metadata/build/bundler/asset::js-any-bundle-output
+  - id: metadata/build/bundler/runtime::webpack-bundled
+  - id: metadata/build/bundler/wrapper::esbuild-bundled
+  - id: metadata/build/bundler/wrapper::rollup-bundled
+  - id: js-unicode-escape-ui-text
+- id: js-global-property-write
+  desc: Global object property assignment
+  crit: suspicious
+  conf: 0.8
+  attack: T1027.002
+  mbc: B0032
+  for:
+  - javascript
+  size_max: 500000
+  all:
   - id: js-global-property-write-assignment
-    desc: Global object property assignment
-    crit: suspicious
-    conf: 0.6
-    attack: T1027.002
-    mbc: B0032
-    for:
-      - javascript
+  any:
+  - id: micro-behaviors/process/interpreter/eval/direct::js-eval-raw
+  - id: micro-behaviors/process/interpreter/eval/compile::js-function-constructor
+  - id: micro-behaviors/data/decode/base64::atob-decode
+  - id: micro-behaviors/process/interpreter/eval/compile::js-new-function-constructor
+  unless:
+  - id: metadata/build/
+  - id: well-known/lib/web/jquery::license-url
+  - id: well-known/lib/web/prototype::copyright
+  - id: well-known/lib/web/ecmascript::shutter-reloaded-lightbox
+  - id: well-known/lib/web/docsify::docsify-library
+  - id: well-known/lib/runtime/scripted/electron::electron-app-asar-member-path
+  - id: well-known/lib/runtime/scripted/electron::electron-app-bundle-exception
+- id: js-window-property-write-assignment
+  desc: window high-risk property assignment
+  crit: component
+  conf: 0.7
+  any:
+  - id: js-window-write-exec
+  - id: js-window-write-decode
+  - id: js-window-write-network
+- id: js-globalthis-property-write-assignment
+  desc: globalThis high-risk property assignment
+  crit: component
+  conf: 0.7
+  any:
+  - id: js-globalthis-write-exec
+  - id: js-globalthis-write-decode
+  - id: js-globalthis-write-network
+- id: js-global-property-write-assignment
+  desc: Global object property assignment
+  crit: suspicious
+  conf: 0.6
+  attack: T1027.002
+  mbc: B0032
+  for:
+  - javascript
+  any:
+  - id: js-window-property-write-assignment
+  - id: js-globalthis-property-write-assignment
+  unless:
+  - id: metadata/package/testing/presence/harness::test-directory
+  - id: metadata/package/testing/presence/harness::test-directory-path
+  - id: metadata/build/
+  - id: well-known/lib/web/docsify::docsify-library
+  - id: well-known/lib/runtime/scripted/electron::electron-app-asar-member-path
+  - id: well-known/lib/runtime/scripted/electron::electron-app-bundle-exception
+- id: js-local-fileserver-test-marker
+  desc: Local Express static test server marker
+  crit: component
+  conf: 0.95
+  for:
+  - javascript
+  all:
+  - id: metadata/import/npm/express
+  - id: metadata/import/npm/serve-index
+  - id: metadata/import/npm/multer
+  - id: metadata/import/npm/resources
+  - id: metadata/import/npm/httpserver
+- id: electron-ml-parity-runner
+  desc: Electron ML parity test runner
+  crit: component
+  conf: 0.95
+  for:
+  - javascript
+  - typescript
+  all:
+  - id: well-known/app/system/electron-auth::electron-ml-parity-token
+  - id: well-known/app/system/electron-auth::electron-ml-parity-host-response-prefix
+  - id: micro-behaviors/os/stdio::node-readline-line-handler
+- id: js-obfuscated-requires
+  desc: Obfuscated module imports via hex encoding
+  crit: hostile
+  conf: 0.95
+  attack: T1195.002
+  mbc: B0032
+  for:
+  - javascript
+  all:
+  - id: js-hex-encoded-require
+  - id: micro-behaviors/data/decode/hex::buffer-from-hex-dup
+- id: js-obfuscated-requires-b64
+  desc: Obfuscated module imports via base64 encoding
+  crit: hostile
+  conf: 0.95
+  attack: T1195.002
+  mbc: B0032
+  for:
+  - javascript
+  all:
+  - id: js-b64-encoded-require
+  - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::hex-name-mangling
+- id: js-strong-obfuscation
+  desc: Multiple JavaScript string-obfuscation indicators
+  crit: suspicious
+  conf: 0.9
+  mbc: B0032
+  attack: T1027
+  for:
+  - javascript
+  needs: 2
+  any:
+  - id: objectives/anti-static/obfuscation/string/charcode-url::dense-fromcharcode
+  - id: dense-unicode-escapes
+  - id: micro-behaviors/data/encode/hex::js-dense-hex-escapes
+  - id: js-hex-encoded-require
+  - id: js-b64-encoded-require
+  - id: objectives/anti-static/obfuscation/string/reconstruct::js-string-deobfuscation
+  - id: objectives/anti-static/obfuscation/string/reconstruct::js-dict-string-reconstruction
+  unless:
+  - id: js-define-locale-call
+  - id: metadata/build/bundler/vscode::js-distribution-output-path
+  - id: metadata/package/files/dependency::webfontloader-package-path
+  - id: well-known/tool/development/vcs/github-web::js-parse-end-mark
+  downgrade:
     any:
-      - id: js-window-property-write-assignment
-      - id: js-globalthis-property-write-assignment
-    unless:
-      - id: metadata/package/testing/presence/harness::test-directory
-      - id: metadata/package/testing/presence/harness::test-directory-path
-      - id: metadata/build/
-      - id: well-known/lib/web/docsify::docsify-library
-      - id: well-known/lib/runtime/scripted/electron::electron-app-asar-member-path
-      - id: well-known/lib/runtime/scripted/electron::electron-app-bundle-exception
-  - id: js-local-fileserver-test-marker
-    desc: Local Express static test server marker
-    crit: component
-    conf: 0.95
-    for:
-      - javascript
-    all:
-      - id: metadata/import/npm/express
-      - id: metadata/import/npm/serve-index
-      - id: metadata/import/npm/multer
-      - id: metadata/import/npm/resources
-      - id: metadata/import/npm/httpserver
-  - id: electron-ml-parity-runner
-    desc: Electron ML parity test runner
-    crit: component
-    conf: 0.95
-    for:
-      - javascript
-      - typescript
-    all:
-      - id: well-known/app/system/electron-auth::electron-ml-parity-token
-      - id: well-known/app/system/electron-auth::electron-ml-parity-host-response-prefix
-      - id: micro-behaviors/os/stdio::node-readline-line-handler
-  - id: js-obfuscated-requires
-    desc: Obfuscated module imports via hex encoding
-    crit: hostile
-    conf: 0.95
-    attack: T1195.002
-    mbc: B0032
-    for:
-      - javascript
-    all:
-      - id: js-hex-encoded-require
-      - id: micro-behaviors/data/decode/hex::buffer-from-hex-dup
-  - id: js-obfuscated-requires-b64
-    desc: Obfuscated module imports via base64 encoding
-    crit: hostile
-    conf: 0.95
-    attack: T1195.002
-    mbc: B0032
-    for:
-      - javascript
-    all:
-      - id: js-b64-encoded-require
-      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::hex-name-mangling
-  - id: js-strong-obfuscation
-    desc: Multiple JavaScript string-obfuscation indicators
-    crit: suspicious
-    conf: 0.9
-    mbc: B0032
-    attack: T1027
-    for:
-      - javascript
-    # One broad decoder-shaped heuristic can occur naturally in minified
-    # libraries.  Promote the file to this umbrella only when two distinct
-    # concealment indicators agree; each strong atomic still surfaces alone.
-    needs: 2
-    any:
-      - id: objectives/anti-static/obfuscation/string/charcode-url::dense-fromcharcode
-      - id: dense-unicode-escapes
-      - id: micro-behaviors/data/encode/hex::js-dense-hex-escapes
-      - id: js-hex-encoded-require
-      - id: js-b64-encoded-require
-      - id: objectives/anti-static/obfuscation/string/reconstruct::js-string-deobfuscation
-      - id: objectives/anti-static/obfuscation/string/reconstruct::js-dict-string-reconstruction
-    unless:
-      - id: js-define-locale-call
-      - id: metadata/build/bundler/vscode::js-distribution-output-path
-      - id: metadata/package/files/dependency::webfontloader-package-path
-      # GitHub's production runtime is a minified application bundle. Its
-      # Unicode strings and generic decoder helpers are shipped UI code, not
-      # evidence that a fetched script is concealing a payload.
-      - id: well-known/tool/development/vcs/github-web::js-parse-end-mark
-    downgrade:
-      any:
-        - id: metadata/build/
-  - id: unicode-marker-hidden-wmi-payload
-    desc: Unicode-marker obfuscates hidden WMI payload
-    # This is an obfuscation/launch-shape summary.  The execution-specific
-    # WMI composites carry the hostile verdict; keep this overlapping view
-    # suspicious so one payload does not produce duplicate hostile findings.
-    crit: suspicious
-    conf: 0.99
-    attack: "T1027,T1027.002,T1047,T1059.007,T1564.003"
-    mbc: "B0032,E1043"
-    for: [javascript]
-    all:
-      - id: objectives/anti-static/obfuscation/string/array::js-long-delimiter-split-join-cleanup
-      - id: objectives/execution/wmi::js-hidden-process-create-sequence
-      - id: micro-behaviors/os/com/automation::wscript-shell-literal
-      - id: micro-behaviors/data/decode/base64::base64-decode-call-text
-  - id: js-numeric-xor-wsh-environment-loader
-    desc: Numeric XOR obfuscation feeds WSH environment staging
-    crit: hostile
-    conf: 0.99
-    attack: T1027,T1059.007,T1564.003
-    for: [javascript]
-    all:
-      - id: metadata/file/arithmetic::js-extreme-digit-ratio-large-source
-      - id: micro-behaviors/data/encode/char-code::computed-string-method-xor-rebuild
-      - id: micro-behaviors/os/env/modify::wsh-environment-decoded-assignment-cluster
-      - id: micro-behaviors/process/interpreter/jscript::createobject-call
+    - id: metadata/build/
+- id: unicode-marker-hidden-wmi-payload
+  desc: Unicode-marker obfuscates hidden WMI payload
+  crit: suspicious
+  conf: 0.99
+  attack: T1027,T1027.002,T1047,T1059.007,T1564.003
+  mbc: B0032,E1043
+  for:
+  - javascript
+  all:
+  - id: objectives/anti-static/obfuscation/string/array::js-long-delimiter-split-join-cleanup
+  - id: objectives/execution/wmi::js-hidden-process-create-sequence
+  - id: micro-behaviors/os/com/automation::wscript-shell-literal
+  - id: micro-behaviors/data/decode/base64::base64-decode-call-text
+- id: js-numeric-xor-wsh-environment-loader
+  desc: Numeric XOR obfuscation feeds WSH environment staging
+  crit: hostile
+  conf: 0.99
+  attack: T1027,T1059.007,T1564.003
+  for:
+  - javascript
+  all:
+  - id: metadata/file/arithmetic::js-extreme-digit-ratio-large-source
+  - id: micro-behaviors/data/encode/char-code::computed-string-method-xor-rebuild
+  - id: micro-behaviors/os/env/modify::wsh-environment-decoded-assignment-cluster
+  - id: micro-behaviors/process/interpreter/jscript::createobject-call

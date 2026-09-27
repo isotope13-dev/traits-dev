@@ -77,7 +77,7 @@ describe claims to reconcile with existing siblings before creating children.
 | `micro-behaviors/crypto/symmetric/aes/library` | 76 | Reconcile with `aes/runtime-library` (48) and algorithm/mode siblings. A .NET AES implementation and an mbedTLS AES implementation belong with AES. A generic cipher API or Go CFB stream type needs AES evidence before receiving an AES claim. The two implementation leaves total **124**, so simply merging them violates the cap. |
 | `micro-behaviors/data/archive/library` | 16 | Route archive creation, extraction and member access by the operation. A bare package reference supports less than a call extracting an archive. |
 | `micro-behaviors/data/runtime/library` | 35 | Retire this mixed subject with its parent/siblings: samples include HTTP/2, ASN.1 and Go/WASM interop. Those are communication, data-format and foreign-interface claims. |
-| `micro-behaviors/data/string/library` | 24 at audit / retired | Twenty-one string API observations moved to operation leaves (measure, compare, copy, case, search, concat). Javassist, cglib and Byte Buddy are specialized code-generation fingerprints used by reflection guards, so their explicit reference-only traits moved to `micro-behaviors/code/generation`; `string/runtime` still needs a separate review. A dynamic `CallByName` observation is reflection, not necessarily string handling. |
+| `micro-behaviors/data/string/library` | 24 at audit / retired | Twenty-one string API observations moved to operation leaves (measure, compare, copy, case, search, concat). Javassist, cglib and Byte Buddy are specialized code-generation fingerprints used by reflection guards, so their explicit reference-only traits moved to `micro-behaviors/metaprogramming/generation`; `string/runtime` still needs a separate review. A dynamic `CallByName` observation is reflection, not necessarily string handling. |
 | `micro-behaviors/dylib/library` | 155* / 8 leaves | Retire the mixed parent: ABI attribution, graphics APIs, editor/tool names and library references are not all dynamic-loading behavior. `XCreateWindow` belongs with window creation; a dependency reference alone stays a dependency reference. |
 | `micro-behaviors/fs/delete/file/library` | 51 | File deletion APIs remain deletion observations alongside their non-library equivalents. Backend/language is not a deletion subtechnique. |
 | `micro-behaviors/fs/path/library` | 18 at audit / 6 now | **Keep the resource meaning.** Shared-library paths are a real path class. Apple's `/Library/Caches`, font, app-data, log and OSRecovery paths have been moved to their resource directories; the remaining path rules describe shared-library files. |
@@ -119,7 +119,7 @@ atoms had no direct YAML consumers.
 The string-library move retained the same matcher, effective scope, severity,
 confidence and metadata for every rule. String API references now land with
 their operation; three known bytecode-manipulation library fingerprints now
-use `micro-behaviors/code/generation` and explicitly claim only a reference,
+use `micro-behaviors/metaprogramming/generation` and explicitly claim only a reference,
 not execution. Their references in reflection composites were rewritten,
 preserving their role as exclusions for ordinary framework behavior. The .NET
 `Combine` and `GetDirectoryName` method-name fingerprints were separately
@@ -142,6 +142,16 @@ component is insufficient:
 | Wallet-provider interface | Its supported interface operation, key access or transaction operation. `window.ethereum` alone does not mean credential theft. |
 | Provider import, dependency declaration, upstream source path | The actual import/dependency/provenance observation unless stronger evidence supports embedded functionality. |
 | Independent identified wallet/library artifact | Its single canonical `well-known` home, subject to the existing recognition and specificity bars. |
+
+The Ethereum client cohort is now split by those claims: JSON-RPC methods,
+batching and provider-list composition live under `communications/rpc`;
+transaction recipient fields and recipient-byte reconstruction live under
+`data/transaction/query`; explorer URL/API signatures live under
+`communications/http/url/rpc`; generic array mapping atoms live under
+`data/collection/array`. The source-vs-language distinction remains in
+`for:` scopes and filenames. Remaining Python wallet, key, signing and
+transaction-submission rules and the other `crypto/library/blockchain/*`
+siblings still require the same per-rule disposition.
 
 The current `crypto/library/implementation` roll-up combines several primitive
 references with broad library context. Refactor its supported claims; don't

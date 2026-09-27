@@ -67,6 +67,7 @@ See [Matcher Defines Identity](TAXONOMY.md#matcher-defines-identity) in TAXONOMY
 
 ## Trait Placement & IDs
 
+- **Rules belong only in leaf directories.** This applies equally to atomic traits, composites, and aliases: a directory containing rules must not also have rule-bearing descendants. Parent directories define categories and can be referenced to select descendant rules; they do not hold umbrella rules. Before splitting a leaf, assign every existing rule one defensible destination. See [directory budgets and placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
 - IDs auto-prefixed by directory path (e.g., `traits/micro-behaviors/process/create/shell/` → prefix `micro-behaviors/process/create/shell`)
 - **Filenames are NEVER part of trait IDs** - only the directory path is used for prefixing
   - A trait `foo` in `traits/micro-behaviors/process/create/shell/python.yaml` has ID `micro-behaviors/process/create/shell::foo`
@@ -292,6 +293,12 @@ defaults:
   - `bitcoin_addr`: Only match if evidence contains a valid Bitcoin address (P2PKH, P2SH, or SegWit) with a valid checksum.
   - `base64`: Require the entire matched span to be compatible with canonical standard or URL-safe Base64, padded or unpadded. Checks length, padding placement and unused trailing bits; rejects mixed alphabets and ignores ASCII space/tab/CR/LF. Does not allocate a decoded buffer. Compatibility is not proof of encoding intent, executable content, or hostility: even ordinary words can be valid Base64. Anchor the pattern when validating an entire literal, and use separate length/context constraints.
 - **Symbol normalization:** Leading underscores are stripped from both loaded symbols and `exact`/`substr` patterns for cross-platform portability (macOS `_malloc`, glibc `__libc_start_main` both match `exact: "malloc"` / `exact: "libc_start_main"`). Regex patterns are not normalized.
+  Test anchored regexes against the normalized name: `^__gxx_` misses `gxx_`.
+  The ABI rules use `^_{0,2}gxx_` to accept both normalized and previously
+  accepted decorated spellings. Confirm positive and negative symbol controls;
+  matching the same spelling in a string literal is not a symbol test. Before
+  repairing an inactive matcher, audit its consumers so the newly recognized
+  neutral fact does not activate an unsupported identity or intent claim.
 - **Symbol family shortcuts:** use `type: import`, `type: export`, or `type: function` when you know the family. They are clearer spellings for `type: symbol` with `kind: import/export/function`. Keep `type: symbol` for cross-family searches or `kind: forward` PE re-export rules. When `kind: forward`, the pattern is tested against both the export name *and* the forward target (`KERNEL32.LoadLibraryA`).
 
 **Which one should I use?**
@@ -608,6 +615,13 @@ itself a call.
 
 If you're ever in doubt about what a node's text is, run `cleave test-match <file> --type ast --kind <kind> --pattern <something-permissive>` and inspect the captured evidence.
 
+**Tree-sitter queries need captures.** The evaluator counts captured nodes, so a
+structurally valid query without a capture emits no finding. Capture the intended
+observation, for example `(subscript_expression index: (binary_expression
+operator: "+")) @access`. Use named fields to distinguish the index from the
+object being indexed. Verify a positive example and a nearby negative example
+with `test-rules`; successful query compilation alone does not prove detection.
+
 ## Count & Density Constraints
 
 These are **trait-level fields** (siblings of `if:`, not nested inside the condition):
@@ -884,6 +898,14 @@ composite_rules:
 ```
 
 **Trait references:** Use `{ id: trait-id }` in condition lists. The `type:` field can be omitted for trait references.
+
+**Preserve reference sets when moving rules.** Audit references to every ancestor
+directory, not only exact IDs and the immediate leaf. An explicit `any:` list
+may become a directory reference only when it covers the whole destination;
+even a 99% subset would gain an unintended alternative. Keep partial sets named.
+The redundant-reference validator requires full coverage rather than a percentage.
+An `all:` list is a conjunction; a directory reference matches any descendant.
+Do not replace the former with the latter or demand a taxonomy split on count alone.
 
 **Absence detection:** Composite rules take `all:`, `any:`, `needs:`, `unless:` and `downgrade:`. There is no composite-level `none:` field — a composite carrying one fails to parse and is dropped at load time (the analyze path skips unparseable rule files with a warning; `cleave validate` reports it). Express absence with `unless:`, which skips the rule when the listed condition matches:
 
@@ -1435,10 +1457,11 @@ with its decoded named-bit subtree in values (e.g. `pe.dll_characteristics.*`,
 `make validate` allows at most **85 atomic traits and composite rules combined**
 per directory, summed across its YAML files, at every criticality. Exactly 85
 passes; 86 fails. There is no separate atomic cap or directory exemption.
-Behavioral tiers (`micro-behaviors/`, `objectives/`) permit 2–5 directory levels
-below the tier; the filename is not a level. See
+Depth above five directory levels below the tier produces a non-blocking review
+warning, not a hard limit; count neither the tier nor the filename. Sparse
+sibling groups below 35 combined rules also prompt review under the criteria in
 [Directory budgets and placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts)
-for the required sibling audit and the separate three-level ML aggregation limit.
+alongside the required sibling audit and the separate ML feature visibility limit.
 
 ### Forward compatibility (newer fields, older binaries)
 
@@ -1460,6 +1483,14 @@ differently, by design:
 Practical consequence: it's safe to publish a rule pack that uses a new field;
 older analyzers skip just those rules instead of erroring out. Bump the analyzer
 when you need those rules to actually fire.
+
+### Metadata section review
+
+Binary-only metadata matchers without section filters receive a non-blocking
+review advisory. Add a section constraint when location is part of the claim;
+whole-file vocabulary need not be restricted to an arbitrary section. This does
+not relax the separate section requirements for well-known binary fingerprints
+or binary hex conditions.
 
 ### Regex Constraints
 

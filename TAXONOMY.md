@@ -1,6 +1,60 @@
 # cleave Taxonomy
 
-A taxonomy with three behavioral tiers and a metadata tier, following [MBC (Malware Behavior Catalog)](https://github.com/MBCProject/mbc-markdown) principles.
+The primary purpose is a precise, defensible catalog of malware behaviors and
+characteristics, aspiring to Carl Linnaeus's classification rigor: each observation
+has one reasonable home, each child refines its parent, and similar categories
+have documented boundaries. The catalog is
+informed by [MBC (Malware Behavior Catalog)](https://github.com/MBCProject/mbc-markdown).
+
+## Purpose and design commitments
+
+Neutral capabilities and properties belong in the catalog too; their presence
+alone does not imply malice.
+The Linnaean analogy is a standard of classification rigor, not a requirement for
+fixed ranks, uniform depth, or a single classification for an entire sample.
+ML features are a downstream use of this classification. Taxonomic meaning takes
+priority over the current model's feature layout.
+
+The practical standard is reproducible classification: two authors reading a
+matcher and the directory contracts should independently choose the same home
+without knowing the sample, implementation language, or consuming composite.
+This catalogs observations, not mutually exclusive classes of specimens: one
+sample can exhibit many behaviors and characteristics, each classified separately.
+
+- **One defensible home per observation.** Classify what the matcher establishes.
+  Each child narrows its parent; siblings answer the same classification question.
+  Behavioral branches refine capabilities or techniques; characteristic branches
+  refine properties or identities. Neither needs artificial technique labels.
+  Document admission criteria and tie-breaking rules wherever categories overlap.
+  For competing directories, state what each admits, what it excludes, and the
+  evidence that decides between them; include a boundary example when needed.
+- **Strictly leaf-only.** Atomic and composite rules live only in leaves. Parents
+  organize categories; references reuse evidence without copying rules between levels.
+- **Consolidate duplicate observations.** Identical matcher bodies are candidates
+  for merging, not reasons for parallel taxonomy branches. Compare effective scope
+  and conditions before merging; preserve distinct observations when those differ.
+- **Classify the behavior or characteristic, not its implementation.** Language,
+  file type, and library backend normally belong in filenames and rule scope;
+  equivalent observations share a
+  directory across source and compiled forms. Embedded library evidence follows
+  its supported technique; independent artifact identity belongs in `well-known/`.
+  Distinguish a program's technique from the analyzer's evidence: manipulating an
+  AST is a technique; using an AST matcher to recognize a socket call is not.
+- **Keep claims within the evidence.** A reference, dependency, or embedded
+  implementation can support a useful characteristic or capability without
+  proving execution, data flow, or malicious intent. Names, descriptions, and
+  placement must preserve that distinction.
+- **Prefer breadth when equally precise.** Retain depth for real subtechniques.
+  Counts and depth warnings prompt review; they never justify invented distinctions,
+  generic overflow buckets, or merging meaningfully different behaviors.
+- **Preserve detection deliberately.** Update consumers when consolidating or moving
+  rules, test both positive and benign cases, and document intentional coverage changes.
+  A misleading classification is not repaired by lowering criticality.
+
+Treat directory boundaries as an authoring contract: if two homes remain equally
+reasonable, clarify their admission criteria or revise the partition before
+adding the rule. Apply the [placement procedure and directory budgets](#directory-budgets-and-placement-contracts)
+below; counts are constraints and review signals, not definitions of behaviors.
 
 ## Tiers
 
@@ -59,16 +113,16 @@ The contract (each is enforced at load time):
 
 ## ML Feature Extraction
 
-The ML pipeline extracts features from **subdirectory path + criticality**, not individual trait IDs. Each trait's directory path (up to 3 levels deep), combined with its criticality level, becomes a feature dimension. This means:
+The ML pipeline extracts features from **trait-path prefixes + criticality**, not individual trait IDs alone. The current Collimator path-presence/max-criticality extractor keeps the first three path segments **including** the tier (`objectives/evasion/kernel-hide`), so it guarantees only two taxonomy levels below that tier as direct path features. Full paths can also appear in higher-order features when present in the trained vocabulary, but a deep path is not guaranteed its own unary feature. Treat the visible-prefix limit as an implementation detail that may change with a model update, not as a reason to erase a real technique distinction. This means:
 
-- **Directory structure is the feature space.** A trait at `objectives/evasion/kernel-hide/rootkit/linux.yaml` with `crit: suspicious` generates the feature `evasion/kernel-hide/rootkit:suspicious`. The directory hierarchy directly shapes what the model learns.
+- **Directory structure is the feature space.** A trait at `objectives/evasion/kernel-hide/rootkit/linux.yaml` with `crit: suspicious` currently generates direct path features through `objectives/evasion/kernel-hide:suspicious`; the deeper `rootkit` distinction is not a guaranteed unary feature. The directory hierarchy directly shapes what the model learns.
 - **Criticality is the signal strength.** Two traits in the same directory but at different criticality levels produce different features. A `suspicious` rootkit trait and a `component` rootkit trait are distinct signals.
-- **Depth matters.** The pipeline uses up to 3 directory levels. Features aggregate at the deepest available level, so `evasion/kernel-hide/rootkit` is more specific than `evasion/kernel-hide`, which is more specific than `evasion`.
+- **Path-prefix visibility is bounded.** The current direct path feature uses the tier plus its first two descendants. Deeper directory names remain important for human placement and can occur in higher-order features, but they are not guaranteed an independent direct feature until the model's path limit changes.
 
 ### Design implications for trait authors
 
-- **Group related detections under the same subdirectory** so they aggregate into a single, strong feature. A directory with 10+ traits produces a robust signal; a directory with 1-2 traits produces a weak one.
-- **Don't create single-trait subdirectories** when the trait fits an existing directory. `credential-access/browser/` (11 traits) is a strong feature; adding `credential-access/opera/` with 1 trait creates a weak feature that should instead be a file within `credential-access/browser/`.
+- **Group detections by their shared behavior or characteristic.** Consistent categories also support feature aggregation; rule count alone establishes neither taxonomic validity nor ML signal quality.
+- **Don't create single-trait subdirectories** when the trait fits an existing directory. Browser-specific evidence for the same credential-access technique belongs in that technique's leaf, with browser-specific filenames. A distinct technique may justify a small leaf; document its boundary rather than merging it merely to increase the count.
 - **Use technique-based directories.** Directory names should describe the behavior or method being detected, not the implementation language, platform, ecosystem, file type, malware family, or sample source. Put implementation details in filenames when they help readability, unless the technique itself is platform-specific.
 - **Prefer concise, meaningful names.** Short directory names are easier to scan and produce cleaner ML features: use `exec`, `poll`, `proxy`, `shell`, `reflect`, or `stage` when they are clear in context. Do not shorten names so far that humans lose the technique meaning.
 - **Avoid marker buckets.** Do not use `marker/` or `markers/` as directory names; name the behavior or technique being indicated instead.
@@ -84,8 +138,8 @@ The ML pipeline extracts features from **subdirectory path + criticality**, not 
   shapes -- neither a service nor a judgment a reader could act on; they now sit in
   `os/package-manager/publish/` and `os/package-manager/installer-script/`.
 
-- **Name the level the model can see.** The feature keeps three directory levels after the tier, so the segment that carries the distinction has to sit at or above level 3. A tree like `fs/path/sensitive/private-key/` puts the real discriminator at level 4, where it is aggregated away: every child of `sensitive/` — SSH keys, cookies, `/etc/passwd`, an iMessage database — collapses into the single feature `fs/path/sensitive`, teaching the model that reading someone's notes and reading their private key are the same event. Promote the discriminating axis instead (`fs/path/private-key/`, `fs/path/password-store/`), and express the secondary axis — *whose* credential it is — in the **filename** (`ssh.yaml`, `browser.yaml`), which costs nothing because filenames are never part of trait IDs. A grouping word that only re-states its parent (`sensitive/credentials/`) fails the precision test above *and* spends the last visible level; drop it and let the type take that slot.
-- **The 3-level depth limit** means `objectives/anti-static/obfuscation/string/encoding/` extracts as `anti-static/obfuscation/string` — the `encoding/` level is aggregated into `string/`. Plan directory depth accordingly, and avoid unnecessary intermediate directories (e.g., prefer `obfuscation/syntax/` over `obfuscation/source/syntax/`).
+- **Keep meaningful distinctions visible when practical.** The current direct path feature ends after two taxonomy levels below the tier. Thus `micro-behaviors/fs/path/sensitive/private-key/` and its siblings share the direct prefix `micro-behaviors/fs/path`; the model cannot distinguish private-key paths from other paths through that feature alone. A more exact taxonomy might use `fs/path/private-key/`, `fs/path/password-store/`, and `fs/path/cookie/`, with ownership in filenames such as `ssh.yaml` or `browser.yaml`; those leaves still share the current direct prefix. Likewise, `objectives/anti-static/obfuscation/string/encoding/` and `.../string/fragmentation/` share the direct prefix `objectives/anti-static/obfuscation`; their distinct leaves are not guaranteed unary features. Consider a broader sibling layout such as `anti-static/obfuscation/string-encoding/` and `.../string-fragmentation/` if it preserves one clear home per matcher.
+- **Prefer breadth over depth when precision is unchanged.** Put distinct, equally specific techniques in sibling directories rather than stacking another level under a broad bucket. Keep a deeper child when it expresses a genuine subtechnique and flattening it would merge claims that need different destinations. Directory depth is not itself evidence of misorganization; a validator may flag sparse sibling cohorts for review, but it must not demand a shallower path when that would make placement ambiguous or less exact.
 
 ## Core Principles
 
@@ -163,13 +217,47 @@ rule’s `for:` and `platforms:` scope. Classify source-level evidence by what i
 establishes: an operation/API by its capability, a hostile code technique by
 its objective, and a structural property of the analyzed code by its metadata
 subject. Code techniques such as AST inspection/transformation and runtime
-reflection belong under the same technique regardless of whether evidence is
-source text or compiled code. `micro-behaviors/data/source/` is a historical
-mixed namespace, not a claim that source code is a kind of runtime data or a
-valid new placement; do not add rules there. Migrate each existing rule to its
-semantic subject rather than recreating `source/` as a taxonomy axis.
+reflection belong under `metaprogramming/<technique>` regardless of whether
+evidence is source text or compiled code. `micro-behaviors/data/source/` is a
+historical mixed namespace, not a claim that source code is a kind of runtime
+data or a valid new placement; do not add rules there. Migrate each existing
+rule to its semantic subject rather than recreating `source/` as a taxonomy
+axis.
 
 ### Directory budgets and placement contracts
+
+**Placement procedure:** State the observation the matcher actually supports;
+choose its tier; find the existing subject; then choose the most specific
+leaf justified by that observation. Check its nearest competing leaf before
+adding a rule. Implementation language, evidence surface, and the objective
+that consumes an atom do not choose its home.
+
+**Keep directories strictly leaf-only.** Broad observations do not justify
+putting YAML beside subdirectories. We previously tried mixed nodes: similar
+rules accumulated at both parent and child levels, creating duplicate homes.
+This applies to atomic traits and composites alike: a parent cannot retain
+umbrella composites, aliases, or broad matchers after gaining rule-bearing
+children. Parent paths remain available for directory references; they group
+descendant rules without owning another copy of those rules.
+When a matcher cannot choose among children, resolve its actual claim:
+
+- A shared operation with an unspecified algorithm belongs with that operation,
+  such as cipher initialization; it must not be assigned an algorithm it does
+  not establish. The operation needs one canonical home shared by all callers.
+- A dependency declaration or attribution belongs with that metadata subject;
+  it does not establish every capability of the named library.
+- A matcher with independently meaningful alternatives should be reviewed as
+  separate canonical observations, with consumers updated to preserve the
+  original alternatives. Do not copy the whole matcher into each destination.
+- An opaque fingerprint that really establishes only a broad capability needs
+  a coherent leaf partition for that capability before migration. Record an
+  unresolved placement issue until that partition is defensible. Do not use a
+  parent-level rule, `general`, `other`, or a false subtechnique to hide the gap.
+
+A proposed split must account for **all** existing rules, including broad
+observations, before any are moved. If its children cannot do so without
+overlap or overstated claims, revise the split. The 85-rule cap is not evidence
+that a more specific observation exists.
 
 `make validate` enforces **one inclusive cap of 85 rules per directory**:
 atomic `traits` plus `composite_rules`, across every YAML file in that directory.
@@ -177,11 +265,38 @@ There is no separate atomic cap and no directory exemption. All criticalities,
 including `exception`, consume the budget. Descendant directories have their own
 budgets; filenames do not create new namespaces or budgets.
 
-For `micro-behaviors/` and `objectives/`, the validator permits **2–5 directory
-levels below the tier**, excluding the filename. A fifth level is available for
-a real refinement; it is not a target. The documented ML aggregation remains
-three levels below the tier. Raising the authoring depth does not change the
-extractor or make levels four and five separate features.
+`make validate` emits a **soft, non-blocking depth warning above five directory
+levels below the tier**, across all four tiers. Count neither the tier itself
+nor the YAML filename: `objectives/a/b/c/d/e/rules.yaml` is depth five and does
+not warn; `objectives/a/b/c/d/e/f/rules.yaml` is depth six and does. A warning
+requests review, not mandatory flattening, and does not change the exit status.
+There is no hard physical depth limit.
+Use the shortest hierarchy that gives each matcher one clear semantic home.
+Prefer breadth over depth when sibling techniques remain equally exact; retain
+a deeper level when flattening would merge distinct techniques or make
+placement ambiguous. The current ML extractor gives direct path features only
+through two descendants below the tier, so deeper leaves may not contribute a
+separate direct feature. That is a model-visibility limitation to weigh, not a
+reason to sacrifice taxonomy precision. Within the behavioral tiers, below
+the first category level, the validator reports a parent for review when it
+has at least two child subtrees and all those subtrees together contain fewer
+than 35 rules. This may suggest room to express equally precise sibling
+categories more broadly. Single-child parents do not trigger this advisory;
+internal directories still contain no rules. It does not reject a path solely
+because it is deep.
+
+Sibling names sharing a spelling stem also prompt non-blocking review. A stem
+match is not proof of synonymous subjects: account identity and process
+accounting are distinct. Document admissions and exclusions; merge only when
+the observations genuinely overlap. This does not create a directory exemption.
+
+Platform breadth is likewise a review heuristic: four or more platform
+declarations produce a non-blocking scope advisory, uniformly across tiers.
+Check that the matcher supports each platform; a format-defined metadata fact
+can legitimately hold across operating systems. Do not drop supported coverage,
+duplicate matchers by OS, or move a rule into a different subject just to reduce
+the count. Invalid platform declarations remain errors. This advisory does not
+relax the 85-rule cap or the strictly leaf-only policy.
 
 Before splitting a directory, audit its siblings and likely destinations. Route
 misplaced atoms to their existing homes and consolidate equivalent rules first.
@@ -193,9 +308,9 @@ Every proposed parent needs a placement contract containing:
 4. At least one placement example and counterexample, with a canonical destination.
 
 A child must be a proper refinement of its parent. Remove synonymous or empty
-grouping levels; promote meaningful children when that brings the distinguishing
-subject into the first three levels. Expand breadth for different mechanisms,
-resources, or effects, not for alternate verbs, languages, APIs, or rule forms.
+grouping levels. Expand breadth for different mechanisms, resources, or effects
+when doing so preserves exact placement; do not split by alternate verbs,
+languages, APIs, or rule forms.
 Keep the existing 150-child fan-out cap: broad identity catalogs should split by
 a stable function, with an explicit primary-function tiebreaker.
 
@@ -206,7 +321,7 @@ corroboration does not choose its directory. A rule that needs several children
 but proves no narrower result needs an explicitly defined joint behavior, not a
 `misc/`, `combined/`, or `behavioral/` overflow bucket.
 
-The [directory contracts through level three](#directory-contracts-through-level-three)
+The [behavioral directory contracts](#behavioral-directory-contracts)
 are the placement guide. The [85-rule audit and migration plan](docs/taxonomy-audit/PLAN.md)
 records violations and the work needed to bring existing rules into that guide.
 Existing IDs continue to resolve until a migration updates their consumers;
@@ -343,14 +458,14 @@ When a behavior could serve multiple objectives, place the single trait where ev
 | File property with no behavioral implication | `metadata/` | Structural fact, not behavior |
 | File property indicating deceptive intent | `evasion/masquerade/` | Deception is behavioral |
 
-## Directory contracts through level three
+## Behavioral directory contracts
 
 **Count depth after the tier:** in `objectives/command-and-control/reverse-shell/pty`,
 `command-and-control` is level 1, `reverse-shell` is level 2, and `pty` is level 3.
-This section defines ownership at those levels. Levels four and five may refine
-the claim, but may not change its subject or rescue a misplaced parent. The
-authoring limit remains five for behavioral tiers; this documentation scope is
-not a new three-level validation cap.
+This section defines ownership at those levels. Deeper levels may refine
+the claim, but may not change its subject or rescue a misplaced parent. Depths
+above five receive the soft review warning described in the directory budgets;
+this documentation scope is not a three-level validation cap.
 
 Read every path as an admission test: **the tier's kind of observation, about
 this subject, narrowed by this behavior or mechanism**. The tables below and
@@ -466,7 +581,7 @@ not acquire a second home merely because it uses a socket underneath.
 | `http/services` vs a protocol operation | A named remote service endpoint without an operation → `services`; an operation tied to that endpoint → the operation's directory. A vendor CLI invocation is not automatically HTTP. |
 | `communications/url` vs `http/url` or `http/query` | Generic URL construction/parsing/reference → `url/{construction,parse,reference}`; HTTP request parameter handling → `http/query`. Endpoint identity follows the service/resource it identifies. |
 | `communications/ip` vs `os/network` | Address syntax, literal, construction, or parsing → `ip`; local interface/route/address configuration or queries → `os/network`. Active remote probing is not merely address parsing. |
-| `dns/lookup`, `resolver`, `server` | Resolve a name → `lookup`; configure/select resolver infrastructure → `resolver`; receive/respond to DNS queries → `server`. A DNS label/domain literal alone does not prove any of these operations. |
+| `dns/lookup`, `dns/txt`, `resolver`, `server` | Generic name-resolution APIs and operations without record-type-specific behavior → `lookup`; querying, parsing, or handling TXT records → `txt`; configure/select resolver infrastructure → `resolver`; receive/respond to DNS queries → `server`. TXT is already a lookup, so do not repeat `lookup` in the feature name. A DNS label/domain literal alone does not prove any of these operations. |
 | `communications/ipc` vs network messaging | Local process/host bridges, pipes, shared-memory messaging and native-host channels → `ipc`; remote messaging protocols → `messaging` or the named protocol. IRC is a network protocol, not IPC merely because it transmits messages. |
 | `communications/mcp` vs agent configuration | MCP negotiation, tool/resource listing and invocation → `mcp`; a config field naming an MCP server is metadata. A tool exposing a shell references canonical process traits. |
 | TLS under HTTP vs socket TLS | Generic TLS handshake, validation and encrypted transport belong with socket TLS (`socket/ssl` currently); an explicitly HTTP-only integration may refine HTTP. Duplicate TLS APIs do not belong in both `http/ssl` and `http/tls`. Certificate facts use metadata; certificate operations use crypto. |
@@ -484,14 +599,51 @@ OS and language names are not alternative operation leaves.
 |---|---|
 | `data/encode` vs `decode` vs `metadata/file/encoded` | Required direction of transformation chooses encode/decode; encoded material merely present is metadata. A library import supporting both directions is one capability observation, not two claims that both operations ran. |
 | `data/{encode,decode}/<algorithm>` vs origin/spelling variants | Base64 remains `base64` whether the input is an HTTP body, environment value, native call or reflected method. Repeated decoding is a real refinement; `symbol-base64` and `request-base64` are not different algorithms. |
+| Decoder matcher backends and API variants | Symbol/call facts, source text and compiled method names for the same decoder share its algorithm leaf. `decode/symbol-base64` is retired; preserve an old subtree consumer as named alternatives, not a reference to the broader destination. Equivalent API spellings can share a matcher when their scope and meaning agree. Review consumers that intentionally selected one variant before broadening them. A generic method name such as `DecodeString` does not identify Base64 without its package or receiver context. |
+| Codec operations vs imports, alphabets and output | A decoder/encoder operation or direction-specific API reference belongs with that direction. Importing a module that provides both directions belongs in `metadata/import/package`; an alphabet constant belongs in `metadata/file/string/charset`. A generic file-write method belongs with file writes, even when its caller previously decoded data. Consumers may combine these observations, but an import, alphabet or write alone must not satisfy a decoding aggregate. |
+| Arithmetic vs codecs, formatting and branching | Numeric calculations, shifts, masks and bitwise combinations → `data/arithmetic`; constructing a textual number representation → `data/format/string`; conditional execution → `data/control-flow/branch`. Generic shifts, binary formatting, or a nearby alphabet do not establish a codec or its direction. A hexadecimal literal in a condition does not by itself establish a threshold comparison. Arithmetic has the same home in source and compiled code; `data/source/arithmetic` is retired. |
+| DOM construction, XML typing and codec direction | Generic DOM node creation, traversal and mutation → `data/collection/dom`; XML parser class/API references → `data/parse/xml`; XML node data types and typed-value properties → `data/format/xml`. Browser rendering or window interaction needs browser-specific evidence and belongs in UI. XML object serialization remains `data/serialize/xml`. `nodeTypedValue` is read/write and supports non-Base64 types: require a bound Base64 text-to-bytes sequence for decoding, or bytes-to-text sequence for encoding. An arbitrary element name such as `Base64Data` establishes neither XML nor a codec. |
+| Generic DOM vs browser UI | Element/node construction, insertion/removal, selectors, XPath, tree walkers and node text/attribute operations belong in `data/collection/dom`, including when found in browser code. A variable named `document` or `node` does not establish a browser window or traversal relationship. UI placement requires an additional browser/window/page-specific subject, such as window visibility, user interaction, page rendering or active-tab access. A nearby walker and assignment are separate observations until their receiver/data flow is bound. Language and DOM implementation stay in scope/filenames. |
+| Encoding families vs mixed transformation umbrellas | Base16 belongs with `decode/hex`, Base32 with `decode/base32`, ASCII85/Z85 with `decode/base85`, and standard/URL-safe Base64 with `decode/base64`. Joining decoded pieces belongs with string assembly. `decode/encoded` is retired: encoding, compression and object serialization are different subjects. Consumers needing alternatives across them should reference the named observations rather than invent a shared decoder category. |
 | `data/compress` vs `decompress` vs `archive` | Reducing a byte stream → compress; expanding it → decompress; accessing or creating a member container → archive. ZIP member extraction is `archive/extract`; using raw deflate is the corresponding compression direction. |
 | `data/serialize` vs `parse` vs `format` | Object ↔ representation codecs (JSON, YAML, protobuf, pickle) → `serialize/<format>`; lexical/grammar/query interpretation → `parse/<grammar-or-operation>`; specialized format handling without a more specific operation → `format/<format>`. File format identity alone is metadata. |
-| `data/string`, `buffer`, `control-flow`, historical `data/source` | String-value operation → string; byte/storage operation → buffer; execution-path construct → control-flow. Source code is the matcher’s evidence, not a subject: classify the operation/technique it establishes. AST parsing, inspection or mutation → planned `code/ast`; runtime reflection → planned `code/reflection`; code shape without an operation → `metadata/code`. Never choose a directory by source-vs-compiled representation or language; put those constraints in rule scope. |
-| `code/ast` vs `data/parse` | Parsing or traversing a program AST, or constructing/mutating that AST → `code/ast`; parsing data formats/grammars unrelated to program structure → `data/parse` or `data/format`. JSON used to transport an AST does not by itself make the operation an AST technique. |
-| `code/reflection` vs dynamic loading/evaluation | Discovering types/members or invoking them reflectively → `code/reflection`; loading a module or evaluating source/bytecode → the corresponding load/evaluation capability. A language-specific API matcher belongs in that neutral technique leaf with its language in `for:`. |
-| Code-generation API vs code-generation library fingerprint | A call/construction that performs code or bytecode generation → `code/generation`; a reference to a framework specialized for that technique may also live there, but must say “reference” and must not assert generation occurred. A scan of the library artifact itself uses its `well-known/lib` identity. |
+| JSON conversion vs computed calls or expression evaluation | `JSON.parse(Buffer.from(...))` is JSON deserialization; it implies Base64 only when the Buffer operation requires that encoding. A computed Buffer method-call chain belongs with dynamic dispatch until its method and encoding are established. `eval("(" + expression + ")")` is expression evaluation, not necessarily JSON conversion or safe code. Nearby encoding labels and unrelated `toString` calls do not establish a conversion chain. |
+| `data/string`, `buffer`, `collection`, `control-flow`, historical `data/source` | String-value operation → string; byte/storage operation → buffer; collection/element operation → collection; execution-path construct → control-flow. Source code is the matcher’s evidence, not a subject: classify the analyzed program’s operation/technique it establishes. AST operations → `metaprogramming/ast`; runtime reflection → `metaprogramming/reflection`; code shape without an operation → `metadata/code`. Never choose a directory by source-vs-compiled representation or language; put those constraints in rule scope. |
+| `metaprogramming/ast` vs `data/parse` | The analyzed program constructs, traverses, inspects or mutates a program AST → `metaprogramming/ast`; parsing data formats/grammars unrelated to program structure → `data/parse` or `data/format`. An AST used only by the analyzer to inspect a sample is evidence format, not a behavior to classify. JSON used to transport an AST does not by itself make the operation an AST technique. |
+| Source parsing vs AST manipulation | A program that parses source into an AST uses `metaprogramming/ast`; classify parser tooling used only by an analyst as evidence, not behavior. Formatting or emitting generated code is `metaprogramming/generation`; a composite may require AST parse, output formatting and a file write to claim code generation. These homes are independent of whether the same technique appears in source code or compiled artifacts. |
+| `metaprogramming/reflection` vs dynamic loading/evaluation | The analyzed program discovers types/members or invokes them reflectively → `metaprogramming/reflection`; loading a module or evaluating source/bytecode → the corresponding load/evaluation capability. A language-specific API matcher belongs in that neutral technique leaf with its language in `for:`. |
+| `communications/http/direct-socket` vs `communications/http/client` vs `communications/socket` | Hand-built HTTP request/message over a directly connected socket → `http/direct-socket`; a platform or library HTTP client API → `http/client`; socket connect/listen/stream behavior without HTTP semantics → `communications/socket`. The protocol of the message determines the first placement even when the transport is a raw socket. A socket plus an HTTP token alone does not establish a shell or malicious command channel. |
+| `communications/rpc` vs `data/transaction/query` | RPC method names, request batches, and remote-procedure transport → `communications/rpc`; interpreting fields or reconstructing values from a retrieved ledger transaction → `data/transaction/query`. A configured endpoint alone is URL/configuration evidence; it does not prove a request or transaction operation. |
+| Blockchain-client behavior vs blockchain-related identifiers | A client behavior requires evidence of an operation against a blockchain interface: a chain-specific RPC request/query, a contract/log read, or a transaction operation tied to a ledger protocol. Put atomic observations with their operation (`communications/rpc`, `data/transaction/*`, `crypto`, or the relevant wallet/provider interface); place operation composites that establish client use under `communications/blockchain/client/`, where the directory feature aggregates them. A package import, SDK/library fingerprint, chain name, endpoint string, wallet-provider method vocabulary, or offline key derivation alone does not establish client behavior. A transaction signing primitive without chain-specific transaction context remains crypto; an endpoint without an operation remains URL/configuration. Malware objectives may reference precise client operations, but must add the malicious purpose (for example, retrieving C2 data or unauthorized transfers). |
+| `communications/ip/literal` vs network objectives | A parsed or literal address, including RFC1918/private ranges, is neutral endpoint evidence → `ip/literal`; require connection direction, protocol, and the behavior carried over it before assigning C2 or hostile intent. Private-address identity alone is not a command channel. |
+| Code-generation API vs code-generation library fingerprint | A call/construction that performs code or bytecode generation → `metaprogramming/generation`; a reference to a framework specialized for that technique may also live there, but must say “reference” and must not assert generation occurred. A scan of the library artifact itself uses its `well-known/lib` identity. |
 | `data/db/<engine>` vs operation children | Engine-specific protocol/API without a specific operation uses the engine; a required query/delete/schema/backup operation uses that operation, with engine in the filename. A targeted credential table adds a separate objective claim. |
-| `crypto/library/blockchain` vs transaction and protocol operations | Cipher/signature/hash primitives → crypto; constructing, signing, submitting or querying a financial ledger transaction → planned `data/transaction/{construct,sign,submit,query}`. Generic RPC/HTTP remains communications; provider endpoint identity is not a transaction. |
+| SQL syntax vs schema operations | Catalog/table/column introspection → `data/db/schema/introspection`; table definitions and relational column declarations → `data/db/schema/relational`; stored functions, procedures, triggers and their language bindings → `data/db/schema/stored-code`. These operations keep the same home across SQL dialects and API spellings. A SELECT against a schema catalog is introspection; a SELECT against application records is data access. A column name alone does not prove a relational schema, and a password column plus assignment does not prove plaintext storage. Generic SQL syntax and command references remain in `data/db/sql` pending operation-specific migration; it is not an alternative home for established schema operations. |
+| Database row mutation vs schema destruction | Deleting records or truncating table contents → `data/db/delete/row`; deleting a table/database/schema object → schema destruction, not row deletion. Inserting or assigning record values → `data/db/write/row`. A password-column declaration and SET assignment do not establish whether the value is plaintext or hashed. A generic static `truncate()` call belongs with method dispatch until a database receiver is established; a `clearAllLogs` symbol alone is telemetry naming, not proof of deletion. |
+| SQL mutation placement | INSERT, UPDATE and REPLACE row-operation syntax → `data/db/write/row`; DELETE and TRUNCATE record-removal syntax → `data/db/delete/row`; DROP TABLE/VIEW/INDEX/DATABASE/SCHEMA syntax → `data/db/schema/delete`. These homes are independent of SQL dialect, source language and matcher backend. Deleting records preserves the storage object; dropping it destroys a schema object. Keep literal-only, clause-qualified and broad token predicates distinct when their supported claims or scope differ. |
+| SQL context vs unrelated observations | Unrelated database evidence must not decide whether a command label or language construct exists. Command/status vocabulary → `metadata/file/string/command`; a comma expression → `data/control-flow/sequence`; delimiter removal through split/join → `data/string/replace`. None independently establishes remote control, concealment or payload execution. Intent-bearing consumers must require their own supporting operations rather than treating absence of SQL as malicious evidence. |
+| Account vocabulary vs credentials, schemas and telemetry | User/account identifiers, names, email and membership/activity labels without a required operation → `metadata/file/string/account`; authentication-secret labels or token values → `metadata/file/string/credential`. A required object structure, parsed field, or value mapping belongs with the corresponding structured-data observation; a quoted label or label followed by a colon alone does not establish an object or assignment. Relational definitions require database syntax. Telemetry vocabulary requires a monitoring/analytics subject; an account label alone is not telemetry. A set of labels does not establish a shared record, key relationship, collection or transmission. |
+| Object properties vs named vocabulary | Required member/subscript access → `data/property/access`, independent of language or representation; a generic `.get()` call without a resolved receiver → `data/control-flow/dispatch`. Object-definition/key syntax → `data/serialize/schema-object`; an exported module interface → `os/module/export`. Bare names follow their subject: account/contact labels → `metadata/file/string/account`, device-property labels → `metadata/file/string/device`, generic named code identifiers → `metadata/file/string/identity`. A member node alone need not prove a read rather than a write; descriptions must state the access the matcher actually establishes. `data/source/property/identity` is retired, not a second home for these observations. |
+| Property operations and computed calls | Member lookup or access → `data/property/access`; assigning a property value → `data/property/assign`; defining a descriptor or accessor → `data/property/define`; enumerating keys or entries → `data/property/enumerate`. Invoking a selected member or constructor → `data/control-flow/dispatch`, whether selected directly, by brackets, or by a function result. A computed key does not prove decoding; arguments `0` and `false` do not prove a hidden process. Name the operation rather than retaining `source/property`, `computed` or `transition` as competing homes. Buffer allocation, loops, conditional expressions, array operations and module exports retain their own subjects even when exploit composites combine them. |
+| Generic Run/argument syntax vs shell execution or obfuscation | A method named Run, indexed invocation, numeric/Boolean arguments, or arithmetic argument expressions → `data/control-flow/dispatch` until the receiver and operation establish a shell/process launch. The number 2 alone does not establish file overwrite. Addition in a subscript and WScript bracket access → `data/property/access`; ordinary indexing or host API access is not obfuscation. Functions choosing a method, argument or constructor do not establish decoding without a transformation. Exact objective consumers may combine these neutral observations with their own required evidence; broad shell/obfuscation references must not treat the neutral syntax itself as the claimed operation. |
+| Collection shape and arithmetic vs encoding, reconstruction and timing evasion | Nested array literals → `data/collection/array`; nesting alone establishes no lookup, codec or obfuscation. Identifier subtraction and `+=` assignment → `data/arithmetic`; without operand types or bindings, neither proves date measurement nor string reconstruction. Date calls → `time/query`. Timing evasion requires evidence of an analysis-dependent timing decision. Nearby initialization, addition and eval establish co-occurrence only; they do not identify a malware family or prove a shared accumulator. |
+| Function measurements vs runtime indirection or padding | Function counts, anonymity, constant-return counts and ratios → `metadata/file/function`; the subject measured chooses the directory, not a threshold or suspected obfuscator. Function-selected keys → `data/property/access`; a function call producing a key does not establish decoding. Computed invocation patterns → `data/control-flow/dispatch`; hex-shaped tokens do not prove numeric offsets when the matcher also accepts identifiers. Objective consumers must supply the evidence for concealment or padding. |
+| Hexadecimal notation vs encoding and concealment | Numeric token text and incomplete bracket/number prefixes → `metadata/file/literal`; they do not establish a decoder, mixed radices, byte range, or an array literal. Binary operations between hexadecimal operands → `data/arithmetic`; indexing by a hex key or identifier-plus-hex expression → `data/property/access`, without asserting the receiver is an array. Actual representation conversion belongs with its codec operation. Concealment requires additional evidence beyond the radix spelling. Filename extensions belong in `metadata/file/extension/identity`, including when used as exclusions. |
+| Indexed values, collection methods and lexical array-like shapes | Unbound indexed reads and bracket chains → `data/property/access`; assignment between indexed values → `data/property/assign`; addition between indexed values → `data/arithmetic` without claiming numeric or string types. Sort/fill method syntax → `data/collection/array`; join with a short string argument → `data/string/concat`, without assuming the argument is a delimiter. Byte-buffer construction and zero initialization → `data/buffer/alloc`; a random index calculation → `os/random/prng/stdlib` without claiming an element was accessed. Method-name strings and bracket/URL prefixes → `metadata/file/literal`; bracketed Base64-like strings → `metadata/file/encoded` without claiming a codec operation. `data/source/syntax/array` is retired; do not recreate a source-representation bucket. |
+| Symbol repetition vs character conversion vs decoding | Repeated `indexOf` symbols → `metadata/file/naming`: a name count establishes neither a string receiver nor a decoder. Repeated `charCodeAt` near `String.fromCharCode` arguments → `micro-behaviors/data/string/conversion`. Decoding requires evidence of the representation being decoded; concealment requires additional context. |
+| Structural profiles vs intent and generated provenance | A conjunction of long lines, opaque identifiers and missing comments describes line layout (`metadata/file/line`), not npm malware. Repeated character conversion with line/name constraints stays in `data/string/conversion`; it does not prove a decoder. Bare `Search.setIndex` text belongs in `metadata/file/literal`, unlike a format-specific generated-index signature in `metadata/build/generated`. Do not let a weak reference inherit the broad build exclusions. A disjunction of unrelated counts does not identify an obfuscator; a package having tests does not establish exfiltration. Retire unsupported aggregates rather than inventing a directory for their claims. |
+| Binary string counts, compiler symbols and graphics declarations | Counts of extracted or high-entropy strings across a binary belong in `metadata/file/string/count`, including threshold-specific observations (one to five is not zero); they do not identify a section, an obfuscated blob or a trojanized backdoor. Compiler ABI/runtime symbol prefixes belong in `metadata/binary/symbols/compiler`. Import-kind graphics API declarations belong in `metadata/binary/symbols/imports`; graphics vocabulary, including library filename/path text, belongs in `metadata/file/string/graphics`. Neither proves a drawing operation or library loading. Embedded implementation fingerprints that actually establish a graphics technique remain behavioral evidence; broad library-name or symbol declarations must not acquire that stronger claim. |
+| Graphics vocabulary, declarations and provider identity | Graphics API/backend/driver words and filename/path references → `metadata/file/string/graphics`, taking precedence over generic filename text in `file/string/file`; end-user product names remain `file/string/application-name`. Parsed imports → `metadata/binary/symbols/imports`; exported provider interfaces → `metadata/binary/symbols/exports`; declared SONAME and provider/interface conjunction → `metadata/binary/linking/runtime`. Mesa artifact identity requires corroborating provider and Mesa/DRI evidence in `well-known/`; words alone do not establish it. Actual drawing operations remain behavioral evidence. |
+| WebAssembly declarations vs language attribution | Parsed export names belong in `metadata/binary/symbols/exports`, even when queried through a value array; arbitrary name text is not an export. An unspecified producer record belongs in `metadata/binary/provenance/build`. Corroborated compiled-language attribution can reference those facts from `metadata/lang/compiled`; one helper name or producer-record presence does not by itself establish a language. WASM is rule scope, not a new directory axis. |
+| Account properties vs accounting vocabulary | `metadata/file/string/account` owns user/account identifiers and profile fields. `metadata/file/string/accounting` owns literal vocabulary for login-session and process-usage records, including accounting headers/configuration; it does not imply header inclusion, portability or file operations. Concrete accounting log paths belong in `micro-behaviors/fs/path/log/accounting`; destruction intent belongs in `objectives/evasion/indicator-removal/accounting`. A shared spelling stem does not make these subjects synonymous. |
+| TLS operations vs vocabulary and generic I/O | Bare security labels such as `domain_intel` belong in `metadata/file/string/security`; they establish neither TLS use nor benign scanner identity. Generic NSPR read/write/send/receive references belong in `process/io/stream` when the matcher cannot distinguish backing or encryption. TLS classification requires TLS-specific evidence; context creation alone does not establish a connection, and warning suppression alone does not establish disabled verification. |
+| TLS verification vs HTTP and sockets | `communications/tls/verify/disable` owns explicit peer-certificate/hostname verification-disable APIs and settings, including client-library forms. Ordinary context creation, custom trust callbacks, warning suppression and a selectable insecure-mode option do not belong there. HTTP requests own HTTP mechanics; socket creation/connect/accept own transport endpoints. An API backend does not give a TLS observation a second HTTP/socket home. The retired `http/ssl` leaf must not be recreated; remaining legacy TLS observations are audited by operation before moving. |
+| Diagnostic warnings vs TLS verification | Warning emission/filtering/suppression belongs in `os/telemetry/logging/warning`, even when the warning concerns an insecure request. A warning filter does not disable certificate or hostname checks and does not establish HTTP activity. Consumers requiring suppression must reference its exact atoms because the warning leaf also admits emission. |
+| Argument-byte characteristics vs resolved API operations | Encoded register-load/call shapes without a bound callee belong in `metadata/binary/code/arguments`, with architecture in scope/filenames. Name the observed bytes, not inferred API semantics. An import elsewhere does not resolve the matched call; an operation-specific claim requires that target and its argument evidence. The metadata leaf does not guarantee instruction alignment or execution. |
+| Compiler ABI, library identity and exception flow | Compiler/runtime symbol prefixes remain in `metadata/binary/symbols/compiler` even when referenced by library or execution rules. They alone establish neither libc++/libstdc++ identity nor exception-based control flow. ABI plus a system-API reference and size/string-count filters belongs with `process/create/api-system`; exception obfuscation requires evidence of exception-based control transfer. Place a shared string-count predicate in `metadata/file/string/count`, retaining nonredundant size, entropy and scope gates in contextual composites. Do not duplicate a neutral count under a malware family. |
+| Dot joins vs DNS labels or exfiltration | A dot join near named fields establishes string composition and co-occurrence → `data/string/concat`; it does not establish that those field values enter the joined string. DNS placement requires a DNS operation or protocol-specific construction. Exfiltration requires evidence of the transmitted data and destination; broad objective references must not inherit a neutral string helper as exfiltration evidence. |
+| Metadata vocabulary vs section-specific binary facts | Whole-file vocabulary belongs with its meaning, independent of which binary section contains it. Section filters are required when the claim depends on that location; do not invent a section requirement to permit relocation. Missing filters on binary-only metadata produce a review advisory. Existing binary-fingerprint and hex-condition requirements remain separate. |
+| `crypto/library/blockchain` vs transaction and protocol operations | Cipher/signature/hash primitives → crypto; constructing, signing, submitting or querying a financial ledger transaction → `data/transaction/{construct,sign,submit,query}`. Generic RPC/HTTP remains communications; provider endpoint identity is not a transaction. |
 | `crypto/symmetric/xor` vs `data/{encode,decode}/xor` | A required keyed cipher construction → crypto; representation scrambling/descrambling → data. A bare XOR instruction cannot establish either construction. |
 | `fs/path/<resource>` vs all file operations | Merely naming a location → path by resource kind. Required read/write/copy/etc. → that operation, referencing the path atom where useful. A path match never inherits the consuming composite's action. |
 | `fs/path/{password-store,cookie,private-key,public-key,token,secret-config,config}` | Choose the identified resource in that order of specificity, not its application owner: saved-login DB, cookie jar, private key, authorization/host-trust key, token file, secret-bearing config, then ordinary config. A file's defined role, not a generic credential word, determines the choice. |
@@ -516,7 +668,7 @@ Apply the ordered [process-creation table](#process-creation) for
 | `process/exit`, `terminate`, `control` | Ending the current process → exit; terminating another → terminate; other process control → its operation. A signal API without the terminating signal is not process termination. |
 | `process/identity`, `info`, `enumerate`, `pid` | Current process identity → identity; process attributes → info; listing processes → enumerate; PID-file lifecycle → pid. A PID value is not a PID file. |
 | `process/thread`, `threading`, `sync`, `mem/sync` | Thread creation → create/thread; thread lifecycle/attributes → thread; locks/events/join → process/sync; memory visibility/cache synchronization → mem/sync. Language/platform does not choose among them. |
-| `process/fd`, `io`, `communications/ipc` | Descriptor duplication/control → fd; routing child streams → io; the pipe/channel itself → IPC. A reverse shell references these observations and adds outbound shell-I/O coupling. |
+| `process/fd`, `io`, `communications/ipc` | Descriptor operations and standard-stream attachment → fd; copying/pumping data between streams → io; creating or addressing the pipe/channel itself → IPC. A reverse shell references these observations and adds outbound shell-I/O coupling. |
 | `os/env` topics vs operations | Named variable meaning wins when required: CI-issued secret → `ci-credentials`, other secret name → `secret-name`, ordinary provider/runtime config → its topic. Variable-unspecified read/enumeration/modify/dump uses the operation leaf. Merge `check`/`gate` by value-test semantics. Never classify a secret as ordinary provider config solely by vendor prefix. |
 | `os/registry/{read,write,delete,keys,hive}` vs `access`/`manipulate` | Required value read/write/delete wins; key/hive references alone use keys/hive. Split residual generic access by open/enumerate/watch/create semantics during migration. A Run-key write with durable activation is a persistence composite, not every registry write. |
 | `os/service` operations vs `user-session`/`config` | Required create/start/stop/delete/query/configure/dispatch operation wins. A service definition field without an action remains a field/configuration fact. User versus system service scope is evidence, not a duplicate operation branch. |
@@ -524,6 +676,60 @@ Apply the ordered [process-creation table](#process-creation) for
 | `os/sysinfo`, `hardware`, discovery | Query hostname/OS/hardware properties → sysinfo; operate a device → hardware; required reconnaissance collection/target selection → discovery. A single vendor literal proves neither probing nor reconnaissance. |
 | `os/privilege`, `security`, privilege escalation | Authority/token queries or ordinary changes → privilege/security; crossing to greater authority through abuse → privilege-escalation. `sudo` text or a requested-admin manifest alone is not that crossing. |
 | `hardware/input`, `display`, collection | Device/event/capture API alone → hardware; required logging or surveillance behavior → collection. An empty error handler or arbitrary screen API is not screenshot theft. |
+
+Within `process/fd`, use `query` for obtaining or inspecting a descriptor,
+`control` for changing its flags, `close` for closing it, `dup` for duplicating
+a descriptor, and `stdio` for attaching or configuring standard input/output/error.
+When a matcher requires a duplication API, `dup` owns that atom even if its
+argument is a standard descriptor; a composite that describes the resulting
+standard-stream attachment belongs in `stdio`. A bare `fileno()` is a query,
+not socket evidence. A connected descriptor or fixed remote address alone does
+not establish a shell or hostile intent. Language and file type stay in scopes
+and filenames.
+
+For stream observations, a `Stdin` assignment belongs in `process/fd/stdio`;
+an arbitrary `inputStream` property or input/output worker belongs in
+`process/io/stream`. Variable names such as `conn`, `sock`, and `process` do
+not establish object types. Starting two stream workers does not establish
+opposite transfer directions. A reverse-shell composite must add the actual
+connection, shell process, and required I/O coupling evidence.
+
+A named runtime variable such as `BASH_ENV` belongs in `os/env/runtime`, even
+when a CI attack consumes it. Require CI-specific evidence before using
+`os/env/cicd`. A `Zone.Identifier` string belongs in `fs/path/stream`;
+modification/removal evidence is needed before claiming MOTW removal. A binary
+export count belongs in `metadata/binary/symbols/count`, regardless of which
+capability or objective uses that count as an exclusion or downgrade.
+
+A manifest dependency remains `metadata/package/dependencies/manifest/identity`
+when a fixture or known-library composite consumes it. A Preact dependency
+alone establishes neither a test fixture nor an executed import. The fixture
+composite must add its own private-package, path or other contextual evidence;
+do not place the declaration in the fixture directory and then use that
+directory to suppress the same declaration elsewhere.
+
+For archive members, distinguish the **name** from the member's **contents**.
+Patterns over `archive.members[*].path` that merely suggest a key, certificate
+or credential file belong in `metadata/package/files/name`. Describe the name
+or suffix; do not assert that the file contains a private key. Fixture or
+credential-use composites must add their own contextual/content evidence.
+The former `metadata/package/files/credentials` leaf contained only such name
+patterns and is retired; do not recreate it as a second home for them.
+
+Use `metadata/package/files/archive-member` for member structure, including
+rooted paths and traversal counts; use `files/name` for lexical naming
+conventions. A parent-directory segment must come from a parsed member path
+or traversal metric, not arbitrary `..` bytes in compressed content. An archive
+basename's suffix belongs in `metadata/file/extension/package`; the parser's
+reported format belongs in `metadata/file/format/structured`. Parser-error
+counts belong in `metadata/file/archive` and do not alone establish fatal
+corruption or tampering. Contextual diagnostics reference these shared facts.
+
+DOS internal-table query evidence belongs in `micro-behaviors/os/msdos/internal`.
+An `AH=52h` load followed by an interrupt sequence is a neutral query indicator;
+an `AH=52h` load before an unknown near call is only a component. Infection or
+antivirus-tampering composites add their own directory-entry, write, hook or
+target evidence. The query alone must not carry either objective label.
 
 ### Objective ownership and level-three questions
 
@@ -563,9 +769,10 @@ At `objectives/command-and-control`, classify the **required result** first:
 
 | Level-2 directory | Admission | Exclusion / routing |
 |---|---|---|
-| `reverse-shell` | Outbound connection explicitly coupled to a shell session's input/output. | A listening/accepting shell → `backdoor/bind-shell`; individual command requests → `remote-command`; socket and shell symbols without their relationship are insufficient. |
+| `reverse-shell` | Outbound connection explicitly coupled to a shell session's input/output. | A listening/accepting shell → `backdoor/bind-shell`; HTTP-polled task execution or independent command requests → `remote-command`; socket and shell symbols without their relationship are insufficient. |
 | `backdoor/bind-shell` vs `backdoor/dispatch` | A listener that connects an accepted client to a shell → `bind-shell`. | Use `dispatch/<mechanism>` when the handler receives independent tasks and chooses an operation/command; remote access to a shell does not create a second dispatch classification. |
-| `remote-command` | Receive attacker-directed tasks and dispatch operations or return command results. | A persistent connected shell uses reverse-shell; an HTTP server endpoint exposing command execution uses backdoor/webshell. Polling/HTTP/socket are channel facts, not parallel copies of dispatch. |
+| `remote-command` | Receive attacker-directed tasks and dispatch operations or return command results. Repeated HTTP retrieval and dispatch → `remote-command/http-poll`; a single received task dispatch → `remote-command/dispatch`. | A persistent connected shell uses reverse-shell; an HTTP server endpoint exposing command execution uses backdoor/webshell. A single HTTP request is not polling. |
+| `remote-command/dispatch` admission | Required evidence must connect received task data to an operation, interpreter, or command execution. A response written back over the channel strengthens the dispatch chain. | Socket plus process execution, or output written to a socket without received task execution, does not establish remote command dispatch. A persistent shell whose standard streams are wired to a connection uses `reverse-shell/<mechanism>`. |
 | `backdoor` | An unauthorized access/control surface, such as a bind listener, webshell or authentication bypass. | Generic task dispatch uses remote-command; durable installation adds a persistence claim; binary/script/native-source are not access mechanisms. |
 | `beacon` | Repeated attacker check-in or heartbeat, without a narrower required tasking result. | An ordinary timer or telemetry endpoint is not a beacon; an actual dispatched task belongs with its tasking result. |
 | `botnet` | Fleet membership/coordination or distributed operator tasking. | A network-device platform or DDoS action alone is not botnet coordination. |
@@ -582,14 +789,101 @@ encoding do not replace that evidence.
 | Level-3 child | Required mechanism | Competing legacy paths |
 |---|---|---|
 | `dev-tcp` | Shell pseudo-device opens the connection and redirects shell I/O. | `/dev/tcp` sending HTTP alone goes to neutral communications. |
-| `utility-relay` **planned** | External network utility owns the shell relay. | Extend/rename `netcat`; a utility banner alone is identity/capability. |
+| `netcat` | Netcat (including compatible `nc`/`ncat` forms) connects to a remote endpoint and directly owns the shell relay. Require connect-mode endpoint evidence; a local listener is `backdoor/bind-shell`. | A netcat banner, import, or command invocation without shell-I/O coupling is a neutral capability under `micro-behaviors/communications/socket/netcat/`; it does not enter this objective. Other utilities need their own child only when evidence and volume justify one. |
 | `pty` | A pseudoterminal explicitly carries the connected session. | PTY allocation alone remains `process/tty/pty`. |
-| `fd-redirect` **planned** | Socket installed as inherited standard descriptors. | Consolidate `dup` and the applicable `stdio` rules. |
-| `stream-bridge` **planned** | Explicit read/write/copy loop joins socket and persistent child streams. | Redistribute `socket-exec`; per-command result loops use remote-command. |
+| `fd-redirect` | Socket installed as inherited standard descriptors for the shell process. | The former `dup/` and `syscall/` objective leaves are retired. Syscall choice is evidence for descriptor redirection, not a second objective. Stream copy/pump loops belong in `stream-bridge`. |
+| `stream-bridge` | Explicit read/write/copy operations bridge a socket and persistent child-process streams. | Socket and shell co-occurrence is insufficient; per-command result loops use remote-command. |
 
-`encoded` and `syscall` do not define alternative shell bridges. `http-poll`
-does not establish a shell session without the required I/O relationship.
-Retire those parallel classifications when migrating their rules.
+Choose one primary leaf using this precedence when a rule proves more than one
+mechanism: `dev-tcp` → `netcat` → `pty` → `fd-redirect` →
+`stream-bridge`. This names the most specific required relay mechanism and
+prevents duplicate copies of one detection in several leaves. A rule that
+proves only socket plus shell co-occurrence does not qualify for any of them;
+strengthen its evidence or route it to the actual command-dispatch behavior.
+Encoding style and syscall/API spelling do not override this choice.
+An encoded-command option belongs with command-invocation flags; window-style
+arguments belong with hidden process launch. A TCPClient name inside Base64 is
+a TCP facility reference, not a reverse shell. Classify decoded payloads by the
+behavior they establish, and distinguish containing such a payload from proving
+that a launcher executes it. Do not combine decoding, a shell invocation and a
+network type name into a relay verdict without the transfer mechanism.
+`reverse-shell/encoded` is retired: encoding is a representation, not a relay
+mechanism. Shell-option labels belong with neutral security vocabulary under
+`metadata/file/string/security`; decoded import text belongs with import
+metadata. Neither proves that the named behavior executes.
+Nearby decoding and process execution do not establish that decoded bytes become
+code, even inside a package. Separate encoded strings must not be joined into
+an invented relay; retain their independently supported capability observations.
+Computed calls, an obfuscator-style function name, or a sparse import table do
+not supply missing network or relay evidence. In native code, cmd.exe strings,
+pipe APIs and Winsock imports still need evidence linking the channel to child
+I/O. The same applies to CLR type/method names: `TcpClient`, redirected standard
+streams, `HandleCmd`, or reverse-shell terminology do not prove a relay. A
+command-handler identifier belongs with neutral dispatch observations; consumers
+must establish remote execution through additional behavioral evidence. Where
+source relations are available, bind the network stream and child process to
+both directions of transfer rather than joining unrelated helpers in the file.
+Locale and window-station queries do not establish a C2 activation gate
+without the relevant conditional behavior. When an aggregate adds only an
+unsupported verdict to existing canonical observations, retire the aggregate;
+do not preserve it under a vague obfuscation or generic-behavior directory.
+For a stream relay, require input delivery and a return path; a networking
+call, shell reference, and generic `.pipe()` call are insufficient. An
+explicit `telnet | shell | telnet` pipeline or a Telnet/shell cycle through
+one FIFO belongs in `stream-bridge`, not `pty`: require the shell's pipeline
+position and, for FIFO cycles, the same created path at both ends. A filter
+such as `sed` between Telnet commands is not a shell. FIFO creation near a
+Telnet command is not a relay, and service/tunnel/cron strings do not establish
+a persistent shell without the corresponding activation behavior. An
+input/output pipe pair must use the same peer and child identifiers; separate
+file-backed stdin/stdout pipes cannot borrow an unrelated network connection.
+The neutral paired-pipe observation belongs in `process/fd/stdio`, regardless
+of whether its matcher uses text, call facts, or an AST query. Identifier
+agreement is not proof of the peer's network type or immunity to reassignment;
+the objective still requires connection and shell evidence. An extension or
+install-hook wrapper references the canonical relay rather than
+repeating weaker stream tests. Archive co-occurrence proves that the package
+contains the relay and trigger declaration, not that the trigger invokes it.
+An environment reference such as `IS_CHILD` belongs in `os/env/config`; its
+name alone proves neither a guard nor a detached-child restart.
+`netcat/` is the technique directory for a shell relay owned by netcat; it is
+not a generic home for every observation mentioning the utility. Keep direct
+shell execution (such as `nc -e /bin/sh`) and FIFO/pipeline relay forms together
+while the directory remains comfortably within the 85-rule cap. If growth makes
+the directory crowded, split only by the relay invocation form, such as
+`netcat/direct-exec/` and `netcat/fifo/`. Each child must require that form and
+exclude its sibling's form. Keep language and file type in rule scope/filenames;
+they do not define netcat subtechniques. A utility invocation without evidence
+that netcat carries the shell session stays in the neutral socket capability
+taxonomy, even if an objective composite later references it.
+
+**Netcat versus descriptor redirection:** a rule requiring netcat's invocation
+semantics belongs in `netcat`, even if the invocation also redirects descriptors.
+A utility-independent socket-to-stdio observation belongs in its neutral fd
+capability; a utility-independent shell-relay composite belongs in `fd-redirect`.
+Reference that shared evidence from the netcat rule rather than copying its
+matcher into both objective leaves.
+
+`socket-exec/` and `stdio/` are retired reverse-shell catch-alls, not placement
+destinations. Standard I/O names a resource shared by several relay mechanisms;
+it does not distinguish descriptor inheritance from stream pumping. When
+migrating their rules, classify the required shell-I/O mechanism: a PTY carrying
+the session → `pty`; socket descriptors inherited by the shell → `fd-redirect`;
+explicit socket/child-stream copying → `stream-bridge`; netcat owning the relay
+→ `netcat`; shell pseudo-device redirection → `dev-tcp`. A loop that receives
+independent commands and dispatches them belongs in `remote-command/dispatch`,
+even when the transport is a socket. Socket and shell evidence without one of
+these relationships does not establish a reverse shell and must be tightened,
+reclassified by its actual behavior, or removed if it has no valid claim.
+
+An accepted connection feeding shell descriptors belongs in `backdoor/bind-shell`;
+an outbound connection feeding them belongs in `reverse-shell/fd-redirect`.
+Bind/listen/accept and connect are distinct admission evidence, not interchangeable
+alternatives in a rule claiming an outbound shell.
+
+`encoded` does not define an alternative shell bridge. `http-poll` does not
+establish a shell session without the required I/O relationship. Retire those
+parallel classifications when migrating their rules; `syscall` is already retired.
 
 Dropper level-3 children are **planned replacements** for the overlapping
 `delivery`, `staging`, `execution`, and `behavior` partitions. Pick the first
@@ -719,8 +1013,27 @@ Conversely, a text matcher of a structured field remains a fact about that field
 | `package` | Declared package fields and package-member/project properties. Level 2 names the field/resource, level 3 its facet. | Registry reputation/history → registry; behavior of a lifecycle script → its capability/objective; named package identity is not any arbitrary dependency declaration. |
 | `permission` | Declared authority, grant scope and activation rights. Level 2 names the protected surface; level 3 refines grant breadth/property. | API invocation → capability. A declared clipboard permission does not prove reading the clipboard. Ordinary extension identity/description is a package property. |
 | `registry` | Package-registry publication record: release/package history, reach, ownership and listing claims. Registry provider goes in the filename; new subdivisions must name those properties. | This is not the Windows registry (`micro-behaviors/os/registry`). Bundled manifest facts remain package metadata; reputation is not an attack verdict. |
-| `signed` | Signature/certificate/entitlement/trust facts. Under certificate choose the required role: planned `subject`, existing `issuer`, planned `timestamp` or `revocation`, then `signature` or `security` properties. Redistribute the mixed `identity` leaf by those roles. | Installing/verifying a certificate → crypto; vendor string without signature provenance → vendor/provenance; a timestamp authority or issuer does not establish the artifact's leaf signer. |
+| `signed` | Signature/certificate/entitlement/trust facts. Under certificate choose the required role: `subject`, `issuer`, `signature`, or `security`; `issuer/name` is a certificate's claimed issuer name, `issuer/chain` is chain structure, and named verified issuer sets such as `issuer/microsoft` or `issuer/attestation` are exact chain-thumbprint identities. | Installing/verifying a certificate → crypto; vendor string without signature provenance → vendor/provenance; a timestamp authority or issuer does not establish the artifact's leaf signer. A Microsoft third-party attestation CA proves Microsoft attested to the signer, not that Microsoft authored the signed code. |
 | `vendor` | OS/platform vendor provenance claims, refined by the claimed role or evidence surface. | Third-party product identity → well-known; certificate subject → signed/certificate; manifest vendor field → package/vendor. |
+
+For certificate rules, classify by the certificate role/property the matcher
+actually reads, using this precedence when one rule appears to fit several
+labels:
+
+| Matcher evidence | Canonical home | What it does not establish |
+|---|---|---|
+| Distinguished-name fields on the signing leaf certificate | `metadata/signed/certificate/subject` | Product identity or verified issuer identity. |
+| Issuer distinguished-name text | `metadata/signed/certificate/issuer/name` | That the named authority issued the certificate; names are claims. |
+| Exact verified-chain thumbprint for a Microsoft code-signing CA | `metadata/signed/certificate/issuer/microsoft` | Microsoft authorship when the CA is a third-party attestation authority. |
+| Exact verified-chain thumbprint for a Microsoft third-party component CA | `metadata/signed/certificate/issuer/attestation` | Microsoft platform provenance; it establishes attestation of another signer. |
+| Presence, length, or shape of verified chain entries | `metadata/signed/certificate/issuer/chain` | The identity of any authority in the chain. |
+| Signature verification, digest integrity, or nested-signature state | `metadata/signed/certificate/signature` | Signer identity by itself. |
+| EKU, key usage, or other certificate security constraints | `metadata/signed/certificate/security` | Whether the signature verifies. |
+
+When a rule combines these facts, split independent observations into canonical
+atoms and let the composite state the combined result. Do not place an issuer
+name string under a verified-authority directory, or infer a product/platform
+identity from certificate text alone.
 
 `font` and `media` are documented schema namespaces without YAML directories in
 this checkout. Their table definitions settle ownership before materialization;
@@ -742,6 +1055,16 @@ fixture's role takes precedence over a generic member count/path. Plain README
 presence is documentation, not package description. A checksum manifest is
 integrity, not generic completeness. Language and ecosystem do not choose
 between compiled/scripted testing buckets; reconcile those by test role.
+
+Within documentation, `claims` owns statements about the package's promised
+properties or purpose; `security-advisory` owns advisory references and removal
+notices; `source` owns documentation filename/location observations. A claim
+read specifically from the manifest's `description` field instead belongs in
+`description/<subject>`, even if identical words could appear in a README.
+A placeholder claim does not prove deception, and a removal notice does not
+authenticate its author. Objective composites must supply those extra facts.
+Prose matchers must admit their actual document types; inheriting a manifest-only
+scope for README text makes a README composite ineffective.
 
 For `permission/host`, grant breadth distinguishes **planned**
 `all-origins`, `domain-pattern`, and `explicit-origin` children. A hostname
@@ -810,8 +1133,8 @@ The larger trees below are an orientation map containing current and historical
 paths; they are not an exemption from these contracts. A conflicting legacy
 branch is migration debt, not an alternate authoring choice. Before moving a
 cohort, map every rule to these contracts, calculate destination counts, and
-rewrite exact and directory references together. No YAML has moved merely
-because this guide documents a better boundary.
+rewrite exact and directory references together. Documentation records the
+boundary; validation and fixture results verify the migration.
 
 ## Tier 1: Capabilities (`micro-behaviors/`)
 
@@ -856,7 +1179,11 @@ micro-behaviors/
 │   │                      #   DDoS amplification → objectives/impact/dos/.
 │   │                      #   DNS tunneling → objectives/command-and-control/.
 │   ├── socket/            #   Socket ops (TCP, UDP, raw, bind, listen)  C0001
+│   ├── tls/               #   Transport security, independent of application protocol
+│   │   └── verify/        #     Peer certificate/hostname authentication
+│   │       └── disable/   #       Explicit verification-disable APIs/settings
 │   ├── http/              #   HTTP/HTTPS (client, server, download)     C0002
+│   │   └── direct-socket/ #     Hand-built HTTP over connected sockets
 │   ├── dns/               #   DNS (lookups, records, DoH, tools)        C0011
 │   ├── email/             #   Email (SMTP, MAPI, MIME, NNTP)            C0012
 │   ├── icmp/              #   ICMP (ping, traceroute)                   C0014
@@ -907,13 +1234,14 @@ micro-behaviors/
 │                          #   library artifact identity → well-known/lib/crypto/.
 │                          #   Blockchain RPC/transaction operations are not crypto primitives.
 │
-├── code/                  # Code operations/techniques, language and filetype neutral
-│   ├── ast/               #   Parse, inspect, traverse, build, or transform ASTs
-│   ├── generation/        #   Generate or rewrite code/bytecode; technique-specific
-│   └── reflection/        #   Runtime type/member discovery or reflective invocation
+├── metaprogramming/       # Code-as-code techniques; language and filetype neutral
+│   ├── ast/               #   Program code inspects, traverses, builds, or transforms ASTs
+│   ├── generation/        #   Generate or rewrite code/bytecode
+│   └── reflection/        #   Program code discovers types/members or invokes them reflectively
 │                          #   Source-vs-compiled and language belong in rule scope/files.
-│                          #   Add this branch with its validator whitelist and first
-│                          #   audited migration; do not use it as a generic code bucket.
+│                          #   Parsing source into a program AST belongs in ast;
+│                          #   generating or formatting output code belongs in
+│                          #   generation. Library references assert presence only.
 
 ├── data/                  # Data transformation                 → MBC: Data
 │   │                      #   Neutral data operations only.
@@ -922,6 +1250,7 @@ micro-behaviors/
 │   │                      #   Obfuscator detection → objectives/anti-static/.
 │   │                      #   CVE-specific patterns → objectives/execution/exploit/.
 │   │                      #   Malware family markers → well-known/.
+│   ├── arithmetic/        #   Numeric and bitwise operations, independent of representation
 │   ├── encode/            #   Encoding (base64, hex, URL, XOR, rot13, custom)  C0026
 │   ├── decode/            #   Decoding (base64, hex, buffer)                   C0053
 │   ├── compress/          #   Compression (zip, gzip, zlib)                    C0024
@@ -940,6 +1269,8 @@ micro-behaviors/
 │   │   └── combined/       #   Legacy mixed claims; preserve distinct algorithm facts
 │   ├── archive/           #   Archive operations (tar, zip extraction)
 │   ├── serialize/         #   Serialization (JSON, YAML, pickle, protobuf)
+│   ├── transaction/       #   Ledger transaction data operations
+│   │   └── query/         #     Interpret retrieved transaction fields/results
 │   ├── format/            #   Format handling not covered by a narrower operation
 │   │                      #     File-level identification or header presence → metadata/file/format/
 │   ├── embedded/          #   Embedded content/resource handling (certificates, EXIF, runtime)
@@ -947,6 +1278,10 @@ micro-behaviors/
 │   ├── source/            #   CLOSED historical mixed namespace; classify by semantic subject
 │   ├── string/            #   String length, search, comparison, conversion    C0019
 │   ├── buffer/            #   Buffer operations (offset writes, reassembly)
+│   ├── collection/        #   Operations over collections (arrays, mappings)
+│   ├── property/          #   Object properties: access, assign, define, enumerate
+│   │                      #     Computed invocation → control-flow/dispatch;
+│   │                      #     property labels without operations → metadata
 │   ├── db/                #   Database operations (SQL, Redis, MongoDB, etc.)
 │   └── control-flow/      #   Control flow patterns (loops, error handling)
 │   # NOTE: PRNG → os/random/. Config detection → metadata/config/.
@@ -961,12 +1296,11 @@ micro-behaviors/
 │   #   is on the TAXONOMY notable bar — an analyst wants it surfaced in a
 │   #   supply-chain diff. It belongs here (data/encode/, data/decode/,
 │   #   data/serialize/, data/compress/, data/archive/, data/format/),
-│   #   NOT in metadata/. This includes the
-│   #   neutral act of IMPORTING such a module (e.g. Python `import base64`
-│   #   → data/encode/base64::import-base64, `import pickle` →
-│   #   data/serialize/unsafe/python::import-pickle): the import is a
-│   #   capability observation, kept at notable. metadata/ only records what a file IS
-│   #   (e.g. "contains base64-looking strings"), never that code decodes.
+│   #   NOT in metadata/. An import alone does not establish the operation:
+│   #   `import base64` supports both encoding and decoding and belongs with
+│   #   import metadata, not arbitrarily under one direction. An embedded
+│   #   alphabet is charset metadata. Keep these useful observations, but
+│   #   require direction-specific evidence before reporting a transformation.
 │   #   The engine also emits a neutral per-module import node under
 │   #   metadata/import/<lang>/<module> for composites that need an
 │   #   import fact without inferring the decode capability.
@@ -1396,10 +1730,10 @@ objectives/
 │   ├── remote-command/        #   Command dispatch                           B0011
 │   ├── reverse-shell/         #   Outbound connection coupled to shell I/O   B0030
 │   │   ├── dev-tcp/           #     Shell pseudo-device connection/redirection
-│   │   ├── utility-relay/     #     Planned: network utility owns relay (netcat successor)
+│   │   ├── netcat/            #     Netcat invocation owns the shell relay
 │   │   ├── pty/               #     Pseudoterminal carries connected shell session
-│   │   ├── fd-redirect/       #     Planned: inherited descriptor redirection (dup/stdio)
-│   │   └── stream-bridge/     #     Planned: explicit socket/child-stream bridge
+│   │   ├── fd-redirect/       #     Socket installed as inherited shell descriptors
+│   │   └── stream-bridge/     #     Explicit socket/child-stream bridge
 │   └── trigger/               #   Attacker activation gates, not ordinary lifecycle facts
 │
 ├── collection/                # Information gathering (OB0003)
@@ -1924,7 +2258,7 @@ File-level properties with no behavioral implication. Describes *what a file is*
 
   The former `metadata/library/` tree held ~1,030 rules across ~68 directories and mixed several different concepts: library fingerprints that duplicated `well-known/lib/`, plain capability markers wearing a library's directory name, named offensive tools, CI fingerprints, and vague structural leaves. That migration is complete: `metadata/library/` is now closed and empty. Because a directory reference is an ML path feature, each migrated matcher was placed according to what it actually finds; never recreate the old bucket or move a whole directory on the strength of its name.
 - New top-level subdirectories require updating both TAXONOMY.md and `ALLOWED_METADATA` in `src/capabilities/validation/directory_whitelist.rs`
-- **Depth:** Prefer at most three levels below `metadata/` so the distinguishing subject remains ML-visible. This is a feature-design guideline, not the behavioral-tier validator's physical depth limit.
+- **Depth:** Prefer breadth when precision is unchanged; depths above five below `metadata/` receive the same non-blocking review warning as other tiers. Current direct ML path features include only two levels below the tier; taxonomy depth and model visibility are separate concerns.
 - **Max leaf size:** 85 rules per directory across all tiers, atomic traits and composite rules counted together (`policy/oversized-dir`); no directory exemptions
 - **Max fan-out:** No directory should have more than 150 immediate subdirectories. Split by the parent's documented subject/function question; ecosystem or vendor grouping must not create a second home for the same claim.
 - **Prefer technology-neutral subdirectory names.** Technology names belong in filenames, not directory names, unless the technology itself defines the subject. The 85-rule cap does not justify a language or platform split.
@@ -2252,7 +2586,7 @@ directory/path::trait-name
 Capabilities combine into objectives via composite rules:
 
 ```yaml
-# objectives/command-and-control/reverse-shell/combos.yaml
+# objectives/command-and-control/reverse-shell/fd-redirect/combos.yaml
 composite_rules:
   - id: reverse-shell
     desc: "Reverse shell pattern"
