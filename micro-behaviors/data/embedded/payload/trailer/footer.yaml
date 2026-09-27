@@ -1,0 +1,146 @@
+# Locating data appended to the end of a file: seek relative to the end,
+# compare the final bytes against a fixed marker, or read integers at
+# offsets measured back from the end. Archive and media parsers do this
+# too (ZIP end-of-central-directory, ID3v1), so each atom is only notable;
+# the objectives that reference them add the carrier and execution legs.
+defaults:
+  crit: notable
+  platforms: [windows, linux, macos]
+  attack: T1027.003
+
+traits:
+  - id: powershell-seek-end-relative
+    desc: Seeks relative to end of file
+    conf: 0.85
+    for: [powershell]
+    if:
+      type: text
+      regex: '(?i)\.Seek\(\s*-\d{1,3}\s*,\s*(''End''|"End"|\[(System\.)?IO\.SeekOrigin\]::End)\s*\)'
+
+  # $b[0]-eq 0x53 -and $b[1]-eq 0x54 ...: a buffer checked byte by byte
+  # against hex constants, the shape of a magic-marker test.
+  - id: powershell-byte-index-hex-compare
+    desc: Compares buffer bytes to hex constants
+    conf: 0.8
+    for: [powershell]
+    count_min: 3
+    if:
+      type: text
+      regex: '(?i)\$\w+\[\s*[0-7]\s*\]\s*-eq\s*0x[0-9a-f]{2}'
+
+  # $Bytes[$k - 4] -eq 0x53 -and $Bytes[$k - 3] -eq 0x54 ... over a whole
+  # buffer: the same footer check without a seek.
+  - id: powershell-length-relative-magic-compare
+    desc: Compares final buffer bytes to marker
+    conf: 0.88
+    for: [powershell]
+    count_min: 3
+    if:
+      type: text
+      regex: '(?i)\$\w+\[\s*\$\w+\s*-\s*[1-8]\s*\]\s*-eq\s*0x[0-9a-f]{2}'
+
+  # [BitConverter]::ToInt32($Bytes, $k - 8): a length or count stored in a
+  # footer table. Two or more such reads describe a trailer index.
+  - id: powershell-footer-relative-int-read
+    desc: Reads integers at end-relative offsets
+    conf: 0.9
+    for: [powershell]
+    count_min: 2
+    if:
+      type: text
+      regex: '(?i)\[BitConverter\]::ToU?Int[136][246]\(\s*\$\w+\s*,\s*\$\w+\s*-\s*\d{1,3}\s*\)'
+
+  - id: csharp-seek-end-relative
+    desc: Seeks relative to end of file
+    conf: 0.8
+    for: [csharp]
+    if:
+      type: text
+      regex: '\.Seek\(\s*-\d{1,3}\s*,\s*SeekOrigin\.End\s*\)'
+
+  - id: python-seek-end-relative
+    desc: Seeks relative to end of file
+    conf: 0.8
+    for: [python]
+    if:
+      type: text
+      regex: '\.seek\(\s*-\d{1,3}\s*,\s*(2|os\.SEEK_END|io\.SEEK_END)\s*\)'
+
+  - id: python-read-bytes-literal-compare
+    desc: Compares read bytes to a bytes literal
+    conf: 0.75
+    for: [python]
+    if:
+      type: text
+      regex: '\.read\(\s*\d{1,3}\s*\)\s*(==|!=)\s*b["'']'
+
+  - id: python-slice-tail-magic-compare
+    desc: Compares final bytes to a marker
+    conf: 0.8
+    for: [python]
+    if:
+      type: text
+      regex: '\[\s*-\d{1,2}\s*:\s*\]\s*(==|!=)\s*b["''][^"'']{3,8}["'']'
+
+  - id: javascript-slice-tail-magic-compare
+    desc: Compares final bytes to a marker
+    conf: 0.8
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\.(slice|subarray)\(-\d{1,2}\)\.toString\([^)]{0,20}\)\s*[!=]==?\s*["''][^"'']{3,8}["'']'
+
+  - id: go-seek-end-relative
+    desc: Seeks relative to end of file
+    conf: 0.75
+    for: [go]
+    if:
+      type: text
+      regex: '\.Seek\(\s*-\d{1,3}\s*,\s*(io\.SeekEnd|os\.SEEK_END|2)\s*\)'
+
+  # The PowerShell footer check carried as an -EncodedCommand payload inside
+  # a host-language launcher.
+  - id: encoded-powershell-seek-end-relative
+    desc: Encoded script seeks from end of file
+    conf: 0.85
+    for: [batch, python, javascript, typescript, rust, go, csharp, powershell]
+    if:
+      type: encoded
+      encoding: base64
+      regex: '(?i)\.Seek\(\s*-\d{1,3}\s*,\s*(''End''|"End"|\[(System\.)?IO\.SeekOrigin\]::End)\s*\)'
+
+  - id: encoded-powershell-byte-index-hex-compare
+    desc: Encoded script compares bytes to hex
+    conf: 0.8
+    for: [batch, python, javascript, typescript, rust, go, csharp, powershell]
+    if:
+      type: encoded
+      encoding: base64
+      regex: '(?i)\$\w+\[[0-7]\]\s*-eq\s*0x[0-9a-f]{2}.{0,40}\$\w+\[[0-7]\]\s*-eq\s*0x'
+
+composite_rules:
+  - id: powershell-seek-end-magic-compare
+    desc: Compares end-of-file bytes to a marker
+    conf: 0.9
+    for: [powershell]
+    near_lines: 8
+    all:
+      - id: powershell-seek-end-relative
+      - id: powershell-byte-index-hex-compare
+
+  - id: python-seek-end-magic-compare
+    desc: Compares end-of-file bytes to a marker
+    conf: 0.85
+    for: [python]
+    near_lines: 4
+    all:
+      - id: python-seek-end-relative
+      - id: python-read-bytes-literal-compare
+
+  - id: encoded-powershell-seek-end-magic-compare
+    desc: Encoded script checks a file-end marker
+    conf: 0.9
+    for: [batch, python, javascript, typescript, rust, go, csharp, powershell]
+    all:
+      - id: encoded-powershell-seek-end-relative
+      - id: encoded-powershell-byte-index-hex-compare

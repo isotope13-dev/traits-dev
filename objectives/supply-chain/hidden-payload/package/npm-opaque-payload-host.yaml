@@ -1,0 +1,62 @@
+# npm used as a free, trusted CDN for an encrypted second stage.
+#
+# `@chikawa222224/testchikawa222224` ships a 43 MB `bin/*.bin` whose bytes are
+# ciphertext behind a private `YUIENC01` header, and an index.js that does
+# nothing but stream-hash that file — a decoy API so the tarball looks like a
+# library. The manifest pins `os: [win32]`, `cpu: [x64]` although the package
+# contains no native code at all: the platform lock only makes sense for the
+# Windows payload hidden in the blob. A separate loader fetches the tarball
+# from the registry (or unpkg/jsDelivr) and decrypts it on the victim.
+#
+# Legitimate platform-pinned packages (`@esbuild/win32-x64`, `@img/sharp-*`,
+# N-API prebuilds) ship PE/ELF/Mach-O images, which cleave types as native
+# executables rather than `data`, and compressed assets carry registered magic
+# that the data-blob entropy atoms already exclude. What remains — an
+# os-pinned package whose deliverable is an unidentifiable cipher-grade blob —
+# has no reader in the package that could use it.
+#
+# Scope is the nearest archive so a manifest and a blob from unrelated
+# packages cannot satisfy the rule together.
+defaults:
+  platforms: [linux, macos, windows]
+  for: [package.json, data, npm]
+  attack: T1195.002,T1608.001,T1027.013
+
+composite_rules:
+  - id: npm-platform-pinned-cipher-blob
+    desc: OS-pinned npm package ships cipher-grade data blob
+    crit: suspicious
+    conf: 0.88
+    scope: archive
+    all:
+      - id: metadata/package/runtime::has-os-restriction
+      - id: metadata/file/data-blob::very-high-entropy-data-file
+      - id: metadata/file/data-blob::opaque-data-peak-cipher-entropy
+      - id: metadata/file/data-blob::opaque-data-peak-cipher-mass
+
+  # Windows-only is the victim-platform choice for a staged PE; paired with
+  # an opaque cipher blob and a plain JavaScript entry it is the payload-host
+  # shape rather than a prebuilt-binary distribution.
+  - id: npm-windows-pinned-encrypted-payload-host
+    desc: Windows-only npm package hosts encrypted payload blob
+    crit: hostile
+    conf: 0.93
+    scope: archive
+    all:
+      - id: metadata/package/runtime::windows-only-platform-restriction
+      - id: metadata/package/entrypoint::main-root-javascript-entry
+      - id: metadata/file/data-blob::very-high-entropy-data-file
+      - id: metadata/file/data-blob::opaque-data-peak-cipher-entropy
+      - id: metadata/file/data-blob::opaque-data-peak-cipher-mass
+
+  # A private ENC<n> crypter container inside a published npm package: the
+  # registry is carrying ciphertext in a format only the attacker's loader
+  # reads, whatever platform the manifest claims.
+  - id: npm-package-ships-custom-crypter-container
+    desc: npm package ships custom-header encrypted container
+    crit: hostile
+    conf: 0.94
+    scope: archive
+    all:
+      - id: metadata/package/files/included::package-json-basename
+      - id: objectives/anti-static/obfuscation/payload/encrypted::opaque-data-custom-enc-container
