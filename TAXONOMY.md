@@ -281,10 +281,10 @@ When a matcher cannot choose among children, resolve its actual claim:
 
 A proposed split must account for **all** existing rules, including broad
 observations, before any are moved. If its children cannot do so without
-overlap or overstated claims, revise the split. The 85-rule cap is not evidence
+overlap or overstated claims, revise the split. The 100-rule cap is not evidence
 that a more specific observation exists.
 
-`make validate` enforces **one inclusive cap of 85 rules per directory**:
+`make validate` enforces **one inclusive cap of 100 rules per directory**:
 atomic `traits` plus `composite_rules`, across every YAML file in that directory.
 There is no separate atomic cap and no directory exemption. All criticalities,
 including `exception`, consume the budget. Descendant directories have their own
@@ -321,7 +321,7 @@ Check that the matcher supports each platform; a format-defined metadata fact
 can legitimately hold across operating systems. Do not drop supported coverage,
 duplicate matchers by OS, or move a rule into a different subject just to reduce
 the count. Invalid platform declarations remain errors. This advisory does not
-relax the 85-rule cap or the strictly leaf-only policy.
+relax the 100-rule cap or the strictly leaf-only policy.
 
 Before splitting a directory, audit its siblings and likely destinations. Route
 misplaced atoms to their existing homes and consolidate equivalent rules first.
@@ -347,7 +347,7 @@ but proves no narrower result needs an explicitly defined joint behavior, not a
 `misc/`, `combined/`, or `behavioral/` overflow bucket.
 
 The [behavioral directory contracts](#behavioral-directory-contracts)
-are the placement guide. The [85-rule audit and migration plan](docs/taxonomy-audit/PLAN.md)
+are the placement guide. The [directory audit and migration plan](docs/taxonomy-audit/PLAN.md)
 records violations and the work needed to bring existing rules into that guide.
 Existing IDs continue to resolve until a migration updates their consumers;
 their presence does not make a conflicting directory an equally valid home.
@@ -521,6 +521,115 @@ is not a multi-source sweep unless it requires the sweep. If two destinations
 still pass, add a deciding example and counterexample here **before** adding
 the rule or directory. Do not decide by spare capacity or the location of the
 sample that motivated it.
+
+### Stealer source axis
+
+`exfiltration/stealer/<source>` answers one question: **what information or
+resource is transferred out?** It does not classify the search strategy, the
+transport, the API, the implementation language, or the malware's purpose.
+Keep a rule at the broadest source leaf that its required evidence supports;
+make a narrower child only when it names a stable kind of stolen data and
+changes the claim an analyst can make. A file path or API mention alone is not
+proof of transfer, and a transport leg alone is not proof of a sensitive
+source.
+
+| Evidence establishes | Destination | Boundary |
+|---|---|---|
+| Browser credential, cookie, history, or extension-store contents leave | `stealer/browser` | Reading without a send leg is `credential-access/browser`; a browser API alone is a capability. |
+| A named credential or secret source leaves | Its matching leaf, such as `credential`, `dev-secret`, `env`, `keychain`, `ssh`, `token`, or `wallet` | Choose the source actually required by the matcher, not an optional alternative. |
+| File contents leave, with no more specific data class | `stealer/file` | A recursive search is an acquisition method; enumeration without transfer is `collection/file-targeting`. |
+| Host/account/device identifiers leave | `stealer/system-info/identity` | Hostname, username, account name, machine ID, or a stable hardware identifier. |
+| OS, runtime, or execution-environment facts leave | `stealer/system-info/platform` | This is about the reported host's platform, not the classifier's platform restriction. |
+| Running-process inventory leaves | `stealer/system-info/process` | Process enumeration without a send leg is discovery. |
+| Installed-software or package inventory leaves | `stealer/system-info/software` | A package name or dependency list is not automatically software inventory. |
+| Interfaces, routes, addresses, or network configuration leave | `stealer/system-info/network` | Merely mentioning an interface supports a probable network capability or discovery claim, not theft. |
+| A host report requires fields from multiple `system-info` classes, or explicitly leaves the reported host-data class open across multiple classes, with no one class defining the claim | `stealer/system-info/profile` | A generic “profile” label or one host field alone do not qualify. If one source class is required and sufficient, use that class. Alternatives spanning classes are profile, not `multi-source`. |
+| Two or more independent stolen source classes are each required | `stealer/multi-source` | `all` evidence must require each class. An `any` list of alternative sources is not multi-source theft. |
+
+Use the same source-first rule for tricky neighboring names. `sweep` describes
+how candidates are searched, so it is not a source leaf: transferred files go
+to `file`, while an untransferred sweep stays under collection or discovery.
+`surveillance` describes purpose, so classify transferred screen, camera,
+audio, input, or message data by that source; monitoring without transfer stays
+under collection. `phish` describes acquisition, so classify the stolen
+credential or user input. A network channel, resolver, endpoint, or encoding
+does not change the source. These legacy names admit no new rules and must be
+emptied by source-by-source review; do not move a rule until its required
+evidence supports the destination and its existing consumers are checked. The
+legacy-candidate dispositions are tracked in
+[`docs/taxonomy-audit/STEALER-SOURCE-PLAN.md`](docs/taxonomy-audit/STEALER-SOURCE-PLAN.md).
+
+For example, a trait requiring both host identity and interface inventory in
+one outbound report belongs in `system-info/profile`; a trait requiring only a
+hostname and username belongs in `system-info/identity`. A rule accepting
+either a process inventory or installed-software inventory also belongs in
+`system-info/profile`: it leaves the specific host-data class open, but does
+not require both datasets. If both browser
+cookies and wallet data are independently required, use `multi-source`; if a
+matcher accepts either one, use the broader source claim or split the rule.
+The implementation language, OS, file format, and transport belong in the
+filename, `for`, or referenced component traits, never in a parallel source
+directory.
+
+### Ledger operations and wallet evidence
+
+A blockchain implementation is not a cryptographic primitive. Classify each
+observation by its supported operation; a client can legitimately expose many
+of these capabilities without becoming a separately identified SDK artifact.
+Strings and API references can support probable capability just as calls can;
+the description states which evidence was observed.
+
+| Home | Admission and tie-break |
+|---|---|
+| `data/transaction/construct` | Populate transaction outputs, build instructions/messages, or estimate a transaction fee. A message-type reference belongs here even without submission. |
+| `data/transaction/authorize` | Grant or describe another party's spending/transfer authority: token allowance, permit fields, delegated transfer authorization. This narrower authority claim takes precedence over ordinary construction. A maximum integer alone is not an allowance. |
+| `data/transaction/sign` | Sign a required financial transaction or payment mandate. A signature over arbitrary messages/typed data, or an OR accepting those, belongs in `crypto/asymmetric/signature`. |
+| `data/transaction/submit` | Submit/broadcast a transaction, extrinsic or financial order. A composite requiring construction/signing plus submission follows submission; local preparation alone does not. |
+| `data/transaction/query` | Read or interpret transaction-record fields/results, including recipient-byte decoding. Live account balances and contract state are client operations, not transaction-record parsing. |
+| `communications/blockchain/client` | Ledger-client operations such as balance, contract and state queries; existing chain-specific RPC composites remain here. Offline keys, a brand, a provider import or endpoint alone does not establish client use. |
+| `communications/http/url/rpc` | Ledger explorer/RPC endpoint references without a required operation. An ordinary price-feed URL belongs in `url/endpoint`, not here. |
+| `communications/http/services/payment` | HTTP payment-gating interfaces, payment headers, resource servers and payment-payload validation. Transaction-specific cryptographic signing follows `data/transaction/sign`; a generic privacy wrapper alone is insufficient. |
+| `crypto/asymmetric/key` | Private-key/keypair loading, generation, reconstruction or derived public keys/accounts, regardless of wallet or implementation. Do not describe every factory as derivation or every wallet constructor as a private-key import. |
+| `ui/controls/wallet` | Wallet connection, recovery-phrase, signing and reward/balance interface text. Prompts do not themselves establish key acquisition, signing or reward submission. |
+
+**Capability is not a library exemption.** Do not use a whole blockchain,
+wallet or crypto capability directory as proof that a file is a benign library.
+The word `wallet`, a public RPC URL, key parsing, or an ordinary transaction API
+may occur in malware. Exclusions must name the actual alternative explanation
+and have evidence for it. Review consumers when moving these observations:
+retaining every old capability as an identity exclusion perpetuates false
+negatives; widening to a whole destination creates new ones. Identity evidence
+must identify the analyzed artifact; it is not synonymous with embedded use.
+
+### Mnemonic key material and recovery interfaces
+
+`crypto/mnemonic` owns mnemonic representations of cryptographic seed material:
+wordlists, phrase construction/generation, phrase validation, and distinctive
+phrase identifiers or implementation references. It is not a library layer or
+a synonym for key derivation. A wordlist can encode entropy without running a
+KDF; a mnemonic can exist without a blockchain connection. BIP-39 explicitly
+separates [mnemonic generation from seed derivation](https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki#generating-the-mnemonic). Preserve these
+observations across source, scripts and binaries in the same leaf.
+
+- Producing/loading a private key, a wallet keypair, or a hierarchical key path
+  belongs in `crypto/asymmetric/key`. A phrase-specific operation follows
+  `crypto/mnemonic`; an OR accepting either phrases or keypairs uses the broader
+  key-material claim and must not be described as phrase-only generation.
+- PBKDF2 calls/parameters follow `crypto/kdf`; a bare `self.wordlist` member
+  follows `data/collection/wordlist`, because it could be an ordinary dictionary.
+  A composite tying that wordlist to mnemonic and PBKDF2 evidence can support
+  mnemonic implementation presence without identifying an independent library.
+- Recovery UI labels, seed-word entry grids, textareas and invalid-phrase text
+  belong in `ui/controls/wallet` when wallet/seed-phrase context is supported.
+  Phrase assembly itself follows `crypto/mnemonic`. A UI prompt does not imply
+  capture for an attacker; acquisition/export composites must supply that context.
+- Bitcoin WIF is a private-key representation (`crypto/asymmetric/key`), not a
+  mnemonic. Ethereum UTC keystore names are wallet file locators (`fs/path/wallet`).
+  Neither alone is theft. Secret-source consumers may reference their precise
+  observations without putting neutral atoms back in an objective tier.
+- Seed-phrase words are content clues, not file metadata. A bare `seed` function
+  name, maximum integer, or unqualified address variable does not establish a
+  mnemonic or a blockchain technique. Do not fill this leaf with those remnants.
 
 ### Implementations and library fingerprints
 
@@ -705,7 +814,7 @@ OS and language names are not alternative operation leaves.
 | `fs/path/{personal,app-data,cache,font,library,log,metadata-store,system,temp}` | Classify the kind of resource named by the path, not the spelling of an ancestor directory. Browser history is personal; a profile or application-support/group-container path is app-data; cache is cache; an installed font path is font; `/lib` and `.dylib` references are shared-library paths; `/Library/Logs` is log; `.DS_Store` is a directory-metadata store; OSRecovery is a system path; temporary locations are temp. Thus `/Library/Caches` goes to cache and `/Library/OSRecovery` to system even though both contain the segment `Library`. |
 | `fs/path` vs `fs/path-ops` | A path identifies a resource → `path/<resource>`; code joins, normalizes, parses or matches pathnames → `path-ops/{join,normalize,parse,match}`. Migrate `path/{construct,basename,check}` by operation; resource references stay in path. `Path.Combine` is join; `Path.GetDirectoryName` is parse/extract-parent. A bare method-name token is only an API fingerprint, not proof the method was called or that the surrounding behavior is malicious. Traversing the filesystem is directory/traverse, not pathname manipulation. |
 | `fs/read`, `write`, `delete` vs `file/*` and `shell-ops` | Explicit content read/write/deletion uses the dedicated operation parent; create/open/copy/move/rename/stat use the corresponding `fs/file` operation. Shell/API spelling does not create another home. Reconcile `file/read-write` per actual evidence; keep a joint claim only if both operations are required. |
-| `fs/directory`, `enumerate`, `traversal`, `search` | Listing one directory → `directory/readdir`; recursive descent → `directory/traverse`; indexed/predicate search → `search`; drive/device inventory → `enumerate` by resource. Directory deletion → `delete/directory`, rather than also directory/rmdir. A file extension being searched is not a traversal mechanism. |
+| `fs/directory`, `enumerate`, `traversal`, `search` | Listing one directory → `directory/readdir`; recursive descent without a narrower target-selection claim → `directory/traverse`; filename/content predicates, globs, search options, and indexed searches → `search`; drive/device inventory → `enumerate` by resource. A filename or extension predicate selects files, not a resource class to enumerate. `fs/enumerate/extension` is retired into `fs/search`. When search also descends recursively, the required name/content predicate selects `search`; recursion alone selects `traverse`. Directory deletion → `delete/directory`, rather than also directory/rmdir. |
 | `fs/temp`, `fs/path/temp` | Creating a temporary object → `temp/{file,directory}`; a temporary location reference → `path/temp`. Tool-builder identity (PyInstaller, etc.) does not define a temporary-file operation. |
 | `fs/memory/mmap`, `mem/alloc/map`, `mem/anonymous`, `mem/create` | Required file-backed mapping → `fs/memory/mmap`; anonymous address-space mapping → `mem/alloc/map`; anonymous file descriptor → `mem/anonymous/create`; shared memory/image-section object → `mem/create` by object. Generic `mmap` without backing evidence must not assert a specific backing. |
 | `mem/alloc`, `protect`, `read` vs execution/injection | Allocation, permission change or remote memory access alone stays neutral. Injection needs a target process and execution transfer; same-process payload execution is not cross-process injection. RWX permissions alone do not establish hostile intent. |
@@ -849,7 +958,7 @@ At `objectives/command-and-control`, classify the **required result** first:
 | `beacon` | Repeated attacker check-in or heartbeat, without a narrower required tasking result. | An ordinary timer or telemetry endpoint is not a beacon; an actual dispatched task belongs with its tasking result. |
 | `botnet` | Fleet membership/coordination or distributed operator tasking. | A network-device platform or DDoS action alone is not botnet coordination. |
 | `channel` | A communication mechanism proven to carry attacker control, without a narrower access/dispatch claim. | Generic transport APIs are capabilities. Choose protocol/mechanism over vendor identity. |
-| `dns` | DNS-mediated control retrieval or command-channel tunneling; `dga` for algorithmic rendezvous naming. | DNS carrying stolen values belongs in exfiltration; generic lookup is a capability. |
+| `dns` | DNS-mediated task retrieval, attacker check-in, or command-channel tunneling; `dga` for algorithmic rendezvous naming. | Stolen values follow `exfiltration/stealer/<source>` when the source is established, otherwise `exfiltration/dns/<mechanism>` only when unauthorized transfer is supported. A DoH provider endpoint or media type alone belongs in `micro-behaviors/communications/dns/doh`; a generic DNS lookup is a capability. |
 | `infrastructure` | An endpoint, configuration or rendezvous construction with a demonstrated C2 role. | Ordinary hosting/service endpoints and chosen labels alone do not establish C2. |
 | `trigger` | An attacker activation condition: packet knock, message/content gate or local artifact gate. | Ordinary lifecycle/timer facts are capabilities/metadata; `activation` merely restates trigger. |
 | `dropper` | Required acquisition/staging of a payload linked to its activation. | An installer identity, download, encoded blob or execution API alone does not establish this chain. |
@@ -922,7 +1031,7 @@ name alone proves neither a guard nor a detached-child restart.
 `netcat/` is the technique directory for a shell relay owned by netcat; it is
 not a generic home for every observation mentioning the utility. Keep direct
 shell execution (such as `nc -e /bin/sh`) and FIFO/pipeline relay forms together
-while the directory remains comfortably within the 85-rule cap. If growth makes
+while the directory remains comfortably within the 100-rule cap. If growth makes
 the directory crowded, split only by the relay invocation form, such as
 `netcat/direct-exec/` and `netcat/fifo/`. Each child must require that form and
 exclude its sibling's form. Keep language and file type in rule scope/filenames;
@@ -1104,19 +1213,583 @@ is a stealer.
 | Mailbox/message content vs account secrets | `collection/email-harvest` or messaging for content; credential-access for authentication material. An audit event stating access occurred is not itself a harvesting implementation. |
 | Host, account, software, process, network or cloud reconnaissance | Discovery by surveyed resource. `discovery/host` owns installed software/security/browser applications; system owns machine/hardware/OS profile; process owns running-process inventory; network owns interfaces/peers/probes; account owns principals; cloud owns provider resources. Reconcile duplicate host/process/system branches accordingly. |
 | Specific source plus its transmission | `exfiltration/stealer/<source>`; the source wins over HTTP/DNS/webhook transport, package carrier, and install/build trigger. |
-| Required multi-source sweep plus transmission | `exfiltration/stealer/sweep`. An OR over alternate sources is not a required sweep. Optional second sources do not move a browser stealer here. |
+| Required theft of independent datasets plus transmission | `exfiltration/stealer/multi-source`, replacing the audited portion of legacy `sweep`. Browser cookies plus wallet secrets qualify; browser identity plus a separately required network/geo profile also qualifies. Several observations about one host do not: network address and geo fields together are still one network-profile dataset. An OR over sources or an optional second source does not qualify. |
 | Exfiltration channel abuse without a narrower established source | `exfiltration/<transport>` by required transport mechanism; it still needs theft/unauthorized-transfer evidence. Neither HTTP POST nor an OAST domain alone meets admission. |
 | Local hash/password recovery vs remote guessing | `credential-access/cracking` for local recovery; `lateral-movement/brute-force` for attempts to gain remote access. Service/protocol identity alone is not guessing. |
-| Deceptive credential prompt vs its completed export | `credential-access/phishing` for the deception/relay; `exfiltration/stealer/phish` for captured-input-plus-send. The latter references the former, not a duplicate phishing matcher. |
+| Deceptive credential prompt vs its completed export | `credential-access/phishing` for deception/relay; `exfiltration/stealer/input` for captured-input export. The former `stealer/phish` rules have been reconciled: local capture and archiving are not export. Reference acquisition evidence rather than duplicating its matcher. |
 
 For `stealer/<source>`, use the identified store before a broad storage medium:
 wallet → wallet; browser-owned saved logins/cookies → browser; OS secret store
 → keychain; SSH material → ssh; cloud-provider stores → cloud; developer
 credential files → dev-secret; process environment → env; app session tokens
 not covered by those stores → token; other documents → file. Source-required
-capture, mailbox, host profile, account DB, appliance config and network config
-use the correspondingly named existing children. A specific source beats
-`file`, `input`, or `system-info`; a mandatory joint profile/sweep must say so.
+capture, mailbox, host profile, account DB, and appliance configuration use
+their source children. Network inventory follows the host-report contract
+below. A specific store beats `file`, `input`, or `system-info`; accompanying
+host context does not turn one stolen dataset into multi-source theft.
+
+#### Stealer directories classify the acquired information
+
+The primary question is **what information is probably acquired and sent?**
+Transport, acquisition method, breadth of search, and implementation language
+do not compete with that source axis. Host identity accompanying wallet theft
+does not make a second theft objective: the wallet remains the defining source.
+Likewise, browser fingerprint fields describe a client profile; they are not
+the same source as browser passwords, cookies, or browsing records.
+
+`system-info` owns exported host/client reports: identity, OS/runtime,
+hardware, installed software, running processes, and network inventory.
+Hostname, username, MAC/IP addresses, OS details, and process lists may be
+parts of one report. They do not become independent stolen datasets merely
+because their evidence comes from different APIs or discovery directories.
+Account names in an inventory belong here; an authentication database or
+password hashes belong in `account-db`. Network survey data belongs here;
+Wi-Fi passwords belong with credentials, and a stolen appliance configuration
+file belongs in `appliance-config`.
+
+The implemented subdivision has the following placement contracts. Rules live
+only in the populated children; `system-info` itself contains no rules or
+aliases. Hardware is a reserved source contract, not an empty directory: the
+audited matchers did not require a hardware-only export. Map every rule,
+including helper atoms, before any future split.
+
+| `system-info` child | Defining information; boundary |
+|---|---|
+| `identity` | Host/account/device identifiers or fingerprints. A hardware serial or MAC used to identify a victim is identity; hardware capacity and interface configuration are not. |
+| `platform` | OS, kernel, runtime, release, architecture, and execution environment. The surveyed platform is data, never a hierarchy keyed by OS or language. |
+| `hardware` (reserved) | CPU, memory, storage capacity, and physical-device inventory. Stable victim identifiers go to identity. Materialize this leaf only when a matcher requires that source. |
+| `software` | Installed packages, applications, services, and versions. Running instances go to process; OS/runtime version goes to platform. |
+| `process` | Running-process inventory and its execution attributes. A process inventory sent by itself belongs here; a report that requires process data together with identity, platform, software, or network data belongs in `profile`. Replaces the corresponding `process-list` rules. |
+| `network` | Interfaces, addresses, routes, neighbors, connectivity, and network survey results. Replaces inventory from `network-config`; exclude secrets and whole appliance configurations. |
+| `profile` | A host/client report whose required source spans, or cannot be confined to, one of the specific information domains above. Examples: a multi-domain schema, a profiling bundle, or alternatives among host-inventory domains. Every alternative must still establish host-information evidence; an endpoint or User-Agent alone does not. |
+
+Use the most specific established source; ancillary identifiers do not displace
+it. Use `profile` when reporting the host is the defining result and the whole
+matcher does not require one narrower information domain. This is the common
+source shared by host-inventory alternatives, not a miscellaneous leaf for an
+unknown source. An OR over unrelated theft targets (for example, wallet keys
+or screenshots) is not a host profile and still needs matcher/source review.
+A distinctive interface-name reference alone remains a capability clue at
+`micro-behaviors/network/interface`; a reconnaissance combination belongs in
+discovery, and a probable report export belongs in stealer. These are evidence
+thresholds for classification, not demands for proof of runtime activity.
+
+`multi-source` requires independently meaningful target datasets (for example,
+browser credentials and wallet keys), each required by the matcher. Count
+source classes, not matched traits: `needs: 2` can be satisfied by two indicators
+of the same source, and directory references can match several traits. Two
+browser stores still belong in browser. Shared host context, optional sources,
+and OR alternatives cannot establish multi-source theft. Do not rename all of
+`sweep` wholesale; its nonconforming rules need individual destinations.
+
+`credential` owns probable export of authentication material or authentication
+stores when the whole matcher leaves the store open. For example, an export
+requiring either an SSH-key bundle or browser login databases belongs here;
+one requiring both belongs in `multi-source`, and one requiring browser logins
+alone belongs in `browser`. Multiple browser indicators cannot be counted as
+multiple sources. Apply the specific-store rule first, then independently
+required sources, then this common authentication-data category. It is not a
+home for arbitrary OR alternatives: mailbox content, screenshots, documents,
+and host reports do not become credentials through association with a stealer.
+An unknown payload still follows its established transfer mechanism.
+
+`keychain` requires a credential-store source (for example, Keychain, keyring,
+Vault or Protected Storage) and probable outbound transfer. A DPAPI unprotect
+call identifies a protection mechanism, not the store that supplied the data;
+with an export context but no required store it follows `credential`. Likewise,
+keychain-or-Discord, keychain-or-cloud and keychain-or-browser alternatives
+follow `credential`, not `keychain` or `multi-source`. Two independently required
+stores without transfer evidence belong in `credential-access/theft/multi-store`;
+acquisition must not be classified as export merely because its consumer exports.
+A keychain query beside an output-field label is a keychain capability clue;
+network context must come from the consuming export classifier. Named account
+or application credential targeting follows the established credential-access
+source category (for example, GameCenter in gaming), even when Keychain supplies
+its access method. Password prompts paired with a login-keychain path belong in
+keychain credential access; the path alone does not establish a completed read.
+
+Defanged IPv4 notation belongs in `communications/ip/parse`. Its matcher must
+validate octet syntax after accounting for delimiters such as `[.]` or `(.)`;
+a validator that accepts only dotted-decimal text cannot validate that form.
+Defanging does not establish public routability or malicious intent. Private
+and loopback addresses still have the same notation capability; a consuming
+objective must supply its own behavioral context.
+
+Browser credential access separates the protection/access mechanism from
+neutral store locators. `credential-access/browser/app-bound` owns recovery or
+bypass of App-Bound Encryption and its technique-specific fragments, across
+browser brands. `browser/devtools` owns browser debugging interfaces used for
+cookie/session acquisition or enabling access to that interface. Ordinary DPAPI
+recovery remains in `browser/dpapi`; classic Chromium store/decryption workflows
+remain in `browser/chromium`. A required App-Bound protection leg takes precedence
+over the underlying DPAPI, injection, or browser-brand detail. Generic injection,
+DPAPI and DevTools APIs retain their neutral capability homes. Explicit collector
+report/key-dump output follows `browser/loot`, including a recovered App-Bound
+key filename; the output filename does not establish how the key was recovered.
+
+Browser-location clues follow `micro-behaviors/fs/path` even when they support
+credential-access consumers. `cookie` owns cookie database/jar locations;
+`password-store` owns login/password/key-store locations and named credential
+service locators; `application/browser` owns profile roots, configuration,
+history/local-storage locations, and alternatives spanning browser store types.
+For example, a pattern accepting either Login Data or Cookies beneath a browser
+profile follows `application/browser`, while a required Login Data filename
+follows `password-store`. A `_copy.db` filename does not require copying, and
+a nearby profile/store name does not require a read. Name these as references
+unless the matcher also requires the operation. Executable/process basenames
+follow `application/executable`; serialized password/cookie field syntax follows
+`data/serialize/schema-object`; cookie getter/setter methods follow HTTP cookies.
+KWallet/libsecret wallet, service and schema references follow the keyring
+capability. Neither a brand set nor a JSON field alone establishes a collector.
+
+Browser ownership is a source boundary, not an implementation environment.
+`stealer/browser` admits probable export of browser-owned cookies, saved
+credentials, storage state, and browsing records. An extension that sends a
+screenshot follows `screen`; independently required browser data plus a
+screenshot follows `multi-source`. Alternatives between browser passwords and
+wallet, mail-client, or cloud credentials follow `credential`, unless one
+narrower source is required. Protected Storage passwords without a browser
+target follow `keychain`: a generic name/password report format does not
+establish browser ownership. Local acquisition stays in credential-access or
+collection; cookie APIs, analytics labels, and JSON construction stay neutral.
+
+Browser-export admission requires evidence for both the browser dataset and its
+probable transmission. Library co-occurrence, ad-hoc signing plus an HTTP client,
+or a browser-store name plus a wallet brand do not supply that relationship.
+These remain useful capability observations. A specialized cookie-reader module
+belongs with HTTP cookie handling; an HTTP cookie-jar module belongs in
+`communications/http/cookie-store`. Neither is a temporary-file technique merely
+because a bundler can package it. A TLS write API reference belongs in
+`communications/socket/ssl`; the browser-export composite supplies the cookie
+target and session context. Explicit browser export takes precedence over its
+local acquisition category; reference the acquisition rule from the exporter.
+
+Disambiguate overloaded terms by the resource, not the spelling. PyInstaller's
+archive "cookie" is a custom archive footer, so its read diagnostic belongs in
+`data/archive/custom`, not HTTP cookies or browser credentials. Generic bundled
+modules do not identify a bundler; archive-specific diagnostics may still be
+referenced explicitly by consumers needing that context. When an exporter moves,
+check whether its required acquisition rule already preserves an old directory
+consumer before adding redundant alternatives. Also check `needs` counts,
+exclusions and spatial conditions; simple existence equivalence is not a proof
+for those cases.
+
+HTTP export uses the required source before the channel: appliance configuration,
+account stores, environment data, images, and generic local files follow their
+`stealer/<source>` homes even when archived, encoded, or sent through several
+protocols. Without a required narrower source, `http/archive` owns export
+patterns requiring archive packaging or an archive payload; `http/encrypted`
+owns payload cryptography with HTTP export context. Archive takes precedence
+when both are required. `http/encoded` owns non-cryptographic encodings and
+obfuscated HTTP representations; TLS alone does not make an encrypted-payload
+rule. `http/upload` retains upload-specific objective patterns lacking those
+required refinements. An optional archive, cipher, or source does not choose
+the narrower directory. These are placement tests, not automatic justification
+for an objective's criticality or confidence.
+
+Neutral POST methods, request-body options, socket sends, route literals,
+FormData fields, and MIME types retain their corresponding HTTP/socket
+capabilities. In particular, `image/ppm` does not establish a screenshot, and
+`Transfer-Encoding: chunked` does not establish Base64 encoding or application
+data fragmentation. Archive creation and Base64 conversion stay with their
+local operations. A consumer can infer export from these observations without
+moving or copying them into the objective tier.
+
+`micro-behaviors/crypto/hybrid` owns evidence combining symmetric payload
+cryptography and asymmetric key wrapping, including envelope/algorithm-pair
+references. `library` is not an intervening mechanism. Standalone signing,
+generic provider APIs, and individual algorithms do not qualify merely because
+a hybrid composite consumes them. `data/serialize/bittorrent` owns creation of
+BitTorrent metainfo, including tracker/web-seed configuration and archive
+publication. Existing metainfo fields and format references remain in
+`data/format/bittorrent`; a torrent creator is not inherently a data thief.
+
+For transport-only evidence, `exfiltration/http/header` owns attack-specific
+HTTP-header channels and their vocabulary. A required `X-Exfil-Data` label with
+optional browser or DNS context is neither browser-specific nor necessarily
+DNS. Ordinary header access stays under HTTP capabilities. Header, query, and
+body are different carriers; a known required stolen source takes precedence
+over all three.
+
+HTTP client observations do not become theft because a credential composite
+consumes them. An OR over POST, upload, or curl mechanisms belongs with request
+clients and retains that meaning in every consumer. Within request capabilities,
+use the required facet first: JSON encoding → `request/json`, body construction
+or transmission → `request/body`, method selection → `request/verb`, and bearer
+authorization → `authorization-header`. General client calls and mixed client
+mechanisms stay in `request/client`. A nearby label such as `vsent` does not
+change a request observation into theft; the objective must add source evidence.
+The duplicate `http/body` branch is retired: outbound body observations use
+`request/body`, and no-CORS request mode uses `request/configuration`. Request
+JSON remains a more specific facet than an unspecified body. Do not reopen the
+old branch as another home for the same operations.
+
+Browsing history and navigation records follow the same source rule as browser
+cookies: local observation belongs in collection, while probable remote export
+belongs in `stealer/browser`. A mere HTTP client accompanying local history
+collection does not establish a reporting channel. Navigation-record fields and
+page/referrer reads remain neutral capabilities. Do not count a recognized
+cookie library or generic bundle marker as browser-theft evidence.
+
+Local-storage evidence must require a storage interface; encryption, decryption,
+or key import alone is not local storage. URL serialization and a URL near a
+request-body field are distinct observations. Export composites can accept
+either as corroborating record construction, but must independently require
+the observed browser source and a transfer channel. Do not create a mixed
+"upload payload" alias that turns either neutral observation into an objective.
+
+Mail has three separate subjects: message content, authentication material, and
+addresses/contacts. Mailbox-message collection belongs in `collection/email-harvest`;
+remote export of message content belongs in `stealer/message`. Exported mail
+account passwords or SMTP credentials belong in `stealer/credential`, unless
+another established secret-store source is required. A mail client or email
+transport does not make its payload message content. Browser session clues used
+for mailbox reconnaissance follow mail collection, not browser-data export.
+
+Under `micro-behaviors/communications/email`, `address` owns address recognition,
+extraction, normalization and address-handling references; `mime` owns message
+headers/content and attachments; `auth` owns authentication evidence; `queue`
+owns message queuing. `access` owns mailbox client, enumeration and reading
+interfaces (IMAP, MAPI, Exchange/EWS and webmail application endpoints). `send`
+requires sending evidence: an Exchange client, folder query or attachment
+constructor alone does not meet it. Provider authentication and request-parameter
+references follow the named service when they identify that service rather than
+email data handling. Collection composites combine these capabilities with their
+source and acquisition context; generic capabilities do not become objectives
+through their consumers.
+
+A `MailItemsAccessed`/Bind audit record describes a recorded event and follows
+`os/telemetry/logging/event`; it is not itself a harvesting implementation.
+API/client GUID fields without that event context follow structured record
+fields in `data/serialize/schema-object`. Names/descriptions must say whether
+they recognize a record, a method reference, a path, or a probable workflow.
+Address-book registry keys stay under registry keys, mailstore paths under
+personal-data paths, and writing an address list to the clipboard is clipboard
+output. None alone establishes harvesting or remote export.
+
+TLS certificate-verification callback setters/customization belong in
+`communications/tls/verify/callback`, regardless of the client using them.
+`verify/disable` requires evidence that verification is disabled or bypassed;
+installing a callback does not establish that. Keep the distinction even when
+the sibling cohort is small: it prevents a meaningful security overclaim.
+
+Structured-record declarations and access operations are different observations.
+`data/serialize/schema-object` describes named fields or field combinations in
+records. Reading a named key with a mapping lookup belongs in
+`data/collection/map`; branching on a decoded response belongs in
+`data/control-flow/branch`. A helper name does not establish an object schema:
+cookie-access helpers follow cookies, a share-link constructor follows URL
+construction, and an unstructured status label follows telemetry vocabulary.
+
+`screen` owns probable export of displayed content: desktop/window/tab images,
+screen streams, and text derived from displayed content (for example, OCR).
+The acquired information decides placement, so a captured browser tab belongs
+here rather than with browser-owned stores. Host identifiers accompanying a
+screen report do not create an independent dataset. Local capture with
+collection context belongs in `collection/screenshot`; capture APIs
+alone remain capabilities. Neither a timer nor a streaming representation
+changes the source; screen streaming with remote delivery belongs in `screen`.
+
+`image` owns probable export of image data when the matcher leaves its origin
+open. Bitmap copying, pixel readback, and image encoding do not themselves
+distinguish screen pixels from an off-screen image. Prefer `screen` when the
+whole matcher supports that source; use `image` for unspecified visual content,
+and a camera source when acquisition specifically identifies camera recordings.
+This is an information-source distinction, not a PNG/JPEG/filetype partition.
+Known image content takes precedence over generic `file`; independently
+required image and process-dump datasets belong in `multi-source`.
+
+`audio` owns exported sound, including microphone recordings and audio whose
+origin remains unspecified. An MP3 encoder does not identify a microphone.
+`camera` owns exported camera imagery or camera streams. `audiovisual` owns a
+recording whose source selection permits audio, camera video, or a combined
+recording without requiring one narrower source. Use the narrower source when
+the whole matcher identifies it. Screen-specific acquisition still goes to
+`screen`; camera and microphone tracks within one recording do not by themselves
+establish independent stolen datasets. Separately required screen/camera streams
+or keyboard/screen acquisitions can establish `multi-source`. HTTP response
+streams and public relays deliver data just as uploads do.
+
+Local acquisition follows the same subjects: `collection/audio`,
+`collection/camera`, `collection/screenshot`, or `collection/multi-source` for
+independently required datasets. Optional sources, activity-control commands,
+and unrelated graphics APIs do not establish multiple acquired datasets.
+An input-injection channel follows remote control; redundant startup mechanisms
+follow persistence even if a screenshot capability supplies optional context.
+
+For keyboard evidence, distinguish observing input from generating it. Hooks,
+listeners, polling APIs, and their implementation references belong with those
+keyboard capabilities unless the whole matcher supports collection intent.
+Logging or staging captured keystrokes belongs in `collection/keylog` by its
+acquisition mechanism; exporting them belongs in `stealer/input`. Synthesized
+keystrokes, including System Events `key down` commands, belong in
+`hardware/input/keyboard/simulate`. An automation-service name without a keyboard
+operation remains general automation. Filenames, event-field labels, and a
+generic send method cannot independently establish that keystrokes were acquired.
+
+Within `collection/keylog`, `hook` owns interception through a keyboard hook or
+listener, `polling` owns repeated key-state queries, `device` owns direct input
+device/HID acquisition, and `terminal` owns terminal-input collection. When a
+keyboard hook invokes state queries, interception remains the acquisition
+mechanism. `capture` is the legacy remainder, not an alternative home for a
+known mechanism. A combined key-recording/store signature whose acquisition
+mechanism remains unspecified can stay there pending the remainder's audit;
+database/table names alone remain neutral keyboard labels. Independently
+required clipboard or screen acquisition moves
+the whole collection composite to `collection/multi-source`; sending acquired
+keys moves it to `stealer/input`, regardless of the transport.
+
+Direct input-event device reading, including evdev, uses `keylog/device`;
+`evdev` is not a second home for that mechanism. Keyboard notifier interception
+with recording/exposure context uses `keylog/hook`, including kernel callbacks.
+The callback API, header, event-code gate, buffer copy, and character-device
+creation are independent capabilities. Their execution context does not turn
+them into collection by itself.
+
+`collection/touch` owns collection of touch positions/gestures with collection
+context, such as a remotely tasked agent. Raw coordinate reading/decoding alone
+is an input-device capability. Touch positions are not typed characters: a
+keyboard interpretation needs mapping or other keyboard evidence. Input export
+still follows `stealer/input`, whether its source is keys, form values, or touch.
+
+CSS field-value selectors paired with conditional remote resource requests,
+and their corresponding character-log receiving service, belong in
+`stealer/input`. A selector with a local or unspecified image URL remains a
+styling capability. Parameterized log/focus routes, indexed buffers, stylesheet
+paths, and password-field attribute updates do not independently establish
+collection. They keep their route, data-access, path, or form-input homes.
+
+The neutral capabilities have narrower contracts:
+
+| Directory under `micro-behaviors/` | Admission and tie-break |
+|---|---|
+| `ui/window/hook` | Generic window-hook installation, chaining, removal, and lifecycle. `SetWindowsHookEx` without a keyboard hook type does not select keyboard interception. |
+| `hardware/input/keyboard/hook` | Keyboard-specific hook interfaces, key grabs, or hook types. Generic window hooks remain under windows even when a keylogger consumes them. |
+| `hardware/input/keyboard/listener` | Keyboard events, event codes, and subscriptions without a narrower interception mechanism. A KeyPress handler need not be global. |
+| `hardware/input/keyboard/poll` | Queries of key state and virtual-key polling loops. |
+| `hardware/input/keyboard/layout` | Key-code translation and keyboard layouts, including conversion to characters. |
+| `hardware/input/keyboard/label` | Keyboard/keylogger names, key-name tables, and declared or placeholder keyboard functionality. Descriptions must distinguish declarations from implemented collection. |
+| `hardware/input/keyboard/simulate`, `hardware/input/mouse/simulate` | Generation of input of the named kind. `synthesis` is not a separate technique. |
+| `hardware/input/event` | General input event interfaces, state, payloads, and handling, including libraries and composites spanning keyboard and mouse. Use the keyboard or mouse child only when the matcher identifies that narrower subject. |
+| `hardware/input/device` | Input-device inventory, paths, and device references. A path or filename filter alone does not establish a keyboard event read. |
+| `hardware/input/mouse/position` | Pointer coordinates and pointer-information queries; a generic mouse-state name does not identify position. |
+| `ui/window/probe`, `ui/window/enumerate` | Window-class references and identification belong in probe; window title/text queries belong in enumerate. A class-name set containing general GUI windows is not specifically a browser/WebView capability. |
+
+Generic compiler execution, formatted headings, log filename templates, temporary
+paths, thread creation, and writable file modes keep their corresponding
+capability homes. Their use by a keylogger does not change their subject.
+Content referring to a filename remains a path observation; matching the
+analyzed artifact's own basename is file metadata.
+
+Browser observation and telemetry follow the same evidence-role distinction.
+Tab/navigation listeners and URL extraction are browser capabilities; JSON
+serialization is not upload, and a request-body fragment is not a completed
+request. Local storage, cookie lifetime, and uninstall-URL registration remain
+their respective capabilities. Collection requires source/retention context;
+export follows the acquired source even when its transport is an analytics SDK.
+An SDK name or endpoint alone does not establish that sensitive data is sent.
+
+Within neutral telemetry, `os/telemetry/logging/event` owns named event/status
+vocabulary and combinations of those labels. A failure/success event name is
+evidence of an instrumentation interest, not proof that its named operation
+occurred. `os/telemetry/activity` owns activity-report fields and combinations
+of fields/events describing what is monitored. `logging/analytics` owns analytics
+interfaces, property bags, identity configuration, and forwarding context;
+`communications/http/telemetry` owns telemetry endpoints and request mechanics.
+Use the more specific protocol operation when required. A bare path-field name
+stays with path references, and a generic chat-send label stays with messaging;
+neither becomes telemetry merely because a reporting composite consumes it.
+
+An empty allowlist and an unsuccessful array lookup do not establish a return,
+disabled collection, or a kill switch. File those observations with array
+operations until an execution-control matcher supplies the claimed consequence.
+Browser executable filenames are application-path references; they do not
+establish process enumeration, browser history access, or the analyzed file's
+own identity.
+
+Wallet evidence follows its required subject, not the desktop/mobile packaging
+of the application. Use these boundaries before placing a wallet-related rule:
+
+| Required observation | Home and boundary |
+|---|---|
+| Wallet database, keystore, vault or data-directory location | `micro-behaviors/fs/path/wallet`; constructing or mentioning the location does not establish a read. A roll-up of locations remains a location observation. |
+| Installed application bundle location | `micro-behaviors/fs/path/application/bundle`; `/Applications/Trezor Suite.app` locates an application, not its secret store. |
+| Named application or package reference, including an OR with its store location | `micro-behaviors/os/application/target`; the whole matcher must require a store location to qualify for the wallet-path leaf. A product string does not identify the analyzed artifact as that product. |
+| Wallet-specific recovery/connection interface | `micro-behaviors/ui/controls/wallet`; an unqualified “SECRET PHRASE” label instead belongs in `ui/dialog/prompt`. |
+| DPAPI reference or Telegram-send member/channel name | The protection or messaging capability respectively. A wallet consumer does not give these generic observations a wallet source. |
+| Probable wallet-secret acquisition without export | `objectives/credential-access/wallet/<mechanism>`; a path or application name alone remains neutral. The legacy `desktop` leaf is being reconciled, not an admission rule based on packaging. |
+| Required seed-phrase source and probable export | `objectives/exfiltration/stealer/wallet`, including seed-entry forms. An alternative allowing a generic private key or unqualified secret phrase follows `stealer/credential` unless other required evidence establishes a wallet source. |
+
+Credential-entry interfaces belong in `micro-behaviors/ui/controls/credential`
+when their required subject is private-key or other authentication-material entry
+and a wallet source is optional. This includes entry/recovery labels, verification
+controller symbols, input surfaces, and page-level combinations. Wallet-specific
+phrase/connection interfaces remain in `ui/controls/wallet`; an OR accepting a
+generic private key follows the broader credential interface. Generic secret
+wording without a required authentication-material type remains in
+`ui/dialog/prompt`. None of these interfaces alone establishes deception or theft.
+
+Application names, repeated brand references, named provider objects, and brand
+catalogs belong in `os/application/target`, including wallet brands. A reference
+to TronLink or an injected Phantom provider does not identify the analyzed file
+as that independent artifact. Such words must not activate blanket known-app or
+known-library exclusions merely because they previously occupied `well-known`.
+
+A termination command or force-kill near an application path belongs with
+`process/terminate/command`. A required named wallet application path supports
+wallet context; an unqualified `/Applications/` path alone does not.
+A composite combining concealed UI, termination, and wallet context may infer
+process interference in `objectives/impact/degrade/process`; it must not claim
+file replacement or credential access without that evidence. A wallet-associated
+LaunchAgent label belongs with `os/service/launchagent`. Labels, recovery UI,
+RunAtLoad text and LaunchAgents paths alone do not require spoofing, installation,
+or export. Do not add a hostile wrapper to turn those clues into such claims.
+
+File-search vocabulary and operations share `micro-behaviors/fs/search` when
+their subject is selecting files. A wildcard literal supports a possible target;
+a find-option fragment supports a search interface. Descriptions must distinguish
+those clues from a matched command or traversal call. Language, source versus
+binary, and target extension do not create competing hierarchy layers. The shared
+`fs/search::recursive-file-discovery` selector combines traversal evidence with
+the relocated application-bundle search. It is incomplete discovery evidence for
+consumers, not a second definition of a search operation or proof of acquisition.
+Keep such cross-mechanism combinations explicit; do not copy the underlying
+matcher into both operation directories. Interpreting
+configuration contents follows `data/config/load`, even when a parser method
+names a file; finding that file follows `fs/search`.
+
+A file-search plus transfer classifier follows `stealer/wallet` only when every
+source alternative requires wallet evidence. An OR permitting generic `id.json`
+search evidence follows `stealer/file`. Neither filename selection alone nor an
+extra wrapper around a filename filter establishes theft. Preserve the selection
+observation and require acquisition/transfer context in its consumers.
+
+Directory consumers must retain useful source clues explicitly after relocation.
+A wallet-source selector can reuse named application/store observations, but must
+not inherit generic messaging, protection or prompt observations merely because
+they once lived beside wallet rules. Such selectors express incomplete source
+evidence; the consuming objective supplies acquisition or transfer context.
+Counts of clues or repeated mentions do not prove multiple stores, reads, sends,
+or repeated harvesting. An invalid-seed message beside one export is not evidence
+of a second harvest.
+
+Wallet address extraction interfaces belong in `data/parse/wallet` when they
+identify parsing/extraction of wallet information without requiring secret
+material. Public addresses are not private keys. Browser profile/path discovery
+method references belong with browser application paths; reporting method
+references belong with telemetry or URL construction. Named implementation
+methods can support these capability inferences without establishing that the
+program is a blockchain client or that it steals credentials.
+
+When a composite claims several distinct named methods, use separate atoms and
+an `any`/`needs` threshold. A regex occurrence count can be satisfied by repeated
+copies of one alternative; it does not establish method diversity. A wildcard
+method-name count likewise must not be described as a count of distinct wallet
+providers unless distinctness is actually enforced.
+
+Neutral `hardware/input/media` owns acquisition interfaces that leave audio
+versus video open, such as `getUserMedia`, and mixed webcam/microphone controls.
+`data/stream/record` owns stream recording and emitted recording chunks, including
+synthetic streams; MediaRecorder alone does not identify a display, camera, or
+microphone source. Named screen/webcam stream routes support their respective
+capabilities. A generic stream handler belongs in `process/io/stream`, an HTTP
+route definition in `communications/http/server/route`, and tunnel bootstrap or
+numeric server selectors in `communications/proxy/tunnel`. A selector's meaning
+must come from other evidence, not a source-specific trait name.
+
+These boundaries classify probable capabilities, not proven execution. A
+distinctive capture name, API reference, or image artifact can support an
+inference when read with the other required evidence. Descriptions must not
+claim a narrower source than the matcher supports. Generic raster operations
+belong in `ui/graphics/draw`, image construction/readback in `ui/graphics/image`,
+encoding in `data/encode/image`, display geometry in `hardware/display/state`,
+and window bounds in `ui/window/region`. Window enumeration or device-context
+access without pixel capture stays with windows. Image-path observations remain
+in `fs/path/media`; explicit capture consumers may reference them. Source code
+versus compiled form never creates a separate `native-capture` technique.
+
+`file` owns exported files or staged file bundles when their content is not
+confined to a more specific source. A search over sensitive filename extensions
+does not establish every possible source those extensions could represent.
+Pure targeting belongs in `collection/file-targeting`; credential acquisition
+without export belongs in `credential-access`. Permission bundles belong in
+the permission capability, and references to history or credential-config paths
+remain path capabilities. Query fields naming collection stages belong with
+the transfer protocol unless the matcher independently requires source evidence.
+Within file targeting, `filter` owns selection by filename/extension patterns;
+`identity-set` owns combinations identifying targeted files or stores, including
+combinations that reuse filters. A group of target indicators is not an export
+or a claim that every matched indicator represents another dataset.
+
+Review threshold composites by evidence role as well as matcher identity.
+Putting endpoints and source indicators in the same `any` list can satisfy a
+theft claim using only endpoints, or using only local source paths. Require each
+necessary role separately. Identical-body validation cannot detect this error:
+two different endpoint matchers may still supply the same semantic role.
+
+The former `phish` leaf classified an acquisition method; its exporting rules
+now live in `input`, while local capture and archive staging have their own
+objective homes. Legacy `surveillance` still classifies a purpose and overlaps
+captured input. Its two Go input-export rules have moved to `input`; audit the
+remaining rules by exported data (audio, video, message) before splitting.
+Audited screen and image exports now use the source contracts above; local
+capture and neutral graphics operations no longer acquire export meaning from
+their former placement. Unresolved mixed-source or control-channel matchers
+remain a review backlog, not an admission contract for new surveillance rules.
+Keep phishing-method evidence under credential-access and reference it from the
+source-specific export. See the [stealer migration plan](docs/taxonomy-audit/STEALER-SOURCE-PLAN.md)
+for rule dispositions and ordering.
+
+HTTP evidence uses the same whole-matcher distinction. `http/user-agent`
+owns that header's values, reading/setting/testing it, and pools of those values.
+`http/fingerprint` owns client-hint/fetch-metadata fields and profiles spanning
+several HTTP fields. Selecting a browser's TLS/HTTP transport impersonation
+profile belongs in `http/tls`; it does not merely set a User-Agent. Credential
+provider modes and assumed-role records belong in `os/security/auth/cloud`,
+even when found beside a user-agent in an audit record. None of these neutral
+capabilities alone establishes export of host information.
+
+`http/upload` owns file/data upload operations and their recognizable invocation
+patterns. A content-type header alone belongs in `http/header/content-type`;
+other named headers belong in their header category. `http/form` owns form and
+multipart construction, fields, attachment descriptions, and form submission.
+A filename suffix without form context belongs in `fs/path/extension`.
+Constructing a Blob with a gzip media type belongs in `data/buffer/alloc`:
+the label does not establish compression or transmission. Yarn bundle identity
+belongs in `well-known/tool/packaging/yarn`, even if an upload rule once used it.
+
+Endpoint paths such as `/collect` and `/exfil` belong in
+`http/url/endpoint` when no source or unauthorized-transfer condition is required.
+A request method or client marker can qualify endpoint evidence without turning
+it into an exfiltration objective. Required stolen-source evidence follows the
+stealer source contracts; otherwise an actual theft/transfer inference is needed
+for `exfiltration/http/collect`. Password/secret assignments remain authentication
+capabilities, not collection or export by themselves. An IP upload destination
+whose alternatives include bare IP and IP:port values belongs in `ip/endpoint`;
+`http/url/external-ip` specifically requires an HTTP URL form.
+
+Broad directory consumers inherit these boundaries. Do not preserve a former
+upload vote from a relocated header, suffix, package identity, or form-field
+fragment merely to retain a score. Preserve explicit references and test actual
+transfer controls; repair any lost legitimate inference using the evidence the
+consumer actually needs. Identical bodies with different effective scopes or
+suppression conditions require a coverage-aware merge, not automatic deletion.
+
+RouterOS query literals follow the resource queried, just like other APIs:
+interfaces → `network/interface`; routes → `os/network/route`; firewall
+configuration → `os/firewall/query`; wireless configuration →
+`hardware/wireless/network`. The hierarchy does not acquire a RouterOS layer.
+`os/firewall/probe` means checking availability of firewall tooling, not reading
+its rules. A host-profile accessor spanning identity, hardware, software, or
+health goes in `os/sysinfo/profile`; configured services/tools go in
+`os/sysinfo/config`. Multi-resource network status queries go in
+`os/network/status`. Coordinated reconnaissance remains an objective assembled
+from those capabilities; `discovery/network/enumeration` owns the network-only
+query combinations, while `discovery/system/profile` owns broader host surveys.
+
+An object-field matcher belongs in `data/serialize/schema-object`. JSON Pointer
+token escaping (`~` → `~0`, `/` → `~1`) belongs in `data/encode/json-pointer`:
+it transforms a path token rather than recognizing an object schema.
 
 ### Persistence: the activation boundary, not the file location
 
@@ -1392,14 +2065,16 @@ micro-behaviors/
 │   └── profinet/          #   PROFINET industrial Ethernet               (RT/IRT)
 │
 ├── crypto/                # Cryptographic operations            → MBC: Cryptography
-│   │                      #   Neutral crypto primitives only.
+│   │                      #   Cryptographic operations and key material.
 │   │                      #   API hashing → objectives/anti-static/obfuscation/imports/.
 │   │                      #   DPAPI credential decryption → objectives/credential-access/.
 │   │                      #   PRNG → os/random/.
 │   ├── symmetric/         #   Symmetric ciphers (AES, DES, XOR, RC4)   C0068
 │   ├── asymmetric/        #   Asymmetric ciphers (RSA, ECC, Curve25519)
+│   ├── hybrid/            #   Symmetric payload cryptography with asymmetric key wrapping
 │   ├── hash/              #   Cryptographic hashes (SHA, MD5, Blake2b)  C0029
 │   ├── kdf/               #   Key derivation functions                  C0028
+│   ├── mnemonic/          #   Seed-phrase representations, wordlists and validation
 │   ├── certificate/       #   Certificate ops (install, store, sign, verify)
 │   ├── native/            #   Native crypto provider/API references without a narrower operation
 │   └── library/           #   Legacy implementation partition; migrate by technique/group
@@ -1442,7 +2117,11 @@ micro-behaviors/
 │   │   └── combined/       #   Legacy mixed claims; preserve distinct algorithm facts
 │   ├── archive/           #   Archive operations (tar, zip extraction)
 │   ├── serialize/         #   Serialization (JSON, YAML, pickle, protobuf)
-│   ├── transaction/       #   Ledger transaction data operations
+│   ├── transaction/       #   Financial/ledger transaction data operations
+│   │   ├── authorize/     #     Spender/transfer authority and permits
+│   │   ├── construct/     #     Messages, outputs and fee preparation
+│   │   ├── sign/          #     Transaction/payment-specific signing
+│   │   ├── submit/        #     Broadcast transactions or financial orders
 │   │   └── query/         #     Interpret retrieved transaction fields/results
 │   ├── format/            #   Format handling not covered by a narrower operation
 │   │                      #     File-level identification or header presence → metadata/file/format/
@@ -1927,10 +2606,14 @@ objectives/
 │   │                          #   Financial data → credential-access/financial/.
 │   ├── keylog/                #   Keystroke logging                       T1056.001
 │   ├── clipboard/             #   Clipboard capture                       T1115
+│   ├── audio/                 #   Local sound acquisition                 T1123
+│   ├── camera/                #   Local camera acquisition                T1125
+│   ├── multi-source/          #   Independently required acquired datasets; no export
 │   ├── screenshot/            #   Screen capture                          T1113
+│   ├── touch/                 #   Touch position/gesture collection
 │   ├── archive/               #   Archive collected data                  T1560
 │   ├── database/              #   Database enumeration/access             T1005
-│   ├── email-harvest/         #   Email address harvesting                T1114
+│   ├── email-harvest/         #   Mailbox/address collection              T1114
 │   ├── file-copy/             #   File copying mechanisms                 T1005
 │   ├── file-targeting/        #   File enumeration for targeting          T1083
 │   ├── network/               #   Network packet/traffic capture          T1040
@@ -1977,7 +2660,7 @@ objectives/
 │   │   └── multi-store/       #     Sweep across developer credential STORES (cloud
 │   │                          #       configs, SSH keys, .env/.npmrc, browser DBs); the
 │   │                          #       dev-workstation analogue of multi-app. A sweep
-│   │                          #       that also SENDS → exfiltration/stealer/sweep/.
+│   │                          #       that also SENDS → exfiltration/stealer/ by source.
 │   ├── validation/            #   Credential validation
 │   ├── vpn/config/            #   VPN config credentials
 │   ├── wallet/                #   Crypto wallet access                    B0028
@@ -2083,21 +2766,31 @@ objectives/
 │       │                      #     and product go in the filename.
 │       ├── account-db/        #     /etc/shadow, /etc/passwd, SAM, sudo logs
 │       ├── appliance-config/  #     Router/firewall/appliance configs (RouterOS, NetScaler)
+│       ├── audio/             #     Sound, including recordings with unspecified origin
+│       ├── audiovisual/       #     Audio/video recording without a required narrower source
 │       ├── browser/           #     Browser passwords, cookies, extension storage
+│       ├── camera/            #     Camera imagery or streams
 │       ├── cloud/             #     Cloud credentials (~/.aws, IMDS, kubeconfig)
+│       ├── credential/        #     Authentication-store export with no required narrower store
 │       ├── dev-secret/        #     .npmrc, .git-credentials, .env files, CI secrets
 │       ├── env/               #     Process environment secrets
 │       ├── file/              #     Documents, disk sweeps, removable media
+│       ├── image/             #     Image data with unspecified acquisition origin
 │       ├── input/             #     Keystrokes, form input, clipboard
 │       ├── keychain/          #     OS secret stores (Keychain, DPAPI, libsecret)
 │       ├── message/           #     SMS, mailboxes, chat history
-│       ├── network-config/    #     Interfaces, routes, ARP, Wi-Fi profiles
-│       ├── phish/             #     Credentials typed into a phishing form
-│       ├── process-list/      #     Running-process inventory
+│       ├── multi-source/      #     Required independent stolen datasets, not indicator counts
+│       ├── screen/            #     Display/window/tab images, streams, or derived text
 │       ├── ssh/               #     SSH keys and host files
-│       ├── surveillance/      #     Screenshots, camera, microphone
-│       ├── sweep/             #     One stealer harvesting many of the above
-│       ├── system-info/       #     Host profile (hostname, user, OS, hardware)
+│       ├── surveillance/      #     Legacy purpose axis: audit by input/screen/audio/video source
+│       ├── sweep/             #     Legacy unresolved rules; no new admissions
+│       ├── system-info/       #     Host/client reports; parent holds no rules
+│       │   ├── identity/      #       Host, account, and stable device identifiers
+│       │   ├── platform/      #       OS/runtime/execution-environment information
+│       │   ├── software/      #       Installed software/package inventory
+│       │   ├── process/       #       Running-process inventory
+│       │   ├── network/       #       Interfaces, routes, connectivity, and network survey
+│       │   └── profile/       #       Reports spanning or leaving open several host domains
 │       ├── token/             #     App session tokens (Discord, Telegram, games)
 │       └── wallet/            #     Crypto wallets and seed phrases
 │
@@ -2460,9 +3153,9 @@ probable capability belongs with that capability in `micro-behaviors/`.
   The former `metadata/library/` tree held ~1,030 rules across ~68 directories and mixed several different concepts: library fingerprints that duplicated `well-known/lib/`, plain capability markers wearing a library's directory name, named offensive tools, CI fingerprints, and vague structural leaves. That migration is complete: `metadata/library/` is now closed and empty. Because a directory reference is an ML path feature, each migrated matcher was placed according to what it actually finds; never recreate the old bucket or move a whole directory on the strength of its name.
 - New top-level subdirectories require updating both TAXONOMY.md and `ALLOWED_METADATA` in `src/capabilities/validation/directory_whitelist.rs`
 - **Depth:** Prefer breadth when precision is unchanged; depths above five below `metadata/` receive the same non-blocking review warning as other tiers. Current direct ML path features include only two levels below the tier; taxonomy depth and model visibility are separate concerns.
-- **Max leaf size:** 85 rules per directory across all tiers, atomic traits and composite rules counted together (`policy/oversized-dir`); no directory exemptions
+- **Max leaf size:** 100 rules per directory across all tiers, atomic traits and composite rules counted together (`policy/oversized-dir`); no directory exemptions
 - **Max fan-out:** No directory should have more than 150 immediate subdirectories. Split by the parent's documented subject/function question; ecosystem or vendor grouping must not create a second home for the same claim.
-- **Prefer technology-neutral subdirectory names.** Technology names belong in filenames, not directory names, unless the technology itself defines the subject. The 85-rule cap does not justify a language or platform split.
+- **Prefer technology-neutral subdirectory names.** Technology names belong in filenames, not directory names, unless the technology itself defines the subject. The 100-rule cap does not justify a language or platform split.
 - **One level, one question.** Every child of a directory must answer the *same* question about its parent. A level that mixes axes gives some traits two valid homes at once, and the duplicate pair is then created by the taxonomy rather than by an author: it is not a mistake anyone can avoid.
 
   The test is to name the question out loud and check that every sibling answers it. `micro-behaviors/fs/path/` should answer *what does this path point at* — a credential, a cookie, a config file, a log, a cache. Siblings like `application/`, `package-manager/`, `os/` and `webserver/` answer a different question, *whose is it*, and siblings like `basename/`, `construct/` and `traversal/` answer a third, *what is being done with it*. With all three present, "an application's config file path" is a genuine member of `config/`, of `application/config/`, and arguably of `basename/` — which is exactly how `fs/path/config/app/` and `fs/path/application/config/` both came to exist, holding the same subject (`editor-extensions` on one side, `vscode` on the other).
@@ -2817,7 +3510,7 @@ composite_rules:
 | `eval()` call | Capability | `micro-behaviors/process/interpreter/eval/direct` | notable |
 | Process hollowing | Capability | `micro-behaviors/process/hollow` | suspicious |
 | Screenshot API | Capability | `micro-behaviors/hardware/display/screenshot` | notable |
-| Screenshot + timer + upload | Objective | `objectives/collection/screenshot` | suspicious |
+| Screenshot + timer + upload | Objective | `objectives/exfiltration/stealer/screen` | suspicious |
 | Reverse shell pattern | Objective | `objectives/command-and-control/reverse-shell` | hostile |
 | Cobalt Strike beacon | Known | `well-known/malware/rat/cobalt-strike` | hostile |
 

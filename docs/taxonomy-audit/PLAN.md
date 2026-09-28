@@ -1,4 +1,4 @@
-# 85-rule taxonomy audit and migration plan
+# Taxonomy audit and migration plan
 
 Snapshot: 2026-09-26, traits revision `a8b72b286f0d2ac29e005e151472eaaf701b596e`.
 Validator checkout: `../cleave`, based on `a1819d4a488714542871132564b36753722aa3a2`.
@@ -9,28 +9,518 @@ snapshot; do not combine the two sets of counts.
 
 ## Decision and measured impact
 
-## Current working-tree measurement — 2026-09-28
+## Current working-tree measurement — 2026-09-28, 100-rule cap
 
-The regenerated [post-migration audit snapshot](snapshot-2026-09-28-post-http-source/)
-covers the current working tree, including uncommitted changes. Across 20,080
-YAML files and 118,795 rules, it finds **160 over-cap directories**, **18,051
-rules in those directories**, and **4,451 rules above the combined 85-rule
-cap**. There are 108 identical-matcher groups covering 242 rules to review,
-not blindly merge. The audit tree has no directory deeper than five. Soft
-validation passes **1,837/1,837 fixtures**. Strict validation remains red on
-catalog-wide policy and quality findings, including **160 over-cap
-directories**; no stale or broken references remain from this source-routing
-cohort.
-Remaining cap and semantic work is tracked in the dated `oversized.csv`,
-`siblings.csv`, and disposition ledger; path changes still require downstream
-feature/model evaluation.
+The regenerated [current audit snapshot](snapshot-2026-09-28-current/)
+includes the current shared tree and uses the uniform inclusive limit of 100.
+Across **20,737 YAML files** and **118,806 rules**, it finds **79 over-cap
+directories**, **9,929 rules in them**, and **2,029 excess rules**. Compared
+with the immediately preceding 85-rule measurement, this removes 64 directory
+violations and reduces the minimum excess by 1,739 rules; the four-rule Electron
+ASAR reclassification also moves a complete spawn chain to its required sink. Atomic overlap review contains **64 groups / 144 rules touching
+violators**, and **430 groups globally**. No rule directory is deeper than
+five; no cap exemptions exist. Sparse review uses sibling groups below 35,
+without flagging a single child alone.
 
-The focused system-info/sweep pass routes capability-only file targeting and
-root-search rules to `collection/file-targeting`, file-source exports to
-`stealer/file`, and mandatory mixed-source profiles to `stealer/sweep`.
-`system-info` now has 160 rules (75 above cap), `sweep` has 83, and `file` has
-55. This follows source semantics rather than moving rules just to meet the cap;
-see [the source audit](SYSTEM-INFO-EXFIL-SOURCES.md).
+The first 100-cap audit cohort should start with directories that combine the
+largest excess and a coherent nearby sibling review: `dropper/staging/encrypted`
+(213 rules after the Electron ASAR move), `supply-chain/recon-exfil/install-hook` (198),
+`supply-chain/hidden-payload/runtime` (192), `dropper/execution/loader` (191),
+and `anti-static/obfuscation/payload/encrypted` (188). These are inspection
+priorities, not preselected split designs. For each, check the 64 exact matcher
+overlap groups touching violators, then compare every proposed child with its
+parent and siblings. Consolidate duplicate evidence first; split only along a
+single stable technique question whose children each narrow the parent. The
+remaining 74 directories should then be reviewed by shared parent/cohort so
+that moves account for destination capacity and sibling meaning together.
+
+## Implementation checkpoint: encrypted staging sink correction
+
+The [encrypted staging audit](DROPPER-STAGING-ENCRYPTED.md) found that the
+Electron ASAR composite requires decryption, temporary EXE writing, and hidden
+child launch, so its correct home is `dropper/file-exec/spawn`. The file moved
+intact: matcher bytes, defaults, scope, criticality, confidence, and mappings
+are unchanged, and no external references needed updates. The source leaf falls
+**217 → 213**; the receiver rises **64 → 68**. A hard-linked before/after run
+with the available prebuilt engine produced the same corpus failures on both
+sides: three benign archive paths trigger the unrelated
+`anti-static/obfuscation/payload/encoded::shell-eval-base64-decode` rule. The
+current engine still cannot rebuild due shared `filefacts`/`stng` API
+mismatches, so strict validation with the current validator remains open.
+
+## Implementation checkpoint: socket-backed shell classification and wallet source
+
+The [ASP.NET socket relay audit](WEBSHELL-REQUEST-FD-REDIRECT.md) moves the
+reverse-shell composite and both defining atoms to their semantic homes. The
+webshell request leaf falls **86 → 83**; `fd-redirect` rises **35 → 37** and
+neutral socket creation **61 → 62**. The direct socket-to-stdio technique stays
+hostile; the standalone socket-creation clue is notable capability evidence.
+All **1,842 controlled corpus fixtures** pass, including a benign Telegram path
+control that rejects path mention as proof of acquisition.
+
+The [wallet-keyring source audit](SENSITIVE-DATA-WALLET-KEYRING.md) moves seven
+unchanged rules from generic `sensitive-data` into `stealer/wallet`. The wallet
+leaf is **48**; the legacy source falls **141 → 134** and remains over cap for
+further source-by-source review. Live strict validation reports **98 issues**
+and **144 over-cap directories**; an independent new schema-object sibling is
+90 rules. The broader migration remains open.
+
+The [JavaScript credential-source audit](SENSITIVE-DATA-JAVASCRIPT-SOURCES.md)
+moves nine rules: wallet seed/mnemonic/password export to `stealer/wallet`, and
+generic private-key export to `stealer/credential`. The generic `sensitive-data`
+directory falls **134 → 125**; wallet rises **48 → 54**, credential **37 → 40**.
+An unsupported supply-chain “library theft” duplicate is merged into the
+canonical wallet-seed classifier, preserving its ATT&CK mapping. All **1,842
+controlled corpus fixtures** pass. The source leaf remains over cap and needs
+further source/technique review; no exception was added.
+
+The [source-classification audit](SENSITIVE-DATA-EXFIL-SOURCES.md) continues
+that migration. Six JavaScript/Go source-to-HTTP classifiers now follow
+`env`, `file`, and `system-info/profile`; process-only export moves to
+`system-info/process`; a required browser-plus-network identity export moves to
+`multi-source`. The legacy source falls **125 → 119**. Every receiver remains
+within 85, with `system-info/profile` exactly at the cap. All **1,842 controlled
+corpus fixtures** pass. Live strict validation still reports **144 over-cap
+directories**; the broader audit remains open.
+
+The [DNS source-classification audit](DNS-EXFILTRATION-SOURCE-CLASSIFICATION.md)
+moves **18 rules** whose matchers already require AWS/netrc credentials,
+credential stores, account databases, SSH material, or sensitive identity files
+from `exfiltration/dns/tunnel` to their source-defined stealer leaves. Hostname
+and user identity DNS exports now follow `system-info/identity`. A follow-up
+moves neutral DoH endpoint observations to `communications/dns/doh` and the
+DoH-to-C2 composite to `command-and-control/dns/tunneling`. An explicit DNS TXT
+command-execution rule also moves from exfiltration to that C2 leaf, and the
+Go PAN-OS DNS heartbeat moves to `command-and-control/beacon/network/periodic`.
+The DNS exfil leaf and C2 tunneling leaf are now **100** and **85** rules; the
+beacon periodic receiver has **81**. The DNS exfil leaf falls **125 → 100**;
+every receiver remains within the current 100-rule cap. A related
+system-information review moves a host/user-only
+export from `system-info/profile` to `system-info/identity`; the leaves are now
+84 and 38 rules. All **1,842 controlled corpus fixtures** pass. At the current
+100-rule limit, the DNS exfil leaf is within cap; 79 directories remain over
+cap catalog-wide, and other C2-versus-theft rules need individual review.
+
+## Implementation checkpoint: ASP.NET socket-backed shell relay
+
+Moved `aspnet-callback-reverse-shell` from `webshell/request` to
+`reverse-shell/fd-redirect`: it attaches the same outbound socket to all three
+child-process standard streams, which is the documented direct descriptor
+redirection technique. `webshell/request` falls from 86 to 85; the receiver rises
+from 35 to 36. Matcher conditions, scope, criticality, confidence and mappings
+remain equivalent, and all three directory references were reviewed. The move
+preserves all **1,841 controlled corpus fixtures**. See
+[the boundary audit](WEBSHELL-REQUEST-FD-REDIRECT.md).
+
+The refreshed live validator reports **103 existing issues**, including **143
+over-cap directories**; the shared tree has other concurrent changes. The
+taxonomy migration remains open.
+
+## Implementation checkpoint: credential UI and application references
+
+The [wallet-UI audit](WALLET-UI-BOUNDARIES.md) records **44 moves, one merge and
+two unsupported hostile wrapper retirements**. Desktop-wallet falls from 24 to
+17; objective mnemonic from 41 to 33. Product references leave artifact/library
+identity, generic secret-entry UI follows credential controls, and process/service
+observations follow their capabilities. Every receiver remains a strict leaf
+within 85. The MetaMask union preserves prior scope and removes a duplicate vote.
+
+The proof protects **541 definitions**; **653 affected directory references in
+475 consumers** have recorded dispositions. **127 focused assertions** pass across
+37 files. The complete controlled corpus passes
+**1,841 fixtures** with 46 affected files overlaid on the previous passing snapshot.
+Exact seed-export expectations replace stale hierarchy assertions without changing
+score thresholds. Strict validation remains at 110 diagnostics and 144 oversized
+directories; the unrelated live RAT matcher still blocks loading.
+
+The ledger contains **1,674 implemented dispositions out of 1,683**, six
+retirements and three sweep reviews. Four outside changes are recorded separately.
+Residual wallet catalogs, recovery UI, decryption and staging claims need further
+review. The full taxonomy migration remains unfinished.
+
+## Implementation checkpoint: filename search and source-specific export
+
+The [wallet-search audit](WALLET-SEARCH-BOUNDARIES.md) records **29 moves**, one
+unsupported hostile wrapper retirement, and two explicit composite additions.
+Desktop-wallet falls from **44 to 24**. The six-rule `fs/enumerate/extension`
+branch is removed; predicates share `fs/search` across languages and file forms.
+Dotenv interpretation leaves filesystem search for configuration loading.
+
+Wallet and generic `id.json` search exports now have separate source-required
+classifiers. Their union preserves the original Telegram classifier; a compiled
+control demonstrates that generic search options no longer imply a wallet.
+Traversal-dependent consumers retain the relocated bundle search explicitly.
+The old hostile wrapper around a JSON filter is retired, while its suspicious
+underlying observation remains unchanged.
+
+The proof protects **69 original definitions**, with **39 directory references in
+32 consumers** reviewed and 22 repair records (20 consumers plus the source split).
+**82 focused assertions**, **32 Boolean union comparisons**, and all **1,841
+controlled corpus fixtures** pass. Strict validation reports 110 diagnostics and
+144 over-cap directories; an unrelated live RAT matcher still blocks loading.
+Eight outside changes are recorded separately. The ledger contains **1,629
+implemented dispositions out of 1,636**, four retirements and three sweep reviews.
+Residual desktop UI, application interference, decryption, catalog and staging
+cohorts remain open, as does the full cap and semantic migration.
+
+## Implementation checkpoint: wallet stores and exported secrets
+
+The [desktop-wallet audit](DESKTOP-WALLET-BOUNDARIES.md) records **83 moves**,
+reducing the desktop leaf from **120 to 44**. Store paths, installed applications,
+product references, prompts, DPAPI and messaging follow their actual subjects.
+Six completed exporters follow their required source; a generic private key or
+secret phrase cannot by itself require a wallet category. Every receiver remains
+an existing strict leaf within 85. No exception or new depth was needed.
+
+The proof protects **144 definitions**, reviews **48 directory references in 42
+consumers**, and records **11 explicit repairs**. **126 focused assertions** and
+all **1,841 controlled corpus fixtures** pass. The corpus comparison uses the
+previously passing snapshot plus only the migration's 35 changed files, with no
+excluded fixtures. Live loading is blocked by an unrelated new RAT definition;
+23 outside changes are recorded separately. See the verification/isolation records.
+
+The ledger contains **1,600 implemented dispositions out of 1,606**, plus three
+retirements and three sweep reviews. Mnemonic retains 41 rules; blockchain-library
+retains 63. The audit lists file-selection, recovery-UI, application-interference,
+secret-container, broad-catalog and staging cohorts still needing semantic fixes.
+The desktop size violation is resolved; the full taxonomy migration remains open.
+
+## Implementation checkpoint: mnemonic capabilities and recovery interfaces
+
+The [mnemonic audit](MNEMONIC-BOUNDARIES.md) records **77 moves**, reducing
+`credential-access/wallet/mnemonic` from **91 to 46**. Seed representations and
+wordlists now share `crypto/mnemonic`; WIF/private-key evidence, derivation paths,
+UI recovery controls and keystore locators follow their documented subjects.
+All receivers remain strict leaves within 85; 63 blockchain-library rules remain.
+
+The proof protects **147 definitions**, with **33 directory references in 30
+consumers** reviewed. Five explicit repairs retain relevant source/encryption
+clues and remove a blanket mnemonic exemption. Local seed-entry code no longer
+counts as sensitive-file targeting merely through directory membership.
+**84 focused assertions** and all **1,841 isolated corpus fixtures** pass.
+Live soft validation still fails the unrelated PyAigis shell-decoder regression;
+strict validation reports **107 diagnostics** and **145 over-cap directories**.
+
+The ledger contains **1,517 implemented dispositions out of 1,523**, plus three
+retirements and three sweep reviews. Fifteen outside changes are recorded
+separately. The audit lists remaining private-key/UI alternatives, wallet export
+classifiers, three generic wallet remnants and the provider/exchange cohorts.
+The full taxonomy migration remains unfinished.
+
+## Implementation checkpoint: blockchain operations and library exclusions
+
+The [blockchain audit](BLOCKCHAIN-OPERATION-BOUNDARIES.md) records **87 moves**
+into transaction, key/signature/hash, endpoint, payment-interface and UI homes.
+All receiving leaves stay within 85. Query and reward observations leave the
+library layer; **93 rules remain** there for explicit follow-up.
+
+**34 blanket blockchain exclusions are removed**, fixing the reproduced
+`wallet.dat` profiler false negative and preventing wallet vocabulary from
+hiding ordinary process/deserialization capabilities. One redundant ZIP
+alternative from the previous batch is also removed. Moved matcher/settings
+semantics are preserved; consumer changes are separately recorded.
+
+The proof protects **204 definitions** with no outside changes, reviewing
+**70 directory references in 66 consumers**. **57 focused assertions** and all
+**1,841 isolated corpus fixtures** pass. Live soft validation still fails the
+unchanged PyAigis shell-decoder regression; strict validation reports **91
+diagnostics** and **146 over-cap directories**. The ledger contains **1,440
+implemented dispositions out of 1,446**, plus three retirements and three sweep
+reviews. The full migration remains open.
+
+## Implementation checkpoint: HTTP upload follows source and channel
+
+The [HTTP-upload audit](HTTP-UPLOAD-BOUNDARIES.md) records **98 moves**,
+reducing HTTP upload from **176 to 85** combined rules. Required source data
+selects the stealer leaf; otherwise archive, encrypted payload and encoded
+transport have documented precedence. Local HTTP construction, paths, archive
+creation and crypto operations follow their neutral capabilities. Three hybrid
+crypto observations move up a level; all receivers remain strict leaves within 85.
+
+All moved matcher/settings semantics are preserved. Four consumer rewrites retain
+appropriate moved evidence; the proof protects **276 definitions** and reviews
+**151 directory references in 130 consumers**. **83 focused assertions** and
+**128 Boolean comparisons** pass. All **1,841 corpus fixtures** pass with only
+the unrelated shell-decoder regression isolated. Live validation still fails;
+strict validation reports **92 diagnostics** and **146 over-cap directories**.
+
+The ledger has **1,353 implemented dispositions out of 1,359**, plus three
+retirements and three sweep reviews. The later preservation proof records 17
+outside changes and 118,811 rules; the inventory above is a separate checkpoint.
+The audit records remaining upload classifiers and a blockchain-library
+exclusion that mistakes generic wallet terminology for a library identity.
+The cap migration and semantic audit remain open.
+
+## Implementation checkpoint: browser locations and access mechanisms
+
+The [browser-access audit](BROWSER-ACCESS-BOUNDARIES.md) records **95 moves**,
+resolving two cap violations: Chromium **136 → 82**, multi-target **106 → 85**.
+App-Bound Encryption and DevTools become sibling techniques, with no added depth.
+Neutral paths, JSON fields, executable names and keyring references follow their
+capabilities. All receivers remain strict leaves within 85.
+
+The proof protects **205 definitions** and records **37 affected directory
+references in 36 consumers**. Six consumer repairs retain relocated technique
+alternatives. Two dead defanged-IP matchers are repaired explicitly; all other
+moved matcher/settings semantics are preserved. **1,032 Boolean comparisons**
+and **63 focused assertions** pass. All **1,841 corpus fixtures** pass with only
+the unrelated shell-decoder regression isolated; live validation remains failing.
+Strict validation reports **91 diagnostics**, including **147 over-cap leaves**.
+
+The ledger has **1,248 implemented dispositions out of 1,251**, with three sweep
+reviews. Remaining browser export, generic-capability and mixed-target rules are
+listed in the audit; passing a cap is not a semantic certificate.
+
+## Implementation checkpoint: keychain sources and local credential access
+
+The [keychain audit](KEYCHAIN-SOURCE-BOUNDARIES.md) records **11 moves**:
+five local observations leave export, and six classifiers follow their common
+authentication-data source in `credential`. Keychain export has **11** rules;
+credential export **33**. Every receiver remains a strict leaf within 85.
+Matchers and settings are preserved. The Python collector explicitly retains
+its former DPAPI source, with an unchanged eligible candidate set.
+
+The proof protects **25 definitions**, and **16 affected directory references in
+12 consumers** are reviewed. **59 focused assertions** pass. All **1,841 corpus
+fixtures** pass in the documented temporary copy restoring only the unrelated
+shell-decoder regression; the live tree still fails on PyAigis. Strict validation
+retains **89 diagnostics** and the cap backlog stays at **149 directories**.
+The ledger has **1,153 implemented dispositions out of 1,156**, with three sweep
+reviews. Remaining weak transfer/store claims are recorded explicitly.
+
+## Implementation checkpoint: mail sources and client operations
+
+The [mail audit](MAIL-SOURCE-BOUNDARIES.md) records **89 moves**, reducing
+email-harvest from 103 to **45**. Mailbox access, sending, address parsing, audit
+records and account secrets now follow distinct subjects. Schema-object has
+**77** rules after its own cleanup; every receiver is a strict leaf within 85.
+Browser request-history export replaces mailbox reconnaissance in the 85-rule
+browser leaf. No matcher or effective detection setting changed.
+
+The proof protects **189 definitions**; the consumer report covers **72 changed
+references in 66 consumers**. All **45 focused assertions** pass. The live corpus
+has an unrelated pre-existing PyAigis shell-decoder regression. An isolated copy
+restoring only that rule to its previous definition passes **1,841 fixtures**;
+the repository rule remains unchanged. Strict validation retains **89 diagnostics**.
+The audit records the isolation and outside edits explicitly.
+
+The shared tree has **149 oversized directories**. The ledger contains **1,142
+implemented dispositions out of 1,145**, with three sweep reviews. Contacts,
+message-export claims, campaign audit provenance, and remaining browser/keychain
+alternatives still need semantic review. The migration remains unfinished.
+
+## Implementation checkpoint: browsing records and storage boundaries
+
+The [history audit](BROWSER-HISTORY-BOUNDARIES.md) records **13 moves**, four
+retired wrappers, and one new neutral tab-event helper. Ten history/navigation
+exports now follow their browser source. Browser export has **85** rules,
+activity/browser **53**, and tracking **45**. No receiver exceeds the cap.
+
+Local storage now requires a storage interface; encryption alone no longer
+satisfies it. The source-and-send classifier remains available. Payload evidence
+is explicit in its consumers, and recognized cookie helpers no longer supply
+false theft evidence. **8,192 Boolean comparisons**, **42 focused assertions**,
+and all **1,841 corpus fixtures** pass. Strict validation retains **89
+diagnostics**. The audit distinguishes the 39-definition move-preservation
+proof from intentional refinements and retirement effects on broad consumers.
+
+The shared tree now has **150 oversized directories**: an independent CFML
+webshell addition raised its receiver to 86 during the pass. The ledger records
+**1,054 implemented dispositions out of 1,057**, with three sweep reviews;
+retired mixed observations have no fabricated single replacement. Remaining
+browser acquisition, mailbox, keychain and HTTP-report classification is listed
+in the audit. The overall taxonomy migration remains unfinished.
+
+## Implementation checkpoint: browser sources and HTTP request facets
+
+The [browser-source audit](BROWSER-SOURCE-BOUNDARIES.md) records **55 moves**:
+stealer/browser falls from 106 to **78**, request/client from 96 to **85**, and
+the duplicate HTTP body branch is retired. The catalog has **149 oversized
+directories**, down from 151. Every receiver is a strict leaf within 85.
+
+An ordinary JSON POST no longer supplies false cloud-theft evidence through a
+misplaced helper. Distinct Go method groups replace invalid occurrence counts.
+All **1,841 corpus fixtures** and **73 focused assertions** pass on the shared
+tree without exclusions; strict validation still reports **88 diagnostics**.
+The audit separates the matcher-preserving moves from intentional method-count
+and loader repairs, records **377 protected definitions**, and documents
+**92 changed directory references in 83 consumers**.
+
+The ledger has **1,036 implemented dispositions out of 1,039**, with three sweep
+reviews and a broader semantic backlog. Next, reconcile remaining browser helper
+and source claims, route the history/navigation exports from collection, and
+audit keychain alternatives. Passing the cap does not certify those classifiers.
+
+## Latest checkpoint: browser observation and neutral instrumentation
+
+The [113-rule manifest](activity-routing-moves.csv) reduces activity/browser from
+100 to **62** and monitor/tracking from 125 to **50**, resolving two cap
+violations. Generic event labels, JSON serialization, URL observation, storage,
+cookies, and lifecycle callbacks move to their neutral subjects. All receivers
+remain leaves within 85. The [activity audit](ACTIVITY-TELEMETRY-BOUNDARIES.md)
+records **208 protected definitions**, **66 affected directory references in 62
+consumers**, and a separately repaired JVM directory-observation regression.
+
+All **82 focused assertions** pass. An isolated YAML copy excluding one new
+post-baseline Go wallet file passes **1,841 corpus fixtures**. The actual shared
+tree remains failing: strict validation reports **85 diagnostics**, and the new
+file's regex-alternation count checks prevent even soft loading. The audit and
+snapshot manifest state that verification boundary explicitly; no repository
+exceptions were introduced. Twenty-eight outside changes are recorded separately.
+
+The cumulative ledger has **981 implemented dispositions out of 984**, plus its
+three sweep reviews. The broader semantic backlog is separate. Next, reconcile
+the overfull **106-rule stealer/browser** leaf before routing history/navigation
+exports out of collection; do not fill an already oversized destination.
+
+## Latest checkpoint: input devices, notifier hooks, CSS export, and touch
+
+The [34-rule sibling manifest](input-siblings-moves.csv) retires the overlapping
+keylog/evdev leaf, moves kernel notifier collection into hook, and routes CSS
+input oracles by exported source. Generic routes, paths, buffers and device
+interfaces become capabilities. Direct-device collection has **9** rules,
+hook **60**, and input export **54**. Touch collection has its own documented
+source category; raw coordinates are not classified as keystrokes.
+
+The [sibling audit](INPUT-SIBLING-BOUNDARIES.md) records **66 protected
+definitions**, **32 changed directory references in 30 consumers**, and the
+remaining classifier review. All conditions and effective settings are
+preserved. The cumulative ledger has **868 implemented dispositions out of
+871**, with three sweep reviews; the broader semantic backlog is separate.
+The cap backlog remains **153**, with no exceptions or new depth.
+
+## Latest checkpoint: keyboard collection and neutral input
+
+The [200-rule manifest](keylog-routing-moves.csv) separates acquisition methods,
+input export, general input handling, and synthesis. Keylog/capture falls from
+193 to **53**, resolving one cap violation. The receiving hook leaf stays at
+**59** after its generic primitives leave. Mouse synthesis/simulate synonyms
+are consolidated, and MouseInfo leaves the misleading robot category.
+Every receiver is a strict leaf within 85. No additional depth is introduced.
+
+The [input audit](KEYLOG-INPUT-BOUNDARIES.md) documents the contracts, **386
+protected definitions**, and **76 affected directory references in 70 consumers**.
+One tested exclusion repair prevents `event` from also matching `System Events`.
+All **1,840 verdict fixtures**, **38 source-routing assertions**, and **14 new
+input assertions** pass. Strict validation still reports **77 diagnostics**,
+including **153 oversized directories**. Eight concurrent definition changes
+outside this migration are recorded separately.
+
+The cumulative [837-row ledger](stealer-source-dispositions.csv) contains **834
+implemented dispositions** and **three sweep reviews**. Those review counts cover
+the ledger, not the whole remaining taxonomy backlog. The 53-rule capture
+remainder and adjacent device/evdev/kernel/CSS leaves need the precision review
+detailed in the input audit. Earlier checkpoints retain their own measurements.
+
+## Latest checkpoint: recording sources and acquisition mechanics
+
+The [68-rule manifest](surveillance-moves.csv) separates sound/camera exports,
+local acquisition, and source-neutral recording APIs. Monitor/capture falls from
+83 to **29** rules and surveillance from 14 to **6**; these leaves were already
+within the cap. The pass improves semantics without claiming another cap fix.
+All receiving leaves remain within 85. Source categories are registered in the
+validator, with no exemptions. The whole catalog preserves moved definitions;
+one collector follows the new sources and one covered OR leg is removed.
+The rebuilt CLI passes **1,840 verdict fixtures** and **38 focused assertions**.
+Strict validation initially retained 70 diagnostics; the reconciled run has 79,
+with nine additional diagnostics from concurrent edits outside this migration.
+
+The [recording audit](RECORDING-SOURCE-BOUNDARIES.md) records evidence contracts,
+38 affected directory references across 34 consumers, validation, and unresolved
+source/control distinctions. The [637-row ledger](stealer-source-dispositions.csv)
+has **634 implemented** dispositions and **three sweep reviews**. There remain
+154 cap violations. The snapshot includes concurrently added AMOS rules and
+Java/native matcher cleanup, recorded separately in the audit. The next
+oversized collection sibling is keylog/capture (**193**), whose atoms mix input
+observation with input synthesis.
+
+## Latest checkpoint: capture sources and redundant depth
+
+The [181-rule manifest](capture-routing-moves.csv) separates screen/image export,
+local capture, and neutral graphics/device/path observations. Screenshot
+collection now has **58** rules and monitor/capture **83**, resolving two cap
+violations. With screen streams moved to export, the redundant screenshot/capture
+child is collapsed into the screenshot leaf. The implementation-form
+native-capture directory is retired. No new depth or exceptions are added.
+
+Whole-catalog comparison preserves every moved rule's effective definition;
+the Python collector additionally follows the new screen/image directories.
+All **1,837 verdict fixtures** and **29 focused assertions** pass. Strict
+validation retains 70 issues, with oversized directories reduced to **154**.
+The [capture audit](CAPTURE-SOURCE-BOUNDARIES.md) documents 52 changed broad
+references across 46 consumers and the remaining surveillance, display, and
+monitor reviews. The [569-row ledger](stealer-source-dispositions.csv) records
+**566 implemented** dispositions and **three remaining sweep reviews**.
+Historical checkpoints below retain their earlier measurements.
+
+## Latest checkpoint: HTTP capability boundaries
+
+The [82-entry manifest](http-capability-moves.csv) records 81 moves and one
+inlined helper. HTTP upload now has **66** rules and HTTP collect **83**, resolving
+two cap violations through semantic relocation into existing categories. Every
+receiver is strictly leaf-only and at or below 85. The whole catalog passes
+normalized comparison with explicit exceptions for equivalent helper inlining
+and making Yarn bundle identity notable. Form construction, headers, suffixes,
+Blob construction, and package identity no longer supply generic upload votes.
+
+All **1,837 verdict fixtures** and **18 focused assertions** pass. Strict
+validation retains 70 reported issues; only the oversized-directory diagnostic
+improves, from 158 to 156. See [the HTTP audit](HTTP-CAPABILITY-BOUNDARIES.md)
+for source contracts, remaining scope-sensitive duplicate candidates, and
+preservation limits. The [389-row ledger](stealer-source-dispositions.csv)
+records **385 implemented** dispositions and **four remaining sweep reviews**.
+Broader semantic and cap work remains, including screenshot capture and
+surveillance. Path changes still need downstream model assessment.
+Historical checkpoints below retain their earlier measurements.
+
+## Latest checkpoint: sweep sources and evidence roles
+
+The [67-rule manifest](stealer-phase4-moves.csv) separates required independent
+datasets (`multi-source`, **22**) from authentication-store alternatives
+(`credential`, **15**), local acquisition, and neutral capabilities. Every moved
+rule initially passed definition-preserving comparison. One Node composite then
+received a separately tested precision repair: endpoints alone and source paths
+alone no longer satisfy secret export; source plus either endpoint still does.
+The source/destination helper adds one rule to the existing 121-rule HTTP collect
+violator, increasing excess by one without adding an exemption.
+
+All **1,837 verdict fixtures** and **8 source-routing assertions** pass. Strict
+validation retains **70 issues**, including 158 oversized directories; no new
+migration diagnostics remain. See [the checkpoint and remaining cohort](STEALER-SOURCE-PLAN.md)
+for source contracts, exact preservation limits, and validator candidates.
+Remaining catalog-wide cap, surveillance, transport, and semantic work is tracked
+in the snapshot CSVs and ledgers. Path changes still require downstream model
+assessment. Historical checkpoints below retain their earlier measurements.
+
+## Latest checkpoint: host-information sources and capability boundaries
+
+The [206-rule manifest](stealer-phase3-moves.csv) covers the host-information
+split and receiving-leaf audits. All moved definitions retain matcher bodies
+and effective settings after ID normalization. User-agent evidence and
+schema-object each contain **85** rules; discovery/system/profile contains
+**77**. The focused regression check passes all four assertions, and soft
+validation passes **1,837/1,837 fixtures**. Strict validation still reports
+70 issues, including 158 oversized directories; no broken references or
+leaf-only violations remain from this migration. An unrelated login-items
+addition is included in the working-tree measurements. The source contracts,
+intentional broad-consumer grouping changes, and remaining work are documented
+in [the implementation checkpoint](STEALER-SOURCE-PLAN.md).
+
+## Latest checkpoint: capability helpers and captured input
+
+Thirty rules moved with matcher bodies and effective settings preserved:
+sixteen out of system-info, all twelve out of phish, and two input exporters
+out of surveillance. Phish has no rules left; its exports now follow input,
+and local capture/staging remains in the respective objectives. Every receiving
+leaf remains within 85. The [manifest](stealer-phase2-moves.csv) records exact
+IDs and definition hashes. Soft validation passes **1,837/1,837 fixtures**;
+strict validation retains the same 69 reported entries. The backdoor consumer
+retains applicable relocated members. Python infostealer intentionally excludes
+three telemetry/startup helpers from source counting instead of promoting them
+to independent proximity legs. Four dedicated finding assertions pass: a real
+multi-source export matches, while telemetry observations remain visible without
+an infostealer finding. The broader source-equivalence audit remains unfinished;
+see [the implementation checkpoint](STEALER-SOURCE-PLAN.md).
 
 ## Latest checkpoint: PowerShell decompression is encoded staging
 
@@ -1645,7 +2135,7 @@ change the current direct prefix `objectives/anti-static/obfuscation`.
 Use independent placement reviews on representative unfamiliar matchers to
 check whether contracts actually give authors the same destination.
 
-The implemented policy is **85 atomic traits plus composite rules combined per
+The implemented policy is **100 atomic traits plus composite rules combined per
 directory**, inclusive, with **no exemptions**. There is no separate atomic cap.
 There is **no hard physical-depth limit**. Depth above five directories below
 any tier receives a soft, non-blocking validation warning; the tier and YAML
@@ -1660,27 +2150,25 @@ cap and semantic taxonomy audits remain active work.
 
 | Measurement | Result |
 |---|---:|
-| YAML files containing rules | 19,764 |
-| Atomic traits / composites | 79,169 / 39,509 |
-| Total rules / directories containing rules | 118,678 / 8,637 |
-| Directories exceeding the old 75-atomic cap | 0 |
-| Directories exceeding the intermediate 80-combined cap | 219 |
-| Directories exceeding the chosen 85-combined cap | **180** |
-| Violators by tier | 143 objectives, 24 capabilities, 7 metadata, 6 identities |
-| Rules in violating directories | **20,215** |
-| Sum of excess above 85 | **4,915** |
-| Violators plus sibling subtrees inventoried | 2,826 rule directories / 61,219 rules |
-| Identical atomic `if` bodies touching violators | 128 groups / 284 rules |
+| YAML files containing rules | 20,737 |
+| Atomic traits / composites | 79,328 / 39,478 |
+| Total rules / directories containing rules | 118,806 / 8,721 |
+| Directories exceeding the current 100-combined cap | **79** |
+| Violators by tier | 78 objectives, 1 well-known |
+| Rules in violating directories | **9,929** |
+| Sum of excess above 100 | **2,029** |
+| Violators plus sibling subtrees inventoried | 1,177 rule directories / 29,700 rules |
+| Identical atomic `if` bodies touching violators | 64 groups / 144 rules |
 
-4,915 is the minimum number of rules that must leave their *current* oversized
+2,029 is the minimum number of rules that must leave their *current* oversized
 directories or be removed; it is not a proposed deletion count. Reclassifying
 all contents of a retired directory will move more. Destination capacity must
 also be measured; moving 20 rules into an 80-rule sibling simply moves the error.
 
 The released/default binary initially enforced the old atomic-only policy.
 The sibling engine checkout already contained uncommitted combined-counting
-work at 80. That work was preserved, its threshold changed to 85, and the
-reverse-shell exemption removed. The old exemption concerned `reverse-shell/dup`,
+work at 80. That work was preserved, its threshold was later raised to 100, and
+the reverse-shell exemption removed. The old exemption concerned `reverse-shell/dup`,
 which currently has only 52 rules. The actual reverse-shell violator is
 `reverse-shell/socket-exec`, with 151. Removing the exemption therefore creates
 no additional failure at this snapshot, but prevents future bypasses.
@@ -1688,14 +2176,16 @@ no additional failure at this snapshot, but prevents future bypasses.
 Validation evidence:
 
 - Before: `make validate` passed all 1,583 fixtures.
-- After rebuilding the engine: `make validate` fails with exactly **180**
-  `policy/oversized-dir` directory violations, and no other hard policy failure.
-- `cargo test --lib taxonomy_tests`: **26 passed**. Tests include all-atomic,
-  all-composite and mixed 85/86 boundaries, 76 atoms without an atomic cap,
+- The current taxonomy audit finds **79** over-cap directories. The engine build
+  is blocked by the unrelated `filefacts::decode_dos_com_xor_payload` API
+  mismatch in the shared `cleave` worktree, so strict `make validate` has not
+  yet been rerun with the raised cap.
+- Boundary tests now cover all-atomic, all-composite and mixed 100/101 limits,
+  76 atoms without an atomic cap,
   separate-directory budgets, the former exempt path, and depth counting.
-- `cleave --traits-dir . validate --soft`: all **1,583 fixtures pass** on the
-  rebuilt engine. This diagnostic run allows policy errors through; it is not
-  a claim that strict validation is green.
+- The earlier 85-cap soft validation passed its then-current fixture corpus.
+  The current 100-cap engine build is blocked by the API mismatch above, so no
+  fresh `make validate` result is claimed here.
 
 ## Current migration progress
 
@@ -2690,3 +3180,25 @@ criticality, and composite legs are preserved; the only reference update is
 the hidden-run composite's link to the moved drop-and-execute rule. This takes
 `dropper/delivery/document` from 86 to 82 rules without removing detection and
 reduces the global over-cap count by one. The full migration plan remains open.
+
+
+### Latest checkpoint: browser export is separated from incidental capabilities
+
+Implemented [the browser-export audit](BROWSER-EXPORT-BOUNDARIES.md): seven
+moves, three unsupported hostile wrapper retirements, and no matcher changes.
+The browser-export leaf stays at 85; its three incoming export chains have
+positive and local-only controls. Cookie-reader and cookie-jar modules follow
+their HTTP capabilities, a TLS reference follows TLS writing, and the archive
+footer diagnostic follows custom archives. Sixteen exclusions retain that
+archive-specific evidence explicitly. Existing acquisition consumers retain the
+exporters' required source evidence without new aliases or redundant wrappers.
+
+The audit covers 59 directory references in 53 consumers and protects 64 original
+definitions. New and established controls pass 71 assertions across 31 files.
+All 1,841 corpus fixtures pass with only the documented pre-existing shell-decoder
+regression isolated in a temporary copy. Live soft validation still fails that
+regression; strict validation reports 96 diagnostics and 147 oversized directories
+in the shared tree. A concurrently introduced filename-bearing CPUID reference
+was corrected so validation could load the catalog. The broader taxonomy plan
+remains open; remaining PyInstaller contents and browser-export evidence chains
+need further semantic review.

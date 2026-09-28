@@ -1,0 +1,2 @@
+const entropy = Math.random();
+const phrase = generateMnemonic(entropy);

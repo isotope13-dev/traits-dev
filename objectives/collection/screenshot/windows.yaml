@@ -1,0 +1,213 @@
+# Windows Screenshot Capture via GDI + GDI+ Encoding
+# Full screenshot pipeline: GDI capture -> GDI+ PNG encode -> exfil
+defaults:
+  for: [pe, dll]
+  platforms: [windows]
+  attack: T1113
+  mbc: "C0014"
+composite_rules:
+- id: gdi-screen-network-file-cleanup
+  desc: GDI screen capture with network activity and file cleanup
+  crit: suspicious
+  conf: 0.94
+  attack: T1113,T1071
+  all:
+  - id: micro-behaviors/hardware/display/screen::gdi-create-compatible-dc
+  - id: micro-behaviors/ui/window/probe::get-desktop-window
+  - id: micro-behaviors/communications/socket/init::wsa-startup
+  - id: micro-behaviors/fs/delete/file/library::deletefile-w
+  any:
+  - id: micro-behaviors/fs/file/timestamp::set-file-time
+  - id: micro-behaviors/process/create/exec::shell-execute
+  - id: micro-behaviors/communications/ipc/named-pipe::pipe-path-prefix
+  unless:
+  - id: well-known/lib/
+  - id: well-known/app/
+  - id: well-known/tool/
+  - id: metadata/lang/compiler/native::mingw-pseudo-reloc-runtime
+  downgrade:
+    any:
+    # Every leg here is a plain PE import, so there is no location to bound
+    # with proximity: an 86 MB desktop application creates a DC, asks for
+    # the desktop window, opens a socket to check for updates, deletes a
+    # temp file and calls ShellExecute -- all of it somewhere, none of it
+    # together. A verified vendor signature is the evidence that separates
+    # that from a screen-stealer; AMS Software's InteriorDesign 3D matched
+    # all five. Downgraded, not suppressed -- certificates get stolen.
+    - id: metadata/signed/certificate/signature::pe-signature-verified
+    # ...and the signer-cryptography reading. They are separate observations:
+    # `pe-signature-verified` is image-digest integrity, `-kv` is the PKCS#7
+    # signed attributes. A DLL carved out of an installer (AOMEI's Inno bundle
+    # ships botva2.dll, the splash-screen plugin) verifies on the latter.
+    - id: metadata/signed/certificate/signature::pe-signature-verified-kv
+- id: powershell-foreground-window-screenshot
+  desc: PowerShell captures a window as base64 PNG
+  crit: suspicious
+  conf: 0.98
+  for: [powershell]
+  all:
+  - id: micro-behaviors/ui/window/enumerate::get-foreground-window-source
+  - id: micro-behaviors/ui/window/region::powershell-window-bounds
+  - id: micro-behaviors/hardware/display/screenshot::powershell-copyfromscreen
+  - id: micro-behaviors/data/buffer/alloc::powershell-memory-stream-constructor
+  - id: micro-behaviors/data/encode/image/png::powershell-png-image
+  - id: micro-behaviors/data/encode/base64::powershell-base64-image
+- id: powershell-protected-webview-capture
+  desc: PowerShell bypasses protected WebView rendering to capture its contents
+  crit: hostile
+  conf: 0.99
+  attack: T1113,T1027.003
+  mbc: B0015
+  for: [powershell]
+  all:
+  - id: micro-behaviors/ui/window/enumerate::powershell-child-window-enumeration
+  - id: micro-behaviors/ui/window/webview::powershell-webview-class-marker
+  - id: micro-behaviors/hardware/display/screenshot::powershell-printwindow-call
+  - id: micro-behaviors/hardware/display/screen::print-window-full-content
+  - id: micro-behaviors/ui/window/region::powershell-window-bounds
+  near_lines: 100
+- id: gdi-input-hook-surveillance
+  desc: GDI desktop capture combined with input-hook capability
+  crit: suspicious
+  conf: 0.92
+  attack: T1113,T1056.001
+  mbc: B0015
+  all:
+  - id: micro-behaviors/hardware/display/screenshot::gdi-screen-capture-primitives
+  - id: micro-behaviors/ui/window/probe::get-desktop-window
+  - id: micro-behaviors/ui/window/hook::windows-hook-lifecycle
+  any:
+  - id: micro-behaviors/hardware/input/keyboard/poll::get-key-state
+  - id: micro-behaviors/hardware/input/keyboard/poll::foreground-window-input-state
+  - id: micro-behaviors/hardware/input/keyboard/layout::map-virtual-key
+  needs: 1
+  unless:
+  - id: metadata/binary/installer/family/
+  - id: metadata/lang/compiler/managed::delphi
+  # Catalogued applications, tools, and runtimes are allowed to expose GUI
+  # painting and hook lifecycle APIs as framework surface.
+  - id: well-known/app/
+  - id: well-known/tool/
+  - id: well-known/lib/
+  - id: objectives/collection/keylog/capture::known-gui-runtime-input-exception
+- id: gdi-window-capture
+  desc: GDI window capture with screen context
+  crit: suspicious
+  conf: 0.92
+  all:
+  - id: micro-behaviors/hardware/display/screen::gdi-bitmap-transfer-primitives
+  any:
+  - id: micro-behaviors/ui/window/enumerate::get-foreground-window
+  - id: micro-behaviors/ui/window/enumerate::get-window-text
+  - id: micro-behaviors/ui/window/enumerate::get-window-text-length
+  unless:
+  - id: well-known/app/
+  - id: well-known/lib/
+  - id: metadata/binary/installer/family::inno-uninstaller-runtime
+  - id: metadata/binary/symbols/count::many-exports
+  - id: well-known/app/utility/siw::siw-family-identity
+  downgrade:
+    any:
+    - id: metadata/binary/symbols/count::many-imports
+    - id: metadata/package/versioning/scheme::pe-version-resource
+- id: printwindow-window-capture
+  desc: PrintWindow selected window capture
+  crit: suspicious
+  conf: 0.94
+  all:
+  - id: micro-behaviors/hardware/display/screenshot::printwindow-capture-primitives
+  - id: micro-behaviors/ui/window/enumerate::desktop-window-enumeration
+  any:
+  - id: micro-behaviors/ui/window/control::get-window-rect
+  - id: micro-behaviors/communications/http/server/managed::mjpeg-stream-content-type
+  downgrade:
+    any:
+    - id: metadata/binary/vendor/
+    - id: well-known/app/browser/internet-explorer/
+- id: gdi-capture-clipboard-desktop-access
+  desc: GDI capture with clipboard and desktop access
+  crit: suspicious
+  conf: 0.94
+  all:
+  - id: gdi-window-capture
+  - id: micro-behaviors/os/clipboard/read::get-clipboard-data
+  - id: micro-behaviors/ui/window/station::open-desktop-import
+  unless:
+  - id: well-known/app/
+  - id: well-known/lib/
+  - id: metadata/binary/symbols/count::many-exports
+- id: gdi-clipboard-socks5-executable-loader
+  desc: Screen and clipboard collection with SOCKS5 loader
+  crit: hostile
+  conf: 0.97
+  all:
+  - id: gdi-capture-clipboard-desktop-access
+  - id: micro-behaviors/communications/proxy/socks::socks5-version-greeting-bytes
+  - id: micro-behaviors/mem/alloc/executable::executable-allocation-indicator
+  - id: micro-behaviors/process/control/info::process-info-class-7-constant
+  - id: micro-behaviors/process/control/info::process-info-class-31-constant
+  unless:
+  - id: well-known/app/
+  - id: well-known/lib/
+  - id: metadata/binary/symbols/count::many-exports
+- id: gdi-capture-clipboard-hook-surveillance
+  desc: GDI screen capture with clipboard access and keyboard hooks
+  crit: hostile
+  conf: 0.97
+  all:
+  - id: micro-behaviors/hardware/display/screenshot::gdi-screen-capture-primitives
+  - id: micro-behaviors/os/clipboard/read::get-clipboard-data
+  # A generic Windows message hook is normal GUI plumbing; require a
+  # keyboard-specific hook type before treating this cluster as surveillance.
+  - id: micro-behaviors/hardware/input/keyboard/hook::windows-keyboard-hook-install
+  any:
+  - id: micro-behaviors/hardware/input/keyboard/poll::get-key-state
+  - id: micro-behaviors/ui/window/enumerate::get-foreground-window
+  - id: micro-behaviors/ui/window/enumerate::get-window-text
+  needs: 2
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/vendor/
+  - id: well-known/app/
+  - id: well-known/lib/
+  - id: metadata/binary/installer/family/
+  - id: metadata/lang/compiler/managed::borland-section-code
+- id: windows-stealer-dpapi-screen-exfil
+  desc: Windows credential theft with screen capture and HTTP exfil
+  crit: hostile
+  conf: 0.95
+  all:
+  - id: micro-behaviors/os/security/dpapi::crypt-unprotect-data-api
+  - id: micro-behaviors/hardware/display/screenshot::gdi-screen-capture-primitives
+  any:
+  - id: micro-behaviors/communications/http/client/wininet::wininet-read-file-src
+  - id: micro-behaviors/communications/http/client/wininet::internet-read-file
+  - id: micro-behaviors/communications/http/client/wininet::wininet-http-flow
+  unless:
+  - id: metadata/binary/vendor/
+- id: gdi-keyboard-capture-through-tunnel
+  desc: GDI screen and keyboard capture through tunnel service
+  crit: hostile
+  conf: 0.99
+  attack: T1113,T1056.001,T1090
+  all:
+  - id: micro-behaviors/hardware/display/screenshot::gdi-screen-capture-primitives
+  - id: micro-behaviors/hardware/input/keyboard/poll::polling-keylogger-api-cluster
+  - id: objectives/command-and-control/infrastructure/domain/tunnel::ngrok-io-endpoint
+  unless:
+  - id: well-known/tool/reverse-engineering/
+  - id: well-known/tool/sysadmin/
+- id: unsigned-obfuscated-screen-clipboard-surveillance
+  desc: Unsigned obfuscated PE captures screen and clipboard data
+  crit: hostile
+  conf: 0.99
+  attack: T1027,T1113,T1115
+  all:
+  - id: gdi-capture-clipboard-desktop-access
+  - id: metadata/binary/layout/checksum::pe-checksum-zeroed
+  - id: micro-behaviors/data/embedded/payload/header::pe-e-lfanew-read-x64
+  - id: micro-behaviors/data/embedded/payload/header::inline-pe-header-walk
+  - id: micro-behaviors/crypto/symmetric/xor/loop::x64-xor-imm8-widen-loop
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/

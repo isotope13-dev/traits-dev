@@ -184,27 +184,35 @@ def audit(data, out, cap, revision):
               ("directory", "named_reference_owners", "directory_reference_owners", "directory_reference_prefixes"), impact)
 
     children = defaultdict(set)
+    subtree_rules = defaultdict(int)
     for directory in counts:
         path = Path(directory)
+        subtree_rules[directory] += sum(counts[directory])
         for parent in path.parents:
             if str(parent) != ".":
                 children[str(parent)].add(path.relative_to(parent).parts[0])
+                subtree_rules[str(parent)] += sum(counts[directory])
     structure = []
     for directory in sorted(set(counts) | set(children)):
         depth, fanout = len(Path(directory).parts) - 1, len(children[directory])
         flags = []
-        if directory in counts and depth > 4:
-            flags.append("depth-above-four")
-        if fanout == 1:
-            flags.append("single-child-review")
+        if directory in counts and depth > 5:
+            flags.append("depth-above-five")
+        # A single child can preserve a useful semantic category. Review
+        # sparse sibling groups instead, matching the validator's 35-rule
+        # advisory threshold; do not mistake either heuristic for proof.
+        descendant_rules = subtree_rules[directory] - sum(counts.get(directory, (0, 0)))
+        if fanout >= 2 and descendant_rules < 35:
+            flags.append("sparse-siblings-below-35")
         if fanout >= 90:
             flags.append("broad-parent-review")
         if directory in counts and fanout:
             flags.append("mixed-leaf")
         if flags:
             structure.append(dict(directory=directory, depth=depth, children=fanout,
-                                  rules=sum(counts.get(directory, (0, 0))), flags=";".join(flags)))
-    write_csv(out, "structure.csv", ("directory", "depth", "children", "rules", "flags"), structure)
+                                  rules=sum(counts.get(directory, (0, 0))),
+                                  descendant_rules=descendant_rules, flags=";".join(flags)))
+    write_csv(out, "structure.csv", ("directory", "depth", "children", "rules", "descendant_rules", "flags"), structure)
     summary = dict(revision=revision, combined_cap=cap, exemptions=[],
                    files=len({r["file"] for r in rules}), rules=len(rules),
                    atomic=sum(c[0] for c in counts.values()), composite=sum(c[1] for c in counts.values()),
@@ -217,6 +225,9 @@ def audit(data, out, cap, revision):
                    sibling_scope_directories=len(scoped), sibling_scope_rules=sum(sum(counts[d]) for d in scoped),
                    sibling_scope_roots=scopes, matcher_overlap_groups=len(overlaps),
                    matcher_overlap_rules=len(duplicate_rows),
+                   matcher_overlap_scope="atomic if-body groups touching oversized directories",
+                   global_atomic_overlap_groups=sum(len(g) > 1 for g in matchers.values()),
+                   soft_max_depth=5, sparse_sibling_limit=35,
                    depths=dict(sorted(Counter(len(Path(d).parts) - 1 for d in counts).items())))
     (out / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     return summary
@@ -226,7 +237,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--out", type=Path, required=True)
-    parser.add_argument("--cap", type=int, default=85)
+    parser.add_argument("--cap", type=int, default=100)
     parser.add_argument("--layers-only", action="store_true",
                         help="Only inventory implementation/resource vocabulary for semantic review")
     args = parser.parse_args()

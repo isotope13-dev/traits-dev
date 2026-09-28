@@ -1,0 +1,53 @@
+# A DOM keystroke recorder: the page installs a document-level key handler,
+# turns the key code back into a character, and queues the result for sending.
+#
+# This is what a page-embedded keylogger looks like when it is not a form
+# grabber -- it records typing anywhere, including outside form fields. The
+# Great Suspender's post-sale build (2020) loaded exactly this from a remote
+# analytics bundle: `document.onkeypress = function(e){...}` reading
+# `e.keyCode ? e.keyCode : e.charCode`, converting with `String.fromCharCode`,
+# and pushing `key_value` plus the target element's `value` into an upload
+# queue.
+#
+# A page legitimately handles keys for shortcuts and input masks, so neither
+# the handler nor the conversion is enough alone. Recording the character into
+# a queue or event object is the step no shortcut handler takes.
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript, html]
+  attack: T1056.001
+  mbc: E1056
+
+traits:
+  - id: key-value-recorded-to-event
+    desc: Stores explicitly named key-data field
+    crit: notable
+    conf: 0.9
+    # Require an explicit key-data field name. A bare `set(key, value)` is the
+    # universal key/value-store API shape and says nothing about keystrokes.
+    if:
+      type: text
+      regex: '(^|\s)(set|push|append)\s*\(\s*["'']key[_-]?\w{0,5}["'']\s*[,)]'
+    unless:
+      - id: metadata/package/testing/harness/unit::javascript-vitest-unit-test-context
+  - id: browser-key-event-object-queued
+    desc: Queues browser keyboard-event key data
+    # Keyboard-shortcut and validation tools also queue key objects. This is
+    # only a keylogger when the composite below ties it to capture-phase input
+    # and typed-value collection. A terminal-UI toolkit's keypress queue
+    # ({key: n.key}) matches the bare shape, so it stays a fragment.
+    crit: component
+    conf: 0.97
+    if:
+      type: text
+      regex: '\.(push|append)\s*\(\s*\{[^}]{0,220}\b(key|code)\s*:\s*[A-Za-z_$][\w$]*\.(key|code)\b'
+
+  # --- Extension content-script keylogger that re-arms on injected fields ---
+  #
+  # A page-injecting content script (KREMLIN "AVSync"/"FrameSync") attaches an
+  # input handler to every <input>/<textarea>, then uses a MutationObserver to
+  # re-attach the same handler to fields added later — so a login form rendered
+  # after page load is still logged. Captured values are posted to the service
+  # worker under a "KeyLogger" action, tagged with ext-prefixed field names.
+  # These four literals survive the extension's obfuscation because they are
+  # string constants, not call structure.

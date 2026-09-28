@@ -149,9 +149,12 @@ transaction recipient fields and recipient-byte reconstruction live under
 `data/transaction/query`; explorer URL/API signatures live under
 `communications/http/url/rpc`; generic array mapping atoms live under
 `data/collection/array`. The source-vs-language distinction remains in
-`for:` scopes and filenames. Remaining Python wallet, key, signing and
-transaction-submission rules and the other `crypto/library/blockchain/*`
-siblings still require the same per-rule disposition.
+`for:` scopes and filenames. The subsequent [blockchain operation audit](BLOCKCHAIN-OPERATION-BOUNDARIES.md)
+relocates 87 key, signing, transaction, endpoint and UI observations, and removes
+34 blanket library exclusions. The [mnemonic follow-up](MNEMONIC-BOUNDARIES.md) moves another 30 observations
+out of this layer while reconciling the oversized mnemonic objective leaf.
+The remaining 63 observations have explicit follow-up cohorts; the subtree is
+not yet fully reconciled.
 
 The current `crypto/library/implementation` roll-up combines several primitive
 references with broad library context. Refactor its supported claims; don't

@@ -1,0 +1,126 @@
+# Screenshot capture in source code
+# ATT&CK: T1113 (Screen Capture)
+defaults:
+  attack: T1113
+  mbc: C0014
+
+traits:
+  # C# / Windows GDI screenshot traits
+- id: ps-screenshot-loop--rx-7
+  desc: "Matches 'Save-Screenshot'"
+  crit: notable
+  conf: 0.86
+  for: [powershell]
+  platforms: [windows]
+  if:
+    type: text
+    regex: '(?is)while\s*\(\s*\$true\s*\).{0,800}(Save-Screenshot|CopyFromScreen).{0,800}Start-Sleep'
+
+  # Go: server-side code that retrieves screenshots from a remote client via RPC
+  # and saves them as PNG files under a screenshots/ directory (RAT pattern).
+- id: ps-screenshot-loop--rx-8
+  desc: "Matches 'Start-Sleep'"
+  crit: notable
+  conf: 0.86
+  for: [powershell]
+  platforms: [windows]
+  if:
+    type: text
+    regex: '(?is)while\s*\(\s*\$true\s*\).{0,800}(BitBlt).{0,800}Start-Sleep'
+
+  # Go: server-side code that retrieves screenshots from a remote client via RPC
+  # and saves them as PNG files under a screenshots/ directory (RAT pattern).
+composite_rules:
+- id: csharp-screenshot
+  desc: C# GDI screenshot capture pattern
+  crit: suspicious
+  conf: 0.9
+  for: [csharp]
+  platforms: [windows]
+  all:
+  - id: micro-behaviors/hardware/display/state::screen-primaryscreen
+  - id: micro-behaviors/hardware/input/mouse/position::cursor-position-reference
+  any:
+  - id: micro-behaviors/ui/graphics/draw::bitblt-dllimport
+  - id: micro-behaviors/hardware/display/screen::gdi-bitblt
+
+- id: powershell-addtype-screenshot
+  desc: PowerShell compiled screenshot capture
+  crit: suspicious
+  conf: 0.95
+  for: [powershell]
+  platforms: [windows]
+  all:
+  - id: micro-behaviors/ui/graphics/draw::ps-addtype-drawing-apis
+  - id: micro-behaviors/ui/graphics/draw::ps-screen-graphics-apis
+  any:
+  - id: micro-behaviors/hardware/display/screenshot::ps-save-screenshot-function
+  - id: micro-behaviors/process/interpreter/eval/compile::powershell-add-type
+  - id: metadata/lang/scripted::add-type-definition
+
+- id: powershell-screenshot-timer
+  desc: PowerShell repeated screenshot capture
+  crit: suspicious
+  conf: 0.93
+  for: [powershell]
+  platforms: [windows]
+  all:
+  - id: powershell-addtype-screenshot
+  - id: ps-screenshot-loop
+
+- id: go-rpc-screenshot-capture
+  desc: Go RAT remote screenshot capture via RPC
+  crit: suspicious
+  conf: 0.9
+  for: [go]
+  platforms: [windows, unix]
+  all:
+  - id: micro-behaviors/hardware/display/screenshot::go-screen-api-reference
+  - id: micro-behaviors/fs/path/media::go-screenshots-dir
+  - id: micro-behaviors/fs/write/file/full::os-write-file
+- id: rust-temp-png-screenshot
+  desc: Rust randomized temp PNG screenshot
+  crit: suspicious
+  conf: 0.95
+  for: [rust]
+  platforms: [windows, unix]
+  all:
+  - id: micro-behaviors/hardware/display/screenshot::scrap-screen-capture
+  - id: micro-behaviors/fs/path/temp::rust-temp-dir
+  - id: micro-behaviors/data/encode/image/buffer::rust-png-image-save
+  - id: micro-behaviors/fs/path/media::rust-randomized-png-filename
+  any:
+  - id: metadata/file/naming::rust-random-name-module
+  - id: micro-behaviors/ui/graphics/image::rust-save-image-error
+  - id: micro-behaviors/ui/graphics/image::rust-capture-frame-error
+- id: ps-screenshot-loop
+  desc: PowerShell repeated screenshot loop
+  crit: component
+  conf: 0.86
+  for: [powershell]
+  platforms: [windows]
+  any:
+  - id: ps-screenshot-loop--rx-7
+  - id: ps-screenshot-loop--rx-8
+
+# `csharp-screenshot` above requires `Screen.PrimaryScreen` and
+# `Cursor.Position` -- the managed .NET screenshot API. Code that declares the
+# GDI calls itself through `[DllImport]` has neither, so the composite could
+# not see it, and four JetBrains-decompiled screen-grabber classes from a
+# single RAT (`43.exe`) scored nothing at all.
+#
+# The atoms for the P/Invoke spelling already existed in
+# `hardware/display/screenshot/windows-gdi-source.yaml` and were consumed only
+# by two Lua composites, so this is a wiring gap rather than a coverage one.
+#
+# Reaching past the managed API to raw gdi32 is the discriminating part: a
+# program that wants a screenshot uses `Graphics.CopyFromScreen`, and one that
+# declares `BitBlt` plus a DIB section or a screen measurement is assembling
+# the pipeline by hand, which is what you do when you want it to work without
+# a window and without System.Drawing being an obvious dependency.
+# Notable, not suspicious. The benign corpus is full of the programs that
+# *implement* this: SDL, Wine, CPython, GHC and MonoDevelop all declare the
+# GDI capture chain, because a cross-platform toolkit has to. Assembling the
+# pipeline is a capability, and the reason to record it is so the surveillance
+# and stealer composites can reach a source file at all -- they could not
+# before. Intent belongs to whatever reads this.

@@ -1,20 +1,5 @@
-# Browsing-history surveillance and exfiltration by a browser extension.
-#
-# Behavioral, not IOC-based: the atoms key on the *structure* of the
-# collect -> stage -> exfil pipeline (request interception, per-request host
-# extraction, WebCrypto/IndexedDB staging, scheduled POST) rather than on any
-# campaign domain or string. Those Chrome API names cannot be renamed by a
-# minifier, so the signature survives the "heavily minified, interwoven with
-# legitimate code" packaging documented for the 2026 ModHeader
-# (idgpnmonknjnojddfkpgkljpfnnfcklj) campaign and generalizes to future
-# history-stealer extensions built on any collection channel.
-#
-# Discriminator vs. a legitimate content-blocker or URL-reputation service
-# (which also intercept requests and read hostnames): a *stealer* batches the
-# collected hosts into local storage (often encrypted) and uploads them, rather
-# than fetching filter lists in or checking one host at a time. HOSTILE rules
-# therefore require a local-staging leg; the send-only pattern (which a
-# reputation service also shows) is only SUSPICIOUS.
+# Local browser observation, scheduled identity reporting, and legacy
+# collection classifiers still awaiting individual source/control-role review.
 defaults:
   platforms: [unix, windows]
   for: [javascript, typescript]
@@ -22,340 +7,36 @@ defaults:
   crit: notable
   conf: 0.9
 
-traits:
-  - id: extension-browsing-activity-record
-    desc: Records active-tab browsing and interaction data
-    crit: notable
-    conf: 0.94
-    if:
-      type: text
-      regex: '(?i)browsingData.{0,180}(activeDuration|scrollDistance|charsTyped|keywords)'
-
-  - id: hardcoded-bearer-token
-    desc: Hardcoded JWT-like Bearer credential
-    crit: notable
-    conf: 0.9
-    attack: T1071.001
-    if:
-      type: text
-      regex: '(?i)Bearer\s+[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}'
-
-  - id: dexie-indexeddb-wrapper
-    desc: Dexie IndexedDB wrapper instantiation
-    crit: notable
-    conf: 0.85
-    if:
-      type: text
-      regex: '\bnew\s+Dexie\s*\('
-
-  - id: js-empty-gate-array
-    desc: Declares an empty gating array
-    crit: component
-    conf: 0.85
-    if:
-      type: text
-      regex: '\b(allow|white)[Ll]ist\s*=\s*\[\s*\]'
-
-  - id: js-gate-array-miss-return
-    desc: Early return on gating-array miss
-    crit: notable
-    conf: 0.85
-    if:
-      type: text
-      regex: '\b(allow|white)[Ll]ist\.indexOf\([^)]{0,40}\)\s*===?\s*-\s*1'
-
-  - id: js-timestamp-hash
-    desc: Hashes a runtime timestamp
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      regex: '(Date\.now\(\)|performance\.now\(\))[\s\S]{0,80}\.digest\('
-
-  - id: js-tabs-updated-host-harvest
-    desc: Tab update listener extracts host
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      regex: 'onUpdated\.addListener.{0,500}new URL\(.{0,80}\.url\)\.hostname'
-
-  - id: js-tabs-activated-host-harvest
-    desc: Tab activation listener extracts host
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      regex: 'onActivated\.addListener.{0,500}new URL\(.{0,80}\.url\)\.hostname'
-
-  - id: proxy-request-anal-buffer
-    desc: Buffers intercepted requests in local storage
-    crit: notable
-    conf: 0.95
-    if:
-      type: text
-      regex: 'push\([A-Za-z_$][\w$]*\).{0,180}storage\.local\.set\(\{anal:'
-
-  - id: extension-pageview-record-fields
-    desc: Records visited URL, referrer, and status
-    crit: notable
-    conf: 0.98
-    if:
-      type: text
-      regex: '\bvisitedURL\s*:[\s\S]{0,160}\breferrerURL\s*:[\s\S]{0,160}\b(responseCode|statusCode)\s*:'
-
-  # Require the visited URL/host value to be close to an upload-body
-  # construction. An extension can read a request host for filtering or
-  # licensing while sending unrelated state; those are not exfiltration.
-  - id: visited-url-before-json-upload
-    desc: Visited URL/host reaches JSON serialization
-    crit: notable
-    conf: 0.88
-    if:
-      type: text
-      regex: '(?i)(details\.url|tab\.url|url\.hostname)[\s\S]{0,80}JSON\.stringify'
-
-  - id: json-upload-before-visited-url
-    desc: JSON serialization carries visited URL/host
-    crit: notable
-    conf: 0.88
-    if:
-      type: text
-      regex: '(?i)JSON\.stringify[\s\S]{0,80}(details\.url|tab\.url|url\.hostname)'
-
-  - id: visited-url-before-request-body
-    desc: Visited URL/host reaches request body
-    crit: notable
-    conf: 0.84
-    if:
-      type: text
-      regex: '(?i)(details\.url|tab\.url|url\.hostname)[\s\S]{0,80}body\s*:'
-
-  - id: request-body-before-visited-url
-    desc: Request body carries visited URL/host
-    crit: notable
-    conf: 0.84
-    if:
-      type: text
-      regex: '(?i)body\s*:[\s\S]{0,80}(details\.url|tab\.url|url\.hostname)'
-
 composite_rules:
-  - id: js-device-fingerprint-timestamp
-    desc: Hashes browser identity data with timestamp
-    crit: notable
-    conf: 0.92
-    all:
-      - id: micro-behaviors/os/sysinfo/platform/browser::browser-identity-input
-      - id: js-timestamp-hash
-    near_bytes: 320
-
-  # Benign context: a content blocker / URL filter (ad blocker, parental
-  # control, safe-browsing gate). It intercepts requests and reads hostnames
-  # for the SAME reason a history stealer does -- but then it *blocks* them,
-  # returning a {cancel}/{redirectUrl} BlockingResponse (typically to its own
-  # interstitial). A history stealer records the host and lets the request
-  # through; a header modifier returns {requestHeaders}. Suppresses the
-  # collect->stage->upload composites, whose upload/staging legs otherwise
-  # fire on a filter that caches its config in storage.local and syncs it.
-  - id: content-filter-request-blocking
-    desc: Content blocker cancels/redirects requests
-    crit: exception
-    all:
-      - id: micro-behaviors/process/hook/webextension::chrome-webrequest-pre-request
-      - id: micro-behaviors/process/hook/webextension::webrequest-block-or-redirect
-
-  # Any channel through which the extension learns which pages the user visits.
-  - id: extension-visited-url-source
-    desc: Monitors pages the user visits
-    crit: component
-    conf: 0.9
-    any:
-      - id: micro-behaviors/process/hook/webextension::chrome-webrequest-pre-request
-      - id: micro-behaviors/browser-extension/tabs::chrome-tabs-on-updated
-      - id: micro-behaviors/browser-extension/tabs::chrome-tabs-on-activated
-      - id: micro-behaviors/browser-extension/lifecycle::chrome-webnavigation-api
-      - id: micro-behaviors/browser-extension/lifecycle::chrome-history-state-listener
-
-  # Any local staging of collected data before batched upload.
-  - id: extension-local-staging
-    desc: Stages collected data locally
-    crit: component
-    conf: 0.9
-    any:
-      - id: micro-behaviors/crypto/library/provider::subtle-encrypt-decrypt
-      - id: micro-behaviors/crypto/symmetric/aes/runtime-library::webcrypto-aes-gcm-importkey
-      - id: dexie-indexeddb-wrapper
-      - id: micro-behaviors/data/db/web-storage::indexeddb-open
-      - id: micro-behaviors/data/db/web-storage::chrome-storage-local-set
-
-  - id: extension-visited-url-upload-payload
-    desc: Visited URL or host reaches an upload payload
-    crit: component
-    conf: 0.9
-    any:
-      - id: visited-url-before-json-upload
-      - id: json-upload-before-visited-url
-      - id: visited-url-before-request-body
-      - id: request-body-before-visited-url
-
-  # ===================== HOSTILE: batched history stealers ====================
-
-  # Core signature: intercepts requests, harvests the host of each visited page,
-  # stages the batch locally, and uploads it. This is the ModHeader pipeline and
-  # it is a browsing-history stealer regardless of the destination domain.
-  - id: extension-visited-domain-history-exfil
-    desc: Extension exfiltrates visited-domain history
-    crit: hostile
-    conf: 0.95
-    all:
-      - id: micro-behaviors/communications/http/url/navigation::url-object-host-read
-      - id: micro-behaviors/process/hook/webextension::chrome-webrequest-pre-request
-      - id: micro-behaviors/communications/http/request/client::javascript-http-request-channel
-      - id: extension-local-staging
-      - id: extension-visited-url-upload-payload
-    unless:
-      - id: content-filter-request-blocking
-      - id: well-known/app/ai/browser-agent/webbrain::webbrain-ai-agent-context
-      - id: well-known/dual-use/tunnel/vpn-browser::vpn-browser-extension-context
-
-  # Same theft via the tabs channel: reads the host from tab/navigation events,
-  # stages it, and uploads. Staging is required so benign tab-sync (which posts
-  # tab URLs to a first-party backend without local batching) is not caught.
-  - id: extension-tab-visited-url-exfil
-    desc: Exfiltrates visited URLs from tab events
-    crit: hostile
-    conf: 0.93
-    near_bytes: 8192
-    all:
-      - id: micro-behaviors/communications/http/url/navigation::url-object-host-read
-      - id: micro-behaviors/communications/http/request/client::javascript-http-request-channel
-      - id: extension-local-staging
-      - id: extension-visited-url-upload-payload
-    any:
-      - id: js-tabs-updated-host-harvest
-      - id: js-tabs-activated-host-harvest
-    unless:
-      - id: content-filter-request-blocking
-      - id: well-known/app/ai/browser-agent/webbrain::webbrain-ai-agent-context
-      - id: well-known/dual-use/tunnel/vpn-browser::vpn-browser-extension-context
-
-  # Direct history-API collection plus upload is sensitive but dual-use: a
-  # user-facing history-search tool can intentionally send selected records
-  # to its configured service.
-  - id: extension-history-api-harvest-exfil
-    desc: Uploads browser history to a remote service
-    # A history-search extension may intentionally send user-selected records
-    # to a user-configured AI service. The collection and upload remain
-    # security-relevant, but this shape alone does not establish theft.
-    crit: suspicious
-    conf: 0.9
-    attack: T1217
-    near_bytes: 16384
-    all:
-      - id: micro-behaviors/communications/http/request/client::javascript-http-request-channel
-      - id: extension-local-staging
-    any:
-      - id: micro-behaviors/data/db/access::history-search
-      - id: micro-behaviors/data/db/access::history-get-visits
-      - id: micro-behaviors/data/db/access::top-sites-get
-    unless:
-
-  # ===================== SUSPICIOUS: one leg short / dual-use ==================
-
-  # Sends intercepted visited hosts to a remote endpoint with no local batching.
-  # A URL-reputation service (Web-of-Trust style) looks the same, so: suspicious.
-  - id: extension-request-host-upload
-    desc: Uploads intercepted visited hosts
-    crit: suspicious
-    conf: 0.9
-    all:
-      - id: micro-behaviors/communications/http/url/navigation::url-object-host-read
-      - id: micro-behaviors/process/hook/webextension::chrome-webrequest-pre-request
-      - id: micro-behaviors/communications/http/request/client::javascript-http-request-channel
-      - id: extension-visited-url-upload-payload
-    unless:
-      - id: content-filter-request-blocking
-      - id: well-known/dual-use/tunnel/vpn-browser::vpn-browser-extension-context
-
-  # Device-fingerprinted, scheduled beacon to a remote endpoint. The fingerprint
-  # + periodic alarm + outbound upload is the covert-telemetry shape.
   - id: extension-scheduled-fingerprint-beacon
     desc: Scheduled fingerprinted remote beacon
     crit: suspicious
     conf: 0.9
     attack: T1029
     all:
-      - id: js-device-fingerprint-timestamp
+      - id: micro-behaviors/crypto/hash/digest::browser-identity-timestamp-digest-context
       - id: micro-behaviors/time/schedule/webextension::chrome-alarms-create
       - id: micro-behaviors/communications/http/request/client::javascript-http-request-channel
     unless:
       - id: well-known/app/ai/usage/safetrace::safetrace-extension-context
       - id: well-known/app/ai/usage/safetrace::safetrace-extension-name
 
-  # A collection+exfil pipeline gated behind an empty kill switch, so it stays
-  # inert under sandbox review yet ships fully functional.
+  # Legacy classifier: an empty allowlist/index miss does not prove an
+  # early return or dormant control flow. Requires separate control-flow review.
   - id: extension-dormant-surveillance-pipeline
     desc: Dormant browsing surveillance pipeline
     crit: suspicious
     conf: 0.92
     attack: T1480
     all:
-      - id: extension-dormant-kill-switch
-      - id: extension-visited-url-source
+      - id: micro-behaviors/data/collection/array::empty-allowlist-index-miss
+      - id: micro-behaviors/browser-extension/tabs::extension-navigation-observation-interfaces
       - id: micro-behaviors/communications/http/request/client::javascript-http-request-channel
 
   # ===================== ARCHIVE-SCOPE: pool manifest + code ==================
 
   # All-URL extension whose background code harvests visited hosts and uploads
   # them: manifest breadth + code behavior together, evaluated across the crx.
-  - id: extension-all-urls-surveillance-package
-    desc: All-URL extension intercepts and uploads visited domains
-    crit: hostile
-    conf: 0.95
-    # Manifest and worker evidence live in separate entries of this archive.
-    scope: archive
-    for: [crx, xpi, zip, chrome-manifest, javascript]
-    all:
-      - id: metadata/permission/manifest::permission-all-urls
-      - id: micro-behaviors/communications/http/url/navigation::url-object-host-read
-      - id: micro-behaviors/process/hook/webextension::chrome-webrequest-pre-request
-      - id: micro-behaviors/communications/http/request/client::javascript-http-request-channel
-      - id: extension-local-staging
-      - id: extension-visited-url-upload-payload
-    unless:
-      - id: content-filter-request-blocking
-      - id: well-known/app/ai/browser-agent/webbrain::webbrain-ai-agent-context
-      - id: well-known/dual-use/tunnel/vpn-browser::vpn-browser-extension-context
-
-  - id: extension-all-urls-browsing-activity-upload
-    desc: All-URL extension uploads recorded browsing activity
-    crit: hostile
-    conf: 0.98
-    attack: T1041,T1217
-    scope: archive
-    for: [crx, xpi, zip, chrome-manifest, javascript]
-    all:
-      - id: metadata/permission/manifest::host-permission-all-urls
-      - id: extension-browsing-activity-record
-      - id: micro-behaviors/communications/http/request/client::js-fetch-call
-      - id: micro-behaviors/data/decode/jwt::jwt-token-prefix
-
-  - id: all-url-pageview-record-upload
-    desc: All-URL extension uploads recorded pageview URLs and referrers
-    crit: suspicious
-    conf: 0.97
-    attack: T1119,T1041
-    scope: archive
-    for: [crx, xpi, zip, chrome-manifest, javascript]
-    all:
-      - id: metadata/permission/manifest::permission-all-urls
-      - id: extension-pageview-record-fields
-      - id: micro-behaviors/process/hook/webextension::webrequest-completed-listener
-      - id: micro-behaviors/communications/http/request/client::js-fetch-call
-
-  # Require a navigation listener as well as the content-script relay.  A
-  # content script may read its own host for ordinary site-specific UI; the
-  # listener is the evidence that the extension observes navigation events.
   - id: content-script-all-urls-visit-tracking
     desc: All-URL extension observes page hosts during navigation
     crit: notable
@@ -376,15 +57,6 @@ composite_rules:
 
   # Dormant kill switch: a capability gated behind a gating array that ships
   # empty, so it stays inert until the operator populates it remotely.
-  - id: extension-dormant-kill-switch
-    desc: Dormant empty-gate kill switch
-    crit: notable
-    conf: 0.9
-    attack: T1480
-    all:
-      - id: js-empty-gate-array
-      - id: js-gate-array-miss-return
-
   - id: extension-proxy-request-history-buffer
     desc: Buffers intercepted proxy-request history
     crit: suspicious
@@ -393,4 +65,4 @@ composite_rules:
     all:
       - id: micro-behaviors/process/hook/webextension::browser-proxy-request-listener
       - id: micro-behaviors/communications/http/url/navigation::url-object-host-read
-      - id: proxy-request-anal-buffer
+      - id: micro-behaviors/data/db/web-storage::array-push-local-anal-storage

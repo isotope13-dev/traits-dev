@@ -1,19 +1,27 @@
-# Working-tree taxonomy snapshot after source routing and sweep audit
+# Shared-tree snapshot after socket-to-process boundary review
 
-Generated 2026-09-28 after routing source-specific HTTP exfiltration composites
-to `stealer/cloud`, `stealer/env`, `stealer/file`, `stealer/dev-secret`,
-`stealer/keychain`, `stealer/ssh`, `stealer/surveillance`, `stealer/token`,
-`stealer/wallet`, `stealer/sweep`, `stealer/appliance-config`, and the
-process-list/surveillance source leaves. A sibling audit then routed file-only
-targeting and exfiltration out of `sweep`, and moved three mandatory mixed-source
-profiles from `system-info` into `sweep`. The base Git revision is
-`13c9f9accd8c5a7a37cacfc76b05e33b6602221b`; this snapshot includes the dirty
-working tree and the source moves.
+Generated 2026-09-28 from base revision
+`a5d07653229f5482466ac164b221e884d781a849`, including uncommitted/concurrent work.
+The established snapshot directory name is retained.
 
-The combined cap is 85 with no directory exemptions. The catalog contains
-20,080 YAML files and 118,795 rules (79,323 atomic, 39,472 composite). It has
-160 over-cap directories, 18,051 rules in those directories, and 4,451 rules
-above the cap. There are 108 identical-matcher groups covering 242 rules to
-review, not blindly merge. The tree has 60 directories at depth five and none
-deeper. Soft validation passes all **1,837/1,837 fixtures**. See the adjacent
-CSVs for the full audit data.
+The [wallet-UI audit](../WALLET-UI-BOUNDARIES.md) records **44 moves, one merge,
+and two unsupported hostile wrapper retirements**. Desktop-wallet falls from
+24 to 17, objective mnemonic from 41 to 33, and blockchain-library from 63 to 56.
+The [socket-relay audit](../WEBSHELL-REQUEST-FD-REDIRECT.md) moves the ASP.NET
+reverse-shell chain and its socket/process evidence to reverse-shell descriptor
+redirection and neutral socket creation. The [wallet-keyring audit](../SENSITIVE-DATA-WALLET-KEYRING.md)
+moves seven source-specific export rules into `stealer/wallet`.
+
+Across **20,672 YAML files** and **118,817 rules** (79,336 atomic and 39,481
+composite), there are **144 oversized directories**, **16,076 rules in them**,
+and **3,836 excess rules**. No cap exemption exists. Atomic overlap review contains
+**102 groups / 229 rules touching violators**, with **431 groups globally**.
+No rule directory is deeper than five. Sparse sibling review uses 35 and does
+not flag a single child alone.
+
+The [wallet-UI verification record](../wallet-ui-verification.json) protects 541
+original definitions. **127 focused assertions** pass across 37 files. All
+**1,842 corpus fixtures** pass in the controlled snapshot with current taxonomy
+overlays, including the added benign path control. No corpus files or fixtures
+are excluded. Live strict validation reports **98 issues**, including the 144
+cap violations. The full migration remains unfinished.

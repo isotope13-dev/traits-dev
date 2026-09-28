@@ -45,16 +45,16 @@ with tempfile.TemporaryDirectory(prefix='taxonomy-sibling-advisory-') as tmp:
     assert 'share a name stem' in result.stderr, result.stderr
     print('Spelling advisory emitted; no failure beyond the production allowlist check.')
 
-    (account / 'traits.yaml').write_text(rules(85, 'identity'))
+    (account / 'traits.yaml').write_text(rules(100, 'identity'))
     result = run()
     assert 'validation failed: 1 issue(s)' in result.stderr, result.stdout + result.stderr
     assert 'oversized-dir' not in result.stderr, result.stderr
-    print('Inclusive 85-rule cap adds no failure.')
+    print('Inclusive 100-rule cap adds no failure.')
 
-    (account / 'traits.yaml').write_text(rules(86, 'identity'))
+    (account / 'traits.yaml').write_text(rules(101, 'identity'))
     result = run()
     assert result.returncode != 0 and 'oversized-dir' in result.stderr, result.stdout + result.stderr
-    print('86 rules still fail strict validation.')
+    print('101 rules still fail strict validation.')
 
     (account / 'traits.yaml').write_text(rules(1, 'identity'))
     (account / 'profile').mkdir()

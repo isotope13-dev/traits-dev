@@ -1,0 +1,115 @@
+# npm install hook that POSTs a host profile to a hardcoded remote host.
+#
+# The existing hostile install-hook beacons all key on a *recognisable*
+# destination — a bare IPv4 (npm-postinstall-ip-beacon), a Discord webhook
+# (npm-install-hook-recon-webhook-beacon), or an interactsh/OAST domain
+# (npm-preinstall-node-oast-host-profile-exfil). Operators who register their
+# own domain fall through all of them, which is how `gaarf-node-bq@1.0.0`
+# scored a single hostile: a postinstall script that JSON-encodes
+# hostname/platform/arch/node version plus the npm lifecycle context and POSTs
+# it to a hardcoded FQDN, with the error handler emptied and the socket
+# destroyed on a short timeout so the install never blocks or fails.
+#
+# Anchored on the destination being *hardcoded* rather than on which domain it
+# is: the legs are the install hook, the host-recon payload shape, the POST
+# body, a literal remote host in the request options, and the fire-and-forget
+# tell. A package that talks to its own API at runtime lacks the install hook;
+# a legitimate postinstall (a binary downloader) lacks the host-recon payload.
+#
+# scope: archive — the lifecycle hook is declared in package.json and the
+# beacon lives in the sidecar script it runs.
+defaults:
+  crit: hostile
+  conf: 0.97
+  platforms: [unix, windows]
+  for: [javascript, typescript, tar, zip]
+  attack: T1195.002,T1041,T1082
+  mbc: E1041
+
+composite_rules:
+  - id: node-host-profile-hardcoded-post-script
+    desc: Script collects host profile and posts to fixed host
+    crit: notable
+    conf: 0.95
+    for: [javascript, typescript]
+    scope: file
+    all:
+      - id: micro-behaviors/os/sysinfo/hostname::os-hostname-call
+      - id: micro-behaviors/data/source/syntax/schema::host-system-metric-schema
+      - id: micro-behaviors/communications/http/request/configuration::node-request-hardcoded-remote-host
+      - id: micro-behaviors/communications/http/request/body::node-http-request-stream-body
+      - id: micro-behaviors/data/serialize/json::json-stringify-identifier
+    any:
+      - id: micro-behaviors/data/control-flow/error-handling::silent-error-handler
+      - id: micro-behaviors/communications/http/request/configuration::request-timeout-destroys-request
+      - id: micro-behaviors/os/env/package-manager::npm-lifecycle
+      - id: micro-behaviors/data/control-flow/error-handling::empty-named-catch-text
+  - id: npm-install-hook-host-profile-post-hardcoded-host
+    desc: Install hook host-profile beacon to fixed host
+    for: [npm, tar, zip, package.json, javascript]
+    scope: archive
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/declaration::postinstall-hook-declaration
+      - id: objectives/exfiltration/stealer/system-info/profile::node-host-profile-hardcoded-post-script
+
+  # URL-parsed workers.dev destinations may assign u.hostname rather than a
+  # quoted hostname directly in the request options. Keep that equivalent
+  # destination form in a full install-hook composite instead of surfacing a
+  # generic remote-host atom as an install beacon by itself.
+  - id: node-host-profile-workers-post-script
+    desc: Script collects host profile and posts to workers.dev
+    crit: notable
+    conf: 0.95
+    for: [javascript, typescript]
+    scope: file
+    all:
+      - id: micro-behaviors/os/sysinfo/hostname::os-hostname-call
+      - id: micro-behaviors/data/source/syntax/schema::host-system-metric-schema
+      - id: micro-behaviors/communications/http/url/domain::workers-dev-url
+      - id: micro-behaviors/communications/http/request/body::node-http-request-stream-body
+      - id: micro-behaviors/data/serialize/json::json-stringify-identifier
+    any:
+      - id: micro-behaviors/data/control-flow/error-handling::silent-error-handler
+      - id: micro-behaviors/communications/http/request/configuration::request-timeout-destroys-request
+      - id: micro-behaviors/os/env/package-manager::npm-lifecycle
+      - id: micro-behaviors/data/control-flow/error-handling::empty-named-catch-text
+  - id: npm-install-hook-host-profile-post-workers-host
+    desc: Install hook host-profile beacon to workers.dev
+    for: [npm, tar, zip, package.json, javascript]
+    scope: archive
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/declaration::postinstall-hook-declaration
+      - id: objectives/exfiltration/stealer/system-info/profile::node-host-profile-workers-post-script
+
+  # CI/sandbox skip + Desktop/Documents/Downloads "real machine" gate before
+  # posting a host profile — fake-telemetry install trojans (hex-encode-utils).
+  # Do not unless: metadata/package/testing/ — .d.ts members fire that directory
+  # and would suppress this on every typed npm package.
+  - id: npm-install-sandbox-gated-host-exfil
+    desc: Sandbox-gated install hook host-profile exfil
+    attack: T1497.001,T1195.002,T1041,T1082
+    mbc: B0007,E1041
+    for: [npm, tar, zip, package.json, javascript]
+    scope: archive
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/declaration::postinstall-hook-declaration
+      - id: micro-behaviors/os/env/cicd::ci-info-isci-property
+      - id: micro-behaviors/fs/path/location::common-user-folders
+      - id: micro-behaviors/data/source/syntax/schema::host-system-metric-schema
+      - id: micro-behaviors/communications/http/request/verb::post-method-text
+      - id: micro-behaviors/communications/http/request/client::https-request
+
+  # Free CF Workers sink + TLS verification disabled on an install-time host
+  # profile POST — not legitimate product telemetry.
+  - id: npm-workers-dev-tls-bypass-host-beacon
+    desc: Install host beacon to workers.dev with TLS off
+    attack: T1195.002,T1041,T1082,T1553.004,T1583.006
+    mbc: E1041,B0030
+    for: [npm, tar, zip, package.json, javascript]
+    scope: archive
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/declaration::postinstall-hook-declaration
+      - id: micro-behaviors/communications/http/url/domain::workers-dev-url
+      - id: micro-behaviors/communications/tls/verify/disable::reject-unauthorized-false
+      - id: micro-behaviors/data/source/syntax/schema::host-system-metric-schema
+      - id: micro-behaviors/communications/http/request/verb::post-method-text
