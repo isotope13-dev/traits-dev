@@ -9,6 +9,1188 @@ snapshot; do not combine the two sets of counts.
 
 ## Decision and measured impact
 
+## Current working-tree measurement — 2026-09-28
+
+The regenerated [post-migration audit snapshot](snapshot-2026-09-28-post-http-source/)
+covers the current working tree, including uncommitted changes. Across 20,080
+YAML files and 118,795 rules, it finds **160 over-cap directories**, **18,051
+rules in those directories**, and **4,451 rules above the combined 85-rule
+cap**. There are 108 identical-matcher groups covering 242 rules to review,
+not blindly merge. The audit tree has no directory deeper than five. Soft
+validation passes **1,837/1,837 fixtures**. Strict validation remains red on
+catalog-wide policy and quality findings, including **160 over-cap
+directories**; no stale or broken references remain from this source-routing
+cohort.
+Remaining cap and semantic work is tracked in the dated `oversized.csv`,
+`siblings.csv`, and disposition ledger; path changes still require downstream
+feature/model evaluation.
+
+The focused system-info/sweep pass routes capability-only file targeting and
+root-search rules to `collection/file-targeting`, file-source exports to
+`stealer/file`, and mandatory mixed-source profiles to `stealer/sweep`.
+`system-info` now has 160 rules (75 above cap), `sweep` has 83, and `file` has
+55. This follows source semantics rather than moving rules just to meet the cap;
+see [the source audit](SYSTEM-INFO-EXFIL-SOURCES.md).
+
+## Latest checkpoint: PowerShell decompression is encoded staging
+
+Five composites in `dropper/staging/encrypted/powershell-data.yaml` required
+Base64 and/or Deflate reconstruction evidence without requiring encryption or
+an activation sink. They moved to `dropper/staging/encoded/powershell-data.yaml`
+with their IDs, conditions, scope, criticality, confidence, and attack mappings
+unchanged. A synthetic generic-data sample matches two moved composites;
+soft validation retains all **1,837/1,837 fixture** verdicts. Strict validation
+still reports the same **60 existing validation issues**, including 160 cap
+violations, with no stale-reference or unknown-directory issue for this move.
+Encrypted staging falls from 223 to **218 rules**; encoded staging rises from 28 to **33** and
+remains below the 85-rule cap. The refreshed audit records **160** over-cap
+directories and **4,485** excess rules. The remaining PowerShell cohort stays
+for individual review; this checkpoint does not assume that HTTP/image
+retrieval, anti-static string clues, or a culture-derived key are encryption.
+See [the focused disposition](DROPPER-POWERSHELL-COMPRESSED-DATA.md).
+
+## Latest checkpoint: HTTP exfiltration follows its source
+
+Four composites moved from `exfiltration/http/upload` into `stealer/cloud`,
+`stealer/env`, or `stealer/file`: cloud/Kubernetes secrets with hybrid
+encryption, environment credentials sent to a router endpoint, file-content
+records with a harvested npm token, and environment-secret evidence near
+encoded GitHub writes. Matcher conditions were retained; the GitHub write
+description was narrowed to state the proximity the matcher actually
+establishes. One deaddrop consumer now references the moved cloud-source rule.
+A matched/miss synthetic pair confirms the router rule still requires an
+environment-exfil leg, and the file-source rule matches its synthetic
+GitHub/token/file pattern. Soft validation passes **1,837/1,837 fixtures**;
+strict validation remains at **60 issues**. The refreshed cap audit remains at
+160 over-cap directories and falls to **4,480 excess rules**. HTTP upload is
+now **196 rules**; the destination leaves contain 26 cloud, 53 environment,
+and 50 file-source rules, all below the cap. See [the focused
+source-routing audit](EXFIL-HTTP-SOURCE-ROUTING.md); the remaining HTTP-upload
+rules still need individual source and transfer review.
+
+## Latest checkpoint: HTTP exfiltration follows credential sources
+
+Moved three JVM composites that require developer-credential file reads plus
+HTTP/curl transfer from `exfiltration/http/upload` to
+`exfiltration/stealer/dev-secret`. Moved the Swift iOS Keychain marker and its
+HTTP-exfiltration composite to `exfiltration/stealer/keychain`, retaining the
+HTTP POST capability atom in the upload directory. Matcher bodies, IDs,
+effective scopes, criticality, confidence, and ATT&CK settings are preserved;
+there were no external consumers of the moved IDs. Upload falls from 196 to
+191 rules; `dev-secret` rises from 73 to 76 and `keychain` from 19 to 21.
+The refreshed audit remains at 160 over-cap directories and reduces excess
+rules from 4,480 to 4,475. Strict validation reports no broken references from
+these moves; the catalog-wide cap and policy errors remain.
+
+## Latest checkpoint: HTTP exfiltration follows SSH, capture, token, and wallet sources
+
+Moved Swift SSH-key marker/exfiltration rules to `stealer/ssh`, the browser
+camera/microphone-recording upload composite to `stealer/surveillance`, the
+device-code OAuth token forwarding composite to `stealer/token`, and the Sui
+wallet archive upload composite to `stealer/wallet`. The OAuth phishing
+consumer now references the token-source rule. Generic MediaRecorder plus
+upload-route evidence stays under HTTP upload because it does not establish a
+sensitive capture source or theft intent. Rule matcher bodies and effective
+scopes, criticalities, confidence, and tags were retained. Soft validation
+passes **1,837/1,837 fixtures**. The refreshed audit measures 160 over-cap
+directories and **4,467 excess rules**; HTTP upload falls from 196 to 183.
+Strict validation still fails on catalog-wide policy and cap findings.
+
+## Latest checkpoint: HTTP upload evidence follows screenshot and sweep sources
+
+Moved the browser-extension visible-screenshot JSON upload to
+`stealer/surveillance`, the Swift authorized-key upload to `stealer/ssh`, and
+the Swift composite requiring both shadow/SSH-path and shell-history evidence
+to `stealer/sweep`. The shared Swift collect-endpoint atom remains in HTTP
+upload because it is also used by cloud exfiltration and a degradation rule
+and does not identify a payload source. Matcher bodies and effective rule
+settings are preserved. Soft validation passes **1,837/1,837 fixtures**. HTTP
+upload now has 180 rules, 95 above its cap; `stealer/sweep` has 83 rules and
+remains under cap. The full audit records **4,464 excess rules** across 160
+over-cap directories.
+
+## Latest checkpoint: HTTP transport follows appliance and required sweep sources
+
+Moved ESXi credential/configuration material sent over HTTP to
+`stealer/appliance-config`. Moved the Objective-C BSD credential export to
+`stealer/sweep`: its matcher requires the master-passwd source and at least
+one additional credential-source clue before the send. Both composites keep
+their source, transport, scope, criticality, confidence, and matcher settings;
+local transport references now use canonical fully-qualified IDs. Soft
+validation remains **1,837/1,837 fixtures**. HTTP upload is 178 rules, 93
+over cap; appliance-config is 33 and sweep is 84. The full audit measures
+**4,462 excess rules** across 160 directories.
+
+## Latest checkpoint: HTTP source files follow the file source
+
+Moved two Python composites from HTTP upload to `stealer/file`: one requires
+enumeration of System32 driver text/log files plus a POST content field; the
+other reads local Python source and sends it to a specific transform endpoint.
+Both already express file collection in their ATT&CK mappings, and their
+matcher bodies, scope, criticality, confidence, and file-type settings are
+unchanged. Soft validation passes **1,837/1,837 fixtures**. HTTP upload now has
+176 rules, 91 over cap; `stealer/file` has 52. The refreshed full audit records
+**4,460 excess rules** across 160 directories.
+
+## Latest checkpoint: miscategorized system-info exports follow their source
+
+Moved Go global-input export and its anti-debug wrapper to
+`stealer/surveillance`; a browser/network-identity export to `stealer/sweep`;
+and JVM and Swift process-inventory exports to `stealer/process-list`. Their matchers and
+effective settings remain unchanged. The browser/network composite requires
+both source classes and brings `sweep` to exactly 85 rules. Soft validation
+passes **1,837/1,837 fixtures**. `stealer/system-info` falls from 169 to 164
+rules but remains over cap; its broader contents need technique-based
+subdivision before routing more host-profile exports there. The refreshed
+full audit records **4,454 excess rules** across 160 directories. See the
+[focused source audit](SYSTEM-INFO-EXFIL-SOURCES.md) for the complete mapping
+and remaining system-info disposition.
+
+## Latest checkpoint: cloud credential exfiltration follows its source
+
+`aws-shared-credentials-http-exfil` requires AWS credential-file contents to
+enter an HTTP request. It moved from `exfiltration/http/upload` to
+`exfiltration/stealer/cloud`; its matcher and effective rule settings are
+unchanged, and its supply-chain consumer now uses the canonical source ID. The
+consumer now admits `tar`, `whl`, and `pyproject.toml` types so it can evaluate
+source-distribution and wheel containers. The hostile AWS-upload control still matches and the
+benign unrelated-body control stays negative. Soft validation passes
+**1,837/1,837 fixtures**. The current audit reports 160 over-cap directories
+and 4,484 excess rules. The full PyPI archive sample remains unmatched because
+its `Path.read_text()` to `json=` flow is outside the source atom's current
+`open().read()` to `data=` matcher; that separate coverage gap is documented in
+[the focused audit](EXFIL-CLOUD-CREDENTIAL-HTTP.md).
+
+## Latest checkpoint: install-hook host profiling follows the result
+
+[Host-profile audit](INSTALL-HOOK-HOST-PROFILE.md) moves a JavaScript host/CI
+query aggregate to `discovery/system/profile`, and moves install-time
+host-profile transmissions to `exfiltration/stealer/system-info`. The install
+declaration is retained as evidence in the exfiltration composites. This
+removes one trigger-based duplicate home, but exposes existing breadth debt:
+`recon-exfil/install-hook` is **199 rules**, `stealer/system-info` **169**, and
+`discovery/system/profile` **93**. No per-directory exception is proposed;
+these leaves need their own precise cohort audits. Strict validation remains
+at **60 issues** and **164 over-cap directories**; soft validation passes
+**1,837/1,837 fixtures**.
+
+## Latest checkpoint: parsed archive properties leave capabilities
+
+[Archive fact audit](ARCHIVE-FILE-FACTS.md) moves five parser-derived
+observations—member naming/separators, duplicate paths, and encrypted-member
+counts—from `micro-behaviors/data/archive/member` to the corresponding package
+and file metadata leaves. These rules describe the analyzed archive, not code
+that manipulates archives. Matcher bodies, effective scopes, confidence, and
+criticality remain intact. `TAXONOMY.md` now states this boundary. Soft
+validation passes **1,837/1,837 fixtures**; strict validation remains at **60
+issues** and **164 over-cap directories**.
+
+## Latest checkpoint: APK package-member facts leave dropper staging
+
+[APK member-fact audit](DROPPER-APK-MEMBER-FACTS.md) moves 17 parsed APK
+member-path observations from `dropper/staging/archive` to
+`metadata/package/files/mobile-package`. Their evidence establishes package
+contents, not packing or staging; package scopes and matchers are preserved,
+while inappropriate inherited `T1027.002`/`B0024` labels are removed. The
+device-admin plus lock-screen resource composite now lives under Android UI
+harassment and references the canonical package facts. DEX content references
+remain for separate review. The taxonomy now documents package-specific versus
+generic archive-member boundaries and how capability/objective composites
+consume member facts. Soft validation passes **1,837/1,837 fixtures**. The
+archive-staging directory falls from **97 to 79 rules** after the member move;
+two later asset-staging composites bring it to **81 rules**. Strict validation
+still reports catalog-wide issues, including **164 over-cap directories**.
+
+The same audit relocated 14 APK member observations out of encrypted staging,
+plus six composites whose evidence did not establish encrypted staging. The
+LibGDX/network-module composites now describe package contents, and
+non-encrypted asset staging sits with archive staging. One encrypted-core
+composite remains in the encrypted leaf. Its count falls from **243 to 223**;
+soft validation remains **1,837/1,837**, and strict validation is back to the
+existing **60 issues**. The encrypted leaf remains over cap and requires a
+separate technique-level subdivision; see the expanded
+[APK member-fact audit](DROPPER-APK-MEMBER-FACTS.md).
+
+## Latest checkpoint: Node Python bootstrap remains a capability signal
+
+[Node Python-bootstrap audit](DROPPER-NODE-PYTHON-BOOTSTRAP.md) moves the
+file-scoped URL, write-stream, and `execSync` conjunction into the shell-bridge
+capability leaf. The duplicate objective-only `get-pip.py` text leg was
+removed because the URL matcher already covers that bootstrap URL. The rule is
+now named as co-occurrence and scored notable because it does not link fetched
+bytes to execution. Soft validation passes **1,837/1,837 fixtures**.
+`execute-download` falls from **134 to 133 rules**. Strict validation remains
+at **60 issues**, including **165 over-cap directories**. See the
+[mapping ledger](dropper-node-python-bootstrap-mapping.json).
+
+## Latest checkpoint: crypto provider references leave encrypted staging
+
+[Crypto API audit](DROPPER-CRYPTO-API.md) moves 13 rules out of
+`objectives/command-and-control/dropper/staging/encrypted`. Their evidence is
+Python cryptography imports near BCrypt/libcrypto references and API-name
+strings; it does not establish payload staging or conditional fallback
+selection. The rules now describe probable native crypto API references and
+co-occurrence in `micro-behaviors/crypto/native/`, preserving matcher bodies and
+effective scopes. Soft validation passes **1,837/1,837 fixtures**. I rebuilt
+cleave against the sibling `filefacts` working tree with a one-command Cargo
+patch; `make validate` now reports the established 60 issues and 165 over-cap
+directories, with no unknown-directory error. The encrypted-staging directory
+remains over the 85-rule cap and needs further cohort-by-cohort audit.
+
+## Latest checkpoint: .NET RAT configuration leaves encrypted staging
+
+[.NET RAT-config audit](DROPPER-DOTNET-RAT-CONFIG.md) moves the MD5 provider
+and ECB/zero-padding clues to their crypto capability leaves, while the
+RAT-specific field cluster and crypto co-occurrence move to
+`command-and-control/backdoor/rat/config`. The composite no longer claims that
+decryption occurred. Two consumers now use the canonical crypto IDs; matcher
+bodies and effective scopes are preserved. Soft validation passes
+**1,837/1,837 fixtures**. Encrypted staging loses five rules but remains over
+the cap; strict validation reports the existing 60 issues, including 165
+over-cap directories.
+
+## Latest checkpoint: Electron sidecar chain follows its module-load sink
+
+[Electron sidecar audit](DROPPER-ELECTRON-SIDECAR-MODULE-LOAD.md) moves the
+AES-decrypt/`Module._compile` chain from encrypted staging to `dropper/module-load`,
+the required activation sink. Its matcher legs, scope, confidence, criticality,
+tags, and exclusions are preserved; three masquerade consumers use the
+canonical path. Soft validation passes **1,837/1,837 fixtures**. Encrypted
+staging loses one additional rule and remains over cap.
+
+## Latest checkpoint: archive containment is separate from encrypted staging
+
+[Archive disk-image audit](DROPPER-ARCHIVE-UNENCRYPTED-DISK-IMAGE.md) moves two
+composites that never require archive encryption from `staging/encrypted` to
+`staging/archive`. The taxonomy now distinguishes an archive-contained disk
+image from encrypted archive staging and from a mounted image-disk activation.
+Matchers and effective metadata are preserved; no external consumer needed an
+ID update. Soft validation passes **1,837/1,837 fixtures**. Encrypted staging
+falls to 243 rules; archive staging is 97 and remains over cap for further
+cohort review.
+
+## Latest checkpoint: JavaScript temp-environment clue uses the shared capability
+
+[JavaScript environment audit](DROPPER-JAVASCRIPT-ENVIRONMENT.md) moves the
+`process.env.TEMP` observation from `execute-download` to the shared
+`os/env/read` capability and updates the Node downloader consumer. The shared
+matcher now covers JavaScript and TypeScript alongside other source forms.
+`execute-download` falls from **135 to 134 rules**. See the
+[mapping ledger](dropper-javascript-environment-mapping.json).
+
+## Latest checkpoint: hidden scratch-stage patterns use one technique leaf
+
+[Hidden-stage audit](DROPPER-HIDDEN-STAGE.md) moves 17 language-neutral hidden
+scratch-stage rules from the generic download-execute directory into the
+existing `delivery/hidden-stage/` leaf, and updates six consumers. The move
+keeps carrier formats together under the behavior they evidence; it does not
+create language/filetype branches. The hostile CI fixture now expects the new
+canonical leaf, and the benign shell control explicitly forbids it. Soft
+validation passes **1,837/1,837 fixtures**. `execute-download` falls from **152
+to 135 rules** and remains over the 85-rule cap. Strict validation remains at
+**60 issues**, including **165 over-cap directories**. See the
+[mapping ledger](dropper-hidden-stage-mapping.json).
+
+## Latest checkpoint: Windows HTTP APIs are explicit delivery techniques
+
+[Windows HTTP API audit](DROPPER-TRANSFER-API-LEAVES.md) moves 13 more WinHTTP,
+URLMon, and WinINet rules beside the 17 API-specific rules moved earlier.
+Their effective scopes, matchers, and rule metadata are preserved, with
+canonical IDs updated for external consumers. The `TAXONOMY.md` disambiguation
+defines each child by its transfer API, not language or filetype.
+`execute-download` falls from **165 to 152 rules**, so it remains over the
+single 85-rule cap and needs further technique-level audit. See the
+[mapping ledger](dropper-wininet-urlmon-mapping.json).
+
+## Latest checkpoint: PowerShell download clues use capability leaves
+
+[PowerShell atom audit](DROPPER-POWERSHELL-ATOMS.md) relocates four capability
+observations from the oversized dropper leaf to WebClient download, MSI
+installer, and GitHub URL capability leaves. Their exact consumers now use the
+canonical IDs; the download/installer objective composites remain in their
+sink leaves. Their `[powershell, batch, pe]` scopes are preserved, while
+inherited dropper tags are removed where the atom does not establish transfer
+or installation. A filename-only MSI date heuristic was retired in favor of
+requiring the actual package verb. See the expanded
+[mapping ledger](dropper-powershell-cooccurrence-mapping.json). The full soft
+fixture suite passes **1,837/1,837**. Strict validation remains at **60 issues**
+and **165 directories over the 85-rule cap**; this migration adds no strict
+issues.
+
+## Latest checkpoint: PowerShell fetch and launch evidence stays capability-level
+
+[PowerShell co-occurrence audit](DROPPER-POWERSHELL-COOCCURRENCE.md) moves one
+atom and two unsupported dropper composites into the corresponding process and
+download capability leaves. SCCM, MSI, and Defender consumers now use the
+canonical capability IDs. The fetch composite and the hidden request/launch
+co-occurrence are notable, not hostile, because neither proves payload
+activation. A fixture review also repaired PowerShell backtick-newline handling
+in the existing `iwr-outfile-download` matcher, restoring a separately
+evidenced quiet-MSI installer chain. Soft validation passes **1,837/1,837
+fixtures**. See the [mapping ledger](dropper-powershell-cooccurrence-mapping.json).
+
+## Latest checkpoint: PowerShell rules use installer and spawn sinks
+
+[PowerShell sink audit](DROPPER-POWERSHELL-COMPLETED-SINKS.md) moves three MSI
+chains to `file-exec/installer` and two downloaded-executable launch chains to
+`file-exec/spawn`. Their source atoms remain available through canonical
+references. Matchers and effective scopes are unchanged. `execute-download`
+falls from **195 to 190 rules**, installer grows from **10 to 13**, and spawn
+from **60 to 62**. See the
+[mapping ledger](dropper-powershell-completed-sinks-mapping.json).
+
+## Latest checkpoint: .NET launch chains use file-exec/spawn
+
+[.NET spawn audit](DROPPER-DOTNET-SPAWN.md) moves five C#/.NET composites
+with required process-launch evidence to `dropper/file-exec/spawn/`. The one
+C# source-scoped rule keeps that scope, the other four remain PE scoped, and
+the sandbox-gated composite retains its helper dependency through a canonical
+cross-directory reference. Matcher semantics and effective scopes are
+unchanged. `execute-download` falls from **200 to 195 rules** and spawn grows
+from **55 to 60**. See the
+[mapping ledger](dropper-dotnet-spawn-mapping.json).
+
+## Latest checkpoint: URLMon launch chains use file-exec/spawn
+
+[URLMon spawn audit](DROPPER-URLMON-SPAWN.md) moves ten composites requiring
+`WinExec`, `ShellExecute`, `ShellExecuteEx`, or process-creation evidence into
+`dropper/file-exec/spawn/`. Their dependent browser-UA and sandbox-gated rules
+moved with the rules they reference. Matchers and effective scopes are
+preserved, including PE-only scope for the two signed-downloader rules. The
+source leaf falls from **210 to 200 rules** and spawn grows from **45 to 55**.
+See the [mapping ledger](dropper-urlmon-spawn-mapping.json).
+
+## Latest checkpoint: VBScript MSI chains use file-exec/installer
+
+[VBScript MSI audit](DROPPER-VBS-MSI-FILE-EXEC.md) moves three rules requiring
+an `msiexec` transaction to `dropper/file-exec/installer`. The delayed RMM
+composite moved with its referenced base rule. Matcher bodies, effective
+scopes, criticalities, and tags are unchanged. The two non-installer findings
+from the same source file remain for separate review. `execute-download` falls
+from **213 to 210 rules** and `file-exec/installer` grows from **7 to 10**.
+See the [mapping ledger](dropper-vbs-msi-file-exec-mapping.json).
+
+## Latest checkpoint: URLMon launch rules use file-exec/spawn
+
+[URLMon sink audit](DROPPER-URLMON-FILE-EXEC.md) moves two composites that
+require a branded URLMon downloader and `ShellExecuteEx` or `CreateProcessW`
+to `dropper/file-exec/spawn`. Their matcher bodies and effective scopes are
+unchanged; no exact consumers needed updates. The two adjacent staging-only
+profiles stay in the source leaf because they do not establish a launch sink.
+`execute-download` falls from **215 to 213 rules** and `file-exec/spawn` grows
+from **43 to 45**. See the [mapping ledger](dropper-urlmon-file-exec-mapping.json).
+
+## Latest checkpoint: Node download/interpreter co-occurrence is a capability
+
+[Node co-occurrence audit](NODE-INTERPRETER-COOCCURRENCE.md) moves three rules
+from the dropper source leaf to
+`micro-behaviors/process/create/shell/interpreter/`. A generic `run()` call
+with an interpreter name remains a lower-confidence capability clue; the
+download/interpreter composite is now named and scored as co-occurrence because
+its 320-line window does not link downloaded bytes to interpreter input. Both
+supply-chain consumers use the canonical capability ID. The dropper leaf falls
+from **218 to 215 rules** and the interpreter leaf now has **12**. Soft
+validation passes **1,837/1,837 fixtures**; strict validation remains at **59
+issues**, including **165 over-cap directories**. See the
+[mapping ledger](node-interpreter-cooccurrence-mapping.json).
+
+## Latest checkpoint: remote-thread activation uses process-inject
+
+[Download sink audit](DROPPER-EXECUTE-DOWNLOAD-SINKS.md) moves one WinHTTP
+composite requiring remote-process memory APIs and remote-thread creation to
+`dropper/process-inject`. Its matcher and execution scope are preserved.
+`execute-download` falls from **219 to 218 rules**. See the
+[mapping ledger](dropper-execute-download-sinks-mapping.json).
+
+## Latest checkpoint: neutral WebClient retrieval stays in communications
+
+[DownloadString reference audit](DROPPER-EXECUTE-DOWNLOAD-HTTP-REFERENCES.md)
+moves six WebClient type/download findings out of
+`dropper/delivery/execute-download`. Their match predicates are preserved; the
+three DownloadString composites and the executable-download-to-writable-path
+composite are now notable communications capabilities because no rule linked
+the fetched content to evaluation or launch. One impossible PE scope was
+removed from the DownloadString composite. `execute-download` falls from
+**225 to 219 rules**. The taxonomy now states the
+retrieval-versus-activation admission test. See the
+[mapping ledger](dropper-execute-download-http-references-mapping.json).
+
+
+### Latest checkpoint: archive-adjacent eval and module loading use their sinks
+
+[Archive eval/module-load audit](DROPPER-ARCHIVE-EVAL-MODULE-LOAD.md) moves
+the remote PowerShell `IEX` chain to `script-eval` and the Dalvik reflective
+invocation chain to `module-load`. The APK asset helpers remain in archive
+staging, with one dependent reference updated. The original PowerShell matcher
+was restored exactly, and its process-start legs were removed from the archive
+extraction aggregate. `staging/archive` drops from **97 to 95 rules**. Soft
+validation passes **1,837/1,837 fixtures**. See the
+[mapping ledger](dropper-archive-eval-module-load-mapping.json).
+
+
+### Latest checkpoint: completed archive launches follow the spawn sink
+
+[Archive file-execution audit](DROPPER-ARCHIVE-FILE-EXEC.md) moves six
+PowerShell archive chains whose matchers require payload process launch into
+`dropper/file-exec/spawn`. The helper rules remain in archive staging, and the
+extraction-only composites stay there. `file-exec/spawn` grows from **78 to
+84 rules**; the external ClickFix consumer now references the canonical rule
+path. Matchers and effective scope are unchanged. Soft validation passes
+**1,837/1,837 fixtures**. Strict validation still reports **165 over-cap
+directories** and existing catalog debt. See the
+[mapping ledger](dropper-archive-file-exec-mapping.json).
+
+
+### Latest checkpoint: file-exec is refined by activation mechanism
+
+[File-execution subtechnique audit](DROPPER-FILE-EXEC-SUBTECHNIQUES.md)
+reorganizes all rules in `dropper/file-exec` into strictly leaf-only
+`command` (**41**), `spawn` (**43**), and `installer` (**7**) directories.
+Shell/interpreter-evaluated command text, direct process creation, and installer
+transactions each have one admission test. Exact rule references point to their
+canonical child paths; parent-directory references remain valid aggregate
+references. No matcher or effective rule scope changed. Soft
+validation passes **1,837/1,837 fixtures**. Strict validation still reports
+**165 over-cap directories** and existing catalog debt. See the
+[85-rule mapping ledger](dropper-file-exec-subtechniques-mapping.json).
+
+
+### Latest checkpoint: encrypted payloads follow injection and image-map sinks
+
+[Injection/image-map audit](DROPPER-ENCRYPTED-INJECT-IMAGE-MAP.md) moves the
+CryptoAPI manual-PE mapper to `dropper/image-map`, and three composites with
+required remote memory-transfer, remote-thread, or thread-hijack evidence to
+`dropper/process-inject`. Two exact consumers now use the canonical image-map
+ID; the other moved rules had no external consumers. `staging/encrypted` drops
+from **268 to 264 rules**. Matchers, effective scope, and criticality remain
+unchanged. The directory contract now explicitly distinguishes process
+injection, current-process image mapping, and generic executable-memory
+staging. Soft validation passes **1,837/1,837 fixtures** with no new migration
+warnings. Strict validation still reports **165 over-cap directories** and
+other catalog debt. See the
+[mapping ledger](dropper-encrypted-inject-image-map-mapping.json).
+
+
+### Latest checkpoint: completed source-evaluation chains use script-eval
+
+[Encrypted script-eval audit](DROPPER-ENCRYPTED-SCRIPT-EVAL.md) moves the
+Python base64/zlib `exec` chain, Ruby Base64/zlib `eval` chain, and PowerShell
+hex-XOR `IEX` chain from encrypted staging to `dropper/script-eval`. The Ruby
+atomic pattern moved with its composite; decoder-only evidence and the
+PowerShell ScriptBlock-construction rule remain in staging. No external
+consumers needed reference updates. `staging/encrypted` drops from **272 to
+268 rules** (four definitions, including the Ruby atom); script-eval remains
+below the 85-rule cap. Matchers, scopes,
+and criticality are unchanged. See the
+[mapping ledger](dropper-encrypted-script-eval-mapping.json).
+
+
+### Latest checkpoint: remaining completed encrypted stages follow their sink
+
+[Encrypted-stage sink audit](DROPPER-ENCRYPTED-REMAINING-SINKS.md) moves the
+.NET decrypt-and-reflective-assembly-load chain to `dropper/module-load` and
+the PowerShell hex-XOR chain that downloads and launches an executable to
+`dropper/file-exec`. Decoder and ScriptBlock evidence remains in encrypted
+staging and is referenced by exact ID. The injection-configuration composite
+stays in encrypted staging because its strings do not establish process
+injection. `staging/encrypted` drops from **274 to 272 rules**, module-load
+grows from **9 to 10**, and file-exec grows from **84 to 85**, at the shared
+cap. Rule matchers and effective scope are unchanged; one dependent .NET
+reference now uses the canonical ID. See the
+[mapping ledger](dropper-encrypted-remaining-sinks-mapping.json).
+
+
+### Latest checkpoint: IoT raw-IP chmod launch chains use file-exec
+
+[ELF chmod/file-exec audit](DROPPER-ELF-CHMOD-FILE-EXEC.md) moves three
+Linux ELF composites whose raw-IP download evidence is joined to explicit
+chmod and local-launch evidence. One cleanup consumer now references the
+canonical rule path; the other two composites had no external exact-ID
+consumers. Rule matchers, effective scope, and criticality are unchanged.
+`delivery/execute-download` drops from **228 to 225 rules** and file-exec
+grows from **81 to 84**. Soft validation passes **1,837/1,837 fixtures**.
+Strict validation retains the existing unknown `micro-behaviors/os/application`
+directory and catalog-wide over-cap debt, including **165 over-cap
+directories**. See the [mapping ledger](dropper-elf-chmod-file-exec-mapping.json).
+
+
+### Latest checkpoint: IoT download-to-shell pipes use interpreter-stdin
+
+[ELF stdin audit](DROPPER-ELF-INTERPRETER-STDIN.md) moves two ELF chains
+whose downloader output is piped directly into the shell: the hex-encoded NVMS
+stager and the raw-IP IoT shell stager. Their activation sink is interpreter
+stdin; the shared native pipe marker remains in the legacy leaf by exact ID.
+No external references to the moved composites needed updates. Matcher bodies
+and scopes are unchanged. `delivery/execute-download` drops from **230 to 228
+rules** and `interpreter-stdin` grows from **1 to 3**. Soft validation passes
+**1,837/1,837 fixtures**. Strict validation retains catalog-wide debt,
+including **165 over-cap directories**. See the
+[mapping ledger](dropper-elf-interpreter-stdin-mapping.json).
+
+
+### Latest checkpoint: PHP and TFTP local launches use file-exec
+
+[PHP/TFTP file-exec audit](DROPPER-PHP-TFTP-FILE-EXEC.md) moves the bounded
+PHP download/chmod/local-exec chain and the one-command TFTP-to-local-shell
+launch into `dropper/file-exec`. The TFTP exploit consumer now uses the
+canonical exact ID; no PHP exact-ID consumers needed updates. Matcher bodies
+and effective scopes are unchanged. `delivery/execute-download` drops from
+**232 to 230 rules** and file-exec grows from **79 to 81**. Soft validation
+passes **1,837/1,837 fixtures**. Strict validation retains catalog-wide debt,
+including **165 over-cap directories**. See the
+[mapping ledger](dropper-php-tftp-file-exec-mapping.json).
+
+
+### Latest checkpoint: ELF download/chmod/execute chain uses file-exec
+
+[ELF file-exec audit](DROPPER-ELF-FILE-EXEC.md) moves the
+`download-permission-execute-chain` composite to `dropper/file-exec`. Its
+required legs combine a native download/chmod marker with chmod-then-local-exec
+behavior. Eight consumer files now use the canonical exact ID (nine reference
+occurrences); the supporting download marker remains in the legacy source leaf.
+The matcher and effective scope are unchanged. `delivery/execute-download`
+drops from **233 to 232 rules** and file-exec grows from **78 to 79**. Soft validation
+passes **1,837/1,837 fixtures**. Strict validation retains the catalog-wide cap
+and quality debt, including **165 over-cap directories**. See
+the [mapping ledger](dropper-download-permission-file-exec-mapping.json).
+
+
+### Latest checkpoint: WinINet hollowing follows process-inject sink
+
+[WinINet hollowing audit](DROPPER-WININET-PROCESS-INJECT.md) moves the
+retrieval-plus-process-hollowing composite from `delivery/execute-download` to
+`dropper/process-inject`. Its matcher body and criticality are unchanged, and
+there were no exact-ID consumers. The legacy leaf drops from **234 to 233
+rules**; `process-inject` now contains one rule. Soft validation passes
+**1,837/1,837 fixtures**. Strict validation retains the catalog-wide cap and
+quality debt, including **165 over-cap directories**. See the
+[mapping ledger](dropper-wininet-process-inject-mapping.json).
+
+
+### Latest checkpoint: PowerShell executable/MSI launch chains use file-exec
+
+[PowerShell file-exec audit](DROPPER-POWERSHELL-FILE-EXEC.md) moves three
+chains from legacy `delivery/execute-download`: a writable-path EXE launch, a
+country-gated executable launch, and a ProgramData MSI install. Their matcher
+bodies and criticalities remain unchanged; source helper traits stay in the
+legacy leaf and the moved composites reference them by exact ID. No external
+references to the moved composites needed updates. The legacy leaf drops from
+**237 to 234 rules** and file-exec grows from **75 to 78**. Soft validation
+passes **1,837/1,837 fixtures**. Strict validation still has catalog-wide cap
+and quality debt, including **165 over-cap directories**. See the
+[mapping ledger](dropper-powershell-file-exec-mapping.json).
+
+
+### Latest checkpoint: Go and Java temp-file launches use file-exec
+
+[Go/Java launch audit](DROPPER-LANGUAGE-FILE-EXEC.md) moves the Go encrypted
+payload temp-file launcher and the Java XOR-decoded temp-shell launcher to
+`dropper/file-exec`. Their supporting observations remain in encrypted staging;
+the moved composites now reference those traits by canonical exact IDs. The
+OrgSearch consumer now points to the Go rule at its new home. No matcher bodies,
+scopes, or criticalities changed. Encrypted staging drops from **277 to 274
+rules** and file-exec grows from **72 to 75**. Soft validation passes
+**1,837/1,837 fixtures**. Strict validation retains the catalog-wide cap and
+quality debt, including **165 over-cap directories**. See the
+[mapping ledger](dropper-language-file-exec-mapping.json).
+
+
+### Latest checkpoint: native encrypted loaders follow activation sink
+
+[Native loader audit](DROPPER-NATIVE-LOADERS.md) moves the XChaCha/native
+section-map chain to `dropper/image-map` and the write-then-`LoadLibraryA` DLL
+loader to `dropper/module-load`. The crypto and transport evidence remains part
+of each existing composite, and neither matcher body was changed. The encrypted
+staging leaf drops from **279 to 277 rules**; image-map gains one rule and
+module-load grows from **8 to 9**. Soft validation remains **1,837/1,837
+fixtures**. Strict validation retains the catalog-wide cap and quality debt,
+including **165 over-cap directories**. See the
+[mapping ledger](dropper-native-loaders-mapping.json).
+
+
+### Latest checkpoint: JavaScript encrypted eval rules follow sink and capability
+
+[JavaScript eval audit](DROPPER-JAVASCRIPT-EVAL.md) moves the completed
+hardcoded-decrypt/eval chains into `dropper/script-eval` and classifies a
+standalone generator/eval source indicator with the interpreter-eval capability.
+That source indicator alone does not establish encryption, staging, or a dropper.
+The encrypted-staging leaf drops from **287 to 279 rules**; `script-eval` grows
+from **4 to 11**, and JavaScript direct-eval grows by one. Soft validation
+passes **1,837/1,837 fixtures**. Strict validation still reports the existing
+catalog-wide taxonomy and quality debt, including **165 over-cap directories**. See the
+[mapping ledger](dropper-javascript-eval-mapping.json).
+
+
+### Latest checkpoint: encrypted dropper rules follow their activation sink
+
+[Encrypted sink audit](DROPPER-DECRYPT-EVAL-SINKS.md) splits completed
+decrypt-and-execute chains into `script-eval`, `module-load`, and `file-exec`.
+It leaves unbounded or sink-ambiguous zero-IV rules in the staging leaf until
+their matchers establish a launch relationship. Soft validation passes
+**1,837/1,837 fixtures**; the encrypted staging leaf drops from **293 to 287
+rules**, while the new script-eval leaf has **4**, module-load **8**, and
+file-exec **72**. Strict validation remains at **59 issues**, including **165
+over-cap directories**, without new migration-specific warnings. See the
+[mapping ledger](dropper-decrypt-eval-sinks-mapping.json).
+
+### Earlier checkpoint: encrypted Node activation uses module-load
+
+[Encrypted module-load audit](DROPPER-ENCRYPTED-MODULE-LOAD.md) moves four
+Node composites with a required dynamic `require` sink from
+`staging/encrypted` to `dropper/module-load`. The decryption method remains
+referenced evidence; eval chains and ciphertext without an established sink
+stay in their own technique homes. Three supply-chain consumers now use
+canonical IDs. Soft validation passes **1,837/1,837 fixtures**. The encrypted
+staging leaf drops from **297 to 293 rules** and module-load grows from **3 to
+7**. Strict validation still reports catalog-wide cap and quality debt. See
+the [mapping ledger](dropper-encrypted-module-load-mapping.json).
+
+### Earlier checkpoint: remote MSI activation uses file-exec
+
+[MSI file-exec audit](FILE-EXEC-MSIEXEC.md) moves three remote MSI-install
+composites and their shared non-ASCII-switch fragment from
+`delivery/execute-download` to `dropper/file-exec`. The URL-backed package
+install activates the staged file through its installer handler; a generic
+`msiexec` invocation remains insufficient. Soft validation passes
+**1,837/1,837 fixtures**. The source leaf drops from **241 to 237 rules** and
+`file-exec` grows from **67 to 71**. Strict validation retains catalog-wide
+quality and cap debt, including **165 over-cap directories**. See the
+[mapping ledger](file-exec-msiexec-mapping.json).
+
+### Earlier checkpoint: Node activation follows the required sink
+
+[Node sink audit](NODE-DROPPER-SINKS.md) moves eight complete Node file-launch
+chains to `dropper/file-exec` and a decoded dynamic-`require` loader to
+`dropper/module-load`. It leaves a broad download/interpreter co-occurrence in
+the old leaf because its matcher does not tie the downloaded file to the
+interpreter input. FTP-banner aggregation already includes both sink leaves;
+five exact supply-chain references now use the canonical IDs. Soft validation
+passes **1,837/1,837 fixtures**. `delivery/execute-download` drops from **250
+to 241 rules**, `file-exec` grows from **59 to 67**, and `module-load` from **2
+to 3**. Strict validation still reports catalog-wide cap and quality debt. See
+the [mapping ledger](node-dropper-sinks-mapping.json).
+
+### Earlier checkpoint: Regsvr32 scriptlet execution has a technique-specific home
+
+[Regsvr32 audit](REGSVR32-LOLBIN.md) moves the seven-rule Squiblydoo set out of
+the generic staged-download leaf and consolidates it with the two existing
+Regsvr32 LOLBin rules in `objectives/execution/lolbin/regsvr32`. The new
+boundary distinguishes remote scriptlet activation from a staged file launch;
+the Equation Editor, DLL-hijacking, Windows LOLBin, and FTP-banner consumers
+now use the canonical rules. Soft validation passes **1,837/1,837 fixtures**.
+`delivery/execute-download` drops from **257 to 250 rules**; the new
+Regsvr32 leaf has **9 rules**. Strict validation retains the catalog-wide
+quality and cap warnings, including **165 over-cap directories**. See the
+[mapping ledger](regsvr32-lolbin-mapping.json).
+
+### Earlier checkpoint: Node activation chains use file-exec or module-load
+
+[Node activation audit](DROPPER-NODE-ACTIVATION.md) moves five complete staged
+payload composites according to their sink: four process launches to
+`dropper/file-exec` and one dynamic `require` loader to
+`dropper/module-load`. FTP-banner consumers now include both activation leaves
+and the remaining legacy delivery directory. Soft validation passes
+**1,837/1,837 fixtures**. `delivery/execute-download` drops from **262 to 257
+rules**; `file-exec` grows from **55 to 59**, and `module-load` from **1 to 2**.
+Strict validation still reports catalog-wide quality and cap warnings,
+including **165 over-cap directories**. See the
+[mapping ledger](dropper-node-activation-mapping.json).
+
+### Latest checkpoint: Python file activation uses the file-exec leaf
+
+[Python file-exec audit](FILE-EXEC-PYTHON.md) moves four composites joining
+remote file acquisition or writing to a process launch. Python/platform scopes
+remain in the rule file; matchers, effective scope, and proximity are unchanged.
+Soft validation passes **1,837/1,837 fixtures**. The oversized
+`delivery/execute-download` leaf drops from **266 to 262 rules**; `file-exec`
+grows from **51 to 55 rules**. Strict validation remains at **59 issues**,
+including **165 over-cap directories**. See the
+[mapping ledger](file-exec-python-mapping.json).
+
+### Latest checkpoint: .NET file activation uses the file-exec leaf
+
+[.NET file-exec audit](FILE-EXEC-DOTNET.md) moves six PE-scoped composites
+that link downloaded or written files to process/file-handler activation. The
+PE scope remains in the rule file, and two external consumers now use canonical
+IDs. Soft validation passes **1,837/1,837 fixtures**. The oversized
+`delivery/execute-download` leaf drops from **272 to 266 rules**; `file-exec`
+grows from **45 to 51 rules**. Strict validation remains at **59 issues**,
+including **165 over-cap directories**. See the
+[mapping ledger](file-exec-dotnet-mapping.json).
+
+### Latest checkpoint: piped shell payloads use interpreter-stdin
+
+[Interpreter-stdin audit](INTERPRETER-STDIN.md) moves the raw-IP downloader
+fallback rule out of file execution because the payload is piped into a newly
+launched shell. Matcher and effective scope are unchanged; the fallback atom
+remains in the neutral HTTP capability leaf. Soft validation passes
+**1,837/1,837 fixtures**. `delivery/execute-download` drops from **294 to 293
+rules**; strict validation remains at **59 issues**, including **165 over-cap
+directories**. See the [mapping ledger](interpreter-stdin-mapping.json).
+
+### Earlier checkpoint: shell file activation uses the file-exec leaf
+
+[Shell file-exec audit](FILE-EXEC-SHELL.md) now includes thirty-five shell
+download/permission-change/launch composites in the canonical activation leaf.
+The latest twenty-one rules retain their matchers and scopes; cross-rule and
+external consumers use canonical IDs. The FTP-banner consumers also include
+both activation leaves alongside the remaining legacy directory. Soft
+validation passes **1,837/1,837 fixtures**. `delivery/execute-download` drops
+from **293 to 272 rules**, while `file-exec` remains under cap at **45 rules**.
+Strict validation still reports **59 issues**, including **165 over-cap
+directories**. See the
+[mapping ledger](file-exec-shell-mapping.json).
+
+### Earlier checkpoint: shell download fallback is a capability
+
+[HTTP fallback audit](HTTP-DOWNLOAD-FALLBACK.md) moves two shell matcher atoms
+and their cascade composite out of the dropper objective into
+`communications/http/download/fallback`. The two raw-IP droppers retain the
+same fallback evidence through canonical references; fallback alone does not
+imply payload activation. Soft validation passes **1,837/1,837 fixtures**. The
+oversized execute-download leaf drops from **306 to 303 rules**. Strict
+validation remains at **59 issues**, including **165 over-cap directories**.
+See the [mapping ledger](http-download-fallback-mapping.json).
+
+### Latest checkpoint: Rust file-execution chains use the activation leaf
+
+[Rust file-exec audit](FILE-EXEC-RUST.md) moves four composites whose evidence
+joins remote file staging to a process or file-handler launch into
+`dropper/file-exec`. Effective Rust/platform scopes, proximity limits,
+metadata, and consumers are preserved. Soft validation passes all
+**1,837/1,837 fixtures**. The oversized `delivery/execute-download` leaf drops
+from **310 to 306 rules**; `file-exec` grows from **11 to 15 rules**. Strict
+validation remains at **59 issues**, including **165 over-cap directories**.
+See the [mapping ledger](file-exec-rust-mapping.json).
+
+### Earlier checkpoint: PowerShell file-execution chains use the activation leaf
+
+[PowerShell file-exec audit](FILE-EXEC-POWERSHELL.md) moves five composites
+whose evidence joins remote staging or archive extraction to a process
+launch or installer sink into `dropper/file-exec`. Matchers, scopes, confidence, and criticality
+are unchanged; the encrypted-stage and timing consumers now reference the new
+canonical IDs. Soft validation passes all **1,837/1,837 fixtures**. The strict
+quality/cap debt remains catalog-wide; the oversized
+`delivery/execute-download` leaf drops from **315 to 310 rules**. The new
+`file-exec` leaf contains **11 rules**, well below the cap. See the
+[mapping ledger](file-exec-powershell-mapping.json).
+
+### Earlier checkpoint: shell file activation moves to its canonical leaf
+
+[Shell file-exec audit](FILE-EXEC-SHELL.md) moves five download/chmod/launch
+composites out of `delivery/execute-download` into `dropper/file-exec`, with
+matchers and scopes unchanged. Four same-file references and one external
+consumer were remapped. Positive local, BusyBox temp, and raw-IP checks pass;
+a >30-line locality negative remains negative. The oversized delivery leaf
+drops from **320 to 315 rules**; the 85-rule debt remains. See the
+[mapping ledger](file-exec-shell-mapping.json).
+
+### Earlier checkpoint: cloud credential strings classified as capabilities
+
+[Cloud credential reference audit](CLOUD-CREDENTIAL-REFERENCES.md) moves
+provider endpoint paths into their HTTP-service leaves, environment-name sets
+to `os/env/cloud`, and local credential/config paths to `fs/path/credential`.
+Three GCP endpoint strings leave `metadata/file/string/cloud`; Rust-specific
+credential clues leave the attacker-objective leaf or reuse existing neutral
+HTTP atoms. The Rust hostile composites keep their provider and compiler
+constraints, and the benign MongoDB ELF retains capability markers without a
+Rust credential-sweep finding. Exact fixture assertions now use explicit
+`required_traits`/`forbidden_traits` fields instead of malformed path prefixes.
+The soft fixture gate passes **1,837/1,837**; strict validation still reports
+**59 quality/cap issues**, including **165 directories** above the 85-rule
+combined cap.
+
+### Earlier checkpoint: C# file activation and .NET XOR module loading
+
+[C# file-exec audit](FILE-EXEC-C-SHARP.md) moves the complete C# download and
+launch composite into `dropper/file-exec`, replaces four duplicated objective
+atoms with canonical HTTP, process, environment-read and process-configuration
+evidence, and requires the evidence to cluster within 512 bytes. Three
+FTP-banner consumers retain the migrated C# rule explicitly. A nearby positive
+fixture still matches; the same signals split across distant methods do not.
+
+The .NET XOR-loader composite now lives under `dropper/module-load`, selected
+by its assembly-loading sink. Its shared hex-conversion evidence moved to
+`micro-behaviors/data/decode/hex`; the old mixed “assembly, temp, entry point or
+process start” atom was retired. The old `delivery/execute-download` leaf
+remains at **315 rules** after these partial migrations, so the 85-rule debt is
+not resolved. The new activation leaves are still being populated. See the
+[mapping ledgers](file-exec-csharp-mapping.json) and
+[.NET module-load ledger](dotnet-module-load-mapping.json).
+
+### Earlier checkpoint: move the remaining clear network-interface misplacements
+
+[Network-interface cleanup](INTERFACE-CLEANUP.md) moves seven rules or
+composites: best-interface route selection to `os/network/route`, domain-join
+status and host-network profile composites to `os/sysinfo`, Android VPN route
+configuration to `os/network/tunnel`, and Node mapped-drive enumeration to
+`os/network/share`. At that checkpoint the interface leaf decreased from **59 to 52**
+rules; the route leaf grows from **8 to 9**, tunnel from **27 to 29**, and share
+by one.
+Five broad host-profile/exfiltration consumers retain their former member sets.
+All seven effective definitions compare equal modulo IDs, except that the
+host-network composite description was corrected to match its existing
+three-of-twelve matcher.
+
+Soft validation passes the current **1,829 fixtures** (including 530 benign
+fixtures). Strict `make validate` still reports **57 issues**, including **165
+over-cap directories**; the moved rules add no reference or scope errors. The
+two Google Play package-name literals were subsequently moved to
+`micro-behaviors/os/application/target`; see
+[APPLICATION-TARGET.md](APPLICATION-TARGET.md). The interface leaf now has 50
+rules after that move.
+
+### Latest checkpoint: separate route and neighbor-table operations
+
+[Route/neighbor audit](ROUTE-NEIGHBOR.md) relocates ten rules from generic
+interface and socket-route leaves to `micro-behaviors/os/network/route` and
+`.../neighbors`. The 5 route APIs and their composite, plus route queries, now
+describe routing-table behavior; ARP/IP neighbor queries and cache flushes share
+the neighbor-table leaf. The source `communications/socket/route` leaf is retired.
+The interface/route/neighbor boundary and the rule that a route-cache flush is
+neighbor management are now documented in TAXONOMY.md.
+
+All ten moved definitions retain their effective matcher and scope. Five
+host-profile/exfiltration consumers preserve the three members moved out of the
+interface leaf. Seven broad communication-directory consumers intentionally no
+longer count route-table APIs as communication evidence; the consumer audit
+records why. Exact route and neighbor references were updated. Soft validation
+passes **1,827/1,827 fixtures**, with **165 oversized directories and zero mixed
+nodes**. Strict validation still fails on catalog-wide cap and quality debts.
+
+### Latest checkpoint: OS tunnel interfaces leave generic interface/proxy leaves
+
+[Tunnel/interface audit](TUNNEL-INTERFACE.md) moves 27 rules with unchanged
+effective matching semantics and 50 documented reference decisions. All twelve
+affected directory-consumer member sets are preserved. Interface has **62 rules**,
+application proxy tunnels **80**, and the new OS tunnel-interface leaf **27**.
+All **330 focused verdicts** match the pre-move baseline; soft validation passes
+**1,827/1,827 fixtures**. There are **165 oversized directories and zero mixed
+nodes**. Strict validation remains unresolved. Preserving an Empire consumer's
+conjunction required one OR helper, increasing that already oversized family
+leaf from 89 to **90**; this remains cap debt without an exemption. The audit
+also records semantic cleanup still needed in the now-under-cap network leaves.
+
+### Earlier checkpoint: wireless capabilities leave the generic interface leaf
+
+[Interface/wireless audit](INTERFACE-WIRELESS.md) moves 14 rules to the existing
+wireless-network leaf, preserving their matchers, effective scopes, and all
+original consumers. Interface decreases from **94 to 80 rules**; wireless
+increases from **47 to 61**. Four consumer member sets and the webhook's
+94-member network group are preserved; its field alternatives are explicitly
+grouped without losing the 512-byte constraint. The ledger records 14 moves
+and 31 reference decisions. All **136 focused verdicts** match the captured
+baseline, and soft validation passes **1,827/1,827 fixtures**. There are
+**166 oversized directories and zero mixed nodes**. Strict `make validate`
+still reports size, scope, suppression, regex, and description debts.
+
+### Earlier correction: classify probable capabilities from content
+
+Distinctive strings and other static indicators belong with the probable
+capability they support; proof of execution is not required. `veth` and bridge
+interface references now live in `micro-behaviors/network/interface`, with
+unchanged matchers and effective scope. That checkpoint left 94 interface rules;
+the wireless cohort above reduces this to 80. Re-audit prior semantic-content moves into
+`metadata/file/string`, starting with the pending container and port cohorts;
+string counts and other real artifact measurements remain metadata. Do not
+expand metadata to absorb content merely because an operation is uncertain.
+The correction passes 16 focused verdicts and all 1,826 fixtures under soft
+validation. There are zero mixed nodes and 167 oversized directories; strict
+validation remains unresolved. The namespace audit records the five affected
+directory consumers and the intentionally broadened interface evidence.
+
+### Latest checkpoint: put interface capabilities under an OS-neutral path
+
+The generic interface capability leaf moved from `micro-behaviors/os/network/interface`
+to `micro-behaviors/network/interface`; all 61 YAML files that referenced the
+old IDs now use the canonical path. Three JavaScript shell-command observations
+(`ifconfig`, `ip addr`, and `ip a`) moved out of `objectives/discovery/network/interface`.
+Their matcher bodies, descriptions, confidence, criticality, filetype, and
+platform scopes are unchanged; their `T1016` objective tags were removed because
+each atom describes a capability clue, not adversarial intent. The host-system
+consumer now references a type-scoped capability composite, preserving those
+command alternatives without retaining a discovery objective for a single
+query. The obsolete three-leg objective helper was retired.
+
+The capability leaf now contains **54 rules** (46 atomics and 8 composites).
+The directory validator admits `network/interface` as a neutral resource home.
+Focused JavaScript samples match all three moved atoms, and `test-rules` confirms
+the replacement composite and host-system consumer match. Soft validation passes
+all **1,837/1,837 fixtures**. Strict `make validate` still reports the
+catalog's **60 issues**, including **160 over-cap directories**; it
+reports no unknown-directory or stale-reference issue for this migration.
+
+### Latest checkpoint: separate namespace behavior from runtime identity
+
+[Container namespace audit](NAMESPACE-CLEANUP.md) moves container-runtime
+identity, interface names, and host-root changes to their matching metadata or
+filesystem techniques, and retires unsupported roll-ups. Namespace operations
+remain in the platform-neutral `namespace` leaf, with Linux/Unix in rule scope;
+the syscall-specific matcher file shares that leaf. Five port-reference and
+service-table rules moved to a new `network/port` leaf, removing a mixed
+parent/child node while preserving seven references from six consumers.
+Focused inert controls verify relocated characteristics and retained
+operations. Two filename-as-directory references in a separate .NET ransomware
+composite were repaired so validation can load the catalog. Before the capability
+placement correction above, soft validation completed with **1,826/1,826 passing
+fixtures** and **zero mixed nodes**; **167 directories still exceeded the 85-rule
+cap**. Those results do not establish acceptance of the pending semantic moves
+or a passing strict validation run.
+
+### Latest checkpoint: distinguish Kubernetes references from namespaces
+
+[Kubernetes namespace audit](KUBERNETES-NAMESPACE.md) relocates three API/env
+references, retires two unsupported/unconsumed roll-ups, and requires actual
+environment-access evidence in a catalog consumer. Seven ledger entries and 30
+reference decisions accompany **1,824/1,824 passing fixtures**, 30 targeted
+verdicts and 12 updated regression verdicts. Namespace has 45 rules;
+**167 oversized directories and zero mixed nodes** remain. Names-only catalogs
+lose their false access finding; actual access and namespace controls retain coverage.
+
+
+### Latest checkpoint: separate Kubernetes path prefixes from imports
+
+[Kubernetes prefix audit](KUBERNETES-PREFIX.md) moves two directory-prefix
+observations to general secret-store paths and removes the Go path shortcut
+from a renamed package-import aggregate. Seven ledger entries and 14 reference
+decisions accompany 16 targeted verdicts and **1,820/1,820 passing fixtures**.
+Runtime has 65 rules and credential paths 37; **167 oversized directories and
+zero mixed nodes** remain. The namespace aggregate's other unsupported client
+identity alternatives are recorded for follow-up.
+
+
+### Latest checkpoint: generic secret mounts are not token stores
+
+[Secret-mount audit](SECRET-MOUNT.md) moves two generic directory observations
+to general credential paths, preserving effective matchers and nine consumers.
+The generic-mount/config control no longer manufactures a token/config pair;
+a defined token/config pair retains coverage. Eleven ledger entries, 21
+reference decisions and 16 targeted verdicts accompany **1,818/1,818 passing
+fixtures**. Runtime has 67 rules, token paths 38, credential paths 35;
+**167 oversized directories and zero mixed nodes** remain.
+
+
+### Latest checkpoint: separate service-account tokens, namespace and CA files
+
+[Service-account resource audit](SERVICEACCOUNT-RESOURCES.md) retires the
+paths-as-access aggregate, moves public/configuration resources to their own
+filesystem homes, and requires token evidence in credential consumers. Fifteen
+ledger entries and 28 reference decisions accompany **1,816/1,816 passing
+fixtures**, 20 new targeted verdicts and 15 updated regression verdicts.
+Runtime has 68 rules; **167 oversized directories and zero mixed nodes** remain.
+CA/namespace controls lose the false token-abuse finding; token controls retain
+coverage. Remaining path-only objective claims are explicitly documented.
+
+
+### Latest checkpoint: remove context-as-path evidence and repair cardinality
+
+[Container context audit](CONTAINER-CONTEXT.md) retires the misplaced tooling
+aggregate while preserving its only direct downgrade use. A second repair
+replaces matching-rule counts with six explicit credential-category pairs and
+updates two exfiltration consumers. Nine targeted verdicts and **1,814/1,814
+fixtures** pass. Eleven ledger entries and 18 reference decisions are recorded;
+**167 oversized directories and zero mixed nodes** remain. The intentional
+single-category/app-data coverage changes and remaining aggregate debt are explicit.
+
+
+### Latest checkpoint: Kubernetes token references follow their resource
+
+[Kubernetes token-path audit](KUBERNETES-TOKEN-PATH.md) relocates two path atoms
+with unchanged effective matchers and updates six exact consumers. Twenty
+reference decisions and 15 targeted verdicts accompany **1,812/1,812 passing
+fixtures**. Runtime has 71 rules, token paths 38; **167 oversized directories and
+zero mixed nodes** remain. The audit records the surviving service-account
+aggregate and a demonstrated context-as-secret-path cardinality defect.
+
+
+### Latest checkpoint: token filename text does not establish Kubernetes
+
+[Container token-read audit](CONTAINER-TOKEN-READ.md) relocates one mislabeled
+member-reference atom to file-text metadata, preserving its exact predicate and
+apply-composite consumer. Five reference decisions, ten targeted verdicts and
+**1,810/1,810 fixtures** pass, including two new benign controls. Runtime has
+73 rules; **167 oversized directories and zero mixed nodes** remain. The cap
+count was already 167 at this cohort's start in the shared worktree. The audit
+records the remaining token/namespace/CA/mount and credential-access migrations.
+
+
+### Latest checkpoint: privilege vocabulary requires container context
+
+[Container privilege audit](CONTAINER-PRIVILEGE.md) relocates four generic
+observations, tightens Docker configuration evidence and repairs enabled-flag
+boundaries. Six ledger entries and 14 consumer decisions are recorded. Twelve
+targeted checks and **1,808/1,808 fixtures pass**, including six new benign
+controls. Runtime contains 74 rules; **166 oversized directories and zero mixed
+nodes** remain. Changed files introduce no remaining hygiene errors.
+
+### Latest checkpoint: container port vocabulary and duplicate consolidation
+
+[Container port audit](CONTAINER-PORTS.md) moves four port observations into
+network metadata and retires an equivalent discovery-tier port-pair rule. Five
+consumer changes and 14 reference decisions preserve contextual uses without
+claiming Docker, authentication or TLS from numbers alone. Four new controls
+pass; the full suite is **1,802/1,802**. Runtime contains 77 rules; **166 oversized
+directories and zero mixed nodes** remain.
+
+### Latest checkpoint: container socket references share a filesystem home
+
+[Container socket audit](CONTAINER-SOCKETS.md) relocates seven endpoint-path
+rules, updates nine consumers and records 27 reference decisions. Matchers,
+scopes and exclusions are preserved; container-reference context remains where
+justified, without treating paths as trusted tooling. Eight new fixtures pass;
+the full suite is **1,798/1,798**. Runtime is now 81 rules, leaving **166 oversized
+directories and zero mixed nodes**. Remaining runtime/image/OCI misplacements
+are recorded separately from cap compliance.
+
+### Latest checkpoint: inline fetch contents-write coverage
+
+[GitHub fetch audit](GITHUB-FETCH.md) restores destination-bound inline fetch
+PUTs without accepting method overrides or unrelated calls. Two rule changes
+and 22 consumer decisions are recorded; **1,790/1,790 fixtures pass**. GitHub
+contains 84 rules; **167 oversized directories and zero mixed nodes** remain.
+Variable-held options remain unsupported pending a current-value contract;
+mutation/spread counterexamples and a quantified-query discrepancy are recorded
+for engine follow-up.
+
+### Latest checkpoint: contents URLs separated from write evidence
+
+[GitHub write audit](GITHUB-WRITE.md) requires write-specific evidence in the
+create-and-write combination and adds a PUT atom bound to its own destination.
+Eight targeted checks distinguish direct writes from reads and unrelated PUTs;
+**1,790/1,790 fixtures pass**. Two rule changes and 22 consumer decisions are
+recorded. GitHub contains 83 rules; **167 oversized directories and zero mixed
+nodes** remain. Unsupported write implementations and the older proximity-based
+write-flow rule remain explicit follow-up work.
+
+### Latest checkpoint: repository creation requires operation evidence
+
+[GitHub creation audit](GITHUB-CREATION.md) removes bare-path and field-only
+creation shortcuts, retires two unsupported rules, and updates the affected
+exfiltration consumer. Five effective changes and 37 consumer decisions are
+recorded. Seven exact creation controls pass; the full fixture gate passes
+**1,790/1,790**. GitHub contains 82 rules; **167 oversized directories and zero
+mixed nodes** remain. Unresolved helper and obfuscated field-only coverage
+changes are intentional and documented rather than hidden by a weaker claim.
+
+### Latest checkpoint: generic options removed from GitHub activity
+
+[GitHub options audit](GITHUB-OPTIONS.md) relocates three provider-neutral
+observations and updates four exact consumers, with 23 consumer decisions.
+Generic recursion, pagination and GraphQL text no longer suppress unrelated
+environment uploads. Nine new fixtures pass; the full suite is **1,790/1,790**.
+GitHub is now 84 rules, leaving **167 oversized directories and zero mixed
+nodes**. The audit records remaining service/sibling placement and inference
+issues rather than treating cap compliance as semantic completion.
+
+### Latest checkpoint: parsed PowerShell helper identity
+
+[PowerShell library audit](POWERSHELL-LIBRARY.md) replaces three text matchers
+with parsed assignments and bound encoder/launch relationships. The actual helper
+and a renamed parameter retain recognition; commented and mismatched controls
+do not activate its exception. **1,781/1,781 fixtures pass**. The library
+description/regex failures are resolved; **168 oversized directories** and the
+separate suppression/description debt remain.
+
+### Latest checkpoint: bound HTTP hostname transfer and definition-aware dedup
+
+[Shell hostname-flow audit](SHELL-HOST-FLOW.md) binds identity output through
+hex encoding into the next HTTP hostname, adds single-line pipeline coverage,
+and rejects seven negative flow/shadowing cases. The objective moves from DNS
+to HTTP hostname transport; three unsupported/redundant composites retire.
+Ten ledger entries and 58 consumer decisions include a canonical shared curl
+definition guard. The engine now preserves function definitions when comparing
+cross-type matchers: **14 validator tests pass**. The rebuilt engine passes
+**1,781/1,781 fixtures**. **168 oversized directories** and zero mixed nodes
+remain; strict validation additionally reports separate PowerShell, WASM,
+Silver Sparrow description/regex issues and suppression-count debt.
+
+### Latest checkpoint: literal limit separated from DNS truncation
+
+[DNS limit audit](DNS-LIMIT.md) relocates a numeric assignment and curl URL
+shape, retires a false truncation/exfiltration inference and its one-leg roll-up,
+and updates three consumers. Seven ledger entries and 33 ancestor decisions
+record the change. **1,771/1,771 fixtures pass**; an ordinary service request is
+neutral and a multiline hex-identity hostname transfer remains hostile.
+**168 oversized directories** and zero mixed nodes remain, along with the
+concurrent PowerShell strict-validation failures. The retained `xxd` matcher
+misses single-line pipelines; repair its data relationship before broadening it.
+
+### Latest checkpoint: domain preparation claims separated from transfer
+
+[DNS preparation audit](DNS-PREPARATION.md) relocates three neutral observations,
+retires four unsupported/redundant composites and updates three consumers.
+Seventeen ancestor decisions record the changed support. Two ordinary-settings
+controls lose false hostile verdicts; actual DNS identity egress remains
+unchanged. **1,769/1,769 fixtures pass**. **168 oversized directories** and zero
+mixed nodes remain. Strict validation still also reports the concurrent
+PowerShell description/regex-length and suppression-count failures.
+
+### Latest checkpoint: analyzer-based DNS AST leaf retired
+
+[DNS AST closure](DNS-AST-CLOSURE.md) moves domain-like formatting to string
+construction and retires its unsupported packing/exfiltration profile. Three
+ledger entries and four ancestor decisions record the change. An ordinary
+configuration control loses a false hostile verdict; actual host-identity DNS
+egress retains identical findings. **1,767/1,767 fixtures pass**. The `dns/ast`
+directory and production references are gone; **168 oversized directories**
+and zero mixed nodes remain. Strict validation also reports concurrent
+PowerShell description/regex-length and suppression-count failures, separately
+from this DNS migration.
+
+### Latest checkpoint: DNS construction requires coherent labels
+
+[DNS construction repair](DNS-CONSTRUCTION.md) replaces generic two-of packing
+inference with a bound label/length encoder and corroborating construction
+evidence. Two neutral primitives leave `dns/ast`; its loose manual-label profile
+is retired. Six effective-definition changes and 20 consumer decisions record
+the intentional coverage changes. Three benign controls require correct
+construction and reject arbitrary framing/mismatched lengths. **1,765/1,765
+fixtures pass**; strict validation still reports **168 oversized directories**.
+Two `dns/ast` rules remain, as do co-occurrence-based downstream intent claims.
+
+### Latest checkpoint: binary packing separated from DNS identity
+
+[DNS packing audit](DNS-PACKING.md) relocates six generic packing observations
+to integer framing and binary serialization, with unchanged predicates and four
+exact consumer rewrites. Ten ancestor decisions document the semantic narrowing
+of communications/exfiltration directories. Two controls retain identical
+findings modulo IDs. **1,762/1,762 fixtures pass**; strict validation still reports
+**168 oversized directories**, with zero mixed nodes. The control exposes an
+unchanged DNS-construction composite that accepts generic packing alone; repair
+that evidence boundary next. The remaining five `dns/ast` rules also need audit.
+
+### Latest checkpoint: fabricated DNS construction chain retired
+
+[DNS placeholder audit](DNS-PLACEHOLDERS.md) removes two sentinel-string atoms,
+their tunneling roll-up and a dependent exfiltration composite. Three optional
+consumers and six ancestor references are audited. A sentinel-only negative
+control loses the false verdict; a real encoded-label egress control retains
+its complete findings. **1,762/1,762 fixtures pass**. Strict validation reports
+**168 oversized directories**, with zero mixed nodes; DNS tunneling is 83 rules.
+Overlapping DNS C2 and exfiltration branches remain open for semantic migration,
+including unsupported name-only claims and an analyzer-based `ast` directory.
+
+### Latest checkpoint: native-host fixture evidence corrected
+
+[Native-host fixture review](NATIVE-HOST-FIXTURE.md) retains the retirement of
+the unsupported setup-as-staging detector. The original archive is preserved
+byte-for-byte as a negative control; a new inert remote-tasking/native-execution
+control requires the positive objective. The shared checkout now passes
+**1,760/1,760 fixtures**, resolving the discrepancy below without restoring the
+detector. Strict validation still reports **169 oversized directories**.
+
+### Latest checkpoint: TLS initialization separated from connection
+
+[TLS initialization audit](TLS-INITIALIZATION.md) moves five setup observations
+to one `tls/initialize` leaf and retires a connection roll-up that accepted
+constructors. Nine ledger entries and eight ancestor decisions preserve primitive
+matching and exact consumers. Five control scans agree modulo IDs. **1,759/1,759
+fixtures pass in an isolated copy restoring only the pre-existing native-host
+detector**; the shared suite currently has one native-host fixture failure from
+concurrent detector retirement. That discrepancy is not repaired by reverting
+the unrelated work. Strict validation reports **169 oversized directories**;
+zero mixed nodes. The shared fixture discrepancy and broader migration remain open.
+
 ### Latest checkpoint: unbound API argument-byte claims repaired
 
 [Call-argument byte audit](CALL-ARGUMENT-BYTES.md) reproduces six false OpenSSL
@@ -1453,3 +2635,58 @@ For **every** cohort:
 The outcome should be fewer overlapping concepts and stronger canonical
 observations. Passing a numeric cap alone is not evidence of a defensible
 taxonomy or better model performance.
+
+### Latest checkpoint: notebook identity cues leave the generic profile bucket
+
+Moved the Colab project/version identifier observations and their notebook
+metadata-harvest composite from `objectives/discovery/system/profile/` to
+`objectives/discovery/system/fingerprint/notebook/`. The rules are gated on a
+Colab callback plus a notebook-specific identifier; that subject is narrower
+than generic host profiling and now has an explicit place in the discovery
+tree. Also moved Swift host/system field pairs to `fingerprint/info/`: the
+fields establish profile content, while the existing exfiltration composite
+adds the transfer evidence. Its ATT&CK mapping is now T1082 at the discovery
+atoms and remains T1041 on the exfiltration composite. Finally, moved the Node
+process-snapshot path clue into `objectives/discovery/process/enumerate/` and
+renamed its description to identify it as a path reference rather than claim
+the program creates the file. The relocated matchers retain their criticality
+and scope; the process clue's ATT&CK mapping now reflects process discovery
+rather than network exfiltration. Repository search found and updated the
+Swift exfiltration consumer and all three consumers of the process-snapshot
+clue. The source profile bucket falls
+from 93 to 87 rules from those subject relocations, then to 84 after moving
+Go's `ps`, `netstat`, and `df` command clues into process enumeration, network
+status, and disk-information capability homes. The host-profile command-set
+composite now references those generic capability atoms. Reused shared
+BusyBox-source and apko identity exclusions in the new atoms to avoid
+duplicating inline suppression logic. Strict validation remains at its
+pre-change 60 issues, while over-cap directories fall from 164 to 163; the
+profile leaf is no longer over cap. The larger taxonomy audit and global cap
+migration remain incomplete.
+
+### Latest checkpoint: browser bundleware is separated from browser discovery
+
+Moved the seven-rule AVG/SlimWare bundleware chain from
+`objectives/discovery/host/browser/identity/` to
+`objectives/impact/ui/manipulation/browser/`. The installer clues, homepage
+offer, toolbar identifier, tracking/PDB clues, and hostile bundleware composite
+describe unauthorized browser-setting manipulation; they do not describe
+learning which browsers are present. The browser-discovery sibling keeps its
+browser identity, installed-browser, and data-location rules. Matcher bodies,
+scopes, criticalities, and composite membership are unchanged; repository
+search found no external references. The taxonomy tree now defines the browser
+manipulation leaf. This reduces browser identity from 88 to 81 rules and the
+global over-cap count by one; it does not complete the broader cohort audit.
+
+### Latest checkpoint: VBScript payload execution leaves document delivery
+
+Split `delivery/document/vba-embedded-pe.yaml` by the behavior each rule
+requires. The two VBScript drop-and-run composites moved to
+`dropper/file-exec/spawn/`; the reconstructed hard-coded PE payload and its MZ
+string evidence moved to `dropper/staging/encoded/`, because they establish a
+payload but no activation sink. The descendant leaf is now documented with
+that admission rule. Matchers, effective VBS/Windows scope, confidence,
+criticality, and composite legs are preserved; the only reference update is
+the hidden-run composite's link to the moved drop-and-execute rule. This takes
+`dropper/delivery/document` from 86 to 82 rules without removing detection and
+reduces the global over-cap count by one. The full migration plan remains open.

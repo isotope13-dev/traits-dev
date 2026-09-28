@@ -1,0 +1,222 @@
+defaults:
+  for: [pe, dll]
+  platforms: [windows]
+  attack: T1105
+  mbc: E1105
+
+composite_rules:
+- id: signed-urlmon-download-execute
+  desc: Signed URLMon downloader executes payload
+  for: [pe]
+  crit: suspicious
+  conf: 0.95
+  size_max: 524288
+  all:
+  - id: micro-behaviors/communications/http/client/urlmon::branded-urlmon-downloader
+  - id: micro-behaviors/os/security/auth/verify::winverifytrust-symbol
+  any:
+  - id: micro-behaviors/process/create/exec::shell-execute-ex
+  - id: micro-behaviors/process/create/spawn::create-process-w
+  downgrade:
+    any:
+    - id: well-known/game/steam/
+    - id: metadata/signed/platform/
+    - id: well-known/app/utility/yandex-pack::official-yandex-pack-downloader
+- id: signed-downloader-with-host-recon
+  desc: Signed downloader with session reconnaissance
+  for: [pe]
+  crit: hostile
+  conf: 0.97
+  size_max: 524288
+  unless:
+  - id: well-known/app/utility/yandex-pack::official-yandex-pack-downloader
+  all:
+  - id: micro-behaviors/communications/http/client/urlmon::branded-urlmon-downloader
+  - id: micro-behaviors/os/security/auth/verify::winverifytrust-symbol
+  - id: objectives/discovery/account/lookup::interactive-session-account-enumeration
+  any:
+  - id: micro-behaviors/process/create/exec::shell-execute-ex
+  - id: micro-behaviors/process/create/spawn::create-process-w
+  downgrade:
+    any:
+    - id: metadata/signed/platform/
+- id: ini-configured-urlmon-winexec-dropper
+  desc: INI-configured URLMon downloader executes payload
+  crit: hostile
+  conf: 0.97
+  attack: T1105,T1106
+  size_max: 131072
+  all:
+  - id: micro-behaviors/communications/http/client/urlmon::url-download-to-file
+  - id: micro-behaviors/process/create/exec::winexec
+  - id: micro-behaviors/fs/config/system::read-private-profile-ansi
+  - id: metadata/signed/trust-level::unsigned-missing-signature-record
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: well-known/tool/
+# Farfli/Gh0st-class large DLL droppers keep the same INI+URLMon staging
+# chain as the compact WinExec variant above but grow past the 128 KiB cap
+# once they embed MFC resources and launch through ShellExecuteExA.
+- id: ini-configured-urlmon-shell-execute-dropper
+  desc: INI-configured URLMon downloader launches via ShellExecuteEx
+  crit: hostile
+  conf: 0.97
+  attack: T1105,T1106
+  size_min: 131072
+  all:
+  - id: micro-behaviors/communications/http/client/urlmon::url-download-to-file
+  - id: micro-behaviors/fs/config/system::read-private-profile-ansi
+  - id: micro-behaviors/process/create/system::shell-execute-ex-a
+  - id: metadata/signed/trust-level::unsigned-missing-signature-record
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: well-known/tool/
+- id: pe-wininet-executable-url-launcher
+  desc: PE downloads an executable URL with WinInet and can launch it
+  crit: hostile
+  conf: 0.97
+  attack: T1105,T1106
+  size_max: 524288
+  all:
+  - id: micro-behaviors/communications/http/download/url::executable-url-reference-pe
+  - id: micro-behaviors/communications/http/client/wininet::wininet-http-flow
+  - id: metadata/signed/trust-level::unsigned-missing-signature-record
+  any:
+  - id: micro-behaviors/process/create/exec::shell-execute-a
+  - id: micro-behaviors/process/create/exec::shell-execute
+  - id: micro-behaviors/process/create/exec::winexec
+  needs: 1
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: well-known/app/
+  - id: well-known/tool/
+- id: direct-ip-urlmon-wininet-exec-dropper
+  desc: Direct-IP URLMon WinInet execute dropper
+  crit: hostile
+  conf: 0.97
+  size_max: 524288
+  all:
+  - id: micro-behaviors/communications/ip/literal::external-ipv4-http-url
+  - id: micro-behaviors/communications/http/client/urlmon::url-download-to-file
+  any:
+  - id: micro-behaviors/process/create/spawn::create-process-w
+  - id: micro-behaviors/process/create/spawn::create-process-a
+  - id: micro-behaviors/process/create/shell/spawn::win-shellexecute
+  - id: micro-behaviors/process/create/exec::shell-execute
+  needs: 1
+  unless:
+  - id: metadata/binary/installer/family/
+  - id: metadata/binary/installer/script/
+  - id: metadata/package/versioning/scheme::pe-version-resource
+- id: browser-ua-direct-ip-payload-dropper
+  desc: Browser-impersonating direct-IP payload dropper
+  crit: hostile
+  conf: 0.97
+  size_max: 524288
+  all:
+  - id: direct-ip-urlmon-wininet-exec-dropper
+  - id: objectives/command-and-control/channel/http-beacon::chrome-spoof-user-agent-pe
+  any:
+  - id: objectives/anti-analysis/debugger-detect/check::debugger-api
+  - id: objectives/anti-analysis/timing/evasion::timing-delta-check
+  - id: micro-behaviors/fs/delete/file/library::deletefile-w
+  needs: 1
+  unless:
+  - id: metadata/binary/installer/family/
+  - id: metadata/binary/installer/script/
+  - id: metadata/package/versioning/scheme::pe-version-resource
+  # URLDownloadToFile + memory execution (urlmon-based dropper)
+- id: urlmon-embedded-pe-exec-dropper
+  desc: URLMon embedded payload execution dropper
+  crit: hostile
+  conf: 0.96
+  size_max: 524288
+  all:
+  - id: micro-behaviors/communications/http/client/urlmon::url-download-to-file
+  - id: micro-behaviors/process/create/launch::create-process-api-name
+  - id: metadata/binary/layout/embedded::pe-embedded
+  - id: metadata/binary/symbols/imports::pe-imports-max-80
+  any:
+  - id: objectives/anti-static/obfuscation/imports::manual-getprocaddress
+  - id: micro-behaviors/communications/http/client/wininet::internet-open
+  - id: micro-behaviors/process/sync/mutex::open-mutex
+  needs: 2
+  unless:
+  - id: metadata/binary/installer/family/
+  - id: metadata/binary/installer/script/
+  - id: metadata/binary/framework/
+- id: urlmon-shell-execute-dropper
+  desc: URLMon download and shell execute dropper
+  crit: suspicious
+  conf: 0.93
+  size_max: 524288
+  all:
+  - id: micro-behaviors/communications/http/client/urlmon::url-download-to-file
+  - id: micro-behaviors/process/create/system::shell-execute-ex-a
+  - id: metadata/binary/symbols/imports::pe-imports-max-80
+  any:
+  - id: micro-behaviors/communications/http/client/wininet::internet-open
+  - id: micro-behaviors/communications/http/client/wininet::wininet-dll-name-reference
+  - id: micro-behaviors/mem/protect/modify::virtual-protect
+  needs: 2
+  unless:
+  - id: metadata/package/versioning/scheme::pe-version-resource
+  - id: metadata/binary/installer/family/
+- id: urlmon-shell-execute-stager
+  desc: URLMon download then ShellExecute stager
+  crit: suspicious
+  conf: 0.94
+  size_max: 524288
+  all:
+  - id: micro-behaviors/communications/http/client/urlmon::url-download-to-file
+  - id: micro-behaviors/process/create/shell/spawn::win-shellexecute
+  any:
+  - id: micro-behaviors/time/timing/delay::sleep-dup
+  - id: micro-behaviors/os/privilege/manifest::require-administrator
+  - id: micro-behaviors/process/enumerate/snapshot::toolhelp-process-enumeration
+  - id: metadata/hardening/memory::wx-section
+  needs: 2
+  unless:
+  - id: metadata/package/versioning/scheme::pe-version-resource
+  - id: metadata/binary/installer/family/
+  - id: metadata/binary/installer/script/
+- id: hostile-urlmon-sandbox-gated-stager
+  desc: Sandbox-gated URLMon payload stager
+  crit: hostile
+  conf: 0.96
+  size_max: 524288
+  all:
+  - id: urlmon-shell-execute-stager
+  - id: micro-behaviors/process/enumerate/snapshot::toolhelp-process-enumeration
+  - id: micro-behaviors/os/privilege/manifest::require-administrator
+  - id: metadata/signed/trust-level::unsigned
+  any:
+  - id: metadata/hardening/memory::wx-section
+  - id: micro-behaviors/time/timing/delay::sleep-dup
+  unless:
+  - id: metadata/package/versioning/scheme::pe-version-resource
+  - id: metadata/binary/installer/family/
+  - id: metadata/binary/installer/script/
+- id: packed-urlmon-shell-execute-dropper
+  desc: Packed URLMon shell-execute payload dropper
+  crit: hostile
+  conf: 0.95
+  size_max: 524288
+  all:
+  - id: micro-behaviors/communications/http/client/urlmon::url-download-to-file
+  - id: micro-behaviors/process/create/system::shell-execute-ex-a
+  - id: metadata/binary/section/label::upx-section-pair
+  any:
+  - id: micro-behaviors/communications/http/client/wininet::internet-open
+  - id: micro-behaviors/mem/protect/modify::virtual-protect
+  - id: micro-behaviors/os/module/load::get-proc-address-import
+  - id: micro-behaviors/dylib/load/runtime::load-library-a
+  - id: objectives/evasion/self-delete/file/script::slash-c-del-fragment
+  - id: objectives/anti-static/obfuscation/string/delimiter::repeated-xhash-overlay-delimiter
+  needs: 2
+  unless:
+  - id: metadata/package/versioning/scheme::pe-version-resource
+  - id: metadata/binary/installer/family/

@@ -1,15 +1,18 @@
 # cleave Taxonomy
 
-The primary purpose is a precise, defensible catalog of malware behaviors and
-characteristics, aspiring to Carl Linnaeus's classification rigor: each observation
-has one reasonable home, each child refines its parent, and similar categories
-have documented boundaries. The catalog is
-informed by [MBC (Malware Behavior Catalog)](https://github.com/MBCProject/mbc-markdown).
+The taxonomy's primary purpose is a **precise, defensible catalog of malware
+behaviors and characteristics**, aspiring to Carl Linnaeus's classification rigor:
+each observation has one reasonable home, each child refines its parent, and
+similar categories have documented boundaries. The catalog is informed by
+[MBC (Malware Behavior Catalog)](https://github.com/MBCProject/mbc-markdown).
 
 ## Purpose and design commitments
 
-Neutral capabilities and properties belong in the catalog too; their presence
-alone does not imply malice.
+Behaviors describe capabilities, mechanisms, and supported attacker objectives;
+characteristics describe properties such as structure, provenance, and identity.
+Both are first-class subjects. A characteristic need not be recast as a technique
+to earn a place. Neutral capabilities and properties belong in the catalog too;
+their presence alone does not imply malice.
 The Linnaean analogy is a standard of classification rigor, not a requirement for
 fixed ranks, uniform depth, or a single classification for an entire sample.
 ML features are a downstream use of this classification. Taxonomic meaning takes
@@ -20,6 +23,17 @@ matcher and the directory contracts should independently choose the same home
 without knowing the sample, implementation language, or consuming composite.
 This catalogs observations, not mutually exclusive classes of specimens: one
 sample can exhibit many behaviors and characteristics, each classified separately.
+The catalog describes what a program can probably do, using the available
+evidence. Runtime execution is not an admission requirement. Distinctive
+strings, API references, paths, constants, and embedded implementations can all
+support a capability inference. Classify the probable capability at the
+specificity the evidence supports; express the evidence and uncertainty in
+the rule's description, matcher, scope, and confidence.
+The directory names the inferred capability; the rule description names the
+observed evidence. For example, an interface-name reference can indicate
+probable network-interface interaction without identifying whether the program
+enumerates, configures, or monitors interfaces. Keep that rule in the interface
+capability leaf until its evidence supports a more specific operation.
 
 - **One defensible home per observation.** Classify what the matcher establishes.
   Each child narrows its parent; siblings answer the same classification question.
@@ -35,11 +49,17 @@ sample can exhibit many behaviors and characteristics, each classified separatel
   and conditions before merging; preserve distinct observations when those differ.
 - **Classify the behavior or characteristic, not its implementation.** Language,
   file type, and library backend normally belong in filenames and rule scope;
-  equivalent observations share a
-  directory across source and compiled forms. Embedded library evidence follows
+  equivalent observations share a directory across source and compiled forms.
+  Embedded library evidence follows
   its supported technique; independent artifact identity belongs in `well-known/`.
   Distinguish a program's technique from the analyzer's evidence: manipulating an
   AST is a technique; using an AST matcher to recognize a socket call is not.
+  Keep hierarchy labels platform-, language-, and filetype-neutral when the
+  behavior is shared. A platform name is appropriate when it is part of the
+  technique itself (for example, `systemd` persistence); it is not a generic
+  implementation partition. Linux namespace operations therefore belong in
+  the `namespace` technique leaf with Linux scope on the applicable rules, not
+  beneath a `namespace/linux/` directory.
 - **Keep claims within the evidence.** A reference, dependency, or embedded
   implementation can support a useful characteristic or capability without
   proving execution, data flow, or malicious intent. Names, descriptions, and
@@ -60,7 +80,7 @@ below; counts are constraints and review signals, not definitions of behaviors.
 
 | Tier | Purpose | Criticality Range | MBC Equivalent |
 |------|---------|-------------------|----------------|
-| **Capabilities** (`micro-behaviors/`) | Observable mechanics — what code *can do* | component → baseline → notable → suspicious | [Micro-objectives](https://github.com/MBCProject/mbc-markdown/tree/master/micro-behaviors) |
+| **Capabilities** (`micro-behaviors/`) | Probable capabilities inferred from evidence — what code *can probably do* | component → baseline → notable → suspicious | [Micro-objectives](https://github.com/MBCProject/mbc-markdown/tree/master/micro-behaviors) |
 | **Objectives** (`objectives/`) | Attacker goals — why code *likely wants* to do something | component → baseline → notable → suspicious → hostile | [Objectives](https://github.com/MBCProject/mbc-markdown#malware-objective-descriptions) |
 | **Known Entities** (`well-known/`) | Specific well-known malware, unwanted software, and tool/app/library signatures | component → baseline → notable → suspicious → hostile | [Corpus](https://github.com/MBCProject/mbc-markdown/tree/master/xample-malware) |
 | **Metadata** (`metadata/`) | Neutral file-structure properties — what a file *is* | component → baseline → notable → suspicious (rare) | — |
@@ -188,7 +208,12 @@ The distinction is container versus member, not file extension. A member inside 
 
 ### Directory Layout Convention
 
-All tiers follow: `TIER/CATEGORY/BEHAVIOR/METHOD/platform.yaml`
+Paths classify observations from general to specific; they do not require fixed
+ranks or uniform depth. Behavioral paths commonly follow
+`TIER/CATEGORY/BEHAVIOR/METHOD/platform.yaml`; characteristic and identity paths
+instead refine the property or entity being identified. Omit levels that add no
+meaning. Implementation-specific filenames do not create taxonomy categories.
+Regardless of path shape, rules belong strictly in leaves.
 
 - **`objectives/`**: `objectives/OBJECTIVE/BEHAVIOR/METHOD/` with technique-based directories and per-platform or per-ecosystem YAML files. Add sub-method directories when a method has many variants (e.g., string obfuscation techniques). Avoid platform, language, ecosystem, file-type, and family names as directories unless they are the technique being detected.
 - **`micro-behaviors/`**: `micro-behaviors/CATEGORY/BEHAVIOR/METHOD/` (e.g., `crypto/symmetric/aes/ruby.yaml`, not `crypto/symmetric/aes.yaml`). If no specific method applies, group by syscall, protocol, or logical grouping. Composite traits may reference directory names to match related rules.
@@ -349,7 +374,7 @@ Specific malware, unwanted software, dual-use product, app, library, game, or to
 Attacker intent inferred from capability combinations?
   → objectives/
 
-Single observable mechanic, no intent inference?
+Evidence of a probable capability, without an attacker-intent claim?
   → micro-behaviors/
      Rarely legitimate?     → suspicious
      Useful in differential analysis? → notable
@@ -363,6 +388,7 @@ Neutral file property (not behavioral)?
 
 The matcher type does not decide tier placement. A `type: text`, `string_literal`, `raw`, or `encoded` matcher still belongs where the thing it detects belongs:
 
+- **Classify the inferred capability, not the certainty or evidence format.** A distinctive interface name such as `veth` or `docker0` supports probable network-interface interaction and belongs in `micro-behaviors/network/interface/`, alongside relevant API references, paths, and calls. This is a capability clue, not proof of runtime activity or attacker intent. Describe a reference as a reference; require operation-specific evidence to label it enumeration or configuration. Reconnaissance intent belongs in `objectives/discovery/network/` only when combined evidence supports that inference. String evidence does not need a separate metadata home, `reference/` layer, or `probable/` branch. Ordinary ambiguous words still need context before they support a useful capability inference.
 - Terms go where the represented concept belongs, not under a text bucket. A credential word belongs in `objectives/credential-access/theft/keywords/`; HTTP verbs belong in `micro-behaviors/communications/http/keywords/`; help and usage strings belong in `micro-behaviors/ui/help/` because they represent the ability to expose a user-facing help surface.
 - Terms that represent attacker intent or impact go under `objectives/`. Infection terms such as "infected", "virus", or ELF infection context belong with `objectives/impact/infect/`; hostile traits stay in `objectives/` or `well-known/`.
 - Specific product, malware-family, tool, library, app, or game identities go under `well-known/`, not a generic keyword bucket. Embedded implementation evidence follows the [technique-first contract](#implementations-and-library-fingerprints); a dependency declaration remains metadata.
@@ -431,6 +457,7 @@ When a behavior could serve multiple objectives, place the single trait where ev
 |----------|-----------|-----------|
 | Process injection, no further context | `evasion/process/injection/` | Stealth is the most common use; privesc/lateral composites reference it |
 | Staged payload acquisition plus activation | `command-and-control/dropper/` | Repository convention; choose the required activation mechanism from the directory guide. This does not by itself establish an ongoing C2 channel. |
+| Environment-variable access vs path reference | A call that reads an environment variable belongs in `micro-behaviors/os/env/read/`, even when the selected variable names a path such as TEMP. A literal or constructed temporary path without an environment-read operation belongs in `micro-behaviors/fs/path/temp/`. |
 | Keylogging capability detected | `collection/keylog/` | General capture; credential-access composites reference it when combined with specific store targeting |
 | Rootkit hides files/processes | `evasion/kernel-hide/` | Hides from users/admins, not from sandboxes |
 | Masquerades as system binary | `evasion/masquerade/` | Deceives users/admins, not analysis tools |
@@ -506,6 +533,7 @@ Keep language and backend in the filename, trait name and description.
 | What the matcher establishes | Placement and description |
 |---|---|
 | Embedded AES tables or an AES-specific implementation signature | `micro-behaviors/crypto/symmetric/aes`, refined by the actual mechanism where needed; describe “contains an AES implementation,” not “encrypts files.” |
+| A native crypto-provider reference without a supported specific algorithm or payload purpose | `micro-behaviors/crypto/native/`; describe the API reference or co-occurrence as evidence of probable crypto capability, not as proof that a fallback ran, a payload was encrypted, or a named algorithm was used. A declared dependency alone is metadata; a fingerprint of the analyzed library itself is `well-known/lib/`. |
 | Embedded zlib inflate implementation or its specific API | `micro-behaviors/data/decompress/zlib`; do not claim compression or execution when only decompression capability is supported. |
 | A library-specific HTTP request or string operation | The corresponding HTTP/string operation, alongside other implementations of that operation. |
 | A fingerprint supporting a known capability group but no narrower operation | That capability group's documented observation, if a valid home exists. Do not invent an algorithm or create `library`, `wrapper`, or `implementation` as a remainder bucket. Factor broad roll-ups into their supported canonical observations. |
@@ -551,13 +579,14 @@ does not override the operation its matcher actually observes.
 | Level-1 directory | Admission and child question | Boundary |
 |---|---|---|
 | `browser-extension` | Extension-host operations that have no technology-neutral equivalent: action, lifecycle, management, tabs. Children identify that host surface. | Storage, messaging, HTTP, scheduling, and injection use their capability homes. Manifest authority uses `metadata/permission`. Engine-emitted host/permission IDs are covered below. |
-| `communications` | Exchanging data, addressing peers, or manipulating a communication protocol. Level 2 names the protocol or transport facility; level 3 names its operation/surface. | Interface configuration is `os/network`; passive file format facts are metadata; attacker control or theft needs an objective claim. |
+| `communications` | Exchanging data, addressing peers, or manipulating a communication protocol. Level 2 names the protocol or transport facility; level 3 names its operation/surface. | Local interface inspection or configuration is `network/interface`; passive file format facts are metadata; attacker control or theft needs an objective claim. |
 | `crypto` | Cryptographic primitives, keys, derivation, hashes, and certificate operations. Children refine primitive family then algorithm/operation. | Encoding is `data/encode` or `decode`; randomness is `os/random`; certificate contents are `metadata/signed`; named-library identity is `well-known/lib`. |
 | `data` | Transforming, interpreting, organizing, or operating on data. Children identify an operation and its algorithm/format/mechanism. | Mere data presence is metadata. Source location, language, or intended consumer is not a second transform. |
 | `dylib` | Native shared-library loading, enumeration and loader lookup. Children identify the loader operation. | Language module loading is `os/module`; manual address resolution is `os/api-resolution`; a named API goes with its function. `dylib/library` is a legacy mixture: dependency facts use metadata, embedded capabilities use their techniques, independent library identities use well-known/lib. |
 | `fs` | Filesystem objects, paths and operations. Children identify the resource or operation, then its mechanism or resource subtype. | File contents are classified by what they establish; a sensitive path literal does not prove theft. Raw hardware interaction is `hardware`. |
 | `hardware` | Direct device access, input/output, capture, or control. Children name the device family then operation. | Querying host properties is `os/sysinfo`; manipulating windows/widgets is `ui`; ongoing surveillance needs collection evidence. |
 | `mem` | Address-space allocation, access, protection, mapping and management. Children name the memory operation then its mechanism. | Cross-process execution transfer is not established by allocation/write alone. Compression remains `data` even when performed in memory. |
+| `network` | Local network interfaces and their identity, address, and state. Children name the network resource or operation. | Protocol exchange and peer communication belong in `communications`; a probable interface capability clue alone does not establish discovery intent, which belongs in `objectives/discovery/network/`. |
 | `os` | Operating-system facilities with no more specific resource home: registry, services, accounts, authority, environment, kernel, packages. Children name the facility then operation. | File/process/network operations retain their specific homes even when accessed through an OS API. |
 | `process` | Execution contexts, lifecycle, control, identity, arguments and I/O. Children name the operation then its mechanism. | Permissions use `os/privilege`; runtime identity is `well-known/lib`; durable activation is persistence. |
 | `time` | Reading time, waiting, measuring elapsed time, or arranging callbacks. Children distinguish query, sleep, timing and scheduling. | OS task/service registration is `os/autorun` or `os/service`; an analysis-evasion gate needs an objective composite. |
@@ -575,14 +604,16 @@ not acquire a second home merely because it uses a socket underneath.
 | `http/client`, `http/request`, verb leaves | Method-specific request → `http/{get,post,put,patch,delete,head,options}`; method-unspecified request/client use → `http/client`. `request` must not duplicate the latter. |
 | `http/upload` vs `http/post` | A file/attachment transfer mechanism → `upload`; POST without that evidence → `post`. POST alone is not file upload or exfiltration. |
 | `http/download` vs `http/get` | Retrieving a response as an artifact/file → `download`; GET alone → `get`. A downloader requires neither execution nor attacker control. |
+| `http/download/fallback` | A conditional retry or ordered alternate downloader after failure/unavailability belongs in `download/fallback`. A multi-client marker without a matched order supports fallback capability, not proof a retry occurred. Neither fallback nor generic download establishes payload activation; a dropper must add staging-to-sink evidence. |
 | `http/header`, `authorization-header`, `body`, `query` | Classify the particular field's meaning first: authentication → its auth subject; User-Agent → `user-agent`; cookies → `cookies`; otherwise use the HTTP surface. A raw header token does not prove a request or a login. |
 | `http/oauth`, `device-code`, `token-auth`, `jwt`, `basic-auth`, `auth` | OAuth grant acquisition/refresh, including device authorization → `oauth`; presenting a bearer token → `token-auth`; JWT structure/processing → `jwt`; Basic credentials → `basic-auth`; `auth` only when the mechanism is not established. Mechanism-specific leaves take precedence. |
 | `http/cookies`, `cookie-store`, `cookie-name` | HTTP cookie operations and protocol fields → `cookies`. A cookie-jar path → `fs/path/cookie`; credential/session extraction requires its own objective. Consolidate competing spellings by this distinction. |
 | `http/services` vs a protocol operation | A named remote service endpoint without an operation → `services`; an operation tied to that endpoint → the operation's directory. A vendor CLI invocation is not automatically HTTP. |
 | `communications/url` vs `http/url` or `http/query` | Generic URL construction/parsing/reference → `url/{construction,parse,reference}`; HTTP request parameter handling → `http/query`. Endpoint identity follows the service/resource it identifies. |
-| `communications/ip` vs `os/network` | Address syntax, literal, construction, or parsing → `ip`; local interface/route/address configuration or queries → `os/network`. Active remote probing is not merely address parsing. |
+| `communications/ip` vs `network/interface` vs `objectives/discovery/network` | Address syntax, literals, construction, or parsing → `communications/ip`. Local interface identity/address/state evidence, including a distinctive name, API reference, or query command → `micro-behaviors/network/interface`; this suggests capability and does not alone establish hostile reconnaissance. Active remote probing or a multi-signal network survey that supports an intent inference → `objectives/discovery/network`. |
 | `dns/lookup`, `dns/txt`, `resolver`, `server` | Generic name-resolution APIs and operations without record-type-specific behavior → `lookup`; querying, parsing, or handling TXT records → `txt`; configure/select resolver infrastructure → `resolver`; receive/respond to DNS queries → `server`. TXT is already a lookup, so do not repeat `lookup` in the feature name. A DNS label/domain literal alone does not prove any of these operations. |
 | `communications/ipc` vs network messaging | Local process/host bridges, pipes, shared-memory messaging and native-host channels → `ipc`; remote messaging protocols → `messaging` or the named protocol. IRC is a network protocol, not IPC merely because it transmits messages. |
+| Native-host setup vs remote staging | Native messaging permission, an install callback, local storage writes and an install message remain separate neutral observations. A stored URL or comment about a helper does not prove a request, registration write or execution. Remote-command/staging objectives require the additional tasking, acquisition or execution relationship; missing helper code must not be supplied by inference. |
 | `communications/mcp` vs agent configuration | MCP negotiation, tool/resource listing and invocation → `mcp`; a config field naming an MCP server is metadata. A tool exposing a shell references canonical process traits. |
 | TLS under HTTP vs socket TLS | Generic TLS handshake, validation and encrypted transport belong with socket TLS (`socket/ssl` currently); an explicitly HTTP-only integration may refine HTTP. Duplicate TLS APIs do not belong in both `http/ssl` and `http/tls`. Certificate facts use metadata; certificate operations use crypto. |
 | `proxy/{socks,tunnel,relay,reverse}` vs C2 | Required SOCKS protocol → `socks`; establishing an encapsulated channel → `tunnel`; forwarding over an existing channel → `relay`. Direction alone does not establish attacker control; combine it with the required mechanism, rather than duplicating a relay under `reverse`. |
@@ -638,14 +669,38 @@ OS and language names are not alternative operation leaves.
 | Account properties vs accounting vocabulary | `metadata/file/string/account` owns user/account identifiers and profile fields. `metadata/file/string/accounting` owns literal vocabulary for login-session and process-usage records, including accounting headers/configuration; it does not imply header inclusion, portability or file operations. Concrete accounting log paths belong in `micro-behaviors/fs/path/log/accounting`; destruction intent belongs in `objectives/evasion/indicator-removal/accounting`. A shared spelling stem does not make these subjects synonymous. |
 | TLS operations vs vocabulary and generic I/O | Bare security labels such as `domain_intel` belong in `metadata/file/string/security`; they establish neither TLS use nor benign scanner identity. Generic NSPR read/write/send/receive references belong in `process/io/stream` when the matcher cannot distinguish backing or encryption. TLS classification requires TLS-specific evidence; context creation alone does not establish a connection, and warning suppression alone does not establish disabled verification. |
 | TLS verification vs HTTP and sockets | `communications/tls/verify/disable` owns explicit peer-certificate/hostname verification-disable APIs and settings, including client-library forms. Ordinary context creation, custom trust callbacks, warning suppression and a selectable insecure-mode option do not belong there. HTTP requests own HTTP mechanics; socket creation/connect/accept own transport endpoints. An API backend does not give a TLS observation a second HTTP/socket home. The retired `http/ssl` leaf must not be recreated; remaining legacy TLS observations are audited by operation before moving. |
+| TLS initialization vs connection and verification | `communications/tls/initialize` owns creating configuration or per-connection state and selecting the initial client method. Preserve object distinctions in trait names; SSL_new state is not TLS session resumption. Setup does not establish a connection, negotiate a handshake, or disable verification. Those operations need their own evidence; do not use an OR of constructors as a connection claim. |
 | Diagnostic warnings vs TLS verification | Warning emission/filtering/suppression belongs in `os/telemetry/logging/warning`, even when the warning concerns an insecure request. A warning filter does not disable certificate or hostname checks and does not establish HTTP activity. Consumers requiring suppression must reference its exact atoms because the warning leaf also admits emission. |
 | Argument-byte characteristics vs resolved API operations | Encoded register-load/call shapes without a bound callee belong in `metadata/binary/code/arguments`, with architecture in scope/filenames. Name the observed bytes, not inferred API semantics. An import elsewhere does not resolve the matched call; an operation-specific claim requires that target and its argument evidence. The metadata leaf does not guarantee instruction alignment or execution. |
+| Binary packing vs DNS construction | Generic format-driven record serialization belongs in `data/serialize/binary`; known integer widths, byte order and length fields belong in `data/buffer/integer-codec`. A `struct.pack` format such as `!HHIH` or `!HBB` specifies a layout, not a DNS record identity. DNS consumers reference the canonical packing observation and supply the protocol evidence. Using an AST or symbol matcher does not create an `ast` technique. |
+| Length framing and ASCII encoding vs DNS labels | A length expression belongs with integer framing; ASCII conversion belongs in `data/encode/charset`. Their co-occurrence does not establish DNS or exfiltration. A coherent dotted-label encoder must bind each label to its own length and encoded bytes. DNS wire construction remains a neutral capability; a transfer objective needs additional evidence. |
+| Domain-like formatting vs DNS transfer | Formatting dotted fields and a domain-like suffix belongs in `data/string/concat`; it does not prove resolution or transmission. A nearby binary-packing operation does not supply that missing relationship. `objectives/exfiltration/dns/ast` is retired: matcher backends do not define behavioral categories. Actual AST manipulation belongs with its operation. |
+| Domain variable names vs channel behavior | Assignment text using names such as `beacon_domain` belongs in `metadata/file/string/domain`; the author's vocabulary does not prove a beacon or transfer. HTTP URL construction belongs in `communications/http/url/build`. Independent hex conversion and a templated hostname do not establish that the encoded value is placed in the hostname; an objective must supply that relationship and its intent evidence. |
+| Literal limits vs truncation | `metadata/file/string/limit` owns text naming a numeric bound, such as `max_length=63`, without evidence that the bound is applied. It does not own measured file/string sizes or actual truncation operations. A DNS-sized constant plus a variable-shaped curl URL does not establish label truncation or exfiltration. URL structure belongs in `communications/http/url/build`; an actual truncation belongs with the string operation. |
+| Generic options vs service operations | `metadata/file/string/traversal` owns recursion/traversal option vocabulary without an operation; `metadata/file/string/limit` owns literal per-page counts without evidence of pagination. Neither `recursive=true` nor `per_page=20` identifies GitHub. A bare `/graphql` literal belongs in `communications/http/graphql`, independent of provider. Service-specific composites must add the service evidence explicitly; generic options must not inherit service-wide suppression or intent claims. |
+| Service endpoint vs mutation | A shared collection path such as GitHub `/user/repos` establishes an endpoint reference, not listing or creation. Creation requires an explicit creation method/route or supported API call. A version header plus `auto_init` does not establish a request; unrelated method and path arguments to an unresolved helper do not establish its destination. Keep endpoint observations available without promoting them to mutations through an OR composite. |
+| Contents endpoint vs write destination | A GitHub `/contents/` URL can support a read. A contents-write claim needs a write-specific API/route or a write call bound to that destination. A PUT to another host near a GitHub URL is not a GitHub write. Repository creation plus a contents URL does not establish publication, and even two supported operations do not prove their order, shared repository, or payload flow. |
+| Value origin vs selected option | A literal contributing to an options object's history does not necessarily remain its selected value. Claims about a request method must account for duplicate keys, spreads, computed keys and intervening mutation. Value-origin evidence is not a substitute for that proof; unresolved options remain unresolved rather than inheriting the strongest historical value. |
+| HTTP hostname transport vs DNS exfiltration | A bound value supplied in an HTTP request's hostname belongs in `micro-behaviors/communications/http/request/url`; the corresponding transfer objective belongs in `objectives/exfiltration/http/hostname`. Query parameters and bodies have their own HTTP channel categories. A hostname in a curl URL does not prove a DNS query occurred. Direct DNS label/query transport keeps its DNS home. Independent hex conversion and URL text are insufficient; bind the produced value to the requested hostname. |
+| Function definitions vs invocation | A function defined with a familiar utility name is a naming/definition observation (`data/source/function/names`), not proof that the utility runs. A local `curl` definition can invalidate assumptions about a curl invocation. Reuse a shared definition guard where appropriate; duplicate-matcher checks must preserve the distinction between defining, calling and merely mentioning the same name. |
+| Socket paths vs IPC and container operations | `micro-behaviors/fs/path/socket` owns filesystem socket endpoint references, including Docker daemon paths and encoded forms. It does not establish opening, connecting, listening, or controlling a container. Those operations require their own IPC/container evidence. Socket files are not device-node paths; protocol/address-family constants are not filesystem paths. A known Docker endpoint can still corroborate a container-reference claim, but cannot alone establish trusted container tooling for a suppression. |
+| Port literals vs service and security properties | `metadata/file/string/network` owns port references and service vocabulary without network operations. Port 2375 does not establish Docker or unauthenticated access; port 2376 does not establish TLS. A literal pair remains one configuration observation, not a scan. Service-specific words may corroborate service context, while connection, protocol, authentication and probing claims each need their own evidence. |
+| Privilege vocabulary vs container configuration | Generic `Privileged`/`privileged` fields, assignments and `--privileged` text belong in `metadata/file/string/security`. They do not identify Docker, Kubernetes or an SDK. Container-specific findings add the relevant configuration structure or command context. A Docker `HostConfig` privilege setting is configuration evidence, not proof of launch; an enabled CLI option must not accept `--privileged=false` or a longer option name. |
 | Compiler ABI, library identity and exception flow | Compiler/runtime symbol prefixes remain in `metadata/binary/symbols/compiler` even when referenced by library or execution rules. They alone establish neither libc++/libstdc++ identity nor exception-based control flow. ABI plus a system-API reference and size/string-count filters belongs with `process/create/api-system`; exception obfuscation requires evidence of exception-based control transfer. Place a shared string-count predicate in `metadata/file/string/count`, retaining nonredundant size, entropy and scope gates in contextual composites. Do not duplicate a neutral count under a malware family. |
 | Dot joins vs DNS labels or exfiltration | A dot join near named fields establishes string composition and co-occurrence → `data/string/concat`; it does not establish that those field values enter the joined string. DNS placement requires a DNS operation or protocol-specific construction. Exfiltration requires evidence of the transmitted data and destination; broad objective references must not inherit a neutral string helper as exfiltration evidence. |
 | Metadata vocabulary vs section-specific binary facts | Whole-file vocabulary belongs with its meaning, independent of which binary section contains it. Section filters are required when the claim depends on that location; do not invent a section requirement to permit relocation. Missing filters on binary-only metadata produce a review advisory. Existing binary-fingerprint and hex-condition requirements remain separate. |
 | `crypto/library/blockchain` vs transaction and protocol operations | Cipher/signature/hash primitives → crypto; constructing, signing, submitting or querying a financial ledger transaction → `data/transaction/{construct,sign,submit,query}`. Generic RPC/HTTP remains communications; provider endpoint identity is not a transaction. |
 | `crypto/symmetric/xor` vs `data/{encode,decode}/xor` | A required keyed cipher construction → crypto; representation scrambling/descrambling → data. A bare XOR instruction cannot establish either construction. |
 | `fs/path/<resource>` vs all file operations | Merely naming a location → path by resource kind. Required read/write/copy/etc. → that operation, referencing the path atom where useful. A path match never inherits the consuming composite's action. |
+| Service-account resources vs container runtime | A defined bearer-token path belongs in `fs/path/token`; a deployment namespace file belongs in `fs/path/config/environment`; a public CA certificate location belongs in `fs/path/certificate`. The latter two are not credentials merely because their parent is named `secrets`. A mount-directory prefix identifies neither the child resource nor file access. Classify each matcher by the resource it actually identifies; a cross-resource OR must not claim token theft or reading. Kubernetes API/client evidence remains separate from filesystem references. The retired runtime `serviceaccount-files` aggregate must not be recreated. |
+| Certificate paths vs public keys and signing metadata | `fs/path/certificate` admits locations identifying public certificates or trust bundles. SSH authorization/host-trust key files remain `fs/path/public-key`; private keys remain `fs/path/private-key`. An ambiguous `.pem` suffix alone identifies neither certificate nor private key. Certificate loading/verification is an operation; the analyzed artifact's signing chain is `metadata/signed/certificate`. A referenced CA file does not identify that artifact's signer. |
+| Generic secret directories vs specific credential resources | A conventional secret-store directory such as `/run/secrets` belongs in `fs/path/credential` when the matcher identifies no particular child resource. It does not establish a bearer token, private key, configuration file, or the actual contents of the mount. A defined child resource uses its specific category, including public certificates and deployment configuration. Generic directory and child matches may overlap; they are not independent credential categories. Container-runtime identity and filesystem access require additional evidence. |
+| Kubernetes directory prefixes vs package imports | `/var/run/secrets/kubernetes` prefix text identifies a conventional secret-store location → `fs/path/credential`; it does not require a service-account child or identify a client library. Package-import evidence can identify a Kubernetes dependency, but does not prove invocation or runtime execution. Keep path and import observations separate even when both are useful workload context. Prefix matchers must be described as prefixes, not exact directories or individual files. |
+| Kubernetes API/configuration references vs Linux namespaces | Kubernetes API route text belongs in `communications/http/services/kubernetes`; it does not establish an HTTP request or identify a client library. The `KUBECONFIG` name belongs in `os/env/config`, without implying a value read or credential contents. Linux namespace flags, joining and creation belong in `os/container/namespace`; Kubernetes resource scoping does not make its API paths Linux namespace operations. Do not recreate the retired `kubernetes-comp` identity OR. |
+| Environment configuration names vs access | A variable name or configuration marker is a reference, not a read. Consumers claiming environment access must require `os/env/read` or a more specific access observation, not the entire `os/env` ancestor. Even access plus nearby secret names does not prove that all named values were read or transmitted. |
+| Token files vs token-issuance APIs | A service-account filesystem token location → `fs/path/token`; a TokenRequest API route is protocol/API evidence, not a token-file path. Resource names shared between an API and a file do not justify merging their categories. Standard and variable-mount token paths share the same filesystem leaf; their overlapping matches are not independent resources for cardinality claims. |
+| Resource paths vs contextual weighting | A rule in `fs/path/<resource>` must establish a location of that resource. Tool identities, runtime context and benign-use weighting do not qualify, even as `component` composites: parent-directory consumers would inherit them as path evidence. Keep a single consumer's context directly in its `unless`/`downgrade` clause; reusable benign suppressors follow the exception contract. `needs` over directory references can count multiple matching rules in one directory, not distinct categories or resources. For a category-pair claim, require both category predicates explicitly. Cross-category pairs belong in `fs/path/credential`; ordinary app-data paths do not establish credentials. |
+| Filename/member text vs file reads | Text such as `/ "token").read_text` belongs in `metadata/file/string/file`: it does not require a call, a resolved path, or bearer-token contents. A filename alone cannot identify Kubernetes or another service. Structured read operations belong in `fs/read`; read evidence bound to a selected target refines `fs/read/file/target`. Neither a method reference nor a comment should acquire operation semantics through a directory roll-up. |
 | `fs/path/{password-store,cookie,private-key,public-key,token,secret-config,config}` | Choose the identified resource in that order of specificity, not its application owner: saved-login DB, cookie jar, private key, authorization/host-trust key, token file, secret-bearing config, then ordinary config. A file's defined role, not a generic credential word, determines the choice. |
 | `fs/path/{personal,app-data,cache,font,library,log,metadata-store,system,temp}` | Classify the kind of resource named by the path, not the spelling of an ancestor directory. Browser history is personal; a profile or application-support/group-container path is app-data; cache is cache; an installed font path is font; `/lib` and `.dylib` references are shared-library paths; `/Library/Logs` is log; `.DS_Store` is a directory-metadata store; OSRecovery is a system path; temporary locations are temp. Thus `/Library/Caches` goes to cache and `/Library/OSRecovery` to system even though both contain the segment `Library`. |
 | `fs/path` vs `fs/path-ops` | A path identifies a resource → `path/<resource>`; code joins, normalizes, parses or matches pathnames → `path-ops/{join,normalize,parse,match}`. Migrate `path/{construct,basename,check}` by operation; resource references stay in path. `Path.Combine` is join; `Path.GetDirectoryName` is parse/extract-parent. A bare method-name token is only an API fingerprint, not proof the method was called or that the surrounding behavior is malicious. Traversing the filesystem is directory/traverse, not pathname manipulation. |
@@ -725,6 +780,23 @@ reported format belongs in `metadata/file/format/structured`. Parser-error
 counts belong in `metadata/file/archive` and do not alone establish fatal
 corruption or tampering. Contextual diagnostics reference these shared facts.
 
+Parsed archive properties also belong in metadata: encrypted-member counts,
+duplicate-member counts, and member-path separators describe the container
+being analyzed. `micro-behaviors/data/archive/` is for code that can create,
+list, read, extract, or otherwise manipulate archives. A parser finding about
+the sample's archive is not evidence that the program itself performs that
+operation.
+
+When an archive is a recognized package format, classify package-specific
+member facts under that package's `metadata/package/files/` subject. For
+example, APK resource paths, DEX member names, and nested APK assets belong in
+`mobile-package/`; generic archive-member layout facts stay in
+`metadata/package/files/archive-member`. These member facts describe package
+contents or structure even when their names are suspicious. A probable staging,
+loading, or harassment claim belongs in the corresponding capability or
+objective only when a composite adds evidence for that claim; those rules
+consume the package facts rather than redefining them.
+
 DOS internal-table query evidence belongs in `micro-behaviors/os/msdos/internal`.
 An `AH=52h` load followed by an interrupt sequence is a neutral query indicator;
 an `AH=52h` load before an unknown near call is only a component. Infection or
@@ -781,6 +853,7 @@ At `objectives/command-and-control`, classify the **required result** first:
 | `infrastructure` | An endpoint, configuration or rendezvous construction with a demonstrated C2 role. | Ordinary hosting/service endpoints and chosen labels alone do not establish C2. |
 | `trigger` | An attacker activation condition: packet knock, message/content gate or local artifact gate. | Ordinary lifecycle/timer facts are capabilities/metadata; `activation` merely restates trigger. |
 | `dropper` | Required acquisition/staging of a payload linked to its activation. | An installer identity, download, encoded blob or execution API alone does not establish this chain. |
+| HTTP retrieval vs dropper activation | A `DownloadString` call, URL, or cleartext HTTP reference belongs under `micro-behaviors/communications/http/` unless the rule also links the retrieved content to an activation sink. Require that link before classifying `dropper`; source evaluation routes to `dropper/script-eval`, a launched staged file to `dropper/file-exec`, and in-memory transfer to the supported injection/image-map sink. | A download alone establishes a probable network capability, not payload execution, command dispatch, or C2. |
 
 Reverse-shell level-3 placement uses the **first required mechanism** below.
 All rows still require the admission test above. Direction, transport and
@@ -885,11 +958,29 @@ alternatives in a rule claiming an outbound shell.
 establish a shell session without the required I/O relationship. Retire those
 parallel classifications when migrating their rules; `syscall` is already retired.
 
-Dropper level-3 children are **planned replacements** for the overlapping
-`delivery`, `staging`, `execution`, and `behavior` partitions. Pick the first
-required activation sink; reference source, concealment and trigger facts.
+Dropper level-3 children classify the **required activation sink**. The legacy
+`delivery`, `staging`, `execution`, and `behavior` partitions are being
+reconciled into these canonical homes. Pick one sink and reference source,
+concealment and trigger facts; do not duplicate a complete chain under its
+carrier or encoding.
 
-| Planned child | Required payload activation |
+When no activation sink is established and a staging observation remains in
+the legacy `staging/` branch, use the technique the matcher actually requires:
+
+| Required evidence | Placement | Boundary |
+|---|---|---|
+| Archive membership or archive-contained payload/lure, with no required encryption clue | `dropper/staging/archive/` | A disk image merely contained in an archive stays here; require mounting or execution from that image before using `staging/image-disk/`. |
+| Encrypted content used as the defining staging mechanism | `dropper/staging/encrypted/` | A password-protected archive belongs here when the archive's encrypted-member/header evidence is required. If encryption is optional and the archive or nested disk image is the actual technique, use `staging/archive/`. |
+| Reconstructed or decoded embedded payload, with no activation sink established | `dropper/staging/encoded/` | Require evidence of payload reconstruction, not merely an encoding API or encoded string. Once a sink is shown, classify the full chain by that activation sink. |
+| Mounted virtual disk used to activate a contained executable or shortcut | `dropper/staging/image-disk/` | Requires mount/activation evidence; archive membership alone does not qualify. |
+
+The evidence-source format (archive metadata, strings, or API references) does
+not create another taxonomy branch. The rule description should say whether
+the observed evidence indicates an encrypted archive, archive membership, or
+disk-image activation, and must not claim a launch or decryption sink that the
+matcher does not connect.
+
+| Activation child | Required payload activation |
 |---|---|
 | `process-inject` | Transfer execution of the staged payload into another process. |
 | `image-map` | Map/relocate a native image for execution in the current process. |
@@ -898,9 +989,89 @@ required activation sink; reference source, concealment and trigger facts.
 | `interpreter-stdin` | Feed staged source through a new interpreter's stdin. |
 | `file-exec` | Launch a staged file through a process or file-handler mechanism. |
 
+`file-exec` is strictly a parent; its rule-bearing leaves refine the activation
+mechanism. `file-exec/command` requires a shell or command interpreter to
+evaluate command text that launches the staged file (`system()` with a shell
+command, or a shell script invoking a local payload). `file-exec/spawn` requires
+a process-creation API or structured process invocation to launch the staged
+file directly (`Start-Process`, `ProcessBuilder`, `execve`). `file-exec/installer`
+requires handing a staged package to an installer transaction (for example,
+`msiexec`). If a chain invokes an installer to activate its package, classify
+that rule under `installer`, even though the installer itself is a process.
+Use `command` when shell parsing is required and `spawn` when the target path is
+passed directly to a process-creation mechanism. A mere installer reference
+without package-install evidence does not qualify for `installer`. Do not put
+rules directly in the `file-exec` parent.
+
+Require evidence of cross-process execution transfer for `process-inject`;
+executable memory or thread creation in the current process alone does not
+establish injection. `image-map` requires evidence that a native image is
+mapped or relocated for execution in the current process. Decrypting into
+executable memory without either specific sink remains memory staging until
+the matcher supports a narrower activation claim.
+
+A file-level co-occurrence of HTTP retrieval, response materialization, and an
+interpreter launch does not by itself link the retrieved bytes to the launched
+interpreter. Keep that useful observation under the interpreter capability,
+describe it as co-occurrence, and reserve a dropper execution classification
+for evidence that connects the staged payload to its activation sink. A broad
+proximity window may support a lead, but it must not turn unrelated paths in a
+large source file into a download-and-execute claim.
+
+Within `objectives/command-and-control/dropper/delivery/`, use `urlmon/` for
+download-and-execute rules whose specific transfer technique is URLMon
+(`URLDownloadToFile` and related URLMon paths), `wininet/` for WinINet, and
+`winhttp/` for WinHTTP. These API names are valid technique labels even though
+they are Windows-specific: the child states the transfer mechanism, while the
+parent states the malware behavior. The APIs are separate categories because
+they are distinct transfer interfaces; do not merge them as synonyms. Keep
+rules that combine multiple transfer methods or do not identify one of these
+APIs in the general `execute-download/` leaf. Do not create language- or
+filetype-based children.
+
+Use `hidden-stage/` for dropper rules whose distinguishing technique is
+concealing the staged payload in a hidden or writable scratch surface and
+arming or launching it. Prefer an API-specific transfer leaf (`urlmon/`,
+`wininet/`, or `winhttp/`) when the rule's defining technique is that transfer
+API; use `hidden-stage/` for format-neutral hidden-path staging without a
+narrower transfer mechanism. A hidden window alone is process-creation
+evidence, not a hidden-file stage.
+
+The same boundary applies to PowerShell: a hidden-window option, an
+`Invoke-WebRequest` call, and a nearby `Start-Process` indicate concealed
+execution and network-request capabilities, but do not establish that the
+response supplies the launched process. Keep this as a neutral hidden-process
+capability co-occurrence. Classify a confirmed downloaded MSI under
+`dropper/file-exec/installer` only when the rule also connects the retrieved
+path to the installer invocation.
+
 The same remote encrypted assembly therefore has one chain home, `module-load`;
 its encryption, network transport and install hook are referenced observations.
 The neutral loader and any concealment objective retain their own canonical IDs.
+Likewise, decrypting a staged file and activating it through dynamic `require`
+is `module-load`; decrypt-and-eval chains use `script-eval`, and ciphertext with
+no established sink remains in the appropriate staging leaf.
+
+`new Function`/`eval` of decrypted source is `script-eval`; `Module._compile`
+is `module-load`. A local write/chmod/spawn chain is `file-exec` only when the
+bounded evidence supports a likely relation between the stage and the launch.
+A standalone interpreter-evaluation capability stays under
+`micro-behaviors/process/interpreter/eval/`; only a completed staged-source
+chain moves to the dropper sink leaf. A generator/source fragment that indicates
+JavaScript `eval` is therefore a language-specific eval observation, not by
+itself proof of encrypted staging or a dropper.
+
+Remote scriptlet execution through `regsvr32` (`/i:` plus `scrobj`) belongs in
+`execution/lolbin/regsvr32`, where the named proxy-execution technique and its
+Squiblydoo refinement share one leaf. It is not `dropper/file-exec`: the
+activation is the LOLBin's scriptlet mechanism, not launch of a staged file.
+Generic `regsvr32` invocation remains a process-launch capability; a complete
+staged-file chain belongs under its actual activation sink.
+
+A remote MSI URL combined with `msiexec` installation belongs in
+`dropper/file-exec`: the installer is the file-handler activation sink.
+`msiexec` invocation or an MSI identity without remote staging and installation
+evidence does not establish that dropper chain.
 
 ### Analysis evasion, concealment, and disruption boundaries
 
@@ -917,7 +1088,7 @@ The neutral loader and any concealment objective retain their own canonical IDs.
 | `evasion/kernel-hide` vs user-space hooks | Kernel-mediated concealment alone qualifies for kernel-hide. User-space interposition uses the applicable process/hijack concealment mechanism; `kernel-hide/userspace` is a migration conflict. |
 | `evasion/{masquerade,decoy,file-hiding}` | Falsified identity → masquerade by identity surface; diversionary content → decoy; concealment of a file's visibility/location → file-hiding. A hidden-file attribute alone remains neutral. |
 | `evasion/{indicator-removal,self-delete}` | Removing records/artifacts of activity → indicator-removal; removing the running program's own artifact → self-delete. Application-log type does not duplicate the same removal mechanism under another sibling. |
-| `impact/{destroy,wipe,ransom,degrade,dos,infect}` | Content destruction → destroy; overwrite/erase storage → wipe; coercive encryption/extortion → ransom; disable a capability → degrade; availability exhaustion → dos; insert replicating code into a host → infect. Read/write/encrypt APIs alone establish none of these outcomes. |
+| `impact/{destroy,wipe,ransom,degrade,dos,infect}` | Content destruction → destroy; overwrite/erase storage → wipe; coercive encryption/extortion → ransom; disable a capability → degrade; availability exhaustion → dos; insert replicating code into a host → infect. Read/write/encrypt APIs alone establish none of these outcomes. A generic “sending crash” report string plus a socket or connect API does not establish availability exhaustion. |
 
 ### Collection, credentials, discovery, and theft
 
@@ -1180,6 +1351,7 @@ micro-behaviors/
 │   │                      #   DNS tunneling → objectives/command-and-control/.
 │   ├── socket/            #   Socket ops (TCP, UDP, raw, bind, listen)  C0001
 │   ├── tls/               #   Transport security, independent of application protocol
+│   │   ├── initialize/    #     Prepare configuration or per-connection state
 │   │   └── verify/        #     Peer certificate/hostname authentication
 │   │       └── disable/   #       Explicit verification-disable APIs/settings
 │   ├── http/              #   HTTP/HTTPS (client, server, download)     C0002
@@ -1229,6 +1401,7 @@ micro-behaviors/
 │   ├── hash/              #   Cryptographic hashes (SHA, MD5, Blake2b)  C0029
 │   ├── kdf/               #   Key derivation functions                  C0028
 │   ├── certificate/       #   Certificate ops (install, store, sign, verify)
+│   ├── native/            #   Native crypto provider/API references without a narrower operation
 │   └── library/           #   Legacy implementation partition; migrate by technique/group
 │                          #   Embedded code → supported crypto capability; independent
 │                          #   library artifact identity → well-known/lib/crypto/.
@@ -1399,12 +1572,20 @@ micro-behaviors/
 │   # execution, injection, unhooking and exploitation require their own
 │   # objective evidence; a memory API does not establish those outcomes.
 │
+├── network/               # Network-resource capabilities
+│   └── interface/         # Interface identity, address, and state; clues may
+│                          # indicate probable interaction without proving an
+│                          # enumeration or configuration operation
+│
 ├── os/                    # OS integration                      → MBC: Operating System
 │   │                      #   OS-specific APIs that don't fit other top-level categories.
 │   │                      #   Process ops → process/. File ops → fs/. Timing → time/.
 │   │                      #   Persistence composites (crontab, registry Run keys) →
 │   │                      #   objectives/persistence/.
 │   ├── api-resolution/    #   API resolution (GetProcAddress, hash-based)
+│   ├── application/       #   Application identities used by OS facilities
+│   │   └── target/        #     App/package IDs cited as the intended target
+│   │                      #     (reference evidence; not installed-app discovery)
 │   ├── autorun/           #   Autorun keyword/scheduled task patterns
 │   ├── bpf/               #   BPF/eBPF operations
 │   ├── callback/          #   OS callback mechanisms
@@ -1470,7 +1651,8 @@ micro-behaviors/
 │   ├── message/           #   Message queues
 │   ├── module/            #   Module loading
 │   ├── msdos/             #   MS-DOS interrupt handling (vintage)
-│   ├── network/           #   Network config (interfaces, status)
+│   ├── network/           #   Network config and status
+│   │   └── status/        #     Active network state queries (netstat, ss)
 │   ├── package-manager/   #   Package management (apt, pip)
 │   ├── pam/               #   PAM authentication
 │   ├── privilege/         #   Privilege APIs (manifest, paths — neutral only)
@@ -1509,6 +1691,7 @@ micro-behaviors/
 │   │   ├── platform/      #     OS/arch detection (uname, sys.platform, GOOS)
 │   │   ├── hostname/      #     Machine name (gethostname, hostname cmd)
 │   │   ├── hardware/      #     Hardware info (DMI, SMBIOS, memory)
+│   │   ├── disk/           #     Disk capacity and volume information
 │   │   ├── directories/   #     System directory paths
 │   │   ├── process/       #     Current process info (GetStartupInfo)
 │   │   ├── config/        #     System config (sysconf, sysctl)
@@ -1715,7 +1898,7 @@ objectives/
 │   │   └── websocket/         #     WebSocket C2
 │   ├── dns/                   #   DNS-based C2 + DGA + tunneling             B0031
 │   ├── dropper/               #   Payload staging linked to activation       E1105 + B0023
-│   │   │                      #   Planned canonical children; migration required.
+│   │   │                      #   Canonical activation homes; legacy migration in progress.
 │   │   │                      #   Existing delivery/staging/execution/behavior branches
 │   │   │                      #   are reconciled by activation sink, not retained as aliases.
 │   │   ├── process-inject/    #     Execute staged payload in another process
@@ -1724,6 +1907,7 @@ objectives/
 │   │   ├── script-eval/       #     Evaluate source in the current interpreter
 │   │   ├── interpreter-stdin/ #     Source streamed to a new interpreter
 │   │   └── file-exec/         #     Launch a staged file
+│   │       └── spawn/         #       Write/copy it, then launch a child process
 │   ├── infrastructure/        #   C2 infrastructure (domains, IPs, cloud)    B0030
 │   │   ├── domain/            #     Domains, DGA, hosting
 │   │   └── config/            #     C2 config patterns
@@ -1804,8 +1988,11 @@ objectives/
 │   │                          #   Rules must infer reconnaissance INTENT, not just
 │   │                          #   observe a single system call. Single os.platform() →
 │   │                          #   micro-behaviors/. Profiling multiple properties → here.
+│   │                          #   Notebook-specific host/browser fingerprinting →
+│   │                          #   fingerprint/notebook; generic host fields → fingerprint/info.
 │   ├── system/                #   System information                      E1082
 │   │   ├── fingerprint/       #     System/hardware/OS profiling
+│   │   │   └── notebook/      #       Notebook-specific host/browser fingerprinting
 │   │   ├── architecture/      #     CPU architecture discovery
 │   │   ├── locale/            #     Language/region discovery
 │   │   ├── hardware/          #     Hardware enumeration
@@ -1823,7 +2010,8 @@ objectives/
 │   │   ├── permissions/       #     Permission enumeration
 │   │   ├── security/          #     Security software discovery           T1518.001
 │   │   └── software/          #     Installed software                    T1518
-│   ├── process/               #   Process enumeration                     T1057
+│   ├── process/               #   Running-process discovery               T1057
+│   │   ├── enumerate/         #     Inventory of running processes
 │   │   └── window/            #     Window discovery                      E1010
 │   ├── account/               #   Account/user discovery                  T1087, T1033
 │   │   └── lookup/
@@ -1848,6 +2036,7 @@ objectives/
 │   ├── interpreter/           #   Script/code interpreters                 E1059
 │   ├── lnk/                   #   LNK-based execution                     E1204
 │   ├── lolbin/                #   Living-off-the-land binaries             T1218
+│   │   └── regsvr32/          #     Regsvr32 scriptlet execution / Squiblydoo
 │   ├── lure/                  #   User execution via social engineering    E1204
 │   ├── trigger/               #   Document exploitation triggers           E1203
 │   └── wmi/                   #   WMI execution                            E1569
@@ -1938,7 +2127,8 @@ objectives/
 │   ├── ransom/                #   Ransomware encryption + extortion       T1486
 │   ├── services/stop/         #   Service stopping                        T1489
 │   ├── system/                #   System impact (crash, shutdown, reboot)
-│   ├── ui/manipulation/       #   Screen locker / UI lockout
+│   ├── ui/manipulation/       #   User-visible interface manipulation
+│   │   └── browser/           #     Unauthorized browser settings and search/homepage changes
 │   └── wipe/disk/             #   Disk wiping                             T1561
 │
 ├── lateral-movement/          # Propagation (OB0011)
@@ -2245,7 +2435,10 @@ well-known/
 
 ## Metadata (`metadata/`)
 
-File-level properties with no behavioral implication. Describes *what a file is*, not *what it does*.
+Properties of the artifact: its structure, format, provenance, declarations,
+and measurements. Content may supply evidence for these properties, but
+content is not automatically metadata. A distinctive string indicating a
+probable capability belongs with that capability in `micro-behaviors/`.
 
 **Rules:**
 - Behavioral detection belongs in `micro-behaviors/` or `objectives/` according to the evidence, not here
@@ -2255,6 +2448,14 @@ File-level properties with no behavioral implication. Describes *what a file is*
 - Identities of the analyzed app, dual-use product, tool, game, or library/framework/runtime artifact go under `well-known/{app,dual-use,tool,game,lib}/`. Embedded implementation fingerprints belong with their supported capabilities; dependency declarations and attribution alone remain metadata.
 - **Distinguish a tool's *output* from the tool's *identity*.** "This code was bundled/minified/transpiled" is a build-transform fact → `metadata/build/<function>/` (group by function: `bundler/`, `minifier/`, `transpiler/`). "This file *is* webpack / PuTTY / Wireshark" is a named-software fingerprint → `well-known/`. Putting a software identity in `metadata/` is the same *matcher-defines-identity* violation as mislabeling a generic capability.
 - **Avoid grab-bag directories.** A directory must name one coherent concept that is meaningful as an ML path feature. If a dir accretes unrelated kinds of traits — e.g. the former `package/tooling/` held build-output (`webpack-bundled`), software identities (`tool-identity-putty`), *and* project-hygiene facts (`has-eslint-config`) all at once — the path feature becomes noise and analysts can't reason about it. Split each kind to its proper home (`build/`, `well-known/`, and the `package/` subdirectory for the subject) and delete the grab-bag. Vague names (`tooling`, `context`, `misc`, `helpers`) are a smell that this has happened.
+
+  **Audit semantic content currently filed under `file/string`.** Do not send
+  capability indicators here merely because they match strings or cannot prove
+  execution. Existing semantic-content branches and their older placement rows
+  are a migration backlog, not precedents for new rules. Reassess each matcher
+  for its probable capability or characteristic; retain genuine artifact
+  measurements such as extracted-string counts in metadata. A weak but useful
+  capability indicator can remain with its capability at appropriate confidence.
 
   The former `metadata/library/` tree held ~1,030 rules across ~68 directories and mixed several different concepts: library fingerprints that duplicated `well-known/lib/`, plain capability markers wearing a library's directory name, named offensive tools, CI fingerprints, and vague structural leaves. That migration is complete: `metadata/library/` is now closed and empty. Because a directory reference is an ML path feature, each migrated matcher was placed according to what it actually finds; never recreate the old bucket or move a whole directory on the strength of its name.
 - New top-level subdirectories require updating both TAXONOMY.md and `ALLOWED_METADATA` in `src/capabilities/validation/directory_whitelist.rs`
@@ -2366,7 +2567,7 @@ metadata/
 │   │                      #    shape belongs with profile/, entropy with the thing measured)
 │   ├── policy/            #   Policy/config text identities
 │   ├── profile/           #   Text profile and wrapper shapes
-│   └── string/            #   Neutral string identities
+│   └── string/            #   String measurements; semantic-content branches await audit
 ├── font/                  # Font container structure (sfnt/WOFF/WOFF2/EOT)
 │   ├── container/         #   Format identity and header/table-directory validity
 │   └── layout/            #   Byte coverage: gaps, trailing data, oversized tables
@@ -2517,6 +2718,17 @@ When placing a new metadata trait, use this tiebreaker table. Each row names the
 | `signed/` | `vendor/` | Is it about the cryptographic signature chain or entitlements? → `signed/`. Is it identifying an OS/platform vendor by strings/resources/patterns? → `vendor/` |
 | `vendor/` | `well-known/app/`, `well-known/dual-use/`, or `well-known/tool/` | Is it an OS/platform vendor or system userland marker (Apple, Microsoft, NetBSD, GNU/FSF)? → `vendor/`. Is it a specific well-known application or suite? → `well-known/app/`. Is its legitimate abuse-relevant function the reason analysts need the identity? → `well-known/dual-use/`. Is it a professional analyst/admin/developer tool? → `well-known/tool/` |
 | `vendor/` | `well-known/lib/` | Platform vendor that produced the file → `vendor/`. Identified third-party library/framework/runtime artifact → `well-known/lib/`. An embedded implementation fingerprint follows its technique; a vendor/library mention alone does not identify the whole file. |
+| Interface indicators | artifact metadata | Distinctive interface names, paths, API references, and calls all support the capability in `micro-behaviors/network/interface/`. Their evidence strength affects confidence and the specificity of the description; it does not create another home under metadata. |
+| `network/interface` | `hardware/wireless/network` | Generic adapters, interface addresses/status, and virtual or bridge interfaces belong in `network/interface`. Wi-Fi/Bluetooth radio discovery, wireless association, saved WLAN profiles, and wireless-specific client APIs belong in `hardware/wireless/network`; the wireless subject takes precedence even when an API enumerates adapters. Strings, library references, imports, and calls share the same technique home. Reading a saved WLAN profile alone is a neutral capability; credential access requires evidence for the secret-access inference. |
+| `network/interface` | `os/network/route` | Adapter identity, address, and status queries or changes belong in `interface`. Reading, creating, deleting, or changing destination-to-next-hop routing entries belongs in `route`, whether evidence is a command or an OS API. A route lookup that also selects an interface remains route evidence; a separate adapter query remains interface evidence. |
+| `os/network/route` | `os/network/neighbors` | IP destination-to-next-hop routes belong in `route`. Local IP-to-link neighbor mappings, ARP tables, and neighbor-cache queries or flushes belong in `neighbors`. A cache flush is neighbor-table management, not route-table modification. |
+| `os/network/route` | `os/sysinfo/network` | A route-table operation or route selection belongs in `os/network/route`. A composite that characterizes the host by combining network configuration with adapter, wireless, or other host facts belongs in `os/sysinfo/network`. A queried domain-join status is host identity → `os/sysinfo/hostname`; querying directory contents or objects belongs in `os/security/directory-service`. |
+| `network/interface` | `os/network/share` | Network adapters and their addresses belong in `interface`. Enumerating or mapping remote shares and drives belongs in `share`, even when the evidence comes from a shell command. |
+| `network/interface` | `os/network/tunnel` | Generic adapter inventory, addresses, bridge and virtual-Ethernet references belong with interfaces. TUN/TAP packet endpoints, WinTun adapters, VPN-service builders and application selection, and configured tunnel interfaces belong in `os/network/tunnel`. These indicate probable tunnel-interface capability across operating systems; they do not require proof of live traffic or a particular implementation language. |
+| `os/application/target` | `network/interface` | A package identifier cited as the application a program may select or target belongs in `os/application/target`, even when a VPN or another network feature consumes it. This records a reference to an app identity; it does not prove the app is installed or that an operation occurred. Interface-name references and adapter APIs belong in `network/interface`, because their probable capability concerns network interfaces. A package-manager API that queries, installs, or manages apps belongs under `os/package-manager/` instead. |
+| Cloud credential indicators | `metadata/file/string/cloud` | A provider endpoint or request-path string → `micro-behaviors/communications/http/services/<provider>/`; an environment-variable name → `micro-behaviors/os/env/cloud/`; a local credential/config path → `micro-behaviors/fs/path/credential/`; cloud authentication-source selection or chaining → `micro-behaviors/os/security/auth/cloud/`. These are content clues, not file metadata and not proof that a read or request occurred. Credential-access objectives combine the capability clues with evidence that supports an intent inference. |
+| `os/network/tunnel` | `communications/proxy/tunnel` | The OS tunnel branch owns virtual packet interfaces and their configuration. The proxy branch owns application/session forwarding, such as a public-service tunnel or a WebSocket-to-TCP bridge. A `/dev/net/tun` path or WinTun library reference follows the OS capability; a stream-forwarding API follows the proxy mechanism. Consumers may combine them without copying the atoms. |
+| WLAN capability clues | independent provider identity | Library-name references and a `wlanapi.dll` basename can support probable wireless API capability in `micro-behaviors/hardware/wireless/network`. A stronger fingerprint identifying the independent provider artifact belongs in `well-known/lib/`. A filename alone must not gain verified-provider semantics or newly activate broad known-library suppressors merely through relocation. |
 
 ### Choosing a dependency-manifest facet
 

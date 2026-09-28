@@ -1,0 +1,219 @@
+defaults:
+  attack: T1105
+  mbc: E1105
+  platforms: [unix, windows]
+  for: [pe, dll]
+
+composite_rules:
+- id: unsigned-wininet-process-downloader
+  desc: Unsigned WinInet downloader launches a child process
+  crit: hostile
+  conf: 0.95
+  attack: T1105,T1059.003
+  platforms: [windows]
+  all:
+  - id: micro-behaviors/communications/http/client/wininet::wininet-http-flow
+  - id: metadata/signed/trust-level::unsigned-missing-signature-record
+  any:
+  - id: micro-behaviors/process/create/spawn::child-process-creation-api
+  - id: micro-behaviors/process/create/launch::create-process-api-name
+  unless:
+  - id: metadata/binary/installer/family/
+  - id: well-known/app/
+  - id: well-known/tool/
+  - id: well-known/lib/
+  # The AutoIt interpreter stub imports WinInet and CreateProcess for every
+  # compiled script, so these imports say nothing about the script's intent.
+  - id: metadata/lang/compiled::autoit-compiled-script
+- id: wininet-thread-context-shell-stager
+  desc: WinInet downloader with thread-context shell staging
+  # Imports establish a risky downloader/injection combination, not dataflow.
+  crit: suspicious
+  conf: 0.99
+  attack: T1105,T1055.003,T1622
+  platforms: [windows]
+  all:
+  - id: micro-behaviors/communications/http/client/wininet::wininet-http-flow
+  - id: micro-behaviors/process/info/thread::get-thread-context-import
+  - id: micro-behaviors/process/info/thread::set-thread-context-import
+  - id: micro-behaviors/process/info/thread::resume-thread-import
+  - id: micro-behaviors/mem/protect/modify::virtual-protect
+  - id: micro-behaviors/process/create/exec::shell-execute
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: well-known/tool/reverse-engineering/
+  - id: well-known/app/media/kmplayer::signed-kmplayer-executable
+- id: raw-ip-wininet-memory-process-loader
+  desc: Raw-IP WinInet memory process loader
+  crit: hostile
+  conf: 0.98
+  attack: T1105,T1059.003,T1027
+  platforms: [windows]
+  size_max: 524288
+  all:
+  - id: micro-behaviors/communications/ip/literal::http-ip-url
+  - id: micro-behaviors/communications/http/client/wininet::wininet-http-flow
+  - id: micro-behaviors/mem/protect/modify::virtual-alloc
+  any:
+  - id: micro-behaviors/process/create/spawn::create-process-w
+  - id: micro-behaviors/process/create/shell/spawn::win-shellexecute
+  - id: micro-behaviors/process/create/exec::shell-execute
+  unless:
+  - id: metadata/binary/installer/script/
+  - id: well-known/app/system/drivers/hp-universal-printing::hp-universal-printing-hpmja130
+- id: hostile-downloader-wininet
+  desc: Hostile Downloader (Network -> Memory -> Process)
+  crit: hostile
+  conf: 0.9
+  size_max: 524288
+  unless:
+  - id: well-known/game/steam/
+  - id: metadata/binary/installer/script/
+  all:
+  - id: micro-behaviors/communications/http/client/wininet::internet-read-file
+  - id: micro-behaviors/mem/protect/modify::virtual-alloc
+  - id: micro-behaviors/process/create/spawn::create-process-w
+  - id: metadata/binary/symbols/imports::pe-imports-max-80
+- id: unsigned-wininet-anti-debug-downloader
+  desc: Unsigned anti-debug WinInet downloader can launch a process
+  crit: hostile
+  conf: 0.94
+  platforms: [windows]
+  size_max: 262144
+  all:
+  - id: micro-behaviors/communications/http/client/wininet::wininet-http-flow
+  - id: micro-behaviors/process/debug/detect::is-debugger-present-import
+  - id: metadata/signed/trust-level::unsigned-missing-signature-record
+  # Network and debugger imports alone occur in unsigned update clients. A
+  # hostile downloader also needs a concrete way to launch its fetched stage.
+  any:
+  - id: micro-behaviors/process/create/spawn::create-process-a
+  - id: micro-behaviors/process/create/spawn::create-process-w
+  - id: micro-behaviors/process/create/exec::shell-execute-a
+  - id: micro-behaviors/process/create/exec::winexec
+  needs: 1
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: metadata/binary/installer/script/
+  # Stock NSIS INetC legitimately combines WinInet transfers with the
+  # IsDebuggerPresent import; its user-agent string is a specific plugin ID.
+  - id: metadata/binary/installer/plugin::inetc-user-agent
+  - id: well-known/tool/reverse-engineering/
+  - id: well-known/lib/native/pywin32::pywin32-binding-module
+  - id: well-known/tool/development/toolchain/cygwin/
+- id: wininet-memory-stager
+  desc: WinInet downloader with in-memory staging
+  crit: suspicious
+  conf: 0.92
+  platforms: [windows]
+  size_max: 262144
+  all:
+  - id: micro-behaviors/communications/http/client/wininet::internet-open
+  - id: micro-behaviors/communications/http/client/wininet::internet-read-file
+  - id: micro-behaviors/mem/protect/modify::virtual-alloc
+  # Only legs that actually evidence staging may support the "in-memory
+  # staging" claim. `sleep-dup` and `exit-process` used to sit here, but Sleep
+  # and ExitProcess are CRT boilerplate present in every Win32 binary, so with
+  # needs:2 the rule reduced to "imports WinInet and calls VirtualAlloc" --
+  # which convicted NSIS's stock Inetc download plugin inside IObit's signed
+  # installer, and would convict any small downloader utility.
+  any:
+  - id: micro-behaviors/fs/memory/mmap::win32-file-mapping
+  - id: micro-behaviors/fs/path/check::self-directory-switch
+  - id: micro-behaviors/fs/path/temp::word-temp-staging-file
+  needs: 1
+  unless:
+  - id: metadata/binary/installer/script/
+  - id: metadata/binary/installer/plugin/
+  - id: well-known/app/system/oracle-java-updater::signed-oracle-java-updater
+  downgrade:
+    any:
+    - id: metadata/lang/compiler/managed/
+- id: hostile-downloader-wininet-memory-or-process
+  desc: Hostile downloader with memory or process exec
+  crit: hostile
+  conf: 0.9
+  platforms: [windows]
+  size_max: 524288
+  unless:
+  - id: well-known/game/steam/
+  - id: metadata/binary/installer/script/
+  all:
+  - id: micro-behaviors/communications/http/client/wininet::internet-read-file
+  - id: micro-behaviors/mem/protect/modify::virtual-alloc
+  - id: metadata/binary/symbols/imports::pe-imports-max-80
+  any:
+  - id: micro-behaviors/process/create/spawn::create-process-w
+  - id: micro-behaviors/process/create/spawn::create-process-a
+  - id: wininet-memory-stager
+  downgrade:
+    any:
+    - id: metadata/binary/symbols/plugin::ollydbg-plugin-export
+    - id: well-known/tool/reverse-engineering/windows-debugger/
+- id: packed-wininet-downloader
+  desc: Packed binary with WinInet and dynamic loading
+  crit: suspicious
+  conf: 0.88
+  platforms: [windows]
+  size_max: 524288
+  all:
+  - id: micro-behaviors/communications/http/client/wininet::internet-open
+  - id: objectives/anti-static/obfuscation/payload/import::minimal-pe-dynamic-load
+  any:
+  - id: metadata/binary/section/label::upx-section
+  - id: objectives/anti-static/pack/detect::upx-marker
+  - id: metadata/binary/layout/entropy::high-overall-entropy-70
+  - id: metadata/binary/code/entropy::high-code-entropy
+- id: autoit-admin-wininet-injector
+  desc: Elevated AutoIt injector with WinInet staging
+  crit: hostile
+  conf: 0.97
+  platforms: [windows]
+  attack: T1055,T1071.001
+  all:
+  - id: metadata/lang/compiled::autoit-compiled-script
+  - id: metadata/build/manifest::pe-requires-admin
+  - id: micro-behaviors/communications/http/client/wininet::wininet-http-flow
+  - id: micro-behaviors/process/inject/runtime/call::write-process-memory-dup
+  any:
+  - id: micro-behaviors/mem/alloc/remote::virtual-alloc-ex
+  - id: micro-behaviors/process/info/thread::resume-thread-import
+  - id: micro-behaviors/process/create/spawn::create-process-w
+  needs: 2
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/signed/developer/
+  - id: well-known/app/utility/sordum::bluelife-hosts-editor
+- id: packed-autoit-wininet-dropper
+  desc: Packed AutoIt WinInet input-gated dropper
+  crit: hostile
+  conf: 0.96
+  platforms: [windows]
+  all:
+  - id: objectives/anti-static/obfuscation/binary-metrics/section-names::packed-autoit-encrypted-resource
+  - id: micro-behaviors/communications/http/client/wininet::wininet-http-flow
+  - id: micro-behaviors/process/create/spawn::create-process-w
+  - id: micro-behaviors/hardware/input/block::block-input-import
+  - id: micro-behaviors/hardware/input/keyboard/poll::get-async-key-state
+  any:
+  - id: micro-behaviors/os/network/share::wnet-share-connect-cycle
+  - id: micro-behaviors/communications/http/client/wininet::internet-read-file
+- id: packed-autoit-wininet-runpe-dropper
+  desc: Packed AutoIt WinInet RunPE dropper
+  crit: hostile
+  conf: 0.97
+  platforms: [windows]
+  size_min: 900000
+  size_max: 1800000
+  all:
+  - id: objectives/evasion/process/injection/hollowing::packed-autoit-runpe-primitives
+  - id: micro-behaviors/communications/http/client/wininet::wininet-http-request-strings
+  - id: micro-behaviors/hardware/input/block::block-input-import
+  any:
+  - id: micro-behaviors/hardware/input/keyboard/poll::get-keyboard-state-str
+  - id: micro-behaviors/hardware/input/mouse/synthesis::synthetic-user-input
+  - id: micro-behaviors/hardware/display/screen::gdi-getdibits
+  - id: micro-behaviors/os/autorun/keyword::startup-keyword
+  needs: 2

@@ -1,0 +1,1 @@
+value = 'CLONE_NEWNET'

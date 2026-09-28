@@ -1,0 +1,423 @@
+defaults:
+  attack: T1105
+  mbc: B0024
+  platforms: [unix, windows]
+  for: [shell]
+composite_rules:
+  - id: shell-download-chmod-local-exec
+    desc: Shell downloads, chmods, and executes a local file
+    crit: suspicious
+    conf: 0.96
+    near_lines: 30
+    all:
+      - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-tmp-file
+      - id: micro-behaviors/process/create/local-exec::tmp-path-execution
+    any:
+      - id: micro-behaviors/communications/http/download/wget::wget-output-file
+      - id: micro-behaviors/communications/http/download/cli::fetch-output-flag-script
+    unless:
+      - id: metadata/build/archive::source-archive-member
+      - id: metadata/build/autotools::autoconf-generated-script
+      - id: well-known/app/system/brev-cli::source-tree-marker
+      - id: well-known/app/infrastructure/dokku::dokku-source-tree
+      - id: well-known/tool/detection/stackrox::ci-source-context
+      - id: well-known/app/infrastructure/openshift::openshift-release-ci-step-context
+      - id: micro-behaviors/os/package-manager/installer-script::installer-script
+      - id: micro-behaviors/os/package-manager/installer-script::silent-eula-accept-installer
+      - id: micro-behaviors/os/package-manager/installer-script::verified-github-release-installer
+  - id: busybox-download-chmod-local-exec
+    desc: BusyBox download chmod local execute
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: micro-behaviors/process/create/local-exec::chmod-exec-literal-local
+    any:
+      - id: micro-behaviors/communications/http/download/busybox::wget
+      - id: micro-behaviors/communications/ftp/download/tftp::tftp
+      - id: micro-behaviors/communications/ftp/download/busybox::ftpget
+      - id: micro-behaviors/communications/ftp/download/tftp::command
+    near_bytes: 220
+  - id: busybox-download-chmod-temp-exec
+    desc: BusyBox download arms and launches a temporary payload
+    crit: suspicious
+    conf: 0.97
+    attack: "T1105, T1059.004, T1222.002"
+    all:
+      - id: micro-behaviors/communications/http/download/busybox::wget
+      - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-absolute-path
+      - id: micro-behaviors/process/create/local-exec::background-tmp-execution
+    near_lines: 30
+  - id: raw-ip-busybox-download-chmod-local-exec
+    desc: Raw-IP BusyBox download chmod local execute
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: objectives/command-and-control/dropper/file-exec/command::busybox-download-chmod-local-exec
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-shell-endpoint
+    unless:
+      - id: metadata/package/testing/
+      - id: metadata/build/autotools::autoconf-generated-script
+      - id: objectives/command-and-control/dropper/delivery/fetch-exec::raw-ip-repeated-download-exec-cleanup
+  - id: raw-ip-busybox-multiarch-dropper
+    desc: Raw-IP BusyBox multi-architecture dropper
+    crit: hostile
+    conf: 0.99
+    attack: "T1105, T1059.004"
+    all:
+      - id: metadata/file/string/identity::multi-architecture-name-set
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-shell-endpoint
+    any:
+      - id: objectives/command-and-control/dropper/file-exec/command::raw-ip-busybox-download-chmod-local-exec
+      - id: objectives/command-and-control/dropper/file-exec/command::busybox-download-chmod-temp-exec
+  - id: encrypted-variable-payload-detached-dropper
+    desc: Downloads, decrypts, makes executable, and detaches a shell payload
+    crit: hostile
+    conf: 0.99
+    attack: T1105,T1140,T1222.002,T1059.004
+    all:
+      - id: micro-behaviors/communications/http/download/shell::fetch-var-output-var
+      - id: micro-behaviors/crypto/symmetric/aes/openssl::openssl-aes-decrypt
+      - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-var-target
+      - id: micro-behaviors/process/daemonize/detach::nohup-shell-launch
+      - id: micro-behaviors/os/sysinfo/platform/arch::multi-arch-target
+  - id: multi-protocol-raw-ip-script-dropper-cleanup
+    desc: Raw-IP multi-protocol dropper also deletes staged paths
+    crit: hostile
+    conf: 0.99
+    attack: "T1105,T1059.004,T1222.002,T1070.004"
+    near_bytes: 1024
+    all:
+      - id: micro-behaviors/communications/http/download/fallback::multi-client-download-fallback
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-http-url
+      - id: micro-behaviors/fs/chmod/executable/dangerous::chmod-777
+      - id: micro-behaviors/fs/delete/directory::shell-recursive-delete
+    any:
+      - id: micro-behaviors/process/create/local-exec::local-execution
+      - id: micro-behaviors/process/create/local-exec::interpreter-local-relative-script
+    unless:
+      - id: metadata/package/testing/
+      - id: metadata/build/autotools::autoconf-generated-script
+      - id: micro-behaviors/os/package-manager/installer-script::installer-script
+      - id: objectives/command-and-control/dropper/delivery/fetch-exec::raw-ip-repeated-download-exec-cleanup
+      - id: objectives/evasion/indicator-removal/cleanup::raw-ip-arch-loader-cleanup
+
+  # A shell script that selects an architecture, retrieves an executable from
+  # a literal IP, arms it, detaches it, and removes its launcher is a complete
+  # dropper chain. These legs are deliberately structural so the rule remains
+  # useful when the server, architecture names, or payload name changes.
+  - id: raw-ip-curl-literal-download-chmod-local-exec
+    desc: Raw IP curl download chmod local execute
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: micro-behaviors/communications/http/download/shell::curl-http-literal-download
+      - id: micro-behaviors/process/create/local-exec::chmod-exec-literal-local
+    any:
+      - id: micro-behaviors/communications/ip/literal::http-ip-url
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-http-url
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-script
+    unless:
+      - id: metadata/build/archive::source-archive-member
+      - id: metadata/build/autotools::autoconf-generated-script
+      - id: metadata/package/testing/
+      - id: objectives/command-and-control/dropper/delivery/fetch-exec::raw-ip-repeated-download-exec-cleanup
+      - id: objectives/command-and-control/dropper/delivery/fetch-exec::raw-ip-repeated-download-chmod-exec
+  - id: raw-ip-literal-download-chmod-local-exec
+    desc: Raw IP literal download chmod local execute
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: micro-behaviors/communications/http/download/shell::wget-http-literal-download
+      - id: micro-behaviors/process/create/local-exec::chmod-exec-literal-local
+    any:
+      - id: micro-behaviors/communications/ip/literal::http-ip-url
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-http-url
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-script
+    unless:
+      - id: metadata/build/archive::source-archive-member
+      - id: metadata/build/autotools::autoconf-generated-script
+      - id: metadata/package/testing/
+      # The Huawei exploit composite describes the same embedded wget/chmod/
+      # execute chain together with the vulnerable endpoint and request shape.
+      - id: objectives/command-and-control/botnet/iot::huawei-hg532-upnp-exploit
+      # The repeated chain reports the same fetch/permission/launch behavior
+      # with stronger evidence and should replace this single-stage finding.
+      - id: objectives/command-and-control/dropper/delivery/fetch-exec::raw-ip-repeated-download-exec-cleanup
+      # The repeated chain supplies stronger evidence and replaces both the
+      # individual wget and curl delivery findings.
+      - id: objectives/command-and-control/dropper/delivery/fetch-exec::raw-ip-repeated-download-chmod-exec
+  - id: raw-ip-loop-download-chmod-var-exec
+    desc: External-IP loop download chmod and execute
+    crit: hostile
+    conf: 0.98
+    attack: "T1105, T1059.004, T1222.002"
+    all:
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-http-url
+      - id: micro-behaviors/communications/http/download/shell::wget-loop-variable-download
+      - id: micro-behaviors/process/create/local-exec::chmod-exec-var-local
+  - id: raw-ip-redirected-download-chmod-exec
+    desc: Raw IP redirected download chmod execute
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: micro-behaviors/communications/http/download/shell::fetch-output-to-literal
+      - id: micro-behaviors/process/create/local-exec::chmod-exec-literal-local
+    any:
+      - id: micro-behaviors/communications/ip/literal::http-ip-url
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-http-url
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-script
+  # A shell script that selects an architecture, retrieves an executable from
+  # a literal IP, arms it, detaches it, and removes its launcher is a complete
+  # dropper chain. These legs are deliberately structural so the rule remains
+  # useful when the server, architecture names, or payload name changes.
+  - id: raw-ip-shell-fetch-chmod-detach
+    desc: Shell fetches a raw-IP payload, arms it, and detaches it
+    crit: hostile
+    conf: 0.99
+    attack: "T1105,T1059.004,T1222.002"
+    platforms: [unix]
+    all:
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-shell-endpoint
+      - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-var-target
+      - id: micro-behaviors/process/daemonize/detach::nohup-shell-launch
+    any:
+      - id: micro-behaviors/communications/http/download/cli::fetch-output-flag-script
+      - id: micro-behaviors/communications/http/download/shell::shell-dev-tcp-http-get-download
+
+  - id: raw-ip-system-path-download-chmod-detached
+    desc: Raw-IP download replaces and detaches a system executable
+    crit: hostile
+    conf: 0.99
+    attack: "T1105, T1059.004, T1222.002"
+    all:
+      - id: micro-behaviors/communications/ip/literal::http-ip-url
+      - id: micro-behaviors/communications/http/download/wget::wget-output-file
+      - id: micro-behaviors/fs/chmod/executable/mode::chmod-system-path-executable
+      - id: micro-behaviors/process/daemonize/detach::nohup-system-path-launch
+  - id: raw-ip-temp-download-chmod-exec
+    desc: Raw-IP temp download chmod execute
+    crit: hostile
+    conf: 0.99
+    attack: "T1105, T1059.004, T1222.002"
+    all:
+      - id: micro-behaviors/communications/ip/literal::http-ip-url
+      - id: micro-behaviors/communications/http/download/wget::wget-output-file
+      - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-tmp-file
+      - id: micro-behaviors/process/create/local-exec::tmp-path-execution
+      - id: micro-behaviors/process/create/local-exec::background-tmp-execution
+  - id: raw-ip-masqueraded-shell-dropper
+    desc: Raw-IP download executes temp stage
+    crit: hostile
+    conf: 0.99
+    attack: T1105,T1036.007,T1059.004
+    near_bytes: 1024
+    all:
+      - id: micro-behaviors/communications/http/download/fallback::downloader-fallback-chain
+      - id: objectives/command-and-control/dropper/delivery/execute-download::temp-nonscript-shell-launch
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-http-url
+  - id: raw-ip-multiarch-shell-payload
+    desc: Shell fetches and executes raw-IP multi-architecture payload
+    crit: hostile
+    conf: 0.99
+    attack: "T1105,T1059.004,T1222.002"
+    all:
+      - id: objectives/command-and-control/dropper/delivery/execute-download::raw-ip-shell-source
+      - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-var-target
+      - id: micro-behaviors/process/create/local-exec::shell-variable-exec-with-args
+      - id: micro-behaviors/os/sysinfo/platform/arch::multi-arch-target
+    any:
+      - id: micro-behaviors/communications/http/download/shell::fetch-var-output-var
+      - id: micro-behaviors/communications/http/download/shell::fetch-variable-input-output-command
+  # This chain proves a multi-architecture executable dropper, but does not by
+  # itself prove either an IoT target or botnet enrollment. Keep that stronger
+  # interpretation in botnet composites that add actual IoT/botnet evidence.
+  - id: multiarch-variable-protocol-dropper
+    desc: Multi-architecture fallback downloader executes a variable stage
+    crit: hostile
+    conf: 0.99
+    attack: "T1105,T1059.004,T1222.002"
+    platforms: [linux]
+    all:
+      - id: micro-behaviors/communications/http/download/fallback::multi-client-download-fallback
+      - id: micro-behaviors/os/sysinfo/platform/arch::multi-arch-target
+      - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-var-target
+      - id: micro-behaviors/process/create/local-exec::shell-variable-exec-with-args
+  - id: raw-ip-download-chmod-local-exec
+    desc: Raw IP download chmod local execute
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: objectives/command-and-control/dropper/file-exec/command::shell-download-chmod-local-exec
+    any:
+      - id: micro-behaviors/communications/ip/literal::http-ip-url
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-http-url
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-script
+  - id: self-deleting-download-chmod-exec
+    desc: Self-deleting download chmod execute
+    crit: hostile
+    conf: 0.97
+    attack: "T1105, T1070.004"
+    all:
+      - id: objectives/command-and-control/dropper/file-exec/command::shell-download-chmod-local-exec
+    any:
+      - id: objectives/evasion/self-delete/file/script::self-delete-shell
+      - id: objectives/evasion/self-delete/cleanup/remove::rm-self-dollar-zero
+  - id: self-deleting-multiarch-download-dropper
+    desc: Self-deleting multi-architecture download dropper
+    crit: hostile
+    conf: 0.98
+    attack: "T1105, T1059.004, T1070.004"
+    all:
+      - id: self-deleting-download-chmod-exec
+      - id: micro-behaviors/os/sysinfo/platform/string::multi-arch-runtime-wordlist
+    any:
+      - id: objectives/command-and-control/dropper/delivery/download::shell-silent-hardcoded-download-staging
+      - id: micro-behaviors/communications/http/url/external-ip::curl-external-ip-request
+      - id: micro-behaviors/process/create/shell/busybox::busybox-command
+  - id: raw-ip-loop-download-chmod-exec
+    desc: Raw IP loop download chmod execute
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: raw-ip-download-chmod-local-exec
+      - id: micro-behaviors/communications/http/download/shell::wget-loop-variable-download
+  - id: raw-ip-bulk-download-chmod-exec
+    desc: Raw IP bulk download chmod execute
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: objectives/command-and-control/dropper/file-exec/command::raw-ip-literal-download-chmod-local-exec
+      - id: micro-behaviors/communications/http/download/shell::wget-http-literal-download-cluster
+    unless:
+      - id: objectives/command-and-control/dropper/delivery/fetch-exec::raw-ip-repeated-download-exec-cleanup
+      - id: objectives/command-and-control/botnet/iot::raw-ip-multiarch-protocol-dropper
+  - id: raw-ip-bulk-multiarch-download-exec
+    desc: Raw IP bulk multi-architecture download execute
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: raw-ip-bulk-download-chmod-exec
+      - id: micro-behaviors/os/sysinfo/platform/string::multi-arch-runtime-wordlist
+    unless:
+      - id: objectives/command-and-control/botnet/iot::raw-ip-multiarch-protocol-dropper
+  - id: raw-ip-redirected-multiarch-dropper
+    desc: Raw IP redirected multi-architecture dropper
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: objectives/command-and-control/dropper/file-exec/command::raw-ip-redirected-download-chmod-exec
+      - id: micro-behaviors/os/sysinfo/platform/string::multi-arch-runtime-wordlist
+  - id: busybox-redirected-multiarch-dropper
+    desc: BusyBox redirected multi-architecture dropper
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: objectives/command-and-control/dropper/file-exec/command::raw-ip-redirected-download-chmod-exec
+      - id: micro-behaviors/process/create/shell/busybox::busybox-command
+      - id: micro-behaviors/os/sysinfo/platform/string::multi-arch-runtime-wordlist
+  - id: busybox-raw-ip-bulk-multiarch-dropper
+    desc: BusyBox raw-IP bulk multi-architecture dropper
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: raw-ip-bulk-download-chmod-exec
+      - id: micro-behaviors/process/create/shell/busybox::busybox-command
+      - id: micro-behaviors/os/sysinfo/platform/string::multi-arch-runtime-wordlist
+  - id: raw-ip-curl-bulk-download-chmod-exec
+    desc: Raw IP curl bulk download chmod execute
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: objectives/command-and-control/dropper/file-exec/command::raw-ip-curl-literal-download-chmod-local-exec
+      - id: micro-behaviors/communications/http/download/shell::curl-http-literal-download-cluster
+  - id: raw-ip-curl-bulk-multiarch-dropper
+    desc: Raw IP curl bulk multi-architecture dropper
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: raw-ip-curl-bulk-download-chmod-exec
+      - id: micro-behaviors/os/sysinfo/platform/string::multi-arch-runtime-wordlist
+  - id: raw-ip-bulk-self-deleting-dropper
+    desc: Raw IP bulk self-deleting dropper
+    crit: hostile
+    conf: 0.98
+    attack: "T1105, T1070.004"
+    any:
+      - id: raw-ip-bulk-download-chmod-exec
+      - id: raw-ip-curl-bulk-download-chmod-exec
+    all:
+      - id: objectives/evasion/self-delete/cleanup/remove::rm-self-dollar-zero
+  - id: multiarch-download-execute-loop
+    desc: Multi-architecture download execute loop
+    crit: hostile
+    conf: 0.98
+    attack: "T1105, T1059.004"
+    all:
+      - id: micro-behaviors/os/sysinfo/platform/arch::multi-arch-target
+      - id: objectives/command-and-control/dropper/file-exec/command::shell-download-chmod-local-exec
+    any:
+      - id: micro-behaviors/communications/http/download/shell::fetch-var-output-var
+      - id: micro-behaviors/communications/http/download/shell::wget-loop-variable-download
+      - id: objectives/command-and-control/dropper/delivery/execute-download::adb-argument-local-payload
+    needs: 2
+  - id: raw-ip-multiarch-dropper
+    desc: Raw IP multi-architecture dropper
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-script
+      - id: multiarch-download-execute-loop
+  - id: raw-ip-multiarch-wget-dropper
+    desc: Raw-IP multi-architecture wget dropper
+    crit: hostile
+    conf: 0.99
+    attack: "T1105, T1059.004"
+    all:
+      - id: objectives/command-and-control/dropper/file-exec/command::shell-download-chmod-local-exec
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-http-url
+      - id: micro-behaviors/os/sysinfo/platform/arch::multiple-architecture-references
+      - id: micro-behaviors/communications/http/download/shell::wget-insecure-tls-download
+    unless:
+      - id: metadata/package/testing/
+      - id: metadata/build/autotools::autoconf-generated-script
+  - id: adb-tagged-multiarch-dropper
+    desc: ADB-tagged multi-architecture dropper
+    crit: hostile
+    conf: 0.98
+    attack: "T1105, T1059.004"
+    all:
+      - id: objectives/command-and-control/dropper/delivery/execute-download::adb-argument-local-payload
+      - id: multiarch-download-execute-loop
+  - id: multiarch-protocol-literal-exec
+    desc: Multi-architecture protocol fallback execution
+    crit: hostile
+    conf: 0.99
+    attack: "T1105,T1059.004,T1222.002"
+    all:
+      - id: micro-behaviors/communications/http/download/fallback::multi-client-download-fallback
+      - id: micro-behaviors/os/sysinfo/platform/arch::multiple-architecture-references
+      - id: micro-behaviors/fs/chmod/executable/dangerous::chmod-777
+      - id: micro-behaviors/process/create/local-exec::local-execution
+    unless:
+      - id: objectives/command-and-control/dropper/delivery/fetch-exec::raw-ip-repeated-download-exec-cleanup
+      # cybench challenge resources carry real worm droppers verbatim.
+      - id: well-known/lib/ai/inspect-evals::eval-corpus-context
+      - id: objectives/command-and-control/botnet/iot::raw-ip-multiarch-protocol-dropper
+  - id: raw-ip-shell-self-deleting-dropper
+    desc: Raw-IP shell dropper deletes its launcher
+    crit: hostile
+    conf: 0.99
+    attack: "T1105,T1059.004,T1070.004"
+    platforms: [unix]
+    all:
+      - id: objectives/command-and-control/dropper/file-exec/command::raw-ip-shell-fetch-chmod-detach
+      - id: objectives/evasion/self-delete/cleanup/remove::rm-self-dollar-zero
+
+# An agent skill that instructs downloading a password-protected binary and
+# also carries a fetch-substitution shell (`$(curl ...)` inside a command
+# substitution). The passworded download tells the agent to fetch what
+# scanners cannot open; the substitution shell is what runs beside it.
+#
+# Worked example: the netcode-openclaw trading skills, whose SKILL.md
+# directs Windows agents to AuthTool.exe (password: 1234) while embedding a
+# base64-masked curl-to-bash line behind an Apple-looking URL echo.
