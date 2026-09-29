@@ -1,0 +1,138 @@
+defaults:
+  platforms:
+  - unix
+  - windows
+  for:
+  - javascript
+  - typescript
+  attack: T1195.002
+traits:
+- id: hex-string-array
+  desc: Array of hex strings (potential shellcode)
+  crit: suspicious
+  conf: 0.85
+  if:
+    type: string_literal
+    regex: \[\s*["']0x[0-9a-f]{2}["'](\s*,\s*["']0x[0-9a-f]{2}["']){10,}\s*\]
+- id: join-hex-array
+  desc: Joins hexadecimal byte strings
+  crit: suspicious
+  conf: 0.85
+  if:
+    type: string_literal
+    regex: (?i)0x[0-9a-f]{2}["'],\s*["']0x[0-9a-f]{2}["']\s*\]\.join\(["']{2}\)
+- id: hidden-script-ref
+  desc: References hidden .js file
+  crit: suspicious
+  conf: 0.9
+  if:
+    type: string_literal
+    regex: '["'']\./\.[a-z0-9_-]+\.js["'']'
+  unless:
+  - type: string_literal
+    regex: '["'']\./\.babel(rc|\.config)\.js["'']'
+- id: eval-hex-decode
+  desc: eval() of hex-decoded buffer
+  crit: suspicious
+  conf: 0.98
+  if:
+    type: string_literal
+    regex: eval\(Buffer\.from\(.{1,120},['']hex['']\)\.toString\(\)\)
+- id: process-env-username
+  desc: Accesses process.env.USERNAME
+  crit: notable
+  conf: 0.7
+  if:
+    type: string_literal
+    substr: process.env.USERNAME
+- id: buffer-slice-magic
+  desc: Buffer.slice with magic offsets
+  crit: baseline
+  conf: 0.75
+  size_max: 100000
+  if:
+    type: text
+    regex: \b(Buffer|payload|bytes?|Uint8Array)\b.{0,40}\.slice\(\d{1,4},\s*\d{1,4}\)
+  unless:
+  - type: text
+    regex: \.slice\(0,\s*\d\)
+  - type: text
+    regex: \bpk\.slice\(0,\s*16\)
+- id: malicious-electron-inject
+  desc: Trojanized Electron app.asar injection
+  crit: suspicious
+  conf: 0.98
+  attack: T1554
+  mbc: B0024
+  if:
+    type: text
+    substr: require("electron").app.on("ready"
+- id: install-hook-discord-exfil
+  desc: Install hook Discord webhook exfil
+  crit: suspicious
+  conf: 0.98
+  for:
+  - package.json
+  if:
+    type: value
+    path: scripts.preinstall
+    regex: (curl|wget).{0,100}discord\.com/api/webhooks
+composite_rules:
+- id: obfuscated-eval
+  desc: Obfuscated eval via buffer decode
+  crit: suspicious
+  conf: 0.95
+  near_lines: 64
+  all:
+  - id: micro-behaviors/process/interpreter/eval/direct::js-eval-raw
+  - id: micro-behaviors/data/string/conversion::tostring-call
+  any:
+  - id: micro-behaviors/data/decode/base64::buffer-from-base64
+  - id: micro-behaviors/data/decode/hex::buffer-from-hex-dup
+  unless:
+  - id: metadata/build/
+- id: hidden-payload-eval
+  desc: eval() of payload from hidden file
+  crit: hostile
+  conf: 0.95
+  all:
+  - id: metadata/import/builtin::require-fs
+  - id: micro-behaviors/fs/read/file/target::hidden-relative-file-read
+  - id: micro-behaviors/process/interpreter/eval/direct::js-eval-variable-argument
+- id: hex-payload-injection
+  desc: Hex-encoded payload injection
+  crit: suspicious
+  conf: 0.9
+  all:
+  - id: objectives/supply-chain/hidden-payload/staging/concealment::hex-string-array
+  - id: objectives/supply-chain/hidden-payload/staging/concealment::join-hex-array
+  - id: micro-behaviors/process/interpreter/eval/direct::js-eval-variable-argument
+- id: suspicious-eval-transform
+  desc: eval() following data transformation
+  crit: notable
+  conf: 0.9
+  all:
+  - id: metadata/file/size::javascript-small-file-5k
+  - id: micro-behaviors/data/encode/xor::js-indexed-buffer-xor-loop
+  - id: micro-behaviors/process/interpreter/eval/direct::js-eval-variable-argument
+- id: encoded-eval-chain
+  desc: Encoded data decoded then executed
+  crit: suspicious
+  conf: 0.95
+  any:
+  - id: objectives/supply-chain/hidden-payload/staging/concealment::eval-hex-decode
+  - id: objectives/supply-chain/hidden-payload/staging/concealment::obfuscated-eval
+- id: electron-trojan-injection
+  desc: Electron application trojan injection
+  crit: hostile
+  conf: 0.95
+  all:
+  - id: objectives/supply-chain/hidden-payload/staging/concealment::malicious-electron-inject
+  - id: micro-behaviors/communications/http/post::post
+- id: sliced-payload-eval
+  desc: Execution of sliced data buffer
+  crit: suspicious
+  conf: 0.9
+  all:
+  - id: objectives/supply-chain/hidden-payload/staging/concealment::buffer-slice-magic
+  - id: micro-behaviors/process/interpreter/eval/direct::js-eval-variable-argument

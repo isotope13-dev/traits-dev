@@ -1,0 +1,877 @@
+defaults:
+  platforms: [windows, linux, macos]
+  for: [binaries]
+  attack: T1027
+  mbc: B0032
+traits:
+- id: high-entropy-data-section
+  desc: High entropy in data section
+  crit: suspicious
+  conf: 0.8
+  entropy_min: 6.0
+  entropy_max: 7.8
+  if:
+    type: section
+    exact: data
+  unless:
+  - id: metadata/signed/platform::microsoft
+  - id: metadata/signed/leaf::microsoft-corporation
+  - id: well-known/lib/runtime/compiled/msvc-runtime::msvc-runtime-library
+  - id: well-known/app/enterprise/microsoft-office-support::microsoft-office-support-bundle-context
+- id: high-entropy-dot-data-section
+  desc: High entropy .data section
+  crit: suspicious
+  conf: 0.84
+  for:
+  - pe
+  platforms:
+  - windows
+  # 6.0 is not a high reading for a .data section: it is what mixed binary
+  # tables score. The Go toolchain's own `go.exe` measures 6.14 across a 394 KB
+  # .data holding runtime metadata, and its `functions.count` exclusion below
+  # never fires because that metric is not emitted for this PE. The packed and
+  # encoded payloads this rule is for sit above 7.0; neutral measurement of
+  # readings at 7.5 and up lives in metadata/binary/section/metrics.
+  if:
+    type: section
+    exact: .data
+    length_min: 4096
+    entropy_min: 7.0
+    entropy_max: 7.8
+  unless:
+  - type: metrics
+    field: functions.count
+    min: 500
+  - id: metadata/signed/platform/
+  - id: well-known/app/enterprise/microsoft-office-support::microsoft-office-support-bundle-context
+  - id: well-known/tool/sysadmin/unetbootin/
+  - type: metrics
+    field: exports.count
+    min: 20
+  downgrade:
+    any:
+    - id: metadata/binary/symbols/count::many-imports
+- id: massive-encrypted-dot-data
+  desc: Massive encrypted .data payload
+  crit: notable
+  conf: 0.95
+  for:
+  - pe
+  platforms:
+  - windows
+  if:
+    type: section
+    exact: .data
+    writable: true
+    entropy_min: 7.8
+    length_min: 262144
+  unless:
+  - type: metrics
+    field: functions.count
+    min: 500
+  - id: metadata/signed/platform/
+  - type: symbol
+    exact: TaggantPrepare
+  - id: objectives/anti-static/pack/detect::aspack-marker
+- id: loader-encrypted-dot-data
+  desc: Loader sized encrypted .data blob
+  crit: notable
+  conf: 0.95
+  for:
+  - pe
+  platforms:
+  - windows
+  if:
+    type: section
+    exact: .data
+    writable: true
+    entropy_min: 7.85
+    length_min: 49152
+  unless:
+  - type: metrics
+    field: functions.count
+    min: 500
+  - id: metadata/signed/platform/
+  - type: symbol
+    exact: TaggantPrepare
+  - id: objectives/anti-static/pack/detect::aspack-marker
+- id: packed-loader-low-code-to-data-ratio
+  desc: Packed loader code-to-data ratio below 0.4
+  crit: notable
+  conf: 0.9
+  for:
+  - pe
+  platforms:
+  - windows
+  size_min: 32768
+  entropy_min: 5.0
+  if:
+    type: metrics
+    field: binary.code_to_data_ratio
+    max: 0.3
+  unless:
+  - type: basename
+    regex: \.dll$
+  - type: metrics
+    field: imports.count
+    min: 250
+  - type: metrics
+    field: exports.count
+    min: 50
+  - id: objectives/anti-static/pack/detect::aspack-marker
+  - type: metrics
+    field: functions.count
+    min: 500
+- id: extreme-packed-loader-code-to-data-ratio
+  desc: Packed loader code-to-data ratio below 0.2
+  crit: notable
+  conf: 0.92
+  for:
+  - pe
+  platforms:
+  - windows
+  size_min: 1048576
+  if:
+    type: metrics
+    field: binary.code_to_data_ratio
+    max: 0.2
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/resource/
+- id: encrypted-rdata-section
+  desc: Encrypted rdata section (PE crypter)
+  crit: suspicious
+  conf: 0.9
+  for:
+  - pe
+  if:
+    type: section
+    substr: rdata
+    entropy_min: 7.5
+  unless:
+  - id: metadata/lang/compiler/managed::versioned-vcl-app
+  - id: metadata/binary/framework/
+  # Native CPython crypto extensions pack high-entropy constant tables in .rdata.
+  - id: objectives/anti-static/obfuscation/imports/
+- id: oversized-rdata-section
+  desc: Oversized rdata section vs code
+  crit: suspicious
+  conf: 0.82
+  for:
+  - pe
+  platforms:
+  - windows
+  size_min: 131072
+  if:
+    type: section
+    regex: .rdata
+    compare_to: .text
+    size_ratio_min: 1.7
+  unless:
+  - type: basename
+    regex: \.dll$
+  - type: metrics
+    field: exports.count
+    min: 50
+  - id: metadata/signed/platform/
+  - type: metrics
+    field: functions.count
+    min: 500
+  # Native CPython extensions (unicodedata, PyCryptodome, etc.) carry large
+  # constant/lookup tables in .rdata that dwarf their thin code section.
+  - id: objectives/anti-static/obfuscation/imports/
+  # Wine/ReactOS builtins (codecs, COM type libs) are .rdata-heavy by design.
+  - id: metadata/binary/vendor/
+- id: data-section-dominant
+  desc: Data section significantly larger than code
+  crit: component
+  conf: 0.8
+  size_min: 32768
+  if:
+    id: metadata/binary/section/ratio::data-section-1p5x-code
+  unless:
+  - type: basename
+    regex: \.dll$
+  - id: well-known/tool/sysadmin/par-launcher::par-env-vars
+  - id: metadata/signed/platform::apple
+  - type: metrics
+    field: exports.count
+    min: 50
+  - type: metrics
+    field: binary.data_entropy
+    max: 5.4
+  - type: metrics
+    field: functions.count
+    min: 500
+- id: massive-low-entropy-dot-data
+  desc: Massive low-entropy writable .data section
+  crit: suspicious
+  conf: 0.94
+  for:
+  - pe
+  platforms:
+  - windows
+  size_min: 16777216
+  # Size-inflation padding is dominated by NUL runs (entropy ~0), but loaders
+  # routinely dilute it with stuffed decoy strings (ripped SDK/library text) to
+  # masquerade as a complex benign app, lifting .data entropy to ~3-4.5. That is
+  # still far below packed/encrypted payloads (6.5+); the 16MB writable floor plus
+  # the 95%-of-file and code:data legs in low-entropy-data-padding-geometry keep
+  # this near-zero-FP against ordinary mixed-content .data sections.
+  if:
+    type: section
+    exact: .data
+    writable: true
+    length_min: 16777216
+    entropy_max: 4.5
+  unless:
+  - id: well-known/tool/detection/wireshark/
+  - id: metadata/signed/platform/
+  # Narrowed from the whole metadata/binary/resource/ dir: that prefix matched
+  # any PE carrying an icon (pe-resource-icon-list), which suppressed this trait
+  # on essentially every real-world executable. Only resource-ONLY DLLs and
+  # null-padded resource blobs legitimately present a huge low-entropy section.
+  - id: metadata/binary/resource/identity::resource-only-dll
+  - id: metadata/binary/resource/size::large-null-rsrc
+  # avfilter and the other LGPL FFmpeg libraries ship a large writable .data
+  # of filter graphs and zeroed tables. ProductName FFmpeg is the version
+  # resource, which a decoy string in .data does not satisfy.
+  - id: well-known/lib/media/ffmpeg::ffmpeg-product-versioninfo
+- id: dot-data-over-95pct-of-pe
+  desc: Largest section over ninety-five percent of file
+  crit: notable
+  conf: 0.92
+  for:
+  - pe
+  platforms:
+  - windows
+  size_min: 16777216
+  # binary.data_to_file_ratio is not produced by the analyzer (phantom field →
+  # the trait never fired). largest_section_ratio is the equivalent signal; the
+  # composite pairs it with massive-low-entropy-dot-data, which confirms the
+  # dominant section is the writable .data blob.
+  if:
+    type: metrics
+    field: binary.largest_section_ratio
+    min: 0.95
+- id: extreme-loader-code-to-data-imbalance
+  desc: Code to data ratio below 0.05
+  crit: notable
+  conf: 0.9
+  for:
+  - pe
+  platforms:
+  - windows
+  size_min: 16777216
+  if:
+    type: metrics
+    field: binary.code_to_data_ratio
+    max: 0.05
+- id: largest-section-resource-only-dll
+  desc: Largest-section resource-only DLL
+  crit: component
+  conf: 0.85
+  platforms:
+  - windows
+  for:
+  - pe
+  if:
+    type: trait
+    id: metadata/binary/resource/identity::resource-only-dll
+- id: largest-section-versioned-export-library
+  desc: Largest-section versioned export library
+  crit: component
+  conf: 0.85
+  platforms:
+  - windows
+  for:
+  - pe
+  if:
+    type: trait
+    id: versioned-export-heavy-library
+- id: largest-section-nativeaot-runtime
+  desc: Largest-section NativeAOT runtime
+  crit: component
+  conf: 0.85
+  platforms:
+  - windows
+  for:
+  - pe
+  if:
+    type: trait
+    id: metadata/lang/compiler/aot::nativeaot-large-runtime
+- id: encrypted-payload-section-cond-0--inline-29177
+  desc: Derived data-section geometry component
+  crit: component
+  conf: 0.9
+  size_min: 8192
+  if:
+    type: trait
+    id: metadata/binary/section/entropy::very-high-entropy-data-section
+- id: encrypted-payload-section-cond-1--inline-29178
+  desc: Derived data-section geometry component
+  crit: component
+  conf: 0.9
+  size_min: 8192
+  if:
+    type: trait
+    id: metadata/binary/section/prose::tiny-cstring-section
+  # A tiny __cstring section is normal for Go Mach-O binaries (Go keeps strings
+  # in pclntab/rodata) — not a concealed-payload signal there.
+  unless:
+  - id: metadata/lang/compiled/
+- id: packed-loader-data-geometry-cond-0--inline-29185
+  desc: Derived data-section geometry component
+  crit: component
+  conf: 0.95
+  platforms:
+  - windows
+  for:
+  - pe
+  if:
+    type: trait
+    id: massive-encrypted-dot-data
+- id: packed-loader-data-geometry-cond-1--inline-29188
+  desc: Derived data-section geometry component
+  crit: component
+  conf: 0.95
+  platforms:
+  - windows
+  for:
+  - pe
+  if:
+    type: trait
+    id: metadata/binary/section/ratio::pe-largest-section-65-percent
+  unless:
+  - type: trait
+    id: metadata/file/extension/identity::linux-kernel-package-artifact-basename
+- id: encrypted-loader-data-geometry-cond-0--inline-29193
+  desc: Derived data-section geometry component
+  crit: component
+  conf: 0.96
+  platforms:
+  - windows
+  for:
+  - pe
+  if:
+    type: trait
+    id: loader-encrypted-dot-data
+- id: encrypted-loader-data-geometry-cond-1--inline-29197
+  desc: Derived data-section geometry component
+  crit: component
+  conf: 0.96
+  platforms:
+  - windows
+  for:
+  - pe
+  if:
+    type: trait
+    id: micro-behaviors/crypto/library/cryptoapi::capi-keyed-buffer-crypto-chain
+- id: packed-anti-analysis-data-loader-cond-0--inline-29201
+  desc: Derived data-section geometry component
+  crit: component
+  conf: 0.97
+  platforms:
+  - windows
+  size_min: 1048576
+  for:
+  - pe
+  if:
+    type: trait
+    id: metadata/binary/section/ratio::large-four-section-pe
+- id: packed-anti-analysis-data-loader-cond-1--inline-29202
+  desc: Derived data-section geometry component
+  crit: component
+  conf: 0.97
+  platforms:
+  - windows
+  size_min: 1048576
+  for:
+  - pe
+  if:
+    type: trait
+    id: metadata/binary/section/ratio::dominant-section
+  unless:
+  - type: trait
+    id: metadata/file/extension/identity::linux-kernel-package-artifact-basename
+- id: packed-anti-analysis-data-loader-cond-2--inline-29203
+  desc: Derived data-section geometry component
+  crit: component
+  conf: 0.97
+  platforms:
+  - windows
+  size_min: 1048576
+  for:
+  - pe
+  if:
+    type: trait
+    id: metadata/binary/layout/entropy::high-entropy-data
+- id: packed-anti-analysis-data-loader-cond-3--inline-29204
+  desc: Derived data-section geometry component
+  crit: component
+  conf: 0.97
+  platforms:
+  - windows
+  size_min: 1048576
+  for:
+  - pe
+  if:
+    type: trait
+    id: extreme-packed-loader-code-to-data-ratio
+- id: packed-anti-analysis-data-loader-cond-4--inline-29205
+  desc: Derived data-section geometry component
+  crit: component
+  conf: 0.97
+  platforms:
+  - windows
+  size_min: 1048576
+  for:
+  - pe
+  if:
+    type: trait
+    id: objectives/anti-analysis/debugger-detect/check::is-debugger-present-symbol
+- id: packed-anti-analysis-data-loader-cond-5--inline-29206
+  desc: Derived data-section geometry component
+  crit: component
+  conf: 0.97
+  platforms:
+  - windows
+  size_min: 1048576
+  for:
+  - pe
+  if:
+    type: trait
+    id: micro-behaviors/os/exception/error-handling::exception-filter-pair-imports
+- id: packed-anti-analysis-data-loader-cond-0--inline-29208
+  desc: Derived data-section geometry component
+  crit: component
+  conf: 0.97
+  platforms:
+  - windows
+  size_min: 1048576
+  for:
+  - pe
+  if:
+    type: trait
+    id: metadata/signed/platform::microsoft
+- id: packed-anti-analysis-data-loader-cond-1--inline-29209
+  desc: Derived data-section geometry component
+  crit: component
+  conf: 0.97
+  platforms:
+  - windows
+  size_min: 1048576
+  for:
+  - pe
+  if:
+    type: trait
+    id: metadata/lang/compiler/aot::nativeaot-large-runtime
+- id: packed-anti-analysis-data-loader-cond-2--inline-29210
+  desc: Derived data-section geometry component
+  crit: component
+  conf: 0.97
+  platforms:
+  - windows
+  size_min: 1048576
+  for:
+  - pe
+  if:
+    type: trait
+    id: metadata/binary/resource/identity::resource-only-dll
+composite_rules:
+- id: unsigned-sparse-rdata-loader-profile
+  # A future-proof loader profile: an unsigned PE with a very large read-only
+  # data section, sparse imports, and runtime resolution/memory staging. Large
+  # type-library and COM proxy DLLs can share the geometry, so this remains
+  # suspicious; family rules add the hostile interpretation when proxy and
+  # campaign markers are present.
+  desc: Unsigned sparse-import rdata loader profile
+  crit: suspicious
+  conf: 0.94
+  for: [pe, dll]
+  attack: "T1027.009,T1574.002"
+  all:
+  - id: metadata/binary/section/ratio::oversized-rdata-ratio
+  - id: metadata/signed/trust-level::unsigned
+  - id: metadata/binary/symbols/count::max-25-imports
+  - id: metadata/binary/provenance/build::pe-far-future-timestamp
+  - id: micro-behaviors/os/module/load::get-proc-address-import
+  - id: micro-behaviors/dylib/load/runtime::load-library-ex-a
+  - id: micro-behaviors/mem/alloc/virtual::nt-allocate-virtual-memory-api
+  - id: micro-behaviors/process/create/thread::create-thread
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/section/ratio::benign-large-rdata-layout
+  - id: metadata/binary/installer/family/
+
+- id: opaque-rdata-anti-analysis-loader
+  desc: Monolithic RDATA carrier paired with local and remote debugger queries
+  crit: hostile
+  conf: 0.97
+  attack: T1027,T1622
+  for: [pe]
+  all:
+  - id: metadata/binary/layout/size::large-rdata-section
+  - id: metadata/binary/layout/size::massive-executable
+  - id: metadata/binary/layout/checksum::pe-checksum-zeroed
+  - id: metadata/binary/layout/tls::pe-tls-callback-table
+  - id: objectives/anti-analysis/debugger-detect/check::is-debugger-present
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/
+  - id: well-known/tool/reverse-engineering/
+  - id: well-known/tool/development/toolchain/deno::deno-runtime-binary
+  - id: well-known/tool/development/toolchain/deno::denort-runtime-binary
+  # Same shape as the Deno carve-outs above: a Chromium/Electron binary is a
+  # 100 MB+ image with a monolithic .rdata, MSVC TLS callbacks and the CRT's
+  # IsDebuggerPresent, so it satisfies every leg on framework structure alone.
+  - id: well-known/lib/runtime/scripted/electron::electron-chromium-runtime-strong
+
+- id: encrypted-data-section-toolchain-profile
+  desc: Encrypted data-section toolchain profile
+  crit: component
+  conf: 0.9
+  any:
+  - id: metadata/lang/compiler/managed::versioned-vcl-app
+  - id: metadata/signed/leaf::google-llc
+  - id: well-known/lib/media/ffmpeg::ffmpeg-lib-marker
+  - id: objectives/anti-static/pack/detect::enigma-protector
+  - id: metadata/binary/framework::dotnet-assembly
+  - id: metadata/signed/platform::microsoft
+  - id: well-known/app/system/drivers/
+  - id: objectives/anti-static/pack/asprotect::asprotect-protector-application
+  # Native CPython crypto extensions (PyCryptodome _ec_ws, etc.) pack optimized
+  # constant tables at entropy >7.5 in .rdata — not an encrypted payload.
+  - id: metadata/lang/compiler/native::python-msvc-extension
+- id: high-entropy-dot-data-runtime-profile
+  desc: High-entropy .data runtime profile
+  crit: component
+  conf: 0.92
+  any:
+  - id: well-known/dual-use/access-control/zprotect::zprotect-plugin
+  - id: metadata/lang/compiler/systems::go-pe-binary-context
+  - id: well-known/app/system/drivers/
+  - id: well-known/dual-use/access-control/hasp-license-manager::hasp-license-manager-service
+  - id: well-known/lib/crypto/rsa-bsafe::rsa-bsafe-crypto-library
+
+- id: go-inflated-data-loader-layout
+  desc: Go PE inflated data loader layout
+  crit: suspicious
+  conf: 0.9
+  for:
+  - pe
+  platforms:
+  - windows
+  all:
+  - id: metadata/lang/compiler/systems::go-pe-rich-symbols
+  - id: metadata/binary/section/ratio::inflated-data-section
+  - id: metadata/binary/symbols/imports::pe-single-import-dll
+  any:
+  - id: micro-behaviors/os/api-resolution/manual::go-syscall-dynamic-api-dispatch
+  - id: micro-behaviors/mem/protect/modify::virtual-alloc
+  - id: micro-behaviors/process/inject/runtime/thread-context::thread-context-apis-3of4
+  needs: 2
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+- id: packed-loader-low-code-to-data-packaging
+  desc: Recognized PE packaging in data-heavy layout
+  crit: component
+  conf: 0.85
+  any:
+  - id: metadata/binary/resource/identity::resource-only-dll
+  - id: metadata/signed/platform::microsoft
+  - id: metadata/package/versioning/scheme::pe-version-resource
+  - id: metadata/binary/installer/sfx::winrar-sfx
+- id: dotnet-data-section-framework-profile
+  desc: Managed PE framework metadata marker
+  crit: component
+  conf: 0.95
+  any:
+  - id: metadata/binary/framework::dotnet-assembly
+  - id: metadata/binary/framework::dotnet-metadata
+  - id: metadata/signed/unknown::.net
+- id: versioned-export-heavy-library
+  desc: Versioned export-heavy library layout
+  crit: component
+  conf: 0.85
+  for:
+  - dll
+  platforms:
+  - windows
+  all:
+  - id: metadata/package/versioning/scheme::version-resource-metadata
+  - id: metadata/binary/symbols/count::many-exports-20
+- id: packed-loader-largest-section-packaging
+  desc: Large-section packaging/runtime profile
+  crit: component
+  conf: 0.85
+  for:
+  - pe
+  platforms:
+  - windows
+  any:
+  - id: objectives/anti-static/obfuscation/payload/section/content::largest-section-resource-only-dll
+  - id: metadata/signed/platform::microsoft
+  - id: metadata/signed/certificate/identity::open-source-developer-leaf-subject
+  - id: objectives/anti-static/obfuscation/payload/section/content::largest-section-versioned-export-library
+  - id: objectives/anti-static/obfuscation/payload/section/content::largest-section-nativeaot-runtime
+  - id: micro-behaviors/data/encode/pecompact::pecompact-seh-trick
+  - id: metadata/binary/section/label::upx-section
+  - id: metadata/binary/layout/ratio::legacy-watcom-packed-utility
+  - id: metadata/binary/symbols/count::high-export-count-marker
+- id: encrypted-payload-section
+  desc: Encrypted payload in data section
+  crit: suspicious
+  conf: 0.9
+  size_min: 8192
+  all:
+  - id: objectives/anti-static/obfuscation/payload/section/content::encrypted-payload-section-cond-0--inline-29177
+  - id: objectives/anti-static/obfuscation/payload/section/content::encrypted-payload-section-cond-1--inline-29178
+- id: data-heavy-dropper-pattern
+  desc: Data-heavy binary with shell execution
+  crit: suspicious
+  conf: 0.9
+  all:
+  - id: objectives/anti-static/obfuscation/payload/section/content::data-section-dominant
+  - id: micro-behaviors/process/create/shell/spawn::shell-execution-comp
+  unless:
+  - id: metadata/signed/platform::apple
+  - id: well-known/tool/sysadmin/unetbootin/
+  # Statically linked OCaml runtimes are data-dominant by construction (large
+  # .data/.rdata tables) and carry process-spawn runtime functions, so the
+  # pair describes the toolchain, not a staged payload (e.g. semgrep-core.exe).
+  - id: metadata/lang/compiler/native::ocaml-native-runtime-marker
+- id: packed-loader-data-geometry
+  desc: Packed loader with dominant encrypted .data
+  crit: suspicious
+  conf: 0.95
+  for:
+  - pe
+  platforms:
+  - windows
+  all:
+  - id: objectives/anti-static/obfuscation/payload/section/content::packed-loader-data-geometry-cond-0--inline-29185
+  any:
+  - id: objectives/anti-static/obfuscation/payload/section/content::packed-loader-low-code-to-data-ratio
+  - id: objectives/anti-static/obfuscation/payload/section/content::packed-loader-data-geometry-cond-1--inline-29188
+  unless:
+  - id: metadata/lang/compiler/systems::go-pe-binary-context
+  - id: metadata/signed/platform::microsoft
+  - id: metadata/package/versioning/scheme::version-resource-metadata
+  - id: metadata/signed/certificate/subject::pe-signer-nvidia-corporation
+  - id: well-known/lib/ai/triton::triton-package-binary
+- id: encrypted-loader-data-geometry
+  desc: Encrypted loader data geometry
+  crit: suspicious
+  conf: 0.96
+  for:
+  - pe
+  platforms:
+  - windows
+  all:
+  - id: objectives/anti-static/obfuscation/payload/section/content::encrypted-loader-data-geometry-cond-0--inline-29193
+  - id: metadata/binary/section/ratio::data-section-1p5x-code
+  any:
+  - id: objectives/anti-static/obfuscation/payload/section/content::packed-loader-low-code-to-data-ratio
+  - id: objectives/anti-static/obfuscation/payload/section/content::encrypted-loader-data-geometry-cond-1--inline-29197
+  unless:
+  - id: metadata/signed/platform::microsoft
+  - id: metadata/signed/certificate/subject::pe-signer-nvidia-corporation
+  - id: well-known/lib/ai/triton::triton-package-binary
+- id: packed-anti-analysis-data-loader
+  desc: Packed PE loader with anti-analysis data geometry
+  crit: suspicious
+  conf: 0.97
+  for:
+  - pe
+  platforms:
+  - windows
+  size_min: 1048576
+  all:
+  - id: objectives/anti-static/obfuscation/payload/section/content::packed-anti-analysis-data-loader-cond-0--inline-29201
+  - id: objectives/anti-static/obfuscation/payload/section/content::packed-anti-analysis-data-loader-cond-1--inline-29202
+  - id: objectives/anti-static/obfuscation/payload/section/content::packed-anti-analysis-data-loader-cond-2--inline-29203
+  - id: objectives/anti-static/obfuscation/payload/section/content::packed-anti-analysis-data-loader-cond-3--inline-29204
+  - id: objectives/anti-static/obfuscation/payload/section/content::packed-anti-analysis-data-loader-cond-4--inline-29205
+  - id: objectives/anti-static/obfuscation/payload/section/content::packed-anti-analysis-data-loader-cond-5--inline-29206
+  unless:
+  - id: objectives/anti-static/obfuscation/payload/section/content::packed-anti-analysis-data-loader-cond-0--inline-29208
+  - id: objectives/anti-static/obfuscation/payload/section/content::packed-anti-analysis-data-loader-cond-1--inline-29209
+  - id: objectives/anti-static/obfuscation/payload/section/content::packed-anti-analysis-data-loader-cond-2--inline-29210
+- id: low-entropy-data-padding-geometry
+  desc: Dominant low-entropy writable .data padding geometry
+  crit: suspicious
+  conf: 0.97
+  for:
+  - pe
+  platforms:
+  - windows
+  all:
+  - id: objectives/anti-static/obfuscation/payload/section/content::massive-low-entropy-dot-data
+  - id: objectives/anti-static/obfuscation/payload/section/content::dot-data-over-95pct-of-pe
+  - id: objectives/anti-static/obfuscation/payload/section/content::extreme-loader-code-to-data-imbalance
+  any:
+  - id: metadata/binary/layout/checksum::pe-checksum-zeroed
+  - id: metadata/binary/layout/checksum::pe-checksum-mismatch
+  - id: metadata/binary/layout/size::massive-executable
+  - id: metadata/binary/provenance/build::pe-export-timestamp-all-ones
+  # The three geometry legs (16MB+ writable .data, >=95% of file, code:data<0.05)
+  # already exclude every benign runtime — managed frameworks ship their bulk as
+  # high-entropy resources/snapshots, not a low-entropy writable .data blob. The
+  # exclusions below are light insurance, scoped to specific RUNTIME markers.
+  # The previous `metadata/binary/framework/` dir-prefix was too broad: it also
+  # matched ATL/WTL RTTI and a bare "mscoree" string, both of which a
+  # decoy-stuffed loader trivially fakes, defeating the padding verdict.
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/framework::dotnet-metadata
+  - id: metadata/binary/framework::flutter-windows-dll
+- id: null-padded-remote-process-loader
+  desc: Null-padded PE performs remote thread-context injection
+  crit: hostile
+  conf: 0.99
+  for:
+  - pe
+  platforms:
+  - windows
+  attack: T1027,T1055
+  mbc: B0033
+  all:
+  - id: objectives/anti-static/obfuscation/payload/section/content::low-entropy-data-padding-geometry
+  - id: objectives/evasion/process/injection/memory::remote-process-thread-context-loader
+  unless:
+  - id: metadata/signed/platform/
+  - id: well-known/tool/reverse-engineering/
+- id: encoded-rdata-loader-geometry
+  desc: Encoded loader payload in rdata
+  crit: suspicious
+  conf: 0.93
+  for:
+  - pe
+  platforms:
+  - windows
+  all:
+  - id: objectives/anti-static/obfuscation/payload/section/content::oversized-rdata-section
+  - id: micro-behaviors/data/encode/base64::alphabet-permuted-native
+  any:
+  - id: micro-behaviors/data/embedded/payload/resource::pe-magic-in-rdata
+  - id: metadata/binary/debug::pdb-random-basename
+  - id: metadata/package/versioning/scheme::pe-productname-field
+- id: large-encrypted-rdata-loader
+  desc: Large PE with high-entropy .rdata and low code-to-data ratio
+  crit: suspicious
+  conf: 0.85
+  size_min: 4194304
+  for:
+  - pe
+  platforms:
+  - windows
+  all:
+  - id: metadata/binary/section/entropy::extreme-rdata-entropy
+  - id: metadata/binary/section/ratio::rdata-ratio-over-5x
+  - id: objectives/anti-static/obfuscation/payload/section/layout::low-code-to-data-ratio-pe
+  unless:
+  - id: metadata/signed/platform/
+  # `section/metrics/` is dissolved. Each of these rules is about .rdata
+  # shape, and the benign rdata signer context landed in ratio/. Name it:
+  # the whole ratio/ directory also holds the `rdata-ratio-over-5x` leg.
+  - id: metadata/binary/section/ratio::oversized-rdata-signer-context
+  # `framework::clr-runtime-header` dropped to stay under the expanded
+  # suppression budget: an IL-only assembly has no .rdata section at all.
+  - id: metadata/binary/symbols/count::many-exports-200
+- id: go-symtab-rwx-payload
+  desc: Go PE conceals an opaque payload in an RWX .symtab section
+  crit: hostile
+  conf: 0.99
+  for:
+  - pe
+  platforms:
+  - windows
+  all:
+  - id: metadata/binary/section/entropy::high-entropy-rwx-symtab-section
+  - id: metadata/lang/compiler/systems::go-version-string
+  any:
+  - id: micro-behaviors/mem/protect/modify::virtual-alloc
+  - id: micro-behaviors/process/create/thread::create-thread
+  - id: micro-behaviors/dylib/lookup::get-proc-address
+
+- id: aes-high-entropy-dll-payload
+  desc: DLL hides AES-protected data in a high-entropy section
+  crit: hostile
+  conf: 0.99
+  for: [pe, dll]
+  platforms: [windows]
+  attack: T1027,T1140
+  all:
+  - id: metadata/binary/signing::small-high-entropy-data-section
+  - id: micro-behaviors/crypto/symmetric/aes/cng::bcrypt-aes-cbc
+  - id: metadata/binary/symbols/count::minimal-exports
+  - id: metadata/binary/layout/checksum::pe-checksum-zeroed
+  unless:
+  - id: metadata/binary/installer/family/
+  - id: metadata/binary/framework/
+  - id: well-known/tool/reverse-engineering/
+- id: encrypted-thread-buffer-loader
+  desc: Encrypted data executed from a resolved thread buffer
+  crit: hostile
+  conf: 0.99
+  for: [pe, dll]
+  platforms: [windows]
+  attack: T1027,T1140,T1055
+  all:
+  - id: objectives/anti-static/obfuscation/payload/section/content::encrypted-loader-data-geometry
+  - id: micro-behaviors/crypto/symmetric/aes/constant::aes-sbox-bytes-pe-rdata
+  - id: micro-behaviors/mem/alloc/executable::virtualalloc-rwx-commit-resolved-x64
+  - id: micro-behaviors/process/create/thread::create-thread-buffer-resolved-x64
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/framework/
+  - id: well-known/tool/reverse-engineering/
+# Packed stealers (RadThief/Fragtor-class) stash twin max-entropy .seh
+# blobs and flip protection with VirtualProtect before running them.
+- id: duplicate-seh-virtualprotect-payload
+  desc: Duplicate .seh payloads unlocked via VirtualProtect
+  crit: hostile
+  conf: 0.96
+  for: [pe]
+  platforms: [windows]
+  attack: T1027,T1055
+  all:
+  - id: metadata/binary/section/label::duplicated-high-entropy-seh-sections
+  - id: micro-behaviors/mem/protect/modify::virtual-protect
+  - id: metadata/binary/layout/checksum::pe-checksum-zeroed
+  unless:
+  - id: metadata/signed/platform/
+  - id: micro-behaviors/data/encode/pecompact::pecompact-seh-trick
+  - id: metadata/binary/installer/family/
+- id: duplicate-seh-unsigned-entropy-loader
+  desc: Unsigned PE with duplicate .seh and VirtualProtect
+  crit: hostile
+  conf: 0.95
+  for: [pe]
+  platforms: [windows]
+  attack: T1027,T1055
+  all:
+  - id: metadata/binary/section/label::duplicated-high-entropy-seh-sections
+  - id: micro-behaviors/mem/protect/modify::virtual-protect
+  - id: metadata/signed/trust-level::unsigned-missing-signature-record
+  unless:
+  - id: metadata/signed/platform/
+  - id: micro-behaviors/data/encode/pecompact::pecompact-seh-trick
+  - id: metadata/binary/installer/family/
+- id: duplicate-seh-high-entropy-loader
+  desc: High-entropy PE with duplicate .seh and VirtualProtect
+  crit: hostile
+  conf: 0.95
+  for: [pe]
+  platforms: [windows]
+  attack: T1027,T1055
+  all:
+  - id: metadata/binary/section/label::duplicated-high-entropy-seh-sections
+  - id: micro-behaviors/mem/protect/modify::virtual-protect
+  - id: metadata/binary/layout/entropy::overall-entropy-78
+  unless:
+  - id: metadata/signed/platform/
+  - id: micro-behaviors/data/encode/pecompact::pecompact-seh-trick
+  - id: metadata/binary/installer/family/

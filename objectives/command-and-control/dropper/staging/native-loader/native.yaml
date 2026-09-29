@@ -1,0 +1,989 @@
+defaults:
+  for:
+  - pe
+  - dll
+  platforms:
+  - windows
+traits:
+- id: small-loader-executable
+  desc: Small executable with loader-style filename
+  crit: suspicious
+  conf: 0.7
+  size_min: 512
+  size_max: 102400
+  if:
+    type: text
+    regex: (?i)\b[a-z0-9_-]*loader[a-z0-9._-]*\.exe\b
+    section: .text
+- id: pe-dir64-relocation-loop-x64
+  desc: PE DIR64 relocation loop
+  crit: notable
+  conf: 0.84
+  for: [pe]
+  if:
+    type: hex
+    section: .text
+    pattern: 41 81 E6 00 F0 00 00 66 41 81 FE 00 A0
+- id: inno-550-data-in-overlay
+  desc: Inno 5.5 data in overlay
+  crit: notable
+  conf: 0.92
+  if:
+    type: hex
+    pattern: "49 6E 6E 6F 20 53 65 74 75 70 20 53 65 74 75 70 20 44 61 74 61 20 28 35 2E 35 2E 30 29"
+    offset_range: [1048576, null]
+composite_rules:
+- id: recognized-temp-shell-handoff-profile
+  desc: Recognized temp shell handoff marker
+  crit: notable
+  conf: 0.8
+  any:
+  - id: metadata/binary/installer/family::known-benign-installer
+  - id: metadata/binary/installer/script::nsis-error-title
+  - id: well-known/tool/reverse-engineering/dede::generated-file-banner
+  - id: metadata/signed/unknown::lenovo-beijing-co.
+- id: signed-versioned-temp-handoff-profile
+  desc: Signed versioned temp handoff marker
+  crit: notable
+  conf: 0.8
+  all:
+  - id: metadata/signed/developer
+  - id: metadata/package/versioning/scheme::pe-version-resource
+  - id: metadata/binary/symbols/count::many-imports
+- id: mingw-thread-message-loader
+  desc: MinGW loader with thread and message queue plumbing
+  crit: suspicious
+  conf: 0.85
+  attack: T1129
+  size_max: 102400
+  all:
+  - id: micro-behaviors/process/create/thread::create-thread
+  - id: micro-behaviors/os/message/queue::peek-message-a
+  - id: micro-behaviors/os/message/queue::post-thread-message-a
+  - id: metadata/lang/compiler/native::mingw-runtime-marker
+  unless:
+  - id: metadata/binary/symbols/count::many-exports
+- id: exception-table-loader-control
+  desc: Small loader with custom exception table control
+  crit: suspicious
+  conf: 0.8
+  attack: T1006
+  all:
+  - id: small-loader-executable
+  - id: micro-behaviors/os/exception/register::rtl-add-function-table
+  - id: micro-behaviors/os/exception/handler::capture-context
+  - id: micro-behaviors/os/exception/handler::virtual-unwind
+  unless:
+  - id: metadata/binary/code/complexity::many-functions
+- id: exception-registered-memory-loader
+  desc: Memory-executing loader with registered exception table
+  crit: suspicious
+  conf: 0.85
+  all:
+  - id: micro-behaviors/mem/protect/modify::virtual-alloc
+  - id: micro-behaviors/mem/protect/modify::virtual-protect
+  - id: micro-behaviors/os/exception/register::rtl-add-function-table
+  unless:
+  - id: metadata/binary/symbols/count::many-exports
+  - id: metadata/signed/platform/
+  - id: metadata/lang/compiler/aot::native-runtime-large-file
+  - id: metadata/lang/compiler/aot::huge-runtime-function-count
+  - id: well-known/app/ai/coding-agent/anthropic-claude-code::native-windows-package-context
+  # V8 and the sandbox register unwind tables and change page protection.
+  - id: well-known/lib/runtime/scripted/electron::chromium-engine-capability-context
+  - id: well-known/lib/runtime/scripted/bun-runtime::bun-windows-runtime-binary
+- id: sparse-encrypted-powershell-reference
+  desc: Sparse-import PE with concealed payload and PowerShell reference
+  crit: hostile
+  conf: 0.97
+  for: [pe]
+  attack: T1027,T1059.001
+  size_min: 10485760
+  all:
+  - id: metadata/binary/symbols/count::max-25-imports
+  - id: metadata/file/data-blob::low-entropy-binary-with-dense-region
+  - id: micro-behaviors/process/create/shell/interpreter::powershell-executable-token
+  any:
+  - id: micro-behaviors/dylib/load/runtime::load-library-a
+  - id: micro-behaviors/dylib/lookup::get-proc-address
+  - id: micro-behaviors/crypto/
+  - id: micro-behaviors/process/create/shell/
+  needs: 2
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/framework/
+- id: encrypted-bundle-embedded-code-loader
+  desc: Encrypted bundle loads embedded code into executable memory and starts a thread
+  crit: hostile
+  conf: 0.98
+  attack: T1027.009,T1055
+  mbc: B0032
+  all:
+  - id: micro-behaviors/data/archive/custom::bndl-magic
+  - id: micro-behaviors/crypto/symmetric/stream/chacha::chacha-salsa-constant
+  - id: micro-behaviors/data/embedded/payload/header::inline-pe-signature-check
+  - id: micro-behaviors/mem/alloc/executable::page-execute-readwrite-arg-x64
+  - id: micro-behaviors/process/threading/create::create-thread-text
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/framework/
+- id: sidecar-exception-memory-loader
+  desc: Sidecar memory loader
+  crit: hostile
+  conf: 0.94
+  attack: T1620
+  all:
+  - id: micro-behaviors/fs/path/extension::short-bin-sidecar-reference
+  - id: exception-registered-memory-loader
+  any:
+  - id: objectives/anti-static/obfuscation/imports/api-hashing::pe-api-hashing-indicator-single
+  - id: objectives/anti-static/obfuscation/payload/import::minimal-pe-dynamic-load
+  - id: objectives/evasion/self-delete/file/script::module-path-delete
+- id: sparse-api-hash-sidecar-loader
+  desc: Sparse API-hashed sidecar loader markers
+  crit: suspicious
+  conf: 0.88
+  attack: T1027.007
+  all:
+  - id: micro-behaviors/fs/path/extension::short-bin-sidecar-reference
+  - id: objectives/anti-static/obfuscation/imports/api-hashing::pe-api-hashing-indicator-single
+  - id: micro-behaviors/os/module/load::dynamic-self-resolution-imports
+  - id: micro-behaviors/mem/protect/modify::virtual-alloc
+  any:
+  - id: micro-behaviors/mem/protect/modify::virtual-protect
+  - id: micro-behaviors/os/exception/register::rtl-add-function-table
+  - id: objectives/evasion/self-delete/file/script::module-path-delete
+  unless:
+  - id: metadata/binary/framework/
+- id: data-section-rwx-direct-call-loader
+  desc: Data section RWX direct-call loader
+  crit: hostile
+  conf: 0.96
+  attack: T1620
+  all:
+  - id: micro-behaviors/mem/protect/modify::virtual-protect
+  - id: micro-behaviors/mem/protect/modify::virtualprotect-rwx-direct-call-x86
+  - id: objectives/anti-static/obfuscation/payload/section/content::high-entropy-dot-data-section
+  any:
+  - id: metadata/binary/symbols/exports::single-short-lowercase-export
+  - id: metadata/binary/header/malformed::pe-entry-in-header
+  - id: objectives/anti-static/obfuscation/imports/api-hashing::pe-api-hashing-indicator-single
+  needs: 2
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/framework/
+  - id: well-known/lib/runtime/scripted/electron/
+  - id: metadata/binary/symbols/exports::no-exports
+- id: self-issued-admin-rwx-memory-loader
+  desc: Self-issued admin PE with RWX memory loading and dynamic API resolution
+  crit: hostile
+  conf: 0.98
+  attack: T1027,T1620
+  mbc: B0032
+  all:
+  - id: metadata/signed/certificate/chain::pe-cert-leaf-self-issued
+  - id: metadata/build/manifest::pe-requires-admin
+  - id: metadata/binary/section/header::pe-entry-in-writable-section
+  - id: metadata/binary/section/permission::pe-multiple-executable-writable-sections
+  - id: micro-behaviors/mem/protect/modify::virtual-protect
+  - id: micro-behaviors/os/module/load::get-proc-address-import
+  - id: micro-behaviors/dylib/load/runtime::load-library-a
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: metadata/binary/framework/
+- id: exported-section-decrypt-exec-loader
+  desc: Exported section decrypt execute loader
+  crit: hostile
+  conf: 0.95
+  attack: T1620
+  all:
+  - id: objectives/command-and-control/dropper/staging/native-loader::data-section-rwx-direct-call-loader
+  - id: objectives/anti-static/obfuscation/name-mangling/export-name::single-randomized-dll-export
+  any:
+  - id: micro-behaviors/os/module/load::dynamic-self-resolution-imports
+  - id: micro-behaviors/process/create/thread::create-thread
+  - id: objectives/anti-analysis/debugger-detect/combined-checks::debugger-check-with-guards
+  unless:
+  - id: metadata/signed/platform/
+- id: api-hashed-entry-header-section-loader
+  desc: API-hashed entry-header section loader
+  crit: hostile
+  conf: 0.95
+  attack: T1620
+  all:
+  - id: micro-behaviors/mem/protect/modify::virtualprotect-rwx-direct-call-x86
+  - id: metadata/binary/header/malformed::pe-entry-in-header
+  - id: objectives/anti-static/obfuscation/imports/api-hashing::pe-api-hashing-indicator-single
+  - id: objectives/anti-static/obfuscation/payload/section/content::high-entropy-dot-data-section
+  any:
+  - id: metadata/binary/symbols/exports::single-short-lowercase-export
+  - id: micro-behaviors/os/module/load::dynamic-self-resolution-imports
+  - id: objectives/anti-analysis/debugger-detect/combined-checks::debugger-check-with-guards
+  needs: 2
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/framework/
+  - id: metadata/binary/symbols/exports::no-exports
+- id: webroot-pdb-section-exec-loader
+  desc: Webroot PDB section execution loader
+  crit: hostile
+  conf: 0.94
+  attack: T1620
+  all:
+  - id: micro-behaviors/mem/protect/modify::virtualprotect-rwx-direct-call-x86
+  - id: metadata/binary/debug::pdb-webroot-loader-project
+  - id: metadata/binary/header/malformed::pe-entry-in-header
+  any:
+  - id: objectives/anti-static/obfuscation/payload/section/content::high-entropy-dot-data-section
+  - id: objectives/anti-static/obfuscation/name-mangling/export-name::single-randomized-dll-export
+  - id: objectives/anti-static/obfuscation/imports/api-hashing::pe-api-hashing-indicator-single
+  needs: 2
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/framework/
+- id: dll-rwx-section-execution-profile
+  desc: DLL RWX section execution profile
+  crit: suspicious
+  conf: 0.9
+  attack: T1620
+  all:
+  - id: micro-behaviors/mem/protect/modify::virtualprotect-rwx-stack-arg-x86
+  - id: micro-behaviors/mem/protect/modify::virtualprotect-rwx-direct-call-x86
+  - id: metadata/binary/symbols/count::minimal-exports
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/framework/
+- id: sparse-overlay-tls-dll-loader
+  desc: Sparse-import DLL loader with TLS callbacks and packed overlay
+  crit: hostile
+  conf: 0.96
+  attack: T1620
+  all:
+  - id: objectives/anti-static/pack/runtime::sparse-tls-overlay-packed-dll
+  - id: metadata/binary/symbols/imports::pe-imports-max-six
+  - id: metadata/binary/symbols/exports::single-export
+  any:
+  - id: metadata/binary/framework::mscoree-name
+  - id: micro-behaviors/os/module/load::ntdll-dll-string
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+- id: winsock-temp-targeting-profile
+  desc: PE section, target and TEMP process clues
+  crit: suspicious
+  conf: 0.95
+  attack: T1105
+  size_max: 262144
+  all:
+  - id: micro-behaviors/fs/write/file/handle::pe-temp-write-process-api-profile
+  - id: objectives/discovery/process/targeting::toolhelp-enumeration-with-access
+  - id: objectives/anti-static/obfuscation/payload/section/content::high-entropy-dot-data-section
+  any:
+  - id: micro-behaviors/communications/ip/endpoint::external-ipv4-port-binary
+  - id: micro-behaviors/os/registry/access::registry-write-api-chain
+  - id: objectives/anti-analysis/debugger-detect/combined-checks::debugger-check-with-guards
+  needs: 2
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: metadata/binary/framework/
+- id: api-hashed-rwx-section-loader
+  desc: API-hashed RWX section loader
+  crit: suspicious
+  conf: 0.9
+  attack: T1027.007
+  all:
+  - id: micro-behaviors/mem/protect/modify::virtualprotect-rwx-direct-call-x86
+  - id: objectives/anti-static/obfuscation/imports/api-hashing::pe-api-hashing-indicator-single
+  any:
+  - id: metadata/binary/header/malformed::pe-entry-in-header
+  - id: metadata/binary/symbols/exports::single-short-lowercase-export
+  - id: metadata/binary/debug::pdb-webroot-loader-project
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/framework/
+- id: embedded-pe-manual-resolver-loader
+  desc: Embedded PE loader with manual resolver
+  crit: hostile
+  conf: 0.95
+  attack: T1620
+  size_max: 524288
+  all:
+  - id: metadata/binary/layout/embedded::pe-embedded
+  - id: objectives/anti-static/obfuscation/imports/api-hashing::manual-getprocaddress
+  - id: micro-behaviors/process/create/launch::create-process-api-name
+  any:
+  - id: micro-behaviors/communications/http/client/urlmon::url-download-to-file-str
+  - id: micro-behaviors/communications/http/client/wininet::internet-open
+  - id: micro-behaviors/process/terminate/kill::terminate-process
+  needs: 2
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: metadata/binary/framework/
+- id: sidecar-manual-map-indirect-exec
+  desc: Sidecar manual-map indirect execution
+  crit: hostile
+  conf: 0.95
+  attack: T1620
+  all:
+  - id: sidecar-exception-memory-loader
+  - id: pe-dir64-relocation-loop-x64
+  - id: micro-behaviors/data/control-flow/dispatch::indirect-call-r13-x64
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/framework/
+- id: wintun-embedded-memory-stager
+  desc: Wintun-branded embedded indirect memory stager
+  crit: hostile
+  conf: 0.97
+  attack: T1027.009,T1620
+  all:
+  - id: micro-behaviors/os/network/tunnel::wintun-dll-reference
+  - id: well-known/lib/platform/wintun::wintun-wireguard-company
+  - id: metadata/binary/layout/embedded::embedded-pe-three-plus
+  - id: micro-behaviors/mem/protect/modify::virtual-memory-allocation-protection-api-pair
+  - id: micro-behaviors/data/control-flow/dispatch::indirect-call-r13-x64
+  any:
+  - id: micro-behaviors/data/embedded/payload/header::inline-mz-magic-check
+  - id: micro-behaviors/process/debug/detect::is-debugger-present-import
+  - id: micro-behaviors/dylib/load/runtime::load-library-ex-a
+  needs: 1
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/framework/
+- id: indirect-wininet-pe-loader
+  desc: WinInet indirect embedded-PE loader
+  crit: hostile
+  conf: 0.98
+  attack: T1105,T1055.012,T1620
+  all:
+  - id: micro-behaviors/communications/http/client/wininet::dynamic-wininet-api-set--internetopenurla
+  - id: micro-behaviors/data/embedded/payload/header::inline-pe-signature-check
+  - id: micro-behaviors/data/control-flow/dispatch::indirect-call-r13-x64
+  any:
+  - id: micro-behaviors/mem/alloc/executable::executable-allocation-indicator
+  - id: micro-behaviors/data/embedded/payload/header::inline-mz-magic-check
+  unless:
+  - id: metadata/signed/platform/
+  - id: well-known/tool/reverse-engineering/
+- id: fabricated-dll-process-memory-loader
+  desc: Fabricated DLL process memory loader
+  crit: hostile
+  conf: 0.94
+  attack: T1620
+  all:
+  - id: objectives/evasion/masquerade/debug::pe-stem-differs-from-pdb-stem
+  - id: metadata/binary/section/header::reloc-overhang-dominant
+  - id: micro-behaviors/process/create/spawn::child-process-creation-api
+  - id: micro-behaviors/mem/protect/modify::virtual-protect-ex
+  - id: objectives/anti-analysis/debugger-detect/check::debugger-api
+  any:
+  - id: metadata/binary/symbols/count::minimal-exports
+  - id: micro-behaviors/process/debug/event::output-debug-string
+  - id: micro-behaviors/process/terminate/kill::terminate-process
+  needs: 2
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/framework/
+- id: fabricated-debugger-aware-dll-loader
+  desc: Fabricated debugger-aware DLL loader
+  crit: hostile
+  conf: 0.93
+  attack: T1620
+  all:
+  - id: fabricated-dll-process-memory-loader
+  - id: micro-behaviors/process/debug/event::output-debug-string
+  - id: micro-behaviors/process/terminate/kill::terminate-process
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/framework/
+- id: fabricated-pdb-process-spawn-dll-loader
+  desc: Fabricated PDB process-spawn DLL loader
+  crit: hostile
+  conf: 0.94
+  attack: T1620
+  all:
+  - id: metadata/binary/debug::pdb-absolute-path
+  - id: metadata/binary/symbols/count::minimal-exports
+  - id: metadata/binary/section/header::reloc-overhang-dominant
+  - id: micro-behaviors/process/create/spawn::child-process-creation-api
+  - id: micro-behaviors/process/debug/event::output-debug-string
+  any:
+  - id: micro-behaviors/fs/enumerate/volume::get-disk-free-space
+  - id: micro-behaviors/os/env/block::get-environment-strings-wide
+  - id: objectives/anti-analysis/debugger-detect/check::seh-pointer-probe-anti-debug
+  needs: 2
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/vendor/
+  - id: metadata/binary/framework::dotnet-metadata
+- id: go-rdata-memory-loader
+  desc: Go PE dynamic memory loader
+  crit: hostile
+  conf: 0.95
+  attack: T1620
+  all:
+  - id: metadata/lang/compiler/systems::go-pe-rich-symbols
+  - id: micro-behaviors/mem/protect/modify::virtual-alloc
+  - id: micro-behaviors/os/api-resolution/manual::go-syscall-dynamic-api-dispatch
+  - id: metadata/binary/section/entropy::medium-entropy-rdata-section
+  any:
+  - id: objectives/evasion/decoy/strings::go-trading-type-facade
+  - id: micro-behaviors/os/api-resolution/manual::go-lazyproc-resolution
+  - id: metadata/binary/symbols/count::import-count-under-80
+  needs: 2
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: metadata/lang/compiler/aot::huge-runtime-function-count
+  - id: micro-behaviors/communications/http/server/listener::listenandserve-call
+  - id: micro-behaviors/os/service/control/
+- id: go-opaque-dynamic-win32-rwx-loader
+  desc: Opaque Go RWX loader using dynamic Win32 dispatch
+  crit: hostile
+  conf: 0.99
+  attack: T1027.007,T1620
+  all:
+  - id: metadata/lang/compiler/systems::go-buildinfo
+  - id: metadata/lang/compiler/systems::go-opaque-module-path
+  - id: micro-behaviors/mem/alloc/executable::go-abi-rwx-reserve-commit-call-x64-any
+  # `go-syscall-function-pointer-dispatch` (the legacy `syscall.Syscall`
+  # entry) used to sit here alongside the SyscallN composite below. A Go
+  # binary carries one spelling or the other -- the linker keeps only the
+  # entry the build actually reaches -- so demanding both meant this never
+  # fired on anything built with a current toolchain. The SyscallN composite
+  # already establishes the dynamic-dispatch leg on its own.
+  - id: micro-behaviors/os/api-resolution/manual::go-syscall-dynamic-api-dispatch
+  any:
+  - id: micro-behaviors/dylib/load/runtime
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: well-known/tool/development/
+- id: self-issued-garbled-go-computed-entry-loader
+  desc: Self-issued garbled Go loader dispatches a computed entry point
+  crit: hostile
+  conf: 0.99
+  attack: T1027,T1620
+  all:
+  - id: metadata/lang/compiler/systems::go-buildinfo
+  - id: metadata/lang/compiler/systems::go-opaque-module-path
+  - id: objectives/anti-static/obfuscation/obfuscator/garble::garble-obfuscated-go
+  - id: micro-behaviors/os/api-resolution/manual::go-syscall-dynamic-api-dispatch
+  - id: micro-behaviors/process/inject/runtime/call::go-syscall-computed-entry-dispatch-x64
+  - id: metadata/signed/certificate/chain::pe-cert-leaf-self-issued
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: well-known/tool/development/
+- id: packed-pe-network-memory-loader
+  desc: Packed PE network memory loader
+  crit: hostile
+  conf: 0.95
+  attack: T1620
+  all:
+  - id: metadata/file/data-blob::low-entropy-binary-with-dense-region
+  - id: micro-behaviors/mem/alloc/executable::executable-allocation-indicator
+  - id: micro-behaviors/communications/ip/endpoint::external-ipv4-port-pe-with-networking
+  - id: micro-behaviors/process/create/spawn::child-process-creation-api
+  any:
+  - id: micro-behaviors/communications/socket/init::connect-api
+  - id: micro-behaviors/communications/ip/resolve::resolve-getaddrinfo-import
+  - id: micro-behaviors/crypto/symmetric/stream/chacha::chacha-salsa-constant
+  needs: 2
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: well-known/tool/sysadmin/
+  - id: well-known/tool/development/
+  - id: well-known/tool/detection/
+- id: nuitka-packed-process-loader
+  desc: Nuitka packed process loader
+  crit: suspicious
+  conf: 0.9
+  attack: T1027.002
+  all:
+  - id: metadata/lang/compiler/generated::nuitka-onefile-runtime
+  - id: metadata/binary/section/entropy::high-entropy-rodata
+  - id: metadata/binary/resource/identity::pe-resource-opaque-token
+  - id: micro-behaviors/process/create/spawn::child-process-creation-api
+  - id: metadata/binary/layout/overlay::low-overlay-entropy
+  unless:
+  - id: metadata/signed/platform/
+- id: nuitka-packed-process-dropper
+  desc: Nuitka packed process-launching dropper
+  crit: hostile
+  conf: 0.95
+  attack: T1027.002, T1059
+  all:
+  - id: nuitka-packed-process-loader
+  - id: metadata/binary/header/malformed::malformed-pe-structure
+  - id: metadata/binary/resource/size::oversized-low-entropy-rsrc
+  any:
+  - id: micro-behaviors/process/create/launch::create-process-api-name
+  - id: micro-behaviors/data/embedded/payload/resource::pe-resource-full-extraction
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/framework/
+  - id: metadata/binary/installer/family/
+- id: mingw-nttraceevent-overlay-dll-loader
+  desc: MinGW packed DLL loader with NtTraceEvent and overlay payload
+  crit: hostile
+  conf: 0.95
+  attack: T1027.002, T1622
+  all:
+  - id: objectives/anti-analysis/debugger-detect/tls::nttraceevent-reference
+  - id: metadata/binary/section/label::pe-tls-section
+  - id: metadata/binary/layout/overlay::low-entropy-large-overlay
+  - id: metadata/binary/symbols/count::minimal-exports
+  any:
+  - id: metadata/binary/section/ratio::large-reloc-section
+  - id: metadata/binary/code/entropy::high-code-entropy
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+- id: inno-overlay-reboot-installer
+  desc: Inno overlay reboot installer
+  crit: suspicious
+  conf: 0.88
+  attack: T1105
+  all:
+  - id: inno-550-data-in-overlay
+  - id: metadata/binary/layout/ratio::overlay-over-90pct
+  - id: objectives/impact/system/shutdown::shutdown-privilege-reboot-api
+  - id: micro-behaviors/process/create/spawn::child-process-creation-api
+  any:
+  - id: micro-behaviors/fs/delete/file/library::deletefile-a
+  - id: micro-behaviors/os/privilege/token::adjust-token-privileges-any
+  needs: 2
+  unless:
+  - id: metadata/signed/platform/
+  - id: well-known/tool/
+- id: encrypted-inno-privileged-dropper
+  desc: Encrypted Inno privileged dropper
+  crit: hostile
+  conf: 0.98
+  attack: T1027.009, T1105
+  all:
+  - id: objectives/anti-static/obfuscation/payload/encrypted-loader::encrypted-inno-overlay-payload
+  - id: inno-overlay-reboot-installer
+  - id: micro-behaviors/os/privilege/token::adjust-token-privileges
+  - id: micro-behaviors/process/create/spawn::child-process-creation-api
+- id: go-crypter-memory-loader
+  desc: Go crypter memory loader
+  crit: hostile
+  conf: 0.95
+  attack: T1620
+  all:
+  - id: metadata/lang/compiler/systems::go-pe-rich-symbols
+  - id: micro-behaviors/os/api-resolution/manual::go-syscall-dynamic-api-dispatch
+  - id: micro-behaviors/mem/protect/modify::virtual-alloc
+  - id: micro-behaviors/crypto/symmetric/aes/library::go-new-cipher-symbol
+  any:
+  - id: micro-behaviors/crypto/symmetric/xor/stream::go-xor-encoding--xorkeystream
+  - id: micro-behaviors/crypto/symmetric/aes/library::go-cfb-stream-itab
+  needs: 2
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: well-known/tool/sysadmin/
+  - id: well-known/tool/development/
+  - id: well-known/tool/detection/
+- id: go-crypter-proc-call-loader
+  desc: Go crypter Proc.Call loader
+  crit: hostile
+  conf: 0.96
+  attack: T1620
+  all:
+  - id: go-crypter-memory-loader
+  - id: objectives/evasion/process/injection/shellcode::go-syscall-proc-call
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: well-known/tool/
+- id: self-signed-encrypted-memory-loader
+  desc: Self-signed encrypted memory loader
+  crit: suspicious
+  conf: 0.9
+  attack: T1620
+  all:
+  - id: metadata/signed/certificate/chain::pe-cert-leaf-self-issued
+  - id: micro-behaviors/mem/alloc/executable::executable-allocation-indicator
+  - id: micro-behaviors/crypto/symmetric/stream/chacha::chacha-salsa-constant
+  - id: metadata/binary/resource/size::oversized-low-entropy-rsrc
+  unless:
+  - id: metadata/signed/platform/
+  - id: well-known/tool/
+- id: self-signed-packed-payload-loader
+  desc: Self-signed packed payload loader
+  crit: hostile
+  conf: 0.93
+  attack: T1620
+  all:
+  - id: metadata/signed/certificate/chain::pe-cert-leaf-self-issued
+  - id: objectives/anti-static/pack/runtime::unpacking-api-pattern
+  - id: metadata/binary/section/entropy::high-entropy-rdata-section
+  any:
+  - id: micro-behaviors/process/create/shell/spawn::win-shellexecute
+  - id: micro-behaviors/process/terminate/kill::terminate-process
+  - id: micro-behaviors/fs/delete/file/library::deletefile-a
+  - id: micro-behaviors/os/privilege/token::get-token-information
+  needs: 2
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: well-known/tool/
+- id: self-signed-packed-process-loader
+  desc: Self-signed packed process-control loader
+  crit: hostile
+  conf: 0.95
+  attack: "T1620, T1059"
+  all:
+  - id: self-signed-packed-payload-loader
+  - id: micro-behaviors/process/create/shell/spawn::win-shellexecute
+  - id: micro-behaviors/process/terminate/kill::terminate-process
+- id: djb2-process-enumerating-injection-loader
+  desc: DJB2 process-enumerating injection loader
+  crit: suspicious
+  conf: 0.93
+  attack: T1055
+  all:
+  - id: objectives/anti-static/obfuscation/imports/api-hashing::djb2-api-resolution
+  - id: micro-behaviors/process/enumerate/snapshot::process32-traversal-text
+  - id: micro-behaviors/mem/protect/modify::virtual-alloc-ex-name
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/framework/
+  - id: well-known/tool/
+- id: small-mingw-threaded-loader
+  desc: Small MinGW threaded loader with exception registration
+  crit: suspicious
+  conf: 0.75
+  for:
+  - pe
+  all:
+  - id: small-loader-executable
+  - id: metadata/lang/compiler/native::mingw-runtime-marker
+  - id: micro-behaviors/process/create/thread::create-thread
+  - id: micro-behaviors/os/exception/register::rtl-add-function-table
+  - id: micro-behaviors/mem/protect/modify::virtual-protect
+# `mingw-c-runtime-loader` was removed here. It required malloc + free +
+# metadata/lang/compiler/native::mingw-runtime-marker and scored suspicious,
+# but nothing in the matcher loads anything: the three legs together say
+# "this PE was built with MinGW and calls the C runtime", which is compiler
+# provenance, and mingw-runtime-marker already records it under
+# metadata/lang/compiler/native. Per RULES.md the matcher is the identity, so
+# the rule's home and name described a composite's intent rather than what it
+# searched for, and nothing referenced it -- it only ever fired standalone.
+#
+# It could not be rescued by adding loader behavior, either. MinGW's own
+# pseudo-relocation runtime calls VirtualAlloc/VirtualProtect and resolves
+# imports through LoadLibrary/GetProcAddress, so every candidate leg is
+# satisfied by the toolchain rather than the program: libav's avcodec-56.dll
+# and avformat-56.dll carry mingw-pseudo-reloc-runtime alongside all of them.
+# The discriminating case is the sibling `small-mingw-threaded-loader`, which
+# gates on a small executable plus thread creation and exception-table
+# registration. Seen on the LibAV DLLs bundled in InteriorDesign3DAMS.exe and
+# on bulk_extractor's src/tests/hello_win64_exe fixture.
+- id: ini-driven-file-stager
+  desc: INI driven file stager with process handoff
+  crit: suspicious
+  conf: 0.92
+  attack: T1106
+  mbc: B0030
+  all:
+  - id: micro-behaviors/fs/file/copy::copyfile-w
+  - id: micro-behaviors/process/create/spawn::create-process-w
+  - id: micro-behaviors/fs/config/system::ini-read-write-cycle
+  any:
+  - id: micro-behaviors/fs/delete/file/library::deletefile-w
+  - id: objectives/anti-static/obfuscation/reflection/class::dynamic-load-pattern
+  - id: micro-behaviors/fs/file/move::move-file-ex
+  - id: micro-behaviors/fs/temp/directory::temp-file-staging-primitives
+  needs: 2
+  downgrade:
+    any:
+    - id: metadata/binary/framework/
+  unless:
+  - id: metadata/binary/symbols/count::large-export-table
+  - id: metadata/lang/compiler/managed/
+  - id: metadata/lang/compiled::autoit-compiled-script
+  - id: well-known/tool/
+  - id: well-known/app/system/iobit::advanced-systemcare-component-context
+  # Signed IObit updaters/scanners (Driver Booster AutoUpdate/CareScan, etc.)
+  # legitimately combine INI config with file copy + CreateProcess handoff.
+  - id: well-known/app/system/iobit::iobit-component-context
+- id: ini-driven-plugin-loader
+  desc: INI configured DLL plugin loader
+  crit: suspicious
+  conf: 0.93
+  attack: T1574.002
+  mbc: B0030
+  all:
+  - id: micro-behaviors/fs/config/system::ini-read-write-cycle
+  - id: micro-behaviors/dylib/load/runtime::load-library-w
+  - id: micro-behaviors/dylib/lookup::get-proc-address
+  - id: micro-behaviors/process/create/thread::create-thread
+  any:
+  - id: micro-behaviors/data/embedded/payload/resource::pe-resource-full-extraction
+  - id: micro-behaviors/fs/file/copy::copyfile-w
+  - id: micro-behaviors/process/create/spawn::create-process-w
+  downgrade:
+    any:
+    - id: metadata/binary/vendor::is-microsoft-named
+    - id: metadata/file/string/identity::is-windows-named
+    - id: metadata/package/versioning/scheme::pe-version-resource
+    - id: metadata/binary/symbols/count::many-exports
+- id: temp-copy-shell-handoff
+  desc: Temp staged file copy with shell handoff
+  crit: suspicious
+  conf: 0.95
+  attack: T1105
+  mbc: B0024
+  all:
+  - id: micro-behaviors/fs/temp/directory::temp-file-staging-primitives
+  - id: micro-behaviors/process/create/exec::shell-execute-a
+  - id: micro-behaviors/fs/path/check::get-module-filename
+  any:
+  - id: micro-behaviors/fs/file/copy::copyfile-w
+  - id: micro-behaviors/fs/file/copy::copyfile-a
+  - id: micro-behaviors/fs/file/move::move-file
+  - id: micro-behaviors/fs/file/move::move-file-ex
+  unless:
+  - id: metadata/binary/framework/
+  - id: metadata/binary/installer/
+  - id: well-known/tool/
+  - id: well-known/app/
+  - id: well-known/lib/native/pywin32::pywin32-binding-module
+- id: packed-temp-copy-shell-loader
+  desc: Packed temp staged shell loader
+  crit: hostile
+  conf: 0.97
+  attack: T1105
+  mbc: B0024
+  all:
+  - id: temp-copy-shell-handoff
+  any:
+  - id: metadata/binary/section/label::upx-section
+  - id: objectives/anti-analysis/debugger-detect/check::is-debugger-present
+  - id: micro-behaviors/os/service/dispatch::service-dispatch-triad
+  needs: 2
+  downgrade:
+    any:
+    - id: metadata/binary/framework/
+    - id: metadata/signed/platform/
+- id: embedded-pe-wsh-temp-stager
+  desc: Embedded PE with WSH temp staging handoff
+  crit: suspicious
+  conf: 0.94
+  attack: T1105,T1059.005
+  mbc: B0024
+  for: [pe]
+  all:
+  - id: metadata/binary/layout/embedded::pe-embedded
+  - id: micro-behaviors/process/create/shell/script-host::wscript-host-exec
+  any:
+  - id: micro-behaviors/fs/temp/directory::temp-file-staging-primitives
+  - id: micro-behaviors/process/create/spawn::create-process-a
+  - id: micro-behaviors/process/create/spawn::child-process-creation-api
+  needs: 2
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: well-known/tool/sysadmin/
+  - id: well-known/tool/development/
+  - id: well-known/tool/detection/
+- id: embedded-pe-clr-memory-stage-loader
+  desc: Embedded PE CLR memory stage loader
+  crit: hostile
+  conf: 0.97
+  attack: T1620,T1059.005
+  mbc: B0032
+  for: [pe]
+  all:
+  - id: embedded-pe-wsh-temp-stager
+  - id: metadata/binary/vendor::recognized-windows-binary
+  - id: micro-behaviors/mem/alloc/executable::executable-allocation-indicator
+  any:
+  - id: micro-behaviors/process/enumerate/snapshot::create-toolhelp32-snapshot
+  - id: micro-behaviors/process/enumerate/snapshot::toolhelp-process-enumeration
+  - id: micro-behaviors/mem/protect/modify/
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: well-known/tool/sysadmin/
+  - id: well-known/tool/development/
+  - id: well-known/tool/detection/
+- id: ini-int-configured-plugin-loader
+  desc: INI integer configured plugin loader
+  crit: suspicious
+  conf: 0.91
+  attack: T1574.002
+  mbc: B0030
+  all:
+  - id: micro-behaviors/fs/config/system::ini-read-int-write-cycle
+  - id: micro-behaviors/dylib/load/runtime::load-library-w
+  - id: micro-behaviors/dylib/lookup::get-proc-address
+  - id: micro-behaviors/process/create/thread::create-thread
+  any:
+  - id: micro-behaviors/data/embedded/payload/resource::pe-resource-full-extraction
+  - id: micro-behaviors/fs/file/copy::copyfile-w
+  - id: micro-behaviors/process/create/spawn::create-process-w
+  downgrade:
+    any:
+    - id: metadata/binary/vendor::is-microsoft-named
+    - id: metadata/file/string/identity::is-windows-named
+    - id: metadata/package/versioning/scheme::pe-version-resource
+    - id: metadata/binary/symbols/count::many-exports
+- id: userprofile-staged-native-loader
+  desc: User profile staged native loader
+  crit: suspicious
+  conf: 0.9
+  attack: T1027
+  mbc: B0032
+  all:
+  - id: micro-behaviors/os/env/user-paths::userprofile-var
+  - id: micro-behaviors/fs/directory/mkdir::create-directory-a
+  - id: micro-behaviors/fs/file/open::file-create-win
+  - id: micro-behaviors/fs/write/file/handle::write-file
+  any:
+  - id: objectives/anti-analysis/self-modify/runtime::xor-modulo-key-loop-x64
+  - id: micro-behaviors/crypto/symmetric/xor/loop::native-byte-xor-loop
+  - id: objectives/anti-static/obfuscation/payload/encrypted::large-data-section
+  - id: metadata/binary/section/ratio::data-section-1p5x-code
+  - id: micro-behaviors/dylib/load/runtime::load-library-ex-w
+  - id: micro-behaviors/dylib/lookup::get-proc-address
+  needs: 2
+  downgrade:
+    any:
+    - id: metadata/binary/vendor::is-microsoft-named
+    - id: metadata/file/string/identity::is-windows-named
+    - id: metadata/package/versioning/scheme::pe-version-resource
+    - id: metadata/lang/compiler/native/
+    - id: metadata/signed/platform/
+- id: local-decrypt-overwrite-exec
+  desc: Local decrypt overwrite and execute
+  crit: suspicious
+  conf: 0.95
+  attack: T1027
+  mbc: B0030
+  all:
+  - id: micro-behaviors/process/create/spawn::create-process-w
+  - id: micro-behaviors/fs/file/open::file-create-win
+  - id: micro-behaviors/fs/read/file/handle::read-file
+  - id: micro-behaviors/fs/write/file/handle::write-file
+  - id: micro-behaviors/fs/file/truncate::set-end-of-file-win
+  - id: micro-behaviors/crypto/symmetric/xor/loop::backward-byte-xor-loop-i386
+  any:
+  - id: micro-behaviors/fs/path/extension::exe-name-or-extension
+  - id: micro-behaviors/crypto/symmetric/stream/rc4::rc4-sbox-sequence
+  downgrade:
+    any:
+    - id: metadata/signed/platform/
+- id: registry-aware-encrypted-stager
+  desc: Registry aware encrypted file staging loader
+  crit: suspicious
+  conf: 0.93
+  attack: T1027
+  mbc: B0030
+  all:
+  - id: micro-behaviors/fs/read/file/handle::read-file
+  - id: micro-behaviors/fs/write/file/handle::write-file
+  - id: micro-behaviors/fs/file/truncate::set-end-of-file-win
+  - id: micro-behaviors/fs/enumerate/directory::find-first-file
+  - id: micro-behaviors/os/registry/access::registry-read-api-chain
+  - id: metadata/binary/layout/entropy::high-entropy-data
+  any:
+  - id: metadata/binary/section/ratio::data-section-1p5x-code
+  - id: micro-behaviors/crypto/symmetric/stream/rc4::rc4-sbox-sequence
+  - id: objectives/anti-analysis/timing/evasion::timing-check-minimal-stub
+  - id: objectives/anti-analysis/debugger-detect/check::is-debugger-present
+  needs: 2
+  downgrade:
+    any:
+    - id: metadata/binary/vendor::is-microsoft-named
+    - id: metadata/file/string/identity::is-windows-named
+    - id: metadata/signed/platform/
+- id: self-read-encrypted-overwrite-stager
+  desc: Self reading encrypted overwrite stager
+  crit: hostile
+  conf: 0.96
+  attack: T1027
+  mbc: B0030
+  all:
+  - id: objectives/anti-static/obfuscation/payload/self-read::self-read-file-chain
+  - id: micro-behaviors/os/module/load::dynamic-self-resolution-imports
+  - id: metadata/binary/layout/entropy::high-entropy-data
+  - id: micro-behaviors/fs/file/open::file-create-win
+  - id: micro-behaviors/fs/read/file/handle::read-file
+  - id: micro-behaviors/fs/write/file/handle::write-file
+  - id: micro-behaviors/fs/file/truncate::set-end-of-file-win
+  any:
+  - id: objectives/anti-static/obfuscation/payload/section/content::encrypted-loader-data-geometry
+  - id: objectives/anti-static/obfuscation/payload/section/content::packed-loader-data-geometry
+  - id: objectives/anti-analysis/debugger-detect/combined-checks::debugger-check-with-guards
+  - id: objectives/anti-analysis/self-terminate::debugger-check-terminate-process
+  needs: 2
+  downgrade:
+    any:
+    - id: metadata/binary/framework/
+    - id: metadata/binary/vendor::is-microsoft-named
+    - id: metadata/file/string/identity::is-windows-named
+    - id: metadata/signed/platform/
+- id: mingw-winhttp-proxy-aware-stager
+  desc: MinGW WinHTTP proxy-aware staged C2 loader
+  crit: hostile
+  conf: 0.95
+  attack: T1071.001
+  mbc: B0030
+  size_max: 524288
+  all:
+  - id: micro-behaviors/communications/http/client/winhttp::winhttp-proxy-aware-resolution
+  - id: micro-behaviors/os/module/load::dynamic-self-resolution-imports
+  - id: micro-behaviors/mem/protect/modify::virtual-protect
+  - id: metadata/lang/compiler/native::mingw-pseudo-reloc-runtime
+  - id: metadata/binary/layout/overlay::has-overlay
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: metadata/binary/vendor/
+  - id: well-known/tool/sysadmin/busybox::mingit-busybox-basename
+  downgrade:
+    any:
+    - id: metadata/package/versioning/scheme::pe-version-resource
+    - id: metadata/binary/framework/
+- id: mingw-winhttp-no-ui-stager
+  desc: Small MinGW WinHTTP unsigned PE without UI resources
+  crit: suspicious
+  conf: 0.9
+  attack: T1071.001
+  mbc: B0030
+  size_max: 262144
+  all:
+  - id: micro-behaviors/communications/http/client/winhttp::winhttp-open
+  - id: metadata/lang/compiler/native::mingw-pseudo-reloc-runtime
+  - id: metadata/binary/symbols/exports::no-exports
+  - id: metadata/signed/trust-level::unsigned
+  unless:
+  - id: metadata/package/versioning/scheme::pe-version-resource
+  - id: metadata/binary/vendor/
+  - id: metadata/binary/installer/family/
+  - id: metadata/signed/platform/
+  - id: well-known/tool/sysadmin/busybox::mingit-busybox-basename
+
+- id: x64-xor-protected-memory-loader
+  desc: x64 PE decrypts data into executable memory
+  crit: hostile
+  conf: 0.98
+  attack: T1027,T1140,T1620
+  mbc: B0032
+  size_max: 5242880
+  all:
+  - id: micro-behaviors/mem/protect/modify::virtual-protect
+  - id: micro-behaviors/crypto/symmetric/xor/loop::x64-xor-immediate-byte-loop
+  - id: micro-behaviors/mem/protect/modify::virtualprotect-executable-read-register-x64
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/framework/

@@ -13,24 +13,24 @@ snapshot; do not combine the two sets of counts.
 
 The regenerated [current audit snapshot](snapshot-2026-09-28-current/)
 includes the current shared tree and uses the uniform inclusive limit of 100.
-Across **21,098 YAML files** and **118,855 rules**, it finds **71 over-cap
-directories**, **8,835 rules in them**, and **1,735 excess rules**. Compared
-with the preceding 85-rule measurement, this removes 72 directory
-violations and reduces the minimum excess by 2,033 rules. Twenty-nine rules
-have been reclassified from the encrypted-staging cohort: 26 completed chains
-follow their activation sinks, and the GitHub URL clue plus two loader composites
-now follow their neutral endpoint and module-load homes. Existing matcher
-conditions were retained; the URL clue now uses the broader shared URL scope.
-The current install-hook review moved provider endpoint evidence to neutral
-cloud-service capabilities and consolidated one duplicate matcher. Follow-up
-classification moved provider-specific endpoint/path clues under each cloud
-service's `metadata/` leaf, HTTP metadata headers to `http/header/custom`, and
-the GCP credential filename to `fs/path/credential`; existing consumers now
-reference those canonical capability traits.
-Atomic overlap review contains **56 groups / 127 rules touching violators** and
-**421 groups globally**. No rule directory is deeper than five; no cap
-exemptions exist. Sparse review uses sibling groups below 35, without flagging
-a single child alone.
+Across **21,452 rule-bearing YAML files** and **118,921 rules**, it finds
+**0 over-cap directories**, **0 rules in violators**, and **0 excess rules**.
+There are 79,414 atomic and 39,507 composite rules. The old atomic-only 75
+measurement would still flag 19 directories, and the former combined-80
+measurement would flag 182; neither is the enforced policy now. One hundred
+directories are at depth five and two DOS leaves are at depth six, which are
+soft warnings under the current policy. Sparse sibling output remains an
+advisory review at 35 rules and does not flag a single child by itself.
+
+The cap pass completed the technique reorganizations documented below:
+source-specific install hooks, network-device exploit cohorts, dropper
+download modes, hidden-payload staging and execution, binary masquerade,
+scan/port, sensitive-data, hollowing, privilege-escalation vulnerabilities,
+eval/scripting, password brute-force, dispatch/shell, and the Elex family.
+The leaf-only invariant and reference checks were rerun after each split.
+Global matcher inventory contains **418 identical atomic matcher groups**;
+identical bodies remain validator review signals until scope, defaults,
+constraints, severity, and semantic claim have also been compared.
 
 The [hidden-payload runtime audit](HIDDEN-PAYLOAD-RUNTIME-AUDIT.md) identifies
 `runtime` as a legacy lifecycle bucket rather than a concealment technique. Its
@@ -46,7 +46,7 @@ PowerShell source-to-upload composite still matches when its upload evidence is
 present.
 
 The [dropper/execution audit](DROPPER-EXECUTION-AUDIT.md) now inventories all
-1,749 rules in its 41 remaining directories; no leaf exceeds the cap. The
+1,233 rules in its 19 remaining directories; no leaf exceeds the cap. The
 `exec-download` archive pass routed four unbound download/extract/launch
 composites to HTTP, process-creation and Run-key persistence subjects. The
 remaining 24 HTA/WSH rules then moved by file write, decode, shortcut
@@ -55,8 +55,87 @@ that leaf is empty. Four dead directory-reference alternatives were removed
 from plugin and FTP-banner consumers. The final Ruby `script` rules now follow
 HTTP API and process-launch evidence; their `module.bin` sibling follows
 URL-path and launch context. The shared tree changed concurrently, so the
-current 1,749-rule count is not a simple subtraction from the previous
-checkpoint. Three unsupported macro-dropper verdicts now follow
+current count is not a simple subtraction from the previous checkpoint.
+The latest `loader` pass emptied that leaf from 100 rules. Go sandbox
+names, ELF HTTP/`execv`, overlay/manual-map clues, Flutter self-read,
+PyInstaller pack overlays, managed remote-control/resource profiles,
+keylogger/cache paths, sparse import counts, and ConfuserEx trust claims
+now follow their supported subjects. One RustDesk and one ConfuserEx
+refinement were removed because their added OR condition was already
+required by the base; 15 relocated matcher/condition sets and effective
+scopes were compared with committed source.
+The VB6 follow-up moved ten neutral selfloader clues and five composites by
+their supported path, string, crypto, PE-header, and overlay subjects. Two
+heterogeneous EOF OR matchers were split by operation. Ten of thirteen
+remaining VB6 binary composites now follow required import-obfuscation or
+process-hollowing evidence; three ungrounded loader/masquerade wrappers were
+retired. The import-obfuscation and hollowing destination leaves already
+exceeded the cap and need mechanism-based splits. Eight adjacent VB6 crypter
+rules left a language-specific payload-obfuscation leaf and now follow
+resource reads, EOF overlay packing, string markers, or resource-stub
+concealment. The AES `vb6/` leaf still needs a broader technique-based
+sibling audit. The Elex AutoIt/UIMgrBroker wrapper now follows Elex family
+identity, while
+two unlinked MFC/LuaJIT dropper verdicts were retired. Their component
+observations remain, and the shared high-entropy `.rsrc` fact moved to
+binary-section metadata with its consumers updated. The seven FASM
+assembly-source rules left the legacy loader leaf. Its four
+direct observations moved to source, API-resolution, and WinINet leaves;
+one heterogeneous include-name OR became four source-import observations.
+Two unlinked RunPE dropper verdicts were retired. Thirteen fake-UPX
+composites now follow required UPX packing, WindowsUpdate
+masquerade, or neutral XOR/Base64 evidence. Loader and encrypted-overlay
+claims unsupported by their conditions were removed; matcher clauses were
+retained. Two unbounded bitmap/reflection composites were retired because a
+proximity-bounded steganography sibling covers the supported technique; the
+resource/Base64 PE profile moved to resource concealment. Netz's direct
+resource-to-assembly invocation moved to `dropper/module-load`, its CLR calls
+to neutral runtime leaves, and its GUID to Siscos/Netz identity. Two native
+resource/overlay/process wrappers without linked payload activation were
+retired. The managed ZIP follow-up now requires resource access and ZIP extraction in
+a neutral capability, retiring three weak loader composites and two dependent
+NuGet loader wrappers. The final .NET file sent two family-only name ORs to
+Elex identity, nine composites to their required packing/obfuscation/JIT
+techniques, and retired a Run-path-only persistence wrapper and unlinked
+resource downloader. The legacy `execution/loader` leaf is empty. The small
+`native`, `persistence`, and `nezha-dropper` leaves also emptied: unlinked
+wrappers were retired, a Go identifier clue moved to neutral string evidence,
+and the eooce/ws family consumer now requires Nezha config/flags for its
+deployment clue. The `wininet-stage` leaf emptied after six unbound fetch/cache/process
+co-occurrences were retired and the ShellExecuteEx/regsvr32 reference moved
+to neutral process creation. `binary-native` also emptied: two archive-wide
+npm wrappers lacked member-to-launch binding, while four bounded Node and
+one newly bounded shell chain now follow probable `file-exec/spawn` evidence.
+Their supply-chain consumers were updated. The `kontuke` leaf also emptied.
+Its generic PowerShell/conhost/curl/tar
+observations now follow their mechanisms, while the exact EndpointDLP
+sidecar profile follows a family marker under known Kontuke malware.
+The `platform-branch` leaf emptied after its hash-prefix checks, process
+co-occurrences, bounded file-launch profile and exact Node self-delete
+conditions moved to their respective subjects. Two unlinked supply-chain
+wrappers were retired. The `sqlserver` leaf also emptied: ten observations
+now describe database configuration, CLR stored code and database-mediated
+shell calls, while three composites follow their exact SQL execution method.
+The `stego-loader` leaf emptied after marked-file evaluation, encoded-command,
+LSB and rundll32 contexts followed their supported mechanisms. Two image and
+execution co-occurrences lacking concealed-image evidence were retired; the
+Rust test-fixture consumer now separates its stronger remote-shell branch.
+Sixteen `vb6-shell` rules now follow their required socket, string, HTTP,
+process, registry, masquerade, rundll32 or sparse-import subject. Four
+concealment/credential contexts remain for over-cap destination restructuring;
+none supports its former dropper claim.
+The nineteen-rule WMI leaf emptied after its complete process-creation set
+moved to `objectives/execution/wmi`; no rule established a staged payload
+handoff, so none remained under dropper.
+The twenty-three-rule `encoding` leaf also emptied: representation and
+evaluation contexts moved under anti-static taxonomy, while the one complete
+uuencoded self-extractor moved to dropper file execution.
+The twenty-four-rule `payload` leaf emptied after its FTP self-reconstruction,
+JSONKeeper worker evaluation, Electron extraction, compiler, concealment,
+LaunchAgent and neutral process clues followed their behavioral homes. No
+generic payload label remains as a taxonomy axis.
+Three unsupported
+macro-dropper verdicts now follow
 WSH execution and document-trigger evidence, emptying the macro child. The
 sibling review moved four API-hash profiles to native API-hash obfuscation and
 an OEP/PE-header profile to binary infection, emptying two more legacy leaves.
@@ -94,7 +173,7 @@ persistence, with their matcher clauses and effective scopes retained. Eleven
 legacy staging rules now follow temp paths, checks, process commands,
 curl/WebClient, or rundll32 evidence without an unsupported cross-path
 handoff. The inventory is structural; individual evidence review remains for
-the 1,749 remaining legacy rules. The final fifteen `execute-download` rules have now
+the 1,233 remaining legacy rules. The final fifteen `execute-download` rules have now
 been routed by their required sink or supported co-occurrence; that leaf is
 empty. Its dependent supply-chain profiles were adjusted where they claimed
 an unbound fetched-payload execution. The adjacent sixteen-rule `download`
@@ -191,7 +270,8 @@ and rename-plus-command and extconf-context rules moved to their supported
 execution and build-hook homes. Rubygems and Alpine package consumers were
 updated and checked on synthetic Ruby and apk examples.
 
-The first 100-cap audit cohort combines the largest excess and coherent nearby
+The first 100-cap audit cohort (historical snapshot before the later splits)
+combined the largest excess and coherent nearby
 sibling reviews: `supply-chain/hidden-payload/runtime` (188),
 `dropper/execution/loader` (100), `dropper/staging/encrypted` (188 after its
 sink review), `dropper/staging/embedded` (186), and
@@ -3534,3 +3614,468 @@ in the shared tree. A concurrently introduced filename-bearing CPUID reference
 was corrected so validation could load the catalog. The broader taxonomy plan
 remains open; remaining PyInstaller contents and browser-export evidence chains
 need further semantic review.
+
+### Latest checkpoint: self-extract leaves follow activation and staging evidence
+
+Audited all 24 rules in the legacy `dropper/execution/self-extract` leaf.
+AutoHotkey FileInstall/Run, IExpress/AutoIt, and the MSI wrapper now follow
+`dropper/file-exec/spawn`; fixed-offset self-reading C code follows
+`dropper/staging/stub` without claiming an unbound activation handoff. The
+background local-tool probe moved to neutral shell launch, and the
+Windows-System self-read/process profile moved to path masquerade. All external
+references were updated. The legacy leaf is empty; the dropper inventory is
+113 files, 1,233 rules, and 19 rule-bearing directories, with no leaf over 100.
+
+### Latest checkpoint: HTTP is a transfer source, not a taxonomy level
+
+Audited all 28 rules in `dropper/execution/http`. JVM, Python, and the
+path-based Rust launch follow `dropper/file-exec/spawn`; Rust
+`curl|shell` follows `dropper/delivery/pipe`. PHP response writes and
+variable includes now live with filesystem-response and PHP auto-exec
+capabilities. Kotlin and PHP decode profiles remain staging context without
+an asserted response-to-sink relationship. A duplicate Hermit archive
+bootstrap rule was retired, and the Block FTL archive refinement moved to
+supply-chain manifest evidence. The legacy HTTP leaf is empty.
+
+### Latest checkpoint: network-stage is split by bound behavior
+
+Audited all 28 rules in `dropper/execution/network-stage`. The one compact
+fetch/write/chmod/spawn chain follows `dropper/file-exec/spawn`; the npm
+wrapper follows install-hook context. Other rules now describe neutral Node
+process, hidden execution, archive, temporary-file, wallet, obfuscation and
+path-masquerade evidence. Fetch/write/launch co-occurrences without a value or
+path handoff no longer claim a dropper. All old consumers were updated and the
+legacy leaf is empty.
+
+### Latest checkpoint: JPHP carrier evidence leaves dropper execution
+
+Audited all 29 rules in `dropper/execution/jphp`. Runtime markers moved to
+the neutral runtime-interpreter capability; process, archive, hidden-form and
+Defender-context rules follow their actual subjects. The JPHP name is now
+scope evidence rather than an activation technique. All rule IDs were
+preserved and the legacy leaf is empty.
+
+### Latest checkpoint: markup and masquerade-loader leaves are behaviorally split
+
+The 29-rule HTML markup leaf was divided between clipboard-lure PowerShell
+evidence and blockchain-delivery staging evidence. The SQLite proxy profile
+moved to the DLL-proxy masquerade leaf, while its exact Native API injection
+duplicate was removed in favor of the existing definition. Three additional
+identity profiles moved from `masquerade-loader` to version-resource, versioninfo
+and brand-wrapper leaves. The remaining COM, timer, signer and LaoMaoTao rules
+then followed their process, timing, trust and identity leaves. The reflective
+leaf also closed: batch/.NET reflective chains moved to `dropper/module-load`,
+and the stripped batch crypter moved to `dropper/file-exec/command`. The Deno
+bring-your-own-runtime cohort then moved from `runtime-eval` to the existing
+standalone JavaScript-runtime technique, with its two supply-chain consumers
+updated. Android DEX wget staging and netcat stream-to-shell delivery moved
+from the pipe carrier to the existing Android staged-loader and dropper pipe
+techniques. Miner configuration hijacking moved to cryptojacking configuration
+and the inline Python listener moved to neutral socket-listen evidence. The
+dropper subtree now contains 113 files and 1,233 rules across 19 rule-bearing
+directories. The reflective, runtime-eval and these pipe subcohorts are now
+resolved; the shell pipe file now retains only generic pipe, installer and
+fetch-loop evidence after its three misplaced atoms moved to specific leaves.
+
+### Latest checkpoint: staged-loader remains one leaf and platform names stay in filenames
+
+The Android DEX pipe rules had been placed under a platform-named child
+directory while the parent also contained YAML, violating the strictly
+leaf-only and platform-neutral directory policies. The child was flattened
+to `dropper/staged-loader/android-pipe.yaml`; the filename preserves the
+Android scope while the directory continues to describe the staged-loader
+technique. Matcher bodies, IDs, scopes and conditions were preserved.
+
+The validator now reaches catalog-wide policy checks: the staged-loader
+structure and platform-directory errors are gone, and two stale references
+were repaired to their existing neutral traits. The current shared catalog
+still reports 107 issues, dominated by 69 oversized directories and six
+micro-behavior-to-objective references; those are separate taxonomy debts and
+remain queued for their own evidence review.
+
+### Latest checkpoint: objective composites leave capability directories
+
+The six obfuscated Node hidden-stage composites were objective in substance:
+they combine hidden process creation with obfuscation, dynamic loading and
+staging context. They moved from `micro-behaviors/process/create/hidden` to
+`objectives/evasion/process/hidden/execution`, and the plugin-loader consumer
+was updated. Three Node archive/staging composites likewise moved from the
+archive capability file to `dropper/staging/archive`; the neutral archive
+constructor atom remains in `micro-behaviors/data/archive/library`.
+
+The hostile JVM bytecode temp-execution composite moved to the Java file-exec
+objective with its original scope and ATT&CK mapping preserved. The Rust and
+Classic ASP composite scopes were corrected so every required leg can match
+the declared file type. OpenWrt kprobe composites now declare only source or
+ELF types supported by their kprobe evidence; the invalid outer scope was
+removed. These changes eliminate six capability-to-objective errors, the
+hostile capability error, and all composite file-type errors.
+
+The generic shell-spawn leaf was reduced from 101 to 96 rules by moving the
+five batch start/temporary-execution observations into the existing
+`process/create/shell/batch` technique leaf and updating all consumers. The
+batch child now holds 17 rules and remains below the cap. The validator now
+reports 95 catalog issues, with 66 oversized directories and seven
+suppression-limit findings still requiring broader evidence audits.
+
+The 42-rule payment-document executable lure cohort then moved from the broad
+`masquerade/file/lure` leaf to the technique-specific sibling
+`masquerade/file/payment`. Its local composite references were preserved, and
+external cabinet, installer and medical-lure consumers now use the new
+directory ID. The generic lure leaf is 63 rules; the new payment leaf is 42.
+
+The Linux system-process name cohort then moved from the broad
+`masquerade/process/name` leaf to the technique-specific sibling
+`masquerade/process/system-name`. The parent retains 59 rules and the new leaf
+holds 52. Both splits are behavior-based boundaries rather than platform or
+language partitions, and the current catalog has no broken trait references.
+
+The broad anti-static imports leaf was also split at a real technique boundary:
+the 91 API-hash and additive-hash rules now live under
+`anti-static/obfuscation/imports/api-hashing`; the remaining 100 import-
+obfuscation rules now live under the sibling `imports/concealment` leaf. The
+category node is YAML-free, so the strict leaf-only rule remains intact. The
+validator's oversized-directory count is now 64; the remaining cap failures
+still need evidence-led technique splits.
+
+The 188-rule `dropper/staging/embedded` leaf was then flattened into four
+depth-five technique leaves: `staging/runtime` (runtime carriers),
+`staging/native` (native binary carriers), `staging/script` (script and registry
+carriers), and the existing `staging/archive` leaf (archive carriers). The
+moved cohorts contain 94, 46, 39, and 9 rules respectively; the archive cohort
+joins the pre-existing archive rules. This preserves the carrier
+mechanism in the path, avoids a sixth level, and removes the mixed parent.
+
+After this flattening, the shared validator reports 64 oversized directories;
+the remaining failures are independent of the dropper staging move. The move
+also leaves no broken references in the staging subtree.
+
+The encrypted-staging audit found that the 88-rule `7z-aes-exe` cohort was
+archive staging rather than a general encrypted-payload category. It now lives
+in the depth-five `dropper/staging/encrypted-archive` leaf; the generic
+`dropper/staging/encrypted` leaf retains 96 rules and the existing archive leaf
+is unchanged. This is a carrier distinction, so it remains platform and
+language neutral. The validator now reports 63 oversized directories.
+
+The latest `make validate` run reaches all catalog policy checks with 23
+issues: 61 oversized directories, six suppression-limit findings, twelve
+long-regex or three nested-regex reviews, and one duplicate matcher warning in
+each of the literal-covered and cross-surface categories. Broken references,
+impossible file-type composites, mixed leaf directories, and micro-to-objective
+cap references are now clear. The hidden-payload runtime audit then routed
+remote loader cohorts to `hidden-payload/remote-loader`, native extension and
+plugin cohorts to their mechanism leaves, package obfuscator evidence to
+`anti-static/obfuscation/obfuscator-supply-chain`, and telemetry composites to
+their data-source stealer leaves. Runtime is now 94 rules and the catalog has
+61 oversized directories remaining. These remaining warnings are
+matcher-quality work and independent cap audits, not unresolved references.
+
+The encrypted-payload audit then split three concrete carrier mechanisms:
+the 35-rule source-level command cohort moved to
+`anti-static/obfuscation/payload/encrypted-source`, 33 executable-loader
+rules moved to `payload/encrypted-loader`, and 27 key/placeholder-key rules
+moved to `payload/encrypted-key`. The parent encrypted leaf is now 83 rules;
+all consumers were retargeted and validation reports no broken references or
+YAML parsing errors. The current validator total is 23 issues with 59
+oversized directories; the shared-default reuse warnings were folded into
+file defaults during the same quality pass.
+
+The debugger-detection audit then reduced the broad 148-rule
+`anti-analysis/debugger-detect/check` leaf to exactly 100 rules. Twenty-three
+loader-bound rules moved to `debugger-detect/loader`; 22 multi-signal
+profiles moved into the existing `debugger-detect/combined-checks` leaf,
+which now holds 49 rules; and three exception-trigger profiles moved to the
+new `debugger-detect/exception` leaf. All external and local references were
+retargeted, and validation again reports no broken references or YAML parsing
+errors. The catalog now has 60 oversized directories remaining.
+
+The process-injection audit then reduced
+`evasion/process/injection/memory` from 147 to 94 rules. Thirty-three
+ptrace/procfs rules moved into the existing `injection/ptrace` leaf, seven
+in-memory module-loading rules joined `injection/native`, and 19
+code-cave/GOT-hijacking rules moved into the new `injection/hijack` leaf.
+References were retargeted and validation reports no broken references or YAML
+parsing errors. The catalog now has 59 oversized directories remaining.
+
+The trojanized-application package audit reduced
+`supply-chain/trojanized/app/package` from 148 to 40 rules. Eighty-three
+agent-skill rules moved to the new `app/agent-skill` leaf; native-agent,
+remote-agent, installer, and vendor-repack cohorts moved to their existing
+`native-loader`, `remote-command`, `installer`, and `replace` leaves,
+which now hold 9, 9, 18, and 37 rules respectively. All known consumers were
+retargeted. The taxonomy files parse cleanly; the full validator is currently
+blocked before taxonomy checks by an untracked benign fixture lacking an
+expectations entry, so the next run must re-establish that fixture baseline
+before measuring the cap count.
+
+The build-pipeline audit moved the 95-rule CI workflow and pull-request
+tampering cohort into the new `supply-chain/trojanized/ci-pipeline` leaf. The
+residual `build-pipeline` leaf is 49 rules, and three external consumers were
+retargeted. This is a CI authority boundary rather than a provider or language
+split; the catalog has 58 oversized directories remaining.
+
+An isolated validation overlay (with a temporary expectation only for the
+untracked Tor benign fixture) confirms the post-move tree loads and resolves
+all references. It reports 24 catalog issues and 57 oversized directories;
+the extra quality findings are seven suppression-limit warnings and one
+binary-section validation warning. The repository's direct `make validate`
+remains blocked by that untracked fixture's missing expectations entry, so the
+overlay result is the authoritative taxonomy check until the fixture manifest
+is reconciled.
+
+The dropper staging audit then split the 128-rule `staging/memory` leaf by
+carrier mechanism: 46 managed-runtime memory loaders moved to the existing
+`staging/managed` leaf and 44 script/interpreter stages moved to
+`staging/script`. The residual `staging/memory` leaf now has 38 rules. All
+references were retargeted, and the taxonomy guide now makes these carrier
+boundaries explicit while keeping HTTP, encryption, and language as matcher
+context rather than extra taxonomy levels.
+
+The persistence service audit reduced `persistence/system/service/install` from
+133 to 99 rules. Twenty-five kernel-driver registration rules moved to the new
+`persistence/system/driver` leaf, seven SafeBoot-only rules moved to the new
+`persistence/system/safeboot` leaf, and two `svchost` service-DLL loader rules
+joined the existing `persistence/system/service/loader` leaf. References were
+retargeted, and the taxonomy guide now distinguishes service installation,
+kernel-driver activation, SafeBoot startup, and service-DLL loading.
+
+The kernel-hide audit moved the 57-rule `kernel-hide/userspace/ld-preload`
+legacy file into the existing `hijack-execution-flow/env/preload` leaf. LD_PRELOAD
+is environment-based execution-flow hijacking, so this removes a duplicate
+userspace branch without introducing a language or operating-system split.
+
+The packing audit moved the 89-rule `anti-static/pack/section-anomaly/loader-noise`
+cohort into a new sibling `anti-static/pack/loader-noise` leaf. The residual
+`section-anomaly` leaf now contains only section-layout measurements and
+ownership anomalies; all consumers were retargeted.
+
+The string-obfuscation audit moved four mechanism-specific files out of
+`obfuscation/string/encoding`: HTA and C octal source syntax moved to
+`obfuscation/syntax`, rolling-XOR moved to `string/crypto`, and browser-target
+substitution moved to `string/conceal`. The encoding leaf is now 96 rules, and
+the taxonomy guide records the mechanism boundaries.
+
+The tunnel audit moved 23 SOCKS-specific rules out of the 118-rule
+`command-and-control/channel/tunnel/proxy` leaf into a new sibling
+`channel/tunnel/socks` leaf. The generic proxy residual is 95 rules, and the
+taxonomy guide now distinguishes protocol-specific SOCKS tunneling from generic
+relay behavior.
+
+The Defender audit moved eight telemetry/scanning-suppression rules from
+`anti-av/platform/defender` into the existing `anti-av/blinding` leaf. The
+Defender leaf is now exactly 100 rules; exclusions, service changes, and
+product-control settings remain there, while notifications, MAPS/sample
+reporting, behavior, IOAV, and archive-scanning suppression use `blinding`.
+
+The string-reconstruction audit moved the 38-rule indexed-character cohort
+from `obfuscation/string/reconstruct` into a new sibling
+`obfuscation/string/index-select` leaf. Generic reconstruction remains 75
+rules, and references were retargeted.
+
+The latest isolated validation overlay resolves all references after these
+moves and reports 50 oversized directories. The remaining non-taxonomy findings
+are the pre-existing unknown `objectives/execution/database` tier, three
+quality description/validation issues, and seven suppression-limit warnings;
+the direct validator is still blocked by the untracked Tor fixture noted above.
+
+The subsequent overlay sees a partial count of 49 oversized directories, but
+its final load is interrupted by two concurrent YAML parse errors in
+`objectives/evasion/process/injection/cluster/traits.yaml` and the untracked
+Tor browser fixture. The post-Defender count of 50 was reference-clean; a final
+cap measurement must wait for those shared-file changes to be reconciled.
+
+The direct validator now reports 41 oversized directories after the fileless,
+SysV-init, shell-sink delivery, and kernel-module splits. It resolves the moved references;
+remaining hard failures are the unrelated quality findings and the existing
+Tor-browser reference issue.
+
+The fileless audit moved the 33-rule anonymous-file-descriptor cohort from
+`evasion/fileless/memory` to a new sibling `evasion/fileless/memfd` leaf. The
+generic fileless memory leaf now contains 74 rules; references were retargeted
+and the taxonomy guide distinguishes `memfd` execution from other in-memory
+mechanisms.
+
+The kernel-module audit moved the three-rule VxWorks module/task-table hiding
+profile into the existing `kernel-hide/rootkit` leaf. The generic
+`kernel-hide/module` leaf is now 99 rules, with the taxonomy guide documenting
+the coordinated rootkit boundary.
+
+The dropper delivery audit moved the 92-rule shell-sink cohort out of
+`dropper/delivery/fetch-exec` into the sibling `delivery/fetch-exec-shell`
+leaf. The general `fetch-exec` residual is 41 rules; references were
+retargeted and the taxonomy guide makes shell an activation mechanism rather
+than a source-language branch.
+
+The persistence boot audit moved the two-rule `runlevel-self-install` cohort
+from `persistence/system/init/boot` into the existing `init/script` leaf. The
+boot leaf is now 99 rules; the taxonomy guide records SysV runlevel scripts as
+the mechanism-specific child.
+
+The persistence timer audit moved the nine-rule `user-timer-source` profile
+from `persistence/system/service/systemd` into the existing
+`persistence/system/cron/schedule` leaf. Systemd service installation remains
+under `service/systemd`; the schedule leaf owns the required timer trigger.
+
+The script-infection audit moved the three-rule AutoLISP self-replication
+profile from `impact/infect/script/self-copy` into the existing
+`impact/infect/macro` leaf. The self-copy residual is now 104 rules, so further
+splitting is still required there.
+
+The follow-up infection audit moved the four-rule Go embedded-shell infector
+into `impact/infect/script/inject`, where the matcher establishes code written
+into an existing script host. `script/self-copy` is now exactly 100 rules.
+
+The EDR teardown audit moved four mechanism cohorts: Java security-tool kills
+to `edr/terminate`, AppRemover and BTR vulnerable-driver profiles to
+`edr/driver`, and the driverless WFP silencer to `edr/network`. The residual
+`edr/teardown` leaf is 97 rules; references were retargeted and the taxonomy
+guide records the mechanism boundaries.
+
+The phishing audit moved 11 passkey/WebAuthn rules from
+`credential-access/phishing/mfa-relay` into a new sibling
+`credential-access/phishing/passkey` leaf. MFA relay is now exactly 100 rules;
+the guide distinguishes passkey spoofing/downgrade from challenge relaying.
+
+The ICS audit removed the mixed parent leaf by moving the 44-rule safety-
+parameter matcher set from `impact/degrade/ics` into
+`impact/degrade/ics/parameter`. The existing PLC-disruption and device-recovery
+leaves now sit beside it, so the parent is a strict grouping node and each
+child names a distinct OT-impact action. The taxonomy guide documents the
+boundary between process/setpoint mutation, controller/project disruption,
+recovery interference, neutral protocol mechanics, and discovery.
+
+The botnet audit moved the Android TV raw-packet flood composite from
+`impact/dos/attack/botnet` into the existing `impact/dos/attack/flood` leaf.
+Its evidence establishes a flood implementation, but no botnet coordination,
+so the move removes a one-rule overflow without using the implementation
+platform as a taxonomy level.
+
+The RAT-control audit moved the UPnP-exposed remote-control composite and the
+Android accessibility/VNC surveillance composite into the existing
+`backdoor/rat/remote-agent` leaf. Both establish an exposed or interactive
+remote agent rather than RAT tasking control signals; the former control leaf
+therefore drops to the 100-rule cap without a platform split.
+
+The CI-abuse audit moved the generic Groovy shell-command atoms into
+`micro-behaviors/process/create/shell/command-string` and the dynamic-evaluate
+atom into `objectives/execution/interpreter/eval/dynamic`. CI composites now
+reference those neutral capability leaves, leaving the CI directory for
+context-specific behavior instead of using Groovy as a taxonomy axis.
+
+The indicator-removal audit moved the six-rule PowerShell ETW provider-disable
+cohort from `indicator-removal/logs` into the existing
+`anti-av/blinding` ETW leaf. ETW telemetry suppression now has one home beside
+the native patching profiles; ordinary log deletion remains under `logs`.
+
+The log-removal audit separated shell-history truncation into
+`indicator-removal/history` and moved the remaining auth/lastlog and journal
+cohort into `indicator-removal/log-removal`. The cross-purpose composite now
+references the history atom explicitly; the general `indicator-removal/logs`
+leaf is at the combined cap.
+
+The appliance-tasking audit moved six NetScaler/Citrix ADC command-control
+profiles into `command-and-control/remote-command/appliance`, alongside the
+existing PAN-OS appliance profiles. Their required control surface is an
+appliance remote-command technique rather than generic HTTP tasking; references
+were retargeted and the HTTP tasking leaf is now within the cap.
+
+The follow-up appliance audit moved the QNX, RouterOS, and remaining NetScaler
+tasking profiles from `backdoor/tasking/poll` into the same appliance leaf.
+Their platform names describe the controlled appliance surface, while the
+required command channel remains remote-command/appliance; the poll leaf is
+now within the combined cap.
+
+The RAT-tasking audit moved the 75-rule Windows RAT command vocabulary into
+`backdoor/rat/command-set`. It contains explicit task names spanning discovery,
+collection, credential access, evasion, and lateral movement, so it is a RAT
+control-surface technique rather than generic remote-task transport. The
+generic `remote-command/tasking` leaf remains direct and reference-clean.
+
+The package-impersonation audit moved the scoring composite file from
+`impersonation/package/wheel-sdist` into the existing `impersonation/package/scoring`
+leaf. Wheel/sdist remains the home for package-summary and archive evidence;
+scoring composites now have a distinct inference-function home.
+
+The LLM prompt audit partitioned the former mixed prompt leaf into `mcp`,
+`carrier`, `egress`, and `override` leaves. MCP tool poisoning, propagated
+prompt carriers, network-control directives, and direct behavior overrides now
+have distinct homes; the parent holds no rules and all references remain valid.
+
+The fabricated-identity audit moved named application identities into
+`masquerade/identity/app`, security-product identities into `.../product`, and
+installer/NSIS/driver-installer identities into `.../installer`. The former
+fabricated leaf now retains only identities without a more specific artifact
+class.
+
+The destruction audit moved container-store and privileged host-root wipes into
+the new `impact/destroy/container` leaf, and LLM-directed destructive deletion
+into `impact/destroy/agent-directed`. The ordinary file-deletion leaf is now at
+the combined cap.
+
+The dropper audit retired the mixed `delivery/fetch-eval` leaf as a destination.
+Remote response-to-interpreter rules now live under `dropper/script-eval/response-eval`
+or the more concentrated `remote-code` profile; the `response-eval` name avoids
+the ambiguous sibling stem that the validator flagged. Embedded decoded-source
+evaluation lives under `script-eval/embedded`. References were retargeted by
+rule ID. This separates the activation sink from the transport or package
+carrier and removes one combined-cap violation without a language branch.
+
+The remote-command audit partitioned the legacy `control` leaf into ADB,
+WebSocket, SSH, MCP, interactive-terminal, hosted-service, and generic
+dispatch mechanisms. Generic task profiles were added to the existing
+`remote-command/dispatch` leaf; the mechanism leaves retain their control
+surface evidence without turning implementation languages into taxonomy levels.
+
+The encoded-payload audit split `anti-static/obfuscation/payload/encoded` by
+its required sink: exactly 100 decoded-to-execution rules now live in
+`encoded/exec`, while 24 carrier/decoder observations live in `encoded/carrier`.
+This keeps encoded content from being treated as execution merely because a
+decoder or dynamic API is present.
+
+The install-hook audit migrated the cloud-metadata cohort out of the legacy
+trigger bucket. Cloud theft now uses `exfiltration/stealer/cloud`; database
+software discovery uses `discovery/host/software`; database query collection
+uses `collection/database/query`; file, environment, developer-secret, and
+database-recon results use their source-specific stealer leaves. The install
+hook remains a referenced lifecycle fact rather than a second objective axis.
+
+The Cargo package audit moved neutral dependency and feature presence facts to
+`metadata/package/dependencies/manifest/presence/cargo.yaml`, keylogging
+profiles to `collection/keylog/capture`, ransomware profiles to their impact
+leaves, and two multi-source theft profiles to `exfiltration/stealer/multi-source`.
+The remaining Cargo package profile is exactly 100 rules, so the package leaf
+meets the inclusive cap without a Cargo-specific directory level.
+
+The latest cap pass completed the remaining reorganizations. Technique cohorts
+now live in leaves under `botnet/iot`, network-device exploit, dropper download,
+hidden-payload staging/exec, binary masquerade, scan/port, sensitive-data,
+hollowing, privilege-escalation vulnerabilities, eval/scripting, password
+brute-force, dispatch/shell, and the Elex family. The child names answer the
+documented technique question; source languages and platforms remain filenames
+or matcher scope. References were retargeted by directory and the leaf-only
+invariant was rerun after each cohort.
+
+The authoritative audit (`scripts/audit-taxonomy.py --cap 100`) now reports
+**0 violating directories, 0 rules in violators, and 0 excess rules** across
+**118,901 rules** (79,410 atomic and 39,491 composite). It finds 109 depth-five
+directories and four depth-six leaves; depth above five remains a soft warning.
+The 75-atomic historical count still identifies 19 directories, but the
+inclusive combined cap is the enforced policy. The legacy
+`dropper/execution` tree is empty after its final sink-based migration.
+`make validate` reaches the taxonomy checks without cap, leaf-directory,
+meaningless-segment, YAML, or broken-reference errors; its remaining failures
+are independent quality, deduplication, and suppression checks already present
+in the tree.
+
+The global matcher inventory contains 418 identical atomic matcher groups. The
+validator should continue flagging identical matcher bodies, but the audit must
+include scope, defaults, constraints, severity, and the semantic claim before
+suggesting a merge. A neutral atom and an objective composite may intentionally
+share a matcher; identical text alone is a review signal, not an automatic
+deduplication.
+
+Future taxonomy work should use the same sequence: state the result and the
+deciding child question in `TAXONOMY.md`, split only into technique-bearing
+leaves, retarget every reference, and rerun both validation and the authoritative
+audit. Sparse sibling output remains advisory at 35 rules; depth above five is
+the soft warning. Neither should override a precise, defensible placement.

@@ -1,0 +1,225 @@
+# Migrated from the legacy install-hook trigger bucket; the result owns this path.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, package.json, shell]
+  attack: T1195.002
+  mbc: E1041
+
+
+traits:
+  - id: oastify-metadata-path
+    desc: OASTify metadata exfil path
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: text
+      substr: .oastify.com/metadata
+  - id: npm-postinstall-ecs-container-metadata-url
+    desc: postinstall reads ECS metadata URL variable
+    crit: suspicious
+    conf: 0.98
+    for: [package.json]
+    if:
+      type: value
+      path: scripts.postinstall
+      regex: '\bprocess\.env\.ECS_CONTAINER_METADATA_URI_V4\b'
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/fixture/
+
+
+composite_rules:
+  - id: npm-lifecycle-aws-ecs-node-credential-post
+    desc: Node POST follows ECS credential query
+    crit: suspicious
+    conf: 0.99
+    for: [package.json]
+    attack: T1041,T1552.005,T1195.002
+    all:
+      - id: objectives/credential-access/cloud/token/metadata::npm-lifecycle-aws-ecs-credential-query
+      - id: micro-behaviors/communications/http/post::npm-script-node-http-post
+    near_bytes: 900
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/fixture/
+
+  - id: npm-postinstall-ecs-metadata-oob-exfil
+    desc: npm postinstall exfils ECS container metadata to OOB
+    crit: hostile
+    conf: 0.995
+    attack: T1195.002,T1552.005,T1041,T1567.002
+    for: [package.json]
+    all:
+      - id: objectives/exfiltration/stealer/cloud::npm-postinstall-ecs-container-metadata-url
+      - id: objectives/supply-chain/install-hook/scripts/postinstall::curl-stdin-body-post
+      - id: well-known/dual-use/tunnel/ngrok::npm-script-ngrok-free-domain
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/fixture/
+
+  - id: npm-postinstall-cloud-log-routing-exfil
+    desc: Tiny npm manifest attempts cloud log-routing exfiltration
+    crit: hostile
+    conf: 0.995
+    attack: T1195.002,T1041
+    for: [package.json, npm, tar, zip]
+    scope: archive
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/declaration::postinstall-hook-declaration
+      - id: objectives/exfiltration/http/report::npm-cloud-log-routing-ngrok-exfil
+      - id: metadata/package/freeform::pkg-skeleton-small
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/fixture/
+
+  - id: npm-hook-cloud-metadata-http-exfil
+    desc: npm hook exfiltrates cloud metadata via HTTP
+    crit: hostile
+    conf: 0.98
+    attack: "T1195.002, T1552.005, T1041"
+    for: [javascript]
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/hook-file::hook-script-filename
+      - id: micro-behaviors/communications/http/services/cloud::curl-aws-metadata-query
+      - id: micro-behaviors/communications/http/services/cloud::cloud-metadata-endpoint-reference
+      - id: objectives/exfiltration/http/upload::node-collect-exfil
+  - id: curl-cloud-metadata-oast-exfil
+    desc: curl exfils cloud metadata to OASTify
+    crit: hostile
+    conf: 0.995
+    attack: T1041
+    for: [javascript, shell]
+    all:
+      - id: micro-behaviors/communications/http/services/cloud::curl-aws-metadata-query
+      - id: micro-behaviors/communications/http/services/cloud::cloud-metadata-endpoint-reference
+      - id: objectives/exfiltration/oob/endpoint::oastify
+      - id: micro-behaviors/communications/http/curl::curl-post-flag
+    any:
+      - id: objectives/exfiltration/stealer/cloud::oastify-metadata-path
+      - id: objectives/exfiltration/stealer/file::curl-cat-temp-files-post
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+  - id: curl-cloud-metadata-oob-exfil
+    desc: curl exfils cloud metadata to OOB
+    crit: hostile
+    conf: 0.99
+    attack: T1041
+    all:
+      - id: micro-behaviors/communications/http/services/cloud::curl-aws-metadata-query
+      - id: micro-behaviors/communications/http/services/cloud::cloud-metadata-endpoint-reference
+      - id: objectives/exfiltration/oob/endpoint::oob-endpoint-any
+    any:
+      - id: micro-behaviors/communications/http/upload::curl-post-temp-json-file
+      - id: micro-behaviors/communications/http/curl::curl-post-flag
+      - id: micro-behaviors/communications/http/curl::curl-post-custom-header
+    unless:
+      - id: well-known/tool/offensive/pentestkit/
+      - id: metadata/package/testing/harness/runtime/
+  - id: postinstall-cloud-metadata-oob-exfil
+    desc: postinstall exfils cloud metadata to OOB
+    crit: hostile
+    conf: 0.99
+    attack: T1041
+    for: [javascript]
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/local-script::postinstall-js-file
+      - id: micro-behaviors/communications/http/services/cloud::cloud-metadata-endpoint-reference
+      - id: objectives/exfiltration/oob/endpoint::oob-endpoint-any
+    any:
+      - id: micro-behaviors/communications/http/upload::curl-post-temp-json-file
+      - id: micro-behaviors/communications/http/curl::curl-post-custom-header
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+  - id: postinstall-aws-iam-metadata-oob-exfil
+    desc: postinstall exfils AWS IAM metadata
+    crit: hostile
+    conf: 0.995
+    attack: T1195.002,T1552.005,T1041
+    for: [package.json]
+    all:
+      - id: objectives/supply-chain/install-hook/package/manifest::postinstall-hook-key
+      - id: objectives/credential-access/cloud/token/metadata::postinstall-aws-iam-metadata-script
+      - id: micro-behaviors/communications/http/post::npm-script-node-http-post
+      - id: objectives/exfiltration/oob/endpoint::pipedream-npm-script
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+  - id: postinstall-aws-imdsv2-oob-exfil
+    desc: postinstall exfils AWS IMDSv2 credentials
+    crit: hostile
+    conf: 0.995
+    attack: T1195.002,T1552.005,T1041
+    for: [package.json]
+    all:
+      - id: objectives/supply-chain/install-hook/package/manifest::postinstall-hook-key
+      - id: objectives/credential-access/cloud/token/metadata::postinstall-aws-iam-metadata-script
+      - id: objectives/credential-access/cloud/token/metadata::postinstall-aws-imdsv2-token-script
+      - id: micro-behaviors/communications/http/post::npm-script-node-http-post
+      - id: objectives/exfiltration/oob/endpoint::pipedream-npm-script
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+  - id: postinstall-aws-imdsv2-ngrok-exfil
+    desc: postinstall exfils AWS metadata via OOB
+    crit: hostile
+    conf: 0.995
+    attack: T1195.002,T1552.005,T1041
+    for: [package.json]
+    all:
+      - id: objectives/supply-chain/install-hook/package/manifest::postinstall-hook-key
+      - id: objectives/credential-access/cloud/token/metadata::postinstall-aws-imdsv2-token-script
+      - id: micro-behaviors/communications/http/post::npm-script-node-http-post
+      - id: well-known/dual-use/tunnel/ngrok::npm-script-ngrok-free-domain
+    any:
+      - id: objectives/credential-access/cloud/token/metadata::postinstall-aws-iam-metadata-script
+      - id: objectives/credential-access/cloud/token/metadata::npm-postinstall-aws-ecs-task-credential-query
+      - id: objectives/credential-access/cloud/token/metadata::npm-postinstall-aws-ecs-iam-credential-query
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+  - id: npm-aws-credential-oob-post
+    desc: AWS metadata posted to OOB endpoint
+    crit: hostile
+    conf: 0.99
+    attack: T1552.005,T1041
+    for: [package.json]
+    all:
+      - id: objectives/supply-chain/install-hook/package/manifest::postinstall-hook-key
+      - id: micro-behaviors/communications/http/post::npm-script-node-http-post
+      - id: well-known/dual-use/tunnel/ngrok::npm-script-ngrok-free-domain
+    any:
+      - id: objectives/credential-access/cloud/token/metadata::postinstall-aws-iam-metadata-script
+      - id: objectives/credential-access/cloud/token/metadata::npm-postinstall-aws-ecs-task-credential-query
+      - id: objectives/credential-access/cloud/token/metadata::npm-postinstall-aws-ecs-iam-credential-query
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+  - id: npm-postinstall-cloud-metadata-oast-exfil
+    desc: npm postinstall exfils cloud metadata to OASTify
+    crit: hostile
+    conf: 0.995
+    scope: archive
+    for: [javascript, package.json, tar, zip]
+    all:
+      - id: objectives/execution/interpreter/script/npm::npm-postinstall-script
+      - id: objectives/exfiltration/stealer/cloud::curl-cloud-metadata-oast-exfil
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+  - id: npm-postinstall-cloud-metadata-oob-exfil
+    desc: npm postinstall exfils cloud metadata to OOB
+    crit: hostile
+    conf: 0.99
+    scope: archive
+    for: [javascript, package.json, tar, zip]
+    all:
+      - id: objectives/execution/interpreter/script/npm::npm-postinstall-script
+      - id: objectives/exfiltration/stealer/cloud::curl-cloud-metadata-oob-exfil
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+  - id: npm-postinstall-cloud-url-oob-exfil
+    desc: npm postinstall reports cloud metadata to OOB
+    crit: hostile
+    conf: 0.99
+    scope: archive
+    for: [javascript, package.json, tar, zip]
+    all:
+      - id: objectives/execution/interpreter/script/npm::npm-postinstall-script
+      - id: objectives/exfiltration/stealer/cloud::postinstall-cloud-metadata-oob-exfil
+    unless:
+      - id: metadata/package/testing/harness/runtime/

@@ -1,0 +1,67 @@
+# Node handed a file that lives in a fonts, images or icons directory.
+# Those folders hold data the browser fetches; no runtime loads code from
+# them. A command whose first argument points there is running a payload
+# stored where reviewers expect assets. The PolinRider campaign kept its
+# loader in `public/fonts/`, and burying it under `prisma/generated/.../fonts`
+# or `dto/public/fonts` kept the directory while the file name rotated. This
+# rule holds when the name carries no suffix at all (`fonts/fa-solid`), the
+# case the suffix rules in ../extension-mismatch/non-script.yaml cannot see.
+#
+# Matched at command position, so each invocation is judged alone. Script
+# suffixes are excluded: icon and font build scripts do live in these trees.
+defaults:
+  platforms: [windows, linux, macos]
+  attack: T1036.005
+
+traits:
+  - id: node-runs-asset-directory-file
+    desc: Node runs file from asset directory
+    crit: suspicious
+    conf: 0.92
+    for: [json, package.json, shell]
+    if:
+      type: text
+      regex: '[\s";&|(]node\S{0,4}\s+\S{0,40}[/\\](fonts?|im(g|ages?)|icons?)[/\\]\S{1,80}[^\w./]'
+    not:
+      - regex: '(?i)\.(m?js|cjs|[mc]?ts|[jt]sx|json|node)\W?$'
+
+  # The directory-as-module form: `node ./public/fonts` with no file. Node
+  # then runs the folder's `package.json` "main" (or its `index.js`), so the
+  # executed file never appears in the command at all. An asset directory is
+  # not a package, so pointing an interpreter at it is the same disguise.
+  - id: node-runs-asset-directory-as-module
+    desc: Node runs asset directory as module
+    crit: suspicious
+    conf: 0.9
+    for: [json, package.json]
+    if:
+      type: text
+      regex: '[\s";&|(]node\S{0,4}\s+\S{0,60}[/\\](fonts?|im(g|ages?)|icons?)["\s;&|)]'
+
+  # The file being scanned is itself a Git hook: a husky hook under `.husky/`
+  # or a hook in `.git/hooks/` named for a Git event. A hook runs on the
+  # matching Git operation, so a disguised payload here is an autorun outside
+  # the editor entirely.
+  - id: git-hook-script-file
+    desc: File is a Git hook script
+    crit: notable
+    conf: 0.9
+    for: [shell]
+    if:
+      type: path
+      regex: '(^|[/\\])(pre-commit|pre-push|post-merge)$'
+
+composite_rules:
+  # A Git hook that runs a payload from an asset directory. The hook fires on
+  # an ordinary Git operation (commit, push, checkout), so this is autorun
+  # persistence with the payload hidden where reviewers expect assets. Both
+  # legs in the same hook file; neither is normal for a hook.
+  - id: git-hook-runs-asset-directory-payload
+    desc: Git hook runs a payload from an asset directory
+    crit: hostile
+    conf: 0.96
+    attack: T1546,T1036.005
+    for: [shell]
+    all:
+      - id: git-hook-script-file
+      - id: node-runs-asset-directory-file

@@ -1,43 +1,58 @@
 # Interpreter handed a file whose suffix it does not read as source.
 # Extension-agnostic siblings of the font rules in this directory, which keep
 # the font suffixes: these rules exclude them so one file is reported once.
-# The suffix must start with a letter, so version strings (`node 18.17`) are
-# not suffixes. `not:` filters the matched span, which always ends at the
-# suffix, so an earlier dot in the path cannot trigger the exclusion.
+# The suffix must start with a letter and end the token, so version strings
+# (`node 18.17`), `.bin/` directories and `*.test.mjs` globs are not
+# suffixes. Compound names Node resolves to a script (`retry.integ.spec` ->
+# `.spec.js`) are excluded by trailing-word `not:` lists on each rule.
+#
+# Each interpreter invocation is matched on its own, at command position
+# (start of a JSON string or after a shell operator), so `node x.llf && node
+# lint.js` cannot hide the payload behind a benign call in either order.
+# Text `not:` filters that one invocation's span, which ends at the suffix.
+# A value matcher cannot do this: its `not:` is judged against the whole
+# script string, so any benign `.js` call anywhere would excuse the payload.
 defaults:
   platforms: [windows, linux, macos]
   attack: T1036.008
 
 traits:
-  # Anchored to a VS Code task `command` value in text form, so the rule
-  # reads per-OS command blocks too. Up to three flags may precede the file.
+  # Any JSON command string: VS Code tasks, per-OS command blocks, and the
+  # tasks block some campaigns embed in workspace settings.
   - id: node-task-executes-non-script-suffix
-    desc: Node task runs a non-script-suffix file
+    desc: Node command runs a non-script-suffix file
     crit: suspicious
     conf: 0.93
     for: [json]
     if:
       type: text
-      regex: '"command"\s*:\s*"[^"]{0,99}\bnode\S{0,4}(\s+-\S*){0,3}\s+[^"\s-]\S*\.[a-z]\w{0,4}\W'
-      case_insensitive: true
+      regex: '[";&|(]\s*node(\.exe)?(\s+-\S{0,40}){0,3}\s+[^"\s-][^"\s]{0,99}\.[a-z]\w{0,4}[^\w./]'
     not:
       - regex: '(?i)\.(m?js|cjs|[mc]?ts|[jt]sx|json|node)\W?$'
       - regex: '(?i)\.(woff2?|[ot]tf|eot)\W?$'
+      # `-e/--eval/-p` run the next argument as code, not as a file path.
+      - regex: '\s(-e|--eval|-p|--print)(\s|=)'
+      # Node resolves an extensionless compound name (`retry.integ.spec`) to
+      # `.spec.js`; these trailing words are conventions, not real suffixes.
+      - regex: '(?i)\.(spec|test|e2e|bench|cy|min|dev|prod)\W?$'
+      - regex: '(?i)\.(conf|config|setup|mock|fixtures?|stories|story|worker)\W?$'
 
   # Bun and Deno run the same payloads Node does; `deno run` takes the
   # subcommand before its flags.
   - id: bun-deno-task-executes-non-script-suffix
-    desc: Bun or Deno task runs a non-script file
+    desc: Bun or Deno runs a non-script file
     crit: suspicious
     conf: 0.92
     for: [json]
     if:
       type: text
-      regex: '"command"\s*:\s*"[^"]*\b(bun|deno)(\s+run)?(\s+-\S*){0,3}\s+[^"\s-]\S*\.[a-z]\w{0,4}\W'
-      case_insensitive: true
+      regex: '[";&|( ](bun|deno)(\s+run)?(\s+-\S{0,40}){0,3}\s+[^"\s-][^"\s]{0,99}\.[a-z]\w{0,4}[^\w./]'
     not:
       - regex: '(?i)\.(m?js|cjs|[mc]?ts|[jt]sx|json)\W?$'
       - regex: '(?i)\.(woff2?|[ot]tf|eot)\W?$'
+      - regex: '\s(-e|--eval|-p|--print)(\s|=)'
+      - regex: '(?i)\.(spec|test|e2e|bench|cy|min|dev|prod)\W?$'
+      - regex: '(?i)\.(conf|config|setup|mock|fixtures?|stories|story|worker)\W?$'
 
   # Process-style task: `"command": "node"` with the file as the first
   # non-flag element of `args`. The command-string rules above never see
@@ -49,31 +64,154 @@ traits:
     for: [json]
     if:
       type: text
-      regex: '"command"\s*:\s*"node"\s*,\s*"args"\s*:\s*\[("-[^"]*",\s*)*"[^"\s-][^"]*\.[a-z]\w{0,4}"'
+      regex: '"node"\s*,\s*"args"\s*:\s*\[("-[^"]{0,40}",\s*){0,3}"[^"\s-][^"]{0,99}\.[a-z]\w{0,4}"'
       case_insensitive: true
     not:
       - regex: '(?i)\.(m?js|cjs|[mc]?ts|[jt]sx|json|node)"$'
       - regex: '(?i)\.(woff2?|[ot]tf|eot)"$'
 
-  # npm script values are commands by construction, so the value path keeps
-  # prose ("the node module.exports ...") out of reach. A lifecycle script
-  # running a disguised payload is the same masquerade outside the IDE.
+  # The same match over package.json text, where scripts are the only
+  # strings that open with a command. Kept as text, not a `scripts.*` value
+  # path: see the header.
   - id: npm-script-node-non-script-suffix
     desc: npm script runs Node on non-script file
     crit: suspicious
     conf: 0.92
     for: [package.json]
     if:
-      type: value
-      path: scripts.*
-      regex: '(^|[;&|(]\s*)node\S{0,4}(\s+-\S*){0,3}\s+[^\s''"-]\S*\.[a-z]\w{0,4}(\s|$)'
+      type: text
+      regex: '[";&|(]\s*node(\.exe)?(\s+-\S{0,40}){0,3}\s+[^"\s-][^"\s]{0,99}\.[a-z]\w{0,4}[^\w./]'
+    not:
+      - regex: '(?i)\.(m?js|cjs|[mc]?ts|[jt]sx|json|node)\W?$'
+      - regex: '(?i)\.(woff2?|[ot]tf|eot)\W?$'
+      - regex: '\s(-e|--eval|-p|--print)(\s|=)'
+      - regex: '(?i)\.(spec|test|e2e|bench|cy|min|dev|prod)\W?$'
+      - regex: '(?i)\.(conf|config|setup|mock|fixtures?|stories|story|worker)\W?$'
+
+  # A config module that require()s or import()s a path in an asset directory.
+  # A font/image folder holds data the app fetches, never a code module, so a
+  # dynamic load from there is a payload run under an asset's cover.
+  # createRequire(import.meta.url)("...") reduces to require() and is covered
+  # by the same ``require`` alternative.
+  - id: module-load-of-asset-directory-path
+    desc: Module loaded from an asset directory
+    crit: notable
+    conf: 0.94
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\b(require|import)\s*\(\s*[''"`][^''"`\n]{0,80}[/\\](fonts?|im(g|ages?)|icons?)[/\\]'
+      case_insensitive: true
+
+  # A config module that loads a path with a known data/binary suffix. Do not
+  # treat every dotted basename as an extension: CommonJS resolves an
+  # extensionless name such as `delay.base` by appending `.js`.
+  - id: module-load-of-non-script-suffix
+    desc: Module loaded from a non-script suffix
+    crit: notable
+    conf: 0.94
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\b(require|import)\s*\(\s*[''"`][^''"`\n]{0,80}[/\\][^''"`\n]{1,50}\.(dat|bin|llf|dll|exe|so|dylib|woff2?|ttf|otf|eot|png|jpe?g|gif|webp|bmp|ico|pdf|zip|tar|gz|7z|pem|key|der)[''"`]'
       case_insensitive: true
     not:
-      # Exclude the first filename passed to Node even when it has arguments
-      # after it or the command continues through a shell operator. Bound the
-      # path scan to keep this negative check cheap on large manifests.
-      - regex: '(?i)(^|[;&|(]\s*)node(\s+-\S*){0,3}\s+[^\s''"-][^\s;&|)]{0,200}\.(m?js|cjs|[mc]?ts|[jt]sx|json|node)(\s|[;&|)]|$)'
-      - regex: '(?i)(^|[;&|(]\s*)node(\s+-\S*){0,3}\s+[^\s''"-][^\s;&|)]{0,200}\.(woff2?|[ot]tf|eot)(\s|[;&|)]|$)'
-      # `node -e/--eval` executes the following code argument; filenames in
-      # that code are not Node script paths supplied as the command target.
-      - regex: '(?i)(^|[;&|(]\s*)node(\s+-\S*){0,3}\s+(-e|--eval|--print)(\s|=)'
+      - regex: '(?i)\.(m?js|cjs|[mc]?ts|[jt]sx|json|node|wasm)[''"`]$'
+      - regex: '(?i)\.(spec|test|e2e|bench|conf|config|setup|mock)[''"`]$'
+
+  # ESM configs (eslint.config.mjs, vite.config.mjs) cannot use bare require,
+  # so a loader there uses `createRequire(import.meta.url)(path)`. The path
+  # is in the second call, which the require/import atoms above do not reach.
+  - id: createrequire-of-non-script-suffix
+    desc: createRequire loads a non-script file
+    crit: notable
+    conf: 0.94
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'createRequire\s*\([^)\n]{0,40}\)\s*\(\s*[''"`][^''"`\n]{1,50}\.(dat|bin|llf|dll|exe|so|dylib|woff2?|ttf|otf|eot|png|jpe?g|gif|webp|bmp|ico|pdf|zip|tar|gz|7z|pem|key|der)[''"`]'
+      case_insensitive: true
+    not:
+      - regex: '(?i)\.(m?js|cjs|[mc]?ts|[jt]sx|json|node|wasm)[''"`]$'
+
+  # A folder-open task whose Node argument is computed by command
+  # substitution (`node $(...)`, `node `...``). Build tasks name their entry
+  # file; deriving it at runtime hides which file runs from anyone reading the
+  # task. Notable alone (a wrapper script could do this); the folder-open
+  # composite below makes the autorun case hostile.
+  - id: node-command-substitution-argument
+    desc: Node argument built by command substitution
+    crit: notable
+    conf: 0.9
+    for: [json]
+    if:
+      type: text
+      regex: '[";&|( ]node(\.exe)?(\s+-\S{0,40}){0,3}\s+["'']?(\$\(|`)'
+
+  # A folder-open task whose Node argument is nothing but an environment
+  # variable expansion (`node ${env:X}`, `node "$X"`, `node %X%`). The real
+  # path lives in the task's own `options.env`/`terminal...env`, out of the
+  # command a reviewer reads. A normal launch names its script.
+  - id: node-runs-env-var-target
+    desc: Node run target is an env-var expansion
+    crit: notable
+    conf: 0.9
+    for: [json]
+    if:
+      type: text
+      regex: '[";&|( ]node(\.exe)?\s+[\\"'']{0,2}(\$\{?(env:)?[A-Za-z_]|%[A-Za-z_])[\w:}]{0,40}'
+
+composite_rules:
+  # One id for "a config module dynamically loads a disguised path", whichever
+  # loader form. Its legs overlap on a single call, so they are notable and
+  # this roll-up carries the suspicious verdict.
+  - id: config-module-loads-disguised-path
+    desc: Config module loads a disguised path
+    crit: suspicious
+    conf: 0.95
+    any:
+      - id: module-load-of-asset-directory-path
+      - id: module-load-of-non-script-suffix
+      - id: createrequire-of-non-script-suffix
+
+  # The unconcealed counterpart of the IDE family's concealed-masquerade
+  # verdict, mirroring vscode-folder-open-executes-font-script: opening the
+  # folder runs a payload whose name or location says "asset". No concealment
+  # is needed for that to be hostile; a concealed task gets the more specific
+  # IDE verdict instead, so it is excluded here to avoid a duplicate.
+  - id: vscode-folder-open-executes-disguised-file
+    desc: Folder-open task executes a disguised payload file
+    crit: hostile
+    conf: 0.97
+    attack: "T1204.002,T1036.008,T1059"
+    for: [json]
+    all:
+      - id: metadata/permission/activation::vscode-task-folder-open-activation
+    any:
+      - id: node-task-executes-non-script-suffix
+      - id: bun-deno-task-executes-non-script-suffix
+      - id: node-task-args-non-script-suffix
+    # A concealed suffix loader has a more specific hostile verdict in the IDE
+    # trigger family (vscode-concealed-media-masquerade-autorun); stand down
+    # there to avoid reporting the same workflow twice.
+    unless:
+      - id: objectives/execution/trigger/ide::vscode-task-concealment
+
+  # The indirect run forms -- command substitution, an env-var target, and an
+  # asset directory run as a module. The IDE concealed-masquerade composite
+  # keys on the extension-mismatch directory and does not reach these, so this
+  # composite carries them for both concealed and unconcealed folder-open
+  # tasks. A build task names its script; none of these do.
+  - id: vscode-folder-open-runs-indirect-payload
+    desc: Folder-open task runs an indirect payload
+    crit: hostile
+    conf: 0.96
+    attack: "T1204.002,T1059"
+    for: [json]
+    all:
+      - id: metadata/permission/activation::vscode-task-folder-open-activation
+    any:
+      - id: node-command-substitution-argument
+      - id: node-runs-env-var-target
+      - id: objectives/evasion/masquerade/path::node-runs-asset-directory-file
+      - id: objectives/evasion/masquerade/path::node-runs-asset-directory-as-module

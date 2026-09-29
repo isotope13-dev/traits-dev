@@ -1,0 +1,146 @@
+defaults:
+  platforms: [windows, linux, macos]
+  mbc: E1046
+  attack: T1046
+traits:
+  - id: objectives/discovery/network/scan/port/probe::gomap-import
+    desc: JustinTimperio gomap port scanning library
+    crit: notable
+    conf: 0.95
+    for:
+      - go
+    if:
+      type: symbol
+      kind: import
+      regex: '(^|/)JustinTimperio/gomap($|/)'
+  - id: objectives/discovery/network/scan/port/probe::gomap-string
+    desc: JustinTimperio gomap scanner library in binary
+    crit: notable
+    conf: 0.9
+    for: [go, elf, macho, pe]
+    if:
+      type: text
+      regex: JustinTimperio/gomap|gomap\.Scan
+  - id: objectives/discovery/network/scan/port/probe::go-nmap-import
+    desc: go-nmap library import
+    crit: notable
+    conf: 0.9
+    for:
+      - go
+    if:
+      type: symbol
+      kind: import
+      regex: '(^|/)go-nmap(/|$)'
+  - id: objectives/discovery/network/scan/port/probe::nmap-go-import
+    desc: nmap Go library import
+    crit: notable
+    conf: 0.9
+    for:
+      - go
+    if:
+      type: symbol
+      kind: import
+      regex: '(^|/)nmap(/|$)'
+    unless:
+      - id: metadata/lang/generated::generated-code-do-not-edit-text
+      - id: metadata/package/testing/presence/harness/
+  - id: objectives/discovery/network/scan/port/probe::tcp-connect-scan
+    desc: TCP connect scanning
+    crit: notable
+    conf: 0.75
+    for:
+      - go
+    count_min: 5
+    unless:
+      - id: metadata/package/testing/harness/unit/
+      - id: metadata/package/testing/presence/harness::go-test-file
+    if:
+      id: micro-behaviors/communications/socket/connect::dial-timeout-tcp
+  - id: objectives/discovery/network/scan/port/probe::common-ports-array
+    desc: Common port array for scanning
+    crit: notable
+    conf: 0.8
+    for: [scripts, binaries]
+    if:
+      type: text
+      word: commonPorts
+  # Hand-rolled Go scanners import no scanning library at all, so the library
+  # traits above miss them entirely; they walk a caller-supplied port range in
+  # a three-clause for loop and hand each port to a dialer worker. Matching the
+  # incrementing port counter itself is what survives renamed helpers.
+  - id: objectives/discovery/network/scan/port/probe::port-range-sweep-loop
+    desc: Loop walks an incrementing port range
+    crit: notable
+    conf: 0.85
+    for: [go]
+    if:
+      type: text
+      regex: 'for \w*[Pp]ort\w*\b.{0,60}[Pp]ort\+\+'
+    unless:
+      - id: metadata/package/testing/harness/unit::go-test
+      - id: metadata/package/testing/presence/harness::go-test-file
+composite_rules:
+  - id: objectives/discovery/network/scan/port/probe::scanner-library
+    desc: Port scanning library
+    crit: notable
+    conf: 0.9
+    any:
+      - id: objectives/discovery/network/scan/port/probe::gomap-import
+      - id: objectives/discovery/network/scan/port/probe::gomap-string
+      - id: objectives/discovery/network/scan/port/probe::go-nmap-import
+      - id: objectives/discovery/network/scan/port/probe::nmap-go-import
+  - id: objectives/discovery/network/scan/port/probe::scan-operations
+    desc: Port scanning operations
+    crit: notable
+    conf: 0.8
+    any:
+      - id: objectives/discovery/network/scan/port/probe::tcp-connect-scan
+      - id: objectives/discovery/network/scan/port/probe::common-ports-array
+      - id: objectives/discovery/network/scan/port/probe::port-range-sweep-loop
+  - id: objectives/discovery/network/scan/port/probe::network-scanner
+    desc: Network port scanner
+    crit: notable
+    conf: 0.9
+    all:
+      - id: objectives/discovery/network/scan/port/probe::scanner-library
+      - id: objectives/discovery/network/scan/port/probe::scan-operations
+  # Identity, not intent: a source tree that both walks a port range and banner-
+  # probes each open socket is a port scanner, whether it ships as a published
+  # tool or as the recon stage of a worm. Archive scope because the sweep loop
+  # and the per-port probe live in different files of the same module.
+  - id: objectives/discovery/network/scan/port/probe::go-port-sweep-with-banner-probe
+    desc: Go source sweeps ports and grabs banners
+    crit: notable
+    conf: 0.92
+    for: [go, zip]
+    scope: archive
+    all:
+      - id: objectives/discovery/network/scan/port/probe::port-range-sweep-loop
+      - id: micro-behaviors/communications/socket/receive::go-time-bounded-tcp-response-read
+
+  - id: objectives/discovery/network/scan/port/probe::local-network-recon
+    desc: Local network reconnaissance
+    crit: suspicious
+    conf: 0.85
+    for: [go]
+    # Do not combine interfaces/CIDR handling from vendored libraries with a
+    # port loop elsewhere in an archive.  The complete recon operation must
+    # be present in one source file.
+    scope: leaf
+    all:
+      - id: micro-behaviors/network/interface::net-interfaces
+      - id: micro-behaviors/communications/ip/parse::net-parsecidr
+      - id: objectives/discovery/network/scan/port/probe::port-range-sweep-loop
+
+  - id: objectives/discovery/network/scan/port/probe::local-network-recon-tcp-connect
+    desc: Local network reconnaissance with TCP connect scans
+    crit: suspicious
+    conf: 0.85
+    for: [go]
+    # Keep the complete operation in one source file; archive-wide pooling
+    # would combine normal vendored network helpers into a false recon hit.
+    scope: leaf
+    all:
+      - id: micro-behaviors/network/interface::net-interfaces
+      - id: micro-behaviors/communications/ip/parse::net-parsecidr
+      - id: objectives/discovery/network/scan/port/probe::tcp-connect-scan

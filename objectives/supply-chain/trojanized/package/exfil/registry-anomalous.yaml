@@ -1,0 +1,190 @@
+# A freshly-published package that ships malicious obfuscated code. Two legs are
+# fixed in `all:` — the execution vector (exfil sink or install hook) and
+# `freshly-published`, the supply-chain context. `freshly-published` is the
+# *version* age, so it catches both a fresh malware drop AND an account-takeover
+# that pushes a new version of an *old* package (which `brand-new-package`, the
+# package age, would miss). The obfuscation style is the `any:` group because a
+# single subtree is too narrow: the audit's packages obfuscate every which way —
+# obfuscator.io output, string-array rotation, control-flow state machines. The
+# group excludes `code-metrics/` (legit minification) and `encoding/` (base64 is
+# benign-common); `obfuscator/`/`string/`/`syntax/` are tool-grade tells. The
+# obfuscation-OR plus the exfil/hook leg is the FP governor — legit packages don't
+# ship tool-obfuscated code that also exfiltrates or runs install hooks. The OR
+# lives inline alongside `all:` because cleave filters a bare `any:`/`needs:1`
+# combiner as low-value. (Trait-dir iteration needs `CLEAVE_SKIP_CACHE=1` — the
+# report cache keys on bytes, not the trait set.)
+#
+# The execution-vector leg is a `fresh-package-*` helper, NOT a bare
+# `objectives/exfiltration/` or `objectives/supply-chain/install-hook/` subtree.
+# A bare-directory `all:` leg resolves to *every* trait beneath it at *any*
+# criticality (RULES "directory-reference safety"), so under `scope: package`
+# the leg was satisfied by lone `component` fragments scattered across an
+# unrelated fetched dependency tree — a `.pem` filename filter, an `await f(`,
+# an `@scope/name`, a mature version, an `[..].join('')`. That false-fires on
+# every large, actively-published benign monorepo (fonts, formatters). The
+# helpers anchor the leg on a *real objective firing*: data actually leaving via
+# a network channel (http/dns/ftp/cloud/messaging/oob), or an actual lifecycle
+# install hook that runs code (install/preinstall/postinstall/prepare/hook-file).
+# Collection-only fragments (`stealer/`, `sensitive-data/`) and manifest facts
+# (`package/manifest/`, `agent-skill/`, `dynamic-install/`) no longer stand in
+# for a met objective.
+defaults:
+  for: [registry]
+  platforms: [unix, windows, android, ios]
+
+composite_rules:
+- id: fresh-package-outbound-exfil-channel
+  for: [registry, javascript, package.json, npm, shell]
+  desc: Fresh package has an outbound exfil sink
+  crit: notable
+  conf: 0.8
+  scope: package
+  attack: "T1195.002"
+  # A genuine data-egress channel firing — not a collection/file-targeting
+  # fragment (`stealer/`, `sensitive-data/`) that merely names a sensitive path.
+  all:
+    - id: metadata/registry::brand-new-package
+  any:
+    - id: objectives/exfiltration/http/upload::node-collect-exfil
+    - id: objectives/exfiltration/stealer/credential::node-encode-exfil
+    - id: objectives/exfiltration/messaging/discord::discord-http-exfil-chain
+    - id: objectives/exfiltration/messaging/discord::discord-webhook-system-info
+    - id: objectives/exfiltration/oob/endpoint::oob-endpoint-file-exfil
+    - id: objectives/exfiltration/oob/endpoint::js-local-route-oob-post
+    - id: objectives/exfiltration/oob/endpoint::preinstall-exfil
+  unless:
+    - id: metadata/registry::widely-installed
+    - id: well-known/app/ai/coding-agent/acuvo-code::official-package-context
+
+- id: deprecated-package-hidden-native-loader
+  for: [registry, javascript, npm]
+  desc: Deprecated package launches hidden native payload
+  crit: hostile
+  conf: 0.99
+  scope: outer
+  attack: "T1195.002,T1059.007,T1105"
+  all:
+    - id: metadata/registry::deprecated
+    - id: objectives/command-and-control/dropper/file-exec/detached::hidden-native-payload-extraction-and-launch
+
+- id: fresh-package-lifecycle-install-hook
+  for: [registry, package.json, npm, javascript]
+  desc: Fresh package defines a lifecycle install hook
+  crit: notable
+  conf: 0.8
+  scope: package
+  attack: "T1195.002"
+  # An actual install/preinstall/postinstall/prepare hook or hook-file that runs
+  # code — not a manifest fact (scoped name, mature version) or a generic
+  # `await f(`/runtime-`npm install` fragment that lives under install-hook/.
+  all:
+    - id: metadata/registry::brand-new-package
+  any:
+    - id: metadata/package/scripts/lifecycle::install-hooks
+    - id: objectives/supply-chain/install-hook/scripts/encoded-body::install-hook-charcode-encoded-loader
+    - id: objectives/supply-chain/install-hook/scripts/encoded-body::install-hook-encoded-dynamic-require
+    - id: objectives/supply-chain/install-hook/scripts/prepare::has-prepare
+    - id: objectives/supply-chain/install-hook/scripts/hook-file::hook-script-dropper
+    - id: objectives/supply-chain/install-hook/scripts/hook-file::hook-script-telemetry-beacon
+    - id: objectives/supply-chain/install-hook/scripts/hook-file::hook-depconf-credential-project-exfil
+  unless:
+    - id: metadata/registry::widely-installed
+
+- id: fresh-package-env-secret-exfil
+  for: [registry, javascript, npm]
+  desc: Fresh package exfiltrates environment secrets
+  crit: hostile
+  conf: 0.9
+  scope: package
+  attack: "T1195.002"
+  # Directory ref into env/ only — automated-webapp history/auth pairing atoms
+  # live under stealer/sweep/ so a fuzzy-history plugin cannot satisfy
+  # this hostile leg. Keep generic non-env path pairs out of env/.
+  all:
+    - id: metadata/registry::freshly-published
+  any:
+    - id: objectives/exfiltration/stealer/env
+  unless:
+    - id: metadata/registry::widely-installed
+
+- id: package-obfuscated-exfil
+  for: [registry, javascript, package.json, npm]
+  desc: Anomalous package hides outbound data exfiltration
+  crit: hostile
+  conf: 0.85
+  scope: package
+  attack: "T1195.002"
+  needs: 1
+  all:
+    - id: objectives/supply-chain/trojanized/package/exfil::fresh-package-outbound-exfil-channel
+  any:
+    # Tool-grade obfuscators only. Directory refs into string/syntax match
+    # ordinary helpers (chained .replace, date formatters) and false-convict
+    # fresh packages whose postinstall only chmods a shipped native binary.
+    - id: objectives/anti-static/obfuscation/obfuscator/
+  unless:
+    - id: metadata/registry::widely-installed
+    - id: well-known/app/ai/coding-agent/acuvo-code::official-package-context
+
+- id: package-obfuscated-install-dropper
+  for: [registry, javascript, npm]
+  desc: Anomalous package runs an obfuscated install hook
+  crit: hostile
+  conf: 0.85
+  scope: package
+  attack: "T1195.002"
+  needs: 1
+  # The install hook is the execution vector instead of (or alongside) the exfil
+  # sink — `ts-biginteger-lib` in the audit was a takeover publishing an
+  # obfuscated install-hook dropper.
+  all:
+    - id: objectives/supply-chain/trojanized/package/exfil::fresh-package-lifecycle-install-hook
+  any:
+    - id: objectives/anti-static/obfuscation/obfuscator/
+  unless:
+    - id: metadata/registry::widely-installed
+
+- id: fresh-package-fetch-commonjs-smuggle
+  for: [registry, npm, javascript]
+  desc: Fresh package ships fetch-to-CommonJS remote loader
+  crit: hostile
+  conf: 0.99
+  scope: outer
+  attack: T1195.002,T1059.007,T1105
+  all:
+    - id: metadata/registry::freshly-published
+    - id: objectives/command-and-control/dropper/script-eval/remote-code::fetch-text-commonjs-module-smuggle
+  unless:
+    - id: metadata/registry::widely-installed
+
+- id: fresh-package-exfil-on-install
+  for: [registry, package.json, npm]
+  desc: Brand-new package's install script POSTs data out
+  crit: suspicious
+  conf: 0.72
+  scope: outer
+  attack: "T1195.002"
+  # A lifecycle-script POST in a days-old package is the install-hook exfil
+  # shape, but a benign postinstall can also POST telemetry — suspicious, not
+  # hostile, unless it also obfuscates (the rules above).
+  all:
+    - id: metadata/registry::brand-new-package
+    - id: micro-behaviors/communications/http/post::npm-script-post
+  unless:
+    - id: metadata/registry::widely-installed
+
+- id: fresh-obfuscated-package
+  for: [registry, javascript, npm]
+  desc: Fresh obfuscated package with execution vector
+  crit: suspicious
+  conf: 0.7
+  scope: package
+  # A brand-new package shipping tool-grade obfuscation is only suspicious when
+  # paired with an install-time or exfiltration vector. Minified vendored
+  # libraries in legitimate new packages are common enough that age plus
+  # obfuscation alone is not an intent signal.
+  all:
+    - id: objectives/anti-static/obfuscation/obfuscator/
+    - id: objectives/supply-chain/trojanized/package/exfil::fresh-package-exfil-on-install
+  unless:
+    - id: metadata/registry::widely-installed

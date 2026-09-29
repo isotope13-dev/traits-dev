@@ -1,0 +1,70 @@
+# Node/Electron evented-GET remote-code loader. (general response-evaluation profile)
+#
+# `https.get(url, res => { let b=''; res.on('data',c=>b+=c);
+#  res.on('end', () => eval(b)); })` fetches a remote script and evaluates the
+# response body in-process. QuickFox's trojanized Electron renderer used this
+# to run a second stage pulled from a typosquatted CDN, but the shape is the
+# generic Node download-and-execute loader (distinct from https.request, which
+# fetch-eval/node-https.yaml already covers).
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1105,T1059.007
+  mbc: E1105.016
+
+traits:
+  # `res.on('data', c => eval(c))` -- the chunk is evaluated as it arrives, so
+  # the loader never needs an `end` handler or an accumulator buffer at all.
+  # This is the shape the 2018 eslint-scope/eslint-config-eslint compromise
+  # shipped, and it is strictly shorter than the buffer-then-eval form the
+  # composite below already covered.
+  - id: stream-chunk-eval
+    desc: Stream data chunk passed to eval
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: '["'']data["'']\s*,\s*\(?\s*\w+\s*\)?\s*=>[^;]{0,80}eval\s*\('
+    unless:
+      - id: metadata/package/testing/
+
+composite_rules:
+  - id: node-evented-get-chunk-eval
+    desc: HTTP response chunks are evaluated
+    crit: hostile
+    conf: 0.96
+    scope: file
+    near_bytes: 1200
+    all:
+      - id: micro-behaviors/communications/http/request/evented::node-evented-get-response
+      - id: stream-chunk-eval
+    unless:
+      - id: metadata/package/testing/
+
+  # Proximity is measured in BYTES, not lines: a webpack/ncc bundle is one
+  # physical line, so `near_lines` imposed no constraint at all there and the
+  # legs were free to match megabytes apart -- Next.js's compiled
+  # `edge-runtime/index.js` carries an unrelated `https.get`, an unrelated
+  # `res.on('end')` and an unrelated `eval(<var>)` in one 525 KB line. The
+  # loader this rule describes fits in a few hundred bytes.
+  - id: node-evented-get-remote-eval
+    desc: Evented HTTP GET response body is evaluated
+    crit: hostile
+    conf: 0.96
+    scope: file
+    near_bytes: 1200
+    all:
+      - id: micro-behaviors/communications/http/request/evented::node-evented-get-response
+      - id: micro-behaviors/process/io/stream::node-stream-end-event
+    any:
+      - id: micro-behaviors/process/interpreter/eval/direct::js-eval-variable-argument
+      - id: objectives/execution/interpreter/eval/remote::js-eval-message-data
+
+  - id: target-gated-remote-code-loader
+    desc: Target-software gate guards a remote-code loader
+    crit: hostile
+    conf: 0.97
+    scope: file
+    all:
+      - id: node-evented-get-remote-eval
+      - id: objectives/discovery/host/process::high-value-software-presence-gate

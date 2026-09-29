@@ -1,0 +1,3 @@
+LEXERS = {
+    "AscLexer": ("*.asc", "*.pem", "id_rsa", "id_ed25519"),
+}

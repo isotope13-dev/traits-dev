@@ -1,0 +1,296 @@
+defaults:
+  platforms: [linux, macos, windows]
+  for: [pe, elf, macho]
+traits:
+  - id: very-low-strings
+    desc: Very few extracted strings
+    crit: suspicious
+    conf: 0.7
+    size_min: 49152
+    if:
+      type: metrics
+      field: binary.string_count
+      max: 20
+    not:
+      - regex: \.(tar\.gz|tgz|zip)$
+    unless:
+      # Truncated PE fixtures can contain only the header and a short prefix
+      # of the first section, so their string count says nothing about
+      # import concealment in the missing image.
+      - id: metadata/binary/section/ratio::pe-section-overflow-present
+      # Wine's `apisetschema.dll` is a schema table with no code and no strings.
+      - id: well-known/lib/platform/wine::wine-builtin-dll-marker
+      - id: metadata/binary/symbols/count::many-imports-50
+      # Embedded eBPF/relocatable object files (libbpf skeletons, .o) are
+      # intrinsically string-sparse bytecode, not import-concealed code. ELF type
+      # is the value `elf.type`, not a numeric `elf.e_machine` metric (which was
+      # dead), and cleave reports BPF e_machine as "unknown" — so key on ET_REL.
+      - id: metadata/binary/header/identity::elf-relocatable-object
+      # Generated-stub binaries have no strings by construction: Apple ships
+      # libobjc-trampolines.dylib and Xcode's libRemoteInjectionPayload.dylib
+      # as pages of emitted trampolines, and darling reimplements the same
+      # runtime. Both carry their vendor's identity on the file itself.
+      - id: metadata/signed/platform/
+      - id: well-known/tool/development/toolchain/darling/
+      - id: metadata/binary/resource/firmware/
+      - id: metadata/binary/layout/size::small-macho-binary
+  - id: extremely-low-strings
+    desc: Extremely few extracted strings
+    crit: suspicious
+    conf: 0.7
+    size_min: 49152
+    if:
+      type: metrics
+      field: binary.string_count
+      max: 10
+    not:
+      - regex: \.(tar\.gz|tgz|zip)$
+    unless:
+      # Do not infer string concealment from a PE whose declared sections
+      # extend past EOF; most of the program bytes are simply absent.
+      - id: metadata/binary/section/ratio::pe-section-overflow-present
+      # Wine's `apisetschema.dll` is a schema table with no code and no strings.
+      - id: well-known/lib/platform/wine::wine-builtin-dll-marker
+      - id: metadata/binary/symbols/count::many-imports-50
+      - id: metadata/binary/framework::electron-desktop-runtime
+      - id: metadata/binary/installer/script/
+      # Embedded eBPF/relocatable object files are intrinsically string-sparse
+      # bytecode; key on ET_REL (the elf.e_machine metric was dead and BPF reads
+      # as "unknown" — see very-low-strings).
+      - id: metadata/binary/header/identity::elf-relocatable-object
+      - id: metadata/binary/layout/size::small-macho-binary
+  - id: sparse-strings-under-25-pe
+    desc: Sparse strings under twenty-five
+    crit: notable
+    conf: 0.82
+    for: [pe]
+    size_min: 32768
+    size_max: 65535
+    if:
+      type: metrics
+      field: binary.string_count
+      max: 24
+    unless:
+      - id: metadata/binary/framework/
+      - id: metadata/signed/platform/
+  - id: five-plus-sections-pe
+    desc: Five or more PE sections
+    crit: component
+    conf: 0.8
+    for: [pe]
+    if:
+      type: metrics
+      field: sections.count
+      min: 5
+    unless:
+      - id: metadata/lang/compiler/systems::go-pe-symtab
+composite_rules:
+  - id: low-string-extension-soft-noise
+    desc: Low-string extension soft compat noise
+    crit: component
+    conf: 0.85
+    any:
+      - id: metadata/file/extension/asset::packaged-asset-extension
+      - id: metadata/file/extension/asset::data-file-extension
+      - id: metadata/file/extension/asset::structured-asset-extension
+  - id: low-strings-soft-noise
+    desc: Recognized low-string binary marker
+    crit: component
+    conf: 0.85
+    any:
+      - id: metadata/signed/certificate/identity::open-source-developer-leaf-subject
+      - id: metadata/binary/layout/size::small-elf-binary
+      - id: metadata/binary/layout/size::small-macho-binary
+      - id: metadata/binary/code/complexity::many-functions
+      - id: metadata/binary/installer/script::nullsoft-install-system
+      - id: metadata/binary/symbols/count::many-imports-50
+      - id: metadata/binary/framework::electron-desktop-runtime
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: metadata/signed/platform::microsoft
+      # Wine/ReactOS builtin PEs implement (export) the Windows API rather than
+      # importing it; their thin forwarder stubs are string-sparse by design.
+      - id: metadata/lang/upstream::windows-system-implementer-dll
+  - id: small-zero-import-pe
+    desc: Small PE with empty imports and sparse strings
+    crit: suspicious
+    conf: 0.88
+    for: [pe]
+    attack: T1027
+    mbc: B0032
+    size_min: 32768
+    size_max: 65535
+    all:
+      - id: metadata/binary/symbols/count::no-imports
+      - id: sparse-strings-under-25-pe
+      - id: five-plus-sections-pe
+  - id: minimal-imports-suspicious-apis
+    desc: Minimal imports with suspicious API combination
+    crit: suspicious
+    conf: 0.75
+    for: [pe]
+    attack: T1027
+    needs: 3
+    any:
+      - id: micro-behaviors/dylib/load/runtime::load-library-a
+      - id: micro-behaviors/dylib/lookup::get-proc-address
+      - id: micro-behaviors/process/create/exec::shell-execute-a
+      - id: micro-behaviors/process/create/exec::shell-execute
+      - id: micro-behaviors/process/create/exec::shell-execute-ex
+      - id: micro-behaviors/crypto/certificate/store::cert-open-store
+      - id: micro-behaviors/mem/alloc/heap::heap-alloc
+    unless:
+      - id: metadata/binary/symbols/count::many-imports-30
+      - id: objectives/anti-static/pack/asprotect
+      - id: metadata/binary/symbols/count::many-imports
+      - id: metadata/binary/symbols/count::many-imports-40
+      - id: metadata/binary/symbols/count::very-many-imports
+      - id: well-known/app/ai/coding-agent/anthropic-claude-code::native-windows-package-context
+      # libcef resolves most Windows APIs through its own loader, so the
+      # import table stays small beside ShellExecute and certificate APIs.
+      - id: well-known/lib/runtime/scripted/electron::chromium-engine-capability-context
+  - id: go-sparse-dynamic-api-imports
+    desc: Go PE sparse dynamic imports
+    # Retained-symbol Go Windows builds import one DLL and resolve the rest
+    # through the runtime. That is the ordinary loader, not a concealed import
+    # table; garble builds drop the symbol metadata this rule requires.
+    crit: notable
+    conf: 0.9
+    for: [pe]
+    attack: T1027.007
+    all:
+      - id: metadata/lang/compiler/systems::go-pe-rich-symbols
+      - id: metadata/binary/symbols/imports::pe-single-import-dll
+      - id: micro-behaviors/os/api-resolution/manual::go-syscall-dynamic-api-dispatch
+    any:
+      - id: metadata/binary/resource/size::no-resources
+      - id: metadata/binary/symbols/count::import-count-under-80
+      - id: metadata/binary/section/ratio::inflated-data-section
+    needs: 2
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/installer/family/
+  - id: concealed-capabilities-pe
+    desc: Concealed capabilities via import minimization
+    crit: suspicious
+    conf: 0.85
+    for: [pe]
+    attack: T1027
+    mbc: B0032
+    all:
+      - id: very-low-strings
+    needs: 4
+    any:
+      - id: micro-behaviors/dylib/load/runtime::load-library-a
+      - id: micro-behaviors/dylib/lookup::get-proc-address
+      - id: micro-behaviors/process/create/exec::shell-execute-a
+      - id: micro-behaviors/process/create/exec::shell-execute
+      - id: micro-behaviors/crypto/certificate/store::cert-open-store
+      - id: micro-behaviors/mem/alloc/heap::heap-alloc
+      - id: micro-behaviors/mem/protect/modify::virtual-protect
+    unless:
+      - id: metadata/binary/symbols/count::many-imports-25
+      - id: metadata/binary/symbols/count::many-imports
+  - id: import-concealed-ransomware-pattern
+    desc: Ransomware with concealed import table
+    crit: hostile
+    conf: 0.9
+    for: [pe]
+    attack: T1486
+    mbc: C0027
+    all:
+      - id: extremely-low-strings
+      - id: micro-behaviors/crypto/certificate/store::cert-open-store
+    needs: 2
+    any:
+      - id: micro-behaviors/dylib/load/runtime::load-library-a
+      - id: micro-behaviors/dylib/lookup::get-proc-address
+      - id: micro-behaviors/process/create/exec::shell-execute-a
+      - id: micro-behaviors/mem/protect/modify::virtual-protect
+      - id: micro-behaviors/fs/
+    unless:
+      - id: metadata/binary/symbols/count::many-imports-20
+      - id: metadata/binary/symbols/count::many-imports
+  - id: import-concealed-dropper-pattern
+    desc: Dropper with heavily minimized imports
+    crit: hostile
+    conf: 0.9
+    for: [pe]
+    attack: T1027
+    mbc: B0032
+    all:
+      - id: extremely-low-strings
+      - id: micro-behaviors/dylib/load/runtime::load-library-a
+      - id: micro-behaviors/dylib/lookup::get-proc-address
+    needs: 2
+    any:
+      - id: micro-behaviors/process/create/exec::shell-execute-a
+      - id: micro-behaviors/process/create/exec::shell-execute
+      - id: micro-behaviors/crypto/certificate/store::cert-open-store
+      - id: micro-behaviors/mem/protect/modify::virtual-protect
+      - id: micro-behaviors/fs/
+    unless:
+      - id: metadata/binary/symbols/count::many-imports-20
+  - id: themida-minimal-import-concealment
+    desc: Themida-packed PE minimizes visible imports
+    crit: hostile
+    conf: 0.98
+    for: [pe]
+    attack: T1027,T1027.007
+    all:
+      - id: objectives/anti-static/pack/detect::themida-boot-loader-layout
+      - id: metadata/binary/symbols/imports::pe-imports-max-six
+      - id: metadata/binary/section/label::blank-section-name-cluster
+      - id: metadata/signed/certificate/chain::pe-cert-leaf-self-issued
+      - id: metadata/signed/unknown/
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/installer/family/
+  # Unsigned Themida stubs with two-or-fewer imports and blank section names
+  # hide the real IAT behind the boot unpacker. Self-issued siblings are
+  # covered by themida-minimal-import-concealment; Google-signed Chrome is
+  # excluded via the browser-context exception.
+  - id: themida-unsigned-sparse-blank-loader
+    desc: Unsigned Themida sparse blank-section loader
+    crit: hostile
+    conf: 0.98
+    for: [pe]
+    attack: T1027.002,T1027.007
+    mbc: F0001
+    all:
+      - id: objectives/anti-static/pack/detect::themida-boot-loader-layout
+      - id: metadata/binary/symbols/imports::few-import-count
+      - id: metadata/binary/section/label::blank-section-name-cluster
+      - id: metadata/signed/trust-level::unsigned-missing-signature-record
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/installer/family/
+      - id: well-known/tool/browser::google-chrome-browser-context
+  # Unsigned Themida blank-section loaders that keep a process-launch primitive
+  # in the visible IAT while hiding everything else behind the boot unpacker.
+  # The two-import sibling above misses Themida stubs that leave a slightly
+  # larger import table (a dozen entries here, including ShellExecuteW): the
+  # concealed IAT still hides the payload's real capabilities, and the one
+  # retained exec primitive is exactly what launches it after unpacking. A
+  # legitimate Themida customer ships a signed binary with version identity,
+  # so the unsigned + identity-less + sparse-import + exec combination has no
+  # legitimate use.
+  - id: themida-unsigned-sparse-exec-loader
+    desc: Unsigned Themida blank-section loader with sparse imports and shell execution
+    crit: hostile
+    conf: 0.97
+    for: [pe]
+    attack: T1027.002,T1027.007
+    mbc: F0001
+    all:
+      - id: objectives/anti-static/pack/detect::themida-boot-loader-layout
+      - id: metadata/binary/section/label::blank-section-name-cluster
+      - id: metadata/signed/trust-level::unsigned-missing-signature-record
+      - id: metadata/binary/resource/identity::pe-no-version-info-resource
+      - id: metadata/binary/symbols/count::max-25-imports
+      - id: micro-behaviors/process/create/exec::shell-execute
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/installer/family/
+      - id: well-known/tool/browser::google-chrome-browser-context
+
+

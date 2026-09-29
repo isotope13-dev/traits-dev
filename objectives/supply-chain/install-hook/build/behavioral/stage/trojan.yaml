@@ -1,0 +1,349 @@
+defaults:
+  platforms:
+  - unix
+  - windows
+  crit: suspicious
+  attack: T1195.002
+
+traits:
+- id: rust-build-rs-payload-path-var
+  desc: build.rs references payload path variable
+  crit: notable
+  conf: 0.86
+  for:
+  - rust
+  if:
+    type: text
+    regex: \b(payload|stage|loader)_path\b
+  unless:
+  - id: metadata/package/testing/
+- id: rust-build-rs-rustc-link-search-native
+  desc: build.rs emits native link search path
+  crit: notable
+  conf: 0.9
+  for:
+  - rust
+  if:
+    type: text
+    substr: cargo:rustc-link-search=native=
+- id: openrewrite-python-package-marker
+  desc: OpenRewrite Python package marker
+  crit: notable
+  conf: 0.95
+  for:
+  - python
+  if:
+    type: text
+    substr: openrewrite
+
+composite_rules:
+- id: python-import-time-download-write-execute
+  desc: Python import downloads and runs an executable
+  crit: hostile
+  conf: 0.98
+  scope: file
+  all:
+  - id: metadata/build/pip::packaging-setuptools-imported-setup-call
+  - id: micro-behaviors/communications/http/request/client::requests-get-url-literal
+  - id: micro-behaviors/fs/write/file/target::py-open-executable-path
+  - id: micro-behaviors/process/interpreter/eval/direct::module-scope-exec-builtin
+- id: python-packaging-curl-pipe-execute
+  desc: Packaging code pipes a curl payload to Python
+  crit: hostile
+  conf: 0.99
+  scope: file
+  all:
+  - id: metadata/build/pip::packaging-setuptools-imported-setup-call
+  - id: micro-behaviors/communications/http/curl::curl-command-remote-url
+  - id: micro-behaviors/process/create/shell/spawn::curl-pipe-exec-python-shell
+  - id: micro-behaviors/process/create/system::python-os-system
+- id: setup-py-embeds-fetched-module
+  desc: setup.py writes a fetched body into Python
+  crit: hostile
+  conf: 0.96
+  for:
+  - python
+  scope: file
+  attack: T1195.002,T1105
+  all:
+  - id: metadata/package/files/included::setup-py-basename
+  - id: micro-behaviors/fs/write/file/full::python-source-write-text
+  - id: micro-behaviors/fs/write/file/full::python-pathlib-write-text
+  any:
+  - id: micro-behaviors/communications/http/lib/requests::requests-post
+  - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-call
+  unless:
+  - id: metadata/package/testing/
+- id: python-setup-encoded-dropper
+  desc: setup.py decodes and executes downloaded payload
+  crit: hostile
+  conf: 0.98
+  for:
+  - python
+  platforms:
+  - unix
+  scope: file
+  all:
+  - id: metadata/build/pip::setup-py
+  - id: metadata/build/pip::packaging-setuptools-import
+  - id: micro-behaviors/data/decode/base64::b64decode-call
+  - id: objectives/anti-static/obfuscation/payload/encoded/exec::decoded-curl-command
+  - id: objectives/anti-static/obfuscation/payload/encoded/exec::decoded-local-execution
+  - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-var-target
+  - id: metadata/build/package/recipe/setup-hooks::setup-cmdclass-install
+- id: setup-py-encrypted-build-hook-fetch
+  desc: setup.py build hook decrypts and fetches a remote payload
+  crit: hostile
+  conf: 0.99
+  for:
+  - python
+  scope: file
+  attack: T1195.002,T1027,T1105
+  all:
+  - id: metadata/build/pip::setup-py
+  - id: metadata/build/package/recipe/setup-hooks::setuptools-build-py-run-override
+  - id: metadata/build/package/recipe/setup-hooks::run-override-calls-helper-after-super
+  - id: micro-behaviors/crypto/symmetric/aes/library::cryptography-aesgcm-api
+  - id: micro-behaviors/crypto/symmetric/decrypt::python-decrypt-method-call
+  - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-call
+  unless:
+  - id: metadata/package/testing/
+- id: setup-build-hook-environment-temp-staging
+  desc: Build hook stages captured environment in temporary file
+  crit: hostile
+  conf: 0.995
+  for:
+  - python
+  attack: T1195.002,T1552.001
+  all:
+  - id: objectives/supply-chain/credential-theft/env::pypi-build-hook-environment-file-harvest
+  - id: micro-behaviors/fs/file/open::python-open-hardcoded-tmp-path
+  - id: micro-behaviors/fs/write/file/full::python-pathlib-write-text
+- id: setup-py-encrypted-build-hook-write
+  desc: setup.py build hook decrypts and writes plaintext
+  crit: hostile
+  conf: 0.995
+  for:
+  - python
+  scope: file
+  attack: T1195.002,T1027,T1140
+  all:
+  - id: metadata/build/pip::setup-py
+  - id: metadata/build/package/recipe/setup-hooks::setuptools-build-py-run-override
+  - id: metadata/build/package/recipe/setup-hooks::run-override-calls-helper-after-super
+  - id: objectives/anti-static/obfuscation/crypto::environment-slice-hash-key
+  - id: micro-behaviors/crypto/symmetric/aes/library::cryptography-aesgcm-api
+  - id: micro-behaviors/crypto/symmetric/decrypt::python-decrypt-method-call
+  - id: micro-behaviors/data/decode/hex::python-fromhex
+  - id: micro-behaviors/fs/path/temp::tmp-path-content
+  - id: micro-behaviors/fs/write/file/full::python-pathlib-write-text
+  unless:
+  - id: metadata/package/testing/
+- id: rust-build-rs-hostname-unverified-remote-payload-stage
+  desc: build.rs downloads hostname-unverified payload into temporary storage
+  crit: suspicious
+  conf: 0.98
+  for:
+  - rust
+  all:
+  - id: metadata/build/ecosystem::cargo-build-script-basename
+  - id: micro-behaviors/communications/http/download/handler::rust-http-response-materialized
+  - id: micro-behaviors/fs/path/temp::rust-temp-path
+  - id: micro-behaviors/communications/socket/ssl::rustls-no-hostname-verification
+- id: rust-build-rs-hostname-unverified-remote-payload-exec
+  desc: Cargo build hook launches a hostname-unverified remote payload
+  crit: hostile
+  conf: 0.995
+  attack: T1195.002,T1105,T1059,T1553
+  mbc: B0024
+  for:
+  - rust
+  all:
+  - id: metadata/build/ecosystem::cargo-build-script-basename
+  - id: objectives/supply-chain/install-hook/build/behavioral/stage::rust-build-rs-hostname-unverified-remote-payload-stage
+  - id: objectives/command-and-control/dropper/file-exec/spawn::rust-hostname-unverified-temp-executable-dropper
+- id: rust-build-rs-obfuscated-endpoint-payload-exec
+  desc: Cargo build hook launches a remote payload from an obfuscated endpoint
+  crit: hostile
+  conf: 0.995
+  attack: T1195.002,T1027.001,T1105,T1059
+  mbc: B0024
+  for:
+  - rust
+  all:
+  - id: metadata/build/ecosystem::cargo-build-script-basename
+  - id: objectives/command-and-control/dropper/file-exec/spawn::rust-obfuscated-endpoint-temp-executable-dropper
+- id: rust-build-rs-hidden-wscript-payload-exec
+  desc: Cargo build hook launches hidden remote PowerShell through WScript
+  crit: hostile
+  conf: 0.995
+  attack: T1195.002,T1105,T1059.001,T1059.005,T1564.003
+  mbc: B0024
+  for:
+  - rust
+  all:
+  - id: metadata/build/ecosystem::cargo-build-script-basename
+  - id: objectives/command-and-control/dropper/file-exec/spawn::rust-hidden-wscript-temp-powershell-stage
+- id: rust-build-rs-include-native-bytes
+  desc: build.rs embeds native payload bytes
+  crit: suspicious
+  conf: 0.9
+  for:
+  - rust
+  all:
+  - id: metadata/build/ecosystem::cargo-build-script-basename
+  any:
+  - id: micro-behaviors/data/embedded/payload/native::rust-embed-native-executable
+  - id: micro-behaviors/data/embedded/payload/native::rust-embed-native-library
+  - id: micro-behaviors/data/embedded/payload/native::rust-embed-named-payload
+- id: rust-build-rs-write-out-dir
+  desc: build.rs writes staged file to OUT_DIR
+  crit: component
+  conf: 0.9
+  for:
+  - rust
+  all:
+  - id: metadata/build/ecosystem::cargo-build-script-basename
+  - id: micro-behaviors/os/env/read::cargo-out-dir-reference
+  any:
+  - id: micro-behaviors/fs/write/file/full::fs-write
+  - id: micro-behaviors/fs/write/file/handle::rust-write-all
+  - id: micro-behaviors/fs/file/create::rust-file-create
+- id: rust-build-rs-copy-out-dir
+  desc: build.rs copies staged file to OUT_DIR
+  crit: component
+  conf: 0.88
+  for:
+  - rust
+  all:
+  - id: metadata/build/ecosystem::cargo-build-script-basename
+  - id: micro-behaviors/os/env/read::cargo-out-dir-reference
+  - id: micro-behaviors/fs/file/copy::rust-fs-copy
+- id: rust-build-rs-exec-staged-path
+  desc: build.rs executes staged local path
+  crit: notable
+  conf: 0.9
+  for:
+  - rust
+  all:
+  - id: metadata/build/ecosystem::cargo-build-script-basename
+  - id: micro-behaviors/process/create/exec::rust-command-path-variable
+  any:
+  - id: objectives/supply-chain/install-hook/build/behavioral/stage::rust-build-rs-payload-path-var
+  - id: objectives/supply-chain/install-hook/build/behavioral/metadata::rust-build-rs-binary-path-var
+- id: rust-build-rs-staged-payload-write
+  desc: build.rs stages payload bytes in OUT_DIR
+  crit: suspicious
+  conf: 0.94
+  for:
+  - rust
+  all:
+  - id: metadata/build/ecosystem::cargo-build-script-basename
+  - id: micro-behaviors/os/env/read::cargo-out-dir-reference
+  - id: objectives/supply-chain/install-hook/build/behavioral/stage::rust-build-rs-include-native-bytes
+  any:
+  - id: objectives/supply-chain/install-hook/build/behavioral/stage::rust-build-rs-write-out-dir
+  - id: objectives/supply-chain/install-hook/build/behavioral/stage::rust-build-rs-copy-out-dir
+  - id: micro-behaviors/fs/write/file/full::fs-write
+  - id: micro-behaviors/fs/write/file/handle::rust-write-all
+- id: rust-build-rs-staged-payload-exec
+  desc: build.rs stages and executes payload
+  crit: hostile
+  conf: 0.98
+  mbc: E1059
+  for:
+  - rust
+  all:
+  - id: objectives/supply-chain/install-hook/build/behavioral/stage::rust-build-rs-staged-payload-write
+  - id: objectives/supply-chain/install-hook/build/behavioral/stage::rust-build-rs-exec-staged-path
+  any:
+  - id: objectives/supply-chain/install-hook/build/behavioral/execute::rust-build-rs-command-status
+  - id: objectives/supply-chain/install-hook/build/behavioral/execute::rust-build-rs-command-output
+  - id: micro-behaviors/process/create/direct::rust-spawn
+  - id: micro-behaviors/fs/chmod/executable/mode::rust-executable-permissions
+- id: rust-build-rs-native-link-staging
+  desc: build.rs stages native library for Cargo linker
+  crit: notable
+  conf: 0.92
+  for:
+  - rust
+  all:
+  - id: metadata/build/ecosystem::cargo-build-script-basename
+  - id: objectives/supply-chain/install-hook/build/behavioral/stage::rust-build-rs-rustc-link-search-native
+  - id: metadata/build/ecosystem::cargo-rustc-link-lib-directive
+  any:
+  - id: objectives/supply-chain/install-hook/build/behavioral/stage::rust-build-rs-include-native-bytes
+  unless:
+  - id: well-known/tool/development/agent/openai-codex/
+  - id: objectives/supply-chain/install-hook/build/behavioral/stage::rust-build-rs-write-out-dir
+  - id: objectives/supply-chain/install-hook/build/behavioral/stage::rust-build-rs-copy-out-dir
+- id: cargo-build-hook-staged-payload-exec
+  desc: Cargo build hook stages and executes native payload
+  crit: hostile
+  conf: 0.98
+  mbc: E1059
+  for:
+  - rust
+  - crate
+  - tar
+  - cargo-toml
+  scope: archive
+  all:
+  - id: objectives/supply-chain/install-hook/build/behavioral/metadata::cargo-build-script-declared
+  - id: objectives/supply-chain/install-hook/build/behavioral/stage::rust-build-rs-staged-payload-exec
+  any:
+  - id: metadata/build/archive::archive-native-binary-entry
+  - id: metadata/build/archive::archive-platform-native-binary-entry
+- id: cargo-archive-build-rs-staged-payload-exec
+  desc: Cargo archive build.rs stages and executes native payload
+  crit: hostile
+  conf: 0.98
+  mbc: E1059
+  for:
+  - rust
+  - crate
+  - cargo-toml
+  - tar
+  scope: archive
+  all:
+  - id: metadata/build/archive::archive-cargo-crate-build-script
+  - id: objectives/supply-chain/install-hook/build/behavioral/stage::rust-build-rs-staged-payload-exec
+  any:
+  - id: metadata/build/archive::archive-native-binary-entry
+  - id: metadata/build/archive::archive-platform-native-binary-entry
+  unless:
+  - id: objectives/supply-chain/install-hook/build/behavioral/metadata::cargo-build-script-declared
+- id: cargo-build-hook-native-link-staging
+  desc: Cargo build hook links staged native library
+  crit: suspicious
+  conf: 0.94
+  for:
+  - rust
+  - crate
+  - tar
+  - cargo-toml
+  scope: archive
+  all:
+  - id: objectives/supply-chain/install-hook/build/behavioral/metadata::cargo-build-script-declared
+  - id: objectives/supply-chain/install-hook/build/behavioral/stage::rust-build-rs-native-link-staging
+  any:
+  - id: metadata/build/archive::archive-native-binary-entry
+  - id: metadata/build/archive::archive-platform-native-binary-entry
+- id: cargo-archive-build-rs-native-link-staging
+  desc: Cargo archive build.rs links staged native library
+  crit: suspicious
+  conf: 0.94
+  for:
+  - rust
+  - crate
+  - cargo-toml
+  - tar
+  scope: archive
+  all:
+  - id: metadata/build/archive::archive-cargo-crate-build-script
+  - id: objectives/supply-chain/install-hook/build/behavioral/stage::rust-build-rs-native-link-staging
+  any:
+  - id: metadata/build/archive::archive-native-binary-entry
+  - id: metadata/build/archive::archive-platform-native-binary-entry
+  unless:
+  - id: objectives/supply-chain/install-hook/build/behavioral/metadata::cargo-build-script-declared

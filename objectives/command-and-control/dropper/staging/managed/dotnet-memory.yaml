@@ -1,0 +1,663 @@
+# .NET downloaders that retrieve payloads and invoke them from memory
+defaults:
+  attack: T1105
+  mbc: B0030
+  platforms: [windows]
+  for: [pe, dll]
+traits:
+  - id: fetch-compressed-resource
+    desc: FetchCompressedResource stage method
+    crit: notable
+    conf: 0.95
+    if:
+      type: text
+      exact: FetchCompressedResource
+  - id: decompress-payload
+    desc: DecompressPayload stage method
+    crit: notable
+    conf: 0.95
+    if:
+      type: text
+      exact: DecompressPayload
+  - id: prepare-assembly
+    desc: PrepareAssembly stage method
+    crit: notable
+    conf: 0.95
+    if:
+      type: text
+      exact: PrepareAssembly
+  - id: fast-create-instance
+    desc: FastCreateInstance loader method
+    crit: notable
+    conf: 0.96
+    if:
+      type: text
+      exact: FastCreateInstance
+  - id: stage3-type-resolution
+    desc: Stage3_TypeResolution marker
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      exact: Stage3_TypeResolution
+  - id: stage4-execution
+    desc: Stage4_Execution marker
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      exact: Stage4_Execution
+  - id: get-network-resource
+    desc: GetNetworkResource stage method
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      exact: GetNetworkResource
+  - id: siphon-image-data-method
+    desc: SiphonImageData bitmap extraction method
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      exact: SiphonImageData
+  - id: accumulate-raw-channels-method
+    desc: AccumulateRawChannels bitmap extraction method
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      exact: AccumulateRawChannels
+composite_rules:
+  # Some managed loaders serialize each payload byte as a decimal integer plus
+  # a fixed offset. DownloadString retrieves the delimited integers; the stub
+  # subtracts the offset, loads the resulting byte array, enumerates its types,
+  # and invokes a method without writing the assembly to disk.
+  - id: dotnet-integer-offset-http-memory-loader
+    desc: .NET downloads offset-encoded bytes and invokes an assembly in memory
+    crit: hostile
+    conf: 0.99
+    attack: "T1105,T1140,T1620"
+    mbc: "B0030,B0032,E1059"
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: micro-behaviors/communications/http/client/managed::downloadstring
+      - id: micro-behaviors/data/decode/custom::vb-integer-offset-byte-decoder
+      - id: micro-behaviors/process/interpreter/reflection/runtime::appdomain-currentdomain
+      - id: micro-behaviors/process/interpreter/reflection/runtime::gettypes-member-token
+      - id: micro-behaviors/process/interpreter/reflection/runtime::get-methods-token
+      - id: micro-behaviors/process/interpreter/reflection/runtime::invoke-token
+
+  # Reactor metadata, byte retrieval, decompression, and reflected invocation
+  # identify a managed staged loader even without base64 or resource APIs.
+  - id: dotnet-reactor-http-compressed-reflective-stage
+    desc: Reactor-protected HTTP compressed reflective stage
+    crit: hostile
+    conf: 0.98
+    attack: "T1027.009,T1105,T1140,T1620"
+    mbc: "B0030,E1059"
+    for: [pe]
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: objectives/anti-static/obfuscation/obfuscator/managed::reactor-module-guid
+      - id: micro-behaviors/communications/http/client/managed::httpclient-bytearray-download
+      - id: micro-behaviors/data/compress/gzip::dotnet-gzip-compression
+      - id: micro-behaviors/process/interpreter/reflection/runtime::invoke-member-token
+
+  - id: http-reflection-loader
+    desc: .NET HTTP in-memory assembly loader
+    crit: suspicious
+    conf: 0.95
+    size_max: 500000
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: micro-behaviors/communications/http/client/managed::request
+      - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+    any:
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-in-memory-assembly-invoke
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-assembly-load-invoke
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-entrypoint-reflection
+    unless:
+      - id: micro-behaviors/fs/write/file/full::dotnet-writeallbytes-token
+  - id: http-entrypoint-loader
+    desc: .NET HTTP download-decode-load-invoke chain
+    crit: suspicious
+    conf: 0.95
+    size_max: 500000
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: micro-behaviors/communications/http/client/managed::request
+      - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-entrypoint-reflection
+    unless:
+      - id: micro-behaviors/fs/write/file/full::dotnet-writeallbytes-token
+
+  - id: csharp-http-aes-reflective-stage
+    desc: C# downloads decrypts and runs a .NET payload in memory
+    crit: hostile
+    conf: 0.98
+    attack: "T1105,T1140,T1620"
+    mbc: "B0024,E1059"
+    for: [csharp]
+    all:
+      - id: micro-behaviors/communications/http/client/managed::request
+      - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+      - id: micro-behaviors/crypto/symmetric/aes/library::dotnet-rijndael-decryptor
+    any:
+      - id: micro-behaviors/process/interpreter/reflection/runtime::csharp-assembly-load-reflected-invoke
+      - id: micro-behaviors/process/interpreter/reflection/vb::vb-newlatebinding
+  - id: dotnet-http-decoded-reflective-stage
+    desc: .NET HTTP response decoded and passed to reflected method invocation
+    crit: hostile
+    conf: 0.96
+    attack: "T1105,T1140,T1620"
+    mbc: E1059
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: micro-behaviors/communications/http/client/managed::request
+      - id: micro-behaviors/communications/http/client/managed::getstringasync
+      - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+      - id: micro-behaviors/process/interpreter/reflection/runtime::reflection-method-access
+    near_bytes: 4096
+    unless:
+      - id: micro-behaviors/fs/write/file/full::dotnet-writeallbytes-token
+  - id: dotnet-network-resource-aes-stage
+    desc: .NET network resource AES reflective stage
+    crit: hostile
+    conf: 0.97
+    attack: "T1105,T1140,T1620"
+    mbc: E1059
+    all:
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-network-resource-method-loader
+      - id: micro-behaviors/crypto/symmetric/aes/library::dotnet-rijndael-decryptor
+  - id: http-aes-reflection-injection-stage
+    desc: .NET HTTP AES reflection injection stage
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: objectives/command-and-control/dropper/staging/managed::http-reflection-loader
+      - id: micro-behaviors/communications/http/client/managed::dotnet-http-client-with-aes
+      - id: objectives/evasion/process/injection/toolkit::dotnet-split-winapi-injection-loader
+    any:
+      - id: micro-behaviors/process/interpreter/reflection/runtime::delegate-invocation-chain
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-resource-resolver-loader
+      - id: metadata/binary/symbols/imports::single-import-raw
+    needs: 2
+    unless:
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/binary/resource/
+  - id: disguised-media-loader
+    desc: HTTP loader fetches media-named payload
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: objectives/command-and-control/dropper/staging/managed::http-reflection-loader
+      - id: micro-behaviors/communications/http/url/path::wav-file-url
+  - id: stage-method-cluster
+    desc: Managed staged loader method cluster
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: fetch-compressed-resource
+      - id: decompress-payload
+      - id: prepare-assembly
+      - id: fast-create-instance
+    any:
+      - id: stage3-type-resolution
+      - id: stage4-execution
+      - id: get-network-resource
+  - id: http-3des-reflection-loader
+    desc: .NET HTTP TripleDES reflection loader
+    crit: hostile
+    conf: 0.98
+    attack: T1620
+    mbc: E1059
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: micro-behaviors/communications/http/client/managed::httpclient-bytearray-download
+      - id: micro-behaviors/crypto/symmetric/3des::triple-des-decrypt-chain
+      - id: micro-behaviors/process/interpreter/reflection/runtime::invoke-member-token
+      - id: objectives/command-and-control/dropper/staging/managed::stage-method-cluster
+    any:
+      - id: micro-behaviors/communications/http/client/managed::custom-user-agent-headers
+      - id: micro-behaviors/communications/http/user-agent::ipad-safari-15-ua-pe
+      - id: micro-behaviors/communications/http/url/path::wav-file-url
+    unless:
+      - id: metadata/signed/platform/
+      - id: micro-behaviors/fs/write/file/full::dotnet-writeallbytes-token
+
+  # A compact loader variant may not expose InvokeMember or the named stage
+  # methods above.  Require the complete independent shape instead: a managed
+  # byte download, TripleDES decryption, reflection-load tokens, and the
+  # native memory-execution API string cluster.  This remains hostile because
+  # the combination describes payload retrieval, decryption, and execution;
+  # each individual API/string atom remains neutral elsewhere.
+  - id: http-3des-reflective-memory-loader
+    desc: .NET HTTP TripleDES payload loader with memory execution
+    crit: hostile
+    conf: 0.99
+    attack: "T1105,T1140,T1620"
+    mbc: "B0024,E1059"
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: micro-behaviors/communications/http/client/managed::httpclient-bytearray-download
+      - id: micro-behaviors/crypto/symmetric/3des::triple-des-provider
+      - id: micro-behaviors/crypto/symmetric/decrypt::dotnet-create-decryptor
+      - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+      - id: micro-behaviors/process/interpreter/reflection/runtime::create-delegate
+      - id: micro-behaviors/process/interpreter/reflection/runtime::load-member-token
+      - id: micro-behaviors/process/interpreter/reflection/runtime::gettypes-member-token
+    any:
+      - id: micro-behaviors/mem/protect/modify::virtual-alloc-string
+      - id: micro-behaviors/mem/protect/modify::virtual-protect-text-pe
+      - id: micro-behaviors/process/threading/create::create-thread-text
+    needs: 2
+    unless:
+      - id: metadata/signed/platform/
+      - id: micro-behaviors/fs/write/file/full::dotnet-writeallbytes-token
+  - id: glitch-media-3des-loader
+    desc: .NET Glitch WAV stage loader
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: objectives/command-and-control/dropper/staging/managed::http-3des-reflection-loader
+      - id: micro-behaviors/communications/http/url/path::wav-file-url
+      - id: micro-behaviors/communications/http/user-agent::ipad-safari-15-ua-pe
+  - id: stego-bitmap-byte-extraction-chain
+    desc: .NET bitmap channel byte extraction chain
+    crit: suspicious
+    conf: 0.94
+    attack: T1027.003
+    mbc: E1027.m02
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: micro-behaviors/data/embedded/payload/image::dotnet-resource-bitmap-pixel-readback
+    any:
+      - id: siphon-image-data-method
+      - id: accumulate-raw-channels-method
+      - id: objectives/command-and-control/dropper/delivery/stego::dotnet-stego-acquire
+      - id: objectives/command-and-control/dropper/delivery/stego::dotnet-harvestimage-pixel-extract
+    needs: 2
+  - id: stego-bitmap-reflection-invoke
+    desc: .NET bitmap stego reflection invoke chain
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: stego-bitmap-byte-extraction-chain
+    any:
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-appdomain-exportedtype-invoke
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-exportedtype-constructor-invoke
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-assembly-load-invoke
+    unless:
+      - id: well-known/lib/runtime/managed/dotnet-runtime::framework-reference-assembly-context
+      - id: metadata/file/extension/identity::netstandard-dll-basename
+      - id: well-known/lib/runtime/managed/dotnet-runtime::msbuild-runtime-assembly-context
+  - id: minimal-import-stub-signal
+    desc: Single-import managed stub signal
+    crit: component
+    conf: 0.9
+    any:
+      - id: metadata/binary/symbols/imports::single-import-count
+      - id: metadata/binary/symbols/imports::single-import-raw
+  - id: stego-bitmap-packing-signal
+    desc: .NET bitmap stego packing indicator
+    crit: suspicious
+    conf: 0.90
+    # A "single import" is the normal shape of any pure-managed .NET
+    # assembly (the only native PE import is the mscoree.dll CLR bootstrap
+    # thunk) -- it names a real packed-stub loader only when the file is
+    # actually stub-sized. A multi-MB commercial UI/reporting assembly (seen
+    # in DevExpress.Utils.v8.2.dll, a real vendored test-tool fixture) has
+    # the same "single import" shape while shipping thousands of unrelated
+    # types, so size_max plus near_bytes keep this to an actual small loader
+    # where the pixel readback sits close to the rest of the stub's code.
+    size_max: 2097152
+    near_bytes: 8192
+    all:
+      - id: minimal-import-stub-signal
+      - id: micro-behaviors/data/embedded/payload/image::dotnet-resource-bitmap-pixel-readback
+    any:
+      - id: objectives/anti-static/pack/entropy::dotnet-large-packed-text
+      - id: objectives/anti-static/pack/runtime::dotnet-packed-stub
+    unless:
+      - id: well-known/lib/ui/spectre-console/
+      - id: well-known/lib/vendor-sdk/htmlforgex/
+      # DevExpress's skinning engine legitimately does per-pixel bitmap
+      # readback; the "minimal imports" leg is a normal .NET PE trait (the
+      # CLR resolves imports via metadata, not the PE import table), not
+      # evidence of packing.
+      - id: well-known/lib/ui/devexpress/
+  - id: stego-bitmap-minimal-import-packed-stub
+    desc: .NET bitmap loader packed stub with minimal imports
+    crit: suspicious
+    conf: 0.93
+    attack: T1027.003
+    mbc: F0001
+    # See stego-bitmap-packing-signal above: "single import" is universal to
+    # pure-managed .NET assemblies, so a "stub" verdict needs an actual
+    # stub-sized file, not a multi-MB feature-complete library.
+    size_max: 2097152
+    near_bytes: 8192
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: metadata/binary/symbols/imports::single-import-raw
+      - id: micro-behaviors/data/embedded/payload/image::dotnet-resource-bitmap-pixel-readback
+    any:
+      - id: objectives/anti-static/pack/runtime::dotnet-packed-stub
+      - id: metadata/binary/section/entropy::random-exec-payload-section
+      - id: metadata/binary/code/entropy::high-code-entropy
+    needs: 2
+    downgrade:
+      any:
+        - id: well-known/app/system/crayens/
+    unless:
+      - id: well-known/lib/ui/devexpress/
+  - id: stego-bitmap-stage-load-chain
+    desc: .NET bitmap stage in-memory load chain
+    crit: suspicious
+    conf: 0.95
+    attack: T1620
+    mbc: E1059
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: stego-bitmap-byte-extraction-chain
+    any:
+      - id: objectives/command-and-control/dropper/staging/managed::stego-bitmap-reflection-invoke
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-appdomain-callbyname-load
+  # The stage-load chain becomes a hostile in-memory dropper when the same
+  # unsigned .NET file also has a high-entropy managed resource and the
+  # explicit AppDomain reflective loader.  This avoids treating ordinary
+  # bitmap processing or ordinary reflection as code staging.
+  - id: dotnet-bitmap-reflective-memory-stage
+    desc: .NET bitmap bytes feed a memory assembly stage
+    crit: hostile
+    conf: 0.99
+    attack: "T1027.003,T1620"
+    mbc: "B0032.001,E1059"
+    for: [pe]
+    all:
+      - id: stego-bitmap-stage-load-chain
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-appdomain-callbyname-load
+      - id: metadata/binary/resource/size::clr-resource-high-entropy
+      - id: metadata/signed/trust-level::unsigned-missing-signature-record
+    unless:
+      - id: metadata/signed/platform/
+  # Crypters rename the pixel-harvest methods per build, so this keys on the
+  # stable API shape instead: a resource bitmap read pixel by pixel, beside
+  # an AppDomain load whose exported types are instantiated, in an unsigned
+  # file whose managed resource is high-entropy. Image tools read pixels and
+  # plugin hosts load assemblies; they do not do both in one unsigned stub.
+  - id: dotnet-bitmap-pixel-appdomain-stage
+    desc: .NET bitmap pixels loaded as an in-memory assembly
+    crit: hostile
+    conf: 0.95
+    attack: "T1027.003,T1620"
+    mbc: "B0032.001,E1059"
+    for: [pe]
+    size_max: 4194304
+    all:
+      - id: micro-behaviors/data/embedded/payload/image::dotnet-resource-bitmap-pixel-readback
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-appdomain-activator-load
+      - id: metadata/binary/resource/size::clr-resource-high-entropy
+      - id: metadata/signed/trust-level::unsigned-missing-signature-record
+    unless:
+      - id: metadata/signed/platform/
+      - id: well-known/lib/ui/devexpress/
+      - id: well-known/app/productivity/jitbit-macro-recorder::known-binary-context
+  - id: stego-bitmap-memory-loader
+    desc: .NET steganographic bitmap in-memory loader
+    crit: hostile
+    conf: 0.96
+    attack: T1027.003
+    mbc: E1105
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: objectives/command-and-control/dropper/staging/managed::stego-bitmap-byte-extraction-chain
+      - id: objectives/command-and-control/dropper/staging/managed::stego-bitmap-minimal-import-packed-stub
+      - id: objectives/command-and-control/dropper/staging/managed::stego-bitmap-packing-signal
+      - id: objectives/command-and-control/dropper/staging/managed::stego-bitmap-stage-load-chain
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/resource/
+
+  # ConfuserEx-tagged stub that already looks like a packed bitmap stego
+  # loader (minimal imports + LockBits/GetPixel resource readback) and
+  # also reflectively invokes / starts a process. Separates Olock/Fareit
+  # crypters from unsigned ConfuserEx IP-protection on benign apps that
+  # never LockBits a high-entropy managed resource.
+  - id: confuserex-stego-bitmap-stub
+    desc: ConfuserEx packed bitmap stego stub
+    crit: hostile
+    conf: 0.96
+    attack: T1027.002,T1027.003,T1620
+    mbc: F0001,E1105
+    all:
+      - id: objectives/anti-static/obfuscation/obfuscator/managed::confuserex-version-banner
+      - id: stego-bitmap-minimal-import-packed-stub
+      - id: micro-behaviors/process/interpreter/reflection/runtime::invoke-member-token
+      - id: metadata/binary/resource/size::dotnet-large-high-entropy-managed-resource
+    any:
+      - id: micro-behaviors/process/create/spawn::process-start-member-token
+      - id: micro-behaviors/data/encode/image/pixel::pixel-access-lockbits
+    unless:
+      - id: metadata/signed/platform/
+  - id: dotnet-packed-vb-resource-loader
+    desc: .NET VB resource loader with explicit payload decoding or loading
+    crit: suspicious
+    conf: 0.9
+    attack: T1620
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: micro-behaviors/process/interpreter/reflection/vb::vb-newlatebinding
+      - id: metadata/binary/section/entropy::random-exec-payload-section
+    any:
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-assembly-load-invoke
+      - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+      - id: micro-behaviors/crypto/symmetric/decrypt::dotnet-create-decryptor
+      - id: micro-behaviors/process/create/launch::create-process-api-name
+    needs: 1
+    unless:
+      - id: metadata/signed/platform/
+  - id: dotnet-template-resource-section-loader
+    desc: .NET template with an executable resource payload and explicit loader behavior
+    crit: suspicious
+    conf: 0.9
+    attack: T1620
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: metadata/build/manifest::pe-manifest-myapplication-template
+      - id: metadata/binary/section/entropy::random-exec-payload-section
+    any:
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-assembly-load-invoke
+      - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+      - id: micro-behaviors/crypto/symmetric/decrypt::dotnet-create-decryptor
+      - id: micro-behaviors/process/create/launch::create-process-api-name
+      - id: micro-behaviors/communications/http/client/managed::downloadstring
+    needs: 1
+    unless:
+      - id: metadata/signed/platform/
+  - id: dotnet-template-gzip-resource-loader
+    desc: .NET template GZip resource loader
+    crit: suspicious
+    conf: 0.92
+    attack: T1620
+    all:
+      - id: dotnet-template-resource-section-loader
+      - id: micro-behaviors/data/compress/gzip::dotnet-gzip-compression
+    unless:
+      - id: metadata/signed/platform/
+  - id: dotnet-template-writealltext-loader
+    desc: .NET template writes staged text
+    crit: suspicious
+    conf: 0.9
+    attack: T1620
+    all:
+      - id: dotnet-template-resource-section-loader
+      - id: micro-behaviors/fs/write/file/full::dotnet-writealltext-token
+    unless:
+      - id: metadata/signed/platform/
+  - id: dotnet-vb-bitmap-write-loader
+    desc: .NET VB bitmap pixel-readback payload writer
+    crit: suspicious
+    conf: 0.9
+    attack: T1620
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: micro-behaviors/process/interpreter/reflection/vb::vb-newlatebinding
+      - id: micro-behaviors/data/embedded/payload/image::dotnet-resource-backed-bitmap
+      - id: micro-behaviors/data/embedded/payload/image::dotnet-resource-bitmap-pixel-readback
+    any:
+      - id: micro-behaviors/fs/write/file/full::dotnet-writeallbytes-token
+      - id: micro-behaviors/fs/write/file/full::dotnet-writealltext-token
+    unless:
+      - id: metadata/signed/platform/
+
+  - id: dotnet-vb-bitmap-inline-pe-stager
+    desc: .NET VB bitmap loader stages an embedded PE payload
+    crit: hostile
+    conf: 0.97
+    attack: T1620,T1027.003
+    mbc: E1059
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: micro-behaviors/process/interpreter/reflection/vb::vb-newlatebinding
+      - id: micro-behaviors/data/embedded/payload/image::dotnet-resource-backed-bitmap
+      - id: micro-behaviors/data/embedded/payload/header::inline-pe-header-walk
+      - id: metadata/binary/section/entropy::random-exec-payload-section
+      - id: micro-behaviors/fs/write/file/full::dotnet-writealltext-token
+    unless:
+      - id: metadata/signed/platform/
+      - id: objectives/anti-static/obfuscation/obfuscator/managed/
+
+  - id: dotnet-bitmap-resource-stager
+    desc: .NET bitmap resource in-memory stager
+    crit: hostile
+    conf: 0.96
+    attack: T1620,T1027.003
+    mbc: E1059
+    all:
+      - id: stego-bitmap-minimal-import-packed-stub
+      - id: dotnet-template-resource-section-loader
+    unless:
+      - id: metadata/signed/platform/
+  - id: dotnet-bitmap-reflective-activator-loader
+    desc: .NET bitmap resource reflective Activator loader
+    crit: hostile
+    conf: 0.96
+    attack: T1620,T1027.003
+    mbc: E1059
+    all:
+      - id: dotnet-template-resource-section-loader
+      - id: micro-behaviors/data/embedded/payload/image::dotnet-resource-bitmap-pixel-readback
+      - id: micro-behaviors/process/interpreter/reflection/runtime::activator
+      - id: metadata/lang/compiler/managed::get-method-token
+    unless:
+      - id: metadata/signed/platform/
+  - id: dotnet-bitmap-packed-inmemory-stager
+    desc: .NET packed bitmap payload staged for in-memory execution
+    crit: hostile
+    conf: 0.96
+    attack: "T1027.003,T1620"
+    mbc: E1059
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: micro-behaviors/data/embedded/payload/image::dotnet-resource-bitmap-pixel-readback
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-reversed-reflective-loader-chain
+      - id: metadata/binary/code/entropy::high-code-entropy
+    unless:
+      - id: metadata/signed/platform/
+  # HOSTILE (T1140 Deobfuscate/Decode + in-memory execution): a .NET assembly
+  # whose body is a large random high-entropy section (the encrypted payload)
+  # which it decodes at runtime and runs via the reflective load+instantiate
+  # chain — the payload never touches disk in cleartext. This is the
+  # SnakeKeyLogger / commodity MSIL-crypter in-memory delivery shape.
+  - id: dotnet-inmemory-staged-encrypted-payload
+    desc: .NET decodes an embedded encrypted payload and runs it in memory
+    crit: hostile
+    conf: 0.88
+    attack: T1140
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: objectives/anti-static/obfuscation/reflection/invoke::dotnet-reflective-loader-chain
+      - id: metadata/binary/section/entropy::random-exec-payload-section
+    unless:
+      - id: metadata/signed/platform::microsoft
+  - id: dotnet-packed-encrypted-resource-stager
+    desc: .NET packed encrypted resource stager
+    crit: hostile
+    conf: 0.94
+    attack: T1620
+    mbc: E1059
+    all:
+      - id: objectives/anti-static/obfuscation/payload/resource::dotnet-managed-resource-decryptor
+      - id: micro-behaviors/process/interpreter/reflection/runtime::managed-resource-reflection-activation
+      - id: objectives/anti-static/pack/runtime::dotnet-packed-stub
+    unless:
+      - id: metadata/signed/platform::microsoft
+      - id: metadata/binary/resource/
+
+  # The `all:` legs are all name-presence facts that an ordinary unsigned WPF
+  # application satisfies on its own: a localized app has a large managed
+  # resource and reads it, `Convert.FromBase64String` is everywhere, and the
+  # bare word `Activator` is in the typeref table of anything that uses XAML or
+  # a DI container. Without a leg that shows the decoded bytes are *loaded as
+  # code*, this rule was "unsigned .NET app with resources", and the `unless:`
+  # list below was growing one shipping product at a time.
+  #
+  # The `any:` group supplies that missing half. In a compiled assembly the
+  # loader is visible as the `Assembly\0Load\0GetType\0GetMethod` run in the
+  # #Strings heap (there is no `Assembly.Load` substring to find in a PE); the
+  # source-level chain and the load-from-bytes form cover the other carriers.
+  - id: dotnet-base64-activator-resource-loader
+    desc: Unsigned .NET reflectively loads decoded resource
+    crit: hostile
+    conf: 0.96
+    attack: T1027.009,T1140,T1620
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: metadata/signed/trust-level::unsigned-missing-signature-record
+      - id: metadata/binary/resource/size::dotnet-large-high-entropy-managed-resource
+      - id: micro-behaviors/data/embedded/payload/resource::dotnet-managed-resource-access
+      - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+      - id: micro-behaviors/process/interpreter/reflection/runtime::activator
+    any:
+      - id: micro-behaviors/os/api-resolution/dynamic::assembly-load-type-method-marker-cluster
+      - id: micro-behaviors/os/api-resolution/dynamic::assembly-load-getmethod-chain
+      - id: micro-behaviors/process/interpreter/reflection/resolve::assembly-load-buffer
+    needs: 1
+    unless:
+      - id: metadata/signed/platform/
+      - id: micro-behaviors/data/embedded/payload/resource::costura-bundle-marker
+      - id: well-known/app/system/stresstimulus::logicnp-cryptolicensing
+      - id: well-known/app/productivity/thebrain::thebrain-known-app-context
+      - id: well-known/app/media/handbrake::handbrake-known-release-context
+
+  # A download/decode/decrypt chain paired with Reflection.Emit and native
+  # delegate resolution is an execution path, not merely crypto or HTTP use.
+  - id: dotnet-http-download-decrypt-emit-cluster
+    desc: .NET HTTP decrypt-and-dynamic-code cluster
+    crit: component
+    conf: 0.99
+    near_bytes: 8192
+    all:
+      - id: micro-behaviors/communications/http/client/managed::getasync
+      - id: micro-behaviors/communications/http/client/managed::readasbytearrayasync
+      - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+      - id: micro-behaviors/crypto/symmetric/decrypt::dotnet-create-decryptor
+      - id: metadata/lang/compiler/managed::reflection-emit
+      - id: metadata/lang/compiler/managed::assembly-builder-token
+      - id: micro-behaviors/process/interpreter/reflection/runtime::invoke-member-token
+      - id: micro-behaviors/os/api-resolution/dynamic::managed-function-pointer-delegate
+
+  - id: dotnet-unsigned-http-reflective-loader
+    desc: Unsigned .NET HTTP reflective payload loader
+    crit: hostile
+    conf: 0.99
+    attack: "T1105,T1140,T1620"
+    mbc: "B0009.014"
+    all:
+      - id: metadata/binary/framework::dotnet-assembly
+      - id: metadata/signed/trust-level::unsigned-missing-signature-record
+      - id: dotnet-http-download-decrypt-emit-cluster
+    unless:
+      - id: metadata/signed/platform/

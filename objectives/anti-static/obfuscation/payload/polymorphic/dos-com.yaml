@@ -17,6 +17,38 @@ traits:
       type: hex
       pattern: "E8 00 00 [0-2] (5D 81 ED|5E 81 EE|5B 81 EB)"
 
+  # Stack-based CALL/POP equivalent: read the CALL return address via SS:SI,
+  # then subtract the code-relative constant into BP.
+  - id: dos-delta-offset-bp-stack
+    desc: DOS delta offset from stack return
+    crit: notable
+    conf: 0.9
+    if:
+      type: hex
+      pattern: "E8 00 00 8B F4 36 8B 2C 81 ED ?? ??"
+
+  # DOS-version guards can separate CALL/POP BP from its base correction.
+  - id: dos-delta-offset-bp-guarded
+    desc: DOS delta offset via guarded CALL/POP BP
+    crit: notable
+    conf: 0.9
+    if:
+      type: hex
+      pattern: "E8 00 00 5D [0-32] 81 ED ?? ??"
+
+  # AntiPC.1958 resolves an appended body from a COM entry jump, then uses
+  # CALL/POP BP and a fixed 7Fh byte-XOR loop. The exact loop is recognized by
+  # FileFacts and decoded for the normal DOS behavior rules.
+  - id: dos-appended-xor-bp-loop
+    desc: DOS appended fixed-key XOR loop via BP
+    crit: suspicious
+    conf: 0.99
+    for: [dos_com]
+    if:
+      type: hex
+      pattern: "93 93 93 93 90 93 E8 00 00 5D 81 ED 08 01 8D 86 24 01 B9 00 00 B3 7F 8B F8 03 F9 2E 30 1D 41 81 F9 86 07 76 F2"
+      offset: 0x834
+
   - id: dos-bios-tick-seed
     desc: DOS reads BIOS tick counter
     crit: notable
@@ -36,6 +68,34 @@ traits:
       type: hex
       pattern: "E8 00 00 [0-2] 5B"
 
+  # Some compact COM loaders capture the return address in CX, subtract the
+  # stub-relative offset, then copy the result to BX for body addressing.
+  - id: dos-delta-offset-cx
+    desc: DOS delta offset via CALL/POP CX
+    crit: notable
+    conf: 0.9
+    if:
+      type: hex
+      pattern: "E8 00 00 59 81 E9 ?? ?? 8B D9"
+
+  # Zamol.2153 captures its COM base in SI and backs up to the viral body.
+  - id: dos-delta-offset-si
+    desc: DOS delta offset via CALL/POP SI
+    crit: notable
+    conf: 0.9
+    if:
+      type: hex
+      pattern: "E8 00 00 5E 83 EE ??"
+
+  # CALL/POP AX, subtract a relative offset, and exchange the base into BP.
+  - id: dos-delta-offset-ax-to-bp
+    desc: DOS delta offset via AX into BP
+    crit: notable
+    conf: 0.9
+    if:
+      type: hex
+      pattern: "E8 00 00 58 2D ?? ?? 95"
+
   # Register-key loop: XOR [reg+disp],reg8, followed by INC and LOOP.
   # Seen in Yog, 1260, and other classic polymorphic/encrypted COM infectors.
   - id: dos-register-xor-loop
@@ -45,6 +105,70 @@ traits:
     if:
       type: hex
       pattern: "30 ?? [0-2] 4? [0-2] E2"
+
+  # Ash.817 rotates the byte key by the current CX countdown on every pass.
+  # The exact entry-referenced loader is decoded by FileFacts for behavior
+  # analysis; the key byte itself is stored after the encrypted region.
+  - id: dos-countdown-rotate-xor-loop
+    desc: DOS countdown-rotated XOR decryptor loop
+    crit: suspicious
+    conf: 0.98
+    for: [dos_com]
+    if:
+      type: hex
+      pattern: "3E 8A 86 36 04 8D B6 36 01 B9 FE 02 30 04 D2 C0 46 E2 F9 C3"
+      offset: 0x16b7
+
+  # Ash.708 uses an entry-referenced, fixed-key byte XOR loop over the rest
+  # of the file. FileFacts recognizes the bounded loader and exposes the
+  # decoded body for behavior analysis.
+  - id: dos-appended-fixed-xor-bx-byte-loop
+    desc: DOS appended fixed-key byte XOR loop via BX
+    crit: suspicious
+    conf: 0.99
+    for: [dos_com]
+    if:
+      type: hex
+      pattern: "E8 00 00 5D 81 ED 0B 01 8D 9E 2A 01 53 8A 86 22 01 B9 9E 02 30 07 43 E2 FB C3 ?? 58 5B 59 CD 21 5B C3"
+      offset: 0x16a9
+
+  # LR.3728.b's entry stub incrementally XORs a relocated decoder, which
+  # then reveals two bounded regions. FileFacts validates both stages and
+  # reconstructs the full COM image for ordinary behavior analysis.
+  - id: dos-two-stage-incrementing-xor-stub
+    desc: DOS uses an incrementing-XOR relocated decoder stub
+    crit: notable
+    conf: 0.98
+    for: [dos_com]
+    if:
+      type: hex
+      pattern: "33 F6 81 C6 54 19 32 E4 80 C4 ?? B9 37 00 2E 30 24 46 80 C4 C2 E2 F7 EB 0D"
+      offset: 0x182e
+
+  # Zamol.2153's resident body was independently recovered from two
+  # discontiguous regions using the key byte at 077Ah OR 35h.
+  - id: dos-discontiguous-fixed-xor-loop
+    desc: DOS decodes two bounded regions with a fixed XOR key
+    crit: suspicious
+    conf: 0.99
+    for: [dos_com]
+    if:
+      type: hex
+      pattern: "9C 57 BF BD 07 2E A0 7A 07 0C 35 2E 30 05 47 81 FF 69 08 7C F6 BF 7D 00 2E 30 05 47 81 FF 27 04 7C F6 5F 9D C3"
+      offset: 0x5eb
+
+  # The loader resolves its appended payload from the entry jump, XORs
+  # 0x2D3 words with 0x9EA2 through a stack-based trampoline, and enters the
+  # decoded body. Keep this rare layout exact; it is not a key-search rule.
+  - id: dos-fixed-key-stack-word-xor
+    desc: DOS decodes appended words with a fixed XOR key
+    crit: suspicious
+    conf: 0.99
+    for: [dos_com]
+    if:
+      type: hex
+      pattern: "B9 (D3 02|D0 02) FA 50 E8 0D 00 FC FF (FA|9B) 06 36 58 05 02 00 50 CA 02 00 5B 8D 57 05 2E 89 17 2E 8C 4F 02 9C 2E FF 1F C3 00 2E 89 27 83 C3 2C 8B E3 58 58 35 A2 9E 50 EB 00"
+      offset: 0x16b0
 
   # Rolling-key loop: XOR BYTE CS:[SI],AH, then reload AH from the byte just
   # written (key = previous plaintext), INC SI / DEC CX. The key schedule
@@ -56,6 +180,65 @@ traits:
     if:
       type: hex
       pattern: "2E 30 24 [0-2] (E3|E2) [0-8] 2E 8A 24 [0-2] 46 49"
+
+  # Word decoder with a rolling key: LODSW / XOR AX,DX / ROR DX,1 / STOSW /
+  # LOOP. SI and DI may alias for in-place decoding or differ for a copy.
+  - id: dos-rolling-xor-word-loop
+    desc: DOS rolling word-XOR decryptor loop
+    crit: notable
+    conf: 0.94
+    if:
+      type: hex
+      pattern: "AD 33 C2 D1 CA AB E2 ??"
+
+  # Some rolling word-XOR decoders rotate and add the loop count into their
+  # key after each word, then store through STOSW.
+  - id: dos-rolling-xor-word-count-loop
+    desc: DOS count-mixed rolling word-XOR loop
+    crit: notable
+    conf: 0.94
+    if:
+      type: hex
+      pattern: "AD 33 C2 D1 C2 (01 CA|03 D1) AB E2 ??"
+
+  # Fixed-key word XOR copied with LODSW/STOSW and a CX loop.
+  - id: dos-fixed-key-xor-word-copy-loop
+    desc: DOS fixed-key word-XOR copy loop
+    crit: notable
+    conf: 0.92
+    if:
+      type: hex
+      pattern: "AD 33 C2 AB E2 ??"
+
+  # Fixed additive transform in place: each word at CS:[BX] is adjusted by
+  # an immediate, then BX advances by two under a counted loop.
+  - id: dos-additive-immediate-word-loop
+    desc: DOS additive immediate word decryptor loop
+    crit: notable
+    conf: 0.94
+    if:
+      type: hex
+      pattern: "2E 81 07 ?? ?? 83 C3 02 83 E9 01 75 ??"
+
+  # Fixed-key in-place decoder over CS:[BX], advancing by words and using a
+  # conditional exit around the short backward jump.
+  - id: dos-fixed-key-xor-word-bx-loop
+    desc: DOS fixed-key XOR word loop through BX
+    crit: notable
+    conf: 0.94
+    if:
+      type: hex
+      pattern: "2E 31 07 83 C3 02 49 74 ?? EB ??"
+
+  # PIC byte decoder rotates each encrypted byte by DH, then increments the
+  # rotation count before advancing through the body.
+  - id: dos-incrementing-ror-byte-loop
+    desc: DOS incrementing byte-ROR decoder loop
+    crit: notable
+    conf: 0.94
+    if:
+      type: hex
+      pattern: "AC 51 88 F1 D2 C8 FE C6 59 AA E2 ??"
 
   # Fixed-key loop: XOR BYTE CS:[BP+SI],imm8 over CX bytes, JCXZ/LOOP
   # controlled, DEC CX / INC SI stepping, short JMP back to the XOR.
@@ -77,6 +260,37 @@ traits:
       type: hex
       pattern: "8A 24 80 F4 ?? 88 24 46 E2"
 
+  # In-place XOR [SI],imm8 loops sometimes self-modify the short branch byte
+  # they use as the first payload byte, then DEC DX/JNZ back to the XOR.
+  - id: dos-self-modifying-xor-si-dx-loop
+    desc: DOS self-modifying XOR [SI] decryptor loop
+    crit: notable
+    conf: 0.94
+    if:
+      type: hex
+      pattern: "80 34 ?? [0-8] 46 4A 75 ??"
+
+  # Wordwise in-place decoder with a BP-relative buffer and key. The loop
+  # advances SI by two bytes and XORs each word with DX.
+  - id: dos-fixed-key-xor-word-si-loop
+    desc: DOS in-place word-XOR decoder
+    crit: notable
+    conf: 0.94
+    if:
+      type: hex
+      pattern: "8D B6 ?? ?? [0-1] 8B 96 ?? ?? B9 ?? ?? 31 14 46 46 E2"
+
+  # A compact overlapping-word decoder XORs [SI] with an immediate, advances
+  # one byte, and counts down SP. The one-byte stride makes the loop decrypt
+  # each byte in place despite using a word XOR instruction.
+  - id: dos-fixed-key-xor-overlap-word-si-loop
+    desc: DOS overlapping-word XOR decryptor loop
+    crit: notable
+    conf: 0.94
+    if:
+      type: hex
+      pattern: "81 34 ?? ?? 46 4C 75 ??"
+
   # Copying decoder: LODSB / XOR AL,[absolute key] / STOSB / LOOP after
   # SI, DI and CX are initialized. The key and loop displacement vary.
   - id: dos-xor-copy-decoder-loop
@@ -96,6 +310,26 @@ traits:
     if:
       type: hex
       pattern: "8A 04 8A 64 FF 32 C4 88 04"
+
+  # Artem-style real-mode stubs patch a RETF byte into the XOR opcode, then
+  # execute the patched instruction as the first step of an in-place loop.
+  # The original file therefore contains RETF where the running code uses
+  # XOR [SI],AL.
+  - id: dos-patched-retf-xor-loop
+    desc: DOS patches RETF into XOR loop
+    crit: notable
+    conf: 0.97
+    if:
+      type: hex
+      pattern: "CB 04 46 3B F1 75 F9 C6 06 ?? ?? CB C3"
+
+  - id: dos-patched-retf-xor-call
+    desc: DOS patches an instruction before calling it
+    crit: notable
+    conf: 0.95
+    if:
+      type: hex
+      pattern: "C6 06 ?? ?? 30 E8 ?? ??"
 
   - id: dos-emit-call-opcode
     desc: Code generator emits CALL opcode
@@ -154,7 +388,12 @@ composite_rules:
     conf: 0.88
     any:
       - id: dos-delta-offset-bp
+      - id: dos-delta-offset-bp-stack
+      - id: dos-delta-offset-bp-guarded
       - id: dos-delta-offset-bx
+      - id: dos-delta-offset-cx
+      - id: dos-delta-offset-ax-to-bp
+      - id: dos-delta-offset-si
 
   - id: dos-xor-loop-dispatch
     desc: DOS XOR decryptor loop
@@ -162,11 +401,30 @@ composite_rules:
     conf: 0.9
     any:
       - id: dos-rolling-xor-loop
+      - id: dos-rolling-xor-word-loop
+      - id: dos-rolling-xor-word-count-loop
+      - id: dos-fixed-key-xor-word-copy-loop
+      - id: dos-fixed-key-xor-word-bx-loop
       - id: dos-fixed-key-xor-loop
       - id: dos-fixed-key-xor-si-loop
+      - id: dos-self-modifying-xor-si-dx-loop
+      - id: dos-fixed-key-xor-word-si-loop
+      - id: dos-fixed-key-xor-overlap-word-si-loop
       - id: dos-xor-copy-decoder-loop
       - id: dos-cascade-xor-loop
       - id: dos-register-xor-loop
+      - id: dos-countdown-rotate-xor-loop
+      - id: dos-appended-fixed-xor-bx-byte-loop
+      - id: dos-appended-two-stage-incrementing-xor
+      - id: dos-discontiguous-fixed-xor-loop
+
+  - id: dos-patched-retf-xor-decryptor
+    desc: DOS uses a self-modifying XOR decoder
+    crit: suspicious
+    conf: 0.96
+    all:
+      - id: dos-patched-retf-xor-loop
+      - id: dos-patched-retf-xor-call
 
   # An XOR loop that only runs position-independent (or only runs behind a
   # divide-error guard) is how encrypted DOS virus bodies start; packer stubs
@@ -179,4 +437,43 @@ composite_rules:
       - id: dos-xor-loop-dispatch
     any:
       - id: dos-delta-offset-dispatch
-      - id: objectives/anti-analysis/debugger-detect/check::dos-int0-div-trigger
+      - id: objectives/anti-analysis/debugger-detect/exception::dos-int0-div-trigger
+
+  - id: dos-appended-two-stage-incrementing-xor
+    desc: DOS decodes an appended body through two incrementing-XOR stages
+    crit: suspicious
+    conf: 0.99
+    for: [dos_com]
+    all:
+      - id: dos-two-stage-incrementing-xor-stub
+      - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-com-entry-redirect
+
+  - id: dos-additive-encrypted-infector
+    for: [dos_com, static-lib]
+    desc: DOS infector decrypts then appends a body
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: dos-additive-immediate-word-loop
+      - id: objectives/impact/infect/binary/dos/com-bytes/interrupt::dos-int21-exec-intercept
+      - id: objectives/impact/infect/binary/dos/com-bytes/interrupt::dos-int21-fcb-find-intercept
+      - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-append-patch-restore-time
+
+  - id: dos-rotating-encrypted-virus-body
+    desc: DOS decrypts a resident infector with a rolling ROR loop
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: dos-incrementing-ror-byte-loop
+      - id: dos-delta-offset-dispatch
+      - id: objectives/impact/infect/binary/dos/com-bytes/interrupt::dos-exec-hook-infector
+
+  - id: dos-stack-xor-exec-infector
+    desc: DOS encrypted payload hooks execution and infects files
+    crit: hostile
+    conf: 0.98
+    for: [dos_com]
+    all:
+      - id: dos-fixed-key-stack-word-xor
+      - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-seek-append-near-call-infector
+      - id: objectives/impact/infect/binary/dos/com-bytes/interrupt::dos-exec-hook-infector

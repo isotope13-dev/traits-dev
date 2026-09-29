@@ -1,0 +1,86 @@
+# Registry-backed script loaders. The article's campaign used an HTA to place
+# a PowerShell loader and an encoded second stage in separate HKCU values, then
+# ran the loader and removed both values. These rules describe that structure,
+# not the campaign's JavaSoft/MSOffice names or lure text.
+defaults:
+  platforms: [windows]
+  for: [powershell, javascript, html, vbs]
+  attack: T1027,T1059.001,T1112,T1140
+
+traits:
+  - id: office-licensing-next-registry
+    desc: Office LicensingNext registry diagnostic
+    crit: notable
+    conf: 0.95
+    for: [powershell]
+    if:
+      type: text
+      substr: 'HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Licensing\LicensingNext'
+
+composite_rules:
+  - id: registry-scriptblock-powershell-loader
+    for: [javascript, powershell, vbs]
+    desc: PowerShell reads registry text and invokes it as a dynamic ScriptBlock
+    crit: hostile
+    conf: 0.99
+    attack: T1027,T1059.001,T1112
+    all:
+      - id: micro-behaviors/os/registry/access::powershell-registry-read
+      - id: micro-behaviors/process/interpreter/eval/compile::powershell-scriptblock-constructor-text
+    near_lines: 6
+
+  - id: registry-sourced-base64-stage
+    desc: PowerShell decodes Base64 from HKCU
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: micro-behaviors/data/decode/base64::powershell-frombase64string
+      - id: micro-behaviors/os/registry/access::powershell-registry-read
+    near_lines: 4
+    unless:
+      - id: office-licensing-next-registry
+
+  - id: registry-sourced-powershell-eval
+    for: [javascript, vbs, html]
+    desc: PowerShell evaluates HKCU registry text
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: micro-behaviors/os/registry/access::powershell-registry-read
+      - id: micro-behaviors/process/interpreter/eval/direct::embedded-powershell-iex
+    near_lines: 8
+
+  - id: hta-registry-powershell-loader
+    for: [javascript, vbs, html]
+    desc: HTA runs PowerShell from registry values
+    crit: hostile
+    conf: 0.99
+    attack: T1027,T1059.001,T1112,T1204.002
+    all:
+      - id: metadata/file/format/markup::hta-application-element
+      - id: micro-behaviors/os/com/automation::wscript-shell-activex-constructor
+      - id: micro-behaviors/os/registry/write/wsh::wscript-regwrite
+      - id: registry-sourced-powershell-eval
+      - id: micro-behaviors/data/control-flow/dispatch::run-zero-number-argument
+
+  - id: hta-registry-loader-cleans-stage
+    for: [javascript, vbs, html]
+    desc: HTA deletes registry-backed PowerShell stage
+    crit: hostile
+    conf: 0.99
+    attack: T1027,T1059.001,T1070.004,T1112
+    all:
+      - id: hta-registry-powershell-loader
+      - id: micro-behaviors/os/registry/delete::powershell-registry-value-delete
+
+  - id: registry-sourced-shellcode-loader
+    for: [powershell]
+    desc: Registry-sourced Base64 stage invokes in memory
+    crit: hostile
+    conf: 0.99
+    attack: T1027,T1112,T1140,T1620
+    all:
+      - id: registry-sourced-base64-stage
+      - id: micro-behaviors/os/api-resolution/dynamic::powershell-null-pointer-delegate-invoke
+    near_lines: 12
+

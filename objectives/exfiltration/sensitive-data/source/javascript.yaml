@@ -1,0 +1,322 @@
+# Sensitive Data Exfiltration - JavaScript/Node.js
+# GuardDog-inspired: Detects exfiltration of sensitive data
+# ATT&CK: T1041 (Exfiltration Over C2 Channel)
+# MBC: B0030 (Data Exfiltration)
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: "T1041"
+  mbc: "B0030"
+traits:
+- id: js-private-key-request-field
+  desc: JS request body carries private-key data
+  crit: notable
+  conf: 0.96
+  if:
+    type: text
+    regex: '(?i)JSON\.stringify\s*\(\s*\{[^}]{0,250}\bprivate[_ -]?key\b\s*[:=]'
+
+- id: js-seed-phrase-request-field
+  desc: JS request body carries seed-phrase data
+  crit: notable
+  conf: 0.96
+  if:
+    type: text
+    regex: '(?i)JSON\.stringify\s*\(\s*\{[^}]{0,250}\b(seedPhrase|mnemonic)\b\s*[:=]'
+
+- id: js-seed-request-field
+  desc: JS request body carries seed data
+  crit: notable
+  conf: 0.97
+  for: [html, javascript, typescript]
+  if:
+    type: text
+    regex: '(?i)JSON\.stringify\s*\(\s*\{[^}]{0,250}\bseed\b\s*:\s*[A-Za-z_$][\w$]*seed'
+
+- id: js-input-value-data-field
+  desc: DOM input value in object data
+  crit: notable
+  conf: 0.9
+  if:
+      type: text
+      # The receiver must read as an input/field element: `data: result.value`
+      # and `data: config.value` are ordinary serialization in any CLI, which
+      # is what this atom matched in a bundled knowledge tool.
+      regex: '(?i)\bdata\s*:\s*(input|field|element|el|form|target|ctrl)[\w$]*\.value\b'
+
+- id: http-body-raw-data-variable
+  desc: HTTP request body uses raw variable
+  crit: notable
+  conf: 0.84
+  if:
+    type: text
+    regex: '\b(fetch|axios|request)\s*\([^;\n]{0,500}\bbody\s*:\s*(raw|file)\b'
+- id: http-body-payload-variable
+  desc: HTTP body uses payload variable
+  crit: notable
+  conf: 0.84
+  if:
+    type: text
+    regex: '\bbody\s*:\s*(payload|fileData)\b'
+- id: http-body-credential-variable
+  desc: HTTP body uses credential variable
+  crit: notable
+  conf: 0.84
+  if:
+    type: text
+    regex: '\bbody\s*:\s*(config|creds|credentials)\b'
+- id: http-body-secret-variable
+  desc: HTTP body uses secret variable
+  crit: notable
+  conf: 0.84
+  if:
+    type: text
+    regex: '\bbody\s*:\s*(token|secret|password|key)\b'
+- id: request-write-content-file-variable
+  desc: HTTP request writes content file variable
+  crit: notable
+  conf: 0.84
+  if:
+    type: text
+    # Omit send: WebSocket .send(content) is not an HTTP client write.
+    regex: '\.(write|post)\s*\(\s*(content|file)\b'
+- id: request-write-secret-variable
+  desc: HTTP request writes secret variable
+  crit: notable
+  conf: 0.84
+  if:
+    type: text
+    # Any method whose first argument is named `token` used to qualify, so
+    # `setToken(token)`, `regex.test(token)` and `arr.push(token)` all read as
+    # exfiltration. Restricted to the transmit-shaped verbs this trait is
+    # named for, matching the `content|file` sibling above.
+    regex: '\.(write|post|send)\s*\(\s*(creds|credentials|token)\b'
+- id: github-mint-repo-token-tool
+  desc: GitHub repo token mint tool
+  crit: notable
+  conf: 0.92
+  if:
+    type: text
+    substr: MINT_REPO_TOKEN
+- id: github-repo-scoped-token-text
+  desc: GitHub repo-scoped token text
+  crit: notable
+  conf: 0.9
+  if:
+    type: text
+    substr: repo-scoped GitHub
+- id: js-secret-value-request-field
+  desc: JavaScript request body names a secret value
+  crit: notable
+  conf: 0.96
+  if:
+    type: text
+    regex: '\bsecret_value\s*:'
+- id: js-secret-service-route
+  desc: JavaScript secret-service request route
+  crit: notable
+  conf: 0.96
+  if:
+    type: text
+    regex: "['\"]\/extension\/(analyze|feedback)['\"]"
+- id: js-wallet-seed-route
+  desc: Posts a wallet seed route
+  crit: notable
+  conf: 0.94
+  if:
+    type: text
+    substr: /wallet-seed
+- id: js-steam-session-route
+  desc: Posts a Steam session route
+  crit: notable
+  conf: 0.94
+  if:
+    type: text
+    substr: /steam-session
+- id: js-discord-injection-route
+  desc: Posts a Discord injection route
+  crit: notable
+  conf: 0.94
+  if:
+    type: text
+    substr: discord-injection
+composite_rules:
+- id: js-wallet-credential-header-exfiltration
+  desc: Encrypted wallet credentials exfiltrated in HTTP header
+  crit: hostile
+  conf: 0.98
+  all:
+    - id: objectives/credential-access/env/secrets/wallet::env-wallet-regex-secret-filter
+    - id: micro-behaviors/crypto/symmetric/aes/runtime-library::createCipheriv
+  any:
+    - id: micro-behaviors/communications/http/get::axios-get-call
+    - id: micro-behaviors/communications/http/post::axios-post-call
+- id: js-sensitive-env-source
+  desc: Sensitive environment secret access (JS)
+  crit: component
+  conf: 0.9
+  any:
+  - id: objectives/credential-access/env/secrets/
+  - id: micro-behaviors/os/env/cloud::aws-secret-access-key-env-read
+  unless:
+  - id: metadata/build/recognized-contexts::benign-app-fp-context
+  - id: well-known/app/system/heroui-pro/
+- id: js-remote-secret-service-request
+  desc: JavaScript sends a secret value to a remote secret service
+  crit: suspicious
+  conf: 0.98
+  near_bytes: 4096
+  all:
+  - id: objectives/exfiltration/sensitive-data/source::js-secret-value-request-field
+  - id: objectives/exfiltration/sensitive-data/source::js-secret-service-route
+  - id: micro-behaviors/communications/http/request/body::http-upload-or-body-sink
+- id: js-env-secret-json-body
+  desc: Environment secret serialized into JSON body
+  crit: component
+  conf: 0.92
+  near_bytes: 2048
+  all:
+  - id: objectives/exfiltration/sensitive-data/source::js-sensitive-env-source
+  any:
+  - id: objectives/exfiltration/serialization::js-serialize-environment
+  - id: micro-behaviors/data/serialize/json::process-env-json-stringify
+  - id: micro-behaviors/data/serialize/schema-object::json-stringify-env-field
+  - id: micro-behaviors/data/serialize/json::json-stringify-sensitive-env-body
+  # Product code that provisions a GitHub connection token for its own backend.
+- id: github-repo-token-provisioning
+  desc: GitHub repo token provisioning
+  crit: baseline
+  all:
+    - id: objectives/exfiltration/sensitive-data/source::github-mint-repo-token-tool
+    - id: objectives/exfiltration/sensitive-data/source::github-repo-scoped-token-text
+  # GuardDog: Sensitive file source
+- id: js-sensitive-file-read-source
+  desc: Sensitive file read source
+  crit: component
+  conf: 0.9
+  near_bytes: 8192
+  all:
+  - id: micro-behaviors/fs/read/file/full::read-node
+  any:
+  - id: micro-behaviors/fs/path/credential::any-credential-path
+  - id: micro-behaviors/fs/path/app-data/
+  unless:
+    - id: metadata/package/testing/harness/runtime/
+    - id: metadata/package/testing/presence/fixture::test-filename-pattern
+- id: js-sensitive-file-request-body
+  desc: Sensitive file data appears in HTTP request body
+  crit: component
+  conf: 0.9
+  near_bytes: 4096
+  all:
+  - id: objectives/exfiltration/sensitive-data/source::js-sensitive-file-read-source
+  any:
+  - id: micro-behaviors/data/serialize/json::json-stringify-file-material-body
+  - id: micro-behaviors/data/serialize/json::json-stringify-credential-material-body
+  - id: objectives/exfiltration/sensitive-data/source::http-body-raw-data-variable
+  - id: objectives/exfiltration/sensitive-data/source::http-body-payload-variable
+  - id: objectives/exfiltration/sensitive-data/source::http-body-credential-variable
+  - id: objectives/exfiltration/sensitive-data/source::http-body-secret-variable
+  - id: micro-behaviors/communications/http/request/body::request-write-raw-data-variable
+  - id: micro-behaviors/communications/http/request/body::request-write-file-data-variable
+  - id: objectives/exfiltration/sensitive-data/source::request-write-content-file-variable
+  - id: objectives/exfiltration/sensitive-data/source::request-write-secret-variable
+- id: js-remote-http-post-json
+  desc: JavaScript JSON POST paired with a nearby remote host URL
+  crit: component
+  conf: 0.92
+  near_lines: 120
+  all:
+  - id: micro-behaviors/communications/http/request/json::http-post-json
+  - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+
+# Hex-obfuscated C2: hex decode + env exfil + eval response = full C2 loop
+- id: js-hex-obfuscated-env-c2
+  desc: Hex-obfuscated env exfil with C2 eval callback
+  crit: hostile
+  conf: 0.98
+  all:
+  - id: micro-behaviors/data/decode/hex::hex-pair-regex-byte-parser
+  - id: micro-behaviors/os/env/enumeration::js-process-env-spread
+  - id: objectives/command-and-control/remote-command/dispatch::eval-response-data
+  downgrade:
+    any:
+      - id: metadata/package/testing/
+      - id: metadata/signed/platform/
+# Assembling an agent-session record (prompts, tool calls, tool results) and
+# POSTing it is the defining architecture of every LLM-observability exporter --
+# Langfuse, LangSmith, Helicone, Braintrust, OpenTelemetry GenAI, Datadog LLM
+# Observability -- and of self-hosted/enterprise coding-agent deployments that
+# ship transcripts to the operator's own collector. These two legs alone cannot
+# tell that population from a trojanized relay: the discriminator is whether the
+# destination is baked in or operator-supplied, which neither leg inspects.
+# Hostile requires "no legitimate use", so this stays suspicious; an analyst
+# still gets told the tool can ship transcripts (incl. bash output) off-box.
+- id: js-agent-session-telemetry-http-upload
+  desc: Agent session transcript uploaded over HTTP
+  crit: suspicious
+  conf: 0.9
+  near_lines: 180
+  all:
+  - id: micro-behaviors/os/telemetry/logging/llm::agent-session-telemetry-record
+  - id: micro-behaviors/communications/http/request/client::fetch-post-pattern
+
+- id: js-agent-session-rollout-http-exfil
+  desc: Full AI agent rollout content sent over HTTP
+  crit: hostile
+  conf: 0.99
+  for: [javascript]
+  scope: leaf
+  all:
+  - id: micro-behaviors/os/telemetry/logging/llm::agent-session-rollout-record
+  - id: micro-behaviors/os/telemetry/logging/llm::agent-session-rollout-post-call
+  - id: micro-behaviors/os/telemetry/logging/llm::agent-session-rollout-json-body
+
+# js-mail-account-log-exfiltration lived here and asserted theft from three
+# legs that only show a verbose logger receiving an account email plus an IMAP
+# host/auth field while some fetch elsewhere targets a /logit/ path. Writing an
+# account address and mail-server settings into a remote diagnostic log is a
+# neutral telemetry capability, not a data-theft objective, so it now lives at
+# micro-behaviors/communications/email/access/imap::account-fields-in-remote-log-request.
+# The credential-bearing variant -- the whole IMAP config object, password field
+# included, serialized into the logged value -- is
+# objectives/exfiltration/http/report::imap-config-object-in-log-url.
+
+# A module that hides which filesystem APIs it uses, and then posts JSON out.
+#
+# Neither leg convicts alone: plenty of packages read files, and plenty POST
+# JSON. What has no benign reading is doing the first *concealed* and the
+# second in the open -- the code is willing to be seen sending, but not to be
+# seen looking. That is the shape of a harvester built to survive a skim of
+# the tarball, and it is why the concealment is the load-bearing half.
+#
+# Worked example: `@hex-validator/v2` / `@hash-validator/v2`, whose `utils.ts`
+# decodes `fs/promises`, `readdir` and `readFile` from base64, walks the tree
+# collecting every `.env` it finds, and ships them to a `vercel.app` endpoint
+# that is itself base64-concealed.
+- id: concealed-fs-enumeration-json-exfil
+  desc: Concealed file enumeration posts JSON out
+  crit: hostile
+  conf: 0.93
+  attack: T1083,T1041
+  mbc: B0032
+  all:
+    - id: objectives/anti-static/obfuscation/encoding/content::encoded-node-fs-enumeration
+    - id: micro-behaviors/communications/http/request/json::http-post-json
+- id: session-loot-route-post
+  desc: Posts wallet steam and discord loot
+  crit: hostile
+  conf: 0.97
+  attack: T1041,T1555.003
+  all:
+    - id: objectives/exfiltration/sensitive-data/source::js-wallet-seed-route
+    - id: objectives/exfiltration/sensitive-data/source::js-steam-session-route
+    - id: objectives/exfiltration/sensitive-data/source::js-discord-injection-route
+- id: wlan-clear-with-wallet-post
+  desc: Wi-Fi key dump with wallet post
+  crit: hostile
+  conf: 0.96
+  attack: T1041,T1555.003
+  all:
+    - id: objectives/credential-access/wifi::js-wlan-profiles-key-clear
+    - id: objectives/exfiltration/sensitive-data/source::js-wallet-seed-route

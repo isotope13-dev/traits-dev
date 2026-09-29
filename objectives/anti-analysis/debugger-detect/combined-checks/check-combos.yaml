@@ -1,0 +1,266 @@
+defaults:
+  attack: T1622
+  mbc: B0001
+  platforms: [unix, windows, macos]
+# Composite Debugger Detection Capabilities
+composite_rules:
+  # IsDebuggerPresent and UnhandledExceptionFilter are standard MSVC CRT
+  # imports linked into virtually every Windows binary. Restrict to small
+  # binaries where these APIs more likely indicate intentional anti-debug.
+  - id: win-basic
+    desc: Windows debugger detection (basic)
+    crit: notable
+    conf: 0.85
+    platforms: [windows]
+    for: [pe, dll]
+    size_max: 100000
+    unless:
+      - id: metadata/signed/platform/
+      - id: well-known/lib/ui/jline/
+      - id: well-known/lib/runtime/scripted/jruby/
+      - id: metadata/binary/layout/embedded::pe-embedded
+    all:
+      - id: objectives/anti-analysis/debugger-detect/check::is-debugger-present
+    any:
+      - id: micro-behaviors/os/exception/error-handling::exception-filter-pair-imports
+      - id: micro-behaviors/os/exception/error-handling::unhandled-exception-filter-import
+      - id: micro-behaviors/os/exception/error-handling::set-unhandled-exception-filter-import
+  - id: win-comprehensive
+    desc: Windows debugger/VM detection (multiple signals)
+    crit: suspicious
+    conf: 0.9
+    platforms: [windows]
+    for: [pe, dll]
+    # IsDebuggerPresent plus QueryPerformanceCounter is common MSVC CRT noise
+    # in medium-sized signed DLLs. Keep this heuristic focused on tiny loaders;
+    # larger anti-analysis suites are covered by the more specific composites
+    # below that require exception filters and additional timing/evasion signals.
+    size_max: 100000
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/framework::bsjb-marker
+    all:
+      - id: objectives/anti-analysis/debugger-detect/check::is-debugger-present
+    any:
+      - id: micro-behaviors/os/exception/error-handling::exception-filter-pair-imports
+      - id: micro-behaviors/os/exception/error-handling::unhandled-exception-filter-import
+      - id: micro-behaviors/os/exception/error-handling::set-unhandled-exception-filter-import
+      - id: micro-behaviors/time/timing/delay::query-performance-counter
+    downgrade:
+      any:
+        - id: metadata/binary/resource/identity::rich-header-present
+        - id: metadata/package/versioning/scheme::pe-version-resource
+  # Larger PE binaries with multiple anti-analysis signals:
+  # IsDebuggerPresent + timing checks + thread affinity manipulation
+  - id: win-anti-analysis-suite
+    desc: Windows anti-analysis technique suite
+    crit: suspicious
+    conf: 0.9
+    platforms: [windows]
+    for: [pe, dll]
+    size_max: 350000
+    unless:
+      - id: metadata/binary/framework::bsjb-marker
+    all:
+      - id: objectives/anti-analysis/debugger-detect/check::is-debugger-present
+      - id: micro-behaviors/os/exception/error-handling::set-unhandled-exception-filter-import
+    any:
+      - id: micro-behaviors/os/exception/error-handling::unhandled-exception-filter-import
+      - id: objectives/anti-analysis/timing/evasion::timing-delta-check
+      - id: micro-behaviors/time/timing/delay::query-performance-counter
+      - id: micro-behaviors/process/control/affinity::set-thread-affinity-mask
+    needs: 2
+    downgrade:
+      any:
+        - id: metadata/binary/resource/identity::rich-header-present
+        - id: metadata/binary/symbols/count::many-imports
+        - id: metadata/signed/platform/
+        - id: metadata/package/versioning/scheme::pe-version-resource
+        - id: metadata/binary/debug::pdb-absolute-path
+  - id: unsigned-loader-anti-analysis-suite
+    desc: Unsigned loader anti-analysis suite
+    crit: suspicious
+    conf: 0.95
+    platforms: [windows]
+    for: [pe, dll]
+    size_max: 400000
+    all:
+      - id: objectives/anti-analysis/debugger-detect/check::is-debugger-present
+      - id: micro-behaviors/os/exception/error-handling::set-unhandled-exception-filter-import
+    any:
+      - id: micro-behaviors/time/timing/delay::sleep-dup
+      - id: objectives/evasion/process/injection/hollowing/process::ppid-spoofing-attributes
+      - id: objectives/anti-static/obfuscation/payload/section/content::loader-encrypted-dot-data
+    needs: 2
+    downgrade:
+      any:
+        - id: metadata/signed/platform/
+
+  # Require both the debugger marker and payload-transform/PE-loader markers;
+  # the debugger constant alone is common compiler or application noise.
+  - id: unsigned-inline-pe-loader-anti-analysis
+    desc: Unsigned inline-PE loader with debugger-gated execution markers
+    crit: hostile
+    conf: 0.97
+    platforms: [windows]
+    for: [pe, dll]
+    attack: T1622,T1027.009,T1620
+    all:
+      - id: metadata/signed/trust-level::unsigned-missing-signature-record
+      - id: micro-behaviors/process/debug/detect::is-debugger-present-import
+      - id: micro-behaviors/data/embedded/payload/header::inline-pe-header-validation-sequence
+      - id: micro-behaviors/crypto/symmetric/xor/loop::x64-xor-imm8-widen-loop
+    any:
+      # A PAGE_EXECUTE_* constant is also emitted by ordinary libraries that
+      # validate or dispatch code. Require two independent execution-memory
+      # signals before calling the PE checks a loader.
+      - id: micro-behaviors/mem/protect/modify::virtualprotect-executable-read-register-x64
+      - id: micro-behaviors/mem/alloc/executable::protected-buffer-indirect-call-x64-reloc
+      - id: micro-behaviors/mem/alloc/executable::executable-allocation-indicator
+      - id: micro-behaviors/mem/protect/modify::virtual-memory-allocation-protection-api-pair
+    needs: 2
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/installer/family/
+      - id: metadata/binary/framework/
+      - id: well-known/app/
+      - id: well-known/lib/
+      - id: well-known/tool/
+  - id: unsigned-pe-parser-with-debugger-api
+    desc: Unsigned PE parser with debugger and memory APIs
+    crit: suspicious
+    conf: 0.9
+    platforms: [windows]
+    for: [pe, dll]
+    attack: T1620,T1622
+    all:
+      - id: metadata/signed/trust-level::unsigned-missing-signature-record
+      - id: micro-behaviors/data/embedded/payload/header::inline-mz-magic-check
+      - id: micro-behaviors/data/embedded/payload/header::inline-pe-signature-check
+      - id: micro-behaviors/data/embedded/payload/header::inline-pe-header-walk-x64
+      - id: micro-behaviors/mem/protect/modify::virtual-memory-allocation-protection-api-pair
+      - id: micro-behaviors/process/debug/detect::is-debugger-present-import
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/binary/installer/family/
+      - id: metadata/binary/framework::dotnet-metadata
+      # NativeAOT runtime support supplies both the PE-mapping primitives and
+      # debugger API without implying debugger-gated application behavior.
+      - id: metadata/lang/compiler/aot::nativeaot-runtime-markers
+      - id: metadata/lang/compiled::rust-backtrace-symbolizer
+      - id: well-known/app/
+      - id: well-known/game/mod/
+      - id: well-known/lib/
+      - id: well-known/tool/
+  - id: overlay-wrapper-anti-analysis-suite
+    desc: Overlay loader anti-analysis suite
+    crit: suspicious
+    conf: 0.96
+    platforms: [windows]
+    for: [pe]
+    size_min: 500000
+    all:
+      - id: objectives/anti-analysis/debugger-detect/check::is-debugger-present
+      - id: micro-behaviors/os/exception/error-handling::set-unhandled-exception-filter-import
+      - id: micro-behaviors/time/timing/delay::query-performance-counter
+      - id: micro-behaviors/time/query::get-tick-count
+      - id: metadata/binary/section/layout::edata-wrapper-entry-layout
+    unless:
+      - id: metadata/signed/platform/
+  - id: linux-comprehensive
+    desc: Linux debugger detection across multiple
+    crit: suspicious
+    conf: 0.95
+    platforms: [linux]
+    for: [elf]
+    needs: 2
+    any:
+      - id: micro-behaviors/os/linker/env::ld-debug
+      - id: objectives/anti-analysis/debugger-detect/check::tracerpid-string
+      - id: objectives/anti-analysis/debugger-detect/check::ptrace-traceme-or-deny
+  # Hardened runtimes commonly pair ptrace with explicit checks for both
+  # dynamic-linker instrumentation variables. This describes genuine
+  # anti-instrumentation behavior without implying a malicious payload.
+  - id: linux-ptrace-linker-instrumentation-checks
+    desc: Linux ptrace and linker instrumentation checks
+    crit: suspicious
+    conf: 0.96
+    platforms: [linux]
+    for: [elf]
+    all:
+      - id: micro-behaviors/os/syscall/invoke::ptrace-import
+      - id: micro-behaviors/os/env/read::getenv
+      - id: micro-behaviors/os/linker/env::ld-preload
+      - id: micro-behaviors/os/linker/env::ld-audit
+    unless:
+      - id: well-known/tool/reverse-engineering/
+      - id: well-known/lib/native/glibc::libc-runtime
+      - id: well-known/tool/sysadmin/proot::proot-binary
+  # Large installer binaries (NSIS, Inno Setup) with anti-analysis signals
+  # in embedded payloads. The main container is large but the anti-analysis
+  # techniques are in the embedded components.
+  - id: installer-anti-analysis-suite
+    desc: Installer binary with embedded anti-analysis techniques
+    crit: suspicious
+    conf: 0.88
+    platforms: [windows]
+    for: [pe]
+    size_min: 500000
+    all:
+      - id: objectives/anti-analysis/debugger-detect/check::is-debugger-present
+    needs: 2
+    any:
+      - id: micro-behaviors/time/timing/delay::query-performance-counter
+      - id: micro-behaviors/time/query::get-tick-count
+      - id: micro-behaviors/os/compat/wow64::wow64-fs-redirect
+      - id: micro-behaviors/os/compat/wow64::is-wow64-process
+    unless:
+      - id: metadata/binary/installer/family/
+      - id: metadata/signed/platform/
+      - id: metadata/binary/vendor::microsoft-corp-versioninfo
+      - id: well-known/app/system/cvte-crashrpt/
+      # `section/metrics/` is dissolved. Each of these rules is about .rdata
+      # shape, and the benign rdata layout/signer contexts landed in ratio/.
+      - id: metadata/binary/section/ratio/
+    downgrade:
+      any:
+        - id: metadata/binary/resource/identity::rich-header-present
+        - id: metadata/binary/symbols/count::many-imports
+  - id: signed-firefox-wrapper-anti-analysis
+    desc: Signed Firefox wrapper anti-analysis suite
+    crit: suspicious
+    conf: 0.96
+    platforms: [windows]
+    for: [pe]
+    size_min: 250000
+    size_max: 1500000
+    all:
+      - id: metadata/signed/unknown::mozilla-corporation
+      - id: well-known/app/communication/thunderbird::legacy-firefox-pdb-path
+      - id: metadata/binary/layout/embedded::pe-embedded
+      - id: micro-behaviors/process/debug/detect::is-debugger-present-import
+      - id: micro-behaviors/os/exception/error-handling::exception-filter-pair-imports
+      - id: micro-behaviors/time/timing/delay::query-performance-counter
+      - id: micro-behaviors/time/query::get-tick-count
+
+  - id: tls-debugger-thread-time-tamper
+    desc: TLS debugger check with thread and system-time API cluster
+    crit: hostile
+    conf: 0.98
+    attack: T1622,T1055.003
+    platforms: [windows]
+    for: [pe, dll]
+    all:
+      - id: metadata/binary/layout/tls::pe-tls-callback-table
+      - id: micro-behaviors/process/debug/detect::is-debugger-present-import
+      - id: micro-behaviors/process/info/thread::get-thread-context-import
+      - id: micro-behaviors/process/info/thread::set-thread-context-import
+      - id: micro-behaviors/process/info/thread::resume-thread-import
+      - id: micro-behaviors/os/sysinfo/config::set-system-time-api
+    # VLC/libVLC's MinGW CRT/TLS and exception machinery imports this
+    # Windows API set without implementing a debugger-gated loader.
+    # Broad-import application DLLs likewise need a concrete implementation
+    # signal before this hostile composite is applied.
+    unless:
+      - id: well-known/lib/media/videolan/
+      - id: metadata/binary/symbols/count::many-imports

@@ -1,0 +1,62 @@
+# ELF binary download, permission change, and local launch chain.
+defaults:
+  platforms: [linux, android]
+  for: [elf]
+  attack: T1105,T1059.004,T1222.002
+  mbc: E1105
+
+composite_rules:
+  - id: download-permission-execute-chain
+    desc: Native binary embeds a download, chmod, and execute chain
+    crit: suspicious
+    conf: 0.98
+    attack: "T1105,T1222.002,T1059.004"
+    all:
+      - id: objectives/command-and-control/dropper/delivery/execute-download/device::native-download-then-chmod
+      - id: micro-behaviors/process/create/local-exec::chmod-then-local-execute-command
+
+  # shell-777 parses a shell AST `chmod` call and can never fire on this
+  # ELF's raw bytes; native-chmod-0777-command is the elf/macho text-regex
+  # sibling that matches the same command as a literal embedded string.
+  - id: raw-ip-download-chmod-relative-exec
+    platforms: [linux]
+    desc: ELF raw-IP download chmod and execute chain
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-http-url
+      - id: micro-behaviors/process/create/shell/spawn::system-fn
+      - id: micro-behaviors/fs/chmod/executable/dangerous::native-chmod-0777-command
+      - id: micro-behaviors/process/create/local-exec::native-relative-executable-string
+
+  # A compiled implant carrying its own raw-IP wget/curl/TFTP fallback chain
+  # is materially different from an installer that invokes one named client.
+  # Requiring the complete local chmod-and-launch command keeps ordinary URL
+  # and downloader references out of this verdict.
+  - id: raw-ip-multi-client-download-execute
+    platforms: [linux]
+    desc: ELF downloads and executes a raw-IP payload through fallback clients
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: micro-behaviors/communications/ip/literal::http-ip-url
+      - id: micro-behaviors/communications/http/download/fallback::multi-client-download-fallback
+      - id: micro-behaviors/process/create/local-exec::chmod-then-local-execute-command
+
+  # The three-way combination is specific to an IoT bot dropper: a raw-IP
+  # download, an executable-mode change, and a Mirai credential table. Each
+  # leg is neutral or suspicious on its own, but together they describe the
+  # payload-delivery behavior.
+  # shell-plus-x is a shell AST match; chmod-make-executable is the
+  # text-regex sibling (matches both `+x` and octal forms) that can see the
+  # same command as a literal string embedded in this ELF's bytes.
+  - id: raw-ip-iot-download-chmod-exec
+    platforms: [linux]
+    desc: IoT bot downloads and executes raw-IP payload
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: micro-behaviors/communications/ip/literal::http-ip-url
+      - id: micro-behaviors/fs/chmod/executable/mode::chmod-make-executable
+      - id: micro-behaviors/process/create/shell/spawn::system-fn
+      - id: objectives/lateral-movement/brute-force/iot-creds::mirai-credential-access

@@ -1,0 +1,155 @@
+defaults:
+  platforms: [windows]
+  for: [batch, powershell, pe]
+  attack: T1027,T1112,T1059.001
+traits:
+- id: hklm-software-guid-key
+  desc: HKLM Software GUID registry key
+  crit: suspicious
+  conf: 0.88
+  if:
+    type: text
+    regex: '(?i)HKLM\\Software\\\{[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}\}'
+- id: decoded-temp-batch-write
+  desc: Decoded PowerShell writes temp batch
+  crit: suspicious
+  conf: 0.96
+  for: [batch, powershell]
+  if:
+    type: encoded
+    regex: '\[IO\.File\]::WriteAllBytes\(\$batch,\s*\[Convert\]::FromBase64String\(\$payload\)\)'
+- id: decoded-temp-batch-exec
+  desc: Decoded PowerShell executes temp batch
+  crit: suspicious
+  conf: 0.94
+  for: [batch, powershell]
+  if:
+    type: encoded
+    regex: '&\s+\$batch\b'
+- id: decoded-stage-self-delete
+  desc: Decoded stage removes loader files
+  crit: suspicious
+  conf: 0.95
+  for: [batch, powershell]
+  if:
+    type: encoded
+    regex: 'Remove-Item\s+\$batch\s+-Force[\s\S]{0,180}Remove-Item\s+\$env:UPDATEPATH'
+- id: nested-base64-batch-payload
+  desc: Nested base64 batch payload
+  crit: suspicious
+  conf: 0.95
+  for: [batch, powershell]
+  if:
+    type: encoded
+    regex: '\$payload\s*=\s*[''"]QGVj[a-zA-Z0-9+/=]{80,}'
+- id: cacls-runas-self-elevation
+  desc: Batch checks admin with cacls
+  crit: notable
+  conf: 0.94
+  for: [batch]
+  attack: T1548.002
+  if:
+    type: text
+    regex: '(?is)cacls\.exe.{0,120}config\\system'
+- id: windows11-setacl-theme-marker
+  desc: Windows11 SetACL theme marker
+  crit: notable
+  conf: 0.9
+  for: [batch]
+  if:
+    type: text
+    substr: ECHO R | powershell.exe ./SetACL.bat
+composite_rules:
+- id: hklm-guid-powershell-payload
+  for: [pe, batch]
+  desc: HKLM GUID key stores PowerShell payload
+  crit: hostile
+  conf: 0.96
+  all:
+  - id: hklm-software-guid-key
+  - id: registry-powershell-byte-payload
+  any:
+  - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+  - id: micro-behaviors/process/create/hidden::encodedcommand-invocation
+- id: registry-powershell-byte-storage
+  desc: Registry byte-storage primitives
+  crit: component
+  conf: 0.9
+  any:
+  - id: micro-behaviors/os/registry/access::reg-set-value-ex-text
+  - id: micro-behaviors/os/registry/access::registry-binary-value-type
+- id: registry-powershell-payload-encoding
+  desc: PowerShell payload encoding markers
+  crit: component
+  conf: 0.9
+  any:
+  - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+  - id: micro-behaviors/os/registry/write/property::registry-property-cmd-text
+  - id: micro-behaviors/os/registry/write/property::powershell-registry-property-cmd
+  - id: objectives/command-and-control/remote-command/appliance::encoded-command-token
+- id: registry-powershell-byte-payload
+  for: [pe, batch]
+  desc: Registry stores encoded PowerShell bytes
+  crit: suspicious
+  conf: 0.9
+  # Large framework binaries can contain these generic PowerShell, registry,
+  # and Base64 tokens in unrelated subsystems. A staged payload keeps them
+  # within the same local byte region.
+  near_bytes: 4096
+  all:
+  - id: micro-behaviors/process/create/shell/lang::powershell-keyword
+  - id: registry-powershell-byte-storage
+  - id: registry-powershell-payload-encoding
+  downgrade:
+    any:
+    - id: well-known/tool/sysadmin/disk-utility::winhex-xways
+    - id: well-known/app/system/aks-engine/
+  unless:
+  - id: windows11-setacl-theme-marker
+  - id: metadata/file/string/identity/
+  - id: metadata/signed/platform::microsoft
+  - id: well-known/app/enterprise/microsoft-office-support::microsoft-office-support-bundle-context
+- id: encoded-temp-batch-stage
+  for: [batch, powershell]
+  desc: Encoded PowerShell writes batch stage
+  crit: hostile
+  conf: 0.98
+  attack: "T1027, T1059.001, T1059.003"
+  all:
+  - id: micro-behaviors/process/create/hidden::encodedcommand-invocation
+  - id: decoded-temp-batch-write
+  - id: decoded-temp-batch-exec
+- id: nested-base64-batch-loader
+  for: [batch, powershell]
+  desc: Encoded PowerShell unwraps nested batch
+  crit: hostile
+  conf: 0.98
+  attack: "T1027, T1105, T1059.003"
+  all:
+  - id: micro-behaviors/process/create/hidden::encodedcommand-invocation
+  - id: nested-base64-batch-payload
+  - id: decoded-temp-batch-write
+- id: elevated-self-deleting-batch-stage
+  for: [batch]
+  desc: Elevated batch stage deletes itself
+  crit: hostile
+  conf: 0.98
+  attack: "T1548.002, T1070.004"
+  all:
+  - id: cacls-runas-self-elevation
+  - id: decoded-stage-self-delete
+  - id: micro-behaviors/process/create/start-process::batch-start-process-self-arg
+  - id: micro-behaviors/os/privilege/elevation::runas-verb
+# batch-has-long-token and batch-near-zero-whitespace are batch-only
+# metrics, so the file default's powershell/pe are dead weight here.
+- id: encoded-command-metric-stager
+  desc: Encoded command with batch metric stager
+  crit: hostile
+  conf: 0.97
+  attack: "T1027, T1059.001, T1059.003"
+  for: [batch]
+  all:
+  - id: micro-behaviors/process/create/hidden::encodedcommand-invocation
+  - id: metadata/file/line::single-long-line-outlier
+  - id: metadata/file/line::batch-has-long-token
+  - id: metadata/file/padding::batch-near-zero-whitespace

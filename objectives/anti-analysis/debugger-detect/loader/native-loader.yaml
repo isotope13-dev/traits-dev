@@ -1,0 +1,190 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+
+traits:
+- id: cape-rhadamanthys-exit-sequence
+  desc: Rhadamanthys loader exit-stub sequence
+  crit: notable
+  conf: 0.99
+  if:
+    type: hex
+    section: .rsrc
+    pattern: 6A 00 6A 00 6A 00 6A 00 6A 00 6A 00 8B 95 ?? ?? ?? ?? 52 8B 85 ?? ?? ?? ?? 50 6A 00 68 FF FF 1F 00
+- id: cape-rhadamanthys-ntdll-sequence
+  desc: Rhadamanthys loader ntdll-name sequence
+  crit: notable
+  conf: 0.99
+  if:
+    type: hex
+    section: .rsrc
+    pattern: B9 6E 00 00 00 66 89 8D ?? ?? ?? ?? BA 74 00 00 00 66 89 95 ?? ?? ?? ?? B8 64 00 00 00 66 89 85 ?? ?? ?? ?? B9 6C 00 00 00 66 89 8D ?? ?? ?? ?? BA 6C 00 00 00 66 89 95
+composite_rules:
+- id: cape-resource-loader-anti-debug
+  desc: CAPE loader with TLS anti-debug and process spawn
+  crit: hostile
+  conf: 0.99
+  attack: T1027.009,T1622,T1106
+  all:
+  - id: cape-rhadamanthys-exit-sequence
+  - id: cape-rhadamanthys-ntdll-sequence
+  - id: metadata/binary/layout/tls::pe-tls-callback-table
+  - id: micro-behaviors/process/debug/detect::is-debugger-present-import
+  - id: micro-behaviors/process/create/spawn::create-process-w
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/
+  - id: well-known/tool/reverse-engineering/
+- id: tls-process-cleanup-loader
+  desc: TLS loader with paired anti-debug checks, IPC, and cleanup
+  crit: hostile
+  conf: 0.98
+  attack: T1622,T1106,T1070.004
+  all:
+  - id: metadata/binary/layout/tls::pe-tls-callback-table
+  - id: micro-behaviors/process/debug/detect::is-debugger-present-import
+  - id: micro-behaviors/process/debug/detect::check-remote-debugger
+  - id: micro-behaviors/process/create/spawn::create-process-w
+  - id: micro-behaviors/communications/ipc/named-pipe::nt-create-named-pipe
+  - id: micro-behaviors/fs/delete/file/library::deletefile-w
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/
+  - id: well-known/tool/reverse-engineering/
+  - id: well-known/lib/testing/selenium/
+  - id: well-known/tool/development/build/turborepo::platform-binary-context
+  - id: well-known/tool/development/toolchain/deno::deno-runtime-binary
+  - id: well-known/tool/development/toolchain/deno::denort-runtime-binary
+- id: self-protecting-encrypted-loader
+  desc: Anti-debug encrypted loader with cleanup
+  crit: hostile
+  conf: 0.95
+  all:
+  - id: micro-behaviors/process/debug/detect::is-debugger-present-import
+  - id: metadata/binary/section/entropy::high-entropy-rdata-section
+  - id: micro-behaviors/mem/protect/modify::virtual-protect
+  - id: micro-behaviors/fs/delete/file/library::deletefile-w
+  - id: micro-behaviors/process/terminate/kill::terminate-process
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/
+  - id: well-known/app/
+  - id: well-known/tool/development/
+  # Versioned cronet.*.dll is Chromium's network stack, not an encrypted loader.
+  - id: well-known/lib/network/cronet::cronet-versioned-basename
+- id: custom-resolver-tls-debug-check
+  desc: Custom resolver with debugger check and TLS
+  crit: hostile
+  conf: 0.96
+  all:
+  - id: objectives/anti-static/obfuscation/imports/api-hashing::pe-loader-manual-export-resolver-x64
+  - id: micro-behaviors/process/debug/detect::is-debugger-present-import
+  - id: metadata/binary/layout/tls::pe-tls-callback-table
+  - id: metadata/binary/section/entropy::high-entropy-exec-section
+  unless:
+  - id: metadata/signed/platform/
+- id: resource-process-memory-inspection-loader
+  desc: Resource stager inspects process memory before launching code
+  crit: hostile
+  conf: 0.97
+  attack: T1027.009,T1057,T1622
+  all:
+  - id: micro-behaviors/data/embedded/payload/resource::pe-resource-full-extraction
+  - id: micro-behaviors/mem/query/info::virtualquery-ex
+  - id: micro-behaviors/mem/protect/modify::virtual-protect
+  - id: micro-behaviors/process/create/spawn::create-process-w
+  - id: micro-behaviors/process/info/thread::resume-thread-import
+  - id: metadata/binary/layout/ratio::overlay-over-90pct
+  unless:
+  - id: metadata/signed/platform/
+  # Inno/NSIS/etc. installers extract payloads, spawn children, and probe
+  # process memory around CreateProcess — same API surface as a stager.
+  - id: metadata/binary/installer/
+  - id: well-known/tool/reverse-engineering/
+
+- id: encrypted-tls-process-loader
+  # A TLS callback plus imports for IsDebuggerPresent and VirtualProtect is
+  # not, by itself, an encrypted loader.  Rust/GUI runtimes commonly contain
+  # all three.  Require an actually high-entropy PE data carrier before this
+  # objective is inferred; the neutral peak-region metrics remain visible.
+  desc: PE with TLS callback, debugger check, and encrypted data loader
+  crit: hostile
+  conf: 0.99
+  for: [pe]
+  all:
+  - id: metadata/file/data-blob::low-entropy-binary-with-dense-region
+  - id: metadata/binary/section/entropy::high-entropy-rdata-section
+  - id: metadata/binary/layout/tls::pe-tls-callback-table
+  - id: micro-behaviors/process/debug/detect::is-debugger-present-import
+  - id: micro-behaviors/mem/protect/modify::virtual-protect
+
+- id: encrypted-pipe-process-loader
+  desc: Encrypted named-pipe process loader
+  crit: hostile
+  conf: 0.99
+  for: [pe]
+  all:
+  - id: metadata/file/data-blob::low-entropy-binary-with-dense-region
+  - id: micro-behaviors/communications/ipc/named-pipe::nt-create-named-pipe
+  - id: micro-behaviors/process/create/spawn::create-process-w
+  - id: objectives/evasion/masquerade/version-resource/claim::randomized-version-identity
+- id: resource-native-api-anti-debug-loader
+  desc: Unsigned resource anti-debug native loader
+  crit: hostile
+  conf: 0.99
+  attack: T1027.007,T1027.009,T1055,T1622
+  all:
+  - id: metadata/signed/trust-level::unsigned
+  - id: micro-behaviors/data/embedded/payload/resource::pe-resource-full-extraction
+  - id: micro-behaviors/process/debug/detect::is-debugger-present-import
+  - id: micro-behaviors/mem/query/info::virtualquery
+  - id: micro-behaviors/mem/protect/modify::virtual-protect
+  - id: objectives/anti-static/obfuscation/imports/concealment::native-memory-api-string-cluster
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/
+  - id: metadata/binary/framework/
+  - id: well-known/app/
+  - id: well-known/tool/
+
+# Anti-debug malware only READS Dr0-Dr7 to notice a debugger already attached.
+# A debugger implementation WRITES them, because that is how a hardware
+# breakpoint is armed -- and it enumerates processes to build its attach list.
+# Without the SetThreadContext exclusion this convicted radare2's own Windows
+# debugger backend, which is the same three calls used for their stated purpose.
+- id: hardware-breakpoint-process-tool-gate
+  desc: Checks debug registers while enumerating analysis tools
+  crit: hostile
+  conf: 0.98
+  attack: T1622,T1057
+  for: [c, cpp]
+  all:
+  - id: micro-behaviors/process/info/thread::get-thread-context
+  - id: micro-behaviors/process/info/thread::hardware-breakpoint-register-field
+  - id: micro-behaviors/process/enumerate/snapshot::toolhelp-process-enumeration-source
+  unless:
+  - id: micro-behaviors/process/info/thread::set-thread-context-import
+  - id: well-known/tool/reverse-engineering/
+
+- id: opaque-windows-hook-loader
+  desc: Unsigned PE combines a debugger check with an opaque Windows hook
+  crit: hostile
+  conf: 0.99
+  attack: T1027,T1056.001,T1622
+  for: [pe]
+  all:
+  - id: metadata/signed/trust-level::unsigned-missing-signature-record
+  - id: micro-behaviors/process/debug/detect::is-debugger-present-import
+  - id: micro-behaviors/ui/window/hook::set-windows-hook
+  - id: metadata/binary/section/entropy::large-high-entropy-writable-section
+  - id: micro-behaviors/process/terminate/kill::terminate-process
+  any:
+  - id: micro-behaviors/process/create/exec::shell-execute-ex
+  - id: micro-behaviors/os/registry/manipulate::reg-delete-value-a-symbol
+  needs: 1
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: well-known/app/
+  - id: well-known/tool/reverse-engineering/
+

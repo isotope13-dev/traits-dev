@@ -72,8 +72,12 @@ def main():
 
     OUTPUT.mkdir(parents=True, exist_ok=True)
     inventory = OUTPUT / "dropper-execution-rules.csv"
+    fieldnames = [
+        "directory", "id", "kind", "crit", "description", "file",
+        "references", "matcher", "effective_scope",
+    ]
     with inventory.open("w", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+        writer = csv.DictWriter(stream, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
     summary = {

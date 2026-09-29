@@ -1,0 +1,164 @@
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1195.002,T1105
+
+traits:
+  - id: browser-kernel-module-loader-marker
+    desc: Browser kernel remote loader
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)(ModuleLoader\s*\.\s*fetchModule|Orchestrator\s*\.\s*run|kernel\s*\.\s*ModuleLoader)'
+
+composite_rules:
+  - id: packed-targeted-remote-script-loader
+    desc: Packed package script targets page for remote DOM loading
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002,T1059.007,T1105
+    all:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::packer-eval-pattern
+      - id: metadata/package/files/runtime::javascript-dist-tree-artifact
+      - id: micro-behaviors/data/collection/dom::element-creation-method-reference
+      - id: micro-behaviors/data/collection/dom::node-mutation-method-reference
+      - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+
+  # A remote script element is a legitimate mechanism in a full browser
+  # application. It is a different release shape when a published dist member
+  # consists only of that loader: the package has replaced local behavior with
+  # code selected by an external server after publication. Keep every leg
+  # file-local so an ordinary bundle's loader and unrelated compact helpers do
+  # not combine at archive scope.
+  - id: compact-dist-remote-script-loader
+    desc: Compact package dist file injects remote script
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: micro-behaviors/process/create/load/remote-code::js-remote-script-element
+      - id: micro-behaviors/data/collection/dom::append-child-reference
+      - id: metadata/file/line::file-one-liner
+      - id: metadata/package/files/runtime::javascript-dist-tree-artifact
+    near_bytes: 512
+
+  # A minimal npm-init scaffold whose public entry loads a blind-XSS collector
+  # instead of implementing local package behavior. The scaffold legs keep a
+  # security tool that merely contains an xss.report fixture from being called
+  # a malicious package.
+  - id: npm-archive-browser-oob-script-loader
+    desc: Minimal npm package loads xss.report collector
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002,T1105,T1048
+    for: [npm, tar, package.json, javascript]
+    scope: archive
+    all:
+      - id: metadata/package/entrypoint::npm-publish-root-manifest-with-root-javascript-entry
+      - id: metadata/package/scripts/develop::npm-init-default-test
+      - id: metadata/package/empty::npm-empty-author
+      - id: metadata/package/dependencies/manifest/presence::npm-no-runtime-dependencies
+      - id: objectives/exfiltration/oob/endpoint::js-remote-script-oob-loader
+    unless:
+      - id: metadata/package/testing/
+
+  # npm-init scaffold whose only runtime behavior is alert(document.domain),
+  # the classic blind-XSS proof payload used in dependency-confusion uploads.
+  - id: npm-archive-browser-domain-alert-probe
+    desc: Minimal npm package probes document.domain via alert
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002,T1189,T1059.007
+    for: [npm, tar, package.json, javascript]
+    scope: archive
+    all:
+      - id: metadata/package/entrypoint::npm-publish-root-manifest-with-root-javascript-entry
+      - id: metadata/package/scripts/develop::npm-init-default-test
+      - id: metadata/package/empty::npm-empty-author
+      - id: metadata/package/dependencies/manifest/presence::npm-no-runtime-dependencies
+      - id: micro-behaviors/ui/window/notify/message::alert-document-domain-probe
+    unless:
+      - id: metadata/package/testing/
+
+  # An HTML package entrypoint that immediately executes code selected from a
+  # mutable forge branch delegates the published package's behavior to bytes
+  # the publisher can replace after review. The file-local dropper composite
+  # proves fetch + HTML parse + script reconstruction; the manifest leg ties
+  # that hostile loader to the package's public runtime surface.
+  - id: npm-html-entry-mutable-remote-bootstrap
+    desc: npm HTML entrypoint bootstraps mutable remote code
+    crit: hostile
+    conf: 0.99
+    for: [npm, tar, package.json, javascript]
+    scope: archive
+    attack: T1195.002,T1105,T1059.007
+    all:
+      - id: metadata/package/entrypoint::main-html-entry
+      - id: objectives/command-and-control/dropper/delivery/html::mutable-branch-remote-html-execution
+      - id: metadata/package/empty::npm-empty-author
+
+  - id: archive-ios-gated-kernel-remote-loader
+    desc: Published archive gates a kernel loader on iOS and remote code
+    crit: hostile
+    conf: 0.99
+    for: [npm, tar, package.json, javascript]
+    scope: archive
+    attack: T1195.002,T1105,T1059.007,T1614.001
+    all:
+      - id: metadata/package/publishing::npm-public-publish-access
+      - id: browser-kernel-module-loader-marker
+      - id: micro-behaviors/process/create/load/remote-code::js-remote-script-element
+      - id: micro-behaviors/os/sysinfo/platform/browser::ios-device-capability-check
+
+  - id: archive-hidden-ios-iframe-remote-stage
+    desc: Published archive hides a remote iframe behind iOS gating
+    crit: hostile
+    conf: 0.99
+    for: [npm, tar, package.json, javascript, html]
+    scope: archive
+    attack: T1195.002,T1105,T1614.001,T1027
+    all:
+      - id: metadata/package/publishing::npm-public-publish-access
+      - id: micro-behaviors/os/sysinfo/platform/browser::ios-device-capability-check
+      - id: micro-behaviors/ui/window/insert-html::browser-create-iframe-element
+      - id: micro-behaviors/communications/http/client/resource::js-remote-src-assignment
+      - id: micro-behaviors/ui/window/style::zero-size-element-style
+
+  # A wallet SDK whose published entry point is nothing but a remote loader.
+  #
+  # @ledgerhq/connect-kit 1.1.6 (2023) shipped a 244-byte `dist/umd/index.js`
+  # that appended a script from a hex-named jsDelivr package and did nothing
+  # else, while the manifest still declared the dependencies of the real
+  # library. Every site embedding Ledger's wallet connector then loaded
+  # whatever that URL served -- which was a drainer.
+  #
+  # The package identity leg is what makes this hostile rather than merely
+  # odd: a loader stub is a plausible shape for an analytics snippet, but not
+  # for the library that brokers a hardware wallet.
+  - id: crypto-sdk-entry-is-remote-loader
+    desc: Crypto SDK entry point is a remote loader
+    crit: hostile
+    conf: 0.97
+    for: [npm, tar, zip, javascript, package.json]
+    scope: archive
+    all:
+      - id: compact-dist-remote-script-loader
+      - id: well-known/lib/crypto/sdk::official-crypto-sdk-manifest
+    any:
+      - id: micro-behaviors/communications/http/url/cdn::jsdelivr-hex-named-package
+      - id: metadata/package/dependencies/manifest/reconciliation::npm-phantom-runtime-dependency
+
+# A published front-end bundle whose entry fetches program text at runtime and
+# compiles it as code. The bundle the consumer installed is only a loader;
+# whatever runs next is decided by the response, so the shipped artifact
+# guarantees nothing about its own behavior.
+#
+# Worked example: the bdthemes display_id stage1, which fetches remote text
+# and hands it to the Function constructor.
+  - id: front-end-entry-remote-code-compile
+    desc: Front-end entry compiles fetched text as code
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: objectives/command-and-control/dropper/script-eval/remote-code::fetch-text-function-code
+      - id: micro-behaviors/communications/http/request/client::js-fetch-call

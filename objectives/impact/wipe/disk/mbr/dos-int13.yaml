@@ -47,6 +47,73 @@ traits:
       type: hex
       pattern: "B8 01 03 [0-8] CD 13"
 
+  # Copy the 64-byte partition table from a read sector buffer to a second
+  # sector buffer before writing it back. Addresses vary by resident layout.
+  - id: dos-mbr-partition-table-copy
+    desc: DOS copies the MBR partition table
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: hex
+      pattern: "81 C6 BE 01 BF ?? ?? 8B DF 81 C7 BE 01 06 1F B9 20 00 FC F3 A5"
+
+  # MOV AX,0515h / clear cylinder, drive, and buffer address / INT 13h:
+  # BIOS writes 21 sectors from physical address 0000:0000 to drive 0. The
+  # starting sector in CL is inherited, so this does not claim a precise CHS
+  # range. The sequence is meaningful when combined with a file infector.
+  - id: dos-int13-drive0-multi-sector-write-lowmem
+    desc: BIOS writes 21 sectors from low memory
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: hex
+      pattern: "B8 15 05 32 ED 33 D2 8E C2 33 DB CD 13"
+
+  # A rotating sector/cylinder loop can hide the BIOS write parameters behind
+  # byte loads. Nine sectors per INT 13h write is not a boot-sector rewrite.
+  - id: dos-int13-nine-sector-write
+    desc: BIOS writes nine sectors per call
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: hex
+      pattern: "B4 03 B0 09 [0-24] CD 13"
+
+  - id: dos-int13-weekday-gate
+    desc: DOS weekday gates a BIOS disk action
+    crit: notable
+    conf: 0.9
+    if:
+      type: hex
+      pattern: "B4 2A CD 21 [0-8] 3C 01 74"
+
+  - id: dos-int13-time-fraction-gate
+    desc: DOS time fraction gates BIOS disk action
+    crit: notable
+    conf: 0.94
+    if:
+      type: hex
+      pattern: "B4 2C CD 21 [0-8] 80 E2 0F 0A D2 75"
+
+  - id: dos-int13-forty-cylinder-counter-loop
+    desc: BIOS sector loop stops at cylinder 40
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: hex
+      pattern: "80 3E ?? ?? 28 73 ?? 80 3E ?? ?? 09 77 ?? B4 03 B0 09 [0-24] CD 13"
+
+  # CMP AX,DEADh / JE over RET gates the destructive routine on the infection
+  # counter. In FullDead, that word is incremented on each eligible non-MZ
+  # candidate and reset by the payload when the threshold is reached.
+  - id: dos-int13-dead-counter-gate
+    desc: Disk payload waits for counter DEAD
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: hex
+      pattern: "3D AD DE 74 01 C3"
+
   # MOV SI,01BEh: points at the MBR partition table inside a sector buffer.
   # Bootloaders do this too, so this only convicts with the sector legs.
   - id: dos-mbr-partition-pointer
@@ -69,6 +136,17 @@ traits:
       pattern: "80 29 44 [0-8] 80 01 44"
 
 composite_rules:
+  - id: dos-exec-virus-weekday-disk-overwrite
+    desc: DOS infector overwrites C drive sectors through cylinder 40
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: dos-int13-nine-sector-write
+      - id: dos-int13-weekday-gate
+      - id: dos-int13-time-fraction-gate
+      - id: dos-int13-forty-cylinder-counter-loop
+      - id: objectives/impact/infect/binary/dos/com-bytes/interrupt::dos-exec-hook-infector
+
   - id: dos-int13-boot-sector-eraser
     desc: DOS erases the boot sector
     crit: hostile
@@ -90,3 +168,40 @@ composite_rules:
       - id: dos-int13-ax-sector-write
       - id: dos-mbr-partition-pointer
       - id: dos-sub-add-44-bytes
+
+  - id: dos-resident-mbr-partition-rewriter
+    desc: Resident DOS virus rewrites the MBR partition table
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: dos-int13-ax-sector-read
+      - id: dos-mbr-partition-table-copy
+      - id: dos-int13-ax-sector-write
+      - id: objectives/impact/infect/binary/dos/exec-open-hook::dos-ivt-int21-set-direct
+
+  # A file infector that also writes multiple BIOS sectors from low memory is
+  # destructive even when its CHS starting sector is inherited at runtime.
+  - id: dos-com-infector-with-lowmem-disk-write
+    desc: DOS infector writes multiple BIOS sectors
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: dos-int13-drive0-multi-sector-write-lowmem
+      - id: dos-int13-dead-counter-gate
+      - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-com-directory-infector
+
+  # Tchechen carries a relocated partition boot payload. On RTC day 16 it
+  # iterates non-empty partition entries and writes 17-sector BIOS blocks
+  # starting from each entry's CHS fields. The inherited bounds do not support
+  # a precise final-sector claim.
+  - id: dos-rtc-gated-partition-overwrite
+    desc: DOS virus overwrites partition sectors on RTC day 16
+    crit: hostile
+    conf: 0.98
+    for: [dos_com]
+    all:
+      - id: objectives/impact/infect/boot-sector::dos-boot-relocate-7c00-repne
+      - id: objectives/impact/infect/boot-sector::dos-rtc-day16-boot-gate
+      - id: objectives/impact/infect/boot-sector::dos-bios-17-sector-write-loop
+      - id: dos-int13-ax-sector-read
+      - id: dos-int13-ax-sector-write

@@ -1,0 +1,65 @@
+# JavaScript loaders that treat HTTP response headers as shell commands. The (general response-evaluation profile)
+# execSync and header-field atoms are neutral; this composite carries the
+# remote command execution intent.
+defaults:
+  crit: hostile
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1105,T1059.007,T1027
+  mbc: B0024,B0032
+
+composite_rules:
+  - id: javascript-remote-header-shell-execution
+    desc: JavaScript executes shell command from HTTP response headers
+    conf: 0.99
+    scope: archive
+    for: [tar, tgz, npm, javascript, typescript]
+    near_bytes: 16384
+    all:
+      - id: micro-behaviors/process/create/shell/bridge::execSync-call
+      - id: micro-behaviors/process/create/shell/bridge::exec-sync-http-response-header-command
+    any:
+      - id: micro-behaviors/data/encode/char-code::js-modulo-charcode-mapping
+      - id: micro-behaviors/os/module/dynamic-load::node-dynamic-require-call
+      - id: micro-behaviors/os/module/dynamic-load::node-computed-require-call
+      - id: micro-behaviors/communications/http/request/client::http-request
+      - id: micro-behaviors/communications/http/request/client::https-request
+    unless:
+      - id: metadata/package/testing/
+
+# A distributed entry that injects a <script> element pointing at a
+# hex-named package on a public CDN. The hex-named package is the tell: it is
+# a throwaway serving the real payload, created minutes before publish and
+# deletable the moment the campaign is noticed, while the compromised package
+# that loads it keeps its install base.
+#
+# Worked example: ledger-connect-kit 1.1.6, whose dist entry injected a
+# jsdelivr script tag for a hex-named npm package carrying the wallet drainer.
+  - id: dist-cdn-hex-script-stage-loader
+    desc: Dist entry injects hex-named CDN script stage
+    conf: 0.96
+    all:
+      - id: micro-behaviors/process/create/load/script::dynamic-script-element-load
+      - id: micro-behaviors/communications/http/url/cdn::jsdelivr-hex-named-package
+
+# A shipped bundle whose tail injects a script element pointing at an
+# encoded remote URL. The trojanized/dist rules convict the bundle
+# tampering; this one states the runtime load -- the code that runs is
+# whatever the encoded URL serves on the day it is visited.
+#
+# Worked example: art-template 4.13.6, whose published bundle grew a tail
+# that injects a remote script tag.
+  - id: dist-tail-injects-encoded-remote-script
+    desc: Bundle tail injects encoded remote script
+    conf: 0.96
+    # The loader and the encoded URL must sit together in the injected tail:
+    # without proximity, webpack's stock JSONP chunk loader plus any
+    # incidentally decodable URL in a large bundle (Kibana entries,
+    # playwright/patchright coreBundle.js) reads as a tail injection.
+    # 1KB still dwarfs an appended snippet (the loader call and its URL are
+    # adjacent by construction) while excluding loader/URL pairs kilobytes
+    # apart in ordinary bundles.
+    near_bytes: 1024
+    all:
+      - id: micro-behaviors/process/create/load/script::dynamic-script-src-decode-assign
+      - id: micro-behaviors/communications/url/encoded::encoded-http-url

@@ -1,23 +1,25 @@
 # Current taxonomy audit snapshot — 2026-09-28
 
-Regenerated 2026-09-29 after the archive and HTA sink review. This inventory measures the shared working tree with the uniform inclusive cap
-of 100 atomic and composite rules per directory. It has no directory exemptions.
+Regenerated 2026-09-29 after the final cap and taxonomy review. This inventory
+measures the shared working tree with the uniform inclusive cap of 100 atomic
+and composite rules per directory. It has no directory exemptions.
 
-The catalog contains 21,098 YAML files and 118,855 rules
-(79,365 atomic and 39,490 composite), across
-8,713 rule directories. 71 directories exceed the cap,
-containing 8,835 rules and 1,735 rules of excess.
-The violations are in 70 `objectives` directories
-and 1 `well-known` directory. No rule
-directory exceeds depth five. Sparse sibling review uses the
-35-rule threshold.
+The catalog contains 21,449 rule-bearing YAML files and 118,901 rules
+(79,410 atomic and 39,491 composite), across 8,801 rule directories. No
+directory exceeds the cap. One hundred nine directories are at depth five and
+four leaves are at depth six; depth above five is a soft warning. Sparse sibling
+review uses the 35-rule threshold and remains advisory.
 
-Compared with the preceding 85-rule inventory, this is 143 →
-71 violating directories and 3,768 → 1,735 excess rules. Sink corrections in the encrypted-staging cohort moved 29 existing rules
-without changing matcher bodies or weakening the conditions. The install-hook environment-secret source move relocates three
-composites to their documented source-based home. The TCC classification audit
-also moved three composites from memory staging to TCC database manipulation.
-Four PowerShell AppDomain chains now live under the runtime `module-load` sink.
+The detailed notes below retain earlier checkpoint measurements for audit
+provenance. The current counts and the empty `dropper/execution` result above
+supersede older intermediate leaf counts in those notes.
+
+Compared with the preceding 85-rule inventory, the final reorganizations split
+the remaining broad technique cohorts into leaf-only children: install hooks,
+network-device exploits, dropper download modes, hidden-payload staging and
+execution, masquerade, scan/port, sensitive-data, hollowing, privilege
+escalation, eval/scripting, brute-force, dispatch/shell, and the Elex family.
+References were retargeted and validation rerun after each split.
 The GitHub image-suffix URL clue now lives with neutral HTTP URL evidence; its
 two Assembly.Load composites live under the module-load sink.
 Two reusable Swift Base64 and Zig shell-argument observations now live in their
@@ -37,7 +39,10 @@ is 178 rules and remains under review. Its combined-cap excess is now 78 rules.
 The hidden-payload runtime pass moved three npm composites to reverse-shell,
 dropper-pipe, and webshell leaves, plus two supporting Node webshell composites;
 the runtime leaf is now 188 rules.
-The `dropper/execution` audit inventories 1,749 remaining rules in 41 leaves.
+The legacy `dropper/execution` tree is empty. Its 615 rules were routed to
+activation-sink, staging, process-injection, script-host, ClickFix delivery,
+or build/provenance leaves without changing matcher bodies or deleting
+referenced findings.
 The legacy `exec-download` leaf is empty after archive and HTA rules followed
 their required download, process-creation, persistence, file-write, decode and
 obfuscation subjects.
@@ -109,9 +114,12 @@ unsupported handoff verdict and its unshared method-name atom were retired.
 Go/PowerShell, native DNS TXT, LuaJIT FFI/runtime and JavaScript terminal
 launcher contexts moved out of legacy source, DNS, sidecar and launcher
 labels. Their retained matcher conditions were compared with the originals.
-The legacy `loader` leaf now contains exactly 100 rules after routing its
+At an earlier checkpoint, the legacy `loader` leaf reached 100 rules after routing its
 minizip, IEExec, C# temp-write, Delphi overlay, .NET reflection, resource,
-Petite and Gentee evidence to their supported homes.
+Petite and Gentee evidence to their supported homes. Its latest rule-level
+pass moved sandbox, self-read, pack, resource, HTTP/process, import-count and
+trust-claim, VB6, Elex, MFC/LuaJIT, UPX and managed-resource evidence to their
+actual subjects; the legacy `loader` leaf is empty.
 The first SFX installer pass routes RunProgram directives, progress control
 and temporary extraction to neutral capability leaves, and retires a
 filename-dependent duplicate and unused umbrella components. The legacy
@@ -124,7 +132,7 @@ fragmentation corrections bring that leaf to 99 rules. Twenty-seven batch
 observations now live under their specific transfer, script-evaluation,
 process, archive, timing and filesystem capabilities; `batch` is exactly 100
 rules. IRM/IEX chains now follow script evaluation, while Perl and Swift
-co-occurrence profiles report their neutral capabilities; `fileless` is 99
+co-occurrence profiles report their neutral capabilities; `fileless` is 100
 rules. The two final over-cap execution leaves were reviewed: `exec-download`
 is now 96 after moving unsupported downloader claims, ten neutral HTA
 observations and Kynix helper names; `script` passed through 40 and is now 3 after routing Ruby,

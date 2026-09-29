@@ -1,0 +1,288 @@
+# Archive-layout detection for DLL-sideloading staging bundles.
+#
+# Loader/dropper families (PlugX, ValleyRAT, Gh0st variants, and many Chinese
+# APT toolchains) are frequently delivered as a single archive that, once
+# extracted, drops a legitimate signed host executable next to a malicious
+# proxy DLL plus an encrypted payload blob. When that archive is a
+# password-protected 7z, the encrypted streams defeat content inspection, but
+# the plaintext member listing still reveals the staging layout: a generic
+# installer/launcher entrypoint at the root, the application's own bundled GUI
+# runtime (Qt/MSVC redistributables) acting as sideload-host scaffolding, and
+# native binaries scattered across update/library staging directories.
+#
+# These composites operate purely on `archive.members[*].path`, so they fire
+# even when the payload cannot be decrypted. They stop at `suspicious`: the
+# layout is the technique's fingerprint, but the malicious payload itself stays
+# encrypted, so an analyst — not the scanner alone — confirms intent.
+defaults:
+  platforms: [windows]
+  for: [zip, tar, 7z]
+  attack: T1574.002
+  mbc: F0015
+
+traits:
+  # --- generic installer/launcher entrypoint at archive root ---
+  - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-root-setup-exe
+    desc: setup.exe at archive root
+    crit: notable
+    conf: 0.8
+    if:
+      type: value
+      path: "archive.members[*].path"
+      regex: '(?i)^setup([_-][a-z0-9]+)?\.exe$'
+
+  - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-root-installer-exe
+    desc: install(er).exe at archive root
+    crit: notable
+    conf: 0.8
+    if:
+      type: value
+      path: "archive.members[*].path"
+      regex: '(?i)^install(er)?\.exe$'
+
+  - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-root-updater-exe
+    desc: update(r).exe at archive root
+    crit: notable
+    conf: 0.8
+    if:
+      type: value
+      path: "archive.members[*].path"
+      regex: '(?i)^update(r)?\.exe$'
+
+  - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-root-launcher-exe
+    desc: launcher.exe at archive root
+    crit: notable
+    conf: 0.8
+    if:
+      type: value
+      path: "archive.members[*].path"
+      regex: '(?i)^launcher\.exe$'
+
+  # --- native binaries scattered across staging directories ---
+  - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-bin-in-update-dir
+    desc: Binary under Updates dir
+    crit: notable
+    conf: 0.8
+    if:
+      type: value
+      path: "archive.members[*].path"
+      regex: '(?i)(^|/)updates?/[^/]+\.(exe|dll)$'
+
+  - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-bin-in-library-dir
+    desc: Binary under Library dir
+    crit: notable
+    conf: 0.8
+    if:
+      type: value
+      path: "archive.members[*].path"
+      regex: '(?i)(^|/)library/[^/]+\.(exe|dll)$'
+
+  # SmugX-style delivery archives carry a shortcut alongside the native
+  # sideload host and a separate data file containing the encrypted payload.
+  # The member names vary between campaigns, so match the layout rather than
+  # RoboForm, PlugX, or a particular lure filename.
+  - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-shortcut-member
+    desc: Archive contains a Windows shortcut member
+    crit: notable
+    conf: 0.94
+    for: [zip]
+    if:
+      type: value
+      path: "archive.members[*].path"
+      regex: '(?i)(^|/)[^/]+\.lnk$'
+    unless:
+      # ISO/UDF images are routed through the archive fact model too, but
+      # their shortcut semantics belong to the ISO taxonomy below.
+      - id: metadata/file/format/iso/structure::primary-volume-descriptor
+
+composite_rules:
+  - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-installer-entrypoint-root
+    desc: Generic installer exe at archive root
+    crit: component
+    conf: 0.8
+    any:
+      - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-root-setup-exe
+      - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-root-installer-exe
+      - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-root-updater-exe
+      - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-root-launcher-exe
+
+  - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-bundled-gui-runtime
+    desc: Bundled Qt/MSVC runtime DLLs
+    crit: component
+    conf: 0.82
+    any:
+      - id: metadata/build/archive::archive-bundled-qt-runtime
+      - id: metadata/build/archive::archive-bundled-msvc-runtime
+      - id: metadata/build/archive::archive-bundled-vcruntime
+
+  - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-native-bins-in-update-dirs
+    desc: Native binary in update/library dir
+    crit: notable
+    conf: 0.8
+    any:
+      - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-bin-in-update-dir
+      - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-bin-in-library-dir
+
+  - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-sideload-host-kit
+    desc: Self-contained DLL-sideload host kit
+    crit: suspicious
+    conf: 0.85
+    all:
+      - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-installer-entrypoint-root
+      - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-bundled-gui-runtime
+      - id: metadata/build/archive::archive-native-binary-entry
+
+  - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-decoy-padded-binary-bundle
+    desc: Binaries padded with unrelated test files
+    crit: suspicious
+    conf: 0.85
+    all:
+      - id: metadata/package/testing/presence/path::archive-phpt-test-member
+    any:
+      - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-bin-in-update-dir
+      - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-bin-in-library-dir
+    unless:
+      # PHP source/SDK trees legitimately ship .phpt tests beside php*.exe/php*.dll.
+      - id: metadata/build/archive::php-distribution-member
+      - id: metadata/build/archive::archive-cargo-toml-entry
+
+  - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-shortcut-native-layout
+    desc: ZIP shortcut is bundled with multiple native members
+    crit: suspicious
+    conf: 0.93
+    attack: T1574.002,T1204.002
+    for: [zip, iso, data]
+    all:
+      - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-shortcut-member
+      - id: metadata/build/archive::archive-multiple-native-binary-members
+    unless:
+      - id: metadata/file/format/iso/structure::primary-volume-descriptor
+      - id: well-known/lib/format/mimetype::mimetype-testdata-archive-context
+
+  - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-shortcut-native-payload-stage
+    desc: ZIP shortcut carries native sideload stage and data payload
+    crit: suspicious
+    conf: 0.95
+    attack: T1027.006,T1574.002,T1204.002
+    for: [zip, iso, data]
+    all:
+      - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-shortcut-member
+      - id: metadata/build/archive::archive-multiple-native-binary-members
+      - id: metadata/package/files/archive-member::archive-member-text-like-name
+    unless:
+      - id: metadata/file/format/iso/structure::primary-volume-descriptor
+      - id: well-known/lib/format/mimetype::mimetype-testdata-archive-context
+
+  - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::encrypted-runtime-loader-bundle
+    for: [zip, tar, data, 7z]
+    desc: Encrypted archive bundles a VC runtime and native loader
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: metadata/file/archive::archive-encrypted-member
+      - id: metadata/build/archive::archive-windows-executable-entry
+    any:
+      - id: metadata/build/archive::archive-bundled-vcruntime
+      - id: metadata/build/archive::archive-bundled-msvc-runtime
+
+  - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::encrypted-runtime-loader-cluster
+    for: [zip, tar, data, 7z]
+    desc: Encrypted kit hides a VC runtime loader
+    crit: hostile
+    conf: 0.95
+    attack: T1574.002,T1027
+    all:
+      - id: metadata/file/archive::archive-encrypted-member-cluster
+      - id: metadata/build/archive::archive-windows-executable-entry
+    any:
+      - id: metadata/build/archive::archive-bundled-vcruntime
+      - id: metadata/build/archive::archive-bundled-msvc-runtime
+
+  # The password-protected staging bundle, as shipped by the HijackLoader /
+  # IDAT delivery waves: an AES-encrypted 7z whose header is deliberately left
+  # in the clear -- the operator wants the victim to see a plausible file list
+  # -- carrying a generic `Setup.exe` at the root, a spread of vendor-looking
+  # DLLs for it to load, and an app-local `api-ms-win-*` stub set so the
+  # renamed signed host resolves its imports from a directory it was never
+  # installed into.
+  #
+  # Encryption is what makes this hostile rather than merely odd. A vendor who
+  # ships an app-local UCRT deployment does not also lock the installer behind
+  # a password: the encryption exists to defeat content inspection, and it is
+  # why every member-level trait below reads the plaintext member table rather
+  # than the payloads. The legs are independent -- entrypoint naming, runtime
+  # deployment shape, native payload, and encryption -- so a campaign that
+  # renames `Setup.exe` or swaps the blob extensions still lands here.
+  - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::encrypted-installer-sideload-staging-bundle
+    desc: Encrypted archive stages an installer sideload kit
+    crit: hostile
+    conf: 0.95
+    attack: T1574.002,T1027
+    #
+    # Legs are spelled out as atoms rather than reusing the
+    # `archive-installer-entrypoint-root` / `archive-native-binary-entry`
+    # roll-ups: a composite referencing an archive-scoped composite resolves
+    # inconsistently, and this rule matched under `test-rules` while firing on
+    # nothing in a real scan until the legs were flattened.
+    all:
+      - id: metadata/file/archive::archive-encrypted-member
+      - id: metadata/build/archive::archive-windows-library-entry
+    any:
+      - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-root-setup-exe
+      - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-root-installer-exe
+      - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-root-updater-exe
+      - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::archive-root-launcher-exe
+      - id: metadata/build/archive::archive-setup-exe-member
+      - id: metadata/build/archive::archive-nonascii-exe-member
+      - id: metadata/file/naming::archive-hyphenated-setup-exe
+      - id: metadata/file/naming::archive-active-setup-exe
+
+  # Same wave, but the launcher is not named Setup.exe. App-local API-set
+  # stubs next to a PE inside a passworded archive are the sideload
+  # scaffolding; the encryption is why this is hostile rather than a
+  # portable UCRT layout.
+  - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::encrypted-apiset-sideload-bundle
+    desc: Encrypted archive deploys API-set stubs beside a PE
+    crit: hostile
+    conf: 0.95
+    attack: T1574.002,T1027
+    all:
+      - id: metadata/file/archive::archive-encrypted-member
+      - id: metadata/build/archive::archive-apiset-stub-member
+      - id: metadata/build/archive::archive-windows-executable-entry
+
+  # PHP .phpt files (and similar interpreter tests) have no business in an
+  # encrypted Windows installer tree. The tests are decoy padding so the
+  # listing looks like a development tree; encryption hides the real payload.
+  - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::encrypted-decoy-padded-sideload-bundle
+    desc: Encrypted archive pads a PE kit with interpreter tests
+    crit: hostile
+    conf: 0.95
+    attack: T1574.002,T1027
+    all:
+      - id: metadata/file/archive::archive-encrypted-member
+      - id: metadata/package/testing/presence/path::archive-phpt-test-member
+      - id: metadata/build/archive::archive-windows-executable-entry
+    unless:
+      - id: metadata/build/archive::php-distribution-member
+      - id: metadata/build/archive::archive-cargo-toml-entry
+
+  - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::encrypted-gdiplus-sideload-dll
+    desc: Encrypted archive deploys GdiPlus.dll
+    crit: hostile
+    conf: 0.94
+    attack: T1574.002,T1027
+    all:
+      - id: metadata/file/archive::archive-encrypted-member
+      - id: metadata/file/naming::archive-gdiplus-dll-member
+      - id: metadata/build/archive::archive-windows-executable-entry
+
+  - id: objectives/evasion/hijack-execution-flow/dll-hijacking/sideload::encrypted-textshaping-sideload-dll
+    desc: Encrypted archive deploys TextShaping.dll
+    crit: hostile
+    conf: 0.94
+    attack: T1574.002,T1027
+    all:
+      - id: metadata/file/archive::archive-encrypted-member
+      - id: metadata/file/naming::archive-textshaping-dll-member
+      - id: metadata/build/archive::archive-windows-executable-entry

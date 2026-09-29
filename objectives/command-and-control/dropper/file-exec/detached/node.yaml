@@ -1,0 +1,421 @@
+defaults:
+  platforms:
+  - windows
+  - unix
+  mbc: B0024
+  for:
+  - javascript
+  - typescript
+traits:
+- id: github-raw-batch-url
+  desc: GitHub raw batch payload URL
+  crit: suspicious
+  conf: 0.95
+  attack: T1105
+  for:
+  - javascript
+  if:
+    type: text
+    regex: github\.com/.{1,40}/.{1,60}/raw/refs/heads/.{1,40}/.{1,80}\.(bat|cmd)
+composite_rules:
+- id: js-charcode-encoded-program
+  desc: Embedded char-code program
+  crit: component
+  near_bytes: 16384
+  all:
+  - id: micro-behaviors/data/encode/char-code::long-numeric-array-literal
+  - id: micro-behaviors/data/encode/char-code::fromcharcode-call-text
+- id: js-encoded-node-self-respawn-loader
+  desc: Encoded JS loader respawns Node on a decoded program
+  crit: hostile
+  conf: 0.96
+  attack: T1027, T1059.007
+  mbc: B0032, E1027
+  near_bytes: 16384
+  all:
+  - id: micro-behaviors/process/create/spawn::process-execpath-spawn
+  any:
+  - id: js-charcode-encoded-program
+  - id: micro-behaviors/data/decode/base64::long-base64-blob-decode-pair
+  unless:
+  - id: metadata/build/
+  - id: metadata/package/testing/
+  - id: micro-behaviors/process/create/spawn::node-self-respawn
+- id: js-encoded-dynamic-require-loader
+  desc: JS loader requires modules by decoded name
+  crit: hostile
+  conf: 0.95
+  attack: T1027, T1105, T1059.007
+  mbc: B0032, E1027
+  near_bytes: 16384
+  all:
+  - id: objectives/anti-static/obfuscation/payload/encoded/carrier::js-encoded-require
+  any:
+  - id: micro-behaviors/data/encode/char-code::fromcharcode-call-text
+  - id: micro-behaviors/data/decode/base64::base64-decode-call-text
+  unless:
+  - id: metadata/build/
+  - id: metadata/package/testing/
+- id: js-obfuscated-native-module-loader
+  desc: Obfuscated JavaScript loads a native Node module
+  crit: hostile
+  conf: 0.97
+  attack: T1027,T1059.007,T1129
+  mbc: B0032,E1027
+  all:
+  - id: metadata/lang/javascript-features::js-obfuscator-while-loop
+  - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::parseint-decoder-loop
+  - id: metadata/file/literal::push-string-literal
+  - id: metadata/file/literal::bracketed-shift-string
+  - id: micro-behaviors/process/create/load/local::cjs-native-node-module-require
+  unless:
+  - id: metadata/build/
+  - id: metadata/package/testing/
+- id: npm-hook-node-self-respawn-loader
+  desc: Install hook self-respawns Node on a decoded program
+  crit: hostile
+  conf: 0.98
+  attack: T1059.007, T1027, T1195.002
+  mbc: B0032, F0011
+  for:
+  - package.json
+  all:
+  - id: objectives/supply-chain/install-hook/scripts/encoded-body::lifecycle-node-eval-charcode-program
+  - id: objectives/supply-chain/install-hook/scripts/encoded-body::manifest-node-execpath-respawn
+- id: temp-payload-staging
+  desc: Temporary payload staging write
+  crit: component
+  conf: 0.9
+  for:
+  - javascript
+  near_lines: 80
+  all:
+  - id: micro-behaviors/fs/temp/directory::os-tmpdir
+  any:
+  - id: micro-behaviors/fs/write/file/stream::create-write-stream
+  - id: micro-behaviors/fs/write/file/executable::node-write-file-executable-mode
+  - id: micro-behaviors/fs/chmod/modify::node-chmod
+- id: node-payload-retrieval-or-staging
+  desc: Node retrieval, staging or shell context
+  crit: component
+  conf: 0.9
+  for:
+  - javascript
+  any:
+  - id: temp-payload-staging
+  - id: micro-behaviors/process/create/subprocess::fetch-write-exec
+  - id: micro-behaviors/process/create/subprocess::fetch-write-exec-delete
+  - id: micro-behaviors/process/create/shell/bridge::js-ip-write-exec-profile
+  - id: github-raw-batch-url
+  - id: micro-behaviors/data/encode/embedded::pe-base64-blob
+  - id: metadata/file/encoded::gzip-base64-like-literal
+- id: node-dropper
+  desc: Node.js dropper spawning payload
+  crit: hostile
+  conf: 0.95
+  attack: T1059.007
+  near_lines: 128
+  for:
+  - javascript
+  near_bytes: 8192
+  all:
+  - id: micro-behaviors/process/create/spawn::process-execpath-spawn
+  - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+  - id: node-payload-retrieval-or-staging
+  unless:
+  - id: micro-behaviors/os/package-manager/runtime-install::node-runtime-install-helper-names
+  - id: micro-behaviors/process/create/spawn::node-lazy-daemon-spawn
+  - id: micro-behaviors/process/create/spawn::node-self-respawn
+  - id: metadata/package/testing/
+  - id: well-known/tool/development/toolchain/deno::source-archive-context
+- id: supply-chain-dropper
+  desc: Supply-chain attack dropper
+  crit: hostile
+  conf: 0.95
+  attack: T1195.002
+  for:
+  - javascript
+  near_bytes: 8192
+  all:
+  - id: micro-behaviors/process/create/shell/bridge::child-process-require
+  - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+  - id: node-payload-retrieval-or-staging
+  unless:
+  - id: micro-behaviors/os/package-manager/runtime-install::node-runtime-install-helper-names
+  - id: micro-behaviors/process/create/spawn::node-lazy-daemon-spawn
+  - id: micro-behaviors/process/create/spawn::node-self-respawn
+  - id: metadata/package/testing/
+  - id: well-known/tool/development/toolchain/deno::source-archive-context
+- id: node-embedded-native-stage-loader
+  desc: Reads an adjacent bundle, extracts executable, and launches detached
+  crit: hostile
+  conf: 0.98
+  attack: T1027, T1059.007, T1195.002
+  mbc: B0032, F0011
+  near_bytes: 2048
+  all:
+  - id: micro-behaviors/process/create/shell/bridge::child-process-require
+  - id: micro-behaviors/fs/read/file/target::read-adjacent-javascript-file
+  - id: micro-behaviors/fs/path/construct::local-script-path
+  - id: micro-behaviors/data/compress/zlib::node-zlib-import
+  - id: micro-behaviors/data/decompress/gzip::node-gunzip-function
+  - id: micro-behaviors/fs/temp/directory::os-tmpdir
+  - id: micro-behaviors/fs/write/file/full::node-write-file-sync
+  - id: micro-behaviors/fs/write/file/executable::node-write-file-executable-mode
+  - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+- id: node-import-time-fetched-executable
+  desc: Node import-time writes and detaches fetched executable
+  crit: hostile
+  conf: 0.99
+  attack: T1105,T1059.007,T1222.002,T1564.003
+  mbc: B0024,F0011
+  for:
+  - javascript
+  near_lines: 120
+  near_bytes: 8192
+  all:
+  - id: micro-behaviors/data/control-flow/module-exec::js-async-iife-import-hook
+  - id: micro-behaviors/process/create/shell/bridge::child-process-destructure-require
+  - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+  - id: micro-behaviors/communications/http/request/client::https-get
+  - id: micro-behaviors/communications/http/download/handler::node-http-response-to-file
+  - id: micro-behaviors/fs/chmod/executable/mode::node-chmod-make-executable
+  unless:
+  - id: metadata/package/testing/
+  - id: metadata/build/
+  - id: metadata/build/recognized-contexts::benign-app-fp-context
+- id: detached-node-stdin-remote-loader
+  desc: Detached Node executes fetched stdin payload
+  crit: hostile
+  conf: 0.98
+  attack: T1105, T1059.007, T1195.002
+  for:
+  - javascript
+  near_lines: 40
+  all:
+  - id: micro-behaviors/process/create/shell/bridge::child-process-require
+  - id: micro-behaviors/process/create/script/file::spawn-node-process
+  - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+  - id: micro-behaviors/communications/http/get::axios-get-call
+  - id: micro-behaviors/data/decode/base64::atob-decode
+  - id: micro-behaviors/process/fd/stdio::js-stdin-write
+  unless:
+  - id: metadata/package/testing/
+- id: remote-fetch-detached-python-stdin-loader
+  desc: Detached Python executes fetched stdin payload
+  crit: hostile
+  conf: 0.98
+  attack: T1105, T1059.003, T1195.002
+  for:
+  - javascript
+  near_lines: 50
+  all:
+  - id: micro-behaviors/process/create/shell/bridge::child-process-require
+  - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+  - id: micro-behaviors/communications/http/request/client::js-fetch-call
+  - id: micro-behaviors/process/fd/stdio::js-stdin-write
+  - id: micro-behaviors/process/create/shell/interpreter::node-spawn-python-interpreter
+  unless:
+  - id: metadata/package/testing/
+- id: node-detached-sibling-stage-spawn
+  desc: Node detached sibling spawn with payload staging or retrieval
+  crit: hostile
+  conf: 0.9
+  attack: T1059.007
+  for:
+  - javascript
+  near_lines: 60
+  all:
+  - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+  - id: micro-behaviors/fs/path/construct::local-script-path
+  - id: node-payload-retrieval-or-staging
+  any:
+  - id: micro-behaviors/process/create/shell/bridge::child-process-require
+  - id: micro-behaviors/process/create/shell/bridge::child-process-destructure-require
+  unless:
+  - id: micro-behaviors/process/create/spawn::node-lazy-daemon-spawn
+  - id: metadata/package/testing/
+  - id: micro-behaviors/os/console/control::chcp-65001-command
+- id: node-stealth-java-sidecar
+  desc: Hidden Node launches Java sidecar
+  crit: hostile
+  conf: 0.96
+  attack: T1059.007
+  for:
+  - javascript
+  near_bytes: 8192
+  all:
+  - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+  - id: micro-behaviors/process/create/spawn::node-jar-launch-argument
+  any:
+  - id: micro-behaviors/process/create/spawn::node-java-process-target
+  - id: micro-behaviors/fs/path/extension::exe-name-or-extension
+  - id: micro-behaviors/fs/path/application/bundle::electron-asar-path
+  unless:
+  - id: metadata/package/testing/
+- id: embedded-pe-stealth-dropper
+  desc: Embedded PE dropped and run detached
+  crit: hostile
+  conf: 0.99
+  attack: T1105
+  for:
+  - javascript
+  all:
+  - id: micro-behaviors/data/encode/embedded::pe-base64-blob
+  - id: micro-behaviors/fs/write/file/full::write-file-sync
+  - id: micro-behaviors/fs/chmod/modify::node-chmod
+  - id: micro-behaviors/fs/temp/directory::os-tmpdir
+  - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+  - id: micro-behaviors/fs/path/extension::exe-name-or-extension
+- id: hidden-native-download-exec
+  desc: Compact hidden native download-and-execute chain
+  crit: hostile
+  conf: 0.96
+  attack: T1105
+  near_lines: 128
+  near_bytes: 8192
+  all:
+  - id: micro-behaviors/communications/http/download/handler::node-http-stream-to-file
+  - id: micro-behaviors/process/create/system::js-execfile-call
+  - id: micro-behaviors/process/create/spawn::windowshide-option
+  any:
+  - id: micro-behaviors/data/encode/xor::js-xor-decoder-ast
+  - id: objectives/command-and-control/dropper/node-bootstrap::base64-buffer
+  unless:
+  - id: metadata/package/testing/
+  - id: metadata/build/bundler/runtime::js-webpack-bundle
+- id: github-temp-shell-stager
+  desc: GitHub temp shell stager with detached exec
+  crit: hostile
+  conf: 0.98
+  attack: T1195.002
+  for:
+  - javascript
+  all:
+  - id: micro-behaviors/process/create/shell/bridge::child-process-require
+  - id: micro-behaviors/process/create/spawn::detached-true
+  - id: micro-behaviors/process/create/spawn::stdio-ignore
+  - id: micro-behaviors/fs/chmod/executable/mode::node-chmod-make-executable
+  - id: micro-behaviors/fs/path/temp::temp-var-tmp
+  - id: micro-behaviors/communications/http/download/github::github-raw-mutable-fetch
+  any:
+  - id: micro-behaviors/communications/http/download/github::github-raw-curl-fetch
+  - id: micro-behaviors/communications/http/url/github::raw-githubusercontent-script-file
+- id: node-detached-remote-shell-loader
+  desc: Detached spawn runs curl-piped-to-shell loader
+  crit: hostile
+  conf: 0.95
+  attack: T1059.004,T1059.007,T1105,T1195.002
+  mbc: B0024,F0011
+  near_bytes: 6144
+  all:
+  - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+  - id: micro-behaviors/process/create/shell/pipeline::curl-pipe-shell-text
+  unless:
+  - id: well-known/app/ai/coding-agent/qwen-code::qwen-code-bundle-text
+  - id: well-known/app/system/vellum::cli-package-context
+  - id: well-known/tool/development/ci/github-actions/setup-docker-action/
+  - id: well-known/app/ai/tool-server/composio::composio-install-url
+- id: node-detached-remote-javascript-stage
+  desc: Detached Node child evaluates fetched JavaScript
+  crit: hostile
+  conf: 0.99
+  attack: T1059.007,T1105,T1195.002
+  near_lines: 40
+  all:
+  - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+  - id: micro-behaviors/process/create/inline-script::node-inline-script-remote-fetch
+  - id: micro-behaviors/process/create/inline-script::node-inline-script-eval-sink
+- id: decrypt-to-detached-node-stdin
+  desc: Cipher decrypt feeds detached Node via stdin
+  crit: hostile
+  conf: 0.97
+  attack: T1059.007, T1027, T1195.002
+  for:
+  - javascript
+  near_lines: 128
+  all:
+  - id: micro-behaviors/crypto/symmetric/decrypt::cryptojs-block-cipher-decrypt-text
+  - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+  - id: micro-behaviors/process/fd/stdio::js-stdin-write
+  any:
+  - id: micro-behaviors/process/create/script/file::spawn-node-process
+  - id: micro-behaviors/process/create/spawn::node-interpreter-target
+  unless:
+  - id: metadata/package/testing/
+- id: obfuscated-concealed-process-import-spawn
+  desc: Obfuscated code hides child_process and spawns
+  crit: hostile
+  conf: 0.95
+  attack: T1027, T1059.007
+  mbc: B0032, F0011
+  all:
+  - id: micro-behaviors/os/module/dynamic-load::node-split-literal-require
+  - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::push-shift-bracket-pattern
+  any:
+  - id: micro-behaviors/process/create/spawn::stdio-ignore
+  - id: micro-behaviors/process/create/minified-spawn::windowshide-bang-true
+  - id: micro-behaviors/process/create/shell/bridge::js-spawnsync
+  unless:
+  - id: metadata/build/
+  - id: metadata/package/testing/
+- id: decrypt-write-dynamic-require-stealth-spawn
+  desc: Decrypts to disk then dynamically requires spawn for a hidden child
+  crit: hostile
+  conf: 0.96
+  attack: T1195.002,T1027.013,T1059.007,T1106
+  mbc: B0024, F0011
+  all:
+  - id: micro-behaviors/crypto/symmetric/aes/runtime-library::createDecipheriv
+  - id: micro-behaviors/fs/write/file/full::node-write-file-sync-call
+  - id: micro-behaviors/os/module/dynamic-load::node-variable-require-call
+  - id: micro-behaviors/process/create/minified-spawn::detached-bang-true
+  - id: micro-behaviors/process/create/minified-spawn::windowshide-bang-true
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/package/testing/presence/fixture::test-filename-pattern
+- id: js-fetch-drop-hidden-detached-launch
+  desc: Runs a downloaded file hidden and detached
+  crit: hostile
+  conf: 0.95
+  attack: T1105,T1059.007,T1564.003
+  mbc: B0024, F0011
+  all:
+  - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+  - id: micro-behaviors/fs/write/file/full::node-write-file-promise-destructured
+  - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+  - id: micro-behaviors/process/create/spawn::windowshide-option
+  unless:
+  - id: metadata/build/
+  - id: metadata/package/testing/
+- id: node-windows-wsh-persistence-remote-dropper
+  desc: Node Windows dropper fetches remote payload with logon persistence
+  crit: hostile
+  conf: 0.98
+  attack: T1105,T1059.005,T1059.007,T1547.001
+  mbc: B0024, F0011
+  platforms:
+  - windows
+  scope: file
+  all:
+  - id: micro-behaviors/communications/http/request/client::node-http-client-scheme-selection
+  - id: micro-behaviors/fs/write/file/full::node-write-sync-buffer
+  - id: objectives/persistence/login/startup/registry::logon-script-registry
+  - id: objectives/persistence/login/startup/shortcut::startup-shortcut-persistence
+  - id: objectives/evasion/self-delete/file/script::js-conditional-file-cleanup
+  - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+- id: xor-reconstructed-detached-spawn
+  desc: XOR-reconstructed payload spawns detached child
+  crit: hostile
+  conf: 0.96
+  attack: T1027,T1059
+  all:
+  - id: objectives/anti-static/obfuscation/string/reconstruct::js-xor-numeric-array-string-reconstruction
+  - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+- id: node-detached-hidden-spawn
+  desc: Node child spawned detached, silent and windowless
+  crit: notable
+  conf: 0.98
+  all:
+  - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
+  - id: micro-behaviors/process/create/spawn::windowshide-option

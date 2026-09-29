@@ -1,0 +1,61 @@
+# Executable bytes stowed inside an asset file and run from a byte offset.
+# A real WOFF2/TTF renders as a font; appending code past its table directory
+# leaves the font valid while carrying a payload. The loader reads the file
+# and evals a slice of it (`readFileSync('fa.woff2').subarray(94512)`), so the
+# font is never named as a script and the payload never sits in a source file.
+# Reading a font/opaque-asset file and executing part of its bytes has no
+# non-adversarial explanation, so the read+slice and the eval together are a
+# hostile conclusion.
+defaults:
+  platforms: [windows, linux, macos]
+  for: [javascript, typescript, json]
+  attack: T1027.009
+  mbc: F0015
+
+traits:
+  # A file read whose path is a font or opaque-asset suffix. Alone it is only
+  # notable -- a loader could legitimately read a `.dat` resource.
+  - id: reads-asset-file
+    desc: Reads a font or opaque-asset file
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: 'readFile(Sync)?\s*\(\s*[''"`][^''"`]{0,70}\.(woff2?|[ot]tf|eot|llf|dat|bin)[''"`]'
+      case_insensitive: true
+
+  # A byte slice taken from an asset-file read: the tell that the bytes past a
+  # real offset, not the file as a whole, are what gets used.
+  - id: slices-asset-file-bytes
+    desc: Slices bytes from an asset-file read
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: 'readFile(Sync)?\([^;\n]{0,50}\.(woff2?|[ot]tf|eot|llf)[''"`]\)\s{0,20}\.(subarray|slice)\('
+      case_insensitive: true
+
+  # A dynamic-execution sink as text, so the composite fires on a `node -e`
+  # payload carried inside a JSON task string as well as in JS source, where
+  # the AST-backed eval atoms would apply.
+  - id: dynamic-exec-sink-text
+    desc: eval or Function dynamic-execution sink
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: '\b(eval|(new\s+)?Function)\s*\('
+
+composite_rules:
+  # The slice of asset bytes is handed to a dynamic-execution sink. Same file,
+  # and near each other, so the read and the eval are one expression, not two
+  # unrelated facts.
+  - id: asset-file-stowaway-executed
+    desc: Executes bytes sliced from an asset file
+    crit: hostile
+    conf: 0.97
+    attack: T1027.009,T1059.007
+    near_bytes: 200
+    all:
+      - id: slices-asset-file-bytes
+      - id: dynamic-exec-sink-text

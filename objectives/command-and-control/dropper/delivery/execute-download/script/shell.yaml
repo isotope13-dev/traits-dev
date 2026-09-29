@@ -1,0 +1,132 @@
+defaults:
+  attack: T1105
+  mbc: B0024
+  platforms:
+    - unix
+    - windows
+  for:
+    - shell
+traits:
+  - id: wget-tar-nohup-chain
+    desc: 'wget tar nohup chain'
+    crit: suspicious
+    conf: 0.85
+    if:
+      type: string_literal
+      regex: (wget|curl).{1,200}&&\s*tar.{1,50}&&\s*cd.{1,50}&&\s*nohup
+  - id: wget-chmod-nohup-chain
+    desc: 'Downloads, makes EXE, and background executes'
+    crit: suspicious
+    conf: 0.85
+    if:
+      type: string_literal
+      regex: (wget|curl).{1,200}&&\s*chmod\s+\+x.{1,50}&&\s*nohup
+  - id: adb-argument-local-payload
+    desc: local variable launched with adb tag
+    crit: suspicious
+    conf: 0.9
+    attack: T1059.004
+    if:
+      type: text
+      regex: '\./\$[A-Za-z_][A-Za-z0-9_]*\s+adb\.\$[A-Za-z_][A-Za-z0-9_]*'
+  - id: temp-nonscript-shell-launch
+    desc: Temp non-script shell launch
+    crit: suspicious
+    conf: 0.94
+    attack: T1036.007,T1059.004
+    if:
+      type: text
+      regex: '(?m)^\s*(/usr/bin/)?(ba)?sh\b\s+/(var/)?tmp/[A-Za-z0-9_.-]+\.(gif|pdf|xml)\b'
+composite_rules:
+  - id: android-raw-ip-apk-redirect-stager
+    desc: Android shell redirects raw-IP download into an APK install
+    crit: hostile
+    conf: 0.99
+    attack: "T1105, T1059.004"
+    platforms: [unix, android]
+    all:
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-shell-endpoint
+      - id: micro-behaviors/communications/socket/netcat::wrapped-nc
+      - id: micro-behaviors/fs/write/file/redirect::shell-output-redirect-to-data
+      - id: micro-behaviors/os/package-manager/sideload::android-shell-package-install
+  - id: android-raw-ip-apk-stager
+    desc: Android shell streams raw-IP APK into temp storage
+    crit: hostile
+    conf: 0.99
+    attack: "T1105, T1059.004"
+    platforms: [unix, android]
+    all:
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-shell-endpoint
+      - id: micro-behaviors/communications/socket/netcat::wrapped-nc
+      - id: micro-behaviors/fs/write/file/shell::android-dd-apk-temp-output
+      - id: micro-behaviors/fs/path/temp::android-local-tmp-path
+  - id: raw-ip-shell-source
+    desc: Shell names an external IPv4 payload source
+    crit: component
+    conf: 0.9
+    any:
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-shell-endpoint
+      - id: micro-behaviors/communications/ip/literal::external-ipv4-shell-assignment
+  - id: agent-skill-passworded-download-fetch-shell
+    desc: Skill instructs passworded download and fetch shell
+    crit: hostile
+    conf: 0.97
+    attack: T1204.002,T1059.004
+    for: [markdown]
+    all:
+      - id: objectives/supply-chain/trojanized/app/agent-skill::skill-instructs-passworded-binary-download
+      - id: micro-behaviors/process/create/shell/command-mode::shell-c-command-substitution-fetch
+
+  - id: agent-skill-release-exe-fetch-shell
+    desc: Skill release-exe instruction with fetch shell
+    crit: hostile
+    conf: 0.97
+    for: [markdown]
+    all:
+      - id: metadata/package/agent-skill::agent-skill-frontmatter
+      - id: micro-behaviors/communications/url/external/github::github-release-executable-download
+      - id: micro-behaviors/process/create/shell/command-mode::shell-c-command-substitution-fetch
+
+  - id: agent-skill-masked-installer-ip-fetch
+    desc: Masked installer resolves raw-IP payload host
+    crit: hostile
+    conf: 0.97
+    for: [shell, markdown, text]
+    all:
+      - id: objectives/supply-chain/trojanized/app/agent-skill::skill-decoy-echo-masked-installer
+      - id: micro-behaviors/communications/ip/literal::http-ip-url
+    unless:
+      - id: metadata/package/testing/harness/unit::javascript-vitest-unit-test-context
+
+  # Unlike the two composites above, neither leg here is attack-shaped on its
+  # own: a GitHub release-asset URL plus "a curl command names a URL" is what
+  # every project's own install documentation looks like. The skill frontmatter
+  # is what makes this an *agent* instruction rather than a README -- a
+  # SKILL.md steering an agent to curl down a release binary is the delivery
+  # step; a maintainer documenting `curl -fLO
+  # https://github.com/<own-repo>/releases/download/$RELEASE/<app>.zip` is not.
+  # Observed on slskdN's docs/self-hosted-relay-tester-guide.md and its
+  # memory-bank changelogs, which record the project's own release URLs and
+  # dozens of unrelated `curl` invocations.
+  - id: agent-skill-release-exe-curl-command
+    desc: Skill release executable fetched via curl command
+    crit: hostile
+    conf: 0.96
+    for: [markdown]
+    all:
+      - id: metadata/package/agent-skill::agent-skill-frontmatter
+      - id: micro-behaviors/communications/url/external/github::github-release-executable-download
+      - id: micro-behaviors/communications/http/curl::curl-command-remote-url
+
+# An encoded PowerShell stage fetched from free-webhost space. The
+# encoded-command rules convict the obfuscation; this states the
+# infrastructure choice -- a dropper that both encodes its commands and
+# hosts its payload on disposable free webhosting has chosen to be
+# unattributable twice.
+  - id: encoded-powershell-webhost-payload
+    desc: Encoded PowerShell stage on free webhost
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: micro-behaviors/process/create/hidden::encodedcommand-invocation-raw
+      - id: objectives/command-and-control/infrastructure/domain/hosting::webhostapp-domain

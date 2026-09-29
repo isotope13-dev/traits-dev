@@ -2,14 +2,18 @@
 
 ## Current finding
 
-The refreshed 2026-09-28 audit measures
-`objectives/supply-chain/hidden-payload/runtime` at **188 rules** (52 atomic,
-136 composite) across 35 files, 88 over the inclusive 100-rule cap. The leaf is
-not a coherent technique group: its rules include remote loaders and staged
-execution, command shells and proxy control, host-data exfiltration, package
-entrypoint facts, and obfuscation evidence. `runtime` describes when behavior
-occurs, not how a payload is concealed from package inspection or a distribution
-trust boundary.
+The refreshed 2026-09-29 audit measures
+`objectives/supply-chain/hidden-payload/runtime` at **94 rules** after the
+first evidence-led routing pass, below the inclusive 100-rule cap. The
+remaining leaf is a compatibility holding area for package-specific
+concealment cases without a more precise mechanism boundary. Remote loader
+cohorts now live in `hidden-payload/remote-loader` (28 rules); native runtime
+replacement and extension cohorts live in `hidden-payload/native-extension`
+(21 rules) and automatically installed remote extensions live in
+`hidden-payload/extensions/remote-code` (13 rules). Obfuscator-package
+evidence moved to `anti-static/obfuscation/obfuscator-supply-chain` (33
+rules), and telemetry composites moved to
+`exfiltration/stealer/message` and `exfiltration/stealer/system-info/profile`.
 
 Its sibling leaves are also over cap: `exec` has 114 rules, `staging` has 123,
 and `package` has 132. These sibling counts make a mechanical move into a
@@ -63,17 +67,11 @@ IDs now point to `webshell/exec`.
 
 ## Remaining review
 
-The runtime leaf still has 188 rules and remains over cap. These dispositions
-do not authorize routing the remaining rules by filename. The
-next pass must classify every atomic and composite rule by its required
-evidence, identify identical or overlapping matchers, record all consumers,
-and measure proposed destinations before relocation. In particular, mixed
-files such as the retained `npm-entrypoint-temp-response-loader`,
-`node-runtime-loader-chain.yaml`, `node-agent-telemetry.yaml`, and
-`obfuscator-trojan.yaml` need rule-by-rule disposition; their entries do not
-all share one result. The temp-response rule requires download, file-write,
-shell-exec, deletion, and a package entrypoint but has no explicit link between
-the written response and the execution sink; do not call it a dropper until
-that gap is resolved. Keep the broader
-runtime-leaf cap finding open until the full manifest and destination audit
-supports a defensible split.
+The runtime leaf is now within cap, but the audit remains open for semantic
+cleanup. `npm-entrypoint-temp-response-loader` still requires an explicit
+binding between the written response and the execution sink before it can be
+called a dropper. `python-remote-pyz-detached-stage` has an explicit
+download-to-detached-execution chain but needs a destination-capacity check
+before moving into the dropper tree. Remaining files should be reviewed by
+required evidence rather than filename, and any identical matcher bodies
+should be merged or reduced to one atomic fact plus scoped composite context.

@@ -1,0 +1,90 @@
+# Node install hooks that collect local state and send it over HTTP.
+# The hook requirement keeps ordinary telemetry in runtime libraries out of
+# this objective; the combined collection and transport pattern is the signal.
+defaults:
+  platforms: [windows, linux]
+  for: [javascript, typescript, tar, zip]
+  attack: T1195.002,T1041,T1082,T1552.005
+  mbc: E1041
+
+composite_rules:
+  # The seven collection/transport legs describe ONE script: it shells out,
+  # reads the environment, and writes a JSON body to an HTTP request. Kept at
+  # package scope they were satisfiable by seven unrelated files, so any large
+  # JS monorepo that also happens to declare a preinstall hook read as a
+  # profiling installer -- openclaw (8550 files, an AI gateway whose preinstall
+  # only prints a "use pnpm" warning) matched all seven from seven different
+  # files. Co-locating them in one leaf file is what the description claims.
+  - id: node-host-profile-http-post-file
+    desc: Script shells out, reads env, and posts a JSON body
+    crit: suspicious
+    conf: 0.9
+    for: [javascript, typescript]
+    scope: file
+    all:
+      - id: metadata/import/builtin::require-child-process
+      - id: micro-behaviors/process/create/shell/bridge::execSync-call
+      - id: micro-behaviors/os/env/read::node-process-env-object-field
+      - id: micro-behaviors/communications/http/request/client::http-request
+      - id: micro-behaviors/communications/http/request/body::request-write-call
+      - id: micro-behaviors/communications/http/request/body::request-end-call
+      - id: micro-behaviors/data/serialize/json::json-stringify-call
+  - id: npm-preinstall-profile-http-post
+    desc: npm preinstall profiles host and posts data
+    crit: hostile
+    conf: 0.99
+    for: [npm, tar, zip, pe, deb, asar, javascript, csharp, manifests]
+    # The claim is about one package's install hook, so it must be evaluated
+    # per package root. Under `scope: archive` a source tree that vendors many
+    # independent npm fixtures -- Deno ships ~1000 under tests/registry/npm --
+    # satisfies the legs from unrelated files and reads as a single profiling
+    # installer.
+    scope: package
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/local-script::preinstall-runs-node-local-script
+      - id: node-host-profile-http-post-file
+    unless:
+      - id: well-known/tool/development/toolchain/deno::source-archive-context
+      - id: well-known/lib/runtime/scripted/electron::electron-app-bundle-exception
+      - id: well-known/tool/development/game-engine/unity-hub::official-package-context
+  - id: npm-postinstall-ip-beacon
+    desc: npm postinstall sends an HTTP callback to a public IP
+    crit: hostile
+    conf: 0.99
+    attack: "T1195.002,T1041"
+    for: [npm, tar, zip, package.json, javascript]
+    scope: archive
+    all:
+      - id: objectives/supply-chain/install-hook/package/manifest::postinstall-runs-node-script
+      - id: objectives/supply-chain/install-hook/scripts/local-script::postinstall-hook-script-http-ip-callback-file
+    unless:
+      - id: well-known/app/ai/knowledge/lean-ctx::source-tree-path
+  - id: npm-preinstall-local-script-profile-get-beacon
+    desc: npm preinstall sidecar GET beacons host profile
+    crit: hostile
+    conf: 0.99
+    attack: "T1195.002,T1041,T1082"
+    for: [npm, tar, zip, javascript, package.json]
+    scope: archive
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/local-script::preinstall-runs-node-local-script
+      - id: objectives/discovery/system/fingerprint/user::small-node-host-user-query
+      - id: micro-behaviors/communications/http/request/dynamic::node-scheme-selected-http-get
+    any:
+      - id: micro-behaviors/data/control-flow/error-handling::silent-error-handler
+      - id: micro-behaviors/communications/ip/literal::http-ip-url
+  - id: postinstall-script-credential-exfil
+    desc: Postinstall script harvests credentials and posts over HTTP
+    crit: hostile
+    conf: 0.98
+    attack: "T1195.002,T1552,T1041"
+    for: [javascript, typescript]
+    scope: file
+    all:
+      - id: objectives/supply-chain/install-hook/scripts/local-script::lifecycle-hook-js-file
+      - id: node-host-profile-http-post-file
+    any:
+      - id: objectives/credential-access/theft/multi-store::multi-store-credential-targeting
+      - id: objectives/credential-access/env/secrets/npm-registry::npmrc-access
+      - id: objectives/credential-access/theft/multi-store::ssh-store-target
+      - id: objectives/credential-access/theft/multi-store::browser-store-target

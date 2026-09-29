@@ -1,0 +1,129 @@
+# Moved to the canonical RAT mechanism leaf.
+defaults:
+  for:
+    - ruby
+  platforms:
+    - unix
+    - windows
+traits:
+  - id: rsa-public-key
+    desc: RSA public key embedded
+    crit: notable
+    conf: 0.85
+    attack: T1059
+    if:
+      type: string_literal
+      regex: 'BEGIN (RSA )?PUBLIC KEY'
+    unless:
+      - id: metadata/package/testing/presence/harness::ruby-test-file
+      - id: metadata/package/testing/presence/harness::ruby-spec-file
+
+  - id: cookie-session-extract
+    desc: Cookie session extraction
+    crit: suspicious
+    conf: 0.8
+    attack: T1190
+    if:
+      type: string_literal
+      regex: __session|HTTP_COOKIE.{0,50}match
+    unless:
+      - id: well-known/lib/runtime/scripted/cruby::source-tree
+      - id: well-known/lib/runtime/scripted/jruby::runtime-context
+      - id: metadata/package/testing/presence/harness::ruby-test-file
+      - id: metadata/package/testing/presence/harness::ruby-spec-file
+  - id: timestamp-validation
+    desc: Timestamp validation check
+    crit: component
+    conf: 0.75
+    attack: T1070
+    if:
+      type: string_literal
+      regex: Time\.now|timestamp|to_i
+  - id: faraday-http
+    desc: Faraday HTTP client
+    crit: suspicious
+    conf: 0.7
+    attack: T1071
+    if:
+      type: string_literal
+      regex: Faraday\.(post|get|request)
+  - id: remote-code-download
+    desc: Download code from remote URL
+    crit: suspicious
+    conf: 0.9
+    attack: T1059
+    unless:
+      - id: metadata/package/testing/presence/harness::ruby-test-file
+      - type: text
+        regex: 'spec\.metadata\["(source_code_uri|changelog_uri|homepage_uri)"\]'
+    if:
+      type: string_literal
+      regex: 'open\(.{0,80}https?.{0,80}\)\.read|URI\.open\(.{0,80}https?.{0,80}\)\.read'
+composite_rules:
+  - id: signed-cookie-backdoor
+    desc: Signed cookie backdoor with RSA verification
+    crit: suspicious
+    conf: 0.95
+    attack: T1059
+    needs: 4
+    any:
+      - id: rsa-public-key
+      - id: cookie-session-extract
+      - id: micro-behaviors/crypto/certificate/usage::signature-verify
+      - id: micro-behaviors/data/serialize/json::ruby-json-parse-call
+      - id: timestamp-validation
+      - id: well-known/lib/web/rack::rack-library
+  - id: remote-code-execution
+    desc: Remote code execution via download
+    crit: suspicious
+    conf: 0.94
+    attack: T1059
+    needs: 4
+    any:
+      - id: micro-behaviors/process/create/thread::ruby-thread-new
+      - id: micro-behaviors/time/sleep/interval::ruby-sleep-call
+      - id: remote-code-download
+      - id: micro-behaviors/os/env/check::rails-env-reference
+      - id: micro-behaviors/process/interpreter/eval/direct::ruby-eval
+  - id: remote-eval-backdoor
+    desc: Eval of code downloaded from a URL (backdoor)
+    crit: hostile
+    conf: 0.96
+    attack: T1059
+    # `eval(open('http…').read)` is the rest-client/strong_password-style
+    # supply-chain backdoor: runtime eval of code fetched from a URL has no
+    # legitimate use. The anchor is the download-and-eval primitive; a second
+    # leg (background-thread persistence, a production-env gate, or an explicit
+    # remote-code-download string) confirms a deliberate planted backdoor.
+    all:
+      - id: objectives/execution/interpreter/eval/remote::eval-remote-fetch
+    any:
+      - id: micro-behaviors/process/create/thread::ruby-thread-new
+      - id: micro-behaviors/os/env/check::rails-env-reference
+      - id: remote-code-download
+
+  # The complete remote-command backdoor: a signed instruction arrives in a
+  # request cookie, the middleware chain verifies it against an embedded
+  # public key, and the verified payload is eval'd inside the application.
+  #
+  # The rest-client 1.6.13 hijack (2019) prepended a module onto
+  # `Rack::Sendfile#call` so every HTTP request passed through it, read
+  # `__session` from the cookie header, checked an RSA signature and a
+  # 60-second timestamp, then evaluated the operator's Ruby. Signing the
+  # commands is what makes it durable: nobody who finds the backdoor can use
+  # it, and the traffic looks like an ordinary session cookie.
+  #
+  # Each half is already suspicious on its own. Together -- request-derived
+  # code reaching eval through a middleware hook that verifies a signature --
+  # there is no reading in which this is a feature.
+  - id: signed-request-command-eval-backdoor
+    desc: Signed request payload evaluated in middleware
+    crit: hostile
+    conf: 0.97
+    attack: T1059.006,T1505.003
+    all:
+      - id: signed-cookie-backdoor
+      - id: objectives/command-and-control/backdoor/webshell/intercept::cookie-code-injection
+    any:
+      - id: objectives/credential-access/capture/input::auth-hook-ruby
+      - id: cookie-session-extract

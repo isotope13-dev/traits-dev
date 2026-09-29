@@ -1,0 +1,112 @@
+# Published packages should not ship repository credentials or make their
+# public API conditional on a mutable, publisher-controlled user list.
+defaults:
+  platforms: [unix, windows]
+  attack: T1195.002
+
+traits:
+  - id: objectives/supply-chain/trojanized/package/access::npm-git-url-embedded-prefixed-github-token
+    desc: npm Git URL exposes GitHub access token
+    crit: suspicious
+    conf: 0.99
+    for: [package.json]
+    if:
+      type: value
+      path: dependencies.*
+      regex: '^git\+https://gh[pousr]_[A-Za-z0-9]{20,255}@github\.com/'
+
+  - id: objectives/supply-chain/trojanized/package/access::npm-git-url-embedded-fine-grained-github-token
+    desc: npm Git URL exposes fine-grained token
+    crit: suspicious
+    conf: 0.99
+    for: [package.json]
+    if:
+      type: value
+      path: dependencies.*
+      regex: '^git\+https://github_pat_[A-Za-z0-9_]{30,255}@github\.com/'
+
+  - id: objectives/supply-chain/trojanized/package/access::login-calls-remote-authorization-check
+    desc: Login awaits remote authorization
+    crit: notable
+    conf: 0.95
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'login\s*\([^)]{0,80}\)[\s\S]{0,600}await\s+this\._verifyAuthorization\s*\('
+
+  - id: objectives/supply-chain/trojanized/package/access::remote-active-username-membership-test
+    desc: Remote data gates active username
+    crit: notable
+    conf: 0.96
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\.username\s*===\s*username\s*&&\s*[A-Za-z_$][A-Za-z0-9_$]*\.active'
+
+  # The "mother key" spelling of the same gate: a custom `x-*-key` header
+  # whose value explicitly falls back to an operator-named secret constant
+  # shipped in the package. Requiring the fallback expression separates this
+  # from ordinary vendor API headers such as `x-goog-api-key`.
+  - id: objectives/supply-chain/trojanized/package/access::custom-operator-key-header
+    desc: Custom x-key header uses operator fallback
+    crit: notable
+    conf: 0.94
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '(?i)x-[\w-]+-key.{0,60}\|\|\s*DEFAULT_(MOTHER|MASTER|OPERATOR|OWNER)_KEY'
+
+  - id: objectives/supply-chain/trojanized/package/access::hardcoded-operator-secret-constant
+    desc: Hardcoded operator key constant
+    crit: notable
+    conf: 0.94
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '(DEFAULT_)?(MOTHER|MASTER|OPERATOR|OWNER)_KEY\s*=\s*["''][^"'']{8,}'
+      case_insensitive: true
+
+composite_rules:
+  - id: objectives/supply-chain/trojanized/package/access::public-npm-credentialed-git-dependency
+    desc: Public npm package embeds a GitHub token in a runtime dependency
+    crit: hostile
+    conf: 0.995
+    for: [package.json]
+    all:
+      - id: objectives/supply-chain/trojanized/package/access::npm-git-url-embedded-prefixed-github-token
+      - id: metadata/package/publishing::npm-public-publish-access
+
+  - id: objectives/supply-chain/trojanized/package/access::remote-github-user-list-gates-library-login
+    desc: Remote GitHub user list gates library login
+    crit: hostile
+    conf: 0.99
+    for: [javascript, typescript]
+    near_lines: 340
+    all:
+      - id: objectives/supply-chain/trojanized/package/access::login-calls-remote-authorization-check
+      - id: micro-behaviors/communications/http/services/github::github-contents-api-endpoint
+      - id: objectives/supply-chain/trojanized/package/access::remote-active-username-membership-test
+
+  # "Hosted mode": the deployed bot authenticates to the operator's web
+  # service with an embedded key before loading, and the same channel hands
+  # out owner control ("total-hijack"). Whoever runs the endpoint -- and
+  # whoever extracts the shipped key -- can grant themselves owner access to
+  # every installation; the gate is the backdoor.
+  #
+  # Worked example: the `@depro-tech/cortana-md` releases, whose obfuscated
+  # `src/hosted-mode.js` sends `x-cortana-key: config.motherKey ||
+  # DEFAULT_MOTHER_KEY ('cortana-hosted-2024-secret')` to the operator's
+  # check-auth endpoint before the bot starts.
+  - id: objectives/supply-chain/trojanized/package/access::hosted-bot-remote-auth-gate
+    desc: Package gates its operation on an operator key
+    crit: hostile
+    conf: 0.95
+    attack: T1195.002,T1090
+    for: [javascript, typescript]
+    all:
+      - id: objectives/supply-chain/trojanized/package/access::custom-operator-key-header
+      - id: objectives/supply-chain/trojanized/package/access::hardcoded-operator-secret-constant
+    any:
+      - id: micro-behaviors/communications/http/request/json::fetch-json-body
+      - id: micro-behaviors/communications/http/request/client::js-fetch-call
+      - id: micro-behaviors/communications/http/request/client::http-client

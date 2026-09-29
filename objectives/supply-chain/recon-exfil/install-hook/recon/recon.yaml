@@ -1,0 +1,361 @@
+defaults:
+  platforms: [unix, windows]
+# NPM Recon and Exfiltration Patterns
+# High-confidence malicious patterns combining info gathering and exfil
+traits:
+- id: js-hostname-pwd-whoami-chain
+  desc: JS contains hostname pwd whoami chain
+  crit: suspicious
+  conf: 0.97
+  attack: T1082
+  for: [javascript]
+  if:
+    type: text
+    regex: 'hostname\s*;\s*pwd\s*;\s*whoami'
+- id: js-host-profile-command-sequence
+  desc: JS sequences host profile commands
+  crit: suspicious
+  conf: 0.96
+  attack: T1082
+  for: [javascript]
+  if:
+    type: text
+    regex: 'hostname.{0,80}pwd.{0,80}whoami'
+    not:
+      - regex: 'hostname["'']\s*:\s*case'
+      - regex: 'case["'']hostname["'']'
+- id: js-nslookup-exec
+  desc: JS exec invokes nslookup for DNS exfil
+  crit: suspicious
+  conf: 0.95
+  attack: T1048.003
+  for: [javascript]
+  if:
+    type: text
+    regex: '(?is)\bexec(Sync)?\s*\([^)]{0,500}nslookup\s+\$\{'
+
+- id: js-curl-ifconfig-me
+  desc: JavaScript source queries public-IP service
+  crit: suspicious
+  conf: 0.95
+  attack: T1016
+  for: [javascript]
+  if:
+    type: text
+    regex: 'curl\s+https://ifconfig\.me'
+- id: js-http-query-exfil
+  desc: Shell exec sends a variable with curl
+  crit: suspicious
+  conf: 0.97
+  attack: T1041
+  for: [javascript]
+  if:
+    # Require a real exec/execSync call.  A text rule also matches harmless
+    # curl examples in comments and documentation strings.
+    type: tree-sitter
+    kind: call
+    regex: '(?is)\bexec(Sync)?\s*\(.{0,400}curl.{0,200}\?\w+=\w*\$\w+'
+
+- id: js-xxd-nslookup-loop
+  desc: JS exec hex chunks into nslookup loop
+  crit: suspicious
+  conf: 0.98
+  attack: T1048.003
+  for: [javascript]
+  if:
+    type: text
+    regex: 'xxd\s+-p.{0,40}\|\s*while\s+read\s+\w+;do\s+nslookup'
+
+- id: js-nslookup-oast-site
+  desc: JS exec nslookup sends data to oast.site
+  crit: suspicious
+  conf: 0.97
+  attack: T1048.003
+  for: [javascript]
+  if:
+    type: text
+    regex: 'nslookup\s+\$\w+\.[a-z0-9.-]+\.oast\.site'
+
+- id: npm-preinstall-nslookup
+  desc: NPM preinstall invokes nslookup
+  crit: suspicious
+  conf: 0.94
+  attack: T1048.003
+  for: [package.json]
+  if:
+    type: value
+    path: scripts.preinstall
+    regex: '\bnslookup\b'
+
+- id: npm-preinstall-hostname-base64
+  desc: NPM preinstall base64 encodes hostname
+  crit: suspicious
+  conf: 0.97
+  attack: T1082
+  for: [package.json]
+  if:
+    type: value
+    path: scripts.preinstall
+    regex: 'hostname\s*\|\s*base64'
+
+- id: npm-preinstall-collaborator-tempest
+  desc: NPM preinstall uses Tempest Collaborator
+  crit: suspicious
+  conf: 0.98
+  attack: T1048.003
+  for: [package.json]
+  if:
+    type: value
+    path: scripts.preinstall
+    regex: 'collaborator\.tempest\.net\.br\b'
+- id: parcel-cpu-count-worker
+  desc: Parcel CPU count worker
+  crit: notable
+  conf: 0.98
+  for: [javascript]
+  if:
+    type: path
+    basename: true
+    exact: cpuCount.js
+
+# === Cross-file composites (evaluated at tarball/package aggregate level) ===
+# These combine signals from different files within the same package.
+
+composite_rules:
+- id: js-shell-host-identity-pair
+  desc: JS shell helper collects user and host identity
+  crit: notable
+  conf: 0.96
+  attack: T1033,T1082
+  for: [javascript, typescript]
+  all:
+  - id: micro-behaviors/process/user/query::node-shell-id-command
+  - id: micro-behaviors/os/sysinfo/hostname::node-shell-hostname-command
+
+- id: npm-postinstall-command-output-http-exfil
+  desc: NPM postinstall exfiltrates encoded shell command output
+  crit: hostile
+  conf: 0.99
+  attack: T1195.002,T1041,T1059.004
+  mbc: E1041
+  for: [javascript, package.json, tar, zip]
+  scope: archive
+  all:
+  - id: objectives/supply-chain/install-hook/package/manifest::postinstall-runs-node-script
+  - id: objectives/exfiltration/http/query::node-command-output-query-exfil
+
+- id: npm-postinstall-encoded-command-beacon
+  desc: npm postinstall encodes command output into HTTPS query
+  crit: hostile
+  conf: 0.99
+  attack: T1195.002,T1041,T1059.004,T1082
+  mbc: E1041
+  for: [javascript, package.json, tar, zip]
+  scope: archive
+  near_lines: 100
+  all:
+  - id: objectives/supply-chain/install-hook/scripts/declaration::postinstall-hook-declaration
+  - id: js-shell-host-identity-pair
+  - id: micro-behaviors/process/create/shell/bridge::execSync-call
+  - id: micro-behaviors/data/encode/base64::node-buffer-base64-encode
+  - id: micro-behaviors/data/encode/url::encode-uri-component-call
+  - id: micro-behaviors/communications/http/request/client::https-get
+  - id: objectives/command-and-control/dropper/script-eval/remote-code::remote-https-get-tls-bypass
+
+- id: npm-preinstall-oob-beacon
+  desc: npm preinstall hooks into OOB callback service
+  crit: hostile
+  conf: 0.97
+  attack: T1195.002
+  mbc: "E1041"
+  for: [package.json]
+  all:
+  - id: objectives/execution/interpreter/script/npm::npm-preinstall-script
+  - id: objectives/exfiltration/oob/
+
+- id: npm-preinstall-sysinfo-dns-exfil
+  desc: NPM preinstall hex-encodes sysinfo into DNS labels
+  crit: hostile
+  conf: 0.98
+  attack: T1048.003
+  all:
+  - id: objectives/execution/interpreter/script/npm::npm-preinstall-script
+  - id: metadata/package/scripts/lifecycle::preinstall-hostname-whoami-pwd
+  - id: metadata/package/scripts/lifecycle::preinstall-curl-dynamic-subdomain
+- id: npm-preinstall-path-segment-dns-exfil
+  desc: NPM preinstall exfils path segments as DNS labels
+  crit: hostile
+  conf: 0.99
+  attack: T1048.003
+  all:
+  - id: objectives/execution/interpreter/script/npm::npm-preinstall-script
+  - id: metadata/package/scripts/lifecycle::preinstall-looped-path-segment-dns-exfil
+- id: npm-oob-callback-recon
+  desc: NPM package enumerates files and contacts OOB service
+  crit: suspicious
+  conf: 0.9
+  attack: T1083
+  mbc: E1041
+  scope: leaf
+  all:
+  - id: metadata/package/scripts/lifecycle::install-hooks
+  - id: metadata/file/size::javascript-small-file-5k
+  - id: objectives/exfiltration/oob/endpoint::oob-endpoint-any
+  - id: micro-behaviors/fs/enumerate/directory::fs-readdir
+  unless:
+  - id: well-known/app/ai/coding-agent/qwen-code::qwen-code-benign-bundle-context
+  - id: well-known/app/ai/coding-agent/qwen-code::qwen-code-bundle-text
+  - id: well-known/app/ai/coding-agent/qwen-code::qwen-code-cli-bundle-path
+  - id: well-known/app/system/vsmux::vsmux-benign-bundle-context
+  - id: well-known/app/system/vsmux::vsmux-vscode-extension
+  - id: well-known/app/system/vsmux::vsmux-bundle-text
+  - id: well-known/app/ai/coding-agent/omnius/
+- id: npm-oob-recon-exfil-hostile
+  desc: NPM package exfils recon data to OOB callback service
+  crit: hostile
+  conf: 0.95
+  attack: T1041
+  mbc: E1041
+  all:
+  - id: npm-oob-callback-recon
+  - id: micro-behaviors/communications/http/request/client::js-fetch-call
+  unless:
+  - id: well-known/app/ai/coding-agent/qwen-code::qwen-code-benign-bundle-context
+  - id: well-known/app/ai/coding-agent/qwen-code::qwen-code-bundle-text
+  - id: well-known/app/ai/coding-agent/qwen-code::qwen-code-cli-bundle-path
+  - id: well-known/app/system/vsmux::vsmux-benign-bundle-context
+  - id: well-known/app/system/vsmux::vsmux-vscode-extension
+  - id: well-known/app/system/vsmux::vsmux-bundle-text
+- id: npm-js-recon-dns-oast-exfil
+  desc: Node exec recons host and exfils via OAST DNS
+  crit: hostile
+  conf: 0.995
+  attack: T1048.003
+  mbc: E1041
+  all:
+  - id: micro-behaviors/process/create/shell/bridge::child-process-destructure-require
+  - id: js-hostname-pwd-whoami-chain
+  - id: js-curl-ifconfig-me
+  - id: js-xxd-nslookup-loop
+  - id: js-nslookup-oast-site
+- id: js-container-secret-oast-curl
+  desc: Node curl exfils container secrets to OAST
+  crit: suspicious
+  conf: 0.97
+  attack: T1041
+  mbc: E1041
+  for: [javascript]
+  all:
+  - id: micro-behaviors/process/create/shell/bridge::child-process-destructure-require
+  - id: micro-behaviors/communications/http/curl::curl-post-flag
+  - id: objectives/exfiltration/oob/endpoint::oastify
+  - id: micro-behaviors/fs/path/token::serviceaccount-token-path
+  any:
+  - id: micro-behaviors/fs/path/socket::docker-sock
+  - id: micro-behaviors/fs/path/config/accounts::etc-passwd
+- id: npm-preinstall-container-secret-exfil
+  desc: NPM preinstall exfils container secrets
+  crit: hostile
+  conf: 0.99
+  attack: T1195.002
+  mbc: E1041
+  all:
+  - id: objectives/execution/interpreter/script/npm::npm-preinstall-script
+  - id: js-container-secret-oast-curl
+- id: npm-install-hook-secret-file-exfil
+  desc: npm install hook exfils searched secrets
+  crit: hostile
+  conf: 0.98
+  attack: "T1195.002,T1041,T1552.001"
+  mbc: E1041
+  scope: archive
+  all:
+  - id: metadata/package/scripts/lifecycle::install-hooks
+  - id: objectives/exfiltration/stealer/file::js-sensitive-file-exfiltration
+  any:
+  - id: objectives/collection/file-targeting/command::node-sensitive-find-command
+  - id: micro-behaviors/fs/proc/info/path::process-var-environ
+  - id: objectives/credential-access/env/secrets/npm-registry::npmrc-access
+  - id: objectives/credential-access/env/secrets/ctf::env-ctf-flag
+  - id: objectives/credential-access/env/harvesting::grep-secrets-pattern
+- id: npm-preinstall-dns-hostname-exfil
+  desc: NPM preinstall exfils hostname via DNS
+  crit: hostile
+  conf: 0.995
+  attack: T1048.003
+  mbc: E1041
+  all:
+  - id: objectives/execution/interpreter/script/npm::npm-preinstall-script
+  - id: npm-preinstall-nslookup
+  - id: npm-preinstall-hostname-base64
+  - id: npm-preinstall-collaborator-tempest
+- id: npm-preinstall-nslookup-dns-exfil
+  desc: NPM preinstall exfils recon via nslookup DNS tunnel
+  crit: hostile
+  conf: 0.98
+  attack: T1048.003
+  mbc: E1041
+  near_lines: 120
+  all:
+  - id: objectives/execution/interpreter/script/npm::npm-preinstall-script
+  - id: micro-behaviors/process/create/shell/bridge::child-process-destructure-require
+  - id: micro-behaviors/communications/dns/cli::nslookup-exec
+  - id: micro-behaviors/data/encode/hex::xxd-hex-encode
+  any:
+  - id: js-hostname-pwd-whoami-chain
+  - id: js-host-profile-command-sequence
+  - id: micro-behaviors/os/sysinfo/hostname::hostname-cmd
+- id: npm-preinstall-host-profile-http-exfil
+  desc: NPM preinstall exfils host profile over HTTP
+  crit: hostile
+  conf: 0.995
+  attack: T1195.002,T1041,T1082,T1016
+  mbc: E1041
+  for: [javascript, package.json, tar, zip]
+  scope: archive
+  all:
+  - id: objectives/execution/interpreter/script/npm::npm-preinstall-script
+  - id: micro-behaviors/process/create/shell/bridge::child-process-destructure-require
+  - id: js-hostname-pwd-whoami-chain
+  - id: js-http-query-exfil
+- id: npm-preinstall-host-profile-ip-query-exfil
+  desc: NPM preinstall exfils host profile and public IP
+  crit: hostile
+  conf: 0.99
+  attack: T1195.002,T1016,T1041
+  mbc: E1041
+  for: [javascript, package.json, tar, zip]
+  scope: archive
+  all:
+  - id: objectives/execution/interpreter/script/npm::npm-preinstall-script
+  - id: micro-behaviors/process/create/shell/bridge::child-process-destructure-require
+  - id: js-hostname-pwd-whoami-chain
+  - id: js-curl-ifconfig-me
+  - id: js-http-query-exfil
+
+- id: preinstall-executes-public-ip-telemetry
+  desc: Install hook runs public-IP telemetry code
+  crit: hostile
+  conf: 0.99
+  attack: T1195.002,T1041,T1016
+  mbc: E1041
+  for: [package.json, javascript, tar, zip]
+  scope: archive
+  all:
+  - id: objectives/supply-chain/install-hook/scripts/declaration::has-preinstall
+  - id: objectives/supply-chain/install-hook/scripts/local-script::preinstall-runs-node-local-script
+  - id: objectives/exfiltration/stealer/system-info/network::sentry-public-ip-profile-exfil
+
+# preinstall runs a local Node script that exfils whoami/hostname via nslookup
+# DNS labels (often to a hard-coded resolver). Distinct from hex/OAST variants.
+- id: npm-preinstall-nslookup-host-profile-exfil
+  desc: npm preinstall exfils host profile via nslookup DNS
+  crit: hostile
+  conf: 0.98
+  attack: T1195.002,T1048.003,T1082,T1033
+  mbc: E1041
+  for: [javascript, typescript, package.json, npm, zip, tar]
+  scope: archive
+  all:
+  - id: objectives/supply-chain/install-hook/scripts/local-script::preinstall-runs-node-local-script
+  - id: objectives/exfiltration/stealer/system-info/identity::js-nslookup-host-profile-dns-exfil

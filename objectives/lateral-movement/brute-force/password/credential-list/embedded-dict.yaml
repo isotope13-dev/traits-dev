@@ -1,0 +1,315 @@
+# Embedded password dictionary in brute-forcer/scanner binaries.
+#
+# Lateral-spread modules in Linux ransomware (and IoT botnets like
+# Mirai variants) embed their password lists as a packed array of
+# `&str`s. Stripped from a Go binary, this surfaces as a contiguous
+# run of high-frequency weak passwords adjacent to typical brute-force
+# username strings (`root`, `admin`, `tomcat`, `redis`). A single
+# weak password is ambiguous; 5+ adjacent in a single binary's data
+# section is conclusive credential-spraying intent.
+defaults:
+  platforms: [linux, macos, windows]
+  for: [binaries, scripts]
+  attack: T1110.001
+  mbc: E1110
+
+traits:
+  - id: objectives/lateral-movement/brute-force/password/credential-list::weak-pass-set-numeric
+    desc: Adjacent numeric weak password tokens
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      # Word boundaries: the tokens are list entries, not runs inside a longer
+      # digit/hex string ('0123456789abcdef', '1111111111111111' test vectors).
+      regex: '\b123456789?\b.{0,40}\b111111\b|\b111111\b.{0,40}\b123456789?\b'
+    unless:
+      - id: metadata/build/recognized-contexts::password-strength-blocklist-context
+      # US keyboard row dump (keylogger keymap), not a password list:
+      # "1234567890" sits above "qwertyuiop" on a US layout.
+      - type: raw
+        regex: '1234567890[\-=\s\t]{0,8}qwerty'
+      # Go strconv floating-point precomputed digits table:
+      # "...000000000011111111112222012345678901234567890123..." (powers of 5).
+      - type: raw
+        regex: '00000000001111111111222201234567890'
+      - id: well-known/lib/runtime/native-platform/seedfaker::ffi-native-library
+
+  - id: objectives/lateral-movement/brute-force/password/credential-list::weak-pass-master
+    desc: Master-password dictionary token
+    crit: notable
+    conf: 0.4
+    if:
+      type: text
+      # Adjacent words only: 'master' 40 bytes before '--password=' is a
+      # replication host in a test harness, not the token.
+      # A leading '--' is folded into the span so the not: below can drop the
+      # MySQL replication option '--master-password='.
+      regex: '(?i)(--)?\bmaster[ _-]?(password|passphrase)\b'
+    not:
+      - regex: '^--'
+    unless:
+      - id: metadata/build/recognized-contexts::password-strength-blocklist-context
+      - type: trait
+        id: metadata/file/extension/identity::linux-kernel-package-artifact-basename
+      - id: well-known/app/system/drivers/
+      - id: well-known/lib/runtime/native-platform/seedfaker::ffi-native-library
+      - type: basename
+        regex: '^lib(nvidia|nvoptix|cuda|cudadebugger)'
+      - id: well-known/lib/media/regula-facesdk/
+
+  - id: objectives/lateral-movement/brute-force/password/credential-list::weak-pass-monkey
+    desc: Weak-password token monkey
+    crit: component
+    conf: 0.4
+    if:
+      type: text
+      substr: monkey
+    unless:
+      - id: metadata/build/recognized-contexts::password-strength-blocklist-context
+      - type: trait
+        id: metadata/file/extension/identity::linux-kernel-package-artifact-basename
+      - id: well-known/app/system/drivers/
+      - id: well-known/lib/runtime/native-platform/seedfaker::ffi-native-library
+      - id: well-known/lib/media/regula-facesdk/
+
+  - id: objectives/lateral-movement/brute-force/password/credential-list::weak-pass-dragon
+    desc: Weak-password token dragon
+    # A standalone string literal, not a bare word: `word: dragon` matched the
+    # `dragon.rs` Grisu/Dragon4 float-formatting source path baked into Rust
+    # and Go binaries. Component tier matches the sibling dictionary tokens --
+    # one common noun proves nothing until weak-pass-set-words sees three
+    # adjacent.
+    crit: component
+    conf: 0.4
+    if:
+      type: literal
+      kind: string
+      exact: dragon
+      case_insensitive: true
+    unless:
+      - id: metadata/build/recognized-contexts::password-strength-blocklist-context
+      - type: trait
+        id: metadata/file/extension/identity::linux-kernel-package-artifact-basename
+      - id: well-known/app/system/drivers/
+      - id: well-known/lib/runtime/native-platform/seedfaker::ffi-native-library
+      - id: metadata/binary/section/name::fwimage-section
+      - id: well-known/lib/media/regula-facesdk/
+
+  - id: objectives/lateral-movement/brute-force/password/credential-list::weak-pass-qwerty
+    desc: Weak-password token qwerty
+    crit: component
+    conf: 0.6
+    if:
+      type: text
+      substr: qwerty
+    unless:
+      - id: metadata/build/recognized-contexts::password-strength-blocklist-context
+
+  - id: objectives/lateral-movement/brute-force/password/credential-list::weak-pass-abc123
+    desc: Weak-password token abc123
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      substr: abc123
+    unless:
+      - id: metadata/build/recognized-contexts::password-strength-blocklist-context
+
+  - id: objectives/lateral-movement/brute-force/password/credential-list::weak-pass-letmein
+    desc: Weak-password token letmein
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      substr: letmein
+    unless:
+      - id: metadata/build/recognized-contexts::password-strength-blocklist-context
+
+  # A single service name can also be a product/library term (for example,
+  # "Oracle" in a translation glossary), so each literal is only a component
+  # clue. The service-list composite below needs three names within 120 bytes;
+  # that combination is strong enough to indicate an embedded account list.
+  # These atoms stay separate because each observes a distinct exact token.
+  - id: objectives/lateral-movement/brute-force/password/credential-list::service-account-mysql
+    desc: Possible MySQL service-account name token
+    crit: component
+    conf: 0.85
+    unless:
+      - id: well-known/tool/detection/llm-scanner/
+      - id: metadata/build/recognized-contexts::password-strength-blocklist-context
+      - id: metadata/lang/compiler/systems::go-buildinfo
+      - id: well-known/lib/runtime/scripted/keyv::keyv-library-source-tree
+      - id: well-known/lib/runtime/scripted/keyv::keyv-redis-adapter-mapping
+      - type: text
+        regex: '(?i)(_SYMBOL_CAPS|_CAPABILITY_HINTS)'
+    if:
+      type: text
+      regex: '(?i)\bmysql\b[ \t]*,'
+
+  - id: objectives/lateral-movement/brute-force/password/credential-list::service-account-oracle
+    for: [scripts]
+    desc: Possible Oracle service-account name token
+    crit: component
+    conf: 0.85
+    if:
+      type: literal
+      kind: string
+      exact: oracle
+      case_insensitive: true
+    unless:
+      - id: metadata/build/recognized-contexts::password-strength-blocklist-context
+      - type: trait
+        id: metadata/file/extension/identity::linux-kernel-package-artifact-basename
+      - type: text
+        regex: '(?i)(_SYMBOL_CAPS|_CAPABILITY_HINTS)'
+
+  - id: objectives/lateral-movement/brute-force/password/credential-list::service-account-postgres
+    for: [scripts]
+    desc: Possible PostgreSQL service-account name token
+    crit: component
+    conf: 0.85
+    unless:
+      - id: well-known/tool/detection/llm-scanner/
+      - id: metadata/build/recognized-contexts::password-strength-blocklist-context
+      - type: trait
+        id: metadata/file/extension/identity::linux-kernel-package-artifact-basename
+      - id: well-known/lib/runtime/scripted/keyv::keyv-library-source-tree
+      - id: well-known/lib/runtime/scripted/keyv::keyv-redis-adapter-mapping
+      - type: text
+        regex: '(?i)(_SYMBOL_CAPS|_CAPABILITY_HINTS)'
+    if:
+      type: literal
+      kind: string
+      exact: postgres
+      case_insensitive: true
+
+  - id: objectives/lateral-movement/brute-force/password/credential-list::service-account-tomcat
+    for: [scripts]
+    desc: Possible Tomcat service-account name token
+    crit: component
+    conf: 0.85
+    if:
+      type: literal
+      kind: string
+      exact: tomcat
+      case_insensitive: true
+    unless:
+      - id: metadata/build/recognized-contexts::password-strength-blocklist-context
+      - type: trait
+        id: metadata/file/extension/identity::linux-kernel-package-artifact-basename
+
+  - id: objectives/lateral-movement/brute-force/password/credential-list::service-account-redis
+    for: [scripts]
+    desc: Possible Redis service-account name token
+    crit: component
+    conf: 0.85
+    unless:
+      # The symbol records the API being used; this also sees the name sitting in
+      # data. Standing down there keeps one use from counting twice.
+      - id: micro-behaviors/data/db/redis::python-redis-import
+      - id: well-known/tool/detection/llm-scanner/
+      - id: metadata/build/recognized-contexts::password-strength-blocklist-context
+      - type: trait
+        id: metadata/file/extension/identity::linux-kernel-package-artifact-basename
+      - id: well-known/lib/runtime/scripted/keyv::keyv-library-source-tree
+      - id: well-known/lib/runtime/scripted/keyv::keyv-redis-adapter-mapping
+    if:
+      type: literal
+      # `word:`, not `substr:` — "redis" is a prefix of "redistribute", so the
+      # substring form fired on the licence boilerplate of every GPL/BSD/Apache
+      # source file ("you can redistribute it..."), handing the needs:3
+      # dictionary composite below a free leg from a copyright header. A real
+      # credential list writes the account name as its own token.
+      kind: string
+      exact: redis
+      case_insensitive: true
+
+  - id: objectives/lateral-movement/brute-force/password/credential-list::service-account-ubuntu
+    for: [scripts]
+    desc: Possible Ubuntu service-account name token
+    crit: component
+    conf: 0.85
+    if:
+      type: literal
+      kind: string
+      exact: ubuntu
+      case_insensitive: true
+    unless:
+      - id: metadata/build/recognized-contexts::password-strength-blocklist-context
+
+composite_rules:
+  - id: objectives/lateral-movement/brute-force/password/credential-list::weak-pass-set-words
+    desc: Adjacent dictionary weak passwords
+    crit: notable
+    conf: 0.92
+    near_bytes: 160
+    needs: 3
+    any:
+      - id: objectives/lateral-movement/brute-force/password/credential-list::weak-pass-master
+      - id: objectives/lateral-movement/brute-force/password/credential-list::weak-pass-monkey
+      - id: objectives/lateral-movement/brute-force/password/credential-list::weak-pass-dragon
+      - id: objectives/lateral-movement/brute-force/password/credential-list::weak-pass-qwerty
+      - id: objectives/lateral-movement/brute-force/password/credential-list::weak-pass-abc123
+      - id: objectives/lateral-movement/brute-force/password/credential-list::weak-pass-letmein
+    unless:
+      # Password-strength profiles contain intentionally adjacent weak words;
+      # suppress the dictionary heuristic for that recognized data context.
+      - id: metadata/package/completeness/
+      - id: well-known/tool/detection/
+      - id: metadata/binary/resource/
+      - id: micro-behaviors/data/format/editor-syntax::syntax-bundle-context
+      - id: well-known/app/infrastructure/aws-vault/
+      - id: micro-behaviors/os/security/auth/password::common-password-policy-text
+      - id: well-known/lib/media/regula-facesdk/
+      - id: metadata/file/format/browser-extension::web-extension-root-manifest
+
+  - id: objectives/lateral-movement/brute-force/password/credential-list::weak-pass-set-services
+    desc: Adjacent service-account names
+    crit: component
+    conf: 0.9
+    near_bytes: 120
+    needs: 3
+    any:
+      - id: objectives/lateral-movement/brute-force/password/credential-list::service-account-mysql
+      - id: objectives/lateral-movement/brute-force/password/credential-list::service-account-oracle
+      - id: objectives/lateral-movement/brute-force/password/credential-list::service-account-postgres
+      - id: objectives/lateral-movement/brute-force/password/credential-list::service-account-tomcat
+      - id: objectives/lateral-movement/brute-force/password/credential-list::service-account-redis
+      - id: objectives/lateral-movement/brute-force/password/credential-list::service-account-ubuntu
+      # The six above are source-only: `type: literal` needs a parse. This file
+      # is written for a stripped Go binary's packed `&str` array, where the
+      # only readable form of the same list is the bare names sitting next to
+      # each other -- which is exactly the neutral name catalogue, and exactly
+      # what `near_bytes` below measures.
+      - id: metadata/file/string/process-name::mysql-name
+      - id: metadata/file/string/process-name::postgres-name
+      - id: metadata/file/string/process-name::redis-name
+      - id: metadata/file/string/process-name::tomcat-name
+    unless:
+      - id: metadata/build/recognized-contexts::password-strength-blocklist-context
+      - id: micro-behaviors/process/interpreter/vm/
+      - id: well-known/tool/detection/sast/
+      - id: well-known/tool/detection/llm-scanner/
+      - id: metadata/lang/scripted::dts-declaration-file
+      - id: metadata/binary/resource/
+      - id: micro-behaviors/data/format/editor-syntax::syntax-bundle-context
+      - id: well-known/lib/runtime/native-platform/seedfaker::ffi-native-library
+
+  - id: objectives/lateral-movement/brute-force/password/credential-list::embedded-bruteforce-dictionary
+    desc: Embedded brute-force credential dictionary
+    crit: suspicious
+    conf: 0.95
+    needs: 2
+    any:
+      - id: objectives/lateral-movement/brute-force/password/credential-list::weak-pass-set-numeric
+      - id: objectives/lateral-movement/brute-force/password/credential-list::weak-pass-set-words
+      - id: objectives/lateral-movement/brute-force/password/credential-list::weak-pass-set-services
+    unless:
+      - id: well-known/tool/detection/security-scanner/
+      - id: well-known/tool/offensive/
+      - id: well-known/app/infrastructure/aws-vault/
+      - id: metadata/binary/resource/
+      - id: micro-behaviors/data/format/editor-syntax::syntax-bundle-context
+      - id: metadata/build/recognized-contexts::benign-app-fp-context
+      - id: well-known/tool/development/agent/kilocode::kilo-code-native-runtime

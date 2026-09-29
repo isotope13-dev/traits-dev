@@ -1,0 +1,154 @@
+defaults:
+  platforms: [windows, unix]
+  for:
+  - python
+  attack: T1195.001
+  mbc: E1014
+traits:
+- id: platform-name-check
+  desc: Platform detection via os.name
+  crit: notable
+  conf: 0.7
+  if:
+    type: text
+    regex: from\s+os\s+import\s+name|import\s+os.{0,50}\bos\.name
+- id: you-got-me-comment
+  desc: You got me comment (obfuscation marker)
+  crit: suspicious
+  conf: 0.75
+  if:
+    type: string_literal
+    regex: You\\s+got\\s+me\\s+bro
+    case_insensitive: true
+- id: setup-call-after-code
+  desc: Top-level setup() with dynamic execution
+  crit: suspicious
+  conf: 0.75
+  if:
+    type: text
+    regex: '(?m)^\s*(setuptools\.)?setup\s*\([^)]{0,120}\).{20,500}\b(exec|eval|__import__|compile)\('
+  unless:
+  - id: well-known/app/ai/coding-agent/tabby::tabby-eval-dataset-member
+  - id: metadata/package/testing/presence/harness::test-directory
+- id: post-setup-import-os-sys
+  desc: setup() followed by os/sys import marker
+  crit: suspicious
+  conf: 0.8
+  if:
+    type: text
+    regex: setup\s*\([^\)]{0,120}\).{0,250}(from|import)\s+(os|sys)
+- id: post-setup-import-base64-subprocess
+  desc: "setup() followed by b64/subprocess import"
+  crit: suspicious
+  conf: 0.8
+  if:
+    type: text
+    regex: setup\s*\([^\)]{0,120}\).{0,250}(from|import)\s+(base64|subprocess)
+- id: tempfile-write-exec
+  desc: Write to tempfile then execute
+  crit: suspicious
+  conf: 0.85
+  if:
+    type: text
+    regex: tempfile\.(NamedTemporaryFile|mkstemp).{0,80}write.{0,80}(exec|exe)
+- id: exec-alias-in-payload
+  desc: exec aliased in payload string
+  crit: suspicious
+  conf: 0.9
+  attack: T1027
+  if:
+    type: string_literal
+    regex: \w+=exec;\s*\w+\(
+- id: pythonw-exe-replace-trick
+  desc: 'Python EXE silenced via .replace for pythonw'
+  crit: suspicious
+  conf: 0.95
+  attack: T1059.006
+  if:
+    type: text
+    regex: \.replace\(['"]\.exe['"],\s*['"]w\.exe['"]\)
+- id: large-b64-string-binary--cmltcg9ydcbvcw
+  desc: Large base64 string with binary (CmltcG9ydCBvcw)
+  crit: suspicious
+  conf: 0.95
+  if:
+    type: text
+    word: CmltcG9ydCBvcw
+- id: large-b64-string-binary--cmltcg9ydcbzexm
+  desc: Large base64 string with (CmltcG9ydCBzeXM)
+  crit: suspicious
+  conf: 0.95
+  if:
+    type: text
+    word: CmltcG9ydCBzeXM
+- id: large-b64-string-binary--cmltcg9ydcb0zw1wzmlszq
+  desc: Large base64 string (CmltcG9ydCB0ZW1wZmlsZQ)
+  crit: suspicious
+  conf: 0.95
+  if:
+    type: text
+    word: CmltcG9ydCB0ZW1wZmlsZQ
+composite_rules:
+# The two halves of the old conditional-exec-marker regex are neutral facts
+# with their own homes: the Windows check is the canonical platform atom, the
+# sdist argv test is setup.py packaging logic. Only the setup.py trojan
+# composites below give them meaning together.
+- id: conditional-exec-marker
+  desc: Conditional execution marker (argv, os.name)
+  crit: component
+  conf: 0.85
+  size_max: 32000
+  any:
+  - id: micro-behaviors/os/sysinfo/platform/runtime::python-osname-nt-check
+  - id: metadata/build/pip::setup-py-sdist-argv-check
+- id: large-b64-string-binary
+  desc: Large base64 string with binary MZ header
+  crit: suspicious
+  conf: 0.95
+  unless:
+  - id: well-known/lib/development/
+  any:
+  - id: objectives/anti-static/obfuscation/eval/scripting/host::large-b64-string-binary--cmltcg9ydcbvcw
+  - id: objectives/anti-static/obfuscation/eval/scripting/host::large-b64-string-binary--cmltcg9ydcbzexm
+  - id: objectives/anti-static/obfuscation/eval/scripting/host::large-b64-string-binary--cmltcg9ydcb0zw1wzmlszq
+- id: conditional-exec-check
+  desc: Conditional execution check (argv, environ)
+  crit: suspicious
+  conf: 0.85
+  all:
+  - id: metadata/package/files/included::setup-py-basename
+  - id: objectives/anti-static/obfuscation/eval/scripting/host::conditional-exec-marker
+  any:
+  - id: micro-behaviors/process/create/shell/bridge::js-exec
+  - id: micro-behaviors/process/interpreter/eval/compile::exec-compiled-code
+  unless:
+  - id: metadata/package/testing/presence/harness/
+  - id: metadata/package/testing/harness/unit/
+- id: post-setup-execution
+  desc: Code execution after setup() call
+  crit: suspicious
+  conf: 0.8
+  all:
+  - id: objectives/anti-static/obfuscation/eval/scripting/host::post-setup-import-marker
+  any:
+  - id: micro-behaviors/process/create/shell/bridge::js-exec
+  - id: micro-behaviors/process/interpreter/eval/compile::exec-compiled-code
+  unless:
+  - id: metadata/package/testing/presence/harness/
+  - id: metadata/package/testing/harness/unit/
+- id: post-setup-import-marker
+  desc: setup() followed by import marker
+  crit: suspicious
+  conf: 0.8
+  any:
+  - id: objectives/anti-static/obfuscation/eval/scripting/host::post-setup-import-os-sys
+  - id: objectives/anti-static/obfuscation/eval/scripting/host::post-setup-import-base64-subprocess
+- id: setup-py-post-install-trojan
+  desc: Setup.py with post-install code execution
+  crit: suspicious
+  conf: 0.92
+  mbc: E1014 - python
+  all:
+  - id: micro-behaviors/process/interpreter/eval/direct::exec-builtin
+  - id: objectives/anti-static/obfuscation/eval/scripting/host::platform-name-check
+  - id: objectives/anti-static/obfuscation/eval/scripting/host::conditional-exec-check

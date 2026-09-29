@@ -1,0 +1,212 @@
+defaults:
+  platforms: [unix, windows]
+  crit: suspicious
+  attack: T1027
+  mbc: E1014
+  for: [python]
+traits:
+
+  # `eval('\x6d\x61\x67\x69\x63')` -- an identifier spelled as hex escapes so
+  # the name never appears in the source.
+  #
+  # Python resolves the escapes at parse time, so this is exactly `eval('magic')`
+  # and the indirection buys nothing at runtime. Its only effect is on the
+  # reader: a grep for the variable, function or module being reached finds
+  # nothing, and the call looks like an opaque string. Nothing writes code this
+  # way for any reason but that.
+  #
+  # Three escaped characters is the floor. One or two turn up legitimately --
+  # `'\x00'` sentinels, a `'\xff'` byte -- but a run of three is a name, not a
+  # value, and it is being handed to the interpreter.
+  #
+  # Worked example: a W4SP-family stealer whose payload is base64 chunks, some
+  # rot13'd, reassembled by `eval('\x6d\x61\x67\x69\x63') +
+  # eval('\x63\x6f\x64\x65\x63\x73\x2e\x64\x65\x63\x6f\x64\x65...')`.
+  - id: objectives/anti-static/obfuscation/eval/scripting/reflection::eval-hex-escaped-identifier
+    desc: eval on a hex-escaped identifier
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '\beval\s*\(\s*[''"](\\(x[0-9a-fA-F]{2}|[0-7]{1,3})){3,30}'
+
+  - id: objectives/anti-static/obfuscation/eval/scripting/reflection::arithmetic-expression-chains
+    desc: Complex arithmetic chains
+    crit: suspicious
+    conf: 0.75
+    unless:
+      - type: text
+        substr: //|==|!=|>=|<=|<<|>>|\+=|-=|\*=|/=|//=|<<=|>>=
+      - type: basename
+        regex: '(?i)\.(y|yy|yacc)$'
+    if:
+      type: text
+      regex: "[*].{0,30}//.{0,30}[|].{0,30}<<.{0,30}>>"
+  - id: objectives/anti-static/obfuscation/eval/scripting/reflection::loop-large-numeric-branch
+    desc: Loop branch compares large numeric literal
+    # A single numeric branch is only an obfuscation indicator; the
+    # state-machine composite supplies the required multi-signal context.
+    crit: notable
+    conf: 0.82
+    if:
+      type: text
+      regex: while.{0,30}:[^}]{0,50}if.{0,30}==.{0,30}[1-9][0-9]{4,}\b
+  - id: objectives/anti-static/obfuscation/eval/scripting/reflection::obfuscated-state-variable
+    desc: Chinese identifier with large numeric state
+    crit: component
+    conf: 0.75
+    if:
+      type: text
+      regex: "(?m)^[ \\t]*[一-鿿]{5,}\\s*=\\s*[1-9][0-9]{3,}\\b"
+  # com-dispatch-usage removed - use micro-behaviors/communications/ipc/win32com/python composite instead
+  - id: objectives/anti-static/obfuscation/eval/scripting/reflection::join-map-getattr-chr
+    desc: "built via join(map(getattr(__builtins__)))"
+    crit: suspicious
+    conf: 0.92
+    count_min: 3
+    if:
+      type: text
+      substr: join(map(getattr(__builtins__
+  - id: objectives/anti-static/obfuscation/eval/scripting/reflection::is-admin-flag
+    desc: IsAdmin flag check (Python)
+    # Building block for the admin-check-ctypes composite only. A bare IsAdmin
+    # identifier (e.g. an API-model bool field) is not standalone obfuscation.
+    crit: notable
+    conf: 0.75
+    if:
+      type: text
+      word: IsAdmin
+  - id: objectives/anti-static/obfuscation/eval/scripting/reflection::getattr-builtins-obfuscation
+    desc: Constructed builtin lookup
+    crit: suspicious
+    conf: 0.9
+    unless:
+      - type: basename
+        regex: (test_|_test\.|\.test\.|\.spec\.).*\.py$
+      - id: well-known/lib/network/paramiko::paramiko-source
+    if:
+      type: tree-sitter
+      kind: call
+      regex: getattr\(_*builtins_*\s*,\s*(chr\(|["'].{1,24}["']\s*\+|["']{0,2}\.join\()
+composite_rules:
+
+  # A large base64 blob handed straight to `exec` while the module is imported.
+  #
+  # `direct-base64-exec` is suspicious on its own because `exec(b64decode(...))`
+  # has narrow legitimate uses (a plugin loader, a test harness building code).
+  # A *large* embedded blob removes them: kilobytes of base64 is a program, not
+  # a snippet, and decoding a program only to run it immediately -- with no
+  # branch that inspects or reports it -- is what a packed payload does. At
+  # module scope in a `setup.py`, "immediately" means "during install".
+  #
+  # The decoded bytes frequently begin `MZ`, i.e. a Windows executable written
+  # to a temp path and launched; that stays inside the `exec` string so a
+  # string decoder does not reach it, which is the whole point of the exec
+  # wrapper. The pair -- decode-and-run plus payload-sized blob at import -- is
+  # what the rule keys on instead.
+  #
+  # Worked example: a `setup.py` that, on `os.name == 'nt'`, runs
+  # `exec(b64decode('...'))` whose 400 KB payload writes an embedded PE to the
+  # temp directory and calls `os.startfile` on it.
+  - id: objectives/anti-static/obfuscation/eval/scripting/reflection::python-embedded-blob-exec-at-import
+    desc: Large base64 blob executed at import
+    crit: hostile
+    conf: 0.96
+    attack: "T1027,T1204.002,T1059.006"
+    mbc: "B0032,E1027"
+    # A payload-sized base64 blob that is passed to exec. The blob leg proves
+    # it is a program, not a snippet; the exec leg proves it runs. An install
+    # guard (`if 'sdist' not in argv`) or a platform check does not change
+    # either fact, so no module-scope leg is required -- exec of a megabyte of
+    # base64 has no benign reading wherever it sits.
+    #
+    # direct-base64-exec is an AST match and cannot form on a multi-megabyte
+    # one-line blob; the text sibling survives it. Any of the three proves the
+    # decode is executed.
+    all:
+      - id: metadata/binary/layout/embedded::large-embedded-b64-blob
+    any:
+      - id: objectives/anti-static/obfuscation/control-flow/logic::direct-base64-exec
+      - id: objectives/anti-static/obfuscation/control-flow/logic::imported-base64-exec
+      - id: objectives/anti-static/obfuscation/control-flow/logic::base64-exec-text
+    unless:
+      - id: metadata/package/testing/presence/harness::verified-python-test-file
+
+  # A payload split across named variables, some rotated, reassembled by an
+  # `eval` that names each piece in hex escapes.
+  #
+  # Splitting the base64 is what defeats a decoder: no single literal is a
+  # multiple of four or decodes on its own, so the blob is only recoverable
+  # once the pieces are joined in the right order -- which the source states
+  # only through variable names that are themselves hidden. stng's
+  # rot13-over-base64 decoder recovers a whole rotated payload; it cannot
+  # reassemble fragments held in separate assignments, and this is what that
+  # case looks like from the outside.
+  #
+  # Neither leg is a verdict alone: a large base64 literal is ordinary in
+  # vendored data, and `eval` has legitimate uses. Together -- an identifier
+  # spelled as hex escapes, handed to `eval`, in a file that also carries an
+  # embedded base64 blob -- there is no reading in which the author was doing
+  # anything but hiding what runs.
+  #
+  # Worked example: a W4SP-family PyPI stealer holding its payload in four
+  # 11,545-character literals, rot13-ing two of them, and joining them with
+  # `eval('\x6d\x61\x67\x69\x63') + eval('codecs.decode(love, joy)') + ...`
+  # where `joy` is itself `'\x72\x6f\x74\x31\x33'` -- the string `rot13`,
+  # written so it cannot be grepped.
+  - id: objectives/anti-static/obfuscation/eval/scripting/reflection::python-hex-eval-assembled-blob
+    desc: Hex-escaped eval assembles an encoded blob
+    crit: hostile
+    conf: 0.96
+    attack: T1027,T1140
+    mbc: E1027
+    all:
+      - id: objectives/anti-static/obfuscation/eval/scripting/reflection::eval-hex-escaped-identifier
+      - id: micro-behaviors/data/encode/base64::embedded-base64-blob
+  - id: objectives/anti-static/obfuscation/eval/scripting/reflection::advanced-python-obfuscation
+    desc: Advanced Python obfuscation
+    crit: suspicious
+    conf: 0.9
+    needs: 3
+    any:
+      - id: metadata/lang/source::unicode-variable-names
+      - id: micro-behaviors/data/arithmetic::repeated-numeric-bitshift
+      - id: objectives/anti-static/obfuscation/eval/scripting/reflection::getattr-builtins-obfuscation
+  - id: objectives/anti-static/obfuscation/eval/scripting/reflection::state-machine-obfuscation
+    desc: Opaque numeric state-machine dispatch
+    crit: suspicious
+    conf: 0.95
+    all:
+      - id: objectives/anti-static/obfuscation/eval/scripting/reflection::loop-large-numeric-branch
+      - id: objectives/anti-static/obfuscation/eval/scripting/reflection::obfuscated-state-variable
+  - id: objectives/anti-static/obfuscation/eval/scripting/reflection::admin-check-ctypes
+    desc: Admin privilege check via ctypes (composite)
+    crit: notable
+    conf: 0.85
+    any:
+      - id: micro-behaviors/os/privilege/check::ctypes-is-admin
+      - id: objectives/anti-static/obfuscation/eval/scripting/reflection::is-admin-flag
+      - id: micro-behaviors/os/privilege/check::check-token-membership
+    unless:
+      - id: well-known/tool/detection/
+  - id: objectives/anti-static/obfuscation/eval/scripting/reflection::windows-com-elevation
+    desc: Windows COM elevation attempt
+    crit: suspicious
+    conf: 0.95
+    attack: T1078
+    mbc: E1059
+    platforms:
+      - windows
+    all:
+      - id: micro-behaviors/communications/ipc/win32com::dispatch-call
+      - id: objectives/anti-static/obfuscation/eval/scripting/reflection::admin-check-ctypes
+  - id: objectives/anti-static/obfuscation/eval/scripting/reflection::obfuscated-setup-py-trojan
+    desc: Heavily obfuscated setup.py trojan
+    crit: hostile
+    conf: 0.95
+    attack: T1195.002
+    mbc: B0024
+    all:
+      - id: objectives/anti-static/obfuscation/eval/scripting/reflection::advanced-python-obfuscation
+      - id: objectives/anti-static/obfuscation/eval/scripting/reflection::state-machine-obfuscation
+      - id: micro-behaviors/communications/ipc/win32com::import-win32com

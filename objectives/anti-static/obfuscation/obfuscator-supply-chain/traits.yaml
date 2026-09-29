@@ -1,0 +1,531 @@
+# Hostile / suspicious composites for npm-published bundles that combine
+# obfuscator.io packing with structural and string-table content signals.
+#
+# Standalone layered obfuscator output is suspicious via
+# objectives/anti-static/obfuscation/obfuscator/js-obfuscator::name-mangled-concealed-runtime.
+# These composites add independent behaviors that can justify hostile findings
+# and capture distinct tampering shapes and in-table identifiers.
+#
+# String-table reasoning: obfuscator.io collects all property names and
+# string literals referenced by the original source into a single array
+# (the `_0x3afe()` table) and dispatches them at runtime via decoder
+# calls (`_0x4524e4(0x19f)` → table[idx]). Identifiers that appear in
+# that table are referenced by the original source code — they are not
+# stowaway garbage. Combining "this file is obfuscator.io output" with
+# "the string-table contains X" is reliable evidence the original source
+# referenced X.
+#
+# We still avoid over-claiming behavioral semantics: a `resolveTxt`
+# reference means the source called `.resolveTxt(...)` on something; it
+# does not by itself prove DNS-TXT C2 (could be DNS recon, hosts-file
+# manipulation, etc.). So these stay at `suspicious` unless paired with
+# another structural hostile shape.
+#
+# Generic across families. Family attribution belongs in well-known/malware/
+# with family-unique signatures, not here.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1195.002
+traits:
+  - id: digest-literal
+    desc: Digest identifier in obfuscated bundle
+    crit: component
+    conf: 0.8
+    if:
+      type: literal
+      word: digest
+  - id: resolvetxt-literal
+    desc: resolveTxt string literal
+    crit: notable
+    conf: 0.85
+    if:
+      type: string_literal
+      exact: resolveTxt
+  # Host-fingerprint property names commonly emitted by obfuscator.io into
+  # its string table when the original source called e.g. `os.homedir()`
+  # or `process.arch`. Using string_literal here means we match the
+  # obfuscator's emitted `'homedir'` / `'arch'` strings, not the bare
+  # property-access identifiers that legitimate code uses. `exact:` because a
+  # table entry is the whole literal: `word:` also matched prose and template
+  # interpolations (`\\.\pipe\lsp-${(0,MD.randomBytes)(16)...}` in a
+  # language-client pipe name).
+  - id: homedir-literal
+    desc: homedir string literal
+    crit: notable
+    conf: 0.8
+    if:
+      type: string_literal
+      exact: homedir
+    unless:
+      - id: metadata/file/format/structured::sourcemap
+  - id: arch-literal
+    desc: arch string literal
+    crit: component
+    conf: 0.7
+    if:
+      type: string_literal
+      exact: arch
+    unless:
+      - id: metadata/file/format/structured::sourcemap
+  - id: endianness-literal
+    desc: endianness string literal
+    crit: notable
+    conf: 0.85
+    if:
+      type: string_literal
+      exact: endianness
+    unless:
+      - id: metadata/file/format/structured::sourcemap
+  - id: pid-literal
+    desc: pid string literal
+    crit: component
+    conf: 0.7
+    if:
+      type: string_literal
+      word: pid
+    unless:
+      - id: metadata/file/format/structured::sourcemap
+  - id: randombytes-literal
+    desc: randomBytes string literal
+    crit: notable
+    conf: 0.85
+    if:
+      type: string_literal
+      exact: randomBytes
+    unless:
+      - id: metadata/file/format/structured::sourcemap
+  # A generated runtime that is handed the editor API, host OS, package
+  # metadata, and an HTTPS client is a distinct bridge from ordinary VS Code
+  # activation code.  Keep this as an atomic supply-chain signal so the
+  # hostile rule below can require it alongside layered hiding indicators.
+  - id: obfuscated-vscode-host-network-argument-vector
+    desc: Obfuscated host/network API argument vector
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: text
+      regex: '\[\s*https\s*,\s*os\s*,\s*packageJson\s*,\s*spawnSync\s*,\s*vscode\s*\]'
+
+  # A complete private-key PEM block embedded in a heavily obfuscated runtime
+  # is not ordinary package configuration when the same file also reads
+  # browser or application storage and executes fetched text. Requiring the
+  # complete block avoids treating UI labels and BEGIN-only placeholders as
+  # key material while retaining the high-signal payload shape.
+  - id: obfuscated-private-key-text
+    desc: Obfuscated file contains private-key material
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?is)BEGIN( [A-Z]+)? PRIVATE KEY-----[\w+/=\s]{64,}END( [A-Z]+)? PRIVATE KEY'
+    unless:
+      - id: well-known/app/ai/agent-runtime/aui-agent-builder::generated-web-ui-bundle
+  - id: obfuscated-fetch-text
+    desc: Obfuscated file contains fetch call
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      substr: fetch
+  - id: obfuscated-eval-text
+    desc: Obfuscated file contains eval sink
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      substr: eval
+composite_rules:
+  - id: obfuscated-private-key-fetch-eval-stage
+    desc: Obfuscated runtime fetches and evaluates with a private key
+    crit: hostile
+    conf: 0.99
+    attack: T1195.002,T1027,T1059.007,T1552.004
+    mbc: B0024
+    all:
+      - id: obfuscated-private-key-text
+      - id: micro-behaviors/data/db/web-storage::dom-localstorage
+      - id: obfuscated-fetch-text
+      - id: obfuscated-eval-text
+    any:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::hex-name-mangling-with-string-table-rotation
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::push-shift-bracket-pattern
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::any-name-mangling
+    needs: 1
+
+  - id: obfuscated-vscode-host-network-stage-current
+    desc: Obfuscated VS Code runtime bridges host and network APIs
+    crit: hostile
+    conf: 0.99
+    attack: T1195.002,T1027,T1041,T1592.004
+    mbc: B0024
+    all:
+      - id: obfuscated-vscode-host-network-argument-vector
+      - id: well-known/lib/development/vscode::vscode-extension-marker
+      - id: micro-behaviors/os/module/require::node-global-os-module-exposure
+      - id: micro-behaviors/communications/http/module/load::node-global-https-module-exposure
+      - id: micro-behaviors/process/create/shell/bridge::child-process-require
+      - id: micro-behaviors/process/create/shell/bridge::js-spawnsync
+      - id: metadata/file/encoded::large-base64-like-literal
+      - id: micro-behaviors/process/debug/event::debugger-statement
+    unless:
+      - id: metadata/package/testing/
+
+  # A strongly obfuscated published module that hides a computed Axios URL
+  # request is a payload-bearing network relay.  The URL and endpoint are
+  # intentionally not part of the rule, so rotated infrastructure remains
+  # detectable while ordinary Axios clients and standalone obfuscation do not.
+  - id: obfuscated-axios-computed-url-relay
+    desc: Obfuscated package hides a computed Axios URL relay
+    crit: hostile
+    conf: 0.96
+    attack: T1195.002,T1027,T1071.001,T1041
+    mbc: B0024
+    all:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::hex-name-mangling-with-string-table-rotation
+      - id: micro-behaviors/communications/http/lib/axios::axios-module-import
+      - id: micro-behaviors/communications/http/request/url-computed::axios-computed-url-call
+    unless:
+      - id: metadata/package/testing/
+
+  # Obfuscation plus a debugger trap, embedded decoder, and a runtime bridge
+  # is not explained by a normal extension.  This catches future staged
+  # extensions even when their decoded payload strings and callback endpoint
+  # are new, while leaving standalone obfuscation and API use notable.
+  - id: obfuscated-vscode-hidden-host-network-stage
+    desc: Obfuscated VS Code bundle hides a host-network runtime stage
+    crit: hostile
+    conf: 0.99
+    attack: T1195.002,T1027,T1041,T1592.004
+    mbc: B0024
+    all:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::hex-name-mangling-with-string-table-rotation
+      - id: obfuscated-vscode-host-network-argument-vector
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::obfuscated-base64-codec
+      - id: micro-behaviors/process/debug/event::debugger-statement
+      - id: micro-behaviors/os/module/require::node-global-os-module-exposure
+      - id: micro-behaviors/communications/http/module/load::node-global-https-module-exposure
+      - id: micro-behaviors/process/create/shell/bridge::js-spawnsync
+    unless:
+      - id: metadata/package/testing/
+
+  - id: obfuscated-vscode-global-module-bridge
+    desc: Obfuscated Node runtime exposes host and HTTPS modules
+    crit: notable
+    conf: 0.97
+    attack: T1195.002,T1027.002,T1041
+    mbc: B0024
+    all:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::hex-name-mangling-with-string-table-rotation
+      - id: micro-behaviors/os/module/require::node-global-os-module-exposure
+      - id: micro-behaviors/communications/http/module/load::node-global-https-module-exposure
+      - id: well-known/lib/development/vscode::globalthis-vscode-exposure
+      - id: micro-behaviors/os/module/dynamic-load::node-computed-require-call
+      - id: micro-behaviors/data/encode/char-code::fromcharcode-call
+      - id: micro-behaviors/crypto/symmetric/xor/loop::xor-modulo-key-loop
+    unless:
+      - id: metadata/package/testing/
+
+  - id: obfuscated-detached-runtime-stage
+    desc: Published JavaScript hides a detached decoded runtime stage
+    crit: hostile
+    conf: 0.99
+    attack: T1195.002,T1027,T1059.007,T1564.003
+    mbc: B0024
+    all:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::push-shift-bracket-pattern
+      - id: objectives/anti-static/obfuscation/string/dynamic::arithmetic-decoder-wrapper-call
+      - id: micro-behaviors/process/daemonize/detach::detached-obfuscated-true
+      - id: micro-behaviors/process/create/spawn::windowshide-obfuscated-true
+      - id: micro-behaviors/process/interpreter/eval/compile::js-function-constructor
+    unless:
+      - id: metadata/package/testing/
+
+  - id: obfuscated-detached-published-stage
+    desc: Published JavaScript hides a detached stage behind layered decoding
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002,T1027,T1059.007,T1564.003
+    all:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::push-shift-bracket-pattern
+      - id: objectives/anti-static/obfuscation/string/dynamic::arithmetic-decoder-wrapper-call
+      - id: metadata/file/literal::hex-token-length-undefined-cluster
+      - id: micro-behaviors/process/daemonize/detach::detached-obfuscated-true
+      - id: micro-behaviors/process/create/spawn::windowshide-obfuscated-true
+    any:
+      - id: micro-behaviors/communications/http/websocket::websocket-headers
+      - id: micro-behaviors/communications/socket/dial::javascript-dial
+
+  # esbuild-bundled output PLUS obfuscator control-flow packing in the same file.
+  # esbuild itself never produces obfuscator.io output (hex `_0x` names, the
+  # while(!![]){switch(...)} state machine, parseInt decoder loops). When
+  # both are present the bundle was post-processed by an obfuscator after
+  # the bundler ran. Name mangling alone is common in production bundles;
+  # require it together with a decoder loop or state-machine marker.
+  - id: tampered-prebuilt-bundle
+    desc: Pre-built bundle has obfuscator control-flow markers
+    crit: hostile
+    conf: 0.95
+    mbc: B0024
+    all:
+      - id: metadata/build/bundler/wrapper::js-esbuild-bundle
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::any-name-mangling
+    any:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::decoder-loop-keyword-triad
+      - id: objectives/anti-static/obfuscation/syntax::js-while-switch-state-machine
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+      - id: metadata/package/files/ecosystem::openclaw-evolver-package-member
+      - id: well-known/lib/cloud/box-extract-progress::box-extract-progress-context
+      - id: metadata/package/testing/harness/runtime::obfuscated-mocked-network-test-harness
+      - id: well-known/app/development/cloudflare/
+    downgrade:
+      any:
+        - id: metadata/package/files/ecosystem::openclaw-evolver-archive-container
+
+  # Obfuscated bundle whose string table references DNS TXT lookup API.
+  # The `resolveTxt` method exists on `dns`/`dns.promises` and on
+  # `dns.Resolver`; it has no other common usage. Presence in an
+  # obfuscator.io string table means the source called `.resolveTxt(...)`
+  # somewhere — a known covert-channel primitive (data exfil over DNS
+  # TXT records, lookup of attacker-controlled C2 routing). We stop at
+  # `suspicious` because the call site could also be benign DNS recon.
+  - id: obfuscated-bundle-references-dns-txt
+    desc: Obfuscated bundle references DNS TXT lookup API
+    crit: suspicious
+    conf: 0.92
+    mbc: B0030
+    attack: T1071.004
+    all:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::any-name-mangling
+      - id: resolvetxt-literal
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+
+  # Obfuscated bundle whose string table includes /etc/hosts reads.
+  # /etc/hosts inspection in an obfuscator-packed bundle is consistent
+  # with hosts-file manipulation, custom DNS resolution, or fingerprinting
+  # whether a system has been pre-tainted by another tool — all
+  # supply-chain-malicious shapes.
+  - id: obfuscated-bundle-etc-hosts-access
+    desc: Obfuscated bundle references /etc/hosts
+    crit: suspicious
+    conf: 0.93
+    mbc: B0030
+    attack: T1565.001
+    all:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::any-name-mangling
+      - id: micro-behaviors/fs/path/config/system::config-hosts
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+
+  - id: shell-exec-primitive
+    desc: Bundle invokes a shell-execution primitive
+    crit: component
+    any:
+      - id: micro-behaviors/process/create/shell/bridge::execSync-call
+      - id: micro-behaviors/process/create/shell/bridge::child-process-inline-exec-call
+      - id: micro-behaviors/process/create/exec::js-object-exec-call
+
+  # NOTE: `node-computed-require-call` deliberately is NOT a member. Every
+  # javascript-obfuscator build routes *all* `require()` arguments through its
+  # string-array decoder, so that atom is implied by the `any-name-mangling`
+  # leg below rather than independent evidence — including it collapsed this
+  # rule to "obfuscated bundle + execSync", which fires on legitimately
+  # obfuscated commercial CLIs that shell out to git/npm.
+  - id: hidden-stage-primitive
+    desc: Bundle contains a hidden-stage execution primitive
+    crit: component
+    any:
+      - id: micro-behaviors/process/interpreter/eval/compile::js-function-constructor
+      - id: micro-behaviors/fs/write/file/mode::node-obfuscated-write-mode
+      - id: micro-behaviors/process/create/spawn::windowshide-obfuscated-expression
+      - id: metadata/file/encoded::large-base64-like-literal
+
+  # Shell execution is dual-use in published build/deployment tooling. Require
+  # a second hidden-stage primitive before treating obfuscation plus execution
+  # as a supply-chain payload; the neutral child-process atoms still record the
+  # execution capability on their own.
+  - id: obfuscated-bundle-shell-exec-references
+    desc: Obfuscated bundle hides shell execution with a staged payload
+    crit: hostile
+    conf: 0.95
+    mbc: C0017
+    attack: T1059
+    all:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::any-name-mangling
+      - id: shell-exec-primitive
+      - id: hidden-stage-primitive
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+      # Commercial CLIs that intentionally ship javascript-obfuscator output and
+      # shell out to make/ssh/git (e.g. Profound Logic @profoundlogic/codermake).
+      - id: metadata/build/minifier::intentional-obfuscator-dist-artifact
+      - id: metadata/build/minifier::intentional-obfuscator-release-artifact
+      - id: metadata/build/minifier::intentional-javascript-obfuscator-build
+
+  # A VM-backed directory walk hidden behind an obfuscator string table is a
+  # loader-shaped combination, not ordinary library minification.  The
+  # repeating-key decoder is included to require an actual payload
+  # transformation in addition to the runtime and filesystem surfaces.
+  - id: obfuscated-node-vm-filesystem-loader
+    desc: Obfuscated Node VM loader with filesystem traversal
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002,T1059.007,T1083
+    all:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::hex-name-mangling-with-string-table-rotation
+      - id: micro-behaviors/process/interpreter/vm::vm-require
+      - id: micro-behaviors/fs/directory/traverse::node-obfuscated-dirent-methods
+      - id: micro-behaviors/crypto/symmetric/xor/loop::xor-modulo-key-loop
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+
+  - id: obfuscated-node-hidden-stage-loader
+    desc: Obfuscated Node loader hides staged execution
+    crit: hostile
+    conf: 0.97
+    mbc: B0024
+    attack: T1195.002,T1105,T1059.007
+    all:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::decoder-loop-keyword-triad
+      - id: micro-behaviors/data/control-flow/error-handling::from-str-empty-catch
+      - id: micro-behaviors/process/create/spawn::windowshide-option
+      - id: micro-behaviors/process/create/spawn::windowshide-obfuscated-expression
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+      - id: metadata/build/bundler/asset::js-large-module-bundle
+
+  - id: obfuscated-node-hidden-file-stage
+    desc: Obfuscated Node bundle writes a decoded stage and launches it hidden
+    crit: hostile
+    conf: 0.98
+    mbc: B0024
+    attack: T1027.002,T1059.007,T1105,T1564.003
+    all:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::decoder-loop-keyword-triad
+      - id: micro-behaviors/process/create/spawn::windowshide-obfuscated-expression
+      - id: micro-behaviors/fs/write/file/mode::node-obfuscated-write-mode
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+      - id: metadata/build/bundler/asset::js-large-module-bundle
+
+  # Browser-side staged loaders often avoid Node APIs entirely: the
+  # advertised package exports a helper that creates a <script> element,
+  # assigns .src from caller-controlled data, then appends it into the DOM.
+  # In unobfuscated browser SDKs this is a normal notable capability; in an
+  # obfuscator.io-packed npm artifact it is a supply-chain hidden-payload
+  # shape because follow-on code is fetched and executed by the browser.
+  - id: obfuscated-bundle-dynamic-script-loader
+    desc: Obfuscated bundle dynamically loads browser script
+    crit: suspicious
+    conf: 0.93
+    mbc: C0038
+    attack: T1105
+    all:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::any-name-mangling
+      - id: micro-behaviors/process/create/load/remote-code::js-dynamic-script-loader
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+
+  # The "complete stealer toolkit" shape: obfuscation + host-fingerprint
+  # surface + base64 codec. Stealers gather host info, encode it, and
+  # ship it out. Together these three are the full toolkit; legitimate
+  # libraries do not co-locate all three in an obfuscated bundle.
+  - id: obfuscated-bundle-stealer-toolkit
+    desc: Obfuscated stealer toolkit (host-fingerprint + base64)
+    crit: hostile
+    conf: 0.96
+    mbc: B0030
+    attack: T1082
+    all:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::any-name-mangling
+      - id: metadata/file/string/charset::base64-alphabet
+    any:
+      - id: homedir-literal
+      - id: arch-literal
+      - id: endianness-literal
+      - id: pid-literal
+      - id: randombytes-literal
+      - id: digest-literal
+    needs: 3
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+
+  # Helper composite: any shell-exec primitive present
+  - id: any-shell-exec-literal
+    desc: Any shell-exec primitive identifier
+    crit: component
+    any:
+      - id: micro-behaviors/process/create/shell/bridge::child-process-keyword-literal
+      - id: micro-behaviors/process/create/shell/bridge::execsync-method-literal
+  # Re-state the hostile DNS+exec composite using the two helpers so it
+  # truly requires both categories.
+  - id: obfuscated-bundle-dns-and-exec
+    desc: Obfuscated bundle co-locates DNS lookup and shell-exec
+    crit: hostile
+    conf: 0.97
+    mbc: B0030
+    attack: T1071.004
+    all:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::any-name-mangling
+      - id: resolvetxt-literal
+      - id: any-shell-exec-literal
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+
+  # A packed JavaScript stage that combines an obfuscated detached child,
+  # hidden-window handling, event-loop detachment, and file staging is a
+  # runtime payload rather than ordinary library obfuscation.
+  - id: obfuscated-detached-hidden-file-stage
+    desc: Obfuscated JavaScript stages a detached hidden child
+    crit: hostile
+    conf: 0.98
+    mbc: B0024
+    attack: T1027.002,T1059.007,T1105,T1564.003
+    all:
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::push-shift-bracket-pattern
+      - id: micro-behaviors/process/create/minified-spawn::node-obfuscated-detached-stdio-options
+      - id: micro-behaviors/process/create/spawn::windowshide-obfuscated-true
+      - id: micro-behaviors/process/daemonize/detach::node-handle-unref-text
+      - id: micro-behaviors/fs/write/file/mode::node-obfuscated-write-mode
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+      - id: metadata/package/testing/presence/fixture::test-filename-pattern
+
+  - id: npm-install-obfuscated-string-decoder
+    desc: npm install hook accompanies an obfuscated string decoder
+    crit: suspicious
+    conf: 0.95
+    attack: T1195.002,T1027.002
+    for: [npm, javascript]
+    scope: archive
+    all:
+      # No `has-install` trait exists; the install-hook declaration is carried
+      # by this ecosystem-independent composite, which covers pre/post/install
+      # alike. Requiring only `scripts.install` would miss the postinstall
+      # form that obfuscated npm payloads actually ship.
+      - id: objectives/supply-chain/install-hook/declaration::package-install-hook-present
+      - id: objectives/anti-static/obfuscation/string/array::hex-array-near-indexed-charcode-decoder
+    unless:
+      - id: metadata/package/testing/harness/runtime/
+
+# A marketplace extension whose runtime module is a reverse shell. The
+# reverse-shell rules above convict the shell; this states the supply
+# chain -- the payload is not something the victim ran, it is something
+# they installed from a marketplace that promised a tool.
+#
+# Worked example: the CSF-RED extension set whose extension.js connects
+# an exec'd shell to a remote operator socket on activation.
+
+

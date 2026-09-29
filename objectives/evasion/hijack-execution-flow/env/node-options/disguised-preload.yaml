@@ -1,0 +1,67 @@
+# NODE_OPTIONS (or an .npmrc `node-options`) that preloads a file wearing an
+# asset name or a non-script suffix. `--require`/`--import` runs the named
+# module before the program's own entry point, so a project that sets it in a
+# task's `options.env`, a VS Code `terminal.integrated.env.*`, or an `.npmrc`
+# makes every `node`/`npm` invocation load that file first -- while the visible
+# command stays an ordinary `npm run dev`. Pairing the preload flag with a
+# disguised target is what separates this from New Relic or pino preloading
+# their own named agent. Persists beyond one task and survives deletion of
+# tasks.json, so it is a durable foothold, not a one-shot autorun.
+defaults:
+  platforms: [windows, linux, macos]
+  attack: T1574.006
+  mbc: F0015
+
+traits:
+  # A preload flag whose argument sits in an asset directory. Text so it works
+  # across tasks.json, settings.json and .npmrc alike.
+  - id: node-preload-asset-directory
+    desc: Node preload flag targets asset directory
+    crit: notable
+    conf: 0.93
+    for: [json, package.json, text, shell]
+    if:
+      type: text
+      regex: '(--require|--import)[= ]\S{0,60}[/\\](fonts?|im(g|ages?)|icons?)[/\\]\S{1,60}'
+      case_insensitive: true
+
+  # A preload flag whose argument has a non-script suffix. A real preload is a
+  # module (.js/.cjs/.mjs) or an installed package name with no path; a
+  # `.woff2`/`.llf`/`.dat` is neither.
+  - id: node-preload-non-script-suffix
+    desc: Node preload flag targets non-script file
+    crit: notable
+    conf: 0.93
+    for: [json, package.json, text, shell]
+    if:
+      type: text
+      regex: '(--require|--import)[= ][^\s"'']{1,80}[/\\][^\s"'']{1,60}\.[a-z]\w{0,4}[^\w./]'
+      case_insensitive: true
+    not:
+      - regex: '(?i)\.(m?js|cjs|[mc]?ts|node)[^\w./]$'
+
+composite_rules:
+  # An asset name is not something you write into a preload flag by accident,
+  # so either atom is the disguise; one id for composites to reference.
+  - id: node-preload-disguised-target
+    desc: Node preload flag targets a disguised file
+    crit: suspicious
+    conf: 0.93
+    any:
+      - id: node-preload-asset-directory
+      - id: node-preload-non-script-suffix
+
+  # The disguised preload sits in a VS Code workspace that pre-approves
+  # automatic tasks or hides the terminal: the preload runs on open with no
+  # command a reviewer would question.
+  - id: workspace-preapproved-disguised-preload
+    desc: Workspace preloads a disguised file on open
+    crit: hostile
+    conf: 0.97
+    for: [json]
+    all:
+      - id: node-preload-disguised-target
+    any:
+      - id: metadata/permission/activation::vscode-auto-task-approval
+      - id: metadata/package/config::vscode-terminal-hidden-on-startup
+      - id: metadata/permission/activation::vscode-task-folder-open-activation
