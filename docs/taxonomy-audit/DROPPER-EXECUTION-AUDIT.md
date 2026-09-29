@@ -29,11 +29,11 @@ taxonomy destinations.
 
 ## Directory-level diagnosis
 
-The groups below account for every remaining child. They name the current
-organizing axis, not a destination for all its rules. A leaf can contain
+The groups below record the historical audit sources, including leaves now
+empty. They name the original organizing axis, not a destination for all their rules. A leaf can contain
 several actual sinks and requires per-rule disposition.
 
-| Current axis | Children needing individual sink review |
+| Historical axis | Original children under review |
 |---|---|
 | Activation or loader role, often mixed with stage or concealment clues | `binary-native`, `eval`, `fileless`, `inject`, `loader`, `masquerade-loader`, `native`, `reflective`, `self-extract`, `stealth-spawn`, `stego-loader`, `vb6-shell`, `windows-loader`, `wmi` |
 | Carrier, host, language, file format or application | `batch`, `browser`, `clickfix`, `dropper-script`, `installer`, `jphp`, `markup`, `msi`, `resource`, `script`, `shell-chain`, `sqlserver`, `wsh`, `wsh-reconstruct` |
@@ -1163,10 +1163,9 @@ has one evidence-supported destination and no directory or exact-ID consumer
 depends on the retired path.
 
 `make validate` still fails on catalog-wide debt, including 71 over-cap
-directories, 21 broken ColdFusion references, and 18 redundant clauses.
-It reported no broken references for these dropper moves. The
+directories and one unrelated broken `os-release-open` reference in system
+discovery. It reported no broken references for these dropper moves. The
 relocated C#, VS Code, PyInstaller and shipped-key YAML bodies match their
 original committed bodies; the Werfault rule retains its six matcher legs
 while its identity claim and ATT&CK mapping were corrected. The new audit
-script compiles, and the directory matrix above matches every directory in
-its generated summary exactly once.
+script compiles; its generated summary is the current directory inventory.
