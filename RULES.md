@@ -592,6 +592,64 @@ originating call and explicit library transfers. See [SOURCE_ANALYSIS.md](SOURCE
 for the shared flow contract and YAML examples. Use direct argument
 matching when sufficient; provenance is for actual relationships, not proximity.
 
+**Named-field presence.** `arg.from.field_exists: true` requires `from.field`
+and matches an explicitly present named field, including one with an unknown
+or dynamic value. It does not assert a nonempty value or runtime success.
+It is mutually exclusive with `call`, `value`, `whole_value`, and `member`,
+and does not accept transfer models. Use it when the attribute itself is the
+observation, such as a command execution call specifying an output file.
+
+**Complete literal values.** `arg.from.whole_value` matches a regex against a
+proven complete string value, optionally selected with `from.field`. Use it for
+operation selectors such as an HTTP method, file action, or executable name.
+`from.value` instead selects contributing literal origins and can match pieces
+of a concatenated value. `whole_value` is mutually exclusive with `call`,
+`value`, and `member`, and does not accept transfer models. Unknown expressions
+remain opaque. The CFML producer folds bounded constant concatenations and
+interpolations and distinguishes branch alternatives from concatenation;
+other producers' generic dependency merges remain opaque to this query.
+
+**Member-read provenance.** `arg.from.member` selects an actual member-read
+origin by canonical path, rather than a string that happens to contain that
+path. It is mutually exclusive with `from.call`, `from.value`, and
+`from.whole_value`. Source-call
+`literal`/`argument` constraints apply only to `from.call`.
+
+CFML tag calls expose their attributes as a keyword object at argument zero.
+Use `from.field` to select one attribute before following its value:
+
+```yaml
+type: symbol
+kind: call
+exact: cfexecute
+arg:
+  index: 0
+  from:
+    field: name
+    member: '^(form|url)\.'
+```
+
+For a joint condition on multiple named attributes of the same call, use
+`args:` with an explicit `index` and `from.field` on every filter. Distinct
+fields of the same keyword object count as distinct logical arguments;
+repeating the same index/field pair cannot provide two pieces of evidence.
+The positional matching behavior is unchanged for other filter shapes.
+Template output expressions use the distinct call target `cfoutput:expression`,
+with the expression value at argument zero. Proven CFFILE read/readBinary result
+bindings have the flow target `cffile:read-result`, so they cannot be confused
+with ordinary source functions named `cffile`. These result values retain the
+read tag's keyword object at argument zero. CFHEADER and CFCONTENT use the
+normal tag attribute representation. Query/group output scopes currently expose
+unknown output values and an explicit limitation.
+
+CFScript tracks simple assignments and aliases within lexical blocks. Control
+headers, block edges, unsupported statements and script boundaries clear aliases;
+this does not model cross-branch joins, loop iterations or helper invocations.
+Lexical call observations are retained when RHS value analysis remains opaque.
+
+Unsupported CFML syntax and unresolved scope lookup remain explicit flow
+limitations. A possible value origin does not establish runtime reachability.
+
 **Picking between `type: symbol` and `type: tree-sitter`:** `type: symbol`
 covers nearly every call-matching need. It runs against the precomputed symbol
 view — no live parse, no per-rule tree walk. `type: tree-sitter` is the escape
@@ -1454,9 +1512,9 @@ with its decoded named-bit subtree in values (e.g. `pe.dll_characteristics.*`,
 
 ### Directory limits
 
-`make validate` allows at most **85 atomic traits and composite rules combined**
-per directory, summed across its YAML files, at every criticality. Exactly 85
-passes; 86 fails. There is no separate atomic cap or directory exemption.
+`make validate` allows at most **100 atomic traits and composite rules combined**
+per directory, summed across its YAML files, at every criticality. Exactly 100
+passes; 101 fails. There is no separate atomic cap or directory exemption.
 Depth above five directory levels below the tier produces a non-blocking review
 warning, not a hard limit; count neither the tier nor the filename. Sparse
 sibling groups below 35 combined rules also prompt review under the criteria in

@@ -1,0 +1,1 @@
+<CFFILE DESTINATION="/srv/uploads" ACTION="UPLOADALL">

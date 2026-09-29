@@ -1,0 +1,1 @@
+<CFFILE DESTINATION="/srv/uploads" FILEFIELD="attachment" ACTION="UPLOAD">

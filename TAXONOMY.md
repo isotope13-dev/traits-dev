@@ -206,6 +206,12 @@ The distinction is container versus member, not file extension. A member inside 
 
 **Neutral capabilities belong in `micro-behaviors/`, not `objectives/`.** A trait that detects a single API call, syscall, or keyword (fork, crontab, SetFileAttributes, getenv) is a capability — it belongs in `micro-behaviors/` regardless of which objective composite references it. Composites reference traits across directories. Component traits (`crit: component`) may appear in `objectives/` only when they are attack-context-specific fragments with no meaning outside that context (e.g., Nemucod string pieces, default credential lists, supply-chain URL patterns).
 
+For example, a Swift `Data(base64Encoded:)` reference belongs to
+`micro-behaviors/data/decode/base64` even when an anti-static composite uses it;
+the `/bin/sh`, `-c` argument pair belongs to
+`micro-behaviors/process/create/shell/command-string`. The objective composite
+retains only the intent that the combined evidence supports.
+
 ### Directory Layout Convention
 
 Paths classify observations from general to specific; they do not require fixed
@@ -362,6 +368,13 @@ matchers or compatibility aliases to straddle old and new homes.
   - **`objectives/`**: Reserved for unwanted, improper, or malicious behavior that requires intent inference. Any generic finding suggesting unwanted behavior, malice, or abuse must be categorized under an `objectives/` hierarchy.
   - **`micro-behaviors/`**: Reserved for strictly neutral, atomic observations. If an id, description, or matcher interpretation hints that the observed behavior is unwanted, promotional, deceptive, abusive, or malicious, it is not neutral and should move to `objectives/`; keep only the underlying factual mechanic here.
 - **Platform/Language Neutrality**: Directories must NOT be named after programming languages (e.g., `python/`) or platforms (e.g., `windows/`). These are used as suffixes in YAML filenames (e.g., `dropper_python.yaml`). This ensures the ML pipeline can perform cross-language and cross-platform technique correlation.
+- **Matcher Neutrality**: File a rule by the operation it observes, regardless
+  of whether a text search, symbol fact, or AST query detects it. `ast/` is a
+  valid subject only when the program itself constructs, traverses, or
+  transforms an abstract syntax tree. A Ruby AST matcher for `Base64.decode64`
+  belongs with Base64 decoding; one for `File.rename` belongs with file rename.
+  Stream binary/text mode changes belong in `fs/file/io-mode`; permission-bit
+  changes belong in `fs/chmod`, even if both APIs call their argument a mode.
 
 ## Decision Framework
 
@@ -428,7 +441,7 @@ Stop at the first row that describes the matcher:
 | A new interpreter process handed source text (`node -e`, `python -c`) | `eval` |
 | A library object standing for the child (`Popen`, `NSTask`, `ProcessBuilder`) | `subprocess` |
 | The desktop opener choosing the handler (`ShellExecute`, `open`, `NSWorkspace`) | `shellexec` |
-| An argument vector starting an image (`execve`, `CreateProcess`, `posix_spawn`) | `exec` |
+| An API directly starting an image from an argument vector or executable command line (`execve`, `CreateProcess`, `posix_spawn`, `WinExec`, `WshShell.Run`) | `exec` |
 | Only an executable name, launch flag, agent permission, or import, without a creation mechanism | The corresponding path/configuration/import observation; not a second process-creation mechanism |
 
 The table describes canonical ownership, not a claim that all existing leaves
@@ -437,6 +450,15 @@ by these tests. The executable being launched does not override the mechanism.
 A `Popen(..., shell=True)` matcher belongs in `shell`; a matcher for `Popen`
 without that argument belongs in `subprocess`. An API's optional capabilities
 are not evidence that a particular invocation uses them.
+
+For Windows Script Host, `WshShell.Run` with an executable path is a direct
+program-start clue under `exec`; an explicit `%COMSPEC% /c` argument is a
+shell-command clue under `shell`. A bare `wscript.exe` or `cscript.exe` name
+is an executable-name reference, and `WScript.Shell` alone is a COM-object
+reference. The Microsoft [WSH process guidance](https://learn.microsoft.com/en-us/archive/msdn-magazine/2002/may/scripting-windows-script-host-5-6-boasts-windows-xp-integration-security-new-object-model#spawned-processes)
+shows the explicit `%COMSPEC%` handoff. Existing `shell/wsh` and
+`shell/script-host` are overlapping legacy sources, not alternative homes for
+new WSH Run rules; migrate their rules by these tests and preserve consumers.
 
 Below `shell`, choose a consistent command-form question: interactive session,
 command text, script file, or pipeline. Shell encoding/injection facts can be
@@ -468,6 +490,7 @@ When a behavior could serve multiple objectives, place the single trait where ev
 | WMI process execution | `execution/` | Execution; lateral only when combined with network evidence |
 | Killing AV/EDR processes | `impact/degrade/edr/` | Aggression ("I'll stop you"), not stealth; evasion/anti-av/ is for bypass |
 | Bypassing AMSI or using indirect syscalls | `evasion/anti-av/` | Stealth ("don't see me"), not aggressive termination |
+| Defender exclusion vs AMSI bypass vs delayed injection | `evasion/anti-av/platform/defender/` requires a Defender product exclusion or protection change; `evasion/anti-av/amsi/` requires tampering with the AMSI scanning interface; `evasion/process/injection/` requires cross-process execution transfer. | The target mechanism decides placement. AMSI is not a Defender-specific subtechnique, and delaying an injection does not by itself show AV tampering. Reference the other mechanisms from a composite only when its own objective is established. |
 | Disabling/flushing firewall rules | `impact/degrade/firewall/` | Degrading system capability, not hiding |
 | Hidden files in system directories | `evasion/file-hiding/` | Concealment from users/admins; a hidden file doesn't survive reboots better |
 | `fork` + `setsid` without a durable activation change | `micro-behaviors/process/daemonize/` | Detachment alone does not establish restart after reboot. A durable service/boot registration belongs in persistence. |
@@ -544,6 +567,7 @@ source.
 | Installed-software or package inventory leaves | `stealer/system-info/software` | A package name or dependency list is not automatically software inventory. |
 | Interfaces, routes, addresses, or network configuration leave | `stealer/system-info/network` | Merely mentioning an interface supports a probable network capability or discovery claim, not theft. |
 | A host report requires fields from multiple `system-info` classes, or explicitly leaves the reported host-data class open across multiple classes, with no one class defining the claim | `stealer/system-info/profile` | A generic “profile” label or one host field alone do not qualify. If one source class is required and sufficient, use that class. Alternatives spanning classes are profile, not `multi-source`. |
+| A host marker accompanies a required remote command-dispatch channel | `command-and-control/backdoor/dispatch/<channel>` | The required operator task and execution define the rule; host/platform markers are supporting context. Use `stealer/system-info/<source>` only when the matcher requires probable host-data transmission rather than merely correlating host clues with tasking. |
 | Two or more independent stolen source classes are each required | `stealer/multi-source` | `all` evidence must require each class. An `any` list of alternative sources is not multi-source theft. |
 
 Use the same source-first rule for tricky neighboring names. `sweep` describes
@@ -643,6 +667,7 @@ Keep language and backend in the filename, trait name and description.
 |---|---|
 | Embedded AES tables or an AES-specific implementation signature | `micro-behaviors/crypto/symmetric/aes`, refined by the actual mechanism where needed; describe “contains an AES implementation,” not “encrypts files.” |
 | A native crypto-provider reference without a supported specific algorithm or payload purpose | `micro-behaviors/crypto/native/`; describe the API reference or co-occurrence as evidence of probable crypto capability, not as proof that a fallback ran, a payload was encrypted, or a named algorithm was used. A declared dependency alone is metadata; a fingerprint of the analyzed library itself is `well-known/lib/`. |
+| A generic cipher construction name or API reference with no proven algorithm or key type | `micro-behaviors/crypto/cipher/`; keep it separate from `symmetric` and `asymmetric` until evidence supports one. A bare `Cipher` name is a weak clue, not proof of encryption or payload decryption. |
 | Embedded zlib inflate implementation or its specific API | `micro-behaviors/data/decompress/zlib`; do not claim compression or execution when only decompression capability is supported. |
 | A library-specific HTTP request or string operation | The corresponding HTTP/string operation, alongside other implementations of that operation. |
 | A fingerprint supporting a known capability group but no narrower operation | That capability group's documented observation, if a valid home exists. Do not invent an algorithm or create `library`, `wrapper`, or `implementation` as a remainder bucket. Factor broad roll-ups into their supported canonical observations. |
@@ -718,7 +743,10 @@ not acquire a second home merely because it uses a socket underneath.
 | `http/oauth`, `device-code`, `token-auth`, `jwt`, `basic-auth`, `auth` | OAuth grant acquisition/refresh, including device authorization → `oauth`; presenting a bearer token → `token-auth`; JWT structure/processing → `jwt`; Basic credentials → `basic-auth`; `auth` only when the mechanism is not established. Mechanism-specific leaves take precedence. |
 | `http/cookies`, `cookie-store`, `cookie-name` | HTTP cookie operations and protocol fields → `cookies`. A cookie-jar path → `fs/path/cookie`; credential/session extraction requires its own objective. Consolidate competing spellings by this distinction. |
 | `http/services` vs a protocol operation | A named remote service endpoint without an operation → `services`; an operation tied to that endpoint → the operation's directory. A vendor CLI invocation is not automatically HTTP. |
+| Cloud metadata endpoint vs cloud credential/path evidence | Provider-specific host and request-path clues → `http/services/<provider>/metadata`; a shared metadata address with no provider-specific path → `http/services/cloud`; provider request headers such as `Metadata-Flavor` or `X-aws-ec2-metadata-token` → `http/header/custom`. Environment-variable names → `os/env/cloud`; local credential/config paths → `fs/path/credential`; SDK import or query-call clues follow the named provider capability. These are content clues: they suggest probable capability, but do not prove a request, read, or credential access. |
 | `communications/url` vs `http/url` or `http/query` | Generic URL construction/parsing/reference → `url/{construction,parse,reference}`; HTTP request parameter handling → `http/query`. Endpoint identity follows the service/resource it identifies. |
+| `communications/transfer` vs a protocol operation | Protocol-neutral evidence of sending/uploading/transferring data → `transfer`; when the matcher identifies HTTP, FTP, messaging, DNS, or another protocol, use that protocol's operation. Language clues such as upload wording indicate a probable transfer capability, not proof that bytes left the process. |
+| `http/url/github` vs a dropper sink | A raw GitHub URL or filename suffix, including `.png`, is neutral endpoint text and belongs under `http/url/github`; a suffix does not establish response bytes or steganography. Put a composite that requires a staged payload to be activated by an assembly/module loader under `dropper/module-load`, referencing the URL clue. |
 | `communications/ip` vs `network/interface` vs `objectives/discovery/network` | Address syntax, literals, construction, or parsing → `communications/ip`. Local interface identity/address/state evidence, including a distinctive name, API reference, or query command → `micro-behaviors/network/interface`; this suggests capability and does not alone establish hostile reconnaissance. Active remote probing or a multi-signal network survey that supports an intent inference → `objectives/discovery/network`. |
 | `dns/lookup`, `dns/txt`, `resolver`, `server` | Generic name-resolution APIs and operations without record-type-specific behavior → `lookup`; querying, parsing, or handling TXT records → `txt`; configure/select resolver infrastructure → `resolver`; receive/respond to DNS queries → `server`. TXT is already a lookup, so do not repeat `lookup` in the feature name. A DNS label/domain literal alone does not prove any of these operations. |
 | `communications/ipc` vs network messaging | Local process/host bridges, pipes, shared-memory messaging and native-host channels → `ipc`; remote messaging protocols → `messaging` or the named protocol. IRC is a network protocol, not IPC merely because it transmits messages. |
@@ -935,6 +963,13 @@ composite does not pull its atoms into this tree.
 | `privilege-escalation` | Gain authority beyond the starting principal through a required abuse mechanism. Children name the elevation primitive then affected boundary. | Ordinary authorized elevation APIs are capabilities; injection without higher authority is not privilege escalation. |
 | `supply-chain` | Abuse component selection, provenance, publication, build/update trust, or the correspondence between a distributed component and its claims. Children identify that trust violation. | A package is a carrier; generic theft, execution and persistence retain their own result directories. |
 
+Within `impact/cryptojacking/miner`, command-line flags that select a pool,
+algorithm, worker count or injection mode belong in `config`, including a
+composite of those flags. `runtime` requires evidence of a miner's operating
+loop, worker, launch or execution context; a fetch/extract/exec profile with
+XMRig and pool evidence belongs there only when its description does not claim
+an unproven downloaded-file handoff. A pool endpoint alone belongs in `pool`.
+
 When several outcomes are required, keep their canonical composites and place
 the chain by its distinguishing result: source plus send → exfiltration;
 cross-host installation → lateral movement; higher-authority execution →
@@ -951,10 +986,12 @@ At `objectives/command-and-control`, classify the **required result** first:
 | Level-2 directory | Admission | Exclusion / routing |
 |---|---|---|
 | `reverse-shell` | Outbound connection explicitly coupled to a shell session's input/output. | A listening/accepting shell → `backdoor/bind-shell`; HTTP-polled task execution or independent command requests → `remote-command`; socket and shell symbols without their relationship are insufficient. |
+| `reverse-shell/stream-bridge` vs `dropper/delivery/pipe` | An interactive remote socket bridged to shell input/output → `reverse-shell/stream-bridge`. Downloaded content piped into a local shell without a remote interactive session → `dropper/delivery/pipe`. Both may use a shell, but only the first carries an operator session. |
 | `backdoor/bind-shell` vs `backdoor/dispatch` | A listener that connects an accepted client to a shell → `bind-shell`. | Use `dispatch/<mechanism>` when the handler receives independent tasks and chooses an operation/command; remote access to a shell does not create a second dispatch classification. |
-| `remote-command` | Receive attacker-directed tasks and dispatch operations or return command results. Repeated HTTP retrieval and dispatch → `remote-command/http-poll`; a single received task dispatch → `remote-command/dispatch`. | A persistent connected shell uses reverse-shell; an HTTP server endpoint exposing command execution uses backdoor/webshell. A single HTTP request is not polling. |
+| `remote-command` | Receive attacker-directed tasks and dispatch operations or return command results. Repeated HTTP retrieval and dispatch → `remote-command/http-poll`; a single received task dispatch → `remote-command/dispatch`. An outbound HTTP client retrieving tasks → `backdoor/tasking/http`. | A persistent connected shell uses reverse-shell; an HTTP server route that accepts an operator request and executes its body → `backdoor/webshell/exec`. A single HTTP request is not polling. |
 | `remote-command/dispatch` admission | Required evidence must connect received task data to an operation, interpreter, or command execution. A response written back over the channel strengthens the dispatch chain. | Socket plus process execution, or output written to a socket without received task execution, does not establish remote command dispatch. A persistent shell whose standard streams are wired to a connection uses `reverse-shell/<mechanism>`. |
 | `backdoor` | An unauthorized access/control surface, such as a bind listener, webshell or authentication bypass. | Generic task dispatch uses remote-command; durable installation adds a persistence claim; binary/script/native-source are not access mechanisms. |
+| Modular RAT profile vs capability cluster | Classify as `backdoor/rat/<mechanism>` only when the rule establishes a remote administration or tasking surface, not merely plugin-loading and socket APIs. | A pipe-delimited host string, socket connect, 32-byte array, nearby library load and VM check support separate neutral capability and anti-analysis findings. They do not establish encrypted command transport or an operator-controlled RAT. |
 | `beacon` | Repeated attacker check-in or heartbeat, without a narrower required tasking result. | An ordinary timer or telemetry endpoint is not a beacon; an actual dispatched task belongs with its tasking result. |
 | `botnet` | Fleet membership/coordination or distributed operator tasking. | A network-device platform or DDoS action alone is not botnet coordination. |
 | `channel` | A communication mechanism proven to carry attacker control, without a narrower access/dispatch claim. | Generic transport APIs are capabilities. Choose protocol/mechanism over vendor identity. |
@@ -963,6 +1000,17 @@ At `objectives/command-and-control`, classify the **required result** first:
 | `trigger` | An attacker activation condition: packet knock, message/content gate or local artifact gate. | Ordinary lifecycle/timer facts are capabilities/metadata; `activation` merely restates trigger. |
 | `dropper` | Required acquisition/staging of a payload linked to its activation. | An installer identity, download, encoded blob or execution API alone does not establish this chain. |
 | HTTP retrieval vs dropper activation | A `DownloadString` call, URL, or cleartext HTTP reference belongs under `micro-behaviors/communications/http/` unless the rule also links the retrieved content to an activation sink. Require that link before classifying `dropper`; source evaluation routes to `dropper/script-eval`, a launched staged file to `dropper/file-exec`, and in-memory transfer to the supported injection/image-map sink. | A download alone establishes a probable network capability, not payload execution, command dispatch, or C2. |
+| HTTP/write/activation co-occurrence without a handoff | Classify the composite by its required operation: response or script-path writing → neutral HTTP download/write or filesystem write; `importlib` module loading → neutral module load; subprocess or variable-path interpreter launch → neutral process creation. Describe the nearby HTTP and file clues as context. | A `urlopen().read()`, writable script path, `spec_from_file_location(...).exec_module()`, or response write beside a child interpreter does not prove the same bytes or path reach that sink. Use the corresponding dropper sink only when the matcher binds the source or stage to it. |
+| HTML object `codebase` vs saved executable | An `<object codebase="...exe">` attribute is an HTML-format reference; a UNC EXE string is executable-path evidence; `ADODB.Stream` alone is a COM ProgID reference. | Co-occurrence with `SaveToFile` does not show that the saved path is the `codebase` target. Classify a complete staged-file activation by its linked file-handler sink only when the rule establishes that handoff. |
+| HTA host, media markup, and payload sink | `<hta:application>` identifies the HTA carrier; a media element referencing a file is HTML-document structure; off-screen/minimized windows follow hidden execution. Dynamic `eval` or a script-host launch follows its actual execution mechanism. | A media element alone does not prove a decoy lure. A gzip write to `tempZip`, a nearby `Run tempBat`, or WebClient bytes beside `Assembly.Load` does not establish the downloaded/decoded content as the launched payload. Require the value or path handoff before classifying a dropper. |
+| Desktop-entry download, autostart, and document guise | A linked download-to-launch chain follows the dropper activation sink. A rule that additionally requires XDG autostart belongs under `persistence/login/xdg`; one that requires a deceptive document icon/name belongs under `evasion/masquerade/document`, referencing the delivery finding. | `wget -O /tmp`, chmod/pipe command text, `Type=Application`, `Exec=`, and `Terminal=false` are neutral command or format evidence on their own. They do not create another `dropper/execution/launcher` technique. |
+| Editor extension installation vs dropper | A durable editor extension installation belongs under `persistence/system/editor-extension`; a bare `--install-extension` operation is a neutral package-manager capability. A source-to-installed-package handoff may refine the persistence profile with download evidence. | An HTTPS call, VSIX clue and force-install CLI in one file do not necessarily bind the fetched VSIX to the CLI argument. The editor or programming language is rule scope, not a `dropper/execution/ide-extension` branch. |
+| Temp path, file write, and launch | An EXE/DLL/temp-data path is filesystem-path evidence; `curl -o` or WebClient use follows the downloader; `SaveToFile` follows stream writing; a `rundll32` invocation follows its named execution mechanism. | A download method beside a temp EXE path and a shell name does not prove that path was downloaded or executed. A batch download to `ProgramData` paired with a run from `Temp` names different paths and cannot be treated as one staged-file handoff. |
+| DNS TXT stage vs DNS command channel | A TXT response assembled into a local executable and linked to its launch follows the dropper file-execution sink; TXT records carrying operator commands or replies follow `dns`. | TXT lookup, chunk decoding and a nearby spawn do not by themselves prove either a command channel or a staged-file handoff. Do not use `dns/tunneling` as a home for every encoded TXT response. |
+| Document auto-open vs dropper | An auto-open trigger with a process or interpreter call, but no acquired payload linked to that call, follows `objectives/execution/trigger/document` or the specific interpreter mechanism when that is the primary claim. | A macro, decoded command, hidden window or `CreateProcess` API name alone does not make a dropper. |
+| API resolution vs loader | Manual export walking or API-hash resolution, including a small DLL with sparse imports, follows `anti-static/obfuscation/native-api-hash` when hash-based; an ordinary resolver follows its API-resolution capability. | Sparse strings, a DLL shape or selected file/memory API hashes do not establish DLL sideloading or staged-code activation. |
+| Archive extraction and shortcut launch vs dropper | `hh -decompile` follows CHM extraction, and a LNK invocation follows LNK execution. A staged CHM-to-shortcut dropper needs the downloaded archive, extracted shortcut and launched target linked by path or data. | `curl`, `hh -decompile` and `.lnk` in one file, even in order, do not prove they refer to the same artifact. |
+| Archive download, extraction, and TEMP launch | An archive-extraction command is a neutral `data/archive/extract` capability; HTTP file transfer follows the downloader; a TEMP script or executable launch follows process creation. A required Run-key write follows `persistence/login/startup/registry`. | Proximity among download, extraction, and launch supports context, not an archive-payload dropper claim. Require a path or data relationship from the downloaded archive to an extracted member and from that member to the launch target before using a dropper activation leaf. Keep a hidden-window option as concealment context, not evidence of the handoff. |
 
 Reverse-shell level-3 placement uses the **first required mechanism** below.
 All rows still require the admission test above. Direction, transport and
@@ -1073,6 +1121,53 @@ reconciled into these canonical homes. Pick one sink and reference source,
 concealment and trigger facts; do not duplicate a complete chain under its
 carrier or encoding.
 
+`dropper/execution/loader` has no separate admission test: a loader is a
+program role that can activate code through several different mechanisms.
+`execution` is a phase, not an activation technique. Treat all children of
+this legacy partition as audit sources, not as destinations for new rules.
+Classify each rule by the sink its matcher requires. A loader-shaped name,
+import or event hook without evidence that staged code reaches a sink does
+not establish a dropper. Keep its supported observation in the neutral
+capability tier, or place a complete non-dropper composite under the actual
+objective it supports.
+
+Script, HTA, WSH, MSI and package format identify a carrier or host, not the
+payload sink. A command that invokes `mshta` on a remote URL supports script
+interpreter execution; it does not by itself establish a separately staged
+dropper payload. An MSI containing `New-ScheduledTaskAction` supports a
+scheduled-task observation, while an MSI Run-key write supports persistence.
+The container may be useful as a scope or corroborating leg, but the required
+result owns the rule. Likewise, a quoted Ruby library name is only a string
+literal unless the matcher requires an actual import or load expression;
+do not report bare names as module loading or infer dropper execution from
+them.
+
+A distinctive builder path plus a binary-layout profile may identify a named
+malware wrapper without proving what that wrapper executes. Put the path
+fingerprint and its family composite under `well-known/malware/`, and reusable
+section measurements under `metadata/binary/section/`; another family can
+reference the shared wrapper when its own corroboration is required. A bare
+COM ProgID prefix is an automation reference, not a reconstructed token array,
+HTTP client or dropper by itself. If two consumers need the same matcher with
+different file-size bounds, keep one neutral observation and put the narrower
+bound on the consumer that requires it. Do not invent a section or size bound
+for a family string without evidence merely to satisfy validation.
+The same rule applies to stack-built string fragments in native code: bytes
+constructing `%appdat`, `http://`, a filename or `%s:Zone` are path, URL and
+stream-name evidence, respectively. Their adjacent code bytes or an API-name
+reference do not prove that a URL is downloaded, a Mark-of-the-Web stream is
+removed, or the downloaded file is launched. A distinctive code-stub signature
+can identify a family only after the family attribution is supported; generic
+fragments remain neutral facts that the family rule can reference.
+
+For example, `BeaconPrintf` and related Beacon Object File host API names
+belong in `micro-behaviors/process/interpreter/bof`: they indicate BOF host
+compatibility, not acquisition or activation of a staged BOF. The generic
+COFF `__imp_` import-pointer prefix belongs in
+`micro-behaviors/os/linker/import-symbol`, even when it helps corroborate a
+BOF host. Only a composite linking staged BOF material to execution belongs
+under the appropriate dropper activation sink.
+
 When no activation sink is established and a staging observation remains in
 the legacy `staging/` branch, use the technique the matcher actually requires:
 
@@ -1081,6 +1176,9 @@ the legacy `staging/` branch, use the technique the matcher actually requires:
 | Archive membership or archive-contained payload/lure, with no required encryption clue | `dropper/staging/archive/` | A disk image merely contained in an archive stays here; require mounting or execution from that image before using `staging/image-disk/`. |
 | Encrypted content used as the defining staging mechanism | `dropper/staging/encrypted/` | A password-protected archive belongs here when the archive's encrypted-member/header evidence is required. If encryption is optional and the archive or nested disk image is the actual technique, use `staging/archive/`. |
 | Reconstructed or decoded embedded payload, with no activation sink established | `dropper/staging/encoded/` | Require evidence of payload reconstruction, not merely an encoding API or encoded string. Once a sink is shown, classify the full chain by that activation sink. |
+| Executable carrier is a small stub with a dominant appended payload | `dropper/staging/stub/` | Require the stub-and-overlay shape, not just any embedded PE or a process-launch name. A shell or URLMon clue without a link to the appended bytes does not make this a file-exec chain. |
+| Payload is embedded in a non-resource carrier without the stub-and-overlay shape | `dropper/staging/embedded/` | Require evidence that the embedded material is used as a stage; a bare embedded-PE fact stays in `metadata/binary/layout/embedded` or `micro-behaviors/data/embedded`. Resource-table extraction belongs in `staging/resource` when its staging relation is supported. |
+| Payload is extracted from an executable resource table without a proven activation sink | `dropper/staging/resource/` | Require resource access and extraction/staging evidence. A resource API or a large `.rsrc` section alone stays neutral; once the extracted content is linked to an activation sink, choose that sink instead. |
 | Mounted virtual disk used to activate a contained executable or shortcut | `dropper/staging/image-disk/` | Requires mount/activation evidence; archive membership alone does not qualify. |
 
 The evidence-source format (archive metadata, strings, or API references) does
@@ -1098,6 +1196,15 @@ matcher does not connect.
 | `interpreter-stdin` | Feed staged source through a new interpreter's stdin. |
 | `file-exec` | Launch a staged file through a process or file-handler mechanism. |
 
+A WebAssembly host (`new Go()` plus `WebAssembly.instantiate`) is a neutral
+interpreter/module capability under `micro-behaviors/process/interpreter/wasm`.
+A long or generated-looking `.wasm` filename, a sidecar `require`, or an empty
+Promise catch adds context but does not connect that named asset to the bytes
+passed to `instantiate`. Use `dropper/module-load` only when acquisition or
+staging of the WASM payload is linked to that activation call. JavaScript as
+the host language and `.wasm` as the payload format do not select separate
+dropper children.
+
 `file-exec` is strictly a parent; its rule-bearing leaves refine the activation
 mechanism. `file-exec/command` requires a shell or command interpreter to
 evaluate command text that launches the staged file (`system()` with a shell
@@ -1111,6 +1218,39 @@ Use `command` when shell parsing is required and `spawn` when the target path is
 passed directly to a process-creation mechanism. A mere installer reference
 without package-install evidence does not qualify for `installer`. Do not put
 rules directly in the `file-exec` parent.
+
+Installer evidence follows the observation it actually establishes. An SFX
+`RunProgram` command selects a process target under
+`micro-behaviors/process/create/installer`; its `InstallPath` directive selects
+an archive extraction destination under
+`micro-behaviors/data/archive/extract/destination`; `Progress="no"` configures a
+user-interface control under `micro-behaviors/ui/controls/progress`. A large,
+high-entropy installer overlay is a binary layout or packing observation, not
+evidence that the overlay was launched. Self-issued signatures and fabricated
+product claims belong under certificate or identity masquerade. The historical
+`dropper/execution/installer` carrier leaf is only a migration source: a rule
+belongs in `dropper/file-exec/installer` only when the staged package is linked
+to the installer invocation. These contracts apply equally to NSIS, Inno Setup,
+MSI, 7-Zip SFX and other installer formats.
+
+Bare host-profile field-name pairs belong under
+`micro-behaviors/data/format/host-profile`, even if
+a known sample serializes them as JSON. Use `data/format/json` when the matcher
+requires JSON syntax or a parsed JSON structure; a regex that only sees
+`machine_name` near `windows_user` does not establish the encoding. A composite
+that requires those fields and an HTTP POST can then describe transmission of
+a host profile under `objectives/exfiltration/stealer/system-info/profile`.
+
+A .NET `AppDomain.AssemblyResolve` handler that resolves a staged assembly is
+`module-load`. A host process-creation API marker alongside that handler does
+not turn the rule into `file-exec` unless the matcher requires launching the
+staged file through that process API.
+
+For example, a password-protected 7z rule that requires stdout extraction,
+payload validation, a temporary executable path, and `Start-Process` belongs in
+`file-exec/spawn`: encryption and archive format describe the source, while the
+direct child-process launch is the defining sink. If the encrypted archive is
+identified without a linked activation sink, keep it in `staging/encrypted`.
 
 Require evidence of cross-process execution transfer for `process-inject`;
 executable memory or thread creation in the current process alone does not
@@ -1126,6 +1266,13 @@ describe it as co-occurrence, and reserve a dropper execution classification
 for evidence that connects the staged payload to its activation sink. A broad
 proximity window may support a lead, but it must not turn unrelated paths in a
 large source file into a download-and-execute claim.
+
+Likewise, renaming a file to an executable suffix alongside a shell invocation
+supports a rename-and-command-execution observation. It is a dropper only when
+the matcher connects the renamed staged file to the launched command. An
+`extconf.rb` build hook or outer package is trigger and carrier context; if
+command execution is the required result, classify that composite with
+execution and reference the hook or package fact.
 
 Within `objectives/command-and-control/dropper/delivery/`, use `urlmon/` for
 download-and-execute rules whose specific transfer technique is URLMon
@@ -1164,11 +1311,20 @@ no established sink remains in the appropriate staging leaf.
 `new Function`/`eval` of decrypted source is `script-eval`; `Module._compile`
 is `module-load`. A local write/chmod/spawn chain is `file-exec` only when the
 bounded evidence supports a likely relation between the stage and the launch.
+A PowerShell `AppDomain.Load` or .NET `Assembly.Load` of staged bytes is also
+`module-load`, even when the resulting code stays resident in memory. Reserve
+`staging/memory` for executable-memory staging that does not establish a more
+specific activation sink. Memory residency alone does not choose that leaf.
 A standalone interpreter-evaluation capability stays under
 `micro-behaviors/process/interpreter/eval/`; only a completed staged-source
 chain moves to the dropper sink leaf. A generator/source fragment that indicates
 JavaScript `eval` is therefore a language-specific eval observation, not by
 itself proof of encrypted staging or a dropper.
+The same applies to a Java resource getter beside `ScriptEngine.eval` when
+the rule does not bind the resource stream to the eval argument. An obfuscated
+class name plus engine setup belongs with class-name obfuscation; a WSH
+`GetObject` variable call beside a split URL scheme belongs with string
+fragmentation until the reconstructed moniker is tied to that call.
 
 Remote scriptlet execution through `regsvr32` (`/i:` plus `scrobj`) belongs in
 `execution/lolbin/regsvr32`, where the named proxy-execution technique and its
@@ -1212,6 +1368,7 @@ is a stealer.
 | Keyboard, clipboard, screenshot, microphone/camera capture | Collection by captured source when logging/surveillance is established. Generic UI/device calls remain capabilities. Capturing an explicitly credential input can refine credential-access/capture. |
 | Mailbox/message content vs account secrets | `collection/email-harvest` or messaging for content; credential-access for authentication material. An audit event stating access occurred is not itself a harvesting implementation. |
 | Host, account, software, process, network or cloud reconnaissance | Discovery by surveyed resource. `discovery/host` owns installed software/security/browser applications; system owns machine/hardware/OS profile; process owns running-process inventory; network owns interfaces/peers/probes; account owns principals; cloud owns provider resources. Reconcile duplicate host/process/system branches accordingly. |
+| Host-information query near an endpoint vs exported host data | A WMI/OS query plus an IP/URL clue without a send operation remains `discovery/system/profile`; even a literal `/exfil` path in class strings is endpoint evidence, not a transfer leg. Require upload/send evidence before assigning `exfiltration/stealer/system-info/<source>`. |
 | Specific source plus its transmission | `exfiltration/stealer/<source>`; the source wins over HTTP/DNS/webhook transport, package carrier, and install/build trigger. |
 | Required theft of independent datasets plus transmission | `exfiltration/stealer/multi-source`, replacing the audited portion of legacy `sweep`. Browser cookies plus wallet secrets qualify; browser identity plus a separately required network/geo profile also qualifies. Several observations about one host do not: network address and geo fields together are still one network-profile dataset. An OR over sources or an optional second source does not qualify. |
 | Exfiltration channel abuse without a narrower established source | `exfiltration/<transport>` by required transport mechanism; it still needs theft/unauthorized-transfer evidence. Neither HTTP POST nor an OAST domain alone meets admission. |
@@ -1237,6 +1394,21 @@ does not make a second theft objective: the wallet remains the defining source.
 Likewise, browser fingerprint fields describe a client profile; they are not
 the same source as browser passwords, cookies, or browsing records.
 
+Keep the source axis separate from the acquisition-method axis. A broad file
+sweep describes how a program searches, not what data leaves; it cannot be a
+peer of `browser`, `wallet`, or `system-info`. Put the search behavior under
+`collection/file-targeting` (or the narrower acquisition behavior it actually
+supports), then classify any required outbound chain by its data source. Use
+`multi-source` only when the matcher requires independent source classes. The
+legacy `stealer/sweep` directory admits no new rules and is not a fallback for
+an unclear source. Its former Android permission/WebView combination and
+raw-IP/header combination were retired from the stealer tier because neither
+required a data-read plus outbound-transfer chain. Their independent capability
+signals remain available in their proper homes. Protocol-neutral upload/send
+wording belongs under `micro-behaviors/communications/transfer`; a source
+specific export composite must additionally require a sensitive-data clue and
+bind the source, transfer, and destination evidence by proximity where possible.
+
 `system-info` owns exported host/client reports: identity, OS/runtime,
 hardware, installed software, running processes, and network inventory.
 Hostname, username, MAC/IP addresses, OS details, and process lists may be
@@ -1246,6 +1418,14 @@ Account names in an inventory belong here; an authentication database or
 password hashes belong in `account-db`. Network survey data belongs here;
 Wi-Fi passwords belong with credentials, and a stolen appliance configuration
 file belongs in `appliance-config`.
+
+Split `system-info` by the kind of reported information, not by the API,
+language, operating system, or way it was collected. `identity`, `platform`,
+`software`, `process`, and `network` are narrower source domains. `profile` is
+for a host/client report that requires multiple such domains or leaves the
+reported domain open across them; it is not a synonym for “many indicators,”
+“broad sweep,” or “unknown data.” When one domain is necessary and sufficient,
+use that domain even if the rule also mentions ancillary host fields.
 
 The implemented subdivision has the following placement contracts. Rules live
 only in the populated children; `system-info` itself contains no rules or
@@ -1825,6 +2005,7 @@ the composite and the lifecycle context is a referenced fact.
 | `supply-chain/trojanized` | Unauthorized substitution/modification of an otherwise legitimate component or trusted build/update input/output. Distinguish dependency substitution, build-pipeline modification, update substitution and configuration poisoning. | A wholly malicious loader is not proof that legitimate software was modified. Product identity alone is not proof of a trojanized copy. |
 | `supply-chain/hidden-payload` | Concealment that specifically abuses package inspection, declared contents or a distribution trust boundary. Name the required concealment mechanism. | Generic encrypted/embedded code → anti-static; neutral layout/manifest facts → metadata; full activation chain → dropper. |
 | Credential access or theft during install/build/import | Canonical credential-access or exfiltration source, referencing the lifecycle/build context. | Retire duplicated results in `supply-chain/credential-theft` and `recon-exfil`; a registry token remains a credential even outside installation. |
+| Host-profile discovery or export during an install hook | Discovery-only command/field evidence → `discovery/system/profile`; a required host-profile source plus outbound transfer → `exfiltration/stealer/system-info/profile`. Keep the install-hook declaration as a referenced context leg. | The hook is a trigger, not the collected data or the transfer result. |
 | Execution/persistence during a package lifecycle | Canonical execution/dropper/persistence outcome, referencing the hook fact and any separate trust-violation composite. | `install-hook` is not a second objective tree. Neutral declaration → `metadata/package/scripts/lifecycle`; actual package-manager operation → `micro-behaviors/os/package-manager`. |
 
 For overlaps within supply-chain, required modification of an established
@@ -1834,6 +2015,14 @@ selection/identity claims use `impersonation`. Dependency confusion through a
 misleading registry identity is impersonation; rewriting a trusted dependency
 configuration is trojanization. Each needs evidence of its particular trust
 violation. Merely naming a dependency or containing encoded bytes is neither.
+`hidden-payload/runtime` is a legacy holding area, not an admission category:
+runtime phase alone does not describe concealment. Move full acquisition-to-
+activation chains to `command-and-control/dropper/<sink>`, attacker tasking or
+access to its command-and-control result, and required source-plus-transfer
+chains to `exfiltration/stealer/<source>`. Keep a rule in `hidden-payload/`
+only when its required evidence specifically establishes the package or
+distribution concealment named by that leaf. Treat package lifecycle and
+runtime identity as context unless they establish the trust violation.
 
 ### Metadata subject ownership
 
@@ -1966,6 +2155,7 @@ until a documented reclassification moves it and its references together.
 | `Popen` with `shell=True` | `micro-behaviors/process/create/shell` | Shell parsing is more specific than the subprocess wrapper. |
 | `eval(source)` in the current interpreter | `micro-behaviors/process/interpreter/eval` | No new interpreter process is created. |
 | An install hook harvests process-environment secrets and sends them | `objectives/exfiltration/stealer/env` | Install time is referenced context, not another theft category. |
+| A host/user profile is sent through Telegram during npm preinstall | `objectives/exfiltration/stealer/system-info/profile` | The profile is the source; Telegram and the package lifecycle are referenced transport/context. Use `exfiltration/messaging/telegram` when no narrower data source is established. |
 | A downloaded file is staged and launched | Planned `objectives/command-and-control/dropper/file-exec` | Download method and carrier do not replace the activation sink. |
 | A socket listener accepts a shell connection | `objectives/command-and-control/backdoor/bind-shell` | The connection is accepted rather than initiated as a reverse shell. |
 | The certificate subject identifies a publisher | `metadata/signed/certificate` | It identifies the signing role, not every product or vendor string. |
@@ -2023,6 +2213,7 @@ micro-behaviors/
 │   │                      #   DDoS amplification → objectives/impact/dos/.
 │   │                      #   DNS tunneling → objectives/command-and-control/.
 │   ├── socket/            #   Socket ops (TCP, UDP, raw, bind, listen)  C0001
+│   ├── transfer/          #   Protocol-neutral data-transfer operations and clues
 │   ├── tls/               #   Transport security, independent of application protocol
 │   │   ├── initialize/    #     Prepare configuration or per-connection state
 │   │   └── verify/        #     Peer certificate/hostname authentication
@@ -2071,6 +2262,7 @@ micro-behaviors/
 │   │                      #   PRNG → os/random/.
 │   ├── symmetric/         #   Symmetric ciphers (AES, DES, XOR, RC4)   C0068
 │   ├── asymmetric/        #   Asymmetric ciphers (RSA, ECC, Curve25519)
+│   ├── cipher/            #   Generic cipher construction/API clues with no supported family
 │   ├── hybrid/            #   Symmetric payload cryptography with asymmetric key wrapping
 │   ├── hash/              #   Cryptographic hashes (SHA, MD5, Blake2b)  C0029
 │   ├── kdf/               #   Key derivation functions                  C0028
@@ -2430,7 +2622,7 @@ micro-behaviors/
 │   └── user/              #   Process user identity (whoami, getlogin, getpwuid)
 │
 ├── ui/                    # User interface operations
-│   ├── controls/          #   Widget/control operations
+│   ├── controls/          #   Widget/control operations, including progress display settings
 │   ├── dialog/            #   Dialog boxes, message boxes, prompts
 │   ├── framework/         #   Legacy backend split; widget/render operations use their subjects
 │   ├── graphics/          #   GDI/drawing operations
@@ -2938,6 +3130,7 @@ objectives/
 │   │                            #     inspection trust. Compilation/hex arrays alone are generic.
 │   │                            #     Composites reference anti-static/ atomics.
 │   │                            #     NOT general obfuscation (→ anti-static/obfuscation/).
+│   │                            #     `runtime/` is legacy; do not classify by phase.
 │   ├── impersonation/           #   Package identity deception               T1195.002
 │   │                            #     Typosquatting, dependency confusion, deprecated-package
 │   │                            #     hijack, function shadowing, name similarity.
@@ -3419,7 +3612,7 @@ When placing a new metadata trait, use this tiebreaker table. Each row names the
 | `network/interface` | `os/network/share` | Network adapters and their addresses belong in `interface`. Enumerating or mapping remote shares and drives belongs in `share`, even when the evidence comes from a shell command. |
 | `network/interface` | `os/network/tunnel` | Generic adapter inventory, addresses, bridge and virtual-Ethernet references belong with interfaces. TUN/TAP packet endpoints, WinTun adapters, VPN-service builders and application selection, and configured tunnel interfaces belong in `os/network/tunnel`. These indicate probable tunnel-interface capability across operating systems; they do not require proof of live traffic or a particular implementation language. |
 | `os/application/target` | `network/interface` | A package identifier cited as the application a program may select or target belongs in `os/application/target`, even when a VPN or another network feature consumes it. This records a reference to an app identity; it does not prove the app is installed or that an operation occurred. Interface-name references and adapter APIs belong in `network/interface`, because their probable capability concerns network interfaces. A package-manager API that queries, installs, or manages apps belongs under `os/package-manager/` instead. |
-| Cloud credential indicators | `metadata/file/string/cloud` | A provider endpoint or request-path string → `micro-behaviors/communications/http/services/<provider>/`; an environment-variable name → `micro-behaviors/os/env/cloud/`; a local credential/config path → `micro-behaviors/fs/path/credential/`; cloud authentication-source selection or chaining → `micro-behaviors/os/security/auth/cloud/`. These are content clues, not file metadata and not proof that a read or request occurred. Credential-access objectives combine the capability clues with evidence that supports an intent inference. |
+| Cloud credential and service clues | `metadata/file/string` vs the supported capability | Strings embedded in a file are content, not file metadata. Use the service, header, environment, path, or authentication-source home named in the communications tie-break above. Credential-access objectives combine these neutral capability clues with evidence that supports an intent inference. |
 | `os/network/tunnel` | `communications/proxy/tunnel` | The OS tunnel branch owns virtual packet interfaces and their configuration. The proxy branch owns application/session forwarding, such as a public-service tunnel or a WebSocket-to-TCP bridge. A `/dev/net/tun` path or WinTun library reference follows the OS capability; a stream-forwarding API follows the proxy mechanism. Consumers may combine them without copying the atoms. |
 | WLAN capability clues | independent provider identity | Library-name references and a `wlanapi.dll` basename can support probable wireless API capability in `micro-behaviors/hardware/wireless/network`. A stronger fingerprint identifying the independent provider artifact belongs in `well-known/lib/`. A filename alone must not gain verified-provider semantics or newly activate broad known-library suppressors merely through relocation. |
 

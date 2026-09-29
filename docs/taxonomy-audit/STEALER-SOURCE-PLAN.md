@@ -1,5 +1,20 @@
 # Stealer taxonomy: classify the information, not the breadth of collection
 
+## Current system-information source review — 2026-09-28
+
+Use the reported information class as the source axis. Remote task execution
+beats ancillary host-profile clues; an endpoint string does not substitute for
+a transfer operation. The pass moved `node-websocket-command-relay-host-profile`
+to WebSocket command dispatch, moved `ps-recon-exfil` to system discovery, and
+moved the JVM `ENV=` plus `/exfil` class-string composite to system discovery
+with a name that does not claim data transfer. Their component matcher legs
+remain available and unchanged. Controlled npm and Java-class examples confirm
+the JVM marker rule still matches only when both markers are present; PowerShell
+examples confirm the source rule alone remains discovery while the curl-upload
+chain requires upload evidence. The current child counts are identity 38,
+network 12, platform 2, process 15, profile 87, and software 1; the reserved
+hardware child is empty. Each populated leaf remains below the 100-rule cap.
+
 ## Current checkpoint: wallet sources and supporting capabilities
 
 The subsequent [wallet-search](WALLET-SEARCH-BOUNDARIES.md) and
@@ -13,21 +28,44 @@ benign artifact identity.
 
 The system-information source audit moved `host-user-identity-http-query` from
 `system-info/profile` to `system-info/identity`: host/user fields and identity
-alternatives are required, with no second host-data class. `profile` now has 84
-rules and `identity` has 38. A rule accepting either process or software
+alternatives are required, with no second host-data class. At that checkpoint,
+`profile` had 84 rules and `identity` had 38. A rule accepting either process or software
 inventory remains in `profile` because those alternatives leave the host-data
 class open; its description now says “host inventory,” and the rule does not
 qualify as multi-source theft. Conditions, effective settings, and mappings are
 unchanged, and all **1,842 controlled corpus
 fixtures** pass.
 
-Three legacy `sweep` definitions remain under review: permissioned remote-WebView
-behavior, snapshot/upload prose, and a raw-IP/header composite with alternative
-source clues. None can be moved wholesale into `multi-source`: each lacks a
-required combination of independent stolen datasets. Resolve their own capability
-or objective claims and consumers before retiring the old leaf. The current
-[plan](PLAN.md) records the broader unfinished migration; measurements below are
-historical checkpoints.
+A later cross-objective review moved `node-websocket-command-relay-host-profile`
+from `system-info/platform` to `command-and-control/backdoor/dispatch/websocket`.
+The rule requires a remote fix command and WSS dispatch; platform/version
+markers alone do not show that host data is sent. Its matcher and effective
+settings are preserved. This corrects the source-disposition ledger and adds a
+precedence rule for host clues that accompany required remote command execution.
+Synthetic npm archive checks confirm that the rule matches with all six
+conditions, including `execSync(msg.fixCommand)`, and does not match when that
+required command-execution clue is absent.
+
+The same pass found `ps-recon-exfil` overstated its evidence: it requires a
+WMI OS query and an HTTP IP literal, but no upload/send. It now lives in
+`discovery/system/profile` as `ps-system-profile-recon`; the two downstream
+curl-upload composites still require their upload evidence and reference the
+new ID. The TAXONOMY.md contract now uses this exact query-plus-endpoint case
+to distinguish system discovery from source-specific exfiltration.
+Synthetic PowerShell checks confirm the discovery rule matches on WMI plus the
+endpoint clue, while the stealer rule remains absent until `Out-File` and
+`curl -T` upload evidence are also present; with those legs, both source and
+source-to-send findings match.
+
+The final three legacy `sweep` entries are resolved in the
+[sweep disposition audit](STEALER-SWEEP-RESOLUTION.md). The Android
+permission/WebView and raw-IP/header composites were retired from the stealer
+tier because they did not require a sensitive-data source and transfer chain;
+their independent capability findings remain available. The native
+snapshot/upload clue was tightened to bind sensitive-data and transfer wording,
+then moved beside its credential-export consumer. The `sweep` leaf now has no
+rules and accepts no new ones. The [plan](PLAN.md) records the broader
+unfinished taxonomy migration; measurements below are historical checkpoints.
 
 ## Implementation checkpoint: browsing records and storage boundaries
 

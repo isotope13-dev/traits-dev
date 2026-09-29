@@ -1,0 +1,1 @@
+<CFFILE SOURCE="/srv/a" DESTINATION="/srv/b" ACTION="MOVE">

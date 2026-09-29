@@ -1,0 +1,1 @@
+<cfset value=cfexecute('example')>

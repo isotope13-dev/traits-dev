@@ -1,0 +1,114 @@
+# Completed encrypted payload chain classified by its activation sink.
+defaults:
+  # Batch droppers often embed the AES stage as a PowerShell here-string /
+  # labeled region; keep these atoms on both so invoice/Rechnung-style
+  # multi-stage bats are not invisible to encrypted-stage composites.
+  for: [powershell, batch]
+  platforms: [windows]
+  attack: T1027
+  mbc: C0025
+
+composite_rules:
+- id: ps-aes-iex-stage-loader
+  desc: PowerShell AES-decrypts an embedded stage and evaluates it
+  crit: hostile
+  conf: 0.99
+  attack: T1027,T1059.001
+  mbc: C0025,E1059
+  all:
+  - id: micro-behaviors/crypto/symmetric/aes/library::dotnet-aes-create
+  - id: micro-behaviors/crypto/symmetric/decrypt::dotnet-create-decryptor
+  - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+  any:
+  - id: micro-behaviors/process/interpreter/eval/direct::powershell-iex-call
+  - id: micro-behaviors/process/interpreter/eval/direct::embedded-powershell-iex
+  near_lines: 40
+- id: ps-aes-chunked-stage-loader
+  desc: AES-decrypts many embedded chunks and evals the joined script
+  crit: hostile
+  conf: 0.98
+  # Reaches batch via this file's default for: [powershell, batch] -- batch
+  # droppers embed the AES stage as a PowerShell here-string (see header
+  # comment), and ps-document-masquerade-stage-loader below needs this to
+  # reach batch (pdf-double-extension-script is already for: [batch,
+  # powershell]). No explicit 'for:' needed; it would just restate the
+  # file default.
+  all:
+  - id: objectives/command-and-control/dropper/staging/encrypted::decrypt-aes-function
+  - id: objectives/command-and-control/dropper/staging/encrypted::decrypt-aes-chunk-accumulator
+  - id: objectives/command-and-control/dropper/staging/encrypted::decrypted-string-join
+  - id: objectives/command-and-control/dropper/staging/encrypted::iex-finalscript
+  any:
+  - id: micro-behaviors/data/decode/base64::powershell-base64-symmetric-decrypt
+  - id: objectives/command-and-control/dropper/staging/encrypted::base64-symmetric-decrypt-stage-batch
+  near_lines: 40
+- id: ps-document-masquerade-stage-loader
+  desc: Document-masqueraded encrypted PowerShell stage loader
+  crit: hostile
+  conf: 0.98
+  all:
+  - id: ps-aes-chunked-stage-loader
+  - id: objectives/evasion/masquerade/file/double-ext::pdf-double-extension-script
+- id: ps-encoded-xor-eval-stage-loader
+  desc: Encoded PowerShell XOR-decodes and evaluates a stage
+  crit: hostile
+  conf: 0.97
+  for: [powershell, vbs, html, batch]
+  all:
+  - id: micro-behaviors/data/decode/base64::encoded-dotnet-frombase64string-text
+  - id: objectives/command-and-control/dropper/staging/encrypted::encoded-powershell-bxor
+  - id: objectives/command-and-control/dropper/staging/encrypted::encoded-powershell-modulo-rotation
+  any:
+  - id: objectives/execution/interpreter/eval/invoke::encoded-iex
+  - id: objectives/execution/interpreter/eval/invoke::encoded-scriptblock-create
+
+- id: ps-custom-base32-stage-loader
+  desc: Custom base32 PowerShell stage loader
+  crit: hostile
+  conf: 0.99
+  for: [powershell]
+  all:
+    - id: micro-behaviors/data/decode/base32::ps-custom-base32-decoder
+    - id: micro-behaviors/process/interpreter/eval/direct::powershell-iex-call
+    - id: metadata/file/line::powershell-long-line
+    - id: micro-behaviors/data/decode/base32::ps-custom-base32-carrier
+- id: ps-base64-rc4-gzip-stage-loader
+  desc: PowerShell Base64 RC4 gzip stage loader
+  crit: hostile
+  conf: 0.98
+  for: [powershell]
+  all:
+  - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+  - id: micro-behaviors/crypto/symmetric/xor/rotational::rotation-counter-update
+  - id: micro-behaviors/data/decompress/gzip::gzip-decompression-stream
+  - id: objectives/execution/interpreter/eval/invoke::call-operator-get-command-scriptblock
+
+- id: ps-task-argument-keyed-scriptblock-stager
+  desc: Base64/XOR scheduled-task-keyed ScriptBlock stager
+  crit: hostile
+  conf: 0.99
+  attack: T1027,T1059.001,T1053.005
+  mbc: B0032,E1059,F0012
+  for: [powershell]
+  all:
+  - id: micro-behaviors/os/autorun/scheduled::powershell-scheduled-task-arguments
+  - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+  - id: micro-behaviors/crypto/symmetric/xor/loop::repeating-key-indexed-bxor-loader
+  - id: micro-behaviors/process/interpreter/eval/compile::powershell-scriptblock-constructor
+
+# GammaLoad-like final stage: a network response is Base64-decoded, XOR
+# transformed, and evaluated without materialising the decrypted script.
+# This is deliberately independent of endpoint, variable, or family names.
+- id: ps-remote-base64-xor-inmemory-loader
+  desc: PowerShell downloads and evaluates a Base64/XOR stage
+  crit: hostile
+  conf: 0.99
+  attack: T1105,T1140,T1027,T1059.001
+  mbc: B0030,B0032,E1059
+  for: [powershell]
+  scope: file
+  all:
+    - id: micro-behaviors/communications/http/client/managed::downloadstring
+    - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+    - id: micro-behaviors/crypto/symmetric/xor/loop::repeating-key-indexed-bxor-loader
+    - id: micro-behaviors/process/interpreter/eval/direct::powershell-iex-call

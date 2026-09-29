@@ -1,0 +1,1 @@
+<CFFILE FILE="/srv/f" OUTPUT="fixed" ACTION="APPEND">

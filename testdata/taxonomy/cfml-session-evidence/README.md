@@ -1,0 +1,1 @@
+Static session-existence controls; never execute the templates. Positive and negative comparisons both observe an actual IsDefined call. Comments, quoted code, other scopes, unknown names, and sibling-branch assignments must not establish session-name evidence. No control establishes malicious intent.

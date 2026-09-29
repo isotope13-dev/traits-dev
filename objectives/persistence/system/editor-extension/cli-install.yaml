@@ -1,0 +1,108 @@
+# Editor extension installation is the required durable result. The download,
+# obfuscation and editor-fork clues characterize how it is installed, but the
+# matcher does not always bind the fetched VSIX path to the CLI argument.
+defaults:
+  crit: suspicious
+  platforms: [windows, unix]
+  for: [javascript, typescript, shell, batch, powershell, python]
+  attack: T1176
+
+composite_rules:
+  - id: native-editor-extension-force-install-profile
+    desc: Native GitHub download and extension-install clues
+    conf: 0.99
+    for: [pe, macho]
+    scope: file
+    all:
+      - id: micro-behaviors/communications/url/external/github::github-release-download
+      - id: micro-behaviors/os/package-manager/ide-extension::native-ide-cli-force-install
+    any:
+      - id: micro-behaviors/process/create/spawn::create-process-w
+      - id: micro-behaviors/process/create/direct::execve-import
+    unless:
+      # A first-party agent CLI shipped *inside its own* extension does all
+      # three legs by design: it self-updates from its GitHub releases and
+      # keeps the companion extension current via the editor CLI. Anthropic's
+      # claude.exe sits at extension/resources/native-binary/claude.exe in
+      # anthropic.claude-code, which is exactly what `native-cli-member`
+      # matches, and the two context composites also require the signed
+      # product and publisher strings.
+      - id: well-known/app/ai/coding-agent/anthropic-claude-code::native-windows-package-context
+      - id: well-known/app/ai/coding-agent/anthropic-claude-code::native-linux-package-context
+      - id: well-known/app/ai/coding-agent/anthropic-claude-code::native-macos-package-context
+  - id: obfuscated-editor-extension-download-install
+    for: [javascript]
+    desc: Obfuscated code downloads and force-installs an extension
+    crit: hostile
+    conf: 0.98
+    attack: T1027,T1105,T1176
+    scope: file
+    all:
+      - id: well-known/lib/development/vscode::vscode-extension-marker
+      - id: micro-behaviors/os/module/dynamic-load::node-computed-require-call
+      - id: metadata/import/builtin::require-http
+      - id: micro-behaviors/communications/http/request/dynamic::node-http-request-headers-option
+      - id: micro-behaviors/communications/http/request/dynamic::node-http-response-pipe
+      - id: micro-behaviors/process/create/shell/bridge::js-spawnsync
+      - id: micro-behaviors/os/package-manager/ide-extension::ide-cli-install-extension-obfuscated-literals
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::push-shift-bracket-pattern
+
+  - id: downloaded-vsix-force-install
+    for: [javascript]
+    desc: HTTP response and VSIX force-install clues
+    conf: 0.95
+    all:
+      - id: well-known/lib/development/vscode::vscode-extension-marker
+      - id: micro-behaviors/fs/temp/directory::node-computed-tmpdir-fragment
+      - id: metadata/import/builtin::require-http
+      - id: micro-behaviors/communications/http/request/dynamic::node-http-request-headers-option
+      - id: micro-behaviors/communications/http/request/dynamic::node-http-response-pipe
+      - id: micro-behaviors/process/create/shell/bridge::js-spawnsync
+      - id: micro-behaviors/os/package-manager/ide-extension::ide-cli-install-extension-obfuscated
+
+  - id: obfuscated-vsix-force-install
+    for: [javascript]
+    desc: VSIX force-install and editor-fork clues
+    conf: 0.97
+    all:
+      - id: downloaded-vsix-force-install
+      - id: objectives/discovery/host/application/editor::vscode-fork-editor-enumeration-obfuscated
+
+  - id: editor-fork-sweep-extension-install
+    for: [javascript]
+    desc: Editor-fork sweep and extension-install clues
+    conf: 0.94
+    all:
+      - id: well-known/lib/development/vscode::vscode-extension-marker
+      - id: micro-behaviors/os/package-manager/ide-extension::ide-cli-install-extension-obfuscated
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::push-shift-bracket-pattern
+    # Either shape of the fork sweep: a `which <cli>` probe per fork, or a
+    # table of per-editor install paths. Both answer "which editors can I
+    # reach?"; which one a sample uses is a build detail.
+    any:
+      - id: objectives/discovery/host/application/editor::vscode-fork-editor-enumeration-obfuscated
+      - id: objectives/discovery/host/application/editor::vscode-fork-install-path-enumeration
+
+  # The full chain in one rule: an obfuscator-packed VS Code extension that
+  # sweeps the fork family's install paths, pulls a .vsix off the network, and
+  # hands it to a child process. A marketplace-provisioning script installs a
+  # published *id* into the one editor it was told about, in the clear;
+  # nothing legitimate reassembles the editor paths from string fragments to
+  # push a downloaded package file into every fork it can find.
+  - id: obfuscated-extension-stages-vsix-into-editor-forks
+    for: [javascript]
+    desc: Obfuscated VSIX download/install across editor forks
+    crit: hostile
+    conf: 0.97
+    attack: T1027,T1105,T1176
+    scope: file
+    all:
+      - id: well-known/lib/development/vscode::vscode-extension-marker
+      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::push-shift-bracket-pattern
+      - id: objectives/discovery/host/application/editor::vscode-fork-install-path-enumeration
+      - id: micro-behaviors/process/create/shell/bridge::js-spawnsync
+      - id: micro-behaviors/fs/temp/directory::node-computed-tmpdir-fragment
+      - id: metadata/import/builtin::require-http
+      - id: micro-behaviors/communications/http/request/dynamic::node-http-response-pipe
+      - id: micro-behaviors/communications/http/request/dynamic::node-http-request-headers-option
+      - id: micro-behaviors/os/package-manager/ide-extension::ide-cli-install-extension-obfuscated

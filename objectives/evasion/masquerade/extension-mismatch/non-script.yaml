@@ -1,0 +1,79 @@
+# Interpreter handed a file whose suffix it does not read as source.
+# Extension-agnostic siblings of the font rules in this directory, which keep
+# the font suffixes: these rules exclude them so one file is reported once.
+# The suffix must start with a letter, so version strings (`node 18.17`) are
+# not suffixes. `not:` filters the matched span, which always ends at the
+# suffix, so an earlier dot in the path cannot trigger the exclusion.
+defaults:
+  platforms: [windows, linux, macos]
+  attack: T1036.008
+
+traits:
+  # Anchored to a VS Code task `command` value in text form, so the rule
+  # reads per-OS command blocks too. Up to three flags may precede the file.
+  - id: node-task-executes-non-script-suffix
+    desc: Node task runs a non-script-suffix file
+    crit: suspicious
+    conf: 0.93
+    for: [json]
+    if:
+      type: text
+      regex: '"command"\s*:\s*"[^"]{0,99}\bnode\S{0,4}(\s+-\S*){0,3}\s+[^"\s-]\S*\.[a-z]\w{0,4}\W'
+      case_insensitive: true
+    not:
+      - regex: '(?i)\.(m?js|cjs|[mc]?ts|[jt]sx|json|node)\W?$'
+      - regex: '(?i)\.(woff2?|[ot]tf|eot)\W?$'
+
+  # Bun and Deno run the same payloads Node does; `deno run` takes the
+  # subcommand before its flags.
+  - id: bun-deno-task-executes-non-script-suffix
+    desc: Bun or Deno task runs a non-script file
+    crit: suspicious
+    conf: 0.92
+    for: [json]
+    if:
+      type: text
+      regex: '"command"\s*:\s*"[^"]*\b(bun|deno)(\s+run)?(\s+-\S*){0,3}\s+[^"\s-]\S*\.[a-z]\w{0,4}\W'
+      case_insensitive: true
+    not:
+      - regex: '(?i)\.(m?js|cjs|[mc]?ts|[jt]sx|json)\W?$'
+      - regex: '(?i)\.(woff2?|[ot]tf|eot)\W?$'
+
+  # Process-style task: `"command": "node"` with the file as the first
+  # non-flag element of `args`. The command-string rules above never see
+  # the file name here, so this shape needs its own adjacency matcher.
+  - id: node-task-args-non-script-suffix
+    desc: Node task args name a non-script file
+    crit: suspicious
+    conf: 0.92
+    for: [json]
+    if:
+      type: text
+      regex: '"command"\s*:\s*"node"\s*,\s*"args"\s*:\s*\[("-[^"]*",\s*)*"[^"\s-][^"]*\.[a-z]\w{0,4}"'
+      case_insensitive: true
+    not:
+      - regex: '(?i)\.(m?js|cjs|[mc]?ts|[jt]sx|json|node)"$'
+      - regex: '(?i)\.(woff2?|[ot]tf|eot)"$'
+
+  # npm script values are commands by construction, so the value path keeps
+  # prose ("the node module.exports ...") out of reach. A lifecycle script
+  # running a disguised payload is the same masquerade outside the IDE.
+  - id: npm-script-node-non-script-suffix
+    desc: npm script runs Node on non-script file
+    crit: suspicious
+    conf: 0.92
+    for: [package.json]
+    if:
+      type: value
+      path: scripts.*
+      regex: '(^|[;&|(]\s*)node\S{0,4}(\s+-\S*){0,3}\s+[^\s''"-]\S*\.[a-z]\w{0,4}(\s|$)'
+      case_insensitive: true
+    not:
+      # Exclude the first filename passed to Node even when it has arguments
+      # after it or the command continues through a shell operator. Bound the
+      # path scan to keep this negative check cheap on large manifests.
+      - regex: '(?i)(^|[;&|(]\s*)node(\s+-\S*){0,3}\s+[^\s''"-][^\s;&|)]{0,200}\.(m?js|cjs|[mc]?ts|[jt]sx|json|node)(\s|[;&|)]|$)'
+      - regex: '(?i)(^|[;&|(]\s*)node(\s+-\S*){0,3}\s+[^\s''"-][^\s;&|)]{0,200}\.(woff2?|[ot]tf|eot)(\s|[;&|)]|$)'
+      # `node -e/--eval` executes the following code argument; filenames in
+      # that code are not Node script paths supplied as the command target.
+      - regex: '(?i)(^|[;&|(]\s*)node(\s+-\S*){0,3}\s+(-e|--eval|--print)(\s|=)'

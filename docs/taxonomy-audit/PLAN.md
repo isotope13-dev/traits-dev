@@ -9,44 +9,343 @@ snapshot; do not combine the two sets of counts.
 
 ## Decision and measured impact
 
-## Current working-tree measurement — 2026-09-28, 100-rule cap
+## Current working-tree measurement — 2026-09-29, 100-rule cap
 
 The regenerated [current audit snapshot](snapshot-2026-09-28-current/)
 includes the current shared tree and uses the uniform inclusive limit of 100.
-Across **20,737 YAML files** and **118,806 rules**, it finds **79 over-cap
-directories**, **9,929 rules in them**, and **2,029 excess rules**. Compared
-with the immediately preceding 85-rule measurement, this removes 64 directory
-violations and reduces the minimum excess by 1,739 rules; the four-rule Electron
-ASAR reclassification also moves a complete spawn chain to its required sink. Atomic overlap review contains **64 groups / 144 rules touching
-violators**, and **430 groups globally**. No rule directory is deeper than
-five; no cap exemptions exist. Sparse review uses sibling groups below 35,
-without flagging a single child alone.
+Across **21,098 YAML files** and **118,855 rules**, it finds **71 over-cap
+directories**, **8,835 rules in them**, and **1,735 excess rules**. Compared
+with the preceding 85-rule measurement, this removes 72 directory
+violations and reduces the minimum excess by 2,033 rules. Twenty-nine rules
+have been reclassified from the encrypted-staging cohort: 26 completed chains
+follow their activation sinks, and the GitHub URL clue plus two loader composites
+now follow their neutral endpoint and module-load homes. Existing matcher
+conditions were retained; the URL clue now uses the broader shared URL scope.
+The current install-hook review moved provider endpoint evidence to neutral
+cloud-service capabilities and consolidated one duplicate matcher. Follow-up
+classification moved provider-specific endpoint/path clues under each cloud
+service's `metadata/` leaf, HTTP metadata headers to `http/header/custom`, and
+the GCP credential filename to `fs/path/credential`; existing consumers now
+reference those canonical capability traits.
+Atomic overlap review contains **56 groups / 127 rules touching violators** and
+**421 groups globally**. No rule directory is deeper than five; no cap
+exemptions exist. Sparse review uses sibling groups below 35, without flagging
+a single child alone.
 
-The first 100-cap audit cohort should start with directories that combine the
-largest excess and a coherent nearby sibling review: `dropper/staging/encrypted`
-(213 rules after the Electron ASAR move), `supply-chain/recon-exfil/install-hook` (198),
-`supply-chain/hidden-payload/runtime` (192), `dropper/execution/loader` (191),
-and `anti-static/obfuscation/payload/encrypted` (188). These are inspection
-priorities, not preselected split designs. For each, check the 64 exact matcher
+The [hidden-payload runtime audit](HIDDEN-PAYLOAD-RUNTIME-AUDIT.md) identifies
+`runtime` as a legacy lifecycle bucket rather than a concealment technique. Its
+SOCKS panel-registration rule and five npm/Node composites moved to their
+behavioral homes; the 188-rule leaf remains under rule-by-rule review.
+
+The stealer system-information audit now checks required source and result
+against the exact child contracts. A host-profile composite requiring a remote
+fix-command and WSS dispatch moved to the WebSocket backdoor leaf; a WMI query
+plus an IP literal without a send operation moved to system discovery. Synthetic
+positive and negative cases preserve the command-dispatch boundary, and the
+PowerShell source-to-upload composite still matches when its upload evidence is
+present.
+
+The [dropper/execution audit](DROPPER-EXECUTION-AUDIT.md) now inventories all
+1,749 rules in its 41 remaining directories; no leaf exceeds the cap. The
+`exec-download` archive pass routed four unbound download/extract/launch
+composites to HTTP, process-creation and Run-key persistence subjects. The
+remaining 24 HTA/WSH rules then moved by file write, decode, shortcut
+creation, eval, hidden execution, process creation and obfuscation evidence;
+that leaf is empty. Four dead directory-reference alternatives were removed
+from plugin and FTP-banner consumers. The final Ruby `script` rules now follow
+HTTP API and process-launch evidence; their `module.bin` sibling follows
+URL-path and launch context. The shared tree changed concurrently, so the
+current 1,749-rule count is not a simple subtraction from the previous
+checkpoint. Three unsupported macro-dropper verdicts now follow
+WSH execution and document-trigger evidence, emptying the macro child. The
+sibling review moved four API-hash profiles to native API-hash obfuscation and
+an OEP/PE-header profile to binary infection, emptying two more legacy leaves.
+WinExec security-targeting and LSP profiles now follow their behavioral
+subjects, while the CHM/curl/LNK pass retired a redundant HTML Help finding
+and routed its remaining observations to their direct capabilities.
+The VBS watchdog leaf was emptied by routing its process, path, and timing
+observations and one supported composite to their evidence homes; its other
+composite was retired. The legacy persistence leaf now holds one Node profile:
+four composites moved to persistence or execution sinks, and three unsupported
+chains were retired. The Defender sibling review moved three bare naming clues
+to neutral leaves and narrowed two masquerade composites to their required
+evidence. Five unlinked decode/launch profiles left the legacy `decrypt-exec`
+child for encoded-data, process-creation, and obfuscation leaves; their
+matcher conditions and effective scopes are unchanged. The seven Java and
+WSH `scriptengine` observations moved to stack, eval, class-name obfuscation,
+string-fragmentation, and WSH moniker leaves because their matchers do not
+establish a staged script handoff. Three PowerShell XMLHTTP/WinHTTP
+profiles now follow eval, stream-write, and process-create capabilities
+because their execution sinks were not bound to the retrieved response.
+Four `.NET obfuscated-loader` profiles now follow their required reflection,
+hidden-process, or resource-stage subjects. Four native rules moved by
+library-load, process-create, Gatekeeper and quarantine-removal evidence;
+their modular RAT sibling now describes supported socket, module and VM-check
+clues. The archive/detached-launch and ChaCha/hidden-PowerShell
+profiles now follow process detachment and hidden-window evasion. The HTML
+EXE codebase attribute and two shared WSH path/ProgID atoms now follow
+neutral evidence; three HTML composites moved by their supported stream,
+path, and codebase conditions. The unbound DNS TXT stage and its import-time
+refinement now follow neutral TXT and module-timing evidence. The desktop-entry
+launcher leaf was emptied by routing command text, autostart and document-guise
+rules to their required subjects and retiring a redundant wrapper. Six
+editor-extension installation composites now follow durable editor-extension
+persistence, with their matcher clauses and effective scopes retained. Eleven
+legacy staging rules now follow temp paths, checks, process commands,
+curl/WebClient, or rundll32 evidence without an unsupported cross-path
+handoff. The inventory is structural; individual evidence review remains for
+the 1,749 remaining legacy rules. The final fifteen `execute-download` rules have now
+been routed by their required sink or supported co-occurrence; that leaf is
+empty. Its dependent supply-chain profiles were adjusted where they claimed
+an unbound fetched-payload execution. The adjacent sixteen-rule `download`
+leaf is also empty after routing macro, Perl, Python and Ruby evidence. Seven
+XMRig argument rules moved from miner runtime to configuration, reducing the
+global over-cap count by one.
+Nine `exec-download` rules with unbound HTTP-to-eval or download-to-file-launch
+claims moved to neutral interpreter, process and shell-command leaves. Two
+related PowerShell delivery siblings moved to neutral IWR/TEMP download, and
+their Mark-of-the-Web consumer now states its supported context.
+Three more `exec-download` profiles moved by AppData process creation,
+hidden PowerShell execution, and temp-script cleanup; an RDP consumer now
+states enablement near download clues without asserting a staged implant.
+Eight more PowerShell, MSI and URLMon `exec-download` profiles with no bound
+download-to-launch handoff moved by their required operation. The managed
+.NET HTTP/ZIP/process-API profile moved to neutral HTTP-client evidence.
+The adjacent batch pass moved four shared neutral aliases and one
+BITSAdmin transfer matcher out of the legacy batch leaf, then routed four
+unsupported dropper composites by their required download, TCP stage-query
+and TEMP-launch evidence. A two-profile Python/Startup split preserved all
+32 Boolean combinations; the old `exec-download` batch file is empty.
+The final mixed Winsock/TEMP profile now has separate overlay, self-read
+and debugger alternatives with the same union semantics. The debugger sibling
+remains at 149 rules after a VM artifact moved to VM detection.
+The latest URLMon pass separated six neutral stack-string/path observations,
+two AppData/URLMon profiles, and one Defender-exclusion context from the
+Phorpiex family signature. Primary threat research and matching CRC32 API
+hashes establish the Phorpiex attribution; the old Elex directory mixed a
+Phorpiex infector with a host-family label. Seven AMSI composites and a Go
+process-injection rule left the overloaded Defender sibling. The uniform cap
+remains enforced without an exemption; Defender is now 125 rules and needs
+further technique review.
+The sibling analysis shows that the legacy `loader`,
+`script`, `batch`, and transfer/phase names are not exclusive subtechniques.
+Initial evidence-based moves put C#, .NET and PowerShell assembly activation under
+`module-load`, VS Code and PyInstaller source evaluation under `script-eval`,
+and a Werfault identity composite under masquerade because its matcher lacks
+a staged-code activation sink. One copy-plus-HTTP co-occurrence rule without
+payload activation was retired. Two Python stdin-interpreter composites now
+state their supported neutral capability, and three dead compatibility
+sentinels plus the unreachable family rule they guarded were removed after
+consumer repair. The BOF host API cluster now lives under neutral interpreter
+capabilities, while the COFF import-pointer clue lives with linker facts; its
+prefix matcher was corrected and tested. The Dark Eye wrapper now lives under
+its malware family, with reusable section measurements in metadata; Sysbot's
+identical section matchers were consolidated. Two identical WSH `MSXML2.XML`
+atoms became one neutral COM-prefix observation, with the narrower size guard
+on its consumer. The Elex UIMgrBroker family candidate remains in the legacy
+leaf until its section and size scope can be established from evidence. The
+signed embedded-PE/API-resolution profile moved out of `loader`; its evidence
+supports obfuscation, not certificate abuse or staged-code activation.
+The reentrancy-guard leaf moved to neutral process lifecycle: the matcher
+does not check a guard or link a fetched payload to the child. The standalone
+Nemucod date-evasion verdict was retired after its three required legs were
+inlined into its only full-chain consumer, preserving that consumer's match.
+The nine-rule `integrity` leaf is empty after separating SHA-256 context from
+runtime-install helper names into their neutral technique leaves.
+The five-rule `misextension` leaf is empty after relocating its PNG/text
+carrier clues to COM, Base64 and WebClient capabilities. It never required
+an extension mismatch or a payload launch.
+Three JVM self-relaunch profiles now live in neutral process lifecycle;
+the unsupported stage-handoff verdict and its unshared method-name atom were
+retired. The legacy `jvm-relaunch` child is empty.
+The two Go/PowerShell source composites now report neutral hidden-process
+context: their required launch targets PowerShell, not the downloaded or
+decoded file. The `source` child is empty.
+Two native DNS-TXT/write/exec composites moved to neutral DNS context because
+the TXT response was not bound to the written or launched path.
+The Lua sidecar leaf is empty after separating FFI declarations and Lua
+runtime/file-argument context; no rule required an actual sidecar load.
+The JavaScript terminal-launch cluster left `launcher` for the neutral shell
+bridge; the desktop-entry launcher rules remain for sink review.
+The minizip ZIP-in-data cohort moved out of `loader`: a source filename clue
+belongs to provenance, recognized minizip content to its library identity,
+and packed/checksum combinations to anti-static binary-metrics. No retained
+rule requires the ZIP to be extracted or executed, and the old signature
+claims lacked signer evidence.
+The C# temp-write/Shell profile moved to neutral process-create context; its
+ping-delay variant moved to anti-analysis timing. No matcher bound the written
+temp path to the Shell argument.
+IEExec, Delphi overlay, tiny .NET reflection, RWX resource overlay, Petite/VB6
+and Gentee profiles left `loader` for their provenance, packing, reflection,
+runtime or masquerade homes. The `loader` leaf is now exactly 100 rules, with
+no cap exception or implementation-language split; remaining entries still
+need individual sink review.
+Per-rule review remains open for the rest.
+The seven generic Ruby operations from `ast-script` now live with their
+neutral subjects; four previously inert receiver-qualified symbol matchers
+were corrected with AST queries and checked against positive and unrelated
+method-call examples.
+The eight-rule legacy `rename-exec` leaf is now empty: redundant union
+composites were inlined, unsupported fragmented-download inference retired,
+and rename-plus-command and extconf-context rules moved to their supported
+execution and build-hook homes. Rubygems and Alpine package consumers were
+updated and checked on synthetic Ruby and apk examples.
+
+The first 100-cap audit cohort combines the largest excess and coherent nearby
+sibling reviews: `supply-chain/hidden-payload/runtime` (188),
+`dropper/execution/loader` (100), `dropper/staging/encrypted` (188 after its
+sink review), `dropper/staging/embedded` (186), and
+`anti-static/obfuscation/imports` / `anti-static/obfuscation/payload/encrypted`
+(183 each). The legacy `supply-chain/recon-exfil/install-hook` leaf is now 178
+after source-based migrations. These remain inspection
+priorities, not preselected split designs. For each, check the 63 exact matcher
 overlap groups touching violators, then compare every proposed child with its
 parent and siblings. Consolidate duplicate evidence first; split only along a
 single stable technique question whose children each narrow the parent. The
 remaining 74 directories should then be reviewed by shared parent/cohort so
 that moves account for destination capacity and sibling meaning together.
 
+The install-hook cohort has a dedicated
+[source/result audit and migration plan](INSTALL-HOOK-RECON-EXFIL-PLAN.md).
+Its legacy leaf is **178** rules after source-based relocations and remains
+78 over cap. The plan records sibling destination capacity and rule-file
+cohorts; it rejects language/phase subdirectories because the trigger is
+context rather than a behavior subtype.
+
+## Implementation checkpoint: close the legacy stealer/sweep leaf
+
+The [sweep disposition audit](STEALER-SWEEP-RESOLUTION.md) resolves its final
+three entries. Two unsupported hostile composites were retired from the
+stealer tier, preserving their independent capability/channel findings. The
+native credential-snapshot composite now requires a sensitive-data clue, a
+protocol-neutral upload/send/post clue, and a Cloudflare tunnel within 128
+bytes; the split matcher passes two positive and three counterexample cases. The sweep
+leaf has no YAML rules. The full audit remains at **79 over-cap directories**
+and **1,983 excess rules** under the single 100-rule limit; these changes do
+not add a cap exception.
+
 ## Implementation checkpoint: encrypted staging sink correction
 
-The [encrypted staging audit](DROPPER-STAGING-ENCRYPTED.md) found that the
-Electron ASAR composite requires decryption, temporary EXE writing, and hidden
-child launch, so its correct home is `dropper/file-exec/spawn`. The file moved
-intact: matcher bytes, defaults, scope, criticality, confidence, and mappings
-are unchanged, and no external references needed updates. The source leaf falls
-**217 → 213**; the receiver rises **64 → 68**. A hard-linked before/after run
-with the available prebuilt engine produced the same corpus failures on both
-sides: three benign archive paths trigger the unrelated
-`anti-static/obfuscation/payload/encoded::shell-eval-base64-decode` rule. The
-current engine still cannot rebuild due shared `filefacts`/`stng` API
-mismatches, so strict validation with the current validator remains open.
+The [encrypted staging audit](DROPPER-STAGING-ENCRYPTED.md) moved the Electron
+ASAR decrypt/write/launch chain to `dropper/file-exec/spawn` and the two
+CryptoAPI executable-memory staging rules to `dropper/staging/memory`. Both
+files are byte-identical to their prior definitions; the two consumers of the
+CryptoAPI composite now reference its new ID. The encrypted leaf first fell **217 → 211** through the earlier sink corrections; the passworded 7z stdout launch then moved to `file-exec/spawn`, bringing the current encrypted leaf to **210** and spawn to **69**. Memory rose **131 → 133** during the earlier moves. The
+available prebuilt engine reports the same known benign `pyaigis-top10.tar.xz`
+false positive after the moves, but my attempted before/after check used
+hard-linked files and was contaminated by concurrent edits; I do not treat it
+as detection-parity evidence. Current source validation remains open because
+`cleave` has shared `filefacts`/`stng` API mismatches.
+
+## Implementation checkpoint: passworded 7z launch follows its sink
+
+The [7z sink audit](DROPPER-7Z-SPAWN-SINK.md) moves the passworded 7z stdout
+extract, PE validation, temp-path and `Start-Process` chain from
+`staging/encrypted` to `file-exec/spawn`. Its YAML hash is unchanged and no
+rule-ID consumer required an edit. A live synthetic JavaScript positive matched
+the relocated ID with all four conditions satisfied. The encrypted staging
+cohort falls **211 → 210**; spawn rises **68 → 69**. This does not change the
+global number of rules, cap violators or total excess.
+
+## Implementation checkpoint: encrypted-stage chains follow their sinks
+
+The [encrypted sink-routing audit](DROPPER-ENCRYPTED-SINK-ROUTING.md) moved ten
+PowerShell eval chains to `dropper/script-eval`, two PowerShell assembly loads
+to `dropper/module-load`, and seven direct file-launch chains to
+`dropper/file-exec/spawn`. Rule fields and inherited defaults were compared
+before and after; local and external references now resolve at the new paths.
+Synthetic PowerShell AES/IEX and VS Code write/spawn samples matched their new
+canonical IDs. The encrypted leaf fell **210 → 191**; script-eval is **26**,
+module-load **18**, and file-exec/spawn **76**. No rules were removed or
+weakened.
+
+## Implementation checkpoint: GitHub image-suffix URL and assembly-load sink
+
+The [GitHub image URL audit](GITHUB-IMAGE-URL-MODULE-LOAD.md) moves the
+image-suffix URL atom into the neutral `communications/http/url/github` home:
+the suffix is endpoint text and does not establish image bytes or encryption.
+Both composites now live in `dropper/module-load`, where Assembly.Load is the
+required activation sink; the URL clue is referenced there. Their matcher legs,
+scope and 4 KiB proximity bound are preserved. Synthetic PowerShell positives
+match both composites. The encrypted leaf falls **191 → 188**, module-load
+rises **18 → 20**, and catalog-wide excess falls **1,991 → 1,988**; no
+directory crosses the 100-rule cap as a result.
+
+## Implementation checkpoint: neutral atoms leave the anti-static payload leaf
+
+The [source-command atom audit](ANTI-STATIC-SOURCE-COMMAND-ATOMS.md) moves the
+Swift Base64 API reference to `micro-behaviors/data/decode/base64` and the Zig
+`/bin/sh -c` argument clue to
+`micro-behaviors/process/create/shell/command-string`. Their matcher conditions
+are retained, all four consuming composite references resolve, and synthetic
+Swift and Zig source samples match at the new IDs. The Swift capability scope
+now covers the Unix/macOS context required by its consumers. The anti-static
+encrypted-payload leaf falls **188 → 186**; its remaining Swift path/check-in
+atoms need further evidence-based placement review.
+
+## Implementation checkpoint: Swift beacon fields and path clues
+
+The [Swift beacon/path audit](SWIFT-BEACON-FORMAT-AND-PATH-CLUES.md) moves a
+field set that contained no DNS evidence into `command-and-control/beacon/format`,
+with its path-corroborated composite, and moves the `/tmp/.system_logs` literal
+to `micro-behaviors/fs/path/temp`. The path atom keeps its matcher, Swift/Unix
+scope and suspicious criticality; the beacon composite keeps its conditions
+and hostile tier but now has beacon-format mappings and a name that describes
+the evidence. A synthetic Swift sample matches the relocated composite. The
+anti-static encrypted-payload leaf falls **186 → 183**; two remaining composites
+there still need path-to-action review.
+
+## Implementation checkpoint: install-hook environment-secret source
+
+The [source-routing audit](SUPPLY-CHAIN-ENV-SECRET-SOURCE.md) moves the
+three-composite install-hook environment-secret file from
+`supply-chain/recon-exfil/install-hook` to `exfiltration/stealer/env`. Its
+matchers and settings are byte-identical; it had no external rule-ID consumers.
+The move follows the documented source-first rule: the acquired data is
+process-environment secrets, while install time is referenced context. The
+source leaf falls **198 → 195** and the destination rises **61 → 64**; the
+current 100-rule inventory therefore remains at 79 violating directories and
+falls **2,029 → 2,026** in excess. The sibling audit also confirms that
+`supply-chain/credential-theft/env` is legacy duplication called out in
+`TAXONOMY.md`; its atomic source rules and two source-to-exfil composites still
+need coordinated migration or retirement.
+
+## Implementation checkpoint: Telegram profile follows its source
+
+The [Telegram profile source audit](SUPPLY-CHAIN-TELEGRAM-PROFILE-SOURCE.md)
+moves the canonical host/user profile-to-Telegram composite and its npm
+preinstall wrapper into `exfiltration/stealer/system-info/profile`. Telegram
+is transport; installation is contextual evidence. Effective defaults and
+matching conditions are preserved, along with both existing suppression legs
+where the package rule had been referenced. The install-hook source falls
+**195 → 194**, and the destination rises **84 → 86**. A direct JS positive, an
+npm `.tgz` preinstall positive, and a same-payload package without the hook
+control verify the source and lifecycle distinction.
+
+## Implementation checkpoint: TCC manipulation leaves memory staging
+
+The [AppleScript TCC audit](TCC-APPLE-SECRET-MANIPULATION.md) moves three
+composites that write or save macOS TCC grants from `dropper/staging/memory`
+to the existing `evasion/tcc-manipulation/db` leaf. Descriptions, settings,
+conditions, and references to the existing AppleScript evidence are preserved;
+source defaults remain `applescript`/`macos`. The staging leaf falls **133 → 130 →
+126** and the TCC leaf rises to **19**. The current-source soft validator,
+built with a temporary patch to the adjacent `stng` working tree, found no
+broken references; it reports 84 issues, including the 79 cap
+violations, and the same three benign `pyaigis-top10.tar.xz` fixture matches.
+
+## Implementation checkpoint: PowerShell AppDomain activation sink
+
+The [AppDomain sink audit](DROPPER-APPDOMAIN-SINK.md) moves four unchanged
+PowerShell composites from `dropper/staging/memory` to `dropper/module-load`.
+Each requires an AppDomain assembly load, so the runtime loader is the precise
+activation technique even though the code remains in memory. The source leaf
+falls **130 → 126**; the destination rises **12 → 16**. The latest 100-rule
+inventory has 79 over-cap directories and 2,010 excess rules. A full soft
+validation against the current source, built with a temporary Cargo patch to
+the adjacent `stng` worktree, reports no broken references and the known three
+benign archive fixture matches; it also reports 84 validation issues, including
+all 79 over-cap directories.
 
 ## Implementation checkpoint: socket-backed shell classification and wallet source
 
@@ -2135,8 +2434,8 @@ change the current direct prefix `objectives/anti-static/obfuscation`.
 Use independent placement reviews on representative unfamiliar matchers to
 check whether contracts actually give authors the same destination.
 
-The implemented policy is **100 atomic traits plus composite rules combined per
-directory**, inclusive, with **no exemptions**. There is no separate atomic cap.
+The implemented policy is **one inclusive cap of 100 total rules per directory**,
+counting atomic traits and composite rules together, with **no exemptions**.
 There is **no hard physical-depth limit**. Depth above five directories below
 any tier receives a soft, non-blocking validation warning; the tier and YAML
 filename do not count. Prefer breadth when sibling techniques remain equally precise;
@@ -2150,17 +2449,17 @@ cap and semantic taxonomy audits remain active work.
 
 | Measurement | Result |
 |---|---:|
-| YAML files containing rules | 20,737 |
-| Atomic traits / composites | 79,328 / 39,478 |
-| Total rules / directories containing rules | 118,806 / 8,721 |
+| YAML files containing rules | 20,798 |
+| Atomic traits / composites | 79,333 / 39,475 |
+| Total rules / directories containing rules | 118,808 / 8,724 |
 | Directories exceeding the current 100-combined cap | **79** |
 | Violators by tier | 78 objectives, 1 well-known |
-| Rules in violating directories | **9,929** |
-| Sum of excess above 100 | **2,029** |
-| Violators plus sibling subtrees inventoried | 1,177 rule directories / 29,700 rules |
-| Identical atomic `if` bodies touching violators | 64 groups / 144 rules |
+| Rules in violating directories | **9,861** |
+| Sum of excess above 100 | **1,961** |
+| Violators plus sibling subtrees inventoried | 1,176 rule directories / 29,643 rules |
+| Identical atomic `if` bodies touching violators | 63 groups / 142 rules |
 
-2,029 is the minimum number of rules that must leave their *current* oversized
+1,961 is the minimum number of rules that must leave their *current* oversized
 directories or be removed; it is not a proposed deletion count. Reclassifying
 all contents of a retired directory will move more. Destination capacity must
 also be measured; moving 20 rules into an 80-rule sibling simply moves the error.
@@ -2175,17 +2474,29 @@ no additional failure at this snapshot, but prevents future bypasses.
 
 Validation evidence:
 
-- Before: `make validate` passed all 1,583 fixtures.
-- The current taxonomy audit finds **79** over-cap directories. The engine build
-  is blocked by the unrelated `filefacts::decode_dos_com_xor_payload` API
-  mismatch in the shared `cleave` worktree, so strict `make validate` has not
-  yet been rerun with the raised cap.
+- Before the cap policy changed, `make validate` passed all 1,583 fixtures.
+- The latest `make validate` using the available prebuilt v2.12 binary exits
+  with the expected **79 over-cap directories** and also reports **18** clauses
+  containing a directory plus a trait already covered by that directory. It
+  reports no unknown subdirectories or broken references for the current
+  moves. Building the current adjacent engine source remains blocked by its
+  unrelated call to `stng::decode_xor_fat_macho`, which the locked `stng`
+  revision does not expose; the current-source build therefore remains
+  unverified.
+- Synthetic npm, PowerShell, and Java-class cases cover the current
+  system-information reclassifications: remote command execution is required
+  for the WebSocket dispatch rule; host-profile discovery without upload does
+  not trigger the stealer rule; adding `Out-File` and `curl -T` does; and the JVM
+  profile-marker rule requires both byte patterns.
 - Boundary tests now cover all-atomic, all-composite and mixed 100/101 limits,
   76 atoms without an atomic cap,
   separate-directory budgets, the former exempt path, and depth counting.
-- The earlier 85-cap soft validation passed its then-current fixture corpus.
-  The current 100-cap engine build is blocked by the API mismatch above, so no
-  fresh `make validate` result is claimed here.
+  The two focused current-source tests for combined counting and the former
+  exemption pass when built against the adjacent working-tree `stng` API.
+- The available prebuilt release was used for the taxonomy move smoke check;
+  it still reports the existing benign `pyaigis-top10.tar.xz` false positive.
+  Its 100/101 boundary behavior is verified separately, but current-source
+  build and full strict corpus validation remain open.
 
 ## Current migration progress
 
@@ -2644,6 +2955,15 @@ file/platform scopes with equal and slightly different confidence.
 
 ### Additional patterns to cover, without erasing precision
 
+- **Report mergeable disjoint scopes as an advisory.** The former
+  `execution/script::msi-scheduled-task-action` and neutral
+  `os/autorun/scheduled::new-scheduledtaskaction` had the same
+  `New-ScheduledTaskAction` text matcher. Their effective `for:` lists were
+  disjoint (`oledoc` versus `powershell`), so overlap-only duplicate checks
+  need not reject them, but the atom had no MSI-specific predicate. The
+  neutral rule now owns both file types and the MSI composite references it.
+  A same-body, same-subject advisory should propose this sort of scope union
+  while spelling out confidence and verdict differences for review.
 - **Share normalization across duplicate passes.** Currently only the logic
   pass normalizes `count_min: 1` and an explicit `exists: true` spelling. Its
   “exact check handled this” shortcut deserves regressions for those variants
@@ -2927,9 +3247,9 @@ Audit **all** `command-and-control/dropper` siblings with
 files or renaming one node is inadequate.
 
 `delivery/execute-download` (324), `delivery/fetch-exec` (133),
-`execution/exec-download` (115), `execution/execute-download` (15),
+`execution/exec-download` (now 96 after evidence routing), `execution/execute-download` (15),
 `delivery/fetch-eval` (129), `execution/eval` (78), and `execution/fileless`
-(112) demonstrate duplicate concepts across delivery and execution. The
+(now 99) demonstrate duplicate concepts across delivery and execution. The
 current four-phase dropper tree puts full-chain composites under whichever
 phase the author happened to emphasize.
 
@@ -2969,8 +3289,20 @@ payload construction.
 
 Evidence: `staging/memory` includes a temporary AppleScript file path and
 file-writing launchers; `payload/encrypted` includes plain large-data-section
-measurements; `execution/script::msi-scheduled-task-action` only searches for
-`New-ScheduledTaskAction`. Neither an MSI nor that API proves a dropper.
+measurements. The former `execution/script::msi-scheduled-task-action` searched
+only for `New-ScheduledTaskAction`; it has been merged into a neutral scheduled
+task observation. Neither an MSI nor that API proves a dropper.
+
+The first `execution` cap pass is complete without an exception: 2,001 rules
+across 59 leaves, with `exec-download` at 96 and `script` at 40. This is a
+capacity checkpoint, not a completed semantic migration. MSHTA execution,
+npm preinstall, MSI custom actions, VBS/Excel COM, Kotlin polyglot, Panos Ruby,
+C# command text and JScript obfuscation have now been routed by their required
+evidence. Next require a matched source-to-sink relation before a Ruby
+HTTP-body/Open3 combination claims execution of the downloaded response.
+Audit the remaining Python and JScript profiles and then reconcile the
+overlapping `exec-download`/`execute-download` and
+`script`/`dropper-script` siblings by the required activation sink.
 
 Capacity planning is deliberately deferred to the rule-by-rule map. These
 large families may need real submethods and composite consolidation even
@@ -3103,7 +3435,7 @@ For **every** cohort:
   splitting YAML files. Language-specific matchers may remain separate within
   one directory; collapsing them must preserve supported scopes.
 - Compute destination counts including incoming rules and existing residents.
-  All must be ≤85, with no exemptions, and every internal directory must be
+  All must be ≤100, with no exemptions, and every internal directory must be
   free of YAML leaves. Do not choose an arbitrary “misc” remainder.
 - Rewrite local references, fully-qualified references, positive directory
   references, `unless`, `downgrade`, fixture expectations, source/docs examples,

@@ -1,0 +1,1 @@
+<CFFILE FILE="/srv/f" VARIABLE="data" ACTION="READBINARY">

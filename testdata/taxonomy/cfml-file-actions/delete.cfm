@@ -1,0 +1,1 @@
+<CFFILE FILE="/srv/f" ACTION="DELETE">
