@@ -1,0 +1,80 @@
+# Shell deletion of home-tree content. Paired with agent soul persistence in
+# objectives/persistence/agent/soul-file when the delete protocol is written back
+# into SOUL.md for the next session.
+defaults:
+  platforms: [unix]
+  for: [shell]
+  attack: T1485
+
+traits:
+  - id: shell-home-glob-recursive-delete
+    desc: Recursively deletes across home directories
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      # Require the user-directory component itself to be a glob (for example
+      # /home/* or /home/*/.ssh). A glob below one named test/user home is
+      # ordinary scoped cleanup rather than a delete across user accounts.
+      regex: 'rm\s+-[a-zA-Z]*r[a-zA-Z]*\s+[^\n]{0,60}/home/(\*|\?|\[[^\]\n]{1,12}\])(/\S{0,20}|\s|$)'
+      # Charm tools clear `/home/*/.cache/charm`, not the home itself.
+      not:
+        - substr: /.cache/
+    unless:
+      - id: metadata/package/testing/presence/harness::test-directory-path
+      - id: well-known/app/infrastructure/aws-agent-toolkit::agent-toolkit-context
+      - id: well-known/app/infrastructure/aws-agent-toolkit::db2-driver-script
+      - id: metadata/build/package/maintainer-scripts::debian-postrm-purge-home-cleanup
+
+  - id: shell-home-var-credential-delete
+    desc: Force-deletes HOME credential directories
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: text
+      regex: 'rm\s+-rf\s+[^\n]{0,80}\$HOME/\.(ssh|aws|gnupg)(/\*|"|''|\s|$)'
+    not:
+      - substr: known_hosts
+
+  - id: shell-home-tree-enumerate
+    desc: Enumerates files under /home before deletion
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: 'find\s+(/home|/home/\*|\$HOME)\s+[^\n]{0,80}-type\s+f'
+
+composite_rules:
+  - id: shell-personal-folders-recursive-delete
+    desc: Recursively deletes multiple personal folders
+    crit: hostile
+    conf: 0.97
+    # Both atoms must describe the same command, never two nearby calls.
+    near_bytes: 0
+    all:
+      - id: micro-behaviors/fs/delete/directory::shell-recursive-delete
+      - id: micro-behaviors/fs/delete/directory::shell-multiple-home-content-targets
+  - id: shell-home-tree-delete
+    desc: Shell enumerates then deletes home-tree paths
+    crit: suspicious
+    conf: 0.96
+    near_lines: 30
+    all:
+      - id: shell-home-tree-enumerate
+    any:
+      - id: shell-home-glob-recursive-delete
+      - id: shell-home-var-credential-delete
+      - id: micro-behaviors/fs/delete/directory::shell-recursive-delete
+
+  - id: shell-home-credential-mass-delete
+    desc: Shell mass-deletes home credential directories
+    crit: hostile
+    conf: 0.97
+    attack: T1485,T1552
+    near_lines: 20
+    all:
+      - id: shell-home-var-credential-delete
+    any:
+      - id: shell-home-glob-recursive-delete
+      - id: shell-home-tree-enumerate
+      - id: micro-behaviors/fs/path/private-key::keys

@@ -318,13 +318,12 @@ traits:
       kind: import
       exact: jmg.core.generator.IShellGenerator
   - id: java-shell-bytecode-make-source
-    desc: Java shell bytecode make source
+    desc: Java shell or injector generator entrypoint
     crit: notable
     conf: 0.88
     if:
-      type: symbol
-      kind: function
-      exact: makeShell
+      type: text
+      regex: '\b(genPayload|makeShell|makeInjector)\s*\('
   - id: java-shell-bytecode-modify-source
     desc: Java shell bytecode modify source
     crit: notable
@@ -348,7 +347,7 @@ traits:
     if:
       type: symbol
       kind: identifier
-      exact: MemShellGenerator
+      regex: '^(MemShellGenerator|jMGenerator)$'
   - id: java-probe-shell-generator-class
     desc: Java probe shell generator class
     crit: notable
@@ -495,6 +494,96 @@ traits:
     if:
       type: text
       regex: '\.insert(Before|After)\s*\('
+
+  # Some Jetty shells expose equals(Object) as the handler entry point instead
+  # of implementing a visible Handler interface. The framework arguments are
+  # unpacked as an Object[]; a secret request-header substring claims the
+  # exchange, then the request body drives the tunnel implementation.
+  - id: jetty-object-equals-handler-source
+    desc: Jetty shell overrides Object.equals as handler
+    crit: notable
+    conf: 0.92
+    for: [java]
+    if:
+      type: text
+      regex: '\bboolean\s+equals\s*\(\s*Object\s+\w+\s*\)'
+  - id: jetty-object-array-handler-arguments
+    desc: Jetty shell unpacks framework arguments
+    crit: notable
+    conf: 0.92
+    for: [java]
+    if:
+      type: text
+      regex: 'Object\[\]\s+\w+\s*=\s*\(\(Object\[\]\)\s*\w+\)'
+  - id: jetty-reflective-request-header-access
+    desc: Jetty shell reflects request header access
+    crit: notable
+    conf: 0.9
+    for: [java]
+    if:
+      type: text
+      regex: 'getMethod\s*\(\s*["'']getHeader["'']\s*,\s*String\.class\s*\)'
+  - id: jetty-shell-marks-request-handled
+    desc: Jetty shell suppresses ordinary request handling
+    crit: notable
+    conf: 0.9
+    for: [java]
+    if:
+      type: text
+      regex: 'getMethod\s*\(\s*["'']setHandled["'']'
+  - id: jetty-shell-handled-flag-true
+    desc: Jetty shell marks matched request handled
+    crit: notable
+    conf: 0.9
+    for: [java]
+    if:
+      type: text
+      regex: 'invoke\s*\(\s*baseRequest\s*,\s*true\s*\)'
+
+  # CommandValve and CommandListener are bytecode-redefinition templates:
+  # CommandGenerator replaces their inert getInputStream method with process
+  # execution. The source alone demonstrates the request-to-response shell
+  # shape, but not an executable process call, so keep this suspicious.
+  - id: java-command-shell-template-request-input
+    desc: Request parameter matches the shell name
+    crit: notable
+    conf: 0.9
+    for: [java]
+    if:
+      type: text
+      regex: 'getParameter\s*\(\s*paramName\s*\)'
+  - id: java-command-shell-template-header-fallback
+    desc: Reads shell input from same-named header
+    crit: notable
+    conf: 0.9
+    for: [java]
+    if:
+      type: text
+      regex: 'getHeader\s*\(\s*paramName\s*\)'
+  - id: java-command-shell-template-stream-method
+    desc: Passes input to replaceable stream method
+    crit: notable
+    conf: 0.9
+    for: [java]
+    if:
+      type: text
+      regex: 'getInputStream\s*\(\s*param\s*\)'
+  - id: java-command-shell-template-scans-stream
+    desc: Reads replaceable input stream to text
+    crit: notable
+    conf: 0.9
+    for: [java]
+    if:
+      type: text
+      regex: 'new\s+Scanner\s*\(\s*inputStream\s*\)'
+  - id: java-command-shell-template-response-writer
+    desc: Writes generated stream through servlet response
+    crit: notable
+    conf: 0.9
+    for: [java]
+    if:
+      type: text
+      regex: 'getWriter\s*\(\s*\)\s*\.write\s*\('
 
 composite_rules:
   - id: java-server-filterchain-inject-target
@@ -716,13 +805,14 @@ composite_rules:
     all:
       - id: java-memshell-generator-api-source
     any:
+      - id: java-shell-bytecode-make-source
       - id: java-memshell-result-source
       - id: java-memshell-shelltool-source
       - id: java-memshell-manager-api-source
       - id: java-memshell-inject-helper-source
       - id: java-memshell-probe-content-source
       - id: java-memshell-packer-source
-    needs: 2
+    needs: 1
   - id: java-memshell-integration-harness
     desc: Java memshell integration harness
     crit: suspicious
@@ -752,3 +842,29 @@ composite_rules:
     all:
       - id: java-memshell-manager-api-source
       - id: java-webshell-manager-connection-builder
+
+  - id: jetty-header-equals-tunnel-webshell
+    desc: Jetty hook dispatches a header-gated tunnel
+    crit: hostile
+    conf: 0.99
+    for: [java]
+    all:
+      - id: jetty-object-equals-handler-source
+      - id: jetty-object-array-handler-arguments
+      - id: jetty-reflective-request-header-access
+      - id: jetty-shell-marks-request-handled
+      - id: jetty-shell-handled-flag-true
+      - id: objectives/command-and-control/channel/tunnel/proxy::java-header-tasked-arbitrary-tcp-forwarder
+
+  - id: java-command-shell-template
+    desc: Servlet command shell template
+    crit: suspicious
+    conf: 0.96
+    for: [java]
+    all:
+      - id: java-command-shell-template-request-input
+      - id: java-command-shell-template-header-fallback
+      - id: java-command-shell-template-stream-method
+      - id: java-command-shell-template-scans-stream
+      - id: java-command-shell-template-response-writer
+    near_bytes: 500

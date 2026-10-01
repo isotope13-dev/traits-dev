@@ -265,8 +265,8 @@ defaults:
 
 | Type | Purpose | Matchers | Modifiers |
 |------|---------|----------|-----------|
-| `text` | Byte-scan extracted runs (binaries) or raw text (source) | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
-| `literal` | Parser-extracted constants — strings and numbers | `exact`, `substr`, `regex`, `word`, `value`, `radix` | `kind: string\|number`, count, density, location, `case_insensitive`, `is` |
+| `text` | Byte-scan extracted runs (binaries) or raw text (source) | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `exclude_html_comments`, `is` |
+| `literal` | Parser-extracted constants — strings and numbers | `exact`, `substr`, `regex`, `word`, `value`, `radix` | `kind: string\|number`, count, density, location, `case_insensitive`, `exclude_docstrings`, `is` |
 | `raw` | Raw file bytes | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
 | `symbol` | Imports/exports/forwards/functions/calls | `exact`, `substr`, `regex` | `platforms`, `is`, `kind`, `arg` (call only) |
 | `import` | Imported symbols / source import calls | `exact`, `substr`, `regex` | `platforms`, `is` |
@@ -278,12 +278,25 @@ defaults:
 | `basename` | Filename | `exact`, `substr`, `regex` | `case_insensitive` |
 | ~~`string_literal`~~ | *(renamed — use `literal`; old spelling kept as serde alias)* | | |
 | ~~`ast`~~ | *(renamed — use `tree-sitter`; old spelling kept as serde alias)* | | |
+
 | ~~`base64`~~, ~~`xor`~~ | *(removed — use `encoded`)* | | |
 | ~~`string_value`~~ | *(removed — use `text`)* | | |
 | ~~`string_count` / `string_value_count`~~ | *(removed — use `metrics: binary.string_count` or a `type: text` trait with `count_min`)* | | |
 | ~~`exports_count`~~ | *(removed — use `metrics: binary.export_count`)* | | |
 | ~~`import_combination`~~ | *(removed — use `type: import` plus composite `all`/`any`/`needs`)* | | |
 | ~~`structure`~~ | *(removed — express file-format and arch gates via trait-level `for:`/`arch:`, or check `elf.e_machine`/`macho.cpu_type`/`pe.machine` via `metrics`)* | | |
+
+`exclude_docstrings: true` on a `literal` condition skips Python module,
+class, and function docstrings while preserving matches on executable string
+constants. Use it when the literal is evidence for a runtime capability, such
+as a URL configured for an HTTP client; documentation links remain references
+rather than communication behavior.
+
+`exclude_html_comments: true` on a `text` condition skips HTML (`<!-- -->`)
+and ASP.NET (`<%-- --%>`) comments during raw source scans. It preserves byte
+offsets and line endings, and does not interpret comment-like text inside
+`script`, `style`, `textarea`, or other raw-text elements as markup comments.
+Decoded string layers are still searched as decoded content, not as HTML.
 
 **Matcher notes:**
 - `word` - Word boundary match (equivalent to `\b{value}\b`). Available on `text`, `literal`, `raw`, `section`, `encoded`. NOT available on `symbol`, `basename`, `hex`.

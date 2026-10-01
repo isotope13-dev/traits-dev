@@ -131,15 +131,20 @@ The contract (each is enforced at load time):
 
 **Malcontent defensive-scanner exception.** The exception at
 `well-known/tool/detection/malcontent::malcontent-defensive-scanner-context`
-recognizes the scanner by three content markers in the same ELF's read-only
-data: `github.com/chainguard-dev/malcontent`, `YARAForge`, and
-`MALCONTENT_UPX_PATH`. They respectively identify the upstream Go project,
-its embedded detection catalog, and its scanner-specific UPX configuration.
-Require all three; a package name, filename, catalog marker, or project path
-alone does not establish this identity. This narrowly exempts malcontent's
-embedded detection rules from being mistaken for behavior performed by its
-own executable; it does not exempt other YARA tools or files that merely carry
-those strings. The positive and missing-marker boundaries are covered by
+recognizes the scanner from the same two marker sets used by upstream's
+`rules/internal/malcontent.yara`: three of eight current Go type/package
+constants (`malcontent.Behavior` and `malcontent/pkg/{action,malcontent,
+compile,profile,render,report,version}`), or three of four legacy `bincapz`
+type/package/project constants. Format-specific content matchers cover ELF
+`.rodata`, PE `.rdata`, and Mach-O `__TEXT,__rodata`; package analyzers expose
+embedded executables as child files, so the same matchers work inside tar/APK
+distributions without classifying container names. These source-derived
+markers distinguish the scanner from another binary that merely bundles
+YARAForge or uses one malcontent-specific environment variable. This narrowly
+exempts malcontent's embedded detection rules from being mistaken for behavior
+performed by its own executable; it does not exempt other YARA tools or files
+that merely carry one or two markers. The current and legacy positive cases,
+incomplete marker sets, and old weak-marker combination are covered by
 `scripts/check-malcontent-exception.py` and its fixtures.
 
 **Directory-reference safety — the reason this class exists.** A bare directory reference (`objectives/foo`) in an `all:`/`any:` clause silently *excludes* any exception beneath it, so you can fold an entire `objectives/` directory in as positive evidence without ever inheriting a suppressor by accident. Exceptions are reached only by an exact `dir::id` reference — the form `unless:`/`downgrade:` use — with one carve-out: inside another exception composite, a directory reference *does* include the exceptions beneath it, so an exception may deliberately assemble a directory of benign patterns.
@@ -503,10 +508,11 @@ When a behavior could serve multiple objectives, place the single trait where ev
 | Process injection, no further context | `evasion/process/injection/` | Stealth is the most common use; privesc/lateral composites reference it |
 | Staged payload acquisition plus activation | `command-and-control/dropper/` | Repository convention; choose the required activation mechanism from the directory guide. This does not by itself establish an ongoing C2 channel. |
 | Environment-variable access vs path reference | A call that reads an environment variable belongs in `micro-behaviors/os/env/read/`, even when the selected variable names a path such as TEMP. A literal or constructed temporary path without an environment-read operation belongs in `micro-behaviors/fs/path/temp/`. |
-| Keylogging capability detected | `collection/keylog/` | General capture; credential-access composites reference it when combined with specific store targeting |
+| Keystrokes read for a UI vs keystrokes recorded or staged | UI/device reads belong under `micro-behaviors/hardware/input/`; `collection/keylog/` requires evidence that the acquired keys are recorded, staged, or used for surveillance. Credential-access composites reference that collection finding when combined with a specific store target. |
 | Rootkit hides files/processes | `evasion/kernel-hide/` | Hides from users/admins, not from sandboxes |
 | Masquerades as system binary | `evasion/masquerade/` | Deceives users/admins, not analysis tools |
-| Runtime module load uses a disguised data suffix | `evasion/masquerade/extension-mismatch` | Require a known data/binary suffix or asset-directory context; a dotted extensionless module name can resolve to a script and does not establish masquerading. |
+| Password literal disguised as an absence check | `evasion/masquerade/source-review` | Require a password value compared to a word such as `NULL`; a username or account compared to a sentinel such as `none` does not establish a concealed password bypass. |
+| Runtime module load uses a disguised data suffix | `evasion/masquerade/extension-mismatch` | Bind the loader to its own argument: require an explicit path prefix plus data/binary suffix in one module string, or an asset directory and executable suffix in that same string. A dotted bare package name such as `mongo.exe` resolves by package identity and does not establish masquerading. |
 | Port scanning / network recon | `discovery/network/scan/` | Gaining knowledge, not propagating |
 | Brute-forcing remote services (SSH, IoT) | `lateral-movement/brute-force/` | Malware brute-forcing is about spreading to new hosts |
 
@@ -530,7 +536,7 @@ evidence scope and do not create parallel taxonomy branches.
 | Extracts saved Wi-Fi profile keys | `credential-access/wifi/` | Targets a specific credential store |
 | Reads `AWS_SECRET_ACCESS_KEY` from env | `credential-access/env/secrets/` | Targets a specific secret |
 | Reads `os.environ` generically | `micro-behaviors/os/env/` | Neutral capability, no credential targeting |
-| Generic keystroke capture | `collection/keylog/` | General capture; credential-access composites reference it |
+| Generic keyboard event input | `micro-behaviors/hardware/input/` until recording, staging, or surveillance is established; then use `collection/keylog/` by acquisition mechanism |
 | Chrome passwords + HTTP POST to attacker | `exfiltration/stealer/browser/` | Source + transport = exfiltration; the source names the directory |
 | Chrome passwords read, never sent | `credential-access/browser/` | No transport leg — not a stealer |
 | "admin" or "root" keyword | Concept-specific keyword directory, usually `objectives/discovery/account/keywords/` or a narrower objective when context supports it | Account/user concept, not credential access and not generic text |
@@ -1011,6 +1017,7 @@ composite does not pull its atoms into this tree.
 | `exfiltration` | Transfer target data out through an unauthorized or attacker-directed path. Complete chains use `stealer/<source>`; transport-abuse-only claims use their channel. | Gathering without sending is collection/credential access/discovery. HTTP POST or an endpoint alone is not theft. |
 | `impact` | Damage, disrupt, extort, manipulate or hijack systems, data or resources. Behavior names the effect; method refines its mechanism or target. | Hiding a change is evasion; a normal deletion or encryption API remains a capability. |
 | `lateral-movement` | Establish access to or propagate onto another system. Behavior names access/propagation mechanism; method refines it. | Local execution/collection does not become lateral because a network library is present. Scanning alone is discovery. |
+| Wi-Fi credential form or join QR vs BLE provisioning attack | A user-facing Wi-Fi SSID/password field is a neutral UI credential-entry fact under `micro-behaviors/ui/controls/credential`; generating a Wi-Fi join QR is local data formatting. `lateral-movement/exploit/network-device/provisioning/ble` requires a BLE GATT write linked to an unsafe provisioning value reaching a shell or command sink. | Wi-Fi field labels and QR output alone do not establish lateral movement, command injection, or credential access. |
 | WhatsApp contact-list API vs direct chat-store enumeration in messaging automation | `WPP.contact.list` and `WPP.getAllContacts` are explicit recipient-list evidence; iteration over `WPP.whatsapp.ChatStore._models` is equivalent recipient enumeration when the code extracts direct-chat identifiers. Pair that source with a WPP send operation to identify account-driven messaging automation, or with browser CSV output to identify contact-list export. Chat-store access alone, a one-chat existence check, or a send operation alone remains a capability. | `objectives/lateral-movement/social-engineering/spam/messaging-web-automation` |
 | `persistence` | Create durable reactivation or retained access beyond the current execution. Level 2 chooses the activation/access boundary; level 3 names the mechanism. | Detachment, hiding and long-running loops alone do not establish durability. |
 | `privilege-escalation` | Gain authority beyond the starting principal through a required abuse mechanism. Children name the elevation primitive then affected boundary. | Ordinary authorized elevation APIs are capabilities; injection without higher authority is not privilege escalation. |
@@ -1053,7 +1060,8 @@ At `objectives/command-and-control`, classify the **required result** first:
 | `backdoor/bind-shell` vs `backdoor/dispatch` | A listener that connects an accepted client to a shell → `bind-shell`. | Use `dispatch/<mechanism>` when the handler receives independent tasks and chooses an operation/command; remote access to a shell does not create a second dispatch classification. |
 | `remote-command` | Receive attacker-directed tasks and dispatch operations or return command results. Repeated HTTP retrieval and dispatch → `remote-command/http-poll`; a single received task dispatch → `remote-command/dispatch`. An outbound HTTP client retrieving tasks → `backdoor/tasking/http`. | A persistent connected shell uses reverse-shell; an HTTP server route that accepts an operator request and executes its body → `backdoor/webshell/exec`. A single HTTP request is not polling. |
 | Appliance command control vs generic HTTP tasking | A command/tasking profile tied to an appliance administration surface such as NetScaler/Citrix ADC, PAN-OS, RouterOS, or QNX network equipment belongs under `command-and-control/remote-command/appliance`; generic outbound HTTP tasking remains under `backdoor/tasking/http`. The appliance product is evidence of the control surface here, not a source-language taxonomy branch. |
-| `remote-command/dispatch` admission | Required evidence must connect received task data to an operation, interpreter, or command execution. A response written back over the channel strengthens the dispatch chain. | Socket plus process execution, or output written to a socket without received task execution, does not establish remote command dispatch. A persistent shell whose standard streams are wired to a connection uses `reverse-shell/<mechanism>`. |
+| Command-line switch text vs PowerShell tasking | A bare `EncodedCommand` switch or `command_id` field-name is command vocabulary under `metadata/file/string/command`. A PowerShell command invocation belongs under `micro-behaviors/process/interpreter/powershell/command`; remote-command objectives require evidence connecting received or polled task data to execution. |
+| `remote-command/dispatch` admission | Required evidence must connect received task data to an operation, interpreter, or command execution. A response written back over the channel strengthens the dispatch chain. | Socket plus process execution, output written to a socket without received task execution, or textual proximity between `Out-String` and `.Write()` does not establish remote command dispatch. A persistent shell whose standard streams are wired to a connection uses `reverse-shell/<mechanism>`. |
 | `backdoor` | An unauthorized access/control surface, such as a bind listener, webshell or authentication bypass. | Generic task dispatch uses remote-command; durable installation adds a persistence claim; binary/script/native-source are not access mechanisms. |
 | Modular RAT profile vs capability cluster | Classify as `backdoor/rat/<mechanism>` only when the rule establishes a remote administration or tasking surface, not merely plugin-loading and socket APIs. | A pipe-delimited host string, socket connect, 32-byte array, nearby library load and VM check support separate neutral capability and anti-analysis findings. They do not establish encrypted command transport or an operator-controlled RAT. |
 | RAT command vocabulary vs generic remote tasking | A large command-set profile that names RAT operations across discovery, collection, credential access, evasion, and lateral movement belongs in `backdoor/rat/command-set`; generic task transport and dispatch remain under `remote-command/tasking`. The command names are evidence of a RAT control surface, while each underlying capability may still be referenced from its canonical objective. |
@@ -1062,7 +1070,7 @@ At `objectives/command-and-control`, classify the **required result** first:
 | Encoded payload evidence vs encoded execution | Encoded content that is required to reach an execution sink belongs under `anti-static/obfuscation/payload/encoded/exec`; encoding or decoding evidence without that handoff belongs under `.../encoded/carrier`. The split follows the required sink, not the language, decoder API, or carrier format. |
 | LLM prompt carriers vs prompt effects | Prompt instructions that override policy or agent behavior belong in `security-bypass/llm/prompt/override`; MCP/tool-specific poisoning and hidden tool directives belong in `.../prompt/mcp`; prompt content propagated through documents or telemetry belongs in `.../prompt/carrier`; network-control instructions belong in `.../prompt/egress`. The parent `prompt` is a grouping node only. |
 | Fabricated product identity vs installer identity | A forged named application or security product belongs under `masquerade/identity/app` or `.../identity/product`; an MSI/NSIS/installer-branded carrier belongs under `.../identity/installer`. Loader behavior remains a referenced technique, so installer and product identity are not separated by implementation language. |
-| File deletion vs container destruction | Ordinary file/log deletion belongs under `impact/destroy/file-deletion`; wiping a container store or a privileged host-mounted container root belongs under `impact/destroy/container`. The container runtime is the destroyed resource, not a source-language or orchestration branch. LLM-directed destructive instructions belong under `impact/destroy/agent-directed` and reference the concrete deletion leg. |
+| File deletion vs container destruction | Ordinary file/log deletion belongs under `impact/destroy/file-deletion`; deletion of a user's home, profile, or personal-data directories belongs under `impact/destroy/user-data`. Wiping a container store or a privileged host-mounted container root belongs under `impact/destroy/container`. The container runtime is the destroyed resource, not a source-language or orchestration branch. LLM-directed destructive instructions belong under `impact/destroy/agent-directed` and reference the concrete deletion leg. |
 | `beacon` | Repeated attacker check-in or heartbeat, without a narrower required tasking result. | An ordinary timer or telemetry endpoint is not a beacon; an actual dispatched task belongs with its tasking result. |
 | `botnet` | Fleet membership/coordination or distributed operator tasking. | A network-device platform or DDoS action alone is not botnet coordination. |
 | `channel` | A communication mechanism proven to carry attacker control, without a narrower access/dispatch claim. | Generic transport APIs are capabilities. Choose protocol/mechanism over vendor identity. |
@@ -1072,7 +1080,7 @@ At `objectives/command-and-control`, classify the **required result** first:
 | GitHub C2 state-file markers | Treat `cmd.json`, `data.json`, `handshake.json`, `client_boot_id`, and `cmd_seq` as component evidence. The C2 state-files composite also requires a GitHub Contents API template, a JSON contents read/decode path, and at least two state markers. | A local asset such as Construct's `data.json`, or state-like names without the GitHub read path, does not establish a C2 channel. |
 | `trigger` | An attacker activation condition: packet knock, message/content gate or local artifact gate. | Ordinary lifecycle/timer facts are capabilities/metadata; `activation` merely restates trigger. |
 | `dropper` | Required acquisition/staging of a payload linked to its activation. | An installer identity, download, encoded blob or execution API alone does not establish this chain. |
-| HTTP retrieval vs dropper activation | A `DownloadString` call, URL, or cleartext HTTP reference belongs under `micro-behaviors/communications/http/` unless the rule also links the retrieved content to an activation sink. Require that link before classifying `dropper`; source evaluation routes to `dropper/script-eval`, a launched staged file to `dropper/file-exec`, and in-memory transfer to the supported injection/image-map sink. | A download alone establishes a probable network capability, not payload execution, command dispatch, or C2. |
+| HTTP retrieval vs dropper activation | A `DownloadString` call, URL, or cleartext HTTP reference belongs under `micro-behaviors/communications/http/` unless the rule also links the retrieved content to an activation sink. A GitHub `/releases/download/` path or tool-manager marker is only download/bootstrap evidence; a recognizable tool identity does not supply the missing activation link. Require that link before classifying `dropper`; source evaluation routes to `dropper/script-eval`, a launched staged file to `dropper/file-exec`, and in-memory transfer to the supported injection/image-map sink. | A download alone establishes a probable network capability, not payload execution, command dispatch, or C2. |
 | HTTP/write/activation co-occurrence without a handoff | Classify the composite by its required operation: response or script-path writing → neutral HTTP download/write or filesystem write; `importlib` module loading → neutral module load; subprocess or variable-path interpreter launch → neutral process creation. Describe the nearby HTTP and file clues as context. | A `urlopen().read()`, writable script path, `spec_from_file_location(...).exec_module()`, or response write beside a child interpreter does not prove the same bytes or path reach that sink. Use the corresponding dropper sink only when the matcher binds the source or stage to it. |
 | HTML object `codebase` vs saved executable | An `<object codebase="...exe">` attribute is an HTML-format reference; a UNC EXE string is executable-path evidence; `ADODB.Stream` alone is a COM ProgID reference. | Co-occurrence with `SaveToFile` does not show that the saved path is the `codebase` target. Classify a complete staged-file activation by its linked file-handler sink only when the rule establishes that handoff. |
 | HTA host, media markup, and payload sink | `<hta:application>` identifies the HTA carrier; a media element referencing a file is HTML-document structure; off-screen/minimized windows follow hidden execution. Dynamic `eval` or a script-host launch follows its actual execution mechanism. | A media element alone does not prove a decoy lure. A gzip write to `tempZip`, a nearby `Run tempBat`, or WebClient bytes beside `Assembly.Load` does not establish the downloaded/decoded content as the launched payload. Require the value or path handoff before classifying a dropper. |
@@ -1080,7 +1088,7 @@ At `objectives/command-and-control`, classify the **required result** first:
 | Desktop-entry download, autostart, and document guise | A linked download-to-launch chain follows the dropper activation sink. A rule that additionally requires XDG autostart belongs under `persistence/login/xdg`; one that requires a deceptive document icon/name belongs under `evasion/masquerade/document`, referencing the delivery finding. | `wget -O /tmp`, chmod/pipe command text, `Type=Application`, `Exec=`, and `Terminal=false` are neutral command or format evidence on their own. They do not create another `dropper/execution/launcher` technique. |
 | Editor extension installation vs dropper | A durable editor extension installation belongs under `persistence/system/editor-extension`; a bare `--install-extension` operation is a neutral package-manager capability. A source-to-installed-package handoff may refine the persistence profile with download evidence. | An HTTPS call, VSIX clue and force-install CLI in one file do not necessarily bind the fetched VSIX to the CLI argument. The editor or programming language is rule scope, not a `dropper/execution/ide-extension` branch. |
 | Temp path, file write, and launch | An EXE/DLL/temp-data path is filesystem-path evidence; `curl -o` or WebClient use follows the downloader; `SaveToFile` follows stream writing; a `rundll32` invocation follows its named execution mechanism. | A download method beside a temp EXE path and a shell name does not prove that path was downloaded or executed. A batch download to `ProgramData` paired with a run from `Temp` names different paths and cannot be treated as one staged-file handoff. |
-| DNS TXT stage vs DNS command channel | A TXT response assembled into a local executable and linked to its launch follows the dropper file-execution sink; TXT records carrying operator commands or replies follow `dns`. | TXT lookup, chunk decoding and a nearby spawn do not by themselves prove either a command channel or a staged-file handoff. Do not use `dns/tunneling` as a home for every encoded TXT response. |
+| DNS TXT stage vs DNS command channel | A TXT response assembled into a local executable and linked to its launch follows the dropper file-execution sink; TXT records carrying operator commands or replies follow `dns`. | A lookup, resolver process, output capture, or nearby generic spawn does not establish that DNS data becomes a command. Require a dynamic command or code-execution sink near the lookup before using `dns/tunneling`, and do not use it as a home for every encoded TXT response. |
 | Document auto-open vs dropper | An auto-open trigger with a process or interpreter call, but no acquired payload linked to that call, follows `objectives/execution/trigger/document` or the specific interpreter mechanism when that is the primary claim. | A macro, decoded command, hidden window or `CreateProcess` API name alone does not make a dropper. |
 | API resolution vs loader | Manual export walking or API-hash resolution, including a small DLL with sparse imports, follows `anti-static/obfuscation/native-api-hash` when hash-based; an ordinary resolver follows its API-resolution capability. | Sparse strings, a DLL shape or selected file/memory API hashes do not establish DLL sideloading or staged-code activation. |
 | Archive extraction and shortcut launch vs dropper | `hh -decompile` follows CHM extraction, and a LNK invocation follows LNK execution. A staged CHM-to-shortcut dropper needs the downloaded archive, extracted shortcut and launched target linked by path or data. | `curl`, `hh -decompile` and `.lnk` in one file, even in order, do not prove they refer to the same artifact. |
@@ -1538,6 +1546,7 @@ chain still routes to its dropper sink.
 | Fileless memory mechanisms | Anonymous file-descriptor execution through `memfd_create` or `/proc/self/fd` → `evasion/fileless/memfd`; other in-memory execution without that descriptor mechanism → `evasion/fileless/memory`. A downloaded payload becomes a dropper only when its acquisition and activation handoff are both required. |
 | SysV init script placement | A SysV `SNNname` runlevel script or equivalent init-script installation → `persistence/system/init/script`; boot activation is the trigger, while the script mechanism is the level-3 technique. Keep `init/boot` for non-script boot records or boot-only activation mechanisms. |
 | Init-script command vs documentation/no-op | Require an executable command line for an init action. Comments, examples, and command text passed as arguments to shell `:` are not init operations. |
+| Repository Git config command trigger vs source vocabulary | A valid Git config section with its corresponding command key in the same config document → `persistence/system/git-config`; `[core]` is required for `fsmonitor` and `hooksPath`, and `[filter "name"]` for `clean`, `smudge` or `process`. A Python variable with one of those names, a curl example, Git remote parsing, or a generic Git API does not establish a persistent Git trigger. |
 | Scheduled timer vs service registration | A durable scheduled timer, including a systemd user timer, belongs in `persistence/system/cron/schedule`; a service unit activated by the service manager belongs in `persistence/system/service/install`. The manager name is implementation scope; the required activation trigger chooses the taxonomy leaf. |
 | LD_PRELOAD migration | `kernel-hide/userspace/ld-preload` is retired. LD_PRELOAD and related loader-preload environment interposition belong in `hijack-execution-flow/env/preload`, regardless of the language or operating system named by the matcher. Keep `kernel-hide/` for concealment implemented through kernel state, modules, hooks, or kernel-mediated views. |
 | `evasion/{masquerade,decoy,file-hiding}` | Falsified identity → masquerade by identity surface; diversionary content → decoy; concealment of a file's visibility/location → file-hiding. A hidden-file attribute alone remains neutral. |
@@ -1545,6 +1554,7 @@ chain still routes to its dropper sink.
 | `impact/{destroy,wipe,ransom,degrade,dos,infect}` | Content destruction → destroy; overwrite/erase storage → wipe; coercive encryption/extortion → ransom; disable a capability → degrade; availability exhaustion → dos; insert replicating code into a host → infect. Read/write/encrypt APIs alone establish none of these outcomes. A generic “sending crash” report string plus a socket or connect API does not establish availability exhaustion. |
 | EDR degradation mechanism | Security-tool process/service termination → `impact/degrade/edr/terminate`; vulnerable-driver or BYOVD control → `edr/driver`; network filtering that blocks security-product traffic without a driver → `edr/network`; remaining multi-mechanism teardown profiles → `edr/teardown`. Product and implementation language are matcher scope. |
 | Script self-copy vs script injection | A script copies itself into another script or same-format host → `impact/infect/script/self-copy`; a profile that writes or splices code into an existing script/CMS/source host → `impact/infect/script/inject`. The implementation language is scope; the host modification mechanism chooses the leaf. |
+| Batch FOR command variable vs script self-copy | Assigning the literal `FOR` command to a variable is a neutral control-flow/dispatch fact under `micro-behaviors/data/control-flow/dispatch`. Require that assignment on one command line; a variable reset followed by a FOR loop on the next line is ordinary launcher structure. Script infection still requires using the script's own content as a source written into another host. |
 | WSH FileObject copy vs ordinary object copy | Require the WSH `GetFile(...).Copy(...)` form or a case-sensitive COM `.Copy(dest|target)` call with a complete destination identifier. Generic lowercase buffer/object `copy()` methods and longer identifiers such as `target2` are not WSH self-copy evidence. |
 
 DOS binary infection uses the mechanism beneath the DOS context: directory-entry
@@ -1929,19 +1939,22 @@ generic send method cannot independently establish that keystrokes were acquired
 
 Within `collection/keylog`, `hook` owns interception through a keyboard hook or
 listener, `polling` owns repeated key-state queries, `device` owns direct input
-device/HID acquisition, and `terminal` owns terminal-input collection. When a
-keyboard hook invokes state queries, interception remains the acquisition
-mechanism. `capture` is the legacy remainder, not an alternative home for a
-known mechanism. A combined key-recording/store signature whose acquisition
-mechanism remains unspecified can stay there pending the remainder's audit;
-database/table names alone remain neutral keyboard labels. Independently
+device/HID acquisition when recording or staging is established, and `terminal`
+owns terminal-input collection. When a keyboard hook invokes state queries,
+interception remains the acquisition mechanism. `capture` is the legacy
+remainder, not an alternative home for a known mechanism. A combined
+key-recording/store signature whose acquisition mechanism remains unspecified
+can stay there pending the remainder's audit; database/table names alone remain
+neutral keyboard labels. Independently
 required clipboard or screen acquisition moves
 the whole collection composite to `collection/multi-source`; sending acquired
 keys moves it to `stealer/input`, regardless of the transport.
 
-Direct input-event device reading, including evdev, uses `keylog/device`;
-`evdev` is not a second home for that mechanism. Keyboard notifier interception
-with recording/exposure context uses `keylog/hook`, including kernel callbacks.
+Direct input-event device reads, including evdev, remain `hardware/input`
+capabilities until the file also establishes recording, staging, or surveillance;
+with that context they use `keylog/device`. `evdev` is not a second home for the
+same mechanism. Keyboard notifier interception with recording/exposure context
+uses `keylog/hook`, including kernel callbacks.
 The callback API, header, event-code gate, buffer copy, and character-device
 creation are independent capabilities. Their execution context does not turn
 them into collection by itself.
@@ -1971,7 +1984,7 @@ The neutral capabilities have narrower contracts:
 | `hardware/input/keyboard/label` | Keyboard/keylogger names, key-name tables, and declared or placeholder keyboard functionality. Descriptions must distinguish declarations from implemented collection. |
 | `hardware/input/keyboard/simulate`, `hardware/input/mouse/simulate` | Generation of input of the named kind. `synthesis` is not a separate technique. |
 | `hardware/input/event` | General input event interfaces, state, payloads, and handling, including libraries and composites spanning keyboard and mouse. Use the keyboard or mouse child only when the matcher identifies that narrower subject. |
-| `hardware/input/device` | Input-device inventory, paths, and device references. A path or filename filter alone does not establish a keyboard event read. |
+| `hardware/input/device` | Input-device inventory, paths, and open/read operations as capabilities. A path alone does not establish a keyboard event read, and an event read alone does not establish collection. |
 | `hardware/input/mouse/position` | Pointer coordinates and pointer-information queries; a generic mouse-state name does not identify position. |
 | `ui/window/probe`, `ui/window/enumerate` | Window-class references and identification belong in probe; window title/text queries belong in enumerate. A class-name set containing general GUI windows is not specifically a browser/WebView capability. |
 
@@ -2228,6 +2241,10 @@ For denial-of-service objectives, `dos/attack/flood/` owns the flood action
 itself, while `dos/attack/botnet/` is reserved for evidence that a coordinated
 botnet or controller dispatches that attack. A raw-packet or HTTP flood matcher
 does not become a botnet rule merely because it appears in a bot implementation.
+Resource exhaustion requires evidence of repeated, unbounded, or otherwise
+abusive consumption; one fixed-size parser or I/O buffer allocation is a
+capability detail, not a denial-of-service objective. A send loop that blocks
+for input or is explicitly paced likewise does not establish a flood.
 
 Within a RAT, `control/` is for command/tasking control signals and
 `remote-agent/` is for the exposed remote-desktop or screen/input agent itself.
@@ -2323,8 +2340,8 @@ Conversely, a text matcher of a structured field remains a fact about that field
 
 | Level-1 subject | Level-2/3 ownership | Nearest competing home |
 |---|---|---|
-| `arch` | Artifact instruction-set/ABI target, refined by architecture family. | Compiler identity → lang; hardware queries → capabilities. Architecture is the subject here, not a platform split for an unrelated behavior. |
-| `binary` | Anatomy: header, section, symbols, code, resource, linking, layout, debug. Level 3 is a property of that part: section entropy, header geometry, symbol count, layout overlay. | Whole-file size/format → file; compiler attribution → lang/compiler; signed identity → signed; named API/product → its capability/identity. |
+| `arch` | Artifact instruction-set/ABI target, refined by architecture family. ELF `e_machine` identifies the target and belongs here. | Compiler identity → lang; hardware queries → capabilities. Architecture is the subject here, not a platform split for an unrelated behavior. |
+| `binary` | Anatomy: header, section, symbols, code, resource, linking, layout, debug. Level 3 is a property of that part: section entropy, header geometry, symbol count, layout overlay. ELF machine-field geometry/validity stays here; its architecture meaning → arch. | Whole-file size/format → file; compiler attribution → lang/compiler; signed identity → signed; named API/product → its capability/identity. |
 | `build` | Build configuration and transformation: compiler invocation/config, bundling, minification, transpilation, scaffolding, packaging, CI. Children name transform or pipeline property, not software identity. | “Built with compiler X” → lang/compiler; “this file is compiler X” → well-known; an artifact's manifest field → package. |
 | `document` | Parsed document subject and part: office macro/container, PDF action/form, RTF structure, HTML structure, OLE container. | Embedded code's behavior stays with its behavior; filename/magic alone → file. An OLE container fact does not prove an Office application identity. |
 | `file` | Generic whole-file identity, extent and representation: format, extension, magic, size, encoding, text profile. | Specific parsed anatomy → binary/document/image; specific field/resource meaning takes precedence over generic string/catalog buckets. |
@@ -2618,7 +2635,10 @@ micro-behaviors/
 │   │                      #     Computed invocation → control-flow/dispatch;
 │   │                      #     property labels without operations → metadata
 │   ├── db/                #   Database operations (SQL, Redis, MongoDB, etc.)
-│   └── control-flow/      #   Control flow patterns (loops, error handling)
+│   └── control-flow/      #   Control flow patterns (loops, dispatch, error handling)
+│       ├── dispatch/      #   Neutral command/function/method selection facts
+│       ├── loop/          #   Iteration and repeated-execution patterns
+│       └── error-handling/ #  Exception and failure handling
 │   # NOTE: PRNG → os/random/. Config detection → metadata/config/.
 │   # data/ is for data transformation and data-structure handling, not
 │   # system queries, file metadata, data merely being present, or generic
@@ -2805,6 +2825,9 @@ micro-behaviors/
 │   │                      #     objectives/impact/degrade/firewall/
 │   ├── group/             #   Group management
 │   ├── kernel/            #   Kernel interaction (modules, devices, callbacks)
+│   │   └── credential/    #     BSD/Linux kernel credential field access; writes
+│   │                      #       alone remain capabilities until abuse
+│   │                      #       context establishes privilege escalation
 │   │   └── boot/          #     Boot configuration (bcdedit, Safe Mode, boot flags)
 │   │                      #       Neutral: "changes how the machine next boots";
 │   │                      #       EDR teardown / ransomware staging composites →
@@ -2848,7 +2871,7 @@ micro-behaviors/
 │   │   └── user-session/  #     Legacy scope bucket; operation wins over per-user scope
 │   ├── signal/            #   Signal handling
 │   ├── stdio/             #   Standard I/O operations
-│   ├── syscall/           #   Direct syscall invocation
+│   ├── syscall/           #   Direct syscall invocation and argument access
 │   ├── sysinfo/           #   System information queries
 │   │   ├── platform/      #     OS/arch detection (uname, sys.platform, GOOS)
 │   │   ├── hostname/      #     Machine name (gethostname, hostname cmd)
@@ -3301,6 +3324,8 @@ objectives/
 │   │   ├── rival-bot/         #     Competing malware termination
 │   │   └── system/            #     Critical file/recovery deletion
 │   ├── destroy/               #   Data destruction                        T1485
+│   │   ├── file-deletion/     #     Ordinary file/log deletion
+│   │   └── user-data/         #     User-home and personal-data folders
 │   ├── dos/                   #   Denial of service                       B0033
 │   ├── infect/                #   File infection (virus propagation)
 │   ├── ransom/                #   Ransomware encryption + extortion       T1486
@@ -3686,8 +3711,8 @@ metadata/
 │   │                      #   Adjectives (`sparse/`, `dense/`, `threshold/`, `structural/`)
 │   │                      #   fail the precision test above: they partition by value, not
 │   │                      #   by subject, and spend the last ML-visible level on nothing.
-│   ├── header/            #   Machine, characteristics, timestamps, entry point,
-│   │                      #     malformed/contradictory header fields
+│   ├── header/            #   Machine, subsystem/target characteristics, timestamps,
+│   │                      #     entry point, and malformed/contradictory fields
 │   ├── section/           #   Sections: names, count, size, entropy, permissions,
 │   │                      #     alignment, sparsity. Section *content* patterns are
 │   │                      #     behavior → objectives/, or capability → micro-behaviors/

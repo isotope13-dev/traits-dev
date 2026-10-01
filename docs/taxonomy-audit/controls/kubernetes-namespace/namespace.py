@@ -1,1 +1,0 @@
-value = 'CLONE_NEWNET'

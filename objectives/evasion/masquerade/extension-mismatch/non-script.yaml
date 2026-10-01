@@ -88,51 +88,104 @@ traits:
       - regex: '(?i)\.(spec|test|e2e|bench|cy|min|dev|prod)\W?$'
       - regex: '(?i)\.(conf|config|setup|mock|fixtures?|stories|story|worker)\W?$'
 
-  # A config module that require()s or import()s a path in an asset directory.
-  # A font/image folder holds data the app fetches, never a code module, so a
-  # dynamic load from there is a payload run under an asset's cover.
-  # createRequire(import.meta.url)("...") reduces to require() and is covered
-  # by the same ``require`` alternative.
-  - id: module-load-of-asset-directory-path
-    desc: Module loaded from an asset directory
-    crit: notable
-    conf: 0.94
+  # Short content atoms keep matching precise while staying under the regex
+  # limit. Composites below require the loader, directory and suffix to be
+  # close together; ordinary image and font suffixes cannot satisfy them.
+  - id: module-loader-call
+    desc: Require or import call
+    crit: component
+    conf: 0.9
     for: [javascript, typescript]
     if:
       type: text
-      regex: '\b(require|import)\s*\(\s*[''"`][^''"`\n]{0,80}[/\\](fonts?|im(g|ages?)|icons?)[/\\]'
+      regex: '\b(require|import)\s*\(\s*[''"`]'
+
+  - id: create-require-call
+    desc: createRequire path call
+    crit: component
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'createRequire\s*\([^\n)]{0,40}\)\s*\(\s*[''"`]'
+
+  - id: asset-directory-path-segment
+    desc: Asset directory path
+    crit: component
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '[/\\](fonts?|im(g|ages?)|icons?)[/\\]'
       case_insensitive: true
 
-  # A config module that loads a path with a known data/binary suffix. Do not
-  # treat every dotted basename as an extension: CommonJS resolves an
-  # extensionless name such as `delay.base` by appending `.js`.
+  - id: disguised-module-script-suffix
+    desc: Module path has code or executable suffix
+    crit: component
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\.(m?js|cjs|[mc]?ts|[jt]sx|wasm|node|dat|bin|llf|dll|exe|so|dylib|pem|key|der)[''"`]'
+      case_insensitive: true
+
+  - id: disguised-module-data-suffix
+    desc: Data or binary module suffix
+    crit: component
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\.(dat|bin|llf|dll|exe|so|dylib|pdf|zip|tar|gz|7z|pem|key|der)[''"`]'
+      case_insensitive: true
+
   - id: module-load-of-non-script-suffix
-    desc: Module loaded from a non-script suffix
-    crit: notable
+    desc: Explicit non-script module argument
+    crit: suspicious
     conf: 0.94
     for: [javascript, typescript]
     if:
-      type: text
-      regex: '\b(require|import)\s*\(\s*[''"`][^''"`\n]{0,80}[/\\][^''"`\n]{1,50}\.(dat|bin|llf|dll|exe|so|dylib|woff2?|ttf|otf|eot|png|jpe?g|gif|webp|bmp|ico|pdf|zip|tar|gz|7z|pem|key|der)[''"`]'
-      case_insensitive: true
-    not:
-      - regex: '(?i)\.(m?js|cjs|[mc]?ts|[jt]sx|json|node|wasm)[''"`]$'
-      - regex: '(?i)\.(spec|test|e2e|bench|conf|config|setup|mock)[''"`]$'
+      type: tree-sitter
+      language: javascript
+      # Bind the loader and suspicious suffix to this same argument.
+      query: |
+        (call_expression
+          function: (identifier) @loader
+          arguments: (arguments (string) @target)
+          (#match? @loader "^(require|import)$")
+          (#match? @target "^['\"](\\.{1,2}[/\\\\]|[/\\\\]|[a-zA-Z]:[/\\\\])[^'\"]{0,120}\\.(dat|bin|llf|dll|exe|so|dylib|pdf|zip|tar|gz|7z|pem|key|der)['\"]$"))
 
-  # ESM configs (eslint.config.mjs, vite.config.mjs) cannot use bare require,
-  # so a loader there uses `createRequire(import.meta.url)(path)`. The path
-  # is in the second call, which the require/import atoms above do not reach.
   - id: createrequire-of-non-script-suffix
-    desc: createRequire loads a non-script file
+    desc: createRequire non-script argument
+    crit: suspicious
+    conf: 0.94
+    for: [javascript, typescript]
+    if:
+      type: tree-sitter
+      language: javascript
+      query: |
+        (call_expression
+          function: (call_expression
+            function: (identifier) @loader
+            arguments: (arguments (_)))
+          arguments: (arguments (string) @target)
+          (#eq? @loader "createRequire")
+          (#match? @target "^['\"](\\.{1,2}[/\\\\]|[/\\\\]|[a-zA-Z]:[/\\\\])[^'\"]{0,120}\\.(dat|bin|llf|dll|exe|so|dylib|pdf|zip|tar|gz|7z|pem|key|der)['\"]$"))
+
+  - id: module-load-of-asset-directory-path
+    desc: Executable in asset directory loaded as module
     crit: notable
     conf: 0.94
     for: [javascript, typescript]
     if:
-      type: text
-      regex: 'createRequire\s*\([^)\n]{0,40}\)\s*\(\s*[''"`][^''"`\n]{1,50}\.(dat|bin|llf|dll|exe|so|dylib|woff2?|ttf|otf|eot|png|jpe?g|gif|webp|bmp|ico|pdf|zip|tar|gz|7z|pem|key|der)[''"`]'
-      case_insensitive: true
-    not:
-      - regex: '(?i)\.(m?js|cjs|[mc]?ts|[jt]sx|json|node|wasm)[''"`]$'
+      type: tree-sitter
+      language: javascript
+      query: |
+        (call_expression
+          function: (identifier) @loader
+          arguments: (arguments (string) @target)
+          (#match? @loader "^(require|import)$")
+          (#match? @target "(?i)^['\"](?:\\.{1,2}[/\\\\])?[^'\"]*(fonts?|images?|img|icons?)[/\\\\][^'\"]*\\.(m?js|cjs|[mc]?ts|[jt]sx|wasm|node|dat|bin|llf|dll|exe|so|dylib|pem|key|der)['\"]$"))
 
   # A folder-open task whose Node argument is computed by command
   # substitution (`node $(...)`, `node `...``). Build tasks name their entry
@@ -162,11 +215,11 @@ traits:
       regex: '[";&|( ]node(\.exe)?\s+[\\"'']{0,2}(\$\{?(env:)?[A-Za-z_]|%[A-Za-z_])[\w:}]{0,40}'
 
 composite_rules:
-  # One id for "a config module dynamically loads a disguised path", whichever
-  # loader form. Its legs overlap on a single call, so they are notable and
-  # this roll-up carries the suspicious verdict.
+  # One id for a module loader call paired closely with a data/binary suffix,
+  # whichever loader form. Keep the byte window tight: ordinary modules may
+  # have an unrelated `.bin` directory or shell executable string nearby.
   - id: config-module-loads-disguised-path
-    desc: Config module loads a disguised path
+    desc: Module loader targets a data or binary-looking suffix
     crit: suspicious
     conf: 0.95
     any:
