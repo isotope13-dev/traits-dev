@@ -33,21 +33,24 @@ traits:
   if:
     type: text
     regex: '(?i)(curl|wget)\s+[^|\n]{0,160}evil\.(sh|com)\s*\|'
-- id: curl-pipe-shell-text
-  desc: References a curl- or wget-to-shell pipeline
+# Raw-text surface of the pipeline, for the file types the string-literal
+# surface (curl-pipe-shell-literal) does not cover. On those languages the
+# text surface would only add comments; curl-pipe-shell-text joins the
+# surfaces. Ruby stays here: heredoc bodies (formula caveats, embedded plists)
+# are not on the literal surface. (`typescript` in a for: list resolves to
+# javascript, so TypeScript files are not literal-covered either.)
+- id: curl-pipe-shell-raw-text
+  desc: Text holds a curl-to-shell pipeline
   crit: notable
   conf: 0.9
-  for: [scripts, source, markdown, html]
+  for: [scripts, source, markdown, html, -python, -javascript, -go, -rust, -php, -java]
   attack: T1059.004
   unless:
-    - id: well-known/tool/detection/llm-scanner::llm-scanner-context
-    - id: well-known/tool/detection/agentskillmap/
-    # Security playbook / attack writeups citing known-bad or illustrative hosts
-    - type: text
-      regex: '(?i)https?://(attacker\.com|hackmoltrepeat\.com)/'
-    - type: text
-      regex: '(?i)Actions That curl\s*\|\s*bash'
-    - id: well-known/tool/development/clawgarden::clawgarden-cli-context
+  # Security playbook / attack writeups citing known-bad or illustrative hosts
+  - type: text
+    regex: '(?i)https?://(attacker\.com|hackmoltrepeat\.com)/'
+  - type: text
+    regex: '(?i)Actions That curl\s*\|\s*bash'
   if:
     type: text
     # macOS ClickFix loaders pipe into zsh as often as bash/sh.
@@ -199,13 +202,37 @@ traits:
   desc: String literal holds a curl-to-shell pipeline
   crit: notable
   conf: 0.93
-  for: [python, javascript, typescript, go, rust, ruby, php, java]
+  for: [python, javascript, typescript, go, rust, php, java]
   attack: T1059.004
+  unless:
+  # Security playbook / attack writeups citing known-bad or illustrative hosts
+  - type: text
+    regex: '(?i)https?://(attacker\.com|hackmoltrepeat\.com)/'
+  - type: text
+    regex: '(?i)Actions That curl\s*\|\s*bash'
   if:
     type: literal
     regex: '(curl|wget)\s+.{0,160}\|\s*(bash|zsh|sh)\b'
   not:
   - regex: '(curl|wget)\s+\.{3}\s*\|\s*(bash|zsh|sh)\b'
+  - substr: yarnpkg.com/install.sh
+  - substr: YARN_INSTALLER_SH
+  - regex: '(curl|wget)\s+.{0,200}get\.docker\.com.{0,200}\|\s*(bash|zsh|sh)\b'
+  - regex: '(curl|wget)\s+.{0,200}deb\.nodesource\.com/.{0,80}\|\s*(bash|zsh|sh)\b'
+  - regex: '(curl|wget)\s+.{0,200}cli\.oomol\.com/install\.sh.{0,40}\|\s*(bash|zsh|sh)\b'
+# A `//go:generate` directive is a comment the go tool executes, so it is the
+# one comment form that holds a runnable pipeline in Go source.
+- id: go-generate-curl-pipe-shell-directive
+  desc: go:generate directive pipes download into shell
+  crit: notable
+  conf: 0.95
+  for: [go]
+  platforms: [unix, windows]
+  attack: T1059.004
+  if:
+    type: value
+    path: source.go.generate[*].shell_body
+    regex: '\b(curl|wget)\b[^\n]{0,512}\|\s*(ba|da|z)?sh\b'
 # Windows counterpart: the response is fed to cmd.exe's stdin and every line
 # runs as a batch command. Installers use `irm | iex` or a downloaded .msi,
 # not this.
@@ -220,6 +247,23 @@ traits:
     type: literal
     regex: '(?i)(curl|wget)(\.exe)?\s.{0,160}\|\s*cmd(\.exe)?\b'
 composite_rules:
+  # One curl-to-shell pipeline fact across surfaces: raw text where no parser
+  # applies, string literals (comments excluded) where one does, and go:generate
+  # directives, the comment form Go actually runs.
+  - id: curl-pipe-shell-text
+    desc: References a curl- or wget-to-shell pipeline
+    crit: notable
+    conf: 0.9
+    for: [scripts, source, markdown, html]
+    attack: T1059.004
+    unless:
+      - id: well-known/tool/detection/llm-scanner::llm-scanner-context
+      - id: well-known/tool/detection/agentskillmap/
+      - id: well-known/tool/development/clawgarden::clawgarden-cli-context
+    any:
+      - id: curl-pipe-shell-raw-text
+      - id: curl-pipe-shell-literal
+      - id: go-generate-curl-pipe-shell-directive
   - id: source-curl-pipe-shell
     desc: Source contains a curl-to-shell pipeline
     crit: notable
@@ -289,7 +333,8 @@ composite_rules:
   - id: curl-pipe-shell-in-code
     desc: Code holds a curl-to-shell pipeline
     conf: 0.93
-    for: [source]
+    # Legs cover python/javascript/ruby/php/perl as well as compiled source.
+    for: [scripts, source]
     any:
       - id: curl-pipe-shell-literal
       - id: source-curl-pipe-shell-concat

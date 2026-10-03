@@ -1,0 +1,149 @@
+# Native PHP archive (phar) shape, read from filefacts' parse of the phar
+# manifest: a PHP stub ending in __HALT_COMPILER();, a manifest, the packaged
+# files, and an optional signature trailer. Tar- and zip-based phars type as
+# tar and zip and never reach these rules.
+#
+# Neutral structural facts. Composer, PHPUnit, WP-CLI and PEAR's installer
+# ship as phars. The intent-bearing combinations live in
+# objectives/execution/exploit/deserialization (gadget objects in metadata)
+# and metadata/package/integrity (a digest that no longer matches).
+#
+# Each fact is read from `phar.*` / `archive.format.kind`, which filefacts
+# writes only after a manifest parses, so the format gate is part of every
+# matcher rather than a separate leg.
+defaults:
+  platforms: [windows, unix]
+  for: [phar]
+
+traits:
+  - id: phar-archive
+    desc: Native PHP archive (phar)
+    crit: notable
+    conf: 0.99
+    if:
+      type: value
+      path: archive.format.kind
+      exact: phar
+
+  # PHP's phar extension signs with a digest by default; an OpenSSL signature
+  # is the publisher-key form (`Phar::setSignatureAlgorithm(Phar::OPENSSL)`),
+  # verified against a `.pubkey` file shipped beside the archive.
+  - id: phar-openssl-signed
+    desc: Phar signed with a publisher key
+    crit: notable
+    conf: 0.99
+    if:
+      type: value
+      path: phar.signature.algorithm
+      regex: '^openssl'
+
+  - id: phar-signed
+    desc: Phar carries a signature trailer
+    crit: baseline
+    conf: 0.99
+    if:
+      type: value
+      path: phar.signature.algorithm
+      exists: true
+
+  # PHP unserializes phar metadata whenever the archive is opened through a
+  # phar:// stream -- including file_exists(), is_dir() and other stat calls
+  # on attacker-supplied paths. Serialized objects there are instantiated
+  # without any unserialize() in the target's code. Build tools write arrays
+  # and strings, if anything.
+  - id: phar-metadata-object
+    desc: Phar metadata holds serialized objects
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: metrics
+      field: phar.metadata_object_count
+      min: 1
+
+  # Entry classes of the public PHPGGC chains (file write, file delete and
+  # command execution), one atom per framework. A class name alone is not an
+  # exploit: the composite in objectives/execution/exploit/deserialization
+  # pairs it with the phar metadata that instantiates it.
+  - id: phar-metadata-guzzle-gadget-class
+    desc: Phar metadata names a Guzzle gadget class
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: value
+      path: "phar.metadata_classes[*]"
+      regex: '^\\?GuzzleHttp\\(Cookie\\FileCookieJar|Psr7\\FnStream)$'
+
+  - id: phar-metadata-monolog-gadget-class
+    desc: Phar metadata names a Monolog gadget class
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: value
+      path: "phar.metadata_classes[*]"
+      regex: '^\\?Monolog\\Handler\\(SyslogUdp|Buffer|Group|FingersCrossed)Handler$'
+
+  - id: phar-metadata-laravel-gadget-class
+    desc: Phar metadata names a Laravel gadget class
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: value
+      path: "phar.metadata_classes[*]"
+      regex: '^\\?Illuminate\\(Broadcasting\\PendingBroadcast|Foundation\\Testing\\PendingCommand)$'
+
+  - id: phar-metadata-symfony-gadget-class
+    desc: Phar metadata names a Symfony gadget class
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: value
+      path: "phar.metadata_classes[*]"
+      regex: '^\\?Symfony\\Component\\(Cache\\Adapter\\TagAwareAdapter|Process\\Pipes\\WindowsPipes)$'
+
+  - id: phar-metadata-yii-gadget-class
+    desc: Phar metadata names a Yii gadget class
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: value
+      path: "phar.metadata_classes[*]"
+      regex: '^\\?yii\\db\\BatchQueryResult$'
+
+  - id: phar-metadata-wordpress-gadget-class
+    desc: Phar metadata names a WordPress gadget class
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: value
+      path: "phar.metadata_classes[*]"
+      regex: '^\\?Requests_Utility_FilteredIterator$'
+
+  - id: phar-metadata-faker-gadget-class
+    desc: Phar metadata names a Faker gadget class
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: value
+      path: "phar.metadata_classes[*]"
+      regex: '^\\?Faker\\Generator$'
+
+  - id: phar-metadata-swiftmailer-gadget-class
+    desc: Phar metadata names a SwiftMailer gadget class
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: value
+      path: "phar.metadata_classes[*]"
+      regex: '^\\?Swift_(ByteStream_TemporaryFileByteStream|KeyCache_DiskKeyCache)$'
+
+composite_rules:
+  # With phar.require_hash (the default) PHP refuses an unsigned phar opened
+  # through the extension, so nearly every phar a build tool emits is signed.
+  - id: phar-unsigned
+    desc: Phar has no signature trailer
+    crit: notable
+    conf: 0.95
+    all:
+      - id: phar-archive
+    unless:
+      - id: phar-signed

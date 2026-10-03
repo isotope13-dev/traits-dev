@@ -39,7 +39,9 @@ traits:
     conf: 0.84
     if:
       type: hex
-      pattern: "2A 2E (43 4F 4D|45 58 45|63 6F 6D|65 78 65|2A)"
+      # Mixed-case COM masks ("*.COm") dodge scanners keyed on one case;
+      # DOS upper-cases the mask, so they search the same files.
+      pattern: "2A 2E (43 4F 4D|43 4F 6D|43 6F 4D|43 6F 6D|63 4F 4D|63 4F 6D|63 6F 4D|63 6F 6D|45 58 45|65 78 65|2A)"
   - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-com-mask-stosb
     for: [dos_com, static-lib, data]
     desc: DOS builds a COM search mask
@@ -79,7 +81,7 @@ traits:
   # DOS call numbers 3D02h (open for update) and 4202h (seek to EOF) can be
   # formed compactly from FF3Ch / FF41h with three INC AX instructions.
   - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-open-update-inc-ax
-    desc: DOS opens a file for update via incremented AX
+    desc: DOS INC AX opens file for update
     crit: notable
     conf: 0.9
     for: [dos_com, static-lib, data]
@@ -389,7 +391,7 @@ composite_rules:
     crit: hostile
     conf: 0.96
     all:
-      - id: objectives/anti-static/obfuscation/payload/polymorphic::dos-fixed-key-xor-si-loop
+      - id: objectives/anti-static/obfuscation/payload/polymorphic/decryptor::dos-fixed-key-xor-si-loop
       - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-com-exe-mask
       - id: objectives/impact/infect/binary/dos/com-bytes/interrupt::dos-int21-indirect-ah-call
       - id: objectives/impact/infect/binary/dos/com-bytes/interrupt::dos-int21-indirect-buffer-transfer
@@ -533,7 +535,7 @@ composite_rules:
     all:
       # Canonical atom for the MOV AL,E9/STOSB store-a-jump fragment lives
       # with the polymorphic opcode emitters; shared, not duplicated.
-      - id: objectives/anti-static/obfuscation/payload/polymorphic::dos-emit-jmp-opcode
+      - id: objectives/anti-static/obfuscation/payload/polymorphic/generator::dos-emit-jmp-opcode
       - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-write-dispatch
   - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-hard-disk-sector-write
     desc: DOS writes a hard-disk sector
@@ -567,8 +569,8 @@ composite_rules:
     conf: 0.94
     all:
       - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-com-entry-redirect
-      - id: objectives/anti-static/obfuscation/payload/polymorphic::dos-delta-offset-dispatch
-      - id: objectives/anti-static/obfuscation/payload/polymorphic::dos-xor-loop-dispatch
+      - id: objectives/anti-static/obfuscation/payload/polymorphic/decryptor::dos-delta-offset-dispatch
+      - id: objectives/anti-static/obfuscation/payload/polymorphic/decryptor::dos-xor-loop-dispatch
 
   - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-com-entry-self-modifying-xor-decoder
     for: [dos_com, static-lib, data]
@@ -577,19 +579,60 @@ composite_rules:
     conf: 0.95
     all:
       - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-com-entry-ret-redirect
-      - id: objectives/anti-static/obfuscation/payload/polymorphic::dos-self-modifying-xor-si-dx-loop
+      - id: objectives/anti-static/obfuscation/payload/polymorphic/decryptor::dos-self-modifying-xor-si-dx-loop
+  # Masked forms of the two halves: every service number is
+  # arithmetic-masked, so the search shows up as a COM search mask beside
+  # masked INT 21h loads, and the write as a sized transfer on the handle
+  # the masked open returned.
+  - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-com-masked-search
+    for: [dos_com, static-lib, data]
+    desc: DOS masked calls search for COM files
+    crit: notable
+    conf: 0.9
+    all:
+      - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-com-exe-mask
+      - id: objectives/impact/infect/binary/dos/com-bytes/interrupt::dos-int21-masked-service-calls
+  - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-com-masked-handle-transfer
+    for: [dos_com, static-lib, data]
+    desc: DOS masked calls transfer bytes on a handle
+    crit: notable
+    conf: 0.88
+    all:
+      - id: objectives/impact/infect/binary/dos/com-bytes/interrupt::dos-int21-masked-service-calls
+      - id: objectives/impact/infect/binary/dos/com-bytes/interrupt::dos-int21-handle-sized-transfer
+  - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-com-host-write
+    for: [dos_com, static-lib, data]
+    desc: DOS writes to a file handle
+    crit: notable
+    conf: 0.86
+    any:
+      - id: objectives/impact/infect/binary/dos/com-bytes/interrupt::dos-int21-write-call
+      - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-com-masked-handle-transfer
   - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-com-first-match-overwriter
     desc: DOS writes into files during a COM directory search
     crit: hostile
     conf: 0.94
     all:
+      - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-com-host-write
+    any:
       - id: objectives/impact/infect/binary/dos/com-bytes/interrupt::dos-int21-find-first-call
-      - id: objectives/impact/infect/binary/dos/com-bytes/interrupt::dos-int21-write-call
+      - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-com-masked-search
+  - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-xor-byte-loop-decoder
+    desc: DOS XOR byte loop decodes a body
+    crit: notable
+    conf: 0.9
+    all:
+      - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-xor-byte-loop
+      - id: objectives/anti-static/obfuscation/payload/polymorphic/decryptor::dos-xor-loop-dispatch
+  # The entry JMP lands on a decoder that rewrites its own instructions
+  # before decrypting the appended body: either a plain XOR byte loop, or
+  # (Artem) a loop whose first byte is patched from RETF into XOR at run time.
   - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-com-self-modifying-xor-infector
     desc: DOS COM redirects execution into an encrypted self-modifying body
     crit: hostile
     conf: 0.94
     all:
       - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-com-entry-redirect
-      - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-xor-byte-loop
-      - id: objectives/anti-static/obfuscation/payload/polymorphic::dos-xor-loop-dispatch
+    any:
+      - id: objectives/impact/infect/binary/dos/com-bytes/file::dos-xor-byte-loop-decoder
+      - id: objectives/anti-static/obfuscation/payload/polymorphic/decryptor::dos-patched-retf-xor-decryptor

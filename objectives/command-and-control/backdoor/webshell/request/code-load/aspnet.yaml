@@ -1,0 +1,130 @@
+defaults:
+  platforms:
+  - windows
+  for:
+  - html
+  - csharp
+  - asp
+  mbc: B0030
+  attack: T1505.003
+traits:
+- id: aspnet-base64-embedded-assembly-load
+  desc: ASP.NET loads a Base64 embedded .NET assembly
+  crit: notable
+  conf: 0.96
+  if:
+    type: text
+    regex: '(?is)Assembly\s*\.\s*Load\s*\(\s*Convert\s*\.\s*FromBase64String\s*\('
+- id: aspnet-reflected-processrequest-method
+  desc: ASP.NET resolves ProcessRequest by reflection
+  crit: component
+  conf: 0.96
+  if:
+    type: text
+    regex: 'GetMethod\s*\(\s*("ProcessRequest"|"Proc"\s*\+\s*"essR"\s*\+\s*"equest")'
+- id: aspnet-reflected-context-pass
+  desc: ASP.NET passes HttpContext to reflected handler
+  crit: component
+  conf: 0.96
+  if:
+    type: text
+    regex: 'Invoke\s*\([^)]{0,160}new\s+object\s*\[\s*\]\s*\s*\{\s*this\s*\.\s*Context\s*\}'
+- id: aspnet-final-block-assembly-load
+  desc: Loads decrypted request bytes as assembly
+  crit: component
+  conf: 0.98
+  for: [asp]
+  if:
+    type: text
+    regex: '(?is)TransformFinalBlock\s*\([^)]{0,240}\)[\s\S]{0,240}@?Assembly\s*\.\s*@?Load\s*\('
+- id: aspnet-request-form-decrypted-plugin-dispatch
+  desc: ASP.NET dispatches into a loaded plugin
+  crit: component
+  conf: 0.98
+  for: [asp]
+  if:
+    type: text
+    regex: '(?i)\.GetType\("C"\)\.GetMethod\("S"\)\.Invoke\('
+- id: aspnet-request-plugin-assembly-load
+  desc: ASP.NET loads a request plugin assembly
+  crit: component
+  conf: 0.98
+  for: [asp]
+  if:
+    type: text
+    substr: Assembly.Load
+- id: aspnet-godzilla-session-cache-marker
+  desc: Godzilla session cache key
+  crit: component
+  conf: 0.98
+  for: [asp]
+  if:
+    type: text
+    regex: '(?i)Session\s*\[\s*["'']loadekko["'']\s*\]'
+composite_rules:
+# Encrypted in-memory assembly loaders (the Godzilla/Behinder ASP.NET shape)
+# never spawn a process: the request carries a Base64 blob, the handler decrypts
+# it with a baked-in Rijndael key, and the plaintext is loaded as an assembly
+# through a reflectively resolved `Load` method, so no `Assembly.Load`
+# reference appears. The encrypted response framing confirms the channel.
+- id: aspnet-request-encrypted-assembly-webshell
+  desc: ASP.NET loads request-supplied encrypted bytes as an assembly
+  crit: hostile
+  conf: 0.98
+  all:
+  - id: micro-behaviors/communications/http/server/managed::aspnet-request-indexer-access
+  - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+  - id: micro-behaviors/crypto/symmetric/aes/library::dotnet-rijndael-any
+  - id: micro-behaviors/process/interpreter/reflection/resolve::assembly-load-reflected-name
+  - id: micro-behaviors/process/interpreter/reflection/runtime::dotnet-reflected-method-invoke
+  any:
+  - id: micro-behaviors/communications/http/server/managed::aspnet-response-write
+  - id: micro-behaviors/crypto/symmetric/encrypt::dotnet-create-encryptor
+- id: aspnet-embedded-processrequest-assembly-webshell
+  desc: ASP.NET delegates each request to an embedded .NET handler
+  crit: hostile
+  conf: 0.99
+  for: [asp, csharp]
+  all:
+  - id: micro-behaviors/communications/http/server/managed::aspnet-page-directive
+  - id: micro-behaviors/communications/http/server/managed::aspnet-server-side-script-block
+  - id: aspnet-base64-embedded-assembly-load
+  - id: micro-behaviors/process/interpreter/reflection/runtime::csharp-reflection-method-lookup
+  - id: aspnet-reflected-processrequest-method
+  - id: micro-behaviors/process/interpreter/reflection/runtime::dotnet-reflected-method-invoke
+  - id: aspnet-reflected-context-pass
+- id: aspnet-request-body-decrypted-assembly-webshell
+  desc: ASP.NET decrypts request bytes and loads them as an assembly
+  crit: hostile
+  conf: 0.99
+  for: [asp]
+  all:
+  - id: micro-behaviors/communications/http/server/managed::aspnet-page-directive
+  - id: micro-behaviors/communications/http/request/superglobal::classic-asp-request-binaryread
+  - id: micro-behaviors/crypto/symmetric/aes/library::dotnet-rijndael-decryptor
+  - id: micro-behaviors/crypto/symmetric/decrypt::transform-final-block
+  - id: aspnet-final-block-assembly-load
+- id: aspnet-request-form-decrypted-plugin-webshell
+  desc: ASP.NET decrypts request data and dispatches into a loaded plugin
+  crit: hostile
+  conf: 0.99
+  for: [asp]
+  all:
+  - id: micro-behaviors/communications/http/server/managed::aspnet-page-directive
+  - id: micro-behaviors/communications/http/server/managed::aspnet-request-form-read
+  - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
+  - id: micro-behaviors/crypto/symmetric/aes/library::dotnet-rijndael-decryptor
+  - id: micro-behaviors/crypto/symmetric/decrypt::transform-final-block
+  - id: aspnet-request-plugin-assembly-load
+  - id: aspnet-request-form-decrypted-plugin-dispatch
+- id: aspnet-godzilla-session-assembly-webshell
+  desc: ASP.NET decrypts request data into a session-cached plugin shell
+  crit: hostile
+  conf: 0.99
+  for: [asp]
+  all:
+  - id: micro-behaviors/communications/http/server/managed::aspnet-page-directive
+  - id: micro-behaviors/crypto/symmetric/aes/library::dotnet-rijndael-decryptor
+  - id: micro-behaviors/crypto/symmetric/decrypt::transform-final-block
+  - id: micro-behaviors/process/interpreter/reflection/resolve::assembly-load-reflected-name
+  - id: aspnet-godzilla-session-cache-marker
