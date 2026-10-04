@@ -2,7 +2,7 @@
 
 ## Quick Overview
 
-**Traits** = atomic observations (single pattern)
+**Traits** = atomic observations (one matcher)
 **Composites** = traits combined via boolean logic
 **Criticality** = independent from confidence
 
@@ -14,6 +14,11 @@
 
 See [TAXONOMY.md](./TAXONOMY.md) for complete tier structure.
 
+Store rules in `.yaml` files under those four tiers. The current engine skips
+`.yml`, hidden/underscore directories, and README/EXAMPLE filenames. Recovery
+copies must use a non-YAML suffix such as `.yaml.snapshot`: the engine can load
+`.yaml` files outside the tiers. `make validate` checks this discovery boundary.
+
 **Tier dependencies:**
 - `micro-behaviors/` → can reference `micro-behaviors/`, `metadata/`, and `well-known/{tool,app,lib,game}/` for false-positive exclusions only
 - `objectives/` → can reference `micro-behaviors/`, `objectives/`, `metadata/`, and `well-known/{tool,app,lib,game}/` (positive evidence allowed); never `well-known/malware/` (the dependency runs `well-known/malware/ → objectives/`, not the reverse)
@@ -21,7 +26,7 @@ See [TAXONOMY.md](./TAXONOMY.md) for complete tier structure.
 - `metadata/` → typically references `metadata/`; may reference `well-known/{tool,app,lib,game}/` for benign context
 
 **Critical rules:**
-- `micro-behaviors/` must NOT reference `objectives/` (capabilities are atomic, objectives infer intent)
+- `micro-behaviors/` must NOT reference `objectives/` (a capability must not depend on an attacker-goal classification)
 - `micro-behaviors/` must NOT use `crit: hostile` (hostile requires intent inference, belongs in `objectives/`)
 
 ## Tier Placement Litmus Test
@@ -45,9 +50,19 @@ Before placing a trait in `objectives/` or `well-known/`, ask: **would this fire
 | SELinux xattr | `objectives/evasion/anti-av/` | `micro-behaviors/fs/attributes/xattr/` | Normal on Linux |
 | `readdir` export | `objectives/evasion/kernel-hide/` | Needs `unless:` for PIE executables | PIE ELFs are ET_DYN like .so |
 
-**The rule:** A single API call, syscall, string literal, or structural measurement is **never** an objective. It becomes one only when combined with other signals in a composite rule. Place the atom in `micro-behaviors/` or `metadata/`, and let composites in `objectives/` reference it.
+**The rule:** Place the supported claim, regardless of rule form. A generic API,
+syscall, string, or measurement belongs in a neutral tier. An atomic matcher may
+belong in `objectives/` when it requires an attack-specific action, target or abuse
+mechanism. A composite of ordinary operations remains a neutral capability unless
+its required evidence establishes an attacker objective. Neither the number of
+conditions nor `crit:` supplies missing intent.
 
-**Component traits in `objectives/`:** Only allowed when the fragment is attack-context-specific with no meaning outside that context (e.g., Nemucod-specific string pieces, C2 domain patterns). Generic protocol strings, syscalls, and binary metrics always belong in neutral tiers even when used as composite building blocks.
+**Component traits in `objectives/`:** The required fragment must itself be
+attack-context-specific. Generic protocol strings, syscalls and binary metrics
+retain their neutral homes even when used in an objective. Family-specific
+identifiers follow `well-known/`; a consumer does not turn identity into behavior.
+Changing tier also requires legal criticality and dependencies. Record any
+necessary matcher, severity or dependency correction separately from relocation.
 
 ### Matcher defines identity — never fix placement by lowering criticality
 
@@ -984,6 +999,22 @@ even a 99% subset would gain an unintended alternative. Keep partial sets named.
 The redundant-reference validator requires full coverage rather than a percentage.
 An `all:` list is a conjunction; a directory reference matches any descendant.
 Do not replace the former with the latter or demand a taxonomy split on count alone.
+
+**Grouped alternatives:** an engine with `trait_set` support can preserve one
+reference condition when its members move into different directories:
+
+```yaml
+all:
+  - type: trait_set
+    ids: [micro-behaviors/mem/free::heap-free, micro-behaviors/mem/resize::heap-realloc]
+  - id: another-required-observation
+```
+
+The set requires any eligible member. It emits no intermediate finding. Like a
+directory reference, it contributes distinct matched members to `needs`; overlapping
+selectors within the set count once. Each selector follows ordinary local/exact/
+directory lookup and exception filtering. Keep `all:` and `any:` boundaries intact
+when rewriting references, and prove the selected set before using this for a move.
 
 **Absence detection:** Composite rules take `all:`, `any:`, `needs:`, `unless:` and `downgrade:`. There is no composite-level `none:` field — a composite carrying one fails to parse and is dropped at load time (the analyze path skips unparseable rule files with a warning; `cleave validate` reports it). Express absence with `unless:`, which skips the rule when the listed condition matches:
 

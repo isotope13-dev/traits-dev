@@ -19,7 +19,13 @@ COMPILED_DIR := third-party/compiled
 # Validate each fixture independently, including byte-identical files whose
 # names select different traits (for example, build.rs versus lib.rs).
 validate:
+	python3 scripts/taxonomy_sources.py
 	$(CLEAVE) --traits-dir . validate
+	python3 scripts/check-taxonomy-memory-map.py --cleave "$(CLEAVE)"
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/memory-operations/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/memory-lifecycle/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/memory-catalog/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/windows-heap/cases.json
 
 # Compile the third-party + built-in YARA rules into portable per-filetype
 # `.yrc` files (plus a manifest) under third-party/compiled/. These are BUILD
