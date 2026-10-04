@@ -1,0 +1,1 @@
+The full PowerShell and Python reconstruction should match both suspicious staged-execution profiles. Approved installation without policy bypass or transferred-file execution, and RunFile alone, should match neither. No individual product identity or installer option establishes hostile intent.
