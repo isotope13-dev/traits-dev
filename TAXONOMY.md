@@ -177,7 +177,7 @@ The ML pipeline extracts features from **trait-path prefixes + criticality**, no
   `os/package-manager/publish/` and `os/package-manager/installer-script/`.
 
 - **Keep meaningful distinctions visible when practical.** The current direct path feature ends after two taxonomy levels below the tier. Thus `micro-behaviors/fs/path/sensitive/private-key/` and its siblings share the direct prefix `micro-behaviors/fs/path`; the model cannot distinguish private-key paths from other paths through that feature alone. A more exact taxonomy might use `fs/path/private-key/`, `fs/path/password-store/`, and `fs/path/cookie/`, with ownership in filenames such as `ssh.yaml` or `browser.yaml`; those leaves still share the current direct prefix. Likewise, `objectives/anti-static/obfuscation/string/encoding/` and `.../string/fragmentation/` share the direct prefix `objectives/anti-static/obfuscation`; their distinct leaves are not guaranteed unary features. Consider a broader sibling layout such as `anti-static/obfuscation/string-encoding/` and `.../string-fragmentation/` if it preserves one clear home per matcher.
-- **Prefer breadth over depth when precision is unchanged.** Put distinct, equally specific techniques in sibling directories rather than stacking another level under a broad bucket. Keep a deeper child when it expresses a genuine subtechnique and flattening it would merge claims that need different destinations. Directory depth is not itself evidence of misorganization; a validator may flag sparse sibling cohorts for review, but it must not demand a shallower path when that would make placement ambiguous or less exact.
+- **Prefer breadth over depth when precision is unchanged.** Put distinct, equally specific techniques in sibling directories rather than stacking another level under a broad bucket. Keep a deeper child when it expresses a genuine subtechnique and flattening it would merge claims that need different destinations. Directory depth and a small sibling cohort are review signals, not proof of misorganization; do not flatten when that would make placement ambiguous or less exact.
 
 ## Core Principles
 
@@ -324,11 +324,13 @@ There is no separate atomic cap and no directory exemption. All criticalities,
 including `exception`, consume the budget. Descendant directories have their own
 budgets; filenames do not create new namespaces or budgets.
 
-`make validate` emits a **soft, non-blocking depth warning above five directory
-levels below the tier**, across all four tiers. Count neither the tier itself
-nor the YAML filename: `objectives/a/b/c/d/e/rules.yaml` is depth five and does
-not warn; `objectives/a/b/c/d/e/f/rules.yaml` is depth six and does. A warning
-requests review, not mandatory flattening, and does not change the exit status.
+`make validate` emits a **soft depth warning above five directory levels below
+the tier**, across all four tiers. Count neither the tier itself nor the YAML
+filename: `objectives/a/b/c/d/e/rules.yaml` is depth five and does not warn;
+`objectives/a/b/c/d/e/f/rules.yaml` is depth six and warns. Review the path
+before flattening it: a distinct subtechnique may justify retaining depth.
+Soft warnings fail `make validate`;
+`cleave validate --soft` reports them without failing.
 There is no hard physical depth limit.
 Use the shortest hierarchy that gives each matcher one clear semantic home.
 Prefer breadth over depth when sibling techniques remain equally exact; retain
@@ -336,25 +338,43 @@ a deeper level when flattening would merge distinct techniques or make
 placement ambiguous. The current ML extractor gives direct path features only
 through two descendants below the tier, so deeper leaves may not contribute a
 separate direct feature. That is a model-visibility limitation to weigh, not a
-reason to sacrifice taxonomy precision. Within the behavioral tiers, below
-the first category level, the validator reports a parent for review when it
-has at least two child subtrees and all those subtrees together contain fewer
-than 35 rules. This may suggest room to express equally precise sibling
-categories more broadly. Single-child parents do not trigger this advisory;
-internal directories still contain no rules. It does not reject a path solely
-because it is deep.
+reason to sacrifice taxonomy precision. Within the behavioral tiers, below the
+first category level, the validator reports a parent when it has at least two
+child subtrees and all those subtrees together contain fewer than 35 rules.
+This prompts an audit of their defining traits, but a rare technique can need
+its own home even when it has one rule. Internal directories still contain no
+rules.
 
-Sibling names sharing a spelling stem also prompt non-blocking review. A stem
-match is not proof of synonymous subjects: account identity and process
-accounting are distinct. Document admissions and exclusions; merge only when
-the observations genuinely overlap. This does not create a directory exemption.
+Sibling names sharing a spelling stem also produce a soft warning. A stem match
+is not proof of synonymous subjects: account identity and process accounting
+are distinct. Document admissions and exclusions; merge or nest when the
+observations genuinely overlap. This does not create a directory exemption.
 
 Platform breadth is likewise a review heuristic: four or more platform
-declarations produce a non-blocking scope advisory, uniformly across tiers.
+declarations produce a soft scope warning, uniformly across tiers.
 Check that the matcher supports each platform; a format-defined metadata fact
-can legitimately hold across operating systems. Do not drop supported coverage,
+can legitimately hold across operating systems. `platforms: [all]` is permitted
+only in the validator's `ALL_PLATFORM_DIRECTORY_ALLOWLIST`, for these reviewed
+subjects:
+
+| Directory | Why `all` can be appropriate |
+| --- | --- |
+| `metadata/package/description/disclosure` | Declared package-description text has the same meaning on every target OS. |
+| `metadata/package/documentation/claims` | Documentation claims describe package contents or purpose independently of runtime support. |
+| `metadata/package/documentation/security-advisory` | A quoted registry-removal notice or advisory link is an OS-independent document fact. |
+| `metadata/package/documentation/source` | A README basename identifies the documentation resource on every OS. |
+| `metadata/registry` | Registry publication, custody, reach and withdrawal facts describe the record independently of the package's supported OS. |
+| `micro-behaviors/communications/url/host` | Hostname syntax and spelling are independent of the OS consuming the URL. |
+
+This is permission to declare a justified scope, not a default for every rule
+in those directories. OS-specific facts still need explicit platforms: an AUR
+package targets Linux, and a Chrome Web Store extension requires a supported
+browser platform. Being able to scan a file on z/OS does not establish that its
+behavior applies to z/OS. Source code alone does not prove portability.
+
+Do not drop supported coverage,
 duplicate matchers by OS, or move a rule into a different subject just to reduce
-the count. Invalid platform declarations remain errors. This advisory does not
+the count. Invalid platform declarations remain errors. This warning does not
 relax the 100-rule cap or the strictly leaf-only policy.
 
 Before splitting a directory, audit its siblings and likely destinations. Route
@@ -551,7 +571,7 @@ evidence scope and do not create parallel taxonomy branches.
 `command-and-control` is level 1, `reverse-shell` is level 2, and `pty` is level 3.
 This section defines ownership at those levels. Deeper levels may refine
 the claim, but may not change its subject or rescue a misplaced parent. Depths
-above five receive the soft review warning described in the directory budgets;
+above five receive the soft warning described in the directory budgets;
 this documentation scope is not a three-level validation cap.
 
 Read every path as an admission test: **the tier's kind of observation, about
@@ -883,7 +903,7 @@ OS and language names are not alternative operation leaves.
 | Privilege vocabulary vs container configuration | Generic `Privileged`/`privileged` fields, assignments and `--privileged` text belong in `metadata/file/string/security`. They do not identify Docker, Kubernetes or an SDK. Container-specific findings add the relevant configuration structure or command context. A Docker `HostConfig` privilege setting is configuration evidence, not proof of launch; an enabled CLI option must not accept `--privileged=false` or a longer option name. |
 | Compiler ABI, library identity and exception flow | Compiler/runtime symbol prefixes remain in `metadata/binary/symbols/compiler` even when referenced by library or execution rules. They alone establish neither libc++/libstdc++ identity nor exception-based control flow. ABI plus a system-API reference and size/string-count filters belongs with `process/create/api-system`; exception obfuscation requires evidence of exception-based control transfer. Place a shared string-count predicate in `metadata/file/string/count`, retaining nonredundant size, entropy and scope gates in contextual composites. Do not duplicate a neutral count under a malware family. |
 | Dot joins vs DNS labels or exfiltration | A dot join near named fields establishes string composition and co-occurrence → `data/string/concat`; it does not establish that those field values enter the joined string. DNS placement requires a DNS operation or protocol-specific construction. Exfiltration requires evidence of the transmitted data and destination; broad objective references must not inherit a neutral string helper as exfiltration evidence. |
-| Metadata vocabulary vs section-specific binary facts | Whole-file vocabulary belongs with its meaning, independent of which binary section contains it. Section filters are required when the claim depends on that location; do not invent a section requirement to permit relocation. Missing filters on binary-only metadata produce a review advisory. Existing binary-fingerprint and hex-condition requirements remain separate. |
+| Metadata vocabulary vs section-specific binary facts | Whole-file vocabulary belongs with its meaning, independent of which binary section contains it. Section filters are required when the claim depends on that location; do not invent a section requirement to permit relocation. Missing filters on binary-only metadata produce a soft warning. Existing binary-fingerprint and hex-condition requirements remain separate. |
 | `crypto/library/blockchain` vs transaction and protocol operations | Cipher/signature/hash primitives → crypto; constructing, signing, submitting or querying a financial ledger transaction → `data/transaction/{construct,sign,submit,query}`. Generic RPC/HTTP remains communications; provider endpoint identity is not a transaction. |
 | `crypto/symmetric/xor` vs `data/{encode,decode}/xor` | A required keyed cipher construction → crypto; representation scrambling/descrambling → data. A bare XOR instruction cannot establish either construction. |
 | `fs/path/<resource>` vs all file operations | Merely naming a location → path by resource kind. Required read/write/copy/etc. → that operation, referencing the path atom where useful. A path match never inherits the consuming composite's action. |
@@ -899,6 +919,16 @@ OS and language names are not alternative operation leaves.
 | `fs/path/{password-store,cookie,private-key,public-key,token,secret-config,config}` | Choose the identified resource in that order of specificity, not its application owner: saved-login DB, cookie jar, private key, authorization/host-trust key, token file, secret-bearing config, then ordinary config. A file's defined role, not a generic credential word, determines the choice. |
 | `fs/path/{personal,app-data,cache,font,library,log,metadata-store,system,temp}` | Classify the kind of resource named by the path, not the spelling of an ancestor directory. Browser history is personal; a profile or application-support/group-container path is app-data; cache is cache; an installed font path is font; `/lib` and `.dylib` references are shared-library paths; `/Library/Logs` is log; `.DS_Store` is a directory-metadata store; OSRecovery is a system path; temporary locations are temp. Thus `/Library/Caches` goes to cache and `/Library/OSRecovery` to system even though both contain the segment `Library`. |
 | `fs/path` vs `fs/path-ops` | A path identifies a resource → `path/<resource>`; code joins, normalizes, parses or matches pathnames → `path-ops/{join,normalize,parse,match}`. Migrate `path/{construct,basename,check}` by operation; resource references stay in path. `Path.Combine` is join; `Path.GetDirectoryName` is parse/extract-parent. A bare method-name token is only an API fingerprint, not proof the method was called or that the surrounding behavior is malicious. Traversing the filesystem is directory/traverse, not pathname manipulation. |
+| File locks vs sidecar paths and open sharing | `fs/lock` contains actual file-lock APIs and their locking flags, including whole-file and byte-range mechanisms. A `.lock`/`.journal` filename format belongs in `fs/path/extension`; an X11 display-lock pathname belongs in `fs/path/system`. `FILE_SHARE_READ` and `NtCreateFile` access/disposition flags describe opening a file and belong in `fs/file/open`. A Java `FileLock` class reference identifies the API, without proving a lock was acquired. |
+| Callback signature vs operation | A callback parameter does not make array transforms, string replacement, SQLite function registration, locale/resource/certificate enumeration, or drawing an OS-callback subject. Classify the operation; callback-based execution objectives reference the exact APIs and add executable-buffer evidence. PHP shutdown, tick, autoload, error/exception and session-store registrations are different operations and must not share one atom. |
+| UI toolkits vs interface operations | Embedded library identity belongs in `well-known/lib/ui`; toolkit-specific configuration and log filenames follow their path resource. Tkinter window initialization, mainloop calls and widget construction follow those UI operations. React internal DOM keys support DOM interaction; a ZIPRES resource marker does not alone identify Duilib. GObject repository references are not necessarily GTK UI use. |
+| Office declarations and member paths | Parsed DOCX/PPTX package imports are dependency declarations under `metadata/import/package`. Office filename suffixes belong in `fs/path/extension`; named document-content members belong in `fs/path/personal`. A member-name literal does not establish a ZIP read or text extraction. |
+| Agent file resources vs owner | AI-agent authentication files belong in `fs/path/credential`, application configuration in `fs/path/config/app`, transcripts in `fs/path/personal`, and general state stores in `fs/path/app-data`. The application name belongs in a filename or ID, not a parallel resource taxonomy. Configuration paths alone do not establish secret contents. |
+| Steam resource helpers vs credential access | Embedded-resource helper names support resource handling, not Steam credential theft. Account/config filenames and token-output paths remain neutral path observations; credential collection requires acquisition evidence. Disguised resource extraction belongs under masquerading when the disguise is established. |
+| HTTP audit records vs generic fields | Request, response and user attribution share `os/telemetry/http`. Generic application scan metrics belong with application telemetry; constructing user-name/email map fields is a collection operation. A consent-return guard is control flow until paired with telemetry. An HTTP client beside a field does not prove that the field flows into the request body. |
+| Link creation vs open flags and normalization | Windows symbolic-link APIs and flags share `fs/link/symlink`; junction and other reparse controls stay in `fs/link/reparse`. An open-reparse-point flag belongs with `fs/file/open`. `realpath` is canonical pathname resolution under `fs/path-ops/normalize`. Hard links and symbolic links remain different link mechanisms. |
+| System metrics and linker facts | Resource measurements and ongoing performance queries share `os/sysinfo/performance`; their filenames can distinguish implementations. COFF import-pointer naming conventions are neutral compiler/linkage properties under `metadata/binary/symbols/compiler`; signature removal is a security operation, not library-search-path mutation. |
+| Alarm timers vs geofencing | Alarm scheduling, SIGALRM handler registration and their lifecycle composite share `time/schedule/timeout`. Locale-query APIs and distinctive locale-interaction indicators belong in `os/sysinfo/platform/locale`; structured localization catalogs and resource properties remain metadata. Region-dependent execution requires the query/locale to be paired with gating behavior in `objectives/anti-analysis/geofencing/locale`. Reading macOS CountryCode alone is a macOS capability. |
 | `fs/read`, `write`, `delete` vs `file/*` and `shell-ops` | Explicit content read/write/deletion uses the dedicated operation parent; create/open/copy/move/rename/stat use the corresponding `fs/file` operation. Shell/API spelling does not create another home. Reconcile `file/read-write` per actual evidence; keep a joint claim only if both operations are required. |
 | `fs/directory`, `enumerate`, `traversal`, `search` | Listing one directory → `directory/readdir`; recursive descent without a narrower target-selection claim → `directory/traverse`; filename/content predicates, globs, search options, and indexed searches → `search`; drive/device inventory → `enumerate` by resource. A filename or extension predicate selects files, not a resource class to enumerate. `fs/enumerate/extension` is retired into `fs/search`. When search also descends recursively, the required name/content predicate selects `search`; recursion alone selects `traverse`. Directory deletion → `delete/directory`, rather than also directory/rmdir. |
 | `fs/temp`, `fs/path/temp` | Creating a temporary object → `temp/{file,directory}`; a temporary location reference → `path/temp`. Tool-builder identity (PyInstaller, etc.) does not define a temporary-file operation. |
@@ -1265,7 +1295,7 @@ the legacy `staging/` branch, use the technique the matcher actually requires:
 | Required evidence | Placement | Boundary |
 |---|---|---|
 | Archive membership or archive-contained payload/lure, with no required encryption clue | `dropper/staging/archive/` | A disk image merely contained in an archive stays here; require mounting or execution from that image before using `staging/image-disk/`. |
-| Encrypted content used as the defining staging mechanism | `dropper/staging/encrypted/` | Use this for encrypted payload staging that is not itself an archive technique. A password-protected 7z/ZIP whose archive membership is the defining evidence belongs in `staging/encrypted-archive/`; an unencrypted archive or nested disk image belongs in `staging/archive/`. |
+| Encrypted content used as the defining staging mechanism | `dropper/staging/encrypted/` | Require payload preparation beyond encryption or archive shape. Parsed archive encryption, member names, counts, and header failures remain neutral archive metadata. Actual staged extraction without a linked activation may belong in `staging/archive/`; a required activation sink takes precedence. |
 | Reconstructed or decoded embedded payload, with no activation sink established | `dropper/staging/encoded/` | Require evidence of payload reconstruction, not merely an encoding API or encoded string. Once a sink is shown, classify the full chain by that activation sink. |
 | Executable carrier is a small stub with a dominant appended payload | `dropper/staging/stub/` | Require the stub-and-overlay shape, not just any embedded PE or a process-launch name. A shell or URLMon clue without a link to the appended bytes does not make this a file-exec chain. |
 | Embedded payload uses a runtime carrier | `dropper/staging/runtime/` | Use when a managed runtime or interpreter-specific embedded material is the staging mechanism. A bare embedded implementation stays in `metadata/binary/layout/embedded` or `micro-behaviors/data/embedded`; a linked loader sink takes precedence. |
@@ -1325,10 +1355,10 @@ rules directly in the `file-exec` parent.
 The command leaves refine the activation host, not the source language:
 `file-exec/command/shell` covers ordinary shell command text,
 `file-exec/command/batch` covers batch-script command chains, and
-`file-exec/command/script-host` covers a script host that evaluates or launches
-command text. The latter may use `script-host/download` when the host retrieves
-the launched content and `script-host/embedded` when the source or payload is
-already present. These are execution mechanisms; `javascript`, `powershell`,
+`file-exec/command/script-host-download` covers a script host that retrieves
+the launched content; `file-exec/command/script-host-embedded` covers a host
+that launches source or payload already present. These are execution mechanisms;
+`javascript`, `powershell`,
 `wsh`, and other language names remain matcher scope or filenames.
 
 Remote response pipelines that reach an interpreter may use
@@ -1347,13 +1377,15 @@ the matcher must contain the relevant delivery mechanics. The activation sink
 still owns a complete payload chain when the matcher binds the staged content to
 its launch.
 
-`staging/native-loader` is for native embedded or memory-loader profiles whose
-carrier mechanism is the useful fact and whose matcher does not establish a
-more specific process-injection, image-map, module-load, or file-exec sink.
-`staging/native` and `staging/script` retain carrier or wrapper evidence when a
-payload is staged but its final activation is not linked. The former
-`dropper/execution` tree is retired; it is an audit source only and must remain
-empty.
+`staging/native` is the genus for staged native executable artifacts. Its
+`payload` leaf holds native carrier and wrapper profiles; `loader` is the
+refinement for embedded or memory-loader behavior when the matcher does not
+establish a more specific process-injection, image-map, module-load, or
+file-exec sink. Put a fully established activation chain under the matching
+execution or injection objective, with the native artifact as supporting
+evidence. `staging/script` retains analogous script carrier evidence. The
+former `dropper/execution` tree is retired; it is an audit source only and must
+remain empty.
 
 Installer evidence follows the observation it actually establishes. An SFX
 `RunProgram` command selects a process target under
@@ -1385,9 +1417,9 @@ staged file through that process API.
 For example, a password-protected 7z rule that requires stdout extraction,
 payload validation, a temporary executable path, and `Start-Process` belongs in
 `file-exec/spawn`: encryption and archive format describe the source, while the
-direct child-process launch is the defining sink. If the encrypted archive is
-identified without a linked activation sink, keep it in
-`staging/encrypted-archive`.
+direct child-process launch is the defining sink. Parsed encrypted archive
+identity and member layout without staging or activation remain archive
+metadata; encryption alone does not establish a dropper.
 
 Require evidence of cross-process execution transfer for `process-inject`;
 executable memory or thread creation in the current process alone does not
@@ -1449,11 +1481,12 @@ API; use `hidden-stage/` for format-neutral hidden-path staging without a
 narrower transfer mechanism. A hidden window alone is process-creation
 evidence, not a hidden-file stage.
 
-The sibling `delivery/fetch-exec-shell/` leaf is reserved for fetched content
-whose required activation sink is a shell interpreter or shell pipeline. The
-general `delivery/fetch-exec/` leaf is for fetched execution whose sink is not
-specifically a shell, or whose matcher does not establish the sink. Shell is
-the activation mechanism here, not a source-language branch.
+Downloaded file execution belongs in `delivery/fetch-exec/` when both fetch
+and execution operations are required. A shell script running `./payload`
+uses the same file activation as other download-and-run implementations.
+A fetched response passed directly to interpreter evaluation follows the
+corresponding `script-eval/response-eval` mechanism. Source language alone
+does not define an activation sink.
 
 The same boundary applies to PowerShell: a hidden-window option, an
 `Invoke-WebRequest` call, and a nearby `Start-Process` indicate concealed
@@ -1517,6 +1550,15 @@ names do not choose among these leaves; the required anti-analysis mechanism
 does.
 | `anti-analysis/self-modify` vs `anti-static/obfuscation` | Modification reacting to live analysis → anti-analysis; representation mutation concealing code → anti-static. Ordinary memory permissions prove neither. |
 | `anti-static/obfuscation/{imports,reflection,name-mangling}` | Concealed API/import identity → imports; concealed dynamic dispatch → reflection; altered identifier names → name-mangling. A normal dynamic lookup is a capability. |
+| Encoded API names vs kernel hiding | Encoded user-mode NT APIs → the relevant thread, memory-protection, or PE-header capability; encoding plus kernel dynamic resolution → string obfuscation. A kernel module unlink is module hiding. A numeric task-flag toggle alone does not establish hiding. |
+| Neutral runtime APIs vs execution objectives | JVM process creation, reflection, native-library loading, JNDI context references, Colab callbacks, and Objective-C method dispatch belong with their capabilities. Generic `.invoke()` or `.lookup()` receiver names do not prove reflection or JNDI. |
+| Process exit handlers vs termination | Exit callback registration → `process/exit/handler`; process termination APIs → `process/exit/terminate`. A `process.on` rule must inspect its event argument before claiming an exit handler. |
+| Timer queries, delays, and comparisons | Clock/counter queries → `time/query`; sleep APIs → `time/sleep/interval`; elapsed-time comparisons or polling → `time/timing/check`. CPUID and RDTSC proximity alone does not establish VM evasion. |
+| Memory read vs write helpers | Address and read helpers → `mem/read/arbitrary`; native-memory write helpers → `mem/write/arbitrary`. A helper name indicates a probable primitive, not a completed exploit. |
+| Notification words vs APIs | UI wording and notification API references share `ui/window/notify`; matcher certainty is not a directory axis. Shell filesystem-change notifications → `fs/watch`; tray icons → `ui/graphics/icon`. |
+| Network performance vs packet transmission | HTTP load tests → `communications/benchmark/http`; bandwidth tests → `communications/benchmark/bandwidth`; crafted packet transmission → `communications/socket/send`. Rate figures alone are telemetry references. |
+| TCC vs other access policies | TCC database manipulation concerns macOS. z/OS access, RACROUTE, or audit override markers → general access-control policy bypass. A progress message beside `chflags` does not establish AV quarantine removal. |
+| Asset filenames vs exfiltration | A web asset filename is a path reference. Co-occurrence with process creation does not establish writing, serving, or sending secrets through that asset. |
 | `anti-static/obfuscation/{string,encoding,payload}` | Concealed string values → string; encoding used as the required concealment itself → encoding; concealed executable stage as a unit → payload. Neutral decode/decrypt remains a capability. |
 | `anti-static/obfuscation/{syntax,control-flow,instruction}` | Source-form concealment without changing path structure → syntax; obscured branches/dispatch → control-flow; instruction-level junk/substitution → instruction. File language is not the axis. |
 | String encoding mechanism boundaries | Source escape syntax such as HTA char codes or C octal command literals → `obfuscation/syntax`; cryptographic or XOR string transforms → `obfuscation/string/crypto`; substitution/replacement concealment → `obfuscation/string/conceal`; general encoded string representations → `obfuscation/string/encoding`. The command or interpreter named by the decoded value is a referenced capability, not a reason to move the string rule into an execution branch. |
@@ -1525,16 +1567,16 @@ does.
 | `obfuscation/payload/polymorphic/generator` vs `.../decryptor` | The engine that mutates or emits variable code (opcode emitters, trash/metamorphic generators, LLM variant generation, randomized self-replicas) → `generator`; the self-decryption stub that reveals an encrypted body at run time (delta-offset setup plus XOR/ADD/ROR loops) → `decryptor`. | A matcher showing both an emitter and a stub belongs with the emitter. Fixed encrypted blobs without a run-time decryptor stay under `payload/encrypted`. |
 | Stock UPX packing vs anti-unpacking tamper | A canonical UPX banner, intact PackHeader, sectionless ELF layout, or compression entropy records packing/layout evidence at notable. Raise severity only when the file alters UPX control metadata to defeat the stock unpacker or has separate hostile payload behavior. | Stock UPX output, static linking, high entropy, and absent ELF section headers do not establish hostile intent by themselves. |
 
-Within `obfuscation/payload`, encrypted content is refined by the carrier
-mechanism rather than by source language or operating system:
-`encrypted-loader/` is an encrypted executable or loader carrier,
-`encrypted-key/` is a payload whose distinguishing concealment is a
-hard-coded, placeholder, or structured decryption key, and
-`encrypted-source/` is source-level encrypted command or runtime material.
-The parent `payload/encrypted/` remains for encrypted payloads whose carrier
-does not establish one of those narrower mechanisms. High entropy, section
-geometry, and file-format facts remain separate metadata or binary-observation
-signals and do not select an encrypted-payload leaf by themselves.
+Within `obfuscation/payload`, encrypted payload claims require evidence of
+concealed executable content, rather than merely a key variable, encoding,
+high entropy, or sensitive path. Literal key and passphrase declarations are
+neutral cryptographic key observations; salt belongs with key derivation;
+Base64 field structure is encoding metadata. A command-activation chain is
+classified by its execution sink: decoded command source goes to script-eval,
+whereas a staged file launch goes to file-exec. Source language and key naming
+are matcher scope rather than separate payload carrier mechanisms. File reads,
+network requests, and process APIs without a demonstrated encrypted payload
+retain their respective capabilities and truthful co-occurrence descriptions.
 
 Within `anti-static/pack`, `section-anomaly/` is reserved for section-layout
 measurements and unusual section ownership that are themselves the packing
@@ -1565,7 +1607,9 @@ DOS binary infection uses the mechanism beneath the DOS context: directory-entry
 rewrites → `impact/infect/binary/dos/direntry`, block-driver request hooks →
 `.../driver-hook`, INT 21h exec/open interception → `.../exec-open-hook`,
 system-file-table handle rewriting → `.../sft`, and direct COM-byte or source
-profiles → their corresponding `.../com-bytes` or `.../source` leaves. These
+profiles → `.../file`, `.../interrupt`, or `.../source` according to the
+infection mechanism. The removed `com-bytes` layer described the evidence
+surface rather than the kind of infection. These
 are infection mechanisms, not language or filename categories; a DOS wipe or
 raw disk operation belongs under its own impact objective.
 
@@ -1590,6 +1634,8 @@ is a stealer.
 | Mailbox/message content vs account secrets | `collection/email-harvest` or messaging for content; credential-access for authentication material. An audit event stating access occurred is not itself a harvesting implementation. |
 | Host, account, software, process, network or cloud reconnaissance | Discovery by surveyed resource. `discovery/host` owns installed software/security/browser applications; system owns machine/hardware/OS profile; process owns running-process inventory; network owns interfaces/peers/probes; account owns principals; cloud owns provider resources. Reconcile duplicate host/process/system branches accordingly. |
 | Host-information query near an endpoint vs exported host data | A WMI/OS query plus an IP/URL clue without a send operation remains `discovery/system/profile`; even a literal `/exfil` path in class strings is endpoint evidence, not a transfer leg. Require upload/send evidence before assigning `exfiltration/stealer/system-info/<source>`. |
+
+Disk inventory such as `/sys/block` and `lsblk` belongs with `os/sysinfo/disk`; disk partition and raw-device operations stay under `fs/disk`. Serial-port communication APIs belong under `hardware/serial`, not filesystem device operations. Process-attribute walks over arbitrary PIDs are process enumeration and live under `discovery/process/enumerate`. A provider-specific OTP interception workflow is a refinement of webmail account takeover; keep it beneath `account-takeover`, separate from extraction of stored MFA secrets.
 | Specific source plus its transmission | `exfiltration/stealer/<source>`; the source wins over HTTP/DNS/webhook transport, package carrier, and install/build trigger. |
 | Required theft of independent datasets plus transmission | `exfiltration/stealer/multi-source`, replacing the audited portion of legacy `sweep`. Browser cookies plus wallet secrets qualify; browser identity plus a separately required network/geo profile also qualifies. Several observations about one host do not: network address and geo fields together are still one network-profile dataset. An OR over sources or an optional second source does not qualify. |
 | Exfiltration channel abuse without a narrower established source | `exfiltration/<transport>` by required transport mechanism; it still needs theft/unauthorized-transfer evidence. Neither HTTP POST nor an OAST domain alone meets admission. |
@@ -2540,6 +2586,7 @@ micro-behaviors/
 │   ├── rpc/               #   Remote procedure-call protocols
 │   ├── mcp/               #   Model Context Protocol (stdio and HTTP)
 │   ├── ftp/               #   FTP client/upload                         C0004
+│   ├── tftp/              #   Trivial File Transfer Protocol download
 │   ├── ssh/               #   SSH client/connect
 │   ├── ip/                #   IP addressing (parse, resolve, embedded)
 │   ├── proxy/             #   Proxy/tunneling (SOCKS)
@@ -2555,6 +2602,7 @@ micro-behaviors/
 │   ├── async-io/          #   Async I/O (epoll, kqueue, io_uring, tokio)
 │   ├── capture/           #   Packet capture (tcpdump, wireshark)
 │   ├── benchmark/         #   Network performance testing
+│   ├── flood/             #   Network flooding signals; intent requires context
 │   │                      #   --- ICS/OT protocols (neutral mechanics only) ---
 │   │                      #   ICS port scanning → objectives/discovery/network/scan/.
 │   │                      #   ICS sabotage/manipulation → objectives/impact/degrade/ics/.
@@ -2621,6 +2669,7 @@ micro-behaviors/
 │   │   └── combined/       #   Legacy mixed claims; preserve distinct algorithm facts
 │   ├── archive/           #   Archive operations (tar, zip extraction)
 │   ├── serialize/         #   Serialization (JSON, YAML, pickle, protobuf)
+│   ├── session/           #   Session-state storage and lifecycle operations
 │   ├── transaction/       #   Financial/ledger transaction data operations
 │   │   ├── authorize/     #     Spender/transfer authority and permits
 │   │   ├── construct/     #     Messages, outputs and fee preparation
@@ -2737,6 +2786,8 @@ micro-behaviors/
 │   ├── flash/             #   Flash memory devices (MTD, MMC)
 │   ├── input/             #   Keyboard, mouse (capture, simulation)
 │   ├── iokit/             #   macOS IOKit device framework
+│   ├── serial/            #   Serial-port device communication
+│   ├── serial/            #   Serial-port device communication
 │   ├── smartcard/         #   Smart card reader access (WinSCard)
 │   └── wireless/          #   Wireless network interfaces
 │
@@ -3668,7 +3719,7 @@ probable capability belongs with that capability in `micro-behaviors/`.
 
   The former `metadata/library/` tree held ~1,030 rules across ~68 directories and mixed several different concepts: library fingerprints that duplicated `well-known/lib/`, plain capability markers wearing a library's directory name, named offensive tools, CI fingerprints, and vague structural leaves. That migration is complete: `metadata/library/` is now closed and empty. Because a directory reference is an ML path feature, each migrated matcher was placed according to what it actually finds; never recreate the old bucket or move a whole directory on the strength of its name.
 - New top-level subdirectories require updating both TAXONOMY.md and `ALLOWED_METADATA` in `src/capabilities/validation/directory_whitelist.rs`
-- **Depth:** Prefer breadth when precision is unchanged; depths above five below `metadata/` receive the same non-blocking review warning as other tiers. Current direct ML path features include only two levels below the tier; taxonomy depth and model visibility are separate concerns.
+- **Depth:** Prefer breadth when precision is unchanged; depths above five below `metadata/` receive the same soft warning as other tiers. Current direct ML path features include only two levels below the tier; taxonomy depth and model visibility are separate concerns.
 - **Max leaf size:** 100 rules per directory across all tiers, atomic traits and composite rules counted together (`policy/oversized-dir`); no directory exemptions
 - **Max fan-out:** No directory should have more than 150 immediate subdirectories. Split by the parent's documented subject/function question; ecosystem or vendor grouping must not create a second home for the same claim.
 - **Prefer technology-neutral subdirectory names.** Technology names belong in filenames, not directory names, unless the technology itself defines the subject. The 100-rule cap does not justify a language or platform split.
@@ -4037,3 +4088,89 @@ composite_rules:
 - **ATT&CK Techniques**: `T1234` or `T1234.001` (sub-technique)
 - **MBC Behaviors**: `B0001` (behavior), `C0015` (micro-behavior)
 - **MBC Enhanced**: `E1234` (ATT&CK technique with MBC enhancements)
+
+Download-and-execute traits require a fetch and an execution operation. Architecture tokens, referenced payload basenames, URL fragments, and directory-change fallbacks remain neutral capabilities in their respective subjects. They may strengthen a download-and-execute composite but cannot replace either operation. Shell delivery chains share `dropper/delivery/fetch-exec` with other fetch-and-execute implementations; source language alone does not define a separate delivery mechanism. Fetch plus chmod without execution belongs to `dropper/staging/file`. Parsed package descriptions claiming remote execution are documentation claims; they do not establish that the package executes remote content.
+
+Archive encryption combined with member names, suffixes, counts, nested containers, or header parse failures belongs to the corresponding archive metadata subject (`metadata/file/archive`, `metadata/package/files/archive-shape`, or `metadata/build/archive`). These are facts about the archive itself, including when a member has an executable suffix or an alarming name. Encryption and a filename do not establish payload staging, execution, deception, or destructive behavior. Objective traits need evidence of the corresponding action beyond these archive facts.
+
+Reviewed sparse operation partitions remain distinct even when their rule counts are small:
+
+| Parent | Children | Defining evidence |
+| --- | --- | --- |
+| `micro-behaviors/fs/path-ops` | `join`, `normalize`, `parse` | `Path.Combine` constructs a path; `realpath` resolves a canonical path; `Path.GetDirectoryName` extracts a path component. |
+| `micro-behaviors/fs/swap` | `off`, `on` | `swapoff` disables swap; `swapon` enables it. These are opposite operations. |
+| `micro-behaviors/fs/pipe` | `fifo`, `transfer` | `mkfifo` creates a named pipe; `splice`, `tee`, and `vmsplice` transfer data through pipes. |
+| `objectives/execution/database` | `clr-procedure`, `ole-automation`, `xp-cmdshell` | SQL Server activates external CLR procedures, OLE shell methods, or its shell-command procedure. Each composite requires the corresponding configuration and procedure/method evidence. |
+
+The validator recognizes only these exact parent and child sets. New sibling branches still require review. Low counts alone do not justify collapsing distinct operations.
+
+Permission changes, file attribute changes, and Restart Manager resource shutdown are neutral capabilities unless a predicate establishes an evasion or destructive objective. Co-occurring account paths and permission API names do not prove unlocking, ownership changes, or tampering. Source interfaces naming operations establish declarations, not implementations; a `performWipe` declaration cannot prove a disk wipe. Handle enumeration with type filtering belongs to enumeration, while a predicate requiring remote handle closure may indicate deliberate cross-process unlocking.
+
+Database library names, schema/indexing endpoint references, editor bridges, application storage paths, protocol origins, and key-lookup error messages remain neutral database or path capabilities. A library plus a storage path does not establish collection or token theft. Collection predicates must establish the corresponding query, read, record extraction, or export operation; exfiltration additionally requires transfer evidence.
+
+`memfd_create` creates an anonymous file descriptor and belongs to `mem/anonymous/create`. Its co-occurrence with `execve` does not link the descriptor to execution. Mach-O image creation/disposal and segment layout follow module resources; module linking and loader construction follow dynamic-library loading; symbol lookup follows library lookup. An API name or API cluster is a neutral reference until a predicate establishes concealed payload activation. `SEC_IMAGE` is an image-mapping flag, not proof that an image section was created.
+
+Parsed RTF OLE class names and declared Office external-resource relationships are neutral document format metadata. A referenced DOTM URL or UNC template path is a URL/path capability; a link in document prose does not establish template loading. Neither an ordinary OLE class declaration nor an external resource relationship alone proves document exploitation or lateral movement.
+
+A GitHub runner process probe is process discovery, not installed-application discovery. A bridge-name alternation lexicon establishes a filter reference, not property enumeration or exploitation. Decimal triplet decoding requires byte conversion and string decoding in addition to a loop; a loop increment of three alone is control flow, and `ASCII.GetString` alone is byte-to-string conversion.
+
+Additional reviewed sparse partitions use positive operation or representation boundaries:
+
+| Parent | Children | Defining evidence |
+| --- | --- | --- |
+| `communications/benchmark` | `bandwidth`, `http` | Network throughput tools/endpoints versus HTTP request-workload tools and argv. |
+| `data/decode/char-code` | `decimal-triplet`, `escape-sequence` | Fixed-width decimal chunks converted to bytes versus printf/ANSI-C character escape syntax. |
+| `hardware/input/mouse` | `message`, `position`, `simulate` | Event names/constants versus coordinate access versus mouse-event injection APIs/commands. |
+| `communications/tls` | `initialize`, `verify` | Creating TLS contexts/objects versus certificate-verification configuration. |
+| `communications/tls/verify` | `callback`, `disable` | Validation callback references/setters versus explicit verification-off configuration or its named API/flag reference. A callback alone does not disable verification. |
+
+The remaining sparse cohorts were reviewed by their actual operation or target and keep separate placement contracts. The validator accepts only each exact parent and exact child set below; adding a sibling or moving a branch requires review.
+
+| Parent | Children | Boundary retained |
+| --- | --- | --- |
+| `objectives/credential-access/windows-registry` | `hive`, `security-keys` | Exporting registry hives differs from accessing LSA secret keys. |
+| `objectives/command-and-control/dropper/process-inject` | `hollow`, `remote-thread`, `thread-hijack` | Hollowing, creating remote threads, and hijacking an existing thread are different injection methods. |
+| `objectives/collection/database` | `credentials`, `query` | Reading database configuration credentials differs from querying database records. |
+| `micro-behaviors/communications/blockchain` | `client`, `name-service` | Chain RPC/client activity differs from resolving blockchain names. |
+| `micro-behaviors/process/interpreter/powershell` | `command`, `host` | Command-line launch options differ from the PowerShell host/runtime. |
+| `objectives/anti-analysis/sandbox-detect/environment` | `connectivity`, `function`, `native-injector`, `path`, `pipe`, `var` | Network reachability, function checks, injection-aware profiles, artifact paths, named pipes, and environment variables are separate evidence. |
+| `objectives/execution/condition` | `host-marker`, `platform`, `remote-gate` | Host-specific markers, local platform checks, and remote authorization gates differ. |
+| `micro-behaviors/communications/socket/bind` | `address`, `function`, `ident` | Bind operation/API, address structure, and address identity are separate observations. |
+| `objectives/exfiltration/side-channel` | `dns`, `icmp` | DNS and ICMP are distinct transfer channels. |
+| `objectives/privilege-escalation/hijack-execution-flow` | `com`, `library-stage`, `named-pipe`, `preload`, `service` | COM activation, staged library loading, named-pipe interception, preload variables, and service configuration are distinct hijack surfaces. |
+| `objectives/credential-access/email/webmail` | `account-takeover`, `mfa-secrets`, `owa` | Account mutation, stored MFA-secret extraction, and OWA-specific access have different evidence. Provider OTP interception is nested under account takeover. |
+| `micro-behaviors/os/linker` | `audit`, `env`, `load-path`, `symbol-version` | Linker auditing, loader environment, binary load-path rewriting, and ABI symbol versions are separate capabilities. |
+| `objectives/anti-static/polyglot` | `format`, `iexpress`, `zip-eocd` | General format collisions, IExpress SED polyglots, and ZIP end-record structures differ. |
+| `objectives/discovery/process` | `enumerate`, `targeting`, `window` | Process inventory, selection of a target process, and window-based process discovery differ. Attribute walks are nested under enumeration. |
+| `micro-behaviors/communications/capture` | `packet-socket`, `pcap`, `tcpdump`, `windivert` | Raw packet sockets, libpcap, tcpdump, and WinDivert are distinct capture interfaces. |
+| `objectives/anti-analysis/anti-tampering` | `archive`, `integrity` | Archive tampering checks differ from executable/runtime integrity checks. |
+| `micro-behaviors/communications/icmp` | `channel`, `ping`, `trace` | ICMP data-channel use, echo probing, and route tracing differ. |
+| `objectives/anti-analysis/sandbox-detect/process` | `census`, `list`, `node-sea` | Broad process census, explicit process-list checks, and Node SEA runtime gates use distinct evidence. |
+| `objectives/evasion/quarantine-removal` | `bypass`, `network-appliance` | Local file quarantine controls differ from quarantine on network appliances. |
+| `objectives/credential-access/keychain` | `extract`, `theft` | Store extraction primitives differ from a credential-theft workflow. |
+| `objectives/evasion/tcc-manipulation` | `bypass`, `db`, `fda` | TCC API bypasses, database modification, and Full Disk Access state are separate mechanisms. |
+| `objectives/persistence/system/daemon` | `hidden`, `init`, `install-state`, `path-hidden` | Hidden installation, init activation, install-state markers, and concealed paths are distinct persistence evidence. |
+| `micro-behaviors/fs/device` | `blkid`, `ioctl`, `loop`, `mknod`, `network-block`, `query` | Block identity, device control, loop devices, device-node creation, network block devices, and NT device-link queries differ. Serial communication is under `hardware/serial`. |
+| `objectives/credential-access/messaging` | `telegram`, `whatsapp` | Provider-specific stores have distinct data models and APIs. |
+| `micro-behaviors/fs/disk` | `partition`, `raw` | Partition management differs from raw-disk access; disk inventory belongs to `os/sysinfo/disk`. |
+| `micro-behaviors/mem/read` | `arbitrary`, `cross-process`, `dump`, `physical` | Arbitrary address reads, remote-process reads, dump interfaces, and physical-memory reads differ. |
+| `micro-behaviors/communications/url/construction` | `fragment`, `service`, `template` | URL fragment assembly, provider/service URL construction, and template expansion differ. |
+| `objectives/evasion/process/hook` | `console`, `http`, `inline`, `jit`, `monitor` | Console, HTTP, inline, JIT, and payload-monitoring hooks instrument different surfaces. |
+| `objectives/execution/interpreter/cmd` | `http`, `injection`, `inline` | Request-driven shell execution, command injection, and embedded inline commands differ by input source. |
+| `micro-behaviors/ui/window/dom` | `access`, `audio`, `create`, `render`, `tree` | DOM access, audio-element playback, element creation, rendering, and tree traversal are separate operations. |
+| `micro-behaviors/data/format/media` | `audio`, `magic`, `raster`, `streaming` | Audio processing, media magic checks, raster processing, and media streaming differ. |
+| `objectives/persistence/login/winlogon` | `credential-provider`, `userinit` | Credential-provider registration differs from Userinit launch replacement. |
+
+A DOM member access does not prove a read rather than a write; a cursor API import does not prove polling. API-name references must not be described as invocation or platform abuse. Benchmark argv fragments name options; a combined workload profile also requires the tool argv in a nearby window.
+
+Thread operation partitions distinguish `config` (thread-count/pool limit references), `enumerate` (Thread enumeration or a bound thread-group context), `group` (thread-group accessor), `lifecycle` (thread/fiber creation, conversion, switching, or starts), `priority` (priority-setting API/constant evidence), and `terminate` (stop/termination API references). A generic `.enumerate(array, true)` belongs to array enumeration; thread enumeration needs a resolved Thread API or nearby thread-group access. A `getThreadGroup()` call alone does not enumerate threads.
+
+Filesystem link kinds distinguish `hardlink`, `symlink`, and `junction`. Windows directory symbolic links remain symlinks. The mount-point reparse tag identifies a junction; the generic FSCTL_SET_REPARSE_POINT control code belongs to device control and needs that tag to support a native junction-creation context. A generic reparse-setting flag alone does not identify a junction or establish that one was created.
+
+Process `exit/handler` registers an exit/shutdown callback or trap; `exit/terminate` requests termination or references its API. A string naming `sys.exit` or `process.exit` is a reference, and constructing `SystemExit` does not by itself raise it. Signal `handler` configures or inspects disposition; `dispatch` sends a signal. Register loads of 13 and 1 followed by an unresolved native call are a binary code pattern under `metadata/binary/code/arguments`, not proof of `signal(SIGPIPE, SIG_IGN)`: identifying the callee is necessary for that capability claim.
+
+Registry key paths, credential value names, and temporary hive output paths are neutral references. AutoLogon path/value co-occurrence does not establish a query. A variable-based LSA enumeration objective needs an assignment binding the named variable to the LSA secrets registry path and a nearby enumeration of that same variable. `reg save HKLM\SAM` and companion SYSTEM/SECURITY commands establish hive exports; their commands and extraction composites remain credential-access evidence. `cmdkey /list` follows Credential Manager enumeration, not registry access.
+
+Heartbeat/FILETIME labels with a day-sized constant do not establish a stale-contact comparison. Temporary-path and MoveFile API references do not identify the source file as the running executable. Privilege names and token setup with deferred file/registry API references describe maintenance capabilities; they do not prove privileged self-deletion. Keep these references with time, paths, movement, privilege tokens, and deferred deletion. Self-deletion predicates must identify the running file or script as the deletion target.
+
+The day-interval timing trait requires a parsed C/C++ relational expression involving a heartbeat/check-in/FILETIME field and the FILETIME day-sized constant. An isolated `864000000000` numeric literal is not a timing capability and has no standalone trait.

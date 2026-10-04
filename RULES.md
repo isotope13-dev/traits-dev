@@ -207,6 +207,13 @@ traits:
 | `dex`, `dalvik` | `dex` | Dalvik/ART executable bytecode |
 
 **Platforms:** `linux`, `macos`, `windows`, `unix`, `android`, `ios`, `all`.
+Every rule must declare platforms directly or through file defaults.
+`platforms: [all]` requires a directory in the validator's allowlist and
+evidence whose meaning is independent of the target OS; see
+[platform scope contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
+Do not combine `all` with other platforms. The `unix` umbrella includes z/OS;
+use concrete OS names when an API, package ecosystem or hardware capability
+does not apply throughout that umbrella.
 
 **Architectures:** `x86`, `x86-64`, `aarch64`, `arm`, `riscv`, `mips`, `powerpc`, `powerpc64`, `sparc`, `m68k`, `superh`, `all`. Omitting `arch` is equivalent to `arch: [all]`. Architecture is derived from the analyzed file, never the runtime host. For fat/universal Mach-O binaries, `arch` also clamps pattern searches (hex, raw, encoded) to the byte range of the matching slice, preventing cross-slice false positives.
 
@@ -1528,9 +1535,9 @@ with its decoded named-bit subtree in values (e.g. `pe.dll_characteristics.*`,
 `make validate` allows at most **100 atomic traits and composite rules combined**
 per directory, summed across its YAML files, at every criticality. Exactly 100
 passes; 101 fails. There is no separate atomic cap or directory exemption.
-Depth above five directory levels below the tier produces a non-blocking review
-warning, not a hard limit; count neither the tier nor the filename. Sparse
-sibling groups below 35 combined rules also prompt review under the criteria in
+Depth above five directory levels below the tier produces a soft validation
+warning, not a hard limit; count neither the tier nor the filename. Sibling
+groups below 35 combined rules also produce soft warnings under the criteria in
 [Directory budgets and placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts)
 alongside the required sibling audit and the separate ML feature visibility limit.
 
@@ -1557,11 +1564,11 @@ when you need those rules to actually fire.
 
 ### Metadata section review
 
-Binary-only metadata matchers without section filters receive a non-blocking
-review advisory. Add a section constraint when location is part of the claim;
-whole-file vocabulary need not be restricted to an arbitrary section. This does
-not relax the separate section requirements for well-known binary fingerprints
-or binary hex conditions.
+Binary-only metadata matchers without section filters receive a soft validation
+warning. Add a section constraint when location is part of the claim; whole-file
+vocabulary need not be restricted to an arbitrary section. This does not relax
+the separate section requirements for well-known binary fingerprints or binary
+hex conditions.
 
 ### Regex Constraints
 

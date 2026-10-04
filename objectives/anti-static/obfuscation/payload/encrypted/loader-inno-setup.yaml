@@ -1,0 +1,83 @@
+defaults:
+  platforms: [windows]
+  for: [pe]
+  attack: T1027.009
+  mbc: B0032
+
+composite_rules:
+  - id: tampered-inno-loader-opaque-stage
+    desc: Tampered Inno loader carries an unsigned opaque overlay stage
+    crit: hostile
+    conf: 0.99
+    attack: T1027.009,T1036
+    all:
+      - id: metadata/binary/installer/family::inno-delphi-installer-foundation
+      - id: metadata/binary/installer/script::inno-unrecognized-loader-magic
+      - id: metadata/binary/layout/overlay::large-high-entropy-overlay
+      - id: metadata/signed/trust-level::unsigned-missing-signature-record
+
+  - id: zero-width-encrypted-inno-overlay-payload
+    desc: Zero-width-marked encrypted Inno overlay payload
+    crit: hostile
+    conf: 0.99
+    attack: T1027,T1027.009
+    all:
+      - id: objectives/anti-static/obfuscation/anti-decompile::zero-width-managed-pe-marker-206d
+      - id: objectives/anti-static/obfuscation/anti-decompile::zero-width-managed-pe-marker-206f
+      - id: metadata/binary/installer/family::inno-delphi-installer-foundation
+      - id: metadata/binary/layout/overlay::high-entropy-overlay
+      - id: metadata/binary/layout/ratio::overlay-over-90pct
+      - id: micro-behaviors/crypto/kdf/algorithm::pbkdf2
+      - id: micro-behaviors/crypto/symmetric/stream/chacha::chacha20-keyword
+
+  # REMOVED: malformed-unsigned-inno-crypto-stage. Inno Setup 6.3+ links its
+  # PBKDF2/ChaCha20 installer-encryption code into every SetupLdr whether or
+  # not the script enables encryption, and the Inno compiler emits an unsigned
+  # PE with a zeroed checksum by default. The composite therefore convicted
+  # every unsigned Inno 6.3+ installer as hostile without a single leg that
+  # observes malicious behaviour. Encrypted-overlay abuse remains covered by
+  # encrypted-inno-overlay-payload and encrypted-inno-privileged-reboot-loader,
+  # which require an opaque nested overlay plus privileged reboot staging.
+
+  - id: encrypted-inno-overlay-payload
+    desc: Unsigned Inno installer with opaque nested overlay payload
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: objectives/command-and-control/dropper/staging/native/loader::inno-550-data-in-overlay
+      - id: metadata/binary/layout/overlay::overlay-dominates-third
+      - id: metadata/binary/layout/overlay::large-overlay-1mb
+      - id: metadata/binary/layout/overlay::high-entropy-overlay
+    unless:
+      - id: metadata/signed/platform/
+      - id: metadata/signed/certificate/identity::open-source-developer-leaf-subject
+      - id: well-known/tool/reverse-engineering/cff-explorer/
+
+  - id: encrypted-inno-privileged-reboot-loader
+    desc: Encrypted Inno privileged reboot loader
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: encrypted-inno-overlay-payload
+      - id: objectives/impact/system/shutdown::shutdown-privilege-reboot-api
+      - id: micro-behaviors/process/create/spawn::create-process-a
+  # Inno/Delphi SetupLdr skins that append a blank-named high-entropy CODE
+  # section (not an overlay) as an opaque payload — common Sonbokli/Babar
+  # carriers that steal legit VERSIONINFO (e.g. Light Alloy) to dodge
+  # well-known/app/ suppressors keyed on product metadata alone.
+  - id: inno-blank-exec-opaque-payload
+    desc: Inno stub hides blank-named high-entropy exec payload
+    crit: hostile
+    conf: 0.98
+    attack: T1027.009,T1036.005
+    all:
+      - id: metadata/binary/installer/family::inno-delphi-installer-foundation
+      - id: metadata/binary/section/label::blank-named-high-entropy-exec-section
+      - id: metadata/signed/trust-level::unsigned-missing-signature-record
+      - id: metadata/binary/layout/checksum::pe-checksum-zeroed
+    unless:
+      - id: metadata/signed/platform/
+    # Do not unless light-alloy-inno-installer-context: stolen VERSIONINFO
+    # carriers still match that exception, but the blank exec-section leg
+    # already excludes real Light Alloy installs.
+

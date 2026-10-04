@@ -1,0 +1,94 @@
+# Measurements and reference profiles do not establish payload encryption.
+defaults:
+  platforms: [linux, macos, windows]
+  for: [binaries]
+traits:
+  - id: string-concealment
+    desc: Very few visible strings (<10)
+    crit: notable
+    conf: 0.7
+    size_min: 51200
+    if:
+      type: metrics
+      field: binary.string_count
+      max: 10
+    not:
+    - regex: '\.(node|pak)$'
+    - regex: '\.(dat|map)$'
+    - regex: '^(snapshot_blob|v8_context_snapshot)\.bin$'
+    unless:
+    # A truncated PE may contain only headers and a small section prefix.  Its
+    # sparse strings do not establish an encrypted payload in the absent bytes.
+    - id: metadata/binary/section/ratio::pe-section-overflow-present
+    # Wine's `apisetschema.dll` is a schema table with no code and no strings.
+    - id: well-known/lib/platform/wine::wine-builtin-dll-marker
+    - type: basename
+      regex: '\.(node|pak|map|asar)$'
+    - type: basename
+      regex: '(\.deb|\.gz|snapshot_blob\.bin|v8_context_snapshot\.bin)$'
+    - id: metadata/binary/layout/size::small-elf-binary
+    - type: basename
+      regex: '^[^/]+%[^/]+\.so(\.\d+)*$'
+    # Extracted embedded sub-objects (eBPF bytecode, packer payloads) are
+    # intrinsically string-sparse, not concealed standalone payloads. The synthetic
+    # sub-object path carries the `!!embedded` marker. (Replaced the niche
+    # icv_iconv symbol soft-FP, which the broader embedded gate subsumes in practice.)
+    - type: path
+      regex: '!!embedded'
+    - id: metadata/package/testing/presence/harness::binary-test-directory
+    - id: well-known/tool/reverse-engineering/arwen::source-tree-path
+
+
+  - id: no-strings-dup
+    desc: No visible strings in binary
+    crit: notable
+    conf: 0.8
+    size_min: 65536
+    if:
+      type: metrics
+      field: binary.string_count
+      max: 0
+    not:
+    - regex: '^snapshot_blob\.bin$'
+    - regex: '^v8_context_snapshot\.bin$'
+    unless:
+    - type: basename
+      regex: '\.(node|pak|dat|map)$'
+    - type: basename
+      regex: '\.(asar|svg|ttf|woff2?)$'
+    - type: basename
+      regex: '(\.deb|\.gz|snapshot_blob\.bin|v8_context_snapshot\.bin)$'
+    - type: metrics
+      field: imports.count
+      min: 80
+    - type: metrics
+      field: functions.count
+      min: 30
+composite_rules:
+  - id: string-scarcity-rich-binary
+    desc: String-scarcity rich binary marker
+    crit: component
+    conf: 0.9
+    any:
+    - id: metadata/binary/symbols/count::many-imports
+    - id: metadata/binary/code/complexity::many-functions
+
+  - id: string-scarcity-soft-noise
+    desc: Sparse-string binary shape context
+    crit: component
+    conf: 0.8
+    any:
+    - id: metadata/binary/section/ratio::few-sections
+    - id: metadata/binary/code/complexity::zero-function-count
+    # Embedded eBPF/relocatable object files (libbpf skeletons, .o) are
+    # intrinsically string-sparse bytecode, not concealed payloads.
+    - id: metadata/binary/header/identity::elf-relocatable-object
+
+  - id: no-strings-soft-noise
+    desc: Recognized string-free binary context
+    crit: component
+    conf: 0.85
+    any:
+    - id: metadata/signed/platform::apple
+    - id: metadata/binary/section/label::upx-section
+    - id: micro-behaviors/data/encode/pecompact::pecompact-signature
