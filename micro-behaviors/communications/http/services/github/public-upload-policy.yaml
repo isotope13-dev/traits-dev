@@ -1,0 +1,127 @@
+# PixelLeak's linked gitshot source rejects private and organization-owned
+# destinations. Match the API result bound to the rejecting branch, not its
+# English error messages, account names, repository names, or release tags.
+defaults:
+  for: [javascript, typescript]
+  platforms: [unix, windows]
+  crit: notable
+  conf: 0.95
+
+traits:
+  - id: github-public-repo-cli-create
+    desc: GitHub CLI command creates a public repository
+    for: [scripts, source]
+    if:
+      type: string_literal
+      regex: '\bgh\s+repo\s+create\s+[^\n]{1,160}\s--public\b'
+
+  - id: github-reject-nonpublic-destination
+    desc: Rejects nonpublic GitHub repository visibility
+    if:
+      type: tree-sitter
+      language: javascript
+      query: |
+        (statement_block
+          (lexical_declaration
+            (variable_declarator
+              name: (identifier) @bound
+              value: (call_expression
+                arguments: (arguments [(string) (template_string)] @cmd))))
+          . (if_statement
+              condition: (parenthesized_expression
+                (binary_expression
+                  left: (identifier) @tested
+                  operator: ["!=" "!=="]
+                  right: (string (string_fragment) @visibility)))
+              consequence: (statement_block (throw_statement)))
+          (#eq? @bound @tested)
+          (#eq? @visibility "PUBLIC")
+          (#match? @cmd "gh repo view .*--json visibility.*\\.visibility"))
+
+  - id: github-reject-nonpersonal-owner
+    desc: Rejects GitHub owners with non-User type
+    if:
+      type: tree-sitter
+      language: javascript
+      query: |
+        (statement_block
+          (lexical_declaration
+            (variable_declarator
+              name: (identifier) @bound
+              value: (call_expression
+                arguments: (arguments [(string) (template_string)] @cmd))))
+          . (if_statement
+              condition: (parenthesized_expression
+                (binary_expression
+                  left: (identifier) @tested
+                  operator: ["!=" "!=="]
+                  right: (string (string_fragment) @owner_type)))
+              consequence: (statement_block (throw_statement)))
+          (#eq? @bound @tested)
+          (#eq? @owner_type "User")
+          (#match? @cmd "gh api users/.*(-q|--jq) \\.type"))
+
+  - id: python-github-reject-nonpublic-destination
+    desc: Rejects nonpublic GitHub repository visibility
+    for: [python]
+    if:
+      type: tree-sitter
+      language: python
+      query: |
+        (block
+          (expression_statement
+            (assignment
+              left: (identifier) @bound
+              right: (call arguments: (argument_list (string) @cmd))))
+          . (if_statement
+              condition: (comparison_operator
+                (identifier) @tested "!=" (string) @visibility)
+              consequence: (block (raise_statement)))
+          (#eq? @bound @tested)
+          (#match? @visibility "^['\"]PUBLIC['\"]$")
+          (#match? @cmd "gh repo view .*--json visibility.*\\.visibility"))
+
+  - id: python-github-reject-nonpersonal-owner
+    desc: Rejects GitHub owners with non-User type
+    for: [python]
+    if:
+      type: tree-sitter
+      language: python
+      query: |
+        (block
+          (expression_statement
+            (assignment
+              left: (identifier) @bound
+              right: (call arguments: (argument_list (string) @cmd))))
+          . (if_statement
+              condition: (comparison_operator
+                (identifier) @tested "!=" (string) @owner_type)
+              consequence: (block (raise_statement)))
+          (#eq? @bound @tested)
+          (#match? @owner_type "^['\"]User['\"]$")
+          (#match? @cmd "gh api users/.*(-q|--jq) \\.type"))
+
+composite_rules:
+  - id: github-public-only-release-uploader
+    desc: Release uploader creates public repositories and rejects private destinations
+    crit: suspicious
+    conf: 0.95
+    for: [javascript, typescript, python]
+    all:
+      - id: github-public-repo-cli-create
+      - id: micro-behaviors/communications/http/upload::github-cli-release-upload
+    any:
+      - id: github-reject-nonpublic-destination
+      - id: python-github-reject-nonpublic-destination
+
+  - id: github-personal-only-public-release-uploader
+    desc: Public release uploader rejects organization-owned destinations
+    crit: suspicious
+    conf: 0.95
+    for: [javascript, typescript, python]
+    all:
+      - id: github-public-repo-cli-create
+      - id: micro-behaviors/communications/http/upload::github-cli-release-upload
+    any:
+      - id: github-reject-nonpersonal-owner
+      - id: python-github-reject-nonpersonal-owner
