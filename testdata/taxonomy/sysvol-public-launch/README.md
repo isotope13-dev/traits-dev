@@ -7,3 +7,5 @@ Inspired by https://www.security.com/threat-intelligence/warlock-ransomware-crit
 `copy-only.cmd` must not match that composite: there is no executable launch. `prose.cmd` must not match either that composite or `objectives/command-and-control/dropper/staging/public-folder::public-folder-staging-pattern`.
 
 Checked with atomscan JSON output. Fixtures are analyzed as data and must never be executed.
+
+`privileged-tunnel.cmd` combines administrator-group addition, SYSVOL delivery, Public-profile execution and IDE tunnel service registration. It must match `objectives/command-and-control/channel/tunnel/relay::privileged-sysvol-execution-and-tunnel-service`.
