@@ -4174,3 +4174,11 @@ Registry key paths, credential value names, and temporary hive output paths are 
 Heartbeat/FILETIME labels with a day-sized constant do not establish a stale-contact comparison. Temporary-path and MoveFile API references do not identify the source file as the running executable. Privilege names and token setup with deferred file/registry API references describe maintenance capabilities; they do not prove privileged self-deletion. Keep these references with time, paths, movement, privilege tokens, and deferred deletion. Self-deletion predicates must identify the running file or script as the deletion target.
 
 The day-interval timing trait requires a parsed C/C++ relational expression involving a heartbeat/check-in/FILETIME field and the FILETIME day-sized constant. An isolated `864000000000` numeric literal is not a timing capability and has no standalone trait.
+
+Byte extraction from a byte container belongs in `micro-behaviors/data/buffer/read`
+(for example, VBScript `AscB(MidB(buffer, offset, 1))`). The buffer siblings
+remain operation partitions: `alloc` creates storage, `carve` extracts embedded
+regions, `chunk` handles chunks, `index` addresses elements, `integer-codec`
+converts integer representations, `record` handles records, and `transfer` moves
+buffer contents. `read` extracts bytes without claiming a codec or transfer;
+an unbound indexed access remains `data/property/access`.
