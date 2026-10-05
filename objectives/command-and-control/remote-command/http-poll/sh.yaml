@@ -11,6 +11,42 @@ defaults:
   attack: T1071.001,T1059.004
   mbc: B0030
 
+traits:
+  # Bind both sides of the round trip inside one loop body. Whole-file curl,
+  # eval and POST co-occurrence incorrectly convicted build helper libraries.
+  - id: shell-curl-eval-result-roundtrip
+    desc: Evaluates HTTP tasks and uploads shell results
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: tree-sitter
+      language: shell
+      query: |
+        ((do_group
+          (variable_assignment name: (variable_name) @task
+            value: (command_substitution
+              (command name: (command_name (word) @fetch)
+                argument: (word) @url)))
+          (variable_assignment name: (variable_name) @result
+            value: (command_substitution
+              [
+                (command name: (command_name (word) @eval)
+                  argument: (string (simple_expansion (variable_name) @executed)))
+                (redirected_statement body:
+                  (command name: (command_name (word) @eval)
+                    argument: (string (simple_expansion (variable_name) @executed))))
+              ]))
+          (command name: (command_name (word) @upload)
+            argument: (word) @dataflag
+            . argument: (string (simple_expansion (variable_name) @sent)))) @roundtrip
+        (#eq? @fetch "curl")
+        (#match? @url "^https?://")
+        (#eq? @eval "eval")
+        (#eq? @task @executed)
+        (#eq? @upload "curl")
+        (#match? @dataflag "^(-d|--data(-raw|-binary)?)$")
+        (#eq? @result @sent))
+
 composite_rules:
   - id: shell-http-poll-command-shell
     desc: HTTP-polled shell task agent
@@ -21,7 +57,7 @@ composite_rules:
       # Fetch a command over HTTP.
       - id: micro-behaviors/communications/http/download/cli::curl-command-call
       # Evaluate the fetched value as a shell command.
-      - id: micro-behaviors/process/interpreter/eval/direct::shell-eval-variable
+      - id: shell-curl-eval-result-roundtrip
       # Send the command output back over HTTP.
       - id: micro-behaviors/communications/http/curl::curl-post-flag
     any:
