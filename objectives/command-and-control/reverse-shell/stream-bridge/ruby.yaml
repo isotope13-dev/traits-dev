@@ -4,18 +4,40 @@ defaults:
   attack: T1059
 composite_rules:
   - id: ruby-socket-shell-stream-relay
-    desc: Ruby socket and shell stream relay
-    crit: suspicious
+    desc: Ruby TCP socket bridges both shell streams
+    crit: hostile
     conf: 0.95
     near_bytes: 4096
     all:
       - id: micro-behaviors/communications/socket/connect::ruby-socket-connect
-      - id: micro-behaviors/process/create/shell/lang::ruby-shell-duplex-pipe
-      - id: micro-behaviors/fs/write/file/copy::ruby-stream-copy-pair
+      - id: micro-behaviors/process/create/shell/interpreter::ruby-shell-duplex-pipe
+      - id: ruby-socket-shell-duplex-transfer
   - id: ruby-retrying-socket-shell-relay
     desc: Ruby shell relay with reconnect delay
-    crit: suspicious
+    crit: hostile
     conf: 0.96
     all:
       - id: ruby-socket-shell-stream-relay
-      - id: objectives/command-and-control/beacon/network/periodic::ruby-reconnecting-loop
+      - id: micro-behaviors/communications/socket/connect::ruby-reconnecting-loop
+
+traits:
+  - id: ruby-socket-shell-duplex-transfer
+    desc: Ruby socket relays both shell streams
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: tree-sitter
+      query: |
+        ((_ (assignment left: (identifier) @socket right: (call receiver: (constant) @tcp method: (identifier) @connect)) .
+            (assignment left: (identifier) @child right: (call receiver: (constant) @io method: (identifier) @popen arguments: (argument_list [(array . (string (string_content) @shell) .) (string (string_content) @shell)] (string (string_content) @mode)))) .
+            (assignment right: (call receiver: (constant) @thread method: (identifier) @start block: (block body: (block_body (call receiver: (constant) @io1 method: (identifier) @copy1 arguments: (argument_list . (identifier) @input . (identifier) @stdin .)))))) .
+            (assignment right: (call receiver: (constant) @thread2 method: (identifier) @start2 block: (block body: (block_body (call receiver: (constant) @io2 method: (identifier) @copy2 arguments: (argument_list . (identifier) @stdout . (identifier) @output .))))))) @relay
+         (#eq? @thread "Thread") (#eq? @start "new")
+         (#eq? @thread2 "Thread") (#eq? @start2 "new")
+         (#eq? @tcp "TCPSocket") (#match? @connect "^(new|open)$")
+         (#eq? @io "IO") (#eq? @popen "popen")
+         (#match? @shell "^(/(usr/)?bin/)?(ba|z|k|da)?sh$") (#eq? @mode "r+")
+         (#eq? @io1 "IO") (#eq? @io2 "IO")
+         (#eq? @copy1 "copy_stream") (#eq? @copy2 "copy_stream")
+         (#eq? @socket @input) (#eq? @socket @output)
+         (#eq? @child @stdin) (#eq? @child @stdout))
