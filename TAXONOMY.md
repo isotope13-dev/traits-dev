@@ -848,6 +848,8 @@ OS and language names are not alternative operation leaves.
 | Competing directories | Deciding evidence and canonical home |
 |---|---|
 | `data/encode` vs `decode` vs `metadata/file/encoded` | Required direction of transformation chooses encode/decode; encoded material merely present is metadata. A library import supporting both directions is one capability observation, not two claims that both operations ran. |
+| `data/codec` vs `compress` or `decompress` | Use `codec/<scheme>` when the evidence identifies an implementation/interface or joint bidirectional support but establishes no one direction. Put decoder-specific and encoder-specific observations in their directional operation leaves. Codec presence does not mean a conversion ran. |
+| `data/compression` | Holds compression-family composites spanning codec schemes or the `compress` and `decompress` directions. Directional behavior stays in those operation leaves; direction-neutral, scheme-specific interfaces stay in `data/codec/<scheme>`. |
 | `data/{encode,decode}/<algorithm>` vs origin/spelling variants | Base64 remains `base64` whether the input is an HTTP body, environment value, native call or reflected method. Repeated decoding is a real refinement; `symbol-base64` and `request-base64` are not different algorithms. |
 | Decoder matcher backends and API variants | Symbol/call facts, source text and compiled method names for the same decoder share its algorithm leaf. `decode/symbol-base64` is retired; preserve an old subtree consumer as named alternatives, not a reference to the broader destination. Equivalent API spellings can share a matcher when their scope and meaning agree. Review consumers that intentionally selected one variant before broadening them. A generic method name such as `DecodeString` does not identify Base64 without its package or receiver context. |
 | Codec operations vs imports, alphabets and output | A decoder/encoder operation or direction-specific API reference belongs with that direction. Importing a module that provides both directions belongs in `metadata/import/package`; an alphabet constant belongs in `metadata/file/string/charset`. A generic file-write method belongs with file writes, even when its caller previously decoded data. Consumers may combine these observations, but an import, alphabet or write alone must not satisfy a decoding aggregate. |
@@ -2660,6 +2662,11 @@ micro-behaviors/
 │   ├── arithmetic/        #   Numeric and bitwise operations, independent of representation
 │   ├── encode/            #   Encoding (base64, hex, URL, XOR, rot13, custom)  C0026
 │   ├── decode/            #   Decoding (base64, hex, buffer)                   C0053
+│   ├── codec/             #   Direction-neutral codec implementation/interfaces
+│   │   ├── gzip/          #   Gzip codec APIs without a direction-specific claim
+│   │   ├── lzma/          #   LZMA/XZ codec evidence; no single direction asserted
+│   │   └── zlib/          #   Joint deflate/inflate support for the zlib codec
+│   ├── compression/       #   Family-level composites across codec schemes and directions
 │   ├── compress/          #   Compression (zip, gzip, zlib)                    C0024
 │   │   ├── aplib/         #   aPLib compression
 │   │   ├── brotli/         #   Brotli compression
@@ -2802,6 +2809,7 @@ micro-behaviors/
 │   ├── advise/            #   Memory advisory (madvise, posix_madvise)
 │   ├── alloc/             #   Memory allocation (malloc, VirtualAlloc, PAGE_EXECUTE_*)
 │   ├── anonymous/         #   Anonymous memory (memfd_create, /dev/shm)
+│   ├── combined/          #   Cross-operation memory-management composites
 │   ├── c-runtime/         #   C runtime memory functions (memcpy, memset)
 │   ├── create/            #   Memory-backed file creation
 │   ├── decompress/        #   Legacy: decompression remains data/decompress/ in memory too

@@ -1000,21 +1000,31 @@ The redundant-reference validator requires full coverage rather than a percentag
 An `all:` list is a conjunction; a directory reference matches any descendant.
 Do not replace the former with the latter or demand a taxonomy split on count alone.
 
-**Grouped alternatives:** an engine with `trait_set` support can preserve one
-reference condition when its members move into different directories:
+**Grouped alternatives:** when several references form one alternative, give that
+group a named composite with `any:` and reference the composite as one condition.
+This preserves its cardinality in an enclosing `needs:` clause:
 
 ```yaml
-all:
-  - type: trait_set
-    ids: [micro-behaviors/mem/free::heap-free, micro-behaviors/mem/resize::heap-realloc]
-  - id: another-required-observation
+composite_rules:
+  - id: allocation-api-alternative
+    desc: Allocation API alternative
+    crit: component
+    conf: 1.0
+    any:
+      - id: micro-behaviors/mem/free::heap-free
+      - id: micro-behaviors/mem/resize::heap-realloc
+  - id: allocation-using-operation
+    desc: Uses an allocation API for this operation
+    crit: notable
+    all:
+      - id: allocation-api-alternative
+      - id: another-required-observation
 ```
 
-The set requires any eligible member. It emits no intermediate finding. Like a
-directory reference, it contributes distinct matched members to `needs`; overlapping
-selectors within the set count once. Each selector follows ordinary local/exact/
-directory lookup and exception filtering. Keep `all:` and `any:` boundaries intact
-when rewriting references, and prove the selected set before using this for a move.
+The group is an ordinary composite finding, so name it for the evidence it
+represents and account for that finding in output and scoring reviews. Keep
+`all:`/`any:` boundaries intact and verify selected members, scope, and overlap
+when references move.
 
 **Absence detection:** Composite rules take `all:`, `any:`, `needs:`, `unless:` and `downgrade:`. There is no composite-level `none:` field — a composite carrying one fails to parse and is dropped at load time (the analyze path skips unparseable rule files with a warning; `cleave validate` reports it). Express absence with `unless:`, which skips the rule when the listed condition matches:
 

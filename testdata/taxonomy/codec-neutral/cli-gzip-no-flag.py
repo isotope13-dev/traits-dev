@@ -1,0 +1,1 @@
+command = "gzip sample.gz"

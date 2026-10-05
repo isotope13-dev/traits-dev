@@ -26,6 +26,11 @@ validate:
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/memory-lifecycle/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/memory-catalog/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/windows-heap/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/decompression/cases.json --before
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/compression-boundaries/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/codec-directions/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/codec-neutral/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/codec-zlib/cases.json
 
 # Compile the third-party + built-in YARA rules into portable per-filetype
 # `.yrc` files (plus a manifest) under third-party/compiled/. These are BUILD
