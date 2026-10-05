@@ -4,8 +4,11 @@ defaults:
   attack: T1552.004
 
 traits:
-  - id: kotlin-ssh-private-key-paths
-    desc: Kotlin reads SSH private key paths
+  # Named for the matcher: SSH key *filename strings* in a JVM artifact. The
+  # old "Kotlin reads ... paths" name claimed both a language (these fire on
+  # Java classes too) and a read behavior (a bare constant is not a read).
+  - id: jvm-ssh-private-key-strings
+    desc: SSH private-key filename strings
     crit: suspicious
     conf: 0.92
     if:
@@ -16,6 +19,10 @@ traits:
       # of that table. Those are OID names, not a path anyone reads a key from.
       regex: 'id_(rsa|ecdsa|ed25519|dsa)($|[^0-9A-Za-z_])'
     unless:
+      # A class with no method references contains no executable code, so its
+      # key-filename constants cannot be read by anything in it. Scoped to
+      # class files; source findings are unaffected by the out-of-scope leg.
+      - id: metadata/file/function::jvm-class-no-code
       # Implementers, not callers: the SSH and crypto libraries whose job is
       # to know these filenames. `well-known/lib/network/jsch/` was already
       # excluded on both composites below but never on this leaf, which is
@@ -45,48 +52,32 @@ traits:
       - type: basename
         regex: '(?i)\.(md|mdx|markdown|mkd)$'
 
-  - id: kotlin-ssh-known-auth-files
-    desc: Kotlin reads SSH known and auth files
+  - id: jvm-ssh-known-hosts-string
+    desc: SSH known_hosts filename string
     crit: notable
     conf: 0.92
     if:
       type: text
       substr: known_hosts
 
-  - id: kotlin-known-hosts-bytecode
-    desc: Kotlin bytecode SSH known hosts path
-    crit: notable
-    conf: 0.92
-    for: [class]
-    if:
-      type: hex
-      pattern: 6B 6E 6F 77 6E 5F 68 6F 73 74 73
-
 composite_rules:
-  - id: kotlin-ssh-credential-collection
-    desc: Kotlin collects SSH credential files
+  # Single merged collection rule (was two near-duplicate Kotlin-named
+  # hostiles, one generic and one class-scoped). "Collects" now requires
+  # file-read machinery: bare filename constants in a methodless class husk
+  # are strings, not a theft. The hex known_hosts atom was the same bytes
+  # as the substr above through a different condition type, so it merged
+  # here instead of double-counting one signal.
+  - id: jvm-ssh-credential-collection
+    desc: JVM code collects SSH credential files
     crit: hostile
     conf: 0.98
     all:
-      - id: kotlin-ssh-private-key-paths
+      - id: jvm-ssh-private-key-strings
+      - id: micro-behaviors/fs/read/file/handle::jvm-file-read-machinery
     any:
-      - id: kotlin-ssh-known-auth-files
+      - id: jvm-ssh-known-hosts-string
       - id: micro-behaviors/os/env/ssh::ssh-auth-sock-var
       - id: micro-behaviors/fs/path/public-key::ssh-authorized-keys
-    unless:
-      - id: well-known/lib/network/jsch/
-      - id: well-known/lib/network/sshj/
-
-  - id: kotlin-bytecode-ssh-credential-collection
-    desc: Kotlin bytecode collects SSH key files
-    crit: hostile
-    conf: 0.98
-    for: [class]
-    all:
-      - id: kotlin-ssh-private-key-paths
-    any:
-      - id: kotlin-known-hosts-bytecode
-      - id: micro-behaviors/os/env/ssh::ssh-auth-sock-var
     unless:
       - id: well-known/lib/network/jsch/
       - id: well-known/lib/network/sshj/
