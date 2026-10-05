@@ -2674,7 +2674,6 @@ micro-behaviors/
 │   │   ├── gzip/           #   Gzip compression
 │   │   ├── lz4/            #   LZ4 compression
 │   │   ├── lzma/           #   LZMA/XZ compression
-│   │   ├── combined/       #   Legacy mixed claims; classify required operation/algorithm
 │   │   ├── stream/         #   Algorithm-neutral compression streams
 │   │   ├── zip/            #   ZIP compression
 │   │   ├── zlib/            #   zlib/deflate compression
