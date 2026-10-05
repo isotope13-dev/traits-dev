@@ -71,6 +71,20 @@ traits:
     if:
       type: text
       regex: 'for\s*\(\s*;\s*;\s*\)\s*\{?\s*debugger\s*[;}]'
+  # A clock read on each side of a bare `debugger` statement. With no
+  # inspector attached the statement is a no-op and the two reads are a
+  # millisecond apart; with one attached execution pauses there and the delta
+  # balloons, so the comparison that follows is a "somebody is stepping
+  # through me" test. A debug-build breakpoint is never bracketed by timers.
+  # Keyed on the construct (Date/performance clock, debugger, clock) so it
+  # survives renamed and string-table-obfuscated variables.
+  - id: js-debugger-timing-trap
+    desc: Times a debugger statement to detect DevTools
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: '(new\s+Date\b(\(\))?|\.now\(\))\s*;\s*debugger\s*;[^;{}]{0,80}?(new\s+Date\b|\.now\()'
 composite_rules:
   # The fact other rules want to reference: this file does not merely detect an
   # analyst, it obstructs one. Kept `suspicious` because commercial anti-tamper
@@ -86,6 +100,7 @@ composite_rules:
       - id: js-function-constructor-debugger
       - id: js-debugger-in-while-true-loop
       - id: js-debugger-in-endless-for-loop
+      - id: js-debugger-timing-trap
       - id: js-constructor-debugger-call
       - id: js-constructor-debugger-direct
 
@@ -105,6 +120,35 @@ composite_rules:
     all:
       - id: js-devtools-getter-oracle
       - id: micro-behaviors/communications/rpc::wallet-provider-full-signing-flow
+
+# The same gate built from a timed `debugger` statement, inside a bundle whose
+# strings are hidden behind a custom string-table decoder. Wallet SDKs (viem,
+# wagmi, WalletConnect) ship readable; none of them pause on a breakpoint to
+# check whether an analyst is watching. Concealed strings plus a
+# debugger-timing trap around a wallet-signing flow is the injected drainer,
+# not the library it was spliced into.
+#
+# Worked example: the trojanized lottie-player 2.0.5-2.0.7 bundle, whose
+# JS-Confuser-concealed drainer times `debugger` before prompting for a wallet.
+  - id: debugger-timing-gated-wallet-drainer
+    for: [javascript]
+    desc: Concealed wallet flow gated on a debugger timing trap
+    crit: hostile
+    conf: 0.94
+    attack: T1622,T1027
+    all:
+      - id: js-debugger-timing-trap
+      - id: objectives/anti-static/obfuscation/obfuscator/index-shift::custom-string-table-obfuscator
+    # The transaction-submit leg of rpc::wallet-provider-send-method, named by
+    # atom: the bundle-level rpc composites roll up from decoded layers and are
+    # not visible to sibling composites on the parent file.
+    any:
+      - id: micro-behaviors/communications/rpc::wallet-provider-eth-send-transaction
+      - id: micro-behaviors/communications/rpc::wallet-provider-eth-send-transaction-text
+      - id: micro-behaviors/communications/rpc::wallet-provider-wallet-send-transaction
+      - id: micro-behaviors/communications/rpc::wallet-provider-solana-send-transaction
+      - id: micro-behaviors/communications/rpc::wallet-provider-tron-send-transaction
+      - id: micro-behaviors/communications/rpc::wallet-provider-cosmos-send-transaction
 
 # Detection that does not merely notice an analyst but destroys the page in
 # front of them. A probe answers a question; wiping `document.body` is the
