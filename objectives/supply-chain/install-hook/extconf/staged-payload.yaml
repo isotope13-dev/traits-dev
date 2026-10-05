@@ -1,0 +1,68 @@
+# RubyGems runs extconf.rb at install time. These families decode a Base64
+# reverse-shell stager, then either spawn a detached Ruby child or eval after
+# multi-probe sandbox gates, while still calling create_makefile so the gem
+# looks like a normal native extension.
+defaults:
+  platforms: [unix, windows]
+  for: [ruby]
+  attack: T1195.002,T1059.004,T1140,T1497.001
+  mbc: B0024,B0030
+
+traits:
+  - id: ruby-extconf-opt-rubygems-path-gate
+    desc: extconf skips under /opt/rubygems cwd
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      substr: /opt/rubygems
+
+composite_rules:
+  - id: extconf-base64-spawn-staged-payload
+    desc: extconf decodes Base64 then spawns Ruby on temp script
+    crit: hostile
+    conf: 0.99
+    scope: file
+    all:
+      - id: metadata/build/package/recipe/gemspec::filename-extconf
+      - id: micro-behaviors/data/decode/base64::base64-decode
+      - id: micro-behaviors/process/create/direct::ruby-spawn
+    unless:
+      - id: well-known/lib/runtime/scripted/cruby::source-tree
+      - id: well-known/lib/runtime/scripted/jruby::runtime-context
+      - id: metadata/package/testing/presence/harness::ruby-test-file
+
+  - id: extconf-sandbox-gated-eval-payload
+    desc: extconf evades CI or analysis paths then evals decoded payload
+    crit: hostile
+    conf: 0.99
+    scope: file
+    all:
+      - id: metadata/build/package/recipe/gemspec::filename-extconf
+      - id: micro-behaviors/data/decode/base64::base64-decode
+      - id: micro-behaviors/process/interpreter/eval/direct::ruby-eval
+    any:
+      - id: micro-behaviors/os/env/cicd::ruby-multi-ci-env-probe
+      - id: ruby-extconf-opt-rubygems-path-gate
+    needs: 1
+    unless:
+      - id: well-known/lib/runtime/scripted/cruby::source-tree
+      - id: metadata/package/testing/presence/harness::ruby-test-file
+
+  - id: extconf-decoy-native-build-with-staged-payload
+    desc: extconf runs staged payload behind fake mkmf native build
+    crit: hostile
+    conf: 0.995
+    scope: file
+    all:
+      - id: metadata/build/package/recipe/gemspec::filename-extconf
+      - id: micro-behaviors/data/decode/base64::base64-decode
+      - id: metadata/build/package/recipe/gemspec::extconf-native-build-helper
+    any:
+      - id: micro-behaviors/process/create/direct::ruby-spawn
+      - id: micro-behaviors/process/interpreter/eval/direct::ruby-eval
+      - id: micro-behaviors/process/fork/clone::ruby-fork
+    needs: 1
+    unless:
+      - id: well-known/lib/runtime/scripted/cruby::source-tree
+      - id: metadata/package/testing/presence/harness::ruby-test-file
