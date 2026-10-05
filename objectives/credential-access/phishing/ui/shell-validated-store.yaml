@@ -1,0 +1,62 @@
+defaults:
+  for: [shell]
+  platforms: [macos]
+  attack: T1056.002
+traits:
+  - id: shell-validated-dialog-store-flow
+    desc: Validates captured dialog input then stores it
+    crit: suspicious
+    conf: 0.98
+    unless:
+      - type: symbol
+        kind: function
+        exact: osascript
+      - type: symbol
+        kind: function
+        exact: dscl
+      - type: symbol
+        kind: function
+        exact: printf
+    if:
+      type: tree-sitter
+      language: shell
+      query: |
+        (program
+          (while_statement body: (do_group
+            (list (variable_assignment name: (variable_name) @secret
+              value: (command_substitution .
+                (command name: (command_name (word) @osascript)
+                  argument: (word) @execute
+                  . argument: (raw_string) @script .) .)))
+            . (list
+              (command name: (command_name (word) @dscl)
+                . argument: (word) @directory
+                . argument: (word) @auth
+                . argument: (string)
+                . argument: (string . (simple_expansion (variable_name) @verified) .) .)
+              "&&" . (command name: (command_name (word) @break) .))))
+          . (redirected_statement
+            body: (command name: (command_name (word) @printf)
+              . argument: (raw_string) @format
+              . argument: (string . (simple_expansion (variable_name) @stored) .) .)
+            redirect: (file_redirect ">" destination: (string)))
+          (#eq? @osascript "osascript")
+          (#eq? @execute "-e")
+          (#match? @script "text returned of.*display dialog.*with hidden answer")
+          (#eq? @dscl "dscl")
+          (#eq? @directory ".")
+          (#match? @auth "^-?authonly$")
+          (#eq? @verified @secret)
+          (#eq? @break "break")
+          (#eq? @printf "printf")
+          (#eq? @format "'%s'")
+          (#eq? @stored @secret))
+
+composite_rules:
+  - id: shell-validated-dialog-input-file
+    desc: Saves a validated masked dialog password
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: shell-validated-dialog-store-flow
+      - id: micro-behaviors/ui/dialog/apple::hidden-answer
