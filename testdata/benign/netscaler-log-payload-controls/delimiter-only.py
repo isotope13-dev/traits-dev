@@ -1,0 +1,1 @@
+record = "NSPPE; diagnostic text"
