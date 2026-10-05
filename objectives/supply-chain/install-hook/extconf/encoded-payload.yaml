@@ -1,0 +1,96 @@
+# Native-extension build hooks that decode and run hidden Ruby payloads.
+defaults:
+  platforms: [unix, windows]
+  for: [ruby]
+  attack: T1195.002,T1059.004
+  mbc: B0024
+
+traits:
+  - id: ruby-decode64-then-eval
+    desc: Ruby eval after Base64.decode64 assign
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: text
+      regex: 'Base64\.decode64\([^)]{0,200}\)[\s\S]{0,200}\beval\s*\('
+
+  - id: ruby-decode64-write-spawn-script
+    desc: Ruby writes decoded Base64 and spawns
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: text
+      regex: 'Base64\.decode64[\s\S]{0,280}File\.write[\s\S]{0,220}\bspawn\s*\('
+
+  - id: ruby-hostname-sandbox-vm-regex
+    desc: Ruby hostname sandbox VM regex
+    crit: notable
+    conf: 0.93
+    if:
+      type: text
+      regex: 'host\s*=~\s*/.{0,40}(firecracker|sandbox|vagrant|fc[_-]?vm)'
+
+  - id: ruby-install-analysis-cwd-regex
+    desc: Ruby scanner working-directory regex
+    crit: notable
+    conf: 0.93
+    if:
+      type: text
+      regex: '%r\{\^/opt/rubygems|%r\{\^/workspace/|%r\{\^/var/tmp'
+
+composite_rules:
+  - id: extconf-base64-eval-install-payload
+    desc: extconf.rb evaluates Base64 install payload
+    crit: hostile
+    conf: 0.98
+    scope: file
+    near_bytes: 2800
+    all:
+      - id: metadata/build/package/recipe/gemspec::filename-extconf
+      - id: micro-behaviors/data/decode/base64::ruby-base64-decode64-call
+      - id: micro-behaviors/process/interpreter/eval/direct::ruby-eval
+    any:
+      - id: micro-behaviors/communications/socket/connect::ruby-socket-connect
+      - id: micro-behaviors/communications/socket/send::ruby-copy-stream-to-socket
+      - id: micro-behaviors/process/create/thread::ruby-thread-new
+
+  - id: extconf-base64-spawn-install-payload
+    desc: extconf.rb spawns decoded Ruby script
+    crit: hostile
+    conf: 0.98
+    scope: file
+    near_bytes: 1200
+    all:
+      - id: metadata/build/package/recipe/gemspec::filename-extconf
+      - id: micro-behaviors/data/decode/base64::ruby-base64-decode64-call
+      - id: micro-behaviors/fs/write/file/full::ruby-file-write-content
+      - id: micro-behaviors/process/create/direct::ruby-spawn
+    any:
+      - id: micro-behaviors/communications/socket/connect::ruby-socket-connect
+      - id: ruby-decode64-write-spawn-script
+
+  - id: gem-extconf-sandbox-gated-reverse-shell
+    desc: Gem extconf gated reverse shell
+    crit: hostile
+    conf: 0.99
+    for: [gem, ruby]
+    scope: archive
+    all:
+      - id: extconf-base64-eval-install-payload
+      - id: micro-behaviors/os/env/cicd::ruby-multi-ci-env-probe
+    any:
+      - id: ruby-hostname-sandbox-vm-regex
+      - id: ruby-install-analysis-cwd-regex
+
+  - id: gem-extconf-encoded-reverse-shell
+    desc: Gem extconf encoded TCP reverse shell
+    crit: hostile
+    conf: 0.98
+    for: [gem, ruby]
+    scope: archive
+    all:
+      - id: metadata/build/package/recipe/gemspec::filename-extconf
+      - id: micro-behaviors/data/decode/base64::ruby-base64-decode64-call
+    any:
+      - id: extconf-base64-eval-install-payload
+      - id: extconf-base64-spawn-install-payload
