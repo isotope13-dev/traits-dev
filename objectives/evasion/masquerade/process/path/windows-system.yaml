@@ -1,96 +1,25 @@
-# Windows system-process name dropped into a user-writable path.
-# Windows service/OS processes (svchost, lsass, winlogon, csrss, spoolsv, ...)
-# only ever live under %SystemRoot%\System32. A file carrying one of those
-# names staged under a user profile folder (Documents, Downloads, AppData,
-# Public) or a Temp directory is name-and-location masquerade — the canonical
-# Windows analogue of the Linux service-name-in-/tmp trick in the sibling
-# systemd-service.yaml. Post-exploitation tooling uses it to hide a dropped
-# implant (e.g. a Cloudflare tunnel connector renamed to svchost.exe under the
-# victim's Documents folder) behind a trusted process name. The masquerade is
-# only asserted when a system-process name sits within a few bytes of a
-# user-writable path marker, so neither leg convicts on its own.
-# ATT&CK: T1036.005 (Match Legitimate Name or Location)
 defaults:
   platforms: [windows]
-  for: [scripts]
+  for: [scripts, source]
   attack: T1036.005
   mbc: F0004
-
-traits:
-  # --- user-writable location markers (path fragments) ---
-  - id: path-user-shell-folder
-    desc: User shell-folder path marker
-    crit: component
-    conf: 0.6
-    if:
-      type: text
-      regex: '(?i)[\\/](Documents|Downloads|Desktop)[\\/]'
-
-  # The slash-delimited form above misses the idiomatic PowerShell way of
-  # building the same location — `Join-Path $env:USERPROFILE "Documents"` —
-  # where the folder name is a bare quoted argument with no separators around
-  # it. Paired with the profile env var below so the plain English word alone
-  # never carries this.
-  - id: shell-folder-quoted-arg
-    desc: Quoted user shell-folder name argument
-    crit: component
-    conf: 0.6
-    for: [powershell, batch, csharp]
-    if:
-      type: text
-      regex: '(?i)["''](Documents|Downloads|Desktop)["'']'
-
-
-  # --- Windows system-process executable names ---
-  - id: sysproc-name-service
-    desc: System-process exe name, service set
-    crit: notable
-    conf: 0.7
-    if:
-      type: text
-      regex: '(?i)\b(services|spoolsv|wininit|conhost)\.exe\b'
-
 composite_rules:
-  - id: path-user-shell-folder-cmdlet
-    desc: Shell folder built from profile env var
-    crit: component
-    conf: 0.6
-    for: [batch, powershell]
-    all:
-      - id: shell-folder-quoted-arg
-      - id: micro-behaviors/os/env/user-paths::userprofile-var
-    near_bytes: 60
-
-  - id: sysproc-name-any
-    desc: Windows system-process exe name
-    # A script referencing a protected System32 process by executable name
-    # (svchost.exe, lsass.exe, ...) is a notable identity fact on its own;
-    # paired with a writable path below it becomes masquerade.
-    crit: notable
-    conf: 0.7
-    any:
-      - id: metadata/file/string/process-name::system-process-core-name
-      - id: sysproc-name-service
-
-  - id: writable-path-any
-    desc: User-writable Windows path marker
-    crit: component
-    conf: 0.6
-    any:
-      - id: path-user-shell-folder
-      - id: path-user-shell-folder-cmdlet
-      - id: micro-behaviors/fs/path/app-data::windows-appdata-path-marker
-      - id: micro-behaviors/os/env/user-paths::node-localappdata-access
-      - id: micro-behaviors/fs/temp/reference::windows-public-or-temp-path
-
   - id: windows-system-process-path-masquerade
-    desc: System-process exe in user-writable path
-    crit: hostile
-    conf: 0.96
+    desc: System-process name near writable path
+    crit: suspicious
+    conf: 0.9
     all:
-      - id: sysproc-name-any
-      - id: writable-path-any
+      - id: micro-behaviors/process/info/name::sysproc-name-any
+      - id: micro-behaviors/fs/path/location::writable-path-any
     near_bytes: 256
     unless:
-      - id: metadata/package/testing/presence/harness/
       - id: metadata/file/extension/identity::markdown-file-basename
+
+  - id: downloaded-system-process-temp-launch
+    desc: Downloads and launches a disguised system process
+    crit: hostile
+    conf: 0.97
+    for: [batch]
+    all:
+      - id: windows-system-process-path-masquerade
+      - id: objectives/command-and-control/dropper/file-exec/command/batch::batch-curl-temp-exe-dropper
