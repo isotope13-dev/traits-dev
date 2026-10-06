@@ -138,6 +138,69 @@ traits:
       type: text
       regex: '(?im)^\s*function\s+Get-(ChromeDump|SharpChromium|FoxDump)\b'
 
+  # Thin wrappers around an embedded offensive-tool payload (base64 PE/GZ
+  # decoded and reflectively loaded in memory): Rubeus (Kerberos abuse),
+  # SauronEye (file-content search), Watson (missing-patch scanner),
+  # SharpSecDump (hive credential dump), SharpChiselClient (tunneling), and
+  # WireTap (audio surveillance). The function names are stable Empire module
+  # entry points, so the atom is suspicious on its own and anchors the
+  # staged-wrapper composite below.
+  - id: staged-tool-wrapper-functions-a
+    desc: Empire staged offensive-tool wrapper
+    crit: notable
+    conf: 0.97
+    for: [powershell]
+    platforms: [windows]
+    if:
+      type: text
+      regex: '(?im)^\s*function\s+Invoke-(Rubeus|SauronEye|Watson)\b'
+
+  - id: staged-tool-wrapper-functions-b
+    desc: Empire staged offensive-tool wrapper
+    crit: notable
+    conf: 0.97
+    for: [powershell]
+    platforms: [windows]
+    if:
+      type: text
+      regex: '(?im)^\s*function\s+Invoke-(SharpSecDump|SharpChiselClient|WireTap)\b'
+
+  # Empire firewall-egress prober: systematically opens TCP/UDP connections
+  # across a port range to map what the firewall lets out for C2 planning.
+  - id: empire-egress-probe-function
+    desc: Empire egress firewall probe function
+    crit: suspicious
+    conf: 0.97
+    for: [powershell]
+    platforms: [windows]
+    if:
+      type: text
+      regex: '(?im)^\s*function\s+Invoke-EgressCheck\b'
+
+  # Empire lateral movement over SSH: drives an SSH session to run commands
+  # on a remote host.
+  - id: ssh-lateral-function
+    desc: Empire SSH lateral movement function
+    crit: suspicious
+    conf: 0.97
+    for: [powershell]
+    platforms: [windows]
+    if:
+      type: text
+      regex: '(?im)^\s*function\s+Invoke-SSHCommand\b'
+
+  # Empire network scanner for exploitable web servers ("low hanging
+  # fruit"): threaded probing of a host range with a URI dictionary.
+  - id: find-fruit-function
+    desc: Empire web-server recon scanner function
+    crit: suspicious
+    conf: 0.97
+    for: [powershell]
+    platforms: [windows]
+    if:
+      type: text
+      regex: '(?im)^\s*function\s+Find-Fruit\b'
+
   - id: sysvol-gpp-password-function
     desc: Empire SYSVOL GPP password theft function
     crit: suspicious
@@ -406,6 +469,54 @@ traits:
       # strings without deploying a listener.
       - id: metadata/package/testing/presence/harness::pytest-module
 
+  # Stager generators hand a launcher to the stager-generation service:
+  # generate_launcher / generate_exe_oneliner / generate_agent /
+  # generate_jar. The call only appears where a stager builds its payload,
+  # so the atom is suspicious on its own and anchors the obfuscated-launcher
+  # composite below.
+  - id: empire-stager-generator-api
+    desc: Empire stager launcher-generation call
+    crit: suspicious
+    conf: 0.97
+    for: [python]
+    platforms: [unix, windows]
+    if:
+      type: symbol
+      regex: '(^|\.)generate_(launcher|exe_oneliner|agent|jar)$'
+    unless:
+      - id: metadata/package/testing/presence/harness::pytest-module
+
+  # Stager options that shape the emitted launcher: obfuscating its
+  # PowerShell and prepending AMSI/ETW bypasses.
+  - id: empire-launcher-obfuscation-option
+    desc: Empire launcher obfuscation option
+    crit: notable
+    conf: 0.96
+    for: [python]
+    platforms: [unix, windows]
+    if:
+      type: text
+      regex: '(Obfuscate the launcher|Bypasses as a space separated list)'
+    unless:
+      - id: metadata/package/testing/presence/harness::pytest-module
+
+  # C2 staging packet construction: template-based stagers (c_launcher)
+  # build a routing packet for the STAGE0 shellcode request instead of
+  # calling the launcher-generation service, so the generator-api atom
+  # misses them. Building the staging packet is the same stager behavior
+  # through the other code path.
+  - id: empire-staging-routing-packet
+    desc: Empire staging routing packet construction
+    crit: suspicious
+    conf: 0.96
+    for: [python]
+    platforms: [unix, windows]
+    if:
+      type: symbol
+      regex: '(^|\.)build_routing_packet$'
+    unless:
+      - id: metadata/package/testing/presence/harness::pytest-module
+
   - id: empire-powershell-launcher-helper
     desc: Empire PowerShell launcher builder
     crit: notable
@@ -583,6 +694,7 @@ composite_rules:
       - id: sitelist-password-function
       - id: powerup-service-abuse-functions
       - id: dumpcredstore-function
+      - id: staged-tool-wrapper-functions
 
   - id: empire-powershell-operational-behavior
     desc: Empire module with system action
@@ -1081,3 +1193,143 @@ composite_rules:
     any:
       - id: extra-exploit-module-functions-a
       - id: extra-exploit-module-functions-b
+
+  # Either wrapper-function spelling remains one required family-evidence
+  # group at suspicious: a staged-tool wrapper entry point.
+  - id: staged-tool-wrapper-functions
+    desc: Empire staged offensive-tool wrapper
+    crit: suspicious
+    conf: 0.97
+    for: [powershell]
+    platforms: [windows]
+    any:
+      - id: staged-tool-wrapper-functions-a
+      - id: staged-tool-wrapper-functions-b
+
+  # Staged-tool wrappers decode an embedded PE/GZ payload and reflectively
+  # load its .NET assembly, never touching disk. The wrapper function plus
+  # the in-memory load convicts the staging, not the staged tool itself.
+  - id: empire-staged-tool-wrapper
+    desc: Empire wrapper stages embedded tool in memory
+    crit: hostile
+    conf: 0.98
+    for: [powershell]
+    platforms: [windows]
+    all:
+      - id: staged-tool-wrapper-functions
+    any:
+      - id: micro-behaviors/process/interpreter/reflection/runtime::ps-decode-and-load
+      - id: micro-behaviors/process/interpreter/reflection/resolve::powershell-assembly-load
+    needs: 1
+
+  # Stager generators that offer launcher obfuscation and AMSI/ETW bypass
+  # prepending: role text, plus the launcher-generation call, plus the
+  # obfuscation option. Sibling empire-stager-payload-generator keys on
+  # process/network launcher mechanics instead, so the two cover different
+  # stager facets.
+  - id: empire-obfuscated-launcher-stager
+    desc: Empire stager emits obfuscated launcher
+    crit: hostile
+    conf: 0.97
+    for: [python]
+    platforms: [unix, windows]
+    all:
+      - id: empire-python-c2-role-b
+      - id: empire-stager-generator-api
+      - id: empire-launcher-obfuscation-option
+    unless:
+      - id: metadata/package/testing/presence/harness::pytest-module
+
+  # Egress prober: the Empire function plus a TcpClient connection attempt
+  # in either spelling. Probing which outbound ports answer maps the
+  # firewall for C2 exfil.
+  - id: empire-egress-probe-module
+    desc: Empire module probes firewall egress ports
+    crit: hostile
+    conf: 0.97
+    for: [powershell]
+    platforms: [windows]
+    all:
+      - id: empire-egress-probe-function
+    any:
+      - id: micro-behaviors/communications/socket/connect::powershell-tcpclient-connect
+      - id: micro-behaviors/communications/socket/connect::powershell-tcpclient-newobject-beginconnect
+    needs: 1
+
+  # SSP enumeration: the Empire function plus LSA package-list evidence
+  # gathered through runtime-emitted P/Invoke. Finding installed security
+  # packages feeds SSP persistence (Install-SSP).
+  - id: empire-ssp-enumeration-module
+    desc: Empire module enumerates LSA security packages
+    crit: hostile
+    conf: 0.97
+    for: [powershell]
+    platforms: [windows]
+    all:
+      - id: ssp-enumeration-function
+    any:
+      - id: micro-behaviors/os/registry/keys::lsa-package-list-value-name
+      - id: micro-behaviors/os/api-resolution/dynamic::powershell-runtime-delegate-type-emit
+    needs: 1
+
+  # SSH lateral movement: the Empire function plus SSH client behavior
+  # (session, password or keyboard-interactive auth).
+  - id: empire-ssh-lateral-module
+    desc: Empire module runs commands over SSH laterally
+    crit: hostile
+    conf: 0.97
+    for: [powershell]
+    platforms: [windows]
+    all:
+      - id: ssh-lateral-function
+    any:
+      - id: micro-behaviors/communications/ssh/connect::ssh-client
+      - id: micro-behaviors/communications/ssh/client::password-auth-method
+      - id: micro-behaviors/communications/ssh/client::keyboard-interactive
+    needs: 1
+
+  # PowerShell agent tasking: the agent keeps Empire session state and
+  # evaluates server tasking (IEX of task data) or reflectively loads staged
+  # assemblies. Session state plus dynamic evaluation convicts the agent.
+  - id: empire-powershell-agent-tasking
+    desc: Empire agent evaluates server tasking
+    crit: hostile
+    conf: 0.98
+    for: [powershell]
+    platforms: [windows]
+    all:
+      - id: empire-agent-session-state
+    any:
+      - id: micro-behaviors/process/interpreter/eval/direct::powershell-iex-text
+      - id: micro-behaviors/process/interpreter/reflection/runtime::ps-decode-and-load
+      - id: micro-behaviors/process/interpreter/reflection/runtime::ps-reflective-load
+    needs: 1
+
+  # Threaded HTTP login brute-forcer: the Empire recon function plus disabled
+  # certificate validation for testing logins over TLS.
+  - id: empire-threaded-http-bruteforce
+    desc: Empire threaded HTTP login brute-forcer
+    crit: suspicious
+    conf: 0.96
+    for: [powershell]
+    platforms: [windows]
+    all:
+      - id: empire-recon-http-login
+      - id: objectives/evasion/security-bypass/tls::powershell-cert-validation-callback-accept-all
+
+  # Privilege-escalation audit: the Empire audit function plus Windows
+  # service enumeration with autorun/service registry evidence.
+  - id: empire-privesc-audit-enumeration
+    desc: Empire audit enumerates privesc vectors
+    crit: suspicious
+    conf: 0.96
+    for: [powershell]
+    platforms: [windows]
+    all:
+      - id: offensive-audit-module-functions
+      - id: micro-behaviors/os/service/query::powershell-get-service
+    any:
+      - id: objectives/persistence/login/registry/autostart::currentversion-run-key-path
+      - id: micro-behaviors/os/registry/keys::system-services-registry-path
+      - id: micro-behaviors/os/autorun/scheduled::task-scheduler-com-progid
+    needs: 1
