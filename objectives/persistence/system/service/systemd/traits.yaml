@@ -17,15 +17,6 @@ traits:
     type: text
     substr: /lib/systemd/system/systemd-worker.service
 
-- id: wanted-by-target-kv
-  desc: 'WantedBy=default.target directive'
-  for: [systemd]
-  crit: notable
-  if:
-    type: value
-    path: "install.wanted_by"
-    exact: "default.target"
-
 - id: wanted-by-timer-target
   desc: WantedBy=timers.target directive
   for: [systemd]
@@ -456,14 +447,6 @@ composite_rules:
 # its text/kv variants is the same notable signal, not a suspicious escalation;
 # the actionable suspicion is WantedBy plus a dangerous ExecStart / undocumented
 # unit, which the composites below layer on.
-- id: wanted-by-target
-  desc: Systemd unit declares a WantedBy startup target
-  crit: notable
-  any:
-  - id: micro-behaviors/os/service/unit-field::wanted-by-target-text
-  - id: micro-behaviors/os/service/unit-field::wanted-by-multi-user-text
-  - id: wanted-by-target-kv
-
 - id: systemd-timer-trigger
   desc: Systemd timer persistence trigger
   crit: suspicious
@@ -492,81 +475,6 @@ composite_rules:
   - id: socket-listen-datagram
   - id: wanted-by-socket-target
 
-- id: systemd
-  desc: Configures or controls a systemd unit
-  crit: notable
-  conf: 0.66
-  mbc: B0028
-  needs: 2
-  # Standalone systemd unit files trivially satisfy multiple indicators
-  # (that's their definition). The composite targets scripts/binaries
-  # that deploy systemd persistence, not the unit-file artifacts themselves.
-  # Lowered to notable because legitimate sysadmin scripts (postinst,
-  # ansible plays, distro installers) routinely manage systemd services.
-  for: [shell, python, elf, go, rust, objc]
-  # systemd-keyword (bare word "systemd") is intentionally excluded: it is a
-  # substring of every path indicator (e.g. /etc/systemd/system), so a single
-  # benign path reference would satisfy needs:2 on its own. Persistence requires
-  # an actual action/unit indicator, not a passing mention of the word.
-  any:
-  - id: micro-behaviors/os/service/control::systemctl-word
-  - id: micro-behaviors/os/service/control::systemctl-enable-command
-  - id: systemctl-enable-nonservice-unit
-  - id: micro-behaviors/os/service/unit-field::exec-start
-  - id: micro-behaviors/os/service/restart-policy::restart-always
-  - id: wanted-by-target
-  - id: systemd-timer-trigger
-  - id: systemd-path-trigger
-  - id: systemd-socket-trigger
-  downgrade:
-    any:
-    - id: well-known/dual-use/remote-admin/rustdesk/
-    - id: well-known/app/system/niri::source-tree
-    - id: micro-behaviors/os/service/name::docker-service-unit-name
-  unless:
-  - id: metadata/package/documentation/page::install-doc-basename
-  - id: well-known/lib/native/systemd::systemd-shared-library
-  - id: metadata/file/catalog/service::cloud-init-embedded-systemd-bootstrap-unit
-
-- id: systemd-service-file
-  desc: Embedded systemd persistence directives
-  crit: notable
-  conf: 0.9
-  # Targets scripts/binaries that author/embed a .service file inline;
-  # standalone .service unit files trivially match ExecStart + WantedBy
-  # by definition and should not be flagged as their own persistence.
-  for: [shell, python, elf, go, rust, objc]
-  all:
-  - id: micro-behaviors/os/service/unit-field::exec-start
-  any:
-  - id: micro-behaviors/os/service/restart-policy::restart-always
-  - id: wanted-by-target
-  downgrade:
-    any:
-    - id: well-known/dual-use/remote-admin/rustdesk/
-    - id: micro-behaviors/os/service/unit-field::exec-start-expected-core
-  unless:
-  - id: metadata/file/catalog/service::cloud-init-embedded-systemd-bootstrap-unit
-
-- id: systemd-user-persistence
-  for: [shell, python, rust, c, go, objectivec]
-  desc: Configures a user-level systemd service
-  crit: notable
-  conf: 0.9
-  all:
-  - id: micro-behaviors/os/service/config::systemd-user-service-directory-path
-  any:
-  - id: micro-behaviors/os/service/control::systemctl-word
-  - id: micro-behaviors/os/service/control::systemctl-enable-command
-  - id: systemctl-enable-nonservice-unit
-  - id: micro-behaviors/fs/path/extension::service-unit-filename-literal
-  - id: micro-behaviors/os/service/unit-field::exec-start
-  - id: micro-behaviors/os/service/restart-policy::restart-always
-  - id: wanted-by-target
-  unless:
-  - id: well-known/app/communication/televault::televault-backup-context
-  - id: well-known/app/communication/televault::schedule-module-doc
-
 - id: python-user-service-download-launch
   desc: Python user service downloads and launches
   crit: hostile
@@ -587,7 +495,7 @@ composite_rules:
   for: [python]
   near_lines: 50
   all:
-  - id: systemd-user-persistence
+  - id: micro-behaviors/os/service/config::systemd-user-unit
   - id: micro-behaviors/os/service/configure::loginctl-enable-linger
 
 - id: systemd-user-linger-hidden-respawn
@@ -596,7 +504,7 @@ composite_rules:
   conf: 0.97
   for: [shell, python, go, rust, objc, c, cpp]
   all:
-  - id: systemd-user-persistence
+  - id: micro-behaviors/os/service/config::systemd-user-unit
   - id: micro-behaviors/os/service/configure::loginctl-enable-linger
   - id: exec-start-hidden-executable
   - id: micro-behaviors/os/service/restart-policy::restart-always-text
@@ -615,8 +523,7 @@ composite_rules:
   - id: exec-start-hidden-executable
   any:
   - id: micro-behaviors/os/service/control::systemctl-enable-command
-  - id: wanted-by-target
-
+  - id: micro-behaviors/os/service/unit-field::wanted-by-target
 # Argument-form sibling of hidden-daemon-systemd-persistence: the executable
 # is a stock interpreter, the hidden dotfile is what it executes. Wiring that
 # into autostart (WantedBy/enable) or auto-respawn (Restart=always) is the
@@ -633,7 +540,7 @@ composite_rules:
   - id: exec-start-hidden-argument
   any:
   - id: micro-behaviors/os/service/restart-policy::restart-always
-  - id: wanted-by-target
+  - id: micro-behaviors/os/service/unit-field::wanted-by-target
   - id: micro-behaviors/os/service/control::systemctl-enable-command
   unless:
   - id: metadata/package/tooling::proxmoxve-community-scripts
@@ -647,7 +554,7 @@ composite_rules:
   conf: 0.96
   for: [shell]
   all:
-  - id: systemd-user-persistence
+  - id: micro-behaviors/os/service/config::systemd-user-unit
   - id: micro-behaviors/os/service/restart-policy::restart-always-text
   - id: micro-behaviors/os/service/unit-field::wanted-by-target-text
   - id: micro-behaviors/process/terminate/command::pkill
@@ -887,7 +794,7 @@ composite_rules:
   conf: 0.99
   for: [shell]
   all:
-  - id: systemd-user-persistence
+  - id: micro-behaviors/os/service/config::systemd-user-unit
   - id: micro-behaviors/os/service/config::systemd-http-client-command-text
   - id: objectives/persistence/system/cron/schedule::source-systemd-curl-exec
   - id: micro-behaviors/os/service/unit-field::exec-start-text
