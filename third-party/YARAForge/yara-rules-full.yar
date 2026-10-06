@@ -271163,7 +271163,7 @@ rule SIGNATURE_BASE_CN_Disclosed_20180208_Mal1 : FILE
 		$s2 = "ServUDaemon.exe" fullword ascii
 
 	condition:
-		uint16( 0 ) == 0x5a4d and filesize < 2000KB and ( pe.imphash ( ) == "28e3a58132364197d7cb29ee104004bf" or 1 of ( $x* ) or 3 of them )
+		uint16( 0 ) == 0x5a4d and filesize < 2000KB and ( pe.imphash ( ) == "28e3a58132364197d7cb29ee104004bf" or $x1 or ( $x2 and 3 of ( $a* ) and any of ( $s* ) ) )
 }
 rule SIGNATURE_BASE_CN_Disclosed_20180208_Keylogger_1 : FILE
 {
@@ -353695,7 +353695,7 @@ rule SIGNATURE_BASE_MAL_Mirai_Nov19_1 : FILE
 rule SIGNATURE_BASE_MAL_ARM_LNX_Mirai_Mar13_2022 : FILE
 {
 	meta:
-		description = "Detects new ARM Mirai variant"
+		description = "Mirai attack module and toolchain fingerprints"
 		author = "Mehmet Ali Kerimoglu a.k.a. CYB3RMX"
 		id = "54d8860e-fc45-5571-b68c-66590c67a705"
 		date = "2022-03-16"
