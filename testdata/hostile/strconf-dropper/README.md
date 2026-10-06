@@ -24,5 +24,5 @@ expected in future waves, so no rule depends on this one sample's strings:
 
 Expected convictions:
 
-- Libraries: `dropper/execution/pipe::per-os-remote-script-pipelines` and `spawned-curl-pipe-shell-rce` on every port. Shortener ports also get `dropper/delivery/pipe::shortened-url-shell-pipeline`, and `init()` ports get `supply-chain/trojanized/library/module-init::go-init-remote-script-pipeline`.
+- Libraries: `dropper/execution/pipe::per-os-remote-script-pipelines` on every port. Neutral process/pipeline co-occurrence is reported separately as `micro-behaviors/process/create/shell/pipeline::spawned-curl-shell-pipeline`. Shortener ports also get `dropper/delivery/pipe::shortened-url-shell-pipeline`, and `init()` ports get `supply-chain/trojanized/library/module-init::go-init-remote-script-pipeline`.
 - Stages: `dropper/editor-bootstrap::{bootstrap-var-download-exec,batch-bootstrap-download-exec,node-payload-download-exec}`.
