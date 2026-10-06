@@ -25,6 +25,7 @@ validate:
 # untracked scripts/, so it is kept out of `validate`.
 taxonomy-check:
 	uv run --with pyyaml python scripts/test-taxonomy-move.py
+	python3 scripts/test-taxonomy-corpus-comparison.py
 	python3 scripts/taxonomy_sources.py
 	python3 scripts/check-taxonomy-memory-map.py --cleave "$(CLEAVE)"
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/memory-operations/cases.json
@@ -35,6 +36,7 @@ taxonomy-check:
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/compression-boundaries/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/compression-mode/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/web-codec-streams/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/033-github-recursive-tree-option/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/compression-family/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/python-zlib-import-metadata/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/zlib-software-name-metadata/cases.json
@@ -46,6 +48,28 @@ taxonomy-check:
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/codec-zstd/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/bzip2-boundaries/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/powershell-gzip-staging/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/034-powershell-encoded-command-precision/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/container-privilege/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/036-input-capture-mbc-correction/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/040-shell-input-attack-mapping/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/038-homebrew-transfer-claims/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/039-pastebin-dispatch-claim/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/041-npm-hook-b0024/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/042-email-spam-mapping/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/043-paste-eval-precision/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/044-driver-mapping-corrections/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/045-registry-config-mappings/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/046-conditional-execution-mappings/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/047-network-port-home/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/048-domain-home/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/049-limit-home/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/050-selector-precision/port-consumers/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/050-selector-precision/empire-http-consumers/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/052-per-page-option-disposition/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/053-channel-domain-identifier/cases-after.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/054-architecture-strings/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/055-accounting-vocabulary/cases-after.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/command-task-field/cases.json
 
 # Compile the third-party + built-in YARA rules into portable per-filetype
 # `.yrc` files (plus a manifest) under third-party/compiled/. These are BUILD

@@ -1,0 +1,1 @@
+manifest = {"securityContext": {"privileged": True}}
