@@ -785,6 +785,8 @@ binary merely because an ancestor directory is named `Library`.
 The [implementation-layer audit](docs/taxonomy-audit/IMPLEMENTATION-LAYERS.md)
 records current source directories, concrete destinations and reference risks.
 
+AES constructor references belong in `micro-behaviors/crypto/symmetric/aes/initialize`; they establish cipher initialization support, not encryption of a particular target. Mode-specific CTR references stay in `aes/ctr`, CBC decryption references in `aes/decrypt`, and generic Go GCM block-size errors in `crypto/cipher` because they do not identify AES.
+
 ### Capability domain ownership
 
 These contracts apply to every child of the named level-1 directory, including
