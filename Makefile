@@ -69,6 +69,29 @@ taxonomy-check:
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/053-channel-domain-identifier/cases-after.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/054-architecture-strings/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/055-accounting-vocabulary/cases-after.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/056-credential-strings/cases-after-candidate.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/057-charset-home/cases-encoding-after.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/058-cicd-vocabulary/cases-after.json
+	python3 taxonomy-migration/batches/059-identity-strings/check-phishing-selector-cases.py --traits-dir . --phase after
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/061-process-name-strings/061c-telnet-basename/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/061-process-name-strings/061b-target-name-audit/cases.json
+	python3 taxonomy-migration/batches/063-file-strings/check-path-context-cases.py --traits-dir . --phase after
+	python3 taxonomy-migration/batches/064-security-strings/check-ten-retirements.py --after-only
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/064-security-strings/follow-up-scanning/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/066-account-strings/cases-after.json
+	python3 taxonomy-migration/batches/067-container-strings/check-candidate-cases.py --traits-dir . --phase after
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/069-artifact-strings/cases-after.json
+	python3 taxonomy-migration/batches/072-collection-strings/retirement/check-after.py .
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/073-form-validation-strings/cases-after.json
+	python3 taxonomy-migration/batches/074-corpus-strings/js-fetch-candidate/check-focused-after.py --traits-dir .
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/076-command-strings/binding-retirement/cases-after.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/078-charset-strings/cases-after.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/079-credential-strings/uppercase-candidate/cases-after.json
+	python3 taxonomy-migration/batches/079-tool-auth-suppressor/check-cases.py --cleave "$(CLEAVE)"
+	python3 taxonomy-migration/batches/080-vscode-encodedcommand-selector/check-cases.py --cleave "$(CLEAVE)"
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/062-identity-suppressor-precision/follow-up-empty-join/cases-after.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/062-identity-suppressor-precision/follow-up-batch-metric/cases-after.json
+	python3 taxonomy-migration/batches/074-corpus-strings/route-post-followup/check-focused-after.py --traits-dir . --cleave "$(CLEAVE)"
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/command-task-field/cases.json
 
 # Compile the third-party + built-in YARA rules into portable per-filetype
