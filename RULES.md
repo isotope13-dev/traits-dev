@@ -12,7 +12,9 @@
 - `well-known/*` - Specific malware/tool signatures (family-unique only)
 - `metadata/*` - Informational file properties
 
-See [TAXONOMY.md](./TAXONOMY.md) for complete tier structure.
+[TAXONOMY.md](./TAXONOMY.md) is the authoritative placement contract. This
+guide defines rule syntax and authoring checks; a documented destination does
+not prove validator admission or migration acceptance.
 
 Store rules in `.yaml` files under those four tiers. The current engine skips
 `.yml`, hidden/underscore directories, and README/EXAMPLE filenames. Recovery
@@ -38,7 +40,8 @@ Before placing a trait in `objectives/` or `well-known/`, ask: **would this fire
 | Pattern | Wrong Tier | Correct Tier | Why |
 |---------|-----------|--------------|-----|
 | Binary has many exports | `objectives/evasion/` | `metadata/binary/symbols/` | Neutral structural property |
-| Binary has high entropy | `objectives/anti-static/` | `metadata/binary/section/` | Neutral measurement, filed with the part measured |
+| Binary section has high entropy | `objectives/anti-static/` | `metadata/binary/section/` | Neutral measurement of that section |
+| Whole file has high entropy | `objectives/anti-static/` | `metadata/file/entropy/` | Whole-file measurement, independent of file format |
 | Binary has low complexity | `objectives/anti-static/` | `metadata/binary/code/` | Normal for most binaries |
 | ELF64 class marker | `objectives/anti-static/pack/` | `metadata/binary/header/` | Every 64-bit ELF has this |
 | CLI help/usage text | `objectives/anti-static/` | `micro-behaviors/ui/help/` | Help text is a user-interface behavior, not file metadata |
@@ -46,9 +49,9 @@ Before placing a trait in `objectives/` or `well-known/`, ask: **would this fire
 | SOCKS protocol string | `objectives/c2/backdoor/` | `micro-behaviors/communications/proxy/` | Neutral protocol |
 | `$HOME` env var | `objectives/discovery/` | `micro-behaviors/os/env/` | Universal env var |
 | `execve` symbol | `well-known/tool/offensive/` | `micro-behaviors/process/create/` | Standard syscall |
-| `umask` syscall | `objectives/persistence/` | `micro-behaviors/process/daemonize/` | Standard POSIX call |
+| `chmod` call | `objectives/persistence/` | `micro-behaviors/fs/chmod/` | Permission change alone establishes no persistence |
 | SELinux xattr | `objectives/evasion/anti-av/` | `micro-behaviors/fs/attributes/xattr/` | Normal on Linux |
-| `readdir` export | `objectives/evasion/kernel-hide/` | Needs `unless:` for PIE executables | PIE ELFs are ET_DYN like .so |
+| `readdir` API reference | `objectives/evasion/kernel-hide/` | `micro-behaviors/fs/directory/readdir/` | Directory listing alone establishes no concealment |
 
 **The rule:** Place the supported claim, regardless of rule form. A generic API,
 syscall, string, or measurement belongs in a neutral tier. An atomic matcher may
@@ -83,13 +86,29 @@ See [Matcher Defines Identity](TAXONOMY.md#matcher-defines-identity) in TAXONOMY
 ## Trait Placement & IDs
 
 - **Rules belong only in leaf directories.** This applies equally to atomic traits, composites, and aliases: a directory containing rules must not also have rule-bearing descendants. Parent directories define categories and can be referenced to select descendant rules; they do not hold umbrella rules. Before splitting a leaf, assign every existing rule one defensible destination. See [directory budgets and placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
+- **Content belongs with its supported claim.** Strings are not file metadata.
+  `metadata/file/string` and `metadata/file/literal` are closed to new rules;
+  place capability, intent and identity evidence in their respective homes.
+  If a fragment supports only a consumer's context, record a placement hold
+  until its supported representation is resolved. The installed validator
+  rejects new `file/string` IDs; equivalent `file/literal` enforcement remains
+  an engine dependency.
+- **The directory cap is 100 rules across all its YAML files.** A large leaf
+  prompts semantic review, not a split by language, backend or rule form.
+  Define each child's boundary and a home for the broadest observation before
+  splitting; do not add an `other` bucket. Follow the official
+  [placement procedure](TAXONOMY.md#placement-procedure).
 - IDs auto-prefixed by directory path (e.g., `traits/micro-behaviors/process/create/shell/` → prefix `micro-behaviors/process/create/shell`)
 - **Filenames are NEVER part of trait IDs** - only the directory path is used for prefixing
   - A trait `foo` in `traits/micro-behaviors/process/create/shell/python.yaml` has ID `micro-behaviors/process/create/shell::foo`
   - NOT `micro-behaviors/process/create/shell/python::foo` or `micro-behaviors/process/create/shell/python/foo`
 - Cross-tier references use full paths: `micro-behaviors/process/create/shell::subprocess`
-- Directory match: `micro-behaviors/process/create/shell/` matches all traits in that directory
-- Do not add junk subdirectory names like "operations/" or "commands/"; add subdirectories for the exact operation like "move" instead to provide maximum signal to our ML pipeline, which only sees directory names
+- Directory references select descendant rules as well as direct rules;
+  migration must audit exact references and parent-selector membership. Scope,
+  exclusions and exception handling still govern eligible matches.
+- A path follows the parent's documented refinement axis. Use precise subject
+  or operation names rather than containers such as `operations` or `commands`;
+  do not add levels solely for rule count or ML feature depth.
 - Generic capabilities NEVER go in `well-known/`
 
 ### Engine-Emitted Findings
