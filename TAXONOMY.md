@@ -87,7 +87,12 @@ For composites:
   establish a mechanism. `needs:` counts `any:` matches only.
 - **Count roles, not traits.** `needs: 2` can be met by two indicators of one
   source. Require each role (source, transfer, sink) separately; an `any:`
-  mixing endpoints and sources can convict on endpoints alone.
+  mixing endpoints and sources can convict on endpoints alone. A directory
+  selector can count both an atom and a composite derived from it; test that
+  one observation cannot satisfy a threshold intended to require two roles.
+  Check proximity separately: one nearby constituent can make a compound match
+  appear nearby while another required constituent is distant.
+
 - **The result owns the composite.** Trigger, carrier, transport, encoding and
   language are referenced facts, not homes.
 - **Co-occurrence is not data flow.** Unless the rule binds source to sink
@@ -757,7 +762,7 @@ identity goes with that subject.
 | `binary` | `header`, `section`, `symbols`, `code`, `instruction`, `resource`, `linking`, `layout`, `debug`, `provenance`; a property of that part | **Facts about a part, never what it means:** "three imports" → `symbols`; "imports `GetProcAddress`" → a capability; "exports impersonate `version.dll`" → an objective; "exports are libcurl's ABI" → `well-known/lib`. A part's measurement and malformation share its directory; `crit:` says how unusual. |
 | `build` | `bundler`, `minifier`, `transpiler`, `generated`, `ci`, `config`, `manifest`, `artifact`, `reproducible`, `vcs`, … by transform or pipeline function | What a tool left in the file (bundled, minified, transpiled), grouped by function; the tool goes in the trait name (`esbuild-bundled`). "This file *is* webpack" is `well-known/`; compiler attribution is `lang/compiler`. |
 | `document` | `pdf`, `office`, `rtf`, `html`, `ole`, `chm`; a parsed part or property | Structure, not the behavior of embedded code. Magic alone is `file`. |
-| `file` | `format`, `magic`, `extension`, `size`, `encoding` (*legacy: `encoded`*), `entropy`, `naming`, `profile`, `line`, `literal`, `archive`, `invisible-unicode`; whole-file properties | A specific subject beats a generic text bucket. The file's own name and directory are `naming`; an archive member path is `archive`. `file/string` is **closed**: the validator rejects new IDs, and each existing rule moves to the subject it evidences. |
+| `file` | `format`, `magic`, `extension`, `size`, `encoding` (*legacy: `encoded`*), `entropy`, `naming`, `profile`, `line`, `archive`, `invisible-unicode`; whole-file properties | A specific subject beats a generic text bucket. The file's own name and directory are `naming`; an archive member path is `archive`. `file/string` and `file/literal` are **closed**: move each rule to the subject it evidences. A context-only literal has no standalone behavior home; retain its placement hold until a supported contract or validated consumer representation exists. The installed validator rejects new `file/string` IDs; equivalent `file/literal` enforcement remains an engine dependency. |
 | `hardening` | `build`, `layout`, `memory`, `mitigation`, `sandbox` | Absence is a value of a mitigation, not a "missing" subject. Using a security API is a capability; bypassing one, an objective. |
 | `image` | `pixel`, `segment`, `trailing`: decoded-image measurements, segment totals, trailing layout | Whole-file byte entropy is `file/entropy`. A metric name proves no color channel or end marker. Rendering and capture are capabilities. |
 | `font`, `media` | *Reserved:* font table and container validity; cross-carrier byte coverage | Whitelisted; create with the first supported rule. |
@@ -991,7 +996,7 @@ plan.
 | obj `anti-static/obfuscation/{binary-metrics,code-metrics,tools,multi-layer}` | meta `binary` or `file`, `well-known/`, or a named concealment | Measurements and identities are not concealment | Open |
 | meta `file/encoded`; `lang/encoded` | meta `file/encoding`; `lang/encoding` | Rename | Open |
 | meta whole-file byte-entropy rules under `image/*` | meta `file/entropy` | Decoded-image measurements stay | Open |
-| meta `file/string/*` | The subject each string evidences | No new IDs accepted | Partial (batches 047–080) |
+| meta `file/{string,literal}/*` | The subject each string evidences; context-only predicates held pending validated representation | No new placements; literal validator enforcement pending | Partial (batches 047–080) |
 | meta `package/tooling`, `hardening/missing` | `build/*`, `well-known/*`, `package/<subject>`; the mitigation's own subject | Grab-bag and judgment names | Open |
 | meta `binary/{installer,framework,vendor,signing,license,toolchain}` | `well-known/`, `vendor`, `signed`, `binary/provenance`, `lang/compiler` | Identity is not a format property | Open |
 | `well-known/malware/supply-chain` | The family's defining role | Delivery does not choose identity | Open |

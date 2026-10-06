@@ -1025,6 +1025,12 @@ The group is an ordinary composite finding, so name it for the evidence it
 represents and account for that finding in output and scoring reviews. Keep
 `all:`/`any:` boundaries intact and verify selected members, scope, and overlap
 when references move.
+A directory reference in `any:` can contribute multiple matched descendants
+toward `needs:`. If an atom and its grouping composite both fall under that
+selector, one observation can count twice. Audit every ancestor consumer when
+adding a group; preserve its intended member set and test the threshold with
+one observation and its derived group alone.
+
 
 **Absence detection:** Composite rules take `all:`, `any:`, `needs:`, `unless:` and `downgrade:`. There is no composite-level `none:` field — a composite carrying one fails to parse and is dropped at load time (the analyze path skips unparseable rule files with a warning; `cleave validate` reports it). Express absence with `unless:`, which skips the rule when the listed condition matches:
 
@@ -1151,6 +1157,14 @@ once aggregator/directory references expand (`broad-notable-downgrade`).
 and say nothing false about the matcher.
 
 **Proximity (composites only):** `near_bytes: N`, `near_lines: N` - require evidence from different conditions to fall within a single span of N bytes/lines. Uses a sliding window: the check passes when any contiguous window of size N contains evidence from enough distinct conditions (all conditions for `all:`, `needs` conditions for `any:`).
+
+Check ancestor proximity consumers when adding or moving a composite. A nearby
+constituent can supply its compound finding's evidence even when another required
+constituent is far away. This can change a proximity result at `needs: 1` without
+changing the truth of either constituent or duplicating a counted role. Test a
+near context clue with a distant required operation clue; matching populations
+alone do not prove preservation. See the
+[executed provider controls](taxonomy-migration/research/b8-provider-stage/executed-proximity-normal-controls.json).
 
 **Scope (composites only):** `scope: outer | archive | file | leaf | package` — require all evidence to share an analysis-tree ancestor at the named level. Default `file` requires all evidence to land in the same leaf-file (the deepest file-shaped unit); set `outer` to pool evidence across the whole input. Scope filtering runs *before* `near_bytes`/`near_lines`, so the two compose: scope picks the source bucket, proximity narrows within it. `package` is special: it correlates a fetched artifact with its registry metadata and is **only effective under `--fetch` / `pkg:`** (a no-op on a bare local scan) — see below.
 
