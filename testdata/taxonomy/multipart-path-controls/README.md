@@ -11,4 +11,8 @@ filename into `/etc/cron.d/` and a valid schedule. It should match both rules,
 regardless of endpoint or cron filename. Its harmless command isolates the
 upload-to-scheduler behavior from reverse-shell detections.
 
+`security-fix-comment.js` quotes an encoded traversal payload inside a comment
+explaining the fix that refuses it. It must not match
+`micro-behaviors/fs/path/traversal::encoded-parent-dir-traversal`.
+
 Run `cleave --traits-dir . --format jsonl analyze testdata/taxonomy/multipart-path-controls`.
