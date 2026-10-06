@@ -393,6 +393,7 @@ constructors alone never map to MBC Encrypt Data.
 |---|---|
 | `crypto/symmetric/<algorithm>`, `asymmetric/<algorithm>`, `hybrid` | Primitive or implementation presence with no narrower operation ("contains AES", not "encrypts files"). Refinements such as `aes/initialize` (non-directional constructor), `aes/ctr` and `aes/decrypt` stay until the operation leaves absorb them. `hybrid` is symmetric payload crypto plus asymmetric key wrapping. |
 | `crypto/{encrypt,decrypt,sign,verify}` *(legacy: algorithm leaves such as `symmetric/aes/decrypt`, `asymmetric/{encrypt,signature}`)* | The operation, whether or not the algorithm is known. |
+| `crypto/asymmetric/signature` | Public-key signature support with no required direction or named primitive. A known direction goes to `sign` or `verify`; a named primitive without a required operation stays in its presence home. Excludes MACs, key formats and the file’s own signature. |
 | `crypto/cipher` | Cipher capability with no named algorithm or direction (a bare `Cipher`, Go GCM block-size errors). Record any known family in the rule. |
 | `crypto/hash/{digest,hmac}` | Cryptographic digest or MAC, including implementation presence; CryptoAPI hashing is `digest`. Noncryptographic checksums → `data/checksum` *(legacy: `crypto/hash/{crc32,fnv}`)*. |
 | `crypto/kdf` | Key derivation, whether or not the algorithm is known (PBKDF2 parameters, salt). |
@@ -400,6 +401,14 @@ constructors alone never map to MBC Encrypt Data.
 | `crypto/certificate` | Parsing, validating, installing and storing certificates. The file's own signature is `metadata/signed`. |
 | `crypto/provider` *(legacy: `crypto/native`, `crypto/library/{provider,cng,cryptoapi}`)* | Provider acquisition and release with no narrower operation; `CryptHashData` is hashing. No remainder bucket. |
 | `crypto/mnemonic` | Seed-phrase wordlists, generation and validation. Not a KDF (BIP-39 separates them). A bare `self.wordlist` is `data/collection`. |
+
+**Signature direction needs evidence.** A reference to
+[`java.security.Signature`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/security/Signature.html)
+supports public-key signature capability; it does not choose signing or
+verification. Every passing alternative must establish that public-key subject.
+A bare `Signature` name, key import or hex string does not. WebCrypto's
+[`sign` and `verify` also support HMAC](https://www.w3.org/TR/2017/REC-WebCryptoAPI-20170126/#hmac);
+those method names alone do not establish asymmetric signature support.
 
 <a id="implementation-layers"></a>**Implementation-layer substitution test.**
 Swap the library or backend for another that performs the same operation. If
@@ -416,7 +425,8 @@ authorization (allowances, permits), financial-transaction signing, submission
 and record queries → `data/transaction/{construct,authorize,sign,submit,query}`;
 chain RPC → `communications/blockchain/client`; RPC endpoints with no operation
 → `communications/http/url/rpc`; wallet UI → `ui/controls/wallet`; wallet files
-→ `fs/path/wallet`. Signing arbitrary messages is `crypto/asymmetric/signature`.
+→ `fs/path/wallet`. Signing arbitrary messages is `crypto/sign`
+*(legacy: `crypto/asymmetric/signature`)*.
 A keyed XOR cipher is `crypto/symmetric/xor`; XOR scrambling is
 `data/{encode,decode}/xor`; a bare XOR instruction is neither.
 
