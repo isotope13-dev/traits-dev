@@ -80,9 +80,11 @@ predictable categories that keep different claims apart.
 
 For composites:
 
-- **`all:` decides; `any:` corroborates.** An optional alternative establishes
-  no subtype. `needs:` counts `any:` matches only. A directory that names a mechanism needs
-  that mechanism in `all:`.
+- **Required evidence decides.** `all:` requires every condition; `any:` requires
+  its `needs:` threshold (one by default). A named subtype must hold for every
+  passing combination. Alternatives that all establish Base64 encoding can
+  support that home without `all:`; an alternative that can be bypassed cannot
+  establish a mechanism. `needs:` counts `any:` matches only.
 - **Count roles, not traits.** `needs: 2` can be met by two indicators of one
   source. Require each role (source, transfer, sink) separately; an `any:`
   mixing endpoints and sources can convict on endpoints alone.
