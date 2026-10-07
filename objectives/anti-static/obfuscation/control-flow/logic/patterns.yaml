@@ -24,6 +24,30 @@ traits:
       - id: well-known/tool/detection/security-scanner::skilltotal-package-import-marker
       - id: well-known/tool/detection/tirith::tirith-defensive-scanner-context
       - id: sshpilot-flatpak-agent-context
+      - id: remote-python-payload-roundtrip
+
+  # The remote-transport idiom, from both shell families: the script builds
+  # Python source in cleartext, base64-encodes it locally (a pipe into
+  # base64, or PowerShell's ToBase64String), and interpolates that variable
+  # as the b64decode argument of a `python3 -c` command run on another host.
+  # The encoding exists to survive ssh quoting, not to conceal anything —
+  # the executed code is the file's own source, in the open.
+  - id: shell-payload-base64-encode
+    desc: Shell or PowerShell base64-encodes a payload
+    crit: notable
+    conf: 0.9
+    for: [shell, powershell]
+    if:
+      type: text
+      regex: '(\|\s*base64\b|ToBase64String)'
+  - id: b64decode-variable-argument
+    desc: b64decode argument is an interpolated variable
+    crit: notable
+    conf: 0.9
+    for: [shell, powershell]
+    if:
+      type: text
+      regex: 'b64decode\(\s*[''"]?\$\{?\w+'
 
   # Text fallback for the two AST traits here. tree-sitter does not parse a
   # line past its size limit, and these stagers put a multi-megabyte base64
@@ -95,3 +119,16 @@ composite_rules:
     all:
       - id: well-known/app/communication/sshpilot::python-module
       - id: micro-behaviors/process/create/subprocess::subprocess-detached-session
+
+  # Shell/PowerShell scripts that both encode a local payload and pass that
+  # same variable to a remote b64decode are transporting their own source
+  # across ssh, not staging hidden code — a stager embeds a constant blob
+  # and never carries its cleartext encoder.
+  - id: remote-python-payload-roundtrip
+    desc: Local payload encoded then decoded over ssh
+    crit: exception
+    conf: 0.95
+    for: [shell, powershell]
+    all:
+      - id: shell-payload-base64-encode
+      - id: b64decode-variable-argument
