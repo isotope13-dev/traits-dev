@@ -1,0 +1,10 @@
+const React = require("react");
+const context = React.createContext(null);
+const expression = /hello/;
+expression.exec("hello");
+const proxy = "npm_config_" + protocol + "_proxy";
+window.showErrorMessage("Install failed. Run: curl -LsSf https://vendor.example/install.sh | sh");
+obj[name].bind(obj);
+pdf.getObject(reference);
+const documentation = "docs/axi_spec.md#ordering";
+const marker = "\u200B";

