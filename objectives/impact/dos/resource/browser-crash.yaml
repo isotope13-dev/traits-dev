@@ -1,0 +1,87 @@
+defaults:
+  platforms:
+  - windows
+  - unix
+  for:
+  - javascript
+  - html
+  crit: suspicious
+  conf: 0.95
+  attack: T1499
+traits:
+- id: unguarded-js-tail-recursion
+  desc: Unconditional direct tail self-call
+  if:
+    type: tree-sitter
+    language: javascript
+    query: "((function_declaration\n  name: (identifier) @fn\n  body: (statement_block .\n    (expression_statement)*\n    (expression_statement\n      (call_expression function: (identifier) @callee)) .))\n  (#eq? @fn @callee)) @recursive\n"
+- id: browser-error-history-loop
+  desc: Error handler reloads or navigates history
+  if:
+    type: text
+    regex: window\.onerror\s*=\s*new Function\(["']history\.go\(-?[01]\)
+- id: browser-print-popup-history-nesting
+  desc: Nested print, popup and history crash trigger
+  if:
+    type: text
+    substr: history.go(window.open(window.print()))
+- id: browser-error-constructor-history-side-effect
+  desc: Error hook constructor invokes history eagerly
+  if:
+    type: text
+    regex: window\.onerror\s*=\s*new Function\(history\.go\(
+- id: browser-doubled-buffer-script-throw
+  desc: Doubles buffer then emits throwing script
+  if:
+    type: text
+    regex: \w+=\w+\+\w+;\s*document\.write\(['"]<script>throw\b
+- id: browser-unicode-fill-sled
+  desc: Repeats a Unicode fill-word sled
+  if:
+    type: text
+    regex: '(?i)%u4141%u4141|%u4242%u4242|%u4343%u4343'
+- id: browser-long-loop-string-doubling
+  desc: Doubles a string for 32-plus iterations
+  if:
+    type: tree-sitter
+    language: javascript
+    query: "((_ (variable_declaration (variable_declarator name: (identifier) @buf value: (string))) (for_statement\n  initializer: [(assignment_expression left: (identifier) @i right: (number) @start)\n    (variable_declaration (variable_declarator name: (identifier) @i value: (number) @start))]\n  condition: (binary_expression left: (identifier) @counter operator: [\"<\" \"<=\"] right: (number) @bound)\n  increment: (update_expression argument: (identifier) @inc operator: \"++\")\n  body: (statement_block . (expression_statement)*\n    (expression_statement [\n      (_ left: (identifier) @lhs operator: \"+=\" right: (identifier) @rhs)\n      (_ left: (identifier) @lhs operator: \"+=\" right: (binary_expression left: (identifier) @rhs operator: \"+\"))\n      (_ left: (identifier) @lhs right: (binary_expression left: (identifier) @rhs operator: \"+\" right: (identifier) @rhs))])\n    (expression_statement)* .))) (#eq? @start \"0\") (#eq? @i @counter) (#eq? @i @inc)\n  (#eq? @buf @lhs) (#eq?\
+      \ @buf @rhs)\n  (#match? @bound \"^(3[2-9]|[4-9][0-9]|[1-9][0-9]{2,})$\") ) @doubling\n((_ (variable_declaration (variable_declarator name: (identifier) @buf value: (call_expression function: (identifier) @decoder arguments: (arguments (string))))) (for_statement\n  initializer: [(assignment_expression left: (identifier) @i right: (number) @start)\n    (variable_declaration (variable_declarator name: (identifier) @i value: (number) @start))]\n  condition: (binary_expression left: (identifier) @counter operator: [\"<\" \"<=\"] right: (number) @bound)\n  increment: (update_expression argument: (identifier) @inc operator: \"++\")\n  body: (statement_block . (expression_statement)*\n    (expression_statement [\n      (_ left: (identifier) @lhs operator: \"+=\" right: (identifier) @rhs)\n      (_ left: (identifier) @lhs operator: \"+=\" right: (binary_expression left: (identifier) @rhs operator: \"+\"))\n      (_ left: (identifier) @lhs right: (binary_expression left: (identifier) @rhs\
+      \ operator: \"+\" right: (identifier) @rhs))])\n    (expression_statement)* .))) (#eq? @start \"0\") (#eq? @i @counter) (#eq? @i @inc)\n  (#eq? @buf @lhs) (#eq? @buf @rhs)\n  (#match? @bound \"^(3[2-9]|[4-9][0-9]|[1-9][0-9]{2,})$\") (#eq? @decoder \"unescape\")) @doubling"
+composite_rules:
+- id: browser-recursive-popup-creation
+  desc: Tail recursion accompanies popup creation
+  all:
+  - id: unguarded-js-tail-recursion
+  - id: micro-behaviors/ui/window/navigation::browser-window-open-external-url
+  near_bytes: 500
+- id: browser-large-expansion-dom-output
+  desc: Large buffer expansion accompanies DOM output
+  all:
+  - id: browser-large-expansion-call
+  - id: micro-behaviors/ui/window/insert-html::browser-document-write
+  near_bytes: 1000
+- id: browser-large-expansion-call
+  desc: Encoded buffer repetition uses huge repeat count
+  all:
+  - id: micro-behaviors/data/control-flow/dispatch::js-20-million-second-argument
+  - id: micro-behaviors/data/buffer/carve::js-logarithmic-doubling-repeat
+  - id: micro-behaviors/data/decode/url::js-unicode-unescape-payload
+- id: browser-string-doubling-dom-output
+  desc: Long string doubling accompanies DOM output
+  all:
+  - id: browser-long-loop-string-doubling
+  - id: micro-behaviors/ui/window/insert-html::browser-document-write
+  near_bytes: 1500
+- id: browser-throw-unescaped-buffer
+  desc: Thrown script carries an unescaped buffer
+  all:
+  - id: browser-doubled-buffer-script-throw
+  - id: micro-behaviors/data/decode/url::js-unicode-unescape-payload
+  near_bytes: 800
+- id: browser-sled-document-write
+  desc: Writes a Unicode sled into the document
+  all:
+  - id: browser-unicode-fill-sled
+  - id: micro-behaviors/ui/window/insert-html::browser-document-write
+  near_bytes: 1200
