@@ -14,9 +14,10 @@ The checks analyze bytes only; they do not execute the specimens.
   `micro-behaviors/os/registry/access::powershell-windir-property-access`.
   Effective file/platform scope is preserved; the matcher now requires a
   Get/Set/New-ItemProperty cmdlet rather than an arbitrary -Name argument. The former
-  `user-windir-environment-hijack` pair is a neutral property-reference
-  composite in the registry-access leaf. Its SilentCleanup consumer now also
-  requires registry-write evidence; a property read alone proves no hijack.
+  `user-windir-environment-hijack` pair was redundant and is retired. Its
+  SilentCleanup consumer directly requires the property access, Environment
+  key, registry-write evidence and task path within 180 bytes. This deliberately
+  tightens the former two-reference proximity gate; reads alone prove no hijack.
 - Generic FLS cooccurrence moves from the injection objective into
   `micro-behaviors/process/tls/fiber`. Matchers, size/platform/file scope and
   exclusions are preserved. Severity changes separately to notable. FLS APIs
@@ -27,9 +28,12 @@ The checks analyze bytes only; they do not execute the specimens.
   unchanged matcher and scope. Remote SMB relay remains lateral movement;
   loopback reflection belongs in network-service privilege escalation.
   NBNS header serialization, ID assignments and sending are neutral
-  observations. The two-byte counter loops are an inline requirement of the
-  poisoning objective, rather than a standalone generic loop rule. The hostile poisoning composite additionally requires
-  local authentication reflection/service execution.
+  observations. Two less-than-255 comparisons are a neutral numeric
+  observation in data/arithmetic; the matcher does not claim loops or
+  branching. The poisoning objective requires those bounds alongside both
+  transaction-ID assignments, packet construction/transmission and local
+  authentication reflection/service execution. No standalone loop rule or
+  unrelated Java detector change is needed.
 - Native empty-buffer structure belongs in `metadata/build/scaffold`, not
   malware identity. A raw-byte regex with a 10,000-byte minimum checks all 9,993 zeros following
   the seven-byte PAYLOAD marker. The Samba exception requires module identity
@@ -46,12 +50,11 @@ selector remains an injection selector and intentionally excludes neutral FLS
 cooccurrence. No XOR rotational directory selector needs widening; retained
 consumers reference specific rotation rules. The keys and loops leaves were at
 their 100-rule caps. The new windir observation was refined to actual property
-access and placed in access; the standalone loop observation was removed as
-unnecessary. No existing rules were moved merely to make room. The windir and
+access and placed in access; its redundant pair was removed and
+byte-bound comparisons were placed with numeric operations. No existing rules were moved merely to make room. The windir and
 serialization consumers use their new qualified IDs. No ATT&CK/MBC mapping is
 assigned to the neutral replacement observations. New objective precision
-scores are 6.1 (local NTLM reflection) and 7.9 (NBNS poisoning), above the 3.5
-authoring bar.
+scores exceed the 3.5 authoring bar; local NTLM reflection scores 6.1.
 
 A second placement review checked the supported claims independently of the
 former directories: neutral API/codec/property observations require no attacker
@@ -80,3 +83,9 @@ traits. Ordinary libraries elsewhere inside the payload gem are not
 individually convicted by their containing archive. Member evidence and
 judgments are recorded in the external triage report; each marker note is
 preserved in the commit body.
+
+Baseline arithmetic controls use `cleave test-rules`: the installed scan
+renderer strips baseline findings that no firing composite consumes. The
+attack controls additionally check the normal atomscan output. The bounds
+controls distinguish two comparisons, one comparison, and the non-byte value
+2550 so a numeric prefix cannot satisfy the observation.
