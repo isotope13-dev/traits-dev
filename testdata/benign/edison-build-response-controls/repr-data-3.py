@@ -1,0 +1,1 @@
+REQUEST_RESPONSE = '\\\'"\x00\u2028'

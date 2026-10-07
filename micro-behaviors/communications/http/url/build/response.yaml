@@ -1,225 +1,182 @@
-# A request destination taken straight out of a call result, rather than from
-# a literal or a configured base URL. Neutral on its own — service-discovery,
-# redirect following, and proxy code all do it — but it is the leg that turns a
-# remote lookup into the address the next request goes to, so composites that
-# infer a resolver-style C2 (objectives/command-and-control/infrastructure/
-# blockchain/contract/) reference it and supply the lookup context.
-#
-# `result` must terminate the expression: `host: result.host` /
-# `isShadowRoot(x) ? result.host : result` are property reads on unrelated
-# objects (URL, ShadowRoot) and must not match.
 defaults:
-  platforms: [unix, windows]
-  for: [scripts, source]
+  platforms:
+  - unix
+  - windows
+  for:
+  - scripts
+  - source
   crit: notable
   conf: 0.9
   mbc: C0002
-
 traits:
-  - id: python-urllib-response-body-read
-    desc: Python reads an urllib response body
-    for: [python]
-    conf: 0.94
-    if:
-      type: text
-      regex: '\burlopen\(.{1,200}\)\.read\(\)'
-
-  - id: python-regex-url-search
-    desc: Python regex searches for an HTTP URL
-    for: [python]
-    conf: 0.94
-    if:
-      type: text
-      regex: '\bre\.(search|findall)\(\s*r?["'']https?://'
-
-  - id: go-trim-body-into-url
-    desc: Go trims response text into URL
-    for: [go]
-    if:
-      type: text
-      regex: '["'']https?://["'']\s*\+\s*strings\.TrimSpace\(string\(\w+\)\)'
-
-  - id: host-field-from-call-result
-    desc: Host field assigned from result
-    if:
-      type: text
-      regex: '(?i)[{,\s]host\s*[:=]\s*(await\s+)?result\s*[;,)}]'
-
-  - id: destination-field-from-call-result
-    desc: Destination field assigned from result
-    if:
-      type: text
-      regex: '(?i)[{,\s]destination\s*[:=]\s*(await\s+)?result\s*[;,)}]'
-
-  - id: call-result-destination-field-read
-    desc: Reads destination field off result
-    if:
-      type: text
-      regex: '(?i)\bresult\.destination\b'
-
-  # ABI/hex bytes from a prior call become the next HTTP host or URL. Common in
-  # blockchain dead-drop resolvers that eth_call a contract string and then POST
-  # to the decoded host; neutral without the surrounding RPC/request context.
-  - id: host-from-hex-buffer-decode
-    desc: Host assigned from hex Buffer decode
-    for: [javascript, typescript]
-    if:
-      type: text
-      # Bound the argument expression to one statement/line; allow nested prefix removal.
-      regex: '(?i)\b(host|url|c2)\s*=\s*Buffer\.from\([^;\r\n]{1,80},\s*["'']hex["'']\s*\)'
-
-  - id: host-from-hex-bytes-decode
-    desc: Host assigned from bytes.fromhex
-    for: [python, shell]
-    if:
-      type: text
-      regex: '(?i)\b(host|url|c2)\s*=\s*bytes\.fromhex\b'
-
-  - id: network-destination-function-binding
-    desc: Network destination assigned from call
-    conf: 0.94
-    if:
-      type: text
-      # The decoder identity is supplied by the nearby ABI call composite.
-      # The trailing argument context is kept so the not: filter below can
-      # tell a call from an array/stride index.
-      # `panel` takes no open-ended camel continuation: every UI toolkit
-      # names components PanelBottom/InspectionPanel/..., so a bare camel
-      # hump after panel is a widget, not a C2 panel. Underscore and numeric
-      # continuations stay (panel_url, panel_1, panels) since UI code spells
-      # those with camel humps too, which this form no longer claims.
-      regex: '(?i)\b((host|url|endpoint|c2)\w*|panels?([_0-9]\w*)?)\s*=\s*(await\s+)?\w+\s*\(.{0,24}'
-    not:
-      - regex: '=\s*(string|String|str)\s*\('
-      # Array/stride indexing, not a call: C2H5OHName = AlertN(Quubo * 3)
-      # reads one config slot out of a split array. A destination-producing
-      # call takes strings, paths, or multiple arguments, never a lone
-      # scaled or modulo-reduced index.
-      - regex: '(?i)\b((host|url|endpoint|c2)\w*|panels?([_0-9]\w*)?)\s*=\s*(await\s+)?\w+\(\s*[A-Za-z_]\w*\s*[*%]'
-
-  - id: shell-host-from-xxd-hex-decode
-    desc: Shell assigns host from xxd hex decode
-    for: [shell, applescript]
-    if:
-      type: text
-      # EVM ABI strings are often extracted with shell parameter slicing and
-      # decoded inside command substitution. Bind xxd to a destination-shaped
-      # assignment so ordinary file-format conversion remains neutral.
-      regex: '(?i)\b(host|url|c2)\s*=\s*\$\([^\r\n]{0,200}\bxxd\s+-r\s+-p\b'
-
-  - id: shell-post-to-variable-authority
-    desc: Shell POSTs to variable URL authority
-    for: [shell]
-    if:
-      type: text
-      # Bind the POST verb and computed authority to the same curl command.
-      # This excludes variables used only in a fixed service URL's path.
-      regex: '\bcurl\b[^\r\n]{0,160}-X\s+POST[^\r\n]{0,160}["'']?https?://\$\{?[A-Za-z_]\w*\}?'
-
-  - id: native-variable-url-authority-format
-    desc: Formats URL with variable authority
-    for: [c, cpp, rust]
-    conf: 0.94
-    if:
-      type: text
-      regex: '(?i)\b(snprintf|sprintf|format!)\s*\([^;\r\n]{0,240}["'']https?://%(\d+\$)?s([/:]|["''])'
-
-  # The whole authority half of the destination is interpolated from a
-  # variable. This atomic detects URL construction only.
-  - id: js-fetch-derived-url-authority
-    desc: JavaScript fetch to computed URL authority
-    conf: 0.92
-    for: [javascript, typescript]
-    if:
-      type: text
-      regex: 'fetch\s*\(\s*`https?://\$\{[A-Za-z_$][A-Za-z0-9_$]*\}'
-
-  - id: js-post-to-variable-authority
-    desc: JavaScript POST to computed URL authority
-    conf: 0.94
-    for: [javascript, typescript]
-    if:
-      type: text
-      # Bind the computed authority and POST method to the same fetch call.
-      regex: 'fetch\s*\(\s*`https?://\$\{\w+\}[^`]{0,160}`\s*,\s*\{[^}]{0,240}\bmethod\s*:\s*["'']POST'
-
-  - id: python-post-to-derived-url
-    desc: Python POST to computed URL
-    conf: 0.92
-    for: [python]
-    unless:
-      - id: well-known/app/productivity/keepercommander/
-    if:
-      type: text
-      regex: "requests\\.post\\s*\\(\\s*f['\"]https?://\\{[A-Za-z_][A-Za-z0-9_]*\\}"
-
-  - id: go-post-to-derived-url
-    desc: Go POST to computed URL
-    conf: 0.92
-    for: [go]
-    if:
-      type: text
-      regex: 'http\.Post\s*\(\s*"https?://"\s*\+'
-    unless:
-      - id: metadata/package/testing/presence/harness::go-test-file
-
+- id: python-regex-url-search
+  desc: Python regex searches for an HTTP URL
+  for:
+  - python
+  conf: 0.94
+  if:
+    type: text
+    regex: \bre\.(search|findall)\(\s*r?["']https?://
+- id: go-trim-body-into-url
+  desc: Go trims response text into URL
+  for:
+  - go
+  if:
+    type: text
+    regex: '["'']https?://["'']\s*\+\s*strings\.TrimSpace\(string\(\w+\)\)'
+- id: host-field-from-call-result
+  desc: Host field assigned from result
+  if:
+    type: text
+    regex: (?i)[{,\s]host\s*[:=]\s*(await\s+)?result\s*[;,)}]
+- id: destination-field-from-call-result
+  desc: Destination field assigned from result
+  if:
+    type: text
+    regex: (?i)[{,\s]destination\s*[:=]\s*(await\s+)?result\s*[;,)}]
+- id: call-result-destination-field-read
+  desc: Reads destination field off result
+  if:
+    type: text
+    regex: (?i)\bresult\.destination\b
+- id: host-from-hex-buffer-decode
+  desc: Host assigned from hex Buffer decode
+  for:
+  - javascript
+  - typescript
+  if:
+    type: text
+    regex: '(?i)\b(host|url|c2)\s*=\s*Buffer\.from\([^;\r\n]{1,80},\s*["'']hex["'']\s*\)'
+- id: host-from-hex-bytes-decode
+  desc: Host assigned from bytes.fromhex
+  for:
+  - python
+  - shell
+  if:
+    type: text
+    regex: (?i)\b(host|url|c2)\s*=\s*bytes\.fromhex\b
+- id: network-destination-function-binding
+  desc: Network destination assigned from call
+  conf: 0.94
+  if:
+    type: text
+    regex: (?i)\b((host|url|endpoint|c2)\w*|panels?([_0-9]\w*)?)\s*=\s*(await\s+)?\w+\s*\(.{0,24}
+  not:
+  - regex: =\s*(string|String|str)\s*\(
+  - regex: (?i)\b((host|url|endpoint|c2)\w*|panels?([_0-9]\w*)?)\s*=\s*(await\s+)?\w+\(\s*[A-Za-z_]\w*\s*[*%]
+- id: shell-host-from-xxd-hex-decode
+  desc: Shell assigns host from xxd hex decode
+  for:
+  - shell
+  - applescript
+  if:
+    type: text
+    regex: (?i)\b(host|url|c2)\s*=\s*\$\([^\r\n]{0,200}\bxxd\s+-r\s+-p\b
+- id: shell-post-to-variable-authority
+  desc: Shell POSTs to variable URL authority
+  for:
+  - shell
+  if:
+    type: text
+    regex: \bcurl\b[^\r\n]{0,160}-X\s+POST[^\r\n]{0,160}["']?https?://\$\{?[A-Za-z_]\w*\}?
+- id: native-variable-url-authority-format
+  desc: Formats URL with variable authority
+  for:
+  - c
+  - cpp
+  - rust
+  conf: 0.94
+  if:
+    type: text
+    regex: (?i)\b(snprintf|sprintf|format!)\s*\([^;\r\n]{0,240}["']https?://%(\d+\$)?s([/:]|["'])
+- id: js-fetch-derived-url-authority
+  desc: JavaScript fetch to computed URL authority
+  conf: 0.92
+  for:
+  - javascript
+  - typescript
+  if:
+    type: text
+    regex: fetch\s*\(\s*`https?://\$\{[A-Za-z_$][A-Za-z0-9_$]*\}
+- id: js-post-to-variable-authority
+  desc: JavaScript POST to computed URL authority
+  conf: 0.94
+  for:
+  - javascript
+  - typescript
+  if:
+    type: text
+    regex: fetch\s*\(\s*`https?://\$\{\w+\}[^`]{0,160}`\s*,\s*\{[^}]{0,240}\bmethod\s*:\s*["']POST
+- id: python-post-to-derived-url
+  desc: Python POST to computed URL
+  conf: 0.92
+  for:
+  - python
+  unless:
+  - id: well-known/app/productivity/keepercommander/
+  if:
+    type: text
+    regex: requests\.post\s*\(\s*f['"]https?://\{[A-Za-z_][A-Za-z0-9_]*\}
+- id: go-post-to-derived-url
+  desc: Go POST to computed URL
+  conf: 0.92
+  for:
+  - go
+  if:
+    type: text
+    regex: http\.Post\s*\(\s*"https?://"\s*\+
+  unless:
+  - id: metadata/package/testing/presence/harness::go-test-file
 composite_rules:
-  - id: python-urllib-response-url-extraction
-    desc: Python extracts URL from urllib response
-    for: [python]
-    conf: 0.94
-    near_lines: 12
-    all:
-      - id: python-urllib-response-body-read
-      - id: python-regex-url-search
-
-  - id: go-response-body-url-construction
-    desc: Go builds URL from response body
-    for: [go]
-    near_lines: 12
-    all:
-      - id: micro-behaviors/communications/http/response::go-read-http-response-body
-      - id: go-trim-body-into-url
-
+- id: python-urllib-response-url-extraction
+  desc: Python extracts URL from urllib response
+  for:
+  - python
+  conf: 0.94
+  near_lines: 12
+  all:
+  - id: micro-behaviors/communications/http/client/response-body::python-urllib-response-body-read
+  - id: python-regex-url-search
+- id: go-response-body-url-construction
+  desc: Go builds URL from response body
+  for:
+  - go
+  near_lines: 12
+  all:
+  - id: micro-behaviors/communications/http/response::go-read-http-response-body
+  - id: go-trim-body-into-url
+- id: network-destination-from-abi-decoder
+  desc: ABI decode supplies network destination
+  conf: 0.94
+  near_lines: 2
+  all:
+  - id: network-destination-function-binding
+  - id: micro-behaviors/data/decode/abi::abi-decoder-call
+- id: destination-from-call-or-hex
+  desc: Destination assigned from call result or hex decode
+  conf: 0.9
+  any:
+  - id: host-field-from-call-result
+  - id: destination-field-from-call-result
+  - id: call-result-destination-field-read
+  - id: host-from-hex-buffer-decode
+  - id: host-from-hex-bytes-decode
+  - id: shell-host-from-xxd-hex-decode
   - id: network-destination-from-abi-decoder
-    desc: ABI decode supplies network destination
-    conf: 0.94
-    near_lines: 2
-    all:
-      - id: network-destination-function-binding
-      - id: micro-behaviors/data/decode/abi::abi-decoder-call
-
-  # Aggregates "destination came from a prior call/decode" atoms so consumers
-  # can reference one id instead of enumerating every build/response variant.
-  - id: destination-from-call-or-hex
-    desc: Destination assigned from call result or hex decode
-    conf: 0.9
-    any:
-      - id: host-field-from-call-result
-      - id: destination-field-from-call-result
-      - id: call-result-destination-field-read
-      - id: host-from-hex-buffer-decode
-      - id: host-from-hex-bytes-decode
-      - id: shell-host-from-xxd-hex-decode
-      - id: network-destination-from-abi-decoder
-
-  # Same for the "destination authority came from a variable" atoms, so a
-  # consumer references one id rather than every per-language spelling.
-  - id: post-to-variable-authority
-    desc: Request posts to a variable URL authority
-    conf: 0.9
-    any:
-      - id: js-post-to-variable-authority
-      - id: python-post-to-derived-url
-      - id: go-post-to-derived-url
-      - id: shell-post-to-variable-authority
-
-  - id: request-to-variable-authority
-    desc: Request targets a variable URL authority
-    conf: 0.92
-    any:
-      - id: js-fetch-derived-url-authority
-      - id: python-post-to-derived-url
-      - id: go-post-to-derived-url
-      - id: shell-post-to-variable-authority
-      - id: native-variable-url-authority-format
+- id: post-to-variable-authority
+  desc: Request posts to a variable URL authority
+  conf: 0.9
+  any:
+  - id: js-post-to-variable-authority
+  - id: python-post-to-derived-url
+  - id: go-post-to-derived-url
+  - id: shell-post-to-variable-authority
+- id: request-to-variable-authority
+  desc: Request targets a variable URL authority
+  conf: 0.92
+  any:
+  - id: js-fetch-derived-url-authority
+  - id: python-post-to-derived-url
+  - id: go-post-to-derived-url
+  - id: shell-post-to-variable-authority
+  - id: native-variable-url-authority-format

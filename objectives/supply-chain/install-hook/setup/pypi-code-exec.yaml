@@ -1,135 +1,116 @@
-# Setup.py Code Execution During Installation
-# Detects setup.py hooks combined with code execution — the primary
-# mechanism for PyPI supply-chain attacks.
-# ATT&CK: T1195.002 (Compromise Software Supply Chain)
-# MBC: E1059.006 (Command and Scripting Interpreter)
 defaults:
-  platforms: [linux, macos, windows, unix, android, ios]
-  for: [python]
+  platforms:
+  - linux
+  - macos
+  - windows
+  - unix
+  - android
+  - ios
+  for:
+  - python
 composite_rules:
-  # Top-level setup.py is itself an install/build hook: pip imports it while
-  # resolving metadata and building an sdist, before a consumer imports the
-  # package.  Pair that execution boundary with the already-narrow dataflow
-  # shape `exec(requests.get(...).text)` (or its urllib/eval equivalents).
-  # This detects mutable, memory-only second stages without assuming a package
-  # name, registry, endpoint, or operating system.
-  - id: setup-py-remote-code-loader
-    desc: setup.py directly executes code fetched over HTTP
-    crit: hostile
-    conf: 0.99
-    attack: "T1195.002,T1105,T1059.006"
-    mbc: "B0024,E1059.006"
-    scope: leaf
-    all:
-      - id: metadata/package/files/included::setup-py-basename
-      - id: objectives/command-and-control/dropper/script-eval/response-eval::remote-exec-text
-
-  - id: pypi-setup-root-home-file-read
-    for: [python, python-sdist]
-    desc: Python setup.py reads a root-home file when loaded
-    crit: hostile
-    conf: 0.995
-    attack: T1195.002,T1005
-    scope: outer
-    all:
-      - id: metadata/build/pip::root-setup-py
-      - id: objectives/collection/file-targeting/command::python-import-time-root-home-file-read
-
-  - id: pypi-security-research-claim-with-install-execution
-    for: [python, pkginfo, python-sdist]
-    desc: PyPI package claims security research and executes at install
-    crit: hostile
-    conf: 0.94
-    attack: "T1195.002"
-    mbc: "E1059.006"
-    scope: outer
-    all:
-      - id: metadata/package/description/disclosure::pkginfo-security-research-claim
-      - id: setup-code-execution
-  - id: setup-py-getenv
-    desc: Environment variable access in setup.py
-    crit: notable
-    conf: 0.9
-    all:
-      - id: metadata/build/pip::root-setup-py
-      - id: micro-behaviors/os/env/read::python-os-getenv-call
+- id: setup-py-remote-code-loader
+  desc: setup.py directly executes code fetched over HTTP
+  crit: hostile
+  conf: 0.99
+  attack: T1195.002,T1105,T1059.006
+  mbc: B0024,E1059.006
+  scope: leaf
+  all:
+  - id: metadata/package/files/included::setup-py-basename
+  - id: objectives/command-and-control/dropper/script-eval/response-eval::remote-exec-text
+- id: pypi-setup-root-home-file-read
+  for:
+  - python
+  - python-sdist
+  desc: Python setup.py reads a root-home file when loaded
+  crit: hostile
+  conf: 0.995
+  attack: T1195.002,T1005
+  scope: outer
+  all:
+  - id: metadata/build/pip::root-setup-py
+  - id: objectives/collection/file-targeting/command::python-import-time-root-home-file-read
+- id: pypi-security-research-claim-with-install-execution
+  for:
+  - python
+  - pkginfo
+  - python-sdist
+  desc: PyPI package claims security research and executes at install
+  crit: hostile
+  conf: 0.94
+  attack: T1195.002
+  mbc: E1059.006
+  scope: outer
+  all:
+  - id: metadata/package/description/disclosure::pkginfo-security-research-claim
   - id: setup-code-execution
-    desc: Code execution during package installation
-    # A custom install hook may launch a compiler or another fixed build tool.
-    # The hook is notable and deserves review, but subprocess use alone does
-    # not establish a supply-chain backdoor. Remote and concealed payload
-    # shapes are covered by the hostile composites below.
-    crit: suspicious
-    conf: 0.95
-    attack: "T1195.002"
-    mbc: "E1059.006"
-    near_lines: 10
-    all:
-      - id: metadata/build/package/recipe/setup-hooks::setuptools-run-override
+- id: setup-code-execution
+  desc: Code execution during package installation
+  crit: suspicious
+  conf: 0.95
+  attack: T1195.002
+  mbc: E1059.006
+  near_lines: 10
+  all:
+  - id: metadata/build/package/recipe/setup-hooks::setuptools-run-override
+  any:
+  - id: micro-behaviors/process/interpreter/eval/direct::exec-builtin
+  - id: micro-behaviors/process/interpreter/eval/direct::eval-builtin
+  - id: micro-behaviors/process/interpreter/eval/compile::compile-builtin
+  - id: micro-behaviors/process/create/subprocess::process-execution
+  - id: objectives/anti-static/obfuscation/eval/scripting/reflection::builtins-obfuscation
+  downgrade:
     any:
-      # Direct execution
-      - id: micro-behaviors/process/interpreter/eval/direct::exec-builtin
-      - id: micro-behaviors/process/interpreter/eval/direct::eval-builtin
-      - id: micro-behaviors/process/interpreter/eval/compile::compile-builtin
-      # Process creation
-      - id: micro-behaviors/process/create/subprocess::process-execution
-      # Obfuscated execution
-      - id: objectives/anti-static/obfuscation/eval/scripting/reflection::builtins-obfuscation
-    downgrade:
-      # Legitimate setup.py may check versions with eval or drive a build toolchain
-      any:
-        - id: metadata/package/testing/
-        - id: metadata/signed/platform/
-        - id: micro-behaviors/process/create/shell/build::make-toolchain-invocation
-        - id: micro-behaviors/process/create/shell/build::make-toolchain-shell-format
-        - id: micro-behaviors/process/create/shell/build::build-script-toolchain-invocation
-  - id: pypi-encoded-install-subprocess-dropper
-    for: [python, python-sdist]
-    desc: PyPI install executes base64-encoded subprocess hook
-    crit: hostile
-    conf: 0.97
-    attack: T1195.002,T1059.006,T1105
-    scope: outer
-    all:
-      - id: setup-code-execution
-      - id: objectives/anti-static/obfuscation/encoding/content::encoded-python-subprocess-call
-
-  - id: pypi-install-decode-dynamic-exec-dropper
-    for: [python, python-sdist]
-    desc: PyPI install decodes and dynamically executes hook
-    crit: hostile
-    conf: 0.97
-    attack: T1195.002,T1059.006,T1105
-    scope: outer
-    all:
-      - id: setup-code-execution
-      - id: objectives/anti-static/obfuscation/eval/scripting/decode::python-decode-decrypt-dynamic-exec
-
-  - id: setup-import-url-fetch
-    desc: setup.py fetches a URL while loading
-    crit: hostile
-    conf: 0.96
-    attack: T1195.002,T1071.001
-    scope: file
-    near_lines: 20
-    all:
-      - id: metadata/build/pip::root-setup-py
-      - id: micro-behaviors/communications/http/request/client::python-column0-requests-get
-
-  # setup-code-execution above only catches a setuptools cmdclass override.
-  # The common real shape is a top-level `exec(zlib.decompress(b64decode(...)))`
-  # in the setup.py body (Deep-Live-Cam), which runs during metadata resolution
-  # and sdist build before any consumer import. Pairing the setup.py build entry
-  # with an exec of a decompressed/decoded blob detects that install-time
-  # detonation without assuming a package name, endpoint, or verb.
-  - id: setup-py-executes-packed-blob
-    desc: setup.py executes a concealed packed payload
-    crit: hostile
-    conf: 0.98
-    attack: T1195.002,T1059.006,T1027
-    mbc: "E1059.006,B0024"
-    scope: file
-    for: [python, python-sdist]
-    all:
-      - id: metadata/build/pip::root-setup-py
-      - id: objectives/anti-static/obfuscation/payload/code-in-data::decompressed-code-executed
+    - id: metadata/package/testing/
+    - id: metadata/signed/platform/
+    - id: micro-behaviors/process/create/shell/build::make-toolchain-invocation
+    - id: micro-behaviors/process/create/shell/build::make-toolchain-shell-format
+    - id: micro-behaviors/process/create/shell/build::build-script-toolchain-invocation
+- id: pypi-encoded-install-subprocess-dropper
+  for:
+  - python
+  - python-sdist
+  desc: PyPI install executes base64-encoded subprocess hook
+  crit: hostile
+  conf: 0.97
+  attack: T1195.002,T1059.006,T1105
+  scope: outer
+  all:
+  - id: setup-code-execution
+  - id: objectives/anti-static/obfuscation/encoding/content::encoded-python-subprocess-call
+- id: pypi-install-decode-dynamic-exec-dropper
+  for:
+  - python
+  - python-sdist
+  desc: PyPI install decodes and dynamically executes hook
+  crit: hostile
+  conf: 0.97
+  attack: T1195.002,T1059.006,T1105
+  scope: outer
+  all:
+  - id: setup-code-execution
+  - id: objectives/anti-static/obfuscation/eval/scripting/decode::python-decode-decrypt-dynamic-exec
+- id: setup-import-url-fetch
+  desc: setup.py fetches a URL while loading
+  crit: hostile
+  conf: 0.96
+  attack: T1195.002,T1071.001
+  scope: file
+  near_lines: 20
+  all:
+  - id: metadata/build/pip::root-setup-py
+  - id: micro-behaviors/communications/http/request/client::python-column0-requests-get
+- id: setup-py-executes-packed-blob
+  desc: setup.py executes a concealed packed payload
+  crit: hostile
+  conf: 0.98
+  attack: T1195.002,T1059.006,T1027
+  mbc: E1059.006,B0024
+  scope: file
+  for:
+  - python
+  - python-sdist
+  all:
+  - id: metadata/build/pip::root-setup-py
+  - id: objectives/anti-static/obfuscation/payload/code-in-data::decompressed-code-executed
