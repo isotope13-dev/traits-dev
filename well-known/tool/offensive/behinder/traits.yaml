@@ -6,17 +6,16 @@ defaults:
   size_max: 100000000
 
 traits:
-  - id: java-package-path
-    desc: Behinder Java package path component
+  - id: java-class-namespace
+    desc: Behinder declared Java class namespace
     crit: notable
     conf: 0.98
+    for: [class]
     if:
-      type: path
-      regex: '(^|[\\/])behinder[\\/]'
+      type: value
+      path: class.this_class
+      regex: '^net/rebeyond/behinder/'
 
-  # Behinder derives its AES key from md5(password)[0:16]; the default
-  # connection password "rebeyond" bakes e45e329feb5d925b into every default
-  # shell, whatever the carrier (Java, PHP, ASP.NET).
   - id: default-aes-key
     desc: Behinder default AES key
     crit: notable
@@ -52,39 +51,37 @@ traits:
       type: path
       regex: '(^|[\\/])Decrypt\.class$'
 
-  - id: java-payload-path
-    desc: Behinder Java payload package path
+  - id: java-payload-namespace
+    desc: Behinder declared Java payload namespace
     crit: notable
     conf: 0.98
+    for: [class]
     if:
-      type: path
-      regex: '(^|[\\/])payload[\\/]'
+      type: value
+      path: class.this_class
+      regex: '^net/rebeyond/behinder/payload/'
 
-  # Client-side packages shipped inside Behinder.jar (management UI, crypto,
-  # DAO, entities, utils). Distinct from the server-side `payload/` package.
-  # The leading boundary is dropped to stay within the two-separator path
-  # budget; every composite using this atom also requires java-package-path,
-  # which anchors `behinder/` on its own.
-  - id: java-client-package-path
-    desc: Behinder Java client package path
+  - id: java-client-namespace
+    desc: Behinder declared Java client namespace
     crit: notable
-    conf: 0.96
+    conf: 0.98
+    for: [class]
     if:
-      type: path
-      regex: 'behinder[\\/](core|utils|ui|dao|entity)[\\/]'
+      type: value
+      path: class.this_class
+      regex: '^net/rebeyond/behinder/(core|utils|ui|dao|entity)/'
 
 composite_rules:
   - id: family-markers
-    desc: Behinder webshell framework family markers
-    crit: suspicious
+    desc: Behinder Java payload or client class identity
+    crit: notable
     conf: 0.99
+    for: [class]
     all:
-      - id: java-package-path
+      - id: java-class-namespace
     any:
-      - id: default-aes-key
-      - id: rebeyond-package-token
-      - id: rebeyond-package-path
-      - id: core-decrypt-class-path
+      - id: java-payload-namespace
+      - id: java-client-namespace
 
   - id: webshell-framework
     for: [class]
@@ -106,34 +103,35 @@ composite_rules:
   # identify a payload component. The second composite below requires an
   # active sink before adding another hostile signal.
   - id: payload-component
+    for: [class]
     desc: Behinder server-side webshell payload component
     crit: hostile
     conf: 0.99
     all:
       - id: family-markers
-      - id: java-payload-path
+      - id: java-payload-namespace
 
-  # Management JAR classes are not the injected payload, but they are still
-  # Behinder offensive tooling. Pairing the family marker with a client-package
-  # path yields a second independent hostile finding for those members.
+  # Desktop management classes are tooling identity, not injected payload.
   - id: management-client-component
+    for: [class]
     desc: Behinder management client component
-    crit: hostile
+    crit: notable
     conf: 0.99
     all:
       - id: family-markers
-      - id: java-client-package-path
+      - id: java-client-namespace
 
   - id: payload-active-operation
+    for: [class]
     desc: Behinder payload exposes an active server-side capability
-    # The package and payload composites establish the malicious identity. An
+    # The declared namespace establishes payload identity. An
     # operation atom is still valuable triage context, but repeating it as a
     # hostile verdict overcounts the same payload capability.
     crit: notable
     conf: 0.99
     all:
       - id: family-markers
-      - id: java-payload-path
+      - id: java-payload-namespace
     any:
       - id: micro-behaviors/crypto/library/provider::java-raw-key-cipher-use
       - id: micro-behaviors/process/create/exec::child-process-execution
@@ -144,18 +142,16 @@ composite_rules:
       - id: micro-behaviors/fs/write/file/handle::jvm-fileoutputstream-bytecode
       - id: micro-behaviors/fs/delete/file/library::java-file-delete-bytecode
 
-  # Network-only payloads (SocksProxy, PortMap, Ping, …) lack the AES helpers
-  # that power webshell-framework / payload-file-ops. Path identity composites
-  # share one display span, so without a network-span hostile those classes
-  # under-count. Suppress on the AES leaf — not on webshell-framework, whose
-  # aggregator expansion blows the unless: budget.
+  # Network-only payloads lack the AES helpers used by the other payload
+  # rules. Require the declared payload identity plus a network capability.
   - id: payload-network-channel
+    for: [class]
     desc: Behinder payload opens a network tunnel or probe channel
     crit: hostile
     conf: 0.98
     all:
       - id: family-markers
-      - id: java-payload-path
+      - id: java-payload-namespace
     any:
       - id: micro-behaviors/communications/socket/create::java-socket-class-import
       - id: micro-behaviors/communications/dns/resolver::jvm-inetaddress-getbyname-bytecode
@@ -168,7 +164,7 @@ composite_rules:
   # framework identity with a concrete sink is the hostile payload shape.
   - id: payload-file-ops
     for: [class]
-    desc: Behinder decrypted payload performs file or reflective operations
+    desc: Behinder AES response helper with file or reflective APIs
     crit: hostile
     conf: 0.98
     all:
