@@ -1,0 +1,1 @@
+$entries = cmdkey.exe /list
