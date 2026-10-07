@@ -1,0 +1,29 @@
+// SVGO path-data command table: absolute commands normalize to relative.
+command="C";
+command="c";
+command="H";
+command="h";
+command="V";
+command="v";
+command="L";
+command="l";
+command="M";
+command="m";
+command="Z";
+command="z";
+command="Q";
+command="q";
+command="T";
+command="t";
+command="S";
+command="s";
+command="A";
+command="a";
+command="E";
+command="e";
+command="N";
+command="n";
+command="O";
+command="o";
+command="P";
+if(command==="H"){command="l";} // removeViewBox plugin needs relative paths
