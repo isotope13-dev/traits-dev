@@ -442,8 +442,8 @@ A keyed XOR cipher is `crypto/symmetric/xor`; XOR scrambling is
 | `data/{encode,decode}/<scheme>` | A required direction. Keep a scheme child only if the matcher establishes it: Base16 → `hex`, `base32`, ASCII85/Z85 → `base85`, standard and URL-safe → `base64`. Repeated decoding is a refinement; origin or spelling (`request-base64`) is not. `DecodeString` without its receiver does not identify Base64. |
 | `data/encoding/<scheme>` | Direction-neutral scheme evidence (an embedded Base64 alphabet); asserts no operation. |
 | `data/{compress,decompress}/<algorithm>` | Directional compression; languages and libraries share the algorithm leaf. |
-| `data/codec` | A codec interface or support spanning directions, with scheme in the trait ID when known. Keep this broad leaf while small; create scheme children only after a complete partition gives unknown-scheme evidence a precise home. |
-| `data/compression` | Composites spanning codec schemes or both directions. |
+| `data/codec` | Direct evidence for a codec interface or support spanning directions; keep a known scheme in the trait ID. Keep this broad leaf until a complete semantic partition can place every rule, including scheme-unknown evidence, in a named child. Size alone does not justify a split. |
+| `data/compression` | Composite findings spanning codec schemes or compression directions; direct codec evidence stays in `data/codec`. |
 | `data/{parse,serialize,format}/<format>` | Parsing input; object ↔ representation (JSON, YAML, protobuf, pickle; record fields in `serialize/schema-object`); formatting (`format/string` for number text, `format/credentials` for token shapes). Format identity alone is metadata. |
 | `data/archive/{create,extract,list,modify}` | Code that manipulates archives. A rule binding a member to its extracted file is `extract`, though it also writes. |
 | `data/{string,buffer,collection,property}/<operation>` | Operations on strings, byte buffers, collections (DOM trees in `collection/dom`) and object members (`property/{access,assign,define,enumerate}`), classified by receiver and operation, not method name. |
@@ -496,7 +496,7 @@ a call to it.
 | `os/env/<subject>`, `os/env/<operation>` | The first required meaning wins: CI-issued credential (`ci-credentials`) → other credential (`secret-name`, e.g. `AWS_SECRET_ACCESS_KEY`) → interpreter or loader configuration (`runtime`: `BASH_ENV`, `NODE_OPTIONS`) → filesystem location (`path`; *legacy: `user-paths`*) → CI job metadata (`cicd`) → user identity (`user-info`) → service configuration (`provider`). Otherwise use the operation: `read`, `enumerate` (*legacy: `enumeration`, `dump`*), `write` (*legacy: `modify`*), `test` (*legacy: `check`, `gate`*). A name is a reference, not a read; reading a secret is not theft. |
 | `os/{user,group,privilege,security}/<operation>` | Principals and authority; security controls (`security/auth`, `security/jailbreak`). Crossing to higher authority is an objective. |
 | `os/kernel/<facility>`, `os/{syscall,bpf,container,virtualization}` | Kernel facilities (`kernel/driver` for driver installation and loading, MBC C0037/C0023, not ordinary service creation; *legacy: `os/service/driver`*); direct syscalls; BPF; namespaces (`container/namespace`) and container runtimes; hypervisors. |
-| `os/{module,api-resolution,linker}` | Language modules; manual API resolution; dynamic-linker configuration (`linker/{audit,env,load-path,symbol-version}`). |
+| `os/module/load`; `os/{api-resolution,linker}` | Language-module loading; manual API resolution; dynamic-linker configuration (`linker/{audit,env,load-path,symbol-version}`). Ruby `require` caches a module; `Kernel.load` evaluates the source file on each call. Native libraries belong under `dylib`. |
 | `os/autorun`, `os/package-manager`, `os/sysinfo/<property>`, `os/random`, `os/telemetry` | OS task and autorun registration (malicious durability is persistence); package operations; host properties (`hostname`, `platform`, `hardware`, `disk`, `locale`, `profile`); randomness; logging and analytics. |
 | `os/{clipboard,console,event,signal,exception,message,com,wmi}` | Host facilities. Clipboard by operation: `read`, `write`, `monitor`. COM or WMI evidence with a known function goes to that function. |
 | `os/application/target` | An app or package cited as the program's target (wallet brands, `SpringBoard`); neither discovery nor the file's identity. |
@@ -762,7 +762,7 @@ identity goes with that subject.
 | `binary` | `header`, `section`, `symbols`, `code`, `instruction`, `resource`, `linking`, `layout`, `debug`, `provenance`; a property of that part | **Facts about a part, never what it means:** "three imports" → `symbols`; "imports `GetProcAddress`" → a capability; "exports impersonate `version.dll`" → an objective; "exports are libcurl's ABI" → `well-known/lib`. A part's measurement and malformation share its directory; `crit:` says how unusual. |
 | `build` | `bundler`, `minifier`, `transpiler`, `generated`, `ci`, `config`, `manifest`, `artifact`, `reproducible`, `vcs`, … by transform or pipeline function | What a tool left in the file (bundled, minified, transpiled), grouped by function; the tool goes in the trait name (`esbuild-bundled`). "This file *is* webpack" is `well-known/`; compiler attribution is `lang/compiler`. |
 | `document` | `pdf`, `office`, `rtf`, `html`, `ole`, `chm`; a parsed part or property | Structure, not the behavior of embedded code. Magic alone is `file`. |
-| `file` | `format`, `magic`, `extension`, `size`, `encoding` (*legacy: `encoded`*), `entropy`, `naming`, `profile`, `line`, `archive`, `invisible-unicode`; whole-file properties | A specific subject beats a generic text bucket. The file's own name and directory are `naming`; an archive member path is `archive`. `file/string` and `file/literal` are **closed**: move each rule to the subject it evidences. A context-only literal has no standalone behavior home; retain its placement hold until a supported contract or validated consumer representation exists. The installed validator rejects new `file/string` IDs; equivalent `file/literal` enforcement remains an engine dependency. |
+| `file` | `format`, `magic`, `extension`, `size`, `encoding` (*legacy: `encoded`*), `entropy`, `naming`, `profile`, `line`, `archive`, `invisible-unicode`; whole-file properties | A specific subject beats a generic text bucket. The file's own name and directory are `naming`; an archive member path is `archive`. `file/string` and `file/literal` are **closed**: move each rule to the subject it evidences. A context-only literal has no standalone behavior home; retain its placement hold until a supported contract or validated consumer representation exists. The current validator rejects new `file/string` IDs; equivalent `file/literal` enforcement remains an engine dependency. |
 | `hardening` | `build`, `layout`, `memory`, `mitigation`, `sandbox` | Absence is a value of a mitigation, not a "missing" subject. Using a security API is a capability; bypassing one, an objective. |
 | `image` | `pixel`, `segment`, `trailing`: decoded-image measurements, segment totals, trailing layout | Whole-file byte entropy is `file/entropy`. A metric name proves no color channel or end marker. Rendering and capture are capabilities. |
 | `font`, `media` | *Reserved:* font table and container validity; cross-carrier byte coverage | Whitelisted; create with the first supported rule. |
@@ -805,8 +805,9 @@ or assertion role, not language), `integrity` (checksums, content agreement),
 **Dependency-manifest facets: the first that describes what the matcher reads
 wins.**
 
-1. `identity` — one specific package (`lodash`); renaming the package breaks the
-   trait.
+1. `identity` — the manifest declares one specific package (`lodash`); renaming
+   the name changes the trait. This records the declaration, not proof that the
+   artifact implements that package.
 2. `name-form` — the name's shape (`-linux-x64`, a `.js` suffix); it would match
    a package that does not exist yet.
 3. `source` — the right-hand side as a location (`git+ssh:`, `file:`,

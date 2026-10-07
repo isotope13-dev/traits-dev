@@ -30,6 +30,7 @@ taxonomy-check:
 	python3 scripts/test-taxonomy-corpus-comparison.py
 	python3 scripts/taxonomy_sources.py
 	python3 scripts/check-taxonomy-memory-map.py --cleave "$(CLEAVE)"
+	python3 taxonomy-migration/batches/120-ruby-module-load/run-focused-cases.py --cleave "$(CLEAVE)"
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/memory-operations/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/memory-lifecycle/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/memory-catalog/cases.json
