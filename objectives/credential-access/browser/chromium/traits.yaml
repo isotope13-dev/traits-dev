@@ -15,37 +15,6 @@ traits:
     type: text
     substr: ChromeGetLocalName
     section: ".text"
-- id: browser-creds-table-sql
-  desc: SQL query against a browser credential table
-  # A column-agnostic table query also occurs in forensic and browser
-  # integration code; retain it as useful context without asserting intent.
-  crit: notable
-  conf: 0.9
-  attack: T1555.003
-  for: [scripts, source, powershell]
-  # Matches column-agnostic queries (e.g. `SELECT * FROM `logins``) that the
-  # column-specific password-sql/cookie-sql atoms miss. The targeted table name
-  # (logins/cookies/credit_cards) carries the credential-theft intent.
-  if:
-    type: text
-    regex: (?i)SELECT\b.{0,80}FROM\s+[`'"]?(logins|cookies|credit_cards)\b
-  unless:
-  - id: well-known/app/communication/thunderbird::firefox-omni-runtime-path
-  - id: well-known/lib/platform/browser-automation/drivers/selenium::google-flow-browser-auth-client
-  - id: well-known/app/media/kopuz::kopuz-isolated-cookie-module
-  - id: well-known/app/media/kopuz::kopuz-isolated-cookie-leaf
-  - id: well-known/app/media/kopuz::music-player-context
-  # Selects a single first-party session cookie, not the cookies table.
-  - id: well-known/app/ai/gateway/kimi-chat-opencode::kimi-chat-opencode-context
-# Renamed from `node-kimi-cookie-sql`: the matcher is a generic Chromium
-# cookie-store read and has nothing to do with any one vendor. The sibling
-# `node-kimi-auth-cookie-name` and `node-kimi-cookie-host-filter` traits were
-# removed outright — they hardcoded a single service's cookie name
-# (`kimi-auth`) and host (`kimi.com`), so they could never fire on anything but
-# that one package, and what they actually matched was a lookup narrowed to one
-# first-party domain, which is evidence *against* harvesting rather than for
-# it. Those product-specific strings now live where vendor identifiers belong,
-# in well-known/app/ai/gateway/kimi-chat-opencode.
 - id: chromium-encrypted-cookie-sql-select
   desc: SQL selects encrypted browser cookies
   crit: suspicious
@@ -58,16 +27,6 @@ traits:
     regex: 'SELECT\s+quote\(encrypted_value\)\s+FROM\s+cookies'
   unless:
     - id: well-known/app/ai/gateway/kimi-chat-opencode::kimi-chat-opencode-context
-- id: powershell-cookie-sql
-  desc: PowerShell queries the Chromium cookies table
-  crit: suspicious
-  conf: 0.95
-  for: [powershell]
-  platforms: [windows]
-  attack: T1555.003
-  if:
-    type: text
-    regex: '(?i)\bSELECT\b.{0,180}\bFROM\s+cookies\b'
 - id: firefox-cookie-sql
   desc: Firefox moz_cookies table SQL query
   crit: suspicious
@@ -340,14 +299,6 @@ composite_rules:
   - id: micro-behaviors/communications/http/cookie-store::chromium-os-crypt-reference
   unless:
   - id: well-known/lib/development/browser-cookie3/
-- id: cookie-theft
-  desc: Chrome cookie file access
-  crit: suspicious
-  conf: 0.85
-  attack: T1555.003
-  all:
-  - id: micro-behaviors/fs/path/application/browser::chrome-path
-  - id: micro-behaviors/data/db/sql::chromium-cookie-select-query
 - id: shell-cookie-theft
   desc: Chrome cookie theft via shell
   crit: suspicious
@@ -362,30 +313,6 @@ composite_rules:
   - id: micro-behaviors/process/create/local-exec::cp-execute
   - id: micro-behaviors/communications/http/download/curl::curl-cmd
   - id: micro-behaviors/fs/attributes/xattr::xattr-remove
-- id: master-decrypt
-  desc: Chromium encrypted-key decryption capability
-  crit: suspicious
-  conf: 0.9
-  attack: T1555.003
-  mbc: E1003
-  all:
-  - id: micro-behaviors/fs/path/application/browser::local-state
-  - id: micro-behaviors/data/config/schema::encrypted-key-field-reference
-  - id: micro-behaviors/communications/http/cookie-store::chromium-os-crypt-reference
-  unless:
-  # Media downloaders (youtube-dl, yt-dlp, gallery-dl) decrypt the user's
-  # own browser cookies for --cookies-from-browser.
-  - id: well-known/tool/media/
-  - id: well-known/app/communication/thunderbird::firefox-omni-runtime-path
-  - id: well-known/lib/platform/browser-automation/drivers/selenium::google-flow-browser-auth-client
-  - id: well-known/app/ai/tool-server/linkedin-mcp-server::browser-import-source-context
-  - id: well-known/app/ai/tool-server/linkedin-mcp-server::browser-import-archive-context
-  - id: well-known/lib/platform/browser-automation/drivers/selenium::browser-profile-import-workflow
-  - id: well-known/app/ai/coding-agent/kombai::kombai-browser-session-import-context
-  - id: well-known/lib/runtime/scripted/electron::electron-chromium-runtime-strong
-  # Composio's consented browser-profile import decrypts the user's own
-  # cookies into app-managed profiles; same documented purpose as above.
-  - id: well-known/app/ai/agent-runtime/composio/
 - id: powershell-chromium-cookie-decryption
   desc: PowerShell decrypts Chromium cookies from the browser database
   crit: hostile
@@ -394,31 +321,10 @@ composite_rules:
   platforms: [windows]
   attack: T1555.003
   all:
-  - id: powershell-cookie-sql
-  - id: master-decrypt
+  - id: micro-behaviors/data/db/sql::powershell-cookie-table-select
+  - id: micro-behaviors/communications/http/cookie-store::chromium-encrypted-key-metadata
   - id: micro-behaviors/os/security/dpapi::dotnet-protected-data-unprotect
   - id: micro-behaviors/crypto/symmetric/aes/script::powershell-aes-gcm-decrypt
-- id: python-dpapi-browser-decrypt
-  desc: Python Chromium DPAPI decryption
-  # Forensic tools legitimately decrypt browser records after obtaining the
-  # local DPAPI key. Keep the capability visible, but do not label it hostile
-  # without theft, staging, or exfiltration evidence.
-  crit: notable
-  conf: 0.95
-  attack: T1555.003
-  for: [python]
-  platforms: [windows]
-  all:
-  - id: micro-behaviors/fs/path/application/browser::local-state
-  - id: micro-behaviors/data/config/schema::encrypted-key-field-reference
-  - id: micro-behaviors/os/security/dpapi::python-dpapi-unprotect
-  unless:
-  - id: metadata/package/testing/presence/harness::test-directory
-  - id: well-known/app/ai/tool-server/linkedin-mcp-server::browser-import-source-context
-  - id: well-known/app/ai/tool-server/linkedin-mcp-server::browser-import-archive-context
-  - id: well-known/tool/media/yt-dlp/
-  - id: well-known/lib/development/browser-cookie3/
-  - id: well-known/app/finance/emoney-mcp::session-reuse-context
 - id: chromium-go-credential-extractor
   desc: Chromium credential extractor module
   crit: hostile
@@ -455,8 +361,8 @@ composite_rules:
   any:
   - id: micro-behaviors/data/db/access::chromium-login-sql
   - id: micro-behaviors/data/db/sql::chromium-cookie-select-query
-  - id: cookie-theft
-  - id: master-decrypt
+  - id: micro-behaviors/communications/http/cookie-store::chromium-cookie-query-with-browser-path
+  - id: micro-behaviors/communications/http/cookie-store::chromium-encrypted-key-metadata
 - id: multi-browser
   desc: Multiple Chromium browser data paths
   crit: suspicious
@@ -520,7 +426,7 @@ composite_rules:
   # Decryption or exfiltration composites supply the hostile intent.
   all:
   - id: micro-behaviors/fs/path/application/browser::chrome-user-data
-  - id: browser-creds-table-sql
+  - id: micro-behaviors/data/db/sql::browser-record-table-select
   any:
   - id: micro-behaviors/fs/path/password-store::login-data
   - id: micro-behaviors/fs/path/cookie::browser-cookies-file-path
@@ -619,13 +525,13 @@ composite_rules:
   for: [javascript, typescript]
   all:
   - id: well-known/lib/development/vscode::vscode-extension-marker
-  - id: master-decrypt
+  - id: micro-behaviors/communications/http/cookie-store::chromium-encrypted-key-metadata
   any:
-  - id: browser-creds-table-sql
+  - id: micro-behaviors/data/db/sql::browser-record-table-select
   - id: micro-behaviors/data/db/access::chromium-login-sql
   - id: micro-behaviors/data/db/sql::chromium-cookie-select-query
   - id: chrome-keychain-query
-  - id: chrome-safe-storage-keychain-query
+  - id: micro-behaviors/os/security/keychain::chrome-safe-storage-query
   - id: micro-behaviors/fs/path/password-store::chromium-safe-storage-service-name
   - id: micro-behaviors/crypto/kdf/algorithm::chrome-compatible-kdf-salt
   - id: objectives/credential-access/browser/dpapi::node-dpapi-unprotect
