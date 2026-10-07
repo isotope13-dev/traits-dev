@@ -14,3 +14,80 @@ traits:
       # pentestmonkey php-reverse-shell shape). Both hand the child its
       # standard input through proc_open; the spelling is not the behavior.
       regex: '0\s*=>\s*(array\s*\(\s*["'']pipe["'']|\$[A-Za-z_]\w*)'
+
+  - id: php-resource-read-stdin-pipe-write
+    desc: PHP read result feeds a stdin pipe
+    if:
+      type: tree-sitter
+      query: |
+        ((compound_statement
+          (expression_statement (assignment_expression
+            left: (variable_name) @read_value
+            right: (function_call_expression
+              function: (name) @reader
+              arguments: (arguments (argument (variable_name))))))
+          (expression_statement (function_call_expression
+            function: (name) @writer
+            arguments: (arguments
+              (argument (subscript_expression (variable_name) (integer) @fd))
+              (argument (variable_name) @write_value))))) @relay
+          (#match? @reader "(?i)^fread$")
+          (#match? @writer "(?i)^fwrite$")
+          (#eq? @fd "0")
+          (#eq? @read_value @write_value))
+
+  - id: php-output-pipe-read-resource-write
+    desc: PHP output-pipe result feeds a resource
+    if:
+      type: tree-sitter
+      query: |
+        ((compound_statement
+          (expression_statement (assignment_expression
+            left: (variable_name) @read_value
+            right: (function_call_expression
+              function: (name) @reader
+              arguments: (arguments
+                (argument (subscript_expression (variable_name) (integer) @fd))))))
+          (expression_statement (function_call_expression
+            function: (name) @writer
+            arguments: (arguments
+              (argument (variable_name))
+              (argument (variable_name) @write_value))))) @relay
+          (#match? @reader "(?i)^fread$")
+          (#match? @writer "(?i)^fwrite$")
+          (#match? @fd "^[12]$")
+          (#eq? @read_value @write_value))
+
+  - id: php-shell-stdio-fd-redirection
+    desc: PHP shell redirects stdin and stdout
+    if:
+      type: text
+      regex: '<&[0-9]+\s+>&[0-9]+'
+
+  - id: php-socket-proc-open-descriptors
+    desc: PHP socket binds process stdin/stdout
+    if:
+      type: tree-sitter
+      query: |
+        ((_
+          (expression_statement (assignment_expression
+            left: (variable_name) @socket
+            right: (function_call_expression function: (name) @connect)))
+          (expression_statement (assignment_expression
+            left: (variable_name) @descriptors
+            right: (array_creation_expression
+              (array_element_initializer (integer) @input_fd (variable_name) @input)
+              (array_element_initializer (integer) @output_fd (variable_name) @output))))
+          (expression_statement (assignment_expression
+            right: (function_call_expression
+              function: (name) @spawn
+              arguments: (arguments
+                (argument)
+                (argument (variable_name) @spawn_descriptors)))))) @binding
+          (#match? @connect "(?i)^fsockopen$")
+          (#match? @spawn "(?i)^proc_open$")
+          (#eq? @input_fd "0")
+          (#eq? @output_fd "1")
+          (#eq? @socket @input)
+          (#eq? @socket @output)
+          (#eq? @descriptors @spawn_descriptors))
