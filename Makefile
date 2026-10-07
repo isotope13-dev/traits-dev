@@ -31,6 +31,11 @@ taxonomy-check:
 	python3 scripts/taxonomy_sources.py
 	python3 scripts/check-taxonomy-memory-map.py --cleave "$(CLEAVE)"
 	python3 taxonomy-migration/batches/120-ruby-module-load/run-focused-cases.py --cleave "$(CLEAVE)"
+	python3 taxonomy-migration/batches/121-credential-schema/run-focused-cases.py --cleave "$(CLEAVE)"
+	python3 taxonomy-migration/batches/122-credential-source-symbols/run-focused-cases.py --cleave "$(CLEAVE)"
+	python3 taxonomy-migration/batches/123-ruby-reflection/run-focused-cases.py --cleave "$(CLEAVE)"
+	python3 taxonomy-migration/batches/124-go-reflection/run-focused-cases.py --cleave "$(CLEAVE)"
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/125-ruby-variation-key-components/cases.json --compare taxonomy-migration/batches/125-ruby-variation-key-components/evidence-before.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/memory-operations/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/memory-lifecycle/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/memory-catalog/cases.json
@@ -103,6 +108,7 @@ taxonomy-check:
 	python3 taxonomy-migration/research/b098-frozen-suite-workspace/check-time-after.py --cleave "$(CLEAVE)"
 	python3 taxonomy-migration/research/b101-suite-workspace/run-after-controls.py --cleave "$(CLEAVE)" --traits-dir .
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/102-current-file-populations/focused-cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/130-java-accessibility/cases.json
 
 # Compile the third-party + built-in YARA rules into portable per-filetype
 # `.yrc` files (plus a manifest) under third-party/compiled/. These are BUILD
