@@ -564,6 +564,9 @@ distinguishes it.
   secrets, use the *immediate* store — OS keychain, credential manager,
   environment, cloud secret service — else the required application or
   key-format store (browser, SSH, wallet), else `files` for generic extraction.
+  Certificate/private-key store export is `keychain` (including Windows
+  CAPI/CNG stores); Credential Manager password-blob access is
+  `credential-manager`.
   Process-memory extraction is `memory`; registry keys and hives, including an
   offline SAM, are `registry`. An application store beats its file or registry
   container; the final source beats any key used to unlock it.
