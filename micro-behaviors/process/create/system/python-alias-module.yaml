@@ -8,20 +8,58 @@ traits:
   - id: python-private-alias-module-launch
     desc: Module scope calls privately aliased launcher
     if:
-      type: value
-      path: source.python.module_alias_calls[*].resolved_callee
-      regex: '^(os\.(system|popen|execl)|subprocess\.Popen)$'
+      type: tree-sitter
+      language: python
+      query: |
+        (module
+          (import_from_statement module_name: (dotted_name) @module
+            name: (aliased_import name: (dotted_name) @primitive alias: (identifier) @alias))
+          [(expression_statement (call function: (identifier) @callee))
+           (try_statement body: (block (expression_statement (call function: (identifier) @callee))))]
+          (#eq? @module "os") (#match? @primitive "^(system|popen|execl)$")
+          (#match? @alias "^_") (#eq? @alias @callee))
+        (module
+          (import_from_statement module_name: (dotted_name) @module
+            name: (aliased_import name: (dotted_name) @primitive alias: (identifier) @alias))
+          [(expression_statement (call function: (identifier) @callee))
+           (try_statement body: (block (expression_statement (call function: (identifier) @callee))))]
+          (#eq? @module "subprocess") (#eq? @primitive "Popen")
+          (#match? @alias "^_") (#eq? @alias @callee))
 
   - id: python-closed-temp-remote-eval-windowless-launch
     desc: Closed remote-eval script gets windowless launch
     if:
-      type: value
-      path: source.python.literal_tempfile_stager_flows[*].kind
-      exact: closed_temporary_remote_eval_windowless_launch
-
-  - id: python-private-temp-stager-launcher
-    desc: Temporary script launcher uses private alias
-    if:
-      type: value
-      path: source.python.literal_tempfile_stager_flows[*].launcher_private_alias
-      exact: 'true'
+      type: tree-sitter
+      language: python
+      query: |
+        (module
+          (import_from_statement module_name: (dotted_name) @temp_module
+            name: (aliased_import name: (dotted_name) @constructor alias: (identifier) @constructor_alias))
+          (import_from_statement module_name: (dotted_name) @sys_module
+            name: (aliased_import name: (dotted_name) @executable alias: (identifier) @exe_alias))
+          (import_from_statement module_name: (dotted_name) @os_module
+            name: (aliased_import name: (dotted_name) @system alias: (identifier) @system_alias))
+          (expression_statement (assignment left: (identifier) @temp
+            right: (call function: (identifier) @construct
+              arguments: (argument_list (keyword_argument name: (identifier) @delete value: (false))))))
+          (expression_statement (call function: (attribute object: (identifier) @write_temp attribute: (identifier) @write)
+            arguments: (argument_list (string) @payload)))
+          (expression_statement (call function: (attribute object: (identifier) @close_temp attribute: (identifier) @close)))
+          (try_statement body: (block
+            (expression_statement (call function: (identifier) @launch
+              arguments: (argument_list (string
+                (interpolation expression: (call function: (attribute object: (identifier) @exe attribute: (identifier) @replace)
+                  arguments: (argument_list (string) @old (string) @new)))
+                (interpolation expression: (attribute object: (identifier) @launch_temp attribute: (identifier) @name))) @command)))))
+          (#eq? @temp_module "tempfile") (#eq? @constructor "NamedTemporaryFile")
+          (#eq? @sys_module "sys") (#eq? @executable "executable")
+          (#eq? @os_module "os") (#eq? @system "system")
+          (#eq? @constructor_alias @construct) (#eq? @delete "delete")
+          (#eq? @temp @write_temp) (#eq? @write "write")
+          (#match? @payload "exec\\([^\\n]*https?://[^\\n]*[.]read\\(\\)\\)")
+          (#eq? @temp @close_temp) (#eq? @close "close")
+          (#eq? @system_alias @launch) (#eq? @exe_alias @exe)
+          (#eq? @replace "replace") (#match? @old "^[\"']\\.exe[\"']$")
+          (#match? @new "^[\"']w\\.exe[\"']$")
+          (#eq? @temp @launch_temp) (#eq? @name "name")
+          (#match? @command "^f[\"']start "))
