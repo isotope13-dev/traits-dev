@@ -39,3 +39,25 @@ Final full JSON: zero hostile, one suspicious (Base64 literal piped onward).
 All eight corrected capability IDs match the original sample. Eight positive
 and eight negative assertions passed through check.py. zsh syntax validation
 passed; hash agrees with the submitted SHA-256. No sample code was executed.
+
+The old validator used fixtures to demand hostile verdicts for generic mechanics.
+Updated exact IDs in expectations and reclassified the .invalid encoded loader
+and reserved-IP os.system control as benign, retaining explicit capability
+requirements and score floors. The cross-language drop-exec controls still
+require a positive capability score instead of unsupported hostile intent.
+The compressed external-IP stage retains its remaining hostile detection.
+Rebuilt the local engine because its binaries lagged the checked-out source;
+unrelated ANI, NRBF, and Composer fixture failures require current producers.
+
+Validation blocker: the unmodified HEAD parent also fails 37 validation checks
+with the initially available debug engine. Installed/release builds reject six
+existing YAML-scoped trait files. Rebuilding from the available engine source
+also rejects those YAML types. No unrelated traits or validation exclusions
+were changed to bypass these failures. A compatible engine is still required
+for the mandatory warning-free full validation gate.
+
+Removed a pipe-to-shell token as sufficient evidence of direct interpreter
+evaluation: starting zsh on HTTP response stdin is process creation, not an
+in-process eval. Existing precise pipeline traits retain the real behavior.
+This final tightening and updated built-in expectations await verification
+with a compatible engine; the earlier eight-rule controls passed before it.
