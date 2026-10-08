@@ -10,28 +10,6 @@ defaults:
   size_max: 65536
 
 traits:
-  # A DOS COM payload can be hidden in a command script polyglot. The
-  # unprintable GOTO label transfers cmd.exe past the machine code, while DOS
-  # starts at byte zero and executes the same bytes as a COM program.
-  - id: batch-dos-com-entry-goto
-    for: [batch]
-    desc: Batch polyglot jumps over DOS code
-    crit: notable
-    conf: 0.98
-    if:
-      type: hex
-      pattern: "40 47 4F 54 4F 20 ?? 0D 0A"
-      offset: 0
-
-  - id: dos-bat-file-mask
-    for: [batch]
-    desc: DOS code searches for BAT files
-    crit: notable
-    conf: 0.94
-    if:
-      type: hex
-      pattern: "2A 2E 42 41 54 00"
-
   - id: objectives/impact/infect/binary/dos/file::dos-com-truncated-c-mask
     for: [dos_com, static-lib, data]
     desc: DOS truncated COM search mask
@@ -51,101 +29,6 @@ traits:
     if:
       type: hex
       pattern: "B0 2A [0-4] AA [0-8] B0 2E [0-6] AA [0-8] B0 43 [0-6] AA"
-  - id: objectives/impact/infect/binary/dos/file::dos-open-update-int
-    desc: DOS opens a file for update
-    crit: notable
-    conf: 0.9
-    if:
-      type: hex
-      # DX must point at the filename, so hand-assembled bodies set it up
-      # (CWD / MOV DL,9Eh for the DTA name) between the AX load and INT.
-      pattern: "B8 02 3D [0-6] CD"
-  - id: objectives/impact/infect/binary/dos/file::dos-open-al-update
-    desc: DOS opens for update with AL
-    crit: notable
-    conf: 0.9
-    if:
-      type: hex
-      pattern: "B4 3D B0 02 [0-2] CD"
-  - id: objectives/impact/infect/binary/dos/file::dos-seek-or-ah
-    desc: DOS seeks by setting AH
-    crit: notable
-    conf: 0.88
-    if:
-      type: hex
-      pattern: "80 CC 42 [0-8] CD"
-  # MOV AX,4202h is seek-from-end. CWD then clears DX because 4202h is
-  # positive; tiny appenders return that setup and the caller issues INT 21h,
-  # so the interrupt is not always within a few bytes of the immediate.
-  - id: objectives/impact/infect/binary/dos/file::dos-seek-end-int
-    desc: DOS seeks to end of file
-    crit: notable
-    conf: 0.9
-    if:
-      type: hex
-      pattern: "(B8 02 42 99|B8 02 42 [0-6] CD)"
-  # DOS call numbers 3D02h (open for update) and 4202h (seek to EOF) can be
-  # formed compactly from FF3Ch / FF41h with three INC AX instructions.
-  - id: objectives/impact/infect/binary/dos/file::dos-open-update-inc-ax
-    desc: DOS INC AX opens file for update
-    crit: notable
-    conf: 0.9
-    for: [dos_com, static-lib, data]
-    if:
-      type: hex
-      pattern: "B8 FF 3C 40 40 40"
-  - id: objectives/impact/infect/binary/dos/file::dos-seek-end-inc-ax
-    desc: DOS seeks to EOF via incremented AX
-    crit: notable
-    conf: 0.9
-    for: [dos_com, static-lib, data]
-    if:
-      type: hex
-      pattern: "B8 FF 41 40 40 40"
-  - id: objectives/impact/infect/binary/dos/file::dos-open-update-near
-    desc: DOS opens for update then calls
-    crit: notable
-    conf: 0.9
-    if:
-      type: hex
-      pattern: "B8 02 3D 9C 0E E8"
-  - id: objectives/impact/infect/binary/dos/file::dos-seek-start-int
-    desc: DOS seeks to start of file
-    crit: notable
-    conf: 0.88
-    if:
-      type: hex
-      pattern: "B8 00 42 [0-6] CD"
-  - id: objectives/impact/infect/binary/dos/file::dos-open-update-e8
-    desc: DOS opens for update via a call
-    crit: notable
-    conf: 0.9
-    # Headerless near-call bodies sniff as data; DX takes the DTA filename
-    # (MOV DX,BX / ADD DX,imm8) between the service load and the call.
-    for: [dos_com, static-lib, data]
-    if:
-      type: hex
-      pattern: "B8 02 3D [0-6] E8"
-  - id: objectives/impact/infect/binary/dos/file::dos-seek-end-e8
-    desc: DOS seeks to end via a call
-    crit: notable
-    conf: 0.9
-    for: [dos_com, static-lib, data]
-    if:
-      type: hex
-      pattern: "B8 02 42 [0-8] E8"
-  - id: objectives/impact/infect/binary/dos/file::dos-seek-ah-cwd
-    desc: DOS seeks after sign-extending DX
-    crit: notable
-    conf: 0.88
-    if:
-      type: hex
-      pattern: "B4 42 99 [0-4] CD"
-
-  # INT 21h hooked by patching the IVT at 0000:0084 directly instead of
-  # AH=35h/25h: LDS/LES reg,[0084] then MOV [0084],imm or MOV [0084],reg.
-  # MOV CX,3 and MOV CL,3 both request the three-byte COM entry.
-  # The short CL form is what size-constrained appenders use.
   - id: objectives/impact/infect/binary/dos/file::dos-read-three-bytes
     desc: DOS reads the first three bytes
     crit: notable
@@ -329,17 +212,25 @@ traits:
 
 composite_rules:
   - id: objectives/impact/infect/binary/dos/file::dos-com-directory-infector
-    for: [dos_com, static-lib, data]
-    desc: DOS searches executables and writes viral code
+    desc: DOS directory scan with infection-style writes
     crit: hostile
     conf: 0.96
+    for:
+    - dos_com
+    - static-lib
+    - data
     size_max: 1048576
     all:
-      - id: micro-behaviors/fs/search::dos-int21-find-first-call
-      - id: micro-behaviors/fs/write/file/handle::dos-int21-write-call
+    - id: micro-behaviors/fs/search::dos-int21-find-first-call
+    - id: micro-behaviors/fs/write/file/handle::dos-int21-write-call
+    - id: objectives/impact/infect/binary/dos/file::dos-host-altering-write-admission
     any:
-      - id: micro-behaviors/fs/write/file/handle::dos-image-or-extension-patched-file-write
-      - id: dos-relocated-append-infector
+    - id: micro-behaviors/fs/write/file/handle::dos-image-or-extension-patched-file-write
+    - id: dos-relocated-append-infector
+    unless:
+    - id: micro-behaviors/fs/file/rename::dos-rename-host-build-batch-wrapper
+    - id: micro-behaviors/fs/write/file/handle::dos-dta-cell-sized-own-image-overwrite-loop
+
   - id: objectives/impact/infect/binary/dos/file::dos-batch-companion-dropper
     for: [dos_com, static-lib, data]
     desc: DOS program writes a self-copying batch virus
@@ -350,52 +241,13 @@ composite_rules:
       - id: objectives/impact/infect/binary/dos/file::dos-embedded-batch-self-copy-loop
       - id: micro-behaviors/fs/search::dos-int21-find-first
       - id: micro-behaviors/fs/write/file/handle::dos-int21-write
-  - id: dos-batch-polyglot-infector
-    desc: DOS code infects batch files
-    crit: hostile
-    conf: 0.98
-    for: [batch]
-    size_max: 65536
-    all:
-      - id: batch-dos-com-entry-goto
-      - id: micro-behaviors/fs/search::dos-int21-find-first-call
-      - id: micro-behaviors/fs/write/file/handle::dos-int21-write-call
-    any:
-      - id: objectives/impact/infect/binary/dos/interrupt::dos-int21-find-next
-      - id: dos-bat-file-mask
-    needs: 1
-    unless:
-      # Chromium's resources.pak is a packed resource blob. Coincidental
-      # INT 21h byte runs inside it are not a DOS directory infector.
-      - id: micro-behaviors/fs/path/application/browser::chromium-resources-pak-basename
-      - id: metadata/package/testing/presence/harness::bench-data-corpus-path
-      # pedump's sig.bin is a marshalled packer signature catalog, not a
-      # DOS infector body.
-      - id: well-known/tool/reverse-engineering/pedump::pedump-packer-marker
-      # MaxMind's GeoLite2 city database is a packed binary. INT 21h byte
-      # runs inside it are not a DOS directory infector.
-      - id: well-known/lib/data/maxmind::geolite2-mmdb-basename
-      # OpenCV-style SIFT keypoint tables are packed feature data.
-      - id: well-known/lib/data/keypoint::sift-keypoint-basename
-      # ONNX weights and Qt RCC blobs are packed data, not DOS code.
-      - id: well-known/lib/data/onnx::onnx-model-basename
-      - id: well-known/lib/ui/qt::qt-rcc-basename
-      # VRM avatars are glTF binaries. INT 21h runs in the mesh are not DOS code.
-      - id: well-known/lib/data/vrm::vrm-model-basename
-      # NCNN neural network model weights are tensor data, not DOS code.
-      - id: well-known/lib/data/ncnn::ncnn-model-basename
-
-  # Borland-compiled DOS viruses can hide DOS service numbers in helper
-  # routines, so find/open API signatures may not be present inline. Requiring
-  # an append seek, near-call write, COM target mask, and redirected entry
-  # point identifies the infector chain without those signatures.
   - id: objectives/impact/infect/binary/dos/file::dos-com-near-call-infector
     desc: DOS COM appends an infector through calls
     crit: hostile
     conf: 0.95
     all:
-      - id: objectives/impact/infect/binary/dos/file::dos-seek-end-e8
-      - id: micro-behaviors/fs/write/file/handle::dos-int21-write-near
+      - id: micro-behaviors/fs/file/seek::dos-seek-end-e8
+      - id: metadata/binary/code/control-transfer::x86-ah40-e8-byte-proximity
       - id: micro-behaviors/fs/search::dos-com-exe-or-all-file-wildcard
       - id: metadata/binary/code/control-transfer::entry-near-jump-bytes
 
@@ -416,22 +268,21 @@ composite_rules:
   # Headerless COM bodies sniff as data; three distinct INT 21h service
   # sequences (get vector, set vector, write/find) are not coincidental.
   - id: objectives/impact/infect/binary/dos/file::dos-timestamped-file-write
-    desc: DOS write keeps the file time
+    desc: Host writes with timestamp-setting sequences
     crit: hostile
     conf: 0.95
     all:
-      - id: micro-behaviors/fs/file/open::dos-int21-open-or-create-call
-      - id: micro-behaviors/fs/write/file/handle::dos-int21-write-call
-      - id: objectives/impact/infect/binary/dos/interrupt::dos-int21-set-file-time
+    - id: micro-behaviors/fs/file/open::dos-int21-open-or-create-call
+    - id: micro-behaviors/fs/write/file/handle::dos-int21-write-call
+    - id: micro-behaviors/fs/file/timestamp::dos-int21-set-file-time
+    - id: objectives/impact/infect/binary/dos/file::dos-host-altering-write-admission
     any:
-      - id: objectives/impact/infect/binary/dos/interrupt::dos-int21-read-call
-      - id: objectives/impact/infect/binary/dos/interrupt::dos-int21-seek-call
+    - id: micro-behaviors/fs/read/file/handle::dos-int21-read-call
+    - id: micro-behaviors/fs/file/seek::dos-int21-seek-call
     needs: 1
-  # Overwriting sibling of dos-timestamped-file-write: the found file is
-  # opened read/write through the wrapper call (MOV AL,2 / CALL), overwritten
-  # in place with no read or seek, and its recorded timestamp is put back so
-  # the directory listing hides the infection. Kit-built direct-action
-  # infectors (IVP output) never load the open service inline.
+    unless:
+    - id: micro-behaviors/fs/write/file/handle::dos-encrypted-body-append-header-redirect
+
   - id: objectives/impact/infect/binary/dos/file::dos-searched-overwrite-time-restore
     desc: DOS overwrites searched files, restores time
     crit: hostile
@@ -440,68 +291,33 @@ composite_rules:
       - id: micro-behaviors/fs/search::dos-int21-find-first-call
       - id: objectives/impact/infect/binary/dos/file::dos-call-with-al-two
       - id: micro-behaviors/fs/write/file/handle::dos-int21-write-call
-      - id: objectives/impact/infect/binary/dos/interrupt::dos-int21-set-file-time
-  - id: objectives/impact/infect/binary/dos/file::dos-open-update-dispatch
-    desc: DOS opens a file for update
-    crit: notable
-    conf: 0.9
-    any:
-      - id: objectives/impact/infect/binary/dos/file::dos-open-update-int
-      - id: objectives/impact/infect/binary/dos/file::dos-open-update-inc-ax
-      - id: objectives/impact/infect/binary/dos/file::dos-open-al-update
-      - id: objectives/impact/infect/binary/dos/interrupt::dos-open-update-far
-      - id: objectives/impact/infect/binary/dos/file::dos-open-update-near
-      - id: objectives/impact/infect/binary/dos/file::dos-open-update-e8
-  - id: objectives/impact/infect/binary/dos/file::dos-seek-end-dispatch
-    desc: DOS seeks to end of file
-    crit: notable
-    conf: 0.9
-    any:
-      - id: objectives/impact/infect/binary/dos/file::dos-seek-end-int
-      - id: objectives/impact/infect/binary/dos/file::dos-seek-or-ah
-      - id: objectives/impact/infect/binary/dos/interrupt::dos-seek-end-far
-      - id: objectives/impact/infect/binary/dos/file::dos-seek-start-int
-      - id: objectives/impact/infect/binary/dos/file::dos-seek-end-e8
-      - id: objectives/impact/infect/binary/dos/file::dos-seek-ah-cwd
-      - id: objectives/impact/infect/binary/dos/interrupt::dos-int21-seek
-      - id: objectives/impact/infect/binary/dos/file::dos-seek-end-inc-ax
-      - id: objectives/impact/infect/binary/dos/interrupt::dos-seek-via-farcall
-  - id: objectives/impact/infect/binary/dos/file::dos-write-dispatch
-    desc: DOS writes through a DOS entry
-    crit: notable
-    conf: 0.86
-    any:
-      - id: micro-behaviors/fs/write/file/handle::dos-int21-write
-      - id: objectives/impact/infect/binary/dos/interrupt::dos-write-via-farcall
-      - id: micro-behaviors/fs/write/file/handle::dos-int21-write-near
+      - id: micro-behaviors/fs/file/timestamp::dos-int21-set-file-time
   - id: objectives/impact/infect/binary/dos/file::dos-relocated-append-infector
-    desc: DOS writes a body into a host
+    desc: DOS host-write strategy with seek/write setup
     crit: hostile
     conf: 0.95
     all:
-      - id: objectives/impact/infect/binary/dos/file::dos-seek-end-dispatch
-      - id: objectives/impact/infect/binary/dos/file::dos-write-dispatch
+    - id: micro-behaviors/fs/file/seek::dos-seek-end-dispatch
+    - id: micro-behaviors/fs/write/file/handle::dos-write-dispatch
+    - id: objectives/impact/infect/binary/dos/file::dos-host-altering-write-admission
     any:
-      - id: objectives/impact/infect/binary/dos/file::dos-open-update-dispatch
-      - id: objectives/impact/infect/binary/dos/file::dos-read-three-bytes
+    - id: micro-behaviors/fs/file/open::dos-open-update-dispatch
+    - id: objectives/impact/infect/binary/dos/file::dos-read-three-bytes
     needs: 1
+    unless:
+    - id: micro-behaviors/fs/write/file/handle::dos-encrypted-body-append-header-redirect
 
-  # The same append infection tunneled through near-call wrappers: seek to
-  # end and write through a call (B440h via E8h) instead of inline INT 21h.
-  # Fully tunneled bodies never load AX with 3D02h at all: they pass the
-  # read-write mode in AL (B002h) into the wrapper call, so that shape is
-  # the third open leg. Headerless bodies sniff as data.
   - id: objectives/impact/infect/binary/dos/file::dos-seek-append-near-call-infector
     for: [dos_com, static-lib, data]
     desc: DOS appends a body through near calls
     crit: hostile
     conf: 0.94
     all:
-      - id: objectives/impact/infect/binary/dos/file::dos-seek-end-e8
-      - id: micro-behaviors/fs/write/file/handle::dos-int21-write-near
+      - id: micro-behaviors/fs/file/seek::dos-seek-end-e8
+      - id: metadata/binary/code/control-transfer::x86-ah40-e8-byte-proximity
     any:
-      - id: objectives/impact/infect/binary/dos/file::dos-open-update-dispatch
-      - id: objectives/impact/infect/binary/dos/file::dos-open-update-e8
+      - id: micro-behaviors/fs/file/open::dos-open-update-dispatch
+      - id: micro-behaviors/fs/file/open::dos-open-update-e8
       - id: objectives/impact/infect/binary/dos/file::dos-call-with-al-two
 
   # The dispatch rollups above stay on typed COM files so a lone near-call
@@ -513,11 +329,11 @@ composite_rules:
     crit: hostile
     conf: 0.94
     all:
-      - id: objectives/impact/infect/binary/dos/interrupt::dos-int21-read-call
-      - id: objectives/impact/infect/binary/dos/file::dos-seek-end-int
+      - id: micro-behaviors/fs/read/file/handle::dos-int21-read-call
+      - id: micro-behaviors/fs/file/seek::dos-seek-end-int
       - id: micro-behaviors/fs/write/file/handle::dos-int21-write-call
-      - id: objectives/impact/infect/binary/dos/file::dos-seek-start-int
-      - id: objectives/impact/infect/binary/dos/interrupt::dos-int21-set-file-time
+      - id: micro-behaviors/fs/file/seek::dos-seek-start-int
+      - id: micro-behaviors/fs/file/timestamp::dos-int21-set-file-time
 
   # Resident infector that patches the IVT directly, then filters EXEC or
   # FCB directory calls in its handler and writes into files. Also untyped
@@ -552,14 +368,14 @@ composite_rules:
     conf: 0.94
     all:
       - id: objectives/impact/infect/binary/dos/file::dos-xor-byte-loop
-      - id: objectives/impact/infect/binary/dos/file::dos-write-dispatch
+      - id: micro-behaviors/fs/write/file/handle::dos-write-dispatch
   - id: objectives/impact/infect/binary/dos/file::dos-mutated-name-drop
     desc: DOS writes under a mutated name
     crit: hostile
     conf: 0.93
     all:
       - id: objectives/impact/infect/binary/dos/file::dos-bump-then-create
-      - id: objectives/impact/infect/binary/dos/file::dos-write-dispatch
+      - id: micro-behaviors/fs/write/file/handle::dos-write-dispatch
   - id: objectives/impact/infect/binary/dos/file::dos-jump-prefixed-drop
     for: [dos_com]
     desc: DOS writes a jump-prefixed file
@@ -569,7 +385,7 @@ composite_rules:
       # Canonical atom for the MOV AL,E9/STOSB store-a-jump fragment lives
       # with the polymorphic opcode emitters; shared, not duplicated.
       - id: objectives/anti-static/obfuscation/payload/polymorphic/generator::dos-emit-jmp-opcode
-      - id: objectives/impact/infect/binary/dos/file::dos-write-dispatch
+      - id: micro-behaviors/fs/write/file/handle::dos-write-dispatch
   - id: objectives/impact/infect/binary/dos/file::dos-hard-disk-sector-write
     desc: DOS writes a hard-disk sector
     crit: hostile
@@ -583,7 +399,7 @@ composite_rules:
     conf: 0.93
     all:
       - id: objectives/impact/infect/binary/dos/file::dos-biased-service
-      - id: objectives/impact/infect/binary/dos/file::dos-seek-end-dispatch
+      - id: micro-behaviors/fs/file/seek::dos-seek-end-dispatch
   - id: objectives/impact/infect/binary/dos/file::dos-tiny-body-write
     desc: DOS copies and writes a 59-byte body
     crit: hostile
@@ -635,7 +451,7 @@ composite_rules:
     conf: 0.88
     all:
       - id: objectives/impact/infect/binary/dos/interrupt::dos-int21-masked-service-calls
-      - id: objectives/impact/infect/binary/dos/interrupt::dos-int21-handle-sized-transfer
+      - id: micro-behaviors/os/msdos/interrupt::int21-result-bx-cx-sequence
   - id: dos-com-first-match-overwriter
     for: [dos_com, data]
     desc: DOS overwrites search result with its COM code
@@ -688,14 +504,20 @@ composite_rules:
       - id: micro-behaviors/fs/search::dos-com-exe-or-all-file-wildcard
       - id: objectives/impact/infect/binary/dos/interrupt::dos-lodsw-infection-dispatch-loop
   - id: objectives/impact/infect/binary/dos/file::dos-com-dta-overwriter
-    for: [dos_com, data]
+    for:
+    - dos_com
+    - data
     desc: DOS overwrites DTA files matching wildcard
     crit: hostile
     conf: 0.96
     all:
-      - id: micro-behaviors/fs/search::dos-com-exe-or-all-file-wildcard
-      - id: micro-behaviors/fs/file/open::dos-int21-open-dta-filename
-      - id: micro-behaviors/fs/write/file/handle::dos-int21-handle-write-setup
+    - id: micro-behaviors/fs/search::dos-com-exe-or-all-file-wildcard
+    - id: micro-behaviors/fs/file/open::dos-int21-open-dta-filename
+    - id: micro-behaviors/fs/write/file/handle::dos-int21-handle-write-setup
+    - id: micro-behaviors/fs/write/file/handle::dos-default-dta-open-image-write-close
+    unless:
+    - id: micro-behaviors/fs/write/file/handle::dos-dta-cell-sized-own-image-overwrite-loop
+
   - id: objectives/impact/infect/binary/dos/file::dos-com-companion-infector
     for: [dos_com, data]
     desc: DOS creates companion COM file for executable
@@ -719,7 +541,7 @@ composite_rules:
     all:
       - id: objectives/impact/infect/binary/dos/file::dos-com-mask-stosb
       - id: micro-behaviors/fs/search::dos-int21-find-first-call
-      - id: objectives/impact/infect/binary/dos/interrupt::dos-int21-find-next
+      - id: micro-behaviors/fs/search::dos-int21-find-next
       - id: micro-behaviors/fs/write/file/handle::dos-int21-write-call
 
 

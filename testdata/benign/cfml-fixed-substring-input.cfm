@@ -1,0 +1,1 @@
+<cfoutput>result</cfoutput><cfexecute name='#Mid("/usr/bin/echo",1,Form.length)#' arguments="fixed" timeout="1">

@@ -653,6 +653,12 @@ It is mutually exclusive with `call`, `value`, `whole_value`, and `member`,
 and does not accept transfer models. Use it when the attribute itself is the
 observation, such as a command execution call specifying an output file.
 
+**Named-field absence.** `arg.from.field_absent: true` with a `field` selects
+structural absence in a concrete keyword/attribute map. Opaque objects and
+missing projections do not prove absence. When inferring a CFML default action,
+also require absence of `attributecollection`; dynamic attribute collections
+may provide that action. Presence and absence are mutually exclusive.
+
 **Complete literal values.** `arg.from.whole_value` matches a regex against a
 proven complete string value, optionally selected with `from.field`. Use it for
 operation selectors such as an HTTP method, file action, or executable name.

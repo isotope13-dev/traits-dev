@@ -1,0 +1,1 @@
+<cfset open="->|"><cfset close="|<-"><cfoutput>#open & Form.z1 & Form.z2 & close#</cfoutput>

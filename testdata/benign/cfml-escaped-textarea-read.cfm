@@ -1,0 +1,1 @@
+<cffile action="read" file="/srv/fixed" variable="data"><cftextarea value="#HTMLEditFormat(data)#" name="view">

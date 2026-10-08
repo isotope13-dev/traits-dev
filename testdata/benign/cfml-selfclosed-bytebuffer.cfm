@@ -1,0 +1,1 @@
+<cfset x=CreateObject("java","java.nio.ByteBuffer") />

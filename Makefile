@@ -105,12 +105,27 @@ taxonomy-check:
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/089-wfp-source-call-precision/cases-after.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/command-task-field/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/098-reviewed-paths-with-image/image-cases-after.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/whole-file-entropy/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/139-triage20-entropy-gosum/gosum-positive-cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/139-triage20-entropy-gosum/gosum-negative-cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/139-triage20-entropy-gosum/section-entropy-cases.json
 	python3 taxonomy-migration/research/b098-frozen-suite-workspace/check-time-after.py --cleave "$(CLEAVE)"
 	python3 taxonomy-migration/research/b101-suite-workspace/run-after-controls.py --cleave "$(CLEAVE)" --traits-dir .
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/102-current-file-populations/focused-cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/130-java-accessibility/cases.json
-	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/131-powershell-decryptor-home/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/131-powershell-decryptor-home/cases-current.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/136-triage20-pkginfo-properties/focused-positive-cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/136-triage20-pkginfo-properties/focused-negative-cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/136-triage20-pkginfo-properties/focused-pyproject-positive-cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/136-triage20-pkginfo-properties/focused-pyproject-nearmiss-cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/136-triage20-pkginfo-properties/focused-pyproject-ordinary-cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/140-triage20-cargo-integrity/positive-cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/140-triage20-cargo-integrity/malformed-cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/140-triage20-cargo-integrity/non-cargo-cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/149-triage20-command-capability-scopes/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/141-triage20-shortcut-observations/focused-cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/142-triage20-go-declarations/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/143-triage20-document-names/cases.json
 
 # Compile the third-party + built-in YARA rules into portable per-filetype
 # `.yrc` files (plus a manifest) under third-party/compiled/. These are BUILD
