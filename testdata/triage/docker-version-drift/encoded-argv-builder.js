@@ -1,0 +1,1 @@
+class Util {static async powershellCommand(e,r){let n=await Br("powershell",!0),s=e.replace(/'/g,"''"),i=[];if(r)for(let a in r)i.push(`-${a} '${r[a].replace(/'/g,"''")}'`);return{command:`"${n}"`,args:["-NoLogo","-Sta","-NoProfile","-NonInteractive","-ExecutionPolicy","Unrestricted","-EncodedCommand",Buffer.from(`& '${s}' ${i.join(" ")}`,"utf16le").toString("base64")]}}}
