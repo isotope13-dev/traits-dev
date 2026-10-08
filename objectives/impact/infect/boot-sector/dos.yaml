@@ -64,6 +64,34 @@ traits:
       pattern: "B8 09 02 B9 0B 00 BA 80 00 CD 13 07 06 26 C6 06 F0 00 5A 26 C7 06 F1 00 08 00 26 C7 06 F3 00 7F 02 68 7A 0D CB"
       offset_range: [32, 128]
 
+  # Resident boot infectors of the ABS3 shape install themselves the way
+  # DOS TSRs do: decrement the BIOS memory-size word at 40:13h, convert the
+  # shrunken top of memory into a segment, and swap the INT 13h vector at
+  # 0:4Ch/0:4Eh to a handler copied into the stolen segment. Legitimate boot
+  # code neither shrinks the BIOS memory map nor redirects the disk vector.
+  - id: boot-bios-steal-int13-vector-install
+    desc: Steals BIOS memory to hook INT 13h
+    crit: suspicious
+    conf: 0.97
+    for: [dos_com, static-lib, data]
+    if:
+      type: hex
+      pattern: "FF 0E 13 04 A1 13 04 B1 06 D3 E0 [0-16] 8B 1E 4E 00 A3 4E 00 A1 4C 00"
+
+  # From inside the INT 13h hook: patch a short JMP stub at offset 0 of the
+  # sector just read, copy the virus body over the original boot code with a
+  # REP move that preserves the BPB, then issue the write-back service (AH=3).
+  # No legitimate disk or boot-manager code rewrites a sector it just read
+  # into a jump to freshly copied body code.
+  - id: boot-buffer-jmp-patch-body-copy-write
+    desc: Buffer JMP patch, body copy, sector write
+    crit: suspicious
+    conf: 0.95
+    for: [dos_com, static-lib, data]
+    if:
+      type: hex
+      pattern: "C7 07 EB ?? [0-64] F3 A4 [0-64] B4 03"
+
   # INT 13h reads the hard-disk MBR, gates on partition-table bytes, saves
   # the old sector at CHS 0/0/10, writes a replacement MBR at 0/0/1, then
   # writes nine payload sectors starting at 0/0/11.
@@ -119,6 +147,18 @@ composite_rules:
     all:
       - id: boot-code-int13-resident-hook
       - id: boot-code-marker-gated-sector-write
+
+  # A boot image or dropper that both installs a resident INT 13h hook in
+  # stolen BIOS memory and rewrites sectors it reads -- JMP stub at offset 0,
+  # body copied over the original -- is a complete resident boot infector.
+  - id: dos-resident-int13-boot-infector
+    desc: Resident INT 13h boot-sector infector
+    crit: hostile
+    conf: 0.96
+    for: [dos_com, static-lib, data]
+    all:
+      - id: boot-bios-steal-int13-vector-install
+      - id: boot-buffer-jmp-patch-body-copy-write
 
   # A COM body that reads disk sectors, relocates the boot record from 7C00h
   # to 0600h, and writes sectors back in an absolute-write loop carries the
