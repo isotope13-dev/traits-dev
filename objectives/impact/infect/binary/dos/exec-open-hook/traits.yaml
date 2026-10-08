@@ -35,7 +35,40 @@ traits:
       type: hex
       pattern: "C7 06 90 00 ?? ?? 8C ?? 92 00"
 
+  # Handler swaps AH into AL (XCHG AH,AL) before testing for EXEC (4Bh), so
+  # the usual CMP AH,4Bh / CMP AX,4B00h shapes never appear.
+  - id: dos-handler-xchg-exec-filter
+    desc: INT 21h handler swaps AH for EXEC
+    crit: notable
+    conf: 0.86
+    if:
+      type: hex
+      pattern: "86 E0 3C 4B (74|75)"
+
+  # Host length minus three becomes the E9 displacement; the body is written
+  # from offset zero (its own image), the file is rewound with AL=0 through a
+  # seek helper, and a 3-4 byte entry header is written over the host start.
+  - id: dos-own-image-append-rewind-entry-write
+    desc: Appends own image then rewrites entry jump
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: hex
+      pattern: "2D 03 00 A3 ?? ?? [0-12] B4 40 (33 D2|31 D2) B9 ?? ?? CD 21 B0 00 E8 ?? ?? B4 40 BA ?? ?? B9 (03|04) 00 CD 21"
+
 composite_rules:
+  # Resident EXEC hook opens the launched program for update and appends its
+  # own image with a redirected entry jump: a parasitic COM infector.
+  - id: dos-xchg-exec-hook-appender
+    desc: DOS EXEC hook appends itself to programs
+    for: [dos_com, static-lib]
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: dos-handler-xchg-exec-filter
+      - id: micro-behaviors/fs/file/open::dos-open-update-int
+      - id: dos-own-image-append-rewind-entry-write
+
   # When the resident EXEC path opens an existing host for update, reads its
   # header, seeks to EOF, and writes through the saved DOS dispatcher, the
   # otherwise separate hook and file-I/O primitives form a parasitic infector.
