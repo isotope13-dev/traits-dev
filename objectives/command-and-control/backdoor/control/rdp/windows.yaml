@@ -1,7 +1,3 @@
-# `source` is in `for:` alongside scripts and PE: the registry values and
-# service names below identify RDP enablement wherever they are written, and
-# compiled-language implants (C#, Go, Rust, C++) reach the same keys through
-# the registry API rather than through reg.exe.
 defaults:
   platforms: [windows]
   for: [scripts, source, pe]
@@ -9,85 +5,18 @@ defaults:
   mbc: B0022
 
 traits:
-  - id: rdp-service-autostart
-    desc: Terminal Services set to auto-start
-    crit: suspicious
-    conf: 0.94
-    if:
-      type: text
-      regex: '(?i)\bsc(\.exe)?\s+config\s+TermService\b[^\r\n]{0,80}\bauto\b'
-
-  - id: powershell-termservice-name
-    desc: PowerShell targets Terminal Services
-    crit: notable
-    conf: 0.92
-    for: [powershell]
-    if:
-      type: text
-      regex: '(?i)\bSet-Service\b[^\r\n]{0,80}\bTermService\b'
-
-  # The `-StartupType Automatic` half of the pair is not an RDP fact at all —
-  # it is the generic Windows boot-persistence setting, and now lives with its
-  # siblings as micro-behaviors/os/service/configure::service-auto-start-setting.
-  # Only the TermService target above makes this directory the right home.
-
   - id: rdp-network-level-auth-disable
     desc: Turns off RDP network-level authentication
     crit: suspicious
     conf: 0.94
     attack: T1562.001
     if:
-      # `UserAuthentication` = 0 under `WinStations\RDP-Tcp` drops the
-      # credential check that happens before a session is created, so the
-      # login screen itself is reachable to anyone who can connect. It is what
-      # makes a lock-screen backdoor usable from off the machine, and it is
-      # the direction nobody hardens in.
+      # Bind the disabled value to RDP-Tcp: UserAuthentication alone is
+      # also an ordinary application identifier.
       type: text
-      # `UserAuthentication` is also an ordinary application identifier
-      # (Pusher Channels uses it for its own user-auth request type). Bind the
-      # disabled value to the RDP-Tcp registry key instead of treating any
-      # nearby zero as an RDP configuration change.
       regex: '(?i)RDP-Tcp.{0,200}\bUserAuthentication\b.{0,80}(\b0\b|-Value\s+0)'
 
-  - id: rdp-firewall-globallyopenports-3389
-    desc: Registry firewall exception opens TCP 3389
-    crit: suspicious
-    conf: 0.95
-    attack: T1021.001,T1562.004
-    if:
-      type: text
-      regex: '(?i)3389:TCP:[^"\r\n]{0,24}:Enabled'
-
-  # Windows desktop SKUs allow one interactive session. Turning on concurrent
-  # sessions is how an operator stays logged in while the real user is at the
-  # console — it is the configuration half of the termsrv.dll patch below, and
-  # is not something licensed administration performs.
-  - id: rdp-licensing-concurrent-sessions
-    desc: Enables concurrent Terminal Server sessions
-    crit: suspicious
-    conf: 0.93
-    if:
-      type: text
-      regex: '(?i)\bEnableConcurrentSessions\b[^\r\n]{0,120}(\b1\b|00000001|true)'
-
-  - id: rdp-winlogon-multiple-ts-sessions
-    desc: Enables multiple Terminal Server sessions
-    crit: suspicious
-    conf: 0.93
-    if:
-      type: text
-      regex: '(?i)\bAllowMultipleTSSessions\b[^\r\n]{0,120}(\b1\b|00000001|true)'
-
 composite_rules:
-  - id: rdp-firewall-enable
-    desc: Firewall command enables a Remote Desktop rule
-    crit: suspicious
-    conf: 0.94
-    all:
-      - id: micro-behaviors/os/firewall/netsh::netsh-firewall-rule-enable
-      - id: micro-behaviors/os/firewall/netsh::rdp-firewall-remote-desktop
-    near_lines: 1
-
   - id: registry-rdp-backdoor-enablement
     desc: Registry writes install a concurrent-session RDP backdoor
     crit: hostile
@@ -95,22 +24,12 @@ composite_rules:
     attack: T1021.001,T1112
     all:
       - id: micro-behaviors/os/service/remote::rdp-registry-allow-connections
-      - id: rdp-firewall-globallyopenports-3389
+      - id: micro-behaviors/os/firewall/netsh::rdp-firewall-enabled-tcp-3389-value
     any:
-      - id: rdp-licensing-concurrent-sessions
-      - id: rdp-winlogon-multiple-ts-sessions
+      - id: micro-behaviors/os/service/remote::rdp-concurrent-session-setting
+      - id: micro-behaviors/os/service/remote::rdp-multiple-session-setting
       - id: micro-behaviors/fs/path/config/system::windows-termsrv-dll-path
     needs: 2
-
-  - id: powershell-rdp-service-autostart
-    desc: PowerShell sets Terminal Services auto-start
-    crit: suspicious
-    conf: 0.95
-    for: [powershell]
-    all:
-      - id: powershell-termservice-name
-      - id: micro-behaviors/os/service/configure::service-auto-start-setting
-    near_lines: 2
 
   - id: powershell-staged-rdp-enablement
     desc: RDP enablement near AppData IWR/start clues
@@ -121,5 +40,5 @@ composite_rules:
     all:
       - id: micro-behaviors/process/create/start-process::powershell-appdata-iwr-start-profile
       - id: micro-behaviors/os/service/remote::rdp-registry-allow-connections
-      - id: powershell-rdp-service-autostart
+      - id: micro-behaviors/os/service/remote::powershell-rdp-service-autostart
     near_lines: 24
