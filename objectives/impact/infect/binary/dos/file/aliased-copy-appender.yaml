@@ -1,0 +1,57 @@
+defaults:
+  for: [dos_com, data, text]
+  platforms: [windows, unix]
+  size_max: 65536
+
+traits:
+  # Bind the image copy to the append buffer and the subsequent three-byte
+  # header write. CALL displacements, buffer addresses, length and interrupt
+  # alias are variable; both writes must call the same DOS write helper.
+  - id: dos-copy-append-entry-sequence
+    desc: DOS image append and entry rewrite
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule dos_copy_append_rewrite_entry {
+          strings:
+            $copy = { 0E 07 0E 1F BE 00 00 BF ?? ?? B9 ?? ?? FC F3 A4 }
+            $patch = { 2D 03 00 [0-16] A3 ?? ?? 05 03 01 A3 01 00 }
+            $append = { E8 ?? ?? BA ?? ?? B9 ?? ?? E8 ?? ?? 72 ?? 33 C9 33 D2 32 C0 E8 ?? ?? 72 ?? B9 03 00 BA ?? ?? E8 ?? ?? }
+            $seek = { B4 42 CD ?? C3 }
+            $write = { B4 40 CD ?? C3 }
+          condition:
+            #copy <= 16 and #patch <= 16 and #append <= 16 and
+            #seek <= 16 and #write <= 16 and
+            for any a in (1..#append) : (
+              for any c in (1..#copy) : (
+                @append[a]+3+int16(@append[a]+1) <= @copy[c] and
+                @copy[c] - (@append[a]+3+int16(@append[a]+1)) <= 16 and
+                uint16(@copy[c]+8) == uint16(@append[a]+4) and
+                uint16(@copy[c]+11) == uint16(@append[a]+7) and
+                uint16(@copy[c]+11) >= 64 and
+                for any p in (1..#patch) : (
+                  @patch[p] < @append[a] and @append[a]-@patch[p] < 128 and
+                  uint16(@patch[p]+!patch[p]-8) == uint16(@append[a]+29)+1 and
+                  for any s in (1..#seek) : (
+                    @append[a]+23+int16(@append[a]+21) == @seek[s] and
+                    for any w in (1..#write) : (
+                      @append[a]+12+int16(@append[a]+10) == @write[w] and
+                      @append[a]+34+int16(@append[a]+32) == @write[w] and
+                      uint8(@seek[s]+3) == uint8(@write[w]+3)
+                    )
+                  )
+                )
+              )
+            )
+        }
+
+composite_rules:
+  - id: dos-copy-append-rewrite-entry
+    desc: DOS self-appending entry-jump infection
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: dos-copy-append-entry-sequence
+      - id: micro-behaviors/fs/write/file/handle::dos-aliased-int-write
