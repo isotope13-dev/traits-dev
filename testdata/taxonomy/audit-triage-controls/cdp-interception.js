@@ -1,0 +1,1 @@
+async function instrument(cdp) { await cdp.send('Fetch.enable'); await cdp.send('Fetch.fulfillRequest', {requestId: 'r', body: 'e30='}); await cdp.send('Page.setBypassCSP',{enabled:true}); await cdp.send('Runtime.evaluate',{expression:'window.ready=true'}); }

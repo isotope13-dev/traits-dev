@@ -1,0 +1,59 @@
+# Context for administrator agents; this is evidence of request authentication,
+# not a claim that every route or optional debug mode is secure.
+defaults:
+  platforms: [unix, windows]
+  for: [python]
+  crit: notable
+traits:
+  - id: request-bound-signature-verification
+    desc: Signature check binds request fields
+    conf: 0.96
+    if:
+      type: tree-sitter
+      query: |
+        ((function_definition body: (block) @body)
+          (#match? @body "build_signature_message\\(method, path, body_hash, nonce, timestamp\\)")
+          (#match? @body "self\\._verify_with\\(self\\.ecdsa_vk, auth_token, message\\)")
+          (#match? @body "raise HTTPException\\(status_code=status\\.HTTP_401_UNAUTHORIZED"))
+  - id: ecdsa-verifier-rejects-bad-signature
+    desc: ECDSA verifier rejects invalid signatures
+    conf: 0.96
+    if:
+      type: tree-sitter
+      query: |
+        ((function_definition body: (block) @body)
+          (#match? @body "vk\\.verify\\(signature, message, hashfunc=hashlib\\.sha256")
+          (#match? @body "except BadSignatureError:[\\s\\S]*return False"))
+  - id: request-signature-middleware-guard
+    desc: Middleware guards requests with signatures
+    conf: 0.95
+    if:
+      type: tree-sitter
+      query: |
+        ((class_definition name: (identifier) @name body: (block
+          (function_definition name: (identifier) @dispatch body: (block) @body)))
+          (#eq? @name "AuthEncryptMiddleware")
+          (#eq? @dispatch "dispatch")
+          (#match? @body "crypto\\.identify_signer, request\\.method, path, body_hash, nonce, timestamp, auth_token")
+          (#match? @body "return JSONResponse\\(status_code=status\\.HTTP_401_UNAUTHORIZED")
+          (#match? @body "response = await call_next\\(request\\)"))
+  - id: request-signature-middleware-installed
+    desc: Installs request signature middleware
+    conf: 0.98
+    if:
+      type: tree-sitter
+      query: |
+        ((call function: (attribute attribute: (identifier) @method)
+          arguments: (argument_list (identifier) @middleware))
+          (#eq? @method "add_middleware")
+          (#eq? @middleware "AuthEncryptMiddleware"))
+composite_rules:
+  - id: signed-admin-server-context
+    desc: Installed request-bound signature guard with rejecting ECDSA verifier
+    crit: exception
+    conf: 0.98
+    all:
+      - id: request-bound-signature-verification
+      - id: ecdsa-verifier-rejects-bad-signature
+      - id: request-signature-middleware-guard
+      - id: request-signature-middleware-installed

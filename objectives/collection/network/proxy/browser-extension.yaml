@@ -1,199 +1,34 @@
-# Browser extensions that install a fixed SOCKS5 relay are dual-use at the
-# capability level. These composites add intent-bearing context such as fake
-# premium routes, raw-IP relay farms, or concealed hostname resolution.
 defaults:
-  platforms: [windows, unix]
-  for: [javascript, typescript]
+  platforms:
+  - windows
+  - unix
+  for:
+  - javascript
+  - typescript
   attack: T1090,T1040
-
-traits:
-  # These are attack-context fragments, not generic proxy capabilities. They
-  # describe a server catalogue and handler shape used to sell unavailable
-  # premium locations alongside a browser-wide relay.
-  - id: premium-proxy-node-entry
-    desc: Premium proxy node entry
-    crit: notable
-    conf: 0.95
-    if:
-      type: tree-sitter
-      query: |
-        (pair
-          key: [(property_identifier) @key (string (string_fragment) @key)]
-          value: (true) @value
-          (#eq? @key "premium"))
-
-  - id: proxy-route-action
-    desc: Proxy route action literal
-    crit: notable
-    conf: 0.93
-    if:
-      type: literal
-      kind: string
-      regex: '^(ROUTE_APPLY|APPLY_ROUTE)$'
-
-  - id: proxy-resolver-ip-selection
-    desc: Proxy node opts into hostname-to-IP resolution
-    crit: notable
-    conf: 0.95
-    if:
-      type: tree-sitter
-      query: |
-        (pair
-          key: [(property_identifier) @key (string (string_fragment) @key)]
-          value: (true) @value
-          (#eq? @key "useDnsResolve"))
-
-  # A fleet of "servers" whose hosts are country-code subdomains of one apex —
-  # `us.<apex>`, `de.<apex>`, `jp.<apex>`. Real providers do label endpoints by
-  # country, so this is only a shape; what makes it worth pairing with the
-  # relay composites is how cheap the shape is to fabricate. Wildcard DNS on one
-  # domain produces a twenty-country "network" that is one box, and the user
-  # picking Japan gets the same operator they would have got picking Germany.
-  - id: proxy-endpoint-country-subdomain-fleet
-    desc: Endpoint list uses country-code subdomains
-    crit: notable
-    conf: 0.9
-    count_min: 5
-    if:
-      type: text
-      regex: '"host"\s*:\s*"[a-z]{2}\.[a-z0-9-]{3,40}\.[a-z]{2,12}"'
-
+traits: []
 composite_rules:
-  - id: extension-proxy-doh-endpoint
-    desc: Extension configures proxy alongside public DNS-over-HTTPS
-    crit: suspicious
-    conf: 0.97
-    all:
-      - id: micro-behaviors/os/network/webextension::chrome-proxy-settings-set
-    any:
-      - id: micro-behaviors/communications/dns/doh::doh-cloudflare-json
-      - id: micro-behaviors/communications/dns/doh::doh-google-json
-
-  - id: extension-proxy-host-doh-resolution
-    desc: Extension resolves a proxy host through public DNS-over-HTTPS
-    crit: suspicious
-    conf: 0.98
-    all:
-      - id: micro-behaviors/os/network/webextension::chrome-proxy-settings-set
-      - id: micro-behaviors/os/network/webextension::proxy-host-assignment-from-call
-      - id: proxy-resolver-ip-selection
-    any:
-      - id: micro-behaviors/communications/dns/doh::doh-cloudflare-json
-      - id: micro-behaviors/communications/dns/doh::doh-google-json
-
-  - id: extension-fake-premium-proxy-tier
-    desc: Fake premium proxy tier rejects routes
-    crit: hostile
-    conf: 0.99
-    attack: T1090,T1583.004
-    all:
-      - id: micro-behaviors/os/network/webextension::extension-fixed-socks5-browser-relay
-      - id: premium-non-routable-proxy-node
-      - id: proxy-route-denial-handler
-
-  - id: premium-non-routable-proxy-node
-    desc: Premium proxy node uses a non-routable host
-    crit: suspicious
-    conf: 0.98
-    near_bytes: 256
-    all:
-      - id: premium-proxy-node-entry
-      - id: micro-behaviors/communications/ip/endpoint::javascript-loopback-host-property
-
-  - id: proxy-route-denial-handler
-    desc: Proxy route returns an unsuccessful result
-    crit: suspicious
-    conf: 0.96
-    near_lines: 8
-    all:
-      - id: proxy-route-action
-      - id: micro-behaviors/communications/ipc/message::extension-message-failure-reply
-
-  - id: premium-raw-ip-proxy-node-table
-    desc: Premium proxy tier uses a raw-IP node table
-    crit: suspicious
-    conf: 0.97
-    all:
-      - id: premium-proxy-node-entry
-      - id: micro-behaviors/communications/ip/endpoint::javascript-non-resolver-ipv4-host-table
-
-  # The residential/traffic-farm shape, and the one that survives a rewrite:
-  # every request the browser makes is pushed through relays the extension
-  # names by address, with only loopback exempted. The sibling
-  # `extension-fake-premium-proxy-tier` catches the variant where the paid
-  # nodes are deliberately unroutable; this one catches the variant where they
-  # are real rented exits, which is the same abuse with working infrastructure.
-  - id: extension-raw-ip-proxy-relay-farm
-    desc: Extension routes browsers to raw-IP relays
-    crit: hostile
-    conf: 0.96
-    attack: T1090,T1583.003
-    all:
-      - id: micro-behaviors/os/network/webextension::extension-fixed-socks5-browser-relay
-      - id: micro-behaviors/communications/ip/endpoint::javascript-non-resolver-ipv4-host-table
-
-  - id: extension-paid-raw-ip-proxy-fleet
-    desc: Extension sells a premium raw-IP SOCKS5 proxy fleet
-    crit: hostile
-    conf: 0.98
-    attack: T1090,T1583.003
-    all:
-      - id: extension-raw-ip-proxy-relay-farm
-      - id: premium-raw-ip-proxy-node-table
-
-  - id: extension-hidden-proxy-destination
-    desc: Extension hides its fixed proxy destination behind DoH IP resolution
-    crit: hostile
-    conf: 0.98
-    attack: T1090,T1071.004
-    all:
-      - id: micro-behaviors/os/network/webextension::extension-fixed-socks5-browser-relay
-      - id: extension-proxy-host-doh-resolution
-
-  # A "VPN" that is a bare `chrome.proxy` SOCKS5 setting. Chrome's proxy API
-  # carries no credentials and no transport of its own, so an extension built
-  # this way hands every request the browser makes — URLs, hosts, and the
-  # contents of anything not already under TLS — to whoever runs the relay, with
-  # nothing for the user to authenticate against and nothing to distinguish the
-  # operator from an attacker. The user believes they bought privacy; what they
-  # installed points their whole browser at one stranger.
-  #
-  # A country-labelled fleet plus a paid tier is what separates this from a
-  # single-endpoint corporate proxy helper: the fleet is the sales pitch and the
-  # paid tier is the reason the operator wants the traffic in the first place.
-  - id: extension-paid-socks5-vpn-fleet
-    for: [javascript, typescript, crx, xpi, zip]
-    desc: Extension sells an unauthenticated SOCKS5 fleet
-    crit: hostile
-    conf: 0.95
-    attack: "T1176,T1090,T1040"
-    scope: archive
-    all:
-      - id: micro-behaviors/os/network/webextension::extension-fixed-socks5-browser-relay
-      - id: proxy-endpoint-country-subdomain-fleet
-    any:
-      - id: premium-proxy-node-entry
-      - id: micro-behaviors/browser-extension/tabs::install-https-tab-open
-
-  # Unlike an ordinary browser VPN, this extension presents another provider's
-  # brand while sending nearly every browser destination to Prado's fixed
-  # forward proxy. The cross-brand identity legs establish intent; the proxy
-  # legs establish the separate traffic-diversion behavior.
-  - id: impersonator-routes-browser-through-prado-proxy
-    for: [javascript, typescript, chrome-manifest, crx, xpi, zip]
-    desc: VPN impostor diverts traffic through Prado
-    crit: hostile
-    conf: 0.99
-    attack: T1176,T1090,T1557
-    scope: archive
-    all:
-      - id: well-known/app/browser-extension/prado-vpn::extension-infrastructure
-      - id: metadata/permission/extension-api::permission-proxy
-      - id: micro-behaviors/os/network/webextension::chrome-proxy-settings-set
-      - id: micro-behaviors/os/network/webextension::chrome-proxy-fixed-server-mode
-      - id: micro-behaviors/os/network/webextension::chrome-proxy-https-scheme
-      - id: micro-behaviors/os/network/webextension::chrome-proxy-local-token-only-bypass
-    any:
-      - id: well-known/app/browser-extension/vpnly::display-name
-      - id: well-known/app/browser-extension/urban-vpn::display-name
-      - id: well-known/app/browser-extension/uvpn::display-name
+- id: impersonator-routes-browser-through-prado-proxy
+  for:
+  - javascript
+  - typescript
+  - chrome-manifest
+  - crx
+  - xpi
+  - zip
+  desc: VPN impostor diverts traffic through Prado
+  crit: hostile
+  conf: 0.99
+  attack: T1176,T1090,T1557
+  scope: archive
+  all:
+  - id: well-known/app/browser-extension/prado-vpn::extension-infrastructure
+  - id: metadata/permission/extension-api::permission-proxy
+  - id: micro-behaviors/os/network/webextension::chrome-proxy-settings-set
+  - id: micro-behaviors/os/network/webextension::chrome-proxy-fixed-server-mode
+  - id: micro-behaviors/os/network/webextension::chrome-proxy-https-scheme
+  - id: micro-behaviors/os/network/webextension::chrome-proxy-local-token-only-bypass
+  any:
+  - id: well-known/app/browser-extension/vpnly::display-name
+  - id: well-known/app/browser-extension/urban-vpn::display-name
+  - id: well-known/app/browser-extension/uvpn::display-name

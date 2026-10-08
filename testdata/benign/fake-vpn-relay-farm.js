@@ -1,4 +1,4 @@
-/* fake-VPN service worker — probe for the raw-IP relay-farm composite */
+/* User-activated SOCKS5 relay with a premium endpoint catalog. */
 const SERVERS = [
   { id: "us-1", host: "103.35.189.225", port: 1082, premium: false },
   { id: "de-1", host: "80.92.204.33", port: 1082, premium: true },

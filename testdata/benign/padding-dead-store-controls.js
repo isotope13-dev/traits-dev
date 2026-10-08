@@ -1,4 +1,4 @@
-// Padded junk: meaningless single-character overwrites.
+// Repeated single-letter assignments; no use analysis proves dead stores.
 var v0="a";
 var v1="b";
 var v2="c";
