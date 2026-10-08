@@ -224,7 +224,7 @@ rule Download_in_LNK
         sharing = "TLP:CLEAR"
         source = "BARTBLAZE"
         author = "@bartblaze"
-        description = "Identifies download artefacts in shortcut (LNK) files."
+        description = "LNK contains network-tool, URL-scheme, or .url markers."
         category = "INFO"
 
     strings:
@@ -361,7 +361,7 @@ rule Long_RelativePath_LNK
         sharing = "TLP:CLEAR"
         source = "BARTBLAZE"
         author = "@bartblaze"
-        description = "Identifies shortcut (LNK) file with a long relative path. Might be used in an attempt to hide the path."
+        description = "LNK contains six consecutive parent-directory segments."
         category = "INFO"
 
     strings:

@@ -1,10 +1,6 @@
-# Verifying a *downloaded* artifact against an expected digest before using it.
-#
-# This is the mechanic that separates an installer bootstrap from a dropper: a
-# dropper cannot pin its payload's digest, because the payload rotates. So
-# "fetch, compare against a hard-coded digest, abort on mismatch" is a strong
-# benign-context signal, and the exception composite at the bottom of this file
-# is what download/execute objectives reference from `unless:`.
+# Digest comparison operations and their verification-context consumers.
+# Integrity declarations can corroborate a comparison; they do not by themselves
+# prove a download, control flow, authenticity, or benign intent.
 defaults:
   platforms: [windows, unix]
   for: [shell, javascript, typescript, powershell, batch]
@@ -66,28 +62,6 @@ traits:
     if:
       type: text
       regex: '(?i)Get-FileHash[\s\S]{0,240}\.Hash\s+-(eq|ne)\s+\S'
-  # Language-agnostic on purpose: a hard-coded 64-hex digest sitting next to a
-  # digest-named key reads the same in PowerShell ($X_SHA256 = ".."), shell,
-  # Python, Ruby, JS, and manifests (sha256: ".."). Cargo.lock is excluded:
-  # its registry checksums are package-manager metadata and do not establish an
-  # authored download-verification flow. Rust is included so a real build.rs
-  # bootstrap that pins a downloaded artifact remains visible.
-  # SHA-512 digests are the same signal at twice the width (Alpine's apk
-  # tooling pins 128-hex sums); the trailing group is optional so existing
-  # SHA-256 pins match exactly as before.
-  - id: pinned-artifact-digest-constant
-    desc: Pins an expected digest constant
-    conf: 0.9
-    for: [shell, javascript, typescript, powershell, batch, python, ruby, rust, text, json, manifests]
-    if:
-      type: text
-      regex: '(?i)(sha-?(256|512)|checksums?|digests?|expected)[\s\S]{0,80}[0-9a-f]{64}([0-9a-f]{64})?'
-    unless:
-      - type: path
-        basename: true
-        exact: Cargo.lock
-        case_insensitive: true
-      - id: metadata/package/integrity::debian-dsc-source-manifest
   # The comparison itself, in the form every hashlib-style API produces. Catches
   # verifiers whose pinned constant is named for its role rather than its
   # algorithm (`expected = '81b1...'; if digest.hexdigest() != expected: raise`)
@@ -123,31 +97,22 @@ traits:
       type: text
       regex: '(?i)((hash|checksum|digest)\w*|sha-?256)\s+mismatch'
 
-  - id: external-checksums-manifest-reference
-    desc: Reads digests from external checksums manifest
-    conf: 0.9
-    for: [javascript, typescript, shell, python, ruby]
-    if:
-      type: text
-      regex: '(?i)checksums\.(json|assets|txt)|sha256sums(\.txt)?|readChecksums'
 
 composite_rules:
   - id: pinned-or-manifest-digest-source
-    desc: Pins expected digest inline or via manifest
+    desc: Digest value or checksum-manifest reference
     crit: notable
     conf: 0.9
     for: [shell, javascript, typescript, powershell, batch, python, ruby, text, json, manifests]
     any:
-      - id: pinned-artifact-digest-constant
-      - id: external-checksums-manifest-reference
+      - id: "metadata/package/integrity::digest-label-with-hexadecimal-value"
+      - id: "metadata/package/integrity::checksum-manifest-or-readchecksums-reference"
 
-  # Benign-context suppressor for download+execute detections. An installer
-  # bootstrap pins the digest of everything it fetches and checks it before
-  # running it; a dropper cannot. Lives here rather than under the objectives it
-  # quiets so its name and directory describe what its members actually match,
-  # and so the tier dependency runs objectives/ -> micro-behaviors/ as required.
+  # Existing verification-context suppressor. The markers are co-occurring;
+  # this matcher does not bind a fetched payload, digest and execution sink.
+  # Integrity declarations can appear in benign or hostile programs.
   - id: hash-pinned-download-context
-    desc: Fetched payloads verified against pinned digests before use
+    desc: Digest source with comparison or mismatch markers
     crit: exception
     conf: 0.95
     # Widened past the file-level default: a bootstrap is as often embedded in a
@@ -168,11 +133,11 @@ composite_rules:
   # composites) does not grow: Alpine's apk flow pins 128-hex sums and
   # verifies with `| sha512sum -c`, which no member above recognizes.
   - id: sha512-pinned-download-context
-    desc: Fetched payloads verified against pinned SHA-512 digests
+    desc: Digest value with sha512sum check invocation
     crit: exception
     conf: 0.95
     for: [shell]
     all:
-      - id: pinned-artifact-digest-constant
+      - id: "metadata/package/integrity::digest-label-with-hexadecimal-value"
     any:
       - id: downloaded-artifact-sha512sum-check

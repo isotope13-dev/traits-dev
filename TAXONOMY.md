@@ -253,7 +253,10 @@ A parent stays referenceable. A single child is fine if it adds meaning.
 `platforms: [all]` is allowed only where a fact means the same on every OS:
 `metadata/package/description/disclosure`,
 `metadata/package/documentation/{claims,security-advisory,source}`,
-`metadata/registry` and `micro-behaviors/communications/url/host`. Even there it
+`metadata/registry`, `metadata/file/naming` and
+`micro-behaviors/communications/url/host`. Naming properties record the scanned
+filename or naming measurements; OS-specific path rules still require their
+own explicit platform scopes. Even there it
 must be justified: an AUR package targets Linux, and source code alone does not
 prove portability.
 

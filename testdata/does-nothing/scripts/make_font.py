@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Generate minimal, structurally valid fonts using only the standard library.
+"""Generate inert font containers using only the standard library.
 
 Two containers, because they exercise different code paths in the font
 extractor: a bare sfnt (`.ttf`), whose table directory is walked entry by
-entry and checked for coverage, and a WOFF2 (`.woff2`), whose Brotli-packed
-table data is not addressable so only the fixed header is validated.
+entry and checked for coverage, and a WOFF2 (`.woff2`), whose uncompressed
+variable-length directory and Brotli stream bounds are validated.
 
 Both are deliberately boring: every declared table lies end to end after the
 directory, nothing is appended, and the header sizes agree with the file. A
-scan of either must produce no findings at all — that is the point of a
-does-nothing fixture, and it is what keeps the font coverage metrics
+scan of either must produce only neutral format metadata. The zero-filled
+table bodies are structural controls, not renderable glyphs. This keeps the
+font coverage metrics
 (`font.trailing_bytes`, `font.gap_bytes`, `font.unknown_table_bytes`) honest
 as thresholds move.
 """
@@ -63,11 +64,24 @@ def build_ttf() -> bytes:
 
 
 def build_woff2() -> bytes:
-    """A WOFF2 whose header sizes agree with the file it is written into."""
-    payload = bytes(512)
-    # totalSfntSize is what the font would inflate to; totalCompressedSize is
-    # the on-disk table block. Only the latter is checked against the file.
-    length = 48 + len(payload)
+    """A complete table directory followed by a valid inert Brotli stream."""
+    flags = {b"OS/2": 6, b"cmap": 0, b"glyf": 202, b"head": 1,
+             b"hhea": 2, b"hmtx": 3, b"loca": 203, b"maxp": 4,
+             b"name": 5, b"post": 7}
+    directory = bytearray()
+    for tag, size in TABLES:
+        directory.append(flags[tag])
+        groups = [size & 127]
+        size >>= 7
+        while size:
+            groups.append((size & 127) | 128)
+            size >>= 7
+        directory.extend(reversed(groups))
+    # Brotli-compressed 626 zero bytes (sum of TABLES lengths). A literal
+    # keeps fixture generation standard-library-only; glyf/loca use null
+    # transform version 3, so the decoded stream is the original table data.
+    payload = bytes.fromhex("1b7102f82700a2b1406005")
+    length = 48 + len(directory) + len(payload)
     header = struct.pack(
         ">4sIIHHIIHHIIIII",
         b"wOF2",
@@ -75,7 +89,7 @@ def build_woff2() -> bytes:
         length,  # total file size
         len(TABLES),  # numTables
         0,  # reserved
-        4096,  # totalSfntSize
+        len(build_ttf()),  # totalSfntSize (reference value, not an equality gate)
         len(payload),  # totalCompressedSize
         1,  # majorVersion
         0,  # minorVersion
@@ -86,7 +100,7 @@ def build_woff2() -> bytes:
         0,  # privLength
     )
     assert len(header) == 48, len(header)
-    return header + payload
+    return header + directory + payload
 
 
 def main(target: Path) -> None:
