@@ -29,6 +29,7 @@ taxonomy-check:
 	uv run --with pyyaml python scripts/test-taxonomy-move.py
 	python3 scripts/test-taxonomy-corpus-comparison.py
 	python3 scripts/taxonomy_sources.py
+	python3 scripts/check-taxonomy-doc-links.py taxonomy-migration/research/document-authority/current-link-check.json
 	python3 scripts/check-taxonomy-memory-map.py --cleave "$(CLEAVE)"
 	python3 taxonomy-migration/batches/120-ruby-module-load/run-focused-cases.py --cleave "$(CLEAVE)"
 	python3 taxonomy-migration/batches/121-credential-schema/run-focused-cases.py --cleave "$(CLEAVE)"
@@ -126,6 +127,8 @@ taxonomy-check:
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/141-triage20-shortcut-observations/focused-cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/142-triage20-go-declarations/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/143-triage20-document-names/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/145-triage20-package-manifest-properties/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/registry-write-controls/cases.json
 
 # Compile the third-party + built-in YARA rules into portable per-filetype
 # `.yrc` files (plus a manifest) under third-party/compiled/. These are BUILD

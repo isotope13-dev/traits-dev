@@ -642,9 +642,9 @@ specified fields. `kind: number, value: 511, radix: 8` matches `chmod(_,
 deliberate octal mode bits from incidentally-computed integers.
 
 For value relationships beyond a literal call argument, `arg.from` selects an
-originating call and explicit library transfers. See [SOURCE_ANALYSIS.md](SOURCE_ANALYSIS.md)
-for the shared flow contract and YAML examples. Use direct argument
-matching when sufficient; provenance is for actual relationships, not proximity.
+originating call and explicit library transfers. The sections below define the
+supported provenance forms and their limits. Use direct argument matching when
+sufficient; provenance is for actual relationships, not proximity.
 
 **Named-field presence.** `arg.from.field_exists: true` requires `from.field`
 and matches an explicitly present named field, including one with an unknown
