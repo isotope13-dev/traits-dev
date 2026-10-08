@@ -16,6 +16,8 @@ for c in cases:
   if trait not in ids:failed.append(f"{c['name']}: missing {trait}")
  for trait in c['forbidden_traits']:
   if trait in ids:failed.append(f"{c['name']}: unexpected {trait}")
- if any(t['crit']>=5 for t in f.get('traits',[])):failed.append(f"{c['name']}: unsupported hostile verdict")
+ actual_hostile={t['id'] for t in f.get('traits',[]) if t['crit']>=5}
+ expected_hostile=set(c.get('hostile_traits',[]))
+ if actual_hostile!=expected_hostile:failed.append(f"{c['name']}: hostile findings differ: {sorted(actual_hostile ^ expected_hostile)}")
 if failed:raise SystemExit('\n'.join(failed))
 print(f'{len(cases)} audit triage controls passed')

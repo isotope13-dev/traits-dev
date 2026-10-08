@@ -1,0 +1,1 @@
+do allocator=api["VirtualAlloc"]; output=another(nil,(4096),(12288),(64)) end
