@@ -1,0 +1,48 @@
+defaults:
+  for: [data, dos_com, pe, static-lib]
+  platforms: [windows, unix]
+  size_min: 512
+  size_max: 8192
+  attack: T1542.003
+
+traits:
+  - id: dos-resident-boot-metadata-copy-sequence
+    desc: Boot read replaces victim with resident image
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule dos_resident_boot_metadata_copy_infector {
+          strings:
+            // Gate on BIOS read, sector one, head zero; call saved handler.
+            $gate = { 80 FC 02 75 ?? 83 F9 01 75 ?? 80 FE 00 75 ?? 9C 2E FF 1E ?? ?? }
+            // DS becomes the caller buffer segment, ES the resident CS.
+            // Preserve the partition tail and BPB in the resident boot image.
+            $copy = { 1E 06 1F 0E 07 8B F3 81 C6 BE 01 BF BE 7D B9 21 00 FC F3 A5 8B F3 83 C6 03 BF 03 7C B9 1E 00 F3 A5 1F }
+            // Write resident ES:7C00 to sector one through the same handler.
+            $write = { B8 01 03 B9 01 00 BB 00 7C 32 F6 9C 2E FF 1E ?? ?? CA 02 00 }
+          condition:
+            #gate > 0 and #gate <= 16 and
+            #copy > 0 and #copy <= 16 and
+            #write > 0 and #write <= 16 and
+            for any g in (1..#gate) : (
+              for any c in (1..#copy) : (
+                @copy[c] >= @gate[g]+21 and @copy[c] <= @gate[g]+128 and
+                for any w in (1..#write) : (
+                  @write[w] >= @copy[c]+34 and @write[w] <= @copy[c]+98 and
+                  uint16(@gate[g]+19) == uint16(@write[w]+15)
+                )
+              )
+            )
+        }
+
+composite_rules:
+  - id: dos-resident-boot-metadata-copy-infector
+    desc: Resident boot image infects intercepted sectors
+    for: [data, pe, static-lib]
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: dos-resident-boot-metadata-copy-sequence
+      - id: metadata/file/format/native-executable::dos-boot-sector-ending-signature
