@@ -129,6 +129,11 @@ taxonomy-check:
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/143-triage20-document-names/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/145-triage20-package-manifest-properties/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/registry-write-controls/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/attacker-control-boundary/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/aws-secrets-controls/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/email-spam-controls/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h3-current-reference-inventory/install-context-controls/cases.json
+	uv run --with pyyaml python taxonomy-migration/research/h5-aes-query/test_queries.py
 
 # Compile the third-party + built-in YARA rules into portable per-filetype
 # `.yrc` files (plus a manifest) under third-party/compiled/. These are BUILD

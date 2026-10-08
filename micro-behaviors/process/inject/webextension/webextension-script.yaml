@@ -1,134 +1,95 @@
-# Browser-extension code/CSS injection into page contexts (chrome.scripting,
-# MV2 tabs.executeScript, runtime.getURL-fed script element). Generic technique:
-# injecting code into another execution context.
 defaults:
-  platforms: [windows, unix]
-  for: [javascript, typescript]
+  platforms:
+  - windows
+  - unix
+  for:
+  - javascript
+  - typescript
   crit: notable
   conf: 0.9
 traits:
-  - id: extension-storage-script-injection
-    desc: Injects stored script into page DOM
-    crit: suspicious
-    conf: 0.96
-    if:
-      type: text
-      regex: 'storage\.local\.get[\s\S]{0,220}(prepend|append)\([^)]{0,80}<script'
-  - id: chrome-scripting-api
-    # insertCSS/removeCSS are tracked separately at baseline; matching them here
-    # scored ordinary font/theme extensions as page injectors.
-    desc: Uses the Chrome extension scripting API
-    if:
-      type: symbol
-      kind: member
-      regex: '^chrome\.scripting\.[A-Za-z_]'
-  - id: webextension-scripting-execute
-    desc: Injects code through WebExtension scripting API
-    if:
-      type: symbol
-      kind: call
-      regex: '^(chrome|browser)\.scripting\.executeScript$'
-  - id: chrome-scripting-main-world
-    desc: Extension injects main-world script
-    conf: 0.88
-    ref: sha256:afbffa38a490d43ff8e56a13b0a4b4fbde5c87b06d53d90898d9e7e2fcd08f40
-    if:
-      type: text
-      regex: '(chrome|browser)\.scripting\.ExecutionWorld\.MAIN\b|world\s*:\s*["'']MAIN["'']'
-  - id: chrome-scripting-insert-css
-    desc: Chrome scripting insertCSS injection
-    crit: baseline
-    if:
-      type: text
-      regex: '(chrome|browser)\.scripting\.insertCSS\b'
-  - id: chrome-tabs-execute-script
-    desc: MV2 tabs.executeScript injection
-    if:
-      type: text
-      regex: '(chrome|browser)\.tabs\.executeScript\b'
-  - id: chrome-webview-execute-script
-    desc: Chrome app injects script into embedded WebView
-    if:
-      type: symbol
-      kind: call
-      exact: webview.executeScript
-  - id: web-accessible-bridge-script
-    desc: Extension exposes page-accessible bridge script
-    for: [chrome-manifest]
-    if:
-      type: value
-      path: 'web_accessible_resources[*].resources'
-      regex: 'bridge(_script)?\.js'
-  - id: content-script-all-frames
-    desc: Content script runs in all frames
-    for: [chrome-manifest]
-    if:
-      type: value
-      path: 'content_scripts[*].all_frames'
-      exact: 'true'
-  # Firefox content scripts publish functions into the page with
-  # exportFunction() on window.wrappedJSObject; this overrides page-visible
-  # APIs without injecting a <script> tag.
-  - id: firefox-page-function-export
-    desc: Exports a content-script function into the page
-    conf: 0.9
-    if:
-      type: text
-      regex: 'wrappedJSObject[\s\S]{0,400}\bexportFunction\s*\('
+- id: extension-storage-script-injection
+  desc: Injects stored script into page DOM
+  crit: suspicious
+  conf: 0.96
+  if:
+    type: text
+    regex: storage\.local\.get[\s\S]{0,220}(prepend|append)\([^)]{0,80}<script
+- id: chrome-scripting-api
+  desc: Uses the Chrome extension scripting API
+  if:
+    type: symbol
+    kind: member
+    regex: ^chrome\.scripting\.[A-Za-z_]
+- id: webextension-scripting-execute
+  desc: Injects code through WebExtension scripting API
+  if:
+    type: symbol
+    kind: call
+    regex: ^(chrome|browser)\.scripting\.executeScript$
+- id: chrome-scripting-main-world
+  desc: Extension injects main-world script
+  conf: 0.88
+  ref: sha256:afbffa38a490d43ff8e56a13b0a4b4fbde5c87b06d53d90898d9e7e2fcd08f40
+  if:
+    type: text
+    regex: (chrome|browser)\.scripting\.ExecutionWorld\.MAIN\b|world\s*:\s*["']MAIN["']
+- id: chrome-scripting-insert-css
+  desc: Chrome scripting insertCSS injection
+  crit: baseline
+  if:
+    type: text
+    regex: (chrome|browser)\.scripting\.insertCSS\b
+- id: chrome-tabs-execute-script
+  desc: MV2 tabs.executeScript injection
+  if:
+    type: text
+    regex: (chrome|browser)\.tabs\.executeScript\b
+- id: chrome-webview-execute-script
+  desc: Chrome app injects script into embedded WebView
+  if:
+    type: symbol
+    kind: call
+    exact: webview.executeScript
+- id: firefox-page-function-export
+  desc: Exports a content-script function into the page
+  conf: 0.9
+  if:
+    type: text
+    regex: wrappedJSObject[\s\S]{0,400}\bexportFunction\s*\(
 composite_rules:
-  - id: broad-content-script-injection
-    desc: Extension injects content across many sites
-    crit: notable
-    conf: 0.85
-    for: [chrome-manifest]
-    all:
-      - id: metadata/permission/manifest::is-chrome-manifest
-    any:
-      - id: metadata/permission/host::content-script-all-urls
-      - id: metadata/permission/host::content-script-all-http
-  - id: extension-page-script-injection
-    desc: Extension injects page script
-    crit: notable
-    conf: 0.92
-    all:
-      - id: micro-behaviors/ui/window/insert-html::browser-create-script-element
-      - id: micro-behaviors/browser-extension/lifecycle::chrome-runtime-get-url
-    # These calls must belong to the same injection routine. Bundled React
-    # code can create a script element for its own runtime while unrelated
-    # extension UI code calls runtime.getURL elsewhere in the file.
-    near_bytes: 4096
-  - id: active-tab-scripting-authority
-    for: [javascript, typescript, chrome-manifest, crx, xpi, zip]
-    desc: Can inject code into a user-selected active tab
-    crit: notable
-    conf: 0.94
-    ref: sha256:14e6689d364517cfb12e021b84a1ef2e97550a387fcadde09fe40c706098410a
-    scope: archive
-    all:
-      - id: webextension-scripting-execute
-      - id: metadata/permission/manifest::permission-scripting
-      - id: metadata/permission/active-tab::permission-active-tab
-    unless:
-      - id: well-known/app/security/bitwarden::bitwarden-extension-manifest
-  - id: scripting-location-navigation
-    desc: Script injection paired with page navigation
-    crit: notable
-    conf: 0.9
-    all:
-      - id: webextension-scripting-execute
-      - id: micro-behaviors/ui/window/navigation::browser-location-href-assign
-    near_lines: 80
-  - id: broad-early-all-frame-content-script-injection
-    desc: Broad host access with early all-frame content script
-    crit: notable
-    conf: 0.92
-    for: [chrome-manifest]
-    all:
-      - id: metadata/permission/host::broad-host-access
-      - id: broad-content-script-injection
-      - id: metadata/permission/activation::content-script-run-at-start
-      - id: content-script-all-frames
-    any:
-      - id: metadata/permission/network::network-request-modification
-      - id: metadata/permission/extension-api::all-site-resources
-      - id: metadata/permission/manifest::background-service-worker
+- id: extension-page-script-injection
+  desc: Extension injects page script
+  crit: notable
+  conf: 0.92
+  all:
+  - id: micro-behaviors/ui/window/insert-html::browser-create-script-element
+  - id: micro-behaviors/browser-extension/lifecycle::chrome-runtime-get-url
+  near_bytes: 4096
+- id: active-tab-scripting-authority
+  for:
+  - javascript
+  - typescript
+  - chrome-manifest
+  - crx
+  - xpi
+  - zip
+  desc: Can inject code into a user-selected active tab
+  crit: notable
+  conf: 0.94
+  ref: sha256:14e6689d364517cfb12e021b84a1ef2e97550a387fcadde09fe40c706098410a
+  scope: archive
+  all:
+  - id: webextension-scripting-execute
+  - id: metadata/permission/manifest::permission-scripting
+  - id: metadata/permission/active-tab::permission-active-tab
+  unless:
+  - id: well-known/app/security/bitwarden::bitwarden-extension-manifest
+- id: scripting-location-navigation
+  desc: Script injection paired with page navigation
+  crit: notable
+  conf: 0.9
+  all:
+  - id: webextension-scripting-execute
+  - id: micro-behaviors/ui/window/navigation::browser-location-href-assign
+  near_lines: 80

@@ -90,9 +90,10 @@ See [Matcher Defines Identity](TAXONOMY.md#matcher-defines-identity) in TAXONOMY
   `metadata/file/string` and `metadata/file/literal` are closed to new rules;
   place capability, intent and identity evidence in their respective homes.
   If a fragment supports only a consumer's context, record a placement hold
-  until its supported representation is resolved. The current validator
-  rejects new `file/string` IDs; equivalent `file/literal` enforcement remains
-  an engine dependency.
+  until its supported representation is resolved. The Cleave source worktree
+  rejects new IDs in both namespaces while exact existing IDs remain
+  temporarily grandfathered, with full-validation regression tests for both.
+  Inclusion in the intended release binary remains unverified.
 - **The directory cap is 100 rules across all its YAML files.** A large leaf
   prompts semantic review, not a split by language, backend or rule form.
   Define each child's boundary and a home for the broadest observation before

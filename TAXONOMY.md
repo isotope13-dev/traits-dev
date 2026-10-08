@@ -254,13 +254,16 @@ A parent stays referenceable. A single child is fine if it adds meaning.
 `metadata/package/description/disclosure`,
 `metadata/package/documentation/{claims,security-advisory,source}`,
 `metadata/registry`, `metadata/file/naming`,
-`metadata/file/profile/test-indications` and
+`metadata/file/profile/{test-indications,source-indications}` and
 `micro-behaviors/communications/url/host`. Naming properties record the scanned
 filename or naming measurements; OS-specific path rules still require their
 own explicit platform scopes. Test-indication profiles combine metadata and
 directory observations; each child retains its OS/type gate, and the profile
 asserts neither testing purpose nor software portability. Even there it
-must be justified: an AUR package targets Linux, and source code alone does not
+must be justified. Source-indication profiles are transparent ORs of named
+source syntax, naming and declaration observations; their children retain all
+OS/type gates, and the profile asserts neither execution nor benign intent.
+An AUR package targets Linux, and source code alone does not
 prove portability.
 
 **Size and warnings prompt review; they never justify a split.** At the cap,
@@ -448,7 +451,7 @@ A keyed XOR cipher is `crypto/symmetric/xor`; XOR scrambling is
 | `data/{encode,decode}/<scheme>` | A required direction. Keep a scheme child only if the matcher establishes it: Base16 → `hex`, `base32`, ASCII85/Z85 → `base85`, standard and URL-safe → `base64`. Repeated decoding is a refinement; origin or spelling (`request-base64`) is not. `DecodeString` without its receiver does not identify Base64. |
 | `data/encoding/<scheme>` | Direction-neutral scheme evidence (an embedded Base64 alphabet); asserts no operation. |
 | `data/{compress,decompress}/<algorithm>` | Directional compression; languages and libraries share the algorithm leaf. |
-| `data/codec` | Direct evidence for a codec interface or support spanning directions; keep a known scheme in the trait ID. Keep this broad leaf until a complete semantic partition can place every rule, including scheme-unknown evidence, in a named child. Size alone does not justify a split. |
+| `data/codec` | Direct evidence for a codec interface or support spanning directions; keep a known scheme in the trait ID. A flat leaf may remain until a matcher-proven child axis fits every rule. Unknown scheme alone does not admit a child; never add an `unknown` or `other` bucket. Size alone does not justify a split. |
 | `data/compression` | Composite findings spanning codec schemes or compression directions; direct codec evidence stays in `data/codec`. |
 | `data/{parse,serialize,format}/<format>` | Parsing input; object ↔ representation (JSON, YAML, protobuf, pickle; general record fields in `serialize/schema-object`, credential-shaped records in `serialize/schema-credential`); formatting (`format/string` for number text, `format/credentials` for token shapes). Format identity alone is metadata. |
 | `data/archive/{create,extract,list,modify}` | Code that manipulates archives. A rule binding a member to its extracted file is `extract`, though it also writes. |
@@ -771,7 +774,7 @@ identity goes with that subject.
 | `binary` | `header`, `section`, `symbols`, `code`, `instruction`, `resource`, `linking`, `layout`, `debug`, `provenance`; a property of that part | **Facts about a part, never what it means:** "three imports" → `symbols`; "imports `GetProcAddress`" → a capability; "exports impersonate `version.dll`" → an objective; "exports are libcurl's ABI" → `well-known/lib`. A part's measurement and malformation share its directory; `crit:` says how unusual. |
 | `build` | `bundler`, `minifier`, `transpiler`, `generated`, `ci`, `config`, `manifest`, `artifact`, `reproducible`, `vcs`, … by transform or pipeline function | What a tool left in the file (bundled, minified, transpiled), grouped by function; the tool goes in the trait name (`esbuild-bundled`). "This file *is* webpack" is `well-known/`; compiler attribution is `lang/compiler`. |
 | `document` | `pdf`, `office`, `rtf`, `html`, `ole`, `chm`; a parsed part or property | Structure, not the behavior of embedded code. Magic alone is `file`. |
-| `file` | `format`, `magic`, `extension`, `size`, `encoding` (*legacy: `encoded`*), `entropy`, `naming`, `profile`, `line`, `archive`, `invisible-unicode`; whole-file properties | A specific subject beats a generic text bucket. The file's own name and directory are `naming`; an archive member path is `archive`. `file/string` and `file/literal` are **closed**: move each rule to the subject it evidences. A context-only literal has no standalone behavior home; retain its placement hold until a supported contract or validated consumer representation exists. The current validator rejects new `file/string` IDs; equivalent `file/literal` enforcement remains an engine dependency. |
+| `file` | `format`, `magic`, `extension`, `size`, `encoding` (*legacy: `encoded`*), `entropy`, `naming`, `profile`, `line`, `archive`, `invisible-unicode`; whole-file properties | A specific subject beats a generic text bucket. The file's own name and directory are `naming`; an archive member path is `archive`. `file/string` and `file/literal` are **closed**: move each rule to the subject it evidences. A context-only literal has no standalone behavior home; retain its placement hold until a supported contract or validated consumer representation exists. The Cleave source worktree rejects new IDs in both namespaces while exact existing IDs remain temporarily grandfathered; full-validation checks and regression tests exist in source, but inclusion in the intended release binary remains unverified. |
 | `hardening` | `build`, `layout`, `memory`, `mitigation`, `sandbox` | Absence is a value of a mitigation, not a "missing" subject. Using a security API is a capability; bypassing one, an objective. |
 | `image` | `pixel`, `segment`, `trailing`: decoded-image measurements, segment totals, trailing layout | Whole-file byte entropy is `file/entropy`. A metric name proves no color channel or end marker. Rendering and capture are capabilities. |
 | `font`, `media` | *Reserved:* font table and container validity; cross-carrier byte coverage | Whitelisted; create with the first supported rule. |
