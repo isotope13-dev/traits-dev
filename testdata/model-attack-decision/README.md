@@ -1,0 +1,1 @@
+Positive: hosted model request plus typed injection/unhook task choices. Ordinary model: lacks injection choices. Offline schema: retains attack task schema but lacks a hosted model endpoint. Samples are scaffolds, not complete implants.
