@@ -1,0 +1,12 @@
+import { postJsonToApi, getFromApi, convertToBase64, convertUint8ArrayToBase64 } from '@ai-sdk/provider-utils';
+postJsonToApi({url: 'https://example.com/chat', body: {messages: []}});
+getFromApi({url: 'https://example.com/task'});
+convertToBase64(bytes);
+convertUint8ArrayToBase64(bytes);
+console.log('Usage: tool [options]');
+console.log('thinking mode');
+const endpoint = '/users?id=1';
+clipboard.readText();
+const browser = 'Chrome';
+const service = 'Slack';
+const result = response.reasoning_content;
