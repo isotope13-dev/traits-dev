@@ -8,6 +8,33 @@ defaults:
   size_max: 65536
 
 traits:
+  # DTA-length variant: subtract the three-byte entry jump length, store
+  # its displacement at header+1, seek to BOF and write that header, then
+  # seek to EOF and append code. Bind the write source to the displacement
+  # store and require E9 in that source buffer; lengths and addresses vary.
+  - id: com-bp-entry-jump-then-append
+    desc: Writes COM entry jump then appends code
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        rule com_bp_entry_jump_then_append {
+          strings:
+            $rewrite = { 2D 03 00 89 86 ?? ?? B8 00 42
+                         (33|31) C9 (33|31) D2 CD 21
+                         B4 40 B9 03 00 8D 96 ?? ?? CD 21
+                         B8 02 42 (33|31) C9 (33|31) D2 CD 21
+                         B4 40 B9 ?? ?? 8D 96 ?? ?? CD 21 }
+          condition:
+            for any r in (1..#rewrite) : (
+              @rewrite[r] < 4096 and
+              uint16(@rewrite[r] + 23) >= 0x100 and
+              uint16(@rewrite[r] + 5) == uint16(@rewrite[r] + 23) + 1 and
+              uint8(uint16(@rewrite[r] + 23) - 0x100) == 0xE9
+            )
+        }
+
   # Build E9 + (host offset - 3) in a header buffer, then write that same
   # buffer through DOS. Bind the displacement store to buffer+1 and the
   # write source to the opcode store; relocation addresses are arbitrary.
@@ -114,6 +141,14 @@ traits:
         }
 
 composite_rules:
+  - id: dos-com-bp-entry-append-infector
+    desc: Searches hosts, redirects entry and appends code
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: com-bp-entry-jump-then-append
+      - id: micro-behaviors/fs/search::dos-int21-find-first-call
+
   - id: dos-com-buffer-entry-infector
     desc: Searches files and writes entry-redirecting COM headers
     crit: hostile
