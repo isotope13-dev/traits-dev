@@ -14,7 +14,7 @@ composite_rules:
   attack: T1539,T1041
   all:
     - id: micro-behaviors/fs/file/copy::js-copyfile-sync-call
-    - id: micro-behaviors/communications/http/cookies::cookie-json-request-body
+    - id: cdp-cookie-result-json-post
     - id: micro-behaviors/communications/http/request/client::fetch-literal-https-url
     - id: micro-behaviors/communications/http/post::fetch-post-call
     - id: micro-behaviors/process/create/flags::chromium-remote-debugging-port
@@ -28,3 +28,33 @@ composite_rules:
     # in Agentforce/Cline browser tooling that uses a throwaway mkdtemp
     # profile, not the user's installed Chrome User Data directory.
     - id: well-known/tool/development/vscode-extension/salesforcedx-einstein-gpt/
+
+# The CDP result binding must be the value serialized in the POST body.
+traits:
+- id: cdp-cookie-result-json-post
+  desc: CDP cookies serialized into HTTPS POST body
+  crit: suspicious
+  conf: 0.99
+  for: [javascript]
+  if:
+    type: tree-sitter
+    query: |
+      ((program
+        (lexical_declaration "const" (variable_declarator name: (identifier) @result
+          value: (await_expression (call_expression
+            arguments: (arguments (_) (string (string_fragment) @method))))))
+        (expression_statement (await_expression (call_expression
+          function: (identifier) @fetch arguments: (arguments
+            (string (string_fragment) @url)
+            (object
+              (pair key: (property_identifier) @method_key
+                value: (string (string_fragment) @verb))
+              (pair key: (property_identifier) @body_key
+                value: (call_expression function: (member_expression
+                  object: (identifier) @json property: (property_identifier) @serialize)
+                  arguments: (arguments (object (shorthand_property_identifier) @sent)))))))))) @transfer
+       (#match? @method "^(Network[.]getAllCookies|Storage[.]getCookies)$")
+       (#eq? @fetch "fetch") (#match? @url "^https://")
+       (#eq? @method_key "method") (#eq? @verb "POST")
+       (#eq? @body_key "body") (#eq? @json "JSON")
+       (#eq? @serialize "stringify") (#eq? @result @sent))
