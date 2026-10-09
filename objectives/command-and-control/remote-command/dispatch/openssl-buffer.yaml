@@ -1,0 +1,76 @@
+# Bind the TLS receive buffer to the shell command within one function.
+# Independent SSL_read and popen calls are insufficient evidence.
+defaults:
+  platforms: [unix, windows]
+  for: [c, cpp]
+  attack: T1059.004
+  conf: 0.98
+traits:
+  - id: openssl-buffer-shell-dispatch
+    attack: T1059.004,T1573.002
+    desc: Passes an OpenSSL receive buffer to popen
+    crit: suspicious
+    if:
+      type: tree-sitter
+      query: |
+        ((function_definition
+          body: (compound_statement
+            (while_statement
+              condition: (parenthesized_expression
+                (binary_expression
+                  left: (parenthesized_expression
+                    (assignment_expression
+                  right: (call_expression
+                    function: (identifier) @read
+                    arguments: (argument_list
+                      (identifier) @tls
+                      (identifier) @received))))))
+              body: (compound_statement
+                (declaration
+                  declarator: (init_declarator
+                    value: (call_expression
+                      function: (identifier) @execute
+                      arguments: (argument_list
+                        (identifier) @command
+                        (string_literal) @mode)))))))) @dispatch
+        (#eq? @read "SSL_read")
+        (#eq? @execute "popen")
+        (#eq? @received @command)
+        (#eq? @mode "\"r\""))
+
+  - id: socket-buffer-shell-dispatch
+    desc: Passes a socket receive buffer to popen
+    crit: suspicious
+    if:
+      type: tree-sitter
+      query: |
+        ((compound_statement
+          (expression_statement
+            (call_expression
+              function: (identifier) @recv
+              arguments: (argument_list
+                (_)
+                (identifier) @received)))
+          (declaration
+            declarator: (init_declarator
+              value: (call_expression
+                function: (identifier) @execute
+                arguments: (argument_list
+                  (identifier) @command))))) @dispatch
+          (#eq? @recv "recv")
+          (#eq? @execute "popen")
+          (#eq? @received @command))
+
+composite_rules:
+  - id: tls-client-command-execution
+    attack: T1059.004,T1573.002
+    for: [c, cpp, elf, macho, pe]
+    desc: TLS command dispatch with client connection
+    crit: hostile
+    all:
+      - id: objectives/command-and-control/backdoor/shell/socket::tls-command-dispatch
+    any:
+      - id: micro-behaviors/communications/socket/ssl::openssl-ssl-connect-function
+      - id: micro-behaviors/communications/socket/connect::connect-symbol
+      - id: micro-behaviors/communications/socket/connect::connect-import
+    near_lines: 100
