@@ -253,6 +253,47 @@ traits:
       pattern: "B4 40 B9 01 00 8D 96 ?? ?? CD 21 [0-24] B4 40 B9 02 00 8D 96 ?? ?? CD 21 [0-8] B8 02 42 [0-6] CD 21 [0-16] B4 40 B9 ?? ?? 8D 96 00 01 CD 21"
       offset_range: [0, 4096]
 
+  # Five-byte header variant: append through a saved handle, rewind that
+  # handle, build E9 plus a DTA-derived displacement, and write the same
+  # header buffer. Buffer, handle-cell, marker and body length are variable.
+  - id: com-saved-handle-five-byte-entry-append
+    desc: Appends code and writes calculated COM entry
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        rule com_saved_handle_five_byte_entry_append {
+          strings:
+            $append = { (33|31) C9 8B D1 8B 1E ?? ?? B8 02 42 CD 21
+                        B9 ?? ?? 8B 16 ?? ?? 8B 1E ?? ?? B4 40 CD 21 }
+            $entry = { (33|31) C9 8B D1 8B 1E ?? ?? B8 00 42 CD 21
+                       [0-8] C6 06 ?? ?? E9 A1 ?? ?? 05 03 00 A3 ?? ??
+                       C7 06 ?? ?? ?? ?? B9 05 00 BA ?? ??
+                       8B 1E ?? ?? B4 40 CD 21 }
+            $build = { C6 06 ?? ?? E9 A1 ?? ?? 05 03 00 A3 ?? ??
+                       C7 06 ?? ?? ?? ?? B9 05 00 BA ?? ??
+                       8B 1E ?? ?? B4 40 CD 21 }
+          condition:
+            for any a in (1..#append) : (
+              @append[a] < 4096 and
+              uint16(@append[a] + 6) == uint16(@append[a] + 22) and
+              for any e in (1..#entry) : (
+                @entry[e] >= @append[a] + !append[a] and
+                @entry[e] < @append[a] + 256 and
+                uint16(@entry[e] + 6) == uint16(@append[a] + 6) and
+                for any b in (1..#build) : (
+                  @build[b] >= @entry[e] + 13 and
+                  @build[b] + !build[b] == @entry[e] + !entry[e] and
+                  uint16(@build[b] + 12) == uint16(@build[b] + 2) + 1 and
+                  uint16(@build[b] + 16) == uint16(@build[b] + 2) + 3 and
+                  uint16(@build[b] + 24) == uint16(@build[b] + 2) and
+                  uint16(@build[b] + 28) == uint16(@append[a] + 6)
+                )
+              )
+            )
+        }
+
 composite_rules:
   - id: dos-com-relocated-header-append-infector
     desc: Searches hosts and appends entry-redirecting image
@@ -295,3 +336,12 @@ composite_rules:
       - id: objectives/impact/infect/binary/dos/file::com-append-and-entry-jump
       - id: objectives/impact/infect/binary/dos/file::com-call-append-and-entry-jump
       - id: objectives/impact/infect/binary/dos/file::com-seek-call-entry-jump-then-append
+
+  - id: dos-com-saved-handle-entry-append-infector
+    desc: Enumerates hosts, appends code and redirects entry
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: com-saved-handle-five-byte-entry-append
+      - id: micro-behaviors/fs/search::dos-int21-find-first-call
+      - id: micro-behaviors/fs/search::dos-int21-find-next
