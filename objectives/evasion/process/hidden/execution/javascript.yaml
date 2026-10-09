@@ -6,63 +6,6 @@ defaults:
   for: [javascript, typescript]
 
 traits:
-  - id: hta-taskbar-hidden
-    desc: HTA disables its taskbar entry
-    crit: suspicious
-    conf: 0.93
-    platforms: [windows]
-    for: [javascript, html, vbs, text, data, mp3]
-    if:
-      type: text
-      regex: '(?i)<hta:application\b[\s\S]{0,800}?showintaskbar\s*=\s*["'']?no\b'
-    unless:
-      - id: metadata/package/tooling::contools-script-path
-  - id: hta-windowstate-hidden
-    desc: HTA requests a minimized window
-    crit: suspicious
-    conf: 0.93
-    platforms: [windows]
-    for: [javascript, html, vbs, text, data, mp3]
-    if:
-      type: text
-      regex: '(?i)<hta:application\b[\s\S]{0,800}?windowstate\s*=\s*["'']?(minimize|hidden)\b'
-  - id: window-moveto-standalone-negative
-    desc: moveTo with standalone negative coordinate
-    crit: component
-    conf: 0.85
-    platforms: [windows]
-    for: [javascript, html, vbs, text, data, mp3]
-    if:
-      type: text
-      # HTA JScript calls moveTo as a bare window method. A dotted receiver
-      # (canvas i.moveTo) is a drawing call, so only window. or a non-dot
-      # prefix counts. The negative must stand alone as a coordinate: the
-      # minus has to follow an opening paren, comma, or whitespace, because
-      # centering arithmetic subtracts a dialog width
-      # (moveTo((screen.width-385)/2)) and that subtrahend only looks like
-      # an off-desktop coordinate.
-      regex: '(?i)(\bwindow\.|[^.\w])(moveTo\(([^):]{0,20}[\s,(])?-[1-9]\d+)'
-  - id: window-moveto-large-coordinate
-    desc: moveTo with large off-desktop coordinate
-    crit: component
-    conf: 0.85
-    platforms: [windows]
-    for: [javascript, html, vbs, text, data, mp3]
-    if:
-      type: text
-      # A large second coordinate (moveTo(1,9999)) parks the window off the
-      # desktop the same way a negative one does. Four-digit screen sizes
-      # such as 1080 stay put because the second number has to start at 2.
-      regex: '(?i)(\bwindow\.|[^.\w])(moveTo\([^):]{0,20},[2-9]\d{3})'
-  - id: window-resizeto-trivial
-    desc: resizeTo to a trivial size
-    crit: component
-    conf: 0.85
-    platforms: [windows]
-    for: [javascript, html, vbs, text, data, mp3]
-    if:
-      type: text
-      regex: '(?i)(\bwindow\.|[^.\w])(resizeTo\([01],\s*[01])'
   - id: js-global-error-suppression
     desc: Script swallows every runtime error
     crit: suspicious
@@ -83,23 +26,22 @@ composite_rules:
     desc: Window moves off-screen or shrinks
     crit: suspicious
     conf: 0.9
-    platforms: [windows]
-    for: [javascript, html, vbs, text, data, mp3]
+    platforms:
+    - windows
+    for:
+    - javascript
+    - html
+    - vbs
+    - text
+    - data
+    - mp3
     any:
-      - id: window-moveto-standalone-negative
-      - id: window-moveto-large-coordinate
-      - id: window-resizeto-trivial
+    - id: micro-behaviors/ui/window/control::window-moveto-standalone-negative
+    - id: micro-behaviors/ui/window/control::window-moveto-large-coordinate
+    - id: micro-behaviors/ui/window/control::window-resizeto-trivial
     unless:
-      - id: metadata/file/extension/identity::declaration-file-extension
-      - id: metadata/package/tooling::contools-script-path
-  - id: hidden-hta-window
-    desc: HTA window hides or minimizes
-    crit: suspicious
-    conf: 0.94
-    for: [javascript, html, vbs, text, data, mp3]
-    any:
-      - id: hta-taskbar-hidden
-      - id: hta-windowstate-hidden
+    - id: metadata/file/extension/identity::declaration-file-extension
+    - id: metadata/package/tooling::contools-script-path
   - id: hidden-hta-encoded-loader
     desc: Hidden HTA decodes and evaluates a script
     crit: hostile
@@ -112,7 +54,7 @@ composite_rules:
     # stands on its own here.
     for: [html]
     all:
-      - id: objectives/evasion/process/hidden/execution::hidden-hta-window
+      - id: micro-behaviors/ui/window/control::hta-hidden-or-minimized-window-request
       - id: micro-behaviors/data/decode/custom::hta-hex-xor-string-decoder
       - id: micro-behaviors/data/encode/base64::large-string-assignment
 
@@ -120,12 +62,12 @@ composite_rules:
     desc: Hidden HTA executes encoded script payload
     crit: hostile
     conf: 0.98
-    attack: "T1027,T1059.007,T1564.003"
-    for: [html]
+    attack: T1027,T1059.007,T1564.003
+    for:
+    - html
     all:
-      - id: hidden-hta-window
-      - id: objectives/anti-static/obfuscation/syntax::html-vbscript-encode-payload
-
+    - id: micro-behaviors/ui/window/control::hta-hidden-or-minimized-window-request
+    - id: objectives/anti-static/obfuscation/syntax::html-vbscript-encode-payload
   - id: offscreen-hta-obfuscated-wmi-loader
     desc: Off-screen HTA launches an obfuscated hidden WMI command
     crit: hostile
@@ -143,29 +85,17 @@ composite_rules:
     crit: hostile
     conf: 0.99
     attack: T1027,T1053.005,T1218.005,T1564.003
-    for: [vbs, mp3]
+    for:
+    - vbs
+    - mp3
     all:
-      - id: hidden-hta-window
-      - id: micro-behaviors/os/autorun/control::register-task-definition
-      - id: micro-behaviors/os/autorun/scheduled::task-scheduler-newtask-call
-      - id: micro-behaviors/os/autorun/scheduled::task-scheduler-time-trigger-call
-      - id: micro-behaviors/os/autorun/scheduled::task-scheduler-action-create-call
-      - id: micro-behaviors/os/com/automation::vbs-computed-createobject
-      - id: objectives/command-and-control/dropper/staging/encoded/script::vbs-hex-fragment-accumulator
-
-  # The loader that never declares itself an HTA.
-  #
-  # `hidden-hta-encoded-loader` above requires an `<hta:application>` element
-  # and the window attributes that come with it. This family ships none: the
-  # file is a Creative Commons MP3 with markup appended, so cleave identifies
-  # it as audio, and the hiding is done from script -- `window.moveTo(-1,0)`
-  # puts the window off-screen and `window.onerror` returning true keeps it
-  # quiet -- with the real body a hex-pair decode into `eval`, buried in
-  # element four hundred of five hundred and thirty-seven junk script blocks.
-  #
-  # Scoped by content, not by name, which is the point: none of the three
-  # facts depends on the file being called `.hta`, so the same page delivered
-  # as `.html`, `.svg` or padded with a different media type reads the same.
+    - id: micro-behaviors/ui/window/control::hta-hidden-or-minimized-window-request
+    - id: micro-behaviors/os/autorun/control::register-task-definition
+    - id: micro-behaviors/os/autorun/scheduled::task-scheduler-newtask-call
+    - id: micro-behaviors/os/autorun/scheduled::task-scheduler-time-trigger-call
+    - id: micro-behaviors/os/autorun/scheduled::task-scheduler-action-create-call
+    - id: micro-behaviors/os/com/automation::vbs-computed-createobject
+    - id: objectives/command-and-control/dropper/staging/encoded/script::vbs-hex-fragment-accumulator
   - id: offscreen-silenced-decoder-page
     desc: Off-screen page silences errors and decodes
     crit: hostile

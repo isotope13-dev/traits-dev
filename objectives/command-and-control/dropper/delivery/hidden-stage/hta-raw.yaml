@@ -1,94 +1,40 @@
 defaults:
-  platforms: [windows]
-  # Junk-padded .hta often classifies as unknown (analyzer skipped — cannot
-  # target unknown in for:). Raw fallbacks cover the same dropper when typed
-  # as html/text/data (clean HTA, .txt/.dat carriers). Raw filetype cap is 3.
-  for: [html, text, data]
-
-# Bounded raw fallbacks catch WMI/WSH staging when junk padding empties
-# text extraction (customs-document HTA droppers).
+  platforms:
+  - windows
+  for:
+  - html
+  - text
+  - data
 traits:
-- id: hta-raw-hidden-wmi-process-stage
-  desc: Raw HTA creates hidden WMI process
-  crit: notable
-  conf: 0.97
-  attack: T1047,T1564.003
-  mbc: E1043
-  if:
-    type: raw
-    regex: '(?is)SpawnInstance_\s*\(\s*\).{0,700}ShowWindow\s*=\s*0.{0,700}Create\s*\('
-
-- id: hta-raw-user-environment
-  desc: Raw HTA accesses user environment
-  crit: notable
-  conf: 0.96
-  if:
-    type: raw
-    regex: '(?is)Environment\s*\(\s*["'']User["'']\s*\)'
-
-# Non-ASCII pad after HTA applicationname — bounded class + literal prefix
-# (re-nested / re-perf). Tag identity stays on metadata text trait (dedup).
 - id: hta-raw-nonascii-run
   desc: Non-ASCII run near HTA applicationname
   crit: notable
   conf: 0.9
   if:
     type: raw
-    regex: '(?is)applicationname.{0,800}[^\x00-\x7f]{8,64}'
-
-# Split-join stripping alone is an ordinary string-replace idiom, not an HTA
-# marker cleanup. Suspicion needs a WSH staging marker in the same file
-# (see hta-raw-split-join-cleanup below); this stays notable as evidence.
-- id: hta-raw-split-join-strip
-  desc: Raw split-literal-join-empty strip
-  crit: notable
-  conf: 0.95
-  attack: T1027.002
-  if:
-    type: raw
-    regex: '(?is)\.split\s*\(\s*["''][^"'']{4,80}["'']\s*\)\s*\.join\s*\(\s*["'']{2}\s*\)'
-
-# Text Item() writes miss when junk padding empties string extraction.
-- id: hta-raw-environment-item-write
-  desc: Raw HTA writes a WSH environment item
-  crit: suspicious
-  conf: 0.97
-  if:
-    type: raw
-    regex: '(?is)\.Item\s*\(\s*["''][A-Za-z_][A-Za-z0-9_]{2,32}["'']\s*\)\s*='
-
+    regex: (?is)applicationname.{0,800}[^\x00-\x7f]{8,64}
 composite_rules:
-# Non-ASCII pad near HTA markup. Same id as the former raw regex so
-# unicode-padded WMI hostiles keep wiring.
 - id: hta-raw-nonascii-padding
-  for: [html, text]
+  for:
+  - html
+  - text
   desc: Non-ASCII HTA padding
   crit: suspicious
   conf: 0.96
   all:
   - id: metadata/file/format/markup::hta-application-element
   - id: hta-raw-nonascii-run
-
-# Junk-padded HTA that hides its window and resolves its automation objects
-# at runtime (computed ProgIDs): the padding defeats string inspection while
-# the hidden window defeats casual observation. No legitimate HTA combines
-# non-ASCII padding with a hidden window and computed ActiveX.
 - id: hta-padded-hidden-computed-activex-stage
   desc: Junk-padded hidden HTA resolves ActiveX objects at runtime
   crit: hostile
   conf: 0.97
   attack: T1027,T1218.005,T1564.003
-  for: [html]
+  for:
+  - html
   all:
-  # hta-raw-nonascii-padding already requires the <hta:application> element,
-  # so it is not listed again here.
   - id: hta-raw-nonascii-padding
-  - id: objectives/evasion/process/hidden/execution::hidden-hta-window
+  - id: micro-behaviors/ui/window/control::hta-hidden-or-minimized-window-request
   - id: micro-behaviors/os/com/automation::script-computed-activex-object
-
-# Hidden WMI stage plus an encoded https carrier (UTF-16LE Base64 prefix or
-# decoded URL). Catches the next customs-doc HTA that stages a remote PS
-# download without hardcoding hostnames.
 - id: hta-raw-hidden-encoded-wmi-loader
   desc: HTA hides WMI behind encoded stage
   crit: hostile
@@ -96,39 +42,14 @@ composite_rules:
   attack: T1027,T1047,T1105,T1564.003
   all:
   - id: micro-behaviors/os/com/automation::wscript-shell-activex-constructor
-  - id: hta-raw-hidden-wmi-process-stage
-  - id: hta-raw-user-environment
+  - id: micro-behaviors/process/create/exec::wmi-hidden-startup-create-sequence
+  - id: micro-behaviors/os/env/read::user-environment-call
   any:
   - id: micro-behaviors/communications/url/encoded::encoded-http-url
   - id: metadata/file/encoded::utf16le-b64-https-prefix
-
-- id: hta-raw-wsh-user-environment
-  desc: HTA stages through WSH user environment
-  crit: suspicious
-  conf: 0.97
-  all:
-  - id: micro-behaviors/os/com/automation::wscript-shell-activex-constructor
-  - id: hta-raw-user-environment
-
-# Split-join stripping is an ordinary string-replace idiom on its own
-# (vendored doc UIs normalize URL $refs this way). It reads as HTA marker
-# cleanup only beside a WSH staging marker in the same file — hidden WMI
-# process, user-environment access, or an environment Item() write.
-- id: hta-raw-split-join-cleanup
-  desc: Raw HTA strips marker via split-join
-  crit: suspicious
-  conf: 0.95
-  attack: T1027.002
-  all:
-  - id: hta-raw-split-join-strip
-  any:
-  - id: hta-raw-hidden-wmi-process-stage
-  - id: hta-raw-user-environment
-  - id: hta-raw-environment-item-write
-
-# Off-screen window + env Item + split-join cleanup around hidden WMI —
-# durable shape for pad-junked HTA→PS stagers; kept suspicious so it does
-# not stack with the existing for:* unicode-padded hostile on data/text.
+  for:
+  - html
+  - text
 - id: hta-raw-offscreen-env-wmi-loader
   desc: Off-screen HTA stages env then hidden WMI
   crit: suspicious
@@ -136,25 +57,11 @@ composite_rules:
   attack: T1027.002,T1047,T1059.001,T1564.003
   all:
   - id: micro-behaviors/os/com/automation::wscript-shell-activex-constructor
-  - id: hta-raw-hidden-wmi-process-stage
+  - id: micro-behaviors/process/create/exec::wmi-hidden-startup-create-sequence
   - id: micro-behaviors/ui/window/control::script-window-zero-negative-coordinates
-  - id: hta-raw-user-environment
-  - id: hta-raw-split-join-cleanup
+  - id: micro-behaviors/os/env/read::user-environment-call
+  - id: objectives/anti-static/obfuscation/string/delimiter::registry-encoded-command-substring-cleanup
   any:
-  - id: hta-raw-environment-item-write
-
-# HTA stager pairing split-join marker cleanup with hidden-WMI staging and an
-# environment Item() write. The full chain strips junk padding, stages the
-# launcher name into the user environment, and executes a hidden WMI process.
-- id: hta-raw-split-join-hidden-wmi-stager
-  desc: HTA deobfuscates and launches hidden WMI stager
-  crit: hostile
-  conf: 0.98
-  attack: T1027.002,T1047,T1059.001,T1564.003
-  all:
-  - id: hta-raw-split-join-strip
-  - id: hta-raw-hidden-wmi-process-stage
-  any:
-  - id: hta-raw-environment-item-write
-  - id: hta-raw-wsh-user-environment
-
+  - id: micro-behaviors/data/property/assign::script-item-assignment
+  for:
+  - html
