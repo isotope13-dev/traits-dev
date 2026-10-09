@@ -1,4 +1,4 @@
-// Dropper control: download, chmod, and spawn adjacent in one flow.
+// Installer capability control: caller-selected download, chmod, and spawn.
 const { execSync } = require('node:child_process');
 const fs = require('node:fs');
 function fetchAndRun(url, out) {
