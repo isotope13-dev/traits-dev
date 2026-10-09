@@ -22,14 +22,10 @@ traits:
       type: text
       regex: 'process\.env\.(N8N_USER_FOLDER|N8N_ENCRYPTION_KEY|EXECUTIONS_MODE|N8N_RUNNERS_ENABLED)'
 
-  # Both rules in this file used `type: tree-sitter` with `kind: member` and
-  # matched nothing -- not even `process.env.NPM_TOKEN`. filefacts does extract
-  # the access (`cleave facts` reports
-  # `{"kind":"member","path":"process.env.NPM_TOKEN"}`), but the tree-sitter
-  # matcher walks raw grammar node kinds, and JavaScript spells this
-  # `member_expression`, so `member` selected nothing and the rules were dead.
-  # `type: text` is what the working sibling in traits.yaml
-  # (`service-credential-env-var`) uses.
+  # Parsed member facts distinguish actual environment access from comments.
+  # Match parsed member expressions so examples in comments stay inert.
+  # The matcher preserves the credential-bearing suffixes and public-variable
+  # exclusions used by the prior text rule.
   #
   # Credential-bearing env names, by suffix. LICENSE/ACCESS were added after a
   # preinstall hook read CENTRAL_LICENSE_KEY and shipped it to a vendor endpoint
@@ -44,13 +40,15 @@ traits:
     desc: JavaScript reads a credential env var
     conf: 0.85
     if:
-      type: text
-      regex: 'process\.env\.\w{0,40}((API|PRIVATE|LICENSE|ACCESS)[_-]?KEY|TOKEN|SECRET|PASSWORD)\b'
-      case_insensitive: true
-      not:
-        # Framework build-time variables are deliberately exposed to browser
-        # bundles; reading one is configuration, not a secret access.
-        - substr: NEXT_PUBLIC_
-        - substr: VITE_
-        - substr: REACT_APP_
-        - substr: PUBLIC_KEY
+      type: tree-sitter
+      language: javascript
+      query: |
+        ((member_expression
+          object: (member_expression
+            object: (identifier) @process
+            property: (property_identifier) @env)
+          property: (property_identifier) @name) @read
+        (#eq? @process "process")
+        (#eq? @env "env")
+        (#match? @name "(?i)((API|PRIVATE|LICENSE|ACCESS)[_-]?KEY|TOKEN|SECRET|PASSWORD)$")
+        (#not-match? @name "(?i)^(NEXT_PUBLIC_|VITE_|REACT_APP_)|PUBLIC_KEY"))
