@@ -1,0 +1,1 @@
+program = "/usr/bin/daemon"
