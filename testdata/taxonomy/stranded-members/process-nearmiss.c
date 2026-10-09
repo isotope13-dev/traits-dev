@@ -1,0 +1,1 @@
+void inspect(){OpenProcessStatus(pid);}
