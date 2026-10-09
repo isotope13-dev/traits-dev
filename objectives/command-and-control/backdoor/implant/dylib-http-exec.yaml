@@ -11,7 +11,13 @@
 # so a repacked or rebuilt variant that breaks family YARA signatures still
 # trips it. Embedded language runtimes (libnode, CPython, the JVM, Hermes, …)
 # legitimately host both an HTTP stack and a command interpreter, so any
-# recognized runtime library suppresses the rule.
+# recognized runtime library suppresses the rule. The same holds for a dylib
+# that statically embeds the AWS SDK for C++ / AWS Common Runtime: its own
+# POSIX diagnostics import popen (OS-version lookup for the User-Agent header
+# via Aws::OSVersionInfo::GetSysCommandOutput; crash-backtrace symbolication
+# via aws-c-common's aws_run_command, the `atos`/addr2line helper), and an
+# HTTP client *is* the library's function there (Apache Arrow's S3 client,
+# other cloud SDK shims).
 defaults:
   platforms: [macos]
   for: [macho]
@@ -19,6 +25,17 @@ defaults:
   mbc: B0030
 
 composite_rules:
+  # Recognized-good toolchain: the popen import is the embedded AWS SDK's own
+  # diagnostic code, not an operator command channel.
+  - id: aws-sdk-cpp-embedded-diagnostics
+    desc: Dylib statically embeds AWS SDK C++ or AWS CRT diagnostics
+    crit: exception
+    conf: 0.93
+    any:
+      - id: well-known/lib/cloud/aws-sdk-cpp::osversioninfo-sys-command-output
+      - id: well-known/lib/cloud/aws-crt::aws-c-common-run-command
+      - id: well-known/lib/cloud/aws-crt::aws-crt-library-context
+
   - id: dylib-http-client-command-exec
     desc: Dylib pairs an HTTP client with shell command execution
     crit: suspicious
@@ -34,6 +51,7 @@ composite_rules:
     unless:
       # Embedded interpreters/runtimes legitimately bundle both capabilities.
       - id: well-known/lib/runtime/
+      - id: aws-sdk-cpp-embedded-diagnostics
 
   - id: dylib-implant-beacon-exec-recon
     desc: Dylib implant beacons, runs commands, and fingerprints the host
