@@ -1,11 +1,80 @@
+# Minified single-character values are compared byte-for-byte. Function
+# names are compared over their complete bounded lengths. The helper parameter
+# must be the value posted in JSON; local storage and forwarding must receive
+# the imported phrase. Generated-flow checks use that same import occurrence.
+# This avoids combined AST-query loss in large JavaScript bundles.
 defaults:
   platforms: [unix, windows]
   for: [javascript]
 traits:
   - id: generated-wallet-phrase-imported
-    desc: Generated phrase enters seed import helper
+    desc: Generated mnemonic forwarded through JSON POST
     crit: notable
-    conf: 0.97
+    conf: 0.99
     if:
-      type: text
-      regex: '\.createRandom\(\),\w+=\w+\.mnemonic\?\.phrase.{0,100}type:`seed`'
+      type: yara
+      source: |
+        import "hash"
+        rule generated_wallet_phrase_imported {
+         strings:
+
+          $header = /function [A-Za-z_$][\w$]{0,15}\([A-Za-z_$]\)\{let [\w$]=[`"]/
+          $post = /fetch\([^{}]{1,160},\{method:[`"]POST[`"],(headers:\{[^{}]{1,128}\},)?body:JSON\.stringify\(\{ip:[\w$],country:[\w$],city:[\w$],text:[\w$]\}\)/
+          $seed = /\.fromPhrase\([A-Za-z_$]\),localStorage\.setItem\([\w.$]{1,64},[A-Za-z_$]\),localStorage\.setItem\([\w.$]{1,64},[`"]seed[`"]\),[A-Za-z_$][\w$]{0,15}\([A-Za-z_$]\)/
+          $store = /localStorage\.setItem\([\w.$]{1,64},[A-Za-z_$]\)/
+          $forward = /,[A-Za-z_$][\w$]{0,15}\([A-Za-z_$]\)\}else/
+          $function = "function "
+
+          $import_header = /function [A-Za-z_$][\w$]{0,15}\(\{type:[\w$],words:[\w$],privateKey:[\w$]\}\)/
+          $generation = /function [A-Za-z_$][\w$]{0,15}\(\)\{let [\w$]=[\w$]{1,16}\.createRandom\(\),[\w$]=[\w$]\.mnemonic\?\.phrase.{0,80},[\w$]=[\w$]\.split\([`"] [`"]\)\.filter\(Boolean\);return [\w$]{1,16}\(\{type:[`"]seed[`"],words:[\w$]\}\)/
+          $random = /let [\w$]=[\w$]{1,16}\.createRandom\(\),/
+          $words = /,[\w$]=[\w$]\.split\([`"] [`"]\)\.filter\(Boolean\)/
+          $import_call = /return [A-Za-z_$][\w$]{0,15}\(\{type:[`"]seed[`"],words:[\w$]\}\)/
+         condition:
+          #seed > 0 and #post > 0 and #header > 0 and #store > 0 and #forward > 0 and
+
+          for any s in (1..#seed) : (
+
+            for any g in (1..#generation) : (
+              @generation[g] > @seed[s] + !seed[s] and @generation[g] - @seed[s] < 1024 and
+              for any ih in (1..#import_header) : (
+                @seed[s] > @import_header[ih] and @seed[s] - @import_header[ih] < 512 and
+                for any ic in (1..#import_call) : (
+                  @import_call[ic] > @generation[g] and @import_call[ic] < @generation[g] + !generation[g] and
+                  !import_header[ih] - 40 == !import_call[ic] - 30 and
+                  hash.md5(@import_header[ih] + 9, !import_header[ih] - 40) ==
+                    hash.md5(@import_call[ic] + 7, !import_call[ic] - 30)
+                )
+              ) and
+              for any r in (1..#random) : (
+                @random[r] > @generation[g] and @random[r] < @generation[g] + !generation[g] and
+                uint8(@random[r] + 4) == uint8(@random[r] + !random[r] + 2) and
+                for any w in (1..#words) : (
+                  @words[w] > @random[r] + !random[r] and @words[w] < @generation[g] + !generation[g] and
+                  uint8(@words[w] + 3) == uint8(@random[r] + !random[r]) and
+                  uint8(@words[w] + 1) == uint8(@generation[g] + !generation[g] - 3)
+                )
+              )
+            ) and
+
+            uint8(@seed[s] + 12) == uint8(@seed[s] + !seed[s] - 2) and
+            for any v in (1..#store) : (
+              @store[v] > @seed[s] and @store[v] + !store[v] < @seed[s] + !seed[s] and
+              uint8(@store[v] + !store[v] - 2) == uint8(@seed[s] + 12)
+            ) and
+            for any c in (1..#forward) : (
+              @forward[c] > @seed[s] and @forward[c] + !forward[c] - 5 == @seed[s] + !seed[s] and
+              for any h in (1..#header) : (
+                !header[h] - 20 == !forward[c] - 9 and
+                uint8(@header[h] + 9) == uint8(@forward[c] + 1) and
+                hash.md5(@header[h] + 9, !header[h] - 20) ==
+                  hash.md5(@forward[c] + 1, !forward[c] - 9) and
+                for any p in (1..#post) : (
+                  @post[p] > @header[h] + !header[h] and @post[p] - @header[h] < 2048 and
+                  uint8(@header[h] + !header[h] - 10) == uint8(@post[p] + !post[p] - 3) and
+                  not $function in (@header[h] + 1..@post[p] - 1)
+                )
+              )
+            )
+          )
+        }
