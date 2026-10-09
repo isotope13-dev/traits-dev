@@ -1,7 +1,10 @@
 Controls for the duplicate Content-Length literal observation.
 
 `duplicate.rs` and `probe.rs` must match the neutral duplicate-header trait.
-`probe.rs` must also retain the source desynchronisation probe composite.
+`probe.rs` has separate literals and must not imply a pipeline.
+`pipeline.rs` retains the source desynchronisation probe composite.
+`reject-zero.rs` must report the neutral zero-array comparison only;
+`accept-zero.rs` also reports the explicit successful identity alternative.
 `comment.rs`, `separate.rs` and `body.rs` must not match duplicate headers.
 Comments must not match the source Content-Length literal trait either.
 
