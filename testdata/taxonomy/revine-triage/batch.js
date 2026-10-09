@@ -1,0 +1,1 @@
+const command = "npm.cmd";
