@@ -8,6 +8,31 @@ defaults:
   size_max: 65536
 
 traits:
+  # Build E9 + (host offset - 3) in a header buffer, then write that same
+  # buffer through DOS. Bind the displacement store to buffer+1 and the
+  # write source to the opcode store; relocation addresses are arbitrary.
+  - id: com-indirect-entry-jump-write
+    desc: Writes a calculated COM entry jump
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        rule com_indirect_entry_jump_write {
+          strings:
+            $build = { 2D 03 00 A3 ?? ?? C6 06 ?? ?? E9 }
+            $write = { BA ?? ?? B9 04 00 B8 00 40 CD 21 }
+          condition:
+            for any b in (1..#build) : (
+              uint16(@build[b] + 4) == uint16(@build[b] + 8) + 1 and
+              for any w in (1..#write) : (
+                @write[w] > @build[b] + 10 and
+                @write[w] < @build[b] + 128 and
+                uint16(@write[w] + 1) == uint16(@build[b] + 8)
+              )
+            )
+        }
+
   # BP-relative header buffers: save the original three entry bytes with
   # MOVSW/MOVSB, replace the entry opcode with E9, subtract the jump length
   # from the host size, store its displacement, and select a three-byte write.
@@ -70,6 +95,7 @@ composite_rules:
     all:
       - id: micro-behaviors/fs/search::dos-int21-find-first-call
     any:
+      - id: com-indirect-entry-jump-write
       - id: objectives/impact/infect/binary/dos/file::com-append-and-entry-jump
       - id: objectives/impact/infect/binary/dos/file::com-call-append-and-entry-jump
       - id: objectives/impact/infect/binary/dos/file::com-seek-call-entry-jump-then-append
