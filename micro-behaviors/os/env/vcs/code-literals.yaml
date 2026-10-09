@@ -1,0 +1,68 @@
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript, python, shell]
+
+traits:
+- id: node-gitlab-token-code-literal
+  desc: String contains Node GITLAB_TOKEN env expression
+  crit: notable
+  conf: 0.7
+  if:
+    type: string_literal
+    substr: process.env.GITLAB_TOKEN
+  unless:
+  - id: well-known/lib/cloud/electron-publish::gitlab-publisher
+- id: node-bitbucket-token-code-literal
+  desc: String contains Node BITBUCKET_TOKEN env expr
+  crit: notable
+  conf: 0.7
+  if:
+    type: string_literal
+    substr: process.env.BITBUCKET_TOKEN
+  unless:
+  - id: well-known/lib/cloud/electron-publish::bitbucket-publisher
+
+composite_rules:
+# Release automation that reads a GitHub token while routing secret env values
+# to log redaction is provisioning its own authentication, not harvesting
+# credentials: a stealer ships the secret outbound instead of scrubbing it
+# from logs.
+- id: github-token-redaction-context
+  desc: GitHub token use with secret redaction
+  crit: exception
+  conf: 0.85
+  # `secret-env-value-redaction` is a JavaScript-only shape.
+  for: [javascript, typescript]
+  all:
+  - id: micro-behaviors/os/env/vcs::github-token-name-reference
+  - id: micro-behaviors/data/manipulation::secret-env-value-redaction
+# Tooling that reads a source-control token to authenticate its own work:
+# aube's external-tool downloader, release automation that redacts the token
+# from its logs, and a source map's embedded `sourcesContent` copy of such code.
+- id: source-control-token-known-benign-context
+  desc: Recognized source-control token tooling
+  crit: exception
+  conf: 0.85
+  any:
+  - id: well-known/tool/development/aube::aube-external-tools-download-context
+  - id: metadata/file/format/source-map::sourcemap-sources-content
+  - id: github-token-redaction-context
+  - id: micro-behaviors/os/security/auth/secret::github-cli-token-helper-context
+- id: node-source-control-token-code-literal
+  desc: Source-control token expressions in strings
+  crit: notable
+  conf: 0.9
+  any:
+  - id: node-gitlab-token-code-literal
+  - id: micro-behaviors/os/env/vcs::node-gh-token-code-literal
+  - id: node-bitbucket-token-code-literal
+  unless:
+  - id: source-control-token-known-benign-context
+  - id: micro-behaviors/communications/http/services/github/
+  - id: well-known/lib/cloud/electron-publish/
+  - id: well-known/tool/development/vcs/github-desktop/
+  - id: well-known/tool/detection/agent-glovebox::archive-context
+  - id: well-known/tool/detection/agent-sanitizer::agent-sanitizer-package-context
+# metadata/lang/scripted::env-access is Lua's `_ENV`/getfenv composite
+# (`for: [lua]`) -- an id collision, not a generic "reads an environment
+# variable" atom. The equivalent for a JS/TS node is process-env.
