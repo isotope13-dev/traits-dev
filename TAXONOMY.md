@@ -645,6 +645,10 @@ an ordinary updater goes in `micro-behaviors/process/deploy/<sink>`. Choose
 | `interpreter-stdin` | Staged source piped to a new interpreter. |
 | `file-exec` | A staged file launched via `command` (a shell parses the launch), `spawn` (a process API launches the path) or `installer` (an installer transaction such as `msiexec`). |
 
+Small `file-exec` catalogs may keep command and spawn observations in one
+leaf; each matcher and description must retain the launch mechanism. Split
+by mechanism only when the directory budget and sibling policy admit it.
+
 `image-map` and `interpreter-stdin` are not in the target sink set
 ([open checkpoint](#open-checkpoints)).
 

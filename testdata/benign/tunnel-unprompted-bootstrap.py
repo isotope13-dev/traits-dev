@@ -1,8 +1,7 @@
 """Static analyzer control. Never install or publish this fixture.
 
-Counterfactual to tunnel-install-consent-controls.py: identical bootstrap
-with NO explicit install subcommand gating the download, so the
-command-gated exception must not engage and the dropper composite fires.
+Official cloudflared download and loopback tunnel startup without a prompt.
+Absence of a prompt is not evidence of compromise or a malicious payload.
 """
 import os
 import subprocess
