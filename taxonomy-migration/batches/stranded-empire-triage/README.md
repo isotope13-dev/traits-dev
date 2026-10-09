@@ -24,7 +24,8 @@ members implement credential and ticket recovery, password spraying, process
 and token injection, privilege exploits, UAC registry hijacking, remote command
 execution, interception, keylogging, persistence or ransomware. Agent templates
 implement encrypted tasking, command execution and result transport. The C
-launcher executes an encoded PowerShell agent. The test Mimikatz copy contains
+stager downloads shellcode with WinHTTP, copies it into executable memory,
+and runs it through CreateFiber/SwitchToFiber. The test Mimikatz copy contains
 the same operational reflective loader and credential-theft payload; its test
 directory does not make that payload inert.
 
@@ -99,3 +100,33 @@ new hive subpaths were grouped with the offline-hive helpers after checking
 that existing registry-key atoms do not duplicate these exact paths, and the
 description was shortened. Final repository validation is required; these finite checks do not prove universal absence of
 false positives.
+
+## Follow-up byte review
+
+The current review repeats individual hash verification, atomscan and cleave
+facts for the 91 stranded members. Four additionally listed members—the two
+JSP webshells and the packaged/fetched CVE-2019-13272 exploit—were also reviewed.
+All contain operative attack code and receive individual MALICIOUS markers.
+The ptrace exploit races pkexec, injects execveat register state into a privileged
+tracee, then starts a root shell. This judgement follows the member bytes.
+
+The debugger/Desktop PDB composite and its encrypted Node-loader consumer
+were removed: imports, build paths and ChaCha/locale references establish
+neither active debugger gating nor an encrypted Node payload. Canonical API
+and build-path observations remain. Clipboard wording now describes the
+actual monitoring-or-theft alternatives instead of claiming a change watcher.
+
+TransformFinalBlock moved from symmetric/decrypt to crypto/cipher because it
+finalizes either encryption or decryption. Exact consumers were retargeted;
+the SonicWall ancestor decrypt selector gained the moved observation explicitly.
+Ransomware file replacement now additionally requires CreateEncryptor and ransom-demand wording. Generic
+function names no longer identify PSRansom or establish malicious encryption.
+The replacement tool signature requires its distinctive notification together
+with actual file encryption and original deletion. Ransom vocabulary now has
+a wording-only name, notable severity and no unsupported encryption mapping.
+
+Five further benign controls in `testdata/stranded-review-controls` pass with
+zero hostile and at most one suspicious trait. They cover ordinary functions,
+a direction-neutral crypto transform, a quoted PSRansom message and unrelated
+decryption or ordinary encryption with temporary-file cleanup. `check.py` reproduces those checks.
+Final repository validation is the last action of this review.
