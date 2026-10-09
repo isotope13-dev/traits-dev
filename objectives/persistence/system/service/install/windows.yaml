@@ -66,63 +66,18 @@ composite_rules:
   - id: metadata/binary/symbols/exports::export-dll-register-server
   - id: objectives/anti-static/pack/runtime::x86-dword-xor-add-decoder-loop
   - id: metadata/binary/layout/entropy::high-entropy-writable-executable-layout
-  - id: objectives/anti-static/obfuscation/payload/section/layout::ep-in-rwx-section
+  - id: metadata/binary/section/header::writable-entry-with-wx-section
   - id: metadata/signed/trust-level::unsigned-missing-signature-record
   unless:
   - id: metadata/signed/platform/
   - id: metadata/binary/installer/family/
-- id: service-install-and-start
-  desc: Installs and starts Windows service
-  crit: suspicious
-  conf: 0.94
-  scope: file
-  all:
-  - id: micro-behaviors/os/service/control::open-sc-manager
-  - id: micro-behaviors/os/service/create::create-service
-  - id: micro-behaviors/os/service/start::start-service
-  # The discriminating leg has to be evidence that the service's *image path* is
-  # being written or steered. `self-read-file-import-chain` was not that: it is
-  # satisfied by GetModuleFileName + CreateFile + ReadFile, which every
-  # self-registering service EXE built on the stock ATL/MFC CServiceModule
-  # skeleton imports. With it in the list the rule collapsed to "OpenSCManager +
-  # CreateService + StartService", i.e. every service installer ever shipped.
-  # ChangeServiceConfig is the fourth way to steer that path, and the one a
-  # native implant reaches for: it rewrites lpBinaryPathName (and the start
-  # type) through the SCM handle it already holds, leaving no registry write
-  # and no `sc config` command line for the other three legs to see. A plain
-  # installer registers its service once with CreateService and never
-  # reconfigures it, so pairing the reconfigure with a create/start in the same
-  # binary keeps this as discriminating as the registry-writing spellings.
-  any:
-  - id: micro-behaviors/os/registry/keys::service-key-format-string
-  - id: objectives/privilege-escalation/modify-service::service-imagepath-reg
-  - id: micro-behaviors/os/service/configure::sc-config-binpath
-  - id: micro-behaviors/os/service/configure::change-service-config
-  unless:
-  # A recognized application can legitimately install and reconfigure its own
-  # service; stronger payload-delivery composites consume this signal when the
-  # service lifecycle is actually part of hostile staging.
-  - id: well-known/app/
-  - id: well-known/tool/sysadmin/sysinternals/
-  - id: well-known/tool/sysadmin/nssm::nssm-service-manager
-  - id: well-known/lib/native/
-  - id: well-known/dual-use/tunnel/netch::netch-nfapi-component
-  # mullvad-daemon.exe is the VPN service. The signed installer payload
-  # registers it; the leaf signer is Mullvad VPN AB's Authenticode org.
-  - id: metadata/signed/leaf::mullvad-vpn-ab
-# A service that installs itself and then pulls its real payload over HTTP is
-# a dropper with a boot-survival guarantee, not an installer: a legitimate
-# installer downloads first and registers the finished product, it does not
-# ship a service whose job is to fetch code at runtime. The download leg is the
-# runtime-resolved WinHTTP flow rather than a URL string, so it holds up
-# against implants that keep their endpoint encrypted until use.
 - id: self-installing-service-fetches-payload
   desc: Self-installing service fetches remote payload
   crit: hostile
   conf: 0.95
   attack: T1543.003,T1105
   all:
-  - id: service-install-and-start
+  - id: micro-behaviors/os/service/configure::service-create-configure-start-api-set
   - id: micro-behaviors/communications/http/client/winhttp::winhttp-download-context
   unless:
   - id: metadata/signed/platform/
@@ -150,7 +105,7 @@ composite_rules:
   attack: "T1546.015,T1543.003,T1060"
   all:
   - id: objectives/persistence/system/registry/com-hijack::shellexecutehooks-com-hijack
-  - id: service-install-and-start
+  - id: micro-behaviors/os/service/configure::service-create-configure-start-api-set
   - id: objectives/persistence/login/registry/run-key::pe-registry-self-install
   - id: objectives/anti-static/obfuscation/payload/self-read::pe-overlay-self-extractor
   unless:
@@ -211,7 +166,7 @@ composite_rules:
   crit: suspicious
   conf: 0.95
   all:
-  - id: service-install-and-start
+  - id: micro-behaviors/os/service/configure::service-create-configure-start-api-set
   - id: micro-behaviors/fs/file/copy::copyfile-a
   - id: micro-behaviors/fs/directory/mkdir::create-directory-a
   any:
@@ -234,26 +189,6 @@ composite_rules:
   - id: metadata/binary/installer/family/
   - id: metadata/signed/platform/
   - id: metadata/binary/vendor/
-- id: service-reconfigure-and-start
-  desc: Reconfigures existing service for persistence
-  crit: suspicious
-  conf: 0.95
-  all:
-  - id: micro-behaviors/os/service/control::open-sc-manager
-  - id: micro-behaviors/os/service/control::open-service
-  - id: micro-behaviors/os/service/configure::change-service-config
-  - id: micro-behaviors/os/service/start::start-service
-  any:
-  - id: micro-behaviors/os/registry/keys::service-key-format-string
-  - id: objectives/privilege-escalation/modify-service::service-imagepath-reg
-  - id: micro-behaviors/os/service/configure::sc-config-binpath
-  downgrade:
-    any:
-    - id: metadata/signed/developer
-    - id: metadata/lang/compiler/systems/
-  unless:
-  - id: metadata/binary/vendor::bitdefender-product-marker
-  - id: metadata/binary/framework/
 - id: offline-files-service-reconfigure
   desc: Reconfigures Offline Files service
   crit: suspicious
@@ -276,7 +211,7 @@ composite_rules:
   # every EXE that both registers and implements its own service.
   any:
   - id: micro-behaviors/os/registry/keys::service-key-format-string
-  - id: objectives/privilege-escalation/modify-service::service-imagepath-reg
+  - id: micro-behaviors/os/registry/keys::escaped-service-imagepath-registry-path
   - id: micro-behaviors/os/service/configure::sc-config-binpath
   downgrade:
     any:
