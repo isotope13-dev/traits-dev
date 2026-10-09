@@ -8,6 +8,49 @@ defaults:
   size_max: 65536
 
 traits:
+  # CALL/POP BP establishes a file-relative image base. Bind EOF-3 to
+  # header+1, require E9 at that header, and bind the subsequent EOF write
+  # to an image range containing the relocation code. Addresses, body size,
+  # marker byte and optional processing before the append are not identities.
+  - id: com-relocated-four-byte-entry-append
+    desc: Redirects COM entry and appends own image
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        rule com_relocated_four_byte_entry_append {
+          strings:
+            $base = { E8 00 00 5D 81 ED ?? ?? }
+            $rewrite = { B8 02 42 (2B|33|31) C9 99 CD 21
+                         2D 03 00 89 86 ?? ??
+                         B8 00 42 (2B|33|31) C9 99 CD 21
+                         B8 00 40 B9 04 00 8D 96 ?? ?? CD 21 }
+            $append = { B8 02 42 (2B|33|31) C9 99 CD 21
+                        [0-32] B4 40 B9 ?? ?? 8D 96 ?? ?? CD 21 }
+            $body = { B4 40 B9 ?? ?? 8D 96 ?? ?? CD 21 }
+          condition:
+            for any b in (1..#base) : (
+              uint16(@base[b] + 6) == @base[b] + 3 and
+              for any r in (1..#rewrite) : (
+                @rewrite[r] > @base[b] and @rewrite[r] < @base[b] + 4096 and
+                uint16(@rewrite[r] + 13) == uint16(@rewrite[r] + 31) + 1 and
+                uint8(uint16(@rewrite[r] + 31)) == 0xE9 and
+                for any a in (1..#append) : (
+                  @append[a] >= @rewrite[r] + !rewrite[r] and
+                  @append[a] < @rewrite[r] + !rewrite[r] + 32 and
+                  for any w in (1..#body) : (
+                    @body[w] >= @append[a] + 8 and
+                    @body[w] + !body[w] == @append[a] + !append[a] and
+                    uint16(@body[w] + 7) <= @base[b] and
+                    uint16(@body[w] + 7) + uint16(@body[w] + 3) > @base[b] + !base[b] and
+                    uint16(@body[w] + 7) + uint16(@body[w] + 3) <= filesize
+                  )
+                )
+              )
+            )
+        }
+
   # DTA-length variant: subtract the three-byte entry jump length, store
   # its displacement at header+1, seek to BOF and write that header, then
   # seek to EOF and append code. Bind the write source to the displacement
@@ -198,6 +241,14 @@ traits:
       offset_range: [0, 4096]
 
 composite_rules:
+  - id: dos-com-relocated-header-append-infector
+    desc: Searches hosts and appends entry-redirecting image
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: com-relocated-four-byte-entry-append
+      - id: micro-behaviors/fs/search::dos-int21-find-first-call
+
   - id: dos-com-bp-entry-append-infector
     desc: Searches hosts, redirects entry and appends code
     crit: hostile
