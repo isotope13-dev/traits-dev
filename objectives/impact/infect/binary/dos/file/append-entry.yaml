@@ -35,6 +35,49 @@ traits:
             )
         }
 
+  # DTA-length variant: subtract the three-byte entry jump length, store
+  # its displacement at header+1, append code at EOF, seek to BOF and write
+  # that header. Bind the write source to the displacement store and require
+  # E9 in that source buffer; lengths and addresses vary.
+  - id: com-bp-append-then-entry-jump
+    desc: Appends code then writes COM entry jump
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        rule com_bp_append_then_entry_jump {
+          strings:
+            $calc1 = { 2D 03 00 89 86 ?? ?? }
+            $calc2 = { 2D 03 00 3E 89 86 ?? ?? }
+            $append = { B4 40 (B9 ?? ?? 8D 96 ?? ??|8D 96 ?? ?? B9 ?? ??) CD 21 }
+            $rewind = { B8 00 42 [0-6] CD 21 }
+            $write_entry = { B4 40 B9 03 00 8D 96 ?? ?? CD 21 }
+          condition:
+            for any w in (1..#write_entry) : (
+              @write_entry[w] < 4096 and
+              uint16(@write_entry[w] + 7) >= 0x100 and
+              uint8(uint16(@write_entry[w] + 7) - 0x100) == 0xE9 and
+              for any a in (1..#append) : (
+                @append[a] < @write_entry[w] and
+                @append[a] > @write_entry[w] - 64 and
+                for any r in (1..#rewind) : (
+                  @rewind[r] > @append[a] and @rewind[r] < @write_entry[w] and
+                  (
+                    for any c in (1..#calc1) : (
+                      @calc1[c] < @append[a] and @calc1[c] > @append[a] - 32 and
+                      uint16(@calc1[c] + 5) == uint16(@write_entry[w] + 7) + 1
+                    ) or
+                    for any c in (1..#calc2) : (
+                      @calc2[c] < @append[a] and @calc2[c] > @append[a] - 32 and
+                      uint16(@calc2[c] + 6) == uint16(@write_entry[w] + 7) + 1
+                    )
+                  )
+                )
+              )
+            )
+        }
+
   # Build E9 + (host offset - 3) in a header buffer, then write that same
   # buffer through DOS. Bind the displacement store to buffer+1 and the
   # write source to the opcode store; relocation addresses are arbitrary.
@@ -146,8 +189,10 @@ composite_rules:
     crit: hostile
     conf: 0.98
     all:
-      - id: com-bp-entry-jump-then-append
       - id: micro-behaviors/fs/search::dos-int21-find-first-call
+    any:
+      - id: com-bp-entry-jump-then-append
+      - id: com-bp-append-then-entry-jump
 
   - id: dos-com-buffer-entry-infector
     desc: Searches files and writes entry-redirecting COM headers
