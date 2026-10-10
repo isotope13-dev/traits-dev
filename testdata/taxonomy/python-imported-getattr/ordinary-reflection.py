@@ -1,0 +1,1 @@
+getattr(obj, "sqrt")
