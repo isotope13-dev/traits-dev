@@ -20,8 +20,9 @@ COMPILED_DIR := third-party/compiled
 # failure mode is a slower client, not a wrong verdict.
 # Validate each fixture independently, including byte-identical files whose
 # names select different traits (for example, build.rs versus lib.rs).
+# Validate current rules and engine behavior without cached analysis reports.
 validate:
-	$(CLEAVE) --traits-dir . validate
+	CLEAVE_SKIP_CACHE=1 $(CLEAVE) --traits-dir . validate
 
 # Taxonomy-migration checks (NEW_TAXONOMY_PLAN.md). Python-based and depends on
 # untracked scripts/, so it is kept out of `validate`.
@@ -152,9 +153,10 @@ taxonomy-check:
 # rather than being written over it: an in-place write would leave behind any
 # bucket the current rules no longer produce (a filetype that lost its last
 # rule, or one renamed by an engine fix) and ship it forever.
+# MIME filetype buckets such as application/x-zsh need their output parent.
 precompile:
 	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
-	  mkdir -p "$$tmp/src" && git checkout-index -a --prefix="$$tmp/src/" && \
+	  mkdir -p "$$tmp/src" "$$tmp/out/application" && git checkout-index -a --prefix="$$tmp/src/" && \
 	  CLEAVE_TRAITS_DIR="$$tmp/src" $(YARA_PRECOMPILE) "$$tmp/out" && \
 	  rm -rf $(COMPILED_DIR) && mkdir -p $(COMPILED_DIR) && \
 	  cp -R "$$tmp"/out/. $(COMPILED_DIR)/ && \
