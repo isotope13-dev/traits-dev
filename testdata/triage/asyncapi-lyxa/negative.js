@@ -1,0 +1,11 @@
+hljs.registerLanguage('bash', grammar);
+const modulePath = './transformers.js';
+const serviceModule = require('./socket-manager.service');
+const enumValue = 'list_container';
+const model = 'listContainer';
+const banner = 'listContainer';
+await file.download({destination: tempPath});
+const account = {private_key: '-----BEGIN PRIVATE KEY-----...-----END PRIVATE KEY-----', client_email:'fixture@example-project.iam.gserviceaccount.com'};
+const schemas = [{"title":"schema 0"},{"title":"schema 1"},{"title":"schema 2"},{"title":"schema 3"},{"title":"schema 4"},{"title":"schema 5"},{"title":"schema 6"},{"title":"schema 7"},{"title":"schema 8"},{"title":"schema 9"},{"title":"schema 10"},{"title":"schema 11"},{"title":"schema 12"},{"title":"schema 13"},{"title":"schema 14"},{"title":"schema 15"},{"title":"schema 16"},{"title":"schema 17"},{"title":"schema 18"},{"title":"schema 19"},{"title":"schema 20"},{"title":"schema 21"},{"title":"schema 22"},{"title":"schema 23"},{"title":"schema 24"},{"title":"schema 25"},{"title":"schema 26"},{"title":"schema 27"},{"title":"schema 28"},{"title":"schema 29"},{"title":"schema 30"},{"title":"schema 31"},{"title":"schema 32"},{"title":"schema 33"},{"title":"schema 34"},{"title":"schema 35"},{"title":"schema 36"},{"title":"schema 37"},{"title":"schema 38"},{"title":"schema 39"},{"title":"schema 40"},{"title":"schema 41"},{"title":"schema 42"},{"title":"schema 43"},{"title":"schema 44"},{"title":"schema 45"},{"title":"schema 46"},{"title":"schema 47"},{"title":"schema 48"},{"title":"schema 49"},{"title":"schema 50"},{"title":"schema 51"},{"title":"schema 52"},{"title":"schema 53"},{"title":"schema 54"},{"title":"schema 55"},{"title":"schema 56"},{"title":"schema 57"},{"title":"schema 58"},{"title":"schema 59"}];
+const phone = require('libphonenumber-js');
+const mongoCollection = {collection:'listContainers'};
