@@ -5,6 +5,7 @@ rule LNK_SplitVar_Mshta_RemoteStage
         scan_context = "file"
 
     strings:
+        $example = /start "" ![A-Za-z_][A-Za-z0-9_]{0,31}!![A-Za-z_][A-Za-z0-9_]{0,31}! https:\/\/example\.(org|com|net)(:[0-9]+)?[\/" ]/ wide nocase
         $lnk_magic = { 4C 00 00 00 01 14 02 00 }
         $msh = /set [A-Za-z_][A-Za-z0-9_]{0,31}=msh/ wide nocase
         $ta = /set [A-Za-z_][A-Za-z0-9_]{0,31}=ta/ wide nocase
@@ -23,6 +24,9 @@ rule LNK_SplitVar_Mshta_RemoteStage
                 uint16(@ta[t] - 2) == 0x26 and
                 for any s in (1..#start) : (
                     @start[s] == @ta[t] + !ta[t] + 4 and
+                    (not $example or for all d in (1..#example) : (
+                        @example[d] != @start[s]
+                    )) and
                     uint16(@start[s] - 4) == 0x26 and
                     uint16(@start[s] - 2) == 0x26 and
                     !start[s] == 44 + (!msh[m] - 16) + (!ta[t] - 14) and
