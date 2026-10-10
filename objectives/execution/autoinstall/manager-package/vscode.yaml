@@ -9,14 +9,43 @@ defaults:
   attack: T1059.007
 
 composite_rules:
+  # The follow fact is located at the constructor that requested the package.
+  # Requiring overlapping evidence prevents another failed URL in a large
+  # bundle from supplying this command's HTTP outcome.
+  - id: unavailable-github-shell-command
+    desc: GitHub execution target returned HTTP 404 or 410
+    crit: suspicious
+    conf: 0.95
+    near_bytes: 0
+    all:
+      - id: micro-behaviors/process/create/shell/bridge::github-runner-shell-execution
+      - id: metadata/package/dependencies/declaration::command-package-http-absent
+
   # This is a review-worthy execution boundary, not proof of a hostile
   # dependency. Match a file-local task/command cluster and an actual VS Code
   # import. Do not combine unrelated package-wide markers or pin a sample IOC.
   - id: vscode-unattended-github-shell-task
-    desc: VS Code task runs unattended GitHub package
+    desc: VS Code GitHub task disables npm confirmation
     conf: 0.9
     all:
       - id: micro-behaviors/process/create/task::unattended-github-shell-task
+    any:
+      - id: well-known/lib/development/vscode::require-vscode
+      - id: well-known/lib/development/vscode::import-vscode
+
+  # This reports a local combination, not a proven interprocedural edge:
+  # a persistent-state branch next to an unattended GitHub shell task. The
+  # state key, repository, commit and extension name are deliberately absent.
+  # A dead remote URL is additional acquisition/triage evidence, not something
+  # a static source matcher can infer from a command string.
+  - id: vscode-github-task-with-persistent-state-gate
+    desc: GitHub task near an extension-state comparison
+    conf: 0.94
+    near_bytes: 2048
+    all:
+      - id: micro-behaviors/process/create/shell/bridge::github-runner-shell-execution
+      - id: micro-behaviors/data/control-flow/branch::global-state-comparison-gate
+      - id: micro-behaviors/process/create/task::execute-task-call
     any:
       - id: well-known/lib/development/vscode::require-vscode
       - id: well-known/lib/development/vscode::import-vscode
@@ -31,3 +60,27 @@ composite_rules:
       - id: micro-behaviors/process/create/shell/build::js-package-manager-vcs-ref-install
       - id: micro-behaviors/process/create/spawn::detached-ignored-unref-spawn
       - id: micro-behaviors/data/control-flow/error-handling::empty-named-catch-text
+
+  - id: vscode-state-gated-unavailable-github-task
+    desc: Unavailable GitHub task near extension-state gate
+    conf: 0.95
+    # Reuse the source pass's proven local context. Archive retention caps
+    # each atom's offsets, while this composite retains the winning cluster.
+    # Both results must contain the same constructor location.
+    near_bytes: 0
+    all:
+      - id: unavailable-github-shell-command
+      - id: vscode-github-task-with-persistent-state-gate
+
+  # The inner rule keeps the executed command, its absent artifact, and its
+  # state gate in one source member. Only the startup declaration is pooled
+  # from the extension manifest. HTTP 404 alone cannot satisfy this profile.
+  - id: vscode-startup-unavailable-github-installer
+    desc: Startup extension with missing GitHub installer
+    crit: hostile
+    conf: 0.95
+    for: [vsix, zip, javascript, typescript, package.json]
+    scope: archive
+    all:
+      - id: vscode-state-gated-unavailable-github-task
+      - id: metadata/permission/activation::on-startup-finished

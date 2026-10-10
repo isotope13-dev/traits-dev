@@ -711,6 +711,28 @@ Lexical call observations are retained when RHS value analysis remains opaque.
 Unsupported CFML syntax and unresolved scope lookup remain explicit flow
 limitations. A possible value origin does not establish runtime reachability.
 
+**Receiver provenance and load-time calls.** Two more `kind: call` filters
+read the same flow graph. `receiver.from` traces the value a method is called
+on — the `cp` in `cp.execSync()` — and accepts everything `arg.from` does.
+`module_level: true` requires the call to sit in module-level code, outside
+every function body, so it runs when the file loads (Node `require`, Python
+`import`); a call inside a block (`if (x) { … }`) still counts, one inside a
+function does not. Only the tree-sitter flow producer records module level, so
+the filter can confirm load-time execution but never prove its absence.
+
+```yaml
+type: symbol
+kind: call
+module_level: true
+receiver:
+  from:
+    call: '^require$'
+```
+
+Flow is not built for source over 2 MB (`source-byte-budget`), so on larger
+files every provenance filter declines and the scan records an analysis gap.
+Run `cleave facts flow <file>` to see the graph these filters read.
+
 **Picking between `type: symbol` and `type: tree-sitter`:** `type: symbol`
 covers nearly every call-matching need. It runs against the precomputed symbol
 view — no live parse, no per-rule tree walk. `type: tree-sitter` is the escape
