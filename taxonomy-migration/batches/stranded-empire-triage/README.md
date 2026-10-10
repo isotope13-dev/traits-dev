@@ -130,3 +130,42 @@ zero hostile and at most one suspicious trait. They cover ordinary functions,
 a direction-neutral crypto transform, a quoted PSRansom message and unrelated
 decryption or ordinary encryption with temporary-file cleanup. `check.py` reproduces those checks.
 Final repository validation is the last action of this review.
+
+## Placement review and renewed markers
+
+The renewed byte review verified all 91 stranded hashes and also reviewed the
+four additionally listed executable members. All 95 have individual MALICIOUS
+markers next to their extracted files, with one-line notes of at most 72
+characters. Parent archive convictions are retained. The result tables now
+record the current scans and facts reports, and all 95 members retain 2–4
+hostile traits across their analysis trees.
+
+The four POSIX bind-shell objectives moved from `backdoor/shell/socket` to
+`backdoor/bind-shell`; their evidence, scopes and exclusions are preserved.
+The socket-path/shell-path proximity observation moved to the neutral filesystem
+path namespace and is notable. A raw Windows-script HTTP URL moved from the
+Invoke-WebRequest library namespace to URL/domain; merely quoting a URL no
+longer implies use of that client. DuplicateHandle and CloseHandle observations
+now live with handle duplication and closure, respectively. Certificate markers
+and the renamed `certificate-reference-set` composite are notable, and the description no
+longer asserts legitimate certificate handling from text alone.
+
+[placement-consumer-audit.json](placement-consumer-audit.json) records the nine
+identity migrations, exact consumers and all ancestor-directory consumers.
+Process-creation consumers intentionally lose CloseHandle as evidence, while
+the library consumer loses bare URL references. Backdoor inference consumers
+lose the neutral socket-path observation. Explicit pipe and injection consumers
+follow the canonical handle-duplication identity.
+
+`testdata/taxonomy/stranded-placement/check.py` reproduces three benign controls:
+a quoted URL, ordinary handle operations and quoted certificate boundaries.
+Each has zero hostile and zero suspicious findings. A byte-preserving x86_64
+bind-payload control replaced the dup2 import name with an inert equal-length
+string: both bind-shell objectives disappeared, with no hostile or suspicious
+finding remaining. Positive bind-shell precision was 10.7 and 11.2. All thirty
+compressed payloads were statically inspected with rizin; decoded managed CLR
+payloads received metadata and IL inspection. Mettle's nested archive contains
+65 files, including deployable agents, with TLV command handlers, process control
+and encrypted C2 transport corroborated in the native payload. No specimen was
+executed. These finite checks substantiate the reviewed claims and do not prove
+universal absence of false positives.
