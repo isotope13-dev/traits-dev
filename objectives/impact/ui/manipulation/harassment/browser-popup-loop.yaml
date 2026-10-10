@@ -1,0 +1,54 @@
+defaults:
+  for: [html, javascript]
+  platforms: [windows, unix]
+traits:
+  - id: positive-counter-popup-loop
+    desc: Endless increasing counter opens browser windows
+    crit: suspicious
+    conf: 0.99
+    if:
+      # Bind initializer, test, increment and target to the same counter.
+      # HTML does not expose embedded JS AST facts. Restrict this matcher to
+      # an exact single-call body with no comments or shadowed open function.
+      type: yara
+      source: |
+        rule positive_counter_popup_loop {
+          strings:
+            $loop = /for\s*\(\s*[a-zA-Z]\s*=\s*[1-9][0-9]*\s*;\s*[a-zA-Z]\s*>\s*0\s*;\s*[a-zA-Z]\s*\+\+\s*\)\s*\{\s*open\s*\(\s*["'][^"'\r\n]*["']\s*,\s*["'][^"'\r\n]*["']\s*\+\s*[a-zA-Z]\s*\)\s*;\s*\}/
+            $init = /[a-zA-Z]\s*=/
+            $test = /[a-zA-Z]\s*>/
+            $inc = /[a-zA-Z]\s*\+\+/
+            $target = /[a-zA-Z]\s*\)\s*;/
+            $line_comment = "//"
+            $block_comment = "/*"
+            $html_comment = "<!--"
+            $shadow = /function\s+open\s*\(/
+            $shadow_assign = /\bopen\s*=/
+          condition:
+            not ($line_comment or $block_comment or $html_comment or $shadow or $shadow_assign) and
+            for any l in (1..#loop) : (
+              for any a in (1..#init) : (
+                @init[a] > @loop[l] and @init[a] < @loop[l]+!loop[l] and
+                for any b in (1..#test) : (
+                  @test[b] > @init[a] and @test[b] < @loop[l]+!loop[l] and
+                  uint8(@init[a]) == uint8(@test[b]) and
+                  for any c in (1..#inc) : (
+                    @inc[c] > @test[b] and @inc[c] < @loop[l]+!loop[l] and
+                    uint8(@init[a]) == uint8(@inc[c]) and
+                    for any d in (1..#target) : (
+                      @target[d] > @inc[c] and @target[d] < @loop[l]+!loop[l] and
+                      uint8(@init[a]) == uint8(@target[d])
+                    )
+                  )
+                )
+              )
+            )
+        }
+composite_rules:
+  - id: endless-distinct-window-bomb
+    desc: Unbounded loop creates uniquely named windows
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: positive-counter-popup-loop
+      - id: micro-behaviors/ui/window/navigation::global-open-string-target-call
