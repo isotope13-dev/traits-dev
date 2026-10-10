@@ -12,3 +12,11 @@ def quote_class():
 
 def image_class():
     return 'src=[' + chr(34) + chr(39) + ']([^' + chr(34) + chr(39) + ']+)'
+
+
+def escape_apostrophe(path):
+    return path.replace(chr(39), chr(39) + chr(92) + chr(39) + chr(39))
+
+
+def escape_apostrophe_spaced(path):
+    return path.replace(chr(39), chr ( 39 ) + chr ( 92 ) + chr ( 39 ) + chr ( 39 ))
