@@ -1,0 +1,1 @@
+chrome.declarativeNetRequest.updateSessionRules({addRules:[{action:{type:"modifyHeaders",requestHeaders:[{header:"Origin",operation:"set",value:"https://example.com"}],responseHeaders:[{header:"Access-Control-Allow-Origin",operation:"set",value:"*"},{header:"Access-Control-Allow-Methods",operation:"set",value:"GET"}]}}]});
