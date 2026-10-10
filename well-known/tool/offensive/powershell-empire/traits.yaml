@@ -536,25 +536,15 @@ traits:
       type: symbol
       exact: get_listener_options
 
-  - id: empire-agent-session-state
-    desc: Empire agent session identifier state
-    crit: suspicious
-    conf: 0.93
-    for: [python, powershell]
-    platforms: [unix, windows]
-    if:
-      type: text
-      regex: '(self\.sessionID|\$script:SessionID)'
-
-  - id: empire-agent-task-map
-    desc: Empire agent task queue initialization
+  - id: empire-agent-task-executor
+    desc: Empire agent dynamic-code task executor
     crit: notable
     conf: 0.98
     for: [python]
     platforms: [unix, windows]
     if:
       type: text
-      exact: self.tasks = {}
+      regex: "(?m)^    def dynamic_code_execute_wait_nosave\\(self, data, result_id\\):"
 
   - id: empire-hop-name-placeholder
     desc: Empire HTTP hop name placeholder
@@ -678,6 +668,76 @@ traits:
     if:
       type: text
       regex: '(?im)^\s*function\s+SMBRelayExecute\b'
+
+  - id: python-task-evaluation-diagnostic
+    desc: Empire Python task-evaluation diagnostic
+    crit: notable
+    conf: 0.98
+    for: [python]
+    platforms: [unix, windows]
+    if:
+      type: literal
+      substr: error executing TASK_PYTHON_CMD_WAIT
+
+  - id: python-shell-response-packet
+    desc: Empire shell-task result packet call
+    crit: notable
+    conf: 0.98
+    for: [python]
+    platforms: [unix, windows]
+    if:
+      type: text
+      substr: self.packet_handler.build_response_packet(40, result_data, result_id)
+
+  - id: powershell-agent-entrypoint
+    desc: Empire PowerShell agent function definition
+    crit: notable
+    conf: 0.98
+    for: [powershell]
+    platforms: [windows]
+    if:
+      type: text
+      regex: '(?im)^function\s+Invoke-Empire\s*\{'
+
+  - id: powershell-task-packet-dispatch
+    desc: Empire decoded task packet dispatch
+    crit: notable
+    conf: 0.98
+    for: [powershell]
+    platforms: [windows]
+    if:
+      type: text
+      substr: Process-Tasking $Type $Data $TaskID
+
+  - id: powershell-task-decryption
+    desc: Empire tasking decryption call
+    crit: notable
+    conf: 0.98
+    for: [powershell]
+    platforms: [windows]
+    if:
+      type: text
+      substr: Decrypt-Bytes -Key $Script:SessionKey -In $Tasking
+
+  - id: python-file-chunk-read
+    desc: Empire local-file chunk read
+    crit: notable
+    conf: 0.98
+    for: [python]
+    platforms: [unix, windows]
+    if:
+      type: text
+      substr: self.get_file_part(filePath, offset=offset, base64=False)
+
+  - id: python-file-response-packet
+    desc: Empire file-chunk response packet dispatch
+    crit: notable
+    conf: 0.98
+    for: [python]
+    platforms: [unix, windows]
+    if:
+      type: text
+      substr: self.packet_handler.send_message(self.packet_handler.build_response_packet(41, partData, result_id))
 
 composite_rules:
   - id: empire-offensive-powershell-module
@@ -924,48 +984,13 @@ composite_rules:
 
   - id: empire-agent-protocol
     desc: PowerShell Empire tasking agent protocol
-    crit: hostile
+    crit: notable
     conf: 0.995
     for: [python]
     platforms: [unix, windows]
     all:
       - id: metadata/file/literal::staging-key-identifier-reference
-      - id: empire-agent-session-state
-      - id: empire-agent-task-map
-
-  - id: empire-agent-command-control
-    desc: Empire agent command or network control
-    crit: hostile
-    conf: 0.99
-    for: [python]
-    platforms: [unix, windows]
-    all:
-      - id: metadata/file/literal::staging-key-identifier-reference
-      - id: empire-agent-session-state
-    any:
-      - id: micro-behaviors/communications/socket/connect::socket-create-connection-call
-      - id: micro-behaviors/communications/socket/send::socket-send-method-named
-      - id: micro-behaviors/communications/http/lib/requests::requests-get
-      - id: micro-behaviors/communications/http/lib/requests::requests-post
-      - id: micro-behaviors/communications/http/lib/requests::requests-request
-      - id: micro-behaviors/communications/http/lib/urllib::urllib-urlopen-call-symbol
-      - id: micro-behaviors/communications/http/request/client::python-browser-context-request
-      - id: micro-behaviors/communications/http/request/client::python-http-client-connection
-      - id: micro-behaviors/communications/dns/lookup::source-resolver-query
-      - id: micro-behaviors/communications/websocket/send::python-websocket-send-method
-      - id: micro-behaviors/communications/websocket/send::python-socketio-emit
-      - id: micro-behaviors/os/network/tunnel::dev-tun
-      - id: micro-behaviors/os/network/tunnel::dev-net-tun
-      - id: micro-behaviors/os/network/tunnel::dev-tap
-      - id: micro-behaviors/os/network/tunnel::tunsetiff-ioctl
-      - id: micro-behaviors/os/network/tunnel::tun
-      - id: micro-behaviors/os/network/tunnel::wintun-create-adapter
-      - id: micro-behaviors/os/network/tunnel::wintun-dll-reference
-      - id: micro-behaviors/os/network/tunnel::tap0901-adapter-reference
-      - id: micro-behaviors/os/network/tunnel::windows-virtual-tunnel-adapter
-      - id: "micro-behaviors/process/create"
-      - id: micro-behaviors/process/interpreter/
-    needs: 1
+      - id: empire-agent-task-executor
 
   - id: empire-http-hop-relay
     desc: PowerShell Empire HTTP hop relay template
@@ -1137,25 +1162,9 @@ composite_rules:
       - id: micro-behaviors/communications/ssh/client::keyboard-interactive
     needs: 1
 
-  # PowerShell agent tasking: the agent keeps Empire session state and
-  # evaluates server tasking (IEX of task data) or reflectively loads staged
-  # assemblies. Session state plus dynamic evaluation convicts the agent.
-  - id: empire-powershell-agent-tasking
-    desc: Empire agent evaluates server tasking
-    crit: hostile
-    conf: 0.98
-    for: [powershell]
-    platforms: [windows]
-    all:
-      - id: empire-agent-session-state
-    any:
-      - id: micro-behaviors/process/interpreter/eval/direct::powershell-iex-text
-      - id: micro-behaviors/process/interpreter/reflection/runtime::ps-decode-and-load
-      - id: micro-behaviors/process/interpreter/reflection/runtime::ps-reflective-load
-    needs: 1
+  # Agent task evaluation lives under the remote-command objective.
 
-  # Threaded HTTP login brute-forcer: the Empire recon function plus disabled
-  # certificate validation for testing logins over TLS.
+  # HTTP login scanner TLS-verification behavior.
   - id: empire-http-login-tls-verification-disabled
     desc: HTTP login scanner disables TLS certificate verification
     crit: notable
