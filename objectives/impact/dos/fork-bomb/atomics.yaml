@@ -65,6 +65,37 @@ traits:
     unless:
       - id: well-known/tool/detection/
 
+  # Require the bomb in the shell call, not an unrelated execution API.
+  - id: staged-bash-fork-bomb-execution
+    desc: Rust passes fork bomb to bash -c
+    crit: suspicious
+    conf: 0.97
+    for: [rust]
+    attack: T1499.001
+    if:
+      type: tree-sitter
+      query: |
+        ((call_expression
+          function: (field_expression
+            value: (call_expression
+              function: (field_expression
+                value: (call_expression
+                  function: (scoped_identifier
+                    path: (identifier) @command
+                    name: (identifier) @new)
+                  arguments: (arguments (string_literal) @shell))
+                field: (field_identifier) @flag_method)
+              arguments: (arguments (string_literal) @flag))
+            field: (field_identifier) @payload_method)
+          arguments: (arguments (string_literal) @bomb)) @handoff
+        (#eq? @command "Command")
+        (#eq? @new "new")
+        (#match? @shell "^\"(bash|sh)\"$")
+        (#eq? @flag_method "arg")
+        (#eq? @flag "\"-c\"")
+        (#eq? @payload_method "arg")
+        (#match? @bomb ":\\s*\\(\\s*\\)\\s*\\{\\s*:\\s*\\|\\s*:\\s*&\\s*\\}\\s*;\\s*:"))
+
 composite_rules:
   # The bomb literal next to a blocklist/denylist assignment is the
   # defender's side of the string: an agent framework's SHELL_BLOCKLIST
@@ -82,30 +113,3 @@ composite_rules:
     all:
       - id: embedded-bash-fork-bomb-literal
       - id: micro-behaviors/process/create/shell/guard::shell-blocklist-assignment
-  # The literal plus a way to reach a shell. This is what the atom above was
-  # written to catch, stated properly: vplsfpoael's interpreter holds the bomb
-  # as a Rust string and spawns `bash -c` with it.
-  - id: staged-bash-fork-bomb-execution
-    desc: Hands the bash fork bomb to a shell
-    crit: suspicious
-    conf: 0.95
-    attack: T1499.001
-    # The file default is `for: [shell]`, which is right for the two original
-    # whole-file atoms and wrong for everything added since. The literal atom
-    # overrides it; without the same override here the composite inherits
-    # `shell` and is gated out of the very files it exists for -- a dropper in
-    # Rust, Python or C carrying the bomb as a string.
-    for: [source, scripts, binaries]
-    all:
-      - id: embedded-bash-fork-bomb-literal
-    any:
-      - id: micro-behaviors/process/create/subprocess::rust-command-new-call
-      - id: micro-behaviors/process/interpreter/eval/direct::shell-dynamic-command-execution
-      - id: micro-behaviors/process/create/subprocess::process-execution
-    unless:
-      - id: well-known/tool/detection/
-      - id: micro-behaviors/process/create/shell/guard/
-      - id: well-known/app/ai/coding-agent/
-      - id: blocklisted-fork-bomb-literal
-      - id: well-known/app/utility/cmdchamp/
-      - id: well-known/app/utility/eraigosa-dotfiles/
