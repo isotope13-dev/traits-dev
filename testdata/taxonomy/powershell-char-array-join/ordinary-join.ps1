@@ -1,0 +1,1 @@
+$text = -join ([char[]]$inputBytes)
