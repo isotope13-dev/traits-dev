@@ -1,0 +1,1 @@
+<?php $f=fopen("log.txt","a"); fwrite($f,"routine log"); fclose($f);

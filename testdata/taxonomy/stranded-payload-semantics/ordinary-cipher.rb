@@ -1,0 +1,2 @@
+mode = "gcm"
+puts mode
