@@ -2,7 +2,46 @@ defaults:
   platforms: [windows, unix]
   for: [powershell, data, batch, oledoc, javascript, typescript]
   attack: T1059.001
+traits:
+  # The encoded payload reaches the argv as an expression or variable
+  # (Buffer.from(script,'utf16le').toString('base64'), btoa(...), a named
+  # constant) rather than as an opaque base64 literal. Applications do this
+  # to avoid quoting bugs and antivirus keyword matches on DPAPI/registry
+  # helper scripts; the script stays visible in the same source. A hardcoded
+  # blob is the concealed form and keeps the launch composite at suspicious.
+  - id: encodedcommand-arg-constructed-js
+    desc: EncodedCommand payload is not a blob literal
+    crit: notable
+    conf: 0.93
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '(?i)-EncodedCommand[''"],\s*[A-Za-z_$]'
+  # A long unpunctuated Base64 literal: the hardcoded-payload form. Its
+  # presence in the same source cancels the constructed-payload downgrade,
+  # because the "variable" argument is usually assigned exactly such a blob.
+  - id: encodedcommand-blob-literal-js
+    desc: Long Base64 literal held for a launch
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: literal
+      kind: string
+      regex: '^[A-Za-z0-9+/]{64,}={0,2}$'
 composite_rules:
+  # The constructed-payload downgrade: the argv carries the payload as an
+  # expression/variable and the source holds no long Base64 blob literal
+  # (the usual assignment of a "variable" argument).
+  - id: encodedcommand-constructed-payload
+    desc: Encoded launch with visibly constructed payload
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    all:
+      - id: encodedcommand-arg-constructed-js
+    unless:
+      - id: encodedcommand-blob-literal-js
   - id: encodedcommand-option-reference
     desc: PowerShell encoded-command option reference
     crit: notable
@@ -34,3 +73,10 @@ composite_rules:
       - id: metadata/file/extension/identity::markdown-file-basename
       - id: micro-behaviors/process/create/hidden::encodedcommand-known-benign-context
       - id: "metadata/file/naming::test-directory-component"
+    downgrade:
+      # The suspicious claim is concealment. When the payload is assembled at
+      # the call site from visible plaintext (DPAPI helpers, registry
+      # inventory), the launch is real but nothing is hidden - keep it
+      # notable. A hardcoded blob does not downgrade.
+      any:
+        - id: encodedcommand-constructed-payload
