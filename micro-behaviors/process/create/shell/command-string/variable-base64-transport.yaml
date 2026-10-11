@@ -1,0 +1,47 @@
+defaults:
+  platforms: [unix]
+  for: [shell]
+
+traits:
+  - id: encoded-variable-shell-command-transport
+    desc: Encoded runtime variable passed to shell command
+    crit: notable
+    conf: 0.97
+    if:
+      type: tree-sitter
+      language: shell
+      # Bind the encoder's output variable to the quoted decoder command.
+      # Commands may intervene, but an intervening reassignment cannot.
+      # Reject a second decoder: this exception is file-scoped.
+      query: |
+        ((program
+          (variable_assignment
+            name: (variable_name) @encoded
+            value: (command_substitution
+              (pipeline
+                (command name: (command_name (word) @printf)
+                  argument: (raw_string) @format
+                  argument: (string . (expansion (variable_name)) .))
+                . (command name: (command_name (word) @encoder) !argument))))
+          . (command)*
+          . (command
+            argument: (string
+              . (string_content) @prefix
+              . (expansion (variable_name) @used)
+              . (string_content) @suffix .))) @transport
+          (#eq? @printf "printf")
+          (#eq? @format "'%s'")
+          (#eq? @encoder "base64")
+          (#eq? @encoded @used)
+          (#match? @prefix "^(/(usr/)?bin/)?bash -c 'echo $")
+          (#match? @suffix "^ \\| base64 -d \\| bash'$" )
+          (#not-match? @transport "base64\\s+-d\\s*\\|\\s*bash\\b[\\s\\S]*base64\\s+-d\\s*\\|\\s*bash\\b"))
+
+composite_rules:
+  - id: bound-base64-shell-transport
+    desc: Bound runtime Base64 shell command transport
+    crit: exception
+    conf: 0.97
+    all:
+      - id: encoded-variable-shell-command-transport
+      - id: micro-behaviors/data/encode/base64::base64-encode-command
