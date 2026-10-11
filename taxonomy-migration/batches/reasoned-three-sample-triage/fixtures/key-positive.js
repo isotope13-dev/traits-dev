@@ -1,0 +1,1 @@
+const APP_SECRET_KEY = "abcdefgh";

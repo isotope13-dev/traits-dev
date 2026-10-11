@@ -1,0 +1,1 @@
+const loginForm = document.createElement("form"); loginForm.target="frame";
