@@ -1,7 +1,7 @@
 // Benign CLI coincidence controls: a detached browser-opener in one helper
 // and a foreground self-updater curl pipe in another. The two legs live
 // kilobytes apart in unrelated functions and must not pool into
-// objectives/command-and-control/dropper/file-exec/detached::node-detached-remote-shell-loader.
+// micro-behaviors/process/create/background::node-detached-options-near-shell-pipeline.
 import { homedir } from 'node:os';
 
 const HELP = `myapp: do things from the terminal.
