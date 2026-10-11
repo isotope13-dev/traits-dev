@@ -1,0 +1,68 @@
+defaults:
+  platforms: [unix]
+  for: [shell]
+traits:
+- id: dd-zero-to-shell-var
+  desc: dd zero-fills shell variable output
+  crit: notable
+  conf: 0.9
+  if:
+    type: text
+    regex: dd\s+if=/dev/zero\s+of=["']?\$\{?\w+\}?["']?
+- id: dd-zero-to-mounted-shell-loop
+  desc: Loop device is zero-written by dd
+  crit: notable
+  conf: 0.95
+  if:
+    type: tree-sitter
+    language: shell
+    query: |
+      ((for_statement
+        variable: (variable_name) @iter
+        value: (command_substitution) @source
+        body: (do_group
+          (command
+            name: (command_name (word) @cmd)
+            . argument: (word) @input
+            . argument: (concatenation
+              (word) @outprefix
+              (string (simple_expansion (variable_name) @used)))))
+        (#eq? @cmd "dd")
+        (#eq? @input "if=/dev/zero")
+        (#eq? @outprefix "of=")
+        (#match? @source "grep")
+        (#match? @source "/dev")
+        (#match? @source "/proc/mounts")
+        (#eq? @iter @used)))
+- id: xargs-random-dd-mounted-shell-pipeline
+  desc: xargs sends mounted paths to random dd
+  crit: notable
+  conf: 0.95
+  if:
+    type: tree-sitter
+    language: shell
+    query: |
+      ((pipeline
+        . (command
+            name: (command_name (word) @grep)
+            . argument: (word) @grepopt
+            . argument: (string (string_content) @devfilter)
+            . argument: (word) @mounts)
+        . (command name: (command_name (word) @cut))
+        . (command name: (command_name (word) @sort))
+        . (command
+            name: (command_name (word) @xargs)
+            . argument: (word) @parallel
+            . argument: (concatenation) @replace
+            . argument: (word) @tool
+            . argument: (word) @input
+            . argument: (concatenation) @output))
+        (#eq? @grep "grep")
+        (#eq? @grepopt "-E")
+        (#eq? @devfilter "^/dev")
+        (#eq? @mounts "/proc/mounts")
+        (#eq? @cut "cut") (#eq? @sort "sort")
+        (#eq? @xargs "xargs")
+        (#eq? @parallel "-P8") (#eq? @replace "-I{}")
+        (#eq? @tool "dd") (#eq? @input "if=/dev/urandom")
+        (#eq? @output "of={}"))

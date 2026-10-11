@@ -1,95 +1,58 @@
-# DNS-based Data Exfiltration - Python
-# GuardDog-inspired: Combines DNS lookup capability with sensitive data access
-# ATT&CK: T1048.003 (Exfiltration Over Alternative Protocol - DNS)
 defaults:
   attack: T1048.003
   platforms: [windows, unix, android, ios]
   for: [python]
 traits:
-  - id: ray-driver-ip-helper-marker
-    desc: Ray driver IP helper marker
-    crit: baseline
-    conf: 0.95
-    platforms: [unix]
-    if:
-      type: text
-      substr: "[ray] getting driver IP"
+- id: ray-driver-ip-helper-marker
+  desc: Ray driver IP helper marker
+  crit: baseline
+  conf: 0.95
+  platforms: [unix]
+  if:
+    type: text
+    substr: "[ray] getting driver IP"
 composite_rules:
-  # `scope: leaf`, not `archive`. The behaviour this describes -- read a
-  # credential, hex it, resolve it as a hostname -- happens inside one
-  # function; pooled across a package it only asks whether a wheel contains
-  # getaddrinfo *somewhere*, `.hex()` *somewhere* and a credential path
-  # *somewhere*. litellm 1.87.0 satisfies all four that way and was reported
-  # hostile: it is an LLM proxy, so it resolves hosts, encodes bytes and reads
-  # AWS config for Bedrock, in different modules that have nothing to do with
-  # each other. The sibling `dns-exfiltration` below already scopes to a leaf
-  # with a line bound; this one was the outlier.
-  - id: python-credential-hex-dns-exfil
-    desc: Python package hex-encodes credentials into DNS
-    crit: hostile
-    conf: 0.99
-    scope: leaf
-    near_bytes: 4096
-    all:
-      - id: micro-behaviors/communications/dns/resolver::getaddrinfo
-      - id: micro-behaviors/communications/dns/label::python-dns-query-reference
-      - id: micro-behaviors/data/encode/hex::python-bytes-hex-call
-      - id: micro-behaviors/data/arithmetic::lsb-bit-mask-source
-    any:
-      - id: micro-behaviors/fs/read/file/target::credential-path-near-file-input
-      - id: micro-behaviors/fs/path/secret-config::ssh-config-artifact
-      - id: micro-behaviors/fs/path/token::aws-credentials-text-reference
-    needs: 1
+- id: python-credential-hex-dns-exfil
+  desc: Python package hex-encodes credentials into DNS
+  crit: hostile
+  conf: 0.99
+  scope: leaf
+  near_bytes: 4096
+  all:
+  - id: micro-behaviors/communications/dns/resolver::getaddrinfo
+  - id: micro-behaviors/communications/dns/label::python-dns-query-reference
+  - id: micro-behaviors/data/encode/hex::python-bytes-hex-call
+  - id: micro-behaviors/data/arithmetic::lsb-bit-mask-source
+  any:
+  - id: micro-behaviors/fs/read/file/target::credential-path-near-file-input
+  - id: micro-behaviors/fs/path/secret-config::ssh-config-artifact
+  - id: micro-behaviors/fs/path/token::aws-credentials-text-reference
+  needs: 1
 
   # GuardDog: DNS exfiltration pattern. A hostname lookup is a neutral
   # networking capability; only the complete combination below is hostile.
-  - id: dns-exfiltration
-    desc: DNS-based data exfiltration pattern
-    crit: hostile
-    conf: 0.95
-    mbc: "B0030"
-    scope: leaf
-    near_lines: 30
-    all:
-      - id: micro-behaviors/communications/dns/resolver::hostname-specific-lookup
-      # A resolver call plus a sensitive path is not enough to establish DNS
-      # exfiltration: service discovery and API clients do exactly that.  DNS
-      # exfil requires evidence that data is being placed into the DNS channel.
-      - id: micro-behaviors/communications/dns/label::python-length-prefixed-label-loop
-    any:
-      # Sensitive data sources
-      - id: micro-behaviors/os/env/secret-name::credential-env-read
-      - id: micro-behaviors/fs/path/credential::any-credential-path
-      - id: micro-behaviors/fs/path/app-data/
-    unless:
-      - id: well-known/tool/detection/security-scanner/
-      - id: metadata/package/testing/presence/harness/
-      - id: metadata/package/testing/harness/runtime/
-      - id: well-known/lib/format/conda-package/
-  # Raw socket DNS exfiltration (bypasses standard DNS libraries)
-      - id: "metadata/file/naming::test-directory-component"
-  - id: raw-socket-dns-exfil
-    desc: Raw socket DNS exfiltration with system info
-    crit: hostile
-    conf: 0.95
-    mbc: "B0030"
-    all:
-      - id: micro-behaviors/communications/dns/raw::python-dns-construction
-      - id: micro-behaviors/communications/socket/connect::connect-python
-    any:
-      - id: micro-behaviors/os/sysinfo/profile::python-host-information-query-combination
-      - id: micro-behaviors/os/sysinfo/platform/host::platform-uname
-      - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
+- id: raw-socket-dns-exfil
+  desc: Raw socket DNS exfiltration with system info
+  crit: hostile
+  conf: 0.95
+  mbc: "B0030"
+  all:
+  - id: micro-behaviors/communications/dns/raw::python-dns-construction
+  - id: micro-behaviors/communications/socket/connect::connect-python
+  any:
+  - id: micro-behaviors/os/sysinfo/profile::python-host-information-query-combination
+  - id: micro-behaviors/os/sysinfo/platform/host::platform-uname
+  - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
 
-  - id: cicd-dns-exfil
-    desc: CI/CD environment exfiltrated via DNS
-    crit: hostile
-    conf: 0.95
-    any:
-      - id: micro-behaviors/os/env/cicd::ci-environment-reference-context
-      - id: micro-behaviors/os/env/cicd::runner-name
-    all:
-      - id: micro-behaviors/communications/dns/raw::python-dns-construction
+- id: cicd-dns-exfil
+  desc: CI/CD environment exfiltrated via DNS
+  crit: hostile
+  conf: 0.95
+  any:
+  - id: micro-behaviors/os/env/cicd::ci-environment-reference-context
+  - id: micro-behaviors/os/env/cicd::runner-name
+  all:
+  - id: micro-behaviors/communications/dns/raw::python-dns-construction
 
   # Host identity leaves as DNS query labels. The encoded spellings are
   # covered by exfiltration/dns/encoded; this is the cleartext one -- sanitized
@@ -100,24 +63,24 @@ composite_rules:
   # Worked example: vision_service_python_client's install hook, which
   # resolves `<host>.<user>.vspc.<attacker domain>` via getaddrinfo from both
   # the install and develop classes.
-  - id: python-identity-label-dns-beacon
-    desc: Host identity leaves as DNS query labels
-    crit: hostile
-    conf: 0.95
-    mbc: B0030
-    near_lines: 30
-    all:
-      - id: micro-behaviors/communications/dns/label::python-dynamic-dns-label
-      - id: micro-behaviors/communications/dns/resolver::getaddrinfo
-    any:
-      - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
-      - id: micro-behaviors/os/sysinfo/hostname::python-os-uname-nodename
-      - id: micro-behaviors/process/user/query::python-getpass-user
-      - id: micro-behaviors/process/user/query::os-getlogin-python
-      - id: micro-behaviors/os/env/user-info::python-user-identity-env-reference
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: well-known/tool/detection/security-scanner/
+- id: python-identity-label-dns-beacon
+  desc: Host identity leaves as DNS query labels
+  crit: hostile
+  conf: 0.95
+  mbc: B0030
+  near_lines: 30
+  all:
+  - id: micro-behaviors/communications/dns/label::python-dynamic-dns-label
+  - id: micro-behaviors/communications/dns/resolver::getaddrinfo
+  any:
+  - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
+  - id: micro-behaviors/os/sysinfo/hostname::python-os-uname-nodename
+  - id: micro-behaviors/process/user/query::python-getpass-user
+  - id: micro-behaviors/process/user/query::os-getlogin-python
+  - id: micro-behaviors/os/env/user-info::python-user-identity-env-reference
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: well-known/tool/detection/security-scanner/
 
 
 # The JavaScript spelling of the identity-label beacon: a DNS lookup whose
@@ -127,43 +90,32 @@ composite_rules:
 #
 # Worked example: the @pmm-ux asset-uploader preinstall, which resolves
 # analytics-<uuid>.cloud.mhzmhz.rs.
-  - id: js-identity-label-dns-beacon
-    desc: Host identity leaves as DNS query labels
-    crit: hostile
-    conf: 0.95
-    mbc: B0030
-    for: [javascript, typescript]
-    near_lines: 60
-    all:
-      - id: micro-behaviors/communications/dns/label::uuid-label-hostname
-      - id: micro-behaviors/communications/dns/resolver::dns-lookup-call
-    unless:
-      - id: metadata/package/documentation/
+- id: js-identity-label-dns-beacon
+  desc: Host identity leaves as DNS query labels
+  crit: hostile
+  conf: 0.95
+  mbc: B0030
+  for: [javascript, typescript]
+  near_lines: 60
+  all:
+  - id: micro-behaviors/communications/dns/label::uuid-label-hostname
+  - id: micro-behaviors/communications/dns/resolver::dns-lookup-call
+  unless:
+  - id: metadata/package/documentation/
 
 # The non-UUID spelling of the same channel: the looked-up name is computed
 # (short random IDs plus sanitized platform/host/version labels joined into
 # a dotted name) rather than carrying a UUID label. Requiring the hostname
 # call plus a computed lookup name keeps fixed-hostname service lookups
 # (dynDNS updaters resolve literals) out of scope.
-  - id: js-host-identity-dns-beacon
-    desc: Host identity leaves as DNS query labels
-    crit: hostile
-    conf: 0.94
-    mbc: B0030
-    for: [javascript, typescript]
-    near_lines: 60
-    all:
-      - id: micro-behaviors/communications/dns/resolver::node-dns-host-identity-argument
-      - id: micro-behaviors/communications/dns/resolver::dns-lookup-call
-      - id: micro-behaviors/communications/dns/resolver::dns-lookup-dynamic-name
-  - id: js-host-identity-dns-resolve-beacon
-    desc: Host identity leaves as dns.resolve query labels
-    crit: hostile
-    conf: 0.94
-    mbc: B0030
-    for: [javascript, typescript]
-    near_lines: 60
-    all:
-      - id: micro-behaviors/communications/dns/resolver::node-dns-host-identity-argument
-      - id: micro-behaviors/communications/dns/resolver::require-dns-inline-resolve
-      - id: micro-behaviors/communications/dns/resolver::dns-resolve-dynamic-name
+- id: js-host-identity-dns-beacon
+  desc: Host identity leaves as DNS query labels
+  crit: hostile
+  conf: 0.94
+  mbc: B0030
+  for: [javascript, typescript]
+  near_lines: 60
+  all:
+  - id: micro-behaviors/communications/dns/resolver::node-dns-host-identity-argument
+  - id: micro-behaviors/communications/dns/resolver::dns-lookup-call
+  - id: micro-behaviors/communications/dns/resolver::dns-lookup-dynamic-name

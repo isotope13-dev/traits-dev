@@ -53,6 +53,16 @@ taxonomy-check:
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/memory-operations/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/memory-lifecycle/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/memory-catalog/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/impact-wipe/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/255-triage20-consumer-reference-reconciliation/corrections/mounted-dd-kotlin/cases-after.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/255-triage20-consumer-reference-reconciliation/corrections/mounted-dd-ruby/cases-after.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/255-triage20-consumer-reference-reconciliation/corrections/cobaltprime-boot-device-dd/cases-after.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/255-triage20-consumer-reference-reconciliation/corrections/mounted-dd-c-eldergrove/cases-after.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/255-triage20-consumer-reference-reconciliation/corrections/mounted-dd-perl/cases-after.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/255-triage20-consumer-reference-reconciliation/corrections/php-mounted-dd/cases.json --record taxonomy-migration/batches/255-triage20-consumer-reference-reconciliation/corrections/php-mounted-dd/emitted-after.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/255-triage20-consumer-reference-reconciliation/corrections/shell-staged-self-delete/cases-after.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/255-triage20-consumer-reference-reconciliation/corrections/macos-quarantine-copy-launch/cases-after.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/255-triage20-consumer-reference-reconciliation/corrections/gha-cache-poisoning-stage/cases-after.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/windows-heap/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/decompression/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/compression-boundaries/cases.json
@@ -116,6 +126,7 @@ taxonomy-check:
 	python3 taxonomy-migration/batches/074-corpus-strings/route-post-followup/check-focused-after.py --traits-dir . --cleave "$(CLEAVE)"
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/cipher-directions-current/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/091-qos-objective-retirement/cases-after.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/088-qos-class-reference/current-cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/089-wfp-source-call-precision/cases-after.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/command-task-field/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/098-reviewed-paths-with-image/image-cases-after.json
@@ -141,11 +152,40 @@ taxonomy-check:
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/142-triage20-go-declarations/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/143-triage20-document-names/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/145-triage20-package-manifest-properties/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/239-triage20-swap-helper-invocation/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/registry-write-controls/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/attacker-control-boundary/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/aws-secrets-controls/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/email-spam-controls/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/github-image-url-only/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/conditional-execution/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/bacnet-reference/cases.json --record taxonomy-migration/batches/271-bacnet-reference-audit/emitted-findings.json
+	python3 taxonomy-migration/batches/272-roblox-permission-boundary/run-focused-cases.py --cleave "$(CLEAVE)"
+	python3 taxonomy-migration/batches/273-context-marker-homes/run-focused-cases.py --cleave "$(CLEAVE)"
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/274-all-url-browsing-activity-upload/cases-after.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/telegram-profile-source/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/browser-history-exfil/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/keychain-source-vs-export/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/browser-keychain-decryption/cases-precision-target.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/browser-credential-theft/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/browser-message-injection/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/all-url-pageview-upload/cases.json --record taxonomy-migration/research/h4-placement-coverage/all-url-pageview-upload/emitted-findings.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/all-site-pageview-exfiltration/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/http-upload-behavior/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/dnr-redirect/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/dnr-all-url-ruleset/cases-after.json --record taxonomy-migration/research/h4-placement-coverage/dnr-all-url-ruleset/emitted-after.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/ssh-private-key-paths/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/permission-only-profiles/declared-authority/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/permission-only-profiles/target-scope-only/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/tiktok-bridge-candidate/cases-after.json --record taxonomy-migration/research/h4-placement-coverage/tiktok-bridge-candidate/emitted-after.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h3-current-reference-inventory/install-context-controls/cases.json
+	python3 taxonomy-migration/research/h3-root-setup-py-imports/check_cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/setup-py-socket-imports/cases.json
+	python3 taxonomy-migration/research/h3-root-setup-py-imports/check_cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/setup-py-ctypes-imports/cases.json --record taxonomy-migration/research/h3-root-setup-py-imports/ctypes-emitted-findings.json
+	python3 taxonomy-migration/research/h3-root-setup-py-imports/check_cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/setup-py-input-capture/cases.json --record taxonomy-migration/research/h3-root-setup-py-imports/input-capture-emitted-findings.json
+	python3 taxonomy-migration/research/h3-root-setup-py-imports/check_cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/setup-py-network-pyperclip-imports/cases.json --record taxonomy-migration/research/h3-root-setup-py-imports/network-pyperclip-emitted-findings.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/shellcode-loader-imports/cases.json --record taxonomy-migration/research/h3-root-setup-py-imports/shellcode-loader-findings.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h3-elf-debuglink-runtime/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/setup-py-dropper-imports/cases.json
 	uv run --with pyyaml python taxonomy-migration/research/h5-aes-query/test_queries.py
 
 # Compile the third-party + built-in YARA rules into portable per-filetype

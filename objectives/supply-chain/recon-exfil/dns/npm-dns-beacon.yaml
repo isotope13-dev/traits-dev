@@ -1,8 +1,3 @@
-# DNS-based exfiltration via install hooks (Node.js)
-# Detects install-time DNS beacon patterns where host metadata
-# is encoded and sent via DNS lookups to canary/OOB services.
-# ATT&CK: T1195.002 (Supply Chain Compromise: Compromise Software Supply Chain),
-#         T1048.003 (Exfiltration Over Alternative Protocol: DNS)
 defaults:
   platforms: [unix, windows]
   for: [javascript, typescript]
@@ -10,31 +5,6 @@ defaults:
   mbc: "E1041"
 
 traits:
-  # Hex encoding for DNS label exfiltration
-  # Buffer.from(data).toString("hex").slice(0,60) — truncation to 60 chars
-  # stays under the 63-byte DNS label limit
-- id: hex-encode-dns-label
-  desc: Hex-encodes data truncated to DNS label limit
-  crit: suspicious
-  conf: 0.95
-  if:
-    type: text
-    regex: 'toString\s*\(\s*["''](hex)["'']\s*\)\s*\.\s*slice\s*\(\s*0\s*,\s*6[0-3]\s*\)'
-
-  # Base64-decoded canary domain in encoded strings
-  # Matches dnshook.site domains recovered from base64
-- id: encoded-dnshook-canary
-  desc: Base64-decoded dnshook.site canary domain
-  crit: suspicious
-  conf: 0.98
-  if:
-    type: encoded
-    encoding: base64
-    regex: '[a-z0-9]{8,64}\.dnshook\.site'
-
-  # Obfuscated dns.lookup with canary domain
-  # Detects when dns.lookup is called with a variable containing
-  # a dnshook.site domain (recovered from encoded strings)
 - id: host-profile-term-hostname
   desc: Obfuscated hostname API name
   crit: component
@@ -58,16 +28,13 @@ traits:
     regex: '["'']username["'']'
 
 composite_rules:
-# A numeric dispatch and dotted-label construction are only meaningful here
-# when an encoded OAST/canary domain is also present. Without that third leg,
-# ordinary bundled JavaScript can satisfy the two generic atoms.
 - id: obfuscated-dns-label-lookup
   desc: Computed DNS label lookup with encoded canary
   crit: suspicious
   conf: 0.98
   near_bytes: 1024
   all:
-  - id: encoded-dnshook-canary
+  - id: micro-behaviors/communications/url/host::base64-dnshook-host-reference
   - id: micro-behaviors/data/control-flow/dispatch::js-numeric-indexed-computed-call
   - id: micro-behaviors/data/string/concat::js-dotted-variable-concat
 
@@ -86,12 +53,12 @@ composite_rules:
   - id: host-profile-term-userinfo
   - id: host-profile-term-username
   unless:
-    - id: well-known/tool/development/vscode-extension/dbt-vscode::dbt-vscode-extension-context
-    - id: well-known/lib/web/whatwg-url::whatwg-url-parser-context
-    - id: well-known/lib/web/follow-redirects::node-http-url-parser-context
-    - id: well-known/tool/development/testing/browserstack::browserstack-ai-sdk-context
-    - id: well-known/app/security/seon::seon-sdk-context
-    - id: metadata/package/files/dependency::vsix-bundled-output-path
+  - id: well-known/tool/development/vscode-extension/dbt-vscode::dbt-vscode-extension-context
+  - id: well-known/lib/web/whatwg-url::whatwg-url-parser-context
+  - id: well-known/lib/web/follow-redirects::node-http-url-parser-context
+  - id: well-known/tool/development/testing/browserstack::browserstack-ai-sdk-context
+  - id: well-known/app/security/seon::seon-sdk-context
+  - id: metadata/package/files/dependency::vsix-bundled-output-path
 
   # Import-time behavior: all three legs must occur in the same JavaScript
   # source. This intentionally does not require a literal canary domain: the
@@ -115,7 +82,7 @@ composite_rules:
   attack: "T1027.007,T1033,T1082,T1048.003"
   mbc: "B0032,E1041"
   all:
-  - id: encoded-dnshook-canary
+  - id: micro-behaviors/communications/url/host::base64-dnshook-host-reference
   - id: micro-behaviors/data/control-flow/dispatch::js-numeric-indexed-computed-call
   - id: micro-behaviors/data/string/concat::js-dotted-variable-concat
   any:
@@ -175,90 +142,6 @@ composite_rules:
   - id: micro-behaviors/os/module/export::commonjs-domain-like-export
 
   # Install-time DNS beacon: install hook + DNS lookup + canary domain
-- id: npm-install-dns-beacon
-  desc: NPM install hook beacons via DNS canary
-  crit: hostile
-  conf: 0.99
-  for: [npm, package.json, javascript, typescript]
-  scope: archive
-  all:
-  - id: metadata/package/scripts/lifecycle::has-install-script
-  - id: micro-behaviors/communications/dns/resolver::dns-lookup-call
-  - id: encoded-dnshook-canary
-  any:
-  - id: hex-encode-dns-label
-  - id: micro-behaviors/communications/dns/resolver::node-dns-lookup-with-oob-host-text
-
-- id: npm-install-oast-dns-https-beacon
-  desc: NPM install hook OAST DNS and HTTPS callback
-  crit: hostile
-  conf: 0.99
-  for: [npm, package.json, javascript, typescript]
-  scope: archive
-  attack: "T1195.002,T1048.003"
-  all:
-  - id: metadata/package/scripts/lifecycle::preinstall-runs-node-local-script
-  - id: objectives/exfiltration/oob/callback::javascript-oob-dns-https-interaction
-
-  # DNS exfil with host profiling: install hook + DNS + hostname/userinfo
-- id: npm-install-dns-host-profile-exfil
-  desc: NPM install hook exfils host profile via DNS
-  crit: hostile
-  conf: 0.995
-  for: [npm, package.json, javascript, typescript]
-  scope: archive
-  all:
-  - id: metadata/package/scripts/lifecycle::has-install-script
-  - id: encoded-dnshook-canary
-  - id: micro-behaviors/os/sysinfo/hostname::os-hostname-call
-  - id: micro-behaviors/process/user/query::os-userinfo-call
-  any:
-  - id: hex-encode-dns-label
-  - id: micro-behaviors/communications/dns/resolver::node-dns-lookup-with-oob-host-text
-  - id: micro-behaviors/communications/dns/resolver::dns-lookup-call
-- id: npm-postinstall-dns-host-profile-exfil
-  desc: NPM postinstall exfils host profile via DNS
-  crit: hostile
-  conf: 0.995
-  attack: "T1195.002,T1048.003,T1082,T1033"
-  for: [npm, package.json, javascript, typescript]
-  scope: archive
-  all:
-  - id: metadata/package/scripts/lifecycle::filtered-postinstall-hook
-  - id: micro-behaviors/process/user/query::os-userinfo-call
-  - id: micro-behaviors/os/sysinfo/hostname::os-hostname-call
-  # A lookup and a separate HTTP host survey do not prove DNS exfiltration.
-  # Require encoded DNS labels in addition to the OOB lookup context.
-  - id: hex-encode-dns-label
-  - id: micro-behaviors/communications/dns/resolver::node-dns-lookup-with-oob-host-text
-
-  # Install-time DNS reachability beacon without host profiling or encoded
-  # dnshook labels — cleartext oob.* / OAST host in a bundled postinstall script.
-- id: npm-install-dns-ip-exfil
-  desc: NPM install hook discovers IP and exfils via DNS
-  crit: hostile
-  conf: 0.99
-  for: [npm, package.json, javascript, typescript]
-  scope: archive
-  all:
-  - id: metadata/package/scripts/lifecycle::has-install-script
-  - id: encoded-dnshook-canary
-  - id: micro-behaviors/communications/http/ip-discovery::ifconfig-me
-  any:
-  - id: hex-encode-dns-label
-  - id: micro-behaviors/communications/dns/resolver::node-dns-lookup-with-oob-host-text
-- id: js-hex-dns-canary-exfil
-  desc: Hex-truncated DNS labels queried against a canary host
-  crit: hostile
-  conf: 0.97
-  for: [javascript]
-  all:
-  - id: hex-encode-dns-label
-  - id: micro-behaviors/communications/dns/resolver::node-dns-lookup-with-oob-host-text
-  any:
-  - id: micro-behaviors/communications/dns/resolver::dns-resolve-call
-  - id: micro-behaviors/communications/dns/resolver::dns-lookup-call
-  - id: micro-behaviors/communications/dns/resolver::node-dns-lookup
 - id: npm-install-ships-hex-profile-dns-exfil
   desc: NPM install hook ships hex-obfuscated host-profile DNS exfiltration
   crit: hostile

@@ -477,6 +477,7 @@ a call to it.
 | `fs/path-ops/{join,normalize,parse,match}` | Pathname manipulation (`Path.Combine`, `realpath`, `GetDirectoryName`). |
 | `fs/{acl,attributes,chmod,chown,link,lock,sync,watch,quota}` | Permissions, attributes, ownership, links (`hardlink`, `symlink`, `junction`), file locks (not `.lock` names), sync, change monitoring, quotas. |
 | `fs/temp/{file,directory}`, `fs/volume`, `fs/disk/{partition,raw}` | Creating temporary objects (a temp *location* is `fs/path/temp`); mounts; partitions and raw disk. Disk inventory is `os/sysinfo/disk`. |
+| `fs/swap/{on,off}` | Activating or disabling swap. Storage-header initialization (`mkswap`) belongs in `fs/volume/format`; raw zeroing remains `fs/disk/raw` until required evidence establishes formatting. |
 | `mem/{alloc,free,resize,copy,fill,compare}` | Allocate, release (`HeapFree`), resize (`HeapReAlloc`), copy, fill, compare. |
 | `mem/{map,unmap}`, `mem/create`, `mem/anonymous/create` | Mappings (`mremap` is `map`, not proof of a size change); shared and image-section objects; anonymous file descriptors (`memfd_create` proves no execution from it). |
 | `mem/{read,write,protect,query,advise,lock,gc,sync}` | Access (local, remote or physical, when established), permissions, inspection, advice, pinning, GC, cache visibility. RWX alone is neutral; writing to another process transfers no execution. |
@@ -495,8 +496,9 @@ a call to it.
 | `process/{identity,info,enumerate,argument,resources,pid}` | Current identity; attributes (`info/name` for a process-name literal); listing; arguments; limits; PID files (a PID value is not one). |
 | `process/{exit,terminate,control,daemonize}` | Ending this process (`exit/handler` for exit callbacks); killing another (a signal API without the kill signal is not); other state changes; detaching (`fork`+`setsid`). |
 | `process/lifecycle/<operation>` | Lifecycle; a guard blocking a second instance (mutex, PID file, lock) is `single-instance` (MBC B0024), while a mutex alone is `process/sync/mutex`. |
+| `process/debug/tool-markers` | References to debugging or tracing tooling, including executable names and paths. A reference proves neither a running debugger, a tool-owned artifact, nor an anti-analysis check; those require independent operation and target evidence. |
 | `process/fd/{query,control,close,dup,stdio}`, `process/io/stream`, `process/tty/<operation>` | Descriptors (a duplication API is `dup`; the resulting stream wiring is `stdio`); stream pumping; terminals (`tty/pty`). Creating a pipe is `communications/ipc`. |
-| `process/interpreter/<operation>` | In-process execution: `eval/{direct,indirect,compile}` (including shell `eval` and `source "$x"`), `bof` (Beacon Object File host APIs), `wasm`, `vm`. Launching an interpreter is `process/create`; language identity is metadata. |
+| `process/interpreter/<operation>` | In-process execution: `eval/{direct,indirect,compile,source}`. `eval` executes an expression; `source` executes a file in the current shell. This includes shell `eval` and `source "$x"`, plus `bof` (Beacon Object File host APIs), `wasm`, and `vm`. Launching an interpreter is `process/create`; language identity is metadata. |
 | `process/{attach,debug,hook,inject}/<mechanism>` | Attaching, debugging, intercepting and transferring execution, with no established attacker purpose. |
 | `process/deploy/<sink>` | Neutral acquisition- or staging-to-activation chains (an updater fetching and launching its image), by the [payload sinks](#payload-activation-and-staging). |
 | `dylib/{load,unload,lookup,enumerate}` | Native loader operations. Language modules are `os/module`; export walking or API hashing is `os/api-resolution`; hiding import identity is an anti-static claim. |
@@ -506,7 +508,7 @@ a call to it.
 | `os/{user,group,privilege,security}/<operation>` | Principals and authority; security controls (`security/auth`, `security/jailbreak`). Crossing to higher authority is an objective. |
 | `os/kernel/<facility>`, `os/{syscall,bpf,container,virtualization}` | Kernel facilities (`kernel/driver` for driver installation and loading, MBC C0037/C0023, not ordinary service creation; *legacy: `os/service/driver`*); direct syscalls; BPF; namespaces (`container/namespace`) and container runtimes; hypervisors. |
 | `os/module/load`; `os/{api-resolution,linker}` | Language-module loading; manual API resolution; dynamic-linker configuration (`linker/{audit,env,load-path,symbol-version}`). Ruby `require` caches a module; `Kernel.load` evaluates the source file on each call. Native libraries belong under `dylib`. |
-| `os/autorun`, `os/package-manager`, `os/sysinfo/<property>`, `os/random`, `os/telemetry` | OS task and autorun registration (malicious durability is persistence); package operations; host properties (`hostname`, `platform`, `hardware`, `disk`, `locale`, `profile`); randomness; logging and analytics. |
+| `os/autorun`, `os/package-manager`, `os/sysinfo/<property>`, `os/random`, `os/telemetry` | OS task and autorun registration (malicious durability is persistence); package operations, including package-manager configuration under `os/package-manager/config`; host properties (`hostname`, `platform`, `hardware`, `disk`, `locale`, `profile`); randomness; logging and analytics. |
 | `os/{clipboard,console,event,signal,exception,message,com,wmi}` | Host facilities. Clipboard by operation: `read`, `write`, `monitor`. COM or WMI evidence with a known function goes to that function. |
 | `os/application/target` | An app or package cited as the program's target (wallet brands, `SpringBoard`); neither discovery nor the file's identity. |
 | `time/{query,sleep,timing,schedule}` | Read time; wait; measure elapsed time (`timing/check`); schedule in-process callbacks (`schedule/timeout` for alarms). |
@@ -593,6 +595,11 @@ distinguishes it.
 - **Narrow effects beat broad.** Secure erasure → `wipe`; extortion → `ransom`;
   exhaustion → `dos`; other destructive deletion → `destroy`; code inserted into
   a host file → `infect`.
+- **Mount-derived device wipes.** Put a destructive disk-write objective under
+  `impact/wipe/disk/mount-derived-device` only when source evidence links a
+  device selected from `/proc/mounts` or `findmnt` to the write target. Mount
+  enumeration, a `/dev/` string, or `dd` with an unrelated output does not
+  establish that link; keep those observations in their behavior homes.
 - **Several outcomes:** place by the distinguishing result — source plus send →
   exfiltration; cross-host installation → lateral movement; higher-authority
   execution → privilege escalation; durable reactivation → persistence; else
@@ -716,6 +723,14 @@ legacy. Keyboard events, hooks and evdev reads stay
 `micro-behaviors/hardware/input` until recording, staging or surveillance is
 shown; synthesized keystrokes are `hardware/input/keyboard/simulate`.
 
+`collection/file-copy` keeps three distinct collection claims: `bluetooth`
+requires Android Bluetooth/OBEX file-transfer evidence; `document` identifies
+document/PDF text-extraction capability; `sensitive` requires file copies or
+staging selected by sensitive names or roots. These partition by transfer
+mechanism, content class and target selection, respectively. Keep them separate
+while those claims remain distinct; generic file access stays under
+`micro-behaviors/fs/` and does not qualify as collection by itself.
+
 ### Persistence follows the trigger
 
 Level 2 is the event that reactivates the code; level 3, the activation
@@ -778,17 +793,29 @@ identity goes with that subject.
 | `binary` | `header`, `section`, `symbols`, `code`, `instruction`, `resource`, `linking`, `layout`, `debug`, `provenance`; a property of that part | **Facts about a part, never what it means:** "three imports" → `symbols`; "imports `GetProcAddress`" → a capability; "exports impersonate `version.dll`" → an objective; "exports are libcurl's ABI" → `well-known/lib`. A part's measurement and malformation share its directory; `crit:` says how unusual. |
 | `build` | `bundler`, `minifier`, `transpiler`, `generated`, `ci`, `config`, `manifest`, `artifact`, `reproducible`, `vcs`, … by transform or pipeline function | What a tool left in the file (bundled, minified, transpiled), grouped by function; the tool goes in the trait name (`esbuild-bundled`). "This file *is* webpack" is `well-known/`; compiler attribution is `lang/compiler`. |
 | `document` | `pdf`, `office`, `rtf`, `html`, `ole`, `chm`; a parsed part or property | Structure, not the behavior of embedded code. Magic alone is `file`. |
-| `file` | `format`, `magic`, `extension`, `size`, `encoding` (*legacy: `encoded`*), `entropy`, `naming`, `profile`, `line`, `archive`, `invisible-unicode`; whole-file properties | A specific subject beats a generic text bucket. The file's own name and directory are `naming`; an archive member path is `archive`. `file/string` and `file/literal` are **closed**: move each rule to the subject it evidences. A context-only literal has no standalone behavior home; retain its placement hold until a supported contract or validated consumer representation exists. The Cleave source worktree rejects new IDs in both namespaces while exact existing IDs remain temporarily grandfathered; full-validation checks and regression tests exist in source, but inclusion in the intended release binary remains unverified. |
+| `file` | `format`, `magic`, `extension`, `size`, `encoding` (*legacy: `encoded`*), `entropy`, `naming`, `profile`, `line`, `archive`, `invisible-unicode`; whole-file properties | A specific subject beats a generic text bucket. The file's own name and directory are `naming`; an archive member path is `archive`. `file/string` and `file/literal` are **closed**: move each rule to the subject it evidences. A context-only literal has no standalone behavior home; retain its placement hold until a supported contract or validated consumer representation exists. Current Cleave source and its source-matched release-profile build reject new IDs in both namespaces; exact existing IDs remain temporarily grandfathered. Rebuild the sibling release binary before release use. See the [validator enforcement record](taxonomy-migration/research/document-authority/literal-validator-enforcement.md). |
 | `hardening` | `build`, `layout`, `memory`, `mitigation`, `sandbox` | Absence is a value of a mitigation, not a "missing" subject. Using a security API is a capability; bypassing one, an objective. |
 | `image` | `pixel`, `segment`, `trailing`: decoded-image measurements, segment totals, trailing layout | Whole-file byte entropy is `file/entropy`. A metric name proves no color channel or end marker. Rendering and capture are capabilities. |
 | `font`, `media` | *Reserved:* font table and container validity; cross-carrier byte coverage | Whitelisted; create with the first supported rule. |
 | `import` | `builtin`, `package`, `framework`; engine-emitted `<lang>/<module>` nodes | A dependency reference, not library identity or proof of use. `import base64` supports both directions, so it is an import fact, not `data/decode`. |
 | `lang` | `source`, `compiled`, `scripted`, `compiler`, `runtime`, `version`, `encoding` (*legacy: `encoded`*), `natural`, `locale`, `generated`, `upstream` | "Built with compiler X" is here; "this file *is* compiler X" is `well-known/`. Code transformation is `build`; runtime reflection is `metaprogramming`. |
 | `package` | A manifest field or package role (below) | Properties of the distributed component, not its runtime behavior. |
-| `permission` | Declared authority by protected surface (`host`, `clipboard`, `storage`, `network`, …); grant scope | A hostname without grant context is not a permission; invoking an API is a capability. |
+| `permission` | Declared authority by protected surface (`host`, `clipboard`, `storage`, `network`, …); grant scope and manifest-level profiles combining declared authority or target scope | A hostname without grant context is not a permission; a grant or target profile does not prove API use, injection, interception or theft. Invoking an API is a capability. |
 | `registry` | Package-registry publication records: release history, reach, custody, listing claims | Not the Windows registry (`micro-behaviors/os/registry`). Reputation is not a verdict. |
 | `signed` | `certificate`, `entitlements`, `platform`, `trust-level` | A signer name is neither product identity nor proof of a valid chain. |
 | `vendor` | OS or platform vendor provenance (Apple, Microsoft, NetBSD, GNU) | Certificate fields are `signed`; manifest vendor fields are `package`; third-party products are `well-known/`. |
+
+**`metadata/file/profile` is a narrow home for static artifact signatures.** A
+profile may combine file properties only when it states one stable, testable
+claim, the relation among its evidence, and its file scope. It must include
+benign controls and near misses. It does not assert behavior, malware identity,
+intent, or benign purpose; those claims need their own evidence and homes.
+Same-file co-occurrence alone is not a profile. A fact with a specific subject
+stays in that subject's directory, and a profile must not become the fallback
+for evidence with no defensible claim. Existing `test-indications`,
+`source-indications`, numeric `string-population`, and reference-catalog leaves
+have narrower contracts; each retained profile leaf must document its own
+boundary.
 
 **`file/entropy`** is Shannon entropy over the whole analyzed byte sequence.
 Region, section, string and decoded-pixel entropy belong with those subjects.

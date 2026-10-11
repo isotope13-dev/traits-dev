@@ -90,10 +90,20 @@ See [Matcher Defines Identity](TAXONOMY.md#matcher-defines-identity) in TAXONOMY
   `metadata/file/string` and `metadata/file/literal` are closed to new rules;
   place capability, intent and identity evidence in their respective homes.
   If a fragment supports only a consumer's context, record a placement hold
-  until its supported representation is resolved. The Cleave source worktree
-  rejects new IDs in both namespaces while exact existing IDs remain
-  temporarily grandfathered, with full-validation regression tests for both.
-  Inclusion in the intended release binary remains unverified.
+  until its supported representation is resolved. Current Cleave source and
+  its source-matched release-profile build reject new IDs in both namespaces;
+  exact existing IDs remain temporarily grandfathered. By default,
+  `make validate` selects `../cleave/target/release/cleave` whenever that file
+  exists, even if stale. Rebuild it from current source or pass a source-matched
+  binary explicitly with `make validate CLEAVE=<path-to-source-matched-cleave>`;
+  the tested command and binary hashes are in the
+  [validator enforcement record](taxonomy-migration/research/document-authority/literal-validator-enforcement.md).
+- **A file profile is not a co-occurrence bucket.** A retained
+  `metadata/file/profile` rule must make one stated, non-behavioral artifact
+  claim, define the relation and scope of its evidence, and have benign controls
+  and near misses. Put each fact in its specific subject home; same-file
+  co-occurrence alone does not justify a profile. See the
+  [directory placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
 - **The directory cap is 100 rules across all its YAML files.** A large leaf
   prompts semantic review, not a split by language, backend or rule form.
   Define each child's boundary and a home for the broadest observation before
