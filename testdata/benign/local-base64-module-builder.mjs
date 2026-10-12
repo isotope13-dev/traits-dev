@@ -1,0 +1,10 @@
+import f from "node:fs";
+import o from "node:os";
+import p from "node:path";
+const t=f.mkdtempSync(p.join(o.tmpdir(),"module-build-"));
+const moduleSource="export const greeting = 'hello';";
+const encoded=Buffer.from(moduleSource).toString("base64");
+f.writeFileSync(p.join(t,"module.mjs"),Buffer.from(encoded,"base64"));
+const module=await import("data:text/javascript;base64,"+encoded);
+console.log(module.greeting);
+f.rmSync(t,{recursive:true,force:true});

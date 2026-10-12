@@ -1,0 +1,4 @@
+import f from "node:fs";import o from "node:os";import p from "node:path";
+// Static control: fetch contract data, cache decoded bytes, print metadata.
+// It includes parseInt, POST, base64 and payload on a long line without executing data.
+(async()=>{const r=await fetch("https://cloudflare-eth.com",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:1,method:"eth_call",params:[{to:"0x0000000000000000000000000000000000000000",data:"0x53ed5143"},"latest"]})});const j=await r.json();const n=parseInt(j.result.slice(2,66),16);const record={payloadB64:Buffer.from(j.result,"utf8").toString("base64")};const t=f.mkdtempSync(p.join(o.tmpdir(),"contract-cache-"));f.writeFileSync(p.join(t,"record.txt"),Buffer.from(record.payloadB64,"base64"));console.log({length:n,source:"contract query",cacheDirectory:t,encoding:"Base64 text data"});f.rmSync(t,{recursive:true,force:true})})();
