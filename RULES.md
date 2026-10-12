@@ -104,11 +104,13 @@ See [Matcher Defines Identity](TAXONOMY.md#matcher-defines-identity) in TAXONOMY
   and near misses. Put each fact in its specific subject home; same-file
   co-occurrence alone does not justify a profile. See the
   [directory placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
-- **The directory cap is 100 rules across all its YAML files.** A large leaf
-  prompts semantic review, not a split by language, backend or rule form.
-  Define each child's boundary and a home for the broadest observation before
-  splitting; do not add an `other` bucket. Follow the official
-  [placement procedure](TAXONOMY.md#placement-procedure).
+- **100 rules is the directory review trigger across all its YAML files, not an
+  automatic split point.** First check that every rule is accurate, at the
+  right level, and nonduplicative. A larger leaf needs an exact-path reviewed
+  budget enforced by Cleave; do not raise a global limit or split by language,
+  backend, or rule form. Define each child's boundary and a home for the
+  broadest observation before splitting; do not add an `other` bucket. Follow
+  the official [placement procedure](TAXONOMY.md#placement-procedure).
 - IDs auto-prefixed by directory path (e.g., `traits/micro-behaviors/process/create/shell/` → prefix `micro-behaviors/process/create/shell`)
 - **Filenames are NEVER part of trait IDs** - only the directory path is used for prefixing
   - A trait `foo` in `traits/micro-behaviors/process/create/shell/python.yaml` has ID `micro-behaviors/process/create/shell::foo`
@@ -157,7 +159,7 @@ Some findings are emitted by cleave itself rather than loaded from YAML, for exa
 | `component` | Incomplete evidence that cannot express a clear standalone observation (string fragments like `&cc=`); composite membership alone never justifies this level |
 | `baseline` | Common functionality that nearly every program has (`mmap`, `stdio`, `read`) |
 | `notable` | A clear behavior, purpose, or identity that could interest a security engineer in differential analysis (`socket`, HTTP requests/imports, `exec`, `eval`, `sysctl`, program name, signing information); in general, every program—benign or not—should have at least one notable behavior |
-| `suspicious` | Hides intent/crosses boundaries (VM detection, obfuscation) |
+| `suspicious` | Evasion, intent concealment, or security-boundary crossing where legitimate use remains plausible (e.g. VM detection or obfuscation) |
 | `hostile` | Attack patterns, no legitimate use (reverse shell, ransomware) |
 
 Both `component` and `baseline` are allowed in any tier. `hostile` is allowed only in `objectives/` and `well-known/`; `micro-behaviors/` and `metadata/` max out at `suspicious`.

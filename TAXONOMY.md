@@ -150,7 +150,7 @@ lists). RULES.md is stricter; see [open checkpoints](#open-checkpoints).
 | `component` | Too incomplete to state a fact alone: `&cc=`, one token of a family signature, half a marker. Composite membership does **not** make a trait a component. | Any tier |
 | `baseline` | Clear but near-universal within the trait's `for:` scope (`read`, `mmap`; `USER32.dll` in a Windows GUI PE). | Any tier |
 | `notable` | A behavior, purpose or identity an analyst would want to see change in a version diff, even when benign: communications, code execution, crypto, encoding/decoding, privilege operations, sensitive file access, registry access, persistence surfaces, program identity, signing. | Any tier |
-| `suspicious` | Rarely legitimate. | Any tier; rare in `metadata/` |
+| `suspicious` | Evasion, intent concealment, or security-boundary crossing where legitimate use remains plausible. | Any tier; rare in `metadata/` |
 | `hostile` | Clear attack pattern with no legitimate use; authoring bar precision ≥ 3.5 ([RULES.md](RULES.md#criticality-levels)). | `objectives/`, `well-known/` |
 
 In `metadata/`, a fact that *identifies* something — signer, compiler, declared
@@ -272,9 +272,16 @@ and conditions. Moving the same set elsewhere fixes nothing. If a complete,
 accurate, correctly leveled, nonduplicative set answers one question, retain it
 in that leaf and raise its exact reviewed budget. Cleave must reject counts
 above that recorded budget; do not raise a global ceiling or invent a subtype
-to satisfy a number. The current reviewed exception is
-`metadata/package/dependencies/manifest/identity` at 108 rules, supported by
-[the Cargo dependency identity batch](taxonomy-migration/batches/275-cargo-manifest-identity/README.md).
+to satisfy a number. The current reviewed exceptions are:
+
+- `metadata/package/dependencies/manifest/identity` at 108 rules, supported by
+  [the Cargo dependency identity batch](taxonomy-migration/batches/275-cargo-manifest-identity/README.md).
+- `micro-behaviors/data/decode/base64` at 103 rules. One Base64 algorithm is a
+  coherent home across implementation scopes; a language/API split would sort
+  evidence form rather than refine the decoded behavior. The review moved an
+  encoded-only token to `data/encoding/base64` and removed overlapping Ruby
+  and shell match scopes. See the
+  [review record](taxonomy-migration/research/base64-directory-budget-review.md).
 
 ### Splitting a directory
 
@@ -1072,7 +1079,7 @@ Resolve each in the migration manifest before moving the affected rules.
 
 | Checkpoint | Required resolution |
 |---|---|
-| Broad leaves vs the 100-rule cap | Collapsing today's broad parents ([reading paths](#reading-paths)) into leaves would breach the cap. Keep a split only with a complete partition that admits broad evidence, or record a size-policy decision. |
+| Capacity for broad leaves | The 100-rule review trigger is settled, not a hard cap. Before collapsing today's broad parents ([reading paths](#reading-paths)), document the complete incoming population and consumers, verify every rule's accuracy, level and distinctness, and record an exact-path reviewed budget. Do not invent a sibling or `other` bucket to evade review. |
 | Level-3 branches | Name the children, their single axis, precedence and an incomplete-evidence example before migrating. |
 | Payload sinks | Decide `image-map` and `interpreter-stdin` before moving them. |
 | Broad staging profiles | Staging rules that fit no operation need a defined home; neither dropping the claim nor calling it activation is acceptable. |
