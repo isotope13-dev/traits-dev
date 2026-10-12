@@ -23,6 +23,17 @@ from event names, URL routes from imports, contact collections from numeric
 limits, and command dispatch from upload telemetry. All cases were checked
 using `cleave --traits-dir . --json` and assertions over emitted IDs.
 
+The `@teamqadeer1/baileys` 1.0.0 fork fetches its channel list from a literal
+`https://raw.githubusercontent.com/…/follow.json` URL instead of routing the
+fetch through a variable, so `fetch-variable-near-json-response` never fires
+and `autonomous-whatsapp-newsletter-follow` missed it despite the downstream
+remote-follow composites already expecting the literal-fetch shape.
+`remote-list-follow-positive.js` covers that shape (session-open follow plus
+mute of a remotely listed channel set, asserting the suspicious autonomous and
+connect-time composites and the hostile remote follow-and-mute composite);
+`remote-list-follow-nearmiss.js` fetches the same list but follows once
+outside any session-open handler and matches none of them.
+
 The invocation composite moved from the social objective to the messaging
 capability leaf. ContentVariator and addZeroWidth atoms moved to Unicode
 string capabilities; their suspicious consumer retains its exact references.
