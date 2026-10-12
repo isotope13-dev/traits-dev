@@ -1,0 +1,112 @@
+# Native Tox P2P command-and-control client.
+#
+# Tox is an end-to-end-encrypted peer-to-peer messenger without centralized
+# servers: clients join a DHT, add operator peers by long public key, and
+# exchange messages that no domain takedown can sever. One Windows loader
+# class statically links c-toxcore, bootstraps the DHT, gates commands on a
+# provisioned operator key, executes received shell tasks, returns output as
+# peer messages, and stages follow-on payloads with Tox file transfer. The
+# same c-toxcore call surface appears in reimplementations and FFI bindings,
+# so these atoms match the API names, not one build's strings.
+defaults:
+  platforms: [windows, linux, macos]
+  for: [c, cpp, pe, dll, go, rust, python]
+  attack: T1095
+
+traits:
+  - id: tox-instance-create
+    desc: Creates a Tox client instance
+    crit: notable
+    conf: 0.9
+    if:
+      type: symbol
+      exact: tox_new
+
+  - id: tox-bootstrap-call
+    desc: Bootstraps Tox DHT peer discovery
+    crit: notable
+    conf: 0.92
+    if:
+      type: symbol
+      exact: tox_bootstrap
+
+  - id: tox-peer-add
+    desc: Adds a Tox operator peer
+    crit: notable
+    conf: 0.92
+    if:
+      type: symbol
+      exact: tox_friend_add
+
+  - id: tox-message-loop
+    desc: Runs the Tox client event loop
+    crit: notable
+    conf: 0.9
+    if:
+      type: symbol
+      exact: tox_iterate
+
+  - id: tox-message-callback
+    desc: Registers a Tox peer message callback
+    crit: notable
+    conf: 0.92
+    if:
+      type: symbol
+      exact: tox_callback_friend_message
+
+  - id: tox-send-message
+    desc: Sends a Tox peer message
+    crit: notable
+    conf: 0.9
+    if:
+      type: symbol
+      exact: tox_friend_send_message
+
+  - id: tox-file-transfer
+    desc: Stages a Tox peer file transfer
+    crit: notable
+    conf: 0.9
+    if:
+      type: symbol
+      exact: tox_file_send
+
+  - id: tox-peer-key-gate
+    desc: Tox commands gated on peer key
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?s)\btox_friend_get_public_key\b.{0,500}\b(memcmp|strcmp)\s*\('
+
+composite_rules:
+  # Peer messaging and local shell execution co-occurring in one artifact:
+  # the operator's channel in, the execution sink out. Co-occurrence, not
+  # proven data flow — the legs name the channel and the sink separately.
+  - id: tox-native-shell-command-channel
+    desc: Tox peer messaging paired with local shell execution
+    crit: hostile
+    conf: 0.96
+    attack: T1059
+    all:
+      - id: tox-message-callback
+      - id: tox-send-message
+    any:
+      - id: micro-behaviors/process/create/shell/spawn::c-popen-call
+      - id: micro-behaviors/process/create/spawn::create-process-a
+
+  # The four client-loop legs alone also describe a benign chat client, so an
+  # operated-control leg is required: an operator-key gate, or a local
+  # execution sink for peer-tasked commands.
+  - id: tox-native-p2p-command-loop
+    desc: Operated Tox DHT client loop
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: tox-bootstrap-call
+      - id: tox-peer-add
+      - id: tox-message-loop
+      - id: tox-message-callback
+    any:
+      - id: tox-peer-key-gate
+      - id: micro-behaviors/process/create/shell/spawn::c-popen-call
+      - id: micro-behaviors/process/create/spawn::create-process-a
