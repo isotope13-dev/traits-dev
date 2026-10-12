@@ -10,7 +10,7 @@ YARA_UPDATE ?= $(if $(shell command -v yara-update 2>/dev/null),yara-update,$(ab
 
 COMPILED_DIR := third-party/compiled
 
-.PHONY: validate taxonomy-check precompile yara-compile yara-update install-precommit
+.PHONY: validate validate-uncached validate-profile taxonomy-check precompile yara-compile yara-update install-precommit
 
 # Rule validation.
 #
@@ -20,9 +20,21 @@ COMPILED_DIR := third-party/compiled
 # failure mode is a slower client, not a wrong verdict.
 # Validate each fixture independently, including byte-identical files whose
 # names select different traits (for example, build.rs versus lib.rs).
-# Validate current rules and engine behavior without cached analysis reports.
+# Reports are keyed on content, filename/type, analysis options, engine build,
+# and trait content, with path-equivalence checks before reuse. Reuse unchanged
+# reports for iteration; validate-uncached exercises fresh fixture analysis.
 validate:
+	$(CLEAVE) --traits-dir . validate
+
+validate-uncached:
 	CLEAVE_SKIP_CACHE=1 $(CLEAVE) --traits-dir . validate
+
+# Aggregate regex/Tree-sitter trait costs and slow fixtures. Avoid --verbose:
+# it also computes the expensive, unrelated fixture-overlap diagnostic.
+# Requires cleave's validate scan-stat reporting; output goes to stderr.
+SLOW_RULE_MS ?= 500
+validate-profile:
+	CLEAVE_SKIP_CACHE=1 CLEAVE_TRAIT_TIMING=1 CLEAVE_PHASE_STATS=1 RUST_LOG=cleave=info $(CLEAVE) --slow-rule-ms $(SLOW_RULE_MS) --traits-dir . validate
 
 # Taxonomy-migration checks (NEW_TAXONOMY_PLAN.md). Python-based and depends on
 # untracked scripts/, so it is kept out of `validate`.
