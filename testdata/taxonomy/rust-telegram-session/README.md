@@ -39,3 +39,44 @@ The token predicate preserves its existing test-directory exclusion: in the
 repository positive fixture only the general session-upload rule fires. The
 fixed-destination rule is verified against the supplied archive and a renamed
 copy outside the fixture tree, where both hostile findings fire.
+
+craw 0.1.0 follow-up (2026-10-12)
+--------------------------------
+
+SHA-256: 7c54dce5cacad545e7228b88b6396c8af6a7c3c711d5f0be9371f38481fc0200.
+The eight-member crate contains two Rust source files and package metadata.
+Its public async `parse()` calls the session collector; there is no build
+hook. The collector checks Telegram Desktop session paths under Windows
+APPDATA/LOCALAPPDATA and the executable directory, Linux HOME/XDG/Flatpak/Snap
+locations, and macOS Application Support/container locations. It retains
+existing directories, walks them, skips cache-like path components, opens
+files and copies them into a deflated ZIP held in memory. It decodes a
+numeric byte vector with XOR 0xAA into a syntactically valid bot token
+(bot ID 8921764342) and sends the ZIP to chat -1004365495780. The fixed ZIP
+attachment name has no detection role. The training disclaimer does not
+alter the unprompted credential collection and fixed-destination upload.
+Review was static; the sample and its bot API were not executed.
+
+The original XOR-upload rule required only an unrelated file-wide XOR map.
+It now requires a structural decoder-to-credential binding: a numeric vector
+feeds the same named macro, that macro maps bytes through XOR and converts
+the collected value to UTF-8, and its result supplies `Bot::new` in the same
+block. Rust macro interiors are token trees rather than projected calls, so
+this requires an AST query. The standalone concealment observation is
+suspicious; the file-scoped concealment-plus-session-upload composite is
+hostile. Three hostile findings now cover exfiltration and anti-static
+concealment. These findings share evidence and are not three independent
+proofs of execution.
+
+Run `python3 testdata/taxonomy/rust-telegram-session/check-xor-credential.py`
+for sanitized positives, renamed identifiers and key, hex bytes, formatting
+variants, broken bindings, unused decoding, comments/strings, ordinary uploads
+and local backups. The query covers local double-brace decoder macros and
+direct vector/credential bindings; it does not claim general Rust macro
+expansion or reachability analysis.
+
+Validation: all 17 focused cases pass; `make validate` passes every corpus
+group. The repaired archive scan emits three hostile findings and two
+suspicious findings. Hostile precision scores are 6.6, 6.4 and 7.2.
+`hopper mv -target bad` completed with one noop and no failures: the archive
+was already labeled bad in the training pool.
