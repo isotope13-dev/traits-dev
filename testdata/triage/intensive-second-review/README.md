@@ -27,7 +27,7 @@ write-service evidence and produce no suspicious or hostile findings.
 
 The JSON declares a shell task that invokes Node on `.deps/chunk.txt` when
 the folder opens. Node can execute source regardless of the entry suffix.
-The combined automatic trigger, dot-directory target and text suffix now
+The combined automatic trigger, dot-directory target and atypical suffix now
 support a hostile launch-pattern finding. The rule requires the command and
 trigger in the same parsed task object; unrelated manual and build tasks
 cannot combine into that conclusion. Ordinary JavaScript entry files remain
@@ -38,7 +38,8 @@ The former benign classification is superseded. The byte-identical example
 now lives in `testdata/hostile`, with a required hostile trait in
 `testdata/expectations.toml`. Manual hidden-text execution, separate-task
 commands and hidden JavaScript autorun are benign near-miss fixtures. The
-22 additional static controls are run by
+47 additional static controls cover text, images, fonts, audio and other data
+(including `.jpg`, `.ttf` and `.mp3`), and are run by
 `testdata/triage/vscode-hidden-text-autorun/check.py`.
 
 ## Extension behavior

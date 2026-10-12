@@ -1,4 +1,4 @@
-"""Check automatic hidden-text Node launches without executing task commands."""
+"""Check automatic hidden data/media Node launches without executing task commands."""
 import copy
 import json
 import os
@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[3]
-TRAIT = "objectives/execution/trigger/ide::vscode-folder-open-hidden-text-node-target"
+TRAIT = "objectives/execution/trigger/ide::vscode-folder-open-hidden-nonstandard-node-target"
 sample = json.loads((ROOT / "testdata/hostile/vscode-task-masquerade-controls.json").read_text())
 cases = []
 
@@ -33,6 +33,16 @@ changed("wrong-trigger-case", False, runOptions={"runOn": "FolderOpen"})
 changed("different-suffix", False, command="node ${workspaceFolder}/.deps/chunk.txt.js")
 changed("other-program", False, command="echo ${workspaceFolder}/.deps/chunk.txt")
 changed("description-only", False, command="npm run build", description="node ${workspaceFolder}/.deps/chunk.txt")
+
+# The executable target may masquerade as text, image, font, audio or data.
+for suffix in ("jpg", "ttf", "mp3", "png", "woff2", "otf", "dat", "bin", "svg", "css"):
+    changed("hidden-" + suffix, True, command="node ${workspaceFolder}/.assets/chunk." + suffix)
+    changed("input-" + suffix, False, command="node scripts/build.js ${workspaceFolder}/.assets/input." + suffix)
+changed("bare-hidden-path", True, command="node .deps/chunk.jpg")
+changed("upper-media", True, command="node ${workspaceFolder}/.deps/CHUNK.JPG")
+changed("hidden-test-entry", False, command="node ${workspaceFolder}/.deps/smoke.spec")
+changed("hidden-source-reference", False, command="node ${workspaceFolder}/.deps/source.py")
+changed("whitespace-separated-input", False, command="node ${workspaceFolder}/.deps/build.js\t${workspaceFolder}/.deps/input.jpg")
 
 reordered = copy.deepcopy(sample)
 task = reordered["tasks"][0]
@@ -83,4 +93,4 @@ with tempfile.TemporaryDirectory(prefix="vscode-entry-controls-") as scratch:
             assert not any(t["crit"] == 5 for t in traits.values()), (name, traits)
         print(name, "hostile" if expected else "no hostile finding")
 
-print(f"Passed {len(cases)} hidden-text task controls")
+print(f"Passed {len(cases)} hidden media/data task controls")
