@@ -39,6 +39,8 @@ validate-profile:
 # Taxonomy-migration checks (NEW_TAXONOMY_PLAN.md). Python-based and depends on
 # untracked scripts/, so it is kept out of `validate`.
 taxonomy-check:
+	python3 -m unittest discover -s scripts/tests -p 'test_taxonomy_batch_ledger.py'
+	python3 scripts/check-taxonomy-batch-ledger.py taxonomy-migration/batches/277-shell-profile-retirement/branch-preservation-ledger.json --source-inventory taxonomy-migration/batches/277-shell-profile-retirement/source-inventory --destination-inventory taxonomy-migration/batches/277-shell-profile-retirement/destination-inventory
 	uv run --with pyyaml python scripts/test-taxonomy-move.py
 	python3 scripts/test-taxonomy-corpus-comparison.py
 	python3 scripts/taxonomy_sources.py
@@ -53,9 +55,11 @@ taxonomy-check:
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/memory-operations/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/memory-lifecycle/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/memory-catalog/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/llm-extraction-exception-selector/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/ruby-base64-decoding/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/cargo-manifest-identity/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/impact-wipe/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h6-b276-local-paired-impact-2026-10-12/crystalx-unless-regression-2026-10-12/cases.json --record taxonomy-migration/research/h6-b276-local-paired-impact-2026-10-12/crystalx-unless-regression-2026-10-12/emitted-findings.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/255-triage20-consumer-reference-reconciliation/corrections/mounted-dd-kotlin/cases-after.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/255-triage20-consumer-reference-reconciliation/corrections/mounted-dd-ruby/cases-after.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/255-triage20-consumer-reference-reconciliation/corrections/cobaltprime-boot-device-dd/cases-after.json
@@ -185,6 +189,7 @@ taxonomy-check:
 	python3 taxonomy-migration/research/h3-root-setup-py-imports/check_cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/setup-py-ctypes-imports/cases.json --record taxonomy-migration/research/h3-root-setup-py-imports/ctypes-emitted-findings.json
 	python3 taxonomy-migration/research/h3-root-setup-py-imports/check_cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/setup-py-input-capture/cases.json --record taxonomy-migration/research/h3-root-setup-py-imports/input-capture-emitted-findings.json
 	python3 taxonomy-migration/research/h3-root-setup-py-imports/check_cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/setup-py-network-pyperclip-imports/cases.json --record taxonomy-migration/research/h3-root-setup-py-imports/network-pyperclip-emitted-findings.json
+	python3 taxonomy-migration/research/h3-root-setup-py-imports/check_cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/setup-py-network-pyperclip-imports/alternate-network-arms/cases.json --record taxonomy-migration/research/h3-root-setup-py-imports/network-pyperclip-alternate-emitted-findings.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/shellcode-loader-imports/cases.json --record taxonomy-migration/research/h3-root-setup-py-imports/shellcode-loader-findings.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h3-elf-debuglink-runtime/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/setup-py-dropper-imports/cases.json
