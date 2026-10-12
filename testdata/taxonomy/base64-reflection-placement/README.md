@@ -11,6 +11,13 @@ The callback co-occurrence profile and GetMethods selector move to
 metaprogramming/reflection. Matchers and scopes are retained; the literal
 matcher spelling is normalized from string_literal to literal.
 
+The encoded `file_put_contents` name now has one canonical atom at
+`micro-behaviors/fs/write/file/full::php-base64-file-write-function-name`.
+Its specific file-write capability owns the observation; Base64 is the
+representation. The duplicate in encoding/base64 is removed, and has-encoding
+references the canonical atom. The exact literal, PHP scope, criticality and
+callback profile requirements are unchanged.
+
 Exact webshell and PowerShell consumers follow the moves. The has-encoding
 selector retains the moved name and method filter explicitly. Other audited
 base64 directory consumers require decoding: encoded-C2 configuration,
