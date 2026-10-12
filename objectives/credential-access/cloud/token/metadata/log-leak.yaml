@@ -1,0 +1,88 @@
+# Cloud metadata credential responses written to error logs on parse failure.
+#
+# CAN-2026-2039459 (regression of CVE-2020-8563): auth-provider-gcp logged
+# the raw GCE metadata token response via klog.Errorf when JSON parsing of
+# the token blob failed, exposing the node's OAuth access token to anyone
+# able to read kubelet logs. The same binary deliberately omits credentials
+# from errors elsewhere, so interpolating the raw response into an error
+# is the defect, not ordinary error handling.
+#
+# The reusable technique, not the one call site: fetch a cloud credential
+# response, fail to parse it, and interpolate the raw response body into an
+# error call. Variants reuse it with other formatters (log/slog, Python
+# logging) and other clouds. Atoms key on API names (Errorf,
+# json.Unmarshal/json.loads) plus a credential/response variable as the
+# formatted/parsed argument — never on the log message prose. Hostile
+# verdicts require the cloud endpoint or the parse-plus-log pair nearby.
+defaults:
+  platforms: [unix, windows]
+  attack: T1552.005
+  mbc: E1552
+
+traits:
+  - id: go-credential-error-log
+    desc: Errorf formats credential variable
+    crit: suspicious
+    conf: 0.96
+    for: [go]
+    if:
+      type: text
+      regex: '(?i)\.Errorf\s*\([^;\n]{0,80}%[sv][^;\n]{0,24},\s*\w*(token|secret|cred|password)\w*'
+
+  - id: go-credential-json-unmarshal
+    desc: Go unmarshals credential variable as JSON
+    crit: suspicious
+    conf: 0.94
+    for: [go]
+    if:
+      type: text
+      regex: '(?i)\bjson\.Unmarshal\s*\([^;\n]{0,40}(token|secret|cred|password)'
+
+  - id: python-credential-error-log
+    desc: Error call logs credential variable
+    crit: suspicious
+    conf: 0.96
+    for: [python]
+    if:
+      type: text
+      regex: '(?i)\.error\s*\([^;\n]{0,80}%s[^;\n]{0,24},\s*\w*(token|secret|cred|password)\w*'
+
+  - id: python-credential-json-parse
+    desc: Python parses credential variable as JSON
+    crit: suspicious
+    conf: 0.94
+    for: [python]
+    if:
+      type: text
+      regex: '(?i)\bjson\.loads\s*\(\s*\w*(token|secret|cred|password)\w*\s*\)'
+
+composite_rules:
+  - id: gcp-metadata-token-error-log-leak
+    desc: GCP metadata token response written to error log
+    crit: hostile
+    conf: 0.98
+    for: [go]
+    near_lines: 60
+    all:
+      - id: go-credential-error-log
+      - id: micro-behaviors/communications/http/services/gcp::gcp-metadata-endpoint-go-source
+
+  - id: go-token-parse-failure-log-leak
+    desc: Go logs raw token parse input on JSON failure
+    crit: hostile
+    conf: 0.97
+    for: [go]
+    near_lines: 20
+    all:
+      - id: go-credential-error-log
+      - id: go-credential-json-unmarshal
+
+  - id: python-token-parse-failure-log-leak
+    desc: Python logs raw token response on JSON failure
+    crit: hostile
+    conf: 0.97
+    for: [python]
+    near_lines: 20
+    all:
+      - id: python-credential-error-log
+      - id: python-credential-json-parse
