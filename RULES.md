@@ -1645,9 +1645,12 @@ with its decoded named-bit subtree in values (e.g. `pe.dll_characteristics.*`,
 
 ### Directory limits
 
-`make validate` allows at most **100 atomic traits and composite rules combined**
-per directory, summed across its YAML files, at every criticality. Exactly 100
-passes; 101 fails. There is no separate atomic cap or directory exemption.
+`make validate` uses **100 atomic traits and composite rules combined** per
+directory as a review trigger, summed across its YAML files and criticalities.
+A leaf may exceed 100 only when its exact path has a reviewed budget in Cleave
+and the evidence shows accurate, correctly leveled, nonduplicative rules. The
+validator fails above that leaf's recorded budget; there is no global increase
+or filename-based budget. See [Directory budgets and placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
 Depth above five directory levels below the tier produces a soft validation
 warning, not a hard limit; count neither the tier nor the filename. Sibling
 groups below 35 combined rules also produce soft warnings under the criteria in

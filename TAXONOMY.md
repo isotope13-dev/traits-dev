@@ -243,7 +243,7 @@ A parent stays referenceable. A single child is fine if it adds meaning.
 
 | Check (`make validate`) | Limit |
 |---|---|
-| Rules per directory | **100** traits plus composites, summed over its YAML files, at every criticality. No exemptions; filenames create no budgets. |
+| Rules per directory | **100** traits plus composites is the review trigger, summed over its YAML files and criticalities. A higher leaf budget requires a reviewed, exact-path entry in Cleave and evidence that its rules are accurate, at the right level, and nonduplicative; filenames create no budgets. |
 | Subdirectories | 150. Split broad catalogs by a stable function with a tiebreaker. |
 | Depth | Soft warning beyond five levels below the tier (`objectives/a/b/c/d/e/f/x.yaml` warns). Soft warnings fail `make validate`; `cleave validate --soft` only reports them. |
 | Sparse siblings | Soft warning when, below level 1 of a behavioral tier, two or more child subtrees hold fewer than 35 rules together — unless the exact partition is in `REVIEWED_SPARSE_TAXONOMY_PARTITIONS` (`cleave/src/capabilities/validation/taxonomy.rs`). |
@@ -266,10 +266,15 @@ OS/type gates, and the profile asserts neither execution nor benign intent.
 An AUR package targets Linux, and source code alone does not
 prove portability.
 
-**Size and warnings prompt review; they never justify a split.** At the cap,
-first move misplaced rules home and merge equivalent matchers (after comparing
-scope and conditions). Moving the same set elsewhere fixes nothing. A coherent
-oversized leaf is a design issue to record, not a license for a false split.
+**Size prompts review; it never justifies a split by itself.** At 100, first
+move misplaced rules home and merge equivalent matchers after comparing scope
+and conditions. Moving the same set elsewhere fixes nothing. If a complete,
+accurate, correctly leveled, nonduplicative set answers one question, retain it
+in that leaf and raise its exact reviewed budget. Cleave must reject counts
+above that recorded budget; do not raise a global ceiling or invent a subtype
+to satisfy a number. The current reviewed exception is
+`metadata/package/dependencies/manifest/identity` at 108 rules, supported by
+[the Cargo dependency identity batch](taxonomy-migration/batches/275-cargo-manifest-identity/README.md).
 
 ### Splitting a directory
 
@@ -385,7 +390,7 @@ processes to `process`.
 | `communications/socket/{create,connect,bind,listen,accept,send,receive,close,configure}` | Lifecycle and I/O. An operation beats a transport-only fact (`tcp`, `udp`); `dial`, `wrapper-connect` and `state-connect` are not operations. Hand-built HTTP over a socket is `http/direct-socket`. |
 | `communications/tls/{initialize,verify}` | TLS apart from the application protocol: setup; peer verification (`verify/callback`; `verify/disable` only for explicit disabling). Setup is not a connection; a callback or suppressed warning does not disable verification. |
 | `communications/ip/{literal,parse,construct}` | Address syntax, including private ranges and defanged notation. Address text proves no connection. |
-| `communications/url/{parse,construction,host,scheme,path,query}` | Generic URL structure and endpoints. HTTP-specific URL facts stay in `http/url`; request parameters are `http/query`. A Wayback URL targets the archive, not its inner path. |
+| `communications/url/{parse,construction,host,scheme,path,query}` | Generic URL structure and endpoints. Under `host`, `name` is for hostname identity or syntax independent of a callback role (domain/provider labels, suffixes, dynamic-DNS names, IDN form); `oob` is for recognized out-of-band callback services and callback-specific host patterns. When a host is known for its callback role, use `oob`, not `name`. Endpoint recognition alone does not establish contact, exfiltration, or hostile intent; behavior with an established transfer belongs under `objectives/exfiltration/oob`. HTTP-specific URL facts stay in `http/url`; request parameters are `http/query`. A Wayback URL targets the archive, not its inner path. |
 | `communications/ipc/<mechanism>` | Local channels: pipes, named pipes, Unix sockets, D-Bus, XPC, Binder, native-messaging hosts. Descriptor duplication is `process/fd`; shared-memory allocation is `mem`. IRC is a network protocol: `communications/irc` (*legacy: `ipc/irc`*). |
 | `communications/messaging` | Send verbs shared across chat platforms. The platform's host is `http/services/<platform>`. |
 | `communications/{proxy,capture,transfer,benchmark,flood}` | Relays (`proxy/socks` for SOCKS, `tunnel` to build an encapsulated channel, `relay` to forward over one), packet capture, protocol-neutral send wording, throughput tests, repeated sends. Attack traffic is an impact claim. |
