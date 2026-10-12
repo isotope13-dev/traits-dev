@@ -6,7 +6,7 @@ artifact contents and control-flow review, without an external malware label.
 | Sample | Identity and verdict | Final target |
 | --- | --- | --- |
 | `t21pad.com` | Padded Trivial.21 DOS destructive infector; malicious | Four hostile findings |
-| `vscode-task-masquerade-controls.json` | VS Code folder-open task; benign | Zero hostile, one suspicious |
+| `vscode-task-masquerade-controls.json` | Automatic hidden text Node entry; likely hostile launch | One hostile, one suspicious |
 | `proxy_swift_5583e4-6.14.17.xpi` | Fake OKX wallet extension; malicious | Two hostile wallet-export findings |
 
 ## DOS behavior
@@ -27,12 +27,19 @@ write-service evidence and produce no suspicious or hostile findings.
 
 The JSON declares a shell task that invokes Node on `.deps/chunk.txt` when
 the folder opens. Node can execute source regardless of the entry suffix.
-The supplied artifact contains no script body, download, theft, destruction,
-terminal-hiding settings or independent harmful action. A hidden data-suffixed
-target remains one suspicious review lead; suffix plus automatic activation
-cannot establish a hostile payload. Generic Node argument and activation
-observations remain notable. The byte-identical repository fixture moved from
-`testdata/hostile` to `testdata/benign`.
+The combined automatic trigger, dot-directory target and text suffix now
+support a hostile launch-pattern finding. The rule requires the command and
+trigger in the same parsed task object; unrelated manual and build tasks
+cannot combine into that conclusion. Ordinary JavaScript entry files remain
+outside this finding. No script body was supplied, so the finding makes no
+claim of theft, destruction or terminal concealment in that script.
+
+The former benign classification is superseded. The byte-identical example
+now lives in `testdata/hostile`, with a required hostile trait in
+`testdata/expectations.toml`. Manual hidden-text execution, separate-task
+commands and hidden JavaScript autorun are benign near-miss fixtures. The
+22 additional static controls are run by
+`testdata/triage/vscode-hidden-text-autorun/check.py`.
 
 ## Extension behavior
 
