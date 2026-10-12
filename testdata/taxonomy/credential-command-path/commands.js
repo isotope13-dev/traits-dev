@@ -1,0 +1,1 @@
+const commands = {'/password': () => {}, '/credentials': () => {}};
