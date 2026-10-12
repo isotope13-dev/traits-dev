@@ -1,0 +1,1 @@
+const report = {username: value};
