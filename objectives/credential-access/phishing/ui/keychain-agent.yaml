@@ -1,0 +1,69 @@
+defaults:
+  for: [shell]
+  platforms: [macos]
+traits:
+  - id: dialog-password-keychain-agent-flow
+    desc: Dialog password validated then passed to agent
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: tree-sitter
+      language: shell
+      query: |
+        (program
+          (while_statement body: (do_group
+            (variable_assignment name: (variable_name) @secret
+              value: (command_substitution
+                (command name: (command_name (word) @prompt)
+                  argument: (raw_string) @script)))
+            (list (command name: (command_name (word) @security)
+              argument: (word) @unlock
+              argument: (word) @password_flag
+              argument: (string (simple_expansion (variable_name) @verified)))
+              (command name: (command_name (word) @break)))))
+          (command name: (command_name (word) @fetch)
+            argument: (string) @url
+            argument: (word) @output
+            argument: (string) @downloaded)
+          . (command name: (command_name (word) @chmod)
+            argument: (word) @mode
+            argument: (string) @executable)
+          . (redirected_statement body:
+            (command name: (command_name (word) @launcher)
+              argument: (string) @agent
+              argument: (string (simple_expansion (variable_name) @forwarded))))
+          (#eq? @prompt "osascript")
+          (#match? @script "text returned of.*display dialog.*with hidden answer")
+          (#eq? @security "security")
+          (#eq? @unlock "unlock-keychain")
+          (#eq? @password_flag "-p")
+          (#eq? @verified @secret)
+          (#eq? @break "break")
+          (#eq? @fetch "curl")
+          (#match? @url "https?://")
+          (#eq? @output "-o")
+          (#eq? @chmod "chmod")
+          (#eq? @mode "+x")
+          (#eq? @downloaded @agent)
+          (#eq? @executable @agent)
+          (#eq? @launcher "nohup")
+          (#eq? @forwarded @secret))
+    unless:
+      - type: symbol
+        kind: function
+        exact: osascript
+      - type: symbol
+        kind: function
+        exact: security
+      - type: symbol
+        kind: function
+        exact: nohup
+composite_rules:
+  - id: captured-keychain-password-downloaded-agent
+    desc: Captured password replay with credential export
+    crit: hostile
+    conf: 0.98
+    attack: T1056.002,T1555.001
+    all:
+      - id: dialog-password-keychain-agent-flow
+      - id: objectives/exfiltration/stealer/keychain::login-keychain-developer-archive-upload
