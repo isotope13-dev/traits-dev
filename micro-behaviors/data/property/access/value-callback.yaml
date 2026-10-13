@@ -92,6 +92,57 @@ traits:
           (#eq? @source @sent)
           (#match? @callee "(?i)(send|report|collect|track)"))
 
+  - id: password-field-values-collected-joined
+    desc: Collects password values into joined string
+    crit: notable
+    conf: 0.93
+    if:
+      # Keylogger aggregation: password-selected inputs have each trimmed
+      # value read inside an element loop, and the collected values are
+      # joined for bulk reporting. Bind the loop parameter to the value
+      # read; an unrelated join beside a password form cannot satisfy this.
+      # Terse single-identifier arrows (`inp =>`) bind on the singular
+      # `parameter` field, and `?.` chains parse as plain member nesting.
+      type: tree-sitter
+      query: |
+        ((function_declaration body:
+            (statement_block
+              (lexical_declaration
+                (variable_declarator value:
+                  (call_expression function:
+                    (member_expression property:
+                      (property_identifier) @query) arguments:
+                    (arguments
+                      (string
+                        (string_fragment) @kind)))))
+              (expression_statement
+                (call_expression function:
+                  (member_expression property:
+                    (property_identifier) @each) arguments:
+                  (arguments
+                    (arrow_function parameter:
+                      (identifier) @input body:
+                      (statement_block
+                        (lexical_declaration
+                          (variable_declarator value:
+                            (call_expression function:
+                              (member_expression object:
+                                (member_expression object:
+                                  (identifier) @source property:
+                                  (property_identifier) @value) property:
+                                (property_identifier) @trim)))))))))
+              (return_statement
+                (call_expression function:
+                  (member_expression property:
+                    (property_identifier) @join)))))
+          (#eq? @query "querySelectorAll")
+          (#match? @kind "(?i)password")
+          (#eq? @source @input)
+          (#eq? @each "forEach")
+          (#eq? @value "value")
+          (#eq? @trim "trim")
+          (#eq? @join "join"))
+
 composite_rules:
   - id: value-property-reporting-call
     desc: Passes value property to a reporting callback
@@ -101,3 +152,17 @@ composite_rules:
       - id: value-property-direct-reporting-call
       - id: trimmed-value-timer-reporting-call
       - id: value-alias-timer-reporting-call
+
+  # Grouped alternative for the wallet-telemetry composite: a captured field
+  # value reaches the reporting pipeline either passed straight into a
+  # collection callback or aggregated across password inputs for one bulk
+  # report. Referenced as one condition so the enclosing rule keeps its
+  # cardinality.
+  - id: credential-value-report-channel
+    desc: Captured value reaches reporting pipeline
+    crit: component
+    conf: 0.96
+    scope: file
+    any:
+      - id: micro-behaviors/data/property/access::value-property-reporting-call
+      - id: micro-behaviors/data/property/access::password-field-values-collected-joined
