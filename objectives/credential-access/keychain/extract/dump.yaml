@@ -13,11 +13,10 @@ defaults:
     - ruby
   crit: suspicious
 traits:
-  # `dump-keychain` without an item selector emits the complete Keychain. A
-  # shell redirection proves the output is written to disk, where every stored
-  # secret is exposed beyond the credential store's access controls.
+  # Plain dump-keychain enumerates attributes; -d requests secret decryption.
+  # Require that flag on the command redirected to a non-null output.
   - id: whole-keychain-dump-to-file
-    desc: Writes complete macOS Keychain dump
+    desc: Writes decrypted macOS Keychain dump
     crit: suspicious
     conf: 0.98
     platforms: [macos]
@@ -29,24 +28,34 @@ traits:
         ((redirected_statement
            body: (command
              name: (command_name (word) @command)
-             (word) @subcommand)
+             (word) @subcommand
+             (word) @decrypt)
            redirect: (file_redirect
              [">" ">>"]
              destination: (_) @destination))
          (#eq? @command "security")
          (#eq? @subcommand "dump-keychain")
+         (#eq? @decrypt "-d")
          (#not-match? @destination "^/dev/null$"))
 
-  # Python list-argv spelling of the whole-keychain dump (`["security",
-  # "dump-keychain", ...]`). Without an item selector the command emits the
-  # complete Keychain, so this sits at suspicious with the other dump atoms.
-  - id: python-dump-keychain
-    desc: Python dumps whole macOS keychain
+  - id: python-decrypted-keychain-dump
+    desc: Python Keychain secret-decryption command
+    crit: suspicious
     conf: 0.94
+    platforms: [macos]
     for: [python]
     if:
-      type: text
-      substr: 'security", "dump-keychain'
+      type: tree-sitter
+      language: python
+      query: |
+        ((list
+           (string) @executable
+           (string) @subcommand
+           (string) @decrypt)
+         (#match? @executable "^.(/usr/bin/)?security.$")
+         (#match? @subcommand "^.dump-keychain.$")
+         (#match? @decrypt "^.-d.$"))
+
   - id: find-generic-password
     desc: Invokes macOS Keychain generic-password lookup
     crit: notable
