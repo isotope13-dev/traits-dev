@@ -1,0 +1,315 @@
+{
+  "date": "2026-10-13",
+  "verdict": "purgatory",
+  "reason": "ESET update proxy/helper with automatic image hash mutation, forced port takeover, concealed remote account distribution, and an unauthenticated HTTP self-update channel. Static analysis proves unusual boundary-crossing behavior but does not prove malware, stolen credentials, or a general-purpose backdoor. Neither author strings nor product recognition establishes trust.",
+  "samples": [
+    {
+      "sha256": "b814424409b954ab8b5a43e72520351d25176faad7df419d906e04240dab1353",
+      "size": 138408,
+      "packing": "none"
+    },
+    {
+      "sha256": "64de0e95ed4ae04a819d2267ad4bd0a2d49de9650cf6ec41e96e68fd3bf10292",
+      "size": 61090,
+      "packing": "UPX; decompressed with UPX 5.2.1",
+      "unpacked_sha256": "669bc3ec5f5dd162ad85dfedc4f61b0f8b8dc2428da148687d9367bf6e2f5295",
+      "unpacked_size": 138402
+    }
+  ],
+  "comparison": "All eight section contents are byte-identical between b814 and the manually unpacked 64de. Differences are DOS-header bytes 0x40..0x4d, trailing padding at 0x21c56 onwards, and total padding length. The code and embedded configuration are identical; no second independent payload is present in the trailer.",
+  "method": {
+    "tools": [
+      "rizin disassembly and xrefs",
+      "rz-bin imports/sections/headers",
+      "UPX decompression",
+      "cleave facts",
+      "atomscan full scans",
+      "offline byte comparison and decoder reconstruction"
+    ],
+    "execution": "Neither sample was executed. No sample-supplied endpoint or payload was fetched.",
+    "evidence_directory": "/tmp/triage/b814-re",
+    "engine_binary": {
+      "path": "/Users/t/dev/atomdrift/cleave/target/release/cleave",
+      "sha256": "37b00b4ba2c9295c73330f62e8a399287dbca75be1f5e8beaaa0e3bf8f6febcc"
+    },
+    "packed_carrier": "Rizin checked entry 0x42a2d0: UPX literal/backreference decompression into UPX0, followed by import fixups and original-entry handoff. Manual UPX decompression and identical recovered sections establish the shared application body."
+  },
+  "functions": [
+    {
+      "va": "0x4123c0",
+      "role": "GUI main",
+      "behavior": "Handles -standby-mutate, -autostart, -mutate and -no-rotate. Relocates to its expected basename within the same directory, takes a single-instance mutex, rotates at ordinary startup unless -no-rotate, registers autostart, starts the proxy thread, and creates a hidden window/message loop. A second instance posts local window message 0x8001 to retrigger update/rotation."
+    },
+    {
+      "va": "0x4127e4",
+      "role": "Hash mutation",
+      "behavior": "Opens the specified file exclusively for read/write, retries 25 times with 100 ms sleeps, seeds rand from timing and process ID, appends 4+(rand()%8) random bytes at EOF, and logs hash changed. This changes the image hash without changing section code."
+    },
+    {
+      "va": "0x415800",
+      "role": "Rotation handoff",
+      "behavior": "Copies the running image to the temp directory as eup_rotate_<pid>.exe. Starts it with -standby-mutate <original path> <pid> using CREATE_NO_WINDOW and exits on successful handoff."
+    },
+    {
+      "va": "0x41416c",
+      "role": "Standby mutation",
+      "behavior": "Parses original path/PID, waits up to 60 seconds on the original process, sleeps 700 ms, calls the mutation routine, and relaunches the original with -no-rotate. Cleanup at 0x4153bc removes temp standby copies."
+    },
+    {
+      "va": "0x4154cc / 0x4159f8",
+      "role": "Autostart",
+      "behavior": "Reads/verifies and writes HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run, using value Eupdate Helper containing its quoted full path. Removes its legacy Startup shortcut. If writing requires elevation, requests ShellExecuteW runas with -autostart; no UAC bypass was found."
+    },
+    {
+      "va": "0x4170ec",
+      "role": "Window timer dispatch",
+      "behavior": "Runs ESET ecmd.exe /update through 0x413f30. Checks for program updates at startup and every 600000 ms (10 minutes). Rotates every 21600000 ms (6 hours); an instance retrigger schedules an earlier rotation. These are USER32 timers; the diagnostic saying cron does not mean OS cron or Task Scheduler."
+    },
+    {
+      "va": "0x412964",
+      "role": "Self-update",
+      "behavior": "Fetches http://47.108.48.69:4044/eupo/info.txt into a temp file using the raw-socket HTTP downloader at 0x416c08. Parses version: and downurl:, compares the remote version against 4.0.1, and uses a YES/NO MessageBoxW. Only IDYES (6) at 0x412c77 enters replacement. Downloads the server-supplied HTTP URL, checks only the first two MZ bytes at 0x412de1..0x412dfa, renames the current image to .old.exe, installs the downloaded image at its current path, launches it, and opens the explanatory page. No signature/hash verification was found. The downloaded replacement is a future dependency, not bytes available in these specimens."
+    },
+    {
+      "va": "0x412fac",
+      "role": "Listener",
+      "behavior": "Binds INADDR_ANY on TCP 8000. On bind failure, dynamically resolves GetExtendedTcpTable, finds a LISTEN row for the port, excludes PID <=4 and itself, opens the owner process and terminates it when STILL_ACTIVE; then retries. Accepts clients into per-client handler 0x4144fc. Refreshes upstream account selection about every 30 minutes."
+    },
+    {
+      "va": "0x415c80",
+      "role": "Remote account acquisition",
+      "behavior": "Decodes the account-service hostname, path, username and password in four calls to 0x416bb0; fetches https://id.1yz.me:4046/id.html using Basic encrypt:type. Removes HTML tags, parses trial-/eav- account rows, shuffles candidates, tests them against the ESET consumer update manifest, and caches a successful username/password. This acquires remote supplied accounts; it does not read local browser or credential stores."
+    },
+    {
+      "va": "0x416bb0",
+      "role": "Concealed string decoder",
+      "behavior": "For byte index i: output[i] = input[i] XOR key XOR ((31*i+7) & 255). Ciphertext/keys decode to id.1yz.me, /id.html, encrypt, type. This is an indexed XOR byte transformation, not evidence of AES or a payload decryptor."
+    },
+    {
+      "va": "0x4144fc / 0x414868",
+      "role": "HTTP update proxy",
+      "behavior": "Parses the first request-line target, rejects a target ending in .signed with 404 at 0x4146c7..0x41473b, maps legacy update.ver requests to fixed ESET paths, and fetches against the ESET upstream using the selected Basic account. Other request paths also go to this upstream. No SOCKS/CONNECT tunnel, received command dispatch, or remote shell path was found. Sends HTTP status/content type and streams the upstream response to the accepted socket."
+    },
+    {
+      "va": "0x417c40 / 0x417d20",
+      "role": "Manifest filtering",
+      "behavior": "For rewritten update.ver responses, removes [SERVERS], [LINKS], [HOSTS] headings and their section contents until the next INI heading, forwarding other lines. Together with .signed rejection this changes update delivery; static code alone does not establish how a particular ESET client handles signature fallback."
+    },
+    {
+      "va": "0x414b43",
+      "role": "WinHTTP options",
+      "behavior": "The WinHttpSetOption option at 0x414b62 is 84 with value 0xA80: WINHTTP_OPTION_SECURE_PROTOCOLS allowing TLS 1.0/1.1/1.2. It is not WINHTTP_OPTION_SECURITY_FLAGS (31); therefore this call does not disable certificate verification."
+    }
+  ],
+  "endpoints": [
+    {
+      "url": "http://47.108.48.69:4044/eupo/info.txt",
+      "role": "program update metadata; never contacted during review"
+    },
+    {
+      "url": "https://id.1yz.me:4046/id.html",
+      "role": "concealed upstream account list; never contacted during review"
+    },
+    {
+      "url": "https://um01.cn.eset.com/eset_upd/consumer/windows/limited/dll/update.ver",
+      "role": "upstream account validation and update mirror"
+    },
+    {
+      "url": "https://info.hb.1yz.me/eupo.html",
+      "role": "explanatory page opened after accepted self-update"
+    }
+  ],
+  "changes": [
+    {
+      "trait": "micro-behaviors/process/terminate/kill::listener-port-owner-termination",
+      "crit": "suspicious",
+      "evidence": "Existing listener imports, termination import and both attempt/success diagnostics required. No product identity veto or inferred proxy abuse. Result is process termination, so it lives under process/terminate/kill."
+    },
+    {
+      "trait": "micro-behaviors/data/decode/xor::x86-index-affine-key-xor-copy-loop",
+      "crit": "notable",
+      "evidence": "Native byte-copy loop with two XOR operations and indexed affine key. Multiplier, addend, stack slot and jump displacement are wildcarded; endpoints and absolute addresses are absent."
+    },
+    {
+      "trait": "micro-behaviors/os/autorun/login-items::hklm-run-set-diagnostic",
+      "crit": "notable",
+      "evidence": "Explicit HKLM Run-set diagnostic, describing login activation rather than a generic registry operation."
+    }
+  ],
+  "retained": "self-hash-rotation-relaunch remains suspicious. Generic imports, PE header inspection, RWX CRT support, WinHTTP, account rotation and Run-key path co-occurrence remain capability observations. No hostile trait was added to meet a quota.",
+  "ancestor_audit": "The new termination composite requires existing kill and listener observations; every new match already matches the process/terminate and socket/listen ancestor selectors. New XOR and autorun IDs have no broad local selector consumers found in their affected ancestors. Existing findings on both originals remain non-hostile.",
+  "sources": [
+    {
+      "title": "Microsoft WinHTTP option flags",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/winhttp/option-flags",
+      "used_for": "Distinguishing secure protocol configuration from certificate error-ignore flags; numeric IDs verified against local Zig WinHTTP headers."
+    }
+  ],
+  "checks": {
+    "focused": {
+      "passed": 8,
+      "command": "python3 taxonomy-migration/research/eupdate-paired-review/check.py <b814 sample> --out /tmp/triage/b814-re/controls-final",
+      "cases": [
+        {
+          "case": "positive",
+          "matched": [
+            "micro-behaviors/data/decode/xor::x86-index-affine-key-xor-copy-loop",
+            "micro-behaviors/os/autorun/login-items::hklm-run-set-diagnostic",
+            "micro-behaviors/process/terminate/kill::listener-port-owner-termination"
+          ],
+          "passed": true
+        },
+        {
+          "case": "affine-constant-variation",
+          "matched": [
+            "micro-behaviors/data/decode/xor::x86-index-affine-key-xor-copy-loop",
+            "micro-behaviors/os/autorun/login-items::hklm-run-set-diagnostic",
+            "micro-behaviors/process/terminate/kill::listener-port-owner-termination"
+          ],
+          "passed": true
+        },
+        {
+          "case": "arithmetic-near-miss",
+          "matched": [
+            "micro-behaviors/os/autorun/login-items::hklm-run-set-diagnostic",
+            "micro-behaviors/process/terminate/kill::listener-port-owner-termination"
+          ],
+          "passed": true
+        },
+        {
+          "case": "no-kill-api",
+          "matched": [
+            "micro-behaviors/data/decode/xor::x86-index-affine-key-xor-copy-loop",
+            "micro-behaviors/os/autorun/login-items::hklm-run-set-diagnostic"
+          ],
+          "passed": true
+        },
+        {
+          "case": "no-bind-api",
+          "matched": [
+            "micro-behaviors/data/decode/xor::x86-index-affine-key-xor-copy-loop",
+            "micro-behaviors/os/autorun/login-items::hklm-run-set-diagnostic"
+          ],
+          "passed": true
+        },
+        {
+          "case": "no-attempt-diagnostic",
+          "matched": [
+            "micro-behaviors/data/decode/xor::x86-index-affine-key-xor-copy-loop",
+            "micro-behaviors/os/autorun/login-items::hklm-run-set-diagnostic"
+          ],
+          "passed": true
+        },
+        {
+          "case": "no-success-diagnostic",
+          "matched": [
+            "micro-behaviors/data/decode/xor::x86-index-affine-key-xor-copy-loop",
+            "micro-behaviors/os/autorun/login-items::hklm-run-set-diagnostic"
+          ],
+          "passed": true
+        },
+        {
+          "case": "no-run-diagnostic",
+          "matched": [
+            "micro-behaviors/data/decode/xor::x86-index-affine-key-xor-copy-loop",
+            "micro-behaviors/process/terminate/kill::listener-port-owner-termination"
+          ],
+          "passed": true
+        }
+      ]
+    },
+    "validation": {
+      "status": "passed",
+      "command": "CLEAVE_CACHE_DIR=/tmp/triage/b814-re/validation-cache make validate CLEAVE=/Users/t/dev/atomdrift/cleave/target/release/cleave",
+      "directory": "/tmp/triage/b814-re/validation-tree",
+      "scope": "Snapshot of current tracked repository files plus the new rule file, excluding ignored local settings. All changed rule contents match the working tree.",
+      "result": "validate ok: hostile 618/618  benign 1411/1411  does-nothing 176/176  drop-exec 45/45  hostile/supply-chain-corpus 558/558  hostile/triage20-batch-cocol 1/1  impact-wipe 67/67  obfuscation 78/78  purgatory/source-recipe-declarations 1/1  purgatory/triage20-batch-coolan-unproven 1/1  purgatory/triage20-batch-local-python-unproven 1/1  purgatory/triage20-batch-rdp-controls 1/1  purgatory/triage20-gem-controls 2/2  reverse-shell 24/24  simple-stealer 65/65"
+    },
+    "final_atomscan": [
+      {
+        "sha256": "b814424409b954ab8b5a43e72520351d25176faad7df419d906e04240dab1353",
+        "hostile": 0,
+        "suspicious": 2,
+        "findings": [
+          {
+            "id": "micro-behaviors/fs/write/file/executable::self-hash-rotation-relaunch",
+            "criticality": 4
+          },
+          {
+            "id": "micro-behaviors/process/terminate/kill::listener-port-owner-termination",
+            "criticality": 4
+          }
+        ],
+        "new_neutral": [
+          "micro-behaviors/data/decode/xor::x86-index-affine-key-xor-copy-loop",
+          "micro-behaviors/os/autorun/login-items::hklm-run-set-diagnostic"
+        ]
+      },
+      {
+        "sha256": "64de0e95ed4ae04a819d2267ad4bd0a2d49de9650cf6ec41e96e68fd3bf10292",
+        "hostile": 0,
+        "suspicious": 2,
+        "findings": [
+          {
+            "id": "micro-behaviors/fs/write/file/executable::self-hash-rotation-relaunch",
+            "criticality": 4
+          },
+          {
+            "id": "micro-behaviors/process/terminate/kill::listener-port-owner-termination",
+            "criticality": 4
+          }
+        ],
+        "new_neutral": [
+          "micro-behaviors/data/decode/xor::x86-index-affine-key-xor-copy-loop",
+          "micro-behaviors/os/autorun/login-items::hklm-run-set-diagnostic"
+        ]
+      },
+      {
+        "sha256": "669bc3ec5f5dd162ad85dfedc4f61b0f8b8dc2428da148687d9367bf6e2f5295",
+        "hostile": 0,
+        "suspicious": 2,
+        "findings": [
+          {
+            "id": "micro-behaviors/fs/write/file/executable::self-hash-rotation-relaunch",
+            "criticality": 4
+          },
+          {
+            "id": "micro-behaviors/process/terminate/kill::listener-port-owner-termination",
+            "criticality": 4
+          }
+        ],
+        "new_neutral": [
+          "micro-behaviors/data/decode/xor::x86-index-affine-key-xor-copy-loop",
+          "micro-behaviors/os/autorun/login-items::hklm-run-set-diagnostic"
+        ]
+      }
+    ],
+    "hopper": {
+      "status": "completed",
+      "target": "purgatory",
+      "moved": 2,
+      "failed": 0,
+      "command": "hopper mv -url http://10.9.8.10:8081 -target purgatory <both original SHA256 values>"
+    },
+    "precision": {
+      "listener-port-owner-termination": 8.1,
+      "x86-index-affine-key-xor-copy-loop": 4.5,
+      "hklm-run-set-diagnostic": 2.3
+    },
+    "baseline_validation": {
+      "status": "failed before any rule edits",
+      "cause": "An ignored testdata/does-nothing/.claude/settings.local.json local permissions file contains Read(//tmp/**), triggering notable temp-path-segment. It is not a tracked fixture.",
+      "log": "/tmp/triage/b814-re/validate-before.txt"
+    },
+    "hopper_plan": {
+      "b814": "good -> purgatory",
+      "64de": "bad -> purgatory",
+      "dry_run": "2 planned, 0 failed"
+    }
+  },
+  "limitations": [
+    "Static reverse engineering determines code capability and control flow, not author authorization or endpoint ownership.",
+    "Account-list content and future downloaded program updates are not included in these specimens; no assessment of their live contents was made.",
+    "The concealed strings were decoded offline for review. No sample-specific decoding was added to filefacts; the new YAML observes the decoder implementation."
+  ]
+}
