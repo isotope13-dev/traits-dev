@@ -3,6 +3,12 @@ defaults:
   for: [html]
   conf: 0.98
 traits:
+  - id: star-padded-dom-base64
+    desc: DOM element contains long star-padded Base64
+    crit: suspicious
+    if:
+      type: text
+      regex: '>[\r\n\s]*([A-Za-z0-9+/]{1,8}\*){80,}[A-Za-z0-9+/*=]*[\r\n\s]*<'
   - id: split-eval-assignment
     desc: Eval name fragment assignment
     crit: component
@@ -15,14 +21,59 @@ traits:
     if:
       type: text
       regex: '\b[\w$]+\s*=\s*[''"]ato[''"]\s*;'
+  # The sibling split atoms require three-letter fragments (`'eva'`,
+  # `'ato'`). Shorter splits (`'e'+'va'+'l'`, `'ev'+'al'`) defeat them while
+  # serving the same purpose: single- and double-letter literals assigned to
+  # variables that are concatenated into a callable name elsewhere.
+  - id: short-fragment-assignments
+    desc: Assigns short string fragments for assembly
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: '(?i)=\s*''[a-z]{1,2}''\s*;[\s\S]{0,160}?\b\w+\s*=\s*''[a-z]{1,2}''\s*;'
+  # The other half of the short-split idiom: the assembled name is consumed
+  # through a computed member call (`alias[fragA+fragB](arg)`), so neither
+  # the builtin name nor the call target ever appears literally.
+  - id: concatenated-member-invocation
+    desc: Invokes member named by concatenation
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      regex: '\b\w+\[\w+\+\w+(\+\w+)?\]\s*\('
 composite_rules:
   - id: padded-dom-base64-eval-concealment
-    desc: Star-separated DOM text beside split eval names
-    crit: suspicious
-    attack: T1027
+    desc: Conceals DOM payload behind split eval and atob
+    crit: hostile
+    attack: T1027,T1140
     all:
-      - id: metadata/file/encoding::star-separated-dom-text
+      - id: star-padded-dom-base64
       - id: split-eval-assignment
       - id: split-atob-assignment
       - id: micro-behaviors/data/control-flow/dispatch::js-computed-property-call
       - id: micro-behaviors/data/property/access::dom-innerhtml-access
+  # Short-split twin of the rule above: the same star-padded DOM payload and
+  # hidden-element reads, but the eval/atob names arrive as one- and
+  # two-letter fragments consumed through a concatenated member call, so the
+  # three-letter split atoms miss it.
+  - id: padded-dom-short-fragment-concealment
+    desc: Conceals DOM payload behind fragment-built dispatch
+    crit: hostile
+    attack: T1027,T1140
+    all:
+      - id: star-padded-dom-base64
+      - id: short-fragment-assignments
+      - id: concatenated-member-invocation
+      - id: micro-behaviors/data/property/access::dom-innerhtml-access
+  # The bootstrap half: a broken-image error handler reads the hidden payload
+  # elements, then dispatches through the fragment-built name. No star blob
+  # is required here; the handler-plus-dispatch shape is the loader stub.
+  - id: image-error-fragment-dispatch-loader
+    desc: Error handler dispatches fragment-built call
+    crit: hostile
+    attack: T1027,T1189
+    all:
+      - id: micro-behaviors/ui/window/hook::image-error-dom-payload-read
+      - id: short-fragment-assignments
+      - id: concatenated-member-invocation
