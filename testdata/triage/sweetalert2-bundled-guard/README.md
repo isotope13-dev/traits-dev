@@ -6,7 +6,7 @@ delay, `pointerEvents` blocking with looping remote audio) inside
 `package/dist/bundle.js`. They differ in manifest and disclosure:
 
 - `third-party-bundler.tgz` names `my-app`: the vendored routine is someone
-  else's sabotage, so `npm-bundled-sweetalert2-regional-sabotage` stays
+  else's sabotage, so `bundled-sweetalert2-regional-sabotage` stays
   hostile and `sweetalert2-npm-protestware-release` stays absent.
 - `genuine-sweetalert2.tgz` names `sweetalert2` with no disclosure notice:
   an undisclosed routine sabotages its users whoever published it, so both

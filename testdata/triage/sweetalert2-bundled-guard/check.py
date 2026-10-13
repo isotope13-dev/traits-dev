@@ -22,7 +22,7 @@ import subprocess
 root = pathlib.Path(__file__).resolve().parents[3]
 fixtures = pathlib.Path(__file__).resolve().parent
 
-BUNDLED = "objectives/impact/ui/manipulation/browser::npm-bundled-sweetalert2-regional-sabotage"
+BUNDLED = "objectives/impact/ui/manipulation/browser::bundled-sweetalert2-regional-sabotage"
 RELEASE = "well-known/unwanted/sweetalert2-protestware::sweetalert2-npm-protestware-release"
 REGIONAL = "objectives/impact/ui/manipulation/browser::regional-pointer-events-audio-sabotage"
 
