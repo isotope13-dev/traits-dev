@@ -1,0 +1,79 @@
+# Update third-party YARA rules once a day and open or refresh a PR.
+name: Update third-party rules
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 9 * * *"
+
+permissions: {}
+
+jobs:
+  update:
+    if: ${{ github.repository == 'isotope13-dev/traits-dev' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout traits-dev
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout cleave
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: atomdrift-project/cleave
+          path: cleave
+          persist-credentials: false
+
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+
+      - name: Build yara-update
+        working-directory: cleave/tools/yara-update
+        run: go build -o yara-update .
+
+      - name: Update third-party rules
+        working-directory: third-party
+        run: ../cleave/tools/yara-update/yara-update
+
+      - name: Build cleave
+        run: cargo build --locked --release --manifest-path cleave/Cargo.toml --bin cleave
+
+      - name: Validate rules
+        env:
+          CLEAVE: ${{ github.workspace }}/cleave/target/release/cleave
+        run: make validate
+
+      - name: Open or update pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$(git status --short -- third-party)" ]]; then
+            echo "No third-party rule changes."
+            exit 0
+          fi
+
+          gh auth setup-git
+          branch="automation/update-third-party-rules"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add third-party
+          git commit -m "chore: update third-party YARA rules"
+          git push --force origin "HEAD:$branch"
+
+          if [[ "$(gh pr list --head "$branch" --state open --json number --jq 'length')" -eq 0 ]]; then
+            gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "chore: update third-party YARA rules" \
+              --body "Automated update from cleave's yara-update tool. The updated rules passed make validate."
+          fi
+        shell: bash
