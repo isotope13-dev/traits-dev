@@ -103,6 +103,8 @@ def main():
         traits = reports[name]["traits"]
         observed = {t["id"] for t in traits}&SELECTED
         assert observed == required, (name,sorted(observed),sorted(required))
+        assert not any(t["id"] == "objectives/command-and-control/channel/proxy::port-seizing-open-proxy"
+                       for t in traits), (name, "fixed-upstream mirror mislabeled as open proxy")
         results.append({"case":name,"passed":True,"matched":sorted(observed),
                         "hostile":sum(t["crit"]==5 for t in traits)})
     (args.out/"results.json").write_text(json.dumps(results,indent=2)+"\n")
