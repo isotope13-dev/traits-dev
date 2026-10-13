@@ -2,7 +2,7 @@
 
 Guards three relocations:
 - getpass.getpass must stay a neutral prompt capability
-  (micro-behaviors/process/user/query), never supply-chain impersonation.
+  (micro-behaviors/ui/dialog/prompt), never supply-chain impersonation.
 - sys.stdout/sys.stderr references must stay stdio findings
   (micro-behaviors/process/fd/stdio), never subprocess creation.
 - client.connect on a Unix socket must stay an unqualified call, never an
