@@ -10,8 +10,8 @@ import zipfile
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 PREFIX = "metadata/package/files/mobile-package::"
-LAYOUTS = {PREFIX + "android-config-split-signing-layout",
-           PREFIX + "android-config-split-bndtool-signature-layout"}
+LAYOUTS = {PREFIX + "android-resource-signing-member-layout",
+           PREFIX + "android-resource-bndtool-member-layout"}
 
 
 def code_declaration(manifest, enabled):
@@ -64,6 +64,12 @@ def check(path, expected, expect_hostile=False):
     traits = [t for file in files for t in file.get("traits", [])]
     ids = {t["id"] for t in traits}
     assert ids & LAYOUTS == set(expected), (path.name, "layouts", ids & LAYOUTS)
+    assert not ids & {PREFIX + "android-bundletool-resource-split",
+                      PREFIX + "android-resource-only-split-apk"}, (path.name, "old overclaim")
+    if path.name == "declared-code.apk":
+        assert "metadata/package/runtime::android-manifest-no-dex-code" not in ids
+    if path.name == "not-config-split.apk":
+        assert PREFIX + "android-manifest-config-split" not in ids
     assert bool([t for t in traits if t["crit"] == 5]) == expect_hostile, (path.name, "hostile", traits)
     if not expect_hostile:
         assert not [t for t in traits if t["crit"] >= 4], (path.name, "unexpected suspicious findings")
@@ -77,12 +83,13 @@ with tempfile.TemporaryDirectory(prefix="android-layout-controls-") as scratch:
     scratch = Path(scratch)
     for name, mutation, expected, hostile in [
         ("renamed.vir", lambda m: None, LAYOUTS, False),
-        ("declared-code.apk", lambda m: m.update({"AndroidManifest.xml": code_declaration(m["AndroidManifest.xml"], True)}), set(), False),
-        ("not-config-split.apk", lambda m: m.update({"AndroidManifest.xml": m["AndroidManifest.xml"].replace("config.es".encode("utf-16le"), "normal.es".encode("utf-16le"))}), set(), False),
+        # Layout labels state member presence, not hasCode or split declarations.
+        ("declared-code.apk", lambda m: m.update({"AndroidManifest.xml": code_declaration(m["AndroidManifest.xml"], True)}), LAYOUTS, False),
+        ("not-config-split.apk", lambda m: m.update({"AndroidManifest.xml": m["AndroidManifest.xml"].replace("config.es".encode("utf-16le"), "normal.es".encode("utf-16le"))}), LAYOUTS, False),
         # Exclusions describe member paths, independently of payload validity.
         ("dex-member.apk", lambda m: m.update({"classes.dex": b"path-presence control"}), set(), False),
         ("native-member.apk", lambda m: m.update({"lib/arm64-v8a/libworker.so": b"path-presence control"}), set(), False),
-        ("shadow-manifest.apk", lambda m: m.update({"AndroidManifest.xml": code_declaration(m["AndroidManifest.xml"], True), "assets/AndroidManifest.xml": m["AndroidManifest.xml"]}), set(), False),
+        ("shadow-manifest.apk", lambda m: m.update({"AndroidManifest.xml": code_declaration(m["AndroidManifest.xml"], True), "assets/AndroidManifest.xml": m["AndroidManifest.xml"]}), LAYOUTS, False),
         # A manifest declaration must never suppress an actual attack finding.
         ("concealed-script.apk", lambda m: m.update({"assets/network.js": (ROOT / "testdata/reverse-shell/revshell.js").read_bytes()}), LAYOUTS, True),
     ]:

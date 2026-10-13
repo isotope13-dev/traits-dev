@@ -829,6 +829,16 @@ misses. It does not establish runtime behavior, malware or product identity,
 intent, or benign purpose. Same-file co-occurrence alone is not a profile, and
 this directory is not a fallback for evidence without a defensible claim.
 
+**Archive boundaries follow the observed property.** Member names and member
+table observations belong in `file/archive`, even when the name is a hash,
+lure, extension or signing-file label. The scanned file's own basename belongs
+in `file/naming`; an extension-only observation belongs in `file/extension`.
+Parsed container-kind declarations (cabinet, Phar) belong in `file/format`,
+signature bytes in `file/magic`, and bytes specifically in a PE resource in
+`binary/resource`. Phar signature presence and scheme belong in
+`signed/trust-level`; they establish neither signature validity nor a trusted
+publisher. A member called `BNDLTOOL.RSA` remains a member-name observation.
+
 The live profile children have distinct jobs: `field-presence` records whether
 a parsed field exists; `function-population`, `identifier-population`,
 `string-population`, and `token-population` measure defined populations;
