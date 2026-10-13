@@ -1,0 +1,107 @@
+defaults:
+  for: [shell]
+  platforms: [macos]
+  attack: T1056.002,T1555.001
+
+traits:
+  - id: shell-dialog-keychain-download-replay-flow
+    desc: Validated dialog secret sent to downloaded code
+    crit: suspicious
+    conf: 0.98
+    # Bind both roles: the same secret is captured, validated, and forwarded;
+    # the same path is curl's output and nohup's executable. No lure wording,
+    # campaign endpoint, variable name, or attacker-selected path is required.
+    unless:
+      - type: symbol
+        kind: function
+        exact: osascript
+      - type: symbol
+        kind: function
+        exact: security
+      - type: symbol
+        kind: function
+        exact: curl
+      - type: symbol
+        kind: function
+        exact: nohup
+    if:
+      type: tree-sitter
+      language: shell
+      query: |
+        (program
+          [
+            (for_statement body: (do_group
+              (variable_assignment name: (variable_name) @secret
+                value: (command_substitution
+                  (command name: (command_name (word) @dialog)
+                    argument: (word) @execute
+                    argument: (raw_string) @script)))
+              . (list
+                (command name: (command_name (word) @security)
+                  . argument: (word) @unlock
+                  . argument: (word) @password_flag
+                  . argument: (string . (simple_expansion (variable_name) @validated) .)
+                  . argument: (string) @keychain .)
+                "&&"
+                (command name: (command_name (word) @break))) .))
+            (while_statement body: (do_group
+              (variable_assignment name: (variable_name) @secret
+                value: (command_substitution
+                  (command name: (command_name (word) @dialog)
+                    argument: (word) @execute
+                    argument: (raw_string) @script)))
+              . (list
+                (command name: (command_name (word) @security)
+                  . argument: (word) @unlock
+                  . argument: (word) @password_flag
+                  . argument: (string . (simple_expansion (variable_name) @validated) .)
+                  . argument: (string) @keychain .)
+                "&&"
+                (command name: (command_name (word) @break))) .))
+          ]
+          . (variable_assignment name: (variable_name) @architecture
+              value: (command_substitution
+                (command name: (command_name (word) @uname)
+                  . argument: (word) @machine .)))?
+          . (command name: (command_name (word) @curl)
+            argument: (string) @url
+            . argument: (word) @output_flag
+            . argument: (string (simple_expansion (variable_name) @download_root)) @download .)
+          . (command name: (command_name (word) @chmod)
+              . argument: (word) @executable
+              . argument: (string) @chmod_path .)
+          . (redirected_statement body:
+            (command name: (command_name (word) @nohup)
+              . argument: (string) @payload
+              . argument: (string . (simple_expansion (variable_name) @forwarded) .)))
+          (#eq? @dialog "osascript")
+          (#eq? @execute "-e")
+          (#match? @script "text returned of.*display dialog.*with hidden answer")
+          (#eq? @security "security")
+          (#eq? @unlock "unlock-keychain")
+          (#eq? @password_flag "-p")
+          (#match? @keychain "Library/Keychains/login\\.keychain(-db)?")
+          (#eq? @validated @secret)
+          (#eq? @break "break")
+          (#eq? @uname "uname")
+          (#eq? @machine "-m")
+          (#not-eq? @architecture @secret)
+          (#not-eq? @architecture @download_root)
+          (#eq? @curl "curl")
+          (#match? @url "^\"https?://")
+          (#eq? @output_flag "-o")
+          (#eq? @chmod "chmod")
+          (#eq? @executable "+x")
+          (#eq? @chmod_path @download)
+          (#eq? @nohup "nohup")
+          (#eq? @download @payload)
+          (#eq? @forwarded @secret))
+
+composite_rules:
+  - id: shell-dialog-keychain-download-replay
+    desc: Keychain-validated password sent to payload
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: shell-dialog-keychain-download-replay-flow
+      - id: micro-behaviors/ui/dialog/apple::hidden-answer
