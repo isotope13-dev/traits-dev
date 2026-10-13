@@ -1,0 +1,1 @@
+const handlerNames = ["catch", "finally"];
