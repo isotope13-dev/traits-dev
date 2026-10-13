@@ -1,4 +1,4 @@
-# pi-gated-cookie-reader regression fixtures
+# Pi cookie-client regression fixtures
 
 These fixtures are scanned, never executed.
 
@@ -7,17 +7,24 @@ These fixtures are scanned, never executed.
   reader (`reader.js`, entry symbol `readBrowserCookies`), a Gemini Web
   `StreamGenerate` fallback client (`gemini.js`), a `browserCookieAccess`
   opt-in setting, `pi-package` keyword, `pi.extensions` manifest entry, and
-  a harmless postinstall hook. Neither
+  a harmless postinstall hook. The neutral
+  `micro-behaviors/communications/http/cookies::chromium-cookie-gemini-web-cooccurrence`
+  must fire. Neither retired claim,
   `objectives/credential-access/browser/session-hijack::node-chromium-cookie-gemini-web-abuse`
   nor
   `objectives/supply-chain/credential-theft/package::npm-postinstall-chromium-gemini-web-cookie-hijack`
-  may fire: `well-known/app/ai/browser-agent/pi-web-access::pi-extension-gated-cookie-reader`
-  recognizes the opt-in gated pattern via the generic Chromium
-  cookies-table query leg, without depending on pi-web-access's exact
-  symbol names.
-- `ungated-cookie-hijack.tgz` — positive control with the same cookie
-  query, Gemini endpoint and postinstall hook but no opt-in setting and no
-  Pi markers. Both hostile composites must still fire.
+  may fire. An opt-in gate does not make the underlying cookie-client
+  capability disappear.
+- `ungated-cookie-hijack.tgz` — historical fixture name retained; its code
+  only exports a query and an endpoint. It performs no credential reads or
+  requests, even when invoked by postinstall. The same neutral finding must
+  fire without either hostile claim. A missing setting does not prove theft.
+
+The checker also scans `../pi-cookie-client-triage`: direct and namespace
+Slack clients, unrelated constructors, comments, a Gemini class suffix,
+directory enumeration without recursion, and unchecked versus origin-checked
+cookie redirects. The redirect control renames the helper and local variables
+to check that detection follows the relationship rather than sample names.
 
 Rebuild the archives from `src/` after editing a fixture:
 
