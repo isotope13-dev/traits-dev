@@ -1,0 +1,1 @@
+nodeWritable.write(message, callback);
