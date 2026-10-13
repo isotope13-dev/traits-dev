@@ -50,9 +50,10 @@ def main():
         return bytes(ch ^ key ^ ((a*i+b)&255) for i, ch in enumerate(host.encode()))
     utf16 = lambda text: text.encode("utf-16le")
     host_variation = bytearray(data)
-    host_variation[offset(0x421DF8):offset(0x421DF8)+9] = encode("id.ab.xyz", 23, 11)
+    host_variation[offset(0x421DF8):offset(0x421DF8)+9] = encode("id.ab.xyz", 23, 11, 0x37)
     host_variation[offset(0x416BE3)] = 23
     host_variation[offset(0x416BEF)] = 11
+    host_variation[offset(0x415E2B)] = 0x37
     identity_variation = replace(utf16("Eupdate Helper"), utf16("Generic Helper"))
     identity_variation = identity_variation.replace(b"47.108.48.69", b"46.108.48.69")
     cases = [
@@ -66,6 +67,7 @@ def main():
         ("ordinary-update-path", replace(b".signed\0", b".foobar\0"), SELECTED-{DENIAL}-ADMITTED),
         ("no-scheduled-rotation", replace(utf16("cron triggered"), utf16("task triggered")), SELECTED-{ROTATE}),
         ("no-autostart-success", replace(utf16("HKLM Run set ->"), utf16("HKLM Run ask ->")), SELECTED-{RUN}),
+        ("https-alternate-custom-port", patch(0x415D97, struct.pack("<I",8443)), SELECTED),
         ("https-standard-port", patch(0x415D97, struct.pack("<I",443)), SELECTED-{HOST,HTTPS}),
         ("decoded-common-tld", patch(0x421DF8, encode("id.zz.com")), SELECTED-{HOST,HTTPS}),
         ("wrong-decoder-key", patch(0x415E2B, b"\x5b"), SELECTED-{HOST,HTTPS}),
