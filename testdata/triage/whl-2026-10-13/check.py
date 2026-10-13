@@ -8,8 +8,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[3]
 CONTROLS = [
     ("input_device.py", '# virtualbox mouse uses a VirtualBox USB tablet\nDEVICE = "/dev/input/by-id/usb-VirtualBox_USB_Tablet-event-mouse"\n',
-     ["micro-behaviors/os/virtualization/hypervisor::python-virtualbox-word-reference",
-      "micro-behaviors/os/virtualization/hypervisor::python-vmware-virtualbox-reference"], []),
+     ["micro-behaviors/os/virtualization/hypervisor::python-virtualbox-word-reference"], []),
     ("secret_client.py", '''import os
 import requests
 token = os.getenv("KAGGLE_USER_SECRETS_TOKEN")
