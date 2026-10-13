@@ -113,6 +113,7 @@ taxonomy-check:
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/054-architecture-strings/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/055-accounting-vocabulary/cases-after.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/credential-text/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/f5-source-to-body/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/057-charset-home/cases-encoding-after.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/058-cicd-vocabulary/cases-after.json
 	python3 taxonomy-migration/batches/059-identity-strings/check-phishing-selector-cases.py --cleave "$(CLEAVE)" --traits-dir . --phase after
@@ -147,7 +148,7 @@ taxonomy-check:
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/139-triage20-entropy-gosum/section-entropy-cases.json
 	python3 taxonomy-migration/research/b098-frozen-suite-workspace/check-time-after.py --cleave "$(CLEAVE)"
 	python3 taxonomy-migration/research/b101-suite-workspace/run-after-controls.py --cleave "$(CLEAVE)" --traits-dir .
-	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/102-current-file-populations/focused-cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/current-file-populations/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/130-java-accessibility/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/131-powershell-decryptor-home/cases-current.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/awscli-kerberos-spn-controls/cases.json
