@@ -14,6 +14,9 @@ Controls are synthetic technique variants, not sample bytes:
 - `negative-probe-loop.ps1`: paired loops and a send over a generic
   probe packet (no NBNS bytes, no transaction-ID assignments) fires
   neither.
+- `staged-no-delivery.ps1`: NBNS bytes, transaction-ID walk, and paired
+  loops but no socket send fires only `nbns-poisoning-staged`; the
+  delivery rule stays silent via its send-leg suppressor.
 
 Run `python3 testdata/triage/nbns-poisoning-loop/check.py`. It stages
 copies into a temp dir before scanning (any path under this repo's own

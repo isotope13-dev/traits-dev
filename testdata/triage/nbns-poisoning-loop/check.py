@@ -24,7 +24,8 @@ fixtures = pathlib.Path(__file__).resolve().parent
 # correctly suppress this rule's legs. The committed bytes are the test;
 # the temp location is just scaffolding.
 with tempfile.TemporaryDirectory(prefix="nbns-") as stage:
-    for control in ("positive-spoof-loop.ps1", "negative-probe-loop.ps1"):
+    for control in ("positive-spoof-loop.ps1", "negative-probe-loop.ps1",
+                    "staged-no-delivery.ps1"):
         shutil.copy(fixtures / control, pathlib.Path(stage) / control)
     result = subprocess.run(
         ["cleave", "--traits-dir", str(root), "--format", "json", stage],
@@ -41,6 +42,7 @@ while remaining:
 
 loop = "objectives/credential-access/capture/network::nbns-poisoning-loop"
 reflection = "objectives/credential-access/capture/network::nbns-poisoning-for-ntlm-reflection"
+staged = "objectives/credential-access/capture/network::nbns-poisoning-staged"
 
 
 def has(name, rule_id):
@@ -53,6 +55,11 @@ def hot(name):
 
 assert has("positive-spoof-loop.ps1", loop), "positive"
 assert not has("positive-spoof-loop.ps1", reflection), "boundary"
+assert not has("positive-spoof-loop.ps1", staged), "separation"
 assert not has("negative-probe-loop.ps1", loop), "negative"
 assert not has("negative-probe-loop.ps1", reflection), "negative"
+assert not has("negative-probe-loop.ps1", staged), "negative"
+assert has("staged-no-delivery.ps1", staged), "staged"
+assert not has("staged-no-delivery.ps1", loop), "staged"
+assert not has("staged-no-delivery.ps1", reflection), "staged"
 print("PASS: spoof loop is suspicious without the reflection half")
