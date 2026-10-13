@@ -1,0 +1,1 @@
+pi.registerTool(tool);

@@ -25,6 +25,10 @@ Slack clients, unrelated constructors, comments, a Gemini class suffix,
 directory enumeration without recursion, and unchecked versus origin-checked
 cookie redirects. The redirect control renames the helper and local variables
 to check that detection follows the relationship rather than sample names.
+Additional controls cover actual hex/XOR character decoding, HTML entity
+decoding, Elasticsearch pagination versus date filters, actual fallback forms
+versus cleanup regexes, generic tool registration, blocked-pattern names, and
+recursive deletion through bare imports or renamed receivers.
 
 Rebuild the archives from `src/` after editing a fixture:
 

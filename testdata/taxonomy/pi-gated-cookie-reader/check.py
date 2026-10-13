@@ -19,10 +19,10 @@ cases += json.loads((controls / 'cases.json').read_text())['fixtures']
 # cannot hide the directory-enumeration observation being exercised.
 with tempfile.TemporaryDirectory(prefix='pi-cookie-controls-') as scratch:
     for path in controls.iterdir():
-        if path.suffix in ('.js', '.ts'):
+        if path.suffix in ('.js', '.ts', '.html', '.json') and path.name != 'cases.json':
             shutil.copyfile(path, Path(scratch) / path.name)
     result = subprocess.run(
-        [os.environ.get('CLEAVE', 'cleave'), '--traits-dir', str(root), '--format', 'json',
+        [os.environ.get('CLEAVE', 'cleave'), '--traits-dir', str(root), '--format', 'json', '--all-files',
          str(Path(__file__).parent), scratch],
         cwd=root, capture_output=True, text=True, check=True,
     )
