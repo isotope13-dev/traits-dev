@@ -282,6 +282,11 @@ to satisfy a number. The current reviewed exceptions are:
   encoded-only token to `data/encoding/base64` and removed overlapping Ruby
   and shell match scopes. See the
   [review record](taxonomy-migration/research/base64-directory-budget-review.md).
+- `micro-behaviors/fs/file/copy` at 101 rules. The reviewed ELF `cp` command
+  atom and shared shell/ELF composite belong to the same file-copy operation;
+  implementation form is carried in `for:`. No precise child axis separates
+  this addition from the existing copy observations. See
+  [B281](taxonomy-migration/batches/281-cp-command-placement/README.md).
 
 ### Splitting a directory
 
@@ -805,7 +810,7 @@ identity goes with that subject.
 | `binary` | `header`, `section`, `symbols`, `code`, `instruction`, `resource`, `linking`, `layout`, `debug`, `provenance`; a property of that part | **Facts about a part, never what it means:** "three imports" → `symbols`; "imports `GetProcAddress`" → a capability; "exports impersonate `version.dll`" → an objective; "exports are libcurl's ABI" → `well-known/lib`. A part's measurement and malformation share its directory; `crit:` says how unusual. |
 | `build` | `bundler`, `minifier`, `transpiler`, `generated`, `ci`, `config`, `manifest`, `artifact`, `reproducible`, `vcs`, … by transform or pipeline function | What a tool left in the file (bundled, minified, transpiled), grouped by function; the tool goes in the trait name (`esbuild-bundled`). "This file *is* webpack" is `well-known/`; compiler attribution is `lang/compiler`. |
 | `document` | `pdf`, `office`, `rtf`, `html`, `ole`, `chm`; a parsed part or property | Structure, not the behavior of embedded code. Magic alone is `file`. |
-| `file` | `format`, `magic`, `extension`, `size`, `encoding` (*legacy: `encoded`*), `entropy`, `naming`, `profile`, `line`, `archive`, `invisible-unicode`; whole-file properties | A specific subject beats a generic text bucket. The file's own name and directory are `naming`; an archive member path is `archive`. `file/string` and `file/literal` are **closed**: move each rule to the subject it evidences. A context-only literal has no standalone behavior home; retain its placement hold until a supported contract or validated consumer representation exists. Current Cleave source and its source-matched release-profile build reject new IDs in both namespaces; exact existing IDs remain temporarily grandfathered. Rebuild the sibling release binary before release use. See the [validator enforcement record](taxonomy-migration/research/document-authority/literal-validator-enforcement.md). |
+| `file` | `format`, `magic`, `extension`, `size`, `encoding` (*legacy: `encoded`*), `entropy`, `naming`, `profile`, `line`, `archive`, `catalog`, `comment`, `function`, `import`, `padding`, `arithmetic`; whole-file properties | A specific subject beats a generic text bucket. The file's own name and directory are `naming`; an archive member path is `archive`. `file/string` and `file/literal` are **closed**: move each rule to the subject it evidences. A context-only literal has no standalone behavior home; retain its placement hold until a supported contract or validated consumer representation exists. The validator rejects new IDs in both namespaces; existing IDs are grandfathered during migration. See the [validator enforcement record](taxonomy-migration/research/document-authority/literal-validator-enforcement.md). |
 | `hardening` | `build`, `layout`, `memory`, `mitigation`, `sandbox` | Absence is a value of a mitigation, not a "missing" subject. Using a security API is a capability; bypassing one, an objective. |
 | `image` | `pixel`, `segment`, `trailing`: decoded-image measurements, segment totals, trailing layout | Whole-file byte entropy is `file/entropy`. A metric name proves no color channel or end marker. Rendering and capture are capabilities. |
 | `font`, `media` | *Reserved:* font table and container validity; cross-carrier byte coverage | Whitelisted; create with the first supported rule. |
@@ -814,20 +819,52 @@ identity goes with that subject.
 | `package` | A manifest field or package role (below) | Properties of the distributed component, not its runtime behavior. |
 | `permission` | Declared authority by protected surface (`host`, `clipboard`, `storage`, `network`, …); grant scope and manifest-level profiles combining declared authority or target scope | A hostname without grant context is not a permission; a grant or target profile does not prove API use, injection, interception or theft. Invoking an API is a capability. |
 | `registry` | Package-registry publication records: release history, reach, custody, listing claims | Not the Windows registry (`micro-behaviors/os/registry`). Reputation is not a verdict. |
-| `signed` | `certificate`, `entitlements`, `platform`, `trust-level` | A signer name is neither product identity nor proof of a valid chain. |
+| `signed` | `certificate`, `entitlements`, `platform`, `script`, `trust-level` | A signer name is neither product identity nor proof of a valid chain. |
 | `vendor` | OS or platform vendor provenance (Apple, Microsoft, NetBSD, GNU) | Certificate fields are `signed`; manifest vendor fields are `package`; third-party products are `well-known/`. |
 
-**`metadata/file/profile` is a narrow home for static artifact signatures.** A
-profile may combine file properties only when it states one stable, testable
-claim, the relation among its evidence, and its file scope. It must include
-benign controls and near misses. It does not assert behavior, malware identity,
-intent, or benign purpose; those claims need their own evidence and homes.
-Same-file co-occurrence alone is not a profile. A fact with a specific subject
-stays in that subject's directory, and a profile must not become the fallback
-for evidence with no defensible claim. Existing `test-indications`,
-`source-indications`, numeric `string-population`, and reference-catalog leaves
-have narrower contracts; each retained profile leaf must document its own
-boundary.
+**`metadata/file/profile` holds static, file-scoped measurements and
+relationships.** A profile must state one stable, testable claim, the relation
+among its evidence, and its file scope. It needs benign controls and near
+misses. It does not establish runtime behavior, malware or product identity,
+intent, or benign purpose. Same-file co-occurrence alone is not a profile, and
+this directory is not a fallback for evidence without a defensible claim.
+
+The live profile children have distinct jobs: `field-presence` records whether
+a parsed field exists; `function-population`, `identifier-population`,
+`string-population`, and `token-population` measure defined populations;
+`installer-layout` records file and sidecar relationships; `markup` records
+parsed markup or document-content patterns; `structured` records an explicit
+relationship among structured fields; `source-indications` and
+`test-indications` record source or test-context clues, not execution;
+`identity` records static artifact context, not a known product identity;
+`tool-reference` records references, not tool use or identity. Existing
+`operation-cooccurrence` composites are under individual semantic review: the
+current audit finds 89 composites in 33 files, and same-file presence does not
+prove that operations are related. Add no new rules to `operation-cooccurrence` or
+`tool-reference` until their boundaries are reviewed. A fact with a specific
+behavioral or metadata subject belongs there instead of in a profile.
+The [measured-population contract](taxonomy-migration/contracts/file-populations.md)
+defines the population leaves; its rule-by-rule and metric-producer review
+remains open.
+
+`file/catalog/<kind>` holds embedded or standalone reference tables, indexes,
+and catalogs. Their entries prove neither use, contact, intent, nor product
+identity. `file/comment` records parsed comment spans and file-shape metrics;
+comment text is not executable code or a verified claim. `file/function` holds
+source declarations and names; names do not prove calls. Function-population
+metrics belong in `file/profile/function-population`; binary method anatomy
+belongs in `binary`. `file/import` records parser-reported import counts;
+named module references belong in `metadata/import`, and neither proves use.
+`file/padding` requires an observed filler span, not a whitespace ratio.
+`file/arithmetic` is limited to parsed operator-population measures; actual
+arithmetic operations belong in `micro-behaviors/data/arithmetic`.
+
+The existing `file/data-blob` and `file/policy` branches are closed to new
+rules. They mix unrelated claims and have no residual catch-all home: migrate
+each rule by its evidenced property or subject. Whole-file entropy, file
+signatures, names, and string metrics use their specific homes; declarations
+of authority, hardening, package configuration, and document content use
+`permission`, `hardening`, `package`, and `document` subjects respectively.
 
 **`file/entropy`** is Shannon entropy over the whole analyzed byte sequence.
 Region, section, string and decoded-pixel entropy belong with those subjects.
@@ -886,6 +923,11 @@ Ecosystems share a facet and differ by filename (`identity/npm.yaml`,
 | Presence, length or shape of chain entries | `signed/certificate/issuer/chain` | Any authority's identity |
 | Verification, digest integrity, nested signatures | `signed/certificate/signature` | Signer identity |
 | EKU, key usage, other constraints | `signed/certificate/security` | That the signature verifies |
+
+**Script-signature markers** belong in `signed/script`. A `SIG` begin/end
+marker is evidence of marker text only; it does not establish signature
+validity, signer identity, or trust. Keep it separate from certificate
+verification and signer fields.
 
 Trust comes from pinned CA thumbprints, never names. Installing or verifying a
 certificate is `micro-behaviors/crypto/certificate`.
@@ -1052,7 +1094,11 @@ plan.
 | obj `anti-static/obfuscation/{binary-metrics,code-metrics,tools,multi-layer}` | meta `binary` or `file`, `well-known/`, or a named concealment | Measurements and identities are not concealment | Open |
 | meta `file/encoded`; `lang/encoded` | meta `file/encoding`; `lang/encoding` | Rename | Open |
 | meta whole-file byte-entropy rules under `image/*` | meta `file/entropy` | Decoded-image measurements stay | Open |
-| meta `file/{string,literal}/*` | The subject each string evidences; context-only predicates held pending validated representation | No new placements; literal validator enforcement pending | Partial (batches 047–080) |
+| meta `file/{string,literal}/*` | The subject each string evidences; context-only predicates held pending validated representation | No new IDs; exact existing IDs remain grandfathered until migrated | Partial (batches 047–080) |
+| meta `file/data-blob/*` | The specific measured property or behavior-supported subject | No residual `data-blob` bucket; split entropy, region, signature, name, and string observations | Open |
+| meta `file/policy/*` | `permission`, `hardening`, `package`, or document/format-specific property | No generic policy bucket; preserve declared-versus-effective scope | Open |
+| meta `file/function/*` | Source declaration/name; population profile; `binary` anatomy | A name does not prove invocation or behavior | Open |
+| meta `file/{arithmetic,padding}/*` | Parsed operator population, actual arithmetic operation, observed filler span, or a measured text-shape profile | Separate source-shape measurements from operation claims | Open |
 | meta `package/tooling`, `hardening/missing` | `build/*`, `well-known/*`, `package/<subject>`; the mitigation's own subject | Grab-bag and judgment names | Open |
 | meta `binary/{installer,framework,vendor,signing,license,toolchain}` | `well-known/`, `vendor`, `signed`, `binary/provenance`, `lang/compiler` | Identity is not a format property | Open |
 | `well-known/malware/supply-chain` | The family's defining role | Delivery does not choose identity | Open |
