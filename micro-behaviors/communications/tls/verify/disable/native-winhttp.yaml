@@ -1,0 +1,42 @@
+defaults:
+  for: [pe]
+  platforms: [windows]
+  arch: [x86]
+
+traits:
+  - id: x86-winhttp-ignore-certificate-errors
+    desc: WinHTTP disables server certificate checks
+    crit: suspicious
+    conf: 0.99
+    mbc: C0005
+    if:
+      # Bind the API-name resolution to its pointer slot and the indirect
+      # call. Option 31 is SECURITY_FLAGS; 84 only selects TLS protocols.
+      # 0x3300 ignores unknown CA, name, date and certificate usage errors.
+      type: yara
+      source: |
+        import "pe"
+        rule x86_winhttp_ignore_certificate_errors {
+          strings:
+            $api = "WinHttpSetOption\x00" ascii
+            $resolve = {
+              C7 44 24 04 ?? ?? ?? ?? 89 04 24 FF D3
+              8B 15 ?? ?? ?? ?? 85 D2 51 51 A3 ?? ?? ?? ??
+            }
+            $relax = {
+              8D 45 ?? C7 45 ?? 00 33 00 00
+              C7 44 24 0C 04 00 00 00 89 44 24 08
+              C7 44 24 04 1F 00 00 00 89 3C 24 FF 15 ?? ?? ?? ??
+            }
+          condition:
+            pe.machine == pe.MACHINE_I386 and
+            pe.imports("KERNEL32.dll", "GetProcAddress") and
+            for any r in (1..#resolve) : (
+              for any a in (1..#api) : (
+                pe.rva_to_offset(uint32(@resolve[r]+4)-pe.image_base) == @api[a]
+              ) and for any c in (1..#relax) : (
+                uint32(@resolve[r]+24) == uint32(@relax[c]+35) and
+                uint8(@relax[c]+2) == uint8(@relax[c]+5)
+              )
+            )
+        }
