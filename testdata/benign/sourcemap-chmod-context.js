@@ -1,0 +1,4 @@
+exports.install = function () {
+  return ["chmod +x ./install", "./install auto"];
+};
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjogMywgImZpbGUiOiAiaW5zdGFsbC1hZ2VudC5qcyIsICJzb3VyY2VzIjogWyJpbnN0YWxsLWFnZW50LnRzIl0sICJzb3VyY2VzQ29udGVudCI6IFsiZXhwb3J0IGZ1bmN0aW9uIGluc3RhbGwoKSB7XG4gIGNvbnN0IHN0ZXBzID0gW1xuICAgICdjaG1vZCAreCAuL2luc3RhbGwnLFxuICAgICcuL2luc3RhbGwgYXV0bycsXG4gIF07XG4gIHJldHVybiBzdGVwcztcbn1cbiJdLCAibWFwcGluZ3MiOiAiQUFBQSxTQUFTLFNBQVM7QUFDZCxPQUFPIn0=
