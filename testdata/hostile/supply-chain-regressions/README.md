@@ -18,3 +18,13 @@ dependency, with an entrypoint that imports `execSync`. It pins the
 install, build, import, or execute this package; analyze its bytes only.
 
 SHA-256: `8a044fe60c88355e2f3c5990d2a2e51cffaa64c5b79c236d5352f61f0c5246e5`
+
+`sentry-preinstall-ip-telemetry.tgz` is a synthetic minimal carrier for
+install-time Sentry IP telemetry: a preinstall hook installs a dependency and
+runs a script that fetches the public IP and binds it through bare and direct
+`setUser` calls with PII defaults against a hardcoded DSN. It pins the
+install-hook mechanics hostile, the recon-exfil telemetry hostile, and the
+bare-`setUser`/bare-`url` atoms. Never install, build, import, or execute this
+package; analyze its bytes only.
+
+SHA-256: `d8659a66dd16c2cc71468e6ba210def80d397b733449be0a234204e5374afcf0`
