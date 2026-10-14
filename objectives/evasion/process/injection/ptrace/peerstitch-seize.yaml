@@ -1,0 +1,76 @@
+defaults:
+  platforms: [unix]
+  for: [c, cpp, python, javascript, go, rust, elf]
+  attack: T1055.008
+  mbc: E1055
+
+traits:
+  # PTRACE_SEIZE lets a tracer take over a running process without the
+  # stop-and-fork semantics of PTRACE_ATTACH; PEERSTITCH used it to seize
+  # long-lived appliance daemons before freezing them. Debuggers and tracers
+  # call this too, so a call alone stays suspicious.
+  - id: ptrace-seize-call
+    desc: Calls ptrace to seize a running process
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: 'ptrace\s*\(\s*PTRACE_SEIZE\b'
+    unless:
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-any
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+      - id: metadata/file/profile/source-indications/
+
+  # PTRACE_INTERRUPT freezes a seized process so its register state can be
+  # captured before shellcode is staged. Same benign-user caveat as above.
+  - id: ptrace-interrupt-call
+    desc: Calls ptrace to freeze a seized process
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: 'ptrace\s*\(\s*PTRACE_INTERRUPT\b'
+    unless:
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-any
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+      - id: metadata/file/profile/source-indications/
+
+  # PTRACE_GETREGSET snapshots the victim's registers so the injector can
+  # build a bootstrap that resumes cleanly. Matches the call form with any
+  # request payload, unlike the NT_PRSTATUS-anchored register-read atom,
+  # so reimplementations that pass the request code differently still match.
+  - id: ptrace-getregset-call
+    desc: Calls ptrace to snapshot process registers
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: text
+      regex: 'ptrace\s*\([^;]{0,120}PTRACE_GETREGSET\b'
+    unless:
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-any
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+      - id: metadata/file/profile/source-indications/
+
+composite_rules:
+  # Seize, freeze, and snapshot in one artifact is the parasitization
+  # sequence: attach without a fork, halt the victim, and capture its
+  # registers to stage a memory patch. Tracers seize processes but do not
+  # combine all three steps with injection follow-through; the composite
+  # requires the full chain.
+  - id: ptrace-seize-register-snapshot
+    desc: Seizes processes and snapshots registers for injection
+    crit: hostile
+    conf: 0.97
+    all:
+      - type: trait
+        id: ptrace-seize-call
+      - type: trait
+        id: ptrace-interrupt-call
+      - type: trait
+        id: ptrace-getregset-call
+    unless:
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-any
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+      - id: metadata/file/profile/source-indications/
+      - id: micro-behaviors/process/debug/tool-markers::org-gnu-gdb-marker
+      - id: micro-behaviors/process/debug/tool-markers::gdb-debugger-text-marker
