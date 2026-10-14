@@ -34,6 +34,19 @@ for consumer_file in sorted({row['file'] for row in disposition['consumers']}):
 results.append({'case': 'b278-original-consumers-remain-free-of-path-suppressor',
                 'matched': len(disposition_files)})
 
+# A later prompt-injection review also rejected a broad agent-directory
+# suppressor. Keep this boundary separate from B278's historical source-path
+# accounting and check the exact prompt rule whose source hash is pinned above.
+prompt_rule_file = 'objectives/evasion/security-bypass/llm/prompt/override/repository-content.yaml'
+prompt_source = (repo_root / prompt_rule_file).read_bytes()
+agent_directory_selector = b'well-known/tool/development/agent/'
+assert hashlib.sha256(prompt_source).hexdigest() == disposition_files[prompt_rule_file], (
+    'reviewed prompt source changed; refresh its boundary record', prompt_rule_file)
+assert agent_directory_selector not in prompt_source, (
+    'agent-directory prompt suppressor returned to the reviewed rule', prompt_rule_file)
+results.append({'case': 'later-agent-directory-suppressor-remains-absent',
+                'matched': True})
+
 for label, member, repo, expected in [
     ('runtime-control', 'src/runtime/package.json', repository, True),
     ('path-control', 'src/__tests__/fixtures/pkg/package.json', repository, True),
