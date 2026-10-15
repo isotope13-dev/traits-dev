@@ -1,0 +1,48 @@
+# A received-task dispatch where the tasks arrive as Server-Sent Events and
+# execute through a messaging session's own API.
+#
+# The shape: a kept-open HTTP response body is framed into `event:` / `data:`
+# blocks by hand (no EventSource), each block is parsed as JSON, and the event
+# verb selects a WhatsApp newsletter operation — `follow` calls
+# newsletterFollow, `react` calls newsletterReactMessage with the stream's
+# serverId and emoji — against the authenticated session the module was
+# handed. The operator picks the targets and the actions; the host application
+# only opened a socket. That is received tasks tied to execution: a
+# command channel, not a configuration fetch (a config fetch returns values a
+# program already decided to use; here each event is the decision).
+#
+# File scope keeps the stream consumer, the framing parse and the dispatch in
+# one module, which is how the graft ships. A telemetry client that parses SSE
+# frames but never drives session APIs stays silent: the dispatch leg is
+# required, and the framing and dispatch must sit within one module's span.
+#
+# Worked example: @systemzero/baileys 1.1.2 lib/Utils/signal-stream.js, whose
+# listenToSignalStream consumes
+# https://zone.api.br/api/owner/whatsapp-signal-stream on every socket the
+# factory builds (lib/Socket/index.js) and runs `follow` and `react` events
+# through sock.newsletterFollow / sock.newsletterReactMessage with reconnect
+# and abort-on-close handling.
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript]
+  attack: T1071.001
+
+composite_rules:
+  - id: sse-stream-drives-whatsapp-tasks
+    desc: Event stream drives WhatsApp session tasks
+    crit: hostile
+    conf: 0.97
+    scope: file
+    all:
+      - id: micro-behaviors/communications/http/client/events::sse-frame-line-parse
+      - id: micro-behaviors/communications/http/request/client::js-fetch-call
+    # The parsed event verb selects the session operation: follow or react.
+    # Either establishes the dispatch; both spellings are covered.
+    any:
+      - id: micro-behaviors/communications/messaging/channel::whatsapp-newsletter-follow-api-call
+      - id: micro-behaviors/communications/messaging/channel::whatsapp-newsletter-react-api-call
+    needs: 1
+    # In the worked example the framing parse, both dispatch call sites and
+    # the fetch sit in one ~90-line module (~1.6 KB); the bound keeps the
+    # stream and its dispatch in one consumer.
+    near_bytes: 2400
