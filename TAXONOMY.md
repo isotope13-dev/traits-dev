@@ -47,11 +47,12 @@ predictable categories that keep different claims apart.
    embedded AES implementation is a capability; a manifest naming a crypto
    dependency is metadata; a fingerprint showing the file *is* that library is
    identity; encrypting a victim's files for ransom is an objective.
-6. **Claim no more than the evidence.** A string, API reference, path, constant
-   or embedded implementation can support a *probable* capability; proof of
-   execution is not required. The directory names the inferred capability; the
-   description names the evidence. Never infer an algorithm, data flow, target
-   or purpose the matcher lacks.
+6. **Claim no more than the evidence.** A string, API reference, path or
+   constant alone is a reference, not a capability. Bounded operation context
+   or a validated structural pattern can support a *probable* capability;
+   proof of execution is not required. The directory names the inferred
+   capability; the description names the evidence. Never infer an algorithm,
+   data flow, target or purpose the matcher lacks.
 7. **Implementation is scope.** Language, platform, file type, backend, API
    spelling and matcher type go in `for:`, `platforms:`, the filename and the
    trait ID, not in directories — unless the platform *is* the technique
@@ -514,7 +515,9 @@ a call to it.
 | `process/{exit,terminate,control,daemonize}` | Ending this process (`exit/handler` for exit callbacks); killing another (a signal API without the kill signal is not); other state changes; detaching (`fork`+`setsid`). |
 | `process/lifecycle/<operation>` | Lifecycle; a guard blocking a second instance (mutex, PID file, lock) is `single-instance` (MBC B0024), while a mutex alone is `process/sync/mutex`. |
 | `process/debug/tool-markers` | References to debugging or tracing tooling, including executable names and paths. A reference proves neither a running debugger, a tool-owned artifact, nor an anti-analysis check; those require independent operation and target evidence. |
-| `process/fd/{query,control,close,dup,stdio}`, `process/io/stream`, `process/tty/<operation>` | Descriptors (a duplication API is `dup`; the resulting stream wiring is `stdio`); stream pumping; terminals (`tty/pty`). Creating a pipe is `communications/ipc`. |
+| `process/fd/{query,control,close,dup,stdio}` | Descriptor operations, including child standard-stream configuration, redirection, and descriptor duplication. Creating an IPC pipe is `communications/ipc`. |
+| `process/io/stream/<operation>` | Reading, writing, piping, or relaying stream data, including paired relays between a peer stream and child stdin/stdout. This is the data-movement operation; stdio configuration and descriptor setup or duplication remain under `process/fd`. |
+| `process/tty/<operation>` | Terminal interaction and PTYs. |
 | `process/interpreter/<operation>` | In-process execution: `eval/{direct,indirect,compile,source}`. `eval` executes an expression; `source` executes a file in the current shell. This includes shell `eval` and `source "$x"`, plus `bof` (Beacon Object File host APIs), `wasm`, and `vm`. Launching an interpreter is `process/create`; language identity is metadata. |
 | `process/{attach,debug,hook,inject}/<mechanism>` | Attaching, debugging, intercepting and transferring execution, with no established attacker purpose. |
 | `process/deploy/<sink>` | Neutral acquisition- or staging-to-activation chains (an updater fetching and launching its image), by the [payload sinks](#payload-activation-and-staging). |
@@ -858,7 +861,9 @@ defines the population leaves; its rule-by-rule and metric-producer review
 remains open.
 
 `file/catalog/<kind>` holds embedded or standalone reference tables, indexes,
-and catalogs. Their entries prove neither use, contact, intent, nor product
+and catalogs. `file/catalog/kernel-header` records scoped marker sets found in
+OS/SDK headers; a copied marker set does not establish that the whole file is a
+header. Catalog markers prove neither use, contact, intent, nor product
 identity. `file/comment` records parsed comment spans and file-shape metrics;
 comment text is not executable code or a verified claim. `file/function` holds
 source declarations and names; names do not prove calls. Function-population

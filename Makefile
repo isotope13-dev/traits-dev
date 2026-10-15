@@ -10,7 +10,7 @@ YARA_UPDATE ?= $(if $(shell command -v yara-update 2>/dev/null),yara-update,$(ab
 
 COMPILED_DIR := third-party/compiled
 
-.PHONY: validate validate-uncached validate-profile taxonomy-check precompile yara-compile yara-update install-precommit
+.PHONY: validate validate-uncached validate-profile taxonomy-check h3-import-reference-check precompile yara-compile yara-update install-precommit
 
 # Rule validation.
 #
@@ -36,10 +36,20 @@ SLOW_RULE_MS ?= 500
 validate-profile:
 	CLEAVE_SKIP_CACHE=1 CLEAVE_TRAIT_TIMING=1 CLEAVE_PHASE_STATS=1 RUST_LOG=cleave=info $(CLEAVE) --slow-rule-ms $(SLOW_RULE_MS) --traits-dir . validate
 
+# Focused gate for import-reference precision across language and objective boundaries.
+h3-import-reference-check:
+	python3 testdata/taxonomy/import-reference-precision/run_cases.py --cleave "$(CLEAVE)"
+
 # Taxonomy-migration checks (NEW_TAXONOMY_PLAN.md). Python-based and depends on
 # untracked scripts/, so it is kept out of `validate`.
 taxonomy-check:
+	python3 testdata/taxonomy/browser-import-candidate/run_cases.py --cleave "$(CLEAVE)"
+	python3 testdata/taxonomy/import-reference-precision/run_cases.py --cleave "$(CLEAVE)"
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/node-stream-pipe-placement/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/ptrace-name-table-retirement/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/kernel-header-catalog/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/aws-sdk-wheel-s3-context/cases.json
+	python3 testdata/taxonomy/embedded-python-exclusion/check.py --cleave "$(CLEAVE)"
 	python3 -m unittest discover -s scripts/tests -p 'test_taxonomy_batch_ledger.py'
 	python3 -m unittest discover -s scripts/tests -p 'test_taxonomy_review_signals.py'
 	python3 scripts/check-taxonomy-batch-ledger.py taxonomy-migration/batches/277-shell-profile-retirement/branch-preservation-ledger.json --source-inventory taxonomy-migration/batches/277-shell-profile-retirement/source-inventory --destination-inventory taxonomy-migration/batches/277-shell-profile-retirement/destination-inventory
@@ -224,6 +234,7 @@ taxonomy-check:
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/shellcode-loader-imports/cases.json --record taxonomy-migration/research/h3-root-setup-py-imports/shellcode-loader-findings.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h3-elf-debuglink-runtime/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/setup-py-dropper-imports/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/python-requests-objective-boundary/cases.json
 	uv run --with pyyaml python taxonomy-migration/research/h5-aes-query/test_queries.py
 
 # Compile the third-party + built-in YARA rules into portable per-filetype

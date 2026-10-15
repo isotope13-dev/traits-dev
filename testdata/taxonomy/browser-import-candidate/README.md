@@ -1,0 +1,9 @@
+# Browser import and mapping correction
+
+The former Python rules in `objectives/credential-access/browser/multi-target/python.yaml` inferred browser access or theft from imports such as `sqlite3`, `ctypes`, `requests`, and `zipfile`. Imports establish available APIs, not that the program invokes them against browser data. The rules are retired; explicit database queries, profile access, decryption, collection, and exfiltration rules remain the evidence for those behaviors.
+
+The removed `B0028` mappings were unsupported for browser login databases, cookies, passkeys, and DPAPI-protected browser secrets. MBC defines B0028 as Cryptocurrency: access to files containing Bitcoin or other cryptocurrency wallet data. Generic browser credential access and cookie transfer do not establish that behavior. In `multi-target/native-routine-names.yaml`, the generic extension-grabber marker does not identify cryptocurrency-wallet extensions, so the description now says only “extensions.” A future wallet-specific mapping must require evidence that identifies wallet data.
+
+A proposed `python-obfuscated-browser-store-query` rule was deliberately withdrawn. The candidate combined a character-transform marker, any `exec()` call, a Chrome path, and a query-shaped string at file scope. Its fixture showed unrelated obfuscated `print()` code next to an inert temporary SQLite database named like a Chrome profile. Neither relationship was established: the transformed code did not execute the query, and the query was not shown to use the browser path. Reintroduce such a rule only when the matcher can establish both payload-to-query execution and query-to-browser-store path linkage, with positive and near-miss cases that independently break each link.
+
+`run_cases.py` retains import-only controls, near misses, and representative B0028 regression cases. It runs as part of `make taxonomy-check`.
