@@ -142,6 +142,7 @@ taxonomy-check:
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/066-account-strings/cases-after.json
 	python3 taxonomy-migration/batches/067-container-strings/check-candidate-cases.py --cleave "$(CLEAVE)" --traits-dir . --phase after
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/069-artifact-strings/cases-after.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/metadata-file-string-orphan-retirement/cases.json
 	python3 taxonomy-migration/batches/072-collection-strings/retirement/check-after.py .
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/073-form-validation-strings/cases-after.json
 	python3 taxonomy-migration/batches/074-corpus-strings/js-fetch-candidate/check-focused-after.py --cleave "$(CLEAVE)" --traits-dir .
