@@ -245,7 +245,7 @@ A parent stays referenceable. A single child is fine if it adds meaning.
 | Check (`make validate`) | Limit |
 |---|---|
 | Rules per directory | **100** traits plus composites is the review trigger, summed over its YAML files and criticalities. A higher leaf budget requires a reviewed, exact-path entry in Cleave and evidence that its rules are accurate, at the right level, and nonduplicative; filenames create no budgets. |
-| Subdirectories | 150. Split broad catalogs by a stable function with a tiebreaker. |
+| Subdirectories | Hard error above 150 immediate subdirectories. Split broad catalogs by a stable function with a tiebreaker. |
 | Depth | Soft warning beyond five levels below the tier (`objectives/a/b/c/d/e/f/x.yaml` warns). Soft warnings fail `make validate`; `cleave validate --soft` only reports them. |
 | Sparse siblings | Soft warning when, below level 1 of a behavioral tier, two or more child subtrees hold fewer than 35 rules together — unless the exact partition is in `REVIEWED_SPARSE_TAXONOMY_PARTITIONS` (`cleave/src/capabilities/validation/taxonomy.rs`). |
 | Sibling stems | Soft warning on shared stems. A shared stem is not synonymy (account identity ≠ process accounting); document the boundary or merge. |
@@ -852,10 +852,13 @@ relationship among structured fields; `source-indications` and
 `identity` records static artifact context, not a known product identity;
 `tool-reference` records references, not tool use or identity. Existing
 `operation-cooccurrence` composites are under individual semantic review: the
-current audit finds 89 composites in 33 files, and same-file presence does not
-prove that operations are related. Add no new rules to `operation-cooccurrence` or
-`tool-reference` until their boundaries are reviewed. A fact with a specific
-behavioral or metadata subject belongs there instead of in a profile.
+frozen `528223c70b` review counted 89 composites in 33 files; its later
+reconciliation at `797f566790f5807fde21e613c19545d516430e05` counted 82 in 30
+files. These are dated snapshots, not live-tree counts. Same-file presence does
+not prove that operations are related. Add no new rules to
+`operation-cooccurrence` or `tool-reference` until their boundaries are
+reviewed. A fact with a specific behavioral or metadata subject belongs there
+instead of in a profile.
 The [measured-population contract](taxonomy-migration/contracts/file-populations.md)
 defines the population leaves; its rule-by-rule and metric-producer review
 remains open.
@@ -864,7 +867,19 @@ remains open.
 and catalogs. `file/catalog/kernel-header` records scoped marker sets found in
 OS/SDK headers; a copied marker set does not establish that the whole file is a
 header. Catalog markers prove neither use, contact, intent, nor product
-identity. `file/comment` records parsed comment spans and file-shape metrics;
+identity. `file/catalog/pattern-rules` records a named pattern-rule table
+declaration; it proves that the catalog exists, not that its entries are used,
+that the table has a threat purpose, or that it has a particular provenance or
+product identity. A rule claiming a specific source needs separate schema and
+provenance evidence. `file/catalog/unicode` records Unicode tables and lexicons;
+source escape syntax belongs in `metadata/lang/encoded/unicode-escape`, and an
+isolated escape does not establish table or non-prose context. `file/catalog/service`
+records service-name references and embedded
+service configuration markers; a name mention does not establish service use,
+while a provisioning composite must include the relevant configuration and
+behavior evidence. `file/catalog/identity` describes reference catalogs found
+inside the analyzed file; it does not identify the analyzed file as a product,
+which belongs in `well-known/`. `file/comment` records parsed comment spans and file-shape metrics;
 comment text is not executable code or a verified claim. `file/function` holds
 source declarations and names; names do not prove calls. Function-population
 metrics belong in `file/profile/function-population`; binary method anatomy
@@ -1147,7 +1162,6 @@ Resolve each in the migration manifest before moving the affected rules.
 | Retained access | Choose a home for created accounts and authorized SSH keys, now in `persistence/login/{account,ssh}`. |
 | C2 `dns` and `trigger` | The target layout folds DNS control into `channel/<transport>` and admitted activation guards into `execution/trigger`; keep both leaves until a disposition is recorded. |
 | Cross-cutting discovery | Generate an algorithm/source/mechanism index from recorded facets, so an "AES" view finds both presence and operation rules. No engine change. |
-| RULES.md | Reconcile its blanket restriction on objective atomics with the evidence-based tier rule here. |
 
 ### Migration guardrails
 

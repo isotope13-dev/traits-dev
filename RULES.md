@@ -9,8 +9,8 @@
 **Tier hierarchy:**
 - `micro-behaviors/*` - Observable capabilities (what code can do)
 - `objectives/*` - Attacker objectives (intent signals)
-- `well-known/*` - Specific malware/tool signatures (family-unique only)
-- `metadata/*` - Informational file properties
+- `well-known/*` - Recognized malware, tool, app, library, dual-use, and game identities
+- `metadata/*` - Artifact structure, formats, declarations, provenance, and measurements
 
 [TAXONOMY.md](./TAXONOMY.md) is the authoritative placement contract. This
 guide defines rule syntax and authoring checks; a documented destination does
@@ -1658,6 +1658,8 @@ warning, not a hard limit; count neither the tier nor the filename. Sibling
 groups below 35 combined rules also produce soft warnings under the criteria in
 [Directory budgets and placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts)
 alongside the required sibling audit and the separate ML feature visibility limit.
+A directory with more than 150 immediate subdirectories is a hard validation
+error; split broad catalogs by a stable function with a clear tiebreaker.
 
 ### Forward compatibility (newer fields, older binaries)
 

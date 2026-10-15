@@ -48,7 +48,12 @@ taxonomy-check:
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/node-stream-pipe-placement/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/ptrace-name-table-retirement/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/kernel-header-catalog/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/b0-placement-baseline/cases.json --record taxonomy-migration/research/b0-placement-decision-index-2026-10-12/b0-placement-boundaries-2026-10-15/emitted-findings.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/pattern-rules-catalog/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/unicode-script-context/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/nostr-protocol-placement/cases.json --record taxonomy-migration/research/h1-nostr-protocol-placement-audit-2026-10-13/emitted-findings.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/aws-sdk-wheel-s3-context/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/wget-pipe-eval-semantics/cases.json --skip-traces
 	python3 testdata/taxonomy/embedded-python-exclusion/check.py --cleave "$(CLEAVE)"
 	python3 -m unittest discover -s scripts/tests -p 'test_taxonomy_batch_ledger.py'
 	python3 -m unittest discover -s scripts/tests -p 'test_taxonomy_review_signals.py'
@@ -137,7 +142,7 @@ taxonomy-check:
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/061-process-name-strings/061c-telnet-basename/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/061-process-name-strings/061b-target-name-audit/cases.json
 	python3 taxonomy-migration/batches/063-file-strings/check-path-context-cases.py --cleave "$(CLEAVE)" --traits-dir . --phase after
-	python3 taxonomy-migration/research/b101-suite-workspace/check-b064-current.py --cleave "$(CLEAVE)" --traits-dir .
+	python3 taxonomy-migration/research/b101-suite-workspace/check-b064-current-beta1.py --cleave "$(CLEAVE)" --traits-dir .
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/064-security-strings/follow-up-scanning/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/batches/066-account-strings/cases-after.json
 	python3 taxonomy-migration/batches/067-container-strings/check-candidate-cases.py --cleave "$(CLEAVE)" --traits-dir . --phase after
@@ -225,6 +230,7 @@ taxonomy-check:
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/permission-only-profiles/declared-authority/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/permission-only-profiles/target-scope-only/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/tiktok-bridge-candidate/cases-after.json --record taxonomy-migration/research/h4-placement-coverage/tiktok-bridge-candidate/emitted-after.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h4-placement-coverage/tiktok-content-network-authority/cases.json --record taxonomy-migration/research/h4-placement-coverage/tiktok-content-network-authority/emitted.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h3-current-reference-inventory/install-context-controls/cases.json
 	python3 taxonomy-migration/research/h3-root-setup-py-imports/check_cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/setup-py-socket-imports/cases.json
 	python3 taxonomy-migration/research/h3-root-setup-py-imports/check_cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/setup-py-ctypes-imports/cases.json --record taxonomy-migration/research/h3-root-setup-py-imports/ctypes-emitted-findings.json
@@ -233,9 +239,11 @@ taxonomy-check:
 	python3 taxonomy-migration/research/h3-root-setup-py-imports/check_cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/setup-py-network-pyperclip-imports/alternate-network-arms/cases.json --record taxonomy-migration/research/h3-root-setup-py-imports/network-pyperclip-alternate-emitted-findings.json
 	python3 testdata/supply-chain-guard-reference/check.py /tmp/traits-supply-chain-guard-reference
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/shellcode-loader-imports/cases.json --record taxonomy-migration/research/h3-root-setup-py-imports/shellcode-loader-findings.json
+	python3 testdata/taxonomy/shellcode-loader-imports/check-split-source.py --cleave "$(CLEAVE)"
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases taxonomy-migration/research/h3-elf-debuglink-runtime/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/setup-py-dropper-imports/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/python-requests-objective-boundary/cases.json
+	python3 testdata/taxonomy/embedded-python-direct-b64-exec/check.py --cleave "$(CLEAVE)"
 	uv run --with pyyaml python taxonomy-migration/research/h5-aes-query/test_queries.py
 
 # Compile the third-party + built-in YARA rules into portable per-filetype
