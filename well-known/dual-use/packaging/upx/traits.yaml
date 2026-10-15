@@ -1,0 +1,43 @@
+# UPX, the open-source executable compressor, identified by its i386 PE
+# decompressor rather than its section names. Some build pipelines blank or
+# rename UPX0/UPX1 (KX.exe, the hardware register utility HandheldCompanion
+# ships, has both names emptied), which hides the packer from the
+# metadata/binary/section/label::upx-section-pair layout check. The stub is
+# unchanged: PUSHAD, ESI loaded with the packed-section base, and EDI pointed
+# at the decompression target below it (LEA EDI, [ESI - size]). UPX is used by
+# legitimate vendors and malware alike, so this identifies the packer only; it
+# tempers rules that infer intent from packed layout alone and never silences
+# behavior evidence.
+defaults:
+  conf: 0.97
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+  size_min: 4096
+  size_max: 104857600
+
+traits:
+  - id: upx-x86-pe-entry-stub
+    desc: UPX i386 decompressor stub at entry
+    crit: notable
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule upx_x86_pe_entry_stub {
+          strings:
+            // pushad; mov esi, imm32; lea edi, [esi - disp32]
+            $stub = { 60 BE ?? ?? ?? ?? 8D BE ?? ?? ?? FF }
+          condition:
+            pe.machine == pe.MACHINE_I386 and $stub at pe.entry_point
+        }
+
+composite_rules:
+  # The UPX stub always starts in its writable packed section; together they
+  # are the canonical decompressor layout even when section names are blank.
+  - id: upx-entry-stub-packer-context
+    desc: UPX decompressor stub runs from a writable entry section
+    crit: exception
+    all:
+      - id: upx-x86-pe-entry-stub
+      - id: metadata/binary/section/header::pe-entry-in-writable-section
