@@ -1,0 +1,79 @@
+defaults:
+  platforms: [unix, windows]
+  for: [python]
+  attack: T1499.004
+
+traits:
+# A thread object constructed and started in one chained expression, so no
+# handle is kept and nothing can ever join it. Neutral on its own: one-shot
+# background workers are written this way. The loop and target legs below
+# decide whether the spawn replicates.
+- id: thread-chained-start-call
+  desc: Thread constructed and started in one call
+  crit: notable
+  conf: 0.9
+  if:
+    type: text
+    regex: 'Thread\(.{0,60}\)\.start\(\)'
+
+# A function that spawns threads of itself from inside an unbounded loop:
+# every child re-enters the same loop and spawns again, so the thread count
+# grows without bound until the machine stops accepting new ones. The spawn
+# may sit directly in the loop body or behind a try guarding the per-
+# iteration fallible work.
+- id: thread-spawn-targets-enclosing-function
+  desc: Thread spawn targets the enclosing function
+  crit: suspicious
+  conf: 0.95
+  if:
+    type: tree-sitter
+    query: |
+      (
+        (function_definition name: (identifier) @fn
+          body: (block
+            (while_statement
+              body: (block
+                (try_statement
+                  body: (block
+                    (expression_statement (call
+                      function: (attribute
+                        object: (call
+                          function: (attribute attribute: (identifier) @ctor)
+                          arguments: (argument_list
+                            (keyword_argument name: (identifier) @kw
+                              value: (identifier) @tgt)))
+                        attribute: (identifier) @start)))))))))
+        (#match? @ctor "^Thread$")
+        (#eq? @kw "target")
+        (#eq? @start "start")
+        (#eq? @fn @tgt)
+      )
+
+composite_rules:
+# The thread IS the loop body: an unbounded loop spawning a thread per
+# iteration with no handle kept. A thread-per-connection server keeps the
+# handle (to join) or blocks on accept; a chained Thread(...).start() near
+# the loop header can do neither.
+- id: tight-thread-spawn-loop
+  desc: Thread spawn is the whole loop body
+  crit: suspicious
+  conf: 0.93
+  all:
+    - id: micro-behaviors/data/control-flow/loop::python-while-true
+    - id: thread-chained-start-call
+  near_lines: 6
+
+# The tight thread-spawn loop whose target is the looping function itself.
+# The co-occurrence is the whole attack: unbounded iteration (nothing can
+# stop it), thread creation with no handle kept (nothing can join it), and
+# self-targeting (every child becomes another spawner). There is no
+# legitimate use: a program that wants many workers bounds the count, and a
+# program that wants one child does not aim the spawn at itself.
+- id: self-replicating-thread-bomb
+  desc: Unbounded loop spawns threads of itself
+  crit: hostile
+  conf: 0.97
+  all:
+    - id: tight-thread-spawn-loop
+    - id: thread-spawn-targets-enclosing-function
+    - id: micro-behaviors/process/create/thread::python-thread-create
