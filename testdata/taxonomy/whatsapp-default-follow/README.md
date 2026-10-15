@@ -16,7 +16,7 @@ AntiBan has one suspicious finding for zero-width content variation; its
 webhooks use caller-supplied destinations and credential snapshots stay local.
 GitHub's fetched behaviors bundle has no hostile or suspicious findings.
 
-`cases.json` records five positive and near-miss source controls. They verify
+`cases.json` records positive and near-miss source controls. They verify
 that caller configuration and a nearby example JID cannot convict a follow,
 while a literal follow target still matches. They also separate header names
 from event names, URL routes from imports, contact collections from numeric
@@ -41,3 +41,19 @@ The sole automation-directory consumer already requires a retained cleanup
 atom in that directory, so these moves do not alter its optional quorum.
 A scoped libsignal alias remains visible through existing dependency-source
 metadata; an alias plus Baileys identity does not establish a hostile swap.
+
+The `@nyzzpedia/baileys` 1.0.2/1.0.3 fork walks a hardcoded `NYZZ_CHANNELS`
+roster on session open, so the channel id never sits at the follow call site
+and the single-JID legs miss it. `connect-roster-newsletter-follow` requires
+the connection handler, the open branch, an embedded multi-JID roster and a
+follow invocation in one file.
+`roster-connect-follow-positive.js` covers that shape;
+`roster-connect-follow-nearmiss.js` runs the identical loop over a
+caller-supplied roster and matches neither the roster atom nor the hostile
+composite. The same fork's message builder substitutes a built-in
+annotation naming its channel into media sent without annotations;
+`media-annotation-hardcoded-channel-default` requires the annotation array,
+the caller-omission fallback and the embedded JID together.
+`media-annotation-default-positive.js` covers the swap, and
+`media-annotation-default-nearmiss.js` annotates its own channel posts
+unconditionally — the newsletter annotation alone stays neutral.
