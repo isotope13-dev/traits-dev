@@ -15,6 +15,13 @@ Fixtures for triaging two VirusShare HTML pages (October 2026):
   redirect). Must fire both atob-eval composites.
 - `atob-data-benign.html` decodes a small config string with no eval.
   None of the new traits may fire.
+- `prize-scam-funnel.html` models the fake-bank survey kit
+  ("Congratulations! ... 5000 Dollar", "Share with 5 groups/20
+  friends", `whatsapp://send` launcher). Must fire the congratulations
+  claim and funnel.
+- `legit-congrats-benign.html` is a graduation page (congratulations,
+  uncapped share, no cash, no deep link). None of the funnel traits may
+  fire.
 
 Run: `python3 testdata/triage-compromised-page-regression/check.py
 [--cleave-output.json]`. Fixtures are scanned as copies outside the repo
