@@ -36,3 +36,38 @@ traits:
       regex: '\bod\s+-'
     unless:
       - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-any
+
+  # Redirect sibling of the pipe transports: `printf %s ${b64} | base64 -d >
+  # /tmp/run.sh` or `echo ${b64} | base64 -d > /entrypoint.sh`. The decoder
+  # input must be an interpolation or variable -- a static blob here is a
+  # concealed payload, not transport -- and the output must stage a file
+  # rather than pipe onward into a shell. Deploy helpers that stage their own
+  # cleartext script (a scheduler command held in an env var past a length
+  # limit, a Dockerfile entrypoint carried past RUN quoting) match this; a
+  # dropper decoding a static blob does not.
+  - id: interpolated-base64-decode-to-file
+    desc: Interpolated Base64 decoded into a file
+    conf: 0.94
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '["'']?\$+\{?\w[\w$.]*\}?["'']?\s*\|\s*base64\s+(-[dD]|--decode).{0,30}>\s*\S+'
+
+composite_rules:
+  # The program encodes a runtime value it holds in clear text (the all-leg
+  # encoder), then decodes an interpolation of that value into the staged
+  # script it runs. The encoder and its use site can sit a screen apart (a
+  # task builder encodes the script where the env is assembled and emits the
+  # decode command where the task is defined), so the window is wider than
+  # the pipe-form round trips. A static blob staged and run still scores:
+  # nothing there encodes anything.
+  - id: redirect-base64-transport
+    desc: Runtime Base64 decoded into a file
+    crit: exception
+    conf: 0.95
+    for: [javascript, typescript]
+    near_bytes: 2048
+    all:
+      - id: micro-behaviors/data/encode/base64::tostring-base64
+    any:
+      - id: interpolated-base64-decode-to-file
