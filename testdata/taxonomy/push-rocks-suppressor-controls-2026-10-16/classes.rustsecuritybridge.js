@@ -1,0 +1,1 @@
+const attachmentNames = input.attachmentNames;

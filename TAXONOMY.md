@@ -251,6 +251,13 @@ A parent stays referenceable. A single child is fine if it adds meaning.
 | Sibling stems | Soft warning on shared stems. A shared stem is not synonymy (account identity ≠ process accounting); document the boundary or merge. |
 | Platforms | Soft warning at four or more. `platforms: [all]` only in `ALL_PLATFORM_DIRECTORY_ALLOWLIST` (same file). |
 
+`micro-behaviors/communications/http/url/path` has a reviewed budget of 101:
+the Stream Chat route literal and `/_api/<entity>` are distinct path
+observations. The latter is used only with Power Pages/Dataverse context in a
+composite; neither path fact establishes a request, SDK identity or endpoint
+operation. The exact budget is enforced in Cleave; the default review trigger
+remains 100.
+
 `platforms: [all]` is allowed only where a fact means the same on every OS:
 `metadata/package/description/disclosure`,
 `metadata/package/documentation/{claims,security-advisory,source}`,
@@ -396,6 +403,7 @@ processes to `process`.
 |---|---|
 | `communications/<protocol>/<operation>` | DNS, FTP, TFTP, SSH, TLS, WebSocket, RPC, gRPC, email, messaging, IRC, MCP, ICS protocols (`modbus`, `dnp3`, `s7`, `bacnet`, `ethernet-ip`, `opcua`, `profinet`). Children are operations (connect, authenticate, send, receive, serve, configure). A vendor, SDK or client library is not a protocol. |
 | `communications/http/{client,server}` | Method-unspecified client use; server-side handling. No `request` leaf duplicating `client`. |
+| `communications/http/url/path` | HTTP URL path references, including literal API routes such as `/_api/...` or `/api/v2/chat/`. A route reference alone establishes neither a request, SDK identity, nor endpoint operation. |
 | `communications/http/{get,post,put,patch,delete,head,options}` | A required method. |
 | `communications/http/{download,upload}` | A response saved as an artifact (ordered retries in `download/fallback`); a file or attachment sent. GET alone is `get` and POST alone `post`; neither is upload, exfiltration or execution. |
 | `communications/http/{header,cookies,auth,redirect,response,form}` | Classify a header by meaning: authentication → its auth leaf (`oauth` incl. device code, `token-auth`, `jwt`, `basic-auth`; `auth` when unknown), `user-agent`, `cookies`; otherwise `header`. A cookie-jar path is `fs/path/cookie`. |
@@ -818,12 +826,22 @@ identity goes with that subject.
 | `image` | `pixel`, `segment`, `trailing`: decoded-image measurements, segment totals, trailing layout | Whole-file byte entropy is `file/entropy`. A metric name proves no color channel or end marker. Rendering and capture are capabilities. |
 | `font`, `media` | *Reserved:* font table and container validity; cross-carrier byte coverage | Whitelisted; create with the first supported rule. |
 | `import` | `builtin`, `package`, `framework`; engine-emitted `<lang>/<module>` nodes | A dependency reference, not library identity or proof of use. `import base64` supports both directions, so it is an import fact, not `data/decode`. |
-| `lang` | `source`, `compiled`, `scripted`, `compiler`, `runtime`, `version`, `encoding` (*legacy: `encoded`*), `natural`, `locale`, `generated`, `upstream` | "Built with compiler X" is here; "this file *is* compiler X" is `well-known/`. Code transformation is `build`; runtime reflection is `metaprogramming`. |
+| `lang` | `source`, `compiled`, `scripted`, `compiler`, `runtime`, `version`, `encoding` (*legacy: `encoded`*), `natural`, `locale`, `generated`, `upstream` | "Built with compiler X" is here; "this file *is* compiler X" is `well-known/`. Code transformation is `build`; runtime reflection is `metaprogramming`. Engine-emitted `metadata/lang/embedded::<language>` marks detected source inside a containing file; it does not say that source ran. |
 | `package` | A manifest field or package role (below) | Properties of the distributed component, not its runtime behavior. |
 | `permission` | Declared authority by protected surface (`host`, `clipboard`, `storage`, `network`, …); grant scope and manifest-level profiles combining declared authority or target scope | A hostname without grant context is not a permission; a grant or target profile does not prove API use, injection, interception or theft. Invoking an API is a capability. |
 | `registry` | Package-registry publication records: release history, reach, custody, listing claims | Not the Windows registry (`micro-behaviors/os/registry`). Reputation is not a verdict. |
 | `signed` | `certificate`, `entitlements`, `platform`, `script`, `trust-level` | A signer name is neither product identity nor proof of a valid chain. |
 | `vendor` | OS or platform vendor provenance (Apple, Microsoft, NetBSD, GNU) | Certificate fields are `signed`; manifest vendor fields are `package`; third-party products are `well-known/`. |
+
+Raw signed-entitlement keys are emitted as runtime facts under
+`metadata/entitlement/<category>::<key>`. The rules in
+`metadata/signed/entitlements` interpret those facts into named properties;
+the raw entitlement IDs are engine output, not duplicate YAML declarations.
+
+`metadata/file/format/console-font` holds console-font format signatures and
+fragment-manifest structure. A matched header prefix alone does not establish
+whole-file validity. The reserved `metadata/font` home is for font-table or
+cross-carrier properties, not a duplicate format identity.
 
 **`metadata/file/profile` holds static, file-scoped measurements and
 relationships.** A profile must state one stable, testable claim, the relation

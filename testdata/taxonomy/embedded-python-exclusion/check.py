@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pin the embedded-Python exclusion on direct-base64-exec with test-rules."""
+"""Check string-only Python text against live direct-base64-exec calls."""
 import argparse
 import json
 import os
@@ -64,17 +64,6 @@ def main() -> None:
             else:
                 assert not_matched and not matched, output
 
-            marker = cases["embedded_python_marker"]
-            suppressed_by = case["suppressed_by"]
-            if suppressed_by:
-                expected = (
-                    "Skipped by 'unless' condition: Trait { id: "
-                    f'"{suppressed_by}" }} [matched: {suppressed_by}]'
-                )
-                assert expected in output, output
-                assert marker == suppressed_by
-            else:
-                assert marker not in output, output
             print(f"PASS {case['file']}: direct-base64-exec {case['direct_base64_exec']}")
 
 

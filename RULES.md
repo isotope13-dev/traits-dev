@@ -90,9 +90,12 @@ See [Matcher Defines Identity](TAXONOMY.md#matcher-defines-identity) in TAXONOMY
   `metadata/file/string` and `metadata/file/literal` are closed to new rules;
   place capability, intent and identity evidence in their respective homes.
   If a fragment supports only a consumer's context, record a placement hold
-  until its supported representation is resolved. Current Cleave source and
-  its source-matched release-profile build reject new IDs in both namespaces;
-  exact existing IDs remain temporarily grandfathered. By default,
+  until its supported representation is resolved. The recorded Cleave source
+  revision and its source-matched release-profile build rejected new IDs in
+  both namespaces; exact existing IDs were grandfathered during migration.
+  This is evidence for that recorded revision, not a claim about the current
+  sibling checkout or binary. The evidence record pins the tested source and
+  build hashes. By default,
   `make validate` selects `../cleave/target/release/cleave` whenever that file
   exists, even if stale. Rebuild it from current source or pass a source-matched
   binary explicitly with `make validate CLEAVE=<path-to-source-matched-cleave>`;

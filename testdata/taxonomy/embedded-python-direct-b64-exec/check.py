@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Trace the embedded-Python exclusion and retained direct-call control."""
+"""Trace direct decode/exec with and without code-shaped string content."""
 import argparse
 import json
 import os
@@ -24,7 +24,7 @@ def run_case(cleave: str, cases: dict, case: dict, temp_root: Path) -> str:
         "yara,radare2,upx",
         "test-rules",
         "--rules",
-        cases["rule"],
+        ",".join((cases["rule"], cases["composite"])),
         str(target),
     ]
     result = subprocess.run(
@@ -56,49 +56,42 @@ def main() -> None:
         for case in cases["fixtures"]:
             outputs[case["file"]] = run_case(cleave, cases, case, temp_root)
 
-    suppressed_case, retained_case = cases["fixtures"]
-    suppressed_output = outputs[suppressed_case["file"]]
-    retained_output = outputs[retained_case["file"]]
+    embedded_case, plain_case = cases["fixtures"]
+    embedded_output = outputs[embedded_case["file"]]
+    plain_output = outputs[plain_case["file"]]
     rule = cases["rule"]
-    marker = cases["embedded_python_marker"]
 
-    # Both fixtures carry the exact same active decode/exec source line. The
-    # retained trace proves that line satisfies the rule's AST matcher; the
-    # paired trace proves the embedded-language finding suppresses it.
-    assert suppressed_case["direct_base64_exec"] == "suppressed"
-    assert retained_case["direct_base64_exec"] == "retained"
+    # Both fixtures carry the same active decode/exec source line. A separate
+    # embedded-code string must not suppress the active AST call.
+    assert embedded_case["direct_base64_exec"] == "matched"
+    assert plain_case["direct_base64_exec"] == "matched"
     assert cases["decode_exec_line"] in Path(__file__).with_name(
-        suppressed_case["file"]
+        embedded_case["file"]
     ).read_text()
     assert cases["decode_exec_line"] in Path(__file__).with_name(
-        retained_case["file"]
+        plain_case["file"]
     ).read_text()
 
-    assert f"NOT MATCHED {rule} (trait)" in suppressed_output, suppressed_output
-    assert not any(
-        line.startswith(f"MATCHED {rule} (trait)")
-        for line in suppressed_output.splitlines()
-    ), suppressed_output
-    expected_skip = (
-        "Skipped by 'unless' condition: Trait { id: "
-        f'"{marker}" }} [matched: {marker}]'
-    )
-    assert expected_skip in suppressed_output, suppressed_output
-
-    assert f"MATCHED {rule} (trait)" in retained_output, retained_output
+    assert f"MATCHED {rule} (trait)" in embedded_output, embedded_output
     assert not any(
         line.startswith(f"NOT MATCHED {rule} (trait)")
-        for line in retained_output.splitlines()
-    ), retained_output
-    assert "Found 1 matching AST node(s)" in retained_output, retained_output
-    assert cases["decode_exec_line"] in retained_output, retained_output
-    assert marker not in retained_output, retained_output
+        for line in embedded_output.splitlines()
+    ), embedded_output
+    assert "Found 1 matching AST node(s)" in embedded_output, embedded_output
+    assert cases["decode_exec_line"] in embedded_output, embedded_output
+    assert f"MATCHED {cases['composite']} (composite)" in embedded_output, embedded_output
+    assert f"MATCHED {rule} (trait)" in plain_output, plain_output
+    assert not any(
+        line.startswith(f"NOT MATCHED {rule} (trait)")
+        for line in plain_output.splitlines()
+    ), plain_output
+    assert f"MATCHED {cases['composite']} (composite)" in plain_output, plain_output
 
     print(
-        f"PASS {suppressed_case['file']}: {rule} suppressed by matched {marker}"
+        f"PASS {embedded_case['file']}: active {rule} remains matched with embedded-code text"
     )
     print(
-        f"PASS {retained_case['file']}: {rule} matched the same direct decode/exec call"
+        f"PASS {plain_case['file']}: {rule} matched the direct decode/exec call"
     )
 
 
