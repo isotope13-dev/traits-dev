@@ -2,10 +2,11 @@
 
 Regression coverage for the toga-ai vendor-telemetry calibration: an
 installer that writes global agent settings with full-content OTel export
-keeps the base content-telemetry-write flag, but the stronger
-hardcoded-credential claim stays silent on the recognized vendor installer
-(both harness identity markers present) while still firing on the same
-behavior without vendor identity. The bearer token in the fixtures is a
+plus a hardcoded collector credential fires both the base
+content-telemetry-write flag and the stronger hardcoded-credential claim,
+regardless of whose package name, bootstrap comment, repository URL or
+collector hostname the bundle carries. Bundle identity text is
+publish-credential-controlled, so it never exempts the plant. The bearer token in the fixtures is a
 synthetic same-shape placeholder, not a live credential.
 """
 import argparse
