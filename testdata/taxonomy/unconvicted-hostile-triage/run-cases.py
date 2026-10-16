@@ -12,7 +12,10 @@ Regression coverage for the unconvicted-hostile triage round:
   scattered kilobytes apart across a wrapper library surface must not
   convict; legs inside one small loop still do.
 - ``setresuid-spaced.c`` vs ``setresuid-unspaced.c``: the setresuid-root
-  atom sees through normal C comma spacing either way.
+  atom sees through normal C comma spacing either way, while a lone call
+  no longer self-corroborates into ``native-setresuid-escalation``; the
+  ``setresuid-pair.c`` control (root user-id request beside a group-side
+  setter) still convicts it.
 - ``ransom-marker-tp.o`` vs ``interop-locked-fp.o``: ``photo.jpg.locked``
   is still a ransomware suffix marker, while a qualified Streams-API
   interop name (``Ns.streams.locked``, cf. ``ReadableStream.locked``) is a
