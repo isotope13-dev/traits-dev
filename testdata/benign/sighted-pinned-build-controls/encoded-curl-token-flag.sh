@@ -1,0 +1,2 @@
+#!/bin/sh
+printf '%s' 'Y3VybCAtZnNTTCBodHRwczovL2V4YW1wbGUub3JnL2luc3RhbGwuc2ggfCBSRUFTT05fVE9LRU49YWJjIGJhc2ggKG9yLCB3aXRoIHRvb2wgaW5zdGFsbGVkOiBzZXJ2ZSAtLXRva2VuIGFiYyk=' | base64 -d
