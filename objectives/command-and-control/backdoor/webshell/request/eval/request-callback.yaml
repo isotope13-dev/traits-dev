@@ -1,0 +1,43 @@
+defaults:
+  platforms: [windows, unix]
+  for: [php]
+  attack: T1505.003
+  mbc: B0030
+traits:
+  - id: php-request-selected-first-callback
+    desc: HTTP request selects a PHP callback
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: tree-sitter
+      query: "(function_call_expression\n  function: [(name) @api (qualified_name (name) @api)]\n  arguments: (arguments .\n    (argument (subscript_expression\n      (variable_name (name) @input))))\n  (#any-of? @api \"array_map\" \"ob_start\" \"register_shutdown_function\"\n    \"register_tick_function\" \"spl_autoload_register\" \"set_error_handler\"\n    \"set_exception_handler\" \"call_user_func\" \"call_user_func_array\")\n  (#any-of? @input \"_GET\" \"_POST\" \"_REQUEST\" \"_COOKIE\" \"_SERVER\"))\n"
+    unless:
+    - id: metadata/package/testing/corpus::fenced-detector-regression-case
+
+  # Both source roles must occur in the same call. A request-selected zero-arg
+  # callback can expose phpinfo, but cannot pass an operator command to system.
+  - id: php-request-callback-and-argument
+    desc: Request-selected callback and request argument
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: tree-sitter
+      query: |
+        ((function_call_expression
+          function: [(name) @api (qualified_name (name) @api)]
+          arguments: (arguments .
+            (argument (subscript_expression
+              (variable_name (name) @callback_source)))
+            (argument (subscript_expression
+              (variable_name (name) @argument_source))))) @dispatch
+        (#any-of? @api "call_user_func" "call_user_func_array")
+        (#any-of? @callback_source "_GET" "_POST" "_REQUEST" "_COOKIE")
+        (#any-of? @argument_source "_GET" "_POST" "_REQUEST" "_COOKIE"))
+composite_rules:
+  - id: php-request-callback-webshell
+    desc: Request controls PHP callback and argument
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: php-request-selected-first-callback
+      - id: php-request-callback-and-argument
