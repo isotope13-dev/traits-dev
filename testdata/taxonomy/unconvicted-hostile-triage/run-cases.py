@@ -34,6 +34,13 @@ Regression coverage for the unconvicted-hostile triage round:
 - ``mcp-updater-detached.js`` vs ``mcp-backdoor-detached.js``: an
   obfuscated tokenized detached launch beside an update check is the
   self-updater exception; the same shape without it still convicts.
+- ``consent-env-upload.py`` vs ``steal-env-upload.py``: a CLI that refuses
+  to run unless the operator exports credential env vars is delegated
+  consent; a silent env-secret POST without it still convicts.
+- ``system-cleanup.sh`` vs ``random-maintenance.sh``: log truncation
+  beside package-cache cleaning is system maintenance, not
+  anti-forensics; the same truncation without maintenance context still
+  reads as indicator removal.
 """
 import argparse
 import json
