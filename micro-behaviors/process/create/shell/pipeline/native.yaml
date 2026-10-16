@@ -5,14 +5,36 @@ traits:
   for:
   - elf
   id: native-download-shell-pipeline-reference
-  desc: Native binary embeds a download-to-shell command
+  desc: Native embeds shell-download command fragments
   crit: notable
   conf: 0.98
   if:
-    type: text
-    # Require whitespace before arguments so embedded guardrail regexes
-    # such as `curl_bash_execution(curl|wget)\s+...` do not look like commands.
-    regex: '(?i)(wget|curl)\s+[^|\n]{1,120}\|\s*(\w+=\S+\s+){0,3}(ba|da)?sh\b'
-  not:
-  - regex: '(?i)\b(wget|curl)\s+\.\.\.\s*\|\s*(ba|da)?sh\b'
-  - regex: '(?i)\b(wget|curl)\s+[^|\n]{0,80}\b(example\.\w+|\w+\.(example|invalid))'
+    type: yara
+    source: |
+      import "elf"
+      rule native_download_shell_pipeline {
+        strings:
+          $full = /(wget|curl)\s+[^|\n]{1,120}\|\s*(\w+=\S+\s+){0,3}(ba|da)?sh\b/ nocase
+          $placeholder = /(wget|curl)\s+\.\.\.\s*\|\s*(ba|da)?sh\b/ nocase
+          $example = /(wget|curl)\s+[^|\n]{0,80}\b(example\.\w+|\w+\.(example|invalid))/ nocase
+          $prefix = "wget -q http://" ascii
+          $suffix = " -O-|sh" ascii
+          // Go's concatstrings builds one command from a string-slice array.
+          // Require a recovered implementation as well as both fragments.
+          $concat = "runtime.concatstrings" ascii
+        condition:
+          (for any i in (1..#full) : (
+            not (for any j in (1..#placeholder) : (
+              @placeholder[j] == @full[i]
+            )) and not (for any j in (1..#example) : (
+              @example[j] == @full[i]
+            ))
+          )) or (
+            $concat and
+            for any s in (0..elf.number_of_sections - 1) : (
+              elf.sections[s].name == ".rodata" and
+              $prefix in (elf.sections[s].offset..elf.sections[s].offset + elf.sections[s].size) and
+              $suffix in (elf.sections[s].offset..elf.sections[s].offset + elf.sections[s].size)
+            )
+          )
+      }

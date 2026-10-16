@@ -4,135 +4,22 @@ defaults:
   attack: T1027.002
   mbc: F0001.008
 
-traits:
-  - id: packheader-magic-xor0b
-    desc: UPX PackHeader magic XOR-masked with byte 0x0B
-    crit: notable
-    conf: 1.0
-    if:
-      type: hex
-      pattern: 5E 5B 53 2A 0E 0C 0E 0A
-      offset_range: [-64, null]
-
-  - id: upx-400-version
-    desc: UPX packer version 4.00
-    crit: notable
-    conf: 1.0
-    if:
-      type: value
-      path: binary.packer_version
-      exact: '4.00'
-
-  # Stock UPX 5.x rejects images packed with pre-4.x UPX ("corrupt b_info"):
-  # the block-header layout moved on. A modern static stub wearing a
-  # decade-old packer version frustrates standard unpackers exactly like a
-  # sabotaged header does.
-  - id: pre4-upx-packer-version
-    desc: Pre-4.x UPX packer version
-    crit: notable
-    conf: 0.99
-    if:
-      type: value
-      path: binary.packer_version
-      regex: '^[0-3]\.'
-
-  # A real trailing PackHeader starts with UPX! followed by a checksum and
-  # non-zero packer version/format fields. Zeroing the whole control prefix
-  # leaves the runtime stub usable but makes stock UPX reject the carrier.
-  - id: zeroed-packheader-control-prefix
-    desc: UPX header has zeroed control fields
-    crit: notable
-    conf: 0.99
-    if:
-      type: raw
-      regex: 'UPX!\x00{7}'
-      offset_range: [-64, -32]
-
-  # UPX's 36-byte PackHeader normally begins exactly 36 bytes before EOF.
-  # This body is internally valid for the 4.00 ARM format, but the leading
-  # magic can be replaced so the runtime stub still works while `upx -d`
-  # rejects the file. Match the stable format/method bytes and separately
-  # exclude the canonical magic rather than keying on one attacker's four
-  # replacement bytes.
-  - id: upx400-arm-packheader-body
-    desc: UPX 4.00 ARM PackHeader body
-    crit: notable
-    conf: 0.99
-    if:
-      type: hex
-      pattern: "?? ?? ?? ?? 0E 17 0E 0A"
-      offset_range: [-36, -28]
-
-  - id: upx400-amd64-packheader-body
-    desc: UPX 4.00 AMD64 PackHeader body
-    crit: notable
-    conf: 0.99
-    if:
-      type: hex
-      pattern: "?? ?? ?? ?? 0E 16 ?? ??"
-      offset_range: [-36, -28]
-
-  - id: upx-sf-net-url
-    desc: UPX project URL
-    crit: notable
-    conf: 0.99
-    if:
-      type: text
-      substr: 'http://upx.sf.net'
-
-  - id: trailing-packheader-magic
-    desc: Canonical trailing UPX PackHeader magic
-    crit: notable
-    conf: 1.0
-    if:
-      type: hex
-      pattern: 55 50 58 21
-      offset_range: [-36, -32]
-
-  # The canonical PackHeader at EOF-36 with its version byte intact. Stock
-  # UPX 4.x ends a packed ELF with a loader marker -- UPX! then zero bytes --
-  # eleven bytes *before* that header, so a zero-run matcher reading the tail
-  # window sees the marker and not the header. A file whose real header still
-  # carries a version has not had its control fields zeroed.
-  - id: intact-trailing-packheader
-    desc: Trailing UPX PackHeader with non-zero version
-    crit: notable
-    conf: 0.99
-    if:
-      type: raw
-      regex: 'UPX![\x01-\xff]'
-      # The whole five-byte match must fit: magic at EOF-36, version at -32.
-      offset_range: [-36, -31]
-
-  # p_info (immediately after l_info) carries the original image size; UPX
-  # normally writes p_filesize/p_blocksize non-zero for a packed ELF. All
-  # twelve bytes being zero explains why stock UPX rejects the image, but does
-  # not by itself distinguish deliberate anti-unpacking from file corruption.
-  - id: zeroed-pinfo-size-fields
-    desc: UPX ELF zeroes original-image size metadata
-    crit: notable
-    conf: 0.99
-    if:
-      type: hex
-      pattern: 55 50 58 21 ?? ?? ?? ?? 00 00 00 00 00 00 00 00 00 00 00 00
-      offset_range: [0, 4096]
-
 composite_rules:
   - id: xor0b-packheader-anti-unpack
     desc: ELF masks UPX 4.00 PackHeader magic to block unpacking
     crit: hostile
     conf: 0.99
     all:
-      - id: packheader-magic-xor0b
-      - id: upx-400-version
-      - id: objectives/anti-static/pack/detect::upx-packed-elf
+      - id: metadata/binary/layout/stub::packheader-magic-xor0b
+      - id: metadata/binary/provenance/build::upx-400-version
+      - id: metadata/binary/layout/stub::upx-packed-elf
 
   - id: zeroed-pinfo-anti-unpack
     desc: UPX ELF has zeroed original-image metadata
     crit: suspicious
     conf: 0.93
     all:
-      - id: zeroed-pinfo-size-fields
+      - id: metadata/binary/layout/stub::zeroed-pinfo-size-fields
       - id: objectives/anti-static/pack/detect::upx-magic-raw
       - id: metadata/binary/section/header::no-section-headers
     unless:
@@ -143,15 +30,15 @@ composite_rules:
     crit: hostile
     conf: 0.99
     all:
-      - id: zeroed-packheader-control-prefix
-      - id: objectives/anti-static/pack/detect::upx-banner
+      - id: metadata/binary/layout/stub::zeroed-packheader-control-prefix
+      - id: metadata/binary/provenance/build::upx-banner
     unless:
       # cybench "packed-away" ships the header-corrupted UPX artifact itself
       # as the challenge solution.
       - id: well-known/lib/ai/inspect-evals::eval-corpus-context
       # Stock UPX 4.x output: the zero run is the loader marker ahead of an
       # intact header (trufflehog's release binaries, among many).
-      - id: intact-trailing-packheader
+      - id: metadata/binary/layout/stub::intact-trailing-packheader
 
   # A fossil packer version on a modern stub-shaped carrier: statically
   # linked, sectionless, symbol-stripped, and high-entropy throughout.
@@ -163,23 +50,14 @@ composite_rules:
     crit: hostile
     conf: 0.95
     all:
-      - id: pre4-upx-packer-version
-      - id: objectives/anti-static/pack/detect::upx-packed-elf
+      - id: metadata/binary/provenance/build::pre4-upx-packer-version
+      - id: metadata/binary/layout/stub::upx-packed-elf
       - id: metadata/binary/section/header::elf32-zero-section-header-offset
       - id: metadata/binary/linking/dynamic::elf-needed-libs-zero
       - id: metadata/file/entropy::overall-entropy-78
       - id: metadata/binary/symbols/table::full-symbol-table-absent-or-empty
     unless:
-      - id: intact-trailing-packheader
-
-  - id: upx-provenance-indicator
-    desc: UPX provenance indicator
-    crit: component
-    conf: 0.99
-    any:
-      - id: objectives/anti-static/pack/detect::upx-banner
-      - id: upx-sf-net-url
-      - id: upx-400-version
+      - id: metadata/binary/layout/stub::intact-trailing-packheader
 
   - id: corrupted-upx400-packheader-magic
     desc: ELF corrupts UPX 4.00 PackHeader magic to block unpacking
@@ -187,12 +65,12 @@ composite_rules:
     conf: 0.99
     all:
       - id: metadata/binary/section/header::no-section-headers
-      - id: upx-provenance-indicator
+      - id: metadata/binary/provenance/build::upx-provenance-indicator
     any:
-      - id: upx400-arm-packheader-body
-      - id: upx400-amd64-packheader-body
+      - id: metadata/binary/layout/stub::upx400-arm-packheader-body
+      - id: metadata/binary/layout/stub::upx400-amd64-packheader-body
     unless:
-      - id: trailing-packheader-magic
+      - id: metadata/binary/layout/stub::trailing-packheader-magic
       - id: objectives/anti-static/pack/detect::upx-magic-raw
 
   # Stock UPX on ELF32 often strips the section table and leaves a trailing
@@ -203,7 +81,7 @@ composite_rules:
     crit: notable
     conf: 0.96
     all:
-      - id: trailing-packheader-magic
+      - id: metadata/binary/layout/stub::trailing-packheader-magic
       - id: metadata/binary/section/header::elf32-zero-section-header-offset
       - id: metadata/file/entropy::high-overall-entropy-70
     unless:
@@ -215,7 +93,7 @@ composite_rules:
     crit: notable
     conf: 0.95
     all:
-      - id: objectives/anti-static/pack/detect::upx-banner
+      - id: metadata/binary/provenance/build::upx-banner
       - id: "metadata/binary/linking/records::elf-dynamic-linker-metadata-absent"
       - id: metadata/binary/section/header::elf32-zero-section-header-offset
     unless:
