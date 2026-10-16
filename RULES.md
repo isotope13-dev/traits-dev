@@ -151,6 +151,12 @@ JavaScript imports use the `npm` ecosystem. Static YAML namespaces such as
 
 Some findings are emitted by cleave itself rather than loaded from YAML, for example package facts such as `supply-chain/install-hook/postinstall`. Treat these as built-in facts when triaging: they may appear in output like traits, but they cannot be suppressed with a YAML `unless:` on a local trait id unless the engine exposes a corresponding rule hook. Do not create duplicate YAML traits solely to shadow them. Instead, document the benign context in `metadata/` or adjust the consuming YAML composites that reference YAML install-hook traits; engine-level severity changes belong in cleave, not this taxonomy.
 
+A Base64-decoded ZIP emits the notable format observation
+`metadata/file/encoding::base64-decoded-zip`. Encoding and ZIP magic alone
+do not establish evasion; the decoded archive and its members still receive
+their normal analysis. Do not add a YAML shadow or a filename exclusion for
+an ordinary document or application asset carrying this format.
+
 ## Criticality Levels
 
 | Level | Use When |
