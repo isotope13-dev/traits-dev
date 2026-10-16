@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build three small Go controls and test the file-wide keygen exclusion."""
+"""Build Go symbol and embedded-JavaScript controls for key generation."""
 import argparse
 import json
 import os
@@ -60,7 +60,9 @@ def main() -> None:
                 "--traits-dir",
                 str(ROOT),
                 "--disable",
-                "yara,radare2,upx",
+                # Keep Rizin enabled: it supplies the ELF Go function symbols
+                # required by this type:symbol rule. YARA and UPX are unrelated.
+                "yara,upx",
                 "--format",
                 "json",
                 "analyze",

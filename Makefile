@@ -46,6 +46,7 @@ taxonomy-check:
 	python3 testdata/taxonomy/browser-import-candidate/run_cases.py --cleave "$(CLEAVE)"
 	python3 testdata/taxonomy/import-reference-precision/run_cases.py --cleave "$(CLEAVE)"
 	python3 testdata/taxonomy/embedded-shell-exclusion/check.py --cleave "$(CLEAVE)"
+	python3 testdata/taxonomy/go-keygen-embedded-js-exclusion/check.py --cleave "$(CLEAVE)"
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/axios-objective-boundary/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/python-requests-import-consumers-2026-10-16/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/python-requests-objective-boundary/cases.json

@@ -478,7 +478,7 @@ A keyed XOR cipher is `crypto/symmetric/xor`; XOR scrambling is
 | `data/encoding/<scheme>` | Direction-neutral scheme evidence (an embedded Base64 alphabet); asserts no operation. |
 | `data/{compress,decompress}/<algorithm>` | Directional compression; languages and libraries share the algorithm leaf. |
 | `data/codec` | Direct evidence for a codec interface or support spanning directions; keep a known scheme in the trait ID. A flat leaf may remain until a matcher-proven child axis fits every rule. Unknown scheme alone does not admit a child; never add an `unknown` or `other` bucket. Size alone does not justify a split. |
-| `data/compression` | Composite findings spanning codec schemes or compression directions; direct codec evidence stays in `data/codec`. |
+| `data/compression` | Composite findings that relate encoding/decoding to compression/decompression or span codec schemes or directions; direct codec evidence stays in `data/codec`. |
 | `data/{parse,serialize,format}/<format>` | Parsing input; object ↔ representation (JSON, YAML, protobuf, pickle; general record fields in `serialize/schema-object`, credential-shaped records in `serialize/schema-credential`); formatting (`format/string` for number text, `format/credentials` for token shapes). Format identity alone is metadata. |
 | `data/archive/{create,extract,list,modify}` | Code that manipulates archives. A rule binding a member to its extracted file is `extract`, though it also writes. |
 | `data/{string,buffer,collection,property}/<operation>` | Operations on strings, byte buffers, collections (DOM trees in `collection/dom`) and object members (`property/{access,assign,define,enumerate}`), classified by receiver and operation, not method name. |
