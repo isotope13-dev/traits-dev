@@ -1,0 +1,63 @@
+defaults:
+  platforms: [unix, windows]
+  for: [pickle]
+
+traits:
+  # Protocol 4/5 STACK_GLOBAL -> BINUNICODE -> TUPLE1 -> REDUCE.
+  # Require both operations inside the exact source string passed to exec,
+  # rather than correlating unrelated source strings elsewhere in the pickle.
+  - id: exec-string-shell-fetch-reduction
+    desc: Exec reduction embeds shell downloader source
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule pickle_exec_shell_downloader {
+          strings:
+            $exec = /\x8c\x08builtins\x94?\x8c\x04exec\x94?\x93\x94?X..../s
+            $exec_short = /\x8c\x08builtins\x94?\x8c\x04exec\x94?\x93\x94?\x8c./s
+            $shell = /os\.system\(\s*["']python[23]?\s+-c\s/
+            $fetch = /urllib\.request\.urlretrieve\(\s*["']https?:\/\//
+            $reduce = /\x94?\x85\x94?R/
+          condition:
+            (
+            for any i in (1..#exec): (
+              for any s in (1..#shell): (
+                @shell[s] >= @exec[i] + !exec[i] and
+                @shell[s] + !shell[s] <= @exec[i] + !exec[i] + uint32(@exec[i] + !exec[i] - 4)
+              ) and
+              for any f in (1..#fetch): (
+                @fetch[f] >= @exec[i] + !exec[i] and
+                @fetch[f] + !fetch[f] <= @exec[i] + !exec[i] + uint32(@exec[i] + !exec[i] - 4)
+              ) and
+              for any r in (1..#reduce): (
+                @reduce[r] == @exec[i] + !exec[i] + uint32(@exec[i] + !exec[i] - 4)
+              )
+            )
+            ) or (
+            for any i in (1..#exec_short): (
+              for any s in (1..#shell): (
+                @shell[s] >= @exec_short[i] + !exec_short[i] and
+                @shell[s] + !shell[s] <= @exec_short[i] + !exec_short[i] + uint8(@exec_short[i] + !exec_short[i] - 1)
+              ) and
+              for any f in (1..#fetch): (
+                @fetch[f] >= @exec_short[i] + !exec_short[i] and
+                @fetch[f] + !fetch[f] <= @exec_short[i] + !exec_short[i] + uint8(@exec_short[i] + !exec_short[i] - 1)
+              ) and
+              for any r in (1..#reduce): (
+                @reduce[r] == @exec_short[i] + !exec_short[i] + uint8(@exec_short[i] + !exec_short[i] - 1)
+              )
+            )
+            )
+        }
+
+composite_rules:
+  # Parser-confirmed callable identity corroborates the bounded bytecode chain.
+  - id: exec-shell-downloader
+    desc: Pickle exec reducer embeds shell downloader
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: exec-string-shell-fetch-reduction
+      - id: metadata/import/builtin::pickle-builtins-exec
