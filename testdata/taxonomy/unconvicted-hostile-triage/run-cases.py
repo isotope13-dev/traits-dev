@@ -20,6 +20,13 @@ Regression coverage for the unconvicted-hostile triage round:
   is still a ransomware suffix marker, while a qualified Streams-API
   interop name (``Ns.streams.locked``, cf. ``ReadableStream.locked``) is a
   dotted code identifier, not a renamed victim file.
+- ``store-execute-cmd.js`` vs ``c2-exec-postback.js``: a vetted data-store
+  write through ``execute(r.cmd)`` is the command pattern, not remote
+  tasking; the C2 composite (URL, shell-exec, output capture, postback)
+  still convicts a real execute-and-report shape.
+- ``rust-fetch-noexec/build.rs`` vs ``rust-fetch-spawn/build.rs``: an HTTP
+  fetch beside a ``python -c`` discovery query (``.output()``) is not
+  fetch-and-run; a fetch beside a ``.spawn()`` launch still is.
 """
 import argparse
 import json
