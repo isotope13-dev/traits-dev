@@ -106,6 +106,79 @@ traits:
           (#match? @tail "(?i)^(powershell(\\.exe)?\\s+(-NoProfile\\s+)?-(w|WindowStyle)\\s+hidden\\s+-(c|Command)\\s+(iwr|Invoke-WebRequest)\\s+)?https?://[A-Za-z0-9][A-Za-z0-9.-]*\\.[A-Za-z]{2,}(:[0-9]+)?/[-A-Za-z0-9_./%]*(\\s+-UseBasicParsing)?\\s*\\|\\s*(iex|Invoke-Expression)$")
           (#not-match? @tail "(?i)\\.localhost[:/]"))
 
+  # Mirror of terminal-hidden-powershell-eval-submit for the honest case: the
+  # submitted text goes to a terminal the user can see (show, never hide),
+  # so delivery is transparent rather than stealthy. The command itself is
+  # unrestricted: whatever it installs, the user watches it run.
+  - id: terminal-shown-text-submit
+    desc: Shown terminal receives submitted text
+    conf: 0.9
+    unless:
+      - type: tree-sitter
+        language: javascript
+        query: |
+          ([
+            (formal_parameters) @binding
+            (function_declaration name: (identifier) @binding)
+            (function_expression name: (identifier) @binding)
+            (generator_function_declaration name: (identifier) @binding)
+            (generator_function name: (identifier) @binding)
+            (class_declaration name: (identifier) @binding)
+            (assignment_expression left: (_) @binding)
+            (augmented_assignment_expression left: (_) @binding)
+            (arrow_function parameter: (identifier) @binding)
+            (catch_clause parameter: (_) @binding)
+            (for_in_statement left: (_) @binding)
+            (import_statement) @binding
+            (variable_declarator name: [(object_pattern) (array_pattern)] @binding)
+          ] (#match? @binding "\\b(vscode|require)\\b"))
+          (variable_declarator name: (identifier) @name value: (_) @value
+            (#eq? @name "vscode")
+            (#not-match? @value "^require\\s*\\(\\s*[\"']vscode[\"']\\s*\\)$"))
+          (variable_declarator name: (identifier) @name
+            (#eq? @name "require"))
+          (variable_declarator name: (identifier) @name !value
+            (#eq? @name "vscode"))
+          [(with_statement) @scope
+           (call_expression function: (identifier) @dynamic
+             (#match? @dynamic "^(eval|Function)$"))]
+    if:
+      type: tree-sitter
+      language: javascript
+      query: |
+        (statement_block
+          (lexical_declaration kind: "const"
+            . (variable_declarator name: (identifier) @terminal
+              value: (call_expression
+                function: (member_expression
+                  object: (member_expression object: (identifier) @api
+                    property: (property_identifier) @window)
+                  property: (property_identifier) @create)
+                arguments: [
+                  (arguments) @emptyargs
+                  (arguments . (string) @terminalname .)
+                  (arguments . (object
+                    . (pair key: (property_identifier) @option value: (string)) .) .)
+                ])) .)
+          . (comment)* . (expression_statement (call_expression
+            function: (member_expression object: (identifier) @shown
+              property: (property_identifier) @show)
+            arguments: (arguments) @showargs))
+          . (comment)* . (expression_statement (call_expression
+            function: (member_expression object: (identifier) @sender
+              property: (property_identifier) @send)
+            arguments: (arguments . (_) @cmd .)))
+          (#eq? @api "vscode")
+          (#eq? @window "window")
+          (#eq? @create "createTerminal")
+          (#match? @option "^name$")
+          (#match? @emptyargs "^\\(\\s*\\)$")
+          (#eq? @terminal @shown)
+          (#eq? @show "show")
+          (#match? @showargs "^\\(\\s*\\)$")
+          (#eq? @terminal @sender)
+          (#eq? @send "sendText"))
+
 composite_rules:
   - id: vscode-hidden-debug-fetch-runtime
     desc: VS Code debug runtime hides fetch-execute
