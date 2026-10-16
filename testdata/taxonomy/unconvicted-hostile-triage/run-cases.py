@@ -27,6 +27,13 @@ Regression coverage for the unconvicted-hostile triage round:
 - ``rust-fetch-noexec/build.rs`` vs ``rust-fetch-spawn/build.rs``: an HTTP
   fetch beside a ``python -c`` discovery query (``.output()``) is not
   fetch-and-run; a fetch beside a ``.spawn()`` launch still is.
+- ``jest-worker-cleanup.zip`` vs ``group-kill-untracked.sh``: an e2e
+  harness killing its pidfile-tracked worker group is cleanup (the zip
+  exercises the archive-member path, where shell-gated atoms evaluate);
+  an untracked ``kill -9 -${var}`` still fires.
+- ``mcp-updater-detached.js`` vs ``mcp-backdoor-detached.js``: an
+  obfuscated tokenized detached launch beside an update check is the
+  self-updater exception; the same shape without it still convicts.
 """
 import argparse
 import json
