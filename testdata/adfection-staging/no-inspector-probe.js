@@ -1,0 +1,92 @@
+      (async () => {
+        const webdriver = !!window.webdriver;
+        const [q1, q2] = await new Promise((resolve) => {
+          navigator.webkitTemporaryStorage.queryUsageAndQuota(function (_, quota) {
+            resolve([quota, performance.memory.jsHeapSizeLimit * 2]);
+          });
+        });
+        const aesKey = await crypto.subtle.generateKey(
+          { name: "AES-CBC", length: 256 },
+          true,
+          ["encrypt", "decrypt"]
+        );
+        const aesRawKey = await crypto.subtle.exportKey("raw", aesKey);
+        const base64AesKey = btoa(
+          String.fromCharCode.apply(null, new Uint8Array(aesRawKey))
+        );
+        const sendValues = { q1, q2, webdriver, stack };
+        const encryptionKey = new Uint8Array(
+          [...atob(`MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApi2k3p15wU1Nx5SpHNjB27vt2LAKhrJ
+/BUaF437uIbgA5cwPJla6qvx1ZjSvgqkdcJY6R6QJvZWmL9ovYzi+Vj2puAX+QWNCT1P4L4DBq8t0EanWmwgT0xcuXlyB9PGWOzOPb1JTNC7mgCiAXiNWrQJeNdqqaYkqVCits4R0Telljbj0Vgn3S
+/FA+WK0ree/b9m1Fj9JTNmPjt1Ydb1AvIdyZMJShzJYDhTHfDiHnkADjkoYwE+0adBYiSADwx5slA6IgoqVCfOI6Pixg9Uh6Nr7xQruUmthNPF8q2m1zbhqjDkoPoJM7T9WIUDmzZGcILA8AEQPmFEfVQWqsyJHvQIDAQAB
+`)].map((c) => c.charCodeAt(0))
+        );
+        const rsaPublicKey = await window.crypto.subtle.importKey(
+          "spki",
+          encryptionKey,
+          { name: "RSA-OAEP", hash: "SHA-256" },
+          false,
+          ["encrypt"]
+        );
+        const encrypt = async (type, message) => {
+          const encoder = new TextEncoder();
+          const encryptedAesKeyBuffer = await window.crypto.subtle.encrypt(
+            { name: "RSA-OAEP" },
+            rsaPublicKey,
+            encoder.encode(base64AesKey)
+          );
+          const encryptedAesKey = btoa(
+            String.fromCharCode(...new Uint8Array(encryptedAesKeyBuffer))
+          );
+          const iv = crypto.getRandomValues(new Uint8Array(16));
+          const encryptedMessageBuffer = await crypto.subtle.encrypt(
+            { name: "AES-CBC", iv },
+            aesKey,
+            encoder.encode(JSON.stringify(message))
+          );
+          const combined = new Uint8Array(
+            iv.length + encryptedMessageBuffer.byteLength
+          );
+          combined.set(iv, 0);
+          combined.set(new Uint8Array(encryptedMessageBuffer), iv.length);
+          const encryptedMessage = btoa(
+            String.fromCharCode(...combined)
+          );
+          return {
+            key: encryptedAesKey,
+            value: encryptedMessage,
+            type,
+          };
+        };
+        const socket = new WebSocket(
+          "wss://" + location.host + location.pathname + location.search
+        );
+        let now = new Date();
+        socket.addEventListener("open", async () => {
+          socket.send(JSON.stringify(await encrypt("values", sendValues)));
+          socket.send(
+            JSON.stringify({ type: "time", id: 1, time: new Date() - now })
+          );
+          now = new Date();
+        });
+
+        socket.addEventListener("message", async (event) => {
+          socket.send(
+            JSON.stringify({ type: "time", id: 2, time: new Date() - now })
+          );
+          const bin = Uint8Array.from(atob(event.data), (c) => c.charCodeAt(0));
+          const decrypted = await crypto.subtle.decrypt(
+            { name: "AES-CBC", iv: bin.slice(0, 16) },
+            aesKey,
+            bin.slice(16)
+          );
+          const func = new Function(
+            `return (${new TextDecoder().decode(decrypted)})`
+          )();
+          func(encrypt, socket);
+        });
+        socket.addEventListener("error", async () => {
+          socket.send(JSON.stringify(await encrypt("str", "SOCKET_ERR")));
+        });
+      })();
+    
