@@ -77,6 +77,8 @@ taxonomy-check:
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/wordpress-theme-upload-boundary/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/php-uploaded-copy-structure/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/java-stream-copy-precision/cases.json
+	python3 testdata/taxonomy/shell-option-command/check.py
+	python3 testdata/taxonomy/play-store-suppression/check.py
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/batch-variable-camouflage/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/truncate-zero-command-fragment/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/llm-extraction-exception-selector/cases.json
