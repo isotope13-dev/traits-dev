@@ -1,0 +1,60 @@
+# Building blocks of a resident INT 21h hook in a small COM image. Each is
+# written as YARA so the sequence is evaluated under the engine's size floor.
+defaults:
+  platforms: [windows, unix]
+  for: [dos_com, data]
+  size_max: 4096
+traits:
+  # AH=35h reads the current INT 21h vector, a few moves save it, and AH=25h
+  # installs a new handler, so every later DOS call reaches the new code.
+  - id: dos-int21-vector-get-then-set
+    desc: DOS saves, replaces INT 21h vector
+    crit: notable
+    conf: 0.9
+    if:
+      type: yara
+      source: |
+        rule dos_int21_vector_get_then_set {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $hook = { B8 21 35 CD 21 [0-16] BA ?? ?? B4 25 CD 21 }
+          condition:
+            $hook in (0..256)
+        }
+
+  # INT 27h ends the program and keeps the first DX bytes resident.
+  - id: dos-tsr-keep-int27
+    desc: DOS stays resident via INT 27h
+    crit: notable
+    conf: 0.9
+    if:
+      type: yara
+      source: |
+        rule dos_tsr_keep_int27 {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $keep = { BA ?? ?? CD 27 }
+          condition:
+            $keep in (0..256)
+        }
+
+  # XOR SI,SI / MOV DS,SI / LDS SI,[SI+4] load the INT 01h (single-step)
+  # handler address from the vector table; PUSH [SI] / MOV WORD [SI],imm16 /
+  # POP [SI] save, replace and restore the handler's first word.
+  - id: dos-int01-handler-first-word-patch
+    desc: DOS patches INT 01h handler first word
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: yara
+      source: |
+        rule dos_int01_handler_first_word_patch {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $patch = { 33 F6 8E DE C5 74 04 FF 34 C7 04 ?? ?? 8F 04 }
+          condition:
+            $patch in (0..512)
+        }
