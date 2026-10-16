@@ -53,6 +53,19 @@ with tempfile.TemporaryDirectory(prefix='pickle-controls-') as tmp:
                 header.size = len(data)
                 archive.addfile(header, io.BytesIO(data))
         cases[name] = (stream.getvalue(), ({RULE, MODEL} if is_payload else set()), ({RULE, MODEL} if not is_payload else set()))
+    # These bytes satisfied the removed raw-TAR co-occurrence signature,
+    # but none of these plain-text members is executable pickle bytecode.
+    stream = io.BytesIO()
+    with tarfile.open(fileobj=stream, mode='w') as archive:
+        for member, data in {
+            'notes.txt': b'builtins.exec is an unsafe deserializer callable',
+            'fetch.txt': b'urllib.request.urlretrieve',
+            'spawn.txt': b'subprocess.Popen',
+        }.items():
+            header = tarfile.TarInfo(member)
+            header.size = len(data)
+            archive.addfile(header, io.BytesIO(data))
+    cases['unrelated-text.tar'] = (stream.getvalue(), set(), {RULE, MODEL})
     trial = '''const t=localStorage.getItem("trial-start");
 if(t){if((new Date().getTime()-Date.parse(t))/864e5>3){setTimeout(showReminder,500)}}
 else{localStorage.setItem("trial-start",`${new Date()}`)}
@@ -74,7 +87,7 @@ else{localStorage.setItem("trial-start",`${new Date()}`)}
         ids = {t['id'] for f in report['files'] if Path(f['path']).name == name or f['path'].startswith(str(tmp/name) + '!') or f['path'].startswith(str(tmp/name) + '/') for t in f.get('traits', [])}
         assert expected <= ids, (name, 'missing', expected - ids, [(f['path'], [(t['id'], t['crit']) for t in f.get('traits', [])]) for f in report['files'] if f['path'].startswith(str(tmp/name))])
         assert not excluded & ids, (name, 'unexpected', excluded & ids)
-        if name in ['exec-only.pkl', 'source-data.pkl', 'no-network.pkl', 'ordinary.tar', 'unrelated-exec.pkl', 'exec-reference.pkl']:
+        if name in ['exec-only.pkl', 'source-data.pkl', 'no-network.pkl', 'ordinary.tar', 'unrelated-exec.pkl', 'exec-reference.pkl', 'unrelated-text.tar']:
             high = [t for f in report['files'] if f['path'].startswith(str(tmp/name)) for t in f.get('traits', []) if t['crit'] >= 4]
             assert not high, (name, high)
         print('PASS', name)

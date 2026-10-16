@@ -7,7 +7,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
-AUTH = "objectives/credential-access/capture/network::notification-popup-webdav-authentication"
+AUTH = "micro-behaviors/ui/window/notify::notification-popup-webdav-address"
 HIDE = "objectives/evasion/process/hidden/window::tiny-webdav-notification-popup"
 AUTH_SOURCE = AUTH + "-source"
 HIDE_SOURCE = HIDE + "-source"
@@ -64,5 +64,14 @@ while remaining.strip():
             if trait["id"] in {AUTH, HIDE, AUTH_SOURCE, HIDE_SOURCE}
         }
         assert observed == EXPECTED[name], (name, observed, EXPECTED[name])
+        if name.startswith("writer."):
+            high = [t for t in artifact.get("traits", []) if t["crit"] >= 4]
+            assert len(high) <= 1 and all(t["crit"] == 4 for t in high), (name, high)
+        for trait in artifact.get("traits", []):
+            if trait["id"] in {AUTH, AUTH_SOURCE}:
+                assert trait["crit"] == 3, (name, "configuration must be notable", trait)
+            assert not trait["id"].startswith(
+                "objectives/credential-access/capture/network::notification-popup-webdav-authentication"
+            ), (name, "configuration is not authentication capture", trait)
 assert seen == set(EXPECTED), ("Missing fixtures", set(EXPECTED) - seen)
 print(f"Passed {len(seen)} notification/WebDAV cases")

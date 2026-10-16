@@ -3,15 +3,16 @@ These fixtures exercise remote `file://host/DavWWWRoot/` and
 documented in [Investigating Ephemeral Supply Chain Tampering](https://cloud.google.com/blog/topics/threat-intelligence/investigating-ephemeral-supply-chain-tampering/).
 
 Run `python3 testdata/notification-webdav-controls/check.py` from the repository.
-The two suspicious findings describe distinct observations: WebDAV rendering
-that risks Windows authentication disclosure, and concealment of that rendering
-in a zero/one-pixel popup. Neither asserts successful credential theft.
+The notable notification finding describes a literal remote WebDAV Address
+in a popup record. It establishes neither rendering nor authentication capture.
+The separate suspicious finding records zero/one-pixel popup geometry, a plausible
+concealment configuration. Source emitters alone do not establish malicious intent.
 
 Positive cases change hostnames, paths, section numbers, field order, whitespace,
 line endings, source language and URL/UNC spelling (including `@SSL@443`).
 Controls reject HTTPS banners, local file URLs, loopback destinations, commented
 addresses, prose and non-popup sections. Ordinary visible
-WebDAV popups retain only the authentication-risk finding. Geometry in another
+WebDAV popups retain only the notable configuration finding. Geometry in another
 section or another popup cannot supply the concealment finding.
 
 The matchers inspect raw bytes because the text extractor omits short INI lines.
@@ -29,3 +30,8 @@ Each observation has one matcher definition shared by disjoint file-type scopes
 via a YAML anchor. The added source traits cover C#, Go, Ruby and JavaScript;
 the original traits retain text, Python, PowerShell and C++ coverage. This keeps
 each inline YARA trait within the four-file-type admission limit.
+
+The configuration trait moved from credential capture to ui/window/notify;
+its matcher and file scopes are preserved. No YAML consumers referenced its
+old IDs. Writer controls must have no hostile and at most one suspicious
+finding; geometry and endpoint controls retain their previous match sets.
