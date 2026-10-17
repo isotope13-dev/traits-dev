@@ -6,6 +6,7 @@ import marshal
 from pathlib import Path
 import py_compile
 import shutil
+import struct
 import subprocess
 import tempfile
 
@@ -23,6 +24,11 @@ def main():
               for name in ["file-path", "local-path", "server-path", "executed", "last-access", "command"]}
     factory = "micro-behaviors/os/com/class-factory::dll-get-activation-factory-export"
     retired = "well-known/app/infrastructure/windows-text-input-formatter::timf-dll-get-activation-factory"
+    retired_ids = {entry["id"] for entry in json.loads((here / "retired-ids.json").read_text())["retired"]}
+    section_labels = {
+        "metadata/binary/section/label::high-section-name-entropy",
+        "metadata/binary/section/label::multiple-nonstandard-section-names",
+    }
     fixtures = {
         "json-loads": ("import json\nvalue = json.loads(payload)\n", {loads}),
         "json-dumps": ("import json\nvalue = json.dumps(payload)\n", {dumps}),
@@ -57,6 +63,28 @@ def main():
         for name, matches in [("winrt.pe", {factory}), ("reference-only.pe", set())]:
             shutil.copyfile(here / name, root / name)
             expected[name] = matches
+        # Preserve the valid native export fixture while giving its section
+        # table OpenCV's conventional IPP/MSVC names. Empty trailing sections
+        # need no payload. The two label measurements must remain observable
+        # without the retired inference that the names were generated.
+        binary = bytearray((here / "winrt.pe").read_bytes())
+        pe = struct.unpack_from("<I", binary, 0x3c)[0]
+        original_count = struct.unpack_from("<H", binary, pe + 6)[0]
+        optional_size = struct.unpack_from("<H", binary, pe + 20)[0]
+        table = pe + 24 + optional_size
+        first_data = min(struct.unpack_from("<I", binary, table + i * 40 + 20)[0]
+                         for i in range(original_count))
+        names = [".text", "IPPCODE", ".rdata", ".data", ".pdata", ".tls", "IPPDATA",
+                 ".gfids", "_RDATA", ".rsrc", ".reloc"]
+        assert table + len(names) * 40 <= first_data
+        for i, name in enumerate(names):
+            offset = table + i * 40
+            if i >= original_count:
+                binary[offset:offset + 40] = bytes(40)
+            binary[offset:offset + 8] = name.encode().ljust(8, b"\0")
+        struct.pack_into("<H", binary, pe + 6, len(names))
+        (root / "ipp-section-names.pe").write_bytes(binary)
+        expected["ipp-section-names.pe"] = {factory} | section_labels
         result = subprocess.run(
             [args.cleave, "--traits-dir", str(repo), "--format", "json", "analyze", str(root)],
             text=True, capture_output=True, check=True,
@@ -71,7 +99,7 @@ def main():
                 name = Path(file["path"]).name
                 if name in expected:
                     ids = {trait["id"] for trait in file.get("traits", [])}
-                    observed = ids & ({loads, dumps, codec, factory, retired} | fields)
+                    observed = ids & ({loads, dumps, codec, factory, retired} | fields | retired_ids | section_labels)
                     assert observed == expected[name], (name, observed, expected[name])
                     assert not any(i.startswith("well-known/app/infrastructure/windows-text-input-formatter::")
                                    for i in ids), (name, "unrelated component identity")
