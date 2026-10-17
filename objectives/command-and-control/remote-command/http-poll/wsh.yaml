@@ -1,0 +1,57 @@
+defaults:
+  platforms: [windows]
+  for: [javascript]
+  attack: T1071.001,T1059.007
+
+traits:
+  - id: event-paced-http-response-eval-loop
+    desc: Event-paced loop evaluates HTTP responses
+    crit: suspicious
+    conf: 0.99
+    # Bind the HTTP receiver and the evaluated value, including array slots.
+    # Different clients or eval operands must not satisfy the command channel.
+    if:
+      type: tree-sitter
+      language: javascript
+      query: |
+        ((while_statement
+          condition: (parenthesized_expression (true))
+          body: (statement_block
+            (expression_statement (call_expression
+              function: (member_expression property: (property_identifier) @wait)))
+            (expression_statement (call_expression
+              function: (member_expression object: (identifier) @client
+                property: (property_identifier) @open)
+              arguments: (arguments
+                (string (string_fragment) @method)
+                (string (string_fragment) @url) (false))))
+            (expression_statement (call_expression
+              function: (member_expression object: (identifier) @sender
+                property: (property_identifier) @send)))
+            (expression_statement (assignment_expression
+              left: (_) @task
+              right: (member_expression object: (identifier) @receiver
+                property: (property_identifier) @body)))
+            (expression_statement (call_expression
+              function: (identifier) @eval
+              arguments: (arguments (_) @executed))))) @poll
+          (#eq? @wait "NextEvent")
+          (#eq? @open "open")
+          (#eq? @method "POST")
+          (#match? @url "^https?://")
+          (#eq? @send "send")
+          (#eq? @body "responseText")
+          (#eq? @eval "eval")
+          (#eq? @client @sender)
+          (#eq? @client @receiver)
+          (#eq? @task @executed))
+
+composite_rules:
+  - id: wsh-timed-http-response-eval-loop
+    desc: WSH timed HTTP command-evaluation loop
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: event-paced-http-response-eval-loop
+      - id: micro-behaviors/communications/http/client/winhttp::winhttp-request-com
+      - id: micro-behaviors/os/com/invoke::getobject-wmi-call
