@@ -1,6 +1,9 @@
 defaults:
   platforms: [windows]
-  for: [python, batch, powershell, pe]
+  # pyc: PyInstaller bundles carry the script as bytecode members, and the
+  # netsh strings survive only there; the PE container's compressed overlay
+  # hides them from a plain text scan.
+  for: [python, batch, powershell, pe, pyc]
   attack: T1555
 traits:
   - id: netsh-wlan-show-profiles
@@ -8,8 +11,10 @@ traits:
     crit: notable
     conf: 0.88
     if:
+      # No trailing boundary: bytecode members append one marshal type byte
+      # to each extracted run, so 'profiles' can be followed by a letter.
       type: text
-      regex: 'netsh\s+wlan\s+show\s+profiles?\b'
+      regex: 'netsh\s+wlan\s+show\s+profiles?'
   - id: netsh-wlan-key-clear
     desc: Netsh Wi-Fi key extraction
     crit: notable
@@ -28,15 +33,18 @@ traits:
     desc: Python requests plaintext Wi-Fi keys
     crit: notable
     conf: 0.94
-    for: [python]
+    for: [python, pyc]
     if:
+      # The quote-adjacent form dominates in source; bundled bytecode builds
+      # the argument as a separate '" key=clear"' fragment whose trailing
+      # marshal byte merges into the run, so no closing boundary is required.
       type: text
-      regex: '["'']key\s*=\s*clear["'']'
+      regex: '[''"]\s*key\s*=\s*clear'
   - id: python-wifi-password-parse
     desc: Python parses Wi-Fi password output
     crit: notable
     conf: 0.94
-    for: [python]
+    for: [python, pyc]
     if:
       type: text
       regex: '\bpassword_match\s*=\s*re\.search\s*\('
@@ -95,6 +103,20 @@ composite_rules:
       - id: netsh-wlan-key-content-parse
       - id: netsh-wlan-show-profiles
       - id: micro-behaviors/process/create/shell-subprocess::shell-true
+  # Bytecode carrier: PyInstaller-style bundles assemble the netsh command
+  # from separate string fragments (profile-name template, '" key=clear"',
+  # 'Key Content'), so the single-string command regex never fires. The
+  # fragments together are the same inventory-plus-plaintext-key request.
+  - id: python-bytecode-netsh-wifi-key-extraction
+    desc: Bundled Python bytecode extracts Wi-Fi keys via netsh
+    crit: notable
+    conf: 0.95
+    for: [pyc]
+    all:
+      - id: python-netsh-key-clear-argument
+    any:
+      - id: netsh-wlan-show-profiles
+      - id: netsh-wlan-key-content-parse
   # A compiled binary that enumerates saved profiles and parses the "Key
   # Content" line of `netsh wlan show profile ... key=clear` output is
   # harvesting Wi-Fi passphrases: inventory tooling lists profiles but never
