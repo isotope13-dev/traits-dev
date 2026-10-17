@@ -1,0 +1,67 @@
+# The x64 call setup requests FileDispositionInformation (13) with a one-byte
+# TRUE buffer. SEC_IMAGE creation, deletion and entry-point redirection
+# diagnostics, and imported thread-context activation APIs distinguish a
+# ghosted executable image from ordinary temporary-file cleanup.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86-64]
+  attack: T1055
+traits:
+  - id: delete-pending-executable-section
+    desc: Delete-pending executable section setup
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule delete_pending_executable_section {
+          strings:
+            $dispose = {
+              C6 84 24 ?? ?? ?? ?? 01
+              41 B9 01 00 00 00 C7 44 24 20 0D 00 00 00
+              4C 8D 84 24 ?? ?? ?? ?? 48 8B C8
+              48 8D 54 24 ?? [0-8] FF 15 ?? ?? ?? ??
+            }
+            $image = { C7 44 24 28 00 00 00 01 }
+            $deleted = "File marked for deletion" ascii
+          condition:
+            pe.is_64bit() and all of them and
+            pe.imports("ntdll.dll", "NtSetInformationFile") and
+            pe.imports("ntdll.dll", "NtWriteFile") and
+            pe.imports("ntdll.dll", "NtCreateSection") and
+            pe.imports("ntdll.dll", "NtMapViewOfSection") and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              $dispose in (pe.sections[s].raw_data_offset ..
+                pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size) and
+              $image in (pe.sections[s].raw_data_offset ..
+                pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size) and
+              for any d in (1..#dispose) : (
+                @dispose[d] >= pe.sections[s].raw_data_offset and
+                @dispose[d]+!dispose[d] <= pe.sections[s].raw_data_offset +
+                  pe.sections[s].raw_data_size and
+                uint32(@dispose[d]+3) == uint32(@dispose[d]+26) and
+                for any i in (0..pe.number_of_imports-1) : (
+                  for any f in (0..pe.import_details[i].number_of_functions-1) : (
+                    pe.import_details[i].functions[f].name == "NtSetInformationFile" and
+                    pe.sections[s].virtual_address + @dispose[d] -
+                      pe.sections[s].raw_data_offset + !dispose[d] +
+                      int32(@dispose[d]+!dispose[d]-4) ==
+                      pe.import_details[i].functions[f].rva
+                  )
+                )
+              )
+            )
+        }
+composite_rules:
+  - id: delete-pending-image-context-redirection
+    desc: Ghosted image with thread redirection
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: delete-pending-executable-section
+      - id: micro-behaviors/process/inject/runtime/call::entrypoint-redirection-diagnostic
+      - id: micro-behaviors/process/info/thread::set-thread-context-import
+      - id: micro-behaviors/process/info/thread::resume-thread-import

