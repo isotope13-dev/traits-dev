@@ -1,0 +1,2 @@
+#define ISOLATION_AWARE_INLINE inline
+ISOLATION_AWARE_INLINE FARPROC IsolationAwarePrivatenCv ResolveSdkApi(LPCSTR name);
