@@ -1,0 +1,2 @@
+# KMS migration help, base64-embedded in the CLI bundle.
+HELP_BLOB = "Q29tcGxldGlvbiBjb3ZlcnMgdGhlIGFjdGl2ZSBkYXRhYmFzZS4gSXQgZG9lcyBub3QgcmUtZW5jcnlwdCByZXRhaW5lZCBiYWNrdXBzLCByZXZva2UgU1NIIGFjY2Vzcywgb3IgYXV0aG9yaXplIG9sZC1rZXkgZGVsZXRpb24uIEtlZXAgaGlzdG9yaWNhbCBrZXlzIGFjY2Vzc2libGUu"
