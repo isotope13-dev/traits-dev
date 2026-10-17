@@ -238,13 +238,16 @@ classifier field), and test the exact suppression it performs.
 
 ### Structure and limits
 
-**Rules live only in leaves.** A directory holds YAML or subdirectories, never
-both, for traits, composites and aliases alike; mixed nodes grew duplicate homes.
-A parent stays referenceable. A single child is fine if it adds meaning.
+**Rules live only in leaves.** A directory may contain rules or rule-bearing
+descendants, never both; this applies equally to traits, composites and aliases.
+Mixed nodes create duplicate homes. Parents remain referenceable; a single child
+is fine if it adds meaning. This is repository policy, not a check currently
+enforced by general Cleave validation; run `python3 scripts/taxonomy-map.py` to
+report mixed rule/descendant directories for review.
 
-| Check (`make validate`) | Limit |
+| Validator check | Limit |
 |---|---|
-| Rules per directory | **100** traits plus composites is the review trigger, summed over its YAML files and criticalities. A higher leaf budget requires a reviewed, exact-path entry in Cleave and evidence that its rules are accurate, at the right level, and nonduplicative; filenames create no budgets. |
+| Rules per directory | **100** traits plus composites is the default validator budget and review trigger, summed over its YAML files and criticalities. A higher leaf budget requires a reviewed, exact-path entry in Cleave and evidence that its rules are accurate, at the right level, and nonduplicative; filenames create no budgets. |
 | Subdirectories | Hard error above 150 immediate subdirectories. Split broad catalogs by a stable function with a tiebreaker. |
 | Depth | Soft warning beyond five levels below the tier (`objectives/a/b/c/d/e/f/x.yaml` warns). Soft warnings fail `make validate`; `cleave validate --soft` only reports them. |
 | Sparse siblings | Soft warning when, below level 1 of a behavioral tier, two or more child subtrees hold fewer than 35 rules together — unless the exact partition is in `REVIEWED_SPARSE_TAXONOMY_PARTITIONS` (`cleave/src/capabilities/validation/taxonomy.rs`). |
@@ -848,7 +851,9 @@ relationships.** A profile must state one stable, testable claim, the relation
 among its evidence, and its file scope. It needs benign controls and near
 misses. It does not establish runtime behavior, malware or product identity,
 intent, or benign purpose. Same-file co-occurrence alone is not a profile, and
-this directory is not a fallback for evidence without a defensible claim.
+this directory is not a fallback for evidence without a defensible claim. This
+contract is reviewed through rule review and focused fixtures; general Cleave
+validation does not establish that a profile's semantics are sound.
 
 **Archive boundaries follow the observed property.** Member names and member
 table observations belong in `file/archive`, even when the name is a hash,

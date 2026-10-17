@@ -1,1 +1,1 @@
-const warning = "delete all files";
+const warning = "delete all your files";

@@ -50,6 +50,7 @@ taxonomy-check:
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/axios-objective-boundary/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/python-requests-import-consumers-2026-10-16/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/python-requests-objective-boundary/cases.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/javascript-private-key-environment-variable/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/node-stream-pipe-placement/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/ptrace-name-table-retirement/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/kernel-header-catalog/cases.json
@@ -62,6 +63,9 @@ taxonomy-check:
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/provenance-core-suppressor/cases.json
 	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/vultisig-suppressor/cases.json
 	python3 scripts/check-retired-trait-ids.py --manifest testdata/taxonomy/yubico-identity-retirement/retired-ids.json
+	python3 scripts/check-retired-trait-ids.py --manifest testdata/taxonomy/js-local-fileserver-retirement/retired-ids.json
+	python3 scripts/check-retired-trait-ids.py --manifest taxonomy-migration/batches/301-elex-lpadv-profiles/retired-ids.json
+	python3 scripts/check-taxonomy-cases.py --cleave "$(CLEAVE)" --cases testdata/taxonomy/elex-lpadv-profile-controls/cases.json
 	python3 testdata/taxonomy/scapy-outer-suppressor/check.py --cleave "$(CLEAVE)"
 	python3 testdata/taxonomy/libpcap-source-tree-suppressor/check.py --cleave "$(CLEAVE)" --quiet
 	python3 testdata/taxonomy/opamp-exception-suppressor/run.py --cleave "$(CLEAVE)"
@@ -78,6 +82,7 @@ taxonomy-check:
 	python3 testdata/taxonomy/embedded-python-exclusion/check.py --cleave "$(CLEAVE)"
 	python3 -m unittest discover -s scripts/tests -p 'test_taxonomy_batch_ledger.py'
 	python3 -m unittest discover -s scripts/tests -p 'test_taxonomy_review_signals.py'
+	uv run --with pyyaml python -m unittest discover -s scripts/tests -p 'test_taxonomy_map.py'
 	python3 -m unittest discover -s scripts/tests -p 'test_retired_trait_ids.py'
 	python3 scripts/check-taxonomy-batch-ledger.py taxonomy-migration/batches/277-shell-profile-retirement/branch-preservation-ledger.json --source-inventory taxonomy-migration/batches/277-shell-profile-retirement/source-inventory --destination-inventory taxonomy-migration/batches/277-shell-profile-retirement/destination-inventory
 	uv run --with pyyaml python scripts/test-taxonomy-move.py

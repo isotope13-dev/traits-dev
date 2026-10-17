@@ -85,7 +85,14 @@ See [Matcher Defines Identity](TAXONOMY.md#matcher-defines-identity) in TAXONOMY
 
 ## Trait Placement & IDs
 
-- **Rules belong only in leaf directories.** This applies equally to atomic traits, composites, and aliases: a directory containing rules must not also have rule-bearing descendants. Parent directories define categories and can be referenced to select descendant rules; they do not hold umbrella rules. Before splitting a leaf, assign every existing rule one defensible destination. See [directory budgets and placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
+- **Rules belong only in leaf directories.** This applies equally to atomic
+  traits, composites, and aliases: a directory containing rules must not also
+  have rule-bearing descendants. Parent directories define categories and can
+  be referenced to select descendant rules; they do not hold umbrella rules.
+  This is placement policy; general Cleave validation does not enforce it, so
+  use the taxonomy map to find mixed rule/descendant directories for review.
+  Before splitting a leaf, assign every existing rule one defensible
+  destination. See [directory budgets and placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
 - **Content belongs with its supported claim.** Strings are not file metadata.
   `metadata/file/string` and `metadata/file/literal` are closed to new rules;
   place capability, intent and identity evidence in their respective homes.
@@ -101,15 +108,17 @@ See [Matcher Defines Identity](TAXONOMY.md#matcher-defines-identity) in TAXONOMY
   binary explicitly with `make validate CLEAVE=<path-to-source-matched-cleave>`;
   the tested command and binary hashes are in the
   [validator enforcement record](taxonomy-migration/research/document-authority/literal-validator-enforcement.md).
-- **A file profile is not a co-occurrence bucket.** A retained
-  `metadata/file/profile` rule must make one stated, non-behavioral artifact
+- **A file profile is not a co-occurrence bucket.** This is a review and
+  focused-fixture contract, not a general semantic check performed by
+  `cleave validate`. A retained `metadata/file/profile` rule must make one
+  stated, non-behavioral artifact
   claim, define the relation and scope of its evidence, and have benign controls
   and near misses. Put each fact in its specific subject home; same-file
   co-occurrence alone does not justify a profile. See the
   [directory placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
-- **100 rules is the directory review trigger across all its YAML files, not an
-  automatic split point.** First check that every rule is accurate, at the
-  right level, and nonduplicative. A larger leaf needs an exact-path reviewed
+- **100 rules is the default validator budget and directory review trigger
+  across all its YAML files, not an automatic split point.** First check that
+  every rule is accurate, at the right level, and nonduplicative. A larger leaf needs an exact-path reviewed
   budget enforced by Cleave; do not raise a global limit or split by language,
   backend, or rule form. Define each child's boundary and a home for the
   broadest observation before splitting; do not add an `other` bucket. Follow
