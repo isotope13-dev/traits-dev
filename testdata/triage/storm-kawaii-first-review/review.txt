@@ -1,0 +1,150 @@
+First reasoned review, 2026-10-17
+
+Verdicts (SHA-256 prefixes):
+36ea1050141c  MALICIOUS  StormAttack service-DLL/Active Setup injector
+7333e03ae65c  MALICIOUS  Same StormAttack injector, alternate PE header/layout
+147f86fb3903  MALICIOUS  Kawaii-Unicorn multi-payload/infected PE container
+
+Method and limits
+-----------------
+Ran atomscan and cleave facts separately for all three original paths. Used
+Rizin disassembly, pefile section/header inspection, dnfile/dncil IL decoding,
+and independent byte reconstruction. Samples were never executed. The three
+provided Triage report pages were inaccessible; their scores and collector
+filenames were not used as proof. This review does not attribute the bundle
+to the long list of families in its filename.
+
+36ea1050141c and 7333e03ae65c
+--------------------------
+Both contain the same x86 .text implementation. In the overlapping original
+file bytes only 254 bytes differ: DOS stub, section raw sizes, and part of the
+IAT. The embedded payload begins at 0x5060 in both.
+
+The entry stub calls 0x401cb0. Its mode branches call the following routines:
+* 0x402460: FindResourceA/SizeofResource/LoadResource/LockResource -> allocated
+  buffer -> 0x4023c0 -> CreateFileA/WriteFile. The installer passes resource
+  type DLL and ID 101, constructing a System32/StormServer.dll destination.
+* 0x401260: builds an expandable SystemRoot/System32 DLL path, opens
+  HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters, deletes
+  ServiceDLL, and writes the replacement REG_EXPAND_SZ with RegSetValueExA.
+* 0x401150: selects a child image (calc, notepad, IE fallbacks), CreateProcessA,
+  VirtualAllocEx, WriteProcessMemory of the DLL path, resolves LoadLibraryA
+  through GetModuleHandleA/GetProcAddress, and passes the result as the
+  CreateRemoteThread entry with the remote path as its argument.
+* 0x401900: obtains its module path and a GUID, creates an Active Setup
+  Installed Components subkey, writes StubPath, reads/patches its own image
+  with CRT I/O, writes a copy, and calls CreateProcessA on that path.
+* 0x401390: GetModuleFileNameA -> GetShortPathNameA -> COMSPEC lookup; builds
+  /c del <own-short-path> > nul and starts the shell, then resumes/closes it.
+
+The loaded configuration selects mode 3 (Active Setup), with the service/DLL
+injection branches also present. Family-specific Storm server/welcome banners
+and the embedded STORM command format corroborate StormAttack identity.
+The retained four hostile findings cover injection-linked service hijacking,
+Active Setup, shell self-deletion, and family identity. No Remcos/WannaCry
+behavior was inferred from the filenames.
+
+These are damaged specimens: their embedded DLL has no import directory or
+executable section and its entry at RVA 0x741a resolves into zero bytes.
+The IAT contains bound/resolved legacy addresses. Thus static attack code is
+verified, but successful deployment/injection of these exact copies is not.
+The existing descriptions already say code/profile rather than observed
+successful execution, and no target-specific exceptions were added.
+
+147f86fb3903
+------------
+The outer PE identifies itself in resources as Kawaii-Unicorn (UEFI). Its
+VB6 entry at 0x4013d4 passes the VB5 header to the runtime. Native form code
+around 0x42a0d0 reads the current App.Path/EXEName image into a byte array,
+randomizes a byte index/value (rtcRandomize/Rnd and conversion/modulo calls),
+stores AL through the array data pointer at 0x42a553, writes a replica through
+__vbaPutOwner3, launches it with rtcShell, and has cmd rename/.die cleanup. The
+existing polymorphic replication and family detections are supported; byte
+mutation is not evidence of encryption or victim-document destruction.
+The .data raw pointer is malformed (0xf002c000), and .text is writable without
+an executable section flag. These properties do not identify an extra family.
+
+Embedded Action.dll at 0x7501c:
+Plugin.Run -> Packet.Read -> LEB128.Read -> command-string switch. Task handlers
+include firewall off via hidden cmd /c, Task Manager restrictions via registry
+writes, Defender WMI ExclusionPath additions, Run/Userinit and logon tasks,
+restore-point enumeration and SRRemoveRestorePoint, and process-critical
+controls. BSOD.Run checks administrative membership, calls RtlAdjustPrivilege
+with privilege 19, Enable=true, CurrentThread=false, then NtRaiseHardError with
+response option 6. This is a deliberately fatal-error operation, not an API
+name alone. The Command Prompt handler writes DisableCMD under Policies\Explorer,
+so the old blanket claim that both tools are disabled was unwarranted.
+
+Embedded javaws.exe at 0x26eecf:
+Its entry at RVA 0x1430c leads to an altered x64 loader, stack-constructs
+VirtualAlloc, allocates 0x61be bytes with MEM_COMMIT|MEM_RESERVE and PAGE_EXECUTE_READWRITE,
+copies 0x4615 bytes from RVA 0xfde9, and decodes the first 0x3fe0 bytes backwards.
+The key starts at r9d=0x15c13, adds r10d=0x92819200 and rotates left one bit per
+byte. Independent decoding recovers the Azov Kasimir mutex, ProgramData and
+rdpclient paths plus API tables. The decoded code validates MZ, PE, AMD64 and
+PE32+ headers at offsets 0x1ccc..0x1d66 and contains file read/write, traversal,
+loader-copy and executable-memory routines. This independently corroborates
+the existing Azov encrypted file-infector fingerprint; the Oracle host name
+alone establishes neither benignness nor a malicious family. Removed the
+unrelated B0024 single-instance mapping from that static loader signature.
+
+Managed ColorGenerator at 0x2e0acf:
+MyApplication -> Form21.InitializeComponent -> FHHF06. FHHF00/FHHF02 reconstruct
+31744 bytes from a .cctor string: replace X->4, |->-, *->-00, }->0, split, and
+Convert.ToByte(base 16). FHHF06 uses Type.InvokeMember(Load, InvokeMethod) on
+System.Reflection.Assembly; NASDNNNSN chooses a type and GetMethod(AddContext).
+FHHF07 invokes it with resource/key/assembly arguments.
+
+The recovered assembly is a card-game-shaped DLL with an added AOCMS loader.
+AOCMS.AddContext waits 25.5 seconds, obtains a resource bitmap from the original
+entry assembly, calls III14 to collect R/G/B bytes in column-major order,
+XORs with a repeated ASCII key and the final-byte-derived mask, reads a four-byte
+length prefix, GZip-decompresses, Assembly.Loads and invokes EntryPoint.
+Thus the hidden second assembly really uses RGB steganography; the visible
+ColorGenerator pixel/color UI methods do not themselves perform that extraction.
+
+Resource jRcwPZY is a 523x523 RGBA PNG inside serialized Bitmap data. Independent
+PNG parsing finds broken IDAT CRCs, malformed later chunk boundaries and a zlib
+error. A native PE occurs within that corrupted resource span. No managed
+CreateProcess or temporary-directory call exists in the visible IL: those API
+strings belong to embedded native data. The old native-temp-dropper finding
+asserted an unproven data flow and was removed. The damaged PNG prevented full
+recovery of the final managed stage; no final-stage family claim is made.
+Other embedded members include a silent SFX with a configured mining batch,
+a Petite-packed image, and additional native images. Mining pool/wallet options
+alone do not establish unauthorized cryptojacking or executable renaming.
+
+Trait placement and detection changes
+------------------------------------
+* Namespace/function measurements moved to metadata/binary/{symbols/compiler,
+  code/complexity}, with neutral names and notable severity. Signing/version
+  data no longer changes the meaning of those measurements.
+* RGB/GetObject API co-occurrence moved to micro-behaviors/ui/graphics/image as
+  a neutral reference profile. The byte-array profile now requires three getter
+  results stored into a byte array, rather than RGB names or a generic CIL call
+  sequence. The superseded, otherwise-unused generic component was removed.
+* Old bitmap activation composites reference the corrected byte-array profile;
+  the two raw bitmap/reflection-only composites now require it too. The visible
+  hex wrapper no longer receives five invented bitmap/native-stage conclusions.
+* Added substituted-hex executable concealment and assembly-activation coverage
+  under anti-static/encoding/custom and execution/payload/module-load.
+* Plain TaskMgr/CMD policy/API co-occurrence and ntdll hard-error references
+  moved to their neutral registry/syscall homes. Added task-plugin and explicit
+  shutdown-privilege/fatal-error coverage in remote-command/tasking and impact.
+* Pool/wallet option atoms and their composite moved to process/argument/option;
+  the pair is notable and says nothing about renaming or unauthorized mining.
+* Updated exact consumers and focused fixture expectations. Parent selectors
+  now see the neutral observations; no new directory partition was introduced.
+  No dependent-package exception, file hash gate or collector-name gate was used.
+
+Focused checks
+--------------
+RGB synthetic PE fixtures: API-only negative, getter/array positive, missing
+array-store negative. PicoScope profiler/imaging context controls preserved.
+Actual decoded AOCMS assembly matches the stronger RGB byte-array profile.
+Managed wrapper controls remove encoded MZ or InvokeMember independently.
+Plugin controls remove a task verb or change only the fatal response option;
+API-name evidence remains present in the latter negative control. Arbitrary
+fixture filenames verify that identity is not gated on collection names.
+The new activation, tasking and crash rules have precision 7.5, 9.4 and 8.9,
+respectively; those scores supplement the execution-path evidence above.

@@ -9,9 +9,9 @@ bitmap-stego composites therefore fire on vendor protection and
 oscilloscope imaging, not hostile behavior; `picoscope-suite-context`
 (PicoScope7 build-farm path fragment) suppresses them.
 
-Controls: the profiler-check positive and the pixel-channel positive (no
-Pico markers) must report their hostile/suspicious; the same images with
-the PicoScope7 marker must report neither.
+Controls: profiler checks retain their suspicious classification. RGB API
+names report a neutral profile and never establish byte harvesting; the
+PicoScope context continues to suppress that redundant imaging profile.
 """
 import json
 import os
@@ -23,10 +23,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PROFILER = ('objectives/anti-analysis/debugger-detect/combined-checks::'
             'dotnet-profiler-anti-debug')
-RED_CHANNEL = ('objectives/anti-static/obfuscation/steganography/image::'
-               'dotnet-red-channel-byte-collection')
-DECOMPOSITION = ('objectives/anti-static/obfuscation/steganography/image::'
-                 'dotnet-pixel-channel-decomposition')
+RED_CHANNEL = ('micro-behaviors/ui/graphics/image::'
+               'dotnet-rgb-byte-array-profile')
+DECOMPOSITION = ('micro-behaviors/ui/graphics/image::'
+                 'dotnet-pixel-rgb-resource-api-profile')
 
 PROFILER_IMPORTS = [
     ('KERNEL32.dll', 'GetProcAddress'),
@@ -175,7 +175,7 @@ def main():
     stego = dest / 'pixel-channel-positive.exe'
     stego.write_bytes(build_pe(DOTNET_IMPORTS, STEGO_STRINGS))
     ids = scan(stego)
-    assert RED_CHANNEL in ids, 'pixel channel pattern must report'
+    assert RED_CHANNEL not in ids, 'API names alone must not prove byte harvesting'
     assert DECOMPOSITION in ids, 'channel decomposition must report'
     print('PASS pixel-channel-positive.exe', flush=True)
 
