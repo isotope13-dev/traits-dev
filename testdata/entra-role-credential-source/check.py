@@ -6,7 +6,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 ROLE = "micro-behaviors/os/security/auth/rbac::entra-global-admin-role-grant"
-CHAIN = "objectives/persistence/login/oauth::entra-privileged-role-credential-add"
+CHAIN = "micro-behaviors/os/security/auth/rbac::entra-role-grant-credential-add-references"
 POST = "micro-behaviors/os/security/auth/rbac::graph-directory-role-post-call"
 ROLE_ID = "micro-behaviors/os/security/auth/rbac::entra-global-admin-role-id"
 
@@ -14,7 +14,7 @@ cases = {}
 for name in ("role-and-secrets.go", "role-and-secrets.cs", "service-principal-secrets.cs"):
     cases[f"testdata/entra-role-credential-source/{name}"] = ({ROLE, CHAIN, POST}, set())
 for extension in ("py", "js", "ps1"):
-    cases[f"testdata/hostile/entra-role-and-secrets.{extension}"] = ({ROLE, CHAIN}, set())
+    cases[f"testdata/benign/entra-role-and-secrets.{extension}"] = ({ROLE, CHAIN}, set())
 for name in (
     "entra-role-read-and-rotation.cs", "entra-role-source-documentation.cs",
     "entra-role-read-and-secret-rotation.py", "entra-role-documentation.py",
