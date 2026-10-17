@@ -1,25 +1,9 @@
 #!/usr/bin/env python3
-"""Single-vendor security inventory is not an AV kill list.
+"""Security-product names with supervision APIs do not establish killing.
 
-Run `python3 testdata/security-audit-inventory/check.py
-<scratch-directory>`. Fixtures are minimal PE32 files built at runtime (no
-committed binaries) and copied outside testdata so file-path testing
-suppressors cannot mask the findings under test.
-
-Both fixtures import the same supervision APIs (OpenProcess,
-TerminateProcess, Toolhelp snapshot/first/next): the shape every process
-supervisor shares. They differ only in vendor-name breadth:
-
-`kill-list-positive.exe` names two vendors' security processes
-(MsMpEng.exe, CSFalconService.exe). It must report the
-av-product-killer hostile and the security-process-name-survey
-suspicious trait.
-
-`audit-inventory-negative.exe` names only Defender (MsMpEng.exe) plus
-wireshark/procmon inventory strings and a TeamViewer_Service.exe
-reference, the defensive-audit shape. It must report neither hostile nor
-survey; the sandbox suspicious trait (analysis-tool inventory) and the
-teamviewer-service-name notable still surface.
+Build minimal PE32 inventory controls outside testdata, then verify that
+neither vendor breadth nor OpenProcess/TerminateProcess imports convict.
+The multi-vendor case retains the neutral API co-occurrence and survey.
 """
 import json
 import os
@@ -33,15 +17,16 @@ scratch = Path(sys.argv[1])
 scratch.mkdir(parents=True, exist_ok=True)
 root = Path(__file__).resolve().parents[2]
 
-KILLER = ('objectives/impact/degrade/edr/targeting::av-product-killer', 5)
+CAPABILITY = ('micro-behaviors/process/terminate/kill::'
+              'security-name-table-with-termination-apis', 3)
 SURVEY = ('objectives/discovery/host/security::'
           'security-process-name-survey', 4)
 SANDBOX = ('objectives/anti-analysis/sandbox-detect/tool-references::'
            'sandbox', 4)
 TVNAME = ('micro-behaviors/os/service/name::teamviewer-service-name', 3)
-watched = {KILLER, SURVEY, SANDBOX, TVNAME}
+watched = {CAPABILITY, SURVEY, SANDBOX, TVNAME}
 expected = {
-    'kill-list-positive.exe': {KILLER, SURVEY},
+    'multi-vendor-inventory.exe': {CAPABILITY, SURVEY},
     'audit-inventory-negative.exe': {SANDBOX, TVNAME},
 }
 
@@ -109,7 +94,7 @@ def build_pe(path, extra_strings):
 
 
 fixtures = {
-    'kill-list-positive.exe': POSITIVE_STRS,
+    'multi-vendor-inventory.exe': POSITIVE_STRS,
     'audit-inventory-negative.exe': NEGATIVE_STRS,
 }
 for fixture, strings in fixtures.items():
@@ -123,8 +108,11 @@ for fixture, strings in fixtures.items():
     )
     report = json.loads(result.stdout)
     found = set()
+    hostile = set()
     for entry in report['files']:
+        hostile |= {t['id'] for t in entry['traits'] if t['crit'] == 5}
         found |= {(t['id'], t['crit']) for t in entry['traits']
                   if (t['id'], t['crit']) in watched}
+    assert not hostile, (fixture, sorted(hostile))
     assert found == expected[fixture], (fixture, sorted(found))
     print(f'{fixture}: passed')
