@@ -1,0 +1,54 @@
+Sample: 0d93035673c3f2ddbad70057bf479b24195a2073fa5e9d9a9af95202bc895429
+Verdict: hostile Linux x86-64 MeshAgent deployer.
+
+Analysis used cleave facts and rizin disassembly, without executing the sample
+or fetching its remote payloads. Addresses below are virtual addresses in the
+submitted ELF. The complete executable LOAD segment survives, although the file
+ends at 65536 bytes and its section-header table extends beyond EOF. This alone
+does not establish deliberate anti-analysis. The installed engine's built-in
+anti-analysis/malformed/elf-header finding is a pre-existing classification
+limitation; the new hostile rules do not consume it.
+
+Main starts at 0x401030 (rizin includes it inside fcn.00401010).
+0x4010aa-0x4011b9 downloads an encrypted ZIP using wget and extracts it with
+unzip -o -P into /tmp. It deletes the ZIP and chmods the agent 0755.
+0x4012xx-0x40134e fetches YouTube commentThreads JSON and passes it to the
+parser at 0x401ef0. That parser searches quoted textOriginal values and calls
+0x401d90 to extract a domain candidate. The extractor scans hostname characters
+and requires domain punctuation and alphabetic content; it is not command eval.
+If no domain is recovered, 0x401368 calls the Google Drive fallback at 0x402000,
+which downloads a text file, trims whitespace, and copies the address into the
+same output buffer. The downloaded intermediate files are unlinked.
+0x401569-0x401571 passes meshagent.msh and that domain buffer to 0x402220.
+0x402220 replaces PUT_DOMAIN_HERE in the configuration and writes it back.
+0x4017b8-0x401880 double-forks, calls setsid, changes to /tmp, redirects output
+to meshagent.log, and executes stdbuf -oL with the agent executable as argument.
+0x402430 polls the agent PID and reads its log for Connected. for up to 30s.
+0x40170b-0x40175c unlinks the connected agent's executable, configuration,
+database, log and IPC artifact while keeping the agent process running.
+0x401761-0x4017b3 checks its liveness every 30s and redeploys after death.
+Failed deployments back off from 60s to 600s. Subsequent deployment cycles
+pkill existing instances and replace the agent.
+
+0x4019d0 obtains the hostname, constructs JSON containing pcName, eventType,
+and message, and double-forks wget --post-data to an HTTPS Cloud Run endpoint.
+This is deployment telemetry. It is not evidence of credential theft.
+Other user-defined helpers cover synchronous fork/exec/wait, file reading,
+domain extraction, configuration replacement, and failure cleanup; the rest of
+the recovered native functions are predominantly statically linked musl.
+
+YouTube comments are a C2 address rendezvous, rather than a demonstrated
+command channel. MeshAgent handles subsequent remote control. The remote ZIP
+and live server behavior were not inspected.
+
+New coverage separates YouTube resolution, Drive resolution, deletion of a
+live agent's files, and detached execution of the concealed agent. Findings
+describe static co-occurrence rather than claiming engine-proven value flow.
+Neither original video/Drive IDs, API key, password, endpoint hostname, sample
+hash, size, nor staged basename is required. Diagnostic wording remains one
+coverage limitation: removing all semantic diagnostics requires other rules.
+
+verify.py builds inert ELF fixtures. It checks both-source and single-source
+variants, renamed identifiers and equivalent wording, ordinary API references,
+ordinary agent cleanup, missing required evidence, and absent syscall roles.
+Run: python3 testdata/triage/youtube-drive-agent/verify.py /tmp/agent-controls

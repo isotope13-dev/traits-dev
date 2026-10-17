@@ -43,6 +43,7 @@ h3-import-reference-check:
 # Taxonomy-migration checks (NEW_TAXONOMY_PLAN.md). Python-based and depends on
 # untracked scripts/, so it is kept out of `validate`.
 taxonomy-check:
+	python3 testdata/taxonomy/winrt-json-bytecode/check.py --cleave "$(CLEAVE)"
 	python3 testdata/taxonomy/browser-import-candidate/run_cases.py --cleave "$(CLEAVE)"
 	python3 testdata/taxonomy/import-reference-precision/run_cases.py --cleave "$(CLEAVE)"
 	python3 testdata/taxonomy/embedded-shell-exclusion/check.py --cleave "$(CLEAVE)"
