@@ -1,0 +1,1 @@
+- `print_prompts`: Whether to print the system prompt and task prompt to the printer. Default is True.
