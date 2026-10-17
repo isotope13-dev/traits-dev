@@ -1,0 +1,37 @@
+# The decoder input is bound to the encoded security-control path by its
+# actual PE address. Nearby code opens that key under HKLM and writes a
+# zero DWORD, enabling a path exclusion. Generic registry imports do not
+# establish this result. Concealed exclusion setup is suspicious even though
+# an administrator could deliberately configure exclusions this way.
+defaults:
+  for: [pe]
+  platforms: [windows]
+  arch: [x86]
+  attack: T1562.001
+traits:
+  - id: x86-rolling-xor-defender-path-exclusion-write
+    desc: Obfuscated Defender path exclusion write
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule rolling_xor_defender_path_exclusion_write {
+          strings:
+            // SOFTWARE\Microsoft\Windows Defender\Exclusions\Paths, NUL
+            // XOR key E4; key += C8 + alternating(+1, -1).
+            $path = { B7 E2 32 69 53 8C C6 18 78 A0 DD 1E 36 62 A7 F2 02 59 A8 EA ED 23 70 B2 D3 1E 14 B9 A1 EB 31 73 80 C8 06 61 41 B5 F7 31 51 9E DD 12 2A 7E 88 CD 05 59 9C CE 84 }
+            // Set DWORD size/type; decode 53 bytes; open decoded key in HKLM.
+            $setup = { 6A 04 5F 8D 45 ?? 50 68 03 01 00 00 53 68 C8 00 00 00 68 E4 00 00 00 6A 35 68 ?? ?? ?? ?? 56 89 5D ?? 89 7D ?? E8 ?? ?? ?? ?? 83 C4 14 50 68 02 00 00 80 FF 15 ?? ?? ?? ?? }
+            // REG_DWORD, zero data; same function's RegSetValueExA call.
+            $write = { 57 8D 45 ?? 50 57 53 8D 85 ?? ?? ?? ?? 50 FF 75 ?? 89 5D ?? FF 15 ?? ?? ?? ?? }
+          condition:
+            pe.is_pe and pe.imports("ADVAPI32.dll", "RegSetValueExA") and
+            for any p in (1..#path) : (
+              for any s in (1..#setup) : (
+                pe.rva_to_offset(uint32(@setup[s] + 26) - pe.image_base) == @path[p] and
+                $write in (@setup[s]..@setup[s] + 160)
+              )
+            )
+        }
