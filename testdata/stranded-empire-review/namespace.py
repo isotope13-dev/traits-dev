@@ -1,0 +1,2 @@
+namespace = {}
+exec(code, namespace)
