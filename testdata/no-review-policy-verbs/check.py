@@ -18,6 +18,7 @@ RULE = ('objectives/evasion/security-bypass/llm/prompt/override::'
         'repository-content-agent-prompt-injection')
 expected = {
     'negative-policy.md': False,
+    'negative-approval-demand.md': False,
     'positive-directive.md': True,
 }
 
