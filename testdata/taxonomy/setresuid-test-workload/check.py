@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that a syscall test workload does not convict as setresuid escalation."""
+"""Check that a syscall test workload does not convict as setresuid co-occurrence."""
 import argparse
 import json
 import os
@@ -66,17 +66,17 @@ def main() -> None:
         for case in cases["fixtures"]:
             file = files[Path(case["file"]).name]
             emitted = {trait["id"] for trait in file.get("traits", [])}
-            assert (cases["escalation_rule"] in emitted) == case[
-                "expect_escalation"
-            ], (case["file"], "setresuid escalation", file)
+            assert (cases["profile_rule"] in emitted) == case[
+                "expect_profile"
+            ], (case["file"], "setresuid co-occurrence", file)
             assert (cases["atom_rule"] in emitted) == case["expect_atom"], (
                 case["file"],
                 "setresuid root atom",
                 file,
             )
             print(
-                f"PASS {case['file']}: escalation "
-                f"{'present' if case['expect_escalation'] else 'absent'}, "
+                f"PASS {case['file']}: neutral profile "
+                f"{'present' if case['expect_profile'] else 'absent'}, "
                 f"atom {'present' if case['expect_atom'] else 'absent'}"
             )
 
