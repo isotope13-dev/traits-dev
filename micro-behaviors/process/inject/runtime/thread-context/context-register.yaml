@@ -1,0 +1,46 @@
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86-64]
+traits:
+  # CONTEXT.Rcx is 0x80 bytes from the x64 CONTEXT base. The matcher
+  # binds that store to the very buffer passed to SetThreadContext, and
+  # resolves the RIP-relative call to the PE import slot. This is a
+  # register rewrite, not proof that the supplied value is an entry point.
+  - id: x64-context-rcx-write-call
+    desc: CONTEXT.Rcx write bound to SetThreadContext
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_context_rcx_write_call {
+          strings:
+            $rewrite = {
+              48 8B 4B 08
+              48 8D 94 24 ?? ?? ?? ??
+              48 89 BC 24 ?? ?? ?? ??
+              FF 15 ?? ?? ?? ??
+            }
+          condition:
+            pe.is_64bit() and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for any m in (1..#rewrite) : (
+                @rewrite[m] >= pe.sections[s].raw_data_offset and
+                @rewrite[m]+!rewrite[m] <= pe.sections[s].raw_data_offset +
+                  pe.sections[s].raw_data_size and
+                uint32(@rewrite[m]+16) == uint32(@rewrite[m]+8)+0x80 and
+                for any i in (0..pe.number_of_imports-1) : (
+                  for any f in (0..pe.import_details[i].number_of_functions-1) : (
+                    pe.import_details[i].functions[f].name == "SetThreadContext" and
+                    pe.sections[s].virtual_address + @rewrite[m] -
+                      pe.sections[s].raw_data_offset + !rewrite[m] +
+                      int32(@rewrite[m]+22) ==
+                      pe.import_details[i].functions[f].rva
+                  )
+                )
+              )
+            )
+        }
