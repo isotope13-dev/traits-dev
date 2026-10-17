@@ -1,0 +1,67 @@
+const MIME = {
+  "application/json": { source: "iana" },
+  "application/jrd+json": { source: "iana" },
+  "application/json-patch+json": { source: "iana" },
+  "application/jsonml+json": { source: "iana" },
+};
+const filler0 = 0;
+const filler1 = 1;
+const filler2 = 2;
+const filler3 = 3;
+const filler4 = 4;
+const filler5 = 5;
+const filler6 = 6;
+const filler7 = 7;
+const filler8 = 8;
+const filler9 = 9;
+const filler10 = 10;
+const filler11 = 11;
+const filler12 = 12;
+const filler13 = 13;
+const filler14 = 14;
+const filler15 = 15;
+const filler16 = 16;
+const filler17 = 17;
+const filler18 = 18;
+const filler19 = 19;
+const filler20 = 20;
+const filler21 = 21;
+const filler22 = 22;
+const filler23 = 23;
+const filler24 = 24;
+const filler25 = 25;
+const filler26 = 26;
+const filler27 = 27;
+const filler28 = 28;
+const filler29 = 29;
+const filler30 = 30;
+const filler31 = 31;
+const filler32 = 32;
+const filler33 = 33;
+const filler34 = 34;
+const filler35 = 35;
+const filler36 = 36;
+const filler37 = 37;
+const filler38 = 38;
+const filler39 = 39;
+const filler40 = 40;
+const filler41 = 41;
+const filler42 = 42;
+const filler43 = 43;
+const filler44 = 44;
+const filler45 = 45;
+const filler46 = 46;
+const filler47 = 47;
+const filler48 = 48;
+const filler49 = 49;
+const filler50 = 50;
+const filler51 = 51;
+const filler52 = 52;
+const filler53 = 53;
+const filler54 = 54;
+const filler55 = 55;
+const filler56 = 56;
+const filler57 = 57;
+const filler58 = 58;
+const filler59 = 59;
+const opts = { method: "POST" };
