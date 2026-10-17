@@ -1,0 +1,73 @@
+# Raw-socket staged Python execution: a script that connects a socket,
+# receives length-framed bytes, and exec()s them. Unlike the HTTP
+# fetch-compile-exec shape, there is no URL fetch and no compile step: wire
+# bytes go straight into the interpreter, the classic staged-backdoor stub.
+#
+# The legs are argument-context text patterns on purpose. Staged stubs ship
+# broken, concatenated, or embedded in other files (this family prepends the
+# stub to an unrelated tool), which defeats whole-file symbol extraction;
+# the byte patterns survive either way. Each pattern carries its argument
+# context so it never matches a bare name in a comment or string, and each
+# leg alone stays notable until the composites pair them.
+# The `makefile` scope is deliberate, not drift: staged stubs ship
+# concatenated onto unrelated tools or stripped of their extension, and the
+# file typer can read the result as something else entirely (this family's
+# carrier reads as makefile). The patterns below match Python-idiom text, so
+# they only fire on makefiles that embed Python socket-and-exec code, which
+# is the concatenation shape, not ordinary build files.
+defaults:
+  platforms: [unix, windows]
+  for: [python, text, makefile]
+  attack: T1105
+traits:
+  - id: socket-recv-assign
+    desc: Assigns socket-received bytes to variable
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: '=\s*[A-Za-z_]\w*\.\s*recv\s*\('
+  - id: python-exec-namespace
+    desc: Execs variable with namespace argument
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: '\bexec\s*\(\s*[A-Za-z_]\w*\s*,'
+  - id: socket-connect-literal
+    desc: Connects socket to literal address
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      regex: '\.\s*connect\s*\(\s*\(\s*[''"]'
+  - id: length-prefix-unpack
+    desc: Unpacks length prefix with struct
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      regex: 'struct\.unpack\s*\(\s*[''"][<>!]?I[''"]\s*,'
+composite_rules:
+  # Wire bytes straight into exec(): the staged-execution half. Legitimate
+  # remote-admin frameworks move code this way, so co-occurrence alone stays
+  # suspicious; the framing composite carries the downloader context.
+  - id: python-socket-staged-exec
+    desc: Socket-staged Python code execution
+    crit: suspicious
+    conf: 0.88
+    near_lines: 40
+    all:
+      - id: socket-recv-assign
+      - id: python-exec-namespace
+  # Length-framed receive channel plus an outbound connection: the staging
+  # half. Length-prefixed protocols exist in legitimate clients, so this
+  # stays suspicious on its own.
+  - id: python-length-framed-socket-stage
+    desc: Length-framed socket staging channel
+    crit: suspicious
+    conf: 0.85
+    near_lines: 40
+    all:
+      - id: length-prefix-unpack
+      - id: socket-connect-literal
