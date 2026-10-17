@@ -1,0 +1,1 @@
+class Generic { void run(Resource resource) { resource.acquire(); } }

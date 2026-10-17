@@ -1,0 +1,1 @@
+class Strings { String run(String text) { return new StringBuilder(text).reverse().toString(); } }
