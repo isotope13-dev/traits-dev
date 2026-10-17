@@ -64,7 +64,7 @@ cases.append(dict(case_id=name, path=str(ROOT / name), matched=[], not_matched=[
     'objectives/command-and-control/backdoor/tasking/delimited::twostroke-command-field-delimiter',
     'well-known/lib/platform/raw-cpuid::rust-raw-cpuid-lib',
     'micro-behaviors/data/format/crypto-address::doge-address-regex',
-    'micro-behaviors/ui/controls/widget::winforms-timer',
+    'micro-behaviors/time/schedule/keywords::dotnet-timer-with-winforms-reference',
 ]))
 name = 'complete-command-table.exe'
 (ROOT / name).write_bytes(pe(b'\0!udp\0!tcp\0!ntp\0!vse\0'))
