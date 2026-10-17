@@ -836,6 +836,14 @@ identity goes with that subject.
 | `signed` | `certificate`, `entitlements`, `platform`, `script`, `trust-level` | A signer name is neither product identity nor proof of a valid chain. |
 | `vendor` | OS or platform vendor provenance (Apple, Microsoft, NetBSD, GNU) | Certificate fields are `signed`; manifest vendor fields are `package`; third-party products are `well-known/`. |
 
+Text shaped like `require('../common')` or `function test()` does not alone
+establish a package test-harness role. A rule reporting only that source-text
+form belongs in `metadata/lang/source/syntax`, outside broad
+`metadata/package/testing` selectors. An actual module-loading call belongs
+under `micro-behaviors/os/module`; a corroborated test-harness role belongs
+under `metadata/package/testing`. Preserve explicit consumers when relocating
+weak source context rather than granting every test exclusion that context.
+
 Raw signed-entitlement keys are emitted as runtime facts under
 `metadata/entitlement/<category>::<key>`. The rules in
 `metadata/signed/entitlements` interpret those facts into named properties;
