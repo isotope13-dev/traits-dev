@@ -90,6 +90,16 @@ def main():
     case("credential-stager.elf", elf(staging + echo + script),
          [KILL, DECODE, IMPACT])
     case("without-credentials.elf", elf(echo + script), [KILL, DECODE], [IMPACT])
+    socks_bruteforcer = ("objectives/lateral-movement/brute-force/iot-creds::"
+                         "mirai-credential-socks-bruteforcer")
+    # Credential runs stay long like packed-table literals so the string
+    # extractor keeps them (a bare 5-byte "jvbzd" falls below min length).
+    proxy_creds = b"xc3511 admin\x00jvbzd extra\x00SOCKS5 on :%d\x00"
+    case("socks-bruteforcer.elf", elf(proxy_creds), [socks_bruteforcer])
+    case("socks-bruteforcer-no-banner.elf", elf(b"xc3511 admin\x00jvbzd extra\x00"),
+         no=[socks_bruteforcer])
+    case("socks-bruteforcer-no-creds.elf", elf(b"SOCKS5 on :%d\x00"),
+         no=[socks_bruteforcer])
     case("echo-prefix-only.elf", elf(echo), no=[DECODE])
     case("fingerprint.elf", elf(b"GET/dlr.\0/config/\0KERN_SECURELEVEL\0" + bytes(512)),
          no=[MALFORMED, ROUTE, REMOVED])
