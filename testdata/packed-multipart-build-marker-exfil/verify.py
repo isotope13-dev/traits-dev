@@ -1,15 +1,10 @@
-"""Packed multipart file exfiltration with a per-build marker.
+"""Multipart upload and mutation-marker false-positive controls.
 
 Run: python3 testdata/packed-multipart-build-marker-exfil/verify.py <scratch-directory>
 
-`packed-multipart-file-exfil-with-build-marker` convicts a PE that performs
-a libcurl multipart upload of a file[] field while carrying a per-build
-UNIQUE mutation slot in packed UPX data, with a hardcoded cleartext
-endpoint (or a UPX overlay executable) corroborating. Legitimate uploaders
-lack the packed build-marker pairing: the positive control (libcurl
-multipart upload + UNIQUE slot + cleartext URL in UPX sections) must
-convict, while dropping the marker, the file[] field, or every corroborating
-endpoint must not.
+An uploader, a mutation marker and an endpoint establish no stolen source.
+Rifaien reads and submits its own executable. None of these combinations
+may resurrect the retired exfiltration conviction.
 """
 import json
 import os
@@ -135,8 +130,8 @@ def main():
     dest = Path(sys.argv[1])
     dest.mkdir(parents=True, exist_ok=True)
     cases = {
-        # Full pattern: libcurl multipart upload + build marker + URL.
-        'exfil-positive.exe': (UPLOAD_STRINGS, True),
+        # The complete former pattern still establishes no theft.
+        'upload-marker-negative.exe': (UPLOAD_STRINGS, False),
         # Same uploader without the per-build marker: no conviction.
         'no-marker-negative.exe': (
             tuple(s for s in UPLOAD_STRINGS if s != '[[UNIQUE]]'), False),
