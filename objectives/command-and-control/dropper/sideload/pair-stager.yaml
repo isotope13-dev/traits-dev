@@ -28,7 +28,39 @@ traits:
       type: text
       regex: '(?i)certutil[^&|>\r\n]{0,200}\.dll\b'
 
+  - id: batch-tar-extract-staged-archive
+    desc: Batch extracts archive with system tar
+    crit: notable
+    conf: 0.9
+    for: [batch]
+    if:
+      type: text
+      regex: '(?i)tar\.exe["'']?\s+-xf\b'
+
+  - id: batch-detached-local-launch
+    desc: Batch launches local executable detached
+    crit: notable
+    conf: 0.9
+    for: [batch]
+    if:
+      type: text
+      regex: '(?i)\bstart\s+""\s+/d\s+\S+\s+/b\s+'
+
 composite_rules:
+  # Self-extracting variant of the pair stager: the batch file carries
+  # a PEM/base64 blob, decodes and unpacks it under LocalAppData, then
+  # launches the staged host detached so a same-directory DLL loads.
+  - id: batch-self-extracting-appdata-pair-launch
+    desc: Batch self-extracts an EXE/DLL pair to LocalAppData and launches it
+    crit: hostile
+    conf: 0.97
+    for: [batch]
+    all:
+      - id: micro-behaviors/crypto/certificate/usage::pem-begin
+      - id: micro-behaviors/fs/path/app-data::localappdata-env-var-reference
+      - id: batch-tar-extract-staged-archive
+      - id: batch-detached-local-launch
+
   - id: certutil-exe-dll-sideload-pair-staged
     desc: certutil stages an EXE and DLL pair in a public folder
     crit: hostile
@@ -40,3 +72,20 @@ composite_rules:
     any:
       - id: micro-behaviors/fs/path/temp::windows-public-or-temp-path
       - id: micro-behaviors/fs/write/file/target::users-public-path
+
+  # A multi-megabyte batch file that is mostly one low-whitespace
+  # base64 blob between PEM markers, staged into LocalAppData and
+  # cleaned up with forced quiet deletes, is a packed payload carrier:
+  # the script text is only the decoder for the blob it carries.
+  - id: batch-embedded-pem-blob-appdata-staging
+    desc: Batch carries PEM payload blob staged to LocalAppData
+    crit: hostile
+    conf: 0.96
+    for: [batch]
+    attack: T1105,T1027
+    all:
+      - id: micro-behaviors/crypto/certificate/usage::pem-begin
+      - id: micro-behaviors/crypto/certificate/usage::pem-end
+      - id: metadata/file/padding::large-batch-low-whitespace-ratio
+      - id: micro-behaviors/fs/path/app-data::localappdata-env-var-reference
+      - id: micro-behaviors/fs/delete/file/command::batch-del-force-quiet-switch
