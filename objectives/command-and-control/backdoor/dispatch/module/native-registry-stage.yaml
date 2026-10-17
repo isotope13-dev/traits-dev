@@ -1,0 +1,59 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+traits:
+  # A packet callback takes the body at R14+header, allocates RWX memory,
+  # copies that body to the allocation, and publishes the pointer. Another
+  # callback calls through that same pointer. Bind the store and call by their
+  # RIP-relative destinations, rather than assuming two APIs imply a flow.
+  # The header length/opcodes are protocol structure; addresses are wildcarded.
+  - id: x64-message-executable-buffer-handoff
+    desc: Packet body becomes an executable callback
+    crit: suspicious
+    conf: 0.99
+    attack: T1620
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_packet_executable_buffer_dispatch {
+          strings:
+            $dispatch = { 4C 8B F2 4C 8B F9 80 3A ?? 0F 84 ?? ?? ?? ?? 41 83 F8 ?? 0F 85 }
+            $stage = { 48 63 15 ?? ?? ?? ?? 33 C9 44 8D 49 40
+                       41 B8 00 30 00 00 FF 15 ?? ?? ?? ??
+                       48 89 05 ?? ?? ?? ?? 4C 63 05 ?? ?? ?? ??
+                       49 8D 96 ?? ?? 00 00 48 8B C8 E8 ?? ?? ?? ?? }
+            $invoke = { FF 15 ?? ?? ?? ?? 33 C0 48 8B 8D ?? ?? ?? ??
+                        48 33 CC E8 ?? ?? ?? ?? }
+          condition:
+            pe.is_64bit() and all of them and
+            for any s in (0..pe.number_of_sections - 1): (
+              pe.sections[s].name == ".text" and
+              for any i in (1..#stage): (
+                @stage[i] >= pe.sections[s].raw_data_offset and
+                @stage[i] + !stage[i] <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size and
+                for any d in (1..#dispatch): (
+                  @stage[i] > @dispatch[d] and @stage[i] - @dispatch[d] < 1536 and
+                  @dispatch[d] >= pe.sections[s].raw_data_offset
+                ) and
+                for any j in (1..#invoke): (
+                  @invoke[j] >= pe.sections[s].raw_data_offset and
+                  @invoke[j] + !invoke[j] <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size and
+                  ((@stage[i] + 32 + uint32(@stage[i] + 28)) & 0xffffffff) ==
+                  ((@invoke[j] + 6 + uint32(@invoke[j] + 2)) & 0xffffffff)
+                )
+              )
+            )
+        }
+
+composite_rules:
+  - id: x64-packet-executable-buffer-dispatch
+    desc: Network task handler executes cached shellcode
+    crit: hostile
+    conf: 0.99
+    attack: T1620,T1112
+    all:
+      - id: x64-message-executable-buffer-handoff
+      - id: micro-behaviors/communications/socket/init::recv-api-ordinal
+      - id: micro-behaviors/os/registry/write::reg-set-value-ex-w

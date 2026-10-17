@@ -1,0 +1,36 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+  attack: T1036
+traits:
+  # GS:60 -> PEB; +20 -> ProcessParameters; +60/+70 are its ImagePathName
+  # and CommandLine UNICODE_STRINGs. PEB+18 -> Ldr; first entry +48/+58
+  # carries FullDllName/BaseDllName. Junk instructions may separate stores.
+  - id: x64-peb-process-and-loader-name-rewrite
+    desc: Rewrites PEB process and loader identity
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_peb_process_and_loader_identity_rewrite {
+          strings:
+            $rewrite = { 65 48 8B 2C 25 60 00 00 00 [180-220] 48 8B 45 20 [0-20] 0F 10 44 24 ?? [0-20] F3 0F 7F 40 60 [0-8] 48 8B 45 20 [0-20] 0F 10 4C 24 ?? F3 0F 7F 48 70 [0-8] 48 8B 45 18 [0-30] 48 8B 78 10 F3 0F 7F 47 48 }
+          condition:
+            pe.is_64bit() and $rewrite and
+            for any s in (0..pe.number_of_sections - 1): (
+              pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              @rewrite >= pe.sections[s].raw_data_offset and
+              @rewrite + !rewrite <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size
+            )
+        }
+composite_rules:
+  - id: native-packet-backdoor-peb-name-spoofing
+    desc: Packet backdoor rewrites process and module identity
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: x64-peb-process-and-loader-name-rewrite
+      - id: objectives/command-and-control/backdoor/dispatch/module::x64-packet-executable-buffer-dispatch
