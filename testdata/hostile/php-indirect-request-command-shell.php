@@ -1,7 +1,7 @@
 <?php
-// Fixture: indirect request-driven command webshell with a socket reverse
-// shell fallback. Mirrors the laudanum-adjacent shape where request data is
-// assigned to a variable before execution (never tainted directly).
+// Fixture: indirect request-driven command webshell plus a socket client.
+// The shell string is sent as data; it never reaches an execution call.
+// Socket and redirected-shell text alone must not imply a reverse shell.
 $cmd = 'cmd';
 $command = $_REQUEST[$cmd];
 $system = 'system';
