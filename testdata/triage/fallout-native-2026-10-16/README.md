@@ -94,7 +94,9 @@ and branch displacements wildcarded. Combine it with the existing raw-UDP
 attack and corroborating family identity to recognize the packet-tasked
 StormAttack variant. Required code evidence prevents names alone from
 convicting. Final coverage has two hostile traits in the embedded DLL.
-The outer PE also retains an accurate suspicious section-overlap observation.
+The outer PE also retains an accurate notable section-overlap observation;
+intent is established by the packer/loader composites that combine it with
+additional evidence.
 
 Move the former tiny-overlay-loader composite into PE section metadata.
 The DLL has substantial native code in .data; small size and a writable
