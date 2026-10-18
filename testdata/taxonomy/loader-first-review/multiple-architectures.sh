@@ -1,0 +1,2 @@
+#!/bin/sh
+printf '%s\n' 'x86_64 mips'
