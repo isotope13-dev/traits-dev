@@ -1,0 +1,1 @@
+class Writer { void write() throws Exception { new java.io.FileOutputStream(f); } }
