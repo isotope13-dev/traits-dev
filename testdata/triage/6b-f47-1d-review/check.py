@@ -49,7 +49,7 @@ for name, imports, strings in [
     if name == 'native-thread-name':
         assert 'micro-behaviors/process/create/thread::nt-create-thread-ex-name' in ids
         assert 'micro-behaviors/process/inject/runtime/call::native-remote-thread-create' not in ids
-        assert 'micro-behaviors/process/inject/runtime/call::create-remote-thread-dup' not in ids
+        assert 'micro-behaviors/process/inject/remote-thread::remote-thread-api-reference' not in ids
     print('PASS', name, flush=True)
 
 target = 'objectives/command-and-control/backdoor/webshell/stager::dotnet-page-http-shellcode-stager'
