@@ -1,0 +1,2 @@
+<?php
+$line = fgets($stream);
