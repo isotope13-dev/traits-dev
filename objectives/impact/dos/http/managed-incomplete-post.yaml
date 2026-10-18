@@ -1,0 +1,49 @@
+# Surviving CIL in a damaged managed client still shows the implementation:
+# a task starts/stops a worker, a fan-out loop creates threads, and each socket
+# sends an HTTP header promising a body, then sleeps without sending that body.
+# Match the control vocabulary AND implementation; neither a POST header nor
+# a thread-creation loop alone establishes an attack.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  attack: T1499.003
+traits:
+  - id: managed-threaded-incomplete-post-implementation
+    desc: Thread fan-out with incomplete HTTP POST headers
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule managed_threaded_incomplete_post_tasking {
+          strings:
+            $request = "POST / HTTP/1.1\r\nHost: " wide
+            $body = /Content-length: [1-9][0-9]{2,6}\r\n\r\n/ wide nocase
+            $threads = { 06 25 FE 07 ?? ?? ?? 06
+                         73 ?? ?? ?? 0A 73 ?? ?? ?? 0A
+                         13 ?? 11 ?? 6F ?? ?? ?? 0A
+                         11 ?? 17 D6 13 ?? 11 ?? 1F ?? 31 ?? }
+            $send_sleep = { 08 06 16 06 8E B7 16 6F ?? ?? ?? 0A
+                            26 20 ?? ?? ?? ?? 28 ?? ?? ?? 0A }
+          condition:
+            all of them and
+            for any s in (0..pe.number_of_sections - 1): (
+              pe.sections[s].name == ".text" and
+              for all of them : (
+                $ in (pe.sections[s].raw_data_offset ..
+                      pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size - 1)
+              )
+            )
+        }
+
+composite_rules:
+  - id: managed-threaded-incomplete-post-tasking
+    desc: DDoS tasking with threaded incomplete HTTP POSTs
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: managed-threaded-incomplete-post-implementation
+      - id: micro-behaviors/data/control-flow/dispatch::start-ddos-command-token
+      - id: micro-behaviors/data/control-flow/dispatch::stop-ddos-command-token
+      - id: metadata/binary/framework::dotnet-assembly
