@@ -20,18 +20,53 @@ traits:
     if:
       type: text
       regex: '(?i)\bGet-Process\s+(-Name\s+)?["'']?taskmgr["'']?\s*\|\s*Stop-Process\b'
-composite_rules:
+  # Bind the process-query result to its guard, and the same service variable
+  # to stop in the observed branch and start in the unobserved branch.
   - id: taskmgr-query-service-stop-start
-    desc: Task Manager query with service stop and restart commands
+    desc: Task Manager presence gates service activity
+    for: [powershell]
     crit: suspicious
-    conf: 0.95
+    conf: 0.98
     attack: T1564
-    all:
-      - id: micro-behaviors/process/enumerate/shell::powershell-taskmgr-query
-      - id: micro-behaviors/os/service/stop::powershell-stop-service-command
-      - id: micro-behaviors/os/service/start::powershell-start-service-command
+    if:
+      type: tree-sitter
+      query: |
+        (statement_list
+          (pipeline (assignment_expression
+            (left_assignment_expression) @binding
+            (assignement_operator) @assignment
+            value: (pipeline (pipeline_chain (command
+              command_name: (command_name) @query
+              command_elements: (command_elements) @query_args)))))
+          . (if_statement
+              condition: (pipeline) @guard
+              (statement_block statement_list: (statement_list
+                . (pipeline (pipeline_chain (command
+                    command_name: (command_name) @stop
+                    command_elements: (command_elements
+                      (array_literal_expression (unary_expression
+                        (variable) @stopped))) @stop_args)))))
+              else_clause: (else_clause
+                (statement_block statement_list: (statement_list
+                  . (pipeline (pipeline_chain (command
+                      command_name: (command_name) @start
+                      command_elements: (command_elements
+                        (array_literal_expression (unary_expression
+                          (variable) @started))) @start_args))))))) @concealment
+          (#eq? @assignment "=")
+          (#eq? @binding @guard)
+          (#eq? @stopped @started)
+          (#match? @query "(?i)^Get-Process$")
+          (#match? @query_args "(?i)^\\s+(?:-Name\\s+)?['\"]?taskmgr(?:\\.exe)?['\"]?(?:\\s|$)")
+          (#match? @stop "(?i)^Stop-Service$")
+          (#match? @start "(?i)^Start-Service$")
+          (#match? @stop_args "(?i)^\\s+-Name\\s+\\$")
+          (#match? @start_args "(?i)^\\s+-Name\\s+\\$"))
+
+composite_rules:
 
   - id: taskmgr-service-evasion-and-kill
+    for: [powershell]
     desc: Task Manager service evasion with process termination
     crit: hostile
     conf: 0.98
@@ -42,3 +77,13 @@ composite_rules:
       - id: micro-behaviors/process/terminate/command::script-taskkill-taskmgr
       - id: powershell-taskmgr-termination
       - id: powershell-taskmgr-pipeline-termination
+
+  - id: taskmgr-service-concealment-watchdog
+    desc: Task Manager gates service in endless loop
+    for: [powershell]
+    crit: hostile
+    conf: 0.98
+    attack: T1564
+    all:
+      - id: taskmgr-query-service-stop-start
+      - id: micro-behaviors/data/control-flow/loop::embedded-powershell-while-true
