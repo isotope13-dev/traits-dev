@@ -1,0 +1,49 @@
+defaults:
+  for: [pe]
+  platforms: [windows]
+  arch: [x86]
+  crit: notable
+  conf: 0.97
+
+traits:
+  # This is a static sender profile, not proof of a successful request. Bind
+  # the format argument to the actual POST literal, and the formatted local
+  # buffer to both the length call and transmit call. A template alone or an
+  # unrelated buffer must not establish a sender. Addresses, frame offsets,
+  # sleep intervals and thunk destinations are deliberately variable.
+  - id: x86-formatted-post-buffer-send
+    desc: x86 POST formatting and socket-send layout
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_formatted_post_buffer_send {
+          strings:
+            $post = "POST %s HTTP/1.1\r\n" ascii
+            $winsock = "WS2_32.dll" ascii nocase
+            $flow = {
+              6A 10 8D 85 ?? ?? FF FF 50 FF B5 ?? ?? FF FF
+              E8 ?? ?? ?? ?? 83 F8 FF 0F 84 ?? ?? ?? ??
+              FF 75 0C FF 75 0C FF 15 ?? ?? ?? ?? 50
+              8D 85 ?? ?? FF FF 50 8D 85 ?? ?? FF FF 50
+              68 ?? ?? ?? ?? FF B5 ?? ?? FF FF FF 15 ?? ?? ?? ??
+              83 C4 18 [0-32]
+              6A 00 FF B5 ?? ?? FF FF FF 15 ?? ?? ?? ?? 40 50
+              FF B5 ?? ?? FF FF FF B5 ?? ?? FF FF E8 ?? ?? ?? ??
+            }
+          condition:
+            pe.machine == pe.MACHINE_I386 and $winsock and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for any f in (1..#flow) : (
+                @flow[f] >= pe.sections[s].raw_data_offset and
+                @flow[f]+!flow[f] <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size and
+                for any p in (1..#post) : (
+                  pe.rva_to_offset(uint32(@flow[f]+57)-pe.image_base) == @post[p]
+                ) and
+                uint32(@flow[f]+63) == uint32(@flow[f]+!flow[f]-29) and
+                uint32(@flow[f]+63) == uint32(@flow[f]+!flow[f]-15) and
+                uint32(@flow[f]+11) == uint32(@flow[f]+!flow[f]-9)
+              )
+            )
+        }
