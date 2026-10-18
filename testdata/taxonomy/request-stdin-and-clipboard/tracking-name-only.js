@@ -1,0 +1,1 @@
+let lastClipboardValue = "documentation";
