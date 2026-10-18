@@ -2,14 +2,15 @@
 # the byte count and buffer, write (AH=40h) and close (AH=3Eh): a program
 # dropping a file image of itself. Written as YARA so the sequence is
 # evaluated on images under the engine's size floor.
+defaults:
+  platforms: [windows, unix]
+  for: [dos_com, data]
+  size_max: 4096
 traits:
   - id: dos-create-write-close-image
     desc: DOS creates file, writes buffer, closes it
     crit: notable
     conf: 0.88
-    platforms: [windows, unix]
-    for: [dos_com, data]
-    size_max: 4096
     if:
       type: yara
       source: |
@@ -20,4 +21,53 @@ traits:
             $seq = { B4 3C 33 C9 CD 21 93 [0-4] B4 40 B9 ?? ?? BA ?? ?? CD 21 B4 3E CD 21 }
           condition:
             $seq in (0..512)
+        }
+  # Create (CX cleared), write, close, then exit. The name pointer and the
+  # write length are filled in between the service loads.
+  - id: dos-create-write-close-exit
+    desc: Creates a file, writes, then exits
+    crit: notable
+    conf: 0.9
+    if:
+      type: yara
+      source: |
+        rule dos_create_write_close_exit {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $seq = { B4 3C [0-6] 33 C9 CD 21 [0-8] B4 40 [0-8] CD 21 B4 3E CD 21 [0-4] B4 4C CD 21 }
+          condition:
+            $seq in (0..256)
+        }
+  # CALL $+3 / POP DX / SUB DX,3 leaves DX at the image base.
+  - id: dos-call-pop-image-base
+    desc: Call and pop yields image base
+    crit: notable
+    conf: 0.92
+    if:
+      type: yara
+      source: |
+        rule dos_call_pop_image_base {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $d = { E8 00 00 5A 83 EA 03 }
+          condition:
+            $d in (0..256)
+        }
+  # POP restores the saved length, then ADD CX,imm widens the write.
+  - id: dos-popped-length-add-write
+    desc: Adds to a restored write length
+    crit: notable
+    conf: 0.9
+    if:
+      type: yara
+      source: |
+        rule dos_popped_length_add_write {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $w = { 59 [0-4] B4 40 [0-8] 81 C1 ?? ?? CD 21 }
+          condition:
+            $w in (0..256)
         }
