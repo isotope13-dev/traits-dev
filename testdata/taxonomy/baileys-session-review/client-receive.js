@@ -1,0 +1,1 @@
+ws.on('message', handler);
