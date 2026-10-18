@@ -1,0 +1,1 @@
+const implementation = "boost::asio::detail::win_iocp_io_context";

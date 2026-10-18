@@ -1,0 +1,1 @@
+Set file=fs.OpenTextFile(path,2,False)
