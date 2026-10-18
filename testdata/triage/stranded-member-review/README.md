@@ -41,8 +41,12 @@ arguments, and PowerShell window settings. The local-path description no
 longer claims an image path is a script.
 
 Run `python3 testdata/triage/stranded-member-review/check.py` from the repository
-root. The 14 static controls cover positive and negative call arguments,
+root. The original 14 static controls cover positive and negative call arguments,
 quoted deletion examples, recovery re-enabling, ordinary window settings,
 anonymous-function Axios calls, unrelated method properties, socket-name
 strings without calls, and WinForms references. These fixtures are analyzed
 as data and never executed.
+
+See [placement-review.md](placement-review.md) for the three subsequent taxonomy
+corrections and six additional controls (20 total). Fresh per-member atomscan
+reports confirm unchanged severities and only the intended trait ID replacements.
