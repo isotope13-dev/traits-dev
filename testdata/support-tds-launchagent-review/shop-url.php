@@ -1,0 +1,1 @@
+<?php $homepage = "https://merchant.shop/catalog"; ?>
