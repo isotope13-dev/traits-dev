@@ -1,0 +1,40 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86]
+
+traits:
+  - id: x86-embedded-pe-xor1-loop
+    desc: XOR decoding loop targets embedded PE
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_embedded_pe_xor1_loop {
+          strings:
+            $loop = {
+              33 C0 B1 01 8A 90 ?? ?? ?? ?? 32 D1
+              88 90 ?? ?? ?? ?? 40 3D ?? ?? ?? ?? 7C EA
+            }
+            $header = { 4C 5B 91 01 02 01 01 01 05 01 01 01 FE FE 01 01 }
+          condition:
+            pe.machine == pe.MACHINE_I386 and
+            for any s in (0..pe.number_of_sections-1) : (
+              (pe.sections[s].name == ".text" or pe.sections[s].name == ".data") and
+              for any l in (1..#loop) : (
+                @loop[l] >= pe.sections[s].raw_data_offset and
+                @loop[l]+!loop[l] <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size and
+                uint32(@loop[l]+6) == uint32(@loop[l]+14) and
+                uint32(@loop[l]+20) >= 256 and
+                for any h in (1..#header) : (
+                  pe.rva_to_offset(uint32(@loop[l]+6)-pe.image_base) == @header[h] and
+                  @header[h]+uint32(@loop[l]+20) <= filesize and
+                  (uint32(@header[h]+60) ^ 0x01010101) >= 64 and
+                  (uint32(@header[h]+60) ^ 0x01010101) <= 1024 and
+                  (uint32(@header[h]+(uint32(@header[h]+60)^0x01010101)) ^ 0x01010101) == 0x00004550
+                )
+              )
+            )
+        }
