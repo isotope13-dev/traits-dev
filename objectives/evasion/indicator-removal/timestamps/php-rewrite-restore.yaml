@@ -1,41 +1,319 @@
 defaults:
   crit: hostile
-  platforms: [unix, windows]
-  for: [php]
+  platforms:
+  - unix
+  - windows
+  for:
+  - php
   attack: T1070.006
-  conf: 0.95
-
 composite_rules:
-  # Same capture / overwrite / restore shape as php-stealth-file-rewrite, with
-  # the PHP @ operator muting failures on the calls: the author expects to run
-  # unattended against files it may not fully control and wants no trace.
-  - id: php-silenced-rewrite-mtime-restore
-    desc: PHP silently rewrites a file and restores mtime
-    near_bytes: 512
-    all:
-      - id: micro-behaviors/fs/file/timestamp::php-filemtime-call
-      - id: micro-behaviors/fs/file/timestamp::php-touch-restores-captured-mtime
-      - id: micro-behaviors/fs/write/file/full::php-file-put-contents
-      - id: micro-behaviors/os/stdio::error-suppress-prefix
-    unless:
-      - id: metadata/package/testing/harness/unit/
-      - id: well-known/lib/runtime/scripted/php-runtime::source-tree
-      - id: well-known/lib/web/server/symfony::symfony-framework
-      - id: well-known/app/publishing/wordpress-plugins/security::snapshot-restore-context
-
-  # Request-supplied bytes are spliced onto the file's existing contents and
-  # the file's mtime is put back, so the injected code is neither visible in
-  # a listing nor in modification-time based integrity checks.
-  - id: php-request-injection-mtime-restore
-    desc: Request data injected into file; mtime restored
-    near_bytes: 512
-    all:
-      - id: micro-behaviors/fs/file/timestamp::php-touch-restores-captured-mtime
-      - id: micro-behaviors/fs/write/file/full::php-file-put-contents
-      - id: micro-behaviors/fs/read/file/full::php-file-get-variable-source
-      - id: micro-behaviors/communications/http/request/superglobal::php-request-parameter-access
-    unless:
-      - id: metadata/package/testing/harness/unit/
-      - id: well-known/lib/runtime/scripted/php-runtime::source-tree
-      - id: well-known/lib/web/server/symfony::symfony-framework
-      - id: well-known/app/publishing/wordpress-plugins/security::snapshot-restore-context
+- id: php-request-injection-mtime-restore
+  desc: Restores mtime after request-driven PHP injection
+  conf: 0.97
+  all:
+  - id: objectives/impact/infect/script/inject::php-request-script-prepend
+  - id: php-request-script-restored-mtime-bound-paths
+traits:
+- id: php-request-script-restored-mtime-bound-paths
+  desc: Request prepend restores same PHP script mtime
+  crit: suspicious
+  conf: 0.98
+  if:
+    type: tree-sitter
+    query: |
+      (
+        (program
+          (expression_statement
+            (assignment_expression left:
+              (variable_name) @path right: [
+              (string)
+              (encapsed_string) ] @script)) .
+          (expression_statement
+            (assignment_expression left:
+              (variable_name) @mtime right: [
+              (function_call_expression function:
+                (name) @stat arguments:
+                (arguments
+                  (argument
+                    (variable_name) @statpath)))
+              (error_suppression_expression
+                (function_call_expression function:
+                  (name) @stat arguments:
+                  (arguments
+                    (argument
+                      (variable_name) @statpath)))) ])) .
+          (expression_statement [
+            (function_call_expression function:
+              (name) @write arguments:
+              (arguments
+                (argument
+                  (variable_name) @writepath) .
+                (argument
+                  (binary_expression left:
+                    (subscript_expression
+                      (variable_name
+                        (name) @request)) operator: "." right:
+                    (function_call_expression function:
+                      (name) @read arguments:
+                      (arguments
+                        (argument
+                          (variable_name) @readpath)))))))
+            (error_suppression_expression
+              (function_call_expression function:
+                (name) @write arguments:
+                (arguments
+                  (argument
+                    (variable_name) @writepath) .
+                  (argument
+                    (binary_expression left:
+                      (subscript_expression
+                        (variable_name
+                          (name) @request)) operator: "." right:
+                      (function_call_expression function:
+                        (name) @read arguments:
+                        (arguments
+                          (argument
+                            (variable_name) @readpath)))))))) ]) .
+          (expression_statement [
+            (function_call_expression function:
+              (name) @touch arguments:
+              (arguments
+                (argument
+                  (variable_name) @touchpath) .
+                (argument
+                  (variable_name) @restoretime)))
+            (error_suppression_expression
+              (function_call_expression function:
+                (name) @touch arguments:
+                (arguments
+                  (argument
+                    (variable_name) @touchpath) .
+                  (argument
+                    (variable_name) @restoretime)))) ]))
+        (#eq? @write "file_put_contents")
+        (#eq? @read "file_get_contents")
+        (#eq? @path @writepath)
+        (#eq? @path @readpath)
+        (#any-of? @request "_POST" "_GET" "_REQUEST")
+        (#match? @script "(?i)\\.php['\\\"]$")
+        (#eq? @stat "filemtime")
+        (#eq? @statpath @path)
+        (#not-eq? @mtime @path)
+        (#eq? @touch "touch")
+        (#eq? @touchpath @path)
+        (#eq? @restoretime @mtime)) @conceal
+      (
+        (program
+          (expression_statement
+            (assignment_expression left:
+              (variable_name) @path right: [
+              (string)
+              (encapsed_string) ] @script)) .
+          (expression_statement
+            (assignment_expression left:
+              (variable_name) @mtime right: [
+              (function_call_expression function:
+                (name) @stat arguments:
+                (arguments
+                  (argument
+                    (variable_name) @statpath)))
+              (error_suppression_expression
+                (function_call_expression function:
+                  (name) @stat arguments:
+                  (arguments
+                    (argument
+                      (variable_name) @statpath)))) ])) .
+          (expression_statement
+            (assignment_expression left:
+              (variable_name) @mode right: [
+              (function_call_expression function:
+                (name) @perm arguments:
+                (arguments
+                  (argument
+                    (variable_name) @permpath)))
+              (error_suppression_expression
+                (function_call_expression function:
+                  (name) @perm arguments:
+                  (arguments
+                    (argument
+                      (variable_name) @permpath)))) ])) .
+          (expression_statement [
+            (function_call_expression function:
+              (name) @write arguments:
+              (arguments
+                (argument
+                  (variable_name) @writepath) .
+                (argument
+                  (binary_expression left:
+                    (subscript_expression
+                      (variable_name
+                        (name) @request)) operator: "." right:
+                    (function_call_expression function:
+                      (name) @read arguments:
+                      (arguments
+                        (argument
+                          (variable_name) @readpath)))))))
+            (error_suppression_expression
+              (function_call_expression function:
+                (name) @write arguments:
+                (arguments
+                  (argument
+                    (variable_name) @writepath) .
+                  (argument
+                    (binary_expression left:
+                      (subscript_expression
+                        (variable_name
+                          (name) @request)) operator: "." right:
+                      (function_call_expression function:
+                        (name) @read arguments:
+                        (arguments
+                          (argument
+                            (variable_name) @readpath)))))))) ]) .
+          (expression_statement [
+            (function_call_expression function:
+              (name) @touch arguments:
+              (arguments
+                (argument
+                  (variable_name) @touchpath) .
+                (argument
+                  (variable_name) @restoretime)))
+            (error_suppression_expression
+              (function_call_expression function:
+                (name) @touch arguments:
+                (arguments
+                  (argument
+                    (variable_name) @touchpath) .
+                  (argument
+                    (variable_name) @restoretime)))) ]))
+        (#eq? @write "file_put_contents")
+        (#eq? @read "file_get_contents")
+        (#eq? @path @writepath)
+        (#eq? @path @readpath)
+        (#any-of? @request "_POST" "_GET" "_REQUEST")
+        (#match? @script "(?i)\\.php['\\\"]$")
+        (#eq? @stat "filemtime")
+        (#eq? @perm "fileperms")
+        (#eq? @statpath @path)
+        (#eq? @permpath @path)
+        (#not-eq? @mtime @path)
+        (#not-eq? @mode @path)
+        (#eq? @touch "touch")
+        (#eq? @touchpath @path)
+        (#eq? @restoretime @mtime)) @conceal
+      (
+        (program
+          (expression_statement
+            (assignment_expression left:
+              (variable_name) @path right: [
+              (string)
+              (encapsed_string) ] @script)) .
+          (expression_statement
+            (assignment_expression left:
+              (variable_name) @mtime right: [
+              (function_call_expression function:
+                (name) @stat arguments:
+                (arguments
+                  (argument
+                    (variable_name) @statpath)))
+              (error_suppression_expression
+                (function_call_expression function:
+                  (name) @stat arguments:
+                  (arguments
+                    (argument
+                      (variable_name) @statpath)))) ])) .
+          (expression_statement
+            (assignment_expression left:
+              (variable_name) @mode right: [
+              (function_call_expression function:
+                (name) @perm arguments:
+                (arguments
+                  (argument
+                    (variable_name) @permpath)))
+              (error_suppression_expression
+                (function_call_expression function:
+                  (name) @perm arguments:
+                  (arguments
+                    (argument
+                      (variable_name) @permpath)))) ])) .
+          (expression_statement [
+            (function_call_expression function:
+              (name) @write arguments:
+              (arguments
+                (argument
+                  (variable_name) @writepath) .
+                (argument
+                  (binary_expression left:
+                    (subscript_expression
+                      (variable_name
+                        (name) @request)) operator: "." right:
+                    (function_call_expression function:
+                      (name) @read arguments:
+                      (arguments
+                        (argument
+                          (variable_name) @readpath)))))))
+            (error_suppression_expression
+              (function_call_expression function:
+                (name) @write arguments:
+                (arguments
+                  (argument
+                    (variable_name) @writepath) .
+                  (argument
+                    (binary_expression left:
+                      (subscript_expression
+                        (variable_name
+                          (name) @request)) operator: "." right:
+                      (function_call_expression function:
+                        (name) @read arguments:
+                        (arguments
+                          (argument
+                            (variable_name) @readpath)))))))) ]) .
+          (expression_statement [
+            (function_call_expression function:
+              (name) @chmod arguments:
+              (arguments
+                (argument
+                  (variable_name) @chmodpath) .
+                (argument
+                  (variable_name) @restoremode)))
+            (error_suppression_expression
+              (function_call_expression function:
+                (name) @chmod arguments:
+                (arguments
+                  (argument
+                    (variable_name) @chmodpath) .
+                  (argument
+                    (variable_name) @restoremode)))) ]) .
+          (expression_statement [
+            (function_call_expression function:
+              (name) @touch arguments:
+              (arguments
+                (argument
+                  (variable_name) @touchpath) .
+                (argument
+                  (variable_name) @restoretime)))
+            (error_suppression_expression
+              (function_call_expression function:
+                (name) @touch arguments:
+                (arguments
+                  (argument
+                    (variable_name) @touchpath) .
+                  (argument
+                    (variable_name) @restoretime)))) ]))
+        (#eq? @write "file_put_contents")
+        (#eq? @read "file_get_contents")
+        (#eq? @path @writepath)
+        (#eq? @path @readpath)
+        (#any-of? @request "_POST" "_GET" "_REQUEST")
+        (#match? @script "(?i)\\.php['\\\"]$")
+        (#eq? @stat "filemtime")
+        (#eq? @perm "fileperms")
+        (#eq? @statpath @path)
+        (#eq? @permpath @path)
+        (#not-eq? @mtime @path)
+        (#not-eq? @mode @path)
+        (#eq? @touch "touch")
+        (#eq? @touchpath @path)
+        (#eq? @restoretime @mtime)
+        (#eq? @chmod "chmod")
+        (#eq? @chmodpath @path)
+        (#eq? @restoremode @mode)) @conceal
