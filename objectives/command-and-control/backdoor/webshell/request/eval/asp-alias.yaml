@@ -1,0 +1,88 @@
+# ASP currently has no structured flow facts. Bind identifier bytes across
+# three adjacent statements rather than treating request/eval co-occurrence
+# as flow. The newline constraints exclude intervening rewrites and guards;
+# quoted text and comments cannot supply statement prefixes.
+defaults:
+  for: [asp]
+  platforms: [windows]
+  attack: T1505.003
+  mbc: B0030
+
+traits:
+  - id: asp-request-alias-eval-binding
+    desc: ASP request-to-Eval alias binding
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule classic_asp_request_alias_eval {
+          strings:
+            $lhs = /\b[A-Za-z_][A-Za-z0-9_]{0,31}[ \t]*=/
+            $request = /[ \t]*=[ \t]*request[ \t]*\([ \t]*"[^"\r\n]{1,64}"[ \t]*\)[ \t]*\r?\n/i
+            $equals = /[ \t]*=[ \t]*/
+            $newline = /[ \t]*\r?\n[ \t]*/
+            $eval = /[ \t]*\r?\n[ \t]*eval[ \t]+/i
+            $eval_statement = /[ \t]*\r?\n[ \t]*eval[ \t]+[A-Za-z_][A-Za-z0-9_]{0,31}[ \t]*(\r?\n|%>)/i
+            $line = /\n[ \t]*/
+            $page = "<%"
+            $close = "%>"
+            $comment = /<%--.*?--%>|<!--.*?-->/s
+          condition:
+            $page and $request and $eval and
+            for any s in (1..#lhs) : (
+              for any p in (1..#page) : (
+                @page[p] < @lhs[s] and
+                (#close == 0 or for all q in (1..#close) : (
+                  @close[q] < @page[p] or @close[q] >= @lhs[s]
+                ))
+              ) and
+              for any l in (1..#line) : (
+                @line[l] + !line[l] == @lhs[s]
+              ) and
+              for any r in (1..#request) : (
+                @request[r] >= @lhs[s] + 1 and
+                @request[r] <= @lhs[s] + !lhs[s] - 1 and
+                @request[r] + !request[r] > @lhs[s] + !lhs[s] and
+                for any a in (1..#lhs) : (
+                  @lhs[a] >= @request[r] + !request[r] and
+                  @lhs[a] <= @request[r] + !request[r] + 80 and
+                  for any n in (1..#newline) : (
+                    @newline[n] + !newline[n] == @lhs[a] and
+                    @newline[n] >= @request[r] and
+                    @newline[n] < @request[r] + !request[r]
+                  ) and
+                  for any e in (1..#equals) : (
+                    @equals[e] >= @lhs[a] + 1 and
+                    @equals[e] <= @lhs[a] + !lhs[a] - 1 and
+                    for all k in (0..@request[r]-@lhs[s]-1) : (
+                      (uint8(@equals[e]+!equals[e]+k) | 32) == (uint8(@lhs[s]+k) | 32)
+                    ) and
+                    for any v in (1..#eval) : (
+                      @eval[v] == @equals[e]+!equals[e]+@request[r]-@lhs[s] and
+                      for all k in (0..@equals[e]-@lhs[a]-1) : (
+                        (uint8(@eval[v]+!eval[v]+k) | 32) == (uint8(@lhs[a]+k) | 32)
+                      ) and $eval_statement at @eval[v] and
+                      (uint8(@eval[v]+!eval[v]+@equals[e]-@lhs[a]) == 32 or
+                       uint8(@eval[v]+!eval[v]+@equals[e]-@lhs[a]) == 9 or
+                       uint8(@eval[v]+!eval[v]+@equals[e]-@lhs[a]) == 13 or
+                       uint8(@eval[v]+!eval[v]+@equals[e]-@lhs[a]) == 10 or
+                       uint8(@eval[v]+!eval[v]+@equals[e]-@lhs[a]) == 37)
+                    )
+                  )
+                )
+              ) and
+              (#comment == 0 or for all c in (1..#comment) : (
+                @lhs[s] < @comment[c] or @lhs[s] >= @comment[c] + !comment[c]
+              ))
+            )
+        }
+
+composite_rules:
+  - id: classic-asp-request-alias-eval
+    desc: ASP evaluates request text through an alias
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: asp-request-alias-eval-binding
+      - id: micro-behaviors/process/interpreter/eval/direct::vbs-eval-function
