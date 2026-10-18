@@ -1,0 +1,1 @@
+function _0xcafe(n){return n;} _0xcafe(0xbeef);

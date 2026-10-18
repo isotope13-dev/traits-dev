@@ -1,61 +1,66 @@
-# AH=39h creates the directory named at DS:DX. The digit walker and the
-# CX countdown are separate; a disk-fill composite joins them. YARA so a
-# short COM image is still scanned.
+# Opcode, pointer and backward-branch checks identify this COM mkdir loop.
+# Headerless files without a COM extension can remain Unknown in the engine;
+# this rule cannot override its file-type classifier.
 defaults:
-  for:
-  - dos_com
-  - data
-  platforms:
-  - windows
-  - unix
+  for: [dos_com, data]
+  platforms: [windows, unix]
   size_max: 65536
+  crit: notable
 traits:
   - id: dos-int21-mkdir-imm-dx
     desc: DOS creates a directory by name
-    crit: notable
     conf: 0.9
+    if:
+      type: hex
+      pattern: "B4 39 BA ?? ?? CD 21"
+
+  - id: dos-counted-digit-mkdir-loop
+    desc: DOS bulk mkdir loop increments directory digits
+    conf: 0.99
     if:
       type: yara
       source: |
-        rule dos_int21_mkdir_imm_dx {
+        rule dos_counted_digit_mkdir_loop {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $init = { B9 ?? ?? 51 }
+            $mk = { B4 39 BA ?? ?? CD 21 }
+            $walk = { BF ?? ?? BB ?? ?? FE 01 80 39 39 76 06
+                      C6 01 30 4B 75 F3 59 83 F9 00 74 04 49 51 EB ?? CD 20 }
+          condition:
+            #init > 0 and #mk > 0 and #walk > 0 and
+            for any i in (1..#init) : (
+              uint16(@init[i]+1) >= 256 and
+              for any m in (1..#mk) : (
+                @mk[m] >= @init[i]+4 and @mk[m] < @init[i]+64 and
+                for any w in (1..#walk) : (
+                  @walk[w] >= @mk[m]+7 and @walk[w] <= @mk[m]+9 and
+                  uint16(@walk[w]+1) == uint16(@mk[m]+3) and
+                  uint16(@walk[w]+4) >= 1 and uint16(@walk[w]+4) <= 7 and
+                  @walk[w]+29+uint8(@walk[w]+28) == @mk[m]+256
+                )
+              )
+            )
+        }
+
+  - id: dos-mkdir-oem-blank-name-buffer
+    desc: DOS mkdir targets OEM blank name fields
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule dos_mkdir_oem_blank_name_buffer {
           meta:
             filetypes = "dos_com,data"
           strings:
             $mk = { B4 39 BA ?? ?? CD 21 }
+            $name = /\xFF{2,7}[0-9]{1,6}\.\xFF{1,3}\x00/
           condition:
-            $mk
-        }
-
-  # INC the indexed byte, and if it passes '9' store '0' and step back.
-  - id: dos-ascii-digit-carry
-    desc: Increments an ASCII digit with carry
-    crit: notable
-    conf: 0.92
-    if:
-      type: yara
-      source: |
-        rule dos_ascii_digit_carry {
-          meta:
-            filetypes = "dos_com,data"
-          strings:
-            $dig = { FE 01 80 39 39 76 ?? C6 01 30 4B 75 ?? }
-          condition:
-            $dig
-        }
-
-  # POP the remaining count, stop at zero, otherwise decrement and jump back.
-  - id: dos-cx-countdown-restart
-    desc: Counts down CX and jumps back
-    crit: notable
-    conf: 0.9
-    if:
-      type: yara
-      source: |
-        rule dos_cx_countdown_restart {
-          meta:
-            filetypes = "dos_com,data"
-          strings:
-            $cx = { 59 83 F9 00 74 ?? 49 51 EB ?? }
-          condition:
-            $cx
+            #mk > 0 and #name > 0 and
+            for any m in (1..#mk) : (
+              for any n in (1..#name) : (
+                @name[n]+256 == uint16(@mk[m]+3)
+              )
+            )
         }
