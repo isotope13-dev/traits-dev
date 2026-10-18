@@ -1,0 +1,62 @@
+# Compare identifier bytes within operation matches: a generic identifier
+# pattern would exceed Cleave's eight-match cap before reaching the script.
+defaults:
+  platforms: [windows, unix]
+  for: [html, javascript, typescript]
+  crit: notable
+  conf: 0.98
+
+traits:
+  - id: joined-mnemonic-json-post
+    desc: Joined phrase sent in mnemonic JSON POST
+    if:
+      type: yara
+      source: |
+        rule joined_mnemonic_json_post {
+          strings:
+            $join = /\b[A-Za-z_][A-Za-z0-9_]{0,63}\s*=\s*[A-Za-z_][A-Za-z0-9_]{0,63}\.join\(\s*["'] ["']\s*\)/
+            $post = /\bfetch\s*\([^;]{0,500}\bmethod\s*:\s*["']POST["'][^;]{0,500}\bbody\s*:\s*JSON\.stringify\(\s*\{\s*(seedPhrase|mnemonic)\s*:\s*[A-Za-z_][A-Za-z0-9_]{0,63}/
+          condition:
+            all of them and
+            for any j in (1..#join) : (
+              for any p in (1..#post) : (
+                @post[p] > @join[j] and @post[p] - @join[j] < 4096 and
+                for any n in (1..64) : (
+                  (uint8(@join[j]+n) <= 32 or uint8(@join[j]+n) == 61) and
+                  (uint8(@post[p]+!post[p]-n-1) <= 32 or
+                   uint8(@post[p]+!post[p]-n-1) == 58) and
+                  for all b in (0..n-1) : (
+                    uint8(@join[j]+b) == uint8(@post[p]+!post[p]-n+b)
+                  )
+                )
+              )
+            )
+        }
+
+  - id: queued-key-buffer-json-post
+    desc: Queued key buffer sent in JSON POST
+    if:
+      type: yara
+      source: |
+        rule queued_key_buffer_json_post {
+          strings:
+            $queue = /\b[A-Za-z_][A-Za-z0-9_]{0,63}\.push\(\s*\{[^}]{0,200}:\s*(e|ev|evt|event)\.key\b/
+            $post = /\bfetch\s*\([^;]{0,500}\bmethod\s*:\s*["']POST["'][^;]{0,500}\bbody\s*:\s*JSON\.stringify\(\s*\{[^;]{0,300}\.splice\(\s*0\s*\)/
+            $splice = /\b[A-Za-z_][A-Za-z0-9_]{0,63}\.splice\(\s*0\s*\)/
+          condition:
+            all of them and
+            for any q in (1..#queue) : (
+              for any p in (1..#post) : (
+                for any s in (1..#splice) : (
+                  @splice[s] > @post[p] and
+                  @splice[s] + !splice[s] == @post[p] + !post[p] and
+                  for any n in (1..64) : (
+                    uint8(@queue[q]+n) == 46 and uint8(@splice[s]+n) == 46 and
+                    for all b in (0..n-1) : (
+                      uint8(@queue[q]+b) == uint8(@splice[s]+b)
+                    )
+                  )
+                )
+              )
+            )
+        }
