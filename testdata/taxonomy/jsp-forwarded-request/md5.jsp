@@ -1,0 +1,1 @@
+<%@page import="java.security.*"%><% MessageDigest.getInstance("MD5"); %>

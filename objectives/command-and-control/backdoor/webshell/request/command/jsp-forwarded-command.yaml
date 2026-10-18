@@ -1,0 +1,77 @@
+# Bounded JSP request bindings; no password, banner, URL or parameter key gates.
+defaults:
+  platforms:
+  - unix
+  - windows
+  for:
+  - jsp
+  attack: T1505.003
+  mbc: B0030
+traits:
+- id: jsp-forwarded-request-command-pattern
+  desc: JSP request data feeds process arguments
+  crit: suspicious
+  conf: 0.99
+  if:
+    type: yara
+    source: |
+      rule jsp_forwarded_request_command {
+        strings:
+          $z_code_source_path = /String\s+z1\s*=\s*EC\(request\.getParameter\("[^"\r\n]+"\)\s*\+\s*"",\s*cs\)/
+          $z_code_source_data = /String\s+z2\s*=\s*EC\(request\.getParameter\("[^"\r\n]+"\)\s*\+\s*"",\s*cs\)/
+          $z_code_identity = /String\s+EC\(String s,\s*String c\)\s*throws Exception\s*\{\s*return s;\s*\}/
+          $z_write_z1 = /\bz1\s*=/
+          $z_write_z2 = /\bz2\s*=/
+          $z_code_argv = /String\[\]\s+c\s*=\s*\{\s*z1\.substring\(2\),\s*z1\.substring\(0,\s*2\),\s*z2\s*\}/
+          $z_code_exec = /Runtime\.getRuntime\(\)\.exec\(c\)/
+          $z_write_c = /\bc\s*=/
+          $comment = /<%--.*?--%>|<!--.*?-->|\/\*.*?\*\/|\/\/[^\r\n]*?([\r\n]|$)/s
+          $h_code_getter = /String\s+getRequestStringVal\(HttpServletRequest request,\s*String key\)\s*\{\s*String val=request\.getParameter\(key\);\s*if\(!isEmpty\(val\)\)\s*\{\s*return val;/
+          $h_code_bind = /String\s+cmd\s*=\s*Util\.getRequestStringVal\(request,\s*"[^"\r\n]+"\)/
+          $h_code_dispatch = /result\s*=\s*Util\.execCmd\(cmd,\s*encode\)/
+          $h_code_helper = /String\s+execCmd\(String cmd,\s*String encode\)/
+          $h_code_split = /String\[\]\s+rmd\s*=\s*cmd\.split\(" "\)/
+          $h_code_allocate = /String\[\]\s+cmds\s*=\s*new String\[rmd\.length\+2\]/
+          $h_code_windows = /cmds\[0\]\s*=\s*"cmd";\s*cmds\[1\]\s*=\s*"\/c"/
+          $h_code_posix = /cmds\[0\]\s*=\s*"\/bin\/sh";\s*cmds\[1\]\s*=\s*"-c"/
+          $h_code_transfer = /for\(int i=0;i<rmd\.length;i\+\+\)\s*\{\s*cmds\[i\+2\]=rmd\[i\];\s*\}/
+          $h_code_exec = /Runtime\.getRuntime\(\)\.exec\(cmds\)/
+          $h_write_cmd = /\bcmd\s*=/
+          $h_write_rmd = /\brmd\s*=/
+          $h_write_cmds = /\bcmds\s*=/
+          $h_write_element = /\bcmds\[[^\]\r\n]+\]\s*=/
+        condition:
+          (all of ($z_code*) and
+          #z_write_z1 == 1 and #z_write_z2 == 1 and
+          @z_code_source_path < @z_code_argv and @z_code_source_data < @z_code_argv and
+          @z_code_argv < @z_code_exec and @z_code_exec - @z_code_argv < 512 and
+          for all i in (1..#z_write_c) : (
+            @z_write_c[i] < @z_code_argv + !z_code_argv or @z_write_c[i] >= @z_code_exec
+          ) and
+          for all of ($z_code*) : (
+            #comment == 0 or for all c in (1..#comment) : (
+              @ + ! <= @comment[c] or @ >= @comment[c] + !comment[c]
+            )
+          )) or
+          (all of ($h_code*) and
+          #h_write_cmd == 1 and #h_write_rmd == 1 and #h_write_cmds == 1 and #h_write_element == 5 and
+          @h_code_bind < @h_code_dispatch and @h_code_dispatch - @h_code_bind < 512 and
+          @h_code_helper < @h_code_split and @h_code_split < @h_code_allocate and
+          @h_code_allocate < @h_code_transfer and @h_code_transfer < @h_code_exec and
+          @h_code_exec - @h_code_helper < 1800 and
+          for all of ($h_code*) : (
+            #comment == 0 or for all c in (1..#comment) : (
+              @ + ! <= @comment[c] or @ >= @comment[c] + !comment[c]
+            )
+          ))
+      }
+composite_rules:
+- id: jsp-forwarded-request-command
+  desc: JSP forwards request input into OS commands
+  crit: hostile
+  conf: 0.99
+  all:
+  - id: jsp-forwarded-request-command-pattern
+  - id: metadata/lang/scripted::jsp-server-page
+  - id: micro-behaviors/process/create/exec::java-runtime-exec-source
+  - id: micro-behaviors/communications/http/response::jsp-response-print-syntax

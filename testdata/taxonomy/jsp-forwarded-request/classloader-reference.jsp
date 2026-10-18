@@ -1,0 +1,1 @@
+<%@page import="java.lang.*"%><% this.getClass().getClassLoader(); %>

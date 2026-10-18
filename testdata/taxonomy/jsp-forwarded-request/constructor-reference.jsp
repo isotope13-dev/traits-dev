@@ -1,0 +1,1 @@
+<%@page import="java.lang.*"%><% Class.forName("java.lang.String").newInstance(); %>

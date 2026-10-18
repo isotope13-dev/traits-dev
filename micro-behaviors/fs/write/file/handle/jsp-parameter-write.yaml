@@ -1,0 +1,62 @@
+# Bounded JSP request bindings; no password, banner, URL or parameter key gates.
+defaults:
+  platforms:
+  - unix
+  - windows
+  for:
+  - jsp
+  crit: notable
+  conf: 0.99
+traits:
+- id: jsp-parameter-path-content-write
+  desc: JSP parameters supply file path and contents
+  if:
+    type: yara
+    source: |
+      rule jsp_parameter_file_write_bound {
+        strings:
+          $z_code_source_path = /String\s+z1\s*=\s*EC\(request\.getParameter\("[^"\r\n]+"\)\s*\+\s*"",\s*cs\)/
+          $z_code_source_data = /String\s+z2\s*=\s*EC\(request\.getParameter\("[^"\r\n]+"\)\s*\+\s*"",\s*cs\)/
+          $z_code_identity = /String\s+EC\(String s,\s*String c\)\s*throws Exception\s*\{\s*return s;\s*\}/
+          $z_write_z1 = /\bz1\s*=/
+          $z_write_z2 = /\bz2\s*=/
+          $z_code_writer = /BufferedWriter\s+bw\s*=\s*new BufferedWriter\(\s*new OutputStreamWriter\(\s*new FileOutputStream\(\s*new File\(z1\)\s*\)\s*\)\s*\)/
+          $z_code_write = /bw\.write\(z2\)/
+          $z_write_bw = /\bbw\s*=/
+          $comment = /<%--.*?--%>|<!--.*?-->|\/\*.*?\*\/|\/\/[^\r\n]*?([\r\n]|$)/s
+          $h_code_getter = /String\s+getRequestStringVal\(HttpServletRequest request,\s*String key\)\s*\{\s*String val=request\.getParameter\(key\);\s*if\(!isEmpty\(val\)\)\s*\{\s*return val;/
+          $h_code_path = /String\s+path\s*=\s*Util\.getRequestStringVal\(request,\s*"[^"\r\n]+"\)/
+          $h_code_content = /String\s+content\s*=\s*Util\.getRequestStringVal\(request,\s*"[^"\r\n]+"\)/
+          $h_code_dispatch = /FileUtil\.writeTextToFile\(content,\s*path,\s*encoding\)/
+          $h_code_helper = /String\s+writeTextToFile\(String text,\s*String path,\s*String encode\)/
+          $h_code_file = /osw\s*=\s*new OutputStreamWriter\(new FileOutputStream\(path\)/
+          $h_code_writer = /BufferedWriter\s+bw\s*=\s*new BufferedWriter\(osw\)/
+          $h_code_write = /bw\.write\(text\)/
+          $h_write_path = /\bpath\s*=/
+          $h_write_content = /\bcontent\s*=/
+        condition:
+          (all of ($z_code*) and
+          #z_write_z1 == 1 and #z_write_z2 == 1 and #z_write_bw == 1 and
+          @z_code_source_path < @z_code_writer and @z_code_source_data < @z_code_writer and
+          @z_code_writer < @z_code_write and @z_code_write - @z_code_writer < 512 and
+          for all of ($z_code*) : (
+            #comment == 0 or for all c in (1..#comment) : (
+              @ + ! <= @comment[c] or @ >= @comment[c] + !comment[c]
+            )
+          )) or
+          (all of ($h_code*) and
+          for all i in (1..#h_write_path) : (
+            @h_write_path[i] < @h_code_path + !h_code_path or @h_write_path[i] >= @h_code_dispatch
+          ) and for all i in (1..#h_write_content) : (
+            @h_write_content[i] < @h_code_content + !h_code_content or @h_write_content[i] >= @h_code_dispatch
+          ) and
+          @h_code_path < @h_code_content and @h_code_content < @h_code_dispatch and
+          @h_code_dispatch - @h_code_content < 512 and @h_code_dispatch - @h_code_path < 2600 and
+          @h_code_helper < @h_code_file and @h_code_file < @h_code_writer and
+          @h_code_writer < @h_code_write and @h_code_write - @h_code_helper < 1000 and
+          for all of ($h_code*) : (
+            #comment == 0 or for all c in (1..#comment) : (
+              @ + ! <= @comment[c] or @ >= @comment[c] + !comment[c]
+            )
+          ))
+      }
