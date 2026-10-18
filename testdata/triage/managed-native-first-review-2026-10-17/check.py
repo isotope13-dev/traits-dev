@@ -30,7 +30,7 @@ chrome = 'objectives/evasion/masquerade/version-resource/google-chrome::chrome-b
 plugin = 'objectives/command-and-control/backdoor/dispatch/module::messagepack-managed-plugin-tasking'
 tls = 'micro-behaviors/communications/tls/verify/callback::dotnet-custom-tls-certificate-validation'
 active = 'objectives/persistence/login/registry/autostart::active-setup-service-dll-injector'
-neutral = 'micro-behaviors/process/inject/runtime/thread-context::suspended-write-resume-api-profile'
+neutral = 'micro-behaviors/mem/combined::suspended-write-resume-api-profile'
 cases = []
 
 def mutated(name, index, replacements, expected):
