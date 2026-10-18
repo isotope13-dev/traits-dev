@@ -33,8 +33,8 @@ traits:
   # Plain text regex, broadened to binaries like noop-exit-shebang-script-write
   # below: a Go/ELF binary that shells out to `exec.Command("sh", "-c", ...)`
   # carries the same command string in its data section.
-  - id: shell-printf-file-write
-    desc: Shell printf redirects output to a file
+  - id: binary-shell-printf-file-write
+    desc: Binary contains printf output redirect text
     conf: 0.86
     # File default platforms: [unix] silently drops Pe from `binaries` (a
     # Windows-only type) unless overridden here.
@@ -44,11 +44,27 @@ traits:
     # Ruby's `printf fmt, v.to_i > 9 ? ...` reads the `>` comparison as a
     # redirect. The `(^|[;&])` anchor already keeps this at statement
     # position, which is exactly where those calls live.
-    for: [shell, binaries]
+    for: [binaries]
     if:
       type: text
       # A backslash-newline continues this shell command before redirection.
       regex: '(?im)(^|[;&])\s*printf\b([^\r\n]|\\\r?\n){0,160}(>[^&]|of=)'
+  - id: shell-printf-file-redirect
+    desc: Shell printf redirects output to a file
+    conf: 0.94
+    if:
+      type: tree-sitter
+      query: |
+        ([
+          (redirected_statement
+            body: (command name: (command_name (word) @command))
+            redirect: (file_redirect [">" ">>"] destination: (_) @destination))
+          (redirected_statement
+            body: (list (command name: (command_name (word) @command)) .)
+            redirect: (file_redirect [">" ">>"] destination: (_) @destination))
+        ] @write
+         (#eq? @command "printf")
+         (#not-match? @destination "^[\"']?/dev/(tcp/|udp/|null[\"']?$)"))
   # No-op shebang body (`exit 0` / `true`) written via printf/echo — the write
   # half of a filesystem exec capability probe (create, chmod, run, delete),
   # not payload staging. Broadened to binaries so the same string in a Go/ELF
@@ -176,6 +192,14 @@ traits:
       regex: '(?i)(curl|wget|https?://)[^\n>]{0,40}>>?[^\n]{0,16}\.(bashrc|zshrc|profile|zlogin)\b'
 
 composite_rules:
+  - id: shell-printf-file-write
+    desc: Shell printf redirects output to a file
+    conf: 0.86
+    platforms: [unix, windows]
+    for: [shell, binaries]
+    any:
+      - id: shell-printf-file-redirect
+      - id: binary-shell-printf-file-write
   - id: shell-watchdog-feed
     desc: Shell watchdog keepalive write
     conf: 0.9
