@@ -1,0 +1,5 @@
+MESSAGE_KEY = "upd.marker.done"
+TRACKING_KEY = "update.tracker.ran"
+FIELD_NAME = "tracker_done"
+NOT_A_FILE = "marker.done.extra"
+CALL_TEXT = ".set_target("
