@@ -24,7 +24,7 @@ name = meta + 'file/naming::business-document-exe-name'
 controls = {
     'action.html': ([button], []),
     'manual.html': ([meta + 'document/html::groff-creator-comment',
-                     meta + 'lang/natural::en-shell-kind-term'], [button]),
+                     meta + 'lang/natural::en-shell-backdoor-term'], [button]),
     'plain.html': ([], [button, meta + 'document/html::groff-creator-comment']),
     'options.sh': ([mb + 'process/argument/option::xmrig-randomx-mode-option',
                     mb + 'process/argument/option::xmrig-cpu-threads-hint-option',
