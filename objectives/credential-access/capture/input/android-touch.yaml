@@ -18,25 +18,7 @@ traits:
       kind: string
       regex: '(?i)^(password|pin|pattern)(_quality)?_?(touch_?points?|coordinates?)$'
 
-  # This is an operation, not a vocabulary hit: the parser must expose a call
-  # whose target maps or resolves a touch/coordinate into a keypad digit, PIN,
-  # or unlock pattern. Legitimate lock-screen implementations can contain the
-  # operation, so the hostile conclusion below also requires raw input capture
-  # and the explicit touch-derived credential type.
-  - id: touch-coordinate-keypad-mapping-call
-    desc: Maps touch coordinates to credential keys
-    crit: suspicious
-    conf: 0.96
-    for: [java, kotlin, go, rust, c, cpp, dex]
-    if:
-      type: symbol
-      kind: call
-      regex: '(?i)^(map|match|resolve|convert).*(touch|coord|[^d]point).*(pin($|_)|digit|keypad|pattern)'
-
-  # Pattern-lock identifier token: lock-pattern view and method names across
-  # OEM skins (AOSP, One UI, MIUI, EMUI, ColorOS, OxygenOS). Structural
-  # identifier, not prose; the composite below pairs it with the actual
-  # accessibility ViewId search that reads the cells.
+  # Source identifier token; node-search composites supply lookup context.
   - id: android-pattern-lock-id-token
     desc: Pattern-lock identifier token
     crit: notable
@@ -46,33 +28,56 @@ traits:
       type: text
       regex: '(?i)\block.?pattern\w*|\bpattern.?lock\w*'
 
-composite_rules:
-  - id: android-overlay-window-surface
-    desc: Android runtime overlay window surface
-    crit: component
-    conf: 0.95
-    any:
-      - id: micro-behaviors/ui/window/overlay::android-source-runtime-overlay-window
-      - id: micro-behaviors/ui/window/overlay::runtime-overlay-window
-
-  - id: android-overlay-touch-coordinate-capture
-    desc: Android overlay captures touch coordinates
-    crit: component
+  - id: android-touch-credential-buffering
+    desc: Touch listener buffers credential digits
+    crit: suspicious
     conf: 0.98
-    all:
-      - id: android-overlay-window-surface
-      - id: micro-behaviors/hardware/input/event::android-view-touch-coordinate-capture
+    for: [java]
+    if:
+      type: tree-sitter
+      language: java
+      query: |
+        (class_body
+          (field_declaration declarator: (variable_declarator
+            value: (method_invocation arguments: (argument_list
+              (string_literal (string_fragment) @payment_package)))))
+          (method_declaration body: (block (expression_statement
+              (method_invocation
+                name: (identifier) @listener
+                arguments: (argument_list
+                  (lambda_expression body: (block
+                    (local_variable_declaration
+                      declarator: (variable_declarator
+                        name: (identifier) @digit
+                        value: (method_invocation
+                          name: (identifier) @mapping
+                          arguments: (argument_list
+                            (method_invocation name: (identifier) @x)
+                            (method_invocation name: (identifier) @y)))))
+                    (expression_statement (method_invocation
+                      object: (identifier) @buffer
+                      name: (identifier) @append
+                      arguments: (argument_list (identifier) @stored))))))
+                (#eq? @listener "setOnTouchListener")
+                (#match? @mapping "(?i)(coord|touch|point)")
+                (#match? @x "^get(Raw)?X$")
+                (#match? @y "^get(Raw)?Y$")
+                (#match? @buffer "(?i)(pin|password|passcode)")
+                (#eq? @append "append")
+                (#eq? @digit @stored)))))
+          (#match? @payment_package "^(com[.]phonepe[.]app|net[.]one97[.]paytm)$"))
 
+composite_rules:
   - id: android-overlay-touch-credential-replay
-    desc: Android overlay captures and replays credential touch coordinates
+    desc: Payment-targeting credential tap replay handlers
     crit: hostile
-    conf: 0.995
+    conf: 0.99
     attack: T1056.001,T1417.001
+    for: [java]
     all:
-      - id: android-overlay-touch-coordinate-capture
-      - id: objectives/credential-access/phishing/ui::android-accessibility-service-surface
-      - id: micro-behaviors/hardware/input/accessibility::android-accessibility-ui-action-source
-      - id: objectives/credential-access/phishing/ui::android-sensitive-input-label
+      - id: android-touch-credential-buffering
+      - id: micro-behaviors/hardware/input/accessibility::android-accessibility-event-package-read
+      - id: micro-behaviors/hardware/input/event::accessibility-overlay-touch-and-gesture
 
   # Hardware-level touch theft is distinct from overlay touch replay. The
   # collector reads the kernel's multitouch X/Y events and then converts those
@@ -88,7 +93,7 @@ composite_rules:
     all:
       - id: micro-behaviors/hardware/input/device::android-raw-touch-coordinate-capture
       - id: touch-point-credential-type
-      - id: touch-coordinate-keypad-mapping-call
+      - id: micro-behaviors/hardware/input/event::touch-coordinate-keypad-mapping-call
 
   # Identifier token plus the actual ViewId tree search: the lookup half of
   # the harvest. A stock lock screen knows only its own layout; hunting
