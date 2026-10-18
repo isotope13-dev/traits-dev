@@ -218893,7 +218893,7 @@ rule DITEKSHEN_MALWARE_Win_Fakecaptcha_Downloader : FILE
 rule DITEKSHEN_MALWARE_Win_Xenorat : FILE
 {
 	meta:
-		description = "Detects Blacksuit"
+		description = "Detects Xeno RAT"
 		author = "ditekshen"
 		id = "7f27ebef-8a0e-591a-a926-ac950db86053"
 		date = "2020-11-06"

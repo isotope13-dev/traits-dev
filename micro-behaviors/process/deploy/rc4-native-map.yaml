@@ -1,0 +1,42 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86]
+  attack: T1140,T1620
+traits:
+  # Bind the call targets, rather than convicting on unrelated RC4 and memory
+  # APIs in one file. The wrapper transforms EBX in place, then EBX is passed
+  # to a native MZ/PE image mapper. Relative calls share one .text mapping.
+  # Keys, endpoint, export names and image addresses are deliberately absent.
+  - id: x86-rc4-buffer-to-manual-pe-map
+    desc: RC4-transformed buffer passed to PE mapper
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        rule rc4_buffer_to_pe_mapper {
+          strings:
+            $chain = { E8 ?? ?? ?? ?? 53 E8 ?? ?? ?? ?? 8B F0 83 C4 10 85 F6 }
+            $mapper = { 51 8B 44 24 08 53 55 56 66 81 38 4D 5A 57 74 ?? 5F 5E 5D 33 C0 5B 59 C3 8B 78 3C 03 F8 89 7C 24 ?? 81 3F 50 45 00 00 [180-240] 53 E8 ?? ?? ?? ?? 8B 03 83 C4 04 8B 40 28 85 C0 74 ?? 03 C5 85 C0 74 ?? 6A 00 6A 01 55 FF D0 }
+            $transform = { 81 EC ?? ?? ?? ?? B0 ?? 6A ?? [30-90] E8 ?? ?? ?? ?? 8B 94 24 ?? ?? ?? ?? 8B 84 24 ?? ?? ?? ?? 52 8D 4C 24 ?? 50 51 E8 ?? ?? ?? ?? 81 C4 ?? ?? ?? ?? C3 }
+            $rc4 = { 8B 44 24 0C 56 57 33 C9 33 F6 33 FF 85 C0 76 ?? 8B 44 24 0C 53 55 8B 6C 24 ?? 41 81 E1 FF 00 00 80 [80-100] 8A 14 02 8A 1C 2F 32 DA 8B 54 24 ?? 88 1C 2F 47 3B FA 72 ?? 5D 5B 5F 5E C3 }
+          condition:
+            uint16(0) == 0x5a4d and
+            #chain > 0 and #chain < 64 and
+            #mapper > 0 and #mapper < 64 and
+            #transform > 0 and #transform < 64 and
+            #rc4 > 0 and #rc4 < 64 and
+            for any c in (1..#chain) : (
+              for any m in (1..#mapper) : (
+                @mapper[m] == @chain[c] + 11 + int32(@chain[c] + 7)
+              ) and
+              for any t in (1..#transform) : (
+                @transform[t] == @chain[c] + 5 + int32(@chain[c] + 1) and
+                for any r in (1..#rc4) : (
+                  @rc4[r] == @transform[t] + !transform[t] - 7 +
+                    int32(@transform[t] + !transform[t] - 11)
+                )
+              )
+            )
+        }
