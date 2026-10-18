@@ -424,6 +424,13 @@ processes to `process`.
 Don't duplicate WebSocket under HTTP, or a client library under each HTTP verb.
 A port literal is not a service, scan or authentication state.
 
+`communications/http/client/initialize` records construction or opening of an
+HTTP client or connection object without a required request method. An
+`HttpURLConnection` cast beside `openConnection()` belongs here; a bound POST
+method belongs in `http/post`, and an arbitrary `openConnection()` without an
+HTTP receiver does not establish this subject. Opening the object does not
+prove network transmission. Library spelling belongs in the ID and scope.
+
 ### Cryptography
 
 **Operation beats presence.** An AES encryption call is `encrypt`; an AES
@@ -494,6 +501,12 @@ A keyed XOR cipher is `crypto/symmetric/xor`; XOR scrambling is
 to `metaprogramming`, execution constructs to `data/control-flow`, artifact and
 language facts to `metadata`. A function *defined* with a utility's name is not
 a call to it.
+
+`data/encoding/xor` records direction-neutral XOR scrambling structure. A
+state-update/byte-XOR/store sequence fits even when the same loop can encode
+and decode. A bare XOR instruction does not establish scrambling. Required
+reconstruction context can establish decoding in a consuming rule; the atom
+must not acquire a direction from its consumer.
 
 ### Files, memory and hardware
 
@@ -566,6 +579,14 @@ An explicit shell argument beats the wrapper. An API's optional features are no
 evidence that this call uses them, and the launched executable does not change
 the mechanism. Under `shell`, pick one command-form axis (interactive session,
 command text, script file, pipeline).
+
+`process/inject/remote-thread` records remote-thread APIs and their accompanying
+remote-memory preparation. It does not require a DLL payload: allocation,
+writing and `CreateRemoteThread` references fit; allocating and writing without
+an execution-transfer API do not. `process/inject/dll` needs DLL-loading
+evidence. Neither an API profile nor a JVM interface declaration proves that a
+particular buffer became the thread's entry point. Imported method references
+and declarations remain distinct evidence.
 
 ## Attacker behaviors: `objectives/`
 
