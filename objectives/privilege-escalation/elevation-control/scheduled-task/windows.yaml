@@ -1,51 +1,11 @@
-# Scheduled-task privilege escalation: the Task Scheduler service runs
-# registered actions under the account the task was created with, so a task
-# marked /RU SYSTEM executes its action as NT AUTHORITY\SYSTEM regardless of
-# the invoking user's rights. Malware uses this as a throwaway elevation
-# helper: create a one-shot SYSTEM task whose /TR action wraps a command in
-# cmd.exe /c (or powershell), run it, and delete the task immediately so the
-# elevation footprint exists for only a few seconds. Legitimate software
-# registers durable tasks that run named programs; it does not spin up
-# SYSTEM-wrapped interpreter one-shots and remove them in the same breath.
-#
-# Observed in the counterfeit-installer campaign tracked by Microsoft
-# Defender Experts (Silver Fox / Yinhu class), where the helper task elevated
-# a Microsoft Defender exclusion registry write to SYSTEM.
+# Disposable SYSTEM-task helpers. Task registration alone requires existing
+# authority and does not demonstrate a privilege-boundary bypass.
 defaults:
   platforms: [windows]
   attack: T1053.005
   mbc: F0012
 
-traits:
-  # A /TR action that runs a command interpreter is a wrapper for an arbitrary
-  # command rather than a named program: the task exists to execute whatever
-  # follows the interpreter flag. Ordinary tasks point at the application
-  # itself; elevation and cleanup helpers are the ones that need cmd.exe /c.
-  - id: schtasks-run-task-command
-    desc: Immediately runs a scheduled task
-    crit: notable
-    conf: 0.9
-    for: [scripts, binaries]
-    if:
-      type: text
-      regex: '(?i)\bschtasks(\.exe)?\s+/run\b'
-
 composite_rules:
-  - id: system-task-interpreter-elevation
-    desc: SYSTEM scheduled task wraps an interpreter command
-    crit: suspicious
-    conf: 0.97
-    all:
-      - id: micro-behaviors/os/autorun/scheduled::schtasks-system-runas
-      - id: micro-behaviors/process/create/construction::schtasks-interpreter-action
-      - id: micro-behaviors/os/autorun/scheduled::windows-schtasks-create
-    near_bytes: 512
-    unless:
-      - id: metadata/signed/platform/
-      - id: metadata/binary/installer/family/
-  # A durable daily task, not the create-run-delete helper below. The
-  # interpreter action and the SYSTEM account sit on one schtasks line;
-  # the same script also turns the execution policy off so that file runs.
   - id: system-interpreter-task-policy-bypass
     desc: SYSTEM interpreter task plus policy bypass
     crit: hostile
@@ -53,7 +13,7 @@ composite_rules:
     near_bytes: 4096
     all:
       - id: micro-behaviors/os/autorun/scheduled::schtasks-system-runas
-      - id: micro-behaviors/process/create/construction::schtasks-interpreter-action
+      - id: micro-behaviors/os/autorun/control::schtasks-interpreter-action
       - id: micro-behaviors/process/create/flags::execution-policy-override-flag
     unless:
       - id: metadata/package/testing/harness/runtime/
@@ -66,8 +26,8 @@ composite_rules:
     crit: hostile
     conf: 0.99
     all:
-      - id: system-task-interpreter-elevation
-      - id: schtasks-run-task-command
+      - id: micro-behaviors/os/autorun/scheduled::system-interpreter-task
+      - id: micro-behaviors/os/autorun/control::schtasks-run-task-command
       - id: micro-behaviors/os/autorun/control::schtasks-delete-task-command
     near_lines: 40
     unless:
