@@ -1,83 +1,47 @@
+# Ordinary Chromium binaries contain these strings in readable sections.
+# Require three different markers inside sections with no memory access bits;
+# this is suspicious stuffing evidence, not proof of a malicious payload.
 defaults:
   platforms:
-    - windows
-    - linux
-    - macos
-  for: [javascript, html, pe]
-  crit: component
-  conf: 0.9
+  - windows
+  for:
+  - pe
 traits:
-  - id: chromium-test-url
-    crit: notable
-    desc: Chromium test command-line URL
-    if:
-      type: text
-      substr: "example-cmdline.test"
-  - id: chromium-test-navigation
-    crit: notable
-    desc: Chromium internal test navigation string
-    if:
-      type: text
-      substr: ui_test_utils::NavigateToURL
-  - id: chromium-memory-infra
-    crit: notable
-    desc: Chromium memory infrastructure metric string
-    if:
-      type: text
-      substr: disabled-by-default-memory-infra
-  - id: chromium-autofill-test
-    crit: notable
-    desc: Chromium autofill test form string
-    if:
-      type: text
-      substr: form action="https://www.example.com/" method="POST" id="shipping"
-  - id: chromium-proxy-source-path
-    crit: notable
-    desc: Chromium proxy source path
-    if:
-      type: text
-      substr: ../chrome/chrome_proxy/chrome_proxy_main_win.cc
-  - id: chromium-pwa-launcher-pdb
-    crit: notable
-    desc: Chromium launcher PDB marker
-    if:
-      type: text
-      substr: chrome_pwa_launcher.exe.pdb
-  - id: chromium-notification-helper
-    crit: notable
-    desc: Chromium notification helper marker
-    if:
-      type: text
-      substr: NotificationHelperMetrics
+- id: chromium-decoy-stuffing
+  desc: Chromium markers in inaccessible PE sections
+  crit: suspicious
+  conf: 0.94
+  if:
+    type: yara
+    source: |
+      import "pe"
+      rule chromium_strings_in_inaccessible_sections {
+        strings:
+          $chrome_url = "example-cmdline.test"
+          $chrome_navigation = "ui_test_utils::NavigateToURL"
+          $chrome_memory = "disabled-by-default-memory-infra"
+          $chrome_autofill = "form action=\"https://www.example.com/\" method=\"POST\" id=\"shipping\""
+          $chrome_proxy = "../chrome/chrome_proxy/chrome_proxy_main_win.cc"
+          $chrome_launcher = "chrome_pwa_launcher.exe.pdb"
+          $chrome_notification = "NotificationHelperMetrics"
+        condition:
+          pe.is_pe and pe.number_of_sections > 0 and
+          for 3 of ($chrome*) : (
+            for any j in (1..#) : (
+              for any i in (0..pe.number_of_sections - 1) : (
+                pe.sections[i].characteristics & 0xe0000000 == 0 and
+                @[j] >= pe.sections[i].raw_data_offset and
+                @[j] + ![j] <= pe.sections[i].raw_data_offset + pe.sections[i].raw_data_size
+              )
+            )
+          )
+      }
 composite_rules:
-  - id: chromium-stuffed-decrypting-loader
-    desc: Chromium decoy corpus conceals decrypting memory loader
-    for: [pe, dll]
-    platforms: [windows]
-    crit: hostile
-    conf: 0.98
-    attack: T1027.016,T1620
-    all:
-      - id: chromium-decoy-stuffing
-      - id: objectives/anti-static/obfuscation/payload/memory::subtract-decrypted-tls-execution
-  - id: chromium-junk-strings
-    desc: Chromium test strings used as junk code obfuscation
-    needs: 2
-    any:
-      - id: chromium-test-url
-      - id: chromium-test-navigation
-      - id: chromium-memory-infra
-      - id: chromium-autofill-test
+- id: chromium-stuffed-decrypting-loader
+  desc: Chromium decoy corpus conceals decrypting memory loader
+  crit: hostile
+  conf: 0.98
+  attack: T1027.016,T1620
+  all:
   - id: chromium-decoy-stuffing
-    desc: Chromium decoy strings stuffed into binary
-    crit: suspicious
-    conf: 0.94
-    needs: 3
-    any:
-      - id: objectives/anti-static/obfuscation/string/junking::chromium-test-url
-      - id: objectives/anti-static/obfuscation/string/junking::chromium-test-navigation
-      - id: objectives/anti-static/obfuscation/string/junking::chromium-memory-infra
-      - id: objectives/anti-static/obfuscation/string/junking::chromium-autofill-test
-      - id: objectives/anti-static/obfuscation/string/junking::chromium-proxy-source-path
-      - id: objectives/anti-static/obfuscation/string/junking::chromium-pwa-launcher-pdb
-      - id: objectives/anti-static/obfuscation/string/junking::chromium-notification-helper
+  - id: objectives/anti-static/obfuscation/payload/memory::subtract-decrypted-tls-execution
