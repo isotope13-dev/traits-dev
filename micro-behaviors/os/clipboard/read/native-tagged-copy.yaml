@@ -1,0 +1,48 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86]
+
+traits:
+  - id: x86-cf-text-tagged-copy
+    desc: Clipboard text copied into tagged record
+    crit: notable
+    conf: 0.98
+    attack: T1115
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule clipboard_text_tagged_copy {
+          strings:
+            $read_name = "GetClipboardData\x00" ascii
+            $lock_name = "GlobalLock\x00" ascii
+            // Resolve and call GetClipboardData(CF_TEXT), check the handle,
+            // resolve GlobalLock, size and lock that same handle, allocate,
+            // and copy the returned text to one byte past a record tag.
+            // Relocation operands and the tag value are deliberately free.
+            $copy = {
+              68 ?? ?? ?? ?? 68 ?? ?? ?? ?? FF D3 50 FF D5
+              6A 01 FF D0 8B F8 89 7C 24 ?? 85 FF 75 1A [26]
+              56 68 ?? ?? ?? ?? 68 ?? ?? ?? ?? FF D3 50 FF D5
+              57 89 44 24 ?? FF 15 ?? ?? ?? ?? 8B F0 57 46
+              FF 54 24 ?? 56 89 44 24 ?? E8 ?? ?? ?? ??
+              8B 4C 24 ?? 8B F8 8D 46 FF 50 51 8D 57 01 52
+              C6 07 ?? E8 ?? ?? ?? ?? 83 C4 10
+            }
+          condition:
+            pe.machine == pe.MACHINE_I386 and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].name == ".text" and
+              for any c in (1..#copy) : (
+                @copy[c] >= pe.sections[s].raw_data_offset and
+                @copy[c] + !copy[c] <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size and
+                for any r in (1..#read_name) : (
+                  pe.rva_to_offset(uint32(@copy[c]+1)-pe.image_base) == @read_name[r]
+                ) and
+                for any l in (1..#lock_name) : (
+                  pe.rva_to_offset(uint32(@copy[c]+57)-pe.image_base) == @lock_name[l]
+                )
+              )
+            )
+        }
