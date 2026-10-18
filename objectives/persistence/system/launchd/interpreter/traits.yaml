@@ -2,28 +2,6 @@ defaults:
   platforms: [macos]
   for: [plist]
 traits:
-  - id: abandon-process-group
-    desc: AbandonProcessGroup key
-    crit: notable
-    conf: 0.76
-    if:
-      type: value
-      path: AbandonProcessGroup
-  - id: progargs-shell-interpreter
-    desc: ProgramArguments shell interpreter
-    crit: notable
-    conf: 0.82
-    attack: T1059.004
-    if:
-      type: value
-      path: ProgramArguments[0]
-      regex: ^/(bin|usr/bin)/(ba)?sh$|^/bin/zsh$
-  # A ProgramArguments entry that is a bare absolute path into an app bundle's
-  # MacOS/ executables dir (no inline script body, no shell metacharacters):
-  # `sh -c /Applications/Foo.app/Contents/MacOS/bar` is a launcher wrapper, not
-  # inline-interpreter execution. Named (not inline) so it is collected at the
-  # leaf plist and can downgrade the composite even when it rolls up to an
-  # enclosing archive.
   - id: progargs-app-bundle-binary
     desc: Launches an app-bundle executable
     crit: notable
@@ -53,45 +31,6 @@ traits:
       type: value
       path: ProgramArguments[*]
       regex: '^sysctl\s+-w\s+kern\.\w+=\d+(\s+kern\.\w+=\d+){0,4}$'
-  - id: progargs-system-python-interpreter
-    desc: ProgramArguments system Python interpreter
-    crit: notable
-    conf: 0.78
-    attack: T1059.006
-    if:
-      type: value
-      path: ProgramArguments[0]
-      regex: ^(/usr/bin|/usr/local/bin|/opt/homebrew/bin)/python[0-9.]*$
-  - id: progargs-ruby-interpreter
-    desc: ProgramArguments Ruby interpreter
-    crit: notable
-    conf: 0.78
-    attack: T1059.004
-    if:
-      type: value
-      path: ProgramArguments[0]
-      exact: /usr/bin/ruby
-  - id: progargs-perl-interpreter
-    desc: ProgramArguments Perl interpreter
-    crit: notable
-    conf: 0.78
-    attack: T1059.006
-    if:
-      type: value
-      path: ProgramArguments[0]
-      exact: /usr/bin/perl
-  - id: progargs-osascript-interpreter
-    desc: ProgramArguments osascript interpreter
-    crit: notable
-    conf: 0.78
-    attack: T1059.002
-    if:
-      type: value
-      path: ProgramArguments[0]
-      exact: /usr/bin/osascript
-  # An upgrader renders its one-shot job from a source template whose Label and
-  # arguments carry `{TIMESTAMP}` / `{SCRIPT_PATH}` slots. A plist with unfilled
-  # slots is a template on disk in a source tree, not an installed job.
   - id: launchd-plist-template-placeholder
     desc: Launchd plist label has template placeholder
     crit: notable
@@ -100,15 +39,6 @@ traits:
       type: value
       path: Label
       regex: '\{[A-Z][A-Z_]{2,20}\}'
-  - id: progargs-inline-flag
-    desc: ProgramArguments inline execution flag
-    crit: component
-    conf: 0.82
-    attack: T1059
-    if:
-      type: value
-      path: ProgramArguments[*]
-      regex: ^-(c|e)$
   - id: progargs-remote-pipe-shell
     desc: Launchd runs remote pipe-to-shell command
     crit: suspicious
@@ -119,63 +49,6 @@ traits:
       path: ProgramArguments[*]
       regex: '(?i)\b(curl|wget)\b.{4,240}https?://.{4,240}\|\s*(/(usr/)?bin/)?((ba|z)?sh|osascript)\b'
 composite_rules:
-  - id: progargs-script-interpreter
-    desc: ProgramArguments script interpreter
-    crit: component
-    conf: 0.78
-    attack: T1059
-    any:
-      - id: progargs-system-python-interpreter
-      - id: progargs-ruby-interpreter
-      - id: progargs-perl-interpreter
-      - id: progargs-osascript-interpreter
-  # One downgrade leg. Each member is a fixed helper rather than an
-  # interpreter payload: an app-bundle path, `exec /abs/bin`, a template
-  # placeholder, a known agent label, or a single kern.* sysctl write.
-  - id: launchd-inline-fixed-helper
-    desc: Inline launchd runs a fixed helper
-    crit: notable
-    conf: 0.85
-    any:
-      - id: progargs-app-bundle-binary
-      - id: progargs-inline-exec-absolute-binary
-      - id: launchd-plist-template-placeholder
-      - id: progargs-sysctl-kernel-write
-      - id: well-known/app/utility/kpango-dotfiles::kpango-dotfiles-source-path
-      - id: well-known/app/infrastructure/pm2::pm2-launchd-label
-      - id: well-known/app/ai/agent-runtime/voicelayer::voicelayer-launchd-label
-  - id: launchd-inline-interpreter
-    desc: Launchd inline interpreter execution
-    crit: suspicious
-    conf: 0.88
-    attack: T1059,T1543.004
-    unless:
-      - id: well-known/tool/detection/agent-glovebox::archive-context
-      - id: metadata/package/testing/
-      - id: "metadata/file/naming::test-directory-component"
-    all:
-      - id: progargs-inline-flag
-    any:
-      - id: progargs-shell-interpreter
-      - id: progargs-script-interpreter
-    # `sh -c /Applications/Foo.app/Contents/MacOS/bar` is a launcher wrapper
-    # around a bundled executable, not inline-interpreter execution (T1059).
-    # Still worth noting (sh wrapper around a service), so downgrade to notable
-    # rather than drop. Referenced by name so it resolves at the leaf plist.
-    downgrade:
-      any:
-        - id: launchd-inline-fixed-helper
-  - id: launchd-abandon-inline-interpreter
-    desc: Launchd abandons inline interpreter
-    crit: suspicious
-    conf: 0.86
-    attack: T1059,T1543.004
-    all:
-      - id: abandon-process-group
-      - id: launchd-inline-interpreter
-    downgrade:
-      any:
-        - id: launchd-plist-template-placeholder
   - id: launchd-recurring-remote-pipe-shell
     desc: Launchd repeatedly fetches code into a shell
     crit: hostile
@@ -192,8 +65,8 @@ composite_rules:
     conf: 0.99
     attack: T1059.002,T1105,T1543.004
     all:
-      - id: progargs-osascript-interpreter
+      - id: micro-behaviors/os/service/configure::launchd-osascript-program
       - id: progargs-remote-pipe-shell
     any:
-      - id: objectives/persistence/system/launchd/bootstrap::run-at-load
+      - id: micro-behaviors/os/service/configure::launchd-run-at-load
       - id: micro-behaviors/os/service/plist::keep-alive
