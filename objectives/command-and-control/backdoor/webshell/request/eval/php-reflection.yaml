@@ -1,0 +1,60 @@
+defaults:
+  platforms: [unix, windows]
+  for: [php]
+  crit: suspicious
+  conf: 0.97
+  attack: T1505.003
+
+traits:
+  # Match adjacent statements and bind the invocation receiver to the object
+  # just constructed. Mere introspection, a different receiver, or a later
+  # reassignment must not establish request-driven invocation. These patterns
+  # remain suspicious because authorization may exist outside the matched code.
+  - id: php-request-selected-reflection-invocation
+    desc: HTTP-selected reflected PHP function is invoked
+    if:
+      type: tree-sitter
+      query: |
+        ((_ (expression_statement
+          (assignment_expression
+            left: (variable_name) @bound
+            right: (object_creation_expression
+              [(name) @class (qualified_name (name) @class)]
+              (arguments . (argument
+                (subscript_expression (variable_name (name) @source)))))))
+          . [(echo_statement (member_call_expression
+               object: (variable_name) @receiver name: (name) @method))
+             (expression_statement (member_call_expression
+               object: (variable_name) @receiver name: (name) @method))])
+          (#eq? @bound @receiver)
+          (#match? @class "(?i)^ReflectionFunction$")
+          (#match? @method "(?i)^invoke(Args)?$")
+          (#any-of? @source "_GET" "_POST" "_REQUEST" "_COOKIE")) @dispatch
+
+  - id: php-request-reflection-function-and-argument
+    desc: HTTP controls reflected function and argument
+    if:
+      type: tree-sitter
+      query: |
+        ((_ (expression_statement
+          (assignment_expression
+            left: (variable_name) @bound
+            right: (object_creation_expression
+              [(name) @class (qualified_name (name) @class)]
+              (arguments . (argument
+                (subscript_expression (variable_name (name) @source)))))))
+          . [(echo_statement (member_call_expression
+               object: (variable_name) @receiver name: (name) @method
+               arguments: (arguments . (argument (array_creation_expression
+                 (array_element_initializer (subscript_expression
+                   (variable_name (name) @argument_source))))))))
+             (expression_statement (member_call_expression
+               object: (variable_name) @receiver name: (name) @method
+               arguments: (arguments . (argument (array_creation_expression
+                 (array_element_initializer (subscript_expression
+                   (variable_name (name) @argument_source))))))))])
+          (#eq? @bound @receiver)
+          (#match? @class "(?i)^ReflectionFunction$")
+          (#match? @method "(?i)^invokeArgs$")
+          (#any-of? @source "_GET" "_POST" "_REQUEST" "_COOKIE")
+          (#any-of? @argument_source "_GET" "_POST" "_REQUEST" "_COOKIE")) @dispatch
