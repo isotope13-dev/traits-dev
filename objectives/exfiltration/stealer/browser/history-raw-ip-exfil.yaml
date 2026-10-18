@@ -1,48 +1,63 @@
-# On-disk browser-store harvest shipped to a hardcoded public IP.
-#
-# A script or native implant that reads another browser's on-disk profile
-# (Chrome/Edge/Firefox History or Login Data) and, in the same file, POSTs or
-# uploads over HTTP to a bare external IPv4 is a browser stealer exfiltrating to
-# operator infrastructure. Legitimate software reaches its own backend through
-# a hostname; harvesting a competitor browser's store and sending it to a raw
-# address has no benign reading. Keyed on the store-read role, the upload role
-# and the raw-IP sink rather than on any campaign host or stage label, so it
-# carries to future stagers that read the same stores and change their C2 IP
-# (modeled on the Midnight Blizzard-linked ChocoShell stager, which collected
-# browser history and POSTed to /t/event on a raw-IP staging server).
 defaults:
-  platforms: [windows, unix]
-  for: [scripts, source]
-  attack: T1041,T1217
-  mbc: E1041
-
+  platforms: [windows]
+  for: [powershell]
+  conf: 0.97
+  attack: T1217,T1041
+traits:
+  # Bind a history-reading function to the call producing the uploaded value.
+  # Adjacent assignment and send prevent an intervening reassignment from
+  # satisfying this limited static-flow signature. No function/variable names,
+  # endpoint, stage labels, or purported malware family are required.
+  - id: powershell-history-function-http-body-flow
+    desc: HTTP body contains history-reader output
+    crit: suspicious
+    if:
+      type: tree-sitter
+      query: |
+        ((statement_list
+          (function_statement (function_name) @source
+            (script_block (script_block_body (statement_list
+              (pipeline (assignment_expression
+                (left_assignment_expression) @profiles value: (pipeline) @paths))
+              (foreach_statement (variable) @item (pipeline) @items
+                (statement_block (statement_list
+                  (pipeline (pipeline_chain (command
+                    (command_name) @read
+                    (command_elements
+                      (command_parameter) @pathflag
+                      . (command_argument_sep)
+                      . (array_literal_expression (unary_expression (variable) @readitem)))))))))))))
+          (pipeline (assignment_expression
+            (left_assignment_expression) @data
+            value: (pipeline (pipeline_chain (command (command_name) @invoke))) @result))
+          . (pipeline (pipeline_chain (command
+            (command_name) @http
+            (command_elements
+              (command_parameter) @methodflag
+              . (command_argument_sep)
+              . (generic_token) @method
+              (command_parameter) @bodyflag
+              . (command_argument_sep)
+              . (array_literal_expression (unary_expression (variable) @sent)))))))
+          (#eq? @source @invoke)
+          (#match? @result "(?i)^[a-z_][a-z0-9_-]*\\s*(\\|\\s*Out-String\\s*)?$")
+          (#eq? @data @sent)
+          (#match? @http "(?i)^(Invoke-RestMethod|Invoke-WebRequest|irm|iwr)$")
+          (#match? @methodflag "(?i)^-Method$")
+          (#match? @method "(?i)^Post$")
+          (#match? @bodyflag "(?i)^-Body$")
+          (#eq? @profiles @items)
+          (#eq? @item @readitem)
+          (#match? @read "(?i)^Get-Content$")
+          (#match? @pathflag "(?i)^-Path$")
+          (#match? @paths "(?i)User Data\\\\(Default|Profile[^\\\\]*)\\\\History"))
 composite_rules:
-  # A browser profile *directory* is only a location: sandbox-fingerprinting
-  # agents and installers test for it too. A harvest needs a data-store file
-  # (history, cookies, saved logins) inside that profile.
-  - id: browser-profile-store-file-reference
-    desc: Browser profile with a data-store file
-    crit: component
-    conf: 0.9
-    all:
-      - id: micro-behaviors/fs/path/application/browser/
-    any:
-      - id: micro-behaviors/fs/path/personal::history-file
-      - id: micro-behaviors/fs/path/cookie::browser-cookies-file-path
-      - id: micro-behaviors/fs/path/password-store/
-
-  - id: browser-store-raw-ip-exfil
-    desc: Browser-profile harvest uploaded to a raw IP
+  - id: powershell-concealed-history-exfil
+    desc: Browser-history export with concealed launcher
     crit: hostile
-    conf: 0.95
-    attack: T1005,T1041,T1217
-    for: [scripts, source, pe, dll]
     all:
-      - id: micro-behaviors/communications/ip/literal::http-ip-url-filtered-text
-      - id: browser-profile-store-file-reference
-    any:
-      - id: micro-behaviors/communications/http/post/
-      - id: micro-behaviors/communications/http/lib/invoke-webrequest::http-body-or-upload
-      - id: micro-behaviors/communications/http/client/managed::downloadstring
-    unless:
-      - id: metadata/package/testing/corpus::rule-test-case-detection-verdicts
+      - id: powershell-history-function-http-body-flow
+      - id: micro-behaviors/communications/http/post::powershell-post-method
+      - id: micro-behaviors/communications/ip/literal::http-ip-url-source-literal
+      - id: micro-behaviors/process/create/hidden::start-process-windowstyle-hidden
+      - id: micro-behaviors/os/security/policy::powershell-policy-bypass-text
