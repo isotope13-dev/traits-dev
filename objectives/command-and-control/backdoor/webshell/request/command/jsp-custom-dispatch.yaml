@@ -1,0 +1,56 @@
+defaults:
+  platforms: [unix, windows]
+  for: [jsp]
+  attack: T1505.003
+  mbc: B0030
+# Custom JSP/JSPX shell protocol: require request/local/argument-array bindings
+# and their matching helper implementations, without banners or DB names.
+# Block and server-page comments cannot supply the required source snippets.
+traits:
+  - id: jsp-custom-request-command-pattern
+    desc: Custom JSP request-command dispatch pattern
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule jsp_custom_request_command {
+          strings:
+            $code_z1 = /String\s+z1\s*=\s*EC\(decode\(request\.getParameter\("z1"\)/
+            $code_z2 = /String\s+z2\s*=\s*EC\(decode\(request\.getParameter\("z2"\)/
+            $code_args = /String\[\]\s+pars\s*=\s*\{\s*z0,\s*z1,\s*z2,\s*z3\s*\}/
+            $write_z1 = /\bz1\s*=/
+            $write_z2 = /\bz2\s*=/
+            $write_pars = /\bpars\s*=/
+            $comment = /<%--.*?--%>|<!--.*?-->|\/\*.*?\*\//s
+
+            $code_helper = /ExecuteCommandCode\(String cmdPath,\s*String command\)/
+            $code_dispatch = /ExecuteCommandCode\(pars\[1\],\s*pars\[2\]\)/
+            $code_argv = /String\[\]\s+c\s*=\s*\{\s*cmdPath,[^;]{1,64}command\s*\}/
+            $code_flags = "!isWin() ? \"-c\" : \"/c\""
+            $write_c = /\bc\s*=/
+            $code_exec = "Runtime.getRuntime().exec(c)"
+
+          condition:
+            all of ($code*) and
+            #write_z1 == 1 and #write_z2 == 1 and #write_pars == 1 and
+            @code_argv < @code_exec and
+            for all i in (1..#write_c) : (
+              @write_c[i] < @code_argv + !code_argv or @write_c[i] >= @code_exec
+            ) and
+            for all of ($code*) : (
+              #comment == 0 or for all c in (1..#comment) : (
+                @ < @comment[c] or @ >= @comment[c] + !comment[c]
+              )
+            )
+        }
+
+composite_rules:
+  - id: jsp-custom-request-command
+    desc: JSP request-to-command webshell
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: jsp-custom-request-command-pattern
+      - id: metadata/lang/scripted::jsp-server-page
+      - id: micro-behaviors/communications/http/response::jsp-response-print-syntax
