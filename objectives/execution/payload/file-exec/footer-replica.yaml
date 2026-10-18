@@ -1,0 +1,82 @@
+# Admission: a self-image read is followed by footer-controlled copying,
+# rewriting the descendant's recursion counters, and launching the SAME output
+# path. This is the linked replication routine, not an API co-occurrence rule.
+# Relocations/call displacements and generated names are deliberately unpinned.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86-64]
+
+traits:
+  - id: native-footer-replica-loop-layout
+    desc: Footer rewrite and replica-launch loop
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule footer_self_replica_launch {
+          strings:
+            // Resolve this image's pathname, open it, size it, allocate a
+            // buffer and read the entire image before consuming its footer.
+            $read = {
+              41 B8 E7 03 00 00 48 8D 94 24 [4] 33 C9 FF 15 [4]
+              41 B8 F4 01 00 00 48 8D 94 24 [4] 48 8D 4C 24 30 E8 [4]
+              48 8D 15 [4] 48 8D 4C 24 30 E8 [4]
+              33 D2 48 8B C8 48 8B F8 44 8D 42 02 E8 [4]
+              48 8B CF E8 [4] 45 33 C0 4C 63 F8 33 D2 48 8B CF E8 [4]
+              49 8B CF E8 [4] 4C 8B CF 4D 8B C7 BA 01 00 00 00
+              48 8B C8 4C 8B F0 E8 [4] 48 8B CF E8 [4] 43 8B 4C 37 F8
+            }
+            // Last two dwords of the image buffer become depth and fan-out.
+            $footer = {
+              43 8B 4C 37 F8 33 ED 43 8B 54 37 FC FF C9
+              89 54 24 20 89 4C 24 24 85 D2 0F 8E [4]
+              48 89 B4 24 [4] BE ?? ?? ?? ?? 85 C9 0F 88 [4] BA 08 00 00 00
+            }
+            // Write the image minus its tail, append generated padding,
+            // write depth/fan-out, close, launch rdi, and repeat.
+            $copy = {
+              41 8D 8F 00 FF FF FF 4C 8B C8 4C 63 C1
+              BA 01 00 00 00 49 83 E8 08 49 8B CE 48 8B D8 E8 [4]
+              48 63 D6 48 8D 0D [4] E8 [4] 48 8B C8 48 8B D3 E8 [4]
+              BA 04 00 00 00 48 8D 4C 24 24 4C 8B CB 44 8D 42 FD E8 [4]
+              BA 04 00 00 00 48 8D 4C 24 20 4C 8B CB 44 8D 42 FD E8 [4]
+              48 8B CB E8 [4] 48 8B CF E8 [4]
+              FF C5 81 C6 ?? ?? ?? ?? 3B 6C 24 20 7D ?? 8B 4C 24 24 E9 [4]
+              48 8B B4 24
+            }
+            // Command-line conversion and Win32 process-creation helper.
+            $spawn = {
+              B8 ?? ?? ?? ?? E8 [4] 48 2B E0 48 8B 05 [4] 48 33 C4
+              48 89 84 24 [4] 0F 57 C0 C7 44 24 70 68 00 00 00
+              [78-90] 48 8B D1 49 FF C0 48 8D 8C 24 [4] E8 [4]
+              48 8D 44 24 50 45 33 C9 48 89 44 24 48
+              48 8D 94 24 [4] 48 8D 44 24 70 45 33 C0
+              48 89 44 24 40 33 C9 33 C0 48 89 44 24 38
+              48 89 44 24 30 89 44 24 28 89 44 24 20 FF 15 [4] 48 8B 8C 24
+            }
+          condition:
+            pe.machine == pe.MACHINE_AMD64 and
+            pe.imports("kernel32.dll", "GetModuleFileNameW") and
+            pe.imports("kernel32.dll", "CreateProcessW") and
+            for any s in pe.sections : (
+              s.name == ".text" and
+              $read in (s.raw_data_offset..s.raw_data_offset + s.raw_data_size) and
+              $footer at (@read + !read - 5) and
+              $copy in (@footer..@footer + 128) and
+              // The replica-path call at copy+114 targets this helper.
+              $spawn at (@copy + 119 + int32(@copy + 115))
+            )
+        }
+
+composite_rules:
+  - id: native-footer-self-replica-launch
+    desc: Footer-controlled executable replication
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: native-footer-replica-loop-layout
+      - id: micro-behaviors/process/create/spawn::create-process-w
+      - id: micro-behaviors/os/module/load::get-module-filename-dup
