@@ -12,7 +12,7 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 RUSTLS = "micro-behaviors/crypto/library/provider::rustls-crate-path"
 GO_TLS = "micro-behaviors/data/runtime/library::go-tls-internal-ciphersuites"
-KEY = "micro-behaviors/communications/http/cookie-store::chromium-key-storage-reference"
+KEY = "micro-behaviors/data/config/browser-preference::chromium-key-storage-reference"
 COOKIE = "micro-behaviors/fs/path/cookie::cookie-sqlite-database-reference"
 OLD_KEY = "well-known/lib/platform/browser-automation/drivers/selenium::browser-profile-chrome-key-material"
 OLD_COOKIE = "objectives/supply-chain/hidden-payload/extensions/backdoor::extension-cookie-database-reference"
