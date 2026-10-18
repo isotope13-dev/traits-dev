@@ -86,7 +86,7 @@ def main():
         'option.elf': (elf(b'--donate-level\0'), {OPTION}, {'objectives/impact/cryptojacking/miner/config::xmrig-donate-level-cli-flag'}),
         'single-class.dll': (pe(classes[:1]), {RTTI}, {GHOST}),
         'five-classes.dll': (pe(classes[:5]), {RTTI}, {GHOST}),
-        'six-classes.dll': (pe(classes), {RTTI,GHOST}, set()),
+        'six-classes.dll': (pe(classes), {RTTI}, {GHOST}),
     }
     args.scratch.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=args.scratch) as temp:
