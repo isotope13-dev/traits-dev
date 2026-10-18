@@ -1,0 +1,41 @@
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+
+traits:
+  # Follow the pushed string pointers and the shared HKEY stack slot. Mere
+  # coexistence of a Windows path, Run text and registry imports is not enough.
+  - id: x86-windows-logon-run-value-write
+    desc: Windows logon Run value write setup
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_windows_logon_run_value_write {
+          strings:
+            $key = "Software\\Microsoft\\Windows NT\\CurrentVersion\\Windows" wide nocase
+            $value = "Run" wide fullword
+            $open = { 6A 03 56 68 ?? ?? ?? ?? 68 01 00 00 80
+                      89 B5 ?? ?? ?? ?? FF 15 ?? ?? ?? ?? }
+            $write = { 8D 44 00 02 50 8B C3 50 6A 01 56 68 ?? ?? ?? ??
+                       FF B5 ?? ?? ?? ?? FF 15 ?? ?? ?? ?? }
+          condition:
+            pe.is_pe and pe.imports("ADVAPI32.dll", "RegOpenKeyExW") and
+            pe.imports("ADVAPI32.dll", "RegSetValueExW") and
+            for any i in (1..#open) : (
+              for any s in (0..pe.number_of_sections - 1) : (
+                pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                @open[i] >= pe.sections[s].raw_data_offset and
+                @open[i] + !open[i] <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size
+              ) and
+              $key at pe.rva_to_offset(uint32(@open[i] + 4) - pe.image_base) and
+              for any j in (1..#write) : (
+                @write[j] > @open[i] and @write[j] < @open[i] + 128 and
+                uint32(@open[i] + 15) == uint32(@write[j] + 18) and
+                $value at pe.rva_to_offset(uint32(@write[j] + 12) - pe.image_base)
+              )
+            )
+        }
