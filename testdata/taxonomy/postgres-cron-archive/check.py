@@ -27,7 +27,7 @@ for case in cases:
     assert hostile == set(case['hostile']), (case['path'], hostile)
     assert not any(i in traits for i in old_prefixes), case['path']
     if case['path'] == 'connection-only.py':
-        assert 'micro-behaviors/os/env/config::python-database-url-env-reference' in traits
+        assert 'micro-behaviors/os/env/config::python-database-url' in traits
         assert 'micro-behaviors/data/db/access::psycopg-connect-call' in traits
         assert not any(t['crit'] >= 4 for t in traits.values()), traits
     if case['path'] == 'client.ps1':
