@@ -17,15 +17,6 @@ traits:
       regex: 'https?://([^/"''\s]+\.)?gameograf\.com\b'
       case_insensitive: true
 
-  - id: gameograf-api-host-permission
-    desc: Gameograf API host permission
-    crit: notable
-    for: [chrome-manifest]
-    if:
-      type: value
-      path: host_permissions
-      regex: 'https?://api\.gameograf\.com/\*'
-
   # A shortcut record, not a mention of the publisher host. The key is part of
   # the source text around the literal, so a literal-only host match cannot
   # express it.
@@ -39,15 +30,11 @@ traits:
       regex: 'url\s*:\s*["'']https?://play\.gameograf\.com/?["'']'
       case_insensitive: true
 
+# Identity and monetization are independent of a malware verdict. A new-tab
+# override, configured-engine search, shortcut feed and HTML rendering do not
+# establish search hijacking. Version numbers and store metadata do not change
+# the meaning of those operations.
 composite_rules:
-  # Named unwanted-software family: suspicious, never hostile (decision
-  # 2026-09-26, same as adkeeps/owhit). Family samples belong in the
-  # purgatory pool; do not re-raise this for a hostile-labeled sample.
-  # Legs flattened rather than chained (chained archive-scoped composites
-  # resolved inconsistently and the verdict missed matching samples; see the
-  # same note on owhit-promotional-newtab-pua). Unit42 tracks this publisher
-  # as a wallpaper-adware campaign: forced install landing page, operator
-  # uninstall URL, remote-injected popups, wholesale IndexedDB resets.
   - id: gameograf-promotional-newtab-pua
     desc: Gameograf promotional new-tab potentially unwanted extension
     crit: suspicious
@@ -59,57 +46,20 @@ composite_rules:
       - id: metadata/package/author/identity::gameograf-manifest-author
       - id: gameograf-promo-host
       - id: micro-behaviors/browser-extension/lifecycle::extension-install-uninstall-lifecycle-urls
-    # A package Google reviewed and signed (verified_contents.json) is the
-    # publisher's store line, whose install tab and uninstall URL are marketing
-    # rather than the repacked or side-loaded builds this verdict targets. The
-    # unreviewed manifest shell below still convicts on its own.
-    downgrade:
-      scope: archive
-      any:
-        - id: metadata/permission/manifest::chrome-webstore-verified-contents
 
-  # Manifest-only shell of the same publisher. The PUA composite above stays
-  # suspicious and still needs the promo host plus install/uninstall URLs,
-  # which live in the scripts. A scan of this manifest alone has neither.
-  #
-  # This does not claim a default-search settings takeover: there is no
-  # chrome_settings_overrides, and the search grant only fronts queries
-  # through chrome.search.query. The hostile evidence is the conjunction the
-  # manifest pre-authorizes for this publisher: every new tab is the
-  # operator's page, searches typed there run under the extension grant, and
-  # a service worker stays resident. Each leg is ordinary alone.
-  #
-  # The reviewed store wallpaper releases are listed by exact version above;
-  # the generic patch-version shape also matches other builds such as 1.1.2.
   - id: gameograf-newtab-search-shell
-    desc: Gameograf new-tab search shell
-    crit: hostile
+    desc: Gameograf new-tab search and worker manifest
+    crit: notable
     conf: 0.95
-    attack: T1176
     for: [chrome-manifest]
     all:
       - id: metadata/package/author/identity::gameograf-manifest-author
       - id: metadata/permission/manifest::chrome-newtab-override
       - id: metadata/permission/manifest::permission-search
       - id: metadata/permission/manifest::background-service-worker
-    unless:
-      - id: metadata/package/version::reviewed-gameograf-store-release
-    downgrade:
-      scope: archive
-      any:
-        - id: metadata/package/files/archive-shape::extension-ships-script-member
-        - id: metadata/file/format/browser-extension::web-extension-root-manifest
-        - id: gameograf-promotional-newtab-pua
 
-  # Script-side shape of the publisher's new-tab page: it renders the backend's
-  # JSON shortcut feed as link markup and offers a search box backed by
-  # chrome.search.query. That API runs the user's own configured engine and the
-  # page navigates to its result -- ordinary new-tab behaviour, with feed
-  # shortcuts the user can delete. This records family identity only; it is not
-  # a takeover conviction (see objectives/ for search-provider overrides or
-  # redirects of search traffic).
   - id: gameograf-newtab-search-backend-page
-    desc: Gameograf new-tab page with backend shortcut feed and search box
+    desc: Gameograf JSON feed, markup and search APIs
     crit: notable
     conf: 0.95
     for: [javascript]
@@ -120,23 +70,12 @@ composite_rules:
       - id: micro-behaviors/browser-extension/lifecycle::chrome-search-query
       - id: micro-behaviors/browser-extension/lifecycle::chrome-search-result-navigation
 
-  # Both halves, plus the shortcut catalog itself. The catalog is interpolated
-  # into live anchors, so the operator can change every new-tab link after
-  # review, and chrome.search.query then replaces the top frame with the
-  # callback's first result. A feed or a search box alone stays the notable
-  # identity above. Reviewed store wallpaper releases (1.1.1, 1.1.12) carry a
-  # patch component; that manifest downgrades this verdict inside the package.
-  # A page scanned on its own, and an unpatched shell (3, 3.2), keep it.
-  #
-  # MV3 builds move the catalog fetch into the service worker and render the
-  # anchors from another script that only reads storage. Archive scope still
-  # treats that as one package. Either a literal-URL JSON fetch or
-  # fetch(CONSTANT).then(r => r.json()) supplies the feed leg.
-  - id: gameograf-newtab-feed-search-takeover
-    desc: Gameograf catalog feed and search replace the new tab
-    crit: hostile
+  # Archive scope permits fetch and rendering in different scripts. This is
+  # co-occurrence of family features, not proof of a feed-to-search data flow.
+  - id: gameograf-newtab-feed-search-page
+    desc: Gameograf feed, link markup and search APIs
+    crit: notable
     conf: 0.95
-    attack: T1176
     scope: archive
     for: [javascript, crx, xpi, zip]
     all:
@@ -148,24 +87,11 @@ composite_rules:
     any:
       - id: micro-behaviors/communications/http/request/json::fetch-json-response
       - id: micro-behaviors/communications/http/request/json::fetch-variable-near-json-response
-    downgrade:
-      scope: archive
-      any:
-        - id: metadata/package/version::reviewed-gameograf-store-release
 
-  # Script-only bundled-shortcut page. gameograf-newtab-search-backend-page
-  # stays notable: a fetched shortcut feed plus chrome.search.query is the
-  # publisher's ordinary search box, and that API alone is not a hijack.
-  # gameograf-promotional-newtab-pua stays the manifest-lifecycle PUA verdict
-  # and is not re-raised here. This page instead compiles the play portal into
-  # a default shortcut record, parses shortcut records into live anchors
-  # through an HTML-append sink, and replaces the top frame with the search
-  # callback's first result URL. Each of those is insufficient alone.
   - id: gameograf-bundled-shortcut-page
-    desc: Gameograf bundled play-portal shortcut page
-    crit: hostile
+    desc: Gameograf play shortcut with search navigation
+    crit: notable
     conf: 0.95
-    attack: T1176
     for: [javascript]
     all:
       - id: gameograf-bundled-play-shortcut
