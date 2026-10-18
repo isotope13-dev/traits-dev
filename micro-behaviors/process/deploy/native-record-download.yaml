@@ -1,0 +1,88 @@
+# Received binary task 5 passes a field of the copied record to the helper.
+# Bind the relative call to the helper prologue; an unrelated downloader in
+# the same DLL is insufficient. The helper reuses its download destination
+# as CreateProcessA's image path. No family label or endpoint is required.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86]
+
+traits:
+  - id: x86-packet-task-download-launch
+    desc: Packet dispatch calls download/launch helper
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_packet_task_download_launch {
+          strings:
+            // recv(buffer, 0x528); positive-length guard; copy that record;
+            // dispatch its leading dword; task 5 calls the helper below.
+            $record = {
+              56 68 28 05 00 00 FF 75 ?? 53 FF 15 [4]
+              85 C0 0F 8E [4] 8B 75 ?? BA 4A 01 00 00
+              8B CA 33 C0 8D BD [4] F3 AB 8B CA 8D BD [4] F3 A5
+              8B 85 [4] 3D 99 00 00 00 0F 87 [4] 0F 84 [4]
+              83 F8 06 0F 87 [4] 0F 84 [4]
+              48 74 ?? 48 74 ?? 48 74 ?? 48 74 ?? 48 0F 85 [4]
+              8D 85 [4] 50 E8 [4] E9
+            }
+            $helper = {
+              55 8B EC 81 EC [4] 66 A1 [4] 53 56 57 6A 40
+              66 89 45 ?? 33 DB 59 33 C0 8D BD [4] 88 9D [4]
+              6A 40 F3 AB 66 AB AA 59 33 C0 8D BD [4] 88 9D [4]
+              F3 AB 66 AB AA 8B 7D 08
+            }
+            // Dynamically resolve a download API, call it with the helper's
+            // URL argument and a local destination, then launch that path.
+            $transfer = {
+              8B 35 [4] FF D6 68 [4] 8B F8 FF D6 68 [4] 57 FF 15 [4]
+              53 8D 8D [4] 6A 0A 51 FF 75 08 53 FF D0
+              6A 11 33 C0 59 8D 7D ?? F3 AB 8D 45 ??
+              C7 45 ?? 44 00 00 00 50 8D 45 ?? 50
+              53 53 6A 20 53 53 53 8D 85 [4] 53 50 FF 15 [4]
+              5F 5E 5B C9 C3
+            }
+            $api = "URLDownloadToFileA" ascii fullword
+            $lib = "urlmon.dll" ascii nocase fullword
+          condition:
+            pe.machine == pe.MACHINE_I386 and
+            pe.imports("WS2_32.dll", 16) and
+            pe.imports("KERNEL32.dll", "GetProcAddress") and
+            pe.imports("KERNEL32.dll", "CreateProcessA") and
+            $api and $lib and
+            for any s in pe.sections : (
+              s.name == ".data" and
+              for any i in (1..#record) : (
+                @record[i] >= s.raw_data_offset and
+                @record[i] + !record[i] <= s.raw_data_offset + s.raw_data_size and
+                // recv's buffer is copied; the copied leading dword is
+                // what dispatch tests. All three frame displacements agree.
+                uint8(@record[i] + 8) == uint8(@record[i] + 26) and
+                int32(@record[i] + 38) == int32(@record[i] + 48) and
+                int32(@record[i] + 48) == int32(@record[i] + 56) and
+                // The helper argument addresses a field inside this record.
+                int32(@record[i] + 113) >= int32(@record[i] + 56) + 4 and
+                int32(@record[i] + 113) < int32(@record[i] + 56) + 0x528 and
+                // Relative CALL displacement joins task dispatch to helper.
+                $helper at (@record[i] + !record[i] - 1 +
+                  int32(@record[i] + !record[i] - 5)) and
+                for any h in (1..#helper) : (
+                  @helper[h] == @record[i] + !record[i] - 1 +
+                    int32(@record[i] + !record[i] - 5) and
+                  @helper[h] >= s.raw_data_offset and
+                  for any t in (1..#transfer) : (
+                    @transfer[t] > @helper[h] + !helper[h] and
+                    @transfer[t] < @helper[h] + 512 and
+                    @transfer[t] + !transfer[t] <= s.raw_data_offset + s.raw_data_size and
+                    $api at pe.rva_to_offset(uint32(@transfer[t] + 18) - pe.image_base) and
+                    // Same EBP-relative buffer is the download destination
+                    // and CreateProcessA's lpApplicationName argument.
+                    int32(@transfer[t] + 32) == int32(@transfer[t] + 79)
+                  )
+                )
+              )
+            )
+        }
