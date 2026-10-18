@@ -5,7 +5,8 @@ Fixtures live under testdata/, whose path tokens suppress test-guarded
 traits regardless of content, so stage copies into a guard-neutral temp dir
 before analyzing: the directory shape (brand rows plus provider rdns names)
 must stay quiet while the installed-probe shape (bundle/package checks with
-no rdns declarations) must still match both targeting rules.
+no rdns declarations) retains the bundle reference. Package checks alone do
+not establish wallet credential acquisition.
 """
 import json
 import os
@@ -49,6 +50,6 @@ assert RDNS in observed[BENIGN], (BENIGN, observed[BENIGN])
 assert BUNDLE not in observed[BENIGN], (BENIGN, observed[BENIGN])
 assert CLUSTER not in observed[BENIGN], (BENIGN, observed[BENIGN])
 assert BUNDLE in observed[POSITIVE], (POSITIVE, observed[POSITIVE])
-assert CLUSTER in observed[POSITIVE], (POSITIVE, observed[POSITIVE])
+assert CLUSTER not in observed[POSITIVE], (POSITIVE, observed[POSITIVE])
 assert RDNS not in observed[POSITIVE], (POSITIVE, observed[POSITIVE])
 print("Passed 2 wallet-discovery-rdns cases")

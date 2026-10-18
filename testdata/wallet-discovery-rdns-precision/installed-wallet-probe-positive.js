@@ -1,6 +1,6 @@
 // Installed-wallet probe: checks packages and data dirs for wallet
-// artifacts without declaring any provider rdns names. Both the bundle
-// atom and the keyword cluster MUST still fire here.
+// artifacts without declaring any provider rdns names. The bundle reference
+// remains; without file reads this does not establish credential acquisition.
 function findWallets() {
 	checkPackage("metamask");
 	checkDataDir("metamask");
