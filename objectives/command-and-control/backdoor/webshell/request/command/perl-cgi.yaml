@@ -46,13 +46,6 @@ traits:
     if:
       type: text
       regex: '\bsystem\s*\(\s*["'']\$1'
-  - id: perl-cgi-command-param
-    desc: Reads a CGI command parameter
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      regex: '\bparam\(\s*[''"]command[''"]'
   - id: perl-use-cgi
     desc: Imports the Perl CGI module
     crit: notable
@@ -73,7 +66,38 @@ traits:
     if:
       type: text
       substr: '/bin/bash -i'
+  - id: perl-query-variable-backtick-command
+    desc: CGI query variable becomes backtick command
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: tree-sitter
+      query: |
+        (source_file
+          (expression_statement
+            (assignment_expression
+              left: (variable_declaration variable: (scalar) @input)
+              right: (hash_element_expression
+                hash: (container_variable (varname) @environment)
+                key: (autoquoted_bareword) @key)))
+          (expression_statement
+            (assignment_expression
+              right: (command_string
+                content: (string_content (scalar) @command)) @shell))
+          (#eq? @environment "ENV")
+          (#eq? @key "QUERY_STRING")
+          (#eq? @input @command)
+          (#match? @shell "^`\\$[A-Za-z_]\\w*`$")) @channel
 composite_rules:
+  - id: perl-cgi-variable-backtick-webshell
+    desc: CGI query command with HTTP response
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: perl-query-variable-backtick-command
+      - id: micro-behaviors/communications/http/request/cgi::content-type-response
+    unless:
+      - id: metadata/package/testing/presence/harness::perl-test-file
   - id: perl-cgi-system-cmd-field
     desc: CGI script starts interactive bash
     crit: hostile
@@ -95,17 +119,6 @@ composite_rules:
       - id: micro-behaviors/data/source/syntax/keyword::webshell-term-reference
       - id: micro-behaviors/ui/terminal::webshell-manager-label
       - id: execute-frame
-  - id: perl-cgi-variable-backtick-webshell
-    desc: Perl CGI backtick command webshell
-    crit: hostile
-    conf: 0.97
-    # The command may be the raw query string, not a hidden action field.
-    near_lines: 40
-    all:
-      - id: micro-behaviors/process/create/shell/backtick::backticks-variable-exec
-      - id: micro-behaviors/communications/http/request/cgi::query-string-server-var
-    unless:
-      - id: metadata/package/testing/presence/harness::perl-test-file
   - id: perl-cgi-pipe-command
     desc: Opens a pipe from a CGI command
     crit: hostile
@@ -137,6 +150,6 @@ composite_rules:
     near_lines: 30
     all:
       - id: micro-behaviors/process/create/shell/backtick::backticks-variable-exec
-      - id: perl-cgi-command-param
+      - id: micro-behaviors/communications/http/request/cgi::perl-command-param-call
     unless:
       - id: metadata/package/testing/presence/harness::perl-test-file
