@@ -941,6 +941,12 @@ named module references belong in `metadata/import`, and neither proves use.
 `file/arithmetic` is limited to parsed operator-population measures; actual
 arithmetic operations belong in `micro-behaviors/data/arithmetic`.
 
+`binary/symbols/descriptor` records type-descriptor shapes in executable
+constant or symbol tables. A JVM byte-array/slice method descriptor belongs
+here without asserting that the method is imported or that a particular
+constructor uses it. An imported method name belongs with its capability;
+an import count belongs in `binary/symbols/imports`.
+
 The existing `file/data-blob` and `file/policy` branches are closed to new
 rules. They mix unrelated claims and have no residual catch-all home: migrate
 each rule by its evidenced property or subject. Whole-file entropy, file

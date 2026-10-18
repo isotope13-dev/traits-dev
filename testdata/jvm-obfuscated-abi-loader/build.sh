@@ -18,3 +18,12 @@ with zipfile.ZipFile(sys.argv[2],'w',zipfile.ZIP_DEFLATED) as z:
   info.compress_type=zipfile.ZIP_DEFLATED
   z.writestr(info,(root/name).read_bytes())
 PY
+
+# Derive the source-role near miss from the byte-preserving hostile fixture.
+python3 - "$fixture_dir/../hostile/jvm-native-browser-collector.jar" "$fixture_dir/controls/jvm-secret-apis-no-browser-source.jar" <<'PYCODE'
+import sys,zipfile
+with zipfile.ZipFile(sys.argv[1]) as source, zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as output:
+ for member in source.infolist():
+  if member.filename != 'com/example/handlers/browser/PasswordHandler.class':
+   output.writestr(member, source.read(member.filename))
+PYCODE
