@@ -1,0 +1,146 @@
+# WPS (Wi-Fi Simple Config) carried in EAP-Expanded over EAPOL, plus the
+# Broadcom-router post-exploitation surfaces the WPS reassembly research
+# demonstrated: the `wl actframe` raw-frame sender and NVRAM PSK keys.
+# Atoms here are neutral protocol/capability observations; the hostile
+# fragment-reassembly and action-frame-exfiltration claims live in
+# objectives and reference these.
+defaults:
+  crit: notable
+  conf: 0.9
+  for: [scripts, source, elf]
+  platforms: [unix, windows]
+
+traits:
+  - id: wfa-simpleconfig-identity
+    desc: WPS enrollee registrar identity string
+    conf: 0.95
+    if:
+      type: text
+      regex: 'WFA-SimpleConfig-(Enrollee|Registrar)-1-0'
+
+  # WFA vendor ID 0x00372a, in the byte spellings source and embedded
+  # arrays actually use: escaped bytes, a 24-bit constant, or an array.
+  - id: wps-expanded-vendor-id
+    desc: WFA EAP-Expanded vendor identifier bytes
+    conf: 0.95
+    if:
+      type: text
+      regex: '(?i)(\\x00\\x37\\x2a|\b0x00372a\b|0x00\s*,\s*0x37\s*,\s*0x2a)'
+
+  # Microsoft WPS vendor IE header (OUI 00:50:f2, type 4) that opens every
+  # WSC information element in beacons, probes and association requests.
+  - id: wps-vendor-ie-prefix
+    desc: WPS vendor information element prefix
+    conf: 0.93
+    if:
+      type: text
+      regex: '(?i)(\\x00\\x50\\xf2\\x04|0x00\s*,\s*0x50\s*,\s*0xf2\s*,\s*0x04|\b0050f204\b)'
+
+  # Broadcom proprietary IE (OUI 00:10:18 + subtype 02). The subtype byte
+  # keeps bare Broadcom MAC-OUI tables out.
+  - id: broadcom-vendor-ie-prefix
+    desc: Broadcom proprietary vendor IE prefix
+    conf: 0.93
+    if:
+      type: text
+      regex: '(?i)(\b00101802\b|\\x00\\x10\\x18\\x02|0x00\s*,\s*0x10\s*,\s*0x18\s*,\s*0x02)'
+
+  - id: wsc-fragment-ack-opcode
+    desc: WSC fragment acknowledgement opcode name
+    conf: 0.9
+    if:
+      type: text
+      regex: '\b(WSC_FRAGMENT_ACK|WSC_FRAG_ACK|WPS_FRAG_ACK|EAP_WPS_OP_FRAG_ACK)\b'
+
+  # MF (more fragments) + LF (length field present) are the two flag bits
+  # of the WSC fragment header, split by spelling: WPS-prefixed constant
+  # names, and the generic-name combination the published tooling uses.
+  - id: wps-named-fragment-flag
+    desc: Named WPS fragment flag constant
+    conf: 0.9
+    if:
+      type: text
+      regex: '\b(EAP_WPS|WSC|WPS)_FLAG_(MF|LF)\b'
+
+  - id: fragment-mf-lf-combination
+    desc: More-fragments and length-field flags combined
+    conf: 0.88
+    if:
+      type: text
+      regex: '\b(MORE_FRAGMENTS|LENGTH_FIELD)\s*\|\s*(MORE_FRAGMENTS|LENGTH_FIELD)\b'
+
+  - id: scapy-dot11-frame-construction
+    desc: Constructs a Scapy 802.11 frame stack
+    for: [python]
+    conf: 0.94
+    if:
+      type: text
+      regex: 'RadioTap\s*\(\s*\)\s*/\s*Dot11\s*\('
+
+  - id: native-dot11-frame-construction
+    desc: Constructs a native 802.11 radiotap frame
+    conf: 0.92
+    if:
+      type: text
+      regex: '(layers\.Dot11\s*\{|ieee80211_radiotap_header|radiotap_hdr\s*\[\])'
+
+  # Broadcom's `wl` utility sending a raw vendor action frame. Legitimate
+  # in driver test scripts; the exfiltration claim needs the encoded
+  # command-output leg as well.
+  - id: wl-actframe-command
+    desc: Sends 802.11 action frame via wl
+    attack: T1048
+    conf: 0.95
+    platforms: [unix]
+    if:
+      type: text
+      regex: '(?i)\bwl\s+(-i\s+\S+\s+)?actframe\b'
+
+  # The action frame's payload is interpolated from a shell variable
+  # rather than a fixed test pattern: runtime data is being carried.
+  - id: wl-actframe-variable-payload
+    desc: wl actframe carries a variable payload
+    attack: T1048
+    conf: 0.92
+    platforms: [unix]
+    if:
+      type: text
+      regex: '(?is)actframe.{0,120}\$\{?\w+'
+
+  # Broadcom/OpenWrt NVRAM lookup of a Wi-Fi pre-shared key, via the
+  # `nvram get` command or the nvram_get() C API.
+  - id: nvram-wifi-psk-read
+    desc: Reads Wi-Fi PSK from router NVRAM
+    attack: T1003
+    conf: 0.94
+    platforms: [unix]
+    if:
+      type: text
+      regex: '(?i)nvram(_get\s*\(|\s+get)\s*["'']?(wl\d*_)?[a-z0-9_]*wpa_?psk\b'
+
+composite_rules:
+  - id: wsc-fragment-flag-combination
+    desc: WSC fragment flags in either spelling
+    crit: notable
+    conf: 0.9
+    any:
+      - id: wps-named-fragment-flag
+      - id: fragment-mf-lf-combination
+
+  - id: dot11-frame-construction
+    desc: Constructs raw 802.11 frames
+    crit: notable
+    conf: 0.92
+    any:
+      - id: scapy-dot11-frame-construction
+      - id: native-dot11-frame-construction
+
+  # One send observation over the spellings: Scapy's layer-2 send or a
+  # hand-constructed Dot11/radiotap frame in any language.
+  - id: dot11-frame-send
+    desc: Transmits a constructed 802.11 frame
+    crit: notable
+    conf: 0.92
+    any:
+      - id: micro-behaviors/communications/socket/raw::scapy-layer2-packet-send
+      - id: dot11-frame-construction
