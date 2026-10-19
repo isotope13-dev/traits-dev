@@ -1,0 +1,232 @@
+--- /Users/t/dev/atomdrift/cleave/src/main.rs
++++ /Users/t/dev/atomdrift/cleave/src/main.rs
+@@ -272,7 +272,14 @@
+             .context("failed to spawn SIGUSR1 thread")?;
+     }
+ 
+-    let format = args.format();
++    // Facts always returns JSON, even without --format. Applying the terminal
++    // sanitizer to it replaces raw DEL/C1/bidi characters with non-JSON \u{...}
++    // escapes and corrupts the authoring data stream.
++    let format = if matches!(args.command, Some(cli::Command::Facts { .. })) {
++        cli::OutputFormat::Json
++    } else {
++        args.format()
++    };
+     let effective_log_file = args.log_file.clone();
+ 
+     // `cleave validate` is meant to print a single summary line on success, so
+--- /Users/t/dev/atomdrift/cleave/src/analyzers/sfx_detector.rs
++++ /Users/t/dev/atomdrift/cleave/src/analyzers/sfx_detector.rs
+@@ -38,6 +38,7 @@
+     InnoSetup,
+     PyInstaller,
+     Nuitka,
++    IExpress,
+ }
+ 
+ impl SfxKind {
+@@ -47,6 +48,7 @@
+             SfxKind::InnoSetup => "file/sfx/inno-setup",
+             SfxKind::PyInstaller => "file/sfx/pyinstaller",
+             SfxKind::Nuitka => "file/sfx/nuitka",
++            SfxKind::IExpress => "metadata/file/format/iexpress::cabinet-self-extractor",
+         }
+     }
+ 
+@@ -56,6 +58,7 @@
+             SfxKind::InnoSetup => "Inno Setup self-extracting installer",
+             SfxKind::PyInstaller => "PyInstaller-bundled Python executable",
+             SfxKind::Nuitka => "Nuitka compressed one-file Python bundle",
++            SfxKind::IExpress => "IExpress cabinet self-extractor",
+         }
+     }
+ 
+@@ -65,6 +68,7 @@
+             SfxKind::InnoSetup => "Inno Setup",
+             SfxKind::PyInstaller => "PyInstaller",
+             SfxKind::Nuitka => "Nuitka",
++            SfxKind::IExpress => "IExpress",
+         }
+     }
+ }
+@@ -182,7 +186,42 @@
+     {
+         return Some(SfxKind::Nuitka);
+     }
++    if iexpress_cabinet_offset(data, embedded_binaries).is_some() {
++        return Some(SfxKind::IExpress);
++    }
+     None
++}
++
++// IExpress stores its format-mandated CABINET and RUNPROGRAM resource names
++// as UTF-16. Require both and a bounded, structurally plausible cabinet, rather
++// than inferring a bundle from a vendor/version string or bare MSCF bytes.
++fn iexpress_cabinet_offset(
++    data: &[u8],
++    embedded: &[crate::analyzers::embedded_binary_detector::EmbeddedBinary],
++) -> Option<usize> {
++    if !data.starts_with(b"MZ") {
++        return None;
++    }
++    for name in ["CABINET", "RUNPROGRAM"] {
++        let marker: Vec<u8> = name.encode_utf16().flat_map(u16::to_le_bytes).collect();
++        marker_outside_embedded_binary(data, &marker, embedded)?;
++    }
++    memmem::find_iter(data, b"MSCF").find(|&offset| {
++        if embedded.iter().any(|b| b.encoding.is_none()
++            && offset >= b.offset && offset < b.offset.saturating_add(b.estimated_size)) {
++            return false;
++        }
++        let Some(header) = data.get(offset..offset.saturating_add(36)) else {
++            return false;
++        };
++        let len = u32::from_le_bytes(header[8..12].try_into().unwrap_or_default()) as usize;
++        let files = u32::from_le_bytes(header[16..20].try_into().unwrap_or_default()) as usize;
++        header[4..8] == [0; 4] && header[24..26] == [3, 1]
++            && len >= 36 && files >= 36 && files < len
++            && u16::from_le_bytes([header[26], header[27]]) > 0
++            && u16::from_le_bytes([header[28], header[29]]) > 0
++            && data.get(offset..offset.saturating_add(len)).is_some()
++    })
+ }
+ 
+ fn marker_outside_embedded_binary(
+@@ -233,6 +272,7 @@
+         SfxKind::InnoSetup => INNO_MARKER,
+         SfxKind::PyInstaller => PYINST_MAGIC,
+         SfxKind::Nuitka => NUITKA_COMPRESSED,
++        SfxKind::IExpress => b"MSCF",
+     };
+     let marker_offset = marker_outside_embedded_binary(data, marker, embedded_binaries);
+ 
+@@ -378,7 +418,7 @@
+ 
+     let mut inno_diagnostics = vec![];
+     let extracted = match kind {
+-        SfxKind::Nsis => run_7z(extraction_path, tmp.path()),
++        SfxKind::Nsis | SfxKind::IExpress => run_7z(extraction_path, tmp.path()),
+         SfxKind::Nuitka => {
+             marker_offset.is_some_and(|offset| extract_nuitka_at(data, offset, tmp.path()).is_ok())
+         }
+@@ -1094,4 +1134,26 @@
+         assert_eq!(finding.crit, Criticality::Notable);
+         assert_eq!(finding.attack, None);
+     }
+-}
++    #[test]
++    fn iexpress_requires_resources_and_bounded_cabinet() {
++        let mut data = b"MZ".to_vec();
++        for name in ["CABINET", "RUNPROGRAM"] {
++            data.extend(name.encode_utf16().flat_map(u16::to_le_bytes));
++        }
++        let start = data.len();
++        let mut cab = [0_u8; 64];
++        cab[..4].copy_from_slice(b"MSCF");
++        cab[8..12].copy_from_slice(&64_u32.to_le_bytes());
++        cab[16..20].copy_from_slice(&44_u32.to_le_bytes());
++        cab[24..30].copy_from_slice(&[3, 1, 1, 0, 1, 0]);
++        data.extend(cab);
++        assert_eq!(detect_sfx(&data, &[]), Some(SfxKind::IExpress));
++        assert_eq!(detect_sfx(&data[..start + 48], &[]), None);
++        let mut version_only = b"MZ Microsoft wextract.pdb".to_vec();
++        version_only.extend(cab);
++        assert_eq!(detect_sfx(&version_only, &[]), None);
++        data[start + 28] = 0;
++        assert_eq!(detect_sfx(&data, &[]), None);
++    }
++
++}
+--- /Users/t/dev/atomdrift/filefacts/src/fileid/heuristics.rs
++++ /Users/t/dev/atomdrift/filefacts/src/fileid/heuristics.rs
+@@ -675,6 +675,25 @@
+         scores
+     };
+ 
++    // A long leading string assignment can cover both prefix windows. Read
++    // the following source after its lexical closing quote, then use the same
++    // language scorer; never infer a language from encoded payload contents.
++    let scores = if scores.iter().copied().max().unwrap_or(0) < SETTLED_HEAD_SCORE {
++        match after_leading_string_assignment(body) {
++            Some(tail) if tail.len() >= MIN_CONTENT_BYTES => {
++                let candidate = scan_scores(&tail[..tail.len().min(SCAN_LIMIT)]);
++                if candidate.iter().copied().max().unwrap_or(0) >= THRESHOLD {
++                    candidate
++                } else {
++                    scores
++                }
++            }
++            _ => scores,
++        }
++    } else {
++        scores
++    };
++
+     // Batch's and VBScript's tokens are quoted by everything that drops or
+     // launches them: a VBScript writing `@echo off` into a `.bat`, a makefile
+     // recipe's `@echo`, JScript's `new ActiveXObject("WScript.Shell")`. Their
+@@ -864,6 +883,39 @@
+     }
+     mask
+ };
++
++
++/// Return the source following a long, leading quoted assignment. The prefix
++/// must be an identifier assignment, optionally introduced by a declaration.
++/// Work is bounded and escaped quotes are skipped without decoding the string.
++fn after_leading_string_assignment(body: &[u8]) -> Option<&[u8]> {
++    let quote = body.iter().take(256).position(|b| matches!(b, b'\'' | b'"'))?;
++    let prefix = std::str::from_utf8(&body[..quote]).ok()?.trim();
++    let prefix = prefix.strip_suffix('=')?.trim_end();
++    let fields: Vec<&str> = prefix.split_whitespace().collect();
++    let name = match fields.as_slice() {
++        [name] => *name,
++        ["local" | "const" | "let" | "var", name] => *name,
++        _ => return None,
++    };
++    if !name.bytes().enumerate().all(|(i, b)| {
++        b == b'_' || b.is_ascii_alphabetic() || (i > 0 && b.is_ascii_digit())
++    }) || name.is_empty() {
++        return None;
++    }
++    let delimiter = body[quote];
++    let mut cursor = quote + 1;
++    while cursor < body.len().min(DECODE_LIMIT) {
++        match body[cursor] {
++            b'\\' => cursor += 2,
++            b if b == delimiter => {
++                return (cursor > SCAN_LIMIT * 2).then_some(&body[cursor + 1..]);
++            }
++            _ => cursor += 1,
++        }
++    }
++    None
++}
+ 
+ /// `true` when the window carries enough control bytes that it cannot be one
+ /// of the scored languages.
+--- /Users/t/dev/atomdrift/filefacts/src/fileid/heuristics/tests.rs
++++ /Users/t/dev/atomdrift/filefacts/src/fileid/heuristics/tests.rs
+@@ -811,3 +811,21 @@
+         );
+     }
+ }
++
++#[test]
++fn leading_encoded_literal_does_not_hide_following_source() {
++    let payload = "QUJDREVGRw".repeat(40000);
++    for (source, kind) in [
++        (format!("local asset = \"{payload}\" local function decode(x) return x end for k,v in ipairs({{}}) do end"), FileType::Lua),
++        (format!("const asset = \"{payload}\"; const fs = require('fs'); module.exports = function() {{ console.log(asset); }};"), FileType::JavaScript),
++    ] {
++        assert_eq!(detect_from_content(source.as_bytes()), Some(kind));
++    }
++    for source in [
++        format!("local asset = \"{payload}\" plain explanatory prose"),
++        format!("{{\"data\":\"{payload}\",\"example\":\"getmetatable local function ipairs(\"}}"),
++        format!("local asset = \"{payload} local function decode(x) return x end"),
++    ] {
++        assert_eq!(detect_from_content(source.as_bytes()), None);
++    }
++}

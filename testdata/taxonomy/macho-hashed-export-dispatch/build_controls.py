@@ -27,7 +27,7 @@ def stack_bytes(data):
 
 rules = [
     'objectives/anti-static/obfuscation/control-flow/dispatch::masked-arithmetic-dispatch-state',
-    'objectives/anti-static/obfuscation/native-api-hash::export-trie-name-hash-resolution',
+    'objectives/anti-static/obfuscation/imports/api-hashing::export-trie-name-hash-resolution',
     'micro-behaviors/crypto/hash/hmac::siphash-arx-round-x64',
     'micro-behaviors/data/string/assembly::native-immediate-string',
 ]
