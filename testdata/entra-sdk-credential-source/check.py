@@ -10,7 +10,8 @@ RBAC = "micro-behaviors/os/security/auth/rbac::"
 CLOUD = "micro-behaviors/os/security/auth/cloud::"
 ROLE = RBAC + "entra-global-admin-role-grant"
 WRITE = CLOUD + "graph-identity-credential-create"
-CHAIN = "objectives/persistence/login/oauth::entra-admin-grant-credential-reuse"
+CHAIN = RBAC + "entra-admin-grant-credential-login-references"
+RETIRED = "objectives/persistence/login/oauth::entra-admin-grant-credential-reuse"
 SDK_ROLE = RBAC + "graph-directory-role-sdk-call"
 JS_ROLE = RBAC + "graph-directory-role-js-sdk-post"
 SDK_APP = CLOUD + "graph-application-password-sdk-call"
@@ -43,6 +44,10 @@ observed = {}
 for line in result.stdout.splitlines():
     for file in json.loads(line)["files"]:
         observed[Path(file["path"]).name] = {t["id"] for t in file.get("traits", [])}
+        assert not any(t["id"] == RETIRED for t in file.get("traits", [])), file["path"]
+        for trait in file.get("traits", []):
+            if trait["id"] == CHAIN:
+                assert trait["crit"] == 3, file["path"]
 for name, (required, forbidden) in cases.items():
     assert name in observed, f"No analysis for {name}"
     assert required <= observed[name], f"{name}: missing {required - observed[name]}"
