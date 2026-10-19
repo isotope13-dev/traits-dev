@@ -490,6 +490,57 @@ traits:
             )
         }
 
+  # XOR self-decrypting form (Trivial.82 class): a 9-byte stub at the
+  # entry XORs the body in place with the key byte inside the stub
+  # (80 34 <key>), so the find-first and open/write service sequences
+  # only exist encrypted. The YARA legs bind the encoded bytes to that
+  # same stub key instead of accepting an arbitrary XOR match.
+  - id: dos-xor-encrypted-find-first-code
+    desc: XOR-encrypted DOS find-first sequence
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        rule dos_xor_encrypted_find_first_code {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $stub = { BE ?? ?? 80 34 ?? 46 E2 ?? }
+            $find = "\xb4\x4e\xba" xor(1-255)
+          condition:
+            $stub at 0 and
+            for any i in (1..#find) : (
+              @find[i] > @stub[1] and
+              (uint8(@find[i]) ^ 0xb4) == uint8(@stub[1] + 5)
+            )
+        }
+    unless:
+      - id: well-known/tool/reverse-engineering/pedump::pedump-packer-marker
+
+  - id: dos-xor-encrypted-open-write-code
+    desc: XOR-encrypted DOS open-write-retime sequence
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        rule dos_xor_encrypted_open_write_code {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $stub = { BE ?? ?? 80 34 ?? 46 E2 ?? }
+            $write = "\xba\x9e\x00\xb8\x02\x3d\xcd\x21\xb7\x40\x93\xba\x00\x03\xb1\x52\xcd\x21\xb8\x01\x57\x33\xc9\xcd\x21" xor(1-255)
+          condition:
+            $stub at 0 and
+            for any i in (1..#write) : (
+              @write[i] > @stub[1] and
+              (uint8(@write[i]) ^ 0xba) == uint8(@stub[1] + 5)
+            )
+        }
+    unless:
+      - id: well-known/tool/reverse-engineering/pedump::pedump-packer-marker
+
 composite_rules:
   - id: dos-xor-loop-writeonly-overwrite
     desc: XOR decryptor overwrites opened COM hosts
@@ -722,3 +773,10 @@ composite_rules:
       - id: dos-image-write-close-find-next
       - id: micro-behaviors/fs/search::dos-int21-find-first
 
+  - id: objectives/impact/infect/binary/dos/overwrite::dos-com-xor-encrypted-overwriter
+    desc: XOR-encrypted DOS COM overwrites found files
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: dos-xor-encrypted-find-first-code
+      - id: dos-xor-encrypted-open-write-code
