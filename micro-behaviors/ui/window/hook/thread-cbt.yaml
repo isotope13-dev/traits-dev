@@ -1,0 +1,38 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86]
+
+traits:
+  # Bind both indirect calls to their IAT slots. The current thread ID is
+  # passed as dwThreadId, hmod is NULL, and idHook is WH_CBT (5). This is the
+  # ordinary MFC dialog/window hook, not a keyboard hook or key recorder.
+  - id: x86-current-thread-cbt-hook
+    desc: Installs CBT window hook on current thread
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_current_thread_cbt_hook {
+          strings:
+            $setup = { FF 15 ?? ?? ?? ?? 50 6A 00 68 ?? ?? ?? ??
+                       6A 05 FF 15 ?? ?? ?? ?? }
+          condition:
+            pe.is_pe and pe.machine == pe.MACHINE_I386 and
+            for any i in (1..#setup) : (
+              uint32(@setup[i] + 2) == pe.image_base +
+                pe.import_rva("KERNEL32.dll", "GetCurrentThreadId") and
+              (uint32(@setup[i] + 18) == pe.image_base +
+                pe.import_rva("USER32.dll", "SetWindowsHookExW") or
+               uint32(@setup[i] + 18) == pe.image_base +
+                pe.import_rva("USER32.dll", "SetWindowsHookExA")) and
+              for any s in (0..pe.number_of_sections - 1) : (
+                pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                @setup[i] >= pe.sections[s].raw_data_offset and
+                @setup[i] + !setup[i] <= pe.sections[s].raw_data_offset +
+                  pe.sections[s].raw_data_size
+              )
+            )
+        }
