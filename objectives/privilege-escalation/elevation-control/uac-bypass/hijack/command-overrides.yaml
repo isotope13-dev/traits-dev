@@ -1,0 +1,69 @@
+defaults:
+  platforms:
+  - windows
+  conf: 0.98
+  attack: T1548.002
+traits:
+- id: python-windir-shell-command-write
+  desc: windir setter adds shell command-tail syntax
+  for:
+  - python
+  crit: suspicious
+  if:
+    type: tree-sitter
+    query: |
+      (call
+        function: (attribute attribute: (identifier) @setter)
+        arguments: (argument_list
+          . (_)
+          . (string) @name
+          . (_)
+          . (_)
+          . (binary_operator operator: "+" right: (string) @tail))
+        (#match? @setter "^SetValueEx$")
+        (#match? @name "^['\"]windir['\"]$")
+        (#match? @tail "(?i)[&|]\\s*rem\\b")
+      ) @write
+- id: powershell-windir-shell-command-write
+  desc: Per-user windir setter adds shell command tail
+  for:
+  - powershell
+  crit: suspicious
+  if:
+    type: tree-sitter
+    query: |
+      (command
+        command_name: (command_name) @setter
+        command_elements: (command_elements) @args
+        (#match? @setter "(?i)^(Set|New)-ItemProperty$")
+        (#match? @args "(?i)-Path\\s+['\"]HKCU:\\\\Environment['\"]")
+        (#match? @args "(?i)-Name\\s+['\"]windir['\"]")
+        (#match? @args "(?i)-Value\\s+['\"][^'\"\\r\\n]{0,120}[&|]\\s*rem\\b")
+      ) @write
+- id: python-folder-default-command-write
+  desc: Writes default command through Folder key handle
+  for:
+  - python
+  crit: suspicious
+  if:
+    type: tree-sitter
+    query: |
+      (with_statement
+        (with_clause (with_item value: (as_pattern
+          (call
+            function: (attribute object: (identifier) @api attribute: (identifier) @create)
+            arguments: (argument_list
+              . (attribute object: (identifier) @hive_api attribute: (identifier) @hive)
+              . (string) @path))
+          alias: (as_pattern_target (identifier) @handle))))
+        body: (block (expression_statement (call
+          function: (attribute object: (identifier) @write_api attribute: (identifier) @setter)
+          arguments: (argument_list . (identifier) @target . (string) @default))))
+        (#match? @create "^CreateKey(Ex)?$")
+        (#match? @hive "^HKEY_CURRENT_USER$")
+        (#match? @path "^[rR]?['\"]Software\\\\Classes\\\\Folder\\\\shell\\\\open\\\\command['\"]$")
+        (#match? @setter "^SetValueEx$")
+        (#match? @default "^(''|\"\")$")
+        (#eq? @api @hive_api)
+        (#eq? @api @write_api)
+        (#eq? @handle @target)) @write
