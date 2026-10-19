@@ -1,0 +1,47 @@
+# Bind both RIP-relative string loads to their actual targets. API names,
+# association strings and a printf-like argument template elsewhere in a file
+# do not establish this registration sequence. This is a capability, not a
+# UAC bypass: HKCR IsolatedCommand alone does not establish elevation.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86-64]
+traits:
+  - id: native-exefile-wrapper-registration
+    desc: Native HKCR EXE wrapper registration sequence
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule native_exefile_wrapper_registration {
+          strings:
+            $key = "exefile\\shell\\open\\command" ascii fullword nocase
+            $value = "IsolatedCommand" ascii fullword nocase
+            $open = { 48 8D 15 ?? ?? ?? ?? 48 C7 C1 00 00 00 80
+                      45 (31|33) C0 45 (31|33) C9 FF 15 ?? ?? ?? ?? }
+            $append = { 48 B9 20 22 25 31 22 20 25 2A
+                        48 89 0C 07 C6 44 07 08 00 }
+            $set = { 48 8D 15 ?? ?? ?? ?? 48 8B 1D ?? ?? ?? ??
+                     45 (31|33) C0 41 B9 01 00 00 00 FF D3 }
+          condition:
+            all of them and
+            pe.imports("ADVAPI32.dll", "RegCreateKeyExA") and
+            pe.imports("ADVAPI32.dll", "RegSetValueExA") and
+            for any s in pe.sections : (
+              s.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for any i in (1..#open) : (
+                @open[i] >= s.raw_data_offset and
+                @open[i] + 256 <= s.raw_data_offset + s.raw_data_size and
+                $key at pe.rva_to_offset(s.virtual_address + @open[i] -
+                  s.raw_data_offset + 7 + int32(@open[i] + 3)) and
+                $append in (@open[i] + 26 .. @open[i] + 200) and
+                for any j in (1..#set) : (
+                  @set[j] > @open[i] + 26 and @set[j] < @open[i] + 256 and
+                  $value at pe.rva_to_offset(s.virtual_address + @set[j] -
+                    s.raw_data_offset + 7 + int32(@set[j] + 3))
+                )
+              )
+            )
+        }
