@@ -1,19 +1,19 @@
 These fixtures exercise remote `file://host/DavWWWRoot/` and
-`\\host\DavWWWRoot\` popup rendering, as
+`\\host\DavWWWRoot\` popup declarations, as
 documented in [Investigating Ephemeral Supply Chain Tampering](https://cloud.google.com/blog/topics/threat-intelligence/investigating-ephemeral-supply-chain-tampering/).
 
 Run `python3 testdata/notification-webdav-controls/check.py` from the repository.
 The notable notification finding describes a literal remote WebDAV Address
 in a popup record. It establishes neither rendering nor authentication capture.
-The separate suspicious finding records zero/one-pixel popup geometry, a plausible
-concealment configuration. Source emitters alone do not establish malicious intent.
+The separate notable finding records zero/one-pixel popup geometry. Configuration
+bytes alone establish neither popup activation nor deliberate concealment.
 
 Positive cases change hostnames, paths, section numbers, field order, whitespace,
 line endings, source language and URL/UNC spelling (including `@SSL@443`).
 Controls reject HTTPS banners, local file URLs, loopback destinations, commented
 addresses, prose and non-popup sections. Ordinary visible
 WebDAV popups retain only the notable configuration finding. Geometry in another
-section or another popup cannot supply the concealment finding.
+section or another popup cannot supply the geometry finding.
 
 The matchers inspect raw bytes because the text extractor omits short INI lines.
 They cover literal configurations and embedded configurations in Python,
@@ -33,5 +33,10 @@ each inline YARA trait within the four-file-type admission limit.
 
 The configuration trait moved from credential capture to ui/window/notify;
 its matcher and file scopes are preserved. No YAML consumers referenced its
-old IDs. Writer controls must have no hostile and at most one suspicious
+old IDs. Writer controls must have no hostile or suspicious
 finding; geometry and endpoint controls retain their previous match sets.
+
+The geometry observation also lives in `micro-behaviors/ui/window/notify`: its
+matcher reads configuration only. The move preserves every match and file scope,
+removes the unsupported hidden-process mapping, and assigns notable severity.
+There are no YAML consumers of its old IDs or ancestor selectors.
