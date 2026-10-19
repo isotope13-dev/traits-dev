@@ -22,11 +22,12 @@ Regression coverage for the unconvicted-hostile triage round:
   dotted code identifier, not a renamed victim file.
 - ``store-execute-cmd.js`` vs ``c2-exec-postback.js``: a vetted data-store
   write through ``execute(r.cmd)`` is the command pattern, not remote
-  tasking; the C2 composite (URL, shell-exec, output capture, postback)
-  still convicts a real execute-and-report shape.
+  tasking; neither fixture establishes received tasking or output-to-request
+  flow, so neither convicts.
 - ``rust-fetch-noexec/build.rs`` vs ``rust-fetch-spawn/build.rs``: an HTTP
   fetch beside a ``python -c`` discovery query (``.output()``) is not
-  fetch-and-run; a fetch beside a ``.spawn()`` launch still is.
+  fetch-and-run; a fetch beside a ``.spawn()`` launch does not by itself
+  establish abuse.
 - ``jest-worker-cleanup.zip`` vs ``group-kill-untracked.sh``: an e2e
   harness killing its pidfile-tracked worker group is cleanup (the zip
   exercises the archive-member path, where shell-gated atoms evaluate);
