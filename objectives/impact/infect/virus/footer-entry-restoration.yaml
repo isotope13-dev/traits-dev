@@ -1,0 +1,101 @@
+# Infected-host startup, rather than a generic debugger/import profile.
+# The entry's relative jump must lead to the register-saving PEB stub.
+# The loader recovers five saved bytes from its file footer and writes that
+# buffer back to the host entry, temporarily changing its page protection.
+# Stack slots are bound across the source, decoder and protected entry write;
+# relocation addresses, decoder keys and payload names are not signatures.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+
+traits:
+  - id: x86-footer-restored-entry-diversion
+    desc: Redirected PE entry restored from encoded footer
+    crit: suspicious
+    conf: 0.99
+    attack: T1554
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule footer_restored_entry_diversion {
+          strings:
+            $stub = {
+              E8 ?? ?? ?? ?? ?? ?? 60 8B EC 83 C5 24 54
+              E8 ?? ?? ?? ?? ?? ?? ?? ?? 64 A1 30 00 00 00
+              8B 40 0C 8B 70 1C
+            }
+            // Image base + OptionalHeader.AddressOfEntryPoint.
+            $entry = { 8B 85 ?? ?? ?? ?? 8B 4D 08 03 48 28 89 8D ?? ?? ?? ?? }
+            // Copy five bytes from file_buffer + file_size - 29.
+            $footer = {
+              6A 05 8B 85 ?? ?? ?? ?? 8B 4D FC 8D 44 01 E3
+              50 8D 85 ?? ?? ?? ?? 50 E8 ?? ?? ?? ?? 83 C4 0C
+            }
+            $decode = {
+              83 BD ?? ?? ?? ?? 05 7D ?? 8B 85 ?? ?? ?? ??
+              0F BE 84 05 ?? ?? ?? ?? 0F BE 4D ?? 33 C1
+              8B 8D ?? ?? ?? ?? 88 84 0D ?? ?? ?? ??
+              8B 85 ?? ?? ?? ?? 0F BE 84 05 ?? ?? ?? ?? F7 D0
+              8B 8D ?? ?? ?? ?? 88 84 0D ?? ?? ?? ?? EB ??
+            }
+            // Protect(entry,5,RWX,&old); copy(entry,buffer,5);
+            // Protect(entry,5,old,&old). Bind the stack operands below.
+            $restore = {
+              8D 85 ?? ?? ?? ?? 50 6A 40 6A 05 FF B5 ?? ?? ?? ??
+              FF 95 ?? ?? ?? ?? 6A 05 8D 85 ?? ?? ?? ?? 50
+              FF B5 ?? ?? ?? ?? E8 ?? ?? ?? ?? 83 C4 0C
+              8D 85 ?? ?? ?? ?? 50 FF B5 ?? ?? ?? ?? 6A 05
+              FF B5 ?? ?? ?? ?? FF 95 ?? ?? ?? ??
+            }
+          condition:
+            pe.machine == pe.MACHINE_I386 and
+            uint8(pe.entry_point) == 0xe9 and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].name == ".text" and
+              for any b in (1..#stub) : (
+                @stub[b] >= pe.sections[s].raw_data_offset and
+                @stub[b] + !stub[b] <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size and
+                pe.rva_to_offset(uint32(uint32(0x3c)+0x28)+5+int32(pe.entry_point+1)) == @stub[b]
+              ) and
+              for any r in (1..#restore) : (
+                @restore[r] >= pe.sections[s].raw_data_offset and
+                @restore[r] + !restore[r] <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size and
+                uint32(@restore[r]+13) == uint32(@restore[r]+34) and
+                uint32(@restore[r]+13) == uint32(@restore[r]+63) and
+                uint32(@restore[r]+19) == uint32(@restore[r]+69) and
+                uint32(@restore[r]+2) == uint32(@restore[r]+48) and
+                uint32(@restore[r]+2) == uint32(@restore[r]+55) and
+                for any f in (1..#footer) : (
+                  @footer[f] >= @restore[r]-768 and @footer[f] < @restore[r] and
+                  uint32(@footer[f]+18) == uint32(@restore[r]+27) and
+                  for any d in (1..#decode) : (
+                    @decode[d] > @footer[f] and @decode[d] < @restore[r] and
+                    uint32(@decode[d]+2) == uint32(@decode[d]+11) and
+                    uint32(@decode[d]+2) == uint32(@decode[d]+31) and
+                    uint32(@decode[d]+2) == uint32(@decode[d]+44) and
+                    uint32(@decode[d]+2) == uint32(@decode[d]+60) and
+                    uint32(@decode[d]+19) == uint32(@footer[f]+18) and
+                    uint32(@decode[d]+19) == uint32(@decode[d]+38) and
+                    uint32(@decode[d]+19) == uint32(@decode[d]+52) and
+                    uint32(@decode[d]+19) == uint32(@decode[d]+67)
+                  )
+                ) and
+                for any e in (1..#entry) : (
+                  @entry[e] >= @restore[r]-1024 and @entry[e] < @restore[r] and
+                  uint32(@entry[e]+14) == uint32(@restore[r]+13)
+                )
+              )
+            )
+        }
+
+composite_rules:
+  - id: encoded-footer-parasitic-entry-loader
+    desc: Obfuscated PE entry diversion with footer recovery
+    crit: hostile
+    conf: 0.99
+    attack: T1554,T1027.002
+    all:
+      - id: x86-footer-restored-entry-diversion
+      - id: objectives/anti-static/obfuscation/decoders::return-skip-stack-bytes-opaque-overlay
