@@ -1,5 +1,5 @@
 #!/bin/sh
-# Unverified multi-arch stager (hostile control): no hashes, no checks.
+# Unverified multi-arch bootstrap: download/run/cleanup alone is not hostile.
 set -e
 case "$(uname -m)" in
   x86_64) path="stage/amd64" ;;
