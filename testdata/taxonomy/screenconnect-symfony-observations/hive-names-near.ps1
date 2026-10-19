@@ -1,0 +1,2 @@
+$machineHive = "HKLM"
+$userHive = "HKCU"

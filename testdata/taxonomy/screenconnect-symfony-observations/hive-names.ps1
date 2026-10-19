@@ -1,0 +1,2 @@
+HKLM
+HKCU
