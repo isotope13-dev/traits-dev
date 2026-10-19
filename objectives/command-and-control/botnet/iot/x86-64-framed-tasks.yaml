@@ -1,0 +1,70 @@
+# The receive calls and parser handoff are bound by relative call targets.
+# A modified flood routine does not erase the independently retained task path.
+defaults:
+  platforms: [linux]
+  for: [elf]
+  arch: [x86-64]
+  attack: T1095
+traits:
+  - id: x86-64-framed-attack-task-code
+    desc: Receive calls bound to attack-record parser
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "elf"
+        rule x86_64_framed_attack_task_code {
+          strings:
+            // Function entry, then duration, vector, target count and masks.
+            $parser = {
+              48 89 5C 24 ?? [75]
+              44 8B 37 41 0F CE 83 FE 04 74 ??
+              0F B6 47 04 83 FE 05 88 44 24 ?? 74 ??
+              44 0F B6 6F 05 45 84 ED 74 ?? 44 8D 7B FA
+              41 0F B6 FD 48 8D 04 BF 49 63 D7 48 39 C2
+            }
+            // Bound uint16 length to 1024; receive the body and call parser.
+            $dispatch = {
+              66 C1 C8 08 66 3D 00 04 66 89 84 24 [4] 0F 87 [4]
+              0F B7 94 24 [4] C7 03 00 00 00 00 B9 02 40 00 00
+              8B 3D [4] 48 89 E6 E8 [4] 83 F8 FF 0F 84 [4]
+              85 C0 74 ?? 8B 3D [4] B9 00 40 00 00 BA 02 00 00 00
+              48 89 EE E8 [4] 8B 3D [4] 0F B7 94 24 [4]
+              B9 00 40 00 00 66 C1 CA 08 48 89 E6 66 89 94 24 [4]
+              0F B7 D2 E8 [4] 0F B7 84 24 [4] 66 85 C0 0F 84 [4]
+              48 89 E7 0F B7 F0 E8 ?? ?? ?? ??
+            }
+            $recv = {
+              45 31 C9 45 31 C0 E9 01 00 00 00 90 53
+              4C 63 D1 48 63 FF B8 2D 00 00 00 0F 05
+            }
+          condition:
+            elf.machine == elf.EM_X86_64 and
+            for any s in (0..elf.number_of_sections-1) : (
+              elf.sections[s].name == ".text" and
+              for any d in (1..#dispatch) : (
+                @dispatch[d] >= elf.sections[s].offset and
+                @dispatch[d]+!dispatch[d] <= elf.sections[s].offset+elf.sections[s].size and
+                for any p in (1..#parser) : (
+                  @parser[p] >= elf.sections[s].offset and
+                  @parser[p]+!parser[p] <= elf.sections[s].offset+elf.sections[s].size and
+                  @dispatch[d]+162+int32(@dispatch[d]+158) == @parser[p]
+                ) and
+                for any r in (1..#recv) : (
+                  @recv[r] >= elf.sections[s].offset and
+                  @recv[r]+!recv[r] <= elf.sections[s].offset+elf.sections[s].size and
+                  @dispatch[d]+55+int32(@dispatch[d]+51) == @recv[r] and
+                  @dispatch[d]+134+int32(@dispatch[d]+130) == @recv[r]
+                )
+              )
+            )
+        }
+composite_rules:
+  - id: x86-64-framed-credential-bot
+    desc: Remote attack parser with hidden IoT credentials
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: x86-64-framed-attack-task-code
+      - id: objectives/lateral-movement/brute-force/iot-creds::xor-encoded-iot-credential-table

@@ -1,0 +1,48 @@
+# Socket setup and a repeated send bound to the sendto syscall wrapper.
+# This capability alone establishes no unauthorized target or tasking.
+defaults:
+  platforms: [linux]
+  for: [elf]
+  arch: [x86-64]
+traits:
+  - id: x86-64-udp-flood-send-loop
+    desc: UDP setup and bound repeated-send loop
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "elf"
+        rule x86_64_udp_flood_send_loop {
+          strings:
+            // AF_INET / SOCK_DGRAM / IPPROTO_UDP.
+            $udp = { BF 02 00 00 00 BA 11 00 00 00 BE 02 00 00 00 E8 ?? ?? ?? ?? }
+            // Iterate target sockets and buffers; outer branch repeats forever.
+            $loop = {
+              49 8B 34 DF 41 8B 3C 9E B9 00 40 00 00 48 89 EA
+              48 FF C3 E8 [4] 49 39 DC 74 CA EB E1
+            }
+            $send = {
+              45 31 C9 45 31 C0 E9 01 00 00 00 90 53 45 89 C9
+              4C 63 D1 48 63 FF B8 2C 00 00 00 0F 05
+            }
+          condition:
+            elf.machine == elf.EM_X86_64 and
+            for any s in (0..elf.number_of_sections-1) : (
+              elf.sections[s].name == ".text" and
+              for any l in (1..#loop) : (
+                @loop[l] >= elf.sections[s].offset and
+                @loop[l]+!loop[l] <= elf.sections[s].offset+elf.sections[s].size and
+                for any u in (1..#udp) : (
+                  @udp[u] >= elf.sections[s].offset and
+                  @udp[u] < @loop[l] and @loop[l]-@udp[u] < 512
+                ) and
+                for any t in (1..#send) : (
+                  @send[t] >= elf.sections[s].offset and
+                  @send[t]+!send[t] <= elf.sections[s].offset+elf.sections[s].size and
+                  @loop[l]+24+int32(@loop[l]+20) == @send[t]
+                )
+              )
+            )
+        }
+
