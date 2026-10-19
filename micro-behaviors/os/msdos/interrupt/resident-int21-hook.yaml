@@ -89,6 +89,67 @@ traits:
   # handler address from the vector table; PUSH [SI] / MOV [SI],val /
   # POP [SI] save, replace and restore the handler. A 66h prefix makes
   # each step 32-bit so the whole vector dword is swapped at once.
+  # Direct vector-table install without the AH=35h/25h pair: the body is
+  # block-copied low (REP MOVSB with a byte count loaded just before) and
+  # the handler word lands in the table with STOSW (Small.63). A plain
+  # block copy alone is data movement; the copy-then-store pairing inside
+  # a small window is what marks a vector patch.
+  - id: dos-low-copy-vector-store
+    desc: DOS low copy then vector store
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: yara
+      source: |
+        rule dos_low_copy_vector_store {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $copy = { ( B1 ?? | B9 ?? ?? ) [0-8] F3 A4 [0-32] AB }
+          condition:
+            $copy in (0..512)
+        }
+
+  # Write-service trigger for a resident hook: CMP AX,40E9h fires only
+  # when AH=40h (write) meets a buffer whose first byte is E9h -- the near
+  # jump that starts a COM program being written to disk -- and the
+  # handler then writes a fixed body length over it (Small.63).
+  - id: dos-int21-e9-write-trigger
+    desc: DOS write hook triggers on E9-led buffer
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: yara
+      source: |
+        rule dos_int21_e9_write_trigger {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $hook = { 3D E9 40 [0-20] B9 ?? ?? [0-6] CD 21 }
+          condition:
+            $hook in (0..4096)
+        }
+
+  # Handler exit that chains onward: POP DS / POPA restore the caller's
+  # registers and a far jump continues into the saved original vector
+  # (Small.63). Legitimate TSRs chain the same way, so this only ever
+  # serves as one leg of a hook composite.
+  - id: dos-handler-chain-far-jump
+    desc: DOS handler chains via far jump
+    crit: suspicious
+    conf: 0.85
+    if:
+      type: yara
+      source: |
+        rule dos_handler_chain_far_jump {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $chain = { 1F 61 EA }
+          condition:
+            $chain in (0..4096)
+        }
+
   - id: dos-int01-handler-first-word-patch
     desc: DOS patches INT 01h handler first word
     crit: suspicious
