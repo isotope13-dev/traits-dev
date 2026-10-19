@@ -1,0 +1,59 @@
+defaults:
+  for: [pe]
+  platforms: [windows]
+  arch: [x86]
+
+traits:
+  # Bind the two boolean calls to their probe bodies. File-wide coexistence
+  # of VM instructions and an unrelated early return does not establish a
+  # gate. Relative call targets are mapped from the caller RVA to each callee
+  # section; both probe bodies must be executable. No section name,
+  # image address, family string or packer label is required.
+  - id: x86-virtualpc-vmware-early-return
+    desc: Virtual PC/VMware probes gate early return
+    crit: suspicious
+    conf: 0.99
+    attack: T1497.001
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_virtualpc_vmware_early_return {
+          strings:
+            $gate = { E8 ?? ?? ?? ?? 0F B6 C0 85 C0 75 0C
+                      E8 ?? ?? ?? ?? 0F B6 C0 85 C0 74 07 33 C0
+                      E9 ?? ?? ?? ?? }
+            $vpc = { 0F 3F 07 0B }
+            $vmware = { B8 68 58 4D 56 [0-27]
+                        (66 BA 58 56 | BA 58 56 00 00) ED }
+          condition:
+            pe.machine == pe.MACHINE_I386 and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for any g in (1..#gate) : (
+                @gate[g] >= pe.sections[s].raw_data_offset and
+                @gate[g]+!gate[g] <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size and
+                @gate[g]+31+int32(@gate[g]+27) >= pe.sections[s].raw_data_offset and
+                @gate[g]+35+int32(@gate[g]+27) <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size and
+                (uint16(@gate[g]+31+int32(@gate[g]+27)) == 0xc3c9 or
+                 uint16(@gate[g]+31+int32(@gate[g]+27)) == 0xc2c9) and
+                for any t in (0..pe.number_of_sections-1) : (
+                  pe.sections[t].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                  for any v in (1..#vpc) : (
+                    @vpc[v] >= pe.sections[t].raw_data_offset and
+                    @vpc[v]+!vpc[v] <= pe.sections[t].raw_data_offset+pe.sections[t].raw_data_size and
+                    pe.rva_to_offset(pe.sections[s].virtual_address+@gate[g]-pe.sections[s].raw_data_offset+5+int32(@gate[g]+1)) >= pe.sections[t].raw_data_offset and
+                    @vpc[v] >= pe.rva_to_offset(pe.sections[s].virtual_address+@gate[g]-pe.sections[s].raw_data_offset+5+int32(@gate[g]+1)) and
+                    @vpc[v] <= pe.rva_to_offset(pe.sections[s].virtual_address+@gate[g]-pe.sections[s].raw_data_offset+5+int32(@gate[g]+1))+96
+                  ) and
+                  for any m in (1..#vmware) : (
+                    @vmware[m] >= pe.sections[t].raw_data_offset and
+                    @vmware[m]+!vmware[m] <= pe.sections[t].raw_data_offset+pe.sections[t].raw_data_size and
+                    pe.rva_to_offset(pe.sections[s].virtual_address+@gate[g]-pe.sections[s].raw_data_offset+17+int32(@gate[g]+13)) >= pe.sections[t].raw_data_offset and
+                    @vmware[m] >= pe.rva_to_offset(pe.sections[s].virtual_address+@gate[g]-pe.sections[s].raw_data_offset+17+int32(@gate[g]+13)) and
+                    @vmware[m] <= pe.rva_to_offset(pe.sections[s].virtual_address+@gate[g]-pe.sections[s].raw_data_offset+17+int32(@gate[g]+13))+96
+                  )
+                )
+              )
+            )
+        }
