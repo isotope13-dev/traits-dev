@@ -7,10 +7,11 @@ Regression coverage for the unconvicted-hostile triage round:
   ``steps.*.outputs.command``) is automation, not an environment-staged
   payload, so ``invoke-expression-env-variable`` stays silent; the opaque
   control ``iex-opaque-env.ps1`` still fires it.
-- ``popup-lockup-tight.js`` vs ``popup-api-scattered.js``: a moving-popup
-  lockup drives open/move/focus/screen-reads from one tight timer loop. Legs
-  scattered kilobytes apart across a wrapper library surface must not
-  convict; legs inside one small loop still do.
+- ``popup-lockup-tight.js`` vs ``popup-api-scattered.js``: the tight fixture
+  attempts random movement and repeated focus within a 100 ms interval.
+  These are suspicious
+  UI interference, not proof of popup lockup or resource exhaustion.
+  Scattered API references do not establish either callback relationship.
 - ``setresuid-spaced.c`` vs ``setresuid-unspaced.c``: the setresuid-root
   atom sees through normal C comma spacing either way, while a lone call
   no longer self-corroborates into ``native-setresuid-escalation``; the
@@ -32,9 +33,10 @@ Regression coverage for the unconvicted-hostile triage round:
   harness killing its pidfile-tracked worker group is cleanup (the zip
   exercises the archive-member path, where shell-gated atoms evaluate);
   an untracked ``kill -9 -${var}`` still fires.
-- ``mcp-updater-detached.js`` vs ``mcp-backdoor-detached.js``: an
-  obfuscated tokenized detached launch beside an update check is the
-  self-updater exception; the same shape without it still convicts.
+- ``mcp-updater-detached.js`` vs ``mcp-backdoor-detached.js``: neither
+  obfuscated token configuration nor detached execution establishes a
+  backdoor or staged payload. The latter fixture actually throws before
+  reaching its imports; neutral source capabilities remain visible.
 - ``consent-env-upload.py`` vs ``steal-env-upload.py``: a CLI that refuses
   to run unless the operator exports credential env vars is delegated
   consent; a silent env-secret POST without it still convicts.
