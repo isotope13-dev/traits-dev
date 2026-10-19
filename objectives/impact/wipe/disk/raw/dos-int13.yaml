@@ -33,6 +33,49 @@ traits:
     unless:
       - id: well-known/tool/reverse-engineering/pedump::pedump-packer-marker
 
+  # MOV AX,xx02h with AL other than 1: BIOS read of more than one sector.
+  # Mislabeled dumps are often typed data or static-lib rather than dos_com.
+  - id: dos-int13-multisector-read
+    desc: BIOS reads multiple disk sectors
+    crit: notable
+    conf: 0.9
+    if:
+      type: hex
+      pattern: "B8 ~01 02 [0-40] CD 13"
+      offset_range: [0, 512]
+
+  # MOV AX,xx03h / INT 13h writes any sector count. Floppy erasers use DL
+  # below 80h, so the fixed-disk atom above does not see them.
+  - id: dos-int13-ax-sector-write-any
+    desc: BIOS writes sectors via AX immediate
+    crit: notable
+    conf: 0.9
+    if:
+      type: hex
+      pattern: "B8 ?? 03 [0-24] CD 13"
+      offset_range: [0, 512]
+
+  # AL other than 1 overwrites more than a single boot sector.
+  - id: dos-int13-multisector-write
+    desc: BIOS writes multiple disk sectors
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: hex
+      pattern: "B8 ~01 03 [0-24] CD 13"
+      offset_range: [0, 512]
+
+  # INT 13h then INT 21h AH=4Ch. The gap allows another sector call
+  # between the disk service and MOV AH,4Ch / MOV AL,imm / INT 21h.
+  - id: dos-int13-then-dos-exit
+    desc: DOS exits after BIOS disk call
+    crit: notable
+    conf: 0.9
+    if:
+      type: hex
+      pattern: "CD 13 [0-64] B4 4C [0-8] CD 21"
+      offset_range: [0, 512]
+
 composite_rules:
   - id: dos-raw-fixed-disk-wiper
     desc: DOS program overwrites raw fixed disk sectors and exits
@@ -51,3 +94,26 @@ composite_rules:
     all:
       - id: dos-int13-raw-disk-copy-loop
       - id: objectives/impact/wipe/disk/mbr::dos-int13-sector-write-exit
+
+  # Reads a multi-sector run, writes sectors back through INT 13h, then
+  # terminates. No prompt and no DOS file call: a floppy or fixed-disk eraser.
+  - id: dos-int13-read-write-exit-wiper
+    desc: DOS read-write sector wipe then exit
+    crit: hostile
+    conf: 0.96
+    size_max: 2048
+    all:
+      - id: dos-int13-multisector-read
+      - id: dos-int13-ax-sector-write-any
+      - id: dos-int13-then-dos-exit
+
+  # A multi-sector BIOS write (not a one-sector boot patch) followed by
+  # process exit. Disk tools that rewrite a track are far larger than this.
+  - id: dos-int13-multisector-write-exit-wiper
+    desc: DOS overwrites multiple sectors then exits
+    crit: hostile
+    conf: 0.95
+    size_max: 2048
+    all:
+      - id: dos-int13-multisector-write
+      - id: dos-int13-then-dos-exit
