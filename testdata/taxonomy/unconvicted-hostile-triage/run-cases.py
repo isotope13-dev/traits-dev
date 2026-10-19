@@ -39,7 +39,8 @@ Regression coverage for the unconvicted-hostile triage round:
   reaching its imports; neutral source capabilities remain visible.
 - ``consent-env-upload.py`` vs ``steal-env-upload.py``: a CLI that refuses
   to run unless the operator exports credential env vars is delegated
-  consent; a silent env-secret POST without it still convicts.
+  consent. The function-only fixture contains no invocation; its declared
+  credential-to-body capability remains notable.
 - ``system-cleanup.sh`` vs ``random-maintenance.sh``: log truncation
   beside package-cache cleaning is system maintenance, not
   anti-forensics; the same truncation without maintenance context still

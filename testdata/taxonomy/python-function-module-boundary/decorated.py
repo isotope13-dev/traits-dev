@@ -1,0 +1,3 @@
+@staticmethod
+def example():
+    pass
