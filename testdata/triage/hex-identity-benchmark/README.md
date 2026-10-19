@@ -26,7 +26,10 @@ beacon plus preinstall declaration, with the archive description saying ships
 rather than asserting an unproven path binding between manifest and sidecar.
 The new matcher requires OOB evidence in the actual constructed destination;
 an unrelated OOB string cannot provide that relationship. Campaign strings and
-function, parameter, buffer, URL and OS alias names are not required. All six
+function, parameter, buffer, URL and OS alias names are not required. The known
+checkDownloadSpeed API must consume the constructed URL; an arbitrary renamed
+method or console logger is not evidence of network transmission. The URL-argument
+observation now lives under micro-behaviors/communications/http/url/build. All six
 relative orders of the OS import and the two function declarations are covered.
 
 json-body-post no longer treats req.write as proof of POST. Its description
@@ -34,5 +37,6 @@ states co-occurrence because even JSON.stringify plus a POST literal does not
 bind a specific body to a specific request.
 
 Run the fixtures with python3 testdata/triage/hex-identity-benchmark/check.py.
-Positive and renamed code must match; unused sources, disconnected encoders,
+Positive and renamed identifiers must match; renamed unknown methods, local
+URL logging, unused sources, disconnected encoders,
 fixed destinations, comments and unrelated OOB endpoints must not match.
