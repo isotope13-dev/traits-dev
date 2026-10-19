@@ -1,0 +1,1 @@
+const properties = ['cmd', 'command'];
