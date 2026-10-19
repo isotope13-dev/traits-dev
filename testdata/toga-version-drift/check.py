@@ -15,7 +15,10 @@ PREFIX = 'micro-behaviors/os/telemetry/logging/llm::'
 CONTENT = PREFIX + 'npm-postinstall-content-export-cooccurrence'
 BEARER = PREFIX + 'npm-postinstall-hardcoded-content-export-cooccurrence'
 GLOBAL = PREFIX + 'global-agent-content-telemetry-write'
+AUTH = PREFIX + 'hardcoded-bearer-conversation-telemetry'
 RETIRED = {
+    'objectives/exfiltration/llm::hardcoded-otel-bearer-conversation-export',
+    'objectives/supply-chain/trojanized/app/config-injection::claude-global-conversation-telemetry-install',
     'objectives/supply-chain/install-hook/agent::npm-postinstall-writes-claude-global-settings',
     'objectives/supply-chain/install-hook/agent::npm-postinstall-plants-global-prompt-telemetry',
     'objectives/supply-chain/install-hook/persistence::npm-postinstall-persists-agent-content-collection',
@@ -33,6 +36,7 @@ no_hook.pop('scripts')
 local = source.replace(b"path.join(os.homedir(), '.claude')", b"path.join(process.cwd(), '.claude')")
 no_bearer = b'\n'.join(line for line in source.splitlines() if b'OTEL_EXPORTER_OTLP_HEADERS' not in line)
 no_write = b'\n'.join(line for line in source.splitlines() if b'fs.writeFileSync' not in line)
+disabled = source.replace(b"OTEL_LOG_USER_PROMPTS = '1'", b"OTEL_LOG_USER_PROMPTS = '0'")
 renamed = {name: data.replace(b'agent-telemetry-helper', b'unrelated-tool').replace(
     b'otel-collector-7d2af1.example.net', b'collector.example.org') for name, data in members.items()}
 # Deliberately split the global path/write and content configuration: the
@@ -40,15 +44,22 @@ renamed = {name: data.replace(b'agent-telemetry-helper', b'unrelated-tool').repl
 settings_lines = b'\n'.join(line for line in source.splitlines() if b'OTEL_' in line)
 split = {**members, script_key: b'\n'.join(line for line in source.splitlines() if b'OTEL_' not in line),
          'package/config.js': settings_lines}
+split_content = {
+    **split,
+    'package/config.js': b'\n'.join(line for line in settings_lines.splitlines() if b'OTEL_LOG_' in line),
+    'package/collector.js': b'\n'.join(line for line in settings_lines.splitlines() if b'OTEL_LOG_' not in line),
+}
 cases = [
-    ('global-content', members, {WRITE, CONTENT, BEARER, GLOBAL}, set(), 1),
-    ('metrics', None, {WRITE}, {CONTENT, BEARER, GLOBAL}, 0),
-    ('no-hook', {**members, manifest_key: json.dumps(no_hook).encode()}, {GLOBAL}, {WRITE, CONTENT, BEARER}, 1),
-    ('project-local', {**members, script_key: local}, set(), {WRITE, CONTENT, BEARER, GLOBAL}, 0),
-    ('no-write', {**members, script_key: no_write}, set(), {WRITE, CONTENT, BEARER, GLOBAL}, 0),
-    ('no-bearer', {**members, script_key: no_bearer}, {WRITE, CONTENT, GLOBAL}, {BEARER}, 1),
-    ('renamed', renamed, {WRITE, CONTENT, BEARER, GLOBAL}, set(), 1),
-    ('split-members', split, {WRITE, CONTENT, BEARER}, {GLOBAL}, 0),
+    ('global-content', members, {WRITE, CONTENT, BEARER, GLOBAL, AUTH}, set(), 1),
+    ('metrics', None, {WRITE}, {CONTENT, BEARER, GLOBAL, AUTH}, 0),
+    ('no-hook', {**members, manifest_key: json.dumps(no_hook).encode()}, {GLOBAL, AUTH}, {WRITE, CONTENT, BEARER}, 1),
+    ('project-local', {**members, script_key: local}, {AUTH}, {WRITE, CONTENT, BEARER, GLOBAL}, 0),
+    ('no-write', {**members, script_key: no_write}, {AUTH}, {WRITE, CONTENT, BEARER, GLOBAL}, 0),
+    ('no-bearer', {**members, script_key: no_bearer}, {WRITE, CONTENT, GLOBAL}, {BEARER, AUTH}, 1),
+    ('disabled-prompts', {**members, script_key: disabled}, {WRITE}, {CONTENT, BEARER, GLOBAL, AUTH}, 0),
+    ('renamed', renamed, {WRITE, CONTENT, BEARER, GLOBAL, AUTH}, set(), 1),
+    ('split-members', split, {WRITE, CONTENT, BEARER, AUTH}, {GLOBAL}, 0),
+    ('split-content-config', split_content, {WRITE}, {CONTENT, BEARER, GLOBAL, AUTH}, 0),
 ]
 with tempfile.TemporaryDirectory(prefix='toga-version-drift-', dir=args.scratch) as staging:
     targets = []
