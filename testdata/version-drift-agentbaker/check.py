@@ -10,7 +10,7 @@ fixtures = Path(__file__).resolve().parent
 root = fixtures.parent.parent
 console = 'objectives/command-and-control/infrastructure/operator::cli-operator-console'
 retired = 'objectives/command-and-control/infrastructure/operator::foreground-interactive-shell'
-command = 'micro-behaviors/process/create/exec::go-exec-command-call'
+command = 'micro-behaviors/process/create/subprocess::go-exec-command-call'
 cases = {
     'shell-name.go': (set(), {console, retired, command}),
     'session-console.go': ({console}, {retired, command}),
