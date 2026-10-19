@@ -18,6 +18,9 @@ cases = {
     'payload-after-profiler': True,
     'payload-before-profiler': True,
     'profiled-script': True,
+    # `node ./commands/change.pack` resolves change.pack.js: `.pack` is the
+    # trailing stem word of a compound script name, like `.spec`.
+    'pack-compound': False,
 }
 with tempfile.TemporaryDirectory(prefix='node-operand-controls-') as staging:
     paths = []
