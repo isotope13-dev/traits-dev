@@ -266,6 +266,37 @@ traits:
     # kernel-thread names to draw argv[0] from. Legitimate scripts never
     # keep such a list; the names vary per family, the array shape does not.
     regex: '=\(\s*"?\[[a-z0-9][\w/.-]{2,12}\]?"?(\s+"?\[[a-z0-9][\w/.-]{2,12}\]?"?){2,}'
+# Mirai-lineage bots XOR their fake-process-name pool with a one-byte key
+# (tadashi.mips: key 0x5A), so the plaintext kernel-thread atoms above stay
+# dark. YARA's xor modifier tries all keys per string; key 0 is excluded so
+# a plaintext name list -- kernel tooling names these threads openly -- is
+# not counted. Three names must share a 4KB window: the pool is one table.
+- id: xor-encoded-kernel-thread-name-set
+  desc: XOR-hidden kernel-thread process name set
+  crit: suspicious
+  conf: 0.93
+  attack: T1036.004,T1027
+  mbc: F0004
+  for: [elf]
+  size_max: 33554432
+  if:
+    type: yara
+    source: |
+      rule xor_encoded_kernel_thread_name_set {
+        strings:
+          $n01 = "migration" xor(1-255)
+          $n02 = "watchdog" xor(1-255)
+          $n03 = "kblockd" xor(1-255)
+          $n04 = "hugepaged" xor(1-255)
+          $n05 = "auditd" xor(1-255)
+          $n06 = "kswapd" xor(1-255)
+        condition:
+          for any of ($n*) : (
+            for any m in (1..#) : (
+              3 of ($n*) in (@[m] .. @[m] + 4096)
+            )
+          )
+      }
 composite_rules:
 - id: hidden-cron-kworker-masquerade
   desc: Hidden cron implant adopts kernel-worker identity
@@ -476,4 +507,18 @@ composite_rules:
   all:
   - id: kthread-name-pool
   - id: micro-behaviors/process/argument/rewrite::shell-exec-argv0-variable
+# The encoded twin of the pool above, inside a binary that already carries
+# the hidden IoT credential dialer: the name pool is the disguise the bot
+# wears on the process table while it sprays credentials. The dialer leg
+# supplies the hostile behavior; the pool alone stays suspicious.
+- id: xor-kernel-name-credential-bot
+  desc: Kernel-thread name pool hides IoT credential bot
+  crit: hostile
+  conf: 0.97
+  mbc: F0004
+  attack: T1036.004,T1110.001,T1027
+  for: [elf]
+  all:
+  - id: xor-encoded-kernel-thread-name-set
+  - id: objectives/lateral-movement/brute-force/iot-creds::xor-credential-table-direct-network-bot
 
