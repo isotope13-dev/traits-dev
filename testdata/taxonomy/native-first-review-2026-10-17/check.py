@@ -4,8 +4,8 @@ from pathlib import Path
 import subprocess
 
 ROOT=Path(__file__).parent
-layout='metadata/binary/instruction::x64-sized-buffer-call-forward-layout'
-report='objectives/exfiltration/stealer/multi-source::native-sensitive-path-loot-report'
+layout='metadata/binary/instruction/sequence::x64-sized-buffer-call-forward-layout'
+report='micro-behaviors/communications/http/request/body::native-sensitive-path-report-context'
 resource='micro-behaviors/fs/write/file/resource::drive-exe-search-resource-edit-api-set'
 mac='micro-behaviors/communications/http/message::urlencoded-mac-address-field'
 ssh='micro-behaviors/communications/ssh/client::ssh-command-history-reference'

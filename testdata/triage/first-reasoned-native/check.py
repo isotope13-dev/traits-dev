@@ -16,7 +16,7 @@ C2 = 'objectives/command-and-control/remote-command/dispatch::concealed-native-m
 SERVICE = 'objectives/persistence/system/service/install::concealed-module-agent-auto-service'
 FLOOD = 'objectives/impact/dos/attack/flood::native-raw-udp-burst-flood'
 STORM = 'well-known/malware/botnet/stormattack::stormattack-ddos-module'
-LOOT = 'objectives/exfiltration/stealer/multi-source::native-sensitive-path-loot-report'
+LOOT = 'micro-behaviors/communications/http/request/body::native-sensitive-path-report-context'
 
 
 def reports(output):

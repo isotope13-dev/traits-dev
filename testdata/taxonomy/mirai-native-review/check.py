@@ -91,7 +91,7 @@ def main():
          [KILL, DECODE, IMPACT])
     case("without-credentials.elf", elf(echo + script), [KILL, DECODE], [IMPACT])
     socks_bruteforcer = ("objectives/lateral-movement/brute-force/iot-creds::"
-                         "mirai-credential-socks-bruteforcer")
+                         "iot-default-credentials-with-proxy-banner")
     # Credential runs stay long like packed-table literals so the string
     # extractor keeps them (a bare 5-byte "jvbzd" falls below min length).
     proxy_creds = b"xc3511 admin\x00jvbzd extra\x00SOCKS5 on :%d\x00"
