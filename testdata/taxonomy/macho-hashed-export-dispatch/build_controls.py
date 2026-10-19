@@ -29,7 +29,7 @@ rules = [
     'objectives/anti-static/obfuscation/control-flow/dispatch::masked-arithmetic-dispatch-state',
     'objectives/anti-static/obfuscation/native-api-hash::export-trie-name-hash-resolution',
     'micro-behaviors/crypto/hash/hmac::siphash-arx-round-x64',
-    'micro-behaviors/data/string/assembly::native-stack-string',
+    'micro-behaviors/data/string/assembly::native-immediate-string',
 ]
 controls = [
     ('encoded-dispatch', state * 5, [rules[0]]),
