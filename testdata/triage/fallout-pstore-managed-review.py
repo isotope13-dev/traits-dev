@@ -9,7 +9,7 @@ from pathlib import Path
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
-XOR = 'micro-behaviors/data/encoding::x86-indexed-byte-xor-stack-key-loop'
+XOR = 'micro-behaviors/data/encoding/xor::x86-indexed-byte-xor-stack-key-loop'
 HTTP_PROFILE = 'micro-behaviors/communications/http/client/managed::managed-keyboard-recording-webclient-references'
 GET = 'micro-behaviors/communications/http/get::getasync'
 POST = 'micro-behaviors/communications/http/post::postasync'

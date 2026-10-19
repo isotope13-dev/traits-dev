@@ -34,7 +34,7 @@ def case(name, matched=(), absent=()):
 kill = 'micro-behaviors/process/terminate/command::killall'
 discord = 'micro-behaviors/os/application/target::discord-client-name-reference'
 signal = 'micro-behaviors/process/control/signal::arm-oabi-kill-syscall'
-xor = 'micro-behaviors/data/encoding::arm-thumb-bytewise-xor-loop'
+xor = 'micro-behaviors/data/encoding/xor::arm-thumb-bytewise-xor-loop'
 aplib = 'micro-behaviors/data/decompress/aplib::x86-aplib-depacker'
 crypt = 'micro-behaviors/communications/irc/command::crypt-directional-channel-labels'
 encrypted = 'objectives/command-and-control/channel/irc/bot::encrypted-irc-multivector-flood-tasking'

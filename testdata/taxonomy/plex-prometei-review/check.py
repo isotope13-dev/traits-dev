@@ -43,7 +43,7 @@ def check(out, cleave):
         p = out / (name + '.exe')
         p.write_bytes(image(data))
         cases.append((p, yes, no))
-    xor = 'micro-behaviors/data/encoding::x86-countdown-rolling-xor-loop'
+    xor = 'micro-behaviors/data/encoding/xor::x86-countdown-rolling-xor-loop'
     code = bytes.fromhex('8a da 02 d9 30 18 85 c9 74 10 40 8d 98 12 34 56 78 49 03 d7 3b de 7c e8')
     for (name, payload, want) in [('rolling-xor', code, True), ('rolling-add', code.replace(b'0\x18', b'\x00\x18'), False)]:
         p = out / (name + '.exe')

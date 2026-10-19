@@ -14,7 +14,7 @@ CONFIG = 'objectives/command-and-control/backdoor/webshell/config::htaccess-comm
 COMMAND = 'objectives/command-and-control/backdoor/webshell/request/command::'
 ROUTE = 'micro-behaviors/communications/http/server/route::'
 STREAM = 'micro-behaviors/process/io/stream::php-proc-output-echo'
-XOR = 'micro-behaviors/data/encoding::php-cyclic-xor-string-reconstruction'
+XOR = 'micro-behaviors/data/encoding/xor::php-cyclic-xor-string-reconstruction'
 GRANT = 'objectives/privilege-escalation/elevation-control/setuid/shell::cookie-webshell-setuid-shell-grant'
 CONSOLE = """
 if (isset($_POST['job'])) {
