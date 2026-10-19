@@ -10,7 +10,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
 XOR = 'micro-behaviors/data/encoding::x86-indexed-byte-xor-stack-key-loop'
-UPLOAD = 'objectives/exfiltration/stealer/input::managed-buffered-keylog-webclient-upload-cooccurrence'
+HTTP_PROFILE = 'micro-behaviors/communications/http/client/managed::managed-keyboard-recording-webclient-references'
 GET = 'micro-behaviors/communications/http/get::getasync'
 POST = 'micro-behaviors/communications/http/post::postasync'
 SAMPLES = [
@@ -35,9 +35,9 @@ def main():
         path.write_bytes(content if isinstance(content, bytes) else content.encode())
         cases.append((path, expected))
 
-    add('native.exe', data[0], {XOR: True, UPLOAD: False})
-    add('buffered.exe', data[1], {UPLOAD: True})
-    add('file-logger.exe', data[2], {UPLOAD: False, GET: True, POST: True})
+    add('native.exe', data[0], {XOR: True, HTTP_PROFILE: False})
+    add('buffered.exe', data[1], {HTTP_PROFILE: True})
+    add('file-logger.exe', data[2], {HTTP_PROFILE: False, GET: True, POST: True})
     signature = bytes.fromhex('8B 55 08 03 55 FC 0F BE 02 33 45 0C 8B 4D 08 03 4D FC 88 01 EB D2')
     assert data[0].count(signature) == 1
     for name, offset, value in [('no-xor', 9, 3), ('different-store', 19, 2),
@@ -50,7 +50,7 @@ def main():
                         ('no-webclient', b'WebClient\0')]:
         assert token in data[1]
         add(name + '.exe', data[1].replace(token, b'X' * (len(token) - 1) + b'\0'),
-            {UPLOAD: False})
+            {HTTP_PROFILE: False})
     assert b'HttpClient\0' in data[2]
     add('no-httpclient.exe', data[2].replace(b'HttpClient\0', b'X' * 10 + b'\0'),
         {GET: False, POST: False})
@@ -60,15 +60,15 @@ var client = new HttpClient();
 await client.GetAsync("https://example.com/data");
 await client.PostAsync("https://example.com/data", null);
 } }
-''', {GET: True, POST: True, UPLOAD: False})
+''', {GET: True, POST: True, HTTP_PROFILE: False})
     add('cache.cs', '''class Example { async void Read(dynamic cache) {
 await cache.GetAsync("entry"); await cache.PostAsync("entry");
 } }
-''', {GET: False, POST: False, UPLOAD: False})
+''', {GET: False, POST: False, HTTP_PROFILE: False})
     add('reference-only.cs', '''using System.Net.Http;
 class Example { string[] methods = { "GetAsync", "PostAsync" };
 HttpClient client = new HttpClient(); }
-''', {GET: True, POST: True, UPLOAD: False})
+''', {GET: True, POST: True, HTTP_PROFILE: False})
 
     def check(case):
         path, expected = case
