@@ -10,12 +10,22 @@ PYTHONDONTWRITEBYTECODE=1 python3 testdata/gauntlet-missed-controls/check-dotnet
 PYTHONDONTWRITEBYTECODE=1 python3 testdata/gauntlet-missed-controls/check-jvm-callsite.py --cleave ../cleave/target/release/cleave --jar-regression
 ```
 
-`check.py` covers 33 controls for the earlier review, including innocent
+`check.py` covers 38 controls for the earlier review, including innocent
 co-occurrences and configuration-only artifacts. `check-managed-polling.py`
 covers eight non-executed synthetic PE controls. Its CIL matcher observes a
 high-bit test and bounded backedge; it does not resolve the called API token
 or prove that characters reach a network sink. The recording composite must
 remain suspicious, never hostile on those observations alone.
+
+Remote-feed controls retain the neutral JSON/template observations in JavaScript
+and TypeScript. Escaped values and an unrelated JSON callback must not be called
+XSS merely because their templates look alike. A concrete attribute-breakout
+script-loader with a parsed append call must still produce both hostile
+payload-backed findings. The inline-only handler control must retain its hostile
+XSS finding; its append call is string data, not an exposed host-AST call.
+No JavaScript control is executed and no endpoint or stage is fetched.
+The runner copies fixtures to neutral temporary paths, so test-directory
+exclusions cannot mask positive payload controls.
 
 `check-dotnet-bundle.py` covers nine native-PE bundle controls: layouts 1, 2
 and 6, stored and raw-DEFLATE members, incomplete manifests, size limits,

@@ -20,6 +20,17 @@ xor = 'micro-behaviors/data/decode/xor::aliased-charcode-xor-rebuild'
 frame = 'micro-behaviors/communications/http/client/resource::one-pixel-external-frame'
 dispatch = 'objectives/anti-static/obfuscation/string/reconstruct::wsh-aliased-xor-computed-dispatch'
 markup = 'micro-behaviors/ui/window/insert-html::'
+remote_ui = {markup + n for n in ('json-response-and-html-body-markup',
+             'json-response-and-link-body-markup', 'json-response-and-paragraph-markup',
+             'json-response-and-link-insertion', 'json-response-and-anchor-target-markup')}
+remote_ui |= {markup + n for n in ('interpolated-shortcut-link-markup', 'object-field-in-html-body-markup', 'append-method-call',
+              'object-name-in-paragraph-markup', 'shortcut-link-markup-and-append-call')}
+exploit = 'objectives/execution/exploit/remote-feed-xss::'
+payload_xss = exploit + 'json-link-markup-with-breakout-payload'
+retired_remote = {exploit + n for n in ('remote-json-url-field-in-anchor-markup',
+                  'response-object-assigned-before-render', 'remote-json-html-body-xss',
+                  'remote-json-paragraph-markup-xss', 'remote-json-active-link-injection',
+                  'remote-json-controlled-active-link-target', 'remote-json-jquery-link-injection')}
 rathole = 'well-known/dual-use/tunnel/rathole::rathole-namespace'
 metadata = 'metadata/package/documentation/claims::'
 indexed = 'objectives/anti-static/obfuscation/string/reconstruct::'
@@ -34,9 +45,13 @@ cases = {
     'visible-frame.html': set(),
     'shortcut-editor.js': {'micro-behaviors/ui/window/insert-html::shortcut-storage-and-link-markup'},
     'wsh-xor-dispatch.js': {xor, dispatch},
-    'remote-links.js': {markup + n for n in ('json-response-and-link-body-markup',
-                        'json-response-and-paragraph-markup', 'json-response-and-link-insertion',
-                        'json-response-and-anchor-target-markup')},
+    'remote-links.js': remote_ui,
+    'remote-links.ts': remote_ui,
+    'remote-links-sanitized.js': remote_ui,
+    'remote-links-unrelated.js': remote_ui,
+    'remote-feed-breakout.js': remote_ui | {payload_xss,
+                                          exploit + 'attribute-breakout-script-loader'},
+    'remote-feed-inline-breakout.js': remote_ui | {payload_xss},
     'text-links.js': set(),
     'PKG-INFO': {metadata + 'pypi-metadata-npm-import-syntax', metadata + 'pypi-metadata-formatcolor-utility-claim'},
     'ordinary/PKG-INFO': set(),
@@ -108,6 +123,7 @@ with tempfile.TemporaryDirectory(prefix='gauntlet-controls-') as tmp:
             source = {'PKG-INFO': fixtures / 'example.PKG-INFO',
                       'ordinary/PKG-INFO': fixtures / 'ordinary.PKG-INFO',
                       'setup.py': fixtures / 'hex-setup.py',
+                      'remote-links.ts': fixtures / 'remote-links.js',
                       'indexed-analytics.rs': repo / 'testdata/cargo-build-analytics-exfil/evil-build.rs',
                       'ordinary-build.rs': repo / 'testdata/cargo-build-analytics-exfil/benign-build.rs'}.get(name, fixtures / name)
             if name == 'bnc-flood-bot-variables.txt':
@@ -129,6 +145,17 @@ with tempfile.TemporaryDirectory(prefix='gauntlet-controls-') as tmp:
             expected_alerts = {'objectives/evasion/masquerade/extension-mismatch::mirc-dll-suffixed-script-config'}
         if name == 'cgi-interface.so':
             expected_alerts = required
+        if name == 'remote-feed-breakout.js':
+            expected_alerts = {payload_xss, exploit + 'attribute-breakout-script-loader',
+                               exploit + 'attribute-breakout-img-onerror'}
+            assert traits[payload_xss]['crit'] == 5
+            assert traits[exploit + 'attribute-breakout-script-loader']['crit'] == 5
+        if name == 'remote-feed-inline-breakout.js':
+            # The AST appendChild leg is not exposed inside a string literal.
+            # The concrete breakout must still produce the hostile XSS finding.
+            expected_alerts = {payload_xss,
+                               exploit + 'attribute-breakout-img-onerror'}
+            assert traits[payload_xss]['crit'] == 5
         if name == 'packed_module-1.0.0-py3-none-any.whl':
             assert alerts, 'Packed Python must remain visible for review'
             assert not any(t.get('crit') == 5 for t in traits.values()), (name, alerts)
@@ -144,6 +171,12 @@ with tempfile.TemporaryDirectory(prefix='gauntlet-controls-') as tmp:
             assert rathole not in traits, name
         if name == 'text-links.js':
             assert markup + 'json-response-and-paragraph-markup' not in traits, name
+        if name.startswith(('remote-links', 'remote-feed-', 'text-links')):
+            assert not retired_remote.intersection(traits), name
+            assert markup + 'remote-json-html-body-injection' not in traits, name
+            assert not {markup + n for n in ('jquery-interpolated-link-markup', 'jquery-append-call',
+                        'jquery-interpolated-element-body-value', 'jquery-interpolated-object-name-in-paragraph',
+                        'jquery-appended-link-markup')}.intersection(traits), name
         if name == 'worker-unrelated.js':
             assert indexed + 'worker-reversed-script-reference' not in traits, name
         if name == 'ordinary-form.pl':
