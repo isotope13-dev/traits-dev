@@ -178,6 +178,18 @@ traits:
     if:
       type: hex
       pattern: "80 FC 4E 72 ?? 80 FC 4F 77"
+  # CMP AH,02h filters disk reads; a 16-bit ES-buffer compare against a
+  # fixed marker gates a REP MOVSB overwrite of the just-read sector
+  # (IntLock checks two such markers). Chained calls and moves between the
+  # filter, the compare and the copy vary, so those spans are bounded.
+  - id: objectives/impact/infect/binary/dos/interrupt::dos-int13-read-gated-block-copy
+    for: [dos_com, static-lib, data]
+    desc: Disk-read check gates block copy
+    crit: notable
+    conf: 0.9
+    if:
+      type: hex
+      pattern: "80 FC 02 (74|75) ?? [0-32] 26 81 ?? ?? ?? ?? ?? (74|75) ?? [0-32] F3 A4"
   - id: objectives/impact/infect/binary/dos/interrupt::dos-int21-xor-find-first
     for: [dos_com, static-lib, data]
     desc: DOS find-first with XOR service number
@@ -239,6 +251,17 @@ traits:
     if:
       type: hex
       pattern: "B8 ?? ?? [0-6] 35 ?? ?? [0-8] CD 21"
+  # Flag-register form (SillyOE.100): no MOV AH,imm at all. LAHF materializes
+  # the service number from the flags, ADD AH,imm fixes it up, and the call
+  # follows within the normal setup span. Straight-line code loads AH first.
+  - id: objectives/impact/infect/binary/dos/interrupt::dos-int21-lahf-add-masked-ah
+    for: [dos_com, static-lib, data]
+    desc: DOS service masked by LAHF/ADD
+    crit: notable
+    conf: 0.85
+    if:
+      type: hex
+      pattern: "9F [0-4] 80 C4 ?? [0-8] CD 21"
 
   # The handle an open/create returns in AX moves to BX, a length goes to
   # CX, and a second INT 21h follows: a sized read or write on the file just
@@ -364,6 +387,8 @@ composite_rules:
       - id: objectives/impact/infect/binary/dos/interrupt::dos-int21-sub-masked-ah
       - id: objectives/impact/infect/binary/dos/interrupt::dos-int21-add-masked-ah
       - id: objectives/impact/infect/binary/dos/interrupt::dos-int21-xor-masked-ax
+      - id: objectives/impact/infect/binary/dos/interrupt::dos-int21-lahf-add-masked-ah
+      - id: micro-behaviors/fs/search::dos-int21-find-first-inc-ah
     needs: 2
 
   # Trivial.23's carry loop: find-first, create-truncate, write-handle setup,
@@ -552,6 +577,29 @@ composite_rules:
     all:
       - id: objectives/impact/infect/binary/dos/interrupt::dos-int13-vector-swap
       - id: micro-behaviors/fs/write/file/handle::dos-write-dispatch
+  # IntLock installs its own INT 13h handler, filters disk reads for fixed
+  # markers, and overwrites the just-read sector when one matches. Ordinary
+  # disk caches compare request tags, never ES-buffer content for magic.
+  - id: objectives/impact/infect/binary/dos/interrupt::dos-int13-read-tamper-hook
+    desc: Disk hook tampers read buffers
+    crit: hostile
+    conf: 0.95
+    for: [dos_com, data]
+    all:
+      - id: micro-behaviors/os/msdos/interrupt::dos-int13-vector-get-then-set
+      - id: objectives/impact/infect/binary/dos/interrupt::dos-int13-read-gated-block-copy
+  # The same hook made resident: the vector install plus the read tamper
+  # plus staying memory-resident via INT 27h. Resident disk caches never
+  # rewrite read buffers on fixed content markers.
+  - id: objectives/impact/infect/binary/dos/interrupt::dos-int13-resident-read-tamperer
+    desc: Resident disk hook rewrites read data
+    crit: hostile
+    conf: 0.96
+    for: [dos_com, data]
+    all:
+      - id: micro-behaviors/os/msdos/interrupt::dos-int13-vector-get-then-set
+      - id: objectives/impact/infect/binary/dos/interrupt::dos-int13-read-gated-block-copy
+      - id: micro-behaviors/os/msdos/interrupt::dos-tsr-keep-int27
 
   - id: objectives/impact/infect/binary/dos/interrupt::dos-int21-search-hook-hides-appended-body
     for: [dos_com, static-lib, data]
