@@ -4,6 +4,7 @@
 Checks binding, required evidence roles, comments, renaming, C++ and Rust.
 The full published proof of concept is kept in the threat-feed scratch data.
 """
+import argparse
 import json
 import os
 from pathlib import Path
@@ -16,10 +17,14 @@ ROOT = HERE.parents[1]
 PREFIX = "objectives/privilege-escalation/exploit/kernel::"
 WRAP = PREFIX + "sysv-shm-fork-counter-wrap"
 MULTICAST = PREFIX + "multicast-iovec-address-corruption"
-IOV = PREFIX + "iovec-buffer-address-as-length"
+IOV = "micro-behaviors/data/buffer/record::iovec-buffer-address-as-length"
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fixture-parent", type=Path,
+                        help="Parent directory for generated source controls")
+    args = parser.parse_args()
     wrap = (HERE / "wrap.c").read_text()
     rust = (HERE / "wrap.rs").read_text()
     multicast = (HERE / "multicast.c").read_text()
@@ -38,6 +43,30 @@ def main():
                          lambda m: "renamed_" + m[0], source)
         expected = [WRAP, MULTICAST] if suffix == "c" else [WRAP]
         add("renamed." + suffix, renamed, expected, [] if suffix == "c" else [MULTICAST])
+
+    declared = wrap.replace("mapped = shmat(", "void *mapped = shmat(").replace(
+        "child = fork()", "int child = fork()")
+    add("declared.c", declared, [WRAP], [MULTICAST])
+    add("declared.cpp", declared, [WRAP], [MULTICAST])
+    add("declared-unrelated.c", declared.replace("munmap(mapped,", "munmap(other,"))
+    imported = rust.replace("use libc::{IPC_RMID, IPC_STAT};",
+                            "use libc::{IPC_RMID, IPC_STAT, shmat, munmap, fork};")
+    for target in ("shmat", "munmap", "fork"):
+        imported = imported.replace("libc::" + target, target)
+    add("imported.rs", imported, [WRAP], [MULTICAST])
+    add("imported-unrelated.rs", imported.replace("munmap(mapped,", "munmap(other,"))
+    for cast in ("(void *)(uintptr_t)", "(void *)", ""):
+        carrier = multicast.replace("(void *)(uintptr_t)", cast).replace(
+            "(size_t)address", "address")
+        name = "carrier-casts-" + str(len(cast))
+        add(name + ".c", carrier, [MULTICAST, IOV], [WRAP])
+        add(name + ".cpp", carrier, [MULTICAST, IOV], [WRAP])
+        add(name + "-unrelated.c", carrier.replace(
+            "entries[index].iov_len", "entries[index + 1].iov_len"),
+            absent=[WRAP, MULTICAST, IOV])
+        add(name + "-address.c", carrier.replace(
+            "iov_len = address", "iov_len = other_address"),
+            absent=[WRAP, MULTICAST, IOV])
 
     # Every required role must matter; ordinary teardown is a near miss.
     for name, old, new in (
@@ -75,7 +104,8 @@ def main():
     add("strings.c", "const char *documentation = " + json.dumps(combined) + ";\n",
         absent=[WRAP, MULTICAST, IOV])
 
-    with tempfile.TemporaryDirectory(prefix="sysv-multicast-") as scratch:
+    with tempfile.TemporaryDirectory(prefix="sysv-multicast-",
+                                     dir=args.fixture_parent) as scratch:
         directory = Path(scratch)
         for name, source, _, _ in cases:
             (directory / name).write_text(source)
