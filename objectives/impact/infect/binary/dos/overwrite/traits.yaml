@@ -425,7 +425,86 @@ traits:
             $p in (0..128)
         }
 
+  # Single-byte XOR hides find-first, an incremented key, and a write-only
+  # open of the DTA name. The xor modifier recovers every key.
+  - id: dos-xor-find-writeonly-open
+    desc: XOR body write-opens found files
+    crit: notable
+    conf: 0.95
+    size_max: 4096
+    if:
+      type: yara
+      source: |
+        rule dos_xor_find_writeonly_open {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $loop = { B9 ?? 00 BE 03 01 80 34 ?? 46 E2 FA }
+          condition:
+            for any i in (1..#loop) : (
+              @loop[i] < 256 and
+              uint8(@loop[i] + 8) ^ uint8(3) == 0xB4 and
+              uint8(@loop[i] + 8) ^ uint8(4) == 0x4E and
+              uint8(@loop[i] + 8) ^ uint8(5) == 0xBA and
+              uint8(@loop[i] + 8) ^ uint8(7) == 0x01 and
+              uint8(@loop[i] + 8) ^ uint8(8) == 0xCD and
+              uint8(@loop[i] + 8) ^ uint8(9) == 0x21 and
+              uint8(@loop[i] + 8) ^ uint8(12) == 0xFE and
+              uint8(@loop[i] + 8) ^ uint8(13) == 0x06 and
+              uint8(@loop[i] + 8) ^ uint8(16) == 0xBA and
+              uint8(@loop[i] + 8) ^ uint8(17) == 0x9E and
+              uint8(@loop[i] + 8) ^ uint8(18) == 0x00 and
+              uint8(@loop[i] + 8) ^ uint8(19) == 0xB8 and
+              uint8(@loop[i] + 8) ^ uint8(20) == 0x01 and
+              uint8(@loop[i] + 8) ^ uint8(21) == 0x3D and
+              uint8(@loop[i] + 8) ^ uint8(22) == 0xCD and
+              uint8(@loop[i] + 8) ^ uint8(23) == 0x21
+            )
+        }
+  # The write path calls back into the XOR loop, then writes CL bytes from 0100h.
+  - id: dos-xor-reencrypt-image-write
+    desc: XOR body reencrypts then writes image
+    crit: notable
+    conf: 0.95
+    size_max: 4096
+    if:
+      type: yara
+      source: |
+        rule dos_xor_reencrypt_image_write {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $loop = { B1 ?? CD 21 B9 ?? 00 BE 03 01 80 34 ?? 46 E2 FA }
+          condition:
+            for any i in (1..#loop) : (
+              @loop[i] < 256 and
+              for any off in (3..48) : (
+                off + 5 < @loop[i] and
+                uint8(@loop[i] + 12) ^ uint8(off) == 0xB4 and
+                uint8(@loop[i] + 12) ^ uint8(off + 1) == 0x40 and
+                uint8(@loop[i] + 12) ^ uint8(off + 2) == 0xBA and
+                uint8(@loop[i] + 12) ^ uint8(off + 3) == 0x00 and
+                uint8(@loop[i] + 12) ^ uint8(off + 4) == 0x01 and
+                uint8(@loop[i] + 12) ^ uint8(off + 5) == 0xE8
+              )
+            )
+        }
+
 composite_rules:
+  - id: dos-xor-loop-writeonly-overwrite
+    desc: XOR decryptor overwrites opened COM hosts
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: objectives/anti-static/obfuscation/payload/polymorphic/decryptor::dos-counted-xor-si-0103-loop
+      - id: dos-xor-find-writeonly-open
+  - id: dos-xor-loop-reencrypt-overwrite
+    desc: XOR decryptor reencrypts and writes image
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: objectives/anti-static/obfuscation/payload/polymorphic/decryptor::dos-counted-xor-si-0103-loop
+      - id: dos-xor-reencrypt-image-write
   - id: objectives/impact/infect/binary/dos/overwrite::dos-com-resident-open-hook-infection
     desc: DOS resident COM hook appends virus body
     crit: hostile
