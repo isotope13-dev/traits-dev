@@ -424,6 +424,18 @@ processes to `process`.
 Don't duplicate WebSocket under HTTP, or a client library under each HTTP verb.
 A port literal is not a service, scan or authentication state.
 
+Protocol configuration follows the configured facility, not its INI/JSON
+carrier. `communications/irc/configure` admits a recognized IRC server-setting
+structure containing a server and port; describe it as a declared endpoint,
+not a connection. A custom variable named `%flserv` or `%flport` alone does not
+establish that structure or role. Parsing a configuration file is a separate
+data operation; recognizing its section syntax is format metadata. File-path
+references keep their `fs/path` homes even inside protocol configuration.
+The reviewed IRC children are `command` (protocol-command vocabulary or
+construction) and `configure` (declared connection settings). Command text
+does not establish endpoint settings, and endpoint settings do not establish
+a command being sent.
+
 `communications/http/client/initialize` records construction or opening of an
 HTTP client or connection object without a required request method. An
 `HttpURLConnection` cast beside `openConnection()` belongs here; a bound POST
