@@ -47,19 +47,20 @@ def case(name, matched=(), absent=()):
     cases.append({"path":str(relative/name), "matched":list(matched),
                   "not_matched":list(absent)})
 
-network="micro-behaviors/communications/socket/syscall::"
+network={name:"micro-behaviors/communications/socket/"+op+"::"
+         for name,op in [("socket","create"),("connect","connect"),("send","send"),("recv","receive"),("sendto","send")]}
 names="metadata/binary/symbols/name::"
 mirai="well-known/malware/botnet/mirai/identity::mirai-unstripped-stdhex-bot"
 # Real literal loads point exactly to the syscall number 0x38 bytes later.
 for name,num in [("socket",281),("connect",283),("send",289),("recv",291),("sendto",290)]:
     code=bytes.fromhex("30 70 9F E5 00 00 00 EF")+b"\0"*48+struct.pack("<I",num)
     elf(name+"-wrapper.elf",text=code)
-    case(name+"-wrapper.elf",[network+"arm-"+name+"-literal-syscall-wrapper"])
+    case(name+"-wrapper.elf",[network[name]+"arm-"+name+"-literal-syscall-wrapper"])
     # A number present in text without the LDR/SVC relationship is not a syscall.
     elf(name+"-integer.elf",text=b"\0"*8+struct.pack("<I",num))
-    case(name+"-integer.elf",absent=[network+"arm-"+name+"-literal-syscall-wrapper"])
+    case(name+"-integer.elf",absent=[network[name]+"arm-"+name+"-literal-syscall-wrapper"])
 elf("wrong-literal-load.elf",text=bytes.fromhex("2C 70 9F E5 00 00 00 EF")+b"\0"*48+struct.pack("<I",290))
-case("wrong-literal-load.elf",absent=[network+"arm-sendto-literal-syscall-wrapper"])
+case("wrong-literal-load.elf",absent=[network["sendto"]+"arm-sendto-literal-syscall-wrapper"])
 syms=b"\0table_unlock_val\0attack_parse\0attack_udp_stdhex\0attack_tcp_stomp\0attack_socket\0attack_ongoing\0"
 elf("mirai-symbol-cluster.elf",symbols=syms)
 case("mirai-symbol-cluster.elf",[mirai,names+"tcp-bypass-stomp-handler-name",names+"socket-tcpflood-handler-name",names+"attack-ongoing-symbol-name"])
