@@ -21,6 +21,9 @@ cases = {
     # `node ./commands/change.pack` resolves change.pack.js: `.pack` is the
     # trailing stem word of a compound script name, like `.spec`.
     'pack-compound': False,
+    # `node rollup.pre-build` resolves rollup.pre-build.js: `.pre` is the
+    # stem word before a hyphenated build-stage qualifier.
+    'prebuild-compound': False,
 }
 with tempfile.TemporaryDirectory(prefix='node-operand-controls-') as staging:
     paths = []
