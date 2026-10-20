@@ -1,0 +1,42 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86]
+  size_min: 4096
+  size_max: 1048576
+
+traits:
+  # Bind both indirect calls to their IAT slots and both pushed value-name
+  # pointers to ServiceDLL. Neither imports nor this name alone proves a write.
+  - id: x86-servicedll-delete-replace-128
+    desc: x86 deletes and rewrites ServiceDLL (128 bytes)
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_servicedll_delete_replace_128 {
+          strings:
+            $value = "ServiceDLL\x00" ascii
+            $delete = { 68 ?? ?? ?? ?? 52 FF 15 ?? ?? ?? ?? }
+            $write = { 68 80 00 00 00 50 6A 02 6A 00 68 ?? ?? ?? ??
+                       51 FF 15 ?? ?? ?? ?? }
+          condition:
+            pe.machine == pe.MACHINE_I386 and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].name == ".text" and
+              for any d in (1..#delete) : (
+                @delete[d] >= pe.sections[s].raw_data_offset and
+                uint32(@delete[d]+8) == pe.image_base + pe.import_rva("ADVAPI32.dll", "RegDeleteValueA") and
+                for any w in (1..#write) : (
+                  @write[w] >= @delete[d] + !delete[d] and
+                  @write[w] <= @delete[d] + 48 and
+                  @write[w] + !write[w] <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size and
+                  uint32(@write[w]+18) == pe.image_base + pe.import_rva("ADVAPI32.dll", "RegSetValueExA") and
+                  uint32(@delete[d]+1) == uint32(@write[w]+11) and
+                  $value at pe.rva_to_offset(uint32(@delete[d]+1)-pe.image_base)
+                )
+              )
+            )
+        }
