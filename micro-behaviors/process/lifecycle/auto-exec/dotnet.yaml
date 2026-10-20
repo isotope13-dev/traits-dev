@@ -14,10 +14,64 @@ traits:
     desc: .NET module initializer runs on load
     crit: notable
     conf: 0.9
+    for: [pe, dll]
+    # Read the outer CLR tables: YARA-X deliberately omits <Module> from
+    # dotnet.classes, and rizin does not recover methods in every assembly.
+    # Standard optimized metadata uses two-byte table indexes here. Heap
+    # indexes may be two or four bytes. The first TypeDef must be <Module>,
+    # own MethodDef #1, and hand later methods to TypeDef #2. MethodDef #1
+    # must name a static special-name .cctor with a nonzero body RVA.
     if:
-      type: text
-      substr: ModuleInitializerAttribute
-      section: text
+      type: yara
+      source: |
+        import "dotnet"
+        rule own_clr_module_constructor {
+          strings:
+            $module = "<Module>\x00"
+            $cctor = ".cctor\x00"
+          condition:
+            for any st in dotnet.streams : (
+              st.name == "#Strings" and
+              for any mi in (1..#module) : (
+                @module[mi] >= st.offset and
+                @module[mi] < st.offset + st.size and
+                for any ci in (1..#cctor) : (
+                  @cctor[ci] >= st.offset and
+                  @cctor[ci] < st.offset + st.size and
+                  for any tb in dotnet.streams : (
+                    tb.name == "#~" and
+                    uint8(tb.offset + 8) & 0x7f == 0x57 and
+                    uint32(tb.offset + 24) == 1 and
+                    uint32(tb.offset + 28) < 16384 and
+                    uint32(tb.offset + 32) >= 2 and
+                    uint32(tb.offset + 32) < 16384 and
+                    uint32(tb.offset + 36) < 65536 and
+                    uint32(tb.offset + 40) < 65536 and
+                    with sw = 2 + 2 * (uint8(tb.offset + 6) & 1),
+                         bw = 2 + ((uint8(tb.offset + 6) & 4) >> 1) : (
+                      for any td in (tb.offset + 44..tb.offset + tb.size - 28) : (
+                        uint32(td) == 0 and
+                        ((sw == 2 and uint16(td + 4) == @module[mi] - st.offset) or
+                         (sw == 4 and uint32(td + 4) == @module[mi] - st.offset)) and
+                        uint16(td + 4 + 2 * sw) == 0 and
+                        uint16(td + 6 + 2 * sw) == 1 and
+                        uint16(td + 8 + 2 * sw) == 1 and
+                        uint16(td + 18 + 4 * sw) > 1 and
+                        with md = td + (10 + 2 * sw) * uint32(tb.offset + 32) +
+                                  (2 + sw + bw) * uint32(tb.offset + 36) : (
+                          md + 12 + sw <= tb.offset + tb.size and
+                          uint32(md) > 0 and
+                          uint16(md + 6) & 0x1810 == 0x1810 and
+                          ((sw == 2 and uint16(md + 8) == @cctor[ci] - st.offset) or
+                           (sw == 4 and uint32(md + 8) == @cctor[ci] - st.offset))
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
 
   - id: dotnet-source-module-initializer
     desc: .NET source declares module-load initializer
