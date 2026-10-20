@@ -31,8 +31,11 @@ large = 'metadata/binary/resource/size::clr-resource-large'
 entropy = 'metadata/binary/resource/entropy::clr-resource-high-entropy'
 combined = 'metadata/binary/resource/entropy::clr-resource-size-and-entropy'
 wql = 'micro-behaviors/process/enumerate/wmi::win32-process-wql-enumeration'
-by_id = 'micro-behaviors/process/enumerate/managed::dotnet-get-process-by-id-member'
+by_id = 'micro-behaviors/process/info/query::dotnet-get-process-by-id-member'
+invoke_member = 'micro-behaviors/metaprogramming/reflection::invoke-member-token'
 retired = {
+    'micro-behaviors/process/enumerate/managed::dotnet-get-process-by-id-member',
+    'micro-behaviors/process/interpreter/reflection/runtime::invoke-member-token',
     'metadata/binary/resource/identity::clr-resource-large',
     'metadata/binary/resource/size::clr-resource-high-entropy',
     'metadata/binary/resource/size::dotnet-large-high-entropy-managed-resource',
@@ -69,7 +72,14 @@ def inert_pe(strings):
 
 
 cases = [
-    ('reviewed.exe', original, {large, entropy, combined, wql, by_id}, set()),
+    ('reviewed.exe', original, {large, entropy, combined, wql, by_id, invoke_member}, set()),
+    ('without-invoke-member.exe',
+     original.replace(b'InvokeMember', b'InvokeMembex'),
+     {by_id}, {invoke_member}),
+    ('pid-lookup-without-enumeration.exe',
+     original.replace('Win32_Process'.encode('utf-16le'),
+                      'Win32_Procesx'.encode('utf-16le')),
+     {by_id, invoke_member}, {wql}),
     ('large-zero-resource.exe', modified_resource(resource.size, b''),
      {large}, {entropy, combined}),
     ('small-entropy-resource.exe', modified_resource(4096, resource.data[:4096]),
@@ -107,6 +117,9 @@ for name, _, required, forbidden in cases:
                                                          (forbidden | retired) & traits.keys())
     for tid in required:
         assert traits[tid]['crit'] == 3, (name, tid, traits[tid]['crit'])
+    if name == 'pid-lookup-without-enumeration.exe':
+        assert not [tid for tid in traits if tid.startswith(
+            'micro-behaviors/process/enumerate/')], name
     if name == 'reviewed.exe':
         assert not [t for t in traits.values() if t['crit'] >= 4], name
     print('PASS', name)

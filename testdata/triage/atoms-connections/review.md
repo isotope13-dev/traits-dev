@@ -124,3 +124,46 @@ explicit inline case-insensitive regex modifier to pass the analysis pipeline
 as well as the direct matcher. The final atomscan report contains zero hostile
 and zero suspicious findings, and retains every previous observation under
 the resource-ID mapping above.
+
+## Follow-up: API placement and independent recheck
+
+The same sample was independently disassembled and its resource unpacked again.
+The three asset lengths, resource digest, 10979 recovered decoder calls,
+loopback-only routes, bounded save paths, stale-instance termination, and
+byte-identical upstream PeerJS 1.5.4 were confirmed. No hostile behavior was
+found. A fresh HTTPS fetch of version.json advertised 1.8.5; the current catalog
+contained only Atom Math Lab 1.4.0. Its archive matched the advertised SHA-256
+`26bf4ce88d8d4834bdcf7e21867557109f8c9b5c95e93fd132a612366f941289`.
+Its arithmetic question generation, independent answer verification, progress
+storage, and interface handlers agree with the declared learning-game purpose.
+The downloaded portable executable is a newer build, not a hash match for this
+sample. Live-site version and catalog changes do not alter the recovered code.
+
+Two additional placement corrections preserve their matchers and scopes:
+
+- `micro-behaviors/process/interpreter/reflection/runtime::invoke-member-token`
+  becomes `micro-behaviors/metaprogramming/reflection::invoke-member-token`.
+  The API name covers reflected invocation and C# dynamic member binding; it
+  establishes neither script execution nor a staged-code handoff. All exact
+  YAML consumers were updated. The only old-ancestor directory consumer is
+  an Empire Python rule, incompatible with this atom's PE/C# scope. No new-home
+  directory consumers were present. The destination now has 100 rules.
+- `micro-behaviors/process/enumerate/managed::dotnet-get-process-by-id-member`
+  becomes `micro-behaviors/process/info/query::dotnet-get-process-by-id-member`.
+  Looking up one known PID is not process enumeration. The termination consumer
+  follows the moved trait. Four broad enumeration selectors remain unchanged:
+  their analysis-tool co-occurrence claims should no longer accept a singleton
+  PID lookup as enumeration. No new-home directory selectors were present.
+  The inherited enumeration mappings T1057/E1057 were removed from this atom.
+
+The HttpListener type and GetManifestResourceStream method references also lose
+unsupported C2 and concealed-payload ATT&CK mappings (T1071.001 and T1027.009).
+Their descriptions explicitly state the API-reference evidence. Severities
+remain notable. No product-name exception or score-based suppression was added.
+
+Full before/after reports have exactly the same finding IDs after applying the
+two relocation mappings, with zero suspicious/hostile findings. Static mutated
+controls independently remove InvokeMember and GetProcessById and each loses
+only its respective atom. The expanded check.py also removes the WQL process
+class while retaining the PID lookup; this must produce no process-enumeration
+finding. Original resource and WQL controls remain in the check.
