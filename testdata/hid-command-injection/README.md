@@ -6,13 +6,16 @@ Enter. `digispark.cpp` reproduces the published demonstration; the Python and
 keyboard-script fixtures express the same technique with different HID APIs,
 destinations, flag order and command aliases. These are static scan fixtures.
 
-Two hostile findings describe separate results: Run-dialog injection carrying
-a download-eval expression, and that injected payload carrying hidden-window
-and policy-bypass options. The latter joins predicates at the same output
-call or STRING directive. Generic output APIs, hidden windows, policy flags,
-USB identifiers and the publisher's demonstration domain do not independently
-establish an attack. The Python output receiver must originate from a keyboard
-layout constructor; an arbitrary file write is insufficient.
+The submitted Run-dialog download-eval sequence is a notable keyboard-synthesis
+capability. Hidden-window and policy-bypass options on that same output operation
+support one suspicious security-bypass finding. The demonstration's exact command
+is published as harmless test-device firmware. Neither this sequence nor its URL
+establishes theft, destruction, or unauthorized access. These findings retain the
+mechanics without convicting authorized automation or training examples.
+
+The latter finding joins predicates at the same output call or STRING directive.
+The Python output receiver must originate from a keyboard layout constructor;
+an arbitrary file write is insufficient.
 
 Controls cover browser-only automation, downloads without evaluation, missing
 Run/Enter events, distant events, comments, prose, unrelated payload literals,
@@ -31,7 +34,7 @@ separate Enter operation. These preserve the article's Windows target while
 varying the device implementation. The submission and download-eval predicates
 must start at the same output operation. An unrelated line output cannot submit
 the command; Run-dialog context and the existing payload/concealment gates remain
-required for hostile findings.
+required for the corresponding capability and bypass findings.
 
 The [Digispark implementation](https://github.com/digistump/DigistumpArduino/blob/master/digistump-avr/libraries/DigisparkKeyboard/DigiKeyboard.h)
 inherits Arduino `Print`; its ASCII table maps LF to Enter. The

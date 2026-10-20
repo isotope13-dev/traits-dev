@@ -34,6 +34,9 @@ for case in cases:
     for forbidden in case["not_matched"]:
         if forbidden in traits:
             failures.append(f"{name}: unexpected {forbidden}")
+    for required in case.get("suspicious", []):
+        if required not in traits or traits[required]["crit"] != 4:
+            failures.append(f"{name}: missing suspicious {required}")
     for required in case.get("notable", []):
         if required not in traits or traits[required]["crit"] != 3:
             failures.append(f"{name}: missing notable {required}")
