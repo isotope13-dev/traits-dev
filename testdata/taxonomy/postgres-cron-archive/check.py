@@ -31,7 +31,7 @@ for case in cases:
         assert 'micro-behaviors/data/db/access::psycopg-connect-call' in traits
         assert not any(t['crit'] >= 4 for t in traits.values()), traits
     if case['path'] == 'client.ps1':
-        assert 'micro-behaviors/process/create/exec::powershell-call-exe' in traits
+        assert 'micro-behaviors/process/create/exec::powershell-call-operator-target' in traits
     if case['path'] == 'path-only.py':
         assert 'micro-behaviors/fs/path/account-db::unix-account-database-path-reference' in traits
         assert 'micro-behaviors/fs/read/file/target::etc-passwd-read' not in traits
