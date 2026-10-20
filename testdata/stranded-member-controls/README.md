@@ -19,7 +19,7 @@ The checks analyze bytes only; they do not execute the specimens.
   key, registry-write evidence and task path within 180 bytes. This deliberately
   tightens the former two-reference proximity gate; reads alone prove no hijack.
 - Generic FLS cooccurrence moves from the injection objective into
-  `micro-behaviors/process/tls/fiber`. Matchers, size/platform/file scope and
+  `micro-behaviors/process/tls`. Matchers, size/platform/file scope and
   exclusions are preserved. Severity changes separately to notable. FLS APIs
   do not prove scheduling, injection or evasion. The outer fiber-dispatch
   composite was redundant because its thread-creation leg already satisfied
