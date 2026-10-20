@@ -876,6 +876,9 @@ form belongs in `metadata/lang/source/syntax`, outside broad
 under `micro-behaviors/os/module`; a corroborated test-harness role belongs
 under `metadata/package/testing`. Preserve explicit consumers when relocating
 weak source context rather than granting every test exclusion that context.
+`metadata/lang/source/literal` records quoted source forms, such as an epoch
+comparison written inside a Python string. It does not establish that the
+quoted operation executes; its explicit consumers retain that distinction.
 
 Raw signed-entitlement keys are emitted as runtime facts under
 `metadata/entitlement/<category>::<key>`. The rules in

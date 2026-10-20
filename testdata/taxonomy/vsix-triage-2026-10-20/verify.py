@@ -4,6 +4,8 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
+import tempfile
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
@@ -14,9 +16,46 @@ PROFILE = 'objectives/exfiltration/stealer/system-info/profile::base64-env-profi
 STARTUP = 'objectives/supply-chain/recon-exfil/callback::vscode-startup-encoded-profile-query'
 VULNERABLE = 'objectives/supply-chain/trojanized/app/ai-agent-tools::prompt-requests-vulnerable-code'
 CASES = {
+    'ordinary-multi-credential-config.js': {'require': ['micro-behaviors/os/env/config::node-several-credential-config-sources'], 'criticality_max': 3},
+    'quoted-temp-batch.js': {'require': ['micro-behaviors/process/create/shell/command-string::cmd-curl-temp-batch-invocation', 'objectives/evasion/process/hidden/window::hidden-cmd-temp-batch-launch']},
+    'different-quoted-temp-batch.js': {'forbid': ['micro-behaviors/process/create/shell/command-string::cmd-curl-temp-batch-invocation']},
+    'variable-temp-batch.js': {'require': ['micro-behaviors/process/create/shell/command-string::powershell-temp-batch-variable-invocation', 'objectives/evasion/process/hidden/window::hidden-powershell-temp-batch-launch']},
+    'different-variable-temp-batch.js': {'forbid': ['micro-behaviors/process/create/shell/command-string::powershell-temp-batch-variable-invocation']},
+    'packrat-carrier.vsix': {'require': ['well-known/malware/supply-chain/packrat::automatic-packrat-payload-installation'], 'hostile_min': 1},
+    'ordinary-extension-pack.vsix': {'criticality_max': 3},
+    'concealed-editor-installer.vsix': {'hostile_min': 3},
     'auth-identity-poc.vsix': {'require': ['objectives/credential-access/dev-tools/session::serializer-extension-identity-rewrite', 'objectives/credential-access/dev-tools/session::silent-auth-session-with-identity-rewrite'], 'suspicious_min': 2, 'hostile_max': 0},
     'ordinary-silent-session.js': {'criticality_max': 3},
     'ordinary-identity-migration.js': {'criticality_max': 3},
+    'hidden-temp-batch.vsix': {'require': ['micro-behaviors/process/create/shell/command-string::powershell-curl-temp-batch-invocation', 'objectives/supply-chain/hidden-payload/extensions/vscode::vscode-invisible-name-hidden-batch-stage'], 'hostile_min': 1},
+    'different-temp-batch.js': {'forbid': ['micro-behaviors/process/create/shell/command-string::powershell-curl-temp-batch-invocation'], 'criticality_max': 3},
+    'rc4-multiline-loader.js': {'require': ['micro-behaviors/crypto/symmetric/stream/rc4::js-rc4-implementation', 'objectives/anti-static/obfuscation/obfuscator/js-obfuscator::rc4-checksum-rotated-table-runtime']},
+    'package.json': {'require': ['metadata/package/dependencies/manifest/identity::npm-declares-node-builtins-as-dependencies'], 'criticality_max': 3},
+    'version-check-extension.vsix': {'criticality_max': 3},
+    'fork-install-readme.vsix': {'criticality_max': 3},
+    'routeros-client.js': {'criticality_max': 3},
+    'native-abi-mismatch.vsix': {'suspicious_min': 2, 'hostile_max': 0},
+    'ordinary-native-addon.node': {'criticality_max': 3},
+    'fetch-arbitrary-target.js': {'require': ['micro-behaviors/communications/http/request/client::js-fetch-call'], 'criticality_max': 3},
+    'fetch-syntax-data.js': {'forbid': ['micro-behaviors/communications/http/request/client::js-fetch-call'], 'criticality_max': 3},
+    'filename-breakout-control.js': {'criticality_max': 3},
+    'filename-breakout-positive.js': {'require': ['objectives/execution/exploit/command-injection::filename-quote-shell-breakout-literal']},
+    'response-vm-extension.vsix': {'hostile_min': 3},
+    'ordinary-vm-http.js': {'criticality_max': 3},
+    'decrypt-eval-positive.js': {'require': ['objectives/supply-chain/hidden-payload/encoding::aes-decrypt-eval-loader']},
+    'unrelated-crypto-eval.js': {'criticality_max': 3},
+    'hidden-python-stage.vsix': {'suspicious_min': 2, 'hostile_max': 0},
+    'dormant-hidden-stage.vsix': {'suspicious_min': 2, 'hostile_max': 0},
+    'wallet-archive-stealer.vsix': {'hostile_min': 3},
+    'response-vm-loader.js': {'hostile_min': 1},
+    'clipboard-hotkey-manager.py': {'criticality_max': 3},
+    'dialog-key-webhook.vsix': {'require': ['objectives/exfiltration/messaging/discord::dialog-credential-discord-post'], 'hostile_min': 3},
+    'event-shell.vsix': {'require': ['objectives/command-and-control/reverse-shell/stream-bridge::node-event-callback-shell-bridge'], 'hostile_min': 3},
+    'named-host-shell.vsix': {'require': [BRIDGE], 'hostile_min': 3},
+    'remote-agent.vsix': {'criticality_max': 3},
+    'periodic-loader.vsix': {'require': ['objectives/command-and-control/beacon/network/periodic::periodic-http-response-eval'], 'hostile_min': 3},
+    'legacy-api-parser.vsix': {'hostile_max': 0, 'suspicious_min': 1},
+    'official-provider-client.vsix': {'criticality_max': 3},
     'socket-shell.vsix': {'require': [BRIDGE], 'hostile_min': 3},
     'encoded-downloader.vsix': {'require': [ENCODED], 'hostile_min': 1},
     'native-pair.vsix': {'require': [PAIR, 'objectives/supply-chain/hidden-payload/extensions/vscode::vscode-hidden-batch-native-pair-stage'], 'suspicious_min': 2},
@@ -24,17 +63,22 @@ CASES = {
     'security-policy.vsix': {'criticality_max': 3},
     'disclosed-provider.vsix': {'criticality_max': 3},
     'notification-helper.vsix': {'criticality_max': 3},
+    'normal-dialog-webhook.js': {'criticality_max': 3},
     'socket-client.js': {'criticality_max': 3},
     'unrelated-streams.js': {'criticality_max': 3},
     'powershell-helper.js': {'criticality_max': 3},
-    'ordinary-download.bat': {'hostile_max': 0, 'forbid': [PAIR]},
+    'ordinary-download.bat': {'criticality_max': 3, 'forbid': [PAIR]},
     'rejected-code-request.js': {'criticality_max': 3},
     'live-code-request.js': {'require': [VULNERABLE]},
     'mixed-code-request.js': {'require': [VULNERABLE]},
     'offline-xor-profile.js': {'criticality_max': 3},
 }
 engine = os.environ.get('CLEAVE', str(REPO.parent / 'cleave/target/release/cleave'))
-result = subprocess.run([engine, '--traits-dir', str(REPO), '--format', 'json', *[str(HERE / name) for name in CASES]], capture_output=True, text=True, check=True, timeout=600)
+# Analyze exact fixture bytes outside test-directory guards, as real downloads.
+with tempfile.TemporaryDirectory(prefix='vsix-technique-check-', dir='/var/tmp') as work:
+    for name in CASES:
+        shutil.copyfile(HERE / name, Path(work) / name)
+    result = subprocess.run([engine, '--traits-dir', str(REPO), '--format', 'json', *[str(Path(work) / name) for name in CASES]], capture_output=True, text=True, check=True, timeout=600)
 decoder = json.JSONDecoder()
 remaining = result.stdout
 reports = {}

@@ -21,6 +21,7 @@ EXPECTED = {
     "dynamic.kt": ["micro-behaviors/process/interpreter/webview::source-variable-named-javascript-interface"],
     "epoch.py": ["micro-behaviors/time/query::python-time-epoch-comparison-context"],
     "duration.py": ["micro-behaviors/time/query::python-time-epoch-comparison-context"],
+    "quoted-epoch.py": ["metadata/lang/source/literal::python-quoted-epoch-comparison"],
     "ranking.csv": ["metadata/file/format/wordlist::search-ranking-csv-header"],
     "s3.json": ["objectives/discovery/cloud/permissions::s3-public-access-block-disabled"],
     "letter.txt": ["objectives/lateral-movement/social-engineering/lures::advance-fee-fraud-letter"],
@@ -36,7 +37,7 @@ EXPECTED = {
 ZERO_HIGH = {
     "kubernetes-meta.py",
     "bot-status.html", "user-panel.html",
-    "trigger.js", "dynamic.kt", "static.kt", "epoch.py", "duration.py",
+    "trigger.js", "dynamic.kt", "static.kt", "epoch.py", "duration.py", "quoted-epoch.py",
     "ranking.csv", "domains.json", "diagnostics.ts", "component-toggle.kt",
     "hidden.vbs",
 }
@@ -82,6 +83,8 @@ def main():
                 assert not any(t["crit"] >= 4 for t in traits), (name, traits)
             if name == "static.kt":
                 assert EXPECTED["dynamic.kt"][0] not in ids
+            if name == "quoted-epoch.py":
+                assert EXPECTED["epoch.py"][0] not in ids
             print("PASS", name)
         print(f"{len(EXPECTED)} cases passed")
 
