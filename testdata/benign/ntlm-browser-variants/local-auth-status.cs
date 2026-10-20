@@ -1,0 +1,19 @@
+using System;
+using System.Net;
+using System.IO;
+using System.Diagnostics;
+class Capture {
+    static void Main() {
+        var listener = new HttpListener();
+        listener.Prefixes.Add("http://localhost:8080/");
+        listener.Start();
+        string challenge = "TlRMTVNTUAACAAAAAAAAAAAAAAAFgomiESIzRFVmd4gAAAAAAAAAAAAAAAAAAAAA";
+        for (int i = 0; i < 4; i++) {
+            var context = listener.GetContext();
+            context.Response.StatusCode = 401;
+            context.Response.AddHeader("WWW-Authenticate", "NTLM " + challenge);
+            context.Response.Close();
+        }
+        listener.Stop();
+    }
+}
