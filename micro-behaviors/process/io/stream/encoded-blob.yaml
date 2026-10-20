@@ -1,0 +1,92 @@
+# Encoded literal output piped onward; no execution sink is required.
+defaults:
+  platforms: [unix]
+  for: [scripts, source, makefile, dockerfile, text, pbxproj]
+  crit: notable
+  conf: 0.9
+
+traits:
+  # A long hex literal piped onward. 32 nibbles is 16 bytes -- below that a run
+  # is as likely to be an id or a checksum as a payload. The `echo`/`printf`
+  # anchor is what separates "a hex constant exists in this file" (digests,
+  # keys, colour tables) from "a hex constant is being fed to a program".
+  - id: hex-blob-piped-onward
+    desc: Long hex literal echoed into a pipeline
+    if:
+      type: text
+      regex: '(echo|printf)\s+[''"]?[0-9a-fA-F]{32,}[''"]?\s*\|'
+    unless:
+      # A source comment showing how a fixture was produced is documentation,
+      # not a pipeline the file runs. c2pa-rs documents its DER test vectors
+      # with `/// echo "8215...636f6d" | xxd -r -p | openssl asn1parse`.
+      # Only C-family comment markers, not `#`: a shell script's real
+      # payload and a commented-out line share the same file, and `#` would
+      # let one comment disarm the rule for the whole script.
+      - type: raw
+        regex: '(?m)^\s*(//[/!]?|\*)\s*(echo|printf)\s+[''"]?[0-9a-fA-F]{32,}'
+      # bind9's nsupdate system tests echo DNS wire images into a pipeline.
+      - id: metadata/package/testing/presence/harness::test-directory
+      - id: metadata/package/testing/presence/path::git-tests-directory
+      # Checksum and digest calculations pipe input to compute hashes, not to decode payloads.
+      - type: raw
+        regex: '\|\s*([a-zA-Z0-9_-]*(sum|digest)|openssl\s+dgst|cksum)\b'
+
+  # The full shape: an encoded blob whose pipeline terminates in a shell. The
+  # decoder between the two is left open so a reversed-flag `xxd -p -r`, a
+  # rebuilt command name, or a `base64 -d` all match the same rule.
+  # The base64 spelling of the same construct. The attacker's choice of
+  # encoding is arbitrary and varies within a single campaign -- the
+  # universal_file_viewer loader shipped hex in its Android and macOS payloads
+  # and base64 in the iOS one -- so a rule that knew only about hex would have
+  # caught two of its three droppers. 40 characters rather than 32 because the
+  # base64 alphabet overlaps ordinary words, and a run this long piped into a
+  # command is not prose.
+  - id: base64-blob-piped-onward
+    desc: Long base64 literal echoed into a pipeline
+    if:
+      type: text
+      regex: '(echo|printf)\s+[''"]?[A-Za-z0-9+/]{40,}={0,2}[''"]?\s*\|'
+    not:
+      - regex: '(echo|printf)\s+[''"]?[0-9a-fA-F]{40,}[''"]?\s*\|'
+    unless:
+      - id: metadata/package/testing/corpus/
+      # Autotools output pipes long encoded literals through sed/tr as a matter
+      # of course -- libtool.m4's `$ECHO "X$..." | $Xsed` idiom and configure's
+      # own probe strings. Passenger vendors libuv and libev, so it ships four
+      # such generated files. One directory reference covers the generated-file
+      # markers rather than naming them leaf by leaf.
+      - id: metadata/build/autotools/
+      # See `hex-blob-piped-onward`: a source comment documenting how a
+      # fixture was generated is not a pipeline the file runs.
+      - type: raw
+        regex: '(?m)^\s*(//[/!]?|\*)\s*(echo|printf)\s+[''"]?[A-Za-z0-9+/]{40,}'
+      # Decoding to the terminal for a human to read is inspection, not
+      # staging: with no shell sink and no file redirect past the decoder,
+      # nothing executes and nothing is written. sigstore/scaffolding's
+      # getting-started.md shows `echo '<attestation>' | base64 -d` so the
+      # reader can eyeball a payload, and command substitutions `$(echo ... | base64 -d)`
+      # or chained checks `echo ... | base64 -d;` decode without piping onward. A stager
+      # pipes onward (`| sh`) or redirects (`> payload`), which the end anchor keeps matching.
+      - type: raw
+        regex: '(?i)(?m)\|\s*base64\s+(-d|--decode)\s*$'
+      - type: raw
+        regex: '(?i)(?m)\|\s*base64\s+(-d|--decode)\s*(\)|;)'
+      - id: well-known/tool/development/ci/github-actions/setup-github-auth::setup-github-auth-context
+      # Scanner unit tests retain dangerous command strings as inert fixtures.
+      - id: metadata/package/testing/harness/unit::javascript-vitest-unit-test-context
+      - id: metadata/package/testing/presence/harness::test-directory
+      # Checksum and digest calculations pipe input to compute hashes, not to decode payloads.
+      - type: raw
+        regex: '\|\s*([a-zA-Z0-9_-]*(sum|digest)|openssl\s+dgst|cksum)\b'
+
+composite_rules:
+  - id: encoded-blob-piped-onward
+    desc: Encoded blob echoed into a pipeline
+    crit: notable
+    conf: 0.9
+    any:
+      - id: hex-blob-piped-onward
+      - id: base64-blob-piped-onward
+    unless:
+    - id: metadata/package/testing/
+    - id: "metadata/file/naming::test-directory-component"
