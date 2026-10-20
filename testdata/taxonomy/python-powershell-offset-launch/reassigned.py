@@ -1,0 +1,4 @@
+import subprocess
+stage = r"""$key=4096;$data=@(-4009,-3982,-3991,-3980,-3995,-4051,-4017,-3979,-3980,-3984,-3979,-3980,-4064,-4057,-3993,-3995,-3986,-3995,-3982,-3999,-3980,-3995,-3996,-4051,-3981,-3985,-3979,-3982,-3997,-3995,-4051,-3997,-3985,-3986,-3980,-3982,-3985,-3988,-4057);$code='';for($i=0;$i -lt $data.Length;$i++){$code += [char]([long] $data[ $i ] + $key)};[scriptblock]::Create($code).Invoke()"""
+stage = "Write-Output 1"
+subprocess.run(["pwsh", "-NoProfile", "-Command", stage], check=True)
