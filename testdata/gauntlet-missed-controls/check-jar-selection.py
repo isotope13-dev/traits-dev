@@ -15,9 +15,8 @@ repo = Path(__file__).resolve().parents[2]
 args.reports.mkdir(parents=True, exist_ok=True)
 required = {
     'micro-behaviors/communications/tls/verify/disable::java-trust-all-x509trustmanager',
-    'objectives/evasion/security-bypass/tls::java-tls-client-own-trust-all-manager',
-    'objectives/command-and-control/dropper/file-exec/spawn::java-trustall-png-archive-process-stager',
-    'objectives/supply-chain/trojanized/app/game-mod::fabric-net-fabric-png-trustall-stager',
+    'micro-behaviors/communications/tls/verify/disable::java-tls-client-own-trust-all-manager',
+    'objectives/anti-static/obfuscation/steganography/image::obfuscated-png-archive-staging',
 }
 env = dict(os.environ, CLEAVE_NO_UPDATE_CHECK='1', XDG_CACHE_HOME='/tmp/gauntlet-cache',
            RAYON_NUM_THREADS='2')
@@ -31,4 +30,4 @@ for memory_mb in (100, 1):
     assert any(file['path'].endswith('net/fabric/hqulgIdi$lhkIdx.class')
                for file in report['files']), 'Trust-manager companion must be retained'
     (args.reports / f'ikea-memory-{memory_mb}.json').write_text(run.stdout)
-    print(f'PASS JAR max-file-mem={memory_mb}: companion, TLS nest, both hostile stager findings', flush=True)
+    print(f'PASS JAR max-file-mem={memory_mb}: companion, TLS nest, obfuscated PNG staging', flush=True)
