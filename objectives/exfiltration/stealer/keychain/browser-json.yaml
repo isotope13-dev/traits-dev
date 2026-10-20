@@ -1,0 +1,82 @@
+defaults:
+  platforms: [ios, macos]
+  for: [javascript, typescript]
+  crit: suspicious
+  conf: 0.95
+  attack: T1555.001,T1041
+traits:
+  # Named helper results, not a claim that the helper really implements native
+  # keychain access. Bind the result to this request's body; a status message
+  # or a different upload alongside a local keychain read is insufficient.
+  - id: keychain-helper-result-http-body
+    desc: Keychain-reading helper result reaches HTTP body
+    if:
+      type: tree-sitter
+      query: |
+        (statement_block
+          (_ (variable_declarator
+            name: (identifier) @collected
+            value: (call_expression
+              function: (identifier) @reader
+              arguments: (arguments))))
+          . (expression_statement
+              (binary_expression
+                operator: "&&"
+                right: (call_expression
+                  function: (member_expression property: (property_identifier) @log))))?
+          . (expression_statement
+              [(call_expression
+          function: (identifier) @fetch
+          arguments: (arguments
+            . (string (string_fragment) @url)
+            . (object
+              (pair key: (property_identifier) @body
+                value: (call_expression
+                  function: (member_expression
+                    object: (identifier) @json
+                    property: (property_identifier) @stringify)
+                  arguments: (arguments . (object
+                    (pair value: (identifier) @uploaded)) .))))))
+               (call_expression
+                 function: (member_expression
+                   object: (call_expression
+          function: (identifier) @fetch
+          arguments: (arguments
+            . (string (string_fragment) @url)
+            . (object
+              (pair key: (property_identifier) @body
+                value: (call_expression
+                  function: (member_expression
+                    object: (identifier) @json
+                    property: (property_identifier) @stringify)
+                  arguments: (arguments . (object
+                    (pair value: (identifier) @uploaded)) .))))))
+                   property: (property_identifier) @catch))])
+          (#match? @reader "(?i)^(read|get|dump)Keychain$")
+          (#eq? @collected @uploaded)
+          (#eq? @fetch "fetch")
+          (#match? @url "^https?://")
+          (#eq? @body "body")
+          (#eq? @json "JSON")
+          (#eq? @stringify "stringify")
+          (#eq? @log "log")
+          (#eq? @catch "catch"))
+
+composite_rules:
+  - id: browser-keychain-export-evidence
+    desc: Browser keychain upload or dump-payload evidence
+    for: [html, javascript, typescript]
+    any:
+      - id: keychain-helper-result-http-body
+      - id: html-keychain-dump-near-http-post
+
+  # Bounded co-occurrence in HTML, where parsed JS flow is unavailable.
+  - id: html-keychain-dump-near-http-post
+    desc: Keychain dump payload near external HTTP POST
+    for: [html]
+    conf: 0.9
+    near_bytes: 1024
+    all:
+      - id: micro-behaviors/data/serialize/schema-credential::html-keychain-dump-body
+      - id: micro-behaviors/communications/http/post::html-fetch-post-call
+      - id: micro-behaviors/communications/http/request/client::fetch-literal-https-url
