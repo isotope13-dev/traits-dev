@@ -1,0 +1,1 @@
+const decoded = atob(encoded);
