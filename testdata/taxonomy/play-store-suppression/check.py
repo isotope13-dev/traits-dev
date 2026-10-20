@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
-import tempfile
+from contextlib import nullcontext
 
 
 HERE = Path(__file__).resolve().parent
@@ -86,6 +86,58 @@ class PackageUpdater {
 }
 ''', (True, True, True))
 
+# Equivalent command vectors retain the same Android operation across JVM
+# source languages; executable/package arguments must belong to the builder.
+PM = BASE.replace('"sh", "-c", "cmd package disable-user --user 0 com.android.vending"',
+                  '"pm", "disable", "com.android.vending"').replace(
+                  '"sh", "-c", "cmd package enable --user 0 com.android.vending"',
+                  '"pm", "enable", "com.android.vending"')
+CMD = PM.replace('"pm", "disable"', '"cmd", "package", "disable"').replace(
+                 '"pm", "enable"', '"cmd", "package", "enable"')
+for name, source in (("pm-argv", PM), ("cmd-argv", CMD),
+                     ("absolute-pm-argv", PM.replace('"pm"', '"/system/bin/pm"')),
+                     ("absolute-cmd-argv", CMD.replace('"cmd"', '"/system/bin/cmd"')),
+                     ("renamed-argv", PM.replace("StageInstaller", "SystemUpdater")
+                                        .replace("session", "transaction")
+                                        .replace("base.apk", "partner.apk"))):
+    cases[name] = (source, (True, True, True))
+    cases[name + "-other-package"] = (source.replace("com.android.vending", "org.example.store"),
+                                       (False, False, False))
+    cases[name + "-unstarted"] = (source.replace(".start().waitFor()", ""), (False, False, False))
+
+kotlin = cases["complete-kotlin"][0]
+cases["pm-argv-kotlin"] = (kotlin.replace(
+    '"sh", "-c", "cmd package disable-user --user 0 com.android.vending"',
+    '"pm", "disable", "com.android.vending"').replace(
+    '"sh", "-c", "cmd package enable --user 0 com.android.vending"',
+    '"pm", "enable", "com.android.vending"'), (True, True, True))
+cases["cmd-argv-kotlin"] = (cases["pm-argv-kotlin"][0].replace(
+    '"pm", "disable"', '"cmd", "package", "disable"').replace(
+    '"pm", "enable"', '"cmd", "package", "enable"'), (True, True, True))
+
+for name in ("pm-argv-kotlin", "cmd-argv-kotlin"):
+    src = cases[name][0]
+    disable_line = next(line for line in src.splitlines(True) if '"disable"' in line)
+    cases["commented-" + name] = (src.replace(disable_line,
+        "        // " + disable_line.lstrip() +
+        '        ProcessBuilder("echo", "maintenance").start().waitFor()\n'),
+        (False, False, True))
+    cases["ordinary-" + name] = (src.replace(disable_line, ""), (False, False, True))
+
+ATTRIBUTION = "objectives/evasion/masquerade/identity/app::android-store-disable-play-attributed-install"
+ATTRIBUTION_CALL = "micro-behaviors/os/package-manager/management::android-play-installer-attribution-call"
+setter = '        params.setInstallerPackageName("com.android.vending");\n'
+with_attribution = PM.replace("        int id =", setter + "        int id =")
+cases["play-attribution"] = (with_attribution, (True, True, True))
+cases["other-attribution"] = (with_attribution.replace(
+    'setInstallerPackageName("com.android.vending")',
+    'setInstallerPackageName("org.example.store")'), (True, True, True))
+cases["commented-attribution"] = (with_attribution.replace(setter, "        // " + setter.lstrip()),
+                                    (True, True, True))
+cases["ordinary-attribution"] = (with_attribution.replace(
+    next(line for line in with_attribution.splitlines(True) if '"disable"' in line), ""),
+    (False, False, True))
+
 # Keep the pre-existing controls in the same gate.
 for filename in ("install.java", "ordinary-install.java", "comment.java", "other-package.java",
                  "user-scoped-comment.java", "user-scoped-other-package.java"):
@@ -99,7 +151,12 @@ for filename in ("install.java", "ordinary-install.java", "comment.java", "other
         "user-scoped-other-package.java": (False, False, False),
     }[filename])
 
-with tempfile.TemporaryDirectory(prefix="play-store-suppression-") as directory:
+# Keep benign controls in Cleave's fixtures, outside feed retrieval data.
+fixture_root = Path(os.environ.get("CLEAVE_FIXTURES", "/usr/local/var/cyclotron/cleave/tests/fixtures"))
+fixture_root.mkdir(parents=True, exist_ok=True)
+fixture_dir = fixture_root / "midnight-mimosa-store-suppression"
+fixture_dir.mkdir(exist_ok=True)
+with nullcontext(str(fixture_dir)) as directory:
     paths = []
     for name, (source, _) in cases.items():
         path = Path(directory) / (name + (".kt" if name.endswith("-kotlin") else ".java"))
@@ -107,8 +164,10 @@ with tempfile.TemporaryDirectory(prefix="play-store-suppression-") as directory:
         paths.append(str(path))
     result = subprocess.run(
         [os.environ.get("CLEAVE", "cleave"), "--traits-dir", str(ROOT), "--format", "jsonl", *paths],
-        capture_output=True, text=True, check=True,
+        capture_output=True, text=True, check=False,
     )
+    if result.returncode:
+        raise RuntimeError(result.stderr)
     reports = {
         Path(f["path"]).stem: f
         for line in result.stdout.splitlines()
@@ -120,7 +179,10 @@ with tempfile.TemporaryDirectory(prefix="play-store-suppression-") as directory:
         for trait, expected in ((EVASION, bypass), (INSTALL, False), (DISABLE, disable), (RESTORE, restore)):
             assert (trait in traits) == expected, (name, trait, expected, traits)
             if trait in traits:
-                assert traits[trait] == (5 if trait in (EVASION, INSTALL) else 3), (name, traits)
-        assert {t for t, c in traits.items() if c >= 4} == ({EVASION} if bypass else set()), (name, traits)
+                assert traits[trait] == (5 if trait in (EVASION, INSTALL) else (4 if trait == DISABLE else 3)), (name, traits)
+        attribution = name == "play-attribution"
+        assert (ATTRIBUTION in traits) == attribution, (name, traits)
+        assert (ATTRIBUTION_CALL in traits) == (name in {"play-attribution", "ordinary-attribution"}), (name, traits)
+        assert {t for t, c in traits.items() if c >= 4} == (({EVASION} if bypass else set()) | ({DISABLE} if disable else set()) | ({ATTRIBUTION} if attribution else set())), (name, traits)
 
 print(f"Passed {len(cases)} store disable/install/restore controls")
