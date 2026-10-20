@@ -60,7 +60,7 @@ def main():
         'far-apart.php': (installer(ADD) + '// padding\n' * 500 + CONSOLE,
             {COMMAND + 'php-request-proc-open-console'}, {CONFIG}),
         'mismatched-output.php': (installer(ADD) + CONSOLE.replace('stream_get_contents($handles[1])', 'stream_get_contents($other[1])'),
-            set(), {CONFIG, COMMAND + 'php-request-proc-open-console', STREAM}),
+            {CONFIG}, {COMMAND + 'php-request-proc-open-console', STREAM}),
         'descriptor-request.php': (installer(ADD) + CONSOLE.replace("proc_open($_POST['job'],", "proc_open('fixed-tool',").replace("['pipe', 'r']", "$_POST['job']"),
             set(), {CONFIG, COMMAND + 'php-request-proc-open-console'}),
         'xor-string.php': ('<?php\n$out .= $blob[$n] ^ $mask[$n % $width];\n', {XOR}, set()),

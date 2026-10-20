@@ -11,3 +11,5 @@ Run `python3 testdata/htaccess-addhandler-persistence/verify.py <scratch-directo
 The controls also cover renamed request keys and data suffixes, unrelated output
 handles, request data confined to descriptors, cyclic XOR reconstruction, a
 WordPress init hook, and cookie-webshell setuid grants. Nothing is executed.
+An unrelated output handle excludes the process-output relay finding but does
+not remove request-driven command execution or the handler configuration claim.
