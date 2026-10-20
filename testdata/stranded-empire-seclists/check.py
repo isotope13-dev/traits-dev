@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import zipfile
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--scratch-root', required=True)
@@ -14,9 +15,14 @@ root = Path(__file__).resolve().parent
 cases = json.loads((root / 'cases.json').read_text())
 with tempfile.TemporaryDirectory(prefix='content-controls-', dir=args.scratch_root) as tmp:
     targets = []
-    for name in cases:
+    for name, case in cases.items():
         target = Path(tmp) / name
-        shutil.copyfile(root / name, target)
+        member = case.get('stored_member')
+        if member:
+            with zipfile.ZipFile(target, 'w', zipfile.ZIP_STORED) as archive:
+                archive.writestr(member['path'], member['text'])
+        else:
+            shutil.copyfile(root / name, target)
         targets.append(str(target))
     env = dict(os.environ, CLEAVE_VALIDATE='0', CLEAVE_SKIP_CACHE='1')
     result = subprocess.run(
