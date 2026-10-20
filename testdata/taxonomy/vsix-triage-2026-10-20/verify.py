@@ -16,6 +16,7 @@ PROFILE = 'objectives/exfiltration/stealer/system-info/profile::base64-env-profi
 STARTUP = 'objectives/supply-chain/recon-exfil/callback::vscode-startup-encoded-profile-query'
 VULNERABLE = 'objectives/supply-chain/trojanized/app/ai-agent-tools::prompt-requests-vulnerable-code'
 CASES = {
+    'indirect-editor-installer.vsix': {'hostile_min': 3},
     'ordinary-multi-credential-config.js': {'require': ['micro-behaviors/os/env/config::node-several-credential-config-sources'], 'criticality_max': 3},
     'quoted-temp-batch.js': {'require': ['micro-behaviors/process/create/shell/command-string::cmd-curl-temp-batch-invocation', 'objectives/evasion/process/hidden/window::hidden-cmd-temp-batch-launch']},
     'different-quoted-temp-batch.js': {'forbid': ['micro-behaviors/process/create/shell/command-string::cmd-curl-temp-batch-invocation']},

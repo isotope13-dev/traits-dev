@@ -15,7 +15,7 @@ PREFIXES = {
     "bytecode": "metadata/build/bun::bun-bytecode-source-marker",
     "electron": "micro-behaviors/process/interpreter/webview::electron-execute-javascript-reference",
     "font": "micro-behaviors/ui/graphics/font::noto-color-emoji-font-reference",
-    "test": "metadata/lang/source/syntax::common-test-source-text",
+    "test": "metadata/lang/source/shape::common-test-source-text",
 }
 
 # Positive cases include spelling/order changes; negative cases separate

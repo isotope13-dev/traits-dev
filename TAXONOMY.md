@@ -870,15 +870,60 @@ identity goes with that subject.
 | `vendor` | OS or platform vendor provenance (Apple, Microsoft, NetBSD, GNU) | Certificate fields are `signed`; manifest vendor fields are `package`; third-party products are `well-known/`. |
 
 Text shaped like `require('../common')` or `function test()` does not alone
-establish a package test-harness role. A rule reporting only that source-text
-form belongs in `metadata/lang/source/syntax`, outside broad
-`metadata/package/testing` selectors. An actual module-loading call belongs
+establish a package test-harness role. The rule combining those alternative
+source forms belongs in `metadata/lang/source/shape`; a single call form belongs
+in `metadata/lang/source/syntax/call`, outside broad `metadata/package/testing`
+selectors. An actual module-loading call belongs
 under `micro-behaviors/os/module`; a corroborated test-harness role belongs
 under `metadata/package/testing`. Preserve explicit consumers when relocating
 weak source context rather than granting every test exclusion that context.
 `metadata/lang/source/literal` records quoted source forms, such as an epoch
 comparison written inside a Python string. It does not establish that the
 quoted operation executes; its explicit consumers retain that distinction.
+
+**Source syntax.** `metadata/lang/source/syntax` asks **which grammatical construct is present?**
+Its children require the construct's source form; a text or literal matcher
+may observe embedded code, examples or comments. These observations establish
+neither execution nor the capability suggested by an identifier. Language,
+API and parser remain scope and filenames, not children.
+
+| Child | Required property | Boundary and deciding example |
+|---|---|---|
+| `assignment` | A value assigned to a variable or expression, including counted assignments. | `buf = "..."` and `__info__ = {...}` fit. A required `const`, function or type declaration goes to `source/declaration`; a mapping entry goes to `key-value`. |
+| `call` | A call-shaped expression, its arguments, or bounded relationships between calls. | `fetch(a.url, b.options)`, `send({...})`, and an end handler near `eval(` fit. A bare `EventDispatcher` name goes to `source/naming`; parentheses must be required for a call claim. |
+| `command` | Command words, options, operands or pipelines in command text or an argument list. | `git log --patch` and `install -D` fit. A parenthesized method invocation goes to `call`; a bare cmdlet name goes to `source/naming`. |
+| `directive` | Source-processing directives, event annotations or named language sections. | ASP.NET `<%@ Page ... %>`, MIDL `cpp_quote`, `@event timer.action`, and YARA `strings:` fit. A type or rule declaration introducing a name goes to `source/declaration`; an ordinary mapping key goes to `key-value`. |
+| `key-value` | A named key/value entry or markup attribute, including the value's source form. | `"command": "..."`, `pattern: /.../`, and an HTML `href="...?q=..."` fit. `obj.command` goes to `member`; assignment to a standalone variable goes to `assignment`. |
+| `member` | A qualified name, member selection, subscripted member, or template field reference. | `Net::HTTP`, `exports.KNOWN_C2_DOMAINS`, `obj['a' + 'b']`, and `{{.Field}}` fit. If invocation parentheses are required, use `call`; a field's initializer belongs in `key-value`. |
+| `operator` | An operator or cast relates expressions or a value and a type. | A function-pointer cast and a comparison against an epoch constant fit. A function-pointer declaration belongs in `source/declaration`; a large numeric call argument belongs in `call`. |
+
+**Choose by the required relationship, then its operands.** A declaration
+introducing a binding or type goes to `source/declaration`; an assignment
+without that declaration evidence stays in `syntax/assignment`. A field entry
+beats an incidental member name in its value. For expressions, required
+assignment beats a nested call, a call/argument relationship beats incidental
+member access, and a cast/comparison beats its operand's spelling. A shell
+command's words and options belong together in `command`, even when serialized
+as an argument array. An API name alone never acquires call semantics.
+
+Use the existing neighboring subjects when no single syntax construct is the
+claim: `source/naming` for identifier vocabulary and function-name populations,
+`source/literal` for array values or the contents and line shape of literals,
+and `source/origin` for a source layer's carrier or extraction provenance.
+`source/shape` holds source-context profiles spanning constructs, declarations
+or source-file evidence: the Delphi/YARA source signatures, Haxe basename or
+package declaration, frontend member-or-hook literal profile, scanner schema
+exception, source-catalog label and encoding-related source profile. A single
+assignment does not become a whole-source profile because it is counted.
+
+The [source syntax move inventory](testdata/taxonomy/source-syntax-placement/migration.json)
+places all 101 former direct rules. The audit found no identical effective
+definitions to consolidate. Matchers, defaults, scope, criticality and explicit
+dependencies are preserved. The two PHP-panel directory exclusions use the
+shared `source/shape::source-syntax-known-benign-context` profile to retain
+their original observation set, including relocated observations. Its PHP scope
+matches those consumers; it follows the existing named exclusion-group
+convention and retains `component` criticality for source context alone.
 
 Raw signed-entitlement keys are emitted as runtime facts under
 `metadata/entitlement/<category>::<key>`. The rules in

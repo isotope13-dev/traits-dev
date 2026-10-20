@@ -74,7 +74,7 @@ Use isolated templates and never evaluate untrusted input.
     add('no-upload.exe', pe.replace(b'UploadString\0', b'XXXXXXXXXXXX\0'), {HTTP: False})
     add('no-recording.exe', pe.replace(b'Append\0', b'XXXXXX\0'), {HTTP: False})
 
-    syntax = 'metadata/lang/source/syntax::regex-pattern-rule-field'
+    syntax = 'metadata/lang/source/syntax/key-value::regex-pattern-rule-field'
     cite = 'metadata/package/documentation/source::payloadsallthethings-reference'
     ssrf = 'metadata/package/documentation/claims::ssrf-protection-wording'
     dep = 'metadata/package/dependencies/manifest/identity::pkginfo-playwright-dependency'

@@ -8,7 +8,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[3]
 CONCAT = 'micro-behaviors/data/collection/array::js-nested-index-concat'
 REMAP = 'objectives/anti-static/obfuscation/string/array::js-index-remap-array-reconstruction'
-SPLIT = 'metadata/lang/source/syntax::js-split-member-access-text'
+SPLIT = 'metadata/lang/source/syntax/member::js-split-member-access-text'
 RETIRED = {
     'objectives/anti-static/obfuscation/string/array::js-array-remap-nested-concat',
     'micro-behaviors/data/control-flow/analysis::js-nested-array-concat',
