@@ -1,0 +1,2 @@
+$api = 'DuplicateToken'
+$other = 'SetThreadToken'
