@@ -67,7 +67,7 @@ for manifest in [repo / 'testdata/stranded-empire-seclists/cases.json',
     for case in entries:
         ids = case.get('matched', []) + case.get('not_matched', [])
         relevant = any(('metadata/file/archive::' in t or
-                        'metadata/lang/natural::reverse-shell-term' in t or
+                        'metadata/lang/natural/vocabulary::reverse-shell-term' in t or
                         '::php-password-input-element' in t or
                         '::php-command-named-form-control' in t) for t in ids)
         if relevant:
