@@ -33,7 +33,7 @@ for f in controls:
     if Path(f['path']).name == 'database-client.py':
         assert traits['micro-behaviors/os/env/config::python-database-url']['crit'] == 3
     if Path(f['path']).name == 'mixed-maintenance.sql':
-        assert 'micro-behaviors/data/db/postgresql::definer-dynamic-query' not in traits
+        assert 'micro-behaviors/data/db/schema/stored-code::postgres-definer-dynamic-query' not in traits
     if Path(f['path']).name == 'unrelated-env.py':
         assert 'micro-behaviors/os/env/config::python-database-url' not in traits
 print(f'{len(positive)} exploit samples meet the hostile floor; {len(controls)} controls pass')

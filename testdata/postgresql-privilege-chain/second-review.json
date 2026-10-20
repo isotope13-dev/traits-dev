@@ -1,0 +1,101 @@
+{
+  "verdict": "MALICIOUS",
+  "identification": "PostgreSQL pg_cron, SECURITY DEFINER and WAL-archiver exploit reconstructions",
+  "basis": "The contents attempt scheduler impersonation as postgres, caller-controlled owner-privileged SQL, elevated role membership, account-file reading, and replacing server auto-configuration with an identity-probe shell command. No ordinary database maintenance result explains that combination. These are explicit exploit attempts, with important defects; successful compromise or a deployed malware family is not established.",
+  "context_missing": [
+    "Registry package coordinates and original distribution context",
+    "Evidence of authorized laboratory use",
+    "Target PostgreSQL version, role grants, pg_cron installation/preload and job state",
+    "Server archive_mode and archive_library configuration",
+    "Whether statements were executed manually in stages"
+  ],
+  "obfuscation": "None. Python raw triple-quoted SQL and PowerShell single-quoted here-string preserve the payload. Nested PostgreSQL dollar quotes delimit SQL bodies and configuration data; they are not encryption. cleave facts exposed the SQL and no additional encoded payload.",
+  "execution_paths": {
+    "driver-variant.py": "At module load reads DATABASE_URL, calls psycopg.connect(autocommit=True), then passes all SQL to one conn.execute call. There is no wait, retry, result handling, or staged second connection. psycopg sends this parameter-free batch as one transaction: newly registered cron work is not visible to another worker before commit. An undefined definer-function call can abort and roll back the preceding database changes.",
+    "powershell-client.ps1": "Assigns a literal here-string to $sql, pipes it to the psql executable using the call operator, and sets ON_ERROR_STOP=1. psql sends complete statements separately; early commits are possible, but a fresh run normally reaches the definer call before the next cron tick and stops on error. Connection selection comes from psql defaults/environment, not a hardcoded attacker endpoint.",
+    "reconstructed-chain.sql": "The same staged chain as raw SQL, with different function/role names and OID. It requires a SQL client. Whether execution continues after an error depends on that client; the comment instructs waiting but provides no synchronization."
+  },
+  "shared_chain": [
+    "GRANT pg_read_all_data and pg_write_all_data requires existing grant authority; it does not itself bypass permissions.",
+    "CREATE EXTENSION pg_cron and cron.schedule require installation/configuration/privileges. The fixed WHERE jobid=1 does not use the newly returned job ID and may select no job or another job.",
+    "UPDATE cron.job sets username=postgres and stores a DO block that creates a SECURITY DEFINER function, then grants its use to an application role. The function returns dynamic SQL results as its owner if the scheduled creation succeeds.",
+    "The subsequent SELECT requests a superuser-named role GRANT through RETURN QUERY EXECUTE. Such GRANT does not return tuples and fails on tested PostgreSQL; the role names also require target-specific existence and authority.",
+    "The pg_read_file and lo_export LANGUAGE internal declarations express attempted server-file access. Both supplied internal names are invalid on tested stock PostgreSQL 18.6; actual symbols are pg_read_file_off_len and be_lo_export. Creating internal-language functions also requires elevated authority. Rebinding a read symbol does not remove its runtime path/role checks.",
+    "The final intended path stages archive_command data in a large object, invokes an export alias targeting the mandated postgresql.auto.conf name, reloads configuration, and switches WAL. A working export could overwrite the file rather than append to it. Archiver shell execution requires appropriate preexisting archive settings; the scripts do not enable archive_mode. id redirects a probe to /tmp, not an exfiltration endpoint."
+  ],
+  "isolated_verification": {
+    "engine": "PostgreSQL 18.6 (Homebrew)",
+    "method": "Fresh scratch cluster with TCP disabled and a private Unix socket. Only isolated function/transaction fragments and dummy roles were evaluated; no sample was run against a real deployment, no pg_cron job was installed, no account file was read, and no archiver payload was installed. Server was stopped afterward.",
+    "results": [
+      "Exact maintenance_query function body with SELECT current_user::text returned owner reviewer.",
+      "The same body with GRANT higher_role TO lower_role raised GRANT ROLE query does not return tuples; pg_has_role remained false.",
+      "A single multi-statement command containing CREATE TABLE then an undefined function left no table, confirming batch rollback.",
+      "AS pg_read_file and AS lo_export internal declarations both failed even as cluster superuser: no built-in function of that name.",
+      "A schema-authorized ordinary role attempting a correct be_lo_export internal binding was denied permission for language internal."
+    ]
+  },
+  "trait_changes": [
+    "Moved 15 observations from the database-engine directory to their supported operation/subject homes, including SQL row updates, stored-code declarations, security grants, query calls, database configuration/archiving, and source assignment syntax.",
+    "Moved the targeted cron username rewrite from query to write/row. Renamed the generic postgres username assignment to avoid claiming it belongs to a job.",
+    "Consolidated the duplicate definer matcher into the canonical statement-bounded matcher; separate restricted-definer and dynamic invoker functions no longer establish definer-dynamic SQL.",
+    "Consolidated overlapping auto-config argument observations into a SELECT-call matcher, avoiding a bare parenthesized pair being named an output operation.",
+    "Cron hostile evidence now also requires a dollar-quoted DO command assignment; archiver hostile evidence requires a same-call large-object/convert_to/archive_command staging shape, same-declaration internal export, a config reload and a WAL switch, plus exploit context.",
+    "File binding descriptions explicitly describe declarations, not successful native-symbol resolution. Matchers also recognize correct be_lo_export and pg_read_file_off_len/all variants.",
+    "Corrected /etc/passwd read matcher description to its read-prefixed call evidence and removed unsupported current-user ATT&CK mapping.",
+    "Intentional suppression correction: existing PostgreSQL-directory exclusions remain limited to retained database-runtime/client facts. Moved SQL-operation observations are not copied into unrelated loader, syscall, PATH or ransomware suppressors: SQL syntax does not identify a benign database runtime. This is a dependency-population change, not a placement-only preservation claim."
+  ],
+  "checks": {
+    "focused_cases": "12 passed, including 4 exploit carriers/variants and 8 controls/near misses.",
+    "final_atomscan": "All 3 full sample paths rescanned using local traits; exactly 2 hostile findings each. Exit status 1 represents the detection result; JSON reports were checked.",
+    "hostile_traits": [
+      "objectives/privilege-escalation/exploit/database::pg-cron-definer-backdoor",
+      "objectives/execution/exploit/service-command-injection::large-object-archive-command-overwrite"
+    ]
+  },
+  "sources": [
+    {
+      "url": "https://www.psycopg.org/psycopg3/docs/basic/from_pg2.html",
+      "supports": "Batch transaction semantics and psql statement splitting."
+    },
+    {
+      "url": "https://github.com/citusdata/pg_cron",
+      "supports": "cron.job schema and scheduled connection/worker execution."
+    },
+    {
+      "url": "https://www.postgresql.org/docs/current/sql-createfunction.html",
+      "supports": "Function ownership and definer execution semantics."
+    },
+    {
+      "url": "https://raw.githubusercontent.com/postgres/postgres/REL_18_STABLE/src/include/catalog/pg_proc.dat",
+      "supports": "Actual internal file-read and large-object export symbols."
+    },
+    {
+      "url": "https://raw.githubusercontent.com/postgres/postgres/REL_18_STABLE/src/backend/utils/adt/genfile.c",
+      "supports": "Runtime file-read path and pg_read_server_files checks."
+    },
+    {
+      "url": "https://www.postgresql.org/docs/current/continuous-archiving.html",
+      "supports": "archive_mode prerequisites and archiver shell-command behavior."
+    }
+  ],
+  "samples": [
+    {
+      "path": "/usr/local/var/cyclotron/tmp.noindex/cyclotron-98e79cc7/samples/9629e0bcfc26/driver-variant.py",
+      "sha256": "9629e0bcfc26626031349aab59d91f1d945243181bb92111547d49e9311b472b",
+      "verdict": "MALICIOUS",
+      "marker": "Python PostgreSQL PoC: escalation/RCE attempt; tighten traits"
+    },
+    {
+      "path": "/usr/local/var/cyclotron/tmp.noindex/cyclotron-98e79cc7/samples/208582e26c95/powershell-client.ps1",
+      "sha256": "208582e26c959d83d2c94c7a1f8aeed46dc26b55da3e4429d3b334d710aa49ad",
+      "verdict": "MALICIOUS",
+      "marker": "PowerShell PostgreSQL PoC: escalation/RCE attempt; tighten traits"
+    },
+    {
+      "path": "/usr/local/var/cyclotron/tmp.noindex/cyclotron-98e79cc7/samples/eb39cff789d6/reconstructed-chain.sql",
+      "sha256": "eb39cff789d6d05314416f0ea2bd5b6f09afec561ebdc68e7920337f4072c0d0",
+      "verdict": "MALICIOUS",
+      "marker": "PostgreSQL SQL PoC: escalation/RCE attempt; tighten traits"
+    }
+  ]
+}
