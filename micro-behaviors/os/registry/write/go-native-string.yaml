@@ -1,0 +1,47 @@
+defaults:
+  platforms: [windows]
+  for: [pe]
+  crit: notable
+traits:
+  # Follow RIP-relative references to the Run pathname and to the resolved
+  # RegSetValueExW object. The six-argument frame sets Reserved=0, Type=REG_SZ
+  # and carries data/length arguments. A nearby string alone cannot satisfy it.
+  - id: go-x64-run-path-string-write
+    desc: Run path and resolved REG_SZ writer
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule go_x64_run_path_string_write {
+          strings:
+            $run = "Software\\Microsoft\\Windows\\CurrentVersion\\Run" ascii nocase
+            $api = "RegSetValueExW" ascii
+            $ref = { 48 8D 05 ?? ?? ?? ?? BB 2D 00 00 00 E8 ?? ?? ?? ??
+                     48 85 FF 74 ?? 31 C0 EB ?? 48 85 DB 0F 86 ?? ?? ?? ??
+                     48 89 44 24 ?? }
+            $write = { 48 89 08 48 8B 4C 24 ?? 48 89 48 08
+                       48 C7 40 10 00 00 00 00 48 C7 40 18 01 00 00 00
+                       48 8B 4C 24 ?? 48 89 48 20 48 8B 4C 24 ??
+                       89 C9 48 89 48 28 48 8B 0D ?? ?? ?? ??
+                       48 89 C3 BF 06 00 00 00 48 89 C8 48 89 F9 E8 ?? ?? ?? ?? }
+          condition:
+            pe.is_64bit() and pe.image_base < 0x100000000 and
+            for any s in (0..pe.number_of_sections - 1) : (
+              pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for any i in (1..#write) : (
+                @write[i] >= pe.sections[s].raw_data_offset and
+                @write[i] + !write[i] <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size and
+                $api at pe.rva_to_offset(uint32(pe.rva_to_offset(
+                  uint32(pe.rva_to_offset(pe.sections[s].virtual_address +
+                    @write[i] - pe.sections[s].raw_data_offset + 55 +
+                    int32(@write[i] + 51))) - pe.image_base) + 8) - pe.image_base) and
+                for any j in (1..#ref) : (
+                  @ref[j] >= pe.sections[s].raw_data_offset and
+                  @ref[j] < @write[i] and @write[i] - @ref[j] < 1024 and
+                  $run at pe.rva_to_offset(pe.sections[s].virtual_address +
+                    @ref[j] - pe.sections[s].raw_data_offset + 7 + int32(@ref[j] + 3))
+                )
+              )
+            )
+        }
