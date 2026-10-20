@@ -2,5 +2,6 @@
 const BaseDelay = require("../delay.base");
 const DelayFactory = require("../delay.factory");
 const SkipFirstDelay = require("./skip-first.delay");
+const IteratorZip = require("../Iterator.zip");
 
-module.exports = { BaseDelay, DelayFactory, SkipFirstDelay };
+module.exports = { BaseDelay, DelayFactory, SkipFirstDelay, IteratorZip };
