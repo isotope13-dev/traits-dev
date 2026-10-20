@@ -1,0 +1,1 @@
+open(OUTPUT, ">>result.txt");
