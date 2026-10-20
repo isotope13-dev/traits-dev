@@ -58,35 +58,6 @@ traits:
       type: text
       regex: 'tee[ \t]+-[Aa] +["'']?(~|\$HOME)?/?\.(bashrc|zshrc|bash_profile|zprofile|zshenv|profile)\b'
 
-  # Legs of the credential-strip shape below: a replace call whose pattern is
-  # an `export <CREDENTIAL>=...` line and whose replacement is empty — the
-  # startup file is being rewritten without that credential export.
-  # Key-rotation helpers replace the old line with a new value, so the empty
-  # replacement is what separates removal from rotation.
-  # The credential assignment must sit inside the same regex literal as
-  # `export`, on the same line: token normalizers that strip a leading
-  # `export ` prefix from a pasted value and separately mention a credential
-  # name (e.g. `replace(/^export\s+/, "")` beside `ANTHROPIC_AUTH_TOKEN=`)
-  # are not removing an export line from any content.
-  - id: rc-export-line-replace-open
-    desc: Replace pattern targets credential export line
-    crit: component
-    if:
-      type: text
-      regex: 'replace\(\s*/[^\r\n;]{0,40}\bexport\b[^\r\n;]{0,60}(API_KEY|TOKEN|SECRET)'
-  - id: rc-credential-export-name
-    desc: Credential keyword in export-line pattern
-    crit: component
-    if:
-      type: text
-      regex: '(API_KEY|TOKEN|SECRET)[A-Z_0-9]*'
-  - id: rc-empty-replacement-close
-    desc: Replace flags followed by empty replacement
-    crit: component
-    if:
-      type: text
-      regex: '/[a-z]*\s*,\s*[''"]{0,2}\)'
-
 composite_rules:
   - id: append-shell-rc-direct
     desc: Appends directly to a shell startup file
@@ -114,20 +85,6 @@ composite_rules:
       - id: micro-behaviors/fs/write/file/append::append-file-async
     near_bytes: 256
 
-  # The strip shape: one replace call rewriting an `export <CREDENTIAL>=`
-  # line away. Bound to its target and the write-back in the composite
-  # below, since a bare replace-call mention proves nothing about startup
-  # files.
-  - id: rc-credential-export-strip
-    desc: Strips credential export lines from content
-    crit: suspicious
-    conf: 0.9
-    all:
-      - id: rc-export-line-replace-open
-      - id: rc-credential-export-name
-      - id: rc-empty-replacement-close
-    near_bytes: 120
-
   # The strip atom bound to its target and the write-back: together this is
   # "this startup file is being rewritten without its credential exports",
   # which a bare replace-call mention does not establish.
@@ -136,8 +93,12 @@ composite_rules:
     crit: suspicious
     conf: 0.92
     all:
-      - id: rc-credential-export-strip
+      - id: micro-behaviors/data/string/replace::js-credential-export-removal
       - id: shell-profile-rc-name
+    any:
+      # The older write aggregate misses bare/destructured writeFileSync
+      # calls. Keep its async coverage and include the canonical call atom.
+      - id: micro-behaviors/fs/write/file/full::node-write-file-sync-call
       - id: micro-behaviors/fs/write/file/full::js-file-write
     near_bytes: 600
 
