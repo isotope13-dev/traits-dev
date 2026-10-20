@@ -6,7 +6,8 @@ Manifests whose `files` allowlist is a root JavaScript glob
 (`*.{js,d.ts}`, `*.js`) ship every root loader the hook can name, so
 `postinstall: node postinstall.js` is not a dead hook. A hook naming a
 loader the allowlist does not cover must still report
-`install-hook-missing-companion-loader`.
+`install-hook-omits-companion-from-files-list` at notable severity.
+This observation does not establish a payload or a hostile effect.
 
 Manifests are staged as package.json in the scratch directory because
 the pairing is file-scoped and traits suppress test paths.
@@ -20,8 +21,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
-TRAIT = ('objectives/supply-chain/install-hook/scripts/local-script::'
-         'install-hook-missing-companion-loader')
+TRAIT = ('micro-behaviors/os/package-manager/hook-install::'
+         'install-hook-omits-companion-from-files-list')
 
 
 def scan(path):
@@ -44,10 +45,10 @@ def main():
     assert TRAIT not in scan(benign), 'root *.js glob must not fire'
     print('PASS glob', flush=True)
 
-    hostile = dest / 'missing' / 'package.json'
-    hostile.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(HERE / 'missing-manifest.json', hostile)
-    assert TRAIT in scan(hostile), 'uncovered loader must fire'
+    uncovered = dest / 'missing' / 'package.json'
+    uncovered.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(HERE / 'missing-manifest.json', uncovered)
+    assert TRAIT in scan(uncovered), 'uncovered loader must fire'
     print('PASS missing', flush=True)
 
 
