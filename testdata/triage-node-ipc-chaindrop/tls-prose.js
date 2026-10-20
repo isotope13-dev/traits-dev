@@ -1,0 +1,1 @@
+- `rejectUnauthorized: false` disables certificate identity verification.
