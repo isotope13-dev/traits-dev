@@ -1,21 +1,45 @@
-# A setuid copy of a shell dropped into a system executable directory is a
-# completed root backdoor, not just an escalation attempt: every local user can
-# run it as root, and the system-path destination makes it masquerade as
-# platform software (planted names imitate bus or auth daemons). Each leg binds
-# a different required fact about the same install -- the setuid mode bit on a
-# shell copy, and a destination inside /bin, /sbin or /usr/bin -- so the
-# conjunction is one construction, not one observation counted twice.
+# Bind all three operations to one destination. A system-directory copy and
+# an unrelated setuid chmod do not establish a setuid shell installation.
+# This detects installation intent, not successful root execution: permissions,
+# mount flags and the copied shell's privilege handling still govern success.
 defaults:
   platforms: [unix]
   for: [shell]
-  attack: T1548.001,T1036.005
+  attack: T1548.001
+
+traits:
+  - id: root-owned-system-shell-setuid-install
+    desc: Installs root-owned setuid system shell
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: tree-sitter
+      query: |
+        ((program
+          (command name: (command_name (word) @copy) .
+            argument: (word) @source . argument: (word) @destination .) .
+          (command name: (command_name (word) @chown) .
+            argument: (word) @owner . argument: (word) @owned .) .
+          (command name: (command_name (word) @chmod) .
+            argument: (_) @mode . argument: (word) @modified .))
+          (#match? @copy "^(/bin/)?cp$")
+          (#match? @source "^/(usr/)?bin/(ba)?sh$")
+          (#match? @destination "^/(usr/)?s?bin/[A-Za-z0-9_.-]+$")
+          (#match? @chown "^(/bin/)?chown$")
+          (#match? @owner "^root(:root)?$")
+          (#match? @chmod "^(/bin/)?chmod$")
+          (#match? @mode "^(u\\+s|0?4[0-7]{3})$")
+          (#eq? @destination @owned)
+          (#eq? @destination @modified))
 
 composite_rules:
   - id: setuid-shell-copy-system-path
-    desc: Setuid shell copy planted in system executable directory
+    desc: Root-owned setuid shell with audit-log erasure
     crit: hostile
-    conf: 0.97
+    conf: 0.99
     all:
-      - id: objectives/privilege-escalation/elevation-control/setuid/shell::suid-shell-copy
-      - id: micro-behaviors/fs/file/copy::shell-copy-system-binary
-    near_bytes: 400
+      - id: root-owned-system-shell-setuid-install
+    any:
+      - id: objectives/evasion/indicator-removal/logs::beyondtrust-vault-audit-removal
+      - id: objectives/evasion/indicator-removal/logs::appliance-active-security-log-removal
+    near_bytes: 2048
