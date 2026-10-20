@@ -1,5 +1,5 @@
--- Positive control: subprocess plus write-mode open plus naming Lua
--- targets with no platform context must still trip the infector rule.
+-- Source-overwrite control: truncates enumerated Lua scripts.
+-- This never reads or copies itself, so it does not establish infection.
 local function spread(target)
 	local fp = io.popen("ls /tmp/*.lua")
 	for name in fp:lines() do
