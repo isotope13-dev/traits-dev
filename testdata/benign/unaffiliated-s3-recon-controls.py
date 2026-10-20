@@ -1,5 +1,4 @@
-"""Unaffiliated bucket recon (hostile control): enumerate and read
-every bucket's permission surface with no audit framework around it."""
+"""Unbranded S3 inventory: listing and permission reads are neutral capabilities."""
 
 import boto3
 
