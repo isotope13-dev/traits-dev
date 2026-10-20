@@ -1,14 +1,7 @@
-"""Vendor MSI installers are not WebClient droppers.
+"""WebClient executable-URL/process-start context remains a neutral capability.
 
-Run: python3 testdata/powershell-msiexec-installer-context/verify.py <scratch-directory>
-
-`powershell-webclient-remote-exe-launch` fires when WebClient downloads an
-executable and Start-Process launches it. Vendor MSI install scripts match
-that shape incidentally: they fetch an MSI and invoke msiexec (including
-prior-version uninstall cleanup via Start-Process). That is installer flow,
-not a stealth payload launch, so the rule excludes the msiexec context (the
-iwr sibling already does). The positive control proves the exclusion is
-narrow: without msiexec the hostile still fires.
+The historical MSI exclusion is preserved during relocation; ordinary EXE
+installers retain the capability without a hostile dropper claim.
 """
 import json
 import os
@@ -17,8 +10,8 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-TARGET = ('objectives/command-and-control/dropper/file-exec/spawn::'
-          'powershell-webclient-remote-exe-launch')
+TARGET = ('micro-behaviors/process/create/spawn::'
+          'powershell-webclient-executable-url-start-context')
 
 NEGATIVE = """\
 $WebClient = New-Object System.Net.WebClient
@@ -42,9 +35,9 @@ def main():
     dest.mkdir(parents=True, exist_ok=True)
     cases = {
         'msi-installer-negative.ps1': (NEGATIVE, False),
-        'plain-dropper-positive.ps1': (POSITIVE, True),
+        'plain-exe-positive.ps1': (POSITIVE, True),
     }
-    for name, (body, hostile) in cases.items():
+    for name, (body, present) in cases.items():
         path = dest / name
         path.write_text(body)
         result = subprocess.run(
@@ -54,7 +47,7 @@ def main():
             text=True, capture_output=True, check=True)
         report = json.loads(result.stdout)
         ids = {t['id'] for entry in report['files'] for t in entry['traits']}
-        assert (TARGET in ids) == hostile, (name, sorted(ids))
+        assert (TARGET in ids) == present, (name, sorted(ids))
         print('PASS', name, flush=True)
 
 
