@@ -1,0 +1,1 @@
+unsigned int swap(unsigned int x) { return __builtin_bswap32(x); }
