@@ -3,19 +3,11 @@
 # NTDS.dit reference and survives changes to hostnames, users, and destinations.
 defaults:
   platforms: [windows]
-  for: [scripts, binaries]
+  for: [scripts, source, binaries]
   attack: T1003.003
   mbc: B0005
 
 traits:
-  - id: shadow-copy-ntds-path
-    desc: NTDS.dit inside a Volume Shadow Copy path
-    crit: suspicious
-    conf: 0.98
-    if:
-      type: text
-      regex: '(?i)\\Device\\HarddiskVolumeShadowCopy\d+[\\/]Windows[\\/]NTDS[\\/]NTDS\.dit\b'
-
   - id: shadow-copy-registry-hive-path
     desc: Registry hive inside a VSS path
     crit: suspicious
@@ -25,15 +17,33 @@ traits:
       type: text
       regex: '(?i)HarddiskVolumeShadowCopy\d+[^\r\n]{0,48}\bconfig[\\/](SAM|SECURITY|SYSTEM)\b'
 
+  # Bind the credential-store path to the source operand. An unrelated
+  # CopyFile/shutil.copyfile invocation elsewhere in the file is insufficient.
+  - id: shadow-copy-ntds-copy-call
+    desc: Copies the NTDS database from a snapshot
+    crit: suspicious
+    conf: 0.98
+    for: [python, javascript, typescript, c, cpp, csharp, java]
+    if:
+      type: symbol
+      kind: call
+      regex: '(?i)(^|\.)(copy(file(sync)?|2)?|CopyFile(Ex)?[AW]?)$'
+      arg:
+        index: 0
+        from:
+          value: '(?i)HarddiskVolumeShadowCopy\d+[\\/]+Windows[\\/]+NTDS[\\/]+ntds\.dit\b'
+
 composite_rules:
   - id: shadow-copy-ntds-dump
-    desc: Copies NTDS.dit from a VSS path
+    desc: NTDS snapshot copy with VSS commands
     crit: hostile
     conf: 0.99
     all:
-      - id: micro-behaviors/fs/volume/shadow-copy::shadow-copy-file-copy-command
       - id: micro-behaviors/fs/volume/shadow-copy::vssadmin-shadow-operation
-      - id: shadow-copy-ntds-path
+      - id: micro-behaviors/fs/path/account-db::shadow-copy-ntds-database-path
+    any:
+      - id: micro-behaviors/fs/volume/shadow-copy::shadow-copy-file-copy-command
+      - id: shadow-copy-ntds-copy-call
     near_bytes: 4096
 
   - id: shadow-copy-registry-hive-dump
