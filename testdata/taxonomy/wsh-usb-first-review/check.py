@@ -18,7 +18,7 @@ def add(name, source, expected=None):
     path.write_text(source)
     checks[str(path)] = expected or {}
 U = 'objectives/lateral-movement/usb-worm/drive-infector::wsh-hidden-shortcut-drive-worm'
-R = 'well-known/malware/rat/houdini::wshrat-http-command-client'
+R = 'well-known/malware/rat/wshrat::http-command-client'
 C = 'micro-behaviors/communications/http/cookie-store::document-cookie-expire-directive'
 add('usb', usb, {U: True})
 add('usb-no-self-copy', usb.replace('fso.CopyFile(WScript.ScriptFullName,', 'fso.CopyFile(otherSource,'), {U: False})
@@ -26,7 +26,9 @@ add('usb-fixed-drive', usb.replace('DriveType == 1', 'DriveType == 2'), {U: Fals
 add('usb-visible-files', usb.replace('file.Attributes = 2 + 4;', ''), {U: False})
 add('usb-single-launch', usb.replace('&start Document.pdf', ''), {U: False})
 add('rat', rat, {R: True})
-add('rat-no-registration', rat.replace('"WSHRAT"', '"ordinary-client"'), {R: False})
+# Family behavior survives a renamed registration label.
+add('rat-no-registration', rat.replace('"WSHRAT"', '"ordinary-client"'), {R: True})
+add('rat-no-task-protocol', rat[:rat.index('switch (task)')], {R: False})
 add('download', (fixtures / 'http-download.js').read_text(), {C: False, U: False, R: False})
 add('cookie', 'document.cookie = "session=; Max-Age=0; path=/";', {C: True})
 # Inert synthetic PE headers let the VM-port matcher prove its operation,
