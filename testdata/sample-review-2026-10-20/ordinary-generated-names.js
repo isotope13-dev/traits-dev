@@ -1,0 +1,14 @@
+var _0xabcd = 1; function _0x1234() { return _0xabcd; }
+var value0 = _0xabcd;
+var value1 = _0xabcd;
+var value2 = _0xabcd;
+var value3 = _0xabcd;
+var value4 = _0xabcd;
+var value5 = _0xabcd;
+var value6 = _0xabcd;
+var value7 = _0xabcd;
+var value8 = _0xabcd;
+var value9 = _0xabcd;
+var value10 = _0xabcd;
+var value11 = _0xabcd;
+var states = "1|2|3|4|5";
