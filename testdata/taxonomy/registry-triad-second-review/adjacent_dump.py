@@ -1,0 +1,1 @@
+methods = {'lsass.exe': 'C:\\Windows\\Temp\\dump.dmp'}

@@ -1,0 +1,1 @@
+url_argument = '/i:https://example.test/file.sct' 

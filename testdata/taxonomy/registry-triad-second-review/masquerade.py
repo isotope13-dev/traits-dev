@@ -1,0 +1,1 @@
+dropped_image = 'C:\\Windows\\Temp\\lsass.exe' 

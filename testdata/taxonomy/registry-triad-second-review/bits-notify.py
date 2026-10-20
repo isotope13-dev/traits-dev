@@ -1,0 +1,1 @@
+command = 'bitsadmin /SetNotifyCmdLine job calc.exe NULL' 

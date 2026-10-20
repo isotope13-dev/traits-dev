@@ -1,0 +1,1 @@
+print("Explicit WinRM client")
