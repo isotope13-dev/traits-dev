@@ -11,7 +11,7 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 RUSTLS = "micro-behaviors/crypto/library/provider::rustls-crate-path"
-GO_TLS = "micro-behaviors/data/runtime/library::go-tls-internal-ciphersuites"
+GO_TLS = "micro-behaviors/data/runtime/library::go-tls-ciphersuites-reference"
 KEY = "micro-behaviors/data/config/browser-preference::chromium-key-storage-reference"
 COOKIE = "micro-behaviors/fs/path/cookie::cookie-sqlite-database-reference"
 OLD_KEY = "well-known/lib/platform/browser-automation/drivers/selenium::browser-profile-chrome-key-material"
@@ -46,7 +46,25 @@ with tempfile.TemporaryDirectory(prefix="npm-triage-controls-") as directory:
         subprocess.run(["cc", "-O0", str(source), "-o", str(binary)], check=True)
         ids = findings(binary)
         assert (RUSTLS in ids) == expected, (name, ids)
-        assert (GO_TLS in ids) != expected, (name, ids)
+        # A bare CipherSuites token is shared by unrelated TLS libraries.
+        assert GO_TLS not in ids, (name, ids)
+        print(name + ": PASS")
+
+    for name, token, expected in [
+        ("qualified-go-tls", "crypto/tls.CipherSuites", True),
+        ("qualified-go-tls-slash", "crypto/tls/CipherSuites", True),
+        ("objc-socket-tls-option", "GCDAsyncSocketSSLCipherSuites", False),
+        ("different-go-function", "crypto/tls.CipherSuitesExtra", False),
+    ]:
+        source = base / (name + ".c")
+        binary = base / (name + ".bin")
+        source.write_text(
+            "#include <stdio.h>\nint main(void) { puts(" + json.dumps(token)
+            + "); return 0; }\n"
+        )
+        subprocess.run(["cc", "-O0", str(source), "-o", str(binary)], check=True)
+        ids = findings(binary)
+        assert (GO_TLS in ids) == expected, (name, ids)
         print(name + ": PASS")
 
     for name, contents, expected in [

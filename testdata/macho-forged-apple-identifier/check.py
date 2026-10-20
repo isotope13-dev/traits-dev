@@ -1,7 +1,9 @@
-"""Forged Apple platform identity controls; never execute an image.
+"""Apple identifier versus authenticated provenance; never execute an image.
 
 An ad-hoc signature is self-signed: anyone can stamp any CodeDirectory
-identifier, including `com.apple.*`. `metadata/signed/platform::apple`
+identifier, including `com.apple.*`. Xcode simulator test runners also retain
+that prefix legitimately, so it is not a hostile forgery finding.
+`metadata/signed/platform::apple`
 must therefore require a certificate chain anchoring at Apple, not just
 the identifier prefix, or every forged identifier suppresses
 platform-gated findings (and the packed-command-runner composites that
@@ -24,6 +26,7 @@ import tempfile
 APPLE = 'metadata/signed/platform::apple'
 PREFIX = 'metadata/binary/signing::apple-identifier-prefix'
 FORGED = 'objectives/evasion/masquerade/trust::adhoc-forged-apple-platform-identity'
+PAIR = 'metadata/signed/trust-level::adhoc-apple-identifier'
 ADHOC = 'metadata/signed/trust-level::adhoc'
 
 FIXTURE = pathlib.Path('testdata/taxonomy/browser-export-final/adhoc-notes-client.macho')
@@ -63,12 +66,12 @@ def main():
         base = pathlib.Path(tmp) / 'adhoc-notes-client.macho'
         base.write_bytes(original)
         cases.append(('adhoc-fixture', base,
-                      {APPLE: False, PREFIX: False, FORGED: False, ADHOC: True}))
+                      {APPLE: False, PREFIX: False, FORGED: False, PAIR: False, ADHOC: True}))
 
         forged = pathlib.Path(tmp) / 'forged-apple-identifier.macho'
         forged.write_bytes(original.replace(OLD_ID, NEW_ID))
         cases.append(('forged-apple-identifier', forged,
-                      {APPLE: False, PREFIX: True, FORGED: True, ADHOC: True}))
+                      {APPLE: False, PREFIX: True, FORGED: False, PAIR: True, ADHOC: True}))
 
         positive = None
         for candidate in POSITIVE_CANDIDATES:
@@ -84,7 +87,7 @@ def main():
                 break
         if positive is not None:
             cases.append(('genuine-apple-binary', positive,
-                          {APPLE: True, PREFIX: True, FORGED: False}))
+                          {APPLE: True, PREFIX: True, FORGED: False, PAIR: False}))
         else:
             print(json.dumps({'case': 'genuine-apple-binary', 'skipped': True,
                               'reason': 'no Apple-signed Mach-O on this host'}))
