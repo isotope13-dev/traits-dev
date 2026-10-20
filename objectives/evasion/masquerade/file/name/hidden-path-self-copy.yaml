@@ -1,0 +1,56 @@
+# Bind API slots and stack buffers, not build addresses or the dropped name.
+# The hidden destination gains the UTF-16 .exe suffix; CopyFileW's source is
+# the very buffer populated by GetModuleFileNameW(NULL,...).
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+traits:
+  - id: x86-hidden-path-exe-self-copy
+    desc: Hides a path and self-copies as path.exe
+    crit: suspicious
+    conf: 0.99
+    attack: T1036.005,T1564.001
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule hidden_path_exe_self_copy {
+          strings:
+            $slots = { 8B 1D ?? ?? ?? ?? 55 8B 2D ?? ?? ?? ?? }
+            $hide = { 6A 07 8D 8C 24 ?? ?? ?? ?? 51 FF D5 }
+            $self = { 68 ?? ?? ?? ?? 8D 94 24 ?? ?? ?? ?? 52 6A 00 FF D3 }
+            $copy = {
+              8B 0D ?? ?? ?? ?? 8B 15 ?? ?? ?? ?? 89 08
+              66 8B 0D ?? ?? ?? ?? 89 50 04 6A 00
+              8D 94 24 ?? ?? ?? ?? 66 89 48 08 52
+              8D 84 24 ?? ?? ?? ?? 50 FF 15 ?? ?? ?? ??
+            }
+          condition:
+            pe.machine == pe.MACHINE_I386 and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].name == ".text" and
+              for any c in (1..#copy) : (
+                @copy[c] >= pe.sections[s].raw_data_offset and
+                @copy[c] + !copy[c] <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size and
+                uint32(@copy[c]+48) == pe.image_base + pe.import_rva("KERNEL32.dll", "CopyFileW") and
+                uint32(pe.rva_to_offset(uint32(@copy[c]+2)-pe.image_base)) == 0x0065002e and
+                uint32(pe.rva_to_offset(uint32(@copy[c]+8)-pe.image_base)) == 0x00650078 and
+                uint16(pe.rva_to_offset(uint32(@copy[c]+17)-pe.image_base)) == 0 and
+                for any h in (1..#hide) : (
+                  @hide[h] >= @copy[c]-192 and @hide[h] < @copy[c] and
+                  uint32(@hide[h]+5) == uint32(@copy[c]+29) and
+                  for any m in (1..#self) : (
+                    @self[m] > @hide[h] and @self[m] < @copy[c] and
+                    uint32(@self[m]+8)+4 == uint32(@copy[c]+41) and
+                    for any l in (1..#slots) : (
+                      @slots[l] >= pe.sections[s].raw_data_offset and
+                      @slots[l] >= @hide[h]-1024 and @slots[l] < @hide[h] and
+                      uint32(@slots[l]+2) == pe.image_base + pe.import_rva("KERNEL32.dll", "GetModuleFileNameW") and
+                      uint32(@slots[l]+9) == pe.image_base + pe.import_rva("KERNEL32.dll", "SetFileAttributesW")
+                    )
+                  )
+                )
+              )
+            )
+        }
