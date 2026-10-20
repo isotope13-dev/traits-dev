@@ -20,7 +20,7 @@ value = response.json()["result"]["secret"]
       "micro-behaviors/communications/rpc::secret-read-rpc-session-token-context"], []),
     ("remote_notebook.py", '''from google.colab import output
 from IPython.display import Javascript, display
-display(Javascript("async function identify() { return import('https://cdn.example.net/fingerprint.js'); }"))
+display(Javascript("async function identify() { return import('https://assets.library-cdn.net/fingerprint.js'); }"))
 visitor = output.eval_js("identify()")
 ''', ["micro-behaviors/os/module/require::python-remote-es-module-import",
       "micro-behaviors/process/interpreter/eval/indirect::notebook-js-result-readback",
@@ -34,7 +34,7 @@ value = output.eval_js("identify()")
     ("browser.js", 'async function identify() { return FingerprintJS.load(); }\n',
      ["micro-behaviors/os/sysinfo/hardware::fingerprintjs-load-call"], []),
     ("predicate.py", 'def is_hosted_notebook():\n    return False\n',
-     ["micro-behaviors/data/source/function/names::hosted-notebook-predicate-name"], []),
+     ["metadata/file/function::hosted-notebook-predicate-name"], []),
 ]
 
 with tempfile.TemporaryDirectory(prefix="wheel-placement-controls-") as scratch:
