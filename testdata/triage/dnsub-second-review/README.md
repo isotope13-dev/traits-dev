@@ -4,6 +4,10 @@ Verdict: **MALICIOUS**. The supplied Go source archive identifies itself as
 `github.com/Kaleidora/dnsub-scanning-tool@v0.0.0-20260915234017-06de181f2626`.
 SHA-256: `9686f8c67b1a2d489f2dde25e744259337751ca59f2826d448bf8f22c6001b07`.
 
+The second review of version `v0.0.0-20260916194142-ec0647985873`, SHA-256
+`b96893554ca1a3778eedcfb06b41f5f05491e1300ee173f1f56f96590373a234`,
+confirmed the same launcher behavior and build limitation described below.
+
 ## Source evidence
 
 `main.go:8` places 1,832 spaces between `exec.Command` and its argument list.
@@ -60,7 +64,14 @@ hostile composites now require this narrower evidence. The generic padding
 trait remains available for other calls and yields to the specific observation
 when present. No filename, endpoint, or staged basename gates detection.
 
-Run the 12 static positive/negative controls with:
+The repeat review also adds notable GET request-construction coverage for
+`http.NewRequest` and `http.NewRequestWithContext`. The method must occupy
+the correct argument position; a GET token in a URL, body, comment or quoted
+example does not establish GET construction. Ordinary Go DNS-client traits
+retain their notable severity and DNS capability mapping, without the
+unsupported ATT&CK DNS command-and-control mapping.
+
+Run the 23 static positive/negative controls with:
 
 ```sh
 python3 testdata/triage/dnsub-second-review/check.py --work-dir /path/to/scratch
@@ -69,3 +80,6 @@ python3 testdata/triage/dnsub-second-review/check.py --work-dir /path/to/scratch
 Controls cover the four launching methods, visible code, unrelated padded
 calls, constructor-only code, an unrelated launched command, a program name
 appearing only as an argument, comments, and below-threshold padding.
+GET controls cover method constants, quoted and raw literals, the context
+constructor's shifted method position, POST, misplaced GET arguments, comments
+and quoted code examples.

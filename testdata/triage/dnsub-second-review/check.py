@@ -13,6 +13,7 @@ HOSTILE = {
     "objectives/execution/payload/file-exec::go-powershell-certutil-stage",
     "objectives/evasion/security-bypass/policy/execution::go-hidden-powershell-policy-bypass",
 }
+GET_REQUEST = "micro-behaviors/communications/http/get::go-http-get-request-construction"
 
 
 def main():
@@ -46,6 +47,24 @@ def main():
     case("comment-only", "// " + command, forbidden=HOSTILE | {PADDED, GENERIC})
     case("below-padding-threshold", re.sub(r" {500,}", " " * 499, command),
          forbidden=HOSTILE | {PADDED, GENERIC})
+
+    # GET is the method argument, not any occurrence in a constructor call.
+    for name, body, expected in (
+        ("get-method-constant", 'http.NewRequest(http.MethodGet, target, nil)', True),
+        ("get-method-literal", 'http.NewRequest("GET", target, nil)', True),
+        ("get-method-raw-literal", 'http.NewRequest(`GET`, target, nil)', True),
+        ("get-context-method", 'http.NewRequestWithContext(ctx, http.MethodGet, target, nil)', True),
+        ("get-context-literal", 'http.NewRequestWithContext(ctx, "GET", target, nil)', True),
+        ("post-method", 'http.NewRequest(http.MethodPost, target, nil)', False),
+        ("get-only-in-url", 'http.NewRequest("POST", http.MethodGet, nil)', False),
+        ("get-only-in-body", 'http.NewRequest("POST", target, http.MethodGet)', False),
+        ("get-context-only-in-url", 'http.NewRequestWithContext(ctx, "POST", "GET", nil)', False),
+        ("get-only-in-comment", '// http.NewRequest(http.MethodGet, target, nil)', False),
+        ("get-only-in-string", 'println(`http.NewRequest(http.MethodGet, target, nil)`)', False),
+    ):
+        source = 'package main\nimport "net/http"\nfunc main() {\n' + body + '\n}\n'
+        cases.append((name, source, {GET_REQUEST} if expected else set(),
+                      HOSTILE if expected else HOSTILE | {GET_REQUEST}))
 
     def scan(item):
         name, source, required, forbidden = item
