@@ -1,53 +1,28 @@
+# Unit 42, PEERSTITCH, Figure 6: auto-script traversal installs an Apache
+# DNS-01 interpreter hook. Renewal mode and interpreter configuration alone
+# have legitimate uses; the exploited write supplies the attack context.
 defaults:
-  platforms: [unix]
-  for: [scripts, source]
-  attack: T1053
-  mbc: OB0007
-
-traits:
-  # An ACME DNS-01 challenge handler pointing at a script interpreter. The
-  # certificate manager executes this command with challenge parameters
-  # supplied by the ACME server, so mapping it to /bin/node (or another
-  # interpreter) turns every renewal into remote-controlled execution.
-  # Legitimate hooks point at dedicated validation scripts, not interpreters.
-  - id: acme-dns-challenge-interpreter
-    desc: ACME DNS challenge handler runs an interpreter
-    crit: suspicious
-    conf: 0.9
-    if:
-      type: text
-      regex: 'ChallengeDns01[^\n]{0,80}/bin/(node|sh|bash|dash|python[0-9.]*|perl|php|ruby)\b'
-    unless:
-      - id: metadata/file/profile/source-indications/
-
-  # Forcing the certificate manager into always-renew mode makes it poll and
-  # re-run the challenge handler continuously, which is what converts a
-  # one-shot validation hook into a persistent re-execution loop.
-  - id: acme-always-renew-mode
-    desc: ACME client forced into always-renew polling
-    crit: suspicious
-    conf: 0.9
-    if:
-      type: text
-      regex: 'MDRenewMode\s+always\b'
-    unless:
-      - id: metadata/file/profile/source-indications/
+  platforms: [unix, windows]
+  for: [scripts, source, text, json]
+  attack: T1505
 
 composite_rules:
-  # A renewal hook that executes an interpreter on every poll is the
-  # certificate-management persistence channel: the web server itself
-  # re-triggers the payload each time it attempts a renewal, with parameters
-  # drawn from the remote ACME directory. Either leg alone is configuration;
-  # together they are a persistent execution primitive with no legitimate
-  # pairing (renewal hooks invoke validation helpers, not shells).
-  - id: acme-renewal-hook-persistence
-    desc: Certificate renewal hook executes an interpreter persistently
-    crit: hostile
+  - id: acme-dns-challenge-interpreter
+    desc: Auto-script traversal with ACME interpreter hook
+    crit: suspicious
     conf: 0.96
+    near_bytes: 2048
     all:
-      - type: trait
-        id: acme-dns-challenge-interpreter
-      - type: trait
-        id: acme-always-renew-mode
-    unless:
-      - id: metadata/file/profile/source-indications/
+      - id: micro-behaviors/os/autorun/control::apache-md-dns01-interpreter-handler
+    any:
+      - id: objectives/privilege-escalation/exploit/vulnerabilities/appliance::fortios-auto-script-path-traversal
+      - id: objectives/privilege-escalation/exploit/vulnerabilities/appliance::fortios-auto-script-audit-traversal
+
+  - id: acme-renewal-hook-persistence
+    desc: Auto-script exploit with recurring ACME interpreter hook
+    crit: hostile
+    conf: 0.98
+    near_bytes: 2048
+    all:
+      - id: acme-dns-challenge-interpreter
+      - id: micro-behaviors/crypto/certificate/usage::apache-md-always-renew-mode
