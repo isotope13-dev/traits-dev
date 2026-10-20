@@ -27,7 +27,7 @@ EXPECTED = {
     "letter.txt": ["objectives/lateral-movement/social-engineering/lures::advance-fee-fraud-letter"],
     "diagnostics.ts": ["micro-behaviors/os/telemetry/activity::shell-guard-recent-read",
                        "micro-behaviors/os/telemetry/activity::shell-guard-command-rpc-output"],
-    "detached.py": ["objectives/evasion/process/hidden/execution::nohup-hidden-curl-staged-script-exec"],
+    "detached.py": ["micro-behaviors/process/deploy::nohup-curl-temp-script-cluster"],
     "telemetry-installer.js": ["micro-behaviors/os/telemetry/logging/llm::global-agent-content-telemetry-write"],
     "static.kt": [],
     "domains.json": [],
@@ -77,8 +77,7 @@ def main():
             ids = {t["id"] for t in traits}
             assert set(required) <= ids, (name, set(required) - ids)
             assert not RETIRED & ids, (name, RETIRED & ids)
-            if name != "detached.py":
-                assert not any(t["crit"] >= 5 for t in traits), (name, traits)
+            assert not any(t["crit"] >= 5 for t in traits), (name, traits)
             if name in ZERO_HIGH:
                 assert not any(t["crit"] >= 4 for t in traits), (name, traits)
             if name == "static.kt":

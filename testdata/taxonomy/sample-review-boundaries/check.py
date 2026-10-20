@@ -34,7 +34,7 @@ with tempfile.TemporaryDirectory(prefix='trait-boundaries-', dir=args.scratch) a
     add('agent.json', json.dumps({'system_prompt': prompt}), [llm + 'llm-unrestricted-mode-system-prompt'])
     payload = "' UNION SELECT username, password FROM users--"
     add('catalog.json', json.dumps({'payloads': [payload]}), [query], [sql])
-    add('query.py', 'query = ' + repr(payload) + '\n', [query, sql])
+    add('query.py', 'query = ' + repr(payload) + '\n', [query], [sql])
     add('encode.py', 'def encode(payload):\n    return "".join(chr(0xE0000 + ord(ch)) for ch in payload)\n', [encoder, smuggling])
     add('sanitize.py', 'def clean(text):\n    return "".join(chr(ord(ch)) for ch in text if not 0xE0000 <= ord(ch) <= 0xE007F)\n', [], [encoder, smuggling])
     add('driver.c', 'const char *driver = "WinRing0x64.sys";\n', [], [miner])

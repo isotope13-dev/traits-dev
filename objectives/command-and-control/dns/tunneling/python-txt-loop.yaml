@@ -1,0 +1,95 @@
+# Python flow currently leaves for-loop bindings opaque. This structural rule
+# binds the helper's DNS stdout -> regex fields -> returned list -> loop item
+# -> Base32 decode -> the third argument of a sh -c argv. Captured identifiers
+# are compared rather than relying on this fixture's function/variable names.
+defaults:
+  platforms: [unix, windows]
+  for: [python]
+  conf: 0.98
+  attack: T1071.004,T1059.004,T1140
+traits:
+  - id: python-dns-txt-base32-field-shell-loop
+    desc: DNS TXT fields feed Base32 shell loop
+    crit: suspicious
+    if:
+      type: tree-sitter
+      query: |
+        ((module
+          (function_definition
+            name: (identifier) @source
+            body: (block
+              (expression_statement
+                (assignment left: (identifier) @output
+                  right: (attribute
+                    object: (call
+                      function: (attribute
+                        object: (identifier) @query_module
+                        attribute: (identifier) @query_method)
+                      arguments: (argument_list
+                        . (list . (string) @cli . (string) @query_type)))
+                    attribute: (identifier) @stdout)))
+              . (expression_statement
+                (assignment left: (identifier) @fields
+                  right: (call
+                    function: (attribute
+                      object: (identifier) @regex_module
+                      attribute: (identifier) @findall)
+                    arguments: (argument_list
+                      . (string) . (identifier) @output_ref .))))
+              . (return_statement (identifier) @fields_return)))
+          (function_definition
+            body: (block
+              (for_statement
+                left: (identifier) @field
+                right: (call function: (identifier) @source_ref)
+                body: (block
+                  (try_statement
+                    body: (block
+                      (expression_statement
+                        (assignment left: (identifier) @command
+                          right: (call
+                            function: (attribute
+                              object: (identifier) @base64_module
+                              attribute: (identifier) @b32decode)
+                            arguments: (argument_list
+                              . (binary_operator left: (identifier) @field_ref) .))))
+                      . (expression_statement
+                        (call
+                          function: (attribute
+                            object: (identifier) @process_module
+                            attribute: (identifier) @process_method)
+                          arguments: (argument_list
+                            . (list
+                              . (string) @shell . (string) @command_flag
+                              . (call
+                                function: (attribute
+                                  object: (identifier) @command_ref
+                                  attribute: (identifier) @decode)
+                                arguments: (argument_list)) .))))))))))) @chain
+          (#eq? @query_module "subprocess")
+          (#eq? @query_method "run")
+          (#match? @cli "^[\"']nslookup[\"']$")
+          (#match? @query_type "^[\"']-type=TXT[\"']$")
+          (#eq? @stdout "stdout")
+          (#eq? @regex_module "re")
+          (#eq? @findall "findall")
+          (#eq? @output @output_ref)
+          (#eq? @fields @fields_return)
+          (#eq? @source @source_ref)
+          (#eq? @field @field_ref)
+          (#eq? @base64_module "base64")
+          (#eq? @b32decode "b32decode")
+          (#eq? @process_module "subprocess")
+          (#eq? @process_method "run")
+          (#match? @shell "^[\"']/bin/(ba)?sh[\"']$")
+          (#match? @command_flag "^[\"']-c[\"']$")
+          (#eq? @command @command_ref)
+          (#eq? @decode "decode")
+        )
+composite_rules:
+  - id: python-dns-txt-returned-fields-shell-exec
+    desc: DNS TXT fields decode into shell commands
+    crit: hostile
+    all:
+      - id: python-dns-txt-base32-field-shell-loop
+      - id: micro-behaviors/data/decode/base32::python-base32-decode
