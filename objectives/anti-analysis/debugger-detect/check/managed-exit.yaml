@@ -1,0 +1,40 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+traits:
+  # Require both debugger API names, the Exit member and the short-circuit
+  # conditional call layout inside the CLR code/metadata section. This is a
+  # probable anti-analysis gate, not resolution of MethodDef/MemberRef tokens.
+  # No keylogger identity, endpoint, build name or fixed metadata RID is needed.
+  - id: managed-dual-debugger-check-exit-layout
+    desc: Managed debugger checks with exit-call layout
+    crit: suspicious
+    conf: 0.95
+    attack: T1622
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule managed_dual_debugger_check_exit_layout {
+          meta:
+            filetypes = "pe,dll"
+          strings:
+            $clr = "BSJB"
+            $native = "\x00IsDebuggerPresent\x00"
+            $debugger = "\x00Debugger\x00"
+            $attached = "\x00get_IsAttached\x00"
+            $exit = "\x00Exit\x00"
+            // MethodDef call; short-circuit; MemberRef call; boolean invert;
+            // merge false; local store/reload; conditional call with int 0.
+            $gate = { 28 ?? ?? ?? 06 2D ?? 28 ?? ?? ?? 0A 16 FE 01
+                      2B ?? 16 [0-8] 2D ?? 16 28 ?? ?? ?? 0A }
+          condition:
+            pe.is_pe and
+            for any i in (0..pe.number_of_sections - 1) : (
+              pe.sections[i].name == ".text" and
+              for all of them : (
+                $ in (pe.sections[i].raw_data_offset ..
+                      pe.sections[i].raw_data_offset + pe.sections[i].raw_data_size - 1)
+              )
+            )
+        }
