@@ -1,0 +1,58 @@
+# Decode with the key in the counted loop, rather than matching encoded bytes
+# by chance. CALL must target that loop; RET enters the decrypted body, which
+# opens the default DTA name for update, keeps the returned handle, advances
+# the key, and jumps to a self-image write through the same loop. No family
+# name, exact size, initial key or specimen hash is required.
+defaults:
+  platforms: [windows, unix]
+  for: [dos_com, data]
+  size_max: 4096
+
+traits:
+  - id: dos-call-xor-dta-overwrite-code
+    desc: XOR body opens DTA host for self-overwrite
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule dos_call_xor_dta_overwrite_code {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $entry = { B4 4E BA ?? 01 E8 ?? 00 }
+            $loop = { B9 ?? 00 BE 08 01 80 34 ?? 46 E2 FA B1 ?? CD 21 C3 }
+            $inc = "\xfe\x06" xor(1-255)
+            $open = "\xba\x9e\x00\xb8\x02\x3d\xcd\x21\x93\xeb" xor(1-255)
+            $write = "\xb4\x40\xba\x00\x01" xor(1-255)
+            $mask = "*.COM\x00" xor(1-255)
+          condition:
+            $entry at 0 and
+            for any i in (1..#loop) : (
+              @loop[i] < 240 and
+              @loop[i] == 8 + uint16(6) and
+              uint16(@loop[i]+1) == @loop[i] - 8 and
+              uint8(@loop[i]+13) >= @loop[i] + !loop[i] and
+              uint8(@loop[i]+13) <= filesize and
+              for any m in (1..#mask) : (
+                @mask[m] == uint16(3) - 0x100 and
+                @mask[m] >= 23 and @mask[m] + !mask[m] <= @loop[i] - 5 and
+                (uint8(@mask[m]) ^ 0x2a) == uint8(@loop[i]+8)
+              ) and
+              for any n in (1..#inc) : (
+                @inc[n] == 8 and
+                (uint8(8) ^ 0xfe) == uint8(@loop[i]+8) and
+                (uint8(10) ^ uint8(@loop[i]+8)) == @loop[i] + 8 and
+                (uint8(11) ^ uint8(@loop[i]+8)) == 1
+              ) and
+              for any o in (1..#open) : (
+                @open[o] == 12 and
+                (uint8(12) ^ 0xba) == uint8(@loop[i]+8) and
+                23 + (uint8(22) ^ uint8(@loop[i]+8)) == @loop[i] - 5
+              ) and
+              for any w in (1..#write) : (
+                @write[w] == @loop[i] - 5 and
+                (uint8(@write[w]) ^ 0xb4) == uint8(@loop[i]+8)
+              )
+            )
+        }

@@ -253,17 +253,6 @@ traits:
       type: hex
       pattern: "2E 80 32 ?? [0-2] (E3|E2) [0-8] 49 46 EB"
 
-  # Bytewise decoder used by small encrypted DOS COM infector bodies:
-  # MOV AH,[SI] / XOR AH,imm8 / MOV [SI],AH / INC SI / LOOP.
-  # Also matches direct XOR [SI],imm8 / INC SI / LOOP.
-  - id: dos-fixed-key-xor-si-loop
-    desc: DOS in-place fixed-key XOR decoder
-    crit: notable
-    conf: 0.92
-    if:
-      type: hex
-      pattern: "(8A 24 80 F4 ?? 88 24|80 34 ??) 46 E2"
-
   # In-place XOR [SI],imm8 loops sometimes self-modify the short branch byte
   # they use as the first payload byte, then DEC DX/JNZ back to the XOR.
   - id: dos-self-modifying-xor-si-dx-loop
@@ -347,13 +336,6 @@ traits:
       type: hex
       pattern: "C6 06 ?? ?? 30 E8 ?? ??"
 
-  - id: dos-call-register-xor-stub
-    desc: DOS sets up and calls XOR loop
-    crit: notable
-    conf: 0.94
-    if:
-      type: hex
-      pattern: "(B9 ?? ?? B0 ?? BE ?? ??|B4 4E BA ?? ??) E8 ?? ??"
 
   # Copying word decoder: LODSW, swap bytes, XOR with a 16-bit immediate,
   # swap back, STOSW, LOOP, then RET into the revealed body. The key is a
@@ -415,25 +397,6 @@ traits:
             #junk >= 4
         }
 
-  # MOV CX,imm16 / MOV SI,01xxh / XOR BYTE [SI],imm8 / INC SI / LOOP.
-  # The counted body starts after leading setup, and the key byte varies.
-  - id: dos-counted-xor-si-0103-loop
-    desc: DOS counted XOR decrypts from entry offset
-    crit: notable
-    conf: 0.94
-    size_max: 4096
-    if:
-      type: yara
-      source: |
-        rule dos_counted_xor_si_0103_loop {
-          meta:
-            filetypes = "dos_com,data"
-          strings:
-            $loop = { B9 ?? 00 BE ?? 01 80 34 ?? 46 E2 FA }
-          condition:
-            $loop in (0..256)
-        }
-
 composite_rules:
   # Rollups so composites can require "a delta stub" or "an XOR loop" without
   # pinning the register or key schedule a fresh sample happens to use.
@@ -463,7 +426,7 @@ composite_rules:
       - id: dos-fixed-key-xor-word-copy-loop
       - id: dos-fixed-key-xor-word-bx-loop
       - id: dos-fixed-key-xor-loop
-      - id: dos-fixed-key-xor-si-loop
+      - id: objectives/impact/infect/binary/dos/overwrite::dos-call-xor-dta-overwrite-code
       - id: dos-self-modifying-xor-si-dx-loop
       - id: dos-fixed-key-xor-word-si-loop
       - id: dos-fixed-key-xor-overlap-word-si-loop
@@ -485,19 +448,18 @@ composite_rules:
       - id: dos-patched-retf-xor-loop
       - id: dos-patched-retf-xor-call
 
-  # An XOR loop that only runs position-independent (or only runs behind a
-  # divide-error guard) is how encrypted DOS virus bodies start; packer stubs
-  # do not pair these shapes, so the combination convicts.
-  - id: dos-encrypted-virus-body
-    desc: DOS virus decrypts an encrypted body
-    crit: hostile
+  # XOR plus an indirect entry or exception guard suggests concealment,
+  # but does not establish infection; legitimate protectors also use it.
+  - id: dos-xor-loop-with-call-or-guard
+    desc: DOS XOR loop with call or guard
+    crit: suspicious
     conf: 0.93
     all:
       - id: dos-xor-loop-dispatch
     any:
       - id: dos-delta-offset-dispatch
       - id: objectives/anti-analysis/debugger-detect/exception::dos-int0-div-trigger
-      - id: dos-call-register-xor-stub
+      - id: metadata/binary/code/control-transfer::dos-register-setup-near-call
 
   - id: dos-appended-two-stage-incrementing-xor
     desc: DOS decodes an appended body through two incrementing-XOR stages
