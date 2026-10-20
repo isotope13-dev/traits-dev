@@ -1,0 +1,99 @@
+# Resolve the delegate target and setter through CLR metadata, rather than
+# combining a callback name with an unrelated constant-returning method.
+# Covers optimized #~ metadata with two-byte heap/table indices and a tiny
+# `ldc.i4.1; ret` callback installed through an instance setter. Static setters
+# and other layouts deliberately remain unmatched.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  crit: notable
+  conf: 0.99
+
+traits:
+  - id: dotnet-installed-trust-all-callback
+    desc: CIL installs an always-true certificate callback
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule dotnet_installed_trust_all_callback {
+          strings:
+            $tables = "#~\x00\x00" ascii
+            $strings = "#Strings\x00" ascii
+            $setter = /set_(Remote|Server)CertificateValidationCallback\x00/
+            $delegate = "RemoteCertificateValidationCallback\x00" ascii
+            $namespace = "System.Net.Security\x00" ascii
+            $ctor = ".ctor\x00" ascii
+            // The only permitted intermediate operations duplicate and cache
+            // the delegate. An arbitrary gap could discard or replace it.
+            $bind = {
+              FE 06 ?? ?? ?? 06 73 ?? ?? ?? 0A [0-6] 6F ?? ?? ?? 0A
+            }
+          condition:
+            pe.is_pe and $setter and $delegate and $namespace and $bind and
+            pe.data_directories[14].virtual_address != 0 and
+            with clr = pe.rva_to_offset(pe.data_directories[14].virtual_address),
+                 root = pe.rva_to_offset(uint32(clr+8)) : (
+              uint32(root) == 0x424a5342 and
+              for any th in (1..#tables) : (
+                @tables[th] >= root+24 and @tables[th] < root+512 and
+                for any sh in (1..#strings) : (
+                  @strings[sh] >= root+24 and @strings[sh] < root+512 and
+                  with tab = root+uint32(@tables[th]-8),
+                       heap = root+uint32(@strings[sh]-8),
+                       valid = uint32(tab+8) | (uint32(tab+12) << 32),
+                       v1 = valid-((valid >> 1) & 0x5555555555555555),
+                       v2 = (v1 & 0x3333333333333333)+((v1 >> 2) & 0x3333333333333333),
+                       v3 = (v2+(v2 >> 4)) & 0x0f0f0f0f0f0f0f0f,
+                       n = (v3+(v3 >> 8)+(v3 >> 16)+(v3 >> 24)+(v3 >> 32)+(v3 >> 40)+(v3 >> 48)+(v3 >> 56)) & 0x7f : (
+                    // Normal optimized table prefix: Module, TypeRef, TypeDef,
+                    // Field, MethodDef, Param, InterfaceImpl, MemberRef.
+                    uint8(tab+6) == 0 and (valid & 0x7ff) == 0x757 and
+                    n >= 8 and n <= 56 and valid < 0x0100000000000000 and
+                    uint32(tab+24) == 1 and
+                    for all r in (0..n-1) : (uint32(tab+24+4*r) < 2048) and
+                    with types = tab+24+4*n+10,
+                         methods = types+6*uint32(tab+28)+14*uint32(tab+32)+6*uint32(tab+36),
+                         members = methods+14*uint32(tab+40)+6*uint32(tab+44)+4*uint32(tab+48) : (
+                      for any b in (1..#bind) : (
+                        (!bind[b] == 16 or
+                          (!bind[b] == 22 and uint16(@bind[b]+11) == 0x8025 and
+                           uint8(@bind[b]+16) == 4)) and
+                        for any sec in (0..pe.number_of_sections-1) : (
+                          pe.sections[sec].name == ".text" and
+                          @bind[b] >= pe.sections[sec].raw_data_offset and
+                          @bind[b]+!bind[b] <= pe.sections[sec].raw_data_offset+pe.sections[sec].raw_data_size
+                        ) and
+                        with target = uint32(@bind[b]+2) & 0xffffff,
+                             ctor = uint32(@bind[b]+7) & 0xffffff,
+                             setter = uint32(@bind[b]+!bind[b]-4) & 0xffffff : (
+                          target > 0 and target <= uint32(tab+40) and
+                          ctor > 0 and ctor <= uint32(tab+52) and
+                          setter > 0 and setter <= uint32(tab+52) and
+                          with method = pe.rva_to_offset(uint32(methods+14*(target-1))),
+                               owner = uint16(members+6*(ctor-1)) : (
+                            // Tiny method header (two code bytes), true, ret.
+                            uint8(method) == 0x0a and uint16(method+1) == 0x2a17 and
+                            (owner & 7) == 1 and (owner >> 3) > 0 and
+                            (owner >> 3) <= uint32(tab+28) and
+                            for any d in (1..#delegate) : (
+                              heap+uint16(types+6*((owner >> 3)-1)+2) == @delegate[d]
+                            ) and
+                            for any ns in (1..#namespace) : (
+                              heap+uint16(types+6*((owner >> 3)-1)+4) == @namespace[ns]
+                            ) and
+                            for any c in (1..#ctor) : (
+                              heap+uint16(members+6*(ctor-1)+2) == @ctor[c]
+                            ) and
+                            for any s in (1..#setter) : (
+                              heap+uint16(members+6*(setter-1)+2) == @setter[s]
+                            )
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
