@@ -124,7 +124,7 @@ for name in ("pm-argv-kotlin", "cmd-argv-kotlin"):
         (False, False, True))
     cases["ordinary-" + name] = (src.replace(disable_line, ""), (False, False, True))
 
-ATTRIBUTION = "objectives/evasion/masquerade/identity/app::android-store-disable-play-attributed-install"
+ATTRIBUTION = "objectives/evasion/masquerade/identity/installer::android-play-store-installer-masquerade"
 ATTRIBUTION_CALL = "micro-behaviors/os/package-manager/management::android-play-installer-attribution-call"
 setter = '        params.setInstallerPackageName("com.android.vending");\n'
 with_attribution = PM.replace("        int id =", setter + "        int id =")
@@ -176,6 +176,8 @@ with nullcontext(str(fixture_dir)) as directory:
     assert reports.keys() == cases.keys(), reports.keys()
     for name, (_, (bypass, disable, restore)) in cases.items():
         traits = {t["id"]: t["crit"] for t in reports[name].get("traits", [])}
+        attribution = name == "play-attribution"
+        bypass = bypass and attribution
         for trait, expected in ((EVASION, bypass), (INSTALL, False), (DISABLE, disable), (RESTORE, restore)):
             assert (trait in traits) == expected, (name, trait, expected, traits)
             if trait in traits:
