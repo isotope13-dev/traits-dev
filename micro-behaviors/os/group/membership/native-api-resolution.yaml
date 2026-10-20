@@ -1,0 +1,37 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86]
+
+traits:
+  - id: net-local-group-add-members-resolved-global
+    desc: Resolves NetLocalGroupAddMembers to global
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule resolve_net_local_group_add_members_global {
+          strings:
+            $api = "NetLocalGroupAddMembers\x00" ascii
+            // push API name; push DLL name; LoadLibrary; push its handle;
+            // GetProcAddress; store the resulting function pointer; return.
+            $resolve = { 68 ?? ?? ?? ?? 68 ?? ?? ?? ?? FF 15 ?? ?? ?? ??
+                         50 FF 15 ?? ?? ?? ?? A3 ?? ?? ?? ?? C3 }
+          condition:
+            pe.machine == pe.MACHINE_I386 and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].name == ".text" and
+              for any r in (1..#resolve) : (
+                @resolve[r] >= pe.sections[s].raw_data_offset and
+                @resolve[r] + !resolve[r] <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size and
+                uint32(@resolve[r]+19) == pe.image_base + pe.import_rva("KERNEL32.dll", "GetProcAddress") and
+                (uint32(@resolve[r]+12) == pe.image_base + pe.import_rva("KERNEL32.dll", "LoadLibraryW") or
+                 uint32(@resolve[r]+12) == pe.image_base + pe.import_rva("KERNEL32.dll", "LoadLibraryA")) and
+                for any a in (1..#api) : (
+                  pe.rva_to_offset(uint32(@resolve[r]+1)-pe.image_base) == @api[a]
+                )
+              )
+            )
+        }
