@@ -1,0 +1,1 @@
+$sig = Get-AuthenticodeSignature -FilePath $dlPath
