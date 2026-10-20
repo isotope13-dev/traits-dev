@@ -12,7 +12,7 @@ HELPERS = runpy.run_path(str(ROOT / "testdata/taxonomy/mirai-native-review/check
 elf, reports, escaped = (HELPERS[k] for k in ("elf", "reports", "escaped"))
 ENTRY = "micro-behaviors/process/create/shell/interactive::router-cli-shell-entry-sequence"
 WORM = "objectives/lateral-movement/worm/device-network::router-shell-busybox-payload-propagation"
-KILLER = "objectives/impact/degrade/rival-bot/competitor::router-propagation-deleted-image-killer"
+KILLER = "objectives/impact/degrade/process::router-propagation-deleted-image-killer"
 RC4 = "micro-behaviors/crypto/symmetric/stream/rc4::"
 WINDOWS = {
     "x86-initial-prga-buffer-xor": bytes.fromhex(

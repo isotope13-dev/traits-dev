@@ -14,7 +14,7 @@ FLOOD = 'objectives/impact/dos/flood::hdrincl-multivector-flood-bot'
 BANNER = 'well-known/malware/botnet/mirai/http::loader-status-banner'
 STATUS = 'micro-behaviors/communications/flood::attack-status-banner'
 SIGNAL = 'micro-behaviors/process/control/signal::posix-kill-symbol'
-DELETED = 'objectives/impact/degrade/rival-bot/competitor::router-propagation-deleted-image-killer'
+DELETED = 'objectives/impact/degrade/process::router-propagation-deleted-image-killer'
 XOR = bytes.fromhex('80 32 22 80 72 01 22 48 83 C2 02 48 39 CA 75 F0')
 KILL = bytes.fromhex('31 C0 BF 02 00 00 00 E8 00 00 00 00 44 89 F7 BE 09 00 00 00 E8 00 00 00 00')
 

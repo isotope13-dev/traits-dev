@@ -1,0 +1,58 @@
+# Repeated target traversal bound to a sendto wrapper and socketcall syscall.
+# All displacements vary; no addresses, endpoints, keys or specimen sizes.
+defaults:
+  platforms: [linux]
+  for: [elf]
+  arch: [x86]
+traits:
+  - id: x86-bound-strided-target-send-loop
+    desc: i386 repeated target loop calls sendto
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "elf"
+        rule i386_bound_strided_target_send_loop {
+          strings:
+            // Copy target port, send a packet, advance the target by 24
+            // bytes, and branch backwards for another target sweep.
+            $loop = {
+              66 8B 45 02 66 89 47 02 50 50 6A 10 57 68 40 40 00 00
+              8B 44 24 ?? 50 56 8B 44 24 ?? 50 E8 [4] 83 C4 20
+              8B 4C 24 ?? 8B 54 24 ?? 41 83 C7 18 89 4C 24 ??
+              39 54 24 ?? 0F 84 ?? ?? FF FF
+            }
+            // Six cdecl arguments packed into a socketcall argument vector;
+            // subcommand 11 is sendto. The second call is also bound below.
+            $send = {
+              83 EC 34
+              8B 44 24 38 89 44 24 1C 8B 44 24 3C 89 44 24 20
+              8B 44 24 40 89 44 24 24 8B 44 24 44 89 44 24 28
+              8B 44 24 48 89 44 24 2C 8B 44 24 4C 89 44 24 30
+              8D 44 24 1C 50 6A 0B E8 [4] 83 C4 3C C3
+            }
+            $socketcall = {
+              53 83 EC 08 8B 54 24 10 8B 4C 24 14 87 D3
+              B8 66 00 00 00 CD 80
+            }
+          condition:
+            elf.machine == elf.EM_386 and
+            for any s in (0..elf.number_of_sections-1) : (
+              elf.sections[s].name == ".text" and
+              for any l in (1..#loop) : (
+                @loop[l] >= elf.sections[s].offset and
+                @loop[l]+!loop[l] <= elf.sections[s].offset+elf.sections[s].size and
+                for any w in (1..#send) : (
+                  @send[w] >= elf.sections[s].offset and
+                  @send[w]+!send[w] <= elf.sections[s].offset+elf.sections[s].size and
+                  @loop[l]+34+int32(@loop[l]+30) == @send[w] and
+                  for any c in (1..#socketcall) : (
+                    @socketcall[c] >= elf.sections[s].offset and
+                    @socketcall[c]+!socketcall[c] <= elf.sections[s].offset+elf.sections[s].size and
+                    @send[w]+63+int32(@send[w]+59) == @socketcall[c]
+                  )
+                )
+              )
+            )
+        }
