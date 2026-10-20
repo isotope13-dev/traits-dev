@@ -1,0 +1,1 @@
+dojo.version = {major: 1, minor: 10, patch: 4};

@@ -1,0 +1,1 @@
+api.loadPlugin("viewer");
