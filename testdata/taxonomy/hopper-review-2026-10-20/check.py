@@ -27,7 +27,7 @@ EXPECTED = {
     "letter.txt": ["objectives/lateral-movement/social-engineering/lures::advance-fee-fraud-letter"],
     "diagnostics.ts": ["micro-behaviors/os/telemetry/activity::shell-guard-recent-read",
                        "micro-behaviors/os/telemetry/activity::shell-guard-command-rpc-output"],
-    "detached.py": ["micro-behaviors/process/deploy::nohup-curl-temp-script-cluster"],
+    "detached.py": ["micro-behaviors/process/deploy/file-exec::nohup-curl-temp-script-cluster"],
     "telemetry-installer.js": ["micro-behaviors/os/telemetry/logging/llm::global-agent-content-telemetry-write"],
     "static.kt": [],
     "domains.json": [],

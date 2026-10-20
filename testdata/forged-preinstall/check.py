@@ -9,7 +9,7 @@ import sys
 
 samples, controls = map(Path, sys.argv[1:3])
 cleave = sys.argv[3] if len(sys.argv) > 3 else "cleave"
-tls = "micro-behaviors/process/deploy::unverified-curl-temp-interpreter-cluster"
+tls = "micro-behaviors/process/deploy/file-exec::unverified-curl-temp-interpreter-cluster"
 hidden = "micro-behaviors/process/daemonize/detach::nohup-curl-download-output-suppressed"
 temp = "micro-behaviors/process/create/shell/command-string::exec-temp-unix-path"
 retired = "objectives/command-and-control/dropper/node-bootstrap::exec-temp-unix-path"

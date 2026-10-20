@@ -11,7 +11,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[3]
-DEPLOY = 'micro-behaviors/process/deploy::x86-packet-task-download-launch'
+DEPLOY = 'micro-behaviors/process/deploy/file-exec::x86-packet-task-download-launch'
 CONTROL = ('objectives/command-and-control/remote-command/tasking::'
            'packet-flood-download-launch-control')
 FAMILY = {

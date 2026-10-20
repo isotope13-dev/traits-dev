@@ -22,8 +22,8 @@ xxe = 'objectives/execution/exploit/xxe::system-url-embeds-entity-ref'
 query = 'micro-behaviors/data/db/sql::union-credential-column-query-text'
 sql_payload = 'objectives/execution/exploit/sql-injection::quoted-credential-union-payload'
 detach = 'micro-behaviors/process/daemonize/detach::nohup-curl-download-output-suppressed'
-deploy = 'micro-behaviors/process/deploy::nohup-curl-temp-script-cluster'
-unverified = 'micro-behaviors/process/deploy::unverified-curl-temp-interpreter-cluster'
+deploy = 'micro-behaviors/process/deploy/file-exec::nohup-curl-temp-script-cluster'
+unverified = 'micro-behaviors/process/deploy/file-exec::unverified-curl-temp-interpreter-cluster'
 retired = {
     'objectives/command-and-control/dns/tunneling::python-dns-cli-command-exec',
     'objectives/lateral-movement/exploit/container::nsenter-host-shadow-read',

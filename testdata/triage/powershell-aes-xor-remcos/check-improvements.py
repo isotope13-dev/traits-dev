@@ -17,7 +17,7 @@ decoded = "metadata/file/encoding::decoded-payload-layer"
 mismatch = "metadata/file/extension/identity::pe-content-extension-mismatch"
 settings = "metadata/binary/resource/identity::wide-settings-resource-name"
 context = "well-known/malware/rat/remcos::remcos-rc4-settings-resource"
-cooccurrence = "micro-behaviors/process/deploy::powershell-decrypt-eval-cooccurrence"
+cooccurrence = "micro-behaviors/process/deploy/script-eval::powershell-decrypt-eval-cooccurrence"
 linked = "objectives/command-and-control/dropper/script-eval/embedded::ps-aes-iex-stage-loader"
 
 with tempfile.TemporaryDirectory(prefix="remcos-trait-controls-") as tmp:

@@ -12,8 +12,8 @@ I = 'well-known/malware/botnet/mirai/identity::rc4-credential-selfrep-bot'
 R = 'micro-behaviors/crypto/symmetric/stream/rc4::x64-stack-byte-state-prga'
 D = 'micro-behaviors/process/fd/dup::x86-64-syscall-dup2-sectionless'
 L = 'micro-behaviors/communications/flood::native-packet-send-loop'
-S = 'micro-behaviors/process/deploy::public-ip-fetch-chmod-local-launch'
-M = 'micro-behaviors/process/deploy::multiarch-transfer-launch-cleanup-sweep'
+S = 'micro-behaviors/process/deploy/file-exec::public-ip-fetch-chmod-local-launch'
+M = 'micro-behaviors/process/deploy/file-exec::multiarch-transfer-launch-cleanup-sweep'
 
 
 def elf(code=b'\xc3', rodata=b'', sectionless=False):

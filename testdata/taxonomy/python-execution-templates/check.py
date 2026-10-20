@@ -11,7 +11,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[3]
 HERE = Path(__file__).resolve().parent
 GEN = 'micro-behaviors/metaprogramming/generation::python-returned-exec-template'
-CHAIN = 'micro-behaviors/process/deploy::python-exec-zlib-marshal-chain'
+CHAIN = 'micro-behaviors/process/deploy/script-eval::python-exec-zlib-marshal-chain'
 PACK = 'objectives/anti-static/pack/runtime::exec-marshal-zlib'
 EXEC = 'micro-behaviors/process/interpreter/eval/direct::exec-builtin'
 SEND = 'micro-behaviors/communications/messaging/send::pytelegrambotapi-send-document'

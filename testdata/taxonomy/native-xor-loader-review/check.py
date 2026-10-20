@@ -17,7 +17,7 @@ EXEC = bytes.fromhex(
     '89 45 fc 85 c0 74 3f 8b 0e 8b 57 10 51 52 50 e8 00 00 00 00 '
     '83 c4 0c 90 8b 5d fc 53 5e 90 ff d6')
 XOR = 'micro-behaviors/data/decode/xor::x86-header-key-search-byte-xor'
-CALL = 'micro-behaviors/process/deploy::x86-rwx-copied-buffer-call'
+CALL = 'micro-behaviors/process/deploy/image-map::x86-rwx-copied-buffer-call'
 LOADER = 'objectives/anti-static/obfuscation/encoding/xor::x86-key-searched-xor-code-loader'
 HTTP = 'micro-behaviors/communications/http/client/wininet::unsigned-rwx-reloc-wininet-api-profile'
 MAPPING = 'micro-behaviors/communications/http/client/wininet::unsigned-reloc-wininet-file-mapping-api-profile'

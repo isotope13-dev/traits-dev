@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 import zipfile
 
-DEPLOY = 'micro-behaviors/process/deploy::browser-headers-near-response-eval'
+DEPLOY = 'micro-behaviors/process/deploy/script-eval::browser-headers-near-response-eval'
 COPY = 'micro-behaviors/os/clipboard/write::browser-token-variable-write'
 STORE = 'micro-behaviors/data/db/web-storage::okta-token-store-key'
 JSON_B64 = 'micro-behaviors/data/decode/base64::json-call-atob-proximity'

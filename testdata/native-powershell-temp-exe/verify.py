@@ -11,7 +11,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 pe_image = runpy.run_path(str(ROOT / 'testdata/native-rat-loader-triage/verify.py'))['pe_image']
-CHAIN = 'micro-behaviors/process/deploy::powershell-download-launch-same-temp-exe'
+CHAIN = 'micro-behaviors/process/deploy/file-exec::powershell-download-launch-same-temp-exe'
 PAYLOAD = 'objectives/execution/payload/file-exec::native-hidden-powershell-temp-exe-launch'
 HIDDEN = 'objectives/evasion/process/hidden/execution::nested-hidden-powershell-temp-payload'
 OLD_CHANNEL = 'objectives/command-and-control/channel/http/transport::native-direct-ip-http-channel-with-hidden-powershell-fetch'

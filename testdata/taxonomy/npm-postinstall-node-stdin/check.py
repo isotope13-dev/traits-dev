@@ -9,8 +9,8 @@ import io
 import tarfile
 
 ROOT = Path(__file__).resolve().parents[3]
-CURL = 'micro-behaviors/process/deploy::npm-postinstall-curl-node-stdin'
-WGET = 'micro-behaviors/process/deploy::npm-postinstall-wget-node-stdin'
+CURL = 'micro-behaviors/process/deploy/interpreter-stdin::npm-postinstall-curl-node-stdin'
+WGET = 'micro-behaviors/process/deploy/interpreter-stdin::npm-postinstall-wget-node-stdin'
 BRAND = 'objectives/supply-chain/impersonation/brand::angular-core-scoped-squat-remote-install'
 ARCHIVE = 'objectives/command-and-control/dropper/interpreter-stdin::impersonated-package-archived-node-loader'
 RULES = [CURL, WGET, BRAND, ARCHIVE]

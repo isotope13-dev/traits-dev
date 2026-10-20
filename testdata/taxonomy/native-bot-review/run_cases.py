@@ -24,7 +24,7 @@ def main():
     dos = "objectives/impact/dos/attack/botnet::i386-attack-parser-gre-flood"
     bot = "objectives/command-and-control/botnet/iot::static-x86-procfs-socketcall-bot"
     edr = "objectives/impact/degrade/edr/targeting::socket-tasking-security-process-killer"
-    launch = "micro-behaviors/process/deploy::multiarch-fallback-launch-profile"
+    launch = "micro-behaviors/process/deploy/file-exec::multiarch-fallback-launch-profile"
     hidden = "objectives/evasion/file-hiding/staging::hidden-temp-fallback-fetch-exec"
 
     def case(name, data, present=(), absent=(), no_hostile=False):
@@ -79,7 +79,7 @@ def main():
     no_launch = visible.replace(b'./"$f" "$A" 2>/dev/null &', b'sleep 1 &')
     case("download-chmod-background-sleep.sh", no_launch, absent=(launch, hidden), no_hostile=True)
     case("hidden-path-only.sh", b'#!/bin/sh\nd="/tmp/.cache"\nmkdir -p "$d"\n', absent=(launch, hidden), no_hostile=True)
-    cleanup = "micro-behaviors/process/deploy::multiarch-fallback-launch-cleanup"
+    cleanup = "micro-behaviors/process/deploy/file-exec::multiarch-fallback-launch-cleanup"
     fixture = repo / "testdata/benign/unverified-multiarch-stager-controls.sh"
     case("unverified-launch-cleanup.sh", fixture.read_bytes(),
          (launch, cleanup), no_hostile=True)

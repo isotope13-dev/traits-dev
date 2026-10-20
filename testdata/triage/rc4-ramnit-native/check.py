@@ -23,7 +23,7 @@ PARTS = {
     'resume': bytes.fromhex('8b 85 4c 72 01 20 2b 85 54 72 01 20 89 44 24 1c 61 ff e0'),
 }
 
-MAP = "micro-behaviors/process/deploy::x86-rc4-buffer-to-manual-pe-map"
+MAP = "micro-behaviors/process/deploy/image-map::x86-rc4-buffer-to-manual-pe-map"
 LOAD = "objectives/command-and-control/dropper/image-map::concealed-rc4-native-image-loader"
 PARASITE = "objectives/impact/infect/virus::x86-xor-sibling-drop-launch-host-resume"
 RAMNIT = "well-known/malware/worm/ramnit::ramnit-sibling-dropper"
