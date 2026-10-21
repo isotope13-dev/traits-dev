@@ -302,6 +302,15 @@ to satisfy a number. The current reviewed exceptions are:
   this addition from the existing copy observations. See
   [B281](taxonomy-migration/batches/281-cp-command-placement/README.md).
 
+- `metadata/file/naming` at 101 rules. The additional large eight-hex basename
+  is distinct from the existing 40/64-hex forms; its size predicate is retained.
+- `metadata/file/archive` at 101 rules. The additional archive entropy/name
+  context records two static properties without inferring a staged loader.
+  The VSIX review audited both 101-rule catalogs, found no duplicate matcher
+  shapes, and retained all scopes and consumers. The controls cover both naming
+  near misses and ordinary high-entropy archives; see the reproducible
+  [VSIX review records](testdata/taxonomy/vsix-triage-2026-10-20/triage-summary.json).
+
 ### Splitting a directory
 
 A split must place **every** existing rule, including the broadest, before
@@ -949,6 +958,11 @@ assignment beats a nested call, a call/argument relationship beats incidental
 member access, and a cast/comparison beats its operand's spelling. A shell
 command's words and options belong together in `command`, even when serialized
 as an argument array. An API name alone never acquires call semantics.
+
+Within `lang/natural`, `vocabulary` describes words or token sets; `phrasing`
+describes multiword clauses and their stated relationships, such as an action
+paired with omission of review. A clause alone does not establish an agent
+directive or prove that its described action ran.
 
 Use the existing neighboring subjects when no single syntax construct is the
 claim: `source/naming` for identifier vocabulary and function-name populations,

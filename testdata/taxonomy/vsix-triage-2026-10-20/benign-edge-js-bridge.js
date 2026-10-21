@@ -1,0 +1,1 @@
+const runtime=require('edge-js'); const fn=runtime.func(function(){/*using System; using System.Threading.Tasks; class Startup { public async Task<object> Invoke(object input) { return input; } }*/}); fn('hello',()=>{});

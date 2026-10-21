@@ -1,0 +1,15 @@
+@echo off
+setlocal enabledelayedexpansion
+set TIMESTAMP=20261021123000
+echo !TIMESTAMP:~0,4!
+echo !TIMESTAMP:~0,4!
+echo !TIMESTAMP:~0,4!
+echo !TIMESTAMP:~0,4!
+echo !TIMESTAMP:~0,4!
+echo !TIMESTAMP:~0,4!
+echo !TIMESTAMP:~0,4!
+echo !TIMESTAMP:~0,4!
+echo !TIMESTAMP:~0,4!
+echo !TIMESTAMP:~0,4!
+echo !TIMESTAMP:~0,4!
+echo !TIMESTAMP:~0,4!
