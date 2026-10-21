@@ -154,13 +154,25 @@
         "Bounded CPU-only emulation of that decoded arithmetic executes 189186 instructions before the first PEB read at stage offset 0x1b16d. No OS model, imports, filesystem, network, or native process execution was supplied.",
         "Static inspection shows PEB/module traversal and an XOR-word routine searching for an MZ result. This establishes another loader stage, not a recovered final malware family.",
         "Follow-up hash-checked tracing reaches registration of the handler at stage+0x1e37b. Direct CPU checks verify five exception codes and the transformation EIP += byte(EIP+20) XOR 0x19. A nonzero Dr0 causes a secondary invalid read in the handler model; it does not cleanly return SEARCH.",
-        "The API hash routine at 0x1d9bf was directly checked for five names, including RtlAddVectoredExceptionHandler, NtAllocateVirtualMemory, and ZwQueryVirtualMemory. Under the recorded synthetic returns, the trace reaches two allocation calls and a process-memory query.",
+        "The API hash routine at 0x1d9bf was directly checked for 38 names, including RtlAddVectoredExceptionHandler, NtAllocateVirtualMemory, and ZwQueryVirtualMemory. Under the recorded synthetic returns, the trace reaches two allocation calls and a process-memory query.",
         "The memory scanner at 0x1d33b walks 4 KiB pages and compares six printable-string length/hash pairs. The marker texts are unresolved.",
         "A separate trace explicitly assuming no memory-marker match reaches a far jump through selector 0x33 to 64-bit code at stage+0x1c9a2. Static inspection of that block shows a native PEB debug-byte check with an infinite loop on the nonzero branch. See nsis-control-flow.json and the portable trace model.",
-        "The portable mixed-mode model validates the selector-0x33 entry and selector-0x23 return. In a synthetic Windows 10 environment the x64 block executes 28,901 instructions, requests native memory protection (syscall 0x50), scans a NOP-filled native DLL text section, and returns to x86. The x86 continuation resolves ExitProcess and NtProtectVirtualMemory and reaches another protection call. See nsis-control-flow.json for every assumption and the stop boundary."
+        "The portable mixed-mode model validates the selector-0x33 entry and selector-0x23 return. In a synthetic Windows 10 environment the x64 block executes 28,901 instructions, requests native memory protection (syscall 0x50), scans a NOP-filled native DLL text section, and returns to x86. The x86 continuation resolves ExitProcess and NtProtectVirtualMemory and reaches another protection call. See nsis-control-flow.json for every assumption and the stop boundary.",
+        "The prior null pointer was a missing resolver-wrapper side effect: initialization saves LdrLoadDll+5 at [EBP+0xc]. The original pointer arithmetic is now directly CPU-checked, with the export itself explicitly synthetic.",
+        "The continuation writes a function prologue at LdrLoadDll, patches DbgBreakPoint to NOP, and patches DbgUiRemoteBreakin to call ExitProcess. API names are verified with the sample hash routine.",
+        "The EnumWindows callback increments a supplied counter. Zero modeled windows reaches TerminateProcess; twelve proceeds to NtSetInformationThread(-2, 0x11, NULL, 0). Assuming that succeeds, a 0x2dbff000-byte allocation request reached the former model limit. The subsequent sparse continuation is recorded in nsis-allocation-checks.json.",
+        "The large allocation is now modeled with sparse, non-executable backing: only 8192 bytes are touched before the new boundary. STATUS_NO_MEMORY instead makes the stage retry with 4096 fewer bytes.",
+        "Correcting FS:C0, preserving marker-scan setup/cleanup and supplying PEB.ProcessParameters removes an earlier spurious Internet-API path. No endpoint is inferred from that model artifact.",
+        "The corrected path queries ProcessDebugPort. Assuming zero, it reaches CreateProcessInternalW with the synthetic installer path and CREATE_SUSPENDED. Assuming child creation succeeds, NtReadVirtualMemory receives the returned child handle. Its requested size is zero under the incomplete synthetic DLL metadata. No child is created natively and no injection or hollowing is claimed.",
+        "Direct CPU replay establishes the prior zero-length NtReadVirtualMemory request came from the synthetic DLL export-directory RVA. The source address is DLL base plus SectionAlignment; first-section SizeOfRawData is saved separately. Five independent field controls pass.",
+        "With those two fields populated, the first suspended child supplies modeled DLL bytes to the current process, then is terminated. A second suspended child receives a distinct modeled handle. The stage builds a windir-derived SysWOW64\\mshtml.dll path, requests an SEC_IMAGE section, and requests its mapping into that second child. The authoritative trace stops before NtMapViewOfSection is given a result; see nsis-remote-checks.json.",
+        "The previously unresolved export hash 0x8bfb3ee0 is BaseThreadInitThunk, verified by the sample hash routine and corroborated by the kernel32 export declaration. The stage locates an ntdll .data pointer equal to that export. A zero-filled .data control terminates the second child; a seeded match follows a distinct branch.",
+        "The matching-pointer branch requests executable allocation and a copy of the modeled parent region into the second child, resumes its thread, reads the corresponding child .data slot and requests a four-byte overwrite to relocated stage+0xaf. See nsis-sections-checks.json.",
+        "The exact copy-time sparse image is now replayed in a separate CPU-only child model. The copied hook compares the thread start against the RFQ image entry point: a mismatch tail-jumps to the cached BaseThreadInitThunk, while the main-thread path restores the original slot and repeats the loader startup chain. Four register/module controls converge after about 4.72 million instructions at a real-DLL-content boundary: after protecting the synthetic mshtml view, its zero metadata produces a write at mapping base minus one. See nsis-child-checks.json."
       ],
       "remaining_limits": [
-        "Mixed-mode tracing stops at stage+0x1c02c when synthetic DLL code lacks a searched patch target, producing address 0xfffffffb. Real target-code semantics are still required; no final payload recovery is claimed.",
+        "The parent-side continuation reaches TerminateProcess after modeling the child-only pointer write. The child CPU replay stops at stage+0x9fa0 because the zero-filled synthetic mshtml mapping underflows to base-1. Matching x86 mshtml image bytes/layout are now the immediate evidence needed to continue; real ntdll initialized data and kernel32 export/runtime bases are still required to validate the exact Windows slot and startup timing.",
+        "All earlier OS/module/window/debug/allocation assumptions remain; the matching .data slot, symbolic remote image, remote allocation/copy, successful thread resume and initialized child pointer are additional assumptions. The child execution is CPU-only and does not model the scheduler race. The 64 MiB copy length is model geometry, not payload size.",
         "The relationship to the sparse companion files remains unresolved.",
         "The production NSIS path still omits its installer instruction stream, leaving the callback-loading chain undetected."
       ]
@@ -190,6 +202,27 @@
       "remaining_limits": [
         "No available copy contains the missing key/resource tail. No benign or hostile conclusion is invented for absent payload bytes."
       ]
+    },
+    {
+      "indices": [
+        12
+      ],
+      "sha256": [
+        "0a967cea6e689473893bfb06d740cd9d757b10ceb1183c85f81dc15cc8e8a703"
+      ],
+      "assessment": "malformed DOS resident-infector code; routed bad (Hopper noop)",
+      "findings": [
+        "Entry copies its body to low memory and swaps the two INT21 vector words at 0x84 and 0x86. A separate handler filters AH=40h writes whose first byte is E9h.",
+        "Under the recorded synthetic COM entry state, the installed vector is 0025:0025 while the apparent handler begins at copied-body offset 0x29. The target lands four bytes early; no successful infection is claimed.",
+        "A bounded structural filefacts recognizer now identifies the unchanged 65-byte original as dos_com. Existing rules emit two hostile and three suspicious findings. Two objective descriptions were corrected to describe the code evidence."
+      ],
+      "remaining_limits": [
+        "Actual DOS execution was not attempted. Startup register values in the CPU check are explicit assumptions."
+      ],
+      "evidence_reports": [
+        "dos-hook-model.json",
+        "dos-relocation-dispatch.json"
+      ]
     }
   ],
   "rule_change": {
@@ -202,21 +235,25 @@
     "external_exact_consumers": 0
   },
   "verification": {
-    "decoded_evidence": "verify.py passes six exact-hash evidence groups",
+    "decoded_evidence": "Six exact-hash evidence groups pass in the final recheck.",
     "dism_atomscan": "22 records; retired family IDs absent; both structural suspicious IDs retained",
     "managed_atomscan": "one distinct suspicious Base64/GZIP ID, zero hostile",
     "appimage_asar": "16009 records, zero high IDs; extracted AppRun also zero high",
-    "make_validate": "Passed: hostile 753/753, benign 1735/1735 and all other suites. A later concurrent rebase introduced unrelated unresolved conflicts; current-tree validation is pending their resolution.",
+    "make_validate": "validate ok: hostile 753/753  benign 1735/1735  does-nothing 176/176  drop-exec 45/45  hostile/supply-chain-corpus 555/555  hostile/triage20-batch-cocol 1/1  impact-wipe 67/67  obfuscation 78/78  purgatory/mirc-saved-variables 1/1  purgatory/source-recipe-declarations 1/1  purgatory/triage20-batch-coolan-unproven 1/1  purgatory/triage20-batch-local-python-unproven 1/1  purgatory/triage20-batch-rdp-controls 1/1  purgatory/triage20-gem-controls 2/2  reverse-shell 24/24  simple-stealer 65/65",
     "installed_validator_probe": "Older installed Cleave cannot load newer rpa/rpyc file types; not used as a substitute passing validator.",
     "appimage_native": "All 13 ELF members completed with zero high findings; full native/ASAR coverage ledger saved in appimage-coverage.json.",
     "affected_scan_assertions": "Trainer has exactly the one compressed-bundle ID; DISM has exactly the two retained structural IDs and neither retired family ID; complete ASAR and launcher have no high IDs.",
     "diff_check": "passed",
     "damaged_pe_dispatch": "20 dispatch tests passed; original Atomscan PE result verified; full make validate passed.",
-    "nsis_handler": "Five exception cases, two rejected controls, the nonzero-Dr0 failure, and five API hashes verified with bounded CPU-only checks. Both portable trace modes reproduced their recorded boundaries.",
-    "nsis_mixed_mode": "Portable driver reproduces x64 entry, protection request, x86 return, and the synthetic-code stop boundary. All assumptions are explicit. Final re-run reproduces the unchanged baseline (1,145,950 instructions) and mixed stop (1,811,899 cumulative x86 instructions).",
+    "nsis_handler": "Five accepted exception cases, two rejected controls, the nonzero-Dr0 failure and 38 API hashes verified with original code in a CPU-only model.",
+    "nsis_mixed_mode": "Baseline still stops at ZwQueryVirtualMemory after 1,145,950 instructions. Resolver setup, low-page fault semantics, debug-entry patches, zero/twelve-window branches and bounded large-allocation boundary are recorded in nsis-environment-checks.json.",
     "format_dispatch": "233 identification tests pass; fixed and dynamic VHD integration verified; unchanged originals rescanned with Atomscan; full make validate passes.",
     "earlier_jpeg_waiver": "Only five JPEG-carrier fixture failures reported by the current sibling binary; user explicitly deferred these failures.",
-    "triage_controls": "23 controls passed, including quoted versus executable epoch expressions."
+    "triage_controls": "23 controls passed, including quoted versus executable epoch expressions.",
+    "dos_relocation": "234 identification tests passed; unchanged original scans as dos_com with two hostile and three suspicious traits; CPU checks establish a malformed installed handler address.",
+    "nsis_allocation": "Seven sparse-memory controls pass. Corrected conditional child trace reproduces the NtReadVirtualMemory boundary after 4,980,487 cumulative x86 instructions with 8 KiB sparse backing. See nsis-allocation-checks.json.",
+    "nsis_remote": "Five independent original-code DLL-range controls and seven sparse-memory controls pass. The complete corrected conditional trace reproduces the mshtml.dll SEC_IMAGE mapping request into the second suspended child at 6,963,774 x86 instructions. See nsis-remote-checks.json.",
+    "nsis_sections": "Two original-code .data branch controls distinguish no-match termination from a matching-pointer allocation/copy/resume/read/overwrite chain. The final target equals relocated stage+0xaf. Static DLL-metadata helper smoke check passes."
   },
   "routing": {
     "new_good": [
@@ -232,25 +269,26 @@
     ],
     "hopper_results": {
       "moved": 6,
-      "noop": 7,
+      "noop": 8,
       "absent": 0,
       "failed": 0
     },
     "local_good_moves": 3,
     "initial_review_updated": "testdata/taxonomy/hopper-review-2026-10-20/review.json",
-    "holds_remaining": 7,
-    "gate": "Latest live-tree make validate passed. The user JPEG waiver remains recorded for the earlier six moves.",
+    "holds_remaining": 6,
+    "gate": "Unchanged DOS original rescanned with rebuilt Atomscan; rebuilt current Cleave passes full make validate before Hopper routing.",
     "new_bad": [
       24,
       11,
       13,
       14,
       15,
-      16
+      16,
+      12
     ]
   },
   "other_initial_holds": {
-    "DOS_and_mIRC": "Five DOS originals now route bad. The resident self-modifying DOS hook and malformed mIRC fragment remain held.",
+    "DOS_and_mIRC": "All six held DOS originals now route bad. The malformed mIRC fragment remains held.",
     "Jans_ops_agent_sysmanage": "Sysmanage cleared with one suspicious trait and routes good. Jans now has two real unusual findings; ops-agent keeps deliberate security-control findings. No blanket source suppression."
   }
 }

@@ -266,7 +266,10 @@ remains 100.
 `metadata/package/documentation/{claims,security-advisory,source}`,
 `metadata/registry`, `metadata/file/naming`,
 `metadata/file/profile/{test-indications,source-indications}` and
-`micro-behaviors/communications/url/host`. Naming properties record the scanned
+`micro-behaviors/communications/url/host` and
+`objectives/supply-chain/security-hold`. Security-holding status is independent
+of the target OS; its policy classifier does not assert code portability.
+Naming properties record the scanned
 filename or naming measurements; OS-specific path rules still require their
 own explicit platform scopes. Test-indication profiles combine metadata and
 directory observations; each child retains its OS/type gate, and the profile
@@ -627,7 +630,7 @@ distinguishes it.
 | `lateral-movement` | `exploit/<remote-surface>`, `brute-force/<service>`, `pass-the-hash`, `smb`, `ssh`, `worm`, `usb-worm`, `delivery` *(open)*, `social-engineering` | Reaching or spreading to **another** system. A mechanism-specific exploit or credential reuse beats a generic protocol home. Scanning is discovery; local cracking is `credential-access/cracking`; infecting local files is `impact/infect`. |
 | `persistence` | `login/<surface>`, `system/<surface>`, `firmware/<surface>` | Durable, unwanted reactivation, [by trigger](#persistence-follows-the-trigger). |
 | `privilege-escalation` | `exploit/<boundary>`, `elevation-control/<bypass>`, `token-manipulation`, `hijack-execution-flow/<surface>`, `modify-service`, `kernel-modules`, `install-certificate`, `process-injection` | A required crossing to greater authority. A privileged API, requested permission, `sudo` text or injection alone is not one. |
-| `supply-chain` | `impersonation/<deception>`, `trojanized/<trusted-input>`, `hidden-payload/<inspection-evasion>` | Abuse of component selection, distribution, or build and update trust; [package scope is not enough](#supply-chain-trust). |
+| `supply-chain` | `impersonation/<deception>`, `trojanized/<trusted-input>`, `hidden-payload/<inspection-evasion>`, `security-hold` | Abuse of component selection, distribution, or build and update trust; [package scope is not enough](#supply-chain-trust). `security-hold` is the explicit classification-policy exception below. |
 
 ### Objective boundaries
 
@@ -812,6 +815,19 @@ scope. Retained access without reactivation (created accounts, authorized SSH
 keys, now in `login/{account,ssh}`) is an [open checkpoint](#open-checkpoints).
 
 ### Supply-chain trust
+
+**Security-hold classification policy.** `security-hold` classifies a recognized
+security-held package as `hostile`, including an inert npm replacement or a
+vendored copy. This is an explicit exception to the usual requirement for
+artifact evidence of an attack. The finding describes security-holding status,
+not payload execution. An npm manifest must carry both `0.0.1-security` and the
+canonical npm security-holder repository in that same manifest; an authoritative
+registry record may instead supply its security-hold flag or holder description.
+A version, repository reference, README mention, ordinary deprecation, or
+unresolved dependency alone does not establish this classification. Metadata
+observations retain their own criticality; the hostile classification belongs
+only to `objectives/supply-chain/security-hold`. Archive parents inherit a
+matched member's finding, but different members must not supply separate legs.
 
 Read the claim without the package name. If it still only says "steals
 credentials" or "runs a downloaded payload", that result owns the composite;

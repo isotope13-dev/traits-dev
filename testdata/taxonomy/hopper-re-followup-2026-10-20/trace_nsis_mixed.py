@@ -6,9 +6,13 @@ from unicorn.x86_const import *
 ap=argparse.ArgumentParser(description=__doc__)
 ap.add_argument('--audit-root',type=Path,required=True)
 ap.add_argument('--output-dir',type=Path,required=True)
+ap.add_argument('--model-window-count',type=int,choices=range(65),default=None)
+ap.add_argument('--assume-thread-hide-success',action='store_true')
 args=ap.parse_args()
 model=Path(__file__).with_name('trace_nsis_stage.py')
-sys.argv=[str(model),'--audit-root',str(args.audit_root),'--output-dir',str(args.output_dir),'--assume-no-memory-marker','--model-mapped-memory']
+sys.argv=[str(model),'--audit-root',str(args.audit_root),'--output-dir',str(args.output_dir),'--assume-no-memory-marker','--model-mapped-memory','--model-resolver-state']
+if args.model_window_count is not None:sys.argv+=['--model-window-count',str(args.model_window_count)]
+if args.assume_thread_hide_success:sys.argv+=['--assume-thread-hide-success']
 g=runpy.run_path(str(model));old=g['u'];stage=g['stage'];out=g['output'];u=unicorn.Uc(unicorn.UC_ARCH_X86,unicorn.UC_MODE_64)
 assert old.reg_read(UC_X86_REG_EIP)==stage+0x1c995
 entry,selector=struct.unpack('<IH',old.mem_read(old.reg_read(UC_X86_REG_EAX),6))
@@ -53,13 +57,25 @@ for start,end,perm in old.mem_regions():old.mem_write(start,bytes(u.mem_read(sta
 # Supply explicit synthetic Windows structures to resumed x86 code.
 # FS has zero base in this 32-bit model, so [FS:30] is backed at address 0x30.
 old.mem_map(0x50000000,0x100000);old.mem_write(0x50000000,bytes(u.mem_read(0x50000000,0x100000)))
-old.mem_map(0,0x1000)
+if not any(start==0 for start,end,perm in old.mem_regions()):old.mem_map(0,0x1000)
 def old32(a,x):old.mem_write(a,struct.pack('<I',x))
-old32(0x30,0x50020000);old32(0x5002000c,0x50070000)
+old32(0x18,0x50000000);old32(0x30,0x50020000);old32(0x5002000c,0x50070000)
+# A synthetic installer invocation, not an observed launch command. The stage
+# reads ProcessParameters.CommandLine.Buffer via [PEB+10]+44; leaving this
+# pointer null incorrectly turns environment access into an obfuscation fault.
+old32(0x50020010,0x50090000)
+def old_unicode(structure, address, value):
+    encoded=value.encode('utf-16le')
+    old.mem_write(structure,struct.pack('<HHI',len(encoded),len(encoded)+2,address))
+    old.mem_write(address,encoded+b'\0\0')
+old_unicode(0x50090038,0x50092000,r'C:\triage\RFQ Fabrics.exe')
+old_unicode(0x50090040,0x50093000,r'"C:\triage\RFQ Fabrics.exe"')
+old32(0x50090048,0x50094000)
+
 old32(0x50070014,0x50071000);old32(0x50071000,0x50072000);old32(0x50072010,0x50080000)
 old32(0x5008003c,0x100);old32(0x5008012c,0x1000);old32(0x50080208,0x1000)
 old.mem_write(0x50081000,b'\x90'*0x1000)
 for name in regs:old.reg_write(globals()['UC_X86_REG_E'+name],u.reg_read(globals()['UC_X86_REG_R'+name])&0xffffffff)
 old.reg_write(UC_X86_REG_EFLAGS,u.reg_read(UC_X86_REG_EFLAGS));old.reg_write(UC_X86_REG_EIP,target)
-env=g['hook'].__globals__;env['started']=time.monotonic();env['events'].append({'assumption':'x64 continuation uses synthetic Windows 10 TEB/PEB/module metadata and a NOP-filled ntdll text section; protection syscall returns success; resumed x86 uses synthetic PEB/Ldr/PE headers and NOP text','x64_instructions':count,'return_to_x86':hex(target-stage)})
+env=g['hook'].__globals__;env['started']=time.monotonic();env['events'].append({'assumption':'x64 continuation uses synthetic Windows 10 TEB/PEB/module metadata and a NOP-filled ntdll text section; protection syscall returns success; resumed x86 uses synthetic PEB/Ldr/PE headers and NOP text','synthetic_command_line':r'"C:\triage\RFQ Fabrics.exe"','x64_instructions':count,'return_to_x86':hex(target-stage)})
 g['run_trace']()

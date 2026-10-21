@@ -10,7 +10,7 @@ YARA_UPDATE ?= $(if $(shell command -v yara-update 2>/dev/null),yara-update,$(ab
 
 COMPILED_DIR := third-party/compiled
 
-.PHONY: validate validate-uncached validate-profile taxonomy-check h3-import-reference-check precompile yara-compile yara-update install-precommit
+.PHONY: validate validate-uncached validate-profile taxonomy-check h3-import-reference-check npm-security-hold-check precompile yara-compile yara-update install-precommit
 
 # Rule validation.
 #
@@ -40,9 +40,13 @@ validate-profile:
 h3-import-reference-check:
 	python3 testdata/taxonomy/import-reference-precision/run_cases.py --cleave "$(CLEAVE)"
 
+npm-security-hold-check:
+	python3 testdata/taxonomy/npm-security-hold/check.py --cleave "$(CLEAVE)"
+
 # Taxonomy-migration checks (NEW_TAXONOMY_PLAN.md). Python-based and depends on
 # untracked scripts/, so it is kept out of `validate`.
 taxonomy-check:
+	$(MAKE) npm-security-hold-check
 	python3 testdata/taxonomy/winrt-json-bytecode/check.py --cleave "$(CLEAVE)"
 	python3 testdata/taxonomy/browser-import-candidate/run_cases.py --cleave "$(CLEAVE)"
 	python3 testdata/taxonomy/import-reference-precision/run_cases.py --cleave "$(CLEAVE)"
