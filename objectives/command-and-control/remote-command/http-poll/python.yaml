@@ -1,0 +1,47 @@
+defaults:
+  platforms: [unix, windows]
+  for: [python]
+  crit: suspicious
+  conf: 0.99
+  attack: T1071.001,T1059.006
+
+traits:
+  # Require the fetched body and executed identifier in the same loop body.
+  # Adjacency excludes an intervening overwrite; comments and prose do not
+  # produce these nodes. Neither the URL nor the variable names matter.
+  - id: python-http-response-exec-poll
+    desc: Loop executes downloaded HTTP response bodies
+    if:
+      type: tree-sitter
+      language: python
+      query: |
+        ((while_statement
+          condition: (true)
+          body: (block
+            (expression_statement
+              (assignment
+                left: (identifier) @received
+                right: (attribute
+                  object: (call
+                    function: (attribute
+                      object: (identifier) @client
+                      attribute: (identifier) @get))
+                  attribute: (identifier) @body)))
+            . (expression_statement
+              (call function: (identifier) @execute
+                arguments: (argument_list . (identifier) @executed)))))
+        (#match? @client "^(requests|httpx)$")
+        (#eq? @get "get")
+        (#match? @body "^(text|content)$")
+        (#eq? @execute "exec")
+        (#eq? @received @executed))
+
+composite_rules:
+  - id: python-detached-http-exec-poll
+    desc: HTTP exec loop with detached daemon setup
+    crit: hostile
+    all:
+      - id: python-http-response-exec-poll
+      - id: micro-behaviors/process/create/fork::python-os-fork-call
+      - id: micro-behaviors/process/daemonize/detach::python-setsid
+      - id: micro-behaviors/process/fd/dup::python-dup2
