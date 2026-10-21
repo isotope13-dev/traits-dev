@@ -1,0 +1,1 @@
+export const colors = '"abcdef01abcdef01abcdef01abcdef01abcdef01abcdef01abcdef01abcdef01abcdef01abcdef01abcdef01abcdef01abcdef01abcdef01abcdef01abcdef01"';
