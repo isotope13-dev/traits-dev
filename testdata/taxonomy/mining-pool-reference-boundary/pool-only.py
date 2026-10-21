@@ -1,0 +1,1 @@
+endpoint = "pool.supportxmr.com"
