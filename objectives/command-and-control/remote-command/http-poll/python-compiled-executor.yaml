@@ -1,0 +1,73 @@
+# The HTTP response variable, helper name and helper parameter must agree.
+# The lambda is opaque to source-call provenance (facts: anonymous-function),
+# so this requires the syntax tree, including the repeated request-to-exec link.
+# No URL, polling interval, synthetic filename or helper spelling is required.
+defaults:
+  platforms: [unix, windows]
+  for: [python]
+  attack: T1059.006,T1071.001
+traits:
+  - id: python-polled-response-compiled-executor
+    desc: Polled HTTP bodies drive compiled Python
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: tree-sitter
+      query: |
+        ((module
+          (function_definition
+            name: (identifier) @helper
+            parameters: (parameters (identifier) @parameter)
+            body: (block
+              (expression_statement (await (call
+                function: (attribute attribute: (identifier) @executor)
+                arguments: (argument_list
+                  (lambda body: (call
+                    function: (identifier) @exec
+                    arguments: (argument_list
+                      (call function: (identifier) @compile
+                        arguments: (argument_list
+                          . (identifier) @compiled
+                          . (string)
+                          . (string) @mode)))))))))))
+          (function_definition
+            body: (block
+              (while_statement condition: (true)
+                body: (block
+                  (try_statement body: (block
+                    (expression_statement (assignment
+                      left: (identifier) @received
+                      right: (attribute
+                        object: (call function: (attribute
+                          object: (identifier) @client
+                          attribute: (identifier) @get))
+                        attribute: (identifier) @text)))
+                    . (expression_statement (await (call
+                      function: (identifier) @invoked
+                      arguments: (argument_list . (identifier) @submitted)))))))))))
+          (#eq? @helper @invoked)
+          (#eq? @parameter @compiled)
+          (#eq? @received @submitted)
+          (#eq? @executor "run_in_executor")
+          (#eq? @exec "exec")
+          (#eq? @compile "compile")
+          (#match? @mode "^['\"]exec['\"]$")
+          (#match? @client "^(requests|httpx)$")
+          (#eq? @get "get")
+          (#eq? @text "text"))
+
+    # Cleave also parses plain quoted code as synthetic ##plain@ snippets.
+    # Those are source data, not a live request-to-executor surface. Encoded
+    # payload layers retain their own analysis and are not excluded here.
+    unless:
+      - type: path
+        regex: '##plain@0x[0-9a-f]+$'
+
+composite_rules:
+  - id: python-polled-compiled-code-daemon
+    desc: Detached daemon executes polled Python code
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: python-polled-response-compiled-executor
+      - id: micro-behaviors/process/daemonize/detach::python-fork-new-session
