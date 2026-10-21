@@ -1,5 +1,11 @@
 # Heartbreaker regression evidence
 
+Current placement and verdict follow-up (2026-10-21): see
+[minimod-heartbreaker-review-2026-10-21](../minimod-heartbreaker-review-2026-10-21/README.md).
+Encrypted replacement/rename is now a neutral notable capability; hostile
+source mutation requires the independent ransom-demand composite. The nine
+controls below continue to pass. The earlier record follows.
+
 Source: https://objective-see.org/blog/blog_0x8A.html (18 October 2026).
 The saved article was only an abstract. The full HTML, its eight article
 images, and its code blocks were extracted into the task's scratch directory.

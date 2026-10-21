@@ -93,7 +93,7 @@ args.report.write_text(result.stdout)
 files = {Path(f["path"]).name: f
          for line in result.stdout.splitlines()
          for f in json.loads(line)["files"]}
-impact = "objectives/impact/ransom/encrypt/filesystem::aead-destructive-file-relabeling"
+impact = "micro-behaviors/fs/write/encrypted::aead-overwrite-rename-profile"
 morph = ("objectives/anti-static/obfuscation/payload/polymorphic/generator"
          "::embedded-rust-source-mutation")
 for name in fixtures:
