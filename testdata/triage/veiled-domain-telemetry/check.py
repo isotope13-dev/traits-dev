@@ -16,9 +16,9 @@ bulk report. Either rotation alone dropped the old composites:
 - positive-aggregate-harvest.js: password-selected inputs read, pushed,
   and joined fires password-field-values-collected-joined. The finding
   feeds wallet-input-telemetry-http-exfiltration through the
-  credential-value-report-channel group, which is component crit and
-  therefore invisible in scan output: the staged archive assert below is
-  its observable proof.
+  dom-value-report-channel group, which also accepts value reporting with
+  DOM edit/submit listeners. The staged archive assert below exercises the
+  password-aggregation alternative without requiring an event listener.
 - negative-form-echo.js: password selector loop that never reads value
   fires neither.
 - staged-full-veiled.zip: no-data-claim manifest plus seed-entry page plus
