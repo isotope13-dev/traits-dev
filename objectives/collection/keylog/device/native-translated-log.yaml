@@ -1,0 +1,100 @@
+defaults:
+  for: [pe, dll]
+  platforms: [windows]
+  arch: [x86]
+  attack: T1056.001
+
+traits:
+  # The translated-key buffer is passed to the writer, which scrambles that
+  # same buffer in place before WriteFile. Relative calls bind the helpers;
+  # import-address checks bind the ToAscii and WriteFile thunks. Neither a
+  # keyboard API import nor a log-format string alone establishes recording.
+  # RID_INPUT, RAWINPUT keyboard selection, and the handler call distinguish
+  # message-driven device capture from polling for keyboard transitions.
+  - id: native-translated-scrambled-key-write-code
+    desc: Raw-input scrambled-key-write code
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule native_translated_scrambled_key_log {
+          strings:
+            $session = "[Log Started] - [%"
+            $poll = {
+              53 81 EC 78 01 00 00 C7 84 24 6C 01 00 00 00 00 00 00
+              C7 04 24 12 00 00 00 E8 ?? ?? ?? ?? 83 EC 04 98
+              25 00 80 00 00
+            }
+            $translate = {
+              C7 44 24 10 00 00 00 00 8D 54 24 26 89 54 24 0C
+              8D 54 24 68 89 54 24 08 89 44 24 04 8B 84 24 80 01 00 00
+              89 04 24 E8 ?? ?? ?? ?? 83 EC 14 83 F8 01 0F 85 ?? ?? ?? ??
+            }
+            $record = {
+              C7 44 24 08 00 00 00 00 8B 84 24 6C 01 00 00 89 44 24 04
+              8D 44 24 28 89 04 24 E8 ?? ?? ?? ??
+            }
+            $writer = {
+              57 56 53 81 EC 60 04 00 00 8B 84 24 78 04 00 00 88 44 24 3C
+            }
+            $write = {
+              8B 84 24 74 04 00 00 89 44 24 04 8B 84 24 70 04 00 00
+              89 04 24 E8 ?? ?? ?? ?? 8B 94 24 74 04 00 00 A1 ?? ?? ?? ??
+              C7 44 24 10 00 00 00 00 8D 4C 24 48 89 4C 24 0C
+              89 54 24 08 8B 94 24 70 04 00 00 89 54 24 04 89 04 24
+              E8 ?? ?? ?? ??
+            }
+            $scramble = {
+              83 EC 10 C7 44 24 0C 00 00 00 00 EB 24
+              8B 54 24 14 8B 44 24 0C 01 C2 8B 4C 24 14 8B 44 24 0C
+              01 C8 0F B6 00 83 F0 ?? 83 C0 ?? 88 02
+              83 44 24 0C 01 8B 44 24 0C 3B 44 24 18 72 D2
+            }
+            $raw = {
+              8B 44 24 2C 8B 00 83 F8 01 75 ?? 8B 44 24 2C
+              8B 40 18 3D 00 01 00 00 74 ?? 8B 44 24 2C 8B 40 18
+              3D 04 01 00 00 75 ?? 8B 44 24 2C 0F B7 40 16 0F B7 C0
+              89 04 24 E8 ?? ?? ?? ??
+            }
+            $rawread = {
+              C7 44 24 10 10 00 00 00 8D 54 24 3C 89 54 24 0C
+              C7 44 24 08 00 00 00 00 C7 44 24 04 03 00 00 10
+              89 04 24 FF D1
+            }
+          condition:
+            pe.machine == pe.MACHINE_I386 and all of them and
+            pe.imports("USER32.dll", "GetKeyboardState") and
+            pe.imports("USER32.dll", "GetKeyState") and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for all of ($poll, $translate, $record, $writer, $write, $scramble, $raw, $rawread) : (
+                @ >= pe.sections[s].raw_data_offset and
+                @+! <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size
+              )
+            ) and
+            @translate > @poll and @translate < @poll+1600 and
+            @record > @translate and @record+31 < @poll+1800 and
+            @record+31+int32(@record+27) == @writer and
+            @write > @writer and @write+77 < @writer+900 and
+            @write+26+int32(@write+22) == @scramble and
+            @raw+58+int32(@raw+54) == @poll and
+            @rawread < @raw and @raw < @rawread+800 and
+            uint16(@translate+43+int32(@translate+39)) == 0x25ff and
+            uint32(@translate+45+int32(@translate+39)) ==
+              pe.image_base+pe.import_rva("USER32.dll", "ToAscii") and
+            uint16(@write+77+int32(@write+73)) == 0x25ff and
+            uint32(@write+79+int32(@write+73)) ==
+              pe.image_base+pe.import_rva("KERNEL32.dll", "WriteFile")
+        }
+
+composite_rules:
+  - id: native-translated-scrambled-key-log
+    desc: Raw-input keylogger with scrambled logs
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: native-translated-scrambled-key-write-code
+      - id: micro-behaviors/ui/window/enumerate::get-foreground-window
+      - id: micro-behaviors/hardware/input/keyboard/poll::get-keyboard-state
