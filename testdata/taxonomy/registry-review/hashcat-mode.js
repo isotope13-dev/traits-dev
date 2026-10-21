@@ -1,0 +1,1 @@
+const entries=[{command:"hashcat -m 13100 hashes.txt words.txt",desc:"Kerberos reference"},{command:"hashcat --help",desc:"usage reference"},{command:"hashcat --version",desc:"version reference"}]; module.exports={entries};
