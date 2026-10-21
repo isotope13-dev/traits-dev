@@ -20,7 +20,7 @@ packed = (args.samples_dir / '30bb1fd1244c/no-chrome-identity.exe').read_bytes()
 rat = (args.samples_dir / '96c139caa475/2026-10-17_df4c25e653ac476f73e2bcc600e5f7c0_elex_wannacry').read_bytes()
 input_post = 'objectives/exfiltration/stealer/input::managed-file-keylog-form-post-cooccurrence'
 firefox = 'objectives/credential-access/browser/firefox::packed-firefox-nss-login-decryptor'
-family = 'well-known/malware/stealer/cosmicduke::cosmicduke-builder-and-cipher-key'
+family = 'well-known/malware/stealer/cosmicduke::packed-credential-stealer'
 self_delete = 'objectives/evasion/self-delete/file/script::stack-built-ping-self-delete-x86'
 rat_delete = 'objectives/evasion/self-delete/file/script::wininet-office-self-delete-rat'
 tasking = 'objectives/command-and-control/remote-command/tasking::native-http-binary-task-dispatch'
@@ -77,14 +77,14 @@ cases.append(('managed-without-polling-profile', replace_pattern(managed,
     rb'\x06\x20\xff\x00\x00\x00\xfe\x02\x16\xfe\x01\x0b\x07\x2d', 0x2c), set()))
 cases += [
     ('packed-renamed-positive', packed, {firefox, family}),
-    ('packed-without-nss', change(packed, b'NSS_Ini', b'XYZ_Ini'), {family}),
-    ('packed-without-decrypt', change(packed, b'SDR_Decrypt', b'SDR_XXXXXXX'), {family}),
-    ('packed-without-login-query', change(packed, b'select id, hostname, user', b'select id, hostname, xxxx'), {family}),
-    ('packed-without-builder', change(packed, b'BotGenStudio', b'XXXXXXXXXXXX'), {firefox}),
-    ('packed-without-key', change(packed, b'AdjustKernelTableFromSSDTSpace2', b'X' * len(b'AdjustKernelTableFromSSDTSpace2')), {firefox}),
+    ('packed-without-nss', change(packed, b'NSS_Ini', b'XYZ_Ini'), set()),
+    ('packed-without-decrypt', change(packed, b'SDR_Decrypt', b'SDR_XXXXXXX'), set()),
+    ('packed-without-login-query', change(packed, b'select id, hostname, user', b'select id, hostname, xxxx'), set()),
+    ('packed-without-builder', change(packed, b'BotGenStudio', b'XXXXXXXXXXXX'), {firefox, family}),
+    ('packed-without-key', change(packed, b'AdjustKernelTableFromSSDTSpace2', b'X' * len(b'AdjustKernelTableFromSSDTSpace2')), {firefox, family}),
 ]
 handoff = rb'\x8b\x25....\x8b\x2d....\x8b\x0d....\x8b\x15....\x8b\x35....\x8b\x3d....\x8d\x05....\xff\xe0'
-cases.append(('packed-without-concealed-tail-handoff', replace_pattern(packed, handoff, 0xd0), {family}))
+cases.append(('packed-without-concealed-tail-handoff', replace_pattern(packed, handoff, 0xd0), set()))
 cases.append(('inert-firefox-recovery-references', inert_pe(
     b'NSS_Init\0PK11SDR_Decrypt\0'
     b'select id, hostname, username, encryptedpassword from moz_logins\0'), set()))

@@ -4,9 +4,10 @@ Run `python3 testdata/taxonomy/cosmicduke-packed-native/check.py <retained-sampl
 The specimen is supplied separately; the repository does not redistribute it.
 
 The renamed positive must match both the credential behavior and family identity.
-Removing NSS initialization, the decrypt-name fragment, the login SELECT, the
-Chrome executable resource identity, or the saved-stack tail handoff must remove
-both hostile findings. Removing both optional family identifiers must retain the
+Removing NSS initialization, the decrypt-name fragment, the login SELECT, or
+the saved-stack tail handoff must remove both hostile findings. Removing the
+Chrome filename retains the family finding through the concealed credential
+decryptor observation. Removing both optional family identifiers must retain the
 credential behavior and remove only the family finding. The controls mutate bytes
 without executing the specimen; scans run with network refresh disabled.
 

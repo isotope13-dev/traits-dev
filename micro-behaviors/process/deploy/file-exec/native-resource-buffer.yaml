@@ -1,0 +1,83 @@
+# Join the relative calls, resource-buffer argument, size slot and destination
+# path. An unrelated resource, WriteFile or ShellExecute import is insufficient.
+# The preparation helper extracts the supplied archive buffer, appends padding,
+# and passes its output and original destination to the bound file writer.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+
+traits:
+  - id: x86-resource-buffer-stage-launch
+    desc: Stages resource and ShellExecutes same path
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_resource_buffer_stage_launch {
+          strings:
+            $stage = {
+              8D 85 [4] 83 C4 0C 50 E8 [4] 8B D8 59 3B DE 0F 84 [4]
+              FF B5 [4] 8D 85 [4] 53 50 E8 [4] 83 C4 0C
+              68 [4] FF 15 [4] 6A 01 56 68 [4] 8D 85 [4] 50 56 56 FF 15 ?? ?? ?? ??
+            }
+            $resource = {
+              53 55 57 33 FF 57 FF 15 [4] 68 [4] 8B D8 68 [4] 53 FF 15 [4]
+              8B E8 3B EF 74 ?? 56 55 53 FF 15 [4] 55 53 8B F0 FF 15 [4]
+              8B D8 53 FF 15 [4] 8B E8 8B 44 24 14 56 89 30 E8 [4]
+              56 8B F8 6A 00 57 E8 [4] 56 55 57 E8 [4]
+              83 C4 1C 53 FF 15 [4] 5E 8B C7 5F 5D 5B C3
+            }
+            $prepare = {
+              55 8B EC 51 51 53 56 57 FF 75 08 33 DB FF 15 [4] 83 F8 FF
+              74 ?? FF 75 08 E8 [4] 59 3B 45 10 75 ?? 43 EB ??
+              BF [4] 57 E8 [4] 59 8B F0 56 FF 75 10 89 7D FC FF 75 0C
+              8D 7D FC E8 [4] 83 C4 0C 85 C0 74 ?? FF 15 [4] 50 E8 [4]
+              59 6A ?? B8 [4] E8 [4] 8B 7D FC 59 50 8D 1C 37 89 45 10
+              E8 [4] 03 7D 10 59 57 56 FF 75 08 E8 [4] 83 C4 0C
+              8B D8 4B F7 DB 1B DB 43 56 E8 [4] 59 5F 5E 8B C3 5B C9 C3
+            }
+            $store = {
+              55 8B EC 56 FF 75 08 33 F6 FF 15 [4] 83 F8 FF 74 ??
+              8B 45 08 E8 [4] 85 C0 74 ?? 57 56 56 6A 02 56 6A 01
+              68 00 00 00 40 FF 75 08 FF 15 [4] 8B F8 83 FF FF 74 ??
+              56 8D 45 0C 50 FF 75 10 FF 75 0C 57 FF 15 [4]
+              F7 D8 1B C0 23 45 0C 3B 45 10 75 ?? 33 F6 46
+              57 FF 15 [4] 5F 8B C6 5E 5D C3
+            }
+          condition:
+            pe.machine == pe.MACHINE_I386 and
+            for any s in pe.sections : (
+              s.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for any a in (1..#stage) : (
+                @stage[a] >= s.raw_data_offset and
+                @stage[a]+!stage[a] <= s.raw_data_offset+s.raw_data_size and
+                uint32(@stage[a]+2) == uint32(@stage[a]+28) and
+                uint32(@stage[a]+34) == uint32(@stage[a]+69) and
+                uint32(@stage[a]+78) == pe.image_base+pe.import_rva("SHELL32.dll", "ShellExecuteW") and
+                for any r in (1..#resource) : (
+                  @resource[r] == @stage[a]+15+int32(@stage[a]+11) and
+                  @resource[r] >= s.raw_data_offset and
+                  @resource[r]+!resource[r] <= s.raw_data_offset+s.raw_data_size and
+                  uint32(@resource[r]+27) == pe.image_base+pe.import_rva("KERNEL32.dll", "FindResourceW") and
+                  uint32(@resource[r]+42) == pe.image_base+pe.import_rva("KERNEL32.dll", "SizeofResource") and
+                  uint32(@resource[r]+52) == pe.image_base+pe.import_rva("KERNEL32.dll", "LoadResource") and
+                  uint32(@resource[r]+61) == pe.image_base+pe.import_rva("KERNEL32.dll", "LockResource") and
+                  for any p in (1..#prepare) : (
+                    @prepare[p] == @stage[a]+45+int32(@stage[a]+41) and
+                    @prepare[p] >= s.raw_data_offset and
+                    @prepare[p]+!prepare[p] <= s.raw_data_offset+s.raw_data_size and
+                    for any w in (1..#store) : (
+                      @store[w] == @prepare[p]+135+int32(@prepare[p]+131) and
+                      @store[w] >= s.raw_data_offset and
+                      @store[w]+!store[w] <= s.raw_data_offset+s.raw_data_size and
+                      uint32(@store[w]+50) == pe.image_base+pe.import_rva("KERNEL32.dll", "CreateFileW") and
+                      uint32(@store[w]+75) == pe.image_base+pe.import_rva("KERNEL32.dll", "WriteFile")
+                    )
+                  )
+                )
+              )
+            )
+        }

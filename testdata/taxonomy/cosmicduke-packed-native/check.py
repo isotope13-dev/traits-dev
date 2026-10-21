@@ -25,7 +25,7 @@ cases = [
     ('no-nss-init', change(original, b'NSS_Ini', b'XYZ_Ini'), set()),
     ('no-decrypt-name', change(original, b'SDR_Decrypt', b'SDR_XXXXXXX'), set()),
     ('no-login-select', change(original, b'select id, hostname, user', b'select id, hostname, xxxx'), set()),
-    ('no-chrome-identity', change(original, 'chrome.exe'.encode('utf-16le'), 'foobar.exe'.encode('utf-16le')), set()),
+    ('no-chrome-identity', change(original, 'chrome.exe'.encode('utf-16le'), 'foobar.exe'.encode('utf-16le')), {family}),
 ]
 # The handoff opcode is at the end of a register-restore block, rather than
 # an arbitrary FF E0 elsewhere in the packed image.
