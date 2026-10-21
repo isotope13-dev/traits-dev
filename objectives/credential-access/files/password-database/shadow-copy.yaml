@@ -1,0 +1,79 @@
+# Source-bound acquisition of Active Directory credentials from a VSS snapshot.
+# Paths alone, destination operands, and unrelated backup operations cannot
+# supply the acquisition leg. The command forms use syntax trees because their
+# call facts do not expose positional path arguments reliably.
+defaults:
+  platforms: [windows]
+  for: [scripts, source]
+  attack: T1003.003
+
+traits:
+  # Bind the credential-store path to the source operand. An unrelated
+  # CopyFile/shutil.copyfile invocation elsewhere in the file is insufficient.
+  - id: shadow-copy-ntds-copy-call
+    desc: Copies the NTDS database from a snapshot
+    crit: suspicious
+    conf: 0.98
+    for: [python, javascript, typescript, csharp, java, ruby, php]
+    if:
+      type: symbol
+      kind: call
+      regex: '(?i)(^|\.)(copy(file(sync)?|2)?|cp)$'
+      arg:
+        index: 0
+        from:
+          value: '(?i)HarddiskVolumeShadowCopy\d+[\\/]+Windows[\\/]+NTDS[\\/]+ntds\.dit\b'
+
+  - id: native-shadow-copy-ntds-source
+    desc: Native file-copy call reads NTDS from VSS
+    crit: suspicious
+    conf: 0.98
+    for: [c, cpp, rust]
+    if:
+      type: symbol
+      kind: call
+      regex: '(?i)(^|[.:])(copy(_file)?|CopyFile(Ex)?[AW]?)$'
+      arg:
+        index: 0
+        from:
+          value: '(?i)HarddiskVolumeShadowCopy\d+[\\/]+Windows[\\/]+NTDS[\\/]+ntds\.dit\b'
+
+  - id: batch-shadow-copy-ntds-source
+    desc: Batch copies the NTDS database from VSS
+    crit: suspicious
+    conf: 0.98
+    for: [batch]
+    if:
+      type: tree-sitter
+      query: |
+        (cmd (command_name) @tool (argument_list) @args
+          (#match? @tool "(?i)^(copy|xcopy)$")
+          (#match? @args "(?i)^\\s*(/[a-z]\\s+)*[\"']?\\S*HarddiskVolumeShadowCopy\\d+\\S*[\\\\/]ntds\\.dit[\"']?(\\s|$)")) @copy
+
+  - id: powershell-shadow-copy-ntds-source
+    desc: PowerShell copies the NTDS database from VSS
+    crit: suspicious
+    conf: 0.98
+    for: [powershell]
+    if:
+      type: tree-sitter
+      query: |
+        (command
+          command_name: (command_name) @tool
+          command_elements: (command_elements) @args
+          (#match? @tool "(?i)^(Copy-Item|copy|cp|cpi)$")
+          (#match? @args "(?i)^\\s*(-Force\\s+)?(-(Literal)?Path\\s+)?[\"']?\\S*HarddiskVolumeShadowCopy\\d+\\S*[\\\\/]ntds\\.dit[\"']?(\\s|$)")) @copy
+
+composite_rules:
+  - id: shadow-copy-ntds-dump
+    desc: VSS commands accompany source-bound NTDS copying
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: micro-behaviors/fs/volume/shadow-copy::vssadmin-shadow-operation
+    any:
+      - id: shadow-copy-ntds-copy-call
+      - id: native-shadow-copy-ntds-source
+      - id: batch-shadow-copy-ntds-source
+      - id: powershell-shadow-copy-ntds-source
+    near_bytes: 4096
