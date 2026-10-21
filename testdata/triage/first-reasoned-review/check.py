@@ -15,6 +15,7 @@ STARTUP = 'micro-behaviors/fs/write/content::batch-startup-script-redirect-block
 COPY = 'micro-behaviors/fs/file/copy::batch-quoted-startup-copy-destination'
 INVENTORY = 'objectives/discovery/host/security::batch-tasklist-av-name-filter'
 OLD = {
+    'objectives/execution/lnk/proxy::headless-conhost-argument-batch-carrier',
     'objectives/execution/payload/file-exec::lnk-headless-archive-config-batch',
     'objectives/command-and-control/dropper/lnk/script-chain::lnk-script-chain-dropper',
     'objectives/command-and-control/dropper/lnk/conhost-curl::temp-exe-download',
