@@ -85,26 +85,68 @@ traits:
       - id: metadata/package/testing/
       - id: "metadata/file/naming::test-directory-component"
   - id: shell-rm-rf-macos-system-path
-    desc: rm targets the macOS system root path
-    crit: component
-    conf: 0.9
+    desc: Shell command deletes macOS system root
+    crit: suspicious
+    conf: 0.95
+    platforms: [macos]
+    for: [shell]
     if:
-      type: text
-      # The target must be the macOS root itself (/System, /Library/System),
-      # not a path that merely ends in one: cross toolchains refresh a
-      # staging sysroot from a fresh SDK (`rm -rf .../sys-root/System`),
-      # which deletes build staging, not the running system.
-      regex: rm\s+-rf\s+["']?/(System|Library/System)(/\*?)?(\s|["']|;|$)
-  - id: python-rmtree-macos-system-path
-    desc: rmtree targets the macOS system root path
-    crit: component
-    conf: 0.9
+      # The command node excludes comments, quoted references and heredocs.
+      # Staging sysroots do not begin at the actual system root.
+      type: tree-sitter
+      query: |
+        ((command name: (command_name) @name) @delete
+          (#eq? @name "rm")
+          (#match? @delete "^rm\\s+-rf\\s+[\"']?/(System|Library/System)(/\\*?)?([\"';\\s]|$)"))
+  - id: python-macos-system-delete-command
+    desc: Python launches macOS system deletion command
+    crit: suspicious
+    conf: 0.95
+    platforms: [macos]
     for: [python]
     if:
       type: symbol
       kind: call
-      substr: rmtree
+      # These APIs always interpret their string argument through a shell.
+      regex: '^(os\.(system|popen)|subprocess\.get(status)?output)$'
       arg:
+        index: 0
+        kind: string
+        regex: '^rm\s+-rf\s+["'']?/(System|Library/System)(/\*?)?(\s|["'']|;|$)'
+  - id: python-subprocess-macos-system-delete
+    desc: Shell subprocess deletes macOS system root
+    crit: suspicious
+    conf: 0.95
+    platforms: [macos]
+    for: [python]
+    if:
+      # Python's keyword argument facts do not retain shell=True. Require
+      # that option on the same call as the command, rather than elsewhere
+      # in a test file or on a separate harmless subprocess.
+      type: tree-sitter
+      query: |
+        ((call
+          function: (attribute
+            object: (identifier) @module
+            attribute: (identifier) @method)
+          arguments: (argument_list . (string) @command
+            (keyword_argument name: (identifier) @option value: (true)))) @delete
+          (#eq? @module "subprocess")
+          (#match? @method "^(run|call|Popen|check_call|check_output)$")
+          (#eq? @option "shell")
+          (#match? @command "^[\"']rm\\s+-rf\\s+[\"']?/(System|Library/System)(/\\*?)?([\"';\\s]|$)"))
+  - id: python-rmtree-macos-system-path
+    desc: Python recursively deletes macOS system root
+    crit: suspicious
+    conf: 0.95
+    platforms: [macos]
+    for: [python]
+    if:
+      type: symbol
+      kind: call
+      regex: '^(shutil\.)?rmtree$'
+      arg:
+        index: 0
         kind: string
         regex: '^/(System|Library/System)/?$'
   - id: rmtree-call
@@ -304,6 +346,8 @@ composite_rules:
       - macos
     any:
       - id: shell-rm-rf-macos-system-path
+      - id: python-macos-system-delete-command
+      - id: python-subprocess-macos-system-delete
       - id: python-rmtree-macos-system-path
   - id: windows-recursive-delete
     desc: Windows system directory recursive deletion
