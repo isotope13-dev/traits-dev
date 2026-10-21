@@ -10,6 +10,12 @@ RACE = 'objectives/privilege-escalation/exploit/race-condition::defender-update-
 SWAP = 'objectives/credential-access/registry::offline-sam-read-password-replacement'
 HTTP = 'micro-behaviors/communications/http/client/initialize::viem-http-rpc-transport'
 URLS = 'micro-behaviors/communications/http/url/rpc::multiple-rpc-provider-urls'
+SAM = 'micro-behaviors/fs/path/account-db::windows-sam-hive-path'
+HIVE = 'micro-behaviors/fs/path/config/system::shadow-copy-registry-hive-path'
+VSS = 'micro-behaviors/fs/volume/shadow-copy::shadow-copy-path-reference'
+SYSTEM = 'micro-behaviors/fs/path/config/system::windows-system-hive-path'
+BIND = 'metadata/lang/source/syntax/assignment::named-variable-call-assignment'
+PHP_PANEL = 'objectives/command-and-control/backdoor/webshell/recon::sensitive-path-panel'
 
 # Materialize controls in the cleave fixture tree supplied by the caller.
 # Keep the recipe here so a clean cleave checkout can reproduce the checks.
@@ -56,6 +62,20 @@ const pages = ['https://one.example.test', 'https://two.example.test'];
 }
 CONTROLS['unused-numeric-code.py'] = CONTROLS['wrong-control-code.py'].replace(
     '0x90018', '17').replace('    uuid =', '    unrelated_constant = 0x90008\n    uuid =')
+CONTROLS.update({
+    'escaped-snapshot.cpp': r'''const wchar_t* sam = L"\\Device\\HarddiskVolumeShadowCopy12\\Windows\\System32\\config\\SAM";
+const wchar_t* system = L"\\Device\\HarddiskVolumeShadowCopy12\\Windows\\System32\\config\\SYSTEM";
+''',
+    'snapshot-nearmiss.cpp': r'''const wchar_t* cache = L"\\Device\\HarddiskVolumeShadowCopy12\\Windows\\System32\\config\\CACHE";
+''',
+    'system-hive.py': r'''path = r"C:\Windows\System32\config\SYSTEM"
+''',
+    'assignment.py': 'endpoint = lookup()\n',
+    'assignment-nearmiss.py': 'endpoint = require("module")\n',
+    'assignment-only.php': '<?php $endpoint = lookup(); echo ".ssh/id_rsa .mysql_history";\n',
+    'prior-syntax.php': '<?php $ENDPOINT = lookup(); echo ".ssh/id_rsa .mysql_history";\n',
+    'both-assignments.php': '<?php $endpoint = lookup(); $ENDPOINT = lookup(); echo ".ssh/id_rsa .mysql_history";\n',
+})
 
 
 def decode_stream(text):
@@ -92,18 +112,37 @@ def main():
         traits = {t['id']: t for t in file.get('traits', [])}
         assert traits[RACE]['crit'] == 5, file['path']
         assert traits[SWAP]['crit'] == 5, file['path']
+        assert SAM in traits and HIVE in traits and VSS in traits, file['path']
+        if Path(file['path']).suffix == '.rs':
+            assert BIND in traits, file['path']
         hostile = [t['id'] for t in traits.values() if t['crit'] == 5]
         assert len(hostile) >= 2, file['path']
         results.append({'file': Path(file['path']).name, 'hostile': hostile})
     controls = list(scan(args.cleave, args.fixtures))
-    assert len(controls) == 8, len(controls)
+    assert len(controls) == len(CONTROLS), len(controls)
     for file in controls:
         traits = {t['id']: t for t in file.get('traits', [])}
-        assert not [t for t in traits.values() if t['crit'] >= 4], file['path']
+        if Path(file['path']).name != 'assignment-only.php':
+            assert not [t for t in traits.values() if t['crit'] >= 4], file['path']
         if Path(file['path']).name == 'rpc-http-placement.js':
             assert HTTP in traits and URLS in traits, file['path']
         if Path(file['path']).name == 'rpc-http-nearmiss.js':
             assert HTTP not in traits and URLS not in traits, file['path']
+        name = Path(file['path']).name
+        if name == 'escaped-snapshot.cpp':
+            assert {SAM, HIVE, VSS} <= traits.keys(), file['path']
+        if name == 'snapshot-nearmiss.cpp':
+            assert VSS in traits and SAM not in traits and HIVE not in traits, file['path']
+        if name == 'system-hive.py':
+            assert SYSTEM in traits, file['path']
+        if name == 'assignment.py':
+            assert BIND in traits, file['path']
+        if name == 'assignment-nearmiss.py':
+            assert BIND not in traits, file['path']
+        if name == 'assignment-only.php':
+            assert BIND in traits and PHP_PANEL in traits, file['path']
+        if name in ('prior-syntax.php', 'both-assignments.php'):
+            assert PHP_PANEL not in traits, file['path']
     print(json.dumps({'samples': results, 'controls_passed': len(controls)}, indent=2))
 
 
