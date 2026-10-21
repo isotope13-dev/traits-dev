@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check compromised-page triage fixtures: mass-injection and atob-eval.
+"""Check compromised-page triage fixtures: remote includes and atob-eval.
 
 Fixtures are scanned as copies outside the repo because some legs carry
 test-directory exclusions on repository fixture paths.
@@ -12,8 +12,6 @@ import tempfile
 from pathlib import Path
 
 HOSTILE = {
-    "objectives/command-and-control/dropper/delivery/web-injection::repeated-remote-script-injection",
-    "objectives/command-and-control/dropper/delivery/html::massed-query-tagged-script-stage",
     "objectives/anti-static/obfuscation/syntax::html-atob-eval-identifier-stager",
     "objectives/command-and-control/dropper/delivery/html::atob-blob-variable-eval-delivery",
 }
@@ -48,6 +46,8 @@ for case in cases:
     traits = {t["id"]: t for t in report["traits"]}
     assert not set(case["matched"]) - traits.keys(), name
     assert not set(case["not_matched"]) & traits.keys(), name
+    if name == "repeated-script-inject.html":
+        assert all(t["crit"] < 4 for t in traits.values()), name
     for hid in HOSTILE & set(case["matched"]):
         assert traits[hid]["crit"] == 5, (name, hid)
 print(f"PASS: {len(cases)} compromised-page triage fixtures")

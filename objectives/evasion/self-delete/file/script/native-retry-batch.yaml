@@ -1,0 +1,49 @@
+# Bind the module-path output buffer to both deletion placeholders. Registry,
+# socket, family, endpoint, and dropped-batch names do not gate this finding.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+
+traits:
+  - id: x86-module-path-retry-delete-batch
+    desc: Formats retry-delete batch with module path
+    crit: suspicious
+    conf: 0.96
+    attack: T1070.004
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_module_path_retry_delete_batch {
+          strings:
+            $template = /:[A-Za-z_]{1,32}\r?\ndel "%s"\r?\nif exist "%s" goto /
+            // LEA output buffer; pass NULL module in zeroed EBX; indirect API call.
+            $zero_setup = { 33 DB 56 (89 5D ?? | 89 9D ?? ?? ?? ??) FF 15 ?? ?? ?? ?? }
+            $module = { 56 8D 85 ?? ?? ?? ?? 50 53 FF 15 ?? ?? ?? ?? }
+            // Template pointer in EDI; strlen-derived allocation arithmetic.
+            $template_load = { BF ?? ?? ?? ?? 6B F6 03 57 E8 ?? ?? ?? ?? 03 F0 }
+            // Push the module buffer twice, then template and output buffer.
+            $format = { 8D 85 ?? ?? ?? ?? 50 50 57 FF 75 ?? 56 E8 ?? ?? ?? ?? }
+          condition:
+            pe.machine == pe.MACHINE_I386 and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for any m in (1..#module) : (
+                @module[m] >= pe.sections[s].raw_data_offset and
+                uint32(@module[m]+11) == pe.image_base + pe.import_rva("KERNEL32.dll", "GetModuleFileNameA") and
+                $zero_setup in (@module[m]-64..@module[m]) and
+                for any t in (1..#template_load) : (
+                  @template_load[t] > @module[m] and
+                  @template_load[t] < @module[m]+256 and
+                  $template at pe.rva_to_offset(uint32(@template_load[t]+1)-pe.image_base) and
+                  for any f in (1..#format) : (
+                    @format[f] > @template_load[t] and
+                    @format[f] < @template_load[t]+128 and
+                    @format[f]+!format[f] <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size and
+                    uint32(@format[f]+2) == uint32(@module[m]+3)
+                  )
+                )
+              )
+            )
+        }
