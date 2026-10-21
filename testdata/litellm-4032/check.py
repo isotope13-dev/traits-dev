@@ -23,8 +23,8 @@ while s.strip():
         files[str(Path(f['path']).relative_to(args.fixtures))] = {
             t['id']: t['crit'] for t in f.get('traits', [])}
 
-sql = {'micro-behaviors/data/db/sql::litellm-credential-values-query',
-       'micro-behaviors/data/db/sql::litellm-model-params-query'}
+sql = {'micro-behaviors/data/db/query::litellm-credential-values-query',
+       'micro-behaviors/data/db/query::litellm-model-params-query'}
 dump = 'objectives/credential-access/dev-tools/ai::litellm-provider-database-dump'
 export = 'objectives/exfiltration/stealer/dev-secret::litellm-provider-database-http-export'
 poll = 'objectives/command-and-control/remote-command/http-poll::python-helper-response-exec-poll'

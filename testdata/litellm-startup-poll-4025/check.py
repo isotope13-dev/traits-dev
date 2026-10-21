@@ -23,8 +23,8 @@ while text.strip():
         name = str(Path(item['path']).relative_to(args.fixtures))
         files[name] = {trait['id']: trait['crit'] for trait in item.get('traits', [])}
 
-sql = {'micro-behaviors/data/db/sql::litellm-credential-values-query',
-       'micro-behaviors/data/db/sql::litellm-model-params-query'}
+sql = {'micro-behaviors/data/db/query::litellm-credential-values-query',
+       'micro-behaviors/data/db/query::litellm-model-params-query'}
 poll = 'objectives/command-and-control/remote-command/http-poll::python-http-response-exec-poll'
 daemon = 'objectives/command-and-control/remote-command/http-poll::python-detached-http-exec-poll'
 startup = 'objectives/persistence/login/python-startup::python-startup-http-exec-poll'
