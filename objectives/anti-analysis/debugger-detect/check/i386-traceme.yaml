@@ -1,0 +1,42 @@
+defaults:
+  platforms: [linux]
+  for: [elf]
+  arch: [x86]
+  attack: T1622
+
+traits:
+  - id: i386-self-trace-failure-check
+    desc: x86 self-trace probe checks failure
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "elf"
+        rule i386_self_trace_failure_exit {
+          strings:
+            // ptrace(PTRACE_TRACEME, 1, NULL, NULL); return unless -1;
+            // the failure branch calls a handler with argument 1.
+            $probe = {
+              6A 00 6A 01 6A 00 6A 00 E8 ?? ?? ?? ??
+              83 C4 20 40 74 04 83 C4 0C C3 83 EC 0C 6A 01 E8 ?? ?? ?? ??
+            }
+            $ptrace = {
+              57 56 53 83 EC 10 8B 7C 24 20 8D 44 24 30
+              89 44 24 08 8B 4C 24 24 8D 47 FF 8B 54 24 28
+              8B 74 24 2C 83 F8 02 77 04 8D 74 24 0C
+              53 89 FB B8 1A 00 00 00 CD 80
+            }
+          condition:
+            elf.machine == elf.EM_386 and
+            for any s in (0..elf.number_of_sections-1) : (
+              elf.sections[s].name == ".text" and
+              $probe in (elf.sections[s].offset..elf.sections[s].offset+elf.sections[s].size) and
+              $ptrace in (elf.sections[s].offset..elf.sections[s].offset+elf.sections[s].size) and
+              for any c in (1..#probe) : (
+                for any p in (1..#ptrace) : (
+                  @probe[c]+13+int32(@probe[c]+9) == @ptrace[p]
+                )
+              )
+            )
+        }

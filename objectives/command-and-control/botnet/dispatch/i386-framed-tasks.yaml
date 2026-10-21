@@ -1,0 +1,76 @@
+# Follow the received record into the duration/vector/IPv4-target parser.
+# Relative call destinations are checked, not merely co-occurring wrappers.
+defaults:
+  platforms: [linux]
+  for: [elf]
+  arch: [x86]
+  attack: T1095
+
+traits:
+  - id: i386-framed-attack-task-code
+    desc: x86 receives framed attack records
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "elf"
+        rule i386_framed_attack_task_code {
+          strings:
+            // Network-order duration, vector byte, target count, then
+            // count * 5 bytes of IPv4 addresses and prefix lengths.
+            $parser = {
+              55 57 56 53 83 EC 1C 8B 5C 24 34 8B 74 24 30
+              8B 7C 24 38 83 FB 03 77 ?? 83 C8 FF 83 C4 1C
+              5B 5E 5F 5D C3 8B 06 66 C1 C8 08 C1 C8 10
+              66 C1 C8 08 83 FB 04 89 07 74 ?? 8A 46 04
+              83 FB 05 88 47 04 74 ?? 8A 46 05 88 47 05
+              84 C0 74 ?? 8D 53 FA 89 54 24 10 31 D2
+              [0-24] 8D 04 92 39 44 24 10
+            }
+            $dispatch = {
+              66 C1 C8 08 66 3D 00 04 66 89 84 24 [4] 0F 87 [4]
+              C7 07 00 00 00 00 68 02 40 00 00 66 8B 84 24 [4]
+              25 FF FF 00 00 50 8D 84 24 [4] 50 8B 15 [4] 52 E8 ?? ?? ?? ??
+              83 C4 10 83 F8 FF 74 ?? 85 C0 74 ??
+              68 00 40 00 00 6A 02 8D 94 24 [4] 52 A1 [4] 50 E8 ?? ?? ?? ??
+              66 8B 84 24 [4] 66 C1 C8 08 66 89 84 24 [4]
+              25 FF FF 00 00 68 00 40 00 00 50 8D 8C 24 [4]
+              51 A1 [4] 50 E8 ?? ?? ?? ?? 83 C4 1C 8D 84 24 [4] 50
+              66 8B 84 24 [4] 25 FF FF 00 00 50 8D 84 24 [4] 50 E8 ?? ?? ?? ??
+            }
+            $recv = {
+              53 83 EC 20 8D 44 24 1C 50 6A 01 E8 ?? ?? ?? ??
+              FF 74 24 3C FF 74 24 3C FF 74 24 3C FF 74 24 3C
+              E8 ?? ?? ?? ?? 83 C4 18 6A 00 89 C3 FF 74 24 20 E8 ?? ?? ?? ??
+              89 D8 83 C4 28 5B C3
+            }
+            // uClibc socketcall(SYS_RECV=10).
+            $recv_impl = {
+              83 EC 24 8B 44 24 28 89 44 24 14
+              8B 44 24 2C 89 44 24 18 8B 44 24 30 89 44 24 1C
+              8B 44 24 34 89 44 24 20 8D 44 24 14 50 6A 0A E8 ?? ?? ?? ??
+            }
+          condition:
+            elf.machine == elf.EM_386 and
+            for any s in (0..elf.number_of_sections-1) : (
+              elf.sections[s].name == ".text" and
+              $parser in (elf.sections[s].offset..elf.sections[s].offset+elf.sections[s].size) and
+              $dispatch in (elf.sections[s].offset..elf.sections[s].offset+elf.sections[s].size) and
+              $recv in (elf.sections[s].offset..elf.sections[s].offset+elf.sections[s].size) and
+              $recv_impl in (elf.sections[s].offset..elf.sections[s].offset+elf.sections[s].size) and
+              for any d in (1..#dispatch) : (
+                for any p in (1..#parser) : (
+                  @dispatch[d]+193+int32(@dispatch[d]+189) == @parser[p]
+                ) and
+                for any r in (1..#recv) : (
+                  @dispatch[d]+67+int32(@dispatch[d]+63) == @recv[r] and
+                  @dispatch[d]+105+int32(@dispatch[d]+101) == @recv[r] and
+                  @dispatch[d]+155+int32(@dispatch[d]+151) == @recv[r] and
+                  for any i in (1..#recv_impl) : (
+                    @recv[r]+37+int32(@recv[r]+33) == @recv_impl[i]
+                  )
+                )
+              )
+            )
+        }

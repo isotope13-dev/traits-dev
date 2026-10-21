@@ -1,0 +1,59 @@
+defaults:
+  platforms: [linux]
+  for: [elf]
+  arch: [x86]
+  crit: notable
+  conf: 0.99
+
+traits:
+  - id: i386-table-indexed-datagram-loop
+    desc: x86 repeated packet-table socket sends
+    if:
+      type: yara
+      source: |
+        import "elf"
+        rule i386_table_indexed_datagram_loop {
+          strings:
+            // strlen(packet[index])+1; send(socket[index], packet[index],
+            // length, MSG_NOSIGNAL); advance index and repeat the sweep.
+            $loop = {
+              68 00 40 00 00 50 50 8B 44 B3 FC 50 E8 ?? ?? ?? ??
+              83 C4 0C 40 50 8B 44 B3 FC 50 8B 44 B5 FC 46 50
+              E8 ?? ?? ?? ?? 83 C4 10 39 F7 74 ?? EB ??
+            }
+            $strlen = {
+              57 31 C0 8B 7C 24 08 83 C9 FF F2 AE F7 D1 49 89 C8 5F C3
+            }
+            $send = {
+              53 83 EC 20 8D 44 24 1C 50 6A 01 E8 ?? ?? ?? ??
+              FF 74 24 3C FF 74 24 3C FF 74 24 3C FF 74 24 3C
+              E8 ?? ?? ?? ?? 83 C4 18 6A 00 89 C3 FF 74 24 20 E8 ?? ?? ?? ??
+              89 D8 83 C4 28 5B C3
+            }
+            // uClibc socketcall(SYS_SEND=9), not a receive wrapper.
+            $send_impl = {
+              83 EC 24 8B 44 24 28 89 44 24 14
+              8B 44 24 2C 89 44 24 18 8B 44 24 30 89 44 24 1C
+              8B 44 24 34 89 44 24 20 8D 44 24 14 50 6A 09 E8 ?? ?? ?? ??
+            }
+          condition:
+            elf.machine == elf.EM_386 and
+            for any s in (0..elf.number_of_sections-1) : (
+              elf.sections[s].name == ".text" and
+              $loop in (elf.sections[s].offset..elf.sections[s].offset+elf.sections[s].size) and
+              $strlen in (elf.sections[s].offset..elf.sections[s].offset+elf.sections[s].size) and
+              $send in (elf.sections[s].offset..elf.sections[s].offset+elf.sections[s].size) and
+              $send_impl in (elf.sections[s].offset..elf.sections[s].offset+elf.sections[s].size) and
+              for any l in (1..#loop) : (
+                for any n in (1..#strlen) : (
+                  @loop[l]+17+int32(@loop[l]+13) == @strlen[n]
+                ) and
+                for any w in (1..#send) : (
+                  @loop[l]+38+int32(@loop[l]+34) == @send[w] and
+                  for any i in (1..#send_impl) : (
+                    @send[w]+37+int32(@send[w]+33) == @send_impl[i]
+                  )
+                )
+              )
+            )
+        }
