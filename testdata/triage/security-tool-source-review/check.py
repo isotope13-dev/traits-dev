@@ -31,7 +31,7 @@ cases = {
     'actions.py': ([], ['well-known/app/infrastructure/harbor::source-tree',
                         'well-known/app/infrastructure/harbor::package-identity']),
     'names.py': (
-        ['metadata/lang/source/naming::downloadurl-identifier-text',
+        ['metadata/lang/source/naming/target::downloadurl-identifier-text',
          'micro-behaviors/data/string/compare::python-printable-ascii-range-test',
          'micro-behaviors/data/format/credentials::admin-admin-pair',
          'micro-behaviors/data/format/credentials::guest-guest-pair'], []),

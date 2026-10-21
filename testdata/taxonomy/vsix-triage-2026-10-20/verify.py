@@ -100,7 +100,7 @@ CASES = {
     'registry-api-reference-catalog.py': {'require': ['micro-behaviors/os/registry/offline-hive::offreg-hive-write-api-context'], 'criticality_max': 3},
     'imds-path-reference-catalog.js': {'require': ['metadata/lang/source/shape::module-call-and-imds-path-context'], 'criticality_max': 3},
     'skill-content-catalog.js': {'forbid': ['objectives/command-and-control/backdoor/rat/command-set::windows-rat-domain-takeover-tasking', 'objectives/credential-access/cloud/token/metadata::npm-load-time-imds-token-role-recon', 'objectives/command-and-control/backdoor/webshell/embedded::embedded-wordpress-plugin-command-webshell'], 'require': ['micro-behaviors/data/embedded/script::wordpress-request-execution-fragment-context']},
-    'administration-name-catalog.js': {'require': ['metadata/lang/source/naming::ad-user-name-tokens', 'metadata/lang/source/naming::network-scan-name-tokens'], 'criticality_max': 3},
+    'administration-name-catalog.js': {'require': ['metadata/lang/source/naming/action::ad-user-name-tokens', 'metadata/lang/source/naming/action::network-scan-name-tokens'], 'criticality_max': 3},
     'native-import-iife.vsix': {'require': ['micro-behaviors/os/module/require::silent-exportless-native-import-iife', 'objectives/supply-chain/hidden-payload/extensions/vscode::vscode-startup-native-abi-mismatch'], 'suspicious_min': 2, 'hostile_max': 0},
     'native-import-iife.js': {'require': ['micro-behaviors/os/module/require::silent-exportless-native-import-iife'], 'suspicious_min': 1, 'hostile_max': 0},
     'native-iife-binding-variant.js': {'require': ['micro-behaviors/os/module/require::silent-exportless-native-import-iife'], 'suspicious_min': 1, 'hostile_max': 0},
