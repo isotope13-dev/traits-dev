@@ -24,10 +24,14 @@ while remaining.strip():
 argument = "micro-behaviors/process/argument/positional::wscript-first-argument"
 launch = "micro-behaviors/process/create/exec::vbs-inline-shell-first-argument"
 flags = "micro-behaviors/process/create/flags::wsh-hidden-async-run"
+hostile = (
+    "objectives/command-and-control/dropper/delivery/execute-download/script"
+    "::vbs-hidden-first-argument-path-launcher"
+)
 covered = {argument, launch, flags}
 cases = {
-    "hidden-argument.vbs": covered,
-    "case-variant.vbs": covered,
+    "hidden-argument.vbs": covered | {hostile},
+    "case-variant.vbs": covered | {hostile},
     "visible-argument.vbs": {argument, launch},
     "synchronous-argument.vbs": {argument, launch},
     "other-argument.vbs": {flags},
@@ -38,8 +42,10 @@ cases = {
 for name, expected in cases.items():
     traits = reports[name].get("traits", [])
     actual = {trait["id"] for trait in traits}
-    assert actual & covered == expected, (name, expected, actual & covered)
-    assert all(trait["crit"] <= 3 for trait in traits), (name, traits)
+    assert actual & (covered | {hostile}) == expected, (name, expected, actual & (covered | {hostile}))
+    assert all(
+        trait["crit"] <= 3 or trait["id"] == hostile for trait in traits
+    ), (name, traits)
 fragment = {trait["id"] for trait in reports["environment-fragment.js"]["traits"]}
 assert "micro-behaviors/data/string/replace::node-environment-fragment-unicode-replace" in fragment
 assert not any(trait.startswith("micro-behaviors/process/create/exec::") for trait in fragment)
