@@ -1,0 +1,104 @@
+# Follow the actual response through both executor callbacks and the polling
+# function. Callback/lambda provenance is opaque in facts, so bind the helper
+# names, arguments and returned values in the syntax tree. No campaign names,
+# URLs, paths, interval, executor variable or function spelling is required.
+defaults:
+  platforms: [unix, windows]
+  for: [python]
+  attack: T1071.001,T1059.006
+
+traits:
+  - id: python-threadpool-http-exec-poll
+    desc: HTTP polling executes thread-pool callbacks
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: tree-sitter
+      language: python
+      query: |
+        ((module
+          (function_definition
+            name: (identifier) @fetch
+            parameters: (parameters . (identifier) @url .)
+            body: (block
+              . (expression_statement (assignment
+                left: (identifier) @response
+                right: (call function: (attribute
+                  object: (identifier) @client attribute: (identifier) @get)
+                  arguments: (argument_list . (identifier) @requested))))
+              . (expression_statement (call))?
+              . (return_statement (attribute
+                object: (identifier) @returned attribute: (identifier) @text)) .))
+          (function_definition
+            name: (identifier) @async_fetch
+            parameters: (parameters . (identifier) @async_url .)
+            body: (block
+              (for_statement body: (block
+                (try_statement body: (block
+                  (return_statement (await (call
+                    function: (attribute attribute: (identifier) @fetch_executor)
+                    arguments: (argument_list
+                      . (_) . (identifier) @callback . (identifier) @forwarded .))))))))))
+          (function_definition
+            name: (identifier) @execute
+            parameters: (parameters . (identifier) @source .)
+            body: (block
+              (expression_statement (await (call
+                function: (attribute attribute: (identifier) @exec_executor)
+                arguments: (argument_list
+                  . (_) . (lambda body: (call
+                    function: (identifier) @exec
+                    arguments: (argument_list . (call
+                      function: (identifier) @compile
+                      arguments: (argument_list
+                        . (identifier) @compiled . (string) . (string) @mode)))))))))))
+          (function_definition
+            name: (identifier) @step
+            body: (block
+              (expression_statement (assignment
+                left: (identifier) @received
+                right: (await (call function: (identifier) @fetch_call))))
+              . (expression_statement (await (call
+                function: (identifier) @exec_call
+                arguments: (argument_list . (identifier) @submitted .))))))
+          (function_definition body: (block
+            (while_statement condition: (true) body: (block
+              (try_statement body: (block
+                (expression_statement (call
+                  function: (attribute object: (identifier) @asyncio
+                    attribute: (identifier) @run)
+                  arguments: (argument_list . (call
+                    function: (identifier) @step_call
+                    arguments: (argument_list)) .))))))))))
+          (#match? @client "^(requests|httpx)$")
+          (#eq? @get "get")
+          (#eq? @text "text")
+          (#eq? @url @requested)
+          (#eq? @response @returned)
+          (#eq? @fetch_executor "run_in_executor")
+          (#eq? @fetch @callback)
+          (#eq? @async_url @forwarded)
+          (#eq? @exec_executor "run_in_executor")
+          (#eq? @exec "exec")
+          (#eq? @compile "compile")
+          (#match? @mode "^['\"]exec['\"]$")
+          (#eq? @source @compiled)
+          (#eq? @async_fetch @fetch_call)
+          (#eq? @execute @exec_call)
+          (#eq? @received @submitted)
+          (#eq? @asyncio "asyncio")
+          (#eq? @run "run")
+          (#eq? @step @step_call))
+    unless:
+      - id: metadata/lang/source/origin::plain-source-layer-path
+
+composite_rules:
+  - id: python-threadpool-http-exec-daemon
+    desc: Detached daemon polls and executes HTTP bodies
+    crit: hostile
+    conf: 0.99
+    platforms: [linux, macos]
+    all:
+      - id: python-threadpool-http-exec-poll
+      - id: micro-behaviors/process/daemonize/detach::python-fork-new-session
+      - id: micro-behaviors/process/fd/dup::python-dup2
