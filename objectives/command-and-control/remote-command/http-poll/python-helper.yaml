@@ -1,0 +1,67 @@
+# Bind three roles: a real HTTP helper, its returned body, and the exec helper
+# consuming that body. Adjacency rejects overwritten responses; capture equality
+# rejects unrelated function calls. Names, domain, URL path and interval vary.
+defaults:
+  platforms: [unix, windows]
+  for: [python]
+  attack: T1071.001,T1059.006
+traits:
+  - id: python-helper-response-exec-poll
+    desc: Poll executes HTTP bodies through helpers
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: tree-sitter
+      language: python
+      query: |
+        ((module
+          (function_definition
+            name: (identifier) @fetcher
+            parameters: (parameters (identifier) @url)
+            body: (block
+              (return_statement (attribute
+                object: (call function: (attribute
+                  object: (identifier) @client
+                  attribute: (identifier) @get)
+                  arguments: (argument_list . (identifier) @requested))
+                attribute: (identifier) @text))))
+          (function_definition
+            name: (identifier) @executor
+            parameters: (parameters (identifier) @body)
+            body: (block
+              (expression_statement (call
+                function: (identifier) @exec
+                arguments: (argument_list . (identifier) @executed)))))
+          (function_definition
+            body: (block
+              (while_statement condition: (true)
+                body: (block
+                  (try_statement body: (block
+                    (expression_statement (assignment
+                      left: (identifier) @received
+                      right: (await (call
+                        function: (identifier) @fetchcall))))
+                    . (expression_statement (await (call
+                      function: (identifier) @execcall
+                      arguments: (argument_list . (identifier) @submitted)))))))))))
+          (#eq? @fetcher @fetchcall)
+          (#eq? @url @requested)
+          (#match? @client "^(requests|httpx)$")
+          (#eq? @get "get")
+          (#eq? @text "text")
+          (#eq? @executor @execcall)
+          (#eq? @body @executed)
+          (#eq? @exec "exec")
+          (#eq? @received @submitted))
+    unless:
+      - id: metadata/lang/source/origin::plain-source-layer-path
+composite_rules:
+  - id: python-detached-helper-exec-poll
+    platforms: [linux, macos]
+    desc: Detached daemon executes HTTP helper results
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: python-helper-response-exec-poll
+      - id: micro-behaviors/process/daemonize/detach::python-fork-new-session
+      - id: micro-behaviors/process/fd/dup::python-dup2
