@@ -62,7 +62,7 @@ def main() -> None:
     rule = cases["rule"]
 
     # Both fixtures carry the same active decode/exec source line. A separate
-    # embedded-code string must not suppress the active AST call.
+    # embedded-code string must not suppress the active call-site match.
     assert embedded_case["direct_base64_exec"] == "matched"
     assert plain_case["direct_base64_exec"] == "matched"
     assert cases["decode_exec_line"] in Path(__file__).with_name(
@@ -77,8 +77,7 @@ def main() -> None:
         line.startswith(f"NOT MATCHED {rule} (trait)")
         for line in embedded_output.splitlines()
     ), embedded_output
-    assert "Found 1 matching AST node(s)" in embedded_output, embedded_output
-    assert cases["decode_exec_line"] in embedded_output, embedded_output
+    assert "Matching symbol records: 1" in embedded_output, embedded_output
     assert f"MATCHED {cases['composite']} (composite)" in embedded_output, embedded_output
     assert f"MATCHED {rule} (trait)" in plain_output, plain_output
     assert not any(

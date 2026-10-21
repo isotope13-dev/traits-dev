@@ -108,8 +108,12 @@ CASES = {
     'shadowed-native-require.js': {'forbid': ['micro-behaviors/os/module/require::silent-exportless-native-import-iife'], 'criticality_max': 3},
     'deferred-native-import.js': {'forbid': ['micro-behaviors/os/module/require::silent-exportless-native-import-iife'], 'criticality_max': 3},
     'nx-compromised-bootstrap.js': {'require': ['well-known/malware/supply-chain/teampcp-nx::nx-console-teampcp-github-bootstrap'], 'hostile_min': 1},
-    'different-github-commit-task.js': {'forbid': ['well-known/malware/supply-chain/teampcp-nx::nx-console-teampcp-github-bootstrap', 'well-known/malware/supply-chain/teampcp-nx::compromised-bootstrap-commit-literal'], 'hostile_max': 0},
+    'different-github-commit-task.js': {'forbid': ['well-known/malware/supply-chain/teampcp-nx::nx-console-teampcp-github-bootstrap', 'well-known/malware/supply-chain/teampcp-nx::compromised-bootstrap-commit-reference'], 'hostile_max': 0},
     'quoted-bootstrap-reference.js': {'forbid': ['well-known/malware/supply-chain/teampcp-nx::nx-console-teampcp-github-bootstrap'], 'hostile_max': 0},
+    'embedded-bootstrap-example.js': {'require': ['well-known/malware/supply-chain/teampcp-nx::nx-console-teampcp-github-bootstrap']},
+    'arrow-native-import.js': {'require': ['micro-behaviors/os/module/require::silent-exportless-native-import-iife'], 'suspicious_min': 1, 'hostile_max': 0},
+    'generator-native-reference.js': {'forbid': ['micro-behaviors/os/module/require::silent-exportless-native-import-iife'], 'criticality_max': 3},
+    'unreachable-native-iife.js': {'forbid': ['micro-behaviors/os/module/require::silent-exportless-native-import-iife'], 'criticality_max': 3},
 }
 engine = os.environ.get('CLEAVE', str(REPO.parent / 'cleave/target/release/cleave'))
 # Analyze exact fixture bytes outside test-directory guards, as real downloads.

@@ -397,7 +397,7 @@ processes to `process`.
 | `hardware` | Device and peripheral I/O or control. | Host property queries (`os/sysinfo`); windows and widgets (`ui`); surveillance (objectives). |
 | `process` | Execution contexts: creation, lifecycle, coordination, descriptors, interpreters, attach/hook/inject. | Privilege (`os/privilege`); durable activation (`objectives/persistence`). |
 | `dylib` | Native library loading, unloading, enumeration, symbol lookup. | Language modules (`os/module`); manual API resolution (`os/api-resolution`). |
-| `metaprogramming` | The program inspecting, generating or transforming program structure: `ast`, `generation`, `reflection` *(legacy: `process/interpreter/reflection`)*. Reflection includes inspecting class/member metadata, resolving members and invoking a resolved member. | Loading, defining or activating executable classes (`process/interpreter/runtime`); an AST the *analyzer* uses to match. |
+| `metaprogramming` | The program inspecting, generating or transforming program structure: `ast`, `generation`, `reflection` *(legacy: `process/interpreter/reflection`)*. `generation` includes turning supplied source or an AST into an executable representation without requiring its invocation; reflection includes inspecting class/member metadata, resolving members and invoking a resolved member. | Running compiled/generated code (`process/interpreter/eval/constructed`); launching a compiler process (`process/create`); loading, defining or activating executable classes (`process/interpreter/runtime`); an AST the *analyzer* uses to match. |
 | `os` | Host services without a more specific facility: registry, services, environment, accounts, privilege, security controls, kernel, packages, autorun, sysinfo, telemetry, clipboard, console. | File, process and network operations, even through an OS API. |
 | `time` | Clocks, waits, elapsed time, in-process scheduling. | OS task registration (`os/autorun`, `os/service`); evasion gates (objectives). |
 | `ui` | Presentation and interaction. | Display hardware or capture (`hardware/display`); deception (objectives); framework identity (`well-known/lib/ui`). |
@@ -557,7 +557,7 @@ must not acquire a direction from its consumer.
 | `process/fd/{query,control,close,dup,stdio}` | Descriptor operations, including child standard-stream configuration, redirection, and descriptor duplication. Creating an IPC pipe is `communications/ipc`. |
 | `process/io/stream/<operation>` | Reading, writing, piping, or relaying stream data, including paired relays between a peer stream and child stdin/stdout. This is the data-movement operation; stdio configuration and descriptor setup or duplication remain under `process/fd`. |
 | `process/tty/<operation>` | Terminal interaction and PTYs. |
-| `process/interpreter/<operation>` | In-process execution: `eval/{direct,indirect,compile,source}`. `eval` executes an expression; `source` executes a file in the current shell. This includes shell `eval` and `source "$x"`, plus `bof` (Beacon Object File host APIs), `wasm`, and `vm`. Launching an interpreter is `process/create`; language identity is metadata. |
+| `process/interpreter/<operation>` | In-process execution: `eval/{direct,indirect,constructed,source}` plus `bof` (Beacon Object File host APIs), `wasm`, and `vm`. `eval` executes supplied code in an existing interpreter. Launching an interpreter is `process/create`; compilation without required invocation is `metaprogramming/generation`; language identity is metadata. |
 | `process/{attach,debug,hook,inject}/<mechanism>` | Attaching, debugging, intercepting and transferring execution, with no established attacker purpose. |
 | `process/deploy/<sink>` | Neutral acquisition- or staging-to-activation chains (an updater fetching and launching its image), by the [payload sinks](#payload-activation-and-staging). |
 | `dylib/{load,unload,lookup,enumerate}` | Native loader operations. Language modules are `os/module`; export walking or API hashing is `os/api-resolution`; hiding import identity is an anti-static claim. |
@@ -572,6 +572,34 @@ must not acquire a direction from its consumer.
 | `os/application/target` | An app or package cited as the program's target (wallet brands, `SpringBoard`); neither discovery nor the file's identity. |
 | `time/{query,sleep,timing,schedule}` | Read time; wait; measure elapsed time (`timing/check`); schedule in-process callbacks (`schedule/timeout` for alarms). |
 | `ui/{controls,dialog,graphics,help,menu,terminal,wallpaper,window}` | Credential-entry controls (`controls/credential`), wallet UI (`controls/wallet`), prompts (`dialog/prompt`), `--help` text (`help`), window hooks, enumeration and notifications. Deceptive hiding is evasion. |
+
+`process/interpreter/eval/` answers one question: **how does supplied code begin
+executing inside an existing interpreter?** Admission requires execution, not a
+compiler name, source-shaped string, constructor reference, or code object that
+is merely produced. Its children are:
+
+| Child | Definition and boundary | Example | Counterexample |
+|---|---|---|---|
+| `direct` | A recognized evaluator consumes source, a form or an expression directly. Input provenance stays in the trait name. | `eval(decoded)`; Python `exec(code)`; shell `eval "$cmd"`. | `compile(source, ..., "exec")` produces a code object but does not run it. |
+| `indirect` | The evaluator is reached through an alias, global/member lookup, callback, bridge or other computed dispatch. The matcher must still establish evaluator semantics. | `(0, eval)(code)`; passing `eval` as a promise callback. | Calling an arbitrary variable or computed member is `data/control-flow/dispatch`. |
+| `constructed` | Required evidence both creates or obtains an executable unit and invokes that unit. | `new Function(body)()`; `exec(compile(source, ...))`; `ScriptBlock.Create(text).Invoke()`. | `new Function(body)`, `ScriptBlock.Create(text)` and Lua `load(text)` without invocation are `metaprogramming/generation`. |
+| `source` | A file is evaluated in the current interpreter context rather than launched as a child. | shell `source file`; PowerShell `& "file.ps1"`. | Node `Module._compile` is `os/module/load`; `bash file` creates an interpreter process. |
+
+Precedence is `source` for a required file, then `constructed` when creation and
+invocation are both required, then `indirect` when dispatch obscures or reroutes
+the evaluator, otherwise `direct`. A decoder, decryptor, HTTP response or object
+field does not create another child: those facts qualify the input, not the
+execution mechanism.
+
+Within `metaprogramming/generation`, runtime compilation answers a different
+question: **does the program turn supplied program text or structure into an
+executable representation?** It includes Python `compile`, JavaScript
+`Function`, PowerShell `ScriptBlock.Create`, expression-tree `Compile`, and
+similar callable/code-object construction. It excludes execution-only APIs,
+compiler/toolchain identity, external compiler process creation, module loading,
+and quoted compiler wording. Generation is the existing broader operation—it
+already includes JIT and C# compilation—and remains one leaf while the combined
+catalog fits the default 100-rule budget and one-operation contract.
 
 #### Process creation
 
