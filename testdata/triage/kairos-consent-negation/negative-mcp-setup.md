@@ -1,0 +1,1 @@
+Setup required — database configuration
