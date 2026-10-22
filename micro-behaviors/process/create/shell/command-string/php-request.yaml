@@ -1,0 +1,181 @@
+# PHP Command Execution Traits
+# MBC: E1059 (Command and Scripting Interpreter)
+# ATT&CK: T1059.004 (Unix Shell)
+defaults:
+  platforms: [unix, windows]
+  for: [php]
+  crit: notable
+  mbc: "E1059"
+  attack: "T1059.004"
+traits:
+# An exec-family call whose arguments reference a request superglobal. PHP
+# subscripts/interpolations don't fold to arg facts, so these match the call
+# form plus the superglobal as source text — the function list and the `(`
+# keep them FP-safe. The function list is split into two atoms per superglobal
+# to stay under the alt-chain limit (≤4 alternatives), mirroring the existing
+# `exec-user-input-get-text--rx-*` decomposition. `$_GET` is already covered by
+# the `exec-user-input-get-text` composite below.
+# The pipe-process forms require the request as the first command argument;
+# request data in a descriptor or output argument does not select a command.
+# Every atom in this family suppresses on a documentation basename: a Markdown
+# writeup sniffed as PHP quotes webshell one-liners as data, and the
+# `exec-user-input`/`exec-user-input-get-text` umbrellas already exclude it.
+- id: exec-user-input-post--g1
+  desc: $_POST reaches exec/system/shell_exec
+  crit: suspicious
+  conf: 0.85
+  if:
+    type: tree-sitter
+    kind: call
+    regex: \b(exec|system|shell_exec)\s*\([^;]{0,200}\$_POST
+  unless:
+  - id: well-known/tool/offensive/exploitdb::published-script-wrapper
+  - id: metadata/file/extension/identity::markdown-file-basename
+- id: exec-user-input-post--g2
+  desc: $_POST reaches passthru/popen/proc_open
+  crit: suspicious
+  conf: 0.85
+  if:
+    type: tree-sitter
+    kind: call
+    regex: '\b(passthru|popen|proc_open)\s*\(\s*\$_POST\s*\['
+  unless:
+  - id: metadata/file/extension/identity::markdown-file-basename
+- id: exec-user-input-request--g1
+  desc: $_REQUEST reaches exec/system/shell_exec
+  crit: suspicious
+  conf: 0.85
+  if:
+    type: tree-sitter
+    kind: call
+    regex: \b(exec|system|shell_exec)\s*\([^;]{0,200}\$_REQUEST
+  unless:
+  - type: text
+    regex: '\bescapeshell(arg|cmd)\s*\(\s*\$_REQUEST'
+  - id: well-known/tool/offensive/payload-corpus::payloadsallthethings-release-member
+  - id: well-known/tool/offensive/industrialxpl/
+  - id: micro-behaviors/metaprogramming/generation::configured-assessment-plugin
+  - id: micro-behaviors/metaprogramming/generation::parameterized-shell-command-builder
+  # A detector's own Go test file quoting webshell fixtures for its watcher
+  # to flag: quoted payload, not a shipped execution path.
+  - id: metadata/package/testing/presence/harness::go-test-file
+  - id: metadata/file/extension/identity::markdown-file-basename
+- id: exec-user-input-request--g2
+  desc: $_REQUEST reaches passthru/popen/proc_open
+  crit: suspicious
+  conf: 0.85
+  if:
+    type: tree-sitter
+    kind: call
+    regex: '\b(passthru|popen|proc_open)\s*\(\s*\$_REQUEST\s*\['
+  unless:
+  - id: metadata/file/extension/identity::markdown-file-basename
+- id: exec-user-input-get-text--rx-1
+  desc: $_GET reaches exec/system
+  crit: suspicious
+  conf: 0.92
+  if:
+    type: tree-sitter
+    kind: call
+    # Match the selected call itself, not PHP source quoted in another call.
+    regex: '^(exec|system)\s*\(\s*\$_GET\s*\[[^\]]{1,80}\]'
+  unless:
+  - id: metadata/file/encoding::decoded-base64-layer
+  - id: micro-behaviors/ui/help::escaped-local-command-reference
+  - id: well-known/tool/offensive/
+  - id: metadata/file/naming::test-directory-component
+  - id: metadata/file/extension/identity::markdown-file-basename
+  - id: metadata/file/extension/identity::yaml-url-decoded-fragment-basename
+  - id: metadata/package/testing/
+  - id: metadata/package/testing/corpus::php-taint-engine-fixture-context
+  downgrade:
+    scope: parent
+    any:
+    - id: micro-behaviors/ui/help::escaped-local-command-reference
+- id: exec-user-input-get-text--rx-2
+  desc: $_GET reaches shell_exec/passthru
+  crit: suspicious
+  conf: 0.92
+  if:
+    type: tree-sitter
+    kind: call
+    regex: '\b(shell_exec|passthru)\s*\(\s*\$_GET\s*\[[^\]]{1,80}\]'
+  unless:
+    - id: well-known/tool/offensive/bingo/
+    - id: well-known/tool/offensive/payload-corpus::payloadsallthethings-release-member
+    # React Doctor's regression fixtures are deliberately vulnerable PHP the
+    # scanner must flag; the fixture path (not an archive-wide context) carries
+    # the exclusion so it resolves on the member file itself.
+    - id: well-known/tool/detection/react-doctor::react-doctor-tree-path
+    - id: well-known/app/system/anthropic-cybersecurity-skills::cybersecurity-skill-template-guide
+    - id: metadata/file/extension/identity::markdown-file-basename
+- id: exec-user-input-get-text--rx-3
+  desc: $_GET reaches popen/proc_open
+  crit: suspicious
+  conf: 0.92
+  if:
+    type: tree-sitter
+    kind: call
+    regex: '\b(popen|proc_open)\s*\(\s*\$_GET\s*\[[^\]]{1,80}\]'
+  unless:
+  - id: metadata/file/extension/identity::markdown-file-basename
+
+composite_rules:
+- id: exec-user-input
+  desc: Command execution with user input
+  crit: suspicious
+  conf: 0.9
+  any:
+  - id: exec-user-input-post--g1
+  - id: exec-user-input-post--g2
+  - id: exec-user-input-request--g1
+  - id: exec-user-input-request--g2
+  - id: exec-user-input-get-text
+  unless:
+  - id: well-known/tool/offensive/
+  - id: "metadata/lang/source/shape::yara-rule-source"
+  - id: well-known/tool/detection/security-scanner::anteumbra-package-tree-member
+  # A webshell fixture embedded in a test corpus is data its detector asserts
+  # on, not a shipped execution path.
+  - id: "metadata/file/naming::test-directory-component"
+  - id: metadata/file/extension/identity::markdown-file-basename
+  - id: extension-origin-local-helper
+  # A detector's own Go test file quoting webshell fixtures for its watcher
+  # to flag: quoted payload, not a shipped execution path.
+  - id: metadata/package/testing/presence/harness::go-test-file
+  downgrade:
+    scope: parent
+    any:
+      - id: micro-behaviors/ui/help::escaped-local-command-reference
+- id: extension-origin-local-helper
+  desc: PHP helper limited to extension origin
+  crit: exception
+  conf: 0.85
+  # A native-messaging companion that runs a local command for one named browser
+  # extension (espeak-ng's Chromium extension pipes SSML to `espeak-ng` through
+  # `passthru($_POST[...])` on `php -S localhost`). Its CORS reply admits only a
+  # `chrome-extension://` origin and only POST, which a planted webshell, meant
+  # to be driven from anywhere, never declares.
+  all:
+  - id: micro-behaviors/communications/http/header/cors::php-cors-extension-origin
+  - id: micro-behaviors/communications/http/header/cors::php-cors-post-only
+- id: exec-user-input-get-text
+  desc: GET input reaches command execution
+  crit: suspicious
+  conf: 0.92
+  any:
+  - id: exec-user-input-get-text--rx-1
+  - id: exec-user-input-get-text--rx-2
+  - id: exec-user-input-get-text--rx-3
+  unless:
+  - id: metadata/file/encoding::decoded-base64-layer
+  - id: micro-behaviors/ui/help::escaped-local-command-reference
+  - id: metadata/build/generated::php-empty-function-declarations
+  - id: metadata/build/generated::php-manual-empty-function-stubs
+  - id: well-known/tool/offensive/
+  - id: metadata/file/naming::test-directory-component
+  - id: metadata/file/extension/identity::markdown-file-basename
+  downgrade:
+    scope: parent
+    any:
+    - id: micro-behaviors/ui/help::escaped-local-command-reference

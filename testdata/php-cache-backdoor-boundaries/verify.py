@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 COPY = 'micro-behaviors/fs/file/copy::php-write-own-source-copy'
 WRITE = 'micro-behaviors/fs/write/file/full::php-htaccess-write'
 READ = 'micro-behaviors/fs/read/file/full::php-file-get-variable-source'
-XOR = 'micro-behaviors/crypto/symmetric/xor/loop::'
+XOR = 'micro-behaviors/data/encoding/xor::'
 LOOPS = {XOR + 'php-repeating-key-index-xor', XOR + 'php-byte-xor-transform-loop'}
 CONFIG = 'objectives/command-and-control/backdoor/webshell/config::htaccess-command-webshell-handler'
 TRANSFORM = '$out .= chr(ord($bytes[$n]) ^ ord($mask[$n % strlen($mask)]));'
