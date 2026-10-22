@@ -1,0 +1,83 @@
+# A wallet UI may validate an address and copy it on request. Here the program
+# repeatedly reads the system clipboard, tests that same value, and overwrites
+# it with a different, fixed destination. Bindings and the enclosing loop are
+# required; an unrelated wallet regex or a commented example is insufficient.
+defaults:
+  platforms: [unix, windows]
+  crit: suspicious
+  conf: 0.99
+  attack: T1115,T1565.001
+
+traits:
+  - id: python-polled-eth-address-overwrite
+    desc: Python polls and overwrites ETH clipboard text
+    for: [python]
+    if:
+      type: tree-sitter
+      query: |
+        ((while_statement body: (block
+          (expression_statement (assignment left: (identifier) @copied
+            right: (call function: (attribute object: (identifier) @reader
+              attribute: (identifier) @paste) arguments: (argument_list)))) .
+          (if_statement condition: (call
+            function: (attribute object: (identifier) @regex
+              attribute: (identifier) @match)
+            arguments: (argument_list (string) @pattern (identifier) @checked))
+            consequence: (block (expression_statement (call
+              function: (attribute object: (identifier) @writer
+                attribute: (identifier) @copy)
+              arguments: (argument_list (string) @destination))))))) @overwrite
+          (#match? @reader "^(pyperclip|clipboard)$")
+          (#eq? @reader @writer) (#eq? @paste "paste") (#eq? @copy "copy")
+          (#eq? @regex "re") (#match? @match "^(fullmatch|match|search)$")
+          (#eq? @copied @checked)
+          (#match? @pattern "0x\\[[^]]+\\]\\{40\\}")
+          (#match? @pattern "a-f") (#match? @pattern "0-9")
+          (#match? @destination "^['\"]0x[a-fA-F0-9]{40}['\"]$")
+          (#not-match? @destination "(?i)^['\"]0x(0{40}|0{36}dead)['\"]$"))
+
+  - id: javascript-polled-eth-address-overwrite
+    desc: Browser polls and overwrites ETH clipboard text
+    for: [javascript, typescript]
+    if:
+      type: tree-sitter
+      query: |
+        ((while_statement body: (statement_block
+          (lexical_declaration (variable_declarator name: (identifier) @copied
+            value: (await_expression (call_expression
+              function: (member_expression
+                object: (member_expression object: (identifier) @reader
+                  property: (property_identifier) @read_clipboard)
+                property: (property_identifier) @read)
+              arguments: (arguments))))) .
+          (if_statement condition: (parenthesized_expression (call_expression
+            function: (member_expression object: (regex) @pattern
+              property: (property_identifier) @test)
+            arguments: (arguments (identifier) @checked)))
+            consequence: (statement_block (expression_statement
+              (await_expression (call_expression
+                function: (member_expression
+                  object: (member_expression object: (identifier) @writer
+                    property: (property_identifier) @write_clipboard)
+                  property: (property_identifier) @write)
+                arguments: (arguments (string) @destination)))))))) @overwrite
+          (#eq? @reader "navigator") (#eq? @reader @writer)
+          (#eq? @read_clipboard "clipboard") (#eq? @write_clipboard "clipboard")
+          (#eq? @read "readText") (#eq? @write "writeText") (#eq? @test "test")
+          (#eq? @copied @checked)
+          (#match? @pattern "0x\\[[^]]+\\]\\{40\\}")
+          (#match? @pattern "a-f") (#match? @pattern "0-9")
+          (#match? @destination "^['\"]0x[a-fA-F0-9]{40}['\"]$")
+          (#not-match? @destination "(?i)^['\"]0x(0{40}|0{36}dead)['\"]$"))
+
+composite_rules:
+  - id: polled-eth-clipboard-hijacker
+    desc: Polled clipboard wallet destination replacement
+    crit: hostile
+    conf: 0.99
+    for: [python, javascript, typescript]
+    all:
+      - id: micro-behaviors/data/format/crypto-address::eth-address-regex
+    any:
+      - id: python-polled-eth-address-overwrite
+      - id: javascript-polled-eth-address-overwrite

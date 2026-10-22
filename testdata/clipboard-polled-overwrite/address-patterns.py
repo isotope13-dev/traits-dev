@@ -1,0 +1,1 @@
+patterns = ['1[a-km-zA-HJ-NP-Z1-9]{25,34}', 'bc1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{39,59}', 'bitcoincash:[qp][a-zA-Z0-9]', 'ltc1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{39,59}', '[mlML][a-km-zA-HJ-NP-Z1-9]', '[T][1-9A-HJ-NP-Za-km-z]{33}', '[1-9A-HJ-NP-Za-km-z]{32,44}']
