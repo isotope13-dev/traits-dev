@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 HOSTILE = ('objectives/supply-chain/install-hook/project-rewrite::'
            'install-hook-injects-consumer-dependency')
 ESCAPE = ('objectives/supply-chain/install-hook/project-rewrite::'
-          'install-hook-parent-directory-escape')
+          'postinstall-parent-directory-escape')
 PKG_INSTALL = ('objectives/supply-chain/install-hook/package/manifest::'
                'install-hook-runs-pkg-install')
 

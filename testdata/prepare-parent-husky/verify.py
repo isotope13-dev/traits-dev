@@ -11,8 +11,7 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[2]
-PREFIX = "objectives/supply-chain/install-hook/project-rewrite::"
-ESCAPE = PREFIX + "prepare-parent-directory-escape"
+ESCAPE = "micro-behaviors/fs/directory/chdir::npm-prepare-parent-directory"
 INSTALL = "objectives/execution/autoinstall/package::script-npm-install-prepare"
 
 # These scripts are analyzed as data and are never executed.
@@ -39,6 +38,14 @@ CASES = {
     "windows-delayed-variable": ("cd ../.. && husky install !HOOK_DIR!", True, False),
     "redirection": ("cd ../.. && husky install ui/.husky>output", True, False),
     "plain-injection": ("cd ../.. && npm install injected-package", True, True),
+    "sibling-build": (
+        "npm run compile && cd ../tools && npm i && npm run compile && "
+        "cd ../sdk && node ../tools/build/src/prepublish.js .", True, False),
+    "renamed-sibling-build": (
+        "npm run build && cd ../generator && npm i && npm run build", True, False),
+    "no-navigation": ("npm run compile", False, False),
+    "child-navigation": ("cd tools && npm run compile", False, False),
+    "printed-navigation": ('echo "cd ../tools"', False, False),
 }
 
 
@@ -63,13 +70,15 @@ def main():
         report, end = decoder.raw_decode(remaining)
         reports.append(report)
         remaining = remaining[end:].lstrip()
-    findings = {Path(f["path"]).parent.name: {t["id"] for t in f.get("traits", [])}
+    findings = {Path(f["path"]).parent.name: {t["id"]: t for t in f.get("traits", [])}
                 for report in reports for f in report["files"]
                 if Path(f["path"]).name == "package.json"}
     for name, (_, escape, install) in CASES.items():
         ids = findings[name]
         assert (ESCAPE in ids) == escape, (name, "escape", sorted(ids))
         assert (INSTALL in ids) == install, (name, "package install", sorted(ids))
+        if escape:
+            assert ids[ESCAPE]["crit"] == 3, (name, "navigation must be notable")
         print("PASS", name)
 
 

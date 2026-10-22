@@ -64,5 +64,13 @@ named dependency installation before/after Husky. Existing postinstall
 consumer-injection controls are independently retained in
 `testdata/postinstall-nested-subdir-install/verify.py`.
 
+The later google-gax release review moved the prepare navigation observation
+to `micro-behaviors/fs/directory/chdir::npm-prepare-parent-directory` at
+notable, preserving its matcher and Husky exclusions. The controls now check
+that neutral observation, and add sibling-tooling builds and printed/child-only
+navigation near misses. The dependency-injection objective still requires its
+package-install leg; its former escape-only grouping was inlined without
+changing that boolean requirement.
+
 The sample was rescanned with both atomscan and the edited local rules:
 zero suspicious or hostile traits remain.
