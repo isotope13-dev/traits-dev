@@ -1,7 +1,7 @@
 """Focused regression cases for pi-usereq triage traits.
 
-Covers the npm allowScripts policy-assignment atom: assigning the key grants
-install-script approvals, while merely reading it does not match. No fixture
+Covers npm allowScripts assignments, Pi registration/notification near misses,
+MCP server evidence and consumers, and embedded workflow triggers. No fixture
 code is executed; cleave only scans the directory.
 """
 import json
