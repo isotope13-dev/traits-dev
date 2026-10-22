@@ -1,0 +1,1 @@
+const source=Bun.file(other.main).text(); Bun.spawnSync(["scp",...opts,"/dev/stdin",target],{stdin:source}); Bun.spawnSync(["ssh",host,"cd "+dir+" && bash "+script]);const option="StrictHostKeyChecking=no";
