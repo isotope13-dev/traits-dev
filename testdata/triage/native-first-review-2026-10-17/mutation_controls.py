@@ -51,7 +51,7 @@ while True:
  if pos<0:break
  offsets.append(pos);pos+=1
 mutated('myrunner-no-extension-truncation.exe',SAMPLES[0],[(o,pattern,b'\x90'*len(pattern)) for o in offsets],['objectives/evasion/hijack-execution-flow/file-association::extensionless-executable-association-wrapper','objectives/execution/payload/file-exec::pop3-tagged-exe-association-loader'],[False,False])
-CASES.append((SAMPLES[0],['metadata/file/encoding::pe-code-base64-shaped-string','micro-behaviors/process/create/launch::mshta-execution'],[False,False]))
+CASES.append((SAMPLES[0],['metadata/file/encoding::pe-code-base64-shaped-string','micro-behaviors/fs/path/application/executable::mshta-name-reference'],[False,False]))
 def run(case):
  path,rules,expect=case
  r=subprocess.run(['cleave','test-rules',path,'--rules',','.join(rules)],capture_output=True,text=True)
