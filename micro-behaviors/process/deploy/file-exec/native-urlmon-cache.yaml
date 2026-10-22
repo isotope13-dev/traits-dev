@@ -1,0 +1,52 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86]
+
+traits:
+  - id: x86-urlmon-cache-path-winexec
+    desc: URLMon cache download path passed to WinExec
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_urlmon_cache_path_winexec {
+          strings:
+            $name = "URLDownloadToCacheFileA\x00" ascii
+            $fetch = {
+              68 [4] 50 FF 15 [4] 8B F0 85 F6 0F 84 [4]
+              8B 84 24 [4] 8B BC 24 [4] 85 C0 74 ?? 57 FF 15 [4]
+              6A 00 6A 00 8D 44 24 ?? 68 [4] 50 57 6A 00 FF D6
+              85 C0 75 ?? 8B 9C 24 [4] BD 01 00 00 00 85 DB 0F 84 ?? ?? ?? ??
+            }
+            $launch = {
+              8B 84 24 [4] 85 C0 74 ?? 6A 01 6A 00 6A 00
+              8D 54 24 ?? 68 [4] 52 E8 [4] 83 C4 14 85 C0
+              6A ?? 74 ?? 8D 44 24 ?? 50 FF 15 ?? ?? ?? ??
+            }
+          condition:
+            pe.machine == pe.MACHINE_I386 and
+            for any s in pe.sections : (
+              s.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for any f in (1..#fetch) : (
+                @fetch[f] >= s.raw_data_offset and
+                @fetch[f]+!fetch[f] <= s.raw_data_offset+s.raw_data_size and
+                uint32(@fetch[f]+8) == pe.image_base+pe.import_rva("KERNEL32.dll", "GetProcAddress") and
+                for any n in (1..#name) : (
+                  pe.rva_to_offset(uint32(@fetch[f]+1)-pe.image_base) == @name[n]
+                ) and
+                for any l in (1..#launch) : (
+                  @launch[l] == @fetch[f]+90+int32(@fetch[f]+86) and
+                  @launch[l] >= s.raw_data_offset and
+                  @launch[l]+!launch[l] <= s.raw_data_offset+s.raw_data_size and
+                  // Account for argument pushes: all three LEAs refer to
+                  // the same local cache pathname, not an unrelated file.
+                  uint8(@launch[l]+20) == uint8(@fetch[f]+54)+4 and
+                  uint8(@launch[l]+44)+4 == uint8(@fetch[f]+54) and
+                  uint32(@launch[l]+48) == pe.image_base+pe.import_rva("KERNEL32.dll", "WinExec")
+                )
+              )
+            )
+        }
