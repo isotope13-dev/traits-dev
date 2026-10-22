@@ -24,49 +24,17 @@ defaults:
   conf: 0.94
   attack: T1550.001
 
-traits:
-  # OWA's token-to-cookie exchange endpoint.  Legitimate clients talk to Graph
-  # or to OWA as a signed-in user; posting a bearer token here to obtain a
-  # session is the token-replay step.
-  - id: owa-token-session-endpoint
-    desc: Outlook Web Access token exchange endpoint
-    crit: suspicious
-    conf: 0.95
-    if:
-      type: text
-      regex: '(?i)outlook\.office(365)?\.com/owa/auth\.owa'
-
-  - id: owa-bearer-assertion-body
-    desc: Posts a bearer assertion to OWA
-    crit: suspicious
-    conf: 0.95
-    if:
-      type: literal
-      substr: token_type=Bearer&access_token=
-      case_insensitive: true
-      # Documentation examples quote this body shape; only string constants
-      # handled as values count, and Python docstrings never do.
-      kind: string
-      exclude_docstrings: true
-    # Secret scanners and redaction engines quote this body shape in
-    # documentation and detectors; describing the format is not posting it.
-    unless:
-      - id: well-known/tool/detection/
-
 composite_rules:
   # A stolen access token exchanged for an interactive mailbox session.
   - id: stolen-token-to-owa-session
+    for: [javascript, typescript, python, ruby, csharp, go, java]
     desc: Replays an OAuth token into an OWA session
     crit: hostile
     conf: 0.96
     attack: T1550.001,T1114.002
     all:
-      - id: owa-token-session-endpoint
-    any:
-      - id: owa-bearer-assertion-body
-      - id: micro-behaviors/communications/http/device-code::token-object-field
-      - id: micro-behaviors/communications/http/oauth::oauth-offline-access-scope
-    needs: 1
+      - id: micro-behaviors/communications/http/services/microsoft::owa-token-session-endpoint
+      - id: micro-behaviors/communications/http/token-auth::bearer-access-token-form-fields
     near_bytes: 8192
     unless:
       - id: well-known/tool/detection/
@@ -76,7 +44,7 @@ composite_rules:
   # Electron capability; doing it to inject a credential minted for a
   # Microsoft first-party client is the weaponisation.
   - id: bearer-header-injected-into-session
-    for: [javascript]
+    for: [javascript, typescript]
     desc: Injects a bearer token into intercepted requests
     crit: hostile
     conf: 0.95
@@ -87,3 +55,18 @@ composite_rules:
     near_bytes: 8192
     unless:
       - id: well-known/tool/detection/
+
+  # This is a suspicious co-occurrence, not a proof of source-to-sink flow.
+  # Ordinary visible OAuth windows and HTTP-only refresh clients lack the
+  # hidden window + refresh grant + Entra cookie combination.
+  - id: hidden-browser-refresh-to-session-cookie
+    for: [javascript, typescript]
+    desc: Hidden browser refresh grant with Entra session cookies
+    crit: suspicious
+    conf: 0.97
+    all:
+      - id: micro-behaviors/ui/window/visibility::electron-hidden-browserwindow
+      - id: micro-behaviors/communications/http/oauth::microsoft-oauth-token-endpoint
+      - id: micro-behaviors/communications/http/oauth::oauth-refresh-grant-type
+      - id: micro-behaviors/communications/http/cookie-name::entra-session-cookie-name
+    near_bytes: 4096
