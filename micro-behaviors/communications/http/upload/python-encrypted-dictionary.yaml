@@ -1,0 +1,123 @@
+# Bind the credential path iteration, file read, dictionary, serialization,
+# encryption and POST body. The generic payload-flow extractor loses credential
+# provenance when paths come from a tuple and are joined to Path.home().
+# Adjacency after collection rejects overwritten plaintext and ciphertext.
+# A second collection loop only adds a read result; it cannot reset the bundle.
+defaults:
+  platforms: [unix, windows]
+  for: [python]
+traits:
+  - id: python-credential-dictionary-encrypted-post
+    desc: Credential dictionary enters encrypted POST body
+    crit: notable
+    conf: 0.99
+    if:
+      type: tree-sitter
+      query: |
+        ((block
+          (expression_statement (assignment
+            left: (identifier) @dictionary right: (dictionary)))
+          . (expression_statement (assignment
+            left: (identifier) @home
+            right: (call function: (attribute object: (identifier) @pathlib
+              attribute: (identifier) @home_method))))
+          . (for_statement
+            left: (identifier) @relative
+            right: (tuple (string (string_content) @credential))
+            body: (block
+              . (expression_statement (assignment
+                left: (identifier) @target
+                right: (binary_operator left: (identifier) @joined_home
+                  operator: "/" right: (identifier) @joined_relative)))
+              . (if_statement
+                condition: (call function: (attribute
+                  object: (identifier) @checked attribute: (identifier) @is_file))
+                consequence: (block
+                  . (expression_statement (assignment
+                    left: (subscript value: (identifier) @stored_dictionary
+                      subscript: (identifier) @stored_relative)
+                    right: (call function: (attribute
+                      object: (identifier) @read_target
+                      attribute: (identifier) @read_text)))) .)) .))
+          . (for_statement
+            body: (block . (try_statement body: (block
+              . (expression_statement (assignment
+                left: (subscript value: (identifier) @additional_dictionary
+                  subscript: (_))
+                right: (call function: (attribute
+                  object: (call function: (attribute
+                    attribute: (identifier) @read_bytes))
+                  attribute: (identifier) @decode)))) .)) .))
+          . (expression_statement (assignment
+            left: (identifier) @plaintext
+            right: (call function: (attribute object: (identifier) @gzip
+              attribute: (identifier) @compress)
+              arguments: (argument_list . (call function: (attribute
+                object: (call function: (attribute object: (identifier) @json
+                  attribute: (identifier) @dumps)
+                  arguments: (argument_list . (identifier) @serialized .))
+                attribute: (identifier) @encode)) .))))
+          . (expression_statement (assignment
+            left: (identifier) @key right: (call)))
+          . (expression_statement (assignment
+            left: (identifier) @iv right: (call)))
+          . (expression_statement (assignment
+            left: (identifier) @cipher
+            right: (call function: (attribute object: (identifier) @aes
+              attribute: (identifier) @new)
+              arguments: (argument_list
+                . (identifier) @cipher_key . (_) . (identifier) @cipher_iv .))))
+          . (expression_statement (assignment
+            left: (identifier) @ciphertext
+            right: (call function: (attribute object: (identifier) @used_cipher
+              attribute: (identifier) @encrypt)
+              arguments: (argument_list . (call function: (identifier) @pad
+                arguments: (argument_list . (identifier) @padded . (_))) .))))
+          . (expression_statement (assignment
+            left: (identifier) @wrapped right: (call)))
+          . (expression_statement (assignment
+            left: (identifier)
+            right: (call function: (attribute object: (identifier) @client
+              attribute: (identifier) @post)
+              arguments: (argument_list
+                (keyword_argument name: (identifier) @data
+                  value: (binary_operator
+                    right: (identifier) @sent))))))) @transfer
+          (#eq? @pathlib "Path")
+          (#eq? @home_method "home")
+          (#match? @credential "^\\.(aws/credentials|npmrc|git-credentials|netrc)$")
+          (#eq? @home @joined_home)
+          (#eq? @relative @joined_relative)
+          (#eq? @relative @stored_relative)
+          (#eq? @target @checked)
+          (#eq? @target @read_target)
+          (#eq? @is_file "is_file")
+          (#eq? @read_text "read_text")
+          (#eq? @dictionary @stored_dictionary)
+          (#eq? @dictionary @serialized)
+          (#eq? @dictionary @additional_dictionary)
+          (#eq? @read_bytes "read_bytes")
+          (#eq? @decode "decode")
+          (#eq? @gzip "gzip")
+          (#eq? @compress "compress")
+          (#eq? @json "json")
+          (#eq? @dumps "dumps")
+          (#eq? @encode "encode")
+          (#eq? @plaintext @padded)
+          (#eq? @key @cipher_key)
+          (#eq? @iv @cipher_iv)
+          (#eq? @aes "AES")
+          (#eq? @new "new")
+          (#eq? @cipher @used_cipher)
+          (#eq? @encrypt "encrypt")
+          (#eq? @pad "pad")
+          (#not-eq? @key @plaintext)
+          (#not-eq? @iv @plaintext)
+          (#not-eq? @cipher @plaintext)
+          (#not-eq? @wrapped @ciphertext)
+          (#match? @client "^(requests|httpx)$")
+          (#eq? @post "post")
+          (#eq? @data "data")
+          (#eq? @ciphertext @sent))
+    unless:
+      - id: metadata/lang/source/origin::plain-source-layer-path
