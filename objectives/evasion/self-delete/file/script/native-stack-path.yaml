@@ -1,0 +1,44 @@
+# A path query's output buffer supplies both DEL and IF EXIST placeholders.
+# This ESP-relative formatter is a separate compiler shape from the existing
+# EBP-relative imported-API rule. It does not depend on a batch filename.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+traits:
+  - id: x86-queried-path-retry-delete-formatter
+    desc: Queried path reused in retry-delete batch
+    crit: suspicious
+    conf: 0.95
+    attack: T1070.004
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_queried_path_retry_delete_formatter {
+          strings:
+            $api = "GetModuleFileNameA" ascii fullword
+            $template = /:[A-Za-z_]{1,32}\r?\ndel "%s"\r?\nif exist "%s" goto /
+            $query = { 68 04 01 00 00 8D 94 24 ?? ?? ?? ?? 52 6A 00 FF 15 ?? ?? ?? ?? }
+            $format = {
+              8D 44 24 ?? 50 8D 8C 24 ?? ?? ?? ?? 51
+              8D 94 24 ?? ?? ?? ?? 52 8B C2 50
+              68 ?? ?? ?? ?? 57 56 E8 ?? ?? ?? ??
+            }
+          condition:
+            pe.machine == pe.MACHINE_I386 and $api and
+            for any s in pe.sections : (
+              s.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for any q in (1..#query) : (
+                @query[q] >= s.raw_data_offset and
+                for any f in (1..#format) : (
+                  @format[f] > @query[q] and @format[f] < @query[q]+384 and
+                  @format[f]+!format[f] <= s.raw_data_offset+s.raw_data_size and
+                  // Saved registers and outstanding arguments shift ESP
+                  // by 32 bytes between the two path-buffer LEAs.
+                  uint32(@format[f]+16) == uint32(@query[q]+8)+32 and
+                  $template at pe.rva_to_offset(uint32(@format[f]+25)-pe.image_base)
+                )
+              )
+            )
+        }

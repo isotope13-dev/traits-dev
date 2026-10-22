@@ -18,6 +18,9 @@ traits:
           strings:
             $key = "Software\\Microsoft\\Windows NT\\CurrentVersion\\Windows" wide nocase
             $value = "Run" wide fullword
+            $dll = "ADVAPI32.dll" ascii nocase fullword
+            $open_name = "RegOpenKeyExW" ascii fullword
+            $write_name = "RegSetValueExW" ascii fullword
             $open = { 6A 03 56 68 ?? ?? ?? ?? 68 01 00 00 80
                       89 B5 ?? ?? ?? ?? FF 15 ?? ?? ?? ?? }
             $open_xor = { 6A 03 33 F6 56 68 ?? ?? ?? ?? 68 01 00 00 80
@@ -26,10 +29,42 @@ traits:
                        FF B5 ?? ?? ?? ?? FF 15 ?? ?? ?? ?? }
             $open_esp = { 6A 03 6A 00 68 ?? ?? ?? ?? 68 01 00 00 80
                           C7 44 24 ?? 00 00 00 00 FF 15 ?? ?? ?? ?? }
+            // Keep bounded instruction contexts: the engine retains only
+            // eight offsets per pattern, so bare MOV/LEA fragments lose joins.
+            $reload_esp = { 8B 44 24 ?? 51 8D 94 24 ?? ?? ?? ?? 52 }
+            $reload_esp_early = { 8B 4C 24 ?? 2B C2 D1 F8 8D 54 00 02 52
+                                  8D 84 24 ?? ?? ?? ?? 50 }
             $write_esp = { 6A 01 6A 00 68 ?? ?? ?? ?? ( 50 | 51 | 52 | 53 | 55 | 56 | 57 ) FF 15 ?? ?? ?? ?? }
           condition:
-            pe.is_pe and pe.imports("ADVAPI32.dll", "RegOpenKeyExW") and
-            pe.imports("ADVAPI32.dll", "RegSetValueExW") and
+            pe.is_pe and (
+              (pe.imports("ADVAPI32.dll", "RegOpenKeyExW") and
+               pe.imports("ADVAPI32.dll", "RegSetValueExW")) or
+              // Recover ownership through a preserved descriptor. The code's
+              // two IAT operands must resolve to the named API lookup entries.
+              (all of ($dll, $open_name, $write_name, $open_esp, $write_esp) and
+                for any o in (1..#open_esp) : (
+                  for any w in (1..#write_esp) : (
+                    @write_esp[w] > @open_esp[o] and @write_esp[w] < @open_esp[o]+128 and
+                    for any l in (1..#dll) : (
+                      for any d in (0..@dll[l]) : (
+                        uint32(d+4) == 0 and uint32(d+8) == 0 and
+                        pe.rva_to_offset(uint32(d+12)) == @dll[l] and
+                        uint32(@open_esp[o]+24) >= pe.image_base+uint32(d+16) and
+                        uint32(@open_esp[o]+24) < pe.image_base+uint32(d+16)+256 and
+                        uint32(@write_esp[w]+12) >= pe.image_base+uint32(d+16) and
+                        uint32(@write_esp[w]+12) < pe.image_base+uint32(d+16)+256 and
+                        (uint32(@open_esp[o]+24)-pe.image_base-uint32(d+16)) % 4 == 0 and
+                        (uint32(@write_esp[w]+12)-pe.image_base-uint32(d+16)) % 4 == 0 and
+                        pe.rva_to_offset(uint32(pe.rva_to_offset(uint32(d))+
+                          uint32(@open_esp[o]+24)-pe.image_base-uint32(d+16)))+2 == @open_name and
+                        pe.rva_to_offset(uint32(pe.rva_to_offset(uint32(d))+
+                          uint32(@write_esp[w]+12)-pe.image_base-uint32(d+16)))+2 == @write_name
+                      )
+                    )
+                  )
+                )
+              )
+            ) and
             (
               (for any i in (1..#open) : (
                 for any s in (0..pe.number_of_sections - 1) : (
@@ -63,9 +98,25 @@ traits:
                   @open_esp[i] >= pe.sections[s].raw_data_offset and
                   @open_esp[i] + !open_esp[i] <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size
                 ) and
+                uint8(@open_esp[i]-5) == 0x8d and
+                uint8(@open_esp[i]-3) == 0x24 and
+                ((uint8(@open_esp[i]-4) == 0x44 and uint8(@open_esp[i]-1) == 0x50) or
+                 (uint8(@open_esp[i]-4) == 0x4c and uint8(@open_esp[i]-1) == 0x51)) and
                 $key at pe.rva_to_offset(uint32(@open_esp[i] + 5) - pe.image_base) and
                 for any j in (1..#write_esp) : (
                   @write_esp[j] > @open_esp[i] and @write_esp[j] < @open_esp[i] + 128 and
+                  (
+                    (for any h in (1..#reload_esp) : (
+                      @reload_esp[h]+!reload_esp[h] == @write_esp[j] and
+                      uint8(@reload_esp[h]+3) == uint8(@open_esp[i]-2) and
+                      uint8(@write_esp[j]+9) == 0x50
+                    )) or
+                    (for any h in (1..#reload_esp_early) : (
+                      @reload_esp_early[h]+!reload_esp_early[h] == @write_esp[j] and
+                      uint8(@reload_esp_early[h]+3) == uint8(@open_esp[i]-2) and
+                      uint8(@write_esp[j]+9) == 0x51
+                    ))
+                  ) and
                   $value at pe.rva_to_offset(uint32(@write_esp[j] + 5) - pe.image_base)
                 )
               ))

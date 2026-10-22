@@ -1,0 +1,48 @@
+# Some unpacked images retain an original import descriptor outside the active
+# directory. Bind ordinal ownership to that descriptor, not another DLL's table.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+
+traits:
+  - id: winsock-client-ordinal-api-set
+    desc: Winsock connect/send/receive ordinal references
+    crit: notable
+    conf: 0.96
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule winsock_preserved_client_ordinal_table {
+          strings:
+            $dll = "WS2_32.dll" ascii nocase fullword
+            $client = { 10 00 00 80 13 00 00 80 03 00 00 80 04 00 00 80 }
+          condition:
+            pe.is_pe and $dll and (
+              (pe.imports("WS2_32.dll", 4) and pe.imports("WS2_32.dll", 23) and
+               pe.imports("WS2_32.dll", 16) and pe.imports("WS2_32.dll", 19)) or
+              (pe.machine == pe.MACHINE_I386 and $client and
+            for any c in (1..#client) : (
+              for any l in (1..#dll) : (
+                for any d in (0..@dll[l]) : (
+                  uint32(d+4) == 0 and uint32(d+8) == 0 and
+                  pe.rva_to_offset(uint32(d+12)) == @dll[l] and
+                  uint32(d+16) > 0 and
+                  for any t in (0..63) : (
+                    pe.rva_to_offset(uint32(d)) + t*4 == @client[c] and
+                    // The run is part of a terminated ordinal-only table.
+                    for any n in (t+4..64) : (
+                      uint32(pe.rva_to_offset(uint32(d))+n*4) == 0 and
+                      for any a in (0..n-1) : (
+                        uint32(pe.rva_to_offset(uint32(d))+a*4) == 0x80000017
+                      ) and
+                      for all k in (0..n-1) : (
+                        uint32(pe.rva_to_offset(uint32(d))+k*4) & 0xffff0000 == 0x80000000
+                      )
+                    )
+                  )
+                )
+              )
+            ))
+            )
+        }
