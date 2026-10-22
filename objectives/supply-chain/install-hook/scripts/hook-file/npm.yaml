@@ -6,6 +6,63 @@ defaults:
   - javascript
   attack: T1195.002
 traits:
+- id: postinstall-ssh-key-env-curl-flow
+  desc: SSH key and env reach curl input
+  crit: suspicious
+  conf: 0.99
+  platforms: [unix]
+  attack: T1552.004,T1552.001,T1041
+  if:
+    type: tree-sitter
+    language: javascript
+    query: |
+      ((program
+        (lexical_declaration
+          (variable_declarator
+            name: (identifier) @key
+            value: (call_expression
+              function: (member_expression
+                object: (identifier) @fs
+                property: (property_identifier) @read)
+              arguments: (arguments
+                . (binary_expression) @path
+                . (string)))))
+        (_)*
+        (lexical_declaration
+          (variable_declarator
+            name: (identifier) @envjson
+            value: (call_expression
+              function: (member_expression
+                object: (identifier) @json
+                property: (property_identifier) @stringify)
+              arguments: (arguments
+                . (member_expression
+                  object: (identifier) @process
+                  property: (property_identifier) @env)))))
+        (_)*
+        (expression_statement
+          (call_expression
+            function: (identifier) @exec
+            arguments: (arguments
+              . (string (string_fragment) @command)
+              . (object
+                (pair
+                  key: (property_identifier) @input
+                  value: (binary_expression
+                    left: (identifier) @key_use
+                    right: (identifier) @env_use)))))))
+      (#eq? @fs "fs")
+      (#eq? @read "readFileSync")
+      (#match? @path "(?s)homedir\\(\\)\\s*\\+\\s*['\"]/\\.ssh/id_(rsa|ed25519|ecdsa)")
+      (#eq? @json "JSON")
+      (#eq? @stringify "stringify")
+      (#eq? @process "process")
+      (#eq? @env "env")
+      (#eq? @exec "execSync")
+      (#match? @command "^curl\\b[^;|\\n]*--data-binary\\s+@-\\s+https?://")
+      (#eq? @input "input")
+      (#eq? @key @key_use)
+      (#eq? @envjson @env_use))
 - id: init-js-filename
   desc: File named init.js
   crit: component
@@ -562,6 +619,16 @@ composite_rules:
   all:
   - id: hook-full-env-report-cluster
   - id: objectives/exfiltration/http/upload::node-collect-exfil
+- id: postinstall-ssh-key-env-curl-exfil
+  desc: Postinstall attempts SSH/env upload
+  crit: hostile
+  conf: 0.99
+  attack: T1195.002,T1552.004,T1552.001,T1041
+  for: [npm, package.json, javascript]
+  scope: archive
+  all:
+  - id: metadata/package/scripts/lifecycle::postinstall-hook-declaration
+  - id: postinstall-ssh-key-env-curl-flow
 - id: postinstall-unverified-binary-archive-installer
   desc: npm postinstall downloads unverified binary archive
   crit: suspicious
