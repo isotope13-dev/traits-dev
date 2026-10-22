@@ -126,7 +126,7 @@ def main():
                 [AES, 'objectives/credential-access/browser/chromium::python-dpapi-chromium-login-decrypt',
                  'objectives/exfiltration/stealer/dev-secret::encoded-multi-developer-secret-exfil'],
                 ['well-known/malware/stealer/privcollect::privcollect-tool-marker',
-                 'well-known/malware/stealer/privcollect::litellm-dev-exfil-host'], False)
+                 'objectives/command-and-control/infrastructure/domain/known::litellm-dev-host-reference'], False)
 
             startup = (args.sample_root / 'wheel-payloads/unix/sitecustomize.py').read_text()
             functions = [node.name for node in ast.parse(startup).body
