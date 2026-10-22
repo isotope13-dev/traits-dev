@@ -22,7 +22,10 @@ COMPILED_DIR := third-party/compiled
 # names select different traits (for example, build.rs versus lib.rs).
 # Reports are keyed on content, filename/type, analysis options, engine build,
 # and trait content, with path-equivalence checks before reuse. Reuse unchanged
-# reports for iteration; validate-uncached exercises fresh fixture analysis.
+# successful full-validation results for iteration. A fresh run measures rule
+# costs without analysis-report reuse; --soft reports performance issues without
+# failing. testdata/performance supplies cost probes with unrestricted verdicts.
+# validate-uncached forces a fresh measured pass.
 validate:
 	$(CLEAVE) --traits-dir . validate
 
