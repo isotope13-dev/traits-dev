@@ -63,6 +63,104 @@ traits:
       type: text
       regex: '(?s)environ\.items\(\)\s*:.{0,100}\+='
 
+  # `fh.write(json.dumps(...))` whose argument is derived from
+  # `os.environ.items()` through `json.dumps`. A filtered config dump has the
+  # same flow, so this is the materialization, not the harvest. Keys-only
+  # iteration that never reaches the write does not match.
+  - id: python-environ-items-json-write
+    desc: Writes JSON derived from environment entries
+    conf: 0.9
+    if:
+      type: symbol
+      kind: call
+      regex: '\.write$'
+      arg:
+        index: 0
+        from:
+          call: '^os\.environ\.items$'
+          through:
+            - call: '^json\.dumps$'
+              arguments: [0]
+
+  # `{k: v[:200] for k, v in os.environ.items()}` keeps every value. A name
+  # filter (`if k.startswith(...)`) is a different behavior and is excluded.
+  # The value may be the loop variable or a slice of it, under any name.
+  - id: python-environ-unfiltered-value-comprehension
+    desc: Keeps every environment value unfiltered
+    conf: 0.9
+    if:
+      type: tree-sitter
+      query: |
+        ((dictionary_comprehension
+            body: (pair
+              value: [(identifier) @kept (subscript (identifier) @kept)])
+            (for_in_clause
+              left: (pattern_list . (identifier) @key (identifier) @val .)
+              right: (call
+                function: (attribute
+                  object: (attribute
+                    object: (identifier) @os
+                    attribute: (identifier) @env)
+                  attribute: (identifier) @items)
+                arguments: (argument_list)))) @comp
+          (#eq? @os "os")
+          (#eq? @env "environ")
+          (#eq? @items "items")
+          (#eq? @kept @val)
+          (#not-match? @comp "\\bif\\b"))
+
+  # The function invoked at module level is the one that writes JSON, and it
+  # either reads os.environ.items() itself or calls the helper that does.
+  # The helper call may be a direct assignment or the first assignment inside
+  # a try. An unrelated module-level call next to an uncalled saver does not
+  # match, because the callee name has to be the writer that reaches the helper.
+  - id: python-import-runs-environ-json-writer
+    desc: Import runs environment JSON writer
+    conf: 0.9
+    if:
+      type: tree-sitter
+      query: |
+        ((module
+            (function_definition
+              name: (identifier) @fn
+              body: (block) @body)
+            (_)*
+            (expression_statement
+              (call
+                function: (identifier) @called)))
+          (#eq? @fn @called)
+          (#match? @body "os\\.environ\\.items\\(\\)")
+          (#match? @body "json\\.dumps")
+          (#match? @body "\\.write\\("))
+
+        ((module
+            (function_definition
+              name: (identifier) @helper
+              body: (block) @hbody)
+            (_)*
+            (function_definition
+              name: (identifier) @entry
+              body: (block
+                [(expression_statement
+                   (assignment
+                     right: (call
+                       function: (identifier) @invoked)))
+                 (try_statement
+                   body: (block
+                     (expression_statement
+                       (assignment
+                         right: (call
+                           function: (identifier) @invoked)))))]) @ebody)
+            (_)*
+            (expression_statement
+              (call
+                function: (identifier) @called)))
+          (#eq? @entry @called)
+          (#eq? @invoked @helper)
+          (#match? @hbody "os\\.environ\\.items\\(\\)")
+          (#match? @ebody "json\\.dumps")
+          (#match? @ebody "\\.write\\("))
+
 composite_rules:
   - id: environ-alias-items-loop
     desc: Iterates over aliased os.environ entries
