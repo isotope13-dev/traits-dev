@@ -1,0 +1,72 @@
+# HTML has no JavaScript symbol/flow projection. Compare the response binding
+# and the eval argument byte for byte. Permit whitespace or a nonmutating
+# status/nonempty guard between them; reject calls and assignments in the guard.
+# The existing JavaScript AST matcher remains canonical for standalone scripts.
+defaults:
+  platforms: [windows, unix]
+  for: [html]
+  crit: notable
+  conf: 0.98
+
+traits:
+  - id: html-response-text-binding-eval
+    desc: HTML script evaluates its stored responseText
+    attack: T1059.007
+    if:
+      type: yara
+      source: |
+        rule html_response_text_binding_eval {
+          strings:
+            $store = /\bvar [A-Za-z_][A-Za-z0-9_]{0,63}[ \t]*=[ \t]*[A-Za-z_$][A-Za-z0-9_$]{0,63}\.responseText[ \t]*;/
+            $eval = /\beval\([A-Za-z_][A-Za-z0-9_]{0,63}\)/
+            $script = /<script([ \t\r\n][^>]{0,256})?>/ nocase
+            $script_end = /<\/script[ \t\r\n]*>/ nocase
+            $guard = /\bif[ \t]*\([A-Za-z0-9_$ .!<>=&|]{1,100}\)[ \t\r\n]*\{[ \t\r\n]*/
+            $guard_keyword = /\b(new|await|yield|delete)\b/
+          condition:
+            $script and $store and $eval and
+            for any i in (1..#store) : (
+              for any j in (1..#eval) : (
+                (@eval[j] == 0 or uint8(@eval[j]-1) != 0x2e) and
+                for any s in (1..#script) : (
+                  @script[s] + !script[s] <= @store[i] and
+                  not for any e in (1..#script_end) : (
+                    @script_end[e] > @script[s] and @script_end[e] < @eval[j]
+                  )
+                ) and
+                @eval[j] >= @store[i] + !store[i] and
+                @eval[j] - (@store[i] + !store[i]) <= 128 and
+                (uint8(@store[i] + 4 + !eval[j] - 6) == 0x3d or
+                 uint8(@store[i] + 4 + !eval[j] - 6) == 0x20 or
+                 uint8(@store[i] + 4 + !eval[j] - 6) == 0x09) and
+                for all k in (0..!eval[j]-7) : (
+                  uint8(@store[i]+4+k) == uint8(@eval[j]+5+k)
+                ) and
+                (@store[i]+!store[i] == @eval[j] or
+                  for all k in (@store[i]+!store[i]..@eval[j]-1) : (
+                    uint8(k) == 0x20 or uint8(k) == 0x09 or
+                    uint8(k) == 0x0a or uint8(k) == 0x0d
+                  ) or
+                  for any g in (1..#guard) : (
+                    @guard[g] >= @store[i]+!store[i] and
+                    @guard[g]+!guard[g] == @eval[j] and
+                    (@guard[g] == @store[i]+!store[i] or
+                      for all k in (@store[i]+!store[i]..@guard[g]-1) : (
+                        uint8(k) == 0x20 or uint8(k) == 0x09 or
+                        uint8(k) == 0x0a or uint8(k) == 0x0d
+                      )
+                    ) and
+                    not for any k in (1..#guard_keyword) : (
+                      @guard_keyword[k] >= @guard[g] and
+                      @guard_keyword[k] < @guard[g]+!guard[g]
+                    ) and
+                    for all k in (@guard[g]..@guard[g]+!guard[g]-1) : (
+                      uint8(k) != 0x3d or uint8(k-1) == 0x3d or
+                      uint8(k+1) == 0x3d or uint8(k-1) == 0x21 or
+                      uint8(k-1) == 0x3c or uint8(k-1) == 0x3e
+                    )
+                  )
+                )
+              )
+            )
+        }
