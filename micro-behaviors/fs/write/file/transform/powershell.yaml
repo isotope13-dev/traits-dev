@@ -1,0 +1,61 @@
+defaults:
+  for: [powershell]
+  platforms: [windows]
+  crit: notable
+  conf: 0.96
+
+traits:
+  # Bind both the input/output path and transformed buffer. A converter,
+  # backup script or encoder writing a different destination must not match.
+  - id: powershell-inplace-byte-increment-operands
+    desc: Bound byte-increment source operands
+    if:
+      type: yara
+      source: |
+        rule inplace_byte_increment {
+          strings:
+            $read = /\$[A-Za-z_][A-Za-z0-9_]{0,23}[ \t]*=[ \t]*\[(System\.)?IO\.File\]::ReadAllBytes\(\$[A-Za-z_][A-Za-z0-9_.]{0,47}\)/ nocase
+            $inc = /\$[A-Za-z_][A-Za-z0-9_]{0,23}\[\$[A-Za-z_][A-Za-z0-9_]{0,23}\][ \t]*\+=[ \t]*1\b/ nocase
+            $write = /WriteAllBytes\(\$[A-Za-z_][A-Za-z0-9_.]{0,47},[ \t]*\$[A-Za-z_][A-Za-z0-9_]{0,23}\)/ nocase
+          condition:
+            filesize < 262144 and
+            #read > 0 and #read <= 16 and #inc > 0 and #inc <= 16 and #write > 0 and #write <= 16 and
+            for any r in (1..#read) : (
+              for any w in (1..#write) : (
+                @write[w] > @read[r] and @write[w] - @read[r] < 512 and
+                for any n in (2..25) : (
+                  (uint8(@read[r]+n) == 32 or uint8(@read[r]+n) == 9 or uint8(@read[r]+n) == 61) and
+                  for all k in (0..n-1) : (uint8(@read[r]+k) == uint8(@write[w]+!write[w]-n-1+k)) and
+                  for any i in (1..#inc) : (
+                    @inc[i] > @read[r] and @inc[i] < @write[w] and uint8(@inc[i]+n) == 91 and
+                    for all k in (0..n-1) : (uint8(@read[r]+k) == uint8(@inc[i]+k))
+                  )
+                ) and
+                for any p in (25..80) : (
+                  uint8(@read[r]+p) == 40 and uint8(@read[r]+p+1) == 36 and
+                  uint8(@write[w]+14+!read[r]-p-2) == 44 and
+                  for all k in (0..!read[r]-p-3) : (uint8(@read[r]+p+1+k) == uint8(@write[w]+14+k))
+                )
+              )
+            )
+        }
+  - id: powershell-read-loop-write-statements
+    desc: PowerShell read-mutate-write statements
+    if:
+      type: tree-sitter
+      query: |
+        (statement_list
+          (pipeline (assignment_expression) @read)
+          . (for_statement) @loop
+          . (pipeline) @write
+          (#match? @read "(?i)ReadAllBytes")
+          (#match? @loop "\\+=\\s*1")
+          (#match? @write "(?i)WriteAllBytes")) @routine
+
+composite_rules:
+  - id: powershell-inplace-byte-increment
+    desc: Increments and rewrites the same file buffer
+    near_bytes: 512
+    all:
+      - id: powershell-inplace-byte-increment-operands
+      - id: powershell-read-loop-write-statements
