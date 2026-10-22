@@ -30,7 +30,7 @@ retired = {
 }
 cases = [
     ('mcp', (fixtures / 'mcp-backdoor-detached.js').read_text(),
-     {'micro-behaviors/os/env/secret-name::javascript-credential-env-read'}, {in_try}, 3),
+     {'micro-behaviors/os/env/secret-name::javascript-credential-env-reference'}, {in_try}, 3),
     ('mcp-updater', (fixtures / 'mcp-updater-detached.js').read_text(), set(), set(), 3),
     ('popup', (fixtures / 'popup-lockup-tight.js').read_text(), {movement, focus}, set(), 4),
     ('scattered', (fixtures / 'popup-api-scattered.js').read_text(), set(), {movement, focus}, 3),
