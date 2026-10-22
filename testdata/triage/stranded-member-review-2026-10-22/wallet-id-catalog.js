@@ -1,0 +1,24 @@
+// Catalog data only: neither an extension nor a credential collector.
+export const registeredWallets = [
+  "nkbihfbeogaeaoehlefnkodbefgpgknn",
+  "bfnaelmomeimhlpmgjnjophhpkkoljpa",
+  "egjidjbpglichdcondbcbdnbeeppgdph",
+  "fhbohimaelbohpjbbldcngcnapndodjp",
+  "hnfanknocfeofbddgcijnmhnfnkdnaad",
+  "ibnejdfjmmkpcnlpebklmnkoeoihofec",
+  "lpfcbjknijpeeillifnkikgncikgfhdo",
+  "ookjlbkiijinhpmnjffcofjonbfbgaoc",
+  "ejjladinnckdgjemekebdpeokbikhfci",
+  "efbglgofoippbgcjepnhiblaibcnclgk",
+  "phkbamefinggmakgklpkljjmgibohnba",
+  "aholpfdialjgjfhomihkjbmgjidlcdno",
+  "dmkamcknogkgcdfhhbddcghachkejeap",
+  "acmacodkjbdgmoleebolmdjonilkdbch",
+  "odbfpeeihdkbihmopkbjmoonfanlbfcl",
+  "ejbalbakoplchlghecdalmeeeajnimhm",
+  "aeachknmefphepccionboohckonoeemg",
+  "hifafgmccdpekplomjjkcfgodnhcellj",
+  "jblndlipeogpafnldhgmapagcccfchpi",
+  "fjcldmjmjhkmlelfidncplebgghbgcjp",
+  "dlcobpjiigpikoobohmabehhmhfoodbb"
+];
