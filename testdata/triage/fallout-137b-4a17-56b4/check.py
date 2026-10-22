@@ -49,8 +49,12 @@ elif sys.argv[1] == 'check':
         assert not ids & RETIRED, (name, ids & RETIRED)
         # Skipping REX.W narrows a save but still executes the parser.
         # Skipping the optional body peek also preserves body reception.
+        # The shifted outer branch skips REX.B and tests EBP (payload
+        # length), which remains positive for the default 512-byte payload.
+        # Bounded emulation confirms repeated sends in this variant.
         expected = name in {'positive.elf', 'parser-call-redirected.elf',
-                            'receive-call-redirected.elf'}
+                            'receive-call-redirected.elf',
+                            'outer-repeat-branch-changed.elf'}
         assert (PREFIX in ids) == expected, name
         assert (BOT in ids) == expected, name
         results.append({'control': name, 'flood': PREFIX in ids, 'bot': BOT in ids})

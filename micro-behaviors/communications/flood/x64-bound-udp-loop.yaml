@@ -17,10 +17,18 @@ traits:
           strings:
             // AF_INET / SOCK_DGRAM / IPPROTO_UDP.
             $udp = { BF 02 00 00 00 BA 11 00 00 00 BE 02 00 00 00 E8 ?? ?? ?? ?? }
-            // Iterate target sockets and buffers; outer branch repeats forever.
+            // Repeat the target sweep. Skipping the REX prefix on its guard
+            // tests EBP (payload length) rather than R13D (target count).
+            // A positive payload length still repeats; validate that guard
+            // separately rather than accepting arbitrary shifted branches.
             $loop = {
               49 8B 34 DF 41 8B 3C 9E B9 00 40 00 00 48 89 EA
-              48 FF C3 E8 [4] 49 39 DC 74 CA EB E1
+              48 FF C3 E8 [4] 49 39 DC 74 ( CA | CB ) EB E1
+            }
+            $length_guard = {
+              0F B7 44 24 ?? 0F B7 6C 24 ?? 89 44 24 ?? [0-32]
+              45 85 ED 7E FE 80 7C 24 ?? 00 75 ??
+              0F B6 44 24 ?? 31 DB FF C8 4C 8D 60 01
             }
             $send = {
               45 31 C9 45 31 C0 E9 01 00 00 00 90 53 45 89 C9
@@ -33,6 +41,14 @@ traits:
               for any l in (1..#loop) : (
                 @loop[l] >= elf.sections[s].offset and
                 @loop[l]+!loop[l] <= elf.sections[s].offset+elf.sections[s].size and
+                (
+                  uint8(@loop[l]+28) == 0xca or
+                  for any g in (1..#length_guard) : (
+                    @length_guard[g] >= elf.sections[s].offset and
+                    @length_guard[g]+!length_guard[g] == @loop[l] and
+                    uint8(@length_guard[g]+4) == uint8(@length_guard[g]+9)
+                  )
+                ) and
                 for any u in (1..#udp) : (
                   @udp[u] >= elf.sections[s].offset and
                   @udp[u] < @loop[l] and @loop[l]-@udp[u] < 512
