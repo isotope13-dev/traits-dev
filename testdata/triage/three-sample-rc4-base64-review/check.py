@@ -7,7 +7,11 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[3]
-NEW = 'objectives/anti-static/obfuscation/encoding/base64::ps-regex-repaired-base64'
+# Dedup correction (batch review follow-up): the repair matcher already has a
+# canonical home as the notable atom under micro-behaviors/data/string/replace.
+# The suspicious objectives atomic duplicated it and was removed; the evasion
+# context is carried by composites that require the atom with other legs.
+NEW = 'micro-behaviors/data/string/replace::powershell-base64-regex-preprocessing'
 OLD = 'objectives/command-and-control/dropper/file-exec/command/batch::ps-regex-repaired-base64'
 RC4 = 'micro-behaviors/crypto/symmetric/stream/rc4::superh-rc4-unrolled-buffer-transform'
 spec = importlib.util.spec_from_file_location('fixtures', ROOT / 'testdata/taxonomy/mirai-native-review/check.py')

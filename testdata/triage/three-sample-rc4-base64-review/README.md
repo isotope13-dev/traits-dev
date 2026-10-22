@@ -139,3 +139,14 @@ ordinary Base64 and unrelated regex replacement. The existing
 `testdata/taxonomy/mirai-native-review/check.py` passes all 21 retained controls.
 Also compared the moved rule and its consumer to HEAD programmatically: matcher,
 scope, severity and composite structure are unchanged after ID substitution.
+
+## Correction (duplicate-atom dedup)
+
+The relocated repair trait duplicated the existing canonical matcher
+`micro-behaviors/data/string/replace::powershell-base64-regex-preprocessing`
+(notable). An atomic this generic cannot carry a suspicious objectives claim on
+its own, so the duplicate objectives copy was removed and the control above now
+asserts the canonical atom. Detection is unchanged: every repair-idiom file
+still fires the atom, and the evasion context for the WhatsApp CMD remains a
+suspicious verdict through `batch-fragmented-regex-base64-eval`, which requires
+the repair atom together with fragmentation and eval evidence.
