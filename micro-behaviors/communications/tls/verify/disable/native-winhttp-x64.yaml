@@ -2,6 +2,7 @@ defaults:
   platforms: [windows]
   for: [pe]
   arch: [x86-64]
+  mbc: C0005
 
 traits:
   # Resolve the RIP-relative load to WinHttpSetOption's IAT slot. The
@@ -11,7 +12,6 @@ traits:
     desc: WinHTTP certificate-ignore call setup
     crit: notable
     conf: 0.98
-    mbc: C0005
     if:
       type: yara
       source: |
@@ -42,6 +42,42 @@ traits:
                     pe.import_details[i].functions[f].name == "WinHttpSetOption" and
                     pe.sections[s].virtual_address+@load[l]-pe.sections[s].raw_data_offset+
                       7+int32(@load[l]+3) == pe.import_details[i].functions[f].rva
+                  )
+                )
+              )
+            )
+        }
+
+  - id: x64-winhttp-frame-certificate-ignore-call
+    desc: WinHTTP certificate-ignore frame-local flags
+    crit: notable
+    conf: 0.98
+    for: [pe, dll]
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_winhttp_frame_certificate_ignore_call {
+          strings:
+            $relax = {
+              C7 85 ?? ?? ?? ?? ?? ?? ?? ??
+              4C 8D 85 ?? ?? ?? ?? 48 8B 8D ?? ?? ?? ??
+              BA 1F 00 00 00 41 B9 04 00 00 00 FF 15 ?? ?? ?? ??
+            }
+          condition:
+            pe.is_64bit() and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for any c in (1..#relax) : (
+                @relax[c] >= pe.sections[s].raw_data_offset and
+                @relax[c]+!relax[c] <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size and
+                uint32(@relax[c]+2) == uint32(@relax[c]+13) and
+                (uint32(@relax[c]+6) & 0x3300) != 0 and
+                for any i in (0..pe.number_of_imports-1) : (
+                  for any f in (0..pe.import_details[i].number_of_functions-1) : (
+                    pe.import_details[i].functions[f].name == "WinHttpSetOption" and
+                    pe.sections[s].virtual_address+@relax[c]-pe.sections[s].raw_data_offset+
+                      41+int32(@relax[c]+37) == pe.import_details[i].functions[f].rva
                   )
                 )
               )
