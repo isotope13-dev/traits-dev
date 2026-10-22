@@ -52,7 +52,20 @@ HANDOFF = bytes.fromhex('48 8B 84 24 10 00 00 00 31 DB 31 C9 48 89 CF E8 00 00 0
 ENTRY_AX = bytes.fromhex('8B 40 10 48 89 84 24 10 00 00 00 48 8B 8C 24 10 00 00 00 48 8B 94 24 10 00 00 00 48 01 D1 48 89 8C 24 10 00 00 00') + HANDOFF
 ENTRY_DX = bytes.fromhex('8B 52 10 48 8B 9C 24 10 00 00 00 48 01 DA 48 89 94 24 10 00 00 00') + HANDOFF
 
+BX_ARITH = bytes.fromhex('0F B6 3C 33 4C 8D 04 5B 4E 8D 04 43 44 29 C7 83 C7 9F 40 88 3C 1E 48 FF C3 48 81 FB 00 00 01 00 7C DE')
+BX_SHIFT = bytes.fromhex('0F B6 3C 33 49 89 D8 49 C1 E0 05 49 29 D8 44 29 C7 83 C7 F7 40 88 3C 1E 48 FF C3 0F 1F 00 48 81 FB 00 00 01 00 7C D9')
+BX_SWAP = bytes.fromhex('0F B6 7C 33 01 44 0F B6 04 33 40 88 3C 1E 44 88 44 33 01 48 83 C3 02')
+ENTRY_DX_SI = bytes.fromhex('8B 52 10 48 8B 94 24 10 00 00 00 48 8B B4 24 18 00 00 00 48 01 F2 48 89 94 24 20 00 00 00') + HANDOFF
+
 cases = [
+    ('bx-scaled-index', image(BX_ARITH + BX_SWAP), {ARITH, SWAP}),
+    ('bx-scaled-by-thirteen', image(BX_ARITH.replace(b'\x04\x43', b'\x04\x83')), {ARITH}),
+    ('bx-shifted-index', image(BX_SHIFT), {ARITH}),
+    ('bx-wrong-byte-store', image(BX_ARITH.replace(b'\x40\x88\x3c\x1e', b'\x40\x88\x0c\x1e')), set()),
+    ('bx-forms-in-data', image(b'\xc3', BX_ARITH + BX_SWAP), set()),
+    ('entry-dx-si', image(ENTRY_DX_SI), {ENTRY}),
+    ('entry-dx-si-without-add', image(ENTRY_DX_SI.replace(b'\x48\x01\xf2', b'\x48\x31\xf2')), set()),
+    ('entry-dx-si-wrong-field', image(ENTRY_DX_SI.replace(b'\x8b\x52\x10', b'\x8b\x52\x14')), set()),
     ('pointer-ax', image(POINTER_OLD), {POINTER}),
     ('pointer-dx', image(POINTER_DX), {POINTER}),
     ('pointer-wrong-field', image(POINTER_DX.replace(b'\xc0\x10', b'\xc0\x18')), set()),
