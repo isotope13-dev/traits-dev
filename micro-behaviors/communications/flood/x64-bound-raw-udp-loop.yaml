@@ -1,0 +1,81 @@
+# Distinct from the connected SOCK_DGRAM loop: this routine builds packets
+# for SOCK_RAW/IPPROTO_UDP and repeatedly traverses 24-byte target records.
+# Bind both calls, the descriptor slot, counter slots and backward branches.
+# Packet generation alone does not establish an unauthorized target.
+defaults:
+  platforms: [linux]
+  for: [elf]
+  arch: [x86-64]
+traits:
+  - id: x64-bound-raw-udp-target-loop
+    desc: Raw UDP socket and repeated target sends
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "elf"
+        rule x64_bound_raw_udp_target_loop {
+          strings:
+            // socket(AF_INET, SOCK_RAW, IPPROTO_UDP), saving its descriptor.
+            $setup = {
+              BA 11 00 00 00 BE 03 00 00 00 BF 02 00 00 00
+              89 44 24 ?? E8 [4] 83 F8 FF 89 44 24 ?? 0F 84 ?? ?? ?? ??
+            }
+            $socket = {
+              53 48 63 D2 48 63 F6 48 63 FF B8 29 00 00 00 0F 05
+            }
+            // Reset target index; buffers include 28 bytes of IPv4/UDP headers.
+            $cycle = {
+              7E FE 48 8B 1C 24 41 8D 57 08 C7 44 24 ?? 00 00 00 00
+              31 C0 89 54 24 ?? 48 83 C3 1C
+              48 8B 4C 24 ?? 48 98 48 8D 14 C5 00 00 00 00
+              4C 8B 24 C1 48 C1 E0 05 48 29 D0 4C 01 E8 80 78 14 1F
+            }
+            // Copy destination port, send, increment index, repeat the sweep.
+            $loop = {
+              48 63 44 24 ?? 41 B9 10 00 00 00 8B 7C 24 ??
+              B9 00 40 00 00 4C 89 E6 48 8D 14 C5 00 00 00 00
+              48 C1 E0 05 48 29 D0 0F B7 55 02 4D 8D 44 05 00
+              66 42 89 54 28 02 48 89 DA E8 [4]
+              8B 44 24 ?? FF C0 41 39 C6 89 44 24 ??
+              0F 8F [4] 45 85 F6 E9 ?? ?? ?? ??
+            }
+            $sendto = {
+              53 45 89 C9 4C 63 D1 48 63 FF B8 2C 00 00 00 0F 05
+            }
+          condition:
+            elf.machine == elf.EM_X86_64 and
+            for any s in (0..elf.number_of_sections-1) : (
+              elf.sections[s].name == ".text" and
+              for any l in (1..#loop) : (
+                @loop[l] >= elf.sections[s].offset and
+                @loop[l]+!loop[l] <= elf.sections[s].offset+elf.sections[s].size and
+                uint8(@loop[l]+4) == uint8(@loop[l]+64) and
+                uint8(@loop[l]+4) == uint8(@loop[l]+73) and
+                for any c in (1..#cycle) : (
+                  @cycle[c] >= elf.sections[s].offset and
+                  @cycle[c]+!cycle[c] <= elf.sections[s].offset+elf.sections[s].size and
+                  uint8(@cycle[c]+13) == uint8(@loop[l]+4) and
+                  @loop[l]+80+int32(@loop[l]+76) == @cycle[c]+28 and
+                  @loop[l]+88+int32(@loop[l]+84) == @cycle[c] and
+                  for any u in (1..#setup) : (
+                    @setup[u] >= elf.sections[s].offset and
+                    @setup[u]+!setup[u] <= @cycle[c] and
+                    @cycle[c]-@setup[u] < 1024 and
+                    uint8(@setup[u]+30) == uint8(@loop[l]+14) and
+                    for any t in (1..#socket) : (
+                      @socket[t] >= elf.sections[s].offset and
+                      @socket[t]+!socket[t] <= elf.sections[s].offset+elf.sections[s].size and
+                      @setup[u]+24+int32(@setup[u]+20) == @socket[t]
+                    )
+                  )
+                ) and
+                for any t in (1..#sendto) : (
+                  @sendto[t] >= elf.sections[s].offset and
+                  @sendto[t]+!sendto[t] <= elf.sections[s].offset+elf.sections[s].size and
+                  @loop[l]+61+int32(@loop[l]+57) == @sendto[t]
+                )
+              )
+            )
+        }
