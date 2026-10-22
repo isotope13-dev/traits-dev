@@ -22,7 +22,7 @@ for line in proc.stdout.splitlines():
         assert not any(t['crit'] == 5 for t in traits.values()), name
         assert sum(t['crit'] == 4 for t in traits.values()) <= 1, name
         if name == 'url-reference.ps1':
-            assert 'micro-behaviors/communications/http/message::powershell-http-url-literal' in traits
+            assert 'micro-behaviors/communications/http/url/scheme::powershell-http-url-literal' in traits
             assert not any(k.startswith('micro-behaviors/communications/http/lib/invoke-webrequest') for k in traits), traits
         elif name == 'handle-reference.c':
             assert 'micro-behaviors/process/fd/close::close-handle-reference' in traits
