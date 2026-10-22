@@ -1,0 +1,34 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86]
+
+traits:
+  # Bound argument and import slot: API presence plus an unrelated push 6
+  # cannot establish an attribute write. Both masks set Hidden and System;
+  # mask 7 additionally sets ReadOnly. Legitimate installers can do this too.
+  - id: x86-set-hidden-system-attributes
+    desc: SetFileAttributesA call sets Hidden and System
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_set_hidden_system_attributes {
+          strings:
+            $set = { 6A (06|07) 8D
+                     (85 [4] 50|8D [4] 51|95 [4] 52)
+                     FF 15 ?? ?? ?? ?? }
+          condition:
+            pe.machine == pe.MACHINE_I386 and
+            for any s in pe.sections : (
+              s.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for any w in (1..#set) : (
+                @set[w] >= s.raw_data_offset and
+                @set[w] + !set[w] <= s.raw_data_offset + s.raw_data_size and
+                uint32(@set[w] + !set[w] - 4) == pe.image_base +
+                  pe.import_rva("KERNEL32.dll", "SetFileAttributesA")
+              )
+            )
+        }
