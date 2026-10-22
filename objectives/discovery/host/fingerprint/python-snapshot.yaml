@@ -1,0 +1,46 @@
+# A Python module that, as soon as it is imported, snapshots the host into a
+# file: every environment entry, the command lines of other processes read
+# from /proc, serialized to JSON and opened for writing. Environment values
+# and other processes' argv routinely carry tokens and passwords, so the
+# snapshot is a credential-bearing host survey even when it stays on disk.
+#
+# research-probe-6150c1c915 0.1.0 (MAL-2026-18097) ships a .pth hook that
+# imports such a module at every interpreter start and also asks the GCP
+# metadata server for the instance's service-account identity, writing the
+# result into /tmp. A diagnostic hook that only builds an in-memory report
+# (no /proc reads, no file write, no metadata request) matches none of these.
+defaults:
+  platforms: [linux]
+  attack: T1082,T1057,T1552.001
+
+composite_rules:
+  - id: python-import-env-process-snapshot-file
+    desc: Import writes env and process snapshot file
+    crit: suspicious
+    conf: 0.9
+    for: [python]
+    all:
+      - id: micro-behaviors/data/control-flow/module-exec::module-level-side-effect-call
+      - id: micro-behaviors/os/env/enumeration::python-environ-items-loop
+      - id: micro-behaviors/fs/proc/info/listing::python-proc-enumerate
+      - id: micro-behaviors/fs/proc/cmdline::process-var-cmdline
+      - id: micro-behaviors/data/serialize/json::json-dumps-call
+      - id: micro-behaviors/fs/file/open::write-append-create-mode
+    unless:
+      - id: metadata/package/testing/
+      - id: "metadata/file/naming::test-directory-component"
+
+  # The same snapshot armed by a site-packages .pth import, together with a
+  # cloud service-account identity request: every interpreter on the host
+  # surveys it, with no import by the user required.
+  - id: wheel-pth-startup-host-cloud-snapshot
+    desc: Wheel .pth startup snapshots host and cloud identity
+    crit: hostile
+    conf: 0.93
+    attack: T1546.004,T1082,T1057,T1552.001,T1580
+    for: [whl, python]
+    scope: archive
+    all:
+      - id: micro-behaviors/process/interpreter/python::pth-startup-import
+      - id: python-import-env-process-snapshot-file
+      - id: objectives/discovery/cloud/metadata::wheel-pth-gcp-service-account-request
