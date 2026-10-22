@@ -1,0 +1,131 @@
+# Import-time staging of the entire process environment.
+#
+# Flow records that a module-level call invokes the writer, that the writer
+# serializes a local call with json.dumps, and that the writer's file write
+# receives that serialization. The collector's returned dictionary contains
+# os.environ.items(); helper returns are not inlined, so the query binds the
+# collector name, the returned report, the serialized variable and the written
+# variable. A filtered comprehension is ordinary key selection. An in-memory
+# dumps, a write of a different value, or a call under __main__ is not this
+# staging chain. No network send or cloud access token is claimed.
+defaults:
+  platforms: [unix, windows]
+  for: [python]
+  attack: T1552.001
+  crit: suspicious
+  conf: 0.97
+
+traits:
+  - id: python-full-env-snapshot-write-chain
+    desc: Import-called full environment file write
+    if:
+      type: tree-sitter
+      language: python
+      query: |
+        ((module
+          (function_definition
+            name: (identifier) @collector
+            body: (block
+              (expression_statement
+                (assignment
+                  left: (identifier) @report
+                  right: (dictionary) @dict))
+              (return_statement (identifier) @returned)))
+          (function_definition
+            name: (identifier) @writer
+            body: (block
+              (try_statement
+                body: (block
+                  (expression_statement
+                    (assignment
+                      left: (identifier) @snap
+                      right: (call function: (identifier) @called)))
+                  (expression_statement
+                    (assignment
+                      left: (identifier) @blob
+                      right: (call
+                        function: (attribute
+                          object: (identifier) @json
+                          attribute: (identifier) @dumps)
+                        arguments: (argument_list . (identifier) @serialized))))
+                  (for_statement
+                    body: (block
+                      (try_statement
+                        body: (block
+                          (with_statement
+                            body: (block
+                              (expression_statement
+                                (call
+                                  function: (attribute attribute: (identifier) @meth)
+                                  arguments: (argument_list . (identifier) @written)))))))))))))
+          (expression_statement
+            (call function: (identifier) @entry)))
+          (#eq? @collector @called)
+          (#eq? @report @returned)
+          (#eq? @snap @serialized)
+          (#eq? @blob @written)
+          (#eq? @writer @entry)
+          (#eq? @json "json")
+          (#eq? @dumps "dumps")
+          (#eq? @meth "write")
+          (#match? @dict "environ\\.items\\(\\)\\s*\\}"))
+
+        ((module
+          (function_definition
+            name: (identifier) @collector
+            body: (block
+              (expression_statement
+                (assignment
+                  left: (identifier) @report
+                  right: (dictionary) @dict))
+              (return_statement (identifier) @returned)))
+          (function_definition
+            name: (identifier) @writer
+            body: (block
+              (expression_statement
+                (assignment
+                  left: (identifier) @snap
+                  right: (call function: (identifier) @called)))
+              (expression_statement
+                (assignment
+                  left: (identifier) @blob
+                  right: (call
+                    function: (attribute
+                      object: (identifier) @json
+                      attribute: (identifier) @dumps)
+                    arguments: (argument_list . (identifier) @serialized))))
+              (with_statement
+                body: (block
+                  (expression_statement
+                    (call
+                      function: (attribute attribute: (identifier) @meth)
+                      arguments: (argument_list . (identifier) @written)))))))
+          (expression_statement
+            (call function: (identifier) @entry)))
+          (#eq? @collector @called)
+          (#eq? @report @returned)
+          (#eq? @snap @serialized)
+          (#eq? @blob @written)
+          (#eq? @writer @entry)
+          (#eq? @json "json")
+          (#eq? @dumps "dumps")
+          (#eq? @meth "write")
+          (#match? @dict "environ\\.items\\(\\)\\s*\\}"))
+    unless:
+      - id: metadata/package/testing/
+      - id: "metadata/file/naming::test-directory-component"
+
+composite_rules:
+  - id: python-import-writes-full-env-snapshot
+    desc: Import writes full environment snapshot
+    crit: hostile
+    conf: 0.97
+    # The symbol leg is the same os.environ.items call the chain already
+    # binds into the returned dictionary. It does not add an unbound
+    # iteration elsewhere in the file.
+    all:
+      - id: python-full-env-snapshot-write-chain
+      - id: micro-behaviors/os/env/enumeration::python-environ-items-loop
+    unless:
+      - id: metadata/package/testing/
+      - id: "metadata/file/naming::test-directory-component"
