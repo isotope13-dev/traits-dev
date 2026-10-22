@@ -12,8 +12,8 @@ import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[3]
-MANIFEST = "objectives/supply-chain/impersonation/registry/publish/npm-security-holder::npm-security-holder-package"
-REGISTRY = "objectives/supply-chain/impersonation/registry/publish/npm-security-holder::registry-security-held-package"
+MANIFEST = "objectives/supply-chain/security-hold::npm-security-holder-package"
+REGISTRY = "objectives/supply-chain/security-hold::registry-security-held-package"
 RULES = {MANIFEST, REGISTRY}
 
 
