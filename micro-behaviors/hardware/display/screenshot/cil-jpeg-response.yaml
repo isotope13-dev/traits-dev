@@ -1,0 +1,48 @@
+defaults:
+  for: [pe, dll]
+  platforms: [windows]
+
+traits:
+  # Image.Save consumes a stream local. The same local is converted to an
+  # array, transformed and Base64 encoded into response[4]; the same response
+  # array is concatenated and dispatched. Bind both locals instead of merely
+  # checking that screenshot and networking APIs occur somewhere in a PE.
+  - id: cil-jpeg-base64-response-construction
+    desc: CIL JPEG stream to Base64 response dispatch
+    crit: notable
+    conf: 0.96
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule cil_jpeg_base64_response_construction {
+          strings:
+            $save = { 11 ?? 11 ?? 28 ?? ?? ?? 0A 6F ?? ?? ?? 0A
+                      1B 8D ?? ?? ?? 01 13 ?? }
+            $send = { 11 ?? 1A 11 ?? 6F ?? ?? ?? 0A
+                      28 ?? ?? ?? 06 28 ?? ?? ?? 0A A2
+                      11 ?? 28 ?? ?? ?? 0A 28 ?? ?? ?? 06 }
+            $capture = "CopyFromScreen" ascii fullword
+            $jpeg = "get_Jpeg" ascii fullword
+            $encode = "ToBase64String" ascii fullword
+          condition:
+            $capture and $jpeg and $encode and
+            for any s in pe.sections : (
+              s.name == ".text" and
+              for all of ($capture, $jpeg, $encode) : (
+                $ in (s.raw_data_offset .. s.raw_data_offset + s.raw_data_size - 1)
+              ) and
+              for any a in (1..#save) : (
+                @save[a] >= s.raw_data_offset and
+                @save[a] + !save[a] <= s.raw_data_offset + s.raw_data_size and
+                for any b in (1..#send) : (
+                  @send[b] > @save[a] + !save[a] and
+                  @send[b] < @save[a] + 256 and
+                  @send[b] + !send[b] <= s.raw_data_offset + s.raw_data_size and
+                  uint8(@save[a]+3) == uint8(@send[b]+4) and
+                  uint8(@save[a]+21) == uint8(@send[b]+1) and
+                  uint8(@send[b]+1) == uint8(@send[b]+22)
+                )
+              )
+            )
+        }
