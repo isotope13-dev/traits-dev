@@ -4,6 +4,17 @@ defaults:
   for: [javascript, typescript]
   attack: T1552.004
 
+traits:
+  # `curl --data-binary @-` reads the POST body from stdin. Pairing it with
+  # a just-read private key is the exfil; the operand alone is only a curl flag.
+  - id: curl-stdin-post-command
+    desc: curl POSTs a stdin body
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: 'curl\b[^\n]{0,160}--data-binary\s+@-'
+
 composite_rules:
   - id: node-ssh-key-http-exfil
     desc: Node SSH key HTTP exfil
@@ -78,6 +89,27 @@ composite_rules:
       - id: micro-behaviors/process/create/shell/bridge::js-spawnsync-posix-interpreter
       - id: micro-behaviors/process/create/exec::node-spawnsync-call
       - id: micro-behaviors/process/create/shell/bridge::execSync-call
+    needs: 1
+    unless:
+      - id: metadata/build/recognized-contexts::benign-trojanized-fp-context
+      - id: well-known/app/infrastructure/
+
+  # readFileSync('~/.ssh/id_rsa') then execSync('curl … --data-binary @-')
+  # posts that key. Node's http.request().end() rules do not see curl.
+  - id: node-read-ssh-key-curl-stdin-post
+    desc: Node reads an SSH key and curl-posts stdin
+    crit: hostile
+    conf: 0.97
+    attack: T1552.004,T1041
+    near_bytes: 512
+    all:
+      - id: micro-behaviors/fs/read/file/full::read-node
+      - id: curl-stdin-post-command
+      - id: micro-behaviors/process/create/shell/bridge::execSync-call
+    any:
+      - id: micro-behaviors/fs/path/private-key::ssh-private-key-filename-rsa
+      - id: micro-behaviors/fs/path/private-key::ssh-private-key-filename-ed25519
+      - id: micro-behaviors/fs/path/private-key::ssh-private-key-filename-ecdsa
     needs: 1
     unless:
       - id: metadata/build/recognized-contexts::benign-trojanized-fp-context
