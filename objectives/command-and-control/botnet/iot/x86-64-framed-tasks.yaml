@@ -16,9 +16,11 @@ traits:
         import "elf"
         rule x86_64_framed_attack_task_code {
           strings:
-            // Function entry, then duration, vector, target count and masks.
+            // A 32-bit or REX.W 64-bit first save precedes the same parser.
+            // Entering after REX.W still executes the parser, although the
+            // caller's saved RBX upper half is then not preserved.
             $parser = {
-              48 89 5C 24 ?? [75]
+              89 5C 24 ?? [75]
               44 8B 37 41 0F CE 83 FE 04 74 ??
               0F B6 47 04 83 FE 05 88 44 24 ?? 74 ??
               44 0F B6 6F 05 45 84 ED 74 ?? 44 8D 7B FA
@@ -62,12 +64,27 @@ traits:
                 for any p in (1..#parser) : (
                   @parser[p] >= elf.sections[s].offset and
                   @parser[p]+!parser[p] <= elf.sections[s].offset+elf.sections[s].size and
-                  @dispatch[d]+162+int32(@dispatch[d]+158) == @parser[p]
+                  (
+                    @dispatch[d]+162+int32(@dispatch[d]+158) == @parser[p] or
+                    @parser[p] > elf.sections[s].offset and
+                    uint8(@parser[p]-1) == 0x48 and
+                    @dispatch[d]+162+int32(@dispatch[d]+158) == @parser[p]-1
+                  )
                 ) and
                 for any r in (1..#recv) : (
                   @recv[r] >= elf.sections[s].offset and
                   @recv[r]+!recv[r] <= elf.sections[s].offset+elf.sections[s].size and
-                  @dispatch[d]+55+int32(@dispatch[d]+51) == @recv[r] and
+                  (
+                    @dispatch[d]+55+int32(@dispatch[d]+51) == @recv[r] or
+                    // The optional body peek may return immediately: EAX
+                    // still holds the nonzero frame length. The subsequent
+                    // body recv and parser handoff remain mandatory.
+                    (
+                      @dispatch[d]+55+int32(@dispatch[d]+51) >= elf.sections[s].offset and
+                      @dispatch[d]+55+int32(@dispatch[d]+51) < elf.sections[s].offset+elf.sections[s].size and
+                      uint8(@dispatch[d]+55+int32(@dispatch[d]+51)) == 0xc3
+                    )
+                  ) and
                   @dispatch[d]+134+int32(@dispatch[d]+130) == @recv[r]
                 )
               ) or
@@ -80,7 +97,12 @@ traits:
                 for any p in (1..#parser) : (
                   @parser[p] >= elf.sections[s].offset and
                   @parser[p]+!parser[p] <= elf.sections[s].offset+elf.sections[s].size and
-                  @dispatch_stack[d]+168+int32(@dispatch_stack[d]+164) == @parser[p]
+                  (
+                    @dispatch_stack[d]+168+int32(@dispatch_stack[d]+164) == @parser[p] or
+                    @parser[p] > elf.sections[s].offset and
+                    uint8(@parser[p]-1) == 0x48 and
+                    @dispatch_stack[d]+168+int32(@dispatch_stack[d]+164) == @parser[p]-1
+                  )
                 ) and
                 for any r in (1..#recv) : (
                   @recv[r] >= elf.sections[s].offset and

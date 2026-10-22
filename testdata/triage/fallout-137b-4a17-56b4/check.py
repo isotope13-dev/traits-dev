@@ -47,7 +47,10 @@ elif sys.argv[1] == 'check':
         name = pathlib.Path(f['path']).name
         ids = {t['id'] for t in f.get('traits', [])}
         assert not ids & RETIRED, (name, ids & RETIRED)
-        expected = name == 'positive.elf'
+        # Skipping REX.W narrows a save but still executes the parser.
+        # Skipping the optional body peek also preserves body reception.
+        expected = name in {'positive.elf', 'parser-call-redirected.elf',
+                            'receive-call-redirected.elf'}
         assert (PREFIX in ids) == expected, name
         assert (BOT in ids) == expected, name
         results.append({'control': name, 'flood': PREFIX in ids, 'bot': BOT in ids})
