@@ -81,7 +81,9 @@ traits:
   # DTA-length variant: subtract the three-byte entry jump length, store
   # its displacement at header+1, append code at EOF, seek to BOF and write
   # that header. Bind the write source to the displacement store and require
-  # E9 in that source buffer; lengths and addresses vary.
+  # E9 in that source buffer; lengths and addresses vary. The DI-buffer form
+  # allows a generated body between displacement calculation and append;
+  # its four-byte header includes a marker after the three-byte entry jump.
   - id: com-bp-append-then-entry-jump
     desc: Appends code then writes COM entry jump
     crit: suspicious
@@ -95,13 +97,15 @@ traits:
             $calc2 = { 2D 03 00 3E 89 86 ?? ?? }
             $append = { B4 40 (B9 ?? ?? 8D 96 ?? ??|8D 96 ?? ?? B9 ?? ??) CD 21 }
             $rewind = { B8 00 42 [0-6] CD 21 }
-            $write_entry = { B4 40 B9 03 00 8D 96 ?? ?? CD 21 }
+            $write_entry = { B4 40 B9 (03|04) 00 8D 96 ?? ?? CD 21 }
+            $append_di = { B4 40 8B D7 CD 21 B8 00 42
+                            (2B|33|31) C9 (2B|33|31) D2 CD 21 }
           condition:
             for any w in (1..#write_entry) : (
               @write_entry[w] < 4096 and
               uint16(@write_entry[w] + 7) >= 0x100 and
               uint8(uint16(@write_entry[w] + 7) - 0x100) == 0xE9 and
-              for any a in (1..#append) : (
+              (for any a in (1..#append) : (
                 @append[a] < @write_entry[w] and
                 @append[a] > @write_entry[w] - 64 and
                 for any r in (1..#rewind) : (
@@ -117,7 +121,15 @@ traits:
                     )
                   )
                 )
-              )
+              ) or
+              for any a in (1..#append_di) : (
+                @write_entry[w] == @append_di[a] + !append_di[a] and
+                for any c in (1..#calc1) : (
+                  @calc1[c] < @append_di[a] and
+                  @calc1[c] > @append_di[a] - 96 and
+                  uint16(@calc1[c] + 5) == uint16(@write_entry[w] + 7) + 1
+                )
+              ))
             )
         }
 
