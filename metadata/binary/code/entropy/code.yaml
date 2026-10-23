@@ -46,17 +46,42 @@ traits:
       type: metrics
       field: binary.code_entropy
       min: 5.5
-  # The code section carries effectively no instructions (a ret sled, zero
-  # fill, or equivalent): imports and strings in such a file are inert
-  # references, never behavior. Dropper and launcher composites must not
-  # convict on string co-occurrence alone; a real payload needs code here.
+  # Inspect actual bytes even when PE resource parsing falls back to headers.
+  # Exclude file-alignment padding beyond VirtualSize. Every nonempty
+  # executable section must be near-constant; a parser's
+  # default zero does not establish that a file has inert code.
   - id: code-entropy-near-zero
-    desc: Code section entropy near zero
+    desc: PE executable sections have near-zero entropy
     crit: notable
     for: [pe, dll]
     platforms: [windows]
     conf: 0.9
     if:
-      type: metrics
-      field: binary.code_entropy
-      max: 0.5
+      type: yara
+      source: |
+        import "pe"
+        import "math"
+        rule near_constant_pe_code_bytes {
+          strings:
+            $mz = { 4D 5A }
+          condition:
+            $mz at 0 and
+            pe.is_pe and
+            for any s in (0..pe.number_of_sections-1) : (
+              (pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE) != 0 and
+              pe.sections[s].raw_data_size > 0
+            ) and
+            for all s in (0..pe.number_of_sections-1) : (
+              (pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE) == 0 or
+              pe.sections[s].raw_data_size == 0 or (
+                pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size <= filesize and
+                (
+                  (pe.sections[s].virtual_size >= pe.sections[s].raw_data_size and
+                   math.entropy(pe.sections[s].raw_data_offset, pe.sections[s].raw_data_size) <= 0.5) or
+                  (pe.sections[s].virtual_size > 0 and
+                   pe.sections[s].virtual_size < pe.sections[s].raw_data_size and
+                   math.entropy(pe.sections[s].raw_data_offset, pe.sections[s].virtual_size) <= 0.5)
+                )
+              )
+            )
+        }
