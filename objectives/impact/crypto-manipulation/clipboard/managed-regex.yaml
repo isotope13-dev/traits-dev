@@ -1,0 +1,56 @@
+# A clipboard-change callback checks for an existing replacement destination,
+# substitutes a wallet regex with that same destination, and calls its writer.
+# Field-token equality keeps unrelated strings and replacement values apart.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  attack: T1115,T1565.001
+traits:
+  - id: managed-wallet-regex-clipboard-replacement
+    desc: Wallet-regex clipboard replacement code
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule managed_wallet_regex_clipboard_replacement {
+          strings:
+            $clr = "BSJB"
+            $forms = "System.Windows.Forms" fullword
+            $clipboard = "Clipboard" fullword
+            $read = "GetText" fullword
+            $write = "SetText" fullword
+            $listener = "AddClipboardFormatListener" fullword
+            $regex = "System.Text.RegularExpressions" fullword
+            $replace = "Replace" fullword
+            $wallet_btc = "\\b(bc1|[13])" wide
+            $wallet_eth = "\\b(0x)" wide
+            $swap = { 7E ?? ?? ?? 04 7E ?? ?? ?? 04 6F ?? ?? ?? 0A
+                      2D ?? 7E ?? ?? ?? 04 7E ?? ?? ?? 04 7E ?? ?? ?? 04
+                      6F ?? ?? ?? 0A (0A|0B|0C|0D) (06|07|08|09)
+                      28 ?? ?? ?? 0A 28 ?? ?? ?? 06 }
+          condition:
+            all of ($clr, $forms, $clipboard, $read, $write, $listener,
+                    $regex, $replace) and any of ($wallet_*) and
+            for any i in (1..#swap) : (
+              uint32(@swap[i] + 1) == uint32(@swap[i] + 23) and
+              uint32(@swap[i] + 6) == uint32(@swap[i] + 28) and
+              uint8(@swap[i] + 37) == uint8(@swap[i] + 38) + 4 and
+              for any s in (0..pe.number_of_sections - 1) : (
+                pe.sections[s].name == ".text" and
+                @swap[i] >= pe.sections[s].raw_data_offset and
+                @swap[i] + !swap[i] <= pe.sections[s].raw_data_offset +
+                                      pe.sections[s].raw_data_size
+              )
+            )
+        }
+
+composite_rules:
+  - id: managed-backdoor-wallet-clipboard-replacement
+    desc: Plugin backdoor replaces clipboard wallet addresses
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: managed-wallet-regex-clipboard-replacement
+      - id: objectives/command-and-control/backdoor/dispatch/module::managed-plugin-tasking-backdoor
