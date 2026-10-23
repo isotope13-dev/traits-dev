@@ -1,0 +1,65 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+traits:
+  - id: go-websocket-read-dispatch-calls
+    desc: Go WebSocket reader calls envelope dispatcher
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule go_websocket_read_dispatch_calls {
+          strings:
+            $pcln = { F1 FF FF FF 00 00 01 08 }
+            $caller = /[A-Za-z0-9_\x2f.\x2d]{1,160}\.(readLoop|readCommands)\x00/
+            $callee = "nhooyr.io/websocket.(*Conn).Read\x00"
+            $dispatch = /[A-Za-z0-9_\x2f.\x2d]{1,160}\.\(\*Dispatcher\)\.Dispatch\x00/
+            
+          condition:
+            pe.is_pe and pe.machine == pe.MACHINE_AMD64 and filesize < 64MB and
+            $caller and $callee and $dispatch and $pcln and
+            for any h in (1..#pcln) : (
+              with hdr = @pcln[h] : (
+                uint64(hdr+8) > 0 and uint64(hdr+8) < 100000 and
+                with table = hdr+uint64(hdr+64), names = hdr+uint64(hdr+32), text = uint64(hdr+24) : (
+                  table+uint64(hdr+8)*8+8 < filesize and names < filesize and
+                  for any i in (0..uint64(hdr+8)-1) : (
+                    with funcmeta = table+uint32(table+i*8+4) : (
+                      funcmeta+8 < filesize and
+                      for any n in (1..#caller) : (
+                        names+int32(funcmeta+4) <= @caller[n] and
+                        @caller[n]-(names+int32(funcmeta+4)) < 160 and
+                        for all z in (names+int32(funcmeta+4)..@caller[n]) : (uint8(z) != 0) and
+                        with start = text+uint32(table+i*8), extent = uint32(table+(i+1)*8)-uint32(table+i*8) : (
+                          extent > 5 and extent < 32768 and
+                          with code = pe.rva_to_offset(start-pe.image_base) : (
+                            code+extent <= filesize and
+                            (true) and
+                            for all destname in (@callee, @dispatch) : (
+                            for any j in (0..uint64(hdr+8)-1) : (
+                              with destmeta = table+uint32(table+j*8+4) : (
+                                destmeta+8 < filesize and
+                                for any m in (1..1) : (
+                                  names+int32(destmeta+4) <= destname and
+                                  destname-(names+int32(destmeta+4)) < 160 and
+                                  for all z in (names+int32(destmeta+4)..destname) : (uint8(z) != 0) and
+                                  for any callsite in (code..code+extent-5) : (
+                                    uint8(callsite) == 0xe8 and
+                                    start+(callsite-code)+5+int32(callsite+1) == text+uint32(table+j*8)
+                                  )
+                                )
+                              )
+                            )
+                            )
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
