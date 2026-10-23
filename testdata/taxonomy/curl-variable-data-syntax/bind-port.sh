@@ -1,0 +1,2 @@
+#!/bin/sh
+proxy --listen 0.0.0.0:3000
