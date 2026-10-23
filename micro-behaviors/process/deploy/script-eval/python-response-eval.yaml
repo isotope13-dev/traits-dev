@@ -13,7 +13,7 @@ traits:
     if:
       type: tree-sitter
       query: |
-        (module
+        ((module
           (function_definition
             name: (identifier) @fetch_name
             body: (block) @fetch_body)
@@ -38,13 +38,46 @@ traits:
                       arguments: (argument_list .
                         (call
                           function: (identifier) @compile
-                          arguments: (argument_list . (identifier) @compiled_source))))))))
-          (#match? @fetch_body "(?s)urlopen.{0,240}return.{0,80}\\.read\\(")
+                          arguments: (argument_list . (identifier) @compiled_source)))))))))) @flow
+          (#match? @fetch_body "(?s)urlopen.{0,400}\\.read\\(.{0,120}return")
           (#eq? @fetch_name @fetch_call)
           (#eq? @source @compiled_source)
           (#eq? @decode "decode")
           (#eq? @exec "exec")
-          (#eq? @compile "compile"))) @flow
+          (#eq? @compile "compile"))
+
+  # Variant where the helper returns response bytes and the caller passes
+  # those bytes directly to compile/exec, without an intermediate decode.
+  - id: python-helper-returned-bytes-exec-flow
+    desc: Executes bytes returned by an HTTP helper
+    crit: notable
+    conf: 0.98
+    if:
+      type: tree-sitter
+      query: |
+        ((module
+          (function_definition name: (identifier) @fetch_name body: (block) @fetch_body)
+          (function_definition body: (block
+            (_)*
+            (expression_statement
+              (assignment
+                left: (identifier) @source
+                right: (call
+                  function: (identifier) @fetch_call
+                  arguments: (argument_list . (identifier) @url))))
+            (_)*
+            (expression_statement
+              (call
+                function: (identifier) @exec
+                arguments: (argument_list .
+                  (call
+                    function: (identifier) @compile
+                    arguments: (argument_list . (identifier) @compiled_source)))))))
+          (#match? @fetch_body "(?s)urlopen.{0,400}\\.read\\(.{0,120}return")
+          (#eq? @fetch_name @fetch_call)
+          (#eq? @source @compiled_source)
+          (#eq? @exec "exec")
+          (#eq? @compile "compile")))
 
   # The non-decoding form binds a helper's URL parameter through urlopen, its
   # returned response bytes, the caller's source variable, and compile/exec.
@@ -106,6 +139,16 @@ traits:
           call: '^urllib(\.request)?\.urlopen\.read$'
 
 composite_rules:
+  - id: python-http-helper-executed-source-evidence
+    desc: Python compiles source returned by an HTTP helper
+    crit: notable
+    conf: 0.98
+    for: [whl, python]
+    scope: archive
+    any:
+      - id: python-helper-fetched-source-exec-flow
+      - id: python-helper-returned-bytes-exec-flow
+
   - id: python-urlopen-compile-exec-proximity
     desc: urlopen, compile and exec co-occur
     crit: notable
