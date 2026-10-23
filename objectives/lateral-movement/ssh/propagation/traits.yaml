@@ -47,25 +47,48 @@ traits:
   # with credentials it was handed — a fan-out, not an administrator
   # connecting to their own server.
   #
-  # The interpreter tail is what makes it propagation rather than a remote
-  # `uptime`: the command launched on the far host is a script run through
-  # python/perl/bash, so whatever the caller spreads runs there.
+  # Require an inline interpreter payload, not any remote shell command. A
+  # normal administrative `bash -c "npm install ..."` is not propagation.
+  # Python/perl inline programs and shell commands that decode or fetch a
+  # payload remain covered when paired with password SSH and disabled host
+  # verification.
   #
   # Kept language-neutral. IoT bots build this string with printf templates in
   # C, but the same one-liner appears verbatim in shell droppers and in Python
   # `subprocess` argument lists, and the matcher does not care which.
-  - id: sshpass-remote-interpreter-launch
-    desc: Password SSH launches a remote interpreter
+  - id: sshpass-disables-host-verification
+    desc: Password SSH disables host-key verification
     crit: suspicious
     conf: 0.95
-    attack: T1021.004,T1078.001
     if:
       type: text
-      regex: 'sshpass -p .{0,60}StrictHostKeyChecking=no.{0,80}\b(python|perl|bash)\b'
+      regex: 'sshpass -p .{0,60}StrictHostKeyChecking=no'
+    unless:
+      - id: metadata/package/testing/
+
+  - id: ssh-launches-inline-payload
+    desc: SSH remote interpreter runs inline payload code
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: text
+      regex: '\b(python\s+-c|perl\s+-e|bash\s+-c.{0,50}\b(curl|wget|base64|/dev/tcp))'
     unless:
       - id: metadata/package/testing/
 
 composite_rules:
+  # Keep the pieces independently useful; their proximity in one SSH command
+  # establishes the password-authenticated, host-unverified payload launch.
+  - id: sshpass-remote-interpreter-launch
+    desc: Password SSH launches an inline remote payload
+    crit: suspicious
+    conf: 0.95
+    attack: T1021.004,T1078.001
+    near_bytes: 180
+    all:
+      - id: sshpass-disables-host-verification
+      - id: ssh-launches-inline-payload
+
   - id: ssh-chmod-command
     desc: Executed SSH command contains chmod action
     crit: component
