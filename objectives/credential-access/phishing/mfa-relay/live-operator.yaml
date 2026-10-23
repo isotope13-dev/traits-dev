@@ -10,91 +10,6 @@ defaults:
   mbc: B0030
 
 traits:
-  # A bare `expiry` is not a payment-card field: SDK bundles (Azure Storage SAS
-  # `Expiry`, token/lease/cache records) use it constantly, which made this leg
-  # fire on ordinary dependency code. Require a spelling that only a card form
-  # uses.
-  - id: browser-otp-data-property
-    desc: Browser OTP data field names
-    crit: component
-    conf: 0.92
-    if:
-      type: text
-      regex: '(?i)\b(otp|mfa|2fa)\b[\s"''=:]'
-
-  # A lone `username:`/`email:` object key is not credential evidence: HTTP
-  # API request envelopes use `username` as a plain field name, and a Discord
-  # webhook post body's bot-name field alone made the discord-exfiltration
-  # consumer (which admits every credential-access descendant) report benign
-  # feedback telemetry as sensitive-data exfiltration. A harvested record
-  # pairs the identity field with its secret; require the pair, in either
-  # key order, before calling a shape a credential record.
-  - id: browser-credential-record-key-pair
-    desc: Paired user and secret record keys
-    crit: component
-    conf: 0.9
-    if:
-      type: text
-      # Key prefixes (\buser, \bpass) accept username/user_id and password/
-      # passwd spellings; the 99-char window keeps both keys in one record.
-      regex: '(?is)\buser\w{0,8}["'']?[:=].{0,99}\bpass|\bpass\w{0,8}["'']?[:=].{0,99}\buser'
-
-  # One adjacency regex, not two component legs 1200 bytes apart. The claim is
-  # that page-control commands are *mapped to* page files, and only adjacency
-  # shows that. The split form paired any `<verb>_<word>:` object key with any
-  # `"....html"` string anywhere in the surrounding 1200 bytes, which a large
-  # generated bundle satisfies by coincidence: the Kombai extension's 8 MB
-  # webpack UI bundle matched on a media-player key `next_page:` sitting near an
-  # unrelated `"/index.html"`, and was reported as a phishing route map. An
-  # operator panel writes `to_otp: "otp.html"` literally, so the adjacency form
-  # costs real kits nothing while removing that coincidence class outright.
-  - id: browser-command-route-map
-    desc: Maps page-control commands to HTML pages
-    crit: suspicious
-    conf: 0.96
-    if:
-      type: text
-      regex: '(?i)\b(to|go|show|next)_\w{1,20}\s*:\s*["''][\w./-]{1,40}\.html?["'']'
-      # Static-site front matter maps next_url to the following doc page
-      # (Middleman/Jekyll). An operator map uses a page role, as in to_otp.
-      not:
-        - regex: '(?i)\bnext_url\b'
-    unless:
-      # Docker's official build-push Action ships a generated ncc bundle whose
-      # dependencies carried the old split form's generic tokens. The adjacency
-      # matcher above should already exclude it; kept until that is confirmed
-      # against the artifact rather than assumed.
-      - id: well-known/tool/development/ci/github-actions/docker-build-push-action::repository-url
-      - id: well-known/tool/development/ci/github-actions/docker-build-push-action::dist-tree
-      # Admin SPA settings panels map show_* keys to settings/*.html routes.
-      - type: text
-        regex: ':\s*["'']settings/'
-
-  # Bare `assign(`/`replace(` matched `Object.assign` and `String.replace` in
-  # any script, and a bare `href` leg matched every anchor element, so this
-  # fragment fired on ordinary DOM code. Navigation means the location object
-  # is the thing being assigned or called.
-  - id: browser-route-navigation
-    desc: Browser route navigation call
-    # React Router and ordinary SPAs use this routinely. It is useful as a
-    # composite leg, but not meaningful phishing evidence by itself.
-    crit: component
-    conf: 0.94
-    if:
-      type: text
-      regex: '(?i)\blocation\s*\.\s*(assign|replace)\s*\(|\blocation\s*\.\s*href\s*='
-
-  - id: form-value-member-read
-    desc: Reads a browser form value member
-    crit: component
-    conf: 0.92
-    if:
-      type: text
-      regex: '(?i)\b(input|option|form)\s*\.\s*(value|innerText)\b'
-
-  # Host-bridge PhaaS clients declare an explicit parent/iframe control mode,
-  # open a QT session WebSocket, and dump the harvested form on a final panel
-  # route. Match the structural tokens so renamed kits keep the shape.
   - id: browser-host-bridge-mode-flag
     desc: Declares a browser host-bridge phishing mode
     crit: suspicious
@@ -120,28 +35,6 @@ traits:
       regex: '(?i)\bapi/open/the_final_interface\b'
 
 composite_rules:
-  - id: browser-form-value-read
-    desc: Browser code reads a form value
-    crit: component
-    conf: 0.92
-    any:
-      - id: form-value-member-read
-      - id: micro-behaviors/ui/window/form-input::browser-event-target-value-reference
-      - id: micro-behaviors/ui/window/form-input::browser-native-form-value-descriptor-read
-
-  - id: browser-card-otp-credential-record
-    desc: Browser data record combines card, OTP, and login fields
-    crit: suspicious
-    conf: 0.98
-    all:
-      - id: micro-behaviors/data/parse/payment::payment-card-field-name
-      - id: browser-credential-record-key-pair
-      - id: browser-form-value-read
-    any:
-      - id: browser-otp-data-property
-      - id: micro-behaviors/ui/window/otp-field::browser-verification-data-property
-    near_bytes: 1800
-
   - id: browser-live-input-websocket-collection
     desc: Streams browser credential input over a WebSocket
     crit: hostile
@@ -153,23 +46,13 @@ composite_rules:
       # document listener covers both implementations.
       - id: micro-behaviors/ui/window/form-input::document-input-listener
       - id: micro-behaviors/communications/websocket/handler::websocket-javascript-constructor
-      - id: browser-sensitive-phishing-field-set
+      - id: micro-behaviors/ui/controls/credential::browser-login-or-card-otp-fields
     any:
       - id: micro-behaviors/ui/window/form-input::browser-event-value-send-call
       - id: micro-behaviors/ui/window/form-input::browser-json-event-value-send-call
       - id: micro-behaviors/ui/window/form-input::browser-value-socket-send
     near_bytes: 2400
 
-  - id: browser-sensitive-phishing-field-set
-    desc: Browser code references login or payment-and-OTP fields
-    crit: component
-    conf: 0.96
-    any:
-      # Traditional kits query an explicit password element. Framework-based
-      # kits instead keep card, login, and OTP values in one data record and
-      # attach a generic listener, so no password selector appears in script.
-      - id: micro-behaviors/ui/controls/credential::browser-credential-field-reference
-      - id: browser-card-otp-credential-record
 
   - id: browser-worker-live-sensitive-input-collection
     for: [javascript]
@@ -179,19 +62,22 @@ composite_rules:
     attack: T1056.003,T1111
     all:
       - id: micro-behaviors/ui/window/form-input::document-input-listener
-      - id: browser-card-otp-credential-record
+      - id: micro-behaviors/ui/controls/credential::browser-login-card-otp-fields
       - id: micro-behaviors/process/create/workers::browser-worker-constructor
       - id: micro-behaviors/communications/ipc/message::postmessage-call
     near_bytes: 3600
 
+  # Bind the received command to the same guarded page-table lookup used
+  # by location navigation; local route tables alone are ordinary SPA code.
   - id: browser-operator-directed-phishing-flow
+    for: [javascript, typescript]
     desc: Operator-directed phishing flow routes harvested data among pages
     crit: hostile
     conf: 0.99
     all:
-      - id: browser-card-otp-credential-record
-      - id: browser-command-route-map
-      - id: browser-remote-route-dispatch
+      - id: micro-behaviors/ui/controls/credential::browser-login-card-otp-fields
+      - id: micro-behaviors/ui/window/navigation::browser-command-route-map
+      - id: micro-behaviors/ui/window/navigation::websocket-message-command-page-navigation
     any:
       - id: micro-behaviors/ui/window/form-input::browser-event-value-send-call
       - id: micro-behaviors/ui/window/form-input::browser-json-event-value-send-call
@@ -205,35 +91,13 @@ composite_rules:
     conf: 0.99
     attack: T1056.003,T1111,T1041
     all:
-      - id: browser-card-otp-credential-record
+      - id: micro-behaviors/ui/controls/credential::browser-login-card-otp-fields
       - id: micro-behaviors/communications/websocket/handler::websocket-javascript-constructor
       - id: micro-behaviors/crypto/symmetric/aes/ctr::aes-ctr-algorithm-marker
     any:
       - id: micro-behaviors/ui/window/form-input::browser-event-value-send-call
       - id: micro-behaviors/ui/window/form-input::browser-value-socket-send
     near_bytes: 5200
-  - id: browser-remote-route-dispatch
-    desc: Dispatches a remote browser route
-    crit: suspicious
-    conf: 0.96
-    # Vendored browser libraries use indexed drawing commands and string
-    # replacement for ordinary rendering; keep this phishing-flow inference
-    # for application-owned browser code.
-    unless:
-      - id: metadata/package/files/dependency::node-modules-path
-      # VSCodium's editor core owns this generic command/route plumbing;
-      # an exact core-bundle path is stronger than archive-wide product context.
-      - id: well-known/tool/development/editor/vscodium::vscodium-core-bundle-path
-    any:
-      - id: micro-behaviors/data/property/access::command-field-table-index
-      - id: micro-behaviors/data/control-flow/dispatch::command-variable-dispatch-index
-    all:
-      # A route index plus navigation is common in charting and application
-      # routers. Require the adjacent command-to-page map that gives this
-      # behavior its operator-directed meaning.
-      - id: browser-command-route-map
-      - id: browser-route-navigation
-    near_bytes: 500
 
   - id: browser-host-bridged-operator-channel
     desc: Host-bridged channel steers a live phishing session
@@ -251,3 +115,18 @@ composite_rules:
       - id: micro-behaviors/ui/window/form-input::browser-json-event-value-send-call
       - id: micro-behaviors/ui/window/form-input::browser-value-socket-send
     near_bytes: 6000
+
+# Preserve HTML and local page-routing capture from the former operator rule.
+  - id: browser-page-routed-sensitive-input-collection
+    desc: Sensitive input sends beside page-command routing
+    crit: hostile
+    conf: 0.99
+    all:
+    - id: micro-behaviors/ui/controls/credential::browser-login-card-otp-fields
+    - id: micro-behaviors/ui/window/navigation::browser-command-route-map
+    - id: micro-behaviors/ui/window/navigation::browser-page-command-dispatch
+    any:
+    - id: micro-behaviors/ui/window/form-input::browser-event-value-send-call
+    - id: micro-behaviors/ui/window/form-input::browser-json-event-value-send-call
+    - id: micro-behaviors/ui/window/form-input::browser-value-socket-send
+    near_bytes: 5200
