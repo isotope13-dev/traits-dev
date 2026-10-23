@@ -20,13 +20,15 @@ while rest.strip():
 by_name = {Path(f['path']).name: f for f in reports}
 ids = lambda name: {t['id'] for t in by_name[name].get('traits', [])}
 hostile = lambda name: {t['id'] for t in by_name[name].get('traits', []) if t['crit'] == 5}
-DUMP = 'objectives/supply-chain/recon-exfil/pipeline::github-actions-memdump-downloader'
+DUMP = 'micro-behaviors/process/deploy/interpreter-stdin::curl-json-content-sudo-python'
+EXFIL = 'objectives/exfiltration/stealer/dev-secret::runner-secret-filter-issue-post'
 CURL = 'micro-behaviors/communications/http/download/curl::'
 IDENTITY = 'micro-behaviors/communications/http/request/json::urllib-json-body-host-identity'
 for name in ('comment-only.js', 'comment-only.sh', 'unused-command.js', 'unrelated-exec.js'):
     assert not hostile(name), (name, hostile(name))
 for name in ('memory-pipeline.sh', 'memory-pipeline.js'):
-    assert DUMP in hostile(name), (name, hostile(name))
+    assert DUMP in ids(name), (name, ids(name))
+    assert EXFIL in hostile(name), (name, hostile(name))
 assert CURL + 'shell-curl-output-option-call' in ids('curl-real-output.sh')
 assert CURL + 'source-curl-output-option-text' in ids('curl-long-output.cmd')
 for name in ('curl-pipe-compiler.sh', 'remote-agent.sh'):
