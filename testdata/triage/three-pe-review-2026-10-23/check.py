@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[3]
 SWAP = 'objectives/impact/crypto-manipulation/clipboard::managed-wallet-regex-clipboard-replacement'
 CLIPPER = 'objectives/impact/crypto-manipulation/clipboard::managed-backdoor-wallet-clipboard-replacement'
 RUN = 'objectives/persistence/login/registry/run-key::managed-plugin-backdoor-run-key-references'
-CLAIM = 'objectives/evasion/masquerade/version-resource/claim::microsoft-company-claim-with-urlmon-reference'
+CLAIM = 'micro-behaviors/communications/http/client/urlmon::urlmon-reference-with-microsoft-company-claim'
 LABEL = 'metadata/binary/resource/identity::microsoft-exact-string-rsrc'
 
 
