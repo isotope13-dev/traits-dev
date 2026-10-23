@@ -1,0 +1,100 @@
+defaults:
+  platforms: [unix, windows]
+  for: [scripts, source]
+  crit: notable
+  conf: 0.96
+
+traits:
+  - id: ldap-bind-request-constructor
+    desc: Constructs an LDAP BindRequest
+    for: [python, javascript, typescript]
+    if:
+      type: symbol
+      kind: call
+      regex: '(^|[.:])BindRequest$'
+
+  - id: ldap-modify-request-constructor
+    desc: Constructs an LDAP ModifyRequest
+    for: [python, javascript, typescript]
+    if:
+      type: symbol
+      kind: call
+      regex: '(^|[.:])ModifyRequest$'
+
+  - id: sasl-gss-spnego-mechanism
+    desc: GSS-SPNEGO SASL mechanism literal
+    if:
+      type: literal
+      exact: GSS-SPNEGO
+      exclude_docstrings: true
+
+  # Follow the constructed record through protection to transmission. The
+  # equality predicates bind both intermediate buffers; unrelated encryption
+  # or a separate send cannot satisfy these patterns. Operand names provide
+  # bounded protocol context, not a tool/family name or exact variable name.
+  - id: python-protected-bind-modify-send
+    desc: Protects and sends stacked bind/modify buffers
+    for: [python]
+    crit: suspicious
+    if:
+      type: tree-sitter
+      query: |
+        (block
+          (expression_statement
+            (assignment left: (identifier) @record
+              right: (binary_operator left: (identifier) @bind
+                operator: "+" right: (identifier) @modify)))
+          . (expression_statement
+            (assignment left: (identifier) @wire
+              right: (call
+                function: (attribute attribute: (identifier) @protect)
+                arguments: (argument_list (identifier) @record_use))))
+          . (expression_statement
+            (call function: (attribute attribute: (identifier) @send)
+              arguments: (argument_list (identifier) @wire_use)))
+          (#match? @bind "(?i)bind")
+          (#match? @modify "(?i)modif")
+          (#match? @protect "^(encrypt|wrap|seal|sign)$")
+          (#eq? @send "sendall")
+          (#eq? @record @record_use)
+          (#eq? @wire @wire_use))
+
+  - id: javascript-protected-bind-modify-send
+    desc: Protects and sends stacked bind/modify buffers
+    for: [javascript, typescript]
+    crit: suspicious
+    if:
+      type: tree-sitter
+      query: |
+        (statement_block
+          (lexical_declaration (variable_declarator
+            name: (identifier) @record
+            value: (call_expression
+              function: (member_expression object: (identifier) @buffer
+                property: (property_identifier) @concat)
+              arguments: (arguments (array
+                (identifier) @bind (identifier) @modify)))))
+          . (lexical_declaration (variable_declarator
+            name: (identifier) @wire
+            value: (call_expression
+              function: (member_expression property: (property_identifier) @protect)
+              arguments: (arguments (identifier) @record_use))))
+          . (expression_statement (call_expression
+            function: (member_expression property: (property_identifier) @send)
+            arguments: (arguments (identifier) @wire_use)))
+          (#eq? @buffer "Buffer")
+          (#eq? @concat "concat")
+          (#match? @bind "(?i)bind")
+          (#match? @modify "(?i)modif")
+          (#match? @protect "^(encrypt|wrap|seal|sign)$")
+          (#eq? @send "write")
+          (#eq? @record @record_use)
+          (#eq? @wire @wire_use))
+
+composite_rules:
+  - id: protected-bind-modify-send
+    desc: Protects and sends stacked bind/modify buffers
+    crit: suspicious
+    any:
+      - id: python-protected-bind-modify-send
+      - id: javascript-protected-bind-modify-send
