@@ -1,1 +1,1 @@
-const a=["a","b","c","d","e","f"];
+const nameList=["a","b","c","d","e","f"];

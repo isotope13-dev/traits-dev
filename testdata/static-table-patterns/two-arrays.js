@@ -1,1 +1,1 @@
-const a=["a","b","c"], b=["d","e","f"];
+const commandNames=["a","b","c"], fileNames=["d","e","f"];
