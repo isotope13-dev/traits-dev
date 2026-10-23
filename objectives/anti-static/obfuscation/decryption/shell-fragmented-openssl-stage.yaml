@@ -2,6 +2,34 @@ defaults:
   platforms: [unix]
   for: [shell, scripts]
   attack: T1027,T1140
+traits:
+  # Bind the assigned variable to eval's argument. An unrelated eval elsewhere
+  # must not turn an ordinary encrypted backup into an executable stage.
+  - id: shell-eval-aes-command-output
+    desc: Evaluates variable holding AES command output
+    crit: suspicious
+    conf: 0.97
+    for: [shell]
+    if:
+      type: tree-sitter
+      query: |
+        ((_
+          (variable_assignment name: (variable_name) @saved
+            value: (command_substitution [
+              (command argument: (word) @enc . argument: (word) @decrypt
+                . argument: (word) @cipher)
+              (pipeline (command argument: (word) @enc . argument: (word) @decrypt
+                . argument: (word) @cipher))]))
+          . (comment)* .
+          (command name: (command_name (word) @verb)
+            argument: [
+              (string [(simple_expansion (variable_name) @used)
+                       (expansion (variable_name) @used)])
+              (simple_expansion (variable_name) @used)
+              (expansion (variable_name) @used)]))
+          (#eq? @saved @used) (#eq? @verb "eval")
+          (#eq? @enc "enc") (#eq? @decrypt "-d")
+          (#match? @cipher "^-aes-(128|192|256)-(ctr|cbc)$"))
 composite_rules:
   - id: shell-aes-decrypt-with-dynamic-commands-and-hex
     desc: AES decrypt with dynamic commands and hex
@@ -27,3 +55,12 @@ composite_rules:
       - id: micro-behaviors/process/create/shell/stdin-feed::variable-text-piped-into-shell-stdin
       - id: micro-behaviors/process/create/shell/stdin-feed::variable-text-fed-to-shell-c-flag
     needs: 1
+  - id: shell-concealed-aes-output-evaluation
+    desc: Concealed AES command output feeds shell eval
+    crit: hostile
+    conf: 0.97
+    for: [shell]
+    attack: T1027,T1059.004,T1140
+    all:
+      - id: shell-eval-aes-command-output
+      - id: shell-aes-decrypt-with-dynamic-commands-and-hex

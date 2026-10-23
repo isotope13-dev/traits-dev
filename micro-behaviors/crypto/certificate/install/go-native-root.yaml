@@ -1,0 +1,67 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+traits:
+  - id: go-root-certificate-request-routine
+    desc: Go ROOT certificate-install request routine
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule go_root_certificate_request_routine {
+          strings:
+            $pcln = { F1 FF FF FF 00 00 01 08 }
+            $caller = /[A-Za-z0-9_\x2f.\x2d]{1,160}\.(installCertToStore|installCertificateToStore)\x00/
+            $callee = "golang.org/x/sys/windows.(*LazyProc).Call\x00"
+            $asn = { 48 C7 40 08 01 00 01 00 [0-40] 48 C7 40 20 03 00 00 00 }
+          condition:
+            pe.is_pe and pe.machine == pe.MACHINE_AMD64 and filesize < 64MB and
+            $caller and $callee and $pcln and
+            for any h in (1..#pcln) : (
+              with hdr = @pcln[h] : (
+                uint64(hdr+8) > 0 and uint64(hdr+8) < 100000 and
+                with table = hdr+uint64(hdr+64), names = hdr+uint64(hdr+32), text = uint64(hdr+24) : (
+                  table+uint64(hdr+8)*8+8 < filesize and names < filesize and
+                  for any i in (0..uint64(hdr+8)-1) : (
+                    with funcmeta = table+uint32(table+i*8+4) : (
+                      funcmeta+8 < filesize and
+                      for any n in (1..#caller) : (
+                        names+int32(funcmeta+4) <= @caller[n] and
+                        @caller[n]-(names+int32(funcmeta+4)) < 160 and
+                        for all z in (names+int32(funcmeta+4)..@caller[n]) : (uint8(z) != 0) and
+                        with start = text+uint32(table+i*8), extent = uint32(table+(i+1)*8)-uint32(table+i*8) : (
+                          extent > 5 and extent < 32768 and
+                          with code = pe.rva_to_offset(start-pe.image_base) : (
+                            code+extent <= filesize and
+                            (for any r in (code..code+extent-16) : (
+          uint32(r) & 0xffffff == 0x058d48 and uint8(r+7) == 0xbb and uint32(r+8) == 4 and
+          uint8(r+12) == 0xe8 and
+          uint32(pe.rva_to_offset(start+(r-code)+7+int32(r+3)-pe.image_base)) == 0x544f4f52
+        ) and
+        for any k in (1..#asn) : (@asn[k] >= code and @asn[k] < code+extent)) and
+                            for any j in (0..uint64(hdr+8)-1) : (
+                              with destmeta = table+uint32(table+j*8+4) : (
+                                destmeta+8 < filesize and
+                                for any m in (1..#callee) : (
+                                  names+int32(destmeta+4) <= @callee[m] and
+                                  @callee[m]-(names+int32(destmeta+4)) < 160 and
+                                  for all z in (names+int32(destmeta+4)..@callee[m]) : (uint8(z) != 0) and
+                                  for any callsite in (code..code+extent-5) : (
+                                    uint8(callsite) == 0xe8 and
+                                    start+(callsite-code)+5+int32(callsite+1) == text+uint32(table+j*8)
+                                  )
+                                )
+                              )
+                            )
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
