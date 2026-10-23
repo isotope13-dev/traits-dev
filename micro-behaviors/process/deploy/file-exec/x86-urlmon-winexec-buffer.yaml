@@ -1,0 +1,38 @@
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+traits:
+  # URLDownloadToFileA is resolved by name. Its output pathname and the
+  # later WinExec pathname refer to the same stack buffer (ESP differs by
+  # one already-pushed argument). Bind both imported calls and the API name.
+  - id: x86-urlmon-file-buffer-to-winexec
+    desc: x86 URLMon output buffer passed to WinExec
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_urlmon_file_buffer_to_winexec {
+          strings:
+            $api = "URLDownloadToFileA\x00"
+            $chain = { 68 [4] 50 FF 15 [4]
+                       6A 00 8D 8C 24 [4] 6A ?? 8D 54 24 ?? 51 52 6A 00 FF D0
+                       8B 4C 24 ?? 33 C0 83 F9 ?? 8D 8C 24 [4]
+                       0F 95 C0 48 83 E0 ?? 50 51 FF 15 ?? ?? ?? ?? }
+          condition:
+            for any s in pe.sections : (
+              s.name == ".text" and
+              for any c in (1..#chain) : (
+                @chain[c] >= s.raw_data_offset and
+                @chain[c]+!chain[c] <= s.raw_data_offset+s.raw_data_size and
+                $api at pe.rva_to_offset(uint32(@chain[c]+1)-pe.image_base) and
+                uint32(@chain[c]+8) == pe.image_base +
+                  pe.import_rva("KERNEL32.dll", "GetProcAddress") and
+                uint32(@chain[c]+17) == uint32(@chain[c]+45)+4 and
+                uint32(@chain[c]+60) == pe.image_base +
+                  pe.import_rva("KERNEL32.dll", "WinExec")
+              )
+            )
+        }

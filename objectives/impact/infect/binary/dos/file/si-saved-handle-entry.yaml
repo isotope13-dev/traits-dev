@@ -1,0 +1,51 @@
+defaults:
+  for: [dos_com, data]
+  platforms: [windows, unix]
+  size_max: 65536
+
+traits:
+  # Bind EOF length, E9 displacement, saved handle and own relocation code.
+  # Both normal COM files and images with a 256-byte PSP prefix are accepted.
+  - id: dos-si-saved-handle-entry-append
+    desc: Redirects COM entry and appends own code
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule dos_si_saved_handle_entry_append {
+          strings:
+            $base = { E8 00 00 5A 81 EA ?? ?? 8B F2 }
+            $length = { B4 42 8B 9C ?? ?? 33 C9 33 D2 B0 02 CD 21
+                        89 84 ?? ?? }
+            $entry = { B4 40 8B 9C ?? ?? B9 03 00 8B 94 ?? ??
+                       83 EA 03 89 94 ?? ?? BA ?? ?? 03 D6 CD 21
+                       B4 42 8B 9C ?? ?? 33 C9 33 D2 B0 02 CD 21
+                       B4 40 BA ?? ?? 03 D6 8B 9C ?? ?? 8B 8C ?? ?? CD 21 }
+          condition:
+            for any b in (1..#base) : (
+              (uint16(@base[b]+6) == @base[b]+3 or
+               uint16(@base[b]+6) == @base[b]+0x103) and
+              for any l in (1..#length) : (
+                @length[l] > @base[b] and @length[l]-@base[b] < 1024 and
+                for any e in (1..#entry) : (
+                  @entry[e] > @length[l] and @entry[e]-@length[l] < 256 and
+                  uint16(@entry[e]+4) == uint16(@length[l]+4) and
+                  uint16(@entry[e]+11) == uint16(@length[l]+16) and
+                  uint16(@entry[e]+18) == uint16(@entry[e]+21)+1 and
+                  uint8(uint16(@entry[e]+21) -
+                    (uint16(@base[b]+6)-@base[b]-3)) == 0xE9 and
+                  uint16(@entry[e]+31) == uint16(@length[l]+4) and
+                  uint16(@entry[e]+50) == uint16(@length[l]+4) and
+                  uint16(@entry[e]+44) == uint16(@base[b]+6)-3 and
+                  uint16(@entry[e]+54) -
+                    (uint16(@base[b]+6)-@base[b]-3)+1 < filesize and
+                  uint16(@entry[e]+44) + uint16(uint16(@entry[e]+54) -
+                    (uint16(@base[b]+6)-@base[b]-3)) <=
+                    filesize+(uint16(@base[b]+6)-@base[b]-3) and
+                  uint16(uint16(@entry[e]+54) -
+                    (uint16(@base[b]+6)-@base[b]-3)) > @entry[e]+!entry[e]-@base[b]
+                )
+              )
+            )
+        }

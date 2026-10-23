@@ -1,0 +1,37 @@
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+traits:
+  - id: x86-length-prefixed-task-records
+    desc: Length-prefixed socket read and dispatch
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_length_prefixed_record_task_table {
+          strings:
+            $record = { 8B 44 24 10 8B 15 [4] 8D 4C 24 18 50 51 52 E8 [4]
+                        83 C4 0C 85 C0 0F 84 [4] 8B 44 24 14 83 C0 FE
+                        83 F8 ?? 77 ?? 33 C9 8A 88 [4] FF 24 8D ?? ?? ?? ?? }
+            $reader = { 81 EC [4] 56 57 8B BC 24 [4] 33 F6 85 FF }
+            $recv = { 8B C7 6A 00 2B C6 8D 0C 2E 50 51 53 FF 15 [4] 85 C0 }
+          condition:
+            for any s in pe.sections : (
+              s.name == ".text" and
+              for any r in (1..#record) : (
+                @record[r] >= s.raw_data_offset and
+                @record[r]+!record[r] <= s.raw_data_offset+s.raw_data_size and
+                for any h in (1..#reader) : (
+                  @reader[h] == pe.rva_to_offset(s.virtual_address +
+                    @record[r]-s.raw_data_offset+22+int32(@record[r]+18)) and
+                  for any v in (1..#recv) : (
+                    @recv[v] > @reader[h] and @recv[v]-@reader[h] < 160 and
+                    uint32(@recv[v]+14) == pe.image_base+pe.import_rva("WS2_32.dll",16)
+                  )
+                )
+              )
+            )
+        }
