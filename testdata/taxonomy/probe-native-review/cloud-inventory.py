@@ -1,0 +1,1 @@
+urls = ["https://storage.googleapis.com/storage/v1/b?project=" + project, "https://storage.googleapis.com/storage/v1/b/%s/o?maxResults=5" % bucket, "https://storage.googleapis.com/storage/v1/b/%s/iam" % bucket]
