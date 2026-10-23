@@ -3,12 +3,13 @@
 
 Builds minimal non-executable AArch64 ELF fixtures (named sections, no
 entry point) and checks the two hostile composites covering the
-boatnet-style cryptojacker: a kill-syscall plus three-or-more rival
-miner names, and an embedded systemd unit plus piped crontab install
-under a kworker process title.
+boatnet-style cryptojacker: a kill-syscall, proc PID command-line path,
+three rival miner names, and an embedded systemd unit plus piped crontab
+install under a kworker process title.
 
-Covers the needs:3 threshold (two miner names must not fire the kill
-list) and the all-legs requirement of the persistence composite (a
+Covers the complete process-enumeration, kill-syscall and three-name
+signature, plus a benign embedded-name near miss without process targeting.
+It also checks the all-legs requirement of the persistence composite (a
 unit template alone must not fire it).
 """
 from __future__ import annotations
@@ -62,19 +63,20 @@ def elf64(rodata: bytes, code: bytes) -> bytes:
 
 
 FIXTURES = {
-    # Kill syscall, four rival miner names, unit template, piped crontab
+    # Kill syscall, proc PID command-line path, three rival miner names,
+    # unit template, piped crontab
     # install, kworker title: both composites fire.
     "rival-kill-unit-cron.elf": (
         KILL_CODE,
-        b"xmrig\0cpuminer\0minerd\0[kworker/1:1]\0" + UNIT +
+        b"/proc/%d/cmdline\0xmrig\0cpuminer\0minerd\0[kworker/1:1]\0" + UNIT +
         b"(crontab -l 2>/dev/null; echo '*/15 * * * * /tmp/.x') | crontab -\n",
         {KILL, PERSIST},
         set(),
     ),
-    # Kill syscall but only two miner names: kill list must stay silent.
-    "near-miss-two-names.elf": (
+    # A kill syscall and three names without process enumeration must stay silent.
+    "embedded-names-without-process-targeting.elf": (
         KILL_CODE,
-        b"xmrig\0cpuminer\0",
+        b"xmrig\0cpuminer\0minerd\0",
         set(),
         {KILL, PERSIST},
     ),
