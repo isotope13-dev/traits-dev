@@ -1,0 +1,48 @@
+# A zero-argument exported action consists solely of a forced recursive,
+# quiet System32 DLL sweep, with streams discarded and errors swallowed.
+# General system-DLL servicing remains covered by the suspicious rule.
+defaults:
+  platforms: [windows]
+  for: [javascript, typescript]
+  attack: T1485
+traits:
+  - id: node-silent-system32-dll-wipe-action
+    desc: Silent exported System32 DLL deletion action
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: tree-sitter
+      query: |
+        ((program
+          (lexical_declaration (variable_declarator
+            name: (object_pattern (shorthand_property_identifier_pattern) @exec)
+            value: (call_expression function: (identifier) @require
+              arguments: (arguments . (string) @module .))))
+          (expression_statement (assignment_expression
+            left: (member_expression object: (identifier) @export_module
+              property: (property_identifier) @exports)
+            right: (function_expression parameters: (formal_parameters) @params
+              body: (statement_block . (try_statement
+                body: (statement_block . (expression_statement
+                  (call_expression function: (identifier) @called
+                    arguments: (arguments . (string) @command . (object
+                      (pair key: (property_identifier) @shell value: (true))
+                      (pair key: (property_identifier) @stdio value: (string) @ignore)) .))) .)
+                handler: (catch_clause body: (statement_block) @caught)) (empty_statement)? .))))) @wipe
+          (#match? @params "^\\(\\s*\\)$")
+          (#match? @caught "^\\{\\s*\\}$")
+          (#eq? @require "require") (#match? @module "^[\"']child_process[\"']$")
+          (#eq? @exec "execSync") (#eq? @exec @called)
+          (#eq? @export_module "module") (#eq? @exports "exports")
+          (#match? @command "(?i)^[\"']del /F /S /Q [a-z]:\\\\+Windows\\\\+System32\\\\+[*][.]dll[\"']$")
+          (#eq? @shell "shell") (#eq? @stdio "stdio")
+          (#match? @ignore "^[\"']ignore[\"']$"))
+
+composite_rules:
+  - id: node-silent-system32-dll-wipe
+    desc: Silent exported action wipes System32 DLLs
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: node-silent-system32-dll-wipe-action
+      - id: metadata/import/builtin::require-child-process
