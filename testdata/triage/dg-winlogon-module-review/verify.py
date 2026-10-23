@@ -20,7 +20,7 @@ WRAPPER = next(p for p in (SAMPLES / '8bc154405b1c').glob('2026*')
 RULES = {
     'record': 'micro-behaviors/communications/socket/receive/x86-length-prefixed-record.yaml',
     'download': 'micro-behaviors/process/deploy/file-exec/x86-urlmon-winexec-buffer.yaml',
-    'registry': 'objectives/persistence/login/winlogon/userinit/native-task-agent.yaml',
+    'registry': 'micro-behaviors/os/registry/write/native-userinit-command.yaml',
     'burst': 'micro-behaviors/communications/flood/x86-counted-datagrams.yaml',
     'infect': 'objectives/impact/infect/binary/dos/file/si-saved-handle-entry.yaml',
 }

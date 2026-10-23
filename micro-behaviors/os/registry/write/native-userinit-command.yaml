@@ -1,0 +1,48 @@
+# Command construction and registry write establish the persistence surface.
+# Attacker tasking is required separately by the hostile persistence composite.
+defaults:
+  platforms: [windows]
+  for: [pe]
+traits:
+  - id: native-constructed-userinit-command-write
+    desc: Writes comma-joined Winlogon Userinit
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_comma_joined_userinit_string_write {
+          strings:
+            $value = "Userinit\x00" nocase
+            $key = "Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\x00" nocase
+            $api = "RegSetValueExA\x00"
+            $concat = { 51 68 [4] 52 68 [4] 50 FF D6 83 C4 14 }
+            $open = { B9 ?? 00 00 00 BE [4] 8D 7C 24 ?? 8D 54 24 ?? F3 A5
+                      8D 4C 24 ?? 51 52 68 02 00 00 80 66 A5 FF 15 ?? ?? ?? ?? }
+            $write = { 8B 4C 24 ?? 8D 84 24 [4] 6A ?? 50 6A 01 6A 00
+                       68 [4] 51 FF 15 ?? ?? ?? ?? }
+          condition:
+            $api and
+            for any s in pe.sections : (
+              s.name == ".text" and
+              for any c in (1..#concat) : (
+                @concat[c] >= s.raw_data_offset and
+                uint8(pe.rva_to_offset(uint32(@concat[c]+2)-pe.image_base)) == 0x2C and
+                uint8(pe.rva_to_offset(uint32(@concat[c]+2)-pe.image_base)+1) == 0 and
+                uint32(pe.rva_to_offset(uint32(@concat[c]+8)-pe.image_base)) == 0x73257325 and
+                uint16(pe.rva_to_offset(uint32(@concat[c]+8)-pe.image_base)+4) == 0x7325 and
+                for any o in (1..#open) : (
+                  @open[o] > @concat[c] and @open[o]-@concat[c] < 64 and
+                  $key at pe.rva_to_offset(uint32(@open[o]+6)-pe.image_base) and
+                  for any w in (1..#write) : (
+                    @write[w] >= @open[o]+!open[o] and @write[w]-@open[o] < 128 and
+                    @write[w]+!write[w] <= s.raw_data_offset+s.raw_data_size and
+                    uint8(@write[w]+3) == uint8(@open[o]+23) and
+                    $value at pe.rva_to_offset(uint32(@write[w]+19)-pe.image_base)
+                  )
+                )
+              )
+            )
+        }
+
