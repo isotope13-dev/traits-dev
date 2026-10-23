@@ -1,0 +1,1 @@
+var buffer="a";var i;for(var i=0;i<40;i++){buffer+=buffer+"a";}document.write(buffer);

@@ -1,0 +1,1 @@
+const a=["one","two","three","four","five"];document.createElement("script");
