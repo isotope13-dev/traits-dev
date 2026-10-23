@@ -1,0 +1,57 @@
+# A hidden cache flag activates modification of an existing trusted workflow.
+# Bind the checked workflow variable to the append destination and require
+# the remote-shell run directive inside that append's literal heredoc.
+defaults:
+  platforms: [unix]
+  for: [shell]
+  attack: T1195.002,T1059.004
+  conf: 0.98
+traits:
+  - id: cache-gated-workflow-shell-append
+    desc: Cache-gated workflow remote-shell append
+    crit: suspicious
+    if:
+      type: tree-sitter
+      query: |
+        (if_statement
+          condition: (test_command
+            (unary_expression
+              operator: (test_operator) @gate_op
+              (string (simple_expansion (variable_name) @home)
+                (string_content) @flag)))
+          (variable_assignment name: (variable_name) @assigned
+            value: (string (string_content) @workflow))
+          . (list
+            (test_command (unary_expression operator: (test_operator) @file_op
+              (string (simple_expansion (variable_name) @checked))))
+            (command name: (command_name (word) @exit)
+              argument: (number) @status))
+          . (redirected_statement
+            body: (list
+              (command name: (command_name (word) @search))
+              (command name: (command_name (word) @writer)))
+            redirect: (file_redirect ">>"
+              destination: (string (simple_expansion (variable_name) @written)))
+            redirect: (heredoc_redirect
+              (heredoc_start) @delimiter (heredoc_body) @payload))
+          (#eq? @gate_op "-e")
+          (#eq? @home "HOME")
+          (#match? @flag "^/\\.cache/[^/\\s]+$")
+          (#match? @workflow "^\\.github/workflows/[A-Za-z0-9_.-]+\\.ya?ml$")
+          (#eq? @assigned @checked)
+          (#eq? @assigned @written)
+          (#eq? @file_op "-f")
+          (#eq? @exit "exit")
+          (#eq? @status "0")
+          (#eq? @search "grep")
+          (#eq? @writer "cat")
+          (#match? @delimiter "^'[^']+'$")
+          (#match? @payload "(?m)^\\s*run:\\s*curl\\s+[^\\n|]{1,200}\\|\\s*(/bin/)?(ba|z)?sh\\b"))
+
+composite_rules:
+  - id: action-cache-gated-workflow-shell-implant
+    desc: Action injects cache-gated workflow shell step
+    crit: hostile
+    all:
+      - id: cache-gated-workflow-shell-append
+      - id: metadata/build/ci/step::composite-action-step-script

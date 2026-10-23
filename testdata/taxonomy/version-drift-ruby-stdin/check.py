@@ -17,7 +17,7 @@ stream = 'micro-behaviors/process/io/stream::curl-pipe-ruby-stdin'
 old_pipe = 'objectives/command-and-control/dropper/delivery/pipe::curl-pipe-ruby'
 old_path = 'micro-behaviors/os/service/config::workflow-user-service-path'
 service = 'micro-behaviors/os/service/config::workflow-user-service-config'
-stage = 'objectives/supply-chain/hidden-payload/ci::gha-remote-shell-stage'
+stage = 'micro-behaviors/process/deploy/interpreter-stdin::gha-download-shell-pipeline'
 
 with tempfile.TemporaryDirectory(prefix='ruby-pipe-', dir=args.scratch) as work:
     work = Path(work)
@@ -27,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix='ruby-pipe-', dir=args.scratch) as work:
     result = subprocess.run([
         args.cleave, '--traits-dir', str(root), '--format', 'json', str(work),
         str(root / 'testdata/benign/github-actions-service-healthcheck/action.yml'),
-        str(root / 'testdata/hostile/gha-pipe-stage-controls.tar'),
+        str(root / 'testdata/benign/gha-pipe-stage-controls.tar'),
     ], check=True, capture_output=True, text=True, timeout=180)
     decoder = json.JSONDecoder()
     pending = result.stdout
@@ -48,6 +48,6 @@ with tempfile.TemporaryDirectory(prefix='ruby-pipe-', dir=args.scratch) as work:
     assert service in by_path[str(work / 'systemd-directory.yml')]
     health = str(root / 'testdata/benign/github-actions-service-healthcheck/action.yml')
     assert service in by_path[health]
-    archive = str(root / 'testdata/hostile/gha-pipe-stage-controls.tar')
-    assert by_path[archive].get(stage) == 5
-print('PASS: data parsing, source stdin, disconnected commands, unit configuration, hostile archive')
+    archive = str(root / 'testdata/benign/gha-pipe-stage-controls.tar')
+    assert by_path[archive].get(stage) == 3
+print('PASS: data parsing, source stdin, disconnected commands, unit configuration, disclosed deployment')
