@@ -1,0 +1,63 @@
+defaults:
+  platforms: [windows]
+  crit: notable
+  attack: T1489
+
+traits:
+  - id: control-service-stop-call
+    desc: Calls ControlService with SERVICE_CONTROL_STOP
+    conf: 0.98
+    for: [c, cpp, csharp, python, go, rust]
+    if:
+      type: symbol
+      kind: call
+      regex: '(^|[.:>])ControlService$'
+      arg:
+        index: 1
+        kind: number
+        value: 1
+
+  # Bind the direct x86 call operand to the actual ControlService IAT
+  # entry. XOR-zero, increment, and push must use the same register:
+  # the control argument is 1, not an arbitrary ControlService operation.
+  - id: x86-control-service-stop
+    desc: x86 ControlService call with stop control
+    conf: 0.98
+    for: [pe, dll]
+    arch: [x86]
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_control_service_stop {
+          strings:
+            $stop = { 33 ?? [0-12] (40|41|42|43|46|47)
+                      (50|51|52|53|56|57) (50|51|52|53|56|57) FF 15 ?? ?? ?? ?? }
+          condition:
+            pe.is_32bit() and
+            for any s in pe.sections : (
+              s.name == ".text" and
+              for any i in (1..#stop) : (
+                @stop[i] >= s.raw_data_offset and
+                @stop[i]+!stop[i] <= s.raw_data_offset+s.raw_data_size and
+                uint8(@stop[i]+1) == 0xc0+9*(uint8(@stop[i]+!stop[i]-9)-0x40) and
+                uint8(@stop[i]+!stop[i]-8) == uint8(@stop[i]+!stop[i]-9)+0x10 and
+                for any lib in pe.import_details : (
+                  lib.library_name matches /^advapi32\.dll$/i and
+                  for any f in lib.functions : (
+                    f.name == "ControlService" and
+                    uint32(@stop[i]+!stop[i]-4) == pe.image_base+f.rva
+                  )
+                )
+              )
+            )
+        }
+
+composite_rules:
+  - id: control-service-stop-request
+    desc: ControlService service-stop request
+    conf: 0.98
+    for: [c, cpp, csharp, python, go, rust, pe, dll]
+    any:
+      - id: control-service-stop-call
+      - id: x86-control-service-stop
