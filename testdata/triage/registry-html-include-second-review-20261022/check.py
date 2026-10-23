@@ -93,9 +93,10 @@ def run(scratch, phase):
     assert records['openx-reader.php']['micro-behaviors/process/interpreter/eval/source::php-read-then-include-same-path'] == 3
     assert P+'asset-reader-executes-its-argument' not in records['openx-reader.php']
     webhook = 'objectives/exfiltration/messaging/webhook::'
-    # Upstream consolidated the one-way credential send into this exfil rule.
+    # Explicitly supplied license values do not establish credential theft.
     assert webhook+'license-validator-webhook' not in records['license-webhook.js']
-    assert records['license-webhook.js'][webhook+'webhook-license-credential-exfil'] == 5
+    assert webhook+'webhook-license-credential-exfil' not in records['license-webhook.js']
+    assert records['license-webhook.js']['micro-behaviors/communications/http/webhook::licensekey-body-at-fixed-webhook'] == 3
     assert records['message-channel-name.js'][MOVED[next(k for k in MOVED if 'send-message' in k)]] == 3
     assert records['license-name.js'][MOVED[next(k for k in MOVED if 'licensekey' in k)]] == 3
     before_path = scratch/'controls.before.jsonl'
@@ -109,8 +110,16 @@ def run(scratch, phase):
                      'positive-discord-webhook-post.js','apps-script-license.js',
                      'discord-api-channel-name.js']:
             for old_id, crit in before[name].items():
-                new_id = MOVED.get(old_id, old_id)
-                assert records[name].get(new_id) == crit, (name, old_id, crit)
+                corrections = {
+                    webhook+'webhook-license-credential-exfil':
+                        ('micro-behaviors/communications/http/webhook::licensekey-body-at-fixed-webhook', 3),
+                    webhook+'easypanel-node-meta-webhook':
+                        ('micro-behaviors/communications/http/webhook::easypanel-node-meta-webhook', 3),
+                    webhook+'licensekey-credentials-body-mapping':
+                        ('metadata/lang/source/syntax/key-value::licensekey-body-mapping-text', 1),
+                }
+                new_id, expected_crit = corrections.get(old_id, (MOVED.get(old_id, old_id), crit))
+                assert records[name].get(new_id) == expected_crit, (name, old_id, crit)
     (scratch/'controls-summary.json').write_text(json.dumps(records,indent=2)+'\n')
     print(f'{len(records)} focused cases passed')
     return records
