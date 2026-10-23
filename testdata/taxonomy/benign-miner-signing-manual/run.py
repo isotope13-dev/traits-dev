@@ -20,7 +20,7 @@ evaluation = mb + 'process/interpreter/eval/direct::base64-evaluation-call-text'
 compile_call = mb + 'process/interpreter/eval/compile::base64-compile-call-text'
 source = mb + 'process/interpreter/eval/source::shell-source-command'
 url = mb + 'communications/http/url/path::script-url-reference-pe'
-name = meta + 'file/naming::business-document-exe-name'
+name = meta + 'file/naming::business-document-themed-basename'
 controls = {
     'action.html': ([button], []),
     'manual.html': ([meta + 'document/html::groff-creator-comment',
