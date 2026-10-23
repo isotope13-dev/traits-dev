@@ -75,8 +75,8 @@ expect('git_export.py', {export}, {retired})
 expect('git_read_only.py', forbidden={export, retired})
 assert all(retired not in found for found in files.values())
 codecs = {'metadata/import/package::python-dunder-base64-import',
-          'metadata/import/package::python-dynamic-zlib-import',
-          'metadata/import/package::python-dynamic-codec-imports'}
+          'micro-behaviors/os/module/load::python-dynamic-zlib-import',
+          'micro-behaviors/os/module/load::python-dynamic-codec-imports'}
 expect('dynamic_codecs.py', codecs)
 for name in ('codec_comment.py', 'codec_literal.py', 'wrong_codecs.py'):
     expect(name, forbidden=codecs)

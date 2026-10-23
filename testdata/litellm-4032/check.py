@@ -53,6 +53,6 @@ for name in ('counts.py', 'column_counts.py', 'names_only.py', 'comment_only.py'
     expect('benign/' + name, forbidden=sql | {dump, export, poll, daemon, startup})
 expect('benign/dynamic_base64.py', {'metadata/import/package::python-dunder-base64-import', 'micro-behaviors/os/module/load::dunder-import-call'})
 expect('benign/quoted_base64.py', forbidden={'metadata/import/package::python-dunder-base64-import', 'micro-behaviors/os/module/load::dunder-import-call'})
-expect('benign/dynamic_zlib.py', {'metadata/import/package::python-dynamic-zlib-import', 'micro-behaviors/os/module/load::dunder-import-call'})
-expect('benign/quoted_zlib.py', forbidden={'metadata/import/package::python-dynamic-zlib-import', 'micro-behaviors/os/module/load::dunder-import-call'})
+expect('benign/dynamic_zlib.py', {'micro-behaviors/os/module/load::python-dynamic-zlib-import', 'micro-behaviors/os/module/load::dunder-import-call'})
+expect('benign/quoted_zlib.py', forbidden={'micro-behaviors/os/module/load::python-dynamic-zlib-import', 'micro-behaviors/os/module/load::dunder-import-call'})
 print(f'{checks} focused fixture cases passed')
