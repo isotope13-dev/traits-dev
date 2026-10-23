@@ -1,0 +1,1 @@
+query = "SELECT id FROM a UNION ALL SELECT id FROM b"
