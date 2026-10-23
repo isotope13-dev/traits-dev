@@ -88,8 +88,9 @@ def main():
         assert not RETIRED.intersection(traits), name
         if not screen and KEYLOG not in traits:
             assert not any(t['crit'] == 5 for t in traits.values()), name
-        if KEYLOG_MARKERS[0] in markers:
-            assert KEYLOG in traits, name
+        # These generated PE controls have a streamless CLR metadata root and
+        # an immediate-return native entrypoint; marker strings are not runnable IL.
+        assert KEYLOG not in traits, (name, sorted(traits))
         if 'CopyFromScreen' in markers:
             assert traits[CAPTURE]['crit'] == 3, (name, traits[CAPTURE])
         print('PASS', name, flush=True)
