@@ -17,7 +17,7 @@ eval_id = 'objectives/execution/payload/script-eval::shell-aes-stage-eval-with-v
 aes_id = 'objectives/execution/payload/script-eval::shell-concealed-hex-aes-stage-eval'
 chain_id = 'micro-behaviors/process/deploy/file-exec::variable-output-move-clear-mode-launch-chain'
 stage_ids = {
-    'objectives/command-and-control/dropper/delivery/fetch-exec::printf-hidden-payload-execution',
+    'objectives/execution/payload/file-exec::printf-hidden-payload-execution',
     'objectives/evasion/anti-av/platform/gatekeeper::encoded-stager-clears-attributes',
     'objectives/command-and-control/beacon/network/http::pasted-event-payload-beacon',
 }
