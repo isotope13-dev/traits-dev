@@ -4,6 +4,32 @@ defaults:
   arch: [x86]
 
 traits:
+  # Tie the immediate mask to the actual imported API, rather than an arbitrary
+  # indirect call. Executable section names may be changed by a packer.
+  - id: x86-set-hidden-attribute
+    desc: SetFileAttributesA call supplies Hidden flag
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_set_hidden_attribute {
+          strings:
+            $set = { 6A 02 (50|51|52|53|56|57) FF 15 ?? ?? ?? ?? }
+          condition:
+            pe.machine == pe.MACHINE_I386 and
+            for any s in pe.sections : (
+              s.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for any w in (1..#set) : (
+                @set[w] >= s.raw_data_offset and
+                @set[w] + !set[w] <= s.raw_data_offset + s.raw_data_size and
+                uint32(@set[w] + !set[w] - 4) == pe.image_base +
+                  pe.import_rva("KERNEL32.dll", "SetFileAttributesA")
+              )
+            )
+        }
+
   # Bound argument and import slot: API presence plus an unrelated push 6
   # cannot establish an attribute write. Both masks set Hidden and System;
   # mask 7 additionally sets ReadOnly. Legitimate installers can do this too.
