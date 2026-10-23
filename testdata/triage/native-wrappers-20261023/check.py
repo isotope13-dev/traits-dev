@@ -16,7 +16,7 @@ controls.mkdir(exist_ok=True)
 exe = os.environ.get("CLEAVE", "cleave")
 env = dict(os.environ, CLEAVE_VALIDATE="0")
 records = []
-debug = "objectives/anti-analysis/debugger-detect/check::x86-peb-being-debugged-byte-branch"
+debug = "objectives/anti-analysis/debugger-detect/check::peb-being-debugged-byte-branch"
 heap = "objectives/anti-analysis/debugger-detect/check::x86-peb-ntglobalflag-mask-branch"
 opaque = "objectives/anti-static/obfuscation/payload/resource::cyclic-xor-opaque-resource-decompressor"
 footer = "objectives/impact/infect/binary/rewrite::prepender-host-copy-footer-routines"
