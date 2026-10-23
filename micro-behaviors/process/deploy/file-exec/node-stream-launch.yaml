@@ -1,0 +1,68 @@
+# Require the response, writer handle, and launched destination to be linked.
+# Downloading a file and separately spawning curl or a local CLI is insufficient.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  crit: notable
+traits:
+  - id: node-stream-file-finish-launch
+    desc: HTTP stream file launched on writer finish
+    conf: 0.96
+    if:
+      type: tree-sitter
+      query: |
+        ((_
+          (lexical_declaration (variable_declarator
+            name: (identifier) @writer
+            value: (call_expression function: (_) @create
+              arguments: (arguments (identifier) @saved))))
+          (expression_statement (call_expression function: (_) @get
+            arguments: (arguments (_)
+              (arrow_function parameters: (formal_parameters (identifier) @response)
+                body: (statement_block
+                  (expression_statement (call_expression
+                    function: (member_expression object: (identifier) @pipe_response property: (property_identifier) @pipe)
+                    arguments: (arguments (identifier) @pipe_writer)))
+                  (expression_statement (call_expression
+                    function: (member_expression object: (identifier) @finish_writer property: (property_identifier) @on)
+                    arguments: (arguments (string (string_fragment) @event)
+                      (arrow_function parameters: (formal_parameters) @finish_params body: (statement_block
+                        (expression_statement (call_expression function: (_) @launch
+                          arguments: (arguments (identifier) @launched)))))))))))))) @chain
+          (#match? @create "^(fs\\.)?createWriteStream$")
+          (#match? @get "^(https?|https?Client)\\.get$")
+          (#eq? @response @pipe_response) (#eq? @writer @pipe_writer)
+          (#eq? @writer @finish_writer) (#eq? @pipe "pipe")
+          (#eq? @on "on") (#eq? @event "finish")
+          (#eq? @finish_params "()")
+          (#match? @launch "(^|\\.)(execFile|spawn)(Sync)?$")
+          (#eq? @saved @launched))
+composite_rules:
+  - id: node-streamed-temp-file-launch
+    desc: Streamed-file launch with temporary path context
+    conf: 0.95
+    all:
+      - id: node-stream-file-finish-launch
+    any:
+      - id: micro-behaviors/fs/path/temp::temp-tmp
+      - id: micro-behaviors/os/sysinfo/directories::node-os-tmpdir
+  - id: node-dns-streamed-temp-file-launch
+    desc: DNS lookup beside streamed-file launch
+    conf: 0.96
+    all:
+      - id: node-streamed-temp-file-launch
+      - id: micro-behaviors/fs/chmod/modify::node-chmod
+      - id: micro-behaviors/communications/dns/resolver::node-dns-lookup
+  # The former compact-js-fetch-chmod-exec objective inferred a file chain
+  # from independent download, chmod and process calls. Reuse observations
+  # that actually connect a destination to its launch instead.
+  - id: node-download-chmod-file-launch
+    desc: Linked file launch with chmod context
+    conf: 0.95
+    near_lines: 140
+    all:
+      - id: micro-behaviors/fs/chmod/modify::node-chmod
+      - id: micro-behaviors/communications/http/download/handler::node-http-response-to-file
+    any:
+      - id: node-stream-file-finish-launch
+      - id: download-helper-then-spawnsync-path
