@@ -1,5 +1,10 @@
 Run `python3 testdata/rule-query-performance/check.py [cleave]` from the repository.
 
+An optional second argument selects controls by filename prefix. Run
+`python3 testdata/rule-query-performance/check.py cleave shell-absolute-` for the
+absolute-path environment-filter controls, including shell contexts, executable
+quoting, flag combinations, output redirects, and input-redirection near misses.
+
 The controls cover all six credential field orders, intervening properties,
 selector tables, nested and separate objects, string-doubling assignments and
 near misses, runtime JavaScript/TypeScript imports, and erased import types.

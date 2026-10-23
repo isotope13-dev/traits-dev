@@ -10,6 +10,10 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 cleave = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("CLEAVE", "cleave")
 cases = json.loads((HERE / "cases.json").read_text())
+prefix = sys.argv[2] if len(sys.argv) > 2 else ""
+cases = [case for case in cases if case["name"].startswith(prefix)]
+if not cases:
+    raise SystemExit(f"No source-query controls match prefix: {prefix!r}")
 table_id = "metadata/lang/source/shape::javascript-literal-tables-pure-helpers"
 positive_tables = {"both-record-orders.js", "forward.js", "reverse.js",
                    "sparse-arrays.js", "three-arrays.js"}
@@ -22,6 +26,8 @@ with tempfile.TemporaryDirectory(prefix="source-query-controls-") as tmp:
         paths.append(str(path))
         expected[str(path)] = (case["must"], case["forbidden"])
     for path in sorted((HERE.parent / "static-table-patterns").glob("*.js")):
+        if prefix:
+            continue
         paths.append(str(path))
         positive = path.name in positive_tables
         expected[str(path)] = ([table_id] if positive else [],
