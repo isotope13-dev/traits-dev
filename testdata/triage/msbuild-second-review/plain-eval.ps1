@@ -1,0 +1,1 @@
+Invoke-Expression (Get-Content task.ps1)

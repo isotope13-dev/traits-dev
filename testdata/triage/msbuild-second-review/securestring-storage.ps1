@@ -1,0 +1,1 @@
+$s = ConvertTo-SecureString $encrypted -Key $key; [Runtime.InteropServices.Marshal]::SecureStringToBSTR($s)

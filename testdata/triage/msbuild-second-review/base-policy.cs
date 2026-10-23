@@ -1,0 +1,1 @@
+state.AuthorizationManager = new System.Management.Automation.AuthorizationManager("x");
