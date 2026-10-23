@@ -7,7 +7,7 @@ ROOT = HERE.parents[2]
 OUTPUT = 'micro-behaviors/process/io/stream::perl-captured-command-line-output'
 QUERY = 'objectives/command-and-control/backdoor/webshell/request/command::perl-cgi-variable-backtick-webshell'
 REPLY = 'objectives/command-and-control/backdoor/webshell/relay::perl-cgi-command-output-response'
-C2 = 'well-known/tool/offensive/mettle::c2-implant-session'
+C2 = 'well-known/tool/offensive/mettle::c2-registration-markers'
 CASES = {
     'cgi-results.pl': ([OUTPUT, QUERY, REPLY], []),
     'cgi-fixed-command.pl': ([OUTPUT], [QUERY, REPLY]),
@@ -34,6 +34,6 @@ for name, (present, absent) in CASES.items():
     assert set(present) <= traits.keys(), (name, 'missing', set(present) - traits.keys())
     assert not set(absent) & traits.keys(), (name, 'unexpected', set(absent) & traits.keys())
     if name == 'bin/mettle.exe':
-        assert traits[C2] == 5, (name, traits[C2])
+        assert traits[C2] == 3, (name, traits[C2])
     print('PASS', name, flush=True)
 print(f'{len(CASES)} focused controls passed')

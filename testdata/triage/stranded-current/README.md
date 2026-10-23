@@ -23,5 +23,5 @@ reflective-loading ID. No unrelated leaf was split to satisfy a rule budget.
 
 The two preload API-set composites remain in their capability homes at notable:
 imports and a loader-variable reference establish no hostile command. Mettle
-implant behavior is retained independently of a package filename or location.
+C2 source markers remain notable; they do not establish a runnable implant.
 The final repository gate is `make validate`.
