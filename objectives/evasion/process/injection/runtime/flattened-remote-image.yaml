@@ -1,0 +1,44 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+traits:
+  # Reverse engineering establishes OpenProcess, VirtualAllocEx,
+  # WriteProcessMemory and CreateRemoteThread at these indirect call sites.
+  # Match the argument construction and shared process-handle stack slot,
+  # not an API-name bag. All code/data addresses and frame offsets vary.
+  - id: concealed-remote-image-transfer-call-blocks
+    desc: Concealed remote image transfer call blocks
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule concealed_remote_image_transfer_blocks {
+          strings:
+            $open = { B9 FF FF 1F 00 44 8B C3 31 D2 41 FF D4 48 85 C0 4C 8B E0 }
+            $alloc = { C7 44 24 20 40 00 00 00 4C 8B AC 24 ?? ?? ?? ?? 49 8B CD 31 D2 4C 8B 44 24 ?? 41 B9 00 30 00 00 FF 94 24 ?? ?? ?? ?? }
+            $write = { 49 C7 06 00 00 00 00 4C 89 74 24 20 4C 8B B4 24 ?? ?? ?? ?? 4C 89 F1 4C 8B 7C 24 ?? 4D 89 E1 4C 89 FA 4C 8B C3 41 FF D5 }
+            $thread = { 49 01 C7 31 C0 48 89 44 24 30 48 89 44 24 20 C7 44 24 28 00 00 00 00 31 D2 45 31 C0 4D 8B CF 4C 89 E9 FF 94 24 ?? ?? ?? ?? 48 85 C0 }
+          condition:
+            pe.is_pe and pe.machine == pe.MACHINE_AMD64 and all of them and
+            uint32(@alloc+12) == uint32(@write+16) and
+            @write < @alloc and @alloc < @open and @open < @thread and
+            @thread - @write < 16384 and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              @write >= pe.sections[s].raw_data_offset and
+              @thread + !thread <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size
+            )
+        }
+composite_rules:
+  - id: tls-flattened-remote-image-injection
+    desc: TLS-flattened loader writes an image and starts a remote thread
+    crit: hostile
+    conf: 0.98
+    attack: T1055,T1027
+    all:
+      - id: concealed-remote-image-transfer-call-blocks
+      - id: objectives/anti-static/obfuscation/control-flow/dispatch::tls-state-relative-table-flattening
+      - id: micro-behaviors/dylib/lookup::get-proc-address-import

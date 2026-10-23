@@ -1,0 +1,50 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86]
+traits:
+  # An eight-byte header supplies both the next receive length and the
+  # dispatch opcode. The same dispatcher downloads a supplied URL and runs
+  # the resulting temporary executable. Relocations and branch offsets vary.
+  - id: native-framed-download-dispatch-code
+    desc: Framed task dispatcher downloads and executes
+    crit: suspicious
+    conf: 0.99
+    attack: T1105,T1059
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule framed_socket_tasking_download_exec {
+          strings:
+            $receive = {
+              6A 08 51 52 E8 ?? ?? ?? ?? 83 C4 0C 85 C0 0F 84 ?? ?? ?? ??
+              8B 44 24 10 8B 15 ?? ?? ?? ?? 8D 4C 24 18 50 51 52
+              E8 ?? ?? ?? ?? 83 C4 0C 85 C0 0F 84 ?? ?? ?? ??
+              8B 44 24 14 83 C0 ?? 83 F8 ?? 77 ?? 33 C9
+              8A 88 ?? ?? ?? ?? FF 24 8D ?? ?? ?? ??
+            }
+            $download = {
+              68 ?? ?? ?? ?? 50 FF 15 ?? ?? ?? ??
+              6A 00 8D 8C 24 ?? ?? ?? ?? 6A 0A 8D 54 24 20 51 52 6A 00 FF D0
+              8B 4C 24 14 33 C0 83 F9 ?? 8D 8C 24 ?? ?? ?? ??
+              0F 95 C0 48 83 E0 05 50 51 FF 15 ?? ?? ?? ??
+            }
+            $api = "URLDownloadToFileA" fullword
+          condition:
+            pe.machine == pe.MACHINE_I386 and all of them and
+            @download > @receive and @download < @receive+2048 and
+            pe.rva_to_offset(uint32(@download+1)-pe.image_base) == @api and
+            uint32(@download+8) == pe.image_base+pe.import_rva("KERNEL32.dll", "GetProcAddress") and
+            uint32(@download+60) == pe.image_base+pe.import_rva("KERNEL32.dll", "WinExec")
+        }
+
+composite_rules:
+  - id: framed-socket-tasking-download-exec
+    desc: Socket bot dispatches download-and-run commands
+    crit: hostile
+    conf: 0.99
+    attack: T1105
+    all:
+      - id: native-framed-download-dispatch-code
+      - id: micro-behaviors/process/create/exec::winexec

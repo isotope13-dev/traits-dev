@@ -60,8 +60,8 @@ def run(scratch, phase):
                 trait['id']: trait['crit'] for trait in file.get('traits', [])
             }
     root_expected = {
-      'header-shadow.php': (True, True),
-      'renamed-shadow.php': (True, True),
+      'header-shadow.php': (True, False),
+      'renamed-shadow.php': (True, False),
       'get-include.php': (True, False),
       'direct-file-include.php': (True, False),
       'arithmetic-include.php': (False, False),
@@ -85,10 +85,16 @@ def run(scratch, phase):
             raise AssertionError(name)
         found = (ROOT_RULE in records[name], SHADOW_RULE in records[name])
         assert found == expected, (name, found, expected)
+    # Upstream retired the deception claim: nearby definitions are a neutral
+    # co-occurrence, including when the constants have different names.
+    nearby = 'micro-behaviors/data/property/define::request-and-literal-constant-definitions-nearby'
+    for name in ['header-shadow.php', 'renamed-shadow.php', 'unrelated-constants.php']:
+        assert records[name][nearby] == 3
     assert records['openx-reader.php']['micro-behaviors/process/interpreter/eval/source::php-read-then-include-same-path'] == 3
     assert P+'asset-reader-executes-its-argument' not in records['openx-reader.php']
     webhook = 'objectives/exfiltration/messaging/webhook::'
-    assert records['license-webhook.js'][webhook+'license-validator-webhook'] == 5
+    # Upstream consolidated the one-way credential send into this exfil rule.
+    assert webhook+'license-validator-webhook' not in records['license-webhook.js']
     assert records['license-webhook.js'][webhook+'webhook-license-credential-exfil'] == 5
     assert records['message-channel-name.js'][MOVED[next(k for k in MOVED if 'send-message' in k)]] == 3
     assert records['license-name.js'][MOVED[next(k for k in MOVED if 'licensekey' in k)]] == 3
