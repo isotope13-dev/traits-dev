@@ -1,14 +1,19 @@
 # The C# flow producer does not retain these local aliases. Bind adjacent
 # declarations in its AST; other supported forms use explicit call provenance.
 # Class names, method names and downloaded filenames are unrestricted.
+# This crosses from HTTP data to invoked managed code. Legitimate plugin hosts
+# can do this too: suspicious capability, with no attacker objective inferred.
+# Replaces the C#-only activation verdict formerly in C2/dropper/module-load.
 defaults:
   platforms:
-  - unix
+  - linux
+  - macos
   - windows
   for:
   - csharp
   - python
-  crit: notable
+  - powershell
+  crit: suspicious
   conf: 0.97
 traits:
 - id: csharp-http-assembly-method-invocation
@@ -31,6 +36,7 @@ traits:
       (#eq? @download @loaded))
 - id: http-assembly-method-invocation-flow
   desc: HTTP response feeds managed method invocation
+  for: [csharp, python]
   if:
     type: symbol
     kind: call
@@ -46,9 +52,65 @@ traits:
           receiver: true
         - call: \.GetMethod$
           receiver: true
+- id: python-http-read-assembly-method-invocation
+  desc: HTTP read feeds managed method invocation
+  for: [python]
+  if:
+    type: symbol
+    kind: call
+    regex: '(^|\.)Assembly\.Load\.GetType\.GetMethod\.Invoke$'
+    receiver:
+      from:
+        call: '(^|\.)urlopen$'
+        through:
+        - call: \.read$
+          receiver: true
+        - call: '^bytearray$'
+          arguments: [0]
+        - call: '(^|\.)Assembly\.Load$'
+          arguments: [0]
+        - call: \.GetType$
+          receiver: true
+        - call: \.GetMethod$
+          receiver: true
+# PowerShell's fact producer exposes command calls but not .NET member calls.
+# Match the nested invocation receivers in its syntax tree instead. The first
+# Assembly.Load argument must itself start with a byte-download invocation.
+- id: powershell-http-assembly-method-invocation
+  desc: PowerShell invokes HTTP-delivered assembly
+  for: [powershell]
+  if:
+    type: tree-sitter
+    query: |
+      (invokation_expression
+        (invokation_expression
+          (invokation_expression
+            (invokation_expression
+              (type_literal) @assembly
+              (member_name) @load
+              (argument_list) @download)
+            (member_name) @gettype)
+          (member_name) @getmethod)
+        (member_name) @invoke
+        (#match? @assembly "(?i)^\\[((System\\.)?Reflection\\.)?Assembly\\]$")
+        (#match? @load "(?i)^Load$")
+        (#match? @download "(?i)^\\(\\s*\\$[\\w]+\\.DownloadData\\s*\\(")
+        (#match? @gettype "(?i)^GetType$")
+        (#match? @getmethod "(?i)^GetMethod$")
+        (#match? @invoke "(?i)^Invoke$"))
 composite_rules:
 - id: http-assembly-method-invocation
   desc: Invokes a method from HTTP-delivered assembly
   any:
   - id: csharp-http-assembly-method-invocation
   - id: http-assembly-method-invocation-flow
+  - id: python-http-read-assembly-method-invocation
+  - id: powershell-http-assembly-method-invocation
+- id: powershell-http-slice-decoded-assembly
+  desc: HTTP response slicing with decoded assembly load
+  for: [powershell]
+  attack: T1620
+  all:
+  - id: micro-behaviors/data/string/access::powershell-http-response-substring
+  - id: micro-behaviors/process/interpreter/reflection/runtime::ps-decode-and-load
+  - id: micro-behaviors/communications/http/client/managed::downloaddata
