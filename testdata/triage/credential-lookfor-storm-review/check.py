@@ -50,7 +50,7 @@ for name in ['raw', 'stdin']:
     expect('body-' + name + '.sh', body, False)
 imports = 'objectives/anti-static/obfuscation/imports/concealment::fragment-loader-export-backscan'
 execute = 'objectives/anti-static/obfuscation/payload/fragmentation::fragment-loader-executable-buffer'
-corpus = 'objectives/anti-static/obfuscation/string/junking::fragment-loader-sandbox-path-corpus'
+corpus = 'objectives/anti-static/obfuscation/string/junking::fragment-loader-hash-path-corpus'
 for trait in [imports, execute, corpus]:
     expect('loader-renamed.exe', trait)
     expect('loader-no-fragment-reassembly.exe', trait, False)
