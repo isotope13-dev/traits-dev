@@ -25,6 +25,12 @@ for name,(required,forbidden) in cases.items():
  data=json.loads(r.stdout);traits={t['id']:t for f in data['files'] for t in f.get('traits',[])}
  assert required<=traits.keys(),(name,'missing',required-traits.keys())
  assert not forbidden&traits.keys(),(name,'unexpected',forbidden&traits.keys())
+ if name in ('all-behavior-evidence.exe','missing-dll-payload.exe'):
+  assert traits[attack['defender']]['crit']==4,(name,'Defender text must remain suspicious')
+  assert traits[attack['firewall']]['crit']==4,(name,'SharedAccess text must remain suspicious')
+  assert traits[attack['mining']]['crit']==5,(name,'mining and teardown combination must remain hostile')
+  if name=='all-behavior-evidence.exe':
+   assert traits[attack['smb']]['crit']==5,(name,'SMB DLL payload combination must remain hostile')
  if name=='mining-only.exe':assert traits[login]['crit']==3
  if name=='debugger-only.exe':assert traits[debug]['crit']==3
  print('PASS',name)
