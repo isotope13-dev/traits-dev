@@ -316437,11 +316437,10 @@ rule SIGNATURE_BASE_IMPLANT_3_V3 : FILE
 	strings:
 		$STR1 = ".?AVAgentKernel@@"
 		$STR2 = ".?AVIAgentModule@@"
-		$STR3 = "AgentKernel"
 		$fp1 = "Panda Security S.L." wide
 
 	condition:
-		( uint16( 0 ) == 0x5A4D or uint16( 0 ) == 0xCFD0 or uint16( 0 ) == 0xC3D4 or uint32( 0 ) == 0x46445025 or uint32( 1 ) == 0x6674725C ) and 1 of ( $STR* ) and not 1 of ( $fp* )
+		( uint16( 0 ) == 0x5A4D or uint16( 0 ) == 0xCFD0 or uint16( 0 ) == 0xC3D4 or uint32( 0 ) == 0x46445025 or uint32( 1 ) == 0x6674725C ) and any of ( $STR1, $STR2 ) and not 1 of ( $fp* )
 }
 rule SIGNATURE_BASE_IMPLANT_4_V1 : FILE
 {
