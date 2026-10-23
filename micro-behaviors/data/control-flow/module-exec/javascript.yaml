@@ -46,19 +46,54 @@ traits:
     if:
       type: text
       regex: 'module\.exports\s*=\s*require\s*\(\s*["''][@\w./-]{1,100}["'']\s*\)'
-  # A module whose entire body is one require pass-through: no local logic,
-  # no reviewable behavior. Text regexes run multi-line, so the line must
-  # start at column 0: an indented re-export sits inside an `if`/`else`
-  # environment switch (ipfs-utils src/fetch.js picks electron-fetch or
-  # native-fetch) and the module body then holds real selection logic. Adapter shims share the spelling, so this stays
-  # a neutral hollowness observation for redirector composites to consume.
+  # Require the sole program statement, allowing only surrounding comments.
+  # Line anchors also match re-exports nested in a Browserify bundle.
   - id: sole-require-passthrough-module
     desc: Module body is only a require pass-through
     crit: notable
     conf: 0.93
     if:
-      type: text
-      regex: '(?m)^module\.exports\s*=\s*require\(\s*[''"][@\w./-]{1,100}[''"]\s*\)\s*;?\s*$'
+      type: tree-sitter
+      query: |
+        ([
+        (program . (expression_statement
+            (assignment_expression
+              left: (member_expression
+                object: (identifier) @module
+                property: (property_identifier) @exports)
+              right: (call_expression
+                function: (identifier) @require
+                arguments: (arguments . (string (string_fragment) @target) .)))) @passthrough .)
+        (program . (comment)+ . (expression_statement
+            (assignment_expression
+              left: (member_expression
+                object: (identifier) @module
+                property: (property_identifier) @exports)
+              right: (call_expression
+                function: (identifier) @require
+                arguments: (arguments . (string (string_fragment) @target) .)))) @passthrough .)
+        (program . (expression_statement
+            (assignment_expression
+              left: (member_expression
+                object: (identifier) @module
+                property: (property_identifier) @exports)
+              right: (call_expression
+                function: (identifier) @require
+                arguments: (arguments . (string (string_fragment) @target) .)))) @passthrough . (comment)+ .)
+        (program . (comment)+ . (expression_statement
+            (assignment_expression
+              left: (member_expression
+                object: (identifier) @module
+                property: (property_identifier) @exports)
+              right: (call_expression
+                function: (identifier) @require
+                arguments: (arguments . (string (string_fragment) @target) .)))) @passthrough . (comment)+ .)
+        ]
+        (#eq? @module "module")
+        (#eq? @exports "exports")
+        (#eq? @require "require")
+        (#match? @target "^[@\\w./-]{1,100}$"))
+
   # Relative `./lib` barrels re-export this package's own code. A hollow
   # remote loader re-exports a package name, which is what the URL dependency
   # installs.
@@ -67,8 +102,47 @@ traits:
     crit: notable
     conf: 0.93
     if:
-      type: text
-      regex: '(?m)^module\.exports\s*=\s*require\(\s*[''"][@\w][^''"]{0,80}[''"]\s*\)\s*;?\s*$'
+      type: tree-sitter
+      query: |
+        ([
+        (program . (expression_statement
+            (assignment_expression
+              left: (member_expression
+                object: (identifier) @module
+                property: (property_identifier) @exports)
+              right: (call_expression
+                function: (identifier) @require
+                arguments: (arguments . (string (string_fragment) @target) .)))) @passthrough .)
+        (program . (comment)+ . (expression_statement
+            (assignment_expression
+              left: (member_expression
+                object: (identifier) @module
+                property: (property_identifier) @exports)
+              right: (call_expression
+                function: (identifier) @require
+                arguments: (arguments . (string (string_fragment) @target) .)))) @passthrough .)
+        (program . (expression_statement
+            (assignment_expression
+              left: (member_expression
+                object: (identifier) @module
+                property: (property_identifier) @exports)
+              right: (call_expression
+                function: (identifier) @require
+                arguments: (arguments . (string (string_fragment) @target) .)))) @passthrough . (comment)+ .)
+        (program . (comment)+ . (expression_statement
+            (assignment_expression
+              left: (member_expression
+                object: (identifier) @module
+                property: (property_identifier) @exports)
+              right: (call_expression
+                function: (identifier) @require
+                arguments: (arguments . (string (string_fragment) @target) .)))) @passthrough . (comment)+ .)
+        ]
+        (#eq? @module "module")
+        (#eq? @exports "exports")
+        (#eq? @require "require")
+        (#match? @target "^[@\\w][^\\x27\\x22]{0,80}$"))
+
   # `require = require('esm')(module)` makes the entry a loader for an ES-module
   # source tree. The `module.exports = require('./lib/index.js')` line below it
   # re-exports the package's own build, so the file is not a hollow stub.
