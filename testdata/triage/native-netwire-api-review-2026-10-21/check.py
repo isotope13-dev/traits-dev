@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
 KEY = 'objectives/collection/keylog/device::native-translated-scrambled-key-log'
 CODE = 'objectives/collection/keylog/device::native-translated-scrambled-key-write-code'
 CODEC = 'micro-behaviors/data/encoding/substitution::x86-rotated-64-symbol-substitution'
-ELEX = 'well-known/malware/trojan/elex/identity::elex-resource-dll-renamed-rundll32-scrambled'
+ELEX = 'well-known/malware/trojan/elex/identity::elex-resource-dll-renamed-rundll32-any-section'
 
 
 def main():

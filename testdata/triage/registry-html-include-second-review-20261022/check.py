@@ -85,7 +85,8 @@ def run(scratch, phase):
             raise AssertionError(name)
         found = (ROOT_RULE in records[name], SHADOW_RULE in records[name])
         assert found == expected, (name, found, expected)
-    assert records['openx-reader.php'][P+'asset-reader-executes-its-argument'] == 5
+    assert records['openx-reader.php']['micro-behaviors/process/interpreter/eval/source::php-read-then-include-same-path'] == 3
+    assert P+'asset-reader-executes-its-argument' not in records['openx-reader.php']
     webhook = 'objectives/exfiltration/messaging/webhook::'
     assert records['license-webhook.js'][webhook+'license-validator-webhook'] == 5
     assert records['license-webhook.js'][webhook+'webhook-license-credential-exfil'] == 5
