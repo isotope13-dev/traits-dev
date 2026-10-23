@@ -15,7 +15,7 @@ CONTEXT = 'micro-behaviors/process/inject/runtime/thread-context::x64-context-rc
 SHELL = 'micro-behaviors/process/create/shellexec::shell-execute-call'
 EDGE = 'metadata/file/string/application-name::edge-name-ms'
 CASES = {
-    'positive': ({GHOST: 5, DISPOSE: 4, CONTEXT: 4, SHELL: 3, EDGE: 3}, []),
+    'positive': ({GHOST: 4, DISPOSE: 4, CONTEXT: 4, SHELL: 3, EDGE: 3}, []),
     'wrong-disposition-buffer': ({CONTEXT: 4}, [DISPOSE, GHOST]),
     'wrong-disposition-call': ({CONTEXT: 4}, [DISPOSE, GHOST]),
     'keep-file': ({CONTEXT: 4}, [DISPOSE, GHOST]),
@@ -23,7 +23,7 @@ CASES = {
     'wrong-image-call': ({CONTEXT: 4}, [DISPOSE, GHOST]),
     'wrong-context-register': ({DISPOSE: 4}, [CONTEXT, GHOST]),
     'wrong-context-call': ({DISPOSE: 4}, [CONTEXT, GHOST]),
-    'autorun-directive': ({DISPOSE: 4, CONTEXT: 4, GHOST: 5}, [SHELL, EDGE]),
+    'autorun-directive': ({DISPOSE: 4, CONTEXT: 4, GHOST: 4}, [SHELL, EDGE]),
 }
 
 

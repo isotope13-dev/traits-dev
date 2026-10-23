@@ -8,7 +8,7 @@ unavailable through the browser tool; their scores were not used as proof.
 No sample code was executed and no embedded server was contacted.
 
 The fixture entry point is RET. Signature bytes after it are inert and only
-test matcher relationships. A matched hostile composite in a synthetic
+test matcher relationships. A matched suspicious composite in a synthetic
 fixture is not a malicious verdict for that fixture.
 
 build_controls.py reproduces the PE64 controls without a compiler. check.py
