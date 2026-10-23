@@ -2,64 +2,113 @@ defaults:
   platforms: [unix, windows]
   for: [javascript, typescript]
 traits:
-  # The flow producer omits class-member targets inside Promise callbacks.
-  # Bind the imported clients, selector method, selected receiver, and URL
-  # argument structurally instead of treating an arbitrary .get() as HTTP.
-  - id: node-class-selector-http-get
-    desc: GET uses class-selected Node HTTP client
+  # Match the selector behavior at its class, avoiding a file-root query that
+  # joins every top-level declaration in large bundles. Module requirements
+  # are checked by the composites below.
+  - id: node-class-selected-get-shape
+    desc: Class selects a client and calls GET
     crit: notable
     conf: 0.96
     if:
       type: tree-sitter
       query: |
-        ((program
-          [(lexical_declaration (variable_declarator name: (identifier) @http
-             value: (call_expression function: (identifier) @require_http
-               arguments: (arguments (string (string_fragment) @http_module)))))
-           (variable_declaration (variable_declarator name: (identifier) @http
-             value: (call_expression function: (identifier) @require_http
-               arguments: (arguments (string (string_fragment) @http_module)))))]
-          [(lexical_declaration (variable_declarator name: (identifier) @https
-             value: (call_expression function: (identifier) @require_https
-               arguments: (arguments (string (string_fragment) @https_module)))))
-           (variable_declaration (variable_declarator name: (identifier) @https
-             value: (call_expression function: (identifier) @require_https
-               arguments: (arguments (string (string_fragment) @https_module)))))]
-          (class_declaration body: (class_body
-            (method_definition name: (property_identifier) @selector
+        ((class_declaration
+          body: (class_body
+            (method_definition
+              name: (property_identifier) @selector
               body: (statement_block
-                (return_statement (ternary_expression
-                  condition: (binary_expression
-                    left: (member_expression property: (property_identifier) @protocol)
-                    operator: "==="
-                    right: (string (string_fragment) @scheme))
-                  consequence: (identifier) @http_result
-                  alternative: (identifier) @https_result))))
-            (method_definition body: (statement_block
-              [(lexical_declaration (variable_declarator name: (identifier) @client
-                 value: (call_expression function: (member_expression
-                   object: (this) property: (property_identifier) @selector_call)
-                   arguments: (arguments . (identifier) @url))))
-               (variable_declaration (variable_declarator name: (identifier) @client
-                 value: (call_expression function: (member_expression
-                   object: (this) property: (property_identifier) @selector_call)
-                   arguments: (arguments . (identifier) @url))))]
-              (return_statement (call_expression function: (member_expression
-                object: (new_expression arguments: (arguments
-                  (arrow_function body: (statement_block
-                    (return_statement (call_expression
-                      function: (member_expression object: (identifier) @get_client
-                        property: (property_identifier) @get)
-                      arguments: (arguments . (identifier) @get_url))))))))))))))) @get_flow
-          (#eq? @require_http "require")
-          (#eq? @require_https "require")
-          (#match? @http_module "^(node:)?http$")
-          (#match? @https_module "^(node:)?https$")
-          (#eq? @protocol "protocol")
-          (#eq? @scheme "http:")
-          (#eq? @http @http_result)
-          (#eq? @https @https_result)
-          (#eq? @selector @selector_call)
-          (#eq? @client @get_client)
-          (#eq? @url @get_url)
-          (#eq? @get "get"))
+                (return_statement
+                  (ternary_expression
+                    condition: (binary_expression
+                      left: (member_expression
+                        property: (property_identifier) @protocol)
+                      operator: "==="
+                      right: (string (string_fragment) @scheme))
+                    consequence: (identifier) @http_result
+                    alternative: (identifier) @https_result))))
+            (method_definition
+              body: (statement_block
+                [(lexical_declaration
+                   (variable_declarator
+                     name: (identifier) @client
+                     value: (call_expression
+                       function: (member_expression
+                         object: (this)
+                         property: (property_identifier) @selector_call)
+                       arguments: (arguments . (identifier) @url))))
+                 (variable_declaration
+                   (variable_declarator
+                     name: (identifier) @client
+                     value: (call_expression
+                       function: (member_expression
+                         object: (this)
+                         property: (property_identifier) @selector_call)
+                       arguments: (arguments . (identifier) @url))))]
+                (return_statement
+                  (call_expression
+                    function: (member_expression
+                      object: (new_expression
+                        arguments: (arguments
+                          (arrow_function
+                            body: (statement_block
+                              (return_statement
+                                (call_expression
+                                  function: (member_expression
+                                    object: (identifier) @get_client
+                                    property: (property_identifier) @get)
+                                  arguments: (arguments . (identifier) @get_url))))))))))))))
+        (#eq? @protocol "protocol")
+        (#eq? @scheme "http:")
+        (#not-eq? @http_result @https_result)
+        (#eq? @selector @selector_call)
+        (#eq? @client @get_client)
+        (#eq? @url @get_url)
+        (#eq? @get "get"))
+
+  - id: node-prefixed-http-require
+    desc: Requires node:http
+    crit: notable
+    conf: 0.95
+    if:
+      type: symbol
+      kind: call
+      exact: require
+      arg:
+        kind: string
+        exact: node:http
+
+  - id: node-prefixed-https-require
+    desc: Requires node:https
+    crit: notable
+    conf: 0.95
+    if:
+      type: symbol
+      kind: call
+      exact: require
+      arg:
+        kind: string
+        exact: node:https
+
+composite_rules:
+  - id: node-http-module-required
+    desc: Requires the Node HTTP module
+    crit: notable
+    any:
+      - id: metadata/import/builtin::require-http
+      - id: node-prefixed-http-require
+
+  - id: node-https-module-required
+    desc: Requires the Node HTTPS module
+    crit: notable
+    any:
+      - id: metadata/import/builtin::require-https
+      - id: node-prefixed-https-require
+
+  - id: node-class-selector-http-get
+    desc: GET uses class-selected Node HTTP client
+    crit: notable
+    conf: 0.96
+    all:
+      - id: node-class-selected-get-shape
+      - id: node-http-module-required
+      - id: node-https-module-required
