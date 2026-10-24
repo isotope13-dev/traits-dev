@@ -18,12 +18,41 @@ traits:
       section: .text
       pattern: '8B 4F 00 89 88 00 00 00 00 81 28 ?? ?? ?? ?? 81 C0 04 00 00 00 81 C7 04 00 00 00 8A 8F 00 00 00 00 80 C1 ?? 88 88 00 00 00 00 81 C0 01 00 00 00 81 C7 01 00 00 00 83 C6 ?? 81 FE ?? ?? ?? ?? 0F 82 ?? ?? ?? ?? 81 E8 ?? ?? ?? ?? 50 81 C0 ?? ?? ?? ?? FF D0 59 58 8F C6 5F C3'
 
+  # The separated blocks form one arithmetic reconstruction and handoff.
+  # Matching them independently avoids an expensive multi-gap hex automaton.
+  - id: x86-jump-linked-decoder-handoff
+    desc: Jump-linked arithmetic buffer handoff
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_jump_linked_decoder_handoff {
+          strings:
+            $subtract = { 81 29 ?? ?? ?? ?? E9 ?? ?? ?? ?? [0-256] 83 C1 04 E9 ?? ?? ?? ?? }
+            $bound = { 83 C7 ?? 81 FF ?? ?? ?? ?? E9 ?? ?? ?? ?? [0-1024] 0F 82 ?? ?? ?? ?? E9 ?? ?? ?? ?? }
+            $base = { 81 E9 ?? ?? ?? ?? FF F1 E9 ?? ?? ?? ?? }
+            $entry = { 81 C1 ?? ?? ?? ?? FF D1 E9 ?? ?? ?? ?? [0-1024] 8F C1 5B 5E 5F C3 }
+          condition:
+            pe.is_pe and pe.machine == pe.MACHINE_I386 and
+            @subtract < @bound and @bound < @base and @base < @entry and
+            @entry - @subtract < 4096 and
+            for any s in (0..pe.number_of_sections - 1): (
+              pe.sections[s].name == ".text" and
+              all of them in (pe.sections[s].raw_data_offset..
+                pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size)
+            )
+        }
+
 composite_rules:
   - id: x86-mixed-width-decoder-execution
     desc: Arithmetic-decoded resource code execution
     crit: hostile
     conf: 0.99
     all:
-      - id: x86-mixed-width-decoder-handoff
       - id: micro-behaviors/mem/alloc/virtual::virtual-alloc
       - id: metadata/binary/resource/entropy::large-high-entropy-rsrc-section
+    any:
+      - id: x86-mixed-width-decoder-handoff
+      - id: x86-jump-linked-decoder-handoff
