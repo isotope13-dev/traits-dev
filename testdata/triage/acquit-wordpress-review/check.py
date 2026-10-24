@@ -29,7 +29,15 @@ checks = {
     'option-reassigned-id.php': ({WRITE}, {STORE}),
     'option-definition.php': (set(), {WRITE, STORE}),
     'option-credential-capture.php': ({WRITE, CAPTURE}, {STORE}),
-    'option-family-consumer.php': ({WRITE, 'well-known/malware/backdoor/r-evil::r-evil-hacktool-main'}, {STORE}),
+    'option-family-consumer.php': (
+        {WRITE},
+        {
+            STORE,
+            'well-known/malware/backdoor/r-evil::r-evil-hacktool',
+            'well-known/malware/backdoor/r-evil::r-evil-hacktool-functions',
+            'well-known/malware/backdoor/r-evil::r-evil-hacktool-main',
+        },
+    ),
     'option-local-profile.php': ({WRITE, PROFILE}, {STORE}),
     'configuration-label.py': ({EQUALS}, {COLON}),
     'label-prose.php': (set(), {BUFFER}),
