@@ -182595,7 +182595,7 @@ rule DITEKSHEN_INDICATOR_SUSPICIOUS_Finger_Download_Pattern
 		importance = 20
 
 	strings:
-		$pat1 = /finger(\.exe)?\s.{1,50}@.{7,10}\|/ ascii wide
+		$pat1 = /finger(\.exe)?\s.{1,50}@[A-Za-z0-9.-]{7,10}\s*\|/ ascii wide
 		$pat2 = "-Command \"finger" ascii wide
 		$ne1 = "Nmap service detection probe list" ascii
 
