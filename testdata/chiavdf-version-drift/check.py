@@ -15,7 +15,7 @@ fetch = "micro-behaviors/communications/http/client/library::fetch-cmd"
 nginx = "micro-behaviors/communications/http/auth::nginx-basic-auth-directive"
 basic = "micro-behaviors/communications/http/auth::authorization-basic-header-token"
 upload = "objectives/supply-chain/recon-exfil/secrets::fetch-github-token"
-exfil = "objectives/supply-chain/recon-exfil/secrets::github-token-exfil"
+exfil = "objectives/exfiltration/stealer/dev-secret::github-token-exfil"
 cases = {
     "checkout.sh": ({basic}, {fetch, nginx, upload, exfil}),
     "downloader.sh": ({fetch}, {nginx}),
