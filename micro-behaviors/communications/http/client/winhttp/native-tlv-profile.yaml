@@ -1,0 +1,71 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+traits:
+  # A compiled buffer flow signature; relative call displacements bind the
+  # serializer and HTTP implementation to their callers. Matched stack slots
+  # carry the transformed profile pointer and length into the request body.
+  # Keys, domains, addresses, filenames and prompt text are wildcarded/absent.
+  - id: native-tlv-profile-https-body-handoff
+    desc: Transformed TLV profile used as HTTPS body
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule native_tlv_profile_encrypted_https_export {
+          meta:
+            filetypes = "pe,dll"
+          strings:
+            $profile = {
+              4C 8B 87 18 01 00 00 4C 8B 8F 28 01 00 00
+              B8 ?? ?? ?? ?? 44 29 F0 48 8D 4C 24 28 89 C2 E8 ?? ?? ?? ??
+              41 8D 86 ?? ?? ?? ?? (8B C0 | 89 C0) 4C 8B 04 07
+              4C 8B 8F 10 01 00 00 BA 04 00 00 00 48 8D 4C 24 28 E8 ?? ?? ?? ??
+            }
+            $pipeline = {
+              48 8D 9C 24 90 03 00 00 48 8B CB 48 89 FA E8 ?? ?? ?? ??
+              48 8B 3B 48 8B 43 10 48 89 44 24 28 48 89 7C 24 20
+              31 F6 4C 8D B4 24 A0 01 00 00 31 D2 45 31 C9 4C 89 F1 E8 ?? ?? ?? ??
+              [20-40] 48 8D 9C 24 90 03 00 00 48 89 D9 E8 ?? ?? ?? ??
+              49 8B 3E 4D 8B 4E 10 48 89 DA 48 8D 8C 24 50 02 00 00 4C 8B C7 E8 ?? ?? ?? ??
+            }
+            $save_body = {
+              48 89 94 24 98 01 00 00 48 8D BC 24 50 02 00 00
+              48 8B 17 48 89 94 24 30 01 00 00 [8-32]
+              48 8B 94 14 50 02 00 00 48 89 54 24 70
+            }
+            $post_body = {
+              48 8B 54 24 70 48 89 54 24 40
+              4C 8B AC 24 30 01 00 00 4C 89 6C 24 38
+              48 89 44 24 30 48 89 74 24 28 48 89 5C 24 20
+              48 8D 9C 24 50 02 00 00 48 89 D9
+              4C 8B A4 24 D8 00 00 00 4C 89 E2
+              4C 8B 84 24 B0 00 00 00 4C 8B CF E8 ?? ?? ?? ??
+            }
+            $secure = {
+              0F 57 E4 0F 11 64 24 20 C7 44 24 30 00 00 80 00
+              45 31 C9 [0-16] FF 94 24 ?? ?? 00 00
+            }
+            $write_body = {
+              48 8D 74 24 50 C7 06 00 00 00 00
+              48 8B 84 24 D8 01 00 00 49 89 F1 48 8D 14 28
+              FF 94 24 ?? ?? 00 00
+            }
+          condition:
+            pe.is_pe and pe.machine == pe.MACHINE_AMD64 and
+            for any i in (1..#pipeline) : (
+              $profile in (@pipeline[i] + 19 + int32(@pipeline[i] + 15) ..
+                           @pipeline[i] + 19 + int32(@pipeline[i] + 15) + 1100) and
+              $save_body in (@pipeline[i] + 125 .. @pipeline[i] + 400) and
+              for any j in (1..#post_body) : (
+                @post_body[j] > @pipeline[i] - 32768 and @post_body[j] < @pipeline[i] + 32768 and
+                $secure in (@post_body[j] + 76 + int32(@post_body[j] + 72) ..
+                            @post_body[j] + 76 + int32(@post_body[j] + 72) + 8192) and
+                $write_body in (@post_body[j] + 76 + int32(@post_body[j] + 72) ..
+                                @post_body[j] + 76 + int32(@post_body[j] + 72) + 8192)
+              )
+            )
+        }
