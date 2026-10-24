@@ -1,0 +1,40 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86]
+
+traits:
+  # Match the API operand and the class-string operand of the same call.
+  # Returning a boolean from FindWindowA establishes a check, not termination.
+  - id: x86-sysinternals-window-presence-probe
+    desc: Tests Sysinternals tool window presence
+    crit: suspicious
+    conf: 0.99
+    attack: T1518.001
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule sysinternals_window_presence_probe {
+          strings:
+            $class_procmon = "PROCMON_WINDOW_CLASS" ascii fullword
+            $class_procexp = "PROCEXPL" ascii fullword
+            $probe = { 6A 00 68 ?? ?? ?? ?? FF 15 ?? ?? ?? ?? 85 C0 0F 95 C0 C3 }
+          condition:
+            pe.is_32bit() and any of ($class_*) and $probe and
+            for any p in (1..#probe) : (
+              uint32(@probe[p]+9) == pe.image_base + pe.import_rva("USER32.dll", "FindWindowA") and
+              for any s in (0..pe.number_of_sections-1) : (
+                pe.sections[s].name == ".text" and
+                @probe[p] >= pe.sections[s].raw_data_offset and
+                @probe[p]+19 <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size
+              ) and (
+                for any m in (1..#class_procmon) : (
+                  pe.rva_to_offset(uint32(@probe[p]+3)-pe.image_base) == @class_procmon[m]
+                ) or
+                for any m in (1..#class_procexp) : (
+                  pe.rva_to_offset(uint32(@probe[p]+3)-pe.image_base) == @class_procexp[m]
+                )
+              )
+            )
+        }
