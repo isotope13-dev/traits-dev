@@ -15,8 +15,8 @@ root = Path(__file__).resolve().parents[2]
 poll = 'objectives/command-and-control/remote-command/http-poll::python-threadpool-http-exec-poll'
 daemon = 'objectives/command-and-control/remote-command/http-poll::python-threadpool-http-exec-daemon'
 startup = 'objectives/persistence/system/python-startup::startup-hook-threadpool-code-daemon'
-host = 'objectives/command-and-control/channel/deaddrop/url::js-fetch-response-host-indirection'
-execute = 'objectives/command-and-control/channel/deaddrop/url::js-indirected-http-response-eval'
+host = 'micro-behaviors/communications/http/url/build::js-fetch-response-host-indirection'
+execute = 'objectives/execution/payload/script-eval::js-indirected-http-response-eval'
 new = {poll, daemon, startup, host, execute}
 cases = {}
 
