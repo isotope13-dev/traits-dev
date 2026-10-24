@@ -1,0 +1,34 @@
+defaults:
+  for: [pe]
+  platforms: [windows]
+  arch: [x86]
+traits:
+  - id: go-x86-pe-map-entry-dispatch
+    desc: Go x86 PE mapping and computed-entry dispatch
+    crit: suspicious
+    conf: 0.97
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule go_x86_pe_map_entry_dispatch {
+          strings:
+            // MZ validation, followed by e_lfanew and PE signature checks.
+            $mz = { 80 3A 4D 0F 85 [4] 80 7A 01 5A 0F 85 }
+            $pe = { 8B 42 3C [0-40] 80 7D 00 50 [0-30] 80 7D 00 45 }
+            // image base + entry RVA becomes syscall's function argument.
+            $entry = { 8B 84 24 [4] 8B 8C 24 [4] 01 C8 89 04 24
+              C7 44 24 04 00 00 00 00 C7 44 24 08 00 00 00 00
+              C7 44 24 0C 00 00 00 00 C7 44 24 10 00 00 00 00 E8 ?? ?? ?? ?? }
+            $resolve = "syscall.GetProcAddress" ascii
+            $load = "syscall.LoadLibrary" ascii
+          condition:
+            all of them and
+            for any i in (0..pe.number_of_sections-1) : (
+              pe.sections[i].characteristics & 0x20000000 != 0 and
+              $mz in (pe.sections[i].raw_data_offset..
+                pe.sections[i].raw_data_offset + pe.sections[i].raw_data_size) and
+              $pe in (@mz..@mz + 512) and
+              $entry in (@mz..@mz + 8192)
+            )
+        }

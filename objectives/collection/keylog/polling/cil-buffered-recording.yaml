@@ -1,0 +1,54 @@
+defaults:
+  for:
+  - pe
+  - dll
+  platforms:
+  - windows
+  attack: T1056.001
+composite_rules:
+- id: cil-key-state-loop-buffered-recording
+  desc: Networked managed keystroke recording
+  crit: hostile
+  conf: 0.99
+  all:
+  - id: cil-key-state-window-record-pattern
+  - id: micro-behaviors/communications/socket/tcp::dotnet-tcpclient-stream-references
+  - id: micro-behaviors/os/registry/access::dotnet-registrykey-setvalue-references
+traits:
+- id: cil-key-state-window-record-pattern
+  desc: Managed key-state and window record pattern
+  crit: suspicious
+  conf: 0.99
+  if:
+    type: yara
+    source: |
+      import "pe"
+      rule cil_key_state_loop_buffered_recording {
+        strings:
+          $poll_api = "GetAsyncKeyState\x00" ascii
+          $unicode_api = "ToUnicodeEx\x00" ascii
+          $window_api = "GetForegroundWindow\x00" ascii
+          // key-state result equals 0x8001 (newly pressed key).
+          $poll = { 07 28 ?? ?? ?? 06 20 01 80 FF FF FE 01 }
+          // Append window-context helper, then translated key, to the SAME
+          // instance field using the SAME String.Concat MemberRef token.
+          $record = { 02 02 7B ?? ?? ?? 04 02 28 ?? ?? ?? 06
+            28 ?? ?? ?? 0A 7D ?? ?? ?? 04
+            02 02 7B ?? ?? ?? 04 09 28 ?? ?? ?? 0A 7D ?? ?? ?? 04 }
+          $range = { 07 17 D6 0B 07 20 FF 00 00 00 31 ?? }
+        condition:
+          all of them and
+          for any i in (1..#record) : (
+            uint32(@record[i]+3) == uint32(@record[i]+19) and
+            uint32(@record[i]+3) == uint32(@record[i]+26) and
+            uint32(@record[i]+3) == uint32(@record[i]+37) and
+            uint32(@record[i]+14) == uint32(@record[i]+32) and
+            $poll in (@record[i]-256..@record[i]) and
+            $range in (@record[i]..@record[i]+256) and
+            for any s in pe.sections : (
+              s.characteristics & 0x20000000 != 0 and
+              @record[i] >= s.raw_data_offset and
+              @record[i]+!record[i] <= s.raw_data_offset+s.raw_data_size
+            )
+          )
+      }

@@ -1,0 +1,43 @@
+defaults:
+  for: [pe, dll]
+  platforms: [windows]
+traits:
+  - id: cil-tcp-buffer-thread-dispatch
+    desc: TCP stream buffer forwarded to a thread
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule cil_tcp_buffer_thread_dispatch {
+          strings:
+            $tcp = "TcpClient\x00" ascii
+            $receive_api = "Receive\x00" ascii
+            $thread_api = "ParameterizedThreadStart\x00" ascii
+            // Socket.Receive(buffer, 0, buffer.Length, 0), then
+            // stream.Write(buffer, 0, receivedLength). Bind all buffer fields.
+            $receive = { 7E ?? ?? ?? 04 6F [4] 7E ?? ?? ?? 04 16
+              7E ?? ?? ?? 04 8E 69 16 6F [4] 0D
+              7E ?? ?? ?? 04 7E ?? ?? ?? 04 16 09 6F ?? ?? ?? 0A }
+            // Delegate -> Thread -> stream.ToArray() -> Thread.Start(bytes).
+            $dispatch = { 14 FE 06 ?? ?? ?? 06 73 ?? ?? ?? 0A 17
+              73 ?? ?? ?? 0A 25 7E ?? ?? ?? 04
+              6F ?? ?? ?? 0A 6F ?? ?? ?? 0A }
+          condition:
+            all of them and
+            for any i in (1..#receive) : (
+              uint32(@receive[i]+11) == uint32(@receive[i]+17) and
+              uint32(@receive[i]+11) == uint32(@receive[i]+36) and
+              for any j in (1..#dispatch) : (
+                @dispatch[j] > @receive[i] and
+                @dispatch[j] < @receive[i]+512 and
+                uint32(@receive[i]+31) == uint32(@dispatch[j]+20) and
+                for any s in pe.sections : (
+                  s.characteristics & 0x20000000 != 0 and
+                  @receive[i] >= s.raw_data_offset and
+                  @dispatch[j]+!dispatch[j] <= s.raw_data_offset+s.raw_data_size
+                )
+              )
+            )
+        }

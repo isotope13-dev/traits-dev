@@ -1,33 +1,58 @@
 defaults:
   platforms:
-    - windows
+  - windows
   for:
-    - pe
+  - pe
   attack: T1561.002
 traits:
-  - id: explicit-mbr-overwrite-message
-    desc: MBR-overwrite taunt string
-    crit: component
-    conf: 0.99
-    if:
-      type: text
-      substr: your MBR has been overwritten
+- id: explicit-mbr-overwrite-message
+  desc: MBR-overwrite taunt string
+  crit: component
+  conf: 0.99
+  if:
+    type: text
+    substr: your MBR has been overwritten
+- id: cil-taunting-boot-sector-write
+  desc: Boot-sector taunt with managed sector write
+  crit: suspicious
+  conf: 0.99
+  if:
+    type: yara
+    source: |
+      import "pe"
+      rule cil_sector_buffer_write_api_profile {
+        strings:
+          $taunt = "your MBR has been overwritten" ascii
+          $write = "WriteFile\x00" ascii
+          $create = "CreateFile\x00" ascii
+          $array = { 20 00 02 00 00 8D [4] 25 D0 [4] 28 ?? ?? ?? ?? }
+          // buffer, cast, length 512, bytes-written byref, null overlapped,
+          // then a managed P/Invoke call. Tokens and local index vary.
+          $call = { 09 74 [4] 20 00 02 00 00 12 ?? 7E [4] 28 ?? ?? ?? 06 26 }
+        condition:
+          all of them and
+          for any s in pe.sections : (
+            s.characteristics & 0x20000000 != 0 and
+            $array in (s.raw_data_offset..s.raw_data_offset + s.raw_data_size) and
+            $call in (@array..@array + 512)
+          )
+      }
 composite_rules:
+- id: destructive-wipe-announcement
+  desc: MBR or machine destruction announcement
+  crit: component
+  conf: 0.98
+  any:
+  - id: explicit-mbr-overwrite-message
+  - id: objectives/impact/infect/terms::computer-done-for-taunt
+- id: mbr-wiper-pe
+  desc: MBR destruction taunt and sector-write evidence
+  crit: hostile
+  conf: 0.995
+  mbc: E1561
+  all:
   - id: destructive-wipe-announcement
-    desc: MBR or machine destruction announcement
-    crit: component
-    conf: 0.98
-    any:
-      - id: explicit-mbr-overwrite-message
-      - id: objectives/impact/infect/terms::computer-done-for-taunt
-
-  - id: mbr-wiper-pe
-    desc: MBR destruction message with physical-drive write API references
-    crit: hostile
-    conf: 0.995
-    mbc: E1561
-    all:
-      - id: destructive-wipe-announcement
-    any:
-      - id: micro-behaviors/fs/disk/raw::windows-physicaldrive-write-profile
-      - id: micro-behaviors/fs/disk/raw::windows-managed-physicaldrive-write-profile
+  any:
+  - id: micro-behaviors/fs/disk/raw::windows-physicaldrive-write-profile
+  - id: micro-behaviors/fs/disk/raw::windows-managed-physicaldrive-write-profile
+  - id: cil-taunting-boot-sector-write
