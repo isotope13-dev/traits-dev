@@ -31,8 +31,9 @@ assert {p.name for p in paths} == set(expected)
 env = dict(os.environ, CLEAVE_TRAITS_DIR=str(ROOT), SCAN_NO_UPDATE='1', SCAN_HOPPER='')
 result = subprocess.run(
     ['atomscan', '--mode', 'slow', '--follow=none', '--format', 'json', *map(str, paths)],
-    env=env, check=True, capture_output=True, text=True, timeout=180,
+    env=env, check=False, capture_output=True, text=True, timeout=180,
 )
+assert result.returncode in (0, 1), result.stderr
 seen = set()
 for line in result.stdout.splitlines():
     for file in json.loads(line)['raw']['files']:
