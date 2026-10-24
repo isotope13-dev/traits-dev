@@ -1,6 +1,52 @@
 defaults:
   platforms: [unix, windows]
 traits:
+  # NuttX's udpblaster derives a per-packet sleep from the configured host
+  # bit rate. Require the configuration, calculation, send, and sleep before
+  # treating that loop as a paced network test.
+  - id: udpblaster-rate-derived-delay
+    desc: Computes delay from UDP host rate
+    crit: notable
+    conf: 0.95
+    for: [c]
+    if:
+      type: text
+      regex: 'delay\s*=\s*\([^;\r\n]{0,80}CONFIG_EXAMPLES_UDPBLASTER_HOSTRATE'
+  - id: udpblaster-delay-sleep
+    desc: UDP blaster sleeps for computed delay
+    crit: notable
+    conf: 0.95
+    for: [c]
+    if:
+      type: text
+      regex: 'usleep\s*\(\s*delay\s*\)'
+  # NuttX syslogd reads complete entries from its configured local syslog
+  # device and forwards each entry as one UDP datagram to the configured
+  # syslog server. Its blocking log-reader loop is not a packet flood.
+  - id: syslog-device-open
+    desc: Opens the configured syslog device
+    crit: notable
+    conf: 0.95
+    for: [c]
+    if:
+      type: text
+      regex: 'open\s*\(\s*CONFIG_SYSLOG_DEVPATH'
+  - id: syslog-device-buffer-read
+    desc: Reads data into a log buffer
+    crit: notable
+    conf: 0.95
+    for: [c]
+    if:
+      type: text
+      regex: 'read\s*\(\s*fd\s*,\s*&buffer'
+  - id: syslog-buffer-udp-send
+    desc: Sends a log buffer over UDP
+    crit: notable
+    conf: 0.95
+    for: [c]
+    if:
+      type: text
+      regex: 'sendto\s*\(\s*sock\s*,\s*buffer\s*,\s*endpos'
   # A C++ method named send (nghttp2's Worker::send) and Apple's syslogd
   # watch fanout both sit in an infinite loop. Neither is a packet flood.
   - id: nghttp2-worker-source
@@ -37,7 +83,7 @@ traits:
       regex: '(^|[\\/])tsend\.c$'
 composite_rules:
   - id: udp-flood-loop
-    desc: Infinite loop sending network data (DDoS)
+    desc: Unpaced unbounded UDP send loop
     crit: suspicious
     conf: 0.8
     mbc: "C0005" # Flooding
@@ -49,6 +95,8 @@ composite_rules:
       - id: micro-behaviors/communications/socket/send::sendto-symbol
     unless:
       - id: udp-flood-loop-known-benign-context
+      - id: udpblaster-rate-paced-test
+      - id: syslog-device-forwarding-loop
       # These metadata predicates are baseline and cannot be members of an
       # exception composite; retain them as direct, file-level near misses.
       - id: metadata/package/testing/presence/harness::test-directory
@@ -91,3 +139,21 @@ composite_rules:
       - id: micro-behaviors/communications/socket/accept::accept-call-source
       - id: well-known/lib/network/curl::libcurl-source-copyright
       - id: well-known/lib/crypto/openssl::openssl-source-copyright
+  - id: udpblaster-rate-paced-test
+    desc: UDP test sender paces packets by configured rate
+    crit: exception
+    conf: 0.95
+    for: [c]
+    all:
+      - id: udpblaster-rate-derived-delay
+      - id: micro-behaviors/communications/socket/send::sendto-symbol
+      - id: udpblaster-delay-sleep
+  - id: syslog-device-forwarding-loop
+    desc: Syslog loop forwards read entries by UDP
+    crit: exception
+    conf: 0.95
+    for: [c]
+    all:
+      - id: syslog-device-open
+      - id: syslog-device-buffer-read
+      - id: syslog-buffer-udp-send
