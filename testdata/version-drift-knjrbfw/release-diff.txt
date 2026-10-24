@@ -1,0 +1,415 @@
+--- 0.0.55/VERSION
++++ 0.0.57/VERSION
+@@ -1 +1 @@
+-0.0.55+0.0.57--- 0.0.55/knjrbfw.gemspec
++++ 0.0.57/knjrbfw.gemspec
+@@ -5,11 +5,11 @@
+ 
+ Gem::Specification.new do |s|
+   s.name = %q{knjrbfw}
+-  s.version = "0.0.55"
++  s.version = "0.0.57"
+ 
+   s.required_rubygems_version = Gem::Requirement.new(">= 0") if s.respond_to? :required_rubygems_version=
+   s.authors = ["Kasper Johansen"]
+-  s.date = %q{2012-07-05}
++  s.date = %q{2012-07-10}
+   s.description = %q{Including stuff for HTTP, SSH and much more.}
+   s.email = %q{k@spernj.org}
+   s.extra_rdoc_files = [
+@@ -101,6 +101,7 @@
+     "lib/knj/image.rb",
+     "lib/knj/includes/appserver_cli.rb",
+     "lib/knj/includes/require_info.rb",
++    "lib/knj/iotop.rb",
+     "lib/knj/ip2location.rb",
+     "lib/knj/ironruby-gtk2/button.rb",
+     "lib/knj/ironruby-gtk2/dialog.rb",
+@@ -224,6 +225,7 @@
+     "lib/knj/scripts/keepalive.rb",
+     "lib/knj/scripts/php_to_rb_helper.rb",
+     "lib/knj/scripts/process_meta_exec.rb",
++    "lib/knj/scripts/speed_test.rb",
+     "lib/knj/scripts/svn_merge.rb",
+     "lib/knj/scripts/upgrade_knjrbfw_checker.rb",
+     "lib/knj/sms.rb",
+--- 0.0.55/lib/knj/arrayext.rb
++++ 0.0.57/lib/knj/arrayext.rb
+@@ -334,4 +334,22 @@
+       return ret
+     end
+   end
++  
++  #Returns a given hash in an array by mathing the contents up against another hash.
++  def self.array_hash_find(args)
++    args[:arr].each do |h|
++      found = true
++      
++      args[:args].each do |key, val|
++        if h[key] != val
++          found = false
++          break
++        end
++      end
++      
++      return h if found
++    end
++    
++    return nil
++  end
+ end--- 0.0.55/lib/knj/datarow.rb
++++ 0.0.57/lib/knj/datarow.rb
+@@ -42,6 +42,12 @@
+     return @depending_data
+   end
+   
++  #Returns true if this class has been initialized.
++  def self.initialized?
++    return false if !@ob or !@columns_sqlhelper_args
++    return true
++  end
++  
+   #This is used by 'Knj::Objects' to find out which other objects should be deleted when an object of this class is deleted automatically. Returns the array that tells about autodelete data.
+   #===Examples
+   #This will trigger Knj::Objects to automatically delete all the users pictures, when deleting the current user.
+@@ -90,9 +96,24 @@
+       if val.is_a?(Array)
+         classname, colname, methodname = *val
+       elsif val.is_a?(Hash)
+-        classname = val[:class]
+-        colname = val[:col]
+-        methodname = val[:method]
++        classname, colname, methodname = nil, nil, nil
++        
++        val.each do |hkey, hval|
++          case hkey
++            when :class
++              classname = hval
++            when :col
++              colname = hval
++            when :method
++              methodname = hval
++            when :depends, :autodelete, :where
++              #ignore
++            else
++              raise "Invalid key for 'has_many': '#{hkey}'."
++          end
++        end
++        
++        colname = "#{self.name.to_s.split("::").last.to_s.downcase}_id".to_sym if colname.to_s.empty?
+         
+         if val[:depends]
+           self.depending_data << {
+@@ -111,14 +132,15 @@
+         raise "Unknown argument: '#{val.class.name}'."
+       end
+       
++      raise "No classname given." if !classname
++      methodname = "#{classname.to_s.downcase}s".to_sym if !methodname
++      raise "No column was given for '#{self.name}' regarding has-many-class: '#{classname}'." if !colname
++      
+       if val.is_a?(Hash) and val.key?(:where)
+         where_args = val[:where]
+       else
+         where_args = nil
+       end
+-      
+-      raise "No classname given." if !classname
+-      methodname = "#{classname.to_s.downcase}s".to_sym if !methodname
+       
+       define_method(methodname) do |*args, &block|
+         if args and args[0]
+@@ -181,7 +203,22 @@
+       elsif val.is_a?(Array)
+         classname, colname, methodname = *val
+       elsif val.is_a?(Hash)
+-        classname, colname, methodname = val[:class], val[:col], val[:method]
++        classname, colname, methodname = nil, nil, nil
++        
++        val.each do |hkey, hval|
++          case hkey
++            when :class
++              classname = hval
++            when :col
++              colname = hval
++            when :method
++              methodname = hval
++            when :required
++              #ignore
++            else
++              raise "Invalid key for class '#{self.name}' functionality 'has_many': '#{hkey}'."
++          end
++        end
+         
+         if val[:required]
+           colname = "#{classname.to_s.downcase}_id".to_sym if !colname
+@@ -306,6 +343,7 @@
+   
+   #Returns various data for the objects-sql-helper. This can be used to view various informations about the columns and more.
+   def self.columns_sqlhelper_args
++    raise "No SQLHelper arguments has been spawned yet." if !@columns_sqlhelper_args
+     return @columns_sqlhelper_args
+   end
+   
+--- 0.0.55/lib/knj/gtk2_tv.rb
++++ 0.0.57/lib/knj/gtk2_tv.rb
+@@ -108,10 +108,7 @@
+   # Knj::Gtk2::Tv.sel(treeview) #=> [1, "Kasper"]
+   def self.sel(tv)
+     selected = tv.selection.selected_rows
+-    
+-    if !tv.model or selected.size <= 0
+-      return nil
+-    end
++    return nil if !tv.model or selected.size <= 0
+     
+     iter = tv.model.get_iter(selected[0])
+     returnval = []
+--- 0.0.55/lib/knj/knj.rb
++++ 0.0.57/lib/knj/knj.rb
+@@ -34,4 +34,13 @@
+   def self.p(*args, &block)
+     return Knj::Php.print_r(*args, &block)
+   end
++  
++  def self.handle_return(args)
++    if args[:block]
++      args[:enum].each(&args[:block])
++      return nil
++    else
++      return Array_enumerator.new(args[:enum])
++    end
++  end
+ end--- 0.0.55/lib/knj/knjdb/libknjdb.rb
++++ 0.0.57/lib/knj/knjdb/libknjdb.rb
+@@ -764,10 +764,22 @@
+     end
+   end
+   
++  #Returns the sign to be used for surrounding tables.
+   def col_table
+     return "`"
+   end
+   
++  #Optimizes all tables in the database.
++  def optimize(args = nil)
++    STDOUT.puts "Beginning optimization of database." if @debug or (args and args[:debug])
++    self.tables.list do |table|
++      STDOUT.puts "Optimizing table: '#{table.name}'." if @debug or (args and args[:debug])
++      table.optimize
++    end
++    
++    return nil
++  end
++  
+   #Proxies the method to the driver.
+   #
+   #===Examples
+--- 0.0.55/lib/knj/knjdb/query_buffer.rb
++++ 0.0.57/lib/knj/knjdb/query_buffer.rb
+@@ -8,6 +8,8 @@
+     @queries_count = 0
+     @debug = @args[:debug]
+     @lock = Mutex.new
++    
++    STDOUT.puts "Query buffer started." if @debug
+     
+     begin
+       yield(self)
+@@ -34,6 +36,7 @@
+   #   buffer.delete(:users, {:id => 5})
+   # end
+   def delete(table, where)
++    STDOUT.puts "Delete called on table #{table} with arguments: '#{where}'." if @debug
+     self.query(@args[:db].delete(table, where, :return_sql => true))
+     return nil
+   end
+--- 0.0.55/lib/knj/objects.rb
++++ 0.0.57/lib/knj/objects.rb
+@@ -367,6 +367,15 @@
+     return obj
+   end
+   
++  #Same as normal get but returns false if not found instead of raising error.
++  def get!(*args, &block)
++    begin
++      return self.get(*args, &block)
++    rescue Knj::Errors::NotFound
++      return false
++    end
++  end
++  
+   def object_finalizer(id)
+     classname = @objects_idclass[id]
+     if classname
+@@ -411,6 +420,10 @@
+   end
+   
+   #Returns an array-list of objects. If given a block the block will be called for each element and memory will be spared if running weak-link-mode.
++  #===Examples
++  # ob.list(:User) do |user|
++  #   print "Username: #{user.name}\n"
++  # end
+   def list(classname, args = {}, &block)
+     args = {} if args == nil
+     classname = classname.to_sym
+@@ -440,6 +453,33 @@
+     else
+       return ret
+     end
++  end
++  
++  #Yields every object that is missing certain required objects (based on 'has_many' required-argument).
++  def list_invalid_required(args, &block)
++    enum = Enumerator.new do |yielder|
++      classname = args[:class]
++      classob = @args[:module].const_get(classname)
++      required_data = classob.required_data
++      
++      if required_data and !required_data.empty?
++        required_data.each do |req_data|
++          self.list(args[:class], :cloned_ubuf => true) do |obj|
++            puts "Checking #{obj.classname}(#{obj.id}) for required #{req_data[:class]}." if args[:debug]
++            id = obj[req_data[:col]]
++            
++            begin
++              raise Knj::Errors::NotFound if !id
++              obj_req = self.get(req_data[:class], id)
++            rescue Knj::Errors::NotFound
++              yielder << {:obj => obj, :type => :required, :id => id, :data => req_data}
++            end
++          end
++        end
++      end
++    end
++    
++    return Knj.handle_return(:enum => enum, :block => block)
+   end
+   
+   #Returns select-options-HTML for inserting into a HTML-select-element.
+@@ -768,9 +808,7 @@
+       end
+       
+       #Delete any translations that has been set on the object by 'has_translation'-method.
+-      if object.class.translations
+-        _kas.trans_del(object)
+-      end
++      _kas.trans_del(object) if object.class.translations
+       
+       #If a buffer is given in arguments, then use that to delete the object.
+       if args and buffer = args[:db_buffer]
+@@ -867,6 +905,10 @@
+   def clean_all
+     self.clean(@objects.keys)
+   end
++  
++  def classes_loaded
++    return @objects.keys
++  end
+ end
+ 
+ require "#{$knjpath}objects/objects_sqlhelper"--- 0.0.55/lib/knj/objects/objects_sqlhelper.rb
++++ 0.0.57/lib/knj/objects/objects_sqlhelper.rb
+@@ -189,6 +189,7 @@
+         if !args[:joins_skip]
+           datarow_obj = self.datarow_obj_from_args(args_def, list_args, realkey[0])
+           args = datarow_obj.columns_sqlhelper_args
++          raise "Couldnt get arguments from SQLHelper." if !args
+         else
+           datarow_obj = @args[:module].const_get(realkey[0])
+           args = args_def
+@@ -476,10 +477,14 @@
+   
+   def datarow_from_datarow_argument(datarow_argument)
+     if datarow_argument.is_a?(String)
+-      return Knj::Strings.const_get_full(datarow_argument)
+-    end
+-    
+-    return datarow_argument
++      const = Knj::Strings.const_get_full(datarow_argument)
++    else
++      const = datarow_argument
++    end
++    
++    self.load_class(datarow_argument.to_s.split("::").last) if !const.initialized? #Make sure the class is initialized.
++    
++    return const
+   end
+   
+   def not(not_v, val)
+--- 0.0.55/lib/knj/os.rb
++++ 0.0.57/lib/knj/os.rb
+@@ -143,8 +143,7 @@
+   
+   #Runs a command as a process of its own and wont block or be depended on this process.
+   def self.subproc(cmd)
+-    cmd = cmd.to_s + "  >> /dev/null 2>&1 &"
+-    %x[#{cmd}]
++    %x[#{cmd} >> /dev/null 2>&1 &]
+   end
+   
+   #Returns the xauth file for GDM.
+--- 0.0.55/spec/objects_spec.rb
++++ 0.0.57/spec/objects_spec.rb
+@@ -76,9 +76,9 @@
+     
+     #Stress it to test threadsafety...
+     threads = []
+-    0.upto(10) do |tc|
++    0.upto(5) do |tc|
+       threads << Knj::Thread.new do
+-        0.upto(10) do |ic|
++        0.upto(5) do |ic|
+           user = $ob.add(:User, {:username => "User #{tc}-#{ic}"})
+           raise "No user returned." if !user
+           $ob.delete(user)
+@@ -116,9 +116,9 @@
+     )
+     
+     threads = []
+-    0.upto(10) do
++    0.upto(5) do
+       threads << Knj::Thread.new do
+-        0.upto(15) do
++        0.upto(5) do
+           ret = $ob2.add(:Group, {:groupname => "User 1"}, {:skip_ret => true})
+           raise "Expected empty return but got something: #{ret}" if ret
+         end
+@@ -228,6 +228,28 @@
+       :project_id => 1
+     })
+     
++    begin
++      $obb.add(:Task, {:name => "Test task"})
++      raise "Method should fail but didnt."
++    rescue
++      #ignore.
++    end
++    
++    
++    #Test 'list_invalid_required'.
++    $db.insert(:Task, :name => "Invalid require")
++    id = $db.last_id
++    found = false
++    
++    $ob.list_invalid_required(:class => :Task) do |d|
++      raise "Expected object ID to be #{id} but it wasnt: #{d[:obj].id}" if d[:obj].id.to_i != id.to_i
++      $ob.delete(d[:obj])
++      found = true
++    end
++    
++    raise "Expected to find a task but didnt." if !found
++    
++    
+     ret_proc = []
+     $ob.list(:Task) do |task|
+       ret_proc << task
+@@ -289,7 +311,7 @@
+   
+   it "should be able to to multiple additions and delete objects through a buffer" do
+     objs = []
+-    0.upto(10000) do
++    0.upto(500) do
+       objs << {:name => :Kasper}
+     end
+     
