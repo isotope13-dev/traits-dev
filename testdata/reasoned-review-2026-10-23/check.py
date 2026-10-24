@@ -13,7 +13,7 @@ import tempfile
 
 CLIPPER = 'objectives/impact/crypto-manipulation/clipboard::managed-multicoin-clipboard-replacement-template'
 PERSISTENCE = 'objectives/persistence/login/registry/run-key::go-credential-stealer-run-key-write-profile'
-CAPABILITY = 'micro-behaviors/mem/combined::game-reference-remote-memory-write-api-profile'
+CAPABILITY = 'micro-behaviors/mem/combined::enumerated-remote-memory-write-api-profile'
 
 
 def scan(path):
