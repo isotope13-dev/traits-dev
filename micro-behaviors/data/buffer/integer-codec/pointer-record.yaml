@@ -1,0 +1,96 @@
+# These are serialization facts, not exploitation verdicts. In particular,
+# three machine words can also be an ordinary application record.
+defaults:
+  platforms: [unix, windows]
+  for: [scripts, source]
+  crit: notable
+  conf: 0.95
+traits:
+  - id: python-little-endian-integer-read
+    desc: Reads an integer from little-endian bytes
+    for: [python]
+    if:
+      type: symbol
+      kind: call
+      exact: int.from_bytes
+      arg:
+        index: 1
+        kind: string
+        exact: little
+  - id: node-little-endian-u64-read
+    desc: Reads a little-endian 64-bit buffer value
+    for: [javascript, typescript]
+    if:
+      type: symbol
+      kind: call
+      regex: '\.readBigUInt64LE$'
+  - id: ruby-little-endian-u64-read
+    desc: Unpacks a little-endian 64-bit value
+    for: [ruby]
+    if:
+      type: symbol
+      kind: call
+      exact: unpack1
+      arg:
+        index: 0
+        kind: string
+        exact: 'Q<'
+  - id: python-three-word-zero-tail-record
+    desc: Packs three words ending in null
+    for: [python]
+    if:
+      type: symbol
+      kind: call
+      exact: struct.pack
+      args:
+        - index: 0
+          kind: string
+          exact: '<QQQ'
+        - index: 3
+          kind: number
+          value: 0
+  - id: ruby-system-command-null-record
+    desc: Packs system address, argument, null word
+    for: [ruby]
+    if:
+      type: text
+      regex: '\[\s*system\w{0,16}\s*,\s*\w+\s*,\s*0\s*\]\.pack\(["'']Q<Q<Q<'
+  - id: python-low-word-two-byte-serialize
+    desc: Serializes one value's low two bytes
+    crit: notable
+    for: [python]
+    if:
+      type: tree-sitter
+      language: python
+      query: |
+        ((call function: (identifier) @ctor arguments: (argument_list
+          (list
+            (binary_operator left: (identifier) @lo operator: "&" right: (integer) @mask1)
+            (binary_operator left: (parenthesized_expression
+              (binary_operator left: (identifier) @hi operator: ">>" right: (integer) @shift))
+              operator: "&" right: (integer) @mask2)))) @bytes
+          (#eq? @ctor "bytes") (#eq? @lo @hi)
+          (#match? @mask1 "^(0x[fF]{2}|255)$")
+          (#match? @mask2 "^(0x[fF]{2}|255)$") (#eq? @shift "8"))
+composite_rules:
+  - id: python-system-zero-tail-record
+    desc: Packs system address, argument, null word
+    for: [python]
+    # All three observations start at the same struct.pack call. An adjacent
+    # application record must not supply the zero-tail layout for another call.
+    near_bytes: 8
+    all:
+      - id: python-three-word-zero-tail-record
+      - id: pack-named-system-address
+  - id: system-zero-tail-record
+    desc: Serializes system address, argument, null word
+    for: [python, ruby]
+    any:
+      - id: python-system-zero-tail-record
+      - id: ruby-system-command-null-record
+  - id: little-endian-word-read
+    desc: Reads little-endian integers from bytes
+    any:
+      - id: python-little-endian-integer-read
+      - id: node-little-endian-u64-read
+      - id: ruby-little-endian-u64-read
