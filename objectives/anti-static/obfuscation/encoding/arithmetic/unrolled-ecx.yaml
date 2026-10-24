@@ -1,0 +1,44 @@
+# An ECX-based decoder transforms consecutive blocks with unrolled keyed dword
+# operations, then calls inside that decoded interval. Constants and section
+# names are free; the counter, back edge and destination are verified.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86]
+traits:
+  - id: x86-unrolled-ecx-decoded-range-call
+    desc: Unrolled arithmetic decoder calls decoded range
+    crit: suspicious
+    conf: 0.99
+    attack: T1027,T1140
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_unrolled_ecx_decoded_range_call {
+          strings:
+            $head = { 50 51 52 53 55 56 57 E8 00 00 00 00 59 81 E9 ?? ?? ?? ?? BA 00 00 00 00 51 }
+            $ops = { 81 (81|A9|B1) ?? ?? ?? ?? ?? ?? ?? ?? 81 (81|A9|B1) ?? ?? ?? ?? ?? ?? ?? ?? }
+            $tail = { 81 C2 ?? ?? ?? ?? 81 C1 ?? ?? ?? ?? 81 FA ?? ?? ?? ?? 74 05 E9 ?? ?? ?? ?? E8 ?? ?? ?? ?? 5F 5E 5D 5B 5A 59 58 }
+          condition:
+            pe.is_pe and pe.machine == pe.MACHINE_I386 and
+            @head < @ops and @ops < @tail and @tail - @head < 16384 and
+            uint32(@tail+2) >= 16 and uint32(@tail+2) <= 4096 and
+            uint32(@tail+2) == uint32(@tail+8) and
+            uint32(@tail+14) >= uint32(@tail+2) and
+            uint32(@tail+14) <= 64MB and
+            uint32(@tail+14) % uint32(@tail+2) == 0 and
+            @tail+25+int32(@tail+21) == @head+25 and
+            for any s in (0..pe.number_of_sections-1): (
+              pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              @head >= pe.sections[s].raw_data_offset and
+              @tail+37 <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size and
+              with origin = pe.image_base+pe.sections[s].virtual_address-pe.sections[s].raw_data_offset,
+                   decoded = origin+@head+12-uint32(@head+15),
+                   destination = origin+@tail+30+int32(@tail+26) : (
+                destination >= decoded and destination < decoded+uint32(@tail+14) and
+                pe.rva_to_offset(decoded-pe.image_base) >= 0 and
+                pe.rva_to_offset(destination-pe.image_base) >= 0
+              )
+            )
+        }
