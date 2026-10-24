@@ -34,7 +34,7 @@ cases = {
     "prototype-definition.js": ({prototype + "version-string"}, set()),
     "go-header.go": ({header + "content-type::go-content-type-set"}, set()),
     "github-media-type.js": ({header + "content-type::github-json-media-type"}, set()),
-    "apify-references.js": ({apify + "apify-actor-init-method-reference", apify + "apify-actor-pushdata-method-reference", theft + "apify-sdk-method-hook"}, set()),
+    "apify-references.js": ({apify + "apify-actor-init-method-reference", apify + "apify-actor-pushdata-method-reference", "metadata/lang/source/syntax/assignment::actor-method-assignment-with-saved-reference"}, {theft + "apify-actor-data-theft"}),
     "github-token-send.yml": ({theft + "github-actions-secret-theft", theft + "curl-github-token", theft + "github-token-exfil"}, set()),
     "github-token-auth.yml": (set(), {theft + "github-actions-secret-theft", theft + "curl-github-token"}),
     "github-reserved-collector.yml": ({"micro-behaviors/communications/http/request/credentials::secrets-in-http-body"}, {theft + "github-actions-secret-theft", theft + "curl-github-token"}),
