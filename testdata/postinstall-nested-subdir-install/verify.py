@@ -15,7 +15,7 @@ installs a named package must report
 `install-hook-injects-consumer-dependency`; the nested bare-install
 shape must report neither the hostile nor the escape/install
 suspicious traits; the nested shape with a named package must keep its
-suspicious traits (and the hostile, which still sees both legs).
+named-dependency traits, without claiming that it leaves the package.
 """
 import json
 import os
@@ -28,7 +28,7 @@ HOSTILE = ('objectives/supply-chain/install-hook/project-rewrite::'
            'install-hook-injects-consumer-dependency')
 ESCAPE = ('objectives/supply-chain/install-hook/project-rewrite::'
           'postinstall-parent-directory-escape')
-PKG_INSTALL = ('objectives/supply-chain/install-hook/package/manifest::'
+PKG_INSTALL = ('micro-behaviors/os/package-manager/hook-install::'
                'install-hook-runs-pkg-install')
 
 POSITIVE = {'scripts': {'postinstall': 'cd ../../.. && npm install evil'}}
@@ -71,7 +71,9 @@ def main():
     print('PASS negative/package.json', flush=True)
 
     ids = scan(write_manifest(dest, 'named-nested', NAMED_NESTED))
-    assert HOSTILE in ids, 'nested named install must still convict'
+    assert HOSTILE not in ids, 'nested named install does not escape the package'
+    assert 'objectives/supply-chain/install-hook/package/manifest::npm-postinstall-names-dependency' in ids
+    assert 'micro-behaviors/os/package-manager/hook-install::postinstall-runs-npm-install' in ids
     print('PASS named-nested/package.json', flush=True)
 
 
