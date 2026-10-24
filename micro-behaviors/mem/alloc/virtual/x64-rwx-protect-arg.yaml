@@ -1,5 +1,5 @@
 # x64 call whose 4th argument (r9d) is set to 0x40, PAGE_EXECUTE_READWRITE,
-# just before an indirect import call: the VirtualAlloc(addr, size, type,
+# just before a resolved VirtualAlloc import call: VirtualAlloc(addr, size, type,
 # PAGE_EXECUTE_READWRITE) shape. Compilers spell it `mov r9d, 0x40` or
 # `or r9d, 0x40`. RWX allocation alone is neutral -- system DLLs, JITs and
 # runtimes do it -- so this is a memory capability, not a payload claim.
@@ -11,7 +11,7 @@ defaults:
 
 traits:
   - id: x64-call-rwx-protect-fourth-arg
-    desc: x64 call passes RWX protection argument
+    desc: x64 RWX allocation call setup
     crit: notable
     conf: 0.85
     # JavaScript engines allocate RWX pages for JIT code; a Bun-compiled CLI
@@ -19,10 +19,49 @@ traits:
     unless:
       - id: well-known/lib/runtime/scripted/bun-runtime/
     if:
-      type: hex
-      section: .text
-      pattern: >-
-        (41 B9 40 00 00 00 [0-20] FF 15 ?? ?? ?? ?? |
-        41 83 C9 40 [0-20] FF 15 ?? ?? ?? ?? |
-        41 B9 40 00 00 00 31 C9 BA ?? ?? ?? ?? 41 B8 00 30 00 00 41 FF D? 48 85 C0 |
-        41 B9 40 00 00 00 31 C9 BA ?? ?? ?? ?? 41 B8 00 30 00 00 FF D? 48 85 C0)
+      type: yara
+      source: |
+        import "pe"
+        rule x64_rwx_allocation_call_setup {
+          strings:
+            $mov = { 41 B9 40 00 00 00 [0-20] FF 15 ?? ?? ?? ?? }
+            $or = { 41 83 C9 40 [0-20] FF 15 ?? ?? ?? ?? }
+            $register = {
+              41 B9 40 00 00 00 31 C9 BA ?? ?? ?? ??
+              41 B8 00 30 00 00 (41 FF D? | FF D?) 48 85 C0
+            }
+          condition:
+            pe.is_64bit() and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].name == ".text" and (
+                $register in (pe.sections[s].raw_data_offset..
+                  pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size-1) or
+                for any m in (1..#mov) : (
+                  @mov[m] >= pe.sections[s].raw_data_offset and
+                  @mov[m]+!mov[m] <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size and
+                  (!mov[m] == 12 or
+                    for all k in (@mov[m]+6..@mov[m]+!mov[m]-7) : (uint8(k) != 0xe8)) and
+                  for any i in (0..pe.number_of_imports-1) : (
+                    for any f in (0..pe.import_details[i].number_of_functions-1) : (
+                      pe.import_details[i].functions[f].name == "VirtualAlloc" and
+                      pe.sections[s].virtual_address+@mov[m]-pe.sections[s].raw_data_offset+
+                        !mov[m]+int32(@mov[m]+!mov[m]-4) == pe.import_details[i].functions[f].rva
+                    )
+                  )
+                ) or
+                for any m in (1..#or) : (
+                  @or[m] >= pe.sections[s].raw_data_offset and
+                  @or[m]+!or[m] <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size and
+                  (!or[m] == 10 or
+                    for all k in (@or[m]+4..@or[m]+!or[m]-7) : (uint8(k) != 0xe8)) and
+                  for any i in (0..pe.number_of_imports-1) : (
+                    for any f in (0..pe.import_details[i].number_of_functions-1) : (
+                      pe.import_details[i].functions[f].name == "VirtualAlloc" and
+                      pe.sections[s].virtual_address+@or[m]-pe.sections[s].raw_data_offset+
+                        !or[m]+int32(@or[m]+!or[m]-4) == pe.import_details[i].functions[f].rva
+                    )
+                  )
+                )
+              )
+            )
+        }
