@@ -1,1 +1,0 @@
-Set file=fs.CreateTextFile(path,True)

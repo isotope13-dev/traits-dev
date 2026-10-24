@@ -1,2 +1,0 @@
-function generateMockData() { return []; }
-generateMockData();

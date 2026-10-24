@@ -1,1 +1,0 @@
-Write-Output "Image viewer"

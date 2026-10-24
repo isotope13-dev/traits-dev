@@ -1,1 +1,0 @@
-code = 'https.getting(url)'

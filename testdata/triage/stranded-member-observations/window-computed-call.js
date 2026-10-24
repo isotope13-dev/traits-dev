@@ -1,1 +1,0 @@
-window[first][second](input);

@@ -1,6 +1,0 @@
-import http.client
-conn = http.client.HTTPConnection('server.invalid', 9999)
-conn.request('POST', '/settings', 'apply=1')
-post(conn, "/hosts/host@0/edit/log", {"file": "/srv/web/htdocs/access.log", "format": "combined"})
-handler = {"interpreter": "/bin/sh"}
-other = {"extension": "log"}

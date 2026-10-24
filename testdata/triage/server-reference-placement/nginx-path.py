@@ -1,1 +1,0 @@
-paths = ['/etc/nginx/ssl']

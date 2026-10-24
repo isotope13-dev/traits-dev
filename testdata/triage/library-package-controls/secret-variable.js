@@ -1,1 +1,0 @@
-const CLIENT_SECRET = process.env.FIGMA_CLIENT_SECRET;

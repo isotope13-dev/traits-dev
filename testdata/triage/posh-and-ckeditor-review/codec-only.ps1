@@ -1,1 +1,0 @@
-$type = [IO.Compression.DeflateStream]

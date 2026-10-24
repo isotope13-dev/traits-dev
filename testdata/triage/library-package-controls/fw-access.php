@@ -1,1 +1,0 @@
-<?php $forward = $reply->fw;

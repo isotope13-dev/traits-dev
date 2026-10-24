@@ -1,1 +1,0 @@
-const a={host:"mail.internal"};const b={username:"operator"};const c={password:"secret-pass"};

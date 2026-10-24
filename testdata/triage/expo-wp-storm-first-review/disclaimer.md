@@ -1,1 +1,0 @@
-For authorized security testing only.

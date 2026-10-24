@@ -1,1 +1,0 @@
-state.AuthorizationManager = new ApplicationAuthorizationManager("x");

@@ -1,2 +1,0 @@
-import { redirect } from 'express';
-redirect('http://169.254.169.254/latest/meta-data');

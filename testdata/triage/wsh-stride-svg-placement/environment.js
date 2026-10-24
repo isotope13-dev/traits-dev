@@ -1,1 +1,0 @@
-startup.EnvironmentVariables=["A=B"];

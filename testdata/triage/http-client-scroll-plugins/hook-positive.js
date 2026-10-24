@@ -1,1 +1,0 @@
-window.fetch = function(url) { return originalFetch(url); };

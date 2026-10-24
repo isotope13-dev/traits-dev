@@ -1,1 +1,0 @@
-Set-WmiInstance -Namespace 'root\subscription' -Class '__EventFilter' -Arguments @{Name='ServiceMonitor';QueryLanguage='WQL';Query="SELECT * FROM __InstanceModificationEvent WITHIN 10 WHERE TargetInstance ISA 'Win32_Service'"}

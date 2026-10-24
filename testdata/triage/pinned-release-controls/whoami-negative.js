@@ -1,1 +1,0 @@
-const report = {username: value};

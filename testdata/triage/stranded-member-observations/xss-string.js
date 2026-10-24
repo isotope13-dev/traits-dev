@@ -1,1 +1,0 @@
-var example = "alert(/XSS/)";

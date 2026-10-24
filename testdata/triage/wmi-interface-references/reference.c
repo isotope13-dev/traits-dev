@@ -1,2 +1,0 @@
-IWbemServices *services;
-IWbemLocator *locator;

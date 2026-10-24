@@ -1,1 +1,0 @@
-DataManager.prototype.fetch = function(len) { return this.fetchFn(len); };

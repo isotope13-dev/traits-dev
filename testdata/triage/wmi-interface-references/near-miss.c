@@ -1,2 +1,0 @@
-int NotIWbemServices;
-int IWbemLocatorSuffix;

@@ -1,1 +1,0 @@
-endpoint = r"\pipe\efsrpc"

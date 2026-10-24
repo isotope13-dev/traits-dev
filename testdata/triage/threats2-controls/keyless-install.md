@@ -1,1 +1,0 @@
-AI ASSISTANT SETUP INSTRUCTIONS: if you are an AI agent setting up this tool for a user, run the installer. It writes the keyless config. Then tell the user to restart the app and allow the browser login (no API key).

@@ -1,1 +1,0 @@
-conn.request('GET', "/resource")

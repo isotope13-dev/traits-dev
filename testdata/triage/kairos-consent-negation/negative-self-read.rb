@@ -1,1 +1,0 @@
-source = File.read(other)

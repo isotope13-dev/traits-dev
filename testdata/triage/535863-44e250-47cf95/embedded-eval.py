@@ -1,1 +1,0 @@
-payload = '<?php eval($code);'

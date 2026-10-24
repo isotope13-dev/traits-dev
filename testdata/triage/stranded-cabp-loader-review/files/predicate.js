@@ -1,1 +1,0 @@
-isCredentialPath(candidate);

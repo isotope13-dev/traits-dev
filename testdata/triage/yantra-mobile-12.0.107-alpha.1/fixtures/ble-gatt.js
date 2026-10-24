@@ -1,1 +1,0 @@
-radio.startDeviceScan(services, {}, callback); await peer.readCharacteristicForService(service, characteristic); await peer.writeCharacteristicWithResponseForService(service, characteristic, data); peer.monitorCharacteristicForService(service, characteristic, callback);

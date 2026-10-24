@@ -1,5 +1,0 @@
-$buffer = [NativeApi]::VirtualAlloc([IntPtr]::Zero, 4096, 0x3000, 0x40)
-[NativeApi]::VirtualProtect($buffer, 4096, 0x40, [ref]$previousProtection)
-$Win32Functions.VirtualProtect.Invoke($buffer, 4096, 0x40, [ref]$previousProtection)
-[NativeApi]::VirtualAllocEx($process, [IntPtr]::Zero, 4096, 0x3000, 0x40)
-[NativeApi]::VirtualProtectEx($process, $buffer, 4096, 0x40, [ref]$previousProtection)

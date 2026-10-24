@@ -1,1 +1,0 @@
-const executable = "mshta.exe";

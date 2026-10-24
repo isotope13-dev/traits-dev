@@ -1,1 +1,0 @@
-Local $api = "WriteProcessMemory"

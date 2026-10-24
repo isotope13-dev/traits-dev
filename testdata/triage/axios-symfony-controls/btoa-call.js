@@ -1,1 +1,0 @@
-const encoded = btoa(input);
