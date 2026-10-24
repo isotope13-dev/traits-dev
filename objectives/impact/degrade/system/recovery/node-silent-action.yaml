@@ -1,0 +1,57 @@
+# An exported zero-argument action only disables recovery and boot-failure
+# handling, discards child streams, and swallows all errors. Ordinary repair
+# commands remain covered by the existing suspicious and notable observations.
+defaults:
+  platforms: [windows]
+  for: [javascript, typescript]
+  attack: T1490
+traits:
+  - id: node-silent-boot-recovery-disable-action
+    desc: Silent exported action disables boot recovery
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: tree-sitter
+      query: |
+        ((program
+          (lexical_declaration (variable_declarator
+            name: (object_pattern [
+              (shorthand_property_identifier_pattern) @api @exec
+              (pair_pattern key: (property_identifier) @api value: (identifier) @exec)])
+            value: (call_expression function: (identifier) @require
+              arguments: (arguments . (string) @module .))))
+          (expression_statement (assignment_expression
+            left: (member_expression object: (identifier) @export_module
+              property: (property_identifier) @exports)
+            right: (function_expression parameters: (formal_parameters) @params
+              body: (statement_block . (try_statement
+                body: (statement_block . (expression_statement
+                  (call_expression function: (identifier) @called1
+                    arguments: (arguments . (string) @policy . (object
+                      (pair key: (property_identifier) @shell1 value: (true))
+                      (pair key: (property_identifier) @stdio1 value: (string) @ignore1)) .)))
+                  . (expression_statement
+                  (call_expression function: (identifier) @called2
+                    arguments: (arguments . (string) @recovery . (object
+                      (pair key: (property_identifier) @shell2 value: (true))
+                      (pair key: (property_identifier) @stdio2 value: (string) @ignore2)) .))) .)
+                handler: (catch_clause body: (statement_block) @caught)) (empty_statement)? .))))) @action
+          (#match? @params "^\\(\\s*\\)$")
+          (#match? @caught "^\\{\\s*\\}$")
+          (#eq? @require "require") (#match? @module "^[\"']child_process[\"']$")
+          (#eq? @api "execSync") (#eq? @exec @called1) (#eq? @exec @called2)
+          (#eq? @export_module "module") (#eq? @exports "exports")
+          (#match? @policy "(?i)^[\"']bcdedit.* /set .* bootstatuspolicy ignoreallfailures[\"']$")
+          (#match? @recovery "(?i)^[\"']bcdedit.* /set .* recoveryenabled no[\"']$")
+          (#eq? @shell1 "shell") (#eq? @shell2 "shell")
+          (#eq? @stdio1 "stdio") (#eq? @stdio2 "stdio")
+          (#match? @ignore1 "^[\"']ignore[\"']$")
+          (#match? @ignore2 "^[\"']ignore[\"']$"))
+composite_rules:
+  - id: node-silent-boot-recovery-sabotage
+    desc: Silent exported action sabotages boot recovery
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: node-silent-boot-recovery-disable-action
+      - id: metadata/import/builtin::require-child-process
