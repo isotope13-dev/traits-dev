@@ -1,0 +1,37 @@
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+  attack: T1134.001
+traits:
+  - id: lsass-token-duplication-impersonation-profile
+    desc: LSASS token duplication/impersonation profile
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule lsass_token_duplication_impersonation_profile {
+          strings:
+            $target = "lsass.exe" nocase
+            $open = "OpenProcessToken" fullword
+            $duplicate = "DuplicateTokenEx" fullword
+            $impersonate = "ImpersonateLoggedOnUser" fullword
+            // TOKEN_ALL_ACCESS, no attributes, SecurityImpersonation,
+            // TokenPrimary, output handle address; Go 386 stack arguments.
+            $setup = {
+              C7 44 24 04 FF 01 0F 00 C7 44 24 08 00 00 00 00
+              C7 44 24 0C 02 00 00 00 C7 44 24 10 01 00 00 00
+              8D 44 24 ?? 89 44 24 14 E8 ?? ?? ?? ??
+            }
+          condition:
+            all of them and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].name == ".text" and
+              for any i in (1..#setup) : (
+                @setup[i] >= pe.sections[s].raw_data_offset and
+                @setup[i] + !setup[i] <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size
+              )
+            )
+        }
