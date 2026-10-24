@@ -10,7 +10,7 @@ HERE = Path(__file__).resolve().parent
 ARITH = 'micro-behaviors/data/arithmetic::'
 LINE = 'metadata/file/line::source-line-over-1mb'
 DLL = 'metadata/lang/runtime::lua-runtime-dll-name'
-HEX = 'metadata/lang/source/syntax/call::hex-number-and-falsy-arguments'
+HEX = 'metadata/lang/source/syntax/call/arguments::hex-number-and-falsy-arguments'
 PAD = 'metadata/lang/natural/phrasing::padding-alignment-wording'
 OLD_LINE = 'objectives/anti-static/obfuscation/code-metrics/line-length::'
 

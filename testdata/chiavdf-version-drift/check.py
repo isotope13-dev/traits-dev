@@ -10,7 +10,7 @@ import sys
 root = Path(__file__).resolve().parents[2]
 scratch = Path(sys.argv[1])
 scratch.mkdir(parents=True, exist_ok=True)
-syntax = "metadata/lang/source/syntax/call::github-token-fetch-shaped-text"
+syntax = "metadata/lang/source/syntax/call/arguments::github-token-fetch-shaped-text"
 fetch = "micro-behaviors/communications/http/client/library::fetch-cmd"
 nginx = "micro-behaviors/communications/http/auth::nginx-basic-auth-directive"
 basic = "micro-behaviors/communications/http/auth::authorization-basic-header-token"

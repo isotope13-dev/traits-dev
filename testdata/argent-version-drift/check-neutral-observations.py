@@ -23,7 +23,7 @@ cases = [
     ('table.js', 'metadata/lang/source/shape::javascript-hex-string-array-prefix',
      'const hashes = [' + "'aabbcc'," * 10 + '];\n',
      'const hashes = [' + "'aabbcc'," * 9 + '];\n'),
-    ('connect.sh', 'metadata/lang/source/syntax/call::shell-connect-method-text',
+    ('connect.sh', 'metadata/lang/source/syntax/call/invocation::shell-connect-method-text',
      "python3 - <<'PYCODE'\ns.connect(('localhost', 3000))\nPYCODE\n",
      "python3 - <<'PYCODE'\ns.disconnect()\nPYCODE\n"),
     ('own.py', 'micro-behaviors/fs/path-ops/join::python-own-script-path',

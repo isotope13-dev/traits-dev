@@ -21,7 +21,7 @@ KEY = "micro-behaviors/crypto/key/generate::"
 BUILD = "metadata/build/manifest::"
 EXEC = "micro-behaviors/process/create/shell/command-string::"
 LOL = "objectives/execution/lolbin/frameworks::"
-SYNTAX = "metadata/lang/source/syntax/call::python-add-file-member-call"
+SYNTAX = "metadata/lang/source/syntax/call/invocation::python-add-file-member-call"
 SUBPROCESS = "micro-behaviors/process/create/subprocess::run-ast"
 cases = {
     "legacy-runtime.py": {

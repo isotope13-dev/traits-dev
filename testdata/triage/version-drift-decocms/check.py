@@ -18,7 +18,7 @@ for source in fixtures.iterdir():
         shutil.copyfile(source, args.staging / source.name)
 
 query = "micro-behaviors/data/db/query::select-encrypted-key-field"
-indexed = "metadata/lang/source/syntax/call::js-constructor-hex-indexed-arguments"
+indexed = "metadata/lang/source/syntax/call/arguments::js-constructor-hex-indexed-arguments"
 screen = "micro-behaviors/hardware/display/screen::browser-indexed-screen-dimension-field"
 expected = {
     "encrypted-key-query.js": {query},

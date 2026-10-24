@@ -95,7 +95,7 @@ def main():
     for name, source in sources.items():
         (args.scratch / name).write_text(source)
     expectations.update({
-        "ordinary-ui.js": ({"metadata/lang/source/syntax/call::close-literal-near-indexed-call-text"},
+        "ordinary-ui.js": ({"metadata/lang/source/syntax/call/relationship::close-literal-near-indexed-call-text"},
                            {"micro-behaviors/process/io/stream::wsh-bracket-stdin-close-call"}),
         "Callback.java": ({"metadata/file/function::jvm-onmessage-declaration"},
                           {"micro-behaviors/communications/websocket/receive::jvm-onmessage-function"}),

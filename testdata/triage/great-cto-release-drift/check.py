@@ -70,7 +70,7 @@ check('refusal-with-live-override.md', required=[OVERRIDE+'llm-prior-instruction
 check('bare-override.sh', required=[OVERRIDE+'llm-prior-instruction-override'], alerts=1)
 check('query.js', required=[QUERY+'cookie-session-query-key-reference', QUERY+'cookie-session-query-encoding-cooccurrence'])
 check('dependency-names.js', required=['metadata/lang/source/literal::okta-package-specifier', 'metadata/lang/source/literal::stripe-package-specifier'])
-check('scanner-vocabulary.js', required=['metadata/lang/source/syntax/key-value::repeated-quoted-severity-fields', 'metadata/lang/source/syntax/call::scan-source-call'])
+check('scanner-vocabulary.js', required=['metadata/lang/source/syntax/key-value::repeated-quoted-severity-fields', 'metadata/lang/source/syntax/call/invocation::scan-source-call'])
 check('agent-guidance.js', required=['metadata/package/config::claude-guidance-delegates-agents-md'])
 check('reference.js', required=['metadata/package/documentation/security-advisory::owasp-llm-top-10-reference', 'metadata/lang/source/literal::codex-cli-name-literal'], forbidden=['well-known/tool/detection/llm-scanner::llm-scanner-context', 'well-known/tool/development/agent/openai-codex::openai-codex-source-context'])
 check('package.json', required=['metadata/package/keywords/capability::package-ai-keyword', 'metadata/package/keywords/capability::package-agent-keyword', 'metadata/package/keywords/identity::package-ai-model-keyword'])

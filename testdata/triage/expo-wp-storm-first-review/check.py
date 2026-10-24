@@ -76,7 +76,7 @@ def main():
         "prompt": "metadata/package/documentation/agent-safety::adversarial-content-risk-discussion",
         "disclaimer": "metadata/package/documentation/security-testing::authorized-security-testing-statement",
         "chain": "objectives/execution/exploit/chain::wordpress-rest-sqli-admin-shell-chain",
-        "gettext": "metadata/lang/source/syntax/call::java-kotlin-gettext-call-text",
+        "gettext": "metadata/lang/source/syntax/call/invocation::java-kotlin-gettext-call-text",
         "message": "micro-behaviors/communications/ipc/message::postmessage-json-stringify",
         "flutter": "micro-behaviors/process/interpreter/webview::flutter-webview-js-channel-bridge",
         "boot": "metadata/permission/activation::android-boot-completed-permission-reference",

@@ -14,7 +14,7 @@ root = Path(__file__).resolve().parents[3]
 fixtures = Path(__file__).with_name('files')
 a.scratch.mkdir(parents=True, exist_ok=True)
 eval_id = 'micro-behaviors/process/interpreter/eval/direct::js-eval-variable-argument'
-source_id = 'metadata/lang/source/syntax/call::then-eval-ident-callback-source'
+source_id = 'metadata/lang/source/syntax/call/relationship::then-eval-ident-callback-source'
 gui = 'objectives/impact/degrade/process::ransom-gui-force-kills-explorer'
 cryptor = 'objectives/impact/ransom/encrypt/bulk-encryption::ransomware-cbc-glob-encrypt-remove-bytecode'
 old = 'objectives/command-and-control/dropper/script-eval/remote-code::then-eval-ident-callback'
@@ -27,7 +27,7 @@ cases = [
     ('callback.js', {eval_id, source_id}, {old}),
     ('exports.js', {'metadata/lang/source/syntax/assignment::cjs-exports-pattern'}, set()),
     ('env-write.js', {'micro-behaviors/os/env/secret-name::javascript-credential-env-reference'}, {'micro-behaviors/os/env/secret-name::javascript-credential-env-read'}),
-    ('predicate.js', {'metadata/lang/source/syntax/call::js-credential-path-guard'}, {'micro-behaviors/fs/path/credential::js-credential-path-guard'}),
+    ('predicate.js', {'metadata/lang/source/syntax/call/invocation::js-credential-path-guard'}, {'micro-behaviors/fs/path/credential::js-credential-path-guard'}),
     ('utility-cryptor.pyc', {'micro-behaviors/crypto/symmetric/encrypt::pyc-encrypt-name-record'}, {cryptor, gui}),
     ('gui-without-kill.pyc', {'objectives/impact/ransom/note::close-window-blocks-decryption-warning'}, {gui, cryptor}),
     ('warning.py', {'objectives/impact/ransom/note::close-window-blocks-decryption-warning'}, {gui, cryptor}),

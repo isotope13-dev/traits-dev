@@ -97,7 +97,7 @@ def main():
         'package-tarball.js': ('const archive="package/addon.tgz";\n',
                                'micro-behaviors/fs/path/archive::node-package-tgz-path-reference'),
         'setup-import.py': ('setup(name="ordinary-package"); import os\n',
-                            'metadata/lang/source/syntax/call::post-setup-import-os-sys'),
+                            'metadata/lang/source/syntax/call/relationship::post-setup-import-os-sys'),
         'discord-path.py': ('path="discord/Local Storage/leveldb"\n',
                             'micro-behaviors/fs/path/app-data::discord-local-storage-path'),
         'release-api.js': ((HERE / 'controls/release-maintainer.js').read_text(),

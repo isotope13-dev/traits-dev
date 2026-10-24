@@ -96,7 +96,7 @@ cannot be repaired with an evidence-supported hostile matcher.
 * Added the previously missed silent physical-disk first-sector zeroing chain
   in osinthell f.js, including its inherited archive finding.
 * Moved `go-many-fragment-joins` to
-  `metadata/lang/source/syntax/call::go-repeated-short-string-argument-prefixes`.
+  `metadata/lang/source/syntax/call/arguments::go-repeated-short-string-argument-prefixes`.
   Its actual gRPC matches are six normal `metadata.Pairs` argument lists,
   not string joining or evasion. Retained notable severity, platform/type scope,
   threshold and exclusions. Removed unsupported T1027/B0032 mappings. Factoring

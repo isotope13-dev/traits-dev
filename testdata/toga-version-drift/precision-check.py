@@ -9,7 +9,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 GLOB = 'objectives/collection/file-targeting/filter::credential-wildcard-name-filter'
-HOOK = 'metadata/lang/source/syntax/call::frontend-component-hook-literal'
+HOOK = 'metadata/lang/source/syntax/call/invocation::frontend-component-hook-literal'
 CORE = 'metadata/lang/source/syntax/member::frontend-component-primitive-literal'
 SYNTAX = 'metadata/lang/source/shape::frontend-component-syntax-literal'
 OLD = 'well-known/lib/web/site-platforms/package-ecosystem::has-frontend-framework'

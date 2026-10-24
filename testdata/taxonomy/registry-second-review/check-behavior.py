@@ -67,7 +67,7 @@ with tempfile.TemporaryDirectory(prefix='registry-review-', dir=a.scratch) as d:
     got = files[str(work / 'package.json')]
     assert got['metadata/package/dependencies/direct-url::url-dependency-with-install-hooks'] == 3
     assert got['metadata/package/dependencies/direct-url::runtime-and-dev-plaintext-http-dependencies'] == 4
-    syntax = 'metadata/lang/source/syntax/call::workflow-eval-call-text'
+    syntax = 'metadata/lang/source/syntax/call/invocation::workflow-eval-call-text'
     assert syntax in files[str(work / 'syntax.sh')]
     assert files[str(work / 'inline.sh')]['objectives/anti-static/obfuscation/payload/encoded/exec::inline-ruby-base64-eval'] == 5
     suffix = 'metadata/file/extension/executable::pdf-double-extension-script'

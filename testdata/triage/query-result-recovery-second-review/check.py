@@ -12,7 +12,7 @@ CASES = {
     'ordinary-query.py': {MB+'communications/grpc::query-result-upload-method'},
     'source-observations.py': {
         'metadata/lang/source/declaration::python-overwrite-file-function',
-        'metadata/lang/source/syntax/call::python-host-variable-create-connection',
+        'metadata/lang/source/syntax/call/arguments::python-host-variable-create-connection',
         'metadata/package/documentation/security-advisory::cve-reference',
     },
     'tls-client.py': {

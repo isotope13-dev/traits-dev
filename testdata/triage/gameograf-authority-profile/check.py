@@ -31,7 +31,7 @@ for line in r.stdout.splitlines():
     for f in json.loads(line)['files']:
         if Path(f['path']).name.startswith('jquery-'):
             ids = {t['id']: t['crit'] for t in f.get('traits', [])}
-            assert ids['metadata/lang/source/syntax/call::dollar-call-interpolated-link-field'] == 3
+            assert ids['metadata/lang/source/syntax/call/arguments::dollar-call-interpolated-link-field'] == 3
             assert all(v < 4 for v in ids.values()), (f['path'], ids)
             print('PASS', Path(f['path']).name)
             continue

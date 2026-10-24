@@ -11,7 +11,7 @@ CASES = {
     HERE / 'source-forms.js': {
         'metadata/lang/source/literal::js-single-lowercase-token-line',
         'micro-behaviors/hardware/input/mouse/message::mouseclick-event-name-literal',
-        'metadata/lang/source/syntax/call::js-token-save-mutation-call-text',
+        'metadata/lang/source/syntax/call/arguments::js-token-save-mutation-call-text',
         'metadata/lang/natural/phrasing::discord-user-token-tos-disclosure',
     },
     HERE / 'source-forms.py': {

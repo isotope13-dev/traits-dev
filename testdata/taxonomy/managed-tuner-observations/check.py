@@ -13,7 +13,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[3]
 SHA = 'micro-behaviors/crypto/hash/digest::sha256-code-name-reference'
-INVOKE = 'metadata/lang/source/syntax/call::invoke-member-call-text'
+INVOKE = 'metadata/lang/source/syntax/call/invocation::invoke-member-call-text'
 HOST = 'micro-behaviors/process/interpreter/powershell/host::dotnet-powershell-host'
 PIPE = 'micro-behaviors/process/deploy/script-eval::pe-irm-iex-pipeline-text'
 DNS = 'micro-behaviors/network/dns::powershell-set-dns-server-address-text'

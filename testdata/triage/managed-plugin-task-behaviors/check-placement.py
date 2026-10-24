@@ -7,7 +7,7 @@ import sys
 sys.dont_write_bytecode = True
 from check import ROOT, reports
 
-MOVED = 'metadata/lang/source/syntax/call::computed-call-hex-token-pairs'
+MOVED = 'metadata/lang/source/syntax/call/arguments::computed-call-hex-token-pairs'
 OLD = 'micro-behaviors/data/control-flow/dispatch::computed-call-hex-token-pairs'
 ATTACK = 'objectives/command-and-control/dropper/module-load::packed-aead-envelope-module-loader'
 BASE = Path(__file__).with_name('placement')
