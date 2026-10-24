@@ -20,7 +20,79 @@ traits:
     conf: 0.95
     if:
       type: text
-      regex: 'NumberOfSections\s*=\s*[\w.]{0,40}NumberOfSections\s*\+'
+      regex: 'NumberOfSections\s*=\s*[\w.]{0,40}NumberOfSections\s*\+|NumberOfSections\s*\+\+'
+
+  - id: pe-section-object-appended
+    desc: Appends a PE section object
+    crit: notable
+    conf: 0.95
+    if:
+      type: text
+      regex: 'Sections\s*=\s*append\([^;\n]{0,120}\bnewsection\s*\)'
+
+  - id: pe-shellcode-written-to-image
+    desc: Assigns shellcode to a PE insertion buffer
+    crit: notable
+    conf: 0.95
+    if:
+      type: text
+      regex: '(InsertionBytes|InsertionData|RawData)\s*=\s*(shellcode|[A-Za-z_$][\w.$]*shellcode)\b'
+
+  - id: pe-new-section-code-characteristic
+    desc: Marks PE section as code
+    crit: notable
+    conf: 0.95
+    if:
+      type: text
+      regex: 'newsection\.Characteristics\s*=\s*[^\n;]{0,160}IMAGE_SCN_CNT_CODE'
+
+  - id: pe-new-section-executable-characteristic
+    desc: Marks a PE section executable
+    crit: notable
+    conf: 0.95
+    if:
+      type: text
+      regex: 'newsection\.Characteristics\s*=\s*[^\n;]{0,160}IMAGE_SCN_MEM_EXECUTE'
+
+  - id: pe-relocation-directory-cleared
+    desc: Clears the PE base relocation directory
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: 'DataDirectory\s*\[\s*5\s*\]\.VirtualAddress\s*=\s*0\b'
+
+  - id: pe-relocations-marked-stripped
+    desc: Marks PE relocations as stripped
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: 'Characteristics\s*\|=\s*[^\n;]{0,80}IMAGE_FILE_RELOCS_STRIPPED'
+
+  - id: pe-aslr-flag-toggled
+    desc: Toggles the PE dynamic-base flag
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: 'DllCharacteristics\s*\^=\s*[^\n;]{0,80}IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE'
+
+  - id: pe-dep-flag-toggled
+    desc: Toggles the PE NX compatibility flag
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: 'DllCharacteristics\s*\^=\s*[^\n;]{0,80}IMAGE_DLLCHARACTERISTICS_NX_COMPAT'
+
+  - id: pe-certificate-directory-cleared
+    desc: Clears the PE certificate table directory
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: text
+      regex: 'DataDirectory\s*\[\s*4\s*\]\.VirtualAddress\s*=\s*0\b'
 
   - id: pe-size-of-image-growth
     desc: Grows the PE SizeOfImage field
@@ -50,15 +122,25 @@ traits:
       regex: 'DataDirectory\s*[\[(]\s*1[12]\s*[\])][\w.$]{0,24}\s*=\s*0\b'
 
 composite_rules:
+  - id: pe-new-section-executable-code
+    desc: Marks a PE section as executable code
+    crit: notable
+    conf: 0.95
+    near_lines: 0
+    all:
+      - id: pe-new-section-executable-characteristic
+      - id: pe-new-section-code-characteristic
   - id: pe-section-append
     desc: Appends a section to a PE file
     crit: suspicious
     conf: 0.94
+    near_bytes: 4096
     all:
       - id: pe-section-count-increment
     any:
       - id: pe-size-of-image-growth
       - id: micro-behaviors/data/format/pe-parser::io-or-seek-near-nt-header-offset
+      - id: pe-section-object-appended
   # Appending a section and blanking the import metadata in the same pass is a
   # packer or crypter rebuilding the image, not a build tool extending it.
   - id: pe-section-append-directory-strip
@@ -76,6 +158,48 @@ composite_rules:
     crit: hostile
     conf: 0.96
     attack: T1027.002,T1554
+    near_bytes: 4096
     all:
       - id: pe-section-append
       - id: pe-entry-point-redirection
+
+  # The combination distinguishes a shellcode injector from ordinary PE
+  # editors: it appends executable code, puts shellcode in the output image,
+  # and redirects startup to the new section.
+  - id: pe-shellcode-section-entry-injection
+    desc: Injects shellcode into PE startup section
+    crit: hostile
+    conf: 0.97
+    attack: T1554
+    near_bytes: 4096
+    all:
+      - id: pe-section-append
+      - id: pe-new-section-executable-code
+      - id: pe-shellcode-written-to-image
+      - id: pe-entry-point-redirection
+
+  # Source may toggle these bits based on input headers. The relocation
+  # directory and stripped-relocations marker make the ASLR weakening concrete;
+  # the executable-section and entry-point handoff tie it to payload injection.
+  - id: pe-shellcode-injection-tampers-with-mitigations
+    desc: Injection strips relocations and toggles mitigations
+    crit: hostile
+    conf: 0.96
+    attack: T1554
+    near_bytes: 4096
+    all:
+      - id: pe-shellcode-section-entry-injection
+      - id: pe-relocation-directory-cleared
+      - id: pe-relocations-marked-stripped
+      - id: pe-aslr-flag-toggled
+      - id: pe-dep-flag-toggled
+
+  - id: pe-shellcode-injection-clears-certificate-table
+    desc: Shellcode injection clears the PE certificate table
+    crit: hostile
+    conf: 0.96
+    attack: T1554
+    near_bytes: 4096
+    all:
+      - id: pe-shellcode-section-entry-injection
+      - id: pe-certificate-directory-cleared
