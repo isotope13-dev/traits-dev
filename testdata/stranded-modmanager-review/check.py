@@ -12,6 +12,8 @@ DESCRIPTOR = "metadata/binary/symbols/descriptor::hook-manager-rtti-without-prot
 MIME = "micro-behaviors/data/format/mime::wildcard-application-mime"
 LOG = "micro-behaviors/communications/http/url/php-endpoint::php-log-script-path"
 EXFIL = "objectives/exfiltration/http/collect::browser-stealer-php-exfil"
+PHP_CONTEXT = "micro-behaviors/communications/http/url/php-endpoint::php-log-uid-http-vocabulary"
+FG_URI = "micro-behaviors/communications/http/url/php-endpoint::fg-php-uid-query-path"
 
 def main():
     cases = json.loads((ROOT / "cases.json").read_text())
@@ -26,7 +28,8 @@ def main():
     for case in cases:
         ids = {t["id"] for f in by_name[case["file"]]["raw"]["files"] for t in f.get("traits", [])}
         for key, trait in [("upstream", UPSTREAM), ("descriptor", DESCRIPTOR),
-                           ("mime", MIME), ("log", LOG), ("exfil", EXFIL)]:
+                           ("mime", MIME), ("log", LOG), ("exfil", EXFIL),
+                           ("php_context", PHP_CONTEXT), ("fg_uri", FG_URI)]:
             assert (trait in ids) == case.get(key, False), (case["file"], key, ids)
     print(f"PASS {len(cases)} controls; all 44 distinctive RTTI pairs retained")
 
