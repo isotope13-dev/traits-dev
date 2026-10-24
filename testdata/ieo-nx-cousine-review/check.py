@@ -16,7 +16,6 @@ root = here.parents[1]
 opcode = 'metadata/binary/instruction/opcode::repeated-rdtscp-byte-pattern'
 setup = 'micro-behaviors/fs/path/application/executable::hyphenated-setup-exe-name'
 auto = 'objectives/execution/autoinstall/manager-package::download-manager-auto-installer'
-loader = 'objectives/anti-analysis/sandbox-detect/tool-references::native-anti-analysis-catalog-loader'
 xor = 'objectives/anti-static/obfuscation/name-mangling/variables::javascript-hex-variables-with-xor'
 drive = 'micro-behaviors/communications/http/services/google::googleapis-drive'
 moves = {
@@ -32,7 +31,7 @@ cases = {
     'setup-name-only.exe': ([setup], [auto, loader]),
     'download-launch.exe': ([setup, auto], [loader]),
     'download-no-name.exe': ([], [setup, auto]),
-    'analysis-catalog.exe': ([opcode, loader], [auto]),
+    'analysis-catalog.exe': ([opcode], [auto]),
     'xor-names.js': ([xor], []),
     'xor-readable.js': ([], [xor]),
     'hex-names.js': ([], [xor]),

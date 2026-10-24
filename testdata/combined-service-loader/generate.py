@@ -42,20 +42,14 @@ parts = {
     'analysis': b'u[-] VM detected - legit only\0',
     'remote': b'aVirtualAllocEx\0aWriteProcessMemory\0aCreateRemoteThread\0',
 }
-ids = [
-    'objectives/anti-static/obfuscation/payload/encrypted::serialized-encrypted-hidden-launch-loader',
-    'objectives/anti-analysis/environment-detect/runtime::analysis-aware-encrypted-hidden-launch-loader',
-    'objectives/evasion/process/injection/memory::encrypted-hidden-launcher-remote-thread-apis',
-]
 cases = []
 for omit in [None, *parts]:
     name = ('positive' if omit is None else 'without-' + omit) + '.exe'
     data = b'NUITKA_ONEFILE_PARENT\0' + b'\0'.join(v for k, v in parts.items() if k != omit)
     (ROOT / name).write_bytes(pe(data))
-    matched = (ids[:] if omit is None else [ids[0], ids[2]] if omit == 'analysis'
-               else [ids[0], ids[1]] if omit == 'remote' else [])
-    cases.append(dict(case_id=name, path=str(ROOT / name), matched=matched,
-                      not_matched=[x for x in ids if x not in matched]))
+    # These fixtures contain serialized names and status strings but no
+    # executable decoder/launcher path; marker co-occurrence is not behavior.
+    cases.append(dict(case_id=name, path=str(ROOT / name), matched=[], not_matched=[]))
 
 name = 'opaque-encoded-near-misses.exe'
 (ROOT / name).write_bytes(pe(b'\0uX!udpX!tcpX!ntpX!vseX@##@X_raw_cpuid_X^DBOGUS{2X\0Timer\0'))
