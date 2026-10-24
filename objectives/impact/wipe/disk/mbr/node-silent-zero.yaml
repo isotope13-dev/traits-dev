@@ -1,0 +1,59 @@
+# Bind a writable PhysicalDrive handle to a zero-filled sector and the
+# write at offset zero. A silent zero-argument export hardcodes the disk;
+# ordinary file writes, disk readers and writes of supplied data do not fit.
+defaults:
+  platforms: [windows]
+  for: [javascript, typescript]
+  attack: T1561.002
+traits:
+  - id: node-silent-physicaldrive-boot-sector-zero-action
+    desc: Silent export zeroes physical-disk boot sector
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: tree-sitter
+      query: |
+        ((program
+          (lexical_declaration (variable_declarator
+            name: (identifier) @fs
+            value: (call_expression function: (identifier) @require
+              arguments: (arguments . (string) @module .))))
+          (expression_statement (assignment_expression
+            left: (member_expression object: (identifier) @mod
+              property: (property_identifier) @exports)
+            right: (function_expression parameters: (formal_parameters) @params
+              body: (statement_block (try_statement
+                body: (statement_block
+                  (lexical_declaration (variable_declarator name: (identifier) @fd
+                    value: (call_expression function: (member_expression
+                      object: (identifier) @fs_open property: (property_identifier) @open)
+                      arguments: (arguments . (string) @device . (string) @mode .))))
+                  (lexical_declaration (variable_declarator name: (identifier) @zeros
+                    value: (call_expression function: (member_expression
+                      object: (identifier) @buffer property: (property_identifier) @alloc)
+                      arguments: (arguments . (number) @size . (number) @fill .))))
+                  (expression_statement (call_expression function: (member_expression
+                    object: (identifier) @fs_write property: (property_identifier) @write)
+                    arguments: (arguments . (identifier) @handle . (identifier) @data
+                      . (number) @offset . (number) @length . (number) @position .))))
+                handler: (catch_clause body: (statement_block) @caught))))))) @action
+          (#eq? @require "require") (#match? @module "^[\"']fs[\"']$")
+          (#eq? @mod "module") (#eq? @exports "exports")
+          (#match? @params "^\\(\\s*\\)$") (#match? @caught "^\\{\\s*\\}$")
+          (#eq? @fs @fs_open) (#eq? @fs @fs_write)
+          (#eq? @open "openSync") (#eq? @write "writeSync")
+          (#match? @device "(?i)^[\"']\\\\{4}[.]\\\\{2}PhysicalDrive[0-9]+[\"']$")
+          (#match? @mode "^[\"']r[+][\"']$")
+          (#eq? @buffer "Buffer") (#eq? @alloc "alloc")
+          (#eq? @size "512") (#eq? @fill "0")
+          (#eq? @fd @handle) (#eq? @zeros @data)
+          (#eq? @offset "0") (#eq? @length "512") (#eq? @position "0"))
+
+composite_rules:
+  - id: node-silent-physicaldrive-boot-sector-zero
+    desc: Silent Node export destroys boot sector
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: node-silent-physicaldrive-boot-sector-zero-action
+      - id: metadata/import/builtin::require-fs

