@@ -1,0 +1,1 @@
+example = "import os\nfor pid in os.listdir('/proc'):\n    try:\n        with open('/proc/%d/environ' % int(pid), 'rb') as stream:\n            data = stream.read()\n    except OSError:\n        pass\n"
