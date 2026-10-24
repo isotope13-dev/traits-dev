@@ -1,0 +1,71 @@
+# Anonymous generators are not traversed by the current value-flow producer.
+# Require adjacent bindings and finalization, then a yielded eval of the same
+# plaintext variable. Match no arbitrary statements that could replace it.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1027,T1140,T1059.007
+
+traits:
+  - id: literal-key-generator-source-concealment
+    desc: Generator hides source with literal-key cipher
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: tree-sitter
+      language: javascript
+      query: |
+        ((generator_function
+          body: (statement_block
+            (lexical_declaration
+              (variable_declarator
+                name: (identifier) @cipher
+                value: (call_expression
+                  function: (member_expression
+                    property: (property_identifier) @constructor)
+                  arguments: (arguments
+                    . (string) . (string) . (_)))))
+            . (lexical_declaration
+              (variable_declarator
+                name: (identifier) @plaintext
+                value: (call_expression
+                  function: (member_expression
+                    object: (identifier) @update_receiver
+                    property: (property_identifier) @update)
+                  arguments: (arguments
+                    . (string) @ciphertext . (string) @encoding . (string)))))
+            . (expression_statement (augmented_assignment_expression
+                left: (identifier) @appended
+                operator: "+="
+                right: (call_expression
+                  function: (member_expression
+                    object: (identifier) @final_receiver
+                    property: (property_identifier) @final))))
+            . (expression_statement (yield_expression [
+                (call_expression
+                  function: (member_expression) @pause
+                  arguments: (arguments) @noargs)
+                (new_expression
+                  constructor: (identifier) @pause
+                  arguments: (arguments . (arrow_function
+                    body: (call_expression
+                      function: (identifier) @sleep
+                      arguments: (arguments . (identifier) . (number) .))) .))
+              ]))?
+            . (expression_statement (yield_expression
+                (call_expression
+                  function: (identifier) @evaluator
+                  arguments: (arguments . (identifier) @executed .)))))) @chain
+          (#match? @pause "^Promise(\\.resolve)?$")
+          (#eq? @sleep "setTimeout")
+          (#eq? @noargs "()")
+          (#match? @ciphertext "^['\"][0-9A-Fa-f]{8,}['\"]$")
+          (#eq? @constructor "createDecipheriv")
+          (#eq? @update "update")
+          (#eq? @final "final")
+          (#eq? @evaluator "eval")
+          (#match? @encoding "^['\"]hex['\"]$")
+          (#eq? @cipher @update_receiver)
+          (#eq? @cipher @final_receiver)
+          (#eq? @plaintext @appended)
+          (#eq? @plaintext @executed))
