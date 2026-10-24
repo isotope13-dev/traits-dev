@@ -1,3 +1,3 @@
 const locale = "ru-RU";
 const zone = "Europe/Moscow";
-if (isRussianHost()) return;
+if (zone === "Europe/Moscow" && isRussianHost()) return;
