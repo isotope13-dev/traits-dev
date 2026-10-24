@@ -22,7 +22,7 @@ archive('heading-observation.tgz',{'package/CHANGELOG.md':'# @review/transform\n
 archive('readme-heading.tgz',{'package/README.md':'# @review/transform\n'},R,True)
 archive('other-heading.tgz',{'package/other.md':'# @review/transform\n'},R,False)
 T='objectives/privilege-escalation/token-manipulation::rust-system-process-token-impersonation'
-H='objectives/credential-access/browser/app-bound::rust-system-token-app-bound-decryptor'
+H='micro-behaviors/crypto/decrypt::rust-app-bound-token-api-cooccurrence'
 token='''fn worker() {
  let system_names = ["lsass.exe", "winlogon.exe"];
  unsafe {
@@ -33,16 +33,16 @@ token='''fn worker() {
  }
 }
 '''
-source('token-worker.rs',token,T,True)
-source('token-renamed.rs',token.replace('worker','helper').replace('system_names','selectors').replace('process,','target,'),T,True)
-source('token-qualified.rs',token.replace('DuplicateToken(', 'windows::Win32::Security::DuplicateToken('),T,True)
-source('token-aliased.rs','use windows::Win32::Security::DuplicateToken as clone_token;\n'+token.replace('DuplicateToken(', 'clone_token('),T,True)
-source('token-lsass-only.rs',token.replace('"winlogon.exe"','"other.exe"'),T,True)
+source('token-worker.rs',token,T,False)
+source('token-renamed.rs',token.replace('worker','helper').replace('system_names','selectors').replace('process,','target,'),T,False)
+source('token-qualified.rs',token.replace('DuplicateToken(', 'windows::Win32::Security::DuplicateToken('),T,False)
+source('token-aliased.rs','use windows::Win32::Security::DuplicateToken as clone_token;\n'+token.replace('DuplicateToken(', 'clone_token('),T,False)
+source('token-lsass-only.rs',token.replace('"winlogon.exe"','"other.exe"'),T,False)
 source('token-comment.rs','/*\n'+token+'\n*/',T,False)
 source('token-import-only.rs','use windows::Win32::Security::{DuplicateToken,ImpersonateLoggedOnUser};\nconst NAMES: &[&str]=&["lsass.exe","winlogon.exe"];\n',T,False)
 source('token-without-system.rs',token.replace('lsass.exe','normal.exe').replace('winlogon.exe','other.exe'),T,False)
 source('token-no-impersonation.rs',token.replace('ImpersonateLoggedOnUser(copy);',''),T,False)
-source('token-without-open.rs',token.replace('OpenProcessToken(process, rights, output);',''),T,True)
+source('token-without-open.rs',token.replace('OpenProcessToken(process, rights, output);',''),T,False)
 crypto='''const PREFIX: &[u8] = b"APPB";
 const VERSION: &[u8] = b"v20";
 struct LocalState {app_bound_encrypted_key: String}
