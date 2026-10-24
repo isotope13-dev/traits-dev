@@ -1,0 +1,2 @@
+#!/bin/bash
+printf '\x50\x49\x4e\x47'

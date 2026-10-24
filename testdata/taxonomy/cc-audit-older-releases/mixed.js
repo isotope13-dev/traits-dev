@@ -1,0 +1,6 @@
+const manual = `\n```js
+const AWS_ACCESS_KEY_ID = 'AKIAQ7M8K2X9P4W6T3Y1';
+```
+`;
+
+const AWS_ACCESS_KEY_ID = "AKIAM6Q2Z9K7H4P8V3W5";
