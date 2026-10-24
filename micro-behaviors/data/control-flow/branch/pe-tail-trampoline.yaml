@@ -1,0 +1,41 @@
+defaults:
+  platforms:
+  - windows
+  for:
+  - pe
+  arch:
+  - x86
+traits:
+- id: pe-entry-host-trampoline-to-last-section
+  desc: Entry trampoline reaches appended code
+  crit: notable
+  conf: 0.99
+  if:
+    type: yara
+    source: |-
+      import "pe"
+      rule pe_entry_host_trampoline_to_last_section {
+       strings:
+        $call = { E8 ?? ?? ?? ?? }
+       condition:
+        pe.is_pe and pe.machine == pe.MACHINE_I386 and pe.number_of_sections >= 2 and
+        pe.entry_point >= pe.sections[0].raw_data_offset and
+        pe.entry_point < pe.sections[0].raw_data_offset+pe.sections[0].raw_data_size and
+        pe.sections[pe.number_of_sections-1].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+        pe.sections[pe.number_of_sections-1].characteristics & pe.SECTION_MEM_WRITE != 0 and
+        for any i in (1..#call): (
+         @call[i] >= pe.entry_point and @call[i] < pe.entry_point+256 and
+         with origin = pe.image_base+pe.sections[0].virtual_address-pe.sections[0].raw_data_offset,
+              target = origin+@call[i]+5+int32(@call[i]+1) : (
+          pe.rva_to_offset(target-pe.image_base) >= pe.sections[0].raw_data_offset and
+          pe.rva_to_offset(target-pe.image_base)+7 < pe.sections[0].raw_data_offset+pe.sections[0].raw_data_size and
+          with patch = pe.rva_to_offset(target-pe.image_base) : (
+           uint8(patch) == 0xe8 and (uint8(patch+5) == 0xeb or uint8(patch+5) == 0xe9) and
+           with tailtarget = target+5+int32(patch+1) : (
+            tailtarget >= pe.image_base+pe.sections[pe.number_of_sections-1].virtual_address and
+            tailtarget < pe.image_base+pe.sections[pe.number_of_sections-1].virtual_address+pe.sections[pe.number_of_sections-1].virtual_size
+           )
+          )
+         )
+        )
+      }
