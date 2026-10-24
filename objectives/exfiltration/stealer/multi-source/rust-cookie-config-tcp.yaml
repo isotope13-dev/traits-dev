@@ -1,0 +1,75 @@
+# Bind the target-array loop, read result, accumulator, transformed packet,
+# and connected stream. Matching path names and a socket independently cannot
+# establish this transfer; Rust flow facts do not track mutation in this loop.
+defaults:
+  platforms: [windows]
+  for: [rust]
+traits:
+  - id: rust-cookie-config-buffer-tcp-export
+    desc: Exports cookies and connection configs over TCP
+    crit: suspicious
+    conf: 0.98
+    attack: T1041
+    if:
+      type: tree-sitter
+      query: |
+        ((block
+          (expression_statement
+            (for_expression
+              pattern: (identifier) @relative
+              value: (reference_expression value: [
+                (array_expression (string_literal) @connection (string_literal) @cookie)
+                (array_expression (string_literal) @cookie (string_literal) @connection)])
+              body: (block .
+                (let_declaration pattern: (identifier) @path
+                  value: (call_expression
+                    function: (field_expression field: (field_identifier) @join)
+                    arguments: (arguments (identifier) @relative_used)))
+                . (expression_statement (if_expression
+                  condition: (let_condition
+                    pattern: (tuple_struct_pattern type: (identifier) @ok (identifier) @bytes)
+                    value: (call_expression function: (scoped_identifier) @read
+                      arguments: (arguments (reference_expression value: (identifier) @path_used))))
+                  consequence: (block .
+                    (expression_statement (call_expression
+                      function: (field_expression value: (identifier) @collector field: (field_identifier) @extend)
+                      arguments: (arguments (reference_expression value: (identifier) @bytes_used))))))))) @collection)
+          . (let_declaration pattern: (identifier) @packet
+            value: (call_expression function: (identifier) @transform
+              arguments: (arguments (reference_expression value: (identifier) @collector_used) (_))))
+          . (expression_statement (if_expression
+            condition: (let_condition
+              pattern: (tuple_struct_pattern type: (identifier) @connected
+                (mut_pattern (identifier) @stream))
+              value: (call_expression function: (scoped_identifier) @connect
+                arguments: (arguments (string_literal))))
+            consequence: (block .
+              (let_declaration value: (call_expression
+                function: (field_expression value: (identifier) @stream_used field: (field_identifier) @send)
+                arguments: (arguments (reference_expression value: (identifier) @packet_used)))))))) @export
+         (#eq? @relative @relative_used)
+         (#eq? @path @path_used)
+         (#eq? @bytes @bytes_used)
+         (#eq? @ok "Ok")
+         (#eq? @join "join")
+         (#match? @read "^(std::)?fs::read$")
+         (#eq? @extend "extend_from_slice")
+         (#eq? @collector @collector_used)
+         (#eq? @packet @packet_used)
+         (#eq? @stream @stream_used)
+         (#eq? @connected "Ok")
+         (#eq? @send "write_all")
+         (#match? @connect "(^|::)TcpStream::connect$")
+         (#match? @cookie "cookies[.]sqlite")
+         (#match? @connection "(confCons[.]xml|FTPInfo[.]xml)"))
+composite_rules:
+  - id: rust-vm-gated-cookie-config-export
+    desc: VM-gated cookie and connection-config theft
+    crit: hostile
+    conf: 0.98
+    attack: T1041,T1497.001
+    all:
+      - id: rust-cookie-config-buffer-tcp-export
+      - id: objectives/anti-analysis/vm-detect/instruction::rust-cpuid-cache-timing-exit
+      - id: micro-behaviors/data/encoding/xor::rust-iterator-xor-transform
+      - id: micro-behaviors/data/codec::rtl-compress-buffer-source
