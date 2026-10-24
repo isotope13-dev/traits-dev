@@ -1,0 +1,37 @@
+defaults:
+  for: [pe]
+  platforms: [windows]
+  arch: [x86]
+traits:
+  - id: x86-encoded-netsh-inbound-allow-format
+    desc: Formats encoded inbound firewall allow rule
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_encoded_netsh_inbound_allow_format {
+          strings:
+            // netsh advfirewall firewall add rule ...
+            // dir=in action=allow program="%s" enable=yes
+            // The chosen firewall rule name is deliberately not required.
+            $command = { 8A C8 00 4E 6C ED F5 39 52 8B DD 0F 21 7A B5 F1
+                         08 0D 92 D4 F6 28 63 BC C8 01 14 9C A0 E9 74 6F 91 C1 11 [45]
+                         00 44 86 80 ED 23 34 BC C7 19 5D 92 AA B0 35 71
+                         88 C2 03 1D 74 BF FB 3A 56 8C D9 40 66 28 A7 BF
+                         44 48 9A DC E6 21 71 E0 DD 08 47 }
+            $format = { 53 57 68 82 00 00 00 68 ?? ?? ?? ?? 56 E8 ?? ?? ?? ??
+                        83 C4 14 50 8B 45 ?? 8D 84 05 ?? ?? ?? ?? 50 FF 15 ?? ?? ?? ?? }
+          condition:
+            pe.is_pe and
+            for any f in (1..#format) : (
+              for any s in pe.sections : (
+                s.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                @format[f] >= s.raw_data_offset and
+                @format[f]+!format[f] <= s.raw_data_offset+s.raw_data_size
+              ) and
+              $command at pe.rva_to_offset(uint32(@format[f]+8)-pe.image_base) and
+              uint32(@format[f]+35) == pe.image_base + pe.import_rva("USER32.dll", "wsprintfA")
+            )
+        }

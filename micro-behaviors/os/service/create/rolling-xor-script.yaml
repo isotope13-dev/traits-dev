@@ -1,0 +1,37 @@
+defaults:
+  for: [pe]
+  platforms: [windows]
+  arch: [x86]
+traits:
+  # Match functional command fragments, wildcarding chosen paths, service
+  # names, descriptions and labels. Bind the encoded buffer to the formatter.
+  - id: x86-encoded-auto-service-script-format
+    desc: Formats encoded auto-start service script
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_encoded_auto_service_script_format {
+          strings:
+            // cmd /C mkdir ... sc create %s binPath= ...
+            // type= own start= auto ... sc start %s
+            $script = { 87 C0 10 1D 2B 8E B4 30 4F 89 DD 0F [29]
+                        9E D7 5D 27 7F B1 FC 10 48 D4 98 F7 6D 76 B4 CA 3D 55 89 AC B0 [17]
+                        E9 1D 5D 91 80 A4 22 63 B3 84 1E 40 9C B6 F9 69 3D 85 D8 00 52 [75]
+                        EE 07 0D 87 C9 E5 3F 60 FD 81 1E }
+            $format = { 53 57 68 BD 00 00 00 68 ?? ?? ?? ?? 56 E8 ?? ?? ?? ??
+                        83 C4 14 50 8D 85 ?? ?? ?? ?? 50 FF 15 ?? ?? ?? ?? }
+          condition:
+            pe.is_pe and
+            for any f in (1..#format) : (
+              for any s in pe.sections : (
+                s.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                @format[f] >= s.raw_data_offset and
+                @format[f]+!format[f] <= s.raw_data_offset+s.raw_data_size
+              ) and
+              $script at pe.rva_to_offset(uint32(@format[f]+8)-pe.image_base) and
+              uint32(@format[f]+31) == pe.image_base + pe.import_rva("USER32.dll", "wsprintfA")
+            )
+        }

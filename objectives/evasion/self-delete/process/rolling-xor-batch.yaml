@@ -1,0 +1,50 @@
+defaults:
+  for: [pe]
+  platforms: [windows]
+  arch: [x86]
+  attack: T1070.004
+traits:
+  - id: x86-rolling-xor-own-image-delete-batch
+    desc: Encoded deletion batch targets own image
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_rolling_xor_own_image_delete_batch {
+          strings:
+            // @echo off; retry del "%s"; if exist "%s", ping loopback,
+            // goto retry; del %%0. Label bytes are wildcarded.
+            $batch = { A4 C8 17 55 6B ED FB 3B 42 E0 BE 47 ?? ?? ?? ?? ?? ?? ?? ?? 89 47 70 B8 C8 4D 16 D8 B7 AF 6A 73 91 C1 79 37 6D AB B4 38 5C 84 C7 09 64 2F F1 EE 46 0D DC B0 8E 3D 7D B3 C3 4D 05 CF F3 A3 64 33 D4 83 45 1D 3A A3 E1 31 29 E7 D3 12 30 62 F4 ?? ?? ?? ?? ?? ?? ?? ?? D0 AE 44 39 F7 A0 E8 38 3D C1 88 44 30 0E CD }
+            // Same stack buffer from GetModuleFileNameA, converted to OEM,
+            // then passed twice for the two target-path format placeholders.
+            $own = { FF 15 ?? ?? ?? ?? 8D 85 ?? ?? ?? ?? 50 50
+                     FF 15 ?? ?? ?? ?? 8D 85 ?? ?? ?? ?? 50 50
+                     68 C8 00 00 00 68 E4 00 00 00 6A 66
+                     68 ?? ?? ?? ?? BE ?? ?? ?? ?? 56 E8 ?? ?? ?? ??
+                     83 C4 14 50 8D 85 ?? ?? ?? ?? 50 FF 15 ?? ?? ?? ?? }
+          condition:
+            pe.is_pe and pe.imports("KERNEL32.dll", "WriteFile") and
+            pe.imports("SHELL32.dll", "ShellExecuteA") and
+            for any o in (1..#own) : (
+              for any s in pe.sections : (
+                s.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                @own[o] >= s.raw_data_offset and
+                @own[o]+!own[o] <= s.raw_data_offset+s.raw_data_size
+              ) and
+              uint32(@own[o]+2) == pe.image_base + pe.import_rva("KERNEL32.dll", "GetModuleFileNameA") and
+              uint32(@own[o]+16) == pe.image_base + pe.import_rva("USER32.dll", "CharToOemA") and
+              uint32(@own[o]+8) == uint32(@own[o]+22) and
+              $batch at pe.rva_to_offset(uint32(@own[o]+41)-pe.image_base) and
+              uint32(@own[o]+69) == pe.image_base + pe.import_rva("USER32.dll", "wsprintfA")
+            )
+        }
+composite_rules:
+  - id: rolling-xor-image-loader-batch-cleanup
+    desc: Image-transplant loader prepares self-deleting cleanup batch
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: x86-rolling-xor-own-image-delete-batch
+      - id: objectives/evasion/process/injection/hollowing/process::peb-image-transplant-child-loader

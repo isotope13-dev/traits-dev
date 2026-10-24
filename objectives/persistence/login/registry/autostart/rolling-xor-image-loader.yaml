@@ -1,0 +1,56 @@
+defaults:
+  for:
+  - pe
+  platforms:
+  - windows
+  arch:
+  - x86
+  attack: T1547.001
+composite_rules:
+- id: rolling-xor-run-key-image-transplant-loader
+  desc: Image-transplant loader writes an obfuscated Run key
+  crit: hostile
+  conf: 0.98
+  all:
+  - id: x86-rolling-xor-run-registration
+  - id: objectives/evasion/process/injection/hollowing/process::peb-image-transplant-child-loader
+traits:
+# This is concealed autostart registration: a decoded Run key is opened for
+# writing, then the same HKEY receives REG_SZ data. A key reference or generic
+# registry API alone does not qualify. The hostile rule adds image transplant.
+- id: x86-rolling-xor-run-registration
+  desc: Concealed HKCU Run value registration
+  crit: suspicious
+  conf: 0.99
+  if:
+    type: yara
+    source: |
+      import "pe"
+      rule x86_rolling_xor_hkcu_run_write {
+        strings:
+          // SOFTWARE\Microsoft\Windows\CurrentVersion\Run, NUL.
+          // key E4, increment C8 with alternating +1/-1.
+          $key = { B7 E2 32 69 53 8C C6 18 78 A0 DD 1E 36 62 A7 F2 02 59 A8 EA ED 23 70 B2 D3 1E 68 BE B1 FF 26 78 8A D9 22 58 76 BE FD 32 4A B1 E6 08 2A 0D }
+          $open = { 8D 45 ?? 50 68 03 01 00 00 53
+                    68 C8 00 00 00 68 E4 00 00 00 6A 2E
+                    68 ?? ?? ?? ?? 56 E8 ?? ?? ?? ?? 83 C4 14
+                    50 68 01 00 00 80 FF 15 ?? ?? ?? ?? }
+          $write = { 8B 45 ?? 40 50 8D 85 ?? ?? ?? ?? 50 6A 01 53
+                     8D 45 ?? 50 FF 75 ?? FF 15 ?? ?? ?? ?? }
+        condition:
+          pe.is_pe and
+          for any o in (1..#open) : (
+            for any s in pe.sections : (
+              s.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              @open[o] >= s.raw_data_offset and
+              @open[o]+!open[o] <= s.raw_data_offset+s.raw_data_size
+            ) and
+            $key at pe.rva_to_offset(uint32(@open[o]+23)-pe.image_base) and
+            uint32(@open[o]+44) == pe.image_base + pe.import_rva("ADVAPI32.dll", "RegOpenKeyExA") and
+            for any w in (1..#write) : (
+              @write[w] > @open[o] and @write[w] < @open[o]+96 and
+              uint8(@open[o]+2) == uint8(@write[w]+21) and
+              uint32(@write[w]+24) == pe.image_base + pe.import_rva("ADVAPI32.dll", "RegSetValueExA")
+            )
+          )
+      }

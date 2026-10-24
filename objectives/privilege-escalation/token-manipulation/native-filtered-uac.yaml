@@ -1,0 +1,93 @@
+defaults:
+  for:
+  - pe
+  platforms:
+  - windows
+  arch:
+  - x86
+composite_rules:
+- id: x86-wusa-filtered-token-uac-bypass
+  desc: Filtered elevated token launches a child
+  crit: hostile
+  conf: 0.99
+  attack: T1548.002,T1134.001
+  all:
+  - id: x86-filtered-elevated-token-impersonation
+  - id: micro-behaviors/process/create/launch::create-process-with-logon
+traits:
+- id: x86-filtered-elevated-token-impersonation
+  desc: Integrity, Lua filter and impersonation chain
+  crit: suspicious
+  conf: 0.99
+  if:
+    type: yara
+    source: |
+      import "pe"
+      rule x86_wusa_filtered_token_uac_bypass {
+        strings:
+          $wusa = "wusa.exe" wide fullword
+          $set_name = "NtSetInformationToken" ascii fullword
+          $filter_name = "NtFilterToken" ascii fullword
+          $thread_name = "NtSetInformationThread" ascii fullword
+          $open_name = "NtOpenProcessToken" ascii fullword
+          // Distinguish resolver sites so offset-retention limits cannot
+          // discard the later NtFilterToken binding.
+          $resolve_set = { 68 ?? ?? ?? ?? 52 BF F9 FF FF FF FF D6 A3 ?? ?? ?? ?? }
+          $resolve_filter = { 68 ?? ?? ?? ?? 52 BF F3 FF FF FF FF D6 A3 ?? ?? ?? ?? }
+          $resolve_thread = { 68 ?? ?? ?? ?? 51 BF FA FF FF FF FF D6 A3 ?? ?? ?? ?? }
+          $resolve_open = { 68 ?? ?? ?? ?? 52 BF F6 FF FF FF FF D6 A3 ?? ?? ?? ?? }
+          // SHELLEXECUTEINFO specifies wusa.exe, requests its process
+          // handle, and supplies that returned handle to NtOpenProcessToken.
+          $launch = { C7 44 24 ?? 3C 00 00 00 C7 44 24 ?? 40 00 00 00
+                      C7 84 24 ?? ?? ?? ?? ?? ?? ?? ?? 89 9C 24 ?? ?? ?? ??
+                      FF 15 ?? ?? ?? ?? 85 C0 0F 84 ?? ?? ?? ??
+                      8B 94 24 ?? ?? ?? ?? 8D 4C 24 ?? 51 68 00 00 00 02
+                      52 FF 15 ?? ?? ?? ?? }
+          // TokenIntegrityLevel (25).
+          $integrity = { 83 C0 08 50 8D 44 24 ?? 50 6A 19 51 FF 15 ?? ?? ?? ?? }
+          // NtFilterToken flags = LUA_TOKEN (4).
+          $filter = { 8B 44 24 ?? 8D 54 24 ?? 52 53 53 53 6A 04 50 FF 15 ?? ?? ?? ?? }
+          // Current-thread ThreadImpersonationToken (5), length 4.
+          $thread = { 6A 04 8D 4C 24 ?? 51 6A 05 6A FE FF 15 ?? ?? ?? ?? }
+          // CreateProcessWithLogonW uses LOGON_NETCREDENTIALS_ONLY (2).
+          $child = { 6A 00 6A 02 68 ?? ?? ?? ?? 68 ?? ?? ?? ?? 68 ?? ?? ?? ?? FF 15 ?? ?? ?? ?? }
+        condition:
+          pe.is_pe and
+          for any c in (1..#child) : (
+            uint32(@child[c]+21) == pe.image_base + pe.import_rva("ADVAPI32.dll", "CreateProcessWithLogonW")
+          ) and
+          for any i in (1..#integrity) : (
+            for any l in (1..#launch) : (
+              @integrity[i] > @launch[l] and @integrity[i] < @launch[l]+512 and
+              $wusa at pe.rva_to_offset(uint32(@launch[l]+23)-pe.image_base) and
+              uint32(@launch[l]+36) == pe.image_base + pe.import_rva("SHELL32.dll", "ShellExecuteExW") and
+              for any r in (1..#resolve_open) : (
+                $open_name at pe.rva_to_offset(uint32(@resolve_open[r]+1)-pe.image_base) and
+                uint32(@resolve_open[r]+14) == uint32(@launch[l]+68)
+              )
+            ) and
+            for any s in pe.sections : (
+              s.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              @integrity[i] >= s.raw_data_offset and
+              @integrity[i]+!integrity[i] <= s.raw_data_offset+s.raw_data_size
+            ) and
+            for any f in (1..#filter) : (
+              @filter[f] > @integrity[i] and @filter[f] < @integrity[i]+128 and
+              for any t in (1..#thread) : (
+                @thread[t] > @filter[f] and @thread[t] < @filter[f]+128 and
+                for any r in (1..#resolve_set) : (
+                  $set_name at pe.rva_to_offset(uint32(@resolve_set[r]+1)-pe.image_base) and
+                  uint32(@resolve_set[r]+14) == uint32(@integrity[i]+14)
+                ) and
+                for any r in (1..#resolve_filter) : (
+                  $filter_name at pe.rva_to_offset(uint32(@resolve_filter[r]+1)-pe.image_base) and
+                  uint32(@resolve_filter[r]+14) == uint32(@filter[f]+17)
+                ) and
+                for any r in (1..#resolve_thread) : (
+                  $thread_name at pe.rva_to_offset(uint32(@resolve_thread[r]+1)-pe.image_base) and
+                  uint32(@resolve_thread[r]+14) == uint32(@thread[t]+13)
+                )
+              )
+            )
+          )
+      }
