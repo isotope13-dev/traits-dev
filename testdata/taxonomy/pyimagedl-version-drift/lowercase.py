@@ -1,0 +1,1 @@
+banner = '''ordinary text'''
