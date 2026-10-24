@@ -1,0 +1,16 @@
+// Windows.Storage.FileIO.readTextAsync(file);
+// Windows.Storage.FileIO.readBufferAsync(file);
+// Windows.Storage.FileIO.writeTextAsync(file, content);
+// Windows.Storage.KnownFolders.removableDevices.getFoldersAsync();
+// Windows.System.Launcher.launchFileAsync(file);
+// (Windows.Devices as any).SerialCommunication.SerialDevice.fromIdAsync(id);
+const readName = "Windows.Storage.FileIO.readTextAsync(file)";
+const bufferName = "Windows.Storage.FileIO.readBufferAsync(file)";
+const writeName = "Windows.Storage.FileIO.writeTextAsync(file, content)";
+const enumerateName = "Windows.Storage.KnownFolders.removableDevices.getFoldersAsync()";
+const launchName = "Windows.System.Launcher.launchFileAsync(file)";
+const serialName = "Windows.Devices.SerialCommunication.SerialDevice.fromIdAsync(id)";
+other.readTextAsync(file);
+other.writeTextAsync(file, content);
+other.launchFileAsync(file);
+other.fromIdAsync(id);
