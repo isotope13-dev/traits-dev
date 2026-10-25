@@ -1,83 +1,26 @@
 # Provider-side live checks used to separate usable harvested credentials from
 # dead entries. Individual authenticated identity/profile requests are ordinary
 # API behavior; the multi-provider combination is the suspicious behavior, and
-# the hostile verdict additionally requires a harvested-secret inventory that
-# is updated with the validation result.
+# hostile AWS validation additionally requires credential extraction plus
+# a secret inventory and validation-status SQL. Pairing supplied records alone
+# does not establish harvesting.
 defaults:
   platforms: [unix, windows]
   for: [scripts, source]
   attack: T1528
 
-traits:
-  - id: secret-inventory-provider-fields
-    desc: Provider and secret schema fields
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      regex: '(?is)\b(provider|service)\s+TEXT.{0,120}\b(secret|token|api_key)\s+TEXT'
-
-  - id: secret-inventory-source-status-fields
-    desc: Secret source and status schema fields
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      regex: '(?is)\b(source_url|origin)\s+TEXT.{0,120}\bstatus\s+TEXT'
-
-  - id: secret-validation-state-triad
-    desc: Unchecked valid invalid state triad
-    crit: notable
-    conf: 0.92
-    if:
-      type: text
-      regex: '(?is)\bunchecked\b.{0,80}\bvalid\b.{0,80}\binvalid\b'
-
 composite_rules:
-  - id: secret-validation-inventory-schema
-    for: [scripts, '!jcl']
-    desc: Secret inventory with validation states
-    crit: suspicious
-    conf: 0.97
-    near_lines: 32
-    all:
-      - id: micro-behaviors/data/db/schema/relational::sql-create-table
-      - id: secret-inventory-provider-fields
-      - id: secret-inventory-source-status-fields
-      - id: secret-validation-state-triad
-    unless:
-      - id: well-known/tool/detection/security-scanner/
-      - id: well-known/tool/detection/threat-intel/
-
-  - id: secret-validation-status-update
-    desc: Updates stored secret validation state
-    crit: suspicious
-    conf: 0.96
-    near_lines: 12
-    all:
-      - id: micro-behaviors/data/db/write/row::secret-table-status-update
-      - id: micro-behaviors/data/db/write/row::last-checked-sql-assignment
-    unless:
-      - id: well-known/tool/detection/security-scanner/
-      - id: well-known/tool/detection/threat-intel/
-
-  - id: aws-bedrock-credential-capacity-probe
-    desc: Explicit AWS credentials probe Bedrock model capacity
-    crit: suspicious
-    conf: 0.97
-    all:
-      - id: micro-behaviors/communications/http/token-auth::aws-access-key-live-check
-      - id: micro-behaviors/communications/http/services/aws::bedrock-model-discovery-operation
-      - id: micro-behaviors/communications/http/services/aws::bedrock-model-invocation-operation
-
+  # Pairing a caller-supplied credential inventory is also ordinary auditing.
+  # Require extraction before asserting a harvested-credential workflow.
   - id: harvested-aws-credential-live-validation
-    desc: Correlated harvested AWS credentials are live-validated and tracked
+    desc: AWS secret extraction with inventory and live identity checks
     crit: hostile
     conf: 0.99
     all:
-      - id: secret-validation-inventory-schema
-      - id: secret-validation-status-update
-      - id: objectives/credential-access/theft/harvested-store::aws-credential-record-pair-correlation
+      - id: micro-behaviors/data/db/schema/relational::secret-validation-inventory-schema
+      - id: micro-behaviors/data/db/write/row::secret-validation-status-update
+      - id: micro-behaviors/data/db/access::aws-credential-record-pair-correlation
+      - id: objectives/credential-access/api-harvest/token::python-provider-secret-regex-extractor
       - id: micro-behaviors/communications/http/token-auth::aws-access-key-live-check
 
   - id: multi-provider-api-token-live-check
@@ -85,7 +28,7 @@ composite_rules:
     crit: suspicious
     conf: 0.97
     all:
-      - id: secret-validation-inventory-schema
+      - id: micro-behaviors/data/db/schema/relational::secret-validation-inventory-schema
     needs: 2
     any:
       - id: micro-behaviors/communications/http/token-auth::github-api-token-live-check
@@ -101,7 +44,7 @@ composite_rules:
     crit: hostile
     conf: 0.99
     all:
-      - id: secret-validation-inventory-schema
-      - id: secret-validation-status-update
+      - id: micro-behaviors/data/db/schema/relational::secret-validation-inventory-schema
+      - id: micro-behaviors/data/db/write/row::secret-validation-status-update
       - id: multi-provider-api-token-live-check
       - id: objectives/credential-access/api-harvest/token::python-provider-secret-regex-extractor
