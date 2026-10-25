@@ -1,0 +1,73 @@
+# Bind the interval callback to the function that parses a fetched JSON task
+# and evaluates a member of that task inside command dispatch. Neither a timer
+# elsewhere in the file nor evaluation of an unrelated local object suffices.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1071.001,T1059.007
+  conf: 0.98
+traits:
+  - id: interval-json-command-eval
+    desc: Interval callback evaluates HTTP JSON task code
+    crit: suspicious
+    unless:
+      - id: metadata/lang/source/origin::plain-source-layer-path
+    if:
+      type: tree-sitter
+      query: |
+        ((program
+          (function_declaration
+            name: (identifier) @callback
+            body: (statement_block
+              (lexical_declaration
+                (variable_declarator
+                  name: (identifier) @response
+                  value: (await_expression
+                    (call_expression
+                      function: (identifier) @fetch
+                      arguments: (arguments . (string (string_fragment) @url))))))
+              . (lexical_declaration
+                (variable_declarator
+                  name: (identifier) @task
+                  value: (await_expression
+                    (call_expression
+                      function: (member_expression
+                        object: (identifier) @parsed
+                        property: (property_identifier) @json)))))
+              . (switch_statement
+                value: (parenthesized_expression
+                  (member_expression object: (identifier) @selected))
+                body: (switch_body
+                  (switch_case value: (string)
+                    . (lexical_declaration
+                      (variable_declarator
+                        value: (call_expression
+                          function: (identifier) @eval
+                          arguments: (arguments . (member_expression
+                            object: (identifier) @executed) .)))))))))
+          . [(expression_statement
+             (call_expression
+               function: (identifier) @timer
+               arguments: (arguments . (identifier) @scheduled . (_))))
+           (lexical_declaration
+             (variable_declarator
+               value: (call_expression
+                 function: (identifier) @timer
+                 arguments: (arguments . (identifier) @scheduled . (_)))))])
+          (#eq? @fetch "fetch")
+          (#match? @url "^https?://")
+          (#eq? @response @parsed)
+          (#eq? @json "json")
+          (#eq? @task @executed)
+          (#eq? @task @selected)
+          (#eq? @eval "eval")
+          (#eq? @timer "setInterval")
+          (#eq? @callback @scheduled))
+
+composite_rules:
+  - id: interval-http-task-result-channel
+    desc: Repeated HTTP task eval beside result upload
+    crit: hostile
+    all:
+      - id: interval-json-command-eval
+      - id: micro-behaviors/communications/http/upload::fetch-eval-result-body
