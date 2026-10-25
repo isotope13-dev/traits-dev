@@ -1,0 +1,70 @@
+defaults:
+  for: [python]
+  platforms: [linux, macos, windows]
+traits:
+  - id: python-http-file-helper-child-module
+    desc: Downloads file for child module loader
+    crit: notable
+    conf: 0.98
+    # Helper: urllib response -> bytes -> written/returned path.
+    # Caller: returned path -> argv[1] of a written importlib bootstrap.
+    # All path, buffer, handle, helper and source bindings must agree.
+    if:
+      type: tree-sitter
+      query: |
+        ((module
+          (function_definition name: (identifier) @helper body: (block
+            (import_statement name: (aliased_import
+              name: (dotted_name) @urllib alias: (identifier) @client))
+            (for_statement body: (block
+              (try_statement body: (block
+                (with_statement
+                  (with_clause (with_item value: (as_pattern
+                    (call function: (attribute object: (identifier) @fetch_client
+                      attribute: (identifier) @urlopen))
+                    alias: (as_pattern_target (identifier) @response))))
+                  body: (block (expression_statement (assignment
+                    left: (identifier) @bytes
+                    right: (call function: (attribute
+                      object: (identifier) @read_response attribute: (identifier) @read))))))
+                (if_statement consequence: (block
+                  (expression_statement (assignment left: (identifier) @path))
+                  (with_statement
+                    (with_clause (with_item value: (as_pattern
+                      (call function: (identifier) @open_download
+                        arguments: (argument_list . (identifier) @opened (string) @binary_mode))
+                      alias: (as_pattern_target (identifier) @download_handle))))
+                    body: (block (expression_statement (call function: (attribute
+                      object: (identifier) @download_writer attribute: (identifier) @write_download)
+                      arguments: (argument_list . (identifier) @written .)))))
+                  (return_statement (identifier) @returned)))))))))
+          (expression_statement (assignment left: (identifier) @source
+            right: (string) @bootstrap))
+          (function_definition body: (block
+            (expression_statement (assignment left: (identifier) @script
+              right: (call function: (identifier) @helper_call)))
+            (with_statement
+              (with_clause (with_item value: (as_pattern
+                (call function: (identifier) @open_boot
+                  arguments: (argument_list . (identifier) @boot (string) @text_mode))
+                alias: (as_pattern_target (identifier) @boot_handle))))
+              body: (block (expression_statement (call function: (attribute
+                object: (identifier) @boot_writer attribute: (identifier) @write_boot)
+                arguments: (argument_list . (identifier) @boot_source .)))))
+            (expression_statement (assignment right: (call function: (attribute) @launch
+              arguments: (argument_list (list . (attribute) @interpreter
+                (identifier) @executed (identifier) @passed)))))))) @chain
+          (#eq? @urllib "urllib.request") (#eq? @client @fetch_client)
+          (#eq? @urlopen "urlopen") (#eq? @response @read_response)
+          (#eq? @read "read") (#eq? @bytes @written)
+          (#eq? @path @opened) (#eq? @path @returned)
+          (#eq? @open_download "open") (#match? @binary_mode "^['\"]wb['\"]$")
+          (#eq? @download_handle @download_writer) (#eq? @write_download "write")
+          (#eq? @helper @helper_call) (#eq? @script @passed)
+          (#eq? @source @boot_source) (#eq? @boot_handle @boot_writer)
+          (#eq? @write_boot "write") (#eq? @open_boot "open")
+          (#match? @text_mode "^['\"]w['\"]$") (#eq? @boot @executed)
+          (#eq? @interpreter "sys.executable")
+          (#match? @launch "^subprocess\\.(Popen|run)$")
+          (#match? @bootstrap "spec_from_file_location\\([^\n]{1,80}sys\\.argv\\[1\\]")
+          (#match? @bootstrap "loader\\.exec_module\\("))
