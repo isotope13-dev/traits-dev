@@ -1,0 +1,78 @@
+# Bind the history path to File.OpenRead and its stream to the POST body.
+# A declared recurring remote-shell command in the same block supplies
+# suspicious context. The hostile composite retains the original capability
+# evidence, now requiring the path/stream binding; an exporter alone does not qualify.
+# The prior co-occurrence matcher also convicted unrelated stream uploads.
+# The generic file-open/POST co-occurrence capability remains unchanged.
+defaults:
+  platforms: [macos]
+  for: [csharp]
+  attack: T1552.003,T1041,T1543.004
+
+traits:
+  - id: csharp-history-post-shell-job
+    desc: History POST beside remote-shell job
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: tree-sitter
+      query: |
+        (block
+          (local_declaration_statement (variable_declaration
+              (variable_declarator name: (identifier) @command
+                (string_literal) @remote_command)))
+          .
+          (local_declaration_statement (variable_declaration
+              (variable_declarator (interpolated_string_expression
+                  (interpolation (identifier) @used_command)) @launchd)))
+          (local_declaration_statement (variable_declaration
+              (variable_declarator name: (identifier) @path
+                (invocation_expression
+                  function: (member_access_expression
+                    expression: (identifier) @path_type name: (identifier) @combine)
+                  arguments: (argument_list (argument (_))
+                    (argument (string_literal) @history))))))
+          .
+          (if_statement
+            condition: (invocation_expression
+              function: (member_access_expression
+                expression: (identifier) @exists_type name: (identifier) @exists)
+              arguments: (argument_list (argument (identifier) @tested)))
+            consequence: (block
+              (local_declaration_statement (variable_declaration
+                  (variable_declarator name: (identifier) @stream
+                    (invocation_expression
+                      function: (member_access_expression
+                        expression: (identifier) @file_type name: (identifier) @open)
+                      arguments: (argument_list (argument (identifier) @opened))))))
+              .
+              (expression_statement (await_expression (invocation_expression
+                    function: (member_access_expression name: (identifier) @post)
+                    arguments: (argument_list (argument (_))
+                      (argument (object_creation_expression
+                          type: (identifier) @content_type
+                          arguments: (argument_list (argument (identifier) @sent))))))))))
+          (#eq? @path_type "Path") (#eq? @combine "Combine")
+          (#match? @history "^\"\\.(bash|zsh)_history\"$")
+          (#eq? @exists_type "File") (#eq? @exists "Exists")
+          (#eq? @file_type "File") (#eq? @open "OpenRead")
+          (#eq? @post "PostAsync") (#eq? @content_type "StreamContent")
+          (#eq? @path @tested) (#eq? @path @opened) (#eq? @stream @sent)  (#eq? @command @used_command)
+          (#match? @remote_command "\\bcurl\\b")
+          (#match? @remote_command "https?://")
+          (#match? @remote_command "\\|[ \\t]*(ba)?sh")
+          (#match? @launchd "RunAtLoad</key><true")
+          (#match? @launchd "StartInterval</key><integer>[0-9]+"))
+
+composite_rules:
+  - id: launchagent-history-stream-post
+    desc: LaunchAgent loader posts shell history
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: csharp-history-post-shell-job
+      - id: micro-behaviors/fs/path/personal::shell-history-file-reference
+      - id: micro-behaviors/communications/http/upload::dotnet-file-openread-post-cooccurrence
+      - id: micro-behaviors/os/service/launchagent::source-runatload-key
+      - id: micro-behaviors/os/service/launchagent::source-startinterval-key
+      - id: micro-behaviors/process/create/shell/pipeline::curl-pipe-shell-text
