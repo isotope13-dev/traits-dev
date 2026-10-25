@@ -20,12 +20,32 @@ traits:
         rule go_field_base_sum_call_setup {
           strings:
             $legacy = { (8B 40 10 48 89 84 24 ?? ?? ?? ?? [0-2048] 48 8B 8C 24 ?? ?? ?? ?? 48 8B 94 24 ?? ?? ?? ?? 48 01 D1 48 89 8C 24 ?? ?? ?? ?? | 8B 40 10 48 89 84 24 ?? ?? ?? ?? [0-2048] 48 8B 84 24 ?? ?? ?? ?? 48 8B 8C 24 ?? ?? ?? ?? 48 01 C8 48 89 84 24 ?? ?? ?? ?? | 8B 40 10 [0-384] 48 8B 8C 24 ?? ?? ?? ?? 48 01 C8 [0-384] 48 89 84 24 ?? ?? ?? ?? | 8B 52 10 [0-512] 48 8B 9C 24 ?? ?? ?? ?? 48 01 DA [0-512] 48 89 94 24 ?? ?? ?? ?? | 8B 52 10 [0-512] 48 8B 94 24 ?? ?? ?? ?? 48 8B B4 24 ?? ?? ?? ?? 48 01 F2 [0-512] 48 89 94 24 ?? ?? ?? ??) [0-2048] 48 8B 84 24 ?? ?? ?? ?? 31 DB 31 C9 48 89 CF [0-8] E8 ?? ?? ?? ?? }
+            // DX field spill; reload both summands and immediately save the
+            // sum. Bind both stack slots even when inserted junk delays the call.
+            $dx_field = { 8B 52 10 48 89 94 24 ?? ?? ?? ?? }
+            $dx_sum = { 48 8B 94 24 ?? ?? ?? ?? 48 8B B4 24 ?? ?? ?? ?? 48 01 F2 48 89 94 24 ?? ?? ?? ?? }
+            $dx_call = { 48 8B 84 24 ?? ?? ?? ?? 31 DB 31 C9 48 89 CF [0-8] E8 ?? ?? ?? ?? }
             $field = { 8B 40 10 48 89 84 24 ?? ?? ?? ?? }
             $add = { 48 8B 8C 24 ?? ?? ?? ?? 48 8B 94 24 ?? ?? ?? ?? 48 01 D1 }
             $save = { 48 89 8C 24 ?? ?? ?? ?? }
             $call = { 48 8B 84 24 ?? ?? ?? ?? 31 DB 31 C9 48 89 CF E8 ?? ?? ?? ?? }
           condition:
             pe.is_pe and pe.machine == pe.MACHINE_AMD64 and (
+              (
+                all of ($dx_field, $dx_sum, $dx_call) and
+                for any f in (1..#dx_field) : (
+                  pe.sections[pe.section_index(@dx_field[f])].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                  for any a in (1..#dx_sum) : (
+                    @dx_sum[a] >= @dx_field[f] + 11 and @dx_sum[a] - @dx_field[f] <= 512 and
+                    uint32(@dx_field[f]+7) == uint32(@dx_sum[a]+4) and
+                    for any c in (1..#dx_call) : (
+                      @dx_call[c] >= @dx_sum[a] + 27 and @dx_call[c] - @dx_sum[a] <= 3072 and
+                      uint32(@dx_sum[a]+23) == uint32(@dx_call[c]+4) and
+                      pe.section_index(@dx_field[f]) == pe.section_index(@dx_call[c])
+                    )
+                  )
+                )
+              ) or
               for any l in (1..#legacy) : (
                 pe.sections[pe.section_index(@legacy[l])].name == ".text"
               ) or (
