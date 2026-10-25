@@ -61,7 +61,7 @@ def main():
                                   b"Exploiting target...\0payload-arm\0"),
                               {BOUNDARY, ARM, EXPLOIT}, set()),
         "events.c": (b"typedef enum { start, stop } event_type_t;\n",
-                     {"metadata/lang/source/declaration::event-type-name"},
+                     {"metadata/lang/source/naming/declaration::event-type-name"},
                      {"micro-behaviors/os/bpf/program/loader::event-type-enum"}),
         "header.hpp": (b"#ifndef _LIBCPP_EXPERIMENTAL_SIMD\n#define _LIBCPP_EXPERIMENTAL_SIMD\n#endif\n",
                        {"metadata/lang/upstream::libcpp-header-guard"},

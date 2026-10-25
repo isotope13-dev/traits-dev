@@ -304,12 +304,19 @@ to satisfy a number. The current reviewed exceptions are:
 
 - `metadata/file/naming` at 101 rules. The additional large eight-hex basename
   is distinct from the existing 40/64-hex forms; its size predicate is retained.
-- `metadata/file/archive` at 101 rules. The additional archive entropy/name
+- `metadata/file/archive` at 111 rules. The original archive entropy/name
   context records two static properties without inferring a staged loader.
   The VSIX review audited both 101-rule catalogs, found no duplicate matcher
   shapes, and retained all scopes and consumers. The controls cover both naming
   near misses and ordinary high-entropy archives; see the reproducible
   [VSIX review records](testdata/taxonomy/vsix-triage-2026-10-20/triage-summary.json).
+  The subsequent complete data-taxonomy review retained 101 existing canonical
+  archive facts and moved ten distinct archive byte/layout properties home.
+  Three staging claims were renamed to describe their required static evidence.
+  Scope and matcher checks found no equivalent rules; archive formats and
+  evidence representations do not justify children of this property catalog.
+  The exact 111-rule budget and all four full-leaf reviews are recorded in
+  [the rule-by-rule review](testdata/triage/data-taxonomy-audit-20261024/leaf-reviews.json).
 
 ### Splitting a directory
 
@@ -752,7 +759,7 @@ an ordinary updater goes in `micro-behaviors/process/deploy/<sink>`. Choose
 | `process-inject` | Execution moved into another process (`hollow`, `remote-thread`, `thread-hijack`). |
 | `image-map` | A native image mapped for execution in this process. |
 | `module-load` | Staged code loaded by a module or assembly loader (`Assembly.Load`, `AppDomain.AssemblyResolve`, `Module._compile`, dynamic `require`, WASM instantiation of staged bytes). |
-| `script-eval` | Staged source evaluated in the running interpreter (`eval`, `new Function`, `iex`). |
+| `script-eval` | Staged source evaluated by an interpreter (`eval`, `new Function`, `iex`, or explicit inline evaluation such as `node -e`). The child-process launch is supporting evidence; no staged executable file is implied. |
 | `interpreter-stdin` | Staged source piped to a new interpreter. |
 | `file-exec` | A staged file launched via `command` (a shell parses the launch), `spawn` (a process API launches the path) or `installer` (an installer transaction such as `msiexec`). |
 

@@ -21,7 +21,7 @@ def clean(f):
 for suffix in ["actions.py", "helpers.go", "near-miss.go", "browser.js", "config.lua"]:
     clean(named("neutral-first-review/" + suffix))
 
-assert "metadata/lang/source/declaration::python-uppercase-actions-list" in traits(named("neutral-first-review/actions.py"))
+assert "metadata/lang/source/syntax/assignment::python-uppercase-actions-list" in traits(named("neutral-first-review/actions.py"))
 expected = {
     "metadata/build/config::go-linux-only-build-constraint",
     "metadata/lang/source/declaration::register-listener-definition",

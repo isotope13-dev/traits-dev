@@ -1,0 +1,80 @@
+# A matched async resolver and its consuming variable must feed the sink.
+# Transaction queries, XOR utilities and unrelated template evals do not qualify.
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript]
+  conf: 0.98
+  attack: T1102,T1059.007,T1140
+traits:
+  - id: xor-blockchain-helper-result-eval-binding
+    desc: Awaited blockchain XOR helper feeds eval
+    crit: suspicious
+    if:
+      type: tree-sitter
+      query: |
+        (statement_block
+          (function_declaration name: (identifier) @resolver
+            body: (statement_block) @resolver_body)
+          (try_statement body: (statement_block
+            (_ (variable_declarator name: (identifier) @payload
+              value: (await_expression (call_expression function: (identifier) @caller))))
+            (expression_statement (call_expression function: (identifier) @eval
+              arguments: (arguments (identifier) @evaluated)))))
+          (#eq? @resolver @caller)
+          (#eq? @payload @evaluated)
+          (#eq? @eval "eval")
+          (#match? @resolver_body "eth_getTransactionByHash")
+          (#match? @resolver_body "result.{0,16}input")
+          (#match? @resolver_body "charCodeAt")
+          (#match? @resolver_body "fromCharCode")
+          (#match? @resolver_body "\\^")
+        ) @bound
+  - id: xor-blockchain-helper-detached-node-eval-binding
+    desc: Awaited blockchain XOR helper feeds Node
+    crit: suspicious
+    if:
+      type: tree-sitter
+      query: |
+        (statement_block
+          (function_declaration name: (identifier) @resolver
+            body: (statement_block) @resolver_body)
+          (try_statement body: (statement_block
+            (_ (variable_declarator name: (identifier) @payload
+              value: (await_expression (call_expression function: (identifier) @caller))))
+            (expression_statement (call_expression
+              function: (_ object: (call_expression
+                function: (_) @spawn
+                arguments: (arguments
+                  (string (string_fragment) @runtime)
+                  (array
+                    (string (string_fragment) @flag)
+                    (parenthesized_expression (binary_expression
+                      right: (parenthesized_expression (identifier) @child))))
+                  (object) @options)))))))
+          (#eq? @resolver @caller)
+          (#eq? @payload @child)
+          (#eq? @runtime "node")
+          (#eq? @flag "-e")
+          (#match? @spawn "spawn")
+          (#match? @options "detached[ \\t]*:[ \\t]*true")
+          (#match? @resolver_body "eth_getTransactionByHash")
+          (#match? @resolver_body "result.{0,16}input")
+          (#match? @resolver_body "charCodeAt")
+          (#match? @resolver_body "fromCharCode")
+          (#match? @resolver_body "\\^")
+        ) @bound
+composite_rules:
+  - id: xor-blockchain-helper-result-eval
+    desc: Evaluates XOR-decoded blockchain source
+    crit: hostile
+    all:
+      - id: xor-blockchain-helper-result-eval-binding
+      - id: micro-behaviors/communications/blockchain/client::ethereum-transaction-by-hash-literal
+      - id: micro-behaviors/data/string/conversion::js-repeating-key-xor-character-reconstruction
+  - id: xor-blockchain-helper-detached-node-eval
+    desc: Detached Node executes blockchain source
+    crit: hostile
+    all:
+      - id: xor-blockchain-helper-detached-node-eval-binding
+      - id: micro-behaviors/communications/blockchain/client::ethereum-transaction-by-hash-literal
+      - id: micro-behaviors/data/string/conversion::js-repeating-key-xor-character-reconstruction

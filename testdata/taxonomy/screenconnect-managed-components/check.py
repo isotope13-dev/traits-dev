@@ -8,7 +8,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[3]
 HERE = Path(__file__).resolve().parent
 EXPECTED = {
-    "micro-behaviors/data/property/assign::dotnet-item-setter-token",
+    "metadata/lang/source/naming/function::dotnet-item-setter-token",
     "micro-behaviors/fs/path/basename::service-suffix-executable-reference",
     "micro-behaviors/ui/controls/widget::windows-file-open-dialog-interface",
 }
