@@ -1,0 +1,89 @@
+# Bind file, variable and backward jump rather than selected identifiers.
+# Downloading, reading and invoking variable commands remain neutral capabilities.
+defaults:
+  platforms: [windows]
+  for: [batch]
+  attack: T1059.003,T1071.001
+traits:
+  - id: batch-http-file-command-loop
+    desc: HTTP file feeds commands in backward loop
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule batch_curl_bound_file_command_poll {
+          strings:
+            $fetch = /(^|\n)[ \t]*curl(\.exe)?[ \t]+[^\r\n]{0,120}-o[ \t]+/ nocase
+            $head = /(^|\n)[ \t]*set[ \t]+\/p[ \t]+/ nocase
+            $load = /[A-Za-z_][A-Za-z0-9_]{0,31}=<[A-Za-z0-9_.-]{1,64}/
+            $exec = /(^|\n)[ \t]*%[A-Za-z_][A-Za-z0-9_]{0,31}%[ \t]*>/
+            $var = /%[A-Za-z_][A-Za-z0-9_]{0,31}%/
+            $label = /:[A-Za-z_][A-Za-z0-9_]{0,31}/
+            $jump = /(^|\n)[ \t]*goto[ \t]+/ nocase
+            $http = /https?:\/\// nocase
+          condition:
+            all of them and
+            for any f in (1..#fetch) : (
+              for any h in (1..#head) : (
+                @head[h] > @fetch[f]+!fetch[f] and
+                @head[h] < @fetch[f]+!fetch[f]+256 and
+                for any r in (1..#load) : (
+                  @load[r] == @head[h]+!head[h] and
+                  for any e in (1..#exec) : (
+                    @exec[e] > @load[r] and @exec[e] < @load[r]+!load[r]+128 and
+                    for any v in (1..#var) : (
+                      @var[v] >= @exec[e] and
+                      @var[v]+!var[v] < @exec[e]+!exec[e] and
+                      uint16(@load[r]+!var[v]-2) == 0x3c3d and
+                      for all k in (0..!var[v]-3) : (
+                        (uint8(@load[r]+k) | 0x20) == (uint8(@var[v]+1+k) | 0x20)
+                      ) and
+                      for any n in (1..64) : (
+                        !load[r] == !var[v]+n and
+                        uint8(@fetch[f]+!fetch[f]+n) == 0x20 and
+                        $http at (@fetch[f]+!fetch[f]+n+1) and
+                        for all k in (@fetch[f]+!fetch[f]+n+1..@head[h]-1) : (
+                          uint8(k) != 10
+                        ) and
+                        for all k in (0..n-1) : (
+                          (uint8(@fetch[f]+!fetch[f]+k) | 0x20) ==
+                          (uint8(@load[r]+!var[v]+k) | 0x20)
+                        )
+                      ) and
+                      for all k in (@load[r]+!load[r]..@exec[e]) : (
+                        uint8(k) == 10 or uint8(k) == 13 or
+                        uint8(k) == 32 or uint8(k) == 9
+                      ) and
+                      for any l in (1..#label) : (
+                        (@label[l] == 0 or uint8(@label[l]-1) == 10) and
+                        (uint8(@label[l]+!label[l]) == 10 or
+                         uint8(@label[l]+!label[l]) == 13) and
+                        @label[l]+!label[l] < @fetch[f]+1 and
+                        for any j in (1..#jump) : (
+                          @jump[j] > @exec[e] and @jump[j] < @exec[e]+1024 and
+                          for all k in (1..!label[l]-1) : (
+                            (uint8(@label[l]+k) | 0x20) ==
+                            (uint8(@jump[j]+!jump[j]+k-1) | 0x20)
+                          ) and
+                          (uint8(@jump[j]+!jump[j]+!label[l]-1) == 10 or
+                           uint8(@jump[j]+!jump[j]+!label[l]-1) == 13 or
+                           @jump[j]+!jump[j]+!label[l]-1 == filesize)
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
+
+composite_rules:
+  - id: batch-curl-command-polling-backdoor
+    desc: HTTP command polling with POST requests
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: batch-http-file-command-loop
+      - id: micro-behaviors/communications/http/curl::http-curl-data-option
+      - id: micro-behaviors/communications/http/request/verb::post-command-line-option
