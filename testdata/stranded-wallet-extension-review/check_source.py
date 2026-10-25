@@ -31,7 +31,7 @@ while remaining.strip():
     for file in report["files"]:
         found[Path(file["path"])] = {trait["id"] for trait in file.get("traits", [])}
 for path, expected in cases.items():
-    for suffix in ["node-silent-system32-dll-wipe-action", "node-silent-system32-dll-wipe"]:
+    for suffix in ["node-silent-system32-dll-delete-action", "node-silent-system32-dll-delete"]:
         rule = "objectives/impact/degrade/system/file::" + suffix
         assert (rule in found[path]) == expected, (path, rule, expected)
     print(path.name, "matched" if expected else "not matched", flush=True)
