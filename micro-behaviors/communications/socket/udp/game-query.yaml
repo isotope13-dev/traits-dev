@@ -23,9 +23,49 @@ traits:
     desc: Game-query bytes in read-only data
     crit: notable
     if:
-      type: hex
-      section: .rodata
-      pattern: 'FF FF FF FF (67 65 74 73 74 61 74 75 73 | 72 75 6C 65 73 | 54 53 6F 75 72 63 65 20 45 6E 67 69 6E 65 20 51 75 65 72 79 | 55 FF FF FF FF)'
+      type: yara
+      source: |
+        import "pe"
+        import "elf"
+        rule game_query_in_read_only_data {
+          strings:
+            $named = { FF FF FF FF (67 65 74 73 74 61 74 75 73 |
+                       72 75 6C 65 73 |
+                       54 53 6F 75 72 63 65 20 45 6E 67 69 6E 65 20 51 75 65 72 79) }
+            $player = { FF FF FF FF 55 FF FF FF FF }
+          condition:
+            // The nine-byte initial player challenge must be a bounded record,
+            // not an interior run in FF/55 bitmaps or packed lookup tables.
+            // Named query forms retain their previous matching language.
+            (pe.is_pe and for any s in pe.sections : (
+              (s.name contains ".rdata" or s.name contains ".rodata") and (
+                for any n in (1..#named) : (
+                  @named[n] >= s.raw_data_offset and
+                  @named[n]+!named[n] <= s.raw_data_offset+s.raw_data_size
+                ) or
+                for any i in (1..#player) : (
+                  @player[i] >= s.raw_data_offset and
+                  @player[i]+!player[i] <= s.raw_data_offset+s.raw_data_size and
+                  (@player[i] == s.raw_data_offset or uint8(@player[i]-1) != 0xff) and
+                  (@player[i]+!player[i] == s.raw_data_offset+s.raw_data_size or
+                    uint8(@player[i]+!player[i]) != 0xff)
+                )
+              )
+            )) or
+            (uint32(0) == 0x464c457f and for any s in elf.sections : (
+              s.name contains ".rodata" and (
+                for any n in (1..#named) : (
+                  @named[n] >= s.offset and @named[n]+!named[n] <= s.offset+s.size
+                ) or
+                for any i in (1..#player) : (
+                  @player[i] >= s.offset and @player[i]+!player[i] <= s.offset+s.size and
+                  (@player[i] == s.offset or uint8(@player[i]-1) != 0xff) and
+                  (@player[i]+!player[i] == s.offset+s.size or
+                    uint8(@player[i]+!player[i]) != 0xff)
+                )
+              )
+            ))
+        }
     unless:
       - id: metadata/build/bundler/vscode::vscode-extension-generated-asset
       - id: metadata/build/bundler/runtime::js-emscripten-generated-bundle
