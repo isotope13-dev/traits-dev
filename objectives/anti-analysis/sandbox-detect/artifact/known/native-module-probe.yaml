@@ -4,7 +4,7 @@ defaults:
   arch: [x86]
 
 traits:
-  # Bind the pushed module name to GetModuleHandleA's actual IAT slot, then
+  # Bind the pushed module name to GetModuleHandleA/W's actual IAT slot, then
   # require a boolean presence test. A name or unrelated loader call is not a
   # sandbox probe. Addresses and section sizes are not specimen constants.
   - id: x86-sandboxie-module-presence-probe
@@ -18,16 +18,19 @@ traits:
         import "pe"
         rule sandboxie_module_presence_probe {
           strings:
-            $module = "SbieDll.dll" ascii nocase fullword
-            $probe = { 68 ?? ?? ?? ?? FF 15 ?? ?? ?? ?? 85 C0 0F 95 C0 C3 }
+            $module = "SbieDll" ascii wide nocase fullword
+            $probe = { 68 ?? ?? ?? ?? FF 15 ?? ?? ?? ?? 85 C0 ( 0F 95 C0 C3 | 74 ?? | 75 ?? | 0F 84 ?? ?? ?? ?? | 0F 85 ?? ?? ?? ?? ) }
           condition:
             pe.is_32bit() and $module and $probe and
             for any p in (1..#probe) : (
-              uint32(@probe[p]+7) == pe.image_base + pe.import_rva("KERNEL32.dll", "GetModuleHandleA") and
+              (
+                uint32(@probe[p]+7) == pe.image_base + pe.import_rva("KERNEL32.dll", "GetModuleHandleA") or
+                uint32(@probe[p]+7) == pe.image_base + pe.import_rva("KERNEL32.dll", "GetModuleHandleW")
+              ) and
               for any s in (0..pe.number_of_sections-1) : (
                 pe.sections[s].name == ".text" and
                 @probe[p] >= pe.sections[s].raw_data_offset and
-                @probe[p]+17 <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size
+                @probe[p]+!probe[p] <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size
               ) and
               for any m in (1..#module) : (
                 pe.rva_to_offset(uint32(@probe[p]+1)-pe.image_base) == @module[m]
