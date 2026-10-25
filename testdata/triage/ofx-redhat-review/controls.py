@@ -115,12 +115,14 @@ save("no-payment-condition", buf, absent=[RANSOM, C2, SCREEN, PERSIST])
 buf = bytearray(original)
 start = original.index(b"!exec\0")
 buf[start:start + 5] = b"!help"
-save("no-shell-task-verb", buf, absent=[C2, SCREEN])
+# This renames the verb; the shell handler and screenshot task remain.
+save("no-shell-task-verb", buf, [C2, SCREEN, FILE_UPLOAD])
 
 buf = bytearray(original)
 start = original.index(b"!screen\0")
 buf[start:start + 7] = b"!status"
-save("no-screen-task-verb", buf, [C2], [SCREEN])
+# This renames the verb; it still dispatches to desktop capture.
+save("no-screen-task-verb", buf, [C2, SCREEN])
 
 buf = bytearray(original)
 start = original.index(b"!dl\0")

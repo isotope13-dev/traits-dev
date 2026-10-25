@@ -1,0 +1,51 @@
+# String comparison controls a helper that queries desktop dimensions, gets
+# the desktop DC and copies its pixels. No task spelling or image name is used.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+traits:
+  - id: x64-compared-command-desktop-capture-handler
+    desc: Compared command calls desktop raster capture
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_compared_command_desktop_capture_handler {
+          strings:
+            $dispatch = { 48 83 FB ?? 0F 85 ?? ?? ?? ?? 4C 8B C3 48 8D 15 ?? ?? ?? ?? E8 ?? ?? ?? ?? 85 C0 0F 85 ?? ?? ?? ?? 0F 57 C0 F3 0F 7F 45 ?? 4C 89 6D ?? 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8B 5D ?? 84 C0 }
+            $desktop = { 33 C9 FF 15 ?? ?? ?? ?? B9 01 00 00 00 44 8B E8 FF 15 ?? ?? ?? ?? 8B D8 45 85 ED 0F 8E ?? ?? ?? ?? 85 C0 0F 8E ?? ?? ?? ?? 33 C9 FF 15 ?? ?? ?? ?? 4C 8B E0 }
+            $blit = { C7 44 24 40 20 00 CC 40 45 8B CD 48 8B F8 45 33 C0 33 C0 33 D2 89 44 24 38 48 8B CE 89 44 24 30 4C 89 64 24 28 89 5C 24 20 FF 15 ?? ?? ?? ?? }
+            $entry = { 48 89 5C 24 ?? 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 33 C0 4C 8B F1 }
+          condition:
+            pe.is_pe and all of them and
+            for any s in pe.sections : (
+              s.name == ".text" and
+              for any d in (1..#dispatch) : (
+                @dispatch[d] >= s.raw_data_offset and
+                @dispatch[d]+!dispatch[d] <= s.raw_data_offset+s.raw_data_size and
+                @dispatch[d]+10+int32(@dispatch[d]+6) == @dispatch[d]+33+int32(@dispatch[d]+29) and
+                @dispatch[d]+33+int32(@dispatch[d]+29) > @dispatch[d]+!dispatch[d] and
+                for any e in (1..#entry) : (
+                  @entry[e] == @dispatch[d]+54+int32(@dispatch[d]+50)
+                ) and
+                uint8(@dispatch[d]+40) == uint8(@dispatch[d]+48) and
+                uint8(@dispatch[d]+48) == uint8(@dispatch[d]+57) and
+                for any c in (1..#desktop) : (
+                  @desktop[c] > @dispatch[d]+54+int32(@dispatch[d]+50) and
+                  @desktop[c] < @dispatch[d]+54+int32(@dispatch[d]+50)+256 and
+                  @desktop[c] >= s.raw_data_offset and
+                  s.virtual_address+@desktop[c]-s.raw_data_offset+8+int32(@desktop[c]+4) == pe.import_rva("USER32.dll", "GetSystemMetrics") and
+                  s.virtual_address+@desktop[c]-s.raw_data_offset+22+int32(@desktop[c]+18) == pe.import_rva("USER32.dll", "GetSystemMetrics") and
+                  s.virtual_address+@desktop[c]-s.raw_data_offset+49+int32(@desktop[c]+45) == pe.import_rva("USER32.dll", "GetDC") and
+                  for any b in (1..#blit) : (
+                    @blit[b] > @desktop[c] and @blit[b] < @desktop[c]+192 and
+                    @blit[b]+!blit[b] <= s.raw_data_offset+s.raw_data_size and
+                    s.virtual_address+@blit[b]-s.raw_data_offset+47+int32(@blit[b]+43) == pe.import_rva("GDI32.dll", "BitBlt")
+                  )
+                )
+              )
+            )
+        }
