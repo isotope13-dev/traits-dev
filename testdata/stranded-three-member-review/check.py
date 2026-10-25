@@ -10,7 +10,7 @@ REF = "micro-behaviors/process/debug/tool-markers::python-frida-reference"
 OLD = "well-known/tool/reverse-engineering/frida::python-source-reference"
 ARGV = "micro-behaviors/process/argument/positional::python-frida-argv-origin"
 LIST = "micro-behaviors/metaprogramming/reflection::objection-android-component-list-command"
-ANTI = "objectives/anti-analysis/debugger-detect/combined-checks::python-pyc-process-anti-analysis"
+ANTI = "objectives/anti-analysis/debugger-detect/combined-checks::python-process-anti-analysis"
 CASES = {
     "frida-launch.py": ([REF, ARGV], [OLD, LIST]),
     "frida-reassigned.py": ([REF], [OLD, ARGV]),
@@ -25,12 +25,13 @@ env = dict(os.environ, CLEAVE_TRAITS_DIR=str(ROOT), SCAN_HOPPER="", SCAN_FETCH="
 result = subprocess.run(
     ["atomscan", "--no-update", "--follow=none", "--analyze", "local", "--mode", "slow", "-f", "json",
      *[str(HERE / name) for name in CASES]], env=env, text=True, capture_output=True)
-assert result.returncode == 0, result.stderr
+assert result.returncode in (0, 1), result.stderr
 reports = {}
 for line in result.stdout.splitlines():
     report = json.loads(line)
     file = report["raw"]["files"][0]
     reports[Path(file["path"]).name] = {t["id"] for t in file.get("traits", [])}
+assert set(reports) == set(CASES), ("incomplete scan output", set(CASES) - set(reports))
 checks = 0
 for name, (present, absent) in CASES.items():
     ids = reports[name]
