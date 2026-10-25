@@ -19,7 +19,7 @@ def main():
         ("TaskLoop", "task-loop-name-token"),
         ("workerLooper monitorWorkers myTaskLoop", None),
     ]
-    prefix = "metadata/binary/symbols/name::"
+    prefix = "metadata/binary/symbols/name/token::"
     expected_ids = {prefix + case[1] for case in cases if case[1]}
     with tempfile.TemporaryDirectory(prefix="worker-name-placement-") as temp:
         paths = []

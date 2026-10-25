@@ -49,7 +49,7 @@ def case(name, matched=(), absent=()):
 
 network={name:"micro-behaviors/communications/socket/"+op+"::"
          for name,op in [("socket","create"),("connect","connect"),("send","send"),("recv","receive"),("sendto","send")]}
-names="metadata/binary/symbols/name::"
+names="metadata/binary/symbols/name/token::"
 mirai="well-known/malware/botnet/mirai/identity::mirai-unstripped-stdhex-bot"
 # Real literal loads point exactly to the syscall number 0x38 bytes later.
 for name,num in [("socket",281),("connect",283),("send",289),("recv",291),("sendto",290)]:

@@ -69,7 +69,7 @@ def elf(symbol, name_in_code=None, pclntab=None):
 stub = bytes.fromhex('60 e8 03 00 00 00 e9 eb 04 5d 45 55 c3 e8 01 00 00 00 '
                      'eb 5d bb ed ff ff ff 03 dd 81 eb 00 90 00 00')
 packer = 'metadata/build/protector::aspack-x86-unpacking-stub'
-name = 'metadata/binary/symbols/name::dotnet-processstartinfo-name'
+name = 'metadata/binary/symbols/name/token::dotnet-processstartinfo-name'
 go = 'micro-behaviors/process/create/spawn::go-cmd-start-method-symbol'
 combined = 'micro-behaviors/process/create/subprocess::go-cmd-start-symbol'
 pclntab_name = 'metadata/binary/symbols/name::go-cmd-start-pclntab'
