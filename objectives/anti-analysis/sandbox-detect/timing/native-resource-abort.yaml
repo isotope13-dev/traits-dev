@@ -1,0 +1,35 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+traits:
+  - id: x64-uptime-cpu-shared-abort
+    desc: Uptime and CPU gates share abort branch
+    crit: suspicious
+    conf: 0.99
+    attack: T1497.001,T1497.003
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_uptime_cpu_shared_abort {
+          strings:
+            $uptime = { FF 15 ?? ?? ?? ?? 48 3D ?? ?? ?? ?? 0F 82 ?? ?? ?? ?? }
+            $cpu = { FF 15 ?? ?? ?? ?? 83 7D ?? 02 0F 82 ?? ?? ?? ?? }
+          condition:
+            pe.is_pe and $uptime and $cpu and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].name == ".text" and
+              for any u in (1..#uptime) : (
+                @uptime[u] >= pe.sections[s].raw_data_offset and
+                @uptime[u]+128 <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size and
+                uint32(@uptime[u]+8) >= 60000 and uint32(@uptime[u]+8) <= 600000 and
+                pe.sections[s].virtual_address + @uptime[u] - pe.sections[s].raw_data_offset + 6 + int32(@uptime[u]+2) == pe.import_rva("KERNEL32.dll", "GetTickCount64") and
+                for any c in (1..#cpu) : (
+                  @cpu[c] > @uptime[u] and @cpu[c] < @uptime[u]+96 and
+                  pe.sections[s].virtual_address + @cpu[c] - pe.sections[s].raw_data_offset + 6 + int32(@cpu[c]+2) == pe.import_rva("KERNEL32.dll", "GetSystemInfo") and
+                  @uptime[u]+18+int32(@uptime[u]+14) == @cpu[c]+16+int32(@cpu[c]+12)
+                )
+              )
+            )
+        }
