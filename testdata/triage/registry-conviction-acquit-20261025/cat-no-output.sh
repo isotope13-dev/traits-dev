@@ -1,0 +1,3 @@
+cat <<'STAGE'
+hello
+STAGE
