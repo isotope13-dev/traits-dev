@@ -1,0 +1,46 @@
+# Match argument/result fields, actual import thunks and branch destinations.
+# Resource API co-occurrence alone does not establish a sandbox gate.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+traits:
+  - id: x64-ram-screen-shared-abort
+    desc: RAM and screen gates share abort branch
+    crit: suspicious
+    conf: 0.98
+    attack: T1497.001
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_ram_screen_shared_abort {
+          strings:
+            $ram = { 48 8D 8D ?? ?? ?? ?? 0F 11 85 ?? ?? ?? ?? C7 85 ?? ?? ?? ?? 40 00 00 00 0F 11 85 ?? ?? ?? ?? 0F 11 85 ?? ?? ?? ?? 0F 11 85 ?? ?? ?? ?? FF 15 ?? ?? ?? ?? 85 C0 74 ?? 48 8B 85 ?? ?? ?? ?? B9 ?? ?? ?? ?? 48 3B C1 0F 82 ?? ?? ?? ?? }
+            $screen = { 33 C9 FF 15 ?? ?? ?? ?? B9 01 00 00 00 8B D8 FF 15 ?? ?? ?? ?? 81 FB ?? ?? ?? ?? 0F 8C ?? ?? ?? ?? 3D ?? ?? ?? ?? 0F 8C ?? ?? ?? ?? }
+          condition:
+            pe.is_pe and $ram and $screen and
+            for any section in pe.sections : (
+              section.name == ".text" and
+              for any r in (1..#ram) : (
+                @ram[r] >= section.raw_data_offset and
+                @ram[r]+!ram[r] <= section.raw_data_offset+section.raw_data_size and
+                uint32(@ram[r]+3) == uint32(@ram[r]+10) and
+                uint32(@ram[r]+3) == uint32(@ram[r]+16) and
+                uint32(@ram[r]+58) == uint32(@ram[r]+3)+8 and
+                uint32(@ram[r]+63) >= 0x20000000 and
+                section.virtual_address + @ram[r]-section.raw_data_offset + 51 + int32(@ram[r]+47) == pe.import_rva("KERNEL32.dll", "GlobalMemoryStatusEx") and
+                for any s in (1..#screen) : (
+                  @screen[s] >= @ram[r]+!ram[r] and @screen[s] < @ram[r]+256 and
+                  @screen[s]+!screen[s] <= section.raw_data_offset+section.raw_data_size and
+                  section.virtual_address + @screen[s]-section.raw_data_offset + 8 + int32(@screen[s]+4) == pe.import_rva("USER32.dll", "GetSystemMetrics") and
+                  section.virtual_address + @screen[s]-section.raw_data_offset + 21 + int32(@screen[s]+17) == pe.import_rva("USER32.dll", "GetSystemMetrics") and
+                  uint32(@screen[s]+23) >= 640 and uint32(@screen[s]+23) <= 1920 and
+                  uint32(@screen[s]+34) >= 480 and uint32(@screen[s]+34) <= 1080 and
+                  @ram[r]+76+int32(@ram[r]+72) > @screen[s]+!screen[s] and
+                  @ram[r]+76+int32(@ram[r]+72) == @screen[s]+33+int32(@screen[s]+29) and
+                  @screen[s]+33+int32(@screen[s]+29) == @screen[s]+44+int32(@screen[s]+40)
+                )
+              )
+            )
+        }
