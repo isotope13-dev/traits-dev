@@ -1,5 +1,5 @@
 These controls must not match
-`objectives/command-and-control/dropper/file-exec/command/shell::batch-suppressed-download-elevated-launch`.
+`micro-behaviors/os/privilege/elevation::batch-download-elevation-output-suppression`.
 
 `local-admin.bat` requests elevation without downloading a file.
 `unelevated-fetch.bat` downloads and starts a file without requesting elevation.
