@@ -1,0 +1,61 @@
+# Bind the HTTP helper's returned handle, the source passed to compile/exec,
+# and the step invoked inside the polling loop. Co-occurrence is insufficient.
+defaults:
+  platforms: [unix, windows]
+  for: [python]
+  attack: T1071.001,T1059.006
+traits:
+  - id: python-urllib-helper-compiled-exec-poll
+    desc: HTTP helper compiles code in polling loop
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: tree-sitter
+      language: python
+      query: |
+        ((module
+          (function_definition
+            name: (identifier) @fetcher
+            parameters: (parameters . (identifier) @url .)
+            body: (block . (with_statement
+              (with_clause (with_item value: (as_pattern
+                (call function: (attribute) @urlopen
+                  arguments: (argument_list . (identifier) @requested))
+                alias: (as_pattern_target (identifier) @response))))
+              body: (block . (return_statement (call
+                function: (attribute object: (call
+                  function: (attribute object: (identifier) @read_handle
+                    attribute: (identifier) @read)
+                  arguments: (argument_list))
+                  attribute: (identifier) @decode)
+                arguments: (argument_list))) .)) .))
+          (function_definition
+            name: (identifier) @step
+            body: (block
+              (expression_statement (assignment left: (identifier) @source
+                right: (call function: (identifier) @fetch_call
+                  arguments: (argument_list . [
+                    (string) @http_template
+                    (binary_operator left: (string) @http_template)
+                  ]))))
+              . (expression_statement (call function: (identifier) @exec
+                arguments: (argument_list . (call
+                  function: (identifier) @compile
+                  arguments: (argument_list . (identifier) @compiled
+                    (string) (string) @mode .)))))))
+          (function_definition body: (block
+            (while_statement condition: (true) body: (block
+              (try_statement body: (block . (expression_statement (call
+                function: (identifier) @polled
+                arguments: (argument_list))) .))
+              . (expression_statement (call function: (attribute) @sleep)))))))
+          (#eq? @urlopen "urllib.request.urlopen")
+          (#eq? @url @requested)
+          (#eq? @response @read_handle)
+          (#eq? @read "read") (#eq? @decode "decode")
+          (#eq? @fetcher @fetch_call)
+          (#match? @http_template "^['\"]https?://")
+          (#eq? @source @compiled)
+          (#eq? @exec "exec") (#eq? @compile "compile")
+          (#match? @mode "^['\"]exec['\"]$")
+          (#eq? @step @polled) (#eq? @sleep "time.sleep"))

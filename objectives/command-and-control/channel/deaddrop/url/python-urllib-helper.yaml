@@ -1,0 +1,67 @@
+# The first HTTP body supplies the next URL authority. Both calls use the
+# same proven HTTP helper, and the returned second body is compiled/executed.
+defaults:
+  platforms: [unix, windows]
+  for: [python]
+  attack: T1102.001,T1059.006
+traits:
+  - id: python-urllib-response-host-compiled-exec
+    desc: Response selects executed HTTP source host
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: tree-sitter
+      language: python
+      query: |
+        ((module
+          (function_definition
+            name: (identifier) @fetcher
+            parameters: (parameters . (identifier) @url .)
+            body: (block . (with_statement
+              (with_clause (with_item value: (as_pattern
+                (call function: (attribute) @urlopen
+                  arguments: (argument_list . (identifier) @requested))
+                alias: (as_pattern_target (identifier) @response))))
+              body: (block . (return_statement (call
+                function: (attribute object: (call
+                  function: (attribute object: (identifier) @read_handle
+                    attribute: (identifier) @read)
+                  arguments: (argument_list))
+                  attribute: (identifier) @decode)
+                arguments: (argument_list))) .)) .))
+          (function_definition body: (block
+            (expression_statement (assignment left: (identifier) @host
+              right: (subscript value: (call function: (attribute
+                object: (call function: (attribute object: (call
+                  function: (identifier) @first_fetch)
+                  attribute: (identifier) @strip))
+                attribute: (identifier) @splitlines))
+                subscript: (integer) @index)))
+            . (expression_statement (assignment left: (identifier) @source
+              right: (call function: (identifier) @second_fetch
+                arguments: (argument_list . (binary_operator
+                  left: (string) @template operator: "%"
+                  right: (identifier) @used_host) .))))
+            . (expression_statement (call function: (identifier) @exec
+              arguments: (argument_list . (call function: (identifier) @compile
+                arguments: (argument_list . (identifier) @compiled
+                  (string) (string) @mode .))))))))
+          (#eq? @urlopen "urllib.request.urlopen")
+          (#eq? @url @requested) (#eq? @response @read_handle)
+          (#eq? @read "read") (#eq? @decode "decode")
+          (#eq? @fetcher @first_fetch) (#eq? @fetcher @second_fetch)
+          (#eq? @strip "strip") (#eq? @splitlines "splitlines")
+          (#eq? @index "0") (#eq? @host @used_host)
+          (#match? @template "^['\"]https?://%s/")
+          (#eq? @source @compiled)
+          (#eq? @exec "exec") (#eq? @compile "compile")
+          (#match? @mode "^['\"]exec['\"]$"))
+composite_rules:
+  - id: python-urllib-detached-response-host-tasking
+    desc: Detached poller uses response-selected host
+    crit: hostile
+    conf: 0.99
+    platforms: [linux, macos]
+    all:
+      - id: python-urllib-response-host-compiled-exec
+      - id: objectives/command-and-control/remote-command/http-poll::python-urllib-fork-loop-exec
