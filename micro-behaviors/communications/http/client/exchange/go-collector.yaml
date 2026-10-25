@@ -1,0 +1,84 @@
+# Bind the collector and HTTP helpers through actual direct CALL edges in a
+# Go 1.20+ x86 pclntab. Routine names alone do not satisfy this observation.
+# The collector name is a source selector, not an independent theft claim.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+  size_max: 30000000
+traits:
+  - id: go-collector-http-call-chain
+    desc: Go collector calls HTTP request helpers
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule go_collector_http_call_chain {
+          strings:
+            $header = { F1 FF FF FF 00 00 01 04 }
+            $collector = "main.Steal\x00"
+            $request = "main.rq\x00"
+            $attempt = "main.tryRQ\x00"
+            $construct = "net/http.NewRequestWithContext\x00"
+            $send = "net/http.(*Client).do\x00"
+          condition:
+            pe.machine == pe.MACHINE_I386 and all of them and
+            with h = @header, n = uint32(h+8),
+                 table = h+uint32(h+36), names = h+uint32(h+20),
+                 text = uint32(h+16) : (
+              n > 0 and n < 50000 and table+n*8+8 < filesize and
+              for any collector_i in (0..n-1) : (
+                names+uint32(table+uint32(table+collector_i*8+4)+4) == @collector and
+                with collector_start = pe.rva_to_offset(text+uint32(table+collector_i*8)-pe.image_base),
+                     collector_end = pe.rva_to_offset(text+uint32(table+(collector_i+1)*8)-pe.image_base) : (
+                  collector_end > collector_start and collector_end-collector_start < 200000 and
+                  for any request_i in (0..n-1) : (
+                    names+uint32(table+uint32(table+request_i*8+4)+4) == @request and
+                    with request_start = pe.rva_to_offset(text+uint32(table+request_i*8)-pe.image_base),
+                         request_end = pe.rva_to_offset(text+uint32(table+(request_i+1)*8)-pe.image_base) : (
+                      request_end > request_start and request_end-request_start < 200000 and
+                      for any attempt_i in (0..n-1) : (
+                        names+uint32(table+uint32(table+attempt_i*8+4)+4) == @attempt and
+                        with attempt_start = pe.rva_to_offset(text+uint32(table+attempt_i*8)-pe.image_base),
+                             attempt_end = pe.rva_to_offset(text+uint32(table+(attempt_i+1)*8)-pe.image_base) : (
+                          attempt_end > attempt_start and attempt_end-attempt_start < 200000 and
+                          for any construct_i in (0..n-1) : (
+                            names+uint32(table+uint32(table+construct_i*8+4)+4) == @construct and
+                            with construct_start = pe.rva_to_offset(text+uint32(table+construct_i*8)-pe.image_base),
+                                 construct_end = pe.rva_to_offset(text+uint32(table+(construct_i+1)*8)-pe.image_base) : (
+                              construct_end > construct_start and construct_end-construct_start < 200000 and
+                              for any send_i in (0..n-1) : (
+                                names+uint32(table+uint32(table+send_i*8+4)+4) == @send and
+                                with send_start = pe.rva_to_offset(text+uint32(table+send_i*8)-pe.image_base),
+                                     send_end = pe.rva_to_offset(text+uint32(table+(send_i+1)*8)-pe.image_base) : (
+                                  send_end > send_start and send_end-send_start < 200000 and
+                                  for any call_0 in (collector_start..collector_end-5) : (
+                                    uint8(call_0) == 0xe8 and
+                                    call_0+5+int32(call_0+1) == request_start
+                                  ) and
+                                  for any call_1 in (request_start..request_end-5) : (
+                                    uint8(call_1) == 0xe8 and
+                                    call_1+5+int32(call_1+1) == attempt_start
+                                  ) and
+                                  for any call_2 in (attempt_start..attempt_end-5) : (
+                                    uint8(call_2) == 0xe8 and
+                                    call_2+5+int32(call_2+1) == construct_start
+                                  ) and
+                                  for any call_3 in (attempt_start..attempt_end-5) : (
+                                    uint8(call_3) == 0xe8 and
+                                    call_3+5+int32(call_3+1) == send_start
+                                  )
+                                )
+                              )
+                            )
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
