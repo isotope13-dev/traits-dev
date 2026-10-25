@@ -10,13 +10,13 @@ void WAProto;
 
 async function sendStatus(jid, content) {
   const img = await generateWAMessage(jid, content, {});
-  img.message.messageContextInfo = {
+  img.message.imageMessage.contextInfo = {
     forwardingScore: 99999,
     isForwarded: true,
-  };
-  img.message.forwardedNewsletterMessageInfo = {
-    newsletterJid: '100000000000001@newsletter',
-    newsletterName: 'Evil Channel',
+    forwardedNewsletterMessageInfo: {
+      newsletterJid: '100000000000001@newsletter',
+      newsletterName: 'Evil Channel',
+    },
   };
   await relayMessage(jid, img.message, {});
 }

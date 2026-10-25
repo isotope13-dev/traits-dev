@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Baileys fork archive framing must convict trojanized trees only.
 
-`whatsapp-library-fork-timer-preset-follow` and
+`whatsapp-library-fork-socket-timer-preset-follow` and
 `whatsapp-library-fork-forged-viral-forward` pair Baileys library identity
 with the file-local timer-follow and forward-forgery hostile traits. A
 republished tree carrying both implants must report both wrappers; the same
@@ -22,7 +22,7 @@ import tarfile
 
 WRAPPER_NS = 'objectives/supply-chain/trojanized/library/fork-branding'
 WRAPPERS = {
-    f'{WRAPPER_NS}::whatsapp-library-fork-timer-preset-follow',
+    f'{WRAPPER_NS}::whatsapp-library-fork-socket-timer-preset-follow',
     f'{WRAPPER_NS}::whatsapp-library-fork-forged-viral-forward',
 }
 IDENTITY = {
@@ -35,10 +35,13 @@ expected = {
     'positive.tgz': (WRAPPERS, IDENTITY),
     # Clean fork-shaped tree: identity live, wrappers absent.
     'negative.tgz': (set(), IDENTITY),
+    # Unknown root properties are discarded by protobuf; follow remains real.
+    'invalid-root.tgz': ({f'{WRAPPER_NS}::whatsapp-library-fork-socket-timer-preset-follow'}, IDENTITY),
 }
 SOURCES = {
     'positive.tgz': 'positive-socket.js',
     'negative.tgz': 'negative-socket.js',
+    'invalid-root.tgz': 'invalid-root-socket.js',
 }
 PACKAGE_JSON = '{"name": "baileys-fork-fixture", "version": "1.0.0"}\n'
 
