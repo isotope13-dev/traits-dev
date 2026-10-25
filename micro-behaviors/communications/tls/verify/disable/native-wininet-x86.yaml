@@ -2,12 +2,46 @@ defaults:
   platforms: [windows]
   for: [pe, dll]
   arch: [x86]
+  crit: notable
+  conf: 0.99
+  mbc: C0005
 traits:
+  - id: x86-wininet-ignore-unknown-ca
+    desc: WinINet ignores unknown certificate authorities
+    if:
+      # Read/modify/write of the same DWORD: OR IGNORE_UNKNOWN_CA (0x100),
+      # pass its address, length 4 and INTERNET_OPTION_SECURITY_FLAGS (31).
+      # Bind the indirect call to the real setter import, not another API.
+      type: yara
+      source: |
+        import "pe"
+        rule x86_wininet_ignore_unknown_ca {
+          strings:
+            $set = {
+              81 4D ?? 00 01 00 00 6A 04
+              8D 45 ?? 50 6A 1F 53 FF 15 ?? ?? ?? ??
+            }
+          condition:
+            pe.machine == pe.MACHINE_I386 and
+            for any i in (1..#set) : (
+              uint8(@set[i]+2) == uint8(@set[i]+11) and
+              for any s in (0..pe.number_of_sections-1) : (
+                pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                @set[i] >= pe.sections[s].raw_data_offset and
+                @set[i]+22 <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size
+              ) and
+              (
+                (pe.imports("WININET.dll", "InternetSetOptionW") and
+                 uint32(@set[i]+18) == pe.image_base +
+                   pe.import_rva("WININET.dll", "InternetSetOptionW")) or
+                (pe.imports("WININET.dll", "InternetSetOptionA") and
+                 uint32(@set[i]+18) == pe.image_base +
+                   pe.import_rva("WININET.dll", "InternetSetOptionA"))
+              )
+            )
+        }
   - id: x86-wininet-ignore-certificate-name-date
     desc: WinINet ignores certificate name and date
-    crit: notable
-    conf: 0.99
-    mbc: C0005
     if:
       # Bind the loaded function pointer to the HttpOpenRequestW import.
       # 0x80803000 includes SECURE, IGNORE_CERT_CN_INVALID and
