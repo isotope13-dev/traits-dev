@@ -22,9 +22,11 @@ watched = {
     prefix + 'ps-command-wrapper-useb-remote-eval',
     prefix + 'ps-network-eval-pipeline',
 }
+canonical = ('micro-behaviors/process/deploy/script-eval::'
+             'powershell-web-response-piped-eval-text')
 expected = {
     'install-doc-negative.md': set(),
-    'untrusted-pipe-positive.ps1': watched,
+    'untrusted-pipe-positive.ps1': set(),
 }
 for fixture in sorted(Path(__file__).parent.iterdir()):
     if fixture.name not in expected:
@@ -39,8 +41,12 @@ for fixture in sorted(Path(__file__).parent.iterdir()):
     )
     report = json.loads(result.stdout)
     found = set()
+    capabilities = set()
     for entry in report['files']:
+        capabilities |= {t['id'] for t in entry['traits'] if t['crit'] == 3}
         found |= {t['id'] for t in entry['traits']
                   if t['id'] in watched and t['crit'] == 4}
     assert found == expected[fixture.name], (fixture.name, sorted(found))
+    if fixture.name == 'untrusted-pipe-positive.ps1':
+        assert canonical in capabilities, (fixture.name, capabilities)
     print(f'{fixture.name}: passed')

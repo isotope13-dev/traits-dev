@@ -1,14 +1,18 @@
-First-party installer one-liners are not droppers
-====================================================
+First-party installers and remote evaluation
+===========================================
 
-The pipe-to-shell dropper traits fired on OpenClaw's own documented
-install command (`iwr -useb https://openclaw.ai/install.ps1 | iex`) inside
-a markdown code fence. The taxonomy already suppresses other vendors'
-official installers this way (ollama, bun, unsloth, skillshare); OpenClaw
-now has the same `official-install-ps1-url` context trait, referenced from
-all three firing traits (`ps-iwr-pipeline-eval`,
-`ps-command-wrapper-useb-remote-eval`, `ps-network-eval-pipeline`).
+OpenClaw's documented PowerShell install command occurs inside a Markdown
+code fence in `install-doc-negative.md`. It must not produce the obsolete
+suspicious pipeline aliases. The executable HTTP pipeline in
+`untrusted-pipe-positive.ps1` must retain the notable capability
+`micro-behaviors/process/deploy/script-eval::powershell-web-response-piped-eval-text`.
+
+A download/evaluate chain alone establishes no C2 or dropper objective.
+The Slang version-drift review consolidated the redundant suspicious
+`ps-iwr-pipeline-eval` alias into that existing capability and updated
+attack-specific consumers to use it directly. Attack context still belongs
+in their objective composites; vendor URL mentions do not suppress them.
 
 Run `python3 testdata/powershell-official-installer-url/check.py
-<scratch-directory>`. `untrusted-pipe-positive.ps1` must report all three
-traits; `install-doc-negative.md` must report none of them.
+<scratch-directory>`. Both fixtures must lack the three obsolete suspicious
+aliases; the executable fixture must retain the notable pipeline capability.
