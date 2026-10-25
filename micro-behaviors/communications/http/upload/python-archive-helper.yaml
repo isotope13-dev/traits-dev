@@ -1,43 +1,122 @@
-# Bind the tar fileobj to the buffer passed to a local HTTP helper, then bind
-# that helper's second parameter to the urllib Request data keyword. Names,
-# URLs, archive members, encryption keys and campaign tokens are unconstrained.
+# Generic tar uploads remain visible; the hybrid-envelope alternative binds
+# ciphertext to tar contents, the helper body, and the sent request.
 defaults:
-  platforms: [unix, windows]
-  for: [python]
+  platforms:
+  - unix
+  - windows
+  for:
+  - python
   crit: notable
   conf: 0.98
-
 traits:
-  - id: python-tar-buffer-http-helper
-    desc: Tar buffer enters HTTP helper request body
-    if:
-      type: tree-sitter
-      language: python
-      query: |
-        ((module
-          (function_definition body: (block
-            (with_statement (with_clause (with_item value: (as_pattern
-              (call function: (attribute) @archive_open
+- id: python-tar-buffer-http-helper
+  desc: Tar buffer enters HTTP helper request body
+  if:
+    type: tree-sitter
+    language: python
+    query: |
+      ((module
+        (function_definition body: (block
+          (with_statement (with_clause (with_item value: (as_pattern
+            (call function: (attribute) @archive_open
+              arguments: (argument_list (keyword_argument
+                name: (identifier) @fileobj value: (identifier) @buffer)))))))
+          . (expression_statement (call function: (identifier) @helper_call
+            arguments: (argument_list . (_)
+              . (call function: (attribute object: (identifier) @sent_buffer
+                attribute: (identifier) @getvalue)))))))
+        (function_definition name: (identifier) @helper
+          parameters: (parameters . (identifier) @url . (identifier) @body)
+          body: (block . (expression_statement (assignment
+            right: (call function: (attribute) @request
+              arguments: (argument_list . (identifier) @endpoint
+                (keyword_argument name: (identifier) @data
+                  value: (identifier) @payload))))))))
+        (#eq? @archive_open "tarfile.open")
+        (#eq? @fileobj "fileobj")
+        (#eq? @buffer @sent_buffer)
+        (#eq? @getvalue "getvalue")
+        (#eq? @helper_call @helper)
+        (#eq? @request "urllib.request.Request")
+        (#eq? @data "data")
+        (#eq? @body @payload)
+        (#eq? @url @endpoint))
+
+      ((module
+        (function_definition body: (block
+          (expression_statement (assignment
+            left: (identifier) @encrypted
+            right: (call function: (attribute attribute: (identifier) @encrypt)) @cipher))
+          . (comment)*
+          . (expression_statement (assignment left: (identifier) @public
+            right: (call function: (attribute) @rsa_construct)))
+          . (expression_statement (assignment left: (identifier) @wrapped_key
+            right: (call function: (attribute
+              object: (call function: (attribute) @oaep_new)
+              attribute: (identifier) @wrap_encrypt))))
+          . (expression_statement (assignment
+            left: (identifier) @buffer
+            right: (call function: (attribute) @new_buffer)))
+          . (with_statement
+            (with_clause (with_item value: (as_pattern
+              (call function: (attribute) @tar_open
                 arguments: (argument_list (keyword_argument
-                  name: (identifier) @fileobj value: (identifier) @buffer)))))))
-            . (expression_statement (call function: (identifier) @helper_call
-              arguments: (argument_list . (_)
-                . (call function: (attribute object: (identifier) @sent_buffer
-                  attribute: (identifier) @getvalue)))))))
-          (function_definition name: (identifier) @helper
-            parameters: (parameters . (identifier) @url . (identifier) @body)
-            body: (block . (expression_statement (assignment
+                  name: (identifier) @fileobj value: (identifier) @opened_buffer)))
+              alias: (as_pattern_target (identifier) @archive))))
+            body: (block (for_statement
+              left: (pattern_list (identifier) @name (identifier) @content)
+              right: (list (tuple (_) (binary_operator right: (identifier) @packed)))
+              body: (block
+                (expression_statement (assignment
+                  left: (identifier) @info
+                  right: (call function: (attribute) @tar_info
+                    arguments: (argument_list . (identifier) @info_name .))))
+                . (expression_statement (assignment
+                  left: (attribute object: (identifier) @sized_info
+                    attribute: (identifier) @size)
+                  right: (call function: (identifier) @len
+                    arguments: (argument_list . (identifier) @measured .))))
+                . (expression_statement (call
+                  function: (attribute object: (identifier) @archive_use
+                    attribute: (identifier) @addfile)
+                  arguments: (argument_list
+                    . (identifier) @info_use
+                    . (call function: (attribute) @wrap
+                      arguments: (argument_list . (identifier) @wrapped_content .)) .)))))))
+          . (expression_statement (call function: (identifier) @helper_call
+            arguments: (argument_list . (_)
+              . (call function: (attribute object: (identifier) @sent_buffer
+                attribute: (identifier) @getvalue)))))))
+        (function_definition name: (identifier) @helper
+          parameters: (parameters . (identifier) @url . (identifier) @body)
+          body: (block
+            . (expression_statement (assignment
+              left: (identifier) @request_var
               right: (call function: (attribute) @request
                 arguments: (argument_list . (identifier) @endpoint
-                  (keyword_argument name: (identifier) @data
-                    value: (identifier) @payload))))))))
-          (#eq? @archive_open "tarfile.open")
-          (#eq? @fileobj "fileobj")
-          (#eq? @buffer @sent_buffer)
-          (#eq? @getvalue "getvalue")
-          (#eq? @helper_call @helper)
-          (#eq? @request "urllib.request.Request")
-          (#eq? @data "data")
-          (#eq? @body @payload)
-          (#eq? @url @endpoint))
-
+                  (keyword_argument name: (identifier) @data value: (identifier) @payload)))))
+            . (expression_statement (call))*
+            . (if_statement consequence: (block
+                . (expression_statement (call))* .))?
+            . (for_statement body: (block
+              . (try_statement body: (block
+                . (with_statement (with_clause (with_item value: (as_pattern
+                  (call function: (attribute) @urlopen
+                    arguments: (argument_list . (identifier) @sent_request))
+                  alias: (_))))))))))))
+        (#not-eq? @public @encrypted) (#not-eq? @wrapped_key @encrypted)
+        (#match? @rsa_construct "^RSA[.](construct|import_key)$")
+        (#eq? @oaep_new "PKCS1_OAEP.new") (#eq? @wrap_encrypt "encrypt")
+        (#eq? @encrypt "encrypt") (#eq? @new_buffer "io.BytesIO")
+        (#eq? @tar_open "tarfile.open") (#eq? @fileobj "fileobj")
+        (#eq? @buffer @opened_buffer) (#eq? @encrypted @packed)
+        (#eq? @tar_info "tarfile.TarInfo") (#eq? @name @info_name)
+        (#eq? @archive @archive_use) (#eq? @addfile "addfile")
+        (#eq? @info @sized_info) (#eq? @size "size")
+        (#eq? @len "len") (#eq? @content @measured)
+        (#eq? @info @info_use) (#eq? @wrap "io.BytesIO")
+        (#eq? @content @wrapped_content) (#eq? @buffer @sent_buffer)
+        (#eq? @getvalue "getvalue") (#eq? @helper_call @helper)
+        (#eq? @request "urllib.request.Request") (#eq? @data "data")
+        (#eq? @body @payload) (#eq? @url @endpoint)
+        (#eq? @urlopen "urllib.request.urlopen") (#eq? @request_var @sent_request))

@@ -42,9 +42,9 @@ builds and runs the tree with a detached `go run .` and releases the child.
 
 Drives:
 
-- `objectives/supply-chain/hidden-payload/runtime::go-gated-decrypt-and-run` (hostile)
-- `objectives/supply-chain/hidden-payload/runtime::go-decrypt-embedded-archive-then-build-run` (suppressed when gated loader matches)
-- `objectives/supply-chain/hidden-payload/runtime::go-detached-toolchain-run` (suspicious)
+- `objectives/execution/compile/runtime::go-gated-decrypt-and-run` (hostile)
+- `objectives/execution/compile/runtime::go-decrypt-embedded-archive-then-build-run` (suppressed when gated loader matches)
+- `objectives/execution/compile/runtime::go-detached-toolchain-run` (suspicious)
 - `objectives/anti-static/obfuscation/name-mangling/variables::hash-named-local-assignments` (suspicious)
 
 ## Not covered here
