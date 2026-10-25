@@ -1,0 +1,51 @@
+# The CIL first concatenates a host report, then stores that same local in
+# a URL-parts array and passes the concatenated URL to a client method.
+# Require the report fields, getter/API metadata and Telegram text carrier.
+# Metadata co-occurrence alone does not supply the source-to-request link.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+traits:
+  - id: managed-telegram-host-report-construction
+    desc: Managed host report in Telegram request
+    crit: notable
+    conf: 0.96
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule managed_telegram_host_report_construction {
+          strings:
+            $clr = "BSJB"
+            $client = "WebClient\x00"
+            $request = "DownloadString\x00"
+            $user = "get_UserName\x00"
+            $os = "get_OSFullName\x00"
+            $user_field = "UserName : " wide
+            $os_field = "OSFullName : " wide
+            $host = "https://api.telegram.org/bot" wide
+            $send = "/sendMessage?chat_id=" wide
+            $text = "&text=" wide
+            $report_array = { 11 ?? 28 ?? ?? ?? 0A (0A|0B|0C|0D)
+                              (06|07|08|09) 1C 8D ?? ?? ?? 01 13 ?? }
+            $request_array = { 11 ?? 1B (06|07|08|09) A2 11 ??
+                               28 ?? ?? ?? 0A 6F ?? ?? ?? 0A 26 }
+          condition:
+            all of them and
+            for any i in (1..#report_array) : (
+              for any j in (1..#request_array) : (
+                @request_array[j] > @report_array[i] and
+                @request_array[j] - @report_array[i] < 256 and
+                uint8(@report_array[i] + 7) == uint8(@request_array[j] + 3) + 4 and
+                uint8(@report_array[i] + 16) == uint8(@request_array[j] + 1) and
+                uint8(@request_array[j] + 1) == uint8(@request_array[j] + 6) and
+                uint32(@report_array[i] + 3) == uint32(@request_array[j] + 8) and
+                for any s in (0..pe.number_of_sections - 1) : (
+                  pe.sections[s].name == ".text" and
+                  @report_array[i] >= pe.sections[s].raw_data_offset and
+                  @request_array[j] + !request_array[j] <=
+                    pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size
+                )
+              )
+            )
+        }
