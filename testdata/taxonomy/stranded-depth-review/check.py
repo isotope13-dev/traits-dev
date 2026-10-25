@@ -8,7 +8,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[3]
 HERE = Path(__file__).resolve().parent
 DEEP = "micro-behaviors/os/module/load::deep-single-letter-require-path"
-EVAL = "micro-behaviors/process/interpreter/eval/constructed::applescript-eval-joined-lines"
+EVAL = "micro-behaviors/process/interpreter/eval/direct::applescript-eval-joined-lines"
 
 def reports(text):
     decoder = json.JSONDecoder()
