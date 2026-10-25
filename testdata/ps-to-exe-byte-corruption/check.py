@@ -12,7 +12,7 @@ HERE = Path(__file__).resolve().parent
 ENGINE = os.environ.get("CLEAVE", str(ROOT.parent / "cleave/target/release/cleave"))
 HOSTILE = {
     "objectives/impact/destroy/user-data::powershell-recursive-disk-byte-corruption",
-    "objectives/impact/wipe/file/header::powershell-recursive-file-prefix-corruption",
+    "objectives/impact/destroy/user-data::powershell-recursive-file-prefix-corruption",
     "objectives/impact/deface/wallpaper::powershell-file-corruptor-wallpaper-defacement",
 }
 TRANSFORM = "micro-behaviors/fs/write/file/transform::powershell-inplace-byte-increment"

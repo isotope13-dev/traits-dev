@@ -19,7 +19,7 @@ SHELL = "micro-behaviors/process/create/shell/spawn::shell-execution-comp"
 IE = "micro-behaviors/process/info/name::iexplore-exe-name"
 PROFILE = "micro-behaviors/os/kernel/driver::unsigned-privileged-service-driver-api-set"
 OLD_IE = "metadata/file/string/application-name::iexplore-executable-name"
-RUNDLL = "micro-behaviors/process/create/exec::rundll32-command-syntax-reference"
+RUNDLL = "metadata/lang/source/syntax/command::rundll32-command-syntax-reference"
 
 
 def main():
