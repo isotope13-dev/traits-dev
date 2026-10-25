@@ -1,0 +1,68 @@
+defaults:
+  platforms:
+  - unix
+  - windows
+  for:
+  - jsp
+  attack: T1505.003,T1105
+traits:
+- id: objectives/command-and-control/backdoor/webshell/upload::jsp-body-upload-session-execution
+  desc: JSP upload beside session-file argv execution
+  crit: suspicious
+  conf: 0.99
+  if:
+    type: yara
+    source: |-
+      rule jsp_upload_session_filename_execution {
+        strings:
+          $file = /\b[a-zA-Z_$][a-zA-Z0-9_$]{0,63}\s*=\s*\(String\)\s*session\s*\.\s*getAttribute\s*\(/
+          $runtime = /\b[a-zA-Z_$][a-zA-Z0-9_$]{0,63}\s*=\s*Runtime\s*\.\s*getRuntime\s*\(\s*\)/
+          $exec = /\.exec\s*\(\s*new\s+String\s*\[\s*\]\s*\{\s*/
+          $name = /\b[a-zA-Z_$][a-zA-Z0-9_$]{0,63}\b/
+          $body = /request\s*\.\s*getInputStream\s*\(\s*\)/
+          $output = /new\s+FileOutputStream\s*\(/
+          $comment = /\/\*.*?\*\/|\/\/[^\r\n]*?([\r\n]|$)|<%--.*?--%>/s
+          $jsp_open = "<%--"
+          $jsp_close = "--%>"
+        condition:
+          $runtime and
+          for any a in (1..#body) : ((#comment == 0 or for all z in (1..#comment) : (@body[a] < @comment[z] or @body[a] >= @comment[z] + !comment[z])) and (#jsp_open == 0 or for all j in (1..#jsp_open) : (@body[a] < @jsp_open[j] or for any k in (1..#jsp_close) : (@jsp_close[k] >= @jsp_open[j] and @jsp_close[k]+!jsp_close[k] <= @body[a])))) and
+          for any a in (1..#output) : ((#comment == 0 or for all z in (1..#comment) : (@output[a] < @comment[z] or @output[a] >= @comment[z] + !comment[z])) and (#jsp_open == 0 or for all j in (1..#jsp_open) : (@output[a] < @jsp_open[j] or for any k in (1..#jsp_close) : (@jsp_close[k] >= @jsp_open[j] and @jsp_close[k]+!jsp_close[k] <= @output[a])))) and
+          for any f in (1..#file) : (
+            for any e in (1..#exec) : (
+              (#comment == 0 or for all z in (1..#comment) : (@file[f] < @comment[z] or @file[f] >= @comment[z] + !comment[z])) and (#jsp_open == 0 or for all j in (1..#jsp_open) : (@file[f] < @jsp_open[j] or for any k in (1..#jsp_close) : (@jsp_close[k] >= @jsp_open[j] and @jsp_close[k]+!jsp_close[k] <= @file[f]))) and (#comment == 0 or for all z in (1..#comment) : (@exec[e] < @comment[z] or @exec[e] >= @comment[z] + !comment[z])) and (#jsp_open == 0 or for all j in (1..#jsp_open) : (@exec[e] < @jsp_open[j] or for any k in (1..#jsp_close) : (@jsp_close[k] >= @jsp_open[j] and @jsp_close[k]+!jsp_close[k] <= @exec[e]))) and
+              @file[f] < @exec[e] and @exec[e] - @file[f] < 1600 and
+              for any n in (1..#name) : (
+                @name[n] == @exec[e] + !exec[e] and
+                (uint8(@file[f] + !name[n]) == 0x20 or
+                 uint8(@file[f] + !name[n]) == 0x09 or
+                 uint8(@file[f] + !name[n]) == 0x3d) and
+                for all c in (0..!name[n]-1) : (
+                  uint8(@file[f]+c) == uint8(@name[n]+c)
+                ) and
+                for any r in (1..#runtime) : (
+                  (#comment == 0 or for all z in (1..#comment) : (@runtime[r] < @comment[z] or @runtime[r] >= @comment[z] + !comment[z])) and (#jsp_open == 0 or for all j in (1..#jsp_open) : (@runtime[r] < @jsp_open[j] or for any k in (1..#jsp_close) : (@jsp_close[k] >= @jsp_open[j] and @jsp_close[k]+!jsp_close[k] <= @runtime[r]))) and
+                  @runtime[r] < @exec[e] and @exec[e] - @runtime[r] < 400 and
+                  for any v in (1..#name) : (
+                    @name[v]+!name[v] == @exec[e] and
+                    (uint8(@runtime[r]+!name[v]) == 0x20 or
+                     uint8(@runtime[r]+!name[v]) == 0x09 or
+                     uint8(@runtime[r]+!name[v]) == 0x3d) and
+                    for all c in (0..!name[v]-1) : (
+                      uint8(@runtime[r]+c) == uint8(@name[v]+c)
+                    )
+                  )
+                )
+              )
+            )
+          )
+      }
+composite_rules:
+- id: jsp-upload-execution-socket-tunnel
+  desc: JSP tunnel uploads and executes session files
+  crit: hostile
+  conf: 0.99
+  all:
+  - id: jsp-body-upload-session-execution
+  - id: micro-behaviors/communications/proxy/relay::jsp-session-socket-buffer-bridge
+  - id: micro-behaviors/communications/socket/connect::java-address-socket-connect

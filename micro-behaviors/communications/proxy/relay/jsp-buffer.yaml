@@ -1,0 +1,51 @@
+defaults:
+  platforms:
+  - unix
+  - windows
+  for:
+  - jsp
+traits:
+- id: jsp-session-socket-buffer-bridge
+  desc: JSP session socket I/O beside request bodies
+  crit: notable
+  conf: 0.99
+  if:
+    type: yara
+    source: |-
+      rule jsp_session_socket_request_buffers {
+        strings:
+          $session = /\b[a-zA-Z_$][a-zA-Z0-9_$]{0,63}\s*=\s*\(SocketChannel\)\s*session\s*\.\s*getAttribute\s*\(/
+          $read = /\.read\s*\(/
+          $write = /\.write\s*\(/
+          $name = /\b[a-zA-Z_$][a-zA-Z0-9_$]{0,63}\b/
+          $body = /request\s*\.\s*getInputStream\s*\(\s*\)/
+          $wrap = /ByteBuffer\s*\.\s*wrap\s*\(/
+          $comment = /\/\*.*?\*\/|\/\/[^\r\n]*?([\r\n]|$)|<%--.*?--%>/s
+          $jsp_open = "<%--"
+          $jsp_close = "--%>"
+        condition:
+          for any a in (1..#body) : ((#comment == 0 or for all z in (1..#comment) : (@body[a] < @comment[z] or @body[a] >= @comment[z] + !comment[z])) and (#jsp_open == 0 or for all j in (1..#jsp_open) : (@body[a] < @jsp_open[j] or for any k in (1..#jsp_close) : (@jsp_close[k] >= @jsp_open[j] and @jsp_close[k]+!jsp_close[k] <= @body[a])))) and
+          for any a in (1..#wrap) : ((#comment == 0 or for all z in (1..#comment) : (@wrap[a] < @comment[z] or @wrap[a] >= @comment[z] + !comment[z])) and (#jsp_open == 0 or for all j in (1..#jsp_open) : (@wrap[a] < @jsp_open[j] or for any k in (1..#jsp_close) : (@jsp_close[k] >= @jsp_open[j] and @jsp_close[k]+!jsp_close[k] <= @wrap[a])))) and
+          for any s in (1..#session) : (
+            for any n in (1..#name) : (
+              for any w in (1..#write) : (
+                @name[n]+!name[n] == @write[w] and
+                (#comment == 0 or for all z in (1..#comment) : (@session[s] < @comment[z] or @session[s] >= @comment[z] + !comment[z])) and (#jsp_open == 0 or for all j in (1..#jsp_open) : (@session[s] < @jsp_open[j] or for any k in (1..#jsp_close) : (@jsp_close[k] >= @jsp_open[j] and @jsp_close[k]+!jsp_close[k] <= @session[s]))) and (#comment == 0 or for all z in (1..#comment) : (@write[w] < @comment[z] or @write[w] >= @comment[z] + !comment[z])) and (#jsp_open == 0 or for all j in (1..#jsp_open) : (@write[w] < @jsp_open[j] or for any k in (1..#jsp_close) : (@jsp_close[k] >= @jsp_open[j] and @jsp_close[k]+!jsp_close[k] <= @write[w]))) and
+                @session[s] < @write[w] and @write[w]-@session[s] < 1500 and
+                (uint8(@session[s]+!name[n]) == 0x20 or
+                 uint8(@session[s]+!name[n]) == 0x09 or
+                 uint8(@session[s]+!name[n]) == 0x3d) and
+                for all c in (0..!name[n]-1) : (
+                  uint8(@session[s]+c) == uint8(@name[n]+c)
+                ) and
+                for any r in (1..#read) : (
+                  (#comment == 0 or for all z in (1..#comment) : (@read[r] < @comment[z] or @read[r] >= @comment[z] + !comment[z])) and (#jsp_open == 0 or for all j in (1..#jsp_open) : (@read[r] < @jsp_open[j] or for any k in (1..#jsp_close) : (@jsp_close[k] >= @jsp_open[j] and @jsp_close[k]+!jsp_close[k] <= @read[r]))) and
+                  @read[r] > @write[w] and @read[r]-@write[w] < 500 and
+                  for all c in (0..!name[n]-1) : (
+                    uint8(@read[r]-!name[n]+c) == uint8(@name[n]+c)
+                  )
+                )
+              )
+            )
+          )
+      }
