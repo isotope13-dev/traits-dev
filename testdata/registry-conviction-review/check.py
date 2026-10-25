@@ -9,6 +9,7 @@ import tempfile
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 PAYLOAD = "objectives/execution/payload/script-eval::obfuscated-etherhiding-hex-stage-dropper"
+CHILD = "objectives/execution/interpreter/eval/remote::obfuscated-blockchain-http-node-child"
 RENDEZVOUS = "objectives/command-and-control/channel/deaddrop/blockchain::obfuscated-ethereum-recipient-stage-rendezvous"
 PATCH = "objectives/supply-chain/trojanized/app/patch::http-handler-whitespace-hidden-blockchain-stage"
 EVAL = "micro-behaviors/process/interpreter/eval/indirect::js-computed-helper-receives-eval"
@@ -21,26 +22,26 @@ UPLOAD = "metadata/lang/natural/vocabulary/content-word::agent-upload-wording"
 def main():
     source = (HERE / "analytics-stage.js").read_text()
     cases = {
-        "original.js": (source, {PAYLOAD, RENDEZVOUS, PATCH, HIDDEN}, set()),
-        "clean-handler.js": (source[:source.index("global.i=")], set(), {PAYLOAD, RENDEZVOUS, PATCH}),
-        # The payload accepts either execution sink. Removing eval leaves the
-        # child-source path; removing spawn leaves the in-process evaluator.
-        # Avoid eval in the fixture basename: it independently selects the
-        # engine's eval-test context and suppresses the whitespace observation.
-        "without-inline.js": (source.replace("](eval,", "](ignoreSource,"), {PAYLOAD, RENDEZVOUS, PATCH, HIDDEN}, set()),
-        "no-spawn.js": (source.replace("](spawn,", "](ignoreChild,"), {PAYLOAD, RENDEZVOUS, PATCH}, {HIDDEN}),
-        "no-execution-sink.js": (source.replace("](eval,", "](ignoreSource,").replace("](spawn,", "](ignoreChild,"), set(), {PAYLOAD, RENDEZVOUS, PATCH}),
+        "original.js": (source, {PAYLOAD, CHILD, RENDEZVOUS, PATCH, HIDDEN}, set()),
+        "clean-handler.js": (source[:source.index("global.i=")], set(), {PAYLOAD, CHILD, RENDEZVOUS, PATCH}),
+        # Separate sinks retain downstream rendezvous and patch coverage.
+        # An eval-like filename must not hide actual whitespace concealment.
+        "stage-no-eval.js": (source.replace("](eval,", "](ignoreSource,"), {CHILD, RENDEZVOUS, PATCH, HIDDEN}, {PAYLOAD}),
+        "no-spawn.js": (source.replace("](spawn,", "](ignoreChild,"), {PAYLOAD, RENDEZVOUS, PATCH}, {CHILD, HIDDEN}),
+        "no-execution-sink.js": (source.replace("](eval,", "](ignoreSource,").replace("](spawn,", "](ignoreChild,"), set(), {PAYLOAD, CHILD, RENDEZVOUS, PATCH}),
         # The header-stage payload rule has no XOR requirement; the separate
         # XOR/eval loader does. Rendezvous and concealment do not depend on
         # the transform of the downstream stage bytes.
-        "no-xor.js": (source.replace("]^=", "]+="), {PAYLOAD, RENDEZVOUS, PATCH, HIDDEN}, set()),
+        "no-xor.js": (source.replace("]^=", "]+="), {PAYLOAD, CHILD, RENDEZVOUS, PATCH, HIDDEN}, set()),
         "without-window.js": (source.replace("windowsHide", "windowState"),
-                              {PAYLOAD, RENDEZVOUS, PATCH}, {HIDDEN}),
+                              {PAYLOAD, CHILD, RENDEZVOUS, PATCH}, {HIDDEN}),
         "other-stage-route.js": (source.replace(":443/0x/cl", ":443/1y/ab")
                                   .replace(":443/0x/ls", ":443/1y/cd"),
                                   {PAYLOAD, RENDEZVOUS, PATCH}, set()),
         "no-recipient.js": (source.replace("['tx']['to']", "['tx']['value']"), {PAYLOAD}, {RENDEZVOUS, PATCH}),
         "visible-stage.js": (re.sub(r"[ \t]{100,}", " ", source), {PAYLOAD, RENDEZVOUS}, {PATCH}),
+        "plain-padding.eval.js": ("const a=1;" + " "*200 + "const b=2;",
+            {"metadata/file/line::long-inline-whitespace-run"}, {PAYLOAD, CHILD, RENDEZVOUS, PATCH, HIDDEN}),
         "helper-positive.js": ('x[f](eval, source()); x[g](spawn, target, ["-e", code], {});', {EVAL, SPAWN}, {PAYLOAD}),
         "helper-negative.js": ('x[f](log, source()); x[g](observe, target, ["-e", code], {});', set(), {EVAL, SPAWN, PAYLOAD}),
         "background-helper.js": ('const {spawn}=require("child_process");'
@@ -75,7 +76,7 @@ def main():
             assert required <= traits, (name, "missing", required - traits)
             assert not forbidden & traits, (name, "unexpected", forbidden & traits)
         for name in ["clean-handler.js", "helper-positive.js", "helper-negative.js", "git-query-only.bat",
-                     "background-helper.js", "editor-event.js", "build-task.js"]:
+                     "background-helper.js", "editor-event.js", "build-task.js", "plain-padding.eval.js"]:
             assert not any(t["crit"] >= 4 for t in files[name].get("traits", [])), name
     print(f"PASS {len(cases)} original-source and missing-role controls")
 
