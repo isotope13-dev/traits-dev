@@ -107,7 +107,9 @@ for stem in ('other-controls', 'stego'):
             assert actual.get(target) == level, (stem, path, target, level, actual.get(target))
 
 focused = {pathlib.Path(p).name: traits(f) for p, f in files('focused.final.json').items()}
-assert focused['pixel-loader.cs'][CS_LSB] == 5
+# Subsequent byte-level review recognizes the C# demonstration as a retained
+# suspicious concealment lead; its co-occurrence matcher does not prove attack.
+assert focused['pixel-loader.cs'][CS_LSB] == 4
 assert focused['pixel-loader.ps1'][PS_LSB] == 5
 for name in ('pixel-color.cs', 'pixel-one-bit.cs', 'low-bit-codec.cs', 'pixel-different-path.cs', 'candidate-test.ps1'):
     assert not any(t in focused[name] for t in (OLD_LSB, CS_LSB, PS_LSB)), name
