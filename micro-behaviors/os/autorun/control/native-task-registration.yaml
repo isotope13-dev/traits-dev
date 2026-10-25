@@ -1,0 +1,64 @@
+# A facility-bound native COM sequence, rather than a task name or a GUID
+# alone. The trigger and registration snippets are nearby code observations;
+# no claim of observed installation or successful execution is made.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+traits:
+  - id: x64-scheduler-com-logon-registration-code
+    desc: Scheduler COM and logon-registration code
+    crit: notable
+    conf: 0.97
+    attack: T1053.005
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_scheduler_com_logon_registration_code {
+          strings:
+            $create = {
+              4C 8D 0D ?? ?? ?? ?? 33 D2 41 B8 01 00 00 00
+              48 8D 0D ?? ?? ?? ?? FF 15 ?? ?? ?? ??
+            }
+            $logon = {
+              48 8B 01 4C 8D 44 24 ?? BA 09 00 00 00 FF 50 50
+            }
+            $register = {
+              C7 44 24 30 03 00 00 00 [0-24]
+              41 B9 06 00 00 00 [0-24] FF 96 88 00 00 00
+            }
+          condition:
+            pe.is_64bit() and all of them and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for any c in (1..#create) : (
+                @create[c] >= pe.sections[s].raw_data_offset and
+                @create[c]+!create[c] <= pe.sections[s].raw_data_offset +
+                  pe.sections[s].raw_data_size and
+                $logon in (@create[c]..@create[c]+4096) and
+                $register in (@create[c]..@create[c]+4096) and
+                uint64(pe.rva_to_offset(pe.sections[s].virtual_address +
+                  @create[c]-pe.sections[s].raw_data_offset + 7 +
+                  int32(@create[c]+3))) == 0x40134da92faba4c7 and
+                uint64(pe.rva_to_offset(pe.sections[s].virtual_address +
+                  @create[c]-pe.sections[s].raw_data_offset + 7 +
+                  int32(@create[c]+3))+8) == 0x850fd43fcc209796 and
+                uint64(pe.rva_to_offset(pe.sections[s].virtual_address +
+                  @create[c]-pe.sections[s].raw_data_offset + 22 +
+                  int32(@create[c]+18))) == 0x4cfca4e50f87369f and
+                uint64(pe.rva_to_offset(pe.sections[s].virtual_address +
+                  @create[c]-pe.sections[s].raw_data_offset + 22 +
+                  int32(@create[c]+18))+8) == 0xdd724515e6733ebd and
+                for any i in (0..pe.number_of_imports-1) : (
+                  for any f in (0..pe.import_details[i].number_of_functions-1) : (
+                    pe.import_details[i].functions[f].name == "CoCreateInstance" and
+                    pe.sections[s].virtual_address + @create[c] -
+                      pe.sections[s].raw_data_offset + !create[c] +
+                      int32(@create[c]+24) ==
+                      pe.import_details[i].functions[f].rva
+                  )
+                )
+              )
+            )
+        }
