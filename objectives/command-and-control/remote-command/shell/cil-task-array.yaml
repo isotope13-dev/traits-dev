@@ -1,0 +1,68 @@
+# Surviving CIL can identify task execution even when CLR member names were
+# erased. Validate the task's ldstr in #US, bind the compared command local,
+# and require the same four-argument call used for a literal shutdown command.
+# The handler decodes its byte-array argument and splits it into task fields.
+# Tokens, heap offsets, method names and configured endpoints are not pinned.
+defaults:
+  for: [pe, dll]
+  platforms: [windows]
+  attack: T1059.003
+
+traits:
+  - id: cil-decoded-task-shell-field
+    desc: Decoded task-array field reaches VB shell call
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        import "dotnet"
+        rule cil_encrypted_task_shell_dispatch {
+          strings:
+            $shutdown = "shutdown.exe /f /s /t 0" wide
+            $vb = "Microsoft.VisualBasic" ascii fullword
+            $decode = { 02 28 ?? ?? ?? 06 28 ?? ?? ?? 06
+                        7E ?? ?? ?? 04 15 16 28 ?? ?? ?? 0A
+                        0A 06 16 9A 13 ?? }
+            $dispatch = { 11 ?? 72 ?? ?? ?? 70 16 28 ?? ?? ?? 0A
+                          16 33 ?? 06 17 9A 16 16 15
+                          28 ?? ?? ?? 0A 26 }
+            $literal = { 72 ?? ?? ?? 70 16 16 15 28 ?? ?? ?? 0A 26 }
+          condition:
+            all of them and
+            for any s in pe.sections : (
+              s.name == ".text" and
+              for all of them : (
+                $ in (s.raw_data_offset .. s.raw_data_offset + s.raw_data_size - 1)
+              )
+            ) and
+            for any h in dotnet.streams : (
+              h.name == "#US" and
+              for any d in (1..#dispatch) : (
+                (uint32(@dispatch[d]+3) & 0xffffff) < h.size - 2 and
+                uint8(h.offset + (uint32(@dispatch[d]+3) & 0xffffff)) >= 3 and
+                uint8(h.offset + (uint32(@dispatch[d]+3) & 0xffffff)) < 128 and
+                for any a in (1..#decode) : (
+                  @dispatch[d] > @decode[a] and @dispatch[d] < @decode[a]+4096 and
+                  uint8(@decode[a]+28) == uint8(@dispatch[d]+1) and
+                  for any l in (1..#literal) : (
+                    h.offset + (uint32(@literal[l]+1) & 0xffffff) + 1 == @shutdown and
+                    @literal[l] > @decode[a] and @literal[l] < @dispatch[d] and
+                    uint32(@literal[l]+9) == uint32(@dispatch[d]+23)
+                  )
+                )
+              )
+            )
+        }
+
+composite_rules:
+  - id: cil-encrypted-task-shell-dispatch
+    desc: Encrypted socket tasking with shell-field execution
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: cil-decoded-task-shell-field
+      - id: micro-behaviors/communications/socket/receive::dotnet-begin-receive-method-token
+      - id: micro-behaviors/crypto/symmetric/aes/library::dotnet-rijndael
+      - id: metadata/binary/framework::dotnet-assembly
