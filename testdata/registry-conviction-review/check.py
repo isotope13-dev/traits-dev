@@ -20,9 +20,14 @@ def main():
     cases = {
         "original.js": (source, {PAYLOAD, RENDEZVOUS, PATCH}, set()),
         "clean-handler.js": (source[:source.index("global.i=")], set(), {PAYLOAD, RENDEZVOUS, PATCH}),
-        "no-eval.js": (source.replace("](eval,", "](ignoreSource,"), set(), {PAYLOAD, RENDEZVOUS, PATCH}),
-        "no-spawn.js": (source.replace("](spawn,", "](ignoreChild,"), set(), {PAYLOAD, RENDEZVOUS, PATCH}),
-        "no-xor.js": (source.replace("]^=", "]+="), set(), {PAYLOAD, RENDEZVOUS, PATCH}),
+        # The payload accepts either execution sink. Removing eval leaves the
+        # child-source path; removing spawn leaves the in-process evaluator.
+        "no-eval.js": (source.replace("](eval,", "](ignoreSource,"), {PAYLOAD}, {RENDEZVOUS, PATCH}),
+        "no-spawn.js": (source.replace("](spawn,", "](ignoreChild,"), {PAYLOAD, RENDEZVOUS, PATCH}, set()),
+        "no-execution-sink.js": (source.replace("](eval,", "](ignoreSource,").replace("](spawn,", "](ignoreChild,"), set(), {PAYLOAD, RENDEZVOUS, PATCH}),
+        # The header-stage payload rule has no XOR requirement; the separate
+        # XOR/eval loader and the rendezvous/patch consumers do.
+        "no-xor.js": (source.replace("]^=", "]+="), {PAYLOAD}, {RENDEZVOUS, PATCH}),
         "no-recipient.js": (source.replace("['tx']['to']", "['tx']['value']"), {PAYLOAD}, {RENDEZVOUS, PATCH}),
         "visible-stage.js": (re.sub(r"[ \t]{100,}", " ", source), {PAYLOAD, RENDEZVOUS}, {PATCH}),
         "helper-positive.js": ('x[f](eval, source()); x[g](spawn, target, ["-e", code], {});', {EVAL, SPAWN}, {PAYLOAD}),
