@@ -37,7 +37,7 @@ cases = [
     ('cwd.plist', 'micro-behaviors/os/service/configure::launchd-working-directory-tmp',
      plist('<key>WorkingDirectory</key><string>/tmp/app</string>'),
      plist('<key>WorkingDirectory</key><string>/opt/app</string>')),
-    ('node.js', 'micro-behaviors/os/service/plist::source-programarguments-node-execpath-reference',
+    ('node.js', 'micro-behaviors/os/service/configure::source-programarguments-node-execpath-reference',
      'const p = { ProgramArguments: [process.execPath, "worker.js"] };\n',
      'const p = { OtherArguments: [process.execPath, "worker.js"] };\n'),
     ('ip.sh', 'micro-behaviors/data/control-flow/loop::shell-address-named-for-loop',
