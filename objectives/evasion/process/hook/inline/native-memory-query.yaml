@@ -1,0 +1,77 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+traits:
+  - id: image-extension-query-denial-stub
+    desc: Builds selected-base image-query denial stub
+    crit: suspicious
+    conf: 0.99
+    attack: T1055
+    if:
+      type: hex
+      section: .text
+      # The emitted code compares MemoryInformationClass (r8) with 14,
+      # compares BaseAddress (rdx) with the hidden image base, returns
+      # STATUS_NOT_SUPPORTED for that pair, and jumps to the original path
+      # otherwise. Stack offsets and jump displacements are not identity.
+      pattern: 'C7 45 ?? 49 83 F8 0E C7 45 ?? 75 ?? 48 3B C7 45 ?? 15 ?? ?? ?? C7 45 ?? ?? 75 ?? B8 C7 45 ?? BB 00 00 C0 C6 45 ?? C3 [0-48] C7 45 ?? FF 25 ?? ?? 66 C7 45 ?? FF FF'
+  - id: decoded-hotpatch-status-return-patch
+    desc: NtManageHotPatch unsupported-status patch
+    crit: suspicious
+    conf: 0.99
+    attack: T1562.001
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule decoded_hotpatch_status_return_override {
+          strings:
+            $status = { C7 45 ?? B8 BB 00 00 66 C7 45 ?? C0 C3 }
+            $name = { 48 B8 ?? ?? ?? ?? ?? ?? ?? ?? 48 89 45 ?? 48 8B 45 ?? 48 89 45 ?? 48 B8 ?? ?? ?? ?? ?? ?? ?? ?? 48 89 45 ?? 48 8B 45 ?? 48 89 45 ?? }
+            $decode = { 48 8D 0D ?? ?? ?? ?? F3 0F 6F 0C 08 F3 0F 6F 44 05 ?? 0F 57 C8 F3 0F 7F 4C 05 ?? }
+            $syscall = { C7 45 ?? 4C 8B D1 B8 C7 45 ?? FF 00 00 00 }
+            $write = { 41 B9 06 00 00 00 4C 8D 45 ?? 49 8B D6 49 8B CC FF D0 }
+          condition:
+            pe.is_pe and pe.machine == pe.MACHINE_AMD64 and all of them and
+            for any s in pe.sections : (
+              s.name == ".text" and
+              for any n in (1..#name) : (
+                @name[n] >= s.raw_data_offset and
+                for any d in (1..#decode) : (
+                  @decode[d] > @name[n] and @decode[d]-@name[n] < 256 and
+                  with key = pe.rva_to_offset(s.virtual_address + @decode[d] - s.raw_data_offset + 7 + int32(@decode[d]+3)) : (
+                    (uint64(@name[n]+2) ^ uint64(key)) == 0x6567616e614d744e and
+                    (uint64(@name[n]+24) ^ uint64(key+8)) == 0x6863746150746f48 and
+                    for any p in (1..#status) : (
+                      @name[n] > @status[p] and @name[n]-@status[p] < 64 and
+                      for any c in (1..#syscall) : (
+                        @syscall[c] > @status[p] and @syscall[c]-@status[p] < 64 and
+                        for any w in (1..#write) : (
+                          @write[w] > @decode[d] and @write[w]-@decode[d] < 2048
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
+
+composite_rules:
+  - id: image-extension-query-denial-trampoline
+    desc: Conceals image base from native memory queries
+    crit: hostile
+    conf: 0.99
+    attack: T1055
+    all:
+      - id: image-extension-query-denial-stub
+      - id: micro-behaviors/os/api-resolution/hash-based::x64-seeded-xor-multiply-export-names
+  - id: decoded-hotpatch-status-return-override
+    desc: Disables hotpatch API in injected payload host
+    crit: hostile
+    conf: 0.99
+    attack: T1562.001
+    all:
+      - id: decoded-hotpatch-status-return-patch
+      - id: micro-behaviors/process/inject/remote-thread::x64-suspended-pe-entry-thread-call
