@@ -1,5 +1,5 @@
 // Genuine device-identity telemetry: qualified model fields paired with a
-// brand, the shape device-brand-model-report-parameter still claims.
+// brand. Both query observations are retained independently.
 export async function reportDevice(host, info) {
   const url =
     host +
