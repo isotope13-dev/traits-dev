@@ -5,7 +5,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-ROLE = "micro-behaviors/os/security/auth/rbac::entra-global-admin-role-grant"
+ROLE = "micro-behaviors/os/security/auth/rbac::entra-privileged-admin-role-grant"
 CHAIN = "micro-behaviors/os/security/auth/rbac::entra-role-grant-credential-add-references"
 POST = "micro-behaviors/os/security/auth/rbac::graph-directory-role-post-call"
 ROLE_ID = "micro-behaviors/os/security/auth/rbac::entra-global-admin-role-id"
