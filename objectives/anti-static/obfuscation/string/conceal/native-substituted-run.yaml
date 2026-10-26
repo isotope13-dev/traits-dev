@@ -1,0 +1,56 @@
+defaults:
+  platforms: [windows]
+  for: [data]
+traits:
+  # Decode the hidden Run-key name just before a HKCU REG_SZ helper call.
+  # Relative calls and two independent literal-pointer mappings bind the path,
+  # decoder and writer. Concealment is observable without inferring intent.
+  - id: native-substituted-run-registration
+    desc: Decodes concealed Run key before registration
+    crit: suspicious
+    conf: 0.98
+    attack: T1027,T1140
+    if:
+      type: yara
+      source: |
+        rule x86_substituted_hkcu_run_string_write {
+          strings:
+            $key = "MT_qUDrj\\F4Y0W6W85\\U4RSWg6\\PQ00dR5zd064WR\\rQR\\"
+            $session = "\r\n\r\n[Log Started] - [%"
+            $session_ref = {
+              C7 44 24 08 ?? ?? ?? ?? C7 44 24 04 00 04 00 00
+              8D 44 24 5C 89 04 24 E8 ?? ?? ?? ??
+            }
+            $decoder = { 83 EC 6C C6 44 24 14 ?? C6 44 24 15 ?? C6 44 24 16 ?? }
+            $rotate = { 01 D0 83 E0 3F 0F B6 44 04 14 }
+            $create_name = "RegCreateKeyExA" fullword
+            $set_name = "RegSetValueExA" fullword
+            $setup = {
+              C7 04 24 ?? ?? ?? ?? E8 ?? ?? ?? ??
+              8D 94 24 ?? ?? ?? ?? 89 54 24 10
+              C7 44 24 0C 01 00 00 00 C7 44 24 08 ?? ?? ?? ??
+              89 44 24 04 C7 04 24 01 00 00 80 E8 ?? ?? ?? ??
+            }
+            $writer = {
+              83 EC 4C C6 44 24 3F 00 C7 44 24 20 00 00 00 00
+              8D 44 24 38 89 44 24 1C C7 44 24 18 00 00 00 00
+              C7 44 24 14 3F 00 0F 00 C7 44 24 10 00 00 00 00
+              C7 44 24 0C 00 00 00 00 C7 44 24 08 00 00 00 00
+              8B 44 24 54 89 44 24 04 8B 44 24 50 89 04 24
+              E8 ?? ?? ?? ?? 83 EC 24 85 C0 75 ??
+              8B 44 24 60 89 04 24 E8 ?? ?? ?? ?? 8B 54 24 38
+              89 44 24 14 8B 44 24 60 89 44 24 10 8B 44 24 5C
+              89 44 24 0C C7 44 24 08 00 00 00 00 8B 44 24 58
+              89 44 24 04 89 14 24 E8 ?? ?? ?? ?? 83 EC 18 85 C0
+            }
+          condition:
+            all of them and
+            @rotate > @decoder and @rotate < @decoder+512 and
+            for any s in (1..#setup) : (
+              @setup[s]+12+int32(@setup[s]+8) == @decoder and
+              uint32(@setup[s]+3)-@key == uint32(@session_ref+4)-@session and
+              @setup[s]+55+int32(@setup[s]+51) == @writer and
+              uint16(@writer+84+int32(@writer+80)) == 0x25ff and
+              uint16(@writer+151+int32(@writer+147)) == 0x25ff
+            )
+        }

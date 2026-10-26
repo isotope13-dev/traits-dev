@@ -1,13 +1,14 @@
 defaults:
-  for: [pe, dll]
+  for: [pe, dll, data]
   platforms: [windows]
-  arch: [x86]
   attack: T1056.001
 
 traits:
   # The translated-key buffer is passed to the writer, which scrambles that
   # same buffer in place before WriteFile. Relative calls bind the helpers;
-  # import-address checks bind the ToAscii and WriteFile thunks. Neither a
+  # parsed PE import-address checks bind ToAscii and WriteFile thunks. Raw
+  # excerpts require preserved API names and the corresponding jump thunks.
+  # Neither a
   # keyboard API import nor a log-format string alone establishes recording.
   # RID_INPUT, RAWINPUT keyboard selection, and the handler call distinguish
   # message-driven device capture from polling for keyboard transitions.
@@ -63,8 +64,14 @@ traits:
               C7 44 24 08 00 00 00 00 C7 44 24 04 03 00 00 10
               89 04 24 FF D1
             }
+            $api_ascii = "ToAscii" fullword
+            $api_write = "WriteFile" fullword
+            $api_state = "GetKeyState" fullword
+            $api_keyboard = "GetKeyboardState" fullword
+            $api_foreground = "GetForegroundWindow" fullword
           condition:
-            pe.machine == pe.MACHINE_I386 and all of them and
+            all of ($session, $poll, $translate, $record, $writer, $write, $scramble, $raw, $rawread) and
+            ((pe.machine == pe.MACHINE_I386 and
             pe.imports("USER32.dll", "GetKeyboardState") and
             pe.imports("USER32.dll", "GetKeyState") and
             for any s in (0..pe.number_of_sections-1) : (
@@ -73,7 +80,8 @@ traits:
                 @ >= pe.sections[s].raw_data_offset and
                 @+! <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size
               )
-            ) and
+            )) or
+             (not pe.is_pe and all of ($api_*))) and
             @translate > @poll and @translate < @poll+1600 and
             @record > @translate and @record+31 < @poll+1800 and
             @record+31+int32(@record+27) == @writer and
@@ -82,19 +90,32 @@ traits:
             @raw+58+int32(@raw+54) == @poll and
             @rawread < @raw and @raw < @rawread+800 and
             uint16(@translate+43+int32(@translate+39)) == 0x25ff and
-            uint32(@translate+45+int32(@translate+39)) ==
-              pe.image_base+pe.import_rva("USER32.dll", "ToAscii") and
             uint16(@write+77+int32(@write+73)) == 0x25ff and
-            uint32(@write+79+int32(@write+73)) ==
-              pe.image_base+pe.import_rva("KERNEL32.dll", "WriteFile")
+            (not pe.is_pe or
+             (uint32(@translate+45+int32(@translate+39)) ==
+                pe.image_base+pe.import_rva("USER32.dll", "ToAscii") and
+              uint32(@write+79+int32(@write+73)) ==
+                pe.image_base+pe.import_rva("KERNEL32.dll", "WriteFile")))
         }
 
 composite_rules:
   - id: native-translated-scrambled-key-log
     desc: Raw-input keylogger with scrambled logs
+    for: [pe, dll]
     crit: hostile
     conf: 0.99
     all:
       - id: native-translated-scrambled-key-write-code
       - id: micro-behaviors/ui/window/enumerate::get-foreground-window
       - id: micro-behaviors/hardware/input/keyboard/poll::get-keyboard-state
+
+  # Raw excerpts have no import table model. The code rule follows the same
+  # handler-to-translation-to-scramble-to-write path and requires API strings.
+  - id: native-translated-scrambled-key-log-data
+    desc: Headerless raw-input keylogger with scrambled logs
+    crit: hostile
+    conf: 0.98
+    for: [data]
+    all:
+      - id: native-translated-scrambled-key-write-code
+      - id: micro-behaviors/data/decode/table::x86-rotated-alphabet-substitution
