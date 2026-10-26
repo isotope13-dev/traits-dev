@@ -37,26 +37,6 @@ composite_rules:
       - id: micro-behaviors/data/db/access::chromium-login-sql
       - id: micro-behaviors/data/db/sql::chromium-cookie-select-query
 
-  # The same steal-and-send chain, but the loot leaves as a multipart file
-  # upload rather than a JSON body: the stealer zips the harvested stores in
-  # memory (BytesIO) and POSTs the archive with requests `files=` to a webhook.
-  # python-json-body-transport only covers json=/data= bodies, so a
-  # zip-and-upload exfil (the K7 "Stealer Factory" shape) slipped past the
-  # sibling rules. Reading Chromium credential tables and unsealing the key
-  # with DPAPI supplies the theft; the file-upload transport supplies the exfil.
-  - id: python-dpapi-browser-secret-file-upload-exfil
-    desc: DPAPI browser secrets uploaded as a file
-    crit: hostile
-    conf: 0.98
-    attack: T1555.003,T1539,T1041
-    platforms:
-    - windows
-    all:
-    - id: micro-behaviors/data/db/sql::browser-record-table-select
-    - id: micro-behaviors/os/security/dpapi::python-chromium-key-unprotect
-    any:
-    - id: micro-behaviors/communications/http/upload::python-http-files-parameter
-
   - id: python-dpapi-browser-secret-http-exfil
     desc: Python exfiltrates DPAPI-decrypted browser secrets
     crit: hostile
@@ -100,3 +80,25 @@ composite_rules:
       - id: micro-behaviors/communications/messaging/send::python-cookie-material-to-telegram-call
       - id: micro-behaviors/communications/http/services/telegram::telegram-api-host
       - id: micro-behaviors/communications/messaging/send::chat-send-message
+
+traits:
+  - id: python-chromium-login-query-file-upload
+    desc: Chromium login query reaches multipart upload
+    crit: suspicious
+    conf: 0.98
+    attack: T1041,T1555.003
+    platforms: [windows]
+    if:
+      type: symbol
+      kind: call
+      regex: '^(requests|httpx)\.(post|put)$'
+      arg:
+        from:
+          field: files
+          call: '\.execute$'
+          literal: '(?i)^SELECT\b.{0,100}\bpassword_value\b.{0,80}\bFROM\s+logins\b'
+          through:
+            - call: '\.fetch(all|one)$'
+              receiver: true
+            - call: '^repr$'
+              arguments: [0]
