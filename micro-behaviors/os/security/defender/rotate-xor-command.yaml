@@ -1,0 +1,58 @@
+# Full decoded content is verified from a referenced buffer and decoder.
+# Affine multiplier and addend are read from code, not specimen constants.
+defaults:
+  platforms:
+  - windows
+  for:
+  - pe
+  - dll
+  arch:
+  - x86-64
+  crit: notable
+traits:
+- id: rotate-xor-exclusion-command
+  desc: Rotate-XOR concealed Defender exclusion command
+  conf: 0.99
+  if:
+    type: yara
+    source: |-
+      import "pe"
+      rule rotate_xor_exclusion_command {
+        strings:
+          $key = { 0F B6 C0 6B C0 ?? 05 ?? ?? ?? ?? 25 FF 00 00 00 }
+          $source = { 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? }
+          $decoder = { 56 48 83 EC 40 48 89 54 24 38 48 89 4C 24 30 48 8B 74 24 30 }
+        condition:
+          pe.is_64bit() and all of them and
+          for any k in (1..#key) : (
+            for any c in (1..#source) : (
+              for any s in (0..pe.number_of_sections-1) : (
+                pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                @key[k] >= pe.sections[s].raw_data_offset and
+                @key[k]+!key[k] <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size and
+                @source[c] >= pe.sections[s].raw_data_offset and
+                @source[c]+!source[c] <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size and
+                with source_rva = pe.sections[s].virtual_address + @source[c] - pe.sections[s].raw_data_offset,
+                     data = pe.rva_to_offset(source_rva+7+int32(@source[c]+3)),
+                     decoder = pe.rva_to_offset(source_rva+12+int32(@source[c]+8)) : (
+                  for any d in (1..#decoder) : (
+                    @decoder[d] == decoder and uint8(decoder+34) >= 52 and
+                    for all j in (0..30) : (
+                      with index = j+21,
+                           byte = uint8(data+(j+21)*1) : (
+                        with rotated = ((byte >> ((index%7)+1)) | (byte << (8-((index%7)+1)))) & 255 : (
+                          with decoded = rotated ^ ((index*uint8(@key[k]+5)+uint32(@key[k]+7)) & 255) : (
+                            (j >= 0 and j < 8 and decoded == ((0x7250704d2d646441 >> ((j%8)*8)) & 255)) or
+                                  (j >= 8 and j < 16 and decoded == ((0x65636e6572656665 >> ((j%8)*8)) & 255)) or
+                                  (j >= 16 and j < 24 and decoded == ((0x73756c6378452d20 >> ((j%8)*8)) & 255)) or
+                                  (j >= 24 and j < 31 and decoded == ((0x687461506e6f69 >> ((j%8)*8)) & 255))
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+      }

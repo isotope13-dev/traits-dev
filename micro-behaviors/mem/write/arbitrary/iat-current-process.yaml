@@ -1,0 +1,47 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+traits:
+  - id: x64-iat-current-process-write-call
+    desc: Current-process handle passed to memory write
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_iat_current_process_write_call {
+          strings:
+            $write = {
+              48 8B 05 ?? ?? ?? ?? 48 89 45 ?? 48 8B 45 ??
+              48 83 EC 20 FF D0 48 83 C4 20
+              48 8B 0D ?? ?? ?? ?? 48 89 4D ?? 4C 8B 55 ??
+              4C 8D 9D ?? ?? ?? ?? 48 83 EC 30 48 89 C1
+              48 8B 95 ?? ?? ?? ?? 49 89 F8 49 89 F1
+              4C 89 5C 24 20 41 FF D2 48 83 C4 30
+            }
+          condition:
+            pe.is_64bit() and $write and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for any w in (1..#write) : (
+                @write[w] >= pe.sections[s].raw_data_offset and
+                @write[w]+!write[w] <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size and
+                uint8(@write[w]+10) == uint8(@write[w]+14) and
+                uint8(@write[w]+35) == uint8(@write[w]+39) and
+                for any i in (0..pe.number_of_imports-1) : (
+                  for any f in (0..pe.import_details[i].number_of_functions-1) : (
+                    pe.import_details[i].functions[f].name == "GetCurrentProcess" and
+                    pe.sections[s].virtual_address + @write[w] - pe.sections[s].raw_data_offset + 7 + int32(@write[w]+3) == pe.import_details[i].functions[f].rva
+                  )
+                ) and
+                for any i in (0..pe.number_of_imports-1) : (
+                  for any f in (0..pe.import_details[i].number_of_functions-1) : (
+                    pe.import_details[i].functions[f].name == "WriteProcessMemory" and
+                    pe.sections[s].virtual_address + @write[w] - pe.sections[s].raw_data_offset + 32 + int32(@write[w]+28) == pe.import_details[i].functions[f].rva
+                  )
+                )
+              )
+            )
+        }

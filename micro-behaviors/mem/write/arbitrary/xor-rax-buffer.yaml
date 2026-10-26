@@ -1,0 +1,40 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+traits:
+  - id: x64-xor-rax-bytes-to-stack-buffer
+    desc: Copies XOR-RAX bytes into stack buffer
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_xor_rax_bytes_to_stack_buffer {
+          strings:
+            $copy = { 66 8B 05 ?? ?? ?? ?? 66 89 85 ?? ?? ?? ?? 8A 05 ?? ?? ?? ?? 88 85 ?? ?? ?? ?? }
+          condition:
+            pe.is_64bit() and $copy and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for any c in (1..#copy) : (
+                @copy[c] >= pe.sections[s].raw_data_offset and
+                @copy[c]+!copy[c] <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size and
+                int32(@copy[c]+10)+2 == int32(@copy[c]+22) and
+                with rva = pe.sections[s].virtual_address + @copy[c] - pe.sections[s].raw_data_offset : (
+                  uint16(pe.rva_to_offset(rva+7+int32(@copy[c]+3))) == 0x3148 and
+                  uint8(pe.rva_to_offset(rva+20+int32(@copy[c]+16))) == 0xc0
+                )
+              )
+            )
+        }
+composite_rules:
+  - id: x64-local-xor-rax-patch-write-profile
+    desc: XOR-RAX buffer near current-process memory write
+    crit: notable
+    conf: 0.99
+    near_bytes: 16384
+    all:
+      - id: x64-xor-rax-bytes-to-stack-buffer
+      - id: x64-iat-current-process-write-call

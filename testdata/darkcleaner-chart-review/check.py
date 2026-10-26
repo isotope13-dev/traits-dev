@@ -92,7 +92,7 @@ def scan(name, blob):
 
 CLEANER = 'well-known/game/cheat::game-ban-trace-cleaner'
 HASH = 'micro-behaviors/os/api-resolution/hash-based::multiply-shift-xor-export-walk'
-MIX = 'metadata/binary/instruction::multiply-shift-xor-register-sequence'
+MIX = 'metadata/binary/instruction/sequence::multiply-shift-xor-register-sequence'
 PE_READ = 'micro-behaviors/data/format/pe-parser::x64-mov-e-lfanew-read'
 REMOVE = 'micro-behaviors/os/kernel/device::setupdi-remove-device'
 KEY = 'micro-behaviors/os/registry/delete::sh-delete-key-w'
