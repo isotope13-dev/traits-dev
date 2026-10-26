@@ -1,0 +1,1 @@
+osascript -e 'run script "on copyReport(sourcePath, destinationPath)" & return & "do shell script \"cat \" & quoted form of sourcePath & \" > \" & quoted form of destinationPath" & return & "end copyReport"'
