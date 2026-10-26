@@ -8,10 +8,10 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[2]
 CLEAVE = os.environ.get("CLEAVE", "/usr/local/var/cyclotron/cleave/target/release/cleave")
 CONTROLS = Path(os.environ.get(
-    "AI_TRAIN_CONTROLS", "/usr/local/var/cyclotron/cleave/tests/fixtures/ai-train"))
+    "AI_TRAIN_CONTROLS", str(ROOT / "testdata/triage/fallout-20261026")))
 CATALOG = "objectives/credential-access/dev-tools/ai::multi-ai-agent-"
 PROTOCOL = "well-known/malware/stealer/aokigahara::chunked-upload-protocol"
-MARKER = "well-known/malware/stealer/aokigahara::gate-token-header-marker"
+MARKER = "micro-behaviors/communications/http/token-auth::x-gate-token-header-reference"
 AUTH = "micro-behaviors/fs/path/credential::"
 CONFIG = "micro-behaviors/fs/path/config/app::"
 GEMINI = "micro-behaviors/fs/path/password-store::gemini-workspace-auth-artifact-path"
@@ -35,6 +35,8 @@ def analyze(path):
 for name in ("windows-catalog.cs", "posix-paths.js"):
     traits = analyze(ROOT / "testdata/ai-train" / name)
     assert COLLECTION <= traits.keys(), (name, COLLECTION - traits.keys())
+    assert all(traits[key]["crit"] == 4 for key in COLLECTION), name
+    assert not any(t["crit"] == 5 for t in traits.values()), name
     assert {GEMINI, CURSOR, AUTH + "claude-auth-artifact-path",
             AUTH + "codex-auth-artifact-path", CONFIG + "codeium-config-artifact-path",
             CONFIG + "claude-root-config-artifact-path"} <= traits.keys(), name
