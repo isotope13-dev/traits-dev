@@ -1,1 +1,0 @@
-window.onbeforeunload = function(){return false;}; localStorage.setItem("lock", "1"); while(true){location.reload();}

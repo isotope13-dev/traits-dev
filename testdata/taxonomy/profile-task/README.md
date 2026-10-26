@@ -1,1 +1,0 @@
-The renamed Python case must match objectives/persistence/login/scheduled-task/path::short-interval-profile-executable and micro-behaviors/os/autorun/scheduled::schtasks-appdata-executable-command. The daily Program Files backup must match neither. Checked with cleave JSON output.

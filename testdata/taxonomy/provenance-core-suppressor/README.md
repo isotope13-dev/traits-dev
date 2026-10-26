@@ -1,5 +1,0 @@
-# Provenance-core suppressor regression
-
-The near-miss wheels independently copy the `provenance_core/` member path, the upstream repository URL, or the normalized `provenance_core` wheel distribution name into an otherwise hostile OP_RETURN-stage package. Their `manifest.py` body is copied from `testdata/hostile/supply-chain-corpus/py/pypi-emberworks-btc-opreturn-stage-linux.whl` (SHA-256 `790c8d4683f530901f0d2ce9d605af4f90a1a7e633a9470eee9d6fd3f70de715`). The archives are inert test data; no member is executed.
-
-`cases.json` requires the archive-scoped hostile capability for all three copied-clue specimens and the original hostile control. Before removing the directory-prefix suppressor, the copied-path specimen was observed to be skipped by `unless: well-known/lib/crypto/provenance-core/`, while the clean hostile wheel matched. A repository URL comment in the Python member was independently observed to suppress the same finding. The name-only fixture protects the PEP 427 normalized underscore spelling; the old matcher expected a hyphen and therefore missed this package-name clue.

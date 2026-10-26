@@ -1,0 +1,6 @@
+snippet_0 = 'for target in ip_list'
+snippet_1 = 'for target in targets'
+snippet_2 = 'for target in hosts'
+snippet_3 = 'for target in ips'
+snippet_4 = 'for target in addr'
+snippet_5 = 'for target in ip'

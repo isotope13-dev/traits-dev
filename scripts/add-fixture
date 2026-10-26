@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+"""Publish one fixture atomically, preserving its logical filename."""
+
+import argparse
+import lzma
+import os
+from pathlib import Path
+import tempfile
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("source", type=Path)
+    parser.add_argument("destination", type=Path, help="Logical path under testdata/<severity>/")
+    args = parser.parse_args()
+    repo = Path(__file__).resolve().parents[1]
+    root = repo / "testdata"
+    destination = args.destination.resolve()
+    try:
+        relative = destination.relative_to(root)
+    except ValueError:
+        parser.error("destination must be under this repository's testdata/")
+    if len(relative.parts) < 2 or relative.parts[0] not in {"hostile", "suspicious", "notable", "baseline"}:
+        parser.error("destination must be under hostile/, suspicious/, notable/, or baseline/")
+    exempt = len(relative.parts) > 2 and relative.parts[1] == "does-nothing"
+    data = args.source.read_bytes()
+    # A sample that is itself XZ needs an outer storage layer too: x.xz.xz.
+    if destination.suffix == ".xz" or (len(data) > 20 * 1024 and not exempt):
+        data = lzma.compress(data, preset=6)
+        destination = destination.with_name(destination.name + ".xz")
+    if len(data) > 500 * 1024 and not exempt:
+        parser.error(f"fixture is {len(data)} bytes after storage compression; reduce it below 500 KiB")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    staging = repo / "out" / "fixture-staging"
+    staging.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=staging, delete=False) as output:
+            temporary = Path(output.name)
+            output.write(data)
+        # Atomic creation fails on a competing writer's destination. Nothing
+        # partially written or temporary appears inside the fixture tree.
+        os.link(temporary, destination)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    print(destination.relative_to(repo))
+
+
+if __name__ == "__main__":
+    main()

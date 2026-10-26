@@ -238,12 +238,17 @@ classifier field), and test the exact suppression it performs.
 
 ### Structure and limits
 
-**Rules live only in leaves.** A directory may contain rules or rule-bearing
-descendants, never both; this applies equally to traits, composites and aliases.
-Mixed nodes create duplicate homes. Parents remain referenceable; a single child
-is fine if it adds meaning. This is repository policy, not a check currently
-enforced by general Cleave validation; run `python3 scripts/taxonomy-map.py` to
-report mixed rule/descendant directories for review.
+**Rules normally live only in leaves.** This applies equally to traits,
+composites and aliases. The reviewed exception is the item taxonomy under
+`objectives/exfiltration/stealer`: a rule belongs at the most specific item node
+its required evidence supports, including a meaningful ancestor when the item
+subtype is unknown or alternatives span its children. A broad credential rule
+therefore stays at `credential`; it is never copied into its children or filed
+under an invented `other` class. This exception does not authorize parent rules
+elsewhere. Parents remain referenceable; a single child is fine if it adds
+meaning. This is repository policy, not a check currently enforced by general
+Cleave validation; run `python3 scripts/taxonomy-map.py` to report mixed
+rule/descendant directories for review against this exception.
 
 | Validator check | Limit |
 |---|---|
@@ -254,11 +259,13 @@ report mixed rule/descendant directories for review.
 | Sibling stems | Soft warning on shared stems. A shared stem is not synonymy (account identity ≠ process accounting); document the boundary or merge. |
 | Platforms | Soft warning at four or more. `platforms: [all]` only in `ALL_PLATFORM_DIRECTORY_ALLOWLIST` (same file). |
 
-`micro-behaviors/communications/http/url/path` has a reviewed budget of 101:
+`micro-behaviors/communications/http/url/path` has a reviewed budget of 110:
 the Stream Chat route literal and `/_api/<entity>` are distinct path
 observations. The latter is used only with Power Pages/Dataverse context in a
 composite; neither path fact establishes a request, SDK identity or endpoint
-operation. The exact budget is enforced in Cleave; the default review trigger
+operation. The item-taxonomy review added nine distinct route references moved
+out of theft categories; they retain their content, source/type scopes and
+exclusions. The exact budget is enforced in Cleave; the default review trigger
 remains 100.
 
 `platforms: [all]` is allowed only where a fact means the same on every OS:
@@ -290,6 +297,28 @@ to satisfy a number. The current reviewed exceptions are:
 
 - `metadata/package/dependencies/manifest/identity` at 108 rules, supported by
   [the Cargo dependency identity batch](taxonomy-migration/batches/275-cargo-manifest-identity/README.md).
+- `objectives/exfiltration/stealer/credential` at 276 rules. These matchers
+  require authentication material but leave its form open or admit alternatives
+  spanning password, token and key forms. They remain at the meaningful
+  credential ancestor; storage/application labels do not justify subtypes.
+  The complete population and effective scopes have no exact matcher/scope
+  duplicates. See the [item placement audit](docs/taxonomy-audit/triage/review-pool-20261026/item-placement-audit.json)
+  and [complete budget reviews](docs/taxonomy-audit/triage/review-pool-20261026/budget-leaf-reviews.json).
+- The same complete item review retained distinct neutral observations at
+  `micro-behaviors/communications/http/header/custom` (101),
+  `micro-behaviors/communications/http/post` (101),
+  `micro-behaviors/communications/http/request/body` (104),
+  `micro-behaviors/communications/http/upload` (102),
+  `micro-behaviors/communications/http/url/path` (110),
+  `micro-behaviors/fs/path/credential` (103),
+  `micro-behaviors/fs/write/file/full` (101), and
+  `micro-behaviors/os/user/account` (101). Incoming observations describe
+  header declarations, request payloads, upload operands, route references,
+  credential paths, local file writes or account listings; none requires a theft claim. Each
+  complete population was compared with effective scope and exclusions and
+  has no exact matcher/scope duplicates. The linked budget review records
+  every definition; implementation-language splits would add no semantic
+  distinction.
 - `micro-behaviors/data/decode/base64` at 103 rules. One Base64 algorithm is a
   coherent home across implementation scopes; a language/API split would sort
   evidence form rather than refine the decoded behavior. The review moved an
@@ -309,14 +338,14 @@ to satisfy a number. The current reviewed exceptions are:
   The VSIX review audited both 101-rule catalogs, found no duplicate matcher
   shapes, and retained all scopes and consumers. The controls cover both naming
   near misses and ordinary high-entropy archives; see the reproducible
-  [VSIX review records](testdata/taxonomy/vsix-triage-2026-10-20/triage-summary.json).
+  [VSIX review records](docs/taxonomy-audit/taxonomy/vsix-triage-2026-10-20/triage-summary.json).
   The subsequent complete data-taxonomy review retained 101 existing canonical
   archive facts and moved ten distinct archive byte/layout properties home.
   Three staging claims were renamed to describe their required static evidence.
   Scope and matcher checks found no equivalent rules; archive formats and
   evidence representations do not justify children of this property catalog.
   The exact 111-rule budget and all four full-leaf reviews are recorded in
-  [the rule-by-rule review](testdata/triage/data-taxonomy-audit-20261024/leaf-reviews.json).
+  [the rule-by-rule review](docs/taxonomy-audit/triage/data-taxonomy-audit-20261024/leaf-reviews.json).
 
 ### Splitting a directory
 
@@ -668,7 +697,7 @@ distinguishes it.
 | `discovery` | `account`, `host`, `system`, `network`, `process`, `cloud` | A reconnaissance survey, by surveyed resource: `host` = installed software, security products, browsers; `system` = machine, hardware, OS; `process` = running processes; `network` = interfaces, peers, probes, scans; `account` = principals; `cloud` = provider resources. One generic query stays a capability. |
 | `command-and-control` | `channel/<transport>`, `beacon`, `remote-command/<dispatch>`, `backdoor/<access-surface>`, `reverse-shell/<io-coupling>`, `botnet`, `infrastructure`, `dns`, `trigger` | Attacker control, tasking, access or communication. Payload delivery is [execution](#payload-activation-and-staging); a protocol name is not C2. |
 | `execution` | `payload/<sink>` *(legacy: `command-and-control/dropper/<sink>`)*, `staging/<operation>` *(legacy: `command-and-control/dropper/staging/<carrier>`)*, `exploit`, `interpreter`, `lolbin`, `lure`, `trigger`, `database`, `activex`, `automation`, `compile`, `condition`, `lnk`, `wmi`, `autoinstall` | Unwanted execution through an exploit, deceptive invocation, trusted execution surface or admitted payload chain. Generic execution APIs stay in `process`. `database` is database-hosted execution (CLR procedures, `xp_cmdshell`, OLE Automation). |
-| `exfiltration` | `stealer/<source>`; transport-only: `http`, `dns`, `ftp`, `cloud`, `messaging`, `llm`, `oob`, `side-channel` | Unauthorized transfer. A full source-to-send chain is `stealer/<source>` and beats transport; a transport child needs an established theft claim with no narrower source. A POST, an endpoint or ordinary model inference is not exfiltration. Header, query and body are distinct HTTP carriers. |
+| `exfiltration` | `stealer/<item>`; transport-only: `http`, `dns`, `ftp`, `cloud`, `messaging`, `llm`, `oob`, `side-channel` | Unauthorized transfer. An acquisition-to-send chain is classified by its stolen item and beats transport; a transport child needs an established theft claim whose item kind is not established. A POST, an endpoint or ordinary model inference is not exfiltration. Header, query and body are distinct HTTP carriers. |
 | `evasion` | `anti-av/<control>`, `security-bypass/<control>`, `masquerade/<deception>`, `decoy`, `file-hiding`, `kernel-hide`, `indicator-removal/<record>`, `self-delete`, `process/<concealment>`, `fileless`, `hijack-execution-flow`, `hosts-file`, `quarantine-removal`, `tcc-manipulation`, `file-unlock` | Hiding activity from users, admins or deployed security products, or bypassing their controls. |
 | `impact` | `destroy/<resource>`, `wipe`, `ransom`, `dos`, `degrade/<target>`, `infect/<host-artifact>`, `crypto-manipulation`, `cryptojacking`, `deface`, `services`, `system`, `ui`, `spam` *(legacy: `lateral-movement/social-engineering/spam`)* | Destruction, disruption, extortion, unauthorized modification or resource abuse. Ordinary deletion or encryption is neutral; spam needs unsolicited-message abuse, not volume. |
 | `lateral-movement` | `exploit/<remote-surface>`, `brute-force/<service>`, `pass-the-hash`, `smb`, `ssh`, `worm`, `usb-worm`, `delivery` *(open)*, `social-engineering` | Reaching or spreading to **another** system. A mechanism-specific exploit or credential reuse beats a generic protocol home. Scanning is discovery; local cracking is `credential-access/cracking`; infecting local files is `impact/infect`. |
@@ -689,9 +718,11 @@ distinguishes it.
   Process-memory extraction is `memory`; registry keys and hives, including an
   offline SAM, are `registry`. An application store beats its file or registry
   container; the final source beats any key used to unlock it.
-- **Export follows the same rule.** A keychain-to-send chain is
-  `exfiltration/stealer/keychain` even when a browser consumes the secret.
-  Never invent a source.
+- **Export follows the item.** Credential acquisition keeps its store-based
+  classification above. An export uses the [stolen-item taxonomy](#collection-credentials-and-theft):
+  a private key from an environment variable, file or keychain has the same
+  `stealer/credential/key` home. Its acquisition store remains referenced
+  evidence. Never infer an item subtype from the store alone.
 - **Activation before delivery detail.** An admitted acquisition- or
   staging-to-activation chain is placed by its sink; language, transport,
   encryption and carrier are supporting facts.
@@ -788,46 +819,74 @@ runtime) is evidence, not the partition. Ordinary extraction stays
 
 ### Collection, credentials and theft
 
-Classify **what is acquired**, then whether it must leave.
+Classify **the item that leaves**, using the acquisition and send evidence.
 
-`exfiltration/stealer/<source>` answers one question — **what leaves?** — not
-the search strategy, transport, API, language or purpose. A stealer composite
-needs a source leg **and** a transport leg; its atoms live in `credential-access/`,
-`collection/`, `discovery/` or `micro-behaviors/`. Use
-the most specific source the whole matcher requires; host identifiers riding
-along never displace it.
+`exfiltration/stealer/<item>` answers one question — **what data does this
+matcher require to be exported?** Storage location, application, language,
+transport and activation trigger remain referenced facts. Every theft rule
+requires acquisition/content evidence and a send; a source-only selector,
+payload field, route literal or imported client belongs in its own observation
+home. A bounded co-occurrence can remain suspicious when described as such;
+it must not claim a data binding the matcher does not establish.
 
-| Required source, with a send | Child |
+| Required exported item | Home beneath `stealer` |
 |---|---|
-| Wallet secrets, seed phrases | `wallet` |
-| Browser-owned logins, cookies, storage, history | `browser` |
-| OS secret store (Keychain, libsecret, Vault, Protected Storage) | `keychain` |
-| SSH keys and host files | `ssh` |
-| Cloud credentials (`~/.aws`, IMDS, kubeconfig) | `cloud` |
-| Developer credential files (`.npmrc`, `.git-credentials`, `.env`, CI secrets) | `dev-secret` |
-| Process environment | `env` |
-| App session tokens not covered above | `token` |
-| Authentication material, store left open | `credential` |
-| Account databases, password hashes | `account-db` |
-| Appliance configuration files | `appliance-config` |
-| Keystrokes, form input, touch, clipboard | `input` |
-| Displayed content: screenshots, screen streams, OCR text | `screen` |
-| Image data of unspecified origin | `image` |
-| Sound; camera imagery; either-or recordings | `audio`; `camera`; `audiovisual` |
+| Authentication material with subtype left open, or alternatives spanning credential forms | `credential` |
+| A selected password, protected password/verifier field or pre-shared authentication password | `credential/password` |
+| A selected bearer, API, OAuth or application session token | `credential/token` |
+| A selected cryptographic secret/private key | `credential/key` |
+| A mnemonic, seed phrase or recovery secret | `credential/recovery-secret` |
+| A stored authentication database, cache, keyring or credential-record set exported as a record/container | `credential/record` |
+| Configuration files or settings, without a required extracted secret type | `configuration` |
+| A broad process-environment snapshot, or environment values without a required credential type | `configuration/environment` |
+| Application storage/profile state with its content type left open | `application-state` |
+| Cookie state, without assuming every cookie authenticates a session | `application-state/cookie` |
+| Browsing/history/activity records | `activity` |
+| Captured input values, keystroke/touch records or clipboard content without narrower semantic content | `input` |
+| Media content whose modality is left open or spans modalities | `media` |
+| Static images; audio; ordered visual streams | `media/image`; `media/audio`; `media/video` |
+| Payment-card and associated billing data | `financial/payment-card` |
 | Messages, mailboxes, SMS | `message` |
-| Documents or files with no narrower class | `file` |
+| A database dump or row set without a narrower required semantic item | `database` |
+| Files whose contents have no narrower required item class | `file` |
 | Host report: identifiers / OS and runtime / installed software / running processes / network inventory | `system-info/{identity,platform,software,process,network}` |
 | Host report spanning or leaving open several of those | `system-info/profile` |
-| Two or more independent source classes, **each required** | `multi-source` |
+| Workspace/repository metadata report | `system-info/workspace-profile` |
+| Two or more independent item families, **each required** | `multi-item` |
+| Theft established, but alternatives or untyped secret values prove no narrower item family | `stealer` itself |
 
-- `multi-source` counts source classes, not traits: two browser stores are
-  `browser`, and an `any:` over sources takes the common broader source (often
-  `credential` or `system-info/profile`).
-- A sweep is a search method, surveillance a purpose and phishing an
-  acquisition method; none is a source. Sent files are `file`; an unsent sweep
-  is `collection/file-targeting`.
+**Precedence and counterexamples.** A selected wallet private key is
+`credential/key` regardless of acquisition store. A complete `.env` file is
+configuration; a selected private-key field loaded from that file is a key.
+A whole environment dump stays `configuration/environment`; possible tokens
+inside it do not create a token-export predicate. A browser cookie is cookie
+state unless the required evidence identifies an authentication token. A
+password database exported as a whole is a credential record; a selected
+password value is a password. These classify the object the matcher actually
+selects, rather than every possible constituent of a container.
 
-**Local acquisition** uses the same subjects under `collection/`. In
+`multi-item` counts required exported item families, not acquisition stores or
+traits. A wallet key plus an SSH key is still credential material; desktop and
+camera video are both video. An `any:` over passwords and tokens stays at
+`credential`. A screenshot import beside a credential exporter does not prove
+a second exported item. When alternatives share only the theft objective,
+retain the rule at the meaningful `stealer` ancestor. Broad rules must never
+be duplicated across descendants.
+
+The exact sparse partition `stealer/media/{audio,image,video}` is reviewed:
+sound, a static image and an ordered visual stream are distinct item modalities.
+A screenshot and camera still are both images; desktop and webcam streams are
+both video. A matcher admitting either audio or video stays at `media`. Device,
+API, codec and transport never choose a modality child.
+
+The complete item-placement inventory and source-facet review are in
+[the review-pool migration audit](docs/taxonomy-audit/triage/review-pool-20261026/item-placement-audit.json).
+The former store/application branches (`env`, `cloud`, `browser`, `wallet`,
+`keychain`, `dev-secret`, `ssh`) are retired objective homes; their acquisition
+observations remain in the capability and credential-access tiers.
+
+**Local acquisition** remains under `collection/` or `credential-access/` by
+the acquired subject and acquisition operation. In
 `collection/keylog`: `hook` (hook or listener), `polling` (key-state queries),
 `device` (input-device reads with recording context), `terminal`; `capture` is
 legacy. Keyboard events, hooks and evdev reads stay
@@ -981,7 +1040,7 @@ package declaration, frontend member-or-hook literal profile, scanner schema
 exception, source-catalog label and encoding-related source profile. A single
 assignment does not become a whole-source profile because it is counted.
 
-The [source syntax move inventory](testdata/taxonomy/source-syntax-placement/migration.json)
+The [source syntax move inventory](docs/taxonomy-audit/taxonomy/source-syntax-placement/migration.json)
 places all 101 former direct rules. The audit found no identical effective
 definitions to consolidate. Matchers, defaults, scope, criticality and explicit
 dependencies are preserved. The two PHP-panel directory exclusions use the
@@ -1301,8 +1360,8 @@ plan.
 | obj `lateral-movement/social-engineering/spam` | obj `impact/spam` | An impact | Open |
 | obj `lateral-movement/delivery` | By mechanism: remote execution, admin shares, WMI, GPO, update service | Not email delivery | Open (needs a contract) |
 | obj `exfiltration/stealer/{network-config,process-list}` | obj `stealer/system-info/{network,process}` | Same source | Open |
-| obj `exfiltration/stealer/{surveillance,phish}` | obj `stealer/<source>` (`input`, `screen`, `audio`, …) | Purpose and method are not sources | Open |
-| obj `exfiltration/{sensitive-data,serialization}` | `collection` or `credential-access` (no send), `stealer/<source>` (chain), mb `data/serialize` (neutral) | By required send | Open |
+| obj `exfiltration/stealer/{surveillance,phish}` | obj `stealer/<item>` or the supported neutral/local-acquisition observation | Purpose and method are not stolen item types | Item review applied |
+| obj `exfiltration/{sensitive-data,serialization}` | `collection` or `credential-access` (no send), `stealer/<item>` (chain), mb `data/serialize` (neutral) | By required send | Open |
 | obj `supply-chain/{install-hook,recon-exfil,credential-theft,metadata-anomaly}` | The required result's home, hook referenced | A trigger is not an objective | Open |
 | obj `anti-static/obfuscation/{binary-metrics,code-metrics,tools,multi-layer}` | meta `binary` or `file`, `well-known/`, or a named concealment | Measurements and identities are not concealment | Open |
 | meta `file/encoded`; `lang/encoded` | meta `file/encoding`; `lang/encoding` | Rename | Open |

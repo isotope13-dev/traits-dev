@@ -1,0 +1,1 @@
+settings = [mode, "-d", expression]

@@ -1,0 +1,1 @@
+execSync("which node");

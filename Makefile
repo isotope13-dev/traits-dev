@@ -24,7 +24,7 @@ COMPILED_DIR := third-party/compiled
 # and trait content, with path-equivalence checks before reuse. Reuse unchanged
 # successful full-validation results for iteration. A fresh run measures rule
 # costs without analysis-report reuse; --soft reports performance issues without
-# failing. testdata/performance supplies cost probes with unrestricted verdicts.
+# failing. Every classified fixture also supplies a measured cost probe.
 # validate-uncached forces a fresh measured pass.
 validate:
 	$(CLEAVE) --traits-dir . validate
