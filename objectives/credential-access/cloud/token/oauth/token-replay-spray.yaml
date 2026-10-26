@@ -1,0 +1,52 @@
+# Token spraying: bulk replay of stolen Microsoft 365 refresh tokens
+# (Huntress, token-replay-spray, 2026-10-22).
+#
+# Build A of that campaign was a Node script that walked stolen token
+# records and redeemed each refresh token at the Microsoft token endpoint
+# under the Microsoft Office or Authentication Broker client ID
+# (OAuth2:Token requests, `node` user agent), then redeemed a second token
+# for the Device Registration Service to join a rogue device.  No leg here
+# keys on the campaign's IPs, user agent, device names, or folder names:
+# the convictions rest on bulk refresh-token handling plus impersonation of
+# a first-party client that no third-party script legitimately signs in as
+# (contrast Azure CLI / PowerShell, which are developer tools and are
+# deliberately not gating legs).
+#
+# ATT&CK: T1550.001, T1528, T1098.005
+defaults:
+  platforms: [windows, unix]
+  for: [scripts, source]
+  attack: T1550.001,T1528
+
+composite_rules:
+  - id: bulk-first-party-refresh-token-replay
+    desc: Bulk refresh-token replay as Office or broker client
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: micro-behaviors/communications/http/token-auth::refresh-token-record-iteration
+      - id: micro-behaviors/communications/http/oauth::oauth-refresh-grant-type
+      - id: micro-behaviors/communications/http/services/microsoft::microsoft-login-domain
+      - id: micro-behaviors/communications/http/oauth::microsoft-office-or-broker-client-id
+    near_bytes: 4200
+    unless:
+      - id: well-known/lib/crypto/msal-node::library-context
+
+  # Redeeming a refresh token for the Device Registration Service resource
+  # is the roadtx-style rogue-device step: the resulting token joins a new
+  # device to the victim tenant for durable, MFA-satisfying access.  OS
+  # device join performs this exchange inside Windows itself, not from a
+  # script redeeming an externally supplied refresh token as Office/broker.
+  - id: device-registration-refresh-token-redemption
+    desc: Refresh token redeemed for Device Registration Service
+    crit: hostile
+    conf: 0.97
+    attack: T1550.001,T1098.005
+    all:
+      - id: micro-behaviors/communications/http/services/entra-directory::device-registration-service-reference
+      - id: micro-behaviors/communications/http/oauth::oauth-refresh-grant-type
+      - id: micro-behaviors/communications/http/services/microsoft::microsoft-login-domain
+      - id: micro-behaviors/communications/http/oauth::microsoft-office-or-broker-client-id
+    near_bytes: 4200
+    unless:
+      - id: well-known/lib/crypto/msal-node::library-context
