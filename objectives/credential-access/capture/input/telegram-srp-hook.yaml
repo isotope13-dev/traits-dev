@@ -1,0 +1,82 @@
+# SRPHelper.getX consumes the cleartext password bytes before derivation.
+# Report screenshots: 0x0v1 uCreator analysis, image-3.png.
+defaults:
+  platforms: [android]
+  for: [java]
+  crit: suspicious
+  conf: 0.97
+
+traits:
+  - id: telegram-srp-getx-method-hook
+    desc: Hooks Telegram password derivation method
+    if:
+      type: symbol
+      kind: call
+      exact: hookAllMethods
+      args:
+        - index: 0
+          from:
+            call: '(loadClass|findClass|forName)$'
+            literal: '^org\.telegram\.messenger\.SRPHelper$'
+        - index: 1
+          kind: string
+          exact: getX
+
+  - id: telegram-srp-hook-argument-cache
+    desc: Telegram SRP callback caches its password input
+    if:
+      type: tree-sitter
+      query: |-
+        ((block
+         (local_variable_declaration declarator: (variable_declarator
+          name: (identifier) @resolved
+          value: (method_invocation name: (identifier) @resolver
+           arguments: (argument_list (string_literal) @class (_)*))))
+         (expression_statement (method_invocation
+         name: (identifier) @hook
+         arguments: (argument_list
+          (identifier) @usedclass
+          (string_literal) @method
+          (object_creation_expression
+           (class_body
+            (method_declaration
+             name: (identifier) @callback
+             parameters: (formal_parameters (formal_parameter name: (identifier) @parameter))
+             body: (block
+              (local_variable_declaration declarator: (variable_declarator
+               name: (identifier) @copy
+               value: (object_creation_expression
+                type: (type_identifier) @constructor
+                arguments: (argument_list
+                 (cast_expression value: (array_access
+                  array: (field_access object: (identifier) @source field: (identifier) @field)
+                  index: (decimal_integer_literal) @index)) (_)))))
+              (expression_statement (method_invocation
+               object: (method_invocation
+                name: (identifier) @store
+                arguments: (argument_list (string_literal) @key (identifier) @stored))
+               name: (identifier) @flush)))))))))) @capture
+         (#eq? @resolved @usedclass)
+         (#match? @resolver "^(loadClass|findClass|forName)$")
+         (#eq? @class "\"org.telegram.messenger.SRPHelper\"")
+         (#eq? @hook "hookAllMethods")
+         (#eq? @method "\"getX\"")
+         (#eq? @callback "beforeHookedMethod")
+         (#eq? @constructor "String")
+         (#eq? @parameter @source)
+         (#eq? @field "args")
+         (#eq? @index "0")
+         (#eq? @store "putString")
+         (#eq? @copy @stored)
+         (#match? @flush "^(apply|commit)$"))
+
+composite_rules:
+  - id: telegram-prehash-password-capture
+    desc: Telegram derivation hook caches cleartext password
+    crit: hostile
+    conf: 0.99
+    attack: T1056
+    near_bytes: 1536
+    all:
+      - id: telegram-srp-getx-method-hook
+      - id: telegram-srp-hook-argument-cache
