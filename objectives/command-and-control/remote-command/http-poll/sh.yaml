@@ -31,20 +31,89 @@ traits:
             value: (command_substitution
               [
                 (command name: (command_name (word) @eval)
-                  argument: (string (simple_expansion (variable_name) @executed)))
+                  argument: [
+                    (string (simple_expansion (variable_name) @executed))
+                    (string (expansion (variable_name) @executed))
+                    (simple_expansion (variable_name) @executed)
+                    (expansion (variable_name) @executed)
+                  ])
                 (redirected_statement body:
                   (command name: (command_name (word) @eval)
-                    argument: (string (simple_expansion (variable_name) @executed))))
+                    argument: [
+                      (string (simple_expansion (variable_name) @executed))
+                      (string (expansion (variable_name) @executed))
+                      (simple_expansion (variable_name) @executed)
+                      (expansion (variable_name) @executed)
+                    ]))
               ]))
           (command name: (command_name (word) @upload)
             argument: (word) @dataflag
-            . argument: (string (simple_expansion (variable_name) @sent)))) @roundtrip
+            . argument: [
+              (string (simple_expansion (variable_name) @sent))
+              (string (expansion (variable_name) @sent))
+              (simple_expansion (variable_name) @sent)
+              (expansion (variable_name) @sent)
+            ])) @roundtrip
         (#eq? @fetch "curl")
         (#match? @url "^https?://")
         (#eq? @eval "eval")
         (#eq? @task @executed)
         (#eq? @upload "curl")
-        (#match? @dataflag "^(-d|--data(-raw|-binary)?)$")
+        (#match? @dataflag "^(-d|--data(-ascii|-raw|-binary|-urlencode)?)$")
+        (#eq? @result @sent))
+
+  # A fresh shell is equivalent to eval for a fetched command. Bind the
+  # fetched variable to -c and its captured output to the uploaded body;
+  # ordinary curl telemetry beside an unrelated shell must not satisfy this.
+  - id: shell-curl-command-result-roundtrip
+    desc: Executes HTTP shell tasks and uploads results
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: tree-sitter
+      language: shell
+      query: |
+        ((do_group
+          (variable_assignment name: (variable_name) @task
+            value: (command_substitution
+              (command name: (command_name (word) @fetch)
+                argument: (word) @url)))
+          (variable_assignment name: (variable_name) @result
+            value: (command_substitution
+              [
+                (command name: (command_name (word) @shell)
+                  argument: (word) @mode
+                  . argument: [
+                    (string (simple_expansion (variable_name) @executed))
+                    (string (expansion (variable_name) @executed))
+                    (simple_expansion (variable_name) @executed)
+                    (expansion (variable_name) @executed)
+                  ])
+                (redirected_statement body:
+                  (command name: (command_name (word) @shell)
+                    argument: (word) @mode
+                    . argument: [
+                      (string (simple_expansion (variable_name) @executed))
+                      (string (expansion (variable_name) @executed))
+                      (simple_expansion (variable_name) @executed)
+                      (expansion (variable_name) @executed)
+                    ]))
+              ]))
+          (command name: (command_name (word) @upload)
+            argument: (word) @dataflag
+            . argument: [
+              (string (simple_expansion (variable_name) @sent))
+              (string (expansion (variable_name) @sent))
+              (simple_expansion (variable_name) @sent)
+              (expansion (variable_name) @sent)
+            ])) @roundtrip
+        (#eq? @fetch "curl")
+        (#match? @url "^https?://")
+        (#match? @shell "^(/(usr/)?bin/)?(sh|bash|dash|ksh|zsh)$")
+        (#eq? @mode "-c")
+        (#eq? @task @executed)
+        (#eq? @upload "curl")
+        (#match? @dataflag "^(-d|--data(-ascii|-raw|-binary|-urlencode)?)$")
         (#eq? @result @sent))
 
 composite_rules:
@@ -56,12 +125,9 @@ composite_rules:
     all:
       # Fetch a command over HTTP.
       - id: micro-behaviors/communications/http/curl::curl-command-call
-      # Evaluate the fetched value as a shell command.
-      - id: shell-curl-eval-result-roundtrip
-      # Send the command output back over HTTP.
-      - id: micro-behaviors/communications/http/curl::curl-post-flag
     any:
-      # A loop makes it an interactive shell; the -d body carrying the result is
-      # the alternative discriminator when the loop is structured differently.
-      - id: micro-behaviors/data/control-flow/loop::shell-infinite-loop
-      - id: micro-behaviors/communications/http/curl::curl-short-data-option
+      # Both structured round trips require dispatch inside the loop body and
+      # upload of the captured result as the curl request body (-d/--data* is
+      # itself a POST; a literal -X POST spelling is not required).
+      - id: shell-curl-eval-result-roundtrip
+      - id: shell-curl-command-result-roundtrip
