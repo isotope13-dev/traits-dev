@@ -185060,7 +185060,7 @@ rule DITEKSHEN_INDICATOR_TOOL_PET_Botb : FILE
 rule DITEKSHEN_INDICATOR_TOOL_PWS_LSASS_Createminidump : FILE
 {
 	meta:
-		description = "Detects CreateMiniDump tool"
+		description = "LSASS minidump tool strings"
 		author = "ditekSHen"
 		id = "0d8642d1-2ed9-5270-a54a-6ba788026f5f"
 		date = "2020-11-06"
