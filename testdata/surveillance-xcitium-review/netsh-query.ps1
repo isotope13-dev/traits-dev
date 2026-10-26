@@ -1,0 +1,1 @@
+& netsh show helper

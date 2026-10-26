@@ -45,48 +45,10 @@ composite_rules:
       - id: micro-behaviors/network/dns::loopback-hosts-name-entry
       - id: micro-behaviors/communications/url/host/name::security-update-telemetry-service-references
 
-  # The same intercept written in native code instead of a shell one-liner.
-  # Compiled implants build the hosts line from a format string and hold the
-  # redirect target as a separate constant, so `loopback-hosts-name-redirect`
-  # never sees a complete line and the redirect need not point at loopback at
-  # all — pinning the victim's names to an attacker-run host works just as
-  # well. What survives compilation is the pairing of a hosts *rewrite* with
-  # the Win32 calls that push a certificate into a trust store.
-  #
-  # This used to be "native-hosts-redirect-with-root-ca" / "Hosts redirect plus
-  # root CA installation" over just `hosts-file-path` + `cert-store-population-
-  # api`, and reported two things it had not observed. Neither half carries its
-  # claim alone: `hosts-file-path` is a bare path string that every tool which
-  # merely *displays* the hosts file holds, and CertAddCertificateContextToStore
-  # / PFXImportCertStore populate a caller-selected store — for an Authenticode
-  # verifier that store is a temporary in-memory one, never the machine root.
-  # SIW, a signed system-information utility that shows the hosts file and
-  # checks driver signatures, scored hostile on exactly that pair.
-  #
-  # So the hosts half must show a rewrite rather than a mention: file-modifying
-  # APIs alongside the path, a resolver-cache flush (how a rewrite is made to
-  # take effect), or ownership seizure of the file. A program that rewrites
-  # name resolution *and* pushes its own certificate into a store is setting up
-  # to read the victim's TLS traffic.
-  - id: native-hosts-rewrite-with-cert-store-install
-    desc: Hosts file rewrite with certificate-store install
-    crit: hostile
-    conf: 0.95
-    for: [binaries]
-    all:
-      - id: micro-behaviors/crypto/certificate/store::cert-store-population-api
-    any:
-      - id: micro-behaviors/fs/path/config/system::hosts-file-modification-api-set
-      - id: hosts-rewrite-with-dns-flush
-    unless:
-      - id: well-known/app/storage/syncback::syncback-backup-benign-context
-
-  # Widening Firefox's trust to the OS root store right where a certificate is
-  # being pushed into that store closes the last gap in a Windows intercept:
-  # Chrome and Edge follow the machine store already, Firefox does not until
-  # this policy is set. Enterprise management tooling legitimately does both,
-  # so this stays out of `hostile` only when it is the whole story — paired
-  # with a hosts rewrite it lands in the composite above as well.
+  # Native hosts paths, cache-flush APIs and certificate-store APIs do not
+  # bind a redirect to a trust change. Their neutral observations now live in
+  # micro-behaviors/network/dns and crypto/certificate/store.
+  # Firefox trust policy remains a separate observation below.
   - id: root-ca-install-with-firefox-trust-widening
     desc: Root CA install widens Firefox trust
     crit: hostile
@@ -95,18 +57,3 @@ composite_rules:
     all:
       - id: micro-behaviors/crypto/certificate/install::firefox-enterprise-roots-policy
       - id: micro-behaviors/crypto/certificate/store::cert-store-population-api
-
-  # Flushing the resolver cache is how a hosts rewrite is made to take effect
-  # immediately. Ad blockers and hosts-based filtering tools do this too, so on
-  # its own it is only suspicious — but it is the reliable native tell that the
-  # hosts path was *written*, not merely referenced.
-  - id: hosts-rewrite-with-dns-flush
-    desc: Rewrites hosts then flushes DNS cache
-    crit: suspicious
-    conf: 0.9
-    for: [pe]
-    all:
-      - id: micro-behaviors/fs/path/config/system::hosts-file-path
-      - id: micro-behaviors/communications/dns/flush::dns-flush-resolver-cache
-    unless:
-      - id: well-known/dual-use/tunnel/sing-box/
