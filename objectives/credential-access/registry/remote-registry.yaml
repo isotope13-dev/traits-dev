@@ -1,0 +1,45 @@
+# Opening a credential store is suspicious, but does not establish recovered
+# passwords. In particular, GetValue on the Secrets root does not decrypt LSA
+# secrets, and Control\Lsa also holds ordinary policy settings.
+defaults:
+  platforms: [windows]
+  for: [csharp]
+  conf: 0.96
+
+traits:
+  - id: dotnet-sam-account-key-access
+    desc: Opens the SAM account registry store
+    crit: suspicious
+    attack: T1003.002
+    if:
+      # Verbatim C# strings are opaque in the current call-argument projection.
+      # Match the call node so both ordinary and verbatim literals are covered.
+      type: tree-sitter
+      kind: call
+      regex: '(?i)^[\w.]+\.OpenSubKey\s*\(\s*@?"SAM\\+Domains\\+Account(\\|")'
+
+  - id: dotnet-lsa-secrets-key-access
+    desc: Opens the LSA secrets registry store
+    crit: suspicious
+    attack: T1003.004
+    if:
+      type: tree-sitter
+      kind: call
+      regex: '(?i)^[\w.]+\.OpenSubKey\s*\(\s*@?"SECURITY\\+Policy\\+Secrets(\\|")'
+
+composite_rules:
+  # Require both credential-store calls and an impersonation expression. A context
+  # type declaration plus a remote FIPS-policy query is not credential theft.
+  # This is bounded co-occurrence, not proof of token/key-handle data flow or
+  # successful extraction; incomplete source can still express the attempt.
+  - id: impersonated-remote-registry-hive-read
+    desc: Remote SAM and LSA access with impersonation
+    crit: hostile
+    conf: 0.97
+    attack: T1003.002,T1003.004,T1134.001
+    all:
+      - id: micro-behaviors/os/registry/access::open-remote-registry-base-key
+      - id: micro-behaviors/os/privilege/token::dotnet-identity-impersonation
+      - id: dotnet-sam-account-key-access
+      - id: dotnet-lsa-secrets-key-access
+    near_lines: 60
