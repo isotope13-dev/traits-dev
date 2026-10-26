@@ -1,16 +1,9 @@
 """Focused regression cases for helper-agent triage traits.
 
-Covers the dynamic FLAG env lookup atom and the https.request OOB beacon
-composites. No fixture code is executed; cleave only scans the directory.
-
-Note on harness suppression: files under testdata/ match the test-directory
-component, so composites carrying a testing-harness `unless:` cannot fire on
-the loose fixtures here. That is why:
-- js-https-post-oob is asserted on the tgz member path (inner paths do not
-  carry the testdata/ prefix, so the file-scope composite fires there), and
-- npm-postinstall-oob-https-beacon (archive scope, sees the outer testdata/
-  path) is asserted as not_matched here; its positive case is the real
-  helper-agent 1.0.4 sample, verified via `atomscan <path>`.
+Covers dynamic FLAG env lookup and HTTPS POST/body observations near an OOB
+endpoint. A fixed marker is not credential theft or data exfiltration. The
+archive/member cases retain network coverage and forbid the former hostile ID.
+No fixture code is executed; cleave only scans the directory.
 """
 import json
 from pathlib import Path
