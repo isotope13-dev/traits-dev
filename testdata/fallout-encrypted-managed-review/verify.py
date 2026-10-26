@@ -24,7 +24,7 @@ HTTP = 'micro-behaviors/communications/http/client/managed::httpclient-get-temp-
 OLD_HTTP = 'objectives/command-and-control/dropper/file-exec/spawn::dotnet-httpclient-temp-execute-dropper'
 OBF = 'objectives/anti-static/obfuscation/string/concat::ps-obfuscated-eval'
 NEW_PERSIST = {
- 'objectives/credential-access/credential-manager/store-api::managed-keylogger-credential-directory-copy-references',
+ 'objectives/credential-access/credential-manager/files::managed-keylogger-credential-directory-copy-references',
  'objectives/persistence/login/startup/folder::managed-keylogger-startup-batch-profile',
  'objectives/persistence/login/scheduled-task/cli::managed-keylogger-logon-task',
 }
