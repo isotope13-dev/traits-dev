@@ -1,1 +1,0 @@
-execSync("which claude");

@@ -1,1 +1,0 @@
-function handleUpload() { return "ready"; }

@@ -1,3 +1,0 @@
-cat <<'STAGE'
-hello
-STAGE
