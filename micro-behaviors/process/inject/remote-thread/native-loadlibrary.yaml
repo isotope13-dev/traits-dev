@@ -1,0 +1,64 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86]
+
+traits:
+  - id: x86-copied-path-loadlibrary-thread
+    desc: Remote LoadLibrary thread with copied path
+    crit: notable
+    conf: 0.99
+    attack: T1055.001
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule copied_path_remote_loadlibrary_thread {
+          strings:
+            $loader = "LoadLibraryA\x00" ascii
+            $module = "kernel32.dll\x00" ascii nocase
+            // ESI is the process handle; VirtualAllocEx's result goes to
+            // EDI, the destination passed to WriteProcessMemory below.
+            $copy = {
+              6A 04 2B C2 68 00 10 00 00 40 50 6A 00 56
+              FF 15 ?? ?? ?? ?? 8B F8 85 FF 74 ??
+              8D 84 24 ?? ?? ?? ?? C7 44 24 ?? 00 00 00 00
+              8D 50 01 8A 08 40 84 C9 75 F9
+              8D 4C 24 ?? 51 2B C2 50 8D 94 24 ?? ?? ?? ??
+              52 57 56 FF 15 ?? ?? ?? ?? 85 C0 75 ??
+            }
+            // Resolve LoadLibraryA and pass that exact result as the start
+            // routine, EDI as its argument, and ESI as the target process.
+            $thread = {
+              68 ?? ?? ?? ?? FF 15 ?? ?? ?? ??
+              68 ?? ?? ?? ?? 50 FF 15 ?? ?? ?? ?? 85 C0 74 ??
+              6A 00 6A 00 57 50 6A 00 6A 00 56 FF 15 ?? ?? ?? ??
+            }
+          condition:
+            pe.machine == pe.MACHINE_I386 and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].name == ".text" and
+              for any c in (1..#copy) : (
+                @copy[c] >= pe.sections[s].raw_data_offset and
+                @copy[c] + !copy[c] <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size and
+                uint32(@copy[c]+16) == pe.image_base + pe.import_rva("KERNEL32.dll", "VirtualAllocEx") and
+                uint32(@copy[c]+71) == pe.image_base + pe.import_rva("KERNEL32.dll", "WriteProcessMemory") and
+                for any t in (1..#thread) : (
+                  @thread[t] > @copy[c] + !copy[c] and
+                  @thread[t] < @copy[c] + 256 and
+                  @thread[t] + !thread[t] <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size and
+                  uint32(@thread[t]+7) == pe.image_base + pe.import_rva("KERNEL32.dll", "GetModuleHandleA") and
+                  uint32(@thread[t]+19) == pe.image_base + pe.import_rva("KERNEL32.dll", "GetProcAddress") and
+                  uint32(@thread[t]+40) == pe.image_base + pe.import_rva("KERNEL32.dll", "CreateRemoteThread") and
+                  // Follow the successful write branch to the resolver.
+                  @copy[c]+79+int8(@copy[c]+78) == @thread[t] and
+                  for any l in (1..#loader) : (
+                    pe.rva_to_offset(uint32(@thread[t]+12)-pe.image_base) == @loader[l]
+                  ) and
+                  for any m in (1..#module) : (
+                    pe.rva_to_offset(uint32(@thread[t]+1)-pe.image_base) == @module[m]
+                  )
+                )
+              )
+            )
+        }
