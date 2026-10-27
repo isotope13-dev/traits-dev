@@ -1,0 +1,1 @@
+const fingerprint = "AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45";
