@@ -1,0 +1,66 @@
+# RSI is the output path, R14 the buffer, R15 the returned file handle.
+# The same RSI path is formatted into RBX, then passed to CreateProcessW.
+# Resolve both RIP-relative IAT operands rather than relying on unrelated
+# imports elsewhere in the image. Sizes, stack slots and addresses may vary.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86-64]
+traits:
+  - id: x64-buffer-write-same-path-launch
+    desc: Buffer written then same path launched
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_buffer_write_same_path_launch {
+          strings:
+            $stage = {
+              BA 00 00 00 40 48 89 F1 48 C7 44 24 ?? 00 00 00 00
+              41 FF D3 49 89 C7 48 83 F8 FF 0F 84 [4]
+              4C 8D 8C 24 [4] 41 B8 [4] 4C 89 F2 48 89 C1
+              C7 84 24 [4] 00 00 00 00 48 C7 44 24 ?? 00 00 00 00
+              FF 15 [4] 4C 89 F9 41 FF D5 BA 80 00 00 00 48 89 F1 FF 15 [4]
+              [24-40] 49 89 F1 48 89 D9 4C 8D 05 [4] BA [4] FF D5
+              [48-64] 4C 8B 3D [4] 48 89 DA [96-120] 41 FF D7 85 C0
+            }
+            $format_path = { 49 89 F1 48 89 D9 4C 8D 05 [4] BA [4] FF D5 }
+            $formatter = { 48 8B 2D ?? ?? ?? ?? }
+            $path_format = { 25 00 73 00 00 00 }
+          condition:
+            pe.machine == pe.MACHINE_AMD64 and
+            for any s in pe.sections : (
+              s.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for any a in (1..#stage) : (
+                @stage[a] >= s.raw_data_offset and
+                @stage[a]+!stage[a] <= s.raw_data_offset+s.raw_data_size and
+                s.virtual_address + @stage[a] - s.raw_data_offset + 79 +
+                  int32(@stage[a]+75) == pe.import_rva("KERNEL32.dll", "WriteFile") and
+                // Require the path-copy formatter and its exact "%s" format.
+                for any f in (1..#formatter) : (
+                  @formatter[f] >= s.raw_data_offset and
+                  @formatter[f] < @stage[a] and @stage[a]-@formatter[f] <= 1024 and
+                  s.virtual_address + @formatter[f] - s.raw_data_offset + 7 +
+                    int32(@formatter[f]+3) == pe.import_rva("msvcrt.dll", "_snwprintf")
+                ) and
+                for any f in (1..#format_path) : (
+                  @format_path[f] > @stage[a] and
+                  @format_path[f]+!format_path[f] < @stage[a]+!stage[a] and
+                  for any p in (1..#path_format) : (
+                    @path_format[p] == pe.rva_to_offset(
+                      s.virtual_address + @format_path[f] - s.raw_data_offset + 13 +
+                      int32(@format_path[f]+9))
+                  )
+                ) and
+                // The variable gap before the IAT load permits stack layout
+                // changes; locate that operand within the matched sequence.
+                for any c in (@stage[a]+192..@stage[a]+208) : (
+                  (uint32(c) & 0x00ffffff) == 0x003d8b4c and
+                  s.virtual_address + c - s.raw_data_offset + 7 + int32(c+3) ==
+                    pe.import_rva("KERNEL32.dll", "CreateProcessW")
+                )
+              )
+            )
+        }
