@@ -1,0 +1,1 @@
+method = File.method(:write)

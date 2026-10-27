@@ -1,26 +1,27 @@
-# Self-Process Shellcode Injection
-# Allocates executable memory, copies code, and executes it within same process.
-# ATT&CK: T1055 (Process Injection)
-# MBC: B0033
 defaults:
-  platforms: [windows]
-  attack: "T1055"
-  mbc: "B0033"
+  platforms:
+  - windows
+  attack: T1055
+  mbc: B0033
 traits:
-  # Function names that reference shellcode generation
 - id: shellcode-generator-func
   desc: Shellcode generator function name
   crit: suspicious
   conf: 0.9
-  for: [c, cpp, pe, dll]
+  for:
+  - c
+  - cpp
+  - pe
+  - dll
   if:
     type: text
-    regex: '(?i)shell_?code.?generator'
+    regex: (?i)shell_?code.?generator
 - id: powershell-shellcode-bin-path
   desc: PowerShell shellcode bin path
   crit: notable
   conf: 0.86
-  for: [powershell]
+  for:
+  - powershell
   if:
     type: text
     substr: shellcode.bin
@@ -28,102 +29,103 @@ traits:
   desc: PowerShell shellcode byte array output
   crit: component
   conf: 0.86
-  for: [powershell]
+  for:
+  - powershell
   if:
     type: text
-    substr: "[Byte[]]"
+    substr: '[Byte[]]'
 - id: go-syscall-proc-call
   desc: Go PE Proc.Call symbol
   crit: notable
   conf: 0.88
-  for: [pe]
+  for:
+  - pe
   if:
-    # Go emits this name into its pclntab for the standard syscall package.
-    # Search the symbol projection instead of arbitrary text so that the
-    # runtime's name table is not treated as a call site.
     type: symbol
     exact: syscall.(*Proc).Call
 - id: go-sonic-loader-marker
   desc: bytedance sonic Go loader marker
   crit: notable
   conf: 0.95
-  for: [pe]
+  for:
+  - pe
   if:
     type: text
     substr: github.com/bytedance/sonic/loader
-# Hand-rolled position-independent copy stub: `lodsd; stosd; dec ecx; jne` — the
-# classic shellcode-loader idiom that copies an embedded stage into a freshly
-# VirtualAlloc'd RWX buffer and `jmp`s to it. Compilers emit `rep movs`/memcpy/SSE,
-# not SI/DI loops, so this hand-written shape is a strong manual-mapper tell.
 - id: manual-mapper-copy-loop-x64
   desc: Hand-rolled lodsd/stosd memory copy loop
   crit: notable
   conf: 0.85
-  for: [pe, dll]
-  arch: [x86-64]
+  for:
+  - pe
+  - dll
+  arch:
+  - x86-64
   if:
     type: hex
-    pattern: "ad ab ff c9 75 fa"
+    pattern: ad ab ff c9 75 fa
     section: .text
-
-# Native loader status strings are unusually explicit: they identify a
-# shellcode runner, rather than merely mentioning a memory API. Keep these
-# separate from generic shellcode-word evidence so the composites below can
-# require the complete loader context.
 - id: native-shellcode-function-marker
   desc: Native shellcode runner function marker
   crit: suspicious
   conf: 0.97
-  for: [pe, dll]
+  for:
+  - pe
+  - dll
   if:
     type: text
-    regex: '(?i)RunShell(InLocal|Uncompressed|Encrypted)\s+function'
-
+    regex: (?i)RunShell(InLocal|Uncompressed|Encrypted)\s+function
 - id: native-shellcode-execution-marker
   desc: Native shellcode execution marker
   crit: suspicious
   conf: 0.97
-  for: [pe, dll]
+  for:
+  - pe
+  - dll
   if:
     type: text
     substr: Executing shellcode
     case_insensitive: true
-
 - id: native-encrypted-shellcode-execution-marker
   desc: Encrypted shellcode execution marker
   crit: suspicious
   conf: 0.97
-  for: [pe, dll]
+  for:
+  - pe
+  - dll
   if:
     type: text
     substr: executed the encrypted shell code
     case_insensitive: true
-
 - id: native-data-file-target-marker
   desc: Native loader target data-file marker
   crit: suspicious
   conf: 0.95
-  for: [pe, dll]
+  for:
+  - pe
+  - dll
   if:
     type: text
     substr: Target data file path
-
 - id: native-data-file-read-marker
   desc: Native loader data-file read marker
   crit: suspicious
   conf: 0.95
-  for: [pe, dll]
+  for:
+  - pe
+  - dll
   if:
     type: text
-    regex: '(?i)read .{0,40} bytes from data file'
-
+    regex: (?i)read .{0,40} bytes from data file
 composite_rules:
 - id: go-rwx-syscall-self-injection
   desc: Garbled Go loader executes a computed entry point from RWX memory
   crit: hostile
   conf: 0.99
-  for: [pe]
-  arch: [x86-64]
+  for:
+  - pe
+  arch:
+  - x86-64
   attack: T1027,T1620
   all:
   - id: metadata/lang/compiler/systems::go-buildinfo
@@ -133,12 +135,13 @@ composite_rules:
   unless:
   - id: metadata/signed/platform/
   - id: metadata/binary/installer/family/
-  - id: well-known/tool/development/
+  - id: well-known/tool/development
 - id: powershell-shellcode-bin-bytearray
   desc: PowerShell shellcode byte array staging
   crit: suspicious
   conf: 0.9
-  for: [powershell]
+  for:
+  - powershell
   all:
   - id: powershell-shellcode-bin-path
   - id: powershell-shellcode-bytearray-output
@@ -146,12 +149,14 @@ composite_rules:
   desc: RWX allocation with code copy
   crit: suspicious
   conf: 0.85
-  for: [pe, dll]
+  for:
+  - pe
+  - dll
   near_bytes: 1024
   all:
   - id: micro-behaviors/mem/protect/modify::executable-memory-api-indicator
   any:
-  - id: "micro-behaviors/mem/copy::memcpy"
+  - id: micro-behaviors/mem/copy::memcpy
   - id: micro-behaviors/mem/copy::source-memcpy-shellcode-or-rwx-context
   unless:
   - id: well-known/lib/native/memory-module::memory-module-source
@@ -163,13 +168,12 @@ composite_rules:
     any:
     - id: metadata/signed/platform/
     - id: metadata/signed/leaf::microsoft-corporation
-# Source retains line-local matching because byte offsets are not meaningful
-# after parser normalization.
 - id: go-local-shellcode-loader
   desc: Go local shellcode loader with executable-memory evidence
   crit: suspicious
   conf: 0.92
-  for: [pe]
+  for:
+  - pe
   all:
   - id: micro-behaviors/mem/alloc/virtual::virtual-alloc
   - id: micro-behaviors/process/create/thread::create-thread
@@ -190,12 +194,11 @@ composite_rules:
   desc: Go shellcode loader with encoded-payload evidence
   crit: hostile
   conf: 0.97
-  for: [pe]
+  for:
+  - pe
   all:
   - id: go-local-shellcode-loader
   any:
-  # A decoder symbol is present in ordinary Go programs. Require either an
-  # encoded data region or an explicit shellcode marker as the payload leg.
   - id: metadata/file/encoded::pe-dense-data-base64-like-blobs
   - id: native-shellcode-function-marker
   - id: native-shellcode-execution-marker
@@ -206,7 +209,8 @@ composite_rules:
   desc: Go shellcode loader with dynamic API dispatch
   crit: hostile
   conf: 0.97
-  for: [pe]
+  for:
+  - pe
   all:
   - id: go-local-shellcode-loader
   - id: micro-behaviors/os/api-resolution/manual::go-syscall-dynamic-api-dispatch
@@ -216,52 +220,58 @@ composite_rules:
   desc: Go dynamic x64 shellcode loader
   crit: hostile
   conf: 0.97
-  for: [pe]
+  for:
+  - pe
   all:
   - id: go-syscall-proc-call
   - id: micro-behaviors/os/api-resolution/manual::go-syscall-dynamic-api-dispatch
   - id: metadata/binary/instruction/operand::x64-load-r8-r9-40
   unless:
   - id: metadata/signed/platform/
-  - id: well-known/tool/
-
+  - id: well-known/tool
 - id: native-file-mapped-shellcode-loader
   desc: Native file-mapped compressed shellcode loader
   crit: hostile
   conf: 0.99
-  for: [pe, dll]
+  for:
+  - pe
+  - dll
   all:
-    - id: native-shellcode-function-marker
-    - id: micro-behaviors/fs/memory/mmap::win32-file-mapping
-    - id: micro-behaviors/data/codec::rtl-decompress-buffer
-
+  - id: native-shellcode-function-marker
+  - id: micro-behaviors/fs/memory/mmap::win32-file-mapping
+  - id: micro-behaviors/data/codec::rtl-decompress-buffer
 - id: native-shellcode-loader-status
   desc: Native shellcode loader status cluster
   crit: notable
   conf: 0.97
-  for: [pe, dll]
+  for:
+  - pe
+  - dll
   needs: 2
   any:
-    - id: native-shellcode-function-marker
-    - id: native-shellcode-execution-marker
-    - id: native-encrypted-shellcode-execution-marker
-
+  - id: native-shellcode-function-marker
+  - id: native-shellcode-execution-marker
+  - id: native-encrypted-shellcode-execution-marker
 - id: native-encrypted-file-shellcode-loader
   desc: Native encrypted data-file shellcode loader
   crit: hostile
   conf: 0.99
-  for: [pe, dll]
+  for:
+  - pe
+  - dll
   all:
-    - id: native-shellcode-loader-status
-    - id: native-encrypted-shellcode-execution-marker
-    - id: native-data-file-target-marker
-    - id: native-data-file-read-marker
-    - id: micro-behaviors/data/codec::rtl-decompress-buffer
+  - id: native-shellcode-loader-status
+  - id: native-encrypted-shellcode-execution-marker
+  - id: native-data-file-target-marker
+  - id: native-data-file-read-marker
+  - id: micro-behaviors/data/codec::rtl-decompress-buffer
 - id: w-xor-x-injection
   desc: W^X memory protection transition (RW -> RX)
   crit: notable
   conf: 0.92
-  for: [pe, dll]
+  for:
+  - pe
+  - dll
   all:
   - id: micro-behaviors/mem/alloc/executable::page-readwrite-push
   - id: micro-behaviors/mem/alloc/executable::page-execute-read-push
@@ -271,18 +281,14 @@ composite_rules:
     any:
     - id: metadata/binary/layout/
     - id: metadata/file/entropy::overall-entropy-outside-middle-band
-# The "is a thread-start / page-protection API present" unions used below are
-# neutral capability groupings — a plain CreateThread or VirtualProtect import
-# satisfies either one, which every signed native addon and runtime DLL has.
-# They live in micro-behaviors/{process/thread/create,mem/protect/modify} so a
-# benign x64 DLL is not tagged with a shellcode-injection finding; the
-# injection intent comes from the W^X argument pair below.
 - id: defender-exclusion-wx-thread-loader
   desc: Defender exclusion with executable-memory loader
   crit: hostile
   conf: 0.98
-  for: [pe]
-  arch: [x86-64]
+  for:
+  - pe
+  arch:
+  - x86-64
   all:
   - id: micro-behaviors/os/security/defender::defender-exclusion-command
   - id: micro-behaviors/mem/protect/modify::integer-loads-protection-thread-apis
@@ -291,11 +297,12 @@ composite_rules:
   desc: Concealed shellcode loader (PEB walk + W^X + minimal IAT)
   crit: suspicious
   conf: 0.95
-  for: [pe, dll]
-  arch: [x86-64]
+  for:
+  - pe
+  - dll
+  arch:
+  - x86-64
   size_max: 5242880
-  # The PEB walk and both page-protection immediates belong to one stub.
-  # A large image can contain each of those bytes in unrelated functions.
   near_bytes: 4096
   all:
   - id: micro-behaviors/process/info/query::peb-access-x64
@@ -321,8 +328,11 @@ composite_rules:
   conf: 0.99
   attack: T1027.007,T1055,T1620
   mbc: B0032
-  for: [pe, dll]
-  arch: [x86-64]
+  for:
+  - pe
+  - dll
+  arch:
+  - x86-64
   size_max: 5242880
   all:
   - id: micro-behaviors/process/info/query::peb-access-x64
@@ -340,8 +350,11 @@ composite_rules:
   conf: 0.995
   attack: T1027.002,T1027.007,T1055,T1620
   mbc: B0032
-  for: [pe, dll]
-  arch: [x86]
+  for:
+  - pe
+  - dll
+  arch:
+  - x86
   all:
   - id: objectives/anti-static/obfuscation/imports/api-hashing::ror13-peb-export-resolver-x86
   - id: objectives/anti-static/obfuscation/payload/encrypted::shikata-ga-nai-stub
@@ -356,8 +369,11 @@ composite_rules:
   conf: 0.995
   attack: T1027.007,T1055,T1620
   mbc: B0032
-  for: [pe, dll]
-  arch: [x86-64]
+  for:
+  - pe
+  - dll
+  arch:
+  - x86-64
   all:
   - id: objectives/anti-static/obfuscation/imports/api-hashing::ror13-peb-export-resolver-x64
   - id: micro-behaviors/mem/alloc/executable::virtualalloc-rwx-commit-import-x64
@@ -370,8 +386,11 @@ composite_rules:
   desc: PEB access with HeapCreate and executable-heap option constant
   crit: hostile
   conf: 0.96
-  for: [pe, dll]
-  arch: [x86-64]
+  for:
+  - pe
+  - dll
+  arch:
+  - x86-64
   size_max: 5242880
   all:
   - id: micro-behaviors/process/info/query::peb-access-x64
@@ -382,14 +401,13 @@ composite_rules:
   - id: metadata/signed/leaf::microsoft-corporation
   - id: well-known/tool/sysadmin/conemu::conemu-setup-signature
   - id: well-known/tool/sysadmin/conemu::conemu-background-plugin
-# A binary impersonating a benign signed OEM utility that also carries a
-# hand-rolled RWX copy-execute loader stub is a SilverFox/Winos stager, not a
-# real Panasonic app. The masquerade leg anchors this to near-zero FP.
 - id: panasonic-masquerade-shellcode-loader
   desc: Panasonic masquerade with manual code loader
   crit: hostile
   conf: 0.95
-  for: [pe, dll]
+  for:
+  - pe
+  - dll
   all:
   - id: objectives/evasion/masquerade/identity/mimicry::unsigned-panasonic-notification-masquerade
   - id: manual-mapper-copy-loop-x64
@@ -397,7 +415,8 @@ composite_rules:
   desc: .NET dynamic code generation with native memory loader APIs
   crit: hostile
   conf: 0.99
-  for: [pe]
+  for:
+  - pe
   attack: T1055,T1620
   all:
   - id: metadata/lang/compiler/managed::reflection-emit
@@ -407,14 +426,15 @@ composite_rules:
   - id: micro-behaviors/mem/protect/modify::virtual-protect-text-pe
   - id: micro-behaviors/mem/copy::rtl-move-memory-name
   - id: micro-behaviors/dylib/lookup::get-proc-address
-
-
 - id: tls-encrypted-wx-thread-loader
   desc: Multiple TLS callbacks with encrypted data and W^X thread staging
   crit: hostile
   conf: 0.98
-  for: [pe, dll]
-  arch: [x86-64]
+  for:
+  - pe
+  - dll
+  arch:
+  - x86-64
   attack: T1027,T1055
   all:
   - id: micro-behaviors/mem/protect/modify::integer-loads-protection-thread-apis
@@ -425,26 +445,30 @@ composite_rules:
   - id: metadata/signed/platform/
   - id: metadata/binary/installer/family/
   - id: metadata/binary/framework/
-
 - id: encrypted-manual-export-thread-loader
   desc: Encrypted manual-export loader that allocates memory and starts a thread
   crit: hostile
   conf: 0.99
-  for: [pe, dll]
-  arch: [x86-64]
+  for:
+  - pe
+  - dll
+  arch:
+  - x86-64
   attack: T1027.013,T1055
   all:
   - id: micro-behaviors/os/api-resolution/manual::x64-pe-export-directory-walk
   - id: micro-behaviors/crypto/symmetric/xxtea::x64-xxtea-decrypt-round
   - id: micro-behaviors/mem/alloc/virtual::virtual-alloc
   - id: micro-behaviors/process/create/thread::create-thread
-
 - id: x86-tea-payload-self-injection-loader
   desc: x86 TEA payload decrypted and executed in-process
   crit: hostile
   conf: 0.98
-  for: [pe, dll]
-  arch: [x86]
+  for:
+  - pe
+  - dll
+  arch:
+  - x86
   attack: T1027,T1055,T1620
   all:
   - id: micro-behaviors/crypto/symmetric/xxtea::x86-tea-decrypt-round
@@ -455,13 +479,15 @@ composite_rules:
   - id: metadata/signed/platform/
   - id: metadata/binary/installer/family/
   - id: well-known/tool/reverse-engineering/
-
 - id: constant-xor-wx-thread-loader-x64
   desc: Obfuscated x64 payload copied into executable thread memory
   crit: hostile
   conf: 0.99
-  for: [pe, dll]
-  arch: [x86-64]
+  for:
+  - pe
+  - dll
+  arch:
+  - x86-64
   attack: T1027,T1055,T1620
   all:
   - id: metadata/binary/instruction/operand::x64-load-r8-r9-04
@@ -470,17 +496,16 @@ composite_rules:
   - id: micro-behaviors/dylib/lookup::get-proc-address-import
   unless:
   - id: metadata/signed/platform/
-# In-process stub launch with every constant disguised: RWX flags set by `bts`
-# instead of immediates, the stub copied byte by byte, and control handed over
-# by a register jump rather than a call. Each leg alone is odd; together, at
-# one site, they are a hand-built shellcode loader (instapp padded dropper).
 - id: bitset-rwx-copy-jump-loader-x64
   desc: Disguised RWX alloc, byte copy, register jump
   crit: suspicious
   conf: 0.97
   attack: T1055,T1620,T1027
-  for: [pe, dll]
-  arch: [x86-64]
+  for:
+  - pe
+  - dll
+  arch:
+  - x86-64
   near_bytes: 256
   all:
   - id: micro-behaviors/mem/alloc/executable::virtualalloc-rwx-commit-bitset-x64

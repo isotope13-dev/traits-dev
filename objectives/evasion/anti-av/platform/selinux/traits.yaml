@@ -1,361 +1,344 @@
 defaults:
   attack: T1562.001
   platforms:
-    - linux
+  - linux
 traits:
-  - id: kotlin-setenforce-zero
-    desc: Kotlin setenforce zero command
-    crit: suspicious
-    conf: 0.9
-    platforms: [android]
-    for: [kotlin]
-    if:
-      type: text
-      substr: "setenforce 0"
-    unless:
-      - id: metadata/package/documentation/
-      - id: metadata/document/html::html-root-at-start
-      - id: metadata/file/extension/identity::markdown-file-basename
-      - id: well-known/tool/detection/
-  - id: load-policy-command
-    desc: Loads a custom SELinux policy
-    crit: suspicious
-    conf: 0.8
-    for:
-      - shell
-    if:
-      type: text
-      regex: '(?m)^[ \t]*((sudo[ \t]+)?load_policy)([ \t]|$)'
-    unless:
-      # A same-file `load_policy()` definition shadows the load_policy(8)
-      # binary for the whole script: bare `load_policy` invocations resolve to
-      # the shell function (e.g. the kernel IMA selftests name their policy
-      # helper this way), not to the SELinux policy loader.
-      - type: text
-        regex: '(?m)^\s*load_policy\s*\(\)'
-      - id: metadata/lang/upstream::linux-kernel-secondary-tree-path
-      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
-      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
-      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
-      - id: metadata/lang/upstream::linux-kernel-primary-tree-path
-      # RPM scriptlets reload the policy they just installed or removed.
-      - id: metadata/build/package/maintainer-scripts::rpm-spec-recipe-context
-  # Only *disabling* a module degrades the MAC policy. Installing or enabling
-  # one (`semodule -i/-e`, and the `-n`/`-B` reload flags) is what every RPM
-  # %post scriptlet, container build, and Ansible SELinux role does to ship its
-  # own policy, and removing it (`-r`) is the same package's uninstall step --
-  # MariaDB ColumnStore's preUn_storage_engine.sh removes the `columnstore`
-  # module it installed. Both neutral forms live in
-  # micro-behaviors/os/security/selinux. `-d` keeps a module installed but
-  # switched off, which is how a distro module gets silenced.
-  - id: semodule-remove-command
-    desc: Disables an SELinux policy module
-    crit: suspicious
-    conf: 0.8
-    for:
-      - shell
-    if:
-      type: text
-      regex: '(?m)^\s*(sudo\s+)?semodule\s+-d\b'
-    unless:
-      - id: well-known/tool/detection/wazuh/
-      - id: metadata/build/package/maintainer-scripts::rpm-spec-postun-scriptlet
-      - id: metadata/build/package/maintainer-scripts::rpm-postun-scriptlet-section
-  - id: grubby-selinux-zero-argument
-    desc: Grubby adds selinux=0 to kernel boot arguments
-    crit: suspicious
-    conf: 0.85
-    for:
-      - shell
-    if:
-      type: text
-      regex: '(?m)^[^#\n]{0,80}\bgrubby\b[^\n]{0,120}--args[ =][^\n]{0,120}\bselinux=0\b'
-    unless:
-      - id: metadata/lang/upstream::linux-kernel-primary-tree-path
-      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
-      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-any
-      - id: well-known/tool/detection/security-remediation/
-  - id: grubby-enforcing-zero-argument
-    desc: Grubby adds enforcing=0 to kernel boot arguments
-    crit: suspicious
-    conf: 0.85
-    for:
-      - shell
-    if:
-      type: text
-      regex: '(?m)\bgrubby\b[^\n]{0,120}--args[ =][^\n]{0,120}\benforcing=0\b'
-    unless:
-      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
-      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-any
-      - id: well-known/tool/detection/security-remediation/
-  # The write context is what makes this a disable rather than a mention. A
-  # bare `SELINUX=disabled` literal also appears in every hardening AUDIT --
-  # `grep -iqE "(SELINUX=enforcing|SELINUX=permissive)" /etc/selinux/config`
-  # in the OpenSCAP test suite read as "sets SELinux permissive". Requiring
-  # either a rewrite verb on the same line or the directive standing alone on
-  # its own line (heredoc-written config) also picks up the unquoted
-  # `echo SELINUX=disabled >` form that the string_literal matcher missed.
-  - id: selinux-disabled-config
-    desc: Writes SELINUX=disabled to the SELinux config
-    crit: suspicious
-    conf: 0.85
-    for:
-      - shell
-    if:
-      type: text
-      regex: '(?m)(^[ \t]*|\b(sed|echo|printf)\b[^\n]{0,80})SELINUX=disabled'
-    unless:
-      - id: well-known/app/data/ease::installer-script-marker
-      - id: well-known/tool/detection/security-remediation/
-      - id: well-known/app/storage/clonezilla::drbl-locale-catalog-context
-      - id: well-known/app/infrastructure/linuxmirrors::project-identity
-      # Kubernetes node provisioning writes SELINUX=disabled as documented
-      # pre-flight (kubeadm prerequisites).
-      - id: well-known/tool/sysadmin/kubernetes/bootstrap::kubernetes-node-provisioning-context
-      # An RPM spec's uninstall scriptlet resets the config of the policy
-      # package it is removing.
-      - id: metadata/build/package/maintainer-scripts::rpm-spec-recipe-context
-    downgrade:
-      any:
-        - id: micro-behaviors/os/package-manager/installer-script::installer-script
-        - id: metadata/package/files/included::install-uninstall-shell-basename
-        - id: well-known/app/infrastructure/fboss::fboss-image-tooling-source
-  - id: selinux-permissive-config
-    desc: Writes SELINUX=permissive to the SELinux config
-    crit: suspicious
-    conf: 0.8
-    for:
-      - shell
-    if:
-      type: text
-      regex: '(?m)(^[ \t]*|\b(sed|echo|printf)\b[^\n]{0,80})SELINUX=permissive([^\n]{0,30})'
-    not:
-      - regex: 'SELINUX=permissive/SELINUX=enforcing'
-    unless:
-      - id: provisioned-selinux-configuration
-      - id: well-known/tool/sysadmin/kubernetes/bootstrap::kubernetes-node-provisioning-context
-      - id: metadata/file/catalog/identity::linux-kernel-selinux-policy-installer
-      - id: well-known/tool/detection/security-remediation/
-      - type: text
-        regex: '(?i)kube(adm|let|ctl)'
-      - id: well-known/tool/sysadmin/kubernetes/bootstrap::kubernetes-deployment-script-basename
-      - id: well-known/tool/sysadmin/kubernetes/bootstrap::kubernetes-bootstrap-directory-path
-      - id: micro-behaviors/os/container/runtime::kubelet-command-reference
-  - id: selinux-state-symbol
-    desc: selinux_state struct, runtime-patch target
-    crit: suspicious
-    conf: 0.75
-    for:
-      - c
-      - elf
-    if:
-      type: symbol
-      exact: selinux_state
-  - id: fake-enforce-identifier
-    desc: fake_enforce spoofs SELinux enforcing
-    crit: suspicious
-    conf: 0.8
-    for:
-      - c
-      - elf
-    if:
-      type: text
-      substr: fake_enforce
-  - id: sel-read-enforce-symbol
-    desc: sel_read_enforce kernel enforce reader
-    crit: suspicious
-    conf: 0.8
-    for:
-      - c
-      - elf
-    if:
-      type: symbol
-      exact: sel_read_enforce
-  - id: sel-write-enforce-symbol
-    desc: Patches sel_write_enforce to disable SELinux
-    crit: suspicious
-    conf: 0.8
-    for:
-      - c
-      - elf
-    if:
-      type: symbol
-      exact: sel_write_enforce
-  - id: selinux-enforcing-pointer-zero-write
-    desc: Writes zero to SELinux enforcement state
-    crit: suspicious
-    conf: 0.96
-    for: [c, cpp]
-    if:
-      type: text
-      regex: '\*\s*selinux_enforcing\s*=\s*0\b'
-  - id: selinux-enforcement-reader-return-patch
-    desc: Patches sel_read_enforce to report enabled
-    crit: suspicious
-    conf: 0.96
-    for: [c, cpp]
-    if:
-      type: text
-      regex: 'sel_read_enforce[\s\S]{0,800}\*\s*\(unsigned\s+int\s*\*\)\s*&p\[1\]\s*=\s*1\b'
-composite_rules:
-  # Weakening enforcement at runtime and in the persistent config is stronger
-  # evidence of intentional security degradation than either action alone.
-  - id: runtime-and-persistent-selinux-permissive
-    desc: Disables SELinux enforcement at runtime and in its config
-    crit: suspicious
-    conf: 0.95
-    for: [shell]
-    all:
-      - id: micro-behaviors/os/security/selinux::setenforce-permissive
-      - id: selinux-permissive-config
-    scope: file
-    near_bytes: 512
-
-  - id: enforcement-commands
-    desc: SELinux enforcement commands
-    for: [scripts, binaries]
+- id: kotlin-setenforce-zero
+  desc: Kotlin setenforce zero command
+  crit: suspicious
+  conf: 0.9
+  platforms:
+  - android
+  for:
+  - kotlin
+  if:
+    type: text
+    substr: setenforce 0
+  unless:
+  - id: metadata/package/documentation
+  - id: metadata/document/html::html-root-at-start
+  - id: metadata/file/extension/identity::markdown-file-basename
+  - id: well-known/tool/detection/
+- id: load-policy-command
+  desc: Loads a custom SELinux policy
+  crit: suspicious
+  conf: 0.8
+  for:
+  - shell
+  if:
+    type: text
+    regex: (?m)^[ \t]*((sudo[ \t]+)?load_policy)([ \t]|$)
+  unless:
+  - type: text
+    regex: (?m)^\s*load_policy\s*\(\)
+  - id: metadata/lang/upstream::linux-kernel-secondary-tree-path
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
+  - id: metadata/lang/upstream::linux-kernel-primary-tree-path
+  - id: metadata/build/package/maintainer-scripts::rpm-spec-recipe-context
+- id: semodule-remove-command
+  desc: Disables an SELinux policy module
+  crit: suspicious
+  conf: 0.8
+  for:
+  - shell
+  if:
+    type: text
+    regex: (?m)^\s*(sudo\s+)?semodule\s+-d\b
+  unless:
+  - id: well-known/tool/detection/wazuh/
+  - id: metadata/build/package/maintainer-scripts::rpm-spec-postun-scriptlet
+  - id: metadata/build/package/maintainer-scripts::rpm-postun-scriptlet-section
+- id: grubby-selinux-zero-argument
+  desc: Grubby adds selinux=0 to kernel boot arguments
+  crit: suspicious
+  conf: 0.85
+  for:
+  - shell
+  if:
+    type: text
+    regex: (?m)^[^#\n]{0,80}\bgrubby\b[^\n]{0,120}--args[ =][^\n]{0,120}\bselinux=0\b
+  unless:
+  - id: metadata/lang/upstream::linux-kernel-primary-tree-path
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-any
+  - id: well-known/tool/detection/security-remediation/
+- id: grubby-enforcing-zero-argument
+  desc: Grubby adds enforcing=0 to kernel boot arguments
+  crit: suspicious
+  conf: 0.85
+  for:
+  - shell
+  if:
+    type: text
+    regex: (?m)\bgrubby\b[^\n]{0,120}--args[ =][^\n]{0,120}\benforcing=0\b
+  unless:
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-any
+  - id: well-known/tool/detection/security-remediation/
+- id: selinux-disabled-config
+  desc: Writes SELINUX=disabled to the SELinux config
+  crit: suspicious
+  conf: 0.85
+  for:
+  - shell
+  if:
+    type: text
+    regex: (?m)(^[ \t]*|\b(sed|echo|printf)\b[^\n]{0,80})SELINUX=disabled
+  unless:
+  - id: well-known/app/data/ease::installer-script-marker
+  - id: well-known/tool/detection/security-remediation/
+  - id: well-known/app/storage/clonezilla::drbl-locale-catalog-context
+  - id: well-known/app/infrastructure/linuxmirrors::project-identity
+  - id: well-known/tool/sysadmin/kubernetes/bootstrap::kubernetes-node-provisioning-context
+  - id: metadata/build/package/maintainer-scripts::rpm-spec-recipe-context
+  downgrade:
     any:
-      - id: micro-behaviors/os/security/selinux::setenforce-permissive
-    crit: baseline
-    unless:
-      - id: well-known/tool/development/agent/kilocode::kilo-code-native-runtime
-      - id: well-known/tool/reverse-engineering/frida/
-      - id: well-known/app/infrastructure/systemd::container-runtime-component-basename
-      - id: well-known/app/publishing/matomo/
-      - id: metadata/package/files/dependency::os-image-root-file-path
-      - id: well-known/tool/sysadmin/cubesandbox::cubesandbox-source-path
-      - id: metadata/package/files/wheel-sdist::python-wheel-vendored-shlib-dir
-      - id: well-known/lib/native/selinux::official-libselinux
-  - id: policy-commands
-    desc: SELinux policy modification commands
-    for:
-      - shell
-    any:
-      - id: load-policy-command
-      - id: semodule-remove-command
-    crit: suspicious
-    unless:
-      - id: metadata/lang/upstream::linux-kernel-secondary-tree-path
-      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
-      - id: metadata/lang/upstream::linux-kernel-primary-tree-path
-      - id: metadata/build/recognized-contexts::benign-build-tooling-context
-      - id: well-known/app/infrastructure/virtualbox::unattended-template
-      - id: well-known/app/data/postgresql::postgresql-source-tree
-      - id: well-known/tool/detection/wazuh/
-      - id: metadata/build/package/maintainer-scripts::rpm-spec-postun-scriptlet
-      - id: metadata/build/package/maintainer-scripts::rpm-postun-scriptlet-section
-  - id: enforcement-reduction
-    desc: Weakens SELinux enforcement via boot or config
-    for:
-      - shell
-    any:
-      - id: grubby-selinux-zero-argument
-      - id: grubby-enforcing-zero-argument
-      - id: selinux-disabled-config
-      - id: selinux-permissive-config
-    crit: suspicious
-    unless:
-      - id: provisioned-selinux-configuration
-      - id: well-known/tool/sysadmin/kubernetes/bootstrap::kubernetes-node-provisioning-context
-      - id: metadata/file/catalog/identity::linux-kernel-selinux-policy-installer
-      - id: metadata/lang/upstream::linux-kernel-primary-tree-path
-      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
-      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-any
-      - id: well-known/tool/detection/security-remediation/
-  - id: sel-enforce-symbols
-    desc: SELinux enforcement symbols
-    for:
-      - c
-      - elf
-    all:
-      - id: sel-read-enforce-symbol
-      - id: sel-write-enforce-symbol
-    crit: suspicious
-  - id: policy-manipulation
-    desc: SELinux policy load or manipulation
-    crit: suspicious
-    conf: 0.8
-    for: [scripts, binaries]
-    any:
-      - id: policy-commands
-    downgrade:
-      any:
-        - id: micro-behaviors/dylib/library/family/
-        - id: metadata/package/testing/presence/platform_suites/
-        - id: metadata/build/autotools
-    unless:
-      # libselinux itself reads /etc/selinux/config as part of normal policy
-      # initialization; that library identity is not an AV-evasion signal.
-      - id: well-known/lib/native/selinux::official-libselinux
-      # libsystemd also consumes SELinux configuration while applying normal
-      # labels; its shared runtime is not policy-tampering code.
-      - id: well-known/lib/native/systemd::systemd-shared-library
-      - id: well-known/tool/detection/wazuh/
-      - id: well-known/tool/sysadmin/busybox::busybox-binary
-  - id: selinux-state-enforcing
-    desc: SELinux state with enforcing keyword
-    for:
-      - c
-      - elf
-    all:
-      - id: selinux-state-symbol
-      - id: micro-behaviors/os/security/selinux::enforcing-keyword
-    crit: suspicious
-  - id: fake-enforce-selinux
-    desc: Fake enforce with SELinux state
-    for:
-      - c
-      - elf
-    all:
-      - id: fake-enforce-identifier
-      - id: selinux-state-symbol
-    crit: suspicious
-  - id: runtime-patch
-    desc: Runtime kernel patch to disable SELinux
-    crit: suspicious
-    conf: 0.95
-    for:
-      - c
-      - elf
-    any:
-      - id: selinux-state-enforcing
-      - id: sel-enforce-symbols
-      - id: fake-enforce-selinux
-  - id: deceptive-kernel-selinux-disable
-    desc: Disables SELinux and makes its status reader lie
-    crit: hostile
-    conf: 0.98
-    for: [c, cpp]
-    all:
-      - id: selinux-enforcing-pointer-zero-write
-      - id: selinux-enforcement-reader-return-patch
-      - id: micro-behaviors/os/kernel/register::cr0-inline-mov-source
-  - id: bypass-comp
-    desc: SELinux enforcement-control indicators
-    crit: notable
-    conf: 0.95
-    for: [scripts, binaries]
-    needs: 2
-    any:
-      - id: enforcement-commands
-      - id: enforcement-reduction
-      - id: runtime-patch
-    unless:
-      - id: metadata/lang/upstream::linux-kernel-primary-tree-path
-      - id: well-known/tool/reverse-engineering/rizin::rz-test-usage
-      - id: well-known/tool/reverse-engineering/frida/
-      - id: metadata/package/files/wheel-sdist::python-wheel-vendored-shlib-dir
-      - id: well-known/app/infrastructure/systemd::container-runtime-component-basename
-      - id: metadata/package/files/dependency::os-image-root-file-path
-      - id: well-known/tool/sysadmin/busybox::busybox-binary
-      - id: well-known/tool/detection/security-remediation/
-
+    - id: micro-behaviors/os/package-manager/installer-script::installer-script
+    - id: metadata/package/files/included::install-uninstall-shell-basename
+    - id: well-known/app/infrastructure/fboss::fboss-image-tooling-source
+- id: selinux-permissive-config
+  desc: Writes SELINUX=permissive to the SELinux config
+  crit: suspicious
+  conf: 0.8
+  for:
+  - shell
+  if:
+    type: text
+    regex: (?m)(^[ \t]*|\b(sed|echo|printf)\b[^\n]{0,80})SELINUX=permissive([^\n]{0,30})
+  not:
+  - regex: SELINUX=permissive/SELINUX=enforcing
+  unless:
   - id: provisioned-selinux-configuration
-    desc: VM or test-realm SELinux setup
-    crit: exception
-    conf: 0.95
+  - id: well-known/tool/sysadmin/kubernetes/bootstrap::kubernetes-node-provisioning-context
+  - id: metadata/file/catalog/identity::linux-kernel-selinux-policy-installer
+  - id: well-known/tool/detection/security-remediation/
+  - type: text
+    regex: (?i)kube(adm|let|ctl)
+  - id: well-known/tool/sysadmin/kubernetes/bootstrap::kubernetes-deployment-script-basename
+  - id: well-known/tool/sysadmin/kubernetes/bootstrap::kubernetes-bootstrap-directory-path
+  - id: micro-behaviors/os/container/runtime::kubelet-command-reference
+- id: selinux-state-symbol
+  desc: selinux_state struct, runtime-patch target
+  crit: suspicious
+  conf: 0.75
+  for:
+  - c
+  - elf
+  if:
+    type: symbol
+    exact: selinux_state
+- id: fake-enforce-identifier
+  desc: fake_enforce spoofs SELinux enforcing
+  crit: suspicious
+  conf: 0.8
+  for:
+  - c
+  - elf
+  if:
+    type: text
+    substr: fake_enforce
+- id: sel-read-enforce-symbol
+  desc: sel_read_enforce kernel enforce reader
+  crit: suspicious
+  conf: 0.8
+  for:
+  - c
+  - elf
+  if:
+    type: symbol
+    exact: sel_read_enforce
+- id: sel-write-enforce-symbol
+  desc: Patches sel_write_enforce to disable SELinux
+  crit: suspicious
+  conf: 0.8
+  for:
+  - c
+  - elf
+  if:
+    type: symbol
+    exact: sel_write_enforce
+- id: selinux-enforcing-pointer-zero-write
+  desc: Writes zero to SELinux enforcement state
+  crit: suspicious
+  conf: 0.96
+  for:
+  - c
+  - cpp
+  if:
+    type: text
+    regex: \*\s*selinux_enforcing\s*=\s*0\b
+- id: selinux-enforcement-reader-return-patch
+  desc: Patches sel_read_enforce to report enabled
+  crit: suspicious
+  conf: 0.96
+  for:
+  - c
+  - cpp
+  if:
+    type: text
+    regex: sel_read_enforce[\s\S]{0,800}\*\s*\(unsigned\s+int\s*\*\)\s*&p\[1\]\s*=\s*1\b
+composite_rules:
+- id: runtime-and-persistent-selinux-permissive
+  desc: Disables SELinux enforcement at runtime and in its config
+  crit: suspicious
+  conf: 0.95
+  for:
+  - shell
+  all:
+  - id: micro-behaviors/os/security/selinux::setenforce-permissive
+  - id: selinux-permissive-config
+  scope: file
+  near_bytes: 512
+- id: enforcement-commands
+  desc: SELinux enforcement commands
+  for:
+  - scripts
+  - binaries
+  any:
+  - id: micro-behaviors/os/security/selinux::setenforce-permissive
+  crit: baseline
+  unless:
+  - id: well-known/tool/development/agent/kilocode::kilo-code-native-runtime
+  - id: well-known/tool/reverse-engineering/frida/
+  - id: well-known/app/infrastructure/systemd::container-runtime-component-basename
+  - id: well-known/app/publishing/matomo/
+  - id: metadata/package/files/dependency::os-image-root-file-path
+  - id: well-known/tool/sysadmin/cubesandbox::cubesandbox-source-path
+  - id: metadata/package/files/wheel-sdist::python-wheel-vendored-shlib-dir
+  - id: well-known/lib/native/selinux::official-libselinux
+- id: policy-commands
+  desc: SELinux policy modification commands
+  for:
+  - shell
+  any:
+  - id: load-policy-command
+  - id: semodule-remove-command
+  crit: suspicious
+  unless:
+  - id: metadata/lang/upstream::linux-kernel-secondary-tree-path
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
+  - id: metadata/lang/upstream::linux-kernel-primary-tree-path
+  - id: metadata/build/recognized-contexts::benign-build-tooling-context
+  - id: well-known/app/infrastructure/virtualbox::unattended-template
+  - id: well-known/app/data/postgresql::postgresql-source-tree
+  - id: well-known/tool/detection/wazuh/
+  - id: metadata/build/package/maintainer-scripts::rpm-spec-postun-scriptlet
+  - id: metadata/build/package/maintainer-scripts::rpm-postun-scriptlet-section
+- id: enforcement-reduction
+  desc: Weakens SELinux enforcement via boot or config
+  for:
+  - shell
+  any:
+  - id: grubby-selinux-zero-argument
+  - id: grubby-enforcing-zero-argument
+  - id: selinux-disabled-config
+  - id: selinux-permissive-config
+  crit: suspicious
+  unless:
+  - id: provisioned-selinux-configuration
+  - id: well-known/tool/sysadmin/kubernetes/bootstrap::kubernetes-node-provisioning-context
+  - id: metadata/file/catalog/identity::linux-kernel-selinux-policy-installer
+  - id: metadata/lang/upstream::linux-kernel-primary-tree-path
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-any
+  - id: well-known/tool/detection/security-remediation/
+- id: sel-enforce-symbols
+  desc: SELinux enforcement symbols
+  for:
+  - c
+  - elf
+  all:
+  - id: sel-read-enforce-symbol
+  - id: sel-write-enforce-symbol
+  crit: suspicious
+- id: policy-manipulation
+  desc: SELinux policy load or manipulation
+  crit: suspicious
+  conf: 0.8
+  for:
+  - scripts
+  - binaries
+  any:
+  - id: policy-commands
+  downgrade:
     any:
-      - id: well-known/tool/sysadmin/cubesandbox::cubesandbox-source-path
-      - id: well-known/app/data/ease::installer-script-marker
-      - id: well-known/tool/sysadmin/k3s::k3s-vagrant-provisioner
-      - id: well-known/lib/crypto/gokrb5::testenv-bootstrap-script
+    - id: micro-behaviors/dylib/library/family/
+    - id: metadata/package/testing/presence/platform_suites/
+    - id: metadata/build/autotools
+  unless:
+  - id: well-known/lib/native/selinux::official-libselinux
+  - id: well-known/lib/native/systemd::systemd-shared-library
+  - id: well-known/tool/detection/wazuh/
+  - id: well-known/tool/sysadmin/busybox::busybox-binary
+- id: selinux-state-enforcing
+  desc: SELinux state with enforcing keyword
+  for:
+  - c
+  - elf
+  all:
+  - id: selinux-state-symbol
+  - id: micro-behaviors/os/security/selinux::enforcing-keyword
+  crit: suspicious
+- id: fake-enforce-selinux
+  desc: Fake enforce with SELinux state
+  for:
+  - c
+  - elf
+  all:
+  - id: fake-enforce-identifier
+  - id: selinux-state-symbol
+  crit: suspicious
+- id: runtime-patch
+  desc: Runtime kernel patch to disable SELinux
+  crit: suspicious
+  conf: 0.95
+  for:
+  - c
+  - elf
+  any:
+  - id: selinux-state-enforcing
+  - id: sel-enforce-symbols
+  - id: fake-enforce-selinux
+- id: deceptive-kernel-selinux-disable
+  desc: Disables SELinux and makes its status reader lie
+  crit: hostile
+  conf: 0.98
+  for:
+  - c
+  - cpp
+  all:
+  - id: selinux-enforcing-pointer-zero-write
+  - id: selinux-enforcement-reader-return-patch
+  - id: micro-behaviors/os/kernel/register::cr0-inline-mov-source
+- id: bypass-comp
+  desc: SELinux enforcement-control indicators
+  crit: notable
+  conf: 0.95
+  for:
+  - scripts
+  - binaries
+  needs: 2
+  any:
+  - id: enforcement-commands
+  - id: enforcement-reduction
+  - id: runtime-patch
+  unless:
+  - id: metadata/lang/upstream::linux-kernel-primary-tree-path
+  - id: well-known/tool/reverse-engineering/rizin::rz-test-usage
+  - id: well-known/tool/reverse-engineering/frida/
+  - id: metadata/package/files/wheel-sdist::python-wheel-vendored-shlib-dir
+  - id: well-known/app/infrastructure/systemd::container-runtime-component-basename
+  - id: metadata/package/files/dependency::os-image-root-file-path
+  - id: well-known/tool/sysadmin/busybox::busybox-binary
+  - id: well-known/tool/detection/security-remediation/
+- id: provisioned-selinux-configuration
+  desc: VM or test-realm SELinux setup
+  crit: exception
+  conf: 0.95
+  any:
+  - id: well-known/tool/sysadmin/cubesandbox::cubesandbox-source-path
+  - id: well-known/app/data/ease::installer-script-marker
+  - id: well-known/tool/sysadmin/k3s::k3s-vagrant-provisioner
+  - id: well-known/lib/crypto/gokrb5::testenv-bootstrap-script

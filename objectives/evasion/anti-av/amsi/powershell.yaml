@@ -1,373 +1,324 @@
 defaults:
-  for: [powershell]
-  platforms: [windows]
+  for:
+  - powershell
+  platforms:
+  - windows
   attack: T1562.001
   mbc: E1562
-
 traits:
-  - id: amsi-init-failed-reflection
-    desc: PowerShell AMSI reflection disables scanning
-    crit: suspicious
-    conf: 0.98
-    unless:
-      - id: metadata/file/profile/markup::technique-catalog-notes
-    if:
-      type: text
-      regex: '(?is)AmsiUtils.{0,180}amsiInitFailed.{0,140}SetValue\s*\('
-
-  - id: base64-amsiutils-type-name
-    desc: Base64-encoded AmsiUtils type name
-    crit: suspicious
-    conf: 0.99
-    for: [powershell, pe]
-    if:
-      type: text
-      substr: U3lzdGVtLk1hbmFnZW1lbnQuQXV0b21hdGlvbi5BbXNpVXRpbHM=
-    unless:
-      # Parser-library malware-fixture corpora (saferwall/pe test/): the
-      # specimen is inert test data, not a shipped AMSI bypass.
-      - id: metadata/package/testing/presence/corpus::binary-test-fixture-member
-    downgrade:
-      scope: archive
-      any:
-        - id: metadata/package/testing/presence/path::archive-test-directory-member-path
-        - id: metadata/file/naming::sha256-hex-basename
-        - id: metadata/package/testing/presence/corpus::binary-test-fixture-member
-
-  - id: base64-amsi-init-failed-field
-    desc: Base64-encoded AMSI failure field
-    crit: suspicious
-    conf: 0.99
-    for: [powershell, pe]
-    if:
-      type: text
-      substr: YW1zaUluaXRGYWlsZWQ=
-    unless:
-      # Parser-library malware-fixture corpora (saferwall/pe test/): the
-      # specimen is inert test data, not a shipped AMSI bypass.
-      - id: metadata/package/testing/presence/corpus::binary-test-fixture-member
-    downgrade:
-      scope: archive
-      any:
-        - id: metadata/package/testing/presence/path::archive-test-directory-member-path
-        - id: metadata/file/naming::sha256-hex-basename
-        - id: metadata/package/testing/presence/corpus::binary-test-fixture-member
-
-
-  - id: amsi-dll-char-concat
-    desc: AMSI DLL character concat
-    crit: suspicious
-    conf: 0.95
-    if:
-      type: text
-      regex: '"a"\s*\+\s*"m"\s*\+\s*"s"\s*\+\s*"i"\s*\+\s*"\.dll"'
-      case_insensitive: true
-  - id: amsi-open-session-concat
-    desc: AmsiOpenSession string concat
-    crit: suspicious
-    conf: 0.96
-    if:
-      type: text
-      regex: '"A"\s*\+\s*"msi"\s*\+\s*"Ope"\s*\+\s*"nS"\s*\+\s*"es"'
-      case_insensitive: true
-
-  # AMSI-bypass-via-Unicode-normalize-replace obfuscation.
-  #
-  # Modern AMSI bypasses (AxiomWallets, April 2026) avoid literal
-  # `AmsiUtils` / `amsiInitFailed` strings entirely. Instead they:
-  #   1. Build a Unicode string with diacritic-substituted letters
-  #      that *visually* resemble the target (e.g. `'ÄmsíÚtí'+'ls'`
-  #      for "AmsiUtils", `'ämsîÌnítF'+'áílèd'` for "amsiInitFailed").
-  #   2. Call `.Normalize(<form>)` on it — the form name is built
-  #      character-by-character via `[Char]([byte]0x46) + …` so
-  #      neither "FormD" nor "FormKD" is ever a literal.
-  #   3. Pipe through `-replace` with another char-built pattern
-  #      that strips the combining marks left over from
-  #      decomposition. The result is the cleartext "AmsiUtils" or
-  #      "amsiInitFailed" without the literal substring ever
-  #      appearing in the source.
-  #
-  # The obfuscation requires the chained `.Normalize(...)` followed
-  # closely by `-replace`. That two-keyword pair is rare in benign
-  # PowerShell (Normalize is uncommon outside i18n tooling, and
-  # deliberate string-cleaning with byte-built char patterns is
-  # almost exclusively a malware idiom).
-  # Build-a-string-from-byte-codes: `[Char]([byte]0xNN)` /
-  # `[Char](NN+NN)` chains that stitch together identifier names
-  # from numeric pieces. Two or more occurrences in close proximity
-  # is characteristic of the byte-arithmetic obfuscation used in
-  # the AMSI bypass above (and many similar malware loaders).
-  - id: powershell-char-cast-chain
-    desc: 'PS repeated [Char]() casts in close proximity'
-    # Requires 4 `[Char](...)` invocations clustered within a few
-    # hundred bytes — the textbook shape of identifier-from-bytes
-    # obfuscation. The regex itself enforces the repetition rather
-    # than relying on `count_min`, which `type: encoded` interprets
-    # per-decoded-string and so wouldn't fire on a single decoded
-    # blob containing many matches.
-    crit: notable
-    conf: 0.86
-    for: [powershell, vbs, html, batch, lnk]
-    if:
-      type: encoded
-      regex: '(\[Char\]\s*\([^)]{1,80}\)[\s+]*){4,}'
-      case_insensitive: true
-
-  - id: powershell-byte-hex-cast
-    desc: PowerShell byte hex cast
-    crit: component
-    conf: 0.82
-    for: [powershell, vbs, html, batch, lnk]
-    if:
-      type: encoded
-      regex: '\[Byte\]\s*0x[0-9A-Fa-f]{1,2}'
-      case_insensitive: true
-
-  # Direct reference to System.Management.Automation.dll — the
-  # assembly that exports AmsiUtils. AMSI bypasses that load the
-  # assembly directly via `AppDomain.CurrentDomain.GetAssemblies()`
-  # use this string instead of the typical `[Ref].Assembly.GetType`
-  # path that the existing `amsi-bypass-reflection` atom matches.
-  - id: amsi-automation-dll-reflection
-    desc: 'amsi automation dll reflection'
-    crit: suspicious
-    conf: 0.9
-    for: [powershell, vbs, html, batch, lnk]
-    if:
-      type: encoded
-      regex: 'System\.Management\.Automation\.dll'
-      case_insensitive: true
-
-  # The wildcard-split bypass. Neither `AmsiUtils` nor `amsiInitFailed` is
-  # written down: the script walks the assembly's type table and matches the
-  # class on a glob that starts mid-word, then walks its non-public static
-  # fields and matches the flag the same way. Writing `$true` into that flag
-  # tells PowerShell that AMSI failed to start, so nothing is scanned again
-  # for the life of the process.
-  #
-  # This is the oldest form and the one that keeps coming back, because the
-  # only thing a variant has to change is where the glob starts.
-  - id: reflective-type-table-scan
-    desc: Enumerates an assembly's type table
-    crit: notable
-    conf: 0.85
-    if:
-      type: text
-      regex: '\[Ref\]\.Assembly\.GetTypes\s*\('
-      case_insensitive: true
-
-  - id: wildcard-amsi-type-fragment
-    desc: Glob matches AmsiUtils mid-word
-    crit: suspicious
-    conf: 0.95
-    unless:
-      - id: metadata/file/profile/markup::technique-catalog-notes
-    if:
-      # `*iUtils`, `*siUtils`, `*msiUtils`. Reflection that means to find a
-      # class names it; a glob starting inside the word exists to keep the
-      # name out of the file.
-      type: text
-      regex: '\*[a-z]{0,4}iUtils'
-      case_insensitive: true
-
-  - id: nonpublic-static-field-lookup
-    desc: Reads non-public static fields
-    crit: notable
-    conf: 0.8
-    if:
-      type: text
-      regex: 'GetFields\s*\([^\)]{0,160}NonPublic[^\)]{0,80}Static'
-      case_insensitive: true
-
-  - id: amsiutils-type-token
-    desc: AmsiUtils reflection type token
-    crit: notable
-    conf: 0.9
-    for: [powershell, text]
-    if:
-      type: text
-      word: AmsiUtils
-  - id: amsicontext-field-token
-    desc: AMSI context field token
-    crit: notable
-    conf: 0.92
-    for: [powershell, text]
-    if:
-      type: text
-      word: amsiContext
-  - id: amsi-context-patch-constant
-    desc: AMSI context patch constant
-    crit: notable
-    conf: 0.93
-    for: [powershell, text]
-    if:
-      type: text
-      substr: "0x41414141"
-
-  - id: wildcard-init-failed-fragment
-    desc: Glob matches an init-failed flag
-    crit: component
-    conf: 0.8
-    if:
-      # `*ailed` / `*Failed`. Ordinary on its own -- scripts do filter logs
-      # for failures -- which is why it only counts beside the type glob.
-      type: text
-      regex: '\*F?ailed.{0,2}\)?\s*\)'
-      case_insensitive: true
-
-composite_rules:
-  - id: base64-amsi-init-failed-reflection-bypass
-    desc: Encoded PowerShell AMSI reflection bypass
-    crit: hostile
-    conf: 0.99
-    for: [powershell, pe, zip, tar, 7z]
+- id: amsi-init-failed-reflection
+  desc: PowerShell AMSI reflection disables scanning
+  crit: suspicious
+  conf: 0.98
+  unless:
+  - id: metadata/file/profile/markup::technique-catalog-notes
+  if:
+    type: text
+    regex: (?is)AmsiUtils.{0,180}amsiInitFailed.{0,140}SetValue\s*\(
+- id: base64-amsiutils-type-name
+  desc: Base64-encoded AmsiUtils type name
+  crit: suspicious
+  conf: 0.99
+  for:
+  - powershell
+  - pe
+  if:
+    type: text
+    substr: U3lzdGVtLk1hbmFnZW1lbnQuQXV0b21hdGlvbi5BbXNpVXRpbHM=
+  unless:
+  - id: metadata/package/testing/presence/corpus::binary-test-fixture-member
+  downgrade:
     scope: archive
-    near_bytes: 900
-    all:
-      - id: base64-amsiutils-type-name
-      - id: base64-amsi-init-failed-field
-      - id: micro-behaviors/metaprogramming/reflection::dotnet-type-field-setvalue
-      - id: micro-behaviors/metaprogramming/reflection::powershell-setvalue-null-true
-    unless:
-      # Security-tool test corpora (PE parser fixture sets, YARA test data)
-      # ship real AMSI-bypass scripts as inert samples; the archive-pooled
-      # verdict belongs to the specimen, not the library that parses it.
-      - id: metadata/package/testing/presence/path::archive-test-directory-member-path
-      - id: metadata/package/testing/presence/corpus::binary-test-fixture-member
-      - id: well-known/app/
-      - id: well-known/tool/
-    downgrade:
-      scope: archive
-      any:
-        - id: metadata/package/testing/presence/path::archive-test-directory-member-path
-        - id: metadata/package/testing/presence/corpus::binary-test-fixture-member
-
+    any:
+    - id: metadata/package/testing/presence/path::archive-test-directory-member-path
+    - id: metadata/filename/name-form::sha256-hex-basename
+    - id: metadata/package/testing/presence/corpus::binary-test-fixture-member
+- id: base64-amsi-init-failed-field
+  desc: Base64-encoded AMSI failure field
+  crit: suspicious
+  conf: 0.99
+  for:
+  - powershell
+  - pe
+  if:
+    type: text
+    substr: YW1zaUluaXRGYWlsZWQ=
+  unless:
+  - id: metadata/package/testing/presence/corpus::binary-test-fixture-member
+  downgrade:
+    scope: archive
+    any:
+    - id: metadata/package/testing/presence/path::archive-test-directory-member-path
+    - id: metadata/filename/name-form::sha256-hex-basename
+    - id: metadata/package/testing/presence/corpus::binary-test-fixture-member
+- id: amsi-dll-char-concat
+  desc: AMSI DLL character concat
+  crit: suspicious
+  conf: 0.95
+  if:
+    type: text
+    regex: '"a"\s*\+\s*"m"\s*\+\s*"s"\s*\+\s*"i"\s*\+\s*"\.dll"'
+    case_insensitive: true
+- id: amsi-open-session-concat
+  desc: AmsiOpenSession string concat
+  crit: suspicious
+  conf: 0.96
+  if:
+    type: text
+    regex: '"A"\s*\+\s*"msi"\s*\+\s*"Ope"\s*\+\s*"nS"\s*\+\s*"es"'
+    case_insensitive: true
+- id: powershell-char-cast-chain
+  desc: PS repeated [Char]() casts in close proximity
+  crit: notable
+  conf: 0.86
+  for:
+  - powershell
+  - vbs
+  - html
+  - batch
+  - lnk
+  if:
+    type: encoded
+    regex: (\[Char\]\s*\([^)]{1,80}\)[\s+]*){4,}
+    case_insensitive: true
+- id: powershell-byte-hex-cast
+  desc: PowerShell byte hex cast
+  crit: component
+  conf: 0.82
+  for:
+  - powershell
+  - vbs
+  - html
+  - batch
+  - lnk
+  if:
+    type: encoded
+    regex: \[Byte\]\s*0x[0-9A-Fa-f]{1,2}
+    case_insensitive: true
+- id: amsi-automation-dll-reflection
+  desc: amsi automation dll reflection
+  crit: suspicious
+  conf: 0.9
+  for:
+  - powershell
+  - vbs
+  - html
+  - batch
+  - lnk
+  if:
+    type: encoded
+    regex: System\.Management\.Automation\.dll
+    case_insensitive: true
+- id: reflective-type-table-scan
+  desc: Enumerates an assembly's type table
+  crit: notable
+  conf: 0.85
+  if:
+    type: text
+    regex: \[Ref\]\.Assembly\.GetTypes\s*\(
+    case_insensitive: true
+- id: wildcard-amsi-type-fragment
+  desc: Glob matches AmsiUtils mid-word
+  crit: suspicious
+  conf: 0.95
+  unless:
+  - id: metadata/file/profile/markup::technique-catalog-notes
+  if:
+    type: text
+    regex: \*[a-z]{0,4}iUtils
+    case_insensitive: true
+- id: nonpublic-static-field-lookup
+  desc: Reads non-public static fields
+  crit: notable
+  conf: 0.8
+  if:
+    type: text
+    regex: GetFields\s*\([^\)]{0,160}NonPublic[^\)]{0,80}Static
+    case_insensitive: true
+- id: amsiutils-type-token
+  desc: AmsiUtils reflection type token
+  crit: notable
+  conf: 0.9
+  for:
+  - powershell
+  - text
+  if:
+    type: text
+    word: AmsiUtils
+- id: amsicontext-field-token
+  desc: AMSI context field token
+  crit: notable
+  conf: 0.92
+  for:
+  - powershell
+  - text
+  if:
+    type: text
+    word: amsiContext
+- id: amsi-context-patch-constant
+  desc: AMSI context patch constant
+  crit: notable
+  conf: 0.93
+  for:
+  - powershell
+  - text
+  if:
+    type: text
+    substr: '0x41414141'
+- id: wildcard-init-failed-fragment
+  desc: Glob matches an init-failed flag
+  crit: component
+  conf: 0.8
+  if:
+    type: text
+    regex: \*F?ailed.{0,2}\)?\s*\)
+    case_insensitive: true
+composite_rules:
+- id: base64-amsi-init-failed-reflection-bypass
+  desc: Encoded PowerShell AMSI reflection bypass
+  crit: hostile
+  conf: 0.99
+  for:
+  - powershell
+  - pe
+  - zip
+  - tar
+  - 7z
+  scope: archive
+  near_bytes: 900
+  all:
+  - id: base64-amsiutils-type-name
+  - id: base64-amsi-init-failed-field
+  - id: micro-behaviors/metaprogramming/reflection::dotnet-type-field-setvalue
+  - id: micro-behaviors/metaprogramming/reflection::powershell-setvalue-null-true
+  unless:
+  - id: metadata/package/testing/presence/path::archive-test-directory-member-path
+  - id: metadata/package/testing/presence/corpus::binary-test-fixture-member
+  - id: well-known/app
+  - id: well-known/tool
+  downgrade:
+    scope: archive
+    any:
+    - id: metadata/package/testing/presence/path::archive-test-directory-member-path
+    - id: metadata/package/testing/presence/corpus::binary-test-fixture-member
+- id: powershell-normalize-replace-deobfuscation
+  desc: PowerShell Normalize replace deobfuscation
+  crit: suspicious
+  conf: 0.93
+  for:
+  - powershell
+  - vbs
+  - html
+  - batch
+  - lnk
+  near_bytes: 1024
+  all:
+  - id: metadata/lang/source/syntax/call/invocation::decoded-normalize-call
+  - id: metadata/lang/source/syntax/operator::decoded-powershell-replace
+  unless:
+  - id: metadata/file/extension/asset::javascript-source-map-path
+  - id: metadata/file/format/source-map::sourcemap
+  - id: metadata/file/format/source-map::sourcemap-sources-content
+  - id: well-known/app/communication/thunderbird::firefox-omni-runtime-path
+- id: powershell-char-byte-build-chain
+  desc: PowerShell char-byte string builder
+  crit: suspicious
+  conf: 0.88
+  for:
+  - powershell
+  - vbs
+  - html
+  - batch
+  - lnk
+  near_bytes: 1024
+  all:
+  - id: powershell-char-cast-chain
+  any:
+  - id: powershell-byte-hex-cast
+  - id: micro-behaviors/data/encode/char-code::powershell-numeric-char-reconstruction
+- id: amsi-open-session-memory-patch
+  desc: PowerShell patches AMSI API bytes in memory
+  crit: hostile
+  conf: 0.98
+  all:
+  - id: objectives/anti-static/obfuscation/string/broken-api::truncated-virtualprotect-name
+  - id: micro-behaviors/mem/c-runtime/functions::marshal-copy-via-type-variable
+  - id: micro-behaviors/metaprogramming/generation::powershell-add-type-variable
+  any:
+  - id: amsi-dll-char-concat
+  - id: amsi-open-session-concat
+  - id: micro-behaviors/os/security/amsi
+  needs: 1
+- id: amsi-bypass-normalize-reflection
+  desc: AMSI bypass via Unicode-normalize string deobfuscation + reflection
+  crit: hostile
+  conf: 0.97
+  for:
+  - powershell
+  - vbs
+  - html
+  - batch
+  - lnk
+  all:
   - id: powershell-normalize-replace-deobfuscation
-    desc: PowerShell Normalize replace deobfuscation
-    crit: suspicious
-    conf: 0.93
-    for: [powershell, vbs, html, batch, lnk]
-    near_bytes: 1024
-    all:
-      - id: metadata/lang/source/syntax/call/invocation::decoded-normalize-call
-      - id: metadata/lang/source/syntax/operator::decoded-powershell-replace
-    unless:
-      - id: metadata/file/extension/asset::javascript-source-map-path
-      - id: metadata/file/format/source-map::sourcemap
-      - id: metadata/file/format/source-map::sourcemap-sources-content
-      - id: well-known/app/communication/thunderbird::firefox-omni-runtime-path
-
   - id: powershell-char-byte-build-chain
-    desc: PowerShell char-byte string builder
-    crit: suspicious
-    conf: 0.88
-    for: [powershell, vbs, html, batch, lnk]
-    near_bytes: 1024
-    all:
-      - id: powershell-char-cast-chain
-    any:
-      - id: powershell-byte-hex-cast
-      - id: micro-behaviors/data/encode/char-code::powershell-numeric-char-reconstruction
-
-  # AmsiOpenSession in-memory patch: compile a P/Invoke surface with Add-Type,
-  # make the resolved export writable, and copy patch bytes over it.  The
-  # `any:` leg is what makes this AMSI-specific — without an AMSI reference in
-  # some form (split-name concat here, plaintext `amsi.dll` in the
-  # micro-behaviors atoms) the same three legs are just a generic memory
-  # patcher, which objectives/evasion/process/hook/inline reports instead.
-  - id: amsi-open-session-memory-patch
-    desc: PowerShell patches AMSI API bytes in memory
-    crit: hostile
-    conf: 0.98
-    all:
-      - id: objectives/anti-static/obfuscation/string/broken-api::truncated-virtualprotect-name
-      - id: micro-behaviors/mem/c-runtime/functions::marshal-copy-via-type-variable
-      - id: micro-behaviors/metaprogramming/generation::powershell-add-type-variable
-    any:
-      - id: amsi-dll-char-concat
-      - id: amsi-open-session-concat
-      - id: micro-behaviors/os/security/amsi
-    needs: 1
-
-  # Reflection-based AmsiUtils.amsiInitFailed bypass that avoids
-  # literal AMSI strings entirely. The two atomic conditions below
-  # together are very nearly conclusive: byte-built char chains plus
-  # a Normalize-then-replace pipeline is the textbook obfuscation
-  # technique for AMSI / EDR-API bypasses, and we additionally gate
-  # on a Reflection-Assembly entry point so we don't flag innocent
-  # i18n code that happens to use both keywords.
-  - id: amsi-bypass-normalize-reflection
-    desc: AMSI bypass via Unicode-normalize string deobfuscation + reflection
-    crit: hostile
-    conf: 0.97
-    for: [powershell, vbs, html, batch, lnk]
-    all:
-      - id: powershell-normalize-replace-deobfuscation
-      - id: powershell-char-byte-build-chain
-      - id: amsi-automation-dll-reflection
-  - id: amsi-init-failed-reflection-bypass
-    desc: Direct PowerShell AMSI initialization bypass
-    crit: hostile
-    conf: 0.98
-    all:
-      - id: amsi-init-failed-reflection
-      - id: micro-behaviors/metaprogramming/generation::powershell-base64-scriptblock-construction
-
-  - id: amsi-reflection-init-flag-tampering
-    desc: AMSI initialization flag forced by reflection
-    crit: hostile
-    conf: 0.99
-    all:
-      - id: amsi-init-failed-reflection
-      - id: objectives/evasion/anti-av/amsi::amsi-bypass-amsiutils-setvalue
-    unless:
-      - id: metadata/file/profile/markup::technique-catalog-notes
-
-  # The type table walked for a class the script will not name, and its
-  # private static fields read for a flag it will not name either. Two globs
-  # that start mid-word, aimed at the one class that turns scanning off.
-  - id: amsi-wildcard-reflection-bypass
-    desc: AMSI flag located by wildcard reflection
-    crit: hostile
-    conf: 0.97
-    all:
-      - id: reflective-type-table-scan
-      - id: wildcard-amsi-type-fragment
-    any:
-      - id: nonpublic-static-field-lookup
-      - id: wildcard-init-failed-fragment
-    unless:
-      - id: metadata/file/profile/markup::technique-catalog-notes
-
-  - id: amsi-hashed-assembly-field-bypass
-    desc: Hashed assembly walk sets AMSI failed
-    crit: hostile
-    conf: 0.97
-    all:
-      - id: micro-behaviors/process/interpreter/reflection/runtime::powershell-appdomain-getassemblies
-      - id: nonpublic-static-field-lookup
-      - id: micro-behaviors/metaprogramming/reflection::powershell-setvalue-null-true
-
-  - id: amsi-context-writeint32-bypass
-    desc: AMSI AmsiUtils context field patched
-    crit: hostile
-    conf: 0.98
-    all:
-      - id: amsiutils-type-token
-      - id: amsicontext-field-token
-    unless:
-      - id: metadata/file/profile/markup::technique-catalog-notes
-  - id: amsi-context-patch-constant-bypass
-    desc: AMSI context patched with 0x41414141
-    crit: hostile
-    conf: 0.97
-    all:
-      - id: amsicontext-field-token
-      - id: amsi-context-patch-constant
-  - id: amsiutils-context-patch-constant
-    desc: AmsiUtils patched with 0x41414141
-    crit: hostile
-    conf: 0.97
-    all:
-      - id: amsiutils-type-token
-      - id: amsi-context-patch-constant
+  - id: amsi-automation-dll-reflection
+- id: amsi-init-failed-reflection-bypass
+  desc: Direct PowerShell AMSI initialization bypass
+  crit: hostile
+  conf: 0.98
+  all:
+  - id: amsi-init-failed-reflection
+  - id: micro-behaviors/metaprogramming/generation::powershell-base64-scriptblock-construction
+- id: amsi-reflection-init-flag-tampering
+  desc: AMSI initialization flag forced by reflection
+  crit: hostile
+  conf: 0.99
+  all:
+  - id: amsi-init-failed-reflection
+  - id: objectives/evasion/anti-av/amsi::amsi-bypass-amsiutils-setvalue
+  unless:
+  - id: metadata/file/profile/markup::technique-catalog-notes
+- id: amsi-wildcard-reflection-bypass
+  desc: AMSI flag located by wildcard reflection
+  crit: hostile
+  conf: 0.97
+  all:
+  - id: reflective-type-table-scan
+  - id: wildcard-amsi-type-fragment
+  any:
+  - id: nonpublic-static-field-lookup
+  - id: wildcard-init-failed-fragment
+  unless:
+  - id: metadata/file/profile/markup::technique-catalog-notes
+- id: amsi-hashed-assembly-field-bypass
+  desc: Hashed assembly walk sets AMSI failed
+  crit: hostile
+  conf: 0.97
+  all:
+  - id: micro-behaviors/process/interpreter/reflection/runtime::powershell-appdomain-getassemblies
+  - id: nonpublic-static-field-lookup
+  - id: micro-behaviors/metaprogramming/reflection::powershell-setvalue-null-true
+- id: amsi-context-writeint32-bypass
+  desc: AMSI AmsiUtils context field patched
+  crit: hostile
+  conf: 0.98
+  all:
+  - id: amsiutils-type-token
+  - id: amsicontext-field-token
+  unless:
+  - id: metadata/file/profile/markup::technique-catalog-notes
+- id: amsi-context-patch-constant-bypass
+  desc: AMSI context patched with 0x41414141
+  crit: hostile
+  conf: 0.97
+  all:
+  - id: amsicontext-field-token
+  - id: amsi-context-patch-constant
+- id: amsiutils-context-patch-constant
+  desc: AmsiUtils patched with 0x41414141
+  crit: hostile
+  conf: 0.97
+  all:
+  - id: amsiutils-type-token
+  - id: amsi-context-patch-constant

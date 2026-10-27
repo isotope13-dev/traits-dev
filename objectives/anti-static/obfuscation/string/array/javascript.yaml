@@ -1,560 +1,517 @@
-# Advanced String Array Obfuscation - JavaScript
-# Detects sophisticated string array obfuscation patterns used in malware
-# MBC: B0032 (Obfuscated Files or Information)
-# ATT&CK: T1027
 defaults:
-  platforms: [windows, unix]
+  platforms:
+  - windows
+  - unix
 traits:
-  - id: typescript-expect-annotation
-    mbc: B0032
-    for: [javascript, typescript]
-    desc: TypeScript expect annotation helper
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      regex: "\\$Expect(Error|Type)\\b"
-  # Large random variable names (>30 chars) typical of obfuscators
-  - id: large-random-variables
-    mbc: B0032
-    for: [javascript, typescript]
-    desc: Large random variable names (obfuscation)
-    # Generated SDKs and compiled bundles also use long identifiers.  Obfuscator
-    # composites combine this with string or control-flow evidence.
-    crit: notable
-    conf: 0.75
-    attack: "T1027"
-    per_kb_min: 0.1
-    downgrade:
-      any:
-        - id: well-known/lib/ui/videojs/
-        - id: well-known/tool/development/vscode-extension/svelte/
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/build/bundler/asset::has-sourcemap
-      - type: metrics
-        field: identifiers.avg_entropy
-        max: 3.0
-      - type: basename
-        regex: '(^|[-_.])(test|tests|spec)\.[cm]?[jt]sx?$'
-    if:
-      type: text
-      regex: "\\b(var|let|const)\\s+[_$A-Za-z][_$A-Za-z]{0,15}[0-9_$][A-Za-z0-9$]{24,}\\b"
-    not:
-      # Three or more camelCase word boundaries: a name mangler emits opaque
-      # runs, not word-segmented ones. Generated SDK clients are long by
-      # convention -- Mistral's Speakeasy output declares
-      # `AgentsApiV1ConversationsGetRequest$outboundSchema`.
-      - regex: '[a-z][A-Z][A-Za-z0-9$]{0,40}[a-z][A-Z][A-Za-z0-9$]{0,40}[a-z][A-Z]'
-      - substr: WIN_BUILD_CONPTY_SUPPORTED
-      - substr: Hydrat
-      - regex: '\b[A-Za-z0-9_$]{20,}(Abi|Address)\b'
-      # SCREAMING_SNAKE_CASE is how humans name constants, never how a name
-      # mangler emits identifiers -- `const CONTEXT_WAITFORELEMENTSTOBEINDOM`
-      # is long, but it is not random.
-      - regex: '^(var|let|const)\s+[A-Z][A-Z0-9_$]*$'
-      # Generated i18n dictionaries use an iNN prefix plus readable camelCase
-      # message keys (for example, i19acceptCustomOptionByCustomer).
-      - regex: '\bi\d+[a-z][A-Za-z0-9]*(?:[A-Z][A-Za-z0-9]*){2,}\b'
-      # Smithy AWS SDK v3 schema tables declare long PascalCase symbols
-      # such as S3DestinationConfiguration, not obfuscator identifiers.
-      - regex: '^var [A-Z][0-9][A-Za-z]{18,}$'
-      - regex: '^var [A-Z][a-z]{2,}[A-Z][a-zA-Z]{18,}$'
-  # String array with hexadecimal indexing patterns
-  - id: string-array-hex-index
-    mbc: B0032
-    for: [javascript, typescript]
-    desc: Repeated obfuscator-style hex array indexing
-    crit: suspicious
-    conf: 0.85
-    attack: "T1027"
-    count_min: 10
-    per_kb_min: 0.5
-    if:
-      type: text
-      regex: "\\b\\w{0,12}_0x[0-9a-fA-F]{3,}\\[\\s*0x[0-9a-fA-F]{2,4}\\s*\\]"
-    not:
-      - substr: ESCAPE_SEQUENCES[
-      # PDF implementations use the standard PDFDocEncoding table in the
-      # same indexed form; this is a format lookup table, not concealed
-      # strings. Filter only those matches, preserving unrelated evidence in
-      # a source file that happens to contain a PDF helper.
-      - regex: '(?i)pdfdocencoding'
-    unless:
-      - id: metadata/package/files/system-package::debian-missing-sources-vendored-crate
-      - type: text
-        regex: "\\b(String\\.)?fromCharCode\\s*\\("
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/package/files/dependency::node-modules-path
-      - id: metadata/build/
-      - id: metadata/package/files/system-package::julia-runtime-path
-      - id: well-known/lib/ai/ggml
-      - id: well-known/lib/native/hpc
-  # String assignment to array with hex indices
-  - id: bracket-concat-rebuild
-    mbc: B0032
-    for: [javascript, typescript]
-    desc: Bracket-notation array concat rebuild pattern
-    crit: notable
-    conf: 0.6
-    attack: "T1027"
-    if:
-      type: text
-      regex: \['concat'\]\(\w+\[\w+\]\)
-  - id: hex-array-assignment
-    mbc: B0032
-    for: [javascript, typescript]
-    desc: Hex array index assignment pattern
-    crit: suspicious
-    conf: 0.88
-    attack: "T1027"
-    count_min: 3
-    if:
-      type: text
-      # Require the literal `0x` prefix, as the `string-array-hex-index`
-      # sibling does. Without it, any short key whose letters happen to be
-      # hex digits qualified: `["C11"]`/`["C17"]` compiler-standard maps,
-      # `["404"]` status tables, `["de"]`/`["fa"]`/`["ca"]` locale maps.
-      regex: "\\[\\s*['\"]0x[0-9a-fA-F]{2,4}['\"]\\s*\\]\\s*=\\s*['\"][^'\"]{1,120}['\"]"
-    unless:
-      - id: metadata/build/
-  # String array declaration with large obfuscated variable names.
-  #
-  # The name length was doing all the work and it does not mean what the trait
-  # says: a 21-character identifier is far more often *descriptive* than
-  # machine-generated. AngularJS's dependency-injection annotation style —
-  # `var ngIncludeFillContentDirective = ['$compile', function(...){}]`,
-  # `var ngTranscludeDirective = ['$compile', ...]` — matched three times over
-  # and rated stock angular.js an obfuscated string array. (Note obfuscator.io's
-  # own arrays are named `_0x1a2b`, well under 20 characters, so length was
-  # never selecting for the real thing.)
-  #
-  # What separates the two is the array, not the name: an obfuscation string
-  # table is a run of string literals, whereas a DI annotation is one string
-  # followed by the function it annotates. Requiring a second consecutive
-  # string element keeps every real string table and drops the DI form. The
-  # long `unless:` list below predates this and is now mostly redundant.
-  - id: obfuscated-string-array
-    mbc: B0032
-    for: [javascript, typescript]
-    desc: Obfuscated string array declaration
-    crit: suspicious
-    conf: 0.82
-    attack: "T1027"
-    count_min: 3
-    if:
-      type: text
-      regex: "var\\s+[A-Za-z][A-Za-z0-9$]{20,}\\s*=\\s*\\[\\s*(['\"][^'\"]{1,60}['\"]\\s*,\\s*){2}"
-    not:
-      - substr: _default =
-      - regex: 'var\s+[a-z][a-zA-Z]*(?:Collection|Extensions?|Types?)\s*=\s*\['
-      # Published component libraries export prop enum tables as ES module vars
-      # (e.g. progressStepBarPropSize=["s","xs","m"]). Obfuscator string tables
-      # are never exported and use machine names without camelCase word breaks.
-      - regex: 'var\s+[a-z][a-z0-9$]*([A-Z][a-z0-9$]*){2,}\s*=\s*\[\s*[''"]'
-    unless:
-      - id: well-known/lib/ui/react::library-identity
-      - id: well-known/tool/development/aube::aube-package-test-fixture
-      - id: well-known/lib/vendor-sdk/geeviz::package-context
-      - id: well-known/lib/vendor-sdk/geeviz::package-path
-      - id: well-known/lib/format/json-ts/
-      - id: metadata/build/
-      - id: metadata/package/files/dependency::node-modules-path
-      - id: well-known/tool/packaging/yarn::yarn-cli-bundle-marker
-  # Multiple concatenated string literals (typical in deobfuscation)
-  - id: zod-schema-description-concat
-    mbc: B0032
-    for: [javascript, typescript]
-    desc: Zod schema description text
-    crit: baseline
-    conf: 0.88
-    if:
-      type: text
-      regex: '\.describe\s*\([^)]{0,600}\+\s*["'']'
-  - id: prompt-fragment-marker
-    mbc: B0032
-    for: [javascript, typescript]
-    desc: Prompt fragment marker
-    crit: baseline
-    conf: 0.88
-    if:
-      type: text
-      regex: '<(plan-mode|web-search)>'
-  - id: self-defending-regex
-    mbc: B0032
-    for: [javascript, typescript]
-    desc: Self-defending regex guard string
-    crit: suspicious
-    conf: 0.94
-    attack: "T1027"
-    if:
-      type: string_literal
-      exact: "(((.+)+)+)+$"
-    unless:
-      - id: well-known/app/security/seon::seon-sdk-context
-      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::javascript-obfuscator-string-array-runtime
-      - id: metadata/build/minifier::intentional-obfuscated-javascript-artifact-context
-    downgrade:
-      scope: archive
-      any:
-        - id: metadata/build/minifier::intentional-obfuscated-javascript-artifact-context
-  - id: constructor-string-split
-    mbc: B0032
-    for: [javascript, typescript]
-    desc: Split constructor string access
-    crit: notable
-    conf: 0.94
-    attack: "T1027"
-    if:
-      type: text
-      substr: "['constructo'+'r']"
-    unless:
-      - id: metadata/build/bundler/vscode::vscode-extension-generated-asset
-      - id: metadata/build/bundler/asset::vscode-extension-output-path
-      - id: well-known/tool/development/vscode-extension/dbcode::extension-context
-      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::javascript-obfuscator-string-array-runtime
-  - id: inline-font-data-uri
-    mbc: B0032
-    for: [javascript, typescript]
-    desc: Inline font data URI asset
-    crit: baseline
-    if:
-      type: text
-      regex: 'data:font/[a-z0-9.+-]+;base64,'
-  - id: repeated-numeric-array-string-decoding
-    mbc: B0032
-    for: [javascript, typescript]
-    desc: Repeated numeric arrays decoded to strings
-    crit: suspicious
-    conf: 0.92
-    count_min: 2
-    if:
-      type: text
-      regex: 'String\.fromCharCode\s*\(\s*\.\.\.\s*\[\s*\d{2,3}(\s*,\s*\d{2,3}){3,}\s*\]'
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-  - id: js-array-reverse
-    desc: Array reverse method
-    crit: baseline
-    conf: 0.5
-    for:
-      - javascript
-    if:
-      type: text
-      regex: (\.reverse|\[\s*["'']reverse["'']\s*\])\s*\(\s*\)
-    unless:
-      - id: well-known/lib/crypto/zxcvbn::zxcvbn-ranked-dictionaries
-      - type: symbol
-        exact: matching
-      - id: metadata/build/bundler/asset::js-large-module-bundle
-      - id: metadata/build/recognized-contexts::benign-build-tooling-context
-  - id: js-long-marker-split-join-cleanup
-    desc: Long marker stripped via split join
-    crit: suspicious
-    conf: 0.9
-    for:
-      - javascript
-    count_min: 2
-    if:
-      type: text
-      regex: '\.split\(\s*["''][A-Za-z0-9]{10,30}["'']\s*\)\.join\(\s*["'']["'']\s*\)'
-    unless:
-      - id: well-known/lib/web/client-side/jquery/
-      - id: well-known/lib/ai/mathjax/
-      - id: metadata/build/bundler/asset::js-large-module-bundle
-      - id: metadata/build/recognized-contexts::benign-build-tooling-context
-      - id: metadata/file/format/markup::adblock-filter-list
-  - id: js-long-delimiter-split-join-cleanup
-    desc: Long delimiter stripped via repeated split join
-    crit: suspicious
-    conf: 0.94
-    attack: T1027.002
-    mbc: B0032
-    for: [javascript]
-    count_min: 2
-    if:
-      type: text
-      # The delimiter must be ONE string literal: `[^"]` instead of `.` stops
-      # the window from swallowing the closing quote and stitching an unrelated
-      # `.join("")` onto a distant `.split("...")`. With a bare `.` this matched
-      # `s.split(" ").filter(Boolean),o=s.map(r=>r[0]||"").join("")` in
-      # intl-tel-input, i.e. two ordinary one-character splits, not a delimiter.
-      regex: '\.split\(\s*"[^"]{10,100}"\s*\)\.join\(\s*""\s*\)'
-    not:
-      # Same discriminator as js-split-join-cleanup: escaped newline/CR/tab
-      # delimiters are text normalisation, not a concealed junk marker.
-      - regex: '\\[rnt]'
-      # ANSI bracketed-paste delimiters are terminal input framing, not
-      # concealed payload markers.
-      - regex: '\\x1b\[20[01]~'
-      # IDE/editor template placeholders (`${workspaceFolder}/`) and prompt
-      # phrases containing them are structured text normalisation, not a
-      # concealed junk marker; obfuscator markers are plain alphanumerics.
-      - regex: '\$\{'
-      # XML/HTML tags or markup fences (`</untrusted-...>`) are input
-      # sanitization or fence stripping, not concealed junk markers.
-      - regex: '</?[a-zA-Z0-9_-]+'
-      # Domain name suffixes (`.my.salesforce.com`) and path/URL segments are
-      # URL normalization, not concealed junk markers.
-      - regex: '\.split\(\s*"[^"]*\.[a-zA-Z]{2,}[^"]*"'
-      # Delimiters containing whitespace (`duration : `) are natural language
-      # text formatting/normalization, not concealed junk markers.
-      - regex: '\.split\(\s*"[^"]*\s[^"\n\r]*"'
-    unless:
-      - id: metadata/build/bundler/wrapper::babel-transpiled
-      - id: metadata/build/minifier::js-large-minified-bundle
-  - id: js-repeated-marker-token
-    desc: Dense repeated string marker token
-    crit: notable
-    conf: 0.93
-    for:
-      - javascript
-    size_min: 20000
-    count_min: 40
-    if:
-      type: text
-      substr: sijRysBVHh
-    unless:
-      - id: metadata/build/bundler/asset::js-large-module-bundle
-      - id: metadata/build/recognized-contexts::benign-build-tooling-context
-  - id: js-marker-split-join-cleanup-call
-    desc: Marker stripped via split join
-    crit: notable
-    conf: 0.93
-    for:
-      - javascript
-    if:
-      type: text
-      substr: '.split("sijRysBVHh").join("")'
-  - id: js-afcrk-repeated-marker-token
-    desc: Dense AFcrk marker padding
-    crit: suspicious
-    conf: 0.96
-    mbc: B0032
-    attack: T1027.002
-    for:
-      - javascript
-    size_min: 20000
-    count_min: 40
-    if:
-      type: text
-      substr: AFcrkFAbmFdInk
-  - id: js-gcfombg-repeated-marker-token
-    desc: Dense gcFombg marker padding
-    crit: suspicious
-    conf: 0.97
-    mbc: B0032
-    attack: T1027.002
-    for:
-      - javascript
-    size_min: 20000
-    count_min: 40
-    if:
-      type: text
-      substr: gcFombgkSgmerA
-  # Deep chained split/join (4+ levels) - string permutation obfuscation
-  - id: js-deep-split-join-chain
-    desc: Repeated split/join string rewrite chain
-    crit: notable
-    conf: 0.92
-    mbc: B0032
-    attack: T1027.002
-    for:
-      - javascript
-    if:
-      type: symbol
-      regex: "(\\.split\\.join|\\.join\\.split){3,}"
-    unless:
-      - id: metadata/build/
-      - type: string_literal
-        substr: "\\0SLASH"
-  - id: js-lzstring-table-split-call
-    desc: Splits LZString UTF-16 output
-    crit: notable
-    conf: 0.9
-    mbc: B0032
-    attack: T1027.002
-    for:
-      - javascript
-      - typescript
-    if:
-      type: text
-      regex: 'decompressFromUTF16\s*\([^)]{0,80}\)\s*\.\s*split\s*\('
+- id: typescript-expect-annotation
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  desc: TypeScript expect annotation helper
+  crit: notable
+  conf: 0.9
+  if:
+    type: text
+    regex: \$Expect(Error|Type)\b
+- id: large-random-variables
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  desc: Large random variable names (obfuscation)
+  crit: notable
+  conf: 0.75
+  attack: T1027
+  per_kb_min: 0.1
+  downgrade:
+    any:
+    - id: well-known/lib/ui/videojs/
+    - id: well-known/tool/development/vscode-extension/svelte/
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/build/bundler/asset::has-sourcemap
+  - type: metrics
+    field: identifiers.avg_entropy
+    max: 3.0
+  - type: basename
+    regex: (^|[-_.])(test|tests|spec)\.[cm]?[jt]sx?$
+  if:
+    type: text
+    regex: \b(var|let|const)\s+[_$A-Za-z][_$A-Za-z]{0,15}[0-9_$][A-Za-z0-9$]{24,}\b
+  not:
+  - regex: '[a-z][A-Z][A-Za-z0-9$]{0,40}[a-z][A-Z][A-Za-z0-9$]{0,40}[a-z][A-Z]'
+  - substr: WIN_BUILD_CONPTY_SUPPORTED
+  - substr: Hydrat
+  - regex: \b[A-Za-z0-9_$]{20,}(Abi|Address)\b
+  - regex: ^(var|let|const)\s+[A-Z][A-Z0-9_$]*$
+  - regex: \bi\d+[a-z][A-Za-z0-9]*(?:[A-Z][A-Za-z0-9]*){2,}\b
+  - regex: ^var [A-Z][0-9][A-Za-z]{18,}$
+  - regex: ^var [A-Z][a-z]{2,}[A-Z][a-zA-Z]{18,}$
+- id: string-array-hex-index
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  desc: Repeated obfuscator-style hex array indexing
+  crit: suspicious
+  conf: 0.85
+  attack: T1027
+  count_min: 10
+  per_kb_min: 0.5
+  if:
+    type: text
+    regex: \b\w{0,12}_0x[0-9a-fA-F]{3,}\[\s*0x[0-9a-fA-F]{2,4}\s*\]
+  not:
+  - substr: ESCAPE_SEQUENCES[
+  - regex: (?i)pdfdocencoding
+  unless:
+  - id: metadata/package/files/system-package::debian-missing-sources-vendored-crate
+  - type: text
+    regex: \b(String\.)?fromCharCode\s*\(
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/package/files/dependency::node-modules-path
+  - id: metadata/build
+  - id: metadata/package/files/system-package::julia-runtime-path
+  - id: well-known/lib/ai/ggml
+  - id: well-known/lib/native/hpc
+- id: bracket-concat-rebuild
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  desc: Bracket-notation array concat rebuild pattern
+  crit: notable
+  conf: 0.6
+  attack: T1027
+  if:
+    type: text
+    regex: \['concat'\]\(\w+\[\w+\]\)
+- id: hex-array-assignment
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  desc: Hex array index assignment pattern
+  crit: suspicious
+  conf: 0.88
+  attack: T1027
+  count_min: 3
+  if:
+    type: text
+    regex: \[\s*['"]0x[0-9a-fA-F]{2,4}['"]\s*\]\s*=\s*['"][^'"]{1,120}['"]
+  unless:
+  - id: metadata/build
+- id: obfuscated-string-array
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  desc: Obfuscated string array declaration
+  crit: suspicious
+  conf: 0.82
+  attack: T1027
+  count_min: 3
+  if:
+    type: text
+    regex: var\s+[A-Za-z][A-Za-z0-9$]{20,}\s*=\s*\[\s*(['"][^'"]{1,60}['"]\s*,\s*){2}
+  not:
+  - substr: _default =
+  - regex: var\s+[a-z][a-zA-Z]*(?:Collection|Extensions?|Types?)\s*=\s*\[
+  - regex: var\s+[a-z][a-z0-9$]*([A-Z][a-z0-9$]*){2,}\s*=\s*\[\s*['"]
+  unless:
+  - id: well-known/lib/ui/react::library-identity
+  - id: well-known/tool/development/aube::aube-package-test-fixture
+  - id: well-known/lib/vendor-sdk/geeviz::package-context
+  - id: well-known/lib/vendor-sdk/geeviz::package-path
+  - id: well-known/lib/format/json-ts/
+  - id: metadata/build
+  - id: metadata/package/files/dependency::node-modules-path
+  - id: well-known/tool/packaging/yarn::yarn-cli-bundle-marker
+- id: zod-schema-description-concat
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  desc: Zod schema description text
+  crit: baseline
+  conf: 0.88
+  if:
+    type: text
+    regex: \.describe\s*\([^)]{0,600}\+\s*["']
+- id: prompt-fragment-marker
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  desc: Prompt fragment marker
+  crit: baseline
+  conf: 0.88
+  if:
+    type: text
+    regex: <(plan-mode|web-search)>
+- id: self-defending-regex
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  desc: Self-defending regex guard string
+  crit: suspicious
+  conf: 0.94
+  attack: T1027
+  if:
+    type: string_literal
+    exact: (((.+)+)+)+$
+  unless:
+  - id: well-known/app/security/seon::seon-sdk-context
+  - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::javascript-obfuscator-string-array-runtime
+  - id: metadata/build/minifier::intentional-obfuscated-javascript-artifact-context
+  downgrade:
+    scope: archive
+    any:
+    - id: metadata/build/minifier::intentional-obfuscated-javascript-artifact-context
+- id: constructor-string-split
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  desc: Split constructor string access
+  crit: notable
+  conf: 0.94
+  attack: T1027
+  if:
+    type: text
+    substr: '[''constructo''+''r'']'
+  unless:
+  - id: metadata/build/bundler/vscode::vscode-extension-generated-asset
+  - id: metadata/build/bundler/asset::vscode-extension-output-path
+  - id: well-known/tool/development/vscode-extension/dbcode::extension-context
+  - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::javascript-obfuscator-string-array-runtime
+- id: inline-font-data-uri
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  desc: Inline font data URI asset
+  crit: baseline
+  if:
+    type: text
+    regex: data:font/[a-z0-9.+-]+;base64,
+- id: repeated-numeric-array-string-decoding
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  desc: Repeated numeric arrays decoded to strings
+  crit: suspicious
+  conf: 0.92
+  count_min: 2
+  if:
+    type: text
+    regex: String\.fromCharCode\s*\(\s*\.\.\.\s*\[\s*\d{2,3}(\s*,\s*\d{2,3}){3,}\s*\]
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+- id: js-array-reverse
+  desc: Array reverse method
+  crit: baseline
+  conf: 0.5
+  for:
+  - javascript
+  if:
+    type: text
+    regex: (\.reverse|\[\s*["'']reverse["'']\s*\])\s*\(\s*\)
+  unless:
+  - id: well-known/lib/crypto/zxcvbn::zxcvbn-ranked-dictionaries
+  - type: symbol
+    exact: matching
+  - id: metadata/build/bundler/asset::js-large-module-bundle
+  - id: metadata/build/recognized-contexts::benign-build-tooling-context
+- id: js-long-marker-split-join-cleanup
+  desc: Long marker stripped via split join
+  crit: suspicious
+  conf: 0.9
+  for:
+  - javascript
+  count_min: 2
+  if:
+    type: text
+    regex: \.split\(\s*["'][A-Za-z0-9]{10,30}["']\s*\)\.join\(\s*["']["']\s*\)
+  unless:
+  - id: well-known/lib/web/client-side/jquery/
+  - id: well-known/lib/ai/mathjax/
+  - id: metadata/build/bundler/asset::js-large-module-bundle
+  - id: metadata/build/recognized-contexts::benign-build-tooling-context
+  - id: metadata/file/format/markup::adblock-filter-list
+- id: js-long-delimiter-split-join-cleanup
+  desc: Long delimiter stripped via repeated split join
+  crit: suspicious
+  conf: 0.94
+  attack: T1027.002
+  mbc: B0032
+  for:
+  - javascript
+  count_min: 2
+  if:
+    type: text
+    regex: \.split\(\s*"[^"]{10,100}"\s*\)\.join\(\s*""\s*\)
+  not:
+  - regex: \\[rnt]
+  - regex: \\x1b\[20[01]~
+  - regex: \$\{
+  - regex: </?[a-zA-Z0-9_-]+
+  - regex: \.split\(\s*"[^"]*\.[a-zA-Z]{2,}[^"]*"
+  - regex: \.split\(\s*"[^"]*\s[^"\n\r]*"
+  unless:
+  - id: metadata/build/bundler/wrapper::babel-transpiled
+  - id: metadata/build/minifier::js-large-minified-bundle
+- id: js-repeated-marker-token
+  desc: Dense repeated string marker token
+  crit: notable
+  conf: 0.93
+  for:
+  - javascript
+  size_min: 20000
+  count_min: 40
+  if:
+    type: text
+    substr: sijRysBVHh
+  unless:
+  - id: metadata/build/bundler/asset::js-large-module-bundle
+  - id: metadata/build/recognized-contexts::benign-build-tooling-context
+- id: js-marker-split-join-cleanup-call
+  desc: Marker stripped via split join
+  crit: notable
+  conf: 0.93
+  for:
+  - javascript
+  if:
+    type: text
+    substr: .split("sijRysBVHh").join("")
+- id: js-afcrk-repeated-marker-token
+  desc: Dense AFcrk marker padding
+  crit: suspicious
+  conf: 0.96
+  mbc: B0032
+  attack: T1027.002
+  for:
+  - javascript
+  size_min: 20000
+  count_min: 40
+  if:
+    type: text
+    substr: AFcrkFAbmFdInk
+- id: js-gcfombg-repeated-marker-token
+  desc: Dense gcFombg marker padding
+  crit: suspicious
+  conf: 0.97
+  mbc: B0032
+  attack: T1027.002
+  for:
+  - javascript
+  size_min: 20000
+  count_min: 40
+  if:
+    type: text
+    substr: gcFombgkSgmerA
+- id: js-deep-split-join-chain
+  desc: Repeated split/join string rewrite chain
+  crit: notable
+  conf: 0.92
+  mbc: B0032
+  attack: T1027.002
+  for:
+  - javascript
+  if:
+    type: symbol
+    regex: (\.split\.join|\.join\.split){3,}
+  unless:
+  - id: metadata/build
+  - type: string_literal
+    substr: \0SLASH
+- id: js-lzstring-table-split-call
+  desc: Splits LZString UTF-16 output
+  crit: notable
+  conf: 0.9
+  mbc: B0032
+  attack: T1027.002
+  for:
+  - javascript
+  - typescript
+  if:
+    type: text
+    regex: decompressFromUTF16\s*\([^)]{0,80}\)\s*\.\s*split\s*\(
 composite_rules:
-  - id: typescript-annotation-marker
-    mbc: B0032
-    for: [javascript, typescript]
-    desc: TypeScript declaration or expect marker
-    crit: component
-    conf: 0.9
-    any:
-      - id: metadata/lang/scripted::dts-declaration-file
-      - id: typescript-expect-annotation
-  # Advanced string array obfuscation composite
+- id: typescript-annotation-marker
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  desc: TypeScript declaration or expect marker
+  crit: component
+  conf: 0.9
+  any:
+  - id: metadata/lang/scripted::dts-declaration-file
+  - id: typescript-expect-annotation
+- id: advanced-string-array-obfuscation
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  desc: Advanced string array obfuscation pattern
+  crit: suspicious
+  conf: 0.92
+  attack: T1027
+  needs: 2
+  any:
+  - id: large-random-variables
+  - id: string-array-hex-index
+  - id: hex-array-assignment
+  - id: obfuscated-string-array
+  all:
+  - id: micro-behaviors/data/string/concat::massive-string-concatenation
+- id: string-deobfuscation-routine
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  desc: String deobfuscation routine
+  crit: hostile
+  conf: 0.95
+  attack: T1027.002
+  all:
+  - id: large-random-variables
+  - id: string-array-hex-index
+  - id: micro-behaviors/data/string/concat::massive-string-concatenation
+  any:
+  - id: hex-array-assignment
+  - id: micro-behaviors/data/property/access::identifier-plus-hex-index
+  unless:
+  - id: well-known/tool/development/mobile/pymobiledevice3
+- id: self-defending-string-array
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  desc: Self-defending string-array obfuscation
+  crit: suspicious
+  conf: 0.97
+  attack: T1027
+  all:
+  - id: self-defending-regex
+  any:
   - id: advanced-string-array-obfuscation
-    mbc: B0032
-    for: [javascript, typescript]
-    desc: Advanced string array obfuscation pattern
-    crit: suspicious
-    conf: 0.92
-    attack: "T1027"
-    needs: 2
-    any:
-      - id: large-random-variables
-      - id: string-array-hex-index
-      - id: hex-array-assignment
-      - id: obfuscated-string-array
-    all:
-      - id: micro-behaviors/data/string/concat::massive-string-concatenation
-  # String deobfuscation routine
-  - id: string-deobfuscation-routine
-    mbc: B0032
-    for: [javascript, typescript]
-    desc: String deobfuscation routine
-    crit: hostile
-    conf: 0.95
-    attack: "T1027.002"
-    all:
-      - id: large-random-variables
-      - id: string-array-hex-index
-      - id: micro-behaviors/data/string/concat::massive-string-concatenation
-    any:
-      - id: hex-array-assignment
-      - id: micro-behaviors/data/property/access::identifier-plus-hex-index
-    unless:
-      - id: well-known/tool/development/mobile/pymobiledevice3
-  - id: self-defending-string-array
-    mbc: B0032
-    for: [javascript, typescript]
-    desc: Self-defending string-array obfuscation
-    crit: suspicious
-    conf: 0.97
-    attack: "T1027"
-    # The ReDoS guard is what makes the array self-defending. Hex indexes
-    # plus a split constructor property also appear in Babel helpers inside
-    # an obfuscated bundle, without any integrity check.
-    all:
-      - id: self-defending-regex
-    any:
-      - id: advanced-string-array-obfuscation
-      - id: string-array-hex-index
-      - id: micro-behaviors/data/property/access::identifier-plus-hex-index
-      - id: constructor-string-split
-    needs: 1
-    unless:
-      - id: metadata/build/bundler/vscode::vscode-extension-generated-asset
-      - id: metadata/build/bundler/asset::vscode-extension-output-path
-      - id: well-known/tool/development/vscode-extension/dbcode::extension-context
-  - id: hex-array-near-indexed-charcode-decoder
-    mbc: B0032
-    desc: Hex array near indexed character decoder
-    crit: suspicious
-    conf: 0.94
-    attack: T1027.002
-    for: [javascript, html]
-    # Large bundles often contain an unrelated character decoder thousands of
-    # bytes away from a numeric table. Require the table and decoder to belong
-    # to one compact reconstruction routine.
-    near_bytes: 4096
-    all:
-      - id: micro-behaviors/data/encode/arrays::js-hex-number-array
-      - id: micro-behaviors/data/decode/charset::indexed-charcode-array-decode
-    # Test vectors commonly place ciphertext arrays near a helper that converts
-    # the independently decrypted output to text. Proximity alone is not data
-    # flow, so do not infer string obfuscation in an identified test harness.
-    # Likewise, PKCS#1 implementations pair ASN.1 DigestInfo hex tables with an
-    # indexed fromCharCode padding loop; those tables are public DER format
-    # constants, not concealed strings (openpgp pkcs1.js triage).
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: micro-behaviors/data/format/asn1::der-algorithm-identifier-hex-array
-      - id: micro-behaviors/crypto/symmetric/aes/script::js-aes-rcon-table
-
-  - id: hex-array-decoded-payload-eval
-    desc: Hexadecimal byte array reconstructed and executed via eval
-    crit: hostile
-    conf: 0.98
-    attack: T1027.002,T1059.007
-    for: [javascript, html]
-    near_bytes: 4096
-    all:
-      - id: micro-behaviors/data/encode/arrays::js-hex-number-array
-      - id: micro-behaviors/data/decode/charset::indexed-charcode-array-decode
-    any:
-      - id: micro-behaviors/process/interpreter/eval/indirect::window-eval-bracket-assigned
-      - id: micro-behaviors/process/interpreter/eval/indirect::eval-assigned-to-variable
-      - id: micro-behaviors/process/interpreter/eval/direct::js-eval-variable-argument
-  - id: obfuscated-browser-xhr-client
-    mbc: B0032
-    for: [javascript, typescript]
-    desc: Obfuscated browser XHR client
-    crit: hostile
-    conf: 0.94
-    attack: "T1027"
-    all:
-      - id: string-array-hex-index
-      - id: micro-behaviors/communications/http/request/client::xmlhttprequest-new
-      - id: micro-behaviors/communications/http/user-agent::navigator-useragent-read
-    any:
-      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::push-shift-bracket-pattern
-      - id: metadata/file/literal::hex-number-text
-    needs: 1
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/package/files/dependency::node-modules-path
-      - id: metadata/build/
-  # Double-encoded string table: the obfuscator's own rotating table decoder in
-  # front of entries that are themselves byte-encoded. Two independent decode
-  # layers over one string table is a deliberate anti-triage choice, not an
-  # artefact of any stock obfuscator preset, and it is what keeps a loader's C2
-  # infrastructure invisible to the string search an analyst runs first.
-  - id: double-encoded-rotated-string-table
-    mbc: B0032
-    for: [javascript, typescript]
-    desc: Rotating string table is byte-encoded
-    crit: suspicious
-    conf: 0.95
-    attack: T1027.013
-    all:
-      - id: "metadata/lang/source/literal::javascript-hex-string-array-prefix"
-    any:
-      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::string-array-rotation
-      - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::push-shift-bracket-pattern
-      - id: micro-behaviors/data/collection/array::js-array-push-shift-rotation
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/build/
-  - id: js-array-swap-pattern
-    desc: Temporary-variable array swap pattern
-    crit: component
-    conf: 0.75
-    mbc: B0032
-    for: [javascript]
-    all:
-      - id: micro-behaviors/data/property/access::indexed-value-variable-binding
-      - id: "metadata/lang/source/syntax/assignment::indexed-value-copy-cluster"
-    near_bytes: 300
-  - id: js-lzstring-utf16-table-split
-    desc: LZString decoded string table split
-    crit: suspicious
-    conf: 0.94
-    mbc: B0032
-    attack: T1027.002
-    for:
-      - javascript
-      - typescript
-    all:
-      - id: micro-behaviors/data/decompress/lzma::lzstring-utf16-decompress
-      - id: js-lzstring-table-split-call
-    near_bytes: 512
-  - id: js-repeated-marker-split-join-cleanup
-    desc: Repeated marker stripped via split join
-    crit: suspicious
-    conf: 0.95
-    mbc: B0032
-    attack: T1027.002
-    for:
-      - javascript
-    all:
-      - id: js-repeated-marker-token
-      - id: js-marker-split-join-cleanup-call
+  - id: string-array-hex-index
+  - id: micro-behaviors/data/property/access::identifier-plus-hex-index
+  - id: constructor-string-split
+  needs: 1
+  unless:
+  - id: metadata/build/bundler/vscode::vscode-extension-generated-asset
+  - id: metadata/build/bundler/asset::vscode-extension-output-path
+  - id: well-known/tool/development/vscode-extension/dbcode::extension-context
+- id: hex-array-near-indexed-charcode-decoder
+  mbc: B0032
+  desc: Hex array near indexed character decoder
+  crit: suspicious
+  conf: 0.94
+  attack: T1027.002
+  for:
+  - javascript
+  - html
+  near_bytes: 4096
+  all:
+  - id: micro-behaviors/data/encode/arrays::js-hex-number-array
+  - id: micro-behaviors/data/decode/charset::indexed-charcode-array-decode
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: micro-behaviors/data/format/asn1::der-algorithm-identifier-hex-array
+  - id: micro-behaviors/crypto/symmetric/aes/script::js-aes-rcon-table
+- id: hex-array-decoded-payload-eval
+  desc: Hexadecimal byte array reconstructed and executed via eval
+  crit: hostile
+  conf: 0.98
+  attack: T1027.002,T1059.007
+  for:
+  - javascript
+  - html
+  near_bytes: 4096
+  all:
+  - id: micro-behaviors/data/encode/arrays::js-hex-number-array
+  - id: micro-behaviors/data/decode/charset::indexed-charcode-array-decode
+  any:
+  - id: micro-behaviors/process/interpreter/eval/indirect::window-eval-bracket-assigned
+  - id: micro-behaviors/process/interpreter/eval/indirect::eval-assigned-to-variable
+  - id: micro-behaviors/process/interpreter/eval/direct::js-eval-variable-argument
+- id: obfuscated-browser-xhr-client
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  desc: Obfuscated browser XHR client
+  crit: hostile
+  conf: 0.94
+  attack: T1027
+  all:
+  - id: string-array-hex-index
+  - id: micro-behaviors/communications/http/request/client::xmlhttprequest-new
+  - id: micro-behaviors/communications/http/user-agent::navigator-useragent-read
+  any:
+  - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::push-shift-bracket-pattern
+  - id: metadata/file/literal::hex-number-text
+  needs: 1
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/package/files/dependency::node-modules-path
+  - id: metadata/build
+- id: double-encoded-rotated-string-table
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  desc: Rotating string table is byte-encoded
+  crit: suspicious
+  conf: 0.95
+  attack: T1027.013
+  all:
+  - id: metadata/lang/source/literal::javascript-hex-string-array-prefix
+  any:
+  - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::string-array-rotation
+  - id: objectives/anti-static/obfuscation/obfuscator/js-obfuscator::push-shift-bracket-pattern
+  - id: micro-behaviors/data/collection/array::js-array-push-shift-rotation
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/build
+- id: js-array-swap-pattern
+  desc: Temporary-variable array swap pattern
+  crit: component
+  conf: 0.75
+  mbc: B0032
+  for:
+  - javascript
+  all:
+  - id: micro-behaviors/data/property/access::indexed-value-variable-binding
+  - id: metadata/lang/source/syntax/assignment::indexed-value-copy-cluster
+  near_bytes: 300
+- id: js-lzstring-utf16-table-split
+  desc: LZString decoded string table split
+  crit: suspicious
+  conf: 0.94
+  mbc: B0032
+  attack: T1027.002
+  for:
+  - javascript
+  - typescript
+  all:
+  - id: micro-behaviors/data/decompress/lzma::lzstring-utf16-decompress
+  - id: js-lzstring-table-split-call
+  near_bytes: 512
+- id: js-repeated-marker-split-join-cleanup
+  desc: Repeated marker stripped via split join
+  crit: suspicious
+  conf: 0.95
+  mbc: B0032
+  attack: T1027.002
+  for:
+  - javascript
+  all:
+  - id: js-repeated-marker-token
+  - id: js-marker-split-join-cleanup-call

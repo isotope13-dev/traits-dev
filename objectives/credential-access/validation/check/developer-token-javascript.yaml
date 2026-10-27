@@ -1,161 +1,129 @@
-# Live credential validation before use/exfil.
-#
-# Stealers that harvest developer tokens often confirm each secret still works
-# against the provider's own API (npm /-/whoami, GitHub /user, Vault
-# lookup-self, aws sts get-caller-identity) so only live credentials are kept.
-# The individual API checks are notable on their own; pairing two or more
-# provider checks with multi-store harvest + HTTP exfil is the hostile class.
 defaults:
-  platforms: [unix, windows]
-  for: [javascript, typescript]
+  platforms:
+  - unix
+  - windows
+  for:
+  - javascript
+  - typescript
   attack: T1552.001
   mbc: E1552
-
 traits:
-  - id: vault-token-lookup-self
-    desc: Validates Vault token via lookup-self
-    crit: notable
-    conf: 0.94
-    if:
-      type: text
-      substr: /v1/auth/token/lookup-self
-    unless:
-      - id: well-known/tool/detection/threat-intel/
-
-  - id: aws-sts-identity-inline-command
-    desc: Inline aws sts get-caller-identity literal
-    crit: component
-    conf: 0.85
-    if:
-      type: text
-      substr: aws sts get-caller-identity
-
-  - id: aws-sts-identity-split-args
-    desc: Split sts get-caller-identity CLI arguments
-    crit: component
-    conf: 0.85
-    if:
-      type: text
-      regex: '["'']sts["'']\s*,\s*["'']get-caller-identity["'']'
-
-  - id: aws-sts-process-invocation
-    desc: Node child-process style invocation
-    crit: component
-    conf: 0.85
-    if:
-      type: text
-      regex: '(exec|spawn)\w*\('
-
+- id: vault-token-lookup-self
+  desc: Validates Vault token via lookup-self
+  crit: notable
+  conf: 0.94
+  if:
+    type: text
+    substr: /v1/auth/token/lookup-self
+  unless:
+  - id: well-known/tool/detection/threat-intel/
+- id: aws-sts-identity-inline-command
+  desc: Inline aws sts get-caller-identity literal
+  crit: component
+  conf: 0.85
+  if:
+    type: text
+    substr: aws sts get-caller-identity
+- id: aws-sts-identity-split-args
+  desc: Split sts get-caller-identity CLI arguments
+  crit: component
+  conf: 0.85
+  if:
+    type: text
+    regex: '["'']sts["'']\s*,\s*["'']get-caller-identity["'']'
+- id: aws-sts-process-invocation
+  desc: Node child-process style invocation
+  crit: component
+  conf: 0.85
+  if:
+    type: text
+    regex: (exec|spawn)\w*\(
 composite_rules:
-  - id: aws-sts-caller-identity-check
-    desc: Validates AWS via get-caller-identity
-    crit: notable
-    conf: 0.9
-    near_bytes: 400
-    all:
-      - id: aws-sts-process-invocation
-    any:
-      - id: aws-sts-identity-inline-command
-      - id: aws-sts-identity-split-args
-    unless:
-      - id: well-known/lib/cloud/aws-sdk-js/
-      - id: metadata/package/files/dependency::node-modules-path
-
+- id: aws-sts-caller-identity-check
+  desc: Validates AWS via get-caller-identity
+  crit: notable
+  conf: 0.9
+  near_bytes: 400
+  all:
+  - id: aws-sts-process-invocation
+  any:
+  - id: aws-sts-identity-inline-command
+  - id: aws-sts-identity-split-args
+  unless:
+  - id: well-known/lib/cloud/aws-sdk-js/
+  - id: metadata/package/files/dependency::node-modules-path
+- id: github-api-user-token-check
+  desc: Validates GitHub token via /user API
+  crit: notable
+  conf: 0.93
+  near_bytes: 160
+  all:
+  - id: micro-behaviors/communications/http/services/github::github-api-host
+  - id: micro-behaviors/communications/http/request/route::user-api-path
+  unless:
+  - id: well-known/tool/detection/threat-intel/
+- id: multi-provider-token-live-check
+  desc: Live-checks tokens against multiple providers
+  crit: suspicious
+  conf: 0.96
+  near_lines: 100
+  needs: 2
+  any:
+  - id: micro-behaviors/os/package-manager/identity::npm-whoami-command
   - id: github-api-user-token-check
-    desc: Validates GitHub token via /user API
-    crit: notable
-    conf: 0.93
-    near_bytes: 160
-    all:
-      - id: micro-behaviors/communications/http/services/github::github-api-host
-      - id: micro-behaviors/communications/http/request/route::user-api-path
-    unless:
-      - id: well-known/tool/detection/threat-intel/
-
-  - id: multi-provider-token-live-check
-    desc: Live-checks tokens against multiple providers
-    crit: suspicious
-    conf: 0.96
-    near_lines: 100
-    needs: 2
-    any:
-      - id: micro-behaviors/os/package-manager/identity::npm-whoami-command
-      - id: github-api-user-token-check
-      - id: vault-token-lookup-self
-      - id: aws-sts-caller-identity-check
-    unless:
-      - id: metadata/build/bundler/asset::js-known-bundler-output
-      - id: metadata/build/bundler/asset::js-large-module-bundle
-      - id: metadata/build/minifier::js-large-minified-bundle
-      - id: metadata/build/bundler/runtime::js-webpack-bundle
-      - id: well-known/lib/runtime/scripted/electron::electron-app-asar-member-path
-
+  - id: vault-token-lookup-self
+  - id: aws-sts-caller-identity-check
+  unless:
+  - id: metadata/build/bundler/asset::js-known-bundler-output
+  - id: metadata/build/bundler/asset::js-large-module-bundle
+  - id: metadata/build/minifier::js-large-minified-bundle
+  - id: metadata/build/bundler/runtime::js-webpack-bundle
+  - id: well-known/lib/runtime/scripted/electron::electron-app-asar-member-path
+- id: developer-store-harvest-cluster
+  desc: Harvests multiple developer credential stores
+  crit: suspicious
+  conf: 0.96
+  needs: 3
+  any:
+  - id: micro-behaviors/fs/path/credential::any-credential-path
+  - id: micro-behaviors/os/env/service-api::node-process-env-vault-token-read
+  - id: objectives/credential-access/files/config::node-dev-source-control-files
+  - id: micro-behaviors/fs/read/file/target::node-vault-iac-read-proximity
+  unless:
+  - id: metadata/build/bundler/asset::js-large-module-bundle
+  - id: metadata/build/minifier::js-large-minified-bundle
+  - id: metadata/build/bundler/runtime::js-webpack-bundle
+  - id: well-known/lib/runtime/scripted/electron::electron-app-asar-member-path
+  - id: micro-behaviors/data/string/redact::credential-stripping-scratch-dir
+  - id: micro-behaviors/data/manipulation::sensitive-token-redaction
+- id: validated-developer-credential-exfil
+  desc: Live-validates developer creds then exfils
+  crit: hostile
+  conf: 0.98
+  attack: T1552.001,T1552.004,T1041
+  mbc: E1552,E1041
+  all:
   - id: developer-store-harvest-cluster
-    desc: Harvests multiple developer credential stores
-    crit: suspicious
-    conf: 0.96
-    needs: 3
-    any:
-      # Umbrella composite, not the bare directory: a directory reference lets
-      # every atom under fs/path/sensitive/credentials/ that matched count as
-      # its own leg, so the single string `~/.ssh/id_rsa` -- even in a code
-      # comment -- lit up ssh-private-key, ssh-dir, private-keys-dir-segment
-      # and ssh-private-key-filename-rsa and reached needs:3 on ONE path.
-      # Folding them into one composite makes that contribute one leg, so the
-      # rule still requires three genuinely different stores.
-      - id: micro-behaviors/fs/path/credential::any-credential-path
-      - id: micro-behaviors/os/env/service-api::node-process-env-vault-token-read
-      - id: objectives/credential-access/files/config::node-dev-source-control-files
-      - id: micro-behaviors/fs/read/file/target::node-vault-iac-read-proximity
-    # Webpack/Electron app bundles pool SSH/.env/vault path strings from
-    # unrelated dependencies into one file; that is not multi-store harvest.
-    #
-    # The `any:` list reaches the whole credential-path umbrella, so three
-    # atoms from it alone satisfy needs:3 -- one comment line naming
-    # ~/.npmrc, ~/.ssh and ~/.aws/credentials is enough. Naming those paths is
-    # dual-use; what separates harvesting from defending is why the file names
-    # them, so code that strips or redacts those stores is excluded here.
-    unless:
-      - id: metadata/build/bundler/asset::js-large-module-bundle
-      - id: metadata/build/minifier::js-large-minified-bundle
-      - id: metadata/build/bundler/runtime::js-webpack-bundle
-      - id: well-known/lib/runtime/scripted/electron::electron-app-asar-member-path
-      # A sandbox that redirects HOME so children cannot reach the credential
-      # stores it lists is the inverse of harvesting them.
-      - id: micro-behaviors/data/string/redact::credential-stripping-scratch-dir
-      # Redaction code names secrets in order to scrub them, and its unit tests
-      # feed real-looking store paths in to assert they come back masked.
-      - id: micro-behaviors/data/manipulation::sensitive-token-redaction
-
-  - id: validated-developer-credential-exfil
-    desc: Live-validates developer creds then exfils
-    crit: hostile
-    conf: 0.98
-    attack: "T1552.001,T1552.004,T1041"
-    mbc: "E1552,E1041"
-    all:
-      - id: developer-store-harvest-cluster
-      - id: multi-provider-token-live-check
-    any:
-      - id: objectives/exfiltration/stealer/credential::node-encode-exfil
-      - id: micro-behaviors/communications/http/request/body::node-upload-sink
-      - id: micro-behaviors/data/encode/base64::node-base64-json-data-field
-    unless:
-      - id: metadata/build/
-      - id: well-known/tool/detection/threat-intel/
-
-  - id: npm-github-token-validate-exfil
-    desc: Validates npm and GitHub tokens then ships
-    crit: hostile
-    conf: 0.97
-    attack: "T1552.001,T1041"
-    mbc: "E1552,E1041"
-    all:
-      - id: micro-behaviors/os/package-manager/identity::npm-whoami-command
-      - id: github-api-user-token-check
-    any:
-      - id: objectives/exfiltration/stealer/credential::node-encode-exfil
-      - id: micro-behaviors/data/encode/base64::node-base64-json-data-field
-      - id: micro-behaviors/fs/path/secret-config::npmrc-credentials
-    unless:
-      - id: well-known/tool/detection/threat-intel/
+  - id: multi-provider-token-live-check
+  any:
+  - id: objectives/exfiltration/stealer/credential::node-encode-exfil
+  - id: micro-behaviors/communications/http/request/body::node-upload-sink
+  - id: micro-behaviors/data/encode/base64::node-base64-json-data-field
+  unless:
+  - id: metadata/build
+  - id: well-known/tool/detection/threat-intel/
+- id: npm-github-token-validate-exfil
+  desc: Validates npm and GitHub tokens then ships
+  crit: hostile
+  conf: 0.97
+  attack: T1552.001,T1041
+  mbc: E1552,E1041
+  all:
+  - id: micro-behaviors/os/package-manager/identity::npm-whoami-command
+  - id: github-api-user-token-check
+  any:
+  - id: objectives/exfiltration/stealer/credential::node-encode-exfil
+  - id: micro-behaviors/data/encode/base64::node-base64-json-data-field
+  - id: micro-behaviors/fs/path/secret-config::npmrc-credentials
+  unless:
+  - id: well-known/tool/detection/threat-intel/

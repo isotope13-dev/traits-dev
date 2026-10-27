@@ -2,102 +2,91 @@ defaults:
   crit: notable
   attack: T1071.001
   mbc: B0030
-  for: [scripts, binaries, powershell]
+  for:
+  - scripts
+  - binaries
+  - powershell
   platforms:
-    - unix
-    - windows
+  - unix
+  - windows
 traits:
-  - id: beacon-start-victim-profile
-    desc: Beacon start victim profile
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      substr: BEACON_START
-  - id: c2-command-result-endpoints
-    desc: Hard-coded HTTP command endpoint URL
-    crit: notable
-    conf: 0.88
-    if:
-      type: literal
-      # Require a parsed string constant with /cmd as a terminal path segment
-      # (not /cmd/pkg docs such as
-      # http://golang.org/cmd/5a from the Go toolchain docs / open-uri tests).
-      regex: "https?://[^\\s\"/]{1,120}/cmd([\"'?&\\s]|$)"
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - type: basename
-        regex: '(^|[-_.])(test|spec)\.[cm]?[jt]sx?$'
-      - id: metadata/document/html::html-root-at-start
+- id: beacon-start-victim-profile
+  desc: Beacon start victim profile
+  crit: notable
+  conf: 0.9
+  if:
+    type: text
+    substr: BEACON_START
+- id: c2-command-result-endpoints
+  desc: Hard-coded HTTP command endpoint URL
+  crit: notable
+  conf: 0.88
+  if:
+    type: literal
+    regex: https?://[^\s"/]{1,120}/cmd(["'?&\s]|$)
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - type: basename
+    regex: (^|[-_.])(test|spec)\.[cm]?[jt]sx?$
+  - id: metadata/document/html::html-root-at-start
 composite_rules:
-  # The size-gated "JSON POST from a small script" shape lives with the other
-  # HTTP-client micro-behaviors as
-  # micro-behaviors/communications/http/request/json::http-post-json-small-script
-  # — it is a neutral protocol shape, so filing it here labelled it as a C2
-  # beacon on every benign script that posts JSON. C2 intent comes from the
-  # json-exfiltration / json-c2-protocol composites that pair it with payload
-  # signals.
-  # Both legs are plain-English word proximity: `command`/`result` near
-  # `base64`/`chunk`. That co-occurrence carries no behavior on its own — it
-  # fires on any prose or code that chunks base64 (MIME encoders, upload
-  # helpers), so it stays a component. The C2 reading comes from
-  # python-tasking-rat-dispatch, which pairs it with a tasking schema and
-  # process enumeration.
-  - id: result-base64-chunking
-    for: [scripts, '!jcl']
-    desc: Command/result near base64-chunk wording
-    crit: component
-    conf: 0.9
-    all:
-      - id: metadata/lang/source/shape::command-result-assignment-pair
-      - id: micro-behaviors/data/encode/base64::base64-chunk-wording
-    near_bytes: 256
+- id: result-base64-chunking
+  for:
+  - scripts
+  - '!jcl'
+  desc: Command/result near base64-chunk wording
+  crit: component
+  conf: 0.9
+  all:
+  - id: metadata/lang/source/shape::command-result-assignment-pair
+  - id: micro-behaviors/data/encode/base64::base64-chunk-wording
+  near_bytes: 256
+- id: json-c2-headers
+  desc: JSON HTTP header handling
+  crit: component
+  conf: 0.85
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/build
+  needs: 3
+  any:
+  - id: micro-behaviors/communications/http/header/content-type::application-json
+  - id: micro-behaviors/communications/http/header/content-type::json-content-type-charset
+  - id: micro-behaviors/communications/http/client/response-body::js-response-text-read
+- id: json-exfiltration
+  desc: Serializes JSON to base64 and sends it over HTTP
+  crit: suspicious
+  conf: 0.9
+  attack: T1041
+  for:
+  - javascript
+  size_max: 5000
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  near_bytes: 2048
+  all:
+  - id: micro-behaviors/data/encode/base64::json-stringify-base64
+  - id: micro-behaviors/communications/http/header/content-type::application-json
+  any:
+  - id: micro-behaviors/communications/http/request/client::fetch-post-pattern
+  - id: micro-behaviors/communications/http/request/json::requests-post-json-payload
+- id: json-c2-protocol
+  desc: JSON C2 communication protocol
+  crit: suspicious
+  conf: 0.95
+  for:
+  - javascript
+  all:
   - id: json-c2-headers
-    desc: JSON HTTP header handling
-    crit: component
-    conf: 0.85
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      # Bundled HTTP libraries (jQuery ajax, axios) and inline source maps
-      # (data:application/json;base64) carry these JSON-over-HTTP tokens too.
-      - id: metadata/build/
-    needs: 3
-    any:
-      - id: micro-behaviors/communications/http/header/content-type::application-json
-      - id: micro-behaviors/communications/http/header/content-type::json-content-type-charset
-      - id: micro-behaviors/communications/http/client/response-body::js-response-text-read
   - id: json-exfiltration
-    desc: Serializes JSON to base64 and sends it over HTTP
-    crit: suspicious
-    conf: 0.9
-    attack: T1041
-    for: [javascript]
-    size_max: 5000
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-    near_bytes: 2048
-    all:
-      - id: micro-behaviors/data/encode/base64::json-stringify-base64
-      - id: micro-behaviors/communications/http/header/content-type::application-json
-    any:
-      - id: micro-behaviors/communications/http/request/client::fetch-post-pattern
-      - id: micro-behaviors/communications/http/request/json::requests-post-json-payload
-  - id: json-c2-protocol
-    desc: JSON C2 communication protocol
-    crit: suspicious
-    conf: 0.95
-    for: [javascript]
-    all:
-      - id: json-c2-headers
-      - id: json-exfiltration
-  - id: flat-file-json-beacon-c2
-    desc: Flat-file JSON beacon C2
-    crit: hostile
-    conf: 0.98
-    for:
-      - python
-      - powershell
-    all:
-      - id: beacon-start-victim-profile
-      - id: c2-command-result-endpoints
-      - id: micro-behaviors/communications/http/url/path::http-result-endpoint
+- id: flat-file-json-beacon-c2
+  desc: Flat-file JSON beacon C2
+  crit: hostile
+  conf: 0.98
+  for:
+  - python
+  - powershell
+  all:
+  - id: beacon-start-victim-profile
+  - id: c2-command-result-endpoints
+  - id: micro-behaviors/communications/http/url/path::http-result-endpoint

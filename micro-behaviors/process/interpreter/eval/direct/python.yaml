@@ -1,246 +1,187 @@
-# Python eval/exec builtins, named at the call site.
 defaults:
-  platforms: [windows, unix]
-  for: [python]
-  attack: "T1059.006"
-  mbc: "E1059"
-
+  platforms:
+  - windows
+  - unix
+  for:
+  - python
+  attack: T1059.006
+  mbc: E1059
+  crit: notable
 traits:
-  - id: eval-exec-decorator-expression
-    desc: Python decorator invokes eval or exec
-    crit: notable
-    conf: 0.98
-    if:
-      type: text
-      regex: '(?m)^\s*@(exec|eval)\s*\('
-  - id: exec-after-file-read
-    desc: Python exec after file read
-    crit: notable
-    conf: 0.94
-    if:
-      type: text
-      regex: 'read\(\)[\s\S]{0,500}exec\(\s*\w+,\s*\w+,\s*\w+\)'
-  - id: exec-command-argument
-    desc: Python exec() called with command variable
-    crit: notable
-    conf: 0.9
-    if:
-      type: symbol
-      kind: call
-      exact: exec
-      arg:
-        kind: identifier
-        name: command
-  - id: eval-builtin
-    desc: "Python eval() built-in function"
-    crit: notable
-    conf: 0.85
-    if:
-      type: symbol
-      kind: call
-      exact: eval
-    unless:
-      - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
-      - id: well-known/tool/detection/security-scanner::code-pattern-catalog
-      - id: well-known/tool/detection/pattern-catalog::python-taint-sink-map
-      - id: well-known/tool/detection/agentskillmap/
-  # A mapping lookup passed directly to eval is an unsafe-evaluation
-  # capability, but this atom alone does not establish a remote source.
-  - id: eval-mapping-get
-    desc: Python eval of mapping get result
-    crit: notable
-    conf: 0.85
-    if:
-      type: text
-      regex: "\\beval\\s*\\(\\s*[a-z_][A-Za-z0-9_]*\\s*\\.get\\s*\\([^)]{0,180},.{0,120}\\)\\s*\\)"
-  - id: eval-prefixed-configuration-expression
-    desc: Evaluates prefixed Python expression
-    crit: notable
-    conf: 0.92
-    if:
-      type: text
-      regex: 'startswith\(\s*["'']eval%["'']\s*\)[\s\S]{0,240}\beval\s*\('
-  # `exec(...)` reached during import rather than from inside a function --
-  # the shape that runs the moment setuptools imports setup.py to read
-  # metadata. The plain `exec-builtin` atom says the capability is present
-  # anywhere in the file, including inside a method nobody calls.
-  - id: module-scope-exec-builtin
-    desc: Module-level exec() with dynamic argument
-    crit: notable
-    conf: 0.9
-    if:
-      type: tree-sitter
-      language: python
-      # The argument must not be a plain string literal. `exec` over a constant
-      # written in the source hides nothing and executes exactly what an
-      # analyst can already read -- sympy's abc.py builds its symbol namespace
-      # with `exec('from sympy import *', ns)` at module scope. The shapes this
-      # trait is for keep matching: the crytic-compile typosquat's
-      # `exec("subprocess.run(...'s.exe')" if sys.platform == 'win32' else
-      # "pass")` is a conditional expression, and the decoded-payload form
-      # `exec(base64.b64decode(blob))` is a call.
-      #
-      # `compile()` over a literal is the same constant, one indirection on:
-      # pip's setuptools_build.py holds `exec(compile('''...''')` inside the
-      # triple-quoted `_SETUPTOOLS_SHIM` template it writes into a subprocess,
-      # and the archive-member parse reads that string body as code. A payload
-      # that compiles decoded bytes (`exec(compile(decoded, ...))`) still
-      # matches, because its argument is not a literal.
-      #
-      # A command-line conversion tool or packaging script may deliberately
-      # interpret a local file read via open() (for example, a Bazel BUILD DSL
-      # converter or setup.py reading _version.py). That is still reported by
-      # exec-builtin and exec-open-read, but it is explicit local-file behavior
-      # rather than a concealed import-time payload.
-      query: |
-        ((module
-           (expression_statement
-             (call function: (identifier) @fn
-                   arguments: (argument_list . [
-                     (call) (identifier) (attribute) (subscript)
-                     (conditional_expression) (binary_operator)] @arg))))
-         (#eq? @fn "exec")
-         (#not-match? @arg "^compile\\([bruBRUf]{0,2}['\"]")
-         (#not-match? @arg "\\bopen\\b"))
-        ((module
-           (expression_statement
-             (assignment right: (call function: (identifier) @fn
-                   arguments: (argument_list . [
-                     (call) (identifier) (attribute) (subscript)
-                     (conditional_expression) (binary_operator)] @arg)))))
-         (#eq? @fn "exec")
-         (#not-match? @arg "^compile\\([bruBRUf]{0,2}['\"]")
-         (#not-match? @arg "\\bopen\\b"))
-    unless:
-      # Legacy setuptools recipes commonly read a checked-in version or metadata file
-      # into setup.py's namespace. The version module is scanned as its own archive
-      # member, so hostile behavior there remains visible; keep the plain
-      # notable exec atoms here, but do not call this packaging idiom suspicious.
-      - id: well-known/lib/development/python-tooling::setup-version-file-exec
-      - type: text
-        regex: \bexec\(compile\(open\((activate_this|__file__|["'][^"']+\.py["'])
-      - type: text
-        regex: (?s)SourceFileLoader\(.{0,400}exec\(compile\(
-      - type: path
-        regex: (^|[\\/])(benchmarks?[\\/]|patches[\\/]patch-[^\\/]+$)
-      - type: text
-        regex: \bexec\s*\(\s*\w*template\.substitute\s*\(
-      - id: micro-behaviors/metaprogramming/generation::python-exec-source-context
-      - id: metadata/file/extension/identity::markdown-file-basename
-      - id: well-known/app/infrastructure/luci::swarming-bot-bootstrap-context
-  - id: exec-builtin
-    desc: Executes dynamic Python code with exec()
-    crit: notable
-    conf: 0.9
-    if:
-      type: symbol
-      kind: call
-      exact: exec
-    unless:
-      - id: micro-behaviors/metaprogramming/generation::python-execution-template-generator
-      - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
-      - id: well-known/tool/detection/security-remediation::compiled-remediation-catalog
-      - id: well-known/tool/detection/security-scanner/
-      - id: well-known/tool/detection/agentskillmap/
-      # A JSP page may be embedded in a carrier that lands on `python`;
-      # its Java `exec(cmd)` helper is not the Python builtin.
-      - id: metadata/lang/scripted::jsp-page-directive
-  - id: python-exec-docstring
-    desc: Executes text taken from a docstring
-    crit: notable
-    conf: 0.94
-    if:
-      type: text
-      regex: 'exec\([\s\S]{0,200}__doc__'
-  # Keep these calls in the indented body immediately following run(). This
-  # gives install-hook composites a local relationship between the hook method
-  # and dynamic execution instead of correlating any exec/eval elsewhere in a
-  # large setup.py (for example a separate top-level version-file reader).
-  # Blank lines inside the body are allowed so padding cannot split the two;
-  # an unindented line still ends the method. Limiting both body length and
-  # per-line width keeps the regex bounded.
-  - id: run-method-exec
-    desc: Python run method invokes exec()
-    crit: notable
-    conf: 0.94
-    if:
-      type: text
-      regex: '(?m)^[ \t]+def run\([^\n)]{0,40}\):\r?\n(([ \t]+[^\r\n]{0,120})?\r?\n){0,6}[ \t]+exec\('
-  - id: run-method-eval
-    desc: Python run method invokes eval()
-    crit: notable
-    conf: 0.94
-    if:
-      type: text
-      regex: '(?m)^[ \t]+def run\([^\n)]{0,40}\):\r?\n(([ \t]+[^\r\n]{0,120})?\r?\n){0,6}[ \t]+eval\('
-  - id: exec-variable
-    desc: Python exec() executes a variable value
-    crit: notable
-    conf: 0.94
-    if:
-      type: symbol
-      kind: call
-      exact: exec
-      arg:
-        index: 0
-        kind: identifier
-    unless:
-      - id: metadata/lang/upstream::linux-kernel-secondary-tree-path
-      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
-      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
-      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
-      - id: metadata/lang/upstream::linux-kernel-primary-tree-path
-      - id: metadata/lang/scripted::jsp-page-directive
-  - id: exec-variable-namespace
-    desc: Python built-in exec() with explicit namespace
-    crit: notable
-    conf: 0.95
-    if:
-      type: tree-sitter
-      kind: call
-      # Anchor at call start so string args (e.g. assertEqual('exec(foo, bar)'))
-      # do not count. Method forms like Job.exec(...) also fail the ^exec guard.
-      regex: '^exec\s*\(\s*[A-Za-z_]\w*\s*,\s*[A-Za-z_]\w*'
-  - id: exec-file-read-result
-    desc: Python exec() evaluates file-read results
-    crit: notable
-    conf: 0.92
-    if:
-      type: text
-      regex: 'exec\s*\(\s*(open\s*\(.{1,160}\)\.read\s*\(|\w+\.read\(\)\s*,\s*\w+\s*\))'
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-  - id: python-exec-triple-quoted-literal
-    desc: exec() of a triple-quoted string literal
-    crit: notable
-    conf: 0.92
-    if:
-      type: text
-      regex: \bexec\s*\(\s*('{3}|"{3})
-    unless:
-      - id: metadata/package/testing/
-      - id: "metadata/file/naming::test-directory-component"
-  - id: python-exec-with-copied-globals
-    desc: exec() with a copy of module globals
-    crit: notable
-    conf: 0.88
-    ref: sha256:a6dfb93ccf1c019100eb55c65b0d5ccc26f835cf876f96fe8366a3376449052a
-    if:
-      type: text
-      regex: 'globals\(\)\.copy\(\)[\s\S]{0,180}exec\s*\('
-  - id: python-eval-subscripted-config
-    desc: eval() of a config or data subscript
-    crit: notable
-    conf: 0.85
-    if:
-      type: tree-sitter
-      kind: call
-      regex: '\beval\s*\(\s*(config|data|payload)\w*\s*\['
-
-  - id: exec-formatted-string
-    desc: Python exec receives an f-string expression
-    crit: notable
-    conf: 0.94
-    if:
-      type: text
-      regex: '\bexec\s*\(\s*[fF]["'']'
+- id: eval-exec-decorator-expression
+  desc: Python decorator invokes eval or exec
+  conf: 0.98
+  if:
+    type: text
+    regex: (?m)^\s*@(exec|eval)\s*\(
+- id: exec-after-file-read
+  desc: Python exec after file read
+  conf: 0.94
+  if:
+    type: text
+    regex: read\(\)[\s\S]{0,500}exec\(\s*\w+,\s*\w+,\s*\w+\)
+- id: exec-command-argument
+  desc: Python exec() called with command variable
+  conf: 0.9
+  if:
+    type: symbol
+    kind: call
+    exact: exec
+    arg:
+      kind: identifier
+      name: command
+- id: eval-builtin
+  desc: Python eval() built-in function
+  conf: 0.85
+  if:
+    type: symbol
+    kind: call
+    exact: eval
+  unless:
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+  - id: well-known/tool/detection/security-scanner::code-pattern-catalog
+  - id: well-known/tool/detection/pattern-catalog::python-taint-sink-map
+  - id: well-known/tool/detection/agentskillmap/
+- id: eval-mapping-get
+  desc: Python eval of mapping get result
+  conf: 0.85
+  if:
+    type: text
+    regex: \beval\s*\(\s*[a-z_][A-Za-z0-9_]*\s*\.get\s*\([^)]{0,180},.{0,120}\)\s*\)
+- id: eval-prefixed-configuration-expression
+  desc: Evaluates prefixed Python expression
+  conf: 0.92
+  if:
+    type: text
+    regex: startswith\(\s*["']eval%["']\s*\)[\s\S]{0,240}\beval\s*\(
+- id: module-scope-exec-builtin
+  desc: Module-level exec() with dynamic argument
+  conf: 0.9
+  if:
+    type: tree-sitter
+    language: python
+    query: |
+      ((module
+         (expression_statement
+           (call function: (identifier) @fn
+                 arguments: (argument_list . [
+                   (call) (identifier) (attribute) (subscript)
+                   (conditional_expression) (binary_operator)] @arg))))
+       (#eq? @fn "exec")
+       (#not-match? @arg "^compile\\([bruBRUf]{0,2}['\"]")
+       (#not-match? @arg "\\bopen\\b"))
+      ((module
+         (expression_statement
+           (assignment right: (call function: (identifier) @fn
+                 arguments: (argument_list . [
+                   (call) (identifier) (attribute) (subscript)
+                   (conditional_expression) (binary_operator)] @arg)))))
+       (#eq? @fn "exec")
+       (#not-match? @arg "^compile\\([bruBRUf]{0,2}['\"]")
+       (#not-match? @arg "\\bopen\\b"))
+  unless:
+  - id: well-known/lib/development/python-tooling::setup-version-file-exec
+  - type: text
+    regex: \bexec\(compile\(open\((activate_this|__file__|["'][^"']+\.py["'])
+  - type: text
+    regex: (?s)SourceFileLoader\(.{0,400}exec\(compile\(
+  - type: path
+    regex: (^|[\\/])(benchmarks?[\\/]|patches[\\/]patch-[^\\/]+$)
+  - type: text
+    regex: \bexec\s*\(\s*\w*template\.substitute\s*\(
+  - id: micro-behaviors/metaprogramming/generation::python-exec-source-context
+  - id: metadata/file/extension/identity::markdown-file-basename
+  - id: well-known/app/infrastructure/luci::swarming-bot-bootstrap-context
+- id: exec-builtin
+  desc: Executes dynamic Python code with exec()
+  conf: 0.9
+  if:
+    type: symbol
+    kind: call
+    exact: exec
+  unless:
+  - id: micro-behaviors/metaprogramming/generation::python-execution-template-generator
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+  - id: well-known/tool/detection/security-remediation::compiled-remediation-catalog
+  - id: well-known/tool/detection/security-scanner/
+  - id: well-known/tool/detection/agentskillmap/
+  - id: metadata/lang/scripted::jsp-page-directive
+- id: python-exec-docstring
+  desc: Executes text taken from a docstring
+  conf: 0.94
+  if:
+    type: text
+    regex: exec\([\s\S]{0,200}__doc__
+- id: run-method-exec
+  desc: Python run method invokes exec()
+  conf: 0.94
+  if:
+    type: text
+    regex: (?m)^[ \t]+def run\([^\n)]{0,40}\):\r?\n(([ \t]+[^\r\n]{0,120})?\r?\n){0,6}[ \t]+exec\(
+- id: run-method-eval
+  desc: Python run method invokes eval()
+  conf: 0.94
+  if:
+    type: text
+    regex: (?m)^[ \t]+def run\([^\n)]{0,40}\):\r?\n(([ \t]+[^\r\n]{0,120})?\r?\n){0,6}[ \t]+eval\(
+- id: exec-variable
+  desc: Python exec() executes a variable value
+  conf: 0.94
+  if:
+    type: symbol
+    kind: call
+    exact: exec
+    arg:
+      index: 0
+      kind: identifier
+  unless:
+  - id: metadata/lang/upstream::linux-kernel-secondary-tree-path
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
+  - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
+  - id: metadata/lang/upstream::linux-kernel-primary-tree-path
+  - id: metadata/lang/scripted::jsp-page-directive
+- id: exec-variable-namespace
+  desc: Python built-in exec() with explicit namespace
+  conf: 0.95
+  if:
+    type: tree-sitter
+    kind: call
+    regex: ^exec\s*\(\s*[A-Za-z_]\w*\s*,\s*[A-Za-z_]\w*
+- id: exec-file-read-result
+  desc: Python exec() evaluates file-read results
+  conf: 0.92
+  if:
+    type: text
+    regex: exec\s*\(\s*(open\s*\(.{1,160}\)\.read\s*\(|\w+\.read\(\)\s*,\s*\w+\s*\))
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+- id: python-exec-triple-quoted-literal
+  desc: exec() of a triple-quoted string literal
+  conf: 0.92
+  if:
+    type: text
+    regex: \bexec\s*\(\s*('{3}|"{3})
+  unless:
+  - id: metadata/package/testing/
+  - id: metadata/path::test-directory-component
+- id: python-exec-with-copied-globals
+  desc: exec() with a copy of module globals
+  conf: 0.88
+  ref: sha256:a6dfb93ccf1c019100eb55c65b0d5ccc26f835cf876f96fe8366a3376449052a
+  if:
+    type: text
+    regex: globals\(\)\.copy\(\)[\s\S]{0,180}exec\s*\(
+- id: python-eval-subscripted-config
+  desc: eval() of a config or data subscript
+  conf: 0.85
+  if:
+    type: tree-sitter
+    kind: call
+    regex: \beval\s*\(\s*(config|data|payload)\w*\s*\[
+- id: exec-formatted-string
+  desc: Python exec receives an f-string expression
+  conf: 0.94
+  if:
+    type: text
+    regex: \bexec\s*\(\s*[fF]["']

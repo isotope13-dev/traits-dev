@@ -1,108 +1,82 @@
 defaults:
   platforms:
-    - windows
+  - windows
   for:
-    - pe
-    - dll
+  - pe
+  - dll
   attack: T1027
   mbc: B0032
 traits:
-  - id: random-alphanumeric-stack-strings
-    desc: Random alphanumeric stack string cluster
-    crit: suspicious
-    conf: 0.88
-    size_min: 51200
-    count_min: 15
-    if:
-      type: encoded
-      encoding: stack
-      # Uppercase environment keys and enum names are compiler constants,
-      # not random strings. Require long mixed letter/digit values.
-      regex: "^([A-Z]*[0-9]){3}[A-Z0-9]{6,}$"
-      not:
-        # Rust integer formatting specializes constants into immediate stores.
-        # Hexadecimal numbers (including duration bounds) are numeric output,
-        # not evidence of random identifiers or concealed strings. Filter each
-        # matched value, so unrelated hex output cannot suppress other clusters.
-        - regex: '^[A-F0-9]+$'
-    unless:
-      - id: metadata/binary/framework/
-      # FFmpeg, libstdc++, PyTorch XPU, and MIOpen build constant-name tables
-      # as stack stores. Grouped so the editor binary can share the slot.
-      - id: compiler-constant-stack-libraries
-      - id: metadata/package/tooling::lite-xl-binary
-    downgrade:
-      any:
-        - id: metadata/binary/code/complexity::many-functions
-        - id: well-known/lib/web/client-side/dioxus
-        - id: metadata/signed/platform/
-        - id: well-known/tool/development/lint/biome/
-        - id: well-known/tool/development/cli/pylon/
-        # Rust materializes every string up to its inline small-string limit
-        # as immediate stores on the stack, so large Rust binaries carry tens
-        # of thousands of stack-decoded fragments and uppercase constant-name
-        # clusters (serde field names, API value enums) that are codegen, not
-        # concealment. Atom downgrade legs must reference atoms — the scan
-        # pipeline evaluates atomic downgrades before composites exist — so
-        # this uses the rustc-path marker rather than the rust-binary
-        # composite.
-        - id: metadata/lang/compiler/systems::rustc-path
-composite_rules:
+- id: random-alphanumeric-stack-strings
+  desc: Random alphanumeric stack string cluster
+  crit: suspicious
+  conf: 0.88
+  size_min: 51200
+  count_min: 15
+  if:
+    type: encoded
+    encoding: stack
+    regex: ^([A-Z]*[0-9]){3}[A-Z0-9]{6,}$
+    not:
+    - regex: ^[A-F0-9]+$
+  unless:
+  - id: metadata/binary/framework/
   - id: compiler-constant-stack-libraries
-    desc: Compiler constant-table native libraries
-    crit: exception
-    conf: 0.95
+  - id: metadata/package/tooling::lite-xl-binary
+  downgrade:
     any:
-      - id: well-known/lib/media/ffmpeg::ffmpeg-product-versioninfo
-      - id: well-known/lib/platform/libstdcxx::libstdcxx-runtime-basename
-      - id: well-known/lib/ai/pytorch::pytorch-xpu-native-library
-      - id: well-known/lib/ai/miopen::miopen-native-library
-      - id: well-known/lib/media/sharp-libvips::sharp-libvips-binary
-      # llama.cpp/ggml inference backends (koboldcpp_*.dll): a single
-      # two-digit conversion table repeated ~200x as stack stores, plus
-      # tensor-name constants — codegen, not concealment.
-      - id: well-known/lib/ai/ggml::ggml-runtime-strings-pe
-  - id: stack-string-obfuscated-pe
-    desc: PE with heavy stack string obfuscation
-    crit: suspicious
-    conf: 0.9
-    all:
-      - id: micro-behaviors/data/string/assembly::many-stack-materialized-strings
+    - id: metadata/binary/code/complexity::many-functions
+    - id: well-known/lib/web/client-side/dioxus
+    - id: metadata/signed/platform/
+    - id: well-known/tool/development/lint/biome/
+    - id: well-known/tool/development/cli/pylon/
+    - id: metadata/lang/compiler/systems::rustc-path
+composite_rules:
+- id: compiler-constant-stack-libraries
+  desc: Compiler constant-table native libraries
+  crit: exception
+  conf: 0.95
+  any:
+  - id: well-known/lib/media/ffmpeg::ffmpeg-product-versioninfo
+  - id: well-known/lib/platform/libstdcxx::libstdcxx-runtime-basename
+  - id: well-known/lib/ai/pytorch::pytorch-xpu-native-library
+  - id: well-known/lib/ai/miopen::miopen-native-library
+  - id: well-known/lib/media/sharp-libvips::sharp-libvips-binary
+  - id: well-known/lib/ai/ggml::ggml-runtime-strings-pe
+- id: stack-string-obfuscated-pe
+  desc: PE with heavy stack string obfuscation
+  crit: suspicious
+  conf: 0.9
+  all:
+  - id: micro-behaviors/data/string/assembly::many-stack-materialized-strings
+  any:
+  - id: random-alphanumeric-stack-strings
+  - id: metadata/binary/header/malformed::low-function-count-marker
+  unless:
+  - id: metadata/binary/framework/
+  - id: compiler-constant-stack-libraries
+  - id: metadata/package/tooling::lite-xl-binary
+  downgrade:
     any:
-      - id: random-alphanumeric-stack-strings
-      - id: metadata/binary/header/malformed::low-function-count-marker
-      # NOTE: module-export-resolution-imports (GetProcAddress + GetModuleHandle)
-      # was removed as a qualifying arm — it is present in a large fraction of
-      # benign DLLs (e.g. native libs embedding a model-name registry like
-      # Datalevin's jniDTLV.dll) and pairing it with stack strings produced FPs.
-      # Genuine obfuscation still trips via the random-alnum / low-function arms.
-    unless:
-      - id: metadata/binary/framework/
-      - id: compiler-constant-stack-libraries
-      - id: metadata/package/tooling::lite-xl-binary
-    downgrade:
-      any:
-        - id: metadata/signed/platform/
-        - id: well-known/tool/development/lint/biome/
-        - id: well-known/tool/development/cli/pylon/
-        # Rust's universal small-string stack codegen (see the atom above)
-        # satisfies both legs of this composite in every large Rust binary.
-        - id: metadata/lang/compiler/systems::rust-binary
-  - id: recognized-stack-string-marker
-    desc: Recognized marker for compiler-generated stack strings
-    crit: component
-    conf: 0.9
-    any:
-      - id: metadata/binary/code/complexity::many-functions
-      - id: well-known/lib/web/client-side/dioxus
-      - id: well-known/app/media/mpv::application-bundle
-      - id: well-known/app/data/qdrant::application-bundle
-      - id: well-known/dual-use/tunnel/swifttunnel_vpn::swifttunnel
-      - id: well-known/game/mod::wynncraft-overhaul-installer
-      - id: well-known/lib/native/pybind11::pybind11-marker
-      - id: micro-behaviors/data/db/postgresql::rust-sqlx-postgres-client
-      - id: micro-behaviors/data/db/sql::sql-generic
-      - id: well-known/lib/ui/
-      - id: well-known/app/ai/tool-server/mcu-ai-debug::helper-binary
-      - id: well-known/tool/development/lint/biome/
-      - id: well-known/tool/development/cli/pylon/
+    - id: metadata/signed/platform/
+    - id: well-known/tool/development/lint/biome/
+    - id: well-known/tool/development/cli/pylon/
+    - id: metadata/lang/compiler/systems::rust-binary
+- id: recognized-stack-string-marker
+  desc: Recognized marker for compiler-generated stack strings
+  crit: component
+  conf: 0.9
+  any:
+  - id: metadata/binary/code/complexity::many-functions
+  - id: well-known/lib/web/client-side/dioxus
+  - id: well-known/app/media/mpv::application-bundle
+  - id: well-known/app/data/qdrant::application-bundle
+  - id: well-known/dual-use/tunnel/swifttunnel_vpn::swifttunnel
+  - id: well-known/game/mod::wynncraft-overhaul-installer
+  - id: well-known/lib/native/pybind11::pybind11-marker
+  - id: micro-behaviors/data/db/postgresql::rust-sqlx-postgres-client
+  - id: micro-behaviors/data/db/sql::sql-generic
+  - id: well-known/lib/ui
+  - id: well-known/app/ai/tool-server/mcu-ai-debug::helper-binary
+  - id: well-known/tool/development/lint/biome/
+  - id: well-known/tool/development/cli/pylon/

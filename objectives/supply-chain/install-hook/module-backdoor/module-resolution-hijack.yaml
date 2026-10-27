@@ -1,157 +1,102 @@
-# Module Resolution Hijacking
-# Detects package/runtime search-order hijacks where the search path
-# is extended with a hidden directory (a leading-dot folder, a
-# tempdir path, or a sibling of a known package directory).
-#
-# Earlier revisions of this file matched bare list methods
-# (`append` / `extend` / `insert`) and bare directory tokens
-# (`site-packages` / `venv`), which triggered on every Python stdlib
-# file that touches a list method or imports from a package
-# directory. The fix is to match the *combined* shape: a path-list
-# manipulation API receiving a hidden-path string literal — i.e.
-# the actual attack pattern, not the building blocks.
 defaults:
-  platforms: [windows, unix]
-  for: [javascript, python, shell]
-
+  platforms:
+  - windows
+  - unix
+  for:
+  - javascript
+  - python
+  - shell
 traits:
-
-  # `PYTHONPATH=` / `NODE_PATH=` set to a hidden directory. The hidden dir
-  # must be the FIRST segment of the value (`./.hidden`, `../.hidden`,
-  # `.hidden`): an install-hook implant has to resolve on the victim machine
-  # without knowing its absolute paths, so the search-path entry travels as a
-  # relative reference. A dotdir buried inside an absolute path
-  # (`PYTHONPATH=/work/.csx-vendor/py`, `PYTHONPATH=$WORK/.vendor/lib`) is a
-  # fixed vendor/tool-cache location, the conventional shape of test
-  # harnesses and cross-environment builds, not a hijack.
-  - id: env-path-hijack-hidden
-    desc: "NODE_PATH/PYTHONPATH set to relative hidden dir"
-    crit: suspicious
-    conf: 0.9
-    if:
-      type: text
-      # \b so `_PYTHONPATH=.../.libs` (libtool helpers) is not a hit; real
-      # `PYTHONPATH=./.hidden` implants still match.
-      regex: '(?i)\b(NODE_PATH|PYTHONPATH)\s*=\s*["'']?(\.{1,2}[\\/])?\.[\w-]{1,30}'
-    # Well-known project/tooling/agent dotdirs (Claude Code skills, OpenClaw
-    # workspace libs, agent-runner app dirs, venvs, config dirs) are
-    # conventional layout, not module-resolution hijacks — e.g.
-    # `PYTHONPATH=.claude/skills/<name>`, `sys.path` entries under
-    # ~/.openclaw/workspace/, or `PYTHONPATH=~/.melaya-runner/`.
-    not:
-      - regex: '(?i)["''=/]\s*\.(build|claude(-plugin)?|openclaw|hermes|codex|omx|gemini|melaya|reference|venv|virtualenv|tox|nox|local|config|cache|github|gitlab|circleci|vscode|idea|husky|yarn|pnpm|devcontainer|bin|acp|pysite)\b'
-      # Libtool's in-tree `.libs` directory is a normal native-extension
-      # build output, not a hidden module-resolution implant.
-      - regex: '(?i)[\\/]\.libs\b'
-      # pnpm/npm cmd-shims embed absolute NODE_PATH trees under node_modules;
-      # a dotted segment in that path is package layout, not a hijack.
-      - regex: '(?i)\bNODE_PATH\s*=\s*["'']?[^"''\n]*node_modules'
-      # `.ci` and `.ci-lint` are a repo's own CI package checkout, the same
-      # conventional layout as `.github`, not a relative implant.
-      - regex: '(?i)\b(NODE_PATH|PYTHONPATH)\s*=\s*["'']?(\.{1,2}[\\/])?\.ci(-[\w]{1,24})?\b'
-    unless:
-      # A sandbox service that injects its own allow-list directory into the
-      # PYTHONPATH of unprivileged child commands.
-      - id: objectives/command-and-control/backdoor/tasking/command-http::privilege-dropping-command-service
-      # Waf stores generated environment values in c4che/default.cache.py;
-      # this is build metadata, not a runtime module search-path change.
-      - type: basename
-        exact: default.cache.py
-
-  # Match the parsed import/call nodes so help text and comments containing
-  # `--import ~/.../.mailx/...` cannot become a module-resolution finding.
-  # The leading ./, ../ or / is required: a hidden directory is only
-  # addressable as a path segment, so a bare `.tld/` run split out of a URL
-  # (e.g. `.com/` from an https:// host in embedded fixture text) is not a
-  # module path. A bare `.name/` specifier is a package name, never a
-  # relative hidden-directory reference.
-  - id: require-from-hidden-path
-    desc: Requires a hidden module path
-    crit: notable
-    conf: 0.85
-    for: [javascript]
-    if:
-      type: symbol
-      kind: call
-      exact: require
-      arg:
-        kind: string
-        regex: '^(\.\.?/|/)\.[\w-]{1,20}/'
-    unless:
-      - id: metadata/package/files/dependency::ceraph-package-path
-
-  - id: import-from-hidden-path
-    desc: Imports a hidden module path
-    crit: notable
-    conf: 0.85
-    for: [javascript, python]
-    if:
-      type: symbol
-      kind: import
-      regex: '^(\.\.?/|/)\.[\w-]{1,20}/'
-    # Well-known project/agent/IDE dotdirs are conventional layout, not
-    # module-resolution hijacks (e.g. importing from .claude-plugin/ or
-    # ~/.openclaw/workspace libs).
-    not:
-      - regex: '(^|/)\.(claude(-plugin)?|openclaw|hermes|codex|gemini|github|gitlab|circleci|vscode|idea|config|husky|yarn|pnpm|changeset|well-known|storybook|next|nuxt|svelte-kit|react-router|devcontainer|bin|ceraph)/'
-      # Build-output dotdirs are generated layout, not a hijack: a template
-      # that ships `import registry from "../.generated/actions-registry.js"`
-      # imports its own codegen, the same way .next/ or .nuxt/ above do.
-      - regex: '(^|/)\.(generated|output|setup|cache|turbo|vite|astro|parcel-cache|angular|metadata)/'
-
+- id: env-path-hijack-hidden
+  desc: NODE_PATH/PYTHONPATH set to relative hidden dir
+  crit: suspicious
+  conf: 0.9
+  if:
+    type: text
+    regex: (?i)\b(NODE_PATH|PYTHONPATH)\s*=\s*["']?(\.{1,2}[\\/])?\.[\w-]{1,30}
+  not:
+  - regex: (?i)["'=/]\s*\.(build|claude(-plugin)?|openclaw|hermes|codex|omx|gemini|melaya|reference|venv|virtualenv|tox|nox|local|config|cache|github|gitlab|circleci|vscode|idea|husky|yarn|pnpm|devcontainer|bin|acp|pysite)\b
+  - regex: (?i)[\\/]\.libs\b
+  - regex: (?i)\bNODE_PATH\s*=\s*["']?[^"'\n]*node_modules
+  - regex: (?i)\b(NODE_PATH|PYTHONPATH)\s*=\s*["']?(\.{1,2}[\\/])?\.ci(-[\w]{1,24})?\b
+  unless:
+  - id: objectives/command-and-control/backdoor/tasking/command-http::privilege-dropping-command-service
+  - type: basename
+    exact: default.cache.py
+- id: require-from-hidden-path
+  desc: Requires a hidden module path
+  crit: notable
+  conf: 0.85
+  for:
+  - javascript
+  if:
+    type: symbol
+    kind: call
+    exact: require
+    arg:
+      kind: string
+      regex: ^(\.\.?/|/)\.[\w-]{1,20}/
+  unless:
+  - id: metadata/package/files/dependency::ceraph-package-path
+- id: import-from-hidden-path
+  desc: Imports a hidden module path
+  crit: notable
+  conf: 0.85
+  for:
+  - javascript
+  - python
+  if:
+    type: symbol
+    kind: import
+    regex: ^(\.\.?/|/)\.[\w-]{1,20}/
+  not:
+  - regex: (^|/)\.(claude(-plugin)?|openclaw|hermes|codex|gemini|github|gitlab|circleci|vscode|idea|config|husky|yarn|pnpm|changeset|well-known|storybook|next|nuxt|svelte-kit|react-router|devcontainer|bin|ceraph)/
+  - regex: (^|/)\.(generated|output|setup|cache|turbo|vite|astro|parcel-cache|angular|metadata)/
 composite_rules:
-  # `sys.path.<insert|append|extend>(<literal hidden path>)` — Python.
+- id: sys-path-hijack-hidden
+  desc: sys.path mutated with hidden-directory literal
+  crit: suspicious
+  conf: 0.93
+  for:
+  - python
+  all:
+  - id: micro-behaviors/os/module/search-path::sys-path-mutate
+  - id: micro-behaviors/os/module/search-path::sys-path-hidden-dir-entry
+  unless:
+  - id: well-known/app/system/cowork-flow::cowork-flow-hook-context
+  - id: metadata/package/testing/presence/harness::test-directory
+  - id: metadata/package/documentation/source::documentation-dir-path
+  - id: well-known/app/data/gsas-ii::gsas-ii-local-plugin-context
+- id: node-module-paths-hijack-hidden
+  desc: module.paths mutated with hidden-directory literal
+  crit: suspicious
+  conf: 0.93
+  for:
+  - javascript
+  near_lines: 1
+  all:
+  - id: micro-behaviors/os/module/search-path::node-module-paths-mutate
+  - id: micro-behaviors/fs/path/location::hidden-dir-literal
+  unless:
+  - id: metadata/build/bundler/runtime::js-webpack-bundle
+  - id: metadata/build/minifier::js-webpack-bundle-minified
+  - id: metadata/build/minifier::js-webpack-minified-module-call
+- id: module-resolution-hijack
+  desc: Module resolution hijack
+  crit: suspicious
+  conf: 0.95
+  any:
   - id: sys-path-hijack-hidden
-    desc: sys.path mutated with hidden-directory literal
-    crit: suspicious
-    conf: 0.93
-    for: [python]
-    all:
-      - id: micro-behaviors/os/module/search-path::sys-path-mutate
-      - id: micro-behaviors/os/module/search-path::sys-path-hidden-dir-entry
-    unless:
-      - id: well-known/app/system/cowork-flow::cowork-flow-hook-context
-      - id: metadata/package/testing/presence/harness::test-directory
-      - id: metadata/package/documentation/source::documentation-dir-path
-      - id: well-known/app/data/gsas-ii::gsas-ii-local-plugin-context
-
-  # `module.paths.<unshift|push>(<literal hidden path>)` — Node.js.
   - id: node-module-paths-hijack-hidden
-    desc: module.paths mutated with hidden-directory literal
-    crit: suspicious
-    conf: 0.93
-    for: [javascript]
-    near_lines: 1
-    all:
-      - id: micro-behaviors/os/module/search-path::node-module-paths-mutate
-      - id: micro-behaviors/fs/path/location::hidden-dir-literal
-    unless:
-      - id: metadata/build/bundler/runtime::js-webpack-bundle
-      - id: metadata/build/minifier::js-webpack-bundle-minified
-      - id: metadata/build/minifier::js-webpack-minified-module-call
-
-  # Search-order hijack is a path-list mutation (sys.path, module.paths,
-  # NODE_PATH/PYTHONPATH). A static import or require of a relative
-  # dot-directory (`import … from "./.setup/chunk.mjs"`) is bundler layout;
-  # those atoms stay notable and do not by themselves convict.
-  - id: module-resolution-hijack
-    desc: Module resolution hijack
-    crit: suspicious
-    conf: 0.95
+  - id: env-path-hijack-hidden
+  downgrade:
     any:
-      - id: sys-path-hijack-hidden
-      - id: node-module-paths-hijack-hidden
-      - id: env-path-hijack-hidden
-    downgrade:
-      any:
-        - id: metadata/build/bundler/asset::js-large-module-bundle
-        - id: micro-behaviors/process/interpreter/vm/
-    unless:
-      - id: well-known/lib/platform/psutil/
-      - id: well-known/app/system/cowork-flow::cowork-flow-hook-context
-      - id: metadata/package/testing/presence/harness::test-directory
-      # require('../.cache/bootcode') is the sandbox's own prebundled bootstrap.
-      - id: metadata/package/files/dependency::postman-sandbox-package-path
-      # Ceraph runtime loads its media registries and testid config from .ceraph/
-      - id: metadata/package/files/dependency::ceraph-package-path
-      - id: well-known/app/data/gsas-ii::gsas-ii-local-plugin-context
+    - id: metadata/build/bundler/asset::js-large-module-bundle
+    - id: micro-behaviors/process/interpreter/vm/
+  unless:
+  - id: well-known/lib/platform/psutil
+  - id: well-known/app/system/cowork-flow::cowork-flow-hook-context
+  - id: metadata/package/testing/presence/harness::test-directory
+  - id: metadata/package/files/dependency::postman-sandbox-package-path
+  - id: metadata/package/files/dependency::ceraph-package-path
+  - id: well-known/app/data/gsas-ii::gsas-ii-local-plugin-context

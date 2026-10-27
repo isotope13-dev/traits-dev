@@ -1,98 +1,77 @@
-# URL-path over-encoding to defeat literal WAF / reverse-proxy rules.
-#
-# A perimeter rule that blocks a path by matching the literal string (e.g.
-# /PSEMHUB/) runs before URL normalization, so re-encoding one unreserved
-# letter of that path as its percent escape slips straight past it while the
-# application server decodes the byte and routes the request normally. In the
-# ShinyHunters/UNC6240 PeopleSoft wave /PSEMHUB/ became /%50SEMHUB/ (%50 -> P);
-# the same trick re-encodes any single letter of any blocked keyword.
-#
-# The tell is structural: an unreserved ASCII letter percent-encoded inside a
-# path segment that also carries literal letters. RFC 3986 never requires
-# encoding A-Z/a-z, so a mixed literal+escaped segment is over-encoding, not
-# ordinary escaping (spaces %20, slashes %2F, reserved chars are excluded by
-# the byte ranges below). The atom alone is a possible evasion marker; the suspicious
-# composite requires an HTTP client that actually sends it.
 defaults:
-  platforms: [unix, windows]
-  for: [python, javascript, typescript, go, ruby, php, shell, source, text]
+  platforms:
+  - unix
+  - windows
+  for:
+  - python
+  - javascript
+  - typescript
+  - go
+  - ruby
+  - php
+  - shell
+  - source
+  - text
   attack: T1190
   mbc: F0004
-
+  crit: suspicious
 traits:
-  - id: overencoded-path-leading-letter
-    desc: URL path over-encodes an ASCII letter
-    crit: suspicious
-    conf: 0.9
-    unless:
-      - id: well-known/tool/offensive/
-      - id: well-known/tool/development/ci/github-actions/docker-build-push-action::dist-tree
-      - id: well-known/tool/development/ci/github-actions/docker-login-action::dist-tree
-      - id: well-known/tool/development/ci/github-actions/github-codeql-action::github-codeql-action-tree
-      - id: well-known/tool/development/ci/github-actions/codeql-action/
-      - id: metadata/package/testing/
-      - id: "metadata/file/naming::test-directory-component"
-    # Anchor parser-extracted literals so random path-like bytes inside a
-    # packed Function body cannot masquerade as a request path. The optional
-    # scheme keeps both relative paths and complete HTTP URLs in scope. Permit
-    # bounded leading path segments because reverse proxies commonly mount an
-    # application below a tenant, locale, or API prefix; the over-encoded
-    # segment is not necessarily the first one after the authority.
-    if:
-      type: literal
-      kind: string
-      regex: '(?i)^(https?://[^/]+)?/([\w%.~-]+/){0,8}[\w%.~-]*%([46][1-9a-f]|[57][0-9a])\w'
-
-  - id: overencoded-path-final-letter
-    desc: Path segment ends with percent-encoded letter
-    crit: suspicious
-    conf: 0.9
-    unless:
-      - id: metadata/package/testing/
-    # Requiring the segment to start with a literal letter prevents the hex
-    # digits in a fully encoded segment from supplying the literal context.
-      - id: "metadata/file/naming::test-directory-component"
-    if:
-      type: literal
-      kind: string
-      regex: '(?i)/[a-z][a-z0-9_.~-]*%([46][1-9a-f]|[57][0-9a])(/|$)'
-
-
+- id: overencoded-path-leading-letter
+  desc: URL path over-encodes an ASCII letter
+  conf: 0.9
+  unless:
+  - id: well-known/tool/offensive/
+  - id: well-known/tool/development/ci/github-actions/docker-build-push-action::dist-tree
+  - id: well-known/tool/development/ci/github-actions/docker-login-action::dist-tree
+  - id: well-known/tool/development/ci/github-actions/github-codeql-action::github-codeql-action-tree
+  - id: well-known/tool/development/ci/github-actions/codeql-action/
+  - id: metadata/package/testing/
+  - id: metadata/path::test-directory-component
+  if:
+    type: literal
+    kind: string
+    regex: (?i)^(https?://[^/]+)?/([\w%.~-]+/){0,8}[\w%.~-]*%([46][1-9a-f]|[57][0-9a])\w
+- id: overencoded-path-final-letter
+  desc: Path segment ends with percent-encoded letter
+  conf: 0.9
+  unless:
+  - id: metadata/package/testing/
+  - id: metadata/path::test-directory-component
+  if:
+    type: literal
+    kind: string
+    regex: (?i)/[a-z][a-z0-9_.~-]*%([46][1-9a-f]|[57][0-9a])(/|$)
 composite_rules:
+- id: waf-overencoded-path-letter
+  desc: URL path mixes literal and encoded letters
+  conf: 0.9
+  any:
+  - id: overencoded-path-leading-letter
+  - id: overencoded-path-final-letter
+- id: overencoded-path-http-request
+  desc: HTTP client uses mixed percent-encoded path letters
+  conf: 0.94
+  attack: T1190,T1027
+  unless:
+  - id: well-known/tool/offensive/
+  all:
   - id: waf-overencoded-path-letter
-    desc: URL path mixes literal and encoded letters
-    crit: suspicious
-    conf: 0.9
-    any:
-      - id: overencoded-path-leading-letter
-      - id: overencoded-path-final-letter
-
-  - id: overencoded-path-http-request
-    desc: HTTP client uses mixed percent-encoded path letters
-    crit: suspicious
-    conf: 0.94
-    attack: T1190,T1027
-    unless:
-      - id: well-known/tool/offensive/
-    all:
-      - id: waf-overencoded-path-letter
-    any:
-      - id: micro-behaviors/communications/http/lib/urllib
-      - id: micro-behaviors/communications/http/client/exchange::urllib-word
-      - id: micro-behaviors/communications/http/client/exchange::urllib-urlopen
-      - id: micro-behaviors/communications/http/client/exchange::urllib-urlopen-call-symbol
-      - id: micro-behaviors/communications/http/client/initialize::urllib-request-symbol
-      - id: micro-behaviors/communications/http/client/initialize::urllib-request-data-body
-      - id: micro-behaviors/communications/http/client/response-body::urlopen-response-body-read
-      - id: micro-behaviors/communications/http/client/exchange::urllib-urlopen-call
-      - id: micro-behaviors/communications/http/post::requests-post
-      - id: micro-behaviors/communications/http/post::js-fetch-post-request
-      - id: micro-behaviors/communications/http/post::http-post-methods
-      - id: micro-behaviors/communications/http/post::jvm-urlconnection-post-source
-      - id: micro-behaviors/communications/http/client/library
-      - id: micro-behaviors/communications/http/download/cli
-
-      - id: micro-behaviors/communications/http/request/client::curl-wget-command-position
-      - id: micro-behaviors/communications/http/curl::curl-s-flag
-      - id: micro-behaviors/communications/http/curl::curl-command-call
-      - id: micro-behaviors/communications/http/url/external-ip::curl-wget-ipv4-url
+  any:
+  - id: micro-behaviors/communications/http/lib/urllib
+  - id: micro-behaviors/communications/http/client/exchange::urllib-word
+  - id: micro-behaviors/communications/http/client/exchange::urllib-urlopen
+  - id: micro-behaviors/communications/http/client/exchange::urllib-urlopen-call-symbol
+  - id: micro-behaviors/communications/http/client/initialize::urllib-request-symbol
+  - id: micro-behaviors/communications/http/client/initialize::urllib-request-data-body
+  - id: micro-behaviors/communications/http/client/response-body::urlopen-response-body-read
+  - id: micro-behaviors/communications/http/client/exchange::urllib-urlopen-call
+  - id: micro-behaviors/communications/http/post::requests-post
+  - id: micro-behaviors/communications/http/post::js-fetch-post-request
+  - id: micro-behaviors/communications/http/post::http-post-methods
+  - id: micro-behaviors/communications/http/post::jvm-urlconnection-post-source
+  - id: micro-behaviors/communications/http/client/library
+  - id: micro-behaviors/communications/http/download/cli
+  - id: micro-behaviors/communications/http/request/client::curl-wget-command-position
+  - id: micro-behaviors/communications/http/curl::curl-s-flag
+  - id: micro-behaviors/communications/http/curl::curl-command-call
+  - id: micro-behaviors/communications/http/url/external-ip::curl-wget-ipv4-url

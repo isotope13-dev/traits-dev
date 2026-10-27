@@ -1,275 +1,259 @@
-# Every rule here is the same shape in a different language: a hidden cache
-# path, a megabyte buffer, an unbounded loop, a zero-padded counter and a write
-# call. Each carries `near_bytes` because those five facts are one routine in a
-# real disk-filler, and because without a proximity bound the set is satisfied
-# by any large program that does all five *somewhere*: pnpm -- a package manager
-# whose whole job is writing a content-addressable store under ~/.pnpm-store --
-# matched on its bundled dist across eight packaged versions and was reported
-# hostile. None of these rules had a scope or proximity constraint.
 defaults:
-  platforms: [linux, macos, windows]
-  for: [zig]
+  platforms:
+  - linux
+  - macos
+  - windows
+  for:
+  - zig
   attack: T1499.001
-
 traits:
-  # Elixir commonly expresses unbounded work as tail recursion rather than a
-  # syntactic `while (true)`. This atom identifies an increasing recursive
-  # producer step; the hostile composite still requires a hidden cache path,
-  # a megabyte buffer, a thousand writes, indexed filenames, and file output.
-  - id: elixir-increasing-recursive-producer
-    desc: Elixir recursively advances an output index
-    crit: notable
-    conf: 0.9
-    for: [elixir]
-    if:
-      type: text
-      regex: '\bdo:\s*[a-z_][A-Za-z0-9_]*\s*\([^\n)]{0,100}\b[A-Za-z_]\w*\s*\+\s*[1-9]\d*'
-
-  - id: jvm-thousand-iteration-constant
-    desc: JVM bytecode loads a 1024 iteration bound
-    crit: baseline
-    conf: 0.94
-    for: [class, java_class]
-    if:
-      type: hex
-      # sipush 1024
-      pattern: '11 04 00'
-
-  - id: jvm-indexed-output-filename
-    desc: JVM class formats an indexed output filename
-    crit: notable
-    conf: 0.92
-    for: [class, java_class]
-    if:
-      type: value
-      path: class.strings[*]
-      regex: '^[A-Za-z_.-]{0,24}%0?[3-8]d(\.[A-Za-z0-9]{1,8})?$'
-
+- id: elixir-increasing-recursive-producer
+  desc: Elixir recursively advances an output index
+  crit: notable
+  conf: 0.9
+  for:
+  - elixir
+  if:
+    type: text
+    regex: \bdo:\s*[a-z_][A-Za-z0-9_]*\s*\([^\n)]{0,100}\b[A-Za-z_]\w*\s*\+\s*[1-9]\d*
+- id: jvm-thousand-iteration-constant
+  desc: JVM bytecode loads a 1024 iteration bound
+  crit: baseline
+  conf: 0.94
+  for:
+  - class
+  - java_class
+  if:
+    type: hex
+    pattern: 11 04 00
+- id: jvm-indexed-output-filename
+  desc: JVM class formats an indexed output filename
+  crit: notable
+  conf: 0.92
+  for:
+  - class
+  - java_class
+  if:
+    type: value
+    path: class.strings[*]
+    regex: ^[A-Za-z_.-]{0,24}%0?[3-8]d(\.[A-Za-z0-9]{1,8})?$
 composite_rules:
-  - id: unbounded-cache-disk-fill-elixir
-    desc: Elixir recursively writes gigabyte chunks into hidden cache files
-    crit: hostile
-    conf: 0.99
-    for: [elixir]
-    near_lines: 45
-    all:
-      - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
-      - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
-      - id: micro-behaviors/data/control-flow/loop::receiver-loop-bound-1024
-      - id: micro-behaviors/data/format/string::zero-padded-integer-format
-      - id: micro-behaviors/fs/write/file/full::source-buffer-write-call
-      - id: elixir-increasing-recursive-producer
-
-  # Bounds are intentionally file-wide for bytecode: constant-pool facts and
-  # the method instructions that use them live in different regions. The six
-  # independent requirements make the combination narrow despite that loose
-  # spatial relationship.
-  - id: unbounded-hidden-cache-disk-fill-jvm
-    desc: JVM bytecode repeatedly fills hidden user cache files
-    crit: hostile
-    conf: 0.99
-    for: [class, java_class]
-    all:
-      - id: micro-behaviors/fs/path/location::jvm-hidden-user-cache-directory
-      - id: metadata/binary/code/bytecode::jvm-one-megabyte-allocation-constant
-      - id: jvm-thousand-iteration-constant
-      - id: jvm-indexed-output-filename
-      - id: micro-behaviors/fs/write/file/handle::jvm-files-newoutputstream-bytecode
-      - id: micro-behaviors/data/buffer/transfer::jvm-outputstream-write
-      - id: metadata/binary/code/complexity::jvm-counter-loop-backedges
-
-  - id: unbounded-hidden-cache-disk-fill
-    desc: Unbounded writes fill hidden cache storage
-    crit: hostile
-    conf: 0.99
-    all:
-      - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
-      - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
-      - id: micro-behaviors/data/control-flow/loop::source-infinite-loop-metric
-      - id: micro-behaviors/fs/file/open::zig-create-file
-      - id: micro-behaviors/data/buffer/transfer::source-write-all-helper-reference
-
-  - id: zig-hidden-cache-disk-fill
-    desc: Zig loop fills hidden cache storage
-    crit: hostile
-    conf: 0.99
-    # `scope: archive` was the only one in this file, and it let the four
-    # generic legs -- a hidden cache path, a megabyte allocation, an infinite
-    # loop and a zero-padded counter -- come from four unrelated members. Any
-    # large source archive satisfies that: Fedora's trunk-0.21.7 source RPM and
-    # Ubuntu's rustc 1.75 tarball both scored hostile. The sibling
-    # `unbounded-hidden-cache-disk-fill` above carries the same legs at file
-    # scope; one program fills the cache, not four files between them.
-    all:
-      - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
-      - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
-      - id: micro-behaviors/data/control-flow/loop::source-infinite-loop-metric
-      - id: micro-behaviors/data/format/string::zero-padded-integer-format
-      - id: micro-behaviors/data/buffer/transfer::source-write-all-helper-reference
-
-  - id: unbounded-cache-disk-fill-native
-    desc: Native loop writes megabyte cache files
-    crit: hostile
-    conf: 0.99
-    near_bytes: 2048
-    for: [c, cpp]
-    all:
-      - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
-      - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
-      - id: micro-behaviors/data/control-flow/loop::infinite-loop-header
-      - id: "metadata/lang/source/literal::integer-1023-or-1024-text"
-      - id: micro-behaviors/data/format/string::zero-padded-integer-format
-      - id: micro-behaviors/fs/write/file/handle::write--fwrite
-
-  - id: unbounded-cache-disk-fill-managed
-    desc: Managed loop writes megabyte cache files
-    crit: hostile
-    conf: 0.99
-    near_bytes: 2048
-    for: [csharp]
-    all:
-      - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
-      - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
-      - id: micro-behaviors/data/control-flow/loop::infinite-loop-header
-      - id: "metadata/lang/source/literal::integer-1023-or-1024-text"
-      - id: micro-behaviors/data/format/string::zero-padded-integer-format
-      - id: micro-behaviors/fs/write/file/full::source-buffer-write-call
-
-  - id: unbounded-cache-disk-fill-javascript
-    desc: JavaScript loop writes megabyte cache files
-    crit: hostile
-    conf: 0.99
-    near_bytes: 2048
-    for: [javascript, typescript]
-    all:
-      - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
-      - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
-      - id: micro-behaviors/data/control-flow/loop::infinite-loop-header
-      - id: "metadata/lang/source/literal::integer-1023-or-1024-text"
-      - id: micro-behaviors/data/format/string::zero-padded-integer-format
-      - id: micro-behaviors/fs/write/file/full::js-fs-write-sync
-
-  - id: unbounded-cache-disk-fill-typescript
-    desc: TypeScript loop writes megabyte cache files
-    crit: hostile
-    conf: 0.99
-    near_bytes: 2048
-    for: [typescript]
-    all:
-      - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
-      - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
-      - id: micro-behaviors/data/control-flow/loop::infinite-loop-header
-      - id: "metadata/lang/source/literal::integer-1023-or-1024-text"
-      - id: micro-behaviors/data/format/string::zero-padded-integer-format
-      - id: micro-behaviors/process/io/stream::js-stream-write-call
-
-  - id: unbounded-cache-disk-fill-php
-    desc: PHP loop writes megabyte cache files
-    crit: hostile
-    conf: 0.99
-    near_bytes: 2048
-    for: [php]
-    all:
-      - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
-      - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
-      - id: micro-behaviors/data/control-flow/loop::infinite-loop-header
-      - id: "metadata/lang/source/literal::integer-1023-or-1024-text"
-      - id: micro-behaviors/data/format/string::zero-padded-integer-format
-      - id: micro-behaviors/fs/write/file/handle::php-fwrite
-
-  - id: unbounded-cache-disk-fill-perl
-    desc: Perl loop writes megabyte cache files
-    crit: hostile
-    conf: 0.99
-    near_bytes: 2048
-    for: [perl]
-    all:
-      - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
-      - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
-      - id: micro-behaviors/data/control-flow/loop::infinite-loop-header
-      - id: "metadata/lang/source/literal::integer-1023-or-1024-text"
-      - id: micro-behaviors/data/format/string::zero-padded-integer-format
-      - id: micro-behaviors/fs/write/file/full::perl-filehandle-print
-
-  - id: unbounded-cache-disk-fill-block-loop
-    desc: Block loop writes megabyte cache files
-    crit: hostile
-    conf: 0.99
-    near_bytes: 2048
-    for: [rust]
-    all:
-      - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
-      - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
-      - id: micro-behaviors/data/control-flow/loop::block-unbounded-loop-header
-      - id: "metadata/lang/source/literal::integer-1023-or-1024-text"
-      - id: micro-behaviors/data/format/string::zero-padded-integer-format
-      - id: micro-behaviors/fs/write/file/full/
-
-  - id: unbounded-cache-disk-fill-go
-    desc: Go loop writes megabyte cache files
-    crit: hostile
-    conf: 0.99
-    near_bytes: 2048
-    for: [go]
-    all:
-      - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
-      - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
-      - id: micro-behaviors/data/control-flow/loop::go-unbounded-three-clause-loop
-      - id: "metadata/lang/source/literal::integer-1023-or-1024-text"
-      - id: micro-behaviors/data/format/string::zero-padded-integer-format
-      - id: micro-behaviors/data/buffer/transfer::go-write-method-call
-
-  - id: unbounded-cache-disk-fill-ruby-loop
-    desc: Ruby loop writes megabyte cache files
-    crit: hostile
-    conf: 0.99
-    near_bytes: 2048
-    for: [ruby]
-    all:
-      - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
-      - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
-      - id: micro-behaviors/data/control-flow/loop::block-unbounded-loop-header
-      - id: micro-behaviors/data/control-flow/loop::receiver-loop-bound-1024
-      - id: micro-behaviors/data/format/string::zero-padded-integer-format
-      - id: micro-behaviors/fs/write/file/full::source-buffer-write-call
-
-  - id: unbounded-cache-disk-fill-metric-loop
-    desc: Parsed infinite loop writes megabyte cache files
-    crit: hostile
-    conf: 0.99
-    for: [kotlin, swift]
-    all:
-      - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
-      - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
-      - id: micro-behaviors/data/control-flow/loop::source-infinite-loop-metric
-      - id: "metadata/lang/source/literal::integer-1023-or-1024-text"
-      - id: micro-behaviors/data/format/string::zero-padded-integer-format
-      - id: micro-behaviors/fs/write/file/full/
-
-  - id: unbounded-cache-disk-fill-powershell
-    desc: PowerShell loop writes megabyte cache files
-    crit: hostile
-    conf: 0.99
-    near_bytes: 2048
-    for: [powershell]
-    all:
-      - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
-      - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
-      - id: micro-behaviors/data/control-flow/loop::infinite-loop-header
-      - id: "metadata/lang/source/literal::integer-1023-or-1024-text"
-      - id: micro-behaviors/data/format/string::zero-padded-integer-format
-      - id: micro-behaviors/process/io/stream::powershell-stream-buffer-write
-
-  - id: unbounded-cache-disk-fill-python-loop
-    desc: Python loop writes megabyte cache files
-    crit: hostile
-    conf: 0.99
-    near_bytes: 2048
-    for: [python]
-    all:
-      - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
-      - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
-      - id: micro-behaviors/data/control-flow/loop::python-unconditional-while-header
-      - id: "metadata/lang/source/literal::integer-1023-or-1024-text"
-      - id: micro-behaviors/data/format/string::zero-padded-integer-format
-      - id: micro-behaviors/fs/write/file/handle::py-file-write-call
+- id: unbounded-cache-disk-fill-elixir
+  desc: Elixir recursively writes gigabyte chunks into hidden cache files
+  crit: hostile
+  conf: 0.99
+  for:
+  - elixir
+  near_lines: 45
+  all:
+  - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
+  - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
+  - id: micro-behaviors/data/control-flow/loop::receiver-loop-bound-1024
+  - id: micro-behaviors/data/format/string::zero-padded-integer-format
+  - id: micro-behaviors/process/io/buffer::source-buffer-write-call
+  - id: elixir-increasing-recursive-producer
+- id: unbounded-hidden-cache-disk-fill-jvm
+  desc: JVM bytecode repeatedly fills hidden user cache files
+  crit: hostile
+  conf: 0.99
+  for:
+  - class
+  - java_class
+  all:
+  - id: micro-behaviors/fs/path/location::jvm-hidden-user-cache-directory
+  - id: metadata/binary/code/bytecode::jvm-one-megabyte-allocation-constant
+  - id: jvm-thousand-iteration-constant
+  - id: jvm-indexed-output-filename
+  - id: micro-behaviors/fs/write/file/handle::jvm-files-newoutputstream-bytecode
+  - id: micro-behaviors/data/buffer/transfer::jvm-outputstream-write
+  - id: metadata/binary/code/complexity::jvm-counter-loop-backedges
+- id: unbounded-hidden-cache-disk-fill
+  desc: Unbounded writes fill hidden cache storage
+  crit: hostile
+  conf: 0.99
+  all:
+  - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
+  - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
+  - id: micro-behaviors/data/control-flow/loop::source-infinite-loop-metric
+  - id: micro-behaviors/fs/file/open::zig-create-file
+  - id: micro-behaviors/data/buffer/transfer::source-write-all-helper-reference
+- id: zig-hidden-cache-disk-fill
+  desc: Zig loop fills hidden cache storage
+  crit: hostile
+  conf: 0.99
+  all:
+  - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
+  - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
+  - id: micro-behaviors/data/control-flow/loop::source-infinite-loop-metric
+  - id: micro-behaviors/data/format/string::zero-padded-integer-format
+  - id: micro-behaviors/data/buffer/transfer::source-write-all-helper-reference
+- id: unbounded-cache-disk-fill-native
+  desc: Native loop writes megabyte cache files
+  crit: hostile
+  conf: 0.99
+  near_bytes: 2048
+  for:
+  - c
+  - cpp
+  all:
+  - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
+  - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
+  - id: micro-behaviors/data/control-flow/loop::infinite-loop-header
+  - id: metadata/lang/source/literal::integer-1023-or-1024-text
+  - id: micro-behaviors/data/format/string::zero-padded-integer-format
+  - id: micro-behaviors/fs/write/file/handle::write--fwrite
+- id: unbounded-cache-disk-fill-managed
+  desc: Managed loop writes megabyte cache files
+  crit: hostile
+  conf: 0.99
+  near_bytes: 2048
+  for:
+  - csharp
+  all:
+  - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
+  - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
+  - id: micro-behaviors/data/control-flow/loop::infinite-loop-header
+  - id: metadata/lang/source/literal::integer-1023-or-1024-text
+  - id: micro-behaviors/data/format/string::zero-padded-integer-format
+  - id: micro-behaviors/process/io/buffer::source-buffer-write-call
+- id: unbounded-cache-disk-fill-javascript
+  desc: JavaScript loop writes megabyte cache files
+  crit: hostile
+  conf: 0.99
+  near_bytes: 2048
+  for:
+  - javascript
+  - typescript
+  all:
+  - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
+  - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
+  - id: micro-behaviors/data/control-flow/loop::infinite-loop-header
+  - id: metadata/lang/source/literal::integer-1023-or-1024-text
+  - id: micro-behaviors/data/format/string::zero-padded-integer-format
+  - id: micro-behaviors/fs/write/file/full::js-fs-write-sync
+- id: unbounded-cache-disk-fill-typescript
+  desc: TypeScript loop writes megabyte cache files
+  crit: hostile
+  conf: 0.99
+  near_bytes: 2048
+  for:
+  - typescript
+  all:
+  - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
+  - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
+  - id: micro-behaviors/data/control-flow/loop::infinite-loop-header
+  - id: metadata/lang/source/literal::integer-1023-or-1024-text
+  - id: micro-behaviors/data/format/string::zero-padded-integer-format
+  - id: micro-behaviors/process/io/stream::js-stream-write-call
+- id: unbounded-cache-disk-fill-php
+  desc: PHP loop writes megabyte cache files
+  crit: hostile
+  conf: 0.99
+  near_bytes: 2048
+  for:
+  - php
+  all:
+  - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
+  - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
+  - id: micro-behaviors/data/control-flow/loop::infinite-loop-header
+  - id: metadata/lang/source/literal::integer-1023-or-1024-text
+  - id: micro-behaviors/data/format/string::zero-padded-integer-format
+  - id: micro-behaviors/fs/write/file/handle::php-fwrite
+- id: unbounded-cache-disk-fill-perl
+  desc: Perl loop writes megabyte cache files
+  crit: hostile
+  conf: 0.99
+  near_bytes: 2048
+  for:
+  - perl
+  all:
+  - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
+  - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
+  - id: micro-behaviors/data/control-flow/loop::infinite-loop-header
+  - id: metadata/lang/source/literal::integer-1023-or-1024-text
+  - id: micro-behaviors/data/format/string::zero-padded-integer-format
+  - id: micro-behaviors/fs/write/stream::perl-filehandle-print
+- id: unbounded-cache-disk-fill-block-loop
+  desc: Block loop writes megabyte cache files
+  crit: hostile
+  conf: 0.99
+  near_bytes: 2048
+  for:
+  - rust
+  all:
+  - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
+  - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
+  - id: micro-behaviors/data/control-flow/loop::block-unbounded-loop-header
+  - id: metadata/lang/source/literal::integer-1023-or-1024-text
+  - id: micro-behaviors/data/format/string::zero-padded-integer-format
+  - id: micro-behaviors/fs/write/file/full
+- id: unbounded-cache-disk-fill-go
+  desc: Go loop writes megabyte cache files
+  crit: hostile
+  conf: 0.99
+  near_bytes: 2048
+  for:
+  - go
+  all:
+  - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
+  - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
+  - id: micro-behaviors/data/control-flow/loop::go-unbounded-three-clause-loop
+  - id: metadata/lang/source/literal::integer-1023-or-1024-text
+  - id: micro-behaviors/data/format/string::zero-padded-integer-format
+  - id: micro-behaviors/data/buffer/transfer::go-write-method-call
+- id: unbounded-cache-disk-fill-ruby-loop
+  desc: Ruby loop writes megabyte cache files
+  crit: hostile
+  conf: 0.99
+  near_bytes: 2048
+  for:
+  - ruby
+  all:
+  - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
+  - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
+  - id: micro-behaviors/data/control-flow/loop::block-unbounded-loop-header
+  - id: micro-behaviors/data/control-flow/loop::receiver-loop-bound-1024
+  - id: micro-behaviors/data/format/string::zero-padded-integer-format
+  - id: micro-behaviors/process/io/buffer::source-buffer-write-call
+- id: unbounded-cache-disk-fill-metric-loop
+  desc: Parsed infinite loop writes megabyte cache files
+  crit: hostile
+  conf: 0.99
+  for:
+  - kotlin
+  - swift
+  all:
+  - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
+  - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
+  - id: micro-behaviors/data/control-flow/loop::source-infinite-loop-metric
+  - id: metadata/lang/source/literal::integer-1023-or-1024-text
+  - id: micro-behaviors/data/format/string::zero-padded-integer-format
+  - id: micro-behaviors/fs/write/file/full
+- id: unbounded-cache-disk-fill-powershell
+  desc: PowerShell loop writes megabyte cache files
+  crit: hostile
+  conf: 0.99
+  near_bytes: 2048
+  for:
+  - powershell
+  all:
+  - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
+  - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
+  - id: micro-behaviors/data/control-flow/loop::infinite-loop-header
+  - id: metadata/lang/source/literal::integer-1023-or-1024-text
+  - id: micro-behaviors/data/format/string::zero-padded-integer-format
+  - id: micro-behaviors/process/io/stream::powershell-stream-buffer-write
+- id: unbounded-cache-disk-fill-python-loop
+  desc: Python loop writes megabyte cache files
+  crit: hostile
+  conf: 0.99
+  near_bytes: 2048
+  for:
+  - python
+  all:
+  - id: micro-behaviors/fs/path/location::source-hidden-user-cache-entry
+  - id: micro-behaviors/mem/alloc/heap::megabyte-size-constant
+  - id: micro-behaviors/data/control-flow/loop::python-unconditional-while-header
+  - id: metadata/lang/source/literal::integer-1023-or-1024-text
+  - id: micro-behaviors/data/format/string::zero-padded-integer-format
+  - id: micro-behaviors/fs/write/file/handle::py-file-write-call

@@ -1,23 +1,12 @@
-# Unicode Steganography & Eval-of-Decoded-Buffer Attack Patterns
-# Detects supply-chain attacks that hide payloads in invisible Unicode
-# characters (variation selectors, zero-width, tag chars) or use
-# eval(Buffer.from(...)) to execute dynamically decoded data.
-#
-# ATT&CK: T1027 (Obfuscated Files) + T1195.002 (Supply Chain: Software)
 defaults:
-  platforms: [windows, unix]
-  for: [javascript, typescript]
+  platforms:
+  - windows
+  - unix
+  for:
+  - javascript
+  - typescript
   attack: T1195.002
 traits:
-  # ── Unicode Steganography Components ─────────────────────────────────
-
-  # Variation-selector decoding and range observations live in their
-  # capability homes; objective composites below add the hidden-payload context.
-  # The neutral eval(Buffer.from(...)) capability lives under the eval
-  # micro-behaviors directory; objective composites add the obfuscation
-  # context that makes it a hidden-payload signal.
-  # AST: eval() with any call expression argument (catches deeply nested
-  # decode chains like eval(Buffer.from(s(x)).toString('utf-8')))
 - id: eval-atob
   desc: eval() of atob() decoded data
   crit: suspicious
@@ -29,7 +18,6 @@ traits:
   unless:
   - id: metadata/package/testing/corpus/
   - id: well-known/tool/detection/
-  # A scanner's test files quote the eval(atob()) fixture to assert detection.
   - id: metadata/package/testing/harness/unit::vitest-import
   - id: well-known/tool/offensive/promptfoo::redteam-eval-corpus-context
   - id: metadata/lang/source/syntax/call/invocation::markup-or-decoded-alert-calls
@@ -38,49 +26,42 @@ traits:
   - id: metadata/package/documentation/source::documentation-dir-path
   if:
     type: text
-    # A quoted 'eval(atob(' names the pattern (scanner signature tables and
-    # labels quote it as data); only an unquoted occurrence invokes it. The
-    # optional leading quote is inside the match span so `not:` can see it.
-    # Include the atob argument so a short quoted token is visible to not:.
-    # Eight alphabet characters is six decoded bytes, too small for a script.
     regex: '[''"`]?eval\(\s*atob\s*\([^)\n]{0,48}'
   not:
-    - regex: '^[''"`]'
-    - regex: 'atob\s*\(\s*["''][A-Za-z0-9+/]{1,8}={0,2}["'']'
+  - regex: ^['"`]
+  - regex: atob\s*\(\s*["'][A-Za-z0-9+/]{1,8}={0,2}["']
 - id: indirect-eval-buffer-arg
   desc: Indirect eval with Buffer argument
   crit: notable
   conf: 0.95
   if:
     type: text
-    regex: '\(0\s*,\s*eval\)\s*\(\s*Buffer\s*\.'
-  # setTimeout/setInterval with decoded string — timer-based eval
+    regex: \(0\s*,\s*eval\)\s*\(\s*Buffer\s*\.
 - id: settimeout-decoded
   desc: setTimeout with Buffer.from decoded code
   crit: suspicious
   conf: 0.9
   if:
     type: text
-    regex: 'setTimeout\(\s*Buffer\.from\('
+    regex: setTimeout\(\s*Buffer\.from\(
 - id: settimeout-atob
   desc: setTimeout with atob decoded code
   crit: suspicious
   conf: 0.9
   if:
     type: text
-    regex: 'setTimeout\(\s*atob\s*\('
-
+    regex: setTimeout\(\s*atob\s*\(
 composite_rules:
-  # ── Hostile: Unicode Steganography + Eval ────────────────────────────
-
-  # eval(Buffer.from(decoder(...))) + variation selector constants
 - id: eval-unicode-stego-payload
   desc: eval() of Unicode steganography decoded payload
   crit: hostile
   conf: 0.95
   attack: T1027
   mbc: B0032
-  for: [javascript, typescript, text]
+  for:
+  - javascript
+  - typescript
+  - text
   all:
   - id: micro-behaviors/process/interpreter/eval/direct::decoded-buffer-eval-call-or-command
   - id: micro-behaviors/data/decode/custom::javascript-variation-selector-byte-decoder
@@ -88,11 +69,7 @@ composite_rules:
   - id: micro-behaviors/data/string/unicode::javascript-variation-selector-range
   - id: micro-behaviors/data/string/unicode::javascript-supplementary-selector-range
   - id: metadata/file/invisible-unicode::multiple
-  # Appended long line in a normal file + eval + data decoding = hostile
-  # This catches the classic "append one minified payload line" attack.
 - id: long-line-eval-injection
-    # ── Hostile: Long-Line Injection + Eval ──────────────────────────────
-
   desc: Eval injection via appended long line
   crit: hostile
   conf: 0.9
@@ -109,25 +86,16 @@ composite_rules:
   - id: micro-behaviors/data/encode/charcode
   - id: micro-behaviors/data/string/access::js-codepoint-at
   unless:
-  - id: metadata/build/
+  - id: metadata/build
   - id: micro-behaviors/process/interpreter/eval/direct::eval-parenthesized-expression
-  # new Function(Buffer.from(...)) in minified code
 - id: function-ctor-decoded-obfuscated
-    # ── Hostile: Function Constructor + Decoded Payload ──────────────────
-
   desc: Function constructor with decoded payload in obfuscated code
   crit: hostile
   conf: 0.9
   all:
   - id: micro-behaviors/metaprogramming/generation::function-from-decoder-or-buffer
   - id: objectives/anti-static/obfuscation/code-metrics/structure::minified-code
-  # Indirect eval (0,eval) immediately receiving a decoded buffer or base64 arg.
-  # Uses indirect-eval-buffer-arg (raw co-occurrence) instead of buffer-keyword
-  # (which matches any identifier containing "Buffer", causing false positives
-  # in code that defines functions like resolveBuffer).
 - id: indirect-eval-decoded
-    # ── Suspicious: Indirect Eval Composites ─────────────────────────────
-
   desc: Indirect eval of decoded buffer
   crit: suspicious
   conf: 0.9
@@ -136,7 +104,6 @@ composite_rules:
   any:
   - id: objectives/supply-chain/hidden-payload/encoding::indirect-eval-buffer-arg
   - id: micro-behaviors/data/encode/base64::base64-tool
-  # Timer-based code execution with decoded payload
 - id: timer-decoded-exec
   desc: setTimeout/setInterval with decoded payload
   crit: suspicious
@@ -144,8 +111,6 @@ composite_rules:
   any:
   - id: settimeout-decoded
   - id: settimeout-atob
-  # codePointAt + charCodeAt/fromCharCode decoder pattern (no eval needed
-  # as a standalone signal — the decoder function itself is suspicious)
 - id: unicode-decoder-function
   desc: Unicode code point decoder function
   crit: suspicious
@@ -162,8 +127,6 @@ composite_rules:
   - id: well-known/tool/detection/
   - id: well-known/lib/ui/blessed::blessed-terminal-unicode-module
   - id: well-known/tool/development/cli/socket-cli::socket-dev-cli-vendored-path
-  # Terminal string-width logic embedded in JS source maps is not stego.
   - id: metadata/file/format/source-map::sourcemap
   - id: metadata/file/format/source-map::sourcemap-sources-content
   - id: metadata/file/format/source-map::sourcemap-context
-

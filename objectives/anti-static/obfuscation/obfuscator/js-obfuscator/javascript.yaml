@@ -1,1047 +1,860 @@
-# NOTE: the rules below used to carry an `unless:` on
-# metadata/package/files/ecosystem::openclaw-evolver-package-member plus a
-# `downgrade:` on ...::openclaw-evolver-archive-container. That member marker is
-# satisfied by the bare substring `EVOLVER_` in any js/ts/json/markdown file,
-# and the container marker by an `evolver-*.zip` basename, so a package could
-# exempt itself from this entire rule family by name. Obfuscator output is
-# exactly what these rules exist to report, whoever shipped it -- vendor
-# allowlisting belongs in a `crit: exception` composite built from notable
-# facts, not a baseline name marker wired into a dozen `unless:` lists.
 defaults:
-  platforms: [windows, unix]
-  # JS obfuscator patterns can appear in files that shebang-juked file-type
-  # detection (e.g. attackers prepending `#!/bin/bash` to a .js) so we accept
-  # both shell and javascript here. The patterns are JS-grammar-specific —
-  # `var _0xabcd =`, `while(!![])` — so legitimate shell scripts don't FP.
+  platforms:
+  - windows
+  - unix
   for:
-    - javascript
-    - shell
+  - javascript
+  - shell
 traits:
-  - id: while-not-zero
-    desc: while(0x0) infinite loop pattern
-    crit: notable
-    conf: 0.85
-    attack: T1027
-    if:
-      type: text
-      substr: 'while(0x0)'
-    unless:
-      - id: metadata/build/
-      # (evolver name allowlist removed -- see file header)
-  - id: while-not-space-zero
-    desc: while loop with a truthy array condition
-    crit: notable
-    conf: 0.85
-    attack: T1027
-    if:
-      type: text
-      regex: while\(\s*!!\s*\[\]\s*\)
-    unless:
-      - id: metadata/build/
-      # (evolver name allowlist removed -- see file header)
-  # jsjiami and similar packers gate the decoder with `while(!![]&&--n+m)`
-  # rather than a bare `while(!![]){...}` block.
-  - id: while-double-bang-and
-    desc: while(!![]&&) obfuscator decoder loop gate
-    crit: notable
-    conf: 0.88
-    attack: T1027
-    if:
-      type: text
-      regex: while\(\s*!!\s*\[\]\s*&&
-    unless:
-      - id: metadata/build/
-  - id: jsjiami-watermark
-    desc: jsjiami JavaScript obfuscator version watermark
-    crit: suspicious
-    conf: 0.95
-    attack: T1027.002
-    mbc: B0032
-    if:
-      type: text
-      # Real output embeds a required version token such as
-      # `jsjiami.com.v6`; filter lists contain only the bare blocked domain.
-      regex: 'jsjiami\.com\.v[0-9]+\b'
-  # Obfuscator string-table rotation: `_0xabcd.push(_0xabcd.shift())` —
-  # always uses `_0x`-mangled identifiers in real JS-obfuscator output.
-  # The bare `X.push(X.shift())` form matched too many legitimate queue
-  # rotations to keep as an objective.
-  - id: push-shift-pattern
-    desc: _0x push/shift self-rotation pattern
-    crit: notable
-    conf: 0.9
-    attack: T1027
-    if:
-      type: text
-      regex: '_0x[a-fA-F0-9]{3,}\.push\(\s*_0x[a-fA-F0-9]{3,}\.shift\(\)\s*\)'
-  # Constants and ordering from the seeded string-table decoder used by the
-  # compromised Joyfill package. Keep this as an obfuscation atom; the
-  # campaign marker and global require alias provide the malware context.
-  - id: seeded-string-shuffle-constants
-    desc: Seeded string-table shuffle constants
-    crit: suspicious
-    conf: 0.98
-    attack: T1027.002
-    mbc: B0032
-    for: [javascript]
-    if:
-      type: text
-      regex: 'charAt.{0,160}19597.{0,160}48014.{0,160}4573868'
-  # Fisher-Yates over a charAt copy: m[b]=m[k]; m[k]=saved, then join.
-  # The LCG constants change per seed, so the swap is the stable fact.
-  - id: fisher-yates-string-shuffle
-    desc: Fisher-Yates shuffle of a string table
-    crit: suspicious
-    conf: 0.93
-    attack: T1027
-    for: [javascript, html]
-    if:
-      type: text
-      regex: 'charAt\([^)]{0,12}\)[\s\S]{0,240}m\[[A-Za-z]\]=m\[[A-Za-z]\];m\[[A-Za-z]\]='
-  # Bracket/quote notation variant: `y['push'](y['shift']())` with a plain
-  # identifier (not _0x-mangled). Same self-rotating string-array decoder, used
-  # by obfuscators that don't hex-rename the array var (e.g. the ndsw webinject).
-  - id: push-shift-bracket-pattern
-    desc: "Bracket-notation push/shift self-rotation"
-    crit: notable
-    conf: 0.9
-    attack: T1027
-    # Inline page scripts hide decoder tables the same way linked modules do
-    # (fisher-yates-string-shuffle below already accepts html for the same
-    # reason); the bracket spelling plus the minified-bundle downgrade keeps
-    # ordinary framework output quiet.
-    for: [javascript, shell, html]
-    if:
-      type: text
-      exclude_html_comments: true
-      regex: "\\w+\\[['\"]push['\"]\\]\\(\\s*\\w+\\[['\"]shift['\"]\\]\\(\\)\\s*\\)"
-    unless:
-      - id: metadata/package/testing/harness/runtime::obfuscated-mocked-network-test-harness
-      - id: well-known/tool/development/vscode-extension/recomment::recomment-obfuscated-bundle-context
-      - id: well-known/tool/development/vscode-extension/recomment::webpack-obfuscator-dep
-      - id: well-known/tool/development/vscode-extension/recomment::recomment-extension-context
-      - id: well-known/tool/development/vscode-extension/recomment::recomment-command-id
-    downgrade:
-      any:
-        - id: metadata/build/minifier::js-large-minified-bundle
-  # The two atoms below exist because every other rule in this file that can
-  # recognise javascript-obfuscator output is suppressed by
-  # `metadata/build/minifier::js-large-minified-bundle` (or by that whole
-  # directory). Those suppressors are reasonable for the generic spellings they
-  # guard -- `x['push'](x['shift']())` and a bare `parseInt` loop do occur in
-  # real bundles -- but the effect is that obfuscated code stops being
-  # recognised at exactly the size where a package ships it: a 7.6 MB
-  # javascript-obfuscator bundle is "a large minified bundle", so the entire
-  # js-obfuscator directory goes quiet on it.
-  #
-  # These two spellings close that hole without reopening those false
-  # positives, because a minifier cannot emit either. Minifiers and bundlers
-  # shorten names; they do not rename to `_0x`-prefixed hexadecimal, they do
-  # not build a string array that rotates itself, and they write `while(!0)`
-  # or `for(;;)` rather than `while(!![])`. Requiring the hex mangling *and*
-  # one of the string-array runtime's two halves is what makes each safe to
-  # leave unsuppressed; the composite below requires both halves.
-  - id: hex-mangled-bracket-rotation
-    desc: Mangled array self-rotates via bracket access
-    crit: notable
-    conf: 0.95
-    attack: T1027.002
-    mbc: B0032
-    for: [javascript, typescript, text]
-    if:
-      type: text
-      regex: "_0x[a-fA-F0-9]{3,}\\[['\"]push['\"]\\][\\s\\S]{0,12}_0x[a-fA-F0-9]{3,}\\[['\"]shift"
-
-  - id: hex-mangled-parseint-rotation-guard
-    desc: Mangled parseInt checksum drives rotation loop
-    crit: notable
-    conf: 0.95
-    attack: T1027.002
-    mbc: B0032
-    for: [javascript, typescript, text]
-    if:
-      type: text
-      regex: 'while\(\s*!!\s*\[\]\s*\)[\s\S]{0,40}_0x[a-fA-F0-9]{3,}\s*=\s*-?\s*parseInt'
-  # javascript-obfuscator's string-array accessor always resolves an entry by
-  # subtracting a per-file base from the caller's index -- `return n[e-=402]`
-  # -- inside the two-argument wrapper it rewrites every literal through. The
-  # `-=` in a member index is what makes it specific: ordinary code indexes
-  # with a value, not with a compound assignment that mutates the parameter.
-  # Name-agnostic on purpose, so it holds for the `aN_0x…` accessors that
-  # webpack-obfuscator emits per module as well as the bare `_0x…` form.
-  - id: string-array-offset-index-decoder
-    desc: String-array accessor subtracts index offset
-    crit: notable
-    conf: 0.92
-    attack: T1027.002
-    mbc: B0032
-    for: [javascript, typescript]
-    if:
-      type: text
-      regex: 'return\s+\w+\[\s*\w+\s*-=\s*(0x[0-9a-fA-F]+|\d+)\s*\]'
-  - id: a0-string-decoder-entrypoint
-    desc: a0_0x JavaScript string decoder entrypoint
-    crit: notable
-    conf: 0.92
-    attack: T1027.002
-    mbc: B0032
-    if:
-      type: text
-      regex: "function a0_0x[0-9a-f]{4}\\("
-    unless:
-      - id: metadata/build/bundler/vscode::vscode-extension-generated-asset
-  # A plain array rotation is common queue logic by itself. Keep it hidden as
-  # a component and require obfuscator-style name mangling in the composite.
-  - id: shift-push-pattern
-    desc: _0x unshift/pop self-rotation pattern
-    crit: notable
-    conf: 0.9
-    attack: T1027
-    if:
-      type: text
-      regex: '_0x[a-fA-F0-9]{3,}\.unshift\(\s*_0x[a-fA-F0-9]{3,}\.pop\(\)\s*\)'
-  - id: array-shuffle-algorithm
-    desc: Array shuffle algorithm in infinite loop
-    crit: notable
-    conf: 0.88
-    attack: T1027
-    if:
-      type: text
-      regex: while\(!!\[\]\).*?try.*?parseInt.*?\.push.*?\.shift
-    unless:
-      - id: metadata/build/
-      # (evolver name allowlist removed -- see file header)
-  - id: parseint-decoder-loop
-    desc: while(!![]) try/parseInt decoder loop
-    crit: notable
-    conf: 0.9
-    attack: T1027
-    mbc: B0032
-    # Inline HTML scripts use the same checksum-controlled rotation loop.
-    for: [javascript, shell, html]
-    if:
-      type: text
-      exclude_html_comments: true
-      regex: while\s*\(\s*!!\s*\[\]\s*\)\s*\{\s*try\s*\{\s*(var|let|const)\s+\w+\s*=[\s(-]*parseInt\(
-    downgrade:
-      any:
-        - id: metadata/build/
-  - id: parseint-decoder-loop-and-gate
-    desc: while(!![]&&) try/parseInt decoder loop
-    crit: notable
-    conf: 0.9
-    attack: T1027
-    mbc: B0032
-    if:
-      type: text
-      regex: while\(\s*!!\s*\[\]\s*&&[\s\S]{1,80}try[\s\S]{1,60}parseInt\(
-    unless:
-      - id: metadata/build/
-  # identifierNamesGenerator: mangled (not hexadecimal) still emits the
-  # string-array rotate decoder as `for(var a=t();;)try{if(...parseInt...
-  # break;a.push(a.shift())}` instead of `while(!![])` / `_0x` names.
-  # Split across atoms: a single regex over the parseInt chain blows the
-  # 90-byte / NFA-memory budgets.
-  - id: for-empty-cond-try
-    desc: for(;;) try empty-condition loop
-    crit: notable
-    conf: 0.88
-    attack: T1027.002
-    mbc: B0032
-    if:
-      type: text
-      regex: 'for\s*\(\s*(var|let|const)\s+\w+\s*=\s*\w+\(\)\s*;\s*;\s*\)\s*try'
-    unless:
-      - id: metadata/build/
-  - id: try-if-parseint
-    desc: try if parseInt decoder gate
-    crit: notable
-    conf: 0.88
-    attack: T1027.002
-    mbc: B0032
-    if:
-      type: text
-      regex: 'try\s*\{\s*if\s*\([^)]{0,80}parseInt'
-    unless:
-      - id: metadata/build/
-  - id: for-boolean-coercion
-    desc: For loop with boolean coercion (+!!false)
-    crit: suspicious
-    conf: 0.88
-    attack: T1027
-    mbc: B0032
-    if:
-      type: text
-      regex: for\s*\(\s*(var|let|const)\s+\w+\s*=\s*\+\s*!!\s*false
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-  # JSFuck encodes arbitrary JavaScript in the six characters []()!+ via type
-  # coercion, so a whole program is one uninterrupted run drawn from that
-  # alphabet. Match the run itself: the previous form wanted two ten-character
-  # bracket runs joined by a single `+`, which real output only happens to
-  # produce once every few tens of kilobytes -- a genuine 22 KB `alert`-class
-  # payload hit it exactly once and so fell under the old `count_min: 2`.
-  # 200 characters is far below any real payload and far above the longest
-  # punctuation run minifiers emit, since a single letter, digit, comma, or
-  # quote breaks the run.
-  #
-  # Phishing kits also ship JSFuck inline in the landing page rather than in a
-  # .js file, so `html` is listed alongside the file-level defaults.
-  - id: jsfuck-pattern
-    desc: JSFuck obfuscation ([]()!+ only)
-    crit: suspicious
-    conf: 0.95
-    attack: T1027.002
-    mbc: B0032
-    for: [javascript, shell, html]
-    if:
-      type: text
-      # A run of empty regexp capture groups is punctuation-heavy but is not
-      # JSFuck. Requiring a bracket/coercion operator within the first match
-      # position retains real JSFuck while rejecting parenthesis-only stress
-      # tests.
-      # ...and a parenthesis must appear inside the run. JSFuck builds calls, so
-      # its output is dense with `(![]+[])`-style groups throughout; a run of a
-      # single repeated character is not JSFuck. moment-timezone's packed data
-      # yields a 200-character run of `!` in a hex-decoded layer, which the
-      # bracket-or-bang start alone accepted.
-      regex: '[!+\[][\[\]()!+]{99,}\([\[\]()!+]{99,}'
-    unless:
-      - id: well-known/tool/offensive/payload-corpus::payloadsallthethings-release-member
-      - id: metadata/package/testing/harness/runtime/
-  - id: global-punctuation-property
-    desc: Global property with non-alphanumeric name
-    crit: suspicious
-    conf: 0.92
-    attack: T1027.002
-    mbc: B0032
-    if:
-      type: text
-      regex: "global\\s*\\[\\s*['\"][^a-zA-Z0-9_]['\"]\\s*\\]\\s*="
-  - id: packer-eval-pattern
-    desc: Canonical Packer eval and replacement wrapper
-    crit: suspicious
-    conf: 0.95
-    attack: T1027.002
-    mbc: B0032
-    # Dean Edwards' packer preamble is longer than 220 bytes before replace.
-    for: [javascript, shell, html, text]
-    if:
-      type: text
-      exclude_html_comments: true
-      regex: eval\s*\(\s*function\(p,a,c,k,e,[dr]\)\s*\{.{0,320}\.replace\s*\(\s*new\s+RegExp
-    unless:
-      - id: well-known/lib/development/js-beautify::package-context
-      - id: well-known/lib/web/client-side/jquery::packed-tooltip-plugin
-      - id: well-known/lib/web/client-side/jquery::packed-autocomplete-plugin
-      - id: well-known/lib/web/client-side/jquery::packed-treeview-plugin
-      - id: well-known/lib/web/client-side/jquery::packed-jquery-plugin
-      - id: well-known/lib/web/standards/cssquery::packed-cssquery-library
-      - id: well-known/lib/web/client-side/sylvester::packed-sylvester-library
-      - id: well-known/lib/web/client-side/platform::packed-platform-library
-  - id: inline-whitespace-before-execution
-    desc: Inline padding precedes JavaScript execution
-    crit: notable
-    conf: 0.95
-    for: [javascript]
-    if:
-      type: text
-      regex: '[^\s][ \t]{100,}(eval|Function|require)\s*\('
-
+- id: while-not-zero
+  desc: while(0x0) infinite loop pattern
+  crit: notable
+  conf: 0.85
+  attack: T1027
+  if:
+    type: text
+    substr: while(0x0)
+  unless:
+  - id: metadata/build
+- id: while-not-space-zero
+  desc: while loop with a truthy array condition
+  crit: notable
+  conf: 0.85
+  attack: T1027
+  if:
+    type: text
+    regex: while\(\s*!!\s*\[\]\s*\)
+  unless:
+  - id: metadata/build
+- id: while-double-bang-and
+  desc: while(!![]&&) obfuscator decoder loop gate
+  crit: notable
+  conf: 0.88
+  attack: T1027
+  if:
+    type: text
+    regex: while\(\s*!!\s*\[\]\s*&&
+  unless:
+  - id: metadata/build
+- id: jsjiami-watermark
+  desc: jsjiami JavaScript obfuscator version watermark
+  crit: suspicious
+  conf: 0.95
+  attack: T1027.002
+  mbc: B0032
+  if:
+    type: text
+    regex: jsjiami\.com\.v[0-9]+\b
+- id: push-shift-pattern
+  desc: _0x push/shift self-rotation pattern
+  crit: notable
+  conf: 0.9
+  attack: T1027
+  if:
+    type: text
+    regex: _0x[a-fA-F0-9]{3,}\.push\(\s*_0x[a-fA-F0-9]{3,}\.shift\(\)\s*\)
+- id: seeded-string-shuffle-constants
+  desc: Seeded string-table shuffle constants
+  crit: suspicious
+  conf: 0.98
+  attack: T1027.002
+  mbc: B0032
+  for:
+  - javascript
+  if:
+    type: text
+    regex: charAt.{0,160}19597.{0,160}48014.{0,160}4573868
+- id: fisher-yates-string-shuffle
+  desc: Fisher-Yates shuffle of a string table
+  crit: suspicious
+  conf: 0.93
+  attack: T1027
+  for:
+  - javascript
+  - html
+  if:
+    type: text
+    regex: charAt\([^)]{0,12}\)[\s\S]{0,240}m\[[A-Za-z]\]=m\[[A-Za-z]\];m\[[A-Za-z]\]=
+- id: push-shift-bracket-pattern
+  desc: Bracket-notation push/shift self-rotation
+  crit: notable
+  conf: 0.9
+  attack: T1027
+  for:
+  - javascript
+  - shell
+  - html
+  if:
+    type: text
+    exclude_html_comments: true
+    regex: \w+\[['"]push['"]\]\(\s*\w+\[['"]shift['"]\]\(\)\s*\)
+  unless:
+  - id: metadata/package/testing/harness/runtime::obfuscated-mocked-network-test-harness
+  - id: well-known/tool/development/vscode-extension/recomment::recomment-obfuscated-bundle-context
+  - id: well-known/tool/development/vscode-extension/recomment::webpack-obfuscator-dep
+  - id: well-known/tool/development/vscode-extension/recomment::recomment-extension-context
+  - id: well-known/tool/development/vscode-extension/recomment::recomment-command-id
+  downgrade:
+    any:
+    - id: metadata/build/minifier::js-large-minified-bundle
+- id: hex-mangled-bracket-rotation
+  desc: Mangled array self-rotates via bracket access
+  crit: notable
+  conf: 0.95
+  attack: T1027.002
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  - text
+  if:
+    type: text
+    regex: _0x[a-fA-F0-9]{3,}\[['"]push['"]\][\s\S]{0,12}_0x[a-fA-F0-9]{3,}\[['"]shift
+- id: hex-mangled-parseint-rotation-guard
+  desc: Mangled parseInt checksum drives rotation loop
+  crit: notable
+  conf: 0.95
+  attack: T1027.002
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  - text
+  if:
+    type: text
+    regex: while\(\s*!!\s*\[\]\s*\)[\s\S]{0,40}_0x[a-fA-F0-9]{3,}\s*=\s*-?\s*parseInt
+- id: string-array-offset-index-decoder
+  desc: String-array accessor subtracts index offset
+  crit: notable
+  conf: 0.92
+  attack: T1027.002
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  if:
+    type: text
+    regex: return\s+\w+\[\s*\w+\s*-=\s*(0x[0-9a-fA-F]+|\d+)\s*\]
+- id: a0-string-decoder-entrypoint
+  desc: a0_0x JavaScript string decoder entrypoint
+  crit: notable
+  conf: 0.92
+  attack: T1027.002
+  mbc: B0032
+  if:
+    type: text
+    regex: function a0_0x[0-9a-f]{4}\(
+  unless:
+  - id: metadata/build/bundler/vscode::vscode-extension-generated-asset
+- id: shift-push-pattern
+  desc: _0x unshift/pop self-rotation pattern
+  crit: notable
+  conf: 0.9
+  attack: T1027
+  if:
+    type: text
+    regex: _0x[a-fA-F0-9]{3,}\.unshift\(\s*_0x[a-fA-F0-9]{3,}\.pop\(\)\s*\)
+- id: array-shuffle-algorithm
+  desc: Array shuffle algorithm in infinite loop
+  crit: notable
+  conf: 0.88
+  attack: T1027
+  if:
+    type: text
+    regex: while\(!!\[\]\).*?try.*?parseInt.*?\.push.*?\.shift
+  unless:
+  - id: metadata/build
+- id: parseint-decoder-loop
+  desc: while(!![]) try/parseInt decoder loop
+  crit: notable
+  conf: 0.9
+  attack: T1027
+  mbc: B0032
+  for:
+  - javascript
+  - shell
+  - html
+  if:
+    type: text
+    exclude_html_comments: true
+    regex: while\s*\(\s*!!\s*\[\]\s*\)\s*\{\s*try\s*\{\s*(var|let|const)\s+\w+\s*=[\s(-]*parseInt\(
+  downgrade:
+    any:
+    - id: metadata/build
+- id: parseint-decoder-loop-and-gate
+  desc: while(!![]&&) try/parseInt decoder loop
+  crit: notable
+  conf: 0.9
+  attack: T1027
+  mbc: B0032
+  if:
+    type: text
+    regex: while\(\s*!!\s*\[\]\s*&&[\s\S]{1,80}try[\s\S]{1,60}parseInt\(
+  unless:
+  - id: metadata/build
+- id: for-empty-cond-try
+  desc: for(;;) try empty-condition loop
+  crit: notable
+  conf: 0.88
+  attack: T1027.002
+  mbc: B0032
+  if:
+    type: text
+    regex: for\s*\(\s*(var|let|const)\s+\w+\s*=\s*\w+\(\)\s*;\s*;\s*\)\s*try
+  unless:
+  - id: metadata/build
+- id: try-if-parseint
+  desc: try if parseInt decoder gate
+  crit: notable
+  conf: 0.88
+  attack: T1027.002
+  mbc: B0032
+  if:
+    type: text
+    regex: try\s*\{\s*if\s*\([^)]{0,80}parseInt
+  unless:
+  - id: metadata/build
+- id: for-boolean-coercion
+  desc: For loop with boolean coercion (+!!false)
+  crit: suspicious
+  conf: 0.88
+  attack: T1027
+  mbc: B0032
+  if:
+    type: text
+    regex: for\s*\(\s*(var|let|const)\s+\w+\s*=\s*\+\s*!!\s*false
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+- id: jsfuck-pattern
+  desc: JSFuck obfuscation ([]()!+ only)
+  crit: suspicious
+  conf: 0.95
+  attack: T1027.002
+  mbc: B0032
+  for:
+  - javascript
+  - shell
+  - html
+  if:
+    type: text
+    regex: '[!+\[][\[\]()!+]{99,}\([\[\]()!+]{99,}'
+  unless:
+  - id: well-known/tool/offensive/payload-corpus::payloadsallthethings-release-member
+  - id: metadata/package/testing/harness/runtime/
+- id: global-punctuation-property
+  desc: Global property with non-alphanumeric name
+  crit: suspicious
+  conf: 0.92
+  attack: T1027.002
+  mbc: B0032
+  if:
+    type: text
+    regex: global\s*\[\s*['"][^a-zA-Z0-9_]['"]\s*\]\s*=
+- id: packer-eval-pattern
+  desc: Canonical Packer eval and replacement wrapper
+  crit: suspicious
+  conf: 0.95
+  attack: T1027.002
+  mbc: B0032
+  for:
+  - javascript
+  - shell
+  - html
+  - text
+  if:
+    type: text
+    exclude_html_comments: true
+    regex: eval\s*\(\s*function\(p,a,c,k,e,[dr]\)\s*\{.{0,320}\.replace\s*\(\s*new\s+RegExp
+  unless:
+  - id: well-known/lib/development/js-beautify::package-context
+  - id: well-known/lib/web/client-side/jquery::packed-tooltip-plugin
+  - id: well-known/lib/web/client-side/jquery::packed-autocomplete-plugin
+  - id: well-known/lib/web/client-side/jquery::packed-treeview-plugin
+  - id: well-known/lib/web/client-side/jquery::packed-jquery-plugin
+  - id: well-known/lib/web/standards/cssquery::packed-cssquery-library
+  - id: well-known/lib/web/client-side/sylvester::packed-sylvester-library
+  - id: well-known/lib/web/client-side/platform::packed-platform-library
+- id: inline-whitespace-before-execution
+  desc: Inline padding precedes JavaScript execution
+  crit: notable
+  conf: 0.95
+  for:
+  - javascript
+  if:
+    type: text
+    regex: '[^\s][ \t]{100,}(eval|Function|require)\s*\('
 composite_rules:
-  # javascript-obfuscator's string-array runtime, identified by both halves of
-  # it: the rotation that permutes the literal table, and the parseInt checksum
-  # loop that keeps rotating until the permutation is correct. Each half alone
-  # is a notable observation; together they are the tool's runtime, and no
-  # minifier, bundler or transpiler emits either half -- which is why this rule
-  # carries no large-minified-bundle suppressor while its generic siblings do.
-  #
-  # Suspicious rather than hostile: shipping obfuscated code is a choice
-  # commercial software makes for its own reasons, and the tool is the same one
-  # either way. What it hides is the attacker's free variable, so the hostile
-  # composites in this file keep requiring a payload alongside the mangling.
-  # The value of naming the runtime is that a reviewer is told the truth -- the
-  # bundle is machine-obfuscated -- rather than being handed a derived symptom
-  # such as "constants are written as hex arithmetic", which is what happens
-  # when this evidence is suppressed.
+- id: javascript-obfuscator-string-array-runtime
+  desc: JavaScript Obfuscator rotates and decodes a string array at runtime
+  crit: suspicious
+  conf: 0.96
+  attack: T1027.002
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  - text
+  all:
+  - id: hex-mangled-bracket-rotation
+  - id: hex-mangled-parseint-rotation-guard
+  downgrade:
+    scope: archive
+    any:
+    - id: metadata/build/minifier::intentional-obfuscated-javascript-artifact-context
+    - id: well-known/lib/development/vscode::vscode-extension-out-output-path
+    - id: well-known/dual-use/remote-admin/whalent/
+    - id: metadata/import/package::comfyui-group-extension-context
+    - id: metadata/build/minifier::vendor-protected-bundle-context
+- id: plain-javascript-obfuscator-string-array-runtime
+  desc: Plain-name Obfuscator rotates and decodes a string array
+  crit: suspicious
+  conf: 0.96
+  attack: T1027.002
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  - html
+  all:
+  - id: push-shift-bracket-pattern
+  - id: parseint-decoder-loop
+  unless:
   - id: javascript-obfuscator-string-array-runtime
-    desc: JavaScript Obfuscator rotates and decodes a string array at runtime
-    crit: suspicious
-    conf: 0.96
-    attack: T1027.002
-    mbc: B0032
-    for: [javascript, typescript, text]
-    all:
-      - id: hex-mangled-bracket-rotation
-      - id: hex-mangled-parseint-rotation-guard
-    downgrade:
-      scope: archive
-      any:
-        - id: metadata/build/minifier::intentional-obfuscated-javascript-artifact-context
-        # Compiled VS Code extension bundle (extension/out/), the VSIX analogue
-        # of the dist/ artifact above; commercial extensions such as Zencoder
-        # ship obfuscator.io output there. Downgrade only: this is not in the
-        # shared intentional context, so hostile obfuscated-loader composites
-        # still fire on malicious VSIXes.
-        - id: well-known/lib/development/vscode::vscode-extension-out-output-path
-        - id: well-known/dual-use/remote-admin/whalent/
-        # ComfyUI group editors ship protected UI code; retain obfuscation
-        # as notable without suppressing payload or credential detections.
-        - id: metadata/import/package::comfyui-group-extension-context
-        # Vendors ship licensed, deliberately obfuscated bundles; downgrade
-        # only, so hostile obfuscated-loader composites still fire.
-        - id: metadata/build/minifier::vendor-protected-bundle-context
-
+  downgrade:
+    scope: archive
+    any:
+    - id: javascript-obfuscator-string-array-runtime
+    - id: metadata/build/minifier::intentional-obfuscated-javascript-artifact-context
+    - id: metadata/build/minifier::intentional-obfuscator-declared-build
+    - id: well-known/lib/development/vscode::vscode-extension-out-output-path
+    - id: metadata/build/minifier::vendor-protected-bundle-context
+    - id: well-known/app/ai/tool-server/
+    - id: well-known/lib/media/tencent-trtc/
+- id: obfuscated-jscript-activex-enumerator
+  desc: Obfuscated script creates ActiveX and enumerates a COM collection
+  crit: suspicious
+  conf: 0.93
+  attack: T1027.002
+  for:
+  - javascript
+  platforms:
+  - windows
+  all:
   - id: plain-javascript-obfuscator-string-array-runtime
-    desc: Plain-name Obfuscator rotates and decodes a string array
-    crit: suspicious
-    conf: 0.96
-    attack: T1027.002
-    mbc: B0032
-    for: [javascript, typescript, html]
-    all:
-      - id: push-shift-bracket-pattern
-      - id: parseint-decoder-loop
-    unless:
-      # Canonical-report guard: `_0x…` identifiers also match `\w+`, so one
-      # hex-mangled invocation satisfies both composites' legs. The
-      # hex-mangled sibling establishes strictly more (the name mangling), so
-      # this one stays live only for output whose identifiers the obfuscator
-      # left unmangled. This file-scoped guard handles a single source file;
-      # the archive downgrade below handles separate members of one package.
-      - id: javascript-obfuscator-string-array-runtime
-    downgrade:
-      scope: archive
-      any:
-        # An archive can repeat its obfuscated library in an offline HTML demo.
-        # Keep the broader plain-name match visible as notable when the
-        # specific hex-mangled runtime is already reported from another member.
-        - id: javascript-obfuscator-string-array-runtime
-        - id: metadata/build/minifier::intentional-obfuscated-javascript-artifact-context
-        - id: metadata/build/minifier::intentional-obfuscator-declared-build
-        - id: well-known/lib/development/vscode::vscode-extension-out-output-path
-        - id: metadata/build/minifier::vendor-protected-bundle-context
-        - id: well-known/app/ai/tool-server/
-        - id: well-known/lib/media/tencent-trtc/
-
-  - id: obfuscated-jscript-activex-enumerator
-    desc: Obfuscated script creates ActiveX and enumerates a COM collection
-    crit: suspicious
-    conf: 0.93
-    attack: T1027.002
-    for: [javascript]
-    platforms: [windows]
-    all:
-      - id: plain-javascript-obfuscator-string-array-runtime
-      - id: micro-behaviors/os/com/automation::activex-object-variable-progid
-      - id: micro-behaviors/os/com/automation::jscript-com-enumerator
-
-  # Obfuscation plus a direct-IP client does not bind that endpoint to C2.
-  - id: obfuscated-direct-ip-http-client
-    desc: JavaScript Obfuscator runtime beside direct-IP HTTP client
-    crit: suspicious
-    conf: 0.95
-    attack: T1027
-    for: [javascript, typescript]
-    all:
-      - id: javascript-obfuscator-string-array-runtime
-      - id: micro-behaviors/communications/ip/literal::direct-ip-http-client
-  - id: obfuscated-split-require-function
-    desc: Obfuscated loader calls generated require
-    crit: hostile
-    conf: 0.97
-    attack: T1027,T1059.007
-    for: [javascript, typescript]
-    all:
-      - id: javascript-obfuscator-string-array-runtime
-      - id: micro-behaviors/process/interpreter/eval/constructed::js-function-constructor-split-require
-  - id: obfuscated-computed-require-constructor
-    desc: Obfuscated constructor runs with require
-    crit: hostile
-    conf: 0.96
-    attack: T1027,T1059.007
-    for: [javascript, typescript]
-    all:
-      - id: javascript-obfuscator-string-array-runtime
-      - id: micro-behaviors/process/interpreter/eval/constructed::js-computed-constructor-require-call
-  # A string-array obfuscated program that ends by building a function from
-  # a decoded body and invoking it: the stage loader of the PolinRider
-  # fa-solid-900.woff2 build, whose C2 logic exists only in that body.
-  - id: obfuscated-empty-param-constructor-run
-    desc: Obfuscated JS builds and runs a decoded function
-    crit: hostile
-    conf: 0.95
-    attack: T1027,T1059.007
-    for: [javascript, typescript]
-    all:
-      - id: javascript-obfuscator-string-array-runtime
-      - id: micro-behaviors/process/interpreter/eval/constructed::js-empty-param-constructor-invoke
-  - id: obfuscated-decoder-function-require
-    desc: Decoder builds a function passed require
-    crit: hostile
-    conf: 0.96
-    attack: T1027,T1059.007
-    for: [javascript, typescript]
-    all:
-      - id: micro-behaviors/process/interpreter/eval/constructed::js-function-then-require-call
-      - id: micro-behaviors/data/decode/utf8::textdecoder-uint8-alias
-
-  - id: obfuscated-external-http-ip
-    desc: JavaScript Obfuscator hides an external HTTP IP URL
-    crit: hostile
-    conf: 0.97
-    attack: T1027.002,T1071.001
-    mbc: B0032,B0030
-    for: [javascript, typescript]
-    all:
-      - id: javascript-obfuscator-string-array-runtime
-      - id: micro-behaviors/communications/ip/literal::javascript-external-http-ip-url
-
-  # The obfuscator hides the string table, then the file compiles a runtime
-  # string with `new Function(...)` and hands it Node's `require`. The body
-  # gets full fs/child_process/net capability while no API name is visible.
-  # Seen in asar `loader.js` droppers (AES-GCM blob -> Function(require)).
-  - id: obfuscated-function-constructor-require-loader
-    desc: Obfuscated JS runs new Function with require
-    crit: hostile
-    conf: 0.96
-    attack: T1027.002,T1059.007
-    mbc: B0032
-    for: [javascript, typescript]
-    all:
-      - id: javascript-obfuscator-string-array-runtime
-      - id: micro-behaviors/process/interpreter/eval/constructed::js-function-constructor-any-args-require-invocation
-    unless:
-      - id: metadata/package/testing/
-      - id: metadata/build/minifier::intentional-obfuscated-javascript-artifact-context
-
-      - id: "metadata/file/naming::test-directory-component"
-  - id: obfuscated-browser-stratum-miner
-    desc: Obfuscated browser Stratum miner
-    crit: hostile
-    conf: 0.99
-    mbc: B0018
-    attack: T1027,T1496
-    for: [javascript, typescript]
-    all:
-      - id: objectives/impact/cryptojacking/miner/runtime::browser-stratum-worker-miner
-    any:
-      - id: metadata/lang/javascript-features::generated-name-or-state-syntax
-      - id: push-shift-bracket-pattern
-      - id: a0-string-decoder-entrypoint
-
-  - id: obfuscated-browser-xelis-miner
-    desc: Obfuscated browser Xelis miner
-    crit: hostile
-    conf: 0.995
-    mbc: B0018
-    attack: T1027,T1496
-    for: [javascript, typescript]
-    all:
-      - id: objectives/impact/cryptojacking/miner/runtime::browser-xelis-stratum-miner
-    any:
-      - id: metadata/lang/javascript-features::generated-name-or-state-syntax
-      - id: push-shift-bracket-pattern
-      - id: a0-string-decoder-entrypoint
-
-  # Every anti-static transform obfuscator.io offers, applied at once: renamed
-  # identifiers, a self-rotating string table, and a while/switch dispatcher.
-  # A minifier produces the first; shipping all three means the author asked
-  # for code that cannot be read, which is worth more than the notable each
-  # leg carries alone. Declared, inspectable build steps are excluded below,
-  # so a project that documents its obfuscation pass still reports as notable.
-  - id: full-anti-static-obfuscator-preset
-    for: [javascript]
-    desc: Obfuscator output mangles, rotates and flattens
-    crit: suspicious
-    conf: 0.94
-    mbc: B0032
-    attack: T1027.002
-    all:
-      - id: metadata/lang/javascript-features::generated-name-or-state-syntax
-      - id: push-shift-bracket-pattern
-      - id: objectives/anti-static/obfuscation/syntax::js-while-switch-state-machine
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/package/testing/presence/fixture::test-filename-pattern
-      - id: metadata/package/testing/harness/runtime::obfuscated-mocked-network-test-harness
-      - id: metadata/build/minifier::intentional-javascript-obfuscator-build
-      - id: metadata/build/minifier::intentional-obfuscator-dist-artifact
-      - id: metadata/build/minifier::intentional-obfuscator-release-artifact
-      - id: well-known/lib/data/akshare/
-      # Both suspicious composites in this file describe one obfuscator.io
-      # invocation, and they share two of three legs (name mangling + string-
-      # table rotation). When the encrypted-table variant below fires it is the
-      # canonical report -- strictly more informative, since it also establishes
-      # that the require() targets are unreadable -- so reporting this preset
-      # alongside it double-counts a single signal into two ids in the same
-      # directory. This composite stays live for the encodings the other cannot
-      # see (base64 stringArrayEncoding leaves no rc4 keystream, so
-      # `xor-modulo-key-loop` never fires and only this one reports).
-      - id: encrypted-string-table-hides-imports
-      # Same guard for the hex-mangled string-array report: it already states
-      # the name mangling and the self-rotating table, so the two ids would
-      # describe one obfuscator.io invocation twice.
-      - id: javascript-obfuscator-string-array-runtime
-
-  # obfuscator.io with `controlFlowFlattening` turned off. The preset above
-  # requires the while/switch state machine, which is optional in the tool and
-  # off by default -- so a payload that only mangles names, rotates the string
-  # table and inflates every numeric literal into an arithmetic expression
-  # topped out at notable, with no single finding above it. That is the exact
-  # configuration the 2024 polyfill.io injection shipped (87 KB, every literal
-  # behind a `_0x` accessor). Three independent obfuscator transforms on one
-  # file is not a minifier and not hand-written code.
-  - id: obfuscator-mangled-rotated-numeric-preset
-    for: [javascript]
-    desc: Obfuscator mangles, rotates and inflates numbers
-    crit: suspicious
-    conf: 0.93
-    mbc: B0032
-    attack: T1027.002
-    all:
-      - id: metadata/lang/javascript-features::generated-name-or-state-syntax
-      - id: push-shift-bracket-pattern
-      - id: micro-behaviors/data/arithmetic::js-dense-subtraction
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/package/testing/presence/fixture::test-filename-pattern
-      - id: metadata/package/testing/harness/runtime::obfuscated-mocked-network-test-harness
-      - id: metadata/build/minifier::intentional-javascript-obfuscator-build
-      - id: metadata/build/minifier::intentional-obfuscator-dist-artifact
-      - id: metadata/build/minifier::intentional-obfuscator-release-artifact
-      - id: well-known/lib/data/akshare::akshare-financial-data-library
-      # Canonical-report guard, same intent the sibling presets carry: one
-      # obfuscator invocation must not surface as several ids in one directory,
-      # and both of these establish strictly more than this composite does.
-      - id: full-anti-static-obfuscator-preset
-      - id: encrypted-string-table-hides-imports
-
-  # A distinct fact from "this file is obfuscator output": the string table is
-  # ENCRYPTED (the repeating-key keystream is obfuscator.io's rc4
-  # stringArrayEncoding, not the plain base64 variant) AND require() targets are
-  # read out of it. The module's dependency set is therefore unknowable without
-  # running the decoder -- a reviewer cannot see what it pulls in. Minified code
-  # keeps its require literals, so bundlers do not reach this.
+  - id: micro-behaviors/os/com/automation::activex-object-variable-progid
+  - id: micro-behaviors/os/com/automation::jscript-com-enumerator
+- id: obfuscated-direct-ip-http-client
+  desc: JavaScript Obfuscator runtime beside direct-IP HTTP client
+  crit: suspicious
+  conf: 0.95
+  attack: T1027
+  for:
+  - javascript
+  - typescript
+  all:
+  - id: javascript-obfuscator-string-array-runtime
+  - id: micro-behaviors/communications/ip/literal::direct-ip-http-client
+- id: obfuscated-split-require-function
+  desc: Obfuscated loader calls generated require
+  crit: hostile
+  conf: 0.97
+  attack: T1027,T1059.007
+  for:
+  - javascript
+  - typescript
+  all:
+  - id: javascript-obfuscator-string-array-runtime
+  - id: micro-behaviors/process/interpreter/eval/constructed::js-function-constructor-split-require
+- id: obfuscated-computed-require-constructor
+  desc: Obfuscated constructor runs with require
+  crit: hostile
+  conf: 0.96
+  attack: T1027,T1059.007
+  for:
+  - javascript
+  - typescript
+  all:
+  - id: javascript-obfuscator-string-array-runtime
+  - id: micro-behaviors/process/interpreter/eval/constructed::js-computed-constructor-require-call
+- id: obfuscated-empty-param-constructor-run
+  desc: Obfuscated JS builds and runs a decoded function
+  crit: hostile
+  conf: 0.95
+  attack: T1027,T1059.007
+  for:
+  - javascript
+  - typescript
+  all:
+  - id: javascript-obfuscator-string-array-runtime
+  - id: micro-behaviors/process/interpreter/eval/constructed::js-empty-param-constructor-invoke
+- id: obfuscated-decoder-function-require
+  desc: Decoder builds a function passed require
+  crit: hostile
+  conf: 0.96
+  attack: T1027,T1059.007
+  for:
+  - javascript
+  - typescript
+  all:
+  - id: micro-behaviors/process/interpreter/eval/constructed::js-function-then-require-call
+  - id: micro-behaviors/data/decode/utf8::textdecoder-uint8-alias
+- id: obfuscated-external-http-ip
+  desc: JavaScript Obfuscator hides an external HTTP IP URL
+  crit: hostile
+  conf: 0.97
+  attack: T1027.002,T1071.001
+  mbc: B0032,B0030
+  for:
+  - javascript
+  - typescript
+  all:
+  - id: javascript-obfuscator-string-array-runtime
+  - id: micro-behaviors/communications/ip/literal::javascript-external-http-ip-url
+- id: obfuscated-function-constructor-require-loader
+  desc: Obfuscated JS runs new Function with require
+  crit: hostile
+  conf: 0.96
+  attack: T1027.002,T1059.007
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  all:
+  - id: javascript-obfuscator-string-array-runtime
+  - id: micro-behaviors/process/interpreter/eval/constructed::js-function-constructor-any-args-require-invocation
+  unless:
+  - id: metadata/package/testing/
+  - id: metadata/build/minifier::intentional-obfuscated-javascript-artifact-context
+  - id: metadata/path::test-directory-component
+- id: obfuscated-browser-stratum-miner
+  desc: Obfuscated browser Stratum miner
+  crit: hostile
+  conf: 0.99
+  mbc: B0018
+  attack: T1027,T1496
+  for:
+  - javascript
+  - typescript
+  all:
+  - id: objectives/impact/cryptojacking/miner/runtime::browser-stratum-worker-miner
+  any:
+  - id: metadata/lang/javascript-features::generated-name-or-state-syntax
+  - id: push-shift-bracket-pattern
+  - id: a0-string-decoder-entrypoint
+- id: obfuscated-browser-xelis-miner
+  desc: Obfuscated browser Xelis miner
+  crit: hostile
+  conf: 0.995
+  mbc: B0018
+  attack: T1027,T1496
+  for:
+  - javascript
+  - typescript
+  all:
+  - id: objectives/impact/cryptojacking/miner/runtime::browser-xelis-stratum-miner
+  any:
+  - id: metadata/lang/javascript-features::generated-name-or-state-syntax
+  - id: push-shift-bracket-pattern
+  - id: a0-string-decoder-entrypoint
+- id: full-anti-static-obfuscator-preset
+  for:
+  - javascript
+  desc: Obfuscator output mangles, rotates and flattens
+  crit: suspicious
+  conf: 0.94
+  mbc: B0032
+  attack: T1027.002
+  all:
+  - id: metadata/lang/javascript-features::generated-name-or-state-syntax
+  - id: push-shift-bracket-pattern
+  - id: objectives/anti-static/obfuscation/syntax::js-while-switch-state-machine
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/package/testing/presence/fixture::test-filename-pattern
+  - id: metadata/package/testing/harness/runtime::obfuscated-mocked-network-test-harness
+  - id: metadata/build/minifier::intentional-javascript-obfuscator-build
+  - id: metadata/build/minifier::intentional-obfuscator-dist-artifact
+  - id: metadata/build/minifier::intentional-obfuscator-release-artifact
+  - id: well-known/lib/data/akshare/
   - id: encrypted-string-table-hides-imports
-    for: [javascript]
-    desc: Encrypted string table hides the module imports
-    crit: suspicious
-    conf: 0.94
-    mbc: B0032
-    attack: T1027.002
-    all:
-      - id: hex-name-mangling-with-string-table-rotation
-      - id: micro-behaviors/data/arithmetic::xor-modulo-loop-observation
-      - id: metadata/file/data-blob::high-average-string-entropy
-      - id: micro-behaviors/os/module/dynamic-load::node-computed-require-call
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/package/testing/presence/fixture::test-filename-pattern
-      - id: metadata/package/testing/harness/runtime::obfuscated-mocked-network-test-harness
-      - id: metadata/build/minifier::intentional-javascript-obfuscator-build
-      - id: metadata/build/minifier::intentional-obfuscator-dist-artifact
-      - id: metadata/build/minifier::intentional-obfuscator-release-artifact
-
-  # The encrypted-table fact on its own, for the files the two composites above
-  # cannot reach. Both of those need a second signal -- a computed require() to
-  # hide, or a while/switch dispatcher -- and a leaf module that imports nothing
-  # and was flattened has neither. The table is still rc4-encrypted, so every
-  # literal in the file (paths, hosts, env var names, service names) is
-  # unreadable until the decoder runs, which is the whole reason the tier is
-  # suspicious. Without this base case a payload drops two full criticality
-  # tiers just by having no imports: in the sample that motivated this, three of
-  # ~50 uniformly obfuscated modules -- including the one that drives the OS
-  # keychain -- topped out at notable purely because they call no require().
-  - id: encrypted-string-table
-    for: [javascript]
-    desc: Encrypted string table hides every literal
-    crit: suspicious
-    conf: 0.92
-    mbc: B0032
-    attack: T1027.002
-    all:
-      - id: hex-name-mangling-with-string-table-rotation
-      - id: micro-behaviors/data/arithmetic::xor-modulo-loop-observation
-      # Separates encoded string-array entries from unrelated application XOR
-      # performed elsewhere in an otherwise plain-text obfuscated file.
-      - id: metadata/file/data-blob::high-average-string-entropy
-    unless:
-      # Canonical-report guard, same intent as the `unless:` the preset above
-      # carries: when a sharper sibling fires it reports this fact plus more,
-      # and one obfuscator invocation must not surface as two ids in the same
-      # directory. These two are the extra legs the siblings require, so their
-      # presence means a sibling has already reported.
-      - id: micro-behaviors/os/module/dynamic-load::node-computed-require-call
-      - id: objectives/anti-static/obfuscation/syntax::js-while-switch-state-machine
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/package/testing/presence/fixture::test-filename-pattern
-      - id: metadata/package/testing/harness/runtime::obfuscated-mocked-network-test-harness
-      - id: metadata/build/minifier::intentional-obfuscated-javascript-artifact-context
-      - id: well-known/tool/development/cli/dev-cli/guanghechen::obfuscated-cli
-
-  # Mangled-name string-array rotate: empty-condition for-loop, parseInt
-  # checksum, and push/shift sit on one obfuscator decoder line.
-  - id: for-try-parseint-array-rotate
-    for: [javascript]
-    desc: for(;;) try parseInt array rotate
-    crit: notable
-    conf: 0.92
-    attack: T1027.002
-    mbc: B0032
-    near_bytes: 2048
-    all:
-      - id: for-empty-cond-try
-      - id: try-if-parseint
-      - id: micro-behaviors/data/collection/array::js-array-push-shift-rotation
-    unless:
-      - id: metadata/build/
-
-  # Same encrypted-table fact as above when the obfuscator did not hex-prefix
-  # identifiers. `for(;;)try{parseInt; push(shift)}` plus the repeating-key
-  # XOR is RC4 stringArrayEncoding without `_0x` names.
-  - id: encrypted-string-table-plain-rotation
-    for: [javascript]
-    desc: RC4 string table with array rotation
-    crit: suspicious
-    conf: 0.92
-    mbc: B0032
-    attack: T1027.002
-    all:
-      - id: for-try-parseint-array-rotate
-      - id: micro-behaviors/data/arithmetic::xor-modulo-loop-observation
-      - id: metadata/file/data-blob::high-average-string-entropy
-    unless:
-      - id: hex-name-mangling-with-string-table-rotation
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/package/testing/presence/fixture::test-filename-pattern
-      - id: metadata/package/testing/harness/runtime::obfuscated-mocked-network-test-harness
-      - id: metadata/build/minifier::intentional-obfuscated-javascript-artifact-context
-
-  # Some commercial obfuscator builds use ordinary short function names
-  # instead of _0x identifiers and rotate the table through arithmetic index
-  # expressions. The RC4 implementation plus encoded table data distinguishes
-  # that construction from normal arithmetic-heavy minified applications.
-  - id: rc4-arithmetic-string-table
-    for: [javascript]
-    desc: RC4 decoder fronts an arithmetic-indexed string table
-    crit: suspicious
-    conf: 0.93
-    mbc: B0032
-    attack: T1027.002
-    all:
-      - id: micro-behaviors/crypto/symmetric/stream/rc4::js-rc4-implementation
-      - id: metadata/file/encoded::large-base64-like-literal
-      - id: micro-behaviors/data/arithmetic::js-dense-subtraction
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/package/testing/presence/fixture::test-filename-pattern
-      - id: metadata/build/minifier::intentional-obfuscated-javascript-artifact-context
-
-  - id: full-obfuscator-io-toolkit
-    desc: JavaScript uses multiple obfuscator.io techniques
-    crit: notable
-    conf: 0.96
-    mbc: B0032
-    attack: T1027.002
-    all:
-      - id: metadata/lang/javascript-features::generated-name-or-state-syntax
-    any:
-      - id: objectives/anti-static/obfuscation/syntax::js-while-switch-state-machine
-      - id: objectives/anti-static/obfuscation/string/array::string-array-hex-index
-      - id: metadata/file/line::single-long-line-outlier
-    needs: 2
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/package/testing/presence/fixture::test-filename-pattern
-      - id: well-known/lib/cloud/box-extract-progress::box-extract-progress-context
-      - id: metadata/package/testing/harness/runtime::obfuscated-mocked-network-test-harness
-
-  # A custom Base64 alphabet is a clear encoding capability, but it is not
-  # evidence of a hidden payload: obfuscator.io's own decoder uses one.
-  - id: obfuscated-base64-codec
-    for: [javascript]
-    desc: Obfuscated JavaScript embeds a Base64 alphabet
-    crit: notable
-    conf: 0.9
-    attack: T1027.002
-    mbc: B0032
-    all:
-      - id: metadata/lang/javascript-features::generated-name-or-state-syntax
-      - id: micro-behaviors/data/encoding/base64::base64-alphabet
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-
-  - id: infinite-loop
-    desc: Obfuscated infinite loop (while(!![]) pattern)
-    crit: notable
-    conf: 0.9
-    attack: T1027
-    any:
-      - id: metadata/lang/javascript-features::js-obfuscator-while-loop
-      - id: while-not-zero
-      - id: while-not-space-zero
-      - id: while-double-bang-and
-      - id: for-boolean-coercion
-    unless:
-      - id: metadata/package/files/dependency::vsix-bundled-output-path
-      - id: metadata/file/format/source-map::sourcemap-context
-      - id: metadata/build/
-      # (evolver name allowlist removed -- see file header)
-  - id: string-array-rotation
-    desc: String array with rotation decoder
-    crit: notable
-    conf: 0.9
-    attack: T1027
-    any:
-      - id: push-shift-pattern
-      - id: push-shift-bracket-pattern
-      - id: shift-push-pattern
-      - id: array-shuffle-algorithm
-      - id: for-try-parseint-array-rotate
-    unless:
-      - id: metadata/package/files/dependency::vsix-bundled-output-path
-      - id: metadata/file/format/source-map::sourcemap-context
-      - id: metadata/build/
-      # (evolver name allowlist removed -- see file header)
-  - id: decoder-loop-keyword-triad
-    desc: Infinite loop decoder with parseInt + push/shift keywords
-    crit: notable
-    conf: 0.92
-    attack: T1027.002
-    mbc: B0032
-    all:
-      - id: infinite-loop
-      - id: metadata/file/literal::push-string-literal
-      - id: metadata/file/literal::bracketed-shift-string
-    any:
-      - id: parseint-decoder-loop
-      - id: parseint-decoder-loop-and-gate
-    unless:
-      - id: metadata/build/
-      # (evolver name allowlist removed -- see file header)
-  # The string-array rotation decoder is the structural signature of
-  # javascript-obfuscator output. It is anti-analysis (T1027) but NOT proof of
-  # malicious intent on its own — commercial software obfuscates its own source
-  # with the identical tool. Obfuscation structure alone is `notable`;
-  # suspicious or hostile is reserved for obfuscation paired with a stronger
-  # boundary-crossing or malicious-payload leg
-  # (eval of decoded bytes, global require-alias trojan, etc. — see
-  # whitespace-hidden-eval / global-alias-obfuscation below).
-  - id: advanced-array-shuffling
-    desc: Array rotation inside an obfuscated loop
-    crit: notable
-    conf: 0.95
-    attack: T1027.002
-    all:
-      - id: infinite-loop
-      - id: string-array-rotation
-    any:
-      - id: "metadata/lang/source/syntax/assignment::indexed-value-copy-cluster"
-      - id: string-array-rotation
-      - id: decoder-loop-keyword-triad
-    unless:
-      - id: metadata/build/
-      # (evolver name allowlist removed -- see file header)
-  - id: commercial-obfuscation
-    desc: Commercial obfuscator patterns
-    crit: suspicious
-    conf: 0.92
-    attack: T1027.002
-    mbc: B0032
-    any:
-      - id: packer-eval-pattern
-      - id: jsjiami-watermark
-  - id: jsjiami-hex-obfuscation
-    desc: jsjiami watermark with hex identifier mangling
-    crit: suspicious
-    conf: 0.96
-    attack: T1027.002
-    mbc: B0032
-    all:
-      - id: jsjiami-watermark
-      - id: metadata/lang/source/declaration::hex-identifier-declarations
-  - id: obfuscated-executable-download-staging
-    desc: Mangled rotation hides an executable download
-    crit: hostile
-    conf: 0.95
-    attack: T1027.002,T1204.002
-    for: [html, javascript]
-    all:
-      - id: push-shift-bracket-pattern
-      - id: metadata/lang/source/declaration::hex-identifier-declarations
-      - id: micro-behaviors/data/decode/base64::base64-decode-call-text
-      - id: objectives/credential-access/phishing/captive-portal::download-executable-link
+  - id: javascript-obfuscator-string-array-runtime
+- id: obfuscator-mangled-rotated-numeric-preset
+  for:
+  - javascript
+  desc: Obfuscator mangles, rotates and inflates numbers
+  crit: suspicious
+  conf: 0.93
+  mbc: B0032
+  attack: T1027.002
+  all:
+  - id: metadata/lang/javascript-features::generated-name-or-state-syntax
+  - id: push-shift-bracket-pattern
+  - id: micro-behaviors/data/arithmetic::js-dense-subtraction
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/package/testing/presence/fixture::test-filename-pattern
+  - id: metadata/package/testing/harness/runtime::obfuscated-mocked-network-test-harness
+  - id: metadata/build/minifier::intentional-javascript-obfuscator-build
+  - id: metadata/build/minifier::intentional-obfuscator-dist-artifact
+  - id: metadata/build/minifier::intentional-obfuscator-release-artifact
+  - id: well-known/lib/data/akshare::akshare-financial-data-library
+  - id: full-anti-static-obfuscator-preset
+  - id: encrypted-string-table-hides-imports
+- id: encrypted-string-table-hides-imports
+  for:
+  - javascript
+  desc: Encrypted string table hides the module imports
+  crit: suspicious
+  conf: 0.94
+  mbc: B0032
+  attack: T1027.002
+  all:
   - id: hex-name-mangling-with-string-table-rotation
-    desc: Hex identifiers beside push/shift rotation patterns
-    crit: notable
-    conf: 0.94
-    attack: T1027.002
-    mbc: B0032
-    all:
-      - id: metadata/lang/source/declaration::hex-identifier-declarations
-    any:
-      - id: push-shift-bracket-pattern
-      - id: push-shift-pattern
-      - id: micro-behaviors/data/collection/array::js-array-push-shift-rotation
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/package/testing/harness/runtime::obfuscated-mocked-network-test-harness
-  # Permutation-based obfuscation: indexed charAt/charCodeAt array writes plus
-  # split/join normalization. A bare string split is ordinary library/parser
-  # code and is not an obfuscation signal, so it is intentionally excluded.
+  - id: micro-behaviors/data/arithmetic::xor-modulo-loop-observation
+  - id: metadata/file/data-blob::high-average-string-entropy
+  - id: micro-behaviors/os/module/dynamic-load::node-computed-require-call
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/package/testing/presence/fixture::test-filename-pattern
+  - id: metadata/package/testing/harness/runtime::obfuscated-mocked-network-test-harness
+  - id: metadata/build/minifier::intentional-javascript-obfuscator-build
+  - id: metadata/build/minifier::intentional-obfuscator-dist-artifact
+  - id: metadata/build/minifier::intentional-obfuscator-release-artifact
+- id: encrypted-string-table
+  for:
+  - javascript
+  desc: Encrypted string table hides every literal
+  crit: suspicious
+  conf: 0.92
+  mbc: B0032
+  attack: T1027.002
+  all:
+  - id: hex-name-mangling-with-string-table-rotation
+  - id: micro-behaviors/data/arithmetic::xor-modulo-loop-observation
+  - id: metadata/file/data-blob::high-average-string-entropy
+  unless:
+  - id: micro-behaviors/os/module/dynamic-load::node-computed-require-call
+  - id: objectives/anti-static/obfuscation/syntax::js-while-switch-state-machine
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/package/testing/presence/fixture::test-filename-pattern
+  - id: metadata/package/testing/harness/runtime::obfuscated-mocked-network-test-harness
+  - id: metadata/build/minifier::intentional-obfuscated-javascript-artifact-context
+  - id: well-known/tool/development/cli/dev-cli/guanghechen::obfuscated-cli
+- id: for-try-parseint-array-rotate
+  for:
+  - javascript
+  desc: for(;;) try parseInt array rotate
+  crit: notable
+  conf: 0.92
+  attack: T1027.002
+  mbc: B0032
+  near_bytes: 2048
+  all:
+  - id: for-empty-cond-try
+  - id: try-if-parseint
+  - id: micro-behaviors/data/collection/array::js-array-push-shift-rotation
+  unless:
+  - id: metadata/build
+- id: encrypted-string-table-plain-rotation
+  for:
+  - javascript
+  desc: RC4 string table with array rotation
+  crit: suspicious
+  conf: 0.92
+  mbc: B0032
+  attack: T1027.002
+  all:
+  - id: for-try-parseint-array-rotate
+  - id: micro-behaviors/data/arithmetic::xor-modulo-loop-observation
+  - id: metadata/file/data-blob::high-average-string-entropy
+  unless:
+  - id: hex-name-mangling-with-string-table-rotation
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/package/testing/presence/fixture::test-filename-pattern
+  - id: metadata/package/testing/harness/runtime::obfuscated-mocked-network-test-harness
+  - id: metadata/build/minifier::intentional-obfuscated-javascript-artifact-context
+- id: rc4-arithmetic-string-table
+  for:
+  - javascript
+  desc: RC4 decoder fronts an arithmetic-indexed string table
+  crit: suspicious
+  conf: 0.93
+  mbc: B0032
+  attack: T1027.002
+  all:
+  - id: micro-behaviors/crypto/symmetric/stream/rc4::js-rc4-implementation
+  - id: metadata/file/encoded::large-base64-like-literal
+  - id: micro-behaviors/data/arithmetic::js-dense-subtraction
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/package/testing/presence/fixture::test-filename-pattern
+  - id: metadata/build/minifier::intentional-obfuscated-javascript-artifact-context
+- id: full-obfuscator-io-toolkit
+  desc: JavaScript uses multiple obfuscator.io techniques
+  crit: notable
+  conf: 0.96
+  mbc: B0032
+  attack: T1027.002
+  all:
+  - id: metadata/lang/javascript-features::generated-name-or-state-syntax
+  any:
+  - id: objectives/anti-static/obfuscation/syntax::js-while-switch-state-machine
+  - id: objectives/anti-static/obfuscation/string/array::string-array-hex-index
+  - id: metadata/file/line::single-long-line-outlier
+  needs: 2
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/package/testing/presence/fixture::test-filename-pattern
+  - id: well-known/lib/cloud/box-extract-progress::box-extract-progress-context
+  - id: metadata/package/testing/harness/runtime::obfuscated-mocked-network-test-harness
+- id: obfuscated-base64-codec
+  for:
+  - javascript
+  desc: Obfuscated JavaScript embeds a Base64 alphabet
+  crit: notable
+  conf: 0.9
+  attack: T1027.002
+  mbc: B0032
+  all:
+  - id: metadata/lang/javascript-features::generated-name-or-state-syntax
+  - id: micro-behaviors/data/encoding/base64::base64-alphabet
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+- id: infinite-loop
+  desc: Obfuscated infinite loop (while(!![]) pattern)
+  crit: notable
+  conf: 0.9
+  attack: T1027
+  any:
+  - id: metadata/lang/javascript-features::js-obfuscator-while-loop
+  - id: while-not-zero
+  - id: while-not-space-zero
+  - id: while-double-bang-and
+  - id: for-boolean-coercion
+  unless:
+  - id: metadata/package/files/dependency::vsix-bundled-output-path
+  - id: metadata/file/format/source-map::sourcemap-context
+  - id: metadata/build
+- id: string-array-rotation
+  desc: String array with rotation decoder
+  crit: notable
+  conf: 0.9
+  attack: T1027
+  any:
+  - id: push-shift-pattern
+  - id: push-shift-bracket-pattern
+  - id: shift-push-pattern
+  - id: array-shuffle-algorithm
+  - id: for-try-parseint-array-rotate
+  unless:
+  - id: metadata/package/files/dependency::vsix-bundled-output-path
+  - id: metadata/file/format/source-map::sourcemap-context
+  - id: metadata/build
+- id: decoder-loop-keyword-triad
+  desc: Infinite loop decoder with parseInt + push/shift keywords
+  crit: notable
+  conf: 0.92
+  attack: T1027.002
+  mbc: B0032
+  all:
+  - id: infinite-loop
+  - id: metadata/file/literal::push-string-literal
+  - id: metadata/file/literal::bracketed-shift-string
+  any:
+  - id: parseint-decoder-loop
+  - id: parseint-decoder-loop-and-gate
+  unless:
+  - id: metadata/build
+- id: advanced-array-shuffling
+  desc: Array rotation inside an obfuscated loop
+  crit: notable
+  conf: 0.95
+  attack: T1027.002
+  all:
+  - id: infinite-loop
+  - id: string-array-rotation
+  any:
+  - id: metadata/lang/source/syntax/assignment::indexed-value-copy-cluster
+  - id: string-array-rotation
+  - id: decoder-loop-keyword-triad
+  unless:
+  - id: metadata/build
+- id: commercial-obfuscation
+  desc: Commercial obfuscator patterns
+  crit: suspicious
+  conf: 0.92
+  attack: T1027.002
+  mbc: B0032
+  any:
+  - id: packer-eval-pattern
+  - id: jsjiami-watermark
+- id: jsjiami-hex-obfuscation
+  desc: jsjiami watermark with hex identifier mangling
+  crit: suspicious
+  conf: 0.96
+  attack: T1027.002
+  mbc: B0032
+  all:
+  - id: jsjiami-watermark
+  - id: metadata/lang/source/declaration::hex-identifier-declarations
+- id: obfuscated-executable-download-staging
+  desc: Mangled rotation hides an executable download
+  crit: hostile
+  conf: 0.95
+  attack: T1027.002,T1204.002
+  for:
+  - html
+  - javascript
+  all:
+  - id: push-shift-bracket-pattern
+  - id: metadata/lang/source/declaration::hex-identifier-declarations
+  - id: micro-behaviors/data/decode/base64::base64-decode-call-text
+  - id: objectives/credential-access/phishing/captive-portal::download-executable-link
+- id: hex-name-mangling-with-string-table-rotation
+  desc: Hex identifiers beside push/shift rotation patterns
+  crit: notable
+  conf: 0.94
+  attack: T1027.002
+  mbc: B0032
+  all:
+  - id: metadata/lang/source/declaration::hex-identifier-declarations
+  any:
+  - id: push-shift-bracket-pattern
+  - id: push-shift-pattern
+  - id: micro-behaviors/data/collection/array::js-array-push-shift-rotation
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/package/testing/harness/runtime::obfuscated-mocked-network-test-harness
+- id: permutation-obfuscation
+  for:
+  - javascript
+  desc: Permutation-based string obfuscation
+  crit: suspicious
+  conf: 0.92
+  attack: T1027.002
+  mbc: B0032
+  all:
+  - id: micro-behaviors/data/encode/char-code::charcode-byte-array-assignment
+  - id: micro-behaviors/data/string/access::js-charat-lookup
+  any:
+  - id: micro-behaviors/data/string/replace::repeated-split-join-removal
+  unless:
+  - id: metadata/build/bundler/runtime::turbopack-bundled
+  - id: metadata/build/bundler/asset::js-large-module-bundle
+  - id: well-known/lib/testing/testing-library/
+  - id: well-known/lib/media/tonal::tonal-js-library-bundle
+  - id: well-known/lib/format/sheetjs-xlsx::bundled-source-context
+  - id: well-known/lib/format/sheetjs-xlsx::package-context
+  - id: well-known/lib/format/sheetjs-xlsx::vendor-bundle-context
+  near_bytes: 600
+- id: strong-js-obfuscation
+  desc: Strong JavaScript obfuscation indicators
+  crit: notable
+  conf: 0.95
+  attack: T1027.002
+  mbc: B0032
+  needs: 2
+  any:
+  - id: metadata/lang/source/declaration::hex-identifier-declarations
+  - id: metadata/lang/source/declaration::dollar-underscore-declarations
+  - id: commercial-obfuscation
+  - id: advanced-array-shuffling
+  - id: metadata/file/line::long-inline-whitespace-run
   - id: permutation-obfuscation
-    for: [javascript]
-    desc: Permutation-based string obfuscation
-    crit: suspicious
-    conf: 0.92
-    attack: T1027.002
-    mbc: B0032
-    all:
-      - id: micro-behaviors/data/encode/char-code::charcode-byte-array-assignment
-      - id: micro-behaviors/data/string/access::js-charat-lookup
-    any:
-      - id: micro-behaviors/data/string/replace::repeated-split-join-removal
-    unless:
-      - id: metadata/build/bundler/runtime::turbopack-bundled
-      - id: metadata/build/bundler/asset::js-large-module-bundle
-      - id: well-known/lib/testing/testing-library/
-      - id: well-known/lib/media/tonal::tonal-js-library-bundle
-      - id: well-known/lib/format/sheetjs-xlsx::bundled-source-context
-      - id: well-known/lib/format/sheetjs-xlsx::package-context
-      - id: well-known/lib/format/sheetjs-xlsx::vendor-bundle-context
-    near_bytes: 600
-  # Stacked obfuscation indicators (name-mangling + array-shuffle + commercial
-  # patterns). Strong anti-analysis signal, but obfuscation density alone does
-  # not establish malicious intent — kept `notable`. Suspicious or hostile escalation
-  # happens via the payload-bearing composites below (require/eval legs).
-  - id: strong-js-obfuscation
-    desc: Strong JavaScript obfuscation indicators
-    crit: notable
-    conf: 0.95
-    attack: T1027.002
-    mbc: B0032
-    needs: 2
-    any:
-      - id: metadata/lang/source/declaration::hex-identifier-declarations
-      - id: metadata/lang/source/declaration::dollar-underscore-declarations
-      - id: commercial-obfuscation
-      - id: advanced-array-shuffling
-      - id: metadata/file/line::long-inline-whitespace-run
-      - id: permutation-obfuscation
-      - id: micro-behaviors/data/property/assign::js-global-require-alias
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/package/testing/harness/runtime::obfuscated-mocked-network-test-harness
-  # This combination establishes layered anti-static transformation, not a
-  # supply-chain trojan: there is no package/lifecycle boundary, network stage,
-  # or hostile payload in any leg. Install-hook composites may reference this
-  # signal and add the missing supply-chain context.
-  - id: name-mangled-concealed-runtime
-    desc: Name mangling with concealed runtime content
-    crit: suspicious
-    conf: 0.95
-    attack: T1027.002
-    mbc: B0032
-    all:
-      - id: metadata/lang/javascript-features::generated-name-or-state-syntax
-    any:
-      - id: objectives/anti-static/obfuscation/encoding/content::encoded-eval
-      - id: micro-behaviors/metaprogramming/generation::embedded-eval-variable-source
-      - id: objectives/anti-static/obfuscation/string/array::string-array-hex-index
-      - id: objectives/anti-static/obfuscation/string/encoding::js-b64-encoded-require
-    unless:
-      - id: metadata/package/testing/harness/fixture::jsimplifier-benignjs-corpus-path
-      - id: metadata/package/files/dependency::vsix-bundled-output-path
-      - id: metadata/file/format/source-map::sourcemap-context
-      - id: well-known/tool/packaging/dean-edwards-packer::dean-edwards
-      - id: metadata/build/minifier::intentional-obfuscated-javascript-artifact-context
-  # Whitespace-hidden obfuscated eval
-  - id: whitespace-hidden-eval
-    desc: Obfuscated code hidden behind whitespace padding
-    crit: suspicious
-    conf: 0.95
-    attack: T1027.002
-    mbc: B0032
-    # A shell `eval` plus aligned package metadata is not JavaScript
-    # obfuscation. Keep this composite specific to JavaScript syntax/files.
-    for: [javascript]
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/package/testing/harness/fixture::jsimplifier-benignjs-corpus-path
-      - id: metadata/file/format/source-map::sourcemap-context
-      - id: well-known/tool/sysadmin/alpine-packages/source-artifact::alpine-libcxx-header
-      - id: objectives/execution/payload/script-eval::obfuscated-http-xor-inline-stage-loader
-    all:
-      - id: metadata/file/line::long-inline-whitespace-run
-      - id: inline-whitespace-before-execution
-    any:
-      - id: permutation-obfuscation
-      # Require a concrete interpreter capability. Referencing the broad
-      # objective directory also matched harmless `obj.code` members in
-      # C/CUDA headers that the fact engine misclassified as JavaScript.
-      - id: micro-behaviors/process/interpreter/eval/
-      - id: objectives/execution/interpreter/eval/remote/
-      - id: micro-behaviors/process/interpreter/vm::vm-runInContext-call
-      - id: objectives/anti-static/obfuscation/string/charcode-url::dense-fromcharcode
-  # Global aliasing plus obfuscation is suspicious concealment. Malicious
-  # intent comes from payload-bearing composites that consume this signal.
-  - id: global-alias-obfuscation
-    for: [javascript]
-    desc: Global require/module aliasing with obfuscation
-    crit: suspicious
-    conf: 0.95
-    attack: T1027.002
-    mbc: B0032
-    all:
-      - id: micro-behaviors/data/property/assign::js-global-require-alias
-    any:
-      - id: permutation-obfuscation
-      - id: metadata/file/line::long-inline-whitespace-run
-      - id: objectives/anti-static/obfuscation/string/reconstruct::js-string-deobfuscation
-      - id: metadata/lang/javascript-features::generated-name-or-state-syntax
-  - id: global-require-permutation-obfuscation
-    for: [javascript]
-    desc: Global require alias with character permutation
-    crit: suspicious
-    conf: 0.96
-    attack: T1027.002
-    mbc: B0024
-    all:
-      - id: micro-behaviors/data/property/assign::js-global-require-alias
-      - id: objectives/anti-static/obfuscation/eval/loader::char-permutation-reassembler
-  - id: obfuscated-cursor-credential-reader
-    for: [javascript]
-    desc: Obfuscated Cursor credential reader
-    crit: hostile
-    conf: 0.99
-    attack: T1027,T1552.001,T1005
-    all:
-      - id: objectives/credential-access/dev-tools/cursor::cursor-auth-access-token-key
-      - id: objectives/credential-access/dev-tools/cursor::cursor-auth-refresh-token-key
-      - id: objectives/credential-access/dev-tools/cursor::cursor-auth-sqlite-reader-function
-      - id: push-shift-bracket-pattern
-      - id: micro-behaviors/process/create/shell/bridge::child-process-compiled-computed-call
-
-  # Bundler output that was then run through the string-array transform: a
-  # webpackChunk JSONP global (a cross-chunk name webpack cannot rename) in a
-  # file that also carries the obfuscator's index-offset accessor. The pairing
-  # says the obfuscation was a build step applied over emitted chunks rather
-  # than a transform someone wrapped around a payload, which matters for rules
-  # that read a computed member expression as concealment: at this point every
-  # member access in the file is computed, including the ordinary ones.
-  - id: obfuscated-webpack-chunk-output
-    desc: String-table obfuscator applied over webpack chunk
-    crit: notable
-    conf: 0.95
-    attack: T1027.002
-    mbc: B0032
-    for: [javascript, typescript]
-    all:
-      - id: string-array-offset-index-decoder
-      - id: metadata/build/bundler/runtime::js-webpack-chunk-global
-  # Substitution-cipher JSFuck loader: Boolean-coercion character access
-  # rebuilds code text while a fromCharCode alphabet table supplies the
-  # characters coercion cannot spell, and the decoded string is invoked on
-  # the spot through a computed call. Mangling plus alphabet plus staged
-  # invocation names the concealed loader rather than the obfuscation alone.
+  - id: micro-behaviors/data/property/assign::js-global-require-alias
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/package/testing/harness/runtime::obfuscated-mocked-network-test-harness
+- id: name-mangled-concealed-runtime
+  desc: Name mangling with concealed runtime content
+  crit: suspicious
+  conf: 0.95
+  attack: T1027.002
+  mbc: B0032
+  all:
+  - id: metadata/lang/javascript-features::generated-name-or-state-syntax
+  any:
+  - id: objectives/anti-static/obfuscation/encoding/content::encoded-eval
+  - id: micro-behaviors/metaprogramming/generation::embedded-eval-variable-source
+  - id: objectives/anti-static/obfuscation/string/array::string-array-hex-index
+  - id: objectives/anti-static/obfuscation/string/encoding::js-b64-encoded-require
+  unless:
+  - id: metadata/package/testing/harness/fixture::jsimplifier-benignjs-corpus-path
+  - id: metadata/package/files/dependency::vsix-bundled-output-path
+  - id: metadata/file/format/source-map::sourcemap-context
+  - id: well-known/tool/packaging/dean-edwards-packer::dean-edwards
+  - id: metadata/build/minifier::intentional-obfuscated-javascript-artifact-context
+- id: whitespace-hidden-eval
+  desc: Obfuscated code hidden behind whitespace padding
+  crit: suspicious
+  conf: 0.95
+  attack: T1027.002
+  mbc: B0032
+  for:
+  - javascript
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/package/testing/harness/fixture::jsimplifier-benignjs-corpus-path
+  - id: metadata/file/format/source-map::sourcemap-context
+  - id: well-known/tool/sysadmin/alpine-packages/source-artifact::alpine-libcxx-header
+  - id: objectives/execution/payload/script-eval::obfuscated-http-xor-inline-stage-loader
+  all:
+  - id: metadata/file/line::long-inline-whitespace-run
+  - id: inline-whitespace-before-execution
+  any:
+  - id: permutation-obfuscation
+  - id: micro-behaviors/process/interpreter/eval
+  - id: objectives/execution/interpreter/eval/remote/
+  - id: micro-behaviors/process/interpreter/vm::vm-runInContext-call
+  - id: objectives/anti-static/obfuscation/string/charcode-url::dense-fromcharcode
+- id: global-alias-obfuscation
+  for:
+  - javascript
+  desc: Global require/module aliasing with obfuscation
+  crit: suspicious
+  conf: 0.95
+  attack: T1027.002
+  mbc: B0032
+  all:
+  - id: micro-behaviors/data/property/assign::js-global-require-alias
+  any:
+  - id: permutation-obfuscation
+  - id: metadata/file/line::long-inline-whitespace-run
+  - id: objectives/anti-static/obfuscation/string/reconstruct::js-string-deobfuscation
+  - id: metadata/lang/javascript-features::generated-name-or-state-syntax
+- id: global-require-permutation-obfuscation
+  for:
+  - javascript
+  desc: Global require alias with character permutation
+  crit: suspicious
+  conf: 0.96
+  attack: T1027.002
+  mbc: B0024
+  all:
+  - id: micro-behaviors/data/property/assign::js-global-require-alias
+  - id: objectives/anti-static/obfuscation/eval/loader::char-permutation-reassembler
+- id: obfuscated-cursor-credential-reader
+  for:
+  - javascript
+  desc: Obfuscated Cursor credential reader
+  crit: hostile
+  conf: 0.99
+  attack: T1027,T1552.001,T1005
+  all:
+  - id: objectives/credential-access/dev-tools/cursor::cursor-auth-access-token-key
+  - id: objectives/credential-access/dev-tools/cursor::cursor-auth-refresh-token-key
+  - id: objectives/credential-access/dev-tools/cursor::cursor-auth-sqlite-reader-function
+  - id: push-shift-bracket-pattern
+  - id: micro-behaviors/process/create/shell/bridge::child-process-compiled-computed-call
+- id: obfuscated-webpack-chunk-output
+  desc: String-table obfuscator applied over webpack chunk
+  crit: notable
+  conf: 0.95
+  attack: T1027.002
+  mbc: B0032
+  for:
+  - javascript
+  - typescript
+  all:
+  - id: string-array-offset-index-decoder
+  - id: metadata/build/bundler/runtime::js-webpack-chunk-global

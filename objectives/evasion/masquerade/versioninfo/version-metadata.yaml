@@ -1,495 +1,401 @@
 defaults:
   attack: T1036.005
   for:
-    - pe
+  - pe
   platforms:
-    - windows
+  - windows
 traits:
-  - id: lowercase-underscore-internal-name
-    desc: Lowercase underscore internal name
-    crit: component
-    conf: 0.82
-    if:
-      type: text
-      regex: '^[a-z]{4,12}_[a-z]{4,12}$'
-      section: .rsrc
-  - id: word-salad-version-copyright
-    desc: Word-salad LegalCopyright metadata
-    crit: suspicious
-    conf: 0.84
-    if:
-      type: value
-      path: pe.version.copyright
-      regex: '^[a-z]{4,20}( [a-z]{4,20}){2,4}$'
-      not:
-        - regex: '(?i)copyright'
-        - regex: '(?i)rights?'
-        - regex: '(?i)reserved'
-        - regex: '(?i)inc\.?'
-        - regex: '(?i)corp\.?'
-        - regex: '(?i)company'
-        - regex: '(?i)ltd\.?'
-        - regex: '(?i)llc'
-  # Crypter stubs frequently XOR/shift the VERSIONINFO string table, leaving
-  # CompanyName/ProductName/FileDescription as symbol-garbage that no legitimate
-  # vendor field ever contains. The chars `< > = @ ; { } |` essentially never
-  # appear in a real company/product/description; requiring TWO of them in one
-  # field (via the composite below needing two scrambled fields) keeps this
-  # near-zero-FP. Note: only catches symbol-range scrambles — alphanumeric-range
-  # scrambles need the planned pe.version.identity_entropy metric.
-  - id: symbol-garbage-company
-    desc: 'CompanyName field is symbol-garbage'
-    crit: component
-    conf: 0.85
-    if:
-      type: value
-      path: pe.version.company
-      regex: '[<>=@;{}|][^<>=@;{}|]*[<>=@;{}|]'
-      not:
-        - regex: '(?i)(https?://|www\.)'
-  - id: symbol-garbage-product
-    desc: 'ProductName field is symbol-garbage'
-    crit: component
-    conf: 0.85
-    if:
-      type: value
-      path: pe.version.product_name
-      regex: '[<>=@;{}|][^<>=@;{}|]*[<>=@;{}|]'
-      not:
-        - regex: '(?i)(https?://|www\.)'
-  - id: symbol-garbage-description
-    desc: 'FileDescription field is symbol-garbage'
-    crit: component
-    conf: 0.85
-    if:
-      type: value
-      path: pe.version.description
-      regex: '[<>=@;{}|][^<>=@;{}|]*[<>=@;{}|]'
-      not:
-        - regex: '(?i)(https?://|www\.)'
-  - id: random-alnum-company-token
-    desc: Opaque alphanumeric CompanyName token
-    crit: component
-    conf: 0.9
-    if:
-      type: value
-      path: pe.version.company
-      regex: '^[A-Za-z0-9]{12,24}$'
-  - id: dotnet-bcl-type-version-product
-    desc: .NET BCL type used as product name
-    crit: notable
-    conf: 0.86
-    if:
-      type: value
-      path: pe.version.product_name
-      exact: BitConverter
-  - id: dotnet-bcl-type-original-filename
-    desc: .NET BCL type used as original filename
-    crit: notable
-    conf: 0.86
-    if:
-      type: value
-      path: pe.version.original_filename
-      regex: '^CallConv\w+\.exe$'
-  - id: opaque-original-filename-token
-    desc: Opaque tokenized original filename identity
-    crit: notable
-    conf: 0.9
-    if:
-      type: value
-      path: pe.version.original_filename
-      # Two or more long uppercase/alphanumeric blocks are enough to be an
-      # opaque generated identity.  The old three-block floor missed packed
-      # loaders using the common PREFIX_TOKEN.exe form; benign context is
-      # handled by the consuming packed-loader composites.
-      regex: '^[A-Z0-9]{4,}(_[A-Z0-9]{4,}){1,}\.exe$'
-    unless:
-      # SDIO OriginalFilename uses PRODUCT_REVnnn.exe packaging while ProductName
-      # remains the real human-readable product string.
-      - id: well-known/app/utility/sdio::sdio-official-context
-  # SilverFox/Atlas-style builders fill ProductName/InternalName with a single
-  # random alphanumeric token (no spaces, no vendor words). Catches future
-  # garbled-identity samples that avoid symbol-garbage charsets.
-  # Beebone/Vobfus-style: short all-lowercase ProductName / OriginalFilename
-  # stored as UTF-16LE in the VERSIONINFO string table.
-  - id: short-lowercase-product-token
-    desc: Wide ProductName short lowercase token
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      regex: 'P\x00r\x00o\x00d\x00u\x00c\x00t\x00N\x00a\x00m\x00e\x00(\x00\x00)+([a-z]\x00){4,8}'
-
-  - id: short-lowercase-wide-exe-name
-    desc: Short lowercase wide .exe version name
-    crit: notable
-    conf: 0.9
-    if:
-      type: text
-      regex: '([a-z]\x00){5,8}\.\x00e\x00x\x00e\x00'
-
-  - id: opaque-alnum-internal-name
-    desc: InternalName is opaque alphanumeric token
-    crit: notable
-    conf: 0.88
-    unless:
-      - id: metadata/signed/leaf::adobe-systems-incorporated
-    if:
-      type: value
-      path: pe.version.internal_name
-      regex: '^[A-Za-z][A-Za-z0-9]{2,5}[0-9][A-Za-z0-9]{0,5}[0-9][A-Za-z0-9]{2,5}$'
-      not:
-        - regex: '(?i)^(Microsoft|Windows|Setup|Install|Update|Helper|Service|Application|Program|Client|Server|Manager|Driver|Runtime|Framework|Atlas|Steam|Adobe|Google|Oracle|Python|Node)'
-  - id: atlas-archive-version-comment
-    desc: Comments field references Atlas Archive
-    crit: suspicious
-    conf: 0.95
-    if:
-      type: value
-      path: pe.version.comments
-      regex: '(?i)\bAtlas\s+Archive\b'
-  # GuLoader/Sonbokli-style NSIS droppers often ship two-word lowercase
-  # Comments/FileDescription and a single opaque LegalCopyright token instead
-  # of the longer 3–5 word copyright salad. Require two fields via the
-  # short-word-salad-versioninfo composite to keep standalone FP low.
-  - id: word-salad-version-comments-pair
-    desc: Two-word nonsense Comments metadata
-    crit: component
-    conf: 0.85
-    if:
-      type: value
-      path: pe.version.comments
-      regex: '^[a-z]{5,20} [a-z]{5,20}$'
-      not:
-        - regex: '(?i)(copyright|rights|reserved|license|version|build|debug|release|http|www)'
-  - id: word-salad-version-description-pair
-    desc: Two-word nonsense FileDescription
-    crit: component
-    conf: 0.85
-    if:
-      type: value
-      path: pe.version.description
-      regex: '^[a-z]{5,20} [a-z]{5,20}$'
-      not:
-        - regex: '(?i)(copyright|rights|reserved|install|setup|update|helper|service|application|program|client|server|manager|driver|runtime|framework|microsoft|windows)'
-  - id: opaque-single-token-copyright
-    desc: Single opaque lowercase LegalCopyright token
-    crit: component
-    conf: 0.8
-    if:
-      type: value
-      path: pe.version.copyright
-      regex: '^[a-z]{7,20}$'
-      not:
-        - regex: '(?i)(copyright|rights|reserved|inc|corp|ltd|llc|company)'
-
-  # The rest of the VERSIONINFO string table in the same throwaway-token form as
-  # the LegalCopyright atom above. Builders have to populate this table: an
-  # absent version resource is itself a flag, and a present one buys a downgrade
-  # in several rules across this corpus (see the credential-store note in
-  # objectives/credential-access/credential-manager/store-api/windows.yaml). So
-  # the generator fills each field with one anonymous lowercase word -- observed
-  # values run to `zzzzzz`, `aaaaaaa`, `eeeeeee`, `tttttttt`.
-  #
-  # Each atom is a component because one such field proves nothing: a small
-  # honest build really can leave a bare token in Comments or LegalTrademarks.
-  # What no authored resource does is leave FOUR of six independent fields that
-  # way, which is what the composite below requires. The charset is deliberately
-  # narrow -- no digits, no spaces, no dot -- so an OriginalFilename only matches
-  # when it is not even a filename, and a ProductName only when it is a single
-  # unpunctuated word.
-  - id: opaque-lowercase-original-filename
-    desc: OriginalFilename is a bare lowercase word
-    crit: component
-    conf: 0.85
-    if:
-      type: value
-      path: pe.version.original_filename
-      regex: '^[a-z]{4,20}$'
-      not:
-        - regex: '(?i)^(setup|install|installer|update|updater)$'
-        - regex: '(?i)^(launcher|uninstall|helper|service)$'
-
-  - id: opaque-lowercase-internal-name
-    desc: InternalName is a bare lowercase word
-    crit: component
-    conf: 0.85
-    if:
-      type: value
-      path: pe.version.internal_name
-      regex: '^[a-z]{4,20}$'
-      not:
-        - regex: '(?i)^(setup|install|installer|update|updater)$'
-        - regex: '(?i)^(launcher|uninstall|helper|service)$'
-
-  - id: opaque-lowercase-product-name
-    desc: ProductName is a bare lowercase word
-    crit: component
-    conf: 0.85
-    if:
-      type: value
-      path: pe.version.product_name
-      regex: '^[a-z]{4,20}$'
-      not:
-        - regex: '(?i)^(setup|install|installer|update|updater)$'
-        - regex: '(?i)^(launcher|uninstall|helper|service|python|node)$'
-
-  - id: opaque-lowercase-trademarks
-    desc: LegalTrademarks is a bare lowercase word
-    crit: component
-    conf: 0.85
-    if:
-      type: value
-      path: pe.version.trademarks
-      regex: '^[a-z]{5,20}$'
-      not:
-        - regex: '(?i)(trademark|registered|reserved|rights)'
-
-  - id: opaque-lowercase-comments
-    desc: Comments field is a bare lowercase word
-    crit: component
-    conf: 0.85
-    if:
-      type: value
-      path: pe.version.comments
-      regex: '^[a-z]{5,20}$'
-      not:
-        - regex: '(?i)^(release|debug|internal|beta|alpha|stable)$'
-        - regex: '(?i)^(freeware|shareware|opensource|none|unknown)$'
-
+- id: lowercase-underscore-internal-name
+  desc: Lowercase underscore internal name
+  crit: component
+  conf: 0.82
+  if:
+    type: text
+    regex: ^[a-z]{4,12}_[a-z]{4,12}$
+    section: .rsrc
+- id: word-salad-version-copyright
+  desc: Word-salad LegalCopyright metadata
+  crit: suspicious
+  conf: 0.84
+  if:
+    type: value
+    path: pe.version.copyright
+    regex: ^[a-z]{4,20}( [a-z]{4,20}){2,4}$
+    not:
+    - regex: (?i)copyright
+    - regex: (?i)rights?
+    - regex: (?i)reserved
+    - regex: (?i)inc\.?
+    - regex: (?i)corp\.?
+    - regex: (?i)company
+    - regex: (?i)ltd\.?
+    - regex: (?i)llc
+- id: symbol-garbage-company
+  desc: CompanyName field is symbol-garbage
+  crit: component
+  conf: 0.85
+  if:
+    type: value
+    path: pe.version.company
+    regex: '[<>=@;{}|][^<>=@;{}|]*[<>=@;{}|]'
+    not:
+    - regex: (?i)(https?://|www\.)
+- id: symbol-garbage-product
+  desc: ProductName field is symbol-garbage
+  crit: component
+  conf: 0.85
+  if:
+    type: value
+    path: pe.version.product_name
+    regex: '[<>=@;{}|][^<>=@;{}|]*[<>=@;{}|]'
+    not:
+    - regex: (?i)(https?://|www\.)
+- id: symbol-garbage-description
+  desc: FileDescription field is symbol-garbage
+  crit: component
+  conf: 0.85
+  if:
+    type: value
+    path: pe.version.description
+    regex: '[<>=@;{}|][^<>=@;{}|]*[<>=@;{}|]'
+    not:
+    - regex: (?i)(https?://|www\.)
+- id: random-alnum-company-token
+  desc: Opaque alphanumeric CompanyName token
+  crit: component
+  conf: 0.9
+  if:
+    type: value
+    path: pe.version.company
+    regex: ^[A-Za-z0-9]{12,24}$
+- id: dotnet-bcl-type-version-product
+  desc: .NET BCL type used as product name
+  crit: notable
+  conf: 0.86
+  if:
+    type: value
+    path: pe.version.product_name
+    exact: BitConverter
+- id: dotnet-bcl-type-original-filename
+  desc: .NET BCL type used as original filename
+  crit: notable
+  conf: 0.86
+  if:
+    type: value
+    path: pe.version.original_filename
+    regex: ^CallConv\w+\.exe$
+- id: opaque-original-filename-token
+  desc: Opaque tokenized original filename identity
+  crit: notable
+  conf: 0.9
+  if:
+    type: value
+    path: pe.version.original_filename
+    regex: ^[A-Z0-9]{4,}(_[A-Z0-9]{4,}){1,}\.exe$
+  unless:
+  - id: well-known/app/utility/sdio::sdio-official-context
+- id: short-lowercase-product-token
+  desc: Wide ProductName short lowercase token
+  crit: notable
+  conf: 0.9
+  if:
+    type: text
+    regex: P\x00r\x00o\x00d\x00u\x00c\x00t\x00N\x00a\x00m\x00e\x00(\x00\x00)+([a-z]\x00){4,8}
+- id: short-lowercase-wide-exe-name
+  desc: Short lowercase wide .exe version name
+  crit: notable
+  conf: 0.9
+  if:
+    type: text
+    regex: ([a-z]\x00){5,8}\.\x00e\x00x\x00e\x00
+- id: opaque-alnum-internal-name
+  desc: InternalName is opaque alphanumeric token
+  crit: notable
+  conf: 0.88
+  unless:
+  - id: metadata/signed/leaf::adobe-systems-incorporated
+  if:
+    type: value
+    path: pe.version.internal_name
+    regex: ^[A-Za-z][A-Za-z0-9]{2,5}[0-9][A-Za-z0-9]{0,5}[0-9][A-Za-z0-9]{2,5}$
+    not:
+    - regex: (?i)^(Microsoft|Windows|Setup|Install|Update|Helper|Service|Application|Program|Client|Server|Manager|Driver|Runtime|Framework|Atlas|Steam|Adobe|Google|Oracle|Python|Node)
+- id: atlas-archive-version-comment
+  desc: Comments field references Atlas Archive
+  crit: suspicious
+  conf: 0.95
+  if:
+    type: value
+    path: pe.version.comments
+    regex: (?i)\bAtlas\s+Archive\b
+- id: word-salad-version-comments-pair
+  desc: Two-word nonsense Comments metadata
+  crit: component
+  conf: 0.85
+  if:
+    type: value
+    path: pe.version.comments
+    regex: ^[a-z]{5,20} [a-z]{5,20}$
+    not:
+    - regex: (?i)(copyright|rights|reserved|license|version|build|debug|release|http|www)
+- id: word-salad-version-description-pair
+  desc: Two-word nonsense FileDescription
+  crit: component
+  conf: 0.85
+  if:
+    type: value
+    path: pe.version.description
+    regex: ^[a-z]{5,20} [a-z]{5,20}$
+    not:
+    - regex: (?i)(copyright|rights|reserved|install|setup|update|helper|service|application|program|client|server|manager|driver|runtime|framework|microsoft|windows)
+- id: opaque-single-token-copyright
+  desc: Single opaque lowercase LegalCopyright token
+  crit: component
+  conf: 0.8
+  if:
+    type: value
+    path: pe.version.copyright
+    regex: ^[a-z]{7,20}$
+    not:
+    - regex: (?i)(copyright|rights|reserved|inc|corp|ltd|llc|company)
+- id: opaque-lowercase-original-filename
+  desc: OriginalFilename is a bare lowercase word
+  crit: component
+  conf: 0.85
+  if:
+    type: value
+    path: pe.version.original_filename
+    regex: ^[a-z]{4,20}$
+    not:
+    - regex: (?i)^(setup|install|installer|update|updater)$
+    - regex: (?i)^(launcher|uninstall|helper|service)$
+- id: opaque-lowercase-internal-name
+  desc: InternalName is a bare lowercase word
+  crit: component
+  conf: 0.85
+  if:
+    type: value
+    path: pe.version.internal_name
+    regex: ^[a-z]{4,20}$
+    not:
+    - regex: (?i)^(setup|install|installer|update|updater)$
+    - regex: (?i)^(launcher|uninstall|helper|service)$
+- id: opaque-lowercase-product-name
+  desc: ProductName is a bare lowercase word
+  crit: component
+  conf: 0.85
+  if:
+    type: value
+    path: pe.version.product_name
+    regex: ^[a-z]{4,20}$
+    not:
+    - regex: (?i)^(setup|install|installer|update|updater)$
+    - regex: (?i)^(launcher|uninstall|helper|service|python|node)$
+- id: opaque-lowercase-trademarks
+  desc: LegalTrademarks is a bare lowercase word
+  crit: component
+  conf: 0.85
+  if:
+    type: value
+    path: pe.version.trademarks
+    regex: ^[a-z]{5,20}$
+    not:
+    - regex: (?i)(trademark|registered|reserved|rights)
+- id: opaque-lowercase-comments
+  desc: Comments field is a bare lowercase word
+  crit: component
+  conf: 0.85
+  if:
+    type: value
+    path: pe.version.comments
+    regex: ^[a-z]{5,20}$
+    not:
+    - regex: (?i)^(release|debug|internal|beta|alpha|stable)$
+    - regex: (?i)^(freeware|shareware|opensource|none|unknown)$
 composite_rules:
-  - id: random-alnum-versioninfo-token-cluster
-    desc: Generated tokens fill VERSIONINFO identity fields
-    crit: component
-    conf: 0.97
-    needs: 2
-    any:
-      - id: random-alnum-company-token
-      - id: metadata/binary/provenance/version-info::internal-name-single-alnum-word
-      - id: metadata/binary/provenance/version-info::original-filename-alnum-no-extension
-    unless:
-      - id: metadata/signed/platform/
+- id: random-alnum-versioninfo-token-cluster
+  desc: Generated tokens fill VERSIONINFO identity fields
+  crit: component
+  conf: 0.97
+  needs: 2
+  any:
+  - id: random-alnum-company-token
+  - id: metadata/binary/provenance/version-info::internal-name-single-alnum-word
+  - id: metadata/binary/provenance/version-info::original-filename-alnum-no-extension
+  unless:
+  - id: metadata/signed/platform/
+- id: scrambled-versioninfo-resource
+  desc: Scrambled (symbol-garbage) PE VERSIONINFO string table
+  crit: notable
+  conf: 0.9
+  attack: T1027
+  needs: 2
+  any:
+  - id: symbol-garbage-company
+  - id: symbol-garbage-product
+  - id: symbol-garbage-description
+  unless:
+  - id: metadata/signed/platform/
+  - id: well-known/tool/detection/wireshark/
+  - id: well-known/lib/format/xz/
+- id: short-word-salad-versioninfo
+  desc: Multi-field short word-salad VERSIONINFO
+  crit: suspicious
+  conf: 0.9
+  needs: 2
+  any:
+  - id: word-salad-version-comments-pair
+  - id: word-salad-version-description-pair
+  - id: opaque-single-token-copyright
+  - id: word-salad-version-copyright
+  unless:
+  - id: metadata/signed/platform/
+- id: opaque-themida-version-masquerade
+  desc: Themida loader with opaque fabricated identity
+  crit: hostile
+  conf: 0.97
+  attack: T1036.005,T1027.002,T1070.006
+  all:
+  - id: opaque-original-filename-token
+  - id: objectives/anti-static/pack/detect::themida-boot-loader-layout
+  - id: metadata/binary/provenance/build::pe-far-future-timestamp
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+- id: fabricated-dotnet-type-versioninfo
+  desc: Fabricated .NET type VERSIONINFO identity
+  crit: suspicious
+  conf: 0.9
+  all:
+  - id: metadata/build/manifest::pe-manifest-myapplication-template
+  - id: dotnet-bcl-type-version-product
+  - id: dotnet-bcl-type-original-filename
+- id: dotnet-fabricated-identity-crypter
+  desc: Unsigned .NET assembly with scrambled identity and throwaway version numbers
+  crit: suspicious
+  conf: 0.94
+  attack: T1027
+  all:
+  - id: metadata/binary/framework::dotnet-metadata
   - id: scrambled-versioninfo-resource
-    desc: Scrambled (symbol-garbage) PE VERSIONINFO string table
-    crit: notable
-    conf: 0.9
-    attack: T1027
-    needs: 2
+  - id: metadata/package/versioning/scheme::dotted-quad-version-pair
+  unless:
+  - id: metadata/signed/platform/
+- id: networked-fake-version-resource
+  desc: Unsigned fake version resource with IP-shaped metadata
+  crit: suspicious
+  conf: 0.94
+  size_max: 1048576
+  all:
+  - id: metadata/package/versioning/scheme::dotted-quad-version-pair
+  any:
+  - id: word-salad-version-copyright
+  - id: lowercase-underscore-internal-name
+  - id: metadata/binary/installer/script::nsis
+  - id: micro-behaviors/mem/protect/modify::getprocaddr-memory-loader-primitives
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/signed/certificate/signature::pe-signature-verified-kv
+  - id: metadata/binary/vendor::microsoft-corp-versioninfo
+  - id: metadata/binary/resource/size::resource-heavy-rsrc
+  - id: metadata/binary/symbols/count::many-imports
+  - id: well-known/lib/crypto/rsa-bsafe/
+  - id: well-known/lib/runtime/managed/jvm/
+- id: opaque-alnum-anti-debug-loader
+  desc: Opaque VERSIONINFO on anti-debug PE loader
+  crit: hostile
+  conf: 0.97
+  attack: T1036.005,T1622
+  all:
+  - id: metadata/binary/provenance/version-info::digit-rich-alnum-product-name
+  - id: opaque-alnum-internal-name
+  - id: objectives/anti-static/obfuscation/imports/api-hashing::renamed-anti-debug-pe-loader
+  unless:
+  - id: metadata/binary/installer/family/
+  - id: well-known/app
+  - id: well-known/tool/reverse-engineering/
+- id: atlas-archive-anti-debug-loader
+  desc: Atlas Archive comment on anti-debug PE loader
+  crit: hostile
+  conf: 0.98
+  attack: T1036.005,T1622
+  all:
+  - id: atlas-archive-version-comment
+  - id: objectives/anti-static/obfuscation/imports/api-hashing::renamed-anti-debug-pe-loader
+  unless:
+  - id: metadata/binary/installer/family/
+  - id: well-known/app
+  - id: well-known/tool/reverse-engineering/
+- id: unsigned-update-claim-manual-loader
+  desc: Unsigned updater claim on an anti-debugging manual PE loader
+  crit: hostile
+  conf: 0.98
+  attack: T1036.005,T1027.009,T1620,T1622
+  all:
+  - id: metadata/signed/trust-level::unsigned-missing-signature-record
+  - id: micro-behaviors/process/debug/detect::is-debugger-present-import
+  - id: micro-behaviors/data/embedded/payload/header::x64-inline-e-lfanew-pe-walk
+  - id: metadata/binary/resource/size::oversized-low-entropy-rsrc
+  - id: metadata/binary/resource/identity::updater-role-label-text
+- id: short-lowercase-version-identity
+  desc: Short lowercase ProductName and OriginalFilename
+  crit: suspicious
+  conf: 0.93
+  all:
+  - id: short-lowercase-product-token
+  - id: short-lowercase-wide-exe-name
+  - id: metadata/binary/provenance/version-info::pe-internalname-field
+  unless:
+  - id: metadata/signed/platform/
+- id: anonymous-token-versioninfo-identity
+  desc: VERSIONINFO identity is anonymous tokens
+  crit: suspicious
+  conf: 0.93
+  attack: T1036.005,T1027
+  needs: 4
+  any:
+  - id: opaque-single-token-copyright
+  - id: opaque-lowercase-original-filename
+  - id: opaque-lowercase-internal-name
+  - id: opaque-lowercase-product-name
+  - id: opaque-lowercase-trademarks
+  - id: opaque-lowercase-comments
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/signed/developer/
+  - id: well-known/app
+  - id: well-known/lib
+  - id: well-known/tool
+  - id: metadata/package/testing/presence/corpus::binary-test-fixture-member
+  downgrade:
+    scope: archive
     any:
-      - id: symbol-garbage-company
-      - id: symbol-garbage-product
-      - id: symbol-garbage-description
-    unless:
-      - id: metadata/signed/platform/
-      - id: well-known/tool/detection/wireshark/
-      - id: well-known/lib/format/xz/
-  - id: short-word-salad-versioninfo
-    desc: Multi-field short word-salad VERSIONINFO
-    crit: suspicious
-    conf: 0.9
-    needs: 2
-    any:
-      - id: word-salad-version-comments-pair
-      - id: word-salad-version-description-pair
-      - id: opaque-single-token-copyright
-      - id: word-salad-version-copyright
-    unless:
-      - id: metadata/signed/platform/
-  - id: opaque-themida-version-masquerade
-    desc: Themida loader with opaque fabricated identity
-    crit: hostile
-    conf: 0.97
-    attack: T1036.005,T1027.002,T1070.006
-    all:
-      - id: opaque-original-filename-token
-      - id: objectives/anti-static/pack/detect::themida-boot-loader-layout
-      - id: metadata/binary/provenance/build::pe-far-future-timestamp
-    unless:
-      - id: metadata/signed/platform/
-      - id: metadata/binary/installer/family/
-  - id: fabricated-dotnet-type-versioninfo
-    desc: Fabricated .NET type VERSIONINFO identity
-    crit: suspicious
-    conf: 0.9
-    all:
-      - id: metadata/build/manifest::pe-manifest-myapplication-template
-      - id: dotnet-bcl-type-version-product
-      - id: dotnet-bcl-type-original-filename
-  # Doubly-fabricated identity: the string table is scrambled garbage AND the
-  # numeric version fields are throwaway dotted-quads. This is a strong
-  # packed/obfuscated .NET marker, but not by itself proof that the program
-  # decrypts or launches a payload; loader verdicts live under the reflective
-  # resource/in-memory execution composites.
-  - id: dotnet-fabricated-identity-crypter
-    desc: Unsigned .NET assembly with scrambled identity and throwaway version numbers
-    crit: suspicious
-    conf: 0.94
-    attack: T1027
-    all:
-      - id: metadata/binary/framework::dotnet-metadata
-      - id: scrambled-versioninfo-resource
-      - id: metadata/package/versioning/scheme::dotted-quad-version-pair
-    unless:
-      - id: metadata/signed/platform/
-  - id: networked-fake-version-resource
-    desc: Unsigned fake version resource with IP-shaped metadata
-    crit: suspicious
-    conf: 0.94
-    size_max: 1048576
-    all:
-      - id: metadata/package/versioning/scheme::dotted-quad-version-pair
-    any:
-      - id: word-salad-version-copyright
-      - id: lowercase-underscore-internal-name
-      - id: metadata/binary/installer/script::nsis
-      - id: micro-behaviors/mem/protect/modify::getprocaddr-memory-loader-primitives
-    unless:
-      - id: metadata/signed/platform/
-      # A verified Authenticode signature contradicts the unsigned-forged-block
-      # claim: signed vendor builds (Eclipse/Adoptium JDK natives and the like)
-      # carry genuine dotted-quad product versions and identifier-style
-      # internal names.
-      - id: metadata/signed/certificate/signature::pe-signature-verified-kv
-      - id: metadata/binary/vendor::microsoft-corp-versioninfo
-      - id: metadata/binary/resource/size::resource-heavy-rsrc
-      - id: metadata/binary/symbols/count::many-imports
-      - id: well-known/lib/crypto/rsa-bsafe/
-      - id: well-known/lib/runtime/managed/jvm/
-  # Opaque ProductName+InternalName plus anti-debug loader. Intentionally
-  # omits signed/platform unless — stolen Microsoft certs must not quiet this.
-  - id: opaque-alnum-anti-debug-loader
-    desc: Opaque VERSIONINFO on anti-debug PE loader
-    crit: hostile
-    conf: 0.97
-    attack: T1036.005,T1622
-    all:
-      - id: metadata/binary/provenance/version-info::digit-rich-alnum-product-name
-      - id: opaque-alnum-internal-name
-      - id: objectives/anti-static/obfuscation/imports/api-hashing::renamed-anti-debug-pe-loader
-    unless:
-      - id: metadata/binary/installer/family/
-      - id: well-known/app/
-      - id: well-known/tool/reverse-engineering/
-  # Atlas Archive comment is a recurring SilverFox/Atlas campaign marker on
-  # loaders that also mutate memory and check for debuggers.
-  - id: atlas-archive-anti-debug-loader
-    desc: Atlas Archive comment on anti-debug PE loader
-    crit: hostile
-    conf: 0.98
-    attack: T1036.005,T1622
-    all:
-      - id: atlas-archive-version-comment
-      - id: objectives/anti-static/obfuscation/imports/api-hashing::renamed-anti-debug-pe-loader
-    unless:
-      - id: metadata/binary/installer/family/
-      - id: well-known/app/
-      - id: well-known/tool/reverse-engineering/
-  - id: unsigned-update-claim-manual-loader
-    desc: Unsigned updater claim on an anti-debugging manual PE loader
-    crit: hostile
-    conf: 0.98
-    attack: T1036.005,T1027.009,T1620,T1622
-    all:
-      - id: metadata/signed/trust-level::unsigned-missing-signature-record
-      - id: micro-behaviors/process/debug/detect::is-debugger-present-import
-      - id: micro-behaviors/data/embedded/payload/header::x64-inline-e-lfanew-pe-walk
-      - id: metadata/binary/resource/size::oversized-low-entropy-rsrc
-      - id: metadata/binary/resource/identity::updater-role-label-text
-
-  - id: short-lowercase-version-identity
-    desc: Short lowercase ProductName and OriginalFilename
-    crit: suspicious
-    conf: 0.93
-    all:
-      - id: short-lowercase-product-token
-      - id: short-lowercase-wide-exe-name
-      - id: metadata/binary/provenance/version-info::pe-internalname-field
-    unless:
-      - id: metadata/signed/platform/
-
-
-  # Retired unsubstantiated-vendor-claim-fake-packer: vendor text and low
-  # section entropy establish neither false authorship nor a fake packer.
-  # Recovered UPX images retain both properties. Their metadata atoms remain;
-  # credential-theft and concealed-loader rules supply independent attacks.
-  # Four of the six writable identity fields reduced to one anonymous lowercase
-  # word each. The fields are independent -- LegalCopyright, LegalTrademarks,
-  # OriginalFilename, InternalName, ProductName and Comments are filled by
-  # different parts of a real build, and a genuine resource that leaves one of
-  # them as a bare token still gets the others right. Four at once means none of
-  # them was written by a person. This is the populated-but-anonymous sibling of
-  # blanked-version-identity-fields above: same goal, opposite tactic, and the
-  # populated form is the one that survives a "does it have version info?" check.
+    - id: metadata/package/testing/presence/corpus::binary-test-fixture-member
+- id: anonymous-identity-packed-admin-image
+  desc: Packed admin-demanding PE with no real identity
+  crit: hostile
+  conf: 0.96
+  attack: T1036.005,T1027.002,T1548
+  all:
   - id: anonymous-token-versioninfo-identity
-    desc: VERSIONINFO identity is anonymous tokens
-    crit: suspicious
-    conf: 0.93
-    attack: T1036.005,T1027
-    needs: 4
-    any:
-      - id: opaque-single-token-copyright
-      - id: opaque-lowercase-original-filename
-      - id: opaque-lowercase-internal-name
-      - id: opaque-lowercase-product-name
-      - id: opaque-lowercase-trademarks
-      - id: opaque-lowercase-comments
-    unless:
-      - id: metadata/signed/platform/
-      - id: metadata/signed/developer/
-      - id: well-known/app/
-      - id: well-known/lib/
-      - id: well-known/tool/
-      # Parser-library malware-fixture corpora (saferwall/pe test/): the
-      # specimen is inert test data, not a shipped anonymous binary.
-      - id: metadata/package/testing/presence/corpus::binary-test-fixture-member
-    downgrade:
-      scope: archive
-      any:
-        - id: metadata/package/testing/presence/corpus::binary-test-fixture-member
-
-  # Compressed, unsigned, demanding administrator, and unwilling to say who
-  # wrote it. Each leg is unremarkable alone -- packers are legal, unsigned
-  # builds are everywhere, and plenty of honest tools need elevation -- but the
-  # combination inverts the normal relationship between privilege and
-  # accountability. A program asking a user for administrator is asking for
-  # trust, and every legitimate one backs that with something checkable: a
-  # signature, or failing that a version resource that names its author. This
-  # asks for the privilege while making itself unattributable in both channels
-  # at once, and hides its code behind compression so the request cannot be
-  # audited either. That is a dropper's posture, not an installer's.
-  - id: anonymous-identity-packed-admin-image
-    desc: Packed admin-demanding PE with no real identity
-    crit: hostile
-    conf: 0.96
-    attack: T1036.005,T1027.002,T1548
-    all:
-      - id: anonymous-token-versioninfo-identity
-      - id: metadata/binary/section/entropy::upx1-high-entropy-payload
-      - id: metadata/build/manifest::pe-requires-admin
-      - id: metadata/signed/trust-level::unsigned-missing-signature-record
-    unless:
-      - id: metadata/signed/platform/
-      - id: metadata/binary/installer/family/
-      - id: well-known/app/
-      - id: well-known/tool/
-
-  # An unsigned multi-megabyte file that is almost entirely opaque payload, with
-  # under 64 KB of actual code, and a version resource whose identity fields were
-  # blanked out. Nothing is claimed and nothing can be checked: the properties
-  # dialog looks filled in, the signature is absent, and the code that would
-  # explain the other 99% of the bytes is not there to read. That is the shape of
-  # a dropper shell, and it is evidence-distinct from the nested-payload rules --
-  # those key on the container format, this on the missing identity.
-  - id: blank-identity-opaque-payload-carrier
-    desc: Blank-identity PE is almost entirely payload
-    crit: hostile
-    conf: 0.96
-    attack: T1036.005,T1027.009
-    all:
-      - id: metadata/binary/provenance/version-info::multiple-blank-version-fields
-      - id: metadata/binary/layout/size::multi-megabyte-pe-negligible-code
-      - id: metadata/binary/layout/ratio::overlay-over-90pct
-      - id: metadata/signed/trust-level::unsigned-missing-signature-record
-    unless:
-      - id: metadata/signed/platform/
-      - id: well-known/app/
+  - id: metadata/binary/section/entropy::upx1-high-entropy-payload
+  - id: metadata/build/manifest::pe-requires-admin
+  - id: metadata/signed/trust-level::unsigned-missing-signature-record
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: well-known/app
+  - id: well-known/tool
+- id: blank-identity-opaque-payload-carrier
+  desc: Blank-identity PE is almost entirely payload
+  crit: hostile
+  conf: 0.96
+  attack: T1036.005,T1027.009
+  all:
+  - id: metadata/binary/provenance/version-info::multiple-blank-version-fields
+  - id: metadata/binary/layout/size::multi-megabyte-pe-negligible-code
+  - id: metadata/binary/layout/ratio::overlay-over-90pct
+  - id: metadata/signed/trust-level::unsigned-missing-signature-record
+  unless:
+  - id: metadata/signed/platform/
+  - id: well-known/app

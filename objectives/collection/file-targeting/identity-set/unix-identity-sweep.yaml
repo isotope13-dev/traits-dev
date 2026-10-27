@@ -1,82 +1,41 @@
-# The set of files a payload reads to learn who it landed on.
-#
-# The torchtriton binary that shipped in the malicious PyTorch nightly of
-# December 2022 is described elsewhere by how the data left -- encoded into
-# DNS queries. This states what it took, which is a separate question and the
-# one a responder has to answer first.
-#
-# It reads `/etc/passwd` and `/etc/hosts` (the account list and whatever
-# internal names this host resolves by hand), `~/.gitconfig` (the developer's
-# name, email, and often a credential helper), and `~/.ssh` (the keys that
-# reach everywhere that developer can reach). That is not a system inventory;
-# it is the bundle that answers "whose machine is this and what does it get
-# me", and it is why the response to this incident was rotating SSH keys
-# rather than reinstalling a package.
-#
-# Kept apart from the exfiltration rule deliberately. A channel finding tells
-# you to block a resolver. This tells you what to assume is already gone,
-# which stays true whichever channel a future variant picks.
 defaults:
-  platforms: [unix]
-  for: [elf, macho, shell, python, perl, ruby, text]
+  platforms:
+  - unix
+  for:
+  - elf
+  - macho
+  - shell
+  - python
+  - perl
+  - ruby
+  - text
   attack: T1005,T1552.004,T1083
   mbc: E1005
-
 composite_rules:
-  - id: developer-identity-file-sweep
-    for: [elf, macho, shell, python, ruby, perl]
-    desc: Collects the developer identity file set
-    crit: hostile
-    conf: 0.94
-    # Still three of the four, but `~/.ssh` has to be one of them. Any one of
-    # these paths appears in ordinary software -- an installer reads
-    # /etc/passwd, a git tool reads .gitconfig -- and in a statically linked
-    # native binary three of them arrive without the program ever naming one:
-    # `/etc/hosts` and `/etc/passwd` are libc's own resolver and NSS tables
-    # (in sentry-cli they sit inline beside `/etc/services`, `/etc/resolv.conf`
-    # and `/etc/localtime`), and `.gitconfig` comes from the vendored `ignore`
-    # crate resolving gitignore excludesfile, next to `XDG_CONFIG_HOME` and the
-    # symbol `ignore::gitignore::gitconfig_excludes_path`. Every static Rust
-    # CLI that walks a git tree therefore reached 3/4 on library data alone --
-    # observed on the sentry-cli binaries bundled in fastlane-plugin-sentry.
-    #
-    # `.ssh` is the leg with no library-noise explanation: neither libc nor a
-    # git crate names the key directory, and it is the one that makes this a
-    # profile of the person rather than an inventory of the host. The
-    # torchtriton binary this rule was written for read all four.
-    all:
-      - id: micro-behaviors/fs/path/credential::ssh-directory-literal
-      - id: micro-behaviors/fs/path/secret-config::gitconfig-file
-    needs: 1
-    any:
-      - id: micro-behaviors/fs/path/account-db::etc-passwd-path-literal
-      - id: micro-behaviors/fs/path/config/system::config-hosts
-    unless:
-      - id: metadata/package/testing/
-      - id: well-known/tool/
-      # Bun standalone executables embed runtime and bundled dependency
-      # literals, including filesystem paths unrelated to reads by the app.
-      - id: well-known/lib/runtime/scripted/bun-runtime/
-      # Account/sshd provisioning scripts write these paths while building a
-      # login; they do not read the set out of an existing host.
-      - id: metadata/build/recognized-contexts::ssh-sandbox-account-provisioning
-      # Documentation names these paths; it does not read them. Neovim ships
-      # netrw's help text at runtime/pack/dist/opt/netrw/doc/netrw.txt, which
-      # documents the file explorer's ssh/scp/netrc handling and so lists the
-      # whole set. `for:` includes `text`, so a document is in scope for a rule
-      # whose claim ("collects the identity file set") only a program can make.
-      - id: metadata/package/documentation/source::documentation-dir-path
-      # Go's linker merges every package's read-only literals into shared
-      # runs, so each of these paths arrives from a different library and
-      # their co-occurrence carries no information about the program. In
-      # agent-deck's 35 MB static build `/etc/passwd` sits in a blob with
-      # `gocachehash`, `archive/tar`, `crypto/x509` and HTML entity names
-      # (os/user), and `/root/.ssh,mode=1777` shares a run with `/etc/hosts`,
-      # `getsockopt`, `netlink` and `unixpacket` (net). The sibling
-      # `config-hosts` atom already carries this exact carve-out for the same
-      # reason; extending it to the composite states it once for the set.
-      # A Go stealer that ships the data out is still convicted by the
-      # exfiltration-channel rules, which this file's note keeps separate.
-      - id: metadata/lang/compiler/systems::go-binary
-      - id: "metadata/file/naming::test-directory-component"
-      - id: well-known/app/ai/coding-agent/reason-machines::reason-machines-cli-context
+- id: developer-identity-file-sweep
+  for:
+  - elf
+  - macho
+  - shell
+  - python
+  - ruby
+  - perl
+  desc: Collects the developer identity file set
+  crit: hostile
+  conf: 0.94
+  all:
+  - id: micro-behaviors/fs/path/config/ssh::ssh-directory-literal
+  - id: micro-behaviors/fs/path/secret-config::gitconfig-file
+  needs: 1
+  any:
+  - id: micro-behaviors/fs/path/account-db::etc-passwd-path-literal
+  - id: micro-behaviors/fs/path/config/system::config-hosts
+  unless:
+  - id: metadata/package/testing/
+  - id: well-known/tool
+  - id: well-known/lib/runtime/scripted/bun-runtime/
+  - id: metadata/build/recognized-contexts::ssh-sandbox-account-provisioning
+  - id: metadata/package/documentation/source::documentation-dir-path
+  - id: metadata/lang/compiler/systems::go-binary
+  - id: metadata/path::test-directory-component
+  - id: well-known/app/ai/coding-agent/reason-machines::reason-machines-cli-context

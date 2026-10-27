@@ -1,287 +1,278 @@
-# URL Indirection / Dead Drop Detection
-# ATT&CK: T1102.001 (Web Service: Dead Drop Resolver)
-# Detects pattern where fetched content is used as a URL for subsequent requests
-# This hides the real C2 infrastructure from static analysis
 defaults:
-  platforms: [windows, unix]
+  platforms:
+  - windows
+  - unix
   crit: suspicious
-  attack: "T1102.001"
+  attack: T1102.001
 traits:
-  # === Go: Fetch then use result as URL ===
-  - id: go-http-get-readall-post
-    desc: GET body precedes converted POST URL
-    crit: suspicious
-    conf: 0.9
-    for: [go]
-    if:
-      # Search one function body and require the POST URL itself to be a
-      # byte-slice-to-string conversion. A file-wide GET -> ReadAll -> POST
-      # sequence merely joins ordinary HTTP helper functions (FloatBox has
-      # separate GetData and PostData methods) and proves no URL indirection.
-      type: tree-sitter
-      kind: function
-      regex: '(?s)http\.Get\(.{0,500}ReadAll\(.{0,200}http\.Post\(\s*string\('
-  - id: go-http-get-string-post
-    desc: http.Get content reused in POST
-    crit: notable
-    conf: 0.85
-    for: [go]
-    if:
-      type: text
-      regex: 'http\.Get\([\s\S]{0,200}(String\(|string\()[\s\S]{0,200}http\.Post\('
-  - id: go-get-then-get
-    desc: HTTP GET result used in second GET
-    crit: notable
-    conf: 0.75
-    for: [go]
-    if:
-      # The qualifier is what makes this an HTTP pattern vs. a generic getter.
-      # Bare `.Get(name).String()...Get(` matched any Go code with two getter
-      # calls — Twitch bot argument parsers (`ArgsParser.Get(arg).String()`),
-      # `url.Values.Get`, `http.Header.Get`, map-of-strings wrappers, config
-      # libraries, etc. The leading `http.Get` or `<ident>Client.Get` anchor
-      # narrows it to actual HTTP clients (stdlib + custom typed clients like
-      # `restyClient`, `httpClient`, `apiClient`) without losing real deaddrops.
-      type: text
-      regex: '(http|\w+[Cc]lient)\.Get\s*\(\s*[^,\n()]{1,120}\s*\)\.String\s*\(\)[\s\S]{0,250}\.Get\s*\('
-  # === Python: requests chaining ===
-  - id: py-requests-url-chain
-    desc: URL variable reused after requests GET
-    crit: suspicious
-    conf: 0.8
-    for: [python]
-    if:
-      type: text
-      regex: '(?i)\burl\s*=\s*requests\.get\(.{0,50}\)\.text[\s\S]{0,40}requests\.(get|post)\(\s*url\b'
-  - id: py-requests-endpoint-chain
-    desc: Endpoint variable reused after requests GET
-    crit: suspicious
-    conf: 0.8
-    for: [python]
-    if:
-      type: text
-      regex: '(?i)endpoint\s*=\s*requests\.get\(.{0,10}\)\.text[\s\S]{0,9}requests\.(get|post)\(endpoint'
-  - id: py-requests-host-chain
-    desc: Host variable reused after requests GET
-    crit: suspicious
-    conf: 0.8
-    for: [python]
-    if:
-      type: text
-      regex: '(?i)\bhost\s*=\s*requests\.get\(.{0,20}\)\.text[\s\S]{0,20}requests\.(get|post)\(\s*host\b'
-  - id: py-urllib-chain
-    desc: Python urllib fetch-chain pattern
-    crit: suspicious
-    conf: 0.8
-    for: [python]
-    if:
-      type: text
-      regex: '(?i)\burl\s*=\s*[\w.]*urlopen\(.{0,60}\)\.read\(\)[\s\S]{0,60}urlopen\(\s*url\b'
-    unless:
-      - id: metadata/package/testing/presence/fixture::test-filename-pattern
-      - id: metadata/package/testing/presence/harness/
-      - id: well-known/lib/ui/pygments::source-tree
-      - id: "metadata/file/naming::test-directory-component"
-  - id: py-urllib-nested-chain
-    desc: Nested urllib urlopen calls
-    crit: suspicious
-    conf: 0.85
-    for: [python]
-    if:
-      type: text
-      regex: 'urlopen\(\s*[\w.]*urlopen\(.{0,60}\)\.read\(\)'
-    unless:
-      - id: metadata/package/testing/presence/fixture::test-filename-pattern
-      - id: metadata/package/testing/presence/harness/
-  # === JavaScript: fetch chaining ===
-      - id: "metadata/file/naming::test-directory-component"
-  - id: js-fetch-chain
-    desc: Inline fetch text chained into fetch
-    crit: suspicious
-    conf: 0.8
-    for:
-    - javascript
-    - typescript
-    if:
-      type: text
-      regex: fetch\([^)]{1,50}\)\.then[\s\S]{0,100}\.text\(\)\)\.then[\s\S]{0,80}fetch\(
-    not:
-    - substr: fetch("config.json").text()
-    unless:
-    - id: metadata/build/recognized-contexts::benign-trojanized-fp-context
-    - id: metadata/package/testing/harness/runtime/
-    - id: metadata/build/
-    - id: metadata/file/profile/markup::assessment-playbook-examples
-  - id: js-axios-chain
-    desc: Axios response data passed as URL
-    crit: suspicious
-    conf: 0.8
-    for: [javascript, typescript]
-    if:
-      type: text
-      # The second request must receive a response-data member as its URL.
-      # Merely returning `response.data` before the next exported API method
-      # is normal client code and is not a dead-drop resolver.
-      regex: 'axios\.get\([^)]{1,40}\)[\s\S]{0,40}\.data[\s\S]{0,30}axios\.(get|post)\(\w+\.data'
-    # Minified HTTP client wrappers often end each method with `return (await
-    # axios.get(...)).data` immediately before the next `async post/get` —
-    # that is adjacent method bodies, not response-as-URL chaining.
-    not:
-      - regex: '\.data\}\s*async\s+'
-    unless:
-      - id: micro-behaviors/os/env/service-api::vite-api-url-reference
-      - id: well-known/lib/development/vscode::vscode-extension-marker
-      - id: metadata/package/runtime::vscode-extension
-  - id: js-axios-app-api-marker
-    desc: Axios application API marker
-    crit: baseline
-    conf: 0.8
-    for: [javascript, typescript]
-    if:
-      type: text
-      regex: '(API_URL|apiUrl|baseURL).{0,120}axios\.'
-  # === Shell: curl/wget result used as URL ===
-  - id: shell-curl-to-shell
-    desc: curl output passed to shell invocation
-    crit: suspicious
-    conf: 0.85
-    for: [shell]
-    if:
-      type: text
-      regex: '\$\(curl[^\r\n)]{1,120}\)[ \t]*\|[ \t]*(bash|sh)\b'
-    unless:
-      - id: metadata/lang/source/syntax/key-value::security-rule-runtime-script-floating-url
-      - id: well-known/app/system/brev-cli::source-tree-marker
-  - id: shell-curl-to-python
-    desc: curl output piped to Python
-    crit: suspicious
-    conf: 0.85
-    for: [shell]
-    if:
-      type: text
-      regex: '\$\(curl[^\r\n)]{1,120}\)[ \t]*\|[ \t]*(python|perl|ruby)\b'
-  - id: shell-curl-to-script-host
-    desc: curl output piped to script host
-    crit: suspicious
-    conf: 0.85
-    for: [shell]
-    if:
-      type: text
-      regex: '\$\(curl[^\r\n)]{1,120}\)[ \t]*\|[ \t]*(php|powershell|cmd|nc)\b'
-  - id: shell-backtick-curl-chain
-    desc: backtick curl output reused
-    crit: suspicious
-    conf: 0.8
-    for: [shell]
-    if:
-      type: text
-      regex: '`curl[^`\r\n]{1,120}`[ \t]*\|[ \t]*(bash|sh|python)\b'
-    unless:
-      - id: metadata/lang/source/syntax/key-value::security-rule-runtime-script-floating-url
-      - id: well-known/app/system/brev-cli::source-tree-marker
-      - id: well-known/tool/detection/security-scanner-identity::ks-aur-scanner-source-context
-      - id: "metadata/file/naming::test-directory-component"
-  - id: shell-wget-to-interpreter
-    desc: wget result piped to interpreter
-    crit: suspicious
-    conf: 0.85
-    for: [shell]
-    if:
-      type: text
-      regex: '`wget[^`\r\n]{1,80}`[ \t]*\|[ \t]*(bash|sh|python)\b'
-    unless:
-      - id: metadata/lang/source/syntax/key-value::security-rule-runtime-script-floating-url
-  # The dead-drop leg is the *response body* of an earlier request being turned
-  # into the next URL. `URI(<any local>)` alone is how every Ruby HTTP client is
-  # written (`Net::HTTP.get(URI(params[:url]))`), so the argument must be a
-  # response accessor for this to mean indirection.
-  - id: ruby-http-uri-from-response-body
-    desc: Net::HTTP URI built from a response body
-    crit: notable
-    conf: 0.8
-    for: [ruby]
-    if:
-      type: text
-      regex: 'Net::HTTP\.(get|post)\s*\(\s*URI\(\s*[a-z_]\w*\.(body|strip|chomp)'
-    not:
-      - regex: "Net::HTTP\\.get_print\\s+URI\\('http://www\\.example\\.com/"
+- id: go-http-get-readall-post
+  desc: GET body precedes converted POST URL
+  crit: suspicious
+  conf: 0.9
+  for:
+  - go
+  if:
+    type: tree-sitter
+    kind: function
+    regex: (?s)http\.Get\(.{0,500}ReadAll\(.{0,200}http\.Post\(\s*string\(
+- id: go-http-get-string-post
+  desc: http.Get content reused in POST
+  crit: notable
+  conf: 0.85
+  for:
+  - go
+  if:
+    type: text
+    regex: http\.Get\([\s\S]{0,200}(String\(|string\()[\s\S]{0,200}http\.Post\(
+- id: go-get-then-get
+  desc: HTTP GET result used in second GET
+  crit: notable
+  conf: 0.75
+  for:
+  - go
+  if:
+    type: text
+    regex: (http|\w+[Cc]lient)\.Get\s*\(\s*[^,\n()]{1,120}\s*\)\.String\s*\(\)[\s\S]{0,250}\.Get\s*\(
+- id: py-requests-url-chain
+  desc: URL variable reused after requests GET
+  crit: suspicious
+  conf: 0.8
+  for:
+  - python
+  if:
+    type: text
+    regex: (?i)\burl\s*=\s*requests\.get\(.{0,50}\)\.text[\s\S]{0,40}requests\.(get|post)\(\s*url\b
+- id: py-requests-endpoint-chain
+  desc: Endpoint variable reused after requests GET
+  crit: suspicious
+  conf: 0.8
+  for:
+  - python
+  if:
+    type: text
+    regex: (?i)endpoint\s*=\s*requests\.get\(.{0,10}\)\.text[\s\S]{0,9}requests\.(get|post)\(endpoint
+- id: py-requests-host-chain
+  desc: Host variable reused after requests GET
+  crit: suspicious
+  conf: 0.8
+  for:
+  - python
+  if:
+    type: text
+    regex: (?i)\bhost\s*=\s*requests\.get\(.{0,20}\)\.text[\s\S]{0,20}requests\.(get|post)\(\s*host\b
+- id: py-urllib-chain
+  desc: Python urllib fetch-chain pattern
+  crit: suspicious
+  conf: 0.8
+  for:
+  - python
+  if:
+    type: text
+    regex: (?i)\burl\s*=\s*[\w.]*urlopen\(.{0,60}\)\.read\(\)[\s\S]{0,60}urlopen\(\s*url\b
+  unless:
+  - id: metadata/package/testing/presence/fixture::test-filename-pattern
+  - id: metadata/package/testing/presence/harness/
+  - id: well-known/lib/ui/pygments::source-tree
+  - id: metadata/path::test-directory-component
+- id: py-urllib-nested-chain
+  desc: Nested urllib urlopen calls
+  crit: suspicious
+  conf: 0.85
+  for:
+  - python
+  if:
+    type: text
+    regex: urlopen\(\s*[\w.]*urlopen\(.{0,60}\)\.read\(\)
+  unless:
+  - id: metadata/package/testing/presence/fixture::test-filename-pattern
+  - id: metadata/package/testing/presence/harness/
+  - id: metadata/path::test-directory-component
+- id: js-fetch-chain
+  desc: Inline fetch text chained into fetch
+  crit: suspicious
+  conf: 0.8
+  for:
+  - javascript
+  - typescript
+  if:
+    type: text
+    regex: fetch\([^)]{1,50}\)\.then[\s\S]{0,100}\.text\(\)\)\.then[\s\S]{0,80}fetch\(
+  not:
+  - substr: fetch("config.json").text()
+  unless:
+  - id: metadata/build/recognized-contexts::benign-trojanized-fp-context
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/build
+  - id: metadata/file/profile/markup::assessment-playbook-examples
+- id: js-axios-chain
+  desc: Axios response data passed as URL
+  crit: suspicious
+  conf: 0.8
+  for:
+  - javascript
+  - typescript
+  if:
+    type: text
+    regex: axios\.get\([^)]{1,40}\)[\s\S]{0,40}\.data[\s\S]{0,30}axios\.(get|post)\(\w+\.data
+  not:
+  - regex: \.data\}\s*async\s+
+  unless:
+  - id: micro-behaviors/os/env/service-api::vite-api-url-reference
+  - id: well-known/lib/development/vscode::vscode-extension-marker
+  - id: metadata/package/runtime::vscode-extension
+- id: js-axios-app-api-marker
+  desc: Axios application API marker
+  crit: baseline
+  conf: 0.8
+  for:
+  - javascript
+  - typescript
+  if:
+    type: text
+    regex: (API_URL|apiUrl|baseURL).{0,120}axios\.
+- id: shell-curl-to-shell
+  desc: curl output passed to shell invocation
+  crit: suspicious
+  conf: 0.85
+  for:
+  - shell
+  if:
+    type: text
+    regex: \$\(curl[^\r\n)]{1,120}\)[ \t]*\|[ \t]*(bash|sh)\b
+  unless:
+  - id: metadata/lang/source/syntax/key-value::security-rule-runtime-script-floating-url
+  - id: well-known/app/system/brev-cli::source-tree-marker
+- id: shell-curl-to-python
+  desc: curl output piped to Python
+  crit: suspicious
+  conf: 0.85
+  for:
+  - shell
+  if:
+    type: text
+    regex: \$\(curl[^\r\n)]{1,120}\)[ \t]*\|[ \t]*(python|perl|ruby)\b
+- id: shell-curl-to-script-host
+  desc: curl output piped to script host
+  crit: suspicious
+  conf: 0.85
+  for:
+  - shell
+  if:
+    type: text
+    regex: \$\(curl[^\r\n)]{1,120}\)[ \t]*\|[ \t]*(php|powershell|cmd|nc)\b
+- id: shell-backtick-curl-chain
+  desc: backtick curl output reused
+  crit: suspicious
+  conf: 0.8
+  for:
+  - shell
+  if:
+    type: text
+    regex: '`curl[^`\r\n]{1,120}`[ \t]*\|[ \t]*(bash|sh|python)\b'
+  unless:
+  - id: metadata/lang/source/syntax/key-value::security-rule-runtime-script-floating-url
+  - id: well-known/app/system/brev-cli::source-tree-marker
+  - id: well-known/tool/detection/security-scanner-identity::ks-aur-scanner-source-context
+  - id: metadata/path::test-directory-component
+- id: shell-wget-to-interpreter
+  desc: wget result piped to interpreter
+  crit: suspicious
+  conf: 0.85
+  for:
+  - shell
+  if:
+    type: text
+    regex: '`wget[^`\r\n]{1,80}`[ \t]*\|[ \t]*(bash|sh|python)\b'
+  unless:
+  - id: metadata/lang/source/syntax/key-value::security-rule-runtime-script-floating-url
+- id: ruby-http-uri-from-response-body
+  desc: Net::HTTP URI built from a response body
+  crit: notable
+  conf: 0.8
+  for:
+  - ruby
+  if:
+    type: text
+    regex: Net::HTTP\.(get|post)\s*\(\s*URI\(\s*[a-z_]\w*\.(body|strip|chomp)
+  not:
+  - regex: Net::HTTP\.get_print\s+URI\('http://www\.example\.com/
 composite_rules:
-  # === URL Dead Drop Pattern ===
+- id: url-deaddrop-go
+  desc: Go URL dead drop pattern
+  crit: suspicious
+  conf: 0.9
+  mbc: C0002
+  any:
+  - id: go-http-get-readall-post
+  - id: go-http-get-string-post
+  - id: go-get-then-get
+  unless:
+  - id: metadata/package/testing/presence/harness::go-test-file
+  - id: metadata/package/testing/harness/unit/
+- id: url-deaddrop-python
+  desc: Python URL dead drop pattern
+  crit: suspicious
+  conf: 0.9
+  any:
+  - id: py-requests-url-chain
+  - id: py-requests-endpoint-chain
+  - id: py-requests-host-chain
+  - id: py-urllib-chain
+  - id: py-urllib-nested-chain
+  scope: leaf
+  unless:
+  - id: metadata/package/testing/presence/fixture::test-filename-pattern
+  - id: metadata/package/testing/presence/harness/
+  - id: metadata/path::test-directory-component
+- id: url-deaddrop-javascript
+  desc: JavaScript URL dead drop pattern
+  crit: suspicious
+  conf: 0.9
+  any:
+  - id: js-fetch-chain
+  - id: js-axios-chain
+  unless:
+  - id: metadata/build/recognized-contexts::benign-trojanized-fp-context
+  - id: metadata/build
+  - id: metadata/package/testing/presence/harness/
+  - id: metadata/path::test-directory-component
+- id: url-deaddrop-shell
+  desc: Shell URL dead drop pattern
+  crit: suspicious
+  conf: 0.9
+  any:
+  - id: shell-curl-to-shell
+  - id: shell-curl-to-python
+  - id: shell-curl-to-script-host
+  - id: shell-backtick-curl-chain
+  - id: shell-wget-to-interpreter
+  unless:
+  - id: metadata/lang/source/syntax/key-value::security-rule-runtime-script-floating-url
+- id: ruby-http-chain
+  desc: Ruby fetches a URL taken from an HTTP response body
+  crit: suspicious
+  conf: 0.8
+  for:
+  - ruby
+  all:
+  - id: micro-behaviors/communications/http/get::ruby-http-get-assign
+  - id: ruby-http-uri-from-response-body
+  unless:
+  - id: metadata/package/testing/presence/harness::test-fixture-directory
+- id: url-deaddrop
+  desc: URL dead drop / indirection pattern
+  crit: suspicious
+  conf: 0.95
+  mbc: C0002
+  any:
   - id: url-deaddrop-go
-    desc: Go URL dead drop pattern
-    crit: suspicious
-    conf: 0.9
-    mbc: "C0002"
-    any:
-      - id: go-http-get-readall-post
-      - id: go-http-get-string-post
-      - id: go-get-then-get
-    unless:
-      - id: metadata/package/testing/presence/harness::go-test-file
-      - id: metadata/package/testing/harness/unit/
   - id: url-deaddrop-python
-    desc: Python URL dead drop pattern
-    crit: suspicious
-    conf: 0.9
-    any:
-      - id: py-requests-url-chain
-      - id: py-requests-endpoint-chain
-      - id: py-requests-host-chain
-      - id: py-urllib-chain
-      - id: py-urllib-nested-chain
-    scope: leaf
-    unless:
-      - id: metadata/package/testing/presence/fixture::test-filename-pattern
-      - id: metadata/package/testing/presence/harness/
-      - id: "metadata/file/naming::test-directory-component"
   - id: url-deaddrop-javascript
-    desc: JavaScript URL dead drop pattern
-    crit: suspicious
-    conf: 0.9
-    any:
-      - id: js-fetch-chain
-      - id: js-axios-chain
-    unless:
-      - id: metadata/build/recognized-contexts::benign-trojanized-fp-context
-      - id: metadata/build/
-      - id: metadata/package/testing/presence/harness/
-      - id: "metadata/file/naming::test-directory-component"
   - id: url-deaddrop-shell
-    desc: Shell URL dead drop pattern
-    crit: suspicious
-    conf: 0.9
-    any:
-      - id: shell-curl-to-shell
-      - id: shell-curl-to-python
-      - id: shell-curl-to-script-host
-      - id: shell-backtick-curl-chain
-      - id: shell-wget-to-interpreter
-    unless:
-      - id: metadata/lang/source/syntax/key-value::security-rule-runtime-script-floating-url
   - id: ruby-http-chain
-    desc: Ruby fetches a URL taken from an HTTP response body
-    crit: suspicious
-    conf: 0.8
-    for: [ruby]
-    all:
-      - id: micro-behaviors/communications/http/get::ruby-http-get-assign
-      - id: ruby-http-uri-from-response-body
-    unless:
-      - id: metadata/package/testing/presence/harness::test-fixture-directory
-  - id: url-deaddrop
-    desc: URL dead drop / indirection pattern
-    crit: suspicious
-    conf: 0.95
-    mbc: "C0002"
-    any:
-      - id: url-deaddrop-go
-      - id: url-deaddrop-python
-      - id: url-deaddrop-javascript
-      - id: url-deaddrop-shell
-      - id: ruby-http-chain
-    unless:
-      - id: metadata/build/recognized-contexts::benign-trojanized-fp-context
-      - id: metadata/lang/source/syntax/key-value::security-rule-runtime-script-floating-url
-      - id: metadata/build/
-      - id: metadata/package/testing/presence/harness/
-      - id: "metadata/file/naming::test-directory-component"
+  unless:
+  - id: metadata/build/recognized-contexts::benign-trojanized-fp-context
+  - id: metadata/lang/source/syntax/key-value::security-rule-runtime-script-floating-url
+  - id: metadata/build
+  - id: metadata/package/testing/presence/harness/
+  - id: metadata/path::test-directory-component

@@ -1,277 +1,234 @@
-# Sub-8KB unsigned PE that embeds a cleartext HTTP URL and ShellExecuteEx is
-# a stager, not a helper: there is no room left for a real program.
-#
-# Size paired with a bare count (strings, imports) has no content-derived
-# behavior and remains represented by its metadata atoms. A conviction needs
-# the behavior legs below. A writable entry point in a tiny PE is covered by
-# metadata/binary/section/header::small-pe-writable-entry-point.
-#
-# Tiers: size or an opaque basename plus a fact every ordinary DLL or .NET
-# assembly has (one export, mscorlib, the FNV prime C# emits for string
-# switches) is notable. Plus one anomaly or one API is suspicious: plugins,
-# no_std DLLs and small launchers share those shapes. Hostile is reserved for
-# an attack sequence or concealment (download-then-execute, ROT13 paths,
-# bitmap stego). The basename is chosen by whoever saved the file, so it
-# never carries a conviction on its own.
 defaults:
-  platforms: [windows]
-  for: [pe, dll]
+  platforms:
+  - windows
+  for:
+  - pe
+  - dll
   attack: T1105,T1059
   crit: hostile
   conf: 0.94
-
 composite_rules:
-  - id: tiny-pe-http-shellexec-stager
-    desc: Tiny PE downloads then ShellExecuteEx
-    all:
-      - id: metadata/binary/layout/size::tiny-pe
-      - id: micro-behaviors/communications/http/url/scheme::http-url-shaped-text
-      - id: micro-behaviors/process/create/shellexec::shell-execute-ex-a
-    unless:
-      - id: metadata/signed/platform/
-      - id: metadata/binary/installer/family/
-      - id: well-known/lib/
-
-  - id: tiny-pe-winsock-http-stager
-    desc: Tiny PE starts Winsock then fetches HTTP
-    crit: suspicious
-    all:
-      - id: metadata/binary/layout/size::tiny-pe
-      - id: micro-behaviors/communications/socket/init::winsock-startup-ordinal
-      - id: micro-behaviors/communications/http/url/scheme::http-url-shaped-text
-    unless:
-      - id: metadata/signed/platform/
-      - id: metadata/binary/installer/family/
-      - id: well-known/lib/
-
-  - id: tiny-pe-overlay-stub
-    desc: Tiny PE carries a large non-certificate overlay
-    crit: suspicious
-    all:
-      - id: metadata/binary/layout/size::tiny-pe
-      - id: metadata/binary/layout/overlay::overlay-over-30pct
-      - id: metadata/binary/layout/size::noncertificate-unclaimed-bytes-512
-    unless:
-      - id: metadata/signed/platform/
-      - id: well-known/lib/
-      - id: "metadata/file/naming::test-directory-component"
-      - id: metadata/package/testing/presence/harness::binary-test-directory
-      - id: metadata/package/testing/presence/path::pe-adversarial-test-path
-      # A stub with no executable code stages nothing: carved slices of an
-      # inert bundle match the shape without any stager behavior.
-      - id: metadata/binary/code/entropy::code-entropy-near-zero
-
-  - id: tiny-pe-com-register
-    desc: Tiny PE exports DllRegisterServer
-    crit: notable
-    all:
-      - id: metadata/binary/layout/size::tiny-pe
-      - id: metadata/binary/symbols/exports::export-dll-register-server
-    unless:
-      - id: metadata/signed/platform/
-      - id: well-known/lib/
-
-  - id: tiny-pe-efi-header
-    desc: Tiny PE claims an EFI subsystem
-    crit: suspicious
-    all:
-      - id: metadata/binary/layout/size::tiny-pe
-      - id: metadata/binary/header/characteristics::efi-pe-subsystem
-    unless:
-      - id: metadata/signed/platform/
-      - id: well-known/lib/
-      - id: metadata/package/testing/
-      - id: well-known/app/
-
-      - id: "metadata/file/naming::test-directory-component"
-  # Size plus CreateProcessA establishes no staging; the tiny-PE metadata
-  # and process/create/exec::create-process-a atom retain those observations.
-  # CopyFileA is a separate rule below.
-  - id: tiny-pe-copyfile-stager
-    desc: Tiny PE copies files to spread
-    crit: hostile
-    conf: 0.93
-    attack: T1105
-    all:
-      - id: metadata/binary/layout/size::tiny-pe
-      - id: micro-behaviors/fs/file/copy::copyfile-a
-    unless:
-      - id: metadata/signed/platform/
-      - id: well-known/lib/
-      - id: well-known/tool/packaging/nsis-nsexec::nsis-nsexec-plugin
-      # CopyFileA in the import table is not a copy. A tiny .text that
-      # begins with RET returns before any imported call.
-      - id: metadata/binary/code/control-transfer::pe-text-immediate-return
-
-  - id: tiny-pe-rot13-path
-    desc: Tiny PE hides Windows paths with ROT13
-    all:
-      - id: metadata/binary/layout/size::tiny-pe
-      - id: micro-behaviors/data/encode/rot13::rot13-windows-path-fragment
-    unless:
-      - id: metadata/signed/platform/
-      - id: well-known/lib/
-
-  - id: tiny-pe-drive-walker
-    desc: Tiny PE walks directories via Win32 find APIs
-    crit: suspicious
-    all:
-      - id: metadata/binary/layout/size::tiny-pe
-      - id: micro-behaviors/fs/directory/readdir::find-file-walker
-    unless:
-      - id: metadata/signed/platform/
-      - id: well-known/lib/
-
-  - id: tiny-pe-opaque-name
-    desc: Tiny PE uses an opaque generated filename
-    crit: notable
-    all:
-      - id: metadata/binary/layout/size::tiny-pe
-      - id: metadata/file/naming::opaque-identifier-pe-basename
-    unless:
-      - id: metadata/signed/platform/
-      - id: well-known/lib/
-
-  - id: tiny-pe-quotation-lure
-    desc: Tiny PE uses a quotation-document lure
-    crit: suspicious
-    all:
-      - id: metadata/binary/layout/size::tiny-pe
-      - id: metadata/file/naming::quotation-exe-name
-    unless:
-      - id: metadata/signed/platform/
-      - id: well-known/lib/
-
-  - id: tiny-pe-virtual-alloc
-    desc: Tiny PE allocates executable memory
-    crit: suspicious
-    all:
-      - id: metadata/binary/layout/size::tiny-pe
-      - id: micro-behaviors/mem/alloc/virtual::virtual-alloc-string
-    unless:
-      - id: metadata/signed/platform/
-      - id: well-known/lib/
-      - id: "metadata/file/naming::test-directory-component"
-      - id: metadata/package/testing/presence/harness::binary-test-directory
-      - id: metadata/package/testing/presence/path::pe-adversarial-test-path
-
-  - id: tiny-dotnet-opaque
-    desc: Tiny .NET module uses an opaque filename
-    crit: notable
-    all:
-      - id: metadata/binary/layout/size::tiny-dotnet
-      - id: metadata/file/naming::opaque-identifier-pe-basename
-    unless:
-      - id: metadata/signed/platform/
-      - id: well-known/lib/
-
-  - id: tiny-pe-minimal-shell
-    desc: Tiny PE has a minimal ShellExecute import set
-    crit: suspicious
-    all:
-      - id: metadata/binary/layout/size::tiny-pe
-      - id: metadata/binary/symbols/imports::pe-sparse-execution-api-profile
-    unless:
-      - id: metadata/signed/platform/
-      - id: well-known/lib/
-      - id: well-known/tool/development/build/buck::dotslash-windows-shim
-
-  - id: opaque-single-import
-    desc: Opaque-named PE has a single import
-    crit: suspicious
-    all:
-      - id: metadata/file/naming::opaque-identifier-pe-basename
-      - id: metadata/binary/symbols/imports::single-import-count
-    unless:
-      - id: metadata/signed/platform/
-      - id: well-known/lib/
-      - id: metadata/binary/framework::dotnet-metadata
-      - id: metadata/binary/framework::dotnet-assembly
-
-  - id: tiny-pe-wsock32
-    desc: Tiny PE talks over WSOCK32
-    crit: suspicious
-    all:
-      - id: metadata/binary/layout/size::tiny-pe
-      - id: micro-behaviors/communications/socket/init::wsock32-dll-marker
-    unless:
-      - id: metadata/signed/platform/
-      - id: well-known/lib/
-
-
-  - id: opaque-dotnet-b64-stub
-    desc: Opaque PE Base64-decodes a payload
-    crit: notable
-    all:
-      - id: metadata/file/naming::opaque-identifier-pe-basename
-      - id: micro-behaviors/data/decode/base64::dotnet-frombase64string-text
-    unless:
-      - id: metadata/signed/platform/
-
-  - id: opaque-dotnet-stego-stub
-    desc: Opaque PE hides a bitmap-stego payload
-    all:
-      - id: metadata/file/naming::opaque-identifier-pe-basename
-      - id: micro-behaviors/ui/graphics/image::dotnet-bitmap-resource-pixel-api-references
-      - id: metadata/build/manifest::pe-manifest-myapplication-template
-    unless:
-      - id: metadata/signed/platform/
-
-  - id: opaque-dotnet-reflective-resource-stub
-    desc: Opaque .NET PE stages high-entropy embedded resources via reflection
-    crit: hostile
-    conf: 0.96
-    attack: T1027.009,T1620
-    all:
-      - id: metadata/file/naming::opaque-identifier-pe-basename
-      - id: metadata/binary/resource/entropy::clr-resource-size-and-entropy
-      - id: micro-behaviors/data/embedded/payload/resource::dotnet-managed-resource-access
-      - id: micro-behaviors/metaprogramming/reflection::invoke-member-token
-      - id: metadata/signed/trust-level::unsigned-missing-signature-record
-      - id: metadata/binary/provenance/version-info::pe-basename-differs-from-original-filename
-    unless:
-      - id: metadata/signed/platform/
-      - id: micro-behaviors/data/embedded/payload/resource::costura-bundle-marker
-      - id: objectives/evasion/masquerade/binary/loader::dotnet-template-resource-application-context
-      - id: well-known/tool/detection/security-scanner::eicar-test-string-reference
-
-  - id: opaque-dominant-overlay-stub
-    desc: Opaque PE is almost entirely overlay
-    crit: suspicious
-    all:
-      - id: metadata/file/naming::opaque-identifier-pe-basename
-      - id: metadata/binary/layout/ratio::overlay-over-90pct
-      - id: metadata/file/entropy::overall-entropy-78
-    unless:
-      - id: metadata/signed/platform/
-      - id: metadata/binary/installer/family/
-
-
-  - id: opaque-virtual-alloc-stub
-    desc: Opaque PE allocates virtual memory
-    crit: notable
-    all:
-      - id: metadata/file/naming::opaque-identifier-pe-basename
-      - id: micro-behaviors/mem/alloc/virtual::virtual-alloc
-    unless:
-      - id: metadata/signed/platform/
-      - id: metadata/binary/installer/family/
-
-  - id: opaque-mixed-export-stub
-    desc: Opaque PE exports mixed-case dummy names
-    crit: suspicious
-    all:
-      - id: metadata/file/naming::opaque-identifier-pe-basename
-      - id: metadata/binary/symbols/export-name-pattern::short-mixed-case-export-name
-    unless:
-      - id: metadata/signed/platform/
-
-  - id: opaque-writable-ep-stub
-    desc: Opaque PE enters in a writable executable section
-    crit: suspicious
-    all:
-      - id: metadata/file/naming::opaque-identifier-pe-basename
-      - id: metadata/binary/section/header::pe-entry-in-writable-section
-      - id: metadata/binary/section/permission::wx-section
-    unless:
-      - id: metadata/signed/platform/
+- id: tiny-pe-http-shellexec-stager
+  desc: Tiny PE downloads then ShellExecuteEx
+  all:
+  - id: metadata/binary/layout/size::tiny-pe
+  - id: micro-behaviors/communications/http/url/scheme::http-url-shaped-text
+  - id: micro-behaviors/process/create/shellexec::shell-execute-ex-a
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: well-known/lib
+- id: tiny-pe-winsock-http-stager
+  desc: Tiny PE starts Winsock then fetches HTTP
+  crit: suspicious
+  all:
+  - id: metadata/binary/layout/size::tiny-pe
+  - id: micro-behaviors/communications/socket/init::winsock-startup-ordinal
+  - id: micro-behaviors/communications/http/url/scheme::http-url-shaped-text
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+  - id: well-known/lib
+- id: tiny-pe-overlay-stub
+  desc: Tiny PE carries a large non-certificate overlay
+  crit: suspicious
+  all:
+  - id: metadata/binary/layout/size::tiny-pe
+  - id: metadata/binary/layout/overlay::overlay-over-30pct
+  - id: metadata/binary/layout/size::noncertificate-unclaimed-bytes-512
+  unless:
+  - id: metadata/signed/platform/
+  - id: well-known/lib
+  - id: metadata/path::test-directory-component
+  - id: metadata/package/testing/presence/harness::binary-test-directory
+  - id: metadata/package/testing/presence/path::pe-adversarial-test-path
+  - id: metadata/binary/code/entropy::code-entropy-near-zero
+- id: tiny-pe-com-register
+  desc: Tiny PE exports DllRegisterServer
+  crit: notable
+  all:
+  - id: metadata/binary/layout/size::tiny-pe
+  - id: metadata/binary/symbols/exports::export-dll-register-server
+  unless:
+  - id: metadata/signed/platform/
+  - id: well-known/lib
+- id: tiny-pe-efi-header
+  desc: Tiny PE claims an EFI subsystem
+  crit: suspicious
+  all:
+  - id: metadata/binary/layout/size::tiny-pe
+  - id: metadata/binary/header/characteristics::efi-pe-subsystem
+  unless:
+  - id: metadata/signed/platform/
+  - id: well-known/lib
+  - id: metadata/package/testing/
+  - id: well-known/app
+  - id: metadata/path::test-directory-component
+- id: tiny-pe-copyfile-stager
+  desc: Tiny PE copies files to spread
+  crit: hostile
+  conf: 0.93
+  attack: T1105
+  all:
+  - id: metadata/binary/layout/size::tiny-pe
+  - id: micro-behaviors/fs/file/copy::copyfile-a
+  unless:
+  - id: metadata/signed/platform/
+  - id: well-known/lib
+  - id: well-known/tool/packaging/nsis-nsexec::nsis-nsexec-plugin
+  - id: metadata/binary/code/control-transfer::pe-text-immediate-return
+- id: tiny-pe-rot13-path
+  desc: Tiny PE hides Windows paths with ROT13
+  all:
+  - id: metadata/binary/layout/size::tiny-pe
+  - id: micro-behaviors/data/encode/rot13::rot13-windows-path-fragment
+  unless:
+  - id: metadata/signed/platform/
+  - id: well-known/lib
+- id: tiny-pe-drive-walker
+  desc: Tiny PE walks directories via Win32 find APIs
+  crit: suspicious
+  all:
+  - id: metadata/binary/layout/size::tiny-pe
+  - id: micro-behaviors/fs/directory/readdir::find-file-walker
+  unless:
+  - id: metadata/signed/platform/
+  - id: well-known/lib
+- id: tiny-pe-opaque-name
+  desc: Tiny PE uses an opaque generated filename
+  crit: notable
+  all:
+  - id: metadata/binary/layout/size::tiny-pe
+  - id: metadata/filename/name-form::opaque-identifier-pe-basename
+  unless:
+  - id: metadata/signed/platform/
+  - id: well-known/lib
+- id: tiny-pe-quotation-lure
+  desc: Tiny PE uses a quotation-document lure
+  crit: suspicious
+  all:
+  - id: metadata/binary/layout/size::tiny-pe
+  - id: metadata/filename/name-form::quotation-exe-name
+  unless:
+  - id: metadata/signed/platform/
+  - id: well-known/lib
+- id: tiny-pe-virtual-alloc
+  desc: Tiny PE allocates executable memory
+  crit: suspicious
+  all:
+  - id: metadata/binary/layout/size::tiny-pe
+  - id: micro-behaviors/mem/alloc/virtual::virtual-alloc-string
+  unless:
+  - id: metadata/signed/platform/
+  - id: well-known/lib
+  - id: metadata/path::test-directory-component
+  - id: metadata/package/testing/presence/harness::binary-test-directory
+  - id: metadata/package/testing/presence/path::pe-adversarial-test-path
+- id: tiny-dotnet-opaque
+  desc: Tiny .NET module uses an opaque filename
+  crit: notable
+  all:
+  - id: metadata/binary/layout/size::tiny-dotnet
+  - id: metadata/filename/name-form::opaque-identifier-pe-basename
+  unless:
+  - id: metadata/signed/platform/
+  - id: well-known/lib
+- id: tiny-pe-minimal-shell
+  desc: Tiny PE has a minimal ShellExecute import set
+  crit: suspicious
+  all:
+  - id: metadata/binary/layout/size::tiny-pe
+  - id: metadata/binary/symbols/imports::pe-sparse-execution-api-profile
+  unless:
+  - id: metadata/signed/platform/
+  - id: well-known/lib
+  - id: well-known/tool/development/build/buck::dotslash-windows-shim
+- id: opaque-single-import
+  desc: Opaque-named PE has a single import
+  crit: suspicious
+  all:
+  - id: metadata/filename/name-form::opaque-identifier-pe-basename
+  - id: metadata/binary/symbols/imports::single-import-count
+  unless:
+  - id: metadata/signed/platform/
+  - id: well-known/lib
+  - id: metadata/binary/framework::dotnet-metadata
+  - id: metadata/binary/framework::dotnet-assembly
+- id: tiny-pe-wsock32
+  desc: Tiny PE talks over WSOCK32
+  crit: suspicious
+  all:
+  - id: metadata/binary/layout/size::tiny-pe
+  - id: micro-behaviors/communications/socket/init::wsock32-dll-marker
+  unless:
+  - id: metadata/signed/platform/
+  - id: well-known/lib
+- id: opaque-dotnet-b64-stub
+  desc: Opaque PE Base64-decodes a payload
+  crit: notable
+  all:
+  - id: metadata/filename/name-form::opaque-identifier-pe-basename
+  - id: metadata/lang/source/naming/resource::dotnet-frombase64string-text
+  unless:
+  - id: metadata/signed/platform/
+- id: opaque-dotnet-stego-stub
+  desc: Opaque PE hides a bitmap-stego payload
+  all:
+  - id: metadata/filename/name-form::opaque-identifier-pe-basename
+  - id: micro-behaviors/ui/graphics/image::dotnet-bitmap-resource-pixel-api-references
+  - id: metadata/build/manifest::pe-manifest-myapplication-template
+  unless:
+  - id: metadata/signed/platform/
+- id: opaque-dotnet-reflective-resource-stub
+  desc: Opaque .NET PE stages high-entropy embedded resources via reflection
+  crit: hostile
+  conf: 0.96
+  attack: T1027.009,T1620
+  all:
+  - id: metadata/filename/name-form::opaque-identifier-pe-basename
+  - id: metadata/binary/resource/entropy::clr-resource-size-and-entropy
+  - id: micro-behaviors/data/embedded/payload/resource::dotnet-managed-resource-access
+  - id: micro-behaviors/metaprogramming/reflection::invoke-member-token
+  - id: metadata/signed/trust-level::unsigned-missing-signature-record
+  - id: metadata/binary/provenance/version-info::pe-basename-differs-from-original-filename
+  unless:
+  - id: metadata/signed/platform/
+  - id: micro-behaviors/data/embedded/payload/resource::costura-bundle-marker
+  - id: objectives/evasion/masquerade/binary/loader::dotnet-template-resource-application-context
+  - id: well-known/tool/detection/security-scanner::eicar-test-string-reference
+- id: opaque-dominant-overlay-stub
+  desc: Opaque PE is almost entirely overlay
+  crit: suspicious
+  all:
+  - id: metadata/filename/name-form::opaque-identifier-pe-basename
+  - id: metadata/binary/layout/ratio::overlay-over-90pct
+  - id: metadata/file/entropy::overall-entropy-78
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+- id: opaque-virtual-alloc-stub
+  desc: Opaque PE allocates virtual memory
+  crit: notable
+  all:
+  - id: metadata/filename/name-form::opaque-identifier-pe-basename
+  - id: micro-behaviors/mem/alloc/virtual::virtual-alloc
+  unless:
+  - id: metadata/signed/platform/
+  - id: metadata/binary/installer/family/
+- id: opaque-mixed-export-stub
+  desc: Opaque PE exports mixed-case dummy names
+  crit: suspicious
+  all:
+  - id: metadata/filename/name-form::opaque-identifier-pe-basename
+  - id: metadata/binary/symbols/export-name-pattern::short-mixed-case-export-name
+  unless:
+  - id: metadata/signed/platform/
+- id: opaque-writable-ep-stub
+  desc: Opaque PE enters in a writable executable section
+  crit: suspicious
+  all:
+  - id: metadata/filename/name-form::opaque-identifier-pe-basename
+  - id: metadata/binary/section/header::pe-entry-in-writable-section
+  - id: metadata/binary/section/permission::wx-section
+  unless:
+  - id: metadata/signed/platform/

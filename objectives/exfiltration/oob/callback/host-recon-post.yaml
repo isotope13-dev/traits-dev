@@ -1,121 +1,99 @@
-# Host identity POSTed to an out-of-band callback service.
-#
-# The recon is ordinary on its own -- hostname, login name, platform, working
-# directory, CI variables, a public-IP lookup and a geolocation call are all
-# things a diagnostic reports. What settles it is where the report goes. An
-# oastify.com, interact.sh or burpcollaborator.net hostname belongs to
-# whoever generated it; nothing resolves there for the package's own benefit,
-# and no diagnostic sends its findings to a name a stranger minted an hour ago.
-#
-# Ruby here, but the legs are language-neutral on purpose: the same package
-# published to npm or PyPI differs only in which HTTP client it reaches for.
 defaults:
-  platforms: [unix, windows]
-  for: [scripts, source]
+  platforms:
+  - unix
+  - windows
+  for:
+  - scripts
+  - source
   attack: T1041,T1082,T1590
   mbc: C0011
-
+  crit: hostile
 composite_rules:
-  - id: oob-service-http-host-recon
-    for: [shell, python, javascript, rust, ruby, go, php, powershell]
-    desc: POSTs host identity to an OOB service
-    crit: hostile
-    conf: 0.95
-    # Archive-wide co-occurrence joins scanner help text to unrelated HTTP
-    # utilities. Require a local source chain before inferring a beacon.
-    scope: file
-    near_lines: 60
-    all:
-      - id: micro-behaviors/communications/url/host/oob::oob-endpoint-any
-      - id: micro-behaviors/communications/http/post/
+- id: oob-service-http-host-recon
+  for:
+  - shell
+  - python
+  - javascript
+  - rust
+  - ruby
+  - go
+  - php
+  - powershell
+  desc: POSTs host identity to an OOB service
+  conf: 0.95
+  scope: file
+  near_lines: 60
+  all:
+  - id: micro-behaviors/communications/url/host/oob::oob-endpoint-any
+  - id: micro-behaviors/communications/http/post
+  any:
+  - id: micro-behaviors/os/sysinfo/hostname/
+  - id: micro-behaviors/os/env/read::ci-env-reference-set
+  - id: micro-behaviors/communications/http/ip-discovery/
+  - id: micro-behaviors/os/user/lookup::user-query-api-set
+  needs: 2
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: well-known/tool/detection/security-scanner/
+  - id: well-known/tool/detection/opena2a-arp/
+  - id: metadata/file/policy/identity::agent-action-security-policy-context
+  - id: metadata/file/catalog/identity::embedded-domain-blocklist-context
+  - id: objectives/supply-chain/impersonation/brand::npm-wix-registry-facade-command-exfil
+  - id: metadata/package/testing/corpus::rule-test-case-detection-verdicts
+  downgrade:
     any:
-      - id: micro-behaviors/os/sysinfo/hostname/
-      - id: micro-behaviors/os/env/read::ci-env-reference-set
-      - id: micro-behaviors/communications/http/ip-discovery/
-      - id: micro-behaviors/os/user/lookup::user-query-api-set
-    needs: 2
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: well-known/tool/detection/security-scanner/
-      - id: well-known/tool/detection/opena2a-arp/
-      - id: metadata/file/policy/identity::agent-action-security-policy-context
-      # Hostname-shaped strings inside an embedded domain blocklist are
-      # data to be blocked, not a callback endpoint the program contacts.
-      - id: metadata/file/catalog/identity::embedded-domain-blocklist-context
-      - id: objectives/supply-chain/impersonation/brand::npm-wix-registry-facade-command-exfil
-      - id: metadata/package/testing/corpus::rule-test-case-detection-verdicts
-    # The OAST-specific composite below restates this same POST with an
-    # attack-specific destination; step down when it fires so one exfil is
-    # not convicted twice.
-    downgrade:
-      any:
-        - id: objectives/exfiltration/stealer/system-info/identity::js-hostname-json-oob-post-clues
-
-  - id: oob-unverified-tls-host-recon
-    for: [python]
-    desc: Unverified TLS posts host identity to OOB
-    crit: hostile
-    conf: 0.96
-    all:
-      - id: micro-behaviors/communications/tls/verify/disable::unverified-ssl-context
-      - id: micro-behaviors/communications/url/host/oob::oob-endpoint-any
-      - id: micro-behaviors/process/user/query::python-getpass-user
-
-  # The claim is that one curl invocation carries the host identity out, so
-  # the argv list, the hostname read and the cwd read have to be the same
-  # piece of code. Without a proximity bound the three legs are just three
-  # ordinary facts about a large Python program -- a subprocess curl call in
-  # one helper, a `socket.gethostname()` label in another, an `os.getcwd()`
-  # workspace default in a third -- and any sizeable CLI or dashboard module
-  # satisfies all three by accident.
-  - id: python-curl-host-cwd-exfil
-    for: [python]
-    desc: curl sends hostname and cwd out
-    crit: hostile
-    conf: 0.95
-    scope: leaf
-    near_lines: 8
-    all:
-      - id: micro-behaviors/communications/url/host/oob::oob-endpoint-any
-      - id: micro-behaviors/communications/http/curl::python-curl-argv-list
-      - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
-      - id: micro-behaviors/fs/directory/cwd::python-os-getcwd
-
-  - id: init-daemon-thread-host-beacon
-    for: [python]
-    desc: Init file starts a daemon host beacon
-    crit: hostile
-    conf: 0.95
-    all:
-      - id: metadata/file/size::init-py-file
-      - id: micro-behaviors/process/create/thread::python-daemon-thread
-      - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
-      - id: micro-behaviors/communications/url/host/oob::oob-endpoint-any
-
-  - id: python-background-thread-posts-hostname
-    for: [python]
-    desc: Background thread posts the hostname
-    crit: hostile
-    conf: 0.96
-    scope: file
-    near_lines: 35
-    all:
-      - id: micro-behaviors/communications/http/post::requests-post
-      - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
-      - id: micro-behaviors/process/create/thread::python-thread-daemon-assignment
-      - id: micro-behaviors/process/create/thread::python-column0-thread-start
-
-  - id: python-build-posts-process-ancestry
-    desc: Build step posts process ancestry
-    crit: hostile
-    conf: 0.95
-    for: [python]
-    attack: T1041,T1057
-    near_lines: 50
-    all:
-      - id: micro-behaviors/communications/http/request/json::urllib-json-request-body
-      - id: micro-behaviors/os/sysinfo/performance::python-psutil-process-metrics
-      # "Ancestry" is the parent chain. A process handle read for memory or CPU
-      # figures next to a JSON request (a local-model controller polling an
-      # Ollama API) reports no lineage.
-      - id: micro-behaviors/process/info/query::python-psutil-process-ancestry-call
+    - id: objectives/exfiltration/stealer/system-info/identity::js-hostname-json-oob-post-clues
+- id: oob-unverified-tls-host-recon
+  for:
+  - python
+  desc: Unverified TLS posts host identity to OOB
+  conf: 0.96
+  all:
+  - id: micro-behaviors/communications/tls/verify/disable::unverified-ssl-context
+  - id: micro-behaviors/communications/url/host/oob::oob-endpoint-any
+  - id: micro-behaviors/process/user/query::python-getpass-user
+- id: python-curl-host-cwd-exfil
+  for:
+  - python
+  desc: curl sends hostname and cwd out
+  conf: 0.95
+  scope: leaf
+  near_lines: 8
+  all:
+  - id: micro-behaviors/communications/url/host/oob::oob-endpoint-any
+  - id: micro-behaviors/communications/http/curl::python-curl-argv-list
+  - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
+  - id: micro-behaviors/fs/directory/cwd::python-os-getcwd
+- id: init-daemon-thread-host-beacon
+  for:
+  - python
+  desc: Init file starts a daemon host beacon
+  conf: 0.95
+  all:
+  - id: metadata/file/size::init-py-file
+  - id: micro-behaviors/process/create/thread::python-daemon-thread
+  - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
+  - id: micro-behaviors/communications/url/host/oob::oob-endpoint-any
+- id: python-background-thread-posts-hostname
+  for:
+  - python
+  desc: Background thread posts the hostname
+  conf: 0.96
+  scope: file
+  near_lines: 35
+  all:
+  - id: micro-behaviors/communications/http/post::requests-post
+  - id: micro-behaviors/os/sysinfo/hostname::python-socket-gethostname
+  - id: micro-behaviors/process/create/thread::python-thread-daemon-assignment
+  - id: micro-behaviors/process/create/thread::python-column0-thread-start
+- id: python-build-posts-process-ancestry
+  desc: Build step posts process ancestry
+  conf: 0.95
+  for:
+  - python
+  attack: T1041,T1057
+  near_lines: 50
+  all:
+  - id: micro-behaviors/communications/http/request/json::urllib-json-request-body
+  - id: micro-behaviors/os/sysinfo/performance::python-psutil-process-metrics
+  - id: micro-behaviors/process/info/query::python-psutil-process-ancestry-call

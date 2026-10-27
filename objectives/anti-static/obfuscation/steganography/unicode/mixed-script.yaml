@@ -1,309 +1,286 @@
 defaults:
-  platforms: [windows, unix]
+  platforms:
+  - windows
+  - unix
   mbc: B0032
   for:
-    - javascript
-    - typescript
+  - javascript
+  - typescript
 traits:
-  - id: dense-non-ascii
-    desc: Dense non-ASCII character payload
-    crit: component
-    conf: 0.6
-    attack: T1027
-    count_min: 3
-    per_kb_min: 0.5
-    if:
-      type: string_literal
-      # The extractor's string-literal matcher measures this class in UTF-8
-      # bytes. Thirty bytes is roughly ten three-byte script characters, so a
-      # short localized word cannot look like a payload.
-      regex: '[^\x00-\x7F]{30}'
-    unless:
-      - id: metadata/file/format/
-      - id: metadata/lang/locale::js-locale-registration-module
-      - id: metadata/lang/locale::moment-legacy-locale-fallback
-      - id: metadata/file/catalog/pattern-rules::secret-pattern-catalog-known-benign-context
-  - id: international-script-obfuscation
-    desc: Dense international-script letter payload
-    crit: component
-    conf: 0.5
-    attack: T1027
-    count_min: 5
-    if:
-      type: string_literal
-      # A single localized word is not an obfuscation signal. Require a long
-      # uninterrupted run of script letters so normal UI prose does not feed
-      # the obfuscation composites. Include Syriac (Quotation.js alphabet maps).
-      regex: '[\p{Devanagari}\p{Cyrillic}\p{Arabic}\p{Hebrew}\p{Han}\p{Syriac}]{10}'
-    unless:
-      - id: metadata/file/format/
-      - id: metadata/lang/locale::js-locale-registration-module
-      - id: metadata/lang/locale::moment-legacy-locale-fallback
-      - id: metadata/file/catalog/pattern-rules::secret-pattern-catalog-known-benign-context
-  - id: mixed-unicode-blocks
-    desc: Mixed Unicode block obfuscation
-    crit: suspicious
-    conf: 0.85
-    attack: T1027
-    count_min: 2
-    if:
-      type: text
-      regex: '[\U00010000-\U0010FFFF][\u0900-\u097F][\U0001F000-\U0001F999]'
-  # `[^\x00-\x7F]{3,}` counts BYTES, so a single 3-byte box-drawing glyph
-  # (`+ '═'` in a console table) satisfied it -- a test runner drawing a banner
-  # tripped this as steganography. Match 3+ non-ASCII LETTERS instead, which is
-  # what homoglyph / CJK string-splitting payloads use and decoration is not.
-  - id: unicode-string-concatenation
-    desc: Unicode character string concatenation
-    crit: notable
-    conf: 0.78
-    attack: T1027
-    for: [javascript, html]
-    count_min: 5
-    per_kb_min: 0.3
-    if:
-      type: text
-      regex: \+\s*["'][\p{L}--\p{ASCII}]{3,}["']
-  - id: js-nonascii-split-join-cleanup
-    desc: Non-ASCII marker split-join cleanup
-    crit: suspicious
-    conf: 0.94
-    attack: T1027.002
-    for: [javascript, html]
-    count_min: 2
-    if:
-      type: text
-      regex: '\.split\(\s*["''][^\x00-\x7F]{4,}["'']\s*\)\s*\.join\(\s*["'']["'']\s*\)'
-    unless:
-      - id: metadata/build/
-  - id: js-nonascii-replace-cleanup
-    desc: Non-ASCII marker replace cleanup
-    crit: suspicious
-    conf: 0.9
-    attack: T1027.002
-    for: [javascript, html]
-    if:
-      type: text
-      # The gap before the marker may not open a character class: a run of
-      # non-ASCII punctuation or numerals inside [...] (fullwidth ，。；
-      # ：, CJK 一二三 enumeration marks) is an i18n character class in a
-      # text-cleaning regex, not an inserted marker sequence. Count code
-      # points, not bytes: SSE/JSON parsers strip a BOM written as the
-      # escape `\xEF\xBB\xBF`, which decodes to three Latin-1 characters.
-      # Letters after the non-ASCII run are a labeled pattern (a Chinese
-      # config header), not a marker being stripped. The run has to end
-      # the regex body, or only punctuation may follow it. ASCII-only
-      # exclusion still matches Cyrillic letters, so word alternations are
-      # dropped below instead of widening this class (that blows the NFA).
-      regex: '\.replace\(/[^/\n\[]{0,40}\P{ASCII}{4,}[^/\nA-Za-z]{0,8}/[a-z]*\s*,\s*["'']{2}\)'
-    unless:
-      # The dedicated conceal trait owns pure non-ASCII delimiter matches;
-      # retain this broader matcher for mixed marker expressions.
-      - id: objectives/anti-static/obfuscation/string/conceal::js-nonascii-delimiter-regex-strip
-    # CJK, kana, hangul, Arabic, and Cyrillic runs are words being stripped
-    # from UI or locale text, not an inserted marker sequence. Arabic and
-    # Cyrillic stay in the filter rather than the matcher: \p{L} in the
-    # counted class exceeds the NFA budget.
-    not:
-      - regex: '[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]{2}'
-      - regex: '[\p{Arabic}]{2}'
-      - regex: '[а-яА-ЯёЁіїєґІЇЄҐ]{2}'
-  - id: js-unicode-delimited-appdomain-fragment
-    desc: Unicode-delimited AppDomain token fragment
-    crit: component
-    conf: 0.94
-    for: [javascript, html, vbs]
-    if:
-      type: text
-      # Some loaders insert the same multi-codepoint non-ASCII marker between
-      # every character. Match the start of AppDomain across that marker rather
-      # than requiring a single separator and an arbitrary intervening token.
-      regex: 'A\P{ASCII}{4,32}p\P{ASCII}{4,32}p\P{ASCII}{4,32}D'
-  - id: js-unicode-delimited-base64-fragment
-    desc: Unicode-delimited Base64 decoder fragment
-    crit: component
-    conf: 0.94
-    for: [javascript, html, vbs]
-    if:
-      type: text
-      # Match `From` when each character is separated by a repeated Unicode
-      # marker, including multi-codepoint markers.
-      regex: 'F\P{ASCII}{4,32}r\P{ASCII}{4,32}o'
-  - id: mixed-ascii-unicode
-    desc: Mixed ASCII and Unicode-letter obfuscation
-    crit: component
-    conf: 0.6
-    attack: T1027
-    count_min: 10
-    if:
-      type: literal
-      # Match three non-ASCII letters, not three UTF-8 bytes. A single
-      # punctuation glyph such as an em dash occupies three bytes and is
-      # ordinary prose, not mixed-script string hiding.
-      regex: '[\x00-\x7F]{3,}[\p{L}--\p{ASCII}]{3,}[\x00-\x7F]{3,}'
-  - id: moment-locale-lib
-    desc: Moment.js locale definition
-    crit: baseline
-    if:
-      type: text
-      substr: defineLocale
-    unless:
-    # The symbol records the API being used; this also sees the name sitting in
-    # data. Standing down there keeps one use from counting twice.
-    - id: objectives/anti-static/obfuscation/string/encoding::js-define-locale-call
-  - id: moment-locale-ref
-    desc: Moment.js locale reference
-    crit: baseline
-    if:
-      type: text
-      substr: moment.locale
-  - id: l10n-basename
-    desc: Localization file
-    crit: baseline
-    if:
-      type: path
-      basename: true
-      substr: l10n
-  - id: locales-directory
-    desc: Locales directory path
-    crit: baseline
-    if:
-      type: path
-      regex: '(^|[\\/])locales?[\\/]'
-  - id: languages-basename
-    desc: Languages file
-    crit: baseline
-    if:
-      type: path
-      basename: true
-      substr: languages
-  - id: mjsunit-basename
-    desc: V8 mjsunit test path
-    crit: notable
-    if:
-      type: path
-      regex: (^|[\\/])mjsunit([\\/]|$)
-  - id: unicode-test-basename
-    desc: Unicode test file path
-    crit: notable
-    if:
-      type: path
-      regex: (^|[\\/])unicode-test\.
+- id: dense-non-ascii
+  desc: Dense non-ASCII character payload
+  crit: component
+  conf: 0.6
+  attack: T1027
+  count_min: 3
+  per_kb_min: 0.5
+  if:
+    type: string_literal
+    regex: '[^\x00-\x7F]{30}'
+  unless:
+  - id: metadata/file/format/
+  - id: metadata/lang/locale::js-locale-registration-module
+  - id: metadata/lang/locale::moment-legacy-locale-fallback
+  - id: metadata/file/catalog/pattern-rules::secret-pattern-catalog-known-benign-context
+- id: international-script-obfuscation
+  desc: Dense international-script letter payload
+  crit: component
+  conf: 0.5
+  attack: T1027
+  count_min: 5
+  if:
+    type: string_literal
+    regex: '[\p{Devanagari}\p{Cyrillic}\p{Arabic}\p{Hebrew}\p{Han}\p{Syriac}]{10}'
+  unless:
+  - id: metadata/file/format/
+  - id: metadata/lang/locale::js-locale-registration-module
+  - id: metadata/lang/locale::moment-legacy-locale-fallback
+  - id: metadata/file/catalog/pattern-rules::secret-pattern-catalog-known-benign-context
+- id: mixed-unicode-blocks
+  desc: Mixed Unicode block obfuscation
+  crit: suspicious
+  conf: 0.85
+  attack: T1027
+  count_min: 2
+  if:
+    type: text
+    regex: '[\U00010000-\U0010FFFF][\u0900-\u097F][\U0001F000-\U0001F999]'
+- id: unicode-string-concatenation
+  desc: Unicode character string concatenation
+  crit: notable
+  conf: 0.78
+  attack: T1027
+  for:
+  - javascript
+  - html
+  count_min: 5
+  per_kb_min: 0.3
+  if:
+    type: text
+    regex: \+\s*["'][\p{L}--\p{ASCII}]{3,}["']
+- id: js-nonascii-split-join-cleanup
+  desc: Non-ASCII marker split-join cleanup
+  crit: suspicious
+  conf: 0.94
+  attack: T1027.002
+  for:
+  - javascript
+  - html
+  count_min: 2
+  if:
+    type: text
+    regex: \.split\(\s*["'][^\x00-\x7F]{4,}["']\s*\)\s*\.join\(\s*["']["']\s*\)
+  unless:
+  - id: metadata/build
+- id: js-nonascii-replace-cleanup
+  desc: Non-ASCII marker replace cleanup
+  crit: suspicious
+  conf: 0.9
+  attack: T1027.002
+  for:
+  - javascript
+  - html
+  if:
+    type: text
+    regex: \.replace\(/[^/\n\[]{0,40}\P{ASCII}{4,}[^/\nA-Za-z]{0,8}/[a-z]*\s*,\s*["']{2}\)
+  unless:
+  - id: objectives/anti-static/obfuscation/string/conceal::js-nonascii-delimiter-regex-strip
+  not:
+  - regex: '[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]{2}'
+  - regex: '[\p{Arabic}]{2}'
+  - regex: '[а-яА-ЯёЁіїєґІЇЄҐ]{2}'
+- id: js-unicode-delimited-appdomain-fragment
+  desc: Unicode-delimited AppDomain token fragment
+  crit: component
+  conf: 0.94
+  for:
+  - javascript
+  - html
+  - vbs
+  if:
+    type: text
+    regex: A\P{ASCII}{4,32}p\P{ASCII}{4,32}p\P{ASCII}{4,32}D
+- id: js-unicode-delimited-base64-fragment
+  desc: Unicode-delimited Base64 decoder fragment
+  crit: component
+  conf: 0.94
+  for:
+  - javascript
+  - html
+  - vbs
+  if:
+    type: text
+    regex: F\P{ASCII}{4,32}r\P{ASCII}{4,32}o
+- id: mixed-ascii-unicode
+  desc: Mixed ASCII and Unicode-letter obfuscation
+  crit: component
+  conf: 0.6
+  attack: T1027
+  count_min: 10
+  if:
+    type: literal
+    regex: '[\x00-\x7F]{3,}[\p{L}--\p{ASCII}]{3,}[\x00-\x7F]{3,}'
+- id: moment-locale-lib
+  desc: Moment.js locale definition
+  crit: baseline
+  if:
+    type: text
+    substr: defineLocale
+  unless:
+  - id: objectives/anti-static/obfuscation/string/encoding::js-define-locale-call
+- id: moment-locale-ref
+  desc: Moment.js locale reference
+  crit: baseline
+  if:
+    type: text
+    substr: moment.locale
+- id: l10n-basename
+  desc: Localization file
+  crit: baseline
+  if:
+    type: path
+    basename: true
+    substr: l10n
+- id: locales-directory
+  desc: Locales directory path
+  crit: baseline
+  if:
+    type: path
+    regex: (^|[\\/])locales?[\\/]
+- id: languages-basename
+  desc: Languages file
+  crit: baseline
+  if:
+    type: path
+    basename: true
+    substr: languages
+- id: mjsunit-basename
+  desc: V8 mjsunit test path
+  crit: notable
+  if:
+    type: path
+    regex: (^|[\\/])mjsunit([\\/]|$)
+- id: unicode-test-basename
+  desc: Unicode test file path
+  crit: notable
+  if:
+    type: path
+    regex: (^|[\\/])unicode-test\.
 composite_rules:
-  - id: advanced-unicode-obfuscation
-    desc: Advanced Unicode obfuscation pattern
-    crit: suspicious
-    conf: 0.94
-    attack: T1027
-    near_lines: 80
-    unless:
-      - id: metadata/file/invisible-unicode/
-      - id: metadata/file/format/
-      - id: metadata/lang/locale::cjk-ui-prose-source
-      - id: metadata/lang/locale::japanese-prose-source
-      - id: metadata/build/
-      - id: mjsunit-basename
-      - id: unicode-test-basename
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/file/catalog/pattern-rules::secret-pattern-catalog-known-benign-context
-    all:
-      - id: unicode-string-concatenation
-      - id: mixed-unicode-blocks
-  - id: unicode-string-hiding
-    desc: Unicode-based string hiding technique
-    crit: suspicious
-    conf: 0.85
-    attack: T1027.002
-    near_lines: 60
-    unless:
-      - id: mjsunit-basename
-      - id: unicode-test-basename
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/file/format/
-      # Any locale-file identity (registration module, prose source, quoted
-      # string dictionary, formatted or minified) marks the non-ASCII runs as
-      # translations rather than hidden strings.
-      - id: metadata/lang/locale/
-      - id: metadata/build/
-      - id: metadata/file/catalog/pattern-rules::secret-pattern-catalog-known-benign-context
-    all:
-      - id: dense-non-ascii
-      - id: mixed-ascii-unicode
-    any:
-      - id: metadata/file/invisible-unicode::unicode-identifier-or-key
-  - id: international-script-obfuscation-complex
-    desc: Complex international script obfuscation
-    crit: suspicious
-    conf: 0.88
-    attack: T1027
-    near_lines: 60
-    unless:
-      - id: metadata/file/format/
-      - id: metadata/lang/locale::cjk-ui-prose-source
-      - id: metadata/lang/locale::japanese-prose-source
-      - id: metadata/file/catalog/pattern-rules::secret-pattern-catalog-known-benign-context
-    all:
-      - id: international-script-obfuscation
-      - id: unicode-string-concatenation
-    any:
-      - id: metadata/lang/encoding::js-three-unicode-escapes
-      - id: mixed-unicode-blocks
-  - id: localization-unicode-marker
-    desc: Localization Unicode marker
-    crit: baseline
-    any:
-      - id: moment-locale-lib
-      - id: moment-locale-ref
-      - id: micro-behaviors/data/format/locale::js-locale-formatting-call
-      - id: metadata/file/naming::i18n-basename
-      - id: l10n-basename
-      - id: metadata/file/naming::locale-basename
-      - id: locales-directory
-      - id: languages-basename
+- id: advanced-unicode-obfuscation
+  desc: Advanced Unicode obfuscation pattern
+  crit: suspicious
+  conf: 0.94
+  attack: T1027
+  near_lines: 80
+  unless:
+  - id: metadata/file/invisible-unicode/
+  - id: metadata/file/format/
+  - id: metadata/lang/locale::cjk-ui-prose-source
+  - id: metadata/lang/locale::japanese-prose-source
+  - id: metadata/build
+  - id: mjsunit-basename
+  - id: unicode-test-basename
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/file/catalog/pattern-rules::secret-pattern-catalog-known-benign-context
+  all:
+  - id: unicode-string-concatenation
+  - id: mixed-unicode-blocks
+- id: unicode-string-hiding
+  desc: Unicode-based string hiding technique
+  crit: suspicious
+  conf: 0.85
+  attack: T1027.002
+  near_lines: 60
+  unless:
+  - id: mjsunit-basename
+  - id: unicode-test-basename
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/file/format/
+  - id: metadata/lang/locale/
+  - id: metadata/build
+  - id: metadata/file/catalog/pattern-rules::secret-pattern-catalog-known-benign-context
+  all:
+  - id: dense-non-ascii
+  - id: mixed-ascii-unicode
+  any:
+  - id: metadata/file/invisible-unicode::unicode-identifier-or-key
+- id: international-script-obfuscation-complex
+  desc: Complex international script obfuscation
+  crit: suspicious
+  conf: 0.88
+  attack: T1027
+  near_lines: 60
+  unless:
+  - id: metadata/file/format/
+  - id: metadata/lang/locale::cjk-ui-prose-source
+  - id: metadata/lang/locale::japanese-prose-source
+  - id: metadata/file/catalog/pattern-rules::secret-pattern-catalog-known-benign-context
+  all:
+  - id: international-script-obfuscation
+  - id: unicode-string-concatenation
+  any:
+  - id: metadata/lang/encoding::js-three-unicode-escapes
+  - id: mixed-unicode-blocks
+- id: localization-unicode-marker
+  desc: Localization Unicode marker
+  crit: baseline
+  any:
+  - id: moment-locale-lib
+  - id: moment-locale-ref
+  - id: micro-behaviors/data/format/locale::js-locale-formatting-call
+  - id: metadata/filename/name-form::i18n-basename
+  - id: l10n-basename
+  - id: metadata/filename/name-form::locale-basename
+  - id: locales-directory
+  - id: languages-basename
+- id: unicode-delimited-managed-loader-tokens
+  desc: Unicode delimiters split managed payload-loader API tokens
+  crit: suspicious
+  conf: 0.98
+  attack: T1027.002,T1140,T1620
+  for:
+  - javascript
+  - vbs
+  all:
+  - id: js-unicode-delimited-appdomain-fragment
+  - id: js-unicode-delimited-base64-fragment
+  - id: metadata/lang/encoding::non-ascii-script-text
+- id: vbs-unicode-delimited-hidden-managed-loader
+  desc: Unicode marker conceals a hidden WMI managed payload loader
+  crit: hostile
+  conf: 0.995
+  attack: T1027.002,T1047,T1059.001,T1105,T1140,T1564.003,T1620
+  for:
+  - vbs
+  all:
   - id: unicode-delimited-managed-loader-tokens
-    desc: Unicode delimiters split managed payload-loader API tokens
-    crit: suspicious
-    conf: 0.98
-    attack: T1027.002,T1140,T1620
-    for: [javascript, vbs]
-    all:
-      - id: js-unicode-delimited-appdomain-fragment
-      - id: js-unicode-delimited-base64-fragment
-      - id: metadata/lang/encoding::non-ascii-script-text
-
-  - id: vbs-unicode-delimited-hidden-managed-loader
-    desc: Unicode marker conceals a hidden WMI managed payload loader
-    crit: hostile
-    conf: 0.995
-    attack: T1027.002,T1047,T1059.001,T1105,T1140,T1564.003,T1620
-    for: [vbs]
-    all:
-      - id: unicode-delimited-managed-loader-tokens
-      - id: objectives/anti-static/obfuscation/string/delimiter::vbs-unicode-marker-split
-      - id: objectives/execution/wmi::vbs-http-range-reflective-wmi-loader
-
-  - id: js-unicode-delimited-hidden-managed-loader
-    desc: Unicode marker conceals a hidden WMI managed payload loader
-    crit: hostile
-    conf: 0.995
-    attack: T1027.002,T1047,T1059.001,T1140,T1564.003,T1620
-    for: [javascript]
-    all:
-      - id: unicode-delimited-managed-loader-tokens
-      - id: js-nonascii-split-join-cleanup
-      - id: micro-behaviors/process/create/exec::js-hidden-process-create-sequence
-
-  - id: unicode-delimited-wmi-powershell-stage
-    desc: Unicode-obfuscated hidden WMI download stage
-    crit: hostile
-    conf: 0.99
-    attack: T1027.002,T1047,T1059.001,T1564.003,T1105
-    mbc: B0032,E1043
-    for: [javascript, html]
-    all:
-      - id: js-nonascii-split-join-cleanup
-      - id: micro-behaviors/process/create/exec::wmi-hidden-variable-process-create
-      - id: micro-behaviors/os/env/modify::wsh-environment-item-assignment
-      - id: micro-behaviors/os/com/automation::wscript-shell-literal
-      - id: micro-behaviors/communications/http/client/webclient::unicode-delimited-webclient-download
-      - id: micro-behaviors/process/create/shell/encoded::unicode-delimited-powershell-command
+  - id: objectives/anti-static/obfuscation/string/delimiter::vbs-unicode-marker-split
+  - id: objectives/execution/wmi::vbs-http-range-reflective-wmi-loader
+- id: js-unicode-delimited-hidden-managed-loader
+  desc: Unicode marker conceals a hidden WMI managed payload loader
+  crit: hostile
+  conf: 0.995
+  attack: T1027.002,T1047,T1059.001,T1140,T1564.003,T1620
+  for:
+  - javascript
+  all:
+  - id: unicode-delimited-managed-loader-tokens
+  - id: js-nonascii-split-join-cleanup
+  - id: micro-behaviors/process/create/exec::js-hidden-process-create-sequence
+- id: unicode-delimited-wmi-powershell-stage
+  desc: Unicode-obfuscated hidden WMI download stage
+  crit: hostile
+  conf: 0.99
+  attack: T1027.002,T1047,T1059.001,T1564.003,T1105
+  mbc: B0032,E1043
+  for:
+  - javascript
+  - html
+  all:
+  - id: js-nonascii-split-join-cleanup
+  - id: micro-behaviors/process/create/exec::wmi-hidden-variable-process-create
+  - id: micro-behaviors/os/env/modify::wsh-environment-item-assignment
+  - id: micro-behaviors/os/com/automation::wscript-shell-literal
+  - id: micro-behaviors/communications/http/client/webclient::unicode-delimited-webclient-download
+  - id: micro-behaviors/process/create/shell/encoded::unicode-delimited-powershell-command

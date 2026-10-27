@@ -1,147 +1,90 @@
-# Mass account enumeration through a platform's own contact-resolution APIs.
-#
-# Consumer platforms ship two surfaces that answer "does this identifier belong
-# to a member": the contact-import / find-friends resolver, which takes a batch
-# of addresses from a user's address book and returns the matching profiles,
-# and the signup availability oracle, which answers whether one address is
-# already taken. Both are meant to be driven by a person, once, over their own
-# contacts.
-#
-# Scraped-directory leaks are produced by driving those same surfaces from an
-# externally sourced address list instead: fixed-size blocks are fed in on a
-# schedule, matched profiles are kept, and the run is spread over days behind
-# rotating egress so the platform's abuse controls never see one caller. The
-# 2026 chess.com listing (7.3M records, no passwords and no payment data,
-# batches stamped across nine consecutive days, ~7.4% of records duplicated
-# between days) has that shape, as did the 2023 incident against the same
-# feature and the contact-importer scrapes of other consumer platforms.
-#
-# The endpoint atoms stay notable on their own: a platform's own front end
-# legitimately references them. Conviction comes from the composites, which
-# require the caller to also do something a first-party client has no reason
-# to do — fan one bulk address list across several resolution surfaces, rotate
-# egress or client identity per block, wait out the platform's 429 throttle, or
-# write the resolved member records to disk.
-#
-# ATT&CK: T1589.002 (Gather Victim Identity Information: Email Addresses),
-# T1087 (Account Discovery), T1119 (Automated Collection).
 defaults:
-  platforms: [unix, windows]
-  for: [scripts, source, binaries, -applescript, -vbs, -beam, -clojure, -staticlib, -pyc]
+  platforms:
+  - unix
+  - windows
+  for:
+  - scripts
+  - source
+  - binaries
+  - -applescript
+  - -vbs
+  - -beam
+  - -clojure
+  - -staticlib
+  - -pyc
   attack: T1589.002
   mbc: E1589
-
 composite_rules:
-  # The two surfaces that exist only to answer "is this identifier a member":
-  # find-friends and the signup availability oracle. /contacts/import and
-  # /contacts/lookup are deliberately NOT here — CRM and marketing SDKs use
-  # those exact routes to push an operator's own list into their own system,
-  # so those two add weight but never anchor a conviction.
+- id: member-account-resolution-endpoint
+  desc: Member-account resolution API endpoint
+  crit: notable
+  conf: 0.92
+  any:
+  - id: micro-behaviors/communications/http/contact-resolution::find-friends-endpoint
+  - id: micro-behaviors/communications/http/contact-resolution::email-availability-oracle-endpoint
+- id: contact-import-batch-payload
+  desc: Address-book import batch request payload
+  crit: notable
+  conf: 0.9
+  all:
+  - id: metadata/lang/source/syntax/key-value::contact-collection-field
+  - id: micro-behaviors/communications/http/request/body::address-book-source-marker
+  near_bytes: 512
+- id: bulk-contact-resolution-sweep
+  desc: Bulk address list swept across account resolvers
+  crit: suspicious
+  conf: 0.93
+  attack: T1087
+  all:
+  - id: metadata/lang/source/syntax/key-value::contact-collection-field
   - id: member-account-resolution-endpoint
-    desc: Member-account resolution API endpoint
-    crit: notable
-    conf: 0.92
-    any:
-      - id: micro-behaviors/communications/http/contact-resolution::find-friends-endpoint
-      - id: micro-behaviors/communications/http/contact-resolution::email-availability-oracle-endpoint
-
-  # A batch payload that also declares itself an address-book import: the full
-  # contact-import request shape, rather than any object with an `emails` key.
-  - id: contact-import-batch-payload
-    desc: Address-book import batch request payload
-    crit: notable
-    conf: 0.9
-    all:
-      - id: "metadata/lang/source/syntax/key-value::contact-collection-field"
-      - id: micro-behaviors/communications/http/request/body::address-book-source-marker
-    near_bytes: 512
-
-  # One client batching addresses into a member-resolution surface and at least
-  # one further contact route. A first-party importer calls exactly one; fanning
-  # a single bulk list across several is how a scraper maximises the yield per
-  # address and works around per-endpoint limits.
-  - id: bulk-contact-resolution-sweep
-    desc: Bulk address list swept across account resolvers
-    crit: suspicious
-    conf: 0.93
-    attack: T1087
-    all:
-      - id: "metadata/lang/source/syntax/key-value::contact-collection-field"
-      - id: member-account-resolution-endpoint
-    any:
-      - id: micro-behaviors/communications/http/contact-resolution
-    needs: 2
-
-  # The signup availability oracle driven by the same client that talks to the
-  # address-book resolver. A signup page checks availability but never calls
-  # find-friends, and a friends UI never checks availability; one client doing
-  # both is testing identifiers, not registering an account.
-  - id: email-oracle-with-contact-resolver
-    desc: Signup email oracle beside contact resolver
-    crit: suspicious
-    conf: 0.93
-    attack: T1087
-    all:
-      - id: micro-behaviors/communications/http/contact-resolution::email-availability-oracle-endpoint
-      - id: micro-behaviors/communications/http/contact-resolution::find-friends-endpoint
-
-  # Bulk resolution where the caller presents a different browser identity per
-  # block. A first-party client sends the user's real User-Agent; a pool exists
-  # so the platform cannot correlate the blocks back to one caller.
-  - id: contact-resolution-identity-rotation
-    desc: Bulk contact resolution behind rotating User-Agents
-    crit: suspicious
-    conf: 0.93
-    attack: T1087
-    all:
-      - id: "metadata/lang/source/syntax/key-value::contact-collection-field"
-      - id: micro-behaviors/communications/http/user-agent::user-agent-pool-rotation
-      - id: member-account-resolution-endpoint
-
-  # Bulk resolution that explicitly handles a platform rate limit. The 429 and
-  # Retry-After pair is a capability signal; the bulk contact-resolution legs
-  # supply the enumeration intent. The three legs must share one driver region:
-  # without proximity, any large bundle containing an unrelated 429 retry
-  # (telemetry exporters), an unrelated contact-shaped field (chat-share
-  # schemas), and a first-party availability check (its own signup flow)
-  # convicts on file-level co-occurrence instead of one caller waiting out a
-  # throttle while sweeping identifiers.
-  - id: rate-limit-aware-account-enumerator
-    desc: Bulk account enumeration with rate-limit handling
-    crit: hostile
-    conf: 0.95
-    attack: T1589.002,T1087
-    all:
-      - id: "metadata/lang/source/syntax/key-value::contact-collection-field"
-      - id: micro-behaviors/communications/http/response::rate-limit-header-handling
-      - id: member-account-resolution-endpoint
-    near_bytes: 8192
-
-  # Bulk resolution issued from a rotating egress pool. Spreading address
-  # batches over many source addresses has no purpose in first-party contact
-  # import; it exists to defeat per-source rate limiting and attribution.
-  - id: proxy-rotated-account-enumerator
-    desc: Bulk account enumeration via rotating proxies
-    crit: hostile
-    conf: 0.95
-    attack: T1589.002,T1090.003
-    all:
-      - id: "metadata/lang/source/syntax/key-value::contact-collection-field"
-      - id: micro-behaviors/communications/http/proxy::proxy-pool-rotation
-      - id: member-account-resolution-endpoint
-
-  # Bulk resolution whose matched profiles are projected onto an account-record
-  # schema and written to disk. The file write is the discriminator a
-  # browser-side contact importer cannot satisfy: the member directory is being
-  # copied out, not a friend list rendered.
-  - id: contact-import-directory-harvester
-    desc: Member directory harvested via contact resolver
-    crit: hostile
-    conf: 0.96
-    attack: T1119,T1213
-    mbc: E1119
-    all:
-      - id: "metadata/lang/source/syntax/key-value::contact-collection-field"
-      - id: metadata/file/string/account::account-field-vocabulary
-      - id: micro-behaviors/fs/write/file/
-      - id: member-account-resolution-endpoint
+  any:
+  - id: micro-behaviors/communications/http/contact-resolution
+  needs: 2
+- id: email-oracle-with-contact-resolver
+  desc: Signup email oracle beside contact resolver
+  crit: suspicious
+  conf: 0.93
+  attack: T1087
+  all:
+  - id: micro-behaviors/communications/http/contact-resolution::email-availability-oracle-endpoint
+  - id: micro-behaviors/communications/http/contact-resolution::find-friends-endpoint
+- id: contact-resolution-identity-rotation
+  desc: Bulk contact resolution behind rotating User-Agents
+  crit: suspicious
+  conf: 0.93
+  attack: T1087
+  all:
+  - id: metadata/lang/source/syntax/key-value::contact-collection-field
+  - id: micro-behaviors/communications/http/user-agent::user-agent-pool-rotation
+  - id: member-account-resolution-endpoint
+- id: rate-limit-aware-account-enumerator
+  desc: Bulk account enumeration with rate-limit handling
+  crit: hostile
+  conf: 0.95
+  attack: T1589.002,T1087
+  all:
+  - id: metadata/lang/source/syntax/key-value::contact-collection-field
+  - id: micro-behaviors/communications/http/response::rate-limit-header-handling
+  - id: member-account-resolution-endpoint
+  near_bytes: 8192
+- id: proxy-rotated-account-enumerator
+  desc: Bulk account enumeration via rotating proxies
+  crit: hostile
+  conf: 0.95
+  attack: T1589.002,T1090.003
+  all:
+  - id: metadata/lang/source/syntax/key-value::contact-collection-field
+  - id: micro-behaviors/communications/http/proxy::proxy-pool-rotation
+  - id: member-account-resolution-endpoint
+- id: contact-import-directory-harvester
+  desc: Member directory harvested via contact resolver
+  crit: hostile
+  conf: 0.96
+  attack: T1119,T1213
+  mbc: E1119
+  all:
+  - id: metadata/lang/source/syntax/key-value::contact-collection-field
+  - id: metadata/file/string/account::account-field-vocabulary
+  - id: micro-behaviors/fs/write/file
+  - id: member-account-resolution-endpoint

@@ -1,190 +1,137 @@
-# Supply Chain Binary Backdoor - Shared Object (.so) Detection
-# Detects malicious shared libraries with backdoor capabilities
-# ATT&CK: T1195.002 (Supply Chain Compromise: Compromise Software Supply Chain)
-# Examples: triton libtriton.so, various PyPI/npm supply chain attacks with native code
 defaults:
-  for: [so]
-  platforms: [linux]
-  attack: "T1195.002"
-  mbc: "B0025"
+  for:
+  - so
+  platforms:
+  - linux
+  attack: T1195.002
+  mbc: B0025
 composite_rules:
-  # Network backdoor in shared library
-  # Shared libraries with socket server capabilities + shell execution
-  # This is highly suspicious - legitimate .so files rarely do this
-  - id: so-network-backdoor
-    desc: Shared library with networked shell behavior
-    crit: suspicious
-    conf: 0.9
-    all:
-      - id: micro-behaviors/communications/socket/connect::connect
-      - id: micro-behaviors/process/create/shell/spawn::shell-execution-comp
+- id: so-network-backdoor
+  desc: Shared library with networked shell behavior
+  crit: suspicious
+  conf: 0.9
+  all:
+  - id: micro-behaviors/communications/socket/connect::connect
+  - id: micro-behaviors/process/create/shell/spawn::shell-execution-comp
+  any:
+  - id: micro-behaviors/communications/socket/bind/function::bind
+  - id: micro-behaviors/communications/socket/accept::accept-sym
+  - id: micro-behaviors/process/create/shell/native::c-popen
+  - id: micro-behaviors/process/create/shell/spawn::system-fn
+  unless:
+  - id: micro-behaviors/dylib/library/family/
+  - id: metadata/binary/symbols/count::many-imports
+  - id: micro-behaviors/os/bpf/
+  - id: well-known/tool/sysadmin/gnupg::npth-threading-library
+  - id: metadata/binary/linking/runtime::elf-interpreter-section-name
+  downgrade:
     any:
-      - id: micro-behaviors/communications/socket/bind/function::bind
-      - id: micro-behaviors/communications/socket/accept::accept-sym
-      - id: micro-behaviors/process/create/shell/native::c-popen
-      - id: micro-behaviors/process/create/shell/spawn::system-fn
-    # Exclude system network libraries
-    unless:
-      - id: micro-behaviors/dylib/library/family/
-      - id: metadata/binary/symbols/count::many-imports
-      - id: micro-behaviors/os/bpf/
-      # A threading library that wraps blocking syscalls exports this rule's
-      # entire leg set as its API -- nPth ships npth_connect, npth_accept and
-      # npth_system because that is what it is for.
-      - id: well-known/tool/sysadmin/gnupg::npth-threading-library
-      # PIE executables share ET_DYN with shared objects. A real .so has no
-      # interpreter; rconfig and other dynamically linked tools do.
-      - id: metadata/binary/linking/runtime::elf-interpreter-section-name
-    downgrade:
-      any:
-        - id: metadata/binary/provenance/
-  # Shared library targeting credentials
-  # .so with both SSH and shell config access is highly suspicious
+    - id: metadata/binary/provenance/
+- id: so-credential-targeting
+  desc: Shared library targeting user credentials
+  crit: suspicious
+  conf: 0.85
+  attack: T1552.004
+  needs: 2
+  all:
+  - id: metadata/binary/header/identity::shared-object-type
+  any:
+  - id: micro-behaviors/fs/path/private-key::keys
+  - id: micro-behaviors/os/autorun/control::shell-profile-reference-or-operation
+  - id: micro-behaviors/os/autorun/control::shell-profile-file-operation
+  unless:
+  - id: micro-behaviors/dylib/library/family/
+- id: so-c2-infrastructure
+  desc: Shared library with C2 infrastructure
+  crit: suspicious
+  conf: 0.9
+  all:
+  - id: objectives/command-and-control/infrastructure/domain/malicious::c2-domain
+  any:
+  - id: micro-behaviors/communications/socket/connect::connect
+  - id: micro-behaviors/communications/socket/bind/function::bind
+  unless:
+  - id: micro-behaviors/dylib/library/family/
+- id: so-rootkit-behavior
+  desc: Trojanized .so with LD_PRELOAD + shell/dlsym
+  crit: suspicious
+  conf: 0.8
+  attack: T1574.006
+  all:
+  - id: metadata/binary/header/identity::shared-object-type
+  - id: micro-behaviors/os/env/runtime::ld-preload
+  any:
+  - id: micro-behaviors/process/create/shell/
+  - id: micro-behaviors/dylib/lookup::dlsym-symbol
+  unless:
+  - id: metadata/binary/provenance/
+  - id: objectives/evasion/hijack-execution-flow/linker/
+  - id: micro-behaviors/dylib/library/family/
+  - id: well-known/tool
+  - id: well-known/lib
+  - id: well-known/lib/observability/telemetry::php-ddtrace-benign-loader-context
+  - id: metadata/binary/linking/
+- id: supply-chain-backdoor
+  desc: Supply chain backdoor in shared library
+  crit: hostile
+  conf: 0.95
+  all:
+  - id: micro-behaviors/communications/socket/connect::connect
+  - id: micro-behaviors/process/create/shell/spawn::shell-execution-comp
+  - id: metadata/binary/header/identity::shared-object-type
+  any:
   - id: so-credential-targeting
-    desc: Shared library targeting user credentials
-    crit: suspicious
-    conf: 0.85
-    attack: "T1552.004"
-    needs: 2
-    all:
-      - id: metadata/binary/header/identity::shared-object-type
-    any:
-      - id: micro-behaviors/fs/path/private-key::keys
-      - id: micro-behaviors/os/autorun/control::shell-profile-reference-or-operation
-      - id: micro-behaviors/os/autorun/control::shell-profile-file-operation
-    unless:
-      - id: micro-behaviors/dylib/library/family/
-  # Shared library with C2 infrastructure
-  # .so with suspicious domain + network operations
   - id: so-c2-infrastructure
-    desc: Shared library with C2 infrastructure
-    crit: suspicious
-    conf: 0.9
-    all:
-      - id: objectives/command-and-control/infrastructure/domain/malicious::c2-domain
-    any:
-      - id: micro-behaviors/communications/socket/connect::connect
-      - id: micro-behaviors/communications/socket/bind/function::bind
-    unless:
-      - id: micro-behaviors/dylib/library/family/
-  # Trojanized shared library with rootkit capabilities.
-  # Linux PIE executables share ET_DYN with shared libraries, so the
-  # `for: [so]` filter alone matches standalone implant ELFs too. The
-  # interpreter check below excludes those: only true .so libraries
-  # lack PT_INTERP.
-  - id: so-rootkit-behavior
-    desc: Trojanized .so with LD_PRELOAD + shell/dlsym
-    crit: suspicious
-    conf: 0.8
-    attack: "T1574.006"
-    all:
-      - id: metadata/binary/header/identity::shared-object-type
-      - id: micro-behaviors/os/env/runtime::ld-preload
-    any:
-      - id: micro-behaviors/process/create/shell/
-      - id: micro-behaviors/dylib/lookup::dlsym-symbol
-    unless:
-      # Known-good libraries/tools that mention LD_PRELOAD (JVM, sanitizers,
-      # qemu, sudo intercept, APM loaders) — not trojanized .so rootkits.
-      - id: metadata/binary/provenance/
-      - id: objectives/evasion/hijack-execution-flow/linker/
-      - id: micro-behaviors/dylib/library/family/
-      - id: well-known/tool/
-      - id: well-known/lib/
-      # Exception composites must be named by leaf id (dir refs skip them).
-      - id: well-known/lib/observability/telemetry::php-ddtrace-benign-loader-context
-      # PIE / static-PIE executables share ET_DYN with .so but are not preloadable.
-      - id: metadata/binary/linking/
-  # Full supply chain backdoor pattern
-  # Combines multiple suspicious behaviors into hostile indicator
-  # Complexity: all(2) + any(4) = 3 base, need file_types for 4
-  # Updated: for: adds +1, making complexity = 4
-  - id: supply-chain-backdoor
-    desc: Supply chain backdoor in shared library
-    crit: hostile
-    conf: 0.95
-    all:
-      # Must have network + shell execution
-      - id: micro-behaviors/communications/socket/connect::connect
-      - id: micro-behaviors/process/create/shell/spawn::shell-execution-comp
-      # PIE executables share ET_DYN with shared objects and link the same
-      # socket/shell APIs (terminal multiplexers, emulators), so require true
-      # shared-object evidence: a plain executable must never read as a
-      # trojanized library.
-      - id: metadata/binary/header/identity::shared-object-type
-    any:
-      # Plus credential targeting or C2 infrastructure
-      - id: so-credential-targeting
-      - id: so-c2-infrastructure
-      - id: objectives/command-and-control/infrastructure/domain/malicious::c2-domain
-      - id: micro-behaviors/fs/path/private-key::keys
-    unless:
-      - id: micro-behaviors/dylib/library/family/
-      - id: metadata/package/tooling::mlterm-sdl2-binary
-      # PIE / static-PIE executables share ET_DYN with .so but are not
-      # preloadable libraries: only true .so files lack PT_INTERP.
-      - id: metadata/binary/linking/runtime::elf-interpreter-section-name
-  # A trojanized systemd/NSS library, keyed on evidence stock systemd cannot
-  # produce. The previous form paired the systemd identity with the terminal
-  # socket-exec pattern, which genuine libsystemd-shared satisfies in full
-  # (ask_password_tty, the socket manager's connect/listen, service spawning
-  # via dup2 + exec + /bin/sh) -- so it fired on every SUSE systemd image and
-  # could never have distinguished a real compromise. C2 infrastructure and
-  # credential targeting are the discriminators: the shipped library carries
-  # only loopback and wildcard addresses and references no credential stores.
-  - id: systemd-library-supply-chain-backdoor
-    desc: Trojanized systemd library with C2 or credential theft
-    crit: hostile
-    conf: 0.98
-    attack: "T1195.002,T1059.004"
-    mbc: "B0022,B0024"
-    for: [elf, so]
-    all:
-      - id: well-known/lib/native/systemd::systemd-shared-library
-    any:
-      - id: so-c2-infrastructure
-      - id: so-credential-targeting
-      - id: objectives/command-and-control/infrastructure/domain/malicious::c2-domain
-      - id: micro-behaviors/fs/path/private-key::keys
-  # Alternative: Network + credential + rootkit pattern
-  # Complexity: all(3) + for: = 4
-  - id: library-backdoor-rootkit
-    desc: Library backdoor with rootkit and credential theft
-    crit: hostile
-    conf: 0.95
-    all:
-      - id: micro-behaviors/communications/socket/connect::connect
-      - id: micro-behaviors/process/create/shell/spawn::shell-execution-comp
-      - id: micro-behaviors/os/env/runtime::ld-preload
-      # As above: executables link the same APIs, so require shared-object
-      # evidence before reading a file as a trojanized library.
-      - id: metadata/binary/header/identity::shared-object-type
-    any:
-      - id: micro-behaviors/fs/path/private-key::keys
-      - id: micro-behaviors/os/autorun/control::shell-profile-reference-or-operation
-    unless:
-      - id: micro-behaviors/dylib/library/family/
-      # PIE executables share ET_DYN with .so; only true .so files lack PT_INTERP.
-      - id: metadata/binary/linking/runtime::elf-interpreter-section-name
-  # Simpler pattern: socket + shell + credential paths
-  # Complexity: all(3) + any(1 via count_min) = still need more
-  # Using file_types: +1 = 4
-  - id: network-shell-credential-so
-    desc: Library with network, shell, and credential access
-    crit: suspicious
-    conf: 0.9
-    all:
-      - id: micro-behaviors/communications/socket/connect::connect
-      - id: micro-behaviors/process/create/shell/spawn::shell-execution-comp
-      # As above: executables link the same APIs, so require shared-object
-      # evidence before reading a file as a trojanized library.
-      - id: metadata/binary/header/identity::shared-object-type
-    any:
-      - id: micro-behaviors/fs/path/private-key::keys
-      - id: micro-behaviors/os/autorun/control::shell-profile-reference-or-operation
-      - id: objectives/command-and-control/infrastructure/domain/malicious::c2-domain
-    unless:
-      - id: micro-behaviors/dylib/library/family/
-      - id: metadata/package/tooling::mlterm-sdl2-binary
-      # PIE executables share ET_DYN with .so; only true .so files lack PT_INTERP.
-      - id: metadata/binary/linking/runtime::elf-interpreter-section-name
+  - id: objectives/command-and-control/infrastructure/domain/malicious::c2-domain
+  - id: micro-behaviors/fs/path/private-key::keys
+  unless:
+  - id: micro-behaviors/dylib/library/family/
+  - id: metadata/package/tooling::mlterm-sdl2-binary
+  - id: metadata/binary/linking/runtime::elf-interpreter-section-name
+- id: systemd-library-supply-chain-backdoor
+  desc: Trojanized systemd library with C2 or credential theft
+  crit: hostile
+  conf: 0.98
+  attack: T1195.002,T1059.004
+  mbc: B0022,B0024
+  for:
+  - elf
+  - so
+  all:
+  - id: well-known/lib/native/systemd::systemd-shared-library
+  any:
+  - id: so-c2-infrastructure
+  - id: so-credential-targeting
+  - id: objectives/command-and-control/infrastructure/domain/malicious::c2-domain
+  - id: micro-behaviors/fs/path/private-key::keys
+- id: library-backdoor-rootkit
+  desc: Library backdoor with rootkit and credential theft
+  crit: hostile
+  conf: 0.95
+  all:
+  - id: micro-behaviors/communications/socket/connect::connect
+  - id: micro-behaviors/process/create/shell/spawn::shell-execution-comp
+  - id: micro-behaviors/os/env/runtime::ld-preload
+  - id: metadata/binary/header/identity::shared-object-type
+  any:
+  - id: micro-behaviors/fs/path/private-key::keys
+  - id: micro-behaviors/os/autorun/control::shell-profile-reference-or-operation
+  unless:
+  - id: micro-behaviors/dylib/library/family/
+  - id: metadata/binary/linking/runtime::elf-interpreter-section-name
+- id: network-shell-credential-so
+  desc: Library with network, shell, and credential access
+  crit: suspicious
+  conf: 0.9
+  all:
+  - id: micro-behaviors/communications/socket/connect::connect
+  - id: micro-behaviors/process/create/shell/spawn::shell-execution-comp
+  - id: metadata/binary/header/identity::shared-object-type
+  any:
+  - id: micro-behaviors/fs/path/private-key::keys
+  - id: micro-behaviors/os/autorun/control::shell-profile-reference-or-operation
+  - id: objectives/command-and-control/infrastructure/domain/malicious::c2-domain
+  unless:
+  - id: micro-behaviors/dylib/library/family/
+  - id: metadata/package/tooling::mlterm-sdl2-binary
+  - id: metadata/binary/linking/runtime::elf-interpreter-section-name

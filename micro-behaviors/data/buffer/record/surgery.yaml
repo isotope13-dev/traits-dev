@@ -1,271 +1,265 @@
-# Record surgery: the buffer, specifically the field-layout kind. Reading,
-# rewriting, and dispatching on constant-offset fields inside a packed record —
-# typed frame-field declarations, indexed byte mutation, nibble packing, fixed
-# offset slicing. Allocation and fixed-size declarations live in
-# alloc/allocation.yaml, copies and stream output in transfer/io.yaml, integer
-# encode/decode in integer-codec/, and payload-carve shapes in
-# carve/carving.yaml. Scopes are explicit per trait (this directory merges
-# several language files).
 defaults:
-  platforms: [windows, linux, macos]
-  for: [c, cpp, elf, macho, pe]
-
+  platforms:
+  - windows
+  - linux
+  - macos
+  for:
+  - c
+  - cpp
+  - elf
+  - macho
+  - pe
 traits:
-  # Short prefix comparisons are common in parsers and protocol dispatchers.
-  # This atom describes only the buffer operation; intent-specific composites
-  # add any command-dispatch evidence.
-  - id: short-prefix-comparison
-    desc: Compares a one-to-four-byte input prefix
-    crit: notable
-    conf: 0.82
-    for: [c, cpp]
-    if:
-      type: text
-      regex: '\b(memcmp|strncmp)\s*\(\s*\w+\s*,\s*\w+\s*,\s*[1-4]\s*\)'
-
-  # `buf[i] = (hi << 4) | lo` is the universal two-nibbles-into-a-byte pack.
-  # Linux's HDMI-CEC helpers (`msg[5] = (input_port << 4) | hpd_state`) and any
-  # BCD/hex codec write it. The custom-alphabet Base16 composite in
-  # objectives/anti-static/obfuscation/encoding/hex/ references it and adds the
-  # offset-alphabet nibble decodes that make it an obfuscation decoder.
-  - id: nibble-pack-byte-assignment
-    desc: Packs two nibbles into a byte
-    crit: baseline
-    conf: 0.9
-    for: [c, cpp, csharp, go, rust]
-    if:
-      type: text
-      regex: '(?i)\w+\[\w+\]\s*=\s*\(\w+\s*<<\s*4\)\s*\|\s*\w+'
-
-  - id: named-byte-replacement-routine
-    desc: References a named byte-replacement routine
-    crit: notable
-    conf: 0.9
-    for: [c, cpp, python, lua]
-    if:
-      type: text
-      regex: '(?i)\b(replace_bytes|replace_matching_bytes)\b'
-
-  # Writing a literal sentinel into offset zero of a buffer under construction:
-  # the first byte of a hand-built frame header. Only the assignment is
-  # visible, so this stays a component and the framing composites supply the
-  # protocol context.
-  - id: first-buffer-byte-0x22
-    desc: Assigns 0x22 to buffer offset zero
-    crit: component
-    conf: 0.8
-    for: [scripts, source]
-    if:
-      type: text
-      regex: '\[[A-Za-z0-9_+\- ]{0,24}0\]\s*=\s*0x22'
-
-  # Appending a TLV option to a record under construction. Ordinary DHCP/
-  # protocol-builder mechanics on its own; the option-overflow composites add
-  # the length arithmetic that makes it an exploit builder.
-  - id: network-option-function-call
-    desc: Calls add_option during buffer construction
-    crit: notable
-    conf: 0.85
-    for: [c, cpp]
-    if:
-      type: symbol
-      kind: call
-      exact: add_option
-
-  - id: typed-byte-type-field
-    desc: 8-bit type field declaration
-    crit: notable
-    conf: 0.9
-    for: [c, cpp]
-    if:
-      type: text
-      regex: '(?im)^\s*(uint8_t|BYTE)\s+\w*type\s*;'
-      case_insensitive: true
-
-  - id: typed-uint32-connection-field
-    desc: 32-bit connection ID field declaration
-    crit: notable
-    conf: 0.9
-    for: [c, cpp]
-    if:
-      type: text
-      regex: '(?im)^\s*(uint32_t|DWORD)\s+(conn_?id|connection_?id)\s*;'
-      case_insensitive: true
-
-  - id: typed-byte-flags-field
-    desc: 8-bit flags field declaration
-    crit: notable
-    conf: 0.9
-    for: [c, cpp]
-    if:
-      type: text
-      regex: '(?im)^\s*(uint8_t|BYTE)\s+\w*flags\s*;'
-      case_insensitive: true
-
-  - id: typed-uint16-length-field
-    desc: 16-bit length field declaration
-    crit: notable
-    conf: 0.9
-    for: [c, cpp]
-    if:
-      type: text
-      regex: '(?im)^\s*(uint16_t|WORD)\s+\w*(data_?len|length)\s*;'
-      case_insensitive: true
-
-  - id: member-type-switch
-    desc: Switches on a member named type
-    crit: notable
-    conf: 0.9
-    for: [c, cpp]
-    if:
-      type: text
-      regex: '\bswitch\s*\(\s*\w{1,32}\.type\s*\)'
-
-  # The 1/3/5 case labels were three near-identical traits differing only in
-  # the digit. One alternation-free atom counts any three of the set; the
-  # dispatch composite below keeps the "three numeric cases" verdict.
-  - id: member-type-switch-numeric-case
-    desc: Handles 1/3/5 case under member-type switch
-    crit: notable
-    conf: 0.9
-    for: [c, cpp]
-    count_min: 3
-    if:
-      type: text
-      regex: '(?is)\bswitch\s*\(\s*\w{1,32}\.type\s*\).{0,512}\bcase\s+[135]\s*:'
-
-  # Pairing the low four bits of adjacent carrier bytes is a neutral byte
-  # reconstruction primitive -- the PowerShell spelling of
-  # nibble-pack-byte-assignment above. Audio/image steganography composites
-  # provide the carrier context and execution sink.
-  - id: powershell-low-nibble-shift
-    desc: Shifts a PowerShell low nibble four bits
-    crit: notable
-    conf: 0.96
-    platforms: [windows]
-    for: [powershell]
-    attack: T1140
-    if:
-      type: text
-      regex: '(?i)-band\s+(0x0?f|15)\s*\)\s*-shl\s+4'
-
-  - id: powershell-low-nibble-or
-    desc: ORs a second PowerShell low nibble
-    crit: notable
-    conf: 0.96
-    platforms: [windows]
-    for: [powershell]
-    attack: T1140
-    if:
-      type: text
-      regex: '(?i)-bor\s*\([^\)\r\n]{1,80}-band\s+(0x0?f|15)\s*\)'
-
-  # A decoded buffer carved into three or more constant-offset fields is a
-  # packed-record parser: the writer and the reader agreed on a fixed header
-  # layout. In JavaScript that shape almost only arises around a hand-rolled
-  # cryptographic envelope -- `salt | iv | tag | ciphertext` -- because the
-  # standard containers (JWE, PEM, protobuf, CBOR) carry their own framing and
-  # are parsed by a library rather than by literal offsets.
-  #
-  # Notable on its own: binary format readers do this legitimately, and hex
-  # offsets (`subarray(0x1c,0x2c)`) are how javascript-obfuscator prints the
-  # same code. The crypto composites supply the intent.
-  # One atom per (method, radix) shape, with no regex alternation, so each
-  # count_min tallies repeats of a single shape rather than a mix; the
-  # composite below unions them. Both offsets must be numeric literals:
-  # a looser class also matched the one-letter identifiers minifiers emit
-  # (`n.slice(a,b)`), which is not a constant-offset field read at all.
-  - id: subarray-decimal-offset-pair
-    desc: Subarray split at decimal offsets
-    crit: notable
-    conf: 0.8
-    count_min: 3
-    platforms: [windows, unix]
-    for: [javascript, typescript]
-    unless:
-    - id: metadata/lang/scripted::dts-declaration-file
-    if:
-      type: text
-      regex: '\bsubarray\s*\(\s*\d{1,6}\s*,\s*\d{1,6}\s*\)'
-
-  - id: subarray-hex-offset-pair
-    desc: Subarray split at hex offsets
-    crit: notable
-    conf: 0.8
-    count_min: 3
-    platforms: [windows, unix]
-    for: [javascript, typescript]
-    if:
-      type: text
-      regex: '\bsubarray\s*\(\s*0x[0-9a-fA-F]{1,4}\s*,\s*0x[0-9a-fA-F]{1,4}\s*\)'
-
-  # The two specific adjacent spans of a 4+4 byte header -- narrower than the
-  # generic fixed-span atoms above, and matched with a single regex so the two
-  # reads have to be adjacent in the source rather than merely both present.
-  - id: adjacent-four-byte-subarrays
-    desc: Reads adjacent four-byte subarrays
-    crit: baseline
-    conf: 0.9
-    platforms: [windows, unix]
-    for: [javascript, typescript]
-    if:
-      type: text
-      regex: 'subarray\s*\(\s*0\s*,\s*4\s*\).{0,120}subarray\s*\(\s*4\s*,\s*8\s*\)'
-
+- id: short-prefix-comparison
+  desc: Compares a one-to-four-byte input prefix
+  crit: notable
+  conf: 0.82
+  for:
+  - c
+  - cpp
+  if:
+    type: text
+    regex: \b(memcmp|strncmp)\s*\(\s*\w+\s*,\s*\w+\s*,\s*[1-4]\s*\)
+- id: nibble-pack-byte-assignment
+  desc: Packs two nibbles into a byte
+  crit: baseline
+  conf: 0.9
+  for:
+  - c
+  - cpp
+  - csharp
+  - go
+  - rust
+  if:
+    type: text
+    regex: (?i)\w+\[\w+\]\s*=\s*\(\w+\s*<<\s*4\)\s*\|\s*\w+
+- id: named-byte-replacement-routine
+  desc: References a named byte-replacement routine
+  crit: notable
+  conf: 0.9
+  for:
+  - c
+  - cpp
+  - python
+  - lua
+  if:
+    type: text
+    regex: (?i)\b(replace_bytes|replace_matching_bytes)\b
+- id: first-buffer-byte-0x22
+  desc: Assigns 0x22 to buffer offset zero
+  crit: component
+  conf: 0.8
+  for:
+  - scripts
+  - source
+  if:
+    type: text
+    regex: \[[A-Za-z0-9_+\- ]{0,24}0\]\s*=\s*0x22
+- id: network-option-function-call
+  desc: Calls add_option during buffer construction
+  crit: notable
+  conf: 0.85
+  for:
+  - c
+  - cpp
+  if:
+    type: symbol
+    kind: call
+    exact: add_option
+- id: typed-byte-type-field
+  desc: 8-bit type field declaration
+  crit: notable
+  conf: 0.9
+  for:
+  - c
+  - cpp
+  if:
+    type: text
+    regex: (?im)^\s*(uint8_t|BYTE)\s+\w*type\s*;
+    case_insensitive: true
+- id: typed-uint32-connection-field
+  desc: 32-bit connection ID field declaration
+  crit: notable
+  conf: 0.9
+  for:
+  - c
+  - cpp
+  if:
+    type: text
+    regex: (?im)^\s*(uint32_t|DWORD)\s+(conn_?id|connection_?id)\s*;
+    case_insensitive: true
+- id: typed-byte-flags-field
+  desc: 8-bit flags field declaration
+  crit: notable
+  conf: 0.9
+  for:
+  - c
+  - cpp
+  if:
+    type: text
+    regex: (?im)^\s*(uint8_t|BYTE)\s+\w*flags\s*;
+    case_insensitive: true
+- id: typed-uint16-length-field
+  desc: 16-bit length field declaration
+  crit: notable
+  conf: 0.9
+  for:
+  - c
+  - cpp
+  if:
+    type: text
+    regex: (?im)^\s*(uint16_t|WORD)\s+\w*(data_?len|length)\s*;
+    case_insensitive: true
+- id: member-type-switch
+  desc: Switches on a member named type
+  crit: notable
+  conf: 0.9
+  for:
+  - c
+  - cpp
+  if:
+    type: text
+    regex: \bswitch\s*\(\s*\w{1,32}\.type\s*\)
+- id: member-type-switch-numeric-case
+  desc: Handles 1/3/5 case under member-type switch
+  crit: notable
+  conf: 0.9
+  for:
+  - c
+  - cpp
+  count_min: 3
+  if:
+    type: text
+    regex: '(?is)\bswitch\s*\(\s*\w{1,32}\.type\s*\).{0,512}\bcase\s+[135]\s*:'
+- id: powershell-low-nibble-shift
+  desc: Shifts a PowerShell low nibble four bits
+  crit: notable
+  conf: 0.96
+  platforms:
+  - windows
+  for:
+  - powershell
+  attack: T1140
+  if:
+    type: text
+    regex: (?i)-band\s+(0x0?f|15)\s*\)\s*-shl\s+4
+- id: powershell-low-nibble-or
+  desc: ORs a second PowerShell low nibble
+  crit: notable
+  conf: 0.96
+  platforms:
+  - windows
+  for:
+  - powershell
+  attack: T1140
+  if:
+    type: text
+    regex: (?i)-bor\s*\([^\)\r\n]{1,80}-band\s+(0x0?f|15)\s*\)
+- id: subarray-decimal-offset-pair
+  desc: Subarray split at decimal offsets
+  crit: notable
+  conf: 0.8
+  count_min: 3
+  platforms:
+  - windows
+  - unix
+  for:
+  - javascript
+  - typescript
+  unless:
+  - id: metadata/lang/scripted::dts-declaration-file
+  if:
+    type: text
+    regex: \bsubarray\s*\(\s*\d{1,6}\s*,\s*\d{1,6}\s*\)
+- id: subarray-hex-offset-pair
+  desc: Subarray split at hex offsets
+  crit: notable
+  conf: 0.8
+  count_min: 3
+  platforms:
+  - windows
+  - unix
+  for:
+  - javascript
+  - typescript
+  if:
+    type: text
+    regex: \bsubarray\s*\(\s*0x[0-9a-fA-F]{1,4}\s*,\s*0x[0-9a-fA-F]{1,4}\s*\)
+- id: adjacent-four-byte-subarrays
+  desc: Reads adjacent four-byte subarrays
+  crit: baseline
+  conf: 0.9
+  platforms:
+  - windows
+  - unix
+  for:
+  - javascript
+  - typescript
+  if:
+    type: text
+    regex: subarray\s*\(\s*0\s*,\s*4\s*\).{0,120}subarray\s*\(\s*4\s*,\s*8\s*\)
 composite_rules:
+- id: native-fixed-frame-field-set
+  desc: Nearby typed fields describing a binary record
+  crit: notable
+  conf: 0.94
+  for:
+  - c
+  - cpp
+  all:
+  - id: typed-byte-type-field
+  - id: typed-uint32-connection-field
+  - id: typed-byte-flags-field
+  - id: typed-uint16-length-field
+  near_lines: 12
+- id: native-member-type-dispatch
+  desc: Member-type switch with three numeric cases
+  crit: notable
+  conf: 0.92
+  for:
+  - c
+  - cpp
+  all:
+  - id: member-type-switch
+  - id: member-type-switch-numeric-case
+  near_lines: 20
+- id: native-fixed-binary-record-dispatch
+  desc: Typed binary record fields with numeric dispatch
+  crit: notable
+  conf: 0.94
+  for:
+  - c
+  - cpp
+  all:
   - id: native-fixed-frame-field-set
-    desc: Nearby typed fields describing a binary record
-    crit: notable
-    conf: 0.94
-    for: [c, cpp]
-    all:
-      - id: typed-byte-type-field
-      - id: typed-uint32-connection-field
-      - id: typed-byte-flags-field
-      - id: typed-uint16-length-field
-    near_lines: 12
-
   - id: native-member-type-dispatch
-    desc: Member-type switch with three numeric cases
-    crit: notable
-    conf: 0.92
-    for: [c, cpp]
-    all:
-      - id: member-type-switch
-      - id: member-type-switch-numeric-case
-    near_lines: 20
-
-  - id: native-fixed-binary-record-dispatch
-    desc: Typed binary record fields with numeric dispatch
-    crit: notable
-    conf: 0.94
-    for: [c, cpp]
-    all:
-      - id: native-fixed-frame-field-set
-      - id: native-member-type-dispatch
-
-  - id: powershell-lower-nibble-pair-merge
-    desc: Merges two PowerShell low nibbles
-    crit: notable
-    conf: 0.98
-    platforms: [windows]
-    for: [powershell]
-    attack: T1140
-    all:
-      - id: powershell-low-nibble-shift
-      - id: powershell-low-nibble-or
-    near_lines: 2
-
-  - id: fixed-offset-buffer-fields
-    desc: Buffer split at three fixed offsets
-    crit: notable
-    conf: 0.8
-    platforms: [windows, unix]
-    for: [javascript, typescript]
-    any:
-      - id: subarray-decimal-offset-pair
-      - id: subarray-hex-offset-pair
-    unless:
-      - id: metadata/package/testing/
-      - id: metadata/build/
-      - id: "metadata/file/naming::test-directory-component"
+- id: powershell-lower-nibble-pair-merge
+  desc: Merges two PowerShell low nibbles
+  crit: notable
+  conf: 0.98
+  platforms:
+  - windows
+  for:
+  - powershell
+  attack: T1140
+  all:
+  - id: powershell-low-nibble-shift
+  - id: powershell-low-nibble-or
+  near_lines: 2
+- id: fixed-offset-buffer-fields
+  desc: Buffer split at three fixed offsets
+  crit: notable
+  conf: 0.8
+  platforms:
+  - windows
+  - unix
+  for:
+  - javascript
+  - typescript
+  any:
+  - id: subarray-decimal-offset-pair
+  - id: subarray-hex-offset-pair
+  unless:
+  - id: metadata/package/testing/
+  - id: metadata/build
+  - id: metadata/path::test-directory-component

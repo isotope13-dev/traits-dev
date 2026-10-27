@@ -297,7 +297,8 @@ does not apply throughout that umbrella.
 | `build` | `makefile`, `cmake`, `pbxproj`, `dockerfile` — executable build logic (a Make recipe, a CMake `execute_process`, an Xcode build phase, a Dockerfile `RUN`), as opposed to the declarative metadata in `manifests`. Overlaps it on `dockerfile`, which is both |
 | `documents` | `pdf`, `rtf`, `html`, `oledoc`, `ooxml` |
 | `media` | `jpeg`, `png` |
-| `data` | `json`, `ipa`, `text`, opaque `data` |
+| `archives` | All concrete container formats marked as archive types by the engine; exclusions such as `-zip` retain ordinary scope semantics |
+| `data` | Opaque `data` |
 
 Use groups instead of listing 9 or more individual types (up to 8 explicit types is accepted — a hand-picked spread across groups that no single named group expresses). `for: [all]` is a soft validation issue — the rule still loads and matches, but authors must name concrete types or combine groups explicitly (e.g., `for: [binaries, scripts]`). Use `for: [msi]`, `for: [iso]`, or `for: [registry]` for those first-class types; do not work around them with `all`.
 
@@ -1669,12 +1670,11 @@ with its decoded named-bit subtree in values (e.g. `pe.dll_characteristics.*`,
 
 ### Directory limits
 
-`make validate` uses **100 atomic traits and composite rules combined** per
-directory as a review trigger, summed across its YAML files and criticalities.
-A leaf may exceed 100 only when its exact path has a reviewed budget in Cleave
-and the evidence shows accurate, correctly leveled, nonduplicative rules. The
-validator fails above that leaf's recorded budget; there is no global increase
-or filename-based budget. See [Directory budgets and placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
+`make validate` enforces **100 atomic traits and composite rules combined** per
+directory, summed across its YAML files and criticalities. There are no
+path-specific directory-size exceptions. Review the parent and peer categories,
+remove misplaced or duplicate rules, and define any necessary semantic
+refinement before moving rules. See [Directory budgets and placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
 Depth above five directory levels below the tier produces a soft validation
 warning, not a hard limit; count neither the tier nor the filename. Sibling
 groups below 35 combined rules also produce soft warnings under the criteria in

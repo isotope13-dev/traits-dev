@@ -1,224 +1,224 @@
 defaults:
   mbc: E1041
-  platforms: [windows, unix]
+  platforms:
+  - windows
+  - unix
   crit: notable
   conf: 0.85
-  # Keep the original high-signal language spread, add PHP for the PHP OOB
-  # composites, and exclude unrelated script formats so endpoint matching stays
-  # bounded. Native binaries remain limited to PE, as in the original rule.
-  for: [scripts, -batch, -jcl, -lua, -perl, -applescript, -vbs, pe, go, rust, package.json]
+  for:
+  - scripts
+  - -batch
+  - -jcl
+  - -lua
+  - -perl
+  - -applescript
+  - -vbs
+  - pe
+  - go
+  - rust
+  - package.json
 composite_rules:
-  - id: npm-postinstall-stdin-oob-exfil
-    desc: npm postinstall pipes command output to an ngrok tunnel
-    crit: hostile
-    conf: 0.995
-    attack: T1195.002,T1033,T1041
-    for: [source, scripts, '!jcl', npm, package.json, tar]
-    scope: archive
-    all:
-      - id: metadata/package/scripts/lifecycle::postinstall-hook-declaration
-      - id: objectives/supply-chain/install-hook/scripts/postinstall::curl-stdin-body-post
-      - id: micro-behaviors/communications/url/host/oob::ngrok-free-domain
-
-  - id: js-remote-script-oob-loader
-    desc: Loads xss.report browser collector script
-    crit: hostile
-    conf: 0.97
-    attack: T1105,T1048
-    for: [javascript, typescript]
-    near_bytes: 512
-    all:
-      - id: micro-behaviors/ui/window/insert-html::browser-create-script-element
-      - id: micro-behaviors/communications/http/client/resource::js-remote-src-assignment
-      - id: micro-behaviors/data/collection/dom::append-child-reference
-      - id: micro-behaviors/communications/http/url/endpoint::xss-report-callback
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: well-known/tool/detection/
-
-  # A script that reads local files into memory, packs them as multipart
-  # form data, and POSTs the form to an out-of-band collector. The read +
-  # form + POST + OOB combination is the file-theft shape: crash reporters
-  # and update checkers POST JSON or telemetry, not local file bytes as
-  # multipart to a callback service.
-  - id: js-file-form-post-oob
-    desc: Posts local files to an OOB endpoint
-    crit: hostile
-    conf: 0.97
-    attack: T1048,T1041
-    for: [javascript, typescript]
-    near_bytes: 8192
-    all:
-      - id: micro-behaviors/communications/url/host/oob::oob-endpoint-any
-      - id: micro-behaviors/communications/http/form::form-data-append
-      - id: micro-behaviors/fs/read/file/full::readfilesync-call
-      - id: micro-behaviors/communications/http/post::request-options-post-method
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: well-known/tool/detection/security-scanner/
-
-  - id: js-fetch-json-post-oob
-    desc: JavaScript fetch JSON POST to OOB
-    crit: hostile
-    conf: 0.97
-    attack: T1048,T1041
-    for: [javascript, typescript]
-    near_bytes: 4096
-    all:
-      - id: micro-behaviors/communications/url/host/oob::oob-endpoint-any
-      - id: micro-behaviors/communications/http/post::fetch-post-call
-      - id: micro-behaviors/communications/http/post::json-body-post
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: well-known/tool/detection/security-scanner/
-      - id: well-known/tool/detection/opena2a-arp/
-      # `.mdx` pages are typed as JavaScript; a tutorial that names
-      # Webhook.site as a test receiver near a fetch example is prose.
-      - id: metadata/file/extension/identity::markdown-file-basename
-      # Hostname-shaped strings inside an embedded domain blocklist are
-      # data to be blocked, not a callback endpoint the program contacts.
-      - id: metadata/file/catalog/identity::embedded-domain-blocklist-context
-      - id: objectives/supply-chain/impersonation/brand::npm-wix-registry-facade-command-exfil
-      - id: well-known/tool/development/testing/empiricalrun/
-      # A fetch POST to a free-host endpoint that the package manifest names
-      # as its own homepage is the vendor's documented API, not a callback.
-      - id: objectives/exfiltration/oob/endpoint::documented-service-api-post-context
-
-  # CanaryTokens' documented honey-credential API accepts a JSON request to
-  # generate decoy AWS keys. This call sends setup metadata to that API; it
-  # does not POST collected local data as an OOB beacon.
-  - id: canarytokens-aws-honey-credential-generation-api
-    desc: CanaryTokens AWS honey-key generation API request
-    crit: exception
-    for: [javascript, typescript]
-    scope: file
-    near_bytes: 4096
-    all:
-      - id: micro-behaviors/communications/url/host/oob::canarytokens-service-reference
-      - id: micro-behaviors/communications/url/host/oob::aws-honey-key-token-type
-      - id: micro-behaviors/communications/http/post::fetch-post-call
-      - id: micro-behaviors/communications/http/post::json-body-post
-
-  # Group the archive and file scopes for vendor API calls. This keeps both
-  # documented-vendor suppressions plus the CanaryTokens honey-key API
-  # recognition behind one narrowly defined exception reference.
-  - id: documented-service-api-post-context
-    desc: Documented vendor service API POST context
-    crit: exception
-    any:
-      - id: objectives/exfiltration/oob/endpoint::documented-vendor-api-endpoint-post
-      - id: objectives/exfiltration/oob/endpoint::documented-vendor-endpoint-post-file
-      - id: objectives/exfiltration/oob/endpoint::canarytokens-aws-honey-credential-generation-api
-
-  - id: browser-page-snapshot-oob-exfil
-    desc: Full browser page snapshot exfiltrated to OOB collector
-    crit: hostile
-    conf: 0.98
-    attack: T1113,T1041
-    for: [javascript, typescript]
-    near_bytes: 4096
-    all:
-      - id: micro-behaviors/communications/url/host/oob::oob-endpoint-any
-      - id: micro-behaviors/data/parse/html::browser-document-html-snapshot-read-any
-      - id: micro-behaviors/data/encode/base64::btoa-symbol
-      - id: micro-behaviors/communications/http/request/client::js-fetch-call
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: well-known/tool/detection/security-scanner/
-
-  - id: js-local-route-oob-post
-    desc: Local application route content posted to OOB callback
-    crit: hostile
-    conf: 0.96
-    attack: T1041
-    for: [javascript, typescript]
-    near_lines: 120
-    all:
-      - id: micro-behaviors/communications/url/host/oob::oob-endpoint-any
-      - id: micro-behaviors/communications/http/client/exchange::js-relative-route-fetch
-      - id: micro-behaviors/communications/http/client/response-body::js-response-text-read
-      - id: micro-behaviors/communications/http/request/verb::post-method-text
-      - id: micro-behaviors/data/serialize/json::json-stringify-call
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: well-known/tool/detection/security-scanner/
-      - id: well-known/tool/detection/opena2a-arp/
-
-  # PHP OOB endpoints are callback collectors rather than application APIs.
-  # A JSON POST to one is an outbound collection operation even when the
-  # payload is assembled from runtime values instead of a local file.
-  - id: php-oob-json-post
-    desc: PHP posts JSON to an OOB endpoint
-    crit: hostile
-    conf: 0.97
-    attack: T1041
-    for: [php]
-    all:
-      - id: micro-behaviors/communications/url/host/oob::oob-endpoint-any
-      - id: micro-behaviors/communications/http/post::php-stream-context-http-post
-      - id: micro-behaviors/data/serialize/json::php-json-encode
-    near_bytes: 4096
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-
-  # Python packages sometimes contain ordinary webhook integrations, so the
-  # hostile signal requires both a known OOB collector and a JSON POST in the
-  # same source file.  A fixed webhook.site UUID is a callback sink, not an
-  # application API, and the payload here is assembled from caller input.
-  - id: npm-postinstall-oob-silent-json-beacon
-    desc: npm postinstall silently POSTs JSON to an OOB sink
-    crit: hostile
-    conf: 0.98
-    attack: T1195.002,T1041
-    for: [javascript, typescript, pkginfo, npm, tar, package.json]
-    scope: archive
-    all:
-      - id: metadata/package/scripts/lifecycle::postinstall-runs-node-script
-      - id: micro-behaviors/communications/http/request/beacon::oob-json-post-suppressed-errors
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-
-  - id: documented-vendor-api-endpoint-post
-    desc: Documented vendor endpoint with no collection
-    crit: exception
-    for: [npm, tar, javascript, typescript, package.json]
-    scope: archive
-    all:
-      - id: micro-behaviors/communications/url/reference::srebps-ai-api-endpoint
-      - id: metadata/package/homepage::manifest-homepage-srebps-endpoint
-    unless:
-      - id: objectives/collection/
-      - id: objectives/discovery/
-      - id: micro-behaviors/fs/path/app-data::local-storage-or-leveldb-reference
-      - id: metadata/lang/source/naming/setting::bucket-order-identifier-reference
-      - id: micro-behaviors/os/sysinfo/
-      - id: micro-behaviors/fs/read/
-      - id: micro-behaviors/process/create/spawn/
-      - id: micro-behaviors/process/create/shell/command-string/
-      - id: metadata/package/scripts/lifecycle::install-hooks
-
-  # File-scope twin of the rule above: the fetch-POST OOB hostile evaluates
-  # inside one member file, where the manifest leg cannot match, so the
-  # archive twin alone leaves the member-level finding standing. The vendor
-  # binding here is the endpoint literal in the posting file itself: a file
-  # that POSTs JSON to srebps-ai.gt.tc with no collection, recon, file-read
-  # or execution legs is an API client call site, not a beacon. Anything
-  # harvesting, profiling, reading files or spawning processes keeps firing.
-  - id: documented-vendor-endpoint-post-file
-    desc: Vendor endpoint POST with no collection
-    crit: exception
-    for: [javascript, typescript]
-    scope: file
-    near_bytes: 8192
-    all:
-      - id: micro-behaviors/communications/url/reference::srebps-ai-api-endpoint
-      - id: micro-behaviors/communications/http/post::json-body-post
-    unless:
-      - id: objectives/collection/
-      - id: objectives/discovery/
-      - id: micro-behaviors/fs/path/app-data::local-storage-or-leveldb-reference
-      - id: metadata/lang/source/naming/setting::bucket-order-identifier-reference
-      - id: micro-behaviors/os/sysinfo/
-      - id: micro-behaviors/fs/read/
-      - id: micro-behaviors/process/create/spawn/
-      - id: micro-behaviors/process/create/shell/command-string/
+- id: npm-postinstall-stdin-oob-exfil
+  desc: npm postinstall pipes command output to an ngrok tunnel
+  crit: hostile
+  conf: 0.995
+  attack: T1195.002,T1033,T1041
+  for:
+  - source
+  - scripts
+  - '!jcl'
+  - npm
+  - package.json
+  - tar
+  scope: archive
+  all:
+  - id: metadata/package/scripts/lifecycle::postinstall-hook-declaration
+  - id: objectives/supply-chain/install-hook/scripts/postinstall::curl-stdin-body-post
+  - id: micro-behaviors/communications/url/host/oob::ngrok-free-domain
+- id: js-remote-script-oob-loader
+  desc: Loads xss.report browser collector script
+  crit: hostile
+  conf: 0.97
+  attack: T1105,T1048
+  for:
+  - javascript
+  - typescript
+  near_bytes: 512
+  all:
+  - id: micro-behaviors/ui/window/insert-html::browser-create-script-element
+  - id: micro-behaviors/communications/http/client/resource::js-remote-src-assignment
+  - id: micro-behaviors/data/collection/dom::append-child-reference
+  - id: micro-behaviors/communications/http/url/endpoint::xss-report-callback
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: well-known/tool/detection/
+- id: js-file-form-post-oob
+  desc: Posts local files to an OOB endpoint
+  crit: hostile
+  conf: 0.97
+  attack: T1048,T1041
+  for:
+  - javascript
+  - typescript
+  near_bytes: 8192
+  all:
+  - id: micro-behaviors/communications/url/host/oob::oob-endpoint-any
+  - id: micro-behaviors/communications/http/form::form-data-append
+  - id: micro-behaviors/fs/read/file/full::readfilesync-call
+  - id: micro-behaviors/communications/http/post::request-options-post-method
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: well-known/tool/detection/security-scanner/
+- id: js-fetch-json-post-oob
+  desc: JavaScript fetch JSON POST to OOB
+  crit: hostile
+  conf: 0.97
+  attack: T1048,T1041
+  for:
+  - javascript
+  - typescript
+  near_bytes: 4096
+  all:
+  - id: micro-behaviors/communications/url/host/oob::oob-endpoint-any
+  - id: micro-behaviors/communications/http/post::fetch-post-call
+  - id: micro-behaviors/communications/http/post::json-body-post
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: well-known/tool/detection/security-scanner/
+  - id: well-known/tool/detection/opena2a-arp/
+  - id: metadata/file/extension/identity::markdown-file-basename
+  - id: metadata/file/catalog/identity::embedded-domain-blocklist-context
+  - id: objectives/supply-chain/impersonation/brand::npm-wix-registry-facade-command-exfil
+  - id: well-known/tool/development/testing/empiricalrun/
+  - id: objectives/exfiltration/oob/endpoint::documented-service-api-post-context
+- id: canarytokens-aws-honey-credential-generation-api
+  desc: CanaryTokens AWS honey-key generation API request
+  crit: exception
+  for:
+  - javascript
+  - typescript
+  scope: file
+  near_bytes: 4096
+  all:
+  - id: micro-behaviors/communications/url/host/oob::canarytokens-service-reference
+  - id: micro-behaviors/communications/url/host/oob::aws-honey-key-token-type
+  - id: micro-behaviors/communications/http/post::fetch-post-call
+  - id: micro-behaviors/communications/http/post::json-body-post
+- id: documented-service-api-post-context
+  desc: Documented vendor service API POST context
+  crit: exception
+  any:
+  - id: objectives/exfiltration/oob/endpoint::documented-vendor-api-endpoint-post
+  - id: objectives/exfiltration/oob/endpoint::documented-vendor-endpoint-post-file
+  - id: objectives/exfiltration/oob/endpoint::canarytokens-aws-honey-credential-generation-api
+- id: browser-page-snapshot-oob-exfil
+  desc: Full browser page snapshot exfiltrated to OOB collector
+  crit: hostile
+  conf: 0.98
+  attack: T1113,T1041
+  for:
+  - javascript
+  - typescript
+  near_bytes: 4096
+  all:
+  - id: micro-behaviors/communications/url/host/oob::oob-endpoint-any
+  - id: micro-behaviors/data/parse/html::browser-document-html-snapshot-read-any
+  - id: micro-behaviors/data/encode/base64::btoa-symbol
+  - id: micro-behaviors/communications/http/request/client::js-fetch-call
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: well-known/tool/detection/security-scanner/
+- id: js-local-route-oob-post
+  desc: Local application route content posted to OOB callback
+  crit: hostile
+  conf: 0.96
+  attack: T1041
+  for:
+  - javascript
+  - typescript
+  near_lines: 120
+  all:
+  - id: micro-behaviors/communications/url/host/oob::oob-endpoint-any
+  - id: micro-behaviors/communications/http/client/exchange::js-relative-route-fetch
+  - id: micro-behaviors/communications/http/client/response-body::js-response-text-read
+  - id: micro-behaviors/communications/http/request/verb::post-method-text
+  - id: micro-behaviors/data/serialize/json::json-stringify-call
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: well-known/tool/detection/security-scanner/
+  - id: well-known/tool/detection/opena2a-arp/
+- id: php-oob-json-post
+  desc: PHP posts JSON to an OOB endpoint
+  crit: hostile
+  conf: 0.97
+  attack: T1041
+  for:
+  - php
+  all:
+  - id: micro-behaviors/communications/url/host/oob::oob-endpoint-any
+  - id: micro-behaviors/communications/http/post::php-stream-context-http-post
+  - id: micro-behaviors/data/serialize/json::php-json-encode
+  near_bytes: 4096
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+- id: npm-postinstall-oob-silent-json-beacon
+  desc: npm postinstall silently POSTs JSON to an OOB sink
+  crit: hostile
+  conf: 0.98
+  attack: T1195.002,T1041
+  for:
+  - javascript
+  - typescript
+  - pkginfo
+  - npm
+  - tar
+  - package.json
+  scope: archive
+  all:
+  - id: metadata/package/scripts/lifecycle::postinstall-runs-node-script
+  - id: micro-behaviors/communications/http/request/beacon::oob-json-post-suppressed-errors
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+- id: documented-vendor-api-endpoint-post
+  desc: Documented vendor endpoint with no collection
+  crit: exception
+  for:
+  - npm
+  - tar
+  - javascript
+  - typescript
+  - package.json
+  scope: archive
+  all:
+  - id: micro-behaviors/communications/url/reference::srebps-ai-api-endpoint
+  - id: metadata/package/homepage::manifest-homepage-srebps-endpoint
+  unless:
+  - id: objectives/collection
+  - id: objectives/discovery
+  - id: micro-behaviors/fs/path/app-data::local-storage-or-leveldb-reference
+  - id: metadata/lang/source/naming/setting::bucket-order-identifier-reference
+  - id: micro-behaviors/os/sysinfo/
+  - id: micro-behaviors/fs/read/
+  - id: micro-behaviors/process/create/spawn/
+  - id: micro-behaviors/process/create/shell/command-string/
+  - id: metadata/package/scripts/lifecycle::install-hooks
+- id: documented-vendor-endpoint-post-file
+  desc: Vendor endpoint POST with no collection
+  crit: exception
+  for:
+  - javascript
+  - typescript
+  scope: file
+  near_bytes: 8192
+  all:
+  - id: micro-behaviors/communications/url/reference::srebps-ai-api-endpoint
+  - id: micro-behaviors/communications/http/post::json-body-post
+  unless:
+  - id: objectives/collection
+  - id: objectives/discovery
+  - id: micro-behaviors/fs/path/app-data::local-storage-or-leveldb-reference
+  - id: metadata/lang/source/naming/setting::bucket-order-identifier-reference
+  - id: micro-behaviors/os/sysinfo/
+  - id: micro-behaviors/fs/read/
+  - id: micro-behaviors/process/create/spawn/
+  - id: micro-behaviors/process/create/shell/command-string/

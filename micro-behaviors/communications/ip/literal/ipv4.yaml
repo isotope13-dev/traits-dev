@@ -1,14 +1,7 @@
-# Policy: hardcoded external IPv4 addresses are always at least notable
-# regardless of file type. Legitimate code resolves names via DNS; pinning a
-# numeric public address bypasses DNS rotation/blocklists and is the malware
-# author's choice (resilience to domain takedowns, sinkholes, EDR DNS hooks).
-# The `not:` exclusion lists below carve out well-known public DNS resolvers
-# and cloud metadata endpoints — adjust those, not the criticality.
-#
-# Non-external addresses (loopback, RFC1918, link-local) carry no comparable
-# signal — those traits stay at their lower default tier.
 defaults:
-  platforms: [windows, unix]
+  platforms:
+  - windows
+  - unix
   for:
   - binaries
   - scripts
@@ -19,10 +12,6 @@ defaults:
   - data
   - xml
 traits:
-# 255.255.255.255 is both the limited-broadcast address and the all-ones
-# netmask, so on its own it says nothing about intent -- it is a component that
-# only carries signal when a composite pairs it with what the code does with
-# it (e.g. network/interface::dotnet-local-ip-via-broadcast-connect).
 - id: all-ones-ipv4-literal
   desc: All-ones IPv4 literal (broadcast/netmask)
   crit: notable
@@ -32,14 +21,12 @@ traits:
     exact: 255.255.255.255
 - id: external-ipv4-android-apk
   desc: Hardcoded external IPv4 address
-  # Search raw bytes so generic XOR decoding of DEX/debug bytes cannot turn an
-  # accidental byte pattern into a claimed network literal. A real ASCII IP
-  # stored in a DEX string item remains present in the raw member bytes; the
-  # android-rat composites add protocol and socket context before escalation.
   crit: notable
   conf: 0.86
-  platforms: [android]
-  for: [android_apk]
+  platforms:
+  - android
+  for:
+  - android_apk
   size_max: 5000000
   if:
     type: raw
@@ -53,86 +40,41 @@ traits:
   unless:
   - id: metadata/package/versioning/scheme::pkginfo-version-ipv4-shape
   - type: basename
-    regex: '\.(nupkg|snupkg|whl|vsix)$'
-  # Package-level scans can retain raw evidence from compressed RPM payloads;
-  # an RPM container is not an Android APK and must not inherit this APK-only
-  # literal finding.
+    regex: \.(nupkg|snupkg|whl|vsix)$
   - type: value
     path: rpm.name
     exists: true
-
-# IPv4-shaped text in a binary is a syntax observation, not proof of a
-# pinned host or a connection. Four-part library versions (for example an
-# SQLite version) can have exactly the same bytes as public IPv4 addresses.
-# Keep this ambiguity explicit rather than excluding an entire program or
-# discarding genuine addresses beside a library's version string.
-# Raw-byte boundaries avoid speculative decodes and longer dotted runs.
-# Excluding leading 0/1/2 octets reduces ASN.1 OID matches; it cannot
-# distinguish every version number from an address.
 - id: external-ipv4-shaped-text-binary
   desc: IPv4-shaped binary text; may be version
   crit: notable
   conf: 0.85
-  for: [pe, elf, macho]
+  for:
+  - pe
+  - elf
+  - macho
   size_max: 20000000
   if:
     type: raw
-    regex: '(^|[^\d.])([0-9]{2,3}|[3-9])(\.[0-9]{1,3}){3}($|[\x00\s"'',:;/)\]>])'
+    regex: (^|[^\d.])([0-9]{2,3}|[3-9])(\.[0-9]{1,3}){3}($|[\x00\s"',:;/)\]>])
     is: external_ip
   unless:
-    # The residual noted above is not hypothetical on Windows: a PE whose own
-    # VERSIONINFO is a dotted quad with every component <= 255 puts that string
-    # into the resource bytes, and this matcher then reports the product's
-    # version as a pinned C2 endpoint. Observed on an Intel-signed installer
-    # whose FileVersion is `25.3.24.7` -- reported on the bundle and on all 27
-    # of its signed payload assemblies at once. `.rsrc`-scoped matches already
-    # have their own honestly-hedged atom (external-ipv4-pe-resource-string),
-    # and the sibling xor-decoded-external-ipv4 below already carries this same
-    # guard for the same reason.
-    - id: metadata/package/versioning/scheme::pe-versioninfo-ipv4-shape
-  # This is the dotted certificate OID printed by GnuTLS tools, not an IP
-  # endpoint. Keep the exception here because the raw matcher has no
-  # certificate-field context.
+  - id: metadata/package/versioning/scheme::pe-versioninfo-ipv4-shape
   not:
-  - regex: '4\.1\.2\.2'
-
-# The C/C++-source counterpart of external-ipv4-shaped-text-binary, matched on
-# parsed string literals. Relocated (2026-08) from
-# objectives/command-and-control/backdoor/proxy/reverse, where a bare
-# dotted-quad literal was named and filed as a reverse-proxy implant endpoint.
-# The matcher only observes an external-looking IPv4 string in C source; the
-# implant inference comes from the composite there, which still references it.
-# It carries the same first-octet >= 3 restriction documented above, for the
-# same reason: without it BoringSSL's OID unit test scored `"2.5.29.19"`
-# (the basicConstraints ASN.1 arc) as a hardcoded C2 endpoint.
+  - regex: 4\.1\.2\.2
 - id: external-ipv4-c-source-literal
   desc: External IPv4 string literal in C source
   crit: notable
   conf: 0.9
-  for: [c, cpp]
+  for:
+  - c
+  - cpp
   if:
     type: literal
     kind: string
-    regex: '^([3-9]|[1-9][0-9]|1[0-9][0-9]|2[0-2][0-9])\.\d{1,3}\.\d{1,3}\.\d{1,3}$'
+    regex: ^([3-9]|[1-9][0-9]|1[0-9][0-9]|2[0-2][0-9])\.\d{1,3}\.\d{1,3}\.\d{1,3}$
     is: external_ip
-
-# Suspicious, per the policy at the top of this file: a numeric public address
-# compiled into a binary is a pinned endpoint that survives domain takedown,
-# sinkholing and DNS-layer blocking, which is why implants carry one and
-# ordinary software resolves names instead. The `not:` list below is where
-# legitimate constants (public resolvers, metadata endpoints, x86 operand bytes
-# decoding to 66.66.66.x) get carved out.
-#
-# This previously read `crit: notable` with `downgrade: any: [<this trait>]` --
-# a self-reference, so the downgrade fired on the trait's own match every time
-# and pinned it to baseline: one level BELOW the "always at least notable"
-# floor this file documents. cleave's validator now rejects that shape
-# (find_self_suppressing_traits); it was invisible before because test-rules
-# evaluates a rule in isolation and reports it as matching normally.
 - id: external-ipv4-binary
   desc: Hardcoded external IPv4 in binary bytes
-    # Search raw bytes so decoded guesses from unrelated binary data do not
-    # masquerade as embedded network endpoints.
   crit: suspicious
   conf: 0.85
   for:
@@ -159,26 +101,16 @@ traits:
   - regex: ^208\.67\.22[20]\.22[20]$
   - exact: 123.123.123.123
   - exact: 44.44.45.5
-  # x86 operand-size override prefix (0x66) runs decode to a 66.66.66.x dotted
-  # string in disassembly/XOR-decoded sections — instruction bytes, not a C2 IP.
   - regex: ^66\.66\.66\.[0-9]{1,3}$
-  # Well-known public DNS resolvers. These are hardcoded in ordinary network
-  # tools, installers and runtimes as fallback resolvers; they are never C2.
-  # (Google 8.8.x, Cloudflare 1.1.1.1, Quad9 9.9.9.9 and OpenDNS are already
-  # excluded above.)
-  - exact: 1.0.0.1              # Cloudflare secondary
-  - regex: ^4\.2\.2\.[1-6]$     # Level3/CenturyLink public resolvers
-  - exact: 149.112.112.112      # Quad9 secondary
-  - regex: ^64\.6\.6[45]\.6$    # Verisign Public DNS
-  - exact: 8.26.56.26           # Comodo Secure DNS
-  - exact: 8.20.247.20          # Comodo Secure DNS secondary
-  # RFC5737 documentation ranges (TEST-NET-1/2/3): reserved for examples and
-  # never routable, so an address in them is sample/test data, not an endpoint.
-  # `is: external_ip` treats them as external, so exclude them explicitly.
+  - exact: 1.0.0.1
+  - regex: ^4\.2\.2\.[1-6]$
+  - exact: 149.112.112.112
+  - regex: ^64\.6\.6[45]\.6$
+  - exact: 8.26.56.26
+  - exact: 8.20.247.20
   - regex: ^192\.0\.2\.[0-9]{1,3}$
   - regex: ^198\.51\.100\.[0-9]{1,3}$
   - regex: ^203\.0\.113\.[0-9]{1,3}$
-  # RFC2544 benchmarking range (198.18.0.0/15): network test harnesses embed it.
   - regex: ^198\.1[89]\.[0-9]{1,3}\.[0-9]{1,3}$
   unless:
   - id: metadata/lang/compiler/aot::native-runtime-large-file
@@ -187,20 +119,12 @@ traits:
   - id: metadata/lang/compiler/managed::dotnet-ipv4-like-version
   - id: metadata/package/versioning/
   - id: well-known/lib/native/glibc::gnu-character-conversion-module
-# Python bytecode keeps string constants length-prefixed rather than
-# NUL-terminated, so neither the `^...$` raw anchors of external-ipv4-binary
-# nor a `type: text` run reliably isolates an embedded address. Match the raw
-# bytes with explicit non-digit delimiters instead, and take the same
-# first-octet >= 3 reading used for binaries so ASN.1 OIDs packed into a
-# marshalled constant table do not read as a pinned endpoint. Only the leading
-# delimiter is written into the pattern: a trailing non-digit byte inside the
-# captured evidence makes `is: external_ip` reject the match, and in a .pyc the
-# byte after a constant is always the next marshal type tag (a letter).
 - id: external-ipv4-pyc
   desc: Pinned external IPv4 in Python bytecode
   crit: notable
   conf: 0.85
-  for: [pyc]
+  for:
+  - pyc
   size_max: 5000000
   if:
     type: raw
@@ -210,11 +134,13 @@ traits:
   desc: Mach-O external IPv4 endpoint with a port
   crit: notable
   conf: 0.9
-  platforms: [macos]
-  for: [macho]
+  platforms:
+  - macos
+  for:
+  - macho
   if:
     type: text
-    regex: '\b([0-9]{1,3}\.){3}[0-9]{1,3}:[0-9]{2,5}\b'
+    regex: \b([0-9]{1,3}\.){3}[0-9]{1,3}:[0-9]{2,5}\b
     is: external_ip
   unless:
   - id: metadata/lang/compiler/generated/
@@ -223,23 +149,28 @@ traits:
   desc: IPv4-shaped PE resource string; may be version
   crit: notable
   conf: 0.92
-  for: [pe, dll]
-  platforms: [windows]
+  for:
+  - pe
+  - dll
+  platforms:
+  - windows
   size_max: 2000000
   if:
     type: text
     section: .rsrc
-    regex: '^(1[0-9]{2}|2[0-1][0-9]|22[0-3]|[1-9]?[0-9])\.([0-9]{1,3}\.){2}[0-9]{1,3}$'
+    regex: ^(1[0-9]{2}|2[0-1][0-9]|22[0-3]|[1-9]?[0-9])\.([0-9]{1,3}\.){2}[0-9]{1,3}$
     is: external_ip
   not:
-  - regex: '^8\.8\.[84]\.[84]$'
+  - regex: ^8\.8\.[84]\.[84]$
   - exact: 1.1.1.1
   - exact: 9.9.9.9
 - id: zabbix-service-role-ip-context
   desc: Zabbix service-role IP configuration
   crit: notable
   conf: 0.9
-  for: [php, source]
+  for:
+  - php
+  - source
   if:
     type: text
     substr: zabbix_server_ip
@@ -247,7 +178,8 @@ traits:
   desc: PHP ip2long conversion call
   crit: baseline
   conf: 0.9
-  for: [php]
+  for:
+  - php
   if:
     type: symbol
     exact: ip2long
@@ -255,7 +187,8 @@ traits:
   desc: GeoIP country-code result field
   crit: baseline
   conf: 0.9
-  for: [php]
+  for:
+  - php
   if:
     type: text
     substr: country_code
@@ -265,14 +198,14 @@ traits:
   conf: 0.9
   if:
     type: text
-    regex: '\bAddProvider\s*\([^\n]{0,240}:853'
+    regex: \bAddProvider\s*\([^\n]{0,240}:853
 - id: ipv4-literal-buffer-length-idiom
   desc: IPv4 string buffer length idiom
   crit: component
   conf: 0.9
   if:
     type: text
-    regex: '(\d{1,3}\.){3}\d{1,3}"\s*\.len\b'
+    regex: (\d{1,3}\.){3}\d{1,3}"\s*\.len\b
 - id: external-ipv4-script
   desc: Hardcoded external IPv4 address
   crit: notable
@@ -284,7 +217,7 @@ traits:
   if:
     type: literal
     kind: string
-    regex: '^([0-9]{1,3}\.){3}[0-9]{1,3}$'
+    regex: ^([0-9]{1,3}\.){3}[0-9]{1,3}$
     is: external_ip
   not:
   - regex: ^2\.16\.840\.1$
@@ -294,141 +227,142 @@ traits:
   - exact: 1.1.1.1
   - exact: 9.9.9.9
   - exact: 100.100.100.200
-  # X.509 Subject Key Identifier extension OID, not an IP address.
   - exact: 2.5.29.14
   - regex: ^208\.67\.22[20]\.22[20]$
   - exact: 123.123.123.123
-  - regex: '\b(ks_)?(check_network_list_ip(_cidr)?|network_list_add_cidr)\b'
+  - regex: \b(ks_)?(check_network_list_ip(_cidr)?|network_list_add_cidr)\b
   - regex: \bks_find_local_ip\b
   - regex: \bks_ip_route\b
   - regex: \bgetsockname\b
   - regex: \bSIO_ROUTING_INTERFACE_QUERY\b
   unless:
-  # A four-arc OID such as 1.3.101.112 (Ed25519) is a structurally valid public
-  # quad. When the file also carries a five-plus-arc OID it is an ASN.1 table
-  # (Zig's std/crypto/codecs/asn1/Oid.zig), not an embedded endpoint.
   - id: micro-behaviors/data/format/asn1::well-known-oid-arc-string
   - id: metadata/package/testing/harness/unit/
   - id: metadata/package/testing/presence/harness::rust-tests-path-filename
   - id: metadata/package/testing/presence/harness::rust-tests-directory-path
-
 - id: external-ipv4-url-script
   desc: Script embeds external IPv4 URL
   crit: notable
   conf: 0.9
-  # `archives` admits archive containers so an archive-scoped composite can
-  # pair this folded member finding with the install-hook manifest fact that
-  # names the script (text conditions cannot re-evaluate against a container).
-  for: [scripts, zip, tar, jar, whl, python-sdist, gem, deb, rpm, npm, nupkg, crate, conda, egg, pkg, dmg, crx, chm, cab, iso, oci_image, xbps, gentoo_binpkg, asar, vsix-archive, xpi, rar, 7z, cpio, apk, alpine_apk, ipa]
+  for:
+  - archives
+  - -apk
+  - -apk_alpine
+  - -composer
+  - -cpan
+  - -cran
+  - -go_module
+  - -hackage
+  - -hex
+  - -phar
+  - -pub
+  - -rpa
+  - -snap
+  - -squashfs
+  - -vhd
+  - scripts
+  - apk
+  - alpine_apk
   if:
     type: text
-    regex: '(?i)https?://(\d{1,3}\.){3}\d{1,3}(:\d{2,5})?'
+    regex: (?i)https?://(\d{1,3}\.){3}\d{1,3}(:\d{2,5})?
     is: external_ip
   unless:
-  # Same carve-out as the sibling external-ipv4-address above. A URL-classifier
-  # test tabulates addresses chosen to sit just outside every reserved range --
-  # agent-glovebox's test_mcpgw_derive_units.py lists `http://126.255.255.255`,
-  # `http://128.0.0.1` and `http://169.253.0.1` as boundary cases -- so the
-  # external-IP check is what the fixture is exercising, not an endpoint.
   - id: metadata/package/testing/harness/unit/
   - id: metadata/package/testing/presence/harness/
-  - id: "metadata/file/naming::test-directory-component"
+  - id: metadata/path::test-directory-component
   not:
-  - regex: '(?i)https?://(1\.1\.1\.1|8\.8\.8\.8|8\.8\.4\.4|9\.9\.9\.9)\b'
-  # Shared address space (RFC 6598, 100.64.0.0/10) is not publicly routable:
-  # Tailscale tailnet IPs live here. Same carve-out as external-ipv4-http-url.
-  - regex: 'https?://100\.(6[4-9]|[789][0-9]|1[01][0-9]|12[0-7])\.'
-
+  - regex: (?i)https?://(1\.1\.1\.1|8\.8\.8\.8|8\.8\.4\.4|9\.9\.9\.9)\b
+  - regex: https?://100\.(6[4-9]|[789][0-9]|1[01][0-9]|12[0-7])\.
 - id: batch-public-ip-literal
   desc: Batch script contains a public IPv4 literal
   crit: notable
   conf: 0.9
-  for: [batch]
+  for:
+  - batch
   size_max: 5000000
   if:
     type: text
-    regex: '\b([0-9]{1,3}\.){3}[0-9]{1,3}(:[0-9]{1,5})?\b'
+    regex: \b([0-9]{1,3}\.){3}[0-9]{1,3}(:[0-9]{1,5})?\b
     is: external_ip
 - id: external-ipv4-shell-literal
   desc: Shell/text contains public IPv4
   crit: notable
   conf: 0.9
-  for: [shell, text]
+  for:
+  - shell
+  - text
   size_max: 200000
   if:
     type: text
-    regex: '(?m)(^|[\s;/\"'':=-])([0-9]{1,3}\.){3}[0-9]{1,3}([:\s;/\"''}0-9]|$)'
+    regex: (?m)(^|[\s;/\"':=-])([0-9]{1,3}\.){3}[0-9]{1,3}([:\s;/\"'}0-9]|$)
     is: external_ip
   not:
-  - regex: '(^|[\s;/\"''])(127\.0\.0\.1|0\.0\.0\.0)([\s;/\"'']|$)'
-  - regex: '(^|[\s;/\"''])10\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}([\s;/\"'']|$)'
-  - regex: '(^|[\s;/\"''])192\.168\.[0-9]{1,3}\.[0-9]{1,3}([\s;/\"'']|$)'
-  - regex: '(^|[\s;/\"''])172\.(1[6-9]|2[0-9]|3[0-1])\.[0-9]{1,3}\.[0-9]{1,3}([\s;/\"'']|$)'
+  - regex: (^|[\s;/\"'])(127\.0\.0\.1|0\.0\.0\.0)([\s;/\"']|$)
+  - regex: (^|[\s;/\"'])10\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}([\s;/\"']|$)
+  - regex: (^|[\s;/\"'])192\.168\.[0-9]{1,3}\.[0-9]{1,3}([\s;/\"']|$)
+  - regex: (^|[\s;/\"'])172\.(1[6-9]|2[0-9]|3[0-1])\.[0-9]{1,3}\.[0-9]{1,3}([\s;/\"']|$)
   unless:
   - id: metadata/file/format/structured::serialized-news-article-catalog
   - id: metadata/package/testing/
-  - id: "metadata/file/naming::test-directory-component"
+  - id: metadata/path::test-directory-component
 - id: external-ipv4-shell-assignment
   desc: Shell assigns external IPv4 endpoint
   crit: notable
   conf: 0.9
-  for: [shell]
+  for:
+  - shell
   size_max: 200000
   if:
     type: text
-    regex: '(?m)^\s*[A-Za-z_]\w*\s*=\S{0,15}?([0-9]{1,3}\.){3}[0-9]{1,3}'
+    regex: (?m)^\s*[A-Za-z_]\w*\s*=\S{0,15}?([0-9]{1,3}\.){3}[0-9]{1,3}
     is: external_ip
 - id: external-ipv4-ssh-user-assignment
   desc: Shell assigns external IPv4 SSH target
   crit: notable
   conf: 0.95
-  for: [shell]
+  for:
+  - shell
   size_max: 200000
   if:
     type: text
-    regex: '(?m)^\s*[A-Za-z_]\w*\s*=\s*["''][\w.-]+@([0-9]{1,3}\.){3}[0-9]{1,3}["'']'
+    regex: (?m)^\s*[A-Za-z_]\w*\s*=\s*["'][\w.-]+@([0-9]{1,3}\.){3}[0-9]{1,3}["']
     is: external_ip
 - id: external-ipv4-telnet-command
   desc: External IPv4 in Telnet command
   crit: notable
   conf: 0.92
-  for: [shell]
+  for:
+  - shell
   size_max: 200000
   if:
     type: text
-    regex: '\btelnet\s+([0-9]{1,3}\.){3}[0-9]{1,3}\s+[0-9]{1,5}\b'
+    regex: \btelnet\s+([0-9]{1,3}\.){3}[0-9]{1,3}\s+[0-9]{1,5}\b
     is: external_ip
   not:
-  - regex: '\b(127\.0\.0\.1|localhost|0\.0\.0\.0)\b'
-  - regex: '\b(10|127)\.[0-9]{1,3}\.'
-  - regex: '\b192\.168\.[0-9]{1,3}\.'
-  - regex: '\b172\.(1[6-9]|2[0-9]|3[0-1])\.[0-9]{1,3}\.'
+  - regex: \b(127\.0\.0\.1|localhost|0\.0\.0\.0)\b
+  - regex: \b(10|127)\.[0-9]{1,3}\.
+  - regex: \b192\.168\.[0-9]{1,3}\.
+  - regex: \b172\.(1[6-9]|2[0-9]|3[0-1])\.[0-9]{1,3}\.
 - id: external-ipv4-http-url
-  # Relocated from objectives/execution/interpreter/script/wsh/jse-dropper.yaml:
-  # an http:// URL whose host is a raw external IPv4 is a neutral network
-  # indicator, not WSH script execution. The jse-powershell-downloader composite
-  # references it cross-directory; the PowerShell-execution intent lives in that
-  # composite's other legs.
   desc: Text contains raw external-IP HTTP URL
   crit: notable
   conf: 0.9
-  # Plain text regex, not an AST/symbol match: the URL string is equally
-  # visible in any compiled binary's string table (an IoT ELF's embedded
-  # busybox command line, a PE's resource strings, a Mach-O's __cstring
-  # section) or an XML document's text nodes -- not just script sources.
-  for: [scripts, source, text, binaries, xml]
+  for:
+  - scripts
+  - source
+  - text
+  - binaries
+  - xml
   if:
     type: text
-    # Optional :port so C2 on non-standard ports (e.g. http://<ip>:8080/) is
-    # matched, not just default-port URLs with the path directly after the host.
     regex: https?://\d+\.\d+\.\d+\.\d+(:\d+)?/
     is: external_ip
   not:
-  # Public DNS resolvers are common connectivity-check / example endpoints.
-  - regex: 'https?://8\.8\.[84]\.[84]/'
-  - regex: 'https?://1\.1\.1\.1/'
-  - regex: 'https?://9\.9\.9\.9/'
-  - regex: 'https?://100\.(6[4-9]|[789][0-9]|1[01][0-9]|12[0-7])\.'
+  - regex: https?://8\.8\.[84]\.[84]/
+  - regex: https?://1\.1\.1\.1/
+  - regex: https?://9\.9\.9\.9/
+  - regex: https?://100\.(6[4-9]|[789][0-9]|1[01][0-9]|12[0-7])\.
   unless:
   - id: metadata/lang/upstream::linux-kernel-primary-tree-path
   - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
@@ -446,15 +380,11 @@ traits:
   desc: Native binary contains a loopback IPv4 address
   crit: notable
   conf: 0.78
-  # Keep this native-only: bytecode and other structured binary projections
-  # can synthesize IP:port-looking text from sockaddr-shaped data runs.
-  # type:raw is capped at 3 file types (elf/macho/pe); dll/so/dylib fold into
-  # those families, so listing pe/elf/macho covers native objects without
-  # pulling in pyc/class/wasm.
-  for: [pe, elf, macho]
+  for:
+  - pe
+  - elf
+  - macho
   size_max: 120000000
-  # Search raw bytes, not the binary text projection. Raw matching catches an
-  # actual ASCII 127/8 literal without accepting a synthesized projection.
   if:
     type: raw
     regex: \b127\.([0-9]{1,3}\.){2}[0-9]{1,3}\b
@@ -477,7 +407,7 @@ traits:
   unless:
   - id: metadata/package/testing/
   - id: metadata/package/versioning/
-  - id: "metadata/file/naming::test-directory-component"
+  - id: metadata/path::test-directory-component
 - id: loopback-ipv4-source
   desc: Hardcoded loopback IPv4 address
   crit: baseline
@@ -489,15 +419,12 @@ traits:
   if:
     type: literal
     kind: string
-    substr: '127.0.0.1'
-  # `not:` tests the matched string literal, so every leg has to name text that
-  # appears alongside the address inside that same literal. Test-filename
-  # patterns cannot; they moved to `unless:` as path conditions.
+    substr: 127.0.0.1
   not:
   - regex: originatorAddress.{0,40}127\.0\.0\.1
-  - substr: "host: '127.0.0.1'"
-  - substr: "host = '127.0.0.1'"
-  - substr: "bindParts.unshift('127.0.0.1')"
+  - substr: 'host: ''127.0.0.1'''
+  - substr: host = '127.0.0.1'
+  - substr: bindParts.unshift('127.0.0.1')
   - regex: (this\.host|targetAddress):? =? '127\.0\.0\.1'
   unless:
   - type: path
@@ -510,7 +437,7 @@ traits:
     id: metadata/lang/scripted::dts-declaration-file
   - type: trait
     id: metadata/package/testing/
-  - id: "metadata/file/naming::test-directory-component"
+  - id: metadata/path::test-directory-component
 - id: private-ipv4-192-go
   desc: Go hardcoded 192.168 address
   crit: baseline
@@ -524,7 +451,7 @@ traits:
     substr: 192.168.
   unless:
   - id: metadata/package/testing/
-  - id: "metadata/file/naming::test-directory-component"
+  - id: metadata/path::test-directory-component
 - id: private-ipv4-10-go
   desc: Go hardcoded 10.x address
   crit: baseline
@@ -538,15 +465,8 @@ traits:
     regex: \b10\.\d{1,3}\.\d{1,3}\.\d{1,3}\b
   unless:
   - id: metadata/package/testing/
-  - id: "metadata/file/naming::test-directory-component"
+  - id: metadata/path::test-directory-component
 - id: localhost-source
-  # The matcher is a bare word match over raw text, so it hits prose as readily
-  # as a URL — it fired on OpenClaw's macOS settings caption "ws:// is allowed
-  # for localhost, LAN, .local, and Tailnet hosts", where nothing is hardcoded
-  # and no host is configured. The old desc, "Hardcoded localhost network host",
-  # asserted a configured endpoint the `word:` never checks. Reworded to what it
-  # detects, matching the honest phrasing its sibling localhost-binary already
-  # uses ("Binary contains the localhost hostname").
   desc: Source references the localhost hostname
   crit: baseline
   conf: 0.75
@@ -559,11 +479,10 @@ traits:
     word: localhost
 - id: localhost-binary
   desc: Binary contains the localhost hostname
-  # Loopback is a local-development/test endpoint, not an external host. Keep
-  # the clear literal visible without treating it like a network indicator.
   crit: baseline
   conf: 0.78
-  for: [binaries]
+  for:
+  - binaries
   size_max: 120000000
   if:
     type: text
@@ -572,47 +491,53 @@ traits:
   desc: Binary contains the IPv6 loopback address
   crit: notable
   conf: 0.8
-  for: [binaries]
+  for:
+  - binaries
   size_max: 120000000
   if:
     type: text
-    exact: '::1'
+    exact: ::1
   unless:
   - id: metadata/lang/compiler/systems::go-binary
 - id: loopback-ipv6-source
   desc: Hardcoded IPv6 loopback address
   crit: baseline
   conf: 0.8
-  for: [source]
+  for:
+  - source
   size_max: 200000
   if:
     type: literal
     kind: string
-    exact: '::1'
+    exact: ::1
 - id: rfc5737-documentation-ipv4-literal
   desc: RFC5737 documentation IPv4 literal
   crit: baseline
   conf: 0.95
-  for: [source, scripts]
+  for:
+  - source
+  - scripts
   if:
     type: literal
     kind: string
-    regex: '^(192\.0\.2\.\d{1,3}|198\.51\.100\.\d{1,3}|203\.0\.113\.\d{1,3})$'
+    regex: ^(192\.0\.2\.\d{1,3}|198\.51\.100\.\d{1,3}|203\.0\.113\.\d{1,3})$
 - id: rfc5737-documentation-ipv4-cidr
   desc: RFC5737 documentation IPv4 CIDR prefix
   crit: baseline
   conf: 0.95
-  for: [source, scripts]
+  for:
+  - source
+  - scripts
   if:
     type: text
-    regex: '(192\.0\.2|198\.51\.100|203\.0\.113)\.\d{1,3}/\d'
+    regex: (192\.0\.2|198\.51\.100|203\.0\.113)\.\d{1,3}/\d
 - id: encoded-external-ipv4-dotnet-version-text
   desc: Dotnet version text context
   crit: notable
   conf: 0.9
   if:
     type: text
-    regex: '(\.dll\.compressed)?\|4\.1\.[0-9]\.0\|System\.[A-Za-z.]+, Version='
+    regex: (\.dll\.compressed)?\|4\.1\.[0-9]\.0\|System\.[A-Za-z.]+, Version=
 - id: encoded-external-ipv4-x3dom-loader-text
   desc: X3DOM loader text context
   crit: notable
@@ -624,15 +549,13 @@ traits:
   desc: Encoded PE version 5.4.248.7
   crit: notable
   conf: 0.95
-  for: [pe]
+  for:
+  - pe
   if:
     type: encoded
-    exact: "5.4.248.7"
+    exact: 5.4.248.7
 - id: non-xor-encoded-external-ipv4-binary
   desc: Repeated non-XOR encoded external IPv4 literals
-  # A single decoded dotted quad occurs by chance in ordinary instruction and
-  # data bytes. Repetition is the minimum evidence that the result represents
-  # encoded configuration rather than a speculative decoder artifact.
   crit: notable
   conf: 0.9
   for:
@@ -641,56 +564,51 @@ traits:
   count_min: 2
   if:
     type: encoded
-    encoding: [base64, base64-obf, hex, url, unicode-escape, base32, base85, utf16le, utf16be, stack, wide]
-    regex: '^([0-9]{1,3}\.){3}[0-9]{1,3}$'
+    encoding:
+    - base64
+    - base64-obf
+    - hex
+    - url
+    - unicode-escape
+    - base32
+    - base85
+    - utf16le
+    - utf16be
+    - stack
+    - wide
+    regex: ^([0-9]{1,3}\.){3}[0-9]{1,3}$
     is: external_ip
   not:
-  - exact: "6.11.6.0"
-  - exact: "32.32.32.3"
+  - exact: 6.11.6.0
+  - exact: 32.32.32.3
   - regex: ^4\.1\.[0-9]\.0$
-  - exact: "5.4.248.7"
+  - exact: 5.4.248.7
   - regex: ^5\.4\.248\.7$
-  - exact: "44.44.45.5"
+  - exact: 44.44.45.5
   unless:
-  # Prefer the raw endpoint atom when both representations are present; the
-  # directory aggregate would otherwise suppress this trait itself.
   - id: micro-behaviors/communications/ip/literal::external-ipv4-binary
-  # Encoders run over packed/high-entropy machine bytes routinely yield
-  # accidental dotted quads; those are not evidence of a configured IP.
   - id: metadata/binary/layout/overlay::overlay-dominates-third
   - id: metadata/binary/code/entropy::high-code-entropy
   - id: metadata/lang/compiler/generated/
-  # Keep explicit dotted-quad version metadata from being mistaken for an
-  # endpoint, but do not suppress encoded network indicators merely because a
-  # PE carries ordinary VERSIONINFO fields.
   - id: metadata/package/versioning/scheme::pe-versioninfo-ipv4-shape
   - id: well-known/lib/format/snowball/
   - id: well-known/lib/native/glibc::gnu-character-conversion-module
-
-# Repeated XOR-decoded dotted quads are still only an IOC-shaped capability.
-# High-entropy code and packed payloads generate these by chance, so keep the
-# atom neutral and suppress those evidence regimes. A C2 verdict must combine
-# it with an actual communication/loader workflow.
 - id: xor-decoded-external-ipv4
   desc: Repeated XOR-decoded external IPv4 literal
   crit: notable
   conf: 0.9
-  for: [binaries]
+  for:
+  - binaries
   count_min: 2
   if:
     type: encoded
     encoding: xor
-    regex: '^([0-9]{1,3}\.){3}[0-9]{1,3}$'
+    regex: ^([0-9]{1,3}\.){3}[0-9]{1,3}$
     is: external_ip
   unless:
-    - id: metadata/binary/code/entropy::high-code-entropy
-    - id: metadata/file/entropy::high-overall-entropy-binary
-    - id: metadata/binary/layout/overlay::overlay-dominates-third
-# XOR-decoded dotted quads remain weak IOC-shaped evidence. Corroborate an
-# endpoint against network API use or a port in the same decoded layer before
-# treating it as a C2 indicator.
-# A single raw-IP URL is a network indicator, not attacker intent. Bulk endpoint
-# lists are evaluated separately by the network-scan objective.
+  - id: metadata/binary/code/entropy::high-code-entropy
+  - id: metadata/file/entropy::high-overall-entropy-binary
+  - id: metadata/binary/layout/overlay::overlay-dominates-third
 - id: http-ip-url-source-literal
   desc: Source literal contains an external-IP HTTP URL
   crit: notable
@@ -700,31 +618,30 @@ traits:
   - source
   not:
   - regex: /thumb\b
-  - substr: "http://100.100.100.200"
-  - substr: "http://100.100.100.200/latest/"
-  - substr: "8.8.8.8"
-  - substr: "8.8.4.4"
-  - substr: "1.1.1.1"
-  - substr: "1.0.0.1"
-  - substr: "223.5.5.5"
-  - substr: "223.6.6.6"
-  - substr: "1.2.3.4"
-  - regex: ':0(/|\b|$)'
-  - regex: 'https?://100\.(6[4-9]|[789][0-9]|1[01][0-9]|12[0-7])\.'
+  - substr: http://100.100.100.200
+  - substr: http://100.100.100.200/latest/
+  - substr: 8.8.8.8
+  - substr: 8.8.4.4
+  - substr: 1.1.1.1
+  - substr: 1.0.0.1
+  - substr: 223.5.5.5
+  - substr: 223.6.6.6
+  - substr: 1.2.3.4
+  - regex: :0(/|\b|$)
+  - regex: https?://100\.(6[4-9]|[789][0-9]|1[01][0-9]|12[0-7])\.
   if:
     type: literal
     kind: string
     is: external_ip
-    regex: "https?://[0-9]{1,3}(\\.[0-9]{1,3}){3}(:[0-9]{1,5})?"
+    regex: https?://[0-9]{1,3}(\.[0-9]{1,3}){3}(:[0-9]{1,5})?
   unless:
   - type: literal
     kind: string
-    substr: "music.126.net"
+    substr: music.126.net
   - type: trait
     id: metadata/package/testing/
   - id: well-known/tool/offensive/projectdiscovery/
-
-  - id: "metadata/file/naming::test-directory-component"
+  - id: metadata/path::test-directory-component
 - id: http-ip-url-text
   desc: Non-source data contains external-IP HTTP URL
   crit: notable
@@ -735,26 +652,25 @@ traits:
   - github-actions
   not:
   - regex: /thumb\b
-  - substr: "http://100.100.100.200"
-  - substr: "http://100.100.100.200/latest/"
-  - substr: "8.8.8.8"
-  - substr: "8.8.4.4"
-  - substr: "1.1.1.1"
-  - substr: "1.0.0.1"
-  - substr: "223.5.5.5"
-  - substr: "223.6.6.6"
-  - substr: "1.2.3.4"
-  - regex: ':0(/|\b|$)'
+  - substr: http://100.100.100.200
+  - substr: http://100.100.100.200/latest/
+  - substr: 8.8.8.8
+  - substr: 8.8.4.4
+  - substr: 1.1.1.1
+  - substr: 1.0.0.1
+  - substr: 223.5.5.5
+  - substr: 223.6.6.6
+  - substr: 1.2.3.4
+  - regex: :0(/|\b|$)
   if:
     type: text
     is: external_ip
-    regex: "https?://[0-9]{1,3}(\\.[0-9]{1,3}){3}(:[0-9]{1,5})?"
+    regex: https?://[0-9]{1,3}(\.[0-9]{1,3}){3}(:[0-9]{1,5})?
   unless:
   - type: text
-    substr: "music.126.net"
+    substr: music.126.net
   - id: well-known/tool/offensive/projectdiscovery/
   - id: well-known/dual-use/remote-admin/screenconnect::screenconnect-signed-launcher-context
-
 - id: malformed-http-ip-url-source-literal
   desc: Malformed HTTP URL with IP
   crit: suspicious
@@ -771,8 +687,7 @@ traits:
   unless:
   - type: trait
     id: metadata/package/testing/
-
-  - id: "metadata/file/naming::test-directory-component"
+  - id: metadata/path::test-directory-component
 - id: malformed-http-ip-url-manifest
   desc: Malformed HTTP URL with IP
   crit: suspicious
@@ -787,7 +702,7 @@ traits:
   unless:
   - type: trait
     id: metadata/package/testing/
-  - id: "metadata/file/naming::test-directory-component"
+  - id: metadata/path::test-directory-component
 - id: private-192-http-url-source-literal
   desc: HTTP URL uses private 192.168 address
   crit: notable
@@ -802,8 +717,7 @@ traits:
   unless:
   - type: trait
     id: metadata/package/testing/
-
-  - id: "metadata/file/naming::test-directory-component"
+  - id: metadata/path::test-directory-component
 - id: private-10-http-url-source-literal
   desc: HTTP URL uses private 10.x address
   crit: notable
@@ -818,8 +732,7 @@ traits:
   unless:
   - type: trait
     id: metadata/package/testing/
-
-  - id: "metadata/file/naming::test-directory-component"
+  - id: metadata/path::test-directory-component
 - id: private-10-http-url-text
   desc: Text contains private 10.x HTTP URL
   crit: notable
@@ -832,8 +745,7 @@ traits:
     regex: https?://10\.\d{1,3}\.\d{1,3}\.\d{1,3}
   unless:
   - id: metadata/package/testing/
-
-  - id: "metadata/file/naming::test-directory-component"
+  - id: metadata/path::test-directory-component
 - id: multiple-private-192-http-urls-text
   desc: Multiple HTTP URLs use private 192.168 addresses
   crit: notable
@@ -849,17 +761,17 @@ traits:
   unless:
   - type: trait
     id: metadata/package/testing/
-  - id: "metadata/file/naming::test-directory-component"
+  - id: metadata/path::test-directory-component
 composite_rules:
 - id: encoded-external-ipv4-binary
   desc: Repeated encoded external IPv4 literals
   crit: notable
   conf: 0.9
-  for: [binaries]
+  for:
+  - binaries
   any:
   - id: non-xor-encoded-external-ipv4-binary
   - id: xor-decoded-external-ipv4
-
 - id: external-ipv4-benign-source-context
   desc: Benign source context for hardcoded external IPv4 literals
   crit: baseline
@@ -870,18 +782,12 @@ composite_rules:
   - id: geoip-range-table-context
   - id: micro-behaviors/communications/dns/client::public-dot-provider-list-go
   - id: public-dot-provider-list-addprovider
-  # Rust inline #[cfg(test)] modules carry IP-shaped literals as hash/parse test
-  # vectors (e.g. fnv's assert_eq!(fnv1a(b"64.81.78.74"), ...)).
   - id: metadata/package/testing/harness/unit::rust-test
   - id: metadata/package/testing/harness/runtime::is-test
   - id: metadata/package/testing/presence/harness::tests-path-filename
   - id: metadata/package/testing/presence/harness::rust-tests-path-filename
-  # IP-string buffer-length idiom: a max-width IPv4 literal used purely to size a
-  # formatting buffer (e.g. serde's `debug_assert_eq!(MAX_LEN, "101.102.103.104".len())`).
-  # The `.len()` call marks it as a length constant, not a network endpoint.
   - id: ipv4-literal-buffer-length-idiom
   - id: metadata/package/testing/presence/scripted::csv-ip-address-column-fixture
-
 - id: geoip-range-table-context
   desc: GeoIP address range table
   crit: baseline
@@ -889,7 +795,6 @@ composite_rules:
   all:
   - id: php-ip2long-call
   - id: geoip-country-code-field
-
 - id: http-ip-url
   desc: Contains an external-IP HTTP URL
   crit: notable
@@ -903,7 +808,6 @@ composite_rules:
   - id: micro-behaviors/communications/http/url/external-ip::url-external-ip-script
   unless:
   - id: well-known/dual-use/remote-admin/screenconnect::screenconnect-signed-launcher-context
-
 - id: malformed-http-ip-url
   desc: Malformed HTTP URL with IP
   crit: suspicious
@@ -911,7 +815,6 @@ composite_rules:
   any:
   - id: malformed-http-ip-url-source-literal
   - id: malformed-http-ip-url-manifest
-
 - id: private-192-http-url
   desc: HTTP URL uses private 192.168 address
   crit: notable
@@ -919,7 +822,6 @@ composite_rules:
   any:
   - id: private-192-http-url-source-literal
   - id: multiple-private-192-http-urls-text
-
 - id: private-10-http-url
   desc: HTTP URL uses private 10.x address
   crit: notable
@@ -927,7 +829,6 @@ composite_rules:
   any:
   - id: private-10-http-url-source-literal
   - id: private-10-http-url-text
-
 - id: http-literal-ip-url
   desc: HTTP URL uses a literal IPv4 address
   crit: notable
@@ -936,7 +837,6 @@ composite_rules:
   - id: http-ip-url
   - id: private-192-http-url
   - id: private-10-http-url
-
 - id: encoded-external-ipv4-benign-binary-context
   desc: Benign encoded IPv4 binary context
   crit: component

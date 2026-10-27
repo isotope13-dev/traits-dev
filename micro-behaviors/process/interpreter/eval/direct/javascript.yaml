@@ -1,172 +1,158 @@
-# JavaScript Eval Detection
-# MBC: B0009.016 (Dynamic Execution)
-# ATT&CK: T1059.007
 defaults:
   crit: notable
-  platforms: [windows, unix]
-  for: [javascript, typescript]
+  platforms:
+  - windows
+  - unix
+  for:
+  - javascript
+  - typescript
 traits:
-
-  # A text reference can be source code embedded in a task or JSON carrier,
-  # where parsed call atoms cannot see the eventual JavaScript operation.
-  - id: eval-call-text
-    desc: Script eval call syntax in source text
-    crit: notable
-    for: [javascript, typescript, json, text, html]
-    conf: 0.82
-    if:
-      type: text
-      regex: '(^|[^.$\w])((window|globalThis)\.)?eval\s*\('
-    unless:
-      - id: metadata/lang/locale::gettext-po-catalog
-      - id: metadata/file/format/security-corpus::trait-expectation-catalog
-      # Declaration documentation can mention eval without invoking it.
-      # Parsed call traits still detect calls in a mislabeled source file.
-      - id: metadata/lang/scripted::dts-declaration-file
-
-  - id: js-eval-variable-argument
-    desc: JavaScript eval executes a variable argument
-    conf: 0.9
-    if:
-      # Call facts can flatten eval('require')(path) to target=eval with
-      # path as its argument. Bind the actual evaluator and its first arg;
-      # later arguments are not evaluated as source by JavaScript eval.
-      type: tree-sitter
-      query: |
+- id: eval-call-text
+  desc: Script eval call syntax in source text
+  for:
+  - javascript
+  - typescript
+  - json
+  - text
+  - html
+  conf: 0.82
+  if:
+    type: text
+    regex: (^|[^.$\w])((window|globalThis)\.)?eval\s*\(
+  unless:
+  - id: metadata/lang/locale::gettext-po-catalog
+  - id: metadata/file/format/security-corpus::trait-expectation-catalog
+  - id: metadata/lang/scripted::dts-declaration-file
+- id: js-eval-variable-argument
+  desc: JavaScript eval executes a variable argument
+  conf: 0.9
+  if:
+    type: tree-sitter
+    query: |
+      (call_expression
+        function: (identifier) @evaluator
+        arguments: (arguments . (identifier))
+        (#eq? @evaluator "eval")) @evaluation
+  unless:
+  - id: metadata/file/extension/identity::julia-source-basename
+  - type: text
+    substr: evaluate_javascript
+- id: js-eval-call-expression-arg
+  for:
+  - javascript
+  - typescript
+  - html
+  desc: JavaScript eval executes a call result
+  conf: 0.9
+  if:
+    type: tree-sitter
+    query: |
+      (call_expression
+        function: (identifier) @evaluator
+        arguments: (arguments . (call_expression))
+        (#eq? @evaluator "eval")) @evaluation
+- id: js-eval-buffer-from-argument
+  desc: JavaScript eval executes Buffer.from result
+  conf: 0.95
+  attack: T1059.007
+  if:
+    type: tree-sitter
+    language: javascript
+    query: |
+      [
         (call_expression
-          function: (identifier) @evaluator
-          arguments: (arguments . (identifier))
-          (#eq? @evaluator "eval")) @evaluation
-    unless:
-      - id: metadata/file/extension/identity::julia-source-basename
-      - type: text
-        substr: evaluate_javascript
-
-
-  - id: js-eval-call-expression-arg
-    for: [javascript, typescript, html]
-    desc: JavaScript eval executes a call result
-    conf: 0.9
-    if:
-      # The result of eval('require') can itself be called with a call
-      # expression. That outer argument belongs to require, not eval.
-      type: tree-sitter
-      query: |
+          function: (identifier) @fn
+          arguments: (arguments
+            (call_expression
+              function: (member_expression
+                object: (identifier) @obj
+                property: (property_identifier) @method)))
+          (#eq? @fn "eval")
+          (#eq? @obj "Buffer")
+          (#eq? @method "from"))
         (call_expression
-          function: (identifier) @evaluator
-          arguments: (arguments . (call_expression))
-          (#eq? @evaluator "eval")) @evaluation
-
-  # Keep this as an AST match: a source string that merely generates
-  # `node -e 'eval(Buffer.from(...))'` is not itself an eval call.
-  - id: js-eval-buffer-from-argument
-    desc: JavaScript eval executes Buffer.from result
-    conf: 0.95
-    attack: T1059.007
-    if:
-      type: tree-sitter
-      language: javascript
-      query: |
-        [
-          (call_expression
-            function: (identifier) @fn
-            arguments: (arguments
-              (call_expression
-                function: (member_expression
-                  object: (identifier) @obj
-                  property: (property_identifier) @method)))
-            (#eq? @fn "eval")
-            (#eq? @obj "Buffer")
-            (#eq? @method "from"))
-          (call_expression
-            function: (identifier) @fn
-            arguments: (arguments
-              (call_expression
-                function: (member_expression
-                  object: (call_expression
-                    function: (member_expression
-                      object: (identifier) @obj
-                      property: (property_identifier) @inner))
-                  property: (property_identifier) @outer)))
-            (#eq? @fn "eval")
-            (#eq? @obj "Buffer")
-            (#eq? @inner "from")
-            (#eq? @outer "toString"))
-        ]
-    unless:
-      - id: micro-behaviors/process/interpreter/node::node-eval-command
-
-
-  - id: js-eval-raw
-    desc: Executes JavaScript dynamically with eval()
-    conf: 0.7
-    if:
-      # Migrated from a tree-sitter query to a `kind: call` match on
-      # the pre-extracted call fact (no per-member cursor walk).
-      type: symbol
-      kind: call
-      exact: 'eval'
-    unless:
-      - id: metadata/lang/compiled::erlang-module-marker
-      - type: text
-        substr: eval(path)
-      - id: metadata/package/testing/harness/runtime/
-      - type: text
-        substr: "function eval_template"
-      - id: metadata/file/extension/identity::julia-source-basename
-      - type: text
-        substr: evaluate_javascript
-    downgrade:
-      any:
-        - id: metadata/package/testing/harness/fixture::embedded-unit-test-fixture
-
-  # Named source/script/module variables are already covered by
-  # js-eval-variable-argument, which also binds the first eval argument.
-  - id: js-eval-tostring-result
-    desc: eval() executes toString() result
-    conf: 0.88
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: metadata/build/bundler/asset::google-tag-manager-bundle
-    if:
-      type: text
-      regex: '\beval\s*\(\s*[\w$.]+\.toString\s*\(\s*\)\s*\)'
-  - id: js-eval-object-property
-    desc: eval() executes object property
-    # The call shape is a real dynamic-execution capability, but it does not
-    # establish attacker intent by itself.  Keep suspicious/hostile severity
-    # in the objective composites that add remote-response or loader context.
-    conf: 0.75
-    attack: T1059.007
-    ref: sha256:3136a698ee6023e879bec6a1ff24d69f9ece7db5195e520acd82fed5b3efa220
-    if:
-      type: text
-      regex: '(^|[^.$A-Za-z0-9_])eval\s*\(\s*[A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*\s*\)'
-    unless:
-      - id: metadata/build/
-      - id: well-known/lib/web/authoring/npm-frameworks::angularjs-bundle
-      - id: metadata/package/files/system-package::julia-runtime-path
-      - id: well-known/lib/runtime/scripted/node-runtime::source-tree
-      - id: well-known/lib/web/site-platforms/nextjs/
-      - id: well-known/app/publishing/civicrm/
-      - id: well-known/app/storage/bruno::app-bundle
-      - id: well-known/lib/web/client-side/ecmascript::websharper-runtime-marker
-      - type: text
-        substr: CriticalCmdDialog
-    not:
-      - regex: '(?i)eval\s*\(\s*window\.(game|softgames)[A-Za-z0-9_$]*\s*\)'
-  - id: js-eval-concat-string
-    desc: Eval of a concatenated string
-    attack: T1059.007
-    conf: 0.9
-    for: [javascript, typescript, html, static-lib]
-    if:
-      type: text
-      regex: '(^|[^.$\w])eval\s*\(\s*["\x27][^"\x27]{0,40}["\x27]\s*\+'
-    unless:
-      - id: metadata/package/testing/harness/runtime/
-      - id: micro-behaviors/process/interpreter/eval/direct::eval-parenthesized-expression
-      - id: well-known/tool/development/ci/github-actions/docker-build-push-action::dist-tree
-    not:
-      - substr: document.all
-      - substr: _expression_function
+          function: (identifier) @fn
+          arguments: (arguments
+            (call_expression
+              function: (member_expression
+                object: (call_expression
+                  function: (member_expression
+                    object: (identifier) @obj
+                    property: (property_identifier) @inner))
+                property: (property_identifier) @outer)))
+          (#eq? @fn "eval")
+          (#eq? @obj "Buffer")
+          (#eq? @inner "from")
+          (#eq? @outer "toString"))
+      ]
+  unless:
+  - id: micro-behaviors/process/interpreter/node::node-eval-command
+- id: js-eval-raw
+  desc: Executes JavaScript dynamically with eval()
+  conf: 0.7
+  if:
+    type: symbol
+    kind: call
+    exact: eval
+  unless:
+  - id: metadata/lang/compiled::erlang-module-marker
+  - type: text
+    substr: eval(path)
+  - id: metadata/package/testing/harness/runtime/
+  - type: text
+    substr: function eval_template
+  - id: metadata/file/extension/identity::julia-source-basename
+  - type: text
+    substr: evaluate_javascript
+  downgrade:
+    any:
+    - id: metadata/package/testing/harness/fixture::embedded-unit-test-fixture
+- id: js-eval-tostring-result
+  desc: eval() executes toString() result
+  conf: 0.88
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: metadata/build/bundler/asset::google-tag-manager-bundle
+  if:
+    type: text
+    regex: \beval\s*\(\s*[\w$.]+\.toString\s*\(\s*\)\s*\)
+- id: js-eval-object-property
+  desc: eval() executes object property
+  conf: 0.75
+  attack: T1059.007
+  ref: sha256:3136a698ee6023e879bec6a1ff24d69f9ece7db5195e520acd82fed5b3efa220
+  if:
+    type: text
+    regex: (^|[^.$A-Za-z0-9_])eval\s*\(\s*[A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*\s*\)
+  unless:
+  - id: metadata/build
+  - id: well-known/lib/web/authoring/npm-frameworks::angularjs-bundle
+  - id: metadata/package/files/system-package::julia-runtime-path
+  - id: well-known/lib/runtime/scripted/node-runtime::source-tree
+  - id: well-known/lib/web/site-platforms/nextjs/
+  - id: well-known/app/publishing/civicrm/
+  - id: well-known/app/storage/bruno::app-bundle
+  - id: well-known/lib/web/client-side/ecmascript::websharper-runtime-marker
+  - type: text
+    substr: CriticalCmdDialog
+  not:
+  - regex: (?i)eval\s*\(\s*window\.(game|softgames)[A-Za-z0-9_$]*\s*\)
+- id: js-eval-concat-string
+  desc: Eval of a concatenated string
+  attack: T1059.007
+  conf: 0.9
+  for:
+  - javascript
+  - typescript
+  - html
+  - static-lib
+  if:
+    type: text
+    regex: (^|[^.$\w])eval\s*\(\s*["\x27][^"\x27]{0,40}["\x27]\s*\+
+  unless:
+  - id: metadata/package/testing/harness/runtime/
+  - id: micro-behaviors/process/interpreter/eval/direct::eval-parenthesized-expression
+  - id: well-known/tool/development/ci/github-actions/docker-build-push-action::dist-tree
+  not:
+  - substr: document.all
+  - substr: _expression_function

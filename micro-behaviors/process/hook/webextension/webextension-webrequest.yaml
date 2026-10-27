@@ -1,338 +1,301 @@
-# Browser-extension network request interception/modification (webRequest
-# blocking listeners, declarativeNetRequest rules). Generic technique:
-# intercepting/rewriting in-flight requests.
 defaults:
-  platforms: [windows, unix]
-  for: [javascript, typescript]
+  platforms:
+  - windows
+  - unix
+  for:
+  - javascript
+  - typescript
   crit: notable
   conf: 0.9
 traits:
-  - id: dnr-block-request-rules
-    desc: DNR rules block network requests
-    for: [json]
-    conf: 0.95
-    if:
-      type: value
-      path: root[*].action.type
-      exact: block
-  - id: chrome-webrequest-api
-    desc: Uses the WebExtension webRequest API
-    if:
-      type: text
-      regex: '(chrome|browser)\.webRequest\.[A-Za-z_]'
-  - id: chrome-webrequest-pre-request
-    desc: Accesses pre-request WebExtension hooks
-    if:
-      type: symbol
-      kind: member
-      regex: '(chrome|browser)\.webRequest\.onBeforeRequest|onBeforeSendHeaders'
-  - id: extension-http-watcher-handler-enum
-    desc: Declares HTTP request and response watchers
-    crit: notable
-    conf: 0.96
-    if:
-      type: text
-      regex: 'onHttpRequest[\s\S]{0,120}onHttpResponse'
-  - id: browser-proxy-request-listener
-    desc: Registers a browser proxy request listener
-    if:
-      type: text
-      regex: '\bproxy\.onRequest\.addListener\b'
-  - id: webrequest-auth-required-listener
-    desc: Registers a web-request authentication listener
-    if:
-      type: text
-      regex: '\bwebRequest\.onAuthRequired\.addListener\b'
-  # Electron's Chromium session object exposes the same webRequest hooks
-  # without the chrome/browser namespace (`session.defaultSession`).
-  - id: electron-session-webrequest-hook
-    desc: Accesses Electron session request hooks
-    if:
-      type: symbol
-      kind: member
-      regex: '\.session\.([A-Za-z_$][\w$]{0,24}\.)?webRequest\.on\w+'
-  - id: webrequest-before-request-listener
-    desc: Accesses the WebRequest onBeforeRequest hook
-    if:
-      type: symbol
-      kind: member
-      regex: 'webRequest\.onBeforeRequest$'
-  - id: webrequest-before-send-headers-listener
-    desc: Accesses the WebRequest request-header hook
-    if:
-      type: symbol
-      kind: member
-      regex: 'webRequest\.onBeforeSendHeaders$'
-  - id: webrequest-completed-listener
-    desc: References the WebRequest completion hook
-    if:
-      type: text
-      regex: 'webRequest\.onCompleted\b'
-  # The listener's URL filter is an element of a nested config array
-  # (`urls: [config[0][4]]`) rather than a pattern literal, so the hosts it
-  # watches are delivered at runtime and never appear in the package.
-  - id: webrequest-filter-from-indexed-config
-    desc: WebRequest URL filter comes from indexed config
-    if:
-      type: text
-      regex: 'webRequest\.on\w+\.addListener\([\s\S]{0,900}\burls\s*:\s*\[\s*[\w$]+(\[[^\]]{1,12}\]){2}'
-  - id: chrome-webrequest-send-headers
-    desc: Registers a WebRequest send-headers listener
-    if:
-      type: symbol
-      kind: call
-      regex: '(^|\.)((chrome|browser)\.webRequest\.onSendHeaders\.addListener)$'
-  - id: remote-filter-rules-fetch
-    desc: Fetches remote browser filtering rules
-    conf: 0.94
-    if:
-      type: text
-      regex: 'fetch\([^)]{0,80}DYNAMIC_RULES_URL'
-  - id: webrequest-request-body-marker
-    desc: WebRequest request body field marker
-    crit: notable
-    if:
-      type: literal
-      kind: string
-      exact: requestBody
-  - id: webrequest-request-header-access
-    desc: WebRequest request header access
-    unless:
-      # .d.ts HTTP client fields named requestHeaders are not chrome.webRequest.
-      - id: metadata/lang/scripted::dts-declaration-file
-    if:
-      type: text
-      regex: 'webRequest.{0,80}requestHeaders|requestHeaders.{0,80}webRequest'
-  # --- Manifest-declared static rulesets -----------------------------------
-  #
-  # Under MV3 the interception above mostly moves out of JavaScript: the
-  # extension ships a JSON ruleset and the browser applies it, so the manifest
-  # states what happens to the user's requests before any code runs. These
-  # read that declaration. `for:` covers the manifest itself and the packaged
-  # forms it arrives in, since the sibling traits here are code-side and the
-  # file default only lists script types.
-  - id: dnr-static-ruleset-declared
-    desc: Declares a static network-request ruleset
-    for: [json, chrome-manifest]
-    if:
-      type: value
-      path: declarative_net_request.rule_resources[*].path
-      exists: true
-  - id: dnr-redirect-named-ruleset
-    desc: Ships a ruleset named for redirection
-    for: [json, chrome-manifest]
-    if:
-      # `"id": "redirectRules"`. Blocking is the common case and is usually
-      # named for what it blocks; a ruleset the author calls "redirect" sends
-      # requests somewhere else instead of dropping them.
-      type: value
-      path: declarative_net_request.rule_resources[*].id
-      regex: '(?i)redirect'
-  - id: dnr-redirect-named-ruleset-file
-    desc: Ruleset file is named for redirection
-    for: [json, chrome-manifest]
-    if:
-      type: value
-      path: declarative_net_request.rule_resources[*].path
-      regex: '(?i)redirect'
-  - id: chrome-declarative-net-request
-    desc: WebExtension declarativeNetRequest API
-    if:
-      type: text
-      regex: '(chrome|browser)\.declarativeNetRequest\b'
-  - id: chrome-dnr-update-rulesets
-    desc: Updates declarative network rulesets
-    if:
-      type: symbol
-      kind: call
-      regex: '(^|\.)declarativeNetRequest\.updateEnabledRulesets$'
-  - id: chrome-dnr-update-dynamic-rules
-    desc: Chrome updates dynamic DNR rules
-    conf: 0.92
-    unless:
-      - id: metadata/package/testing/
-      - id: metadata/lang/scripted::dts-declaration-file
-      - id: "metadata/file/naming::test-directory-component"
-    if:
-      type: symbol
-      kind: call
-      exact: chrome.declarativeNetRequest.updateDynamicRules
-  - id: dnr-query-parameter-transform
-    desc: DNR query parameter transform
-    conf: 0.9
-    if:
-      type: text
-      word: addOrReplaceParams
-  - id: dnr-subframe-resource-type
-    desc: DNR rule targets subframe responses
-    crit: notable
-    conf: 0.94
-    if:
-      type: text
-      regex: 'resourceTypes\s*:\s*\[[^\]]{0,120}["'']sub_frame["'']'
-  - id: browser-dnr-update-dynamic-rules
-    desc: Browser updates dynamic DNR rules
-    conf: 0.92
-    unless:
-      - id: metadata/package/testing/
-      - id: metadata/lang/scripted::dts-declaration-file
-      - id: "metadata/file/naming::test-directory-component"
-    if:
-      type: symbol
-      kind: call
-      exact: browser.declarativeNetRequest.updateDynamicRules
-  - id: bare-dnr-update-dynamic-rules
-    desc: Updates dynamic DNR rules
-    conf: 0.9
-    unless:
-      - id: metadata/package/testing/
-      - id: "metadata/file/naming::test-directory-component"
-    if:
-      type: symbol
-      kind: call
-      exact: declarativeNetRequest.updateDynamicRules
-  - id: chrome-dnr-update-session-rules
-    desc: Chrome updates session DNR rules
-    conf: 0.92
-    unless:
-      - id: metadata/package/testing/
-      - id: "metadata/file/naming::test-directory-component"
-    if:
-      type: symbol
-      kind: call
-      exact: chrome.declarativeNetRequest.updateSessionRules
-  - id: browser-dnr-update-session-rules
-    desc: Browser updates session DNR rules
-    conf: 0.92
-    unless:
-      - id: metadata/package/testing/
-      - id: "metadata/file/naming::test-directory-component"
-    if:
-      type: symbol
-      kind: call
-      exact: browser.declarativeNetRequest.updateSessionRules
-  - id: bare-dnr-update-session-rules
-    desc: Updates session DNR rules
-    conf: 0.9
-    unless:
-      - id: metadata/package/testing/
-      - id: "metadata/file/naming::test-directory-component"
-    if:
-      type: symbol
-      kind: call
-      exact: declarativeNetRequest.updateSessionRules
-  - id: webrequest-on-headers-received
-    desc: Registers WebRequest response-header listener
-    if:
-      type: symbol
-      kind: call
-      regex: '(^|\.)((chrome|browser)\.webRequest\.onHeadersReceived(\.addListener)?)$'
-  - id: dnr-cookie-header-mod
-    desc: DNR sets Cookie header
-    crit: notable
-    conf: 0.93
-    if:
-      type: text
-      regex: modifyHeaders[\s\S]{0,220}(header|name)\s*:\s*['"]Cookie['"]
-  # A DNR rule that deliberately does not apply to the extension's own
-  # requests. `excludedInitiatorDomains: [chrome.runtime.id]` exists to stop a
-  # header rule recursing on traffic the extension itself originates -- the
-  # concern of code maintaining its *own* vendor session, not of code stealing
-  # someone else's. A cookie injector has no reason to write it.
-  - id: dnr-rule-excludes-own-initiator
-    desc: DNR rule excludes the extension's own requests
-    crit: notable
-    conf: 0.95
-    if:
-      type: text
-      regex: 'excludedInitiatorDomains[\s\S]{0,60}runtime\.id'
-  - id: dnr-cookie-header-mod-text
-    desc: DNR rule text modifies the Cookie header
-    crit: notable
-    conf: 0.93
-    if:
-      type: text
-      regex: 'modifyHeaders[\s\S]{0,500}(header|name)\s*:\s*["'']Cookie["'']'
-  # The first-party session-continuity shape: the Cookie append carries its own
-  # condition scoping it to a fixed domain (requestDomains / urlFilter), the
-  # way MV3 apps keep auth cookies on calls to the vendor's own API. An
-  # unscoped Cookie rewrite (inject into every request) is the hostile shape
-  # and stays covered by dnr-cookie-header-mod consumers; this atom only
-  # asserts the scoped form.
-  - id: dnr-cookie-append-then-domain-condition
-    desc: Cookie append precedes a domain scope
-    crit: notable
-    conf: 0.93
-    if:
-      type: text
-      regex: '[''"]Cookie[''"][\s\S]{0,260}append[\s\S]{0,320}(requestDomains|urlFilter)'
-  - id: dnr-domain-condition-then-cookie-append
-    desc: Domain scope precedes a cookie append
-    crit: notable
-    conf: 0.93
-    if:
-      type: text
-      regex: '(requestDomains|urlFilter)[\s\S]{0,320}[''"]Cookie[''"][\s\S]{0,260}append'
-
+- id: dnr-block-request-rules
+  desc: DNR rules block network requests
+  for:
+  - json
+  conf: 0.95
+  if:
+    type: value
+    path: root[*].action.type
+    exact: block
+- id: chrome-webrequest-api
+  desc: Uses the WebExtension webRequest API
+  if:
+    type: text
+    regex: (chrome|browser)\.webRequest\.[A-Za-z_]
+- id: chrome-webrequest-pre-request
+  desc: Accesses pre-request WebExtension hooks
+  if:
+    type: symbol
+    kind: member
+    regex: (chrome|browser)\.webRequest\.onBeforeRequest|onBeforeSendHeaders
+- id: extension-http-watcher-handler-enum
+  desc: Declares HTTP request and response watchers
+  conf: 0.96
+  if:
+    type: text
+    regex: onHttpRequest[\s\S]{0,120}onHttpResponse
+- id: browser-proxy-request-listener
+  desc: Registers a browser proxy request listener
+  if:
+    type: text
+    regex: \bproxy\.onRequest\.addListener\b
+- id: webrequest-auth-required-listener
+  desc: Registers a web-request authentication listener
+  if:
+    type: text
+    regex: \bwebRequest\.onAuthRequired\.addListener\b
+- id: electron-session-webrequest-hook
+  desc: Accesses Electron session request hooks
+  if:
+    type: symbol
+    kind: member
+    regex: \.session\.([A-Za-z_$][\w$]{0,24}\.)?webRequest\.on\w+
+- id: webrequest-before-request-listener
+  desc: Accesses the WebRequest onBeforeRequest hook
+  if:
+    type: symbol
+    kind: member
+    regex: webRequest\.onBeforeRequest$
+- id: webrequest-before-send-headers-listener
+  desc: Accesses the WebRequest request-header hook
+  if:
+    type: symbol
+    kind: member
+    regex: webRequest\.onBeforeSendHeaders$
+- id: webrequest-completed-listener
+  desc: References the WebRequest completion hook
+  if:
+    type: text
+    regex: webRequest\.onCompleted\b
+- id: webrequest-filter-from-indexed-config
+  desc: WebRequest URL filter comes from indexed config
+  if:
+    type: text
+    regex: webRequest\.on\w+\.addListener\([\s\S]{0,900}\burls\s*:\s*\[\s*[\w$]+(\[[^\]]{1,12}\]){2}
+- id: chrome-webrequest-send-headers
+  desc: Registers a WebRequest send-headers listener
+  if:
+    type: symbol
+    kind: call
+    regex: (^|\.)((chrome|browser)\.webRequest\.onSendHeaders\.addListener)$
+- id: remote-filter-rules-fetch
+  desc: Fetches remote browser filtering rules
+  conf: 0.94
+  if:
+    type: text
+    regex: fetch\([^)]{0,80}DYNAMIC_RULES_URL
+- id: webrequest-request-body-marker
+  desc: WebRequest request body field marker
+  if:
+    type: literal
+    kind: string
+    exact: requestBody
+- id: webrequest-request-header-access
+  desc: WebRequest request header access
+  unless:
+  - id: metadata/lang/scripted::dts-declaration-file
+  if:
+    type: text
+    regex: webRequest.{0,80}requestHeaders|requestHeaders.{0,80}webRequest
+- id: dnr-static-ruleset-declared
+  desc: Declares a static network-request ruleset
+  for:
+  - json
+  - chrome-manifest
+  if:
+    type: value
+    path: declarative_net_request.rule_resources[*].path
+    exists: true
+- id: dnr-redirect-named-ruleset
+  desc: Ships a ruleset named for redirection
+  for:
+  - json
+  - chrome-manifest
+  if:
+    type: value
+    path: declarative_net_request.rule_resources[*].id
+    regex: (?i)redirect
+- id: dnr-redirect-named-ruleset-file
+  desc: Ruleset file is named for redirection
+  for:
+  - json
+  - chrome-manifest
+  if:
+    type: value
+    path: declarative_net_request.rule_resources[*].path
+    regex: (?i)redirect
+- id: chrome-declarative-net-request
+  desc: WebExtension declarativeNetRequest API
+  if:
+    type: text
+    regex: (chrome|browser)\.declarativeNetRequest\b
+- id: chrome-dnr-update-rulesets
+  desc: Updates declarative network rulesets
+  if:
+    type: symbol
+    kind: call
+    regex: (^|\.)declarativeNetRequest\.updateEnabledRulesets$
+- id: chrome-dnr-update-dynamic-rules
+  desc: Chrome updates dynamic DNR rules
+  conf: 0.92
+  unless:
+  - id: metadata/package/testing/
+  - id: metadata/lang/scripted::dts-declaration-file
+  - id: metadata/path::test-directory-component
+  if:
+    type: symbol
+    kind: call
+    exact: chrome.declarativeNetRequest.updateDynamicRules
+- id: dnr-query-parameter-transform
+  desc: DNR query parameter transform
+  conf: 0.9
+  if:
+    type: text
+    word: addOrReplaceParams
+- id: dnr-subframe-resource-type
+  desc: DNR rule targets subframe responses
+  conf: 0.94
+  if:
+    type: text
+    regex: resourceTypes\s*:\s*\[[^\]]{0,120}["']sub_frame["']
+- id: browser-dnr-update-dynamic-rules
+  desc: Browser updates dynamic DNR rules
+  conf: 0.92
+  unless:
+  - id: metadata/package/testing/
+  - id: metadata/lang/scripted::dts-declaration-file
+  - id: metadata/path::test-directory-component
+  if:
+    type: symbol
+    kind: call
+    exact: browser.declarativeNetRequest.updateDynamicRules
+- id: bare-dnr-update-dynamic-rules
+  desc: Updates dynamic DNR rules
+  conf: 0.9
+  unless:
+  - id: metadata/package/testing/
+  - id: metadata/path::test-directory-component
+  if:
+    type: symbol
+    kind: call
+    exact: declarativeNetRequest.updateDynamicRules
+- id: chrome-dnr-update-session-rules
+  desc: Chrome updates session DNR rules
+  conf: 0.92
+  unless:
+  - id: metadata/package/testing/
+  - id: metadata/path::test-directory-component
+  if:
+    type: symbol
+    kind: call
+    exact: chrome.declarativeNetRequest.updateSessionRules
+- id: browser-dnr-update-session-rules
+  desc: Browser updates session DNR rules
+  conf: 0.92
+  unless:
+  - id: metadata/package/testing/
+  - id: metadata/path::test-directory-component
+  if:
+    type: symbol
+    kind: call
+    exact: browser.declarativeNetRequest.updateSessionRules
+- id: bare-dnr-update-session-rules
+  desc: Updates session DNR rules
+  conf: 0.9
+  unless:
+  - id: metadata/package/testing/
+  - id: metadata/path::test-directory-component
+  if:
+    type: symbol
+    kind: call
+    exact: declarativeNetRequest.updateSessionRules
+- id: webrequest-on-headers-received
+  desc: Registers WebRequest response-header listener
+  if:
+    type: symbol
+    kind: call
+    regex: (^|\.)((chrome|browser)\.webRequest\.onHeadersReceived(\.addListener)?)$
+- id: dnr-cookie-header-mod
+  desc: DNR sets Cookie header
+  conf: 0.93
+  if:
+    type: text
+    regex: modifyHeaders[\s\S]{0,220}(header|name)\s*:\s*['"]Cookie['"]
+- id: dnr-rule-excludes-own-initiator
+  desc: DNR rule excludes the extension's own requests
+  conf: 0.95
+  if:
+    type: text
+    regex: excludedInitiatorDomains[\s\S]{0,60}runtime\.id
+- id: dnr-cookie-header-mod-text
+  desc: DNR rule text modifies the Cookie header
+  conf: 0.93
+  if:
+    type: text
+    regex: modifyHeaders[\s\S]{0,500}(header|name)\s*:\s*["']Cookie["']
+- id: dnr-cookie-append-then-domain-condition
+  desc: Cookie append precedes a domain scope
+  conf: 0.93
+  if:
+    type: text
+    regex: '[''"]Cookie[''"][\s\S]{0,260}append[\s\S]{0,320}(requestDomains|urlFilter)'
+- id: dnr-domain-condition-then-cookie-append
+  desc: Domain scope precedes a cookie append
+  conf: 0.93
+  if:
+    type: text
+    regex: (requestDomains|urlFilter)[\s\S]{0,320}['"]Cookie['"][\s\S]{0,260}append
 composite_rules:
-  - id: webrequest-external-redirect
-    desc: WebRequest returns external HTTP redirect
-    crit: notable
-    conf: 0.95
-    near_bytes: 2048
-    all:
-      - id: webrequest-block-or-redirect
-      - id: micro-behaviors/communications/http/redirect::redirect-url-object-field
-      - id: micro-behaviors/communications/http/redirect::external-redirect-target
-
-  - id: dnr-cookie-append-domain-scoped
-    desc: DNR cookie append scoped by domain condition
-    crit: notable
-    conf: 0.93
-    any:
-      - id: dnr-cookie-append-then-domain-condition
-      - id: dnr-domain-condition-then-cookie-append
+- id: webrequest-external-redirect
+  desc: WebRequest returns external HTTP redirect
+  conf: 0.95
+  near_bytes: 2048
+  all:
   - id: webrequest-block-or-redirect
-    desc: WebRequest handler blocks or redirects traffic
-    crit: notable
-    conf: 0.9
-    all:
-      - id: chrome-webrequest-api
-      - id: micro-behaviors/data/control-flow/return::cancel-or-redirect-response
-  - id: webrequest-request-body-access
-    desc: WebRequest request body access
-    crit: notable
-    conf: 0.92
-    all:
-      - id: chrome-webrequest-api
-      - id: webrequest-request-body-marker
-  - id: webrequest-request-header-capture
-    desc: WebRequest request-header capture
-    crit: notable
-    conf: 0.92
-    all:
-      - id: webrequest-request-header-access
-    any:
-      - id: webrequest-before-send-headers-listener
-      - id: chrome-webrequest-send-headers
-  - id: request-interception
-    desc: Extension observes or modifies web requests
-    crit: notable
-    conf: 0.9
-    any:
-      - id: chrome-webrequest-pre-request
-      - id: browser-proxy-request-listener
-      - id: webrequest-before-send-headers-listener
-      - id: webrequest-on-headers-received
-      - id: declarative-net-request-update
+  - id: micro-behaviors/communications/http/redirect::redirect-url-object-field
+  - id: micro-behaviors/communications/http/redirect::external-redirect-target
+- id: dnr-cookie-append-domain-scoped
+  desc: DNR cookie append scoped by domain condition
+  conf: 0.93
+  any:
+  - id: dnr-cookie-append-then-domain-condition
+  - id: dnr-domain-condition-then-cookie-append
+- id: webrequest-block-or-redirect
+  desc: WebRequest handler blocks or redirects traffic
+  conf: 0.9
+  all:
+  - id: chrome-webrequest-api
+  - id: micro-behaviors/data/control-flow/return::cancel-or-redirect-response
+- id: webrequest-request-body-access
+  desc: WebRequest request body access
+  conf: 0.92
+  all:
+  - id: chrome-webrequest-api
+  - id: webrequest-request-body-marker
+- id: webrequest-request-header-capture
+  desc: WebRequest request-header capture
+  conf: 0.92
+  all:
+  - id: webrequest-request-header-access
+  any:
+  - id: webrequest-before-send-headers-listener
+  - id: chrome-webrequest-send-headers
+- id: request-interception
+  desc: Extension observes or modifies web requests
+  conf: 0.9
+  any:
+  - id: chrome-webrequest-pre-request
+  - id: browser-proxy-request-listener
+  - id: webrequest-before-send-headers-listener
+  - id: webrequest-on-headers-received
   - id: declarative-net-request-update
-    desc: Updates declarativeNetRequest rules
-    crit: notable
-    conf: 0.92
-    any:
-      - id: chrome-dnr-update-dynamic-rules
-      - id: browser-dnr-update-dynamic-rules
-      - id: bare-dnr-update-dynamic-rules
-      - id: chrome-dnr-update-session-rules
-      - id: browser-dnr-update-session-rules
-      - id: bare-dnr-update-session-rules
+- id: declarative-net-request-update
+  desc: Updates declarativeNetRequest rules
+  conf: 0.92
+  any:
+  - id: chrome-dnr-update-dynamic-rules
+  - id: browser-dnr-update-dynamic-rules
+  - id: bare-dnr-update-dynamic-rules
+  - id: chrome-dnr-update-session-rules
+  - id: browser-dnr-update-session-rules
+  - id: bare-dnr-update-session-rules

@@ -1,123 +1,98 @@
 defaults:
   platforms:
-    - unix
-    - android
-    - ios
+  - unix
+  - android
+  - ios
+  crit: suspicious
 traits:
-  # `dlopen-call` moved to micro-behaviors/dylib/load/runtime::dlopen-reference
-  # — a bare `dlopen` mention in a shell script is a neutral dynamic-loading
-  # reference, not preload hijacking.
-  - id: function-interception
-    desc: Function interception markers
-    crit: suspicious
-    conf: 0.6
-    for:
-    - elf
-    - shell
-    if:
-      type: text
-      regex: (dlsym\(RTLD_NEXT|__libc_dlsym|__libc_dlopen_mode)
-    attack: T1574.006
-    unless:
-    - id: micro-behaviors/dylib/library/libc/
-    - id: well-known/tool/reverse-engineering/frida/
-    - id: objectives/evasion/hijack-execution-flow/linker/
-    - id: micro-behaviors/dylib/library/family/
-    - id: well-known/tool/sysadmin/ripgrep::repository-marker
-    - id: micro-behaviors/metaprogramming/generation::configured-source-builder
-    # Statically embedded jemalloc logs
-    # `Error in dlsym(RTLD_NEXT, "pthread_create")` when its background
-    # thread cannot resolve the real pthread_create. That diagnostic is
-    # the allocator's own wrapper, the same context hook-indicator already
-    # excludes via je_mallctl. Official Redis (testcontainers fixtures)
-    # carries the string and the export, and implements no preload hook.
-    - id: well-known/lib/native/jemalloc/
-  - id: libc-preload-env
-    desc: LD_PRELOAD references libc
-    crit: suspicious
-    conf: 0.8
-    for:
-      - elf
-      - shell
-    if:
-      type: text
-      regex: LD_PRELOAD\s*=\s*([^\s"']{0,120}(/|:)|["']?)libc(\.so|-\d)
-    unless:
-      - id: well-known/lib/runtime/native-platform/bytedance::npth-crash-dumper-context
-  - id: libc-preload-file
-    desc: ld.so.preload references libc
-    crit: suspicious
-    conf: 0.8
-    for:
-      - elf
-      - shell
-    if:
-      type: text
-      regex: ld\.so\.preload[^\n]{0,80}(/|[:\s="'])libc(\.so|-\d)
-    unless:
-      - id: well-known/lib/runtime/native-platform/bytedance::npth-crash-dumper-context
+- id: function-interception
+  desc: Function interception markers
+  conf: 0.6
+  for:
+  - elf
+  - shell
+  if:
+    type: text
+    regex: (dlsym\(RTLD_NEXT|__libc_dlsym|__libc_dlopen_mode)
+  attack: T1574.006
+  unless:
+  - id: micro-behaviors/dylib/library/libc/
+  - id: well-known/tool/reverse-engineering/frida/
+  - id: objectives/evasion/hijack-execution-flow/linker/
+  - id: micro-behaviors/dylib/library/family/
+  - id: well-known/tool/sysadmin/ripgrep::repository-marker
+  - id: micro-behaviors/metaprogramming/generation::configured-source-builder
+  - id: well-known/lib/native/jemalloc/
+- id: libc-preload-env
+  desc: LD_PRELOAD references libc
+  conf: 0.8
+  for:
+  - elf
+  - shell
+  if:
+    type: text
+    regex: LD_PRELOAD\s*=\s*([^\s"']{0,120}(/|:)|["']?)libc(\.so|-\d)
+  unless:
+  - id: well-known/lib/runtime/native-platform/bytedance::npth-crash-dumper-context
+- id: libc-preload-file
+  desc: ld.so.preload references libc
+  conf: 0.8
+  for:
+  - elf
+  - shell
+  if:
+    type: text
+    regex: ld\.so\.preload[^\n]{0,80}(/|[:\s="'])libc(\.so|-\d)
+  unless:
+  - id: well-known/lib/runtime/native-platform/bytedance::npth-crash-dumper-context
 composite_rules:
-  # `dlopen-dlsym-pattern` was removed here: it was a duplicate of
-  # micro-behaviors/dylib/load/runtime::dlopen-dlsym -- the same two legs --
-  # but filed under an evasion objective at suspicious rather than as the
-  # neutral capability it matches. dlopen+dlsym is the standard plugin-loading
-  # API pair, so it fired on bash (loadable builtins) and GNU make (the `load`
-  # directive) in the official gcc:bookworm image. Per RULES.md the matcher is
-  # the identity: the correctly-filed micro-behaviors composite already exists
-  # at notable and even downgrades on system shells, and the hijack claim comes
-  # from the OTHER legs of dynamic-function-interception below -- RTLD_NEXT
-  # interposition and function-interception -- not from loading a library.
+- id: ld-environment-hijacking
+  desc: LD environment variable hijacking
+  conf: 0.85
+  for:
+  - shell
+  attack: T1574.006
+  needs: 2
+  any:
+  - id: micro-behaviors/os/env/runtime::ld-preload
+  - id: micro-behaviors/os/linker::ld-audit
+  - id: micro-behaviors/os/linker::ld-debug
+  not:
+  - substr: The setuid sandbox is not running as root.
+  downgrade:
+    any:
+    - id: metadata/binary/linking/static/
+- id: dynamic-function-interception
+  desc: Dynamic function interception
+  conf: 0.85
+  for:
+  - elf
+  - shell
+  attack: T1574.006
+  needs: 2
+  any:
+  - id: objectives/evasion/hijack-execution-flow/env/preload::dlsym-rtld-next-pattern
+  - id: micro-behaviors/dylib/load/runtime::dlopen-dlsym
+  - id: function-interception
+- id: dynamic-linker-hijacking
+  desc: Complete dynamic linker hijacking
+  conf: 0.9
+  for:
+  - elf
+  - shell
+  attack: T1574.006
+  mbc: E1104
+  needs: 2
+  any:
+  - id: micro-behaviors/dylib/lookup::dlfcn-hook-symbol
   - id: ld-environment-hijacking
-    desc: LD environment variable hijacking
-    crit: suspicious
-    conf: 0.85
-    for:
-      - shell
-    attack: T1574.006
-    needs: 2
-    any:
-      - id: micro-behaviors/os/env/runtime::ld-preload
-      - id: micro-behaviors/os/linker/env::ld-audit
-      - id: micro-behaviors/os/linker/env::ld-debug
-    not:
-      - substr: The setuid sandbox is not running as root.
-    downgrade:
-      any:
-        - id: metadata/binary/linking/static/
   - id: dynamic-function-interception
-    desc: Dynamic function interception
-    crit: suspicious
-    conf: 0.85
-    for:
-      - elf
-      - shell
-    attack: T1574.006
-    needs: 2
-    any:
-      - id: objectives/evasion/hijack-execution-flow/env/preload::dlsym-rtld-next-pattern
-      - id: micro-behaviors/dylib/load/runtime::dlopen-dlsym
-      - id: function-interception
-  - id: dynamic-linker-hijacking
-    desc: Complete dynamic linker hijacking
-    crit: suspicious
-    conf: 0.9
-    for:
-      - elf
-      - shell
-    attack: T1574.006
-    mbc: E1104
-    needs: 2
-    any:
-      - id: micro-behaviors/dylib/lookup::dlfcn-hook-symbol
-      - id: ld-environment-hijacking
-      - id: dynamic-function-interception
-  - id: libc-preload
-    desc: Preload libc library
-    crit: suspicious
-    conf: 0.8
-    for:
-      - elf
-      - shell
-    any:
-      - id: libc-preload-env
-      - id: libc-preload-file
+- id: libc-preload
+  desc: Preload libc library
+  conf: 0.8
+  for:
+  - elf
+  - shell
+  any:
+  - id: libc-preload-env
+  - id: libc-preload-file

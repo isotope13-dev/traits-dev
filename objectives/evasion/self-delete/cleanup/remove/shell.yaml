@@ -1,115 +1,96 @@
-# Shell Self-Delete Detection
-# Detects shell scripts that delete themselves after execution
-# ATT&CK: T1070.004 (Indicator Removal: File Deletion)
-# MBC: F0007 (File Deletion)
 defaults:
-  platforms: [unix, android, ios]
+  platforms:
+  - unix
+  - android
+  - ios
   crit: suspicious
-  attack: "T1070.004"
-  mbc: "F0007"
-  for: [shell]
+  attack: T1070.004
+  mbc: F0007
+  for:
+  - shell
 traits:
-  # Self-deletion using $0
-  # Notable, not suspicious. Eight carve-outs had accumulated here -- the
-  # xargs idiom, test harnesses, container entrypoints, update scripts, a nix
-  # cache seal, a whole `well-known/app/` directory -- which is the sign of a
-  # rule fighting its own breadth rather than of eight odd exceptions. A script
-  # that removes itself when it is done is an installer, a one-shot relaunch
-  # trampoline or a build step as often as it is a dropper covering its tracks;
-  # BusyBox's own install scripts do it. The evasion verdict belongs to the
-  # composites below, which pair the self-delete with the payload.
-  - id: rm-self-dollar-zero
-    desc: Self-deletes using rm command
-    crit: notable
-    conf: 0.95
-    if:
-      type: text
-      # `$0` is the current script only when the command is a shell command
-      # line. Inside a quoted `sh -c` helper it is that helper's argv[0].
-      regex: '(?m)^[ \t]*(/bin/|/usr/bin/)?rm[ \t]+(-[rf]+[ \t]+)?(--[ \t]+)?["\x27]?\$0["\x27]?'
-    unless:
-      - type: text
-        regex: xargs -0 -r sh -c 'rm -[fi] -- "\$0" "\$@" </dev/tty'
-      - id: metadata/file/profile/test-indications/
-      - type: path
-        regex: (^|[\\/])nix[\\/]test-guest[\\/]cache-seal\.sh$
-      - type: text
-        substr: Update process completed successfully
-      - id: well-known/app/
-      - id: metadata/package/files/system-package::container-entrypoint-script
-      - id: objectives/evasion/self-delete/cleanup/remove::recognized-shell-cleanup-context
-      - id: well-known/lib/ai/inspect-evals::eval-corpus-context
-    downgrade:
-      any:
-        - id: metadata/signed/platform::apple
-  # Self-deletion using script name variable
-  - id: rm-self-script-var
-    desc: Self-deletes using script variable
-    crit: suspicious
-    conf: 0.9
-    if:
-      type: text
-      regex: '(?m)^[ \t]*rm\s+(-[rf]+\s+)?(--\s+)?"\$\{?BASH_SOURCE(\[0\])?\}?"'
-    unless:
-      - id: metadata/file/profile/test-indications/
-  # Self-deletion using basename
-  - id: rm-self-basename
-    desc: Self-deletes using basename
-    crit: suspicious
-    conf: 0.85
-    if:
-      type: text
-      regex: 'rm\s+(-[rf]+\s+)?\$\(basename\s+\$0\)'
+- id: rm-self-dollar-zero
+  desc: Self-deletes using rm command
+  crit: notable
+  conf: 0.95
+  if:
+    type: text
+    regex: (?m)^[ \t]*(/bin/|/usr/bin/)?rm[ \t]+(-[rf]+[ \t]+)?(--[ \t]+)?["\x27]?\$0["\x27]?
+  unless:
+  - type: text
+    regex: xargs -0 -r sh -c 'rm -[fi] -- "\$0" "\$@" </dev/tty'
+  - id: metadata/file/profile/test-indications/
+  - type: path
+    regex: (^|[\\/])nix[\\/]test-guest[\\/]cache-seal\.sh$
+  - type: text
+    substr: Update process completed successfully
+  - id: well-known/app
+  - id: metadata/package/files/system-package::container-entrypoint-script
+  - id: objectives/evasion/self-delete/cleanup/remove::recognized-shell-cleanup-context
+  - id: well-known/lib/ai/inspect-evals::eval-corpus-context
+  downgrade:
+    any:
+    - id: metadata/signed/platform::apple
+- id: rm-self-script-var
+  desc: Self-deletes using script variable
+  crit: suspicious
+  conf: 0.9
+  if:
+    type: text
+    regex: (?m)^[ \t]*rm\s+(-[rf]+\s+)?(--\s+)?"\$\{?BASH_SOURCE(\[0\])?\}?"
+  unless:
+  - id: metadata/file/profile/test-indications/
+- id: rm-self-basename
+  desc: Self-deletes using basename
+  crit: suspicious
+  conf: 0.85
+  if:
+    type: text
+    regex: rm\s+(-[rf]+\s+)?\$\(basename\s+\$0\)
 composite_rules:
-  - id: self-deleting-external-ip-loop-dropper
-    desc: Self-deleting external-IP loop dropper
-    crit: hostile
-    conf: 0.99
-    attack: "T1105, T1059.004, T1070.004, T1222.002"
-    mbc: "B0024, F0007"
-    all:
-      - id: rm-self-dollar-zero
-      - id: micro-behaviors/communications/ip/literal::external-ipv4-http-url
-      - id: micro-behaviors/communications/http/download/shell::wget-loop-variable-download
-      - id: micro-behaviors/process/create/local-exec::chmod-exec-var-local
-  - id: self-deleting-raw-ip-variable-dropper
-    desc: Self-deleting raw-IP variable dropper
-    crit: hostile
-    conf: 0.99
-    attack: "T1105,T1059.004,T1070.004,T1222.002"
-    mbc: "B0024,F0007"
-    all:
-      - id: micro-behaviors/fs/path/self::realpath-current-script
-      - id: micro-behaviors/fs/delete/file/command::rm-force-variable-target
-      - id: micro-behaviors/communications/ip/literal::external-ipv4-shell-literal
-      - id: micro-behaviors/communications/http/download/cli::fetch-output-flag-script
-      - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-var-target
-      - id: micro-behaviors/process/daemonize/detach::background-ampersand-hidden
-      - id: "micro-behaviors/os/sysinfo/platform/arch::multi-arch-target"
-    near_lines: 70
-  - id: self-deleting-raw-ip-multiarch-temp-dropper
-    desc: Self-deleting raw-IP multi-architecture temporary dropper
-    crit: hostile
-    conf: 0.99
-    attack: "T1105,T1059.004,T1070.004,T1222.002"
-    mbc: "B0024,F0007"
-    all:
-      - id: objectives/command-and-control/dropper/file-exec/command/shell::raw-ip-busybox-multiarch-dropper
-      - id: rm-self-dollar-zero
-
-  # A one-shot bootstrap that downloads executable code, installs an outbound
-  # mail credential, and removes its hardcoded script path is a distinct
-  # cleanup shape from ordinary installers that use `$0` after a successful
-  # update. Keep the SMTP leg generic so equivalent msmtp provisioning in
-  # another shell script is covered too.
-  - id: self-deleting-remote-smtp-bootstrap
-    desc: Self-deleting remote SMTP bootstrap
-    crit: hostile
-    conf: 0.98
-    attack: "T1105,T1059.004,T1071.003,T1070.004"
-    mbc: "B0024,F0007"
-    near_lines: 40
-    all:
-      - id: micro-behaviors/fs/delete/file/command::rm-force-hardcoded-shell-script
-      - id: objectives/execution/payload/interpreter-stdin::curl-pipe-shell
-      - id: micro-behaviors/communications/email/config::shell-msmtp-credential-bootstrap
+- id: self-deleting-external-ip-loop-dropper
+  desc: Self-deleting external-IP loop dropper
+  crit: hostile
+  conf: 0.99
+  attack: T1105, T1059.004, T1070.004, T1222.002
+  mbc: B0024, F0007
+  all:
+  - id: rm-self-dollar-zero
+  - id: micro-behaviors/communications/ip/literal::external-ipv4-http-url
+  - id: micro-behaviors/communications/http/download/shell::wget-loop-variable-download
+  - id: micro-behaviors/process/create/local-exec::chmod-exec-var-local
+- id: self-deleting-raw-ip-variable-dropper
+  desc: Self-deleting raw-IP variable dropper
+  crit: hostile
+  conf: 0.99
+  attack: T1105,T1059.004,T1070.004,T1222.002
+  mbc: B0024,F0007
+  all:
+  - id: micro-behaviors/fs/path/self::realpath-current-script
+  - id: micro-behaviors/fs/delete/file/command::rm-force-variable-target
+  - id: micro-behaviors/communications/ip/literal::external-ipv4-shell-literal
+  - id: micro-behaviors/communications/http/download/cli::fetch-output-flag-script
+  - id: micro-behaviors/fs/chmod/executable/mode::chmod-exec-var-target
+  - id: micro-behaviors/process/daemonize/detach::background-ampersand-hidden
+  - id: micro-behaviors/os/sysinfo/platform/arch::multi-arch-target
+  near_lines: 70
+- id: self-deleting-raw-ip-multiarch-temp-dropper
+  desc: Self-deleting raw-IP multi-architecture temporary dropper
+  crit: hostile
+  conf: 0.99
+  attack: T1105,T1059.004,T1070.004,T1222.002
+  mbc: B0024,F0007
+  all:
+  - id: objectives/command-and-control/dropper/file-exec/command/shell::raw-ip-busybox-multiarch-dropper
+  - id: rm-self-dollar-zero
+- id: self-deleting-remote-smtp-bootstrap
+  desc: Self-deleting remote SMTP bootstrap
+  crit: hostile
+  conf: 0.98
+  attack: T1105,T1059.004,T1071.003,T1070.004
+  mbc: B0024,F0007
+  near_lines: 40
+  all:
+  - id: micro-behaviors/fs/delete/file/command::rm-force-hardcoded-shell-script
+  - id: objectives/execution/payload/interpreter-stdin::curl-pipe-shell
+  - id: micro-behaviors/communications/email/config::shell-msmtp-credential-bootstrap

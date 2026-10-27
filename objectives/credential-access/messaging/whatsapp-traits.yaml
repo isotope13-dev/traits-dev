@@ -1,0 +1,137 @@
+# WhatsApp Web's encrypted IndexedDB stores contain live device/session
+# material.  A script that reads those stores and decrypts their key records
+# is credential access even when it is packaged as an extension.
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript, crx, xpi]
+  attack: T1539
+
+traits:
+  - id: whatsapp-web-store-target
+    desc: Targets WhatsApp Web session storage
+    crit: suspicious
+    conf: 0.97
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\b(openDb|indexedDB\.open)\s*\(\s*["'']wawc_db_enc["'']'
+
+  - id: whatsapp-wawc-db-get-record
+    desc: Reads wawc_db_enc through a database helper
+    crit: suspicious
+    conf: 0.97
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\bgetRecord\s*\(\s*["'']wawc_db_enc["'']'
+
+  - id: whatsapp-signal-store-target
+    desc: Targets WhatsApp Signal session storage
+    crit: suspicious
+    conf: 0.97
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\b(openDb|openDatabase)\s*\(\s*["'']signal-storage["'']'
+
+  - id: noise-key-field
+    desc: References WhatsApp Noise session-key fields
+    crit: notable
+    conf: 0.98
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\b(WANoiseInfo|noise\.(privKey|pubKey))\b'
+
+  - id: identity-key-field
+    desc: References WhatsApp Signal identity-key fields
+    crit: notable
+    conf: 0.98
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\bsignal_static_(priv|pub)key\b'
+
+  - id: signed-prekey-store
+    desc: References WhatsApp signed prekey store
+    crit: notable
+    conf: 0.98
+    for: [javascript, typescript]
+    # The literal store name is WhatsApp Web session-store vocabulary. The
+    # generic `keyPair.privKey` member access this trait used to accept is
+    # written by every Signal-protocol library while generating its own
+    # prekeys, so it carried no WhatsApp-store identity and false-fired on
+    # clean implementations; only the store-name artifact stays.
+    if:
+      type: text
+      word: signed-prekey-store
+
+  - id: registration-store-id-field
+    desc: References WhatsApp registration-store ID field
+    crit: notable
+    conf: 0.98
+    for: [javascript, typescript]
+    if:
+      type: text
+      word: signal_reg_id
+
+  - id: me-jid-field
+    desc: WhatsApp account JID field
+    crit: notable
+    conf: 0.98
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\b(last-wid-md|WALid)\b'
+
+  # `registration-id-field` moved to
+  # metadata/lang/source/naming/resource::registration-id-identifier:
+  # a bare `registrationId` word is neutral Signal-protocol vocabulary that
+  # every clean Signal library writes, not credential-access evidence.
+
+composite_rules:
+  - id: whatsapp-session-key-fields
+    desc: WhatsApp device session key fields
+    crit: notable
+    conf: 0.98
+    for: [javascript, typescript]
+    any:
+      - id: objectives/credential-access/messaging::noise-key-field
+      - id: objectives/credential-access/messaging::identity-key-field
+      - id: objectives/credential-access/messaging::signed-prekey-store
+
+  - id: whatsapp-session-device-fields
+    desc: WhatsApp session device identifiers
+    crit: notable
+    conf: 0.98
+    for: [javascript, typescript]
+    any:
+      - id: metadata/lang/source/naming/resource::registration-id-identifier
+      - id: objectives/credential-access/messaging::registration-store-id-field
+      - id: objectives/credential-access/messaging::me-jid-field
+
+  - id: whatsapp-web-session-material-extraction
+    for: [javascript, typescript, crx, xpi, zip]
+    desc: WhatsApp session-store reads with decryption clues
+    # Extracting a live session is a sensitive capability, but disclosed
+    # session-migration tools can do this for a user-authorized transfer.
+    # The hostile claim belongs to composites that establish unauthorized
+    # forwarding or another abusive use.
+    crit: suspicious
+    conf: 0.99
+    scope: archive
+    all:
+      - id: objectives/credential-access/messaging::whatsapp-session-key-fields
+      - id: objectives/credential-access/messaging::whatsapp-session-device-fields
+      - id: micro-behaviors/crypto/decrypt::webcrypto-decrypt-source-call
+    any:
+      - id: objectives/credential-access/messaging::whatsapp-web-store-target
+      - id: objectives/credential-access/messaging::whatsapp-wawc-db-get-record
+      - id: objectives/credential-access/messaging::whatsapp-signal-store-target
+    unless:
+      - id: well-known/app/system/vendora-connect::disclosed-integration-context
+      - id: well-known/app/system/vendora-connect::bridge-script-context
+      - id: well-known/app/communication/leona-session-connector::disclosed-integration-context
+      - id: well-known/app/communication/leona-session-connector::bridge-script-context
+      - id: well-known/app/communication/letalk-whatsapp-bridge::disclosed-integration-context
+      - id: well-known/app/communication/letalk-whatsapp-bridge::bridge-script-context

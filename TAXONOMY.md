@@ -246,32 +246,22 @@ subtype is unknown or alternatives span its children. A broad credential rule
 therefore stays at `credential`; it is never copied into its children or filed
 under an invented `other` class. This exception does not authorize parent rules
 elsewhere. Parents remain referenceable; a single child is fine if it adds
-meaning. This is repository policy, not a check currently enforced by general
-Cleave validation; run `python3 scripts/taxonomy-map.py` to report mixed
-rule/descendant directories for review against this exception.
+meaning. General validation does not enforce leaf-only placement; review the moved
+parent and its descendants explicitly against this contract.
 
 | Validator check | Limit |
 |---|---|
-| Rules per directory | **100** traits plus composites is the default validator budget and review trigger, summed over its YAML files and criticalities. A higher leaf budget requires a reviewed, exact-path entry in Cleave and evidence that its rules are accurate, at the right level, and nonduplicative; filenames create no budgets. |
+| Rules per directory | **100** traits plus composites is the uniform maximum, summed over its YAML files and criticalities. There are no per-directory size exceptions; filenames create no budgets. |
 | Subdirectories | Hard error above 150 immediate subdirectories. Split broad catalogs by a stable function with a tiebreaker. |
 | Depth | Soft warning beyond five levels below the tier (`objectives/a/b/c/d/e/f/x.yaml` warns). Soft warnings fail `make validate`; `cleave validate --soft` only reports them. |
-| Sparse siblings | Soft warning when, below level 1 of a behavioral tier, two or more child subtrees hold fewer than 35 rules together — unless the exact partition is in `REVIEWED_SPARSE_TAXONOMY_PARTITIONS` (`cleave/src/capabilities/validation/taxonomy.rs`). |
+| Sparse siblings | Soft warning when, below level 1 of a behavioral tier, two or more child subtrees hold fewer than 35 rules together. No parent or child set is exempt. |
 | Sibling stems | Soft warning on shared stems. A shared stem is not synonymy (account identity ≠ process accounting); document the boundary or merge. |
 | Platforms | Soft warning at four or more. `platforms: [all]` only in `ALL_PLATFORM_DIRECTORY_ALLOWLIST` (same file). |
-
-`micro-behaviors/communications/http/url/path` has a reviewed budget of 110:
-the Stream Chat route literal and `/_api/<entity>` are distinct path
-observations. The latter is used only with Power Pages/Dataverse context in a
-composite; neither path fact establishes a request, SDK identity or endpoint
-operation. The item-taxonomy review added nine distinct route references moved
-out of theft categories; they retain their content, source/type scopes and
-exclusions. The exact budget is enforced in Cleave; the default review trigger
-remains 100.
 
 `platforms: [all]` is allowed only where a fact means the same on every OS:
 `metadata/package/description/disclosure`,
 `metadata/package/documentation/{claims,security-advisory,source}`,
-`metadata/registry`, `metadata/file/naming`,
+`metadata/registry`, `metadata/filename`, `metadata/path`,
 `metadata/file/profile/{test-indications,source-indications}` and
 `micro-behaviors/communications/url/host` and
 `objectives/supply-chain/security-hold`. Security-holding status is independent
@@ -287,65 +277,15 @@ OS/type gates, and the profile asserts neither execution nor benign intent.
 An AUR package targets Linux, and source code alone does not
 prove portability.
 
-**Size prompts review; it never justifies a split by itself.** At 100, first
-move misplaced rules home and merge equivalent matchers after comparing scope
-and conditions. Moving the same set elsewhere fixes nothing. If a complete,
-accurate, correctly leveled, nonduplicative set answers one question, retain it
-in that leaf and raise its exact reviewed budget. Cleave must reject counts
-above that recorded budget; do not raise a global ceiling or invent a subtype
-to satisfy a number. The current reviewed exceptions are:
-
-- `metadata/package/dependencies/manifest/identity` at 108 rules, supported by
-  [the Cargo dependency identity batch](taxonomy-migration/batches/275-cargo-manifest-identity/README.md).
-- `objectives/exfiltration/stealer/credential` at 276 rules. These matchers
-  require authentication material but leave its form open or admit alternatives
-  spanning password, token and key forms. They remain at the meaningful
-  credential ancestor; storage/application labels do not justify subtypes.
-  The complete population and effective scopes have no exact matcher/scope
-  duplicates. See the [item placement audit](docs/taxonomy-audit/triage/review-pool-20261026/item-placement-audit.json)
-  and [complete budget reviews](docs/taxonomy-audit/triage/review-pool-20261026/budget-leaf-reviews.json).
-- The same complete item review retained distinct neutral observations at
-  `micro-behaviors/communications/http/header/custom` (101),
-  `micro-behaviors/communications/http/post` (101),
-  `micro-behaviors/communications/http/request/body` (104),
-  `micro-behaviors/communications/http/upload` (102),
-  `micro-behaviors/communications/http/url/path` (110),
-  `micro-behaviors/fs/path/credential` (103),
-  `micro-behaviors/fs/write/file/full` (101), and
-  `micro-behaviors/os/user/account` (101). Incoming observations describe
-  header declarations, request payloads, upload operands, route references,
-  credential paths, local file writes or account listings; none requires a theft claim. Each
-  complete population was compared with effective scope and exclusions and
-  has no exact matcher/scope duplicates. The linked budget review records
-  every definition; implementation-language splits would add no semantic
-  distinction.
-- `micro-behaviors/data/decode/base64` at 103 rules. One Base64 algorithm is a
-  coherent home across implementation scopes; a language/API split would sort
-  evidence form rather than refine the decoded behavior. The review moved an
-  encoded-only token to `data/encoding/base64` and removed overlapping Ruby
-  and shell match scopes. See the
-  [review record](taxonomy-migration/research/base64-directory-budget-review.md).
-- `micro-behaviors/fs/file/copy` at 101 rules. The reviewed ELF `cp` command
-  atom and shared shell/ELF composite belong to the same file-copy operation;
-  implementation form is carried in `for:`. No precise child axis separates
-  this addition from the existing copy observations. See
-  [B281](taxonomy-migration/batches/281-cp-command-placement/README.md).
-
-- `metadata/file/naming` at 101 rules. The additional large eight-hex basename
-  is distinct from the existing 40/64-hex forms; its size predicate is retained.
-- `metadata/file/archive` at 111 rules. The original archive entropy/name
-  context records two static properties without inferring a staged loader.
-  The VSIX review audited both 101-rule catalogs, found no duplicate matcher
-  shapes, and retained all scopes and consumers. The controls cover both naming
-  near misses and ordinary high-entropy archives; see the reproducible
-  [VSIX review records](docs/taxonomy-audit/taxonomy/vsix-triage-2026-10-20/triage-summary.json).
-  The subsequent complete data-taxonomy review retained 101 existing canonical
-  archive facts and moved ten distinct archive byte/layout properties home.
-  Three staging claims were renamed to describe their required static evidence.
-  Scope and matcher checks found no equivalent rules; archive formats and
-  evidence representations do not justify children of this property catalog.
-  The exact 111-rule budget and all four full-leaf reviews are recorded in
-  [the rule-by-rule review](docs/taxonomy-audit/triage/data-taxonomy-audit-20261024/leaf-reviews.json).
+**Size prompts a semantic review; it never chooses a partition.** The 100-rule
+maximum has no directory-specific exceptions. Start with the parent and its
+peers: identify the question at that level, move misplaced rules, and consolidate
+equivalent matchers after comparing effective scope and conditions. Remove a
+redundant level when it merely restates its parent or names the evidence carrier.
+Only add children for distinctions the required evidence supports. Capacity,
+language, backend, rule form and an `other` bucket never choose a home. A
+complete placement of broad and narrow observations is required before moving.
+Historical larger-budget reviews remain audit evidence, not active waivers.
 
 ### Splitting a directory
 
@@ -360,6 +300,31 @@ anything moves. Each new parent needs a contract stating:
 If the children cannot hold the broad observations without overlap or
 overstatement, revise the split or keep a precisely named broad operation leaf.
 Never invent specificity or create `other`.
+
+### Small subject catalogs
+
+A subject need not have a directory for each operation. The reviewed sparse
+catalogs keep their distinct facts in IDs and descriptions at their shared
+subject: for example `fs/swap` keeps on/off facts, `fs/link` keeps link kinds,
+`os/signal` keeps dispatch/handler facts, and `persistence/login/winlogon`
+keeps Userinit and credential-provider facts. This combines directory levels,
+not predicates or criticalities. Review every consumer when a directory moves:
+its required evidence decides whether a moved member still belongs in that
+condition. A bare filename, for example, does not become a benign software
+identity because an old identity directory contained it. Preserve the intended
+roles and threshold when replacing a reference: an `all:` condition is one
+required role, while `any:` with `needs` can count multiple matching children.
+Use existing references and meaningful composites; do not add migration-only
+grouping rules.
+
+A collapse does not excuse a wrong parent. Process-injection payload chains
+belong in `execution/payload/process-inject`, not C2 dropper catalogs.
+PowerShell command text, options and type/member names are source properties;
+actual child creation, in-process hosting and invocation retain their distinct
+capability homes. Ordinary license checks and availability aborts are not
+attacker execution triggers. A destructive result owns its compound, with a
+required destructive target; a generic cleanup API beside an auth failure is
+insufficient evidence of a wipe.
 
 ### Naming
 
@@ -576,7 +541,7 @@ must not acquire a direction from its consumer.
 | `fs/read`, `fs/write`, `fs/delete/{file,directory}` | Content I/O; deletion by what is removed. A sensitive filename creates no second home. |
 | `fs/directory/{create,readdir,traverse}`, `fs/search` | Create; list one directory; recurse; select by name, extension or content. A required predicate makes it `search` even when recursive. `fs/enumerate` is drive and device inventory only. |
 | `fs/path/<resource>` | A location, classified by **what it points at**, not its owner or an ancestor's name (`/Library/Caches` is `cache`). For secrets, the first that fits: `password-store`, `cookie`, `private-key`, `public-key` (authorized_keys, known_hosts), `token`, `secret-config`, `config`; a generic secret directory (`/run/secrets`) or cross-family union is `credential`. Others: `wallet`, `account-db`, `certificate`, `app-data`, `personal`, `cache`, `font`, `library`, `log`, `metadata-store`, `system`, `temp`, `socket`, `stream`, `extension`, `application/{bundle,browser,executable}`. A path never proves access. |
-| `fs/path-ops/{join,normalize,parse,match}` | Pathname manipulation (`Path.Combine`, `realpath`, `GetDirectoryName`). |
+| `fs/path-ops` | Pathname manipulation: join, normalize, parse and match remain distinct trait IDs (`Path.Combine`, `realpath`, `GetDirectoryName`). |
 | `fs/{acl,attributes,chmod,chown,link,lock,sync,watch,quota}` | Permissions, attributes, ownership, links (`hardlink`, `symlink`, `junction`), file locks (not `.lock` names), sync, change monitoring, quotas. |
 | `fs/temp/{file,directory}`, `fs/volume`, `fs/disk/{partition,raw}` | Creating temporary objects (a temp *location* is `fs/path/temp`); mounts; partitions and raw disk. Disk inventory is `os/sysinfo/disk`. |
 | `fs/swap/{on,off}` | Activating or disabling swap. Storage-header initialization (`mkswap`) belongs in `fs/volume/format`; raw zeroing remains `fs/disk/raw` until required evidence establishes formatting. |
@@ -696,7 +661,7 @@ distinguishes it.
 | `credential-access` | By source: `browser`, `cloud`, `credential-manager`, `keychain`, `env`, `files`, `ssh`, `wallet`, `email`, `messaging`, `dev-tools`, `wifi`, `registry` *(legacy: `windows-registry`)*, `memory` *(legacy: part of `dump`)*; by acquisition: `capture`, `cracking`, `phishing` | Acquiring authentication material or a targeted secret store, by the [credential-source order](#objective-boundaries). A store path alone is a reference; a login form alone is not phishing. |
 | `discovery` | `account`, `host`, `system`, `network`, `process`, `cloud` | A reconnaissance survey, by surveyed resource: `host` = installed software, security products, browsers; `system` = machine, hardware, OS; `process` = running processes; `network` = interfaces, peers, probes, scans; `account` = principals; `cloud` = provider resources. One generic query stays a capability. |
 | `command-and-control` | `channel/<transport>`, `beacon`, `remote-command/<dispatch>`, `backdoor/<access-surface>`, `reverse-shell/<io-coupling>`, `botnet`, `infrastructure`, `dns`, `trigger` | Attacker control, tasking, access or communication. Payload delivery is [execution](#payload-activation-and-staging); a protocol name is not C2. |
-| `execution` | `payload/<sink>` *(legacy: `command-and-control/dropper/<sink>`)*, `staging/<operation>` *(legacy: `command-and-control/dropper/staging/<carrier>`)*, `exploit`, `interpreter`, `lolbin`, `lure`, `trigger`, `database`, `activex`, `automation`, `compile`, `condition`, `lnk`, `wmi`, `autoinstall` | Unwanted execution through an exploit, deceptive invocation, trusted execution surface or admitted payload chain. Generic execution APIs stay in `process`. `database` is database-hosted execution (CLR procedures, `xp_cmdshell`, OLE Automation). |
+| `execution` | `payload/<sink>` *(legacy: `command-and-control/dropper/<sink>`)*, `staging/<operation>` *(legacy: `command-and-control/dropper/staging/<carrier>`)*, `exploit`, `interpreter`, `lolbin`, `lure`, `trigger`, `database`, `activex`, `automation`, `compile`, `lnk`, `wmi`, `autoinstall` | Unwanted execution through an exploit, deceptive invocation, trusted execution surface or admitted payload chain. Generic execution APIs stay in `process`. `database` is database-hosted execution (CLR procedures, `xp_cmdshell`, OLE Automation). |
 | `exfiltration` | `stealer/<item>`; transport-only: `http`, `dns`, `ftp`, `cloud`, `messaging`, `llm`, `oob`, `side-channel` | Unauthorized transfer. An acquisition-to-send chain is classified by its stolen item and beats transport; a transport child needs an established theft claim whose item kind is not established. A POST, an endpoint or ordinary model inference is not exfiltration. Header, query and body are distinct HTTP carriers. |
 | `evasion` | `anti-av/<control>`, `security-bypass/<control>`, `masquerade/<deception>`, `decoy`, `file-hiding`, `kernel-hide`, `indicator-removal/<record>`, `self-delete`, `process/<concealment>`, `fileless`, `hijack-execution-flow`, `hosts-file`, `quarantine-removal`, `tcc-manipulation`, `file-unlock` | Hiding activity from users, admins or deployed security products, or bypassing their controls. |
 | `impact` | `destroy/<resource>`, `wipe`, `ransom`, `dos`, `degrade/<target>`, `infect/<host-artifact>`, `crypto-manipulation`, `cryptojacking`, `deface`, `services`, `system`, `ui`, `spam` *(legacy: `lateral-movement/social-engineering/spam`)* | Destruction, disruption, extortion, unauthorized modification or resource abuse. Ordinary deletion or encryption is neutral; spam needs unsolicited-message abuse, not volume. |
@@ -721,7 +686,7 @@ distinguishes it.
 - **Export follows the item.** Credential acquisition keeps its store-based
   classification above. An export uses the [stolen-item taxonomy](#collection-credentials-and-theft):
   a private key from an environment variable, file or keychain has the same
-  `stealer/credential/key` home. Its acquisition store remains referenced
+  `stealer/credential/value/key` home. Its acquisition store remains referenced
   evidence. Never infer an item subtype from the store alone.
 - **Activation before delivery detail.** An admitted acquisition- or
   staging-to-activation chain is placed by its sink; language, transport,
@@ -831,11 +796,12 @@ it must not claim a data binding the matcher does not establish.
 
 | Required exported item | Home beneath `stealer` |
 |---|---|
-| Authentication material with subtype left open, or alternatives spanning credential forms | `credential` |
-| A selected password, protected password/verifier field or pre-shared authentication password | `credential/password` |
-| A selected bearer, API, OAuth or application session token | `credential/token` |
-| A selected cryptographic secret/private key | `credential/key` |
-| A mnemonic, seed phrase or recovery secret | `credential/recovery-secret` |
+| Authentication material whose exported form is unknown, or alternatives spanning values and whole authentication records | `credential` |
+| Selected secret values whose kind is unknown, or alternatives spanning secret kinds | `credential/value` |
+| A selected password, protected password/verifier field or pre-shared authentication password | `credential/value/password` |
+| A selected bearer, API, OAuth or application session token | `credential/value/token` |
+| A selected cryptographic secret/private key | `credential/value/key` |
+| A mnemonic, seed phrase or recovery secret | `credential/value/recovery-secret` |
 | A stored authentication database, cache, keyring or credential-record set exported as a record/container | `credential/record` |
 | Configuration files or settings, without a required extracted secret type | `configuration` |
 | A broad process-environment snapshot, or environment values without a required credential type | `configuration/environment` |
@@ -843,8 +809,7 @@ it must not claim a data binding the matcher does not establish.
 | Cookie state, without assuming every cookie authenticates a session | `application-state/cookie` |
 | Browsing/history/activity records | `activity` |
 | Captured input values, keystroke/touch records or clipboard content without narrower semantic content | `input` |
-| Media content whose modality is left open or spans modalities | `media` |
-| Static images; audio; ordered visual streams | `media/image`; `media/audio`; `media/video` |
+| Media content: static images, sound or ordered visual streams, with modality in the trait ID and description | `media` |
 | Payment-card and associated billing data | `financial/payment-card` |
 | Messages, mailboxes, SMS | `message` |
 | A database dump or row set without a narrower required semantic item | `database` |
@@ -853,10 +818,10 @@ it must not claim a data binding the matcher does not establish.
 | Host report spanning or leaving open several of those | `system-info/profile` |
 | Workspace/repository metadata report | `system-info/workspace-profile` |
 | Two or more independent item families, **each required** | `multi-item` |
-| Theft established, but alternatives or untyped secret values prove no narrower item family | `stealer` itself |
+| Theft established, but alternatives or untyped content proves no narrower item family | `stealer` itself |
 
 **Precedence and counterexamples.** A selected wallet private key is
-`credential/key` regardless of acquisition store. A complete `.env` file is
+`credential/value/key` regardless of acquisition store. A complete `.env` file is
 configuration; a selected private-key field loaded from that file is a key.
 A whole environment dump stays `configuration/environment`; possible tokens
 inside it do not create a token-export predicate. A browser cookie is cookie
@@ -867,23 +832,44 @@ selects, rather than every possible constituent of a container.
 
 `multi-item` counts required exported item families, not acquisition stores or
 traits. A wallet key plus an SSH key is still credential material; desktop and
-camera video are both video. An `any:` over passwords and tokens stays at
-`credential`. A screenshot import beside a credential exporter does not prove
+camera video are both video. An `any:` over selected passwords and tokens stays at
+`credential/value`. A screenshot import beside a credential exporter does not prove
 a second exported item. When alternatives share only the theft objective,
 retain the rule at the meaningful `stealer` ancestor. Broad rules must never
 be duplicated across descendants.
 
-The exact sparse partition `stealer/media/{audio,image,video}` is reviewed:
-sound, a static image and an ordered visual stream are distinct item modalities.
-A screenshot and camera still are both images; desktop and webcam streams are
-both video. A matcher admitting either audio or video stays at `media`. Device,
-API, codec and transport never choose a modality child.
+`stealer/media` records exported sound, static images and visual streams in
+one leaf. Distinct modalities remain explicit in each trait ID and description;
+small modality directories add no useful catalog boundary. A screenshot and
+camera still are both images; desktop and webcam streams are both video.
+Device, API, codec and transport never choose a theft home.
 
 The complete item-placement inventory and source-facet review are in
 [the review-pool migration audit](docs/taxonomy-audit/triage/review-pool-20261026/item-placement-audit.json).
 The former store/application branches (`env`, `cloud`, `browser`, `wallet`,
 `keychain`, `dev-secret`, `ssh`) are retired objective homes; their acquisition
 observations remain in the capability and credential-access tiers.
+
+**Credential form precedes secret kind.** At `credential`, the question is
+*what form of authentication material is exported?* `value` requires selected
+secret values; `record` requires an authentication record/store exported as a
+record or container. Within `value`, children answer *which secret kind?*
+(`password`, `token`, `key`, `recovery-secret`). Selection is substantive: an
+API-key environment read followed by export can support `value/token`; a
+whole environment snapshot beside an API-key name cannot. A whole login
+keychain is `record`; a selected private key extracted from it is `value/key`.
+An environment-filtered secret union stays at `value` when its passing
+alternatives span several secret kinds. A union admitting both whole records
+and selected secrets stays at `credential`.
+
+Do not guess that a file is a credential store from a chosen output filename,
+or that an arbitrary `getWalletFiles()` helper acquires wallet secrets. Keep
+its proven body/data-flow observation as a capability. An endpoint name,
+credential path and encryption reference do not jointly establish acquisition
+or export. Retire an unsupported compound rather than transplanting that
+claim to a broader theft leaf. Never remove a failed required role from a
+consumer and thereby broaden it; re-establish the result from its remaining
+required evidence or retire that consumer too.
 
 **Local acquisition** remains under `collection/` or `credential-access/` by
 the acquired subject and acquisition operation. In
@@ -976,7 +962,10 @@ identity goes with that subject.
 | `binary` | `header`, `section`, `symbols`, `code`, `instruction`, `resource`, `linking`, `layout`, `debug`, `provenance`; a property of that part | **Facts about a part, never what it means:** "three imports" → `symbols`; "imports `GetProcAddress`" → a capability; "exports impersonate `version.dll`" → an objective; "exports are libcurl's ABI" → `well-known/lib`. A part's measurement and malformation share its directory; `crit:` says how unusual. |
 | `build` | `bundler`, `minifier`, `transpiler`, `generated`, `ci`, `config`, `manifest`, `artifact`, `reproducible`, `vcs`, … by transform or pipeline function | What a tool left in the file (bundled, minified, transpiled), grouped by function; the tool goes in the trait name (`esbuild-bundled`). "This file *is* webpack" is `well-known/`; compiler attribution is `lang/compiler`. |
 | `document` | `pdf`, `office`, `rtf`, `html`, `ole`, `chm`; a parsed part or property | Structure, not the behavior of embedded code. Magic alone is `file`. |
-| `file` | `format`, `magic`, `extension`, `size`, `encoding` (*legacy: `encoded`*), `entropy`, `naming`, `profile`, `line`, `archive`, `catalog`, `comment`, `function`, `import`, `padding`, `arithmetic`; whole-file properties | A specific subject beats a generic text bucket. The file's own name and directory are `naming`; an archive member path is `archive`. `file/string` and `file/literal` are **closed**: move each rule to the subject it evidences. A context-only literal has no standalone behavior home; retain its placement hold until a supported contract or validated consumer representation exists. The validator rejects new IDs in both namespaces; existing IDs are grandfathered during migration. See the [validator enforcement record](taxonomy-migration/research/document-authority/literal-validator-enforcement.md). |
+| `filename` | `identity`, `name-form`: own basename and stem | A property of the scanned name, without parent-directory context. An embedded or referenced name belongs to its own subject. |
+| `path` | Own scanned location and directory relationships | Parent components, source-tree location and multi-component paths. A path mentioned in code is `micro-behaviors/fs/path`; an archive table entry is `archive/member/path`. |
+| `archive` | Container facets and member fields (below) | Properties of the scanned container or its recorded entries; code operating on archives is a capability. |
+| `file` | `format`, `magic`, `extension`, `size`, `encoding` (*legacy: `encoded`*), `entropy`, `profile`, `line`, `catalog`, `comment`, `function`, `import`, `padding`, `arithmetic`; remaining whole-file properties | This legacy umbrella grants no default home: a specific subject beats a generic text bucket. `file/string` and `file/literal` are **closed**: move each rule to the subject it evidences. A context-only literal has no standalone behavior home; retain its placement hold until a supported contract or validated consumer representation exists. The validator rejects new IDs in both namespaces; existing IDs are grandfathered during migration. See the [validator enforcement record](taxonomy-migration/research/document-authority/literal-validator-enforcement.md). |
 | `hardening` | `build`, `layout`, `memory`, `mitigation`, `sandbox` | Absence is a value of a mitigation, not a "missing" subject. Using a security API is a capability; bypassing one, an objective. |
 | `image` | `pixel`, `segment`, `trailing`: decoded-image measurements, segment totals, trailing layout | Whole-file byte entropy is `file/entropy`. A metric name proves no color channel or end marker. Rendering and capture are capabilities. |
 | `font`, `media` | *Reserved:* font table and container validity; cross-carrier byte coverage | Whitelisted; create with the first supported rule. |
@@ -1069,9 +1058,9 @@ contract is reviewed through rule review and focused fixtures; general Cleave
 validation does not establish that a profile's semantics are sound.
 
 **Archive boundaries follow the observed property.** Member names and member
-table observations belong in `file/archive`, even when the name is a hash,
+table observations belong in `archive`, even when the name is a hash,
 lure, extension or signing-file label. The scanned file's own basename belongs
-in `file/naming`; an extension-only observation belongs in `file/extension`.
+in `filename`; an extension-only observation belongs in `file/extension`.
 Parsed container-kind declarations (cabinet, Phar) belong in `file/format`,
 signature bytes in `file/magic`, and bytes specifically in a PE resource in
 `binary/resource`. Phar signature presence and scheme belong in
@@ -1138,6 +1127,22 @@ signatures, names, and string metrics use their specific homes; declarations
 of authority, hardening, package configuration, and document content use
 `permission`, `hardening`, `package`, and `document` subjects respectively.
 
+**Argument syntax** (`lang/source/syntax/argument`) records textual CLI
+options or argv fragments without requiring a complete command. Full command
+forms remain in `syntax/command`; programming-language call-argument forms
+remain in `syntax/call/arguments`. A bare `dumps(metrics)` beside a JSON-looking
+filename does not establish JSON serialization. Counts of recovered string
+candidates belong in `file/profile/string-population`, not a source-literal
+catalog.
+
+**Additional source-construct boundaries.** Markup attribute syntax belongs
+in `lang/source/syntax/attribute`, Go struct tags in `annotation`, Rust match
+arms in `match-arm`, and multi-field object shapes in `object`. A single
+object key/value pair stays in `key-value`; a complete module/package
+statement belongs in `declaration`. Literal field names do not prove an API
+call, account operation or HTTP body. These are grammar properties, independent
+of the language filename and matcher backend.
+
 **`file/entropy`** is Shannon entropy over the whole analyzed byte sequence.
 Region, section, string and decoded-pixel entropy belong with those subjects.
 Entropy alone proves no encoding, encryption or hidden payload. The
@@ -1152,9 +1157,19 @@ covers decoded measurements and parser boundaries.
 or assertion role, not language), `integrity` (checksums, content agreement),
 `config`, `publishing`.
 
-- `scripts/{lifecycle,build,command}`: the **declared trigger** decides, not
-  what the script does.
-- `dependencies/{manifest,lockfile,archive}`: declared, resolved or shipped.
+- `scripts/{lifecycle,build,command}`: a rule identifying a trigger follows
+  the **declared trigger**; a rule identifying command text within the script
+  value belongs in `command`, with its trigger retained in the matcher. For
+  example, the word `mysql` in `scripts.postinstall` is a command-value property,
+  not host discovery or proof of execution. Install and uninstall triggers
+  belong in `lifecycle`; declared build triggers belong in `build`; unbound
+  command text belongs in `command`.
+- `dependencies/<facet>`: the dependency property being observed, directly under
+  `dependencies`; `manifest` repeats the carrier and adds no classification.
+  Declared, resolved and shipped status remain explicit in the fact path,
+  matcher, scope and description. Legacy `declaration`, `lockfile` and `archive`
+  catalogs remain closed to new rules while their individual properties are
+  reconciled; they are not models for new children.
 - `documentation/{claims,security-advisory,source}`: asserted properties,
   advisory references, documentation location. A claim read from the
   manifest's `description` field is `description/<subject>`.
@@ -1166,7 +1181,7 @@ or assertion role, not language), `integrity` (checksums, content agreement),
 - A quality judgment (empty, suspicious, incomplete) is a value, not a subject:
   there is no `quality/` or `tooling/`.
 
-**Dependency-manifest facets: the first that describes what the matcher reads
+**Dependency facets: the first that describes what the matcher reads
 wins.**
 
 1. `identity` — the manifest declares one specific package (`lodash`); renaming
@@ -1180,9 +1195,63 @@ wins.**
 5. `reconciliation` — declared versus imported (phantom or unused).
 6. `presence` — whether the field exists.
 7. `count` — how many entries.
+8. `composition` — a required combination of declared dependencies, rather
+   than one identity or an arbitrary functional category. A runtime import
+   combination does not establish a declared dependency combination.
 
 Ecosystems share a facet and differ by filename (`identity/npm.yaml`,
 `identity/cargo.yaml`).
+
+**Names and archive properties: ordered placement.** The question at the
+metadata root is *which artifact subject has this property?* `file` adds no
+information to a filename, path or archive subject and is removed from those
+paths. Remaining legacy `file` subjects are not permission to add another
+carrier level.
+
+`filename` asks whether the scanned basename names a known conventional file
+or follows an open-ended spelling pattern. `identity` holds exact names and
+finite sets of conventional names (`package.json`, `Qt4Gui.dll`); this identifies
+the name, not the software. `name-form` holds patterns allowing arbitrary
+versions, hashes, prefixes or suffixes (`Qt5Core-<hash>.dll`). A regex enumerating
+a closed set belongs in `identity`; matcher backend does not choose the child.
+A required parent directory instead belongs in `path`.
+
+For the scanned object, a basename/stem-only matcher goes to `filename`;
+otherwise a matcher over its location goes to `path`. A file called
+`package.json` is a filename property; a file below `node_modules/x/` is a path
+property; source text mentioning `~/.npmrc` is neither. Preserve the original
+matcher domain: do not change a path matcher into a basename matcher during a
+move, even when its current description says “filename.”
+
+`archive` asks *which container property or member field is observed?*
+
+| Facet | Required observation | Neighbor and counterexample |
+|---|---|---|
+| `member/extension` | Entry-name suffix/extension, with no named stem required | `.csv` is a suffix; `invoice.csv` is `member/filename`. It does not establish CSV contents. |
+| `member/filename` | Entry basename, stem, token or name shape | `settings_12.ini` qualifies; `assets/settings.ini` with a required parent is `member/path`. |
+| `member/path` | Entry directory relationships, separators, traversal or rootedness | `../etc/x` qualifies; the scanned archive's own directory is `metadata/path`. Aggregate counts of these same path properties stay here. |
+| `member/size`, `member/time` | Recorded entry sizes or timestamps | One oversized entry is `size`; total unpacked bytes describe container `layout`. |
+| `layout` | Container contents, counts, aggregate sizes or relationships between entries | A script beside a library qualifies; one `.js` suffix alone is an entry extension. |
+| `compression` | Declared codec or expansion relationship | A compression ratio qualifies; entropy alone does not identify compression. |
+| `encryption` | Encryption declarations or bounded cipher-method bytes in the container | An encrypted-entry flag qualifies; this is not code that encrypts a victim file. |
+| `parsing` | Container parse success/errors or absent recovered facts | An unreadable directory qualifies; a parser error does not prove deliberate corruption. |
+| `serialization` | Structured serialized values/classes in archive metadata | PHAR metadata classes qualify; a class-name occurrence elsewhere does not. |
+
+When several fields are required, the asserted result owns the rule. A
+relationship between members or between a member and container facts is
+`layout`; merely restricting a suffix matcher to CAB files remains
+`member/extension`. Packaging ecosystems and container implementations stay in
+scope and filenames. These generic member fields have one home under
+`archive`; `package/files` is for packaging-specific roles and layout, not a
+second generic entry-name catalog.
+
+The archive parser supplies the same `archive.*` value fields across container
+formats. Queries confined to those fields may cover the archive family; a
+package-only field or a native-binary field does not gain that scope from its
+directory. `for: [archives]` expands to concrete formats and accepts exclusions.
+When replacing an explicit scope, preserve its concrete members and platform
+gates; do not silently include additional formats. Partial extraction is a
+`parsing` property, not evidence of deliberate anti-analysis.
 
 **Certificates: classify by the role the matcher reads.**
 
@@ -1295,9 +1364,9 @@ evidence establishes the abuse. *mb* = `micro-behaviors/`, *obj* =
 The tree is mid-migration. While a transition is open:
 
 1. **New rules go in an admitted target home.** First confirm the validator you
-   run accepts the destination (`directory_whitelist.rs`) and its partition
-   (`REVIEWED_SPARSE_TAXONOMY_PARTITIONS`); a documented target may still need
-   either change, coordinated through the migration plan.
+   run accepts the destination (`directory_whitelist.rs`) and that the proposed
+   partition satisfies the uniform directory limits. A documented target may
+   still require validator admission, coordinated through the migration plan.
 2. **Directory references don't follow moves.** A composite referencing a
    legacy directory misses rules added to its target. Find its consumers
    (`rg 'legacy/path'`) and check which members each should select before
@@ -1397,7 +1466,7 @@ Resolve each in the migration manifest before moving the affected rules.
 
 | Checkpoint | Required resolution |
 |---|---|
-| Capacity for broad leaves | The 100-rule review trigger is settled, not a hard cap. Before collapsing today's broad parents ([reading paths](#reading-paths)), document the complete incoming population and consumers, verify every rule's accuracy, level and distinctness, and record an exact-path reviewed budget. Do not invent a sibling or `other` bucket to evade review. |
+| Capacity for broad leaves | The 100-rule maximum applies uniformly. Review parent and peer subjects, document the complete population and consumers, and resolve every broad observation before moving. Remove redundant levels and misplaced or duplicate rules before proposing refinements; do not invent a sibling or `other` bucket to satisfy the count. |
 | Level-3 branches | Name the children, their single axis, precedence and an incomplete-evidence example before migrating. |
 | Payload sinks | Decide `image-map` and `interpreter-stdin` before moving them. |
 | Broad staging profiles | Staging rules that fit no operation need a defined home; neither dropping the claim nor calling it activation is acceptable. |

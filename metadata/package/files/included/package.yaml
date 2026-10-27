@@ -1,550 +1,662 @@
 defaults:
   platforms:
-    - unix
-    - windows
-  for: [source]
+  - unix
+  - windows
+  for:
+  - source
 traits:
-  - id: composer-json-basename
-    desc: Filename is composer.json
-    crit: baseline
-    conf: 0.95
-    for: [composer.json]
-    if:
-      type: path
-      basename: true
-      exact: composer.json
-  # `npm pack` always rewrites the tree under a single `package/` root, so a
-  # manifest at exactly `package/package.json` marks a published npm tarball.
-  # A repository archive does not have this shape: GitHub emits
-  # `<repo>-<sha>/…`, and a monorepo's inner manifests sit under `packages/x/`,
-  # `scripts/`, `demos/` and so on. Archive-scoped rules that reason about "the
-  # package's manifest and its entry file" need that distinction, otherwise
-  # they pool one subproject's manifest with an unrelated subproject's code.
-  - id: npm-publish-root-manifest
-    desc: Manifest sits at npm publish root
-    crit: baseline
-    conf: 0.95
-    for: [package.json]
-    if:
-      type: path
-      # Anchored to a path boundary. Unanchored, `package/package.json$` also
-      # matched any dependency whose directory name merely ends in `-package`:
-      # Tabby's node_modules/patch-package/package.json and
-      # github-from-package/package.json both claimed to be an npm publish root,
-      # which silently defeated every archive-scope rule anchored on this fact.
-      regex: '(^|/)package/package\.json$'
-    unless:
-      - type: path
-        regex: '[\\/](assets|node_modules|vendor|tests?|fixtures|examples?)[\\/]'
-
-  - id: npm-publish-root-readme
-    desc: README sits at npm publish root
-    crit: baseline
-    conf: 0.95
-    for: [markdown]
-    if:
-      type: path
-      regex: '(^|/)package/README\.md$'
-
-  # Archive-level shape remains observable even when the manifest itself is
-  # password-protected and cannot be analyzed as a package.json file.
-  - id: npm-package-manifest-member
-    desc: Archive carries npm package manifest
-    crit: baseline
-    conf: 0.95
-    for: [npm, tar, zip]
-    if:
-      type: value
-      path: "archive.members[*].path"
-      regex: '(^|/)package/package\.json$'
-  # Keep this archive-member fact neutral. A published npm package commonly
-  # carries its license at the package root; supply-chain composites can pair
-  # that shape with runtime identity and content-specific evidence.
-  - id: npm-license-archive-member
-    desc: npm archive ships license member
-    crit: baseline
-    conf: 0.95
-    for: [npm, tar]
-    if:
-      type: value
-      path: "archive.members[*].path"
-      regex: '^package/(LICENSE|LICENCE|COPYING|UNLICENSE)(\.[^/]+)?$'
-      case_insensitive: true
-  - id: npm-archive-messages-attachment-html
-    desc: npm archive ships messages attachment HTML
-    crit: notable
-    conf: 0.95
-    for: [npm, tar]
-    if:
-      type: value
-      path: "archive.members[*].path"
-      regex: '^package/templates/attachments/messages-.+\.html$'
-  - id: npm-package-scripts-member
-    desc: JavaScript under npm package scripts dir
-    crit: notable
-    conf: 0.99
-    for: [javascript]
-    if:
-      type: path
-      regex: 'package[\\/]scripts[\\/]'
-  - id: binding-gyp-manifest
-    desc: npm archive includes binding.gyp
-    crit: notable
-    conf: 0.99
-    for: [gyp]
-    if:
-      type: path
-      regex: '(^|[\\/])package[\\/]binding\.gyp$'
-  # Keep this archive member fact neutral. Supply-chain objectives can use its
-  # absence to distinguish a hollow published runtime from a docs package.
-  - id: npm-archive-member-lib-warmup-js
-    desc: npm archive member is lib warmup script
-    crit: notable
-    conf: 0.98
-    for: [npm, tar]
-    if:
-      type: value
-      path: archive.members[*].path
-      regex: '(^|/)package/lib/warmup\.(c?js|mjs)$'
-  - id: npm-runtime-code-member
-    desc: npm archive ships runtime JavaScript
-    crit: baseline
-    conf: 0.95
-    # gzip-wrapped npm tarballs are analyzed as archive containers too; keep
-    # their member facts available to entrypoint composites. Root-level files
-    # and code-tree files are one observation here — the implementation
-    # ships — so the emptied-release composites need a single suppressor
-    # for it.
-    for: [npm, tar, zip]
-    if:
-      type: value
-      path: "archive.members[*].path"
-      # formatters/ is the published product for TSLint and ESLint formatter
-      # packages; it sits beside dist/lib/src rather than under them.
-      # Archive-member separators belong to another container. Excluding them
-      # prevents a nested ZIP from inheriting the enclosing npm dist path.
-      regex: '(^|/)package/(([^/!]+/){0,4}(dist|lib|src|out|bin|formatters)/[^!]+|[^/!]+)\.[cm]?[jt]sx?$'
-  # Contract-source distributions (@perp/voting-escrow, Curve-style ve escrow
-  # packages) ship their product as Solidity and Vyper sources plus Hardhat
-  # artifact JSONs -- no JavaScript at all, and their manifests often still
-  # name an unpublished TypeChain index.js. "Ships no runtime code" is false
-  # for them; the emptied-release composites consult this fact.
-  - id: npm-contract-source-member
-    desc: npm archive ships contract sources
-    crit: baseline
-    conf: 0.95
-    for: [npm, tar, zip]
-    if:
-      type: value
-      path: "archive.members[*].path"
-      regex: '(^|/)package/[^/]+/.+\.(sol|vy)$'
-  # WebAssembly distributions (SWC plugins, wasm-pack packages, Rust/C++
-  # compiled modules) ship their product as a .wasm binary. "Ships no code"
-  # is false for them; placeholder and emptied-release composites consult this.
-  - id: npm-wasm-binary-member
-    desc: npm archive ships WebAssembly binary
-    crit: baseline
-    conf: 0.95
-    for: [npm, tar, zip]
-    if:
-      type: value
-      path: "archive.members[*].path"
-      regex: '(^|/)package/[^!]+\.wasm$'
-  - id: npm-vendored-node-modules-runtime-member
-    desc: Archive bundles npm runtime under node_modules
-    crit: baseline
-    conf: 0.95
-    platforms: [windows, linux]
-    for: [zip, tar, jar, whl, python-sdist, gem, deb, rpm, npm, nupkg, crate, conda, egg, pkg, dmg, crx, chm, cab, iso, oci_image, xbps, gentoo_binpkg, asar, vsix-archive, xpi, rar, 7z, cpio, apk, alpine_apk, ipa]
-    if:
-      type: value
-      path: "archive.members[*].path"
-      regex: '(^|/)node_modules/[^/]+/lib/'
-  - id: java-annotation-processor-service-descriptor
-    desc: Java annotation processor service descriptor
-    crit: notable
-    conf: 0.99
-    for: [jar]
-    if:
-      type: value
-      path: archive.members[*].path
-      exact: META-INF/services/javax.annotation.processing.Processor
-  # Anchor on the `package/` publish root wherever it sits, not on the archive
-  # root: collection zips and re-wrapped tarballs carry the npm tree under a
-  # staging prefix (`tmp/<dir>/<pkg>/package/index.js`).  The sibling manifest
-  # fact (npm-publish-root-manifest) already matches unanchored, so anchoring
-  # this one at `^` made the pair disagree and let npm-main-entrypoint-not-
-  # shipped claim a shipped entrypoint was missing.
-  - id: npm-root-javascript-member
-    desc: npm archive ships root JavaScript file
-    crit: baseline
-    conf: 0.95
-    for: [npm, tar, zip]
-    if:
-      type: value
-      path: "archive.members[*].path"
-      regex: '(^|/)package/[^/]+\.js$'
-  # Root-level install/preinstall/postinstall loaders only. A lib/install.mjs
-  # helper must not satisfy dead-hook suppressors when the hook runs
-  # `node postinstall.mjs` at the package root.
-  - id: npm-archive-root-companion-loader-member
-    desc: npm archive ships root companion loader
-    crit: notable
-    conf: 0.95
-    for: [npm, tar, zip]
-    if:
-      type: value
-      path: "archive.members[*].path"
-      regex: '(^|/)package/(install|preinstall|postinstall)\.(c?js|mjs|sh)$'
-      case_insensitive: true
-  - id: extension-directory-root-js-file
-    desc: JavaScript directly under extension directory
-    crit: baseline
-    conf: 0.95
-    for: [javascript, typescript]
-    if:
-      type: path
-      regex: '(^|[^A-Za-z0-9_-])extension[\\/][^/\\]+\.(js|cjs|mjs)$'
-  # A published package should not normally carry a browser user's profile
-  # databases.  This is metadata about the shipped archive only: it does not
-  # imply that package code reads or exfiltrates the profile.
-  - id: npm-browser-profile-database
-    desc: npm archive ships browser profile database
-    crit: notable
-    conf: 0.95
-    for: [npm, tar, zip]
-    if:
-      type: value
-      path: archive.members[*].path
-      regex: '(?i)^package/(.*/)?(Default/)?(History|Login Data|Cookies|Web Data|Local State)$'
-  - id: jsii-metadata-basename
-    desc: JSII package metadata file
-    crit: component
-    conf: 0.99
-    for: [data, json, kotlin, class, java_class, jar]
-    if:
-      type: path
-      basename: true
-      exact: .jsii
-  - id: archive-nested-package-json-entry
-    desc: Archive contains nested package.json
-    crit: notable
-    conf: 0.9
-    for: [npm, zip]
-    if:
-      type: value
-      path: "archive.members[*].path"
-      regex: '^package/.+/package\.json$'
-  - id: archive-npm-registry-info-sidecar
-    desc: Archive has npm registry info sidecar
-    crit: notable
-    conf: 0.9
-    for: [zip, npm]
-    if:
-      type: value
-      path: "archive.members[*].path"
-      regex: '(^|/)package_info-[^/]+\.json$'
-  # Farmers sometimes rename tea.yaml → "tea (4).yaml" etc. to evade exact-name checks.
-  - id: archive-tea-reward-manifest
-    desc: Archive contains tea.xyz reward manifest
-    crit: notable
-    conf: 0.96
-    for: [npm, tar, zip]
-    if:
-      type: value
-      path: "archive.members[*].path"
-      regex: '(^|/)tea(\s*\(\d+\))?\.ya?ml$'
-  - id: archive-tea-reward-doc-comment
-    desc: Archive embeds tea.xyz reward file marker
-    crit: notable
-    conf: 0.94
-    for: [npm, tar, zip]
-    if:
-      type: text
-      substr: "tea.xyz/what-is-this-file"
-  - id: preinstall-js-basename
-    desc: Filename is preinstall.js/cjs/mjs
-    crit: notable
-    conf: 0.9
-    for: [javascript]
-    if:
-      type: path
-      basename: true
-      regex: "^preinstall\\.(js|cjs|mjs)$"
-  - id: postinstall-js-basename
-    desc: Filename is postinstall.js/cjs/mjs
-    crit: notable
-    conf: 0.9
-    for: [javascript]
-    if:
-      type: path
-      basename: true
-      regex: "^postinstall\\.(js|cjs|mjs)$"
-  - id: thunderbolt-registry-js-basename
-    desc: Filename is thunderboltRegistry.js
-    crit: notable
-    conf: 0.98
-    for: [javascript, typescript]
-    if:
-      type: path
-      basename: true
-      exact: thunderboltRegistry.js
-  - id: install-js-basename
-    desc: Filename is install.js/cjs/mjs
-    crit: notable
-    conf: 0.85
-    for: [javascript]
-    unless:
-      - type: text
-        substr: node-gyp-build
-      - type: text
-        substr: node-gyp.cmd
-      - type: path
-        regex: '(?i)(^|[\\/])(commands|cli|dist[\\/]main)[\\/]'
-    if:
-      type: path
-      basename: true
-      regex: "^install\\.(js|cjs|mjs)$"
-  - id: beacon-js-basename
-    desc: Filename is beacon.js/cjs/mjs
-    crit: notable
-    conf: 0.88
-    for: [javascript]
-    if:
-      type: path
-      basename: true
-      regex: "^beacon\\.(js|cjs|mjs)$"
-  - id: install-uninstall-shell-basename
-    desc: Installer or uninstaller shell script basename
-    crit: baseline
-    conf: 0.95
-    for: [shell]
-    if:
-      type: path
-      basename: true
-      regex: '(?i)(uninstall|installer|install|user-?data)([-_][^\\/]*)?\.sh$'
-  - id: setup-py-basename
-    desc: Filename is setup.py
-    crit: notable
-    conf: 0.95
-    for: [python]
-    if:
-      type: path
-      basename: true
-      exact: setup.py
-  # The build recipe pip actually imports lives at the archive ROOT of an
-  # sdist. A setup.py deeper in the tree belongs to a vendored or embedded
-  # project (debugpy's wheel carries pydevd's), an installed tree, or a
-  # tooling snapshot -- none of them the distribution's own install entry
-  # point. Archive-scope rules that mean "this package's setup.py" should
-  # use this root-anchored atom; `setup-py-basename` stays for per-file
-  # identity.
-  - id: sdist-root-setup-py
-    desc: setup.py at the archive root
-    crit: notable
-    conf: 0.95
-    for: [tar, zip, whl, python-sdist]
-    if:
-      type: value
-      path: archive.members[*].path
-      exact: setup.py
-  # Same root-anchoring for pyproject.toml: the build recipe pip imports lives
-  # at the archive ROOT of an sdist. A pyproject.toml deeper in the tree
-  # belongs to a tooling snapshot or a vendored subproject (GraalVM Truffle
-  # carries one for its Python interop docs beside an unrelated LLVM-test
-  # Windows binary), and pooling it archive-wide against that binary is
-  # inventory, not a delivery shape.
-  - id: sdist-root-pyproject-toml
-    desc: pyproject.toml at the archive root
-    crit: notable
-    conf: 0.95
-    for: [tar, zip, whl, python-sdist]
-    if:
-      type: value
-      path: archive.members[*].path
-      exact: pyproject.toml
-  # An installed tree keeps modules named setup.py (Ansible's facts module,
-  # leftover setuptools scripts). That is not a project entry point.
-  - id: installed-site-packages-setup-py
-    desc: Installed Python module named setup.py
-    crit: notable
-    conf: 0.95
-    for: [python]
-    if:
-      type: path
-      regex: 'site-packages/.+/setup\.py'
-
-  - id: exe-extension-basename
-    desc: Filename ends with .exe
-    crit: baseline
-    conf: 0.95
-    for: [pe]
-    if:
-      type: path
-      basename: true
-      regex: \.[e]xe$
-      case_insensitive: true
-  - id: dll-extension-basename
-    desc: Filename ends with .dll
-    crit: baseline
-    conf: 0.95
-    for: [pe]
-    if:
-      type: path
-      basename: true
-      regex: \.[d]ll$
-      case_insensitive: true
-  - id: so-extension-basename
-    desc: Filename ends with .so
-    crit: baseline
-    conf: 0.95
-    for: [elf]
-    if:
-      type: path
-      basename: true
-      regex: \.so(\.[0-9]+){0,3}$
-  - id: dylib-extension-basename
-    desc: Filename ends with .dylib
-    crit: baseline
-    conf: 0.95
-    for: [macho]
-    if:
-      type: path
-      basename: true
-      regex: \.dylib$
-  - id: su-basename
-    desc: Filename is su
-    crit: component
-    conf: 0.95
-    platforms: [unix]
-    for: [elf, shell]
-    if:
-      type: path
-      basename: true
-      exact: su
-  - id: screenshot-directory-asset-path
-    desc: Asset path under screenshots directory
-    crit: notable
-    conf: 0.9
-    for: [png]
-    if:
-      type: path
-      regex: '(^|[\\/])screenshots[\\/]'
-  - id: empty-javascript-file
-    desc: Empty JavaScript file
-    crit: baseline
-    conf: 0.98
-    for:
-      - javascript
-    size_max: 0
-    if:
-      type: path
-      basename: true
-      regex: \.(c|m)?js$
-  - id: ico-extension-basename
-    desc: Filename ends with .ico
-    crit: baseline
-    conf: 0.9
-    for: [data]
-    if:
-      type: path
-      basename: true
-      regex: \.ico$
-      case_insensitive: true
-  - id: archive-vim-swap-member
-    desc: Archive contains Vim swap file
-    crit: notable
-    conf: 0.92
-    platforms: [windows, linux]
-    for: [zip, tar, jar, whl, python-sdist, gem, deb, rpm, npm, nupkg, crate, conda, egg, pkg, dmg, crx, chm, cab, iso, oci_image, xbps, gentoo_binpkg, asar, vsix-archive, xpi, rar, 7z, cpio, apk, alpine_apk, ipa]
-    if:
-      type: value
-      path: "archive.members[*].path"
-      regex: '(^|/)\.[^/]+\.sw[nop]$'
-  - id: archive-container-path
-    desc: Archive container path
-    crit: baseline
-    conf: 0.95
-    for: [tar, zip]
-    if:
-      type: path
-      basename: true
-      regex: '(?i)\.(tar|tar\.gz|tgz|zip)$'
-  - id: archive-go-mod-entry
-    desc: Archive contains go.mod
-    crit: notable
-    conf: 0.98
-    platforms: [windows, linux]
-    for: [zip, tar, jar, whl, python-sdist, gem, deb, rpm, npm, nupkg, crate, conda, egg, pkg, dmg, crx, chm, cab, iso, oci_image, xbps, gentoo_binpkg, asar, vsix-archive, xpi, rar, 7z, cpio, apk, alpine_apk, ipa]
-    if:
-      type: value
-      path: "archive.members[*].path"
-      regex: '(^|/)go\.mod$'
-  - id: archive-go-source-entry
-    desc: Archive contains Go source
-    crit: component
-    conf: 0.98
-    platforms: [windows, linux]
-    for: [zip, tar, jar, whl, python-sdist, gem, deb, rpm, npm, nupkg, crate, conda, egg, pkg, dmg, crx, chm, cab, iso, oci_image, xbps, gentoo_binpkg, asar, vsix-archive, xpi, rar, 7z, cpio, apk, alpine_apk, ipa]
-    if:
-      type: value
-      path: "archive.members[*].path"
-      regex: '(^|/)[A-Za-z0-9_.-]{1,120}\.go$'
-  - id: archive-swift-package-entry
-    desc: Archive contains Package.swift
-    crit: baseline
-    conf: 0.95
-    platforms: [windows, linux]
-    for: [zip, tar, jar, whl, python-sdist, gem, deb, rpm, npm, nupkg, crate, conda, egg, pkg, dmg, crx, chm, cab, iso, oci_image, xbps, gentoo_binpkg, asar, vsix-archive, xpi, rar, 7z, cpio, apk, alpine_apk, ipa]
-    if:
-      type: value
-      path: "archive.members[*].path"
-      regex: '(^|/)Package\.swift$'
-  - id: vsix-manifest-entry
-    desc: Archive contains VSIX manifest
-    crit: baseline
-    conf: 0.98
-    for: [vsix-archive]
-    if:
-      type: value
-      path: "archive.members[*].path"
-      regex: '(^|/)extension\.vsixmanifest$'
-  - id: vsix-package-json-entry
-    desc: Archive contains VSIX package manifest
-    crit: baseline
-    conf: 0.98
-    for: [vsix-archive]
-    if:
-      type: value
-      path: "archive.members[*].path"
-      regex: '(^|/)extension/package\.json$'
-  - id: vsix-root-extension-js-entry
-    desc: Archive contains root extension entrypoint
-    crit: baseline
-    conf: 0.95
-    for: [vsix-archive]
-    if:
-      type: value
-      path: "archive.members[*].path"
-      regex: '(^|/)extension/extension\.js$'
+- id: composer-json-basename
+  desc: Filename is composer.json
+  crit: baseline
+  conf: 0.95
+  for:
+  - composer.json
+  if:
+    type: path
+    basename: true
+    exact: composer.json
+- id: npm-publish-root-manifest
+  desc: Manifest sits at npm publish root
+  crit: baseline
+  conf: 0.95
+  for:
+  - package.json
+  if:
+    type: path
+    regex: (^|/)package/package\.json$
+  unless:
+  - type: path
+    regex: '[\\/](assets|node_modules|vendor|tests?|fixtures|examples?)[\\/]'
+- id: npm-publish-root-readme
+  desc: README sits at npm publish root
+  crit: baseline
+  conf: 0.95
+  for:
+  - markdown
+  if:
+    type: path
+    regex: (^|/)package/README\.md$
+- id: npm-package-manifest-member
+  desc: Archive carries npm package manifest
+  crit: baseline
+  conf: 0.95
+  for:
+  - npm
+  - tar
+  - zip
+  if:
+    type: value
+    path: archive.members[*].path
+    regex: (^|/)package/package\.json$
+- id: npm-license-archive-member
+  desc: npm archive ships license member
+  crit: baseline
+  conf: 0.95
+  for:
+  - npm
+  - tar
+  if:
+    type: value
+    path: archive.members[*].path
+    regex: ^package/(LICENSE|LICENCE|COPYING|UNLICENSE)(\.[^/]+)?$
+    case_insensitive: true
+- id: npm-archive-messages-attachment-html
+  desc: npm archive ships messages attachment HTML
+  crit: notable
+  conf: 0.95
+  for:
+  - npm
+  - tar
+  if:
+    type: value
+    path: archive.members[*].path
+    regex: ^package/templates/attachments/messages-.+\.html$
+- id: npm-package-scripts-member
+  desc: JavaScript under npm package scripts dir
+  crit: notable
+  conf: 0.99
+  for:
+  - javascript
+  if:
+    type: path
+    regex: package[\\/]scripts[\\/]
+- id: binding-gyp-manifest
+  desc: npm archive includes binding.gyp
+  crit: notable
+  conf: 0.99
+  for:
+  - gyp
+  if:
+    type: path
+    regex: (^|[\\/])package[\\/]binding\.gyp$
+- id: npm-archive-member-lib-warmup-js
+  desc: npm archive member is lib warmup script
+  crit: notable
+  conf: 0.98
+  for:
+  - npm
+  - tar
+  if:
+    type: value
+    path: archive.members[*].path
+    regex: (^|/)package/lib/warmup\.(c?js|mjs)$
+- id: npm-runtime-code-member
+  desc: npm archive ships runtime JavaScript
+  crit: baseline
+  conf: 0.95
+  for:
+  - npm
+  - tar
+  - zip
+  if:
+    type: value
+    path: archive.members[*].path
+    regex: (^|/)package/(([^/!]+/){0,4}(dist|lib|src|out|bin|formatters)/[^!]+|[^/!]+)\.[cm]?[jt]sx?$
+- id: npm-contract-source-member
+  desc: npm archive ships contract sources
+  crit: baseline
+  conf: 0.95
+  for:
+  - npm
+  - tar
+  - zip
+  if:
+    type: value
+    path: archive.members[*].path
+    regex: (^|/)package/[^/]+/.+\.(sol|vy)$
+- id: npm-wasm-binary-member
+  desc: npm archive ships WebAssembly binary
+  crit: baseline
+  conf: 0.95
+  for:
+  - npm
+  - tar
+  - zip
+  if:
+    type: value
+    path: archive.members[*].path
+    regex: (^|/)package/[^!]+\.wasm$
+- id: npm-vendored-node-modules-runtime-member
+  desc: Archive bundles npm runtime under node_modules
+  crit: baseline
+  conf: 0.95
+  platforms:
+  - windows
+  - linux
+  for:
+  - archives
+  - -apk
+  - -apk_alpine
+  - -composer
+  - -cpan
+  - -cran
+  - -go_module
+  - -hackage
+  - -hex
+  - -phar
+  - -pub
+  - -rpa
+  - -snap
+  - -squashfs
+  - -vhd
+  - apk
+  - alpine_apk
+  if:
+    type: value
+    path: archive.members[*].path
+    regex: (^|/)node_modules/[^/]+/lib/
+- id: java-annotation-processor-service-descriptor
+  desc: Java annotation processor service descriptor
+  crit: notable
+  conf: 0.99
+  for:
+  - jar
+  if:
+    type: value
+    path: archive.members[*].path
+    exact: META-INF/services/javax.annotation.processing.Processor
+- id: npm-root-javascript-member
+  desc: npm archive ships root JavaScript file
+  crit: baseline
+  conf: 0.95
+  for:
+  - npm
+  - tar
+  - zip
+  if:
+    type: value
+    path: archive.members[*].path
+    regex: (^|/)package/[^/]+\.js$
+- id: npm-archive-root-companion-loader-member
+  desc: npm archive ships root companion loader
+  crit: notable
+  conf: 0.95
+  for:
+  - npm
+  - tar
+  - zip
+  if:
+    type: value
+    path: archive.members[*].path
+    regex: (^|/)package/(install|preinstall|postinstall)\.(c?js|mjs|sh)$
+    case_insensitive: true
+- id: extension-directory-root-js-file
+  desc: JavaScript directly under extension directory
+  crit: baseline
+  conf: 0.95
+  for:
+  - javascript
+  - typescript
+  if:
+    type: path
+    regex: (^|[^A-Za-z0-9_-])extension[\\/][^/\\]+\.(js|cjs|mjs)$
+- id: npm-browser-profile-database
+  desc: npm archive ships browser profile database
+  crit: notable
+  conf: 0.95
+  for:
+  - npm
+  - tar
+  - zip
+  if:
+    type: value
+    path: archive.members[*].path
+    regex: (?i)^package/(.*/)?(Default/)?(History|Login Data|Cookies|Web Data|Local State)$
+- id: jsii-metadata-basename
+  desc: JSII package metadata file
+  crit: component
+  conf: 0.99
+  for:
+  - data
+  - json
+  - kotlin
+  - class
+  - java_class
+  - jar
+  if:
+    type: path
+    basename: true
+    exact: .jsii
+- id: archive-nested-package-json-entry
+  desc: Archive contains nested package.json
+  crit: notable
+  conf: 0.9
+  for:
+  - npm
+  - zip
+  if:
+    type: value
+    path: archive.members[*].path
+    regex: ^package/.+/package\.json$
+- id: archive-npm-registry-info-sidecar
+  desc: Archive has npm registry info sidecar
+  crit: notable
+  conf: 0.9
+  for:
+  - zip
+  - npm
+  if:
+    type: value
+    path: archive.members[*].path
+    regex: (^|/)package_info-[^/]+\.json$
+- id: archive-tea-reward-manifest
+  desc: Archive contains tea.xyz reward manifest
+  crit: notable
+  conf: 0.96
+  for:
+  - npm
+  - tar
+  - zip
+  if:
+    type: value
+    path: archive.members[*].path
+    regex: (^|/)tea(\s*\(\d+\))?\.ya?ml$
+- id: archive-tea-reward-doc-comment
+  desc: Archive embeds tea.xyz reward file marker
+  crit: notable
+  conf: 0.94
+  for:
+  - npm
+  - tar
+  - zip
+  if:
+    type: text
+    substr: tea.xyz/what-is-this-file
+- id: preinstall-js-basename
+  desc: Filename is preinstall.js/cjs/mjs
+  crit: notable
+  conf: 0.9
+  for:
+  - javascript
+  if:
+    type: path
+    basename: true
+    regex: ^preinstall\.(js|cjs|mjs)$
+- id: postinstall-js-basename
+  desc: Filename is postinstall.js/cjs/mjs
+  crit: notable
+  conf: 0.9
+  for:
+  - javascript
+  if:
+    type: path
+    basename: true
+    regex: ^postinstall\.(js|cjs|mjs)$
+- id: thunderbolt-registry-js-basename
+  desc: Filename is thunderboltRegistry.js
+  crit: notable
+  conf: 0.98
+  for:
+  - javascript
+  - typescript
+  if:
+    type: path
+    basename: true
+    exact: thunderboltRegistry.js
+- id: install-js-basename
+  desc: Filename is install.js/cjs/mjs
+  crit: notable
+  conf: 0.85
+  for:
+  - javascript
+  unless:
+  - type: text
+    substr: node-gyp-build
+  - type: text
+    substr: node-gyp.cmd
+  - type: path
+    regex: (?i)(^|[\\/])(commands|cli|dist[\\/]main)[\\/]
+  if:
+    type: path
+    basename: true
+    regex: ^install\.(js|cjs|mjs)$
+- id: beacon-js-basename
+  desc: Filename is beacon.js/cjs/mjs
+  crit: notable
+  conf: 0.88
+  for:
+  - javascript
+  if:
+    type: path
+    basename: true
+    regex: ^beacon\.(js|cjs|mjs)$
+- id: install-uninstall-shell-basename
+  desc: Installer or uninstaller shell script basename
+  crit: baseline
+  conf: 0.95
+  for:
+  - shell
+  if:
+    type: path
+    basename: true
+    regex: (?i)(uninstall|installer|install|user-?data)([-_][^\\/]*)?\.sh$
+- id: setup-py-basename
+  desc: Filename is setup.py
+  crit: notable
+  conf: 0.95
+  for:
+  - python
+  if:
+    type: path
+    basename: true
+    exact: setup.py
+- id: sdist-root-setup-py
+  desc: setup.py at the archive root
+  crit: notable
+  conf: 0.95
+  for:
+  - tar
+  - zip
+  - whl
+  - python-sdist
+  if:
+    type: value
+    path: archive.members[*].path
+    exact: setup.py
+- id: sdist-root-pyproject-toml
+  desc: pyproject.toml at the archive root
+  crit: notable
+  conf: 0.95
+  for:
+  - tar
+  - zip
+  - whl
+  - python-sdist
+  if:
+    type: value
+    path: archive.members[*].path
+    exact: pyproject.toml
+- id: installed-site-packages-setup-py
+  desc: Installed Python module named setup.py
+  crit: notable
+  conf: 0.95
+  for:
+  - python
+  if:
+    type: path
+    regex: site-packages/.+/setup\.py
+- id: exe-extension-basename
+  desc: Filename ends with .exe
+  crit: baseline
+  conf: 0.95
+  for:
+  - pe
+  if:
+    type: path
+    basename: true
+    regex: \.[e]xe$
+    case_insensitive: true
+- id: dll-extension-basename
+  desc: Filename ends with .dll
+  crit: baseline
+  conf: 0.95
+  for:
+  - pe
+  if:
+    type: path
+    basename: true
+    regex: \.[d]ll$
+    case_insensitive: true
+- id: so-extension-basename
+  desc: Filename ends with .so
+  crit: baseline
+  conf: 0.95
+  for:
+  - elf
+  if:
+    type: path
+    basename: true
+    regex: \.so(\.[0-9]+){0,3}$
+- id: dylib-extension-basename
+  desc: Filename ends with .dylib
+  crit: baseline
+  conf: 0.95
+  for:
+  - macho
+  if:
+    type: path
+    basename: true
+    regex: \.dylib$
+- id: su-basename
+  desc: Filename is su
+  crit: component
+  conf: 0.95
+  platforms:
+  - unix
+  for:
+  - elf
+  - shell
+  if:
+    type: path
+    basename: true
+    exact: su
+- id: screenshot-directory-asset-path
+  desc: Asset path under screenshots directory
+  crit: notable
+  conf: 0.9
+  for:
+  - png
+  if:
+    type: path
+    regex: (^|[\\/])screenshots[\\/]
+- id: empty-javascript-file
+  desc: Empty JavaScript file
+  crit: baseline
+  conf: 0.98
+  for:
+  - javascript
+  size_max: 0
+  if:
+    type: path
+    basename: true
+    regex: \.(c|m)?js$
+- id: ico-extension-basename
+  desc: Filename ends with .ico
+  crit: baseline
+  conf: 0.9
+  for:
+  - data
+  if:
+    type: path
+    basename: true
+    regex: \.ico$
+    case_insensitive: true
+- id: archive-vim-swap-member
+  desc: Archive contains Vim swap file
+  crit: notable
+  conf: 0.92
+  platforms:
+  - windows
+  - linux
+  for:
+  - archives
+  - -apk
+  - -apk_alpine
+  - -composer
+  - -cpan
+  - -cran
+  - -go_module
+  - -hackage
+  - -hex
+  - -phar
+  - -pub
+  - -rpa
+  - -snap
+  - -squashfs
+  - -vhd
+  - apk
+  - alpine_apk
+  if:
+    type: value
+    path: archive.members[*].path
+    regex: (^|/)\.[^/]+\.sw[nop]$
+- id: archive-container-path
+  desc: Archive container path
+  crit: baseline
+  conf: 0.95
+  for:
+  - tar
+  - zip
+  if:
+    type: path
+    basename: true
+    regex: (?i)\.(tar|tar\.gz|tgz|zip)$
+- id: archive-go-mod-entry
+  desc: Archive contains go.mod
+  crit: notable
+  conf: 0.98
+  platforms:
+  - windows
+  - linux
+  for:
+  - archives
+  - -apk
+  - -apk_alpine
+  - -composer
+  - -cpan
+  - -cran
+  - -go_module
+  - -hackage
+  - -hex
+  - -phar
+  - -pub
+  - -rpa
+  - -snap
+  - -squashfs
+  - -vhd
+  - apk
+  - alpine_apk
+  if:
+    type: value
+    path: archive.members[*].path
+    regex: (^|/)go\.mod$
+- id: archive-go-source-entry
+  desc: Archive contains Go source
+  crit: component
+  conf: 0.98
+  platforms:
+  - windows
+  - linux
+  for:
+  - archives
+  - -apk
+  - -apk_alpine
+  - -composer
+  - -cpan
+  - -cran
+  - -go_module
+  - -hackage
+  - -hex
+  - -phar
+  - -pub
+  - -rpa
+  - -snap
+  - -squashfs
+  - -vhd
+  - apk
+  - alpine_apk
+  if:
+    type: value
+    path: archive.members[*].path
+    regex: (^|/)[A-Za-z0-9_.-]{1,120}\.go$
+- id: archive-swift-package-entry
+  desc: Archive contains Package.swift
+  crit: baseline
+  conf: 0.95
+  platforms:
+  - windows
+  - linux
+  for:
+  - archives
+  - -apk
+  - -apk_alpine
+  - -composer
+  - -cpan
+  - -cran
+  - -go_module
+  - -hackage
+  - -hex
+  - -phar
+  - -pub
+  - -rpa
+  - -snap
+  - -squashfs
+  - -vhd
+  - apk
+  - alpine_apk
+  if:
+    type: value
+    path: archive.members[*].path
+    regex: (^|/)Package\.swift$
+- id: vsix-manifest-entry
+  desc: Archive contains VSIX manifest
+  crit: baseline
+  conf: 0.98
+  for:
+  - vsix-archive
+  if:
+    type: value
+    path: archive.members[*].path
+    regex: (^|/)extension\.vsixmanifest$
+- id: vsix-package-json-entry
+  desc: Archive contains VSIX package manifest
+  crit: baseline
+  conf: 0.98
+  for:
+  - vsix-archive
+  if:
+    type: value
+    path: archive.members[*].path
+    regex: (^|/)extension/package\.json$
+- id: vsix-root-extension-js-entry
+  desc: Archive contains root extension entrypoint
+  crit: baseline
+  conf: 0.95
+  for:
+  - vsix-archive
+  if:
+    type: value
+    path: archive.members[*].path
+    regex: (^|/)extension/extension\.js$
 composite_rules:
-  - id: github-module-zip-no-go-source
-    desc: GitHub module archive lacks Go source
-    crit: baseline
-    conf: 0.92
-    for: [zip]
-    all:
-      - id: metadata/file/naming::github-module-zip-basename
-    unless:
-      - id: archive-go-source-entry
-      - id: archive-go-mod-entry
-      - id: archive-swift-package-entry
-  - id: npm-package-with-image
-    desc: NPM package contains image asset
-    crit: baseline
-    conf: 0.75
-    all:
-      - id: metadata/file/naming::package-json-basename
-    any:
-      - id: "metadata/file/extension/identity::png-file-basename"
-      - id: ico-extension-basename
+- id: github-module-zip-no-go-source
+  desc: GitHub module archive lacks Go source
+  crit: baseline
+  conf: 0.92
+  for:
+  - zip
+  all:
+  - id: metadata/filename/name-form::github-module-zip-basename
+  unless:
+  - id: archive-go-source-entry
+  - id: archive-go-mod-entry
+  - id: archive-swift-package-entry
+- id: npm-package-with-image
+  desc: NPM package contains image asset
+  crit: baseline
+  conf: 0.75
+  all:
+  - id: metadata/filename/identity::package-json-basename
+  any:
+  - id: metadata/file/extension/identity::png-file-basename
+  - id: ico-extension-basename
