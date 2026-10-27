@@ -1,0 +1,117 @@
+defaults:
+  platforms: [windows]
+  for: [javascript]
+
+traits:
+  # Bind the helper names across the HTTP response, dispatcher and shell
+  # executor. A separate GET, RegExp and Exec somewhere in a file is not this
+  # channel. Local substitutions on the extracted command remain explicit.
+  - id: wsh-http-regexp-command-dispatch
+    desc: HTTP response capture drives WSH process Exec
+    crit: suspicious
+    conf: 0.99
+    size_max: 200000
+    attack: T1071.001,T1059.007
+    if:
+      type: tree-sitter
+      language: javascript
+      query: |
+        ((program
+          (function_declaration name: (identifier) @request
+            parameters: (formal_parameters (identifier) @method (identifier) @path (_))
+            body: (statement_block
+              (for_statement body: (statement_block
+                (try_statement body: (statement_block
+                  (expression_statement (call_expression
+                    function: (member_expression object: (identifier) @client
+                      property: (property_identifier) @open)
+                    arguments: (arguments (identifier) @methoduse
+                      (binary_expression right: (identifier) @pathuse) (false))))
+                  (return_statement (member_expression object: (identifier) @responseclient
+                    property: (property_identifier) @responsebody))))))))
+          (function_declaration name: (identifier) @poll
+            body: (statement_block (return_statement (call_expression
+              function: (identifier) @requestcall
+              arguments: (arguments (string (string_fragment) @get) (_))))))
+          (function_declaration name: (identifier) @execute
+            parameters: (formal_parameters (identifier) @commandparam)
+            body: (statement_block (try_statement body: (statement_block
+              (variable_declaration (variable_declarator
+                name: (identifier) @child
+                value: (call_expression
+                  function: (member_expression property: (property_identifier) @exec)
+                  arguments: (arguments (binary_expression
+                    right: (identifier) @commanduse)))))
+              (variable_declaration (variable_declarator
+                name: (identifier) @output
+                value: (binary_expression
+                  left: (call_expression function: (member_expression
+                    object: (member_expression object: (identifier) @stdoutchild
+                      property: (property_identifier) @stdout)
+                    property: (property_identifier) @readout))
+                  right: (call_expression function: (member_expression
+                    object: (member_expression object: (identifier) @stderrchild
+                      property: (property_identifier) @stderr)
+                    property: (property_identifier) @readerr)))))
+              (return_statement (identifier) @returned)))))
+          (function_declaration name: (identifier) @dispatch
+            parameters: (formal_parameters (identifier) @received)
+            body: (statement_block
+              (variable_declaration (variable_declarator
+                name: (identifier) @capture
+                value: (call_expression function: (member_expression
+                  object: (identifier) @matchinput property: (property_identifier) @match))))
+              (variable_declaration (variable_declarator
+                name: (identifier) @command
+                value: (call_expression function: (member_expression
+                  object: (call_expression function: (member_expression
+                    object: (subscript_expression object: (identifier) @captured
+                      index: (number) @index)
+                    property: (property_identifier) @replace1))
+                  property: (property_identifier) @replace2))))
+              (variable_declaration (variable_declarator
+                name: (identifier) @result
+                value: (call_expression function: (identifier) @executecall
+                  arguments: (arguments (identifier) @commandarg))))))
+          (function_declaration body: (statement_block
+            (try_statement body: (statement_block
+              (if_statement consequence: (statement_block
+                (expression_statement (call_expression function: (identifier) @dispatchcall
+                  arguments: (arguments (call_expression function: (identifier) @pollcall))))))))))) @channel
+          (#eq? @open "open")
+          (#eq? @method @methoduse)
+          (#eq? @path @pathuse)
+          (#eq? @client @responseclient)
+          (#eq? @responsebody "responseText")
+          (#eq? @request @requestcall)
+          (#eq? @get "GET")
+          (#eq? @exec "Exec")
+          (#eq? @commandparam @commanduse)
+          (#eq? @child @stdoutchild)
+          (#eq? @child @stderrchild)
+          (#eq? @stdout "StdOut")
+          (#eq? @stderr "StdErr")
+          (#eq? @readout "ReadAll")
+          (#eq? @readerr "ReadAll")
+          (#eq? @output @returned)
+          (#eq? @received @matchinput)
+          (#eq? @match "match")
+          (#eq? @capture @captured)
+          (#eq? @index "1")
+          (#eq? @replace1 "replace")
+          (#eq? @replace2 "replace")
+          (#eq? @command @commandarg)
+          (#eq? @execute @executecall)
+          (#eq? @dispatch @dispatchcall)
+          (#eq? @poll @pollcall))
+
+composite_rules:
+  - id: offscreen-encoded-http-shell-agent
+    desc: Offscreen encoded HTTP command-shell agent
+    crit: hostile
+    conf: 0.99
+    attack: T1071.001,T1059.003,T1564.003
+    all:
+      - id: objectives/anti-static/obfuscation/string/encoding::mixed-codecs-wsh-command-channel
+      - id: micro-behaviors/process/create/shell/command-mode::cmd-exe-c-command-text
+      - id: micro-behaviors/ui/window/control::window-moveto-standalone-negative
