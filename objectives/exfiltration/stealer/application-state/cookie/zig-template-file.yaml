@@ -1,0 +1,80 @@
+defaults:
+  platforms: [macos]
+  for: [zig]
+  conf: 0.98
+  attack: T1539,T1041
+
+traits:
+  - id: zig-browser-path-loop-upload-command
+    desc: Browser-path iterator feeds file-upload command
+    crit: suspicious
+    size_max: 200000
+    if:
+      type: yara
+      source: |
+        rule zig_cookie_array_iterator_file_upload {
+          strings:
+            $array = /\bconst [A-Za-z_][A-Za-z0-9_]{0,63} = \[_\]\[\]const u8\{[^}]{1,900}Library\/Application Support\/Google\/Chrome\/[^"\r\n]{1,80}\/Cookies[^}]{0,600}\};/
+            $array_name = /\bconst [A-Za-z_][A-Za-z0-9_]{0,63}/
+            $loop = /for \([A-Za-z_][A-Za-z0-9_]{0,63}\)/
+            $iterator = /\|[A-Za-z_][A-Za-z0-9_]{0,63}\|/
+            $decl = /\bconst [A-Za-z_][A-Za-z0-9_]{0,63} = /
+            $format = /std\.fmt\.bufPrint\(&[A-Za-z_][A-Za-z0-9_]{0,63},[ \t\r\n]*\x22curl[^";\r\n]{1,80}-T '\{s\}\/\{s\}' [^";\r\n]{1,120}\x22,[ \t]*\.\{ [A-Za-z_][A-Za-z0-9_]{0,63}, /
+            $argument = /[A-Za-z_][A-Za-z0-9_]{0,63}, /
+            $launch = /std\.process\.Child\.init\(&\.\{ "\/bin\/sh", "-c", /
+            $command = /[A-Za-z_][A-Za-z0-9_]{0,63} \},/
+            $spawn = ".spawnAndWait("
+          condition:
+            all of them and
+            for any a in (1..#array) : (
+              for any an in (1..#array_name) : (
+                @array[ a ] == @array_name[an] and
+                for any l in (1..#loop) : (
+                  @loop[l] > @array[a]+!array[a] and
+                  @loop[l]-@array[a] < 4096 and
+                  !array_name[an]-6 == !loop[l]-6 and
+                  for all n in (0..!array_name[an]-7) : (
+                    uint8(@array_name[an]+6+n) == uint8(@loop[l]+5+n)
+                  ) and
+                  for any it in (1..#iterator) : (
+                    @iterator[it] == @loop[l]+!loop[l]+1 and
+                    for any f in (1..#format) : (
+                      @format[f] > @iterator[it] and @format[f]-@iterator[it] < 2048 and
+                      for any arg in (1..#argument) : (
+                        @argument[arg] == @format[f]+!format[f] and
+                        !argument[arg]-2 == !iterator[it]-2 and
+                        for all n in (0..!iterator[it]-3) : (
+                          uint8(@iterator[it]+1+n) == uint8(@argument[arg]+n)
+                        )
+                      ) and
+                      for any d in (1..#decl) : (
+                        @decl[d]+!decl[d] == @format[f] and
+                        for any launch in (1..#launch) : (
+                          @launch[launch] > @format[f] and
+                          @launch[launch]-@format[f] < 2048 and
+                          for any cmd in (1..#command) : (
+                            @command[cmd] == @launch[launch]+!launch[launch] and
+                            !decl[d]-9 == !command[cmd]-3 and
+                            for all n in (0..!decl[d]-10) : (
+                              uint8(@decl[d]+6+n) == uint8(@command[cmd]+n)
+                            )
+                          ) and
+                          for any sp in (1..#spawn) : (
+                            @spawn[sp] > @launch[launch] and @spawn[sp]-@launch[launch] < 2048
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
+
+composite_rules:
+  - id: zig-browser-cookie-loop-http-exfil
+    desc: Zig executes browser-path file-upload loop
+    crit: hostile
+    all:
+      - id: zig-browser-path-loop-upload-command
+      - id: micro-behaviors/process/create/shell/command-string::zig-bin-sh-c
