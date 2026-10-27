@@ -1,0 +1,36 @@
+# Bind a PRNG-selected node number to sprintf's destination, then to the
+# value of the multipart node field. This is routing, not proof of execution.
+defaults:
+  platforms: [windows]
+  for: [pe]
+traits:
+  - id: native-random-node-form-value
+    desc: Multipart field routes to a random node
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule native_random_node_form_value {
+          strings:
+            $pick = { E8 ?? ?? ?? ?? BA ?? ?? ?? ?? 89 D1 99 F7 F9 8D 7A 01 }
+            $format = { 57 8D 7D ?? 68 ?? ?? ?? ?? 57 E8 ?? ?? ?? ?? }
+            $field = { 6A 11 57 6A 04 68 ?? ?? ?? ?? 6A 01 56 53 E8 ?? ?? ?? ?? }
+          condition:
+            pe.is_pe and pe.machine == pe.MACHINE_I386 and all of them and
+            @pick < @format and @format < @field and @field - @pick < 512 and
+            uint32(@pick+6) >= 2 and uint32(@pick+6) <= 64 and
+            uint16(@pick+5+int32(@pick+1)) == 0x25ff and
+            uint32(@pick+5+int32(@pick+1)+2) == pe.image_base + pe.import_rva("msvcrt.dll", "rand") and
+            uint16(@format+15+int32(@format+11)) == 0x25ff and
+            uint32(@format+15+int32(@format+11)+2) == pe.image_base + pe.import_rva("msvcrt.dll", "sprintf") and
+            uint32(pe.rva_to_offset(uint32(@field+6)-pe.image_base)) == 0x65646f6e and
+            uint8(pe.rva_to_offset(uint32(@field+6)-pe.image_base)+4) == 0 and
+            @field+19+int32(@field+15) == pe.export_details[pe.exports_index("curl_formadd")].offset and
+            for any i in (0..pe.number_of_sections-1): (
+              pe.sections[i].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              @pick >= pe.sections[i].raw_data_offset and
+              @field < pe.sections[i].raw_data_offset + pe.sections[i].raw_data_size
+            )
+        }
