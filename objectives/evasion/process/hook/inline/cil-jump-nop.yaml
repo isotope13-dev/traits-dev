@@ -1,0 +1,38 @@
+defaults:
+  for: [pe, dll]
+  platforms: [windows]
+traits:
+  - id: cil-native-call-erasure-loop
+    desc: CIL NOPs native CALL instructions
+    crit: suspicious
+    conf: 0.98
+    attack: T1562.001
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule cil_native_jump_erasure {
+          strings:
+            // ldind.u1; ldc.i4 a; ldc.i4 b; call XOR; bne.un.s
+            $jump = { 11 ?? 47 20 ?? ?? ?? ?? 20 ?? ?? ?? ?? 28 ?? ?? ?? 06 33 ?? 20 ?? ?? ?? ?? 20 ?? ?? ?? ?? 28 ?? ?? ?? 06 13 ?? }
+            // pointer + index; ldc.i4 a; ldc.i4 b; call XOR; stind.i1;
+            // index++; loop while index < length.
+            $nop = { 11 ?? 11 ?? 58 20 ?? ?? ?? ?? 20 ?? ?? ?? ?? 28 ?? ?? ?? 06 52 11 ?? 17 58 13 ?? 11 ?? 11 ?? 32 ?? }
+          condition:
+            pe.is_pe and
+            for any j in (1..#jump) : (
+              (uint32(@jump[j]+4) ^ uint32(@jump[j]+9)) == 0xe8 and
+              (uint32(@jump[j]+21) ^ uint32(@jump[j]+26)) == 5 and
+              for any n in (1..#nop) : (
+                @nop[n] > @jump[j] and @nop[n] < @jump[j]+512 and
+                uint8(@jump[j]+1) == uint8(@nop[n]+1) and
+                uint8(@jump[j]+36) == uint8(@nop[n]+30) and
+                (uint32(@nop[n]+6) ^ uint32(@nop[n]+11)) == 0x90 and
+                for any s in (0..pe.number_of_sections-1) : (
+                  pe.sections[s].name == ".text" and
+                  @jump[j] >= pe.sections[s].raw_data_offset and
+                  @nop[n]+!nop[n] <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size
+                )
+              )
+            )
+        }
