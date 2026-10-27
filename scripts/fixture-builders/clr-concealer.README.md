@@ -1,0 +1,1 @@
+CLR controls are inert compiled libraries. indirect-plugin uses 256 calli instructions; reflection-plugin resolves method pointers; resource-reader XOR-decodes a resource. None combines these operations. Rebuild using scripts/fixture-builders/clr-concealer.py (requires .NET 10 SDK).
