@@ -1,0 +1,44 @@
+defaults:
+  platforms: [linux]
+  for: [elf]
+  arch: [x86-64]
+
+traits:
+  - id: native-shell-path-byte-xor
+    desc: Byte-XOR decodes the /bin/sh shell path
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "elf"
+        rule xor_decoded_bin_sh_path {
+          strings:
+            $d = { 0F B6 05 ?? ?? ?? ?? 34 ?? 88 05 ?? ?? ?? ?? }
+          condition:
+            elf.machine == elf.EM_X86_64 and
+            for any t in (0..elf.number_of_sections-1) : (
+              elf.sections[t].name == ".text" and
+              for any s in (0..elf.number_of_sections-1) : (
+                elf.sections[s].name == ".data" and
+                for any i in (1..#d) : (
+                  @d[i] >= elf.sections[t].offset and
+                  @d[i] + 120 <= elf.sections[t].offset + elf.sections[t].size and
+                  elf.sections[t].address + @d[i] - elf.sections[t].offset + 15 + int32(@d[i]+11) >= elf.sections[s].address and
+                  elf.sections[t].address + @d[i] - elf.sections[t].offset + 23 + int32(@d[i]+11) <= elf.sections[s].address + elf.sections[s].size and
+                  for all j in (0..7) : (
+                    uint32(@d[i]+15*j) & 0x00ffffff == 0x0005b60f and
+                    uint8(@d[i]+15*j+7) == 0x34 and
+                    uint16(@d[i]+15*j+9) == 0x0588 and
+                    15*j + int32(@d[i]+15*j+11) == int32(@d[i]+11)+j and
+                    elf.sections[t].address + @d[i] + 15*j - elf.sections[t].offset + 7 + int32(@d[i]+15*j+3) >= elf.sections[s].address and
+                    elf.sections[t].address + @d[i] + 15*j - elf.sections[t].offset + 7 + int32(@d[i]+15*j+3) < elf.sections[s].address + elf.sections[s].size and
+                    (
+                      uint8(elf.sections[s].offset + elf.sections[t].address + @d[i] + 15*j - elf.sections[t].offset + 7 + int32(@d[i]+15*j+3) - elf.sections[s].address) ^
+                      uint8(@d[i]+15*j+8)
+                    ) == ((0x0068732f6e69622f >> (8*j)) & 0xff)
+                  )
+                )
+              )
+            )
+        }
