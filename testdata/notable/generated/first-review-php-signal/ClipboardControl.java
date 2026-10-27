@@ -1,0 +1,1 @@
+import java.awt.*; import java.awt.datatransfer.*; class ClipboardControl { void f() { Clipboard cb=Toolkit.getDefaultToolkit().getSystemClipboard(); cb.getContents(null); DataFlavor fl=DataFlavor.stringFlavor; } }

