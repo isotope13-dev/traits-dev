@@ -1,0 +1,43 @@
+# Verify both calls reach the same clock-resolving wrapper and that the
+# selected stack word is passed to a routine with an iterative HMAC-shaped
+# loop. The finding does not identify the resulting plaintext or intent.
+defaults:
+  for: [macho]
+  platforms: [macos]
+  crit: notable
+traits:
+  - id: x64-clock-delta-kdf-input
+    desc: Clock delta modifies key-derivation input
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        rule x64_clock_delta_kdf_input {
+          strings:
+            $clock = { 55 41 56 53 48 83 EC 10 C7 44 24 0C ?? ?? ?? ?? C7 44 24 08 ?? ?? ?? ?? 31 DB 49 BE 6B 6A F1 5C 27 D2 17 60 }
+            $start = { E8 ?? ?? ?? ?? 49 89 C4 }
+            $delta = { E8 ?? ?? ?? ?? 4C 29 E0 89 D9 81 F1 ?? ?? ?? ?? 48 3D 81 F0 FA 02 0F 42 CB 0F C9 89 8C 24 ?? ?? ?? ?? }
+            $derive = { 48 8D BC 24 ?? ?? ?? ?? 48 8D B4 24 ?? ?? ?? ?? 48 8D 94 24 ?? ?? ?? ?? E8 ?? ?? ?? ?? }
+            $kdf = { 55 41 57 41 56 41 55 41 54 53 48 83 EC 78 48 89 D3 49 89 F6 49 89 FF }
+            $round = { 4C 89 FF 4C 89 E6 48 8D 54 24 30 6A 20 59 4C 8D 44 24 10 E8 ?? ?? ?? ?? 31 C0 }
+          condition:
+            for any c in (1..#clock) : (
+              for any d in (1..#delta) : (
+                @delta[d] + 5 + int32(@delta[d] + 1) == @clock[c] and
+                for any s in (1..#start) : (
+                  @start[s] < @delta[d] and @delta[d] - @start[s] <= 256 and
+                  @start[s] + 5 + int32(@start[s] + 1) == @clock[c] and
+                  for any k in (1..#derive) : (
+                    @derive[k] > @delta[d] and @derive[k] - @delta[d] <= 256 and
+                    uint32(@delta[d] + 30) == uint32(@derive[k] + 4) and
+                    for any f in (1..#kdf) : (
+                      @derive[k] + 29 + int32(@derive[k] + 25) == @kdf[f] and
+                      for any r in (1..#round) : (
+                        @round[r] > @kdf[f] and @round[r] - @kdf[f] < 1024
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
