@@ -1,0 +1,36 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86]
+traits:
+  - id: x86-resolved-export-thread-start
+    desc: Resolved export becomes remote-thread start
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_resolved_export_thread_start {
+          strings:
+            // GetModuleHandleA(module), GetProcAddress(handle, name), test
+            // result; pass that EAX as lpStartAddress, EDI as parameter,
+            // and ESI as process handle to CreateRemoteThread.
+            $handoff = {
+              68 [4] FF 15 [4] 68 [4] 50 FF 15 [4]
+              85 C0 74 ?? 6A 00 6A 00 57 50 6A 00 6A 00 56
+              FF 15 [4] 8B F8 85 FF
+            }
+          condition:
+            pe.machine == pe.MACHINE_I386 and
+            for any s in pe.sections : (
+              s.name == ".text" and
+              for any h in (1..#handoff) : (
+                @handoff[h] >= s.raw_data_offset and
+                @handoff[h]+!handoff[h] <= s.raw_data_offset+s.raw_data_size and
+                uint32(@handoff[h]+7) == pe.image_base+pe.import_rva("KERNEL32.dll", "GetModuleHandleA") and
+                uint32(@handoff[h]+19) == pe.image_base+pe.import_rva("KERNEL32.dll", "GetProcAddress") and
+                uint32(@handoff[h]+40) == pe.image_base+pe.import_rva("KERNEL32.dll", "CreateRemoteThread")
+              )
+            )
+        }
