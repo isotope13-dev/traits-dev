@@ -1,0 +1,1 @@
+const options = {authentication:'none'};
