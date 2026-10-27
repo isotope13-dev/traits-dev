@@ -1,0 +1,39 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+traits:
+  - id: native-same-path-write-wmi-launch-profile
+    desc: Same-path write/launch code with WMI fields
+    crit: notable
+    conf: 0.96
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule same_path_write_wmi_launch {
+          strings:
+            $process = "Win32_Process" wide fullword
+            $command = "CommandLine" wide fullword
+            $create = "Create" wide fullword
+            // length R8, data RDX already set; filename RIP-relative RCX;
+            // writer returns status; success calls launcher with same RCX.
+            $handoff = {
+              44 8B 85 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ??
+              85 C0 0F 84 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ??
+              C7 86 ?? ?? ?? ?? 01 00 00 00
+            }
+          condition:
+            pe.is_64bit() and all of ($process, $command, $create) and
+            pe.imports("kernel32.dll", "WriteFile") and
+            pe.imports("ole32.dll", "CoCreateInstance") and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].name == ".text" and
+              for any h in (1..#handoff) : (
+                @handoff[h] >= pe.sections[s].raw_data_offset and
+                @handoff[h] + !handoff[h] <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size and
+                // Two RIP-relative LEAs refer to the same filename.
+                14 + int32(@handoff[h]+10) == 34 + int32(@handoff[h]+30)
+              )
+            )
+        }

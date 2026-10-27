@@ -1,0 +1,55 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+  attack: T1055.004
+traits:
+  - id: native-task-apc-transfer-code
+    desc: Task payload protocol with mapped APC execution
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule native_task_section_apc {
+          strings:
+            $schema = /task_data\x00.{0,8}task\x00.{0,8}task_id\x00.{0,8}file_entry_point\x00/
+            $map = "NtMapViewOfSection\x00" ascii
+            $section = "NtCreateSection\x00" ascii
+            $queue = "NtQueueApcThread\x00" ascii
+            // The name loaded into RDX is resolved, then the mapped
+            // address RBX and thread RSI feed the resolved routine.
+            $handoff = {
+              48 8D 15 ?? ?? ?? ?? 48 8B C8 FF 15 ?? ?? ?? ??
+              45 33 C9 44 89 6C 24 ?? 45 33 C0
+              48 8B D3 48 8B CE FF D0
+            }
+          condition:
+            pe.is_64bit() and all of ($schema, $map, $section, $queue) and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].name == ".text" and
+              for any h in (1..#handoff) : (
+                @handoff[h] >= pe.sections[s].raw_data_offset and
+                @handoff[h] + !handoff[h] <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size and
+                for any q in (1..#queue) : (
+                  pe.rva_to_offset(pe.sections[s].virtual_address +
+                    @handoff[h] - pe.sections[s].raw_data_offset + 7 +
+                    int32(@handoff[h]+3)) == @queue[q]
+                )
+              )
+            ) and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].name == ".rdata" and
+              @schema >= pe.sections[s].raw_data_offset and
+              @schema + !schema <= pe.sections[s].raw_data_offset + pe.sections[s].raw_data_size
+            )
+        }
+composite_rules:
+  - id: native-task-payload-section-apc
+    desc: Tasked section APC loader with native write APIs
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: native-task-apc-transfer-code
+      - id: micro-behaviors/mem/combined::native-unmap-write-resume-api-profile
