@@ -1,0 +1,1 @@
+system "echo value > output"
