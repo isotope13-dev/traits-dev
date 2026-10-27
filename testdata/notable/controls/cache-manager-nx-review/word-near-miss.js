@@ -1,0 +1,1 @@
+exports.words = ["global", "undermining"];
