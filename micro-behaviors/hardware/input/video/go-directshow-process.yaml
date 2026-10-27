@@ -1,0 +1,58 @@
+# Bind DirectShow input references and child-process calls to one recovered
+# Go routine. A function name or embedded FFmpeg strings alone cannot match.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+  size_max: 30000000
+traits:
+  - id: go-directshow-webcam-process
+    desc: Go DirectShow webcam capture process
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule go_directshow_webcam_process {
+          strings:
+            $header = { F1 FF FF FF 00 00 01 04 }
+            $capture = "main.(*wsSess).ffwcam\x00"
+            $command = "os/exec.Command\x00"
+            $start = "os/exec.(*Cmd).Start\x00"
+            $pipe = "os/exec.(*Cmd).StdoutPipe\x00"
+            $dshow = "dshow"
+            $input = "video="
+          condition:
+            pe.machine == pe.MACHINE_I386 and all of them and
+            with h = @header, n = uint32(h+8),
+                 table = h+uint32(h+36), names = h+uint32(h+20),
+                 text = uint32(h+16) : (
+              n > 0 and n < 50000 and table+n*8+8 < filesize and
+              for any c in (0..n-1) : (
+                names+uint32(table+uint32(table+c*8+4)+4) == @capture and
+                with first = pe.rva_to_offset(text+uint32(table+c*8)-pe.image_base),
+                     last = pe.rva_to_offset(text+uint32(table+(c+1)*8)-pe.image_base) : (
+                  last > first and last-first < 20000 and
+                  for any l in (first..last-6) : (
+                    uint8(l) == 0x8d and uint8(l+1) & 0xc7 == 0x05 and
+                    pe.rva_to_offset(uint32(l+2)-pe.image_base) == @dshow
+                  ) and
+                  for any l in (first..last-6) : (
+                    uint8(l) == 0x8d and uint8(l+1) & 0xc7 == 0x05 and
+                    pe.rva_to_offset(uint32(l+2)-pe.image_base) == @input
+                  ) and
+                  for all target in (@command, @start, @pipe) : (
+                    for any t in (0..n-1) : (
+                      names+uint32(table+uint32(table+t*8+4)+4) == target and
+                      with dest = pe.rva_to_offset(text+uint32(table+t*8)-pe.image_base) : (
+                        for any call in (first..last-5) : (
+                          uint8(call) == 0xe8 and call+5+int32(call+1) == dest
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
