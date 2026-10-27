@@ -5,6 +5,62 @@ defaults:
   attack: T1059.007
   mbc: B0022
 
+traits:
+  - id: deno-forwarded-hidden-run-key-command
+    desc: Forwards hidden Run-key command by HTTP
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: tree-sitter
+      language: javascript
+      query: |
+        ((function_declaration
+          body: (statement_block) @installer)
+          (#match? @installer "(?s)reg add.{0,180}conhost\\.exe\\s+--headless")
+          (#match? @installer "(?s)return fetch\\s*\\([^,]{1,80},.{0,180}JSON\\.stringify\\s*\\(\\s*\\{\\s*command\\s*\\}\\s*\\)")) @forwarding
+  - id: deno-forwarded-hidden-run-key-survey
+    desc: WebSocket forwards hidden autorun and recon
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: tree-sitter
+      language: javascript
+      query: |
+        ((program
+          (lexical_declaration
+            (variable_declarator
+              name: (identifier) @socket
+              value: (new_expression constructor: (identifier) @constructor)))
+          (expression_statement
+            (assignment_expression
+              left: (member_expression
+                object: (identifier) @owner
+                property: (property_identifier) @event)
+              right: (arrow_function
+                body: (statement_block
+                  (expression_statement
+                    (await_expression
+                      (call_expression
+                        function: (identifier) @callback_post
+                        arguments: (arguments . (identifier) @callback_endpoint)))))) @handler))
+          (function_declaration
+            name: (identifier) @installer
+            body: (statement_block
+              (return_statement
+                (call_expression
+                  function: (identifier) @installer_post
+                  arguments: (arguments . (identifier) @install_endpoint))))) @persistence)
+          (#eq? @constructor "WebSocket")
+          (#eq? @socket @owner)
+          (#eq? @event "onopen")
+          (#eq? @callback_post "fetch")
+          (#eq? @installer "installPersistence")
+          (#eq? @installer_post "fetch")
+          (#eq? @callback_endpoint @install_endpoint)
+          (#match? @handler "(?s)JSON\\.stringify.{0,180}ipconfig\\s+/all\\s*&&\\s*route\\s+print\\s*&&\\s*tasklist")
+          (#match? @persistence "(?s)reg add.{0,180}conhost\\.exe\\s+--headless")
+          (#match? @persistence "JSON\\.stringify\\s*\\(\\s*\\{\\s*command\\s*\\}\\s*\\)")) @forwarding
+
 composite_rules:
   - id: deno-http-command-endpoint
     desc: Deno HTTP command execution endpoint
@@ -34,7 +90,7 @@ composite_rules:
       - id: micro-behaviors/os/registry/write::reg-add-run-command
   - id: websocket-tasking-with-hidden-autorun
     desc: WebSocket tasking with hidden autorun commands
-    crit: hostile
+    crit: suspicious
     conf: 0.97
     unless:
       - id: well-known/app/infrastructure/
