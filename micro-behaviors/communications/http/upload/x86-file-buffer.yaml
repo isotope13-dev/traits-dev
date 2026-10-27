@@ -1,0 +1,46 @@
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+traits:
+  # The read size comes from GetFileSize on EDI. A local allocator returns
+  # EAX, saved in a stack slot, then ReadFile fills that EAX buffer. The same
+  # slot supplies the buffer in a later four-argument send inside this routine.
+  # MIME framing and the send API name qualify the transfer as multipart I/O.
+  - id: x86-file-buffer-multipart-send
+    desc: File-read buffer reused in multipart send
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_file_buffer_multipart_send {
+          strings:
+            $read = { 6A 00 57 FF 15 [4] 8B F0 56 E8 [4] 83 C4 04
+                      89 44 24 ?? 85 C0 0F 84 [4] 8B 1D [4] EB ??
+                      [0-32] 6A 00 8D 4C 24 ?? 51 56 50 57 FF D3 }
+            $send = { 8B 54 24 ?? 6A 00 57 52 56 FF 15 [4] 83 F8 FF }
+            $filepart = /Content-Disposition: form-data;[^\r\n]{1,100}filename=/ nocase
+            $send_api = "send" xor
+          condition:
+            pe.machine == pe.MACHINE_I386 and $filepart and $send_api and
+            for any r in (1..#read) : (
+              pe.sections[pe.section_index(@read[r])].characteristics & 0x20000000 != 0 and
+              for any lib in pe.import_details : (
+                lib.library_name matches /^kernel32[.]dll$/i and
+                for any f in lib.functions : (
+                  f.name == "GetFileSize" and
+                  uint32(@read[r]+5) == pe.image_base + f.rva
+                ) and
+                for any f in lib.functions : (
+                  f.name == "ReadFile" and
+                  uint32(@read[r]+34) == pe.image_base + f.rva
+                )
+              ) and
+              for any s in (1..#send) : (
+                @send[s] > @read[r]+!read[r] and @send[s]-@read[r] < 2048 and
+                uint8(@read[r]+23) == uint8(@send[s]+3)
+              )
+            )
+        }
