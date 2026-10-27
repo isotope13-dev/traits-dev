@@ -1,0 +1,1 @@
+const targetReference = "@stripe/sdk";

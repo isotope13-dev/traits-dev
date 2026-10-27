@@ -579,9 +579,36 @@ must not acquire a direction from its consumer.
 | `os/module/load`; `os/{api-resolution,linker}` | Language-module loading; manual API resolution; dynamic-linker configuration (`linker/{audit,env,load-path,symbol-version}`). Ruby `require` caches a module; `Kernel.load` evaluates the source file on each call. Native libraries belong under `dylib`. |
 | `os/autorun`, `os/package-manager`, `os/sysinfo/<property>`, `os/random`, `os/telemetry` | OS task and autorun registration (malicious durability is persistence); package operations, including package-manager configuration under `os/package-manager/config`; host properties (`hostname`, `platform`, `hardware`, `disk`, `locale`, `profile`); randomness; logging and analytics. |
 | `os/{clipboard,console,event,signal,exception,message,com,wmi}` | Host facilities. Clipboard by operation: `read`, `write`, `monitor`. COM or WMI evidence with a known function goes to that function. |
-| `os/application/target` | An app or package cited as the program's target (wallet brands, `SpringBoard`); neither discovery nor the file's identity. |
+| `os/application/target/<function>` | An app or package cited as the program's target (wallet brands, `SpringBoard`); neither discovery nor the file's identity. Children classify the referenced product's function, not the reference's spelling or encoding. |
 | `time/{query,sleep,timing,schedule}` | Read time; wait; measure elapsed time (`timing/check`); schedule in-process callbacks (`schedule/timeout` for alarms). |
 | `ui/{controls,dialog,graphics,help,menu,terminal,wallpaper,window}` | Credential-entry controls (`controls/credential`), wallet UI (`controls/wallet`), prompts (`dialog/prompt`), `--help` text (`help`), window hooks, enumeration and notifications. Deceptive hiding is evasion. |
+
+`os/application/target` asks **what function does the referenced software serve?**
+All children record references, not installation, use, discovery, or ownership.
+Use the narrowest function required by every passing alternative:
+
+| Child | Admission and boundary |
+|---|---|
+| `wallet` | Wallet products, their stores, registered wallet-extension IDs, or catalogs confined to wallets. Wallets take precedence over the broader financial-services class; a bare exchange/payment-service name is `finance`. |
+| `finance` | Exchanges, payment services and DeFi protocols without required wallet identity. Stripe fits; a MetaMask extension ID is `wallet`. |
+| `browser` | Browser products and browser toolbars. Brave fits; a required Brave Wallet extension ID is `wallet`, and a media-player ActiveX control is `media`. |
+| `security` | Defender, bot-defense and CAPTCHA products. A named security product fits; a rival malware/campaign name is `malware`. |
+| `agent` | Named AI-agent products and agent packages. Hermes and OpenClaw fit; a generic word such as "agent" does not identify a product. |
+| `system` | Platform application stores, platform services and desktop-shell components. Finder and Play Services fit; a browser name is `browser`. |
+| `network` | Communication clients, VPN clients and remote-session applications. Discord, OpenVPN and LiveDesk fit; a server implementation is `server`. |
+| `cloud` | Cloud-platform and infrastructure-provider names. GCP fits; a named bot-defense product is `security`. |
+| `server` | Named application/web-server implementations. Tomcat and nginx fit; an HTTP method or generic server API is a protocol capability. |
+| `media` | Media-player products and their controls. RealPlayer fits; BaiduBar is `browser`. |
+| `game` | Game products and their platform controls. Ourgame's GLWorld control fits; an ordinary media player is `media`. |
+| `utility` | Standalone diagnostic or administration tools without a narrower required product class. CPU-Z and wmiexec fit; an app-store identifier is `system`. |
+| `malware` | Rival malware or campaign names cited as targets. TeamPCP fits; this reference never identifies the analyzed file as that malware. |
+
+The broadest current observations are multi-product references confined to one
+function, such as wallet catalogs. A future observation spanning functions must
+resolve its full population and a supported broad home before admission; it
+must not be copied into several children. The placement inventory and unchanged
+definition checks are recorded in
+`taxonomy-migration/batches/stranded-target-functions/`.
 
 `process/interpreter/eval/` answers one question: **how does supplied code begin
 executing inside an existing interpreter?** Admission requires execution, not a

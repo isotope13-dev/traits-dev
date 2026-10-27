@@ -1,0 +1,1 @@
+references = ["metamask", "Brave Software"]
