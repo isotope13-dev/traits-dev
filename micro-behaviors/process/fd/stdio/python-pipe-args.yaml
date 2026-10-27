@@ -36,39 +36,6 @@ traits:
   if:
     type: text
     regex: stderr\s*=\s*(subprocess\.)?STDOUT\b
-- id: py-stdin-custom-stream
-  desc: Custom stream supplied to Python stdin keyword
-  crit: component
-  conf: 0.75
-  if:
-    type: text
-    regex: stdin\s*=\s*[A-Za-z_]\w*($|[^.\w])
-    # PIPE, STDOUT and DEVNULL are the stock subprocess constants, not a
-    # caller-supplied stream such as a socket or file object.
-    not:
-      - regex: '=\s*(subprocess\.)?(PIPE|STDOUT|DEVNULL)\b'
-- id: py-stdout-custom-stream
-  desc: Custom stream supplied to Python stdout keyword
-  crit: component
-  conf: 0.75
-  if:
-    type: text
-    regex: stdout\s*=\s*[A-Za-z_]\w*($|[^.\w])
-    # PIPE, STDOUT and DEVNULL are the stock subprocess constants, not a
-    # caller-supplied stream such as a socket or file object.
-    not:
-      - regex: '=\s*(subprocess\.)?(PIPE|STDOUT|DEVNULL)\b'
-- id: py-stderr-custom-stream
-  desc: Custom stream supplied to Python stderr keyword
-  crit: component
-  conf: 0.75
-  if:
-    type: text
-    regex: stderr\s*=\s*[A-Za-z_]\w*($|[^.\w])
-    # PIPE, STDOUT and DEVNULL are the stock subprocess constants, not a
-    # caller-supplied stream such as a socket or file object.
-    not:
-      - regex: '=\s*(subprocess\.)?(PIPE|STDOUT|DEVNULL)\b'
 - id: py-stdio-dup2
   desc: Python duplicates descriptor to stdio
   crit: notable
@@ -94,6 +61,29 @@ traits:
   if:
     type: text
     substr: .pipe(
+- id: python-custom-stdio
+  desc: Subprocess call supplies custom stdio streams
+  crit: notable
+  conf: 0.96
+  for: [python]
+  # Keep the kwargs on the same call. A nearby subprocess invocation plus
+  # dict(stdin=..., stdout=...) does not configure that child's descriptors.
+  if:
+    type: tree-sitter
+    query: |
+      (
+        (call
+          function: [(attribute) (identifier)] @callee
+          arguments: (argument_list
+            (keyword_argument name: (identifier) @stream1 value: (identifier) @value1)
+            (keyword_argument name: (identifier) @stream2 value: (identifier) @value2))) @stdio
+        (#match? @callee "^(subprocess\\s*\\.\\s*(Popen|run|call)|Popen)$")
+        (#match? @stream1 "^(stdin|stdout|stderr)$")
+        (#match? @stream2 "^(stdin|stdout|stderr)$")
+        (#not-eq? @stream1 @stream2)
+        (#not-match? @value1 "^(PIPE|STDOUT|DEVNULL)$")
+        (#not-match? @value2 "^(PIPE|STDOUT|DEVNULL)$")
+      )
 composite_rules:
 - id: python-stdio-keyword-arguments
   desc: Python standard-stream keyword arguments
@@ -110,18 +100,3 @@ composite_rules:
   any:
   - id: dot-pipe
   - id: pipe-constant
-- id: python-custom-stdio
-  desc: Python subprocess custom stdio streams
-  crit: notable
-  conf: 0.8
-  for: [python]
-  needs: 2
-  # Generic stdout/stderr names also occur in Docker SDK options and ordinary
-  # local assignments. Require a nearby Popen call to establish subprocess IO.
-  all:
-  - id: micro-behaviors/process/create/subprocess::popen-ast
-  any:
-  - id: py-stdin-custom-stream
-  - id: py-stdout-custom-stream
-  - id: py-stderr-custom-stream
-  near_bytes: 700
