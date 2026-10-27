@@ -11,5 +11,5 @@ rule MintsLoader {
         $s4 = "$global" ascii wide
         
     condition:
-        $s1 and 2 of ($s2, $s3, $s4)
+        3 of them
 }
