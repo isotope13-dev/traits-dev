@@ -1,0 +1,98 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86]
+
+traits:
+  - id: x86-byte-task-urlmon-winexec
+    desc: Byte task links URL download to WinExec
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_byte_task_urlmon_winexec {
+          strings:
+            $api = "URLDownloadToFileA\x00" ascii
+            $lib = "urlmon.dll\x00" ascii nocase
+            // A byte selector indexes a byte map and then a jump table.
+            $dispatch = {
+              8B 4D 08 0F B6 01 57 83 F8 ?? 0F 87 [4]
+              0F B6 80 [4] FF 24 85 ?? ?? ?? ??
+            }
+            // The selected branch passes the unchanged ECX task pointer
+            // to a scheduled callback in EAX; retain the callback address.
+            $schedule = {
+              6A 00 6A 00 6A 00 6A 00 B2 01 B8 [4] E8 [4]
+              8B 8E [4] 83 C4 10 89 44 8E ?? FF 86 ?? ?? ?? ??
+            }
+            $callback = {
+              81 EC [4] A1 [4] 33 C4 89 84 24 [4]
+              57 8B BC 24 [4] 80 BF [4] 00 74 ??
+              47 57 E8 [4] 83 C4 04
+            }
+            $helper = {
+              81 EC [4] A1 [4] 33 C4 89 84 24 [4]
+              53 55 8B AC 24 [4] 56 57
+            }
+            $resolve = {
+              68 [4] 32 DB FF 15 [4] 68 [4] 50 A3 [4]
+              FF 15 [4] A3 ?? ?? ?? ??
+            }
+            // Download to a stack pathname, retry on error, and pass that
+            // same pathname to WinExec. API slots and stack offsets bind
+            // the operations; merely having both APIs never qualifies.
+            $transfer = {
+              6A 00 6A 00 8D 44 24 ?? 50 55 6A 00 FF 15 [4]
+              85 C0 74 0F 68 [4] FF D7 46 83 FE ?? 72 DD
+              EB 02 B3 01 6A ?? 8D 4C 24 ?? 51 FF 15 ?? ?? ?? ??
+            }
+          condition:
+            pe.machine == pe.MACHINE_I386 and
+            for any s in pe.sections : (
+              s.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for any d in (1..#dispatch) : (
+                @dispatch[d] >= s.raw_data_offset and
+                @dispatch[d]+!dispatch[d] <= s.raw_data_offset+s.raw_data_size and
+                for any q in (1..#schedule) : (
+                  @schedule[q] > @dispatch[d]+!dispatch[d] and
+                  @schedule[q] < @dispatch[d]+2048 and
+                  @schedule[q]+!schedule[q] <= s.raw_data_offset+s.raw_data_size and
+                  // An actual selector-map entry must route to this branch.
+                  for any op in (0..uint8(@dispatch[d]+9)) : (
+                    uint32(pe.rva_to_offset(uint32(@dispatch[d]+26)-pe.image_base) +
+                      4*uint8(pe.rva_to_offset(uint32(@dispatch[d]+19)-pe.image_base)+op)) ==
+                      pe.image_base+s.virtual_address+@schedule[q]-s.raw_data_offset
+                  ) and
+                  for any c in (1..#callback) : (
+                    @callback[c] == pe.rva_to_offset(uint32(@schedule[q]+11)-pe.image_base) and
+                    @callback[c] >= s.raw_data_offset and
+                    @callback[c]+!callback[c] <= s.raw_data_offset+s.raw_data_size and
+                    uint32(@callback[c]+24) == uint32(@callback[c]+2)+8 and
+                    for any h in (1..#helper) : (
+                      @helper[h] == @callback[c]+44+int32(@callback[c]+40) and
+                      @helper[h] >= s.raw_data_offset and
+                      uint32(@helper[h]+25) == uint32(@helper[h]+2)+12 and
+                      for any r in (1..#resolve) : (
+                        @resolve[r] >= @helper[h]+!helper[h] and
+                        @resolve[r] < @helper[h]+128 and
+                        $lib at pe.rva_to_offset(uint32(@resolve[r]+1)-pe.image_base) and
+                        $api at pe.rva_to_offset(uint32(@resolve[r]+14)-pe.image_base) and
+                        uint32(@resolve[r]+9) == pe.image_base+pe.import_rva("KERNEL32.dll", "LoadLibraryA") and
+                        uint32(@resolve[r]+26) == pe.image_base+pe.import_rva("KERNEL32.dll", "GetProcAddress") and
+                        for any t in (1..#transfer) : (
+                          @transfer[t] >= @resolve[r]+!resolve[r] and
+                          @transfer[t] < @resolve[r]+256 and
+                          @transfer[t]+!transfer[t] <= s.raw_data_offset+s.raw_data_size and
+                          uint32(@transfer[t]+14) == uint32(@resolve[r]+31) and
+                          uint8(@transfer[t]+7) == uint8(@transfer[t]+44)+4 and
+                          uint32(@transfer[t]+48) == pe.image_base+pe.import_rva("KERNEL32.dll", "WinExec")
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
