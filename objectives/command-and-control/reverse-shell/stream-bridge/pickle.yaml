@@ -1,0 +1,41 @@
+defaults:
+  for: [pickle]
+  platforms: [unix, windows]
+  attack: T1059.006
+  mbc: B0030.002
+traits:
+  - id: pickle-shell-relay-source
+    desc: Serialized socket and shell relay source
+    crit: suspicious
+    conf: 0.97
+    # Match the complete attack pattern as one observation, without adding
+    # generic stream operations to an intent namespace. Both transfer directions
+    # must occur after an exec global and within one bounded source region.
+    # This also recognizes source retained behind a corrupt string length.
+    if:
+      type: yara
+      source: |
+        rule pickle_socket_process_stream_relay {
+          strings:
+            $exec = /(c(__builtin__|builtins)\nexec\n|\x8c\x08builtins\x94?\x8c\x04exec\x94?\x93)/
+            $connect = /socket\.socket\([^\r\n)]{0,80}\)[\s\S]{0,256}\.connect\s*\(/
+            $input = /\.stdin\.write\(\s*\w+\.recv\([^)]{1,40}\)(\.decode\(\))?\s*\)/
+            $output = /\.send(all)?\(\s*\w+\.stdout\.read\([^)]{0,40}\)(\.encode\(\))?\s*\)/
+            $shell = /subprocess\.Popen\([^\r\n]{0,240}\bshell\s*=\s*True\b/
+          condition:
+            for any e in (1..#exec): (
+              $connect in (@exec[e] + !exec[e]..@exec[e] + 4096) and
+              $input in (@exec[e] + !exec[e]..@exec[e] + 4096) and
+              $output in (@exec[e] + !exec[e]..@exec[e] + 4096) and
+              $shell in (@exec[e] + !exec[e]..@exec[e] + 4096)
+            )
+        }
+
+composite_rules:
+  - id: pickle-socket-process-stream-relay
+    desc: Pickle embeds a socket-shell stream relay
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: pickle-shell-relay-source
+      - id: metadata/import/builtin::pickle-builtins-exec
