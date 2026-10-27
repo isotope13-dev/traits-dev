@@ -2,14 +2,37 @@ defaults:
   platforms: [linux]
   for: [c, cpp]
   crit: suspicious
-composite_rules:
-  - id: authentication-targeted-hidden-xor-log
-    desc: Auth-targeting code writes hidden XOR log
+traits:
+  - id: hidden-log-xor-append
+    desc: Appends XOR bytes to hidden system log
     conf: 0.98
     attack: T1564.001,T1027
-    near_bytes: 4096
-    all:
-      - id: micro-behaviors/fs/path/location::var-log-hidden-path-reference
-      - id: micro-behaviors/fs/write/file/append::c-fopen-append-mode
-      - id: micro-behaviors/data/encode/xor::indexed-byte-xor-fwrite-loop
-      - id: micro-behaviors/fs/proc/info/path::auth-daemon-proc-comm-search
+    if:
+      type: tree-sitter
+      query: |
+        ((function_definition body: (compound_statement
+          (declaration declarator: (init_declarator
+            declarator: (pointer_declarator declarator: (identifier) @handle)
+            value: (call_expression function: (identifier) @open
+              arguments: (argument_list
+                . (string_literal (string_content) @path)
+                . (string_literal (string_content) @mode) .))))
+          . (if_statement)?
+          . (for_statement body: (compound_statement
+            (declaration declarator: (init_declarator
+              declarator: (identifier) @encoded
+              value: (binary_expression left: (subscript_expression) operator: "^")))
+            . (expression_statement (call_expression function: (identifier) @write
+              arguments: (argument_list
+                . (pointer_expression operator: "&" argument: (identifier) @output)
+                . (number_literal) @size
+                . (number_literal) @count
+                . (identifier) @sink .)))))))
+         (#eq? @open "fopen")
+         (#match? @path "^/var/log/\\.[^:/\\s]{1,40}$")
+         (#match? @mode "^a[+b]*$")
+         (#eq? @write "fwrite")
+         (#eq? @encoded @output)
+         (#eq? @handle @sink)
+         (#eq? @size "1")
+         (#eq? @count "1"))
