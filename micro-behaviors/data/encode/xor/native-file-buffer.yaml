@@ -1,0 +1,43 @@
+# Unlike the direction-neutral loop, this caller establishes encoding before
+# storage: the same buffer and byte count go to the transform and WriteFile.
+# It does not establish which file is written, persistence, or malicious intent.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86]
+traits:
+  - id: x86-alternating-key-xor-file-buffer
+    desc: XOR-transforms buffer before writing to file
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_alternating_key_xor_file_buffer {
+          strings:
+            // Caller-supplied key and step, count from a frame slot, and
+            // EBX as both source and destination. WriteFile consumes EBX
+            // and the same count slot immediately afterwards.
+            $store = { 57 56 FF 75 ?? 53 53 E8 ?? ?? ?? ?? 83 C4 14
+                       6A 00 8D 45 ?? 50 FF 75 ?? 53 FF 75 ?? FF 15 ?? ?? ?? ?? }
+            // Required callee semantics, rather than an unrelated XOR loop.
+            $transform = { 55 8B EC 8B 45 08 57 8B 7D 10 B1 01 85 FF 74 ??
+                           56 8B 75 0C 2B F0 8A 14 06 32 55 14 88 10
+                           8A D1 02 55 18 F6 D9 00 55 14 40 4F 75 ?? }
+          condition:
+            pe.is_pe and
+            for any w in (1..#store) : (
+              for any s in pe.sections : (
+                s.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                @store[w] >= s.raw_data_offset and
+                @store[w]+!store[w] <= s.raw_data_offset+s.raw_data_size and
+                for any t in (1..#transform) : (
+                  pe.rva_to_offset(s.virtual_address+@store[w]-s.raw_data_offset+12+int32(@store[w]+8)) == @transform[t]
+                )
+              ) and
+              uint8(@store[w]+4) == uint8(@store[w]+19) and
+              uint8(@store[w]+4) == uint8(@store[w]+23) and
+              uint32(@store[w]+30) == pe.image_base + pe.import_rva("KERNEL32.dll", "WriteFile")
+            )
+        }
