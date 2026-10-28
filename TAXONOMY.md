@@ -149,14 +149,18 @@ lists). RULES.md is stricter; see [open checkpoints](#open-checkpoints).
 |---|---|---|
 | `exception` | Benign-context composite that suppresses or downgrades another rule; never emitted ([below](#exception-composites)). | Composites; any tier |
 | `component` | Too incomplete to state a fact alone: `&cc=`, one token of a family signature, half a marker. Composite membership does **not** make a trait a component. | Any tier |
-| `baseline` | Clear but near-universal within the trait's `for:` scope (`read`, `mmap`; `USER32.dll` in a Windows GUI PE). | Any tier |
+| `baseline` | Clear but near-universal within the trait's `for:` scope (`read`, `mmap`; `USER32.dll` in a Windows GUI PE). | Any tier except `well-known/` |
 | `notable` | A behavior, purpose or identity an analyst would want to see change in a version diff, even when benign: communications, code execution, crypto, encoding/decoding, privilege operations, sensitive file access, registry access, persistence surfaces, program identity, signing. | Any tier |
 | `suspicious` | Evasion, intent concealment, or security-boundary crossing where legitimate use remains plausible. | Any tier; rare in `metadata/` |
 | `hostile` | Clear attack pattern with no legitimate use; authoring bar precision ≥ 3.5 ([RULES.md](RULES.md#criticality-levels)). | `objectives/`, `well-known/` |
 
 In `metadata/`, a fact that *identifies* something — signer, compiler, declared
 import, runtime — is `notable`; `baseline` is for properties most files of that
-type share.
+type share. `well-known/` does not admit `baseline` rules: a useful named
+entity or filename observation is `notable`, while an incomplete identity
+fragment is a `component` and must feed a positive detection. A benign-context
+composite may instead be `exception`; it is intentionally used for suppression
+and is not a suppression-only building-block violation.
 
 `component` and `baseline` are **not hidden**: JSON output, the web UI and
 diffs show them. A demoted false positive stays visible, mislabeled, under the
@@ -1429,7 +1433,11 @@ product; a family-specific configuration fingerprint does. No general-purpose
 traits here, even at low criticality. Identity never blanket-suppresses an
 entity's behaviors. Program-specific filename observations may live alongside
 that program's evidence, but a basename alone does not establish identity or
-justify an exclusion; rules and consumers must preserve that distinction.
+justify an exclusion; rules and consumers must preserve that distinction. A
+filename-only rule is at most `notable`, and its description identifies the name
+as the observation. An incomplete fragment may be `component`. A filename-only
+rule does not need an arbitrary file-size bound; content-based binary identity
+rules still require a meaningful size bound.
 
 **The first class that fits wins.** (`malware/supply-chain` is legacy: delivery
 does not choose a family's identity.)
