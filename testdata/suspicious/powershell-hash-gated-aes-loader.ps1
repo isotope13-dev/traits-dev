@@ -1,8 +1,7 @@
 # Synthetic fixture: AES-encrypted PowerShell payload that executes only
 # after its SHA256 matches the embedded digest, invoked through a
-# hex-obfuscated char-array entry. Covers
-# powershell-aes-scriptblock-digest-check and
-# powershell-aes-scriptblock-chararray-eval.
+# hex-obfuscated char-array entry. Exercises the encrypted script wrapper,
+# character-array evaluation, and digest-comparison observations independently.
 function Invoke-Update {
     $keyText = 'MDEyMzQ1Njc4OUFCQ0RFRjAxMjM0NTY3ODlBQkNERUY='
     $ivText = 'QUJDREVGR0hJSktMTU5PUA=='
