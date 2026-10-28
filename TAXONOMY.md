@@ -586,9 +586,10 @@ must not acquire a direction from its consumer.
 | `os/module/load`; `os/{api-resolution,linker}` | Language-module loading; manual API resolution; dynamic-linker configuration (`linker/{audit,env,load-path,symbol-version}`). Ruby `require` caches a module; `Kernel.load` evaluates the source file on each call. Native libraries belong under `dylib`. |
 | `os/autorun`, `os/package-manager`, `os/sysinfo/<property>`, `os/random`, `os/telemetry` | OS task and autorun registration (malicious durability is persistence); package operations, including package-manager configuration under `os/package-manager/config`; host properties (`hostname`, `platform`, `hardware`, `disk`, `locale`, `profile`); randomness; logging and analytics. |
 | `os/{clipboard,console,event,signal,exception,message,com,wmi}` | Host facilities. Clipboard by operation: `read`, `write`, `monitor`. COM or WMI evidence with a known function goes to that function. |
+| `os/application/shell-namespace` | Operating-system shell item namespace operations, including virtual items as well as filesystem objects. PIDL manipulation belongs here; resolving a concrete filesystem path belongs in `fs/path`, and an icon drawing operation in `ui/graphics/icon`. A single shell-item API is an observation, not proof of filesystem mutation. |
 | `os/application/target/<function>` | An app or package cited as the program's target (wallet brands, `SpringBoard`); neither discovery nor the file's identity. Children classify the referenced product's function, not the reference's spelling or encoding. |
 | `time/{query,sleep,timing,schedule}` | Read time; wait; measure elapsed time (`timing/check`); schedule in-process callbacks (`schedule/timeout` for alarms). |
-| `ui/{controls,dialog,graphics,help,menu,terminal,wallpaper,window}` | Credential-entry controls (`controls/credential`), wallet UI (`controls/wallet`), prompts (`dialog/prompt`), `--help` text (`help`), window hooks, enumeration and notifications. Deceptive hiding is evasion. |
+| `ui/{controls,dialog,graphics,help,menu,terminal,wallpaper,window}` | Credential-entry controls (`controls/credential`), wallet UI (`controls/wallet`), drag-and-drop interaction (`controls/drag-drop`), prompts (`dialog/prompt`), `--help` text (`help`), window hooks, enumeration and notifications. Deceptive hiding is evasion. |
 
 `os/application/target` asks **what function does the referenced software serve?**
 All children record references, not installation, use, discovery, or ownership.
@@ -1533,7 +1534,7 @@ plan.
 | mb `data/source/*` | mb `metaprogramming/*`, `data/control-flow/*`, `data/property/*`; meta `*` | By claim | Applied (source syntax and naming, metadata, reflection, control flow and property operations routed by claim; no YAML rules or live YAML references remain under `data/source`) |
 | mb `data/encoded` | meta `file/encoding` or mb `data/decode/<scheme>` | Presence vs operation | Applied |
 | mb `data/decode/{request,reflection,environment,native}-base64` | mb `data/decode/base64` | Origin is not an algorithm | Applied |
-| mb `fs/shell-ops` | mb `fs/{read,write,delete/*,file/*}` | By operation | Partial (recursive and AppleScript copy rules moved to `fs/file/copy`; Ruby FileUtils import moved to `metadata/import/builtin`; remaining Shell32, removal, and wipe rules need operation-level review) |
+| mb `fs/shell-ops` | mb `fs/{read,write,delete/*,file/*}`, `ui`, `os/application/shell-namespace`, or meta `binary/symbols` | By evidenced subject; an unspecified Shell32 file operation is a symbol reference | Applied (all 42 rules and references moved; the legacy directory has no YAML; see [migration inventory](docs/taxonomy-audit/taxonomy/shell-subjects/migration.json)) |
 | mb `fs/traversal`; `fs/enumerate` (non-inventory) | mb `fs/directory/traverse`; `fs/directory/readdir`, `fs/search` | Inventory stays in `fs/enumerate` | Applied (traversal, directory listing, and permission search moved; volume/device inventory remains) |
 | mb `fs/directory/mkdir` | mb `fs/directory/create` | Rename | Applied |
 | mb `fs/memory/mmap`, `mem/alloc/map` | mb `mem/map` | Any backing | Applied |
