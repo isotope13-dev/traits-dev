@@ -173,6 +173,11 @@ do not establish evasion; the decoded archive and its members still receive
 their normal analysis. Do not add a YAML shadow or a filename exclusion for
 an ordinary document or application asset carrying this format.
 
+A rule-evaluation timeout records `evaluation-deadline` in `analysis_gaps`.
+It does not establish an analysis-bomb attack: large legitimate source trees
+and machine load can exhaust the same deadline. Keep this transient diagnostic
+out of threat findings and do not create a YAML shadow for it.
+
 ## Criticality Levels
 
 | Level | Use When |
@@ -1244,6 +1249,10 @@ same values as composite `scope:` (`archive`, `outer`, `package`):
         - id: metadata/signed/platform/
 ```
 
+Inline `type: path` conditions in a container-scoped downgrade still match
+the member whose finding is being reconsidered. Combine that local path with
+a named package identity when context applies only to test-data members.
+
 Reach for it only when the wider evidence is genuinely about this file — a
 signed installer whose signature covers the members it carries is the motivating
 case. Without it, a directory reference such as
@@ -1735,6 +1744,15 @@ differently, by design:
 Practical consequence: it's safe to publish a rule pack that uses a new field;
 older analyzers skip just those rules instead of erroring out. Bump the analyzer
 when you need those rules to actually fire.
+
+### Measured rule performance
+
+Fresh validation compares confirmed AST execution costs among at least eight
+queries on the same fixture and in the same boolean or full-count mode. A query
+fails the relative check only when its cost exceeds the larger of 40 times the
+peer median or the median plus 40 median absolute deviations, plus a 1 ms
+allowance. This requires material excess cost above the relative cutoff.
+Whole-rule slow limits and query-budget exhaustion remain separate failures.
 
 ### Metadata section review
 

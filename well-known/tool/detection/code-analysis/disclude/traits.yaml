@@ -1,0 +1,100 @@
+# Recognize the static fixture consumer, not just a declared package name.
+# Consumers downgrade only fixture members, binding the path locally while
+# sharing package identity. Runtime code and standalone copies keep their tier.
+defaults:
+  platforms: [unix, windows]
+  crit: notable
+  conf: 0.99
+
+traits:
+  - id: cargo-name
+    desc: Disclude Cargo package name
+    for: [cargo.toml]
+    if:
+      type: value
+      path: package.name
+      exact: disclude
+
+  - id: cargo-repository
+    desc: Disclude upstream repository declaration
+    for: [cargo.toml]
+    if:
+      type: value
+      path: package.repository
+      exact: https://github.com/disclude-io/disclude-rs
+
+  - id: static-scan-import
+    desc: Imports Disclude static source scanner
+    for: [rust]
+    if:
+      type: import
+      exact: disclude::scan::scan
+
+  - id: fixture-root-construction
+    desc: Constructs a Cargo-relative fixture directory
+    for: [rust]
+    if:
+      type: tree-sitter
+      language: rust
+      query: |
+        ((function_item name: (identifier) @root
+          body: (block
+            (let_declaration pattern: (identifier) @manifest
+              value: (macro_invocation macro: (identifier) @env
+                (token_tree (string_literal) @cargo)))
+            (call_expression
+              function: (field_expression
+                value: (call_expression function: (scoped_identifier) @from
+                  arguments: (arguments (identifier) @used_manifest))
+                field: (field_identifier) @join)
+              arguments: (arguments (string_literal) @directory))))
+          (#eq? @root "fixture_root")
+          (#eq? @env "env")
+          (#eq? @cargo "\"CARGO_MANIFEST_DIR\"")
+          (#eq? @from "PathBuf::from")
+          (#eq? @manifest @used_manifest)
+          (#eq? @join "join")
+          (#eq? @directory "\"tests/fixtures\""))
+
+  - id: fixture-static-scan-call
+    desc: Scans fixture files with Disclude
+    for: [rust]
+    if:
+      type: tree-sitter
+      language: rust
+      query: |
+        ((call_expression function: (identifier) @scan
+          arguments: (arguments
+            (reference_expression value: (call_expression
+              function: (identifier) @root arguments: (arguments)))
+            (reference_expression value: (call_expression
+              function: (scoped_identifier) @options arguments: (arguments)))))
+          (#eq? @scan "scan")
+          (#eq? @root "fixture_root")
+          (#eq? @options "ScanOptions::default"))
+
+composite_rules:
+  - id: static-fixture-harness
+    desc: Disclude tests scan fixture files as data
+    for: [rust]
+    all:
+      - id: static-scan-import
+      - id: fixture-root-construction
+      - id: fixture-static-scan-call
+
+  - id: static-fixture-package
+    desc: Disclude package with a static fixture harness
+    for: [crate, cargo.toml, rust, python, shell, javascript, markdown]
+    scope: archive
+    all:
+      - id: metadata/package/testing/harness/unit::cargo-static-scan-without-build-hook
+      - id: static-fixture-harness
+
+  - id: fixture-package-interpreter-command
+    desc: Disclude fixture package constructs interpreter commands
+    for: [crate, cargo.toml, rust, python, shell, javascript, markdown]
+    scope: archive
+    all:
+      - id: static-fixture-package
+      - id: micro-behaviors/process/create/direct::rust-interpreter-command-outside-fixture-tree
+
