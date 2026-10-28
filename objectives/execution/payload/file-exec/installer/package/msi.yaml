@@ -56,6 +56,46 @@ traits:
     regex: (?i)\.ps1\b
   unless:
     - id: metadata/lang/locale::gettext-po-catalog
+- id: msi-byte-list-generic
+  desc: MSI references a generic byte list
+  crit: component
+  conf: 0.95
+  for: [msi]
+  if:
+    type: text
+    substr: Generic.List[byte]
+- id: msi-byte-list-decoder-call
+  desc: MSI decodes a byte list to text
+  crit: component
+  conf: 0.95
+  for: [msi]
+  if:
+    type: raw
+    regex: 'GetString\(\$\w+\.ToArray\('
+- id: msi-powershell-runspace-create
+  desc: MSI creates a PowerShell runspace
+  crit: component
+  conf: 0.95
+  for: [msi]
+  if:
+    type: text
+    substr: powershell]::Create()
+- id: msi-powershell-add-script
+  desc: MSI adds a script to PowerShell
+  crit: component
+  conf: 0.95
+  for: [msi]
+  if:
+    type: raw
+    regex: 'AddScript\(\$\w+\)'
+- id: msi-powershell-runspace-invoke
+  desc: MSI invokes a PowerShell runspace
+  crit: component
+  conf: 0.95
+  for: [msi]
+  if:
+    type: text
+    substr: .Invoke()
 - id: wscript-vbs-file-vbscript
   desc: MSI runs VBS through WScript
   crit: suspicious
@@ -323,7 +363,44 @@ traits:
         condition:
           uint32(0) == 0xe011cfd0 and $version and $cryptbase
       }
+- id: msi-run-key-background-cmd-launch
+  desc: MSI Run key launches a background command
+  crit: suspicious
+  conf: 0.97
+  attack: T1547.001,T1059.003
+  if:
+    type: text
+    regex: '(?i)CurrentVersion\\Run.{0,200}cmd.{0,20}start.{0,10}/b.{0,120}INSTALLFOLDER.{0,100}exe'
+- id: msi-csrss-msmpeng-camouflage-set
+  desc: MSI uses faux CSRSS and Defender names
+  crit: suspicious
+  conf: 0.98
+  if:
+    type: text
+    regex: '(?is)csrss\.log.{0,220}csrss_sys\.mda.{0,220}csrss_win\.dkd.{0,500}msmpeng_svc\.exe'
 composite_rules:
+- id: msi-inprocess-powershell-byte-decoder
+  desc: MSI reconstructs and invokes a PowerShell script
+  crit: suspicious
+  conf: 0.98
+  attack: T1027,T1059.001
+  for: [msi]
+  near_bytes: 3200
+  all:
+  - id: msi-byte-list-generic
+  - id: msi-byte-list-decoder-call
+  - id: msi-powershell-runspace-create
+  - id: msi-powershell-add-script
+  - id: msi-powershell-runspace-invoke
+- id: msi-obfuscated-inprocess-powershell-loader
+  desc: MSI runs a reconstructed obfuscated PowerShell stage in process
+  crit: hostile
+  conf: 0.99
+  attack: T1027,T1059.001,T1218.007
+  for: [msi]
+  all:
+  - id: msi-inprocess-powershell-byte-decoder
+  - id: metadata/package/files/msi::msi-installation-database-title
 # Downgraded to suspicious: two of the four legs are universal MSI structure.
 # Every MSI has an installation-database title and an OLE security flag, and
 # the File table's `short|long` alias is how MSI has always stored names -- WiX
@@ -702,3 +779,13 @@ composite_rules:
   - id: micro-behaviors/process/create/installer::msi-launchfile-custom-action
   - id: metadata/binary/installer/database::msi-file-table-source-target-alias
   - id: metadata/package/files/msi::msi-launchfile-custom-action
+
+- id: msi-runkey-camouflaged-background-payload
+  desc: MSI installs a camouflaged background payload and persists at logon
+  crit: hostile
+  conf: 0.99
+  attack: T1547.001,T1036.005,T1059.003,T1195.002
+  all:
+  - id: metadata/package/files/msi::msi-installation-database-title
+  - id: msi-run-key-background-cmd-launch
+  - id: msi-csrss-msmpeng-camouflage-set

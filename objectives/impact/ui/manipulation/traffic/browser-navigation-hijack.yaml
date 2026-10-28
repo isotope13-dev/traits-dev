@@ -5,7 +5,189 @@ defaults:
   for: [javascript, typescript, chrome-manifest, crx, xpi, zip]
   attack: T1185,T1566
 
+traits:
+  - id: delayed-redirect-timer
+    desc: Timer delays page navigation
+    crit: notable
+    conf: 0.96
+    for: [javascript, typescript]
+    if:
+      type: symbol
+      exact: setTimeout
+
+  - id: redirect-storage-read
+    desc: Redirect logic reads extension storage
+    crit: notable
+    conf: 0.95
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'storage\.(local|sync)\.get\s*\('
+
+  - id: redirect-storage-write
+    desc: Redirect logic writes extension storage
+    crit: notable
+    conf: 0.95
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'storage\.(local|sync)\.set\s*\('
+
+  - id: remote-page-location-assignment
+    desc: Assigns a remote page URL
+    crit: notable
+    conf: 0.95
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '(window\.)?location(\.href)?\s*=\s*["'']https?://'
+
+  - id: redirect-location-assignment
+    desc: Assigns a page navigation URL
+    crit: notable
+    conf: 0.92
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'location(\.href)?\s*='
+
+  - id: youlink-shortener-host
+    desc: References youlink.biz
+    crit: notable
+    conf: 0.92
+    for: [javascript, typescript]
+    if:
+      type: text
+      substr: youlink.biz
+
+  - id: cuttly-shortener-host
+    desc: References cutt.ly
+    crit: notable
+    conf: 0.92
+    for: [javascript, typescript]
+    if:
+      type: text
+      substr: cutt.ly
+
+  - id: bitly-shortener-host
+    desc: References bit.ly
+    crit: notable
+    conf: 0.92
+    for: [javascript, typescript]
+    if:
+      type: text
+      substr: bit.ly
+
+  - id: tinyurl-shortener-host
+    desc: References tinyurl.com
+    crit: notable
+    conf: 0.92
+    for: [javascript, typescript]
+    if:
+      type: text
+      substr: tinyurl.com
+
+  - id: referral-cookie-write
+    desc: Writes referral cookies for redirects
+    crit: suspicious
+    conf: 0.97
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '(?i)setCookie\s*\(\s*["''](a|utm_term|affiliate|referral|partner)["'']'
+
+  - id: trading-order-controls-clicked-by-extension
+    desc: Clicks trading order buttons
+    crit: suspicious
+    conf: 0.96
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '(?is)\.btn-(put|call)[\s\S]{0,120}\.click\s*\('
+
+  - id: install-removal-utm-promo-url
+    desc: Install or removal UTM promo URL
+    crit: notable
+    conf: 0.92
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '(?i)utm_(source|medium|campaign|content)=(install|uninstall|remove)'
+
 composite_rules:
+  - id: extension-redirect-shortener-host
+    desc: Uses a short-link redirect service
+    crit: suspicious
+    conf: 0.92
+    for: [javascript, typescript]
+    near_bytes: 160
+    all:
+      - id: redirect-location-assignment
+    any:
+      - id: youlink-shortener-host
+      - id: cuttly-shortener-host
+      - id: bitly-shortener-host
+      - id: tinyurl-shortener-host
+
+  - id: delayed-storage-latched-page-redirect
+    desc: Delayed storage-gated page redirect
+    crit: suspicious
+    conf: 0.97
+    for: [javascript, typescript]
+    near_bytes: 2200
+    all:
+      - id: delayed-redirect-timer
+      - id: redirect-storage-read
+      - id: redirect-storage-write
+      - id: remote-page-location-assignment
+
+  - id: all-sites-delayed-shortener-redirect
+    desc: Extension delays then forcibly redirects pages through a shortener
+    crit: hostile
+    conf: 0.99
+    attack: T1176,T1185,T1566
+    scope: archive
+    all:
+      - id: delayed-storage-latched-page-redirect
+      - id: extension-redirect-shortener-host
+      - id: metadata/permission/host::broad-content-script-matches
+
+  - id: extension-shortener-referral-cookie-hijack
+    desc: Extension routes all-site browsing through a referral shortener
+    crit: hostile
+    conf: 0.99
+    attack: T1176,T1185,T1497
+    scope: archive
+    all:
+      - id: extension-redirect-shortener-host
+      - id: referral-cookie-write
+      - id: metadata/permission/host::broad-content-script-matches
+
+  - id: extension-trading-order-automation
+    desc: Extension automates trading orders on matched pages
+    crit: suspicious
+    conf: 0.96
+    attack: T1176,T1491
+    scope: archive
+    all:
+      - id: trading-order-controls-clicked-by-extension
+      - id: metadata/package/description/vertical::description-trading
+
+  - id: extension-install-and-removal-promo-tracking
+    desc: Extension opens tracked promotional pages on install and removal
+    crit: suspicious
+    conf: 0.92
+    attack: T1176
+    scope: archive
+    for: [crx, xpi, zip, javascript, json, chrome-manifest]
+    all:
+      - id: micro-behaviors/browser-extension/lifecycle::chrome-runtime-on-installed
+      - id: micro-behaviors/browser-extension/lifecycle::runtime-set-uninstall-url
+      - id: micro-behaviors/browser-extension/tabs::chrome-tabs-create-with-url-option
+    any:
+      - id: objectives/supply-chain/hidden-payload/extensions/affiliate::extension-affiliate-tracking-parameter
+      - id: install-removal-utm-promo-url
+
   # Rewriting the host of a *top-level navigation* through declarativeNetRequest
   # means the user can type or click one domain and be served by another, with
   # no redirect step visible in the address bar and no code running in the page.

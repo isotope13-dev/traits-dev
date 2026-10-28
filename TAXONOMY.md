@@ -427,7 +427,7 @@ processes to `process`.
 | `communications/socket/{create,connect,bind,listen,accept,send,receive,close,configure}` | Lifecycle and I/O. An operation beats a transport-only fact (`tcp`, `udp`); `dial`, `wrapper-connect` and `state-connect` are not operations. Hand-built HTTP over a socket is `http/direct-socket`. |
 | `communications/tls/{initialize,verify}` | TLS apart from the application protocol: setup; peer verification (`verify/callback`; `verify/disable` only for explicit disabling). Setup is not a connection; a callback or suppressed warning does not disable verification. |
 | `communications/ip/{literal,parse,construct}` | Address syntax, including private ranges and defanged notation. Address text proves no connection. |
-| `communications/url/{parse,construction,host,scheme,path,query}` | Generic URL structure and endpoints. Under `host`, `name` is for hostname identity or syntax independent of a callback role (domain/provider labels, suffixes, dynamic-DNS names, IDN form); `oob` is for recognized out-of-band callback services and callback-specific host patterns. When a host is known for its callback role, use `oob`, not `name`. Endpoint recognition alone does not establish contact, exfiltration, or hostile intent; behavior with an established transfer belongs under `objectives/exfiltration/oob`. HTTP-specific URL facts stay in `http/url`; request parameters are `http/query`. A Wayback URL targets the archive, not its inner path. |
+| `communications/url/{parse,construction,host,scheme,path,query,user-info}` | Generic URL structure and endpoints. Under `host`, `name` is for hostname identity or syntax independent of a callback role (domain/provider labels, suffixes, dynamic-DNS names, IDN form); `oob` is for recognized out-of-band callback services and callback-specific host patterns. When a host is known for its callback role, use `oob`, not `name`. Endpoint recognition alone does not establish contact, exfiltration, or hostile intent; behavior with an established transfer belongs under `objectives/exfiltration/oob`. `user-info` records the authority text before `@`, including hostname-shaped credentials; the destination hostname after `@` belongs under `host`. Neither establishes authentication or contact. HTTP-specific URL facts stay in `http/url`; request parameters are `http/query`. A Wayback URL targets the archive, not its inner path. |
 | `communications/ipc/<mechanism>` | Local channels: pipes, named pipes, Unix sockets, D-Bus, XPC, Binder, native-messaging hosts. Descriptor duplication is `process/fd`; shared-memory allocation is `mem`. IRC is a network protocol: `communications/irc` (*legacy: `ipc/irc`*). |
 | `communications/messaging` | Send verbs shared across chat platforms. The platform's host is `http/services/<platform>`. |
 | `communications/{proxy,capture,transfer,benchmark,flood}` | Relays (`proxy/socks` for SOCKS, `tunnel` to build an encapsulated channel, `relay` to forward over one), packet capture, protocol-neutral send wording, throughput tests, repeated sends. Attack traffic is an impact claim. |
@@ -612,6 +612,16 @@ must not be copied into several children. The placement inventory and unchanged
 definition checks are recorded in
 `taxonomy-migration/batches/stranded-target-functions/`.
 
+Stream identifier names alone are source naming properties. A `stream_handler`
+symbol reference belongs in `metadata/lang/source/naming/function`; a bare
+`stream_stop` token belongs in `metadata/lang/source/naming/action`. Neither
+establishes stream handling or shutdown. The direct stream catalog review
+retains its read, write and relay observations while relocating these names;
+their matchers, effective scopes and criticalities stay unchanged, and exact
+consumers follow the moved observations. A bound shell/FIFO/Netcat feedback
+loop remains a stream capability, with its declared FIFO under `fs/pipe` and
+the reverse-shell result under `objectives/command-and-control/reverse-shell`.
+
 `process/interpreter/eval/` answers one question: **how does supplied code begin
 executing inside an existing interpreter?** Admission requires execution, not a
 compiler name, source-shaped string, constructor reference, or code object that
@@ -740,6 +750,30 @@ distinguishes it.
   exfiltration; cross-host installation → lateral movement; higher-authority
   execution → privilege escalation; durable reactivation → persistence; else
   payload activation. Unrelated outcomes are separate composites.
+
+Allocator-log exploitation belongs in
+`privilege-escalation/exploit/allocator-logging` when required evidence targets
+a privileged file or embeds a privileged command in allocator settings. A
+`MallocLogFile` assignment targeting `/etc/crontab`, a root sudoers cron command
+embedded in `MallocStackLoggingDirectory`, and their bound handoff to `rsh`
+belong here. Ordinary allocator logging configuration does not: it stays a
+neutral runtime configuration observation. The allocator mechanism owns this
+exploit, rather than the cron carrier or the generic `vulnerabilities` catalog.
+The handoff rule must bind the malicious settings to the launched process;
+unrelated logging settings beside an `rsh` call do not establish that link.
+
+A crack attribution tuple belongs with licensing-bypass evidence under
+`evasion/security-bypass/licensing`; it does not identify a recognized software
+family. The tuple requiring `PaddleAPICheck`, `paddle`, and `K'ed by TNT` in one
+constant span fits here. A bare license-check API identifier does not establish
+a bypass or product identity.
+
+Default-credential spraying requires repeated authentication against the
+loop-selected remote targets. An unrelated loop, or a loop that repeatedly
+connects to one fixed host, does not establish a multi-host spray. Bind the
+session receiving the default credentials to the selected target. Likewise,
+commented PE editing examples cannot supply an active shellcode assignment;
+the Go shellcode-insertion role requires a parsed assignment.
 
 ### Command and control
 

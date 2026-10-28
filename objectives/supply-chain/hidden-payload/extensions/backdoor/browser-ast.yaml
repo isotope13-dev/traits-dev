@@ -32,6 +32,32 @@ traits:
       type: text
       regex: 'mode\s*===\s*2[\s\S]{0,320}(url|link)'
 
+# Separate the remote policy fetch, decode, and persistence evidence. Their
+# proximity supports a suspicious policy-cache finding without a wide regex.
+- id: remote-navigation-json-fetch
+  desc: Fetches a remote JSON document
+  crit: notable
+  conf: 0.95
+  if:
+    type: text
+    regex: '(?is)fetch\s*\([^)]{0,240}\)[\s\S]{0,100}\.json\s*\('
+
+- id: remote-navigation-base64-decode
+  desc: Decodes a remote navigation value
+  crit: notable
+  conf: 0.95
+  if:
+    type: text
+    regex: '(?is)(payload|tags)\.map[\s\S]{0,120}atob\s*\('
+
+- id: remote-navigation-storage-cache
+  desc: Stores remote policy in extension storage
+  crit: notable
+  conf: 0.95
+  if:
+    type: text
+    regex: 'chrome\.storage\.(session|local)\.set'
+
 - id: extension-local-storage-arm-flag-set
   desc: Extension sets local storage arm latch flag
   crit: notable
@@ -73,6 +99,28 @@ traits:
 # "Upgrade with npm i -g ..." hint, changelog and docs page, labelling them
 # extension-backdoor evidence; DNR rules name the header as a string literal.
 composite_rules:
+- id: remote-navigation-policy-decode-cache
+  desc: Fetches, decodes, and caches remote policy
+  crit: suspicious
+  conf: 0.97
+  near_bytes: 2200
+  all:
+  - id: remote-navigation-json-fetch
+  - id: remote-navigation-base64-decode
+  - id: remote-navigation-storage-cache
+
+- id: decoded-config-gates-tab-redirect
+  desc: Decoded remote host rules redirect a matching tab
+  crit: hostile
+  conf: 0.99
+  attack: T1176,T1185,T1105
+  near_bytes: 2200
+  all:
+  - id: remote-navigation-policy-decode-cache
+  - id: micro-behaviors/browser-extension/tabs::chrome-tabs-on-updated
+  - id: micro-behaviors/browser-extension/tabs::chrome-tabs-update-with-url
+  - id: micro-behaviors/communications/http/url/domain::js-remote-host-url
+
 - id: extension-history-http-exfil
   desc: Extension uploads browser history on startup
   crit: hostile
@@ -198,6 +246,22 @@ composite_rules:
   - id: micro-behaviors/communications/http/request/client::js-fetch-call
   - id: micro-behaviors/ui/window/dom/render::browser-innerhtml-object-field
   - id: micro-behaviors/communications/http/url/endpoint::user-info-endpoint
+
+# Extension pages can use remotely supplied JSON as HTML. This is weaker than
+# a direct remote-script loader, but gives the API operator control over markup
+# rendered in the extension origin and should be reviewed for unsafe sinks.
+- id: extension-renders-remote-json-html
+  desc: Extension renders HTML from a remote JSON response
+  crit: suspicious
+  conf: 0.94
+  for: [crx, xpi, javascript]
+  scope: archive
+  near_bytes: 4096
+  all:
+  - id: micro-behaviors/communications/http/request/client::js-fetch-call
+  - id: micro-behaviors/communications/http/client/response-body::response-json-no-argument-call
+  - id: micro-behaviors/ui/window/dom/render::browser-innerhtml-object-field
+  - id: micro-behaviors/browser-extension/lifecycle::chrome-runtime-api
 
 # Saved logins are a separate browser credential store; extension-owned
 # storage upload alone is recorded as a neutral HTTP capability.

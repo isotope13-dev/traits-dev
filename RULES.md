@@ -659,6 +659,17 @@ when the projection genuinely doesn't carry what you need.
 | Detect any call from a known dangerous family | `type: symbol regex: '^(eval\|exec\|system\|assert)$'` | Symbol regex with anchors stays tight. |
 | Match a structural shape the projection can't express (loop containing call inside try) | `type: tree-sitter query: "(call_expression ...)"` | Full S-expression query; omit `kind` and `node` — [tree-sitter docs](https://tree-sitter.github.io/tree-sitter/using-parsers#pattern-matching-with-queries). |
 
+For statement adjacency that should survive intervening comments, a `query`
+can set `(#set! cleave.ignore-comments "true")`. This setting applies to the
+entire query, including its other patterns. Cleave masks only parser-recognized
+extra nodes named `comment`, `line_comment`, or `block_comment`, then reparses
+with the same grammar. Byte positions and CR/LF are preserved; string contents
+are untouched. Text predicates and evidence still read the original source,
+so a capture spanning comments includes those comments. The view is cached
+per file and shares the query's existing CPU, byte, deadline, and cancellation
+limits. A failed or interrupted view produces no match and is not cached.
+Queries without the setting continue to use the original tree.
+
 **`arg:` filter shape** (used inside `type: symbol, kind: call`):
 
 ```yaml

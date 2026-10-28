@@ -19,6 +19,20 @@ traits:
       path: chrome_settings_overrides.search_provider.search_url
       regex: 'https?://[^"''\s]+([?&](q|query|kw|p)=\{searchTerms\}|/search/\{searchTerms\})'
       case_insensitive: true
+  # The browser grants a custom provider the user's typed omnibox queries.
+  # Non-mainstream endpoints can be legitimate niche engines, so this is a
+  # review signal rather than a hijack verdict on its own.
+  - id: custom-default-search-endpoint
+    desc: Default search uses a custom host
+    crit: suspicious
+    conf: 0.9
+    for: [json, chrome-manifest]
+    if:
+      type: value
+      path: chrome_settings_overrides.search_provider.search_url
+      regex: '(?i)^https?://[^/]+/[^\"'']*[?&](q|query|kw|p)=\{searchTerms\}'
+    not:
+        - regex: '(?i)^https?://([^/]+\.)?(google|bing|yahoo|duckduckgo|brave|startpage|ecosia|baidu|yandex)\.[^/]+/'
   # Matches a search word in the provider host or in the `{searchTerms}`
   # template itself, so this alone does not establish a branded hijack host;
   # composites supply the monetization and messaging evidence.
@@ -87,7 +101,96 @@ traits:
       regex: '\.html?([?#]|$)'
       case_insensitive: true
 
+  - id: serp-safe-status-label
+    desc: Marks a destination as safe
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'dataset\.[\w$]*Status\s*=\s*.safe'
+
+  - id: serp-affiliate-label
+    desc: Labels an affiliate link
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: text
+      substr: Affiliate Link
+
 composite_rules:
+  # A declared default provider hands every omnibox query to an extension's
+  # own endpoint. Preserve the consented alternate-engine use case as
+  # suspicious; campaign context and response behavior raise severity.
+  - id: extension-default-search-to-custom-endpoint
+    desc: Extension routes omnibox searches to a custom provider
+    crit: suspicious
+    conf: 0.92
+    attack: T1176
+    scope: archive
+    for: [crx, xpi, zip, chrome-manifest, json]
+    all:
+      - id: metadata/permission/manifest::extension-default-search-provider
+      - id: custom-default-search-endpoint
+
+  - id: serp-result-links-uploaded-and-rewritten
+    desc: Search-page collection and URL replacement
+    crit: suspicious
+    conf: 0.98
+    # These operations must occur together in a content script. An archive
+    # can otherwise combine a navigation menu, fetch utility and billing page.
+    scope: file
+    near_bytes: 12000
+    for: [javascript, typescript]
+    all:
+      - id: micro-behaviors/data/collection/dom::search-result-link-selector
+      - id: micro-behaviors/communications/http/request/client::http-method-calls
+      - id: micro-behaviors/ui/window/navigation::javascript-href-write
+    any:
+      - id: micro-behaviors/data/serialize/json::url-list-stringify
+      - id: micro-behaviors/communications/http/request/body::url-list-form-field
+
+  - id: search-result-redirect-marked-as-safe
+    desc: Rewritten result claims safe status
+    crit: suspicious
+    conf: 0.96
+    scope: archive
+    for: [crx, xpi, zip, javascript, typescript]
+    near_bytes: 900
+    all:
+      - id: micro-behaviors/ui/window/navigation::javascript-href-write
+    any:
+      - id: serp-safe-status-label
+      - id: serp-affiliate-label
+  # A service-controlled replacement URL applied to search results, presented
+  # to users as a verified safe destination, is a deceptive traffic diversion.
+  - id: extension-search-results-service-redirect
+    desc: Rewrites search-result links from a remote service
+    crit: suspicious
+    conf: 0.95
+    attack: T1176,T1185,T1036
+    scope: archive
+    for: [crx, xpi, zip, javascript, typescript]
+    all:
+      - id: serp-result-links-uploaded-and-rewritten
+      - id: search-result-redirect-marked-as-safe
+
+  # Remote tab routing from decoded JSON policy is an active browser hijack.
+  # The decode/cache behavior and navigation behavior are separate evidence;
+  # this rule intentionally does not claim browsing-data exfiltration.
+  - id: remote-host-policy-navigation-hijack
+    desc: Remote host policy silently redirects matching browser tabs
+    crit: hostile
+    conf: 0.99
+    attack: T1176,T1185,T1105
+    scope: archive
+    for: [crx, xpi, zip, javascript, typescript]
+    all:
+      - id: objectives/supply-chain/hidden-payload/extensions/backdoor::remote-navigation-policy-decode-cache
+      - id: micro-behaviors/browser-extension/tabs::chrome-tabs-on-updated
+      - id: micro-behaviors/browser-extension/tabs::chrome-tabs-update-with-url
+
   # The provider grant plus a destination that only forwards. Either alone is
   # ordinary -- extensions may set a search engine, and redirectors exist --
   # but an extension that takes the default-search grant and spends it on a
