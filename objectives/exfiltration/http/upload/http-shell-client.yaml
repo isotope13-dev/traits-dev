@@ -1,0 +1,85 @@
+# Both clients accept an operator-selected local path, encode its bytes, and
+# POST chunks to the HTTP controller. This proves a file-transfer path, not
+# which files an operator selects.
+defaults:
+  crit: notable
+  conf: 0.98
+  attack: T1041
+  platforms: [unix, windows]
+
+traits:
+  - id: http-shell-download-task
+    desc: Controller task selects a local file
+    crit: suspicious
+    for: [powershell, shell]
+    if:
+      type: text
+      regex: '(\$invoke64 -like "download\*"|\[\[ \$invoke64 == download\* \]\])'
+
+  - id: http-shell-file-encode
+    desc: Encodes a task-selected local file
+    crit: suspicious
+    for: [powershell, shell]
+    if:
+      type: text
+      substr: 'R64Encoder -f "$file_path"'
+
+  - id: powershell-http-shell-chunk-file-content
+    desc: Splits encoded file content into chunks
+    crit: suspicious
+    for: [powershell]
+    if:
+      type: text
+      substr: '$file_content.Substring($offset, $count)'
+
+  - id: powershell-http-shell-file-chunk-post
+    desc: Posts file chunks to the controller
+    crit: suspicious
+    for: [powershell]
+    if:
+      type: text
+      substr: 'Send-HttpRequest "$server/api/v1/Client/UploadChunk" "POST" "Chunk:${chunk_index}:${is_last}:${chunk_payload}"'
+
+  - id: shell-http-shell-chunk-file-content
+    desc: Reads encoded file content in chunks
+    crit: suspicious
+    for: [shell]
+    platforms: [unix]
+    if:
+      type: text
+      substr: 'dd if="$tmpfile" bs="$chunk_size" skip="$chunk_index"'
+
+  - id: shell-http-shell-file-chunk-post
+    desc: Posts file chunks to the controller
+    crit: suspicious
+    for: [shell]
+    platforms: [unix]
+    if:
+      type: text
+      regex: '/Client/UploadChunk"[^\r\n]{0,50}-d "Chunk:\$chunk_index'
+
+composite_rules:
+  - id: powershell-http-controller-file-upload
+    desc: Uploads a controller-selected file over HTTP
+    crit: hostile
+    conf: 0.99
+    for: [powershell]
+    all:
+      - id: http-shell-download-task
+      - id: http-shell-file-encode
+      - id: powershell-http-shell-chunk-file-content
+      - id: powershell-http-shell-file-chunk-post
+    near_lines: 40
+
+  - id: shell-http-controller-file-upload
+    desc: Uploads a controller-selected file over HTTP
+    crit: hostile
+    conf: 0.99
+    for: [shell]
+    platforms: [unix]
+    all:
+      - id: http-shell-download-task
+      - id: http-shell-file-encode
+      - id: shell-http-shell-chunk-file-content
+      - id: shell-http-shell-file-chunk-post
+    near_lines: 40

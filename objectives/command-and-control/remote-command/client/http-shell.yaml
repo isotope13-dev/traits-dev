@@ -1,0 +1,177 @@
+# These clients poll an HTTP controller, execute its shell task, and return the
+# output. Separate request, execution, and result markers are joined within one
+# compact region so generic network and eval APIs cannot convict alone.
+defaults:
+  platforms: [unix, windows]
+  attack: T1059,T1071.001
+  mbc: B0030
+
+traits:
+  - id: powershell-controller-token-request
+    desc: Requests an HTTP shell task token
+    crit: suspicious
+    conf: 0.98
+    for: [powershell]
+    if:
+      type: text
+      substr: 'Send-HttpRequest "$server/api/v1/Client/Token" "GET"'
+
+  - id: powershell-token-decode
+    desc: Decodes the returned HTTP task token
+    crit: suspicious
+    conf: 0.98
+    for: [powershell]
+    if:
+      type: text
+      substr: 'R64Decoder -t ($token.Split(" ")[-1])'
+
+  - id: powershell-task-eval
+    desc: Evaluates the decoded HTTP shell task
+    crit: suspicious
+    conf: 0.98
+    for: [powershell]
+    if:
+      type: text
+      substr: 'pwn ("$invoke64'
+
+  - id: powershell-output-encode
+    desc: Encodes command output for HTTP return
+    crit: suspicious
+    conf: 0.98
+    for: [powershell]
+    if:
+      type: text
+      substr: 'R64Encoder -t $commandx'
+
+  - id: powershell-output-post
+    desc: Posts output to the HTTP shell controller
+    crit: suspicious
+    conf: 0.98
+    for: [powershell]
+    if:
+      type: text
+      substr: 'Send-HttpRequest "$server/api/v1/Client/$path" "POST" "$param`: $output64"'
+
+  - id: powershell-import-task
+    desc: Selects a remote PowerShell script import
+    crit: suspicious
+    conf: 0.98
+    for: [powershell]
+    if:
+      type: text
+      substr: '$invoke64 -like "import-ps1*"'
+
+  - id: powershell-import-script-fetch
+    desc: Fetches script chunks from the controller
+    crit: suspicious
+    conf: 0.98
+    for: [powershell]
+    if:
+      type: text
+      substr: '"$server/api/v1/Client/Update?index=$chunk_index" "GET"'
+
+  - id: powershell-import-script-decode
+    desc: Decodes fetched bytes into script text
+    crit: suspicious
+    conf: 0.98
+    for: [powershell]
+    if:
+      type: text
+      substr: '[System.Text.Encoding]::UTF8.GetString($script_bytes)'
+
+  - id: powershell-import-script-eval
+    desc: Evaluates script text received over HTTP
+    crit: suspicious
+    conf: 0.98
+    for: [powershell]
+    if:
+      type: text
+      substr: 'pwn ($script_text)'
+
+  - id: shell-controller-token-request
+    desc: Requests an HTTP shell task token
+    crit: suspicious
+    conf: 0.98
+    for: [shell]
+    if:
+      type: text
+      substr: '"$server/api/v1/Client/Token"'
+
+  - id: shell-token-decode
+    desc: Decodes the returned HTTP task token
+    crit: suspicious
+    conf: 0.98
+    for: [shell]
+    if:
+      type: text
+      substr: 'R64Decoder -t "$token"'
+
+  - id: shell-task-eval
+    desc: Evaluates the decoded HTTP shell task
+    crit: suspicious
+    conf: 0.98
+    for: [shell]
+    if:
+      type: text
+      substr: 'eval "$invoke64"'
+
+  - id: shell-output-encode
+    desc: Encodes command output for HTTP return
+    crit: suspicious
+    conf: 0.98
+    for: [shell]
+    if:
+      type: text
+      substr: 'R64Encoder -t "$commandx"'
+
+  - id: shell-output-post
+    desc: Posts output to the HTTP shell controller
+    crit: suspicious
+    conf: 0.98
+    for: [shell]
+    if:
+      type: text
+      regex: 'curl[^\r\n]{0,200}/api/v1/Client/\$path[^\r\n]{0,100}-d "\$param: \$output64"'
+
+composite_rules:
+  - id: powershell-http-reverse-shell-agent
+    desc: Executes PowerShell HTTP tasks and returns output
+    crit: hostile
+    conf: 0.99
+    for: [powershell]
+    scope: file
+    near_lines: 150
+    all:
+      - id: powershell-controller-token-request
+      - id: powershell-token-decode
+      - id: powershell-task-eval
+      - id: powershell-output-encode
+      - id: powershell-output-post
+
+  - id: powershell-http-imported-script-execution
+    desc: Executes a script fetched from the HTTP controller
+    crit: hostile
+    conf: 0.99
+    for: [powershell]
+    scope: file
+    near_lines: 40
+    all:
+      - id: powershell-import-task
+      - id: powershell-import-script-fetch
+      - id: powershell-import-script-decode
+      - id: powershell-import-script-eval
+
+  - id: shell-http-reverse-shell-agent
+    desc: Executes shell HTTP tasks and returns output
+    crit: hostile
+    conf: 0.99
+    for: [shell]
+    platforms: [unix]
+    scope: file
+    near_lines: 150
+    all:
+      - id: shell-controller-token-request
+      - id: shell-token-decode
+      - id: shell-task-eval
+      - id: shell-output-encode
+      - id: shell-output-post
