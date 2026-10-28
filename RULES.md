@@ -122,9 +122,11 @@ See [Matcher Defines Identity](TAXONOMY.md#matcher-defines-identity) in TAXONOMY
   [directory placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
 - **100 rules is the default validator budget and directory review trigger
   across all its YAML files, not an automatic split point.** First check that
-  every rule is accurate, at the right level, and nonduplicative. A larger leaf needs an exact-path reviewed
-  budget enforced by Cleave; do not raise a global limit or split by language,
-  backend, or rule form. Define each child's boundary and a home for the
+  every rule is accurate, at the right level, and nonduplicative. Do not change
+  the cap without asking. A larger leaf requires a complete relevance audit and
+  explicit user approval before adding an exact-path exception enforced by
+  Cleave. Do not split by language or platform merely to meet the cap.
+  Define each child's boundary and a home for the
   broadest observation before splitting; do not add an `other` bucket. Follow
   the official [placement procedure](TAXONOMY.md#placement-procedure).
 - IDs auto-prefixed by directory path (e.g., `traits/micro-behaviors/process/create/shell/` → prefix `micro-behaviors/process/create/shell`)
@@ -1718,9 +1720,13 @@ remove misplaced or duplicate rules, and define any necessary semantic
 refinement before moving rules. See [Directory budgets and placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
 Depth above five directory levels below the tier produces a soft validation
 warning, not a hard limit; count neither the tier nor the filename. Sibling
-groups below 35 combined rules also produce soft warnings under the criteria in
-[Directory budgets and placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts)
-alongside the required sibling audit and the separate ML feature visibility limit.
+parents with ten or more child directories averaging eight or fewer rules
+per child produce a soft validation warning under the criteria in
+[Directory budgets and placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
+The notice reports child count, total rules, and average rules per child; it is
+a review prompt, not an instruction to merge distinct techniques. Since soft
+validation warnings fail strict repository validation, resolve each reported
+parent or revise the contract when the warning is unsound.
 A directory with more than 150 immediate subdirectories is a hard validation
 error; split broad catalogs by a stable function with a clear tiebreaker.
 

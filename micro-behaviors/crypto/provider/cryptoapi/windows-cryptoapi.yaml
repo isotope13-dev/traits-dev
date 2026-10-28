@@ -1,0 +1,156 @@
+# Cryptographic context management - Windows CryptoAPI
+# Neutral provider, hashing, key, and buffer-cryptography capabilities.
+defaults:
+  crit: notable
+  for: [pe, dll]
+  platforms: [windows]
+traits:
+  - id: crypt-derive-key
+    desc: Derive symmetric key from hash
+    conf: 0.9
+    if:
+      type: symbol
+      exact: "CryptDeriveKey"
+    unless:
+      - id: metadata/binary/symbols/count::many-exports-100
+  - id: crypt-import-key
+    for: [pe, dll, c, cpp]
+    desc: Import encrypted key material
+    conf: 0.88
+    if:
+      type: symbol
+      exact: "CryptImportKey"
+  - id: crypt-verify-signature
+    desc: Verify signature with CryptoAPI
+    conf: 0.9
+    if:
+      type: symbol
+      exact: "CryptVerifySignatureW"
+  - id: crypt-encrypt
+    desc: Encrypt buffer with CryptoAPI
+    conf: 0.9
+    for: [pe, dll, c, cpp]
+    if:
+      type: symbol
+      exact: "CryptEncrypt"
+  - id: ncrypt-open-storage-provider
+    desc: Opens a Windows CNG storage provider
+    conf: 0.9
+    for: [binaries, scripts, source]
+    if:
+      type: text
+      substr: NCryptOpenStorageProvider
+    unless:
+      - id: well-known/app/communication/telegram::telegram-desktop-signed-client-context
+  - id: ncrypt-open-key
+    desc: References the NCryptOpenKey CNG API
+    conf: 0.9
+    for: [binaries, scripts, source]
+    if:
+      type: text
+      substr: NCryptOpenKey
+  # Importing a key blob and signing with it are the two halves of reusing a
+  # previously exported CNG/TPM key: NCryptImportKey rehydrates the opaque blob,
+  # NCryptSignHash produces a signature under it. Neutral primitives on their own
+  # (Chrome reloads its own device key this way); the passkey composites pair them
+  # with the enclave state to catch attacker reuse of a stolen wrapped key.
+  - id: ncrypt-import-key
+    desc: Imports a Windows CNG key blob
+    conf: 0.9
+    for: [binaries, scripts, source]
+    if:
+      type: text
+      substr: NCryptImportKey
+  - id: ncrypt-sign-hash
+    desc: Signs a hash with a CNG key
+    conf: 0.9
+    for: [binaries, scripts, source]
+    if:
+      type: text
+      substr: NCryptSignHash
+  - id: ncrypt-export-key
+    desc: Exports a Windows CNG key blob
+    conf: 0.9
+    for: [binaries, scripts, source]
+    if:
+      type: text
+      substr: NCryptExportKey
+  - id: passport-key-storage-provider
+    desc: Uses Microsoft Passport key storage provider
+    conf: 0.95
+    for: [binaries, scripts, source]
+    if:
+      type: text
+      regex: '(?i)Microsoft\s+Passport\s+Key\s+Storage\s+Provider'
+  - id: ncrypt-opaque-key-blob
+    desc: Names a CNG opaque key blob type
+    conf: 0.85
+    for: [binaries, scripts, source]
+    if:
+      type: text
+      regex: '(?i)opaque[_ ]?key[_ ]?blob'
+  - id: ncrypt-silent-flag
+    desc: Passes the CNG silent (no-prompt) flag
+    conf: 0.85
+    for: [binaries, scripts, source]
+    if:
+      type: text
+      substr: NCRYPT_SILENT_FLAG
+composite_rules:
+  # API co-occurrence does not bind a key handle or establish call ordering.
+  # Objective consumers provide the targeted key-store context separately.
+  - id: cng-import-sign-api-profile
+    desc: CNG key import and hash-signing API references
+    conf: 0.92
+    for: [binaries, scripts, source]
+    all:
+      - id: ncrypt-import-key
+      - id: ncrypt-sign-hash
+    downgrade:
+      any:
+        - id: metadata/signed/platform/
+  - id: cng-opaque-blob-silent-api-profile
+    desc: CNG import/sign APIs with opaque blob or silent flag
+    conf: 0.92
+    for: [pe, dll, c, cpp, csharp, rust, go, python]
+    all:
+      - id: cng-import-sign-api-profile
+    any:
+      - id: ncrypt-opaque-key-blob
+      - id: ncrypt-silent-flag
+  - id: capi-key-material-setup
+    desc: CryptoAPI key setup from derived or imported material
+    conf: 0.88
+    all:
+      - id: micro-behaviors/crypto/provider/cryptoapi::crypt-acquire-context
+    any:
+      - id: crypt-derive-key
+      - id: crypt-import-key
+    unless:
+      - id: crypt-verify-signature
+  - id: capi-buffer-crypto-operations
+    desc: CryptoAPI buffer encrypt decrypt operations
+    conf: 0.9
+    any:
+      - id: crypt-encrypt
+      - id: micro-behaviors/crypto/decrypt::crypt-decrypt
+  - id: capi-keyed-buffer-crypto-chain
+    desc: CryptoAPI key setup with buffer encryption operations
+    conf: 0.9
+    all:
+      - id: capi-key-material-setup
+      - id: capi-buffer-crypto-operations
+    downgrade:
+      any:
+        - id: metadata/signed/platform/
+  - id: capi-hash-buffer-decrypt-chain
+    desc: CryptoAPI hashing and buffer decryption chain
+    conf: 0.94
+    all:
+      - id: micro-behaviors/crypto/provider/cryptoapi::crypt-acquire-context
+      - id: micro-behaviors/crypto/hash/digest/unnamed-algorithm::crypt-create-hash
+      - id: micro-behaviors/crypto/hash/digest/unnamed-algorithm::crypt-hash-data
+      - id: micro-behaviors/crypto/decrypt::crypt-decrypt
+    downgrade:
+      any:
+        - id: metadata/signed/platform/

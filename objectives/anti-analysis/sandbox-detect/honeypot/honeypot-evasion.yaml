@@ -91,6 +91,32 @@ traits:
       # Scanner issues this over the SSH session after auth.
       regex: 'cat\s+/proc/version\b.{0,80}/proc/1/cmdline'
 
+  - id: cowrie-etc-config-path
+    desc: Cowrie honeypot /etc configuration path
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      substr: /etc/cowrie/
+
+  - id: dionaea-run-pid-file
+    desc: Dionaea honeypot runtime pid file path
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '/(var/)?run/dionaea(\.pid|/)'
+
+  - id: sandbox-detected-fake-crash-message
+    desc: Logs a staged crash after sandbox detection
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: text
+      # Debug builds announce the decoy: "identified as sandbox/honeypot,
+      # initiating fake crash". The process then idles or dies on purpose.
+      regex: '(?i)(sandbox|honeypot)[^\n]{0,48}\b(fake|simulated|decoy) (crash|segfault)'
+
 composite_rules:
   - id: ssh-honeypot-filesystem-probe
     desc: Probes Cowrie/Kippo honeypot filesystem paths
@@ -114,7 +140,7 @@ composite_rules:
     needs: 2
 
   - id: iot-honeypot-install-path-cluster
-    desc: Multiple IoT analysis honeypot install paths
+    desc: Multiple analysis-honeypot host artifact paths
     crit: suspicious
     conf: 0.96
     needs: 3
@@ -124,6 +150,8 @@ composite_rules:
       - id: kippo-home-path
       - id: kippo-opt-install-path
       - id: dionaea-opt-install-path
+      - id: dionaea-run-pid-file
+      - id: cowrie-etc-config-path
       - id: cuckoo-opt-install-path
 
   - id: ssh-scanner-honeypot-evasion
@@ -138,3 +166,34 @@ composite_rules:
       - id: post-login-proc-version-probe
       - id: objectives/lateral-movement/brute-force/ssh::embedded-ssh-credential-set
       - id: objectives/command-and-control/remote-command/task-schema::bot-verb-ssh-group
+
+  - id: honeypot-and-vm-gated-fake-crash
+    desc: Fakes a crash when honeypot or VM probes hit
+    crit: hostile
+    conf: 0.96
+    attack: T1497.001,T1497.002
+    all:
+      - id: iot-honeypot-install-path-cluster
+      - id: sandbox-detected-fake-crash-message
+    any:
+      - id: objectives/anti-analysis/vm-detect/dmi::dmi-vm-fingerprint
+      - id: objectives/anti-analysis/vm-detect/vendor::vendor-vbox
+      - id: micro-behaviors/process/debug/tool-markers::unix-analysis-tool-lexicon-raw
+
+  # Release builds drop the "fake crash" log line; the probe set itself is the
+  # signal. Cowrie and Dionaea are research honeypots: only code that wants
+  # to avoid being observed by them looks for their files on the local host,
+  # and this composite also requires VM fingerprinting and a list of
+  # sniffer/tracer process names.
+  - id: honeypot-vm-and-sniffer-probe-set
+    desc: Probes for honeypots, VMs and packet sniffers
+    crit: hostile
+    conf: 0.94
+    platforms: [linux]
+    for: [elf]
+    all:
+      - id: iot-honeypot-install-path-cluster
+      - id: micro-behaviors/process/debug/tool-markers::unix-analysis-tool-lexicon-raw
+    any:
+      - id: objectives/anti-analysis/vm-detect/dmi::dmi-vm-fingerprint
+      - id: objectives/anti-analysis/vm-detect/vendor::vendor-vbox
