@@ -670,7 +670,16 @@ arg:
   substr: "evil"     # substring on string/template values
   exact: "..."       # exact value match
   name: "BACKDOOR_PORT"  # identifier name (kind=identifier)
+  is: external_ip    # validator on the argument's own text (see `is` above)
 ```
+
+`is:` takes the same validators as text conditions (`external_ip`,
+`valid_ip`, `bitcoin_addr`, `base64`, `random_like`) and checks the argument's
+literal text: a string or template value, or an identifier's name. Shell words
+such as a curl URL are recorded as identifiers, so `curl http://<ip>/x` and
+Python `requests.get("http://<ip>/x")` both qualify. Because the text comes from
+a parsed call, a commented-out command never matches; prefer it to a text
+regex plus proximity when the claim is "this call targets that address".
 
 The filter matches if **at least one** arg in the call's arg list satisfies all
 specified fields. `kind: number, value: 511, radix: 8` matches `chmod(_,
