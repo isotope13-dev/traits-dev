@@ -791,12 +791,24 @@ itself a call.
 
 If you're ever in doubt about what a node's text is, run `cleave test-match <file> --type ast --kind <kind> --pattern <something-permissive>` and inspect the captured evidence.
 
-**Tree-sitter queries need captures.** The evaluator counts captured nodes, so a
-structurally valid query without a capture emits no finding. Capture the intended
+**Tree-sitter queries need captures.** A structurally valid query without a bound
+capture emits no finding. Each complete match counts as one occurrence; its
+captures supply the evidence. Capture the intended
 observation, for example `(subscript_expression index: (binary_expression
 operator: "+")) @access`. Use named fields to distinguish the index from the
 object being indexed. Verify a positive example and a nearby negative example
 with `test-rules`; successful query compilation alone does not prove detection.
+
+**Selecting evidence sites.** A query may name its intended source occurrence
+`@evidence`. When that capture exists, only its bound nodes supply evidence
+offsets; other captures still participate in predicates and the capture work
+budget. A pattern that does not bind `@evidence` contributes no occurrence.
+Queries without this capture keep all captured nodes as evidence. Selection is
+per original query, including when queries share a batch. This lets a structural
+query bind supporting values while emitting the exact call site a `near_bytes`
+consumer must join. It does not establish a relationship between different
+calls: both observations must independently bind the claimed values to that
+same emitted site. Each complete match still counts as one occurrence.
 
 ## Count & Density Constraints
 

