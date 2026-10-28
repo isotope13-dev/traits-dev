@@ -68,7 +68,7 @@ EPATCH = "objectives/evasion/anti-av/blinding::index-xor-etw-zero-return-patch"
 PERSIST = "objectives/persistence/login/registry/run-key::extortion-concealed-run-key-self-copy"
 RANSOM = "objectives/impact/ransom/encrypt/bulk-encryption::bcrypt-file-encryption-payment-demand"
 C2 = "objectives/command-and-control/remote-command/tasking::discord-extortion-shell-tasking"
-SCREEN = "objectives/exfiltration/stealer/screen::discord-extortion-screen-upload"
+SCREEN = "objectives/exfiltration/stealer/media::discord-extortion-screen-upload"
 FILE_UPLOAD = "objectives/exfiltration/stealer/file::discord-extortion-file-upload-task"
 GATES = "objectives/anti-analysis/sandbox-detect/timing::x64-uptime-cpu-shared-abort"
 run_path = b"Software\\Microsoft\\Windows\\CurrentVersion\\Run"
@@ -127,9 +127,80 @@ save("no-screen-task-verb", buf, [C2, SCREEN])
 buf = bytearray(original)
 start = original.index(b"!dl\0")
 buf[start:start + 3] = b"!ls"
-save("no-file-retrieval-task-verb", buf, [C2, SCREEN], [FILE_UPLOAD])
+# Renaming the verb leaves its file-read/upload handler reachable.
+save("no-file-retrieval-task-verb", buf, [C2, SCREEN, FILE_UPLOAD])
 
 buf = bytearray(original)
 buf[offset(0x140017099) + 14] ^= 1
 save("different-resource-abort-destination", buf, absent=[GATES])
+# Structural file-task controls. Keep the renamed verb in every case so an
+# obsolete spelling cannot satisfy the file-upload composite instead.
+FILE_READ = "micro-behaviors/communications/http/request/body/file::x64-task-file-read-post-body"
+renamed = bytearray(original)
+pos = original.index(b"!dl\0")
+renamed[pos:pos + 3] = b"!ls"
+
+buf = bytearray(renamed)
+buf[pos:pos + 3] = b"!zz"
+save("file-task-renamed-again", buf, [FILE_READ, FILE_UPLOAD])
+
+buf = bytearray(renamed)
+# Redirect the task's call to the independent shell-output helper. The file
+# reader and its imports remain elsewhere in the same PE.
+struct.pack_into("<i", buf, offset(0x14001408C), 0x140012340 - 0x140014090)
+save("file-task-unrelated-helper", buf, absent=[FILE_READ, FILE_UPLOAD])
+
+buf = bytearray(renamed)
+# Change only the API call target: ReadFile -> CreateFileW.
+struct.pack_into("<i", buf, offset(0x140010C94), 0x14004B268 - 0x140010C98)
+save("file-task-unrelated-read-api", buf, absent=[FILE_READ, FILE_UPLOAD])
+
+buf = bytearray(renamed)
+buf[offset(0x140010C91)] ^= 1  # ReadFile gets a different handle register.
+save("file-task-different-read-handle", buf, absent=[FILE_READ, FILE_UPLOAD])
+
+buf = bytearray(renamed)
+buf[offset(0x140014049)] ^= 1  # Size and text mismatch must skip the same block.
+save("file-task-unrelated-abort", buf, absent=[FILE_READ, FILE_UPLOAD])
+
+
+
+# The file buffer must supply the constructed POST body's argument.
+buf = bytearray(renamed)
+buf[offset(0x140011644)] ^= 1  # RDX receives another source register.
+save("file-task-unrelated-body-buffer", buf, absent=[FILE_READ, FILE_UPLOAD])
+
+buf = bytearray(renamed)
+buf[offset(0x140011AB0)] ^= 8  # Pass a different stack body to the POST helper.
+save("file-task-unrelated-post-body", buf, absent=[FILE_READ, FILE_UPLOAD])
+
+DEPLOY = "micro-behaviors/process/deploy/file-exec::x64-file-writer-success-starts-same-path"
+PAYLOAD = "objectives/execution/payload/file-exec/spawn/native::extortion-task-file-write-launch"
+MASQUERADE = "objectives/evasion/masquerade/version-resource/claim::unsigned-microsoft-extortion-claim"
+save("retained-file-write-launch", bytearray(renamed), [DEPLOY, PAYLOAD, MASQUERADE])
+
+buf = bytearray(renamed)
+buf[offset(0x1400142F3)] ^= 8  # Start another path after the writer returns.
+save("payload-different-launch-path", buf, absent=[DEPLOY, PAYLOAD])
+
+buf = bytearray(renamed)
+buf[offset(0x14001420A)] ^= 1  # Success branch no longer reaches setup/launch.
+save("payload-unrelated-success-branch", buf, absent=[DEPLOY, PAYLOAD])
+
+buf = bytearray(renamed)
+struct.pack_into("<i", buf, offset(0x14001213E), 0x14004B1C8 - 0x140012142)
+save("payload-reader-instead-of-writer", buf, absent=[DEPLOY, PAYLOAD])
+
+buf = bytearray(renamed)
+struct.pack_into("<i", buf, offset(0x140014334), 0x14004B2C8 - 0x140014338)
+save("payload-unrelated-launch-api", buf, absent=[DEPLOY, PAYLOAD])
+
+buf = bytearray(renamed)
+old = "Microsoft Corporation".encode("utf-16le")
+new = "ExampleXX Corporation".encode("utf-16le")
+pos = original.index(old)
+assert len(old) == len(new)
+buf[pos:pos + len(old)] = new
+save("extortion-without-microsoft-claim", buf, [RANSOM], [MASQUERADE])
+
 (output / "cases.json").write_text(json.dumps(cases, indent=2) + "\n")

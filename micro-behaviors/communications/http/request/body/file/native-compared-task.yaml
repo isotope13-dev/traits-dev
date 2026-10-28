@@ -1,0 +1,71 @@
+# Bind a compared task to a file reader, its R13 read buffer to both body
+# append branches, and that body to a helper given the wide POST method.
+# This observes request-body provenance; it does not prove network success.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+traits:
+  - id: x64-task-file-read-post-body
+    desc: File-read buffer feeds POST helper
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_task_file_read_post_body {
+          strings:
+            $dispatch = { 48 83 FB ?? 0F 85 ?? ?? ?? ?? 4C 8B C3 48 8D 15 ?? ?? ?? ?? E8 ?? ?? ?? ?? 85 C0 75 ?? 4C 8D 45 ?? 48 8D 15 ?? ?? ?? ?? 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8B D8 48 8D 55 ?? 48 8D 4D ?? E8 ?? ?? ?? ?? 90 48 8B D3 48 8B C8 E8 ?? ?? ?? ?? }
+            $entry = { 48 8B C4 48 89 58 ?? 48 89 50 ?? 55 56 57 41 54 41 55 41 56 41 57 48 8D A8 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? }
+            $open = { 48 89 5C 24 30 89 5C 24 28 C7 44 24 20 03 00 00 00 45 33 C9 BA 00 00 00 80 41 B8 03 00 00 00 FF 15 ?? ?? ?? ?? 48 8B F0 48 83 F8 FF 0F 84 ?? ?? ?? ?? }
+            $size = { 48 89 5D ?? 48 8D 55 ?? 48 8B C8 FF 15 ?? ?? ?? ?? }
+            $read = { 48 89 5C 24 20 4C 8D 8D ?? ?? ?? ?? 49 8B D5 48 8B CE FF 15 ?? ?? ?? ?? 8B D8 48 8B CE FF 15 ?? ?? ?? ?? 85 DB }
+            $append = { 48 8D 04 31 48 89 44 24 50 48 8D 5C 24 ?? 48 83 FA 0F 48 0F 47 5C 24 ?? 48 03 D9 4C 8B C6 49 8B D5 48 8B CB E8 ?? ?? ?? ?? C6 04 33 00 EB ?? 48 89 74 24 20 4D 8B CD 45 33 C0 48 8B D6 48 8D 4C 24 ?? E8 ?? ?? ?? ?? }
+            $method = { 41 B8 04 00 00 00 48 8D 15 ?? ?? ?? ?? 48 8D 4C 24 ?? E8 ?? ?? ?? ?? }
+            $post = { 4C 8D 4D ?? 4C 8D 44 24 ?? 48 8D 54 24 ?? 48 8D 8D ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 }
+          condition:
+            pe.is_pe and all of them and
+            for any s in pe.sections : (
+              s.name == ".text" and
+              for any d in (1..#dispatch) : (
+                @dispatch[d] >= s.raw_data_offset and
+                @dispatch[d]+!dispatch[d] <= s.raw_data_offset+s.raw_data_size and
+                @dispatch[d]+10+int32(@dispatch[d]+6) == @dispatch[d]+29+int8(@dispatch[d]+28) and
+                @dispatch[d]+29+int8(@dispatch[d]+28) > @dispatch[d]+!dispatch[d] and
+                for any e in (1..#entry) : (
+                  @entry[e] == @dispatch[d]+77+int32(@dispatch[d]+73) and
+                  @entry[e] >= s.raw_data_offset and
+                  for any o in (1..#open) : (
+                    @open[o] > @entry[e] and @open[o] < @entry[e]+160 and
+                    s.virtual_address+@open[o]-s.raw_data_offset+37+int32(@open[o]+33) == pe.import_rva("KERNEL32.dll", "CreateFileW") and
+                    for any z in (1..#size) : (
+                      @size[z] == @open[o]+50 and
+                      s.virtual_address+@size[z]-s.raw_data_offset+17+int32(@size[z]+13) == pe.import_rva("KERNEL32.dll", "GetFileSizeEx") and
+                      for any r in (1..#read) : (
+                        @read[r] > @size[z] and @read[r] < @size[z]+128 and
+                        @read[r]+!read[r] <= s.raw_data_offset+s.raw_data_size and
+                        s.virtual_address+@read[r]-s.raw_data_offset+24+int32(@read[r]+20) == pe.import_rva("KERNEL32.dll", "ReadFile") and
+                        s.virtual_address+@read[r]-s.raw_data_offset+35+int32(@read[r]+31) == pe.import_rva("KERNEL32.dll", "CloseHandle") and
+                        for any a in (1..#append) : (
+                          @append[a] > @read[r] and @append[a] < @read[r]+4096 and
+                          uint8(@append[a]+13) == uint8(@append[a]+23) and
+                          uint8(@append[a]+13) == uint8(@append[a]+65) and
+                          for any m in (1..#method) : (
+                            @method[m] > @append[a] and @method[m] < @append[a]+1536 and
+                            uint64(pe.rva_to_offset(s.virtual_address+@method[m]-s.raw_data_offset+13+int32(@method[m]+9))) == 0x00540053004f0050 and
+                            for any p in (1..#post) : (
+                              @post[p] > @method[m]+!method[m] and @post[p] < @method[m]+128 and
+                              @post[p]+!post[p] <= s.raw_data_offset+s.raw_data_size and
+                              uint8(@method[m]+17) == uint8(@post[p]+13) and
+                              uint8(@append[a]+13) == uint8(@post[p]+8)
+                            )
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }

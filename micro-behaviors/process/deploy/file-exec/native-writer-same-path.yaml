@@ -1,0 +1,56 @@
+# Resolve a helper call that receives a path in RDX, preserves it in R14 and
+# creates/writes that file. Its success branch starts the same caller path.
+# This states deployment mechanics; the calling program supplies intent.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+traits:
+  - id: x64-file-writer-success-starts-same-path
+    desc: File-writer success starts the same path
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_file_writer_success_starts_same_path {
+          strings:
+            $handoff = { 48 8D 55 ?? 48 8D 4D ?? E8 ?? ?? ?? ?? 84 C0 0F 85 ?? ?? ?? ?? }
+            $entry = { 48 89 5C 24 ?? 48 89 74 24 ?? 55 57 41 54 41 56 41 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 4C 8B F2 45 33 E4 }
+            $writer = { 49 83 7E 18 07 76 03 4D 8B 36 4C 89 64 24 30 C7 44 24 28 80 00 00 00 C7 44 24 20 02 00 00 00 45 33 C9 45 33 C0 BA 00 00 00 40 49 8B CE FF 15 ?? ?? ?? ?? 48 8B D8 48 83 F8 FF 74 ?? 44 89 A5 ?? ?? ?? ?? 48 8D 54 24 ?? 48 83 7D ?? 0F 48 0F 47 54 24 ?? 4C 89 64 24 20 4C 8D 8D ?? ?? ?? ?? 44 8B 44 24 ?? 48 8B C8 FF 15 ?? ?? ?? ?? 48 8B CB FF 15 ?? ?? ?? ?? }
+            $setup = { C7 85 ?? ?? ?? ?? 68 00 00 00 0F 57 C0 0F 11 85 ?? ?? ?? ?? 0F 11 85 ?? ?? ?? ?? 0F 11 85 ?? ?? ?? ?? 0F 11 85 ?? ?? ?? ?? 0F 11 85 ?? ?? ?? ?? 0F 11 85 ?? ?? ?? ?? 33 C0 0F 11 45 ?? 48 89 45 ?? }
+            $launch = { 48 8D 4D ?? 48 83 7D ?? 07 48 0F 47 4D ?? 48 8D 45 ?? 48 89 44 24 48 48 8D 85 ?? ?? ?? ?? 48 89 44 24 40 4C 89 6C 24 38 4C 89 6C 24 30 C7 44 24 28 00 00 00 08 44 89 6C 24 20 45 33 C9 45 33 C0 33 D2 FF 15 ?? ?? ?? ?? }
+          condition:
+            pe.is_pe and all of them and
+            for any s in pe.sections : (
+              s.name == ".text" and
+              for any h in (1..#handoff) : (
+                @handoff[h] >= s.raw_data_offset and
+                @handoff[h]+!handoff[h] <= s.raw_data_offset+s.raw_data_size and
+                for any e in (1..#entry) : (
+                  @entry[e] == @handoff[h]+13+int32(@handoff[h]+9) and
+                  @entry[e] >= s.raw_data_offset and
+                  for any w in (1..#writer) : (
+                    @writer[w] > @entry[e] and @writer[w] < @entry[e]+1024 and
+                    @writer[w]+!writer[w] <= s.raw_data_offset+s.raw_data_size and
+                    uint8(@writer[w]+59)+@writer[w]+60 >= @writer[w]+!writer[w] and
+                    s.virtual_address+@writer[w]-s.raw_data_offset+51+int32(@writer[w]+47) == pe.import_rva("KERNEL32.dll", "CreateFileW") and
+                    s.virtual_address+@writer[w]-s.raw_data_offset+109+int32(@writer[w]+105) == pe.import_rva("KERNEL32.dll", "WriteFile") and
+                    s.virtual_address+@writer[w]-s.raw_data_offset+118+int32(@writer[w]+114) == pe.import_rva("KERNEL32.dll", "CloseHandle") and
+                    for any u in (1..#setup) : (
+                      @setup[u] == @handoff[h]+21+int32(@handoff[h]+17) and
+                      for any l in (1..#launch) : (
+                        @launch[l] == @setup[u]+!setup[u] and
+                        @launch[l]+!launch[l] <= s.raw_data_offset+s.raw_data_size and
+                        uint8(@launch[l]+3) == uint8(@handoff[h]+3) and
+                        uint8(@launch[l]+13) == uint8(@handoff[h]+3) and
+                        uint8(@launch[l]+7) == (uint8(@launch[l]+3)+24)%256 and
+                        s.virtual_address+@launch[l]-s.raw_data_offset+72+int32(@launch[l]+68) == pe.import_rva("KERNEL32.dll", "CreateProcessW")
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
