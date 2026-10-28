@@ -1,0 +1,64 @@
+defaults:
+  crit: notable
+  conf: 0.85
+  platforms: [windows]
+  for: [pe, csharp, asp]
+
+traits:
+  # Exact code-section names include CLR types and native implementation
+  # modules (Inno Shared.SHA256). This does not establish a CLR runtime.
+  # Certificate labels and source operations have separate observations.
+  # Roslyn also places an IMAGE_DEBUG_TYPE_PDB_CHECKSUM record in .text.
+  # Exclude only that record's algorithm label, not other SHA256 names in
+  # the same assembly (which may genuinely implement or call hashing).
+  - id: sha256-code-name-reference
+    desc: SHA256 type or implementation name reference
+    for: [pe, dll]
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule sha256_code_name_outside_pdb_checksum {
+          strings:
+            $name = /SHA256(Managed|Cng|CryptoServiceProvider)?/ ascii wide nocase
+          condition:
+            pe.is_pe and $name and
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].name == ".text" and
+              for any n in (1..#name) : (
+                @name[n] >= pe.sections[s].raw_data_offset and
+                @name[n]+!name[n] <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size and
+                // Complete ASCII/UTF-16 text-run names; reject prefixes
+                // such as SHA256Example and names embedded in prose.
+                ((uint8(@name[n]+1) != 0 and
+                  (@name[n] == pe.sections[s].raw_data_offset or
+                   uint8(@name[n]-1) < 32 or uint8(@name[n]-1) > 126) and
+                  (@name[n]+!name[n] == filesize or
+                   uint8(@name[n]+!name[n]) < 32 or uint8(@name[n]+!name[n]) > 126)) or
+                 (uint8(@name[n]+1) == 0 and
+                  (@name[n] <= pe.sections[s].raw_data_offset+1 or
+                   uint16(@name[n]-2) < 32 or uint16(@name[n]-2) > 126) and
+                  (@name[n]+!name[n]+1 >= filesize or
+                   uint16(@name[n]+!name[n]) < 32 or uint16(@name[n]+!name[n]) > 126))) and
+                not (
+                  pe.data_directories[6].virtual_address != 0 and
+                  pe.data_directories[6].size >= 28 and
+                  with debug = pe.rva_to_offset(pe.data_directories[6].virtual_address) : (
+                    for any d in (0..(pe.data_directories[6].size \ 28)-1) : (
+                      uint32(debug+28*d+12) == 19 and
+                      uint32(debug+28*d+16) == 39 and
+                      uint32(debug+28*d+24) == @name[n] and
+                      !name[n] == 6 and uint8(@name[n]+6) == 0 and
+                      @name[n]+39 <= filesize
+                    )
+                  )
+                )
+              )
+            )
+        }
+
+  - id: dotnet-compute-hash
+    desc: .NET ComputeHash method reference
+    if:
+      type: text
+      exact: ComputeHash

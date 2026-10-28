@@ -434,6 +434,8 @@ processes to `process`.
 | `network/interface` | Interface identity, address, configuration or state, including a distinctive name (`veth`, `docker0`) and MAC addresses. Wi-Fi and Bluetooth radios and WLAN profiles → `hardware/wireless`. |
 | `network/{connections,route,neighbors,dns,forward,qos,tunnel,status,share}` *(legacy: `os/network/*`)* | Connection inventory, routes, ARP caches, resolver configuration, forwarding, traffic policy, OS tunnel interfaces (TUN/TAP, WinTun), connectivity, share mapping. DNS wire traffic stays `communications/dns`; application-level forwarding is `communications/proxy/tunnel`. |
 
+`communications/http/request/{body,credentials}` is a legacy branch (see "No `request` leaf duplicating `client`"), and both are classified by **the item that enters the request**, in the `stealer` item vocabulary. `request/body/<item>`: `construction` (how a body is attached, naming no item), `credential`, `command-output`, `application-state` (keychains, wallets, browser stores, activity records), `file`, `environment` and `injection` (a body carrying shell-control or traversal syntax). `request/credentials/<origin>` answers *where does the credential come from?*: `file`, `environment`, `ci-credential` (matches `os/env/ci-credentials`), `literal` (embedded in code or a URL), `application-state`, and `unspecified-origin` for a generic secret-flow candidate that names none. An exception composite lives beside the rules it suppresses, not under the item it happens to mention.
+
 Don't duplicate WebSocket under HTTP, or a client library under each HTTP verb.
 A port literal is not a service, scan or authentication state.
 
@@ -470,7 +472,7 @@ constructors alone never map to MBC Encrypt Data.
 | `crypto/{encrypt,decrypt,sign,verify}` *(legacy: algorithm leaves such as `symmetric/aes/decrypt`, `asymmetric/{encrypt,signature}`)* | The operation, whether or not the algorithm is known. |
 | `crypto/asymmetric/signature` | Public-key signature support with no required direction or named primitive. A known direction goes to `sign` or `verify`; a named primitive without a required operation stays in its presence home. Excludes MACs, key formats and the file’s own signature. |
 | `crypto/cipher` | Cipher capability with no named algorithm or direction (a bare `Cipher`, Go GCM block-size errors). Record any known family in the rule. |
-| `crypto/hash/{digest,hmac}` | Cryptographic digest or MAC, including implementation presence; CryptoAPI hashing is `digest`. Noncryptographic checksums → `data/checksum` *(legacy: `crypto/hash/{crc32,fnv}`)*. |
+| `crypto/hash/{digest,hmac}` | Cryptographic digest or MAC, including implementation presence; CryptoAPI hashing is `digest`. `digest/<algorithm>` (`md5`, `sha1`, `sha2`, `sha3`, `blake`) holds rules whose matcher names the algorithm, whatever the language; `digest/unnamed-algorithm` holds evidence that names none (`createHash(alg)`, `ComputeHash`). A digest compared against an embedded value is `os/security/auth/digest-comparison`. Mining markers are not hashing: Stratum and proof-of-work references are `communications/blockchain/mining`. Noncryptographic checksums → `data/checksum` *(legacy: `crypto/hash/{crc32,fnv}`)*. |
 | `crypto/kdf` | Key derivation, whether or not the algorithm is known (PBKDF2 parameters, salt). |
 | `crypto/key/{generate,import,export,exchange,representation}` *(legacy: `asymmetric/key`, `asymmetric/ecdh`)* | Key lifecycle and representation. Bitcoin WIF is a key representation, not a mnemonic. |
 | `crypto/certificate` | Parsing, validating, installing and storing certificates. The file's own signature is `metadata/signed`. |
@@ -519,7 +521,7 @@ A keyed XOR cipher is `crypto/symmetric/xor`; XOR scrambling is
 | `data/{string,buffer,collection,property}/<operation>` | Operations on strings, byte buffers, collections (DOM trees in `collection/dom`) and object members (`property/{access,assign,define,enumerate}`), classified by receiver and operation, not method name. |
 | `data/{arithmetic,checksum,reassembly,transaction}` | Numeric and bitwise operations; noncryptographic integrity checks; reassembly; ledger transactions. |
 | `data/db/<operation>`, `data/config/<operation>` | Database operations, engine in the filename: rows (`write/row` for INSERT, UPDATE, REPLACE; `delete/row` for DELETE, TRUNCATE) and schema (`schema/{introspection,relational,stored-code,delete}`, `DROP` being `delete`); `sql` holds legacy generic syntax. Configuration reads and writes; a configuration file path is `fs/path`. |
-| `data/control-flow/{branch,loop,dispatch,error-handling,assert,return,sequence}` | Execution-path constructs. A method named `Run`, an indexed invocation or a computed call is `dispatch` until its receiver shows a launch. |
+| `data/control-flow/{branch,loop,dispatch,error-handling,assert,return,sequence}` | Execution-path constructs. A method named `Run`, an indexed invocation or a computed call is `dispatch` until its receiver shows a launch. `dispatch` answers *how is the callee selected?*: `named` (a fixed name such as `Run` or `Create`), `computed` (a runtime expression: bracket access, a variable function, an indexed callback), `selector` (a `switch` or lookup on a command or decision value) and `indirect` (a machine-level pointer or register call). The first row that fits wins; a call through a computed name that is also a known launcher stays `computed` until its receiver shows a launch. |
 | `data/{stream,embedded,llm}/<operation>` | Streams and recording; embedded resources; model inference and tool calls. Prompt text that overrides policy is `objectives/evasion/security-bypass/llm`. |
 
 `data/source` is **closed**: it split by evidence form. Syntax manipulation goes
@@ -786,9 +788,7 @@ an ordinary updater goes in `micro-behaviors/process/deploy/<sink>`. Choose
 | `interpreter-stdin` | Staged source piped to a new interpreter. |
 | `file-exec` | A staged file launched via `command` (a shell parses the launch), `spawn` (a process API launches the path) or `installer` (an installer transaction such as `msiexec`). |
 
-Small `file-exec` catalogs may keep command and spawn observations in one
-leaf; each matcher and description must retain the launch mechanism. Split
-by mechanism only when the directory budget and sibling policy admit it.
+`file-exec` is split by launch mechanism: `command/*` (a shell or script host parses the launch), `spawn/*` (a process API launches the path; `native` for compiled images, `runtime` for language runtimes), `detached` (hidden or background launch), `installer/*` (an installer transaction; `package` rules read the installer file, `invocation` rules read whatever launches it) and `shellcode`. Each matcher and description must retain the launch mechanism.
 
 `image-map` and `interpreter-stdin` are not in the target sink set
 ([open checkpoint](#open-checkpoints)).
@@ -1426,7 +1426,7 @@ plan.
 | mb `crypto/native`, `crypto/library/{provider,cng,cryptoapi}` | mb `crypto/provider` | Operations go to their own leaves | Open |
 | mb `crypto/library/*` (other children) | Primitive family, operation, `data/transaction`, `communications/blockchain`, `crypto/key` | By claim | Open |
 | mb `crypto/asymmetric/{key,ecdh}` | mb `crypto/key/{generate,import,export,exchange,representation}` | By key operation | Open |
-| mb `crypto/hash/{crc32,fnv}` | mb `data/checksum` | Noncryptographic | Open |
+| mb `crypto/hash/{crc32,fnv}` | mb `data/checksum` | Noncryptographic | Partial (`crc32` moved; `fnv` open) |
 | mb `data/source/*` | mb `metaprogramming/*`, `data/control-flow/*`, `data/property/*`; meta `*` | By claim | Open (closed to new rules) |
 | mb `data/encoded` | meta `file/encoding` or mb `data/decode/<scheme>` | Presence vs operation | Open |
 | mb `data/decode/{request,reflection,environment,native}-base64` | mb `data/decode/base64` | Origin is not an algorithm | Open |
@@ -1440,13 +1440,12 @@ plan.
 | mb `process/fork` | mb `process/create/fork` | Duplicate | Open |
 | mb `process/user` | mb `process/identity` or `os/user` | Current process vs principal administration | Open |
 | mb `process/create/{launch,direct,spawn,execv,spawnv,stdlib,wrapper,…}` | mb `process/create/<mechanism>` | [Process creation](#process-creation) | Open |
-| mb `process/lifecycle/runtime-init` | mb `process/lifecycle/initialize` | Rename | Open |
 | mb `process/interpreter/reflection` | mb `metaprogramming/reflection` | Code as code | Open |
 | mb `process/script` | The actual execution mechanism | A carrier is not a mechanism | Open |
 | mb `os/env/{enumeration,dump}`, `modify`, `{check,gate}`, `user-paths` | mb `os/env/{enumerate,write,test,path}` | Other topic leaves move to the subject they require | Open |
 | mb `os/service/driver` | mb `os/kernel/driver` | Drivers are not services | Open |
 | mb `dylib/library`, `ui/framework` | meta, a capability, or `well-known/lib`, by claim | Implementation containers | Open |
-| obj `command-and-control/dropper/{process-inject,image-map,module-load,script-eval,interpreter-stdin,file-exec}` | obj `execution/payload/<sink>` (admitted) or mb `process/deploy/<sink>` (neutral) | By sink; admission picks the tier | Open |
+| obj `command-and-control/dropper/{process-inject,image-map,module-load,script-eval,interpreter-stdin,file-exec}` | obj `execution/payload/<sink>` (admitted) or mb `process/deploy/<sink>` (neutral) | By sink; admission picks the tier | Partial (`file-exec` applied: 639 rules in `command/{batch,script-host-download,script-host-embedded,shell}`, `detached`, `installer/{package,invocation}`, `shellcode`, `spawn/{native,runtime}`; the legacy directory is removed; other sinks open) |
 | obj `command-and-control/dropper/staging/*`, `staging-xor`, `staged-loader` | obj `execution/staging/{reconstruct,extract,acquire,store}` | By operation | Open |
 | obj `command-and-control/dropper/*` (`delivery`, `execution`, `behavior` and the rest) | A payload sink, staging operation, C2 result or neutral capability | By claim | Open |
 | obj `collection/email-harvest` | obj `collection/email` | Rename | Open |
