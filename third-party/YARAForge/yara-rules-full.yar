@@ -180142,7 +180142,6 @@ rule GODMODERULES_IDDQD_God_Mode_Rule
 	strings:
 		$ = "sekurlsa::logonpasswords" ascii wide nocase
 		$ = "ERROR kuhl" wide xor
-		$ = " -w hidden " ascii wide nocase
 		$ = "Koadic." ascii
 		$ = "ReflectiveLoader" fullword ascii wide xor
 		$ = "%s as %s\\%s: %d" ascii xor
