@@ -211,16 +211,17 @@ def main():
             follow_cases.append(dict(name='vsix-declares-removed-security-held-dependency',
                 path=vsix_path, hostile=True, required={DEPENDENCY, REMOVED}, forbidden=set(),
                 declarer='!!extension/package.json'))
-    # Recorded refusal/failure responses and a cold-cache transport failure
+    # Recorded refusal/failure responses and a blocked transport destination
     # must not acquire registry.security_hold or version_removed. A 404 never
     # proves previous publication; 403/429/5xx never prove a security takedown.
     for name, status in [('private-package-404', 404), ('unknown-package-410', 410),
                          ('npm-permission-denied-403', 403), ('registry-rate-limit-429', 429),
-                         ('registry-unavailable-503', 503), ('transport-failure', None)]:
+                         ('registry-unavailable-503', 503), ('blocked-transport-failure', None)]:
         package = 'withdrawal-regression-' + name
         path = dump(work / 'follow-inputs' / name / 'package.json',
                     {'name': 'consumer-' + name, 'version': '1.0.0',
-                     'dependencies': {package: '1.0.0'}})
+                     'dependencies': {package: '1.0.0' if status is not None else
+                                      'https://127.0.0.1:9/unreachable.tgz'}})
         if status is not None:
             cache_metadata('https://registry.npmjs.org/' + package,
                            {'error': name}, status=status)
