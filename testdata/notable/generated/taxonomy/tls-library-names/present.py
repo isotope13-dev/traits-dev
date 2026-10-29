@@ -1,0 +1,2 @@
+library = "libssl"
+print(library)

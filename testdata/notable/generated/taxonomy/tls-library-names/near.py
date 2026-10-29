@@ -1,0 +1,2 @@
+library = "libssq"
+print(library)
