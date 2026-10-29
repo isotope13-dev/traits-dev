@@ -123,10 +123,13 @@ an indicator of persistence cannot substitute for installation or activation.
 | Required evidence | Meaning and placement | Unsupported extension |
 |---|---|---|
 | Recognized Base64 decoding call assigned to an object member | Decoding capability under `data/decode/base64`; assignment is incidental. | Concealment or payload execution. |
-| Indexed XOR expression with operation context | Arithmetic under `data/arithmetic`; describe the matched expression. | A cipher, decoding loop or obfuscation without distinguishing context. |
+| Indexed XOR expression with operation context | Bit manipulation under `data/bitwise`; describe the matched expression. | A cipher, decoding loop or obfuscation without distinguishing context. |
 | Assignment disabling verification on an identified TLS client | TLS verification disabling under `communications/tls/verify/disable`. | Malicious interception merely from disabling verification. |
 | Startup HTA path assignment | Startup persistence evidence, with the reference-versus-installation limit explicit. | That an HTA was written or will run. |
 | Unidentified member assigned `false` | Generic assignment syntax when no resource or effect is established. | Security bypass based on an evocative variable name. |
+| `NODE_OPTIONS` assignment specifying `--require` or `--import` | Runtime preload configuration under `os/env/runtime`. | That a child process started or an attacker hijacked it. |
+| An authentication parameter set to `admin/admin`, or a literal default-password assignment | Credential configuration evidence under `os/security/auth/password`; describe the literal or setting. | That authentication succeeded, the value is a live secret, or default credentials were abused. |
+| Parsed C# compound XOR/subtraction, or an indexed XOR expression | XOR under `data/bitwise`, subtraction under `data/arithmetic`; assignment does not erase the operation. | A cipher or concealment without algorithm or reconstruction context. |
 
 Regex, AST and binary matchers follow the same semantic test. Consider their
 effective scope: matching an example or quoted code does not establish that
@@ -223,9 +226,13 @@ fragment is a `component` and must feed a positive detection. A benign-context
 composite may instead be `exception`; it is intentionally used for suppression
 and is not a suppression-only building-block violation.
 
-`component` and `baseline` are **not hidden**: JSON output, the web UI and
-diffs show them. A demoted false positive stays visible, mislabeled, under the
-wrong ML feature.
+`component` and `baseline` remain available while composites are evaluated,
+but report finalization may omit unreferenced low-tier findings. Downgraded
+findings are retained; other retention and rescue rules also apply. Check both
+matching and report emission when evaluating ML visibility. None of this makes
+demotion a placement fix: a misleading observation still supplies the wrong
+meaning to consumers. Use `notable` for an informative standalone fact and
+repair the matcher or taxonomy when its claim is wrong.
 
 ### Prefer strong atomic traits
 
@@ -606,22 +613,56 @@ whole expression would miss ordinary code and only recognize quoted source.
 | `network/interface` | Interface identity, address, configuration or state, including a distinctive name (`veth`, `docker0`) and MAC addresses. Wi-Fi and Bluetooth radios and WLAN profiles → `hardware/wireless`. |
 | `network/{connections,route,neighbors,dns,forward,qos,tunnel,status,share}` *(legacy: `os/network/*`)* | Connection inventory, routes, ARP caches, resolver configuration, forwarding, traffic policy, OS tunnel interfaces (TUN/TAP, WinTun), connectivity, share mapping. DNS wire traffic stays `communications/dns`; application-level forwarding is `communications/proxy/tunnel`. |
 
+A browser extension manifest's declared network-ruleset ID or path is a
+manifest property; it does not establish that the ruleset file is present,
+enabled or applied. A `fetch` call using a dynamically named URL is a request
+observation, not proof that the value is remote or contains filtering rules.
+
+Bluetooth-specific radio, peer and GATT observations share
+`hardware/wireless/bluetooth`, regardless of language or SDK. Wi-Fi and
+protocol-ambiguous or multi-radio observations stay in `hardware/wireless/network`.
+A Bluetooth HCI recording command belongs with packet capture. A named API or
+co-occurring discovery and write do not establish a completed peer transfer.
+
+An Android cellular transport request or process-to-network binding concerns
+network selection under `network/connections`; it does not identify a particular
+interface or prove a connection succeeded. A WinPcap device path is a kernel
+device-location reference, not evidence that packets were captured.
+
 `communications/http/request/{body,credentials}` is a legacy branch (see "No `request` leaf duplicating `client`"), and both are classified by **the item that enters the request**, in the `stealer` item vocabulary. `request/body/<item>`: `construction` (how a body is attached, naming no item), `credential`, `command-output`, `application-state` (keychains, wallets, browser stores, activity records), `file`, `environment` and `injection` (a body carrying shell-control or traversal syntax). `request/credentials/<origin>` answers *where does the credential come from?*: `file`, `environment`, `ci-credential` (matches `os/env/ci-credentials`), `literal` (embedded in code or a URL), `application-state`, and `unspecified-origin` for a generic secret-flow candidate that names none. An exception composite lives beside the rules it suppresses, not under the item it happens to mention.
 
 Don't duplicate WebSocket under HTTP, or a client library under each HTTP verb.
 A port literal is not a service, scan or authentication state.
+A Node HTTP module binding is an import observation, not a request. A generic
+`.aread()` or `.aiter_bytes()` call is stream evidence unless its receiver or
+required context identifies an HTTP response. An HTTPS-prefix test does not
+itself select a client, and handling a `requests` exception does not prove a
+request occurred. Consumers that require an HTTP request must require a request
+observation separately.
 
 Protocol configuration follows the configured facility, not its INI/JSON
-carrier. `communications/irc/configure` admits a recognized IRC server-setting
-structure containing a server and port; describe it as a declared endpoint,
-not a connection. A custom variable named `%flserv` or `%flport` alone does not
-establish that structure or role. Parsing a configuration file is a separate
-data operation; recognizing its section syntax is format metadata. File-path
-references keep their `fs/path` homes even inside protocol configuration.
-The reviewed IRC children are `command` (protocol-command vocabulary or
-construction) and `configure` (declared connection settings). Command text
-does not establish endpoint settings, and endpoint settings do not establish
-a command being sent.
+carrier. `communications/irc/configure` admits recognized endpoint, identity,
+transfer-policy, script-list and saved client-control settings. A protocol-ambiguous server/port setting stays in
+`communications/socket/configure` and declares an endpoint, not a connection; a warning-disable setting
+changes transfer policy, not proof of a received file. A custom variable named
+`%flserv` or `%flport` alone does not establish either role. Saved values must
+be described as saved state, not evidence that an action succeeded.
+
+Use a stronger subject when it is required: DDE server settings belong with
+DDE, a scanner's range/active/result fields with network-survey evidence, and
+mining algorithm or donation settings with mining. Neither generic `pools`
+nor an unspecified `Port` directive identifies those purposes. Named script
+registrations retain their interpreter/configuration meaning; composites that
+establish a deceptive role or transfer policy retain the corresponding
+objective. A field name such as `telegramEnabled` identifies the setting but
+does not prove its value is true or that a message was sent.
+
+Parsing configuration is a separate data operation; recognizing its section
+syntax is format metadata. Bare path references keep their `fs/path` homes.
+A matcher requiring a recognized facility setting together with its value
+belongs with that configured facility. The IRC children distinguish command
+vocabulary/construction (`command`), event registration (`handler`) and declared
+settings (`configure`); none substitutes for actual message transmission.
 
 `communications/http/client/initialize` records construction or opening of an
 HTTP client or connection object without a required request method. An
@@ -688,18 +729,69 @@ A keyed XOR cipher is `crypto/symmetric/xor`; XOR scrambling is
 | `data/{compress,decompress}/<algorithm>` | Directional compression; languages and libraries share the algorithm leaf. |
 | `data/codec` | Direct evidence for a codec interface or support spanning directions; keep a known scheme in the trait ID. A flat leaf may remain until a matcher-proven child axis fits every rule. Unknown scheme alone does not admit a child; never add an `unknown` or `other` bucket. Size alone does not justify a split. |
 | `data/compression` | Composite findings that relate encoding/decoding to compression/decompression or span codec schemes or directions; direct codec evidence stays in `data/codec`. |
-| `data/{parse,serialize,format}/<format>` | Parsing input; object ↔ representation (JSON, YAML, protobuf, pickle; general record fields in `serialize/schema-object`, credential-shaped records in `serialize/schema-credential`); formatting (`format/string` for number text, `format/credentials` for token shapes). Format identity alone is metadata. |
+| `data/{parse,serialize,format}/<format>` | Parsing representation into objects; serializing objects into representation (JSON, YAML, protobuf, pickle; general record fields in `serialize/schema-object`, credential-shaped records in `serialize/schema-credential`); formatting (`format/string` for number text, `format/credentials` for token shapes). Format identity alone is metadata. |
 | `data/archive/{create,extract,list,modify}` | Code that manipulates archives. A rule binding a member to its extracted file is `extract`, though it also writes. |
 | `data/{string,buffer,collection,property}/<operation>` | Operations on strings, byte buffers, collections (DOM trees in `collection/dom`) and object members (`property/{access,assign,define,enumerate}`), classified by receiver and operation, not method name. |
-| `data/{arithmetic,checksum,reassembly,transaction}` | Numeric and bitwise operations; noncryptographic integrity checks; reassembly; ledger transactions. |
-| `data/db/<operation>`, `data/config/<operation>` | Database operations, engine in the filename: rows (`write/row` for INSERT, UPDATE, REPLACE; `delete/row` for DELETE, TRUNCATE) and schema (`schema/{introspection,relational,stored-code,delete}`, `DROP` being `delete`); `sql` holds legacy generic syntax. Configuration reads and writes; a configuration file path is `fs/path`. |
+| `data/{arithmetic,bitwise,checksum,reassembly,transaction}` | Numerical arithmetic; bit manipulation; noncryptographic integrity checks; reassembly; ledger transactions. |
+| `data/db/<operation>`, `data/config/<operation>` | Database and persistent-store operations, engine in the filename: `read`, `write`, `delete`, `enumerate`, `open`, `monitor`, and schema (`schema/{introspection,relational,stored-code,delete}`). Rows, documents and key/value entries share their operation; `write/row` and `delete/row` collapse to `write` and `delete`. Dropping a database or schema object is `schema/delete`; clearing stored entries is `delete`. Configuration reads and writes; a configuration file path is `fs/path`. |
 | `data/control-flow/{branch,loop,dispatch,error-handling,assert,return,sequence}` | Execution-path constructs. A method named `Run`, an indexed invocation or a computed call is `dispatch` until its receiver shows a launch. `dispatch` answers *how is the callee selected?*: `named` (a fixed name such as `Run` or `Create`), `computed` (a runtime expression: bracket access, a variable function, an indexed callback), `selector` (a `switch` or lookup on a command or decision value) and `indirect` (a machine-level pointer or register call). The first row that fits wins; a call through a computed name that is also a known launcher stays `computed` until its receiver shows a launch. |
 | `data/{stream,embedded,llm}/<operation>` | Streams and recording; embedded resources; model inference and tool calls. Prompt text that overrides policy is `objectives/evasion/security-bypass/llm`. |
+
+YAML `load`/`Unmarshal` belong in `data/parse/yaml`; `dump` belongs in
+`data/serialize/yaml`. A format conversion follows its required output:
+`YAMLToJSON` belongs in `data/serialize/json`. A package import by itself
+is import metadata. Direction-neutral JSON or property-list APIs such as
+`NSJSONSerialization` and `NSPropertyListSerialization` belong in `data/codec`;
+their names do not establish serialization rather than parsing. A dictionary
+bridge belongs with map operations, and a payload-named assignment without a
+conversion call remains assignment syntax. A list append containing a key/value pair does not prove
+YAML parsing or duplicate-key support, and a commented-out guard is comment
+evidence rather than an active parser policy.
+
+Database placement asks **what does the required evidence do with stored data?**
+Use an identified operation before a backend reference. `localStorage.getItem`,
+a Redis key enumeration, and a SQL SELECT of stored columns support `read`,
+`enumerate`, and `read` respectively. `setItem` and an INSERT share `write`;
+`removeItem`, FLUSHALL and DELETE share `delete`. `open` requires a database
+opening/connection operation or an API specific to it, not a database name.
+`monitor` registers for changes. The description distinguishes an API reference,
+query text, call, and bound result; moving query text does not prove execution.
+
+`query` holds query preparation/execution whose result remains unspecified and
+query expressions that do not themselves require reading stored values. A
+`SELECT` invoking an unidentified function is not necessarily a record read.
+Constructing a query object (`HKSampleQuery`) is query preparation; invoking
+`readRecords` against an identified record store is a read. Preserve this
+distinction instead of labeling every query-related API as retrieval.
+`access` holds store/interface references or interactions whose direction is
+not fixed; a read-or-write alternation belongs there. An identifiable store
+reference is more informative than generic source syntax, but does not gain
+a read or write claim. `sql` remains a legacy home pending semantic review.
+Stored credential operands retain their significance in IDs and descriptions;
+ordinary credential reads do not alone establish theft. Method replacement
+belongs with function interception, and storage-path strings remain paths.
 
 `data/source` is retired: its rules split by evidence form. Syntax manipulation goes
 to `metaprogramming`, execution constructs to `data/control-flow`, artifact and
 language facts to `metadata`. A function *defined* with a utility's name is not
 a call to it.
+
+`data/bitwise` holds XOR, masks, shifts and Boolean combinations whose
+required operations manipulate bits. `data/arithmetic` holds numerical
+operations and expressions that require or permit a mixture of numeric and
+bitwise operations. A mask followed by division remains arithmetic; a mask
+followed by a shift is bitwise. This is an operation distinction shared across
+languages, not a claim of encryption. A bare caret cannot establish XOR in
+languages where it denotes exponentiation. Similarly, JavaScript `+= 2` can
+concatenate text; without known operands, retain its assignment syntax.
+
+A required buffer-wide transform takes precedence over its individual
+operators. Known XOR byte transforms belong in `data/encoding/xor` when their
+direction is unspecified; additive, complement and mixed byte transforms can
+remain in `data/codec`. An isolated indexed XOR expression or generic iterator
+mapping does not establish byte encoding. A rolling byte hash is `checksum`,
+and a PRNG state update is random generation, even when both use XOR. Encoded
+product names retain their product-reference subject.
 
 `data/encoding/xor` records direction-neutral XOR scrambling structure. A
 state-update/byte-XOR/store sequence fits even when the same loop can encode
@@ -712,7 +804,7 @@ must not acquire a direction from its consumer.
 | Home | Admission and boundary |
 |---|---|
 | `fs/file/{create,open,close,move,rename,stat,io-mode}`; `fs/file/copy/{call,command,source-destination}` | File-object operations. Copy separates function calls, command syntax, and rules requiring source/destination context. Text/binary mode is `io-mode`; permission bits are `fs/chmod`; share and disposition flags are `open`. |
-| `fs/read`, `fs/write`, `fs/delete/{file,directory}` | Content I/O; deletion by what is removed. A sensitive filename creates no second home. |
+| `fs/read`, `fs/write`, `fs/delete/{file,directory}` | Content I/O; deletion by what is removed. A sensitive filename creates no second home. A package import or path-existence check does not establish deletion; assigning a replacement to a deletion function records interception evidence. |
 | `fs/directory/{create,readdir,traverse}`, `fs/search` | Create; list one directory; recurse; select by name, extension or content. `readdir/{native,command,language}` separates enumeration interfaces, shell commands and language forms. `search/{command,name,content,sensitive-file}` separates the selection predicate. A required predicate makes it `search` even when recursive. `fs/enumerate` is drive and device inventory only. |
 | `fs/path/<resource>` | A location, classified by **what it points at**, not its owner or an ancestor's name (`/Library/Caches` is `cache`). For secrets, the first that fits: `password-store`, `cookie`, `private-key`, `public-key` (authorized_keys, known_hosts), `token`, `secret-config`, `config`; a generic secret directory (`/run/secrets`) or cross-family union is `credential`. Others: `wallet`, `account-db`, `certificate`, `app-data`, `personal`, `cache`, `font`, `library`, `log`, `metadata-store`, `system`, `temp`, `socket`, `stream`, `extension`, `application/{bundle,browser,executable}`. A path never proves access. |
 | `fs/path-ops` | Pathname manipulation: join, normalize, parse and match remain distinct trait IDs (`Path.Combine`, `realpath`, `GetDirectoryName`). |
@@ -735,12 +827,12 @@ must not acquire a direction from its consumer.
 | `process/thread/{lifecycle,enumerate,group,priority,config,terminate}`, `process/fiber/<operation>` | Thread or fiber management apart from creation; a fiber is not a thread. |
 | `process/sync/{mutex,semaphore,event,critical-section,join}` | Coordination between execution contexts; memory visibility is `mem/sync`. |
 | `process/work/{queue,pool,task}` *(legacy: `process/threading/queue`)* | Queue and pool management; task submission, completion, waiting, cancellation and future/result access (`QueueUserWorkItem`, `dispatch_async`). These do not establish thread creation. Joining a thread is `process/sync/join`; timer callbacks are `time/schedule`. |
-| `process/{identity,info,enumerate,argument,resources,pid}` | Current identity; attributes (`info/name` for a process-name literal); listing; arguments; limits; PID files (a PID value is not one). |
+| `process/{identity,info,enumerate,argument,resources,pid}` | Current identity; attributes (`info/name` for generic process labels, thread names and name-related diagnostics); listing; arguments; limits; PID files (a PID value is not one). A recognized application's name retains its functional subject under `os/application/target`, even when spelled as a process image. |
 | `process/{exit,terminate,control,daemonize}` | Ending this process (`exit/handler` for exit callbacks); killing another (a signal API without the kill signal is not); other state changes; detaching (`fork`+`setsid`). |
 | `process/lifecycle/<operation>` | Lifecycle; a guard blocking a second instance (mutex, PID file, lock) is `single-instance` (MBC B0024), while a mutex alone is `process/sync/mutex`. |
 | `process/debug/tool-markers` | References to debugging or tracing tooling, including executable names and paths. A reference proves neither a running debugger, a tool-owned artifact, nor an anti-analysis check; those require independent operation and target evidence. |
 | `process/fd/{query,control,close,dup,stdio}` | Descriptor operations, including child standard-stream configuration, redirection, and descriptor duplication. Creating an IPC pipe is `communications/ipc`. |
-| `process/io/stream/<operation>` | Reading, writing, piping, or relaying stream data, including paired relays between a peer stream and child stdin/stdout. This is the data-movement operation; stdio configuration and descriptor setup or duplication remain under `process/fd`. |
+| `process/io/stream/<operation>` | Reading, writing, piping, or relaying stream data, including paired relays between a peer stream and child stdin/stdout. This is the data-movement operation; stdio configuration and descriptor setup or duplication remain under `process/fd`. A property assignment or unbound call-prefix text alone does not establish stream I/O. |
 | `process/tty/<operation>` | Terminal interaction and PTYs. |
 | `process/interpreter/<operation>` | In-process execution: `eval/{direct,indirect,constructed,source}` plus `bof` (Beacon Object File host APIs), `wasm`, and `vm`. `eval` executes supplied code in an existing interpreter. Launching an interpreter is `process/create`; compilation without required invocation is `metaprogramming/generation`; language identity is metadata. |
 | `process/{attach,debug,hook,inject}/<mechanism>` | Attaching, debugging, intercepting and transferring execution, with no established attacker purpose. |
@@ -768,15 +860,17 @@ Use the narrowest function required by every passing alternative:
 | `wallet` | Wallet products, their stores, registered wallet-extension IDs, or catalogs confined to wallets. Wallets take precedence over the broader financial-services class; a bare exchange/payment-service name is `finance`. |
 | `finance` | Exchanges, payment services and DeFi protocols without required wallet identity. Stripe fits; a MetaMask extension ID is `wallet`. |
 | `browser` | Browser products and browser toolbars. Brave fits; a required Brave Wallet extension ID is `wallet`, and a media-player ActiveX control is `media`. |
+| `development` | Editors, IDEs and language-runtime programs referenced by name. PyCharm and `node.exe` fit; an actual Node invocation is process creation, and a declared package dependency is metadata. |
+| `productivity` | Document, spreadsheet, presentation, mail and note-taking applications. Word and OneNote fit; a document filename without a product reference belongs with its file role. |
 | `security` | Defender, bot-defense and CAPTCHA products. A named security product fits; a rival malware/campaign name is `malware`. |
 | `agent` | Named AI-agent products and agent packages. Hermes and OpenClaw fit; a generic word such as "agent" does not identify a product. |
 | `system` | Platform application stores, platform services and desktop-shell components. Finder and Play Services fit; a browser name is `browser`. |
-| `network` | Communication clients, VPN clients and remote-session applications. Discord, OpenVPN and LiveDesk fit; a server implementation is `server`. |
+| `network` | Communication, file-transfer, VPN and remote-session clients. Discord, rclone, OpenVPN and LiveDesk fit; document/mail applications take `productivity` precedence, a server implementation is `server`, and a routing administration tool is `utility`. |
 | `cloud` | Cloud-platform and infrastructure-provider names. GCP fits; a named bot-defense product is `security`. |
-| `server` | Named application/web-server implementations. Tomcat and nginx fit; an HTTP method or generic server API is a protocol capability. |
+| `server` | Named application, web and database server implementations. Tomcat, nginx and SQL Server fit; an HTTP method or generic server API is a protocol capability. |
 | `media` | Media-player products and their controls. RealPlayer fits; BaiduBar is `browser`. |
 | `game` | Game products and their platform controls. Ourgame's GLWorld control fits; an ordinary media player is `media`. |
-| `utility` | Standalone diagnostic or administration tools without a narrower required product class. CPU-Z and wmiexec fit; an app-store identifier is `system`. |
+| `utility` | Diagnostic, administration and application-maintenance tools without a narrower required product class. CPU-Z, wmiexec and named application updaters fit; an app-store identifier is `system`. |
 | `malware` | Rival malware or campaign names cited as targets. TeamPCP fits; this reference never identifies the analyzed file as that malware. |
 
 The broadest current observations are multi-product references confined to one
@@ -785,6 +879,18 @@ resolve its full population and a supported broad home before admission; it
 must not be copied into several children. The placement inventory and unchanged
 definition checks are recorded in
 `taxonomy-migration/batches/stranded-target-functions/`.
+
+**Referenced products are subjects, not process operations.** The same Firefox
+name belongs in `target/browser` whether found in text, a string table or
+bytecode. A name alone proves neither a running process nor interaction with
+that product. Keep required installed locations in
+`fs/path/application/executable`, browser profile/data locations in
+`fs/path/application/browser`, and proxy preference names with proxy
+configuration. A bare `firefox.exe` is a browser reference; a required
+`Mozilla Firefox\\firefox.exe` installation path is an executable-location
+reference. Generic `install_42.exe` spelling has no identified product or
+operation and remains a filename observation. This precedence avoids sibling
+overflow between basename, process-name and application-path catalogs.
 
 Stream identifier names alone are source naming properties. A `stream_handler`
 symbol reference belongs in `metadata/lang/source/naming/function`; a bare
@@ -1504,9 +1610,11 @@ or assertion role, not language), `integrity` (checksums, content agreement),
 **Dependency facets: the first that describes what the matcher reads
 wins.**
 
-1. `identity` — the manifest declares one specific package (`lodash`); renaming
-   the name changes the trait. This records the declaration, not proof that the
-   artifact implements that package.
+1. `identity` — the manifest declares a named package (`lodash`) or one of a
+   closed set of named implementations of a specific standard (the MessagePack
+   dependency alternatives). The exact names determine membership. This records
+   the declaration, not proof that the artifact implements the dependency; it
+   is not a bucket for arbitrary functional categories.
 2. `name-form` — the name's shape (`-linux-x64`, a `.js` suffix); it would match
    a package that does not exist yet.
 3. `source` — the right-hand side as a location (`git+ssh:`, `file:`,
