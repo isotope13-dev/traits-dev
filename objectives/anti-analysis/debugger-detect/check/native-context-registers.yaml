@@ -1,0 +1,39 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+traits:
+  - id: x64-context-debug-registers-shared-branch
+    desc: Debug-register checks share detection branch
+    crit: suspicious
+    conf: 0.98
+    attack: T1622
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_context_debug_registers_shared_branch {
+          strings:
+            $query = { C7 85 ?? ?? ?? ?? 10 00 10 00 FF 15 ?? ?? ?? ?? 48 8B C8 48 8D 95 ?? ?? ?? ?? FF 15 ?? ?? ?? ?? 85 C0 74 ?? }
+            $checks = { 4C 39 A5 ?? ?? ?? ?? 0F 85 ?? ?? ?? ?? 4C 39 A5 ?? ?? ?? ?? 0F 85 ?? ?? ?? ?? 4C 39 A5 ?? ?? ?? ?? 0F 85 ?? ?? ?? ?? 4C 39 A5 ?? ?? ?? ?? 0F 85 ?? ?? ?? ?? }
+          condition:
+            pe.is_pe and all of them and
+            for any s in pe.sections : (
+              s.name == ".text" and
+              for any q in (1..#query) : (
+                @query[q] >= s.raw_data_offset and
+                @query[q]+!query[q] <= s.raw_data_offset+s.raw_data_size and
+                s.virtual_address+@query[q]-s.raw_data_offset+16+int32(@query[q]+12) == pe.import_rva("KERNEL32.dll", "GetCurrentThread") and
+                s.virtual_address+@query[q]-s.raw_data_offset+32+int32(@query[q]+28) == pe.import_rva("KERNEL32.dll", "GetThreadContext") and
+                int32(@query[q]+2) == int32(@query[q]+22)+0x30 and
+                for any c in (1..#checks) : (
+                  @checks[c] == @query[q]+!query[q] and
+                  @checks[c]+!checks[c] <= s.raw_data_offset+s.raw_data_size and
+                  for all r in (0..3) : (
+                    int32(@checks[c]+r*13+3) == int32(@query[q]+22)+0x48+r*8 and
+                    @checks[c]+r*13+13+int32(@checks[c]+r*13+9) == @checks[c]+13+int32(@checks[c]+9)
+                  )
+                )
+              )
+            )
+        }

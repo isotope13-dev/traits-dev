@@ -1,0 +1,33 @@
+# Bind the looked-up name to GetProcAddress and a positive-result branch.
+# A Wine name in an error message or import list is insufficient.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+traits:
+  - id: x64-wine-export-result-gate
+    desc: Branches on Wine export lookup result
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_wine_export_result_gate {
+          strings:
+            $name = "wine_get_unix_file_name" ascii fullword
+            $probe = { 48 8D 15 ?? ?? ?? ?? 48 8B C8 FF 15 ?? ?? ?? ?? 48 85 C0 0F 85 ?? ?? ?? ?? }
+          condition:
+            pe.is_pe and all of them and
+            for any s in pe.sections : (
+              s.name == ".text" and
+              for any p in (1..#probe) : (
+                @probe[p] >= s.raw_data_offset and
+                @probe[p]+!probe[p] <= s.raw_data_offset+s.raw_data_size and
+                s.virtual_address+@probe[p]-s.raw_data_offset+16+int32(@probe[p]+12) == pe.import_rva("KERNEL32.dll", "GetProcAddress") and
+                for any n in (1..#name) : (
+                  pe.rva_to_offset(s.virtual_address+@probe[p]-s.raw_data_offset+7+int32(@probe[p]+3)) == @name[n]
+                )
+              )
+            )
+        }

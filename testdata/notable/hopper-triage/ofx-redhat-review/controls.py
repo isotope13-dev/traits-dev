@@ -66,7 +66,7 @@ RUN = "micro-behaviors/os/registry/keys/autostart::index-mixed-xor-run-key-path"
 APATCH = "objectives/evasion/anti-av/amsi::index-xor-amsi-invalidarg-patch"
 EPATCH = "objectives/evasion/anti-av/blinding::index-xor-etw-zero-return-patch"
 PERSIST = "objectives/persistence/login/registry/run-key::extortion-concealed-run-key-self-copy"
-RANSOM = "objectives/impact/ransom/encrypt/bulk-encryption::bcrypt-file-encryption-payment-demand"
+RANSOM = "objectives/impact/ransom/encrypt/bulk-encryption::bcrypt-file-encryption-recovery-withheld"
 C2 = "objectives/command-and-control/remote-command/tasking::discord-extortion-shell-tasking"
 SCREEN = "objectives/exfiltration/stealer/media::discord-extortion-screen-upload"
 FILE_UPLOAD = "objectives/exfiltration/stealer/file::discord-extortion-file-upload-task"
@@ -110,7 +110,15 @@ for va, atom, composite, name in [
 buf = bytearray(original)
 start = original.index(b"payment is confirmed")
 buf[start:start + len(b"payment is confirmed")] = b"payment is optional!"
-save("no-payment-condition", buf, absent=[RANSOM, C2, SCREEN, PERSIST])
+# Note wording changes no instructions or key custody. The operator still
+# withholds the private key and the same handlers remain reachable.
+save("no-payment-condition", buf, [RANSOM, C2, SCREEN, PERSIST])
+
+buf = bytearray(original)
+for text in [b"payment is confirmed", b"only the operator holds the private half"]:
+    start = original.index(text)
+    buf[start:start + len(text)] = b" " * len(text)
+save("no-withheld-recovery-evidence", buf, absent=[RANSOM, C2, SCREEN, PERSIST])
 
 buf = bytearray(original)
 start = original.index(b"!exec\0")
@@ -202,5 +210,72 @@ pos = original.index(old)
 assert len(old) == len(new)
 buf[pos:pos + len(old)] = new
 save("extortion-without-microsoft-claim", buf, [RANSOM], [MASQUERADE])
+
+WINE = "objectives/anti-analysis/environment-detect/runtime::x64-wine-export-result-gate"
+REGISTERS = "objectives/anti-analysis/debugger-detect/check::x64-context-debug-registers-shared-branch"
+GATEWAY = "micro-behaviors/os/syscall/raw::x64-stack-builds-indirect-syscall-gateway"
+RESTORE = "objectives/evasion/anti-av/ntdll-unhook::index-xor-knowndll-executable-restore"
+save("unchanged-original", bytearray(original), [RANSOM, C2, SCREEN, PERSIST, WINE, REGISTERS, GATEWAY, RESTORE])
+
+buf = bytearray(original)
+struct.pack_into("<i", buf, offset(0x140017177) + 2, 0x14004B310 - 0x14001717D)
+save("wine-name-with-unrelated-api", buf, absent=[WINE])
+
+buf = bytearray(original)
+start = original.index(b"wine_get_unix_file_name")
+buf[start] = ord("x")
+save("different-runtime-export", buf, absent=[WINE])
+
+buf = bytearray(original)
+buf[offset(0x140016DE9) + 2] ^= 1
+save("debug-registers-unrelated-branches", buf, absent=[REGISTERS])
+
+buf = bytearray(original)
+buf[offset(0x140016DE2) + 3] ^= 8
+save("context-other-than-debug-registers", buf, absent=[REGISTERS])
+
+buf = bytearray(original)
+buf[offset(0x140003138) + 4] = 0x90
+save("syscall-prologue-without-indirect-jump", buf, absent=[GATEWAY])
+
+buf = bytearray(original)
+buf[offset(0x140002970) + 7] = 0x40
+save("nonexecutable-section-copy", buf, absent=[RESTORE])
+
+buf = bytearray(original)
+buf[offset(0x140002AEF) + 4] ^= 1
+save("different-restored-library", buf, absent=[RESTORE])
+
+buf = bytearray(original)
+buf[offset(0x140002B71) + 4] ^= 1
+save("different-section-object-namespace", buf, absent=[RESTORE])
+
+# Re-encode the complete short names with changed per-string keys. This
+# verifies the rule follows the decoder instead of recognizing ciphertext.
+buf = bytearray(original)
+for va, text in [(0x140002B30, b"ntdll.dll"), (0x140002BB0, b"KnownDlls")]:
+    loop = offset(va)
+    seed, multiplier = 0x12654321, 0x713579AB
+    struct.pack_into("<I", buf, loop + 11, seed)
+    struct.pack_into("<I", buf, loop + 6, multiplier)
+    base = buf[loop + 28]
+    for j, byte in enumerate(text):
+        prefix = b"\xc7\x44\x24" if j < 8 else b"\x66\xc7\x44\x24"
+        displacement = base + (j // 4) * 4
+        pos = buf.rfind(prefix + bytes([displacement]), loop - 128, loop)
+        assert pos >= 0
+        buf[pos + len(prefix) + 1 + (j % 4)] = byte ^ keystream(seed, multiplier, j)
+save("restore-different-decoder-operands", buf, [RESTORE])
+
+KEY_NOTICE = "objectives/impact/ransom/note::encrypted-files-operator-private-key-notice"
+buf = bytearray(original.replace(b"encrypted", b"protected"))
+start = original.index(b"payment is confirmed")
+buf[start:start + len(b"payment is confirmed")] = b"payment is optional!"
+save("key-custody-without-encryption-notice", buf, absent=[KEY_NOTICE, RANSOM])
+
+buf = bytearray(original.replace(b"private half", b"private key "))
+start = original.index(b"payment is confirmed")
+buf[start:start + len(b"payment is confirmed")] = b"payment is optional!"
+save("key-word-without-payment-condition", buf, [KEY_NOTICE, RANSOM, C2])
 
 (output / "cases.json").write_text(json.dumps(cases, indent=2) + "\n")

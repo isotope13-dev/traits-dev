@@ -1,0 +1,62 @@
+# The two object names are decoded using the operands in the file, then
+# paired with the executable-section overwrite loop. Seeds, multipliers,
+# addresses and stack displacements are not pinned to one specimen.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+traits:
+  - id: index-xor-knowndll-executable-restore
+    desc: Concealed KnownDlls code-section restoration
+    crit: suspicious
+    conf: 0.98
+    attack: T1562.001
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule index_xor_knowndll_executable_restore {
+          strings:
+            $decode = { 49 8B D0 41 69 C0 ?? ?? ?? ?? B9 ?? ?? ?? ?? 2B C8 8B C1 C1 E8 0F 33 C1 42 32 44 04 ?? 43 88 04 08 49 FF C0 48 8D 42 02 48 83 F8 0A 72 ?? }
+            $dword = { C7 44 24 ?? ?? ?? ?? ?? }
+            $word = { 66 C7 44 24 ?? ?? ?? }
+            $copy = { 41 F7 46 24 00 00 00 20 0F 84 ?? ?? ?? ?? 41 8B 46 08 48 89 44 24 ?? 41 8B 44 24 0C 48 03 C6 48 89 44 24 ?? C7 85 ?? ?? ?? ?? 00 00 00 00 48 8B 1D ?? ?? ?? ?? FF 15 ?? ?? ?? ?? 48 8B C8 48 8D 85 ?? ?? ?? ?? 48 89 44 24 20 41 B9 40 00 00 00 4C 8D 44 24 ?? 48 8D 54 24 ?? FF D3 85 C0 78 ?? 41 8B 56 0C 49 03 D5 4C 8B 44 24 ?? 48 8B 4C 24 ?? E8 ?? ?? ?? ?? }
+            $headers = { 81 3F 50 45 00 00 0F 85 ?? ?? ?? ?? 48 63 4E 3C 48 03 CE 81 39 50 45 00 00 0F 85 ?? ?? ?? ?? 8B 41 50 39 47 50 0F 85 ?? ?? ?? ?? }
+          condition:
+            pe.is_pe and all of them and
+            for any s in pe.sections : (
+              s.name == ".text" and
+              for any c in (1..#copy) : (
+                @copy[c] >= s.raw_data_offset and
+                @copy[c]+!copy[c] <= s.raw_data_offset+s.raw_data_size and
+                for any h in (1..#headers) : (
+                  @headers[h] >= s.raw_data_offset and
+                  @headers[h] < @copy[c] and @copy[c]-@headers[h] < 512
+                ) and
+                for all target in (0..1) : (
+                  for any l in (1..#decode) : (
+                    @decode[l] > @copy[c] and @decode[l]-@copy[c] < 1024 and
+                    @decode[l]+!decode[l] <= s.raw_data_offset+s.raw_data_size and
+                    for all j in (0..8) : (
+                      with state = (uint32(@decode[l]+11)-j*uint32(@decode[l]+6)) & 0xffffffff : (
+                        with expected = ((0x6c6c446e776f6e4b*(1-target)+0x6c642e6c6c64746e*target) >> ((j%8)*8)) & 255 : (
+                          (j < 8 and for any d in (1..#dword) : (
+                            @dword[d] >= s.raw_data_offset and
+                            @dword[d] >= @decode[l]-128 and @dword[d]+8 <= @decode[l] and
+                            uint8(@dword[d]+3) == uint8(@decode[l]+28)+(j\4)*4 and
+                            (uint8(@dword[d]+4+j%4) ^ ((state ^ (state >> 15)) & 255)) == expected
+                          )) or
+                          (j == 8 and for any w in (1..#word) : (
+                            @word[w] >= s.raw_data_offset and
+                            @word[w] >= @decode[l]-128 and @word[w]+7 <= @decode[l] and
+                            uint8(@word[w]+4) == uint8(@decode[l]+28)+8 and
+                            (uint8(@word[w]+5) ^ ((state ^ (state >> 15)) & 255)) == 115*(1-target)+108*target
+                          ))
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
