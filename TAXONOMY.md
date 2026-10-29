@@ -313,8 +313,9 @@ subtype is unknown or alternatives span its children. A broad credential rule
 therefore stays at `credential`; it is never copied into its children or filed
 under an invented `other` class. This exception does not authorize parent rules
 elsewhere. Parents remain referenceable; a single child is fine if it adds
-meaning. General validation does not enforce leaf-only placement; review the moved
-parent and its descendants explicitly against this contract.
+meaning. Validation enforces leaf-only placement outside the explicitly reviewed
+item ancestors above; review the moved parent and its descendants against this
+contract as well as running the validator.
 
 | Validator check | Limit |
 |---|---|
@@ -354,6 +355,16 @@ Only add children for distinctions the required evidence supports. Capacity,
 language, backend, rule form and an `other` bucket never choose a home. A
 complete placement of broad and narrow observations is required before moving.
 Historical larger-budget reviews remain audit evidence, not active waivers.
+
+**Review the neighborhood, not just the full leaf.** Inventory the parent's
+children, including undersized siblings, and follow related subjects outside
+that parent. A sibling may contain overflow from an earlier cap. Compare its
+admission evidence with the full leaf before adding any new category. Record
+the rules moved in both directions, the resulting populations, and the boundary
+that explains each placement. A lower count alone is not evidence of improvement.
+The same observed operation must reach the same home regardless of which leaf
+previously had room. Keep genuine protocol or operation refinements distinct;
+merge synonyms and remove divisions whose only explanation is past capacity.
 
 ### Splitting a directory
 
@@ -482,6 +493,99 @@ processes to `process`.
 | `browser-extension` | Extension-host surfaces with no neutral home: `action`, `lifecycle`, `management`, `tabs`; engine-emitted `host-access/<host>` and `permission/<perm>`. | Storage, messaging, HTTP, scheduling and injection keep their usual homes; manifest authority is `metadata/permission`. |
 
 ### Communications and local networking
+
+HTTP authentication uses evidence-specific homes across its existing siblings.
+`oauth` requires OAuth protocol, grant, authorization, client or permission-scope
+evidence. An access/refresh token field or browser token read alone belongs to
+`token-auth`; it does not establish an OAuth grant. `jwt` holds JWT serialization,
+claims and algorithm choices. `authorization-header` holds the Authorization
+field and its credential construction; custom token headers belong to
+`token-auth`. `basic-auth` holds Basic authentication and its client handlers.
+`auth` retains authentication operations for which a more specific mechanism is
+not established. Required protocol evidence takes precedence over a generic
+token name; a header construction takes precedence over the representation of
+its token. For example, `grant_type=refresh_token` identifies an OAuth exchange,
+while `refresh_token` by itself identifies a token field. Neither is evidence
+of credential theft or proof that surrounding code is benign.
+
+Authentication review checkpoint (85-rule cap): 48 rules were relocated across
+these existing homes, with qualified references updated and effective defaults
+preserved. Direct populations changed as follows:
+
+| Home under `communications/http` | Before | After |
+|---|---:|---:|
+| `oauth` | 103 | 85 |
+| `auth` | 93 | 84 |
+| `token-auth` | 55 | 66 |
+| `jwt` | 6 | 16 |
+| `authorization-header` | 46 | 51 |
+| `basic-auth` | 12 | 13 |
+
+The `oauth::oauth` union now requires protocol or endpoint markers; generic
+access/refresh field names alone no longer establish OAuth. Directory consumers
+inherit the refined subject: OAuth exclusions lose token-only evidence, while
+Authorization-header consumers gain the moved header constructions and lose
+header-free token configuration and Basic-handler evidence. This does not make
+authentication evidence a general benign-code exception. Further review must
+address the remaining Graph resource API observations in `oauth`, HTTP service
+siblings, and broad authentication-based exclusions in objective rules; these
+counts are a relocation checkpoint, not a waiver or a completed neighborhood audit.
+
+Microsoft service review: directory users, organizational relationships,
+service principals, roles, delegated authority and authentication-method
+configuration belong together in the existing `http/services/entra-directory`.
+That resource question applies across Graph endpoints and device-registration
+services. Mailboxes, calendars and document resources are not directory identity;
+cross-resource Graph context remains in `http/services/microsoft`. Azure compute,
+blob storage, Key Vault, DevOps and Dataverse retain their existing resource
+homes. A Graph hostname alone does not identify a directory operation. Conversely,
+a relative directory-role path can identify its resource without a literal host.
+A generic `/lists/<id>/items` fragment belongs in `http/url/api-path`; the
+Graph-host composite supplies the service context. OAuth scopes and grants
+retain their protocol role; mail or task API references do not establish OAuth.
+
+This review relocates 18 directory-identity rules from `microsoft` to
+`entra-directory` and four resource-path observations out of `oauth` (three to
+`microsoft`, one to `url/api-path`). The resulting direct counts are 85, 38, 81
+and 78 for `microsoft`, `entra-directory`, `oauth` and `url/api-path`, respectively.
+Explicit consumers keep their evidence references. Endpoint and response-field
+co-occurrence descriptions must distinguish an operation's interface from an
+observed invocation, traversal, read/write channel or synchronization loop.
+Classify the likely operation supported by that interface, while retaining the
+evidence limitation in its description; do not infer an executed loop from a
+pagination field or credential retrieval from two endpoint names alone.
+
+Code-forge service operations share a home across REST, GraphQL, SDK calls
+and CLI commands when they establish the same repository or collaboration
+operation. An SDK import alone establishes named-library use, not a repository
+read or write. GitHub API clients therefore live under
+`well-known/lib/network/code-forge/{octokit,pygithub,ruby-github-api,github-actions-client}`;
+package-identity composites retain their explicit package/repository evidence,
+so importing a client does not identify the scanned artifact as that library.
+Credential-bearing headers belong in `authorization-header`, authenticated
+client construction in `token-auth`, and a generic enabled `recursive` option
+in `data/config/syntax`. The GitHub operation composite supplies the repository
+tree context. This review moved 15 rules out of `services/github`, leaving 85.
+
+For HTTP headers, classify by the required field's protocol role. `header/host`
+holds explicit server-authority selection; `header/forwarded` holds original
+client or target information conveyed by proxies, including forwarding fields
+combined with URL-host reassignment. Setting `Host` belongs in the former;
+reading `X-Forwarded-For` belongs in the latter. Neither alone proves spoofing.
+Message framing belongs in `content-length` or `transfer-encoding`; a joint
+Content-Length/chunked observation belongs with the length-conflict observations.
+`security` holds browser policy and anti-CSRF controls, while credential-token
+headers belong in `token-auth`. A custom spelling does not override a known
+role: `X-aws-ec2-metadata-token` is credential evidence, not a CSP-like security
+policy or an unclassified custom field. `custom` retains application-defined
+fields whose required evidence establishes none of those more specific roles.
+The sibling review relocated 29 rules and removed two unsupported C2/channel
+co-occurrence composites: `custom` now has 73, `host` 8,
+`forwarded` 9, `security` 24, `content-length` 9 and `transfer-encoding` 4.
+PHP AJAX- or command-named request-header access is notable capability evidence.
+The header name does not establish an execution sink or a remote command channel.
+Match the PHP access expression in source; a string-literal matcher for the
+whole expression would miss ordinary code and only recognize quoted source.
 
 | Home | Admission and boundary |
 |---|---|
