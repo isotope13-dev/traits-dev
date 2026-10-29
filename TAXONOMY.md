@@ -425,7 +425,7 @@ processes to `process`.
 | `communications/<protocol>/<operation>` | DNS, FTP, TFTP, SSH, TLS, WebSocket, RPC, gRPC, email, messaging, IRC, MCP, ICS protocols (`modbus`, `dnp3`, `s7`, `bacnet`, `ethernet-ip`, `opcua`, `profinet`). Children are operations (connect, authenticate, send, receive, serve, configure). A vendor, SDK or client library is not a protocol. |
 | `communications/http/{client,server}` | Method-unspecified client use; server-side handling. No `request` leaf duplicating `client`. |
 | `communications/http/url/path` | HTTP URL path references, including literal API routes such as `/_api/...` or `/api/v2/chat/`. A route reference alone establishes neither a request, SDK identity, nor endpoint operation. |
-| `communications/http/{get,post,put,patch,delete,head,options}` | A required method. |
+| `communications/http/{get,post,put,patch,delete,head,options}` | A required method. `head` is the HEAD method, distinct from the `header` field category. |
 | `communications/http/{download,upload}` | A response saved as an artifact (ordered retries in `download/fallback`); a file or attachment sent. GET alone is `get` and POST alone `post`; neither is upload, exfiltration or execution. |
 | `communications/http/{header,cookies,auth,redirect,response,form}` | Classify a header by meaning: authentication → its auth leaf (`oauth` incl. device code, `token-auth`, `jwt`, `basic-auth`; `auth` when unknown), `user-agent`, `cookies`; otherwise `header`. A cookie-jar path is `fs/path/cookie`. |
 | `communications/http/services/<provider>` | A named service endpoint with no operation; an operation goes to its own leaf. Cloud metadata: provider host or path → `services/<provider>/metadata`; headers such as `Metadata-Flavor` → `header/custom`. |
@@ -553,6 +553,7 @@ must not acquire a direction from its consumer.
 | `fs/temp/{file,directory}`, `fs/volume`, `fs/disk/{partition,raw}` | Creating temporary objects (a temp *location* is `fs/path/temp`); mounts; partitions and raw disk. Disk inventory is `os/sysinfo/disk`. |
 | `fs/swap/{on,off}` | Activating or disabling swap. Storage-header initialization (`mkswap`) belongs in `fs/volume/format`; raw zeroing remains `fs/disk/raw` until required evidence establishes formatting. |
 | `mem/{alloc,free,resize,copy,fill,compare}` | Allocate, release (`HeapFree`), resize (`HeapReAlloc`), copy, fill, compare. |
+| `mem/alloc/unified` | Allocation in a unified host/device memory model, such as CUDA managed memory. Ordinary process-heap allocation stays in `alloc/heap`; a virtual mapping stays in `mem/map`. Call-shaped text records syntax, not proof of execution. |
 | `mem/{map,unmap}`, `mem/create`, `mem/anonymous/create` | Mappings (`mremap` is `map`, not proof of a size change); shared and image-section objects; anonymous file descriptors (`memfd_create` proves no execution from it). |
 | `mem/{read,write,protect,query,advise,lock,gc,sync}` | Access (local, remote or physical, when established), permissions, inspection, advice, pinning, GC, cache visibility. RWX alone is neutral; writing to another process transfers no execution. |
 | `mem/combined` | Composites needing one alternative across memory operations. |
@@ -842,8 +843,9 @@ an ordinary updater goes in `micro-behaviors/process/deploy/<sink>`. Choose
 
 `file-exec` is split by launch mechanism: `command/*` (a shell or script host parses the launch), `spawn/*` (a process API launches the path; `native` for compiled images, `runtime` for language runtimes), `detached` (hidden or background launch), `installer/*` (an installer transaction; `package` rules read the installer file, `invocation` rules read whatever launches it) and `shellcode`. Each matcher and description must retain the launch mechanism.
 
-`image-map` and `interpreter-stdin` are not in the target sink set
-([open checkpoint](#open-checkpoints)).
+`image-map` and `interpreter-stdin` are admitted sinks: they distinguish native
+image activation from a new interpreter reading staged source. A mapped image
+or stream reference alone does not establish activation or a linked payload.
 
 **The link is the claim.** A download, URL, encoded blob, execution API,
 installer identity or loader-like name alone is not a payload chain: bind the
@@ -984,13 +986,20 @@ keys, now in `login/{account,ssh}`) is an [open checkpoint](#open-checkpoints).
 
 ### Supply-chain trust
 
-**Security-hold classification policy.** `security-hold` classifies a recognized
-security-held package as `hostile`, including an inert npm replacement or a
+**Security-hold classification policy.** `security-hold` classifies the affected
+dependency as `hostile`, including an inert npm replacement or a
 vendored copy. This is an explicit exception to the usual requirement for
 artifact evidence of an attack. The finding describes security-holding status,
-not payload execution. An npm manifest must carry both `0.0.1-security` and the
+not payload execution, and must explicitly identify the hostile subject as the
+affected dependency, whether scanning it directly or through a declaring package.
+An npm manifest must carry both `0.0.1-security` and the
 canonical npm security-holder repository in that same manifest; an authoritative
 registry record may instead supply its security-hold flag or holder description.
+A manifest whose declared dependency the registry has placed under a security
+hold is also classified `hostile`: the finding must explicitly identify the
+dependency as the hostile subject and is attributed to its declaring manifest.
+It does not assert that the manifest's own code is hostile or that the
+dependency was executed.
 A version, repository reference, README mention, ordinary deprecation, or
 unresolved dependency alone does not establish this classification. Metadata
 observations retain their own criticality; the hostile classification belongs
@@ -1056,6 +1065,17 @@ identity goes with that subject.
 | `signed` | `certificate`, `entitlements`, `platform`, `script`, `trust-level` | A signer name is neither product identity nor proof of a valid chain. |
 | `vendor` | OS or platform vendor provenance (Apple, Microsoft, NetBSD, GNU) | Certificate fields are `signed`; manifest vendor fields are `package`; third-party products are `well-known/`. |
 
+`binary/instruction/cil` records CIL instruction sequences;
+`binary/instruction/call` records call shapes and their local argument setup.
+Other native and instruction-set-independent sequences remain in `sequence`.
+An unbound call sequence does not identify its callee or establish a payload
+flow.
+
+`binary/symbols/name/process` groups process-related symbol-name and name-text
+observations. A matcher that observes the same name in native binaries and
+source text keeps those scopes together. A name does not establish that the
+referenced operation was called.
+
 `metadata/file/encoding` is split by observable transform family: `base64`,
 `hex`, `xor`, `url`, `escape`, and `compression`; `container` records an
 encoding or armor represented by a format wrapper, and `shape` records
@@ -1077,6 +1097,8 @@ weak source context rather than granting every test exclusion that context.
 system-information field names, including words in compiled artifacts. A name
 alone does not establish source code, a structured record, or information
 collection; a required source construct belongs in `metadata/lang/source`.
+JVM constant-pool method-reference counts belong in `binary/symbols/count`;
+zero references does not imply that a class declares or executes no methods.
 
 `metadata/lang/source/literal` records reusable properties of literal objects,
 such as a numeric sequence inside a string or quoted source text. It is not a
@@ -1132,8 +1154,8 @@ member access, and a cast/comparison beats its operand's spelling. A shell
 command's words and options belong together in `command`, even when serialized
 as an argument array. An API name alone never acquires call semantics.
 
-Within `lang/natural`, `vocabulary` describes words or token sets; `phrasing`
-describes multiword clauses and their stated relationships, such as an action
+Within `lang/natural`, `vocabulary` describes words or token sets; `diagnostic` records
+error and rejection messages; `phrasing` describes other multiword clauses and their stated relationships, such as an action
 paired with omission of review. A clause alone does not establish an agent
 directive or prove that its described action ran.
 
@@ -1193,7 +1215,11 @@ do not establish execution or a purpose for those operators.
 The remaining children are:
 `installer-layout` records file and sidecar relationships; `markup` records
 parsed markup or document-content patterns; `structured` records an explicit
-relationship among structured fields; `source-indications` and
+relationship among structured fields; `syntax-tree` records parsed tree
+measurements without inferring a purpose. `cryptography`, `mobile-config`,
+and `tls` group neutral observations by
+subject without granting them the broad source-context exclusions below;
+`source-indications` and
 `test-indications` record source or test-context clues, not execution;
 `identity` records static artifact context, not a known product identity;
 `tool-reference` records references, not tool use or identity. Existing
@@ -1527,10 +1553,10 @@ plan.
 | mb `os/network/mac_address`; `webextension` | mb `network/interface`; mb `communications/proxy/config` | MAC addresses are interface identity; WebExtension rules configure browser proxies | Applied |
 | mb `communications/ipc/irc` | mb `communications/irc/{command,handler}` | IRC is a network protocol | Applied |
 | mb `communications/http/url/*` (generic URL facts) | mb `communications/url/<facet>` | Generic syntax to URL facets; HTTP endpoint, API-route and request facts stay | Partial (construction, path, query, scheme, encoded, host/domain/port/TLD, fragment, external-IP and navigation batches moved; API-specific and transport-specific leaves remain) |
-| mb `crypto/symmetric/<alg>/{decrypt,…}`, `crypto/asymmetric/{encrypt,signature}` | mb `crypto/{encrypt,decrypt,sign,verify}` | Operations move; presence stays | encrypt and decrypt staged (B086, B087); asymmetric encrypt name-only leaf moved to source naming; asymmetric signature leaf fully migrated by claim, including key, primitive, operation, naming and text observations ([inventory](docs/taxonomy-audit/taxonomy/signature-operations/migration.json)); symmetric algorithm operation leaves remain |
+| mb `crypto/symmetric/<alg>/{decrypt,…}`, `crypto/asymmetric/{encrypt,signature}` | mb `crypto/{encrypt,decrypt,sign,verify}` | Operations move; presence stays | encrypt and decrypt staged (B086, B087); asymmetric encrypt name-only leaf moved to source naming; asymmetric signature leaf fully migrated by claim, including key, primitive, operation, naming and text observations ([inventory](docs/taxonomy-audit/taxonomy/signature-operations/migration.json)); generic symmetric encrypt leaf retired: calls → encrypt, native API names → binary symbol names, bytecode text → bytecode metadata, package import → module import; generic symmetric decrypt leaf retired: calls → decrypt, local helper import → module import, PEM/API text → cryptography profile, and unbound command options → command syntax; GPG command and re-encryption call → encrypt, GPG argument and literal observations → command syntax, unrelated encryption/enumeration/deletion evidence → component profile; directory consumers enumerate their previously reachable members; AES and Kerberos decrypt symbol references → binary symbol names, with unbound XOR co-occurrence → cryptography profile; other symmetric algorithm operation leaves remain |
 | mb `crypto/native`, `crypto/library/{provider,cng,cryptoapi}` | mb `crypto/provider` | Operations go to their own leaves | Applied (provider and CryptoAPI rules moved) |
-| mb `crypto/library/*` (other children) | Primitive family, operation, `data/transaction`, `communications/blockchain`, `crypto/key` | By claim | Partial (blockchain moved; Go standard-library package text references → import metadata ([inventory](docs/taxonomy-audit/taxonomy/go-crypto-package/migration.json)); Go helper-name text → source naming ([inventory](docs/taxonomy-audit/taxonomy/go-crypto-helper/migration.json)); Nostr module, call and name text → source metadata ([inventory](docs/taxonomy-audit/taxonomy/nostr-observations/migration.json)); provider context → crypto/provider ([inventory](docs/taxonomy-audit/taxonomy/crypto-provider-context/migration.json)); CryptoAPI public-key name → binary symbol names ([inventory](docs/taxonomy-audit/taxonomy/cryptoapi-name/migration.json)); other library buckets remain) |
-| mb `crypto/asymmetric/{key,ecdh}` | mb `crypto/key/{generate,import,export,exchange,representation}` | By key operation | Partial (ecdh → exchange; Apple key-generation and representation-export imports → their operations; wallet and library name references → source naming; other key evidence remains) |
+| mb `crypto/library/*` (other children) | Primitive family, operation, `data/transaction`, `communications/blockchain`, `crypto/key`, or the observed name/text | By claim | Applied (provider and blockchain operations moved; crypto and API names → metadata; unbound call text and marker co-occurrence → cryptography profile; no legacy YAML rules or live YAML references remain) |
+| mb `crypto/asymmetric/{key,ecdh}` | mb `crypto/key/{generate,import,export,exchange,representation}` or the observed syntax/name | By claim | Applied (ecdh → exchange; key generation, import and representation → their subjects; git-secret reveal → decryption; wallet and library names → source naming; unbound key-recovery terms → cryptography profile; no legacy YAML rules or references remain) |
 | mb `crypto/hash/{crc32,fnv}` | mb `data/checksum` | Noncryptographic | Applied |
 | mb `data/source/*` | mb `metaprogramming/*`, `data/control-flow/*`, `data/property/*`; meta `*` | By claim | Applied (source syntax and naming, metadata, reflection, control flow and property operations routed by claim; no YAML rules or live YAML references remain under `data/source`) |
 | mb `data/encoded` | meta `file/encoding` or mb `data/decode/<scheme>` | Presence vs operation | Applied |
@@ -1539,18 +1565,18 @@ plan.
 | mb `fs/traversal`; `fs/enumerate` (non-inventory) | mb `fs/directory/traverse`; `fs/directory/readdir`, `fs/search` | Inventory stays in `fs/enumerate` | Applied (traversal, directory listing, and permission search moved; volume/device inventory remains) |
 | mb `fs/directory/mkdir` | mb `fs/directory/create` | Rename | Applied |
 | mb `fs/memory/mmap`, `mem/alloc/map` | mb `mem/map` | Any backing | Applied |
-| mb `mem/c-runtime/functions`, `mem/alloc/{executable,heap,managed,…}` | mb `mem/{alloc,free,resize,copy,fill,compare}` | By operation; allocator only when established | Partial (C-runtime allocation → `alloc/heap`; PowerShell `Marshal.Copy` → `copy`; remaining allocator buckets need claim review) |
+| mb `mem/c-runtime/functions`, `mem/alloc/{executable,heap,managed,…}` | mb `mem/{alloc,free,resize,copy,fill,compare}` | By operation; allocator only when established | Partial (C-runtime allocation → `alloc/heap`; PowerShell `Marshal.Copy` → `copy`; Rust alloc_zeroed, dealloc and realloc split by operation; available-byte division → source syntax; managed leaf → unified host/device allocation, with no legacy rules or YAML references; Java memory-flag references → protection and virtual-allocation constants, JavaScript allocator/flag text → combined memory evidence, Lua/Python/PowerShell VirtualAlloc observations → virtual allocation; unbound push immediates → binary instruction operands; Windows kernel pool allocator and flags → heap allocation, safebuffers text → build hardening, hashed VirtualAlloc bytes and source call text → virtual allocation, commit/protection constants → combined memory evidence, unbound calls → instruction observations, delegate API text → API resolution; executable leaf fully moved to observation-specific homes; BIOS 413 assembly text → instruction operands; neither legacy leaf has YAML or live references; other allocator buckets need claim review) |
 | mb `mem/decompress` | mb `data/decompress/<algorithm>` | A data transform | Applied (no rules remain under `mem/decompress`; algorithm rules are in `data/decompress`) |
 | mb `process/threading/*` | mb `process/{thread,sync,work}`; IPC to `communications/ipc` | `queue` → `work`; locks → `sync`; thread creation/concurrency → `thread` | Applied |
 | mb `process/fork` | mb `process/create/fork` | Duplicate | Applied |
-| mb `process/user` | mb `process/identity` or `os/user` | Current process vs principal administration | Partial (user queries moved to `process/identity/query`) |
-| mb `process/create/{launch,direct,spawn,execv,spawnv,stdlib,wrapper,…}` | mb `process/create/<mechanism>` | [Process creation](#process-creation) | Open |
+| mb `process/user` | mb `process/identity` or `os/user` | Current process vs principal administration | Applied (user queries moved by subject; no legacy YAML rules or live YAML references remain) |
+| mb `process/create/{launch,direct,spawn,execv,spawnv,stdlib,wrapper,…}` | mb `process/create/<mechanism>` | [Process creation](#process-creation) | Partial (`stdlib` class and symbol references → JVM imports and binary names; `wrapper` generic calls and call-like text → source syntax; both leaves have no YAML or live references; `execv` source constant, native name text and argument text → naming and syntax subjects, macOS syscall → syscall invocation after recursive suppressor review (current syscall fact production is ELF-only); unbound HTTP/exec correlations → operation-cooccurrence profile; Python exec/spawn calls → executable-image creation and name-only variants → binary name/import subjects; a JVM Runtime.exec method reference → JVM imports; C++ library symbols → binary names and unbound process combinations → co-occurrence; Deno process call, constructor, runtime path and flag literals → their subjects, with unbound HTTP/command clues → network profile; `launch` text → source syntax and text-shape observations, with bound install-hook and FTP findings retained separately; `launch`, `direct`, `execv` and `spawnv` have no YAML or live references; native process symbol names and unbound pipe/exec combinations moved to metadata; other mechanisms remain) |
 | mb `process/interpreter/reflection` | mb `metaprogramming/reflection` | Code as code | Applied |
 | mb `process/script` | The actual execution mechanism (`process/interpreter/wsh` for WSH) | A carrier is not a mechanism | Applied |
 | mb `os/env/{enumeration,dump}`, `modify`, `{check,gate}`, `user-paths` | mb `os/env/{enumerate,write,test,path}` | Other topic leaves move to the subject they require | Partial (mapped operation categories applied) |
 | mb `os/service/driver` | mb `os/kernel/driver` | Drivers are not services | Applied |
 | mb `dylib/library`, `ui/framework` | meta, a capability, or `well-known/lib`, by claim | Implementation containers | Partial (`usb_init` export → `metadata/binary/symbols/exports`; libm imports → `metadata/binary/symbols/imports` ([inventory](docs/taxonomy-audit/taxonomy/libm-imports/migration.json)); terminal-editor project/version text → `metadata/binary/provenance/build`; TLS library names → `fs/path/library` ([inventory](docs/taxonomy-audit/taxonomy/tls-library-names/migration.json)); MFC42 name → `fs/path/library` and all three MFC API names → `metadata/binary/symbols/name/token` ([inventory](docs/taxonomy-audit/taxonomy/mfc-references/migration.json)); `ui/framework` has no YAML rules or live YAML references; other dylib library observations remain) |
-| obj `command-and-control/dropper/{process-inject,image-map,module-load,script-eval,interpreter-stdin,file-exec}` | obj `execution/payload/<sink>` (admitted) or mb `process/deploy/<sink>` (neutral) | By sink; admission picks the tier | Partial (`file-exec` applied: 639 rules in `command/{batch,script-host-download,script-host-embedded,shell}`, `detached`, `installer/{package,invocation}`, `shellcode`, `spawn/{native,runtime}`; the legacy directory is removed; other sinks open) |
+| obj `command-and-control/dropper/{process-inject,image-map,module-load,script-eval,interpreter-stdin,file-exec}` | obj `execution/payload/<sink>` (admitted) or mb `process/deploy/<sink>` (neutral) | By sink; admission picks the tier | Partial (`file-exec` applied: 639 rules in `command/{batch,script-host-download,script-host-embedded,shell}`, `detached`, `installer/{package,invocation}`, `shellcode`, `spawn/{native,runtime}`; the legacy directory is removed; image-map applied: call-bound RC4 mapping → payload/image-map, independent crypto, HTTP and memory evidence → operation-cooccurrence profiles; interpreter-stdin applied: impersonated postinstall → payload sink, archived preinstall pipelines → neutral deploy, unbound combinations → profiles; module-load partial: unbound .NET, Node, JVM and MSI combinations → profiles, Netz source references → tool-reference; other sinks open) |
 | obj `command-and-control/dropper/staging/*`, `staging-xor`, `staged-loader` | obj `execution/staging/{reconstruct,extract,acquire,store}` | By operation | Open |
 | obj `command-and-control/dropper/*` (`delivery`, `execution`, `behavior` and the rest) | A payload sink, staging operation, C2 result or neutral capability | By claim | Open |
 | obj `collection/email-harvest` | obj `collection/email` | Rename | Applied (legacy directory and references are absent) |
@@ -1567,14 +1593,14 @@ plan.
 | meta `file/encoded`; `lang/encoded` | meta `file/encoding`; `lang/encoding` | Rename, then group by encoding scheme or measured shape | Applied; orphaned impossible XOR/Base64 co-occurrence composite removed |
 | meta whole-file byte-entropy rules under `image/*` | meta `file/entropy` | Decoded-image measurements stay | Applied (no whole-file byte-entropy rules remain; decoded-image measurements stay under `image`) |
 | meta `file/{string,literal}/*` | The subject each string evidences; context-only predicates held pending validated representation | No new IDs; exact existing IDs remain grandfathered until migrated | Partial (batches 047–080) |
-| meta `lang/source/literal/value/*` | `lang/source/literal/{string,integer,hex,array}`, the evidenced subject, or `well-known/` | Review matcher and provenance before choosing a type or identity | Partial (generic string shapes and a hex value moved; encoded method names → `lang/encoding/base64`; datetime call → `lang/source/syntax/call/invocation`; remaining observations need individual review) |
+| meta `lang/source/literal/value/*` | `lang/source/literal/{string,integer,hex,array}`, the evidenced subject, or `well-known/` | Review matcher and provenance before choosing a type or identity | Applied (generic string shapes, constructor-path, config-metacharacter and touch-point strings, ambiguous single-word literals, C# Path/CRLF, generic Go/protocol and appendChild/src/forward strings, and six hex observations moved; comma-delimited numeric text → text-shape; Git hook-name fragments → VCS path references, compiled-model and injection-related wording → natural phrasing, CAFEBABE text → hex; Testing Library scope text → package-reference component, with a bounded package-specifier observation outside recursive identity exclusions; Python bytecode reader-name and registry-route fragments moved to their subjects; quoted host terms → system-info field-name references; Android action strings → literal/string; model and port-scan vocabulary → natural-language vocabulary; exact git literal → tool-reference profile; encoded method names → `lang/encoding/base64`; datetime call → `lang/source/syntax/call/invocation`; shortcut glob → `fs/path/glob`; quoted code, generic tokens and shell tilde literal → `lang/source/literal/string`, bare numeric and versioned archive text → `file/profile/text-shape`, Python marshal name records → `binary/code/bytecode`; quoted wallet RPC fragments → component literals, with unbound fragment/selector/rotation combinations → notable cryptography profiles; task literal, quoted labels and unbound filename/status text → their literal or text-shape subjects; package and module references → import metadata, Codex name text → source naming, HTTP references → their metadata subjects; remaining encoding, wording, syntax, module-reference and text-shape observations moved by claim; no legacy YAML rules or live YAML references remain) |
 | meta `file/data-blob/*` | The specific measured property or behavior-supported subject | No residual `data-blob` bucket; split entropy, region, signature, name, and string observations | Applied (14 rules moved to entropy, byte-prefix, filename, path, string-population and text-shape homes; no legacy YAML rules or live YAML references remain) |
-| meta `file/policy/*` | `permission`, `hardening`, `package`, or document/format-specific property | No generic policy bucket; preserve declared-versus-effective scope | Partial (research-canary disclosure wording → natural-language phrasing ([inventory](docs/taxonomy-audit/taxonomy/research-canary/migration.json)); C initializer shape → source syntax ([inventory](docs/taxonomy-audit/taxonomy/c-initializer/migration.json)); mobile-link setting names → source naming; AppArmor include directive → file format; remaining policy observations require review) |
-| meta `file/function/*` | Source declaration/name; population profile; `binary` anatomy | A name does not prove invocation or behavior | Partial (selected source declarations and function names moved; remaining observations need matcher and scope review) |
+| meta `file/policy/*` | `permission`, `hardening`, `package`, or document/format-specific property | No generic policy bucket; preserve declared-versus-effective scope | Applied (research-canary disclosure wording → natural-language phrasing ([inventory](docs/taxonomy-audit/taxonomy/research-canary/migration.json)); C initializer shape → source syntax ([inventory](docs/taxonomy-audit/taxonomy/c-initializer/migration.json)); mobile-link setting names → source naming; Google-services filenames and symbols → path and source naming, with co-occurrence → mobile-config profile; Android manifest, build plugin and field names → their subjects, with unbound combinations → mobile-config profile; mobile branding and white-label names → paths, source naming, package keywords and product identity, with co-occurrence → mobile-config profile; Xcode project, scheme, symbol and command references → their subjects, with co-occurrence → mobile-config profile and the former broad suppressors narrowed to a named tool context; AppArmor include directive → file format; AWS and Socket scanner field text → config syntax; Socket config basename/schema reference → tool-reference profile; Windows policy exception → the suppressed objective; systemd path, ExecStart fields and unit layout → path, service unit fields and service format respectively; uppercase config/key token shapes → file text-shape; agent tool wildcard syntax and settings path → call arguments and agent-config path, with unbound co-occurrence → agent-config profile; security-document wording and defense contexts → documentation policy, structured guardrail response → text shape, with the former directory-wide exception narrowed to defense contexts and a structured block response; agent approval policy wording → documentation policy, block message → diagnostic, safety-setting text → text-shape; no legacy YAML or live YAML references remain) |
+| meta `file/function/*` | Source declaration/name; population profile; `binary` anatomy | A name does not prove invocation or behavior | Applied (selected source declarations and function names moved, including Java sendRequest, Go IsDLL, shell callable identities, managed method-name text, JVM callback names, Java method names and signature text, Go probe names and decrypt-named declarations; Go-style strings in compiled files → binary name text; function populations → `file/profile/function-population`; AST node counts → `file/profile/syntax-tree`; JVM method-reference counts → `binary/symbols/count`; JavaScript decrypt-named symbol → source naming, Ruby audit text → declaration syntax, document function-like text → text-shape; Java method symbols → function naming, Python bytecode name → bytecode metadata, binary helper text → binary name text, and VBA/getuid declaration-like text → text-shape; PHP function-length metric → function-population, parsed-call count → syntax-tree, and unbound transform, locator and spoof-name text → text-shape; remaining function-name and symbol observations → source naming; no legacy YAML rules or live YAML references remain) |
 | meta `file/{arithmetic,padding}/*` | Parsed operator population, actual arithmetic operation, observed filler span, or a measured text-shape profile | Separate source-shape measurements from operation claims | Partial (`file/arithmetic` retired; digit and whitespace ratios and line shapes moved; leading whitespace moved to `file/profile/text-shape`; the uncontextualized text token under `padding` remains for review) |
 | meta `package/tooling`, `hardening/missing` | `build/*`, `well-known/*`, `package/<subject>`; the mitigation's own subject | Grab-bag and judgment names | Applied (`hardening/missing` held four unreferenced aliases of ELF linking facts; those facts remain under `binary/linking/runtime`; Netris and HAL evidence moved to `well-known/`; no legacy tooling rules or live YAML references remain) |
-| meta `binary/{installer,framework,vendor,signing,license,toolchain}` | `well-known/`, `vendor`, `signed`, `binary/provenance`, `lang/compiler` | Identity is not a format property | Open |
-| `well-known/malware/supply-chain` | The family's defining role | Delivery does not choose identity | Open |
+| meta `binary/{installer,framework,vendor,signing,license,toolchain}` | `well-known/`, `vendor`, `signed`, `binary/provenance`, `lang/compiler` | Identity is not a format property | Partial (the Free Software Foundation name reference → `vendor/string`; a BPF header-byte shape → binary header identity, with a generic fixture-path suppression removed; Xcode field-name text → build-toolchain references, and its former directory-wide suppression → parsed embedded-plist keys; signer-verification profiles → signature metadata, with unsupported overlay timing removed; binary `license` and `toolchain` have no remaining YAML rules or live YAML references; other branches remain) |
+| `well-known/malware/supply-chain` | The family's defining role | Delivery does not choose identity | Partial (S1ngularity, Homebrew impersonation campaign markers and the TeamPCP Nx bootstrap → `malware/stealer`; Shai-Hulud → `malware/worm`, with unbound campaign references at notable; generic Homebrew payload text and Charpup filename, archive-path and function-name observations → metadata; a single proc-macro1 release checksum → dependency-specific typosquat evidence; remaining families require role review) |
 
 Remove a legacy home's whitelist entry only after its last rule moves.
 
@@ -1600,7 +1626,6 @@ Resolve each in the migration manifest before moving the affected rules.
 |---|---|
 | Capacity for broad leaves | The default maximum is 100 rules; any category-specific exception requires a complete relevance audit and explicit user approval. Review parent and peer subjects, document the complete population and consumers, and resolve every broad observation before moving. Remove redundant levels and misplaced or duplicate rules before proposing refinements; do not invent a sibling or `other` bucket to satisfy the count. |
 | Level-3 branches | Name the children, their single axis, precedence and an incomplete-evidence example before migrating. |
-| Payload sinks | Decide `image-map` and `interpreter-stdin` before moving them. |
 | Broad staging profiles | Staging rules that fit no operation need a defined home; neither dropping the claim nor calling it activation is acceptable. |
 | Retained access | Choose a home for created accounts and authorized SSH keys, now in `persistence/login/{account,ssh}`. |
 | C2 `dns` and `trigger` | The target layout folds DNS control into `channel/<transport>` and admitted activation guards into `execution/trigger`; keep both leaves until a disposition is recorded. |

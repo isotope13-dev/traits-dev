@@ -61,15 +61,44 @@ traits:
           (#match? @persistence "(?s)reg add.{0,180}conhost\\.exe\\s+--headless")
           (#match? @persistence "JSON\\.stringify\\s*\\(\\s*\\{\\s*command\\s*\\}\\s*\\)")) @forwarding
 
-composite_rules:
-  - id: deno-http-command-endpoint
-    desc: Deno HTTP command execution endpoint
-    crit: hostile
+  - id: deno-request-body-shell-output
+    desc: Deno server runs request body through shell
+    crit: suspicious
     conf: 0.98
-    all:
-      - id: micro-behaviors/communications/http/server/listener::deno-serve-call
-      - id: micro-behaviors/process/create/direct::deno-command-call
-      - id: micro-behaviors/process/create/shell/interpreter::deno-cmd-shell-argument
-    any:
-      - id: micro-behaviors/communications/http/url/api-path::exec-path
-      - id: micro-behaviors/data/serialize/json::json-stringify-command-field
+    if:
+      type: tree-sitter
+      language: javascript
+      query: |
+        ((call_expression
+          function: (member_expression object: (identifier) @deno_server property: (property_identifier) @serve)
+          arguments: (arguments (arrow_function
+            parameters: (formal_parameters . (identifier) @request .)
+            body: (statement_block
+              (lexical_declaration (variable_declarator
+                name: (identifier) @body
+                value: (await_expression (call_expression
+                  function: (member_expression object: (identifier) @request_use property: (property_identifier) @text)
+                  arguments: (arguments)))))
+              .
+              (expression_statement (await_expression (call_expression
+                function: (member_expression
+                  object: (new_expression
+                    constructor: (member_expression object: (identifier) @deno_command property: (property_identifier) @command)
+                    arguments: (arguments . (string (string_fragment) @shell)
+                      (object (pair key: (property_identifier) @args
+                        value: (array . (string (string_fragment) @flag) . (identifier) @body_use .))) .))
+                  property: (property_identifier) @start)
+                arguments: (arguments))))))))
+          (#eq? @deno_server "Deno")
+          (#eq? @serve "serve")
+          (#eq? @request @request_use)
+          (#eq? @text "text")
+          (#eq? @deno_command "Deno")
+          (#eq? @command "Command")
+          (#eq? @shell "cmd")
+          (#eq? @args "args")
+          (#eq? @flag "/c")
+          (#eq? @body @body_use)
+          (#eq? @start "output")) @dispatch
+
+composite_rules:

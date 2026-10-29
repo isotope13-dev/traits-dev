@@ -10,7 +10,7 @@ YARA_UPDATE ?= $(if $(shell command -v yara-update 2>/dev/null),yara-update,$(ab
 
 COMPILED_DIR := third-party/compiled
 
-.PHONY: validate validate-uncached validate-profile precompile yara-compile yara-update install-precommit test-vsix-withdrawal
+.PHONY: validate validate-uncached validate-profile precompile yara-compile yara-update install-precommit test-vsix-withdrawal test-bound-opener test-python-openers
 
 # Offline dependency/registry regressions, including a consuming VSIX. Uses
 # synthetic provider responses in its own cache; never runs package code.
@@ -18,6 +18,12 @@ ATOMSCAN ?= ../scan/target/release/atomscan
 WITHDRAWAL_TEST_WORK ?= $(CURDIR)/.triage-work/vsix-withdrawal-regression
 test-vsix-withdrawal:
 	python3 scripts/review/test-vsix-withdrawal.py --atomscan "$(ATOMSCAN)" --work-dir "$(WITHDRAWAL_TEST_WORK)"
+
+test-bound-opener:
+	python3 scripts/review/test-bound-opener.py
+
+test-python-openers:
+	python3 scripts/review/test-python-openers.py
 
 # Rule validation.
 #
