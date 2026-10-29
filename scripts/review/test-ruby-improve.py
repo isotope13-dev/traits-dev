@@ -12,7 +12,7 @@ WEB = 'objectives/command-and-control/backdoor/webshell/intercept/module::'
 COOKIE = WEB + 'cookie-delivered-code-execution'
 PRODUCTION = WEB + 'ruby-cookie-eval-with-production-check'
 READ = 'micro-behaviors/fs/read/file/full::ruby-file-content-base64-value-flow'
-PACKER = 'objectives/credential-access/credential-manager/secret-storage::ruby-encoded-credential-file-read'
+PACKER = 'objectives/credential-access/files/secret-sweep::ruby-encoded-credential-file-read'
 INVENTORY = 'objectives/credential-access/files/secret-sweep::ruby-secret-file-hash-inventory'
 RUNNER = 'micro-behaviors/process/create/subprocess::ruby-http-body-script-subprocess-flow'
 TLS = 'objectives/command-and-control/dropper/delivery/fetch-exec::ruby-unverified-http-body-subprocess-exec'
@@ -57,6 +57,14 @@ def main():
     add('production-template.rb', template, forbidden=[COOKIE, PRODUCTION], no_hostile=True)
     add('packer.rb', packer, [READ, PACKER])
     add('packer-renamed.rb', re.sub(r'\bcontent\b', 'captured_bytes', re.sub(r'\bCREDENTIAL_FILES\b', 'TARGETS', packer)), [READ, PACKER])
+    add('packer-binary-read.rb', packer.replace('File.read(full_path)', 'File.binread(full_path)'), [READ, PACKER])
+
+    start = packer.index('  CREDENTIAL_FILES =')
+    end = packer.index('  FINANCIAL_EXTENSIONS =')
+    moved_targets = packer[:start] + packer[end:]
+    position = moved_targets.rfind('end')
+    moved_targets = moved_targets[:position] + packer[start:end] + moved_targets[position:]
+    add('packer-reordered.rb', moved_targets, [READ, PACKER])
     add('packer-different-read.rb', packer.replace('File.read(full_path)', "File.read('/tmp/public-data')"), forbidden=[PACKER])
     add('packer-different-encoding.rb', packer.replace('Base64.strict_encode64(content)', 'Base64.strict_encode64(status)'), forbidden=[READ, PACKER])
     add('ordinary-file-encoding.rb', "# .aws/credentials .ssh/id_rsa .netrc\ncontent = File.read('/tmp/public-data')\nencoded = Base64.strict_encode64(content)\n", [READ], [PACKER], True)
@@ -65,6 +73,13 @@ def main():
     add('inventory-other-hash.rb', inventory.replace('Digest::SHA256.hexdigest(content)', 'Digest::SHA256.hexdigest(status)'), forbidden=[INVENTORY], no_hostile=True)
     add('runner.rb', runner, [RUNNER, TLS], no_hostile=True)
     add('runner-renamed.rb', re.sub(r'\bexecute_script\b', 'launch_text', re.sub(r'\bresp\b', 'reply', runner)), [RUNNER, TLS], no_hostile=True)
+
+    start = runner.index('    def execute_script(')
+    end = runner.index('    def eval_ruby(')
+    fetch = runner.index('    def download_and_execute(')
+    after_fetch = runner.index('    def spawn_persistent_shell')
+    reordered = runner[:start] + runner[end:fetch] + runner[fetch:after_fetch] + runner[start:end] + runner[after_fetch:]
+    add('runner-reordered.rb', reordered, [RUNNER, TLS], no_hostile=True)
     add('runner-other-body.rb', runner.replace('execute_script(interpreter, resp.body)', 'execute_script(interpreter, trusted_script)'), forbidden=[RUNNER, TLS], no_hostile=True)
     add('runner-other-target.rb', runner.replace('execute_script(interpreter, resp.body)', 'display_script(interpreter, resp.body)'), forbidden=[RUNNER, TLS], no_hostile=True)
     add('runner-other-temp-path.rb', runner.replace('#{tf.path}', '#{other.path}'), forbidden=[RUNNER, TLS], no_hostile=True)
@@ -76,6 +91,29 @@ def main():
     add('ci-other-setting.rb', ci.replace('RUBYOPT=-r#{hook}', 'LOG_LEVEL=#{hook}'), forbidden=[CI_WRITE, CI_HOOK])
     add('ordinary-ci-preload.rb', "def configure\n path = ENV['GITHUB_ENV']\n File.open(path, 'a') { |output| output.puts \"RUBYOPT=-r#{profiler}\" }\nend\n", [CI_WRITE], [CI_HOOK], True)
 
+    client_path = next((ROOT / 'testdata/hostile/generated/ruby-improve').glob('c2-client.rb'))
+    client = client_path.read_text()
+    client_id = 'objectives/command-and-control/backdoor/tasking/poll::ruby-beacon-exfil-c2'
+    add('c2-client.rb', client, [client_id])
+    add('c2-renamed-client.rb', re.sub(r'\bhttp\b', 'transport', client), [client_id])
+    add('c2-route-references.rb', "require 'net/http'\nROUTES = ['/api/v1/beacon', '/api/v1/exfil']\n", forbidden=[client_id], no_hostile=True)
+    add('c2-unsent.rb', client.replace('http.request(req)', 'puts(req)'), forbidden=[client_id], no_hostile=True)
+    title_id = 'micro-behaviors/process/control/title::ruby-process-title-assignment'
+    neutral_refs = "refs = ['VirtualBox', 'QEMU', 'VMware', 'pip list', 'npm list', 'gem list', '/var/log/system-health', '/api/v1/exfil/']\nputs 'system-health-monitor'\n"
+    add('reference-indicators.rb', neutral_refs,
+        ['micro-behaviors/os/virtualization/hypervisor::ruby-virtualization-vendor-references',
+         'micro-behaviors/os/package-manager/audit::ruby-multi-ecosystem-list-commands',
+         'micro-behaviors/fs/path/log/system::ruby-system-health-log-directory'], [title_id], True)
+    add('process-title.rb', "$0 = 'renamed-worker'\n", [title_id], no_hostile=True)
+    add('quoted-process-title.rb', "puts %q{$0 = 'system-health-monitor'}\n", forbidden=[title_id], no_hostile=True)
+    ffi_demo = (ROOT / 'testdata/notable/controls/ruby-improve/ffi-demo.rb').read_text()
+    add('ffi-demo.rb', ffi_demo, ['micro-behaviors/dylib/load/ffi::ruby-fiddle-require'],
+        ['well-known/tool/offensive/gtfobins::gtfobins-ruby-library-load'], True)
+    inline_client = (ROOT / 'testdata/hostile/generated/ruby-improve/inline-json-client.rb').read_text()
+    add('inline-json-client.rb', inline_client, [client_id])
+    add('inline-json-renamed.rb', re.sub(r'\bhttps(?=\s*=|\.)', 'transport', inline_client), [client_id])
+    unsent = inline_client.replace('https.request(req, payload.to_json)', 'puts(payload.to_json)').replace('https.request(exfil_req, exfil_payload.to_json)', 'puts(exfil_payload.to_json)')
+    add('inline-json-unsent.rb', unsent, forbidden=[client_id])
     with tempfile.TemporaryDirectory(prefix='ruby-improve-') as temp:
         paths = []
         for name, (source, *_rest) in cases.items():

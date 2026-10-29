@@ -1961,7 +1961,7 @@ Resolve each in the migration manifest before moving the affected rules.
 
 | Checkpoint | Required resolution |
 |---|---|
-| Capacity for broad leaves | The temporary maximum is 85 rules; any category-specific exception requires a complete relevance audit and explicit user approval. Review parent and peer subjects, document the complete population and consumers, and resolve every broad observation before moving. Remove redundant levels and misplaced or duplicate rules before proposing refinements; do not invent a sibling or `other` bucket to satisfy the count. |
+| Capacity for broad leaves | The temporary maximum is 100 rules; any category-specific exception requires a complete relevance audit and explicit user approval. Review parent and peer subjects, document the complete population and consumers, and resolve every broad observation before moving. Remove redundant levels and misplaced or duplicate rules before proposing refinements; do not invent a sibling or `other` bucket to satisfy the count. |
 | Level-3 branches | Name the children, their single axis, precedence and an incomplete-evidence example before migrating. |
 | Broad staging profiles | Staging rules that fit no operation need a defined home; neither dropping the claim nor calling it activation is acceptable. |
 | Retained access | Choose a home for created accounts and authorized SSH keys, now in `persistence/login/{account,ssh}`. |
