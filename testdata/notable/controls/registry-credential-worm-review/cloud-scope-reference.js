@@ -1,0 +1,1 @@
+const scope = "https://www.googleapis.com/auth/cloud-platform";

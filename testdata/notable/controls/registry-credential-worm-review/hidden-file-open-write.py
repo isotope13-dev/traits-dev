@@ -1,0 +1,5 @@
+open("/var/tmp/.state-cache", "r")
+open("/run/.state-cache", "r")
+write("/tmp/.state-cache", data)
+write("/var/tmp/.state-cache", data)
+write("/run/.state-cache", data)
