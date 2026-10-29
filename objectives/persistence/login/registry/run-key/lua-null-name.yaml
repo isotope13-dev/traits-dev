@@ -1,0 +1,86 @@
+defaults:
+  platforms: [windows]
+  for: [lua]
+  attack: T1547.001
+traits:
+  - id: lua-nul-concealed-run-value-write
+    desc: Lua writes NUL-named Run-key value
+    crit: suspicious
+    conf: 0.99
+    # Bind Run path -> opened handle -> native write, and leading NUL ->
+    # UNICODE_STRING.Buffer -> that same write. Conditional code is included.
+    if:
+      type: tree-sitter
+      query: |
+        ((block
+          (variable_declaration (assignment_statement
+            (variable_list . (identifier) @path .)
+            (expression_list . (function_call arguments: (arguments
+              . (binary_expression right: (string) @runpath) .)) .)))
+          (variable_declaration (assignment_statement
+            (expression_list (function_call
+              name: (dot_index_expression field: (identifier) @open)
+              arguments: (arguments . (_) . (identifier) @path-use . (_) . (_) . (identifier) @handle .)))))
+          (variable_declaration (assignment_statement
+            (variable_list . (identifier) @wide (identifier))
+            (expression_list . (function_call arguments: (arguments
+              . (binary_expression left: (string) @nul ".." right: (_)) .)) .)))
+          . (variable_declaration (assignment_statement
+            (variable_list . (identifier) @record .)
+            (expression_list . (function_call) .)))
+          . (assignment_statement
+            (variable_list . (dot_index_expression table: (identifier) @record-use
+              field: (identifier) @buffer) .)
+            (expression_list . (identifier) @wide-use .))
+          (variable_declaration (assignment_statement
+            (expression_list (function_call
+              name: (dot_index_expression field: (identifier) @write)
+              arguments: (arguments . (bracket_index_expression table: (identifier) @handle-use field: (number) @index) . (identifier) @record-arg . (_) . (_) . (_) . (_) .)) @evidence))))
+          (#eq? @open "RegOpenKeyExW") (#eq? @path @path-use)
+          (#eq? @handle @handle-use) (#eq? @index "0")
+          (#match? @runpath "(?i)\\\\+CurrentVersion\\\\+Run[\"']$")
+          (#eq? @buffer "Buffer") (#eq? @write "NtSetValueKey")
+          (#eq? @wide @wide-use) (#eq? @record @record-use)
+          (#eq? @record @record-arg)
+          (#match? @nul "^[\"']\\\\(0{1,3}|x00)[\"']$"))
+        ((block
+          (variable_declaration (assignment_statement
+            (variable_list . (identifier) @path .)
+            (expression_list . (function_call arguments: (arguments
+              . (binary_expression right: (string) @runpath) .)) .)))
+          (variable_declaration (assignment_statement
+            (expression_list (function_call
+              name: (dot_index_expression field: (identifier) @open)
+              arguments: (arguments . (_) . (identifier) @path-use . (_) . (_) . (identifier) @handle .)))))
+          (variable_declaration (assignment_statement
+            (variable_list . (identifier) @wide (identifier))
+            (expression_list . (function_call arguments: (arguments
+              . (binary_expression left: (string) @nul ".." right: (_)) .)) .)))
+          . (variable_declaration (assignment_statement
+            (variable_list . (identifier) @record .)
+            (expression_list . (function_call) .)))
+          . (assignment_statement
+            (variable_list . (dot_index_expression table: (identifier) @record-use
+              field: (identifier) @buffer) .)
+            (expression_list . (identifier) @wide-use .))
+          (variable_declaration (assignment_statement
+            (expression_list (function_call
+              name: (dot_index_expression field: (identifier) @write)
+              arguments: (arguments . (bracket_index_expression table: (identifier) @handle-use field: (number) @index) . (identifier) @record-arg . (_) . (_) . (_) . (_) .)) @evidence))))
+          (#eq? @open "RegOpenKeyExW") (#eq? @path @path-use)
+          (#eq? @handle @handle-use) (#eq? @index "0")
+          (#match? @runpath "\\\\067\\\\117\\\\114\\\\114\\\\101\\\\110\\\\116\\\\086\\\\101\\\\114\\\\115\\\\105\\\\111\\\\110.{16}.$")
+          (#match? @runpath "\\\\092\\\\082\\\\117\\\\110[\"']$")
+          (#eq? @buffer "Buffer") (#eq? @write "NtSetValueKey")
+          (#eq? @wide @wide-use) (#eq? @record @record-use)
+          (#eq? @record @record-arg)
+          (#match? @nul "^[\"']\\\\(0{1,3}|x00)[\"']$"))
+
+composite_rules:
+  - id: lua-hidden-run-key-amsi-loader
+    desc: Lua concealed Run-key writer with AMSI erasure
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: lua-nul-concealed-run-value-write
+      - id: objectives/evasion/anti-av/amsi::lua-clr-amsi-memory-erasure-cluster
