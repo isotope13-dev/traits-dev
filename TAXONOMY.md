@@ -491,9 +491,10 @@ processes to `process`.
 | `fs` | Files, directories, paths, filesystem properties. | Raw device I/O (`hardware`). |
 | `mem` | Address spaces, memory objects, access, permissions. | Execution transfer (`process/inject`); in-memory decompression (`data`). |
 | `hardware` | Device and peripheral I/O or control. | Host property queries (`os/sysinfo`); windows and widgets (`ui`); surveillance (objectives). |
-| `process` | Execution contexts: creation, lifecycle, coordination, descriptors, interpreters, attach/hook/inject. | Privilege (`os/privilege`); durable activation (`objectives/persistence`). |
+| `process` | Operations on execution contexts: creation, lifecycle, coordination, process attributes, descriptors and standard streams, interpreters, attach/hook/inject. The required evidence must identify that execution-context subject. | Merely running inside a process or invoking a command-line tool is insufficient. Generic streams (`data/stream`), HTTP interception (`communications/http`), console control (`os/console`), repository operations (`revision-control`), agent policy (`data/llm`), and document operations (`data/document`) retain their subjects. Privilege is `os/privilege`; durable activation is `objectives/persistence`. |
+| `revision-control` | Repository operations and policy: history, changes, references, publication and repository access. `git` covers Git operations; `repository` covers other repository and forge operations. | The incidental subprocess used to run a repository command is not the result being classified. |
 | `dylib` | Native library loading, unloading, enumeration, symbol lookup. | Language modules (`os/module`); manual API resolution (`os/api-resolution`). |
-| `metaprogramming` | The program inspecting, generating or transforming program structure: `ast`, `generation`, `reflection/{inspect/{class,member},resolve,invoke}` *(legacy: `process/interpreter/reflection`)*. `generation` includes turning supplied source or an AST into an executable representation without requiring its invocation; reflection inspection reads class/type or member metadata, resolution finds members, and invocation calls a resolved member. | Running compiled/generated code (`process/interpreter/eval/constructed`); launching a compiler process (`process/create`); loading, defining or activating executable classes (`process/interpreter/runtime`); an AST the *analyzer* uses to match. |
+| `metaprogramming` | The program inspecting, generating or transforming program structure: `ast`, `generation`, `reflection/{inspect/{class,member},resolve,invoke}` *(legacy: `process/interpreter/reflection`)*. `generation` includes turning supplied source or an AST into an executable representation without requiring its invocation; reflection inspection reads class/type or member metadata, resolution finds members, and invocation calls a resolved member. | Running compiled/generated code (`process/interpreter/eval/constructed`); an undifferentiated compiler-process launch (`process/create`; identified compilation belongs in `generation/compile`); loading, defining or activating executable classes (`process/interpreter/runtime`); an AST the *analyzer* uses to match. |
 | `os` | Host services without a more specific facility: registry, services, environment, accounts, privilege, security controls, kernel, packages, autorun, sysinfo, telemetry, clipboard, console. | File, process and network operations, even through an OS API. |
 | `time` | Clocks, waits, elapsed time, in-process scheduling. | OS task registration (`os/autorun`, `os/service`); evasion gates (objectives). |
 | `ui` | Presentation and interaction. | Display hardware or capture (`hardware/display`); deception (objectives); framework identity (`well-known/lib/ui`). |
@@ -735,7 +736,9 @@ A keyed XOR cipher is `crypto/symmetric/xor`; XOR scrambling is
 | `data/{arithmetic,bitwise,checksum,reassembly,transaction}` | Numerical arithmetic; bit manipulation; noncryptographic integrity checks; reassembly; ledger transactions. |
 | `data/db/<operation>`, `data/config/<operation>` | Database and persistent-store operations, engine in the filename: `read`, `write`, `delete`, `enumerate`, `open`, `monitor`, and schema (`schema/{introspection,relational,stored-code,delete}`). Rows, documents and key/value entries share their operation; `write/row` and `delete/row` collapse to `write` and `delete`. Dropping a database or schema object is `schema/delete`; clearing stored entries is `delete`. Configuration reads and writes; a configuration file path is `fs/path`. |
 | `data/control-flow/{branch,loop,dispatch,error-handling,assert,return,sequence}` | Execution-path constructs. A method named `Run`, an indexed invocation or a computed call is `dispatch` until its receiver shows a launch. `dispatch` answers *how is the callee selected?*: `named` (a fixed name such as `Run` or `Create`), `computed` (a runtime expression: bracket access, a variable function, an indexed callback), `selector` (a `switch` or lookup on a command or decision value) and `indirect` (a machine-level pointer or register call). The first row that fits wins; a call through a computed name that is also a known launcher stays `computed` until its receiver shows a launch. |
-| `data/{stream,embedded,llm}/<operation>` | Streams and recording; embedded resources; model inference and tool calls. Prompt text that overrides policy is `objectives/evasion/security-bypass/llm`. |
+| `data/stream/{read,write,transfer,buffer,configure,record}` | Generic stream access and data movement, buffering, readiness/blocking settings and recording. File or peer-specific operations retain `fs` or `communications`; explicit process standard-stream operations use `process/stdio`. A method named `write` alone does not identify a stream. |
+| `data/document/<operation>` | Manipulating document properties, embedded objects, spreadsheet cells and document opening. Document event callbacks are `os/application/hook`; the scanned document's own format and macro counts remain `metadata/document`. |
+| `data/{embedded,llm}/<operation>` | Embedded resources; model inference, sessions, permission policy and tool calls. An agent permission setting or tool declaration does not establish child-process creation. Prompt text that overrides policy is `objectives/evasion/security-bypass/llm`. |
 
 YAML `load`/`Unmarshal` belong in `data/parse/yaml`; `dump` belongs in
 `data/serialize/yaml`. A format conversion follows its required output:
@@ -813,6 +816,7 @@ must not acquire a direction from its consumer.
 | `fs/swap/{on,off}` | Activating or disabling swap. Storage-header initialization (`mkswap`) belongs in `fs/volume/format`; raw zeroing remains `fs/disk/raw` until required evidence establishes formatting. |
 | `mem/{alloc,free,resize,copy,fill,compare}` | Allocate, release (`HeapFree`), resize (`HeapReAlloc`), copy, fill, compare. |
 | `mem/alloc/unified` | Allocation in a unified host/device memory model, such as CUDA managed memory. Ordinary process-heap allocation stays in `alloc/heap`; a virtual mapping stays in `mem/map`. Call-shaped text records syntax, not proof of execution. |
+| `mem/local-storage` | Thread- and fiber-local storage allocation, lookup, assignment and release. TLS here means thread-local storage, not transport security. These APIs do not create or schedule execution contexts. |
 | `mem/{map,unmap}`, `mem/create`, `mem/anonymous/create` | Mappings (`mremap` is `map`, not proof of a size change); shared and image-section objects; anonymous file descriptors (`memfd_create` proves no execution from it). |
 | `mem/{read,write,protect,query,advise,lock,gc,sync}` | Access (local, remote or physical, when established), permissions, inspection, advice, pinning, GC, cache visibility. RWX alone is neutral; writing to another process transfers no execution. |
 | `mem/combined` | Composites needing one alternative across memory operations. |
@@ -824,19 +828,21 @@ must not acquire a direction from its consumer.
 | Home | Admission and boundary |
 |---|---|
 | `process/create/<mechanism>` | Creating an execution context; see [process creation](#process-creation). |
-| `process/thread/{lifecycle,enumerate,group,priority,config,terminate}`, `process/fiber/<operation>` | Thread or fiber management apart from creation; a fiber is not a thread. |
-| `process/sync/{mutex,semaphore,event,critical-section,join}` | Coordination between execution contexts; memory visibility is `mem/sync`. |
+| `process/config` | Launch records, child-process settings and creation-option references. These describe a proposed execution context without proving it was created. Application-specific settings retain their application resource. |
+| `process/thread/{create,lifecycle,enumerate,group,priority,config,terminate}`, `process/fiber/<operation>` | Thread or fiber management; a fiber is not a thread. |
+| `process/sync/{mutex,semaphore,event,critical-section,condition,join}` | Coordination between execution contexts, including reader/writer locks and condition variables; memory visibility is `mem/sync`. Atomic list operations remain `data/collection/list`; a lock-free list is not itself thread coordination. |
 | `process/work/{queue,pool,task}` *(legacy: `process/threading/queue`)* | Queue and pool management; task submission, completion, waiting, cancellation and future/result access (`QueueUserWorkItem`, `dispatch_async`). These do not establish thread creation. Joining a thread is `process/sync/join`; timer callbacks are `time/schedule`. |
 | `process/{identity,info,enumerate,argument,resources,pid}` | Current identity; attributes (`info/name` for generic process labels, thread names and name-related diagnostics); listing; arguments; limits; PID files (a PID value is not one). A recognized application's name retains its functional subject under `os/application/target`, even when spelled as a process image. |
 | `process/{exit,terminate,control,daemonize}` | Ending this process (`exit/handler` for exit callbacks); killing another (a signal API without the kill signal is not); other state changes; detaching (`fork`+`setsid`). |
 | `process/lifecycle/<operation>` | Lifecycle; a guard blocking a second instance (mutex, PID file, lock) is `single-instance` (MBC B0024), while a mutex alone is `process/sync/mutex`. |
 | `process/debug/tool-markers` | References to debugging or tracing tooling, including executable names and paths. A reference proves neither a running debugger, a tool-owned artifact, nor an anti-analysis check; those require independent operation and target evidence. |
 | `process/fd/{query,control,close,dup,stdio}` | Descriptor operations, including child standard-stream configuration, redirection, and descriptor duplication. Creating an IPC pipe is `communications/ipc`. |
-| `process/io/stream/<operation>` | Reading, writing, piping, or relaying stream data, including paired relays between a peer stream and child stdin/stdout. This is the data-movement operation; stdio configuration and descriptor setup or duplication remain under `process/fd`. A property assignment or unbound call-prefix text alone does not establish stream I/O. |
+| `process/stdio/{read,write,relay}` | Reading, writing or relaying explicitly identified stdin, stdout or stderr, including captured child output and peer-to-child relays. Standard-stream configuration and descriptor setup remain `process/fd/stdio`; generic streams are `data/stream`. A `.write()` call or an arbitrary `getInputStream()` receiver does not establish a process resource. `process/io` is retired and banned. |
 | `process/tty/<operation>` | Terminal interaction and PTYs. |
 | `process/interpreter/<operation>` | In-process execution: `eval/{direct,indirect,constructed,source}` plus `bof` (Beacon Object File host APIs), `wasm`, and `vm`. `eval` executes supplied code in an existing interpreter. Launching an interpreter is `process/create`; compilation without required invocation is `metaprogramming/generation`; language identity is metadata. |
 | `process/{attach,debug,hook,inject}/<mechanism>` | Attaching, debugging, intercepting and transferring execution, with no established attacker purpose. |
 | `process/deploy/<sink>` | Neutral acquisition- or staging-to-activation chains (an updater fetching and launching its image), by the [payload sinks](#payload-activation-and-staging). |
+
 | `dylib/{load,unload,lookup,enumerate}` | Native loader operations. Language modules are `os/module`; export walking or API hashing is `os/api-resolution`; hiding import identity is an anti-static claim. |
 | `os/registry/<operation>` | A value read, write or delete beats key or hive references (`keys`, `hive`). Value-name and value-type references belong in `value-name` and `value-type`; they prove neither access nor activation. Only a Run-key write with durable activation is persistence. |
 | `os/service/<operation>` | `create`, `start`, `stop`, `delete`, `configure`, `query`, `dispatch` (running as a service), `control` (no verb). A definition field alone is configuration; user or system scope is evidence, not a branch. |
@@ -850,6 +856,33 @@ must not acquire a direction from its consumer.
 | `os/application/target/<function>` | An app or package cited as the program's target (wallet brands, `SpringBoard`); neither discovery nor the file's identity. Children classify the referenced product's function, not the reference's spelling or encoding. |
 | `time/{query,sleep,timing,schedule}` | Read time; wait; measure elapsed time (`timing/check`); schedule in-process callbacks (`schedule/timeout` for alarms). |
 | `ui/{controls,dialog,graphics,help,menu,terminal,wallpaper,window}` | Credential-entry controls (`controls/credential`), wallet UI (`controls/wallet`), drag-and-drop interaction (`controls/drag-drop`), prompts (`dialog/prompt`), `--help` text (`help`), window hooks, enumeration and notifications. Deceptive hiding is evasion. |
+
+**Process admission is about the affected resource, not the host.** A native
+function detour or runtime-method hook alters execution and fits `process/hook`.
+Intercepting HTTP requests, wrapping console logging, overriding web storage,
+handling window events, or registering application callbacks belongs with that
+resource. An embedded browser is `ui/window/webview`; its native message bridge
+is `communications/ipc/bridge`, while an explicit JavaScript evaluation keeps
+`process/interpreter/eval`.
+
+Creation requires evidence of creating an execution context. Loading modules
+uses `os/module/load` or `dylib/load`; compiler operations use
+`metaprogramming/generation/compile`, with build flags under `metadata/build`.
+A generic launch of an unspecified compiler remains process creation; a rule
+that identifies compilation should retain that more informative operation.
+Installer operations belong with package management; a package format does not
+define a creation mechanism. Interpreter names and imports are metadata; COM
+construction, property assignment and decoded method references retain those
+operations. Language and wrapper buckets such as `shell/lang`, `shell/bridge`,
+`interpreter/jscript` and `create/flags` are retired. Browser configuration is
+`os/application/config`; execution-policy settings are `os/security/execution-policy`.
+Macro events are application hooks, not process creation. Macro atoms for
+memory, networking, strings and COM retain those facilities.
+
+The retired process paths and their replacement guidance are enforced by
+[`scripts/review/process-taxonomy-policy.json`](scripts/review/process-taxonomy-policy.json)
+in `make validate`. Bans apply to whole subtrees, including newly nested leaves;
+renaming a bad category does not exempt it from the execution-context test.
 
 `os/application/target` asks **what function does the referenced software serve?**
 All children record references, not installation, use, discovery, or ownership.
@@ -927,15 +960,27 @@ the evaluator, otherwise `direct`. A decoder, decryptor, HTTP response or object
 field does not create another child: those facts qualify the input, not the
 execution mechanism.
 
-Within `metaprogramming/generation`, runtime compilation answers a different
-question: **does the program turn supplied program text or structure into an
-executable representation?** It includes Python `compile`, JavaScript
-`Function`, PowerShell `ScriptBlock.Create`, expression-tree `Compile`, and
-similar callable/code-object construction. It excludes execution-only APIs,
-compiler/toolchain identity, external compiler process creation, module loading,
-and quoted compiler wording. Generation is the existing broader operation—it
-already includes JIT and C# compilation—and remains one leaf while the combined
-catalog fits the temporary 85-rule budget and one-operation contract.
+Within `metaprogramming/generation`, classify the generated result or operation:
+`function` constructs a callable/code object (JavaScript `Function`, PowerShell
+`ScriptBlock.Create`, expression-tree compilation); `compile` compiles source
+or invokes an identified compiler/toolchain; `source` constructs source text;
+`transform` edits program structure or source; `format` formats source; `emit`
+emits instructions or assembly/module structures. Mere execution remains under
+`process/interpreter`; compilation does not establish invocation. Generic
+process-launch evidence stays under `process/create`, while compiler flags and
+build configuration stay under `metadata/build`.
+
+`os/module/load/{name,path,memory,class}` distinguishes module loading by the
+identified input or resolution mechanism: a module name, file path, in-memory
+representation, or class-loader facility. Native DLL-name references belong in
+`dylib/library/family`; native loading uses `dylib/load`. Modifying loader entries
+is `os/module/configure`, and unbound loading/API co-occurrences are profiles.
+
+Command approval, refusal and classification belong in `os/security/command-policy`;
+redacting command secrets belongs in `os/security/redaction`. A command mentioned
+inside a policy still retains its own resource when matched independently of the
+policy. Audio playback is `hardware/audio/play`; cloud provisioning and resource
+administration are `os/virtualization/{deploy,configure,delete}`.
 
 #### Process creation
 
@@ -944,7 +989,7 @@ context by ___". **The first matching row wins:**
 
 | The matcher shows | Directory |
 |---|---|
-| A thread in the current process | `thread` |
+| A thread in the current process | `process/thread/create` |
 | A fiber | `fiber` |
 | A clone of the current process | `fork` |
 | A new shell parsing command text (`sh -c`, `cmd /c`, `shell=True`, a pipeline, `bash "$f"`, `%COMSPEC% /c`) | `shell` |
@@ -952,12 +997,12 @@ context by ___". **The first matching row wins:**
 | A Windows Script Host execution or script-moniker API | `process/interpreter/wsh` |
 | A library object standing for the child (`Popen`, `NSTask`, `ProcessBuilder`) | `subprocess` |
 | The desktop opener choosing the handler (`ShellExecute`, `open`, `NSWorkspace`) | `shellexec` |
+| An API starting an image from an argument vector or command line (`execve`, `CreateProcess`, `posix_spawn`, `WinExec`, `WshShell.Run` with an executable path) | `exec` |
+| Only an executable name, launch flag, permission or import | Its path, configuration or import observation, not process creation |
 
 `process/thread/{create,config,lifecycle,terminate,enumerate,priority,runtime}`
 records one thread operation per child. Synchronization remains under
 `process/sync`; scheduled work remains under `process/work`.
-| An API starting an image from an argument vector or command line (`execve`, `CreateProcess`, `posix_spawn`, `WinExec`, `WshShell.Run` with an executable path) | `exec` |
-| Only an executable name, launch flag, permission or import | Its path, configuration or import observation, not process creation |
 
 An explicit shell argument beats the wrapper. An API's optional features are no
 evidence that this call uses them, and the launched executable does not change

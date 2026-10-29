@@ -1,0 +1,193 @@
+defaults:
+  for: [python]
+  mbc: "F0005"
+  attack: "T1564.003"
+  crit: notable
+  platforms: [windows]
+traits:
+  - id: create-new-process-group
+    desc: "Process creation detached from parent"
+    conf: 0.8
+    if:
+      type: symbol
+      exact: "CREATE_NEW_PROCESS_GROUP"
+    downgrade:
+      any:
+        - id: metadata/package/testing/scripted::pytest-word
+  # creationflags parameter in subprocess — CREATE_NO_WINDOW suppresses the
+  # console window of a child (ATT&CK Hidden Window), not process concealment.
+  - id: creationflags
+    desc: Subprocess uses CREATE_NO_WINDOW flag
+    conf: 0.75
+    crit: notable
+    if:
+      type: text
+      # Accept any qualifier on the constant. Droppers routinely define
+      # `CREATE_NO_WINDOW = 0x08000000` themselves (it avoids touching the
+      # attribute, which only exists on Windows) and then pass the bare name,
+      # so anchoring on `subprocess.` alone missed the common malware spelling.
+      # The `[\w.|\s]{0,60}` prefix also covers OR-combined flag expressions.
+      regex: 'creationflags\s*=\s*[\w.|\s]{0,60}\bCREATE_NO_WINDOW\b'
+    unless:
+      - id: metadata/file/profile/source-indications/
+      - id: metadata/lang/natural/vocabulary/content-word::deferred-uninstall-wording
+    downgrade:
+      any:
+        - id: well-known/tool/development/debug/debugpy
+  - id: python-qualified-create-no-window
+    desc: Qualified CREATE_NO_WINDOW constant
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: 'subprocess\.CREATE_NO_WINDOW\b'
+  - id: python-create-no-window-getattr
+    desc: Python gets CREATE_NO_WINDOW for child
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\bgetattr\(\s*subprocess\s*,\s*["'']CREATE_NO_WINDOW["''](\s*,\s*0)?\s*\)'
+  # CREATE_NEW_CONSOLE is the inverse of CREATE_NO_WINDOW: the child gets a
+  # console window of its own instead of inheriting or suppressing one. Bound
+  # to the `creationflags=` keyword rather than the bare constant, because the
+  # bare name also appears wherever the constant is merely re-exported or
+  # imported — CPython's own `subprocess.py` pulls it out of `_winapi` and
+  # lists it in `__all__`, which is a declaration, not a process launch.
+  # The file-level T1564.003/F0005 defaults describe window *hiding*; this flag
+  # does the opposite, so it carries its own console/execution codes.
+  - id: python-create-new-console
+    desc: Subprocess uses CREATE_NEW_CONSOLE flag
+    crit: notable
+    conf: 0.92
+    mbc: C0033
+    attack: T1059
+    if:
+      type: text
+      regex: 'creationflags\s*=\s*[\w.|\s]{0,60}\bCREATE_NEW_CONSOLE\b'
+  # Match the direct keyword and adjacent local aliases, including a
+  # platform-conditional alias. An unrelated numeric constant is insufficient.
+  - id: python-create-no-window-hex
+    desc: Numeric CREATE_NO_WINDOW creation flags
+    crit: notable
+    conf: 0.95
+    if:
+      type: tree-sitter
+      query: |
+        [
+          ((keyword_argument name: (identifier) @kw value: (integer) @flag) @flags
+            (#eq? @kw "creationflags")
+            (#match? @flag "^0[xX]0?8000000$"))
+          ((block
+            (expression_statement (assignment
+              left: (identifier) @defined
+              right: [(integer) @flag (conditional_expression (integer) @flag)]))
+            .
+            (expression_statement (call
+              function: (attribute object: (identifier) @mod attribute: (identifier) @api)
+              arguments: (argument_list (keyword_argument
+                name: (identifier) @kw value: (identifier) @used))) @launch))
+            (#eq? @defined @used)
+            (#eq? @mod "subprocess")
+            (#match? @api "^(run|Popen|call)$")
+            (#eq? @kw "creationflags")
+            (#match? @flag "^0[xX]0?8000000$"))
+          ((module
+            (expression_statement (assignment
+              left: (identifier) @defined
+              right: [(integer) @flag (conditional_expression (integer) @flag)]))
+            .
+            (expression_statement (call
+              function: (attribute object: (identifier) @mod attribute: (identifier) @api)
+              arguments: (argument_list (keyword_argument
+                name: (identifier) @kw value: (identifier) @used))) @launch))
+            (#eq? @defined @used)
+            (#eq? @mod "subprocess")
+            (#match? @api "^(run|Popen|call)$")
+            (#eq? @kw "creationflags")
+            (#match? @flag "^0[xX]0?8000000$"))
+        ]
+  # Redefining the constant inline instead of importing it: the value is the
+  # flag, so this fires even when the launch site passes an aliased name the
+  # `creationflags=` matchers above cannot see.
+  - id: python-create-no-window-constant-define
+    desc: Defines CREATE_NO_WINDOW flag value inline
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)CREATE_NO_WINDOW\s*=\s*0x0?8000000\b'
+  - id: python-detached-process-use
+    desc: Subprocess uses DETACHED_PROCESS flag
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: 'creationflags\s*=\s*[\w.|\s]{0,60}\bDETACHED_PROCESS\b'
+  - id: python-sw-hide-assignment
+    desc: Python hides subprocess startup window
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      # Public caller spellings. `_winapi.SW_HIDE` is CPython's own Popen
+      # implementation applying the caller's `shell=True` request.
+      regex: 'wShowWindow\s*=\s*((subprocess|win32con)[.])?SW_HIDE\b'
+  # Combined creation flags with bitwise OR
+  - id: combined-creationflags
+    desc: "Multiple process creation flags combined"
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      # Matches: creationflags=FLAG1 | FLAG2
+      regex: "creationflags\\s*=\\s*[^,)]{1,120}\\|"
+  - id: python-or-create-no-window-hex
+    desc: ORs the CREATE_NO_WINDOW flag value
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '0x[0-9A-Fa-f]+\s*\|\s*0x0?8000000\b'
+    unless:
+      - id: metadata/file/profile/source-indications/
+      - id: metadata/lang/natural/vocabulary/content-word::deferred-uninstall-wording
+    downgrade:
+      any:
+        - id: well-known/tool/development/debug/debugpy
+composite_rules:
+  - id: python-create-no-window-use
+    desc: Python suppresses subprocess console window
+    crit: notable
+    # "Suppresses" promises the flag reaching a launch site. A bare getattr
+    # lookup of the constant is the portable-compat recipe --
+    # getattr(subprocess, "CREATE_NO_WINDOW", 0) is a no-op off Windows --
+    # which compat shims then apply through **kwargs plumbing the
+    # creationflags= matcher cannot see. The lookup alone suppresses no
+    # window, so only the creationflags= and literal spellings count as use;
+    # the lookup atom stays notable for differential analysis.
+    any:
+      - id: micro-behaviors/process/config::creationflags
+      - id: micro-behaviors/process/config::python-create-no-window-hex
+  - id: python-detached-process-use-group
+    desc: Python launches detached hidden process
+    crit: notable
+    any:
+      - id: micro-behaviors/process/config::python-detached-hidden-hex
+      - id: micro-behaviors/process/config::python-detached-process-use
+  - id: python-sw-hide-use
+    desc: Python launches process with SW_HIDE
+    crit: notable
+    any:
+      - id: micro-behaviors/process/config::python-sw-hide-assignment
+      - id: micro-behaviors/process/create/hidden::python-ctypes-winexec-hidden
+  # hidden window flag composite
+  - id: hidden-window-flag
+    desc: "Hidden or detached process window"
+    conf: 0.85
+    crit: notable
+    any:
+      - id: micro-behaviors/process/config::create-no-window
+      - id: micro-behaviors/process/config::detached-process
+      - id: micro-behaviors/ui/window/visibility::sw-hide-symbol
+  # Combined: CREATE_NO_WINDOW + CREATE_NEW_PROCESS_GROUP

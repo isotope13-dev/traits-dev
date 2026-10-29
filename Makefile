@@ -40,10 +40,12 @@ test-python-openers:
 # failing. Every classified fixture also supplies a measured cost probe.
 # validate-uncached forces a fresh measured pass.
 validate:
+	python3 scripts/review/check-process-taxonomy.py
 	python3 scripts/review/test-third-party-config-compat.py
 	$(CLEAVE) --traits-dir . validate
 
 validate-uncached:
+	python3 scripts/review/check-process-taxonomy.py
 	CLEAVE_SKIP_CACHE=1 $(CLEAVE) --traits-dir . validate
 
 # Aggregate regex/Tree-sitter trait costs and slow fixtures. Avoid --verbose:
@@ -51,6 +53,7 @@ validate-uncached:
 # Requires cleave's validate scan-stat reporting; output goes to stderr.
 SLOW_RULE_MS ?= 500
 validate-profile:
+	python3 scripts/review/check-process-taxonomy.py
 	CLEAVE_SKIP_CACHE=1 CLEAVE_TRAIT_TIMING=1 CLEAVE_PHASE_STATS=1 RUST_LOG=cleave=info $(CLEAVE) --slow-rule-ms $(SLOW_RULE_MS) --traits-dir . validate
 
 # Compile the third-party + built-in YARA rules into portable per-filetype
