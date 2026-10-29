@@ -72,6 +72,38 @@ traits:
     if:
       type: raw
       regex: '"\s*(\\x[0-9a-fA-F]{2}|\\U[0-9a-fA-F]{8}|\\u[0-9a-fA-F]{4}){2,}\s*"'
+  - id: gyp-action-reads-container-metadata
+    desc: gyp queries ECS metadata
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: value
+      path: targets[*].actions[*].action[*]
+      regex: 'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI|ECS_CONTAINER_METADATA_URI_V4'
+  - id: gyp-action-surveys-host-secrets
+    desc: gyp lists container secrets
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: value
+      path: targets[*].actions[*].action[*]
+      regex: 'ls\s+-laR\s+/var/run/secrets/'
+  - id: gyp-action-reads-root-file
+    desc: gyp reads root-level files
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: value
+      path: targets[*].actions[*].action[*]
+      regex: 'readFileSync.{0,20}/(flag([./]|$)|etc/)'
+  - id: gyp-action-references-webhook-site
+    desc: gyp action sends data to webhook.site
+    crit: notable
+    conf: 0.99
+    if:
+      type: value
+      path: targets[*].actions[*].action[*]
+      substr: webhook.site
 
 composite_rules:
   - id: gyp-install-action-exfiltrates-host-data
@@ -144,3 +176,39 @@ composite_rules:
     all:
       - id: gyp-condition-python-subclass-traversal
       - id: objectives/execution/exploit/sandbox-escape::python-object-graph-command-execution
+
+  # npm invokes binding.gyp actions during native-addon configuration. These
+  # archive-scoped rules cover the distinct data sources used by install-time
+  # actions that transmit collected host data to an external webhook. Requiring
+  # both collection and outbound transfer avoids treating ordinary gyp builds,
+  # generic HTTP clients, or file reads as hostile on their own.
+  - id: gyp-action-exfiltrates-container-metadata
+    desc: npm gyp action exports ECS credentials or task metadata
+    crit: hostile
+    conf: 0.99
+    attack: T1552.005,T1041,T1195.002
+    for: [npm, tar, javascript, gyp]
+    scope: archive
+    all:
+      - id: gyp-action-reads-container-metadata
+      - id: gyp-action-references-webhook-site
+  - id: gyp-action-exfiltrates-host-file-survey
+    desc: npm gyp action exports local host and secret-directory survey
+    crit: hostile
+    conf: 0.99
+    attack: T1082,T1005,T1041,T1195.002
+    for: [npm, tar, javascript, gyp]
+    scope: archive
+    all:
+      - id: gyp-action-surveys-host-secrets
+      - id: gyp-action-references-webhook-site
+  - id: gyp-action-reads-files-and-exfiltrates
+    desc: npm gyp action sends locally read file contents to webhook
+    crit: hostile
+    conf: 0.99
+    attack: T1005,T1041,T1195.002
+    for: [npm, tar, javascript, gyp]
+    scope: archive
+    all:
+      - id: gyp-action-reads-root-file
+      - id: gyp-action-references-webhook-site
