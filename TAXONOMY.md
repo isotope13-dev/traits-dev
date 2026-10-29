@@ -326,7 +326,7 @@ contract as well as running the validator.
 
 | Validator check | Limit |
 |---|---|
-| Rules per directory | **85** traits plus composites is the temporary maximum, summed over its YAML files and criticalities. A category-specific exception requires a complete relevance audit and explicit approval; filenames create no budgets. |
+| Rules per directory | **85** traits plus composites is the temporary maximum, summed over its YAML files and criticalities. Enforce the same limit on both the physical directory and the ID namespace: explicitly qualified IDs must not hide either population. A category-specific exception requires a complete relevance audit and explicit approval; filenames create no budgets. |
 | Subdirectories | Hard error above 150 immediate subdirectories. Split broad catalogs by a stable function with a tiebreaker. |
 | Depth | Soft warning beyond five levels below the tier (`objectives/a/b/c/d/e/f/x.yaml` warns). Soft warnings fail `make validate`; `cleave validate --soft` only reports them. |
 | Sparse siblings | Soft warning when a parent has ten or more child directories averaging eight or fewer rules per child. Reports child count, total rules, and average rules per child; strict validation fails until the parent is reviewed. |
@@ -865,6 +865,11 @@ resource. An embedded browser is `ui/window/webview`; its native message bridge
 is `communications/ipc/bridge`, while an explicit JavaScript evaluation keeps
 `process/interpreter/eval`.
 
+Standard-library imports remain metadata until use is established. A familiar
+method name in an unbound destructuring expression does not identify its module.
+Runtime-independent API-name references retain a naming category, without
+claiming invocation.
+
 Creation requires evidence of creating an execution context. Loading modules
 uses `os/module/load` or `dylib/load`; compiler operations use
 `metaprogramming/generation/compile`, with build flags under `metadata/build`.
@@ -878,6 +883,10 @@ operations. Language and wrapper buckets such as `shell/lang`, `shell/bridge`,
 `os/application/config`; execution-policy settings are `os/security/execution-policy`.
 Macro events are application hooks, not process creation. Macro atoms for
 memory, networking, strings and COM retain those facilities.
+
+`revision-control/git/{read,write,transfer,configure}` separates repository
+inspection, local mutation, remote exchange and configuration. Mixed operations
+without a narrower common purpose remain `revision-control/repository`.
 
 The retired process paths and their replacement guidance are enforced by
 [`scripts/review/process-taxonomy-policy.json`](scripts/review/process-taxonomy-policy.json)

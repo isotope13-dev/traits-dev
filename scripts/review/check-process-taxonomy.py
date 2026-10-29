@@ -12,7 +12,7 @@ def violations(root, policy):
     for retired, guidance in policy.items():
         path = root / retired
         if path.is_dir():
-            count = sum(1 for item in path.rglob("*") if item.suffix in (".yaml", ".yml"))
+            count = sum(1 for item in path.rglob("*") if item.is_file() and item.suffix in (".yaml", ".yml"))
             yield (
                 f"{retired}: retired process category ({count} YAML files). "
                 f"{guidance['reason']}\n  Destinations: "

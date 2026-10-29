@@ -3,6 +3,7 @@
 
 import importlib.util
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -28,11 +29,20 @@ class ProcessTaxonomyTest(unittest.TestCase):
                 self.assertIn(retired, errors[0])
                 self.assertIn("1 YAML files", errors[0])
 
+    def test_sibling_engine_policy_agrees_when_available(self):
+        engine = Path(__file__).resolve().parents[3] / "cleave/src/capabilities/validation/directory_whitelist.rs"
+        if not engine.is_file():
+            self.skipTest("Sibling cleave source checkout is unavailable")
+        block = engine.read_text().split("const RETIRED_PROCESS_PATHS:", 1)[1].split("];", 1)[0]
+        engine_paths = set(re.findall(r'"(micro-behaviors/process/[^"\n]+)"', block))
+        self.assertEqual(engine_paths, set(json.loads(checker.POLICY.read_text())))
+
     def test_valid_resources_and_similar_names_are_not_banned(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             for path in (
                 "micro-behaviors/process/stdio/relay",
+                "micro-behaviors/process/config",
                 "micro-behaviors/process/create/fork",
                 "micro-behaviors/process/hook/interception",
                 "micro-behaviors/process/interpreter/eval/direct",
