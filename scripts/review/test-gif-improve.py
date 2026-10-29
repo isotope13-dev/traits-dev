@@ -100,6 +100,8 @@ def main():
             path = Path(temp) / name
             path.write_bytes(data)
             paths.append(str(path))
+        if corpus := os.environ.get('GIF_IMPROVE_CORPUS_JSON'):
+            paths.extend(json.loads(Path(corpus).read_text()))
         if atomscan := os.environ.get('ATOMSCAN'):
             command = [atomscan, '--no-update', '--analyze', 'local', '--follow=none',
                        '--mode', 'slow', '--format=json', *paths]

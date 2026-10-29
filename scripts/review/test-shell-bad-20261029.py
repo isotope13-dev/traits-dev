@@ -11,9 +11,10 @@ ROOT = Path(__file__).resolve().parents[2]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--atomscan", default="../scan/target/release/atomscan")
+    parser.add_argument("--cases", type=Path, default=Path(__file__).with_suffix(".json"))
     parser.add_argument("--results", type=Path, help="verify an existing Atomscan JSONL report")
     args = parser.parse_args()
-    cases = json.loads((Path(__file__).with_suffix(".json")).read_text())
+    cases = json.loads(args.cases.read_text())
     if args.results:
         data = args.results.read_text()
     else:

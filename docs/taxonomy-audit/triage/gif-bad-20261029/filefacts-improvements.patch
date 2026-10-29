@@ -93,7 +93,7 @@ index 01048b1..89b023e 100644
      "media.valid",
 --- /dev/null
 +++ b/src/formats/embedded_php.rs
-@@ -0,0 +1,232 @@
+@@ -0,0 +1,254 @@
 +//! Parsed PHP calls inside passive media. No sample code is executed.
 +use crate::{output::Values, value_key};
 +use serde_json::Value;
@@ -122,7 +122,7 @@ index 01048b1..89b023e 100644
 +    // The PHP grammar also accepts configuration-dependent bare <? tags.
 +    // Normalize those away: these facts require a valid long or echo tag.
 +    let mut normalized = bytes.to_vec();
-+    let mut valid_tag = false;
++    let mut first_tag = None;
 +    for offset in 0..bytes.len().saturating_sub(1) {
 +        if &bytes[offset..offset + 2] != b"<?" {
 +            continue;
@@ -132,15 +132,20 @@ index 01048b1..89b023e 100644
 +            || (tag.get(..3).is_some_and(|p| p.eq_ignore_ascii_case(b"php"))
 +                && tag.get(3).is_some_and(u8::is_ascii_whitespace))
 +        {
-+            valid_tag = true;
++            first_tag.get_or_insert(offset);
 +        } else {
 +            normalized[offset + 1] = b' ';
 +        }
 +    }
-+    if !valid_tag {
++    let Some(first_tag) = first_tag else {
 +        return;
-+    }
-+    let source = normalized.as_slice();
++    };
++    // Binary prefixes can place arbitrary comment/string delimiters before
++    // the opening PHP tag. They are inline output, not PHP lexer context.
++    // Begin at the first supported tag, keeping the original suffix for
++    // node text and the normalized suffix for parsing.
++    let original = &bytes[first_tag..];
++    let source = &normalized[first_tag..];
 +    let mut parser = tree_sitter::Parser::new();
 +    if parser
 +        .set_language(&tree_sitter_php::LANGUAGE_PHP.into())
@@ -206,7 +211,7 @@ index 01048b1..89b023e 100644
 +        }
 +        if node.kind() == "function_call_expression"
 +            && !node.has_error()
-+            && let Some(name) = request_call(node, bytes, has_namespace)
++            && let Some(name) = request_call(node, original, has_namespace)
 +        {
 +            calls.insert(name);
 +        }
@@ -313,6 +318,23 @@ index 01048b1..89b023e 100644
 +            assert!(calls(source).is_empty(), "{source:?}");
 +        }
 +    }
++    #[test]
++    fn embedded_php_gif_comment_request_command() {
++        for tag in ["<?php ", "<?PHP\n", "<?="] {
++            let payload = format!("{tag}system($_REQUEST[\"task\"]); ?>");
++            let mut source = b"GIF89a\x01\0\x01\0\x80\0\0\0\0\0\xff\xff\xff\x21\xfe".to_vec();
++            source.push(payload.len() as u8);
++            source.extend_from_slice(payload.as_bytes());
++            source.extend_from_slice(b"\0\x2c\0\0\0\0\x01\0\x01\0\0\x02\x02\x44\x01\0\x3b");
++            let mut parser = tree_sitter::Parser::new();
++            parser
++                .set_language(&tree_sitter_php::LANGUAGE_PHP.into())
++                .unwrap();
++            let tree = parser.parse(&source, None).unwrap();
++            assert_eq!(calls(&source), ["system"], "{}", tree.root_node().to_sexp());
++        }
++    }
++
 +    #[test]
 +    fn embedded_php_byte_budget_is_explicit() {
 +        let mut source = vec![b' '; MAX_BYTES + 1];
