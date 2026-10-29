@@ -1,0 +1,83 @@
+defaults:
+  platforms: [windows]
+  for: [javascript]
+traits:
+  # Compare the path identifier byte-for-byte. This also works inside a COM
+  # scriptlet's CDATA, where the JavaScript parser can treat XML as JSX and
+  # lose all the executable statements. The two calls must be ordered and
+  # bounded; neither a chosen filename nor a particular receiver name gates it.
+  - id: js-adodb-saved-path-hidden-rundll32
+    desc: Saved path passed to hidden rundll32
+    crit: notable
+    conf: 0.97
+    size_max: 262144
+    if:
+      type: yara
+      source: |
+        rule saved_path_hidden_rundll32 {
+          strings:
+            $writer = /[a-zA-Z_$][a-zA-Z0-9_$]{0,63}\.Write[ \t]*\(/
+            $saver = /[a-zA-Z_$][a-zA-Z0-9_$]{0,63}\.SaveToFile[ \t]*\([ \t]*/
+            $writer_dot = ".Write"
+            $saver_dot = ".SaveToFile"
+            $adodb = "ADODB.Stream" nocase
+            $wsh = "WScript.Shell" nocase
+            $save = /(^|[\r\n;{])[ \t]*[a-zA-Z_$][a-zA-Z0-9_$]{0,63}\.SaveToFile[ \t]*\([ \t]*/
+            $assign = /[a-zA-Z_$][a-zA-Z0-9_$]{0,63}[ \t]*=[^=]/
+            $assign_tail = /[ \t]*=[^=]/
+            $save_tail = /[ \t]*,[ \t]*2[ \t]*\)/
+            $run = /(^|[\r\n;{])[ \t]*[a-zA-Z_$][a-zA-Z0-9_$]{0,63}\.Run[ \t]*\([ \t]*['"]rundll32(\.exe)?[ \t]+"['"][ \t]*\+[ \t]*/ nocase
+            $run_tail = /[ \t]*\+[ \t]*('[^'\r\n]{0,100}'|"[^"\r\n]{0,100}")[ \t]*,[ \t]*0[ \t]*,[ \t]*false[ \t]*\)/ nocase
+          condition:
+            $adodb and $wsh and $save and $run and
+            for any s in (1..#save) : (
+              for any u in (1..#saver) : (
+                @saver[u] >= @save[s] and @saver[u] + !saver[u] == @save[s] + !save[s] and
+                for any w in (1..#writer) : (
+                  @writer[w] < @save[s] and @save[s] - @writer[w] < 1024 and
+                  (@writer[w] == 0 or not (
+                    uint8(@writer[w] - 1) >= 65 and uint8(@writer[w] - 1) <= 90 or
+                    uint8(@writer[w] - 1) >= 97 and uint8(@writer[w] - 1) <= 122 or
+                    uint8(@writer[w] - 1) >= 48 and uint8(@writer[w] - 1) <= 57 or
+                    uint8(@writer[w] - 1) == 95 or uint8(@writer[w] - 1) == 36
+                  )) and
+                  for any v in (1..64) : (
+                    $writer_dot at (@writer[w] + v) and $saver_dot at (@saver[u] + v) and
+                    (#assign == 0 or for all a in (1..#assign) : (
+                      @assign[a] <= @writer[w] or @assign[a] >= @save[s] or
+                      not ($assign_tail at (@assign[a] + v) and
+                        for all k in (0..v-1) : (
+                          uint8(@assign[a] + k) == uint8(@writer[w] + k)
+                        )
+                      )
+                    )) and
+                    for all k in (0..v-1) : (
+                      uint8(@writer[w] + k) == uint8(@saver[u] + k)
+                    )
+                  )
+                )
+              ) and
+              for any r in (1..#run) : (
+                @run[r] > @save[s] and @run[r] - @save[s] < 2048 and
+                for any n in (1..64) : (
+                  $save_tail at (@save[s] + !save[s] + n) and
+                  $run_tail at (@run[r] + !run[r] + n) and
+                  (#assign == 0 or for all a in (1..#assign) : (
+                    @assign[a] <= @save[s] or @assign[a] >= @run[r] or
+                    not ($assign_tail at (@assign[a] + n) and
+                      for all k in (0..n-1) : (
+                        uint8(@assign[a] + k) == uint8(@save[s] + !save[s] + k)
+                      )
+                    )
+                  )) and
+                  for all k in (0..n-1) : (
+                    uint8(@save[s] + !save[s] + k) == uint8(@run[r] + !run[r] + k) and
+                    (uint8(@save[s] + !save[s] + k) >= 65 and uint8(@save[s] + !save[s] + k) <= 90 or
+                     uint8(@save[s] + !save[s] + k) >= 97 and uint8(@save[s] + !save[s] + k) <= 122 or
+                     uint8(@save[s] + !save[s] + k) >= 48 and uint8(@save[s] + !save[s] + k) <= 57 or
+                     uint8(@save[s] + !save[s] + k) == 95 or uint8(@save[s] + !save[s] + k) == 36)
+                  )
+                )
+              )
+            )
+        }

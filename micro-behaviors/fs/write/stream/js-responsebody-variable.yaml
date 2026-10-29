@@ -1,0 +1,65 @@
+defaults:
+  platforms: [windows]
+  for: [javascript]
+traits:
+  # Lexical variable binding, not whole-program reachability. The DLL-dropper
+  # consumer adds the ADODB/WSH context and the saved-path launch relationship.
+  - id: js-responsebody-variable-write
+    desc: ResponseBody variable written into saved stream
+    crit: notable
+    conf: 0.97
+    size_max: 262144
+    if:
+      type: yara
+      source: |
+        rule responsebody_variable_write {
+          strings:
+            $assign = /[a-zA-Z_$][a-zA-Z0-9_$]{0,63}[ \t]*=[^=]/
+            $assign_tail = /[ \t]*=[^=]/
+            $writer = /[a-zA-Z_$][a-zA-Z0-9_$]{0,63}\.Write[ \t]*\([ \t]*/
+            $save = /[a-zA-Z_$][a-zA-Z0-9_$]{0,63}\.SaveToFile/
+            $writer_dot = ".Write"
+            $save_dot = ".SaveToFile"
+            $decl = /(^|[\r\n;{])[ \t]*(var|let|const)[ \t]+/
+            $body_tail = /[ \t]*=[ \t]*[a-zA-Z_$][a-zA-Z0-9_$]{0,63}\.ResponseBody[ \t]*;/ nocase
+            $write = /(^|[\r\n;{])[ \t]*[a-zA-Z_$][a-zA-Z0-9_$]{0,63}\.Write[ \t]*\([ \t]*/
+            $write_tail = /[ \t]*\)/
+          condition:
+            $body_tail and $write and
+            for any d in (1..#decl) : (
+              for any w in (1..#write) : (
+                @write[w] > @decl[d] and @write[w] - @decl[d] < 8192 and
+                for any u in (1..#writer) : (
+                  @writer[u] >= @write[w] and @writer[u] + !writer[u] == @write[w] + !write[w] and
+                  for any s in (1..#save) : (
+                    @save[s] > @writer[u] and @save[s] - @writer[u] < 1024 and
+                    for any v in (1..64) : (
+                      $writer_dot at (@writer[u] + v) and $save_dot at (@save[s] + v) and
+                      for all k in (0..v-1) : (
+                        uint8(@writer[u] + k) == uint8(@save[s] + k)
+                      )
+                    )
+                  )
+                ) and
+                for any n in (1..64) : (
+                  $body_tail at (@decl[d] + !decl[d] + n) and
+                  $write_tail at (@write[w] + !write[w] + n) and
+                  (#assign == 0 or for all a in (1..#assign) : (
+                    @assign[a] <= @decl[d] + !decl[d] or @assign[a] >= @write[w] or
+                    not ($assign_tail at (@assign[a] + n) and
+                      for all k in (0..n-1) : (
+                        uint8(@assign[a] + k) == uint8(@decl[d] + !decl[d] + k)
+                      )
+                    )
+                  )) and
+                  for all k in (0..n-1) : (
+                    uint8(@decl[d] + !decl[d] + k) == uint8(@write[w] + !write[w] + k) and
+                    (uint8(@decl[d] + !decl[d] + k) >= 65 and uint8(@decl[d] + !decl[d] + k) <= 90 or
+                     uint8(@decl[d] + !decl[d] + k) >= 97 and uint8(@decl[d] + !decl[d] + k) <= 122 or
+                     uint8(@decl[d] + !decl[d] + k) >= 48 and uint8(@decl[d] + !decl[d] + k) <= 57 or
+                     uint8(@decl[d] + !decl[d] + k) == 95 or uint8(@decl[d] + !decl[d] + k) == 36)
+                  )
+                )
+              )
+            )
+        }
