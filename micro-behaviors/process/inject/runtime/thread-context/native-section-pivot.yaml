@@ -1,0 +1,48 @@
+defaults:
+  for: [pe]
+  platforms: [windows]
+  arch: [x86]
+traits:
+- id: x86-pe-section-write-entry-context-pivot
+  desc: PE section writes with entry-context pivot
+  crit: suspicious
+  conf: 0.98
+  if:
+    type: yara
+    source: |
+      import "pe"
+      rule x86_pe_section_write_entry_context_pivot {
+        strings:
+          $context = { C7 85 ?? ?? ?? ?? 07 00 01 00 }
+          // Write each section's raw bytes to remote_base + VirtualAddress.
+          $section = { 8B 47 0C 03 05 ?? ?? ?? ?? 8D 55 ?? 52 89 45 ??
+                       8B 57 10 52 8B 57 14 03 D1 52 50 A1 ?? ?? ?? ?? 50 FF 15 ?? ?? ?? ?? }
+          // AddressOfEntryPoint + remote_base -> CONTEXT.Eax, then set context,
+          // unmap the local staging image and resume the same remote process.
+          $pivot = { 8B 4B 28 03 0D ?? ?? ?? ?? 68 ?? ?? ?? ?? 03 0D ?? ?? ?? ??
+                     89 8D ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B F0 E8 ?? ?? ?? ??
+                     8D 95 ?? ?? ?? ?? 8B F0 A1 ?? ?? ?? ?? 52 50 FF 15 ?? ?? ?? ??
+                     8B 4B 50 8B 15 ?? ?? ?? ?? A1 ?? ?? ?? ?? 51 52 50 FF 15 ?? ?? ?? ??
+                     8B 0D ?? ?? ?? ?? 51 FF D6 }
+        condition:
+          pe.is_pe and for any s in (0..pe.number_of_sections-1) : (
+            pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+            for any c in (1..#context) : (
+              @context[c] >= pe.sections[s].raw_data_offset and
+              for any w in (1..#section) : (
+                @section[w] > @context[c] and @section[w]-@context[c] < 2048 and
+                for any p in (1..#pivot) : (
+                  @pivot[p] > @section[w] and @pivot[p]-@section[w] < 256 and
+                  @pivot[p]+!pivot[p] <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size and
+                  int32(@pivot[p]+22) == int32(@context[c]+2)+0xb0 and
+                  int32(@pivot[p]+40) == int32(@context[c]+2) and
+                  uint32(@section[w]+5) == uint32(@pivot[p]+16) and
+                  uint32(@section[w]+5) == uint32(@pivot[p]+64) and
+                  uint32(@section[w]+28) == uint32(@pivot[p]+69) and
+                  uint32(@section[w]+28) == uint32(@pivot[p]+84) and
+                  uint32(@pivot[p]+47) == uint32(@pivot[p]+69)+4
+                )
+              )
+            )
+          )
+      }

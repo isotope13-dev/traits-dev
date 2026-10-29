@@ -1,0 +1,74 @@
+defaults:
+  for: [pe]
+  platforms: [windows]
+  arch: [x86]
+traits:
+- id: x86-scanned-callsite-string-capture-patch
+  desc: Patches scanned callsites to capture strings
+  crit: suspicious
+  conf: 0.98
+  if:
+    type: yara
+    source: |
+      import "pe"
+      rule x86_scanned_callsite_string_capture_patch {
+        strings:
+          $capture = { 8F 05 ?? ?? ?? ?? FF 74 24 3C 89 05 ?? ?? ?? ??
+                       89 3D ?? ?? ?? ?? 89 0D ?? ?? ?? ?? 8B 3D ?? ?? ?? ??
+                       8A 08 40 88 0F 47 84 C9 75 F6 C6 07 00 }
+          $scan = { 6A ?? B9 ?? ?? ?? ?? BA ?? ?? ?? ?? B8 ?? ?? ?? ??
+                    E8 ?? ?? ?? ?? A3 ?? ?? ?? ?? 83 3D ?? ?? ?? ?? 00
+                    0F 84 ?? ?? ?? ?? 83 05 ?? ?? ?? ?? 04 }
+          $scanner = { 55 8B EC 83 C4 ?? 53 56 57 89 4D ?? 33 C9 89 4D ?? 2B D0 4A 85 D2 }
+          $install = { B8 ?? ?? ?? ?? 2B 05 ?? ?? ?? ?? 83 E8 05 89 04 24 8B D4
+                       8D 44 24 05 B9 04 00 00 00 E8 ?? ?? ?? ?? 8D 54 24 04
+                       B9 05 00 00 00 A1 ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 }
+          $writer = { 55 8B EC 83 C4 ?? 53 56 57 33 DB 89 5D ?? 8B F1 89 55 ?? 89 45 ?? }
+          $protect = { 8D 45 ?? 50 6A 04 56 8B 5D ?? 53 A1 ?? ?? ?? ?? 8B 00 50 E8 ?? ?? ?? ?? }
+          $write = { 8B CE 8B 55 ?? 8B 45 ?? E8 ?? ?? ?? ?? }
+        condition:
+          pe.is_pe and pe.imports("kernel32.dll", "VirtualProtectEx") and
+          for any s in (0..pe.number_of_sections-1) : (
+            pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+            for any c in (1..#capture) : (
+              @capture[c] >= pe.sections[s].raw_data_offset and
+              @capture[c]+!capture[c] <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size and
+              for any n in (1..#scan) : (
+                @scan[n] >= pe.sections[s].raw_data_offset and
+                for any b in (1..#scanner) : (
+                  @scanner[b] >= pe.sections[s].raw_data_offset and
+                  @scan[n]+22+int32(@scan[n]+18) == @scanner[b] and
+                  for any i in (1..#install) : (
+                    @install[i] > @scan[n] and @install[i]-@scan[n] < 512 and
+                    uint32(@install[i]+1) == pe.image_base+pe.sections[s].virtual_address+@capture[c]-pe.sections[s].raw_data_offset and
+                    uint32(@install[i]+7) == uint32(@scan[n]+23) and
+                    uint32(@install[i]+7) == uint32(@scan[n]+29) and
+                    uint32(@install[i]+7) == uint32(@scan[n]+42) and
+                    uint32(@install[i]+7) == uint32(@install[i]+43) and
+                    @install[i]+!install[i] <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size and
+                    for any w in (1..#writer) : (
+                      @writer[w] >= pe.sections[s].raw_data_offset and
+                      @install[i]+52+int32(@install[i]+48) == @writer[w] and
+                      // Copy the saved replacement buffer into the saved target,
+                      // through the same copier that built the relative operand.
+                      for any v in (1..#write) : (
+                        @write[v] > @writer[w] and @write[v]-@writer[w] < 256 and
+                        @write[v]+!write[v] <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size and
+                        uint8(@write[v]+4) == uint8(@writer[w]+18) and
+                        uint8(@write[v]+7) == uint8(@writer[w]+21) and
+                        @write[v]+13+int32(@write[v]+9) == @install[i]+33+int32(@install[i]+29)
+                      ) and
+                      for any p in (1..#protect) : (
+                        @protect[p] > @writer[w] and @protect[p]-@writer[w] < 192 and
+                        @protect[p]+24+int32(@protect[p]+20) >= pe.sections[s].raw_data_offset and
+                        @protect[p]+30+int32(@protect[p]+20) <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size and
+                        uint16(@protect[p]+24+int32(@protect[p]+20)) == 0x25ff and
+                        uint32(@protect[p]+26+int32(@protect[p]+20)) == pe.image_base+pe.import_rva("kernel32.dll", "VirtualProtectEx")
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+      }

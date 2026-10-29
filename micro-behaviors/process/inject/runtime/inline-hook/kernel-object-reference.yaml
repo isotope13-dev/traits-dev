@@ -7,7 +7,7 @@ defaults:
     - "x86"
 traits:
   - id: "x86-kernel-object-reference-detour-body"
-    desc: "Kernel handle routine patched and called"
+    desc: "Restores and repatches kernel handle lookup"
     crit: "suspicious"
     conf: 0.98
     if:
@@ -21,11 +21,29 @@ traits:
             $target = { 8B 1D ?? ?? ?? ?? 6A 00 8D 45 ?? 50 FF 75 14 8D 75 ??
                         FF 75 10 8B FB FF 75 0C A5 FF 75 08 A4 FF D3 }
             $templates = { C6 45 ?? 8B C6 45 ?? 55 C6 45 ?? 8B C6 45 ?? EC C6 45 ?? E9 }
-            $jump = { 2B C3 83 E8 05 89 45 ?? A5 A4 }
+            $reinstall = { 8B FB 8D 75 ?? B8 ?? ?? ?? ?? 75 ??
+                           2B C3 83 E8 05 89 45 ?? A5 A4 }
           condition:
-            pe.is_pe and $templates and $jump and
+            pe.is_pe and
             pe.imports("ntoskrnl.exe", "ObReferenceObjectByHandle") and
-            for any t in (1..#target) : (
-              uint32(@target[t]+2) == pe.image_base + pe.import_rva("ntoskrnl.exe", "ObReferenceObjectByHandle")
+            for any s in (0..pe.number_of_sections-1) : (
+              pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+              for any p in (1..#templates) : (
+                @templates[p] >= pe.sections[s].raw_data_offset and
+                uint8(@templates[p]+6) == uint8(@templates[p]+2)+2 and
+                uint8(@templates[p]+10) == uint8(@templates[p]+2)+3 and
+                uint8(@templates[p]+14) == uint8(@templates[p]+2)+4 and
+                for any t in (1..#target) : (
+                  @target[t] > @templates[p] and @target[t]-@templates[p] < 128 and
+                  uint8(@target[t]+17) == uint8(@templates[p]+2) and
+                  uint32(@target[t]+2) == pe.image_base + pe.import_rva("ntoskrnl.exe", "ObReferenceObjectByHandle") and
+                  for any r in (1..#reinstall) : (
+                    @reinstall[r] > @target[t] and @reinstall[r]-@target[t] < 192 and
+                    @reinstall[r]+!reinstall[r] <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size and
+                    uint8(@reinstall[r]+4) == uint8(@templates[p]+18) and
+                    uint8(@reinstall[r]+19) == uint8(@reinstall[r]+4)+1
+                  )
+                )
+              )
             )
         }

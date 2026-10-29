@@ -40,6 +40,7 @@ test-python-openers:
 # failing. Every classified fixture also supplies a measured cost probe.
 # validate-uncached forces a fresh measured pass.
 validate:
+	python3 scripts/review/test-third-party-config-compat.py
 	$(CLEAVE) --traits-dir . validate
 
 validate-uncached:
