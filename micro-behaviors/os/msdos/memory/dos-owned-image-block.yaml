@@ -29,3 +29,37 @@ traits:
         condition:
           $copy
       }
+
+# Manual memory-control-block fabrication with no DOS allocation call:
+# the code stores a 'Z' (final-MCB) signature, an owner segment word at
+# offset 0001h and a block-size word at offset 0003h inside one small
+# window, claiming a memory block outside DOS's allocator. Resident DOS
+# viruses carve their copy this way at the top of memory so MEM and
+# subsequent allocations never reach it. Addressing forms vary (m16
+# displacement, [bx+disp], [di+disp]); the three-store shape is the
+# identity.
+- id: dos-fake-final-mcb-claim
+  desc: Forges a final MCB to claim memory
+  crit: suspicious
+  conf: 0.9
+  if:
+    type: yara
+    source: |
+      rule dos_fake_final_mcb_claim {
+        meta:
+          filetypes = "dos_com,data,static-lib"
+        strings:
+          $sig = { C6 ( 06 ?? ?? | 07 | 05 | 04 | 03 | 45 00 | 47 00 | 44 00 | 43 00 ) 5A }
+          $own = { C7 ( 06 01 00 | 45 01 | 47 01 | 44 01 | 43 01 | 07 | 05 ) ?? ?? }
+          $sz  = { C7 ( 06 03 00 | 45 03 | 47 03 | 44 03 | 43 03 | 03 ) ?? ?? }
+        condition:
+          filesize < 65536 and
+          for any i in (1..#sig) : (
+            for any j in (1..#own) : (
+              @own[j] > @sig[i] and @own[j] <= @sig[i] + 16 and
+              for any k in (1..#sz) : (
+                @sz[k] > @own[j] and @sz[k] <= @own[j] + 16
+              )
+            )
+          )
+      }
