@@ -318,7 +318,7 @@ parent and its descendants explicitly against this contract.
 
 | Validator check | Limit |
 |---|---|
-| Rules per directory | **100** traits plus composites is the default maximum, summed over its YAML files and criticalities. A category-specific exception requires a complete relevance audit and explicit approval; filenames create no budgets. |
+| Rules per directory | **85** traits plus composites is the temporary maximum, summed over its YAML files and criticalities. A category-specific exception requires a complete relevance audit and explicit approval; filenames create no budgets. |
 | Subdirectories | Hard error above 150 immediate subdirectories. Split broad catalogs by a stable function with a tiebreaker. |
 | Depth | Soft warning beyond five levels below the tier (`objectives/a/b/c/d/e/f/x.yaml` warns). Soft warnings fail `make validate`; `cleave validate --soft` only reports them. |
 | Sparse siblings | Soft warning when a parent has ten or more child directories averaging eight or fewer rules per child. Reports child count, total rules, and average rules per child; strict validation fails until the parent is reviewed. |
@@ -344,8 +344,8 @@ OS/type gates, and the profile asserts neither execution nor benign intent.
 An AUR package targets Linux, and source code alone does not
 prove portability.
 
-**Size prompts a semantic review; it never chooses a partition.** The 100-rule
-maximum applies by default; category-specific exceptions require a complete
+**Size prompts a semantic review; it never chooses a partition.** The temporary
+85-rule maximum applies to every directory; category-specific exceptions require a complete
 relevance audit and explicit user approval. Start with the parent and its
 peers: identify the question at that level, move misplaced rules, and consolidate
 equivalent matchers after comparing effective scope and conditions. Remove a
@@ -725,7 +725,7 @@ similar callable/code-object construction. It excludes execution-only APIs,
 compiler/toolchain identity, external compiler process creation, module loading,
 and quoted compiler wording. Generation is the existing broader operation—it
 already includes JIT and C# compilation—and remains one leaf while the combined
-catalog fits the default 100-rule budget and one-operation contract.
+catalog fits the temporary 85-rule budget and one-operation contract.
 
 #### Process creation
 
@@ -1692,7 +1692,7 @@ Resolve each in the migration manifest before moving the affected rules.
 
 | Checkpoint | Required resolution |
 |---|---|
-| Capacity for broad leaves | The default maximum is 100 rules; any category-specific exception requires a complete relevance audit and explicit user approval. Review parent and peer subjects, document the complete population and consumers, and resolve every broad observation before moving. Remove redundant levels and misplaced or duplicate rules before proposing refinements; do not invent a sibling or `other` bucket to satisfy the count. |
+| Capacity for broad leaves | The temporary maximum is 85 rules; any category-specific exception requires a complete relevance audit and explicit user approval. Review parent and peer subjects, document the complete population and consumers, and resolve every broad observation before moving. Remove redundant levels and misplaced or duplicate rules before proposing refinements; do not invent a sibling or `other` bucket to satisfy the count. |
 | Level-3 branches | Name the children, their single axis, precedence and an incomplete-evidence example before migrating. |
 | Broad staging profiles | Staging rules that fit no operation need a defined home; neither dropping the claim nor calling it activation is acceptable. |
 | Retained access | Choose a home for created accounts and authorized SSH keys, now in `persistence/login/{account,ssh}`. |

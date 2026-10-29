@@ -120,7 +120,7 @@ See [Matcher Defines Identity](TAXONOMY.md#matcher-defines-identity) in TAXONOMY
   and near misses. Put each fact in its specific subject home; same-file
   co-occurrence alone does not justify a profile. See the
   [directory placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
-- **100 rules is the default validator budget and directory review trigger
+- **85 rules is the temporary validator budget and directory review trigger
   across all its YAML files, not an automatic split point.** First check that
   every rule is accurate, at the right level, and nonduplicative. Do not change
   the cap without asking. A larger leaf requires a complete relevance audit and
@@ -1713,8 +1713,9 @@ with its decoded named-bit subtree in values (e.g. `pe.dll_characteristics.*`,
 
 ### Directory limits
 
-`make validate` enforces **100 atomic traits and composite rules combined** per
-directory, summed across its YAML files and criticalities. There are no
+`make validate` enforces **85 atomic traits and composite rules combined** per
+directory, summed across its YAML files and criticalities. This is a temporary
+review cap. There are no
 path-specific directory-size exceptions. Review the parent and peer categories,
 remove misplaced or duplicate rules, and define any necessary semantic
 refinement before moving rules. See [Directory budgets and placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
