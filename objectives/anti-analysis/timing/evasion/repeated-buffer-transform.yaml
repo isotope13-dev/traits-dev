@@ -1,0 +1,59 @@
+# Large counted work over fixed input/output buffers precedes a transfer into
+# the writable executable output. This is suspicious delay behavior, not a
+# claim that every compressed executable is hostile or that a particular
+# decompressor or malware family is present.
+# Computation-based delay: https://attack.mitre.org/techniques/T1497/003/
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+traits:
+  - id: repeated-buffer-transform-before-transfer
+    desc: Repeated buffer transform precedes execution
+    crit: suspicious
+    conf: 0.98
+    attack: T1497.003
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule repeated_buffer_transform_before_transfer {
+          strings:
+            $loop = { C7 45 ?? 00 00 00 00 EB 09
+                      8B 45 ?? 83 C0 01 89 45 ??
+                      81 7D ?? ?? ?? ?? ?? 7D 20
+                      8D 4D ?? 51
+                      68 ?? ?? ?? ?? 68 ?? ?? ?? ?? 68 ?? ?? ?? ??
+                      E8 ?? ?? ?? ?? 83 C4 10 89 45 ?? EB CE }
+            $transfer = { 8D 05 ?? ?? ?? ?? FF E0 }
+          condition:
+            pe.is_pe and pe.machine == pe.MACHINE_I386 and
+            for any l in (1..#loop) : (
+              uint8(@loop[l]+2) == uint8(@loop[l]+11) and
+              uint8(@loop[l]+2) == uint8(@loop[l]+17) and
+              uint8(@loop[l]+2) == uint8(@loop[l]+20) and
+              uint32(@loop[l]+21) >= 10000 and uint32(@loop[l]+21) <= 0x7fffffff and
+              uint32(@loop[l]+37) > 0 and uint32(@loop[l]+37) <= 0x800000 and
+              for any t in (1..#transfer) : (
+                @transfer[t] >= @loop[l]+!loop[l] and @transfer[t] < @loop[l]+512 and
+                uint32(@loop[l]+32) == uint32(@transfer[t]+2) and
+                for any output in pe.sections : (
+                  output.characteristics & pe.SECTION_MEM_WRITE != 0 and
+                  output.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                  uint32(@loop[l]+32) >= pe.image_base+output.virtual_address and
+                  uint32(@loop[l]+32) < pe.image_base+output.virtual_address+output.virtual_size
+                ) and
+                for any input in pe.sections : (
+                  uint32(@loop[l]+42) >= pe.image_base+input.virtual_address and
+                  uint32(@loop[l]+42)+uint32(@loop[l]+37) <= pe.image_base+input.virtual_address+input.raw_data_size
+                ) and
+                for any code in pe.sections : (
+                  code.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                  @loop[l] >= code.raw_data_offset and
+                  @transfer[t]+!transfer[t] <= code.raw_data_offset+code.raw_data_size and
+                  @loop[l]+51+int32(@loop[l]+47) >= code.raw_data_offset and
+                  @loop[l]+51+int32(@loop[l]+47) < code.raw_data_offset+code.raw_data_size
+                )
+              )
+            )
+        }

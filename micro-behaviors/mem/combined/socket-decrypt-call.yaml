@@ -1,0 +1,46 @@
+defaults:
+  for: [pe]
+  platforms: [windows]
+  arch: [x86]
+traits:
+  - id: x86-recv-decrypt-call-buffer
+    desc: Receives, decrypts, and executes buffer contents
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_recv_decrypt_call_buffer {
+          strings:
+            $alloc = { 6A 40 68 00 30 00 00 50 6A 00
+                       89 85 ?? ?? ?? ?? FF 15 ?? ?? ?? ??
+                       89 85 ?? ?? ?? ?? 85 C0 0F 84 ?? ?? ?? ??
+                       8B BD ?? ?? ?? ?? 8B D8 }
+            $recv = { 6A 00 57 53 56 FF 15 ?? ?? ?? ?? 85 C0
+                      7E ?? 2B F8 03 D8 85 FF 7F ?? }
+            $decrypt_call = { 8B 85 ?? ?? ?? ?? 8B 8D ?? ?? ?? ??
+                              8D 95 ?? ?? ?? ?? 52 50 6A 00 6A 01 6A 00 51
+                              FF 15 ?? ?? ?? ?? 8B BD ?? ?? ?? ??
+                              FF 95 ?? ?? ?? ?? }
+          condition:
+            pe.is_pe and pe.machine == pe.MACHINE_I386 and
+            for any a in (1..#alloc) : (
+              uint32(@alloc[a]+18) == pe.image_base + pe.import_rva("KERNEL32.dll", "VirtualAlloc") and
+              for any r in (1..#recv) : (
+                @recv[r] > @alloc[a]+!alloc[a] and @recv[r] < @alloc[a]+192 and
+                uint32(@recv[r]+7) == pe.image_base + pe.import_rva("WS2_32.dll", "recv") and
+                for any d in (1..#decrypt_call) : (
+                  @decrypt_call[d] == @recv[r]+!recv[r] and
+                  uint32(@decrypt_call[d]+29) == pe.image_base + pe.import_rva("ADVAPI32.dll", "CryptDecrypt") and
+                  uint32(@alloc[a]+24) == uint32(@decrypt_call[d]+2) and
+                  uint32(@decrypt_call[d]+2) == uint32(@decrypt_call[d]+41) and
+                  for any s in pe.sections : (
+                    s.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                    @alloc[a] >= s.raw_data_offset and
+                    @decrypt_call[d]+!decrypt_call[d] <= s.raw_data_offset+s.raw_data_size
+                  )
+                )
+              )
+            )
+        }
