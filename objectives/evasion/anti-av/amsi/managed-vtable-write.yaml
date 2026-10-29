@@ -1,0 +1,72 @@
+defaults:
+  platforms: [windows]
+  for: [csharp]
+  attack: T1562.001
+
+traits:
+  # Bind the AMSI instance through IUnknown, the vtable and its Scan slot.
+  # The installed pointer must be the destination of a preceding code copy.
+  # This identifies a patch attempt, without asserting runtime success.
+  - id: csharp-com-vtable-code-replacement
+    desc: Replaces AMSI COM slot with copied code
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: tree-sitter
+      query: |
+        (method_declaration body: (block
+          (local_declaration_statement (variable_declaration
+            (variable_declarator name: (identifier) @scanner
+              (invocation_expression) @factory)))
+          (expression_statement (invocation_expression
+            function: (member_access_expression) @copy
+            arguments: (argument_list (argument (identifier))
+              (argument (integer_literal) @zero)
+              (argument (identifier) @code) (argument (_)))))
+          (local_declaration_statement (variable_declaration
+            (variable_declarator name: (identifier) @unknown
+              (invocation_expression function: (member_access_expression) @getunknown
+                arguments: (argument_list (argument (identifier) @object))))))
+          (local_declaration_statement (variable_declaration
+            (variable_declarator name: (identifier) @table
+              (invocation_expression function: (member_access_expression) @read
+                arguments: (argument_list (argument (identifier) @unknownarg))))))
+          (local_declaration_statement (variable_declaration
+            (variable_declarator name: (identifier) @slot
+              (invocation_expression function: (member_access_expression) @add
+                arguments: (argument_list (argument (identifier) @tablearg)
+                  (argument (integer_literal) @offset))))))
+          (expression_statement (invocation_expression function: (identifier) @protect
+            arguments: (argument_list (argument (identifier) @protected)
+              (argument (_)) (argument (integer_literal) @writable) (argument (_)))))
+          (expression_statement (invocation_expression
+            function: (member_access_expression) @write
+            arguments: (argument_list (argument (identifier) @written)
+              (argument (identifier) @replacement)))) @evidence
+          )
+          (#match? @factory "^Activator\\.CreateInstance\\(Type\\.GetTypeFromCLSID\\(")
+          (#match? @factory "(?i)fdb00e52-a214-4aa1-8fba-4357bb0072ec")
+          (#eq? @copy "Marshal.Copy")
+          (#eq? @zero "0")
+          (#eq? @getunknown "Marshal.GetIUnknownForObject")
+          (#eq? @scanner @object)
+          (#eq? @read "Marshal.ReadIntPtr")
+          (#eq? @unknown @unknownarg)
+          (#eq? @add "IntPtr.Add")
+          (#eq? @table @tablearg)
+          (#match? @offset "^(0[xX]18|24)$")
+          (#eq? @protect "VirtualProtect")
+          (#match? @writable "^(0[xX]0?4|4)$")
+          (#eq? @slot @protected)
+          (#eq? @write "Marshal.WriteIntPtr")
+          (#eq? @slot @written)
+          (#eq? @code @replacement))
+
+composite_rules:
+  - id: csharp-com-vtable-return-zero-patch
+    desc: AMSI slot replacement with return-zero stub
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: csharp-com-vtable-code-replacement
+      - id: metadata/lang/source/literal/hex::hex-return-zero-byte-sequence

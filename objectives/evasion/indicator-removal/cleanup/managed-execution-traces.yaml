@@ -1,0 +1,53 @@
+defaults:
+  platforms: [windows]
+  for: [csharp]
+  attack: T1070.004
+
+traits:
+  # Both deletion targets are bound to calls in one method. Require the loop
+  # variable being deleted to be the member enumerated from the Prefetch root.
+  # Ordinary log rotation, path references and unrelated deletes do not match.
+  - id: csharp-clr-usage-prefetch-erasure
+    desc: Deletes CLR usage logs and Prefetch records
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: tree-sitter
+      query: |
+        (method_declaration body: (block
+          (expression_statement (invocation_expression
+            function: (member_access_expression) @delete1
+            arguments: (argument_list (argument (invocation_expression
+              function: (member_access_expression) @expand1
+              arguments: (argument_list (argument (verbatim_string_literal) @log)))))))
+          (local_declaration_statement (variable_declaration
+            (variable_declarator name: (identifier) @folder
+              (invocation_expression function: (member_access_expression) @expand2
+                arguments: (argument_list (argument (verbatim_string_literal) @root))))))
+          (foreach_statement left: (identifier) @trace
+            right: (invocation_expression function: (member_access_expression) @enumerate
+              arguments: (argument_list (argument (identifier) @directory)
+                (argument (string_literal) @pattern)))
+            body: (expression_statement (invocation_expression
+              function: (member_access_expression) @delete2
+              arguments: (argument_list (argument (identifier) @deleted))))) @evidence
+          )
+          (#eq? @delete1 "File.Delete")
+          (#eq? @expand1 "Environment.ExpandEnvironmentVariables")
+          (#match? @log "(?i)\\\\Microsoft\\\\CLR_v[0-9.]+\\\\UsageLogs\\\\[^\\\\]+\\.log\"$")
+          (#eq? @expand2 "Environment.ExpandEnvironmentVariables")
+          (#match? @root "(?i)^@\"%WINDIR%\\\\Prefetch\"$")
+          (#eq? @enumerate "Directory.GetFiles")
+          (#eq? @folder @directory)
+          (#match? @pattern "(?i)\\.exe-[^\"]*\\.pf\"$")
+          (#eq? @delete2 "File.Delete")
+          (#eq? @trace @deleted))
+
+composite_rules:
+  - id: amsi-patcher-erases-execution-traces
+    desc: AMSI patcher erases CLR and Prefetch traces
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: csharp-clr-usage-prefetch-erasure
+      - id: objectives/evasion/anti-av/amsi::csharp-com-vtable-return-zero-patch
