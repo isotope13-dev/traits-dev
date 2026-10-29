@@ -1,0 +1,52 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+traits:
+  - id: managed-system-dll-random-append-layout
+    desc: System-DLL target with random-byte append code
+    crit: notable
+    conf: 0.97
+    if:
+      type: yara
+      source: |
+        import "pe"
+        import "dotnet"
+        rule managed_system_dll_random_append {
+          strings:
+            $system = { 1F 25 28 ?? ?? ?? 0A 0A }
+            $target = { 72 ?? ?? ?? 70 A2 }
+            $dll1 = "kernel32.dll" wide fullword
+            $dll2 = "ntdll.dll" wide fullword
+            $dll3 = "user32.dll" wide fullword
+            $stream = "FileStream" ascii fullword
+            $random = "NextBytes" ascii fullword
+            $append = { 09 1C 18 73 ?? ?? ?? 0A 13 ?? 00
+                        20 00 04 00 00 8D ?? ?? ?? 01 13 ??
+                        73 ?? ?? ?? 0A 11 ?? 6F ?? ?? ?? 0A 00
+                        11 ?? 11 ?? 16 11 ?? 8E 69 6F ?? ?? ?? 0A }
+          condition:
+            $system and $target and 1 of ($dll*) and
+            $stream and $random and $append and
+            for any s in pe.sections : (
+              s.name == ".text" and
+              @append+51 <= s.raw_data_offset+s.raw_data_size and
+              for any r in (1..#system) : (
+              @system[r] >= s.raw_data_offset and
+              @system[r] < @append and @append-@system[r] < 512 and
+              for any t in (1..#target) : (
+                @target[t] > @system[r] and @target[t] < @append and
+                for any h in dotnet.streams : (
+                  h.name == "#US" and
+                  for any of ($dll*) : (
+                    @ >= h.offset and @ < h.offset+h.size and
+                    h.offset+(uint32(@target[t]+1) & 0xffffff)+1 == @
+                  )
+                ) and
+                uint8(@append+9) == uint8(@append+37) and
+                uint8(@append+22) == uint8(@append+29) and
+                uint8(@append+22) == uint8(@append+39) and
+                uint8(@append+22) == uint8(@append+42)
+              )
+              )
+            )
+        }
