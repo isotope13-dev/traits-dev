@@ -1,9 +1,10 @@
 # cleave Taxonomy
 
-Where a trait goes, and why. Apply it mechanically: two authors — human or
-model — reading the same matcher should choose the same directory without
-knowing the sample, its reputation, its language, or the composite that
-consumes it.
+Where a trait goes, and why. Two authors — human or model — interpreting the
+same required evidence should choose the same directory. Use the semantics of
+the operation, API, target or configuration; do not depend on the sample's
+reputation or the consuming composite's story. Equivalent behaviors share a
+home across languages and implementations.
 
 This is the authoritative placement contract; [RULES.md](RULES.md) covers rule
 syntax and matchers. Validator admission and migration acceptance are tracked
@@ -28,11 +29,20 @@ neighbors), borrows [MBC](https://github.com/MBCProject/mbc-markdown)'s split
 of objectives, behaviors and methods, and follows Pike's economy: the fewest
 predictable categories that keep different claims apart.
 
+**Classify evidence by the behavior or objective it most plausibly indicates.**
+Prefer meaningful operations, targets and purposes over their syntactic
+representation. Choose the most specific interpretation supported by
+distinguishing evidence; when purpose remains ambiguous, retain the shared
+behavior or subject. The description must distinguish what was observed from
+what is inferred. "Most likely" is grounded in the matcher's required evidence,
+not in the most alarming explanation or the sample's known reputation.
+
 1. **Catalog observations, not specimens.** A sample yields many findings, each
    placed separately. Its reputation, its family, where its other rules live
    and spare directory capacity never choose a home.
-2. **The matcher is the identity.** Name, description and directory describe
-   what the matcher finds, not the consuming composite's intent
+2. **The matcher is the identity.** Name, description and directory reflect
+   the meaning supported by the matcher, not just its grammatical form or the
+   consuming composite's intent
    ([Matcher defines identity](#matcher-defines-identity)).
 3. **One canonical home (the Single-Trait Rule).** MBC files Process Injection
    under both Defense Evasion and Privilege Escalation; cleave defines each
@@ -47,12 +57,14 @@ predictable categories that keep different claims apart.
    embedded AES implementation is a capability; a manifest naming a crypto
    dependency is metadata; a fingerprint showing the file *is* that library is
    identity; encrypting a victim's files for ransom is an objective.
-6. **Claim no more than the evidence.** A string, API reference, path or
-   constant alone is a reference, not a capability. Bounded operation context
-   or a validated structural pattern can support a *probable* capability;
-   proof of execution is not required. The directory names the inferred
-   capability; the description names the evidence. Never infer an algorithm,
-   data flow, target or purpose the matcher lacks.
+6. **Claim no more, and no less, than the evidence supports.** Static evidence
+   can support a probable capability or objective without proof of execution.
+   Interpret operands, API semantics, targets and configuration effects before
+   falling back to syntax. A reference alone does not establish an operation,
+   but can still identify a meaningful behavioral subject. The directory names
+   that subject or the supported inference; the description states the actual
+   evidence and its limits. Never invent an algorithm, data flow, target or
+   purpose, or discard one that the required evidence supports.
 7. **Implementation is scope.** Language, platform, file type, backend, API
    spelling and matcher type go in `for:`, `platforms:`, the filename and the
    trait ID, not in directories — unless the platform *is* the technique
@@ -67,8 +79,10 @@ predictable categories that keep different claims apart.
 
 ## Placement procedure
 
-1. **Write the claim** the matcher supports in one sentence. For a composite,
-   that is what its *required* evidence establishes.
+1. **Write the observation and its most plausible meaning.** Identify the
+   operation, affected resource and apparent purpose supported by the matcher.
+   For a composite, use its *required* evidence. State what remains unknown;
+   uncertainty about purpose does not erase an identifiable operation.
 2. **Choose the tier** ([Tiers](#tiers)).
 3. **Choose level 1:** facility, objective, artifact subject or entity class.
 4. **Apply the branch's boundary and ordered tests.** Required results beat
@@ -77,7 +91,48 @@ predictable categories that keep different claims apart.
    the algorithm, mechanism or subtype stays in the broad operation leaf
    (`crypto/encrypt`, `crypto/cipher`).
 6. **Check the nearest competing leaf.** If both fit, add a deciding example and
-   counterexample here first.
+   counterexample here first. If competing purposes remain equally plausible,
+   use their shared behavior or subject. Before choosing generic syntax,
+   naming, literals or profiles, explain why the evidence supports no more
+   meaningful placement.
+
+### Behavioral meaning and incomplete evidence
+
+Placement answers **what this is evidence of**; the description answers
+**what was observed**. A neutral capability can be informative without being
+malicious. Assigning a function to an object's member, disabling certificate
+verification and configuring automatic startup can each have behavioral meaning
+without establishing an attack. Lack of malicious intent is not a reason to
+file a supported operation as generic syntax.
+
+Incomplete evidence retains its subject. A distinctive Startup HTA path
+assignment is evidence concerning startup persistence, although it does not
+establish a write, installation or execution. A generic `.Path = value`
+assignment has no such distinction. Place a reusable path reference with the
+path or autorun subject; an objective-specific clue may live with that
+objective when its required context distinguishes that purpose. Describe it as
+evidence or an indicator, never as a completed result. Merely being useful to
+an objective's composite does not make an observation objective-specific.
+
+Use `component` only when the observation is incomplete as a standalone fact,
+not merely because it is incomplete evidence for a larger objective. Neither
+placement nor criticality supplies missing evidence. Consumers, including
+directory selectors, must still require the roles needed for their own claim;
+an indicator of persistence cannot substitute for installation or activation.
+
+| Required evidence | Meaning and placement | Unsupported extension |
+|---|---|---|
+| Recognized Base64 decoding call assigned to an object member | Decoding capability under `data/decode/base64`; assignment is incidental. | Concealment or payload execution. |
+| Indexed XOR expression with operation context | Arithmetic under `data/arithmetic`; describe the matched expression. | A cipher, decoding loop or obfuscation without distinguishing context. |
+| Assignment disabling verification on an identified TLS client | TLS verification disabling under `communications/tls/verify/disable`. | Malicious interception merely from disabling verification. |
+| Startup HTA path assignment | Startup persistence evidence, with the reference-versus-installation limit explicit. | That an HTA was written or will run. |
+| Unidentified member assigned `false` | Generic assignment syntax when no resource or effect is established. | Security bypass based on an evocative variable name. |
+
+Regex, AST and binary matchers follow the same semantic test. Consider their
+effective scope: matching an example or quoted code does not establish that
+the containing artifact implements it. Strengthen insufficient matchers with
+focused tests rather than silently upgrading their claims or permanently
+discarding their intended behavioral meaning.
 
 For composites:
 
@@ -106,8 +161,8 @@ For composites:
 
 | Tier | Holds | Does not claim | MBC analogue |
 |---|---|---|---|
-| `micro-behaviors/` | Probable capabilities, simple or compound | Malicious intent or observed execution | [Micro-behaviors](https://github.com/MBCProject/mbc-markdown/tree/master/micro-behaviors) |
-| `objectives/` | Attack claims that required evidence supports | That every constituent operation is malicious | [Objectives](https://github.com/MBCProject/mbc-markdown#malware-objective-descriptions) |
+| `micro-behaviors/` | Probable capabilities, simple or compound, and evidence specific to their operations or resources | Malicious intent or observed execution; a reference alone does not establish an operation | [Micro-behaviors](https://github.com/MBCProject/mbc-markdown/tree/master/micro-behaviors) |
+| `objectives/` | Supported attack claims and explicitly described objective-specific evidence | That every constituent operation is malicious, or that an indicator establishes the whole objective | [Objectives](https://github.com/MBCProject/mbc-markdown#malware-objective-descriptions) |
 | `metadata/` | Artifact structure, format, declarations, provenance, measurements | That declared behavior runs, or that provenance identifies a product | — |
 | `well-known/` | Identity of recognized software or malware families | That a shared capability or dependency identifies the artifact | [Corpus](https://github.com/MBCProject/mbc-markdown/tree/master/xample-malware) |
 
@@ -117,9 +172,12 @@ For composites:
    malware family → `well-known/`.
 2. Required evidence supports an attacker goal, unauthorized result or abuse
    mechanism → `objectives/`. One structured matcher can qualify (an AMSI
-   patch); being common in malware cannot.
-3. A probable capability with no attack claim → `micro-behaviors/`.
-4. A property of the artifact → `metadata/`.
+   patch); being common in malware cannot. Objective-specific indicators follow
+   the incomplete-evidence contract above and must identify their limited claim.
+3. A probable capability, or evidence specific to its operation or resource,
+   with no attack claim → `micro-behaviors/`.
+4. An artifact property or declaration with no stronger supported behavioral
+   meaning → `metadata/`. Generic representation is the final placement choice.
 
 **References** (validated):
 
@@ -136,10 +194,13 @@ should go.
 Atomic and composite are rule forms, not tiers. A neutral operation stays in
 `micro-behaviors/` whatever consumes it — Swift `Data(base64Encoded:)` is
 `data/decode/base64` even inside an anti-static composite — and a compound
-neutral capability stays neutral. An atom belongs in `objectives/` only if its
-matcher alone establishes an attack claim, or it is a `component` fragment
-meaningless outside that attack (Nemucod string pieces, default-credential
-lists). RULES.md is stricter; see [open checkpoints](#open-checkpoints).
+neutral capability stays neutral. An atom belongs in `objectives/` when its
+matcher supports the attack claim or distinguishes evidence for that objective
+under the incomplete-evidence contract. Generic operations stay in their
+capability homes even when used by attack composites. Family-specific fragments
+belong with the family in `well-known/`. Apply the criticality and dependency
+requirements in [RULES.md](RULES.md) as well; placement guidance does not itself
+change validator admission.
 
 ## Criticality and identity
 
@@ -185,8 +246,10 @@ wrong ML feature.
 
 ### Matcher defines identity
 
-**A trait's name, description and directory must say what its matcher finds**,
-at every criticality.
+**A trait's name, description and directory must reflect what its matcher
+supports**, at every criticality. This includes a defensible behavioral
+interpretation, not only a transcription of syntax. State the observed evidence
+precisely and distinguish an indicator from an established operation or result.
 
 A regex that only reads `$_SERVER['HTTP_REFERER']`, named
 `http-referer-to-reflection` and filed under
@@ -1053,7 +1116,7 @@ identity goes with that subject.
 | `filename` | `identity`, `name-form`: own basename and stem | A property of the scanned name, without parent-directory context. An embedded or referenced name belongs to its own subject. |
 | `path` | Own scanned location and directory relationships | Parent components, source-tree location and multi-component paths. A path mentioned in code is `micro-behaviors/fs/path`; an archive table entry is `archive/member/path`. |
 | `archive` | Container facets and member fields (below) | Properties of the scanned container or its recorded entries; code operating on archives is a capability. |
-| `file` | `format`, `magic`, `extension`, `size`, `encoding` (*legacy: `encoded`*), `entropy`, `profile`, `line`, `catalog`, `comment`, `function`, `import`, `padding`; remaining whole-file properties | This legacy umbrella grants no default home: a specific subject beats a generic text bucket. `file/string` and `file/literal` are **closed**: move each rule to the subject it evidences. A context-only literal has no standalone behavior home; retain its placement hold until a supported contract or validated consumer representation exists. The validator rejects new IDs in both namespaces; existing IDs are grandfathered during migration. See the [validator enforcement record](taxonomy-migration/research/document-authority/literal-validator-enforcement.md). |
+| `file` | `format`, `magic`, `extension`, `size`, `encoding` (*legacy: `encoded`*), `entropy`, `profile`, `line`, `catalog`, `comment`, `function`, `import`, `padding`; remaining whole-file properties | This legacy umbrella grants no default home: a specific subject beats a generic text bucket. `file/string` and `file/literal` are **closed**: move each rule to the subject it evidences. A context-only literal can retain a behavioral subject under the incomplete-evidence contract; it must not claim the complete operation. When no subject is supported, review its reusable literal property or consumer representation. The validator rejects new IDs in both namespaces; existing IDs are grandfathered during migration. See the [validator enforcement record](taxonomy-migration/research/document-authority/literal-validator-enforcement.md). |
 | `hardening` | `build`, `layout`, `memory`, `mitigation`, `sandbox` | Absence is a value of a mitigation, not a "missing" subject. Using a security API is a capability; bypassing one, an objective. |
 | `image` | `pixel`, `segment`, `trailing`: decoded-image measurements, segment totals, trailing layout | Whole-file byte entropy is `file/entropy`. A metric name proves no color channel or end marker. Rendering and capture are capabilities. |
 | `font`, `media` | *Reserved:* font table and container validity; cross-carrier byte coverage | Whitelisted; create with the first supported rule. |
@@ -1129,23 +1192,27 @@ meet a count limit. A category-specific budget exception requires a complete
 relevance audit and explicit user approval first.
 
 **Source syntax.** `metadata/lang/source/syntax` asks **which grammatical construct is present?**
-Its children require the construct's source form; a text or literal matcher
-may observe embedded code, examples or comments. These observations establish
-neither execution nor the capability suggested by an identifier. Language,
-API and parser remain scope and filenames, not children.
+Enter this branch only after considering behavioral meaning and subject-specific
+placement. Its children describe observations whose substantive claim is the
+construct's source form. A text or literal matcher may observe embedded code,
+examples or comments; evaluate that scope before attributing capability to the
+artifact. An identifier alone does not establish its suggested operation, but
+a recognized operation does not lose its meaning because it appears inside an
+assignment. Language, API and parser remain scope and filenames, not children.
 
 | Child | Required property | Boundary and deciding example |
 |---|---|---|
 | `assignment/{name,member,call,value}` | Assignment syntax, grouped by the required target or, when no target is required, the assigned value. | Use `member` for member or indexed targets, `call` for call-shaped targets, `name` when a target name is required without a more specific target form, and `value` when the target is unconstrained. A required `const`, function or type declaration goes to `source/declaration`; a mapping entry goes to `key-value`. |
-| `call` | A call-shaped expression, its arguments, or bounded relationships between calls. | `fetch(a.url, b.options)`, `send({...})`, and an end handler near `eval(` fit. A bare `EventDispatcher` name goes to `source/naming`; parentheses must be required for a call claim. |
-| `command` | Command words, options, operands or pipelines in command text or an argument list. | `git log --patch` and `install -D` fit. A parenthesized method invocation goes to `call`; a bare cmdlet name goes to `source/naming`. |
+| `call` | A call-shaped expression or argument relationship without a more specific supported operation or subject. | An unidentified `handler({...})` call can fit. A recognized decoding or network operation belongs with that capability. A bare `EventDispatcher` name establishes no invocation. |
+| `command` | Command words, options, operands or pipelines whose substantive claim is command structure. | An argument-list shape with an unidentified command fits. A recognized file copy belongs with file copying. A parenthesized method invocation goes to `call` only when its meaning is likewise grammatical. |
 | `directive` | Source-processing directives, event annotations or named language sections. | ASP.NET `<%@ Page ... %>`, MIDL `cpp_quote`, `@event timer.action`, and YARA `strings:` fit. A type or rule declaration introducing a name goes to `source/declaration`; an ordinary mapping key goes to `key-value`. |
 | `key-value` | A named key/value entry or markup attribute, including the value's source form. | `"command": "..."`, `pattern: /.../`, and an HTML `href="...?q=..."` fit. `obj.command` goes to `member`; assignment to a standalone variable goes to `assignment`. |
 | `member` | A qualified name, member selection, subscripted member, or template field reference. | `Net::HTTP`, `exports.KNOWN_C2_DOMAINS`, `obj['a' + 'b']`, and `{{.Field}}` fit. If invocation parentheses are required, use `call`; a field's initializer belongs in `key-value`. |
 | `operator` | An operator or cast relates expressions or a value and a type. | A function-pointer cast and a comparison against an epoch constant fit. A function-pointer declaration belongs in `source/declaration`; a large numeric call argument belongs in `call`. |
 | `type-expression` | A source expression naming a type, with no required value being cast. | PowerShell `[char[]]` fits; a required `-as [type]` cast belongs in `operator`. |
 
-**Choose by the required relationship, then its operands.** A declaration
+**Within syntax only, choose by the required grammatical relationship.** These
+tests never override a supported operation, target or purpose. A declaration
 introducing a binding or type goes to `source/declaration`; an assignment
 without that declaration evidence stays in `syntax/assignment`. A field entry
 beats an incidental member name in its value. For expressions, required
@@ -1159,8 +1226,9 @@ error and rejection messages; `phrasing` describes other multiword clauses and t
 paired with omission of review. A clause alone does not establish an agent
 directive or prove that its described action ran.
 
-Use the existing neighboring subjects when no single syntax construct is the
-claim: `source/naming` for identifier vocabulary and function-name populations,
+After semantic placement has been considered, use the existing neighboring
+subjects when no single syntax construct is the claim: `source/naming` for
+identifier vocabulary and function-name populations,
 `source/literal` for array values or the contents and line shape of literals,
 and `source/origin` for a source layer's carrier or extraction provenance.
 `source/shape` holds source-context profiles spanning constructs, declarations
@@ -1633,6 +1701,11 @@ Resolve each in the migration manifest before moving the affected rules.
 
 ### Migration guardrails
 
+- For every move into generic syntax, naming, literals or profiles, record why
+  the required evidence supports no more meaningful behavior, objective or
+  subject. Review operands, API semantics, targets and configuration effects.
+  Record matcher improvements separately when weak detection prevents the
+  intended inference; relocation alone does not resolve that weakness.
 - A branch contract states the subject, the children's question, admission and
   exclusion criteria, and an example with a neighboring counterexample.
 - Two independent placement passes agree on the branch's examples, nearest
