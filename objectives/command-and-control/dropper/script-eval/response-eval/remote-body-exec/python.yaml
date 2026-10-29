@@ -51,7 +51,78 @@ traits:
   if:
     type: path
     regex: (^|[\\/])connexion[\\/]json_schema\.py$
+- id: module-constant-api-code-endpoint
+  desc: Module constant builds /api/.../code URL
+  crit: notable
+  conf: 0.94
+  if:
+    type: text
+    regex: (?m)^[A-Za-z_]\w*\s*=\s*[A-Za-z_]\w*\s*\+\s*['"]/api/[A-Za-z0-9_/-]+/code['"]
+- id: non-url-param-request-compile-exec-flow
+  desc: Non-URL function fetches and compiles source
+  crit: suspicious
+  conf: 0.98
+  if:
+    type: tree-sitter
+    language: python
+    query: |
+      ((module
+        (expression_statement
+          (assignment
+            left: (identifier) @code_url
+            right: (binary_operator)))
+        (function_definition
+          parameters: (parameters . (default_parameter name: (identifier)) .)
+          body: (block
+            (expression_statement
+              (assignment
+                left: (identifier) @req
+                right: (call
+                  function: (identifier) @req_fn
+                  arguments: (argument_list . (identifier) @req_url (_)*))))
+            (with_statement
+              (with_clause (with_item value: (as_pattern
+                (call function: (identifier) @open
+                  arguments: (argument_list . (identifier) @open_req (_)*))
+                alias: (as_pattern_target (identifier) @response))))
+              body: (block
+                (expression_statement
+                  (assignment left: (identifier) @source
+                    right: (call
+                      function: (attribute
+                        object: (call
+                          function: (attribute object: (identifier) @read_response
+                            attribute: (identifier) @read)
+                          arguments: (argument_list))
+                        attribute: (identifier) @decode)
+                      arguments: (argument_list))))))
+            (_)*
+            (expression_statement
+              (call function: (identifier) @exec
+                arguments: (argument_list .
+                  (call function: (identifier) @compile
+                    arguments: (argument_list . (identifier) @compiled_source . (identifier) @compiled_url)))))))) @flow
+        (#eq? @req_fn "Request")
+        (#eq? @req_url @code_url)
+        (#eq? @open "urlopen")
+        (#eq? @open_req @req)
+        (#eq? @read_response @response)
+        (#eq? @read "read")
+        (#eq? @decode "decode")
+        (#eq? @source @compiled_source)
+        (#eq? @compiled_url @code_url)
+        (#eq? @compile "compile")
+        (#eq? @exec "exec"))
 composite_rules:
+- id: fixed-endpoint-urllib-source-exec
+  desc: API function fetches and executes Python source from a fixed code endpoint
+  crit: hostile
+  conf: 0.99
+  attack: T1105,T1059.006
+  mbc: B0024
+  all:
+  - id: module-constant-api-code-endpoint
+  - id: non-url-param-request-compile-exec-flow
 - id: python-curl-node-remote-exec
   desc: Curl-fetched JavaScript runs through Node
   crit: hostile
