@@ -1,0 +1,98 @@
+defaults:
+  platforms: [windows]
+  for: [ruby]
+  attack: T1059.001,T1059.003,T1071.001
+traits:
+  - id: ruby-line-command-dispatch
+    desc: Polls cmd/PowerShell tasks and posts output
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: tree-sitter
+      language: ruby
+      query: |
+        (program
+          (method name: (identifier) @shell
+            parameters: (method_parameters . (identifier) @mode . (identifier) @payload .)
+            body: (body_statement
+              (assignment left: (identifier) @built
+                right: (binary left: (string (string_content) @cmd_prefix) operator: "+" right: (identifier) @payload1))
+              (if condition: (identifier) @mode1 consequence: (then
+                (assignment left: (identifier) @built1
+                  right: (binary left: (string (string_content) @ps_prefix) operator: "+" right: (identifier) @payload2))))
+              (begin (return (argument_list (subshell . (interpolation (identifier) @built2) .))))))
+          (method name: (identifier) @fetch_definition
+            parameters: (method_parameters . (identifier) @fetch_url . (identifier) .)
+            body: (body_statement
+              (assignment left: (identifier) @fetch_curl
+                right: (string (interpolation (identifier) @fetch_url1)) @fetch_command)
+              (if consequence: (then (return (argument_list
+                (call method: (identifier) @fetch_shell
+                  arguments: (argument_list . (false) . (identifier) @fetch_curl1 .))))))))
+          (method name: (identifier) @post_definition
+            parameters: (method_parameters . (identifier) @post_url . (identifier) @post_data . (identifier) .)
+            body: (body_statement
+              (assignment left: (identifier) @post_curl right: (string) @post_command)
+              (if consequence: (then
+                (assignment left: (identifier) @encoded
+                  right: (call receiver: (constant) @encoder method: (identifier) @encode
+                    arguments: (argument_list . (identifier) @post_data1 .)))
+                (operator_assignment left: (identifier) @post_curl1
+                  right: (string (interpolation (call receiver: (identifier) @encoded1))) @data_form)))
+              (operator_assignment left: (identifier) @post_curl2
+                right: (string (interpolation (identifier) @post_url1)) @post_flag)
+              (call method: (identifier) @post_shell
+                arguments: (argument_list . (false) . (identifier) @post_curl3 .))))
+          (method name: (identifier) @executor
+            parameters: (method_parameters . (identifier) @task . (identifier) @flag .)
+            body: (body_statement
+              (if alternative: (else
+                (call method: (identifier) @post
+                  arguments: (argument_list . (global_variable)
+                    (call method: (identifier) @shell_call
+                      arguments: (argument_list . (identifier) @flag1 . (identifier) @task1 .))
+                    (string) .))))))
+          (method body: (body_statement
+            (while condition: (true) body: (do
+              (assignment left: (identifier) @reply
+                right: (call method: (identifier) @fetch arguments: (argument_list . (global_variable) (string) .)))
+              (assignment left: (identifier) @lines
+                right: (call receiver: (identifier) @reply1 method: (identifier) @split))
+              (assignment left: (identifier) @kind
+                right: (element_reference object: (identifier) @lines1 (integer) @zero))
+              (assignment left: (identifier) @command
+                right: (element_reference object: (identifier) @lines2 (integer) @one))
+              (if condition: (binary left: (identifier) @kind1 operator: "==" right: (string (string_content) @cmd))
+                consequence: (then (call method: (identifier) @dispatch
+                  arguments: (argument_list . (identifier) @command1 . (false) .)))
+                alternative: (elsif condition: (binary left: (identifier) @kind2 operator: "==" right: (string (string_content) @ps))
+                  consequence: (then (call method: (identifier) @dispatch1
+                    arguments: (argument_list . (identifier) @command2 . (true) .)))))))))
+          (#eq? @fetch @fetch_definition) (#eq? @shell @fetch_shell)
+          (#eq? @fetch_curl @fetch_curl1) (#eq? @fetch_url @fetch_url1)
+          (#match? @fetch_command "CURL.*-X GET")
+          (#eq? @post @post_definition) (#eq? @shell @post_shell)
+          (#eq? @post_curl @post_curl1) (#eq? @post_curl @post_curl2) (#eq? @post_curl @post_curl3)
+          (#eq? @post_url @post_url1) (#eq? @post_data @post_data1) (#eq? @encoded @encoded1)
+          (#eq? @encoder "Base64") (#eq? @encode "encode64")
+          (#match? @post_command "CURL") (#match? @data_form "-F") (#match? @post_flag "-X POST")
+          (#eq? @cmd_prefix "cmd /c ") (#eq? @ps_prefix "powershell ")
+          (#eq? @mode @mode1) (#eq? @payload @payload1) (#eq? @payload @payload2)
+          (#eq? @built @built1) (#eq? @built @built2)
+          (#eq? @shell @shell_call) (#eq? @flag @flag1) (#eq? @task @task1)
+          (#eq? @reply @reply1) (#eq? @split "split")
+          (#eq? @lines @lines1) (#eq? @lines @lines2)
+          (#eq? @zero "0") (#eq? @one "1")
+          (#eq? @kind @kind1) (#eq? @kind @kind2)
+          (#eq? @cmd "cmd") (#eq? @ps "powershell")
+          (#eq? @executor @dispatch) (#eq? @executor @dispatch1)
+          (#eq? @command @command1) (#eq? @command @command2)) @tasking
+
+composite_rules:
+  - id: ruby-line-polled-cmd-powershell-backdoor
+    desc: HTTP polling dispatches shell tasks and output
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: ruby-line-command-dispatch
+      - id: micro-behaviors/communications/http/curl::curl-post-flag

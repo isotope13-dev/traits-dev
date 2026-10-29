@@ -1612,6 +1612,18 @@ Engine-emitted IDs (imports, permissions, signers, browser-extension host
 grants) keep their producer schema. Reference them; never shadow them with YAML
 copies or move them without an engine change.
 
+File hiding by file-attribute changes shares `objectives/evasion/file-hiding/attributes`
+across implementations: Windows Hidden/System flags and BSD chflags do not
+need separate children named for their APIs. Moving chflags retains its exact
+matchers, scopes and levels. There are no exact or directory consumers of the
+retired chflags branch or the attributes leaf in the reviewed snapshot.
+
+Indexed integer/address table layouts belong in
+`metadata/binary/layout/table`. An indexed integer and address table does not
+prove an attack dispatcher or even callable targets. Symbol-table anatomy stays
+in `binary/symbols/table`; instructions stay in `binary/instruction`, and
+embedded file images in `binary/layout/embedded`.
+
 ## Known entities: `well-known/`
 
 An identity catalog, not a second behavior tree: a directory here says the
