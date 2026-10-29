@@ -1,0 +1,90 @@
+defaults:
+  platforms:
+    - windows
+  for:
+    - batch
+traits:
+  - id: curl-base64-temp-exe-start
+    desc: Starts curl-decoded TEMP .exe basename
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |-
+        rule bound_flow {
+         strings:
+
+        $fetch = /\$[A-Za-z_][A-Za-z0-9_]{0,23}=curl(\.exe)? [^;\r\n|&]{0,80}https?:\/\/[^'";\s|&]{1,200};/ nocase
+        $assign = /\$[A-Za-z_][A-Za-z0-9_]{0,23}=curl/ nocase
+        $save = /\[IO\.File\]::WriteAllBytes\('%temp%\\[A-Za-z0-9_.-]{1,80}\.exe',\s*\[Convert\]::FromBase64String\(\$[A-Za-z_][A-Za-z0-9_]{0,23}\)\)/ nocase
+        $dst = /'%temp%\\[A-Za-z0-9_.-]{1,80}\.exe'/ nocase
+        $decode = /FromBase64String\(\$[A-Za-z_][A-Za-z0-9_]{0,23}\)/ nocase
+
+        $run = /start [A-Za-z0-9_.-]{1,80}\.exe/ nocase
+
+         $cwd = /(^|\n)(cd|chdir) (\/d )?%temp%(\r?\n)/ nocase
+        $cwdchange = /(^|\n)(cd|chdir|pushd|popd)( |\r?\n)/ nocase
+
+        $pscopy = /copy \/y %windir%\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe [A-Za-z0-9_.-]{1,60}\.exe >nul/ nocase
+        $psdest = /[A-Za-z0-9_.-]{1,60}\.exe >nul/ nocase
+        $pspipe = /\| [A-Za-z0-9_.-]{1,60}\/(W 1 \/)?Comm -/ nocase
+        $psargs = /\/(W 1 \/)?Comm -/ nocase
+        $echo = /(^|\n)echo / nocase
+
+        condition:
+
+        #fetch > 0 and #assign > 0 and #save > 0 and #dst > 0 and #decode > 0 and
+        for any a in (1..#fetch) : (
+         for any b in (1..#assign) : (
+          @assign[b] == @fetch[a] and
+          for any c in (1..#save) : (
+           @save[c] == @fetch[a] + !fetch[a] and
+           for any d in (1..#dst) : (
+            @dst[d] == @save[c] + 25 and
+            for any e in (1..#decode) : (
+             @decode[e] > @dst[d] + !dst[d] and @decode[e] + !decode[e] + 1 == @save[c] + !save[c] and
+             !assign[b] - 5 == !decode[e] - 18 and
+             for all k in (0..!assign[b]-6) : ((uint8(@assign[b]+k) | 32) == (uint8(@decode[e]+17+k) | 32))
+
+        and #pscopy > 0 and #psdest > 0 and #pspipe > 0 and #psargs > 0 and #echo > 0 and
+        for any ca in (1..#pscopy) : (
+         (@pscopy[ca] == 0 or uint8(@pscopy[ca]-1) == 10) and @pscopy[ca]+!pscopy[ca] < @fetch[a] and
+         for any cb in (1..#psdest) : (
+          @psdest[cb] > @pscopy[ca] and @psdest[cb]+!psdest[cb] == @pscopy[ca]+!pscopy[ca] and
+          for any cc in (1..#pspipe) : (
+           @pspipe[cc] >= @save[c]+!save[c] and @pspipe[cc]-(@save[c]+!save[c]) <= 16 and
+           for all ws in (@save[c]+!save[c]..@pspipe[cc]-1) : (uint8(ws) == 32 or uint8(ws) == 9) and
+           for any cd in (1..#psargs) : (
+            @psargs[cd] > @pspipe[cc]+2 and @psargs[cd]+!psargs[cd] == @pspipe[cc]+!pspipe[cc] and
+            @psargs[cd]-@pspipe[cc]-2 == !psdest[cb]-9 and
+            for all cp in (0..!psdest[cb]-10) : ((uint8(@psdest[cb]+cp) | 32) == (uint8(@pspipe[cc]+2+cp) | 32)) and
+            for any ce in (1..#echo) : (
+             @echo[ce]+!echo[ce] <= @fetch[a] and @pspipe[cc]-(@echo[ce]+!echo[ce]) < 768 and
+             for all cl in (@echo[ce]+!echo[ce]..@pspipe[cc]-1) : (uint8(cl) != 10 and uint8(cl) != 13)
+            )
+           )
+          )
+         )
+        )
+
+
+        and #cwd > 0 and #run > 0 and
+        for any f in (1..#run) : (
+         for any h in (1..#cwd) : (
+          @cwd[h]+!cwd[h] <= @save[c] and
+          for all j in (1..#cwdchange) : (@cwdchange[j] <= @cwd[h] or @cwdchange[j] >= @run[f])
+         ) and
+         @run[f] > @save[c] + !save[c] and @run[f] - @save[c] < 1024 and
+         ( @run[f] == 0 or uint8(@run[f]-1) == 10 ) and
+         ( @run[f]+!run[f] == filesize or uint8(@run[f]+!run[f]) == 13 or uint8(@run[f]+!run[f]) == 10 ) and
+         !run[f]-6 == !dst[d]-9 and
+         for all k in (0..!run[f]-7) : ((uint8(@run[f]+6+k) | 32) == (uint8(@dst[d]+8+k) | 32))
+        )
+
+            )
+           )
+          )
+         )
+        )
+
+        }

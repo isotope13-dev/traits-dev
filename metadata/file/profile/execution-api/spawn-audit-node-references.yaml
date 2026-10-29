@@ -1,0 +1,155 @@
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript]
+traits:
+  - id: spawn-bash
+    desc: Spawn call text names bash
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: "spawn\\(['\"]bash['\"]"
+  - id: node-interpreter-target
+    desc: Spawn call text names Node
+    crit: notable
+    conf: 0.95
+    for: [scripts, source, text, json]
+    if:
+      # Keep working in large bundles where call facts are unavailable. The
+      # literal interpreter argument distinguishes this from arbitrary spawn
+      # methods while accepting common child_process aliases.
+      type: text
+      regex: '\b(child_process\.|childProcess\.|cp\.)?spawn\s*\(\s*["'']node["'']'
+  # === Node.js self-execution ===
+  - id: node-self-eval-argument
+    desc: Spawn text names Node and eval flag
+    crit: notable
+    conf: 0.94
+    unless:
+      - id: metadata/package/testing/presence/harness/
+      - id: metadata/package/testing/harness/
+      - id: metadata/package/files/dependency::node-modules-path
+      - id: micro-behaviors/process/interpreter/vm/
+      - id: metadata/lang/source/naming/declaration::auto-retry-helper
+      - id: metadata/path::test-directory-component
+    if:
+      type: text
+      regex: 'spawn\s*\(\s*process\.execPath[\s\S]{0,260}[''"]-e[''"]'
+  - id: process-argv-slice-self-reexec
+    desc: Spawn text forwards current Node arguments
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      # argv slicing alone is ordinary CLI argument handling.  Require the
+      # current Node executable to be spawned with that sliced argv list.
+      regex: '\bspawn\s*\(\s*process\.execPath,\s*process\.argv\.slice\(\s*1\s*\)'
+  # Daemon self-respawn: spawn(process.execPath, [__filename, ...]) re-launches
+  # the SAME script that is already running — the supervisor/suicide-respawn
+  # pattern (RSS-budget restart, cycle timeout, crash recovery). The spawned
+  # target is the current module, NOT a freshly written or downloaded payload,
+  # so this is daemonization rather than dropping. Used to exclude benign
+  # self-supervising daemons from the dropper composites.
+  - id: node-self-respawn
+    desc: Spawn text names current Node and script
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: 'spawn\s*\(\s*process\.execPath\s*,\s*\[\s*(__filename|process\.argv\s*\[\s*1\s*\])'
+  - id: process-env-daemonized-flag
+    desc: References __DAEMONIZED environment flag
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      substr: "__DAEMONIZED"
+  - id: node-java-process-target
+    desc: Spawn call text names Java
+    crit: notable
+    conf: 0.86
+    if:
+      type: text
+      regex: 'spawn\s*\([^)]{0,160}(javaw?\.exe|javaw?[''"])'
+composite_rules:
+  - id: fork-call
+    desc: Node child_process import accompanies fork call
+    crit: notable
+    conf: 0.9
+    all:
+      - id: micro-behaviors/data/control-flow/dispatch/named::fork-call-target
+    any:
+      - id: metadata/import/builtin::require-child-process
+      - id: metadata/import/builtin::child-process-import-runtime
+  - id: spawn-call
+    desc: child_process import and spawn call coexist
+    crit: notable
+    conf: 0.9
+    all:
+      - id: metadata/lang/source/syntax/call/relationship::bare-spawn-call
+    any:
+      - id: metadata/import/builtin::require-child-process
+      - id: metadata/import/builtin::child-process-import-runtime
+  - id: indirect-detached-hidden-spawn
+    desc: Indirect spawn and detached option clues
+    crit: notable
+    conf: 0.94
+    all:
+      - id: metadata/file/profile/command-options::detached-true
+      - id: micro-behaviors/process/create/indirect::indirect-spawn-dispatch
+      - id: micro-behaviors/process/daemonize/detach::node-handle-indirect-unref
+  - id: detached-ignored-unref-spawn
+    desc: Detached, stdio and unref clues coexist
+    crit: notable
+    conf: 0.9
+    # Bind unref() to the detached spawn configuration. Without proximity,
+    # timer/socket unref calls elsewhere in a bundled application satisfy the
+    # composite and misdescribe unrelated handles as the spawned child.
+    near_bytes: 2048
+    all:
+      - id: metadata/file/profile/command-options::detached-true
+      - id: micro-behaviors/process/fd/stdio::child-stdio-ignore-option
+    any:
+      - id: micro-behaviors/process/control/wait::node-unref-handle
+      - id: micro-behaviors/process/daemonize/detach::node-handle-indirect-unref
+  # A detached fork survives the parent and runs an independent script — unlike
+  # a normal worker/fork pool, which stays attached. `silent`/`stdio:'ignore'`
+  # further hides its output. This is the fork-based sibling of the spawn combo.
+  - id: detached-fork
+    desc: Fork and detached option clues coexist
+    crit: notable
+    conf: 0.9
+    near_lines: 8
+    all:
+      - id: metadata/file/profile/execution-api::fork-call
+      - id: metadata/file/profile/command-options::detached-true
+  - id: node-lazy-daemon-spawn
+    desc: Detached process and daemon clues coexist
+    crit: notable
+    conf: 0.9
+    all:
+      - id: metadata/file/profile/execution-api::detached-ignored-unref-spawn
+      - id: micro-behaviors/fs/path-ops::file-url-to-path-call-text
+    any:
+      - id: micro-behaviors/process/create/exec::node-spawn-current-executable
+      - id: metadata/file/profile/network::node-bearer-health-probe
+  - id: daemon-guarded-detached-child
+    desc: Daemon guard and detached option clues
+    crit: notable
+    conf: 0.94
+    all:
+      - id: metadata/file/profile/execution-api::process-env-daemonized-flag
+      - id: micro-behaviors/os/env/enumerate::js-process-env-spread
+    any:
+      - id: metadata/file/profile/execution-api::detached-ignored-unref-spawn
+      - id: micro-behaviors/process/daemonize/detach::node-obfuscated-detached-unref
+      - id: micro-behaviors/process/daemonize/detach::node-obfuscated-detached-unref-alias
+      - id: metadata/file/profile/command-options::detached-true
+      - id: micro-behaviors/process/config::detached-hex-true
+      - id: micro-behaviors/process/daemonize/detach::detached-obfuscated-true
+  # Relocated out of objectives/evasion/process/hidden/execution. The matcher
+  # only observes two spawn options -- `detached: true` and `windowsHide: true`
+  # -- which together are the ordinary Node/Electron idiom for fire-and-forget
+  # Windows helpers (`spawn("taskkill", ...)`, launching a converter binary)
+  # and carry no intent of their own. Objective composites supply the context;
+  # see npm-encoded-loader-with-cleanup, which corroborates with it.

@@ -1,0 +1,98 @@
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript]
+traits:
+  - id: detached-true
+    desc: Detached process spawn option
+    crit: notable
+    conf: 0.85
+    # Match the actual call, including TypeScript's (0, module.spawn)(...).
+    # An options object passed to an unrelated API is not process detachment.
+    if:
+      type: tree-sitter
+      query: |
+        ((call_expression
+          function: (_) @callee
+          arguments: (arguments
+            (object (pair key: (_) @key value: (_) @value)))) @call
+          (#match? @callee "(^|\\.)(spawn|fork|execFile)(Sync)?[\\s)]*$")
+          (#match? @key "^[\"']?detached[\"']?$")
+          (#match? @value "^(true|!\\s*0)$"))
+  # Computed child_process["spawn"] access is not emitted as a tree-sitter
+  # call to a named spawn identifier. Keep the same process-launch claim, but
+  # bind Node -e and the detached option within the computed spawn call.
+  - id: computed-node-spawn-detached-true
+    desc: Computed Node spawn detached option
+    crit: notable
+    conf: 0.9
+    if:
+      type: tree-sitter
+      query: |
+        ((call_expression
+          function: (subscript_expression index: (string (string_fragment) @api))
+          arguments: (arguments
+            (string (string_fragment) @runtime)
+            (array . (string (string_fragment) @flag))
+            (object (pair key: (property_identifier) @option
+              value: (true))))) @launch
+          (#eq? @api "spawn")
+          (#eq? @runtime "node")
+          (#eq? @flag "-e")
+          (#eq? @option "detached"))
+  - id: detached-dynamic
+    desc: Detached spawn with dynamic value
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      regex: 'detached\s*:\s*process\.'
+  - id: windowshide-obfuscated-true
+    desc: Obfuscated true enables Node windowsHide
+    # This is still process-creation context, but javascript-obfuscator emits
+    # !![] mechanically for ordinary booleans.  The expression alone does not
+    # establish suspicious intent.
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: 'windowsHide[''"]\s*:\s*!\s*!\s*\[\s*\]'
+    unless:
+      - id: metadata/package/files/ecosystem::openclaw-evolver-package-member
+    downgrade:
+      any:
+        - id: metadata/package/files/ecosystem::openclaw-evolver-archive-container
+  - id: windowshide-obfuscated-expression
+    desc: Obfuscated windowsHide expression
+    # This is a process-creation capability. Obfuscating the boolean is useful
+    # triage context, but does not by itself establish hostile intent: bundled
+    # applications commonly run their helper processes without a console.
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '[''"]?windowsHide[''"]?\s*:\s*!\s*\([^)]{1,120}\)'
+  - id: shell-obfuscated-dynamic
+    desc: "shell option via obfuscated alias"
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '\bshell\s*:\s*_0x[a-fA-F0-9]{4,}\['
+  # === Silent I/O patterns ===
+  # === Shell spawn patterns ===
+composite_rules:
+  - id: detached-hidden-spawn
+    desc: Detached and windowsHide true options co-occur
+    crit: notable
+    conf: 0.85
+    all:
+      - id: metadata/file/profile/command-options::detached-true
+      - id: metadata/file/profile/command-options::node-windowshide-true-option
+    downgrade:
+      # Legitimate use in background tasks
+      any:
+        - id: metadata/package/testing/
+        - id: metadata/signed/platform/
+        - id: metadata/path::test-directory-component
+    unless:
+      - id: well-known/app/ai/coding-agent/qwen-code::qwen-code-bundle-text

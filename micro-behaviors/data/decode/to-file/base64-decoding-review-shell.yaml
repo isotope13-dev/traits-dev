@@ -1,0 +1,81 @@
+defaults:
+  platforms: [unix, windows]
+  for: [shell]
+traits:
+  - id: base64-decode-pipe-simple-target
+    desc: Base64 decode piped into a file write
+    crit: notable
+    conf: 0.95
+    for: [shell, go, source, python, ruby, javascript]
+    if:
+      type: text
+      regex: 'base64\s+(-d|--decode)[^|\n]{0,30}\|[^|\n]{0,40}\b(tee[ \t]+[^-\s;|#]\S*|dd[ \t]+of=\S+)'
+  - id: base64-decode-pipe-tee-append
+    desc: Base64 decode piped to tee append
+    crit: notable
+    conf: 0.95
+    for: [shell, go, source, python, ruby, javascript]
+    if:
+      type: text
+      regex: 'base64\s+(-d|--decode)[^|\n]{0,30}\|[ \t]*tee[ \t]+(-a|--append)[ \t]+[^-\s;|#]\S*'
+  - id: base64-decode-pipe-dd-options
+    desc: Base64 decode piped to dd output
+    crit: notable
+    conf: 0.95
+    for: [shell, go, source, python, ruby, javascript]
+    if:
+      type: text
+      regex: 'base64\s+(-d|--decode)[^|\n]{0,30}\|[ \t]*dd[ \t]+[^|\n;#]{0,40}\bof=\S+'
+  # `echo "$JSON" | base64 -d | gzip -d > task.json` provisions structured
+  # runtime input through the environment. Keep all three semantic gates:
+  # environment input, gzip decompression, and a JSON destination. A broader
+  # decode-to-file exception would also cover an environment-delivered
+  # executable staged for a later launch.
+  - id: env-var-base64-gzip-json-to-file
+    desc: Variable Base64-gzip JSON decoded to file
+    crit: notable
+    conf: 0.95
+    if:
+      type: text
+      regex: 'echo\s+["''"]?\$\{?\w+\}?["''"]?\s*\|\s*base64\s+-[dD]\s*\|\s*gzip\s+-d\s*>\s*\S+\.json\b'
+  # The redirection sibling of `base64-decode-piped-to-file-write`, which only
+  # ever covered `| tee` and `| dd`. Plain `> file` is the commoner spelling:
+  # Apache Druid's `peon.sh` does
+  # `echo ${TASK_JSON} | base64 -d | gzip -d > ${TASK_DIR}/task.json`, and
+  # because that decode sits a few lines above the script's `exec bin/run-java`
+  # it scored two suspicious findings for a decode-then-execute flow it does
+  # not perform -- the bytes land in a task description, and the exec target is
+  # a literal program path.
+  #
+  # Deliberately bounded to data-file extensions rather than any redirect: a
+  # dropper that stages `base64 -d > /tmp/payload` and runs it keeps scoring,
+  # because the thing it writes is not a config or a document.
+  - id: base64-decode-redirected-to-data-file
+    desc: Base64 decode redirected into a data file
+    crit: notable
+    conf: 0.95
+    for: [shell, go, source, python, ruby, javascript]
+    if:
+      type: text
+      regex: 'base64\s+-{1,2}[dD]\w*[^\n]{0,50}>[^\n]{0,60}\.(json|ya?ml|conf|txt|xml)\b'
+
+composite_rules:
+  - id: base64-decode-piped-to-file-write
+    desc: Base64 decode piped into a file write
+    crit: notable
+    conf: 0.95
+    for: [shell, go, source, python, ruby, javascript]
+    any:
+      - id: base64-decode-pipe-simple-target
+      - id: base64-decode-pipe-tee-append
+      - id: base64-decode-pipe-dd-options
+  - id: base64-decode-lands-in-file
+    desc: Base64 decode redirects output to a file
+    crit: notable
+    conf: 0.95
+    for: [shell, go, source, python, ruby, javascript]
+    any:
+      - id: micro-behaviors/data/decode/to-file::base64-decode-piped-to-file-write
+      - id: micro-behaviors/data/decode/to-file::base64-decode-redirected-to-data-file
+      - id: micro-behaviors/data/decode/to-file::env-var-base64-gzip-json-to-file
+

@@ -1,0 +1,270 @@
+defaults:
+  platforms: [windows, unix]
+  for: [python]
+traits:
+  - id: python-urllib-response-decoded-source-exec-flow
+    desc: Executes decoded urllib response source
+    crit: notable
+    conf: 0.98
+    if:
+      type: tree-sitter
+      language: python
+      query: |
+        ((module
+          (function_definition
+            body: (block
+              (with_statement
+                (with_clause (with_item value: (as_pattern
+                  (call function: (identifier) @open
+                    arguments: (argument_list . (_) @_url (_)*))
+                  alias: (as_pattern_target (identifier) @response))))
+                body: (block
+                  (expression_statement
+                    (assignment left: (identifier) @source
+                      right: (call
+                        function: (attribute
+                          object: (call
+                            function: (attribute object: (identifier) @read_response
+                              attribute: (identifier) @read)
+                            arguments: (argument_list))
+                          attribute: (identifier) @decode)
+                        arguments: (argument_list))))))
+              (_)*
+              (expression_statement
+                (call function: (identifier) @exec
+                  arguments: (argument_list .
+                    (call function: (identifier) @compile
+                      arguments: (argument_list . (identifier) @compiled_source)))))))) @flow
+          (#eq? @read_response @response)
+          (#eq? @open "urlopen")
+          (#eq? @read "read")
+          (#eq? @decode "decode")
+          (#eq? @source @compiled_source)
+          (#eq? @compile "compile")
+          (#eq? @exec "exec"))
+
+  # The same response-to-sink relationship when callers pass read() bytes
+  # directly to compile(), without a decode step.
+  - id: python-urllib-response-read-source-exec-flow
+    desc: Executes bytes read from urllib response
+    crit: notable
+    conf: 0.98
+    if:
+      type: tree-sitter
+      language: python
+      query: |
+        ((module
+          (function_definition
+            body: (block
+              (with_statement
+                (with_clause (with_item value: (as_pattern
+                  (call function: (identifier) @open
+                    arguments: (argument_list . (_) @_url (_)*))
+                  alias: (as_pattern_target (identifier) @response))))
+                body: (block
+                  (expression_statement
+                    (assignment left: (identifier) @source
+                      right: (call
+                        function: (attribute object: (identifier) @read_response
+                          attribute: (identifier) @read)
+                        arguments: (argument_list))))))
+              (_)*
+              (expression_statement
+                (call function: (identifier) @exec
+                  arguments: (argument_list .
+                    (call function: (identifier) @compile
+                      arguments: (argument_list . (identifier) @compiled_source)))))))) @flow
+          (#eq? @read_response @response)
+          (#eq? @open "urlopen")
+          (#eq? @read "read")
+          (#eq? @source @compiled_source)
+          (#eq? @compile "compile")
+          (#eq? @exec "exec"))
+
+  # Direct urlopen(...).read() assignment, without a response context manager.
+  - id: python-urllib-urlopen-read-source-exec-flow
+    desc: Executes source from urllib URL response
+    crit: notable
+    conf: 0.98
+    if:
+      type: tree-sitter
+      language: python
+      query: |
+        ((module
+          (function_definition
+            body: (block
+              (expression_statement
+                (assignment left: (identifier) @source
+                  right: (call
+                    function: (attribute
+                      object: (call
+                        function: (attribute
+                          object: (attribute
+                            object: (identifier) @urllib
+                            attribute: (identifier) @request)
+                          attribute: (identifier) @open)
+                        arguments: (argument_list . (_) (_)*))
+                      attribute: (identifier) @read)
+                    arguments: (argument_list))))
+              (_)*
+              (expression_statement
+                (call function: (identifier) @exec
+                  arguments: (argument_list .
+                    (call function: (identifier) @compile
+                      arguments: (argument_list . (identifier) @compiled_source)))))))) @flow
+          (#eq? @urllib "urllib")
+          (#eq? @request "request")
+          (#eq? @open "urlopen")
+          (#eq? @read "read")
+          (#eq? @source @compiled_source)
+          (#eq? @compile "compile")
+          (#eq? @exec "exec"))
+
+  # Bind the result of an HTTP-reading helper to the same source variable
+  # compiled and executed by its caller. Support helpers that either return
+  # a previously read body or directly return response.read() from urlopen's
+  # context manager. Proximity alone does not establish this flow (the
+  # separate co-occurrence profile remains useful for that).
+  - id: python-helper-fetched-source-exec-flow
+    desc: Executes source returned by an HTTP helper
+    crit: notable
+    conf: 0.98
+    if:
+      type: tree-sitter
+      query: |
+        ((module
+          (function_definition
+            name: (identifier) @fetch_name
+            body: (block) @fetch_body)
+          (function_definition
+            body: (block
+              (if_statement
+                consequence: (block
+                  (expression_statement
+                    (assignment
+                      left: (identifier) @source
+                      right: (call
+                        function: (attribute
+                          object: (call
+                            function: (identifier) @fetch_call
+                            arguments: (argument_list . (identifier) @url))
+                          attribute: (identifier) @decode)
+                        arguments: (argument_list))))
+                  (_)*
+                  (expression_statement
+                    (call
+                      function: (identifier) @exec
+                      arguments: (argument_list .
+                        (call
+                          function: (identifier) @compile
+                          arguments: (argument_list . (identifier) @compiled_source)))))))))) @flow
+          (#match? @fetch_body "(?s)urlopen.{0,400}(\\.read\\(.{0,120}return|return.{0,120}\\w+\\.read\\()")
+          (#eq? @fetch_name @fetch_call)
+          (#eq? @source @compiled_source)
+          (#eq? @decode "decode")
+          (#eq? @exec "exec")
+          (#eq? @compile "compile"))
+
+  # Variant where the helper returns response bytes and the caller passes
+  # those bytes directly to compile/exec, without an intermediate decode.
+  - id: python-helper-returned-bytes-exec-flow
+    desc: Executes bytes returned by an HTTP helper
+    crit: notable
+    conf: 0.98
+    if:
+      type: tree-sitter
+      query: |
+        ((module
+          (function_definition name: (identifier) @fetch_name body: (block) @fetch_body)
+          (function_definition body: (block
+            (_)*
+            (expression_statement
+              (assignment
+                left: (identifier) @source
+                right: (call
+                  function: (identifier) @fetch_call
+                  arguments: (argument_list . (identifier) @url))))
+            (_)*
+            (expression_statement
+              (call
+                function: (identifier) @exec
+                arguments: (argument_list .
+                  (call
+                    function: (identifier) @compile
+                    arguments: (argument_list . (identifier) @compiled_source)))))))
+          (#match? @fetch_body "(?s)urlopen.{0,400}\\.read\\(.{0,120}return")
+          (#eq? @fetch_name @fetch_call)
+          (#eq? @source @compiled_source)
+          (#eq? @exec "exec")
+          (#eq? @compile "compile")))
+
+  # The non-decoding form binds a helper's URL parameter through urlopen, its
+  # returned response bytes, the caller's source variable, and compile/exec.
+  - id: python-helper-returned-bytes-compile-exec-flow
+    desc: Executes bytes returned by an HTTP helper
+    crit: notable
+    conf: 0.98
+    if:
+      type: tree-sitter
+      query: |
+        (module
+          (function_definition
+            name: (identifier) @fetch_name
+            parameters: (parameters . (identifier) @helper_url)
+            body: (block) @fetch_body)
+          (function_definition
+            body: (block
+              (expression_statement
+                (assignment
+                  left: (identifier) @source
+                  right: (call
+                    function: (identifier) @fetch_call
+                    arguments: (argument_list . (identifier) @url))))
+              (_)*
+              (expression_statement
+                (call
+                  function: (identifier) @exec
+                  arguments: (argument_list .
+                    (call
+                      function: (identifier) @compile
+                      arguments: (argument_list . (identifier) @compiled_source)))))))
+          (#match? @fetch_body "(?s)urlopen\\(url.{0,120}body\\s*=\\s*\\w+\\.read\\(\\).{0,120}return body")
+          (#eq? @fetch_name @fetch_call)
+          (#eq? @helper_url @url)
+          (#eq? @source @compiled_source)
+          (#eq? @exec "exec")
+          (#eq? @compile "compile")) @flow
+
+  - id: python-urllib-response-exec
+    desc: Python directly evaluates urllib response body
+    crit: notable
+    conf: 0.98
+    if:
+      type: tree-sitter
+      kind: call
+      regex: '^exec\s*\(\s*urllib(\.request)?\.urlopen\([^)]{0,120}\)\.read\('
+
+  - id: python-urllib-body-value-exec
+    desc: Executes a value from urlopen response read
+    crit: notable
+    conf: 0.98
+    if:
+      type: symbol
+      kind: call
+      exact: exec
+      arg:
+        index: 0
+        from:
+          call: '^urllib(\.request)?\.urlopen\.read$'
+
+composite_rules:
+  - id: python-http-helper-executed-source-evidence
+    desc: Python compiles source returned by an HTTP helper
+    crit: notable
+    conf: 0.98
+    for: [whl, python]
+    scope: archive
+    any:
+      - id: micro-behaviors/process/deploy/script-eval/network::python-helper-fetched-source-exec-flow
+      - id: micro-behaviors/process/deploy/script-eval/network::python-helper-returned-bytes-exec-flow
+

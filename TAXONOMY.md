@@ -69,9 +69,11 @@ not in the most alarming explanation or the sample's known reputation.
    spelling and matcher type go in `for:`, `platforms:`, the filename and the
    trait ID, not in directories — unless the platform *is* the technique
    (systemd, `LD_PRELOAD`, Winlogon).
-8. **Shortest precise path.** Split only for a real distinction, never for
-   symmetry, rule count or ML feature depth. Prefer breadth when siblings are
-   equally exact.
+8. **Shortest precise path.** When a directory reaches its budget, first look
+   for durable, evidence-supported distinctions that make the taxonomy more
+   precise and leave room for future growth. Split on those distinctions, not
+   on symmetry, count alone or ML feature depth. Prefer breadth when siblings
+   are equally exact.
 9. **Criticality never fixes placement.** Fix a misleading classification by
    moving, renaming or tightening the rule, never by demoting it.
 10. **Preserve detection.** Moves keep matchers and effective scope; detection
@@ -352,16 +354,19 @@ OS/type gates, and the profile asserts neither execution nor benign intent.
 An AUR package targets Linux, and source code alone does not
 prove portability.
 
-**Size prompts a semantic review; it never chooses a partition.** The temporary
-85-rule maximum applies to every directory; category-specific exceptions require a complete
-relevance audit and explicit user approval. Start with the parent and its
-peers: identify the question at that level, move misplaced rules, and consolidate
-equivalent matchers after comparing effective scope and conditions. Remove a
-redundant level when it merely restates its parent or names the evidence carrier.
-Only add children for distinctions the required evidence supports. Capacity,
-language, backend, rule form and an `other` bucket never choose a home. A
-complete placement of broad and narrow observations is required before moving.
-Historical larger-budget reviews remain audit evidence, not active waivers.
+**At the budget, design for precision and growth.** When a directory reaches
+or exceeds the temporary 85-rule maximum, first seek a durable division into
+more precise, evidence-supported subjects or behaviors, with reasonable room
+for future rules. Review the entire directory and its siblings at the same time:
+check each matcher against its claimed subject, relocate misplaced rules, and
+consolidate equivalent matchers after comparing effective scope and conditions.
+Include broad observations in the design and remove levels that merely restate
+their parent or name the evidence carrier. A split is valuable when its children
+express real distinctions; capacity alone, language, backend, rule form, or an
+`other` bucket cannot justify a category. If the evidence does not support a
+complete division, retain the accurate placement and continue investigating;
+category-specific exceptions require a complete relevance audit and explicit
+user approval. Historical larger-budget reviews are audit evidence, not waivers.
 
 **Review the neighborhood, not just the full leaf.** Inventory the parent's
 children, including undersized siblings, and follow related subjects outside
@@ -671,6 +676,15 @@ A matcher requiring a recognized facility setting together with its value
 belongs with that configured facility. The IRC children distinguish command
 vocabulary/construction (`command`), event registration (`handler`) and declared
 settings (`configure`); none substitutes for actual message transmission.
+
+`communications/http/upload/file` requires evidence of a file entering a
+transfer. A generic stdin body or an upload option without an HTTP destination
+does not establish a file upload. Captured media and ciphertext entering request bodies
+belong to their `request/body` subjects. `metadata/file/profile/http-upload`
+holds unbound transfer clues; `upload-api` holds API names, and `upload-config`
+holds declared fields and allowlists. A method name, destination, configuration
+field, or file and HTTP clues merely co-occurring does not prove an upload.
+Directory-wide upload selectors must therefore use actual transfer evidence.
 
 `communications/http/client/initialize` records construction or opening of an
 HTTP client or connection object without a required request method. An
@@ -1024,6 +1038,16 @@ An explicit shell argument beats the wrapper. An API's optional features are no
 evidence that this call uses them, and the launched executable does not change
 the mechanism. Under `shell`, pick one command-form axis (interactive session,
 command text, script file, pipeline).
+Request-sourced commands require evidence connecting the input to the command;
+a request-member reference alone is source syntax. Variable commands and known
+input sources can be grouped by provenance, interpreter selection by its target,
+and temporary staging by the observed staging and execution. Build markup,
+argument snippets and unbound operation references belong with those observations,
+not under process creation merely because they mention a command.
+Pipeline syntax in documentation, standalone string literals or compiled data is a
+command observation; an execution claim needs evidence of a launch site.
+Constructing a command object or assigning its executable is setup, not a
+process start.
 
 `process/inject/remote-thread` records remote-thread APIs and their accompanying
 remote-memory preparation. It does not require a DLL payload: allocation,
@@ -1175,11 +1199,52 @@ an ordinary updater goes in `micro-behaviors/process/deploy/<sink>`. Choose
 | `interpreter-stdin` | Staged source piped to a new interpreter. |
 | `file-exec` | A staged file launched via `command` (a shell parses the launch), `spawn` (a process API launches the path) or `installer` (an installer transaction such as `msiexec`). |
 
+`script-eval/{network,transformed,input}` groups a linked evaluator by the
+source it consumes: a known network response, otherwise decoded or decrypted
+source, otherwise an input whose origin remains unknown. A known network source
+takes precedence over a transformation. Unbound fetch/eval combinations and
+embedded command text belong in `metadata/file/profile/script-evaluation`.
+
 `file-exec` is split by launch mechanism: `command/*` (a shell or script host parses the launch), `spawn/*` (a process API launches the path; `native` for compiled images, `runtime` for language runtimes), `detached` (hidden or background launch), `installer/*` (an installer transaction; `package` rules read the installer file, `invocation` rules read whatever launches it) and `shellcode`. Each matcher and description must retain the launch mechanism.
 
 `image-map` and `interpreter-stdin` are admitted sinks: they distinguish native
 image activation from a new interpreter reading staged source. A mapped image
 or stream reference alone does not establish activation or a linked payload.
+
+`metadata/file/profile/execution-api` groups process API names, unbound calls
+and configuration co-occurrences. A symbol, import or generic `spawn` call by
+itself does not prove that the named process API was called.
+
+`metadata/file/profile/rpc` records protocol fields and RPC API references;
+`wallet-rpc` records wallet method names and their co-occurrence. Such names
+do not by themselves establish a request, an account access or a signing flow.
+`metadata/file/profile/encoding` groups encoding API and syntax references
+without treating an API name as a completed transform.
+
+`metadata/file/profile/mcp` records MCP protocol names and unbound evidence;
+`agent-config` records declared settings, and `tool-interface` records generic
+tool names, decorators and unbound dispatch clues. A protocol string, tool name
+or configuration entry does not establish that a client sent a request or a
+server handled it. `communications/mcp/server` requires an actual server-side
+operation, and writing client configuration belongs with filesystem writes.
+Do not suppress a finding merely because an MCP-related marker is present;
+require a specific benign context relevant to the finding.
+
+`metadata/file/profile/system-management` groups static references to system
+management helpers and related configuration. A helper name or API reference
+alone does not establish that the operation ran or that another command is benign.
+
+COM follows the same distinction. Actual object creation and method calls
+belong to their COM operation or the function they perform. Class IDs, ProgIDs,
+interface and API names, encoded names, registration fields, and shortcut API
+references live in the corresponding `metadata/file/profile/com-*` categories.
+An identifier or imported API does not establish activation, invocation, or
+that the named software is present. A registration field alone does not prove
+that it was written; an encoded name does not establish its eventual use.
+
+`metadata/file/profile/staging` records file-staging and launch observations
+that co-occur without binding the staged path or bytes to activation. It is a
+profile of the evidence, not a deployment chain.
 
 **The link is the claim.** A download, URL, encoded blob, execution API,
 installer identity or loader-like name alone is not a payload chain: bind the
@@ -1400,12 +1465,34 @@ identity goes with that subject.
 | `vendor` | OS or platform vendor provenance (Apple, Microsoft, NetBSD, GNU) | Certificate fields are `signed`; manifest vendor fields are `package`; third-party products are `well-known/`. |
 
 Named dependency references belong under `package/dependencies/<subject>` when
-the library has a clear subject, such as `network`, `crypto`, or `storage`.
-`identity` remains a legacy holding place while other named dependencies await
-subject review; it adds no meaning above a precise subject. Combinations of declared dependencies
+the library has a clear subject, such as `network`, `crypto`, `storage`,
+`browser-automation`, `development`, `presentation`, `serialization`, `system`,
+or `logging`.
+Use `declaration` for named dependencies without a supported functional subject;
+`identity` is retired because it adds no meaning. Combinations of declared dependencies
 belong under `package/dependencies/composition`. A dependency or combination
 describes available libraries, not their use or a stealing objective. `presence`
 describes field or dependency presence and absence.
+
+`data/encode/serialized-json` holds operations that encode serialized JSON,
+including JSON-to-Base64 calls. Nearby JSON and encoder names without a bound
+data flow are operation references; they do not establish a JSON encoding or
+an HTTP masquerade. Generic Base64 conversion remains under `data/encode/base64`.
+`data/decode/embedded/base64` records decoding of embedded Base64 literals;
+`data/decode/to-file` records decoding that writes to a file. Decoder names and
+accessor references alone do not establish decoding.
+
+`file/profile/process` groups profiles whose required evidence concerns a
+process operation or its references. A set of API names or command clues is a
+profile of those references, not proof that a process was launched or that its
+inputs and outputs are connected. Mining configuration profiles belong in
+`file/profile/blockchain`; named-tool co-occurrences belong in
+`file/profile/tool-reference` and do not identify the analyzed file. Profiles of
+network activity, installation, LLM sessions, agent configuration, archives,
+and cryptography use their corresponding subject names. Installation profiles
+record operation or option references; `installer-layout` records file and
+sidecar relationships. An agent configuration or archive reference does not
+prove a file was written, a private child launched, or an archive created.
 
 A PDF JavaScript API name, even one associated with a historical vulnerability,
 is an API reference. Claim exploitation only when the required evidence supports
@@ -1486,10 +1573,10 @@ assignment. Language, API and parser remain scope and filenames, not children.
 
 | Child | Required property | Boundary and deciding example |
 |---|---|---|
-| `assignment/{name,member,call,value}` | Assignment syntax, grouped by the required target or, when no target is required, the assigned value. | Use `member` for member or indexed targets, `call` for call-shaped targets, `name` when a target name is required without a more specific target form, and `value` when the target is unconstrained. A required `const`, function or type declaration goes to `source/declaration`; a mapping entry goes to `key-value`. |
+| `assignment/{name,member,call,value}` | Assignment syntax, grouped by the required target or, when no target is required, the assigned value. | Use `member` for member or indexed targets, `call` for call-shaped targets, `name` when a target name is required without a more specific target form, and `value` when the target is unconstrained. A required `const`, function or type declaration goes to `source/declaration` when its structure is the claim; a name-focused observation goes to `source/naming`. A mapping entry goes to `key-value`. |
 | `call` | A call-shaped expression or argument relationship without a more specific supported operation or subject. | An unidentified `handler({...})` call can fit. A recognized decoding or network operation belongs with that capability. A bare `EventDispatcher` name establishes no invocation. |
 | `command` | Command words, options, operands or pipelines whose substantive claim is command structure. | An argument-list shape with an unidentified command fits. A recognized file copy belongs with file copying. A parenthesized method invocation goes to `call` only when its meaning is likewise grammatical. |
-| `directive` | Source-processing directives, event annotations or named language sections. | ASP.NET `<%@ Page ... %>`, MIDL `cpp_quote`, `@event timer.action`, and YARA `strings:` fit. A type or rule declaration introducing a name goes to `source/declaration`; an ordinary mapping key goes to `key-value`. |
+| `directive` | Source-processing directives, event annotations or named language sections. | ASP.NET `<%@ Page ... %>`, MIDL `cpp_quote`, `@event timer.action`, and YARA `strings:` fit. A type or rule declaration goes to `source/declaration` when its structure is the claim; a name-focused observation goes to `source/naming`. An ordinary mapping key goes to `key-value`. |
 | `key-value` | A named key/value entry or markup attribute, including the value's source form. | `"command": "..."`, `pattern: /.../`, and an HTML `href="...?q=..."` fit. `obj.command` goes to `member`; assignment to a standalone variable goes to `assignment`. |
 | `member` | A qualified name, member selection, subscripted member, or template field reference. | `Net::HTTP`, `exports.KNOWN_C2_DOMAINS`, `obj['a' + 'b']`, and `{{.Field}}` fit. If invocation parentheses are required, use `call`; a field's initializer belongs in `key-value`. |
 | `operator` | An operator or cast relates expressions or a value and a type. | A function-pointer cast and a comparison against an epoch constant fit. A function-pointer declaration belongs in `source/declaration`; a large numeric call argument belongs in `call`. |
@@ -1497,13 +1584,25 @@ assignment. Language, API and parser remain scope and filenames, not children.
 
 **Within syntax only, choose by the required grammatical relationship.** These
 tests never override a supported operation, target or purpose. A declaration
-introducing a binding or type goes to `source/declaration`; an assignment
-without that declaration evidence stays in `syntax/assignment`. A field entry
+introducing a binding or type goes to `source/declaration` when its structure is
+the claim; name-focused observations go to `source/naming`. An assignment
+without declaration evidence stays in `syntax/assignment`. A field entry
 beats an incidental member name in its value. For expressions, required
 assignment beats a nested call, a call/argument relationship beats incidental
 member access, and a cast/comparison beats its operand's spelling. A shell
 command's words and options belong together in `command`, even when serialized
 as an argument array. An API name alone never acquires call semantics.
+
+A declaration whose substantive evidence is the identifier or its spelling
+belongs with source naming; a declaration whose structure matters independently
+of the name belongs in `source/declaration`. Neither a name nor a declared
+base class proves that the named behavior ran.
+
+`call/construction` records source forms that create an object or command
+configuration, including a command-builder factory. A constructor or factory
+reference alone does not prove construction, and construction does not prove
+the object was started. An actual call whose receiver or purpose is unknown
+can instead be named dispatch; its name alone does not establish the resource.
 
 Within `lang/natural`, `vocabulary` describes words or token sets; `diagnostic` records
 error and rejection messages; `phrasing` describes other multiword clauses and their stated relationships, such as an action
@@ -1635,7 +1734,10 @@ forms remain in `syntax/command`; programming-language call-argument forms
 remain in `syntax/call/arguments`. A bare `dumps(metrics)` beside a JSON-looking
 filename does not establish JSON serialization. Counts of recovered string
 candidates belong in `file/profile/string-population`, not a source-literal
-catalog.
+catalog. Generic option text spanning binaries and source belongs in
+`file/profile/command-options`; an option does not identify a particular program
+or prove that it was passed to a running process. Process options with supported
+purpose may be grouped under `process/argument/visibility` or `lifecycle`.
 
 **Additional source-construct boundaries.** Markup attribute syntax belongs
 in `lang/source/syntax/attribute`, Go struct tags in `annotation`, Rust match
@@ -1992,7 +2094,7 @@ Resolve each in the migration manifest before moving the affected rules.
 
 | Checkpoint | Required resolution |
 |---|---|
-| Capacity for broad leaves | The temporary maximum is 100 rules; any category-specific exception requires a complete relevance audit and explicit user approval. Review parent and peer subjects, document the complete population and consumers, and resolve every broad observation before moving. Remove redundant levels and misplaced or duplicate rules before proposing refinements; do not invent a sibling or `other` bucket to satisfy the count. |
+| Capacity for broad leaves | The temporary maximum is 85 rules; any category-specific exception requires a complete relevance audit and explicit user approval. At the budget, seek durable, precise subdivisions with room to grow, while auditing all rules, parents and siblings. Document the population and consumers, place broad observations accurately, and do not invent a sibling or `other` bucket to satisfy the count. |
 | Level-3 branches | Name the children, their single axis, precedence and an incomplete-evidence example before migrating. |
 | Broad staging profiles | Staging rules that fit no operation need a defined home; neither dropping the claim nor calling it activation is acceptable. |
 | Retained access | Choose a home for created accounts and authorized SSH keys, now in `persistence/login/{account,ssh}`. |
