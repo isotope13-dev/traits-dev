@@ -1,0 +1,151 @@
+# Bind one ADODB stream, its saved path and the path in the hidden DLL command.
+# The enclosing script may decide whether this branch runs; no success is claimed.
+defaults:
+  platforms: [windows]
+  for: [javascript]
+  crit: notable
+traits:
+  - id: parsed-adodb-saved-path-hidden-rundll32
+    desc: ADODB saved path passed to hidden rundll32
+    conf: 0.99
+    if:
+      type: tree-sitter
+      language: javascript
+      query: |
+        ((statement_block
+          (variable_declaration (variable_declarator
+            name: (identifier) @stream
+            value: (new_expression constructor: (identifier) @factory
+              arguments: (arguments . (string (string_fragment) @progid) .))))
+          . (expression_statement (assignment_expression
+            left: (member_expression object: (identifier) @type_stream
+              property: (property_identifier) @type)
+            right: (number) @binary))
+          . (expression_statement (call_expression
+            function: (member_expression object: (identifier) @open_stream
+              property: (property_identifier) @open)
+            arguments: (arguments)))
+          . (expression_statement (call_expression
+            function: (member_expression object: (identifier) @write_stream
+              property: (property_identifier) @write)
+            arguments: (arguments . (_) .)) @evidence)
+          . (expression_statement (call_expression
+            function: (member_expression object: (identifier) @save_stream
+              property: (property_identifier) @save)
+            arguments: (arguments . (identifier) @saved . (number) .)))
+          . (expression_statement (call_expression
+            function: (member_expression object: (identifier) @close_stream
+              property: (property_identifier) @close)
+            arguments: (arguments)))
+          . (expression_statement (call_expression
+            function: (member_expression property: (property_identifier) @run)
+            arguments: (arguments
+              . (binary_expression
+                left: (binary_expression left: (string (string_fragment) @prefix)
+                  operator: "+" right: (identifier) @launched)
+                operator: "+" right: (string (string_fragment) @export))
+              . (number) @hidden . (false) .))))
+          (#eq? @factory "ActiveXObject")
+          (#match? @progid "(?i)^ADODB\\.Stream$")
+          (#eq? @stream @type_stream)
+          (#eq? @stream @open_stream)
+          (#eq? @stream @write_stream)
+          (#eq? @stream @save_stream)
+          (#eq? @stream @close_stream)
+          (#eq? @type "Type")
+          (#eq? @binary "1")
+          (#eq? @open "Open")
+          (#eq? @write "Write")
+          (#eq? @save "SaveToFile")
+          (#eq? @close "Close")
+          (#eq? @run "Run")
+          (#eq? @saved @launched)
+          (#eq? @hidden "0")
+          (#set! cleave.ignore-comments "true")
+          (#match? @prefix "(?i)^rundll32(\\.exe)?[ \\t]+[\"']?$")
+          (#match? @export "^[\"']?[ ,]+[A-Za-z_][A-Za-z0-9_@]*$"))
+
+  - id: scriptlet-adodb-saved-path-hidden-rundll32
+    desc: Scriptlet saves path passed to hidden rundll32
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule scriptlet_adodb_bound_path_rundll32 {
+          strings:
+            $xml = "<?xml" nocase
+            $cdata = "<![CDATA["
+            $comment = /\/\*[^*]*\*+([^\/*][^*]*\*+)*\//
+            $bind = /(^|\n)[ \t]*var[ \t]+/
+            $ctor = /[ \t]*=[ \t]*new[ \t]+ActiveXObject\(["']ADODB\.Stream["']\);/
+            $stage = /[A-Za-z_$][A-Za-z0-9_$]{0,63}\.Write\([^;\r\n]{1,120}\);[ \t\r\n]*[A-Za-z_$][A-Za-z0-9_$]{0,63}\.SaveToFile\(/
+            $write = /\.Write\([^;\r\n]{1,120}\);/
+            $save = ".SaveToFile("
+            $path = /[A-Za-z_$][A-Za-z0-9_$]{0,63}/
+            $save_tail = /,[ \t]*2\);/
+            $close = /[A-Za-z_$][A-Za-z0-9_$]{0,63}\.Close\(\);/
+            $run = /[A-Za-z_$][A-Za-z0-9_$]{0,63}\.Run\(['"]rundll32(\.exe)?[ \t]+["']?['"][ \t]*\+[ \t]*/
+            $run_tail = /[ \t]*\+[ \t]*['"]["']?[ ,]+[A-Za-z_][A-Za-z0-9_@]{0,63}['"],[ \t]*0,[ \t]*false\);/
+          condition:
+            $xml at 0 and $cdata and
+            for any s in (1..#stage) : (
+              for any w in (1..#write) : (
+                @write[w] > @stage[s] and @write[w] <= @stage[s]+64 and
+                for any v in (1..#save) : (
+                  @save[v]+!save[v] == @stage[s]+!stage[s] and
+                  for all k in (0..@write[w]-@stage[s]-1) : (
+                    uint8(@stage[s]+k) == uint8(@save[v]-(@write[w]-@stage[s])+k)
+                  ) and
+                  for any d in (1..#bind) : (
+                    @bind[d]+!bind[d] < @stage[s] and
+                    @stage[s] < @bind[d]+!bind[d]+1024 and
+                    (not $comment or for all b in (1..#comment) : (
+                      @bind[d] < @comment[b] or @bind[d] >= @comment[b]+!comment[b]
+                    )) and
+                    for all k in (0..@write[w]-@stage[s]-1) : (
+                      uint8(@bind[d]+!bind[d]+k) == uint8(@stage[s]+k)
+                    ) and
+                    $ctor at (@bind[d]+!bind[d]+@write[w]-@stage[s])
+                  ) and
+                  for any p in (1..#path) : (
+                    @path[p] == @save[v]+!save[v] and
+                    for any t in (1..#save_tail) : (
+                      @save_tail[t] == @path[p]+!path[p] and
+                      for any c in (1..#close) : (
+                        @close[c] >= @save_tail[t]+!save_tail[t] and
+                        @close[c] < @save_tail[t]+!save_tail[t]+128 and
+                        !close[c] == @write[w]-@stage[s]+9 and
+                        for all k in (@save_tail[t]+!save_tail[t]..@close[c]-1) : (
+                          uint8(k) == 32 or uint8(k) == 9 or uint8(k) == 10 or uint8(k) == 13
+                        ) and
+                        for all k in (0..@write[w]-@stage[s]-1) : (
+                          uint8(@close[c]+k) == uint8(@stage[s]+k)
+                        ) and
+                        for any r in (1..#run) : (
+                          @run[r] >= @close[c]+!close[c] and
+                          @run[r] < @close[c]+!close[c]+128 and
+                          for all k in (@close[c]+!close[c]..@run[r]-1) : (
+                            uint8(k) == 32 or uint8(k) == 9 or uint8(k) == 10 or uint8(k) == 13
+                          ) and
+                          for all k in (0..!path[p]-1) : (
+                            uint8(@run[r]+!run[r]+k) == uint8(@path[p]+k)
+                          ) and
+                          $run_tail at (@run[r]+!run[r]+!path[p])
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
+    unless:
+      - id: parsed-adodb-saved-path-hidden-rundll32
+
+composite_rules:
+  - id: adodb-saved-path-hidden-rundll32
+    desc: ADODB saved path passed to hidden rundll32
+    conf: 0.99
+    any:
+      - id: parsed-adodb-saved-path-hidden-rundll32
+      - id: scriptlet-adodb-saved-path-hidden-rundll32
