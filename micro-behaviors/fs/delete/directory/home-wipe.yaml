@@ -51,38 +51,58 @@ traits:
           (#match? @delete "^(std::)?fs::remove_dir_all$|^remove_dir_all$")
           (#match? @origin "^(dirs|home|std::env|env)::home_dir\\(\\)\\.(unwrap|expect)\\([^)]*\\)$"))
 
-  # `os.RemoveAll(os.UserHomeDir())` and the two-step form that binds the
-  # result first (`home, _ := os.UserHomeDir(); os.RemoveAll(home)`).
-  - id: go-home-directory-wipe
-    desc: Go recursively deletes the home directory
+  # `os.RemoveAll(os.UserHomeDir())` proves its operand at the call site.
+  - id: go-userhome-removeall-call
+    desc: Go RemoveAll of UserHomeDir result
+    crit: notable
+    conf: 0.95
     for: [go]
     if:
       type: text
-      # `homeDir` is a local fixture (`RemoveAll(homeDir)` in an e2e helper).
-      # The wipe is `RemoveAll(home)` or `RemoveAll(os.UserHomeDir())`.
-      regex: 'RemoveAll\s*\(\s*(os\.UserHomeDir\(\)|[Hh]ome)\s*[,)]'
-    unless:
-      # Same shape as the Rust carve-out above, in the language that does it
-      # most: snapd's `snapshotstate_test.go` builds two fake home directories
-      # in a tempdir and tears them down with `os.RemoveAll(homedirB)`. A wipe
-      # that only runs under `go test` never reaches a user's home.
-      - id: metadata/package/testing/harness/unit::go-test
-      # Tempdir-backed fake home directory in a test harness or script:
-      - type: text
-        regex: '\bhome\s*,\s*\w+\s*:?=\s*(os\.)?MkdirTemp'
-      # Joined subdirectory or temp prefix (not bare home root):
-      - type: text
-        regex: '\bhome\s*:?=\s*filepath\.Join'
-      # Ephemeral/isolated home directory created in sandbox/tempdir:
-      - type: text
-        regex: 'Isolated\w*Home'
-      # Application home directory returned by a `.Home()` accessor, not the
-      # user's home root: `home, err := c.Home()` in Ignite's chain InitChain
-      # is the blockchain node's data dir (`~/.<app>` or a configured chain
-      # home), removed as documented pre-init cleanup. `os.UserHomeDir()`
-      # has no `.Home()` call and still matches.
-      - type: text
-        regex: '\bhome\s*(,\s*\w+\s*)?:?=\s*\w+\.Home\(\)'
+      regex: 'RemoveAll\s*\(\s*os\.UserHomeDir\(\)\s*[,)]'
+
+  # The call site for the identifier spelling. An identifier named `home` is
+  # not evidence of provenance: concourse's fly `checklist_test.go` declares a
+  # file-local `home` it never assigns and tears it down in AfterEach, while
+  # the suite's real HOME fixture is a TempDir under a different name. The
+  # suspicious wipe claim therefore requires the binding atoms below; this
+  # call site stays visible as the neutral capability it is.
+  - id: go-home-ident-removeall-call
+    desc: Go RemoveAll of home identifier
+    crit: notable
+    conf: 0.9
+    for: [go]
+    if:
+      type: text
+      regex: 'RemoveAll\s*\(\s*[Hh]ome\s*[,)]'
+
+  # Provenance for the identifier spelling: the deleted identifier bound to a
+  # home-root source. Covers the two-step `home, _ := os.UserHomeDir()` form
+  # and its `os.Getenv("HOME")` / `user.Current().HomeDir` spellings.
+  - id: go-home-userhomedir-binding
+    desc: Go binds home to UserHomeDir
+    crit: notable
+    conf: 0.95
+    for: [go]
+    if:
+      type: text
+      regex: '\b[Hh]ome\s*(,\s*\w+\s*)?:?=\s*os\.UserHomeDir\(\)'
+  - id: go-home-env-binding
+    desc: Go binds home to HOME environment variable
+    crit: notable
+    conf: 0.9
+    for: [go]
+    if:
+      type: text
+      regex: '\b[Hh]ome\s*(,\s*\w+\s*)?:?=\s*os\.(Get|Lookup)Env\(\s*"HOME"\s*\)'
+  - id: go-home-field-binding
+    desc: Go binds home to HomeDir field
+    crit: notable
+    conf: 0.85
+    for: [go]
+    if:
+      type: text
+      regex: '\b[Hh]ome\s*:?=\s*\w+\.HomeDir\b'
 
 
 
@@ -182,6 +202,55 @@ traits:
       regex: '\blet\s+home\s*=\s*(\w+\(\)|std::env::temp_dir\(\)\.join\(|env::temp_dir\(\)\.join\()'
 
 composite_rules:
+  # Provenance group: any home-root source the identifier spelling can be
+  # bound to. Named so the bound-wipe composite counts it as one role.
+  - id: go-home-root-binding
+    desc: Go binds an identifier to a home-root source
+    crit: notable
+    conf: 0.9
+    for: [go]
+    any:
+      - id: go-home-userhomedir-binding
+      - id: go-home-env-binding
+      - id: go-home-field-binding
+
+  # The identifier spelling convicts only when the deleted identifier is bound
+  # to a home-root source in the same file (see the binding atoms above).
+  - id: go-home-bound-wipe
+    desc: Go removes a bound home-root identifier
+    crit: suspicious
+    conf: 0.95
+    for: [go]
+    all:
+      - id: go-home-ident-removeall-call
+      - id: go-home-root-binding
+
+  # Go dispatch. `go-home-bound-wipe` supplies the identifier spelling's
+  # provenance requirement; the exclusions carry over from the original atom.
+  - id: go-home-directory-wipe
+    desc: Go recursively deletes the home directory
+    crit: suspicious
+    conf: 0.95
+    for: [go]
+    any:
+      - id: go-userhome-removeall-call
+      - id: go-home-bound-wipe
+    unless:
+      # Same shape as the Rust carve-out above, in the language that does it
+      # most: snapd's `snapshotstate_test.go` builds two fake home directories
+      # in a tempdir and tears them down with `os.RemoveAll(homedirB)`. A wipe
+      # that only runs under `go test` never reaches a user's home.
+      - id: metadata/package/testing/harness/unit::go-test
+      # Tempdir-backed fake home directories and HOME swaps; bindings that
+      # point `home` at a subdirectory, a TempDir method result, or an
+      # application `.Home()` accessor (see home-fixture-context.yaml):
+      - id: go-home-mkdtemp-assignment
+      - id: go-home-tempdir-method-assignment
+      - id: go-home-setenv-replacement
+      - id: go-home-join-assignment
+      - id: go-home-isolated-naming
+      - id: go-home-accessor-binding
+
   # Language dispatch, not evidence accumulation -- every leg is the same
   # behaviour spelled for a different runtime, so there is no `needs:`. A bare
   # `any:` performs no intent inference and the engine caps it at suspicious
