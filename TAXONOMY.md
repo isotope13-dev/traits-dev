@@ -615,6 +615,12 @@ whole expression would miss ordinary code and only recognize quoted source.
 | `network/interface` | Interface identity, address, configuration or state, including a distinctive name (`veth`, `docker0`) and MAC addresses. Wi-Fi and Bluetooth radios and WLAN profiles → `hardware/wireless`. |
 | `network/{connections,route,neighbors,dns,forward,qos,tunnel,status,share}` *(legacy: `os/network/*`)* | Connection inventory, routes, ARP caches, resolver configuration, forwarding, traffic policy, OS tunnel interfaces (TUN/TAP, WinTun), connectivity, share mapping. DNS wire traffic stays `communications/dns`; application-level forwarding is `communications/proxy/tunnel`. |
 
+A messaging account-deletion request establishes the requested operation, not
+its success or authorization. A vault glob or method-name string alone does
+not establish credential access. When executable code is generated for a child,
+bind the generated value to the child's code argument before claiming that
+particular code is launched; a separate nearby launch is insufficient.
+
 A browser extension manifest's declared network-ruleset ID or path is a
 manifest property; it does not establish that the ruleset file is present,
 enabled or applied. A `fetch` call using a dynamically named URL is a request
@@ -1393,6 +1399,14 @@ identity goes with that subject.
 | `signed` | `certificate`, `entitlements`, `platform`, `script`, `trust-level` | A signer name is neither product identity nor proof of a valid chain. |
 | `vendor` | OS or platform vendor provenance (Apple, Microsoft, NetBSD, GNU) | Certificate fields are `signed`; manifest vendor fields are `package`; third-party products are `well-known/`. |
 
+Named dependency references belong under `package/dependencies/<subject>` when
+the library has a clear subject, such as `network`, `crypto`, or `storage`.
+`identity` remains a legacy holding place while other named dependencies await
+subject review; it adds no meaning above a precise subject. Combinations of declared dependencies
+belong under `package/dependencies/composition`. A dependency or combination
+describes available libraries, not their use or a stealing objective. `presence`
+describes field or dependency presence and absence.
+
 A PDF JavaScript API name, even one associated with a historical vulnerability,
 is an API reference. Claim exploitation only when the required evidence supports
 the exploit mechanism; neither a script action nor the API name proves a
@@ -1506,6 +1520,8 @@ or source-file evidence: the Delphi/YARA source signatures, Haxe basename or
 package declaration, frontend member-or-hook literal profile, scanner schema
 exception, source-catalog label and encoding-related source profile. A single
 assignment does not become a whole-source profile because it is counted.
+Lifecycle event names belong in `source/naming/event` when no registration
+or execution is established; a named hook alone is not a package operation.
 
 The [source syntax move inventory](docs/taxonomy-audit/taxonomy/source-syntax-placement/migration.json)
 places all 101 former direct rules. The audit found no identical effective
