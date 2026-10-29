@@ -1,0 +1,93 @@
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+
+traits:
+  - id: node-flow-request-writes-json-file-content
+    desc: Request writes JSON containing file contents
+    crit: notable
+    conf: 0.97
+    if:
+      type: symbol
+      kind: call
+      regex: '^[\w$]+\.write$'
+      receiver:
+        from:
+          call: '^(http\.)?request$'
+      arg:
+        index: 0
+        from:
+          call: '(^|\.)readFileSync$'
+          through:
+            - call: '(^|\.)trim$'
+              receiver: true
+            - call: '^JSON\.stringify$'
+              arguments: [0]
+
+  # The flow producer currently omits anonymous forEach callback bodies.
+  # Bind the captured outer file-content and JSON variables to the callback's
+  # request and write instead of treating that omission as negative evidence.
+  - id: node-foreach-json-file-body
+    desc: Callback request writes captured file JSON
+    crit: notable
+    conf: 0.97
+    if:
+      type: tree-sitter
+      query: |
+        (program
+          (try_statement
+            body: (statement_block
+              (expression_statement
+                (assignment_expression
+                  left: (identifier) @content
+                  right: (call_expression
+                    function: (member_expression
+                      object: (call_expression
+                        function: (member_expression
+                          object: (identifier) @fs
+                          property: (property_identifier) @read))
+                      property: (property_identifier) @trim))))))
+          (variable_declaration
+            (variable_declarator
+              name: (identifier) @payload
+              value: (call_expression
+                function: (member_expression
+                  object: (identifier) @json
+                  property: (property_identifier) @stringify)
+                arguments: (arguments
+                  (object (pair value: (identifier) @encoded))))))
+          (expression_statement
+            (call_expression
+              function: (member_expression property: (property_identifier) @each)
+              arguments: (arguments
+                (function_expression
+                  body: (statement_block
+                    (try_statement body: (statement_block
+                      (variable_declaration
+                        (variable_declarator
+                          name: (identifier) @request
+                          value: (call_expression
+                            function: (member_expression
+                              object: (identifier) @http
+                              property: (property_identifier) @create))))
+                      (expression_statement
+                        (call_expression
+                          function: (member_expression
+                            object: (identifier) @written_request
+                            property: (property_identifier) @write)
+                          arguments: (arguments (identifier) @sent))) @evidence)))))))
+          (#eq? @fs "fs") (#eq? @read "readFileSync")
+          (#eq? @trim "trim") (#eq? @json "JSON")
+          (#eq? @stringify "stringify") (#eq? @each "forEach")
+          (#eq? @http "http") (#eq? @create "request")
+          (#eq? @write "write") (#eq? @content @encoded)
+          (#eq? @payload @sent) (#eq? @request @written_request))
+
+composite_rules:
+  - id: node-request-writes-json-file-content
+    desc: Request writes JSON containing file contents
+    crit: notable
+    conf: 0.97
+    any:
+      - id: node-flow-request-writes-json-file-content
+      - id: node-foreach-json-file-body
