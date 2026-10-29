@@ -228,6 +228,14 @@ fragment is a `component` and must feed a positive detection. A benign-context
 composite may instead be `exception`; it is intentionally used for suppression
 and is not a suppression-only building-block violation.
 
+Program- and vendor-specific observations belong with the named entity in
+`well-known/`. A self-reported version field, resource string, or certificate
+subject is a claim or observed field, not proof of authorship or signature
+verification. Use a verified signature with the signer evidence when claiming
+signed ownership. Low-tier non-malware name and signer facts do not need an
+arbitrary size range; size and section constraints must reflect the evidence
+and preserve legitimate carriers.
+
 `component` and `baseline` remain available while composites are evaluated,
 but report finalization may omit unreferenced low-tier findings. Downgraded
 findings are retained; other retention and rescue rules also apply. Check both
@@ -328,7 +336,7 @@ contract as well as running the validator.
 
 | Validator check | Limit |
 |---|---|
-| Rules per directory | **100** traits plus composites is the temporary maximum, summed over its YAML files and criticalities. Enforce the same limit on both the physical directory and the ID namespace: explicitly qualified IDs must not hide either population. A category-specific exception requires a complete relevance audit and explicit approval; filenames create no budgets. |
+| Rules per directory | **95** traits plus composites is the temporary maximum, summed over its YAML files and criticalities. Enforce the same limit on both the physical directory and the ID namespace: explicitly qualified IDs must not hide either population. A category-specific exception requires a complete relevance audit and explicit approval; filenames create no budgets. |
 | Subdirectories | Hard error above 150 immediate subdirectories. Split broad catalogs by a stable function with a tiebreaker. |
 | Depth | Soft warning beyond five levels below the tier (`objectives/a/b/c/d/e/f/x.yaml` warns). Soft warnings fail `make validate`; `cleave validate --soft` only reports them. |
 | Sparse siblings | Soft warning when a parent has ten or more child directories averaging eight or fewer rules per child. Reports child count, total rules, and average rules per child; strict validation fails until the parent is reviewed. |
@@ -355,7 +363,7 @@ An AUR package targets Linux, and source code alone does not
 prove portability.
 
 **At the budget, design for precision and growth.** When a directory reaches
-or exceeds the temporary 85-rule maximum, first seek a durable division into
+or exceeds the temporary 100-rule maximum, first seek a durable division into
 more precise, evidence-supported subjects or behaviors, with reasonable room
 for future rules. Review the entire directory and its siblings at the same time:
 check each matcher against its claimed subject, relocate misplaced rules, and
@@ -440,6 +448,13 @@ is done with it* (`construct/`) give one rule several homes — which is how
 `fs/path/config/app/` and `fs/path/application/config/` came to hold the same
 subject. Keep the axis that distinguishes behavior; move the others to filenames
 (`config/app/vscode.yaml`).
+
+`fs/path/system/{root,runtime,state,driver}` distinguishes operating-system
+directory roots, installed runtime locations, system state, and driver paths.
+Application state, executable and script paths, media paths, and directory
+changes retain those subjects even when they mention a system location. A path
+reference alone does not establish discovery, writing, payload staging, or
+execution; unbound file-operation clues belong in a profile.
 
 **A trigger is not an objective.** What a payload does, what sets it off and
 where it came from vary independently. A directory level per axis copies every
@@ -686,6 +701,42 @@ holds declared fields and allowlists. A method name, destination, configuration
 field, or file and HTTP clues merely co-occurring does not prove an upload.
 Directory-wide upload selectors must therefore use actual transfer evidence.
 
+`hardware/display/screenshot` records screen-capture calls or linked capture
+operations. A capture library import, a capture-intent setting, a graphics API
+name, or unbound screen and image operations are evidence profiles; none proves
+a screenshot was taken. Browser-page screenshots and canvas serialization are
+image operations under `ui/graphics/image`, not capture of the host display.
+A screenshot call indicates an attempt, not successful capture or exfiltration.
+
+`mem/protect/modify` records memory-protection calls and syscalls, separating
+executable permissions from changes whose permissions are unspecified. Memory
+allocation, protection constants, indirect-call byte patterns, and unbound API
+names remain separate evidence. A process-handle API can target the caller;
+without a bound target it does not prove a remote process was modified.
+A protection request does not prove that it succeeded or that code ran.
+
+`communications/socket/connect` groups attempted connections by a concrete
+endpoint, TCP, or an otherwise unspecified transport. A socket constructor,
+import, bytecode name or unbound `connect` method does not establish a socket
+connection; `metadata/file/profile/socket-api` and `socket-runtime` record
+those clues. Dial aggregates must require an actual connection observation.
+A static attempt does not establish that the connection succeeded.
+
+`fs/write/file/full/{string,bytes,unspecified}` records APIs that write a
+supplied value to a file, classified by the observed value. It does not imply
+that existing contents were truncated or that the write succeeded. Descriptor
+and stream writes belong with their actual I/O operation; a path, imported API,
+or unbound co-occurrence is not proof that a file was written. Writes to a
+specific configuration or agent-instruction target belong with that target.
+
+Proxy and tunnel classifications follow the evidenced operation. An actual
+forwarding flow belongs under `communications/proxy/relay`; configuration
+changes belong under `communications/proxy/config`. Command text, tunnel
+provider names, proxy API names, unbound transport co-occurrences and frame
+field names belong to their `metadata/file/profile` subjects. Their presence
+alone proves neither a live tunnel nor a link between sockets. A call to
+install a tunnel client is `os/package-manager/runtime-install`, not network forwarding.
+
 `communications/http/client/initialize` records construction or opening of an
 HTTP client or connection object without a required request method. An
 `HttpURLConnection` cast beside `openConnection()` belongs here; a bound POST
@@ -878,6 +929,11 @@ must not acquire a direction from its consumer.
 | `time/{query,sleep,timing,schedule}` | Read time; wait; measure elapsed time (`timing/check`); schedule in-process callbacks (`schedule/timeout` for alarms). |
 | `ui/{controls,dialog,graphics,help,menu,terminal,wallpaper,window}` | Credential-entry controls (`controls/credential`), wallet UI (`controls/wallet`), drag-and-drop interaction (`controls/drag-drop`), prompts (`dialog/prompt`), `--help` text (`help`), window hooks, enumeration and notifications. Deceptive hiding is evasion. |
 
+A bound flow from credential-named environment entries into an HTTP request
+body is a credential-bearing HTTP operation, not merely an environment-name
+reference. `PWD` alone can denote the working directory; environment-access
+proximity to that token does not establish a password or credential read.
+
 **Process admission is about the affected resource, not the host.** A native
 function detour or runtime-method hook alters execution and fits `process/hook`.
 Intercepting HTTP requests, wrapping console logging, overriding web storage,
@@ -1002,9 +1058,13 @@ build configuration stay under `metadata/build`.
 
 `os/module/load/{name,path,memory,class}` distinguishes module loading by the
 identified input or resolution mechanism: a module name, file path, in-memory
-representation, or class-loader facility. Native DLL-name references belong in
-`dylib/library/family`; native loading uses `dylib/load`. Modifying loader entries
-is `os/module/configure`, and unbound loading/API co-occurrences are profiles.
+representation, or class-loader facility. Library names and implementation
+clues live in `metadata/file/profile/library` and `metadata/file/profile/libc`;
+native loading uses `dylib/load`. A library name, import, or isolated export
+neither proves the observed file is that library nor makes it benign. Avoid
+blanket suppression on library-reference directories, especially when looking
+for a compromised library. Modifying loader entries is `os/module/configure`,
+and unbound loading/API co-occurrences are profiles.
 
 Command approval, refusal and classification belong in `os/security/command-policy`;
 redacting command secrets belongs in `os/security/redaction`. A command mentioned
@@ -1636,6 +1696,60 @@ Raw signed-entitlement keys are emitted as runtime facts under
 `metadata/signed/entitlements` interpret those facts into named properties;
 the raw entitlement IDs are engine output, not duplicate YAML declarations.
 
+`metadata/package/testing/presence/suite` records names and paths associated
+with test suites or testbeds. A directory or filename is a location clue; it
+does not establish that tests ran, that all contents are fixtures, or that
+contents are safe. The `harness` sibling covers evidence for test machinery,
+while `path` retains other testing-location observations pending review.
+
+Documentation claims about agent oversight, anti-bot evasion and CAPTCHA
+solving have separate subject homes. They report what a document says; they do
+not establish that an agent obeys a policy, that evasion occurred, or that a
+CAPTCHA was solved. CAPTCHA solving alone does not imply anti-bot evasion.
+
+`metadata/package/documentation/security-exercise` records documentation
+about authorized assessments, security playbooks and CTF exercises; generic
+prerequisite, syntax and pattern headings remain markup observations. Text
+claiming authorization or a training setting is not proof that an operation
+is authorized or harmless. Agent-specific injection guidance and other
+security-testing documentation retain their own subjects.
+
+Testing-presence observations are grouped by subject: certificate fixtures,
+secret-detector fixtures, safety evaluations, and snapshots have separate
+homes. A directory name or certificate field is evidence of a location or
+field, not independently proof that the content is safe or that a test ran.
+The reference-only `fixture-evidence` profile retains the reviewed fixture
+exclusions; the snapshot-directory paths and unbound certificate-directory
+observations do not establish benign fixture context.
+
+`metadata/path` classifies the scanned file's own location by its supported
+subject: `software` for paths naming a software tree or artifact,
+`development` for source, build, examples, and test locations, `installation`
+for installer and provisioning locations, `system` for service and session
+locations, `directory` for generic directory-component clues, `shape` for
+path spelling, and `storage` for data-location subjects. A software-named path
+is a reference, not proof of product identity; a test-named path does not by
+itself prove that its contents are harmless. Referenced filesystem paths and
+archive member paths have their own homes.
+
+`metadata/filename/document-theme` records filenames invoking documents,
+business records, or images; the name alone does not establish deception.
+`metadata/filename/shape` records measurable name forms such as hashes, short
+stems, and generated-looking names. Scanned directory context belongs in
+`metadata/path`, even when a name observation is used alongside it.
+
+`metadata/file/format/desktop-entry` holds desktop-entry field and structure
+observations; launch command semantics have their own behavioral or package
+entrypoint homes. The scanned file's display-session location is a path
+observation in `metadata/path/system`, not an entry field.
+
+`metadata/file/format/news` identifies serialized news records and generated
+briefings; `metadata/file/format/threat-intelligence` identifies indicator
+records, blocklists, and threat-report fields. These describe document subjects,
+not the behavior of quoted content. Other security corpora remain under
+`file/format/security-corpus` when they are detection inputs or rule datasets
+rather than threat-intelligence exports.
+
 `metadata/file/format/console-font` holds console-font format signatures and
 fragment-manifest structure. A matched header prefix alone does not establish
 whole-file validity. The reserved `metadata/font` home is for font-table or
@@ -2094,7 +2208,7 @@ Resolve each in the migration manifest before moving the affected rules.
 
 | Checkpoint | Required resolution |
 |---|---|
-| Capacity for broad leaves | The temporary maximum is 85 rules; any category-specific exception requires a complete relevance audit and explicit user approval. At the budget, seek durable, precise subdivisions with room to grow, while auditing all rules, parents and siblings. Document the population and consumers, place broad observations accurately, and do not invent a sibling or `other` bucket to satisfy the count. |
+| Capacity for broad leaves | The temporary maximum is 100 rules; any category-specific exception requires a complete relevance audit and explicit user approval. At the budget, seek durable, precise subdivisions with room to grow, while auditing all rules, parents and siblings. Document the population and consumers, place broad observations accurately, and do not invent a sibling or `other` bucket to satisfy the count. |
 | Level-3 branches | Name the children, their single axis, precedence and an incomplete-evidence example before migrating. |
 | Broad staging profiles | Staging rules that fit no operation need a defined home; neither dropping the claim nor calling it activation is acceptable. |
 | Retained access | Choose a home for created accounts and authorized SSH keys, now in `persistence/login/{account,ssh}`. |

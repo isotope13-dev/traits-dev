@@ -1,0 +1,177 @@
+defaults:
+  platforms: [windows, unix]
+  for: [shell, batch, powershell, python, javascript, go]
+  crit: notable
+  conf: 0.86
+
+traits:
+  - id: cloudflared-binary-name
+    desc: cloudflared binary reference
+    crit: notable
+    conf: 0.88
+    if:
+      type: literal
+      kind: string
+      substr: cloudflared
+
+  # Only the bare word; the cloudflared composites supply the binary name.
+  - id: cloudflared-tunnel-subcommand
+    desc: Bare "tunnel" string literal
+    crit: component
+    conf: 0.84
+    if:
+      type: literal
+      kind: string
+      exact: tunnel
+
+  - id: trycloudflare-domain
+    desc: References a trycloudflare tunnel domain
+    crit: notable
+    conf: 0.86
+    if:
+      type: literal
+      kind: string
+      substr: trycloudflare
+    unless:
+      - id: well-known/tool/detection/security-scanner::auditr-defensive-signature-catalog
+      - id: metadata/file/catalog/identity::public-suffix-list
+      - id: well-known/lib/network/public-suffix-list::public-suffix-list-content
+
+  - id: cloudflared-node-quick-tunnel-api
+    desc: Node cloudflared quick tunnel API
+    crit: notable
+    conf: 0.86
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'Tunnel\.quick\s*\([\s\S]{0,80}localhost'
+
+  - id: tunnel-run-token-command
+    desc: Tunnel run command with token
+    crit: notable
+    conf: 0.91
+    for: [scripts, systemd-service]
+    platforms: [windows, linux]
+    if:
+      type: text
+      regex: '(?i)\btunnel\s+run\b[^\r\n]{0,180}\s--token\b'
+
+  - id: cloudflared-service-install-command
+    desc: cloudflared service install subcommand
+    # `cloudflared [tunnel] service install [TOKEN]` is Cloudflare's documented
+    # one-shot that registers cloudflared as an OS service (Windows service /
+    # systemd unit) and brings the outbound tunnel up. Deployment tools run it
+    # with the operator's own token and print it in setup instructions, so the
+    # subcommand alone is a service-registration observation, not abuse. A
+    # literal tunnel token after `service install` is what
+    # `tunnel-connector-service-install-token` reports as suspicious.
+    crit: notable
+    conf: 0.9
+    for: [scripts, systemd-service]
+    platforms: [windows, linux]
+    if:
+      type: text
+      regex: '(?i)\bcloudflared(\.exe)?\b[^\r\n]{0,80}\bservice\s+install\b'
+    unless:
+      - id: metadata/file/extension/identity::markdown-file-basename
+
+  - id: tunnel-connector-service-install-token
+    desc: Service install command and token-like text
+    # `<connector> service install <token>` registers the connector as an OS
+    # service and authenticates the tunnel in one shot. Deliberately does NOT
+    # require the `cloudflared` binary name — the sibling
+    # cloudflared-service-install-command covers the named form and goes blind
+    # the moment the connector is renamed, which is exactly what post-
+    # exploitation tooling does. The long opaque token argument is what keeps
+    # this off ordinary `service install` verbs; barring a separator from the
+    # leading run keeps it off long filesystem paths.
+    crit: suspicious
+    conf: 0.9
+    for: [scripts, systemd-service]
+    platforms: [windows, linux]
+    if:
+      type: text
+      regex: '(?i)\bservice\s+install\s+[A-Za-z0-9+_-]{20}[A-Za-z0-9+/=_-]{60,}'
+
+  - id: cloudflared-systemd-service
+    desc: Systemd ExecStart references cloudflared
+    crit: notable
+    conf: 0.9
+    for: [systemd-service]
+    platforms: [linux]
+    if:
+      type: text
+      regex: '(?i)\bExecStart=[^\r\n]{0,160}\bcloudflared(\.exe)?\b'
+
+composite_rules:
+  - id: cloudflared-url-flag
+    desc: Cloudflared reference with URL forwarding option
+    crit: notable
+    conf: 0.9
+    scope: file
+    all:
+      - id: metadata/file/profile/tunnel-setup::cloudflared-binary-name
+      - id: micro-behaviors/process/info/commandline::url-option-literal
+
+  - id: cloudflared-local-service-tunnel
+    desc: Cloudflared and URL option clues
+    crit: notable
+    conf: 0.9
+    all:
+      - id: metadata/file/profile/tunnel-setup::cloudflared-binary-name
+      - id: metadata/file/profile/tunnel-setup::cloudflared-tunnel-subcommand
+      - id: metadata/file/profile/tunnel-setup::cloudflared-url-flag
+  - id: cloudflared-node-quick-tunnel
+    for: [javascript]
+    desc: Cloudflared package and quick-tunnel text
+    crit: notable
+    conf: 0.9
+    all:
+      - id: micro-behaviors/os/module/load/name::cloudflared-node-package-require
+      - id: metadata/file/profile/tunnel-setup::cloudflared-node-quick-tunnel-api
+  - id: tunnel-run-as-external-service
+    desc: Tunnel command and service registration clues
+    crit: suspicious
+    conf: 0.93
+    for: [scripts, systemd-service]
+    platforms: [windows, linux]
+    all:
+      - id: metadata/file/profile/tunnel-setup::tunnel-run-token-command
+    any:
+      - id: micro-behaviors/os/service/config::powershell-binary-service-command
+      - id: micro-behaviors/os/service/create::sc-create-command
+      - id: micro-behaviors/os/service/unit-field::exec-start-text
+      - id: metadata/file/profile/tunnel-setup::cloudflared-systemd-service
+
+  - id: persistent-tunnel-service
+    desc: Tunnel service configuration clues
+    crit: suspicious
+    conf: 0.94
+    for: [scripts, systemd-service]
+    platforms: [windows, linux]
+    any:
+      # run-command staged into a separate service registration, or a service
+      # install carrying a literal tunnel token — under the connector's own
+      # name or renamed, in which case the opaque token is the leg that still
+      # identifies it.
+      - id: metadata/file/profile/tunnel-setup::tunnel-run-as-external-service
+      - id: metadata/file/profile/tunnel-setup::tunnel-connector-service-install-token
+      - id: metadata/file/profile/tunnel-setup::renamed-tunnel-connector-service-install
+
+  - id: renamed-tunnel-connector-service-install
+    desc: Token-shaped text and service registration clues
+    # Token credential plus any OS service registration: the connector binary
+    # can be called anything at all and this still identifies the persistence
+    # as a Cloudflare tunnel.
+    crit: suspicious
+    conf: 0.93
+    for: [scripts, systemd-service]
+    platforms: [windows, linux]
+    all:
+      - id: metadata/file/profile/token-shape::cloudflare-tunnel-token-credential
+    any:
+      - id: metadata/file/profile/tunnel-setup::tunnel-connector-service-install-token
+      - id: micro-behaviors/os/service/create::sc-create-command
+      - id: micro-behaviors/os/service/config::powershell-binary-service-command
+      - id: micro-behaviors/os/service/unit-field::exec-start-text
+      - id: metadata/file/profile/tunnel-setup::cloudflared-systemd-service

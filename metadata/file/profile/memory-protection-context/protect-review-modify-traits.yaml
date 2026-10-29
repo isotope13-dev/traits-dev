@@ -1,0 +1,122 @@
+defaults:
+  for:
+    - pe
+    - dll
+    - c
+    - cpp
+    - csharp
+    - rust
+  platforms:
+    - windows
+traits:
+  - id: source-execute-memory-request
+    desc: Memory API and executable flag text
+    crit: notable
+    conf: 0.92
+    for: [c, cpp, csharp, rust, go, source]
+    if:
+      type: text
+      regex: '(?i)\bVirtual(Alloc|Protect)\w{0,2}\s*\([^;\n]{0,140}(0x40|PAGE_EXECUTE_READ)'
+
+composite_rules:
+  - id: virtualprotect-rwx-stack-arg-x86
+    desc: VirtualProtect import and 0x40 call argument
+    crit: notable
+    conf: 0.9
+    arch: [x86]
+    for: [pe, dll]
+    size_max: 5242880
+    all:
+      - id: metadata/file/profile/memory-protection-api::virtual-protect
+      - id: metadata/binary/instruction/operand::x86-call-third-arg-0x40
+  - id: virtual-protect-ex-noaccess-source
+    desc: VirtualProtectEx and PAGE_NOACCESS references
+    crit: notable
+    conf: 0.98
+    for: [c, cpp, csharp, rust]
+    near_lines: 8
+    all:
+      - id: metadata/file/profile/memory-protection-api::virtual-protect-ex
+      - id: micro-behaviors/mem/protect/constant::page-noaccess-source
+  - id: non-pagespeed-memory-protection
+    desc: Memory protection API references
+    crit: notable
+    conf: 0.9
+    any:
+      - id: metadata/file/profile/memory-protection-api::virtual-protect
+      - id: metadata/file/profile/memory-protection-api::virtual-protect-ex
+    unless:
+      - id: well-known/app/system/weamp-pagespeed/
+  - id: virtual-memory-allocation-protection-api-pair
+    desc: Imports virtual-memory allocation and protection APIs
+    crit: notable
+    conf: 0.9
+    for: [pe, dll]
+    all:
+      - id: micro-behaviors/mem/alloc/virtual::virtual-alloc
+      - id: metadata/file/profile/memory-protection-api::virtual-protect
+  # Union of the surfaces that actually produce executable memory: the
+  # PAGE_EXECUTE_* constant in the clear, or a call site whose protection
+  # argument is the executable constant. A bare VirtualAlloc/VirtualProtect
+  # import pair is deliberately NOT a member -- every JIT and loader has one.
+  - id: executable-page-protection-evidence
+    desc: Executable-page constant or protection argument
+    crit: notable
+    conf: 0.9
+    for: [pe, dll]
+    any:
+      - id: micro-behaviors/mem/protect/constant::page-execute-readwrite
+      - id: metadata/file/profile/memory-protection-context::virtualprotect-rwx-stack-arg-x86
+      - id: metadata/file/profile/memory-protection-code::virtualprotect-rwx-direct-call-x86
+      - id: metadata/file/profile/memory-protection-code::virtualprotect-executable-resolved-x64
+      - id: metadata/file/profile/memory-protection-code::virtualprotect-executable-read-register-x64
+  # Neutral union of the x64 page-protection surfaces (plain VirtualProtect
+  # import or a resolved/register-indirect call to it). A bare import
+  # satisfies it; callers must supply their own attack-specific evidence.
+  - id: page-protection-api-x64
+    desc: x64 memory-protection API (imported or resolved)
+    crit: notable
+    conf: 0.92
+    for: [pe, dll]
+    arch: [x86-64]
+    any:
+      - id: metadata/file/profile/memory-protection-api::virtual-protect
+      - id: metadata/file/profile/memory-protection-code::virtualprotect-executable-resolved-x64
+      - id: metadata/file/profile/memory-protection-code::virtualprotect-executable-read-register-x64
+  # These independent observations do not establish a memory transition,
+  # data flow into a thread, or remote process injection.
+  - id: integer-loads-protection-thread-apis
+    desc: x64 integer loads with protection and thread APIs
+    crit: notable
+    conf: 0.9
+    for: [pe, dll]
+    arch: [x86-64]
+    all:
+      - id: metadata/binary/instruction/operand::x64-load-r8-r9-04
+      - id: metadata/binary/instruction/operand::x64-load-r8-r9-20
+      - id: metadata/file/profile/memory-protection-context::page-protection-api-x64
+      - id: micro-behaviors/process/thread/create::thread-start-api-x64
+    unless:
+      - id: well-known/lib/runtime/scripted/electron/
+      - id: well-known/lib/media/ffmpeg/
+      - id: well-known/tool/development/toolchain/plutolang/
+      - id: metadata/binary/framework::dotnet-metadata
+      - id: metadata/lang/compiler/aot::nativeaot-runtime-markers
+      - id: metadata/binary/installer/family/
+      - id: well-known/lib/crypto/keyring::zowe-secrets-native-keyring-source
+    downgrade:
+      any:
+        - id: metadata/signed/platform/
+        - id: well-known/lib/platform/browser-automation/
+  - id: x64-inline-jump-patch-capability
+    desc: x64 binary writes inline jump trampolines
+    crit: notable
+    conf: 0.95
+    for: [pe, dll]
+    arch: [x86-64]
+    all:
+      - id: metadata/file/profile/memory-protection-api::virtual-protect-ex
+      - id: micro-behaviors/mem/sync/cache::flush-instruction-cache
+    any:
+      - id: micro-behaviors/mem/write/arbitrary::x64-relative-jump-patch-writer
+      - id: micro-behaviors/mem/write/arbitrary::x64-indirect-jump-patch-writer

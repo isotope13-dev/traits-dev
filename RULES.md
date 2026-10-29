@@ -1169,7 +1169,7 @@ composite_rules:
       - id: metadata/signed/platform::microsoft
 ```
 
-`none:` *is* available inside a `downgrade:` block, which takes the full `all:`/`any:`/`none:`/`needs:` shape.
+`none:` is also unavailable inside `downgrade:`. When a downgrade needs a negative guard, define the positive context as a separate rule with `unless:` and reference that context from `downgrade:`; putting `unless:` on the original rule would suppress the finding itself.
 
 **Circular references:** Composites can reference other composites. Circular references are handled safely — composite evaluation uses a fixed-point loop (max 10 iterations). Circular references will not crash but the circularly-dependent traits may not resolve.
 
@@ -1347,7 +1347,7 @@ Reduces criticality by **one level** when conditions match:
 
 **Syntax** (works on both atomic traits and composite rules):
 
-`downgrade:` supports full boolean logic with `all:`, `any:`, `none:`, and `needs:` - the same structure as composite rule conditions.
+`downgrade:` supports `all:`, `any:`, and `needs:`. For a negative guard, reference a separate context rule that uses `unless:`; the original finding remains visible when that context does not match.
 
 ```yaml
 traits:
