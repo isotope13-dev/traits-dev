@@ -99,13 +99,31 @@ buf = bytearray(original)
 rewrite_run(buf, run_path[:-1] + b"x")
 save("different-registry-target", buf, absent=[RUN, PERSIST])
 
-for va, atom, composite, name in [
-    (0x140017DAA, AMSI, APATCH, "no-invalidarg-patch"),
-    (0x140017F3B, ETW, EPATCH, "no-zero-return-patch"),
+buf = bytearray(original)
+buf[offset(0x140017DAA)] = 0x90
+save("no-invalidarg-patch", buf, [AMSI], [APATCH])
+
+ZERO_WRITE = "micro-behaviors/mem/write/arbitrary::x64-write-zero-return"
+buf = bytearray(original)
+buf[offset(0x140017F3B)] = 0x90
+# Removing 66 changes the word store to a dword store; it consumes the
+# following 4C 8D bytes as immediate data. The later byte store at +2
+# still leaves 33 C0 C3 at EtwEventWrite. This is a retained bypass.
+save("no-zero-return-patch", buf, [ETW, ZERO_WRITE, EPATCH])
+
+for name, index, value in [
+    ("zero-return-different-xor", 3, 0x34),
+    ("zero-return-different-store-base", 1, 0x07),
+    ("zero-return-different-ret-offset", 11, 0x03),
+    ("zero-return-without-ret", 12, 0x90),
 ]:
-    buf = bytearray(original)
-    buf[offset(va)] = 0x90
-    save(name, buf, [atom], [composite])
+    changed = bytearray(buf)
+    changed[offset(0x140017F3C) + index] = value
+    save(name, changed, [ETW], [ZERO_WRITE, EPATCH])
+
+changed = bytearray(buf)
+changed[offset(0x140017F3C) + 4:offset(0x140017F3C) + 6] = b"\xAA\xBB"
+save("zero-return-dword-other-upper-bytes", changed, [ETW, ZERO_WRITE, EPATCH])
 
 buf = bytearray(original)
 start = original.index(b"payment is confirmed")
