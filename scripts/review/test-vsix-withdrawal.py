@@ -57,17 +57,17 @@ def main():
 
     add('security-held-removed-release', registry | {'security_hold': True,
         'version_removed': True, 'description': 'security holding package'}, True, [REMOVED])
-    add('security-hold-flag-only', registry | {'security_hold': True}, True,
-        [PREFIX + 'registry-security-held-package'])
+    add('security-hold-flag-only', registry | {'security_hold': True}, False,
+        ['metadata/registry::registry-security-hold'])
     add('golang-security-withheld-coordinate', registry | {'ecosystem': 'golang',
-        'security_hold': True}, True, [PREFIX + 'registry-security-held-package'])
+        'security_hold': True}, False, ['metadata/registry::registry-security-hold'])
     add('security-holder-description-only', registry | {'description': 'security holding package'},
-        True, [PREFIX + 'registry-security-held-package'])
-    # Policy includes the inert stub; assert its status, without inventing
-    # historical removal or implying execution of a malicious payload.
+        False, [PREFIX + 'registry-security-held-package'])
+    # The registry hold remains observable, but an inert stub does not prove
+    # that the listed replacement executes a malicious payload.
     add('inert-holder-still-listed', registry | {'version': '0.0.1-security',
         'security_hold': True, 'version_removed': False, 'description': 'security holding package'},
-        True, forbidden=[REMOVED])
+        False, [PREFIX + 'registry-security-held-package'], forbidden=[REMOVED])
     for name, ecosystem, reason in [
         ('npm-security-before-removal', 'npm', 'security withdrawal: malicious code'),
         ('npm-security-after-removal', 'npm', 'removed for security reasons'),
@@ -118,7 +118,7 @@ def main():
     archive('registry-removal-and-hold-on-different-dependencies', {
         'a.registry.json': registry | {'security_hold': True, 'description': 'security holding package'},
         'b.registry.json': registry | {'name': 'other', 'version_removed': True}},
-        True, forbidden=[REMOVED])
+        False, forbidden=[REMOVED])
 
     results = []
 
@@ -178,30 +178,35 @@ def main():
     follow_cases = []
     for name, security, removed, known in [
         ('removed-security-held-dependency', True, True, True),
+        ('listed-security-held-dependency', True, False, True),
+        ('listed-security-held-fs-dependency', True, False, True),
         ('removed-without-security-reason', False, True, True),
         ('still-listed-ordinary-dependency', False, False, True),
         ('never-published-version', False, True, False),
         ('private-or-unknown-package', False, None, False),
     ]:
-        package = 'withdrawal-regression-' + name
+        package = 'fs' if name == 'listed-security-held-fs-dependency' else 'withdrawal-regression-' + name
+        version = '0.0.1-security' if package == 'fs' else '1.0.0'
         path = dump(work / 'follow-inputs' / name / 'package.json',
                     {'name': 'consumer-' + name, 'version': '1.0.0',
-                     'dependencies': {package: '1.0.0'}})
+                     'dependencies': {package: version}})
         document = {'name': package, 'maintainers': [{'name': 'fixture-maintainer'}],
                     'dist-tags': {'latest': '0.0.1-security' if security else '2.0.0'},
                     'description': 'security holding package' if security else 'Ordinary library',
                     'versions': {}, 'time': {'created': '2020-01-01T00:00:00.000Z'}}
         if known:
-            document['time']['1.0.0'] = '2020-01-01T00:00:00.000Z'
+            document['time'][version] = '2020-01-01T00:00:00.000Z'
         if removed is False:
-            document['versions']['1.0.0'] = {'name': package, 'version': '1.0.0'}
+            document['versions'][version] = {'name': package, 'version': version}
         if removed is None:
             document = {'error': 'Not found'}
         cache_metadata('https://registry.npmjs.org/' + package, document)
         cache_metadata('https://api.npmjs.org/downloads/point/last-month/' + package, {'downloads': 10})
         follow_cases.append(dict(name=name, path=path, hostile=security,
-                                 required={DEPENDENCY, REMOVED} if security else set(), forbidden=set()))
-        if security:
+                                 required=({DEPENDENCY, REMOVED} if removed else {DEPENDENCY})
+                                 if security else set(),
+                                 forbidden={REMOVED} if security and not removed else set()))
+        if security and removed:
             vsix_path = path.parent / 'consumer.vsix'
             manifest = json.loads(path.read_text()) | {'publisher': 'regression',
                         'engines': {'vscode': '^1.90.0'}, 'main': './extension.js'}

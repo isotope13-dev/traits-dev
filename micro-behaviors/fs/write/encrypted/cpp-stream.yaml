@@ -1,0 +1,124 @@
+defaults:
+  for: [c, cpp]
+  platforms: [unix, windows]
+  crit: notable
+  conf: 0.98
+
+traits:
+  # A function name or cipher prototype does not establish file encryption.
+  # Bind the read buffer to the cipher input, the cipher output to write(),
+  # and both I/O operations to the same stream. Casts only unwrap .data().
+  # These are routine definitions; the caller need not reach them at runtime.
+  - id: cpp-stream-cipher-rewrite
+    desc: Stream read followed by cipher-buffer rewrite
+    if:
+      type: tree-sitter
+      language: cpp
+      query: |
+        ((compound_statement
+          (expression_statement (call_expression
+            function: (field_expression argument: (identifier) @reader
+              field: (field_identifier) @read)
+            arguments: (argument_list
+              . [(call_expression function: (field_expression
+                    argument: (identifier) @plain field: (field_identifier) @read_data))
+                 (call_expression function: (template_function name: (identifier) @read_cast)
+                   arguments: (argument_list . (call_expression function: (field_expression
+                     argument: (identifier) @plain field: (field_identifier) @read_data)) .))])))
+          . (expression_statement (call_expression
+              function: (identifier) @random))?
+          . (expression_statement (call_expression
+            function: (identifier) @cipher
+            arguments: (argument_list
+              . [(call_expression function: (field_expression
+                    argument: (identifier) @encrypted field: (field_identifier) @out_data))
+                 (call_expression function: (template_function name: (identifier) @out_cast)
+                   arguments: (argument_list . (call_expression function: (field_expression
+                     argument: (identifier) @encrypted field: (field_identifier) @out_data)) .))]
+              . [(call_expression function: (field_expression
+                    argument: (identifier) @input field: (field_identifier) @in_data))
+                 (call_expression function: (template_function name: (identifier) @in_cast)
+                   arguments: (argument_list . (call_expression function: (field_expression
+                     argument: (identifier) @input field: (field_identifier) @in_data)) .))])))
+          . (expression_statement (call_expression
+            function: (field_expression argument: (identifier) @seeker
+              field: (field_identifier) @seek)))
+          . (expression_statement (call_expression
+            function: (field_expression argument: (identifier) @writer
+              field: (field_identifier) @write)
+            arguments: (argument_list
+              . [(call_expression function: (field_expression
+                    argument: (identifier) @output field: (field_identifier) @write_data))
+                 (call_expression function: (template_function name: (identifier) @write_cast)
+                   arguments: (argument_list . (call_expression function: (field_expression
+                     argument: (identifier) @output field: (field_identifier) @write_data)) .))]))) @evidence)
+          (#eq? @read "read") (#eq? @seek "seekp") (#eq? @write "write")
+          (#eq? @read_data "data") (#eq? @out_data "data")
+          (#eq? @in_data "data") (#eq? @write_data "data")
+          (#eq? @reader @seeker) (#eq? @reader @writer)
+          (#eq? @plain @input) (#eq? @encrypted @output)
+          (#match? @cipher "^crypto_stream_(chacha20|xsalsa20|xchacha20)(_ietf)?_xor(_ic)?$")
+          (#eq? @random "randombytes_buf")
+          (#eq? @read_cast "reinterpret_cast") (#eq? @write_cast "reinterpret_cast")
+          (#eq? @out_cast "reinterpret_cast") (#eq? @in_cast "reinterpret_cast")
+          (#set! cleave.ignore-comments "true"))
+
+  - id: cpp-file-stream-write-source
+    desc: Writes through a declared C++ file stream
+    if:
+      type: tree-sitter
+      language: cpp
+      # Only scalar and standard byte-buffer locals may precede loop I/O;
+      # unknown local types or a loop variable shadowing the stream fail closed.
+      query: |
+        ((compound_statement
+          (declaration type: (_) @type
+            declarator: (init_declarator declarator: (identifier) @file))
+          (expression_statement (call_expression
+            function: (field_expression argument: (identifier) @writer
+              field: (field_identifier) @write))) @evidence)
+          (#match? @type "^(std::)?fstream$")
+          (#eq? @file @writer) (#eq? @write "write")
+          (#set! cleave.ignore-comments "true"))
+        ((compound_statement
+          (declaration type: (_) @type
+            declarator: (init_declarator declarator: (identifier) @file))
+          (for_statement
+            initializer: (declaration declarator: (init_declarator
+              declarator: (identifier) @iterator))
+            body: (compound_statement
+            . (declaration type: (_) @local_type
+                declarator: (init_declarator declarator: (identifier)))+
+            . (expression_statement)*
+            .
+            (expression_statement (call_expression
+              function: (field_expression argument: (identifier) @writer
+                field: (field_identifier) @write))) @evidence)))
+          (#match? @type "^(std::)?fstream$")
+          (#eq? @file @writer) (#eq? @write "write")
+          (#not-eq? @file @iterator)
+          (#match? @local_type "^(std::(size_t|string|vector<[^>]+>|array<[^>]+>)|int|char|unsigned|long)$")
+          (#set! cleave.ignore-comments "true"))
+        ((compound_statement
+          (declaration type: (_) @type
+            declarator: (init_declarator declarator: (identifier) @file))
+          (for_statement
+            initializer: (declaration declarator: (init_declarator
+              declarator: (identifier) @iterator))
+            body: (compound_statement
+            . (expression_statement)*
+            . (expression_statement (call_expression
+              function: (field_expression argument: (identifier) @writer
+                field: (field_identifier) @write))) @evidence)))
+          (#match? @type "^(std::)?fstream$")
+          (#eq? @file @writer) (#eq? @write "write")
+          (#not-eq? @file @iterator)
+          (#set! cleave.ignore-comments "true"))
+
+composite_rules:
+  - id: cpp-file-stream-cipher-rewrite
+    desc: Rewrites a C++ file stream with its cipher output
+    all:
+      - id: cpp-stream-cipher-rewrite
+      - id: cpp-file-stream-write-source
+    near_bytes: 1

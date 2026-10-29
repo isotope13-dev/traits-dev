@@ -1,0 +1,52 @@
+defaults:
+  for: [c, cpp]
+  platforms: [windows]
+  crit: notable
+  conf: 0.98
+
+traits:
+  # The adjacent statements bind the allocation and memcpy destination to the
+  # thread entry. Only a return-on-null guard may intervene before the copy.
+  # Do not confuse a copied argument/context with executable code.
+  - id: copied-buffer-thread-entry-source
+    desc: Copied executable buffer becomes thread entry
+    if:
+      type: tree-sitter
+      language: c
+      query: |
+        ((compound_statement
+          (declaration (init_declarator
+            declarator: (pointer_declarator declarator: (identifier) @allocated)
+            value: (call_expression function: (identifier) @allocate
+              arguments: (argument_list . (_) . (_) . (_) . (_) @protection .))))
+          . (if_statement
+              condition: (parenthesized_expression (unary_expression
+                operator: "!" argument: (identifier)))
+              consequence: (return_statement))?
+          .
+          (expression_statement (call_expression
+            function: (identifier) @copy
+            arguments: (argument_list . (identifier) @destination)))
+          . (declaration (init_declarator
+            value: (call_expression function: (identifier) @thread
+              arguments: (argument_list . (_) . (_)
+                . [(identifier) @entry
+                   (cast_expression value: (identifier) @entry)])) @evidence)))
+          (#eq? @copy "memcpy") (#eq? @thread "CreateThread")
+          (#eq? @allocate "VirtualAlloc")
+          (#eq? @allocated @destination)
+          (#eq? @destination @entry)
+          (#match? @protection "^(PAGE_EXECUTE(_READ(WRITE)?|_WRITECOPY)?|0[xX]0*(10|20|40|80)|16|32|64|128)$")
+          (#set! cleave.ignore-comments "true"))
+
+  - id: allocated-thread-entry-source
+    desc: VirtualAlloc result used as thread entry
+    for: [c, cpp, javascript, typescript]
+    if:
+      type: symbol
+      kind: call
+      exact: CreateThread
+      arg:
+        index: 2
+        from:
+          call: '^VirtualAlloc$'

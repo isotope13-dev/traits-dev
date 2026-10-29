@@ -1,0 +1,74 @@
+defaults:
+  for:
+    - "pe"
+  platforms:
+    - "windows"
+  arch:
+    - "x86"
+traits:
+  - id: "x86-ssdt-pointer-write-protected-window"
+    desc: "Caller pointer redirects a protected syscall"
+    crit: "suspicious"
+    conf: 0.98
+    if:
+      type: "yara"
+      source: |
+        import "pe"
+        rule x86_ssdt_pointer_write_protected_window {
+          strings:
+            // The pointer operand must be the actual SSDT IAT entry. API spelling
+            // alongside an unrelated protected-memory write does not qualify.
+            $irp_a = { 8B 75 0C 8B 46 60 8B 48 0C 8B 50 10 89 55 ?? 8B 5E 3C }
+            $irp_b = { 8B 7D 0C 8B 47 60 8B 48 0C 8B 50 10 89 55 ?? 8B 77 3C }
+            $irp_c = { 8B 4D 0C 8B 41 60 8B 50 0C 8B 58 10 8B 79 3C }
+            $irp_d = { 8B 5D 0C 8B 43 60 8B 48 0C 8B 78 10 8B 73 3C }
+            $irp_stack = { 8B 4D 0C 8B 41 60 8B 50 0C 89 55 ?? 8B 50 10 89 55 ?? 8B 49 3C 89 4D ?? }
+            $load_output = { 8B 75 ?? 56 FF 15 ?? ?? ?? ?? }
+            $table = { A1 ?? ?? ?? ?? (39 50 08 | 39 58 08 | 8B 48 08) }
+            $write = { FA 0F 20 C0 25 FF FF FE FF 0F 22 C0
+                       (8B 03 89 04 91 | 8B 06 89 04 91 |
+                        8B 45 ?? 8B 00 89 04 91 | 8B 06 8B 4D ?? 89 04 99 |
+                        8B 06 89 01 | 8B 07 89 01)
+                       0F 20 C0 0D 00 00 01 00 0F 22 C0 FB }
+          condition:
+            pe.is_pe and pe.imports("ntoskrnl.exe", "KeServiceDescriptorTable") and
+            for any t in (1..#table) : (
+              uint32(@table[t]+1) == pe.image_base + pe.import_rva("ntoskrnl.exe", "KeServiceDescriptorTable") and
+              for any w in (1..#write) : (
+                @write[w] > @table[t] and @write[w] - @table[t] < 192 and
+                (
+                  (uint8(@write[w]+13)==0x03 and
+                   for any f in (1..#irp_a) : (
+                     @irp_a[f]<@table[t] and @table[t]-@irp_a[f]<2048 and
+                     uint8(@table[t]-3)==uint8(@irp_a[f]+14) and
+                     uint16(@table[t]-5)==0x458b and uint16(@table[t]-2)==0x108b)) or
+                  (uint8(@write[w]+13)==0x06 and uint8(@write[w]+14)==0x8b and
+                   for any f in (1..#irp_b) : (
+                     @irp_b[f]<@table[t] and @table[t]-@irp_b[f]<2048 and
+                     uint8(@table[t]-3)==uint8(@irp_b[f]+14) and
+                     uint16(@table[t]-5)==0x458b and uint16(@table[t]-2)==0x188b)) or
+                  (uint8(@write[w]+13)==0x07 and
+                   for any f in (1..#irp_c) : (@irp_c[f]<@table[t] and @table[t]-@irp_c[f]<2048)) or
+                  (uint8(@write[w]+13)==0x06 and uint8(@write[w]+15)==0x01 and
+                   for any f in (1..#irp_d) : (@irp_d[f]<@table[t] and @table[t]-@irp_d[f]<2048)) or
+                  (uint8(@write[w]+13)==0x45 and
+                   for any f in (1..#irp_stack) : (
+                     @irp_stack[f]<@table[t] and @table[t]-@irp_stack[f]<2048 and
+                     uint8(@write[w]+14)==uint8(@irp_stack[f]+23) and
+                     uint8(@table[t]-3)==uint8(@irp_stack[f]+17))) or
+                  (uint8(@write[w]+13)==0x06 and uint8(@write[w]+15)==0x04 and
+                   for any f in (1..#irp_stack) : (
+                     @irp_stack[f]<@table[t] and @table[t]-@irp_stack[f]<2048 and
+                     for any o in (1..#load_output) : (
+                       @load_output[o]>@irp_stack[f] and @load_output[o]<@table[t] and
+                       @table[t]-@load_output[o]<128 and
+                       uint8(@load_output[o]+2)==uint8(@irp_stack[f]+23))))
+                ) and
+                for any s in (0..pe.number_of_sections-1) : (
+                  pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                  @table[t] >= pe.sections[s].raw_data_offset and
+                  @write[w]+!write[w] <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size
+                )
+              )
+            )
+        }
