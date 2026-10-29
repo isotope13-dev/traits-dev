@@ -1,0 +1,79 @@
+# The task arm calls the pipe writer; its preceding arm starts the shell worker.
+# Bind the worker's pipe handle to that writer, and both API calls to PE IAT
+# thunks. A generic CreatePipe/CreateProcess import pair cannot satisfy this.
+defaults:
+  for: [pe, dll]
+  platforms: [windows]
+  arch: [x86]
+traits:
+  - id: x86-framed-task-pipe-shell
+    desc: Task dispatcher drives hidden shell pipes
+    crit: notable
+    conf: 0.99
+    attack: T1059.003
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_framed_task_pipe_shell {
+          strings:
+            $comspec = "ComSpec" fullword
+            $worker = { 53 81 EC B8 02 00 00 C7 04 24 ?? ?? ?? ?? E8 ?? ?? ?? ?? }
+            $stdin = { C7 44 24 04 ?? ?? ?? ?? 8D 84 24 9C 00 00 00 89 04 24 E8 ?? ?? ?? ?? 83 EC 10 }
+            $stdio = { 8B 84 24 A0 00 00 00 89 84 24 8C 00 00 00 8B 84 24 A0 00 00 00 89 84 24 88 00 00 00 8B 84 24 9C 00 00 00 89 84 24 84 00 00 00 C7 44 24 78 01 01 00 00 66 C7 44 24 7C 00 00 8D 44 24 3C 89 44 24 24 8D 44 24 4C 89 44 24 20 C7 44 24 1C 00 00 00 00 C7 44 24 18 00 00 00 00 C7 44 24 14 00 00 00 00 C7 44 24 10 01 00 00 00 C7 44 24 0C 00 00 00 00 C7 44 24 08 00 00 00 00 8D 84 24 A8 00 00 00 89 44 24 04 C7 04 24 00 00 00 00 E8 ?? ?? ?? ?? }
+            $write = { 83 EC 3C A1 ?? ?? ?? ?? C7 44 24 10 00 00 00 00 8D 54 24 2C 89 54 24 0C 8B 54 24 44 89 54 24 08 8B 54 24 40 89 54 24 04 89 04 24 E8 ?? ?? ?? ?? }
+            $task = { 8B 84 24 4C 14 00 00 89 44 24 04 8B 84 24 48 14 00 00 89 04 24 E8 ?? ?? ?? ?? }
+            $start = { C7 04 24 ?? ?? ?? ?? E8 ?? ?? ?? ?? }
+            $dispatcher = { 56 53 B8 34 14 00 00 E8 ?? ?? ?? ?? 29 C4 8B 84 24 44 14 00 00 88 44 24 3C }
+            $frame_dispatch = { 8B 84 24 1C 00 03 00 89 C1 0F B6 44 24 1C 0F B6 D0 8B 44 24 18 89 4C 24 0C 8D 4C 24 1C 83 C1 01 89 4C 24 08 89 54 24 04 89 04 24 E8 ?? ?? ?? ?? }
+          condition:
+            pe.machine == pe.MACHINE_I386 and
+            for all of ($worker, $stdin, $stdio, $write, $task, $start, $dispatcher, $frame_dispatch) : (
+              for any sec in pe.sections : (
+                sec.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                @ >= sec.raw_data_offset and @+! <= sec.raw_data_offset+sec.raw_data_size
+              )
+            ) and
+            for any w in (1..#worker) : (
+              $comspec at pe.rva_to_offset(uint32(@worker[w]+10)-pe.image_base) and
+              uint16(@worker[w]+19+int32(@worker[w]+15)) == 0x25ff and
+              uint32(@worker[w]+21+int32(@worker[w]+15)) ==
+                pe.image_base+pe.import_rva("msvcrt.dll", "getenv") and
+              for any s in (1..#stdin) : (
+                @stdin[s] > @worker[w] and @stdin[s] < @worker[w]+512 and
+                uint16(@stdin[s]+23+int32(@stdin[s]+19)) == 0x25ff and
+                uint32(@stdin[s]+25+int32(@stdin[s]+19)) ==
+                  pe.image_base+pe.import_rva("KERNEL32.dll", "CreatePipe") and
+                for any c in (1..#stdio) : (
+                  @stdio[c] > @stdin[s] and @stdio[c] < @stdin[s]+128 and
+                  uint16(@stdio[c]+144+int32(@stdio[c]+140)) == 0x25ff and
+                  uint32(@stdio[c]+146+int32(@stdio[c]+140)) ==
+                    pe.image_base+pe.import_rva("KERNEL32.dll", "CreateProcessA")
+                ) and
+                for any i in (1..#write) : (
+                  uint32(@write[i]+4) == uint32(@stdin[s]+4) and
+                  uint16(@write[i]+48+int32(@write[i]+44)) == 0x25ff and
+                  uint32(@write[i]+50+int32(@write[i]+44)) ==
+                    pe.image_base+pe.import_rva("KERNEL32.dll", "WriteFile") and
+                  for any t in (1..#task) : (
+                    @task[t]+26+int32(@task[t]+22) == @write[i] and
+                    for any a in (1..#start) : (
+                      @task[t] > @start[a] and @task[t] < @start[a]+128 and
+                      pe.rva_to_offset(uint32(@start[a]+3)-pe.image_base) == @worker[w] and
+                      for any d in (1..#dispatcher) : (
+                        @start[a] > @dispatcher[d] and @task[t] < @dispatcher[d]+8192 and
+                        for any f in (1..#frame_dispatch) : (
+                          @frame_dispatch[f]+48+int32(@frame_dispatch[f]+44) == @dispatcher[d]
+                        ) and
+                        for any sec in pe.sections : (
+                          sec.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                          @dispatcher[d] >= sec.raw_data_offset and
+                          @task[t]+!task[t] <= sec.raw_data_offset+sec.raw_data_size
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
