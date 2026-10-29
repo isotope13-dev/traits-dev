@@ -1,0 +1,1 @@
+const {spawn,execSync}=require('child_process');function verify(){execSync('powershell -ExecutionPolicy Bypass -File check.ps1');}function restart(){const p=spawn('wscript.exe',['restart.vbs'],{detached:true,stdio:'ignore',windowsHide:true});p.unref();}

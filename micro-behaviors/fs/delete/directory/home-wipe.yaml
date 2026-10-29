@@ -31,34 +31,25 @@ defaults:
   mbc: C0047
 
 traits:
-  # `remove_dir_all(home_dir)`, `remove_dir_all(&home)`. The `\)` immediately
-  # after the home token is what excludes `home_dir.join(".cache")`.
   - id: rust-home-directory-wipe
     desc: Rust recursively deletes the home directory
     for: [rust]
     if:
-      type: text
-      # The `\w{0,12}` prefix this used to carry matched `codex_home` in
-      # cc-switch-cli -- an application's own `XXX_HOME` config directory,
-      # which is a subdirectory of the real home and an extremely common
-      # Rust identifier. `home` has to start the name.
-      regex: 'remove_dir_all\s*\(\s*&?home\w{0,10}\s*\)'
-    unless:
-      # A Rust test that fabricates a HOME in a tempdir, points `$HOME` at it
-      # and removes it again is the single most common way this pattern
-      # appears in honest code -- CodeWhale's config crate does exactly that
-      # to exercise its config migration. The variable really is called
-      # `home` and really is a home directory; it is just not the user's.
-      # A wipe that only exists inside `#[cfg(test)]` never runs on anyone.
-      - id: metadata/package/testing/harness/unit::rust-test
-      - id: metadata/package/testing/presence/harness::rust-tests-directory-path
-      # `if let Some(home) = &codex_home { remove_dir_all(home) }`: the binding
-      # is renamed `home`, but it holds an application's own data directory
-      # (OpenAI Codex's sandbox uninstaller removes the CODEX_HOME it created),
-      # not the user's home root.
-      - type: text
-        regex: 'Some\(home\)\s{0,3}=\s{0,3}&?(codex|app|sandbox)\w{0,12}_home\b'
-      - id: rust-temp-home-cleanup
+      type: tree-sitter
+      query: |
+        (function_item body: (block
+          (let_declaration pattern: (identifier) @home value: (_) @origin)
+          (expression_statement
+            (call_expression function: (_) @delete
+              arguments: (arguments [(identifier) @operand
+                (reference_expression value: (identifier) @operand)]))))
+          (#match? @origin "^(dirs|home|std::env|env)::home_dir\\(\\)(\\.(unwrap|expect)\\([^)]*\\))?$")
+          (#match? @delete "^(std::)?fs::remove_dir_all$|^remove_dir_all$")
+          (#eq? @home @operand))
+        (call_expression function: (_) @delete
+          arguments: (arguments (_) @origin)
+          (#match? @delete "^(std::)?fs::remove_dir_all$|^remove_dir_all$")
+          (#match? @origin "^(dirs|home|std::env|env)::home_dir\\(\\)\\.(unwrap|expect)\\([^)]*\\)$"))
 
   # `os.RemoveAll(os.UserHomeDir())` and the two-step form that binds the
   # result first (`home, _ := os.UserHomeDir(); os.RemoveAll(home)`).
@@ -191,18 +182,6 @@ traits:
       regex: '\blet\s+home\s*=\s*(\w+\(\)|std::env::temp_dir\(\)\.join\(|env::temp_dir\(\)\.join\()'
 
 composite_rules:
-  # A benchmark or example can call its temporary fixture `home`; the temp
-  # root plus a local home binding are enough to distinguish that cleanup from
-  # handing the user's home root to remove_dir_all.
-  - id: rust-temp-home-cleanup
-    desc: Rust removes a home fixture built under the system temporary directory
-    crit: exception
-    conf: 0.9
-    all:
-      - id: rust-temp-directory-reference
-      - id: rust-home-path-binding
-    near_bytes: 16000
-
   # Language dispatch, not evidence accumulation -- every leg is the same
   # behaviour spelled for a different runtime, so there is no `needs:`. A bare
   # `any:` performs no intent inference and the engine caps it at suspicious

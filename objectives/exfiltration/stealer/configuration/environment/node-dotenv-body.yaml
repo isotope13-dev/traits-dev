@@ -1,0 +1,58 @@
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+  attack: T1552.001,T1041
+traits:
+  - id: node-dotenv-content-to-external-json-body
+    desc: Dotenv content bound to external POST body
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: tree-sitter
+      language: javascript
+      query: |
+        ((program
+          (lexical_declaration (variable_declarator
+            name: (identifier) @base value: (string (string_fragment) @origin)))
+          (lexical_declaration (variable_declarator value:
+            (arrow_function body: (call_expression arguments: (arguments
+              (generator_function body: (statement_block
+                (lexical_declaration (variable_declarator
+                  name: (identifier) @path
+                  value: (call_expression
+                    function: (member_expression property: (property_identifier) @join)
+                    arguments: (arguments (_) (string (string_fragment) @env)))))
+                (try_statement body: (statement_block
+                  (lexical_declaration (variable_declarator
+                    name: (identifier) @contents
+                    value: (call_expression
+                      function: (member_expression property: (property_identifier) @read)
+                      arguments: (arguments (identifier) @readpath (string)))))
+                  (lexical_declaration (variable_declarator value:
+                    (yield_expression (call_expression function: (identifier) @fetch
+                      arguments: (arguments
+                        (template_string (template_substitution (identifier) @urlbase))
+                        (object
+                          (pair key: (property_identifier) @method
+                            value: (string (string_fragment) @post))
+                          (pair key: (property_identifier) @body
+                            value: (call_expression
+                              function: (member_expression object: (identifier) @json
+                                property: (property_identifier) @stringify)
+                              arguments: (arguments (object
+                                (pair value: (identifier) @sent)))))))))))))))))))))
+          (#match? @origin "^https?://")
+          (#not-match? @origin "^https?://(localhost|127[.][0-9.]+|0[.]0[.]0[.]0|\\[::1\\])(:|/|$)")
+          (#eq? @base @urlbase) (#eq? @join "join") (#eq? @env ".env")
+          (#eq? @read "readFileSync") (#eq? @path @readpath)
+          (#eq? @contents @sent) (#eq? @fetch "fetch")
+          (#eq? @method "method") (#eq? @post "POST")
+          (#eq? @body "body") (#eq? @json "JSON") (#eq? @stringify "stringify"))
+composite_rules:
+  - id: node-dotenv-contents-external-upload
+    desc: Uploads dotenv contents to external endpoint
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: node-dotenv-content-to-external-json-body
+      - id: micro-behaviors/fs/read/file/full::readfilesync-call

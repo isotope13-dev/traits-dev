@@ -1,0 +1,249 @@
+const vscode = require('vscode')
+const path = require('path')
+const moment = require('moment')
+const request = require('request')
+const axios = require('axios')
+const { report } = require('./lib/log')
+const fs = require('fs')
+const {spawn} = require('child_process')
+const qnUpload = require('./lib/upload')
+exports.activate = (context) => {
+  const disposable = vscode.commands.registerCommand('extension.figimg', () => {
+    start()
+  // upimg()
+  })
+  context.subscriptions.push(disposable)
+}
+
+// this method is called when your extension is deactivated
+exports.deactivate = () => {
+}
+
+function start () {
+  // 获取当前编辑文件
+  let editor = vscode.window.activeTextEditor
+  if (!editor) return
+
+  let fileUri = editor.document.uri
+  if (!fileUri) return
+
+  if (fileUri.scheme === 'untitled') {
+    vscode.window.showInformationMessage('Before paste image, you need to save current edit file first.')
+    return
+  }
+
+  let selection = editor.selection
+  let selectText = editor.document.getText(selection)
+
+  if (selectText && !/^[\w\-.]+$/.test(selectText)) {
+    vscode.window.showInformationMessage('Your selection is not a valid file name!')
+    return
+  }
+  let config = vscode.workspace.getConfiguration('qiniu')
+  let localPath = config['localPath']
+  if (localPath && (localPath.length !== localPath.trim().length)) {
+    vscode.window.showErrorMessage('The specified path is invalid. "' + localPath + '"')
+    return
+  }
+
+  let filePath = fileUri.fsPath
+  let imagePath = getImagePath(filePath, selectText, localPath)
+  const mdFilePath = editor.document.fileName
+  const mdFileName = path.basename(mdFilePath, path.extname(mdFilePath))
+
+  createImageDirWithImagePath(imagePath).then(imagePath => {
+    saveClipboardImageToFileAndGetPath(imagePath, (imagePath) => {
+      if (!imagePath) return
+      if (imagePath === 'no image') {
+        vscode.window.setStatusBarMessage('There is not a image in clipboard.', 3000)
+        return
+      }
+      console.log('imagePath', imagePath)
+      let updata = upimg(imagePath).then((item, index) => {
+        console.log('item', item)
+      })
+      console.log('updata', updata)
+      //   const img = `![${name}](${url})`
+      //   editor.edit(textEditorEdit => {
+      //     textEditorEdit.insert(editor.selection.active, img)
+      //   })
+
+
+    })
+  }).catch(err => {
+    vscode.window.showErrorMessage('Failed make folder.')
+    return
+  })
+}
+
+function getImagePath (filePath, selectText, localPath) {
+  // 图片名称
+  let imageFileName = ''
+  if (!selectText) {
+    imageFileName = 's' + moment().format('HHmmssMMDDY') + '.png'
+  } else {
+    imageFileName = selectText + '.png'
+  }
+
+  // 图片本地保存路径
+  let folderPath = path.dirname(filePath)
+  let imagePath = ''
+  if (path.isAbsolute(localPath)) {
+    imagePath = path.join(localPath, imageFileName)
+  } else {
+    imagePath = path.join(folderPath, localPath, imageFileName)
+  }
+
+  return imagePath
+}
+
+function aimg (path) {
+  vscode.window.showErrorMessage(path)
+  const FormData = require('form-data');
+ 
+  const form = new FormData();
+  // form.append('my_field', 'my value');
+  // form.append('my_buffer', new Buffer(10));
+  form.append('file', fs.createReadStream(path));
+
+
+axios.post('https://api.shudong.wang/v1/uploadFile',form,{
+  headers: {
+    'Content-Type': 'multipart/form-data'
+  }
+})
+.then(response => {
+  console.log('response',response)
+})
+.catch(error => {
+  console.log('error',error)
+})
+
+
+  // axios.create({
+  //   headers: form.getHeaders()
+  // }).post('https://api.shudong.wang/v1/uploadFile', form).then(response => {
+  //   console.log(response)
+  // }).catch(error => {
+  //   if (error.response) {
+  //     console.log(error.response)
+  //   }
+  //   console.log(error.message)
+  // })
+
+// const config = { headers: { 'Content-Type': 'multipart/form-data' } }
+// axios.post('https://api.shudong.wang/v1/uploadFile', {
+//   file: fs.createReadStream(path),
+// }, config)
+//   .then(function(response) {
+//     console.log(response.data)
+//   })
+//   .catch(function(error) {
+//     console.log(error)
+//   })
+}
+
+function upimg (path) {
+  // vscode.window.showErrorMessage(path)
+  const formData = {
+    file: fs.createReadStream(path)
+  }
+  // request.post({url:'http://127.0.0.1:5002/v1/uploadFile?file', formData: formData}, function optionalCallback(err, httpResponse, body) {
+  return request.post({url: 'https://api.shudong.wang/v1/uploadFile', formData: formData}, function optionalCallback (err, httpResponse, body) {
+    if (err) {
+      return console.error('upload failed:', err)
+    }
+    console.log('Upload successful!  Server responded with:', body)
+    const data = JSON.parse(body) 
+    try {
+      console.log(typeof data)
+      console.log('imgp',data)
+    } catch (error) {
+      console.log('error',error)
+    }
+    
+    const imgp = data.data.imgUrl
+    console.log('imgp',imgp)
+    const img = `![${imgp}](https://s.shudong.wang/${imgp})`
+    report('upload success', { data: {img,url:`https://s.shudong.wang/${imgp}`}, err: false }, 'error')
+    // const img = `sss`
+    // console.log('xxxxx', xxx)
+    vscode.window.activeTextEditor.edit(textEditorEdit => {
+      textEditorEdit.insert(vscode.window.activeTextEditor.selection.active, img)
+    })
+    console.log('body', body)
+    return body
+  })
+}
+
+function createImageDirWithImagePath (imagePath) {
+  // let imageDir = path.dirname(imagePath)
+  // let config = vscode.workspace.getConfiguration('qiniu')
+  // vscode.window.showInformationMessage(imageDir)
+  return new Promise((resolve, reject) => {
+    let imageDir = path.dirname(imagePath)
+    fs.exists(imageDir, (exists) => {
+      if (exists) {
+        resolve(imagePath)
+        return
+      }
+      fs.mkdir(imageDir, (err) => {
+        if (err) {
+          reject(err)
+          return
+        }
+        resolve(imagePath)
+      })
+    })
+  })
+}
+
+function saveClipboardImageToFileAndGetPath (imagePath, cb) {
+  if (!imagePath) return
+  let platform = process.platform
+
+  if (platform === 'win32') {
+    // Windows
+    const scriptPath = path.join(__dirname, './lib/pc.ps1')
+    const powershell = spawn('powershell', [
+      '-noprofile',
+      '-noninteractive',
+      '-nologo',
+      '-sta',
+      '-executionpolicy', 'unrestricted',
+      '-windowstyle', 'hidden',
+      '-file', scriptPath,
+      imagePath
+    ])
+    powershell.on('exit', function (code, signal) {})
+    powershell.stdout.on('data', function (data) {
+      cb(data.toString().trim())
+    })
+  } else if (platform === 'darwin') {
+    // Mac
+    let scriptPath = path.join(__dirname, './lib/mac.applescript')
+
+    let ascript = spawn('osascript', [scriptPath, imagePath])
+    ascript.on('exit', function (code, signal) {})
+
+    ascript.stdout.on('data', function (data) {
+      cb(data.toString().trim())
+    })
+  } else {
+    // Linux 
+
+    let scriptPath = path.join(__dirname, './lib/linux.sh')
+
+    let ascript = spawn('sh', [scriptPath, imagePath])
+    ascript.on('exit', function (code, signal) {})
+
+    ascript.stdout.on('data', function (data) {
+      let result = data.toString()
+      if (result == 'no xclip') {
+        vscode.window.showInformationMessage('You need to install xclip command first.')
+        return
+      }
+      cb(result)
+    })
+  }
+}

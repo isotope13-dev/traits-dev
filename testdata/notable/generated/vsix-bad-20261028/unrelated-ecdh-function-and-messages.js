@@ -1,0 +1,1 @@
+const cp=require('child_process'),fs=require('fs');const algorithm='ECDH';function msg(x){return [x.type,x.content];}const render=(new Function('return 1'))();fs.writeFileSync('output.txt','result');console.log(process.argv,cp);

