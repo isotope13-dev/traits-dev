@@ -1,0 +1,148 @@
+--- /tmp/vbs-bad-triage-20261029/engine-before/cleave/src/analyzers/generic.rs
++++ /home/t/src/cleave/src/analyzers/generic.rs
+@@ -20,6 +20,7 @@
+ pub(crate) struct GenericAnalyzer {
+     file_type: FileType,
+     engine: crate::Engine,
++    detect_embedded: bool,
+ }
+ 
+ impl GenericAnalyzer {
+@@ -29,6 +30,7 @@
+         Self {
+             file_type,
+             engine: crate::Engine::empty(),
++            detect_embedded: true,
+         }
+     }
+ 
+@@ -36,6 +38,13 @@
+     #[must_use]
+     pub(crate) fn with_engine(mut self, engine: crate::Engine) -> Self {
+         self.engine = engine;
++        self
++    }
++
++    /// Decoded children are already bounded by their caller; do not restart
++    /// embedded detection at depth zero inside the fallback analyzer.
++    pub(crate) fn without_embedded_detection(mut self) -> Self {
++        self.detect_embedded = false;
+         self
+     }
+ 
+@@ -244,23 +253,24 @@
+                 );
+             }
+ 
+-            // Analyze embedded code in strings
+-            let t_embedded = std::time::Instant::now();
+-            let (encoded_layers, plain_findings) =
+-                crate::analyzers::embedded_code_detector::process_all_strings(
+-                    &file_path.display().to_string(),
+-                    &report.strings,
+-                    &self.engine,
+-                    0,
+-                    Some(&self.file_type),
+-                    None,
+-                );
+-            report.files.extend(encoded_layers);
+-            report.findings.extend(plain_findings);
+-            // HTML script islands can carry a complete literal-table program;
+-            // extracting its individual strings loses the reconstruction order.
+-            if self.file_type == FileType::Html {
+-                report.files.extend(
++            if self.detect_embedded {
++                // Analyze embedded code in strings
++                let t_embedded = std::time::Instant::now();
++                let (encoded_layers, plain_findings) =
++                    crate::analyzers::embedded_code_detector::process_all_strings(
++                        &file_path.display().to_string(),
++                        &report.strings,
++                        &self.engine,
++                        0,
++                        Some(&self.file_type),
++                        None,
++                    );
++                report.files.extend(encoded_layers);
++                report.findings.extend(plain_findings);
++                // HTML script islands can carry a complete literal-table program;
++                // extracting its individual strings loses the reconstruction order.
++                if matches!(self.file_type, FileType::Html | FileType::Vbs) {
++                    report.files.extend(
+                     crate::analyzers::embedded_code_detector::analyze_script_deobfuscation_layers(
+                         &file_path.display().to_string(),
+                         content,
+@@ -269,22 +279,23 @@
+                         cancellation.map(AsRef::as_ref),
+                     ),
+                 );
+-            }
+-            // cmd builds its commands from `set` fragments at run time, so the
+-            // command words only exist after expansion; replay it as a layer.
+-            if self.file_type == FileType::Batch {
+-                report.files.extend(
+-                    crate::analyzers::embedded_code_detector::analyze_batch_expansion_layer(
+-                        &file_path.display().to_string(),
+-                        eval_bytes,
+-                        &self.engine,
+-                    ),
++                }
++                // cmd builds its commands from `set` fragments at run time, so the
++                // command words only exist after expansion; replay it as a layer.
++                if self.file_type == FileType::Batch {
++                    report.files.extend(
++                        crate::analyzers::embedded_code_detector::analyze_batch_expansion_layer(
++                            &file_path.display().to_string(),
++                            eval_bytes,
++                            &self.engine,
++                        ),
++                    );
++                }
++                tracing::debug!(
++                    "GenericAnalyzer: Embedded code analysis completed in {:?}",
++                    t_embedded.elapsed()
+                 );
+             }
+-            tracing::debug!(
+-                "GenericAnalyzer: Embedded code analysis completed in {:?}",
+-                t_embedded.elapsed()
+-            );
+         }
+ 
+         // Recover a bounded self-read/certutil hex envelope as data. PE analysis
+@@ -487,14 +498,10 @@
+ 
+     fn extract_strings_regex(&self, content: &str, report: &mut AnalysisReport) {
+         fn double_quote_re() -> Option<&'static regex::Regex> {
+-            static RE: std::sync::OnceLock<Option<regex::Regex>> = std::sync::OnceLock::new();
+-            RE.get_or_init(|| regex::Regex::new(r#""([^"\\]|\\.){0,1000}""#).ok())
+-                .as_ref()
++            static_regex!(r#""([^"\\]|\\.){0,1000}""#)
+         }
+         fn single_quote_re() -> Option<&'static regex::Regex> {
+-            static RE: std::sync::OnceLock<Option<regex::Regex>> = std::sync::OnceLock::new();
+-            RE.get_or_init(|| regex::Regex::new(r#"'([^'\\]|\\.){0,1000}'"#).ok())
+-                .as_ref()
++            static_regex!(r#"'([^'\\]|\\.){0,1000}'"#)
+         }
+ 
+         if let Some(re) = double_quote_re() {
+@@ -704,7 +711,7 @@
+         let content = String::from_utf8_lossy(input.data);
+         let fallback = input.open_ctx_fallback();
+         let source_ctx = input.parsed_ctx.as_ref().or(fallback.as_ref());
+-        Ok(self.analyze_source_internal(
++        let report = self.analyze_source_internal(
+             input.path,
+             &content,
+             Some(input.strings),
+@@ -714,7 +721,8 @@
+             self.engine.compact_members(),
+             source_ctx,
+             input.cancellation.as_ref(),
+-        ))
++        );
++        Ok(report)
+     }
+ 
+     fn can_analyze(&self, _file_path: &Path) -> bool {
