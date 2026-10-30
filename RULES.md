@@ -398,6 +398,14 @@ Decoded string layers are still searched as decoded content, not as HTML.
   neutral fact does not activate an unsupported identity or intent claim.
 - **Symbol family shortcuts:** use `type: import`, `type: export`, or `type: function` when you know the family. They are clearer spellings for `type: symbol` with `kind: import/export/function`. Keep `type: symbol` for cross-family searches or `kind: forward` PE re-export rules. When `kind: forward`, the pattern is tested against both the export name *and* the forward target (`KERNEL32.LoadLibraryA`).
 
+For CPython 3.8–3.14 bytecode, `type: symbol, kind: identifier` matches
+entries in parsed code-object `co_names` tables, including nested code objects.
+Quoted constants and docstrings alone do not supply these identifiers. A name
+table reference establishes use of a name, not a call, import, or data flow;
+describe it accordingly and require additional evidence for behavioral claims.
+Malformed, unsupported, or budget-limited marshal streams supply no name-table
+identifiers. Use an engine with bytecode name-table extraction for these rules.
+
 **Which one should I use?**
 
 Speed and accuracy run together. From best to worst:

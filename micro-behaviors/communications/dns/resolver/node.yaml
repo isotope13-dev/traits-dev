@@ -14,24 +14,26 @@ defaults:
   conf: 0.7
 traits:
   - id: dns-lookup-call
-    desc: dns.lookup() call
+    desc: Calls a method named dns.lookup
     conf: 0.65
     unless:
       - type: basename
         regex: (^|[\\/])builtin-plugins[\\/]tabby-ssh[\\/]node_modules[\\/]
       - id: metadata/lang/scripted::dts-declaration-file
     if:
-      type: text
-      substr: 'dns.lookup('
-  - id: dns-lookup-dynamic-name
-    desc: dns.lookup() resolves a computed name
+      type: symbol
+      kind: call
+      exact: dns.lookup
+  - id: dns-lookup-variable-name
+    desc: dns.lookup() receives a variable
     conf: 0.85
     if:
-      type: text
-      # The looked-up name is a variable or expression, not a string
-      # literal: the resolution IS the message (exfil channel), unlike a
-      # service lookup of a fixed hostname.
-      regex: 'dns\.lookup\(\s*[A-Za-z_$]'
+      type: symbol
+      kind: call
+      exact: dns.lookup
+      arg:
+        index: 0
+        kind: identifier
   - id: dns-lookup-in-loop
     desc: DNS lookup call inside a loop
     crit: notable
@@ -39,62 +41,90 @@ traits:
     if:
       type: text
       regex: 'for\s*\([^)]{1,40}\)\s*\{[\s\S]{0,40}dns\.lookup\s*\('
-  # Keep the module name in the pattern.  The symbol projection collapses every
-  # `require(<anything>).lookup(...)` to the call target `require().lookup`, so
-  # matching that instead reports ordinary MIME/path helpers
-  # (`require('mime').lookup(file)`, `require('../utils').lookup(p)`) as DNS.
-  - id: require-dns-inline-lookup
-    desc: Inline require('dns').lookup() call
-    conf: 0.72
-    if:
-      type: text
-      regex: "require\\(['\"](node:)?dns['\"]\\)\\.lookup\\s*\\("
+  # Receiver provenance covers inline requires and local module aliases.
   - id: dns-require-bound-lookup
     desc: Bound dns import issues lookup call
     conf: 0.9
     if:
-      type: text
-      regex: "require\\(['\"](node:)?dns['\"]\\)[\\s\\S]{0,720}?\\.lookup\\s*\\("
+      type: symbol
+      kind: call
+      regex: '\.lookup$'
+      receiver:
+        from:
+          call: '^require$'
+          literal: '^(node:)?dns$'
   - id: dns-resolve-call
-    desc: dns.resolve() call
+    desc: Calls a method named dns.resolve
     conf: 0.7
     if:
-      type: text
-      regex: '(^|[^.])dns\.resolve\s*\('
-  - id: require-dns-inline-resolve
-    desc: Inline require('dns').resolve() call
-    conf: 0.72
-    if:
-      type: text
-      regex: "require\\(['\"](node:)?dns['\"]\\)\\.resolve\\s*\\("
-  - id: dns-resolve-dynamic-name
-    desc: dns.resolve() queries a computed name
-    conf: 0.85
-    if:
-      type: text
-      regex: "require\\(['\"](node:)?dns['\"]\\)\\.resolve\\(\\s*[A-Za-z_$+]"
-
-  # Destructured imports such as `const { resolve } = require('dns')` retain
-  # the DNS module provenance even though the call target is just `resolve`.
-  - id: dns-require-bound-resolve
+      type: symbol
+      kind: call
+      exact: dns.resolve
+  # Bind the receiver to the DNS import, rather than unrelated nearby text.
+  - id: dns-require-receiver-resolve
     desc: Bound dns import issues resolve call
     conf: 0.9
     if:
-      type: text
-      regex: "require\\(['\"](node:)?dns['\"]\\)[\\s\\S]{0,720}?\\bresolve\\s*\\("
-  - id: dns-resolve-bound-dynamic-name
-    desc: Bound dns resolve() queries a computed name
+      type: symbol
+      kind: call
+      regex: '\.resolve$'
+      receiver:
+        from:
+          call: '^require$'
+          literal: '^(node:)?dns$'
+  # Destructured function imports have no receiver in the projected flow.
+  # Bind the imported API and its call in the same lexical body instead.
+  - id: dns-destructured-resolve-call
+    desc: Destructured DNS resolver is called
+    conf: 0.95
+    if:
+      type: tree-sitter
+      language: javascript
+      query: |
+        ((_
+          (_ (variable_declarator
+            name: (object_pattern [
+              (shorthand_property_identifier_pattern) @api @bound
+              (pair_pattern key: (property_identifier) @api
+                value: (identifier) @bound)])
+            value: (call_expression function: (identifier) @require
+              arguments: (arguments (string (string_fragment) @library)))))
+          .
+          [(lexical_declaration . (variable_declarator name: (identifier) @other) .)
+           (variable_declaration . (variable_declarator name: (identifier) @other) .)]*
+          .
+          (expression_statement (call_expression function: (identifier) @called)))
+          (#eq? @require "require")
+          (#match? @library "^(node:)?dns$")
+          (#eq? @api "resolve")
+          (#eq? @bound @called)
+          (#not-eq? @other @called)
+          (#set! cleave.ignore-comments "true"))
+  - id: dns-bound-resolve-variable-name
+    desc: Imported DNS resolver receives a variable
     conf: 0.85
     if:
-      type: text
-      regex: "require\\(['\"](node:)?dns['\"]\\)[\\s\\S]{0,720}?\\bresolve\\s*\\(\\s*[A-Za-z_$+]"
+      type: symbol
+      kind: call
+      regex: '\.resolve$'
+      receiver:
+        from:
+          call: '^require$'
+          literal: '^(node:)?dns$'
+      arg:
+        index: 0
+        kind: identifier
 
-  - id: dns-resolve4-dynamic-name
-    desc: dns.resolve4() queries a computed name
+  - id: dns-resolve4-variable-name
+    desc: dns.resolve4() receives a variable
     conf: 0.85
     if:
-      type: text
-      regex: 'dns\.resolve4\(\s*[A-Za-z_$+]'
+      type: symbol
+      kind: call
+      exact: dns.resolve4
+      arg:
+        index: 0
+        kind: identifier
   # Node exposes every record query both on the `dns` module and on each
   # `Resolver` instance (`const r = new Resolver(); r.resolve4(...)`).  Matching
   # the call target instead of a literal `dns.` receiver covers both forms; the
@@ -156,6 +186,13 @@ traits:
       type: text
       regex: "dns\\.ADDRCONFIG\\s*\\|\\s*dns\\.V4MAPPED"
 composite_rules:
+  - id: dns-require-bound-resolve
+    desc: Imported Node DNS resolver is called
+    crit: notable
+    conf: 0.95
+    any:
+      - id: dns-require-receiver-resolve
+      - id: dns-destructured-resolve-call
   - id: ipv4-address-selection
     desc: Node DNS lookup selects IPv4-compatible results
     crit: notable
@@ -175,11 +212,8 @@ composite_rules:
       - id: dns-promises-lookup
       - id: ipv4-family-selection
       - id: ipv4-address-flags
-      - id: require-dns-inline-lookup
       - id: dns-require-bound-lookup
-      - id: require-dns-inline-resolve
       - id: dns-require-bound-resolve
-      - id: dns-resolve-dynamic-name
-      - id: dns-resolve-bound-dynamic-name
+      - id: dns-bound-resolve-variable-name
       - id: dns-resolve-mx-ns-soa-srv
       - id: dns-resolve-cname-record
