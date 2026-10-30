@@ -1,0 +1,122 @@
+# Scripts that collect flood parameters and launch attack processes.
+# The flood engine may be a separate binary from this operator interface.
+defaults:
+  platforms:
+  - unix
+  - windows
+  for:
+  - scripts
+  attack: T1498
+  mbc: B0033
+
+traits:
+  - id: flood-interactive-input-operation
+    desc: Script requests interactive input
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?im)\b(raw_)?input\s*\(|\bRead-Host\b|\bread\s+-p\b'
+
+  - id: flood-packet-count-prompt-text
+    desc: Text asks how many packets to send
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\b(enter\s+packet\s+count|how\s+many\s+packets?|packets\s+to\s+send)\b'
+
+  - id: flood-source-ip-prompt-text
+    desc: Text asks for a source address
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(?i)\benter\s+source\s+(ip|address)\b'
+
+  - id: attack-start-banner
+    desc: Script announces an attack starting
+    crit: notable
+    conf: 0.85
+    if:
+      # `echo Attack started` -- how a booter script reports for duty. Anchored
+      # to a shell `echo` command so the word appearing in prose, a game, or a
+      # test name is not read as one.
+      type: text
+      regex: '(?im)^\s*echo\s[^\n]{0,8}attack (start|begin)'
+
+  - id: attack-command-variable
+    desc: Attack command held in a shell variable
+    crit: notable
+    conf: 0.8
+    if:
+      # `atk_cmd="python3 cc.py -url ..."` -- the launcher parameterizes the
+      # single command it will then run many times over.
+      type: text
+      regex: '(?im)^\s*at(k|tack)_cmd\s*='
+
+
+composite_rules:
+  - id: flood-packet-count-prompt
+    desc: Prompts for a packet count to send
+    crit: notable
+    conf: 0.85
+    all:
+      - id: objectives/impact/dos/attack/tasking::flood-interactive-input-operation
+      - id: objectives/impact/dos/attack/tasking::flood-packet-count-prompt-text
+    near_bytes: 160
+
+  - id: flood-source-ip-prompt
+    desc: Prompts for a spoofed source address
+    crit: notable
+    conf: 0.85
+    attack: T1498.001
+    all:
+      - id: objectives/impact/dos/attack/tasking::flood-interactive-input-operation
+      - id: objectives/impact/dos/attack/tasking::flood-source-ip-prompt-text
+    near_bytes: 160
+
+  # Asking for both the source address and the packet count describes one
+  # thing: emit N packets that claim to come from somewhere else.
+  - id: spoofed-source-flood-prompts
+    desc: Prompts for spoofed source and packet volume
+    crit: suspicious
+    conf: 0.92
+    attack: T1498.001
+    all:
+      - id: objectives/impact/dos/attack/tasking::flood-source-ip-prompt
+      - id: objectives/impact/dos/attack/tasking::flood-packet-count-prompt
+
+  # A named flood attack plus a flood parameter prompt: the script is the
+  # front end for that attack, not a document that mentions it.
+  - id: named-flood-tool-launcher
+    desc: Interactive launcher for a named flood attack
+    crit: suspicious
+    conf: 0.92
+    all:
+      - id: micro-behaviors/communications/flood::flood-type-terminology
+    any:
+      - id: objectives/impact/dos/attack/tasking::flood-packet-count-prompt
+      - id: objectives/impact/dos/attack/tasking::flood-source-ip-prompt
+
+  # Raising the file-descriptor ceiling is how a single host sustains many
+  # concurrent connections. Doing it right after announcing an attack, next to
+  # a variable command the script then runs, is a fan-out flooder.
+  - id: parallel-attack-command-launcher
+    for: [shell]
+    desc: Launches parallel copies of an attack command
+    crit: suspicious
+    conf: 0.92
+    all:
+      - id: objectives/impact/dos/attack/tasking::attack-start-banner
+      - id: micro-behaviors/process/resources/limits::shell-ulimit-file-descriptor-limit
+      - id: micro-behaviors/process/create/shell/spawn::sh-dynamic-command-target
+
+  - id: attack-command-process-multiplier
+    for: [shell]
+    desc: Runs a stored attack command as many processes
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: objectives/impact/dos/attack/tasking::attack-command-variable
+      - id: micro-behaviors/process/create/shell/spawn::sh-dynamic-command-target

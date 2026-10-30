@@ -1,0 +1,302 @@
+defaults:
+  platforms:
+  - windows
+  - unix
+  for:
+  - scripts
+  - text
+
+traits:
+  - id: native-hidden-dotdir-path
+    desc: Native source names a hidden dot-directory path
+    crit: notable
+    conf: 0.9
+    for: [c, cpp, objc]
+    if:
+      type: text
+      regex: '["'']\.[A-Za-z0-9_-]{2,80}/'
+    unless:
+      - id: metadata/lang/upstream::linux-kernel-primary-tree-path
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+  # `path.join(os.homedir(), ".foo")` — the Node spelling of a hidden home
+  # entry. This is path construction and nothing more; which entry it names is
+  # what carries meaning, so intent is left to the composites that reference
+  # this. Only the inert VCS/editor config entries are filtered out — the
+  # sensitive stores (.ssh, .aws, .npmrc) and the shell rc files stay visible,
+  # since those are exactly the ones worth seeing a path built for.
+  - id: node-homedir-hidden-entry
+    desc: Node builds a hidden home-directory path
+    crit: notable
+    conf: 0.92
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'path\.join\s*\(\s*(os\.)?homedir\(\)\s*,\s*["'']\.[\w-]{2,80}["'']'
+    not:
+      - regex: '["'']\.(gitconfig|gitignore|gitattributes|github|editorconfig)["'']'
+
+  # Same construction as `node-homedir-hidden-entry`, spelled through the
+  # environment instead of `os.homedir()` — `join(process.env.HOME, ".cache")`.
+  # Reading the home directory from `process.env` avoids importing `node:os`
+  # at all, so a module that never declares an os dependency still lands in the
+  # user's home tree. Path construction only; which entry it names, and what is
+  # written there, is left to the composites that reference this.
+  - id: node-env-home-hidden-entry
+    desc: Node builds hidden path under HOME
+    crit: notable
+    conf: 0.9
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'join\(\s*process\.env\.(HOME|USERPROFILE|APPDATA)\s*,\s*["'']\.[\w-]{2,40}["'']'
+    not:
+      - regex: '["'']\.(gitconfig|gitignore|gitattributes|github|editorconfig)["'']'
+
+  - id: hidden-dir-literal
+    desc: References a hidden-directory path literal
+    crit: component
+    conf: 0.84
+    if:
+      type: literal
+      kind: string
+      regex: '(^|/|~/)\.[A-Za-z_][\w-]{0,30}/'
+    # Agent workspace / IDE / venv dotdirs are conventional layout (e.g. vendoring
+    # paramiko under ~/.openclaw/...), not module-resolution hijacks.
+    not:
+      - regex: '(^|/|~/)\.(local|venv|virtualenv|tox|nox|cache|config|github|gitlab|circleci|vscode|idea|husky|yarn|pnpm|devcontainer|bin|openclaw|claude|hermes|codex|gemini)(/|$)'
+
+  # Compiled JVM classes expose path components independently in the constant
+  # pool, so the contiguous source matcher above cannot see this construction.
+  # Keep each cached-value atom neutral; the composite merely restores the
+  # same path fact for class files and does not assign malicious intent.
+  - id: jvm-hidden-path-component
+    desc: JVM class references a hidden path component
+    crit: baseline
+    conf: 0.9
+    for: [class, java_class]
+    if:
+      type: value
+      path: class.strings[*]
+      regex: '^\.[A-Za-z0-9_-]{2,40}$'
+
+  - id: home-hidden-dotdir-ref
+    desc: Home-relative hidden directory path literal
+    crit: notable
+    conf: 0.6
+    for: [shell, python]
+    if:
+      type: text
+      regex: '(?i)(~|\$HOME)/\.[A-Za-z][\w.-]{1,30}/'
+    not:
+      - regex: '(~|\$HOME)/\.(local|dotnet|cache|config|claude|codex|gemini|npm|cargo|rustup|gradle|venv|virtualenv|bin|openclaw|hermes)(/|$)'
+    unless:
+      - id: metadata/lang/upstream::linux-kernel-secondary-tree-path
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
+      - id: metadata/lang/upstream::linux-kernel-primary-tree-path
+      - id: metadata/file/format/source-map::sourcemap-sources-content
+
+  - id: tilde-hidden-home-path
+    desc: References uncommon hidden home path
+    crit: notable
+    conf: 0.9
+    for: [scripts, source, -php]
+    if:
+      type: text
+      regex: '(^|[[:space:];&])~/\.[A-Za-z0-9_][A-Za-z0-9._-]*($|[[:space:];&])'
+    not:
+      - regex: '~/\.(cache|config|local|dotnet|ssh|aws|gnupg|claude|openclaw|cursor|codex|vscode|cloudshell|steam|var|mailx|rmfmail|mailx-old)(/|$)'
+      - substr: '~/.dotnet'
+      # The prose may terminate the path with Markdown punctuation (for
+      # example ``~/.cache``).  Keep the standard benign home directories
+      # excluded even when no slash follows the directory name.
+      - regex: '~/\.(cache|config|local|ssh|aws|gnupg|claude|openclaw|cursor|codex|vscode|cloudshell|steam|var|mailx|rmfmail|mailx-old)($|[/[:space:];&.,):])'
+      # R's documented per-user Makevars/config directory is ordinary
+      # language-tool configuration, not a concealed payload location.
+      - regex: '~/\.(R|Rconfig)($|[/[:space:];&.,):])'
+      - regex: '~/\.cdk\.json\b'
+      - regex: '~/\.buildroot-ccache'
+      - regex: '~/\.buildman\b'
+      - regex: '~/\.(m2|cargo|rustup|gradle|npm|nuget|ivy2|sbt|gem|bundle|composer|yarn|go|pub-cache|cpan|nvm|rvm|rbenv|sdkman|fnm|volta|deno|bun|pyenv|asdf|pnpm|poetry|nodenv|goenv|dotnet|mailx|rmfmail|mailx-old)(/|$)'
+      - substr: '~/.profile.boot'
+      - substr: '~/.xprofile'
+      - regex: '~/\.(bashrc|bash_profile|profile|xprofile|zshrc|zprofile|kshrc|cshrc|tcshrc|inputrc|gemrc)($|[\s;&|`"'')])'
+      - regex: '~/\.[A-Za-z0-9._-]*rc([._-][A-Za-z0-9._-]+)?($|[\s;&|`"'')])'
+    unless:
+      - id: metadata/lang/upstream::linux-kernel-secondary-tree-path
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
+      - id: metadata/lang/upstream::linux-kernel-primary-tree-path
+      - id: metadata/file/catalog/identity::debian-packages-index
+      - id: metadata/file/catalog/identity::nixpkgs-package-catalog
+      - id: well-known/lib/vendor-sdk/bobfrankston-mailx::bobfrankston-mailx-package-context
+  - id: tilde-hidden-home-path-php-string
+    desc: References uncommon hidden home path string
+    crit: notable
+    conf: 0.9
+    for: [php]
+    if:
+      type: literal
+      kind: string
+      regex: '~/\.[A-Za-z0-9_][A-Za-z0-9._-]*'
+    not:
+      - regex: '~/\.(cache|config|local|dotnet|ssh|aws|gnupg|claude|openclaw|cursor|codex|vscode|cloudshell|steam|var|mailx|rmfmail|mailx-old)(/|$)'
+      - substr: '~/.dotnet'
+      - regex: '~/\.(R|Rconfig)($|[/[:space:];&.,):])'
+      - regex: '~/\.cdk\.json\b'
+      - regex: '~/\.buildroot-ccache'
+      - regex: '~/\.buildman\b'
+      - regex: '~/\.(m2|cargo|rustup|gradle|npm|nuget|ivy2|sbt|gem|bundle|composer|yarn|go|pub-cache|cpan|nvm|rvm|rbenv|sdkman|fnm|volta|deno|bun|pyenv|asdf|pnpm|poetry|nodenv|goenv|dotnet|mailx|rmfmail|mailx-old)(/|$)'
+      - substr: '~/.profile.boot'
+      - substr: '~/.xprofile'
+      - regex: '~/\.(bashrc|bash_profile|profile|xprofile|zshrc|zprofile|kshrc|cshrc|tcshrc|inputrc|gemrc)($|[\s;&|`"'')])'
+      - regex: '~/\.[A-Za-z0-9._-]*rc([._-][A-Za-z0-9._-]+)?($|[\s;&|`"'')])'
+    unless:
+      - id: metadata/lang/upstream::linux-kernel-secondary-tree-path
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
+      - id: metadata/lang/upstream::linux-kernel-primary-tree-path
+      - id: metadata/file/catalog/identity::debian-packages-index
+      - id: metadata/file/catalog/identity::nixpkgs-package-catalog
+      - id: well-known/lib/vendor-sdk/bobfrankston-mailx::bobfrankston-mailx-package-context
+  - id: env-home-hidden-path
+    desc: Hidden path under HOME variable
+    crit: notable
+    conf: 0.9
+    for: [scripts, source, manifests, dockerfile]
+    if:
+      type: text
+      regex: '\$HOME/\.[A-Za-z0-9_][A-Za-z0-9._-]*($|[\s;&|`"'')])'
+    not:
+      - regex: '\$HOME/\.(cache|config|local|dotnet|ssh|aws|gnupg|cloudshell|steam|var)(/|$)'
+      - substr: '$HOME/.dotnet'
+      - substr: '$HOME/.xprofile'
+      - regex: '\$HOME/\.buildroot-ccache'
+      - regex: '\$HOME/\.(m2|cargo|rustup|gradle|npm|nuget|ivy2|sbt|gem|bundle|composer|yarn|go|pub-cache|cpan|nvm|rvm|rbenv|sdkman|fnm|volta|deno|bun|pyenv|asdf|pnpm|poetry|nodenv|goenv|dotnet)(/|$)'
+      - regex: '\$HOME/\.(bashrc|bash_profile|profile|xprofile|zshrc|zprofile|kshrc|cshrc|tcshrc|inputrc|gemrc)($|[\s;&|`"'')])'
+      # Documentation commonly places prose punctuation immediately after a
+      # config filename; it is not part of the hidden path.
+      - regex: '\$HOME/\.[A-Za-z0-9._-]*rc([._-][A-Za-z0-9._-]+)?($|[/[:space:];&.,):])'
+    unless:
+      - id: metadata/lang/upstream::linux-kernel-secondary-tree-path
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
+      - id: metadata/lang/upstream::linux-kernel-primary-tree-path
+      - id: metadata/file/catalog/identity::debian-packages-index
+      - id: metadata/file/catalog/identity::nixpkgs-package-catalog
+      - type: text
+        substr: .steam/steam
+      - type: text
+        substr: com.valvesoftware.Steam
+
+  # XDG's .local/share root is ordinary, but a second dot-prefixed directory
+  # below it is concealed application data. Keep this atomic neutral: install,
+  # execution, and persistence composites supply intent.
+  - id: xdg-data-hidden-subdir-path
+    desc: Hidden subdirectory under user XDG data root
+    crit: notable
+    conf: 0.9
+    platforms: [unix]
+    for: [scripts, source, binaries]
+    if:
+      type: text
+      regex: '(~|\$(HOME|\{HOME\}))/\.local/share/\.[[:word:]][[:word:].-]{1,40}/[[:word:].-]+'
+
+  - id: hidden-shell-script-path
+    desc: References a dot-prefixed .sh file
+    crit: notable
+    conf: 0.9
+    for: [elf, macho, pe]
+    if:
+      type: text
+      regex: '(^|[[:space:]~/])\.[A-Za-z0-9_-]{3,40}\.sh($|[[:space:];&"''])'
+    unless:
+      - id: well-known/dual-use/tunnel/netch/
+
+  - id: absolute-home-hidden-path
+    desc: References absolute hidden home path
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      regex: '/home/\w+/\.[A-Za-z0-9][A-Za-z0-9_-]*/'
+    not:
+      - substr: .contrarian-config
+      - substr: /home/foo/.trash/
+      - substr: XDG_CONFIG_HOME
+      - regex: '/home/\w+/\.[A-Za-z0-9][A-Za-z0-9_-]*/containers/auth\.json'
+      - regex: '/home/\w+/\.(local|config|cache|cargo|rustup|npm|nvm|pyenv|rbenv|go|gradle|m2|vscode|docker|ssh|wasmer|pki|mitmproxy|openclaw|claude|codex|vnc|ag-chain-cosmos|agoric|cosmos)/'
+      - regex: '/home/\w+/\.coord(-venv)?/'
+      - regex: '/home/\w+/\.rvm/'
+      - regex: '/home/\w+/\.virtualenvs/'
+      # Conventional Python environment roots are not concealed staging.
+      - regex: '/home/\w+/\.(venvs?|virtualenv)/'
+      - substr: /home/linuxbrew/.linuxbrew/
+    unless:
+      - id: metadata/lang/upstream::linux-kernel-secondary-tree-path
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-scripts
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-extra
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-tree-path-mmfs
+      - id: metadata/lang/upstream::linux-kernel-primary-tree-path
+  - id: composer-hidden-tmp-command
+    desc: Composer hook references hidden /tmp path
+    crit: baseline
+    conf: 0.9
+    for: [composer.json]
+    platforms: [linux, macos, windows]
+    if:
+      type: value
+      path: scripts.post-install-cmd[*]
+      regex: '/tmp/\.[A-Za-z0-9_][A-Za-z0-9._-]*'
+
+  - id: usr-share-hidden-path-reference
+    desc: References hidden path below /usr/share
+    crit: notable
+    conf: 0.85
+    for: [scripts]
+    platforms: [unix]
+    if:
+      type: literal
+      kind: string
+      regex: '/usr/share/[^:/\s]{1,30}/\.[^:/\s]{1,30}(/|$)'
+
+  - id: hidden-tmp-marker-path
+    desc: Hidden marker path in /tmp
+    crit: notable
+    conf: 0.8
+    for: [shell, python]
+    if:
+      type: string_literal
+      regex: /tmp/\.[a-z].{0,50}-ran|/tmp/\.[a-z].{0,50}-done
+
+
+composite_rules:
+  - id: jvm-hidden-user-cache-directory
+    desc: JVM class constructs a hidden directory under macOS user caches
+    crit: notable
+    conf: 0.94
+    for: [class, java_class]
+    all:
+      - id: micro-behaviors/fs/path/location::jvm-library-path-component
+      - id: micro-behaviors/fs/path/location::jvm-caches-path-component
+      - id: micro-behaviors/fs/path/hidden::jvm-hidden-path-component
+
+  - id: hidden-writable-path
+    desc: Hidden path in writable location
+    crit: notable
+    conf: 0.9
+    for: [scripts, source, manifests, dockerfile, package-lock.json]
+    platforms: [linux, macos, windows]
+    any:
+      - id: micro-behaviors/fs/path/hidden::hidden-tmp-path
+      - id: micro-behaviors/fs/path/hidden::composer-hidden-tmp-command
+      - id: micro-behaviors/fs/path/hidden::var-tmp-hidden
+      - id: micro-behaviors/fs/path/hidden::dev-shm-hidden-path
+      - id: micro-behaviors/fs/path/hidden::tilde-hidden-home-path
+      - id: micro-behaviors/fs/path/hidden::tilde-hidden-home-path-php-string
+      - id: micro-behaviors/fs/path/hidden::env-home-hidden-path
+      - id: micro-behaviors/fs/path/hidden::xdg-data-hidden-subdir-path

@@ -343,7 +343,7 @@ contract as well as running the validator.
 
 | Validator check | Limit |
 |---|---|
-| Rules per directory | **120** traits plus composites is the temporary maximum, summed over its YAML files and criticalities. Enforce the same limit on both the physical directory and the ID namespace: explicitly qualified IDs must not hide either population. A category-specific exception requires a complete relevance audit and explicit approval; filenames create no budgets. |
+| Rules per directory | **98** traits plus composites is the temporary maximum, summed over its YAML files and criticalities. Enforce the same limit on both the physical directory and the ID namespace: explicitly qualified IDs must not hide either population. A category-specific exception requires a complete relevance audit and explicit approval; filenames create no budgets. |
 | Subdirectories | Hard error above 150 immediate subdirectories. Split broad catalogs by a stable function with a tiebreaker. |
 | Depth | Soft warning beyond five levels below the tier (`objectives/a/b/c/d/e/f/x.yaml` warns). Soft warnings fail `make validate`; `cleave validate --soft` only reports them. |
 | Sparse siblings | For behavior and objective parents, a soft warning when ten or more child directories average eight or fewer rules per child. Reports child count, total rules, and average rules per child; strict validation fails until the parent is reviewed. Named-entity catalogs and metadata are outside this heuristic. |
@@ -370,7 +370,7 @@ An AUR package targets Linux, and source code alone does not
 prove portability.
 
 **Hitting the cap triggers division and reorganization.** When a directory
-reaches or exceeds the temporary 120-rule maximum, it is time to divide it up
+reaches or exceeds the temporary 98-rule maximum, it is time to divide it up
 and reorganize. Treat the cap as a signal to redesign the category's boundaries,
 including its parent and siblings, rather than just trim its count. Establish
 durable divisions into more precise, evidence-supported subjects or behaviors,
@@ -1706,6 +1706,9 @@ weak source context rather than granting every test exclusion that context.
 system-information field names, including words in compiled artifacts. A name
 alone does not establish source code, a structured record, or information
 collection; a required source construct belongs in `metadata/lang/source`.
+`metadata/file/system-info/privilege-name` records references to OS privilege
+names in source or compiled content. A name alone does not establish that a
+privilege is present, enabled, requested, or manipulated.
 JVM constant-pool method-reference counts belong in `binary/symbols/count`;
 zero references does not imply that a class declares or executes no methods.
 
@@ -2367,7 +2370,7 @@ Resolve each in the migration manifest before moving the affected rules.
 
 | Checkpoint | Required resolution |
 |---|---|
-| Capacity for broad leaves | The temporary maximum is 120 rules; any category-specific exception requires a complete relevance audit and explicit user approval. At the cap, divide and reorganize the category and its neighborhood into durable, precise subdivisions with room to grow, while auditing all rules, parents and siblings. Document the population and consumers, place broad observations accurately, and do not invent a sibling or `other` bucket to satisfy the count. |
+| Capacity for broad leaves | The temporary maximum is 98 rules; any category-specific exception requires a complete relevance audit and explicit user approval. At the cap, divide and reorganize the category and its neighborhood into durable, precise subdivisions with room to grow, while auditing all rules, parents and siblings. Document the population and consumers, place broad observations accurately, and do not invent a sibling or `other` bucket to satisfy the count. |
 | Level-3 branches | Name the children, their single axis, precedence and an incomplete-evidence example before migrating. |
 | Broad staging profiles | Staging rules that fit no operation need a defined home; neither dropping the claim nor calling it activation is acceptable. |
 | Retained access | Choose a home for created accounts and authorized SSH keys, now in `persistence/login/{account,ssh}`. |
