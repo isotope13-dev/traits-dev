@@ -1,0 +1,158 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index b29ca95..4a367a4 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -10,6 +10,10 @@ is listed under **Changed** with the new value.
+ 
+ ### Added
+ 
++- `media.trailing_content_kind` identifies the actual trailing region separately
++  from executable/archive signatures in metadata or interior gaps. This prevents
++  assigning an unrelated embedded header to an ordinary image trailer.
++
+ - PNG trailer context: `png.trailing_iend_count`, bounded absolute byte offsets
+   in `png.trailing_iend_offsets`, and `trailer_ends_with_iend` in features. These
+   CRC-correct byte records can support investigating image overwrite residue;
+diff --git a/src/formats/carrier.rs b/src/formats/carrier.rs
+index 93d91bb..920dd1e 100644
+--- a/src/formats/carrier.rs
++++ b/src/formats/carrier.rs
+@@ -140,22 +140,25 @@ pub(crate) fn emit(bytes: &[u8], coverage: &Coverage, values: &mut Values, metri
+     let mut stowaway: Vec<&'static str> = Vec::new();
+     let mut stowaway_bytes: u64 = 0;
+     let mut stowaway_entropy: f64 = 0.0;
++    let mut trailing_content_kind = None;
+     let mut problems = coverage.problems.clone();
+ 
+     let mut note = |region: &[u8], counted: bool, allow_text: bool, out: &mut Vec<&'static str>| {
+         if region.is_empty() {
+-            return;
++            return None;
+         }
+         if counted {
+             stowaway_bytes = stowaway_bytes.saturating_add(region.len() as u64);
+             stowaway_entropy = stowaway_entropy.max(entropy::shannon(region));
+         }
+-        if let Some(kind) = classify_region(region) {
++        let kind = classify_region(region);
++        if let Some(kind) = kind {
+             let expected_text = !allow_text && matches!(kind, "text" | "base64" | "high_entropy");
+             if !expected_text && !out.contains(&kind) {
+                 out.push(kind);
+             }
+         }
++        kind
+     };
+ 
+     // Freeform regions are legitimately claimed content, so they are searched
+@@ -223,7 +226,7 @@ pub(crate) fn emit(bytes: &[u8], coverage: &Coverage, values: &mut Values, metri
+             return;
+         };
+         if let Some(region) = bytes.get(a..b.min(bytes.len())) {
+-            note(region, true, true, &mut stowaway);
++            trailing_content_kind = note(region, true, true, &mut stowaway);
+         }
+         // `logical_end` is the extent accounted for by the parser. A
+         // failed walk does not establish that a real trailer was reached.
+@@ -255,6 +258,12 @@ pub(crate) fn emit(bytes: &[u8], coverage: &Coverage, values: &mut Values, metri
+             JsonValue::String(kind.to_string()),
+         );
+     }
++    if let Some(kind) = trailing_content_kind {
++        values.insert_key(
++            value_key!("media.trailing_content_kind"),
++            JsonValue::String(kind.to_string()),
++        );
++    }
+     values.insert_key(value_key!("media.valid"), JsonValue::Bool(valid));
+     if !stowaway.is_empty() {
+         values.insert_key(
+diff --git a/src/formats/carrier/tests.rs b/src/formats/carrier/tests.rs
+index 03250c8..4237906 100644
+--- a/src/formats/carrier/tests.rs
++++ b/src/formats/carrier/tests.rs
+@@ -223,3 +223,72 @@ fn cabinet_candidate_requires_bounded_header_and_searches_past_false_magic() {
+     assert!(!find_cab(&cab));
+     assert!(!find_cab(b"MSCF"));
+ }
++
++#[test]
++fn trailer_kind_is_distinct_from_claimed_metadata_and_interior_holes() {
++    let pe = fake_pe(1024);
++    let mut bytes = vec![0; 64];
++    bytes.extend_from_slice(&pe);
++    let end = bytes.len();
++    bytes.extend_from_slice(b"ordinary unframed trailing text without an executable");
++    bytes.extend_from_slice(b" and sufficient length to exceed the coverage floor");
++    let mut coverage = Coverage::new("test", 8);
++    coverage.claim(8, 64);
++    coverage.claim_freeform(64, end as u64);
++    let (values, _) = run(&coverage, &bytes);
++    assert!(stow(&values).contains(&"pe".to_string()));
++    assert_eq!(
++        values.get("media.trailing_content_kind"),
++        Some(&serde_json::json!("text"))
++    );
++
++    // A program in an interior hole is likewise not a program in the tail.
++    coverage.claims.clear();
++    coverage.claim(end as u64 - 16, end as u64);
++    let (values, _) = run(&coverage, &bytes);
++    assert!(stow(&values).contains(&"pe".to_string()));
++    assert_eq!(
++        values.get("media.trailing_content_kind"),
++        Some(&serde_json::json!("text"))
++    );
++}
++
++#[test]
++fn executable_trailer_retains_location_when_metadata_is_ordinary() {
++    let mut bytes = vec![0; 64];
++    bytes.extend_from_slice(&fake_pe(1024));
++    let mut coverage = Coverage::new("test", 8);
++    coverage.claim(8, 64);
++    let (values, _) = run(&coverage, &bytes);
++    assert_eq!(
++        values.get("media.trailing_content_kind"),
++        Some(&serde_json::json!("pe"))
++    );
++}
++
++#[test]
++fn no_trailer_kind_is_invented_for_covered_or_opaque_unrecognized_data() {
++    let bytes = vec![0; 512];
++    let mut coverage = Coverage::new("test", 8);
++    coverage.claim(8, bytes.len() as u64);
++    assert!(
++        run(&coverage, &bytes)
++            .0
++            .get("media.trailing_content_kind")
++            .is_none()
++    );
++    assert!(
++        run(&Coverage::unrecognized(), &bytes)
++            .0
++            .get("media.trailing_content_kind")
++            .is_none()
++    );
++    let mut high = vec![0; 64];
++    high.extend((0..=255u8).cycle().take(2048));
++    coverage.claims.clear();
++    coverage.claim(8, 64);
++    assert_eq!(
++        run(&coverage, &high).0.get("media.trailing_content_kind"),
++        Some(&serde_json::json!("high_entropy"))
++    );
++}
+diff --git a/src/output/value_keys.rs b/src/output/value_keys.rs
+index 648570c..acec234 100644
+--- a/src/output/value_keys.rs
++++ b/src/output/value_keys.rs
+@@ -501,6 +501,7 @@ pub const VALUE_CATALOG: &[&str] = &[
+     "media.php.request_calls",
+     "media.problems",
+     "media.stowaway",
++    "media.trailing_content_kind",
+     "media.valid",
+     "nib.actions",
+     "nib.archiver",

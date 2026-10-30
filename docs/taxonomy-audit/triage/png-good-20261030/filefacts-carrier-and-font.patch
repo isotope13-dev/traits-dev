@@ -1,0 +1,350 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 7605022..d92a75f 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -142,6 +142,14 @@ is listed under **Changed** with the new value.
+ 
+ ### Fixed
+ 
++- `font.layout_format` retains a structurally coherent WOFF whose signature
++  bytes were reordered, while `font.format` stays `none` and `font.valid`
++  stays false; corrupt decoder fixtures no longer become opaque payloads.
++- Media-carrier CAB candidates require a bounded, versioned fixed header;
++  ASCII `MSCF` in diagram/Base64 metadata is not an embedded cabinet.
++- Media-carrier gzip findings validate reserved header flags and a bounded
++  deflate stream, avoiding three-byte magic coincidences inside compressed
++  PNG metadata while retaining real compressed stowaways.
+ - A JSON, YAML, TOML or plist document could erase `file.basename` and forge
+   filefacts-owned keys.
+ - A CAB signature reported `verified: true` without being bound to the
+diff --git a/src/formats/carrier.rs b/src/formats/carrier.rs
+index c2e0dcf..93d91bb 100644
+--- a/src/formats/carrier.rs
++++ b/src/formats/carrier.rs
+@@ -29,6 +29,7 @@
+ //! duplicating it here would fork that capability for no gain.
+ 
+ use serde_json::Value as JsonValue;
++use std::io::{Read, sink};
+ 
+ use crate::formats::common::bytes_at::u32_le;
+ use crate::metric;
+@@ -301,6 +302,12 @@ pub(crate) fn classify_region(region: &[u8]) -> Option<&'static str> {
+     if find_bzip2(region) {
+         return Some("bzip2");
+     }
++    if find_gzip(region) {
++        return Some("gzip");
++    }
++    if find_cab(region) {
++        return Some("cab");
++    }
+     // `#!/` is likewise short. A shebang only means anything at the start of a
+     // line, which is also the only place an interpreter honours it.
+     if starts_line_with(region, b"#!/") {
+@@ -312,11 +319,9 @@ pub(crate) fn classify_region(region: &[u8]) -> Option<&'static str> {
+         (&b"\xce\xfa\xed\xfe"[..], "macho"),
+         (&b"\xca\xfe\xba\xbe"[..], "macho"),
+         (&b"PK\x03\x04"[..], "zip"),
+-        (&b"\x1f\x8b\x08"[..], "gzip"),
+         (&b"\xfd7zXZ\x00"[..], "xz"),
+         (&b"7z\xbc\xaf\x27\x1c"[..], "sevenz"),
+         (&b"Rar!\x1a\x07"[..], "rar"),
+-        (&b"MSCF"[..], "cab"),
+         (&b"\x28\xb5\x2f\xfd"[..], "zstd"),
+     ] {
+         if memchr::memmem::find(region, magic).is_some() {
+@@ -338,6 +343,33 @@ pub(crate) fn classify_region(region: &[u8]) -> Option<&'static str> {
+     None
+ }
+ 
++/// Cabinet magic is ASCII and can occur inside Base64 or diagram metadata.
++/// Require a fixed header with supported version and bounded container/file
++/// offsets; this identifies a candidate, without claiming full CAB validity.
++fn find_cab(region: &[u8]) -> bool {
++    let mut from = 0usize;
++    while let Some(rel) = region
++        .get(from..)
++        .and_then(|rest| memchr::memmem::find(rest, b"MSCF"))
++    {
++        let at = from + rel;
++        if let Some(rest) = region.get(at..)
++            && let Some(header) = rest.first_chunk::<36>()
++            && header[24..26] == [3, 1]
++            && let Some(size) = u32_le(header, 8)
++            && let Some(files) = u32_le(header, 16)
++            && size >= 36
++            && size as usize <= rest.len()
++            && files >= 36
++            && files <= size
++        {
++            return true;
++        }
++        from = at + 4;
++    }
++    false
++}
++
+ /// A DOS header whose `e_lfanew` resolves to the `PE\0\0` signature. This is
+ /// the same two-step a Windows loader performs, and it is what separates a
+ /// real embedded image from the `MZ` byte pair occurring in media data.
+@@ -382,6 +414,34 @@ fn find_bzip2(region: &[u8]) -> bool {
+     false
+ }
+ 
++/// Validate a gzip member rather than treating its three magic bytes as an
++/// archive. Compressed PNG metadata can contain that triplet by chance. Both
++/// compressed input and produced output are bounded; reaching the output cap
++/// proves a coherent deflate prefix, not a complete member/checksum.
++fn find_gzip(region: &[u8]) -> bool {
++    const INPUT_CAP: usize = 256 * 1024;
++    const OUTPUT_CAP: u64 = 64 * 1024;
++    let mut from = 0usize;
++    while let Some(rel) = region
++        .get(from..)
++        .and_then(|rest| memchr::memmem::find(rest, b"\x1f\x8b\x08"))
++    {
++        let at = from + rel;
++        if let Some(rest) = region.get(at..)
++            && let Some([_, _, _, flags, ..]) = rest.first_chunk::<10>()
++            && flags & 0xe0 == 0
++            && let Some(probe) = rest.get(..rest.len().min(INPUT_CAP))
++        {
++            let mut decoded = flate2::read::GzDecoder::new(probe).take(OUTPUT_CAP);
++            if std::io::copy(&mut decoded, &mut sink()).is_ok() {
++                return true;
++            }
++        }
++        from = at + 3;
++    }
++    false
++}
++
+ /// True when `needle` sits at the very start of `region` or immediately after
+ /// a newline — the only positions where a shebang is meaningful.
+ fn starts_line_with(region: &[u8], needle: &[u8]) -> bool {
+diff --git a/src/formats/carrier/tests.rs b/src/formats/carrier/tests.rs
+index e3d5ab7..03250c8 100644
+--- a/src/formats/carrier/tests.rs
++++ b/src/formats/carrier/tests.rs
+@@ -143,3 +143,83 @@ fn alignment_padding_is_not_a_hole() {
+     let (_, m) = run(&c, &bytes);
+     assert_eq!(m.get("media.gap_bytes"), Some(0.0));
+ }
++
++fn compressed_gzip(data: &[u8]) -> Vec<u8> {
++    use std::io::Write;
++    let mut encoder = flate2::GzBuilder::new()
++        .filename("payload.txt")
++        .comment("carrier regression")
++        .write(Vec::new(), flate2::Compression::default());
++    encoder.write_all(data).unwrap();
++    encoder.finish().unwrap()
++}
++
++#[test]
++fn invalid_gzip_header_in_claimed_metadata_is_not_an_archive() {
++    // Bytes observed inside the valid zTXt stream of ws-about-codecs.png.
++    // 0x8e sets reserved gzip flags, so this is not a gzip header.
++    let mut bytes = vec![0u8; 64];
++    bytes.extend_from_slice(b"\x1f\x8b\x08\x8e\x9f\xd4\x9b\x17\x23\x39\x83\xa4");
++    bytes.resize(512, 0);
++    let mut coverage = Coverage::new("test", 8);
++    coverage.claim(8, 64);
++    coverage.claim_freeform(64, 512);
++    let (values, metrics) = run(&coverage, &bytes);
++    assert!(!stow(&values).contains(&"gzip".to_string()));
++    assert_eq!(metrics.get("media.stowaway_bytes"), Some(0.0));
++}
++
++#[test]
++fn gzip_stowaway_survives_padding_optional_headers_and_bad_magic() {
++    let gzip = compressed_gzip(b"printf 'carrier regression\\n'; id; uname -s\n");
++    let mut region = b"padding\x1f\x8b\x08\x8e invalid candidate; ".to_vec();
++    region.extend_from_slice(&gzip);
++    assert_eq!(classify_region(&region), Some("gzip"));
++    let mut bytes = vec![0u8; 64];
++    bytes.extend_from_slice(&region);
++    let mut coverage = Coverage::new("test", 8);
++    coverage.claim_freeform(8, bytes.len() as u64);
++    assert!(stow(&run(&coverage, &bytes).0).contains(&"gzip".to_string()));
++}
++
++#[test]
++fn gzip_magic_requires_a_valid_stream_and_small_member_checksum() {
++    assert_ne!(classify_region(b"prefix\x1f\x8b\x08"), Some("gzip"));
++    let mut gzip = compressed_gzip(b"ordinary compressed data");
++    assert_eq!(classify_region(&gzip), Some("gzip"));
++    let checksum = gzip.len() - 8;
++    *gzip.get_mut(checksum).unwrap() ^= 1;
++    assert_ne!(classify_region(&gzip), Some("gzip"));
++}
++
++#[test]
++fn large_gzip_is_probed_with_bounded_output() {
++    let gzip = compressed_gzip(&vec![b'A'; 1024 * 1024]);
++    assert_eq!(classify_region(&gzip), Some("gzip"));
++}
++
++#[test]
++fn cab_ascii_inside_diagram_metadata_is_not_an_archive() {
++    let region = b"diagram=MSCF%2BsrsQL1eNarNwQrSK3R%2B7j3Vch%2BMhE";
++    assert!(!find_cab(region));
++    assert_ne!(classify_region(region), Some("cab"));
++}
++
++#[test]
++fn cabinet_candidate_requires_bounded_header_and_searches_past_false_magic() {
++    let mut cab = vec![0u8; 36];
++    cab[..4].copy_from_slice(b"MSCF");
++    cab[8..12].copy_from_slice(&36u32.to_le_bytes());
++    cab[16..20].copy_from_slice(&36u32.to_le_bytes());
++    cab[24..26].copy_from_slice(&[3, 1]);
++    assert_eq!(classify_region(&cab), Some("cab"));
++    let mut padded = b"MSCF not a cabinet; padding ".to_vec();
++    padded.extend_from_slice(&cab);
++    assert_eq!(classify_region(&padded), Some("cab"));
++    cab[8..12].copy_from_slice(&37u32.to_le_bytes());
++    assert!(!find_cab(&cab));
++    cab[8..12].copy_from_slice(&36u32.to_le_bytes());
++    cab[16..20].copy_from_slice(&37u32.to_le_bytes());
++    assert!(!find_cab(&cab));
++    assert!(!find_cab(b"MSCF"));
++}
+diff --git a/src/formats/font.rs b/src/formats/font.rs
+index 93fe65d..72e4290 100644
+--- a/src/formats/font.rs
++++ b/src/formats/font.rs
+@@ -199,12 +199,29 @@ pub(super) fn extract(
+         Format::Woff2 => walk_woff2(bytes, &mut report),
+         Format::Eot => walk_eot(bytes, &mut report),
+         Format::None => {
+-            report.problem("no font signature");
+-            // Nothing here is a font, so say what it is instead. The file was
+-            // typed `font` by its name alone: the bytes carry no magic of their
+-            // own (a raw compressed blob, an encrypted stage, base64), so no
+-            // other extractor claimed them.
+-            report.content_kind = classify_region(bytes).or(Some("unknown"));
++            // A transposed signature does not erase a coherent WOFF header
++            // and table directory. Keep the signature failure, but do not
++            // call the otherwise fully framed font an opaque encrypted blob.
++            let recovered = reordered_woff_header(bytes).then(|| {
++                let mut candidate = Report {
++                    structure_ok: true,
++                    scan_budget: (bytes.len() as u64).saturating_mul(SCAN_PASSES),
++                    ..Report::default()
++                };
++                walk_woff(bytes, &mut candidate);
++                candidate
++            });
++            if let Some(candidate) = recovered.filter(|r| r.structure_ok) {
++                report = candidate;
++                report.problem("font signature bytes are reordered");
++                values.insert_key(
++                    value_key!("font.layout_format"),
++                    JsonValue::String("woff".to_string()),
++                );
++            } else {
++                report.problem("no font signature");
++                report.content_kind = classify_region(bytes).or(Some("unknown"));
++            }
+         }
+     }
+ 
+@@ -351,6 +368,28 @@ fn classify(bytes: &[u8]) -> Format {
+     Format::None
+ }
+ 
++/// A reordered WOFF signature is a corruption candidate only when the
++/// flavor, declared length, reserved field and nonempty table count also fit.
++/// The full WOFF walk must then validate its directory and byte coverage.
++fn reordered_woff_header(bytes: &[u8]) -> bool {
++    let Some(mut magic) = bytes.first_chunk::<4>().copied() else {
++        return false;
++    };
++    magic.sort_unstable();
++    magic == *b"FFOw"
++        && bytes.get(4..8).is_some_and(|flavor| {
++            matches!(flavor, b"OTTO" | b"true" | b"typ1" | b"\x00\x01\x00\x00")
++        })
++        && u32_be(bytes, 8).is_some_and(|len| u64::from(len) == bytes.len() as u64)
++        && bytes.get(14..16) == Some(&[0, 0])
++        && bytes
++            .get(12..14)
++            .and_then(<[u8]>::first_chunk::<2>)
++            .is_some_and(|count| {
++                (1..=MAX_TABLES).contains(&usize::from(u16::from_be_bytes(*count)))
++            })
++}
++
+ /// Walk an sfnt table directory starting at `base`, returning its entries and
+ /// the offset where the directory ends. Coverage is folded in by the caller so
+ /// a collection can account for every member against one shared picture.
+diff --git a/src/formats/font/tests.rs b/src/formats/font/tests.rs
+index 8e3fa43..8267b11 100644
+--- a/src/formats/font/tests.rs
++++ b/src/formats/font/tests.rs
+@@ -535,9 +535,14 @@ fn payload_in_an_interior_gap_is_classified() {
+ 
+ #[test]
+ fn archive_and_script_stowaways_are_named() {
++    use std::io::Write;
++
++    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
++    encoder.write_all(b"gzip stream here").unwrap();
++    let gzip = encoder.finish().unwrap();
+     for (payload, want) in [
+         (b"PK\x03\x04rest of a zip".as_slice(), "zip"),
+-        (b"\x1f\x8b\x08gzip stream here".as_slice(), "gzip"),
++        (gzip.as_slice(), "gzip"),
+         (b"#!/bin/sh\ncurl x | sh\n".as_slice(), "shebang"),
+     ] {
+         let mut font = build_sfnt([0x00, 0x01, 0x00, 0x00], &[(b"head", &[0u8; 54])]);
+@@ -791,3 +796,35 @@ fn overlapping_tables_share_one_scan_budget() {
+             .any(|p| p.as_str().is_some_and(|p| p.contains("scan budget")))
+     );
+ }
++
++#[test]
++fn reordered_woff_signature_retains_layout_without_claiming_validity() {
++    let mut bytes = build_woff(&[(b"head", &[0u8; 54]), (b"cmap", &[0u8; 32])], &[], &[]);
++    bytes.get_mut(..4).unwrap().copy_from_slice(b"wFOF");
++    let (values, _) = run(&bytes);
++    assert_eq!(format_of(&values), "none");
++    assert_eq!(
++        values.get("font.valid").and_then(JsonValue::as_bool),
++        Some(false)
++    );
++    assert_eq!(
++        values.get("font.layout_format").and_then(JsonValue::as_str),
++        Some("woff")
++    );
++    assert!(values.get("font.content_kind").is_none());
++}
++
++#[test]
++fn reordered_magic_does_not_whitelist_noise_or_hide_private_payloads() {
++    let mut bytes = noise(2048);
++    bytes.get_mut(..4).unwrap().copy_from_slice(b"wFOF");
++    assert!(run(&bytes).0.get("font.layout_format").is_none());
++    let mut bytes = build_woff(&[(b"head", &[0u8; 54])], &[], &fake_pe(1024));
++    bytes.get_mut(..4).unwrap().copy_from_slice(b"wFOF");
++    let (values, _) = run(&bytes);
++    assert_eq!(
++        values.get("font.layout_format").and_then(JsonValue::as_str),
++        Some("woff")
++    );
++    assert_eq!(stowaway(&values), vec!["pe"]);
++}
+diff --git a/src/output/value_keys.rs b/src/output/value_keys.rs
+index 322883e..da4d790 100644
+--- a/src/output/value_keys.rs
++++ b/src/output/value_keys.rs
+@@ -322,6 +322,7 @@ pub const VALUE_CATALOG: &[&str] = &[
+     "font.content_kind",
+     "font.features",
+     "font.format",
++    "font.layout_format",
+     "font.problems",
+     "font.sfnt_version",
+     "font.stowaway",

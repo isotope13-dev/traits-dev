@@ -29,11 +29,13 @@ def main():
     spec.loader.exec_module(builder)
     expected = {}
     with tempfile.TemporaryDirectory(prefix="jvm-controls-") as work:
-        for severity, name, data in builder.fixtures():
+        for severity, name, data in builder.fixtures() + builder.webhook_fixtures():
             path = Path(work) / (name + ".class")
             path.write_bytes(data)
             expected[path.name] = severity
-        for severity, name, data in builder.jphp_fixtures() + builder.archive_fixtures():
+        for severity, name, data in (builder.jphp_fixtures() + builder.archive_fixtures()
+                                     + builder.endpoint_fixtures() + builder.keylogger_fixtures()
+                                     + builder.secret_model_fixtures()):
             path = Path(work) / (name + ".jar")
             path.write_bytes(data)
             expected[path.name] = severity
@@ -58,6 +60,29 @@ def main():
     literal_ids = {t["id"] for t in found["string-only-irc-reference.class"].get("traits", [])}
     assert "metadata/import/jvm::sendmessage-member-reference" not in literal_ids
     assert "metadata/import/jvm::irc-class-reference" not in literal_ids
+    theft = "objectives/credential-access/browser/multi-target::jvm-declared-cookie-password-theft"
+    for name in ["quoted-theft-methods.class", "imported-theft-methods.class"]:
+        assert theft not in {t["id"] for t in found[name].get("traits", [])}, name
+    bundle_ids = {t["id"] for t in found["padded-native-theft-bundle.jar"].get("traits", [])}
+    assert theft in bundle_ids
+    assert "objectives/credential-access/discord/token::jvm-credential-theft-discord-recovery-bundle" in bundle_ids
+    assert "objectives/collection/messaging/app::jvm-credential-theft-telegram-collection-bundle" in bundle_ids
+    assert all(t["id"] != "objectives/anti-static/obfuscation/pack::allatori-demo-marker"
+               for f in found.values() for t in f.get("traits", []))
+    for name, expected_id in {
+        "global-keylogger-buffer.class": "jvm-global-hook-keylog-buffer",
+        "nested-keylogger-reporting.jar": "jvm-global-keylog-discord-reporting",
+        "native-keylog-socket-control.jar": "jvm-native-keylog-socket-reporting",
+        "reflected-live-keylogger.class": "jvm-reflected-live-keylog-packets",
+    }.items():
+        assert any(t["id"] == "objectives/collection/keylog/hook::" + expected_id
+                   and t["crit"] == 5 for t in found[name].get("traits", [])), name
+    for name, expected_id in {
+        "protected-secret-collection-model.jar": "well-known/malware/stealer/myth::jvm-myth-secret-collection-model",
+        "reviewed-attachment-diversion.class": "objectives/exfiltration/http/discord::jvm-diverted-webhook-file-uploads",
+    }.items():
+        assert any(t["id"] == expected_id and t["crit"] == 5
+                   for t in found[name].get("traits", [])), name
     print(f"PASS: {len(found)} JVM controls, including renamed positives and literal-only negatives")
 
 

@@ -343884,7 +343884,7 @@ rule SIGNATURE_BASE_TA17_293A_Hacktool_Touch_MAC_Modification : FILE
 rule SIGNATURE_BASE_TA17_293A_Hacktool_Exploit_MS16_032 : FILE
 {
 	meta:
-		description = "Auto-generated rule"
+		description = "PowerShell MS16-032 exploit source markers"
 		author = "Florian Roth (Nextron Systems)"
 		id = "4c5838d7-9956-564e-a25c-f2ba5641ac03"
 		date = "2017-10-21"
@@ -373740,7 +373740,7 @@ rule SIGNATURE_BASE_Invoke_Smbexec : FILE
 rule SIGNATURE_BASE_Invoke_Wmiexec_Gen_1
 {
 	meta:
-		description = "Detects Invoke-WmiExec or Invoke-SmbExec"
+		description = "Invoke-TheHash NTLM hash-authentication markers"
 		author = "Florian Roth (Nextron Systems)"
 		id = "08b79c7d-c383-5891-af0f-31a92f1ed07d"
 		date = "2017-06-14"
@@ -373770,7 +373770,7 @@ rule SIGNATURE_BASE_Invoke_Wmiexec_Gen_1
 rule SIGNATURE_BASE_Invoke_Smbexec_Invoke_Wmiexec_1
 {
 	meta:
-		description = "Auto-generated rule - from files Invoke-SMBExec.ps1, Invoke-WMIExec.ps1"
+		description = "Invoke-TheHash SMB/WMI execution tool markers"
 		author = "Florian Roth (Nextron Systems)"
 		id = "fd1c6599-028d-5535-beb8-5b2658481b97"
 		date = "2017-06-14"

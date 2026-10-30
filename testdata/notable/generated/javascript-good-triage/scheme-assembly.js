@@ -1,0 +1,1 @@
+if (url.startsWith("jdbc:h2:ss"+"l://")) { return parse(url); }

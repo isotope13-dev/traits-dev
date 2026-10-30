@@ -22,6 +22,12 @@ PROFILE = 'metadata/image/pixel::large-uniform-incompressible-png'
 RGB_PROFILE = 'metadata/image/pixel::large-high-entropy-rgb-png'
 LAYOUT_PROFILE = 'objectives/anti-static/obfuscation/steganography/image::png-uniform-pixels-post-iend'
 OPAQUE_TRAILER = 'objectives/anti-static/obfuscation/steganography/image::png-opaque-trailer'
+EXTRA_ENDINGS = 'metadata/image/trailing::png-trailer-multiple-iend-records'
+TAIL_ENDING = 'metadata/image/trailing::png-trailer-ends-with-iend-record'
+TAIL_EXECUTABLE = 'metadata/file/format/media::media-trailer-executable-header'
+TRAILER_ENTROPY = 'metadata/file/format/media::media-trailer-high-entropy'
+PROBE_LIMIT = 'metadata/image/pixel::png-pixel-payload-probe-limited'
+TRAILER_PROGRAM = 'objectives/anti-static/polyglot/format::png-trailing-stowaway-executable'
 
 
 def chunk(kind, body=b''):
@@ -62,16 +68,39 @@ def main():
     add('unused-idat-zero-padding.png', image(extra=bytes(70000)), [UNUSED, LARGE], [TRAIL, OPAQUE])
     add('unused-idat-opaque.png', image(extra=opaque), [UNUSED, LARGE, OPAQUE], [TRAIL, OLD], max_crit=4)
     add('unused-idat-opaque-split.png', image(extra=opaque, split=True), [UNUSED, LARGE, OPAQUE], [TRAIL, OLD], max_crit=4)
-    add('opaque-external-trailer.png', normal + opaque, [TRAIL], [UNUSED, LARGE, OPAQUE], max_crit=5)
+    add('opaque-external-trailer.png', normal + opaque, [TRAIL, OPAQUE_TRAILER], [UNUSED, LARGE, OPAQUE], max_crit=4)
+    # A CRC-correct footer does not validate or cover the preceding bytes.
+    add('opaque-trailer-forged-iend.png', normal + opaque + chunk(b'IEND'),
+        [TRAIL, OPAQUE_TRAILER, TAIL_ENDING], [UNUSED, EXTRA_ENDINGS], max_crit=4)
+    add('opaque-trailer-multiple-iend.png', normal + opaque[:1000] + chunk(b'IEND') + opaque + chunk(b'IEND'),
+        [TRAIL, OPAQUE_TRAILER, EXTRA_ENDINGS, TAIL_ENDING], [UNUSED], max_crit=4)
+    pe = bytearray(70000)
+    pe[:2] = b'MZ'
+    pe[0x3c:0x40] = struct.pack('<I', 0x40)
+    pe[0x40:0x44] = b'PE\0\0'
+    add('executable-trailer-forged-iend.png', normal + pe + chunk(b'IEND'),
+        [TRAIL, TAIL_EXECUTABLE, TAIL_ENDING, TRAILER_PROGRAM], [UNUSED, EXTRA_ENDINGS, OPAQUE_TRAILER], max_crit=4)
     add('large-opaque-external-trailer.png', normal + hashlib.shake_256(b'opaque external PNG data').digest(500000),
-        [TRAIL, OPAQUE_TRAILER], [UNUSED, LARGE, OPAQUE], max_crit=5)
-    add('ordinary-noise.png', noise, [PROFILE, RGB_PROFILE], [TRAIL, UNUSED, LARGE, OPAQUE, LAYOUT_PROFILE])
+        [TRAIL, OPAQUE_TRAILER], [UNUSED, LARGE, OPAQUE], max_crit=4)
+    # A program header in PNG metadata is not a program in its text trailer.
+    metadata_program = normal[:33] + chunk(b'tEXt', b'Comment\0' + bytes(pe)) + normal[33:]
+    add('metadata-executable-text-trailer.png', metadata_program + b'ordinary trailing text ' * 4000,
+        [TRAIL, 'metadata/file/format/media::media-stowaway-executable'],
+        [OPAQUE_TRAILER, TAIL_EXECUTABLE, TRAILER_ENTROPY, TRAILER_PROGRAM], max_crit=4)
+    # Benign-looking IEND records cannot lower the opaque-trailer severity.
+    add('large-opaque-trailer-forged-endings.png', normal + opaque * 8 + chunk(b'IEND') + opaque + chunk(b'IEND'),
+        [TRAIL, OPAQUE_TRAILER, EXTRA_ENDINGS, TAIL_ENDING], [TAIL_EXECUTABLE], max_crit=4)
+    add('ordinary-noise.png', noise, [PROFILE, RGB_PROFILE, PROBE_LIMIT], [TRAIL, UNUSED, LARGE, OPAQUE, LAYOUT_PROFILE])
     add('noise-extra-iend.png', noise + chunk(b'IEND'), [CHUNKS, PROFILE, RGB_PROFILE, LAYOUT_PROFILE], [TRAIL, UNUSED, LARGE, OPAQUE], max_crit=4)
 
     if args.write_fixtures:
         for classification, name in [('notable', 'trailer-fake-iend.png'), ('notable', 'unused-idat.png'),
                                      ('notable', 'unused-idat-zero-padding.png'), ('suspicious', 'unused-idat-opaque.png'),
-                                     ('hostile', 'large-opaque-external-trailer.png')]:
+                                     ('suspicious', 'opaque-external-trailer.png'),
+                                     ('suspicious', 'opaque-trailer-multiple-iend.png'),
+                                     ('suspicious', 'large-opaque-external-trailer.png'),
+                                     ('suspicious', 'metadata-executable-text-trailer.png'),
+                                     ('suspicious', 'large-opaque-trailer-forged-endings.png')]:
             dest = ROOT / 'testdata' / classification / 'generated' / 'taxonomy' / 'png-carrier-layout' / name
             dest.parent.mkdir(parents=True, exist_ok=True)
             data = cases[name][0]
@@ -103,7 +132,8 @@ def main():
             assert name in reports, name
             findings = reports[name].get('traits', [])
             ids = {t['id'] for t in findings}
-            expected_crit = {OPAQUE: 4, LAYOUT_PROFILE: 4, OPAQUE_TRAILER: 5}
+            expected_crit = {OPAQUE: 4, LAYOUT_PROFILE: 4, TRAILER_PROGRAM: 4,
+                             OPAQUE_TRAILER: 4}
             checks.append(dict(case=name, missing=sorted(required - ids), forbidden=sorted(forbidden & ids),
                                excessive=[t for t in findings if t['crit'] > max_crit],
                                wrong_criticality=[t for t in findings if t['id'] in expected_crit and t['crit'] != expected_crit[t['id']]],

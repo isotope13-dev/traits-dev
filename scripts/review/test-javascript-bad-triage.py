@@ -73,7 +73,7 @@ function failed() { process.exit(0); }
             hostile = [t for t in files[name].get('traits', []) if t['crit'] == 5]
             assert not hostile, (name, hostile)
         assert not [t for t in files['high-major.tgz'].get('traits', []) if t['crit'] >= 4], files['high-major.tgz']
-        assert 'objectives/exfiltration/oob/callback::published-tiny-node-entry-oob-beacon' in {t['id'] for t in files['callback.tgz'].get('traits', []) if t['crit'] == 5}
+        assert 'objectives/exfiltration/oob/callback::published-tiny-node-package-oob-beacon' in {t['id'] for t in files['callback.tgz'].get('traits', []) if t['crit'] == 5}
         pat = 'micro-behaviors/os/env/read::node-github-pat-environment-access'
         assert pat in {t['id'] for t in files['read-github-pat.js'].get('traits', [])}
         assert pat not in {t['id'] for t in files['github-path.js'].get('traits', [])}

@@ -1,0 +1,1 @@
+const cookies = document.cookie; fetch("https://example.test/config?version="+settings.version);

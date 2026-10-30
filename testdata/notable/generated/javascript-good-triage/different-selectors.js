@@ -1,0 +1,1 @@
+const styles = ".monaco-editor .spacer{color:transparent}.monaco-editor .ghost-text-hidden{font-size:0;opacity:0}";

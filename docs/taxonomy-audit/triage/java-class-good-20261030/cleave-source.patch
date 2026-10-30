@@ -1,0 +1,164 @@
+--- a/src/analyzers/java_class/capabilities.rs
++++ b/src/analyzers/java_class/capabilities.rs
+@@ -42,23 +42,11 @@
+     /// `strings` are expected to have passed [`Self::is_interesting_string`].
+     pub(super) fn detect_capabilities_from_facts(
+         &self,
+-        class_refs: &[String],
++        _class_refs: &[String],
+         strings: &[String],
+         report: &mut AnalysisReport,
+     ) {
+         let target_path = report.target.path.to_lowercase();
+-        // The Swing/AWT allowlist in the keylogging branch is evaluated one
+-        // string at a time, so a class that plainly implements the keystroke
+-        // API still trips on an unrelated diagnostic message that happens to
+-        // contain the bare word: the JDK's own
+-        // MetaData$java_awt_AWTKeyStroke_PersistenceDelegate carries
+-        // "Unsupported KeyStroke: ", which is not any of the allowlisted
+-        // spellings. Decide once, over the whole constant pool, whether this
+-        // class is a user of the platform keystroke API.
+-        let declares_java_keystroke_api = class_refs.iter().chain(strings.iter()).any(|s| {
+-            let l = s.to_lowercase();
+-            l.contains("awtkeystroke") || l.contains("javax/swing") || l.contains("javax.swing")
+-        });
+         let is_sig_stub = target_path.ends_with(".sig") || target_path.contains("ct.sym");
+         let is_demo_artifact = target_path.contains("/demo/") || target_path.contains("j2ddemo");
+         let is_plantuml_brotli_dictionary =
+@@ -135,41 +123,8 @@
+                 );
+             }
+ 
+-            // Keylogging
+-            let is_java_keystroke_api = s_lower.contains("javax/swing")
+-                || s_lower.contains("javax.swing")
+-                || s_lower.contains("java/awt/awtkeystroke")
+-                || s_lower.contains("java.awt.awtkeystroke")
+-                || s_lower.contains("awtkeystroke")
+-                || s_lower.contains("javax/swing/keystroke")
+-                || s_lower.contains("javax.swing.keystroke")
+-                || s_lower == "app_context_keystroke_key"
+-                || s_lower == "getkeystroke"
+-                || s_lower == "getkeystrokeforevent"
+-                || s_lower == "keystroke.java"
+-                || s_lower == "awtkeystroke.java"
+-                || s_lower == "keystroke.class"
+-                || s_lower == "awtkeystroke.class"
+-                || s_lower == "keystroke"
+-                || s_lower == "keystroke: ";
+-
+-            if s_lower.contains("keylog")
+-                || s_lower.contains("key-log")
+-                || s_lower.contains("o-keylogger")
+-                || (Self::contains_word(&s_lower, "keystroke")
+-                    && !is_java_keystroke_api
+-                    && !declares_java_keystroke_api
+-                    && !s_lower.contains("jline/console")
+-                    && !s_lower.contains("ljline/console"))
+-            {
+-                self.add_capability(
+-                    report,
+-                    "credential/keylogger",
+-                    "Keylogging-related JVM text",
+-                    s,
+-                    Criticality::Notable,
+-                );
+-            }
++            // Bare keylog/keystroke terminology is classified by YAML as
++            // neutral text. Capture/reporting recipes supply hostile intent.
+ 
+             // Encryption/decryption - common in legitimate Java apps for data protection.
+             // Only suspicious when combined with other RAT indicators.
+--- a/src/analyzers/archive/mod.rs
++++ b/src/analyzers/archive/mod.rs
+@@ -807,7 +807,8 @@
+     evidence: Vec<Evidence>,
+     match_count: usize,
+ ) -> Finding {
+-    let crit = if id == "anti-analysis/archive/excessive-size"
++    let crit = if id.starts_with("metadata/archive/")
++        || id == "anti-analysis/archive/excessive-size"
+         || id == "anti-analysis/archive/long-entry-name"
+     {
+         Criticality::Notable
+@@ -818,7 +819,11 @@
+     Finding {
+         precomputed_spans: None,
+         src: None,
+-        kind: FindingKind::Capability,
++        kind: if id.starts_with("metadata/archive/") {
++            FindingKind::Structural
++        } else {
++            FindingKind::Capability
++        },
+         trait_refs: vec![],
+         id: id.into(),
+         desc: desc.into(),
+@@ -908,7 +913,7 @@
+ fn push_archive_hostile_findings(
+     report: &mut AnalysisReport,
+     hostile_reasons: Vec<HostileArchiveReason>,
+-    archive_path: &Path,
++    _archive_path: &Path,
+     source: &str,
+     suppress_path_traversal: bool,
+ ) {
+@@ -962,21 +967,17 @@
+                 ));
+             }
+             HostileArchiveReason::ExcessiveFileCount(count) => {
+-                let path = archive_path.to_string_lossy();
+-                if path.contains("/pkg_freebsd/")
+-                    && (path.contains("opensearch-dashboards-")
+-                        || path.contains("flat-remix-icon-themes-"))
+-                {
+-                    continue;
+-                }
++                // Reaching a configured analysis bound is structural telemetry,
++                // not anti-analysis intent. Keep the guard and visible count,
++                // without package-name exemptions or a malware severity.
+                 report.findings.push(archive_finding(
+-                    "anti-analysis/archive/excessive-files",
+-                    "Archive contains excessive number of files".to_string(),
++                    "metadata/archive/layout::archive-member-limit-reached",
++                    "Archive analysis reached member-count limit".to_string(),
+                     source,
+                     vec![Evidence {
+                         method: "archive_extraction".to_string(),
+                         source: source.to_string(),
+-                        value: format!("count:{} (LIMIT_DEBUG:{})", count, MAX_FILE_COUNT),
++                        value: format!("count:{} limit:{}", count, MAX_FILE_COUNT),
+                         location: None,
+                         ..Default::default()
+                     }],
+@@ -4321,6 +4322,30 @@
+         // Valid paths should work
+         assert!(sanitize_entry_path("foo/bar.txt", Path::new("/tmp/test")).is_some());
+         assert!(sanitize_entry_path("./foo/bar.txt", Path::new("/tmp/test")).is_some());
++    }
++
++    #[test]
++    fn member_limit_telemetry_does_not_downgrade_unsafe_entries() {
++        let mut report = AnalysisReport::new(TargetInfo::default());
++        push_archive_hostile_findings(
++            &mut report,
++            vec![
++                HostileArchiveReason::ExcessiveFileCount(MAX_FILE_COUNT + 1),
++                HostileArchiveReason::PathTraversal("../outside.txt".to_string()),
++            ],
++            Path::new("renamed.zip"),
++            "archive_analyzer",
++            false,
++        );
++        let limit = report
++            .findings
++            .iter()
++            .find(|f| f.id == "metadata/archive/layout::archive-member-limit-reached")
++            .unwrap();
++        assert_eq!(limit.crit, Criticality::Notable);
++        assert!(report.findings.iter().any(
++            |f| f.id.starts_with("anti-analysis/archive/") && f.crit >= Criticality::Suspicious
++        ));
+     }
+ 
+     #[test]
