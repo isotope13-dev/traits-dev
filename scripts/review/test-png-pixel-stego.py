@@ -33,8 +33,10 @@ def main():
         cases = json.loads((source / 'manifest.json').read_text())['cases']
         # Retained fixtures produced by stegano-lsb 3.0.0, independently
         # extracted with zsteg. They test an implementation other than ours.
+        # They are parked with the other pixel-payload carriers until an
+        # engine with pixel reconstruction ships; see that directory's README.
         for name in ['stegano-sequential.png', 'stegano-prime.png']:
-            path = ROOT / 'testdata/suspicious/generated/taxonomy/png-pixel-stego' / name
+            path = ROOT / 'docs/taxonomy-audit/triage/png-bad-20261030/fixtures' / name
             assert path.exists(), path
             cases.append(dict(path=str(path), expected_kind='shell', expected_max_crit=4))
         scan_dir = work / 'images'
