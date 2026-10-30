@@ -7,16 +7,28 @@
 # or identity path, is not enough.
 defaults:
   platforms: [linux, windows, macos]
+  for: [whl, python]
   # Service-account email identifies an account; it is not an access token.
   # A Python .pth startup hook does not establish Unix shell initialization.
   attack: T1580,T1546
+
+traits:
+  # Some Python clients append this relative suffix to the metadata API base
+  # URL, so the complete token URL is never present as one source string.
+  - id: python-gcp-service-account-token-path-fragment
+    desc: References GCP service-account token path
+    crit: notable
+    conf: 0.92
+    for: [python]
+    if:
+      type: text
+      substr: instance/service-accounts/default/token
 
 composite_rules:
   - id: wheel-pth-gcp-service-account-request
     desc: Wheel .pth hook ships GCP identity request
     crit: suspicious
     conf: 0.9
-    for: [whl, python]
     scope: archive
     all:
       - id: metadata/package/files/wheel-sdist::wheel-pth-startup-member
@@ -26,5 +38,26 @@ composite_rules:
     any:
       - id: micro-behaviors/communications/http/client/exchange::urllib-urlopen-call-symbol
       - id: micro-behaviors/communications/http/lib/urllib::urllib-request-object
+    unless:
+      - id: metadata/package/testing/
+
+  # A metadata request can be legitimate when an application lazily resolves
+  # credentials. A wheel startup hook that reads the service-account token,
+  # serializes the result, and posts it over HTTP is a different behavior: the
+  # hook runs automatically in every interpreter using the installed wheel.
+  - id: wheel-pth-gcp-token-and-runtime-profile-exfil
+    desc: Wheel startup hook posts GCP token and runtime profile
+    crit: hostile
+    conf: 0.99
+    scope: archive
+    attack: T1041,T1552.005,T1546.017
+    all:
+      - id: metadata/package/files/wheel-sdist::wheel-pth-startup-member
+      - id: micro-behaviors/process/interpreter/python::pth-startup-import
+      - id: python-gcp-service-account-token-path-fragment
+      - id: micro-behaviors/communications/http/client/exchange::urllib-urlopen-call
+      - id: micro-behaviors/communications/http/request/verb::urllib-request-post
+      - id: micro-behaviors/communications/http/client/initialize::urllib-request-data-body
+      - id: micro-behaviors/data/serialize/json::json-dumps-call
     unless:
       - id: metadata/package/testing/
