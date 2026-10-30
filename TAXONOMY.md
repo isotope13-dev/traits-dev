@@ -307,19 +307,18 @@ whoever downloaded it names the container. **Every conviction needs a
 content-derived required leg.** One built only from name, exact size and metric
 counts is a file hash in disguise.
 
-### Suppression requires content evidence
+### Filename-based suppressions
 
-A scanned filename or directory path alone cannot suppress or downgrade a
-finding: the path can be chosen by an attacker or by whoever collected the
-sample. This applies to `unless:` and `downgrade:` at every criticality,
-including building blocks used by hostile composites. A file under `testdata/`
-is not necessarily a test; require independent evidence from its content.
+A scanned filename or path can be chosen by an attacker or by whoever collected
+the sample, so prefer content evidence when establishing an exception. A rule
+may use at most one path-only trait in `unless:` and at most eight in
+`downgrade:`. These limits apply to all criticalities, including building blocks
+of hostile composites. A file under `testdata/` is not necessarily a test.
 
-The same rule applies through named traits, exception composites, and directory
-references. A composite may use a path to narrow independently established
-content context, but it must not have an alternative that matches solely on a
-path. Runtime evaluation ignores path-only suppressions, and validation reports
-rules that can rely on them.
+Count distinct path-only traits behind directory references and path-only
+composites, so grouping alternatives cannot evade the limits. A composite that
+requires independent content evidence is not a path-only trait. Allowed
+path-based suppressions continue to operate at runtime.
 
 Each `unless:` may select at most 64 distinct rules after expanding directory
 references and referenced composites; a `downgrade:` may select at most 256.
