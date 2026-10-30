@@ -69,11 +69,12 @@ not in the most alarming explanation or the sample's known reputation.
    spelling and matcher type go in `for:`, `platforms:`, the filename and the
    trait ID, not in directories — unless the platform *is* the technique
    (systemd, `LD_PRELOAD`, Winlogon).
-8. **Shortest precise path.** When a directory reaches its budget, first look
-   for durable, evidence-supported distinctions that make the taxonomy more
-   precise and leave room for future growth. Split on those distinctions, not
-   on symmetry, count alone or ML feature depth. Prefer breadth when siblings
-   are equally exact.
+8. **Shortest precise path.** When a directory reaches its budget, it is time
+   to divide it up and reorganize the surrounding taxonomy. Review the shared
+   parent and its siblings first, including earlier overflow. Divide on durable,
+   evidence-supported distinctions that improve precision and leave room for
+   future growth. Symmetry, count alone and ML feature depth do not define a
+   distinction. Prefer breadth when siblings are equally exact.
 9. **Criticality never fixes placement.** Fix a misleading classification by
    moving, renaming or tightening the rule, never by demoting it.
 10. **Preserve detection.** Moves keep matchers and effective scope; detection
@@ -236,6 +237,12 @@ signed ownership. Low-tier non-malware name and signer facts do not need an
 arbitrary size range; size and section constraints must reflect the evidence
 and preserve legitimate carriers.
 
+A reviewed non-malware preference-name fact can likewise be useful without
+claiming the artifact is that product. The Plex `TranscoderH264Options` binary
+observation has a validator allowance scoped to its exact trait and literal;
+it reports the preference name's presence. It is not a general exemption for
+unscoped binary signatures, higher criticalities or malware identities.
+
 `component` and `baseline` remain available while composites are evaluated,
 but report finalization may omit unreferenced low-tier findings. Downgraded
 findings are retained; other retention and rescue rules also apply. Check both
@@ -336,10 +343,10 @@ contract as well as running the validator.
 
 | Validator check | Limit |
 |---|---|
-| Rules per directory | **95** traits plus composites is the temporary maximum, summed over its YAML files and criticalities. Enforce the same limit on both the physical directory and the ID namespace: explicitly qualified IDs must not hide either population. A category-specific exception requires a complete relevance audit and explicit approval; filenames create no budgets. |
+| Rules per directory | **120** traits plus composites is the temporary maximum, summed over its YAML files and criticalities. Enforce the same limit on both the physical directory and the ID namespace: explicitly qualified IDs must not hide either population. A category-specific exception requires a complete relevance audit and explicit approval; filenames create no budgets. |
 | Subdirectories | Hard error above 150 immediate subdirectories. Split broad catalogs by a stable function with a tiebreaker. |
 | Depth | Soft warning beyond five levels below the tier (`objectives/a/b/c/d/e/f/x.yaml` warns). Soft warnings fail `make validate`; `cleave validate --soft` only reports them. |
-| Sparse siblings | Soft warning when a parent has ten or more child directories averaging eight or fewer rules per child. Reports child count, total rules, and average rules per child; strict validation fails until the parent is reviewed. |
+| Sparse siblings | For behavior and objective parents, a soft warning when ten or more child directories average eight or fewer rules per child. Reports child count, total rules, and average rules per child; strict validation fails until the parent is reviewed. Named-entity catalogs and metadata are outside this heuristic. |
 | Sibling stems | Soft warning on shared stems. A shared stem is not synonymy (account identity ≠ process accounting); document the boundary or merge. |
 | Platforms | Soft warning at four or more. `platforms: [all]` only in `ALL_PLATFORM_DIRECTORY_ALLOWLIST` (same file). |
 
@@ -362,19 +369,30 @@ OS/type gates, and the profile asserts neither execution nor benign intent.
 An AUR package targets Linux, and source code alone does not
 prove portability.
 
-**At the budget, design for precision and growth.** When a directory reaches
-or exceeds the temporary 100-rule maximum, first seek a durable division into
-more precise, evidence-supported subjects or behaviors, with reasonable room
-for future rules. Review the entire directory and its siblings at the same time:
+**Hitting the cap triggers division and reorganization.** When a directory
+reaches or exceeds the temporary 120-rule maximum, it is time to divide it up
+and reorganize. Treat the cap as a signal to redesign the category's boundaries,
+including its parent and siblings, rather than just trim its count. Establish
+durable divisions into more precise, evidence-supported subjects or behaviors,
+with reasonable room for future rules. Review the entire directory and its
+siblings at the same time:
 check each matcher against its claimed subject, relocate misplaced rules, and
 consolidate equivalent matchers after comparing effective scope and conditions.
+For consolidation, compare the expanded `for:` sets and effective defaults,
+not just the predicate or the apparent meaning of a group name. In particular,
+do not assume `source` includes every script language; cleave's current source
+group excludes Ruby. A canonical rule must cover the union of the original
+scopes before a duplicate is retired. Verify the affected consumers' type
+gates and test each added language explicitly.
 Include broad observations in the design and remove levels that merely restate
 their parent or name the evidence carrier. A split is valuable when its children
 express real distinctions; capacity alone, language, backend, rule form, or an
-`other` bucket cannot justify a category. If the evidence does not support a
-complete division, retain the accurate placement and continue investigating;
-category-specific exceptions require a complete relevance audit and explicit
-user approval. Historical larger-budget reviews are audit evidence, not waivers.
+`other` bucket cannot justify a category. If the full leaf alone does not admit
+a sound division, broaden the redesign to its parent or the next common
+ancestor and redistribute the affected siblings together. Preserve accurate
+placement throughout that redesign. Category-specific exceptions require a
+complete relevance audit and explicit user approval. Historical larger-budget
+reviews are audit evidence, not waivers.
 
 **Review the neighborhood, not just the full leaf.** Inventory the parent's
 children, including undersized siblings, and follow related subjects outside
@@ -385,6 +403,13 @@ that explains each placement. A lower count alone is not evidence of improvement
 The same observed operation must reach the same home regardless of which leaf
 previously had room. Keep genuine protocol or operation refinements distinct;
 merge synonyms and remove divisions whose only explanation is past capacity.
+
+Choose the review root at the lowest common ancestor that contains the
+competing placements; move up another level when the parent's own boundary
+caused the overlap. Existing siblings are not presumed correct: they may hold
+overflow from an earlier budget. Redesign that shared classification before
+adding children to the full leaf, and apply the resulting admission rules to
+every affected sibling, including those below the cap.
 
 ### Splitting a directory
 
@@ -627,13 +652,51 @@ whole expression would miss ordinary code and only recognize quoted source.
 | `communications/socket/{create,connect,bind,listen,accept,send,receive,close,configure}` | Lifecycle and I/O. An operation beats a transport-only fact (`tcp`, `udp`); `dial`, `wrapper-connect` and `state-connect` are not operations. Hand-built HTTP over a socket is `http/direct-socket`. |
 | `communications/tls/{initialize,verify}` | TLS apart from the application protocol: setup; peer verification (`verify/callback`; `verify/disable` only for explicit disabling). Setup is not a connection; a callback or suppressed warning does not disable verification. |
 | `communications/ip/{literal,parse,construct}` | Address syntax, including private ranges and defanged notation. Address text proves no connection. |
-| `communications/url/{parse,construction,host,scheme,path,query,user-info}` | Generic URL structure and endpoints. `http/url` facts that are generic URL syntax may live in sibling facets such as `http-path`, `http-query`, `http-scheme`, `http-encoded`, or in the construction facet's `http` and `url-fragment-http` children; HTTP endpoint, API-route and request-specific facts remain in `http/url`. Under `host`, `name` is for hostname identity or syntax independent of a callback role (domain references, suffixes, dynamic-DNS names, IDN form); `label` records the spelling or shape of individual hostname labels; `oob` is for recognized out-of-band callback services and callback-specific host patterns. When a host is known for its callback role, use `oob`, not `name`. Endpoint recognition alone does not establish contact, exfiltration, or hostile intent; behavior with an established transfer belongs under `objectives/exfiltration/oob`. `user-info` records the authority text before `@`, including hostname-shaped credentials; the destination hostname after `@` belongs under `host`. Neither establishes authentication or contact. Request parameters are `http/query`. A Wayback URL targets the archive, not its inner path. |
+| `communications/url/{parse,construction,host,scheme,path,query,user-info}` | Generic URL structure and endpoints. HTTP scheme spelling does not create a second query taxonomy: query references use `query`, construction uses `construction/query`, and extraction or traversal uses `parse`. The former `http-query` and `http-encoded` leaves are retired; encoding alone does not establish construction or decoding. Other generic HTTP URL observations remain in facets such as `http-path`, `http-scheme`, and the construction facet's `http` and `url-fragment-http` children pending their neighborhood reviews. HTTP endpoint and API-route facts remain in `http/url`; outgoing query-bearing requests use `http/request/query`, and incoming request-parameter access uses `http/server/request`. Under `host`, `name` is for hostname identity or syntax independent of a callback role (domain references, suffixes, dynamic-DNS names, IDN form); `label` records the spelling or shape of individual hostname labels; `oob` is for recognized out-of-band callback services and callback-specific host patterns. When a host is known for its callback role, use `oob`, not `name`. Endpoint recognition alone does not establish contact, exfiltration, or hostile intent; behavior with an established transfer belongs under `objectives/exfiltration/oob`. `user-info` records the authority text before `@`, including hostname-shaped credentials; the destination hostname after `@` belongs under `host`. Neither establishes authentication or contact. A Wayback URL targets the archive, not its inner path. |
 | `communications/telephony/{call,divert}` | Telephone and application-managed VoIP calls, call control, and call-forwarding/USSD observations. Framework imports are metadata; a method name without a receiver does not establish a telecom call. Call forwarding is telephony, not `messaging/divert`. |
 | `communications/ipc/<mechanism>` | Local channels: pipes, named pipes, Unix sockets, D-Bus, XPC, Binder, native-messaging hosts. Descriptor duplication is `process/fd`; shared-memory allocation is `mem`. IRC is a network protocol: `communications/irc` (*legacy: `ipc/irc`*). |
 | `communications/messaging` | Messaging operations by behavior: `send`, `receive`, `contact`, `group`, `configure`, `register`, and `channel` for persistent channel identity, subscription, mute, or attribution. A message sent through a channel remains `send`. `service-reference` records messaging-service names or endpoints without claiming contact or use. Protocol or platform refinements are appropriate when they identify a distinct mechanism; the platform host otherwise belongs under `http/services/<platform>`. |
 | `communications/{proxy,capture,transfer,benchmark,flood}` | Relays (`proxy/socks` for SOCKS, `tunnel` to build an encapsulated channel, `relay` to forward over one), packet capture, protocol-neutral send wording, throughput tests, repeated sends. Attack traffic is an impact claim. |
 | `network/interface` | Interface identity, address, configuration or state, including a distinctive name (`veth`, `docker0`) and MAC addresses. Wi-Fi and Bluetooth radios and WLAN profiles → `hardware/wireless`. |
 | `network/{connections,route,neighbors,dns,forward,qos,tunnel,status,share}` *(legacy: `os/network/*`)* | Connection inventory, routes, ARP caches, resolver configuration, forwarding, traffic policy, OS tunnel interfaces (TUN/TAP, WinTun), connectivity, share mapping. DNS wire traffic stays `communications/dns`; application-level forwarding is `communications/proxy/tunnel`. |
+
+`communications/url/query` references answer **what does the query represent
+or select?** Its children classify the required content, not its scheme,
+language, encoding or original overflow directory:
+
+| Child | Required content and boundary |
+|---|---|
+| `command` | Command-labelled fields, OS command tokens or shell control syntax in query values. These establish neither command execution nor an injection attempt by themselves. |
+| `prompt` | Prompt/instruction or explicitly chat/agent-qualified query fields, including their nearby URL/template context. A bare `q` or `task` field does not establish an AI prompt. |
+| `credential` | Password, token, cookie or session-named query fields. A field name does not establish acquisition or export of an actual secret. |
+| `mailbox` | A mail/eml query value containing mailbox-shaped content. An at-sign does not establish a valid address, harvested mailbox or transmitted message. |
+| `profile` | Explicit visitor/product/device properties such as user ID, brand/manufacturer, platform, device model, hardware ID, IP address or country. Brand/manufacturer fields do not necessarily identify the host device; these references do not prove fingerprinting or a transmitted report. |
+| `tracking` | Attribution and event/stage fields, including UTM and affiliate markers. Stage labels naming credentials or wallets do not establish collection of those items. |
+| `selection` | Request options, callback/response selection, task or poll actions, pagination/chunk controls, recurrence and status fields. No selected action is claimed to have run. |
+| `endpoint` | A query value containing another URL, including an encoded URL or executable/image target. Neither a redirect nor retrieval is established. |
+| `structure` | Query syntax or content whose purpose remains unspecified: untyped `q`, `type/data`, alphanumeric UUID-labelled values, UID-array notation, placeholder values, generic percent encoding, or mixed command/session/token alternatives with no common narrower subject. This is a neutral fallback after interpreting the required evidence, never a home chosen for spare capacity. |
+
+Operation evidence takes precedence over these reference classes: `urlencode`,
+URLSearchParams construction/set/append and query-value interpolation belong
+in `url/construction/query`; query extraction and bound traversal belong in
+`url/parse`. A generic `params.get('code')` spelling identifies a keyed lookup
+but does not identify URLSearchParams, OAuth or VS Code. Preserve that limited
+observation in source-call metadata until the surrounding matcher establishes
+the resource. A computed query-object method with a callback does not establish
+iteration when the method is unidentified.
+
+For a reference spanning content classes, use the required semantic subject:
+a prompt near a nested URL remains `prompt`, while the independent nested-URL
+atom is `endpoint`. A mixed OR over command, session and token keys cannot claim
+that every alternative is a credential; its shared fact is `structure`. Do not
+copy broad observations into each narrower child. Proximity establishes context,
+not that one query's prompt contains another query's URL or that an encoded
+value came from a nearby command. A transmitted query with a bound source value
+records that operation; a theft objective additionally needs evidence supporting
+the acquisition/export claim. Product-specific configuration signatures belong
+with the named program in `well-known/`, while generic property names such as
+`unique` or `ttl` remain source metadata. Named service endpoints retain their
+service homes; generic query fields are not program identity.
 
 A messaging account-deletion request establishes the requested operation, not
 its success or authorization. A vault glob or method-name string alone does
@@ -811,6 +874,58 @@ A keyed XOR cipher is `crypto/symmetric/xor`; XOR scrambling is
 | `data/stream/{read,write,transfer,buffer,configure,record}` | Generic stream access and data movement, buffering, readiness/blocking settings and recording. File or peer-specific operations retain `fs` or `communications`; explicit process standard-stream operations use `process/stdio`. A method named `write` alone does not identify a stream. |
 | `data/document/<operation>` | Manipulating document properties, embedded objects, spreadsheet cells and document opening. Document event callbacks are `os/application/hook`; the scanned document's own format and macro counts remain `metadata/document`. |
 | `data/{embedded,llm}/<operation>` | Embedded resources; model inference, sessions, permission policy and tool calls. An agent permission setting or tool declaration does not establish child-process creation. Prompt text that overrides policy is `objectives/evasion/security-bypass/llm`. |
+
+`data/control-flow/loop` answers **what controls repetition?** Its children are
+`unconditional` (no header continuation test, or a backward unconditional jump),
+`counted` (a numeric range, bound or stride), `collection` (element/key traversal
+or a recognized iteration callback), and `conditional` (another continuation
+condition). An unconditional header does not prove the body cannot break or
+exit; a numeric bound does not prove progress or termination. When multiple
+properties appear, an explicitly unconditional header wins, then an explicit
+numeric counter, then collection traversal, then another condition. Each rule
+is placed once according to its required evidence.
+
+Review the former `iteration`, `status` and `jvm-loop-method` populations with
+these children. AWK `while (1)` belongs with unconditional loops; a foreach over
+users belongs with collection traversal, regardless of its original leaf. A
+bare label or GOTO does not prove repetition: labels are naming metadata and
+GOTO is `data/control-flow/transfer`; a loop requires a backward edge. A method
+named `repeat`, `retry` or `keepAlive` with no established receiver is naming
+metadata. A `range(...)` call without a loop constructs a sequence; a bare
+`.iter()` spelling with an unidentified receiver is a method-name observation.
+Loop-clause words that do not establish the continuation behavior remain
+source-syntax metadata. Try-protected loops belong with `error-handling` when
+that protection is the required distinction; a switch in a loop is selector
+dispatch. The `loop` prefix denotes repetition evidence, so prefix consumers
+must be reviewed when misplaced labels or method names leave this family.
+
+`data/control-flow/branch` requires a choice of execution path or value. It
+is not a general home for every operation appearing in a condition. A buffer
+comparison stays `mem/compare`, a port test stays `communications/socket/port`,
+and an early return stays `data/control-flow/return`. JSON decoding, grouping,
+frequency ranking, collection filtering and miner startup keep their own
+subjects even when they occur in an `if` or `switch`. A response-header switch
+that selects a handler is selector dispatch; a switch with no callee evidence
+is a branch. Looking up a command-keyed map entry alone does not prove that
+entry was invoked.
+
+Membership testing without a required control transfer belongs in
+`data/collection/membership`; constructing a set is `collection/create` and
+intersecting or pruning its members is `collection/filter`. `collection/group`
+groups elements by a field; `collection/frequency` counts or ranks occurrences;
+`collection/measure` measures cardinality. Generic frequency operations do not
+require an LLM or a voting objective. A model-specific decision context stays
+`data/llm/decision`, with the description distinguishing co-occurrence from a
+bound model-to-action flow.
+
+The former `control-flow/analysis` bucket is not an admission category. File
+syntax density is metadata, computed calls are computed dispatch, caught-error
+processing is error handling, and a bare `iter`/`for_loop` name is naming
+metadata. Mixed OR-profiles that include names, traversal APIs and actual loops
+must describe their shared source indications; they cannot assert that every
+alternative establishes iteration. Similarly, fetched data, membership tests
+and host queries without binding evidence do not prove remote authorization
+or gated execution.
 
 YAML `load`/`Unmarshal` belong in `data/parse/yaml`; `dump` belongs in
 `data/serialize/yaml`. A format conversion follows its required output:
@@ -2026,9 +2141,12 @@ embedded file images in `binary/layout/embedded`.
 
 ## Known entities: `well-known/`
 
-An identity catalog, not a second behavior tree: a directory here says the
-analyzed artifact **is** that named thing. Depth is usually
-class/function/entity; skip the function level when it adds nothing.
+A catalog of recognized software, projects and malware families, not a second
+behavior tree. Depth is usually class/function/entity; skip the function level
+when it adds nothing. Distinguish an artifact identity, a program-specific
+reference or fragment, and a behavior required for a named variant. A directory
+name does not turn every observation beneath it into proof that the scanned
+artifact is that product, an implant, or an attack.
 
 **Entry bar.** The entity is known by name outside this repository — at least
 one in a thousand developers or security engineers would recognize it — and its
@@ -2049,6 +2167,47 @@ filename-only rule is at most `notable`, and its description identifies the name
 as the observation. An incomplete fragment may be `component`. A filename-only
 rule does not need an arbitrary file-size bound; content-based binary identity
 rules still require a meaningful size bound.
+
+**A framework is not its payload.** Offensive C2 platforms have a shared
+catalog at `tool/offensive/command-and-control/<project>`: operator consoles,
+servers, build recipes and project-specific interfaces belong with the project.
+Remote-administration products whose ordinary purpose is administration retain
+`dual-use/remote-admin`; proxy/tunnel products retain `dual-use/tunnel` even
+when used in an offensive workflow. Libraries and ordinary dependency imports
+retain their library or import homes. Do not classify every security utility
+as a framework: scanners, process monitors and anti-analysis test harnesses keep
+their own function and named-entity homes. The old mixed `offensive/frameworks`
+leaf is retired.
+
+An implant claim requires implant-specific evidence. A Sliver operator client
+type, license display, threat-intelligence monitor or WireGuard transport is
+project functionality, not an implant signature or a hostile operation. A
+module path next to a getter named `GetImplantBuilds` does not establish an
+implant. Likewise, generic `NTLM HASH`, session-handler names and numeric `-S`
+options do not identify SMBExec, Sliver or Nmap on their own. Retain the most
+specific supported operation or name observation outside the entity catalog;
+reference it from a discriminating project fingerprint when useful. Do not
+alter criticality to make a placement legal. Independently correct a verdict
+that labels ordinary license display or a scanner's debug-module identity as
+hostile; test the intended operation and real payload evidence separately.
+
+Audit every path through an identity composite, not just its strongest leg.
+A `needs: 2` rule over two named-project markers and two generic fragments must
+not identify the project from the generic pair alone. Require a discriminating
+project alternative as well, or a genuinely distinctive configuration/ABI
+fingerprint. A common name near HTTP/2 and MIME/JWT markers is not automatically
+a C2 family. Co-occurring process creation and a scanner reference do not bind
+that scanner to the launched command. Descriptions must preserve these limits.
+
+Defensive tools that audit AI-agent configuration, skills, permissions or MCP
+interfaces share `tool/detection/agent/<project>`. This groups tools by what
+they audit, not by a language, package manager or generic scanner class name.
+The `agentskillmap` and `skillmap` distribution observations identify one
+project and share its canonical home. A reference to an old subset must not
+silently expand to every observation in the merged directory: preserve the
+selected cohort, including its file types and suppression semantics. A generic
+`vulnerable-configs` path is a path observation; it identifies no scanner and
+cannot independently establish a known-good package or suppress execution.
 
 **The first class that fits wins.** (`malware/supply-chain` is legacy: delivery
 does not choose a family's identity.)
@@ -2208,7 +2367,7 @@ Resolve each in the migration manifest before moving the affected rules.
 
 | Checkpoint | Required resolution |
 |---|---|
-| Capacity for broad leaves | The temporary maximum is 100 rules; any category-specific exception requires a complete relevance audit and explicit user approval. At the budget, seek durable, precise subdivisions with room to grow, while auditing all rules, parents and siblings. Document the population and consumers, place broad observations accurately, and do not invent a sibling or `other` bucket to satisfy the count. |
+| Capacity for broad leaves | The temporary maximum is 120 rules; any category-specific exception requires a complete relevance audit and explicit user approval. At the cap, divide and reorganize the category and its neighborhood into durable, precise subdivisions with room to grow, while auditing all rules, parents and siblings. Document the population and consumers, place broad observations accurately, and do not invent a sibling or `other` bucket to satisfy the count. |
 | Level-3 branches | Name the children, their single axis, precedence and an incomplete-evidence example before migrating. |
 | Broad staging profiles | Staging rules that fit no operation need a defined home; neither dropping the claim nor calling it activation is acceptable. |
 | Retained access | Choose a home for created accounts and authorized SSH keys, now in `persistence/login/{account,ssh}`. |

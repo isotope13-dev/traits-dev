@@ -88,7 +88,7 @@ func send(endpoint string) {
         require("security-report.go", *check_terms)
         reject("ordinary-log.go", *check_terms,
                "metadata/package/documentation/security-testing::security-check-report-vocabulary")
-        sliver_identity = "well-known/malware/rat/sliver::sliver-operator-wireguard-source"
+        sliver_identity = "well-known/tool/offensive/command-and-control/sliver::sliver-operator-wireguard-source"
         sliver_channel = "objectives/command-and-control/channel/transport::sliver-operator-wireguard-rpc-channel"
         require("operator-client.go", sliver_identity, sliver_channel)
         reject("ordinary-wireguard.go", sliver_identity, sliver_channel)

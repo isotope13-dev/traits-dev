@@ -133,7 +133,7 @@ jobs:
         require('postgres.sh', 'micro-behaviors/os/service/stop::postgresql-stop-command')
         require('sshd.sh', 'micro-behaviors/communications/ssh/server::permit-root-login-reference')
         require('advisory.md', 'metadata/package/documentation/security-advisory::glibc-tunables-cve-reference')
-        rnd = 'micro-behaviors/communications/http/query::rnd-query-parameter'
+        rnd = 'micro-behaviors/communications/url/query/structure::rnd-query-parameter'
         require('rnd.js', rnd)
         reject('tr-fragment.js', rnd)
         require('node-options.js', 'micro-behaviors/process/create/hidden::node-windowshide-true-option')

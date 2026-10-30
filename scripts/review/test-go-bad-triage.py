@@ -37,7 +37,7 @@ def main():
     cases={}
     originals=['rpc-network.go','operator-licenses.go','operator-monitor-start.go','operator-monitor-stop.go']
     for name in originals:
-        source=fixture('hostile',name)
+        source=fixture('hostile' if name=='rpc-network.go' else 'notable',name)
         cases[name]=source
         cases['renamed-'+name]=rename(source)
         cases['documented-'+name]=documented(source)
@@ -82,13 +82,12 @@ func use(client *console.SliverClient) {}
         def ids(name):
             return {t['id'] for t in files[name].get('traits',[])}
 
-        family='well-known/malware/rat/sliver::'
-        network={family+'sliver-network-rpc-server-source',
-                 'objectives/discovery/network/interface::sliver-remote-ifconfig-tasking',
+        family='well-known/tool/offensive/command-and-control/sliver::'
+        network={'objectives/discovery/network/interface::sliver-remote-ifconfig-tasking',
                  'objectives/discovery/network/enumeration::sliver-remote-netstat-tasking'}
         allowed_high={}
         for name in originals:
-            wanted=network if name=='rpc-network.go' else {family+('sliver-operator-license-command-source' if name=='operator-licenses.go' else 'sliver-operator-monitor-command-source')}
+            wanted=network if name=='rpc-network.go' else set()
             for prefix in ['','renamed-']:
                 allowed_high[prefix+name]=wanted
         json_trait='objectives/execution/exploit/command-injection::json-address-field-shell-substitution'

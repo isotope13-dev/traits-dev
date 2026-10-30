@@ -117,9 +117,9 @@ func (localChecker) CheckScreen() {}
         def reject(name, *unwanted):
             assert not (set(unwanted) & ids(name)), (name, "unexpected", set(unwanted) & ids(name))
 
-        identity = "well-known/malware/rat/sliver::sliver-operator-wireguard-source"
+        identity = "well-known/tool/offensive/command-and-control/sliver::sliver-operator-wireguard-source"
         channel = "objectives/command-and-control/channel/transport::sliver-operator-wireguard-rpc-channel"
-        signature = "well-known/malware/rat/sliver::operator-rpc-client-return-type"
+        signature = "well-known/tool/offensive/command-and-control/sliver::operator-rpc-client-return-type"
         for name in ("sliver.go", "renamed.go"):
             require(name, identity, channel, signature)
             high = [t for t in files[name].get("traits", []) if t["crit"] >= 4]

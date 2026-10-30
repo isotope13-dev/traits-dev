@@ -20,7 +20,7 @@ def main():
         return (root / 'testdata' / level / 'go-bad-improve' / name).read_text()
 
     def previous(name):
-        return (root / 'testdata/hostile/go-bad-review' / name).read_text()
+        return (root / ('testdata/hostile/go-bad-review' if name == 'rpc-network.go' else 'testdata/notable/go-bad-review') / name).read_text()
 
     def documented(source):
         return 'package notes\n' + '\n'.join('// ' + line for line in source.splitlines()) + '\n'
@@ -36,7 +36,7 @@ def main():
 
     network = previous('rpc-network.go')
     license = previous('operator-licenses.go')
-    monitor = fixture('hostile', 'monitor-assignment.go')
+    monitor = fixture('notable', 'monitor-assignment.go')
     response = fixture('notable', 'response-factory.go')
     cases = {
         'network-if.go': fixture('hostile', 'network-if-init.go'),
@@ -50,7 +50,7 @@ def main():
         'monitor-if.go': monitor.replace('var err error\n    _, err = con.Rpc.MonitorStop(context.Background(), &commonpb.Empty{})\n    _ = err', 'if _, err := con.Rpc.MonitorStop(context.Background(), &commonpb.Empty{}); err != nil { return }'),
         'monitor-expression.go': monitor.replace('var err error\n    _, err = con.Rpc.MonitorStop(context.Background(), &commonpb.Empty{})\n    _ = err', 'con.Rpc.MonitorStart(context.Background(), &commonpb.Empty{})'),
         'monitor-return.go': monitor.replace('args []string) {', 'args []string) (any, error) {').replace('var err error\n    _, err = con.Rpc.MonitorStop(context.Background(), &commonpb.Empty{})\n    _ = err', 'return con.Rpc.MonitorStop(context.Background(), &commonpb.Empty{})'),
-        'license-var.go': fixture('hostile', 'license-var.go'),
+        'license-var.go': fixture('notable', 'license-var.go'),
         'license-assignment.go': license.replace('licensesCmd :=', 'var licensesCmd *cobra.Command\n\tlicensesCmd ='),
         'license-return.go': license.replace('[]*cobra.Command {', '*cobra.Command {').replace('licensesCmd :=', 'return').replace('\n\treturn []*cobra.Command{licensesCmd}', ''),
         'response-return.go': response,
@@ -86,14 +86,13 @@ def main():
         reports = [json.loads(line) for line in proc.stdout.split('\n') if line]
         files = {Path(f['path']).name: f for r in reports for f in r['files']}
         assert files.keys() == cases.keys(), (files.keys(), cases.keys())
-        family = 'well-known/malware/rat/sliver::'
+        family = 'well-known/tool/offensive/command-and-control/sliver::'
         expected = {}
         for names, wanted in [
-            (network_names, {family + 'sliver-network-rpc-server-source',
-                             'objectives/discovery/network/interface::sliver-remote-ifconfig-tasking',
+            (network_names, {'objectives/discovery/network/interface::sliver-remote-ifconfig-tasking',
                              'objectives/discovery/network/enumeration::sliver-remote-netstat-tasking'}),
-            (monitor_names, {family + 'sliver-operator-monitor-command-source'}),
-            (license_names, {family + 'sliver-operator-license-command-source'}),
+            (monitor_names, set()),
+            (license_names, set()),
         ]:
             for name in names:
                 expected[name] = expected['alias-' + name] = wanted
