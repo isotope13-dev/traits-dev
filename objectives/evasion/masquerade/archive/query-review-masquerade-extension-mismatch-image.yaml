@@ -1,0 +1,70 @@
+defaults:
+  platforms:
+  - windows
+  - linux
+  - macos
+  crit: suspicious
+  conf: 0.9
+  attack: T1036.008
+
+traits:
+  - id: archive-content-as-audio-extension
+    desc: Archive content under an audio extension
+    crit: notable
+    conf: 0.95
+    for: [zip, tar, gz, bz2, xz, zst, jar]
+    if:
+      type: metrics
+      field: consistency.extension_content_mismatch.archive_as_audio
+      min: 1
+
+composite_rules:
+  - id: executable-archive-as-image
+    desc: Executable archive under an image extension
+    crit: suspicious
+    conf: 0.96
+    platforms: [android, unix, windows]
+    for: [zip, tar, jar]
+    scope: leaf
+    all:
+      - id: metadata/file/extension/mismatch::archive-content-as-image-extension
+      - id: metadata/archive/layout::archive-contains-executable-member
+    unless:
+      # Native-library asset packs travel under distributor-chosen names
+      # (ABI-split `assets/*.so` protector libraries fetched as `cfg.jpg`):
+      # the packed members are loadable libraries, not a runnable stage.
+      - id: metadata/archive/member/path::assets-native-library-member
+
+  - id: archive-disguised-as-media-extension
+    desc: Archive disguised as a media asset
+    crit: notable
+    conf: 0.95
+    any:
+      - id: metadata/file/extension/mismatch::archive-content-as-image-extension
+      - id: objectives/evasion/masquerade/archive::archive-content-as-audio-extension
+
+  # The residue cases: content sniffing never identified the payload, so no
+  # group transition was recorded and every rule above is blind. This happens
+  # when the real magic is pushed out of reach — hundreds of leading spaces
+  # ahead of a PE, or a base64 wrapper — leaving the extension to decide the
+  # type. The container walker then finds no container signature and reports
+  # what the bytes actually are in `media.content_kind`, which is the only
+  # place this is visible.
+  - id: media-named-file-is-archive
+    desc: Padded archive under a media name
+    crit: suspicious
+    conf: 0.95
+    attack: "T1036.008,T1027,T1027.001"
+    for: [media]
+    all:
+      - id: metadata/file/format/media::media-content-is-archive
+    unless:
+      - id: metadata/file/format/media::media-container-recognized
+      - id: metadata/file/format/media::png-signature-missing-cr
+      # Decoder suites ship multi-megabyte random bytes as corrupted.mp3.
+      # A coincidental gzip magic in that noise is not a padded archive.
+      - id: metadata/package/testing/presence/harness::media-asset-test-path
+
+  # Squiblydoo-style COM scriptlets are delivered under image names so a
+  # media-only scanner never parses the JScript. The extension wins file
+  # type, so script traits never see `<scriptlet>` or the ActiveX shell.

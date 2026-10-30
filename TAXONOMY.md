@@ -157,8 +157,12 @@ For composites:
 
 - **The result owns the composite.** Trigger, carrier, transport, encoding and
   language are referenced facts, not homes.
-- **Co-occurrence is not data flow.** Unless the rule binds source to sink
-  (same value, path or handle), describe it as co-occurrence.
+- **Infer intent from the whole evidence.** Independent, specific clues can
+  support the most likely objective without a proven data flow. For example,
+  browser credential SQL, credential decryption and a webhook together support
+  a credential-stealer classification. Describe the inference and matched
+  evidence without claiming a completed transfer or a binding the rule does not
+  establish. Generic tokens or unrelated operations alone do not suffice.
 - **One result per composite.** Split unrelated results; keep a joint rule only
   when the relationship is the observation. There is no `misc/`, `combined/` or
   `behavioral/` overflow.
@@ -343,7 +347,7 @@ contract as well as running the validator.
 
 | Validator check | Limit |
 |---|---|
-| Rules per directory | **95** traits plus composites is the temporary maximum, summed over its YAML files and criticalities. Enforce the same limit on both the physical directory and the ID namespace: explicitly qualified IDs must not hide either population. A category-specific exception requires a complete relevance audit and explicit approval; filenames create no budgets. |
+| Rules per directory | **93** traits plus composites is the temporary maximum, summed over its YAML files and criticalities. Enforce the same limit on both the physical directory and the ID namespace: explicitly qualified IDs must not hide either population. A category-specific exception requires a complete relevance audit and explicit approval; filenames create no budgets. |
 | Subdirectories | Hard error above 150 immediate subdirectories. Split broad catalogs by a stable function with a tiebreaker. |
 | Depth | Soft warning beyond five levels below the tier (`objectives/a/b/c/d/e/f/x.yaml` warns). Soft warnings fail `make validate`; `cleave validate --soft` only reports them. |
 | Sparse siblings | For behavior and objective parents, a soft warning when ten or more child directories average eight or fewer rules per child. Reports child count, total rules, and average rules per child; strict validation fails until the parent is reviewed. Named-entity catalogs and metadata are outside this heuristic. |
@@ -370,7 +374,7 @@ An AUR package targets Linux, and source code alone does not
 prove portability.
 
 **Hitting the cap triggers division and reorganization.** When a directory
-reaches or exceeds the temporary 95-rule maximum, it is time to divide it up
+reaches or exceeds the temporary 93-rule maximum, it is time to divide it up
 and reorganize. Treat the cap as a signal to redesign the category's boundaries,
 including its parent and siblings, rather than just trim its count. Establish
 durable divisions into more precise, evidence-supported subjects or behaviors,
@@ -1390,6 +1394,11 @@ or stream reference alone does not establish activation or a linked payload.
 and configuration co-occurrences. A symbol, import or generic `spawn` call by
 itself does not prove that the named process API was called.
 
+`metadata/file/profile/network-process` records co-occurring network and process
+evidence when their data flow is not established. Its `network` sibling holds
+general network profiles. The shared word names a cross-cutting boundary, so
+the sibling-name warning has a specific exception.
+
 `metadata/file/profile/rpc` records protocol fields and RPC API references;
 `wallet-rpc` records wallet method names and their co-occurrence. Such names
 do not by themselves establish a request, an account access or a signing flow.
@@ -2202,6 +2211,13 @@ fingerprint. A common name near HTTP/2 and MIME/JWT markers is not automatically
 a C2 family. Co-occurring process creation and a scanner reference do not bind
 that scanner to the launched command. Descriptions must preserve these limits.
 
+Scanner evidence is organized by what it examines: threat signatures, secrets,
+web content, vulnerabilities, policy, and collected evidence have distinct
+`metadata/file/profile/` homes. Generic identifiers and prose remain neutral
+naming or vocabulary observations. Only evidence that identifies a particular
+product belongs under that product in `well-known/tool/detection/`; preserve
+reviewed exception coverage explicitly when splitting a former shared category.
+
 Defensive tools that audit AI-agent configuration, skills, permissions or MCP
 interfaces share `tool/detection/agent/<project>`. This groups tools by what
 they audit, not by a language, package manager or generic scanner class name.
@@ -2370,7 +2386,7 @@ Resolve each in the migration manifest before moving the affected rules.
 
 | Checkpoint | Required resolution |
 |---|---|
-| Capacity for broad leaves | The temporary maximum is 95 rules; any category-specific exception requires a complete relevance audit and explicit user approval. At the cap, divide and reorganize the category and its neighborhood into durable, precise subdivisions with room to grow, while auditing all rules, parents and siblings. Document the population and consumers, place broad observations accurately, and do not invent a sibling or `other` bucket to satisfy the count. |
+| Capacity for broad leaves | The temporary maximum is 93 rules; any category-specific exception requires a complete relevance audit and explicit user approval. At the cap, divide and reorganize the category and its neighborhood into durable, precise subdivisions with room to grow, while auditing all rules, parents and siblings. Document the population and consumers, place broad observations accurately, and do not invent a sibling or `other` bucket to satisfy the count. |
 | Level-3 branches | Name the children, their single axis, precedence and an incomplete-evidence example before migrating. |
 | Broad staging profiles | Staging rules that fit no operation need a defined home; neither dropping the claim nor calling it activation is acceptable. |
 | Retained access | Choose a home for created accounts and authorized SSH keys, now in `persistence/login/{account,ssh}`. |
