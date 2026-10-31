@@ -1,0 +1,52 @@
+defaults:
+  platforms: [windows]
+  for: [batch]
+  attack: T1499
+
+traits:
+  # Compare the actual label and branch operand, including non-ASCII bytes.
+  # The batch parser can lose these labels. A label, START and GOTO merely
+  # occurring in the same file would not establish a repeated launch.
+  # This deliberately covers only a simple, reachable entry-path cycle:
+  # optional ECHO OFF, label, one bare START target, GOTO, trailing whitespace.
+  # No variables, shell operators, START switches, guards or waits are allowed.
+  - id: batch-byte-bound-start-cycle
+    desc: Entry START cycle with byte-identical labels
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule batch_byte_bound_start_cycle {
+          strings:
+            $head = /^[ \t\r\n]{0,128}(@?echo[ \t]+off[ \t]*\r?\n)?[ \t]{0,16}:/ nocase
+            $label = /:[A-Za-z0-9_.\x80-\xff-]{1,64}/
+            $body = /[ \t]{0,16}\r?\n[ \t]{0,16}@?start[ \t]+[A-Za-z0-9_.\\:-]{1,128}\.(bat|cmd|exe|com)[ \t]{0,16}\r?\n[ \t]{0,16}@?goto[ \t]+:?/ nocase
+            $return = /goto[ \t]+:eof([ \t\r\n]|$)/ nocase
+          condition:
+            $head at 0 and $label and $body and not $return and
+            @label == !head - 1 and
+            @body == @label + !label and
+            filesize >= @body + !body + !label - 1 and
+            filesize <= @body + !body + !label - 1 + 128 and
+            for all b in (1..!label - 1) : (
+              uint8(@label + b) == uint8(@body + !body + b - 1)
+            ) and
+            (filesize == @body + !body + !label - 1 or
+              for all t in (@body + !body + !label - 1..filesize - 1) : (
+                uint8(t) == 32 or uint8(t) == 9 or
+                uint8(t) == 13 or uint8(t) == 10
+              )
+            )
+        }
+
+composite_rules:
+  - id: batch-entry-start-cycle-exhaustion
+    desc: Unpaced detached launches in a bound GOTO cycle
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: batch-byte-bound-start-cycle
+    any:
+      - id: metadata/lang/source/syntax/command/control::batch-start-command-call
+      - id: metadata/lang/source/syntax/command/control::batch-echo-suppressed-start-command-call
