@@ -499,6 +499,7 @@ traits:
   # only exist encrypted. The YARA legs bind the encoded bytes to that
   # same stub key instead of accepting an arbitrary XOR match.
   - id: dos-xor-encrypted-find-first-code
+    for: [dos_com, data, text]
     desc: XOR-encrypted DOS find-first sequence
     crit: notable
     conf: 0.98
@@ -507,21 +508,32 @@ traits:
       source: |
         rule dos_xor_encrypted_find_first_code {
           meta:
-            filetypes = "dos_com,data"
+            filetypes = "dos_com,data,text"
           strings:
             $stub = { BE ?? ?? 80 34 ?? 46 E2 ?? }
             $find = "\xb4\x4e\xba" xor(1-255)
+            // Memory-keyed loop: COM entry CALL reaches the BX decoder at
+            // 0x24, revealing DOS EXE find-first under the key at 0108h.
+            $memory_entry = { E8 20 00 }
+            $memory_loop = { BB 3A 01 8A 27 90 32 26 08 01 88 27 90 43 81 FB 34 16 90 7E EE C3 }
+            $memory_find = "\xb9\x27\x00\xba\x3a\x01\xb4\x4e\xcd\x21" xor(1-255)
           condition:
-            $stub at 0 and
-            for any i in (1..#find) : (
-              @find[i] > @stub[1] and
-              (uint8(@find[i]) ^ 0xb4) == uint8(@stub[1] + 5)
-            )
+            ($stub at 0 and
+             for any i in (1..#find) : (
+               @find[i] > @stub[1] and
+               (uint8(@find[i]) ^ 0xb4) == uint8(@stub[1] + 5)
+             )) or
+            ($memory_entry at 1 and $memory_loop at 0x24 and
+             for any i in (1..#memory_find) : (
+               @memory_find[i] > 0x24 and
+               (uint8(@memory_find[i]) ^ 0xb9) == uint8(8)
+             ))
         }
     unless:
       - id: well-known/tool/reverse-engineering/pedump::pedump-packer-marker
 
   - id: dos-xor-encrypted-open-write-code
+    for: [dos_com, data, text]
     desc: XOR-encrypted DOS open-write-retime sequence
     crit: notable
     conf: 0.98
@@ -530,16 +542,34 @@ traits:
       source: |
         rule dos_xor_encrypted_open_write_code {
           meta:
-            filetypes = "dos_com,data"
+            filetypes = "dos_com,data,text"
           strings:
             $stub = { BE ?? ?? 80 34 ?? 46 E2 ?? }
             $write = "\xba\x9e\x00\xb8\x02\x3d\xcd\x21\xb7\x40\x93\xba\x00\x03\xb1\x52\xcd\x21\xb8\x01\x57\x33\xc9\xcd\x21" xor(1-255)
+            // Alternate memory-key body clears candidate attributes, opens
+            // the DTA match, and calls the resident image writer at offset 9.
+            $memory_entry = { E8 20 00 }
+            $memory_loop = { BB 3A 01 8A 27 90 32 26 08 01 88 27 90 43 81 FB 34 16 90 7E EE C3 }
+            $memory_open = "\xba\x9e\x00\xb9\x00\x00\xb0\x01\xb4\x43\xcd\x21\xb0\x02\xb4\x3d\xcd\x21" xor(1-255)
+            $memory_call = "\xe8\xe4\xfe" xor(1-255)
+            $memory_writer = { 8B 1E 5F 01 53 E8 13 00 90 5B B9 FA 14 90 BA 00 01 B4 40 90 CD 21 }
           condition:
-            $stub at 0 and
-            for any i in (1..#write) : (
-              @write[i] > @stub[1] and
-              (uint8(@write[i]) ^ 0xba) == uint8(@stub[1] + 5)
-            )
+            ($stub at 0 and
+             for any i in (1..#write) : (
+               @write[i] > @stub[1] and
+               (uint8(@write[i]) ^ 0xba) == uint8(@stub[1] + 5)
+             )) or
+            ($memory_entry at 1 and $memory_loop at 0x24 and $memory_writer at 9 and
+             for any o in (1..#memory_open) : (
+               @memory_open[o] > 0x24 and
+               (uint8(@memory_open[o]) ^ 0xba) == uint8(8) and
+               for any c in (1..#memory_call) : (
+                 (uint8(@memory_call[c]) ^ 0xe8) == uint8(8) and
+                 @memory_call[c] > @memory_open[o] and
+                 (uint16(@memory_call[c] + 1) ^ (uint8(8) * 0x0101)) == 0xfee4 and
+                 @memory_call[c] + 3 - 0x11c == 9
+               )
+             ))
         }
     unless:
       - id: well-known/tool/reverse-engineering/pedump::pedump-packer-marker
@@ -803,6 +833,7 @@ composite_rules:
       - id: micro-behaviors/fs/search/command::dos-int21-find-first
 
   - id: objectives/impact/infect/binary/dos/overwrite::dos-com-xor-encrypted-overwriter
+    for: [dos_com, data, text]
     desc: XOR-encrypted DOS COM overwrites found files
     crit: hostile
     conf: 0.98
