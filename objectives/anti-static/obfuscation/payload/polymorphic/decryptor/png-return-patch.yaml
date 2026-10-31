@@ -1,0 +1,38 @@
+defaults:
+  platforms: [windows]
+  for: [png]
+traits:
+  # The STG3 stage starts with CALL to a POP RDX patcher. Repeated arithmetic
+  # writes through that return address repair the next decoder before JMP RDX.
+  # This is the recovery mechanism, not proof of the decoded payload's effects.
+  - id: png-stage-return-target-patcher
+    desc: Embedded x64 return-target patching decoder
+    crit: suspicious
+    conf: 0.97
+    attack: T1027,T1140
+    if:
+      type: yara
+      source: |
+        rule png_stage_return_target_patcher {
+          strings:
+            $patcher = {
+              5A [0-16] 81 (42|72) ?? ?? ?? ?? ??
+              [0-32] 81 (42|72) ?? ?? ?? ?? ??
+              [0-32] 81 (42|72) ?? ?? ?? ?? ??
+              [0-32] 81 (42|72) ?? ?? ?? ?? ?? [0-96] FF E2
+            }
+          condition:
+            uint32be(0) == 0x89504e47 and filesize > 100 and
+            uint32be(filesize-4) == 0x53544733 and
+            uint32(filesize-8) == 4 and
+            uint32(filesize-20) < filesize-36 and
+            for any t in (filesize-36-uint32(filesize-20)) : (
+              uint32(t) > 20 and uint32(t)+uint32(t+4) < t and
+              uint8(uint32(t)) == 0xe8 and
+              for any p in (1..#patcher) : (
+                @patcher[p] == uint32(t)+5+int32(uint32(t)+1) and
+                @patcher[p] > uint32(t) and
+                @patcher[p]+!patcher[p] <= uint32(t)+uint32(t+4)
+              )
+            )
+        }
