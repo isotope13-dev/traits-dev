@@ -1,0 +1,75 @@
+# A single open handle supplies the prefix read, EOF-relative displacement,
+# body writes, and prefix rewrite. Relate buffers and counts so disconnected
+# service fragments cannot satisfy the observation. INT operands may be
+# aliased on disk and restored to INT21 by startup code.
+defaults:
+  for: [dos_com, static-lib, data]
+  platforms: [windows, unix]
+  size_max: 65536
+
+traits:
+  - id: dos-xor-buffer-append-prefix-rewrite
+    desc: DOS EXEC appends and rewrites prefix
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule dos_xor_buffer_append_prefix_rewrite {
+          meta:
+            filetypes = "dos_com,static-lib,data"
+          strings:
+            $exec = { 3D 00 4B 74 ?? }
+            $bridge = { EB ?? }
+            $call = { 50 53 51 52 1E 06 E8 ?? ?? 07 1F 5A 59 5B 58 EB ?? }
+            $open = { B8 02 3D CD ?? 72 ?? 8B D8 0E 1F B8 00 42 33 C9 33 D2 CD ?? B4 3F B9 05 00 BA ?? ?? CD ?? }
+            $check = { 2E 81 3E ?? ?? 4D 5A 74 ?? 2E 81 3E ?? ?? ?? ?? 74 ?? }
+            $eof = { B8 02 42 33 C9 33 D2 CD ?? 72 ?? 8B C8 83 E9 03 83 C1 04 2E 89 0E ?? ?? }
+            $copy = { BE ?? ?? BF ?? ?? B9 ?? ?? 2E 8A 04 3C CD 74 ?? 2E 88 05 46 47 E2 ?? EB ?? 2E 88 05 47 46 49 2E 8A 04 3C 21 75 ?? 2E 88 35 EB ?? }
+            $write = { B9 ?? ?? 2E 8A 36 ?? ?? BE ?? ?? 2E 8A 24 32 E6 2E 88 24 46 E2 F5 B9 ?? ?? B4 40 BA ?? ?? CD ?? 72 ?? B9 ?? ?? B4 40 BA ?? ?? CD ?? 72 ?? B8 00 42 33 C9 33 D2 CD ?? B9 05 00 B4 40 BA ?? ?? CD ?? }
+          condition:
+            for any o in (1..#open) : (
+              for any e in (1..#exec) : (
+                for any b in (1..#bridge) : (
+                  uint8(@exec[e]+4) < 128 and
+                  @exec[e]+5+uint8(@exec[e]+4) == @bridge[b] and
+                  for any c in (1..#call) : (
+                    uint8(@bridge[b]+1) < 128 and
+                    @bridge[b]+2+uint8(@bridge[b]+1) == @call[c] and
+                    uint16(@call[c]+7) < 32768 and
+                    @call[c]+9+uint16(@call[c]+7) == @open[o]
+                  )
+                )
+              ) and
+              for any h in (1..#check) : (
+                @check[h] == @open[o]+!open[o]+2 and
+                uint16(@check[h]+3) == uint16(@open[o]+26) and
+                uint16(@check[h]+12) == uint16(@open[o]+26)+3 and
+                uint8(@open[o]+19) == uint8(@open[o]+4) and
+                uint8(@open[o]+29) == uint8(@open[o]+4) and
+                for any e in (1..#eof) : (
+                  @eof[e] > @check[h] and @eof[e]-@check[h] < 64 and
+                  uint8(@eof[e]+8) == uint8(@open[o]+4) and
+                  for any c in (1..#copy) : (
+                    @copy[c] > @eof[e] and @copy[c]-@eof[e] < 64 and
+                    uint16(@copy[c]+4) == uint16(@copy[c]+1)+uint16(@copy[c]+7) and
+                    uint16(@copy[c]+7) > 0 and
+                    for any w in (1..#write) : (
+                      @write[w] > @copy[c] and @write[w]-@copy[c] < 256 and
+                      uint16(@write[w]+1) == uint16(@copy[c]+7) and
+                      uint16(@write[w]+9) == uint16(@copy[c]+4) and
+                      uint16(@write[w]+23) == uint16(@copy[c]+1) and
+                      uint16(@write[w]+28) == 0 and
+                      uint16(@write[w]+35) == uint16(@copy[c]+7) and
+                      uint16(@write[w]+40) == uint16(@copy[c]+4) and
+                      uint16(@write[w]+61)+1 == uint16(@eof[e]+22) and
+                      uint8(@write[w]+31) == uint8(@open[o]+4) and
+                      uint8(@write[w]+43) == uint8(@open[o]+4) and
+                      uint8(@write[w]+54) == uint8(@open[o]+4) and
+                      uint8(@write[w]+64) == uint8(@open[o]+4)
+                    )
+                  )
+                )
+              )
+            )
+        }
