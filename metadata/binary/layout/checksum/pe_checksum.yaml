@@ -24,17 +24,6 @@ traits:
       type: metrics
       field: pe.checksum
       max: 0
-    unless:
-      - id: well-known/game/mod::bedrockboot-preload-cpp-pdb
-      - id: well-known/game/mod::bedrockboot-preload-injector-pdb
-      - id: metadata/binary/framework::dotnet-metadata
-      - id: metadata/lang/compiler/systems::go-binary-comp
-      - id: metadata/lang/compiler/native::python-msvc-extension
-      - id: metadata/file/extension/identity::node-native-addon-extension
-      - type: metrics
-        field: sections.code_size
-        max: 65536
-
   - id: pe-checksum-missing
     desc: PE checksum field is missing or invalid
     if:
@@ -78,13 +67,6 @@ traits:
       type: metrics
       field: pe.checksum_valid
       max: 0
-    unless:
-      - type: basename
-        regex: '^(privoxy\.exe|privoxy\.exe\.gz)$'
-      # Wine rewrites the DOS stub to "Wine builtin DLL" after link, so the
-      # stored OptionalHeader.CheckSum no longer matches the file bytes.
-      - id: well-known/lib/platform/wine::wine-builtin-dll-marker
-
   - id: cert-table-present
     desc: PE certificate table entry populated
     # Presence of the Authenticode directory is ordinary file structure. The
@@ -116,21 +98,6 @@ traits:
       min: 1
 
 composite_rules:
-  # Native runtimes collected by bundlers or redistributables can retain stale
-  # security directory entries after the Authenticode blob has been removed.
-  - id: bundled-native-runtime-signature-context
-    desc: Native runtimes subject to signature stripping
-    crit: exception
-    conf: 0.98
-    any:
-      - id: well-known/lib/runtime/native-platform/tcl-tk::tcl-tk-runtime-library
-      - id: well-known/lib/runtime/scripted/cpython::python-core-native-component
-      - id: well-known/lib/runtime/compiled/msvc-runtime::msvc-runtime-library
-      - id: well-known/lib/format/zlib::zlib-shared-library
-
-  # Populated-but-wrong CheckSum: the linker wrote a value and the bytes have
-  # changed since. Widely referenced as a "binary was modified after link"
-  # building block.
   - id: pe-checksum-mismatch
     desc: PE checksum differs from computed content
     crit: notable
@@ -176,24 +143,9 @@ composite_rules:
     all:
       - id: cert-table-present
       - id: pe-checksum-mismatch
+    # An invalid directory is handled by invalid-cert-directory-checksum.
     unless:
-      - id: metadata/binary/layout/embedded::embedded-pe-child
-      - id: well-known/tool/development/toolchain/go-toolchain::go-module-source-path
-      # Same fixture set cert-table-truncated below already excludes, and for
-      # the same reason: Go's debug/pe test corpus carries real EFI images
-      # (go/src/debug/pe/testdata/vmlinuz-4.15.0-47-generic) whose PE checksum
-      # was never maintained. Only the go@v module form was listed here, which
-      # does not match a toolchain tarball's go/src/ layout.
-      - id: well-known/tool/development/toolchain/go-toolchain::go-toolchain-source-path
-      - id: metadata/signed/certificate/signature::pe-signature-verified
-      - id: metadata/signed/certificate/signature::pe-signature-verified-kv
-      - id: metadata/signed/certificate/subject::pe-signer-ossign-scheibling
-      - id: well-known/app/infrastructure/podman-desktop::podman-desktop-nsis-installer-context
-      # An out-of-bounds certificate directory is not a signed PE. Do not
-      # describe this case as a signed checksum mismatch.
       - id: metadata/binary/layout/checksum::cert-table-truncated
-      - id: well-known/lib/runtime/scripted/node-runtime::windows-runtime-identity
-
   - id: cert-data-zeroed-checksum
     desc: Certificate table present but PE checksum zeroed
     crit: notable
@@ -201,39 +153,6 @@ composite_rules:
     all:
       - id: cert-table-present
       - id: pe-checksum-zeroed
-    unless:
-      - id: metadata/signed/certificate/signature::pe-signature-verified
-      - id: metadata/signed/certificate/signature::pe-signature-verified-kv
-      - id: metadata/signed/certificate/subject::pe-signer-ossign-scheibling
-      # EFI images commonly leave the Windows PE checksum unset; keep the
-      # structural facts, but do not infer Authenticode tampering from them.
-      - id: metadata/binary/header/characteristics::efi-pe-subsystem
-      # The verified Cygwin setup utility is UPX-packed and intentionally ships
-      # with a zero PE checksum; keep the structural fact without treating it
-      # as certificate tampering.
-      - id: well-known/tool/development/toolchain/cygwin::cygwin-setup-signature
-      # UPX zeroes OptionalHeader.CheckSum on every repack, so any signed
-      # binary that was UPX-packed after signing carries this pair by
-      # construction (e.g. the AKApplications-signed Stp2.dll installer helper
-      # in YARA's tests/data). Generalizes the Cygwin-specific carve-out above.
-      # Real cert transplants are still caught by invalid-cert-directory-checksum,
-      # which additionally requires an out-of-bounds security directory.
-      - id: metadata/binary/section/label::upx-section-pair
-      # The signed DesktopMania client was built with an unset PE checksum;
-      # its product identity and live wallpaper endpoint distinguish this
-      # historical Delphi build from a transplanted certificate carrier.
-      - id: well-known/unwanted/desktopmania::desktopmania-wallpaper-client
-
-  # The checksum leg is an `any:` for a reason. `pe-checksum-zeroed` carries
-  # carve-outs for the toolchains that ship a zero CheckSum as a matter of
-  # course -- Go, node addons, uninstaller stubs, and anything under 64KB of
-  # code. Those suppressions are right for the bare fact and wrong here: a
-  # transplant carrier is typically a small dropper, so the code-size carve-out
-  # alone blinded this rule to the shape it exists to catch. Requiring a
-  # certificate table AND a security directory that points outside the file
-  # already carries the specificity those carve-outs were protecting, so pair
-  # it with the raw measurement (`checksum_valid` false, which a zeroed
-  # CheckSum also produces) and let the conjunction do the work.
   - id: invalid-cert-directory-checksum
     desc: Out-of-bounds certificate directory with checksum mismatch
     crit: notable
@@ -244,18 +163,6 @@ composite_rules:
     any:
       - id: pe-checksum-zeroed
       - id: pe-checksum-content-invalid
-    unless:
-      - id: metadata/binary/section/ratio::pe-section-overflow-present
-      - id: objectives/anti-static/pack/upack::dos-stub-kernel32-marker
-      - id: metadata/binary/layout/embedded::embedded-pe-child
-      # Bundlers (PyInstaller) strip the Authenticode blob from the Tcl/Tk DLLs
-      # they collect but leave the security directory entry pointing at the
-      # old offset, now end-of-file, and zero the checksum. That is a stripped
-      # signature on an unmodified runtime library, not a transplanted cert.
-      - id: bundled-native-runtime-signature-context
-      # CAPE sandbox reconstructed memory dumps drop the disk overlay where
-      # the certificate table lived, leaving the security directory dangling.
-      - id: metadata/binary/section/label::cape-sandbox-dump-section
   - id: cert-table-truncated
     desc: Claimed PE certificate table is truncated
     crit: notable

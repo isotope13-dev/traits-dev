@@ -2196,7 +2196,9 @@ justify an exclusion; rules and consumers must preserve that distinction. A
 filename-only rule is at most `notable`, and its description identifies the name
 as the observation. An incomplete fragment may be `component`. A filename-only
 rule does not need an arbitrary file-size bound; content-based binary identity
-rules still require a meaningful size bound.
+rules still require a meaningful size bound. A reviewed, explicitly named
+product-reference observation may have a matcher-specific exception when its
+meaning is independent of file size; it must not claim verified identity.
 
 **A framework is not its payload.** Offensive C2 platforms have a shared
 catalog at `tool/offensive/command-and-control/<project>`: operator consoles,
