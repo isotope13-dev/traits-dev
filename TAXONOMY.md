@@ -1053,7 +1053,7 @@ must not acquire a direction from its consumer.
 | `process/deploy/<sink>` | Neutral acquisition- or staging-to-activation chains (an updater fetching and launching its image), by the [payload sinks](#payload-activation-and-staging). |
 
 | `dylib/{load,unload,lookup,enumerate}` | Native loader operations. Language modules are `os/module`; export walking or API hashing is `os/api-resolution`; hiding import identity is an anti-static claim. |
-| `os/registry/<operation>` | A value read, write or delete beats key or hive references (`keys`, `hive`). Value-name and value-type references belong in `value-name` and `value-type`; they prove neither access nor activation. Only a Run-key write with durable activation is persistence. |
+| `os/registry/<operation>` | A value read, write or delete beats key or hive references (`keys`, `hive`). Key-opening APIs go in `open` when opening is the supported operation; `access` holds broader or combined access observations. Opening a key alone does not establish a value read or write. Value-name and value-type references belong in `value-name` and `value-type`; they prove neither access nor activation. Only a Run-key write with durable activation is persistence. |
 | `os/service/<operation>` | `create`, `start`, `stop`, `delete`, `configure`, `query`, `dispatch` (running as a service), `control` (no verb). A definition field alone is configuration; user or system scope is evidence, not a branch. |
 | `os/env/<subject>`, `os/env/<operation>` | The first required meaning wins: CI-issued credential (`ci-credentials`) → other credential (`secret-name`, e.g. `AWS_SECRET_ACCESS_KEY`) → interpreter or loader configuration (`runtime`: `BASH_ENV`, `NODE_OPTIONS`) → filesystem location (`path`; *legacy: `user-paths`*) → CI job metadata (`cicd`) → user identity (`user-info`) → service configuration (`provider`). Otherwise use the operation: `read`, `enumerate` (*legacy: `enumeration`, `dump`*), `write` (*legacy: `modify`*), `test` (*legacy: `check`, `gate`*). A name is a reference, not a read; reading a secret is not theft. |
 | `os/{user,group,privilege,security}/<operation>` | Principals and authority; security controls (`security/auth`, `security/jailbreak`). Crossing to higher authority is an objective. |
@@ -1223,9 +1223,21 @@ context by ___". **The first matching row wins:**
 | A new interpreter handed source text (`node -e`, `python -c`) | `eval` |
 | A Windows Script Host execution or script-moniker API | `process/interpreter/wsh` |
 | A library object standing for the child (`Popen`, `NSTask`, `ProcessBuilder`) | `subprocess` |
-| The desktop opener choosing the handler (`ShellExecute`, `open`, `NSWorkspace`) | `shellexec` |
+| Opening or dispatching a URL by its scheme or a URL-specific handler | `communications/url/open` |
+| The desktop opener choosing the handler (`ShellExecute`, `open`, `NSWorkspace`) without a required URL target | `shellexec` |
 | An API starting an image from an argument vector or command line (`execve`, `CreateProcess`, `posix_spawn`, `WinExec`, `WshShell.Run` with an executable path) | `exec` |
 | Only an executable name, launch flag, permission or import | Its path, configuration or import observation, not process creation |
+
+URL opening records URL-handler calls and API references, including non-HTTP
+schemes; an API reference alone proves neither dispatch nor a network connection.
+For example, opening a `mailto:` URI
+belongs in `communications/url/open`, while a generic `ShellExecuteW` import
+stays in `shellexec` because its target is unknown. In the registry, an
+`OpenSubKey` reference belongs in `os/registry/open`; a query of a value goes
+to `os/registry/read`. The 89-rule registry-access and shell-execution leaves
+were reviewed with these neighboring operations: seven key-opening rules moved
+to registry open, and five URL-dispatch rules moved to URL open, leaving 82 and
+84 rules respectively in the original leaves.
 
 `process/thread/{create,config,lifecycle,terminate,enumerate,priority,runtime}`
 records one thread operation per child. Synchronization remains under
@@ -1645,6 +1657,13 @@ change its meaning; a text matcher over a structured field is still about that
 field. Strings are *content*: a string evidencing a capability, objective or
 identity goes with that subject.
 
+Within natural-language metadata, `lang/natural/credential` records wording
+whose subject is a password, secret, API key or credential transfer; a token
+setup instruction belongs there, while generic approval wording remains in
+`lang/natural/phrasing`. Such wording alone does not establish credential use
+or theft. This separates seven credential observations from the 92-rule
+phrasing leaf, leaving 85 there and seven in the credential leaf.
+
 | Level 1 | Level 2 (level 3 refines it) | Boundary |
 |---|---|---|
 | `arch` | Instruction-set or ABI target, by family | Parsed target fields (ELF `e_machine`); a word such as `mips64` in `.rodata` identifies nothing. Header-field validity is `binary/header`. |
@@ -1830,11 +1849,9 @@ or execution is established; a named hook alone is not a package operation.
 The [source syntax move inventory](docs/taxonomy-audit/taxonomy/source-syntax-placement/migration.json)
 places all 101 former direct rules. The audit found no identical effective
 definitions to consolidate. Matchers, defaults, scope, criticality and explicit
-dependencies are preserved. The two PHP-panel directory exclusions use the
-shared `source/shape::source-syntax-known-benign-context` profile to retain
-their original observation set, including relocated observations. Its PHP scope
-matches those consumers; it follows the existing named exclusion-group
-convention and retains `component` criticality for source context alone.
+dependencies are preserved. PHP path and command-reference profiles belong in
+`metadata/file/profile/system-management`: their contents alone do not establish
+that an interactive panel exists or that a command runs.
 
 Raw signed-entitlement keys are emitted as runtime facts under
 `metadata/entitlement/<category>::<key>`. The rules in
@@ -1957,7 +1974,10 @@ that the table has a threat purpose, or that it has a particular provenance or
 product identity. A rule claiming a specific source needs separate schema and
 provenance evidence. `file/catalog/unicode` records Unicode tables and lexicons;
 source escape syntax belongs in `metadata/lang/encoded/unicode-escape`, and an
-isolated escape does not establish table or non-prose context. `file/catalog/service`
+isolated escape does not establish table or non-prose context.
+`file/profile/unicode-text` records Unicode text and literal populations;
+writing-system mixtures and localization alone do not establish concealment.
+`file/catalog/service`
 records service-name references and embedded
 service configuration markers; a name mention does not establish service use,
 while a provisioning composite must include the relevant configuration and
