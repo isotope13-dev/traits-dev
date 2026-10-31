@@ -66,7 +66,7 @@ def main():
     bundle_ids = {t["id"] for t in found["padded-native-theft-bundle.jar"].get("traits", [])}
     assert theft in bundle_ids
     assert "objectives/credential-access/discord/token::jvm-credential-theft-discord-recovery-bundle" in bundle_ids
-    assert "objectives/collection/messaging/app::jvm-credential-theft-telegram-collection-bundle" in bundle_ids
+    assert "objectives/collection/messaging/telegram::jvm-credential-theft-telegram-collection-bundle" in bundle_ids
     assert all(t["id"] != "objectives/anti-static/obfuscation/pack::allatori-demo-marker"
                for f in found.values() for t in f.get("traits", []))
     for name, expected_id in {
