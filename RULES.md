@@ -410,39 +410,36 @@ identifiers. Use an engine with bytecode name-table extraction for these rules.
 
 **Which one should I use?**
 
-Speed and accuracy run together. From best to worst:
+Choose the fastest matcher that supports the claim with an acceptably low false-positive rate. Faster is not better if it matches unrelated code; slower is justified when its extra structure materially improves precision.
 
-1. **`symbol` / `import` / `export` / `function` / `literal`** — index lookups
-   against precomputed facts. No re-parse, no scan. Sharpest signal: the
-   walker already split code from comments and string contents, so these
-   never fire on a stray mention in a comment or unrelated string.
-2. **`text`** — substring/regex over extracted strings. Fast enough; less
-   precise than symbol/literal because the corpus includes everything the
-   string extractor recovered.
-3. **`raw`** — substring/regex over the full file bytes. Catches what the
-   string extractor missed (comments, byte sequences across boundaries),
-   pays for it in false positives and wall-clock.
-4. **`tree-sitter`** — live query against the parse tree. Slowest by a wide
-   margin (one walk per rule). Reach for it only when behavior depends on
-   tree shape the symbol projections can't express.
+A practical order, from fastest and most precise to slowest and most structural:
 
-Pick the highest tier that answers your question:
+1. **Structured facts and values** — `symbol` / `import` / `export` / `function` / `literal` / `value` / `metrics` and other precomputed facts. These use indexed or parsed evidence without rescanning file contents. They usually provide the best combination of speed and precision: code symbols are distinguished from comments and strings, and value paths identify the field being matched.
+2. **`text`** — substring/regex over extracted strings. Still fast, but less precise because strings may come from code, comments, documentation, or embedded data. Anchor and narrow the match, or combine it with independent evidence.
+3. **`hex`** — exact or masked byte patterns. For a simple byte signature, this is faster than YARA and avoids parsing source syntax. Use it when a stable byte sequence is the evidence; confirm it against benign near misses.
+4. **`yara`** — suitable signatures are a little slower than ordinary text or simple hex matching, but can express richer byte conditions. Use it when the signature needs YARA's combinations or modifiers; validate it against positive samples and benign near misses.
+5. **`raw`** — substring/regex over full file bytes. It catches comments and byte sequences the string extractor misses, but scans a broader surface and can cost more in both false positives and wall-clock. Use it only when those bytes are the evidence.
+6. **`tree-sitter`** — live query against the parse tree. It is much slower than the other forms because it walks the tree per rule, but can precisely express relationships between syntax nodes. Use it when that structural accuracy is necessary and faster forms cannot express the rule.
 
-- `symbol` for "is this called / imported / exported anywhere?" — and with
+Before writing a tree-sitter rule, run `cleave facts <file>` and check whether the needed call, member, bind, literal, or value is already available. Also consider expressing the evidence as ordinary fact or text traits and combining them in a composite. Use `all:` for jointly required evidence and `near_bytes` or `near_lines` when the relationship depends on co-location. A composite can avoid a per-rule tree walk, but proximity establishes co-occurrence, not data flow; describe only what its required evidence proves.
+
+Pick the least expensive matcher that still distinguishes the intended behavior from benign near misses:
+
+- Use `symbol` for "is this called / imported / exported anywhere?" — and with
   `kind: call, arg: ...` for "this specific call site with this specific
   arg" (see the call-matching section below).
-- `literal` for language-level constants — quoted strings or numeric
+- Use `literal` for language-level constants — quoted strings or numeric
   literals recovered from the parse. `kind: number` is the only way to
   match numbers by value and radix.
-- `text` for human-readable content that isn't tagged by the parser as
+- Use `value` or `metrics` for parsed fields, identities, measurements, and
+  derived properties; prefer exact or typed comparisons when available.
+- Use `text` for human-readable content that isn't tagged by the parser as
   string or symbol — error messages, log strings, embedded config.
-- `raw` for comments, byte-precise offsets, or matches that cross string
-  boundaries.
-- `tree-sitter` only when nothing above works.
-
-Before reaching for `tree-sitter`, check `cleave facts <file>` —
-the call, member, bind, or literal you need is usually already a
-structured fact.
+- Use `hex` for simple byte signatures; use `yara` when richer byte-signature
+  logic is needed. Use `raw` for comments, byte-precise offsets,
+  or matches that cross string boundaries.
+- Use `tree-sitter` when the behavior depends on tree shape the projections
+  and composite rules cannot express precisely.
 
 
 ### Structural

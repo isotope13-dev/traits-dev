@@ -79,6 +79,7 @@ not in the most alarming explanation or the sample's known reputation.
    moving, renaming or tightening the rule, never by demoting it.
 10. **Preserve detection.** Moves keep matchers and effective scope; detection
     fixes are separate, tested and recorded.
+11. **Choose the fastest sufficiently precise matcher.** Prefer structured facts and values, then text/regex; use `hex` for simple byte patterns, YARA for richer byte signatures, and tree-sitter only when its structural accuracy is needed. Before tree-sitter, consider a composite of nearby facts or text traits. See [matcher selection](RULES.md#which-one-should-i-use) for the performance and precision tradeoffs.
 
 ## Placement procedure
 
