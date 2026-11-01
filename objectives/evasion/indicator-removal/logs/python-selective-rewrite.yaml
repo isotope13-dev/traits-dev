@@ -1,0 +1,46 @@
+# Security-log filtering and replacement must use the same opened handle.
+# A read-only collector, an application log, or a write to a different output
+# does not establish this observation. Maintenance remains a plausible use.
+defaults:
+  platforms: [unix]
+  for: [python]
+  crit: suspicious
+  attack: T1070.002
+
+traits:
+  - id: python-selective-system-log-rewrite
+    desc: Selectively filters and rewrites system logs
+    conf: 0.98
+    if:
+      type: tree-sitter
+      query: |
+        ((with_statement
+          (with_clause (with_item value: (as_pattern
+            (call function: (identifier) @open
+              arguments: (argument_list . (string) @path . (string) @mode))
+            alias: (as_pattern_target (identifier) @handle))))
+          body: (block
+            (expression_statement (assignment
+              left: (identifier) @retained
+              right: (list_comprehension
+                body: (identifier) @item
+                (for_in_clause left: (identifier) @line right: (identifier) @source)
+                (if_clause))))
+            . (expression_statement (call
+              function: (attribute object: (identifier) @seek_handle attribute: (identifier) @seek)
+              arguments: (argument_list . (integer) @zero .)))
+            . (expression_statement (call
+              function: (attribute object: (identifier) @write_handle attribute: (identifier) @write)
+              arguments: (argument_list . (identifier) @saved .)))
+            . (expression_statement (call
+              function: (attribute object: (identifier) @truncate_handle attribute: (identifier) @truncate)
+              arguments: (argument_list) @truncate_args)))) @evidence
+          (#eq? @open "open")
+          (#match? @path "^['\"](/var/log/|/home/runtime/dlogs/debuglog['\"])")
+          (#match? @mode "^['\"]r(b\\+|\\+b?)['\"]$")
+          (#eq? @item @line) (#eq? @handle @source)
+          (#eq? @handle @seek_handle) (#eq? @handle @write_handle)
+          (#eq? @handle @truncate_handle) (#eq? @retained @saved)
+          (#eq? @seek "seek") (#eq? @zero "0")
+          (#eq? @write "writelines") (#eq? @truncate "truncate")
+          (#match? @truncate_args "^\\(\\s*\\)$"))
