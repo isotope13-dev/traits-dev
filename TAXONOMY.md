@@ -163,6 +163,14 @@ For composites:
   a credential-stealer classification. Describe the inference and matched
   evidence without claiming a completed transfer or a binding the rule does not
   establish. Generic tokens or unrelated operations alone do not suffice.
+- **Migration must preserve meaning as well as matching.** Before replacing a
+  behavioral home with syntax or a profile, write down the behavior and purpose
+  an analyst could infer before and after the move. Lack of proven execution or
+  data flow alone does not justify losing a supported inference. Keep the
+  shared operation when purpose is uncertain; keep a declared functional
+  interface when implementation is unknown. Put uncertainty in the description,
+  rather than erasing the subject from the path. Review siblings and consumers
+  together, including the effect of changed directory-selector membership.
 - **One result per composite.** Split unrelated results; keep a joint rule only
   when the relationship is the observation. There is no `misc/`, `combined/` or
   `behavioral/` overflow.
@@ -1695,6 +1703,26 @@ belong under `package/dependencies/composition`. A dependency or combination
 describes available libraries, not their use or a stealing objective. `presence`
 describes field or dependency presence and absence.
 
+`lang/source/interface/<subject>` holds declared API surfaces with a supported
+functional subject. `crypto` includes encrypt/decrypt exports, crypto factory
+exports and their nearby crypto imports. An arbitrary object-member assignment
+stays in syntax; an export named `encrypt` does not establish encryption or
+library identity. A composite additionally requiring crypto API use belongs
+with the capability (`micro-behaviors/crypto/provider/library` when no narrower
+operation is required). Import/export proximity alone remains a declaration.
+
+The [behavior and intent repair](docs/taxonomy-audit/taxonomy/behavior-intent-repair/README.md)
+records worked migration reversals: credential search plus sensitive-file and
+multipart clues → `credential-access/files/theft` as upload preparation;
+service listing and stop/disable with miner or rival clues →
+`impact/degrade/services` as disruption evidence; calculator launch clues with
+an install hook → `supply-chain/install-hook/proof-of-concept` as execution
+indicators. None asserts completed transfer, a bound service target, a malware
+family, or a launch bound to the hook. Generic search, ordinary service
+administration without those contextual clues, and calculator launch alone
+retain their neutral homes. Service cleanup messaging plus unit configuration
+clues remains `micro-behaviors/os/service/config`, not proven disruption.
+
 `data/encode/serialized-json` holds operations that encode serialized JSON,
 including JSON-to-Base64 calls. Nearby JSON and encoder names without a bound
 data flow are operation references; they do not establish a JSON encoding or
@@ -2340,7 +2368,8 @@ Applied so far: memory operations into
 direction-neutral codecs into `data/codec` and `data/compression`
 (`data/compress/combined` retired); `communications/http/ssl` into
 `communications/tls`. Acceptance evidence and known gaps are in the migration
-plan.
+plan. Recent role and compatibility reviews are indexed in
+[legacy category review batches](docs/taxonomy-audit/taxonomy/legacy-role-migrations.md).
 
 ### Migration map
 
@@ -2380,7 +2409,7 @@ plan.
 | mb `dylib/library`, `ui/framework` | meta, a capability, or `well-known/lib`, by claim | Implementation containers | Partial (`usb_init` export → `metadata/binary/symbols/exports`; libm imports → `metadata/binary/symbols/imports` ([inventory](docs/taxonomy-audit/taxonomy/libm-imports/migration.json)); terminal-editor project/version text → `metadata/binary/provenance/build`; TLS library names → `fs/path/library` ([inventory](docs/taxonomy-audit/taxonomy/tls-library-names/migration.json)); MFC42 name → `fs/path/library` and all three MFC API names → `metadata/binary/symbols/name/token` ([inventory](docs/taxonomy-audit/taxonomy/mfc-references/migration.json)); `ui/framework` has no YAML rules or live YAML references; other dylib library observations remain) |
 | obj `command-and-control/dropper/{process-inject,image-map,module-load,script-eval,interpreter-stdin,file-exec}` | obj `execution/payload/<sink>` (admitted) or mb `process/deploy/<sink>` (neutral) | By sink; admission picks the tier | Partial (`file-exec` applied: 639 rules in `command/{batch,script-host-download,script-host-embedded,shell}`, `detached`, `installer/{package,invocation}`, `shellcode`, `spawn/{native,runtime}`; the legacy directory is removed; image-map applied: call-bound RC4 mapping → payload/image-map, independent crypto, HTTP and memory evidence → operation-cooccurrence profiles; interpreter-stdin applied: impersonated postinstall → payload sink, archived preinstall pipelines → neutral deploy, unbound combinations → profiles; module-load partial: unbound .NET, Node, JVM and MSI combinations → profiles, Netz source references → tool-reference; other sinks open) |
 | obj `command-and-control/dropper/staging/*`, `staging-xor`, `staged-loader` | obj `execution/staging/{reconstruct,extract,acquire,store}` | By operation | Open |
-| obj `command-and-control/dropper/*` (`delivery`, `execution`, `behavior` and the rest) | A payload sink, staging operation, C2 result or neutral capability | By claim | Open |
+| obj `command-and-control/dropper/*` (`delivery`, `execution`, `behavior` and the rest) | A payload sink, staging operation, C2 result or neutral capability | By claim | Partial (the `compat` leaf held only synthetic missing-rule sentinels; those and their dead ComfyUI consumer were removed; the remaining branches need review) |
 | obj `collection/email-harvest` | obj `collection/email` | Rename | Applied (legacy directory and references are absent) |
 | obj `credential-access/windows-registry` | obj `credential-access/registry` | Rename | Applied |
 | obj `credential-access/{dump,theft,validation}` | obj `credential-access/<source or acquisition>` (`memory`, `files`, `credential-manager`, `capture`, `validation`, …) | Dump is not memory; source and acquisition distinguish below the approved families | Applied (process and image dumps → memory; other leaves routed by source/acquisition) |
@@ -2399,10 +2428,10 @@ plan.
 | meta `file/data-blob/*` | The specific measured property or behavior-supported subject | No residual `data-blob` bucket; split entropy, region, signature, name, and string observations | Applied (14 rules moved to entropy, byte-prefix, filename, path, string-population and text-shape homes; no legacy YAML rules or live YAML references remain) |
 | meta `file/policy/*` | `permission`, `hardening`, `package`, or document/format-specific property | No generic policy bucket; preserve declared-versus-effective scope | Applied (research-canary disclosure wording → natural-language phrasing ([inventory](docs/taxonomy-audit/taxonomy/research-canary/migration.json)); C initializer shape → source syntax ([inventory](docs/taxonomy-audit/taxonomy/c-initializer/migration.json)); mobile-link setting names → source naming; Google-services filenames and symbols → path and source naming, with co-occurrence → mobile-config profile; Android manifest, build plugin and field names → their subjects, with unbound combinations → mobile-config profile; mobile branding and white-label names → paths, source naming, package keywords and product identity, with co-occurrence → mobile-config profile; Xcode project, scheme, symbol and command references → their subjects, with co-occurrence → mobile-config profile and the former broad suppressors narrowed to a named tool context; AppArmor include directive → file format; AWS and Socket scanner field text → config syntax; Socket config basename/schema reference → tool-reference profile; Windows policy exception → the suppressed objective; systemd path, ExecStart fields and unit layout → path, service unit fields and service format respectively; uppercase config/key token shapes → file text-shape; agent tool wildcard syntax and settings path → call arguments and agent-config path, with unbound co-occurrence → agent-config profile; security-document wording and defense contexts → documentation policy, structured guardrail response → text shape, with the former directory-wide exception narrowed to defense contexts and a structured block response; agent approval policy wording → documentation policy, block message → diagnostic, safety-setting text → text-shape; no legacy YAML or live YAML references remain) |
 | meta `file/function/*` | Source declaration/name; population profile; `binary` anatomy | A name does not prove invocation or behavior | Applied (selected source declarations and function names moved, including Java sendRequest, Go IsDLL, shell callable identities, managed method-name text, JVM callback names, Java method names and signature text, Go probe names and decrypt-named declarations; Go-style strings in compiled files → binary name text; function populations → `file/profile/function-population`; AST node counts → `file/profile/syntax-tree`; JVM method-reference counts → `binary/symbols/count`; JavaScript decrypt-named symbol → source naming, Ruby audit text → declaration syntax, document function-like text → text-shape; Java method symbols → function naming, Python bytecode name → bytecode metadata, binary helper text → binary name text, and VBA/getuid declaration-like text → text-shape; PHP function-length metric → function-population, parsed-call count → syntax-tree, and unbound transform, locator and spoof-name text → text-shape; remaining function-name and symbol observations → source naming; no legacy YAML rules or live YAML references remain) |
-| meta `file/{arithmetic,padding}/*` | Parsed operator population, actual arithmetic operation, observed filler span, or a measured text-shape profile | Separate source-shape measurements from operation claims | Partial (`file/arithmetic` retired; digit and whitespace ratios and line shapes moved; leading whitespace moved to `file/profile/text-shape`; the uncontextualized text token under `padding` remains for review) |
+| meta `file/{arithmetic,padding}/*` | Parsed operator population, actual arithmetic operation, observed filler span, or a measured text-shape profile | Separate source-shape measurements from operation claims | Applied (`file/arithmetic` retired; digit and whitespace ratios and line shapes moved; leading whitespace moved to `file/profile/text-shape`; the uncontextualized `PADDINGXXPADDING` token moved to `file/profile/token-shape`, without claiming an observed filler span) |
 | meta `package/tooling`, `hardening/missing` | `build/*`, `well-known/*`, `package/<subject>`; the mitigation's own subject | Grab-bag and judgment names | Applied (`hardening/missing` held four unreferenced aliases of ELF linking facts; those facts remain under `binary/linking/runtime`; Netris and HAL evidence moved to `well-known/`; no legacy tooling rules or live YAML references remain) |
-| meta `binary/{installer,framework,vendor,signing,license,toolchain}` | `well-known/`, `vendor`, `signed`, `binary/provenance`, `lang/compiler` | Identity is not a format property | Partial (the Free Software Foundation name reference → `vendor/string`; a BPF header-byte shape → binary header identity, with a generic fixture-path suppression removed; Xcode field-name text → build-toolchain references, and its former directory-wide suppression → parsed embedded-plist keys; signer-verification profiles → signature metadata, with unsupported overlay timing removed; Microsoft CD bootstrap → Windows utility identity with verified platform signature; binary `license` and `toolchain` have no remaining YAML rules or live YAML references; other branches remain) |
-| `well-known/malware/supply-chain` | The family's defining role | Delivery does not choose identity | Partial (S1ngularity, Homebrew impersonation campaign markers and the TeamPCP Nx bootstrap → `malware/stealer`; Shai-Hulud → `malware/worm`, with unbound campaign references at notable; generic Homebrew payload text and Charpup filename, archive-path and function-name observations → metadata; a single proc-macro1 release checksum → dependency-specific typosquat evidence; remaining families require role review) |
+| meta `binary/{installer,framework,vendor,signing,license,toolchain}` | `well-known/`, `vendor`, `signed`, `binary/provenance`, `lang/compiler` | Identity is not a format property | Partial (the Free Software Foundation name reference → `vendor/string`; Python Software Foundation, GitHub and Digital River remain pending review of all 55 legacy vendor-directory consumers; a BPF header-byte shape → binary header identity, with a generic fixture-path suppression removed; Xcode field-name text → build-toolchain references, and its former directory-wide suppression → parsed embedded-plist keys; signer-verification profiles → signature metadata, with unsupported overlay timing removed; Microsoft CD bootstrap → Windows utility identity with verified platform signature; binary `license` and `toolchain` have no remaining YAML rules or live YAML references; other branches remain) |
+| `well-known/malware/supply-chain` | The family's defining role | Delivery does not choose identity | Partial (S1ngularity, Homebrew impersonation campaign markers, the TeamPCP Nx bootstrap and the bmrxntfj wallet-stealer cluster → `malware/stealer`; Shai-Hulud → `malware/worm`; the campaign-listed Pafer pickle loader, Mangorbit evil-twin extension and Graphalgo Go trojan modules → their respective `malware/trojan` families; Melcuratts and GlassWorm loader indicators → `malware/dropper`; unbound campaign references at notable; generic Homebrew payload text and Charpup filename, archive-path and function-name observations → metadata; a single proc-macro1 release checksum → dependency-specific typosquat evidence; remaining families require role review) |
 
 Remove a legacy home's whitelist entry only after its last rule moves.
 

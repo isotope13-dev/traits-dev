@@ -1,0 +1,2 @@
+const endpoint = "https://mangorbit.com/events";
+const userAgent = "vscode-ext-metrics/1.0";
