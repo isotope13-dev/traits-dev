@@ -1,0 +1,81 @@
+defaults:
+  platforms: [unix, windows]
+  for: [typescript]
+  crit: notable
+  conf: 0.96
+
+traits:
+  - id: command-classifier-test-delegate
+    desc: Classifier delegate without known effect sinks
+    if:
+      # Bind the assertion wrapper's input to the delegated classifier input.
+      type: tree-sitter
+      language: typescript
+      query: |
+        ((variable_declarator
+          name: (identifier) @wrapper
+          value: (arrow_function
+            parameters: (formal_parameters
+              . (required_parameter pattern: (identifier) @input))
+            body: (call_expression function: (identifier) @delegate
+              arguments: (arguments . (identifier) @forwarded))))
+         (#eq? @wrapper "classify")
+         (#eq? @delegate "classifyCommand")
+         (#eq? @input @forwarded))
+    # Test assertions must not excuse actual process/file effects. Imports
+    # catch aliases; computed calls and dynamic loading also block this context.
+    unless:
+      - type: symbol
+        kind: import
+        regex: '^(node:)?(child_process|fs(-extra)?)(/.*)?$'
+      - type: symbol
+        kind: import
+        regex: '^(execa|shelljs|zx|bun)(/.*)?$'
+      - type: symbol
+        # References also block aliases of built-in runtime execution APIs.
+        regex: '(^|\.)(exec\w*|spawn\w*|run)$'
+      - type: symbol
+        regex: '(^|\.)(eval|Function|\$)$'
+      - type: symbol
+        kind: call
+        regex: '(^|\.)(require|import)$'
+      - type: symbol
+        kind: call
+        regex: '(^|\.)(system|popen)$'
+      - type: symbol
+        kind: call
+        regex: '(^|\.)(rm|rmdir|unlink)(Sync)?$'
+      - type: symbol
+        kind: call
+        regex: '(^|\.)(cp|copyFile|writeFile)(Sync)?$'
+      - type: tree-sitter
+        query: |
+          (call_expression function: (subscript_expression)) @computed_call
+          (new_expression) @construction
+          (call_expression function: (import)) @dynamic_import
+
+  - id: command-classifier-category-assertion
+    desc: Asserts a classified command category
+    if:
+      type: tree-sitter
+      query: |
+        ((call_expression
+          function: (member_expression
+            object: (call_expression
+              function: (identifier) @expect
+              arguments: (arguments . (call_expression function: (identifier) @classifier)))
+            property: (property_identifier) @assertion)
+          arguments: (arguments . (string (string_fragment) @category)))
+         (#eq? @expect "expect")
+         (#eq? @classifier "classify")
+         (#eq? @assertion "toContain")
+         (#match? @category "^[a-z-]+\\.[a-z.-]+$"))
+
+composite_rules:
+  - id: command-classifier-policy-test-context
+    desc: Tests command categories through a classifier
+    crit: exception
+    all:
+      - id: command-classifier-test-delegate
+      - id: command-classifier-category-assertion
+      - id: metadata/package/testing/presence/scripted::node-test-call
