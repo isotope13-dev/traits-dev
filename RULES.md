@@ -120,8 +120,10 @@ See [Matcher Defines Identity](TAXONOMY.md#matcher-defines-identity) in TAXONOMY
   and near misses. Put each fact in its specific subject home; same-file
   co-occurrence alone does not justify a profile. See the
   [directory placement contracts](TAXONOMY.md#directory-budgets-and-placement-contracts).
-- **100 rules is the temporary validator budget and directory review trigger
-  across all its YAML files, not an automatic split point.** First check that
+- **80 rules is the forward budget across a directory’s YAML files.** Keep
+  new and reorganized leaves below 80; at 72, review the parent and siblings
+  and divide on a durable semantic distinction. Existing larger leaves remain
+  migration debt under the engine’s current 93-rule gate. First check that
   every rule is accurate, at the right level, and nonduplicative. Do not change
   the cap without asking. A larger leaf requires a complete relevance audit and
   explicit user approval before adding an exact-path exception enforced by

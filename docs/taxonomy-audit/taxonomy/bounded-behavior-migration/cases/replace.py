@@ -1,0 +1,2 @@
+import os
+os.execv("/bin/true", ["true"])

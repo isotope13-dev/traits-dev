@@ -163,6 +163,10 @@ For composites:
   a credential-stealer classification. Describe the inference and matched
   evidence without claiming a completed transfer or a binding the rule does not
   establish. Generic tokens or unrelated operations alone do not suffice.
+- **Analyst test:** would this path help explain what the program likely does?
+  Passing validation is necessary; a less informative path is still a regression.
+  Preserve algorithms, sensitive targets and lifecycle context in IDs and
+  descriptions when they no longer choose the directory.
 - **Migration must preserve meaning as well as matching.** Before replacing a
   behavioral home with syntax or a profile, write down the behavior and purpose
   an analyst could infer before and after the move. Lack of proven execution or
@@ -373,7 +377,7 @@ contract as well as running the validator.
 
 | Validator check | Limit |
 |---|---|
-| Rules per directory | **93** traits plus composites is the temporary maximum, summed over its YAML files and criticalities. Enforce the same limit on both the physical directory and the ID namespace: explicitly qualified IDs must not hide either population. A category-specific exception requires a complete relevance audit and explicit approval; filenames create no budgets. |
+| Rules per directory | **80** traits plus composites is the forward maximum, summed over its YAML files and criticalities. Enforce the same limit on both the physical directory and the ID namespace: explicitly qualified IDs must not hide either population. New and reorganized leaves stay below 80; 72 rules triggers a neighborhood review and split. Existing larger leaves remain migration debt under the engine’s current 93-rule gate. A category-specific exception requires a complete relevance audit and explicit approval; filenames create no budgets. |
 | Subdirectories | Hard error above 150 immediate subdirectories. Split broad catalogs by a stable function with a tiebreaker. |
 | Depth | Soft warning beyond five levels below the tier (`objectives/a/b/c/d/e/f/x.yaml` warns). Soft warnings fail `make validate`; `cleave validate --soft` only reports them. |
 | Sparse siblings | For behavior and objective parents, a soft warning when ten or more child directories average eight or fewer rules per child. Reports child count, total rules, and average rules per child; strict validation fails until the parent is reviewed. Named-entity catalogs and metadata are outside this heuristic. |
@@ -750,7 +754,16 @@ network selection under `network/connections`; it does not identify a particular
 interface or prove a connection succeeded. A WinPcap device path is a kernel
 device-location reference, not evidence that packets were captured.
 
-`communications/http/request/{body,credentials}` is a legacy branch (see "No `request` leaf duplicating `client`"), and both are classified by **the item that enters the request**, in the `stealer` item vocabulary. `request/body/<item>`: `construction` (how a body is attached, naming no item), `credential`, `command-output`, `application-state` (keychains, wallets, browser stores, activity records), `file`, `environment` and `injection` (a body carrying shell-control or traversal syntax). `request/credentials/<origin>` answers *where does the credential come from?*: `file`, `environment`, `ci-credential` (matches `os/env/ci-credentials`), `literal` (embedded in code or a URL), `application-state`, and `unspecified-origin` for a generic secret-flow candidate that names none. An exception composite lives beside the rules it suppresses, not under the item it happens to mention.
+`communications/http/request/{body,credentials}` are retained subject branches,
+not duplicates of generic `client` use. `body/<item>` describes what enters a
+request: `construction` when no item is established, otherwise `credential`,
+`command-output`, `application-state`, `file`, `environment` or `injection`.
+`credentials/<origin>` describes credential provenance: `file`, `environment`,
+`ci-credential`, `literal`, `application-state` or `unspecified-origin`.
+An actual HTTP method belongs in its method leaf; uploading an artifact belongs
+in `upload`; an inferred theft/export chain belongs in `objectives/exfiltration/stealer/<item>`.
+A body field or credential reference alone claims neither transmission nor theft.
+Do not rename these meaningful subject branches merely to eliminate `request`.
 
 Don't duplicate WebSocket under HTTP, or a client library under each HTTP verb.
 A port literal is not a service, scan or authentication state.
@@ -986,7 +999,16 @@ distinction instead of labeling every query-related API as retrieval.
 `access` holds store/interface references or interactions whose direction is
 not fixed; a read-or-write alternation belongs there. An identifiable store
 reference is more informative than generic source syntax, but does not gain
-a read or write claim. `sql` remains a legacy home pending semantic review.
+a read or write claim. `sql` is retired: route by the required operation or interface, not the SQL spelling.
+`read/column` holds named projections and column-reader APIs; `read/key-value`
+holds associative storage lookups; `read/records` holds record/result-set reads
+and their query references when no narrower column or key-value claim is
+required. A known column projection takes precedence over a general record
+query. These homes preserve whether the evidence is a query, reference or call.
+SQL editor integration belongs under `ui/controls/editor`, named service routes
+under `communications/http/services`, and connection diagnostics retain their
+connection or query context. A method reference can retain its operation
+without claiming that it executed.
 Stored credential operands retain their significance in IDs and descriptions;
 ordinary credential reads do not alone establish theft. Method replacement
 belongs with function interception, and storage-path strings remain paths.
@@ -1233,7 +1255,8 @@ context by ___". **The first matching row wins:**
 | A library object standing for the child (`Popen`, `NSTask`, `ProcessBuilder`) | `subprocess` |
 | Opening or dispatching a URL by its scheme or a URL-specific handler | `communications/url/open` |
 | The desktop opener choosing the handler (`ShellExecute`, `open`, `NSWorkspace`) without a required URL target | `shellexec` |
-| An API starting an image from an argument vector or command line (`execve`, `CreateProcess`, `posix_spawn`, `WinExec`, `WshShell.Run` with an executable path) | `exec` |
+| An API starting a child image from an argument vector or command line (`CreateProcess`, `posix_spawn`, `WinExec`, `WshShell.Run` with an executable path) | `exec` |
+| Replacing the current process image (`execve`, `execveat`, `os.execv`, `pcntl_exec`) | `micro-behaviors/process/replace`; replacement does not require a new process |
 | Only an executable name, launch flag, permission or import | Its path, configuration or import observation, not process creation |
 
 URL opening records URL-handler calls and API references, including non-HTTP
@@ -1246,6 +1269,12 @@ to `os/registry/read`. The 89-rule registry-access and shell-execution leaves
 were reviewed with these neighboring operations: seven key-opening rules moved
 to registry open, and five URL-dispatch rules moved to URL open, leaving 82 and
 84 rules respectively in the original leaves.
+
+`process/create/subprocess/{configure,launch,capture}` distinguishes preparing
+a child-process command, launching it without required output capture, and
+launch interfaces that return or pipe its output. Launch APIs and API references
+retain their operation; a configured command is not proof of launch. Explicit
+output capture takes precedence over broad launch evidence.
 
 `process/thread/{create,config,lifecycle,terminate,enumerate,priority,runtime}`
 records one thread operation per child. Synchronization remains under
@@ -2374,10 +2403,17 @@ plan. Recent role and compatibility reviews are indexed in
 ### Migration map
 
 *Staged*: a reviewed batch in `taxonomy-migration/batches/`, not yet applied.
-*Partial*: some rules moved. *Open*: no batch.
+*Partial*: some rules moved. *Open*: no accepted batch.
+**Retire** means empty the legacy namespace. **Selective review** means keep
+valid rules and move only mismatches; branch population is not a move count.
+See the [bounded behavior migration](docs/taxonomy-audit/taxonomy/bounded-behavior-migration/README.md)
+for current mappings, resource splits and reference-set checks.
 
 | Legacy home | Target home | How rules move | Status |
 |---|---|---|---|
+| mb `data/db/sql` (retire) | mb `data/db/{read/{records,column,key-value},query,open,config,write,schema}`, editor and protocol subjects, or declared metadata | Preserve query targets and the distinction between reference, preparation and execution | Applied (70 rules; no compatibility alias) |
+| mb `process/create/spawn` (retire) | `create/{exec,hidden,subprocess/launch,shell/encoded}` | Classify the operation, not API spelling | Applied (11 rules; crowded destination siblings reorganized) |
+| obj `exfiltration/serialization` (retire) | `exfiltration/stealer/credential` for supported export; `data/serialize/{schema-credential,envelope,binary}` for preparation/format evidence | A serialization format is not a stolen item or proof of transfer | Applied (12 moved; unreferenced synthetic QNX rule removed) |
 | mb `os/network/{forward,neighbors,qos,route}` | mb `network/<same>` | Same subject | Applied |
 | mb `os/network/{connections,dns,share,status,tunnel}` | mb `network/<same>` | Same subject | Applied |
 | mb `os/network/interface` | mb `network/interface` | Same subject | Applied (the last adapter-binding rule moved; no YAML rules or live YAML references remain in `os/network`) |
@@ -2404,9 +2440,9 @@ plan. Recent role and compatibility reviews are indexed in
 | mb `process/create/{launch,direct,spawn,execv,spawnv,stdlib,wrapper,…}` | mb `process/create/<mechanism>` | [Process creation](#process-creation) | Partial (`stdlib` class and symbol references → JVM imports and binary names; `wrapper` generic calls and call-like text → source syntax; both leaves have no YAML or live references; `execv` source constant, native name text and argument text → naming and syntax subjects, macOS syscall → syscall invocation after recursive suppressor review (current syscall fact production is ELF-only); unbound HTTP/exec correlations → operation-cooccurrence profile; Python exec/spawn calls → executable-image creation and name-only variants → binary name/import subjects; a JVM Runtime.exec method reference → JVM imports; C++ library symbols → binary names and unbound process combinations → co-occurrence; Deno process call, constructor, runtime path and flag literals → their subjects, with unbound HTTP/command clues → network profile; `launch` text → source syntax and text-shape observations, with bound install-hook and FTP findings retained separately; `launch`, `direct`, `execv` and `spawnv` have no YAML or live references; native process symbol names and unbound pipe/exec combinations moved to metadata; other mechanisms remain) |
 | mb `process/interpreter/reflection` | mb `metaprogramming/reflection` | Code as code | Applied |
 | mb `process/script` | The actual execution mechanism (`process/interpreter/wsh` for WSH) | A carrier is not a mechanism | Applied |
-| mb `os/env/{enumeration,dump}`, `modify`, `{check,gate}`, `user-paths` | mb `os/env/{enumerate,write,test,path}` | Other topic leaves move to the subject they require | Partial (mapped operation categories applied) |
+| mb `os/env/{enumeration,dump}`, `modify`, `{check,gate}`, `user-paths` | mb `os/env/{enumerate,write,test,path}` | Other topic leaves move to the subject they require | Applied (all six named legacy environment-operation directories are empty; further topic review is selective) |
 | mb `os/service/driver` | mb `os/kernel/driver` | Drivers are not services | Applied |
-| mb `dylib/library`, `ui/framework` | meta, a capability, or `well-known/lib`, by claim | Implementation containers | Partial (`usb_init` export → `metadata/binary/symbols/exports`; libm imports → `metadata/binary/symbols/imports` ([inventory](docs/taxonomy-audit/taxonomy/libm-imports/migration.json)); terminal-editor project/version text → `metadata/binary/provenance/build`; TLS library names → `fs/path/library` ([inventory](docs/taxonomy-audit/taxonomy/tls-library-names/migration.json)); MFC42 name → `fs/path/library` and all three MFC API names → `metadata/binary/symbols/name/token` ([inventory](docs/taxonomy-audit/taxonomy/mfc-references/migration.json)); `ui/framework` has no YAML rules or live YAML references; other dylib library observations remain) |
+| mb `dylib/library`, `ui/framework` | meta, a capability, or `well-known/lib`, by claim | Implementation containers | Applied (`usb_init` export → `metadata/binary/symbols/exports`; libm imports → `metadata/binary/symbols/imports` ([inventory](docs/taxonomy-audit/taxonomy/libm-imports/migration.json)); terminal-editor project/version text → `metadata/binary/provenance/build`; TLS library names → `fs/path/library` ([inventory](docs/taxonomy-audit/taxonomy/tls-library-names/migration.json)); MFC42 name → `fs/path/library` and all three MFC API names → `metadata/binary/symbols/name/token` ([inventory](docs/taxonomy-audit/taxonomy/mfc-references/migration.json)); `ui/framework` has no YAML rules or live YAML references; both dylib/library and ui/framework are empty; remaining library observations are a selective subject review) |
 | obj `command-and-control/dropper/{process-inject,image-map,module-load,script-eval,interpreter-stdin,file-exec}` | obj `execution/payload/<sink>` (admitted) or mb `process/deploy/<sink>` (neutral) | By sink; admission picks the tier | Partial (`file-exec` applied: 639 rules in `command/{batch,script-host-download,script-host-embedded,shell}`, `detached`, `installer/{package,invocation}`, `shellcode`, `spawn/{native,runtime}`; the legacy directory is removed; image-map applied: call-bound RC4 mapping → payload/image-map, independent crypto, HTTP and memory evidence → operation-cooccurrence profiles; interpreter-stdin applied: impersonated postinstall → payload sink, archived preinstall pipelines → neutral deploy, unbound combinations → profiles; module-load partial: unbound .NET, Node, JVM and MSI combinations → profiles, Netz source references → tool-reference; other sinks open) |
 | obj `command-and-control/dropper/staging/*`, `staging-xor`, `staged-loader` | obj `execution/staging/{reconstruct,extract,acquire,store}` | By operation | Open |
 | obj `command-and-control/dropper/*` (`delivery`, `execution`, `behavior` and the rest) | A payload sink, staging operation, C2 result or neutral capability | By claim | Partial (the `compat` leaf held only synthetic missing-rule sentinels; those and their dead ComfyUI consumer were removed; the remaining branches need review) |
@@ -2418,8 +2454,8 @@ plan. Recent role and compatibility reviews are indexed in
 | obj `lateral-movement/delivery` | `delivery/{remote-execution,wmi,gpo,update-service}`; `smb/admin-share` | By the remote mechanism and required effect | Partial (these mechanism-specific batches moved; multi-stage/multi-method remain under review) |
 | obj `exfiltration/stealer/{network-config,process-list}` | obj `stealer/system-info/{network,process}` | Same source | Applied (legacy directories absent; target branches populated) |
 | obj `exfiltration/stealer/{surveillance,phish}` | obj `stealer/<item>` or the supported neutral/local-acquisition observation | Purpose and method are not stolen item types | Item review applied |
-| obj `exfiltration/{sensitive-data,serialization}` | `collection` or `credential-access` (no send), `stealer/<item>` (chain), mb `data/serialize` (neutral) | By required send | Open |
-| obj `supply-chain/{install-hook,recon-exfil,credential-theft,metadata-anomaly}` | The required result's home, hook referenced | A trigger is not an objective | Open |
+| obj `exfiltration/sensitive-data` (retire) | `collection` or `credential-access` (no send), `stealer/<item>` (chain), mb `data/serialize` (neutral) | By required send | Open |
+| obj `supply-chain/{install-hook,recon-exfil,credential-theft,metadata-anomaly}` (selective review) | Credential access, exfiltration, discovery or execution by required result; installation-specific abuse stays in `install-hook` | A trigger alone is not an objective; misuse of installation trust is | Open |
 | obj `anti-static/obfuscation/{binary-metrics,code-metrics,tools,multi-layer}` | meta `binary` or `file`, `well-known/`, or a named concealment | Measurements and identities are not concealment | Open |
 | meta `file/encoded`; `lang/encoded` | meta `file/encoding`; `lang/encoding` | Rename, then group by encoding scheme or measured shape | Applied; orphaned impossible XOR/Base64 co-occurrence composite removed |
 | meta whole-file byte-entropy rules under `image/*` | meta `file/entropy` | Decoded-image measurements stay | Applied (no whole-file byte-entropy rules remain; decoded-image measurements stay under `image`) |
@@ -2455,7 +2491,7 @@ Resolve each in the migration manifest before moving the affected rules.
 
 | Checkpoint | Required resolution |
 |---|---|
-| Capacity for broad leaves | The temporary maximum is 93 rules; any category-specific exception requires a complete relevance audit and explicit user approval. At the cap, divide and reorganize the category and its neighborhood into durable, precise subdivisions with room to grow, while auditing all rules, parents and siblings. Document the population and consumers, place broad observations accurately, and do not invent a sibling or `other` bucket to satisfy the count. |
+| Capacity for broad leaves | The forward maximum is 80 rules; review touched leaves at 72 and split by a durable distinction before they approach the cap; any category-specific exception requires a complete relevance audit and explicit user approval. At the cap, divide and reorganize the category and its neighborhood into durable, precise subdivisions with room to grow, while auditing all rules, parents and siblings. Document the population and consumers, place broad observations accurately, and do not invent a sibling or `other` bucket to satisfy the count. |
 | Level-3 branches | Name the children, their single axis, precedence and an incomplete-evidence example before migrating. |
 | Broad staging profiles | Staging rules that fit no operation need a defined home; neither dropping the claim nor calling it activation is acceptable. |
 | Retained access | Choose a home for created accounts and authorized SSH keys, now in `persistence/login/{account,ssh}`. |

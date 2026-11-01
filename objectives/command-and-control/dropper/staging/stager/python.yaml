@@ -1,129 +1,333 @@
-# Python staging chain. The textbook script-based PE/ELF/Mach-O dropper:
-# remote-fetched bytes are validated against an executable magic, written
-# to a disposable temp file, executed hidden, then erased. Each atom is
-# individually low-criticality, but the combination is rarely benign.
-#
-# Phase 3 generalization: the composite uses *family* references where
-# possible (write/rename/exec/cleanup) so it survives variant swaps —
-# pathlib instead of tempfile, os.replace instead of os.rename,
-# os.startfile instead of subprocess.Popen, etc.
 defaults:
-  platforms: [windows]
-  for: [python]
+  platforms:
+  - windows
+  for:
+  - python
   attack: T1105
   mbc: B0023
-
 traits:
-  - id: python-binary-fetch-helper
-    desc: Python binary-download helper reference
-    crit: notable
-    conf: 0.94
-    if:
-      type: text
-      regex: '(?i)\b_fetch_binary\b'
-
-  - id: python-detached-helper-launch
-    desc: Python detached-helper launch reference
-    crit: notable
-    conf: 0.94
-    if:
-      type: text
-      regex: '(?i)\b_spawn_detached\b'
-
+- id: python-binary-fetch-helper
+  desc: Python binary-download helper reference
+  crit: notable
+  conf: 0.94
+  if:
+    type: text
+    regex: (?i)\b_fetch_binary\b
+- id: python-detached-helper-launch
+  desc: Python detached-helper launch reference
+  crit: notable
+  conf: 0.94
+  if:
+    type: text
+    regex: (?i)\b_spawn_detached\b
 composite_rules:
-  - id: python-pe-stager-chain
-    desc: Python writes, renames, executes, and deletes an EXE payload
-    crit: hostile
-    conf: 0.97
-    # The legs must form one staging chain: secure file utilities spread the
-    # same primitives (temp write, atomic rename, temp cleanup, hidden-window
-    # helpers, magic sniffing for input refusal) across unrelated helpers.
-    # Mirrors the near_lines bound on python-pe-magic-validated-stager below.
-    near_lines: 120
-    all:
-      - id: micro-behaviors/fs/temp/mktemp
-      - id: micro-behaviors/fs/file/rename
-      - id: micro-behaviors/process/create/subprocess
-      - id: micro-behaviors/process/config::creationflags
-      - id: micro-behaviors/fs/delete/file/library::py-remove
+- id: python-pe-stager-chain
+  desc: Python writes, renames, executes, and deletes an EXE payload
+  crit: hostile
+  conf: 0.97
+  near_lines: 120
+  all:
+  - id: micro-behaviors/fs/temp/mktemp
+  - id: micro-behaviors/fs/file/rename
+  - id: python-pe-stager-chain-execution-evidence
+  - id: micro-behaviors/process/config::creationflags
+  - id: micro-behaviors/fs/delete/file/library::py-remove
+  any:
+  - id: micro-behaviors/fs/file/rename::rename-target-exe
+  - id: micro-behaviors/data/format/executable/magic::exec-format-magic-reference
+  - id: objectives/evasion/masquerade/file/prefix::artifact-prefix-masquerade
+  downgrade:
     any:
-      - id: micro-behaviors/fs/file/rename::rename-target-exe
-      - id: micro-behaviors/data/format/executable/magic::exec-format-magic-reference
-      - id: objectives/evasion/masquerade/file/prefix::artifact-prefix-masquerade
-    downgrade:
-      any:
-        - id: metadata/path/directory::test-directory-component
+    - id: metadata/path/directory::test-directory-component
+- id: python-configured-binary-stager
+  desc: Python package fetches and launches a configured binary stage
+  crit: hostile
+  conf: 0.99
+  for:
+  - whl
+  - python-sdist
+  - python
+  scope: archive
+  attack: T1195.002,T1105,T1059.006
+  all:
+  - id: micro-behaviors/communications/url/construction/build-http::python-remote-asset-url-config
+  - id: python-binary-fetch-helper
+  - id: micro-behaviors/communications/http/client/response-body::urlopen-response-body-read
+  - id: micro-behaviors/communications/tls/verify/disable::tls-validation-fully-disabled
+  - id: micro-behaviors/fs/file/open::python-method-open-write-binary
+  - id: micro-behaviors/fs/temp/mktemp::tempfile-mkdtemp
+  - id: micro-behaviors/process/create/subprocess/launch::run-ast
+  - id: micro-behaviors/process/create/subprocess/launch::popen-ast
+  - id: micro-behaviors/process/config::combined-creationflags
+  - id: python-detached-helper-launch
+- id: python-downloader-clears-event-logs
+  desc: Python package downloads a stage and clears Windows event logs
+  crit: hostile
+  conf: 0.99
+  for:
+  - whl
+  - python-sdist
+  - python
+  scope: archive
+  attack: T1195.002,T1105,T1070.001
+  all:
+  - id: micro-behaviors/communications/url/construction/build-http::python-remote-asset-url-config
+  - id: python-binary-fetch-helper
+  - id: micro-behaviors/communications/http/client/response-body::urlopen-response-body-read
+  - id: micro-behaviors/fs/file/open::python-method-open-write-binary
+  - id: micro-behaviors/process/create/subprocess/launch::run-ast
+  - id: micro-behaviors/process/config::creationflags
+  - id: objectives/evasion/indicator-removal/logs::python-eventlog-clear-argv
+- id: python-import-time-configured-binary-stager
+  desc: Import triggers remote binary staging
+  crit: hostile
+  conf: 0.99
+  for:
+  - whl
+  - python-sdist
+  - python
+  scope: archive
+  attack: T1195.002,T1105,T1059.006
+  all:
+  - id: metadata/file/size::init-py-file
+  - id: micro-behaviors/data/control-flow/module-exec::module-level-side-effect-call
   - id: python-configured-binary-stager
-    desc: Python package fetches and launches a configured binary stage
-    crit: hostile
-    conf: 0.99
-    for: [whl, python-sdist, python]
-    scope: archive
-    attack: T1195.002,T1105,T1059.006
-    all:
-      - id: micro-behaviors/communications/url/construction/build-http::python-remote-asset-url-config
-      - id: python-binary-fetch-helper
-      - id: micro-behaviors/communications/http/client/response-body::urlopen-response-body-read
-      - id: micro-behaviors/communications/tls/verify/disable::tls-validation-fully-disabled
-      - id: micro-behaviors/fs/file/open::python-method-open-write-binary
-      - id: micro-behaviors/fs/temp/mktemp::tempfile-mkdtemp
-      - id: micro-behaviors/process/create/subprocess::run-ast
-      - id: micro-behaviors/process/create/subprocess::popen-ast
-      - id: micro-behaviors/process/config::combined-creationflags
-      - id: python-detached-helper-launch
-
-  - id: python-downloader-clears-event-logs
-    desc: Python package downloads a stage and clears Windows event logs
-    crit: hostile
-    conf: 0.99
-    for: [whl, python-sdist, python]
-    scope: archive
-    attack: T1195.002,T1105,T1070.001
-    all:
-      - id: micro-behaviors/communications/url/construction/build-http::python-remote-asset-url-config
-      - id: python-binary-fetch-helper
-      - id: micro-behaviors/communications/http/client/response-body::urlopen-response-body-read
-      - id: micro-behaviors/fs/file/open::python-method-open-write-binary
-      - id: micro-behaviors/process/create/subprocess::run-ast
-      - id: micro-behaviors/process/config::creationflags
-      - id: objectives/evasion/indicator-removal/logs::python-eventlog-clear-argv
-
-  - id: python-import-time-configured-binary-stager
-    desc: Import triggers remote binary staging
-    crit: hostile
-    conf: 0.99
-    for: [whl, python-sdist, python]
-    scope: archive
-    attack: T1195.002,T1105,T1059.006
-    all:
-      - id: metadata/file/size::init-py-file
-      - id: micro-behaviors/data/control-flow/module-exec::module-level-side-effect-call
-      - id: python-configured-binary-stager
-
-  - id: python-pe-magic-validated-stager
-    desc: Python validates exec-format magic before staging payload
-    crit: hostile
-    conf: 0.98
-    near_lines: 120
-    all:
-      - id: micro-behaviors/process/create/subprocess
-      - id: micro-behaviors/process/config::creationflags
-      - id: micro-behaviors/data/format/executable/magic::exec-format-magic-reference
-    downgrade:
-      any:
-        - id: metadata/path/directory::test-directory-component
-  - id: artifact-masquerade-execution
-    desc: Artifact-prefix masqueraded temp file executed
-    crit: hostile
-    conf: 0.96
-    near_bytes: 512
-    all:
-      - id: objectives/evasion/masquerade/file/prefix::artifact-prefix-masquerade
+- id: python-pe-magic-validated-stager
+  desc: Python validates exec-format magic before staging payload
+  crit: hostile
+  conf: 0.98
+  near_lines: 120
+  all:
+  - id: micro-behaviors/process/config::creationflags
+  - id: micro-behaviors/data/format/executable/magic::exec-format-magic-reference
+  downgrade:
     any:
-      - id: micro-behaviors/process/create/subprocess
-      - id: metadata/file/profile/script-evaluation::urlencoded-groovy-processbuilder
-      - id: micro-behaviors/process/create/shell/command-mode::python-os-system
-      - id: micro-behaviors/process/create/shellexec::os-startfile-call
-    downgrade:
-      any:
-        - id: metadata/path/directory::test-directory-component
+    - id: metadata/path/directory::test-directory-component
+  any:
+  - id: metadata/lang/natural/diagnostic::pyc-shell-command-description
+  - id: micro-behaviors/process/create/subprocess/capture::check-output
+  - id: micro-behaviors/process/create/subprocess/capture::check-output-ast
+  - id: micro-behaviors/process/create/subprocess/capture::importlib-check-output-call
+  - id: micro-behaviors/process/create/subprocess/capture::importlib-subprocess-check-output
+  - id: micro-behaviors/process/create/subprocess/capture::popen-pipe-communicate
+  - id: micro-behaviors/process/create/subprocess/capture::ruby-open3-capture
+  - id: micro-behaviors/process/create/subprocess/configure::nstask-launch-path
+  - id: micro-behaviors/process/create/subprocess/configure::rust-command-curl-wget
+  - id: micro-behaviors/process/create/subprocess/configure::rust-command-path-variable
+  - id: micro-behaviors/process/create/subprocess/launch::applescript-nstask-shell-exec
+  - id: micro-behaviors/process/create/subprocess/launch::aspnet-source-process-static-start
+  - id: micro-behaviors/process/create/subprocess/launch::asyncio-create-subprocess-exec
+  - id: micro-behaviors/process/create/subprocess/launch::build-extension-subprocess-popen
+  - id: micro-behaviors/process/create/subprocess/launch::bun-spawn-call
+  - id: micro-behaviors/process/create/subprocess/launch::call-ast
+  - id: micro-behaviors/process/create/subprocess/launch::call-touch-argv
+  - id: micro-behaviors/process/create/subprocess/launch::check-call-ast
+  - id: micro-behaviors/process/create/subprocess/launch::check-call-content
+  - id: micro-behaviors/process/create/subprocess/launch::deno-run-call
+  - id: micro-behaviors/process/create/subprocess/launch::dotnet-process-start
+  - id: micro-behaviors/process/create/subprocess/launch::dotnet-source-process-instance-start
+  - id: micro-behaviors/process/create/subprocess/launch::git-diff-argv-call
+  - id: micro-behaviors/process/create/subprocess/launch::glib-get-text-command-argument
+  - id: micro-behaviors/process/create/subprocess/launch::go-command-launch
+  - id: micro-behaviors/process/create/subprocess/launch::go-command-start
+  - id: micro-behaviors/process/create/subprocess/launch::go-powershell-launch-call
+  - id: micro-behaviors/process/create/subprocess/launch::go-toolchain-command
+  - id: micro-behaviors/process/create/subprocess/launch::groovy-processbuilder-start
+  - id: micro-behaviors/process/create/subprocess/launch::java-jar-argv
+  - id: micro-behaviors/process/create/subprocess/launch::java-processbuilder-start-source
+  - id: micro-behaviors/process/create/subprocess/launch::java-shell-exec-with-capture
+  - id: micro-behaviors/process/create/subprocess/launch::nstask-launch
+  - id: micro-behaviors/process/create/subprocess/launch::popen-ast
+  - id: micro-behaviors/process/create/subprocess/launch::popen-content
+  - id: micro-behaviors/process/create/subprocess/launch::proc-open
+  - id: micro-behaviors/process/create/subprocess/launch::proc-open-variable-argument
+  - id: micro-behaviors/process/create/subprocess/launch::process-execution
+  - id: micro-behaviors/process/create/subprocess/launch::pyc-subprocess-api-text
+  - id: micro-behaviors/process/create/subprocess/launch::python-binary-path-argv-proxy
+  - id: micro-behaviors/process/create/subprocess/launch::python-curl-child-piped-into-shell
+  - id: micro-behaviors/process/create/subprocess/launch::python-decoded-bytes-subprocess-argv
+  - id: micro-behaviors/process/create/subprocess/launch::python-exe-library-subprocess
+  - id: micro-behaviors/process/create/subprocess/launch::python-exec-capability
+  - id: micro-behaviors/process/create/subprocess/launch::python-exec-near-download
+  - id: micro-behaviors/process/create/subprocess/launch::python-isolated-source-run
+  - id: micro-behaviors/process/create/subprocess/launch::python-module-level-popen
+  - id: micro-behaviors/process/create/subprocess/launch::python-popen-curl-wget
+  - id: micro-behaviors/process/create/subprocess/launch::python-popen-detached-payload
+  - id: micro-behaviors/process/create/subprocess/launch::python-popen-shell-interpreter
+  - id: micro-behaviors/process/create/subprocess/launch::python-start-shell-subprocess-launch
+  - id: micro-behaviors/process/create/subprocess/launch::python-subprocess-launch-calls
+  - id: micro-behaviors/process/create/subprocess/launch::python-subprocess-string-command
+  - id: micro-behaviors/process/create/subprocess/launch::recv-input-argument
+  - id: micro-behaviors/process/create/subprocess/launch::ruby-http-body-script-subprocess-flow
+  - id: micro-behaviors/process/create/subprocess/launch::ruby-popen
+  - id: micro-behaviors/process/create/subprocess/launch::run-ast
+  - id: micro-behaviors/process/create/subprocess/launch::run-content
+  - id: micro-behaviors/process/create/subprocess/launch::runtime-exec-with-shell-array
+  - id: micro-behaviors/process/create/subprocess/launch::rust-command-spawn-call
+  - id: micro-behaviors/process/create/subprocess/launch::rust-command-status-call
+  - id: micro-behaviors/process/create/subprocess/launch::subprocess-result-pyc
+  - id: micro-behaviors/process/create/subprocess/launch::subprocess-run-sys-executable
+  - id: micro-behaviors/process/create/subprocess/launch::subprocess-shell-cwd-options
+  - id: micro-behaviors/process/create/subprocess/launch::swift-source-process-run
+  - id: micro-behaviors/process/create/subprocess/launch::sys-executable-c-popen-ast
+  - id: micro-behaviors/process/create/subprocess/launch::sys-executable-popen
+  - id: micro-behaviors/process/create/subprocess/launch::sys-executable-stdin-subprocess
+  - id: micro-behaviors/process/create/subprocess/launch::variable-command-argument
+  needs: 1
+- id: artifact-masquerade-execution
+  desc: Artifact-prefix masqueraded temp file executed
+  crit: hostile
+  conf: 0.96
+  near_bytes: 512
+  all:
+  - id: objectives/evasion/masquerade/file/prefix::artifact-prefix-masquerade
+  any:
+  - id: metadata/lang/natural/diagnostic::pyc-shell-command-description
+  - id: micro-behaviors/process/create/subprocess/capture::check-output
+  - id: micro-behaviors/process/create/subprocess/capture::check-output-ast
+  - id: micro-behaviors/process/create/subprocess/capture::importlib-check-output-call
+  - id: micro-behaviors/process/create/subprocess/capture::importlib-subprocess-check-output
+  - id: micro-behaviors/process/create/subprocess/capture::popen-pipe-communicate
+  - id: micro-behaviors/process/create/subprocess/capture::ruby-open3-capture
+  - id: micro-behaviors/process/create/subprocess/configure::nstask-launch-path
+  - id: micro-behaviors/process/create/subprocess/configure::rust-command-curl-wget
+  - id: micro-behaviors/process/create/subprocess/configure::rust-command-path-variable
+  - id: micro-behaviors/process/create/subprocess/launch::applescript-nstask-shell-exec
+  - id: micro-behaviors/process/create/subprocess/launch::aspnet-source-process-static-start
+  - id: micro-behaviors/process/create/subprocess/launch::asyncio-create-subprocess-exec
+  - id: micro-behaviors/process/create/subprocess/launch::build-extension-subprocess-popen
+  - id: micro-behaviors/process/create/subprocess/launch::bun-spawn-call
+  - id: micro-behaviors/process/create/subprocess/launch::call-ast
+  - id: micro-behaviors/process/create/subprocess/launch::call-touch-argv
+  - id: micro-behaviors/process/create/subprocess/launch::check-call-ast
+  - id: micro-behaviors/process/create/subprocess/launch::check-call-content
+  - id: micro-behaviors/process/create/subprocess/launch::deno-run-call
+  - id: micro-behaviors/process/create/subprocess/launch::dotnet-process-start
+  - id: micro-behaviors/process/create/subprocess/launch::dotnet-source-process-instance-start
+  - id: micro-behaviors/process/create/subprocess/launch::git-diff-argv-call
+  - id: micro-behaviors/process/create/subprocess/launch::glib-get-text-command-argument
+  - id: micro-behaviors/process/create/subprocess/launch::go-command-launch
+  - id: micro-behaviors/process/create/subprocess/launch::go-command-start
+  - id: micro-behaviors/process/create/subprocess/launch::go-powershell-launch-call
+  - id: micro-behaviors/process/create/subprocess/launch::go-toolchain-command
+  - id: micro-behaviors/process/create/subprocess/launch::groovy-processbuilder-start
+  - id: micro-behaviors/process/create/subprocess/launch::java-jar-argv
+  - id: micro-behaviors/process/create/subprocess/launch::java-processbuilder-start-source
+  - id: micro-behaviors/process/create/subprocess/launch::java-shell-exec-with-capture
+  - id: micro-behaviors/process/create/subprocess/launch::nstask-launch
+  - id: micro-behaviors/process/create/subprocess/launch::popen-ast
+  - id: micro-behaviors/process/create/subprocess/launch::popen-content
+  - id: micro-behaviors/process/create/subprocess/launch::proc-open
+  - id: micro-behaviors/process/create/subprocess/launch::proc-open-variable-argument
+  - id: micro-behaviors/process/create/subprocess/launch::process-execution
+  - id: micro-behaviors/process/create/subprocess/launch::pyc-subprocess-api-text
+  - id: micro-behaviors/process/create/subprocess/launch::python-binary-path-argv-proxy
+  - id: micro-behaviors/process/create/subprocess/launch::python-curl-child-piped-into-shell
+  - id: micro-behaviors/process/create/subprocess/launch::python-decoded-bytes-subprocess-argv
+  - id: micro-behaviors/process/create/subprocess/launch::python-exe-library-subprocess
+  - id: micro-behaviors/process/create/subprocess/launch::python-exec-capability
+  - id: micro-behaviors/process/create/subprocess/launch::python-exec-near-download
+  - id: micro-behaviors/process/create/subprocess/launch::python-isolated-source-run
+  - id: micro-behaviors/process/create/subprocess/launch::python-module-level-popen
+  - id: micro-behaviors/process/create/subprocess/launch::python-popen-curl-wget
+  - id: micro-behaviors/process/create/subprocess/launch::python-popen-detached-payload
+  - id: micro-behaviors/process/create/subprocess/launch::python-popen-shell-interpreter
+  - id: micro-behaviors/process/create/subprocess/launch::python-start-shell-subprocess-launch
+  - id: micro-behaviors/process/create/subprocess/launch::python-subprocess-launch-calls
+  - id: micro-behaviors/process/create/subprocess/launch::python-subprocess-string-command
+  - id: micro-behaviors/process/create/subprocess/launch::recv-input-argument
+  - id: micro-behaviors/process/create/subprocess/launch::ruby-http-body-script-subprocess-flow
+  - id: micro-behaviors/process/create/subprocess/launch::ruby-popen
+  - id: micro-behaviors/process/create/subprocess/launch::run-ast
+  - id: micro-behaviors/process/create/subprocess/launch::run-content
+  - id: micro-behaviors/process/create/subprocess/launch::runtime-exec-with-shell-array
+  - id: micro-behaviors/process/create/subprocess/launch::rust-command-spawn-call
+  - id: micro-behaviors/process/create/subprocess/launch::rust-command-status-call
+  - id: micro-behaviors/process/create/subprocess/launch::subprocess-result-pyc
+  - id: micro-behaviors/process/create/subprocess/launch::subprocess-run-sys-executable
+  - id: micro-behaviors/process/create/subprocess/launch::subprocess-shell-cwd-options
+  - id: micro-behaviors/process/create/subprocess/launch::swift-source-process-run
+  - id: micro-behaviors/process/create/subprocess/launch::sys-executable-c-popen-ast
+  - id: micro-behaviors/process/create/subprocess/launch::sys-executable-popen
+  - id: micro-behaviors/process/create/subprocess/launch::sys-executable-stdin-subprocess
+  - id: micro-behaviors/process/create/subprocess/launch::variable-command-argument
+  - id: metadata/file/profile/script-evaluation::urlencoded-groovy-processbuilder
+  - id: micro-behaviors/process/create/shell/command-mode::python-os-system
+  - id: micro-behaviors/process/create/shellexec::os-startfile-call
+  downgrade:
+    any:
+    - id: metadata/path/directory::test-directory-component
+- id: python-pe-stager-chain-execution-evidence
+  desc: Launch or process-replacement evidence
+  crit: component
+  conf: 1.0
+  any:
+  - id: metadata/lang/natural/diagnostic::pyc-shell-command-description
+  - id: micro-behaviors/process/create/subprocess/capture::check-output
+  - id: micro-behaviors/process/create/subprocess/capture::check-output-ast
+  - id: micro-behaviors/process/create/subprocess/capture::importlib-check-output-call
+  - id: micro-behaviors/process/create/subprocess/capture::importlib-subprocess-check-output
+  - id: micro-behaviors/process/create/subprocess/capture::popen-pipe-communicate
+  - id: micro-behaviors/process/create/subprocess/capture::ruby-open3-capture
+  - id: micro-behaviors/process/create/subprocess/configure::nstask-launch-path
+  - id: micro-behaviors/process/create/subprocess/configure::rust-command-curl-wget
+  - id: micro-behaviors/process/create/subprocess/configure::rust-command-path-variable
+  - id: micro-behaviors/process/create/subprocess/launch::applescript-nstask-shell-exec
+  - id: micro-behaviors/process/create/subprocess/launch::aspnet-source-process-static-start
+  - id: micro-behaviors/process/create/subprocess/launch::asyncio-create-subprocess-exec
+  - id: micro-behaviors/process/create/subprocess/launch::build-extension-subprocess-popen
+  - id: micro-behaviors/process/create/subprocess/launch::bun-spawn-call
+  - id: micro-behaviors/process/create/subprocess/launch::call-ast
+  - id: micro-behaviors/process/create/subprocess/launch::call-touch-argv
+  - id: micro-behaviors/process/create/subprocess/launch::check-call-ast
+  - id: micro-behaviors/process/create/subprocess/launch::check-call-content
+  - id: micro-behaviors/process/create/subprocess/launch::deno-run-call
+  - id: micro-behaviors/process/create/subprocess/launch::dotnet-process-start
+  - id: micro-behaviors/process/create/subprocess/launch::dotnet-source-process-instance-start
+  - id: micro-behaviors/process/create/subprocess/launch::git-diff-argv-call
+  - id: micro-behaviors/process/create/subprocess/launch::glib-get-text-command-argument
+  - id: micro-behaviors/process/create/subprocess/launch::go-command-launch
+  - id: micro-behaviors/process/create/subprocess/launch::go-command-start
+  - id: micro-behaviors/process/create/subprocess/launch::go-powershell-launch-call
+  - id: micro-behaviors/process/create/subprocess/launch::go-toolchain-command
+  - id: micro-behaviors/process/create/subprocess/launch::groovy-processbuilder-start
+  - id: micro-behaviors/process/create/subprocess/launch::java-jar-argv
+  - id: micro-behaviors/process/create/subprocess/launch::java-processbuilder-start-source
+  - id: micro-behaviors/process/create/subprocess/launch::java-shell-exec-with-capture
+  - id: micro-behaviors/process/create/subprocess/launch::nstask-launch
+  - id: micro-behaviors/process/create/subprocess/launch::popen-ast
+  - id: micro-behaviors/process/create/subprocess/launch::popen-content
+  - id: micro-behaviors/process/create/subprocess/launch::proc-open
+  - id: micro-behaviors/process/create/subprocess/launch::proc-open-variable-argument
+  - id: micro-behaviors/process/create/subprocess/launch::process-execution
+  - id: micro-behaviors/process/create/subprocess/launch::pyc-subprocess-api-text
+  - id: micro-behaviors/process/create/subprocess/launch::python-binary-path-argv-proxy
+  - id: micro-behaviors/process/create/subprocess/launch::python-curl-child-piped-into-shell
+  - id: micro-behaviors/process/create/subprocess/launch::python-decoded-bytes-subprocess-argv
+  - id: micro-behaviors/process/create/subprocess/launch::python-exe-library-subprocess
+  - id: micro-behaviors/process/create/subprocess/launch::python-exec-capability
+  - id: micro-behaviors/process/create/subprocess/launch::python-exec-near-download
+  - id: micro-behaviors/process/create/subprocess/launch::python-isolated-source-run
+  - id: micro-behaviors/process/create/subprocess/launch::python-module-level-popen
+  - id: micro-behaviors/process/create/subprocess/launch::python-popen-curl-wget
+  - id: micro-behaviors/process/create/subprocess/launch::python-popen-detached-payload
+  - id: micro-behaviors/process/create/subprocess/launch::python-popen-shell-interpreter
+  - id: micro-behaviors/process/create/subprocess/launch::python-start-shell-subprocess-launch
+  - id: micro-behaviors/process/create/subprocess/launch::python-subprocess-launch-calls
+  - id: micro-behaviors/process/create/subprocess/launch::python-subprocess-string-command
+  - id: micro-behaviors/process/create/subprocess/launch::recv-input-argument
+  - id: micro-behaviors/process/create/subprocess/launch::ruby-http-body-script-subprocess-flow
+  - id: micro-behaviors/process/create/subprocess/launch::ruby-popen
+  - id: micro-behaviors/process/create/subprocess/launch::run-ast
+  - id: micro-behaviors/process/create/subprocess/launch::run-content
+  - id: micro-behaviors/process/create/subprocess/launch::runtime-exec-with-shell-array
+  - id: micro-behaviors/process/create/subprocess/launch::rust-command-spawn-call
+  - id: micro-behaviors/process/create/subprocess/launch::rust-command-status-call
+  - id: micro-behaviors/process/create/subprocess/launch::subprocess-result-pyc
+  - id: micro-behaviors/process/create/subprocess/launch::subprocess-run-sys-executable
+  - id: micro-behaviors/process/create/subprocess/launch::subprocess-shell-cwd-options
+  - id: micro-behaviors/process/create/subprocess/launch::swift-source-process-run
+  - id: micro-behaviors/process/create/subprocess/launch::sys-executable-c-popen-ast
+  - id: micro-behaviors/process/create/subprocess/launch::sys-executable-popen
+  - id: micro-behaviors/process/create/subprocess/launch::sys-executable-stdin-subprocess
+  - id: micro-behaviors/process/create/subprocess/launch::variable-command-argument
