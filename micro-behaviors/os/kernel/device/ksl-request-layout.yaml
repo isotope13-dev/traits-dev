@@ -1,0 +1,139 @@
+# Source request facts; @evidence selects the call being joined.
+# Neither the shared KSL control code nor command 8 alone proves termination.
+defaults:
+  platforms:
+  - windows
+  for:
+  - c
+  - cpp
+  - csharp
+  - rust
+  - python
+  - go
+traits:
+- id: ksl-eight-byte-control-call
+  desc: KSL control call with eight-byte size
+  crit: notable
+  conf: 0.98
+  if:
+    type: symbol
+    kind: call
+    regex: (^|[.:])DeviceIoControl$
+    args:
+    - index: 1
+      kind: number
+      value: 2236484
+    - index: 3
+      kind: number
+      value: 8
+- id: ksl-macro-eight-byte-control-call
+  desc: Macro-based KSL eight-byte control request
+  crit: notable
+  conf: 0.98
+  if:
+    type: tree-sitter
+    language: c
+    query: |-
+      ((translation_unit
+        (preproc_def name: (identifier) @macro value: (preproc_arg) @value)
+        (function_definition body: (compound_statement [
+        (expression_statement (call_expression function: (identifier) @ioctl
+        arguments: (argument_list . (_) . (_) @code
+          . (identifier) @sent . (number_literal) @length)) @evidence)
+        (if_statement condition: (_ [
+          (call_expression function: (identifier) @ioctl
+        arguments: (argument_list . (_) . (_) @code
+          . (identifier) @sent . (number_literal) @length)) @evidence
+          (unary_expression argument: (call_expression function: (identifier) @ioctl
+        arguments: (argument_list . (_) . (_) @code
+          . (identifier) @sent . (number_literal) @length)) @evidence)]))
+      ])))
+        (#match? @value "^(0[xX]0*222044|2236484)[uUlL]*[ \t\r]*$")
+        (#eq? @macro @code)
+        (#eq? @ioctl "DeviceIoControl")
+      (#match? @length "^(8|0[xX]0*8)[uUlL]*$"))
+  for:
+  - c
+  - cpp
+- id: native-command-eight-dword-device-buffer
+  desc: Sends command-8 and DWORD buffer
+  crit: notable
+  conf: 0.98
+  if:
+    type: tree-sitter
+    language: c
+    query: |-
+      ((compound_statement
+        (expression_statement (assignment_expression
+          left: (pointer_expression argument: (cast_expression
+            type: (type_descriptor type: (type_identifier) @wordtype)
+            value: (identifier) @buffer))
+          right: (number_literal) @command))
+        . (expression_statement (assignment_expression
+          left: (pointer_expression argument: (cast_expression
+            type: (type_descriptor type: (type_identifier) @pidtype)
+            value: (parenthesized_expression (binary_expression
+              left: (identifier) @pidbuffer operator: "+"
+              right: (number_literal) @offset))))
+          right: (_)))
+        . [
+        (expression_statement (call_expression function: (identifier) @ioctl
+        arguments: (argument_list . (_) . (_) @code
+          . (identifier) @sent . (number_literal) @length)) @evidence)
+        (if_statement condition: (_ [
+          (call_expression function: (identifier) @ioctl
+        arguments: (argument_list . (_) . (_) @code
+          . (identifier) @sent . (number_literal) @length)) @evidence
+          (unary_expression argument: (call_expression function: (identifier) @ioctl
+        arguments: (argument_list . (_) . (_) @code
+          . (identifier) @sent . (number_literal) @length)) @evidence)]))
+      ])
+        (#eq? @buffer @pidbuffer) (#eq? @buffer @sent)
+        (#eq? @wordtype @pidtype)
+        (#match? @wordtype "^(DWORD|ULONG|UINT32|uint32_t)$")
+        (#match? @command "^(8|0[xX]0*8)[uUlL]*$")
+        (#match? @offset "^(4|0[xX]0*4)[uUlL]*$")
+        (#eq? @ioctl "DeviceIoControl")
+      (#match? @length "^(8|0[xX]0*8)[uUlL]*$")
+        (#set! cleave.ignore-comments "true"))
+  for:
+  - c
+  - cpp
+- id: python-command-eight-dword-device-buffer
+  desc: Packs command-8 and DWORD device input
+  crit: notable
+  conf: 0.98
+  if:
+    type: tree-sitter
+    query: |-
+      ((call
+        function: (attribute attribute: (identifier) @ioctl)
+        arguments: (argument_list . (_) . (_)
+          . (call function: (attribute attribute: (identifier) @pack)
+            arguments: (argument_list . (string) @format . (integer) @command . (_) .))
+          . (integer) @length)) @evidence
+        (#eq? @ioctl "DeviceIoControl") (#eq? @pack "pack")
+        (#match? @format "^[\"'][<=][IL]{2}[\"']$")
+        (#match? @command "^(8|0[xX]0*8)$")
+        (#match? @length "^(8|0[xX]0*8)$"))
+  for:
+  - python
+composite_rules:
+- id: ksl-eight-byte-device-control
+  desc: KSL 0x222044 device request with eight-byte size
+  crit: notable
+  conf: 0.98
+  any:
+  - id: ksl-eight-byte-control-call
+  - id: ksl-macro-eight-byte-control-call
+- id: command-eight-dword-device-buffer
+  desc: Device request carries command 8 and a DWORD value
+  crit: notable
+  conf: 0.98
+  any:
+  - id: native-command-eight-dword-device-buffer
+  - id: python-command-eight-dword-device-buffer
+  for:
+  - c
+  - cpp
+  - python
