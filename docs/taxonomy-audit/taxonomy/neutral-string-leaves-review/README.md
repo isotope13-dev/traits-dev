@@ -1,0 +1,5 @@
+# Neutral legacy string leaves
+
+Seven legacy leaves mixed container vocabulary, graphics references, credential labels, a hashed-record structure, a binary string-count measurement, upgrade wording and upstream attribution. The rules now live with their individual subjects: runtime and specification references, graphics names and paths, secret naming, record format, binary-string profiles, wording, license references and vendor attribution. None of these observations alone establishes collection, execution or encryption.
+
+The runc directory is used as an exclusion, so generic runc/libcontainer name references remain separate tool-reference evidence. An `image-spec` text match does not by itself prove OCI identity; the combined reference IDs and descriptions now state their alternatives. Likewise, a `libcontainer` reference alone no longer claims runc. Vulkan word references moved to the named library with their existing section scopes; their one-byte minimum is implied by the nonempty text matchers. All other matching scopes and criticalities are preserved, and exact consumers were updated.

@@ -1,0 +1,17 @@
+# Injection branch review
+
+Six legacy subtrees were reviewed by required evidence. Suspended-child APC and section-map/thread-context injection moved to payload execution; an in-process mapping hook moved to the image-map sink. The unsigned version-proxy and API-table combination moved to DLL proxy masquerade. System32 filename references moved to path evidence without labeling the names as injection targets.
+
+Object callback registration and cross-process memory APIs are a driver capability profile; a separate compromised-signer combination remains a hostile code-signing-bypass finding. Atom-table readback plus APC scheduling is an API profile, not proof of atom-bombing; adding a hard-error API reference does not prove a crash. The surveillance combinations retain their stronger collection findings while their names and technique tags describe the evidence.
+
+One existing positive hosts-file sinkhole composite references the entire payload-injection directory. It can now also match the moved APC and section-map findings; those are relevant injection evidence, and the composite still requires an unsigned executable, a hosts-file path and security-vendor localhost redirects. No exclusion directory was broadened.
+
+The PHP procfs shellcode case now separates the interpolated memory path and shellcode write from their likely injection combination. The atom/APC building block is a component, while the hard-error and kernel callback API combinations are notable profiles of independently observable references.
+
+The remaining procfs rules were reviewed by their required evidence: process-memory and environment paths, file-search commands, and injector-related identifiers moved to their observed subjects. Process-memory open plus maps, ptrace and names, and a memory path plus XOR bytes remain evidence profiles rather than confirmed injection. The Lua-search/backdoor-text combination is a suspicious script profile. A Perl LD_PRELOAD composite repeated an environment path already required by its atomic rule and was retired as redundant. The legacy procfs subtree has no remaining rules.
+
+The ptrace subtree was reviewed by required evidence. Calls and attach observations moved to debugger control or attachment; ptrace policy and process-memory paths moved to path observations; function names moved to source naming; and unbound memory, debugger, or identifier combinations moved to evidence profiles. The profiles no longer claim a policy change or injection from paths and references alone. No live YAML references to the retired ptrace namespace remain.
+
+The callback subtree was divided into likely callback deployment, admitted obfuscated local-buffer payload execution, memory and API profiles, and individual API observations. A timer API/resolver combination no longer asserts shellcode execution; its CBC-resource consumer now names the evidence. Thread context API references and their Go trading-type consumer were moved to evidence profiles, without calling ordinary type names a decoy or asserting injection.
+
+The injection toolkit review separated PoolParty module names into an injection-tool reference profile, Cargo feature declarations and unbound API combinations into evidence profiles, Python DLL helpers into the DLL capability, and a KDU mapping command plus detached-injector log into driver exploitation. Their original file-size and section matching scope is preserved. The toolkit general and compatibility files remain.

@@ -1,0 +1,7 @@
+# Final string-identity and neighborhood review
+
+The final `metadata/file/string/identity` observations now live with their subjects: Android API and runtime references, architecture mentions, literals and source names, paths and basenames, prompt examples, and named Chromium and Microsoft runtime components. Generic `%%results%%`, `Frank`, `Cuckoo`, and DOS utility names no longer claim a vendor, developer, typeface or specific operating system without supporting evidence. Two Chromium helper basename observations and the Visual C++ redistributable name are notable references; they do not assert that a file is the genuine product. An abbreviated curl-to-Bash example uses disjoint source and document components with its original notable rollup to retain its full file-type scope.
+
+The neighboring location, basename and filename name-form directories had 84, 78 and 82 rules. User-directory paths, executable references, and development, test and source names were split by subject. The two existing whole-location selectors include both the retained location directory and the moved user-directory rules, preserving their previous union.
+
+The legacy `metadata/file/string` and `metadata/file/literal` trees have no remaining definitions. Their temporary grandfather lists and obsolete file-type exceptions were removed so those IDs cannot be reintroduced. Other directory caps are unchanged.

@@ -1,0 +1,5 @@
+# DAEMON Tools campaign review
+
+The 91-rule legacy branch was divided among DAEMON Tools product identity, the campaign's backdoored helper, InfoCollector, CodeInj, and generic method-name, API-error, path, section and behavioral observations. The family directories identify the campaign stages by their roles rather than their distribution route. The [Securelist incident report](https://securelist.com/tr/daemon-tools-backdoor/119654/) describes the compromised helper, information collector and subsequent shellcode loader.
+
+Normal DAEMON Tools vendor identity, an engine-loading error, and an Engine.dll reference do not establish compromise. The hostile helper-family composites now require the campaign host or pipe GUID rather than accepting those generic observations alone. Likewise, a statement about authorized use is not evidence of deception, and API error strings do not establish that an operation succeeded. Distinctive campaign signatures and vendor identity no longer have an arbitrary 512 KiB ceiling. Cross-references were updated.

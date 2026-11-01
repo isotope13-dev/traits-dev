@@ -1,0 +1,9 @@
+# Lateral-delivery review
+
+The former multi-stage and multi-method leaves mixed unrelated behaviors. Go admin-share, WMIC and PsExec command evidence now lives with its actual capability; their combined remote-administration observation is notable, rather than claiming hostile propagation from ordinary administrative methods. A PE profile that only combines function-name text with DNS references is now neutral evidence.
+
+Base64 plus runtime-loading and remote-process API references are an injection-related profile, not proof of a staged loader. The packed anti-debug profile remains with debugger detection, with network-bootstrap wording removed because its optional APIs do not require network use. NetScaler endpoint strings now identify API paths, not proven staged delivery. Hugging Face command retrieval is a network-download capability, and the Delphi self-copy with a `.jpg.exe` name belongs with double-extension masquerade.
+
+The QNX chain depended on the synthetic `HIDDEN_PAYLOAD_B64` marker and undocumented `PhScreenAttach`/`PhGetImage` names. It was removed rather than retained as hostile delivery. The new `PgReadScreen` call rule detects a real screen-read capability documented by [QNX](https://get.qnx.com/developers/docs/6.4.1/photon/lib_ref/pg/pgreadscreen.html); screen capture alone does not establish exfiltration. The generic `/api/capture/` path remains a neutral API-path reference.
+
+The admin-share observation joins the existing share directory. Its one directory-wide consumer is a positive SMB propagation composite that also requires other independent evidence; the new mapping is a relevant additional share leg and can expand that positive match. The PsExec observation is separate from the broadly referenced subprocess-launch directory. Exact consumers were updated.
