@@ -63,3 +63,12 @@ The PE profile leaf at 70 rules was divided by resource, process, network,
 layout, and resolution evidence. The natural-language phrasing leaf at 85
 rules was also divided by subject. Exact references were updated, and parent
 directory selectors continue to include the same existing rules.
+
+The final binary-shape rules were routed to section, overlay, embedded-file,
+installer, API-resolution and packing subjects; the binary-metrics directory
+now contains no YAML. Twenty-two unreferenced component groupings were
+retired. A verified Microsoft signature plus a checksum mismatch and embedded
+PEs is a suspicious profile, not proof of post-signing tampering; section
+shape and checksum observations likewise do not establish hostile intent.
+The existing directory-wide installer downgrades do not include the moved
+7z/PKCS7 component, preserving their former membership.
