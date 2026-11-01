@@ -3,56 +3,6 @@ defaults:
   for: [json, chrome-manifest, javascript, typescript, crx]
 
 traits:
-  # Text coaching the user through the browser's OWN "an extension changed your
-  # search settings" bubble — "click 'Keep it'", "select Keep changes". Chrome
-  # shows that prompt so the user can undo a settings takeover; an extension that
-  # scripts the user's answer to it is defeating a browser security control, not
-  # onboarding. Deliberately phrased around the verb + Keep pair rather than any
-  # one vendor's wording so re-skins of the same funnel still match.
-  - id: search-url-query-template
-    desc: Search URL query template
-    crit: notable
-    conf: 0.9
-    for: [json, chrome-manifest]
-    if:
-      type: value
-      path: chrome_settings_overrides.search_provider.search_url
-      regex: 'https?://[^"''\s]+([?&](q|query|kw|p)=\{searchTerms\}|/search/\{searchTerms\})'
-      case_insensitive: true
-  # The browser grants a custom provider the user's typed omnibox queries.
-  # Non-mainstream endpoints can be legitimate niche engines, so this is a
-  # review signal rather than a hijack verdict on its own.
-  - id: search-provider-query-endpoint
-    desc: Search provider URL uses /query endpoint
-    crit: notable
-    conf: 0.9
-    for: [json, chrome-manifest]
-    if:
-      type: value
-      path: chrome_settings_overrides.search_provider.search_url
-      regex: '(?i)^https?://[^/]+/query\?(q|query)=\{searchTerms\}$'
-  - id: search-provider-querying-autocomplete-endpoint
-    desc: Suggest URL uses /querying/autocomplete path
-    crit: suspicious
-    conf: 0.92
-    for: [json, chrome-manifest]
-    if:
-      type: value
-      path: chrome_settings_overrides.search_provider.suggest_url
-      regex: '(?i)^https?://[^/]+/querying/autocomplete\?(q|query)=\{searchTerms\}$'
-  # Matches a search word in the provider host or in the `{searchTerms}`
-  # template itself, so this alone does not establish a branded hijack host;
-  # composites supply the monetization and messaging evidence.
-  - id: search-provider-search-token
-    desc: Search provider URL contains a search token
-    crit: notable
-    conf: 0.86
-    for: [json, chrome-manifest]
-    if:
-      type: value
-      path: chrome_settings_overrides.search_provider.search_url
-      regex: 'https?://[^/"'']*\b[a-z0-9-]*search[a-z0-9-]*\b'
-      case_insensitive: true
   - id: browser-brand-search-provider-host
     desc: Browser-brand search provider host marker
     crit: notable
@@ -108,17 +58,6 @@ traits:
       regex: '\.html?([?#]|$)'
       case_insensitive: true
 
-  - id: search-provider-querying-autocomplete-suggest
-    desc: Search suggest URL uses querying/autocomplete
-    crit: notable
-    conf: 0.94
-    for: [json, chrome-manifest]
-    if:
-      type: value
-      path: chrome_settings_overrides.search_provider.suggest_url
-      regex: '^https?://[^/]+/querying/autocomplete\?query=\{searchTerms\}'
-      case_insensitive: true
-
   - id: serp-safe-status-label
     desc: Marks a destination as safe
     crit: notable
@@ -146,7 +85,7 @@ composite_rules:
     crit: suspicious
     conf: 0.92
     attack: T1176
-    scope: archive
+    scope: file
     for: [crx, xpi, zip, chrome-manifest, json]
     all:
       - id: metadata/permission/manifest::extension-default-search-provider
@@ -257,7 +196,7 @@ composite_rules:
       - id: metadata/permission/manifest::extension-default-search-provider
       - id: metadata/permission/host::host-permission-all-urls
       - id: metadata/permission/network::dnr-main-frame-condition
-      - id: search-provider-search-token
+      - id: metadata/permission/extension-api::search-provider-search-token
 
   # The same pair with the monetization evidence attached: the destination is
   # a search-branded host carrying a `{searchTerms}` template and a source tag,
@@ -310,62 +249,59 @@ composite_rules:
 
   # A default search override that also rewrites the provider's requests with
   # declarativeNetRequest query parameters changes browser search traffic after
-  # installation. This is the authority-plus-behavior combination to flag; the
-  # manifest setting alone remains a notable capability.
+  # installation. Attribution parameters can be legitimate, so this is a
+  # suspicious routing change rather than proof of malicious interception.
   - id: extension-search-override-dnr-param-injection
     for: [crx, xpi, chrome-manifest, javascript]
-    desc: Search override injects DNR query parameters
-    crit: hostile
+    desc: Default search provider rewrites query parameters
+    crit: suspicious
     conf: 0.97
     attack: T1176,T1185
     scope: archive
     all:
       - id: metadata/permission/manifest::extension-default-search-provider
       - id: micro-behaviors/communications/http/intercept::dnr-query-parameter-transform
+      - id: micro-behaviors/communications/http/intercept::declarative-net-request-update
 
-  - id: search-override-storage-session-dnr-rewrite
+  - id: search-override-storage-and-request-rewrite
     for: [crx, xpi, zip, chrome-manifest, javascript]
-    desc: Search override injects stored session via DNR
-    crit: hostile
+    desc: Search request rewriting accompanies persistent storage reads
+    crit: suspicious
     conf: 0.98
     attack: T1176,T1185
     scope: archive
     all:
       - id: metadata/permission/network::search-provider-rewrite-authority
       - id: micro-behaviors/data/db/read/key-value::chrome-storage-local-get
-      - id: micro-behaviors/communications/http/intercept::chrome-dnr-update-dynamic-rules
+      - id: micro-behaviors/communications/http/intercept::declarative-net-request-update
       - id: micro-behaviors/communications/http/dynamic::dnr-redirect-action
       - id: micro-behaviors/communications/http/dynamic::dnr-main-frame-resource
 
-  - id: search-override-querying-autocomplete-funnel
-    desc: Default search uses querying/autocomplete proxy
+      - id: micro-behaviors/communications/http/intercept::dnr-query-parameter-transform
+
+  # Typed suggestions leave the browser before the user submits a query.
+  # A custom engine can legitimately implement this, so keep it suspicious.
+  - id: search-override-custom-autocomplete-funnel
+    desc: Custom default provider also receives typed suggestions
     crit: suspicious
     conf: 0.95
     attack: T1176
-    scope: archive
-    for: [crx, xpi, zip, chrome-manifest, json]
+    for: [json, chrome-manifest]
     all:
-      - id: search-url-query-template
-      - id: search-provider-querying-autocomplete-suggest
+      - id: metadata/permission/manifest::extension-default-search-provider
+      - id: metadata/permission/manifest::extension-custom-search-endpoint
+      - id: metadata/permission/manifest::extension-custom-suggest-endpoint
 
   - id: manifest-only-default-search-override
-    desc: Manifest-only extension overrides default search
+    desc: Script-free extension routes default searches to custom host
     crit: suspicious
     conf: 0.93
     attack: T1176
     for: [chrome-manifest, json]
     all:
-      - id: metadata/permission/manifest::chrome-search-terms-template
-      - id: search-provider-search-token
-    unless:
-      - id: metadata/permission/activation::manifest-declares-code-or-permission-key
-      - id: objectives/supply-chain/hidden-payload/extensions/affiliate::manifest-ui-action-or-override-field
-      - id: objectives/supply-chain/hidden-payload/extensions/affiliate::manifest-auxiliary-surface-field
+      - id: metadata/permission/activation::search-only-code-free-manifest
+      - id: metadata/permission/manifest::extension-custom-search-endpoint
 
-  # A default search provider override that pairs webRequest interception hooks
-  # with remote search telemetry reporting modifies and monitors browser search
-  # queries. The manifest declaration alone is notable; pairing it with
-  # webRequest observation and data exfiltration is search hijacking.
   - id: search-override-webrequest-telemetry-hijack
     for: [crx, xpi, zip, chrome-manifest, javascript]
     desc: Search override intercepts traffic with webRequest and exfiltrates telemetry
@@ -378,7 +314,7 @@ composite_rules:
       - id: metadata/permission/network::web-request
       - id: micro-behaviors/communications/http/intercept::chrome-webrequest-api
       - id: micro-behaviors/communications/http/request/json::http-post-json
-      - id: search-provider-search-token
+      - id: metadata/permission/extension-api::search-provider-search-token
 
   # A runtime-installed DNR rule that redirects main-frame search requests to
   # an external HTTP endpoint is direct browser traffic hijacking. The
@@ -444,8 +380,8 @@ composite_rules:
     scope: archive
     all:
       - id: metadata/permission/manifest::extension-default-search-provider
-      - id: search-url-query-template
-      - id: search-provider-search-token
+      - id: metadata/permission/extension-api::search-url-query-template
+      - id: metadata/permission/extension-api::search-provider-search-token
       - id: objectives/collection/activity/browser::extension-persistent-affiliate-tracking
 
   # A provider that claims to be Google but points the browser at a
@@ -488,7 +424,7 @@ composite_rules:
     crit: notable
     conf: 0.9
     all:
-      - id: search-url-query-template
+      - id: metadata/permission/extension-api::search-url-query-template
     any:
       - id: objectives/supply-chain/hidden-payload/extensions/affiliate::yahoo-hosted-search-param
       - id: objectives/supply-chain/hidden-payload/extensions/affiliate::affiliate-partner-query-param
@@ -669,7 +605,7 @@ composite_rules:
     attack: T1176
     all:
       - id: metadata/permission/manifest::extension-default-search-provider
-      - id: objectives/supply-chain/hidden-payload/extensions/affiliate::search-provider-keyword-is-domain
+      - id: metadata/permission/extension-api::search-provider-keyword-is-domain
       - id: objectives/supply-chain/hidden-payload/extensions/affiliate::search-referrer-attribution-query-param
 
   # The monetised new-tab business model, stated as one finding.
@@ -695,8 +631,8 @@ composite_rules:
     all:
       - id: metadata/permission/manifest::extension-default-search-provider
       - id: metadata/permission/manifest::chrome-homepage-override
-      - id: search-url-query-template
-      - id: search-provider-search-token
+      - id: metadata/permission/extension-api::search-url-query-template
+      - id: metadata/permission/extension-api::search-provider-search-token
 
   # A provider need not advertise a search-branded hostname to take over both
   # settings. Requiring the manifest's explicit default flag keeps this below
@@ -712,7 +648,7 @@ composite_rules:
     all:
       - id: metadata/permission/manifest::extension-default-search-provider
       - id: metadata/permission/manifest::chrome-homepage-override
-      - id: search-url-query-template
+      - id: metadata/permission/extension-api::search-url-query-template
 
   # A default-search + homepage takeover by a provider that cannot tell web
   # from image search: its image_url is a static HTML page, not an image
@@ -732,18 +668,5 @@ composite_rules:
     all:
       - id: metadata/permission/manifest::extension-default-search-provider
       - id: metadata/permission/manifest::chrome-homepage-override
-      - id: search-url-query-template
+      - id: metadata/permission/extension-api::search-url-query-template
       - id: search-provider-image-url-html-page
-
-  - id: searchjacked-custom-query-autocomplete-takeover
-    desc: Code-free extension hijacks search and suggest
-    crit: hostile
-    conf: 0.97
-    attack: T1176
-    scope: archive
-    for: [crx, xpi, zip, json, chrome-manifest]
-    all:
-      - id: metadata/permission/activation::search-only-code-free-manifest
-      - id: metadata/permission/manifest::extension-custom-search-endpoint
-      - id: search-provider-query-endpoint
-      - id: search-provider-querying-autocomplete-endpoint
