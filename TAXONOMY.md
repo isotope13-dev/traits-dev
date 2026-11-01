@@ -1041,9 +1041,12 @@ product names retain their product-reference subject.
 
 `data/encoding/xor` records direction-neutral XOR scrambling structure. A
 state-update/byte-XOR/store sequence fits even when the same loop can encode
-and decode. A bare XOR instruction does not establish scrambling. Required
-reconstruction context can establish decoding in a consuming rule; the atom
-must not acquire a direction from its consumer.
+and decode. Classify a required fixed key under `fixed-key`, a repeating key
+under `cyclic-key`, and an operand that evolves through state, position or
+feedback under `evolving-operand`. Use `unspecified-key` when a transform is
+established but its keying mechanism is not. A bare XOR instruction does not
+establish scrambling. Required reconstruction context can establish decoding
+in a consuming rule; the atom must not acquire a direction from its consumer.
 
 ### Files, memory and hardware
 

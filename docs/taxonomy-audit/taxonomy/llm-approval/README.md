@@ -1,15 +1,18 @@
 # Agent approval split
 
-The LLM instruction-override leaf had 80 rules. Eleven approval- and
-consent-bypass observations and composites moved to the sibling `llm/approval`
-subject, leaving 69 rules in `override` and 11 in `approval`. General
+The LLM instruction-override leaf had 80 rules before the concurrent changes.
+Ten approval- and consent-bypass observations and composites moved to the
+sibling `llm/approval` subject. A further rule and its supporting traits were
+retired on the other branch, leaving 69 rules in `override` and 10 in `approval`. General
 instruction-priority overrides remain in the original category. User-directed
 and isolated-harness exceptions remain in their original namespace and are
 referenced explicitly by the relocated rules.
 
 [moves.json](moves.json) records original rules, defaults, ID mappings and
 rewritten consumer files. The move preserves effective predicates, scope,
-criticality and confidence. No directory consumer of the old override leaf
+criticality and confidence, except that the rebase retains the other branch's
+narrower approval indicators and retirement of the persona-and-gate rule.
+No directory consumer of the old override leaf
 was found before the move; references to the parent `llm` subtree continue to
 include both subjects. Run `uv run docs/taxonomy-audit/taxonomy/llm-approval/check-moves.py` to verify definitions and physical/namespace counts.
 

@@ -33,11 +33,22 @@ def normalize(value, namespace):
 for move in moves:
     doc = yaml.safe_load((ROOT / move["destination"]).read_text()) or {}
     namespace, name = move["new"].split("::")
+    if name == "agent-persona-and-gate-takeover":
+        # The rebased branch removed this rule and its supporting traits.
+        assert all(r["id"] != name for r in doc[move["kind"]])
+        continue
     rule = next(r for r in doc[move["kind"]] if r["id"] == name)
     before = {**move["defaults"], **move["before"]}
     after = {**(doc.get("defaults") or {}), **rule}
     before.pop("id")
     after.pop("id")
+    if name == "agent-config-approval-bypass-clues":
+        # Preserve the other branch's narrower approval indicators.
+        retired = {
+            "micro-behaviors/data/llm/permission::agent-permission-wildcard-allow",
+            "micro-behaviors/data/llm/permission::agent-permission-allow-assignment",
+        }
+        before["any"] = [item for item in before["any"] if item["id"] not in retired]
     assert normalize(before, move["old"].split("::")[0]) == normalize(after, namespace), move["old"]
 
 exceptions = yaml.safe_load((ROOT / "objectives/evasion/security-bypass/llm/override/agent-config-hijack.yaml").read_text())
@@ -75,4 +86,4 @@ for branch in ("metadata", "micro-behaviors", "objectives", "well-known"):
 for directory in ("objectives/evasion/security-bypass/llm/override", "objectives/evasion/security-bypass/llm/approval"):
     print(f"{directory}: {physical[directory]} physical, {namespaces[directory]} namespace")
     assert physical[directory] < 72 and namespaces[directory] < 72, directory
-print(f"Verified predicates, scope and severity of {len(moves)} moves")
+print(f"Verified predicates, scope and severity of {len(moves) - 1} moves and one retired rule")
