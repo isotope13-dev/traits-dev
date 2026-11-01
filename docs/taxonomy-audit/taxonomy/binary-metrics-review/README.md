@@ -37,3 +37,29 @@ subject referenced by the name: collection, execution, filesystem, network,
 security, and runtime. This classifies the name evidence, not proof that the
 named activity occurred. Cross-leaf references and existing recursive parent
 selectors were preserved.
+
+The profile, overlay and symbol leaves were retired. Injection API references,
+PE parsing, unsigned overlay and resource combinations, and hidden-process
+settings remain suspicious profiles where the rules do not establish a
+payload or actual execution. The former hostile complexity and VM labels
+were also corrected: their matchers combine complexity measurements, not
+evidence of concealment or a virtual machine. Their consumers now reference
+the measured complexity profiles. Existing suppressions were retained.
+
+Selected remaining binary-shape rules were moved by evidence: PE section and
+import layouts to structural profiles, direct socket/connect syscall
+combinations to the socket capability, and the executable-stack credential
+attack combination to the IoT credential-attack objective. The Mach-O
+combination permits structural clues plus a single ordinary API, so it is a
+section profile rather than an asserted stealer. String-count and entropy
+measurements no longer claim deliberate junk padding.
+
+Two tiny ELF rules and two dependent execution claims described stagers,
+although their predicates require HTTP text, addresses, and file layout but
+no network or execution operation. They now describe suspicious network-text
+profiles. Existing meaningful predicates and suppressions were retained.
+
+The PE profile leaf at 70 rules was divided by resource, process, network,
+layout, and resolution evidence. The natural-language phrasing leaf at 85
+rules was also divided by subject. Exact references were updated, and parent
+directory selectors continue to include the same existing rules.
