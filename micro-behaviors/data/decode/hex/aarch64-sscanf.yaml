@@ -1,0 +1,45 @@
+defaults:
+  platforms: [linux]
+  for: [elf]
+  arch: [aarch64]
+traits:
+  - id: aarch64-sscanf-hex-byte-loop
+    desc: Scans hexadecimal pairs into output bytes
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "elf"
+        rule aarch64_sscanf_hex_byte_loop {
+          strings:
+            $setup = { ?? ?? ?? ?? F5 03 19 AA ?? ?? ?? 91 FB 73 05 A9 7C 46 38 8B FB D3 01 91 ?? ?? ?? (14|15|16|17) }
+            $scan = { E0 03 13 AA E2 03 1B AA E1 03 1A AA 73 0A 00 91 ?? ?? ?? (94|95|96|97) 1F 04 00 71 ?? ?? ?? 54 }
+            $store = { E0 77 40 B9 A0 16 00 38 7F 02 1C EB ?? ?? ?? 54 }
+            $format = "%2x" fullword
+          condition:
+            elf.machine == elf.EM_AARCH64 and all of them and
+            for any t in elf.sections : (t.name == ".text" and
+              for any delta in (t.address-t.offset..t.address-t.offset) : (
+                for any a in (1..#setup) : (for any c in (1..#scan) : (
+                  @setup[a] >= t.offset and @setup[a]+!setup[a] == @store and
+                  @store+!store == @scan[c] and @scan[c]+!scan[c] <= t.offset+t.size and
+                  // Resolve the entry jump and the successful conversion's back edge.
+                  @setup[a]+24+((((uint32(@setup[a]+24)&0x03ffffff)^0x02000000)-0x02000000)*4) == @scan[c] and
+                  (uint32(@setup[a]) & 0x9f00001f) == 0x9000001a and
+                  (uint32(@setup[a]+8) & 0xffc003ff) == 0x9100035a and
+                  @scan[c]+24+(((((uint32(@scan[c]+24)>>5)&0x7ffff)^0x40000)-0x40000)*4) == @store and
+                  for any fn in elf.symtab : (
+                    (fn.name == "sscanf" or fn.name == "__isoc99_sscanf" or fn.name == "__isoc23_sscanf") and
+                    fn.value == (@scan[c]+16+delta+((((uint32(@scan[c]+16)&0x03ffffff)^0x02000000)-0x02000000)*4))
+                  ) and
+                  for any r in elf.sections : (r.name == ".rodata" and
+                    for any h in (1..#format) : (
+                      @format[h] >= r.offset and @format[h]+!format[h] <= r.offset+r.size and
+                      r.address+@format[h]-r.offset == (((@setup[a]+delta)&~0xfff)+((((((uint32(@setup[a])>>5)&0x7ffff)*4+((uint32(@setup[a])>>29)&3))^0x100000)-0x100000)*4096))+((uint32(@setup[a]+8)>>10)&0xfff)
+                    )
+                  )
+                ))
+              )
+            )
+        }

@@ -1,0 +1,98 @@
+# A contiguous GCC AArch64 file-transform/activation path. Preserve the
+# source FILE in x23, destination FILE in x24, input path in x25 and output
+# path in x26 across the state round, I/O, close, unlink, chmod and execl.
+# Resolve branch destinations and path operands, rather than merely counting
+# libc symbols or hidden strings. Basenames and image base are not pinned.
+defaults:
+  platforms: [linux]
+  for: [elf]
+  arch: [aarch64]
+traits:
+  - id: aarch64-hidden-transform-cleanup-exec
+    desc: Hidden file transform, cleanup and execution
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "elf"
+        rule aarch64_hidden_transform_cleanup_exec {
+          strings:
+            $source = { ?? ?? ?? 91 ?? ?? ?? ?? ?? ?? ?? 91 9F 00 01 B9 9F 04 01 B9 ?? ?? ?? (94|95|96|97) F7 03 00 AA ?? ?? ?? B4 }
+            $open = { ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 91 ?? ?? ?? 91 ?? ?? ?? (94|95|96|97) F8 03 00 AA E0 03 17 AA ?? ?? ?? B4 }
+            $header = { ?? ?? ?? (94|95|96|97) FB 03 00 2A E0 03 17 AA ?? ?? ?? (94|95|96|97) 7F 4F 01 71 01 09 80 52 00 00 41 7A E0 03 17 AA ?? ?? ?? 54 ?? ?? ?? (94|95|96|97) E0 03 17 AA ?? ?? ?? (94|95|96|97) FB 03 00 2A 1F 00 00 71 ?? ?? ?? 54 ?? ?? ?? 91 ?? ?? ?? (14|15|16|17) }
+            // RC4 PRGA: increment/mask i, update/mask j, swap S[i]/S[j],
+            // select S[(S[i]+S[j])&255]. The I/O pattern consumes that byte.
+            $round = { 62 06 41 B9 64 02 41 B9 42 04 00 11 42 1C 00 12 62 06 01 B9 63 CA 62 38 64 00 04 0B 84 1C 00 12 64 02 01 B9 65 CA 64 38 65 CA 22 38 63 CA 24 38 62 4A 62 38 63 00 02 0B 63 1C 00 12 62 CA 63 38 }
+            $io = { 40 00 00 4A ?? ?? ?? (94|95|96|97) E0 03 17 AA ?? ?? ?? (94|95|96|97) E1 03 18 AA 1F 04 00 31 ?? ?? ?? 54 }
+            $finish = { E0 03 17 AA ?? ?? ?? (94|95|96|97) E0 03 18 AA ?? ?? ?? (94|95|96|97) ?? ?? ?? 91 ?? ?? ?? (94|95|96|97) ?? ?? ?? 91 ?? ?? ?? (94|95|96|97) ?? ?? ?? 91 A1 3D 80 52 ?? ?? ?? (94|95|96|97) }
+            $args = { 9F 06 00 71 ?? ?? ?? 54 E0 37 40 F9 02 04 40 F9 9F 0A 00 71 ?? ?? ?? 54 03 08 40 F9 9F 0E 00 71 ?? ?? ?? 54 04 0C 40 F9 }
+            $exec = { ?? ?? ?? 91 E0 03 01 AA 05 00 80 D2 ?? ?? ?? (94|95|96|97) }
+            $hidden = /\/tmp\/\.[A-Za-z0-9_-]{1,32}\x00/
+            $write_mode = "wb" fullword
+          condition:
+            elf.machine == elf.EM_AARCH64 and all of them and
+            for any t in elf.sections : (t.name == ".text" and
+              for any delta in (t.address-t.offset..t.address-t.offset) : (
+                for any p in (1..#source) : (
+                  @source[p] >= t.offset and @source[p]+324 <= t.offset+t.size and
+                  $open at @source[p]+32 and $header at @source[p]+64 and
+                  $round at @source[p]+132 and $io at @source[p]+196 and
+                  $finish at @source[p]+224 and $args at @source[p]+268 and
+                  $exec at @source[p]+308 and
+                  // ADRP/ADD register roles and identical input/output operands.
+                  (uint32(@source[p]+4)&0x9f00001f) == 0x90000019 and
+                  (uint32(@source[p]+8)&0xffc003ff) == 0x91000320 and
+                  (uint32(@source[p]+36)&0x9f00001f) == 0x9000001a and
+                  (uint32(@source[p]+44)&0xffc003ff) == 0x91000340 and
+                  uint32(@source[p]+240) == uint32(@source[p]+8) and
+                  (uint32(@source[p]+256)&0xffc003ff) == 0x91000340 and
+                  (uint32(@source[p]+308)&0xffc003ff) == 0x91000341 and
+                  ((uint32(@source[p]+44)>>10)&0xfff) == ((uint32(@source[p]+256)>>10)&0xfff) and
+                  ((uint32(@source[p]+44)>>10)&0xfff) == ((uint32(@source[p]+308)>>10)&0xfff) and
+                  (uint32(@source[p]+248)&0xffc003ff) == 0x910002c0 and
+                  // Initial jump enters getc; non-EOF back edge enters the round.
+                  @source[p]+128+((((uint32(@source[p]+128)&0x03ffffff)^0x02000000)-0x02000000)*4) == @source[p]+204 and
+                  @source[p]+220+(((((uint32(@source[p]+220)>>5)&0x7ffff)^0x40000)-0x40000)*4) == @source[p]+132 and
+                  for all call in (20,48) : (for any fn in elf.symtab : (
+                    (fn.name == "fopen" or fn.name == "fopen64" or fn.name == "_IO_new_fopen") and
+                    fn.value == @source[p]+call+delta+((((uint32(@source[p]+call)&0x03ffffff)^0x02000000)-0x02000000)*4)
+                  )) and
+                  for all call in (64,76,100,108,208) : (for any fn in elf.symtab : (
+                    (fn.name == "getc" or fn.name == "fgetc" or fn.name == "_IO_getc") and
+                    fn.value == @source[p]+call+delta+((((uint32(@source[p]+call)&0x03ffffff)^0x02000000)-0x02000000)*4)
+                  )) and
+                  for any fn in elf.symtab : (fn.name == "fputc" and
+                    fn.value == @source[p]+200+delta+((((uint32(@source[p]+200)&0x03ffffff)^0x02000000)-0x02000000)*4)
+                  ) and
+                  for all call in (228,236) : (for any fn in elf.symtab : (
+                    (fn.name == "fclose" or fn.name == "_IO_new_fclose") and
+                    fn.value == @source[p]+call+delta+((((uint32(@source[p]+call)&0x03ffffff)^0x02000000)-0x02000000)*4)
+                  )) and
+                  for all call in (244,252) : (for any fn in elf.symtab : (fn.name == "unlink" and
+                    fn.value == @source[p]+call+delta+((((uint32(@source[p]+call)&0x03ffffff)^0x02000000)-0x02000000)*4)
+                  )) and
+                  for any fn in elf.symtab : (fn.name == "chmod" and
+                    fn.value == @source[p]+264+delta+((((uint32(@source[p]+264)&0x03ffffff)^0x02000000)-0x02000000)*4)
+                  ) and
+                  for any fn in elf.symtab : (fn.name == "execl" and
+                    fn.value == @source[p]+320+delta+((((uint32(@source[p]+320)&0x03ffffff)^0x02000000)-0x02000000)*4)
+                  ) and
+                  for any r in elf.sections : (r.name == ".rodata" and
+                    // Input ADRP/ADD at +4/+8; output at +36/+44.
+                    for all role in (0,1) : (for any h in (1..#hidden) : (
+                      @hidden[h] >= r.offset and @hidden[h]+!hidden[h] <= r.offset+r.size and
+                      r.address+@hidden[h]-r.offset == (((@source[p]+4+32*role+delta)&~0xfff)+((((((uint32(@source[p]+4+32*role)>>5)&0x7ffff)*4+((uint32(@source[p]+4+32*role)>>29)&3))^0x100000)-0x100000)*4096))+((uint32(@source[p]+8+36*role)>>10)&0xfff)
+                    )) and
+                    // Output fopen must use a writing mode, not an unrelated stream.
+                    (uint32(@source[p]+32)&0x9f00001f) == 0x90000001 and
+                    (uint32(@source[p]+40)&0xffc003ff) == 0x91000021 and
+                    for any m in (1..#write_mode) : (
+                      @write_mode[m] >= r.offset and @write_mode[m]+!write_mode[m] <= r.offset+r.size and
+                      r.address+@write_mode[m]-r.offset == (((@source[p]+32+delta)&~0xfff)+((((((uint32(@source[p]+32)>>5)&0x7ffff)*4+((uint32(@source[p]+32)>>29)&3))^0x100000)-0x100000)*4096))+((uint32(@source[p]+40)>>10)&0xfff)
+                    )
+                  )
+                )
+              )
+            )
+        }
