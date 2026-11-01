@@ -1,0 +1,94 @@
+defaults:
+  platforms: [linux, macos, windows]
+  for: [pe]
+traits:
+  - id: aliased-exports
+    desc: Multiple PE exports share addresses
+    crit: notable
+    conf: 0.88
+    # Alias-heavy exports are common in large compatibility DLLs. Keep this
+    # obfuscation signal focused on stub-like binaries instead of broad API
+    # surfaces.
+    if:
+      type: metrics
+      field: pe.aliased_export_count
+      min: 8
+    unless:
+      - id: metadata/binary/symbols/count::many-exports
+      - id: metadata/binary/symbols/count::many-imports
+      - id: metadata/binary/code/complexity::many-functions
+      - type: metrics
+        field: exports.count
+        min: 401
+  # Inline mirror of many-imports above: that atom is baseline, so scans
+  # strip it when no composite references it and the trait reference alone
+  # does not suppress (libcef.dll ships 1292 imports with 28 ICF-folded
+  # aliases). An import-rich table is not stub-like by construction.
+      - type: metrics
+        field: imports.count
+        min: 80
+  # Windows API-set forwarder DLLs intentionally reuse a small set of stub
+  # addresses across their compatibility exports.
+      - id: metadata/binary/vendor::apiset-stub
+      - id: well-known/lib/format/gnu-libiconv/
+      - id: well-known/lib/media/windows-media-drm::wmdrm-compatibility-stub
+      - id: well-known/game/mod::bethesda-script-extender-plugin
+  - id: tiny-pe-export-alias
+    desc: Tiny PE with aliased exports
+    crit: notable
+    conf: 0.92
+    size_max: 65536
+    if:
+      type: metrics
+      field: pe.aliased_export_count
+      min: 1
+    unless:
+  # Aliased exports in a tiny DLL is what an API-set forwarder stub IS.
+      - id: metadata/binary/linking/api-set::api-set-forwarder-dll
+  # Stdcall publishes the same function twice, as the plain name and as
+  # name@N (N is the stack-byte count). MinGW JNI helpers such as
+  # WindowsDriveInfo do this for every export. That decoration is the
+  # calling convention, not a concealment alias.
+      - type: export
+        regex: '@[0-9]+$'
+  # MSVC folds identical function bodies onto one address (/OPT:ICF), so a C++
+  # class exported from a small DLL reports its constructor and its two
+  # assignment operators as "aliases" of each other. ClassIn's `app_api.dll`
+  # exports `??0NonDriverApi@@…` and two `??4NonDriverApi@@…` at 0x1000. A
+  # concealment stub aliases plain names, not mangled ones.
+      - type: export
+        regex: '^\?\?[0-9A-Z]'
+      - type: metrics
+        field: exports.count
+        min: 5
+      - type: metrics
+        field: pe.is_dotnet
+        min: 1
+      - id: metadata/lang/compiler/systems::go-binary
+      - id: metadata/lang/compiler/native::python3-dll-import
+  # Self-contained CPython extensions (PyCryptodome) export PyInit_<module>
+  # without linking python3X.dll; the export table, not the import table,
+  # identifies them. Without this, ICF-folded CPUID probes read as aliasing.
+      - id: metadata/lang/compiler/native::python-pyinit-export
+
+  - id: low-volume-aliased-exports
+    desc: Small export table with aliasing
+    crit: notable
+    conf: 0.9
+    if:
+      type: metrics
+      field: pe.aliased_export_count
+      min: 5
+    unless:
+  # Aliased exports in a tiny DLL is what an API-set forwarder stub IS.
+      - id: metadata/binary/linking/api-set::api-set-forwarder-dll
+      - type: metrics
+        field: pe.is_dotnet
+        min: 1
+      - id: metadata/lang/compiler/systems::go-binary
+      - type: metrics
+        field: exports.count
+        min: 10
+      - id: well-known/lib/format/gnu-libiconv/
+      - id: metadata/lang/compiler/native::python3-dll-import
+      - id: well-known/game/mod::bethesda-script-extender-plugin

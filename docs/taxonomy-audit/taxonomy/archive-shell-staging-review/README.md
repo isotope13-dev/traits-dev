@@ -1,0 +1,7 @@
+# Archive and shell staging review
+
+The legacy ZIP staging rules labeled 24 archive layouts hostile, including an encrypted archive with a spreadsheet and an archive containing assembly and BIN files. They now describe archive-member and document observations under `metadata/file/profile/archive`. A nonstandard VBA part, Adobe lure, obfuscated batch, or misplaced executable remains suspicious; ordinary archive layouts are notable. The observations do not imply that the same archive member satisfies two independent conditions unless the archive has a sole member.
+
+The positive predicates, file scopes and confidence values are unchanged. The review removed 22 exclusion entries, including test paths, common package identities, and member-count gates. Those suppressions prevented factual archive observations from reporting based on unrelated context or archive size. This intentionally broadens matching. Unsupported staging and execution technique annotations were removed.
+
+The external-IP shell download and executable-permission combinations now live in `objectives/execution/staging/acquire`. The system-binary copy and delayed-cleanup combination joins its related cleanup objective under `objectives/evasion/indicator-removal/system-binary`. A silent shared-object download from a short URL is a suspicious HTTP download behavior rather than automatically hostile; its test-directory exclusion was removed because the path is attacker-controlled.

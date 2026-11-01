@@ -1,0 +1,9 @@
+# Elex archive compatibility review
+
+Four remaining legacy archive traits and two reboot-cleanup traits were sentinel placeholders. Git history shows that they replaced real WinHTTP, SID, resource and cleanup combinations. The sentinel text could not match ordinary PE evidence and made Elex rules that required it unreachable.
+
+The original combinations were reconstructed as notable HTTP and deferred-deletion profiles using current trait IDs. They describe API and metadata clues, without asserting that the APIs operated on the same data, that a download completed, or that the file deleted itself. The reboot-delete profile accepts either the original MoveFileEx API plus textual flag or a compiled x86 null-destination/reboot-flag pattern. The latter covers binaries in which the flag is a numeric constant.
+
+The restored signed profile requires signing evidence, and the COMODO/RITA profile requires both names plus signing evidence. Four dependent Elex rules labeled signed now require signing evidence when their generic host profile does not supply it. Eighteen affected family rules no longer require the binary to fall between 500 KB and 3 MB; their family markers and behavior do not depend on total file size. The restored generic observations also omit the historical size gates and blanket installer/Microsoft suppressions, which are not appropriate for neutral evidence. These changes intentionally broaden detection from the nonmatching sentinels and can surface new family findings.
+
+A synthetic Windows PE with WinHTTP, SID, manifest and cleanup references matched the restored SID and reboot-delete profiles; a negative variant without response and deletion APIs was checked separately. This validates the wiring, not the attribution of a real Elex sample. The former archive directory and both reboot placeholders have no remaining YAML references.

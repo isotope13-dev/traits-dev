@@ -1,0 +1,65 @@
+defaults:
+  platforms: [windows]
+  for: [powershell]
+
+traits:
+- id: powershell-invoke-download-named-variable
+  desc: PowerShell invokes download-named variable
+  crit: suspicious
+  conf: 0.9
+  if:
+    type: text
+    # Only path-like variable suffixes qualify. `& $downloadAction` invokes a
+    # callback, not a downloaded payload.
+    regex: "(?im)^\\s*&\\s*\\$(download|downloaded|payload)(path|file|exe|script)?\\b"
+  unless:
+    # Arcade is the shared .NET build toolset; every dotnet repo vendors
+    # eng/common/tools.ps1 verbatim, and downloading the SDK, vswhere and
+    # dnceng packages then running them is its whole job.
+  - id: metadata/build/recognized-contexts::arcade-build-bootstrapper
+- id: powershell-invoke-stage-named-variable
+  desc: PowerShell invokes stage-named variable
+  crit: suspicious
+  conf: 0.9
+  if:
+    type: text
+    # `$stage.Invoke` is a member call on a build-stage object, not an
+    # invocation of a path stored in `$stage`. Require the variable itself
+    # to be the command (end of line or a following argument).
+    # A quoted literal as the first argument is a message passed to a
+    # progress/stage callback (`& $stage 'Pushes, YAML, permissions'`), not a
+    # staged path being executed: binaries take flags, variables, or splats,
+    # not a lone display string. Member access (`$stage.Invoke`), indexing,
+    # and scriptblock arguments stay excluded as before.
+    regex: "(?m)^\\s*&\\s*\\$(drop|stage)[A-Za-z0-9_]*(\\s*$|\\s+[$@&/(\\-A-Za-z0-9_])"
+# `$cmd` is not a dropper name: `& $cmd.Source` is the canonical way to invoke
+# whatever `Get-Command` resolved, and ordinary setup scripts do it constantly.
+# Keep the executable names closed as well: a prefix such as `$executor` often
+# holds a ScriptBlock and does not imply that a binary path is being invoked.
+# Notable, unlike its `$temp`/`$fetch`/`$stage` siblings. Those prefixes say
+# where the file came from -- downloaded, staged -- which is the dropper claim.
+# `$exe`/`$bin`/`$executable` say only what it is, and `& $exePath @arguments`
+# is how any PowerShell script runs a tool it just located: PowerToys' own
+# tools/build/generate-dsc-manifests.ps1 and .pipelines/generateDscManifests.ps1
+# both do it. Same reasoning the comment above already applies to `$cmd`.
+# The download context lives in `ps-downloadfile-variable-invoke`'s parent
+# composite, which additionally requires ps-downloadfile-call.
+- id: powershell-invoke-executable-named-variable
+  desc: PowerShell invokes executable-named variable
+  crit: notable
+  conf: 0.9
+  if:
+    type: text
+    regex: "(?m)^\\s*&\\s*\\$(exe|bin|executable)(Path|File)?\\b"
+  unless:
+  - type: basename
+    regex: '(?i)(^|[_-])(ci|test)([_-]|\.)'
+- id: powershell-invoke-file-named-variable
+  desc: PowerShell invokes file-named variable
+  crit: notable
+  conf: 0.9
+  if:
+    type: text
+    regex: "(?m)^\\s*&\\s*\\$(runme|file)[A-Za-z0-9_]*\\b"
+  unless:
+  - id: metadata/path/directory::test-directory-component

@@ -16,7 +16,7 @@ PACKER = 'objectives/credential-access/files/secret-sweep::ruby-encoded-credenti
 INVENTORY = 'objectives/credential-access/files/secret-sweep::ruby-secret-file-hash-inventory'
 RUNNER = 'micro-behaviors/process/create/subprocess::ruby-http-body-script-subprocess-flow'
 TLS = 'objectives/command-and-control/dropper/delivery/fetch-exec::ruby-unverified-http-body-subprocess-exec'
-CI_WRITE = 'micro-behaviors/os/env/cicd::ruby-github-env-preload-write'
+CI_WRITE = 'micro-behaviors/os/env/cicd/startup::ruby-github-env-preload-write'
 CI_HOOK = 'objectives/supply-chain/trojanized/build-pipeline::ruby-credential-collector-ci-preload'
 
 

@@ -1,0 +1,91 @@
+# ARM Direct Network Syscalls
+# Detects hand-written ARM assembly making direct network syscalls
+# Unknown disassembler architectures do not prove ARM. Keep the architecture
+# gate explicit on each atom and reject a known non-ARM elf.machine value.
+# The exclusion regex accepts every nonempty machine name except exactly arm.
+defaults:
+  platforms: [linux]
+  for: [elf]
+  arch: [arm]
+  crit: notable
+composite_rules:
+- id: arm-eabi-listening-server
+  desc: ARM EABI TCP listening server
+  crit: notable
+  conf: 0.99
+  arch: [arm]
+  all:
+  - id: micro-behaviors/communications/socket/syscall/create::arm-eabi-socket
+  - id: micro-behaviors/communications/socket/syscall/serve::arm-eabi-bind
+  - id: micro-behaviors/communications/socket/listen::arm-eabi-listen
+  - id: micro-behaviors/communications/socket/syscall/serve::arm-eabi-accept
+- id: arm-direct-network-syscalls
+  desc: ARM direct socket and connect syscalls
+  crit: suspicious
+  conf: 0.98
+  arch: [arm]
+  all:
+      # Require the complete register setup for both operations.  A bare
+      # SVC opcode or syscall-number constant is common in Thumb code and
+      # binary data and is not evidence of a direct network syscall.
+  - id: micro-behaviors/communications/socket/syscall/create::arm-socket-syscall-setup
+  - id: micro-behaviors/communications/socket/syscall/connect::arm-connect-syscall-setup
+  unless:
+      # JNA's native dispatch library embeds platform-specific syscall data
+      # and can contain these ARM byte sequences in non-ARM slices.
+  - id: well-known/lib/platform/jna::native-dispatch-library
+- id: arm-oabi-direct-network-syscalls
+  desc: ARM OABI socket and connect wrappers
+  crit: notable
+  conf: 0.98
+  arch: [arm]
+  all:
+  - id: micro-behaviors/communications/socket/syscall/create::arm-oabi-socketcall-socket
+  - id: micro-behaviors/communications/socket/syscall/connect::arm-oabi-socketcall-connect
+  # Static OABI binaries can also issue the SVC directly, with the syscall
+  # number in the immediate, instead of going through socketcall(2).
+- id: arm-oabi-direct-socket-connect-pair
+  desc: ARM OABI direct socket and connect SVC pair
+  crit: notable
+  conf: 0.95
+  arch: [arm]
+  all:
+  - id: micro-behaviors/communications/socket/syscall/create::arm-oabi-direct-socket
+  - id: micro-behaviors/communications/socket/syscall/connect::arm-oabi-direct-connect
+  # Literal-pool encoding: a hand-written loader that keeps the SYS_socket (281)
+  # and SYS_connect (283) numbers in its literal pool and dispatches via `svc 0`,
+  # rather than materializing them with immediate movs (svc-socket/svc-connect).
+  # The three legs are individually ambiguous (bare integers / a ubiquitous svc
+  # opcode), so require all three within one code window to mean a socket+connect
+  # syscall loader — the documented purpose of these component legs.
+- id: arm-literal-pool-network-syscalls
+  desc: ARM literal-pool socket/connect syscall sequence
+  crit: notable
+  conf: 0.9
+  arch: [arm]
+  near_bytes: 8192
+  all:
+  - id: micro-behaviors/communications/socket/create::arm-socket-literal-syscall-wrapper
+  - id: metadata/file/profile/socket-runtime::arm-connect-literal-syscall-wrapper
+  - id: micro-behaviors/os/syscall/invoke::arm-svc-syscall-instruction
+  # Each required wrapper now binds its own literal load to an SVC site;
+  # unrelated constants elsewhere in the binary cannot satisfy the pair.
+- id: arm-literal-pool-socket-connect-pair
+  desc: ARM socket and connect syscall wrappers
+  crit: notable
+  conf: 0.88
+  arch: [arm]
+  near_bytes: 16384
+  all:
+  - id: micro-behaviors/communications/socket/create::arm-socket-literal-syscall-wrapper
+  - id: metadata/file/profile/socket-runtime::arm-connect-literal-syscall-wrapper
+- id: arm-literal-pool-network-io-syscalls
+  desc: ARM literal-pool send/receive syscall sequence
+  crit: notable
+  conf: 0.92
+  arch: [arm]
+  near_bytes: 8192
+  all:
+  - id: micro-behaviors/communications/socket/send::arm-send-literal-syscall-wrapper
+  - id: micro-behaviors/communications/socket/receive::arm-recv-literal-syscall-wrapper
+  - id: micro-behaviors/os/syscall/invoke::arm-svc-syscall-instruction

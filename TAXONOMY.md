@@ -1058,6 +1058,7 @@ in a consuming rule; the atom must not acquire a direction from its consumer.
 | `fs/path/<resource>` | A location, classified by **what it points at**, not its owner or an ancestor's name (`/Library/Caches` is `cache`). For secrets, the first that fits: `password-store`, `cookie`, `private-key`, `public-key` (authorized_keys, known_hosts), `token`, `secret-config`, `config`; a generic secret directory (`/run/secrets`) or cross-family union is `credential`. Others: `wallet`, `account-db`, `certificate`, `app-data`, `personal`, `cache`, `font`, `library`, `log`, `metadata-store`, `system`, `temp`, `socket`, `stream`, `extension`, `application/{bundle,browser,executable}`. A path never proves access. |
 | `fs/path-ops` | Pathname manipulation: join, normalize, parse and match remain distinct trait IDs (`Path.Combine`, `realpath`, `GetDirectoryName`). |
 | `fs/{acl,attributes,chmod,chown,link,lock,sync,watch,quota}` | Permissions, attributes, ownership, links (`hardlink`, `symlink`, `junction`), file locks (not `.lock` names), sync, change monitoring, quotas. |
+
 | `fs/temp/{file,directory}`, `fs/volume`, `fs/disk/{partition,raw}` | Creating temporary objects (a temp *location* is `fs/path/temp`); mounts; partitions and raw disk. Disk inventory is `os/sysinfo/disk`. |
 | `fs/swap/{on,off}` | Activating or disabling swap. Storage-header initialization (`mkswap`) belongs in `fs/volume/format`; raw zeroing remains `fs/disk/raw` until required evidence establishes formatting. |
 | `mem/{alloc,free,resize,copy,fill,compare}` | Allocate, release (`HeapFree`), resize (`HeapReAlloc`), copy, fill, compare. |
@@ -1069,7 +1070,18 @@ in a consuming rule; the atom must not acquire a direction from its consumer.
 | `mem/{heap-spray,stack-pivot,overflow}` | The required spray layout, stack redirection or out-of-bounds write; allocation, stack access or an unsafe API alone is not enough (MBC C0006, C0009, C0010). |
 | `hardware/{input,display,block,flash,gpu,wireless,smartcard,serial,iokit}/<operation>` | Device I/O and control. Input: `event`, `device`, keyboard `hook`/`listener`/`poll`/`layout`/`simulate`, mouse `position`/`simulate`, and `media` for audio-or-video interfaces (`getUserMedia`). A generic window hook is `ui/window/hook`. |
 
+Executable-permission evidence separates hidden targets, executable creation
+modes and setuid cases from ordinary mode changes. The `executable/evidence`
+roll-up preserves reviewed consumers of the former mode leaf; additions to
+its selected directories require consumer review. String concatenation uses
+`data/string/concat/{join,append,expression}` for the evidenced operation.
+
 ### Process, OS, time and UI
+
+`metadata/file/profile/window-api` records window API and handle references or
+their co-occurrence when they do not establish a hide operation. A supported
+window-hiding operation belongs with window control; a supported concealment
+objective belongs under `evasion/process/hidden/window`.
 
 | Home | Admission and boundary |
 |---|---|
@@ -1201,6 +1213,13 @@ action-word tokens belong in `naming/action/token`; an action word found in a
 function name belongs in `naming/action/function-name`; a name identifying a
 resource belongs in `naming/resource`. These are vocabulary observations,
 not proof that the named operation ran.
+
+An isolated partial string or source snippet belongs in
+`metadata/lang/source/literal/fragment/single`; evidence requiring several
+separated fragments belongs in `fragment/sequence`. Neither placement implies
+that the fragments were concatenated or executed. Use a more specific subject,
+including `well-known/` for a supported product or vendor identity, when the
+evidence establishes one.
 
 `process/interpreter/eval/` answers one question: **how does supplied code begin
 executing inside an existing interpreter?** Admission requires execution, not a
@@ -1469,24 +1488,50 @@ reference source, concealment and trigger facts, and describe uncertainty.
 | `process-inject` | Execution moved into another process (`hollow`, `remote-thread`, `thread-hijack`). |
 | `image-map` | A native image mapped for execution in this process. |
 | `module-load` | Staged code loaded by a module or assembly loader (`Assembly.Load`, `AppDomain.AssemblyResolve`, `Module._compile`, dynamic `require`, WASM instantiation of staged bytes). |
+| `memory-branch` | Staged executable bytes copied into executable memory and activated by a direct branch, callback, or local thread, without requiring a module loader or a launched file. |
 | `script-eval` | Staged source evaluated by an interpreter (`eval`, `new Function`, `iex`, or explicit inline evaluation such as `node -e`). The child-process launch is supporting evidence; no staged executable file is implied. |
 | `interpreter-stdin` | Staged source piped to a new interpreter. |
-| `file-exec` | A staged file launched via `command` (a shell parses the launch), `spawn` (a process API launches the path) or `installer` (an installer transaction such as `msiexec`). |
+| `file-exec` | A staged file launched via `command` (a shell parses the launch), `spawn` (a process API starts a child), `replace` (the current process image is replaced, such as by `execve`) or `installer` (an installer transaction such as `msiexec`). |
 
-`script-eval/{network,transformed,input}` groups a payload evaluator by its
-indicated source: a network response, otherwise decoded or decrypted source,
-otherwise an input whose origin remains unknown. A network source takes
-precedence over a transformation when the evidence supports it. Fetch/eval
+`module-load/{network,embedded,transformed,input}` partitions module activation
+by indicated source: network retrieval, embedded resource, otherwise decoded
+or decrypted input, otherwise an input whose origin remains unknown. Choose the
+most specific supported source, with network taking precedence over an embedded
+resource or transformation.
+
+`script-eval/{blockchain,network,transformed,input}` groups a payload evaluator
+by its indicated source: blockchain-derived code or destinations, another
+network response, otherwise decoded or decrypted source, otherwise an input
+whose origin remains unknown. A blockchain source takes precedence over a
+general network source, and a network source over a transformation, when the
+evidence supports it. Fetch/eval
 co-occurrence that does not suggest a likely chain and embedded command text
 belong in `metadata/file/profile/script-evaluation`.
+Within `network`, `decoded` requires reconstructed fetched code; otherwise
+`constructed` requires a function-constructor sink. The remaining sinks are
+`child` for a separate interpreter command, `script-element` for browser script
+insertion, and `in-process` for evaluation in the current interpreter. A decoded
+URL or obfuscated evaluator alone does not establish decoded response code.
 
-`file-exec` is split by launch mechanism: `command/*` (a shell or script host parses the launch), `spawn/*` (a process API launches the path; `native` for compiled images, `runtime` for language runtimes), `detached` (hidden or background launch), `installer/*` (an installer transaction; `package` rules read the installer file, `invocation` rules read whatever launches it) and `shellcode`. Each matcher and description must retain the launch mechanism.
+Within `transformed`, classify the activation mechanism as `shell` for shell
+command execution, `child` for a separately launched interpreter, `constructed`
+for a Function or ScriptBlock constructor, and `direct` for the remaining
+evaluation sinks, in that order. Keep uncertain construction or unbound clues
+in a capability or evidence profile instead of asserting a completed chain.
+
+`file-exec` is split by launch mechanism: `command/*` (a shell or script host parses the launch), `spawn/*` (a process API launches a child; `native` for compiled images, `runtime` for language runtimes, `fetch` for network acquisition, `sfx` for self-extracting archive launches and `handler` for shell-associated file launches), `replace` (a staged file replaces the current process image), `detached` (hidden or background launch), `installer/*` (an installer transaction; `package` rules read the installer file, `script-package` rules concern script payloads in that file, and `invocation` rules read whatever launches it) and `shellcode`. Each matcher and description must retain the launch mechanism.
+
+`spawn/decrypted` groups admitted chains that launch after decryption when the
+executable type is not established; use a more specific spawn target when the
+matcher identifies it.
 
 `image-map` and `interpreter-stdin` are admitted sinks: they distinguish native
 image activation from a new interpreter reading staged source. A mapped image
 or stream reference alone does not establish activation or a linked payload.
 
-`metadata/file/profile/execution-api` groups process API names, unbound calls
+`metadata/file/profile/process/{artifact,evaluation,hidden,launch,shell,stdio}`
+groups process-related evidence by subject when a stronger behavioral claim is
+not supported. `execution-api` groups process API names, unbound calls
 and configuration co-occurrences. A symbol, import or generic `spawn` call by
 itself does not prove that the named process API was called.
 
@@ -1526,6 +1571,23 @@ that it was written; an encoded name does not establish its eventual use.
 that fall short of indicating a likely deployment chain, such as names or
 configuration fields without the corresponding operations.
 
+`metadata/file/profile/firmware` groups firmware-related paths and accompanying
+operation or naming clues. A firmware-looking path alone does not establish
+that firmware was downloaded, updated or executed.
+
+`metadata/file/profile/http-download` groups URL and download-option clues
+that do not establish a completed fetch. `metadata/file/profile/shell-execution`
+groups shell execution references with related source or file context.
+
+`metadata/file/profile/finance` groups financial-language observations with
+other file characteristics. Financial terms alone do not establish a lure,
+theft or a particular malware family.
+
+`metadata/package/files/android-assets` records Android asset and resource
+member facts. `metadata/file/profile/android-asset-context` groups those facts
+with surrounding APIs, permissions or layout; names alone do not establish
+that a payload was staged or executed.
+
 **Describe the likely chain.** A download, URL, encoded blob, execution API,
 installer identity or loader-like name alone is not a payload chain. A direct
 link between a payload and its sink is strong evidence; a coherent combination
@@ -1540,7 +1602,12 @@ but no payload evidence is `execution/trigger`.
 admission. Partition by operation, in precedence order: `reconstruct`
 (synthesis or decoding) → `extract` (an embedded or container member) →
 `acquire` (external fetch) → `store` (placement), as
-`execution/staging/<operation>`. The carrier (archive, encrypted blob, stub,
+`execution/staging/<operation>`. Shell-mediated payload execution after a
+network fetch can be grouped in `execution/payload/file-exec/command/fetch`;
+the remaining shell execution chains need the same neighborhood review.
+`execution/payload/file-exec/spawn/fetch` groups process-launch chains with
+remote acquisition; other runtime launch chains remain in `spawn/runtime`
+pending the same review. The carrier (archive, encrypted blob, stub,
 runtime) is evidence, not the partition. Ordinary extraction stays
 `data/archive/extract` or `data/embedded`; encoded bytes alone are
 `metadata/file/encoding`.
@@ -1872,6 +1939,11 @@ a marker establishing package or product identity belongs under its
 actually establishes. Quoting a marker
 does not turn family identity into generic source metadata.
 
+Within `literal/string`, use `command` for command tokens, `expression` for
+source-expression fragments, `property` for attribute or configuration keys,
+`shape` for string structure, and `label` for reusable labels without a more
+specific identity or subject. A literal alone does not establish execution.
+
 Replace the legacy `literal/value` bucket with object types as its rules pass
 review. New rules must not enter `value`.
 
@@ -2038,6 +2110,12 @@ signature bytes in `file/magic`, and bytes specifically in a PE resource in
 `binary/resource`. Phar signature presence and scheme belong in
 `signed/trust-level`; they establish neither signature validity nor a trusted
 publisher. A member called `BNDLTOOL.RSA` remains a member-name observation.
+Within `binary/resource`, `label` records generic tokens, names and captions
+observed in the resource section; a text match there does not establish a
+resource-directory name or product ownership. `table` holds directory and
+count facts, while `representation` describes content shapes. Named product
+or vendor identity belongs with the corresponding `well-known/` entity when
+the evidence supports that association.
 
 The live profile children have distinct jobs: `field-presence` records whether
 a parsed field exists; `function-population`, `identifier-population`,
@@ -2489,9 +2567,9 @@ for current mappings, resource splits and reference-set checks.
 | mb `os/env/{enumeration,dump}`, `modify`, `{check,gate}`, `user-paths` | mb `os/env/{enumerate,write,test,path}` | Other topic leaves move to the subject they require | Applied (all six named legacy environment-operation directories are empty; further topic review is selective) |
 | mb `os/service/driver` | mb `os/kernel/driver` | Drivers are not services | Applied |
 | mb `dylib/library`, `ui/framework` | meta, a capability, or `well-known/lib`, by claim | Implementation containers | Applied (`usb_init` export → `metadata/binary/symbols/exports`; libm imports → `metadata/binary/symbols/imports` ([inventory](docs/taxonomy-audit/taxonomy/libm-imports/migration.json)); terminal-editor project/version text → `metadata/binary/provenance/build`; TLS library names → `fs/path/library` ([inventory](docs/taxonomy-audit/taxonomy/tls-library-names/migration.json)); MFC42 name → `fs/path/library` and all three MFC API names → `metadata/binary/symbols/name/token` ([inventory](docs/taxonomy-audit/taxonomy/mfc-references/migration.json)); `ui/framework` has no YAML rules or live YAML references; both dylib/library and ui/framework are empty; remaining library observations are a selective subject review) |
-| obj `command-and-control/dropper/{process-inject,image-map,module-load,script-eval,interpreter-stdin,file-exec}` | obj `execution/payload/<sink>` (admitted) or mb `process/deploy/<sink>` (neutral) | By sink; admission picks the tier | Partial (`file-exec` applied: 639 rules in `command/{batch,script-host-download,script-host-embedded,shell}`, `detached`, `installer/{package,invocation}`, `shellcode`, `spawn/{native,runtime}`; the legacy directory is removed; image-map applied: call-bound RC4 mapping → payload/image-map, independent crypto, HTTP and memory evidence → operation-cooccurrence profiles; interpreter-stdin applied: impersonated postinstall → payload sink, archived preinstall pipelines → neutral deploy, unbound combinations → profiles; module-load partial: unbound .NET, Node, JVM and MSI combinations → profiles, Netz source references → tool-reference; other sinks open) |
-| obj `command-and-control/dropper/staging/*`, `staging-xor`, `staged-loader` | obj `execution/staging/{reconstruct,extract,acquire,store}` | By operation | Partial (`staging-xor` reviewed and removed; encrypted staging reduced by moving reconstruction, cryptography, naming and path observations to their subjects; batch carrier and WSH fragments, acquisition, evaluation and file-execution chains moved to their subjects; other staging and staged-loader rules remain) |
-| obj `command-and-control/dropper/*` (`delivery`, `execution`, `behavior` and the rest) | A payload sink, staging operation, C2 result or neutral capability | By claim | Partial (the `compat` leaf held only synthetic missing-rule sentinels; those and their dead ComfyUI consumer were removed; the remaining branches need review) |
+| obj `command-and-control/dropper/{process-inject,image-map,module-load,script-eval,interpreter-stdin,file-exec}` | obj `execution/payload/<sink>` (admitted) or mb `process/deploy/<sink>` (neutral) | By sink; admission picks the tier | Partial (`file-exec` applied in command, detached, installer, shellcode and spawn categories, including `spawn/fetch`; the legacy directory is removed; image-map applied: call-bound RC4 mapping → payload/image-map, independent crypto, HTTP and memory evidence → operation-cooccurrence profiles; interpreter-stdin applied: impersonated postinstall → payload sink, archived preinstall pipelines → neutral deploy, unbound combinations → profiles; module-load partial: unbound .NET, Node, JVM and MSI combinations → profiles, Netz source references → tool-reference, batch and other admitted loaders → activation sinks, and generic fragments → their encoded, syntax and operation subjects; the final MSBuild rules → build facts, proxy execution, process injection and module activation, retiring the legacy module-load subtree; script-eval partial: detached interpreter input, scheduled execution, polling control, response and function-constructor chains, and neutral remote-source observations moved by subject, retiring remote-code; response-pipeline atoms, execution chains and supporting clues moved by subject, retiring that subtree; response-eval batch, Node module-response, HTTP, wrapper, shell and Python rules moved by execution sink, capability or evidence profile, retiring the response-eval subtree; embedded file-range, decoded command, encrypted runtime and remaining JavaScript and PowerShell chains moved by sink or evidence subject, retiring the legacy script-eval subtree; blockchain-derived source moved to its dedicated sink and transformed evaluation divided by activation; browser navigation and command dispatch split by operation and tasking channel, and Base64 encoding split by input/output behavior; other dropper branches remain) |
+| obj `command-and-control/dropper/staging/*`, `staging-xor`, `staged-loader` | obj `execution/staging/{reconstruct,extract,acquire,store}` | By operation | Partial (`staging-xor`, `staging/archive`, `staging/installer`, `staging/nsis-installer`, `staging/self-extracting`, `staging/signed-nsis-bundle`, `staging/signed-bundle`, `staging/memory`, `staging/encrypted`, `staging/native`, `staging/encoded/script`, `staging/encoded/environment`, `staging/encoded/carrier`, `staging/file`, `staging/http`, `staging/interpreter-stage`, `staging/compressed`, `staging/disk`, `staging/image-disk`, `staging/image-map`, `staging/managed`, `staging/public-folder`, `staging/packing`, `staging/resource`, `staging/runtime`, `staging/script`, `staging/steganography`, `staging/stub`, `staging/temp`, `staging/tiny-pe` and `staging/zip-stage` reviewed and removed; encrypted staging retired by moving reconstruction, cryptography, naming, path, evaluation and evasion observations to their subjects; native payload staging retired by moving ELF and JNI observations to profiles, syscall replacement and hollowing to execution sinks, and EXE/DLL download clues to acquisition; Go/Rust embedded-ELF, Mach-O and GUI observations moved to profiles, editor activation to the fetch-and-spawn sink, and a filename to its path subject; surrogate product-name, embedded-PE and COM observations moved to product references and profiles, with the explicit Active Setup hijack retained as persistence; Access Bridge, MavInject, resource-name, hex/API and PowerShell observations moved to profiles, and dead ratio/product-pair placeholders reviewed; custom-alphabet/cryptography/command and RC4/Rundll32/anti-analysis combinations moved to cryptography profiles without asserting a payload chain; zero-buffer and .NET cryptography observations moved to AES mode and cryptography profiles without assuming decryption or execution; encrypted and obfuscated Android core moved to archive packing, Hashcat path to well-known, MinGW XOR/API clues to PE profiles and ZEROCRYP text/overlay clues to their subjects; BNDL/ChaCha and endpoint observations moved to archive profiles while the temp-file launch chain remains under its execution sink; source XOR/memory and RC4/resource combinations moved to profiles, with thread hijacking retained as an injection objective, and HackSkills documentation moved to well-known; passworded-archive download, signing, attributes and Apple-style paths moved to acquisition, archive profiles, explicit quarantine bypass and masquerade, and VS Code timing/CI references moved to well-known; Windows overlay and API combinations moved to overlay profiles and the Canonical claim to vendor masquerade; CLR configuration and overlay evidence and the Strictor resource signature moved to subject profiles, with a filename suppression removed and a redundant Pack-v3 stage retired; AES/CNG filename and API clues moved to path and PE profiles, timer callback and Defender exclusion to evasion objectives, and the neighboring Defender category split by action; PowerShell data locale, HTTP, indexed invocation, layered encoding and image steganography evidence moved to their subjects, with nearby string categories split by reconstruction mechanism; nearby version-resource claims split Microsoft and Windows component identities into a dedicated sibling, and diagnostic utilities from other Microsoft utility claims; batch carrier and WSH fragments, temporary-script and native temporary-file clues, managed names, security and network-reflection profiles, resource API profiles, PyInstaller bundle observations, Lua propagation and implant identifier clues, PHP percent-u encoding shapes, JavaScript and JCL source clues, DLL exports, GitLab URLs, archive layouts, Windows archive URL and path observations, Android asset profiles, financial and registry profiles, restored WinHTTP and cleanup evidence, Node archive-extraction references, archive-name and Google Drive text profiles, decoded PowerShell batch actions, and Go, Lua, VB and .NET file-write, resource, reflection and encoding references, and runtime-based acquisition, evaluation and file-execution chains moved to their subjects; the remaining stager rules moved by activation, syscall, binary profile and configuration evidence, retiring the staging subtree; remaining staged-loader rules moved to their manifest, identifier, profile, module-loading and memory-branch subjects, retiring that subtree as well) |
+| obj `command-and-control/dropper/*` (`delivery`, `execution`, `behavior` and the rest) | A payload sink, staging operation, C2 result or neutral capability | By claim | Partial (the `compat` leaf held only synthetic missing-rule sentinels; those and their dead ComfyUI consumer were removed; AppData, editor-bootstrap, character-reconstruction, Elex, lifecycle, Bun, MPRESS, licensing and npm CLI rules moved by action, evidence or family identity; an impossible proxy-loader composite was removed and overlapping MPRESS alternatives merged; fragmented WSH and Python-script rules moved to literal evidence, execution and subject profiles, with script-oriented Run-key registrations split into registry-script; standalone runtime rules moved by execution and evidence, with AppData, environment-read, runtime-platform and adjacent crowded neighborhoods split by subject; string concatenation and executable-mode neighbors split by operation and target; remaining branches need review) |
 | obj `collection/email-harvest` | obj `collection/email` | Rename | Applied (legacy directory and references are absent) |
 | obj `credential-access/windows-registry` | obj `credential-access/registry` | Rename | Applied |
 | obj `credential-access/{dump,theft,validation}` | obj `credential-access/<source or acquisition>` (`memory`, `files`, `credential-manager`, `capture`, `validation`, …) | Dump is not memory; source and acquisition distinguish below the approved families | Applied (process and image dumps → memory; other leaves routed by source/acquisition) |
@@ -2502,7 +2580,7 @@ for current mappings, resource splits and reference-set checks.
 | obj `exfiltration/stealer/{surveillance,phish}` | obj `stealer/<item>` or the supported neutral/local-acquisition observation | Purpose and method are not stolen item types | Item review applied |
 | obj `exfiltration/sensitive-data` (retire) | `collection` or `credential-access` (no send), `stealer/<item>` (chain), `side-channel` (leaking oracle), mb `data/serialize` or metadata (partial evidence) | By evidenced result | Applied (browser, automation and source rules reviewed; CSS oracles → side-channel; partial observations → their subjects; no legacy YAML rules or live references remain) |
 | obj `supply-chain/{install-hook,recon-exfil,credential-theft,metadata-anomaly}` (selective review) | Credential access, exfiltration, discovery or execution by required result; installation-specific abuse stays in `install-hook` | A trigger alone is not an objective; misuse of installation trust is | Open |
-| obj `anti-static/obfuscation/{binary-metrics,code-metrics,tools,multi-layer}` | meta `binary` or `file`, `well-known/`, or a named concealment | Measurements and identities are not concealment | Open |
+| obj `anti-static/obfuscation/{binary-metrics,code-metrics,tools,multi-layer}` | meta `binary` or `file`, `well-known/`, or a named concealment | Measurements and identities are not concealment | Partial (function-size and digit-heavy XOR line observations moved to file profiles; VS Code and QuickLook markers moved to their subjects; function and identifier populations, text distributions, generated-code and runtime references, PHP array, Unicode and image observations, long-line execution profiles, and Lua/JavaScript source and evaluation evidence, shell source and execution clues, and native immediate arithmetic moved to their subjects; unreferenced recognized-context components retired; code-metrics is empty; MinGW, import/export, sparse-import and section-name observations moved to binary profiles, with section and symbol names split by subject; remaining binary-metrics, tools and multi-layer need review) |
 | meta `file/encoded`; `lang/encoded` | meta `file/encoding`; `lang/encoding` | Rename, then group by encoding scheme or measured shape | Applied; orphaned impossible XOR/Base64 co-occurrence composite removed |
 | meta whole-file byte-entropy rules under `image/*` | meta `file/entropy` | Decoded-image measurements stay | Applied (no whole-file byte-entropy rules remain; decoded-image measurements stay under `image`) |
 | meta `file/{string,literal}/*` | The subject each string evidences; context-only predicates held pending validated representation | No new IDs; exact existing IDs remain grandfathered until migrated | Partial (batches 047–080) |

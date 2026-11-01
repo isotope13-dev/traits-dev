@@ -6,7 +6,9 @@ base64 text and string replacement. Incomplete tokens are components, not
 independent claims of a download or execution. Four existing literal rules also
 moved to more precise Discord, command-reference and file-function homes to
 keep the fragment directory below the review threshold. The legacy encoded
-script leaf now contains 21 rules. Isolated Discord and file-write name
+script leaf contained 21 rules after this review; those were subsequently
+migrated in the [retirement review](../encoded-script-retirement/README.md).
+Isolated Discord and file-write name
 fragments are components; the complete `discord_desktop_core` literal has a
 separate notable identity rule.
 

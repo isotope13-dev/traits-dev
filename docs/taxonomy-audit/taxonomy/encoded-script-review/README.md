@@ -22,6 +22,8 @@ suspicious profiles instead of complete execution claims.
 The remaining WSH fragments and their 50 KB size limits were subsequently
 reviewed with their consumers; see the
 [WSH fragment review](../wsh-fragment-review/README.md).
+The remaining encoded-script rules were then moved and the legacy leaf
+removed; see the [retirement review](../encoded-script-retirement/README.md).
 
 [moves.json](moves.json) records source predicates, defaults, destinations,
 severity and description changes. Run

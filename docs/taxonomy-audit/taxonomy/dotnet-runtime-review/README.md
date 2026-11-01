@@ -1,0 +1,8 @@
+# .NET runtime staging review
+
+The final runtime staging file mixed resource names and API text with combinations suggesting file staging, execution, process injection and less conclusive managed-runtime profiles. Its 25 remaining rules were moved by the evidence and likely operation. The legacy runtime staging directory has no remaining YAML rules.
+
+- Generic `data.dat` and `lzma.dat` names are filesystem name components, not proof of VB resources. SevenZip and LZMA names belong with decompression references. VBS deletion command text and related script deletion rules have their own file-deletion subject.
+- Resource, reflection, decryption, delegate and process-reference combinations that do not establish a payload or execution are file profiles. Several previously hostile combinations are now suspicious: protected or encrypted resources and reflection APIs can occur in ordinary software. Descriptions and technique metadata no longer assert a specific loader or attack based on those observations.
+- A combination of an embedded resource, cryptography and remote process-memory writes remains an injection objective. The embedded PE/extraction/hidden command and resource/temp/late-bound process combinations remain execution objectives. Base64 decoding plus writing and script clues, and their cleanup or PowerShell combinations, belong to staging by reconstruction. These chains do not require proving data flow; their descriptions state the combined clues.
+- All matching predicates, file scopes, confidence values, exclusions, downgrades and composite references were preserved. Criticality was lowered for name-only components and less conclusive profiles; the underlying technique annotations were removed where the combination did not substantiate them.

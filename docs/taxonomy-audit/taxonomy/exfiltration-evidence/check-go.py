@@ -24,7 +24,7 @@ for move in review["moves"]:
             before.pop(key, None)
         before["crit"] = "baseline"
         before["for"] = ["go"]
-        before["all"][1]["id"] = "micro-behaviors/os/env/read::go-env-access"
+        before["all"][1]["id"] = "micro-behaviors/os/env/read/variable::go-env-access"
     assert before == after, move["old"]
 assert len(review["removed"]) == 1
 assert not (ROOT / "objectives/exfiltration/sensitive-data/source/go.yaml").exists()

@@ -1,0 +1,93 @@
+defaults:
+  for: [powershell, batch]
+  platforms: [windows]
+  attack: T1027
+  mbc: C0025
+composite_rules:
+  - id: ps-aes-iex-stage-loader
+    desc: PowerShell AES decryptor with stage execution
+    crit: hostile
+    conf: 0.99
+    attack: T1027,T1059.001
+    mbc: C0025,E1059
+    all:
+      - id: micro-behaviors/crypto/decrypt::dotnet-create-decryptor
+      - id: metadata/file/profile/encoding::dotnet-frombase64string-text
+      - id: micro-behaviors/crypto/symmetric/aes/library::dotnet-rijndael-any
+  # Variable names such as $payload and $decryptedScript establish no data
+  # flow. Require the transform result to occur inside the evaluation call.
+      - id: metadata/file/profile/script-evaluation::powershell-inline-crypto-transform-evaluation
+    near_lines: 120
+  - id: ps-aes-iex-self-deleting-stage-loader
+    desc: AES-decrypted PowerShell stage with self-delete
+    crit: hostile
+    conf: 0.98
+    for: [powershell]
+    attack: T1027,T1059.001,T1070.004
+    mbc: C0025,E1059,F0007
+    all:
+      - id: objectives/execution/payload/script-eval/transformed/direct::ps-aes-iex-stage-loader
+      - id: micro-behaviors/fs/delete/file/self::powershell-self-delete
+  - id: powershell-chunked-decrypt-eval
+    desc: Chunked decryption and PowerShell evaluation
+    crit: hostile
+    conf: 0.98
+  # Reaches batch via this file's default for: [powershell, batch] -- batch
+  # droppers embed the AES stage as a PowerShell here-string (see header
+  # comment), and ps-document-masquerade-stage-loader below needs this to
+  # reach batch (pdf-double-extension-script is already for: [batch,
+  # powershell]). No explicit 'for:' needed; it would just restate the
+  # file default.
+    all:
+      - id: metadata/lang/source/naming/function/cryptography::decrypt-aes-function
+      - id: metadata/lang/source/naming/function/cryptography::repeated-decrypt-aes-name
+      - id: metadata/file/profile/decryption::powershell-join-crypto-name-cooccurrence
+      - id: micro-behaviors/process/interpreter/eval/direct::powershell-iex-text
+    any:
+      - id: micro-behaviors/crypto/decrypt::powershell-base64-decryption-cooccurrence
+      - id: metadata/file/profile/decryption::batch-base64-decryptor-cooccurrence
+    near_lines: 40
+  - id: ps-document-masquerade-stage-loader
+    desc: Document-masqueraded encrypted PowerShell stage loader
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: objectives/execution/payload/script-eval/transformed/direct::powershell-chunked-decrypt-eval
+      - id: metadata/file/extension/executable::pdf-double-extension-script
+  - id: ps-custom-base32-stage-loader
+    desc: Custom base32 PowerShell stage loader
+    crit: hostile
+    conf: 0.99
+    for: [powershell]
+    all:
+      - id: micro-behaviors/data/decode/base32::ps-custom-base32-decoder
+      - id: micro-behaviors/process/interpreter/eval/direct::powershell-iex-call
+      - id: metadata/file/line::powershell-long-line
+      - id: micro-behaviors/data/decode/base32::ps-custom-base32-carrier
+  - id: powershell-base64-rotation-gzip-eval
+    desc: Base64, rotation and gzip evaluation
+    crit: hostile
+    conf: 0.98
+    for: [powershell]
+    all:
+      - id: metadata/file/profile/encoding::dotnet-frombase64string-text
+      - id: micro-behaviors/crypto/symmetric/xor/rotational::rotation-counter-update
+      - id: micro-behaviors/data/decompress/gzip::gzip-decompression-stream
+      - id: objectives/execution/interpreter/eval/invoke::call-operator-get-command-scriptblock
+
+  - id: ps-base64-indexed-xor-reflective-loader
+    desc: PowerShell executes a Base64/XOR stage through reflection
+    crit: hostile
+    conf: 0.97
+    attack: T1027,T1140,T1059.001
+    mbc: C0025,B0032,E1059
+    for: [powershell]
+    all:
+      - id: micro-behaviors/data/decode/base64::powershell-frombase64string
+      - id: micro-behaviors/crypto/symmetric/xor/loop::indexed-bxor-byte-cast-rhs
+      - id: micro-behaviors/metaprogramming/reflection/inspect/class::powershell-assembly-method-invoke
+      - id: metadata/file/profile/process/evaluation::reflected-invoke-near-dot-source
+
+# GammaLoad-like final stage: a network response is Base64-decoded, XOR
+# transformed, and evaluated without materialising the decrypted script.
+# This is deliberately independent of endpoint, variable, or family names.

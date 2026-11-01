@@ -1,0 +1,72 @@
+defaults:
+  conf: 0.6
+  platforms: [windows, unix]
+traits:
+  - id: js-loop-string-concat
+    desc: Loop appends indexed values to a string
+    crit: notable
+    for: [javascript, typescript]
+    size_max: 500000
+    unless:
+      - type: basename
+        regex: \.js\.map$
+      - id: metadata/build/bundler/asset::js-large-module-bundle
+    if:
+      # Require a string initializer and self-accumulation inside a loop.
+      # The old text pattern also matched `w = stem + suffixes[suffix]`
+      # in the Porter stemmer, without either accumulation or a loop.
+      type: tree-sitter
+      query: |
+        ((_ [
+            (variable_declaration
+              (variable_declarator name: (identifier) @initial value: (string)))
+            (lexical_declaration
+              (variable_declarator name: (identifier) @initial value: (string)))
+          ]
+          (_ body: [
+            (statement_block
+              (expression_statement
+                (assignment_expression
+                  left: (identifier) @destination
+                  right: (binary_expression
+                    left: (identifier) @previous
+                    operator: "+"
+                    right: (subscript_expression))) @append))
+            (expression_statement
+              (assignment_expression
+                left: (identifier) @destination
+                right: (binary_expression
+                  left: (identifier) @previous
+                  operator: "+"
+                  right: (subscript_expression))) @append)
+          ]) @loop)
+          (#eq? @initial @destination)
+          (#eq? @destination @previous)
+          (#match? @loop "^(for|while|do)\\b"))
+  - id: js-loop-string-charat
+    desc: Appends a character returned by charAt()
+    crit: notable
+    for: [javascript, typescript]
+    size_max: 500000
+    # The index must be a variable or index arithmetic (i, i+1, 2*i, idx++) —
+    # the shape a char-by-char decoder walks a string with. A call-valued index
+    # is the random-string/ID/token generator idiom (`charAt(randomInt(0,n))`,
+    # `charAt(secureRand(n))`); the `Math.floor(Math.random()` spelling of it
+    # already had an `unless:` below, but generators that wrap randomness in a
+    # helper slipped through.
+    if:
+      type: text
+      regex: '[\w$]+\s*\+=\s*[\w$]+\.charAt\(\s*[\w$]+\s*[-+*)]'
+    unless:
+      - id: metadata/build/bundler/asset::js-large-module-bundle
+      - id: well-known/lib/ui/jquery-ui::jquery-ui-version-banner
+      - type: text
+        regex: 'charAt\(Math\.floor\([^)]{0,40}Math\.random\(\)'
+composite_rules:
+  - id: js-loop-string-concat-any
+    desc: String concatenation inside JavaScript loop
+    crit: notable
+    any:
+      - id: micro-behaviors/data/string/concat/append::js-loop-string-concat
+      - id: micro-behaviors/data/string/concat/expression::js-loop-string-plus-equals
+      - id: micro-behaviors/data/string/concat/append::js-loop-string-charat

@@ -56,7 +56,7 @@ def main():
         files = {Path(r['files'][0]['path']).name: r['files'][0] for r in reports}
         def ids(name, level=None):
             return {t['id'] for t in files[name].get('traits', []) if level is None or t['crit'] == level}
-        execute = 'objectives/execution/payload/script-eval/transformed::node-permuted-code-factory-stage'
+        execute = 'objectives/execution/payload/script-eval/transformed/constructed::node-permuted-code-factory-stage'
         append = 'objectives/supply-chain/hidden-payload/runtime::exported-module-appended-permutation-stage'
         conceal = 'objectives/anti-static/obfuscation/eval/function::node-code-factory-hidden-by-permuted-key'
         positives = ['original.js', 'renamed.js', 'compacted.js', 'dot-global.js', 'globalthis.js']

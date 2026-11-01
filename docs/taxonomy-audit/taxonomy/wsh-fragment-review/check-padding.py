@@ -6,7 +6,7 @@ import tempfile
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
 RULES = (
-    'metadata/lang/source/literal/fragment::quoted-powersh-fragment',
+    'metadata/lang/source/literal/fragment/single::quoted-powersh-fragment',
     'metadata/file/profile/encoding::tokenized-wsh-powershell-ps1-profile',
 )
 source = (HERE / 'cases/tokenized.js').read_text()
