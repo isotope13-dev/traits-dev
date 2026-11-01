@@ -1,0 +1,391 @@
+defaults:
+  attack: T1219
+  platforms:
+  - windows
+  # MSI is a first-class file type (not OleDoc).
+  # Component/stealth markers live in nested PE members; ApplicationSettings
+  # live in extracted system.config (xml).
+  for:
+  - pe
+  - dll
+  - xml
+  - msi
+  - oledoc
+  conf: 0.95
+  size_max: 50000000
+traits:
+# Assembly-name stems live in traits.yaml. Config/stealth markers here also
+# cover ScreenConnect ApplicationSettings XML (system.config) so extracted
+# CAB configs expose relay constraints during manual or future archive walks.
+- id: msi-application-settings-section
+  desc: ScreenConnect application settings section
+  crit: notable
+  if:
+    type: text
+    substr: ScreenConnect.ApplicationSettings
+- id: msi-remote-control-banner
+  desc: ScreenConnect remote-control banner text
+  crit: notable
+  for: [pe, dll, xml, msi]
+  if:
+    type: text
+    substr: Your computer is being controlled by {0}
+    section: ".text"
+- id: msi-client-service-executable-name
+  desc: ScreenConnect names its service executable
+  crit: notable
+  for: [pe, dll, xml, msi]
+  conf: 0.96
+  if:
+    type: text
+    substr: ClientServiceExecutableName
+    section: ".text"
+# A getter reference also occurs in stock clients with no embedded settings.
+# This names the property, not an actual configured constraint or relay.
+- id: screenconnect-launch-constraint-name-reference
+  desc: ScreenConnect launch-constraint name reference
+  crit: notable
+  for: [pe, dll, xml, msi]
+  if:
+    type: text
+    regex: '\b(get_)?ClientLaunchParametersConstraint\b'
+# `h=` is the relay host inside the launch-parameter query string. It is the
+# first parameter only when the build carries no session/role prefix; an
+# unattended-access build writes `?e=Access&y=Guest&h=...`, so anchoring on `?`
+# alone missed exactly the configuration that matters most.
+- id: msi-relay-host-parameter
+  desc: ScreenConnect cloud relay host parameter
+  crit: notable
+  for: [pe, dll, xml, msi]
+  conf: 0.98
+  if:
+    type: text
+    regex: "[?&]h=[a-z0-9-]+-relay\\.screenconnect\\.com(&amp;|&)p=443"
+- id: msi-relay-host-nonvendor-domain
+  desc: ScreenConnect relay host uses a nonvendor domain
+  crit: notable
+  conf: 0.97
+  for: [pe, dll, xml, msi]
+  if:
+    type: text
+    regex: '(?i)[?&]h=[a-z0-9.-]{1,253}\.[a-z]{2,}(&amp;|&)p=[0-9]{1,5}'
+  not:
+    - regex: '(?i)[?&]h=[a-z0-9.-]{1,253}\.screenconnect\.com(&amp;|&)p=[0-9]{1,5}'
+# A vendor deployment names its relay by hostname; an operator-built client
+# handed to a victim pins the relay as a bare IP literal. The launch
+# parameters are baked on the server side, so the IP identifies the relay the
+# attacker controls — nothing in the signed binaries has to change.
+- id: msi-relay-host-bare-ip
+  desc: ScreenConnect pins bare-IP relay host
+  crit: notable
+  conf: 0.95
+  for: [pe, dll, xml, msi]
+  if:
+    type: text
+    regex: "[?&]h=\\d{1,3}(\\.\\d{1,3}){3}(&amp;|&|$)"
+    is: external_ip
+- id: msi-rsa-key-parameter
+  desc: ScreenConnect embeds relay RSA key blob
+  crit: notable
+  for: [pe, dll, xml, msi]
+  conf: 0.96
+  if:
+    type: text
+    substr: BgIAAACkAABSU0Ex
+# `e=Access` selects the unattended-access role and `y=Guest` runs it without a
+# prompt — together they describe a client that connects back and grants
+# control with no one at the keyboard. A support technician's build carries
+# `e=Support` and a per-session token instead.
+- id: msi-unattended-access-launch-parameter
+  desc: ScreenConnect launch role is unattended access
+  crit: notable
+  for: [pe, dll, xml, msi]
+  conf: 0.97
+  if:
+    type: text
+    regex: '[?&]e=Access(&amp;|&)y=Guest'
+# MSI access agents carry no e=/y= role pair: the baked
+# SERVICE_CLIENT_LAUNCH_PARAMETERS property pins the relay host, port, and
+# session key (h/p/k) the installed service dials with no one at the
+# keyboard. Presence of that property is the MSI form of the same
+# unattended-access configuration.
+- id: msi-service-client-launch-parameters
+  desc: ScreenConnect service client launch parameters
+  crit: notable
+  for: [pe, dll, xml, msi]
+  conf: 0.96
+  if:
+    type: text
+    regex: 'SERVICE_CLIENT_LAUNCH_PARAMETERS\?h=\S+?&p=\d+?&k=\S+'
+- id: msi-feedback-survey-hidden
+  desc: ScreenConnect survey prompt configured off
+  crit: notable
+  for: [pe, dll, xml, msi]
+  conf: 0.98
+  if:
+    type: yara
+    source: |
+      rule msi_feedback_survey_hidden {
+        strings:
+          $setting = /ShowFeedbackSurveyForm\b[^<]{0,80}<value>\s*(false|0)\s*<\/value>/ ascii wide nocase
+        condition:
+          $setting
+      }
+- id: msi-under-control-banner-hidden
+  desc: ScreenConnect control banner configured off
+  crit: notable
+  for: [pe, dll, xml, msi]
+  conf: 0.98
+  if:
+    type: yara
+    source: |
+      rule msi_under_control_banner_hidden {
+        strings:
+          $setting = /ShowUnderControlBanner\b[^<]{0,80}<value>\s*(false|0)\s*<\/value>/ ascii wide nocase
+        condition:
+          $setting
+      }
+- id: msi-balloon-connect-hidden
+  desc: ScreenConnect connect balloon configured off
+  crit: notable
+  for: [pe, dll, xml, msi]
+  conf: 0.98
+  if:
+    type: yara
+    source: |
+      rule msi_balloon_connect_hidden {
+        strings:
+          $setting = /ShowBalloonOnConnect\b[^<]{0,80}<value>\s*(false|0)\s*<\/value>/ ascii wide nocase
+        condition:
+          $setting
+      }
+- id: msi-balloon-hide-hidden
+  desc: ScreenConnect hide balloon configured off
+  crit: notable
+  for: [pe, dll, xml, msi]
+  conf: 0.98
+  if:
+    type: yara
+    source: |
+      rule msi_balloon_hide_hidden {
+        strings:
+          $setting = /ShowBalloonOnHide\b[^<]{0,80}<value>\s*(false|0)\s*<\/value>/ ascii wide nocase
+        condition:
+          $setting
+      }
+- id: msi-tray-icon-hidden
+  desc: ScreenConnect tray icon configured off
+  crit: notable
+  for: [pe, dll, xml, msi]
+  conf: 0.98
+  if:
+    type: yara
+    source: |
+      rule msi_tray_icon_hidden {
+        strings:
+          $setting = /ShowSystemTrayIcon\b[^<]{0,80}<value>\s*(false|0)\s*<\/value>/ ascii wide nocase
+        condition:
+          $setting
+      }
+- id: msi-wallpaper-hiding
+  desc: ScreenConnect wallpaper hiding configured on
+  crit: notable
+  for: [pe, dll, xml, msi]
+  conf: 0.97
+  if:
+    type: yara
+    source: |
+      rule msi_wallpaper_hiding {
+        strings:
+          $setting = /HideWallpaperOnConnect\b[^<]{0,80}<value>\s*(true|1)\s*<\/value>/ ascii wide nocase
+        condition:
+          $setting
+      }
+- id: msi-user-absent-auto-consent
+  desc: ScreenConnect auto-consents without user process
+  crit: notable
+  for: [pe, dll, xml, msi]
+  conf: 0.98
+  if:
+    type: yara
+    source: |
+      rule msi_user_absent_auto_consent {
+        strings:
+          $setting = /AutoConsentIfUserProcessNotRunning\b[^<]{0,80}<value>\s*(true|1)\s*<\/value>/ ascii wide nocase
+        condition:
+          $setting
+      }
+- id: msi-backstage-auto-consent
+  desc: ScreenConnect auto-consents backstage control
+  crit: notable
+  for: [pe, dll, xml, msi]
+  conf: 0.98
+  if:
+    type: yara
+    source: |
+      rule msi_backstage_auto_consent {
+        strings:
+          $setting = /AutoConsentToBackstage\b[^<]{0,80}<value>\s*(true|1)\s*<\/value>/ ascii wide nocase
+        condition:
+          $setting
+      }
+composite_rules:
+- id: msi-screenconnect-components
+  desc: ScreenConnect component bundle in package
+  crit: notable
+  conf: 0.98
+  for: [pe, dll, xml, msi, oledoc, cab]
+  scope: outer
+  needs: 3
+  any:
+  - id: well-known/dual-use/remote-admin/screenconnect/client::screenconnect-client-service-version
+  - id: well-known/dual-use/remote-admin/screenconnect/client::screenconnect-backstage-shell
+  - id: well-known/dual-use/remote-admin/screenconnect/client::screenconnect-credential-provider
+  - id: well-known/dual-use/remote-admin/screenconnect/client::screenconnect-auth-package
+  - id: msi-remote-control-banner
+  - id: msi-client-service-executable-name
+  - id: metadata/document/office/properties::msi-screenconnect-creator-summary
+- id: msi-stealth-access-group
+  desc: ScreenConnect disables multiple user-facing access prompts or notifications
+  crit: suspicious
+  for: [pe, dll, xml, msi]
+  conf: 0.99
+  scope: outer
+  all:
+  - id: msi-application-settings-section
+  needs: 2
+  any:
+  - id: msi-feedback-survey-hidden
+  - id: msi-balloon-connect-hidden
+  - id: msi-balloon-hide-hidden
+  - id: msi-tray-icon-hidden
+# Installer identity and vendor signing do not negate disabled indicators.
+- id: msi-unattended-consent-group
+  desc: ScreenConnect permits unattended remote control
+  crit: suspicious
+  for: [pe, dll, xml, msi]
+  conf: 0.99
+  all:
+  - id: msi-user-absent-auto-consent
+  - id: msi-backstage-auto-consent
+- id: msi-screenconnect-stealth-config
+  desc: ScreenConnect conceals unattended remote control
+  crit: suspicious
+  for: [pe, dll, xml, msi]
+  conf: 0.99
+  all:
+  - id: screenconnect-launch-constraint-name-reference
+  - id: msi-stealth-access-group
+  - id: msi-unattended-consent-group
+- id: msi-screenconnect-relay-config
+  desc: ScreenConnect constraint with relay query and RSA key
+  crit: notable
+  for: [pe, dll, xml, msi]
+  conf: 0.99
+  all:
+  - id: screenconnect-launch-constraint-name-reference
+  - id: micro-behaviors/communications/url/query/structure::h-name-p-number-parameters
+  - id: msi-rsa-key-parameter
+# ServiceExe* names often live only in the MSI file table. Nested PE members
+# expose ClientServiceExecutableName; extracted system.config exposes the relay.
+- id: msi-screenconnect-service-persistence
+  desc: ScreenConnect service persistence signal
+  crit: notable
+  conf: 0.97
+  scope: outer
+  any:
+  - id: metadata/package/files/msi::service-exe-wrapper-name-reference
+  - id: micro-behaviors/os/service/source::msi-serviceinstall-table
+  - id: msi-client-service-executable-name
+- id: msi-screenconnect-service-installer
+  desc: ScreenConnect service with concealed-access configuration
+  crit: suspicious
+  conf: 0.99
+  scope: outer
+  all:
+  - id: msi-screenconnect-components
+  - id: msi-screenconnect-service-persistence
+  - id: msi-screenconnect-stealth-config
+- id: msi-screenconnect-prearmed-unattended-client
+  desc: ScreenConnect embeds unattended relay configuration
+  crit: notable
+  conf: 0.97
+  for: [pe, dll, xml, msi]
+  all:
+  - id: msi-unattended-access-launch-parameter
+  - id: micro-behaviors/communications/url/query/structure::h-name-p-number-parameters
+  - id: msi-rsa-key-parameter
+# Stock ScreenConnect components are dual-use: identity is the finding, and
+# the deployment configuration decides the verdict. A bare-IP relay host is
+# the operator-built shape — vendor deployments name hostnames.
+- id: msi-screenconnect-bare-ip-relay
+  desc: ScreenConnect deployment pins bare-IP relay
+  crit: suspicious
+  conf: 0.95
+  for: [pe, dll, xml, msi]
+  scope: outer
+  all:
+  - id: screenconnect-launch-constraint-name-reference
+  - id: msi-relay-host-bare-ip
+- id: msi-screenconnect-nonvendor-domain-relay
+  desc: ScreenConnect uses a relay outside the vendor domain
+  crit: suspicious
+  conf: 0.95
+  for: [pe, dll, xml, msi]
+  scope: outer
+  all:
+  - id: well-known/dual-use/remote-admin/screenconnect/client::screenconnect-family
+  - id: msi-relay-host-nonvendor-domain
+- id: msi-screenconnect-installer
+  desc: ScreenConnect remote-access installer package
+  crit: notable
+  conf: 0.95
+  for: [msi, oledoc]
+  scope: outer
+  any:
+  - id: msi-screenconnect-components
+  - id: well-known/dual-use/remote-admin/screenconnect/client::screenconnect-family
+  - id: metadata/document/office/properties::msi-screenconnect-creator-summary
+
+- id: msi-screenconnect-unattended-installer
+  desc: ScreenConnect installer configured for unattended automated access
+  crit: suspicious
+  conf: 0.98
+  attack: T1219,T1543.003
+  for: [msi, oledoc]
+  scope: outer
+  all:
+  - id: msi-screenconnect-installer
+  any:
+  - id: msi-unattended-access-launch-parameter
+  - id: msi-user-absent-auto-consent
+  - id: msi-backstage-auto-consent
+  # A service-argument property or disabled notifications alone does not
+  # establish an unattended session role or consent policy.
+
+
+# Stock ScreenConnect packages ship their payload as a multi-member cabinet of
+# managed assemblies and WiX custom-action carriers, the shape the
+# cabinet-dropper composites read as a staged dropper. Suppressors are
+# file-scoped, so the cabinet needs its own identity leg; a covert bare-IP
+# deployment is still reported by the objective-tier covert-relay rule.
+- id: screenconnect-cab-package-context
+  desc: ScreenConnect component cabinet
+  crit: exception
+  conf: 0.95
+  scope: outer
+  for: [cab, pe, xml, ole, msi]
+  all:
+  - id: msi-screenconnect-components
+  - id: screenconnect-launch-constraint-name-reference
+# The stock remote-control client DLL legitimately hooks the keyboard and
+# synchronises the clipboard; the stealth-hook composites target packed
+# loaders, not the vendor's own client library.
+- id: screenconnect-remote-control-client-context
+  desc: ScreenConnect remote-control client library
+  crit: exception
+  conf: 0.95
+  for: [pe, dll]
+  all:
+  - id: metadata/import/package::screenconnect-windows-reference
+  - id: well-known/dual-use/remote-admin/screenconnect/client::screenconnect-product-version-resource

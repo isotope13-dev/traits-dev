@@ -1,0 +1,126 @@
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript, html, php, binaries]
+  crit: notable
+  conf: 0.88
+traits:
+  - id: script-protocol-relative-src-assignment
+    desc: Assigns protocol-relative script source
+    conf: 0.94
+    for: [scripts, html]
+    if:
+      type: text
+      regex: '\.src\s*=\s*["'']//[^"''\s>]{1,200}/[^"''\s>]{1,160}\.js\b'
+  - id: remote-script-element-source
+    desc: Embeds a remote script element
+    crit: notable
+    conf: 0.92
+    for: [javascript, typescript, html]
+    if:
+      # Template literals embedded in extension source are not always exposed
+      # as string-literal facts; the HTML shape remains unambiguous in text.
+      type: text
+      regex: '(?i)<script[^>]{0,220}\bsrc\s*=\s*\\*["'']https?://'
+  - id: opaque-token-script-element-source
+    desc: Embeds remote script with opaque token path
+    crit: notable
+    conf: 0.9
+    for: [html, javascript, typescript]
+    if:
+      type: text
+      exclude_html_comments: true
+      # Require a script tag. Image and source URLs use the same opaque
+      # media-id shape and are not a script gate.
+      regex: '(?i)<script[^>]{0,120}\bsrc\s*=\s*[''"]https?://[^/''"\s]{1,80}/[\w-]{35,64}[''"]'
+    not:
+      # Content-addressed storage paths use cryptographic hash digests (e.g. 64-hex SHA-256),
+      # not opaque TDS routing tokens.
+      - regex: '(?i)/[0-9a-f]{35,64}[''"]'
+
+  # This is a transport observation, including ordinary legacy web pages.
+  # Plain HTTP alone establishes neither concealment nor hostile delivery.
+  - id: plaintext-http-script-element-source
+    desc: Loads remote script over plaintext HTTP
+    crit: notable
+    conf: 0.85
+    for: [html]
+    if:
+      type: text
+      regex: "<script[^>]{0,240}\\bsrc\\s*=\\s*[\"']http://[^\\s\"'<>]{1,80}"
+      exclude_html_comments: true
+    not:
+      - regex: 'http://localhost\b'
+      - regex: 'http://127\.'
+      - regex: 'http://\[::1\]'
+  - id: wsf-remote-script-src-hex
+    desc: WSF script references encoded HTTP URL
+    crit: suspicious
+    conf: 0.94
+    for: [vbs]
+    if:
+      type: text
+      # XML-hex-encoded `http://` in a WSF script src attribute. The encoded
+      # URL is invisible to ordinary clear-text URL extraction.
+      regex: '(?i)<script\b[^>]{0,500}\bsrc\s*=\s*["'']&#x68;&#x74;&#x74;&#x70;&#x3a;&#x2f;&#x2f;'
+  - id: random-php-script-src
+    desc: Script tag loads a random-named PHP endpoint
+    conf: 0.9
+    for: [html, javascript]
+    if:
+      type: text
+      regex: '(?i)<script\b[^>]{0,200}\bsrc\s*=\s*["'']?/?[a-z]{8,12}\.php\b'
+  - id: image-extension-script-source
+    desc: Script source uses an image extension
+    crit: suspicious
+    conf: 0.94
+    for: [html, javascript, php]
+    unless:
+      # Cheat-sheet lines such as ha.ckers.org/xss.jpg sit in alert() probe
+      # lists. Ten or more of those calls mark a corpus, not a page that
+      # loads its own script from an image.
+      - id: metadata/lang/source/syntax/call/relationship::markup-or-decoded-alert-calls
+    if:
+      type: text
+      regex: '(?i)<script\b[^>]{0,80}\bsrc\s*=\s*[''"][^''"\s>]{1,48}\.(jpe?g|gif|png)[''"]'
+      exclude_html_comments: true
+  # A DNS root dot (host ending in `.`) defeats exact-match domain
+  # blocklists while resolving identically. Hand-written markup never
+  # spells the root; kits add it when a loader domain gets blocked.
+  - id: dotted-root-script-src
+    desc: Script src host has root dot
+    conf: 0.88
+    for: [html, javascript]
+    if:
+      type: text
+      regex: '(?i)<script\b[^>]{0,200}\bsrc\s*=\s*["'']https?://[^"''<>\s]{1,120}\./'
+      exclude_html_comments: true
+  # A script tag pulling a library from a jsDelivr lookalike
+  # (`cdn.jsdelivr.cc` instead of `cdn.jsdelivr.net`). The mirror proxies
+  # genuine files but appends executable kit payloads to some, so pages
+  # referencing it load trojanized dependencies. The genuine CDN stays
+  # out via the `not:` filter; composites convict the kit around it.
+  - id: jsdelivr-lookalike-cdn-script
+    desc: Script loads from jsDelivr lookalike host
+    conf: 0.9
+    for: [html, javascript]
+    if:
+      type: text
+      regex: '(?i)<script\b[^>]{0,200}\bsrc\s*=\s*["'']https?://cdn\.jsdelivr\.[a-z]{2,}\b'
+      exclude_html_comments: true
+    not:
+      - regex: 'cdn\.jsdelivr\.net\b'
+  # A script element smuggled inside an attribute value: the attribute
+  # (alt, title) carries markup instead of text so the injected tag lands
+  # wherever the template prints the field. Stored-injection kits wrap the
+  # tag in closers (`</title><script ...>`) to escape the attribute first.
+  - id: directory-endpoint-script-src
+    desc: Script src points at a bare directory
+    conf: 0.88
+    for: [html, javascript]
+    if:
+      type: text
+      regex: '(?i)<script\s+src\s*=\s*[^"''<>\s][^"''<>\s]{0,120}/[\s>]'
+      exclude_html_comments: true
+  # jQuery .load(url) GETs an HTML fragment and inserts it. An absolute URL
+  # alone does not establish whether it is cross-origin.
+  # A bare <script> fragment is sniffed as text, so text is in scope.

@@ -1,0 +1,110 @@
+defaults:
+  crit: notable
+  platforms: [windows]
+  for: [powershell, batch, pe, csharp]
+  attack: T1105
+  mbc: E1105
+traits:
+  - id: iwr-outfile-download
+    desc: Downloads a file with PowerShell
+    conf: 0.86
+    for: [powershell, batch, pe, csharp, python]
+    if:
+      type: text
+      # Word boundaries around the cmdlet: without them a binary fragment
+      # like `IWrw>m{p6-O` satisfies `iwr` + `-o` and false-positives.
+      # Backtick-newline is PowerShell's explicit line continuation. Permit it
+      # while keeping ordinary newlines as boundaries so unrelated commands
+      # cannot be stitched into a download claim.
+      regex: '(?i)\b(Invoke-WebRequest|iwr)\b(([^\r\n]|`[ \t]*\r?\n){0,160})-(OutFile|o)\b'
+  - id: embedded-iwr-outfile-download
+    desc: Embedded IWR command downloads a file
+    conf: 0.95
+    for: [vbs, javascript, html]
+    if:
+      type: text
+      regex: '(?i)\b(Invoke-WebRequest|iwr)\b[^\r\n]{0,160}-(OutFile|o)\b'
+
+  - id: iwr-response-content-access
+    desc: PowerShell reads HTTP response content
+    conf: 0.88
+    for: [powershell]
+    if:
+      type: text
+      regex: '(?i)\$[A-Za-z_]\w*\.(Content|RawContent)\b'
+  - id: iwr-archive-url-download
+    desc: PowerShell IWR references an archive URL
+    conf: 0.93
+    for: [powershell, batch, pe, csharp, javascript, typescript]
+    if:
+      type: text
+      regex: '(?i)\b(iwr|invoke-webrequest)\b.{0,120}\bhttps?://.{1,120}\.(zip|7z|rar)\b'
+  - id: iwr-exe-url
+    desc: PowerShell iwr downloads a URL EXE
+    conf: 0.9
+    for: [powershell]
+    if:
+      type: text
+      regex: '(?im)(^|["'';&|][ \t]*)iwr\b.{0,100}https?://.{0,120}\.exe\b'
+
+  # The same command built inside a host program rather than run as a script.
+  #
+  # `type: text` rather than `literal` on purpose. An obfuscator writes its
+  # string table with every space escaped (`powershell\x20-Command\x20…`), and
+  # the escaped spelling is what the AST literal corpus holds — so a literal
+  # matcher looking for real spaces sees nothing, while stng's decoded output
+  # reaches the text corpus and does carry the plain command. Matching text is
+  # what makes this survive the packer.
+  #
+  # No `^` anchor is possible here (the text corpus is not split per literal),
+  # so the shape carries the precision instead: the interpreter, its fetch
+  # alias, and the pipe into evaluation, all within one command line. The
+  # composites that convict additionally require the host program to be able to
+  # spawn a process, which is what separates a built command from documentation
+  # that merely quotes one.
+  - id: embedded-powershell-irm-iex-command
+    desc: Embedded PowerShell fetch-execute command
+    conf: 0.9
+    for: [scripts, source, class]
+    if:
+      type: text
+      regex: '(?i)powershell\b.{0,80}\birm\b.{0,120}\|\s*iex'
+
+  - id: embedded-iwr-pipe-iex
+    desc: Embedded IWR response pipes into evaluation
+    conf: 0.96
+    for: [scripts, source, class]
+    if:
+      type: text
+      regex: '(?i)\biwr\s+https?://\S{4,180}.{0,80}\|\s*iex\b'
+
+  - id: python-powershell-iwr-url
+    desc: Python embeds PowerShell IWR URL command
+    conf: 0.96
+    for: [python]
+    if:
+      type: text
+      regex: '(?is)\bpowershell\b.{0,100}\biwr\s*["'']?\s*["'']?https?://'
+  - id: python-iex-pipe-argument
+    desc: Python source contains the IEX pipe argument
+    conf: 0.96
+    for: [python]
+    if:
+      type: text
+      regex: '(?i)-UseBasicParsing\s*\|\s*iex\b'
+
+composite_rules:
+  - id: powershell-remote-file-fetch-reference
+    desc: PowerShell fetches a remote file over HTTP
+    conf: 0.9
+    for: [powershell, batch]
+    any:
+      - id: micro-behaviors/communications/http/client/library::powershell-http-command-text
+      - id: micro-behaviors/communications/http/download/webclient::webclient-downloadfile-call
+  - id: iwr-outfile-call
+    desc: PowerShell call downloads file to output path
+    conf: 0.96
+    for: [powershell]
+    all:
+      - id: iwr-outfile-download
+      - id: micro-behaviors/communications/http/client/library::iwr-name

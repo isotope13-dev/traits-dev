@@ -1,0 +1,152 @@
+defaults:
+  platforms: [windows, unix]
+  for:
+    - php
+traits:
+  - id: init
+    desc: cURL session initialization
+    crit: notable
+    conf: 0.8
+    mbc: C0002
+    if:
+      type: symbol
+      kind: call
+      exact: curl_init
+  - id: url-from-method-call
+    desc: CURLOPT_URL set from method call
+    crit: notable
+    conf: 0.7
+    if:
+      type: text
+      regex: 'CURLOPT_URL\s*,\s*\$this->[A-Za-z_][A-Za-z0-9_]*\s*\('
+  - id: url-from-static-call
+    desc: CURLOPT_URL set from static call
+    crit: notable
+    conf: 0.7
+    if:
+      type: text
+      regex: 'CURLOPT_URL\s*,\s*[A-Za-z_][A-Za-z0-9_]*::[A-Za-z_]'
+  - id: url-from-decoder
+    desc: CURLOPT_URL set from decoder call
+    crit: suspicious
+    conf: 0.9
+    mbc: B0032
+    attack: T1027
+    if:
+      type: text
+      regex: 'CURLOPT_URL\s*,\s*(base64_decode|hex2bin|pack)\s*\('
+  - id: exec
+    desc: cURL request execution
+    crit: notable
+    conf: 0.8
+    mbc: C0002
+    if:
+      type: symbol
+      kind: call
+      exact: curl_exec
+  - id: exec-symbol
+    desc: References the PHP curl_exec() function
+    crit: notable
+    conf: 0.8
+    mbc: C0002
+    if:
+      type: symbol
+      exact: curl_exec
+  - id: setopt
+    desc: cURL option configuration
+    crit: notable
+    conf: 0.7
+    if:
+      type: symbol
+      kind: call
+      exact: curl_setopt
+  - id: ssl-verify-disable
+    desc: SSL certificate verification disabled
+    # This is an insecure transport configuration worth surfacing, but the
+    # setting is also used by older authentication clients for environments
+    # without a configured CA bundle.  Escalation requires the encoded-C2
+    # composite below rather than this option alone.
+    crit: notable
+    conf: 0.9
+    mbc: B0032
+    attack: T1553
+    if:
+      type: text
+      regex: curl_setopt\s*\([^,]{1,120},\s*CURLOPT_SSL_VERIFYPEER\s*,\s*(false|0|FALSE)
+  - id: ssl-host-disable
+    desc: SSL host verification disabled
+    crit: notable
+    conf: 0.9
+    mbc: B0032
+    attack: T1553
+    if:
+      type: text
+      regex: curl_setopt\s*\([^,]{1,120},\s*CURLOPT_SSL_VERIFYHOST\s*,\s*(0|false|FALSE)
+  - id: follow-redirects
+    desc: cURL follows HTTP redirects
+    crit: notable
+    conf: 0.6
+    if:
+      type: string_literal
+      substr: CURLOPT_FOLLOWLOCATION
+  - id: file-upload
+    desc: PHP cURL file attachment constructor
+    crit: notable
+    conf: 0.95
+    if:
+      type: tree-sitter
+      language: php
+      node: object_creation_expression
+      regex: '(?i)^new\s+\\?CURLFile\s*\('
+  - id: post-data
+    desc: cURL POST data configuration
+    crit: notable
+    conf: 0.7
+    if:
+      type: symbol
+      kind: call
+      exact: curl_setopt
+      arg:
+        kind: identifier
+        name: CURLOPT_POSTFIELDS
+  # PHP array arguments are opaque in call facts. Inspect the actual call's
+  # second argument, excluding comments, strings and unrelated option arrays.
+  - id: post-data-array
+    desc: cURL option array configures POST body
+    crit: notable
+    conf: 0.95
+    if:
+      type: tree-sitter
+      language: php
+      query: |
+        ((function_call_expression
+          function: (_) @callee
+          arguments: (arguments
+            . (argument)
+            . (argument (array_creation_expression
+              (array_element_initializer . (name) @option))))) @call
+          (#match? @callee "(?i)^\\\\?curl_setopt_array$")
+          (#eq? @option "CURLOPT_POSTFIELDS"))
+  - id: user-agent-set
+    desc: Custom User-Agent header configuration
+    crit: notable
+    conf: 0.75
+    if:
+      type: string_literal
+      substr: CURLOPT_USERAGENT
+  - id: referer-set
+    desc: Custom Referer header configuration
+    crit: notable
+    conf: 0.7
+    if:
+      type: string_literal
+      substr: CURLOPT_REFERER
+
+composite_rules:
+  - id: php-curl-request
+    desc: Executes a PHP cURL request
+    crit: notable
+    conf: 0.9
+    all:
+      - id: micro-behaviors/communications/http/curl/binding::init
+      - id: micro-behaviors/communications/http/curl/binding::exec
