@@ -910,7 +910,7 @@ A keyed XOR cipher is `crypto/symmetric/xor`; XOR scrambling is
 | `data/{compress,decompress}/<algorithm>` | Directional compression; languages and libraries share the algorithm leaf. |
 | `data/codec` | Direct evidence for a codec interface or support spanning directions; keep a known scheme in the trait ID. A flat leaf may remain until a matcher-proven child axis fits every rule. Unknown scheme alone does not admit a child; never add an `unknown` or `other` bucket. Size alone does not justify a split. |
 | `data/compression` | Composite findings that relate encoding/decoding to compression/decompression or span codec schemes or directions; direct codec evidence stays in `data/codec`. |
-| `data/{parse,serialize,format}/<format>` | Parsing representation into objects; serializing objects into representation (JSON, YAML, protobuf, pickle; general record fields in `serialize/schema-object`, credential-shaped records in `serialize/schema-credential`); formatting (`format/string` for number text, `format/credentials` for token shapes). Format identity alone is metadata. |
+| `data/{parse,serialize,format}/<format>` | Parsing representation into objects; serializing objects into representation (JSON, YAML, protobuf, pickle; general record fields in `serialize/schema-object`, host and system fields in `serialize/schema-system`, credential-shaped records in `serialize/schema-credential`, cookie fields in `serialize/schema-cookie`, and payment fields in `serialize/schema-payment`); formatting (`format/string` for number text, `format/credentials` for token shapes). Format identity alone is metadata. |
 | `data/archive/{create,extract,list,modify}` | Code that manipulates archives. A rule binding a member to its extracted file is `extract`, though it also writes. |
 | `data/{string,buffer,collection,property}/<operation>` | Operations on strings, byte buffers, collections (DOM trees in `collection/dom`) and object members (`property/{access,assign,define,enumerate}`), classified by receiver and operation, not method name. |
 | `data/{arithmetic,bitwise,checksum,reassembly,transaction}` | Numerical arithmetic; bit manipulation; noncryptographic integrity checks; reassembly; ledger transactions. |
@@ -958,7 +958,9 @@ Membership testing without a required control transfer belongs in
 `data/collection/membership`; constructing a set is `collection/create` and
 intersecting or pruning its members is `collection/filter`. `collection/group`
 groups elements by a field; `collection/frequency` counts or ranks occurrences;
-`collection/measure` measures cardinality. Generic frequency operations do not
+`collection/measure` measures cardinality. `collection/atom-table` covers
+local and global Windows atom-table operations without assuming IPC.
+Generic frequency operations do not
 require an LLM or a voting objective. A model-specific decision context stays
 `data/llm/decision`, with the description distinguishing co-occurrence from a
 bound model-to-action flow.
@@ -1336,6 +1338,25 @@ distinguishes it.
 
 ### Objective boundaries
 
+- **Analysis environment.** Classify an analysis-directed hostname check under
+  `sandbox-detect/hostname`, a sandbox score or its exit gate under
+  `sandbox-detect/score`, and a broader execution gate under
+  `sandbox-detect/enforcement`. A bare routine name, diagnostic message or
+  ordinary conditional is a reference to describe under metadata or a generic
+  capability; it does not establish that an evasion check ran. When an export
+  of a specific resource is required, use the corresponding exfiltration
+  objective, with the analysis check as supporting evidence.
+- **Agent approval.** Place attempts to bypass an agent's authorization,
+  consent or approval gates under `evasion/security-bypass/llm/approval`.
+  General instruction-priority overrides remain in `llm/override`; a user's
+  actual authorization and isolated, user-directed harness configuration are
+  not themselves evidence of a bypass.
+- **Exported system information.** Put exported account inventories under
+  `exfiltration/stealer/system-info/account` and host or user identity
+  profiles under `system-info/identity`. Exported online-account identity
+  information without a required host profile belongs under
+  `stealer/account-identity`. An account database such as
+  `/etc/passwd` is not by itself a password or credential store.
 - **Credential source.** Classify deceptive capture as `phishing`, hash or
   password recovery as `cracking`, live interception as `capture`. For stored
   secrets, use the *immediate* store — OS keychain, credential manager,
@@ -1433,10 +1454,12 @@ relay → `http` > generic proxy chains → `proxy`.
 
 ### Payload activation and staging
 
-A payload chain needs **acquisition or staging linked to activation**, plus
-admission. Admitted chains go in `execution/payload/<sink>`; the same chain in
-an ordinary updater goes in `micro-behaviors/process/deploy/<sink>`. Choose
-**one** sink; reference source, concealment and trigger facts.
+A payload chain needs **acquisition or staging and likely activation**, plus
+admission. A direct link is strong evidence, but sufficiently specific,
+coherent operations can support the inference without proven data flow.
+Admitted chains go in `execution/payload/<sink>`; the same chain in an ordinary
+updater goes in `micro-behaviors/process/deploy/<sink>`. Choose **one** sink;
+reference source, concealment and trigger facts, and describe uncertainty.
 
 | Sink | Required activation |
 |---|---|
@@ -1447,11 +1470,12 @@ an ordinary updater goes in `micro-behaviors/process/deploy/<sink>`. Choose
 | `interpreter-stdin` | Staged source piped to a new interpreter. |
 | `file-exec` | A staged file launched via `command` (a shell parses the launch), `spawn` (a process API launches the path) or `installer` (an installer transaction such as `msiexec`). |
 
-`script-eval/{network,transformed,input}` groups a linked evaluator by the
-source it consumes: a known network response, otherwise decoded or decrypted
-source, otherwise an input whose origin remains unknown. A known network source
-takes precedence over a transformation. Unbound fetch/eval combinations and
-embedded command text belong in `metadata/file/profile/script-evaluation`.
+`script-eval/{network,transformed,input}` groups a payload evaluator by its
+indicated source: a network response, otherwise decoded or decrypted source,
+otherwise an input whose origin remains unknown. A network source takes
+precedence over a transformation when the evidence supports it. Fetch/eval
+co-occurrence that does not suggest a likely chain and embedded command text
+belong in `metadata/file/profile/script-evaluation`.
 
 `file-exec` is split by launch mechanism: `command/*` (a shell or script host parses the launch), `spawn/*` (a process API launches the path; `native` for compiled images, `runtime` for language runtimes), `detached` (hidden or background launch), `installer/*` (an installer transaction; `package` rules read the installer file, `invocation` rules read whatever launches it) and `shellcode`. Each matcher and description must retain the launch mechanism.
 
@@ -1464,7 +1488,7 @@ and configuration co-occurrences. A symbol, import or generic `spawn` call by
 itself does not prove that the named process API was called.
 
 `metadata/file/profile/network-process` records co-occurring network and process
-evidence when their data flow is not established. Its `network` sibling holds
+evidence that does not indicate a more specific behavior. Its `network` sibling holds
 general network profiles. The shared word names a cross-cutting boundary, so
 the sibling-name warning has a specific exception.
 
@@ -1496,15 +1520,18 @@ that the named software is present. A registration field alone does not prove
 that it was written; an encoded name does not establish its eventual use.
 
 `metadata/file/profile/staging` records file-staging and launch observations
-that co-occur without binding the staged path or bytes to activation. It is a
-profile of the evidence, not a deployment chain.
+that fall short of indicating a likely deployment chain, such as names or
+configuration fields without the corresponding operations.
 
-**The link is the claim.** A download, URL, encoded blob, execution API,
-installer identity or loader-like name alone is not a payload chain: bind the
-bytes or path to the sink, or keep the parts as neutral capabilities. Script,
-HTA, WSH, MSI and package formats are carriers, not sinks. `regsvr32 /i:` with
-`scrobj` is `execution/lolbin/regsvr32`. An auto-open document trigger with a
-process call but no linked payload is `execution/trigger`.
+**Describe the likely chain.** A download, URL, encoded blob, execution API,
+installer identity or loader-like name alone is not a payload chain. A direct
+link between a payload and its sink is strong evidence; a coherent combination
+of operations can also indicate a likely chain without proving data flow.
+Describe the evidence and its uncertainty rather than asserting a connection
+the rule does not establish. Script, HTA, WSH, MSI and package formats are
+carriers, not sinks. `regsvr32 /i:` with `scrobj` is
+`execution/lolbin/regsvr32`. An auto-open document trigger with a process call
+but no payload evidence is `execution/trigger`.
 
 **Staging without activation** needs executable-payload preparation plus
 admission. Partition by operation, in precedence order: `reconstruct`
@@ -1526,6 +1553,8 @@ requires acquisition/content evidence and a send; a source-only selector,
 payload field, route literal or imported client belongs in its own observation
 home. A bounded co-occurrence can remain suspicious when described as such;
 it must not claim a data binding the matcher does not establish.
+Security-hunting query text describes the events it searches for; it does not
+establish that the file itself performs the transfer being investigated.
 
 | Required exported item | Home beneath `stealer` |
 |---|---|
@@ -1536,9 +1565,15 @@ it must not claim a data binding the matcher does not establish.
 | A selected cryptographic secret/private key | `credential/value/key` |
 | A mnemonic, seed phrase or recovery secret | `credential/value/recovery-secret` |
 | A stored authentication database, cache, keyring or credential-record set exported as a record/container | `credential/record` |
+| Browser login records or stores | `credential/browser-record` |
+| Keychain or keyring credential containers | `credential/keyring-record` |
+| Wallet keyring containers | `credential/wallet-record` |
+| Secret-bearing files selected by credential-specific paths, without a narrower required secret value or record type | `credential/file` |
 | Configuration files or settings, without a required extracted secret type | `configuration` |
 | A broad process-environment snapshot, or environment values without a required credential type | `configuration/environment` |
 | Application storage/profile state with its content type left open | `application-state` |
+| Chat-application session or local state without a required selected secret | `application-state/chat` |
+| Browser state with alternatives spanning cookie and login stores or browsing records | `application-state/browser-state` |
 | Cookie state, without assuming every cookie authenticates a session | `application-state/cookie` |
 | Browsing/history/activity records | `activity` |
 | Captured input values, keystroke/touch records or clipboard content without narrower semantic content | `input` |
@@ -1546,7 +1581,13 @@ it must not claim a data binding the matcher does not establish.
 | Payment-card and associated billing data | `financial/payment-card` |
 | Messages, mailboxes, SMS | `message` |
 | A database dump or row set without a narrower required semantic item | `database` |
+| Online-account identity information without a required host profile | `account-identity` |
+| Captured web-page text or markup | `page-content` |
 | Files whose contents have no narrower required item class | `file` |
+| Documents selected for export | `document` |
+| Command output without a narrower required information subject | `command-output` |
+| Account inventories and account-database contents, without an established secret type | `system-info/account` |
+| The host name as the required exported identifier | `system-info/hostname` |
 | Host report: identifiers / OS and runtime / installed software / running processes / network inventory | `system-info/{identity,platform,software,process,network}` |
 | Host report spanning or leaving open several of those | `system-info/profile` |
 | Workspace/repository metadata report | `system-info/workspace-profile` |
@@ -2446,7 +2487,7 @@ for current mappings, resource splits and reference-set checks.
 | mb `os/service/driver` | mb `os/kernel/driver` | Drivers are not services | Applied |
 | mb `dylib/library`, `ui/framework` | meta, a capability, or `well-known/lib`, by claim | Implementation containers | Applied (`usb_init` export → `metadata/binary/symbols/exports`; libm imports → `metadata/binary/symbols/imports` ([inventory](docs/taxonomy-audit/taxonomy/libm-imports/migration.json)); terminal-editor project/version text → `metadata/binary/provenance/build`; TLS library names → `fs/path/library` ([inventory](docs/taxonomy-audit/taxonomy/tls-library-names/migration.json)); MFC42 name → `fs/path/library` and all three MFC API names → `metadata/binary/symbols/name/token` ([inventory](docs/taxonomy-audit/taxonomy/mfc-references/migration.json)); `ui/framework` has no YAML rules or live YAML references; both dylib/library and ui/framework are empty; remaining library observations are a selective subject review) |
 | obj `command-and-control/dropper/{process-inject,image-map,module-load,script-eval,interpreter-stdin,file-exec}` | obj `execution/payload/<sink>` (admitted) or mb `process/deploy/<sink>` (neutral) | By sink; admission picks the tier | Partial (`file-exec` applied: 639 rules in `command/{batch,script-host-download,script-host-embedded,shell}`, `detached`, `installer/{package,invocation}`, `shellcode`, `spawn/{native,runtime}`; the legacy directory is removed; image-map applied: call-bound RC4 mapping → payload/image-map, independent crypto, HTTP and memory evidence → operation-cooccurrence profiles; interpreter-stdin applied: impersonated postinstall → payload sink, archived preinstall pipelines → neutral deploy, unbound combinations → profiles; module-load partial: unbound .NET, Node, JVM and MSI combinations → profiles, Netz source references → tool-reference; other sinks open) |
-| obj `command-and-control/dropper/staging/*`, `staging-xor`, `staged-loader` | obj `execution/staging/{reconstruct,extract,acquire,store}` | By operation | Open |
+| obj `command-and-control/dropper/staging/*`, `staging-xor`, `staged-loader` | obj `execution/staging/{reconstruct,extract,acquire,store}` | By operation | Partial (`staging-xor` reviewed and removed; encrypted staging reduced by moving reconstruction, cryptography, naming and path observations to their subjects; other staging and staged-loader rules remain) |
 | obj `command-and-control/dropper/*` (`delivery`, `execution`, `behavior` and the rest) | A payload sink, staging operation, C2 result or neutral capability | By claim | Partial (the `compat` leaf held only synthetic missing-rule sentinels; those and their dead ComfyUI consumer were removed; the remaining branches need review) |
 | obj `collection/email-harvest` | obj `collection/email` | Rename | Applied (legacy directory and references are absent) |
 | obj `credential-access/windows-registry` | obj `credential-access/registry` | Rename | Applied |
@@ -2456,7 +2497,7 @@ for current mappings, resource splits and reference-set checks.
 | obj `lateral-movement/delivery` | `delivery/{remote-execution,wmi,gpo,update-service}`; `smb/admin-share` | By the remote mechanism and required effect | Partial (these mechanism-specific batches moved; multi-stage/multi-method remain under review) |
 | obj `exfiltration/stealer/{network-config,process-list}` | obj `stealer/system-info/{network,process}` | Same source | Applied (legacy directories absent; target branches populated) |
 | obj `exfiltration/stealer/{surveillance,phish}` | obj `stealer/<item>` or the supported neutral/local-acquisition observation | Purpose and method are not stolen item types | Item review applied |
-| obj `exfiltration/sensitive-data` (retire) | `collection` or `credential-access` (no send), `stealer/<item>` (chain), mb `data/serialize` (neutral) | By required send | Open |
+| obj `exfiltration/sensitive-data` (retire) | `collection` or `credential-access` (no send), `stealer/<item>` (chain), `side-channel` (leaking oracle), mb `data/serialize` or metadata (partial evidence) | By evidenced result | Applied (browser, automation and source rules reviewed; CSS oracles → side-channel; partial observations → their subjects; no legacy YAML rules or live references remain) |
 | obj `supply-chain/{install-hook,recon-exfil,credential-theft,metadata-anomaly}` (selective review) | Credential access, exfiltration, discovery or execution by required result; installation-specific abuse stays in `install-hook` | A trigger alone is not an objective; misuse of installation trust is | Open |
 | obj `anti-static/obfuscation/{binary-metrics,code-metrics,tools,multi-layer}` | meta `binary` or `file`, `well-known/`, or a named concealment | Measurements and identities are not concealment | Open |
 | meta `file/encoded`; `lang/encoded` | meta `file/encoding`; `lang/encoding` | Rename, then group by encoding scheme or measured shape | Applied; orphaned impossible XOR/Base64 co-occurrence composite removed |
