@@ -1,0 +1,66 @@
+defaults:
+  for: [data, dos_com, pe, static-lib]
+  platforms: [windows, unix]
+  size_min: 512
+  size_max: 8192
+  attack: T1542.003
+
+traits:
+  # Check that [0200h+off] lacks the resident sector's own marker byte at
+  # [off], splice victim BPB (0202h->0002h) and boot tail (03xxh->01xxh) into
+  # the resident image at ES:0000h, set BH=0, and call the AH=03h entry of the
+  # saved-INT-13h single-sector wrapper.
+  - id: marker-gated-resident-boot-metadata-splice
+    desc: Splices victim metadata and writes sector
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule marker_gated_resident_boot_metadata_splice {
+          meta:
+            filetypes = "dat,bin,payload,raw,map,com,dos,pe,static-lib,data,dos_com"
+          strings:
+            $vec_hook = { C4 06 4C 00 C7 06 4C 00 ?? ?? 8C 0E 4E 00 0E 1F A3 ?? ?? 8C 06 ?? ?? }
+            $io_wrap = { B8 01 03 EB 03 B8 01 02 8A 16 ?? ?? 9C 2E FF 1E ?? ?? C3 }
+            $handler_entry = { 52 1E 50 51 80 FC 02 75 ?? }
+            $splice_write = { 80 3E ?? 02 ?? 74 ?? 51 BF 02 00 BE 02 02 B9 ?? 00 FC F3 A4 BF ?? 01 BE ?? 03 B9 ?? 00 F3 A4 FF 06 ?? 00 B7 00 59 E8 ?? ?? }
+          condition:
+            #vec_hook > 0 and #vec_hook <= 8 and
+            #io_wrap > 0 and #io_wrap <= 8 and
+            #splice_write > 0 and #splice_write <= 8 and
+            for any h in (1..#vec_hook) : (
+              uint16(@vec_hook[h] + 21) == uint16(@vec_hook[h] + 17) + 2 and
+              for any w in (1..#io_wrap) : (
+                uint16(@vec_hook[h] + 17) == uint16(@io_wrap[w] + 16) and
+                for any s in (1..#splice_write) : (
+                  uint8(@splice_write[s] + 15) >= 0x24 and
+                  uint8(@splice_write[s] + 21) == uint8(@splice_write[s] + 24) and
+                  @splice_write[s] + 41 + int16(@splice_write[s] + 39) == @io_wrap[w] and
+                  (
+                    (
+                      filesize == 512 and
+                      uint16(@vec_hook[h] + 8) < @splice_write[s] and
+                      uint8(@splice_write[s] + 4) == uint8(uint8(@splice_write[s] + 2))
+                    ) or (
+                      filesize > 512 and
+                      #handler_entry > 0 and #handler_entry <= 8 and
+                      for any e in (1..#handler_entry) : (
+                        @handler_entry[e] >= uint16(@vec_hook[h] + 8) and
+                        uint8(@splice_write[s] + 4) == uint8(@handler_entry[e] - uint16(@vec_hook[h] + 8) + uint8(@splice_write[s] + 2))
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
+
+composite_rules:
+  - id: resident-metadata-splice-boot-infector
+    desc: Resident boot virus splices victim metadata
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: micro-behaviors/os/msdos/interrupt::bios-memory-reserve-reloc-int13-hook
+      - id: marker-gated-resident-boot-metadata-splice

@@ -1,0 +1,39 @@
+defaults:
+  for: [data, dos_com, pe, static-lib]
+  platforms: [windows, unix]
+  size_min: 512
+  size_max: 8192
+
+traits:
+  # Inside a hooked INT 13h read filter: throttle on elapsed INT 1Ah clock
+  # ticks, read CHS 0/0/1 into a 0200h scratch buffer via the saved INT 13h
+  # vector, and for fixed disks scan the four MBR partition entries at 03BEh
+  # to read the active partition's VBR into 0200h.
+  - id: int13-tick-gated-active-vbr-read
+    desc: Tick-throttled INT 13h reads active VBR
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule int13_tick_gated_active_vbr_read {
+          meta:
+            filetypes = "dat,bin,payload,raw,map,com,dos,pe,static-lib,data,dos_com"
+          strings:
+            $io_read = { B8 01 02 8A 16 ?? ?? 9C 2E FF 1E ?? ?? C3 }
+            $tick_gate = { 80 FC 02 75 ?? [0-8] ( 32 E4 CD 1A | B4 00 CD 1A ) [0-4] 2B 16 ?? ?? [0-6] 83 EA ?? ( 7C ?? | 72 ?? ) }
+            $vbr_probe = { BB 00 02 E8 ?? ?? 72 ?? F6 C2 80 74 ?? B1 04 BF BE 03 80 3D 80 74 05 83 C7 10 E2 F6 8A 75 01 8B 4D 02 E8 ?? ?? }
+          condition:
+            #io_read > 0 and #io_read <= 8 and
+            #tick_gate > 0 and #tick_gate <= 8 and
+            #vbr_probe > 0 and #vbr_probe <= 8 and
+            for any g in (1..#tick_gate) : (
+              for any p in (1..#vbr_probe) : (
+                @vbr_probe[p] > @tick_gate[g] and @vbr_probe[p] <= @tick_gate[g] + 64 and
+                for any r in (1..#io_read) : (
+                  @vbr_probe[p] + 6 + int16(@vbr_probe[p] + 4) == @io_read[r] and
+                  @vbr_probe[p] + 37 + int16(@vbr_probe[p] + 35) == @io_read[r]
+                )
+              )
+            )
+        }
