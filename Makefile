@@ -25,6 +25,14 @@ test-bound-opener:
 test-python-openers:
 	python3 scripts/review/test-python-openers.py
 
+.PHONY: test-go-handler-command-context
+test-go-handler-command-context:
+	python3 scripts/review/test-go-handler-command-context.py
+
+.PHONY: test-openssl-aes-direction
+test-openssl-aes-direction:
+	python3 scripts/review/test-openssl-aes-direction.py
+
 test-xpi-triage-good:
 	python3 scripts/review/test-xpi-triage-good.py --cleave "$(CLEAVE)"
 
