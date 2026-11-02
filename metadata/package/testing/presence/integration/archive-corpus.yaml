@@ -120,6 +120,50 @@ traits:
       regex: '^(bcj|x86)_[0-9]+\.bin$'
       case_insensitive: true
 
+  # Extractor sanitization suites probe the traversal edge with a micro
+  # archive whose only escaping member writes a literal placeholder to a
+  # fixed test-canary path (`../escape.txt`, `../escape.txtxx`, `../x.txt`).
+  # Both legs are content-derived: the engine's parsed member facts, not
+  # the scanned file's name. Real zip-slip payloads name an executable or
+  # sensitive target; this canary never executes anywhere.
+  - id: single-traversal-member-count
+    desc: Archive reports exactly one traversal member
+    crit: notable
+    conf: 0.95
+    size_max: 4096
+    for: [zip, tar, cpio, 7z, rar]
+    if:
+      type: metrics
+      field: archive.path_traversal_count
+      min: 1
+      max: 1
+
+  - id: escape-txt-traversal-member-path
+    desc: Traversal member uses escape.txt test path
+    crit: notable
+    conf: 0.97
+    size_max: 4096
+    for: [zip, tar, cpio, 7z, rar]
+    if:
+      type: value
+      path: archive.members[*].path
+      regex: '^(\.\./|\.\.\\)(escape\.txt(xx)?|x\.txt)$'
+
+  # Disk-extracted tar members are re-sliced from the extracted safe
+  # member, so a nested tar's `archive.members` can omit the rejected
+  # `../` entry while the raw first ustar header still names it. Read the
+  # canary directly from the header for tar.
+  - id: tar-escape-txt-header
+    desc: Tar first header names escape.txt traversal
+    crit: notable
+    conf: 0.97
+    size_max: 4096
+    for: [tar]
+    if:
+      type: hex
+      offset: 0
+      pattern: "2E 2E 2F 65 73 63 61 70 65 2E 74 78 74 00"
+
 composite_rules:
   - id: rar-regression-fixture-basename
     desc: RAR parser regression fixture basename
@@ -130,3 +174,28 @@ composite_rules:
       - id: rar-filter-regression-fixture-basename
       - id: rar-storage-regression-fixture-basename
       - id: rar-password-regression-fixture-basename
+
+  # Either the parsed member facts or, for re-sliced tars, the raw
+  # first header names the canary traversal.
+  - id: dummy-txt-traversal-header-entry
+    desc: Archive header names dummy text traversal
+    crit: notable
+    conf: 0.97
+    for: [zip, tar, cpio, 7z, rar]
+    any:
+      - id: escape-txt-traversal-member-path
+      - id: tar-escape-txt-header
+
+  # A micro archive whose sole anomaly is one canary-path traversal is a
+  # parser regression probe, not a zip-slip weapon: there is no executable
+  # or sensitive target, only the fixed placeholder name. Referenced only
+  # from the built-in traversal hook's unless:.
+  - id: dummy-escape-txt-traversal-fixture
+    desc: Micro archive escape.txt traversal test fixture
+    crit: exception
+    conf: 0.97
+    for: [zip, tar, cpio, 7z, rar]
+    scope: outer
+    all:
+      - id: single-traversal-member-count
+      - id: dummy-txt-traversal-header-entry
