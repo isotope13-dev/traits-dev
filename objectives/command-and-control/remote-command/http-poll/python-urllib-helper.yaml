@@ -59,3 +59,124 @@ traits:
           (#eq? @exec "exec") (#eq? @compile "compile")
           (#match? @mode "^['\"]exec['\"]$")
           (#eq? @step @polled) (#eq? @sleep "time.sleep"))
+
+  # Direct-exec forms of the helper poll above: the fetched body reaches
+  # exec() without an intervening compile() call. The helper must return
+  # the response handle's own read() result (optionally decoded), the
+  # executed identifier must be the assignment target of the helper call,
+  # and exec must immediately follow that assignment, so overwritten or
+  # unrelated values do not match. The payload URL must start from an
+  # http(s) string template.
+  - id: python-urllib-helper-loop-exec
+    desc: Loop executes urllib helper response
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: tree-sitter
+      language: python
+      query: |
+        ((module
+          (function_definition
+            name: (identifier) @fetcher
+            parameters: (parameters . (identifier) @url .)
+            body: (block . (with_statement
+              (with_clause (with_item value: (as_pattern
+                (call function: (attribute) @urlopen
+                  arguments: (argument_list . (identifier) @requested))
+                alias: (as_pattern_target (identifier) @response))))
+              body: (block . (return_statement [
+                (call function: (attribute object: (identifier) @read_handle
+                  attribute: (identifier) @read) arguments: (argument_list))
+                (call function: (attribute object: (call
+                  function: (attribute object: (identifier) @read_handle
+                    attribute: (identifier) @read)
+                  arguments: (argument_list)) attribute: (identifier))
+                  arguments: (argument_list))
+              ]) .)) .))
+          (function_definition body: (block
+            (while_statement condition: (true) body: (block
+              (try_statement body: (block
+                (expression_statement (assignment left: (identifier) @source
+                  right: (call function: (identifier) @fetch_call
+                    arguments: (argument_list . [
+                      (string) @http_template
+                      (binary_operator left: (string) @http_template)
+                      (binary_operator left: (binary_operator left: (string) @http_template))
+                    ]))))
+                . (expression_statement (call function: (identifier) @exec
+                  arguments: (argument_list . (identifier) @executed .)))))
+              . (expression_statement (call function: (attribute) @sleep)))))))
+          (#eq? @urlopen "urllib.request.urlopen")
+          (#eq? @url @requested)
+          (#eq? @response @read_handle)
+          (#eq? @read "read")
+          (#eq? @fetcher @fetch_call)
+          (#match? @http_template "^['\"]https?://")
+          (#eq? @source @executed)
+          (#eq? @exec "exec") (#eq? @sleep "time.sleep"))
+
+  - id: python-urllib-helper-step-exec-poll
+    desc: Polled step executes urllib helper response
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: tree-sitter
+      language: python
+      query: |
+        ((module
+          (function_definition
+            name: (identifier) @fetcher
+            parameters: (parameters . (identifier) @url .)
+            body: (block . (with_statement
+              (with_clause (with_item value: (as_pattern
+                (call function: (attribute) @urlopen
+                  arguments: (argument_list . (identifier) @requested))
+                alias: (as_pattern_target (identifier) @response))))
+              body: (block . (return_statement [
+                (call function: (attribute object: (identifier) @read_handle
+                  attribute: (identifier) @read) arguments: (argument_list))
+                (call function: (attribute object: (call
+                  function: (attribute object: (identifier) @read_handle
+                    attribute: (identifier) @read)
+                  arguments: (argument_list)) attribute: (identifier))
+                  arguments: (argument_list))
+              ]) .)) .))
+          (function_definition
+            name: (identifier) @step
+            body: (block
+              (expression_statement (assignment left: (identifier) @source
+                right: (call function: (identifier) @fetch_call
+                  arguments: (argument_list . [
+                    (string) @http_template
+                    (binary_operator left: (string) @http_template)
+                    (binary_operator left: (binary_operator left: (string) @http_template))
+                  ]))))
+              . (expression_statement (call function: (identifier) @exec
+                arguments: (argument_list . (identifier) @executed .)))))
+          (function_definition body: (block
+            (while_statement condition: (true) body: (block
+              (try_statement body: (block . (expression_statement (call
+                function: (identifier) @polled
+                arguments: (argument_list))) .))
+              . (expression_statement (call function: (attribute) @sleep)))))))
+          (#eq? @urlopen "urllib.request.urlopen")
+          (#eq? @url @requested)
+          (#eq? @response @read_handle)
+          (#eq? @read "read")
+          (#eq? @fetcher @fetch_call)
+          (#match? @http_template "^['\"]https?://")
+          (#eq? @source @executed)
+          (#eq? @exec "exec")
+          (#eq? @step @polled) (#eq? @sleep "time.sleep"))
+
+composite_rules:
+  - id: python-urllib-helper-fork-exec-poll
+    desc: Forked daemon executes urllib helper responses
+    crit: hostile
+    conf: 0.98
+    platforms: [linux, macos]
+    all:
+      - id: micro-behaviors/process/daemonize/detach::python-fork-new-session
+    any:
+      - id: python-urllib-helper-loop-exec
+      - id: python-urllib-helper-step-exec-poll
