@@ -161,7 +161,10 @@ traits:
     for: [c, cpp, elf]
     if:
       type: text
-      regex: '["'']esxcli\s+vm\s+process\s+list["'']'
+      # The command template usually continues with redirection or a pipe
+      # (esxcli vm process list 2>/dev/null | grep 'World ID' ...), so the
+      # closing quote does not follow `list` directly.
+      regex: '["'']esxcli\s+vm\s+process\s+list\b'
 
 composite_rules:
   # Rust INC variants include these three independent behavior indicators in
@@ -397,9 +400,13 @@ composite_rules:
   # Some hypervisor lockers deliver their extortion notice by changing the
   # SSH login banner instead of dropping a conventional ransom-note file.
   # Keep the rule family-neutral and require the destructive VM targeting
-  # that separates it from legitimate SSH-banner administration.
+  # that separates it from legitimate SSH-banner administration. An sshd
+  # restart is not required evidence: ESXi lockers write the banner file
+  # and append the Banner directive to sshd_config, and the notice takes
+  # effect on the next SSH login without an explicit restart. The
+  # extortion claim itself (either notice phrasing) stays required.
   - id: esxi-vm-termination-ransom-banner
-    for: [elf, shell, python]
+    for: [elf, shell, python, c, cpp, go, rust]
     desc: ESXi VM termination with OpenSSH ransom banner
     crit: hostile
     conf: 0.99
@@ -409,11 +416,32 @@ composite_rules:
       - id: micro-behaviors/os/sysinfo/vmware::vmware-extensions
       - id: micro-behaviors/os/service/config::sshd-config-path
       - id: micro-behaviors/communications/ssh/server::sshd-banner-file-directive
-      - id: micro-behaviors/os/service/start::sshd-restart
-      - id: objectives/impact/ransom/note::encrypted-host-data-notice
     any:
-      - id: micro-behaviors/fs/file/io-mode::write-append-create-mode
-      - id: micro-behaviors/fs/write/file/redirect::shell-file-write-command
+      - id: objectives/impact/ransom/note::encrypted-host-data-notice
+      - id: objectives/impact/ransom/encrypt/threat-text::ransom-note-files-encrypted-state
+
+  # ChaCha20 ESXi locker: enumerate guests, force-kill them to release
+  # VMDK locks, encrypt VM files in place with a stream cipher, and wrap
+  # the session key with an embedded RSA public key. The Salsa20-keyed
+  # composites above miss this cipher choice; the VM-extension, VM-kill,
+  # hybrid-crypto, and file-rewrite roles are each required so an ESXi
+  # backup or administration tool (no forced guest kill paired with
+  # in-place encryption and key wrapping) does not match.
+  - id: esxi-chacha-vm-disk-ransomware
+    desc: ESXi VM-disk ransomware with ChaCha20 and RSA key wrapping
+    crit: hostile
+    conf: 0.99
+    attack: T1486,T1489
+    for: [elf, c, cpp, go, rust]
+    all:
+      - id: micro-behaviors/os/sysinfo/vmware::esxcli-vm-list
+      - id: micro-behaviors/process/terminate/kill::esxcli-vm-kill
+      - id: micro-behaviors/os/sysinfo/vmware::vmware-extensions
+      - id: micro-behaviors/crypto/symmetric/stream/chacha::chacha20-cipher-operation
+      - id: micro-behaviors/crypto/encrypt::rsa-public-encrypt-call
+    any:
+      - id: micro-behaviors/fs/file/binary::file-content-io
+      - id: micro-behaviors/fs/file/binary::source-file-content-io
 
   - id: rust-aes-esxi-locker-cli
     desc: Rust AES ESXi locker with shutdown CLI
