@@ -1,0 +1,41 @@
+# A memory-protection change to read-write-execute issued through a
+# pointer kept in writable memory (not an import-table slot) hides the
+# hardening call from static import analysis. Ordinary VirtualProtect
+# importers call through the read-only IAT; a resolved pointer lives in
+# data. The 0x40 protection value is the technique invariant; buffer
+# addresses and sizes vary per build and are wildcarded.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+traits:
+  - id: x86-resolved-virtualprotect-rwx-call
+    desc: x86 RWX protection via resolved pointer call
+    crit: suspicious
+    conf: 0.93
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_resolved_virtualprotect_rwx_call {
+          strings:
+            $push = { 6A 40 68 ?? ?? ?? ?? }
+            $call = { FF 15 ?? ?? ?? ?? }
+          condition:
+            pe.machine == pe.MACHINE_I386 and $push and $call and
+            for any i in (1..#push) : (
+              for any j in (1..#call) : (
+                @call[j] > @push[i] and @call[j] - @push[i] <= 32 and
+                for any s in pe.sections : (
+                  (s.characteristics & pe.SECTION_MEM_EXECUTE) != 0 and
+                  @push[i] >= s.raw_data_offset and
+                  @call[j] + 6 <= s.raw_data_offset + s.raw_data_size
+                ) and
+                for any t in pe.sections : (
+                  (t.characteristics & pe.SECTION_MEM_WRITE) != 0 and
+                  uint32(@call[j]+2) - pe.image_base >= t.virtual_address and
+                  uint32(@call[j]+2) - pe.image_base < t.virtual_address + t.virtual_size
+                )
+              )
+            )
+        }

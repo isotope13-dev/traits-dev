@@ -1,0 +1,79 @@
+# Scattered x86 decode-and-dispatch operation. A decoder rebuilds code
+# from indexed streams with a memory-held key byte, initializes a table
+# of code-chunk addresses, then invokes the decoded buffer at the start
+# of its code section. Opcodes and register roles are the technique
+# invariants; stream addresses, key values, and sizes vary per build.
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+traits:
+  - id: x86-indexed-key-xor-decode-loop
+    desc: x86 indexed-stream keyed XOR decode loop
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: hex
+      section: .text
+      pattern: '03 05 ?? ?? ?? ?? 8A 00 32 05 ?? ?? ?? ?? 8B 0D ?? ?? ?? ?? 03 0D ?? ?? ?? ?? 88 01'
+  - id: x86-decode-dispatch-table-init
+    desc: x86 scattered-chunk dispatch table init
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_decode_dispatch_table_init {
+          strings:
+            $fill = { C7 05 ?? ?? ?? ?? ?? ?? ?? ?? }
+          condition:
+            pe.machine == pe.MACHINE_I386 and #fill >= 8 and
+            for any i in (1..#fill-7) : (
+              @fill[i+7] - @fill[i] <= 128 and
+              for all j in (i..i+7) : (
+                for any s in pe.sections : (
+                  (s.characteristics & pe.SECTION_MEM_EXECUTE) != 0 and
+                  uint32(@fill[j]+6) - pe.image_base >= s.virtual_address and
+                  uint32(@fill[j]+6) - pe.image_base < s.virtual_address + s.virtual_size
+                )
+              ) and
+              uint32(@fill[i+7]+6) - uint32(@fill[i]+6) >= 0x4000 and
+              for all k in (i..i+6) : (
+                uint32(@fill[k+1]+6) > uint32(@fill[k]+6)
+              )
+            )
+        }
+  - id: x86-decode-dispatch-call-triple
+    desc: x86 decoder dispatch call triple
+    crit: suspicious
+    conf: 0.9
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_decode_dispatch_call_triple {
+          strings:
+            $call = { E8 ?? ?? ?? ?? }
+          condition:
+            pe.machine == pe.MACHINE_I386 and
+            for any i in (1..#call) : (
+              for any s in pe.sections : (
+                (s.characteristics & pe.SECTION_MEM_EXECUTE) != 0 and
+                @call[i] >= s.raw_data_offset and
+                @call[i] + 5 <= s.raw_data_offset + s.raw_data_size and
+                for any t in pe.sections : (
+                  (t.characteristics & pe.SECTION_MEM_EXECUTE) != 0 and
+                  ((@call[i] - s.raw_data_offset + s.virtual_address + 5 + uint32(@call[i]+1)) & 0xFFFFFFFF) == t.virtual_address
+                )
+              ) and
+              for any j in (1..#call) : (
+                i != j and
+                @call[i] > @call[j] and @call[i] - @call[j] <= 21 and
+                for any k in (1..#call) : (
+                  i != k and j != k and
+                  @call[j] > @call[k] and @call[j] - @call[k] <= 21
+                )
+              )
+            )
+        }

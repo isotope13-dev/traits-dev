@@ -70,6 +70,36 @@ traits:
         - id: metadata/binary/symbols/plugin::ollydbg-plugin-export
         - id: metadata/binary/framework::dotnet-metadata
         - id: micro-behaviors/data/format/pe-parser::image-section-header-reference
+  # A loader that pushes a protection-API name address found via its own
+  # module walk, then resolves it through an indirect call, smuggles the
+  # import past static import analysis. Ordinary importers call through
+  # the IAT directly and never push the name address.
+  - id: x86-virtualprotect-loader-walk-resolve
+    desc: x86 resolves VirtualProtect through loader walk
+    crit: suspicious
+    conf: 0.93
+    arch: [x86]
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_virtualprotect_loader_walk_resolve {
+          strings:
+            $name = "VirtualProtect"
+            $resolve = { 68 ?? ?? ?? ?? FF 35 ?? ?? ?? ?? FF 15 ?? ?? ?? ?? }
+          condition:
+            pe.machine == pe.MACHINE_I386 and $name and
+            for any i in (1..#resolve) : (
+              for any n in (1..#name) : (
+                pe.rva_to_offset(uint32(@resolve[i]+1) - pe.image_base) == @name[n]
+              ) and
+              for any s in pe.sections : (
+                (s.characteristics & pe.SECTION_MEM_EXECUTE) != 0 and
+                @resolve[i] >= s.raw_data_offset and
+                @resolve[i] + 17 <= s.raw_data_offset + s.raw_data_size
+              )
+            )
+        }
 composite_rules:
   - id: peb-traversal
     desc: PEB module list traversal
