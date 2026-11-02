@@ -17,14 +17,14 @@ def main():
     repo = Path(__file__).resolve().parents[2]
     engine = str((repo / args.cleave).resolve())
     prefix = "objectives/supply-chain/install-hook/build/msbuild::"
-    beacon = prefix + "nuget-dependency-confusion-host-beacon"
-    lead = prefix + "msbuild-precompile-host-query-download"
-    rewrite = prefix + "nuget-build-task-rewrites-consuming-project"
-    hook = "metadata/build/manifest::msbuild-before-build-target"
-    parameter = "metadata/build/manifest::msbuild-task-given-project-directory"
+    beacon = "objectives/supply-chain/impersonation/depconf::nuget-dependency-confusion-host-beacon"
+    lead = "micro-behaviors/communications/http/download/package::msbuild-host-read-query-clues"
+    rewrite = "objectives/evasion/indicator-removal/structure::nuget-build-hook-cleanup-api-clues"
+    hook = "metadata/build/msbuild::msbuild-before-build-target"
+    parameter = "metadata/build/msbuild::msbuild-task-given-project-directory"
     mythic = "third_party/elastic/Multi_Trojan_Mythic/multi/trojan/mythic"
-    removal = "objectives/evasion/indicator-removal/structure::dotnet-package-reference-removal"
-    cleanup = "objectives/evasion/indicator-removal/structure::dotnet-restore-record-cleanup"
+    removal = "micro-behaviors/data/config/delete::dotnet-nuget-reference-removal-apis"
+    cleanup = "micro-behaviors/fs/delete/file/library::dotnet-nuget-restore-cleanup-apis"
     delete = "micro-behaviors/fs/delete/file/library::dotnet-file-delete-call"
     nuspec = '''<package><metadata><id>Example</id><version>1.0.0</version>
 <authors>Example</authors><description>{description}</description></metadata></package>'''
@@ -103,15 +103,32 @@ def main():
             ]:
                 (work / name).write_bytes(payload)
                 cases[name] = required
-            with zipfile.ZipFile(packages["zyc.framework.modules.aspire.kms.1.1.4.nupkg"]) as archive:
-                code = archive.read("lib/net10.0-windows7.0/ZYC.Framework.Modules.Aspire.KMS.dll")
-            for name, extra, required in [
-                ("shared-dependencies.dll", b"", set()),
-                ("agent-import.dll", b"\x00Agent.Profiles.Http\x00", {mythic}),
-                ("athena-modules.dll", b"\x00Athena.Commands.dll\x00Athena.Handler.Linux.dll\x00", {mythic}),
+            # Preserve the real package layout while independently removing
+            # code mutation support or the implicit build activation surface.
+            for name, change_code, manual, required in [
+                ("real-build-hook.nupkg", False, False, {rewrite, removal, cleanup, delete, hook, parameter}),
+                ("real-no-rewrite-api.nupkg", True, False, {delete, hook, parameter}),
+                ("real-manual-cleanup.nupkg", False, True, {removal, cleanup, delete, parameter}),
             ]:
-                (work / name).write_bytes(code + extra)
+                with zipfile.ZipFile(suspicious) as source_archive, zipfile.ZipFile(work / name, "w") as output:
+                    for member in source_archive.namelist():
+                        data = source_archive.read(member)
+                        if change_code and member.endswith("Tasks.dll"):
+                            data = data.replace(b"WriteAllText", b"QuietAllText")
+                        if manual and member.endswith(".targets"):
+                            data = data.replace(b'BeforeTargets="Build"', b'BeforeTargets="Manual"')
+                        output.writestr(member, data)
                 cases[name] = required
+            if "zyc.framework.modules.aspire.kms.1.1.4.nupkg" in packages:
+                with zipfile.ZipFile(packages["zyc.framework.modules.aspire.kms.1.1.4.nupkg"]) as archive:
+                    code = archive.read("lib/net10.0-windows7.0/ZYC.Framework.Modules.Aspire.KMS.dll")
+                for name, extra, required in [
+                    ("shared-dependencies.dll", b"", set()),
+                    ("agent-import.dll", b"\x00Agent.Profiles.Http\x00", {mythic}),
+                    ("athena-modules.dll", b"\x00Athena.Commands.dll\x00Athena.Handler.Linux.dll\x00", {mythic}),
+                ]:
+                    (work / name).write_bytes(code + extra)
+                    cases[name] = required
 
         checked = {beacon, lead, rewrite, hook, parameter, mythic, removal, cleanup, delete}
         result = subprocess.run([engine, "--traits-dir", str(repo), "--format=json", str(work)],

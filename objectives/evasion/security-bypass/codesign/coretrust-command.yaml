@@ -1,0 +1,125 @@
+# ct_bypass implements CVE-2023-41991; this is an exploit invocation,
+# unlike selecting an SDK or creating an ordinary ad-hoc code signature.
+# https://github.com/opa334/ChOma#coretrust-bypass
+defaults:
+  platforms: [macos, ios]
+  for: [makefile, shell]
+  attack: T1553.001
+
+traits:
+  - id: coretrust-exploit-command
+    desc: CoreTrust bypass tool invocation
+    crit: notable
+    conf: 0.99
+    if:
+      type: text
+      regex: '(?m)^[ \t@+-]*(sudo( +-n)? +)?([\w./-]+/)?ct_bypass[ \t]+["'']?-'
+
+  - id: coretrust-input-apply-options
+    desc: CoreTrust input and apply command text
+    crit: notable
+    conf: 0.99
+    for: [makefile]
+    if:
+      # Option text is useful in a generated command or documentation too;
+      # the composite separately requires actual command-position invocation.
+      # Skip complete quoted operands before looking for a switch. A path
+      # such as "file -r copy.app" does not provide a replace option.
+      type: tree-sitter
+      query: |
+        ((recipe_line) @command
+          (#match? @command "\\bct_bypass[ \\t]")
+          (#match? @command "^([^\"'\\n]|\"[^\"\\n]{0,200}\"|'[^'\\n]{0,200}')*[ \\t][\"']?-i[\"']?[ \\t]+[^ \\t\\r\\n]")
+          (#match? @command "^([^\"'\\n]|\"[^\"\\n]{0,200}\"|'[^'\\n]{0,200}')*[ \\t][\"']?-[ra][\"']?([ \\t]|$)"))
+        ((recipe_line) @command
+          (#match? @command "\\bct_bypass[ \\t]")
+          (#match? @command "^([^\"'\\n]|\"[^\"\\n]{0,200}\"|'[^'\\n]{0,200}')*[ \\t][\"']?-i[\"']?[ \\t]+[^ \\t\\r\\n]")
+          (#match? @command "^([^\"'\\n]|\"[^\"\\n]{0,200}\"|'[^'\\n]{0,200}')*[ \\t][\"']?-o[\"']?[ \\t]+[^ \\t\\r\\n]"))
+
+  - id: coretrust-exploit-shell-call
+    desc: Shell call applies CoreTrust signing exploit
+    crit: hostile
+    conf: 0.99
+    for: [shell]
+    if:
+      # Shell argv facts distinguish identifiers from quoted literals; these
+      # structural alternatives accept either spelling and both option orders.
+      type: tree-sitter
+      query: |
+        (command
+          name: (command_name) @tool
+          argument: (_) @input
+          argument: (_) @apply
+          (#match? @tool "(^|/)ct_bypass[\\\"']?$")
+          (#match? @input "^[\\\"']?-i[\\\"']?$")
+          (#match? @apply "^[\\\"']?-[roa][\\\"']?$"))
+        (command
+          name: (command_name) @tool
+          argument: (_) @apply
+          argument: (_) @input
+          (#match? @tool "(^|/)ct_bypass[\\\"']?$")
+          (#match? @input "^[\\\"']?-i[\\\"']?$")
+          (#match? @apply "^[\\\"']?-[roa][\\\"']?$"))
+
+  - id: coretrust-exploit-sudo-call
+    desc: Sudo call applies CoreTrust signing exploit
+    crit: hostile
+    conf: 0.99
+    for: [shell]
+    if:
+      type: tree-sitter
+      query: |
+        (command
+          name: (command_name) @sudo
+          . argument: (_) @tool
+          argument: (_) @input
+          argument: (_) @apply
+          (#eq? @sudo "sudo")
+          (#match? @tool "(^|/)ct_bypass[\\\"']?$")
+          (#match? @input "^[\\\"']?-i[\\\"']?$")
+          (#match? @apply "^[\\\"']?-[roa][\\\"']?$"))
+        (command
+          name: (command_name) @sudo
+          . argument: (_) @tool
+          argument: (_) @apply
+          argument: (_) @input
+          (#eq? @sudo "sudo")
+          (#match? @tool "(^|/)ct_bypass[\\\"']?$")
+          (#match? @input "^[\\\"']?-i[\\\"']?$")
+          (#match? @apply "^[\\\"']?-[roa][\\\"']?$"))
+
+        (command
+          name: (command_name) @sudo
+          . argument: (_) @option
+          . argument: (_) @tool
+          argument: (_) @input
+          argument: (_) @apply
+          (#eq? @sudo "sudo")
+          (#eq? @option "-n")
+          (#match? @tool "(^|/)ct_bypass[\\\"']?$")
+          (#match? @input "^[\\\"']?-i[\\\"']?$")
+          (#match? @apply "^[\\\"']?-[roa][\\\"']?$"))
+        (command
+          name: (command_name) @sudo
+          . argument: (_) @option
+          . argument: (_) @tool
+          argument: (_) @apply
+          argument: (_) @input
+          (#eq? @sudo "sudo")
+          (#eq? @option "-n")
+          (#match? @tool "(^|/)ct_bypass[\\\"']?$")
+          (#match? @input "^[\\\"']?-i[\\\"']?$")
+          (#match? @apply "^[\\\"']?-[roa][\\\"']?$"))
+
+composite_rules:
+  - id: coretrust-exploit-build
+    desc: Make recipe applies CoreTrust signing exploit
+    crit: hostile
+    conf: 0.99
+    for: [makefile]
+    # Both roles must overlap the same command. A tool probe on one line
+    # and an echoed example on another cannot establish exploit application.
+    near_bytes: 1
+    all:
+      - id: coretrust-exploit-command
+      - id: coretrust-input-apply-options

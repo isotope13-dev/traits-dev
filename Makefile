@@ -39,6 +39,37 @@ test-xpi-triage-good:
 test-swift-triage-good:
 	python3 scripts/review/test-swift-triage-good.py --cleave "$(CLEAVE)"
 
+.PHONY: test-npm-triage-good
+test-npm-triage-good:
+	python3 scripts/review/test-npm-triage-good.py --cleave "$(CLEAVE)"
+
+.PHONY: test-npm-improve
+test-npm-improve:
+	python3 scripts/review/test-npm-improve.py --cleave "$(CLEAVE)"
+
+.PHONY: test-npm-triage-bad
+test-npm-triage-bad:
+	python3 scripts/review/test-npm-triage-bad.py --cleave "$(CLEAVE)"
+
+.PHONY: test-npm-bad-improve
+test-npm-bad-improve:
+	python3 scripts/review/test-npm-bad-improve.py --cleave "$(CLEAVE)"
+
+.PHONY: test-nupkg-triage-good
+test-nupkg-triage-good:
+	python3 scripts/review/test-nupkg-good-triage.py --cleave "$(CLEAVE)"
+
+.PHONY: test-nupkg-improve
+test-nupkg-improve:
+	python3 scripts/review/test-nupkg-improve.py --cleave "$(CLEAVE)"
+
+.PHONY: test-nupkg-triage-bad test-nupkg-host-query
+test-nupkg-triage-bad:
+	python3 scripts/review/test-nupkg-bad-triage.py --cleave "$(CLEAVE)"
+
+test-nupkg-host-query:
+	python3 scripts/review/test-nupkg-host-query.py --cleave "$(CLEAVE)"
+
 .PHONY: test-swift-archive-improve
 test-swift-archive-improve:
 	python3 scripts/review/test-swift-archive-improve.py --cleave "$(CLEAVE)"
@@ -113,3 +144,15 @@ install-precommit:
 	cp scripts/pre-commit .git/hooks/pre-commit
 	chmod +x .git/hooks/pre-commit
 	@echo "Pre-commit hook installed."
+
+.PHONY: test-lua-triage-good
+test-lua-triage-good:
+	python3 scripts/review/test-lua-triage-good.py --cleave "$(CLEAVE)"
+
+.PHONY: test-lua-triage-bad
+test-lua-triage-bad:
+	python3 scripts/review/test-lua-triage-bad.py --cleave "$(CLEAVE)"
+
+.PHONY: test-lua-bad-improve
+test-lua-bad-improve:
+	python3 scripts/review/test-lua-bad-improve.py --cleave "$(CLEAVE)"

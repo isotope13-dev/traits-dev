@@ -739,6 +739,15 @@ remain opaque. The CFML producer folds bounded constant concatenations and
 interpolations and distinguishes branch alternatives from concatenation;
 other producers' generic dependency merges remain opaque to this query.
 
+**Complete integer values.** `arg.from.whole_number` matches a proven complete
+integer, including an alias whose current value is known. It uses the same
+complete-value projection as `whole_value`; an arithmetic operand, string
+spelling a number, boolean, opaque call result or stale earlier assignment does
+not supply the integer. It is mutually exclusive with the other source selectors
+and does not accept transfer models. For example, `ShowWindow` argument 1 with
+`from: {whole_number: 0}` selects a possible `SW_HIDE` mode without relying on
+the variable's name or a source-text declaration that may have been overwritten.
+
 **Member-read provenance.** `arg.from.member` selects an actual member-read
 origin by canonical path, rather than a string that happens to contain that
 path. It is mutually exclusive with `from.call`, `from.value`, and

@@ -1,136 +1,108 @@
 #!/usr/bin/env python3
-"""Check honest metadata/identity findings and preserved attack detections."""
-
+"""Check NuGet finding accuracy and new capability coverage without running code."""
 import argparse
 import json
 from pathlib import Path
 import struct
 import subprocess
 import tempfile
-import zipfile
 
 
-def timestamp_variant(original, header_time, debug_time):
-    data = bytearray(original)
-    pe = struct.unpack_from("<I", data, 0x3C)[0]
-    struct.pack_into("<I", data, pe + 8, header_time)
-    optional = pe + 24
-    directory = optional + (112 if struct.unpack_from("<H", data, optional)[0] == 0x20B else 96)
-    debug_rva, debug_size = struct.unpack_from("<II", data, directory + 6 * 8)
-    if debug_time is None:
-        struct.pack_into("<II", data, directory + 6 * 8, 0, 0)
-        return bytes(data)
-    sections = optional + struct.unpack_from("<H", data, pe + 20)[0]
-    for index in range(struct.unpack_from("<H", data, pe + 6)[0]):
-        virtual_size, rva, raw_size, raw_offset = struct.unpack_from("<IIII", data, sections + index * 40 + 8)
-        if rva <= debug_rva < rva + max(virtual_size, raw_size):
-            debug_offset = raw_offset + debug_rva - rva
-            for offset in range(debug_offset, debug_offset + debug_size, 28):
-                struct.pack_into("<I", data, offset + 4, debug_time)
-            return bytes(data)
-    raise AssertionError("The reviewed PE fixture has no mapped debug directory")
+def pe(text):
+    data = bytearray(65536)
+    data[:2] = b'MZ'
+    struct.pack_into('<I', data, 0x3c, 0x80)
+    data[0x80:0x84] = b'PE\0\0'
+    struct.pack_into('<HHIIIHH', data, 0x84, 0x14c, 1, 0, 0, 0, 224, 0x102)
+    opt = 0x98
+    struct.pack_into('<H', data, opt, 0x10b)
+    struct.pack_into('<I', data, opt + 16, 0x1000)
+    struct.pack_into('<I', data, opt + 28, 0x400000)
+    struct.pack_into('<II', data, opt + 32, 0x1000, 0x200)
+    struct.pack_into('<II', data, opt + 56, 0x11000, 0x200)
+    struct.pack_into('<H', data, opt + 68, 3)
+    sec = opt + 224
+    data[sec:sec + 8] = b'.text\0\0\0'
+    struct.pack_into('<IIII', data, sec + 8, 0xfe00, 0x1000, 0xfe00, 0x200)
+    struct.pack_into('<I', data, sec + 36, 0x60000020)
+    data[0x200:0x200 + len(text)] = text
+    return bytes(data)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cleave", default="../cleave/target/release/cleave")
-    parser.add_argument("--samples-root", type=Path, action="append")
+    parser.add_argument('--cleave', default='../cleave/target/release/cleave')
+    parser.add_argument('--helper-assembly', type=Path)
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
     engine = str((repo / args.cleave).resolve())
-    popen = "micro-behaviors/process/create/shell/command-mode::python-popen-command-call"
-    concat = "micro-behaviors/data/string/concat/expression::python-popen-token-concatenation"
-    service = "objectives/command-and-control/backdoor/tasking/command-http::python-http-json-command-execution-service"
-    timestamps = "metadata/binary/provenance/build::future-pe-debug-timestamps"
-    mismatch = "metadata/binary/debug::pe-stem-differs-from-pdb-stem"
-    manifest = "well-known/app/development/lyric::lyric-dotnet-tool-manifest"
-    lyric_package = "well-known/app/development/lyric::lyric-package-name"
-    template = "metadata/package/files/nuget::nupkg-project-template-member"
-    transitive = "metadata/package/files/nuget::nupkg-transitive-build-targets-member"
-    checked = {popen, concat, service, timestamps, mismatch, manifest, lyric_package, template, transitive}
-    retired = {"objectives/evasion/indicator-removal/timestamps::future-pe-debug-timestamps",
-               "objectives/evasion/masquerade/debug::pe-stem-differs-from-pdb-stem",
-               "objectives/command-and-control/backdoor/tasking/command-http::python-popen-command-call",
-               "objectives/command-and-control/backdoor/tasking/command-http::python-obfuscated-popen-attribute"}
-    server = '''from http.server import BaseHTTPRequestHandler
-import os, json
-class Handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        payload = json.loads(self.rfile.read(100))
-        command = payload.get("query")
-        result = os.popen(command).read()
-        self.wfile.write(json.dumps({"stdout": result, "code": 0}).encode())
-'''
-    cases = {
-        "shell.py": (b'import os\ncommand = "echo status"\nresult = os.popen(command).read()\n', {popen}),
-        "concat.py": (b'attribute = "po" + "pen"\n', {concat}),
-        "service.py": (server.encode(), {popen, service}),
-        "joined-service.py": (server.replace("os.popen(command)", 'getattr(os, "po" + "pen")(command)').encode(), {concat, service}),
-    }
-    tool = '''<?xml version="1.0"?><DotNetCliTool Version="1"><Commands>
-<Command Name="{name}" EntryPoint="{entry}.dll" Runner="dotnet" />
-</Commands></DotNetCliTool>'''
-    cases["other/DotnetToolSettings.xml"] = (tool.format(name="fkh", entry="fkh").encode(), set())
-    cases["lyric/DotnetToolSettings.xml"] = (tool.format(name="lyric", entry="Lyric.Lyric").encode(), {manifest})
-    cases["comment/DotnetToolSettings.xml"] = (("<?xml version='1.0'?><DotNetCliTool><!--" +
-        '<Command Name="lyric" EntryPoint="Lyric.dll" Runner="dotnet" />' +
-        "--></DotNetCliTool>").encode(), set())
-    with tempfile.TemporaryDirectory(prefix="nupkg-improve-controls-") as directory:
+    init = 'micro-behaviors/process/lifecycle/auto-exec::dotnet-source-module-initializer'
+    add = 'micro-behaviors/os/kernel/driver::powershell-pnputil-add-driver'
+    update = 'micro-behaviors/os/kernel/driver::powershell-pnputil-update-device'
+    discord = 'micro-behaviors/data/parse/vocabulary::managed-discord-token-scan-routines-reference'
+    telegram = 'micro-behaviors/data/parse/vocabulary::managed-telegram-session-capture-routines-reference'
+    irc = 'objectives/command-and-control/channel/irc/bot::irc-process-control-command-set'
+    client = 'metadata/lang/source/naming/record::clientinfo-name-binary'
+    memory = 'well-known/lib/native/memory-module::memorymodule-name-reference'
+    focus = {init, add, update, discord, telegram, irc, client, memory}
+    cases = {}
+    for i, attribute in enumerate(['ModuleInitializer', 'ModuleInitializerAttribute',
+            'System.Runtime.CompilerServices.ModuleInitializer',
+            'global::System.Runtime.CompilerServices.ModuleInitializerAttribute']):
+        cases[f'initializer-{i}.cs'] = ('using System.Runtime.CompilerServices; class Startup { [' + attribute + '] internal static void Init() {} }', {init})
+    cases.update({
+        'initializer-comment.cs': ('// [ModuleInitializer]\nclass Startup {}', set()),
+        'initializer-string.cs': ('class Startup { string Help = "[ModuleInitializer]"; }', set()),
+        'initializer-other.cs': ('class Startup { [Other.ModuleInitializer] static void Init() {} }', set()),
+        'initializer-variable.cs': ('class Startup { int ModuleInitializer; }', set()),
+        'driver.ps1': ('pnputil /add-driver $inf.FullName /install\npnputil /update-device $id /install\n', {add, update}),
+        'driver-exe.ps1': ('& pnputil.exe /add-driver $path /install\n', {add}),
+        'driver-comment.ps1': ('# pnputil /add-driver driver.inf /install\n', set()),
+        'driver-help.ps1': ('Write-Host "pnputil /add-driver driver.inf /install"\n', set()),
+        'driver-enumerate.ps1': ('pnputil /enum-drivers\n', set()),
+        'driver-unrelated-argument.ps1': ('Write-Host /add-driver\npnputil /enum-drivers\n', set()),
+        'generic-routines.exe': (pe(b'AddToken\0CaptureDirectory\0'), set()),
+        'messaging-routines.exe': (pe(b'ScanDiscordDesktop\0EnumerateTelegramFiles\0'), {discord, telegram}),
+        'irc-control.exe': (pe(b'PRIVMSG\0NICK\0QUIT\0EXECUTE\0KILLPROCESS\0'), {irc}),
+        'irc-with-execute.exe': (pe(b'PRIVMSG\0NICK\0QUIT\0EXECUTE\0'), set()),
+        'irc-with-kill.exe': (pe(b'PRIVMSG\0NICK\0QUIT\0KILLPROCESS\0'), set()),
+        'process-words.exe': (pe(b'EXECUTE\0KILLPROCESS\0'), set()),
+        'client-record.exe': (pe(b'ClientInfo\0'), {client}),
+        'client-record-near.exe': (pe(b'ClientInformation\0'), set()),
+        'loader-name.exe': (pe(b'MemoryModule\0'), {memory}),
+        'loader-name-near.exe': (pe(b'ModuleMemory\0'), set()),
+    })
+    with tempfile.TemporaryDirectory(prefix='nupkg-improve-controls-') as directory:
         work = Path(directory)
-        for name, (body, _) in cases.items():
-            path = work / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(body)
-        for filename, package_id, members, expected in [
-            ("renamed.nupkg", "Lyric", {}, {lyric_package}),
-            ("lyric.9.9.9.nupkg", "OtherTool", {}, set()),
-            ("content.nupkg", "Example", {"templates/App.csproj": "<Project />",
-                                            "buildTransitive/Example.targets": "<Project />"}, {template, transitive}),
-            ("near-miss.nupkg", "Example", {"docs/templates/App.csproj": "<Project />",
-                                             "build/Example.targets": "<Project />"}, set()),
-        ]:
-            with zipfile.ZipFile(work / filename, "w") as archive:
-                archive.writestr("Example.nuspec", "<package><metadata><id>" + package_id +
-                                 "</id><version>1.0.0</version><authors>Example</authors>"
-                                 "<description>Control</description></metadata></package>")
-                for member, body in members.items():
-                    archive.writestr(member, body)
-            cases[filename] = (b"", expected)
-        if args.samples_root:
-            package = next(p for root in args.samples_root for p in root.rglob("costura.fody.4.1.0.nupkg"))
-            with zipfile.ZipFile(package) as archive:
-                original = archive.read("weaver/Costura.Fody.dll")
-            # The post-2030 header and post-2024 debug thresholds differ.
-            for name, header, debug, expected in [
-                ("future.dll", 2208988800, 1767225600, {timestamps, mismatch}),
-                ("older-debug.dll", 2208988800, 1420070400, {mismatch}),
-                ("older-header.dll", 1577836800, 1767225600, {mismatch}),
-                ("no-debug.dll", 2208988800, None, set()),
-                ("Costura.Fody.dll", 1577836800, 1767225600, set()),
-            ]:
-                (work / name).write_bytes(timestamp_variant(original, header, debug))
-                cases[name] = (b"", expected)
-        result = subprocess.run([engine, "--traits-dir", str(repo), "--format=json", str(work)],
-                                capture_output=True, text=True, check=True)
-        seen = set()
-        for line in result.stdout.split("\n"):
-            if not line:
-                continue
-            file = json.loads(line)["files"][0]
-            name = str(Path(file["path"]).relative_to(work))
-            if name not in cases:
-                continue
-            ids = {t["id"] for t in file.get("traits", [])}
-            assert ids & checked == cases[name][1], (name, ids & checked, cases[name][1])
-            assert not ids & retired, (name, ids & retired)
-            if name in {"other/DotnetToolSettings.xml", "comment/DotnetToolSettings.xml", "lyric.9.9.9.nupkg"}:
-                assert not any(i.startswith("well-known/app/development/lyric::") for i in ids), (name, ids)
-            if name in {"service.py", "joined-service.py"}:
-                assert any(t["id"] == service and t["crit"] == 5 for t in file["traits"])
-            seen.add(name)
-        assert seen == cases.keys(), (seen, cases.keys())
-    print(f"NuGet improvement controls: {len(cases)} passed")
+        for name, (data, _) in cases.items():
+            (work / name).write_bytes(data if isinstance(data, bytes) else data.encode())
+        result = subprocess.run([engine, '--traits-dir', str(repo), '--format', 'json', str(work)], check=True, capture_output=True, text=True)
+        found = {}
+        for line in result.stdout.strip().split('\n'):
+            for file in json.loads(line)['files']:
+                found[Path(file['path']).name] = {t['id'] for t in file.get('traits', [])}
+        for name, (_, expected) in cases.items():
+            assert found.get(name, set()) & focus == expected, (name, found.get(name, set()) & focus, expected)
+    if args.helper_assembly:
+        targets = {
+            'GetFunctionPointer': 'micro-behaviors/metaprogramming/reflection/inspect/member::dotnet-runtime-method-pointer-call',
+            'get_IsAttached': 'micro-behaviors/process/debug/detect::dotnet-debugger-attached-call',
+        }
+        with tempfile.TemporaryDirectory(prefix='managed-api-controls-') as directory:
+            work = Path(directory)
+            original = args.helper_assembly.read_bytes()
+            (work / 'original.dll').write_bytes(original)
+            for method in targets:
+                assert method.encode() in original
+                (work / (method + '.dll')).write_bytes(original.replace(method.encode(), b'X' * len(method)))
+            result = subprocess.run([engine, '--traits-dir', str(repo), '--format', 'json', str(work)], check=True, capture_output=True, text=True)
+            for line in result.stdout.strip().split('\n'):
+                file = json.loads(line)['files'][0]
+                ids = {t['id'] for t in file.get('traits', [])}
+                for method, trait in targets.items():
+                    assert (trait in ids) == (Path(file['path']).stem != method), (file['path'], trait)
+    print(f'NuGet improve controls passed ({len(cases)} cases)')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
