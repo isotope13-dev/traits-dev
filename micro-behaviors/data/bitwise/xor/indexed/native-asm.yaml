@@ -1,0 +1,154 @@
+defaults:
+  platforms:
+    - linux
+    - macos
+    - windows
+  for: [elf, macho, pe]
+  size_max: 52428800
+traits:
+  - id: backward-byte-xor-loop-i386
+    conf: 0.88
+    crit: notable
+    desc: Reverse indexed byte XOR loop
+    if:
+      type: hex
+      section: .text
+      pattern: 8A 44 ?? FF 30 04 ?? 49 83 F9 02 7D ??
+  - id: x64-xor-indexed-byte-loop
+    desc: x64 indexed byte XOR and increment
+    crit: notable
+    conf: 0.85
+    for:
+      - pe
+    if:
+      type: hex
+      section: .text
+      pattern: 32 ?4 ?? 48 FF C0 48 39
+  - id: x64-rbp-xor-imm8-counted-loop
+    desc: x64 stack buffer XOR imm8 counted loop
+    crit: notable
+    conf: 0.9
+    platforms: [windows]
+    arch: [x86-64]
+    for: [pe, dll]
+    if:
+      type: hex
+      section: .text
+      # `xorb imm8, disp(%rbp,%rax); inc %rax; cmp imm8, %rax; jb` -- a
+      # counted single-byte-XOR transform over a stack buffer with the
+      # MSVC rbp-relative addressing shape. Key, displacement, and trip
+      # count vary; plain crypto libraries use wider vector ops instead.
+      pattern: '80 74 05 ?? ?? 48 FF C0 48 83 F8 ?? 72 ??'
+
+  - id: x64-strided-repeating-key-xor-loop
+    desc: x64 strided XOR copy loop
+    crit: notable
+    conf: 0.98
+    arch: [x86-64]
+    for: [pe, dll]
+    if:
+      type: hex
+      # Load a key byte through one index, XOR a separate source byte, write
+      # through a third base, then advance and loop. Packed stubs commonly
+      # rename their executable section, so bound the search to a small stub.
+      offset_range: [0, 524288]
+      pattern: '41 0F B6 2C 17 40 32 2C 31 41 88 2C 3B 48 FF C7 41 39 F9 75 ??'
+
+  - id: x86-indexed-byte-xor-transform-loop
+    desc: x86 byte XOR transform loop
+    crit: notable
+    conf: 0.93
+    arch: [x86]
+    for: [pe, dll]
+    if:
+      type: hex
+      section: .text
+      # A byte is widened, XOR-transformed, stored back, and followed by a
+      # jump. The displacement is unrestricted. Gaps allow register variations;
+      # the combination is more specific than a standalone XOR instruction.
+      pattern: '0F B6 ?? ?? 33 ?? ?? 88 ?? ?? [0-128] E9 ?? ?? ?? ??'
+
+  - id: x86-indexed-two-buffer-xor-loop
+    desc: x86 indexed two-buffer byte XOR loop
+    crit: notable
+    conf: 0.96
+    arch: [x86]
+    for: [pe, dll]
+    if:
+      type: hex
+      section: .text
+      # MSVC load/XOR/store loop over separate source and destination
+      # pointers. Stack slots and the loop displacement vary by build.
+      pattern: '0F B6 08 8B ?? ?? 03 ?? ?? 0F B6 02 33 C8 8B ?? ?? 88 0A 8B ?? ?? 83 C0 01 89 ?? ?? EB ??'
+
+  - id: x86-copy-byte-xor-loop
+    desc: x86 copies and XOR-transforms a byte buffer
+    crit: notable
+    conf: 0.97
+    arch: [x86]
+    for: [pe, dll]
+    if:
+      type: hex
+      section: .text
+      # Load a source byte, XOR it with an immediate key, store it in a
+      # separate destination buffer, increment the index, and branch back.
+      pattern: '0F B6 10 [4-24] 83 F2 ?? 88 10 [4-24] 7C ??'
+
+  - id: x64-xor-immediate-byte-loop
+    desc: x64 XOR immediate byte loop
+    crit: notable
+    conf: 0.9
+    arch: [x86-64]
+    for: [pe]
+    if:
+      type: hex
+      section: .text
+      pattern: '0F B6 ?? ?? 83 F? ?? 88 ?? ?? 48 83 C0 01 48 3D ?? ?? 00 00 75 ??'
+
+  - id: x64-mask-xor-buffer-loop
+    desc: x64 masked XOR buffer transformation loop
+    crit: notable
+    conf: 0.93
+    arch: [x86-64]
+    for: [pe]
+    if:
+      type: hex
+      section: .hxtics
+      # A byte is combined with a mask-derived byte, written to a second
+      # buffer, and the loop advances three indexes. This is deliberately
+      # register-agnostic and does not depend on a payload's constants.
+      pattern: '44 30 ?? 40 F6 ?? 40 22 ?? ?? 44 30 ?? 42 88 ?? ?? 49 FF C? 49 FF C? 49 FF C? 45 39 ?? 75 ??'
+
+  - id: x86-byte-xor-terminator-loop
+    desc: In-place byte XOR loop with -1 terminator
+    crit: notable
+    conf: 0.9
+    arch: [x86, x86-64]
+    if:
+      type: hex
+      section: .text
+      # Opcode 30 writes an 8-bit register into its r/m8 destination. Require
+      # a memory ModR/M form and a backward JNE: accepting any ModR/M and any
+      # branch direction allowed CALL displacement bytes followed by
+      # `cmp reg,-1; jne forward` to masquerade as an XOR loop.
+      pattern: '30 (0?|1?|2?|3?|4?|5?|6?|7?|8?|9?|A?|B?) [1] 83 ?? FF 75 (8?|9?|A?|B?|C?|D?|E?|F?)'
+    unless:
+      # Steam's signed bootstrapper contains `call [edx+0x30]` followed by a
+      # sentinel comparison. The matcher can begin at the call displacement
+      # byte and misread that cross-instruction sequence as an XOR opcode.
+      - id: well-known/game/steam::steam-bootstrapper-identity
+
+
+composite_rules:
+  - id: micro-behaviors/data/bitwise/xor/indexed::native-byte-xor-loop
+    desc: Native indexed byte XOR loop
+    crit: component
+    conf: 0.88
+    any:
+      - id: micro-behaviors/data/bitwise/xor/indexed::backward-byte-xor-loop-i386
+      - id: micro-behaviors/data/bitwise/xor/indexed::x64-xor-indexed-byte-loop
+      - id: micro-behaviors/data/bitwise/xor/indexed::x64-strided-repeating-key-xor-loop
+      - id: micro-behaviors/data/bitwise/xor/indexed::x86-indexed-two-buffer-xor-loop
+      - id: micro-behaviors/data/bitwise/xor/indexed::x86-copy-byte-xor-loop
+      - id: micro-behaviors/data/bitwise/xor/indexed::x64-xor-immediate-byte-loop
+      - id: micro-behaviors/data/bitwise/xor/indexed::x64-mask-xor-buffer-loop
