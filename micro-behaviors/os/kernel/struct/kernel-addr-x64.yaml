@@ -1,12 +1,101 @@
 defaults:
   platforms: [unix]
-  for: [c, elf]
+  for: [c, cpp, rust, go, python, elf]
 
 traits:
   - id: kernel-addr-x64
-    desc: References x64 kernel address constant
+    desc: References x86-64 kernel base 0xffffffff81000000
     crit: notable
     conf: 0.95
     if:
       type: text
       substr: "0xffffffff81000000"
+
+  - id: x64-kernel-text-range-source
+    desc: References x86-64 kernel text range
+    crit: notable
+    conf: 0.92
+    for: [c, cpp, rust, go, python]
+    if:
+      type: text
+      regex: '(?i)\b0xffff_?ffff_?([89ab][0-9a-f]|c0)_?[02468ace]0_?0000\w*\b'
+    unless:
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+
+  - id: x64-kernel-text-range-rodata
+    desc: Stores aligned x86-64 kernel text address
+    crit: notable
+    conf: 0.92
+    for: [elf]
+    arch: [x86-64]
+    if:
+      type: hex
+      section: .rodata
+      pattern: '00 00 (00|20|40|60|80) (80|81) FF FF FF FF'
+    unless:
+      - id: metadata/lang/compiled::linux-kernel-banner
+
+  - id: x64-kernel-gadget-addresses-source
+    desc: Defines x86-64 kernel gadget address table
+    crit: suspicious
+    conf: 0.95
+    for: [c, cpp, rust, go, python]
+    count_min: 6
+    if:
+      type: text
+      regex: '(?i)\b0xffff_?ffff_?8[1-9a-f][0-9a-f_]{5,8}[a-z0-9_]{0,6}\b'
+    unless:
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+      - id: well-known/tool/reverse-engineering/crash-utility::crash-utility-source
+
+  - id: x64-kernel-gadget-addresses-rodata
+    desc: Stores x86-64 kernel addresses in rodata
+    crit: notable
+    conf: 0.9
+    for: [elf]
+    arch: [x86-64]
+    count_min: 5
+    if:
+      type: hex
+      section: .rodata
+      pattern: '?? ?? ?? (81|82|83|84) FF FF FF FF'
+    unless:
+      - id: metadata/lang/compiled::linux-kernel-banner
+
+  - id: x64-kernel-gadget-lea-displacements
+    desc: Computes x86-64 kernel addresses via LEA
+    crit: notable
+    conf: 0.92
+    for: [elf]
+    arch: [x86-64]
+    count_min: 5
+    if:
+      type: hex
+      section: .text
+      # REX.W LEA r64, [r64 + disp32] where disp32 sign-extends to 0xffffffff81xxxxxx..0xffffffff84xxxxxx
+      pattern: '(48|49|4C|4D) 8D (8?|9?|A?|B?) ?? ?? ?? (81|82|83|84)'
+    unless:
+      - id: metadata/lang/compiled::linux-kernel-banner
+
+composite_rules:
+  - id: x64-kernel-text-address
+    desc: References x86-64 kernel text base
+    crit: notable
+    conf: 0.94
+    any:
+      - id: kernel-addr-x64
+      - id: x64-kernel-text-range-source
+      - id: x64-kernel-text-range-rodata
+
+  - id: x64-kernel-gadget-address-table
+    desc: Embeds x86-64 kernel gadget addresses
+    crit: suspicious
+    conf: 0.94
+    any:
+      - id: x64-kernel-gadget-addresses-source
+      - id: x64-kernel-gadget-addresses-rodata
+      - id: x64-kernel-gadget-lea-displacements
+    unless:
+      - id: micro-behaviors/os/syscall/invoke::linux-kernel-source-context
+      - id: metadata/lang/compiled::linux-kernel-banner
+      - id: well-known/tool/reverse-engineering/crash-utility::crash-utility-source
