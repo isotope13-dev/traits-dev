@@ -1,0 +1,54 @@
+defaults:
+  platforms: [unix, windows]
+  for: [package.json]
+traits:
+  - id: npm-main-parent-path
+    desc: npm main path climbs to a parent
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: main
+      regex: '(^|/)\.\.(/|$)'
+    unless:
+      # A `private: true` manifest never reaches a registry, so a parent
+      # entrypoint inside a monorepo build layout (e.g. nx `dist/` output)
+      # is not a published-package traversal risk.
+      - id: metadata/package/publishing::is-private
+      # NOTE: metadata/package/completeness::npm-main-bindings-node is
+      # deliberately not listed: it matches main exactly `bindings/node`,
+      # which contains no `..` segment, so it can never coincide with this
+      # atom's traversal matcher and would be a dead suppression entry.
+      - id: metadata/package/entrypoint/module::subpath-entry-shim-manifest
+      - id: metadata/package/completeness::tree-sitter-language-bindings-main
+      - id: well-known/lib/development/parsing/tree-sitter-grammar-npm::tree-sitter-grammar-npm-package
+      # A source-workspace package may deliberately emit a bundled action into
+      # a parent .github/actions directory; the release command documents that
+      # the parent main entrypoint is build output, not package traversal.
+      - type: value
+        path: scripts.release
+        regex: '\bncc\s+build\b.{0,80}\s-o\s+\.\./'
+  # An install hook that redirects a command's stdout over a source file
+  # generates code on the consumer's machine: whatever the hook prints becomes
+  # a module require() can load. void-elements@0.1.1 regenerates its own `main`
+  # this way from a scraped web page, so the module that runs is never the
+  # module that was published or reviewed. The shape is ecosystem-agnostic --
+  # the redirect target is a module the package itself loads -- and it is the
+  # hook phase that matters: a `build`/`prepare` script generating sources runs
+  # for the author, preinstall and postinstall run for every consumer.
+  #
+  # The redirect on its own is notable, not suspicious: install-time codegen is
+  # ordinary practice. jsonpath ships `node lib/aesprim.js > generated/
+  # aesprim-browser.js`, which patches the already-installed esprima into a
+  # browser build -- purely local, no network, and unchanged since 1.0.1.
+  # What convicts is the *input* to the redirect, so the composites below
+  # supply it: content pulled over cleartext HTTP, or dependencies fetched by
+  # the same hook that then rewrites the package's own sources.
+composite_rules:
+  - id: npm-main-parent-entrypoint
+    desc: Named npm package has parent-relative main path
+    crit: suspicious
+    conf: 0.94
+    all:
+      - id: metadata/package/entrypoint/module::npm-main-parent-path
+      - id: metadata/package/name/convention::npm-has-name

@@ -1,0 +1,118 @@
+defaults:
+  platforms:
+    - unix
+    - windows
+  attack: T1562.004
+traits:
+  - id: ufw-reset-command
+    desc: UFW reset command text
+    crit: component
+    conf: 0.9
+    for:
+      - shell
+    if:
+      type: text
+      regex: \bufw\s+--force\s+reset\b
+  - id: iptables-delete-all
+    desc: Deletes all iptables rules
+    crit: suspicious
+    conf: 0.85
+    for:
+      - shell
+    if:
+      type: text
+      # Bare -X/-Z (all chains) is the degrade signal. Chain-scoped forms like
+      # `iptables -Z mychain` or `iptables -X "${CHAIN}"` only touch one chain.
+      regex: '(?m)(^[ \t]*(sudo[ \t]+)?|["''])iptables[ \t]+(-X|-Z)([ \t]*$|[ \t]+-|[ \t]*[;"''])'
+    unless:
+      - id: well-known/app/utility/cmdchamp/
+      - id: objectives/impact/degrade/firewall/rules::benign-firewall-test-context
+  # FORWARD is deliberately absent: `iptables -P FORWARD ACCEPT` is how a
+  # router, NAT gateway, VPN exit node or container host enables packet
+  # forwarding, and it leaves the host's own INPUT/OUTPUT filtering alone.
+  # Matches micro-behaviors/os/firewall/iptables::iptables-policy-accept.
+  - id: iptables-input-output-policy-accept
+    desc: iptables INPUT/OUTPUT default policy ACCEPT
+    crit: suspicious
+    conf: 0.85
+    for:
+      - shell
+    unless:
+      - id: objectives/impact/degrade/firewall/rules::openvpn-sample-firewall-script
+      # Containerd enables forwarding on the bridge (ExecStartPost iptables -P
+      # FORWARD ACCEPT). AKS Engine bakes this into cloud-init via go-bindata.
+      - id: metadata/build/recognized-contexts::containerd-service-provisioning-marker
+    if:
+      type: string_literal
+      regex: \biptables\s+-P\s+(INPUT|OUTPUT)\s+ACCEPT\b
+  - id: ip6tables-flush
+    desc: Flushes ip6tables rules
+    crit: suspicious
+    conf: 0.85
+    for:
+      - shell
+    unless:
+      - id: objectives/impact/degrade/firewall/rules::openvpn-sample-firewall-script
+      - type: text
+        regex: \bip6tables\s+(-P|--policy)\s+(INPUT|OUTPUT|FORWARD)\s+DROP\b
+    if:
+      type: text
+      # Bare `-F` (all chains) is the degrade signal. Chain-scoped forms like
+      # `ip6tables -F FORWARD` or `ip6tables -F "${CHAIN}"` only clear one
+      # named chain (ordinary reconfiguration / private-chain teardown).
+      regex: \bip6tables\s+-F(\s*$|\s+-|\s*;)
+composite_rules:
+  - id: ufw-reset
+    desc: Resets UFW firewall rules
+    crit: suspicious
+    conf: 0.9
+    for: [shell]
+    all:
+      - id: objectives/impact/degrade/firewall/rules::ufw-reset-command
+    downgrade:
+      any:
+        - id: micro-behaviors/os/firewall/ufw::default-deny
+        - id: micro-behaviors/os/firewall/iptables::iptables-input-drop
+  - id: opened
+    desc: Firewall rules cleared and opened
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: objectives/impact/degrade/firewall/rules::iptables-input-output-policy-accept
+    any:
+      - id: micro-behaviors/os/firewall/iptables::iptables-flush-flag
+      - id: objectives/impact/degrade/firewall/rules::iptables-delete-all
+    unless:
+      - id: well-known/app/infrastructure/replicated-kurl/
+      - id: well-known/dual-use/tunnel/nostr-vpn::benign-e2e-context
+  - id: persisted-empty-iptables-rules
+    desc: Cleared iptables rules persisted
+    crit: suspicious
+    conf: 0.9
+    ref: sha256:4f2559adefb2c0f7a7efa5d9395565bb1a0e4e9f5ce62a8b8be433facbb2d3be
+    for: [scripts, binaries]
+    all:
+      - id: micro-behaviors/os/firewall/iptables::iptables-save-system-rules
+    any:
+      - id: micro-behaviors/os/firewall/iptables::iptables-flush-flag
+      - id: micro-behaviors/os/firewall/iptables::iptables-delete-chain-flag
+  - id: persisted-empty-ip6tables-rules
+    desc: Cleared ip6tables rules persisted
+    crit: suspicious
+    conf: 0.9
+    ref: sha256:4f2559adefb2c0f7a7efa5d9395565bb1a0e4e9f5ce62a8b8be433facbb2d3be
+    for: [scripts, binaries]
+    all:
+      - id: micro-behaviors/os/firewall/iptables::ip6tables-save-system-rules
+    any:
+      - id: micro-behaviors/os/firewall/iptables::ip6tables-flush-flag
+      - id: micro-behaviors/os/firewall/iptables::ip6tables-delete-chain-flag
+  - id: persisted-empty-dualstack-firewall
+    desc: Cleared IPv4 and IPv6 firewall persisted
+    crit: suspicious
+    conf: 0.92
+    ref: sha256:4f2559adefb2c0f7a7efa5d9395565bb1a0e4e9f5ce62a8b8be433facbb2d3be
+    for: [scripts, binaries]
+    all:
+      - id: objectives/impact/degrade/firewall/rules::persisted-empty-iptables-rules
+      - id: objectives/impact/degrade/firewall/rules::persisted-empty-ip6tables-rules
