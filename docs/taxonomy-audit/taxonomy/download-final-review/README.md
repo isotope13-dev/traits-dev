@@ -18,3 +18,10 @@ and 17 library-binding rules. Existing recursive `curl/` references retain the
 same alternatives, while exact references follow the relocated rules. Six WSH
 rules that evaluated remote or decoded source were moved from file-execution to
 their evaluation sinks, leaving the script-host download leaf at 66 rules.
+
+Download-and-launch findings were reviewed by their activation target. The
+former flat `spawn/fetch` rules now sit under
+`file-exec/download/{native,runtime,script-host}`; archive-backed chains moved
+to the existing `spawn/archive` category. Network acquisition remains part of
+each chain, while these child categories make the launched target clearer.
+Rule IDs stayed stable, and consumers now reference their new directories.

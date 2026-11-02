@@ -1,0 +1,157 @@
+defaults:
+  platforms:
+  - unix
+  - windows
+  # These are assembly *source* matchers -- `mov esi, [eax+78h]`, and labels
+  # like `[ebp+MZAddy]` that only survive in source -- so they need the type
+  # this tree gives .asm (c), as asm-manual-import-export-dir already spells
+  # out per-trait. Kept additive so the compiled-shellcode coverage stays.
+  for: [binaries, scripts, c]
+traits:
+- id: asm-manual-import-export-dir
+  conf: 0.9
+  crit: suspicious
+  desc: PE export directory field pair
+  for:
+  - c
+  - cpp
+  if:
+    type: text
+    regex: \bIMAGE_EXPORT_DIRECTORY\b.{0,120}\bAddressOfNames\b
+  unless:
+  - id: micro-behaviors/os/api-resolution/manual::export-table-label
+  - id: micro-behaviors/data/format/executable/header::uefi-image-converter-source
+  - id: micro-behaviors/data/format/executable/header::module-definition-export-writer
+  - type: text
+    regex: \bTEST_FIELD_(SIZE|ALIGN|OFFSET)\s*\(\s*IMAGE_EXPORT_DIRECTORY\b
+  downgrade:
+    any:
+    - type: string_literal
+      word: IMAGE_FILE_MACHINE_I386
+    - type: metrics
+      field: exports.count
+      min: 100
+    - id: well-known/tool/reverse-engineering/ollydbg::ollydbg-executable-marker
+- id: asm-manual-import-addr-names
+  conf: 0.9
+  crit: suspicious
+  desc: PE export name table field
+  for:
+  - c
+  - cpp
+  if:
+    type: text
+    regex: \bAddressOfNames\b.{0,120}\bAddressOfFunctions\b
+  unless:
+  - id: micro-behaviors/os/api-resolution/manual::export-table-label
+  - id: micro-behaviors/data/format/executable/header::uefi-image-converter-source
+  - id: micro-behaviors/data/format/executable/header::module-definition-export-writer
+  - type: text
+    regex: \bTEST_FIELD_(SIZE|ALIGN|OFFSET)\s*\(\s*IMAGE_EXPORT_DIRECTORY\b
+  downgrade:
+    any:
+    - type: string_literal
+      word: IMAGE_FILE_MACHINE_I386
+    - type: metrics
+      field: exports.count
+      min: 100
+    - id: metadata/binary/symbols/plugin::ollydbg-plugin-export
+- id: asm-export-table-rva-offset
+  conf: 0.9
+  crit: suspicious
+  desc: Export table RVA parsed by offset
+  if:
+    type: text
+    regex: mov\s+esi,\s*\[eax\+78h\]
+- id: asm-export-base-adjust
+  conf: 0.88
+  crit: component
+  desc: Export RVA adjusted to base
+  if:
+    type: text
+    regex: add\s+esi,\s*\[ebp\+MZAddy\]
+- id: asm-export-slot-atable
+  conf: 0.85
+  crit: notable
+  desc: AddressOfFunctions slot label
+  if:
+    type: text
+    word: ATableVA
+- id: asm-export-slot-ntable
+  conf: 0.85
+  crit: notable
+  desc: AddressOfNames slot label
+  if:
+    type: text
+    word: NTableVA
+- id: asm-export-slot-otable
+  conf: 0.85
+  crit: notable
+  desc: AddressOfOrdinals slot label
+  if:
+    type: text
+    word: OTableVA
+- id: asm-export-name-scan-forward
+  conf: 0.85
+  crit: notable
+  desc: Export-name comparison after name-table marker
+  if:
+    type: text
+    regex: '(?is)(AddressOfNames|NTableVA).{0,240}rep\s+cmpsb'
+- id: asm-export-name-scan-reverse
+  conf: 0.85
+  crit: notable
+  desc: Export-name comparison before name-table marker
+  if:
+    type: text
+    regex: '(?is)rep\s+cmpsb.{0,240}(AddressOfNames|NTableVA)'
+composite_rules:
+- id: asm-export-name-scan
+  conf: 0.9
+  crit: notable
+  desc: Manual export name comparison loop
+  any:
+  - id: asm-export-name-scan-forward
+  - id: asm-export-name-scan-reverse
+- id: asm-export-table-slots
+  conf: 0.9
+  crit: suspicious
+  desc: Export table address labels
+  needs: 2
+  any:
+  - id: asm-export-slot-atable
+  - id: asm-export-slot-ntable
+  - id: asm-export-slot-otable
+- id: asm-export-ordinal-lookup
+  conf: 0.88
+  crit: suspicious
+  desc: Export ordinal label and lodsw mnemonic
+  all:
+  - id: asm-export-slot-otable
+  - id: micro-behaviors/mem/inline-asm::x86-lodsw-mnemonic
+- id: asm-manual-import-parsing
+  conf: 0.9
+  crit: suspicious
+  desc: PE export-directory field references
+  needs: 2
+  any:
+  - id: asm-manual-import-export-dir
+  - id: asm-manual-import-addr-names
+  - id: micro-behaviors/data/format/executable/header::export-ordinal-table-reference
+  downgrade:
+    any:
+    - id: micro-behaviors/fs/file/section::pe-viewer-machine-types
+    - id: micro-behaviors/os/api-resolution/manual::export-table-label
+    - id: metadata/binary/symbols/count::many-exports-100
+    - id: metadata/binary/symbols/plugin::ollydbg-plugin-export
+- id: asm-manual-import-offset-parsing
+  conf: 0.93
+  crit: suspicious
+  desc: Manual export parsing via PE offsets
+  all:
+  - id: asm-export-table-rva-offset
+  - id: asm-export-base-adjust
+  any:
+  - id: asm-export-table-slots
+  - id: asm-export-name-scan
+  - id: asm-export-ordinal-lookup
