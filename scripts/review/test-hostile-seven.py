@@ -19,8 +19,8 @@ temporary = tempfile.TemporaryDirectory(prefix='hostile-seven-controls-')
 directory = Path(temporary.name)
 payload = (repo / 'testdata/hostile/generated/ruby-bad-review/unsafe-runner/sample.rb').read_text()
 recon = (repo / 'testdata/hostile/generated/ruby-bad-review/recon-helper/sample.rb').read_text()
-identity = (repo / 'testdata/suspicious/generated/ruby-bad-review/identity-staging/sample.rb').read_text()
-manifest = json.loads((repo / 'testdata/suspicious/generated/hostile-seven-review/dependency-bundle/package.json').read_text())
+identity = (repo / 'testdata/hostile/generated/ruby-bad-review/identity-staging/sample.rb').read_text()
+manifest = json.loads((repo / 'testdata/hostile/generated/hostile-seven-review/dependency-bundle/package.json').read_text())
 ids = {
  'runner': 'objectives/execution/payload/file-exec/command/fetch::ruby-unverified-download-pty-eval-toolkit',
  'pty': 'micro-behaviors/process/tty/pty::ruby-pty-shell-identity-environment-writes',

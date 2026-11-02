@@ -1,0 +1,57 @@
+defaults:
+  platforms: [windows, linux]
+  for: [javascript, typescript, tar, zip]
+  attack: T1195.002,T1041,T1082,T1552.005
+  mbc: E1041
+
+composite_rules:
+  - id: objectives/exfiltration/stealer/configuration/environment::node-host-profile-http-post-file
+    desc: Script shells out, reads env, and posts a JSON body
+    crit: suspicious
+    conf: 0.9
+    for: [javascript, typescript]
+    scope: file
+    # Import, execSync, env handoff, and the POST have to be one routine.
+    # A service manager that inherits process.env for a local daemon and
+    # separately posts to that daemon's API is not a host-profile beacon.
+    near_bytes: 3500
+    all:
+      - id: metadata/import/builtin::require-child-process
+      - id: micro-behaviors/process/create/shell/command-string::execSync-call
+      - id: micro-behaviors/os/env/read/collection::node-process-env-object-field
+      - id: micro-behaviors/communications/http/request/client::http-request
+      - id: micro-behaviors/communications/http/request/body/construction::request-write-call
+      - id: micro-behaviors/communications/http/request/body/construction::request-end-call
+      - id: micro-behaviors/data/serialize/json::json-stringify-call
+  - id: objectives/exfiltration/stealer/configuration/environment::npm-preinstall-profile-http-post
+    desc: npm preinstall profiles host and posts data
+    crit: hostile
+    conf: 0.99
+    for: [npm, tar, zip, pe, deb, asar, javascript, csharp, manifests]
+    # The claim is about one package's install hook, so it must be evaluated
+    # per package root. Under `scope: archive` a source tree that vendors many
+    # independent npm fixtures -- Deno ships ~1000 under tests/registry/npm --
+    # satisfies the legs from unrelated files and reads as a single profiling
+    # installer.
+    scope: package
+    all:
+      - id: metadata/package/scripts/command::preinstall-runs-node-local-script
+      - id: objectives/exfiltration/stealer/configuration/environment::node-host-profile-http-post-file
+  - id: objectives/exfiltration/stealer/configuration/environment::npm-postinstall-environment-names-json-post
+    desc: npm postinstall posts environment variable names
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002,T1041,T1082
+    for: [npm, tar, zip, package.json, javascript, typescript]
+    scope: archive
+    all:
+      - id: metadata/package/scripts/command::postinstall-runs-node-script
+      - id: micro-behaviors/os/env/enumerate::js-object-keys-env
+      - id: micro-behaviors/data/serialize/json::json-stringify-call
+      - id: micro-behaviors/communications/http/request/client::https-request
+      - id: micro-behaviors/communications/http/request/verb::post-method-text
+      - id: micro-behaviors/communications/url/host/domain-http::js-remote-host-url
+    any:
+      - id: micro-behaviors/communications/http/request/body/construction::node-http-request-body
+      - id: micro-behaviors/communications/http/request/body/construction::request-write-payload-variable
+    needs: 1

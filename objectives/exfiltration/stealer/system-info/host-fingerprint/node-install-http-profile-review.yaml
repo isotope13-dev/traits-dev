@@ -1,0 +1,131 @@
+defaults:
+  platforms: [windows, linux]
+  for: [javascript, typescript, tar, zip]
+  attack: T1195.002,T1041,T1082,T1552.005
+  mbc: E1041
+
+composite_rules:
+  - id: objectives/exfiltration/stealer/system-info/host-fingerprint::npm-preinstall-shell-host-profile-https-post
+    desc: npm preinstall posts shell-collected host profile over HTTPS
+    crit: hostile
+    conf: 0.99
+    for: [npm, tar, zip, package.json, javascript, typescript]
+    platforms: [unix, windows]
+    scope: package
+    attack: "T1195.002,T1041,T1082,T1033"
+    all:
+      - id: metadata/package/scripts/command::preinstall-runs-node-local-script
+      - id: micro-behaviors/process/create/shell/command-string::execSync-call
+      - id: micro-behaviors/process/identity/query/command::execsync-quoted-whoami
+      - id: micro-behaviors/os/sysinfo/hostname/query::execsync-quoted-hostname
+      - id: micro-behaviors/process/identity/query/principal::node-os-alias-homedir-call
+      - id: micro-behaviors/fs/directory/cwd::process-cwd-call
+      - id: micro-behaviors/communications/http/download/cli/curl-wget::node-execsync-curl-command
+      - id: micro-behaviors/communications/http/ip-discovery::ipinfo-io
+      - id: micro-behaviors/communications/http/request/client::https-request
+      - id: micro-behaviors/communications/http/request/verb::post-method-text
+      - id: micro-behaviors/communications/http/request/json::node-http-request-json-stringify-body
+      - id: micro-behaviors/communications/http/request/body/construction::node-bound-request-write-end
+      - id: micro-behaviors/data/serialize/json::json-stringify-call
+      - id: micro-behaviors/communications/tls/verify/disable::reject-unauthorized-false
+
+  # Same transfer pattern with a fixed IP endpoint and Node APIs for host
+  # identity. Requiring multiple CI-provider checks distinguishes this
+  # broad developer/CI fingerprint from documented install receipts that
+  # report only a package name, hostname and install path.
+  - id: objectives/exfiltration/stealer/system-info/host-fingerprint::npm-postinstall-host-profile-ip-json-post
+    desc: npm postinstall posts host and CI profile to literal IP
+    crit: hostile
+    conf: 0.99
+    for: [npm, tar, zip, package.json, javascript, typescript]
+    platforms: [unix, windows]
+    scope: package
+    attack: "T1195.002,T1041,T1082,T1033"
+    all:
+      - id: metadata/package/scripts/command::postinstall-runs-node-script
+      - id: micro-behaviors/os/sysinfo/profile::node-host-query-json-post-clues
+      - id: micro-behaviors/os/env/cicd/runner::multi-ci-provider-env-refs-three-plus
+      - id: micro-behaviors/communications/ip/literal::http-ip-url
+      - id: micro-behaviors/data/serialize/json::json-stringify-call
+      - id: micro-behaviors/communications/http/request/body/construction::node-http-request-body
+  - id: objectives/exfiltration/stealer/system-info/host-fingerprint::npm-install-host-user-cwd-ip-get-exfil
+    desc: npm install hook sends user, host, and cwd to a public IP via HTTP GET
+    crit: hostile
+    conf: 0.98
+    attack: "T1195.002,T1041,T1082,T1033"
+    for: [npm, tar, zip, package.json]
+    scope: package
+    all:
+      - id: micro-behaviors/communications/ip/literal::http-ip-url-text
+      - id: micro-behaviors/communications/http/get::npm-postinstall-node-http-get
+      - id: micro-behaviors/os/env/user-info::npm-postinstall-user-env
+      - id: micro-behaviors/os/sysinfo/hostname/query::npm-postinstall-os-hostname-call
+      - id: micro-behaviors/os/sysinfo/platform/runtime/environment::npm-postinstall-cwd-call
+    any:
+      - id: metadata/package/scripts/lifecycle::filtered-postinstall-hook
+      - id: metadata/package/scripts/lifecycle::filtered-preinstall-hook
+    # The query conveys install context; ordinary package-manager safeguards
+    # and local development fixtures do not satisfy the network/profile legs.
+    unless:
+      - id: metadata/path/directory::test-directory-component
+  # The seven collection/transport legs describe ONE script: it shells out,
+  # reads the environment, and writes a JSON body to an HTTP request. Kept at
+  # package scope they were satisfiable by seven unrelated files, so any large
+  # JS monorepo that also happens to declare a preinstall hook read as a
+  # profiling installer -- openclaw (8550 files, an AI gateway whose preinstall
+  # only prints a "use pnpm" warning) matched all seven from seven different
+  # files. Co-locating them in one leaf file is what the description claims.
+  - id: objectives/exfiltration/stealer/system-info/host-fingerprint::npm-preinstall-local-script-profile-get-beacon
+    desc: npm preinstall sidecar GET beacons host profile
+    crit: hostile
+    conf: 0.99
+    attack: "T1195.002,T1041,T1082"
+    for: [npm, tar, zip, javascript, package.json]
+    scope: archive
+    all:
+      - id: metadata/package/scripts/command::preinstall-runs-node-local-script
+      - id: micro-behaviors/os/sysinfo/profile::small-node-host-user-query
+      - id: micro-behaviors/communications/http/request/dynamic::node-scheme-selected-http-get
+    any:
+      - id: micro-behaviors/data/control-flow/error-handling::silent-error-handler
+      - id: micro-behaviors/communications/ip/literal::http-ip-url
+  - id: objectives/exfiltration/stealer/system-info/host-fingerprint::node-https-userinfo-host-profile-script
+    desc: Script reports hostname, user, and interfaces over encoded HTTPS
+    crit: suspicious
+    conf: 0.9
+    for: [javascript, typescript]
+    scope: file
+    near_bytes: 8192
+    all:
+      - id: micro-behaviors/os/sysinfo/hostname/query::os-hostname-call
+      - id: micro-behaviors/process/identity/query/principal::node-os-alias-userinfo-call
+      - id: micro-behaviors/network/interface::node-network-interfaces-call
+      - id: micro-behaviors/communications/http/request/client::https-request
+      - id: micro-behaviors/data/encode/url::encode-uri-component-call
+  - id: objectives/exfiltration/stealer/system-info/host-fingerprint::npm-postinstall-https-request-host-profile-beacon
+    desc: npm postinstall HTTPS GET beacons host profile
+    crit: hostile
+    conf: 0.98
+    attack: T1195.002,T1041,T1082
+    for: [npm, tar, zip, package.json, javascript]
+    scope: archive
+    all:
+      - id: metadata/package/scripts/lifecycle::postinstall-hook-declaration
+      - id: metadata/package/scripts/command::postinstall-runs-node-script
+      - id: objectives/exfiltration/stealer/system-info/host-fingerprint::node-https-userinfo-host-profile-script
+
+  # Host identity collected in a JSON object and sent by a declared install
+  # hook is an unsolicited profile transfer even when the server is
+  # configurable and the HTTP client is selected from the URL scheme.
+  - id: objectives/exfiltration/stealer/system-info/host-fingerprint::npm-postinstall-host-identity-json-post
+    desc: npm postinstall sends collected host identity in a JSON POST
+    crit: hostile
+    conf: 0.99
+    attack: T1195.002,T1041,T1082,T1033
+    for: [npm, tar, zip, package.json, javascript, typescript]
+    scope: package
+    all:
+      - id: metadata/package/scripts/command::postinstall-runs-node-script
+      - id: micro-behaviors/os/sysinfo/profile::node-host-query-json-post-clues
+      - id: micro-behaviors/communications/url/host/domain-http::js-remote-host-url
+      - id: micro-behaviors/communications/http/request/dynamic::node-scheme-selected-http-post-body

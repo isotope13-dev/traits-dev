@@ -1,0 +1,108 @@
+defaults:
+  platforms: [windows, linux, macos]
+  for: [binaries]
+  mbc: C0027
+  attack: T1573
+  size_max: 52428800
+traits:
+  - id: rc4-swap-pattern
+    desc: RC4 key scheduling swap byte pattern
+    crit: notable
+    size_max: 10485760
+    if:
+      type: hex
+      section: text
+      # Preserve the byte-swap encoding and recognize GCC AArch64's KSA:
+      # key-index remainder, S/key addition, byte reduction, state swap,
+      # and the backward branch at the 256-entry bound. No key is pinned.
+      pattern: ( 8A ?? ?? 8A ?? ?? 02 ?? 88 ?? ?? 88 ?? ?? | 40 08 D8 9A 41 68 64 38 23 00 03 0B 00 88 18 9B 20 6B 60 38 03 00 03 0B 63 1C 00 12 80 C8 63 38 40 68 24 38 42 04 00 91 81 C8 23 38 5F 00 04 F1 81 FE FF 54 )
+    for: [elf, macho, pe]
+  - id: rc4-ksa-swap-loop-i386
+    desc: RC4 KSA byte swap loop (i386)
+    crit: notable
+    for:
+      - elf
+      - pe
+    if:
+      type: hex
+      section: .text
+      pattern: 0F B6 4C 3B FF 0F B6 C1 [0-24] 8D 14 07 [0-24] 0F B6 02 88 44 3B FF [0-24] 88 0A 75
+  - id: rc4-stack-key-ksa-i386
+    desc: RC4 stack key KSA (i386)
+    crit: notable
+    conf: 0.9
+    arch: [x86]
+    for: [elf, pe]
+    if:
+      type: hex
+      section: .text
+      pattern: 8D BC 24 10 01 00 00 66 B9 00 01 F3 AA C6 84 24 10 01 00 00 ?? C6 84 24 11 01 00 00 ?? [0-128]
+        E8 ?? ?? ?? ?? 89 C5 [0-128] 89 C8 31 D2 F7 F5
+  - id: rc4-stack-key-ksa-x64
+    desc: RC4 stack key KSA (x64)
+    crit: notable
+    conf: 0.9
+    arch: [x86-64]
+    for: [elf, pe]
+    if:
+      type: hex
+      section: .text
+      pattern: 48 8D BC 24 00 01 00 00 C6 84 24 00 01 00 00 ?? C6 84 24 01 01 00 00 ?? [0-128] E8 ?? ?? ?? ??
+        [0-128] 48 89 C8 31 D2 88 0C 0B 48 F7 F6
+  - id: rc4-ksa-modadd-arm-thumb
+    desc: RC4 KSA modular-add chain (ARM Thumb)
+    crit: notable
+    conf: 0.88
+    arch: [arm]
+    for: [elf]
+    if:
+      type: hex
+      section: .text
+      pattern: "?? 5C ?? 44 ?? B2 [0-32] ?? 54"
+  - id: rc4-ksa-swap-loop-x64
+    desc: RC4 KSA byte-swap loop (x64)
+    crit: notable
+    conf: 0.82
+    arch: [x86-64]
+    for: [elf, pe]
+    if:
+      type: hex
+      section: .text
+      pattern: 25 FF 00 00 00 [0-96] 0F B6 ?? [0-32] 88 ?? [0-96] 0F B6 ?? [0-32] 88 ?? [0-96] 81 7D ?? FF 00
+        00 00 76
+  - id: rc4-init-symbol
+    desc: RC4 key scheduler symbol
+    crit: notable
+    conf: 0.9
+    if:
+      type: symbol
+      regex: (?i)(rc4init__|arc4_setkey|rc4_set_key)
+    for: [elf, macho, pe]
+  - id: rc4-key-schedule-symbol
+    desc: RC4 key-scheduling routine
+    crit: notable
+    conf: 0.9
+    if:
+      type: symbol
+      regex: '(?i)^rc4_(ksa|key_schedule|expand_key)$'
+    for: [elf, macho, pe]
+  - id: rc4-init-function-source
+    desc: RC4 init call source
+    crit: notable
+    conf: 0.78
+    for: [c, cpp]
+    if:
+      type: symbol
+      kind: call
+      exact: rc4_init
+composite_rules:
+  - id: rc4-stack-key-bytecode
+    desc: RC4 stack-key bytecode
+    crit: suspicious
+    conf: 0.93
+    any:
+      - id: micro-behaviors/crypto/symmetric/stream/rc4/key-schedule::rc4-stack-key-ksa-i386
+      - id: micro-behaviors/crypto/symmetric/stream/rc4/key-schedule::rc4-stack-key-ksa-x64
+    downgrade:
+      any:
+        - id: micro-behaviors/fs/path/system/library::wininet-dll-name-reference

@@ -1,0 +1,106 @@
+# Credential theft from Python packages that execute during installation or
+# import.  The source incident involved a package published under a requested
+# dependency name; the package identity is intentionally not part of this
+# rule.  The useful static signal is the package execution boundary combined
+# with credential collection and an outbound structured request.
+defaults:
+  platforms: [windows, unix]
+  for: [python, whl, python_sdist]
+  attack: "T1195.002,T1552.001,T1041"
+  mbc: E1041
+
+composite_rules:
+  - id: objectives/exfiltration/stealer/multi-item::pypi-setup-credential-receipt-exfil
+    desc: setup.py writes harvested credentials locally before POST exfiltration
+    crit: hostile
+    conf: 0.98
+    attack: "T1195.002,T1552.001,T1552.004,T1074.001,T1041"
+    mbc: E1552,E1041
+    for: [python]
+    near_bytes: 8192
+    all:
+      - id: metadata/package/files/included::setup-py-basename
+      - id: micro-behaviors/fs/file/io-mode::write-append-create-mode
+      - id: micro-behaviors/data/serialize/object::json-dump
+      - id: micro-behaviors/communications/http/request/client::python-post-transport
+    any:
+      - id: micro-behaviors/fs/directory/readdir/target::python-ssh-directory-listing-context
+      - id: micro-behaviors/os/env/secret-name::python-environ-credential-filter
+  - id: objectives/exfiltration/stealer/multi-item::pypi-install-credential-exfil
+    desc: PyPI install hook exfiltrates credentials
+    crit: hostile
+    conf: 0.99
+    # Installation hook, credential access, and transport must coexist in one
+    # source file. Archive pooling combines unrelated package components.
+    scope: leaf
+    for: [python]
+    all:
+      - id: metadata/build/package/recipe/setup-hooks::setuptools-run-override
+      - id: micro-behaviors/communications/http/request/json::python-json-body-transport
+    any:
+      - id: micro-behaviors/fs/read/file/credential::py-pathlib-pypirc
+      - id: micro-behaviors/fs/read/file/credential::py-pathlib-netrc
+      - id: micro-behaviors/os/env/secret-name::python-sensitive-env-read
+  - id: objectives/exfiltration/stealer/multi-item::pypi-import-credential-exfil
+    desc: Python package import exfiltrates credentials
+    crit: hostile
+    conf: 0.98
+    # Keep import-time execution, transport, and credential collection in the
+    # same source file.  Archive-wide pooling makes a normal package with an
+    # __init__.py, a webhook client, and a credential-aware helper look like
+    # import-time theft even when those capabilities are unrelated.
+    #
+    # `scope: leaf` alone did not achieve that: declaring the rule for the
+    # CONTAINER types meant it also evaluated on the archive itself, where the
+    # archive IS the leaf, so the pooling came back. An npm .tgz for an AI
+    # agent (1440 files) scored hostile that way, with the `__init__.py`, the
+    # POST client and the credential helper all in different, unrelated files.
+    # Every leg here describes a .py file, so evaluate on .py files: a real
+    # malicious sdist still matches, on the offending module, which is the
+    # better attribution anyway.
+    scope: leaf
+    for: [python]
+    all:
+      - id: metadata/file/size::init-py-file
+      - id: micro-behaviors/data/control-flow/module-exec::module-level-side-effect-call
+      - id: micro-behaviors/communications/http/request/json::python-json-body-transport
+    # A package's service credential (for example a Telegram bot token) is
+    # used to authenticate its intended API and is not evidence of theft.
+    # Require a credential-store access or broad environment-harvesting leg;
+    # these are the collection behaviors this objective describes.
+    any:
+      - id: micro-behaviors/fs/read/file/credential::py-pathlib-pypirc
+      - id: micro-behaviors/fs/read/file/credential::py-pathlib-netrc
+      - id: micro-behaviors/os/env/secret-name::python-environ-credential-selection
+      - id: micro-behaviors/os/env/secret-name::python-environ-alias-items-credential-filter
+  - id: objectives/exfiltration/stealer/multi-item::pep517-backend-credential-post
+    desc: PEP 517 wheel builder posts credential material
+    crit: component
+    conf: 0.98
+    scope: leaf
+    for: [python]
+    near_lines: 200
+    all:
+      - id: metadata/build/package/recipe/setup-hooks::python-build-wheel-function
+      - id: micro-behaviors/communications/http/request/json::python-json-body-transport
+    any:
+      - id: micro-behaviors/os/env/secret-name::python-sensitive-env-read
+      - id: micro-behaviors/fs/read/file/credential::py-pathlib-pypirc
+      - id: micro-behaviors/fs/read/file/credential::py-pathlib-netrc
+  - id: objectives/exfiltration/stealer/multi-item::pypi-pep517-credential-exfil
+    desc: PEP 517 build backend exfiltrates credentials
+    crit: hostile
+    conf: 0.99
+    scope: archive
+    for: [whl, python-sdist, pyproject.toml, python]
+    all:
+      - id: "metadata/package/config/tooling::pep517-backend-outside-common-set"
+      # The build hook, credential read, and POST must coexist in one Python
+      # backend. Archive-wide pooling otherwise combines an ordinary backend
+      # with unrelated HTTP and credential-aware modules in a source tree.
+      - id: objectives/exfiltration/stealer/multi-item::pep517-backend-credential-post
+
+  # Interpretation twin of the exfiltration env-sweep hostiles: when the
+  # encoded-sweep or URL-path theft lives in a published wheel/sdist, every
+  # downstream consumer runs it. No package name, endpoint, or version is
+  # assumed — either theft shape in a distribution archive is enough.

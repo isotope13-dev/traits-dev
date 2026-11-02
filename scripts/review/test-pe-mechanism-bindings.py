@@ -21,7 +21,7 @@ EARLIER_SAMPLES = ROOT / 'testdata/hostile/samples/pe-bad-20261028'
 CAPTURE_PATCH = 'micro-behaviors/process/inject/runtime/inline-hook::x86-scanned-callsite-string-capture-patch'
 CAPTURE_INTENT = 'objectives/collection/app-data/hook::scanned-code-string-capture-upload-client'
 PIVOT = 'micro-behaviors/process/inject/runtime/thread-context::x86-pe-section-write-entry-context-pivot'
-HOLLOWING = 'objectives/evasion/process/injection/hollowing/runtime::concealed-native-section-context-hollowing'
+HOLLOWING = 'objectives/execution/payload/process-inject/hollowing/runtime::concealed-native-section-context-hollowing'
 
 
 def signature(hex_string):
