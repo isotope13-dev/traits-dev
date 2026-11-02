@@ -10,7 +10,7 @@ YARA_UPDATE ?= $(if $(shell command -v yara-update 2>/dev/null),yara-update,$(ab
 
 COMPILED_DIR := third-party/compiled
 
-.PHONY: validate validate-uncached validate-profile precompile yara-compile yara-update install-precommit test-vsix-withdrawal test-bound-opener test-python-openers
+.PHONY: validate validate-uncached validate-profile precompile yara-compile yara-update install-precommit test-vsix-withdrawal test-bound-opener test-python-openers test-xpi-triage-good test-swift-triage-good
 
 # Offline dependency/registry regressions, including a consuming VSIX. Uses
 # synthetic provider responses in its own cache; never runs package code.
@@ -24,6 +24,16 @@ test-bound-opener:
 
 test-python-openers:
 	python3 scripts/review/test-python-openers.py
+
+test-xpi-triage-good:
+	python3 scripts/review/test-xpi-triage-good.py --cleave "$(CLEAVE)"
+
+test-swift-triage-good:
+	python3 scripts/review/test-swift-triage-good.py --cleave "$(CLEAVE)"
+
+.PHONY: test-swift-archive-improve
+test-swift-archive-improve:
+	python3 scripts/review/test-swift-archive-improve.py --cleave "$(CLEAVE)"
 
 # Rule validation.
 #

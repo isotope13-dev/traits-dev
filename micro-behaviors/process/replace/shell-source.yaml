@@ -1,0 +1,50 @@
+defaults:
+  platforms: [unix]
+  for: [c, cpp]
+  crit: notable
+  conf: 0.95
+traits:
+  - id: c-exec-shell-path-argument
+    desc: Shell path reaches a native exec call
+    if:
+      type: symbol
+      kind: call
+      regex: '^exec[lv]p?e?$'
+      arg:
+        index: 0
+        from:
+          value: '^(/usr)?/bin/(ba|da|[zk])?sh$'
+  - id: c-exec-shell-from-argv-zero
+    desc: Exec takes shell from argv zero
+    # C/C++ initializer-list elements are not yet represented in the value
+    # graph. Bind the declaration and both exec arguments structurally.
+    if:
+      type: tree-sitter
+      # C exposes the index directly; C++ wraps it in a subscript list.
+      # Capture either node and require its complete text to mean zero.
+      query: |
+        ((compound_statement
+          (declaration declarator: (init_declarator
+            declarator: [
+              (pointer_declarator declarator: (array_declarator
+                declarator: (identifier) @argv))
+              (array_declarator declarator: (pointer_declarator
+                declarator: (identifier) @argv))
+              (array_declarator declarator: (identifier) @argv)]
+            value: (initializer_list . (string_literal) @shell)))
+          (expression_statement (call_expression
+            function: (identifier) @exec
+            arguments: (argument_list
+              . (subscript_expression (identifier) @program (_) @zero)
+              . (identifier) @arguments)))) @launch
+          (#eq? @argv @program)
+          (#eq? @argv @arguments)
+          (#match? @zero "^\\[?\\s*0\\s*\\]?$" )
+          (#match? @exec "^execvp?e?$")
+          (#match? @shell "^\"(/usr)?/bin/(ba|da|[zk])?sh\"$"))
+composite_rules:
+  - id: c-exec-shell-target
+    desc: Native exec call receives a shell target
+    any:
+      - id: c-exec-shell-path-argument
+      - id: c-exec-shell-from-argv-zero

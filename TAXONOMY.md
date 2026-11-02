@@ -937,6 +937,17 @@ A keyed XOR cipher is `crypto/symmetric/xor`; XOR scrambling is
 | `data/document/<operation>` | Manipulating document properties, embedded objects, spreadsheet cells and document opening. Document event callbacks are `os/application/hook`; the scanned document's own format and macro counts remain `metadata/document`. |
 | `data/{embedded,llm}/<operation>` | Embedded resources; model inference, sessions, permission policy and tool calls. An agent permission setting or tool declaration does not establish child-process creation. Prompt text that overrides policy is `objectives/evasion/security-bypass/llm`. |
 
+`data/property/access` records member lookup or a property value read. Selecting
+a constructor or calling a computed member is `control-flow/dispatch/computed`;
+returning an indexed result is `control-flow/return`. Installing a Proxy getter
+is `property/define`. A required ordering between calls and member reads belongs
+in `control-flow/sequence`. Literal-array indexing stays with `collection/array`.
+Passing a member value to a directly named callback is `control-flow/direct-call`;
+a DOM selector that binds collected password values belongs with
+`ui/window/form-input`. A bare method-call spelling remains source-call metadata,
+and a dictionary token or field-name string remains literal or naming metadata.
+These distinctions depend on the required operation, not available directory space.
+
 `data/control-flow/loop` answers **what controls repetition?** Its children are
 `unconditional` (no header continuation test, or a backward unconditional jump),
 `counted` (a numeric range, bound or stride), `collection` (element/key traversal
