@@ -1,0 +1,64 @@
+defaults:
+  for: [data, dos_com, pe, static-lib]
+  platforms: [windows, unix]
+  size_min: 512
+  size_max: 8192
+  attack: T1542.003
+
+traits:
+  # Inside a hooked INT 13h filter: the read gate on sector 1/head 0 (or
+  # the fixed-disk write gate) chains through the saved INT 13h vector,
+  # one-sector backup writes and clean re-reads share that same saved
+  # slot, a fixed/floppy backup-sector select feeds both helpers, and the
+  # 7C00h-resident image is written back to sector 1. The slot arithmetic
+  # proves the helpers chain through one saved vector instead of issuing
+  # independent disk requests.
+  - id: dos-intercept-backup-infect-sequence
+    desc: Read filter infects via backup stealth
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule dos_intercept_backup_infect_sequence {
+          meta:
+            filetypes = "dat,bin,payload,raw,map,com,dos,pe,static-lib,data,dos_com"
+          strings:
+            $gate = { 80 FC 02 75 ?? 83 F9 01 75 ?? 80 FE 00 75 ?? 9C 2E FF 1E ?? ?? }
+            $wgate = { 80 FC 03 75 ?? 80 FA 80 72 ?? }
+            $backup_write = { B8 01 03 9C 2E FF 1E ?? ?? }
+            $stealth_read = { B8 01 02 9C 2E FF 1E ?? ?? }
+            $infect_write = { B8 01 03 B9 01 00 BB 00 7C [0-12] 9C 2E FF 1E ?? ?? }
+            $chs = { B1 ?? 80 FA 80 73 ?? }
+          condition:
+            (#gate <= 8) and (#wgate <= 8) and
+            (#gate > 0 or #wgate > 0) and
+            (#backup_write > 0 and #backup_write <= 8) and
+            (#stealth_read > 0 and #stealth_read <= 8) and
+            (#infect_write > 0 and #infect_write <= 4) and
+            (#chs > 0 and #chs <= 8) and
+            for any c in (1..#chs) : (
+              uint8(@chs[c] + 1) >= 2 and uint8(@chs[c] + 1) <= 63
+            ) and
+            for any w in (1..#backup_write) : (
+              for any s in (1..#stealth_read) : (
+                uint16(@backup_write[w] + 7) == uint16(@stealth_read[s] + 7) and
+                (#gate == 0 or for any g in (1..#gate) : (
+                  uint16(@gate[g] + 19) == uint16(@backup_write[w] + 7)
+                ))
+              )
+            )
+        }
+
+composite_rules:
+  # A 512-byte boot sector carrying the full read-intercept cycle above is
+  # a resident boot-sector infector: it infects what it reads and hides
+  # the infection behind backup-sector stealth.
+  - id: dos-read-intercept-boot-infector
+    desc: Resident filter infects boot sectors via stealth
+    crit: hostile
+    conf: 0.99
+    for: [data, pe, static-lib]
+    all:
+      - id: dos-intercept-backup-infect-sequence
+      - id: metadata/file/format/native-executable::dos-boot-sector-ending-signature

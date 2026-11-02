@@ -17,6 +17,9 @@ traits:
 
   # Shrink conventional memory at 40:13h, relocate 256 words from 7C00h into
   # the reserved top-of-memory segment, and capture/replace INT 13h at 0:4Ch.
+  # The shrink runs register-indirect through BX in some builds, the
+  # relocation ends in an INT 19h reboot instead of a far jump, and the
+  # vector swap runs through BX instead of direct AX moves.
   - id: bios-memory-reserve-reloc-int13-hook
     desc: Reserves BIOS memory and hooks INT 13h
     crit: suspicious
@@ -31,9 +34,48 @@ traits:
           strings:
             $mem_a = { B1 06 [0-4] FF 0E 13 04 [0-4] A1 13 04 [0-2] D3 E0 }
             $mem_b = { FF 0E 13 04 [0-4] A1 13 04 [0-2] B1 06 D3 E0 }
-            $reloc = { BE 00 7C [0-6] ( B9 00 01 FC F3 A5 EA | B9 00 01 F3 A5 EA ) }
+            $mem_bx = { ( B7 04 B3 13 | B3 13 B7 04 ) [0-8] ( FF 0F 8B 07 | 8B 07 FF 0F ) [0-4] B1 06 D3 E0 }
+            $reloc = { BE 00 7C [0-6] ( B9 00 01 FC F3 A5 EA | B9 00 01 F3 A5 EA | B9 00 01 FC F3 A5 CD 19 | B9 00 01 F3 A5 CD 19 ) }
             $hook_les = { C4 06 4C 00 C7 06 4C 00 ?? ?? 8C 0E 4E 00 }
             $hook_mov = { A1 4C 00 [0-8] 8B ?? 4E 00 [0-12] C7 06 4C 00 ?? ?? ( 8C 0E 4E 00 | 89 ?? 4E 00 | A3 4E 00 ) }
+            $hook_bx = { BB 4C 00 C4 07 [0-32] BB 4E 00 89 07 [0-12] BB 4C 00 B8 ?? ?? 89 07 }
           condition:
-            ($mem_a or $mem_b) and $reloc and ($hook_les or $hook_mov)
+            ($mem_a or $mem_b or $mem_bx) and $reloc and ($hook_les or $hook_mov or $hook_bx)
+        }
+
+  # Repoint the BIOS memory-size vector (INT 12h at 0:48h/0:4Ah) at a
+  # handler that reads the size word at 40:13h and reports the unshrunk
+  # size, hiding the kilobyte stolen for residency from later checks.
+  - id: bios-int12-memory-size-hook
+    desc: Hooks INT 12h memory-size handler
+    crit: suspicious
+    conf: 0.98
+    for: [data, dos_com, pe, static-lib]
+    if:
+      type: yara
+      source: |
+        rule bios_int12_memory_size_hook {
+          meta:
+            filetypes = "dat,bin,payload,raw,map,com,dos,pe,static-lib,data,dos_com"
+          strings:
+            $seg = { BB 4A 00 89 07 }
+            $off = { BB 48 00 B8 ?? ?? 89 07 }
+            $size_read = { B7 04 B3 13 [0-32] 26 89 07 }
+            $size_lie = { B8 7F 02 }
+          condition:
+            #seg > 0 and #seg <= 8 and
+            #off > 0 and #off <= 8 and
+            for any s in (1..#seg) : (
+              for any o in (1..#off) : (
+                @off[o] >= @seg[s] and @off[o] <= @seg[s] + 32 and
+                (
+                  (#size_read > 0 and for any r in (1..#size_read) : (
+                    @size_read[r] > @off[o] and @size_read[r] <= @off[o] + 512
+                  )) or
+                  (#size_lie > 0 and for any l in (1..#size_lie) : (
+                    @size_lie[l] > @off[o] and @size_lie[l] <= @off[o] + 512
+                  ))
+                )
+              )
+            )
         }
