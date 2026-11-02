@@ -53,3 +53,41 @@ composite_rules:
     all:
       - id: metadata/file/profile/memory/protection-context::source-execute-memory-request
       - id: micro-behaviors/process/thread/create::create-thread-source
+  # Native-APC shellcode staging from Go source: the payload arrives as data
+  # (hex string, byte array, or base64), is staged through ntdll's native
+  # allocation/protection stubs, and is entered by queueing an APC. Unlike
+  # source-embedded-shellcode-stager above, the staging APIs are the Nt*
+  # syscalls (not VirtualAlloc/VirtualProtect) and entry is an APC queue (not
+  # transmute/cast/CreateThread). Seen in Go loaders that combine
+  # hex.DecodeString with NtAllocateVirtualMemory, NtProtectVirtualMemory and
+  # NtQueueApcThreadEx against the current thread.
+  - id: go-payload-data-indicators
+    desc: Go encoded or array payload data
+    crit: notable
+    conf: 0.9
+    for: [go]
+    any:
+      - id: metadata/lang/encoding/hex::hex-long-hex-string-literal
+      - id: metadata/lang/source/literal/array::portable-hex-byte-array-literal
+      - id: micro-behaviors/data/decode/base64::base64-decoding
+  - id: go-native-apc-shellcode-loader
+    desc: Go native-APC shellcode staging and execution
+    crit: hostile
+    conf: 0.97
+    attack: T1055.004,T1027
+    for: [go]
+    all:
+      - id: micro-behaviors/process/inject/runtime/call::go-nt-allocate-virtual-memory-wrapper
+      - id: micro-behaviors/process/inject/runtime/call::go-nt-protect-virtual-memory-wrapper
+      - id: objectives/execution/payload/memory-branch/shellcode::go-payload-data-indicators
+    # Entry runs the staged page through the APC queue. The Ex spelling is
+    # the one loaders resolve; the plain spelling covers the same primitive.
+    any:
+      - id: micro-behaviors/process/inject/runtime/call::go-nt-queue-apc-thread-ex-wrapper
+      - id: micro-behaviors/process/inject/runtime/call::go-nt-queue-apc-thread-wrapper
+      - id: micro-behaviors/process/inject/apc::nt-queue-apc-thread-ex-reference
+      - id: micro-behaviors/process/inject/apc::nt-queue-apc-thread-reference
+    needs: 1
+    # The allocation, protection, payload and queue must describe one staging
+    # sequence, not coincidental matches scattered across a large file.
+    near_bytes: 4096
