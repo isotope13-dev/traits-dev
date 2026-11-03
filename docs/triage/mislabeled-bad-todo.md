@@ -4,13 +4,13 @@ Apply `x-triage-bad`, followed by `x-improve`, to each filetype. Check an item o
 
 The requested priority is listed first; remaining filetypes are alphabetical. `whl` appeared twice in the original sequence and is listed once.
 
-- [ ] shell: `x-triage-bad`, then `x-improve`
-- [ ] c: `x-triage-bad`, then `x-improve`
-- [ ] package.json: `x-triage-bad`, then `x-improve`
-- [ ] jpeg: `x-triage-bad`, then `x-improve`
-- [ ] gif: `x-triage-bad`, then `x-improve`
+- [x] shell: `x-triage-bad`, then `x-improve` — 40 snapshot entries reviewed; see `shell-bad-review-2026-11-02.md`
+- [x] c: `x-triage-bad`, then `x-improve` — 35 good, 5 bad; see `c-bad-review-2026-11-02.md`
+- [x] package.json: `x-triage-bad`, then `x-improve` — 20 good, 14 bad, 4 inconclusive; see `package-json-bad-review-2026-11-02.md`
+- [x] jpeg: `x-triage-bad`, then `x-improve` — 36 good, 3 bad, 1 inconclusive; see `jpeg-bad-review-2026-11-03.md`
+- [x] gif: `x-triage-bad`, then `x-improve` — 35 good, 2 bad, 3 inconclusive; see `gif-bad-review-2026-11-03.md`
 - [ ] whl: `x-triage-bad`, then `x-improve`
-- [ ] png: `x-triage-bad`, then `x-improve`
+- [x] png: `x-triage-bad`, then `x-improve` — 40 good; see `png-bad-review-2026-11-03.md`
 - [ ] csharp: `x-triage-bad`, then `x-improve`
 - [ ] 7z: `x-triage-bad`, then `x-improve`
 - [ ] apk_alpine: `x-triage-bad`, then `x-improve`

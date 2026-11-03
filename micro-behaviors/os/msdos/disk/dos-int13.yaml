@@ -1,0 +1,186 @@
+# BIOS disk API byte sequences are observations, not proof of a wipe.
+defaults:
+  platforms: [windows, unix]
+  for: [dos_com, static-lib, data]
+  size_max: 65536
+
+traits:
+  - id: dos-int13-fixed-disk-write
+    desc: BIOS writes raw sectors to fixed disk
+    crit: notable
+    conf: 0.92
+    for: [dos_com, data, ole]
+    if:
+      type: hex
+      pattern: "(B8 ?? 03 [0-16] BA 80 00|B8 ?? 03 [0-16] B2 80|BA 80 00 [0-16] B8 ?? 03|B2 80 [0-16] B8 ?? 03) [0-16] CD 13"
+      offset_range: [0, 512]
+    unless:
+      - id: well-known/tool/reverse-engineering/pedump::pedump-packer-marker
+
+  - id: dos-int13-raw-disk-copy-loop
+    desc: BIOS reads and writes raw sectors
+    crit: notable
+    conf: 0.95
+    for: [dos_com, data, ole]
+    if:
+      type: hex
+      pattern: "B8 ?? 02 [0-16] CD 13 [0-8] 72 ?? B8 ?? 03 [0-16] CD 13"
+      offset_range: [0, 512]
+    unless:
+      - id: well-known/tool/reverse-engineering/pedump::pedump-packer-marker
+
+  # MOV AX,xx02h with AL other than 1: BIOS read of more than one sector.
+  # Mislabeled dumps are often typed data or static-lib rather than dos_com.
+  - id: dos-int13-multisector-read
+    desc: BIOS reads multiple disk sectors
+    crit: notable
+    conf: 0.9
+    if:
+      type: hex
+      pattern: "B8 ~01 02 [0-40] CD 13"
+      offset_range: [0, 512]
+
+  # MOV AX,xx03h / INT 13h writes any sector count. Floppy erasers use DL
+  # below 80h, so the fixed-disk atom above does not see them.
+  - id: dos-int13-ax-sector-write-any
+    desc: BIOS writes sectors via AX immediate
+    crit: notable
+    conf: 0.9
+    if:
+      type: hex
+      pattern: "B8 ?? 03 [0-24] CD 13"
+      offset_range: [0, 512]
+
+  # AL other than 1 overwrites more than a single boot sector.
+  - id: dos-int13-multisector-write
+    desc: BIOS writes multiple disk sectors
+    crit: suspicious
+    conf: 0.92
+    if:
+      type: hex
+      pattern: "B8 ~01 03 [0-24] CD 13"
+      offset_range: [0, 512]
+
+  # INT 13h then INT 21h AH=4Ch. The gap allows another sector call
+  # between the disk service and MOV AH,4Ch / MOV AL,imm / INT 21h.
+  - id: dos-int13-then-dos-exit
+    desc: DOS exits after BIOS disk call
+    crit: notable
+    conf: 0.9
+    if:
+      type: hex
+      pattern: "CD 13 [0-64] B4 4C [0-8] CD 21"
+      offset_range: [0, 512]
+
+  - id: dos-int13-sector-write-exit
+    desc: BIOS INT 13h call then immediately exits
+    crit: notable
+    conf: 0.92
+    for: [dos_com, data, ole]
+    if:
+      type: hex
+      pattern: "CD 13 [0-28] (CD 20|B4 4C CD 21|B8 00 4C CD 21|31 C0 CD 21|33 C0 CD 21|CD 21|B0 ?? C3|C3|FA F4|F4)"
+      offset_range: [0, 512]
+    unless:
+      - id: well-known/tool/reverse-engineering/pedump::pedump-packer-marker
+      - id: metadata/path/directory::test-directory-component
+
+  - id: dos-fixed-disk-chs-setup
+    desc: Fixed-disk CHS register setup sequence
+    crit: notable
+    conf: 0.98
+    if:
+      type: hex
+      pattern: "B2 80 B6 00 B5 ?? B1 ??"
+      offset_range: [0, 512]
+    unless:
+      - id: well-known/tool/reverse-engineering/pedump::pedump-packer-marker
+
+  - id: dos-int13-boot-sector-target
+    desc: BIOS write targets a boot-sector address
+    crit: notable
+    conf: 0.92
+    if:
+      type: hex
+      pattern: "B8 01 03 BB 00 7C B9 01 00"
+      offset_range: [0, 512]
+
+  - id: dos-int13-mbr-sector-target
+    desc: BIOS accesses the hard-disk first sector
+    crit: notable
+    conf: 0.92
+    for: [dos_com, data, ole]
+    if:
+      type: hex
+      pattern: "B8 ?? (02|03) [0-8] (B9 01 00 [0-4] BA 80 00|BA 80 00 [0-4] B9 01 00) [0-4] CD 13"
+      offset_range: [0, 512]
+    unless:
+      - id: well-known/tool/reverse-engineering/pedump::pedump-packer-marker
+
+  - id: dos-int13-drive0-write-exit
+    desc: Drive-zero disk call then exit
+    crit: notable
+    conf: 0.92
+    if:
+      type: hex
+      pattern: "(31|33) D2 CD 13 [0-4] B8 00 4C CD 21"
+      offset_range: [0, 512]
+
+
+composite_rules:
+  - id: dos-fixed-disk-write-and-exit
+    desc: Fixed-disk write and exit sequences
+    crit: notable
+    conf: 0.98
+    for: [dos_com, data, ole]
+    all:
+      - id: dos-int13-fixed-disk-write
+      - id: dos-int13-sector-write-exit
+
+  - id: dos-raw-sector-copy-and-exit
+    desc: Raw-sector copy and exit sequences
+    crit: notable
+    conf: 0.97
+    for: [dos_com, data, ole]
+    all:
+      - id: dos-int13-raw-disk-copy-loop
+      - id: dos-int13-sector-write-exit
+
+  # Independent byte patterns do not establish the control-flow path.
+  - id: dos-multisector-read-write-and-exit
+    desc: Sector read, write and exit sequences
+    crit: notable
+    conf: 0.96
+    size_max: 2048
+    all:
+      - id: dos-int13-multisector-read
+      - id: dos-int13-ax-sector-write-any
+      - id: dos-int13-then-dos-exit
+
+  # Multi-sector writes also occur in legitimate disk utilities.
+  - id: dos-multisector-write-and-exit
+    desc: Multi-sector write and exit sequences
+    crit: notable
+    conf: 0.95
+    size_max: 2048
+    all:
+      - id: dos-int13-multisector-write
+      - id: dos-int13-then-dos-exit
+
+  - id: dos-boot-sector-write-and-exit
+    desc: Boot-sector write and exit sequences
+    crit: notable
+    conf: 0.96
+    all:
+      - id: dos-int13-boot-sector-target
+      - id: dos-int13-drive0-write-exit
+
+  - id: dos-first-sector-access-and-exit
+    desc: First-sector access and exit sequences
+    crit: notable
+    conf: 0.98
+    for: [dos_com, data, ole]
+    all:
+      - id: dos-int13-mbr-sector-target
+      - id: dos-int13-sector-write-exit
+

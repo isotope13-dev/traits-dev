@@ -12,15 +12,30 @@ clipboard access and replacement of Ethereum-style wallet addresses. The
 payload contains a hard-coded replacement address. This assessment did not
 execute the package or the payload.
 
-The installed Atomscan reports multiple obfuscation findings but misses the
-shortcut modification. The current local rules now detect that behavior by
-combining the shortcut creation and save calls, launch-argument assignment,
-target-path reference, directory walk, and obfuscation. The decoded strings
-were not present in `cleave facts`, so browser-extension and clipboard
-behavior still need coverage. A new finding records a write of assembled text
-alongside obfuscated character reconstruction without claiming to decode it.
-Validation passes, and Hopper confirmed the existing **bad** label; detection
-coverage of the decoded behavior remains incomplete.
+The initial Atomscan reported obfuscation but missed the shortcut modification.
+The local rules now detect that behavior by combining the shortcut creation
+and save calls, launch-argument assignment, target-path reference, directory
+walk, and obfuscation. A separate finding records a write of assembled text
+alongside obfuscated character reconstruction. Hopper confirmed the existing
+**bad** label.
+
+A bounded, literal-only Python decoder now reconstructs the character-array
+expressions without executing the package. When such a literal is directly
+written and recognized as JavaScript, the written script is analyzed as a
+separate layer. Both rebuilt scanners recover the 1,973-byte browser extension
+from the original archive and report the address-replacement behavior. A new
+hostile finding binds an element value, Ethereum-address substitution, and
+its write-back to the same variables, alongside clipboard paste and copy
+commands; it does not claim the commands succeeded. Focused tests check the
+flow, unrelated values, missing commands, and placeholder destinations. The
+decoder also bounds binding inspection and rejects indirect builtins access;
+these safeguards retain the recovered layer in the original package.
+
+Another composite described the evidence as a wallet-provider transaction
+drainer even though it can match address replacement without a provider hook;
+its description and that of the generic replacement observation now state the
+actual evidence. This improves coverage of the decoded extension; it does not
+establish coverage of every possible behavior in the archive.
 
 # Modified OpenSSH source archive
 
@@ -162,8 +177,14 @@ unsafe write. The bundled utility uses `O_NOFOLLOW` to reject that symlink.
 The test constructs an attempted privileged write through the symlink, so the
 archive is **bad** under the exploit-test policy; Hopper confirmed its existing
 bad label. Neutral observations identify the symlink command and the sudo
-owner-only chmod command. The scanners do not yet recognize this test as an
-exploit attempt, so hostile detection coverage remains incomplete.
+owner-only chmod command. A suspicious co-occurrence finding now identifies
+the permission change, symlink setup, and privileged file check without
+claiming a successful write. An additional structural observation binds the
+checked file to the symlink target and the target's parent to the protected
+directory, with a privileged program invocation between those steps. It does
+not assert that the program opens the link. Both scanners report this on the
+extracted test, and focused path-binding tests and full uncached validation
+pass. The bundled `pmpost` source constructs its notices path from `PCP_LOG_DIR` and opens it with `O_NOFOLLOW`. A more specific finding now binds the test's notices symlink, protected target, privileged `pmpost` invocation, and file check, and also requires the program-path assignment. It reports an exploit test, not a successful write; the assignment and call are static observations rather than a proof of runtime variable values. Both scanners report the hostile finding in the extracted test and the archive. Focused tests cover mismatched paths, program names, privileges, and link types, and full uncached validation passes. Hopper confirmed the existing **bad** label.
 
 # Local osquery dashboard script
 
@@ -187,7 +208,19 @@ payload and was classified **good**. Atomscan could not analyze a fetched RPM
 because its fetched content was not a valid CPIO stream; that external fetch
 is not proof about the remote package's contents.
 
-# Compute image tooling review in progress
+# Compute image tooling archive
+
+The reviewed archive is **good**: its included scripts and configurations
+implement image construction, publishing, provisioning, and VM tests. They
+also contain the security-sensitive operations documented below. Four genuine
+suspicious observations occur in separate members and are retained; lowering
+their severity solely to meet a benign scoring target would conceal those
+operations. The final Cleave scan represented 824 records, with 49 reporting
+limited analysis; Atomscan represented 339 and exited 2 after producing JSON.
+Manual review covered the executable paths and the limited-flow call sites;
+remote installers and dependencies are not included in this ruling. Hopper
+confirmed the existing good label. The paragraphs below preserve the review
+history; references to an unknown label describe earlier stages.
 
 `57d2b6a92b1b` contains cloud image building and testing tools. One build
 workflow configures an SSH key from VM metadata, disables guest agents, changes
@@ -201,7 +234,232 @@ without claiming that the daemon is reachable or the module is unauthenticated.
 The all-files scan covered all 822 archive members and reported three distinct
 suspicious findings, with analysis gaps in 49 records. The archive's
 classification remains under review; the distinct supported security findings
-should not be removed merely to make the package appear benign.
+should not be removed merely to make the package appear benign. A fresh
+all-files Cleave scan represented 824 records, and an independent Atomscan
+represented 336; both reported the same three security observations in
+separate archive members and no other suspicious or hostile archive-member
+findings. A keyword search of the archive for common exploit and CVE terms
+found no matches; this is not a complete review of all executable behavior.
+
+The bootstrap script retrieves a VM service-account token from metadata and
+uses it as an Authorization header for storage requests while shell command
+tracing is enabled. This can expose expanded credentials in tracing output;
+it does not establish credential theft. A new suspicious observation reports
+the tracing and variable header together and suppresses the observation when
+the file explicitly disables tracing. Both scanners report it on the extracted
+script and in fresh archive scans; focused tests and full uncached validation
+pass. A further inventory found 198 Go-template JSON files alongside 443
+ordinary or comment-stripped JSON files; their presence and a keyword search
+alone do not complete the archive review, so its label remains **unknown**.
+
+The 198 Go-template JSON members use image-publishing fields and template
+actions for environment selection, formatting, and version strings; a scan
+of their action heads found no shell or command field. The 441 strict JSON
+members include startup-script references and short test commands. Two SSH
+test workflows configure a VM startup command to stop SSHGuard. A neutral
+value-based observation identifies that command in the startup-script field;
+both scanners report it in the archive, focused tests and full validation
+pass, and no service execution is claimed. A 100 KiB high-entropy file with
+a PowerShell extension is referenced by junk-script workflows and is
+identified as data by `file`; its role was not inferred from its name alone.
+The remaining executable members and analysis gaps still require review.
+
+Further review of Windows provisioning found a command to disable Defender
+real-time monitoring during disk-image preparation. An existing image-build
+exception suppresses the intent-based suspicious finding; a separate neutral
+command observation now preserves this security-relevant detail without
+claiming execution or success. Both scanners report it on the member and in
+fresh archive scans; focused tests and full uncached validation pass. A
+container setup script also downloads a PowerShell installer to a temporary
+path and starts it. A second variant does the same with a different download
+source. The downloaded installers are not included in the archive. A neutral
+finding records a file download near a PowerShell process launch without
+claiming the paths are bound; both scanners report it in the two members and
+the archive. Focused tests cover comments, distant calls, different programs,
+and unbound paths, and full uncached validation passes. The remaining
+executable members need further review before an artifact-wide decision.
+
+The Windows post-install script conditionally creates a `NoAutoUpdate=1`
+property when setting a WSUS server, and its later reset path removes the
+policy and configures scheduled updates. A neutral command observation now
+exposes the setting without claiming that it executed or that the later reset
+succeeded. Linux COS package-replacement scripts stop and mask `update-engine`,
+remove the `module.sig_enforce=1` boot argument, and add `ima_appraise=off`
+when modifying a boot configuration. A companion script restores the root
+filesystem's read-only argument, but does not itself restore those two integrity
+arguments. The [kernel module-signing documentation](https://docs.kernel.org/admin-guide/module-signing.html)
+notes that kernel build configuration can independently enforce signatures;
+removing the argument alone does not prove enforcement is disabled. The
+[kernel parameter documentation](https://www.kernel.org/doc/html/latest/admin-guide/kernel-parameters.html)
+describes `ima_appraise` settings. Neutral observations report the two `sed`
+expressions and the service-mask command without asserting runtime effects.
+Both scanners report all four new observations in the individual scripts and
+archive. Focused tests cover disabled values, comments, different services,
+and nonmatching expressions; full uncached validation passes.
+
+The 102,400-byte high-entropy fixture has all 256 byte values and approximately
+7.998 bits of entropy per byte. Its digest matches the corresponding
+[repository file at the archived revision](https://github.com/GoogleCloudPlatform/compute-image-tools/blob/4e36307b1e7e/image_test/metadata-script/junk.ps1),
+and the archive's workflow describes it as garbage input for metadata-script
+tests. That correspondence supports the documented fixture role; it is not a
+proof about every behavior in the archive. The refreshed all-files Cleave
+report represented 824 records and retained 49 analysis gaps; Atomscan
+represented 338 records and exited 2 while producing its JSON report. The
+archive remains **unknown** pending the remaining executable and flow review.
+
+The Windows update reset path also creates `AUOptions=4`. A separate neutral
+observation reports that command alongside the `NoAutoUpdate=1` command;
+[Microsoft documents](https://learn.microsoft.com/en-us/windows/deployment/update/waas-wu-settings)
+those values as disabling automatic updates and scheduling installation,
+respectively, when applied to the Windows Update policy key. This records both
+code paths without asserting that either completed. Seven included Linux
+kickstart configurations lock the root account and set SSH password and root
+login to `no`; those findings do not establish that the whole archive is safe.
+
+The Windows recovery helper stops a named VM, detaches its boot disk, creates a
+rescue VM with a supplied PowerShell startup file, then detaches and reattaches
+the disk and deletes the rescue VM. Neutral structured observations now report
+the VM stop, attach, detach, delete, and startup-file commands. The old generic
+file-deletion observation had incorrectly matched `-delete` inside the cloud
+option `auto-delete=false`; it now requires a `find -delete` command, including
+supported `sudo` and `busybox` wrappers. Tests retain real deletion detection
+when the unrelated option appears in the same file. Both scanners report the
+new VM observations and omit the false file-deletion finding on the member and
+in the archive; focused tests and full uncached validation pass.
+
+A manual review of Python command call sites found guest-image mounting,
+package installation, metadata queries, SSH test helpers, and image metadata
+upload. The shared guestfs helper writes caller-supplied command text into a
+guest script and invokes it through the guestfs interface; this describes a
+general execution capability, not an embedded attacker command. The ordinary
+JSON startup-script fields include references to included test scripts, two
+SSHGuard-stop test commands, and a small number of explicit test commands.
+The current all-files Cleave scan represents 824 records and retains 49
+analysis gaps; Atomscan represents 338 records and returns 2 with a JSON
+report. Those gaps and the remaining executable paths still require review
+before an artifact-wide decision.
+
+The remaining Windows installer review found that the package installer reads a
+GCS package path from VM metadata, copies the supplied package with `gcloud`,
+installs it with GooGet, and invokes image sysprep. The SQL installer likewise
+uses configured media and storage paths, opens TCP 1433, and starts installer
+processes. Those descriptions concern the included scripts; downloaded media
+is not present for inspection. The scanner had incorrectly associated the
+package installer's metadata URL with an earlier `.EXAMPLE` directive across
+the end of a PowerShell help block. The example-URL observation now stops at
+the block terminator and describes proximity rather than claiming data flow.
+Both scanners omit the misleading observation on the member and archive;
+synthetic tests cover an actual example URL, CRLF, and URLs outside the block,
+and full uncached validation passes. This conservative boundary can miss an
+example that contains another `#` before the URL.
+
+The metadata-script hash fixtures contain long random-looking comment blocks.
+The PowerShell startup fixture computes and prints its own MD5; the shell
+startup fixture writes and runs a generated file whose body consists entirely
+of comments, then logs its hash. Its unquoted here-document contains no dollar
+signs or backticks. Shutdown fixtures include a deliberate delay and hashing.
+These static observations do not establish the behavior of the separately
+referenced remote test data. The refreshed all-files Cleave report represents
+824 records with 49 analysis gaps; Atomscan represents 338 and returned 2 while
+producing JSON. The archive remains **unknown** pending the rest of the review.
+
+The Debian worker downloads a tool to `/usr/bin/gce_export` and marks the same
+path executable; the worker does not itself invoke that tool. A neutral
+structural observation now binds the `curl` output and `chmod` arguments by
+their source text, including commands within a function or an `&&` list.
+Matching path text does not prove that a reassigned variable or filesystem path
+refers to the same object at runtime. Both scanners report the observation on
+the member and archive; focused tests cover different paths, protocols,
+comments, quoted arguments, functions, and unrelated commands, and full
+uncached validation passes.
+
+The COS package-replacement workflow fetches several source repositories,
+checks out a supplied guest-agent revision, applies selected overlay patches,
+builds a package, and replaces files listed from that package in an image.
+The fetched repositories and built package are not included in the archive;
+the included workflow alone does not establish their contents. The fresh
+all-files Cleave scan represents 824 records with 49 analysis gaps, while
+Atomscan represents 338 records and exits 2 after producing JSON. The overall
+archive remains **unknown** while the remaining paths are reviewed.
+
+Two Windows image-building scripts use `gsutil cp` to copy a configured
+`sbomutil.exe` to `C:\sbomutil.exe` and later invoke that literal path to
+generate an SBOM. The executable is not included, and the source does not
+prove the copy or invocation succeeded. A neutral PowerShell syntax rule now
+reports the copy to an executable destination without asserting a network
+transfer or binding it to a later call. Both scanners report it on the two
+members and in the archive. Focused tests distinguish executable destinations
+from executable sources, comments, unrelated commands, and string contents;
+full uncached validation passes.
+
+The reviewed batch members include VM network and boot checks, disk inventory,
+and a local-SSD test. The SSD test writes a DiskPart command file that selects
+disk 1, creates a partition, formats it as NTFS, and changes its drive-letter
+assignment; it then pipes the file to DiskPart. These operations would affect
+the selected disk if run successfully, regardless of their stated test purpose.
+New neutral observations report the written format instruction and the pipe to
+DiskPart without claiming either operation executed. The Windows setup batch
+file also creates a SYSTEM startup task pointing to its setup script and later
+deletes that script; existing observations expose those commands. The two
+PowerShell modules configure the guest and write setup logs. Both scanners
+report the new DiskPart observations in the archive, and focused tests and full
+uncached validation pass. The archive remains under review.
+
+The Linux export script obtains an SBOM tool from a metadata-selected storage
+root, marks the copied `sbomutil` path executable, and later invokes it. A
+related export script formats a metadata-selected buffer disk, copies a
+monitoring script from storage, marks it executable, and starts it. The copied
+programs are not embedded in this archive. New neutral syntax observations
+report `gcloud storage cp` and, when the source text agrees, bind its
+destination to a `chmod +x` target; matching path text alone does not prove
+runtime identity, successful copying, or execution. Both scanners report the
+copy in both scripts and the path binding in the first. Focused tests cover
+uploads, different targets, comments, unrelated commands, and quoted
+variables; full uncached validation passes. Review of the other shell helpers
+included kernel source and changelog collection, VM networking tests, and
+container image deprecation. The OS Login test creates a temporary SSH key and
+disables host-key checking for its test connection. The end-to-end test mounts
+the invoking user's gcloud configuration into its test container.
+
+The Linux configuration-test Python call sites with limited flow analysis
+inspect distribution settings, check root account state, query time and network
+configuration, and exercise package and cloud command availability. The
+Windows configuration test checks activation, interface MTU, runtime versions,
+time service, EMS, timezone, and hostname. These reviews describe the included
+test code; they do not resolve the remaining archive-wide analysis gaps.
+
+The metadata SSH test requests `enable-oslogin=False` at project level before
+testing metadata-provided SSH keys. Its included `SetMetadata` helper updates
+common instance metadata through the Compute API by default; the test script
+does not explicitly restore that OS Login setting. This is a project-wide
+configuration request if the API accepts it, not proof that it took effect.
+The test adds and removes SSH keys and checks expected access. The OS Login
+master test also changes metadata and imports temporary keys, with a `finally`
+cleanup for its master keys. The network test changes a test VM's IP aliases
+and queries endpoints to check forwarding. A neutral Python syntax observation
+now reports the explicit `SetMetadata('enable-oslogin', False, ...)` call;
+both scanners report it on the member and archive. Focused tests cover true,
+variable, unrelated key and method, comment, and string cases; full uncached
+validation passes.
+
+The enterprise Linux installer builds a bootable installation disk by creating
+a GPT label and partitions, formatting them, and copying installation media
+and kickstart files. New neutral Python observations report the `parted
+mklabel` and `mkfs` argument lists passed to calls without claiming those
+commands ran. The same file contains a Python regular expression that matches
+an `xxd` pipeline, including a reverse-mode invocation; an existing text
+finding and its dependent wireless composite previously described that text
+as actual hex encoding. Their descriptions now report only the observed text.
+Both scanners report the corrected description and disk observations in the
+member and archive; focused tests and full uncached validation pass.
+
+The build and rollout configuration builds and publishes image tools. One
+Cloud Build step supplies `--add-acl-grant=AllUsers:R` when updating release
+objects, requesting public read access. A neutral structured observation now
+reports that argument in a build step without asserting that the build ran or
+the ACL was applied. Both scanners report it on the member and archive;
+focused tests distinguish a grant from a removal, an unrelated principal,
+comments, and text outside step arguments. Full uncached validation passes.
 
 # Incomplete shell fragment
 
@@ -426,6 +684,11 @@ creates hidden C source for a root shell, compiles it, sets root ownership and
 the setuid bit, and suppresses shell history. A structural rule now binds the
 compiler output, root ownership change, and setuid permission change to the
 same literal path; its combination with nearby root-shell source produces a
-second hostile observation even without history suppression. Both scanners
-report those two hostile composites. Hopper confirmed **bad**; additional
-independent hostile coverage remains incomplete.
+second hostile observation even without history suppression. A further
+finding reports removal of the compiled source: its structural match binds
+the removed path to the compiler input and the privileged output to the
+ownership and permission changes. This is co-occurrence with embedded root
+shell source, not proof that the shell text flows to the compiled file. Both
+scanners report the three hostile observations. Focused tests cover unrelated
+source and output paths, ordinary builds, and alternate compilers; full
+uncached validation passes. Hopper confirmed **bad**.
