@@ -10,7 +10,7 @@ import tarfile
 import tempfile
 
 
-CRON = "micro-behaviors/os/autorun/cron::cron-scheduled-command-literal"
+CRON = "micro-behaviors/os/autorun/cron/entry::cron-scheduled-command-literal"
 MODE = "micro-behaviors/fs/write/file/mode::node-write-owner-only-mode"
 LOOKUP = "micro-behaviors/os/container/query::ruby-docker-container-lookup"
 CREATE = "micro-behaviors/os/container/create::ruby-docker-container-create"
@@ -65,7 +65,7 @@ with_retries { @runner = ::Docker::Container.get(name) }
     }
     required = {
         "cron.js": {CRON}, "cron-wildcard.js": {CRON},
-        "schedule.js": {"micro-behaviors/os/autorun/cron::cron-schedule-fields-literal"},
+        "schedule.js": {"micro-behaviors/os/autorun/cron/entry::cron-schedule-fields-literal"},
         "storage.js": {STORAGE}, "paste.md": {PASTE},
         **{name: {MODE} for name in ("private.js", "private.ts", "decimal.js", "hex.js")},
         "docker.rb": {LOOKUP, CREATE, BUILD, IMAGE},

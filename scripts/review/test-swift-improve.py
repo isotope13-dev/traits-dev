@@ -73,7 +73,7 @@ for peer in candidates {
     fixtures["profile-label.swift"] = 'let label = "EXFIL:DATA"\nlet profile = "HOSTNAME=x KERNEL=y ENV=z"\n'
     post = "micro-behaviors/communications/http/post::swift-urlrequest-post-method"
     body = "micro-behaviors/communications/http/request/body/construction::swift-urlrequest-http-body"
-    config = "micro-behaviors/os/autorun/cron::swift-crontab-stdin-configuration"
+    config = "micro-behaviors/os/autorun/cron/modify::swift-crontab-stdin-configuration"
     ssh_list = "micro-behaviors/fs/directory/readdir/language::swift-ssh-directory-listing"
     erase = "objectives/evasion/indicator-removal/accounting::swift-login-accounting-zero-write"
     read_post = "micro-behaviors/fs/read/file/content/unspecified::swift-authorized-keys-read-post-clues"

@@ -71,8 +71,8 @@ fs.writeFileSync("entry.js", "export function initialize() { return true; }");
         "ssh.swift": {"micro-behaviors/fs/path/private-key::swift-ssh-ed25519-key-path"},
         "pipes.swift": {"micro-behaviors/process/stdio/relay::swift-pipe-handle-wires-stdio"},
         "server.py": {"micro-behaviors/communications/http/server/handler::python-http-handler-base-request"},
-        "cron-call.lua": {"micro-behaviors/os/autorun/cron::lua-crontab-modification-call"},
-        "luci-cron.lua": {"micro-behaviors/os/autorun/cron::lua-crontab-modification-call"},
+        "cron-call.lua": {"micro-behaviors/os/autorun/cron/modify::lua-crontab-modification-call"},
+        "luci-cron.lua": {"micro-behaviors/os/autorun/cron/modify::lua-crontab-modification-call"},
         "command.config": {"micro-behaviors/revision-control/git/configure::git-config-fsmonitor-trigger"},
         "unicode.txt": {"metadata/file/invisible-unicode::unicode-zero-width-bidi-spliced-token"},
         "count.c": {"micro-behaviors/data/property/write::pointer-count-field-assignment"},
@@ -95,7 +95,7 @@ fs.writeFileSync("entry.js", "export function initialize() { return true; }");
     forbidden = {
         **{name: {"micro-behaviors/revision-control/git/configure::git-config-fsmonitor-trigger"}
            for name in ["false.config", "true.config", "false-comment.config"]},
-        **{name: {"micro-behaviors/os/autorun/cron::lua-crontab-modification-call"}
+        **{name: {"micro-behaviors/os/autorun/cron/modify::lua-crontab-modification-call"}
            for name in ["help.lua", "cron-list.lua", "cron-comment.lua"]},
         "checkout": {"metadata/lang/source/naming/function/analysis::start-check-name"},
         "ordinary-generator.ts": {"objectives/supply-chain/trojanized/package/runtime::extension-package-remote-shell-generator"},
