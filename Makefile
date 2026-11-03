@@ -156,3 +156,47 @@ test-lua-triage-bad:
 .PHONY: test-lua-bad-improve
 test-lua-bad-improve:
 	python3 scripts/review/test-lua-bad-improve.py --cleave "$(CLEAVE)"
+
+.PHONY: test-lua-generated-source
+test-lua-generated-source:
+	python3 scripts/review/test-lua-generated-source.py --cleave "$(CLEAVE)"
+
+.PHONY: test-lua-process-configuration
+test-lua-process-configuration:
+	python3 scripts/review/test-lua-process-configuration.py --cleave "$(CLEAVE)"
+
+.PHONY: test-local-command-taxonomy
+test-local-command-taxonomy:
+	python3 scripts/review/test-local-command-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-remote-admin-taxonomy
+test-remote-admin-taxonomy:
+	python3 scripts/review/test-remote-admin-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-shortcut-target-taxonomy
+test-shortcut-target-taxonomy:
+	python3 scripts/review/test-shortcut-target-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-process-start-taxonomy
+test-process-start-taxonomy:
+	python3 scripts/review/test-process-start-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-hidden-window-taxonomy
+test-hidden-window-taxonomy:
+	python3 scripts/review/test-hidden-window-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-shell-handler-taxonomy
+test-shell-handler-taxonomy:
+	python3 scripts/review/test-shell-handler-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-go-command-start
+test-go-command-start:
+	python3 scripts/review/test-go-command-start.py --cleave "$(CLEAVE)"
+
+.PHONY: test-response-model-context
+test-response-model-context:
+	python3 scripts/review/test-response-model-context.py --cleave "$(CLEAVE)"
+
+.PHONY: test-stream-cipher-taxonomy
+test-stream-cipher-taxonomy:
+	python3 scripts/review/test-stream-cipher-taxonomy.py --cleave "$(CLEAVE)"

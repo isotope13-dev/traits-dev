@@ -1,0 +1,56 @@
+defaults:
+  platforms: [unix]
+  for: [shell]
+  attack: T1059.004
+traits:
+  - id: execute-quoted-var
+    desc: Executes a quoted shell-variable path
+    crit: notable
+    conf: 0.88
+    # This matcher describes shell grammar.  Applying it to every script type
+    # would mistake quoted dollar-prefixed JavaScript strings for commands.
+    if:
+      type: tree-sitter
+      kind: call
+      regex: '^(["''])\$\{?[A-Za-z_]\w*\}?["''](\s|$)'
+  - id: shell-variable-exec-with-args
+    desc: Shell runs a variable command with args
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      # A downloaded stage is often held in a variable and invoked with a
+      # campaign/architecture tag rather than forwarding only "$@". Anchor
+      # the variable command at line start and require a concrete argument so
+      # assignments and ordinary variable expansion do not qualify. Exclude
+      # positional parameters ($0), multiline spans, and documentation text.
+      regex: '(?m)^\s*["'']?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?["'']?[ \t]+["'']?[\w$@*./-]+["'']?([ \t]|[;&|]|$)'
+    not:
+      - regex: '(?i)\b(installation|installer|script|usage|example|help|version|manual|guide)\b'
+      # The argument class accepts "$@" because it also accepts "$tag".
+      # A wrapper that only forwards the caller's positional parameters is
+      # not a command line assembled from named pieces.
+      - regex: '\$\{?[A-Za-z_][A-Za-z0-9_]*\}?[ \t]+["'']?\$[@*0-9]'
+  - id: shell-variable-exec-variable-args
+    desc: Shell runs variable command with variable args
+    crit: notable
+    conf: 0.88
+    if:
+      type: text
+      # The argument variable must be the whole word: "${PREFIX}/lib/x.py"
+      # is a path under a variable root, not a staged argument.
+      # The second variable must be a whole word: unquoted, or quoted with
+      # its closing quote immediately after it. A quoted string starting
+      # with a variable then literal words ("${apt} install -y amass")
+      # is a readable command with a configured prefix interpolated; the
+      # space after that variable is inside the quote, not a delimiter.
+      regex: '(?m)^ *["'']?\$\{?\w+\}?"? +(\$\{?\w+\}?|["'']\$\{?\w+\}?["''])([ \t;&|]|$)'
+    unless:
+      # Template-rendered JS: the ${control}/${paths} slots are un-interpolated
+      # generator output (see string/assembly::sh-js-call-interpolation), and a
+      # staged-command reading needs the variables to mean anything at all.
+      - id: micro-behaviors/data/string/assembly::sh-js-call-interpolation
+      # Parameterized hook-runner idiom (run_config-style vendor scripts): the
+      # invoked variables are `local`-assigned from the caller's positionals
+      # and forwarded in the clear — configuration, not staged reconstruction.
+      - id: metadata/lang/source/syntax/assignment/name::shell-positional-local-assignment
