@@ -1,0 +1,99 @@
+defaults:
+  platforms: [windows]
+  for: [c, cpp]
+  crit: notable
+  conf: 0.95
+traits:
+  - id: mapped-instance-dll-attach-symbolic
+    desc: Calls DLL attach with mapped instance
+    for: [c, cpp, python]
+    if:
+      type: symbol
+      kind: call
+      regex: '.+'
+      args:
+        - index: 0
+          from:
+            call: '(^|\.)MapViewOfFile(Ex)?$'
+        - index: 1
+          kind: identifier
+          name: DLL_PROCESS_ATTACH
+  - id: mapped-instance-dll-attach-numeric
+    desc: Calls DLL attach with mapped instance
+    for: [c, cpp, python]
+    if:
+      type: symbol
+      kind: call
+      regex: '.+'
+      args:
+        - index: 0
+          from:
+            call: '(^|\.)MapViewOfFile(Ex)?$'
+        - index: 1
+          kind: number
+          value: 1
+  - id: pe-raw-section-copy-source
+    desc: Copies raw PE sections to virtual addresses
+    # Facts lose fields on C array-indexed section-header expressions. A
+    # structural query is needed to keep all three operands at one call.
+    if:
+      type: tree-sitter
+      query: |
+        ((call_expression
+          function: (identifier) @fn
+          arguments: (argument_list
+            (binary_expression
+              operator: "+"
+              right: (field_expression field: (field_identifier) @va))
+            (binary_expression
+              operator: "+"
+              right: (field_expression field: (field_identifier) @raw))
+            (field_expression field: (field_identifier) @size))) @evidence
+        (#match? @fn "^(mem(cpy|move)|(Rtl)?CopyMemory)$")
+        (#eq? @va "VirtualAddress")
+        (#eq? @raw "PointerToRawData")
+        (#eq? @size "SizeOfRawData"))
+  - id: x64-pe-raw-section-copy
+    desc: x64 PE raw-section to RVA copy
+    for: [pe, dll]
+    arch: [x86-64]
+    if:
+      type: hex
+      section: .text
+      # RBX = section header + 12; fields are RVA/raw size/raw offset.
+      # R14 is destination image base; RDI is raw file base. Call target
+      # displacement varies with layout. No names or payload constants.
+      pattern: '44 8B 43 04 45 85 C0 74 ?? 8B 0B 8B 53 08 4C 01 F1 48 01 FA E8 ?? ?? ?? ??'
+  - id: x64-pe-entry-and-dll-attach
+    desc: x64 PE entry calculation and DLL attach
+    for: [pe, dll]
+    arch: [x86-64]
+    if:
+      type: hex
+      section: .text
+      # AddressOfEntryPoint (+0x28 in NT headers) added to image base R14;
+      # saved pointer reloaded for DLL_PROCESS_ATTACH with that same instance.
+      # Stack offsets and intervening diagnostics may vary; this is a code
+      # pattern observation, not a complete inter-instruction data-flow proof.
+      pattern: '8B 40 28 4C 01 F0 48 89 44 24 ?? [0-512] 45 31 C0 48 8B 44 24 ?? 4C 89 F1 BA 01 00 00 00 FF D0'
+composite_rules:
+  - id: mapped-pe-raw-section-copy-source
+    desc: Copies raw PE sections into mapped view
+    near_bytes: 1
+    all:
+      - id: pe-raw-section-copy-source
+      - id: micro-behaviors/mem/copy::mapped-view-copy-destination
+  - id: image-section-copy-code-x64
+    desc: Image mapping setup near PE section copying
+    for: [pe, dll]
+    arch: [x86-64]
+    near_bytes: 768
+    all:
+      - id: micro-behaviors/mem/map::x64-sec-image-readonly-call-setup
+      - id: x64-pe-raw-section-copy
+  - id: mapped-instance-dll-attach-call
+    desc: Calls DLL attach with mapped instance
+    for: [c, cpp, python]
+    any:
+      - id: mapped-instance-dll-attach-symbolic
+      - id: mapped-instance-dll-attach-numeric
