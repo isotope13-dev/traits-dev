@@ -14,6 +14,8 @@ args = parser.parse_args()
 shortcut = 'objectives/persistence/login/startup/shortcut::windows-shortcut-obfuscated-argument-inject'
 root_shell = 'objectives/privilege-escalation/elevation-control/setuid/shell::compiled-root-shell-history-suppression'
 ssh_log = 'objectives/credential-access/capture/input::ssh-client-plaintext-password-logging'
+php_template = 'objectives/command-and-control/backdoor/webshell/embedded::phpsploit-header-eval-backdoor-template'
+shell_source_id = 'micro-behaviors/process/interpreter/eval/source::shell-source-command'
 shortcut_source = '''import os
 for root, dirs, files in os.walk("."):
     s = shell.CreateShortcut(root)
@@ -37,6 +39,13 @@ ssh_source = '''void authenticate(void) {
   packet_put_cstring(password);
 }
 '''
+php_source = '''#!/bin/sh
+cat > /tmp/config <<'END'
+source /example
+set BACKDOOR "@eval($_SERVER['HTTP_TOKEN'])"
+exploit --get-backdoor
+END
+'''
 samples = {
     'shortcut.py': (shortcut_source, {shortcut}),
     'no-shortcut.py': (shortcut_source.replace('CreateShortcut(', 'Open('), set()),
@@ -45,6 +54,9 @@ samples = {
     'fixed-command.sh': (shell_source.replace('"sh", 0', '"sh", "-c", "id", 0'), set()),
     'ssh-log.c': (ssh_source, {ssh_log}),
     'ssh-redacted.c': (ssh_source.replace('server_user, password', 'server_user, redacted'), set()),
+    'php-template.sh': (php_source, {php_template}),
+    'php-template-no-generator.sh': (php_source.replace('exploit --get-backdoor', 'help'), set()),
+    'real-source.sh': ('#!/bin/sh\nsource /etc/profile\n', {shell_source_id}),
 }
 with tempfile.TemporaryDirectory(prefix='shell-bad-review-') as tmp:
     paths = []
@@ -59,7 +71,7 @@ with tempfile.TemporaryDirectory(prefix='shell-bad-review-') as tmp:
     reports = [json.loads(line)['files'][0] for line in result.stdout.splitlines() if line]
     for report in reports:
         name = Path(report['path']).name
-        actual = {t['id'] for t in report.get('traits', [])} & {shortcut, root_shell, ssh_log}
+        actual = {t['id'] for t in report.get('traits', [])} & {shortcut, root_shell, ssh_log, php_template, shell_source_id}
         expected = samples[name][1]
         assert actual == expected, (name, actual, expected)
     assert len(reports) == len(samples)
