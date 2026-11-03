@@ -26,8 +26,8 @@ with tempfile.TemporaryDirectory(prefix='python-inline-') as tmp:
     )
     reports = [json.loads(line)['files'][0] for line in result.stdout.splitlines() if line]
     ids = {Path(r['path']).name: {t['id'] for t in r.get('traits', [])} for r in reports}
-    expected = {'micro-behaviors/process/create/eval::python-c-flag',
-                'micro-behaviors/process/create/eval::python3-inline-command'}
+    expected = {'micro-behaviors/process/deploy/interpreter-command::python-c-flag',
+                'micro-behaviors/process/deploy/interpreter-command::python3-inline-command'}
     assert set(ids) == set(cases), ids.keys()
     assert expected <= ids['positive.py'], ids['positive.py']
     for name in ('wrong_executable.py', 'wrong_option.py'):

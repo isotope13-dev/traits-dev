@@ -17,8 +17,8 @@ def main():
     root = Path(__file__).resolve().parents[2]
     engine = str(Path(args.cleave).resolve())
     source = (root / 'testdata/suspicious/generated/javascript-edge-review/profile-exchange.js').read_text()
-    command = 'micro-behaviors/process/deploy/interpreter-stdin::node-concatenated-curl-shell-command'
-    exchange = 'objectives/execution/payload/interpreter-stdin::node-host-profile-shell-response'
+    command = 'micro-behaviors/process/deploy/interpreter-stdin/network::node-concatenated-curl-shell-command'
+    exchange = 'objectives/execution/payload/interpreter-stdin/network::node-host-profile-shell-response'
     cases = {'profile.js': source}
     renamed = source
     for old, new in [('sys_version', 'requestProgram'), ('pkg_install', 'restorePackage'), ('info', 'profileData'), ('install_str', 'serviceAddress')]:

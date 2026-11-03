@@ -89,12 +89,14 @@ test-swift-archive-improve:
 # failing. Every classified fixture also supplies a measured cost probe.
 # validate-uncached forces a fresh measured pass.
 validate:
+	python3 scripts/review/check-retired-taxonomy.py
 	python3 scripts/review/check-process-taxonomy.py
 	python3 scripts/review/check-crypto-taxonomy.py
 	python3 scripts/review/test-third-party-config-compat.py
 	$(CLEAVE) --traits-dir . validate
 
 validate-uncached:
+	python3 scripts/review/check-retired-taxonomy.py
 	python3 scripts/review/check-process-taxonomy.py
 	python3 scripts/review/check-crypto-taxonomy.py
 	CLEAVE_SKIP_CACHE=1 $(CLEAVE) --traits-dir . validate

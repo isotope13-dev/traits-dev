@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory(prefix='script-automation-') as tmp:
     py_expected = {
         'well-known/lib/platform/browser-automation/frameworks::playwright-python-sync-api-import',
         'micro-behaviors/process/interpreter/eval/direct::python-page-evaluate-call',
-        'micro-behaviors/process/create/exec::python-chromium-launch-call',
+        'micro-behaviors/os/application/control::python-chromium-launch-call',
         'micro-behaviors/fs/directory/copy::chrome-profile-copy-name-text',
     }
     js_expected = {

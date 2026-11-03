@@ -30,8 +30,8 @@ with tempfile.TemporaryDirectory(prefix='node-inline-') as tmp:
     reports = [json.loads(line)['files'][0] for line in result.stdout.splitlines() if line]
     ids = {Path(r['path']).name: {t['id'] for t in r.get('traits', [])} for r in reports}
     assert set(ids) == set(cases), ids.keys()
-    direct = 'micro-behaviors/process/create/eval::spawn-node-eval'
-    computed = 'micro-behaviors/process/create/eval::spawn-node-eval-computed-access'
+    direct = 'micro-behaviors/process/deploy/interpreter-command::spawn-node-eval'
+    computed = 'micro-behaviors/process/deploy/interpreter-command::spawn-node-eval-computed-access'
     manifest = 'metadata/package/scripts/inline::manifest-node-inline-command'
     assert direct in ids['entry.js'] and direct in ids['entry.test.js'], ids
     assert computed in ids['computed.js'], ids['computed.js']

@@ -29,7 +29,7 @@ with tempfile.TemporaryDirectory(prefix='python-os-alias-') as tmp:
     reports = [json.loads(line)['files'][0] for line in result.stdout.splitlines() if line]
     ids = {Path(r['path']).name: {t['id'] for t in r.get('traits', [])} for r in reports}
     assert set(ids) == set(cases), ids.keys()
-    prefix = 'micro-behaviors/process/create/system::python-os-system-alias-'
+    prefix = 'metadata/file/profile/process/creation-api::python-os-system-alias-'
     for slug in aliases.values():
         assert prefix + slug in ids[f'{slug}.py'], (slug, ids[f'{slug}.py'])
     for name in ('wrong_module.py', 'mismatched.py', 'bare.py'):

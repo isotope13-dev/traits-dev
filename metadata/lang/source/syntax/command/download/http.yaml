@@ -1,0 +1,120 @@
+defaults:
+  crit: notable
+  platforms: [unix]
+  for: [shell]
+traits:
+- id: http-client-pipe-shell-raw-text
+  desc: Text holds a curl- or wget-to-shell pipeline
+  crit: notable
+  conf: 0.9
+  for: [scripts, source, markdown, html, -python, -javascript, -go, -rust, -php, -java]
+  attack: T1059.004
+  if:
+    type: text
+    # macOS ClickFix loaders pipe into zsh as often as bash/sh. The line must
+    # start with non-comment text: on script surfaces a leading `#` is a
+    # comment and on markdown a heading — both document the pipeline without
+    # running it (same convention as curl-pipe-shell-literal below).
+    regex: '(?m)^[ \t]*[^#\r\n]*?(curl|wget)\s+.{0,160}\|\s*(bash|zsh|sh)\b'
+  not:
+  - regex: '(curl|wget)\s+\.{3}\s*\|\s*(bash|zsh|sh)\b'
+- id: source-curl-pipe-shell-concat
+  desc: Source concatenates curl-to-shell pipeline
+  crit: notable
+  conf: 0.9
+  for: [csharp, perl, c, cpp, kotlin]
+  attack: T1059.004
+  # C# installers commonly split the command and URL across adjacent string
+  # literals. Keep this language-specific atom short and let persistence or
+  # installer composites supply the intent.
+  if:
+    type: text
+    regex: '(?i)\bcurl\b[^\r\n]{0,80}\r?\n[^\r\n]{0,80}\|\s*(bash|zsh|sh)\b'
+- id: python-curl-pipe-bash-string
+  desc: Python string contains curl-to-Bash command
+  crit: notable
+  conf: 0.94
+  attack: T1059.004
+  for: [python]
+  # Anchored at the literal's start so the string has to BE the command, not
+  # mention it. A Python docstring is a string literal too, so the unanchored
+  # form fired on every project that documents its own `curl … | bash`
+  # installer in prose (huggingface_hub's _is_hf_installer_installation
+  # docstring); the leading \s tolerance keeps multi-line command blocks.
+  if:
+    type: literal
+    kind: string
+    regex: '^\s{0,8}curl\s+[^\n]{0,200}\|\s*bash\b'
+- id: curl-pipe-sh-text
+  desc: Text contains curl piped to sh
+  crit: notable
+  conf: 0.9
+  ref: sha256:d36e54ddd109a0f85879c3add5b334f4ba718c873d19cf783926a527b1b7ba24
+  attack: T1059.004
+  for: [shell, markdown, dockerfile]
+  platforms: [unix, windows]
+  if:
+    type: text
+    regex: 'curl\s+.{0,180}\|\s*sh\b'
+  not:
+  - regex: 'curl\s+-LsSf\s+\.\.\.\s*\|\s*sh\b'
+# The pipeline as a string constant the program holds, parsed out of the
+# source: comments and documentation are not literals, so a README-style
+# `curl … | sh` in a comment never counts as something the code can run.
+- id: curl-pipe-shell-literal
+  desc: String literal holds a curl-to-shell pipeline
+  crit: notable
+  conf: 0.93
+  for: [python, javascript, typescript, go, rust, php, java]
+  attack: T1059.004
+  if:
+    type: literal
+    regex: '(?m)^[ \t]*[^#\r\n]*?\b(curl|wget)\s+[^\r\n]{0,160}\|\s*(bash|zsh|sh)\b'
+  not:
+  # Both the ASCII ("curl ... | bash") and single-character ("curl … | bash")
+  # ellipsis are documentation placeholders for an elided URL, not a pipeline
+  # the code can run. A docstring explaining the one-liner install path next
+  # to an exec call is prose, not a spawned pipeline.
+  - regex: '(curl|wget)\s+(\.{3}|…)\s*\|\s*(bash|zsh|sh)\b'
+# A `//go:generate` directive is a comment the go tool executes, so it is the
+# one comment form that holds a runnable pipeline in Go source.
+- id: go-generate-curl-pipe-shell-directive
+  desc: go:generate directive pipes download into shell
+  crit: notable
+  conf: 0.95
+  for: [go]
+  platforms: [unix, windows]
+  attack: T1059.004
+  if:
+    type: value
+    path: source.go.generate[*].shell_body
+    regex: '\b(curl|wget)\b[^\n]{0,512}\|\s*(ba|da|z)?sh\b'
+composite_rules:
+  - id: curl-pipe-shell-text
+    desc: References a curl- or wget-to-shell pipeline
+    crit: notable
+    conf: 0.9
+    for: [scripts, source, markdown, html]
+    attack: T1059.004
+    any:
+      - id: http-client-pipe-shell-raw-text
+      - id: curl-pipe-shell-literal
+      - id: go-generate-curl-pipe-shell-directive
+  - id: source-curl-pipe-shell
+    desc: Source contains a curl- or wget-to-shell pipeline
+    crit: notable
+    conf: 0.9
+    for: [source, scripts, javascript, typescript, csharp, go, rust, swift, zig, c, cpp, objc, objectivec, java, kotlin, ruby, python, perl, php, elixir]
+    any:
+      - id: curl-pipe-shell-text
+      - id: source-curl-pipe-shell-concat
+
+  - id: curl-pipe-shell-in-code
+    desc: Code holds a curl-to-shell pipeline
+    conf: 0.93
+    # Legs cover python/javascript/ruby/php/perl as well as compiled source.
+    for: [scripts, source]
+    any:
+      - id: curl-pipe-shell-literal
+      - id: source-curl-pipe-shell-concat
+

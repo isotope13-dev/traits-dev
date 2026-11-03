@@ -29,7 +29,7 @@ with tempfile.TemporaryDirectory(prefix='background-job-') as tmp:
     ids = {Path(r['path']).name: {t['id'] for t in r.get('traits', [])} for r in reports}
     assert set(ids) == set(cases), ids.keys()
     job = 'micro-behaviors/process/work/task::powershell-start-job-call'
-    about = 'micro-behaviors/process/create/eval::mshta-inline-about-document'
+    about = 'metadata/lang/source/syntax/command/launch::mshta-inline-about-document'
     assert job in ids['job.ps1'] and job not in ids['comment.ps1'], ids
     assert about in ids['blank.ps1'] and about in ids['mixed.ps1'], ids
     print('Background jobs and MSHTA about-command references remain distinct.')

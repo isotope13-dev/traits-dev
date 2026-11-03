@@ -52,7 +52,7 @@ with tempfile.TemporaryDirectory(prefix='account-request-') as tmp:
     assert role_text in ids['generic.cs'], ids['generic.cs']
     assert 'micro-behaviors/communications/http/services/fortios::fortios-admin-api-dotnet' not in ids['generic.cs']
     assert not any('fortios-dotnet-admin-persistence' in t for t in ids['generic.cs'])
-    inline_password = 'micro-behaviors/os/user/account::net-user-add-inline-password'
+    inline_password = 'micro-behaviors/os/user/create::net-user-add-inline-password'
     assert inline_password in ids['small.bat'], ids['small.bat']
     assert inline_password in ids['large.bat'], ids['large.bat']
     assert not any('batch-stub-adds-account-with-fixed-password' in t for t in ids['small.bat'])

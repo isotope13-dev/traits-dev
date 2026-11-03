@@ -7,7 +7,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 CLEAVE = os.environ.get('CLEAVE', '../cleave/target/release/cleave')
-COMMAND = 'micro-behaviors/process/create/shell/request::exec-user-input'
+COMMAND = 'objectives/command-and-control/backdoor/webshell/command::exec-user-input'
 CORS = 'metadata/file/profile/operation-reference::extension-origin-post-cors-reference'
 WEBSHELL = 'objectives/command-and-control/backdoor/webshell/request/command::php-shell-post'
 HEADERS = 'header("Access-Control-Allow-Origin: chrome-extension://example");\nheader("Access-Control-Allow-Methods: POST");\n'

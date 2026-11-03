@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix='process-config-') as tmp:
     for name, trait in expected.items():
         assert trait in ids[name], (name, ids[name])
     assert expected['argv.py'] not in ids['negative.py']
-    assert not any(i.startswith('micro-behaviors/process/create/eval::') and
+    assert not any(i.startswith('micro-behaviors/process/deploy/interpreter-command::') and
                    i.rsplit('::', 1)[-1] in {x.rsplit('::', 1)[-1] for x in expected.values()}
                    for file_ids in ids.values() for i in file_ids)
     print('Command construction and unbound inputs retain their evidence traits.')

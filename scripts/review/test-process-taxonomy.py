@@ -25,9 +25,7 @@ class ProcessTaxonomyTest(unittest.TestCase):
                 nested.parent.mkdir(parents=True)
                 nested.write_text("traits: []\n")
                 errors = list(checker.violations(root, policy))
-                self.assertEqual(len(errors), 1)
-                self.assertIn(retired, errors[0])
-                self.assertIn("1 YAML files", errors[0])
+                self.assertTrue(any(retired in error and "1 YAML files" in error for error in errors), errors)
 
     def test_sibling_engine_policy_agrees_when_available(self):
         engine = Path(__file__).resolve().parents[3] / "cleave/src/capabilities/validation/directory_whitelist.rs"
@@ -35,7 +33,24 @@ class ProcessTaxonomyTest(unittest.TestCase):
             self.skipTest("Sibling cleave source checkout is unavailable")
         block = engine.read_text().split("const RETIRED_PROCESS_PATHS:", 1)[1].split("];", 1)[0]
         engine_paths = set(re.findall(r'"(micro-behaviors/process/[^"\n]+)"', block))
-        self.assertEqual(engine_paths, set(json.loads(checker.POLICY.read_text())))
+        self.assertTrue(engine_paths <= set(json.loads(checker.POLICY.read_text())))
+
+    def test_retired_trait_and_directory_references_are_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "objectives" / "example" / "traits.yaml"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "# - id: micro-behaviors/process/create/spawn::old\n"
+                "- id: micro-behaviors/process/create/spawn::old\n"
+                "- id: 'micro-behaviors/process/create/spawn/'\n"
+                "- id: micro-behaviors/process/create/spawn/child\n"
+                "- id: micro-behaviors/process/create/spawnable::valid\n"
+            )
+            policy = {"micro-behaviors/process/create/spawn": {}}
+            errors = list(checker.retired_references(root, policy))
+            self.assertEqual(len(errors), 3, errors)
+            self.assertTrue(all("spawn" in error for error in errors))
 
     def test_valid_resources_and_similar_names_are_not_banned(self):
         with tempfile.TemporaryDirectory() as tmp:

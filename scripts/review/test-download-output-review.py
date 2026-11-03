@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 
 repo = Path(__file__).resolve().parents[2]
-output = 'micro-behaviors/process/fd/stdio::child-output-ignored-option'
+output = 'micro-behaviors/process/stdio/configure::child-output-ignored-option'
 download = 'micro-behaviors/communications/http/download/curl::curl-output-artifact-short-a'
 lookalike = 'objectives/supply-chain/trojanized/ci-pipeline::pip-bootstrap-lookalike-download'
 cases = {

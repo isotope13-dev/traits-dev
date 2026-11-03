@@ -30,9 +30,9 @@ with tempfile.TemporaryDirectory(prefix='interpreter-input-') as tmp:
     reports = [json.loads(line)['files'][0] for line in result.stdout.splitlines() if line]
     ids = {Path(r['path']).name: {t['id'] for t in r.get('traits', [])} for r in reports}
     assert set(ids) == set(cases), ids.keys()
-    pycall = 'micro-behaviors/process/create/subprocess/launch::interpreter-name-a'
-    pylist = 'micro-behaviors/process/create/subprocess/launch::interpreter-name-list'
-    jscall = 'micro-behaviors/process/create/exec::javascript-interpreter-name'
+    pycall = 'metadata/file/profile/process/creation-api::interpreter-name-a'
+    pylist = 'metadata/file/profile/process/creation-api::interpreter-name-list'
+    jscall = 'micro-behaviors/process/interpreter/lua::javascript-interpreter-name'
     pyprofile = 'metadata/file/profile/script/evaluation::python-source-interpreter-input-clues'
     jsprofile = 'metadata/file/profile/script/evaluation::javascript-lua-source-call-clues'
     assert pycall in ids['input.py'] and pyprofile in ids['input.py'], ids['input.py']

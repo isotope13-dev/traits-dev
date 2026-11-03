@@ -29,7 +29,7 @@ with tempfile.TemporaryDirectory(prefix='hidden-window-taxonomy-') as tmp:
     reports = [json.loads(line)['files'][0] for line in result.stdout.splitlines() if line]
     ids = {str(Path(r['path']).relative_to(root)): {t['id']: t for t in r.get('traits', [])} for r in reports}
     assert set(ids) == set(cases), ids.keys()
-    command = 'micro-behaviors/process/create/shell/launch::batch-powershell-noprofile-command'
+    command = 'metadata/lang/source/syntax/command/launch::batch-powershell-noprofile-command'
     hidden_trait = 'micro-behaviors/process/argument/visibility::powershell-hidden-window'
     assert command in ids['plain.bat'] and hidden_trait not in ids['plain.bat']
     assert hidden_trait not in ids['word.bat']
