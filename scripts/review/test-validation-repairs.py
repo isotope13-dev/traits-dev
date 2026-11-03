@@ -89,7 +89,7 @@ def main():
 
         env = os.environ.copy()
         env.update(XDG_CACHE_HOME=str(work/'cache'), RAYON_NUM_THREADS='4')
-        result = subprocess.run([CLEAVE, '--traits-dir', str(ROOT), '--format', 'jsonl', *[str(c[1]) for c in cases]], cwd=ROOT, capture_output=True, text=True, env=env, timeout=600)
+        result = subprocess.run([CLEAVE, '--traits-dir', str(ROOT), '--format', 'json', *[str(c[1]) for c in cases]], cwd=ROOT, capture_output=True, text=True, env=env, timeout=600)
         if result.returncode:
             raise SystemExit(result.stderr[-5000:])
         reports = {}

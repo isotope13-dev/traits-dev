@@ -3,6 +3,59 @@ import hashlib
 import struct
 import zlib
 
+
+def string_dex(value, referenced=True):
+    """Minimal static method with an optional const-string use of its pool item."""
+    owner, obj = 'LFixture;', 'Ljava/lang/Object;'
+    strings = sorted({owner, obj, 'V', 'run', value})
+    si = {s: i for i, s in enumerate(strings)}
+    types = sorted([owner, obj, 'V'], key=si.get)
+    ti = {s: i for i, s in enumerate(types)}
+    sp, tp = 112, 112 + 4 * len(strings)
+    pp, mp, cp = tp + 12, tp + 24, tp + 32
+    dp = cp + 32
+    data, offsets = bytearray(), []
+    for s in strings:
+        offsets.append(dp + len(data))
+        # These controls use BMP text; preserve the DEX MUTF-8 NUL spelling.
+        encoded = s.encode().replace(b'\0', b'\xc0\x80')
+        data += uleb(len(s.encode('utf-16-le')) // 2) + encoded + b'\0'
+    while (dp + len(data)) % 4:
+        data.append(0)
+    codeoff = dp + len(data)
+    code = [0x001a, si[value], 0x000e] if referenced else [0x000e]
+    data += struct.pack('<HHHHII', 1, 0, 0, 0, 0, len(code))
+    data += struct.pack('<' + 'H' * len(code), *code)
+    classdata = dp + len(data)
+    data += b'\0\0\1\0' + uleb(0) + uleb(9) + uleb(codeoff)
+    while (dp + len(data)) % 4:
+        data.append(0)
+    mapoff = dp + len(data)
+    maps = [(0, 1, 0), (1, len(strings), sp), (2, 3, tp), (3, 1, pp),
+            (5, 1, mp), (6, 1, cp), (0x2002, len(strings), offsets[0]),
+            (0x2001, 1, codeoff), (0x2000, 1, classdata), (0x1000, 1, mapoff)]
+    data += struct.pack('<I', len(maps))
+    for kind, count, offset in sorted(maps, key=lambda row: row[2]):
+        data += struct.pack('<HHII', kind, 0, count, offset)
+    out = bytearray(dp) + data
+    out[:8] = b'dex\n035\0'
+    struct.pack_into('<IIII', out, 32, len(out), 112, 0x12345678, 0)
+    struct.pack_into('<I', out, 52, mapoff)
+    for at, count, offset in [(56, len(strings), sp), (64, 3, tp), (72, 1, pp),
+                              (80, 0, 0), (88, 1, mp), (96, 1, cp),
+                              (104, len(data), dp)]:
+        struct.pack_into('<II', out, at, count, offset)
+    for i, offset in enumerate(offsets):
+        struct.pack_into('<I', out, sp + i * 4, offset)
+    for i, name in enumerate(types):
+        struct.pack_into('<I', out, tp + i * 4, si[name])
+    struct.pack_into('<III', out, pp, si['V'], ti['V'], 0)
+    struct.pack_into('<HHI', out, mp, ti[owner], 0, si['run'])
+    struct.pack_into('<IIIIIIII', out, cp, ti[owner], 1, ti[obj], 0, 0xffffffff, 0, classdata, 0)
+    out[12:32] = hashlib.sha1(out[32:]).digest()
+    struct.pack_into('<I', out, 8, zlib.adler32(out[12:]) & 0xffffffff)
+    return bytes(out)
+
 def uleb(n):
     out = bytearray()
     while True:
