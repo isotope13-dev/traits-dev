@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 CLEAVE = ROOT.parent / 'cleave/target/release/cleave'
 XCODE = 'metadata/binary/bundle::macho-info-plist-dtxcode'
 PLATFORM = 'metadata/binary/bundle::macho-info-plist-dtplatformbuild'
-REFERENCE = 'metadata/build/toolchain::dtxcode-text-reference'
+REFERENCE = 'metadata/binary/provenance/build::dtxcode-text-reference'
 CONSUMER = 'well-known/dual-use/access-control/imyfone::suspicious-qt-plist-legacy-qmake'
 
 with tempfile.TemporaryDirectory(prefix='macho-build-fields-') as temp:

@@ -5,6 +5,8 @@ import re
 from pathlib import Path
 
 RETIRED = {
+    'metadata/build/toolchain':
+        'Use the compiler, build configuration, tool name or observed operation.',
     'micro-behaviors/os/env/enumeration':
         'Use environment enumeration.',
     'micro-behaviors/os/env/dump':

@@ -1204,6 +1204,7 @@ objective belongs under `evasion/process/hidden/window`.
 | `os/module/load`; `os/{api-resolution,linker}` | Language-module loading; manual API resolution; dynamic-linker configuration (`linker/{audit,env,load-path,symbol-version}`). Ruby `require` caches a module; `Kernel.load` evaluates the source file on each call. Native libraries belong under `dylib`. |
 | `os/autorun`, `os/package-manager`, `os/sysinfo/<property>`, `os/random`, `os/telemetry` | OS task and autorun registration (malicious durability is persistence); package operations, including package-manager configuration under `os/package-manager/config`; host properties (`hostname`, `platform`, `hardware`, `disk`, `locale`, `profile`); randomness; logging and analytics. |
 
+| `os/command/lookup` | Resolving or checking availability of commands, including shell built-ins such as `command -v`; a lookup alone does not execute the command. |
 | `os/{clipboard,console,event,signal,exception,message,com,wmi}` | Host facilities. Clipboard by operation: `read`, `write`, `monitor`. COM or WMI evidence with a known function goes to that function. |
 | `os/application/shell-namespace` | Operating-system shell item namespace operations, including virtual items as well as filesystem objects. PIDL manipulation belongs here; resolving a concrete filesystem path belongs in `fs/path`, and an icon drawing operation in `ui/graphics/icon`. A single shell-item API is an observation, not proof of filesystem mutation. |
 | `os/application/target/<function>` | An app or package cited as the program's target (wallet brands, `SpringBoard`); neither discovery nor the file's identity. Children classify the referenced product's function, not the reference's spelling or encoding. |
@@ -1828,6 +1829,13 @@ github-token,registry-token}`; generic credential formats remain in
 `data/format/credentials`. User-level systemd persistence belongs in
 `persistence/system/service/systemd-user`; `systemd` retains system-wide
 and unscoped service evidence.
+
+The former `metadata/build/toolchain` catch-all is retired: compiler clues,
+build targets, command lookup, and source-generation operations use their
+respective subjects. A named tool reference does not prove tool execution.
+
+`metadata/build/architecture` records build-architecture label text; the
+labels alone do not establish the architecture of the analyzed file.
 
 `metadata/build/makefile-shape` records Makefile targets and recipe layout;
 an empty target set alone does not establish a malicious build bypass.
