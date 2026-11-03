@@ -14,13 +14,13 @@ The requested priority is listed first; remaining filetypes are alphabetical. `w
 - [x] csharp: `x-triage-bad`, then `x-improve` — 34 good, 5 bad, 1 inconclusive; see `csharp-bad-review-2026-11-03.md`
 - [x] 7z: `x-triage-bad`, then `x-improve` — 36 bad, 4 good; see `7z-bad-review-2026-11-03.md`
 - [x] apk_alpine: `x-triage-bad`, then `x-improve` — 30 bad, 3 good; see `apk-alpine-bad-review-2026-11-03.md`
-- [ ] apk_android: `x-triage-bad`, then `x-improve` — 6 of 40 samples reviewed; see `apk-android-bad-review-2026-11-03.md`
-- [ ] applescript: `x-triage-bad`, then `x-improve`
-- [ ] asar: `x-triage-bad`, then `x-improve`
-- [ ] asp: `x-triage-bad`, then `x-improve`
-- [ ] batch: `x-triage-bad`, then `x-improve`
-- [ ] bmp: `x-triage-bad`, then `x-improve`
-- [ ] bz2: `x-triage-bad`, then `x-improve`
+- [x] apk_android: `x-triage-bad`, then `x-improve` — 28 bad, 6 good, 6 inconclusive; see `apk-android-bad-review-2026-11-03.md`
+- [x] applescript: `x-triage-bad`, then `x-improve` — 40 bad; see `applescript-bad-review-2026-11-03.md`
+- [x] asar: `x-triage-bad`, then `x-improve` — 29 bad, 2 good, 9 inconclusive; see `asar-bad-review-2026-11-03.md`
+- [x] asp: `x-triage-bad`, then `x-improve` — 27 bad, 11 good, 2 dual-use; see `asp-bad-review-2026-11-03.md`
+- [x] batch: `x-triage-bad`, then `x-improve` — 40 samples reviewed; see `batch-bad-review-2026-11-03.md`
+- [x] bmp: `x-triage-bad`, then `x-improve` — 40 bad; see `bmp-bad-review-2026-11-03.md`
+- [ ] bz2: `x-triage-bad`, then `x-improve` — 18 of 29 samples reviewed; see `bz2-bad-review-2026-11-03.md`
 - [ ] cab: `x-triage-bad`, then `x-improve`
 - [ ] cargo.toml: `x-triage-bad`, then `x-improve`
 - [ ] cfml: `x-triage-bad`, then `x-improve`

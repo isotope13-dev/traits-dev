@@ -7,6 +7,27 @@ defaults:
   platforms: [windows]
   for: [asp]
   attack: T1505.003,T1059.003
+traits:
+  # YARA alternatives bind a few common variable names on both sides; generic
+  # proximity between a request and a stdin write does not prove that link.
+  - id: aspnet-request-variable-to-stdin
+    desc: Request variable is written to command stdin
+    crit: notable
+    conf: 0.96
+    if:
+      type: yara
+      source: |
+        rule aspnet_request_variable_to_stdin {
+          strings:
+            $rx = /(?:string|var)\s+x\s*=\s*[A-Za-z_][A-Za-z0-9_]*\.Request\s*\[/ nocase
+            $wx = /\.StandardInput\.WriteLine\s*\(\s*x\s*\)/ nocase
+            $rcmd = /(?:string|var)\s+cmd\s*=\s*[A-Za-z_][A-Za-z0-9_]*\.Request\s*\[/ nocase
+            $wcmd = /\.StandardInput\.WriteLine\s*\(\s*cmd\s*\)/ nocase
+            $rcommand = /(?:string|var)\s+command\s*=\s*[A-Za-z_][A-Za-z0-9_]*\.Request\s*\[/ nocase
+            $wcommand = /\.StandardInput\.WriteLine\s*\(\s*command\s*\)/ nocase
+          condition:
+            ($rx and $wx) or ($rcmd and $wcmd) or ($rcommand and $wcommand)
+        }
 composite_rules:
   - id: aspnet-request-cmd-stdin-handler
     desc: ASP.NET request handler writes cmd stdin
@@ -20,3 +41,11 @@ composite_rules:
       - id: micro-behaviors/process/create/subprocess/launch::dotnet-source-process-instance-start
       - id: micro-behaviors/process/stdio/configure::aspnet-standard-input-redirection
       - id: micro-behaviors/process/stdio/write::aspnet-process-stdin-variable-write
+  - id: aspnet-request-command-stdin-webshell
+    desc: ASP.NET request variable drives command stdin
+    crit: hostile
+    conf: 0.97
+    near_bytes: 1536
+    all:
+      - id: aspnet-request-variable-to-stdin
+      - id: objectives/command-and-control/remote-command/shell::aspnet-handler-cmd-stdout-response
