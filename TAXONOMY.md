@@ -2218,6 +2218,8 @@ clues use `file/profile/agent/session`. Defensive scanner evidence is grouped
 under `file/profile/scanner` by its subject. References to a scanner subtype
 must keep that subtype rather than expanding an exclusion to every scanner.
 `file/profile/security` separates policy, hunting and blinding evidence.
+Document parsing, format and viewer clues use `file/profile/document`; generic
+URL and filesystem path observations remain with their own subjects.
 `file/profile/open-handler` records unbound handler names, selectors and command
 strings; an actual opener invocation retains its behavioral home.
 

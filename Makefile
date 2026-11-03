@@ -189,6 +189,10 @@ test-hidden-window-taxonomy:
 test-shell-handler-taxonomy:
 	python3 scripts/review/test-shell-handler-taxonomy.py --cleave "$(CLEAVE)"
 
+.PHONY: test-scanner-taxonomy-suppression
+test-scanner-taxonomy-suppression:
+	python3 scripts/review/test-scanner-taxonomy-suppression.py --cleave "$(CLEAVE)"
+
 .PHONY: test-go-command-start
 test-go-command-start:
 	python3 scripts/review/test-go-command-start.py --cleave "$(CLEAVE)"
