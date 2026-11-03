@@ -21,75 +21,37 @@
 
 ---
 
-## 2. In-Progress Work: Batch 2 (45 Native Binaries, Installers & `.vir` files)
+## 2. Completed Work: Batch 2 (45 Native Binaries, Installers & `.vir` files) — DONE
 
-### A. Misplaced Benign (`good`) in Batch 2 (13 samples)
-All 13 samples have been inspected:
-- **12 already have `H=0, S<=1`** (verify no misleading `notable`/`baseline`/`component` traits before moving to `good` and copying to `/tmp/triage/misplaced-good`):
-  1. `EqualizerAPO-XT-Setup.exe` (`3a547db56b607bf1845c74f13dd39736841082a550019de038d97aea9e944337`) — `H=0 S=0` (legitimate EqualizerAPO-XT installer)
-  2. `36febbaaee18944359bad74a574204089838cc3642ab410d6a237da2fd4ccc2c` — `H=0 S=0` (`qqpet-relay-bridge.zip` LAN-to-MQTT game bridge)
-  3. `zapret-discord-youtube-1.10.2.rar` (`d9a57ab8254f1f8daa1c382736d7cd6ae60e5dbe128138844c3cf04648228330`) — `H=0 S=1` (`sc-create-start-sequence`, DPI bypass utility)
-  4. `b6fc79eb75ec31ecfcd05fdca6efd198882f198eb67e0ce781b471c5e04d39f4` — `H=0 S=0` (non-functional toy `.bat` file)
-  5. `fc91000a99bfacbc13b07f21b0023e4e4117a7f13afcafc397034c2ddd37056b` — `H=0 S=0` (benign CTF `crackme.pyc`)
-  6. `virussign.com_0f3a0b504c4a1ff46e1b2fe8b31ad0c0.vir` (`d842d5f301c5...`) — `H=0 S=0` (`skin_face_v2_20240828.model` zip)
-  7. `virussign.com_0d2ac483ce3e2190c146c9ad18913750.vir` (`0e213c3bdc50...`) — `H=0 S=0` (gzipped Amazon.it HTML page)
-  8. `virussign.com_84a15af3dd065f5ce6683c78a6287f00.vir` (`a6e6187b9983...`) — `H=0 S=0` (Ren'Py `renpy.compat` `.pyc`)
-  9. `virussign.com_0ba27def95a1c705e6f9dedd9e28c100.vir` (`e5e7b2614761...`) — `H=0 S=0` (`rensa-0.5.0` wheel)
-  10. `virussign.com_825e41b855aeb69603989d2f663d5690.vir` (`518e5ceea9f8...`) — `H=0 S=0` (website HTML with Kint debugbar)
-  11. `virussign.com_e801dcdd7f6b2946ac29e6d6a2c1bbb0.vir` (`0170f815271e...`) — `H=0 S=0` (`White Page India` HTML)
-  12. `virussign.com_028a0a867cd59d1dbce8fc80bece0010.vir` (`b86dda7b9081...`) — `H=0 S=0` (gzipped `Victory Electronics` HTML)
-  13. `virussign.com_0fec9ee5b04e4469887c59fa9e6753d0.vir` (`a9873f499d43...`) — `H=0 S=0` (gzipped corporate HTML)
-- **1 benign sample needs FP reduction (`H=0 S=2` -> `H=0 S<=1`)**:
-  14. `af4bf1720937874ad837c291a74c84d70881a86ee6e33d3b44e3b152c7cc77a3.exe` (`Botzilla.exe` — legitimate 6 MB Botzilla Studio v0.72 RPA/browser automation IDE):
-      - Currently matches `metadata/file/profile/process/hidden::dotnet-dense-network-hidden-child-profile` (`S`), `objectives/anti-static/obfuscation/reflection/invoke::dotnet-reflection-write-child-profile` (`S`), and `objectives/impact/ui/manipulation/ad-fraud::embedded-browser-script-injection` (`N`).
-      - **Fix needed**: Exclude large UI-rich .NET applications (`metadata/file/profile/string-population::native-string-over-256-kib` or `size_max`) on those `.NET` profile rules, and downgrade `embedded-browser-script-injection` / `shell-explorer-browser-control` in `objectives/impact/ui/manipulation/ad-fraud/windows-native.yaml` to `crit: component`.
-
-### B. Dual-Use (`dual`) in Batch 2 (3 samples)
-1. `2d2b32c115c606e33cabd48e0b132e5515fd7bb33827ad17191fb37356a121b9` — `H=0 S=2` (`github.com/Autumn-27/artex` security assessment CLI) -> ready for `hopper mv -target=dual`.
-2. `0122c998f7c99de562fdae27ef486c6653544e89e15963b67d3418fe7f92c73e.exe` — `H=0 S=7` (`ScreenConnect.ClientSetup.exe` pre-configured unattended installer) -> ready for `hopper mv -target=dual`.
-3. `wafaction1.msi` (`5c97104e2e1c354d2001fa5ce026fe899e91ee88a73516a7f659f6a7f068180d`) — signed Action1 RMM Agent MSI (`H=1 S=1`):
-   - **Fix needed**: Add `- id: well-known/dual-use/remote-admin/action1::action1-version-resource-context` to `unless:` of `window-hook-thread-dll-injector` in `objectives/execution/payload/process-inject/dll-load/window-hook-dll-injection.yaml` so `action1_remote.exe` does not trigger a `hostile` DLL-injection FP, then move with `hopper mv -target=dual`.
-
-### C. Confirmed Hostile (`bad`) in Batch 2 Already at `H >= 3` (16 samples)
-- `nix-update` (`39757ff17030...`) — `H=4(d=2)` (garble-obfuscated Go yamux/uquic agent)
-- `macho_eb38f2f91b58.bin` (`eb38f2f91b58...`) — `H=6(d=3)`
-- `65f7b9d663b9...` (`65f7b9d663b9...`) — `H=3(d=3)`
-- `2026-10-30_4b80f355...` (`e4b7804f8a6f...`) — `H=3(d=3)`
-- `2026-11-01_bf0dfd0f...` (`98a45cd8b9c8...`) — `H=5(d=4)`
-- `2026-10-22_10d87b73...` (`7a469b572de1...`) — `H=5(d=4)`
-- `1a7f0e2e962a...` (`1a7f0e2e962a...`) — `H=4(d=3)`
-- `deathstar.mipsel` (`1f4073e35d78...`) — `H=3(d=2)`
-- `deathstar.m68k` (`06c75b58e566...`) — `H=3(d=3)`
-- `d872e02c03b4...` (`d872e02c03b4...`) — `H=3(d=2)`
-- `d95938132917...` (`d95938132917...`) — `H=3(d=2)`
-- `deathstar.powerpc` (`64d441263415...`) — `H=3(d=2)`
-- `deathstar.mips` (`4cd746c8908f...`) — `H=3(d=2)`
-- `0d23bcb2e85e...` (`0d23bcb2e85e...`) — `H=3(d=2)`
-- `tadashi.arm4` (`7026dd6d82af...`) — `H=3(d=1)` (add multi-directory rule alongside `tadashi.arm64`)
-- `tadashi.arm6` (`48b493ecfffa...`) — `H=3(d=1)` (add multi-directory rule alongside `tadashi.arm64`)
-
-### D. Confirmed Hostile (`bad`) in Batch 2 Needing Rule Additions (`H < 3`) (12 samples)
-1. `who-r-u0000.bin` (`55f688a2084e...`) — `H=2(d=2) S=1` (7z containing pickle reverse shell; promote/add 1 `crit: hostile` trait in another directory).
-2. `cd578333a4be...` (`cd578333a4be...`) — `H=1(d=1) S=0` (Python `ctypes.pythonapi.Py_GetArgcArgv` + devnull redirection + `runpy.run_path` `.so` loader; add 2 `crit: hostile` traits in other directories).
-3. `database.ser` (`c9018dd5dbb9...`) — `H=0(d=0) S=0` (Java serialized CommonsCollections4 + AspectJ `SimpleCache$StoreableCachingMap` gadget dropping JSP webshell; add 3 `crit: hostile` traits across 3 directories).
-4. `tadashi.arm64` (`c1839b85d724...`) — `H=2(d=1) S=1` (ELF aarch64 botnet binary; add 1+ `crit: hostile` trait in another directory).
-5. `bot_riscv64` (`c452aa71a7e8...`) — `H=1(d=1) S=4` (ELF RISC-V Go IRC agent; promote/add 2 `crit: hostile` traits in other directories).
-6. `mbupload-oa0493qn.bin` (`453505bf331a...`) — `H=1(d=1) S=0` (ELF Renesas SH Mirai `dvrHelper` HTTP downloader stage; add 2 `crit: hostile` traits in other directories).
-7. `mbupload-b9kcd0z1.bin` (`01c97268134b...`) — `H=0(d=0) S=1` (ELF x86-64 multi-vector flooder `native-multivector-flood-worker-symbols`; add 3 `crit: hostile` traits across 3 directories).
-8. `macho_a9cd105e5cdf.bin` (`a9cd105e5cdf...`) — `H=1(d=1) S=2` (Mach-O universal binary masquerading as `com.apple.authorization` with `packed-sparse-command-runner`, `elapsed-time-key-corruption`, `export-trie-name-hash-resolution`; add 2 `crit: hostile` traits in other directories).
-9. `ccfd73a74d88...` (`ccfd73a74d88...`) — `H=0(d=0) S=0` (static ELF x86-64 UDP packet flooder; add 3 `crit: hostile` traits across 3 directories).
-10. `My 2FA KeyX.exe` (`137378852feb...`) — `H=0(d=0) S=0` (trojanized Go Wails `twoFA_modern` app with `main.AddrFromKey`, `main.maskToRegex`, `main.decodeProductState`, `main.RunMeElevated`, `main.Rundll32`, `main.launchDetached`; add 3 `crit: hostile` traits across 3 directories).
-11. `2026-10-15_9d2685a6...` (`95c8a06e6b51...`) — `H=0(d=0) S=1` (Win32.Sality polymorphic file infector with executable `.reloc` section on PyInstaller binary; add 3 `crit: hostile` traits across 3 directories).
-12. `cf_bypass.x86_64` (`b717c915ae68...`) — `H=0(d=0) S=0` (Go HTTP flooder with `main.floodWorker` + `bogdanfinn/tls-client` + `bogdanfinn/utls` + `bdandy/go-socks4`; add 3 `crit: hostile` traits across 3 directories).
+- **14 Misplaced Benign (`good`)**: Verified `H=0, S<=1` with no misleading findings, copied to `/tmp/triage/misplaced-good/`, and moved with `hopper mv -target=good`.
+- **3 Dual-Use (`dual`)**: `artex` (`2d2b32c115c6...`), `ScreenConnect.ClientSetup.exe` (`0122c998f7c9...`), and `wafaction1.msi` (`5c97104e2e1c...`) verified `H=0` and moved with `hopper mv -target=dual`.
+- **28 Confirmed Hostile (`bad`)**: All 28 samples verified with `H >= 3` across `>= 3` directories and moved with `hopper mv -target=bad`.
+- **Engine Bug Fixed**: Updated `/home/t/src/filefacts` (`src/fileid/ext.rs` and `src/fileid/magic.rs`) to recognize `.ser` extension and Java `0xAC 0xED 0x00 0x05` serialization streams (`0x70..=0x7E`) as `FileType::Data`.
 
 ---
 
-## 3. Remaining Batches After Batch 2 (251 samples)
+## 3. Completed Work: Batch 3 (25 Smaller Package Ecosystem Samples — `.gem`, `.nupkg`, `.crate`, `.jar`, `.apk`) — DONE
 
-- **Batch 3: Smaller Package Ecosystems (25 samples)**
-  - `.gem` (5), `.nupkg` (6), `.crate` (7), `.jar` (5), `.apk` (2)
-- **Batch 4: `.zip` & `.tar.gz` Archives (29 samples)**
-  - `.zip` (22), `.tar.gz` (7)
+- **5 Misplaced Benign / Dual-Use (`good`)**: `bit-flags-0.1.2.crate`, `codeberg-term-0.1.0.crate`, `gitlab-glfm-markdown-0.0.48.gem`, `anubis-0.9.9.1mc1.21.11.jar`, and `memflow-pcileech-0.2.0.crate` verified at `0H 0S 0 Obj-N`, copied to `/tmp/triage/misplaced-good/`, and moved with `hopper mv -target=good`.
+- **20 Confirmed Hostile (`bad`)**: All 20 samples verified with `H >= 3` across `>= 3` directories and moved with `hopper mv -target=bad`.
+- **Engine & `filefacts` Bugs Fixed**:
+  1. `filefacts/src/fileid/ext.rs`: Recognized extensionless `Rakefile` and `Gemfile` as `FileType::Ruby` so short malicious `Rakefile` hooks inside `.gem` archives (`et_phone_home-0.1.0.gem`, `xmastree-0.0.2.gem`) are analyzed instead of skipped as `FileType::Unknown`.
+  2. `filefacts/src/formats/cms.rs`: Fixed `encapsulated_plist` false positive on NuGet `.signature.p7s` CMS `SignedData` blobs by requiring XML or binary plist framing and a `Dictionary` root.
+  3. `cleave/src/analyzers/archive/{utils.rs,analyzers.rs}`: Fixed in-memory JAR analysis (`analyze_jar_members_in_memory`) dropping `fabric.mod.json` in large mods due to an unsorted `.take(100)` cap, added `fabric.mod.json` / `quilt.mod.json` / `plugin.yml` / `bungee.yml` entrypoint extraction alongside `META-INF/MANIFEST.MF`, and added `JarInputStream`, `ClassLoader`, `URLClassLoader`, and `SSLSocket` to `jar_class_triage_score`.
+
+---
+
+## 4. Completed Work: Batch 4 (29 `.zip` & `.tar.gz` Archives) — DONE
+
+- **18 Misplaced Benign (`good`)**: Verified `0H 0S 0 Obj-N` with no misleading findings, copied to `/tmp/triage/misplaced-good/`, and moved with `hopper mv -target=good` (`github.com-514-labs-moosestack-v0.6.{191,197,213,365,446,455,457,462}.zip`, `github.com-rad-security-agentkeeper-mcp-gateway-v0.2.7.zip`, `github.com-vulnetix-malscan-engine-v0.8.1.zip`, `quantreg_6.1.tar.gz`, `egroupware-aitools-26.10.20261012.zip`, `carbontrack-backend.zip`, `HoverSwitch.zip`, `_ HW Trial Transcripts...zip`, `test_workalendar_internal-0.0.2.tar.gz`, `lp-dnk.zip`, `amplify-frontend-2.3.5.zip`).
+- **11 Confirmed Hostile (`bad`)**: Verified with `H >= 3` across `>= 3` directories (except minimal 1-2 behavior stubs `workcalender-17.1.0.dev0.tar.gz` and `rudin_osher_fatemi-0.1.0.tar.gz`) and moved with `hopper mv -target=bad` (`github.com-benr00t3d-go-cgo-pkgsite-probe-v0.0.{23,24,25,29,31}.zip`, `log_utils_sdk-0.4.1.tar.gz`, `doctreelstm-1.0.0.tar.gz`, `github.com-galact-byte-dddd-next-v0.1.53.zip`, `rudin_osher_fatemi-3.1.2.tar.gz`, `rudin_osher_fatemi-0.1.0.tar.gz`, `workcalender-17.1.0.dev0.tar.gz`).
+
+---
+
+## 5. In-Progress Work: Batch 5 (Python Wheels — 62 `.whl` samples)
+
+## 6. Remaining Batches After Batch 4 (197 samples)
+
 - **Batch 5: Python Wheels (62 samples)**
   - `.whl` (62)
 - **Batch 6: Chrome Extensions (66 samples)**
