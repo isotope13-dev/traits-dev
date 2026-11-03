@@ -1,0 +1,46 @@
+defaults:
+  platforms: [windows]
+  for: [batch]
+
+traits:
+  - id: batch-command-output-form-file-upload
+    desc: curl form uploads a command-output file
+    crit: notable
+    conf: 0.98
+    # Batch has no projected redirection-to-upload binding. YARA compares
+    # the two path spans; proximity alone cannot establish this relationship.
+    if:
+      type: yara
+      source: |
+        rule batch_output_form_upload {
+          strings:
+            $capture = /(^|[\r\n])[ \t]*@?(dir|tasklist|fsutil|powershell)(\.exe)?[ \t][^\r\n>]{0,240}>{1,2}[ \t]*"?/ nocase
+            $upload = /(^|[\r\n])[ \t]*@?[Cc][Uu][Rr][Ll](\.[Ee][Xx][Ee])?[ \t][^\r\n]{0,240}(-F|--form)[ \t]+("[a-zA-Z0-9_-]{1,40}=@[a-zA-Z0-9_.%:\\-]{1,180}"|[a-zA-Z0-9_-]{1,40}=@[a-zA-Z0-9_.%:\\-]{1,180}[ \t\r\n])/
+            $path = /[a-z0-9_.%:\\-]{1,180}/ nocase
+          condition:
+            #capture > 0 and #upload > 0 and #path < 512 and
+            for any c in (1..#capture) : (
+              for any p in (1..#path) : (
+                @path[p] == @capture[c] + !capture[c] and
+                (
+                  (uint8(@path[p]-1) == 0x22 and uint8(@path[p]+!path[p]) == 0x22) or
+                  (uint8(@path[p]-1) != 0x22 and
+                   (uint8(@path[p]+!path[p]) == 0x20 or
+                    uint8(@path[p]+!path[p]) == 0x09 or
+                    uint8(@path[p]+!path[p]) == 0x0d or
+                    uint8(@path[p]+!path[p]) == 0x0a))
+                ) and
+                for any u in (1..#upload) : (
+                  @upload[u] > @path[p] and
+                  for any q in (1..#path) : (
+                    @path[q] >= @upload[u] and
+                    @path[q] + !path[q] == @upload[u] + !upload[u] - 1 and
+                    !path[p] == !path[q] and
+                    for all k in (0..!path[p]-1) : (
+                      (uint8(@path[p]+k) | 0x20) == (uint8(@path[q]+k) | 0x20)
+                    )
+                  )
+                )
+              )
+            )
+        }
