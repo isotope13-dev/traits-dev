@@ -5,6 +5,8 @@ import re
 from pathlib import Path
 
 RETIRED = {
+    'metadata/file/profile/socks-protocol':
+        'Use SOCKS protocol, server, relay or reverse-proxy behavior.',
     'metadata/file/profile/automation-management':
         'Use the named application or the supported automation behavior.',
     'metadata/file/profile/cron':
