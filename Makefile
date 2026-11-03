@@ -247,3 +247,27 @@ test-interpreter-config-taxonomy:
 .PHONY: test-background-job-taxonomy
 test-background-job-taxonomy:
 	python3 scripts/review/test-background-job-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-python-inline-position
+test-python-inline-position:
+	python3 scripts/review/test-python-inline-position.py --cleave "$(CLEAVE)"
+
+.PHONY: test-allocation-api-consumers
+test-allocation-api-consumers:
+	python3 scripts/review/test-allocation-api-consumers.py --cleave "$(CLEAVE)"
+
+.PHONY: test-applescript-subject-taxonomy
+test-applescript-subject-taxonomy:
+	python3 scripts/review/test-applescript-subject-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-wsh-evidence-taxonomy
+test-wsh-evidence-taxonomy:
+	python3 scripts/review/test-wsh-evidence-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-gradle-command-taxonomy
+test-gradle-command-taxonomy:
+	python3 scripts/review/test-gradle-command-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-script-automation-taxonomy
+test-script-automation-taxonomy:
+	python3 scripts/review/test-script-automation-taxonomy.py --cleave "$(CLEAVE)"
