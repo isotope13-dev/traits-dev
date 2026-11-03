@@ -1408,6 +1408,11 @@ Package-triggered execution is organized by the triggering phase: `execution/tri
 
 `process/deploy/file-exec/open` records a downloaded executable staged and
 handed to a file opener; it does not claim that the handler actually ran it.
+A response written to a temporary script and passed to a process runner is
+`process/deploy/file-exec/command`, including an attempted flow whose file
+constructor may prevent execution. Calculator call-shaped text belongs in
+`metadata/file/profile/command-reference`; a `Start-Job` call is background
+work under `process/work/task`.
 An HTML Help item naming a CHM is help navigation, not a process launch.
 Lua `loadstring` creates a function; an invocation of that result supplies
 execution evidence. Source identifiers and input-field text do not establish
@@ -1484,7 +1489,7 @@ distinguishes it.
 | `collection` | `keylog`, `clipboard`, `screenshot`, `audio`, `camera`, `touch`, `messaging`, `email`, `network`, `app-data`, `database`, `file-targeting`, `file-copy`, `archive`, `monitor`, `activity`, `multi-source` | Targeted acquisition or staging **without** a required send. Credentials → `credential-access`; reconnaissance → `discovery`; source plus send → `exfiltration`. `network` means captured traffic. |
 | `credential-access` | By source: `browser`, `cloud`, `credential-manager`, `keychain`, `env`, `files`, `ssh`, `wallet`, `email`, `messaging`, `dev-tools`, `wifi`, `registry`, `memory`; by acquisition: `capture`, `cracking`, `phishing`, `theft`, `validation` | Acquiring authentication material or a targeted secret store, by the [credential-source order](#objective-boundaries). Source-specific distinctions such as provider, smartcard, system and store live beneath their store family; validation and session reuse live beneath `validation`. |
 | `discovery` | `account`, `host`, `system`, `network`, `process`, `cloud` | A reconnaissance survey, by surveyed resource: `host` = installed software, security products, browsers; `system` = machine, hardware, OS; `process` = running processes; `network` = interfaces, peers, probes, scans; `account` = principals; `cloud` = provider resources. One generic query stays a capability. |
-| `command-and-control` | `channel/<transport>`, `beacon`, `remote-command/<dispatch>`, `backdoor/<access-surface>`, `reverse-shell/<io-coupling>`, `botnet`, `infrastructure`, `dns`, `trigger` | Attacker control, tasking, access or communication. Payload delivery is [execution](#payload-activation-and-staging); a protocol name is not C2. |
+| `command-and-control` | `channel/<transport>`, `beacon`, `remote-command/<dispatch>`, `backdoor/<access-surface>`, `reverse-shell/<io-coupling>`, `botnet`, `infrastructure` | Attacker control, tasking, access or communication. Payload delivery is [execution](#payload-activation-and-staging); a protocol name is not C2. |
 | `execution` | `payload/<sink>`, `staging/<operation>`, `exploit`, `interpreter`, `lolbin`, `lure`, `trigger`, `database`, `activex`, `automation`, `compile`, `lnk`, `wmi`, `autoinstall` | Unwanted execution through an exploit, deceptive invocation, trusted execution surface or admitted payload chain. Generic execution APIs stay in `process`. `database` is database-hosted execution (CLR procedures, `xp_cmdshell`, OLE Automation). |
 | `exfiltration` | `stealer/<item>`; transport-only: `http`, `dns`, `ftp`, `cloud`, `messaging`, `llm`, `oob`, `side-channel` | Unauthorized transfer. An acquisition-to-send chain is classified by its stolen item and beats transport; a transport child needs an established theft claim whose item kind is not established. A POST, an endpoint or ordinary model inference is not exfiltration. Header, query and body are distinct HTTP carriers. |
 | `evasion` | `anti-av/<control>`, `security-bypass/<control>`, `masquerade/<deception>`, `decoy`, `file-hiding`, `kernel-hide`, `indicator-removal/<record>`, `self-delete`, `process/<concealment>`, `fileless`, `hijack-execution-flow`, `hosts-file`, `quarantine-removal`, `tcc-manipulation`, `file-unlock` | Hiding activity from users, admins or deployed security products, or bypassing their controls. |
@@ -1597,9 +1602,7 @@ the Go shellcode-insertion role requires a parsed assignment.
 | `botnet` | Fleet membership or distributed tasking. | A DDoS action or device platform alone. |
 | `channel/<transport>` | A transport shown to carry attacker control. | Generic transport APIs. |
 | `channel/dns` | DNS tasking or check-in, including generated-domain rendezvous. | A DoH endpoint, domain generation or lookup without a control role (`micro-behaviors/communications/dns`). |
-| `dns/tunneling` | Legacy DNS evidence under review for relocation by its supported behavior. | Ordinary DNS use. |
 | `infrastructure` | Endpoints or rendezvous with a demonstrated C2 role. | Ordinary hosting and chosen labels. |
-| `trigger` | Attacker activation conditions: packet knock, content gate, local artifact gate. | Ordinary lifecycle or timer facts. |
 
 Within `botnet/iot`, `flood` groups distributed attack tasking, `propagation`
 groups deployment and reinfection, and `control` groups other fleet control
@@ -2076,8 +2079,14 @@ surface.
 
 The registry is storage, not proof of login persistence. Service managers use
 `service`, not a `systemd` sibling. Platform, privilege and file location are
-scope. Retained access without reactivation (created accounts, authorized SSH
-keys, now in `login/{account,ssh}`) is an [open checkpoint](#open-checkpoints).
+scope. Authorized-key backdoor installation belongs in
+`command-and-control/backdoor/ssh`; a password-spray chain that prepares a
+remote key install belongs in `lateral-movement/ssh/deploy-backdoor`. Key and
+path references without an installation remain evidence, as does a service
+override and nearby write without a bound key. Account provisioning and
+privilege configuration belong in `micro-behaviors/os/user/modify`; an
+unauthorized account with independently supported backdoor context belongs in
+`command-and-control/backdoor/account`.
 
 ### Supply-chain trust
 
@@ -2992,8 +3001,6 @@ Resolve each in the migration manifest before moving the affected rules.
 | Capacity for broad leaves | The forward maximum is 80 rules; review touched leaves at 72 and split by a durable distinction before they approach the cap; any category-specific exception requires a complete relevance audit and explicit user approval. At the cap, divide and reorganize the category and its neighborhood into durable, precise subdivisions with room to grow, while auditing all rules, parents and siblings. Document the population and consumers, place broad observations accurately, and do not invent a sibling or `other` bucket to satisfy the count. |
 | Level-3 branches | Name the children, their single axis, precedence and an incomplete-evidence example before migrating. |
 | Broad staging profiles | Staging rules that fit no operation need a defined home; neither dropping the claim nor calling it activation is acceptable. |
-| Retained access | Choose a home for created accounts and authorized SSH keys, now in `persistence/login/{account,ssh}`. |
-| C2 `dns` and `trigger` | Generated-domain tasking moved to `channel/dns`; generic domain and heartbeat clues moved to DNS evidence. Review remaining DNS tunneling and activation rules by claim before retiring the legacy leaves. |
 | Cross-cutting discovery | Generate an algorithm/source/mechanism index from recorded facets, so an "AES" view finds both presence and operation rules. No engine change. |
 
 ### Migration guardrails

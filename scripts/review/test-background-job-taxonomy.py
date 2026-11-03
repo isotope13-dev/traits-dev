@@ -28,7 +28,7 @@ with tempfile.TemporaryDirectory(prefix='background-job-') as tmp:
     reports = [json.loads(line)['files'][0] for line in result.stdout.splitlines() if line]
     ids = {Path(r['path']).name: {t['id'] for t in r.get('traits', [])} for r in reports}
     assert set(ids) == set(cases), ids.keys()
-    job = 'micro-behaviors/process/create/subprocess/launch::powershell-start-job-call'
+    job = 'micro-behaviors/process/work/task::powershell-start-job-call'
     about = 'micro-behaviors/process/create/eval::mshta-inline-about-document'
     assert job in ids['job.ps1'] and job not in ids['comment.ps1'], ids
     assert about in ids['blank.ps1'] and about in ids['mixed.ps1'], ids
