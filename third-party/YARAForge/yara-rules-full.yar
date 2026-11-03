@@ -215158,7 +215158,7 @@ rule DITEKSHEN_MALWARE_Win_Garrantdecrypt : FILE
 rule DITEKSHEN_MALWARE_Win_Locked : FILE
 {
 	meta:
-		description = "Detects Locked ransomware"
+		description = "Locked/CerberImposter ransomware artifact signature"
 		author = "ditekSHen"
 		id = "ad2f91ab-9bbb-5d47-a5c3-5a38dbab2ebe"
 		date = "2020-11-06"
