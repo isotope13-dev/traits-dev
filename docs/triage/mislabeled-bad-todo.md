@@ -20,8 +20,8 @@ The requested priority is listed first; remaining filetypes are alphabetical. `w
 - [x] asp: `x-triage-bad`, then `x-improve` — 27 bad, 11 good, 2 dual-use; see `asp-bad-review-2026-11-03.md`
 - [x] batch: `x-triage-bad`, then `x-improve` — 40 samples reviewed; see `batch-bad-review-2026-11-03.md`
 - [x] bmp: `x-triage-bad`, then `x-improve` — 40 bad; see `bmp-bad-review-2026-11-03.md`
-- [ ] bz2: `x-triage-bad`, then `x-improve` — 18 of 29 samples reviewed; see `bz2-bad-review-2026-11-03.md`
-- [ ] cab: `x-triage-bad`, then `x-improve`
+- [x] bz2: `x-triage-bad`, then `x-improve` — 19 bad, 10 inconclusive; see `bz2-bad-review-2026-11-03.md`
+- [ ] cab: `x-triage-bad`, then `x-improve` — 40 snapshot artifacts; full-artifact scans in progress
 - [ ] cargo.toml: `x-triage-bad`, then `x-improve`
 - [ ] cfml: `x-triage-bad`, then `x-improve`
 - [ ] chm: `x-triage-bad`, then `x-improve`
