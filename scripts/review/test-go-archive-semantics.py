@@ -51,6 +51,7 @@ jobs:
         'dash-single.js': fixture('baseline', 'dash-array.js'),
         'dash-double.js': 'const labels = ["-"];\n',
         'dash-comment.js': 'const labels = [/* label */ "-"];\n',
+        'dash-trailing-comment.js': 'const labels = ["-" /* label */];\n',
         'dash-extra.js': 'const labels = ["-", "next"];\n',
         'dash-string.js': 'const docs = "labels = [\'-\']";\n',
         'config-env.go': 'package schema\nconst name = "Config.Env"\n',
@@ -85,7 +86,7 @@ jobs:
         stage.mkdir()
         for name, source in cases.items():
             (stage / name).write_text(source)
-        proc = subprocess.run([cleave, '--traits-dir', str(root), '--format', 'jsonl', *[str(stage / name) for name in cases]],
+        proc = subprocess.run([cleave, '--traits-dir', str(root), '--min-crit', 'baseline', '--format', 'jsonl', *[str(stage / name) for name in cases]],
                               capture_output=True, text=True, check=True)
         assert 'skipped' not in proc.stderr.lower(), proc.stderr
         reports = [json.loads(line) for line in proc.stdout.split('\n') if line]
@@ -117,7 +118,7 @@ jobs:
         reject('random-comment.js', random)
         reject('random-string.js', random)
         dash = 'metadata/lang/source/syntax/array::single-dash-array-literal'
-        for name in ['dash-single.js', 'dash-double.js', 'dash-comment.js']:
+        for name in ['dash-single.js', 'dash-double.js', 'dash-comment.js', 'dash-trailing-comment.js']:
             require(name, dash)
         for name in ['dash-extra.js', 'dash-string.js']:
             reject(name, dash)
@@ -136,10 +137,10 @@ jobs:
         rnd = 'micro-behaviors/communications/url/query/structure::rnd-query-parameter'
         require('rnd.js', rnd)
         reject('tr-fragment.js', rnd)
-        require('node-options.js', 'micro-behaviors/process/create/hidden::node-windowshide-true-option')
-        require('usage.c', 'micro-behaviors/ui/help::get-saveas-usage')
+        require('node-options.js', 'metadata/file/profile/command-options::node-windowshide-true-option')
+        require('usage.c', 'micro-behaviors/ui/help/command::get-saveas-usage')
         require('PKG-INFO', 'metadata/package/documentation/claims::pkginfo-protection-wording')
-        risk = 'micro-behaviors/process/create/shell/injection::github-pr-command-interpolation'
+        risk = 'objectives/execution/exploit/command-injection::github-pr-command-interpolation'
         risky = {'pr-scalar.yml', 'pr-map.yml', 'pr-array.yml', 'pr-target.yml', 'pr-target-scalar.yml',
                  'pr-target-array.yml', 'pr-body.yml', 'pr-real.yml'}
         for name in risky:

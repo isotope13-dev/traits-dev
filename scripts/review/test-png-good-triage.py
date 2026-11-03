@@ -15,7 +15,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 REMOTE = 'objectives/command-and-control/backdoor/tasking/socket::python-remote-command-channel'
-CRON = 'micro-behaviors/os/autorun/cron::crontab-file-install'
+CRON = 'micro-behaviors/os/autorun/cron/unspecified::crontab-file-install'
 TRACED = 'micro-behaviors/process/debug/detect::bsd-traced-process-flag-reference'
 SERVICE = 'micro-behaviors/os/service/config::chkconfig-add-service'
 FRAUD = 'objectives/lateral-movement/social-engineering/lures::advance-fee-fraud-letter'

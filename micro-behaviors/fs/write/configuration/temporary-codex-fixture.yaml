@@ -1,0 +1,137 @@
+defaults:
+  platforms: [unix, windows]
+  for: [javascript, typescript]
+
+traits:
+  - id: js-fixture-node-module-bindings
+    desc: Binds Node filesystem path and OS modules
+    crit: component
+    conf: 0.97
+    if:
+      type: tree-sitter
+      query: |
+        ((program
+          (lexical_declaration (variable_declarator name: (identifier) @fs
+            value: (call_expression function: (identifier) @require_fs
+              arguments: (arguments (string (string_fragment) @fs_module)))))
+          (lexical_declaration (variable_declarator name: (identifier) @os
+            value: (call_expression function: (identifier) @require_os
+              arguments: (arguments (string (string_fragment) @os_module)))))
+          (lexical_declaration (variable_declarator name: (identifier) @path
+            value: (call_expression function: (identifier) @require_path
+              arguments: (arguments (string (string_fragment) @path_module))))))
+          (#eq? @fs "fs") (#eq? @os "os") (#eq? @path "path")
+          (#eq? @require_fs "require") (#eq? @require_os "require") (#eq? @require_path "require")
+          (#match? @fs_module "^(node:)?fs$")
+          (#match? @os_module "^(node:)?os$")
+          (#match? @path_module "^(node:)?path$"))
+    not:
+      - regex: '(jest\.(mock|doMock)|vi\.mock)\s*\(\s*["''](node:)?(fs|os|path)["'']'
+      - regex: '(fs\.mkdtempSync|os\.tmpdir|path\.join)\s*='
+      - regex: '(jest|vi)\.spyOn\s*\(\s*(fs|os|path)\s*,'
+      - regex: '(function\s*[\w$]*\s*\([^)]*\b(fs|os|path)\b|\([^)]*\b(fs|os|path)\b[^)]*\)\s*=>)'
+  - id: js-single-node-binding-per-name
+    desc: At most three fs os path bindings
+    crit: component
+    conf: 0.95
+    count_min: 3
+    count_max: 3
+    if:
+      type: tree-sitter
+      query: |
+        ((variable_declarator name: (identifier) @name)
+          (#match? @name "^(fs|os|path)$"))
+  - id: js-node-module-alias-parameter
+    desc: Function parameter shadows module alias
+    crit: component
+    conf: 0.95
+    if:
+      type: tree-sitter
+      query: |
+        ([(formal_parameters (identifier) @name)
+          (formal_parameters (object_pattern (shorthand_property_identifier_pattern) @name))
+          (formal_parameters (object_pattern (pair_pattern value: (identifier) @name)))
+          (arrow_function parameter: (identifier) @name)
+          (catch_clause parameter: (identifier) @name)]
+          (#match? @name "^(fs|os|path)$"))
+  - id: js-node-module-mock-text
+    desc: Text mocks a Node module
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(jest\.(mock|doMock)|vi\.mock)\s*\(\s*["''](node:)?(fs|os|path)["'']'
+  - id: js-node-module-helper-override-text
+    desc: Text overrides a Node module helper
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(fs\.mkdtempSync|os\.tmpdir|path\.join)\s*='
+  - id: js-node-module-spy-text
+    desc: Text spies on a Node module
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      regex: '(jest|vi)\.spyOn\s*\(\s*(fs|os|path)\s*,'
+  - id: js-single-file-write-call
+    desc: Source has one file-write API call
+    crit: component
+    conf: 0.96
+    count_max: 1
+    if:
+      type: tree-sitter
+      query: |
+        ((call_expression function: (member_expression property: (property_identifier) @method))
+          (#match? @method "^(writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|copyFileSync|copyFile|renameSync|rename|openSync|open)$"))
+  - id: js-temporary-codex-config-write
+    desc: Writes Codex fixture under temporary directory
+    crit: notable
+    conf: 0.97
+    if:
+      type: tree-sitter
+      query: |
+        ((statement_block
+          (lexical_declaration
+            (variable_declarator name: (identifier) @temp
+              value: (call_expression
+                function: (member_expression object: (identifier) @fs property: (property_identifier) @mktemp)
+                arguments: (arguments
+                  (call_expression function: (member_expression object: (identifier) @path property: (property_identifier) @join)
+                    arguments: (arguments (call_expression function: (member_expression object: (identifier) @os property: (property_identifier) @tmpdir))))))))
+          (lexical_declaration
+            (variable_declarator name: (identifier) @dir
+              value: (call_expression
+                function: (member_expression object: (identifier) @path2 property: (property_identifier) @join2)
+                arguments: (arguments . (identifier) @temp_use . (string (string_fragment) @codex)))))
+          (expression_statement
+            (call_expression function: (member_expression object: (identifier) @fs2 property: (property_identifier) @write)
+              arguments: (arguments
+                (call_expression function: (member_expression object: (identifier) @path3 property: (property_identifier) @join3)
+                  arguments: (arguments . (identifier) @dir_use . (string (string_fragment) @config)))
+                (_) @contents))))
+          (#eq? @fs "fs") (#eq? @fs2 @fs) (#eq? @mktemp "mkdtempSync")
+          (#eq? @os "os") (#eq? @tmpdir "tmpdir")
+          (#eq? @path "path") (#eq? @path2 @path) (#eq? @path3 @path)
+          (#eq? @join "join") (#eq? @join2 @join) (#eq? @join3 @join)
+          (#eq? @temp @temp_use) (#eq? @dir @dir_use)
+          (#eq? @codex ".codex") (#eq? @config "config.toml")
+          (#eq? @write "writeFileSync")
+          (#match? @contents "https?://[^/\\\"']*[.]example[.]com/"))
+
+composite_rules:
+  - id: js-single-temporary-codex-fixture
+    desc: Single Codex config write targets temp fixture
+    crit: notable
+    conf: 0.97
+    all:
+      - id: js-fixture-node-module-bindings
+      - id: js-single-node-binding-per-name
+      - id: js-single-file-write-call
+      - id: js-temporary-codex-config-write
+    unless:
+      - id: js-node-module-alias-parameter
+      - id: js-node-module-mock-text
+      - id: js-node-module-helper-override-text
+      - id: js-node-module-spy-text

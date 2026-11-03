@@ -28,8 +28,8 @@ with ThreadPoolExecutor(max_workers=3) as workers:
     REPORTS = dict(workers.map(scan, FILES))
 EXPECTED = {
     "sandbox-archive-loader.py": {
-        "objectives/command-and-control/dropper/staging/encoded/carrier::python-sandbox-gated-encrypted-archive-launcher",
-        "objectives/anti-static/obfuscation/payload/encrypted::python-xor-archive-hidden-launcher",
+        "objectives/execution/payload/file-exec/spawn/runtime::python-sandbox-encrypted-archive-hidden-launch",
+        "objectives/execution/payload/file-exec/spawn/archive::python-xor-archive-hidden-launcher",
         "objectives/anti-analysis/sandbox-detect/script::python-sandbox-score-exit",
     },
     "monitor-evasion-socket.py": {

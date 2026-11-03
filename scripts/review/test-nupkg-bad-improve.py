@@ -15,10 +15,10 @@ def main():
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
     engine = str((repo / args.cleave).resolve())
-    process = 'micro-behaviors/process/create/managed::dotnet-process-start-call'
+    process = 'micro-behaviors/process/create/subprocess/launch::dotnet-process-start-call'
     directory = 'micro-behaviors/fs/delete/directory::dotnet-directory-delete-call'
     internal = 'metadata/package/description/visibility::nupkg-description-internal-term'
-    process_ref = 'micro-behaviors/process/create/managed::dotnet-process-start-import'
+    process_ref = 'metadata/binary/symbols/name/process::dotnet-process-start-import'
     directory_ref = 'micro-behaviors/fs/delete/directory::dotnet-directory-delete-import'
     focus = {process, directory, process_ref, directory_ref, internal}
     sample = next(args.samples_root.rglob('Systemm.Drawing.Common.1.0.4.nupkg'))

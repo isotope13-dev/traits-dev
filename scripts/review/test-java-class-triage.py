@@ -70,12 +70,12 @@ def main():
     assert all(t["id"] != "objectives/anti-static/obfuscation/pack::allatori-demo-marker"
                for f in found.values() for t in f.get("traits", []))
     for name, expected_id in {
-        "global-keylogger-buffer.class": "jvm-global-hook-keylog-buffer",
-        "nested-keylogger-reporting.jar": "jvm-global-keylog-discord-reporting",
-        "native-keylog-socket-control.jar": "jvm-native-keylog-socket-reporting",
-        "reflected-live-keylogger.class": "jvm-reflected-live-keylog-packets",
+        "global-keylogger-buffer.class": "objectives/collection/keylog/hook::jvm-global-hook-keylog-buffer",
+        "nested-keylogger-reporting.jar": "objectives/exfiltration/stealer/input::jvm-global-keylog-discord-reporting",
+        "native-keylog-socket-control.jar": "objectives/exfiltration/stealer/input::jvm-native-keylog-socket-reporting",
+        "reflected-live-keylogger.class": "objectives/collection/keylog/capture::jvm-reflected-live-keylog-packets",
     }.items():
-        assert any(t["id"] == "objectives/collection/keylog/hook::" + expected_id
+        assert any(t["id"] == expected_id
                    and t["crit"] == 5 for t in found[name].get("traits", [])), name
     for name, expected_id in {
         "protected-secret-collection-model.jar": "well-known/malware/stealer/myth::jvm-myth-secret-collection-model",

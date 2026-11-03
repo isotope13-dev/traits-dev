@@ -126,7 +126,7 @@ def main():
             'reversed-fingerprint.php': {'micro-behaviors/communications/http/fingerprint::php-ip-user-agent-md5'},
             'append-modes.php': {'micro-behaviors/fs/file/io-mode::php-append-file-mode'},
             'qualified-append.php': {'micro-behaviors/fs/file/io-mode::php-append-file-mode'},
-            'html-package.lua': {'micro-behaviors/data/decode/base64::lua-ngx-decode-base64-call'},
+            'html-package.lua': {'micro-behaviors/data/decode/base64/unspecified::lua-ngx-decode-base64-call'},
             'renamed-xor.lua': {'micro-behaviors/data/bitwise/xor::lua-xor-byte-key-loop'},
             'compact-xor.lua': {'micro-behaviors/data/bitwise/xor::lua-xor-byte-key-loop'},
         }

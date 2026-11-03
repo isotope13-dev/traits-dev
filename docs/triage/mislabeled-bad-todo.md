@@ -1,0 +1,131 @@
+# Mislabeled-bad filetype queue
+
+Apply `x-triage-bad`, followed by `x-improve`, to each filetype. Check an item only after its complete sample set and required validation have been verified. The source directory is a snapshot; use Hopper for current labels.
+
+The requested priority is listed first; remaining filetypes are alphabetical. `whl` appeared twice in the original sequence and is listed once.
+
+- [x] shell: `x-triage-bad`, then `x-improve` — 40 snapshot entries reviewed; see `shell-bad-review-2026-11-02.md`
+- [x] c: `x-triage-bad`, then `x-improve` — 35 good, 5 bad; see `c-bad-review-2026-11-02.md`
+- [x] package.json: `x-triage-bad`, then `x-improve` — 20 good, 14 bad, 4 inconclusive; see `package-json-bad-review-2026-11-02.md`
+- [x] jpeg: `x-triage-bad`, then `x-improve` — 36 good, 3 bad, 1 inconclusive; see `jpeg-bad-review-2026-11-03.md`
+- [x] gif: `x-triage-bad`, then `x-improve` — 35 good, 2 bad, 3 inconclusive; see `gif-bad-review-2026-11-03.md`
+- [x] whl: `x-triage-bad`, then `x-improve` — 28 good, 10 bad, 3 dual-use; see `whl-bad-review-2026-11-03.md`
+- [x] png: `x-triage-bad`, then `x-improve` — 40 good; see `png-bad-review-2026-11-03.md`
+- [x] csharp: `x-triage-bad`, then `x-improve` — 34 good, 5 bad, 1 inconclusive; see `csharp-bad-review-2026-11-03.md`
+- [x] 7z: `x-triage-bad`, then `x-improve` — 36 bad, 4 good; see `7z-bad-review-2026-11-03.md`
+- [x] apk_alpine: `x-triage-bad`, then `x-improve` — 30 bad, 3 good; see `apk-alpine-bad-review-2026-11-03.md`
+- [x] apk_android: `x-triage-bad`, then `x-improve` — 28 bad, 6 good, 6 inconclusive; see `apk-android-bad-review-2026-11-03.md`
+- [x] applescript: `x-triage-bad`, then `x-improve` — 40 bad; see `applescript-bad-review-2026-11-03.md`
+- [x] asar: `x-triage-bad`, then `x-improve` — 29 bad, 2 good, 9 inconclusive; see `asar-bad-review-2026-11-03.md`
+- [x] asp: `x-triage-bad`, then `x-improve` — 27 bad, 11 good, 2 dual-use; see `asp-bad-review-2026-11-03.md`
+- [x] batch: `x-triage-bad`, then `x-improve` — 40 samples reviewed; see `batch-bad-review-2026-11-03.md`
+- [x] bmp: `x-triage-bad`, then `x-improve` — 40 bad; see `bmp-bad-review-2026-11-03.md`
+- [x] bz2: `x-triage-bad`, then `x-improve` — 19 bad, 10 inconclusive; see `bz2-bad-review-2026-11-03.md`
+- [ ] cab: `x-triage-bad`, then `x-improve` — 40 snapshot artifacts; full-artifact scans in progress
+- [ ] cargo.toml: `x-triage-bad`, then `x-improve`
+- [ ] cfml: `x-triage-bad`, then `x-improve`
+- [ ] chm: `x-triage-bad`, then `x-improve`
+- [ ] chrome_manifest: `x-triage-bad`, then `x-improve`
+- [ ] clojure: `x-triage-bad`, then `x-improve`
+- [ ] cmake: `x-triage-bad`, then `x-improve`
+- [ ] composer: `x-triage-bad`, then `x-improve`
+- [ ] composer.json: `x-triage-bad`, then `x-improve`
+- [ ] conda: `x-triage-bad`, then `x-improve`
+- [ ] cpan: `x-triage-bad`, then `x-improve`
+- [ ] cpio: `x-triage-bad`, then `x-improve`
+- [ ] crate: `x-triage-bad`, then `x-improve`
+- [ ] crx: `x-triage-bad`, then `x-improve`
+- [ ] data: `x-triage-bad`, then `x-improve`
+- [ ] deb: `x-triage-bad`, then `x-improve`
+- [ ] desktop_entry: `x-triage-bad`, then `x-improve`
+- [ ] dex: `x-triage-bad`, then `x-improve`
+- [ ] dmg: `x-triage-bad`, then `x-improve`
+- [ ] dockerfile: `x-triage-bad`, then `x-improve`
+- [ ] dos_com: `x-triage-bad`, then `x-improve`
+- [ ] egg: `x-triage-bad`, then `x-improve`
+- [ ] elf: `x-triage-bad`, then `x-improve`
+- [ ] elixir: `x-triage-bad`, then `x-improve`
+- [ ] font: `x-triage-bad`, then `x-improve`
+- [ ] gem: `x-triage-bad`, then `x-improve`
+- [ ] github_actions: `x-triage-bad`, then `x-improve`
+- [ ] go: `x-triage-bad`, then `x-improve`
+- [ ] go.mod: `x-triage-bad`, then `x-improve`
+- [ ] go_module: `x-triage-bad`, then `x-improve`
+- [ ] groovy: `x-triage-bad`, then `x-improve`
+- [ ] gyp: `x-triage-bad`, then `x-improve`
+- [ ] gz: `x-triage-bad`, then `x-improve`
+- [ ] html: `x-triage-bad`, then `x-improve`
+- [ ] ico: `x-triage-bad`, then `x-improve`
+- [ ] ipa: `x-triage-bad`, then `x-improve`
+- [ ] iso: `x-triage-bad`, then `x-improve`
+- [ ] jar: `x-triage-bad`, then `x-improve`
+- [ ] java: `x-triage-bad`, then `x-improve`
+- [ ] java_class: `x-triage-bad`, then `x-improve`
+- [ ] javascript: `x-triage-bad`, then `x-improve`
+- [ ] json: `x-triage-bad`, then `x-improve`
+- [ ] jsp: `x-triage-bad`, then `x-improve`
+- [ ] kotlin: `x-triage-bad`, then `x-improve`
+- [ ] lnk: `x-triage-bad`, then `x-improve`
+- [ ] lua: `x-triage-bad`, then `x-improve`
+- [ ] macho: `x-triage-bad`, then `x-improve`
+- [ ] makefile: `x-triage-bad`, then `x-improve`
+- [ ] markdown: `x-triage-bad`, then `x-improve`
+- [ ] mirc: `x-triage-bad`, then `x-improve`
+- [ ] mp3: `x-triage-bad`, then `x-improve`
+- [ ] mp4: `x-triage-bad`, then `x-improve`
+- [ ] ne: `x-triage-bad`, then `x-improve`
+- [ ] nib: `x-triage-bad`, then `x-improve`
+- [ ] npm: `x-triage-bad`, then `x-improve`
+- [ ] nupkg: `x-triage-bad`, then `x-improve`
+- [ ] objective_c: `x-triage-bad`, then `x-improve`
+- [ ] ole_doc: `x-triage-bad`, then `x-improve`
+- [ ] ooxml: `x-triage-bad`, then `x-improve`
+- [ ] package-lock.json: `x-triage-bad`, then `x-improve`
+- [ ] pdf: `x-triage-bad`, then `x-improve`
+- [ ] pe: `x-triage-bad`, then `x-improve`
+- [ ] perl: `x-triage-bad`, then `x-improve`
+- [ ] php: `x-triage-bad`, then `x-improve`
+- [ ] pipfile.lock: `x-triage-bad`, then `x-improve`
+- [ ] pkg_info: `x-triage-bad`, then `x-improve`
+- [ ] pkg_macos: `x-triage-bad`, then `x-improve`
+- [ ] plist: `x-triage-bad`, then `x-improve`
+- [ ] postscript: `x-triage-bad`, then `x-improve`
+- [ ] powershell: `x-triage-bad`, then `x-improve`
+- [ ] pyproject.toml: `x-triage-bad`, then `x-improve`
+- [ ] python: `x-triage-bad`, then `x-improve`
+- [ ] python_bytecode: `x-triage-bad`, then `x-improve`
+- [ ] python_sdist: `x-triage-bad`, then `x-improve`
+- [ ] rar: `x-triage-bad`, then `x-improve`
+- [ ] reg: `x-triage-bad`, then `x-improve`
+- [ ] registry: `x-triage-bad`, then `x-improve`
+- [ ] requirements.txt: `x-triage-bad`, then `x-improve`
+- [ ] rpa: `x-triage-bad`, then `x-improve`
+- [ ] rpm: `x-triage-bad`, then `x-improve`
+- [ ] rpyc: `x-triage-bad`, then `x-improve`
+- [ ] rtf: `x-triage-bad`, then `x-improve`
+- [ ] ruby: `x-triage-bad`, then `x-improve`
+- [ ] rust: `x-triage-bad`, then `x-improve`
+- [ ] scala: `x-triage-bad`, then `x-improve`
+- [ ] shellcode: `x-triage-bad`, then `x-improve`
+- [ ] static-lib: `x-triage-bad`, then `x-improve`
+- [ ] svg: `x-triage-bad`, then `x-improve`
+- [ ] swift: `x-triage-bad`, then `x-improve`
+- [ ] systemd_service: `x-triage-bad`, then `x-improve`
+- [ ] tar: `x-triage-bad`, then `x-improve`
+- [ ] text: `x-triage-bad`, then `x-improve`
+- [ ] tiff: `x-triage-bad`, then `x-improve`
+- [ ] unknown: `x-triage-bad`, then `x-improve`
+- [ ] vbs: `x-triage-bad`, then `x-improve`
+- [ ] vhd: `x-triage-bad`, then `x-improve`
+- [ ] vsix: `x-triage-bad`, then `x-improve`
+- [ ] wasm: `x-triage-bad`, then `x-improve`
+- [ ] wav: `x-triage-bad`, then `x-improve`
+- [ ] webp: `x-triage-bad`, then `x-improve`
+- [ ] xml: `x-triage-bad`, then `x-improve`
+- [ ] xpi: `x-triage-bad`, then `x-improve`
+- [ ] xz: `x-triage-bad`, then `x-improve`
+- [ ] yaml: `x-triage-bad`, then `x-improve`
+- [ ] yara: `x-triage-bad`, then `x-improve`
+- [ ] zig: `x-triage-bad`, then `x-improve`
+- [ ] zip: `x-triage-bad`, then `x-improve`
+- [ ] zst: `x-triage-bad`, then `x-improve`

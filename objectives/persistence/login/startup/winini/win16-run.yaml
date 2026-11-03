@@ -1,0 +1,115 @@
+defaults:
+  platforms: [windows]
+  for: [ne]
+  attack: T1547.001
+traits:
+  - id: win16-windows-run-write
+    desc: Win16 code writes Windows profile run entry
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        rule win16_windows_run_write {
+          strings:
+            $push = { 1E 68 ?? ?? 1E 68 ?? ?? 1E 68 ?? ?? 9A ?? ?? 00 00 }
+            $rel = { 03 01 ?? ?? ?? ?? 3B 00 }
+            $windows = "windows\x00" ascii nocase
+            $run = "run\x00" ascii nocase
+            $kernel = "KERNEL" ascii nocase
+          condition:
+            uint16(0) == 0x5a4d and
+            uint16(uint32(0x3c)) == 0x454e and
+            uint8(uint32(0x3c)+0x36) == 2 and
+            uint16(uint32(0x3c)+0x1c) > 0 and
+            uint16(uint32(0x3c)+0x0e) > 0 and
+            uint16(uint32(0x3c)+0x0e) <= uint16(uint32(0x3c)+0x1c) and
+            uint16(uint32(0x3c)+0x32) <= 16 and
+            for any n in (uint32(0x3c)..uint32(0x3c)) : (
+              for any table in (n+uint16(n+0x22)..n+uint16(n+0x22)) : (
+                for any code in (uint16(table)<<uint16(n+0x32)..uint16(table)<<uint16(n+0x32)) : (
+                  for any data in (uint16(table+8*(uint16(n+0x0e)-1))<<uint16(n+0x32)..uint16(table+8*(uint16(n+0x0e)-1))<<uint16(n+0x32)) : (
+                    for any p in (1..#push) : (
+                      @push[p] >= code and @push[p]+!push[p] <= code+uint16(table+2) and
+                      $windows at data+uint16(@push[p]+2) and
+                      $run at data+uint16(@push[p]+6) and
+                      uint8(data+uint16(@push[p]+10)) != 0 and
+                      for any r in (1..#rel) : (
+                        @rel[r] >= code+uint16(table+2)+2 and
+                        @rel[r]+8 <= code+uint16(table+2)+2+8*uint16(code+uint16(table+2)) and
+                        (@rel[r]-(code+uint16(table+2)+2)) % 8 == 0 and
+                        uint16(@rel[r]+2) == @push[p]+13-code and
+                        uint16(@rel[r]+4) > 0 and uint16(@rel[r]+4) <= uint16(n+0x1e) and
+                        uint8(n+uint16(n+0x2a)+uint16(n+uint16(n+0x28)+2*(uint16(@rel[r]+4)-1))) == 6 and
+                        $kernel at n+uint16(n+0x2a)+uint16(n+uint16(n+0x28)+2*(uint16(@rel[r]+4)-1))+1
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
+
+  - id: win16-hidden-run-executable
+    desc: Win16 hides startup path behind spaces
+    crit: hostile
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        rule win16_hidden_run_executable {
+          strings:
+            $push = { 1E 68 ?? ?? 1E 68 ?? ?? 1E 68 ?? ?? 9A ?? ?? 00 00 }
+            $rel = { 03 01 ?? ?? ?? ?? 3B 00 }
+            $windows = "windows\x00" ascii nocase
+            $run = "run\x00" ascii nocase
+            $kernel = "KERNEL" ascii nocase
+            $exe = ".exe\x00" ascii nocase
+          condition:
+            uint16(0) == 0x5a4d and
+            uint16(uint32(0x3c)) == 0x454e and
+            uint8(uint32(0x3c)+0x36) == 2 and
+            uint16(uint32(0x3c)+0x1c) > 0 and
+            uint16(uint32(0x3c)+0x0e) > 0 and
+            uint16(uint32(0x3c)+0x0e) <= uint16(uint32(0x3c)+0x1c) and
+            uint16(uint32(0x3c)+0x32) <= 16 and
+            for any n in (uint32(0x3c)..uint32(0x3c)) : (
+              for any table in (n+uint16(n+0x22)..n+uint16(n+0x22)) : (
+                for any code in (uint16(table)<<uint16(n+0x32)..uint16(table)<<uint16(n+0x32)) : (
+                  for any data in (uint16(table+8*(uint16(n+0x0e)-1))<<uint16(n+0x32)..uint16(table+8*(uint16(n+0x0e)-1))<<uint16(n+0x32)) : (
+                    for any p in (1..#push) : (
+                      @push[p] >= code and @push[p]+!push[p] <= code+uint16(table+2) and
+                      $windows at data+uint16(@push[p]+2) and
+                      $run at data+uint16(@push[p]+6) and
+                      for all i in (0..63) : (
+                        uint8(data+uint16(@push[p]+10)+i) == 0x20
+                      ) and
+                      for any j in (64..512) : (
+                        ((uint8(data+uint16(@push[p]+10)+j) >= 0x41 and
+                          uint8(data+uint16(@push[p]+10)+j) <= 0x5a) or
+                         (uint8(data+uint16(@push[p]+10)+j) >= 0x61 and
+                          uint8(data+uint16(@push[p]+10)+j) <= 0x7a)) and
+                        uint8(data+uint16(@push[p]+10)+j+1) == 0x3a and
+                        uint8(data+uint16(@push[p]+10)+j+2) == 0x5c and
+                        for any k in (j+4..j+128) : (
+                          $exe at data+uint16(@push[p]+10)+k and
+                          for all m in (j+3..k-1) : (
+                            uint8(data+uint16(@push[p]+10)+m) > 0x20
+                          )
+                        )
+                      ) and
+                      for any r in (1..#rel) : (
+                        @rel[r] >= code+uint16(table+2)+2 and
+                        @rel[r]+8 <= code+uint16(table+2)+2+8*uint16(code+uint16(table+2)) and
+                        (@rel[r]-(code+uint16(table+2)+2)) % 8 == 0 and
+                        uint16(@rel[r]+2) == @push[p]+13-code and
+                        uint16(@rel[r]+4) > 0 and uint16(@rel[r]+4) <= uint16(n+0x1e) and
+                        uint8(n+uint16(n+0x2a)+uint16(n+uint16(n+0x28)+2*(uint16(@rel[r]+4)-1))) == 6 and
+                        $kernel at n+uint16(n+0x2a)+uint16(n+uint16(n+0x28)+2*(uint16(@rel[r]+4)-1))+1
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }

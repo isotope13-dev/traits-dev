@@ -89,12 +89,16 @@ test-swift-archive-improve:
 # failing. Every classified fixture also supplies a measured cost probe.
 # validate-uncached forces a fresh measured pass.
 validate:
+	python3 scripts/review/check-retired-taxonomy.py
 	python3 scripts/review/check-process-taxonomy.py
+	python3 scripts/review/check-crypto-taxonomy.py
 	python3 scripts/review/test-third-party-config-compat.py
 	$(CLEAVE) --traits-dir . validate
 
 validate-uncached:
+	python3 scripts/review/check-retired-taxonomy.py
 	python3 scripts/review/check-process-taxonomy.py
+	python3 scripts/review/check-crypto-taxonomy.py
 	CLEAVE_SKIP_CACHE=1 $(CLEAVE) --traits-dir . validate
 
 # Aggregate regex/Tree-sitter trait costs and slow fixtures. Avoid --verbose:
@@ -103,6 +107,7 @@ validate-uncached:
 SLOW_RULE_MS ?= 500
 validate-profile:
 	python3 scripts/review/check-process-taxonomy.py
+	python3 scripts/review/check-crypto-taxonomy.py
 	CLEAVE_SKIP_CACHE=1 CLEAVE_TRAIT_TIMING=1 CLEAVE_PHASE_STATS=1 RUST_LOG=cleave=info $(CLEAVE) --slow-rule-ms $(SLOW_RULE_MS) --traits-dir . validate
 
 # Compile the third-party + built-in YARA rules into portable per-filetype
@@ -204,3 +209,67 @@ test-response-model-context:
 .PHONY: test-stream-cipher-taxonomy
 test-stream-cipher-taxonomy:
 	python3 scripts/review/test-stream-cipher-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-url-path-taxonomy
+test-url-path-taxonomy:
+	python3 scripts/review/test-url-path-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-memory-allocation-taxonomy
+test-memory-allocation-taxonomy:
+	python3 scripts/review/test-memory-allocation-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-child-process-taxonomy
+test-child-process-taxonomy:
+	python3 scripts/review/test-child-process-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-python-os-alias-taxonomy
+test-python-os-alias-taxonomy:
+	python3 scripts/review/test-python-os-alias-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-java-collection-exfiltration
+test-java-collection-exfiltration:
+	python3 scripts/review/test-java-collection-exfiltration.py --cleave "$(CLEAVE)"
+
+.PHONY: test-process-config-taxonomy
+test-process-config-taxonomy:
+	python3 scripts/review/test-process-config-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-interpreter-input-taxonomy
+test-interpreter-input-taxonomy:
+	python3 scripts/review/test-interpreter-input-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-node-inline-taxonomy
+test-node-inline-taxonomy:
+	python3 scripts/review/test-node-inline-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-interpreter-config-taxonomy
+test-interpreter-config-taxonomy:
+	python3 scripts/review/test-interpreter-config-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-background-job-taxonomy
+test-background-job-taxonomy:
+	python3 scripts/review/test-background-job-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-python-inline-position
+test-python-inline-position:
+	python3 scripts/review/test-python-inline-position.py --cleave "$(CLEAVE)"
+
+.PHONY: test-allocation-api-consumers
+test-allocation-api-consumers:
+	python3 scripts/review/test-allocation-api-consumers.py --cleave "$(CLEAVE)"
+
+.PHONY: test-applescript-subject-taxonomy
+test-applescript-subject-taxonomy:
+	python3 scripts/review/test-applescript-subject-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-wsh-evidence-taxonomy
+test-wsh-evidence-taxonomy:
+	python3 scripts/review/test-wsh-evidence-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-gradle-command-taxonomy
+test-gradle-command-taxonomy:
+	python3 scripts/review/test-gradle-command-taxonomy.py --cleave "$(CLEAVE)"
+
+.PHONY: test-script-automation-taxonomy
+test-script-automation-taxonomy:
+	python3 scripts/review/test-script-automation-taxonomy.py --cleave "$(CLEAVE)"

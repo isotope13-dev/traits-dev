@@ -86,14 +86,14 @@ def main():
             assert probe in ids(name, 5), (name, ids(name, 5))
         for name in ['ordinary-dns.js', 'quiet-inventory.js', 'deferred-dns.js', 'fake-dns.js', 'quoted-dns.js']:
             assert probe not in ids(name), (name, ids(name))
-        launch = 'objectives/execution/payload/interpreter-stdin::npm-preinstall-probed-profile-shell-loader'
+        launch = 'objectives/execution/payload/interpreter-stdin/network::npm-preinstall-probed-profile-shell-loader'
         replace = 'objectives/supply-chain/trojanized/app/package::preinstall-profile-loader-scoped-replacement'
         for name in ['loader.tgz', 'aliased-loader.tgz']:
             assert {launch, replace} <= ids(name, 5), (name, ids(name, 5))
         assert launch in ids('no-replacement.tgz', 5)
         assert replace not in ids('no-replacement.tgz')
         assert launch not in ids('no-hook.tgz')
-        scoped = 'micro-behaviors/process/create/shell/command-string::node-exec-scoped-registry-install'
+        scoped = 'micro-behaviors/os/package-manager/runtime-install::node-exec-scoped-registry-install'
         assert scoped not in ids('reassigned-replacement.js')
         for name in ['quoted-callback.js', 'generic-builder.js', 'schema-only.js', 'ordinary-dns.js', 'quiet-inventory.js', 'deferred-dns.js', 'fake-dns.js', 'quoted-dns.js']:
             assert not ids(name, 5), (name, ids(name, 5))

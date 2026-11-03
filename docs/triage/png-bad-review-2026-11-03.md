@@ -1,0 +1,46 @@
+# PNG mislabeled-bad review, 2026-11-03
+
+Both local Cleave and Atomscan (slow mode, reference following disabled) scanned all 40 snapshot files. Each is a PNG; neither scanner reported suspicious or hostile traits. Independent checks validated chunk bounds and CRCs, complete IDAT decompression, expected non-interlaced scanline lengths and filter bytes, and the absence of bytes after IEND. Text metadata and decoded color profiles were inspected. Searches of file bytes and inflated image data found no structurally validated PE or simple Base64/single-byte-XOR PE. Three files contain local thumbnail file URIs, now reported as notable.
+
+The image parser reports bounded pixel-payload probing for 38 files. These checks do not prove the absence of arbitrary steganography or other encodings. Hopper confirmed all 40 as **good**; updates are tracked in `/var/tmp/triage-png-good-moves.log`.
+
+- `0bbf041082f3ed986f953dbbc8505161171e3f1a26bf29d2cd9fa95d849e7f11` — `/var/tmp/triage/mislabeled-bad/png/0bbf041082f3__bad/dissect-malware/js/2026.scholtz.covid-sk/public/favicon.ico`
+- `1bd5b35db23cfbeaee8ec3ae974e46291f9bc6ff08cd717a5713e92c3b9ab02b` — `/var/tmp/triage/mislabeled-bad/png/1bd5b35db23c__bad/dissect-malware/typescript/2026.NickelAlley.test-project/public/token/USDC.png`
+- `1c340af0b114b16cff1a647e805785537f4b03d6d2a89dde814547ba4fdb6f3b` — `/var/tmp/triage/mislabeled-bad/png/1c340af0b114__bad/projects/realm/docs/assets/favicons/apple-icon-180x180.png`
+- `1e685544f35e142b8350b658123fd81b62a6c4ed7da345491b05f475e0fdb70f` — `/var/tmp/triage/mislabeled-bad/png/1e685544f35e__bad/projects/ApexSU/website/docs/public/logo.png`
+- `24e128c7a37e016d7bc823c574de1e82fdd4d01a23bb0f8c6fca6080edc7c209` — `/var/tmp/triage/mislabeled-bad/png/24e128c7a37e__bad/projects/realm/docs/assets/favicons/apple-icon-57x57.png`
+- `26a6915410b4a6320e5f66a078b5d1abbbb0e4339efa2edd8269194b3efd152e` — `/var/tmp/triage/mislabeled-bad/png/26a6915410b4__bad/datasets/various/The-Awesome-And-Dangerous-collection/ActiveMalwares/DesckVBRAT/arquivos/imagems/keylogger2.png`
+- `2b25f5a9c6f49f01cbe3dc8b45a315cb8c0e31938176573587ae5041493a4a14` — `/var/tmp/triage/mislabeled-bad/png/2b25f5a9c6f4__bad/datasets/various/POC-EXP/ZFsoft/正方教务管理系统存在XSS漏洞可威胁所有登陆用户 - WooYun-2013-26083 - WooYun_org_files/weixin_30[1].png`
+- `301ed6cdbf496bfac3829664782b7c3e5c68410d4035c6f0eefc0e1f78f03617` — `/var/tmp/triage/mislabeled-bad/png/301ed6cdbf49__bad/datasets/various/contagio/african-economy-main/public/imgs/logo.png`
+- `385bdd476d1c98e2167f647a341824e0f0d18da3cde8800998b05274bb38400a` — `/var/tmp/triage/mislabeled-bad/png/385bdd476d1c__bad/projects/ToxicDatabase/Source codes/Image-Processing-RGBQUAD--main/Bitmap Process/packages/Costura.Fody.6.0.0/icon.png`
+- `3e02be5d21095cd144745bba107edfb86d94deb7197c048fb3b0c65ef926eb0d` — `/var/tmp/triage/mislabeled-bad/png/3e02be5d2109__bad/datasets/various/MalwareBazaar/dmg/e23958971d445f0eb3940942b96fd0c38b772e955e3ef43670e975337534ab3c_dmg/e23958971d445f0eb3940942b96fd0c38b772e955e3ef43670e975337534ab3c/PowerSuite.app/Contents/Resources/autofolderimageview.png`
+- `472c806b3caea5f65e9059e6b2ae1a5bb8728deeab38b65c83eb14e693b56921` — `/var/tmp/triage/mislabeled-bad/png/472c806b3cae__bad/projects/Beryl/games/flapybird/assets/img/bg1.png`
+- `59db20427f25e82f17c7315d863e6fd75154623dc4101982368b399737b57908` — `/var/tmp/triage/mislabeled-bad/png/59db20427f25__bad/dissect-malware/python/2026.NickelAlley.web3-social-platform/client/public/default-card.png`
+- `5b58b96660541b8afd50a9599970896e18b9720b40c06918ec64a17c75738907` — `/var/tmp/triage/mislabeled-bad/png/5b58b9666054__bad/projects/byob/web-gui/buildyourownbotnet/assets/js/fullcalendar-2/lib/cupertino/images/ui-bg_highlight-soft_100_deedf7_1x100.png`
+- `5d536101ad53fae99e30a97537941ab12779905ce8adab6720328515496d1f38` — `/var/tmp/triage/mislabeled-bad/png/5d536101ad53__bad/datasets/various/POC-EXP/windows/SYNfulKnock/scapy-2.3.1/doc/scapy/graphics/testing-taxonomy.png`
+- `64f1efaad31d4c738d0f2287f7e20718d4bcc8c28ca7d97abfd04af63ad0831f` — `/var/tmp/triage/mislabeled-bad/png/64f1efaad31d__bad/projects/ligolo-ng/doc/webui.png`
+- `7617297dc296b5ecbf6d8fdf855ad5e33dffd778434435665520e8453154443c` — `/var/tmp/triage/mislabeled-bad/png/7617297dc296__bad/projects/byob/web-gui/buildyourownbotnet/assets/js/ckeditor/skins/moono/images/hidpi/lock-open.png`
+- `79faf437f10e9a6738739e1f5d0d3e9057d8d60f7af6cac176888975de62821a` — `/var/tmp/triage/mislabeled-bad/png/79faf437f10e__bad/projects/byob/web-gui/buildyourownbotnet/assets/js/ckeditor/skins/moono/images/lock.png`
+- `7d1de7d8708b3c31ffae302c021aac07952e46423d80d4453d501c6392b32a25` — `/var/tmp/triage/mislabeled-bad/png/7d1de7d8708b__bad/projects/ApexSU/manager/app/src/main/res/mipmap-ldpi/ic_launcher.png`
+- `8125daf43f5681fcd583977e36357c69bac532fd867b4b43d583a86397f92120` — `/var/tmp/triage/mislabeled-bad/png/8125daf43f56__bad/projects/byob/web-gui/buildyourownbotnet/assets/js/ckeditor/plugins/link/images/anchor.png`
+- `85fc3e4f845de42e761fb801678f2e2d884e648fd9cfe55bd7bd901729218527` — `/var/tmp/triage/mislabeled-bad/png/85fc3e4f845d__bad/datasets/various/The-Awesome-And-Dangerous-collection/ActiveMalwares/DesckVBRAT/arquivos/imagems/batch.png`
+- `89715eb8d46e203b4f900188a8e2f7a36d10f59575fb8fea051837e519b7e326` — `/var/tmp/triage/mislabeled-bad/png/89715eb8d46e__bad/projects/Pandora/Master/src/main/resources/images/agents/contextmenu/keyboard.png`
+- `9299fff9b4625a0ae3b0007d88b98f9d9725666c0c36a29da0cf345b7491ea3e` — `/var/tmp/triage/mislabeled-bad/png/9299fff9b462__bad/projects/EternalHushFramework/logviewer/src/main/resources/images/warn.png`
+- `9d0d7bd57fc653a0e4eabfd95cd09e8dd37ad91e844687f9fa5d31ffcfa15005` — `/var/tmp/triage/mislabeled-bad/png/9d0d7bd57fc6__bad/projects/sliver/docs/sliver-docs/public/favicon.ico`
+- `a15d57b6dcfec9d969ddff474ad5bd521c65f74dc45a29373a187e77ebbbe019` — `/var/tmp/triage/mislabeled-bad/png/a15d57b6dcfe__bad/datasets/various/POC-EXP/windows/SYNfulKnock/scapy-2.3.1/doc/scapy/graphics/trace3d_2.png`
+- `a330f66b2c743caba8bfc8f64d37ef4bb50e68a61d92835c3d8b303df03c2d0a` — `/var/tmp/triage/mislabeled-bad/png/a330f66b2c74__bad/projects/botnets/VirusPack/fragus/images/bl.png`
+- `a5b9327398dabbf8d9a8c79ea82477f1efab4bb11172f4d33b636a4cac78af10` — `/var/tmp/triage/mislabeled-bad/png/a5b9327398da__bad/projects/realm/docs/assets/favicons/apple-icon-precomposed.png`
+- `a6dc869162bad5afaa27d7fa8e9a78c84885375a691329d6788fd037e0138824` — `/var/tmp/triage/mislabeled-bad/png/a6dc869162ba__bad/datasets/various/The-Awesome-And-Dangerous-collection/ExploitKit/Sava Exploits Pack/player.png`
+- `aa3f667f7cb08a322babf0f353c21fab6a7d4b63a15627481835cbe595c52224` — `/var/tmp/triage/mislabeled-bad/png/aa3f667f7cb0__bad/datasets/various/POC-EXP/windows/SYNfulKnock/scapy-2.3.1/doc/scapy/graphics/ATMT_HelloWorld.png`
+- `b541fc3dc141293f87b98d23910e4a4504ae3c566e3b23c588e16f6012fe9722` — `/var/tmp/triage/mislabeled-bad/png/b541fc3dc141__bad/datasets/various/POC-EXP/windows/SYNfulKnock/scapy-2.3.1/doc/scapy/graphics/graph_traceroute.png`
+- `bca991d8d0349771bcf41d0c7c7a63407721da972cc241eab21163f08b28860c` — `/var/tmp/triage/mislabeled-bad/png/bca991d8d034__bad/projects/botnets/VirusPack/fragus/images/tl.png`
+- `c2ebaf11e2bc0749e37c80cb2aa2cb08f05de8d40b4a0429f639d6ed7faa9c09` — `/var/tmp/triage/mislabeled-bad/png/c2ebaf11e2bc__bad/projects/emp3r0r/img/emp3r0r.png`
+- `c83e9b6d319056e20b1a80144fcc726dc425643b42bd84b1fff2c56ac55e7521` — `/var/tmp/triage/mislabeled-bad/png/c83e9b6d3190__bad/datasets/various/MalwareBazaar/dmg/0fd29654721c2984b37969dfaf41d39f48f72061aca89c11382bbe3a2914a6b8_dmg/0fd29654721c2984b37969dfaf41d39f48f72061aca89c11382bbe3a2914a6b8/.background/bg.png`
+- `dc6f1cb63b2e23d052452e36f7964ef30cfabf1f8ff78ee579643a7b816dbe1a` — `/var/tmp/triage/mislabeled-bad/png/dc6f1cb63b2e__bad/projects/fanqiang/fqnews2/app/src/main/res/mipmap-mdpi/ic_launcher_background.png`
+- `e38e072eeaead347627bfe3e37d6bdbeb338752fc86fdabc34e4b5edffcc7615` — `/var/tmp/triage/mislabeled-bad/png/e38e072eeaea__bad/projects/Havoc/client/data/img/treewidget/stylesheet-branch-more.png`
+- `e54dd4aeb50cb29fcf74985a8fa30fcbec4febc8163e03e102a9d4ac72d28018` — `/var/tmp/triage/mislabeled-bad/png/e54dd4aeb50c__bad/projects/byob/web-gui/buildyourownbotnet/assets/js/codemirror/doc/logo.png`
+- `e5f9fd3dfa44f6f325176fa93123b3705d7b0a1ffe39bd9c572b99ee07a2740e` — `/var/tmp/triage/mislabeled-bad/png/e5f9fd3dfa44__bad/datasets/various/contagio/african-economy-main/public/imgs/flags/uk.png`
+- `eaa28546bb8ce811fe4b761b78e8c513dfaa825cbbf6934f89d961e066188d0e` — `/var/tmp/triage/mislabeled-bad/png/eaa28546bb8c__bad/projects/goshs/httpserver/static/images/banner-dark.png`
+- `efe638938fbbbecd594f4f962cdffa7398a4d8efa05b2a7c5281c17da474e011` — `/var/tmp/triage/mislabeled-bad/png/efe638938fbb__bad/projects/pe-union/PEunion/Resources/Icons/Warning16.png`
+- `f60557253468258af169ffa592b726779eb5d51980ca75c203028c6ee4b77404` — `/var/tmp/triage/mislabeled-bad/png/f60557253468__bad/projects/botnets/VirusPack/fragus/images/button.png`
+- `ff0ba8e6f56b061fac6f1112c43c2c14d9b54153204b140af9e1fa40c6104b34` — `/var/tmp/triage/mislabeled-bad/png/ff0ba8e6f56b__bad/datasets/various/jstrosch-malware-samples/maldoc_templates/2021/abuse_ch/week16_Apr12-Apr16/group_11/NONE_12569c0f42b8dd4d8d6777dcd0d098db.jpg`

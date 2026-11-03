@@ -11,11 +11,11 @@ ROOT = Path(__file__).resolve().parents[2]
 WEB = 'objectives/command-and-control/backdoor/webshell/intercept/module::'
 COOKIE = WEB + 'cookie-delivered-code-execution'
 PRODUCTION = WEB + 'ruby-cookie-eval-with-production-check'
-READ = 'micro-behaviors/fs/read/file/full::ruby-file-content-base64-value-flow'
+READ = 'micro-behaviors/fs/read/file/content/unspecified::ruby-file-content-base64-value-flow'
 PACKER = 'objectives/credential-access/files/secret-sweep::ruby-encoded-credential-file-read'
 INVENTORY = 'objectives/credential-access/files/secret-sweep::ruby-secret-file-hash-inventory'
-RUNNER = 'micro-behaviors/process/create/subprocess::ruby-http-body-script-subprocess-flow'
-TLS = 'objectives/command-and-control/dropper/delivery/fetch-exec::ruby-unverified-http-body-subprocess-exec'
+RUNNER = 'micro-behaviors/process/deploy/file-exec/command::ruby-http-body-script-subprocess-flow'
+TLS = 'objectives/execution/payload/file-exec/command/fetch::ruby-unverified-http-body-subprocess-exec'
 CI_WRITE = 'micro-behaviors/os/env/cicd/startup::ruby-github-env-preload-write'
 CI_HOOK = 'objectives/supply-chain/trojanized/build-pipeline::ruby-credential-collector-ci-preload'
 
@@ -40,8 +40,8 @@ def main():
 
     cookie = (ROOT / 'testdata/hostile/generated/ruby-improve/cookie-evaluator.rb').read_text()
     packer = (ROOT / 'testdata/hostile/generated/ruby-improve/credential-packer.rb').read_text()
-    inventory = (ROOT / 'testdata/suspicious/generated/ruby-bad-review/recon-helper/sample.rb').read_text()
-    runner = (ROOT / 'testdata/suspicious/generated/ruby-bad-review/unsafe-runner/sample.rb').read_text()
+    inventory = (ROOT / 'testdata/hostile/generated/ruby-bad-review/recon-helper/sample.rb').read_text()
+    runner = (ROOT / 'testdata/hostile/generated/ruby-bad-review/unsafe-runner/sample.rb').read_text()
     ci = (ROOT / 'testdata/hostile/generated/ruby-bad-review/session-store/sample.rb').read_text()
     add('cookie.rb', cookie, [COOKIE, PRODUCTION])
     add('cookie-renamed.rb', re.sub(r'\bx\b', 'decoded_command', cookie), [COOKIE, PRODUCTION])
@@ -68,22 +68,22 @@ def main():
     add('packer-different-read.rb', packer.replace('File.read(full_path)', "File.read('/tmp/public-data')"), forbidden=[PACKER])
     add('packer-different-encoding.rb', packer.replace('Base64.strict_encode64(content)', 'Base64.strict_encode64(status)'), forbidden=[READ, PACKER])
     add('ordinary-file-encoding.rb', "# .aws/credentials .ssh/id_rsa .netrc\ncontent = File.read('/tmp/public-data')\nencoded = Base64.strict_encode64(content)\n", [READ], [PACKER], True)
-    add('inventory.rb', inventory, [INVENTORY], no_hostile=True)
+    add('inventory.rb', inventory, [INVENTORY, 'objectives/credential-access/files/secret-sweep::ruby-credential-store-host-environment-inventory'])
     add('inventory-other-read.rb', inventory.replace('File.read(f)', "File.read('/tmp/public-data')"), forbidden=[INVENTORY], no_hostile=True)
     add('inventory-other-hash.rb', inventory.replace('Digest::SHA256.hexdigest(content)', 'Digest::SHA256.hexdigest(status)'), forbidden=[INVENTORY], no_hostile=True)
-    add('runner.rb', runner, [RUNNER, TLS], no_hostile=True)
-    add('runner-renamed.rb', re.sub(r'\bexecute_script\b', 'launch_text', re.sub(r'\bresp\b', 'reply', runner)), [RUNNER, TLS], no_hostile=True)
+    add('runner.rb', runner, [RUNNER, TLS, 'objectives/execution/payload/file-exec/command/fetch::ruby-unverified-download-pty-eval-toolkit'])
+    add('runner-renamed.rb', re.sub(r'\bexecute_script\b', 'launch_text', re.sub(r'\bresp\b', 'reply', runner)), [RUNNER, TLS, 'objectives/execution/payload/file-exec/command/fetch::ruby-unverified-download-pty-eval-toolkit'])
 
     start = runner.index('    def execute_script(')
     end = runner.index('    def eval_ruby(')
     fetch = runner.index('    def download_and_execute(')
     after_fetch = runner.index('    def spawn_persistent_shell')
     reordered = runner[:start] + runner[end:fetch] + runner[fetch:after_fetch] + runner[start:end] + runner[after_fetch:]
-    add('runner-reordered.rb', reordered, [RUNNER, TLS], no_hostile=True)
-    add('runner-other-body.rb', runner.replace('execute_script(interpreter, resp.body)', 'execute_script(interpreter, trusted_script)'), forbidden=[RUNNER, TLS], no_hostile=True)
-    add('runner-other-target.rb', runner.replace('execute_script(interpreter, resp.body)', 'display_script(interpreter, resp.body)'), forbidden=[RUNNER, TLS], no_hostile=True)
-    add('runner-other-temp-path.rb', runner.replace('#{tf.path}', '#{other.path}'), forbidden=[RUNNER, TLS], no_hostile=True)
-    add('runner-other-executed-command.rb', runner.replace("Open3.capture3({ 'PATH' => ENV['PATH'] }, cmd)", "Open3.capture3({ 'PATH' => ENV['PATH'] }, other_command)"), forbidden=[RUNNER, TLS], no_hostile=True)
+    add('runner-reordered.rb', reordered, [RUNNER, TLS, 'objectives/execution/payload/file-exec/command/fetch::ruby-unverified-download-pty-eval-toolkit'])
+    add('runner-other-body.rb', runner.replace('execute_script(interpreter, resp.body)', 'execute_script(interpreter, trusted_script)'), forbidden=[RUNNER, TLS, 'objectives/execution/payload/file-exec/command/fetch::ruby-unverified-download-pty-eval-toolkit'], no_hostile=True)
+    add('runner-other-target.rb', runner.replace('execute_script(interpreter, resp.body)', 'display_script(interpreter, resp.body)'), forbidden=[RUNNER, TLS, 'objectives/execution/payload/file-exec/command/fetch::ruby-unverified-download-pty-eval-toolkit'], no_hostile=True)
+    add('runner-other-temp-path.rb', runner.replace('#{tf.path}', '#{other.path}'), forbidden=[RUNNER, TLS, 'objectives/execution/payload/file-exec/command/fetch::ruby-unverified-download-pty-eval-toolkit'], no_hostile=True)
+    add('runner-other-executed-command.rb', runner.replace("Open3.capture3({ 'PATH' => ENV['PATH'] }, cmd)", "Open3.capture3({ 'PATH' => ENV['PATH'] }, other_command)"), forbidden=[RUNNER, TLS, 'objectives/execution/payload/file-exec/command/fetch::ruby-unverified-download-pty-eval-toolkit'], no_hostile=True)
     add('ci-preload.rb', ci, [CI_WRITE, CI_HOOK])
     add('ci-renamed.rb', re.sub(r'\bgenv\b', 'workflow_environment', ci), [CI_WRITE, CI_HOOK])
     add('ci-other-file.rb', ci.replace("File.open(genv, 'a')", "File.open(other, 'a')"), forbidden=[CI_WRITE, CI_HOOK])
