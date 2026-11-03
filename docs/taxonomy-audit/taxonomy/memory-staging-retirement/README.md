@@ -32,3 +32,9 @@ A Python-scoped `dynamic-dropper` rule also referenced the staging ancestor.
 None of the final 26 memory rules applied to Python; three from the preceding
 memory pass did, so those exact alternatives were restored. Other previously
 migrated staging branches still need the same ancestor-consumer audit.
+
+A later review of Python-scoped staging members restored three more renamed
+alternatives to that consumer: the hidden temporary-symlink launcher, socket
+receive near Python execution, and Base64 PE reconstruction with execution or
+permission clues. These references name the individual migrated rules rather
+than their new parent directories. Other staging branches remain to be audited.
