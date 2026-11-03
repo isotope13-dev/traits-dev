@@ -13,8 +13,8 @@ The requested priority is listed first; remaining filetypes are alphabetical. `w
 - [x] png: `x-triage-bad`, then `x-improve` — 40 good; see `png-bad-review-2026-11-03.md`
 - [x] csharp: `x-triage-bad`, then `x-improve` — 34 good, 5 bad, 1 inconclusive; see `csharp-bad-review-2026-11-03.md`
 - [x] 7z: `x-triage-bad`, then `x-improve` — 36 bad, 4 good; see `7z-bad-review-2026-11-03.md`
-- [ ] apk_alpine: `x-triage-bad`, then `x-improve` — 30 of 33 samples documented; remaining findings are tracked in `apk-alpine-bad-review-2026-11-03.md`
-- [ ] apk_android: `x-triage-bad`, then `x-improve`
+- [x] apk_alpine: `x-triage-bad`, then `x-improve` — 30 bad, 3 good; see `apk-alpine-bad-review-2026-11-03.md`
+- [ ] apk_android: `x-triage-bad`, then `x-improve` — 6 of 40 samples reviewed; see `apk-android-bad-review-2026-11-03.md`
 - [ ] applescript: `x-triage-bad`, then `x-improve`
 - [ ] asar: `x-triage-bad`, then `x-improve`
 - [ ] asp: `x-triage-bad`, then `x-improve`
