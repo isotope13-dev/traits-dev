@@ -5,6 +5,8 @@ import re
 from pathlib import Path
 
 RETIRED = {
+    'metadata/file/profile/cron':
+        'Use the supported cron operation or persistence objective.',
     'metadata/file/profile/encoding/serialization':
         'Use the supported parsing or serialization behavior.',
     'metadata/file/profile/file-operation/write-api':

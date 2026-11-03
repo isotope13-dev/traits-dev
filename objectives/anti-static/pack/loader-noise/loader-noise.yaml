@@ -4,24 +4,6 @@ defaults:
   attack: "T1027"
   mbc: "B0032"
 traits:
-  - id: write-only-high-entropy-section
-    desc: Write-only high-entropy section payload
-    crit: suspicious
-    conf: 0.9
-    if:
-      type: section
-      writable: true
-      readable: false
-      length_min: 4096
-    unless:
-  # EFI firmware maps the PE image independently of the Windows per-section
-  # read bit; an EFI `.text` section with this flag is not a write-only payload.
-      - id: metadata/binary/header/characteristics::efi-pe-subsystem
-    downgrade:
-      any:
-        - id: metadata/signed/platform/
-        - id: metadata/filename/brand::is-windows-named
-        - id: well-known/lib/platform/wine/
   - id: tiny-executable-obfuscation-section
     desc: Tiny executable nonstandard section stub
     crit: suspicious
@@ -43,79 +25,6 @@ traits:
     downgrade:
       any:
         - id: metadata/signed/platform/
-  - id: reloc-rwx-payload-section
-    desc: Large RWX .reloc payload section
-    crit: suspicious
-    conf: 0.96
-    if:
-      type: section
-      exact: ".reloc"
-      writable: true
-      executable: true
-      length_min: 262144
-      entropy_max: 4.7
-  - id: reloc-rwx-mid-entropy-payload
-    desc: Mid-entropy RWX .reloc payload section
-    crit: suspicious
-    conf: 0.97
-    if:
-      type: section
-      exact: ".reloc"
-      writable: true
-      executable: true
-      length_min: 262144
-      entropy_min: 4.7
-      entropy_max: 6.0
-    downgrade:
-      any:
-        - id: metadata/signed/platform/
-    unless:
-      - id: metadata/signed/unknown::open-source-developer-martin-tofall
-      - id: well-known/app/browser/internet-explorer/
-      - id: metadata/file/profile/installer/product/catalog/
-  - id: reloc-readonly-encrypted-payload
-    desc: Read-only encrypted .reloc payload
-    crit: suspicious
-    conf: 0.96
-    if:
-      type: section
-      exact: ".reloc"
-      readable: true
-      writable: false
-      executable: false
-      length_min: 262144
-      entropy_min: 7.0
-    downgrade:
-      any:
-        - id: metadata/signed/platform/
-    unless:
-      - id: well-known/app/browser/internet-explorer/
-  # Large MSVC images can have a high-entropy .reloc section simply because
-  # it contains thousands of genuine base-relocation entries. When the
-  # overhang composite also fires, high-entropy-reloc-overhang uses
-  # high-entropy-reloc-section instead so a stuffed trailer is not suppressed.
-      - id: metadata/binary/section/reloc::reloc-entry-count-high
-  - id: x64-xor-dec-dword-payload-loop
-    desc: XOR then decrement dword decode loop
-    crit: notable
-    conf: 0.9
-    arch: [x86-64]
-    count_min: 2
-    if:
-      type: hex
-      section: .text
-      pattern: "41 8b 03 35 ?? ?? ?? ?? ff c8"
-  - id: x86-xor-dec-dword-payload-loop
-    desc: x86 XOR then decrement dword decode loop
-    crit: notable
-    conf: 0.9
-    arch: [x86]
-    if:
-      type: hex
-      section: .text
-      pattern: "81 F2 ?? ?? ?? ?? [0-6] 4A [0-4] 89 17 [0-6] 83 E9 04 83 C7 04 83 C3 04"
-    unless:
-      - id: metadata/signed/platform/
   - id: lol-rwx-payload-section
     desc: Large RWX .lol packed payload section
     crit: suspicious
@@ -161,12 +70,6 @@ traits:
       type: import
       exact: MprSetupProtocolEnum
   # MAPI allocator internals (decomposed per ML-feature-depth guidance)
-  - id: mapi-free-buffer-import
-    desc: Release MAPI-allocated memory buffer
-    crit: notable
-    if:
-      type: import
-      substr: MAPIFreeBuffer
   - id: mapi-sc-bin-from-hex-import
     desc: Convert hex MAPI entry ID to binary
     crit: notable
@@ -186,24 +89,12 @@ traits:
       type: import
       substr: UNKOBJ_ScAllocate
   # shlwapi/hash path niche decomposition
-  - id: path-is-unc-server-a-import
-    desc: Test path for UNC server root
-    crit: notable
-    if:
-      type: import
-      exact: PathIsUNCServerA
   - id: path-undecorate-w-import
     desc: Strip numeric decoration from a filename
     crit: notable
     if:
       type: import
       exact: PathUndecorateW
-  - id: url-hash-w-import
-    desc: Hash a URL via shlwapi URL-hash algorithm
-    crit: notable
-    if:
-      type: import
-      exact: UrlHashW
   - id: reset-write-watch-import
     desc: Clear the dirty-page write-watch bitmap
     crit: notable
@@ -248,13 +139,6 @@ traits:
     if:
       type: text
       exact: "PEStub.dll"
-  - id: python-launcher-banner-marker
-    desc: Embedded Python Launcher banner string
-    crit: notable
-    conf: 0.97
-    if:
-      type: text
-      exact: "Python Launcher for Windows Version %ls"
   - id: python-launcher-usage-marker
     desc: Embedded Python Launcher usage template
     crit: notable
@@ -634,13 +518,13 @@ composite_rules:
       - id: micro-behaviors/mem/combined::memory-management-api-evidence
       - id: micro-behaviors/hardware/display/camera::vfw-capture-interface-import
     any:
-      - id: mapi-free-buffer-import
+      - id: micro-behaviors/mem/free::mapi-free-buffer-import
       - id: mapi-sc-bin-from-hex-import
       - id: mapi-decompose-eid-import
       - id: mapi-unkobj-allocate-import
-      - id: path-is-unc-server-a-import
+      - id: micro-behaviors/fs/path/check::path-is-unc-server-a-import
       - id: path-undecorate-w-import
-      - id: url-hash-w-import
+      - id: micro-behaviors/data/checksum::url-hash-w-import
       - id: reset-write-watch-import
     unless:
       - id: metadata/binary/symbols/count::many-imports-100
@@ -760,7 +644,7 @@ composite_rules:
     crit: suspicious
     conf: 0.97
     all:
-      - id: reloc-rwx-payload-section
+      - id: metadata/binary/section/reloc::large-write-execute-low-entropy-section
     needs: 3
     any:
       - id: metadata/binary/section/ratio::reloc-dominates-image
@@ -779,7 +663,7 @@ composite_rules:
     attack: T1027.002,T1140
     all:
       - id: objectives/anti-static/obfuscation/payload/section/layout::x64-unrolled-dword-decoder-stub
-      - id: reloc-rwx-payload-section
+      - id: metadata/binary/section/reloc::large-write-execute-low-entropy-section
       - id: metadata/binary/section/ratio::reloc-dominates-image
       - id: micro-behaviors/process/info/query::peb-access-x64
       - id: micro-behaviors/mem/protect/modify/unspecified::virtual-protect-import
@@ -792,7 +676,7 @@ composite_rules:
     crit: suspicious
     conf: 0.99
     all:
-      - id: reloc-rwx-payload-section
+      - id: metadata/binary/section/reloc::large-write-execute-low-entropy-section
     needs: 4
     any:
       - id: metadata/binary/section/ratio::reloc-dominates-image
@@ -808,7 +692,7 @@ composite_rules:
     crit: suspicious
     conf: 0.96
     all:
-      - id: reloc-rwx-payload-section
+      - id: metadata/binary/section/reloc::large-write-execute-low-entropy-section
       - id: metadata/binary/section/ratio::reloc-dominates-image
       - id: micro-behaviors/fs/read/file/handle::pe-module-path-file-io-overlay
     any:
@@ -871,12 +755,12 @@ composite_rules:
     crit: hostile
     conf: 0.99
     all:
-      - id: reloc-readonly-encrypted-payload
+      - id: metadata/binary/section/reloc::large-readonly-high-entropy-section
       - id: metadata/binary/section/ratio::reloc-dominates-image
       - id: micro-behaviors/os/service/dispatch::service-dispatch-triad
     any:
-      - id: x64-xor-dec-dword-payload-loop
-      - id: x86-xor-dec-dword-payload-loop
+      - id: micro-behaviors/data/bitwise/mixed::x64-xor-decrement-dword-loop
+      - id: micro-behaviors/data/bitwise/mixed::x86-xor-decrement-dword-loop
       - id: objectives/evasion/anti-av/api-hashing
       - id: metadata/binary/provenance/build::unusual-pe-header-timestamp
     needs: 2
@@ -888,7 +772,7 @@ composite_rules:
     crit: hostile
     conf: 0.99
     all:
-      - id: reloc-rwx-payload-section
+      - id: metadata/binary/section/reloc::large-write-execute-low-entropy-section
       - id: metadata/binary/section/ratio::reloc-dominates-image
       - id: objectives/evasion/masquerade/version-resource/python-dll::python-launcher-version-resource
     any:
@@ -903,7 +787,7 @@ composite_rules:
     crit: hostile
     conf: 0.99
     all:
-      - id: reloc-rwx-payload-section
+      - id: metadata/binary/section/reloc::large-write-execute-low-entropy-section
       - id: metadata/binary/section/ratio::reloc-dominates-image
       - id: objectives/evasion/masquerade/version-resource/claim::asus-getdeviceversion-version-resource
     any:
@@ -962,7 +846,7 @@ composite_rules:
       - id: pestub-dll-marker
     any:
       - id: metadata/binary/debug::venvlauncher-pdb-marker
-      - id: python-launcher-banner-marker
+      - id: well-known/lib/runtime/scripted/python-runtime::python-launcher-banner-marker
       - id: python-launcher-usage-marker
       - id: metadata/binary/layout/embedded::pe-embedded
     needs: 3
