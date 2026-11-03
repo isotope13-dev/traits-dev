@@ -7,7 +7,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 CLEAVE = os.environ.get("CLEAVE", "../cleave/target/release/cleave")
-RULE = "micro-behaviors/crypto/encrypt::openssl-aes-encrypt-command"
+RULE = "micro-behaviors/crypto/encrypt/transform::openssl-aes-encrypt-command"
 
 cases = {
     "default encryption": ("openssl enc -aes-256-cbc -in x -out y\n", True),

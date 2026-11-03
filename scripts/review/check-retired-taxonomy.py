@@ -5,6 +5,30 @@ import re
 from pathlib import Path
 
 RETIRED = {
+    'metadata/file/profile/locale':
+        'Use locale processing, country-selection or UI localization evidence.',
+    'metadata/file/profile/screen-capture':
+        'Use capture or monitoring behavior, or the named library.',
+    'metadata/file/profile/screen-capture/references':
+        'Use capture, display, UI or named-library evidence.',
+    'metadata/file/profile/screen-capture/cooccurrence':
+        'Use screenshot behavior, monitoring or multi-source collection.',
+    'metadata/file/profile/process/network':
+        'Use staged execution, scheduling or the observed process operation.',
+    'metadata/file/profile/process/stdio':
+        'Use process standard-I/O operations or interpreter-input behavior.',
+    'metadata/file/profile/process/termination':
+        'Use process termination behavior or the likely collection or evasion objective.',
+    'metadata/file/profile/payload-building':
+        'Use source-generation behavior for payload-building clues.',
+    'metadata/file/profile/payment-request':
+        'Use payment-related HTTP and form behavior.',
+    'metadata/file/profile/media-projection':
+        'Use Android display projection and virtual-display behavior.',
+    'metadata/file/profile/gpu-api':
+        'Use GPU management behavior or NVIDIA library identity.',
+    'metadata/file/profile/android-native':
+        'Use Android native staging or DEX loader behavior.',
     'metadata/file/profile/socks-protocol':
         'Use SOCKS protocol, server, relay or reverse-proxy behavior.',
     'metadata/file/profile/automation-management':

@@ -864,13 +864,14 @@ operation; `upload-api` holds generic imports and unresolved API names, and
 `upload-config` holds declared fields and allowlists. Captured media and
 ciphertext entering request bodies belong to their `request/body` subjects.
 
-`hardware/display/screenshot` records calls and specific API references that
-indicate attempted screen capture, including partial indicators. A generic
-capture-library import, capture-intent setting, graphics API name without
-screen context, or unbound screen/image co-occurrence remains profile evidence.
-A screenshot indicator supports an attempt; it does not establish successful
-capture or exfiltration. Browser-page screenshots and canvas serialization are
-image operations under `ui/graphics/image`, not capture of the host display.
+`hardware/display/screenshot` records likely host-display capture behavior,
+including partial indicators. Use `display` for a whole-display target, `window`
+for a window target, `reference` for generic capture names and `unspecified`
+when the target or operation is not more specific. Named capture libraries belong
+in `well-known/`; general graphics without a likely capture purpose belongs with
+its observed operation. A reference or co-occurrence does not establish a call,
+successful capture or exfiltration. Browser-page screenshots and canvas
+serialization are image operations under `ui/graphics/image`.
 
 `mem/protect/modify` records memory-protection calls and syscalls, separating
 executable permissions from changes whose permissions are unspecified. Memory
@@ -934,10 +935,10 @@ Unbound text that merely resembles an operation name remains text evidence.
 
 | Home | Admission and boundary |
 |---|---|
-| `crypto/symmetric/<algorithm>`, `asymmetric/<algorithm>`, `hybrid` | Primitive or implementation presence with no narrower operation ("contains AES", not "encrypts files"). `aes/initialize` records a non-directional constructor; `aes/mode` records mode-specific presence. `hybrid` is symmetric payload crypto plus asymmetric key wrapping. |
-| `crypto/{encrypt,decrypt,sign,verify}` | The operation, whether or not the algorithm is known. |
+| `crypto/symmetric/<algorithm>`, `asymmetric/<algorithm>`, `hybrid` | Primitive or implementation presence with no narrower operation ("contains AES", not "encrypts files"). `aes/initialize` records a non-directional constructor; `aes/mode` records mode-specific presence; `aes/transform` covers an AES operation whose direction is not established. `hybrid` is symmetric payload crypto plus asymmetric key wrapping. |
+| `crypto/{encrypt,decrypt,sign,verify}` | The operation, whether or not the algorithm is known. `decrypt/transform` separates symmetric and asymmetric methods from decryption whose method is unspecified; constructors remain in `decrypt/initialize`. |
 | Public-key signatures | Signing and verification use `crypto/sign` and `crypto/verify`. Named primitive presence stays with its algorithm; an undirected class or symbol reference stays in metadata. MACs, key formats and the file’s own signature retain their own subjects. The former `crypto/asymmetric/signature` directory is retired. |
-| `crypto/cipher` | Cipher capability with no named algorithm or direction (a bare `Cipher`, Go GCM block-size errors). Record any known family in the rule. |
+| `crypto/cipher/{mode,io,authentication,reference,unspecified}` | Cipher behavior without a more specific algorithm or direction. Separate mode selection, cipher-stream I/O, authentication-tag handling, named references and otherwise unspecified cipher use. Put algorithm-specific evidence under that algorithm when it is established. |
 | `crypto/hash/{digest,hmac}` | Cryptographic digest or MAC, including implementation presence; CryptoAPI hashing is `digest`. `digest/<algorithm>` (`md5`, `sha1`, `sha2`, `sha3`, `blake`) holds rules whose matcher names the algorithm, whatever the language; `digest/unnamed-algorithm` holds evidence that names none (`createHash(alg)`, `ComputeHash`). A digest compared against an embedded value is `os/security/auth/digest-comparison`. Mining markers are not hashing: Stratum and proof-of-work references are `communications/blockchain/mining`. Noncryptographic checksums → `data/checksum`. |
 | `crypto/kdf` | Key derivation, whether or not the algorithm is known (PBKDF2 parameters, salt). |
 | `crypto/key/{generate,import,export,exchange,derive,representation}` | Key lifecycle and representation. Bitcoin WIF is a key representation, not a mnemonic. |
@@ -957,6 +958,12 @@ Mixed decryption and unrelated network or resource co-occurrences stay in their
 respective profiles rather than asserting one bound operation. Explicit XChaCha20
 transformation and operation-specific XOR, HMAC and key helper references
 belong to their behavioral subjects even when only names are available.
+
+`crypto/encrypt` separates `initialize`, `transform`, `file`, `sensitive`,
+`reference`, and `unspecified` evidence. References do not establish a call;
+file and sensitive-data subjects require evidence of that subject, while mixed
+stages stay unspecified. Cipher authentication-tag retrieval belongs under
+`crypto/cipher/authentication`.
 
 `crypto/symmetric/stream/rc4` divides by the evidence's algorithmic role.
 `key-schedule` holds key scheduling and initialization clues; `transform` holds
@@ -997,7 +1004,7 @@ chain RPC → `communications/blockchain/client`; provider-specific endpoint
 references → the provider in `well-known/`; unbound RPC fields and provider-set
 profiles → `metadata/file/profile/blockchain`; wallet UI → `ui/controls/wallet`; wallet files
 → `fs/path/wallet`. Signing arbitrary messages is `crypto/sign`.
-An indexed XOR expression printed as a character is `data/bitwise/xor/indexed`; it does not alone establish decoding or delivery. An XOR-named function without an observed operation is source function naming; XOR cipher or key wording in a string literal is a cryptography literal, not an implementation.
+An indexed XOR expression printed as a character is `data/bitwise/xor-forms/indexed`; it does not alone establish decoding or delivery. An XOR-named function without an observed operation is source function naming; XOR cipher or key wording in a string literal is a cryptography literal, not an implementation.
 
 A keyed XOR cipher is `crypto/symmetric/xor`; XOR scrambling is
 `data/{encode,decode}/xor`; a bare XOR instruction is neither.
@@ -1184,6 +1191,7 @@ in a consuming rule; the atom must not acquire a direction from its consumer.
 | `mem/local-storage` | Thread- and fiber-local storage allocation, lookup, assignment and release. TLS here means thread-local storage, not transport security. These APIs do not create or schedule execution contexts. |
 | `mem/{map,unmap}`, `mem/create`, `mem/anonymous/create` | Mappings (`mremap` is `map`, not proof of a size change); shared and image-section objects; private heap creation (`create/heap`, distinct from allocating from a heap); anonymous file descriptors (`memfd_create` proves no execution from it). An unbound heap API and flag observation is a memory profile. |
 | `mem/{read,write,protect,query,advise,lock,gc,sync}` | Access (local, remote or physical, when established), permissions, inspection, advice, pinning, GC, cache visibility. RWX alone is neutral; writing to another process transfers no execution. |
+| `mem/load` | Loading code or data into memory when the operation is not more specific; use the established copy, read, write or map operation when supported. A loader name is a reference, not proof that loading or execution occurred. |
 | `mem/combined` | Composites needing one alternative across memory operations. |
 | `mem/{heap-spray,stack-pivot,overflow}` | The required spray layout, stack redirection or out-of-bounds write; allocation, stack access or an unsafe API alone is not enough (MBC C0006, C0009, C0010). |
 | `hardware/{input,display,block,flash,gpu,wireless,smartcard,serial,iokit}/<operation>` | Device I/O and control. Input: `event`, `device`, keyboard `hook`/`listener`/`poll`/`layout`/`simulate`, mouse `position`/`simulate`, and `media` for audio-or-video interfaces (`getUserMedia`). A generic window hook is `ui/window/hook`. |
@@ -1943,18 +1951,20 @@ variable command invocation in a shell belongs under
 `process/create/shell/variable-command`, even when its reconstructed contents
 are unknown. Named commands belong with the operation or target they indicate.
 
-`metadata/file/profile/finance` groups financial-language observations with
-other file characteristics. Financial terms alone do not establish a lure,
-theft or a particular malware family.
+Financial terms alone do not establish a lure, theft or a malware family.
 
 `metadata/package/files/android-assets` records Android asset and resource
-member facts. `metadata/file/profile/android-asset-context` groups those facts
-with surrounding APIs, permissions or layout; names alone do not establish
-that a payload was staged or executed.
+member facts. Combine those facts with APIs and permissions under the likely
+operation or objective when the evidence supports one; an asset name alone
+does not establish that a payload was staged or executed.
 
-`metadata/file/profile/eval-reference` records textual or encoded evaluation
-references, while `script-evaluation` groups evaluation with other file
-context. A reference alone does not establish execution.
+`metadata/package/files/msi` separates installer identity, content and
+configuration. MSI command and privilege-request clues belong with the
+corresponding behavior. Product names, publisher fields and file size alone
+are not proof that an installer is fabricated or malicious.
+
+Evaluation references are partial interpreter behavior; use the likely
+`process/interpreter/eval` mechanism without claiming that a call occurred.
 Source showing an evaluator applied to file or URI content belongs under
 `micro-behaviors/process/interpreter/eval/source`; its description should
 identify the observed source without claiming the code ran. Evaluation of
@@ -1988,8 +1998,14 @@ with streamed or event-delivered network content. Other in-process network
 evaluation remains under `network/in-process`; streaming is a mechanism,
 not proof that every matched event flows into the evaluator.
 
-`metadata/file/profile/process/network` groups combined network-related process
-evidence whose individual operations do not establish a complete execution chain.
+Combined network and process evidence belongs with its likely operation or
+objective, such as staged execution, remote control or scheduling. Describe
+partial and co-occurring evidence as such; a path need not prove data flow.
+
+`anti-static/obfuscation/encoding/xor` separates concealed strings, paths,
+execution and otherwise unspecified XOR concealment. Generic XOR operations and
+name references belong in `micro-behaviors/data/bitwise/xor` or
+`data/encoding/xor`; XOR alone does not establish concealment.
 
 `micro-behaviors/communications/http/download/cli` groups command-line
 download evidence by web cmdlet, curl/wget, other utilities, and combinations
@@ -2415,6 +2431,10 @@ decoding, or any other operation.
 name alone does not establish geofencing. Locale registration, selection and
 locale-aware formatting are behaviors; place their evidence under
 `micro-behaviors/data/format/locale` or the more specific operation it supports.
+Country-code tokens and clusters are partial evidence for country-aware
+processing, not proof that a program queries a locale or restricts execution.
+Country selector data belongs with the UI selection it supports; translated UI
+labels belong with UI localization. Describe the observed evidence precisely.
 
 `metadata/lang/source/literal` records reusable properties of literal objects,
 such as a numeric sequence inside a string or quoted source text. It is not a
