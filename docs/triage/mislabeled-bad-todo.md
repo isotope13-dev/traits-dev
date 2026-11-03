@@ -9,11 +9,11 @@ The requested priority is listed first; remaining filetypes are alphabetical. `w
 - [x] package.json: `x-triage-bad`, then `x-improve` — 20 good, 14 bad, 4 inconclusive; see `package-json-bad-review-2026-11-02.md`
 - [x] jpeg: `x-triage-bad`, then `x-improve` — 36 good, 3 bad, 1 inconclusive; see `jpeg-bad-review-2026-11-03.md`
 - [x] gif: `x-triage-bad`, then `x-improve` — 35 good, 2 bad, 3 inconclusive; see `gif-bad-review-2026-11-03.md`
-- [ ] whl: `x-triage-bad`, then `x-improve`
+- [x] whl: `x-triage-bad`, then `x-improve` — 28 good, 10 bad, 3 dual-use; see `whl-bad-review-2026-11-03.md`
 - [x] png: `x-triage-bad`, then `x-improve` — 40 good; see `png-bad-review-2026-11-03.md`
-- [ ] csharp: `x-triage-bad`, then `x-improve`
-- [ ] 7z: `x-triage-bad`, then `x-improve`
-- [ ] apk_alpine: `x-triage-bad`, then `x-improve`
+- [x] csharp: `x-triage-bad`, then `x-improve` — 34 good, 5 bad, 1 inconclusive; see `csharp-bad-review-2026-11-03.md`
+- [x] 7z: `x-triage-bad`, then `x-improve` — 36 bad, 4 good; see `7z-bad-review-2026-11-03.md`
+- [ ] apk_alpine: `x-triage-bad`, then `x-improve` — 30 of 33 samples documented; remaining findings are tracked in `apk-alpine-bad-review-2026-11-03.md`
 - [ ] apk_android: `x-triage-bad`, then `x-improve`
 - [ ] applescript: `x-triage-bad`, then `x-improve`
 - [ ] asar: `x-triage-bad`, then `x-improve`

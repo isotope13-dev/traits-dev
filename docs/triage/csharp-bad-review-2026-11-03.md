@@ -1,6 +1,6 @@
 # C# snapshot review — 2026-11-03
 
-This review is in progress. Labels below were recorded with Hopper after both current scanners and uncached validation. The snapshot paths may retain their prior labels.
+This review covers all 40 snapshot samples. Labels below were recorded with Hopper after both current scanners and uncached validation. The snapshot paths may retain their prior labels.
 
 - `6d2d1914e4aa56b27c73061fe539ffd3aeba99654cd1e83b5d25c778cfb17d12` — **bad** — Unbounded libc fork loop; direct fork-bomb detection.
 - `0ee2a21ba14bbd0cc10f9a1513156b62044693ac613ad41deb817a24360cb223` — **bad** — Prints transformed AMSI-bypass PowerShell; the decoded memory-protection and patch-copy co-occurrence is detected when scanned separately. Automatic recovery of its long encoded payload remains a coverage gap.
@@ -10,7 +10,18 @@ This review is in progress. Labels below were recorded with Hopper after both cu
 - `722756d0fe2ea21acbb85e5a88837fc3cdbdbea5f03561429a87a0211dbe0800` — **good** — Discord command methods have empty bodies; this standalone helper implements no behavior.
 - `58c463ee96c3f1ca11e6b888d67e8398cf32b6ad5e466d89ee15d36cd8d8d52a` — **inconclusive** — FTP command file retrieves an executable; remote executable content is unavailable for analysis. File contents must not be copied into reports because they include authentication material.
 
-The large ZIP sample `050a6d8d8e9a` remains pending: local scanning produced 9,215 records, with 5,949 records reporting flow or embedded-source analysis gaps. A bounded keyword search found 17 files with process-related terms, 30 with credential-path terms, 76 with download or evaluation terms, 16 with installation-hook terms, and one with a persistence term. An initial review of process matches found mostly build, test, and version-reporting code; other candidates remain to be reviewed. This search does not establish absence of malicious contents; its contents have not been fully reviewed.
+The large ZIP sample `050a6d8d8e9a` was reviewed as a whole. All 9,014
+archive files, including four native shared libraries and the WebAssembly
+module, match byte for byte the [upstream CCXT commit](https://github.com/ccxt/ccxt/tree/1c792db3b934).
+The archive provides exchange-trading code and signing helpers; inspected
+process, credential, network, workflow and installer candidates serve those
+functions and the build system. Fresh Cleave and Atomscan scans found no
+suspicious or hostile traits in 9,184 and 8,087 records respectively; both
+reported 5,949 records with flow or embedded-source gaps. Those gaps limit
+what the scans alone establish, and the upstream match is provenance evidence,
+not proof of benign behavior by itself. The reviewed artifact is **good**;
+Hopper moved it from pending to good after uncached validation passed.
+
 - `5467bad6e8a57df646c8d8b39a1587b92658ab0a5a05b1c47f97dd315cf4142d` — **good** — Commented-out plugin interface only.
 - `0dbabe84a701e753096bd62febbb70ea39ab1d1d2626c01ab5180b2e3a6fd71c` — **good** — MessagePack type enumeration.
 - `d0fe0ec9af1510ce214fa665757056906baf9ed29f2db88874333de3685b1426` — **good** — Windows theme assembly metadata.
@@ -50,4 +61,4 @@ The nine embedded-source gaps are GitHub Actions runner substitutions: the scann
 
 The top-level JavaScript install hook fetches public project statistics and prints a donation message. Evaluation candidates include a build-time source transformation and CLI argument evaluation. The CLI can optionally read exchange credentials from environment variables and configure a proxy. A bounded inspection of shell files found a checksum-verified Composer installer, build and cleanup commands, and an optional skill-document downloader.
 
-The archive also includes four native shared libraries and a WebAssembly binary. Their no-high-finding scans, exported signing/trading functions, and Go build metadata are consistent with the claimed signing role, but do not prove every behavior or establish their provenance. The archive remains pending: the compiled modules and thousands of incomplete flow analyses prevent a confident artifact-wide decision from the checks completed so far.
+The archive also includes four native shared libraries and a WebAssembly binary. Their no-high-finding scans, exported signing/trading functions, Go build metadata, and exact byte matches to the upstream commit support their role in this package. Incomplete flow analysis remains a coverage limitation.

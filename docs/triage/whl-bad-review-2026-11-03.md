@@ -1,10 +1,33 @@
 # Wheel mislabeled-bad review
 
-The snapshot contains 40 files: 39 wheel files and one ZIP archive. Both
-scanners have scanned all 40 files, including the larger archive. An initial
+The snapshot contains 41 files: 40 wheel files and one ZIP archive, including
+one wheel recovered after the original snapshot. Both scanners have scanned
+all 41 files, including the larger archive. An initial
 scan is not a classification,
 and a package's distribution name or collection label is not evidence of its
-behavior.
+behavior. The previously missing wheel
+`360a1fbed512aa82246977b76f2a8bc1ccfc794b79bd23f39f35c62d1502675a`
+(`data-proxy-for-test-0.1.1`) was recovered from PyPI and verified against its
+Hopper SHA-256. The verified bytes were restored to the review snapshot and
+uploaded to Hopper, which cleared its missing status.
+
+`360a1fbed512aa82246977b76f2a8bc1ccfc794b79bd23f39f35c62d1502675a`
+(`data-proxy-for-test`) copies the identity and layout of the legitimate
+`mcp-proxy` project, while adding a `.pth` file that imports its cache module
+at each Python startup. That module immediately fetches two named files from a
+configured cloud-storage bucket into a home-directory cache. The recovered code
+explicitly refuses to execute the cached files; the scan must not claim an
+execution that is absent. The exact wheel digest is also independently listed
+in [OSV MAL-2026-10642](https://osv.dev/vulnerability/MAL-2026-10642), whose
+source analysis identifies the unexpected startup staging added to the copied
+project. This is a malicious supply-chain staging package; Hopper retained
+**bad** and confirmed the recovered bytes. A bound source-level observation
+now follows the import-time call chain to a named downloader; two suspicious
+findings accurately report the bucket/cache context and archive co-occurrence
+with a startup hook. Both scanners agree and uncached validation passes.
+General cross-file linkage between a `.pth` import and its module, and between
+the named downloader and its implementation, remains a detection gap; the
+co-occurrence findings do not assert those connections.
 
 `2556855234f6570def02ffbe93e560c64eca2926cb65f042e2e81f34bc6b22d9`
 (`mpl_presentation_styles`) installs a sourceless bytecode
@@ -80,12 +103,19 @@ Both scanners report the lure, and Hopper confirmed **bad** for both. Two
 additional SMB findings now describe file/archive co-occurrences as suspicious
 instead of asserting an unproven connection between the operations.
 
-`251902a7a156` (`fantasy_hockey_notifier_cdk`) contains a JSII archive with
-5,747 members, including bundled AWS SDK and other JavaScript dependencies.
-The initial local scan represented 5,777 records and Atomscan 5,452; each
-reported 2,526 records with analysis gaps and neither reported suspicious or
-hostile traits. The package's own code and nested dependencies remain under
-review; the absence of findings alone is not a classification.
+`251902a7a156ff0986f488b9d33051149fab99bb5df44707779f1103f93bb589`
+(`fantasy_hockey_notifier_cdk`) includes a JSII archive with 5,747 members.
+Its own JavaScript retrieves a configured ESPN cookie from AWS SSM with
+`WithDecryption`, reads league events from ESPN, and sends notifications to a
+configured SNS topic or Discord webhook. The 106 bundled dependency manifests
+had two prepare scripts (Husky and a MIME build); review of bundled code for
+credential and process-execution patterns did not identify an attack. The SSM
+observation now recognizes both singular and plural parameter commands while
+binding decryption to the command object; a boundary test covers that change.
+Fresh Cleave and locally built Atomscan scans found no suspicious or hostile
+traits, with 5,754 and 5,452 records respectively; Atomscan reported 2,526
+records with analysis gaps. Uncached validation passed, and Hopper moved the
+wheel to **good**.
 
 `985ada2bb71018594b9b1b944dd6f9f326ef0914c08804d7a39abe8e7bc0a39d`
 (`baidubsrc`) contains one inert greeting function and distribution metadata,
@@ -238,13 +268,25 @@ The duplicate observations were made notable, retaining one suspicious
 credential-exposure finding; both scanners agree and Hopper moved both to
 **good**.
 
-The larger archive `b7062077c164` contains a Windows Python installation.
-Atomscan reported a hostile screenshot/exfiltration composite in a bundled
-`mfc140u.dll` based only on DPAPI, GDI, and WinINet API co-occurrence. Those
-APIs do not demonstrate theft or network upload. The composite was moved to a
-neutral file-profile observation. Both scanners now report that observation
-without a suspicious or hostile finding on the DLL, and uncached validation
-passes. The revised local scan represented 12,133 files including nested
-archive members; its remaining suspicious findings are a wheel startup/exit
-co-occurrence and a credential-manager API reference. The archive's full
-content review remains pending.
+The larger archive `b7062077c164` is a Windows Python installation. Atomscan
+initially reported a hostile screenshot/exfiltration composite in a bundled
+`mfc140u.dll` from DPAPI, GDI, and WinINet API co-occurrence; the composite was
+moved to a neutral profile because those APIs do not prove exfiltration. A
+separate wheel-wide startup-hook/exit co-occurrence likewise did not establish
+that the hook reaches the exit and is now a neutral archive profile.
+
+Static provenance checks matched 34 unmodified files to the official Python
+3.12.10 embedded distribution; its modified `_pth` enables the bundled site
+packages. Of 33 installed distribution RECORD files, 31 matched published PyPI
+wheel records on 2,420 common hashed entries, with no differences. The two
+source-only packages' Python files matched their published source archives.
+The 100 Python files in `Lib/distutils` matched the bundled setuptools copy,
+and 431 files in the `get-pip.py` payload matched the published pip 25.0.1
+wheel. The only unmatched launcher was the vendored pip launcher with a small,
+ordinary `wheel.cli` entry point. Three unrecorded fernet package files were a
+one-line import and copies of its upstream module and setup file. These checks
+and review of the installer establish that this is a general-purpose Python
+runtime, so it is **good**; Hopper already had that label. Fresh scans found one
+suspicious credential-manager API finding in the `win32cred` binding and no
+hostile findings. Cleave represented 11,907 records, Atomscan 5,160, with
+1,872 records reporting analysis gaps in each; uncached validation passed.

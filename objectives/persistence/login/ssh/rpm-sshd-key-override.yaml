@@ -1,0 +1,56 @@
+defaults:
+  platforms: [linux]
+  for: [shell]
+traits:
+  - id: alternate-key-file-shell-append
+    desc: Shell appends SSH key to file
+    crit: notable
+    conf: 0.98
+    if:
+      type: tree-sitter
+      language: shell
+      query: |
+        ((redirected_statement
+          body: (command name: (command_name) @command argument: (_) @key)
+          redirect: (file_redirect ">>" destination: (_) @path))
+          (#eq? @command "echo")
+          (#match? @key "^[\"']ssh-ed25519[ \t]+[A-Za-z0-9+/=]{12,}")
+          (#match? @path "^/var/lib/"))
+  - id: alternate-sshd-key-file-injection
+    desc: Alternate sshd store and key append text
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule alternate_sshd_key_file_injection {
+          strings:
+            $assignment = /(^|\n)[ \t]*printf[ \t]+["'][^\r\n]{0,200}AuthorizedKeysFile=\/var\/lib\/[A-Za-z0-9_.\/-]{1,100}/
+            $append = /(^|\n)[ \t]*echo[ \t]+["']ssh-ed25519[ \t]+[A-Za-z0-9+\/=]{12,256}["'][ \t]*>>[ \t]*\/var\/lib\/[A-Za-z0-9_.\/-]{1,100}/
+            $path = /\/var\/lib\/[A-Za-z0-9_.\/-]{1,100}/
+          condition:
+            #path <= 64 and #assignment <= 16 and #append <= 16 and
+            for any a in (1..#assignment) : (
+              for any w in (1..#append) : (
+                for any p in (1..#path) : (
+                  for any q in (1..#path) : (
+                    @path[p] >= @assignment[a] and @path[p] + !path[p] == @assignment[a] + !assignment[a] and
+                    @path[q] >= @append[w] and @path[q] + !path[q] == @append[w] + !append[w] and
+                    !path[p] == !path[q] and
+                    for all i in (0..(!path[p] - 1)) : (uint8(@path[p] + i) == uint8(@path[q] + i))
+                  )
+                )
+              )
+            )
+        }
+composite_rules:
+  - id: rpm-sshd-key-store-backdoor
+    desc: RPM scriptlet backdoors sshd key store
+    crit: hostile
+    conf: 0.99
+    attack: T1098.004
+    all:
+      - id: alternate-sshd-key-file-injection
+      - id: alternate-key-file-shell-append
+      - id: micro-behaviors/communications/ssh/server::sshd-service-alternate-key-override
+      - id: metadata/build/package/maintainer-scripts::rpm-install-scriptlet-body
