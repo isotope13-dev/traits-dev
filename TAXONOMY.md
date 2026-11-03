@@ -1383,7 +1383,7 @@ context by ___". **The first matching row wins:**
 | A shell invokes a variable command target | `shell/variable-command` (the target may resolve to a shell builtin) |
 | An interpreter is handed source text (`node -e`, `python -c`) | `process/deploy/interpreter-command` |
 | A Windows Script Host execution or script-moniker API | `process/interpreter/wsh` |
-| WScript.Shell Run launch evidence | `wsh` |
+| WScript.Shell Run with an executable target | `exec` for a fixed target, `variable` for a computed target; unbound call text remains metadata |
 | A process-starting cmdlet such as Start-Process or its saps alias | `cmdlet` |
 | A library object standing for the child (`Popen`, `NSTask`, `ProcessBuilder`) | `subprocess` |
 | Opening or dispatching a URL by its scheme or a URL-specific handler | `communications/url/open` |
@@ -1454,6 +1454,10 @@ their respective behavior or evidence.
 process targets, Rust command paths and parsed shortcut targets. A target describes what activation would invoke; it does not
 prove activation occurred. A raw executable path elsewhere in a shortcut does
 not establish that path as its target.
+`process/config/parent` groups parent-process launch attributes and related
+configuration clues; querying an existing parent belongs with process identity
+or information queries. `process/config/window` groups window visibility
+settings and related launch-configuration evidence.
 Window options, serialized names and unbound WMI startup clues are not process
 creation by themselves. Keep hidden-launch evidence separate from those
 configuration and profile observations; a generic hex literal does not name a
