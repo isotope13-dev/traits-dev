@@ -23,7 +23,7 @@ with tempfile.TemporaryDirectory(prefix='installer-profile-') as tmp:
     )
     reports = [json.loads(line)['files'][0] for line in result.stdout.splitlines() if line]
     ids = {Path(r['path']).name: {t['id'] for t in r.get('traits', [])} for r in reports}
-    profile = 'metadata/file/profile/installer/lifecycle::macpkg-hook-profile-curl-clues'
+    profile = 'objectives/execution/trigger/package/lifecycle::macpkg-hook-profile-curl-clues'
     assert profile in ids['preinstall'], ids['preinstall']
     assert profile not in ids['other.sh']
     assert not any(t.startswith('objectives/supply-chain/install-hook/') for group in ids.values() for t in group)

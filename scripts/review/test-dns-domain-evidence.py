@@ -134,7 +134,7 @@ const tenantId="x", clientId="x", clientSecret="x", mailbox="x";
     assert chunk not in traits['other_chunk.go']
     wrapper = 'micro-behaviors/data/string/concat/expression::p-dot-wrapper-expression'
     hex_call = 'micro-behaviors/data/string/concat/expression::hex-named-call-dot-concat'
-    combined = 'metadata/file/profile/encoding/composition::split-hex-p-wrapper-clues'
+    combined = 'micro-behaviors/data/encode/hex::split-hex-p-wrapper-clues'
     assert {wrapper, hex_call, combined} <= traits['wrapper.js'].keys(), traits['wrapper.js'].keys()
     assert wrapper not in traits['no_wrapper.js'] and combined not in traits['no_wrapper.js']
     channel = 'objectives/command-and-control/channel/dns::powershell-dga-script-command-channel'

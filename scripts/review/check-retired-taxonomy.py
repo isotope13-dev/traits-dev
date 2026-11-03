@@ -5,6 +5,64 @@ import re
 from pathlib import Path
 
 RETIRED = {
+    'metadata/file/profile/encoding/serialization':
+        'Use the supported parsing or serialization behavior.',
+    'metadata/file/profile/file-operation/write-api':
+        'Use the supported filesystem read or write behavior.',
+    'micro-behaviors/fs/read/file/full':
+        'Use file content reads; not every observation establishes a complete read.',
+    'metadata/file/profile/file-operation/deletion':
+        'Use the supported filesystem deletion behavior.',
+    'metadata/file/profile/file-operation/read':
+        'Use the supported filesystem read or enumeration behavior.',
+    'metadata/file/profile/registry/messaging':
+        'Use the registry software target or supported collection behavior.',
+    'metadata/file/profile/registry/execution':
+        'Use the supported process-hijack or impact objective.',
+    'metadata/file/profile/registry/configuration':
+        'Use the supported session-manager, service or policy behavior.',
+    'metadata/file/profile/registry/association':
+        'Use registry association operations or the supported bypass objective.',
+    'metadata/file/profile/agent/management':
+        'Use the likely agent operation or supported supply-chain objective.',
+    'metadata/file/profile/randomness':
+        'Use random generation or the supported timing behavior.',
+    'metadata/file/profile/xor':
+        'Use the supported XOR operation.',
+    'metadata/file/profile/editor':
+        'Use the named editor library or the likely interpreter behavior.',
+    'metadata/file/profile/timezone':
+        'Use locale timezone metadata or the supported behavior.',
+    'metadata/file/profile/smb-protocol':
+        'Use SMB communication behavior and protocol components.',
+    'metadata/file/profile/shell-token':
+        'Use shell interpreter evidence.',
+    'metadata/file/profile/data-dispatch':
+        'Use the likely evaluation, callback or dispatch behavior.',
+    'metadata/file/profile/data-retrieval':
+        'Use the likely retrieval, decoding or staging behavior.',
+    'metadata/file/profile/alphabet':
+        'Use character-set alphabet metadata or the supported operation.',
+    'metadata/file/profile/user-input':
+        'Use input monitoring or the supported collection objective.',
+    'metadata/file/profile/console-api':
+        'Use console input or output behavior.',
+    'metadata/file/profile/secret-storage':
+        'Use the supported credential-access objective.',
+    'metadata/file/profile/windows-input-capture':
+        'Use the supported multi-source collection objective.',
+    'metadata/file/profile/clipboard-process':
+        'Use the clipboard monitoring behavior.',
+    'metadata/file/profile/office-addin':
+        'Use the likely plugin execution trigger.',
+    'metadata/file/profile/industrial-control':
+        'Use industrial vocabulary or the supported behavior.',
+    'metadata/file/profile/http-response':
+        'Use the likely remote-command behavior or objective.',
+    'metadata/file/profile/download-execution':
+        'Use the likely acquisition, execution, package trigger or Git operation.',
+    'metadata/file/profile/installer/layout':
+        'Use installer metadata by subject or the supported behavior.',
     'metadata/build/toolchain':
         'Use the compiler, build configuration, tool name or observed operation.',
     'micro-behaviors/os/env/enumeration':

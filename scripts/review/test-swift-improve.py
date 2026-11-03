@@ -76,7 +76,7 @@ for peer in candidates {
     config = "micro-behaviors/os/autorun/cron::swift-crontab-stdin-configuration"
     ssh_list = "micro-behaviors/fs/directory/readdir/language::swift-ssh-directory-listing"
     erase = "objectives/evasion/indicator-removal/accounting::swift-login-accounting-zero-write"
-    read_post = "micro-behaviors/fs/read/file/full::swift-authorized-keys-read-post-clues"
+    read_post = "micro-behaviors/fs/read/file/content/unspecified::swift-authorized-keys-read-post-clues"
     tcp_loop = "micro-behaviors/communications/socket/connect/attempt::swift-range-tcp-connect-loop"
     delivery = "objectives/lateral-movement/worm/network::swift-subnet-executable-delivery-attempt"
     profile_label = "objectives/exfiltration/stealer/system-info/profile::swift-socket-profile-exfil"

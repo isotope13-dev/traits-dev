@@ -38,3 +38,17 @@ alternatives to that consumer: the hidden temporary-symlink launcher, socket
 receive near Python execution, and Base64 PE reconstruction with execution or
 permission clues. These references name the individual migrated rules rather
 than their new parent directories. Other staging branches remain to be audited.
+
+Five more Python-applicable successors were restored after reviewing their
+current conditions: the sandbox-gated encrypted archive launcher, RC4 with
+Rundll32 and anti-analysis, custom-alphabet cryptography with command creation,
+RC4 resource and system-operation clues, and passworded archive extraction with
+executable permissions and extended-attribute changes. Their current names
+describe the available evidence; the consumer does not assert a data flow
+between those clues and the secret-storage indicators.
+
+The archive review restored hidden or temporary archive extraction and two
+specific archive-name/download combinations. The reported-host combination
+requires the first archive-name combination, so it is already covered without
+another alternative. Individual archive-name and identifier fragments do not
+by themselves establish staging and were not added as standalone clues.

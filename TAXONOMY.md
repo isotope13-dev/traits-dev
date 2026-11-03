@@ -37,6 +37,31 @@ behavior or subject. The description must distinguish what was observed from
 what is inferred. "Most likely" is grounded in the matcher's required evidence,
 not in the most alarming explanation or the sample's known reputation.
 
+Use `micro-behaviors/data/retrieve` for an acquisition observation that
+explicitly admits distinct data sources, such as either a remote response or
+an image. Prefer a source-specific retrieval or extraction subject when the
+evidence selects one.
+
+`micro-behaviors/crypto/key/recover` groups evidence of key recovery, including
+combinations of public-key and recovered-secret-key terminology. Descriptions
+must distinguish names and co-occurrences from a demonstrated algorithm.
+
+SMB communication and protocol-specific supporting observations use
+`micro-behaviors/communications/smb`; a protocol marker alone remains a
+component and does not claim a successful connection.
+
+`metadata/` is for observations that do not imply a behavior or objective.
+When the required evidence reasonably points to an operation or purpose, put
+the trait in the best-supported `micro-behaviors/` or `objectives/` subject,
+even when it is indirect, partial, or expressed as configuration. A likely
+dropper configuration belongs with the dropper objective; interpreter and
+stdin clues that suggest execution belong with interpreter-stdin behavior.
+Do not require proof of data flow or execution before classifying the likely
+behavior. Keep the description faithful to the observed evidence and use
+severity and confidence to communicate uncertainty. Use metadata only when no
+meaningful behavior or objective can reasonably be inferred, and organize
+those observations by their actual subject rather than a generic profile.
+
 1. **Catalog observations, not specimens.** A sample yields many findings, each
    placed separately. Its reputation, its family, where its other rules live
    and spare directory capacity never choose a home.
@@ -1787,12 +1812,13 @@ URL or obfuscated evaluator alone does not establish decoded response code.
 Within `transformed`, classify the activation mechanism as `shell` for shell
 command execution, `child` for a separately launched interpreter, `constructed`
 for a Function or ScriptBlock constructor, and `direct` for the remaining
-evaluation sinks, in that order. Keep uncertain construction or unbound clues
-in a capability or evidence profile instead of asserting a completed chain.
+evaluation sinks, in that order. Classify uncertain construction or unbound
+clues by the likely capability or objective when one is supported, and describe
+the clues without asserting a completed chain.
 
 `file-exec` is split by launch mechanism: `command/*` (a shell or script host parses the launch), `spawn/*` (a process API launches a child; `native` for compiled images, `runtime` for language runtimes, `archive` for archive-related launches, `sfx` for self-extracting archive launches and `handler` for shell-associated file launches), `download/*` (direct network acquisition tied to likely activation; `native` for compiled images, `runtime` for source or bytecode handed to a language runtime, and `script-host` for a script handed to WSH, PowerShell or another host), `replace` (a staged file replaces the current process image), `detached` (hidden or background launch), `installer/*` (an installer transaction; `package` rules read the installer file, `script-package` rules concern script payloads in that file, and `invocation` rules read whatever launches it) and `shellcode`. Each matcher and description must retain the launch mechanism. `command/chmod` groups shell payload chains that change executable permissions before launch; `command/fetch` covers acquisition-and-launch chains without that requirement. `command/browser-control` groups browser-hosted COM scripts that save and launch fetched files; `command/script-host-download` covers other script-host download-and-launch chains. `command/browser-cache` covers script launches involving browser cache recovery; `command/browser-profile` covers profile-entry copying and execution when no cache path is established.
 
-Keep network acquisition and activation in the same behavior rule when both are supported; source-language or vendor names alone do not define a child category. A rule with only download and process-start references remains a supporting profile unless its matcher establishes a coherent likely chain.
+Keep network acquisition and activation in the same behavior or objective when their combination suggests that chain; source-language or vendor names alone do not define a child category. Do not demand proof that a downloaded object flows to a process before classifying the likely operation. Describe references and configuration as such rather than asserting an observed execution.
 
 `spawn/decrypted` groups admitted chains that launch after decryption when the
 executable type is not established; use a more specific spawn target when the
@@ -1900,7 +1926,7 @@ that it was written; an encoded name does not establish its eventual use.
 
 Native executable request profiles, WebClient retrieval, package-hook requests and named account endpoints follow their respective subjects. HTTP request clients retain generic client calls; endpoint, method, executable-download and package-specific clues follow their respective request subjects.
 
-Self-extractor and cabinet carrier text and related carrier profiles belong with installer archive profiles; executable setup directives belong with installer process configuration. Installer plugin references and related co-occurrence profiles belong with installer plugins. Generic uninstaller names retain their lifecycle subject.
+Installer metadata follows its subject under `metadata/installer`, including layout, configuration, package properties, bundle contents and resources. Move observations that indicate a likely operation to its behavior or objective. Self-extractor and cabinet carrier text and related carrier profiles belong with installer archive profiles; executable setup directives belong with installer process configuration. Installer plugin references and related co-occurrence profiles belong with installer plugins. Generic uninstaller names retain their lifecycle subject.
 
 `metadata/file/profile/staging` records file-staging and launch observations
 that fall short of indicating a likely deployment chain, such as names or
@@ -2379,6 +2405,16 @@ names in source or compiled content. A name alone does not establish that a
 privilege is present, enabled, requested, or manipulated.
 JVM constant-pool method-reference counts belong in `binary/symbols/count`;
 zero references does not imply that a class declares or executes no methods.
+
+`metadata/lang/charset/alphabet` records ordered character-set observations in
+source or binaries. A recognized sequence alone does not imply encoding,
+decoding, or any other operation.
+
+`metadata/lang/locale/timezone` records timezone names and catalogs, while
+`metadata/lang/locale/catalog` records translation message catalogs. A timezone
+name alone does not establish geofencing. Locale registration, selection and
+locale-aware formatting are behaviors; place their evidence under
+`micro-behaviors/data/format/locale` or the more specific operation it supports.
 
 `metadata/lang/source/literal` records reusable properties of literal objects,
 such as a numeric sequence inside a string or quoted source text. It is not a
@@ -3029,7 +3065,7 @@ for current mappings, resource splits and reference-set checks.
 | mb `process/interpreter/reflection` | mb `metaprogramming/reflection` | Code as code | Applied |
 | mb `process/script` | The actual execution mechanism (`process/interpreter/wsh` for WSH) | A carrier is not a mechanism | Applied |
 | mb `os/env/{enumeration,dump}`, `modify`, `{check,gate}`, `user-paths` | mb `os/env/{enumerate,write,test,path}` | Other topic leaves move to the subject they require | Applied (all six named legacy environment-operation directories are empty; further topic review is selective) |
-| mb `os/registry/access` (mixed historical cohort) | Registry operations and key subjects; host discovery, certificate stores, imports and evidence metadata | Keep neutral access only where no narrower operation or subject is supported | Applied (historical access rules separated by claim; generic write-or-delete compatibility group replaced by write evidence, dump-filter clearing includes emptying and deletion without treating both as writes, and the remaining multi-operation co-occurrence moved to a registry profile) |
+| mb `os/registry/access` (mixed historical cohort) | Registry operations and key subjects; host discovery, certificate stores, imports and evidence metadata | Keep neutral access only where no narrower operation or subject is supported | Applied (historical access rules separated by claim; generic write-or-delete compatibility group replaced by write evidence, dump-filter clearing includes emptying and deletion without treating both as writes, and the remaining multi-operation co-occurrence moved to registry key lifecycle behavior) |
 | mb `os/registry/manipulate` (retire) | Registry read, write, delete, key and hive operations; subject-specific persistence; metadata for names and co-occurrences | Classify by supported operation or outcome; do not treat generic setters as registry-specific without context | Applied (69 legacy rules reviewed; redundant API alias retired, Winlogon persistence and key-specific operations moved, and a set/delete co-occurrence no longer suppresses Run-key evidence as a presumed uninstaller) |
 | mb `os/service/driver` | mb `os/kernel/driver` | Drivers are not services | Applied |
 | mb `dylib/library`, `ui/framework` | meta, a capability, or `well-known/lib`, by claim | Implementation containers | Applied (`usb_init` export → `metadata/binary/symbols/exports`; libm imports → `metadata/binary/symbols/imports` ([inventory](docs/taxonomy-audit/taxonomy/libm-imports/migration.json)); terminal-editor project/version text → `metadata/binary/provenance/build`; TLS library names → `fs/path/library` ([inventory](docs/taxonomy-audit/taxonomy/tls-library-names/migration.json)); MFC42 name → `fs/path/library` and all three MFC API names → `metadata/binary/symbols/name/token` ([inventory](docs/taxonomy-audit/taxonomy/mfc-references/migration.json)); `ui/framework` has no YAML rules or live YAML references; both dylib/library and ui/framework are empty; remaining library observations are a selective subject review) |
