@@ -233,6 +233,10 @@ RETIRED = {
         'Use named tunnel tools or the observed forwarding behavior.',
     'metadata/file/profile/tunnel/provider':
         'Use named providers or the specific authentication and endpoint behavior.',
+    'metadata/file/profile/network-context':
+        'Use the evidenced communication, process, execution, or named subject.',
+    'metadata/file/profile/malware-reference':
+        'Use the named malware family or a neutral description of generic evidence.',
     'metadata/file/profile/network-context/storage':
         'Use the storage URL, web-storage write, or file-sync behavior.',
     'metadata/file/profile/network-context/dns':

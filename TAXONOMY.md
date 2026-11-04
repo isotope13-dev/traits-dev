@@ -954,7 +954,7 @@ Unbound text that merely resembles an operation name remains text evidence.
 | `crypto/{encrypt,decrypt,sign,verify}` | The operation, whether or not the algorithm is known. `decrypt/transform` separates symmetric and asymmetric methods from decryption whose method is unspecified; constructors remain in `decrypt/initialize`. |
 | Public-key signatures | Signing and verification use `crypto/sign` and `crypto/verify`. Named primitive presence stays with its algorithm; an undirected class or symbol reference stays in metadata. MACs, key formats and the file’s own signature retain their own subjects. The former `crypto/asymmetric/signature` directory is retired. |
 | `crypto/cipher/{mode,io,authentication,reference,unspecified}` | Cipher behavior without a more specific algorithm or direction. Separate mode selection, cipher-stream I/O, authentication-tag handling, named references and otherwise unspecified cipher use. Put algorithm-specific evidence under that algorithm when it is established. |
-| `crypto/hash/{digest,hmac}` | Cryptographic digest or MAC, including implementation presence; CryptoAPI hashing is `digest`. `digest/<algorithm>` (`md5`, `sha1`, `sha2`, `sha3`, `blake`) holds rules whose matcher names the algorithm, whatever the language; `digest/unnamed-algorithm` holds evidence that names none (`createHash(alg)`, `ComputeHash`). A digest compared against an embedded value is `os/security/auth/digest-comparison`. Mining markers are not hashing: Stratum and proof-of-work references are `communications/blockchain/mining`. Noncryptographic checksums → `data/checksum`. |
+| `crypto/hash/{digest,hmac}` | Cryptographic digest or MAC, including implementation presence; CryptoAPI hashing is `digest`. `digest/<algorithm>` (`md5`, `sha1`, `sha2`, `sha3`, `blake`) holds rules whose matcher names the algorithm, whatever the language; `digest/unnamed-algorithm` holds evidence that names none (`createHash(alg)`, `ComputeHash`). A digest compared against an embedded value is `os/security/auth/digest-comparison`. Mining markers are not hashing: Stratum protocol references are `communications/blockchain/stratum`, while mining-specific capabilities are `communications/blockchain/mining`. Hash-based proof-of-work belongs in `crypto/hash/proof-of-work`; it also supports non-mining uses. Noncryptographic checksums → `data/checksum`. |
 | `crypto/kdf` | Key derivation, whether or not the algorithm is known (PBKDF2 parameters, salt). |
 | `crypto/key/{generate,import,export,exchange,derive,representation}` | Key lifecycle and representation. Bitcoin WIF is a key representation, not a mnemonic. |
 | `crypto/certificate` | Parsing, validating, installing and storing certificates. The file's own signature is `metadata/signed`. |
@@ -1938,8 +1938,8 @@ activation belongs under `objectives/execution/payload/memory-branch`.
 and process evidence that does not establish a more specific behavior. For
 example, an HTTP reference near an execution call does not establish that the
 downloaded content was executed; a bound download-and-launch belongs with the
-supported execution behavior. The legacy `network-context/process` branch is
-retired: place its rules by the supported communication, process, execution,
+supported execution behavior. The legacy `network-context` branch is retired:
+place its rules by the supported communication, process, execution,
 exfiltration, or named-tool subject, and describe unbound observations as such.
 
 `communications/rpc` records RPC protocol fields and API references;
