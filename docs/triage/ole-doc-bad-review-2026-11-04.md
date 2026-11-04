@@ -1,0 +1,15 @@
+# OLE document mislabeled-bad review — 2026-11-04
+
+Reviewed 40 samples with Cleave and Atom, OLE stream and VBA extraction, and static Excel 4 formula inspection. Hopper confirmed 22 bad, 17 good and one inconclusive.
+
+The hostile set includes obfuscated Excel 4 macro sheets, an Office cross-application macro infector, an embedded PowerShell payload and two related VBA workbooks (`683516912ba4`, `4bd7b3fa7e97`) that allocate memory and dispatch a large encoded byte array through an enumeration callback. Both scanners now report the latter pair as hostile. Two additional workbooks (`b02be8a230c8`, `2ec1119c2b57`) reconstruct formulas from worksheet cells, create a hidden Excel 4 sheet and run its formulas; both scanners now report that combined behavior. An altered formula-assignment control clears.
+
+During the subsequent OOXML review, a benign Excel 4 fixture showed that an auto-running macro sheet alone is not proof of an attack. That generic finding is now suspicious. The obfuscated `769ab14597f0`, `d55b6d283b51`, `0066bedc61e5`, `9b8516fcbe18` and `d4592471179f` remain hostile in both scanners through combinations of auto-run and BIFF formula-reconstruction or scattered-character dispatch tokens.
+
+`cc0f6df49467` is a text file containing a base64-encoded .NET PE despite its `.doc` extension. Static IL inspection shows a Discord download, decompression, assembly loading and reflective invocation. Both scanners now identify the original file using combined encoded binary and API evidence; changing the reflection API clears the control. The equivalent text-labeled file also matches. These rules use existing matchers and do not add a decoder or engine feature.
+
+The good samples are `528a3374cc52`, `a26ac93471d0`, `4254ee0078a8`, `9c64ffe191f2`, `da2ee6beb921`, `7a01c6d8555c`, `d1ceb41c265c`, `b8b7b85d3330`, `bb7c9efae6d6`, `914499c5e688`, `5e91a8f91dc6`, `92174e27cd78`, `f70e4d875839`, `ffb3152e993d`, `d5bac99722ad`, `6cecd0da0f4d` and `285aeb7be250`. They include a GUID, translation templates, a thumbnail cache and ordinary business spreadsheets. Macro review showed that generic auto-open plus HTTP, memory-copy APIs, error handling, dynamic property access and long identifiers can occur in business automation without establishing malicious activity. The corresponding rules now describe their evidence accurately and avoid promoting those features to hostile in isolation. A purported MSI-execution finding now requires an MSI command instead of merely an unrelated CreateObject call.
+
+`4f98e7c31c79` is inconclusive: it is a compound Adobe Flash authoring project whose internal authoring streams were listed, but its proprietary ActionScript content was not fully reconstructed. No malicious behavior was established, and the executable project content could not be ruled out from the available inspection.
+
+Both scanners were checked against the changed detections and altered controls. Full `make validate` passed: 3270 hostile, 2088 suspicious, 9437 notable and 1396 baseline fixture checks.

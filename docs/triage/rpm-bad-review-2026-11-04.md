@@ -1,0 +1,3 @@
+# RPM filetype mislabeled-bad review — 2026-11-04
+
+The only sample, `4a129bd52ba6`, is a source archive containing RPM builds and separate nested Windows ZIP files. One ZIP launches an obfuscated Lua payload from a batch file; both scanners identify the payload's Defender-exclusion and persistence indicators, along with screenshot-capture evidence. The containing archive is bad under the embedded-payload policy. This conclusion applies to the archive contents and does not independently establish that the RPM binaries themselves are malicious. Hopper confirmed bad. Existing findings cover the observed behavior, so no taxonomy change was necessary.

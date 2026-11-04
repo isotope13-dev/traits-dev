@@ -1,0 +1,23 @@
+# RTF filetype mislabeled-bad review — 2026-11-04
+
+The 40 samples were reviewed: 35 bad, four good and one inconclusive. The classifications below have been recorded in Hopper.
+
+`0f2819c61217` and `09536a88ac59` contain malformed shape-property data and encoded x86 PEB traversal/shellcode. `0c5483cfafe6` contains an explicit malformed shape overflow payload. `e4afb43a13e0` combines a nested malformed Equation object and encoded x86 machine code; a new finding identifies the combination in both scanners, and changing the machine-code sequence clears the control. These are bad. A new finding combines the malformed shape property and shellcode; both scanners match the first two and changing the shellcode bytes clears the control.
+
+`a77699a60334`, `f619b3ea2d4f` and `86e7550e375d` contain fraudulent ATM/courier prize messages soliciting personal details. `e914ebf360eb`, `5eba3fa6b087`, `710cef561b8b`, `923c3833885a`, `fbe290038700`, `e82558cbe8b2`, `2d3289d23dc0`, `62d7140946d3`, `0a6cf0398058`, `424cd49b0e64`, `8e59f63e0738`, `f9518e3668e8` and `fdb5491684d6` contain fraudulent unclaimed-lottery messages and personal-information forms. These are bad. New findings combine the lure with requested contact fields; both scanners match, and changing the discriminating field or prize wording clears the respective controls.
+
+`80cdae397418`, `5d2b07509547` and `9da27396c195` hide Microsoft login-clone HTML in a percent-encoded JavaScript writer. The decoded pages submit password form data to external endpoints. `3ddf02a29f90`, `8ab7fc39b705`, `4c4ca01e2ee4` and `88985656db76` contain a different encoded Office 365 login clone that posts credentials via AJAX. These are bad as embedded phishing payloads; their script execution depends on the content being handled as HTML rather than solely as an RTF document. Both scanners flag the encoded wrappers; direct decoded pages are also flagged for the first family. Trusted-Microsoft destination and password-removal controls clear the first finding, and changing the credential-post field clears the second. The trusted-destination exception can suppress a page that sends data to both trusted and untrusted endpoints.
+
+`2b48626c3a57` is a Russian-language political article with no embedded object; `87f7613d1e0b` is an inert named test file whose truncated OLE link has no target or object data. Both are good as standalone files. `4bfb8ce2f444` and `e6f8c685fa9c` are RTF documents containing inert dumps of application binary strings, with no embedded RTF objects; searches for command execution and common payload patterns found none. They are good as standalone text.
+
+`abab55c3c210` is bad: static extraction and decoding of its embedded encoded VBE reveals a script that creates a batch file, downloads multiple remote stages, runs a hidden script and deletes itself. Neither scanner exposed the embedded VBE from the original RTF in the initial scan; this extraction limitation remains under review.
+
+`1d4a452b4969` and `bcdb0dc3ce0b` use interleaved RTF controls to conceal auto-updating OLE objects carrying remote MSI installation commands. Existing findings match in both scanners; both are bad.
+
+`5b2649287e76` contains an auto-updating OLE link to a remote HTA. A new finding combines link/update controls with hex-encoded UTF-16 HTTPS and HTA indicators; both scanners match and replacing the HTA extension clears the control. The finding combines document-level facts and does not independently establish that they belong to the same OLE target; extraction establishes that relationship for this sample. `0c91e7067660` and `48aa32a4490b` deliberately interleave byte nibbles to conceal auto-updating object data. `5c44f2648b2c` has massive malformed object parameters and a concealed auto-updating OLE object. These are bad as hostile obfuscation.
+
+`98af66351380` is bad as an embedded obfuscated JavaScript loader. Static extraction reveals a custom alphabet decoder, XOR, .NET transformation, ActiveX and dynamic evaluation. Both scanners identify the extracted script with the new combined finding, and replacing the eval alias clears the control. The original RTF did not expose that script in the initial scanner runs; the finding applies to the extracted payload, not the outer file.
+
+`3c7cb7d45fdb` is an approximately 40 MB Go source archive containing 11,652 entries, not a standalone RTF document. Both scanner runs reported no hostile findings, but the archive was too large for a complete source and embedded-payload review, so it is inconclusive. Hopper uses its purgatory compatibility target for this label.
+
+Full validation passed after the rule changes. No scanner engine features were added.

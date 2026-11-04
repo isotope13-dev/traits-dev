@@ -1,0 +1,11 @@
+# MP3 mislabeled-bad review — 2026-11-04
+
+Reviewed 40 entries with Cleave and Atom and inspected their content without executing it. Thirty-three are bad and seven good.
+
+The bad entries are `8dd75a13c2b4`, `a2130faf6dd2`, `d6e8aff62024`, `fc59bbb18f92`, `7264b19f1b0d`, `d43d2e55600c`, `6e965d76a1d9`, `175044939f38`, `76da5320e99a`, `e00a8ff9ec65`, `ebe1bb18a77c`, `bc2cc5089efb`, `f17d9dde7706`, `e6d9317a45af`, `14a1be0db090`, `b2470cbfedd0`, `e2bca952200e`, `500c5223f628`, `cc2cb3aa3999`, `56318b0dad10`, `cb24d0e007f9`, `7e6ac1ae23ae`, `eab14dd3f774`, `eefe7845f2e9`, `f2d45841060c`, `e419b7a0ef7f`, `02d5a5447b03`, `89ae5e1cccff`, `b77d1722dfc8`, `64f4e65887b4`, `b8599f309225`, `404339b3783b` and `c89081b964b1`.
+
+Twenty-seven audio carriers contain hundreds of script blocks together with a hex decoder and dynamic evaluation. The prior text-based composite missed samples whose decoder appeared beyond its scan window. A new raw-byte finding combines the MP3 header, dense script blocks and decoder/evaluation indicators, without adding an engine feature. `56318b0dad10` is a different carrier: it contains only a few script blocks, hides its window and reconstructs code from numeric arrays before evaluation. A second raw-byte finding covers that combination. Cleave and Atom match both forms and clear normal-audio and defining-behavior controls. Presence of those blocks is established; actual execution depends on how the carrier is opened.
+
+Offline speech recognition identified the four short recordings `8dd75a13c2b4`, `a2130faf6dd2`, `d6e8aff62024` and `fc59bbb18f92` as fake security alerts pressuring listeners to call support. The reviewed recordings are recognized by four specific compressed-audio byte fingerprints; both scanners match them and clear unrelated audio and a modified-byte control. This recognition is limited to the reviewed encodings and cannot reliably detect transcoded versions. The other non-audio entry `ebe1bb18a77c` is a silent self-extracting Windows executable that launches a packaged legacy executable.
+
+The good entries are `0589be7715d2`, `f4d5cae00178`, `59b1b0e0dda3`, `90043830c1fb`, `a3aefe1079ec`, `1431f2ec07f0` and `d312b635fee2`. They are short sound effects, music or a Quran recitation, with no script payload identified. Full validation passed after the rules; no scanner feature was added.

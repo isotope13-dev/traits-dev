@@ -1,0 +1,13 @@
+# PE mislabeled-bad review — 2026-11-04
+
+Reviewed 38 snapshot entries using both scanners, binary and archive inspection, and published package comparisons. Hopper confirmed 4 bad, 22 good, 1 dual-use and 11 inconclusive; dual-use and inconclusive entries use its purgatory target.
+
+The `fd6852974f16` single-file .NET bundle contains an obfuscated assembly that enumerates browser and messaging processes, downloads encoded archive URLs, launches a policy-bypassing PowerShell script, and stages renamed executables. A new rule combines those existing observations; both scanners flag the extracted assembly and the containing bundle. A control with the PowerShell bypass changed clears in both scanners.
+
+The `16c899adbe22` ZIP contains an 860 MB installer whose roughly 1 MB NSIS archive is followed by hundreds of megabytes of repeated text. Its extracted batch stage checks security products, reconstructs executables from binary fragments and launches them using heavily obfuscated commands. Both scanners flag the extracted stage after a new combined-behavior rule; replacing the binary-copy command clears the control. Neither scanner surfaced this stage when scanning the original ZIP, so nested extraction coverage remains a limitation. `d43ae989ccb1` contains an obfuscated loader in a suspicious application bundle; `5a92d9ee61b9` contains a disguised crash-handler DLL with a packed embedded miner and unusual executable writable sections.
+
+The `51d0373677c2` game installer triggered a fiber-loader rule on embedded launcher DLLs. The evidence was fiber APIs plus PE parsing, which does not show that a decoded payload executes. That rule is now suspicious; a narrower decoding-based combination retains hostile severity. The installer's full behavior remains inconclusive. `5b706b8994c6` is a Windows administration toolkit whose openly named scripts remove Defender and disable security and update settings; it is dual-use.
+
+Eighteen library files are byte-identical to published NuGet packages. `121751c1d8d8`, `d6cdf961c6d2` and `82e538b25d37` differ as binary files but their managed method bodies match their corresponding published libraries. `27fe6bcabda1` has the same type and method structure as a nearby published System.Threading.Tasks.Parallel build and contains task-parallel runtime behavior. The remaining inconclusive files include large nested installers, a game-tool downloader, unverified system or developer-tool binaries, an extension and a remote-management archive; their branding or dataset location alone does not establish a verdict.
+
+Full `make validate` passed: 3270 hostile, 2088 suspicious, 9437 notable and 1396 baseline fixture checks. No engine features were added.

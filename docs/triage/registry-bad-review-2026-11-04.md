@@ -1,0 +1,21 @@
+# Registry filetype mislabeled-bad review — 2026-11-04
+
+The 40 files were reviewed: six bad, 30 good, two dual-use, and two inconclusive. The snapshot includes source and package archives.
+
+`0e876eeb8950` attempts to overwrite registry files with a Run-key export, and `a4bb944c9620` deletes autostarts while staging a registry import from a certificate-named file. Both are bad; existing findings match in both scanners, including the disguised-import finding added during the preceding registry-script review.
+
+`736ea4a977f4` only changes browser homepages and is good as a standalone file. `40c874a63e92` changes and locks a homepage while disabling registry tools; the same operations can support managed configurations, so it is dual-use. `4fdb70cbb35b` lowers Internet-zone ActiveX restrictions and is dual-use. A new suspicious finding combines the zone and several specific enabled settings; both scanners match, and changing the unsafe-ActiveX setting clears the control. `569f6c94323f` contains system-configuration values and malformed data whose import behavior and intended target are uncertain; it is inconclusive. Hopper stores dual-use and inconclusive files under its inconclusive compatibility target.
+
+The Avira scheduler-only registry file `45bcf10882ee` from the preceding review was reclassified dual-use, and its finding downgraded to suspicious, because disabling that scheduler can also be an administrative action. Full validation passed.
+
+`daa7fb3f386e` is a typosquatted package whose ESM entry appends a shuffled loader behind a long whitespace run. Its extracted entry hash matches the evidence in [MAL-2026-10088](https://osv.dev/vulnerability/MAL-2026-10088); the sibling CJS build lacks the appended code. It is bad. A new finding combines the padding, Node global alias, string permutation and long embedded code. Both scanners flag the source and archive; removing the padding clears the control.
+
+`441d834d8a97` contains a separately stored JavaScript loader that reconstructs and decrypts stages, writes one to a temporary file and invokes it with Bun. Both scanners already flag the encrypted stage and execution. It is bad as hostile obfuscation; the package metadata names a different entry point, so automatic execution of this file was not established.
+
+`68a867fe3ceb` is an Ember/Astro integration with documentation and tests; `fac75524236f` is a project generator that validates its supplied service token and optionally installs dependencies; `1248fb3dfc8f` provides a ComfyUI integration with an opt-in experimental agent server. The reviewed proof-of-concept server does not collect and transmit host findings. All three are good based on their reviewed contents.
+
+`0a5343ef48f9` and `ba907fb1a328` include explicit XXE payloads targeting local files in parser-security tests. The tests expect those payloads to be rejected, but the supplied archives contain the exploit payloads and are bad under the review policy. Existing findings identify the payloads.
+
+The following package and source archives are good based on their reviewed contents: `912f7ba95566`, `619063639fcb`, `aadd91120e19`, `d543f26c4866`, `f5e81769c9a5`, `f57127257030`, `684f42c21262`, `68204070fcdf`, `d3cadf2654a4`, `a0be8098f432`, `720adafd913a`, `fce6eaab64fc`, `4b7fa50915fb`, `e5c542d14365`, `0eda676df37a`, `3512ffad9083`, `6dd9bb98d36d`, `b8388f94d496`, `ba0242df3e65`, `8ac1b7db6e25`, `c48cab307615`, `2510d39d8f1d`, `1cace6cebdad`, `118311e228df`, `fde5012c569e`, `688eb9a83aae`. They include application, development-tool, CMS and framework packages. Both scanners found no hostile traits; archive contents were also searched for explicit exploit payloads, reverse-shell patterns and command-pipeline examples. The relevant matches were a normal TCP availability check, installer or safety documentation, and XML parser comments. The Ruby gem was inspected through its nested data archive. Several large generated or third-party files were outside the focused source-content search; this review does not prove absence of all malicious behavior.
+
+`1f9675ec3f1d` is inconclusive: its primary VS Code extension bundle is approximately 37 MB and was not fully analyzed as source. Targeted searches and both scanner runs did not establish malicious behavior. Hopper records it as inconclusive.

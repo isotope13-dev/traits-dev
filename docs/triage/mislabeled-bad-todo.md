@@ -60,63 +60,63 @@ The requested priority is listed first; remaining filetypes are alphabetical. `w
 - [x] iso: `x-triage-bad`, then `x-improve` — 16 bad, 24 inconclusive; see `iso-bad-review-2026-11-03.md`
 - [x] jar: `x-triage-bad`, then `x-improve` — 31 bad, 5 good, 1 dual-use, 3 inconclusive; see `jar-bad-review-2026-11-03.md`
 - [x] java: `x-triage-bad`, then `x-improve` — 10 bad, 27 good, 1 dual-use, 1 inconclusive; see `java-bad-review-2026-11-03.md`
-- [ ] java_class: `x-triage-bad`, then `x-improve` — in progress
-- [ ] javascript: `x-triage-bad`, then `x-improve`
-- [ ] json: `x-triage-bad`, then `x-improve`
-- [ ] jsp: `x-triage-bad`, then `x-improve`
-- [ ] kotlin: `x-triage-bad`, then `x-improve`
-- [ ] lnk: `x-triage-bad`, then `x-improve`
-- [ ] lua: `x-triage-bad`, then `x-improve`
-- [ ] macho: `x-triage-bad`, then `x-improve`
-- [ ] makefile: `x-triage-bad`, then `x-improve`
-- [ ] markdown: `x-triage-bad`, then `x-improve`
-- [ ] mirc: `x-triage-bad`, then `x-improve`
-- [ ] mp3: `x-triage-bad`, then `x-improve`
-- [ ] mp4: `x-triage-bad`, then `x-improve`
-- [ ] ne: `x-triage-bad`, then `x-improve`
-- [ ] nib: `x-triage-bad`, then `x-improve`
-- [ ] npm: `x-triage-bad`, then `x-improve`
-- [ ] nupkg: `x-triage-bad`, then `x-improve`
-- [ ] objective_c: `x-triage-bad`, then `x-improve`
-- [ ] ole_doc: `x-triage-bad`, then `x-improve`
-- [ ] ooxml: `x-triage-bad`, then `x-improve`
-- [ ] package-lock.json: `x-triage-bad`, then `x-improve`
-- [ ] pdf: `x-triage-bad`, then `x-improve`
-- [ ] pe: `x-triage-bad`, then `x-improve`
-- [ ] perl: `x-triage-bad`, then `x-improve`
-- [ ] php: `x-triage-bad`, then `x-improve`
-- [ ] pipfile.lock: `x-triage-bad`, then `x-improve`
-- [ ] pkg_info: `x-triage-bad`, then `x-improve`
-- [ ] pkg_macos: `x-triage-bad`, then `x-improve`
-- [ ] plist: `x-triage-bad`, then `x-improve`
-- [ ] postscript: `x-triage-bad`, then `x-improve`
-- [ ] powershell: `x-triage-bad`, then `x-improve`
-- [ ] pyproject.toml: `x-triage-bad`, then `x-improve`
-- [ ] python: `x-triage-bad`, then `x-improve`
-- [ ] python_bytecode: `x-triage-bad`, then `x-improve`
-- [ ] python_sdist: `x-triage-bad`, then `x-improve`
-- [ ] rar: `x-triage-bad`, then `x-improve`
-- [ ] reg: `x-triage-bad`, then `x-improve`
-- [ ] registry: `x-triage-bad`, then `x-improve`
-- [ ] requirements.txt: `x-triage-bad`, then `x-improve`
-- [ ] rpa: `x-triage-bad`, then `x-improve`
-- [ ] rpm: `x-triage-bad`, then `x-improve`
-- [ ] rpyc: `x-triage-bad`, then `x-improve`
-- [ ] rtf: `x-triage-bad`, then `x-improve`
-- [ ] ruby: `x-triage-bad`, then `x-improve`
-- [ ] rust: `x-triage-bad`, then `x-improve`
-- [ ] scala: `x-triage-bad`, then `x-improve`
-- [ ] shellcode: `x-triage-bad`, then `x-improve`
-- [ ] static-lib: `x-triage-bad`, then `x-improve`
-- [ ] svg: `x-triage-bad`, then `x-improve`
-- [ ] swift: `x-triage-bad`, then `x-improve`
-- [ ] systemd_service: `x-triage-bad`, then `x-improve`
-- [ ] tar: `x-triage-bad`, then `x-improve`
-- [ ] text: `x-triage-bad`, then `x-improve`
-- [ ] tiff: `x-triage-bad`, then `x-improve`
-- [ ] unknown: `x-triage-bad`, then `x-improve`
-- [ ] vbs: `x-triage-bad`, then `x-improve`
-- [ ] vhd: `x-triage-bad`, then `x-improve`
+- [x] java_class: `x-triage-bad`, then `x-improve` — 18 bad, 9 good, 2 dual-use, 10 inconclusive; see `java-class-bad-review-2026-11-03.md`
+- [x] javascript: `x-triage-bad`, then `x-improve` — 28 good, 5 bad, 2 dual-use, 3 inconclusive; see `javascript-bad-review-2026-11-03.md`
+- [x] json: `x-triage-bad`, then `x-improve` — 33 good, 6 bad, 1 dual-use; see `json-bad-review-2026-11-03.md`
+- [x] jsp: `x-triage-bad`, then `x-improve` — 37 bad, 2 good, 1 inconclusive; see `jsp-bad-review-2026-11-03.md`
+- [x] kotlin: `x-triage-bad`, then `x-improve` — 32 good, 6 bad, 1 dual-use, 1 inconclusive; see `kotlin-bad-review-2026-11-03.md`
+- [x] lnk: `x-triage-bad`, then `x-improve` — 9 bad, 5 good, 26 inconclusive; see `lnk-bad-review-2026-11-03.md`
+- [x] lua: `x-triage-bad`, then `x-improve` — 29 bad, 2 good, 1 dual-use, 8 inconclusive; see `lua-bad-review-2026-11-03.md`
+- [x] macho: `x-triage-bad`, then `x-improve` — 13 bad, 17 good, 1 dual-use, 9 inconclusive; see `macho-bad-review-2026-11-04.md`
+- [x] makefile: `x-triage-bad`, then `x-improve` — 8 bad, 29 good, 3 inconclusive; see `makefile-bad-review-2026-11-04.md`
+- [x] markdown: `x-triage-bad`, then `x-improve` — 13 bad, 27 good; see `markdown-bad-review-2026-11-04.md`
+- [x] mirc: `x-triage-bad`, then `x-improve` — 19 bad, 13 good, 1 dual-use, 7 inconclusive; see `mirc-bad-review-2026-11-04.md`
+- [x] mp3: `x-triage-bad`, then `x-improve` — 33 bad, 7 good; see mp3-bad-review-2026-11-04.md
+- [x] mp4: `x-triage-bad`, then `x-improve` — 3 bad, 8 good, 2 inconclusive; see mp4-bad-review-2026-11-04.md
+- [x] ne: `x-triage-bad`, then `x-improve` — 26 bad, 5 good, 5 inconclusive; see ne-bad-review-2026-11-04.md
+- [x] nib: `x-triage-bad`, then `x-improve` — 40 good; see nib-bad-review-2026-11-04.md
+- [x] npm: `x-triage-bad`, then `x-improve` — 3 bad, 35 good, 2 inconclusive; see npm-bad-review-2026-11-04.md
+- [x] nupkg: `x-triage-bad`, then `x-improve` — 16 bad, 15 good, 9 inconclusive; see [review](nupkg-bad-review-2026-11-04.md)
+- [x] objective_c: `x-triage-bad`, then `x-improve` — 37 bad, 3 good; see [review](objective-c-bad-review-2026-11-04.md)
+- [x] ole_doc: `x-triage-bad`, then `x-improve` — 22 bad, 17 good, 1 inconclusive; see [review](ole-doc-bad-review-2026-11-04.md)
+- [x] ooxml: `x-triage-bad`, then `x-improve` — 7 bad, 31 good, 1 dual-use, 1 inconclusive; see [review](ooxml-bad-review-2026-11-04.md)
+- [x] package-lock.json: `x-triage-bad`, then `x-improve` — 6 bad, 2 good; see [review](package-lock-bad-review-2026-11-04.md)
+- [x] pdf: `x-triage-bad`, then `x-improve` — 3 bad, 35 good, 2 inconclusive; see [review](pdf-bad-review-2026-11-04.md)
+- [x] pe: `x-triage-bad`, then `x-improve` — 4 bad, 22 good, 1 dual-use, 11 inconclusive; see [review](pe-bad-review-2026-11-04.md)
+- [x] perl: `x-triage-bad`, then `x-improve` — 27 bad, 4 good, 7 dual-use, 2 inconclusive; see [review](perl-bad-review-2026-11-04.md)
+- [x] php: `x-triage-bad`, then `x-improve` — 8 bad, 25 good, 7 inconclusive; see [review](php-bad-review-2026-11-04.md)
+- [x] pipfile.lock: `x-triage-bad`, then `x-improve` — 1 good; see [review](pipfile-lock-bad-review-2026-11-04.md)
+- [x] pkg_info: `x-triage-bad`, then `x-improve` — 9 bad, 7 good, 8 dual-use, 16 inconclusive; see [review](pkg-info-bad-review-2026-11-04.md)
+- [x] pkg_macos: `x-triage-bad`, then `x-improve` — 11 bad, 4 inconclusive; see [review](pkg-macos-bad-review-2026-11-04.md)
+- [x] plist: `x-triage-bad`, then `x-improve` — 37 good, 3 inconclusive; see [review](plist-bad-review-2026-11-04.md)
+- [x] postscript: `x-triage-bad`, then `x-improve` — 1 bad; see [review](postscript-bad-review-2026-11-04.md)
+- [x] powershell: `x-triage-bad`, then `x-improve` — 9 bad, 16 good, 6 dual-use, 9 inconclusive; see [review](powershell-bad-review-2026-11-04.md)
+- [x] pyproject.toml: `x-triage-bad`, then `x-improve` — 1 dual-use; see [review](pyproject-toml-bad-review-2026-11-04.md)
+- [x] python: `x-triage-bad`, then `x-improve` — reviewed in `python-bad-review-2026-11-04.md`
+- [x] python_bytecode: `x-triage-bad`, then `x-improve` — 18 bad, 13 good, 1 dual-use, 8 inconclusive; see [review](python-bytecode-bad-review-2026-11-04.md)
+- [x] python_sdist: `x-triage-bad`, then `x-improve` — 38 bad, 2 good; see [review](python-sdist-bad-review-2026-11-04.md)
+- [x] rar: `x-triage-bad`, then `x-improve` — 19 bad, 2 good, 19 inconclusive; see [review](rar-bad-review-2026-11-04.md)
+- [x] reg: `x-triage-bad`, then `x-improve` — 10 bad, 8 good, 3 dual-use, 3 inconclusive; see [review](reg-bad-review-2026-11-04.md)
+- [x] registry: `x-triage-bad`, then `x-improve` — 6 bad, 30 good, 2 dual-use, 2 inconclusive; see [review](registry-bad-review-2026-11-04.md)
+- [x] requirements.txt: `x-triage-bad`, then `x-improve` — 1 good; see [review](requirements-txt-bad-review-2026-11-04.md)
+- [x] rpa: `x-triage-bad`, then `x-improve` — 1 bad; see [review](rpa-bad-review-2026-11-04.md)
+- [x] rpm: `x-triage-bad`, then `x-improve` — 1 bad; see [review](rpm-bad-review-2026-11-04.md)
+- [x] rpyc: `x-triage-bad`, then `x-improve` — 1 bad; see [review](rpyc-bad-review-2026-11-04.md)
+- [x] rtf: `x-triage-bad`, then `x-improve` — 35 bad, 4 good, 1 inconclusive; see [review](rtf-bad-review-2026-11-04.md)
+- [x] ruby: `x-triage-bad`, then `x-improve` — 29 bad, 8 good, 3 inconclusive; see [review](ruby-bad-review-2026-11-04.md)
+- [x] rust: `x-triage-bad`, then `x-improve` — 9 bad, 25 good, 1 dual-use, 4 inconclusive; see [review](rust-bad-review-2026-11-04.md)
+- [x] scala: `x-triage-bad`, then `x-improve` — 2 bad, 1 inconclusive; see [review](scala-bad-review-2026-11-04.md)
+- [x] shellcode: `x-triage-bad`, then `x-improve` — 4 bad; see [review](shellcode-bad-review-2026-11-04.md)
+- [x] static-lib: `x-triage-bad`, then `x-improve` — 25 bad, 2 good, 13 inconclusive; see static-lib review
+- [x] svg: `x-triage-bad`, then `x-improve` — 10 bad, 5 good, 1 dual-use, 13 inconclusive; see SVG review
+- [x] swift: `x-triage-bad`, then `x-improve` — 38 bad, 1 good, 1 inconclusive; see Swift review
+- [x] systemd_service: `x-triage-bad`, then `x-improve` — 2 bad, 4 inconclusive; see systemd service review
+- [x] tar: `x-triage-bad`, then `x-improve` — 28 good, 4 bad, 8 inconclusive; see tar review
+- [x] text: `x-triage-bad`, then `x-improve` — 37 good, 2 bad, 1 inconclusive; see text review
+- [x] tiff: `x-triage-bad`, then `x-improve` — 39 good, 1 bad; see TIFF review
+- [ ] unknown: `x-triage-bad`, then `x-improve` — classified 22 bad, 16 good, 1 inconclusive; one unknown-type DOS detection gap remains
+- [x] vbs: `x-triage-bad`, then `x-improve` — 17 bad, 10 good, 3 dual-use, 10 inconclusive; see VB-family review
+- [ ] vhd: `x-triage-bad`, then `x-improve` — in progress
 - [ ] vsix: `x-triage-bad`, then `x-improve`
 - [ ] wasm: `x-triage-bad`, then `x-improve`
 - [ ] wav: `x-triage-bad`, then `x-improve`

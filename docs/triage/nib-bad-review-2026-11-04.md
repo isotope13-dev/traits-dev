@@ -1,0 +1,7 @@
+# NIB mislabeled-bad review — 2026-11-04
+
+All 40 entries are good. Cleave and Atom identify each as a single NIB archive and report no hostile findings; a separate Cleave check found no suspicious findings. All have an `NIBArchive` header and contain compiled interface objects, bindings, labels and layout information. Their accessible strings were inspected for script execution, shell commands, external endpoints and credential prompts. No embedded executable payload was identified.
+
+`918e38581b74` contains a label directing the user to enter the device lock-screen password on the device itself; the resource does not implement password collection. A few files include an IEC color-profile reference. The source application's dataset label does not make these individual interface resources hostile.
+
+The good entries are `025e5fa2fdd4`, `03aa186dda84`, `0b3adf5ca99a`, `0bd1c1558b3e`, `12332bfab17e`, `13f5fb96156e`, `1ac39cd6fdc8`, `2b65eee9bd6d`, `2eb22881ecdf`, `3650b7a926a0`, `39181537a9fc`, `3b81da3eec1d`, `40430a980bc5`, `412ca04470ea`, `4ab3959b892d`, `5c56dd7d0756`, `66ede6e6e00d`, `67c7e15a9b91`, `6e951c85f4d7`, `7b441a84ee45`, `8476e503d504`, `87273eae11b3`, `918e38581b74`, `95fcdd83bc23`, `a4cf143fdcc9`, `ac0d78b20e8d`, `adc39a23a489`, `b08512bff91c`, `b281aee036a3`, `b46030db2648`, `b9017f74e76b`, `b9dff6bf01a9`, `cb4b834db138`, `d13644d52d9f`, `d6ea5e159467`, `df5863157f6b`, `e40ea311a90c`, `e5c979a170d5`, `f1614a604d5a` and `f98277404eaa`.
