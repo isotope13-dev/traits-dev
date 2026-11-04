@@ -1,0 +1,1 @@
+const x={file:process.execPath,args:[],envPairs:[]}; Reflect.apply(log,null,[]);
