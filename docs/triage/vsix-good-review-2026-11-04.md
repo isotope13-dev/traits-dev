@@ -1,5 +1,107 @@
 # VSIX mislabeled-good review, 2026-11-04
 
+`03b3ff18820f` is SAP Mobile Development Kit Editor. Its active commands
+cover application builds, deployment, and service synchronization, including
+prompted service credentials. The local no-follow scan examined 25,392
+members and reports OData, workspace, and process-launch observations without
+suspicious or hostile traits. Endpoint ruling: good; recording awaits
+validation of the current shared tree.
+
+`86a8f033af84` is an AI novel-writing assistant with bundled model-runtime
+libraries. It connects to configured model providers and batches telemetry to
+its service when both VS Code telemetry and the extension setting are enabled.
+The fresh local no-follow scan reports the model-provider, telemetry-route, and
+VS Code machine-ID observations and no suspicious or hostile traits. Endpoint
+ruling: good; validation passed and Hopper confirmed the label (no-op).
+
+`7fdf8ef71c3c` is a Sourcegraph Cody testing extension. It exposes coding
+assistant commands, accesses workspace content, integrates model providers,
+and can launch local processes. The fresh local no-follow scan reports those
+capabilities and no suspicious or hostile traits. Endpoint ruling: good;
+validation passed and Hopper confirmed the label (no-op).
+
+`cb989c6d6813` is SiFli SDK CodeKit for building and debugging embedded
+projects. It starts debug adapters and terminals and can download development
+tools; the scan records those behaviors. The fresh local no-follow scan
+examined 2,115 members and reports no suspicious or hostile traits. Endpoint
+ruling: good; validation passed and Hopper confirmed the label (no-op).
+
+`7aedda19868b` is Codaro, an editor code-review assistant. It reads workspace
+content and constructs edit deltas. A legacy heartbeat sender contains network
+code for those deltas but returns unconditionally before reaching it; the
+separate compliance reporting path defaults to disabled and reports event
+metadata when enabled. The fresh local no-follow scan reports workspace
+access and no suspicious or hostile traits. Endpoint ruling: good; validation
+passed and Hopper confirmed the label (no-op).
+
+`2af2763767dc` is Spring Boot Tools, an editor extension with a bundled Java
+language server and its libraries. The extension launches a language server;
+its declared role is Java and Spring configuration assistance. The fresh
+local no-follow scan examined 1,783 members and found no suspicious or hostile
+traits. The earlier dependency-following scan also inspected a separately
+fetched Java extension; that dependency was not part of this artifact. Endpoint
+ruling: good; validation passed and Hopper confirmed the label (no-op).
+
+`8cfbfbbbeea5` is Multi, an AI coding assistant. Its extension registers
+user-facing task, explain, fix, and approval commands; its bundled providers
+include Anthropic and OpenAI integrations and local process-launch support.
+The fresh no-follow scan reports those provider and execution observations
+and no suspicious or hostile traits. Endpoint ruling: good; validation passed
+and Hopper confirmed the good label (no-op).
+
+`4a35030a8b49` is n8n Atom, an editor client for user-configured n8n
+servers. Its code sends the configured n8n API key in the n8n header and
+uses a localhost proxy for workflow operations; it also verifies its own
+license. The fresh no-follow scan reports the n8n extension and API-key
+observations and no suspicious or hostile traits. Endpoint ruling: good;
+validation passed and Hopper confirmed the good label (no-op).
+
+`27760e37b6af` is the Azure Cosmos DB extension. Its active code uses Azure
+identity and Cosmos DB clients and provides database and query-editor operations.
+It offers a visible `dotnet tool install` of Cosmos DB Shell, outside the bundled
+archive. The fresh local no-follow scan reports Azure identity and process-launch
+observations and no suspicious or hostile traits. Endpoint ruling: good;
+validation passed and Hopper confirmed the good label (no-op).
+
+`b7ae0e17eaf1` is the Kubernetes extension. Its code manages cluster resources,
+uses kubeconfig credentials, invokes Kubernetes tools, and supports configured
+authentication commands. The fresh local no-follow scan reports Kubernetes
+configuration and process-launch observations and no suspicious or hostile
+traits. Endpoint ruling: good; validation passed and Hopper confirmed the good
+label (no-op).
+
+`ff28d3093bf1` (Exegol Studio) is an offensive-security agent framework. Its
+bundled executable code registers a shell-command tool, passes agent commands
+to an executor, and spawns an interactive shell in an Exegol container. It
+also registers a kill-chain graph tool and makes a bundled attack-reference
+corpus available to the agent. The corpus is documentation; the ruling rests
+on the implemented attack-agent framework, not those documents alone or the
+operator's authorization. Two new hostile observations in separate directories
+report the command-runner and framework identity. The original archive matches
+both hostile traits; removing the command
+handoff or offensive-context clue prevents them from matching. Validation
+passed, Hopper confirmed the bad label (no-op), and the hash-verified snapshot
+was moved to `/tmp/triage/misplaced-bad`.
+
+`88d0de9d0b74` (The Stratus) synchronizes files to user-configured cloud and
+SSH destinations. The archive also contains four standalone Expect scripts
+for inspecting a remote server; each embeds an SSH password. No references to
+those script filenames were found elsewhere in the archive. A new suspicious
+observation requires the Expect shebang and the literal-password, SSH, and
+password-send sequence; it does not assert the credential is valid. The
+controls without any one of the shebang, literal, SSH invocation, or send
+sequence do not match. The commands perform remote server diagnostics; the
+full no-follow archive scan reports this one suspicious observation and no
+hostile traits. Endpoint ruling: good, with the packaged credential noted;
+validation passed and Hopper confirmed the good label (no-op).
+
+`4f0403aa9eb0` is Saropa Log Capture. It records debug-session output and
+provides viewing, import, and sharing features; its network-capable code
+includes user-facing Gist and webhook integrations. The no-follow archive scan
+examined 1,831 entries and reported no suspicious or hostile findings. The
+endpoint ruling is good; validation passed and Hopper confirmed the existing
+label (no-op).
+
 `86582c7c28c7` (Infracost) bundles a Go Mach-O language server and editor
 extension for Terraform cost estimation. Its bundled source map and executable
 were reviewed: the service references and authentication support that role.
@@ -72,8 +174,8 @@ good label (no-op).
 The initial pool contained 40 archives. A slow local Atomscan directory scan
 finished with 40 JSON records at `/var/tmp/vsix-good-scan.jsonl` (exit 2,
 indicating severe findings). It began before the rule changes below, so the
-records are preliminary. Twenty-one archives have since been confirmed good
-and two moved to bad; the other 17 still require endpoint-based review.
+records are preliminary. Thirty-two archives have since been confirmed good and three confirmed bad;
+the other five still require endpoint-based review.
 
 * `72b2b5ac83ca`: Python autopep8 extension with five ZIP members. Its active
   handler concatenates the editor filename into a shell command without quoting.
@@ -193,8 +295,8 @@ whether that service forwards the content elsewhere has not been established.
 No endpoint ruling has been made from the product description or obfuscation
 alone.
 
-A total of 23 archives remain to be reviewed, including those two;
-the scan is not evidence that unflagged files are safe.
+These archives remain under review; an unflagged scan alone does not establish
+a final endpoint ruling.
 
 `0b0893983983` (Auto Retry Agent) uses a local Chrome DevTools connection to
 inject code that clicks agent approval controls. Its setup can add a remote

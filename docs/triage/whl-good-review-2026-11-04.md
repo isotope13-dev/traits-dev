@@ -5,7 +5,7 @@ following disabled; the JSON records are at `/var/tmp/whl-good-initial.jsonl`.
 These are preliminary scanner results, not endpoint rulings. Several packages
 contain scanner evidence of exploit or reverse-shell functionality and require
 particular attention under the endpoint classification policy.
-Twelve entries have been reviewed: six good, four bad, and two dual-use.
+Twelve entries have been reviewed: eight good and four bad.
 
 `bbf593eb5c6e` and `a4d4de95e770` are Keris Toolkit versions 0.9.0 and
 0.10.0. Their identical shell module generates Bash, Python, and PowerShell
@@ -81,13 +81,13 @@ good; validation passed and Hopper confirmed the label (no-op).
 `2c3f29116d20` and `a0288be63d47` are aioconsole versions 0.6.0 and 0.5.1.
 Their identical server module exposes an interactive Python console over a
 configurable TCP or Unix socket, defaulting TCP to localhost. It is a general
-remote-debugging facility with substantial legitimate uses and can also give
-remote code execution to anyone who reaches an exposed listener; it is
-dual-use rather than a dedicated attack implementation. A new suspicious
-observation identifies the async server, connection handler, and interactive
-console clues. Both wheels match; controls without any one of those clues do
-not. Validation passed, Hopper moved both to the canonical dual-use pool, and
-their hash-verified snapshots were relocated to `/tmp/triage/misplaced-dual-use`.
+Python development library with an optional user-started remote console; the
+ability to misuse that facility does not by itself make the package dual-use
+under the endpoint policy. A new suspicious observation identifies the async
+server, connection handler, and interactive console clues. Both wheels match;
+controls without any one of those clues do not. Validation passed. An initial
+dual-use ruling was corrected to good in Hopper, and both hash-verified
+snapshots were restored to the review tree.
 
 `2727f68d03e2` (riciplay-cli) contains a callable payload factory with MySQL
 file-read injection strings and Jinja command-execution gadgets, plus a harness
