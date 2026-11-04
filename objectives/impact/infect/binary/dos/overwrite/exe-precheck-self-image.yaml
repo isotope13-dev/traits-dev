@@ -1,0 +1,55 @@
+# Nonresident DOS COM overwriter. It enumerates executable names, reads the
+# candidate's initial bytes, compares them with its own image prefix, then
+# reopens a nonmatching candidate and writes that image at the open handle's
+# initial position. DOS set-time and attribute calls preserve host metadata;
+# the bytes themselves establish the destructive overwrite behavior.
+defaults:
+  for: [dos_com]
+  platforms: [windows]
+  size_max: 65536
+
+traits:
+  - id: dos-exe-header-check-then-self-image-write
+    desc: DOS compares EXE header then overwrites it
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        rule dos_exe_header_check_then_self_image_write {
+          strings:
+            // Read the candidate's first four bytes, close it, and compare
+            // that buffer against the COM image beginning at offset 0100h.
+            $read_compare = { B8 00 3D 8D 54 1E CD 21
+                              [0-8] B4 3F B9 04 00 BA ?? ?? CD 21
+                              [0-8] B4 3E CD 21
+                              [0-24] (56|8B F6) BE ?? ?? BF 00 01
+                              B9 04 00 F3 A6 }
+            // Reopen the same DTA filename for update, then write a bounded
+            // portion of the running COM image from offset 0100h. With a
+            // freshly opened handle, this write begins at file offset zero.
+            $reopen_write = { 8D 54 1E CD 21 [0-20]
+                              B8 02 3D [0-8] CD 21
+                              [0-24] B4 40 B9 ?? ?? BA 00 01 CD 21 }
+            $exe_masks = { 2A 2E (45 58 45|43 4F 4D) 00 }
+          condition:
+            #exe_masks > 0 and
+            for any r in (1..#read_compare) : (
+              @read_compare[r] < 4096 and
+              for any w in (1..#reopen_write) : (
+                @reopen_write[w] > @read_compare[r] and
+                @reopen_write[w] < @read_compare[r] + 160
+              )
+            )
+        }
+
+composite_rules:
+  - id: dos-exe-search-precheck-self-overwriter
+    desc: DOS overwrites searched EXE files with itself
+    crit: hostile
+    conf: 0.98
+    attack: T1080
+    all:
+      - id: micro-behaviors/fs/search/command::dos-int21-find-first
+      - id: micro-behaviors/fs/search/command::dos-executable-compatible-wildcard
+      - id: objectives/impact/infect/binary/dos/overwrite::dos-exe-header-check-then-self-image-write
