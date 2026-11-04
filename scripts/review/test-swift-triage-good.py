@@ -88,7 +88,7 @@ fs.writeFileSync("entry.js", "export function initialize() { return true; }");
         "meta.lua": {"metadata/lang/source/syntax/directive::lua-meta-annotation"},
         "check": {"metadata/lang/source/naming/function/analysis::start-check-name"},
         "generator.ts": {
-            "objectives/execution/payload/interpreter-stdin::node-exec-curl-pipe-remote-shell",
+            "objectives/execution/payload/interpreter-stdin/network::node-exec-curl-pipe-remote-shell",
             "objectives/supply-chain/trojanized/package/runtime::extension-package-remote-shell-generator",
         },
     }

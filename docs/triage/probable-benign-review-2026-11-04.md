@@ -1,0 +1,14 @@
+# Probable-benign review — 2026-11-04
+
+Source: `/var/tmp/gauntlet-triage/probable-benign`. Both manifest SHA-256 values were verified against the files. Analysis was static: neither artifact nor its embedded code was executed.
+
+- `0870bb64e40c…` (`subhra74-xdm-v9.0.1-pre.3-xdm-9.0.1-x64.msi`): **good**. The MSI identifies an Xtreme Download Manager installer. The 112 extracted cabinet members include a jpackage launcher, bundled Java runtime and a JAR with the XDM download, media muxing, UI, update and browser integration classes. The launch configuration names `xdm.app.AppMain`. The reviewed class constants support explicit download management, browser-to-localhost integration and user-configured external commands; no covert credential exporter or attacker control was established. The installer is unsigned according to the launcher facts; this is not a benignness assertion by itself.
+- `9ca0f577f576…` (`github.com_apple_swift-…zip`): **good**. The Go-module-formatted archive contains a Swift compiler source tree with 32,691 entries, including compiler source, build tools, documentation and test inputs. Static inspection of command-bearing scripts and the filename-triggering members found ordinary build/analysis functions and compiler fixtures, not an embedded attack. This conclusion rests on the inspected contents, not the archive path or the project name alone.
+
+The initial atomscan reports zero suspicious and zero hostile traits for both samples. The Swift report contains 5,797 reported file entries for the 32,691 archive members, so it must not be read as a complete per-file report; the extracted tree and names were also reviewed. The model marked both below its confident decision level; those model outputs do not determine the endpoint classification.
+
+Swift's `.lnk` entries are mostly ASCII linker argument lists and one is empty. Its 15 `.dylib` examples are empty test placeholders; its one `.so` is a comment-only test file. Several archive facts inferred actual Windows shortcuts and native executables from extensions alone. Their descriptions now explicitly state the observed filenames or classifier results; matchers and dependent rules are unchanged. The existing Swift regression checks retain detection coverage for real executable inputs.
+
+Artifacts: `/tmp/probable-benign-atomscan.jsonl`, `/tmp/probable-benign-atomscan-final.jsonl`, `/tmp/probable-benign-swift/`, `/tmp/probable-benign-xdm/`, and `/tmp/probable-benign-xdm-exe-facts.json`.
+
+Final verification: atomscan again reported no suspicious or hostile traits on either artifact, `make validate` passed (hostile 3329/3329, suspicious 2101/2101, notable 9646/9646, baseline 1420/1420), and all 29 Swift triage controls passed. The Swift test was updated to the current `interpreter-stdin/network` trait ID. Hopper confirmed both SHA-256s already have the `good` label (0 moved, 2 unchanged, 0 absent, 0 failed).
