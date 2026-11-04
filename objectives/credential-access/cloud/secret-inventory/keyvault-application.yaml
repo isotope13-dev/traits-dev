@@ -1,0 +1,72 @@
+# Relationships, rather than SDK words in the same file, justify suspicion:
+# the loop reads each enumerated secret and configures an application with it.
+# Static matching does not establish successful authentication or authorization.
+defaults:
+  platforms: [unix, windows]
+  for: [python]
+  crit: suspicious
+  conf: 0.95
+
+traits:
+  - id: python-enumerated-secret-client-credential
+    desc: Vault values feed application token clients
+    crit: notable
+    if:
+      type: tree-sitter
+      language: python
+      query: |
+        ((for_statement
+          left: (identifier) @entry
+          right: (call
+            function: (attribute object: (identifier) @store
+              attribute: (identifier) @listing))
+          body: (block
+            (expression_statement (assignment
+              left: (identifier) @secret
+              right: (attribute
+                object: (call
+                  function: (attribute object: (identifier) @reader
+                    attribute: (identifier) @read)
+                  arguments: (argument_list
+                    (attribute object: (identifier) @entry_use
+                      attribute: (identifier) @name)))
+                attribute: (identifier) @value)))
+            . (expression_statement (assignment
+              left: (identifier) @application
+              right: (call function: (_) @constructor
+                arguments: (argument_list
+                  (keyword_argument name: (identifier) @credential
+                    value: (identifier) @secret_use)))))
+            . [
+              (expression_statement (assignment
+                right: (call function: (attribute
+                  object: (identifier) @application_use
+                  attribute: (identifier) @token_method))))
+              (while_statement body: (block
+                . (expression_statement (assignment
+                  right: (call function: (attribute
+                    object: (identifier) @application_use
+                    attribute: (identifier) @token_method))))))
+            ])) @pivot
+          (#eq? @listing "list_properties_of_secrets")
+          (#eq? @read "get_secret")
+          (#eq? @store @reader)
+          (#eq? @entry @entry_use)
+          (#eq? @name "name")
+          (#eq? @value "value")
+          (#match? @constructor "(^|\\.)ConfidentialClientApplication$")
+          (#eq? @credential "client_credential")
+          (#eq? @secret @secret_use)
+          (#eq? @application @application_use)
+          (#eq? @token_method "acquire_token_for_client")
+          (#set! cleave.ignore-comments "true"))
+
+composite_rules:
+  - id: python-keyvault-application-credential-probing
+    desc: Probes application authentication with enumerated vault secrets
+    all:
+      - id: python-enumerated-secret-client-credential
+      - id: micro-behaviors/communications/http/services/keyvault-azure::python-secret-list
+      - id: micro-behaviors/communications/http/services/keyvault-azure::python-secret-read
+      - id: micro-behaviors/communications/http/auth::python-application-token-request
+      - id: metadata/import/python/msal
