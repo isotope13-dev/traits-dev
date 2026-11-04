@@ -1,0 +1,59 @@
+# The function name must agree between the RC4-shaped decoder definition and
+# its use beneath UTF decoding, ScriptBlock construction and a call operator.
+# Template placeholders do not supply reliable parser-level argument flow.
+defaults:
+  platforms: [windows]
+  for: [powershell]
+  attack: T1027,T1059.001
+traits:
+  - id: powershell-rc4-scriptblock-loader
+    desc: RC4 decoder feeds immediate ScriptBlock call
+    crit: hostile
+    conf: 0.97
+    if:
+      type: yara
+      source: |
+        rule powershell_rc4_scriptblock_loader {
+          strings:
+            $function = /\bfunction\s+[\w%{}-]+\s*\{/ nocase
+            $run = /[&.]\s*\(\s*\[scriptblock\]\s*::\s*create\s*\(\s*\(\s*\[(system\.)?text\.encoding\]\s*::\s*\w+\s*\)\s*\.GetString\s*\(\s*\(\s*[\w%{}-]+/ nocase
+            $decode = /\(\s*\[(System\.)?Convert\]\s*::\s*FromBase64String\s*\(/ nocase
+            $increment = /\$\w+\s*=\s*\(\$\w+\s*\+\s*1\)\s*%%?\s*256\s*;/
+            $accumulate = /\$\w+\s*=\s*\(\$\w+\s*\+\s*\$\w+\[\$\w+\]\)\s*%%?\s*256\s*;/
+            $swap = /\$\w+\[\$\w+\]\s*=\s*\$\w+\s*;/
+            $sum = /\(\$\w+\[\$\w+\]\s*\+\s*\$\w+\[\$\w+\]\)\s*%%?\s*256/
+            $xor = /-bxor\s+\$\w+\[\$\w+\]/ nocase
+            $name = /[\w%{}-]+/
+          condition:
+            for any f in (1..#function) : (
+              for any r in (1..#run) : (
+                @run[r] > @function[f] and @run[r] < @function[f]+8000 and
+                $decode in (@run[r]+!run[r]..@run[r]+!run[r]+40) and
+                for all g in (1..#function) : (
+                  @function[g] <= @function[f] or @function[g] >= @run[r]
+                ) and
+                for any i in (1..#increment) : (
+                  @increment[i] > @function[f] and
+                  for any a in (1..#accumulate) : (
+                    @accumulate[a] > @increment[i] and
+                    @accumulate[a] < @increment[i]+160 and
+                    @accumulate[a] < @run[r] and
+                    $swap in (@accumulate[a]..@run[r]) and
+                    $sum in (@accumulate[a]..@run[r]) and
+                    $xor in (@accumulate[a]..@run[r])
+                  )
+                ) and
+                for any p in (1..#name) : (
+                  @name[p] >= @function[f]+8 and
+                  @name[p]+!name[p] < @function[f]+!function[f] and
+                  for any q in (1..#name) : (
+                    @name[q]+!name[q] == @run[r]+!run[r] and
+                    !name[p] == !name[q] and
+                    for all k in (0..!name[p]-1) : (
+                      (uint8(@name[p]+k) | 32) == (uint8(@name[q]+k) | 32)
+                    )
+                  )
+                )
+              )
+            )
+        }

