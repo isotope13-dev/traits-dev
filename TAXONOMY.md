@@ -1522,9 +1522,8 @@ Window options, serialized names and unbound WMI startup clues are not process
 creation by themselves. Keep hidden-launch evidence separate from those
 configuration and profile observations; a generic hex literal does not name a
 Windows flag without context.
-`metadata/file/profile/shortcut/path` groups shortcut-specific path and
-working-directory observations; generic path references remain in
-`metadata/file/profile/path-reference`.
+Classify shortcut paths by their evidenced target or working-directory subject;
+classify generic path references by the filesystem or URL subject they name.
 
 Package-triggered execution is organized by the triggering phase: `execution/trigger/package/build` for build and setup machinery, `package/lifecycle` for installer and package-manager lifecycle hooks, and `package/import` for module-import triggers. A Python `.pth` startup hook belongs with Python startup persistence; a filename or hook declaration alone does not establish an executed payload.
 
@@ -1945,8 +1944,8 @@ exfiltration, or named-tool subject, and describe unbound observations as such.
 `communications/rpc` records RPC protocol fields and API references;
 `communications/blockchain/wallet` records wallet method names and their co-occurrence. Such names
 do not by themselves establish a request, an account access or a signing flow.
-`metadata/file/profile/encoding` groups encoding API and syntax references
-without treating an API name as a completed transform.
+Encoding API and syntax references belong with the evidenced codec, operation,
+format, or literal; an API name alone does not establish a completed transform.
 
 `metadata/file/profile/mcp` records MCP protocol names and unbound evidence;
 `agent-config` records declared settings, and `tool-interface` records generic

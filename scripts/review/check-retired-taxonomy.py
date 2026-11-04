@@ -241,6 +241,14 @@ RETIRED = {
         'Use the evidenced blockchain operation, protocol, named service, or supported objective.',
     'metadata/file/profile/embedded-binary':
         'Use the evidenced binary structure, embedded payload, named product, or supported objective.',
+    'metadata/file/profile/credential-terms':
+        'Use the evidenced credential source, operation, vocabulary, named product, or supported objective.',
+    'metadata/file/profile/path-reference':
+        'Use the evidenced filesystem or URL subject, operation, named product, or supported objective.',
+    'metadata/file/profile/markup':
+        'Use the evidenced document format, markup operation, named product, or supported objective.',
+    'metadata/file/profile/encoding':
+        'Use the evidenced codec, operation, format, literal, or supported objective.',
     'metadata/file/profile/browser':
         'Use the evidenced browser operation, collection, exfiltration, or named application subject.',
     'metadata/file/profile/browser/state':
