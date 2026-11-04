@@ -251,6 +251,10 @@ RETIRED = {
         'Use metadata/installer/product for the reviewed installer-product selector.',
     'metadata/file/profile/installer/properties':
         'Use named installer evidence or the observed privilege behavior.',
+    'metadata/file/profile/installer/bundle':
+        'Use the named packaging tool or evidenced installer behavior.',
+    'metadata/file/profile/installer/structure':
+        'Use the evidenced packaging tool, configuration, file, or resource subject.',
     'metadata/file/profile/installer/plugin':
         'Use installer recognition, named DLL evidence, or the supported packing and execution objective.',
     'metadata/file/profile/installer/resource':
@@ -265,10 +269,16 @@ RETIRED = {
         'Use the evidenced decoding, decompression, encoded content, or marker subject.',
     'metadata/file/profile/shortcut/extension':
         'Use the evidenced argument, target path, or extension masquerade.',
+    'metadata/file/profile/shortcut/path':
+        'Use the evidenced executable, path, network share, or masquerade subject.',
+    'metadata/file/profile/shortcut/script-and-command':
+        'Use the evidenced interpreter, process, file, network, or execution subject.',
     'metadata/file/profile/shortcut/options':
         'Use the specific command option, interpreter, or error-suppression behavior.',
     'metadata/file/profile/shortcut/com-automation':
         'Use the specific COM automation, HTTP, or stream behavior.',
+    'metadata/file/profile/shortcut':
+        'Classify shortcut evidence by its observed behavior, objective, or property.',
     'metadata/file/profile/binary-strings':
         'Use the observed text subject, behavior, or named product.',
     'metadata/file/profile/text-distribution':

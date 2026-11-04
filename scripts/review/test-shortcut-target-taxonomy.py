@@ -35,7 +35,7 @@ with tempfile.TemporaryDirectory(prefix='shortcut-target-') as tmp:
     ids = {Path(r['path']).name: {t['id'] for t in r.get('traits', [])} for r in reports}
     assert set(ids) == set(samples), ids.keys()
     cmd = 'micro-behaviors/process/config/target::lnk-cmd-target'
-    wscript_text = 'metadata/file/profile/shortcut/script-and-command::lnk-wscript-path-text'
+    wscript_text = 'micro-behaviors/fs/path/executable::lnk-wscript-path-text'
     script_host = 'micro-behaviors/process/config/target::lnk-script-host-target'
     assert cmd in ids['cmd.lnk'] and cmd not in ids['differentcmd.lnk']
     assert cmd in ids['embedded-wscript.lnk'] and wscript_text in ids['embedded-wscript.lnk']
