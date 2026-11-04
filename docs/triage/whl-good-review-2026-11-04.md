@@ -5,6 +5,7 @@ following disabled; the JSON records are at `/var/tmp/whl-good-initial.jsonl`.
 These are preliminary scanner results, not endpoint rulings. Several packages
 contain scanner evidence of exploit or reverse-shell functionality and require
 particular attention under the endpoint classification policy.
+Twelve entries have been reviewed: six good, four bad, and two dual-use.
 
 `bbf593eb5c6e` and `a4d4de95e770` are Keris Toolkit versions 0.9.0 and
 0.10.0. Their identical shell module generates Bash, Python, and PowerShell
@@ -56,7 +57,7 @@ downgrade now retains the specific decryption warning while reporting the broad
 query at notable when no login-table clues exist. A control adding Login Data
 and login-table references preserves the broad suspicious warning. The fresh
 wheel scan has one suspicious cookie-decryption finding and no hostile traits.
-Endpoint ruling: good; recording awaits validation.
+Endpoint ruling: good; validation passed and Hopper confirmed the label (no-op).
 
 `69dc74f12c76` is a Tovuk deployment CLI wrapper. Unless an override, bundled
 binary, or cached binary is available, normal invocation downloads a native
@@ -65,7 +66,8 @@ with it. The wrapper does not verify a checksum. New notable observations
 report the response write and the co-occurring `execv` call; controls without
 the response read or process replacement do not match. The no-follow wheel scan
 has no suspicious or hostile traits. The remote binary is not in this wheel.
-Endpoint ruling for the wrapper: good; recording awaits validation.
+Endpoint ruling for the wrapper: good; validation passed and Hopper confirmed
+the label (no-op).
 
 `a6dfb93ccf1c` is a Python debugger, logger, and profiler. It executes a
 selected local script, inspects traceback frames, and can send signed reports
@@ -74,7 +76,7 @@ placed a mere `secure_payload`/`emit` text proximity under exfiltration and
 asserted signing and Socket.IO; it has been relocated to a neutral syntax
 observation. Separate traits report the actual Socket.IO and execution APIs.
 The fresh wheel scan has no suspicious or hostile findings. Endpoint ruling:
-good; recording awaits validation.
+good; validation passed and Hopper confirmed the label (no-op).
 
 `2c3f29116d20` and `a0288be63d47` are aioconsole versions 0.6.0 and 0.5.1.
 Their identical server module exposes an interactive Python console over a
@@ -84,8 +86,8 @@ remote code execution to anyone who reaches an exposed listener; it is
 dual-use rather than a dedicated attack implementation. A new suspicious
 observation identifies the async server, connection handler, and interactive
 console clues. Both wheels match; controls without any one of those clues do
-not. A current Hopper CLI supports the canonical dual-use pool and its dry run
-plans the two moves; validation and recording are pending.
+not. Validation passed, Hopper moved both to the canonical dual-use pool, and
+their hash-verified snapshots were relocated to `/tmp/triage/misplaced-dual-use`.
 
 `2727f68d03e2` (riciplay-cli) contains a callable payload factory with MySQL
 file-read injection strings and Jinja command-execution gadgets, plus a harness
@@ -104,4 +106,5 @@ and flag collection make it a dedicated attack framework rather than an inert
 helper. New hostile observations report target dispatch and flag submission in
 separate directories on the actual wheel. Controls without dispatch, flag
 buffering, or submission test those prerequisites. Endpoint ruling: bad;
-validation and relocation are pending.
+validation passed, Hopper moved it to bad, and its hash-verified snapshot was
+relocated to `/tmp/triage/misplaced-bad`.
