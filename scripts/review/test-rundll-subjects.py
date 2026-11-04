@@ -7,7 +7,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 CLEAVE = os.environ.get('CLEAVE', str(ROOT.parent / 'cleave/target/release/cleave'))
-COMMAND = 'well-known/app/system/windows-rundll32::rundll32-command-text'
+COMMAND = 'well-known/app/system/windows/rundll32::rundll32-command-text'
 SYSTEM = 'well-known/lib/platform/microsoft-system::microsoft-known-system-context'
 with tempfile.TemporaryDirectory(prefix='rundll-subjects-') as tmp:
     path = Path(tmp) / 'launch.bat'

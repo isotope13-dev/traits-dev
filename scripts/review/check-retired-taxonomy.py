@@ -5,6 +5,14 @@ import re
 from pathlib import Path
 
 RETIRED = {
+    'metadata/file/profile/com/class-id':
+        'Use the named COM component or the supported object-creation behavior.',
+    'metadata/file/profile/com/interface':
+        'Use the named component, COM interface, or supported operation.',
+    'metadata/file/profile/com/registration':
+        'Use COM registration or the supported registry, persistence, or execution subject.',
+    'metadata/file/profile/text-shape':
+        'Use the observed subject, supported behavior, or specific neutral text property.',
     'metadata/file/profile/string-population':
         'Use the observed string property, subject, supported behavior, or objective.',
     'metadata/file/profile/co-occurrence':
