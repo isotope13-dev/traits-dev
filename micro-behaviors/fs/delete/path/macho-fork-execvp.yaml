@@ -1,0 +1,170 @@
+# Bind code calls through LC_DYSYMTAB and the indirect symbol table.
+# YARA-X 1.22 leaves macho.dysymtab zeroed on the reviewed chained-fixup
+# images; read that bounded load-command field from its mandated structure.
+defaults:
+  platforms:
+  - macos
+  for:
+  - macho
+  crit: notable
+traits:
+- id: x64-fork-remove-execvp-path
+  desc: x64 fork removes or execs one pathname
+  conf: 0.99
+  arch:
+  - x86-64
+  if:
+    type: yara
+    source: |
+      import "macho"
+      rule x64_split_pathname_argv_calls {
+        strings:
+          $split = { E8 ?? ?? ?? ?? 83 F8 00 0F 85 ?? ?? ?? ??
+                     48 8B BD ?? ?? ?? ?? E8 ?? ?? ?? ?? E9 ?? ?? ?? ??
+                     48 8B BD ?? ?? ?? ?? 48 8D B5 ?? ?? ?? ?? E8 ?? ?? ?? ?? }
+          $fork_name = "_fork\x00"
+          $remove_name = "_remove\x00"
+          $exec_name = "_execvp\x00"
+          $dysym = { 0B 00 00 00 50 00 00 00 }
+        condition:
+          uint32(0) == 0xFEEDFACF and
+          for any d in (1..#dysym) : (
+            @dysym[d] >= 32 and @dysym[d]+80 <= 32+macho.sizeofcmds and
+            @dysym[d] % 8 == 0 and
+            with indirect = uint32(@dysym[d]+56) : (
+              #split > 0 and #split <= 64 and
+              for any i in (1..#split) : (
+                int32(@split[i]+10) == 17 and
+                uint32(@split[i]+17) == uint32(@split[i]+34) and
+                for any seg in macho.segments : (
+                  for any code in seg.sections : (
+                    (code.flags & 0x80000000) != 0 and
+                    @split[i] >= code.offset and @split[i]+!split[i] <= code.offset+code.size and
+                    for any linkseg in macho.segments : (
+                      for any stubs in linkseg.sections : (
+                        (stubs.flags & 0xFF) == 8 and stubs.reserved2 > 0 and
+                        with f = code.addr+@split[i]-code.offset+5+int32(@split[i]+1) : (
+                            f >= stubs.addr and f < stubs.addr+stubs.size and
+                            (f-stubs.addr) % stubs.reserved2 == 0 and
+                            with n = uint32(indirect+
+                              4*(stubs.reserved1+(f-stubs.addr)\stubs.reserved2)) : (
+                              n < macho.symtab.nsyms and
+                              for any k in (1..#fork_name) : (
+                                macho.symtab.stroff+macho.symtab.nlists[n].n_strx == @fork_name[k]
+                              )
+                            )
+                          ) and
+                        with r = code.addr+@split[i]-code.offset+26+int32(@split[i]+22) : (
+                            r >= stubs.addr and r < stubs.addr+stubs.size and
+                            (r-stubs.addr) % stubs.reserved2 == 0 and
+                            with n = uint32(indirect+
+                              4*(stubs.reserved1+(r-stubs.addr)\stubs.reserved2)) : (
+                              n < macho.symtab.nsyms and
+                              for any k in (1..#remove_name) : (
+                                macho.symtab.stroff+macho.symtab.nlists[n].n_strx == @remove_name[k]
+                              )
+                            )
+                          ) and
+                        with e = code.addr+@split[i]-code.offset+50+int32(@split[i]+46) : (
+                            e >= stubs.addr and e < stubs.addr+stubs.size and
+                            (e-stubs.addr) % stubs.reserved2 == 0 and
+                            with n = uint32(indirect+
+                              4*(stubs.reserved1+(e-stubs.addr)\stubs.reserved2)) : (
+                              n < macho.symtab.nsyms and
+                              for any k in (1..#exec_name) : (
+                                macho.symtab.stroff+macho.symtab.nlists[n].n_strx == @exec_name[k]
+                              )
+                            )
+                          )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+      }
+- id: arm64-fork-remove-execvp-path
+  desc: ARM64 fork removes or execs one pathname
+  conf: 0.99
+  arch:
+  - aarch64
+  if:
+    type: yara
+    source: |
+      import "macho"
+      rule arm64_split_pathname_argv_calls {
+        strings:
+          $split = { ?? ?? ?? 94 ?? ?? ?? 35 ?? ?? ?? 14
+                     E0 ?? ?? F9 ?? ?? ?? 94 ?? ?? ?? 14
+                     E0 ?? ?? F9 E1 ?? ?? 91 ?? ?? ?? 94 }
+          $fork_name = "_fork\x00"
+          $remove_name = "_remove\x00"
+          $exec_name = "_execvp\x00"
+          $dysym = { 0B 00 00 00 50 00 00 00 }
+        condition:
+          uint32(0) == 0xFEEDFACF and
+          for any d in (1..#dysym) : (
+            @dysym[d] >= 32 and @dysym[d]+80 <= 32+macho.sizeofcmds and
+            @dysym[d] % 8 == 0 and
+            with indirect = uint32(@dysym[d]+56) : (
+              #split > 0 and #split <= 64 and
+              for any i in (1..#split) : (
+                // CBNZ W0 jumps to the pathname+argv branch, skipping removal.
+                (uint32(@split[i]+4) & 0x00FFFFFF) == 0x000000A0 and
+                uint32(@split[i]+12) == uint32(@split[i]+24) and
+                for any seg in macho.segments : (
+                  for any code in seg.sections : (
+                    (code.flags & 0x80000000) != 0 and
+                    @split[i] >= code.offset and @split[i]+!split[i] <= code.offset+code.size and
+                    for any linkseg in macho.segments : (
+                      for any stubs in linkseg.sections : (
+                        (stubs.flags & 0xFF) == 8 and stubs.reserved2 > 0 and
+                        with f = code.addr+@split[i]-code.offset+0+(((uint32(@split[i]+0) & 0x03FFFFFF) ^ 0x02000000)-0x02000000)*4 : (
+                            f >= stubs.addr and f < stubs.addr+stubs.size and
+                            (f-stubs.addr) % stubs.reserved2 == 0 and
+                            with n = uint32(indirect+
+                              4*(stubs.reserved1+(f-stubs.addr)\stubs.reserved2)) : (
+                              n < macho.symtab.nsyms and
+                              for any k in (1..#fork_name) : (
+                                macho.symtab.stroff+macho.symtab.nlists[n].n_strx == @fork_name[k]
+                              )
+                            )
+                          ) and
+                        with r = code.addr+@split[i]-code.offset+16+(((uint32(@split[i]+16) & 0x03FFFFFF) ^ 0x02000000)-0x02000000)*4 : (
+                            r >= stubs.addr and r < stubs.addr+stubs.size and
+                            (r-stubs.addr) % stubs.reserved2 == 0 and
+                            with n = uint32(indirect+
+                              4*(stubs.reserved1+(r-stubs.addr)\stubs.reserved2)) : (
+                              n < macho.symtab.nsyms and
+                              for any k in (1..#remove_name) : (
+                                macho.symtab.stroff+macho.symtab.nlists[n].n_strx == @remove_name[k]
+                              )
+                            )
+                          ) and
+                        with e = code.addr+@split[i]-code.offset+32+(((uint32(@split[i]+32) & 0x03FFFFFF) ^ 0x02000000)-0x02000000)*4 : (
+                            e >= stubs.addr and e < stubs.addr+stubs.size and
+                            (e-stubs.addr) % stubs.reserved2 == 0 and
+                            with n = uint32(indirect+
+                              4*(stubs.reserved1+(e-stubs.addr)\stubs.reserved2)) : (
+                              n < macho.symtab.nsyms and
+                              for any k in (1..#exec_name) : (
+                                macho.symtab.stroff+macho.symtab.nlists[n].n_strx == @exec_name[k]
+                              )
+                            )
+                          )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+      }
+composite_rules:
+- id: macho-fork-remove-execvp-path
+  desc: Fork removes or execs one pathname
+  conf: 0.99
+  any:
+  - id: x64-fork-remove-execvp-path
+  - id: arm64-fork-remove-execvp-path
