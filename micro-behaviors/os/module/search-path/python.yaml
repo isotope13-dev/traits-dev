@@ -21,24 +21,75 @@ traits:
       type: text
       regex: 'site\.(getsitepackages|getusersitepackages)\s*\('
 
-  # The hidden-directory literal written inside the sys.path call itself.
-  # Same-line proximity between the call and any dotdir string is not enough:
-  # installers that write a launcher (bytes containing `sys.path.insert`) into
-  # `.tool/bin/` put both on one line without mutating anything.
+  # Neutral coverage includes conventional build, environment and cache paths.
+  # The contributing literal is bound to the actual call argument, including
+  # concatenation and local aliases; a launcher template is not a call.
+  - id: sys-path-dot-directory-input
+    desc: Import-path argument includes a dot-directory
+    crit: notable
+    conf: 0.95
+    if:
+      type: symbol
+      kind: call
+      regex: '^sys\.path\.(insert|append|extend)$'
+      arg:
+        from:
+          value: '(^|[\\/])\.[A-Za-z_][\w-]{0,30}([\\/]|$)'
+          through:
+            - call: '^os\.path\.(join|normpath|abspath|expanduser)$'
+              arguments: [0, 1, 2, 3]
+
+  # Per-literal exclusions must not suppress a second, unusual path in the
+  # same file. Call facts expose contributing values but cannot exclude an
+  # individual origin by regex. A live call query also excludes quoted code.
   - id: sys-path-hidden-dir-entry
-    desc: Adds a hidden directory to sys.path
+    desc: Adds nonstandard dot-directory to sys.path
     crit: notable
     conf: 0.9
     if:
-      type: text
-      regex: 'sys\.path\.(insert|append|extend)\([^\n]{0,100}[''"/]\.[A-Za-z_][\w-]{0,30}[/''"]'
+      type: tree-sitter
+      language: python
+      query: |
+        ((call
+          function: (attribute
+            object: (attribute object: (identifier) @sys attribute: (identifier) @path)
+            attribute: (identifier) @method)
+          arguments: (argument_list
+            [
+              (string) @directory
+              (binary_operator left: (string) @directory)
+              (binary_operator right: (string) @directory)
+              (list (string) @directory)
+              (tuple (string) @directory)
+            ])) @call
+          (#eq? @sys "sys")
+          (#eq? @path "path")
+          (#match? @method "^(insert|append|extend)$")
+          (#match? @directory "[\"'/\\\\]\\.[A-Za-z_][\\w-]{0,30}[/\\\\\"']")
+          (#not-match? @directory "[\"'/\\\\]\\.(libs|local|venv|virtualenv|tox|nox|cache|config|github|gitlab|openshift-ci|vscode|idea|bin|pydeps|openclaw|claude|hermes|codex|gemini|devcontainer|kodi)[/\\\\\"']"))
+
+        ((call
+          function: (attribute
+            object: (attribute object: (identifier) @sys attribute: (identifier) @path)
+            attribute: (identifier) @method)
+          arguments: (argument_list
+            (call
+              function: (attribute
+                object: (attribute object: (identifier) @os attribute: (identifier) @ospath)
+                attribute: (identifier) @join)
+              arguments: (argument_list (string) @directory)))) @call
+          (#eq? @sys "sys")
+          (#eq? @path "path")
+          (#match? @method "^(insert|append|extend)$")
+          (#eq? @os "os")
+          (#eq? @ospath "path")
+          (#eq? @join "join")
+          (#match? @directory "[\"'/\\\\]\\.[A-Za-z_][\\w-]{0,30}[/\\\\\"']")
+          (#not-match? @directory "[\"'/\\\\]\\.(libs|local|venv|virtualenv|tox|nox|cache|config|github|gitlab|openshift-ci|vscode|idea|bin|pydeps|openclaw|claude|hermes|codex|gemini|devcontainer|kodi)[/\\\\\"']"))
     # Conventional venv/tool/CI dotdirs are layout, not concealment: .github
     # and .gitlab are CI-system directories, and .openshift-ci is their
     # OpenShift CI (ci-operator) equivalent holding shared workflow helpers
     # that jobs import via sys.path.
-    not:
-      - regex: '[''"/]\.(local|venv|virtualenv|tox|nox|cache|config|github|gitlab|openshift-ci|vscode|idea)[/''"]'
-      - regex: '[''"/]\.(bin|pydeps|openclaw|claude|hermes|codex|gemini|devcontainer|kodi)[/''"]'
 
   # site.py adds each non-import line in a .pth file to sys.path. Echoing one
   # absolute directory into site-packages is that documented path entry.
