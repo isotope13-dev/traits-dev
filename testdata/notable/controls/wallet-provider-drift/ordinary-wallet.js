@@ -1,0 +1,7 @@
+export const LIMIT = BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+const chains = ["0x1234567890abcdef1234567890abcdef12345678", "0x234567890abcdef1234567890abcdef123456789", "0x34567890abcdef1234567890abcdef1234567890"];
+export async function pay(provider, recipient, amount) {
+  const accounts = await provider.request({method: "eth_requestAccounts"});
+  return provider.request({method: "eth_sendTransaction", params: [{from: accounts[0], to: recipient, value: amount}]});
+}
+export const approval = "0x095ea7b3";
