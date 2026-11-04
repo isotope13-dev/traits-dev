@@ -55,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix='retained-access-') as tmp:
     assert redis not in ids['redis_no_save.sh']
     deployment = 'objectives/lateral-movement/ssh/deploy-backdoor::lua-credential-loop-installs-ssh-key'
     override = 'micro-behaviors/communications/ssh/server::sshd-service-alternate-key-override'
-    profile = 'metadata/file/profile/installer/lifecycle::rpm-sshd-override-write-clues'
+    profile = 'objectives/persistence/login/ssh::rpm-sshd-override-write-clues'
     assert deployment in ids['deploy.lua'], ids['deploy.lua']
     assert deployment not in ids['no_execution.lua']
     assert override in ids['override.sh'], ids['override.sh']

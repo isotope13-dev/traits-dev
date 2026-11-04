@@ -257,6 +257,10 @@ RETIRED = {
         'Use the named packaging tool or evidenced installer behavior.',
     'metadata/file/profile/installer/structure':
         'Use the evidenced packaging tool, configuration, file, or resource subject.',
+    'metadata/file/profile/installer/product/archive':
+        'Use the named self-extractor, extraction behavior, or evidenced archive subject.',
+    'metadata/file/profile/installer/product':
+        'Use the named product or evidenced installation, packaging, or extraction behavior.',
     'metadata/file/profile/installer/plugin':
         'Use installer recognition, named DLL evidence, or the supported packing and execution objective.',
     'metadata/file/profile/installer/resource':
