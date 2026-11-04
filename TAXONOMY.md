@@ -1966,8 +1966,10 @@ configuration fields without behavioral implications follow their own subject.
 High entropy, an unsigned file, an unknown installer version marker or a zero
 checksum alone do not establish encryption, tampering or payload execution.
 
-Legacy firmware profiles should move to the supported operation or likely
-objective. A firmware-looking path alone does not establish that firmware was
+The legacy firmware profile is retired. Firmware observations use their
+format, operation, or likely objective; short VXWS text clues are firmware
+format context, and the SWXV code bytes are a section-byte observation. None
+alone identifies a platform or establishes a payload. A firmware-looking path alone does not establish that firmware was
 downloaded, updated or executed; retain an isolated path with its path subject.
 Executable and spawn configuration fields belong with process configuration;
 temporary path fields belong with their path subject. Those fields alone do

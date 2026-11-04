@@ -5,6 +5,8 @@ import re
 from pathlib import Path
 
 RETIRED = {
+    'metadata/file/profile/firmware':
+        'Use firmware format evidence, binary section bytes, or the supported operation.',
     'metadata/file/profile/execution-api':
         'Use process creation, replacement, interpreter, or the supported execution objective.',
     'metadata/file/profile/operation-reference':

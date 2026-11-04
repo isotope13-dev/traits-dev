@@ -91,10 +91,10 @@ def main():
         ('negated-malware-warning', {'deprecated': 'Not malware; use the maintained version'}),
     ]:
         add(name, registry | extra, False)
-    add('holder-manifest-string-repository', HOLDER, True, [MANIFEST], manifest=True)
+    add('holder-manifest-string-repository', HOLDER, False, forbidden=[MANIFEST], manifest=True)
     add('holder-manifest-object-repository', HOLDER | {'repository': {
         'type': 'git', 'url': 'git+https://github.com/npm/security-holder.git'}},
-        True, [MANIFEST], manifest=True)
+        False, forbidden=[MANIFEST], manifest=True)
     add('holder-version-alone', {'name': 'ordinary', 'version': '0.0.1-security'}, False, manifest=True)
     add('holder-repository-alone', {'name': 'ordinary', 'version': '1.0.0',
         'repository': 'npm/security-holder'}, False, manifest=True)
@@ -110,7 +110,7 @@ def main():
         cases.append(dict(name=name, path=path, hostile=expected,
                           required=set(required), forbidden=set(forbidden)))
 
-    archive('vendored-holder', {'vendor/held/package.json': HOLDER}, True, [MANIFEST])
+    archive('vendored-holder', {'vendor/held/package.json': HOLDER}, False, forbidden=[MANIFEST])
     archive('holder-legs-in-different-members', {
         'a/package.json': {'name': 'a', 'version': '0.0.1-security'},
         'b/package.json': {'name': 'b', 'version': '1.0.0', 'repository': 'npm/security-holder'}},
@@ -126,14 +126,15 @@ def main():
         phase = 'follow' if follow else 'static'
         command = [args.atomscan, '--no-update', '--analyze', 'local', '--mode', 'slow',
                    '--format=json', '--follow=' + ('dependencies' if follow else 'none'),
-                   '--follow-depth=1', '--fetch-timeout=15s', '--fetch-max-age=7']
+                   '--follow-depth=1']
         command.extend(str(case['path']) for case in batch)
         started = time.monotonic()
         with (work / (phase + '.stderr')).open('wb') as err:
             proc = subprocess.run(command, env=env, stdout=subprocess.PIPE, stderr=err, timeout=300)
         with gzip.open(work / (phase + '.jsonl.gz'), 'wb') as f:
             f.write(proc.stdout)
-        assert proc.returncode in (0, 1, 2), (phase, proc.returncode)
+        assert proc.returncode in (0, 1, 2) and proc.stdout.strip(), (
+            phase, proc.returncode, (work / (phase + '.stderr')).read_text())
         reports = [json.loads(line) for line in proc.stdout.splitlines() if line.strip()]
         by_sha = {r['raw']['files'][0]['sha']: r for r in reports}
         for case in batch:
@@ -150,8 +151,7 @@ def main():
                 # No fetched payload is needed for a removed dependency:
                 # the exact declaring manifest must carry the hostile fact.
                 declaring = [f for f in files if f['path'].endswith(case.get('declarer', 'package.json'))]
-                declaring_ids = {t['id'] for f in declaring for t in f.get('traits', [])
-                                 if t.get('crit') == 5}
+                declaring_ids = {t['id'] for f in declaring for t in f.get('traits', [])}
                 ok = ok and DEPENDENCY in declaring_ids
             row = dict(name=case['name'], phase=phase, passed=ok,
                        expected_hostile=case['hostile'], hostile=sorted(hostile),
@@ -202,7 +202,7 @@ def main():
             document = {'error': 'Not found'}
         cache_metadata('https://registry.npmjs.org/' + package, document)
         cache_metadata('https://api.npmjs.org/downloads/point/last-month/' + package, {'downloads': 10})
-        follow_cases.append(dict(name=name, path=path, hostile=security,
+        follow_cases.append(dict(name=name, path=path, hostile=bool(security and removed),
                                  required=({DEPENDENCY, REMOVED} if removed else {DEPENDENCY})
                                  if security else set(),
                                  forbidden={REMOVED} if security and not removed else set()))

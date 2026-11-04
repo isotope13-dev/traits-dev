@@ -10,6 +10,11 @@ move to acquisition or reconstruction; the short `VXWS`/`SWXV` observations
 are retained as firmware-related markers without treating the marker alone as
 proof of a platform or payload.
 
+The firmware profile has since been retired: the two VXWS text observations
+are under firmware format evidence and the SWXV code-section bytes under
+binary section bytes. Their matchers, scopes, severities, and individual
+consumer alternatives are unchanged.
+
 Go function names, a sparse kernel-callback combination, and Mach-O memory APIs
 now describe their observed evidence instead of claiming decryption or an
 executed stage. Their severity is suspicious or notable. The original match

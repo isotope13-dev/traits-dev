@@ -2,6 +2,8 @@
 
 Apply `x-triage-bad`, followed by `x-improve`, to each filetype. Check an item only after its complete sample set and required validation have been verified. The source directory is a snapshot; use Hopper for current labels.
 
+For VSIX specifically, classify from direct investigation of each packaged artifact, not atomscan output. Inspect activation, executable paths, dependencies, bundled native/Wasm payloads, collection and network destinations. Treat scanner findings as leads and coverage checks. Distinguish Marketplace identity-level removal records from evidence about the exact version and bytes. See the VSIX review for evidence and dispositions.
+
 The requested priority is listed first; remaining filetypes are alphabetical. `whl` appeared twice in the original sequence and is listed once.
 
 - [x] shell: `x-triage-bad`, then `x-improve` — 40 snapshot entries reviewed; see `shell-bad-review-2026-11-02.md`
@@ -116,11 +118,11 @@ The requested priority is listed first; remaining filetypes are alphabetical. `w
 - [x] tiff: `x-triage-bad`, then `x-improve` — 39 good, 1 bad; see TIFF review
 - [ ] unknown: `x-triage-bad`, then `x-improve` — classified 22 bad, 16 good, 1 inconclusive; one unknown-type DOS detection gap remains
 - [x] vbs: `x-triage-bad`, then `x-improve` — 17 bad, 10 good, 3 dual-use, 10 inconclusive; see VB-family review
-- [ ] vhd: `x-triage-bad`, then `x-improve` — in progress
-- [ ] vsix: `x-triage-bad`, then `x-improve`
-- [ ] wasm: `x-triage-bad`, then `x-improve`
-- [ ] wav: `x-triage-bad`, then `x-improve`
-- [ ] webp: `x-triage-bad`, then `x-improve`
+- [x] vhd: `x-triage-bad`, then `x-improve` — 14 bad; see `vhd-bad-review-2026-11-04.md`
+- [x] vsix: `x-triage-bad`, then `x-improve` — 40 directly investigated; 34 good, 6 bad; see `vsix-bad-review-2026-11-04.md`
+- [x] wasm: `x-triage-bad`, then `x-improve` — 1 bad; see `wasm-bad-review-2026-11-04.md`
+- [x] wav: `x-triage-bad`, then `x-improve` — 1 bad, 4 good; see `wav-bad-review-2026-11-04.md`
+- [x] webp: `x-triage-bad`, then `x-improve` — 3 bad, 7 good, 1 inconclusive; see `webp-bad-review-2026-11-04.md`
 - [ ] xml: `x-triage-bad`, then `x-improve`
 - [ ] xpi: `x-triage-bad`, then `x-improve`
 - [ ] xz: `x-triage-bad`, then `x-improve`
