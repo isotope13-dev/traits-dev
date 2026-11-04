@@ -1,0 +1,1 @@
+Reflect.apply(launch,handle,[{"file":process.execPath,"args":[process.execPath,"child.js"],"envPairs":[]}]);
