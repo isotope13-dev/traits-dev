@@ -15,7 +15,13 @@ based review and final classification.
   a LuaJIT version banner, bytecode preload format, and LuaJIT command-line
   help. The generic AMOS cipher-variant heuristic falsely matched this member.
   A Mach-O LuaJIT CLI identity now guards that heuristic; the individual member
-  rescan no longer reports it. The rest of the archive still needs review.
+  rescan no longer reports it. The extension also attaches to selected Lua
+  processes through GDB, LLDB, or a platform helper and loads its debugger
+  library. A new notable observation reports the debugger-attach, spawn, and
+  `dlopen` clues together; controls without the attach or load clue do not
+  match. This is consistent with the debugger's purpose. A full no-follow scan
+  reports the new observation and no suspicious or hostile traits. Validation
+  passed, and Hopper confirmed the good label (no-op).
 * `37970fc037c9`: Batchitt is a chat extension whose webview authenticates with
   a service-issued key and communicates with its own chat service. The key is
   inserted into the login URL path, an unusual security-relevant choice that can
@@ -49,13 +55,15 @@ notable observation reports the CSP reference alongside the text replacement.
 The extension code and native source were inspected, and both architectures
 of the native binaries import only `KERNEL32.dll` directly. The 1.1.86 release
 also creates a writable NixOS editor mirror and desktop entry. These are
-provisional good rulings pending validation. Slow local Atomscan rescans with
+good rulings. Slow local Atomscan rescans with
 reference following disabled report the CSP observation and one suspicious
 hidden-PowerShell finding for each, with no hostile traits. The CSP observation
 also matches all five actual transform files and rejects controls missing the
 CSP reference or the trusted-types replacement. A current `make validate`
-run fails on a duplicate reward-claim matcher in unrelated concurrent changes;
-the five labels have not been recorded yet.
+run first found a duplicate reward-claim matcher; its sole consumer now uses
+the canonical natural-language matcher. After rebuilding the scanner against
+the current source, `make validate` passed and Hopper confirmed the five good
+labels (five no-ops).
 * `b2efc28a78a4`: Commit Defender installs a repository pre-commit hook, reads
   staged diffs and sends review content to a configured AI provider. Its hook
   installer asks before replacing an existing hook and stores its configuration
@@ -78,17 +86,80 @@ also fetched npm `optimize` and Google Chrome packages from referenced URLs
 (`rel: fetched`); they are not necessarily bytes bundled in the VSIX and must
 not be attributed to it without following the reference chain.
 
-A total of 34 archives remain to be reviewed, including those two and Lua Debug;
+`c55411fa467b` (Angular Schematics) was flagged as a bundled artifact with an
+appended obfuscated line. Its vendor bundle has seven lines, two of them over
+1,000 bytes, even though the finding requires at least 30 lines and exactly
+one long line. The scanner had copied line metrics from plain embedded code
+onto the host, allowing them to combine with unrelated host traits. A focused
+scanner regression now passes with those unlocated snippet metrics kept out
+of the host; the actual bundle still needs a rescan after rebuilding.
+
+`3cec32595b0f` (Fitten Code) ships a single 8.4 MB JavaScript bundle beginning
+with a rotated string table and heavily mangled identifiers. The initial scan
+flags obfuscation, and the manifest lists a separate `FittenTech.fitten-code-local`
+extension pack member. Static substitution of the string table exposes code
+that enumerates workspace files, stages selected files in a ZIP, and posts
+them to a hard-coded HTTP endpoint. The enumeration skips dot-prefixed paths,
+ignored paths, and files classified as binary. Its automatic upload entry point calls a
+configuration function that unconditionally returns the same value it treats
+as off; a separate invocation path has not been established. Other data flows
+are still under review. After connecting to its local WebSocket service, the
+extension also starts a legacy conversation-state migration that submits the
+old state to that service and clears it after a reported successful transfer;
+whether that service forwards the content elsewhere has not been established.
+No endpoint ruling has been made from the product description or obfuscation
+alone.
+
+A total of 23 archives remain to be reviewed, including those two;
 the scan is not evidence that unflagged files are safe.
+
+`0b0893983983` (Auto Retry Agent) uses a local Chrome DevTools connection to
+inject code that clicks agent approval controls. Its setup can add a remote
+debugging port to editor launchers. When the user clicks its session-summary
+button, the code collects visible conversation text and logs, redacts a few
+specific patterns, and posts the result to its remote summary service. The
+button describes a recap but does not itself identify that remote transfer.
+The initial scan records the CDP capabilities. A new notable observation reports
+co-occurring visible-conversation reader and JSON POST calls, without claiming
+that the reader's output reaches the request. It matches the actual source and
+rejects controls with either the reader or POST removed. The bundled code and
+external destinations were inspected; the recap is requested through a button,
+and the implementation is consistent with this automation utility. A slow
+local rescan with reference following disabled reports no suspicious or hostile
+traits and includes the new observation. After validation passed, Hopper
+confirmed the good label (no-op).
+
+`df47457a0b8d` (Oxc) integrates the installed Oxlint and Oxfmt tools with the
+editor. Its bundled JavaScript locates and launches local tools and can collect
+shell environment settings; no remote transfer was found in that code. The
+manifest's preinstall command conditionally downloads an image-named URL to
+`icon.png`. A new notable trait identifies curl writing to an image-named file
+without claiming the bytes are an image. The full no-follow rescan reports the
+new observation and no suspicious or hostile traits. After validation passed,
+Hopper confirmed the good label (no-op).
+
+`8752f68614c2` (Protobuf VSC) bundles a language client and server and offers
+installation of `protoc`, `buf`, and `grpcurl` from their release sites. The
+first two have embedded expected hashes for the listed platforms, while the
+`grpcurl` installer logs that hash verification is not implemented. The
+extension also references third-party webview scripts. A new notable trait
+reports the warning as text rather than inferring that all downloads lack
+verification. The real bundle and positive/negative controls matched as
+expected; a no-follow Atomscan rescan reports the warning and no suspicious
+or hostile traits. After validation passed, Hopper confirmed the good label
+(no-op).
 
 Both `bbb21a99269f` (Memory Vault) and `745bc96b9baf` (Quokka) contain the
 same `tar-fs/test/fixtures/invalid.tar`: it has symlink `foo -> ../` and a
 `foo/bar` file containing `hello`. The adjacent test code extracts it and
 asserts an outside `bar` is not written. The JavaScript harness actively sends
 the crafted archive to the extractor and checks the outside path, so it is an
-executable path-traversal test under the requested PoC policy. Both containing
-archives are provisionally bad; do not relabel until hostile findings in two
-directories cover their actual content and the remaining members are reviewed.
+executable path-traversal test under the requested PoC policy. Quokka is bad:
+its updated scan reports both hostile findings in different directories. After
+validation passed, Hopper moved it to bad and its snapshot was moved to
+`/tmp/triage/misplaced-bad`. Memory Vault's completed rescan reported the same
+two hostile findings; after validation passed, Hopper moved it to bad and its
+snapshot was relocated to the same pool.
 Quokka additionally has findings in a fetched Twisted package. The scan's
 parent chain runs from the bundled `pythonTestWorker.py` to a fetched pytest
 wheel, then from its `_pytest/unittest.py` to the fetched Twisted wheel. The
@@ -106,17 +177,35 @@ Normal archive scanning initially missed the inline YARA trait even though
 `cleave test-rules` matched it. The archive analyzer now evaluates inline YARA
 against the original archive bytes; a scanner unit test covers standalone and
 nested containers and a YARA-disabled control. The focused traits test and
-`make validate` pass. The Quokka scan before the harness-rule correction found
-the structural payload; a final full scan and updated atomscan verification
-are still needed. A full Memory Vault rescan ran out of memory during concurrent
+`make validate` pass. A full Memory Vault rescan ran out of memory during concurrent
 builds. A retry grew beyond 75 GiB and was stopped to protect the shared
 machine; its `RAYON_NUM_THREADS` setting did not limit this scanner, which uses
 `CLEAVE_RAYON_THREADS`. A retry with the correct four-thread setting grew past
 35 GiB during member analysis and was stopped; limiting concurrency alone did
 not resolve the problem.
-The updated atomscan build also encountered an unrelated rebase
-in the neighboring scanner checkout; no rebase files were changed for this
-review. Neither provisional classification has been moved.
+An updated atomscan has now been built from a temporary compatibility-adjusted
+copy against the scanner fix. Its no-reference-following Quokka scan reports
+the hostile payload and test-harness traits in different directories on the
+actual VSIX; no other hostile traits were reported in bundled files. The
+neighboring scanner checkout's rebase was left untouched.
+
+The cached Memory Vault retry also exceeded the 30 GiB watchdog and was stopped.
+An isolated scan of its 3.4 MB bundled `libcrypto-1_1.dll` peaked around
+10 GiB. A YARA-disabled scan also peaked around 10 GiB, so YARA alone does not
+explain the resource cost. The standalone `cleave facts text` command likewise
+peaked around 10 GiB; that view initializes the full filefacts extraction
+pipeline, which narrows the investigation to extraction rather than verdict
+aggregation. A standalone binform probe recovered 11,237 functions in that
+library; their overlapping extents total about 2.2 GB of code walks. Building
+call-site facts peaked around 9 GiB while returning 34,773 distinct sites.
+A dependency fix deduplicates overlapping sites during the walk while retaining
+the richest result at each address. On this library the old and new probes
+produced byte-identical records for all 34,773 sites; peak RSS fell from about
+8.7 GiB to 27 MiB. The call-site unit tests, including an overlapping-functions
+regression, pass. A temporary classifier incorporating the fix completed the
+full Memory Vault scan at about 5.4 GiB peak and reports both required hostile
+findings on the original VSIX. The dependency fix remains in the separate
+binform checkout and was used in the temporary classifier for this scan.
 
 Memory Vault also contains three byte-identical copies of the PyInstaller
 executable `memory-vault-fixing.exe` (SHA-256 `e0476df0ef1d111bc7c99d16ce483ead493cde11abe937623213caa7d8922978`).

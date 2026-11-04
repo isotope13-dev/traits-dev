@@ -124,7 +124,7 @@ The requested priority is listed first; remaining filetypes are alphabetical. `w
 - [x] wav: `x-triage-bad`, then `x-improve` — 1 bad, 4 good; see `wav-bad-review-2026-11-04.md`
 - [x] webp: `x-triage-bad`, then `x-improve` — 3 bad, 7 good, 1 inconclusive; see `webp-bad-review-2026-11-04.md`
 - [x] xml: `x-triage-bad`, then `x-improve` — 4 bad, 36 good; see `xml-bad-review-2026-11-04.md`
-- [ ] xpi: `x-triage-bad`, then `x-improve` — 40 outer artifacts unpacked/scanned; 23 completed (12 bad, 11 good), 17 under direct review; see `xpi-bad-review-2026-11-04.md`
+- [ ] xpi: `x-triage-bad`, then `x-improve` — 40 outer artifacts unpacked/scanned; 26 completed (13 bad, 13 good), 14 under direct review; see `xpi-bad-review-2026-11-04.md`
 - [ ] xz: `x-triage-bad`, then `x-improve`
 - [ ] yaml: `x-triage-bad`, then `x-improve`
 - [ ] yara: `x-triage-bad`, then `x-improve`
