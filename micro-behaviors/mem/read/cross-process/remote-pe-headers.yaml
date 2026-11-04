@@ -1,0 +1,38 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  crit: notable
+  conf: 0.97
+
+traits:
+  # A generic MZ/PE comparison or RPM import is insufficient. Both indirect
+  # call targets must resolve to RPM's IAT slot, followed by signature checks.
+  # This detects inspection, not export traversal, injection or recursion.
+  - id: x64-remote-pe-header-validation
+    desc: Validates MZ/PE signatures in process memory
+    arch: [x86-64]
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_remote_pe_header_validation {
+          strings:
+            $mz = { FF 15 [4] [0-24] (3D 4D 5A 00 00|66 81 ?? 4D 5A) }
+            $nt = { FF 15 [4] [0-24] (3D 50 45 00 00|81 ?? [0-5] 50 45 00 00) }
+          condition:
+            pe.is_64bit() and $mz and $nt and
+            for any i in (1..#mz) : (
+              for any j in (1..#nt) : (
+                @nt[j] > @mz[i] and @nt[j] - @mz[i] <= 512 and
+                for any s in pe.sections : (
+                  s.characteristics & 0x20000000 != 0 and
+                  @mz[i] >= s.raw_data_offset and
+                  @nt[j] + !nt[j] <= s.raw_data_offset + s.raw_data_size and
+                  s.virtual_address + @mz[i] + 6 - s.raw_data_offset + int32(@mz[i] + 2) ==
+                    pe.import_rva("kernel32.dll", "ReadProcessMemory") and
+                  s.virtual_address + @nt[j] + 6 - s.raw_data_offset + int32(@nt[j] + 2) ==
+                    pe.import_rva("kernel32.dll", "ReadProcessMemory")
+                )
+              )
+            )
+        }
