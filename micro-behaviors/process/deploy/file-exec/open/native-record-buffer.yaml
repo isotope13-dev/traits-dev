@@ -1,0 +1,51 @@
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+traits:
+  # Native call facts have no argument values. Bind the caller to its writer,
+  # the writer's CreateFile/WriteFile IAT slots and the subsequent opener.
+  # The stack displacement equation identifies the same destination buffer
+  # after argument cleanup. This is a compiler-shape detection, not a generic
+  # claim about every binary containing file and shell APIs.
+  - id: x86-record-buffer-write-open-chain
+    desc: x86 record buffer written then opened
+    crit: notable
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_record_buffer_write_open_chain {
+          strings:
+            $helper = { 83 EC ?? 53 8B 5C 24 ?? 55 8B 6C 24 ?? 33 C0 56 57 }
+            $writer = { 6A 00 57 6A 02 6A 00 6A 01 68 00 00 00 40 53
+                        FF 15 ?? ?? ?? ?? 8B F0 83 FE FF 74 ??
+                        8B 4C 24 ?? 6A 00 8D 44 24 ?? 50 55 51 56
+                        FF 15 ?? ?? ?? ?? }
+            $stage = { 8B 06 50 8D 4E ?? 51 8D 94 24 ?? ?? ?? ?? 52
+                       E8 ?? ?? ?? ?? 83 C4 ?? 85 C0 0F 84 ?? ?? ?? ?? }
+            $open = { 6A ?? 6A 00 8D 94 24 ?? ?? ?? ?? 52
+                      8D 84 24 ?? ?? ?? ?? 50 68 ?? ?? ?? ?? 6A 00
+                      FF 15 ?? ?? ?? ?? }
+          condition:
+            pe.machine == pe.MACHINE_I386 and all of them and
+            for any s in (1..#stage) : (
+              pe.sections[pe.section_index(@stage[s])].characteristics & 0x20000000 != 0 and
+              uint8(@stage[s]+5) > 0 and uint8(@stage[s]+5) < 64 and
+              for any h in (1..#helper) : (
+                @stage[s]+20+int32(@stage[s]+16) == @helper[h] and
+                for any w in (1..#writer) : (
+                  @writer[w] > @helper[h] and @writer[w]-@helper[h] < 256 and
+                  uint32(@writer[w]+17) == pe.image_base+pe.import_rva("KERNEL32.dll", "CreateFileA") and
+                  uint32(@writer[w]+44) == pe.image_base+pe.import_rva("KERNEL32.dll", "WriteFile")
+                )
+              ) and
+              for any o in (1..#open) : (
+                @open[o] > @stage[s] and @open[o]-@stage[s] < 512 and
+                @stage[s]+31+int32(@stage[s]+27) >= @open[o]+33 and
+                uint32(@stage[s]+10)+16 == uint32(@open[o]+15)+uint8(@stage[s]+22) and
+                uint32(@open[o]+29) == pe.image_base+pe.import_rva("SHELL32.dll", "ShellExecuteA")
+              )
+            )
+        }
