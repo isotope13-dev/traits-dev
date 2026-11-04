@@ -1,0 +1,43 @@
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+traits:
+  - id: x86-delimited-three-buffer-file-writes
+    desc: Writes delimited buffers to one file handle
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_delimited_three_buffer_file_writes {
+          strings:
+            $writes = { FF 74 24 ?? FF 74 24 ?? FF 74 24 ?? E8 ?? ?? ?? ??
+                        68 ?? ?? ?? ?? 8B 44 24 ?? 50 FF 74 24 ?? E8 ?? ?? ?? ??
+                        FF 74 24 ?? FF 74 24 ?? FF 74 24 ?? E8 ?? ?? ?? ?? }
+            $writer = { 51 57 8B 7C 24 ?? 33 C0 85 FF 89 44 24 ?? 74 ??
+                        56 8B 74 24 ?? 85 F6 74 ?? [41]
+                        8B 00 6A 00 8D 54 24 ?? 52 56 57 50 FF 15 ?? ?? ?? ??
+                        8B 44 24 ?? 5E 5F 59 C2 0C 00 }
+          condition:
+            pe.machine == pe.MACHINE_I386 and
+            for any i in (1..#writes) : (
+              uint32(@writes[i]+18) >= 1 and uint32(@writes[i]+18) <= 64 and
+              uint8(@writes[i]+11) == uint8(@writes[i]+30) and
+              uint8(@writes[i]+11) == uint8(@writes[i]+47) and
+              // The same stack slot supplies the destination of all writes.
+              17+int32(@writes[i]+13) == 36+int32(@writes[i]+32) and
+              17+int32(@writes[i]+13) == 53+int32(@writes[i]+49) and
+              for any s in pe.sections : (
+                s.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                @writes[i] >= s.raw_data_offset and
+                @writes[i]+!writes[i] <= s.raw_data_offset+s.raw_data_size and
+                for any j in (1..#writer) : (
+                  pe.rva_to_offset(s.virtual_address+@writes[i]-s.raw_data_offset+
+                    17+int32(@writes[i]+13)) == @writer[j] and
+                  uint32(@writer[j]+80) == pe.image_base+pe.import_rva("KERNEL32.dll","WriteFile")
+                )
+              )
+            )
+        }
