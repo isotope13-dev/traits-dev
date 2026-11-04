@@ -239,6 +239,12 @@ RETIRED = {
         'Use the named malware family or a neutral description of generic evidence.',
     'metadata/file/profile/blockchain':
         'Use the evidenced blockchain operation, protocol, named service, or supported objective.',
+    'metadata/file/profile/embedded-binary':
+        'Use the evidenced binary structure, embedded payload, named product, or supported objective.',
+    'metadata/file/profile/browser':
+        'Use the evidenced browser operation, collection, exfiltration, or named application subject.',
+    'metadata/file/profile/browser/state':
+        'Use the evidenced browser storage, cookie access, exfiltration, or named application subject.',
     'metadata/file/profile/network-context/storage':
         'Use the storage URL, web-storage write, or file-sync behavior.',
     'metadata/file/profile/network-context/dns':
