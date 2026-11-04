@@ -5,6 +5,16 @@ import re
 from pathlib import Path
 
 RETIRED = {
+    'metadata/file/profile/string-population':
+        'Use the observed string property, subject, supported behavior, or objective.',
+    'metadata/file/profile/co-occurrence':
+        'Use the supported behavior or objective, describing co-occurrence precisely.',
+    'metadata/file/profile/tool-reference':
+        'Use the named tool or the specific observed behavior and evidence.',
+    'metadata/file/profile/module-loading':
+        'Use the supported module loading, resource access, reflection, or execution objective.',
+    'metadata/file/profile/command-options':
+        'Use the specific command argument, process behavior, or named tool.',
     'metadata/file/profile/firmware':
         'Use firmware format evidence, binary section bytes, or the supported operation.',
     'metadata/file/profile/execution-api':

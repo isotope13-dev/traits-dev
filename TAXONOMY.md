@@ -2747,9 +2747,9 @@ forms remain in `syntax/command`; programming-language call-argument forms
 use `syntax/call/argument-identifier` when an identifier or property argument
 is the observed distinction and `syntax/call/arguments` for other forms. A bare `dumps(metrics)` beside a JSON-looking
 filename does not establish JSON serialization. Counts of recovered string
-candidates belong in `file/profile/string-population`, not a source-literal
-catalog. Generic option text spanning binaries and source belongs in
-`file/profile/command-options`; an option does not identify a particular program
+candidates belong with text-distribution or binary-layout observations when they
+do not indicate a more specific behavior. Generic option text spanning binaries
+and source belongs with the relevant process argument; an option does not identify a particular program
 or prove that it was passed to a running process. Process options with supported
 purpose may be grouped under `process/argument/visibility` or `lifecycle`.
 
