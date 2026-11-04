@@ -1,0 +1,59 @@
+# These are content-to-value flows, not proof of exfiltration or persistence.
+defaults:
+  platforms: [windows]
+  crit: notable
+  conf: 0.97
+traits:
+  - id: csharp-file-content-registry-value-flow
+    desc: Writes file bytes to managed registry values
+    for: [csharp]
+    if:
+      type: symbol
+      kind: call
+      regex: '(^|\.)Registry\.SetValue$'
+      arg:
+        index: 2
+        from:
+          call: '(^|\.)File\.ReadAllBytes$'
+          through:
+            - call: '(^|\.)Convert\.(ToBase64String|ToHexString)$'
+              arguments: [0]
+  - id: python-file-content-registry-value
+    desc: Writes file-derived bytes into a registry value
+    for: [python]
+    if:
+      type: symbol
+      kind: call
+      regex: '(^|\.)winreg\.SetValueEx$'
+      arg:
+        index: 4
+        from:
+          call: '(^|\.)read_bytes$'
+          through:
+            - call: '(^|\.)base64\.b64encode$'
+              arguments: [0]
+            - call: '(^|\.)decode$'
+              receiver: true
+
+  # C# local declarations are currently opaque in the projected flow graph.
+  # Adjacency and equality preserve this particular binding without joining
+  # an unrelated file read to an independent registry configuration write.
+  - id: csharp-assigned-file-content-registry-value
+    desc: Writes adjacent file initializer to registry
+    for: [csharp]
+    if:
+      type: tree-sitter
+      query: |
+        ((block
+          (local_declaration_statement (variable_declaration
+            (variable_declarator name: (identifier) @data
+              (invocation_expression function: (member_access_expression) @reader) @read)))
+          . (expression_statement (invocation_expression
+            function: (member_access_expression) @setter
+            arguments: (argument_list . (argument) . (argument)
+              . (argument (identifier) @sent) .))))
+          (#eq? @data @sent)
+          (#match? @reader "^(System\\.IO\\.)?File\\.ReadAllBytes$|^(System\\.)?Convert\\.(ToBase64String|ToHexString)$")
+          (#match? @setter "^(Microsoft\\.Win32\\.)?Registry\\.SetValue$")
+          (#match? @read "^((System\\.)?Convert\\.(ToBase64String|ToHexString)\\s*\\(\\s*)?(System\\.IO\\.)?File\\.ReadAllBytes\\s*\\("))
+
