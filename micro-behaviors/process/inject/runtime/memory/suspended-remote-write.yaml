@@ -1,0 +1,49 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+
+traits:
+  # The deployed atomscan has no native call projection. Bind each native
+  # call through its RIP-relative IAT operand instead of accepting imports
+  # that might never be used. This is not a shared-handle/data-flow claim.
+  - id: x64-remote-allocation-write-calls
+    desc: Calls remote allocation and memory-write APIs
+    crit: notable
+    conf: 0.97
+    arch: [x86-64]
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_remote_allocation_write_calls {
+          strings:
+            $call = { FF 15 ?? ?? ?? ?? }
+          condition:
+            pe.is_64bit() and $call and
+            for any s in pe.sections : (
+              s.characteristics & 0x20000000 != 0 and
+              for any i in (1..#call) : (
+                @call[i] >= s.raw_data_offset and
+                @call[i] + 6 <= s.raw_data_offset + s.raw_data_size and
+                s.virtual_address + @call[i] + 6 - s.raw_data_offset + int32(@call[i] + 2) ==
+                  pe.import_rva("kernel32.dll", "VirtualAllocEx")
+              ) and
+              for any j in (1..#call) : (
+                @call[j] >= s.raw_data_offset and
+                @call[j] + 6 <= s.raw_data_offset + s.raw_data_size and
+                s.virtual_address + @call[j] + 6 - s.raw_data_offset + int32(@call[j] + 2) ==
+                  pe.import_rva("kernel32.dll", "WriteProcessMemory")
+              )
+            )
+        }
+
+composite_rules:
+  # Security-boundary manipulation remains plausible in legitimate tooling.
+  # This co-occurrence does not prove a shared process handle or hollowing.
+  - id: suspended-launch-remote-memory-apis
+    desc: Suspended launch with remote allocation/writes
+    crit: suspicious
+    conf: 0.85
+    all:
+      - id: micro-behaviors/process/create/exec::x64-createprocess-suspended
+      - id: x64-remote-allocation-write-calls
