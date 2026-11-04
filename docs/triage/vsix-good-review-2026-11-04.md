@@ -1,10 +1,79 @@
 # VSIX mislabeled-good review, 2026-11-04
 
+`86582c7c28c7` (Infracost) bundles a Go Mach-O language server and editor
+extension for Terraform cost estimation. Its bundled source map and executable
+were reviewed: the service references and authentication support that role.
+A new notable observation requires both an Infracost LSP Go module reference
+and its pricing API hostname in the executable's relevant sections. The actual
+binary matches; copies missing either marker do not. A slow, local, no-follow
+VSIX scan reports the observation and no suspicious or hostile findings. The
+endpoint ruling is good; `make validate` passed and Hopper confirmed the
+existing good label (no-op).
+
+`3bcadf119ed2` (AntiKnife) manages Google account tokens and redirects the
+editor's Cloud Code endpoint through a local daemon. The bundled entry point
+spawns that daemon and configures the local proxy; its README describes account
+rotation and an optional remote team mode. The VSIX contains two distinct Go
+executables, including a newer core, and the latter references Google OAuth,
+Cloud Code and a vendor API. The extension uses the newer core; both binaries
+were included in the archive scan.
+On startup the extension reads the IDE's OAuth token information and passes
+access and refresh token fields to the loopback daemon's `importIdeAccount`
+request. A new notable observation records the OAuth and account-import clues;
+it appears in the no-follow VSIX scan. Controls removing both OAuth markers or
+the import call do not match. Static inspection of the Go import handler shows
+a local-mode check, calls to encrypted database storage, and Google account
+operations; its direct calls do not include the remote token-upload client.
+The remote upload client is called by admin handlers, and the bundled admin UI
+invokes the local-token upload handler on an upload-button click. This supports
+a good endpoint ruling; validation passed and Hopper confirmed the good label
+(no-op).
+
+`ca4dd0641078` is a LaTeX graphics helper. Its JavaScript handles selected
+PDF, image, and Draw.io files, and invokes configured local conversion tools
+with `execFile` argument arrays. A slow no-follow archive scan examined 2,170
+members and found no suspicious or hostile traits. The endpoint ruling is good;
+validation passed and Hopper confirmed the good label (no-op).
+
+`0a683b54ec13` is a developer HUD for a local MCP server. On activation, if
+`uv --version` fails, its JavaScript runs the uv installer's HTTPS response
+through a shell after showing an informational message. It later starts a
+configured or workspace MCP server, or falls back to `uv tool run visor-mcp`.
+These network and process behaviors are material operational risks, and the
+scan reports the curl-to-shell execution as a notable trait. The extension's
+own code and bundled UI were reviewed, and a no-follow scan of 1,732 members
+has no suspicious or hostile findings. Endpoint ruling: good; validation passed
+and Hopper confirmed the good label (no-op).
+
+`82f054674f86` is a GitHub-based chat extension. On sign-in it requests
+GitHub OAuth scopes including `repo`, stores the token in VS Code secret
+storage, and posts that GitHub token to the extension's configured service.
+Its uninstall hook also sends an identifier derived by hashing hostname and
+username; the raw values are not sent by that hook. The archive rescan reports
+one suspicious finding for the GitHub-token POST and a separate notable
+uninstall fingerprint observation. Controls removing the relevant token field,
+POST, hash update, or request write do not match their respective rules.
+The reviewed code implements the described chat and account-linking features;
+the endpoint ruling is good with the credential-transfer finding. Validation
+passed and Hopper confirmed the good label (no-op).
+
+`57427878c7a3` is a coding assistant that reads workspace context and offers
+agent actions. It stores its API key in VS Code secret storage, but its account
+profile check puts that key in a URL query before calling `fetch`; URL logging
+can expose it. A new suspicious observation describes the adjacent URL and
+fetch clues. The actual source and compiled code match, while controls without
+the key query or fetch call do not. The no-follow scan of 2,579 members reports
+that one suspicious finding. A synthetic notable branding fixture contained the
+same unrelated key query; its query was redacted to preserve its intended
+branding test without suppressing the real finding. Endpoint ruling: good
+with this unusual security finding; validation passed and Hopper confirmed the
+good label (no-op).
+
 The initial pool contained 40 archives. A slow local Atomscan directory scan
 finished with 40 JSON records at `/var/tmp/vsix-good-scan.jsonl` (exit 2,
 indicating severe findings). It began before the rule changes below, so the
-records are preliminary. Each archive and its contents still require endpoint-
-based review and final classification.
+records are preliminary. Twenty-one archives have since been confirmed good
+and two moved to bad; the other 17 still require endpoint-based review.
 
 * `72b2b5ac83ca`: Python autopep8 extension with five ZIP members. Its active
   handler concatenates the editor filename into a shell command without quoting.
@@ -72,6 +141,16 @@ labels (five no-ops).
   hostile findings. Endpoint ruling: good; Hopper confirmed the existing label
   (no-op).
 
+A fresh no-follow scan of `af55e4111d3d` (CodeGPT) found implemented
+Cloudflare challenge clicking in its browser-automation code. Its other
+reported prompt-extraction and repository-directive findings originate in
+protective instructions forbidding disclosure of the system prompt and
+describing tool-name presentation. The time-related finding came from an
+unrelated timing measurement followed by a `Function` call for Readability.
+The timing and prompt detectors were narrowed at their matching clauses;
+positive, mixed-file, and real-source controls are being checked, and full
+validation and the final archive rescan remain pending.
+
 The initial scan also flagged `d504a4d979ac` (Kombai) and `af55e4111d3d`
 (CodeGPT) for several behaviors, including fingerprinting or browser/automation
 clues. Kombai's entry point attaches the output of `getFootprintV2` to client
@@ -92,7 +171,11 @@ appended obfuscated line. Its vendor bundle has seven lines, two of them over
 one long line. The scanner had copied line metrics from plain embedded code
 onto the host, allowing them to combine with unrelated host traits. A focused
 scanner regression now passes with those unlocated snippet metrics kept out
-of the host; the actual bundle still needs a rescan after rebuilding.
+of the host. A no-follow scan of the whole VSIX using the rebuilt scanner
+clears the appended-payload finding and reports no suspicious or hostile
+traits. Its separate entry-point bundle is nevertheless heavily obfuscated;
+the scan reports string-table rotation and obfuscation as notable observations.
+Its behavior has not yet been established sufficiently for a final ruling.
 
 `3cec32595b0f` (Fitten Code) ships a single 8.4 MB JavaScript bundle beginning
 with a rotated string table and heavily mangled identifiers. The initial scan
