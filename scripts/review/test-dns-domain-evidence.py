@@ -109,7 +109,7 @@ const tenantId="x", clientId="x", clientSecret="x", mailbox="x";
     php_exfil = 'objectives/exfiltration/dns/tunnel::php-dns-label-exfil'
     assert php_exfil in traits['dns_exfil.php'], traits['dns_exfil.php'].keys()
     assert php_exfil not in traits['dns_lookup.php']
-    go_clues = 'metadata/file/profile/network-context/dns::go-dns-c2-label-tunnel'
+    go_clues = 'objectives/command-and-control/channel/tunnel/dns::go-dns-c2-label-tunnel'
     assert go_clues in traits['go_dns.go'], traits['go_dns.go'].keys()
     assert go_clues not in traits['go_no_dns.go']
     kotlin = 'objectives/command-and-control/channel/dns::kotlin-dns-txt-command-channel'
@@ -126,7 +126,7 @@ const tenantId="x", clientId="x", clientSecret="x", mailbox="x";
     dns_shell = 'objectives/command-and-control/remote-command/shell::python-dns-txt-returned-fields-shell-exec'
     assert dns_shell in traits['dns_loop.py'], traits['dns_loop.py'].keys()
     assert dns_shell not in traits['dns_unrelated.py']
-    dns_clues = 'metadata/file/profile/network-context/dns::dns-txt-tool-and-shell-clues'
+    dns_clues = 'objectives/command-and-control/backdoor/tasking/dns::dns-txt-tool-and-shell-clues'
     assert dns_clues in traits['dns_shell_clues.py'], traits['dns_shell_clues.py'].keys()
     assert not any(t.startswith('objectives/command-and-control/channel/dns::') for t in traits['dns_shell_clues.py'])
     chunk = 'micro-behaviors/data/collection/group::go-chunks-63-call'
@@ -140,7 +140,7 @@ const tenantId="x", clientId="x", clientSecret="x", mailbox="x";
     channel = 'objectives/command-and-control/channel/dns::powershell-dga-script-command-channel'
     assert channel in traits['tasking.ps1'], traits['tasking.ps1'].keys()
     assert channel not in traits['lookup.ps1']
-    profile = 'metadata/file/profile/network-context/dns::python-domain-candidates-heartbeat-clues'
+    profile = 'micro-behaviors/communications/dns/domain::python-domain-candidates-heartbeat-clues'
     assert profile in traits['clues.py'], traits['clues.py'].keys()
     assert profile not in traits['no_heartbeat.py']
     assert profile not in traits['no_candidates.py']

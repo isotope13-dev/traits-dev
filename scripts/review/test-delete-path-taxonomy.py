@@ -28,6 +28,6 @@ with tempfile.TemporaryDirectory(prefix='delete-path-') as tmp:
     ids = {Path(r['path']).name: {t['id'] for t in r.get('traits', [])} for r in reports}
     assert 'micro-behaviors/fs/delete/path::shelljs-rm' in ids['remove.js'], ids['remove.js']
     assert 'micro-behaviors/fs/delete/path::os-Remove' in ids['remove.go'], ids['remove.go']
-    assert 'metadata/file/profile/source-indications::zero-argument-delete-call-text' in ids['Other.java'], ids['Other.java']
+    assert 'micro-behaviors/fs/delete/path::zero-argument-delete-call-text' in ids['Other.java'], ids['Other.java']
     assert not any(t.startswith('micro-behaviors/fs/delete/path::') for t in ids['Other.java'])
     print('Path removal and unbound delete-call text remain distinct.')

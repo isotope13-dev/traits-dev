@@ -40,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix='shortcut-target-') as tmp:
     assert cmd in ids['cmd.lnk'] and cmd not in ids['differentcmd.lnk']
     assert cmd in ids['embedded-wscript.lnk'] and wscript_text in ids['embedded-wscript.lnk']
     assert script_host not in ids['embedded-wscript.lnk']
-    option = 'metadata/file/profile/shortcut/options::lnk-short-s-option'
+    option = 'micro-behaviors/process/argument/short-option::lnk-short-s-option'
     ftp_target = 'micro-behaviors/process/config/target::lnk-ftp-target'
     ftp_proxy = 'objectives/execution/lnk/proxy::ftp-script-proxy-shortcut'
     assert option in ids['ftp.lnk'] and option in ids['other-s-option.lnk']

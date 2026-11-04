@@ -5,6 +5,312 @@ import re
 from pathlib import Path
 
 RETIRED = {
+    'metadata/file/profile/execution-api':
+        'Use process creation, replacement, interpreter, or the supported execution objective.',
+    'metadata/file/profile/operation-reference':
+        'Use the specific execution, transfer, application hook or file behavior.',
+    'metadata/file/profile/command-reference':
+        'Use the specific command behavior, named tool, or neutral argument and literal evidence.',
+    'metadata/file/profile/shell-execution':
+        'Use the supported shell, process, command-dispatch or execution objective.',
+    'metadata/file/profile/socket-api':
+        'Use connection, socket operation, port scanning, or supported shell-control behavior.',
+    'metadata/file/profile/socket-runtime':
+        'Use socket connection, initialization, syscall or API-resolution behavior.',
+    'metadata/file/profile/module-interop':
+        'Use the specific service, reflection, process, or network behavior.',
+    'metadata/file/profile/eval-reference':
+        'Use the specific code evaluation, decoding, or serialization behavior.',
+    'metadata/file/profile/mcp':
+        'Use MCP communications, the specific supporting behavior, or the named tool.',
+    'metadata/file/profile/tool-interface':
+        'Use the specific tool dispatch, operation, or source naming subject.',
+    'metadata/file/profile/jvm-constants':
+        'Use the specific JVM behavior or neutral constant evidence.',
+    'metadata/file/profile/identity':
+        'Use the specific file format, installer evidence or named product.',
+    'metadata/file/profile/lua-runtime':
+        'Use the specific Lua reflection, source layout or obfuscation behavior.',
+    'metadata/file/profile/resource-reference':
+        'Use the specific resource path or named vendor component.',
+    'metadata/file/profile/architecture-reference':
+        'Use architecture naming or supported architecture behavior.',
+    'metadata/file/profile/audit-verdict':
+        'Use the specific security assessment evidence.',
+    'metadata/file/profile/emoji-reference':
+        'Use the specific Unicode or text-processing evidence.',
+    'metadata/file/profile/rtf-object':
+        'Use the specific object behavior, obfuscation or document evidence.',
+    'metadata/file/profile/ole-link':
+        'Use linked-object, URL or remote-resource evidence.',
+    'metadata/file/profile/libc':
+        'Use runtime references, binary symbols or runtime filename evidence.',
+    'metadata/file/profile/file-operation':
+        'Use the specific file operation or data transformation.',
+    'metadata/file/profile/system-management':
+        'Use the specific system behavior, path, tool, or supported objective.',
+    'metadata/file/profile/task-command':
+        'Use the specific command behavior, task configuration or execution trigger.',
+    'metadata/file/profile/url-construction':
+        'Use URL construction, HTTP behavior or the supported objective.',
+    'metadata/file/profile/tls':
+        'Use TLS initialization, verification or the supported objective.',
+    'metadata/file/profile/key-recovery':
+        'Use key-recovery behavior or the specific mathematical vocabulary.',
+    'metadata/file/profile/patch-context':
+        'Use the observed patch content or supported execution objective.',
+    'metadata/file/profile/container':
+        'Use the specific container interface or observed behavior.',
+    'metadata/file/profile/error-reporting':
+        'Use the specific diagnostic wording or error behavior.',
+    'metadata/file/profile/license-reference':
+        'Use license declarations or license-validation behavior.',
+    'metadata/file/profile/upstream-attribution':
+        'Use the specific source attribution or license evidence.',
+    'metadata/file/profile/relay-framing':
+        'Use relay behavior, stream framing or the specific data schema.',
+    'metadata/file/profile/registry':
+        'Use the specific registry behavior, source name or supported objective.',
+    'metadata/file/profile/upload-config':
+        'Use copy-destination or upload configuration evidence.',
+    'metadata/file/profile/input-context':
+        'Use the supported input-capture objective or observed input behavior.',
+    'metadata/file/profile/finance':
+        'Use financial names, injection behavior or the supported objective.',
+    'metadata/file/profile/telemetry-identity':
+        'Use telemetry behavior and the specific identity evidence.',
+    'metadata/file/profile/version-comment':
+        'Use the relevant executable version field.',
+    'metadata/file/profile/office-embedded':
+        'Use the embedded document structure or supported execution objective.',
+    'metadata/file/profile/proxy-implementation':
+        'Use the named proxy library, proxy behavior, or specific objective.',
+    'metadata/file/profile/log-reference':
+        'Use the specific log path or observed logging behavior.',
+    'metadata/file/profile/scanner':
+        'Use the specific security scanning behavior, objective, or artifact.',
+    'metadata/file/profile/scanner/indications':
+        'Use the specific scanning behavior or communication subject.',
+    'metadata/file/profile/scanner/evidence':
+        'Use security scanning evidence or the concrete manifest format.',
+    'metadata/file/profile/scanner/vulnerability':
+        'Use vulnerability scanning or the specific evidence subject.',
+    'metadata/file/profile/scanner/security':
+        'Use the specific security scanning evidence or behavior.',
+    'metadata/file/profile/secret-scanning':
+        'Use credential auditing or secret redaction behavior.',
+    'metadata/file/profile/web-scanning':
+        'Use web security auditing behavior or the named scanner.',
+    'metadata/file/profile/transfer/http-download':
+        'Use the supported download behavior, execution objective or named service.',
+    'metadata/file/profile/attack-config-schema':
+        'Use the specific schema and supported objective.',
+    'metadata/file/profile/wallet-rpc':
+        'Use wallet RPC method evidence or the supported obfuscation objective.',
+    'metadata/file/profile/window-api':
+        'Use window control, station, or process configuration evidence.',
+    'metadata/file/profile/android-asset-context':
+        'Use asset loading, staged execution, archive packing, or the observed file operation.',
+    'metadata/file/profile/security':
+        'Use the supported defensive behavior, security evasion, or specific evidence.',
+    'metadata/file/profile/security/policy':
+        'Use defensive policy, risk assessment, or supported log removal.',
+    'metadata/file/profile/security/hunting':
+        'Use security scanning evidence or the supported activity.',
+    'metadata/file/profile/lexical/installer-methods':
+        'Use the specific installation, transfer, extraction, or system operation.',
+    'metadata/file/profile/lexical/string-join':
+        'Use the specific string-joining behavior.',
+    'metadata/file/profile/lexical/operator-population':
+        'Use arithmetic or bitwise observations and supported objectives.',
+    'metadata/file/profile/mobile-config':
+        'Use mobile build configuration, permissions, bundle observations, or the named product.',
+    'metadata/file/profile/rpc':
+        'Use RPC communication, the specific operation, or named product evidence.',
+    'metadata/file/profile/temp-path':
+        'Use temporary artifact paths or the supported operation.',
+    'metadata/file/profile/macro':
+        'Use macro execution, document behavior, or the specific supported operation.',
+    'metadata/file/profile/document/parsing':
+        'Use the specific document parsing or extraction behavior.',
+    'metadata/file/profile/document':
+        'Use document operations, format evidence, or the named product.',
+    'metadata/file/profile/decryption':
+        'Use the cipher, decryption operation, or supported execution or credential objective.',
+    'metadata/file/profile/environment':
+        'Use environment access, CI context, or the supported operation.',
+    'metadata/file/profile/pe-api':
+        'Use the specific API behavior or supported execution and obfuscation objective.',
+    'metadata/file/profile/crypto-envelope':
+        'Use the specific cryptographic operation, format, or named library.',
+    'metadata/file/profile/mobile-api':
+        'Use platform references, named tools, or the specific mobile behavior.',
+    'metadata/file/profile/product-reference':
+        'Use named products, provenance observations, or the supported behavior.',
+    'metadata/file/profile/agent/session':
+        'Use agent session records, named tools, or the specific behavior.',
+    'metadata/file/profile/agent/instruction':
+        'Use the specific agent instruction or supported objective.',
+    'metadata/file/profile/agent':
+        'Use agent behavior, configuration, session evidence, or the named tool.',
+    'metadata/file/profile/library/build':
+        'Use compiler metadata or the supported build operation.',
+    'metadata/file/profile/library/compression':
+        'Use the specific compression evidence.',
+    'metadata/file/profile/library/event-loop':
+        'Use event-loop behavior or the named library.',
+    'metadata/file/profile/library/module-name':
+        'Use library paths, module-name references, or supported resolution behavior.',
+    'metadata/file/profile/library/debugging':
+        'Use debugger and process-control references.',
+    'metadata/file/profile/library/graphics':
+        'Use display, graphics, window, image, or IPC behavior.',
+    'metadata/file/profile/graphics/capture':
+        'Use display capture references or the evidenced capture behavior.',
+    'metadata/file/profile/graphics/representation':
+        'Use the evidenced image representation or operation.',
+    'metadata/file/profile/graphics/reference':
+        'Use display, dynamic linking, image, or embedded-payload evidence.',
+    'metadata/file/profile/graphics/co-occurrence':
+        'Use the evidenced graphics behavior or likely objective.',
+    'metadata/file/profile/graphics':
+        'Use the evidenced graphics behavior or likely objective.',
+    'metadata/file/profile/cryptography':
+        'Use the likely cryptographic operation or generic value evidence.',
+    'metadata/file/profile/token-shape':
+        'Use the evidenced encoding, padding, or credential subject.',
+    'metadata/file/profile/unicode-text':
+        'Use Unicode processing, concatenation, or neutral text shape.',
+    'metadata/file/profile/transfer/http-exchange':
+        'Use Git operations or the specific encoded value.',
+    'metadata/file/profile/transfer':
+        'Use the specific transfer behavior or objective.',
+    'metadata/file/profile/operation-cooccurrence':
+        'Use the supported operation, objective, or neutral text subject.',
+    'metadata/file/profile/field-presence':
+        'Use the evidenced operation, objective, or field subject.',
+    'metadata/file/profile/syntax-tree':
+        'Use source measurements, array representation, or dynamic execution.',
+    'metadata/file/profile/token-population':
+        'Use the specific text distribution, subject, or behavior.',
+    'metadata/file/profile/com/shortcut':
+        'Use shortcut configuration, generic method behavior, or COM interface evidence.',
+    'metadata/file/profile/co-occurrence/instruction':
+        'Use the evidenced buffer, arithmetic, bitwise, or instruction observation.',
+    'metadata/file/profile/co-occurrence/bitwise':
+        'Use the specific bitwise operation and its data flow.',
+    'metadata/file/profile/host-information':
+        'Use the observed host, build, or execution subject.',
+    'metadata/file/profile/structured':
+        'Use the specific structured observation or behavior.',
+    'metadata/file/profile/encoding/composition':
+        'Use the encoded carrier or specific documentation and vocabulary evidence.',
+    'metadata/file/profile/encoding/compression':
+        'Use compression behavior, destination paths, or literal evidence.',
+    'metadata/file/profile/installer/msi/properties':
+        'Use installer launch, maintenance, product, or package evidence.',
+    'metadata/file/profile/installer/msi/layout':
+        'Use installer layout or the identified packaging product.',
+    'metadata/file/profile/installer/msi/libraries':
+        'Use the named library or package string evidence.',
+    'metadata/file/profile/process/injection':
+        'Use injection behavior, type syntax, or neutral text fragments.',
+    'metadata/file/profile/process/launch':
+        'Use process arguments or executable path evidence.',
+    'metadata/file/profile/script/timing':
+        'Use the evidenced timing or string-obfuscation behavior.',
+    'metadata/file/profile/tunnel':
+        'Use the specific tunnel, forwarding, named tool, or persistence behavior.',
+    'metadata/file/profile/pe-loader-context/php-endpoint':
+        'Use the observed HTTP client or supported execution behavior.',
+    'metadata/file/profile/tunnel/setup':
+        'Use named tunnel tools, forwarding, or service persistence evidence.',
+    'metadata/file/profile/tunnel/implementation':
+        'Use the specific tunnel, forwarding, proxy, or named library evidence.',
+    'metadata/file/profile/tunnel/reference':
+        'Use named tunnel tools or the observed forwarding behavior.',
+    'metadata/file/profile/tunnel/provider':
+        'Use named providers or the specific authentication and endpoint behavior.',
+    'metadata/file/profile/network-context/storage':
+        'Use the storage URL, web-storage write, or file-sync behavior.',
+    'metadata/file/profile/network-context/dns':
+        'Use DNS query behavior or the supported control, execution, or exfiltration objective.',
+    'metadata/file/profile/network-context/code-forge':
+        'Use named services or the observed URL and release reference.',
+    'metadata/file/profile/network-context/credential':
+        'Use the evidenced credential access, collection, or cloud operation.',
+    'metadata/file/profile/network-context/native':
+        'Use the evidenced network request or binary observation.',
+    'metadata/file/profile/network-context/cdn':
+        'Use named providers or package asset evidence.',
+    'metadata/file/profile/installer/machine-learning':
+        'Use observed vocabulary, named libraries, or Python execution behavior.',
+    'metadata/file/profile/installer/configuration':
+        'Use installer hooks, install behavior, or the evidenced packing.',
+    'metadata/file/profile/installer/product/catalog':
+        'Use metadata/installer/product for the reviewed installer-product selector.',
+    'metadata/file/profile/installer/properties':
+        'Use named installer evidence or the observed privilege behavior.',
+    'metadata/file/profile/installer/plugin':
+        'Use installer recognition, named DLL evidence, or the supported packing and execution objective.',
+    'metadata/file/profile/installer/resource':
+        'Use the evidenced packing, resource extraction, or file entropy.',
+    'metadata/file/profile/installer/branding':
+        'Use the evidenced obfuscation or named product.',
+    'metadata/file/profile/installer/encoding':
+        'Use the evidenced encoding or script behavior.',
+    'metadata/file/profile/shortcut/construction':
+        'Use shortcut creation, command paths, or the evidenced download behavior.',
+    'metadata/file/profile/shortcut/encoding':
+        'Use the evidenced decoding, decompression, encoded content, or marker subject.',
+    'metadata/file/profile/shortcut/extension':
+        'Use the evidenced argument, target path, or extension masquerade.',
+    'metadata/file/profile/shortcut/options':
+        'Use the specific command option, interpreter, or error-suppression behavior.',
+    'metadata/file/profile/shortcut/com-automation':
+        'Use the specific COM automation, HTTP, or stream behavior.',
+    'metadata/file/profile/binary-strings':
+        'Use the observed text subject, behavior, or named product.',
+    'metadata/file/profile/text-distribution':
+        'Use text distributions, line shape, padding, entropy, or behavior.',
+    'metadata/file/profile/function-population':
+        'Use function measurements, declaration names, or the supported behavior.',
+    'metadata/file/profile/identifier-population':
+        'Use identifier naming, declarations, or the supported behavior.',
+    'metadata/file/profile/archive':
+        'Use archive structure, operations, or the supported objective.',
+    'metadata/file/profile/test-indications':
+        'Use the specific test, fixture, or path evidence.',
+    'metadata/file/profile/source-indications':
+        'Use the specific source subject, behavior, or objective.',
+    'metadata/file/profile/overlay':
+        'Use overlay structure, payload evidence, packing, or the supported objective.',
+    'metadata/file/profile/library/runtime':
+        'Use the evidenced interpreter, linker, plugin, or named product.',
+    'metadata/file/profile/library':
+        'Use the evidenced behavior, library reference, or named product.',
+    'metadata/file/profile/lexical/managed-method-names':
+        'Use the behavior suggested by the method name.',
+    'metadata/file/profile/relay-implementation':
+        'Use the evidenced function name or relay behavior.',
+    'metadata/file/profile/user-agent':
+        'Use the evidenced download or HTTP behavior.',
+    'metadata/file/profile/visibility':
+        'Use the specific literal or visibility behavior.',
+    'metadata/file/profile/package-provenance':
+        'Use the evidenced supply-chain objective or actual provenance.',
+    'metadata/file/profile/mobile-collection':
+        'Use the specific mobile input or communication behavior.',
+    'metadata/file/profile/prompt-example':
+        'Use the specific dialog or prompt evidence.',
+    'metadata/file/profile/transfer/http-upload/reference':
+        'Use file-upload guidance and its supported behavior.',
+    'metadata/file/profile/transfer/http-upload/command':
+        'Use the supported upload behavior or named service.',
+    'metadata/file/profile/transfer/cloud':
+        'Use the named cloud product or the supported transfer objective.',
+    'metadata/file/profile/staging':
+        'Use the supported execution, collection, process or path subject.',
     'metadata/file/profile/transfer/upload-api':
         'Use HTTP request or upload behavior and distinguish symbol references from calls.',
     'metadata/file/profile/memory/fiber':

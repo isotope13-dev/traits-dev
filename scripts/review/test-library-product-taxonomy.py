@@ -34,12 +34,12 @@ with tempfile.TemporaryDirectory(prefix='library-marker-') as tmp:
     )
     reports = [json.loads(line)['files'][0] for line in result.stdout.splitlines() if line]
     ids = {Path(r['path']).name: {t['id'] for t in r.get('traits', [])} for r in reports}
-    metrics = 'metadata/file/profile/source-indications::svg-font-1200-960-negative240-metrics'
+    metrics = 'micro-behaviors/ui/graphics/font::svg-font-1200-960-negative240-metrics'
     glyph_name = 'well-known/lib/ui/bootstrap::glyphicons-halflings-font-id'
     assert metrics in ids['generic.svg'], ids['generic.svg']
     assert glyph_name not in ids['generic.svg']
     assert metrics in ids['glyphicons.svg'] and glyph_name in ids['glyphicons.svg'], ids['glyphicons.svg']
-    css = 'metadata/file/profile/source-indications::css-responsive-utility-class-text'
+    css = 'micro-behaviors/ui/window/style::css-responsive-utility-class-text'
     bootstrap = 'well-known/lib/ui/bootstrap::bootstrap-css-source-map'
     sass = 'metadata/import/framework::sass-core-and-layout-utility-imports'
     assert css in ids['generic.css'], ids['generic.css']

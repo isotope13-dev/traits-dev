@@ -50,14 +50,14 @@ with tempfile.TemporaryDirectory(prefix='activation-evidence-') as tmp:
     reports = [json.loads(line)['files'][0] for line in result.stdout.splitlines() if line]
     ids = {Path(r['path']).name: {t['id'] for t in r.get('traits', [])} for r in reports}
     icmp = 'objectives/execution/trigger/packet::icmp-magic-packet'
-    lua = 'metadata/file/profile/source-indications::lua-service-conditional-delivery-clues'
+    lua = 'micro-behaviors/data/control-flow/branch::lua-service-conditional-delivery-clues'
     route = 'micro-behaviors/communications/http/url/api-path/route::trigger-execute-path-text'
     assert icmp in ids['icmp_signal.py'], ids['icmp_signal.py']
     assert icmp not in ids['icmp_normal.py']
     assert lua in ids['delivery.lua'], ids['delivery.lua']
     assert lua not in ids['delivery_no_gate.lua']
     assert route in ids['route.cs'], ids['route.cs']
-    decorator_clues = 'metadata/file/profile/source-indications::env-decorator-thread-clues'
+    decorator_clues = 'micro-behaviors/os/env/test::env-decorator-thread-clues'
     trigger = 'objectives/execution/trigger/network::powershell-tcp-trigger-command-callback'
     assert decorator_clues in ids['decorator.py'], ids['decorator.py']
     assert decorator_clues not in ids['thread_only.py']

@@ -8,8 +8,8 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 CLEAVE = os.environ.get('CLEAVE', '../cleave/target/release/cleave')
 CLANG = os.environ.get('CLANG', 'clang')
-INDICATOR = 'objectives/supply-chain/trojanized/backdoor::rtld-global-ref'
-LIBRARY = 'metadata/file/profile/library/runtime::libcurl-ref'
+INDICATOR = 'micro-behaviors/os/linker::rtld-global-ref'
+LIBRARY = 'micro-behaviors/communications/http/client/reference::libcurl-ref'
 with tempfile.TemporaryDirectory(prefix='library-reference-') as directory:
     source = Path(directory) / 'fixture.c'
     target = Path(directory) / 'fixture.o'

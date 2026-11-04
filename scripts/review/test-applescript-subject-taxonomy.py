@@ -27,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix='applescript-subject-') as tmp:
         'micro-behaviors/communications/url/open::open-location-cmd',
         'micro-behaviors/os/handler/open::open-g-flag',
         'micro-behaviors/process/create/shell/command-string::shell-command-text-reference',
-        'well-known/app/system/macos-system-binaries::osacompile-cmd',
+        'well-known/app/system/apple/macos-system-binaries::osacompile-cmd',
     }
     assert expected <= ids, expected - ids
     assert not any(i.startswith('micro-behaviors/process/create/script/apple-event::') and
