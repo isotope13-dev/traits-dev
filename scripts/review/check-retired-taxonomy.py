@@ -5,6 +5,14 @@ import re
 from pathlib import Path
 
 RETIRED = {
+    'metadata/file/profile/transfer/upload-api':
+        'Use HTTP request or upload behavior and distinguish symbol references from calls.',
+    'metadata/file/profile/memory/fiber':
+        'Use fiber behavior and distinguish memory co-occurrence from a bound callback.',
+    'metadata/file/profile/executable-config':
+        'Use process configuration, temporary-path, or specific supported behavior.',
+    'metadata/file/profile/open-handler':
+        'Use OS handler dispatch or the specific supported process operation.',
     'metadata/file/profile/locale':
         'Use locale processing, country-selection or UI localization evidence.',
     'metadata/file/profile/screen-capture':

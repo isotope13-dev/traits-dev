@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
-RULE = 'micro-behaviors/process/create/shellexec::node-detached-os-default-handler-spawn'
+RULE = 'micro-behaviors/process/create/exec::node-detached-os-default-handler-spawn'
 CLEAVE = os.environ.get('CLEAVE', '../cleave/target/release/cleave')
 
 helper = """const {spawn} = require('child_process');

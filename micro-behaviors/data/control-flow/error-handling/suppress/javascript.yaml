@@ -1,0 +1,136 @@
+defaults:
+  platforms: [windows, unix]
+  for: [javascript, typescript, html]
+  crit: notable
+  conf: 0.9
+
+traits:
+- id: empty-catch-block
+  desc: JavaScript empty catch block
+  crit: notable
+  conf: 0.9
+  if:
+    type: tree-sitter
+    language: javascript
+    query: |
+      (catch_clause
+        body: (statement_block) @body
+        (#eq? @body "{}"))
+# These text observations are deliberately components: parsers exclude
+# comments only for AST-backed facts, while regexes can also see examples in
+# documentation. Intent-bearing composites must pair them with executable
+# call or data-flow facts.
+- id: empty-optional-catch-text
+  desc: Text has empty optional-binding catch
+  crit: component
+  conf: 0.92
+  if:
+    type: text
+    regex: 'catch\s*\{\s*\}'
+- id: empty-named-catch-text
+  desc: Text has empty named-parameter catch
+  crit: notable
+  conf: 0.92
+  # Sentry's bundler plugin wraps its generated debug-ID stack map in a
+  # best-effort try/catch. The empty handler is build instrumentation, not
+  # application error suppression.
+  unless:
+  - id: metadata/build/debug::sentry-debug-id-wrapper
+  if:
+    type: text
+    regex: 'catch\s*\(\s*\w*\s*\)\s*\{\s*\}'
+# `catch { return false }` — the failure is absorbed and reported as a plain
+# flag, so the caller learns only that something did not happen and never what.
+# Ordinary feature detection is written this way too, which is why this stays
+# notable; it matters in composites because a helper that both hides which
+# builtin it loaded and refuses to say why it failed leaves an operator no
+# trace to read and a reviewer no error to follow.
+- id: catch-returns-constant-only
+  desc: Catch block only returns a constant
+  crit: baseline
+  conf: 0.88
+  if:
+    type: text
+    regex: 'catch\s*(\(\w*\))?\s*\{\s*return (false|true|null|undefined|0)\s*;?\s*\}'
+  unless:
+  - id: metadata/lang/scripted::dts-declaration-file
+- id: silent-error-handler
+  desc: JavaScript emitter discards errors
+  crit: notable
+  conf: 0.9
+  if:
+    type: text
+    regex: \.on\(['"]error['"],\s*(\(\)\s*=>|function\s*\([^)]{0,20}\))\s*\{\s*\}\)
+# Passing `resolve` as the error listener settles the surrounding promise
+# successfully on failure, so a request that never arrives is
+# indistinguishable from one that did.
+- id: resolve-as-error-handler
+  desc: Error listener resolves the promise
+  crit: notable
+  conf: 0.9
+  if:
+    type: text
+    regex: \.(on|once)\(\s*['"]error['"],\s*resolve\s*\)
+# A rejected promise handed an empty arrow swallows the failure without so much
+# as a log line, so a send that never arrives is indistinguishable from one that
+# did. Lived in `micro-behaviors/os/module/require/node.yaml` because one
+# dynamic-import composite there consumes it; the matcher has nothing to do with
+# module loading, and that composite now reaches across to here.
+- id: empty-arrow-catch-handler
+  desc: Text shows empty arrow rejection handler
+  crit: notable
+  conf: 0.8
+  if:
+    type: text
+    regex: "\\.catch\\(\\s*\\(\\s*\\w*\\s*\\)\\s*=>\\s*\\{\\s*\\}\\s*\\)"
+- id: fetch-empty-catch-handler
+  desc: Fetch promise uses empty catch handler
+  if:
+    type: text
+    # The handler must actually discard: `() => {}` or a bare null/undefined
+    # value. `.catch(() => showError())` handles the failure.
+    regex: 'fetch\s*\([^)]{0,240}\)\s*\.catch\(\s*\(\w*\)\s*=>\s*(\{\s*\}|null|undefined|void 0)\s*\)'
+- id: fetch-function-empty-catch-handler
+  desc: Fetch promise uses empty function catch
+  crit: notable
+  conf: 0.85
+  if:
+    type: text
+    # The fetch() call must lead the chain: a bare `.catch(function(){})`
+    # also matches media-autoplay handling (`video.play().catch(...)`) and
+    # other non-fetch promises, which this trait does not describe. The
+    # semicolon bound keeps the span inside one statement while allowing
+    # nested calls such as `JSON.stringify(...)` in the fetch arguments.
+    regex: 'fetch[^;]{0,200}\.catch\(function\s*\(\s*\)\s*\{\s*\}\s*\)'
+- id: promise-identity-then-empty-catch
+  desc: Promise forwards result and discards errors
+  crit: notable
+  conf: 0.99
+  if:
+    type: text
+    substr: .then(e => e).catch(e => { })
+- id: from-str-empty-catch
+  desc: Empty catch follows from_str call
+  crit: notable
+  conf: 0.97
+  size_max: 65536
+  if:
+    type: text
+    regex: 'from_str[\s\S]{0,240}catch\s*\([A-Za-z_][A-Za-z0-9_]*\)\s*\{\s*\}'
+  unless:
+    - type: text
+      substr: instantiateWasm
+  downgrade:
+    any:
+      - type: basename
+        regex: '(?i)\.(spec|test)\.[jt]s$'
+      - id: metadata/path/directory::test-directory-component
+
+- id: onerror-after-return-true
+  desc: onerror follows a return-true function
+  crit: notable
+  conf: 0.93
+  for: [html, javascript]
+  if:
+    type: text
+    regex: 'function\s+\w+\(\)\s*\{\s*return true;\s*\}\s*window\.onerror\s*=\s*\w+'

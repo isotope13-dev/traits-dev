@@ -936,6 +936,7 @@ Unbound text that merely resembles an operation name remains text evidence.
 | Home | Admission and boundary |
 |---|---|
 | `crypto/symmetric/<algorithm>`, `asymmetric/<algorithm>`, `hybrid` | Primitive or implementation presence with no narrower operation ("contains AES", not "encrypts files"). `aes/initialize` records a non-directional constructor; `aes/mode` records mode-specific presence; `aes/transform` covers an AES operation whose direction is not established. `hybrid` is symmetric payload crypto plus asymmetric key wrapping. |
+| `crypto/primitive` | Evidence spanning distinct primitive families when no single algorithm or operation describes the group. A marker is partial evidence, not proof that the primitive was used. |
 | `crypto/{encrypt,decrypt,sign,verify}` | The operation, whether or not the algorithm is known. `decrypt/transform` separates symmetric and asymmetric methods from decryption whose method is unspecified; constructors remain in `decrypt/initialize`. |
 | Public-key signatures | Signing and verification use `crypto/sign` and `crypto/verify`. Named primitive presence stays with its algorithm; an undirected class or symbol reference stays in metadata. MACs, key formats and the file’s own signature retain their own subjects. The former `crypto/asymmetric/signature` directory is retired. |
 | `crypto/cipher/{mode,io,authentication,reference,unspecified}` | Cipher behavior without a more specific algorithm or direction. Separate mode selection, cipher-stream I/O, authentication-tag handling, named references and otherwise unspecified cipher use. Put algorithm-specific evidence under that algorithm when it is established. |
@@ -1062,6 +1063,11 @@ source-syntax metadata. Try-protected loops belong with `error-handling` when
 that protection is the required distinction; a switch in a loop is selector
 dispatch. The `loop` prefix denotes repetition evidence, so prefix consumers
 must be reviewed when misplaced labels or method names leave this family.
+
+`data/control-flow/error-handling` distinguishes `try`, `catch`, `register`,
+`retry`, `signal`, `suppress`, `report`, and `reference`. Keep bare error names
+and exception-constructor text as references; they do not establish that an
+exception was thrown, handled, or concealed.
 
 `data/control-flow/branch` requires a choice of execution path or value. It
 is not a general home for every operation appearing in a condition. A buffer
@@ -1213,7 +1219,7 @@ objective belongs under `evasion/process/hidden/window`.
 |---|---|
 | `process/create/<mechanism>` | Creating an execution context; see [process creation](#process-creation). |
 | `process/config` | Launch records, child-process settings and creation-option references. These describe a proposed execution context without proving it was created. Application-specific settings retain their application resource. |
-| `process/thread/{create,lifecycle,enumerate,group,priority,config,terminate}`, `process/fiber` | Thread or fiber management; a fiber is not a thread or a new process. Fiber creation, callback and switching references belong to `process/fiber`; unbound fiber and memory co-occurrences belong to memory profiles. |
+| `process/thread/{create,lifecycle,enumerate,group,priority,config,terminate}`, `process/fiber` | Thread or fiber management; a fiber is not a thread or a new process. Fiber creation, callback and switching references and their co-occurrence with memory operations belong to `process/fiber`. Distinguish co-occurrence from evidence that binds memory to a fiber callback. |
 | `process/sync/{mutex,semaphore,event,critical-section,condition,join}` | Coordination between execution contexts, including reader/writer locks and condition variables; memory visibility is `mem/sync`. Atomic list operations remain `data/collection/list`; a lock-free list is not itself thread coordination. |
 | `process/work/{queue,pool,task}` | Queue and pool management; task submission, completion, waiting, cancellation and future/result access (`QueueUserWorkItem`, `dispatch_async`). These do not establish thread creation. Joining a thread is `process/sync/join`; timer callbacks are `time/schedule`. |
 | `process/thread/{create,worker,config,runtime}` | Thread creation, JavaScript worker execution contexts, thread-specific configuration, and runtime references. A `worker_threads` import or worker label alone does not create a thread. Generic worker-count text and unrelated pool-builder names remain neutral evidence; `xargs` work dispatch is `process/work/queue`. Creating or submitting a Windows thread-pool work item belongs in `process/work/task`, not thread creation. |
@@ -1422,7 +1428,7 @@ context by ___". **The first matching row wins:**
 | A process-starting cmdlet such as Start-Process or its saps alias | `cmdlet` |
 | A library object standing for the child (`Popen`, `NSTask`, `ProcessBuilder`) | `subprocess` |
 | Opening or dispatching a URL by its scheme or a URL-specific handler | `communications/url/open` |
-| The desktop opener choosing the handler (`ShellExecute`, `open`, `NSWorkspace`) without a required URL target | `shellexec` |
+| The desktop opener choosing the handler (`ShellExecute`, `open`, `NSWorkspace`) without a required URL target | `micro-behaviors/os/handler/open` |
 | An API starting a child image from an argument vector or command line (`CreateProcess`, `posix_spawn`, `WinExec`, `WshShell.Run` with an executable path) | `exec` |
 | Replacing the current process image (`execve`, `execveat`, `os.execv`, `pcntl_exec`) | `micro-behaviors/process/replace`; replacement does not require a new process |
 | Only an executable name, launch flag, permission or import | Its path, configuration or import observation, not process creation |
@@ -1522,7 +1528,10 @@ URL opening records URL-handler calls and API references, including non-HTTP
 schemes; an API reference alone proves neither dispatch nor a network connection.
 For example, opening a `mailto:` URI
 belongs in `communications/url/open`, while a generic `ShellExecuteW` import
-stays in `shellexec` because its target is unknown. In the registry, an
+belongs in `micro-behaviors/os/handler/open` because its target is unknown.
+Handler dispatch can open a document or URL without establishing that a new
+process was created; use process creation or replacement only when the
+evidence supports that operation. In the registry, an
 `OpenSubKey` reference belongs in `os/registry/open`; a query of a value goes
 to `os/registry/read`. The 89-rule registry-access and shell-execution leaves
 were reviewed with these neighboring operations: seven key-opening rules moved
@@ -1936,13 +1945,18 @@ Native executable request profiles, WebClient retrieval, package-hook requests a
 
 Installer metadata follows its subject under `metadata/installer`, including layout, configuration, package properties, bundle contents and resources. Move observations that indicate a likely operation to its behavior or objective. Self-extractor and cabinet carrier text and related carrier profiles belong with installer archive profiles; executable setup directives belong with installer process configuration. Installer plugin references and related co-occurrence profiles belong with installer plugins. Generic uninstaller names retain their lifecycle subject.
 
-`metadata/file/profile/staging` records file-staging and launch observations
-that fall short of indicating a likely deployment chain, such as names or
-configuration fields without the corresponding operations.
+Legacy `metadata/file/profile/staging` observations should move to the most
+specific supported operation or likely deployment objective. Names and
+configuration fields without behavioral implications follow their own subject.
+High entropy, an unsigned file, an unknown installer version marker or a zero
+checksum alone do not establish encryption, tampering or payload execution.
 
-`metadata/file/profile/firmware` groups firmware-related paths and accompanying
-operation or naming clues. A firmware-looking path alone does not establish
-that firmware was downloaded, updated or executed.
+Legacy firmware profiles should move to the supported operation or likely
+objective. A firmware-looking path alone does not establish that firmware was
+downloaded, updated or executed; retain an isolated path with its path subject.
+Executable and spawn configuration fields belong with process configuration;
+temporary path fields belong with their path subject. Those fields alone do
+not establish that a process was launched or a file was downloaded.
 
 `metadata/file/profile/transfer/http-download` groups URL and download-option clues
 that do not establish a completed fetch. `metadata/file/profile/shell-execution`

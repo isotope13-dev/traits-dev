@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory(prefix='applescript-subject-') as tmp:
     expected = {
         'micro-behaviors/os/module/load/path::load-script-posix-file',
         'micro-behaviors/communications/url/open::open-location-cmd',
-        'micro-behaviors/process/create/shellexec::open-g-flag',
+        'micro-behaviors/os/handler/open::open-g-flag',
         'micro-behaviors/process/create/shell/command-string::shell-command-text-reference',
         'well-known/app/system/macos-system-binaries::osacompile-cmd',
     }

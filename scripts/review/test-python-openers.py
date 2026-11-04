@@ -7,8 +7,8 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 CLEAVE = os.environ.get('CLEAVE', '../cleave/target/release/cleave')
-RULES = ','.join('micro-behaviors/process/create/shellexec::' + rule for rule in
-                 ('os-startfile-call', 'webbrowser-open'))
+RULES = ','.join(('micro-behaviors/os/handler/open::os-startfile-call',
+                  'micro-behaviors/communications/url/open::webbrowser-open'))
 
 cases = (
     ('calls', 'import os\nimport webbrowser\nos.startfile("app.exe")\n'
