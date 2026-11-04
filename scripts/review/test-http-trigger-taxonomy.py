@@ -37,14 +37,14 @@ with tempfile.TemporaryDirectory(prefix='http-activation-') as tmp:
     )
     reports = [json.loads(line)['files'][0] for line in result.stdout.splitlines() if line]
     ids = {Path(r['path']).name: {t['id'] for t in r.get('traits', [])} for r in reports}
-    kotlin = 'metadata/file/profile/network-context/endpoint::kotlin-route-hour-window-clues'
+    kotlin = 'objectives/execution/trigger/network::kotlin-route-hour-window-clues'
     perl = 'objectives/command-and-control/remote-command/shell::perl-triggered-command-c2'
     assert kotlin in ids['kotlin.kt'], ids['kotlin.kt']
     assert kotlin not in ids['kotlin_no_gate.kt']
     assert perl in ids['perl.pl'], ids['perl.pl']
     assert perl not in ids['perl_no_exec.pl']
     wipe = 'objectives/impact/wipe/directory::express-robots-destroy-trigger'
-    profile = 'metadata/file/profile/network-context/endpoint::dotnet-http-trigger-activation'
+    profile = 'objectives/execution/trigger/network::dotnet-http-trigger-activation'
     env = 'micro-behaviors/os/env/test::env-check-js--rx-2'
     assert wipe in ids['wipe.js'], ids['wipe.js']
     assert wipe not in ids['no_wipe.js']

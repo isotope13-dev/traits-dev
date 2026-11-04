@@ -1,0 +1,201 @@
+# Neutral Windows scheduled-task capabilities and persistence-related markers.
+# Objective rules combine these observations with intent-specific evidence.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  crit: notable
+  conf: 0.9
+  attack: T1053.005
+  mbc: F0012
+traits:
+  - id: python-schtasks-create-argument
+    desc: Python uses schtasks create argument
+    crit: notable
+    conf: 0.95
+    for: [python]
+    if:
+      type: tree-sitter
+      query: |
+        ((call
+          arguments: (argument_list
+            (list
+              (string (string_content) @tool)
+              (string (string_content) @operation)))) @call
+        (#match? @tool "(?i)^schtasks(\\.exe)?$")
+        (#match? @operation "(?i)^/create$"))
+
+  - id: schtasks-minute-create-sequence
+    desc: Creates a minute-based Windows scheduled task
+    crit: notable
+    conf: 0.96
+    for: [scripts, source, class, java_class]
+    unless:
+      - id: metadata/file/format/log::windows-event-csv-records
+    if:
+      type: text
+      regex: '(?is)\bschtasks([.]exe)?\b.{0,180}/create\b.{0,180}/sc.{0,24}minute\b'
+
+  # HTML Help Shortcut parameters may entity-encode every argument. Keep the
+  # command parts atomic and join the utility, action, and schedule below.
+  - id: schtasks-minute-create-before-command
+    desc: Builds a minute task before schtasks launch
+    crit: notable
+    conf: 0.94
+    for: [scripts, source]
+    if:
+      type: text
+      regex: '(?is)/create\b.{0,180}/sc.{0,24}minute\b.{0,400}\bschtasks([.]exe)?\b'
+
+  - id: jvm-schtasks-create-argument
+    desc: JVM schtasks create argument
+    crit: component
+    conf: 0.96
+    for: [class, java_class]
+    if:
+      type: value
+      path: class.strings[*]
+      regex: '(?i)^/create$'
+
+  - id: powershell-schtasks-xml-create
+    desc: Scheduled task XML creation
+    crit: notable
+    conf: 0.95
+    for: [powershell, batch]
+    if:
+      type: text
+      regex: '(?i)schtasks\s+/create[^\r\n]{0,180}/xml'
+
+  - id: javascript-schtasks-xml-create
+    desc: JavaScript schtasks XML create command
+    crit: notable
+    conf: 0.95
+    for: [javascript]
+    if:
+      type: text
+      regex: '(?i)\bschtasks\s*/create\s*/tn\b[\s\S]{0,160}/xml\b[\s\S]{0,80}/f\b'
+
+  - id: schtasks-create-task-name
+    desc: Scheduled task creation name flag
+    conf: 0.96
+    for: [pe, oledoc, powershell, batch, csharp, python, java, class, java_class]
+    if:
+      type: text
+      # C#/Java source keeps the quote escaped (\"), while compiled strings
+      # and shell commands contain the plain quote.
+      regex: '(?i)/create\b[^\r\n]{0,120}/tn\s+\\?"'
+
+  - id: schtasks-create-cmd
+    desc: Windows schtasks create command
+    crit: notable
+    conf: 0.92
+    for: [scripts, source, pe, dll, class, html]
+    unless:
+      - id: metadata/file/format/log::windows-event-csv-records
+    if:
+      type: text
+      regex: '(?i)\bschtasks(\.exe)?[\s,]+/create\b'
+
+  # `/TR` names the program the task will run. Naming an action is an ordinary
+  # part of every schtasks invocation — installers and uninstallers included —
+  # so this is the neutral flag observation next to its siblings; the intent
+  # comes from what the action points at (see the ADS loader composite).
+  - id: go-schtasks-create-command
+    desc: Go invokes schtasks.exe task creation
+    crit: notable
+    conf: 0.92
+    for: [go]
+    if:
+      type: text
+      regex: '(?i)exec\.Command\(\s*["'']schtasks(\.exe)?["'']\s*,\s*["'']/create["'']'
+
+  - id: htmlhelp-schtasks-create-entity
+    desc: HTML numeric references spell schtasks create
+    crit: component
+    conf: 0.95
+    for: [html]
+    if:
+      type: text
+      substr: '&#x2f;&#x63;&#x72;&#x65;&#x61;&#x74;&#x65;'
+      case_insensitive: true
+  - id: htmlhelp-schtasks-create-text
+    desc: HTML command contains the schtasks create option
+    crit: component
+    conf: 0.95
+    for: [html]
+    if:
+      type: text
+      substr: /create
+      case_insensitive: true
+composite_rules:
+  - id: htmlhelp-schtasks-create-option
+    desc: HTML Help command contains schtasks create
+    crit: component
+    conf: 0.95
+    for: [html]
+    any:
+      - id: htmlhelp-schtasks-create-entity
+      - id: htmlhelp-schtasks-create-text
+  - id: htmlhelp-shortcut-minute-schtasks
+    desc: HTML Help command creates a minute-based scheduled task
+    crit: notable
+    conf: 0.97
+    for: [html]
+    near_bytes: 1600
+    all:
+      - id: htmlhelp-schtasks-create-option
+      - id: micro-behaviors/os/autorun/task-trigger::htmlhelp-schtasks-minute-option
+    any:
+      - id: micro-behaviors/os/autorun/scheduled::htmlhelp-schtasks-entity-caret-prefix
+      - id: micro-behaviors/os/autorun/scheduled::htmlhelp-schtasks-entity-name
+  - id: jvm-schtasks-minute-create
+    desc: JVM creates a minute-based scheduled task
+    crit: notable
+    conf: 0.97
+    for: [class, java_class]
+    all:
+      - id: micro-behaviors/os/autorun/scheduled::jvm-schtasks-utility-token
+      - id: jvm-schtasks-create-argument
+      - id: micro-behaviors/os/autorun/task-trigger::jvm-schtasks-minute-value
+
+  - id: schtasks-minute-creation
+    desc: Creates a minute-based Windows scheduled task
+    crit: notable
+    conf: 0.96
+    for: [scripts, source, class, java_class]
+    any:
+      - id: schtasks-minute-create-sequence
+      - id: schtasks-minute-create-before-command
+      - id: jvm-schtasks-minute-create
+
+  - id: schtasks-split-exe-create
+    desc: schtasks.exe with nearby create /tn args
+    conf: 0.92
+    for: [pe, powershell, batch, csharp, python, java, class, java_class]
+    # Object-initializer source commonly assigns FileName, stdio/window
+    # options, and Arguments across several statements before constructing the
+    # command string. Keep the two schtasks-specific legs in the same small
+    # source region without requiring command-line adjacency.
+    near_bytes: 768
+    all:
+      - id: micro-behaviors/os/autorun/scheduled::schtasks-utility-token
+      - id: schtasks-create-task-name
+
+  - id: windows-schtasks-create
+    desc: Windows scheduled-task creation command evidence
+    conf: 0.85
+    for: [pe, oledoc, powershell, batch, csharp, python, java, class, java_class]
+    size_max: 500000
+    any:
+      - id: schtasks-create-cmd
+      - id: schtasks-split-exe-create
+      - id: python-schtasks-create-command
+
+  - id: python-schtasks-create-command
+    desc: Python creates scheduled tasks
+    crit: notable
+    conf: 0.95
+    for: [python]
+    all:
+      - id: micro-behaviors/os/autorun/scheduled::python-schtasks-command-token
+      - id: python-schtasks-create-argument
+

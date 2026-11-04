@@ -261,6 +261,18 @@ RETIRED = {
         'Use the named self-extractor, extraction behavior, or evidenced archive subject.',
     'metadata/file/profile/installer/product':
         'Use the named product or evidenced installation, packaging, or extraction behavior.',
+    'metadata/file/profile/network-context/encoded':
+        'Use the evidenced encoding, communication, or payload subject.',
+    'metadata/file/profile/network-context/activity':
+        'Use the evidenced communication, process, collection, or execution subject.',
+    'metadata/file/profile/network-context/endpoint':
+        'Use the evidenced URL, header, service, communication, or objective subject.',
+    'metadata/file/profile/network-context/host':
+        'Use the evidenced communication, host discovery, exfiltration, or execution subject.',
+    'metadata/file/profile/network-context/process':
+        'Use the evidenced communication, process, execution, exfiltration, or named tool subject.',
+    'metadata/file/profile/installer/lifecycle':
+        'Use the evidenced installation, execution, persistence, or product subject.',
     'metadata/file/profile/installer/plugin':
         'Use installer recognition, named DLL evidence, or the supported packing and execution objective.',
     'metadata/file/profile/installer/resource':
@@ -269,6 +281,8 @@ RETIRED = {
         'Use the evidenced obfuscation or named product.',
     'metadata/file/profile/installer/encoding':
         'Use the evidenced encoding or script behavior.',
+    'metadata/file/profile/installer':
+        'Use the evidenced installation, behavior, objective, product, or property.',
     'metadata/file/profile/shortcut/construction':
         'Use shortcut creation, command paths, or the evidenced download behavior.',
     'metadata/file/profile/shortcut/encoding':

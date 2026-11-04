@@ -624,6 +624,17 @@ commands that start or stop an existing task use `control`.
 
 ### Communications and local networking
 
+HTTP headers belong with their actual subject: `header/client` for client or
+device identification, `header/referer` for Referer evidence, `header/upload`
+for upload protocol fields, named services
+for their protocol-specific headers, and upload, telemetry or key exchange
+for those operations. `header/custom` holds remaining custom header evidence.
+
+Socket transmission under `communications/socket/send` separates `datagram`,
+`stream`, and generic `message` operations from `content`-specific sends and
+`reference`-only API evidence. A symbol or decoded name alone does not prove
+that a send occurred. Generic stream conversion and writing remain in `data`.
+
 HTTP authentication uses evidence-specific homes across its existing siblings.
 `oauth` requires OAuth protocol, grant, authorization, client or permission-scope
 evidence. An access/refresh token field or browser token read alone belongs to
@@ -1927,7 +1938,9 @@ activation belongs under `objectives/execution/payload/memory-branch`.
 and process evidence that does not establish a more specific behavior. For
 example, an HTTP reference near an execution call does not establish that the
 downloaded content was executed; a bound download-and-launch belongs with the
-supported execution behavior. General network profiles use `network-context`.
+supported execution behavior. The legacy `network-context/process` branch is
+retired: place its rules by the supported communication, process, execution,
+exfiltration, or named-tool subject, and describe unbound observations as such.
 
 `communications/rpc` records RPC protocol fields and API references;
 `communications/blockchain/wallet` records wallet method names and their co-occurrence. Such names
