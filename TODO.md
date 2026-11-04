@@ -48,13 +48,24 @@
 
 ---
 
-## 5. In-Progress Work: Batch 5 (Python Wheels — 62 `.whl` samples)
+## 5. Completed Work: Batch 5 (Python Wheels — 62 `.whl` samples) — DONE
 
-## 6. Remaining Batches After Batch 4 (197 samples)
+- **35 Misplaced Benign (`good`)**: Verified `0H 0S/1S 0 Obj-N` with no misleading findings, copied to `/tmp/triage/misplaced-good/`, and moved with `hopper mv -target=good` (`airbyte_agent_sdk`, `aweb`, `claudecord`, `dashscope`, `elitea_sdk`, `fbuild`, `fontcase`, `luckee_cli`, `moveworks_capi_starter`, `ok_script`, `pirlygenes`, `skills_analyzer`, `splogo`, `stdid_nyxprobe`, `test_workalendar_internal`, `upgini`, `uprobe`).
+- **27 Confirmed Hostile (`bad`)**: Verified with `H >= 3` across `>= 3` directories and moved with `hopper mv -target=bad` (Cluster A 11 wheels: `acousticpack`, `asrloom`, `benchworks`, `hookgantry`, `modelworks`, `phonemeforge`, `phonemeprobe`, `soundsocket`, `ttsdock`, `ttsprobe`, `ttsweaver`; Cluster B 7 wheels: `badgertask`, `brambletask`, `brookworker`, `ferretqueue`, `flintqueue`, `larchworker`, `sedgehaul`; Individual families: `fontus`, `gcpwn`, `myra_ai_assistant`, `pafex`, `pyprig`, `resion`, `suggestedtests`, `wallet_tracking`).
+- **Engine Bug Fixed**: Fixed `filefacts` Python comment-run `O(K^2)` lexer-budget exhaustion so Python files padded with thousands of `#` comment lines (`splogo-1.0.0-py3-none-any.whl`) parse completely within the tree-sitter lexer budget.
 
-- **Batch 5: Python Wheels (62 samples)**
-  - `.whl` (62)
-- **Batch 6: Chrome Extensions (66 samples)**
-  - `.crx` (66)
-- **Batch 7: npm Packages (69 samples)**
-  - `.tgz` (69)
+---
+
+## 6. Completed Work: Batch 6 (Chrome Extensions — 66 `.crx` samples) — DONE
+
+- **49 Misplaced Benign (`good`)**: Verified `0H, S<=1, 0 Obj-N` with no misleading findings, copied to `/tmp/triage/misplaced-good/`, and moved with `hopper mv -target=good`.
+- **2 Dual-Use (`purgatory`)**: Commercial WhatsApp Web CRM bulk-messaging extensions (`mcfhdbbdcaodbaacopebdkhhogjcaieh.crx` / Izza Bot and `nblcdphhoppanhfnllcbnbbfjnlbknfd.crx` / Wasubot) verified `0H` and moved with `hopper mv -target=purgatory`.
+- **15 Confirmed Hostile (`bad`)**: Verified with `H >= 3` across `>= 3` directories and moved with `hopper mv -target=bad` (`ddfdfoaikdeokhfibfkpffonpllddaid.crx`, `acjjhchnekkooeidcjnjpciangnmokgp.crx`, `cchjdbddjikkeeaddghohjljhabbgdfd.crx`, `daabfdbfadnbojjkbbjmegledncaaedl.crx`, `djnpebcpfhbelkdkokmbihhlcdcmbcng.crx`, `dpamgbfmlcbabkbbebemijabckmkffdc.crx`, `fneececehejpknbfdekbjpldplfdllab.crx`, `gihepmncbdnpfdffnbhbkkckffhlkblb.crx`, `hmkdkkmjnhdkbfnheamkefidnbgnhcdj.crx`, `ibnkknhclojkijdeebfhgehmfgkgnmnn.crx`, `jjkmpmebdfbhnlldhknbmpjknidmbnpl.crx`, `maedccdnebfefdjcbebghhcfefknidpf.crx`, `nbjdhgkkhefpifcaechbfdaefacfbndf.crx`, `mlifbfhhhlokpmlbadikcfbdfefpfcbm.crx`, `nnhpfknljdpmfeigdaefebbhbechbdpf.crx`).
+
+---
+
+## 7. Completed Work: Batch 7 (npm Packages — 69 `.tgz` samples) — DONE (ALL 315 / 315 SAMPLES COMPLETE)
+
+- **39 Misplaced Benign (`good`)**: Verified `H=0, S<=1, ObjN=0` with no misleading findings, copied to `/tmp/triage/misplaced-good/`, and moved with `hopper mv -target=good` (`coderabbit-0.9.{1,2}.tgz`, `sentencex-win32-x64-1.0.33.tgz`, `chutes-build-win32-x64-2.0.{1,2,8,10}.tgz`, `watchmen-cli-win32-x64-3.0.{0,4}.tgz`, `mq-bridge-win32-x64-msvc-1.3.0.tgz`, `paidwithtab-3.0.0.tgz`, `git-span-win32-x64-1.1.{47,48}.tgz`, `executable-stories-playwright-8.15.0.tgz`, `hexo-theme-linen-1.0.45.tgz`, `free-email-domains-1.9.9.tgz`, `@retailrocketgroup-retailrocket-edit.abandoned-view-vue-email-template-render-11.0.433449.tgz`, `hyperframes-{0.7.10,0.8.5}.tgz`, `@bobfrankston-mailx-store-web-0.1.133.tgz`, `@ppa-web-components-ppa-searchform-0.1.0.tgz`, `trustlint-2.2.0.tgz`, `foremerge-win32-x64-0.6.0.tgz`, `cmdly-0.2.1.tgz`, `@gowri48-npmpublish-2.1.7.tgz`, `@stefanosala-vc-cli-linux-x64-0.1.0.tgz`, `mega-code-dev-0.5.2.tgz`, `@lightdash-cli-2.618.0.tgz`, `suppa-mcp-2-1.43.0.tgz`, `@reason-machines-cli-linux-{arm64-0.2.333,arm64-musl-0.2.306,x64-musl-0.2.290,x64-0.2.290}.tgz`, `@telora-mcp-products-0.23.5.tgz`, `@beloved-lenora-opencode-shared-rpc-1.0.0.tgz`, `@toptal-davinci-graphql-codegen-extensions-2.0.0.tgz`, `worsier-win32-x64-msvc-3.10.0.tgz`, `@devflow-tools-devflow-0.18.60.tgz`, `hugo-bin-0.166.0.tgz`).
+- **5 Suspicious / Carrier Packages (`purgatory`)**: Verified `H=0, S=2, ObjN=0` and moved with `hopper mv -target=purgatory` (`dependencykfeg-25.1.3.tgz`, `atlassian-wallboard-plugin-10.0.0.tgz`, `@chatunity-baileys-1.2.2.tgz`, `@flexmr-survey-client-2.0.12.tgz`, `@flexmr-survey-conversation-1.0.12.tgz`).
+- **25 Confirmed Hostile (`bad`)**: Verified with `H >= 3` across `>= 3` directories and moved with `hopper mv -target=bad` (`litecore-lib-ltc-1.9.{8,14}.tgz`, `spectral-core-3.0.5.tgz`, `@johnruff215-dev-solana-wallet-tracker-1.0.1.tgz`, `@ifasn-mmdd-doc-mcp-1.1.0.tgz`, `tw-motion-css-2.0.2.tgz`, `raiden-baileys-2.1.4.tgz`, `itsa-react-button-16.0.11.tgz`, `@goparrot-dashboard-combos-0.0.1.tgz`, `@atedone-workspace-context-0.0.{16,22}.tgz`, `@majapisoftwares-router-0.2.0.tgz`, `@zervonex-baileys-3.0.8.tgz`, `scdn-jquery-0.1.6.tgz`, `@axon-web-icons-1.0.1.tgz`, `konnektive-one-1.6.1.tgz`, `@conduitops-logview-archive-1.0.1.tgz`, `@elfhkry666-baileys-0.3.{20,23,24}.tgz`, `@pisell-pisellos-2.3.176.tgz`, `@jexkcode-baileys-1.1.5.tgz`, `animatecss-tailwind-presets-1.0.0.tgz`, `animatecss-tailwind-luminary-2.0.6.tgz`, `akuuong-1.0.0.tgz`).

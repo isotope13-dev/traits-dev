@@ -25,42 +25,42 @@ The requested priority is listed first; remaining filetypes are alphabetical. `w
 - [x] cargo.toml: `x-triage-bad`, then `x-improve` — 23 good, 4 bad; see `cargo-toml-bad-review-2026-11-03.md`
 - [x] cfml: `x-triage-bad`, then `x-improve` — 9 bad; see `cfml-bad-review-2026-11-03.md`
 - [x] chm: `x-triage-bad`, then `x-improve` — 24 bad, 8 good, 1 dual-use, 7 inconclusive; see `chm-bad-review-2026-11-03.md`
-- [ ] chrome_manifest: `x-triage-bad`, then `x-improve` — review complete; three inconclusive relabels pending Hopper; see `chrome-manifest-bad-review-2026-11-03.md`
-- [ ] clojure: `x-triage-bad`, then `x-improve` — in progress
-- [ ] cmake: `x-triage-bad`, then `x-improve`
-- [ ] composer: `x-triage-bad`, then `x-improve`
-- [ ] composer.json: `x-triage-bad`, then `x-improve`
-- [ ] conda: `x-triage-bad`, then `x-improve`
-- [ ] cpan: `x-triage-bad`, then `x-improve`
-- [ ] cpio: `x-triage-bad`, then `x-improve`
-- [ ] crate: `x-triage-bad`, then `x-improve`
-- [ ] crx: `x-triage-bad`, then `x-improve`
-- [ ] data: `x-triage-bad`, then `x-improve`
-- [ ] deb: `x-triage-bad`, then `x-improve`
-- [ ] desktop_entry: `x-triage-bad`, then `x-improve`
-- [ ] dex: `x-triage-bad`, then `x-improve`
-- [ ] dmg: `x-triage-bad`, then `x-improve`
-- [ ] dockerfile: `x-triage-bad`, then `x-improve`
-- [ ] dos_com: `x-triage-bad`, then `x-improve`
-- [ ] egg: `x-triage-bad`, then `x-improve`
-- [ ] elf: `x-triage-bad`, then `x-improve`
-- [ ] elixir: `x-triage-bad`, then `x-improve`
-- [ ] font: `x-triage-bad`, then `x-improve`
-- [ ] gem: `x-triage-bad`, then `x-improve`
-- [ ] github_actions: `x-triage-bad`, then `x-improve`
-- [ ] go: `x-triage-bad`, then `x-improve`
-- [ ] go.mod: `x-triage-bad`, then `x-improve`
-- [ ] go_module: `x-triage-bad`, then `x-improve`
-- [ ] groovy: `x-triage-bad`, then `x-improve`
-- [ ] gyp: `x-triage-bad`, then `x-improve`
-- [ ] gz: `x-triage-bad`, then `x-improve`
-- [ ] html: `x-triage-bad`, then `x-improve`
-- [ ] ico: `x-triage-bad`, then `x-improve`
-- [ ] ipa: `x-triage-bad`, then `x-improve`
-- [ ] iso: `x-triage-bad`, then `x-improve`
-- [ ] jar: `x-triage-bad`, then `x-improve`
-- [ ] java: `x-triage-bad`, then `x-improve`
-- [ ] java_class: `x-triage-bad`, then `x-improve`
+- [x] chrome_manifest: `x-triage-bad`, then `x-improve` — see `chrome-manifest-bad-review-2026-11-03.md`
+- [x] clojure: `x-triage-bad`, then `x-improve` — see `clojure-bad-review-2026-11-03.md`
+- [x] cmake: `x-triage-bad`, then `x-improve` — 1 good; see `cmake-bad-review-2026-11-03.md`
+- [x] composer: `x-triage-bad`, then `x-improve` — 7 bad; see `composer-bad-review-2026-11-03.md`
+- [x] composer.json: `x-triage-bad`, then `x-improve` — 1 bad; see `composer-json-bad-review-2026-11-03.md`
+- [x] conda: `x-triage-bad`, then `x-improve` — 3 good; see `conda-bad-review-2026-11-03.md`
+- [x] cpan: `x-triage-bad`, then `x-improve` — 5 bad; see `cpan-bad-review-2026-11-03.md`
+- [x] cpio: `x-triage-bad`, then `x-improve` — 12 bad, 2 inconclusive; see `cpio-bad-review-2026-11-03.md`
+- [x] crate: `x-triage-bad`, then `x-improve` — 33 bad, 4 good, 1 dual-use, 2 inconclusive; see `crate-bad-review-2026-11-03.md`
+- [x] crx: `x-triage-bad`, then `x-improve` — 5 bad, 12 good, 23 inconclusive; see `crx-bad-review-2026-11-03.md`
+- [x] data: `x-triage-bad`, then `x-improve` — 12 bad, 17 good, 11 inconclusive; see `data-bad-review-2026-11-03.md`
+- [x] deb: `x-triage-bad`, then `x-improve` — 37 good, 3 dual-use; see `deb-bad-review-2026-11-03.md`
+- [x] desktop_entry: `x-triage-bad`, then `x-improve` — 12 bad, 1 inconclusive; see `desktop-entry-bad-review-2026-11-03.md`
+- [x] dex: `x-triage-bad`, then `x-improve` — 10 bad, 1 good, 29 inconclusive; see `dex-bad-review-2026-11-03.md`
+- [x] dmg: `x-triage-bad`, then `x-improve` — 22 bad, 18 inconclusive; see `dmg-bad-review-2026-11-03.md`
+- [x] dockerfile: `x-triage-bad`, then `x-improve` — 1 bad, 12 good, 15 dual-use, 7 inconclusive; see `dockerfile-bad-review-2026-11-03.md`
+- [x] dos_com: `x-triage-bad`, then `x-improve` — 23 bad, 3 good, 14 inconclusive; see `dos-com-bad-review-2026-11-03.md`
+- [x] egg: `x-triage-bad`, then `x-improve` — 1 bad; see `egg-bad-review-2026-11-03.md`
+- [x] elf: `x-triage-bad`, then `x-improve` — 6 bad, 24 good, 2 dual-use, 8 inconclusive; see `elf-bad-review-2026-11-03.md`
+- [x] elixir: `x-triage-bad`, then `x-improve` — 1 bad, 1 inconclusive; see `elixir-bad-review-2026-11-03.md`
+- [x] font: `x-triage-bad`, then `x-improve` — 40 good; see `font-bad-review-2026-11-03.md`
+- [x] gem: `x-triage-bad`, then `x-improve` — 17 bad, 4 good; see `gem-bad-review-2026-11-03.md`
+- [x] github_actions: `x-triage-bad`, then `x-improve` — 6 bad, 12 good, 5 dual-use, 3 inconclusive; see `github-actions-bad-review-2026-11-03.md`
+- [x] go: `x-triage-bad`, then `x-improve` — 2 bad, 34 good, 3 dual-use; see `go-bad-review-2026-11-03.md`
+- [x] go.mod: `x-triage-bad`, then `x-improve` — 9 good, 1 dual-use; see `go-mod-bad-review-2026-11-03.md`
+- [x] go_module: `x-triage-bad`, then `x-improve` — 16 bad, 2 good, 1 dual-use, 1 inconclusive; see `go-module-bad-review-2026-11-03.md`
+- [x] groovy: `x-triage-bad`, then `x-improve` — 26 bad, 1 good, 7 dual-use, 6 inconclusive; see `groovy-bad-review-2026-11-03.md`
+- [x] gyp: `x-triage-bad`, then `x-improve` — 2 bad; see `gyp-bad-review-2026-11-03.md`
+- [x] gz: `x-triage-bad`, then `x-improve` — 9 bad, 6 good, 13 inconclusive; see `gz-bad-review-2026-11-03.md`
+- [x] html: `x-triage-bad`, then `x-improve` — 1 good; see `html-bad-review-2026-11-03.md`
+- [x] ico: `x-triage-bad`, then `x-improve` — 39 good, 1 bad; see `ico-bad-review-2026-11-03.md`
+- [x] ipa: `x-triage-bad`, then `x-improve` — 1 bad; see `ipa-bad-review-2026-11-03.md`
+- [x] iso: `x-triage-bad`, then `x-improve` — 16 bad, 24 inconclusive; see `iso-bad-review-2026-11-03.md`
+- [x] jar: `x-triage-bad`, then `x-improve` — 31 bad, 5 good, 1 dual-use, 3 inconclusive; see `jar-bad-review-2026-11-03.md`
+- [x] java: `x-triage-bad`, then `x-improve` — 10 bad, 27 good, 1 dual-use, 1 inconclusive; see `java-bad-review-2026-11-03.md`
+- [ ] java_class: `x-triage-bad`, then `x-improve` — in progress
 - [ ] javascript: `x-triage-bad`, then `x-improve`
 - [ ] json: `x-triage-bad`, then `x-improve`
 - [ ] jsp: `x-triage-bad`, then `x-improve`
