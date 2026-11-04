@@ -36,16 +36,54 @@ traits:
       (call_expression function: (subscript_expression)) @call
 - for: [html]
   id: html-computed-property-call-text
-  desc: Embedded computed-property call syntax
+  desc: Computed-call syntax in HTML script context
   crit: notable
   conf: 0.82
   unless: *computed-call-exclusions
   if:
-    # HTML has no cached JavaScript AST, including event-handler attributes.
-    # Preserve that carrier's existing nested-index and dispatch coverage.
-    type: text
-    exclude_html_comments: true
-    regex: '\b[A-Za-z_$][\w.$]*(\s*\[([^\[\]\n]|\[[^\]\n]{1,80}\])+\]){1,3}\s*\('
+    # HTML exposes neither JavaScript call facts nor a queryable script AST.
+    # The old whole-document regex mistook help prose such as
+    # "specified as [frame frequency] (e.g. 25)" for a computed call.
+    # Keep the lexical observation, but require a script body, event handler,
+    # or javascript: attribute. This does not prove invocation or data flow.
+    type: yara
+    source: |
+      rule html_computed_call_script_context {
+        strings:
+          $call = /\b[A-Za-z_$][\w.$]*(\s*\[([^\[\]\n]|\[[^\]\n]{1,80}\])+\]){1,3}\s*\(/
+          $open = /<script([ \t\r\n][^>]{0,2048})?>/ nocase
+          $close = /<\/script[ \t\r\n]*>/ nocase
+          $inert = /<script[^>]{0,2048}type\s*=\s*["']application\/(ld\+)?json/ nocase
+          $event_double = /\son[a-z]+\s*=\s*"[^"]{0,4096}"/ nocase
+          $event_single = /\son[a-z]+\s*=\s*'[^']{0,4096}'/ nocase
+          $url_double = /\s(href|src)\s*=\s*"javascript:[^"]{0,4096}"/ nocase
+          $url_single = /\s(href|src)\s*=\s*'javascript:[^']{0,4096}'/ nocase
+          $comment_open = "<!--"
+          $comment_close = "-->"
+        condition:
+          $call and (
+            for any c in (1..#call) : (
+              for any o in (1..#open) : (
+                @call[c] >= @open[o]+!open[o] and
+                not $close in (@open[o]..@call[c]) and
+                not $inert at @open[o] and
+                not for any b in (1..#comment_open) : (
+                  @comment_open[b] < @open[o] and
+                  not $comment_close in (@comment_open[b]..@open[o])
+                )
+              )
+            ) or
+            for any of ($event_*, $url_*) : (
+              for any i in (1..#) : (
+                $call in (@[i]..@[i]+![i]-1) and
+                not for any b in (1..#comment_open) : (
+                  @comment_open[b] < @[i] and
+                  not $comment_close in (@comment_open[b]..@[i])
+                )
+              )
+            )
+          )
+      }
 - for:
   - javascript
   id: js-numeric-indexed-computed-call
