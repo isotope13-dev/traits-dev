@@ -237,6 +237,8 @@ RETIRED = {
         'Use the evidenced communication, process, execution, or named subject.',
     'metadata/file/profile/malware-reference':
         'Use the named malware family or a neutral description of generic evidence.',
+    'metadata/file/profile/blockchain':
+        'Use the evidenced blockchain operation, protocol, named service, or supported objective.',
     'metadata/file/profile/network-context/storage':
         'Use the storage URL, web-storage write, or file-sync behavior.',
     'metadata/file/profile/network-context/dns':

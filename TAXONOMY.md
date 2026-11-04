@@ -1016,8 +1016,8 @@ evidence differences, not techniques.
 authorization (allowances, permits), financial-transaction signing, submission
 and record queries → `data/transaction/{construct,authorize,sign,submit,query}`;
 chain RPC → `communications/blockchain/client`; provider-specific endpoint
-references → the provider in `well-known/`; unbound RPC fields and provider-set
-profiles → `metadata/file/profile/blockchain`; wallet UI → `ui/controls/wallet`; wallet files
+references → the provider in `well-known/`; RPC fields and provider sets → the
+evidenced blockchain protocol or operation; wallet UI → `ui/controls/wallet`; wallet files
 → `fs/path/wallet`. Signing arbitrary messages is `crypto/sign`.
 An indexed XOR expression printed as a character is `data/bitwise/xor-forms/indexed`; it does not alone establish decoding or delivery. An XOR-named function without an observed operation is source function naming; XOR cipher or key wording in a string literal is a cryptography literal, not an implementation.
 
