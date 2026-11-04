@@ -216507,7 +216507,7 @@ rule DITEKSHEN_MALWARE_Linux_Gobrat : FILE
 rule DITEKSHEN_MALWARE_Win_Hakunamatata : FILE
 {
 	meta:
-		description = "Detects HakunaMatata ransomware"
+		description = "Shared managed file-encryptor string cluster (HakunaMatata lead)"
 		author = "ditekSHen"
 		id = "43ca40bb-9eb6-558e-977d-f1fff5659565"
 		date = "2020-11-06"
@@ -277166,7 +277166,7 @@ rule SIGNATURE_BASE_RAT_Sakula : FILE
 rule SIGNATURE_BASE_RAT_Shadowtech : FILE
 {
 	meta:
-		description = "Detects ShadowTech RAT"
+		description = "Settings and short-marker string cluster (ShadowTech lead)"
 		author = "Kevin Breen <kevin@techanarchy.net>"
 		id = "1fb15030-b400-5e70-b183-81e2527d5556"
 		date = "2014-01-04"
