@@ -1,0 +1,56 @@
+defaults:
+  platforms: [windows]
+  for: [pe]
+  arch: [x86]
+
+traits:
+  - id: x86-length-prefixed-recv-forward
+    desc: Length-prefixed recv forwards buffer and count
+    crit: notable
+    conf: 0.97
+    if:
+      # Bind the indirect call target to recv, including ordinal imports,
+      # rather than identifying networking by unrelated import co-occurrence.
+      # The same socket supplies a DWORD length and then successive chunks;
+      # each chunk's buffer and received length are passed to a writer helper.
+      # Writer success and payload activation are separate observations.
+      type: yara
+      source: |
+        import "pe"
+        rule x86_length_prefixed_recv_stream_writer {
+          strings:
+            $recv = {
+              8B 35 ?? ?? ?? ?? 33 DB 53 89 45 ?? 6A 04
+              8D 45 ?? 50 FF 37 FF D6 83 F8 04 74 ??
+              33 C0 EB ?? 39 5D ?? 76 ??
+              6A 00 68 ?? ?? ?? ?? 8D 45 ?? 50 FF 37 FF D6
+              89 45 ?? 85 C0 74 ?? 8B 4D ?? FF 31 50
+              8D 45 ?? 6A 01 50 E8 ?? ?? ?? ??
+              03 5D ?? 83 C4 10 89 1D ?? ?? ?? ??
+              3B 5D ?? 72 ?? 8B 45 ??
+            }
+          condition:
+            pe.is_pe and pe.machine == pe.MACHINE_I386 and
+            for any r in (1..#recv) : (
+              for any s in (0..pe.number_of_sections-1) : (
+                pe.sections[s].characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                @recv[r] >= pe.sections[s].raw_data_offset and
+                @recv[r]+!recv[r] <= pe.sections[s].raw_data_offset+pe.sections[s].raw_data_size
+              ) and
+              for any lib in pe.import_details : (
+                lib.library_name matches /^WS2_32\.dll$/i and
+                for any fn in lib.functions : (
+                  (fn.name == "recv" or fn.ordinal == 16) and
+                  uint32(@recv[r]+2) == pe.image_base+fn.rva
+                )
+              ) and
+              uint8(@recv[r]+11) == uint8(@recv[r]+60) and
+              uint8(@recv[r]+11) == uint8(@recv[r]+94) and
+              uint8(@recv[r]+16) == uint8(@recv[r]+33) and
+              uint8(@recv[r]+16) == uint8(@recv[r]+89) and
+              uint8(@recv[r]+45) == uint8(@recv[r]+66) and
+              uint8(@recv[r]+53) == uint8(@recv[r]+77) and
+              int32(@recv[r]+39) > 0 and
+              int8(@recv[r]+91)+92 == 36
+            )
+        }
