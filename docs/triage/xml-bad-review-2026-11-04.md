@@ -1,4 +1,4 @@
-# XML bad-label review, 2026-11-04 (final recording pending)
+# XML bad-label review, 2026-11-04
 
 The snapshot contains 40 files. Direct investigation supports **4 bad, 36 good**. Both skills have been applied; final validation/disposition recording follows below. XML queue membership does not determine scanner routing: originals include XML, SVG, JScript-dominant scriptlet markup and Android binary XML.
 
@@ -27,3 +27,13 @@ Notable edge cases remain visible without a hostile inference:
 * `dc0a85807395` is a small SVG with a direct document hyperlink and ordinary click-to-open text. It implements no automatic redirect, credential collection or executable payload; an unreviewed remote page is not silently imported into this artifact's verdict.
 
 All matching trait descriptions were reviewed. Full reports/facts for every original are under `/var/tmp/xml-final-review/xml/<prefix>/`; the final batch log is `/var/tmp/xml-final-review-rerun.log`. Final validation and Hopper recording remain necessary before checking the TODO item.
+
+
+## Final verification and recording
+
+The Python directory walk includes one hidden `.idea` library file omitted by the initial rg file count; the complete snapshot has **40 files**, all scanned and reviewed. All eighty final original checks agree with the direct-review dispositions: four hostile originals and thirty-six benign originals with no suspicious/hostile findings.
+
+Full validation passed (`/var/tmp/xml-sfra-final-validation.log`): 3,319 hostile, 2,096 suspicious, 9,641 notable and 1,420 baseline fixtures. `git diff --check` passed. Hopper successfully recorded all forty individual dispositions; every response reports zero absent and zero failed. Review is complete: **4 bad, 36 good**. Earlier pending notes are chronological.
+
+
+The SVG delivery finding also covers other document extensions and bracket-notation download/click calls. A hostile DOCX-name/bracket-call variant passes alongside the ordinary archive-export control. Final validation passed after this improvement: 3,320 hostile, 2,096 suspicious, 9,641 notable and 1,420 baseline fixtures (`/var/tmp/xml-variant-final-validation.log`).
