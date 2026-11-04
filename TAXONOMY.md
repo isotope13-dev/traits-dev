@@ -2436,8 +2436,9 @@ privilege is present, enabled, requested, or manipulated.
 JVM constant-pool method-reference counts belong in `binary/symbols/count`;
 zero references does not imply that a class declares or executes no methods.
 
-`metadata/lang/charset/alphabet` records ordered character-set observations in
-source or binaries. A recognized sequence alone does not imply encoding,
+`metadata/lang/encoding/shape/alphabet` records ordered character-set
+observations in source or binaries, alongside its `shape/character` and
+charset-table neighbors. A recognized sequence alone does not imply encoding,
 decoding, or any other operation.
 
 `metadata/lang/locale/timezone` records timezone names and catalogs, while
