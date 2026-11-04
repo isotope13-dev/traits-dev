@@ -1,0 +1,56 @@
+# Require the copied destination to be the thread's entry address. Ordinary
+# data copying beside a thread that runs a separate callback must not match.
+# YARA compares the variable tokens because template placeholders break the
+# PowerShell parser's call/flow facts; proximity alone cannot bind the address.
+defaults:
+  platforms: [windows]
+  for: [powershell]
+  crit: notable
+traits:
+  - id: powershell-copied-buffer-thread-entry
+    desc: Copied buffer becomes a local thread entry
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        rule powershell_copied_buffer_thread_entry {
+          strings:
+            $copy = /Marshal\s*\]\s*::\s*Copy\s*\([^,;]{1,100},[^,;]{1,40},\s*\$[\w%{}]+/ nocase
+            $thread = /(::\s*CreateThread\s*\(|GetDelegateForFunctionPointer\(\([^;]{0,160}\bCreateThread\b[^;]{0,320}\)\s*\.Invoke\()[^,;]{1,80},[^,;]{1,80},\s*(\[IntPtr\]\s*)?\$[\w%{}]+/ nocase
+            $alias = /\$[\w%{}]+[ \t]*=[ \t]*(\[IntPtr\][ \t]*)?\$[\w%{}]+/ nocase
+            $var = /\$[\w%{}]+/
+          condition:
+            for any c in (1..#copy) : (
+              for any t in (1..#thread) : (
+                @thread[t] > @copy[c] and @thread[t] < @copy[c]+2000 and
+                for any p in (1..#var) : (
+                  @var[p] + !var[p] == @copy[c] + !copy[c] and
+                  for any q in (1..#var) : (
+                    @var[q] + !var[q] == @thread[t] + !thread[t] and
+                    (
+                      (!var[p] == !var[q] and
+                       for all k in (0..!var[p]-1) : (
+                         (uint8(@var[p]+k) | 32) == (uint8(@var[q]+k) | 32)
+                       )) or
+                      for any a in (1..#alias) : (
+                        @alias[a] > @copy[c] and @alias[a] < @thread[t] and
+                        for any u in (1..#var) : (
+                          @var[u] == @alias[a] and !var[u] == !var[q] and
+                          for all k in (0..!var[u]-1) : (
+                            (uint8(@var[u]+k) | 32) == (uint8(@var[q]+k) | 32)
+                          ) and
+                          for any v in (1..#var) : (
+                            @var[v] + !var[v] == @alias[a] + !alias[a] and
+                            !var[v] == !var[p] and
+                            for all k in (0..!var[v]-1) : (
+                              (uint8(@var[v]+k) | 32) == (uint8(@var[p]+k) | 32)
+                            )
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }

@@ -1,0 +1,47 @@
+# Changing PowerShell's private policy cache suppresses future audit collection.
+# It does not delete existing event logs. Ruby scope covers emitted PowerShell.
+defaults:
+  platforms: [windows]
+  for: [powershell, ruby]
+  attack: T1562.002
+  mbc: E1562
+traits:
+  - id: powershell-scriptblock-policy-cache-disable
+    desc: Disables script-block logging in policy cache
+    crit: hostile
+    conf: 0.97
+    if:
+      # Joint, nearby cache lookup, logging targets, readback and two writes.
+      # Templates have no reliable AST or flow projection before substitution.
+      type: yara
+      source: |
+        rule powershell_scriptblock_policy_cache_disable {
+          strings:
+            $cache = /GetField\s*\([^\r\n]{0,180}cachedGroupPolicySettings[^\r\n]{0,100}NonPublic[^\r\n]{0,80}Static/ nocase
+            $read = /\.GetValue\s*\(\s*\$null\s*\)/ nocase
+            $flag = /\$\w+[ \t]*=[^\r\n;]{0,160}EnableScriptBlockLogging/ nocase
+            $disable = /\[\$\w+\][ \t]*=[ \t]*0\b/
+            $direct = /\[["']EnableScriptBlockLogging["']\][ \t]*=[ \t]*0\b/ nocase
+            $var = /\$\w+/
+          condition:
+            for any c in (1..#cache) : (
+              $read in (@cache[c]..@cache[c]+1200) and (
+                $direct in (@cache[c]..@cache[c]+1600) or
+                for any f in (1..#flag) : (
+                  @flag[f] > @cache[c] and @flag[f] < @cache[c]+1200 and
+                  for any d in (1..#disable) : (
+                    @disable[d] > @flag[f] and @disable[d] < @flag[f]+1200 and
+                    for any p in (1..#var) : (
+                      @var[p] == @flag[f] and
+                      for any q in (1..#var) : (
+                        @var[q] == @disable[d]+1 and !var[p] == !var[q] and
+                        for all k in (0..!var[p]-1) : (
+                          (uint8(@var[p]+k) | 32) == (uint8(@var[q]+k) | 32)
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }

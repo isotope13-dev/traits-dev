@@ -7,7 +7,8 @@ defaults:
   mbc: E1562
 traits:
 - id: amsi-init-failed-reflection
-  desc: PowerShell AMSI reflection disables scanning
+  desc: AMSI reflection field-write sequence
+  for: [powershell, ruby]
   crit: suspicious
   conf: 0.98
   unless:
@@ -169,6 +170,47 @@ traits:
     type: text
     regex: \*F?ailed.{0,2}\)?\s*\)
     case_insensitive: true
+- id: amsi-reflection-init-flag-tampering
+  for: [powershell, ruby]
+  desc: AMSI initialization flag forced by reflection
+  crit: hostile
+  conf: 0.99
+  if:
+    # Bind the true write to the failure-field lookup, rather than any
+    # unrelated static-field write elsewhere in a generator.
+    type: yara
+    source: |
+      rule amsi_reflection_init_flag_tampering {
+        strings:
+          $type = "AmsiUtils" nocase
+          $write = /GetField\s*\([^;]{0,180}amsiInitFailed[^;]{0,180}\)\s*\.SetValue\s*\(\s*\$null\s*,\s*\$true\s*\)/ nocase
+          $field = /\$[\w%{}]+[ \t]*=[^;]{0,160}GetField\s*\([^;]{0,180}amsiInitFailed[^;]{0,180}\)/ nocase
+          $setter = /\$[\w%{}]+\.SetValue\s*\(\s*\$null\s*,\s*\$true\s*\)/ nocase
+          $var = /\$[\w%{}]+/
+        condition:
+          for any w in (1..#write) : (
+            (@write[w] >= 400 and $type in (@write[w]-400..@write[w]))
+            or (@write[w] < 400 and $type in (0..@write[w]))
+          ) or
+          for any f in (1..#field) : (
+            ((@field[f] >= 400 and $type in (@field[f]-400..@field[f])) or
+             (@field[f] < 400 and $type in (0..@field[f]))) and
+            for any s in (1..#setter) : (
+              @setter[s] > @field[f] and @setter[s] < @field[f]+800 and
+              for any p in (1..#var) : (
+                @var[p] == @field[f] and
+                for any q in (1..#var) : (
+                  @var[q] == @setter[s] and !var[p] == !var[q] and
+                  for all k in (0..!var[p]-1) : (
+                    (uint8(@var[p]+k) | 32) == (uint8(@var[q]+k) | 32)
+                  )
+                )
+              )
+            )
+          )
+      }
+  unless:
+  - id: metadata/file/profile/markup::technique-catalog-notes
 composite_rules:
 - id: base64-amsi-init-failed-reflection-bypass
   desc: Encoded PowerShell AMSI reflection bypass
@@ -258,15 +300,6 @@ composite_rules:
   all:
   - id: amsi-init-failed-reflection
   - id: micro-behaviors/metaprogramming/generation/function::powershell-base64-scriptblock-construction
-- id: amsi-reflection-init-flag-tampering
-  desc: AMSI initialization flag forced by reflection
-  crit: hostile
-  conf: 0.99
-  all:
-  - id: amsi-init-failed-reflection
-  - id: objectives/evasion/anti-av/amsi::amsi-bypass-amsiutils-setvalue
-  unless:
-  - id: metadata/file/profile/markup::technique-catalog-notes
 - id: amsi-wildcard-reflection-bypass
   desc: AMSI flag located by wildcard reflection
   crit: hostile
