@@ -1,0 +1,1 @@
+Start-Process 'https://manual.example.test/guide.pdf'

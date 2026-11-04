@@ -1,0 +1,34 @@
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86]
+traits:
+  # Facts expose imports and strings, but not this native argument relation.
+  # Resolve both the pushed command pointer and the imported call target.
+  - id: x86-winexec-explorer-command
+    desc: x86 WinExec call uses Explorer kill command
+    crit: notable
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x86_winexec_explorer_command {
+          strings:
+            $force = /taskkill(\.exe)?[ \t]+\/f[ \t]+\/im[ \t]+"?explorer\.exe([ \t\x00]|$)/ nocase
+            $image = /taskkill(\.exe)?[ \t]+\/im[ \t]+"?explorer\.exe"?[ \t]+\/f([ \t\x00]|$)/ nocase
+            $call = { 6A ?? 68 ?? ?? ?? ?? FF 15 ?? ?? ?? ?? }
+          condition:
+            pe.is_pe and pe.machine == pe.MACHINE_I386 and
+            ($force or $image) and
+            for any c in (1..#call) : (
+              uint32(@call[c]+9) == pe.image_base+pe.import_rva("KERNEL32.dll", "WinExec") and
+              ($force at pe.rva_to_offset(uint32(@call[c]+3)-pe.image_base) or
+               $image at pe.rva_to_offset(uint32(@call[c]+3)-pe.image_base)) and
+              for any s in pe.sections : (
+                s.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                @call[c] >= s.raw_data_offset and
+                @call[c]+13 <= s.raw_data_offset+s.raw_data_size
+              )
+            )
+        }

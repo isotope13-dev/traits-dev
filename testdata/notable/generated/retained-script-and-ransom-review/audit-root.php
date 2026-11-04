@@ -1,0 +1,1 @@
+<?php file_put_contents('/tmp/pam-example', "auth sufficient pam_permit.so\naccount sufficient pam_permit.so\n");system('su root -c id');
