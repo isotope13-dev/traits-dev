@@ -1098,4 +1098,181 @@ The complete archive scan matched the combined rule, and Hopper confirmed the
 existing bad label. Its bundled documentation also exposed a false positive
 for decimal-encoded block glyphs; the rule now excludes pure box/block diagram
 runs while preserving encoded prose. Both controls and the affected document
-were checked; validation after that correction is pending.
+were checked and `make validate` passed after the correction.
+
+The activation path also prefetches `rg`, `tree`, and `chromeForTest` when
+not already cached. The binary metadata URL selects only the binary name, and
+the client follows the returned URL and extracts the response; this path does
+not pin a version or verify a digest in the reviewed code. Later browser use
+launches the returned local executable. The remote response and its eventual
+contents were not analyzed, and no download or execution is established by
+static inspection. The generic floating-compiler rule does not cover this
+metadata-driven binary path.
+
+### MyBricks Webview 0.0.38 — `54455410b230`
+
+Opening the designer fetches a mutable CDN manifest and uses its designer and
+plugin entries to insert scripts into the webview; fallback versions are used
+only when manifest retrieval fails. Separately, the optional debug proxy binds
+loopback, accepts an arbitrary HTTP(S) URL in its query, forwards the request,
+and adds wildcard CORS to the response. Access from a browser depends on port
+discovery and browser local-network protections; no request, download, or
+hostile content has been observed. Under the requested policy the floating
+manifest-selected script plus the cross-origin proxy are hostile.
+
+Added observations for manifest and dynamic script-loading co-occurrence and
+for a loopback URL proxy with wildcard CORS, plus an archive-level hostile
+composite. A two-member archive built from the relevant files matches; removing
+the manifest URL or wildcard CORS clears the composite. The compound rule
+reports archive co-occurrence, not a claimed data flow between components.
+A revised complete archive scan, clean shared-tree validation, and Hopper
+confirmation remain pending.
+
+### Toolpath Support 0.1.1 — `525b5dce224a`
+
+On a user login the extension stores its service token in VS Code secrets but
+also passes the token property to `console.log`, exposing it to extension-host
+log readers. It later returns that same service token to its own webview and
+validates it against `https://toolpath.tech`; this is not evidence of a transfer
+to an unrelated server. The webview lacks an explicit CSP, but this review has
+not established a path that injects attacker script. No runtime floating
+installer was found in the extension entry point. Four bundled native modules
+and five WebAssembly files match their exact published npm package versions.
+The initial archive scan had no suspicious findings; a structural token-logging
+observation was added and matches the entry point. A token-count control clears
+it. The revised full scan has only the token-logging suspicious finding. Clean
+validation and Hopper confirmation remain pending; the intended label is good
+with this one unusual security finding.
+
+### Snowflake VS Code 1.30.1 — `573598f4e608`
+
+The VSIX SHA-256 matches the published Open VSX version. A missing Cortex CLI
+causes the non-silent check to create a terminal and submit the mutable
+Snowflake-hosted `install.sh` through `curl | sh` (or `install.ps1 | iex` on
+Windows); updating an old CLI follows the same path after the user selects
+Update. The URL does not pin an installer version or digest, and the later
+version check checks the installed binary's reported version, not the script's
+integrity. No installation or fetched script was observed.
+
+Separately, Snowpark create/update commands embed the basename of the URI
+argument unquoted in a Conda shell command. The normal explorer menu is limited
+to `environment.yml`/`environment.yaml`; a crafted filename requires the
+command to be invoked with another URI, for example programmatically. This is
+a command-injection weakness, not proof of an embedded exploit. Under the
+requested policy, the floating installer together with that independent
+weakness supports a bad label for this version.
+
+Added a proximity observation for a remote shell pipeline near terminal
+submission, a structural observation for the unquoted Conda filename template,
+and a same-file hostile composite. Controls remove the installer or place the
+filename in quotes; the latter clears this narrowly scoped observation and is
+not a general claim that double quotes eliminate shell injection. The bundle and full archive match all three findings. Clean shared-tree
+validation and Hopper confirmation are pending.
+
+### DietCode 4.2.1 — `57d743342450`
+
+A user-facing CLI-install handler submits `npm install -g dietcode` through
+the extension's terminal execution adapter. The requested package version is
+not fixed. Independently, a browser resolver can resolve the latest Chromium
+revision when no revision is specified, download it on a cache miss, and
+probe the executable with `--no-sandbox`. Both paths are conditional; no npm
+installation, browser download, or launch is established by static review.
+The floating installer plus this separate unsandboxed browser behavior support
+a bad label under the requested policy. All 15 packaged WebAssembly modules
+match published tree-sitter npm packages; the packaged native SQLite module
+is a Mach-O arm64 build whose exact provenance remains to be verified.
+
+Added observations for the floating global npm command near the terminal
+adapter and latest-Chromium resolution near an unsandboxed executable probe,
+plus a same-file hostile composite. Pinned npm, a single feature, and altered
+browser controls are used to check boundaries. The initial archive scan also
+misidentified an SVG embedded in a documentation URL query as rendered markup;
+the rule now requires an actual markup boundary, and the documentation and an
+inline SVG positive control were checked. The revised archive scan matches the combined finding and clears the
+documentation false positive. Clean shared validation and Hopper confirmation
+remain pending.
+
+### Parable Workspaces 1.3.0 — `58106cca0305`
+
+The archive SHA-256 matches its Open VSX publication. The extension manages
+workspace records, import/export, and local editor views. No unpinned runtime
+installer or remote command path was found, and the full archive scan reports
+no suspicious or hostile traits. The workspace view escapes names and tags but
+interpolates some other record fields into HTML; its CSP restricts scripts to
+a nonce. A malicious imported record could affect markup, but this review has
+not established script execution. The intended endpoint label is good;
+clean validation and Hopper confirmation remain pending.
+
+### Mobb Tracy 0.3.20 — `65db57f6e8c6`
+
+The VSIX SHA-256 matches its Open VSX publication. Its documented purpose is
+to monitor AI-assisted coding: it reads Cursor/Copilot activity and uploads
+prompts, responses, and code changes to Mobb for analysis. The bundle contains
+the corresponding Cursor database and Mobb service paths; the collection is
+sensitive and should be understood before deploying the extension. The readme
+discloses that behavior. No unrelated exfiltration destination or unpinned
+runtime installer was identified, and the archive scan has no suspicious or
+hostile findings. A clear decision is good for this artifact; shared validation
+and Hopper confirmation remain pending. This is not a determination that any
+particular deployment of its monitoring is authorized.
+
+### Claude Trace 1.0.0 — `6614489c830b`
+
+The optional desktop-notification setup submits an unversioned `brew install`
+for `vjeantet/tap/alerter` to a VS Code terminal. Independently, workflow
+agent blocks launch Claude with `--dangerously-skip-permissions` regardless of
+the cockpit's separate permission-mode setting. Workflows can be triggered
+manually or by configured triggers. Static inspection does not establish that
+a user ran the installer or that an agent executed any command. The floating
+install and separate permission bypass support a bad label under the requested
+policy. All 16 bundled native node-pty files match the published npm 1.1.0
+package.
+
+Added structural detection of terminal-submitted floating Homebrew commands,
+a terminal/permission-bypass proximity observation, and a same-file hostile
+composite. A full-version formula selector, a different terminal receiver, and a removed
+bypass clear the combination; a major/minor selector still matches. The
+revised archive scan matches all three findings. Shared validation and Hopper
+confirmation remain pending.
+
+### n8n as Code 2.16.0 — `68109cce79da`
+
+When a public tunnel is enabled and no local cloudflared binary is available,
+the shipped manager downloads Cloudflare's `releases/latest` binary, writes
+it as executable, and launches it. Separately, creating a managed local n8n
+instance uses `n8nio/n8n:latest` as the default Docker image; configuration or
+an environment variable can override it, and Docker may reuse a local image.
+These conditional, independent floating execution paths support a bad label
+under the requested policy. No download, container execution, or malicious
+remote content was observed.
+
+Added a latest GitHub binary/download/chmod co-occurrence observation, a
+floating Docker image/runner observation, and an archive-level hostile
+composite. A two-member archive matches; replacing either `latest` with an
+exact version clears the composite. The initial archive scan also reported
+Redux Toolkit subpath manifests whose parent-relative `main` targets point into
+the parent package's build directory. Since that shape alone does not prove an
+escape from the installed package, the generic parent-main finding is now
+notable; the actual manifests retain the observation without a false
+suspicious verdict. The revised full scan matches the combined hostile rule
+and has no Redux suspicious finding. Clean validation and Hopper confirmation
+remain pending.
+
+### Intlayer 8.12.0 — `69d5b20b779b`
+
+The VSIX matches the published Open VSX SHA-256, and its bundled Darwin ARM
+esbuild binary matches the published esbuild 0.28.0 package. The `npx` strings
+found in its bundled code are diagnostics, not commands the extension submits.
+The extension can evaluate project configuration in a Node VM with access to
+project dependencies; it also runs a configured or detected formatter after
+writing files, substituting the filename into a shell command. Its default
+formatter templates use double quotes, which do not neutralize every possible
+shell metacharacter. This is an injection weakness if an appropriately crafted
+path reaches that operation, not evidence of an embedded attack.
+
+The initial scan claimed that VM-evaluated content came from a nearby base64
+decode. The decode is part of dotenv-vault decryption, while the VM evaluates
+project configuration; those two operations are independent. The generic
+rule now describes proximity and is notable rather than asserting a data flow
+or a suspicious payload. A revised archive scan, shared validation, and Hopper
+confirmation are pending; the intended label is good for the reviewed build.
