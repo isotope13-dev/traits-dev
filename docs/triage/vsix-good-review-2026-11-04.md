@@ -4,8 +4,7 @@
 cover application builds, deployment, and service synchronization, including
 prompted service credentials. The local no-follow scan examined 25,392
 members and reports OData, workspace, and process-launch observations without
-suspicious or hostile traits. Endpoint ruling: good; recording awaits
-validation of the current shared tree.
+suspicious or hostile traits. Endpoint ruling: good; validation passed and Hopper confirmed the label (no-op).
 
 `86a8f033af84` is an AI novel-writing assistant with bundled model-runtime
 libraries. It connects to configured model providers and batches telemetry to
@@ -174,8 +173,8 @@ good label (no-op).
 The initial pool contained 40 archives. A slow local Atomscan directory scan
 finished with 40 JSON records at `/var/tmp/vsix-good-scan.jsonl` (exit 2,
 indicating severe findings). It began before the rule changes below, so the
-records are preliminary. Thirty-two archives have since been confirmed good and three confirmed bad;
-the other five still require endpoint-based review.
+records are preliminary. Thirty-four archives have since been confirmed good and three confirmed bad;
+the other three still require endpoint-based review.
 
 * `72b2b5ac83ca`: Python autopep8 extension with five ZIP members. Its active
   handler concatenates the editor filename into a shell command without quoting.
@@ -249,20 +248,28 @@ reported prompt-extraction and repository-directive findings originate in
 protective instructions forbidding disclosure of the system prompt and
 describing tool-name presentation. The time-related finding came from an
 unrelated timing measurement followed by a `Function` call for Readability.
-The timing and prompt detectors were narrowed at their matching clauses;
-positive, mixed-file, and real-source controls are being checked, and full
-validation and the final archive rescan remain pending.
+The timing and prompt detectors were narrowed at their matching clauses.
+Positive, mixed-file, and real-source controls pass. A fresh full no-follow
+scan reports only the challenge-clicking observation as suspicious; endpoint
+ruling: good, with that behavior noted. Validation passed and Hopper confirmed
+the label (no-op).
 
 The initial scan also flagged `d504a4d979ac` (Kombai) and `af55e4111d3d`
 (CodeGPT) for several behaviors, including fingerprinting or browser/automation
 clues. Kombai's entry point attaches the output of `getFootprintV2` to client
 context sent to its own authenticated WebSocket and uses the same helper in an
-HTTP header. Its lazily loaded runtime is heavily obfuscated and its full
-fingerprint contents are not yet understood; no final endpoint ruling has been
-made. A hostile exfiltration claim based only on fingerprint, lazy loading,
+HTTP header. Static decoding of this archive's own obfuscated runtime shows
+machine and editor/session identifiers, process context, and a persisted random
+ID. The reviewed fingerprint does not collect passwords or workspace files.
+A hostile exfiltration claim based only on fingerprint, lazy loading,
 VS Code and socket/header references was relocated to capability observations
-that state co-occurrence. Its main JavaScript rescan no longer reports that
-hostile claim; the obfuscated runtime retains its suspicious finding. The scan
+that state co-occurrence. The runtime retains one suspicious obfuscation
+finding. An unrelated iOS version parser and script loader were 250 KB apart
+on the same minified line, so their proximity rule now also bounds byte
+distance; nearby and separated controls respectively match and reject.
+The fresh archive scan reports no hostile traits and one suspicious trait.
+Endpoint ruling: good, with the fingerprint and obfuscation noted; validation
+passed and Hopper confirmed the good label (no-op). The scan
 also fetched npm `optimize` and Google Chrome packages from referenced URLs
 (`rel: fetched`); they are not necessarily bytes bundled in the VSIX and must
 not be attributed to it without following the reference chain.
@@ -277,7 +284,13 @@ of the host. A no-follow scan of the whole VSIX using the rebuilt scanner
 clears the appended-payload finding and reports no suspicious or hostile
 traits. Its separate entry-point bundle is nevertheless heavily obfuscated;
 the scan reports string-table rotation and obfuscation as notable observations.
-Its behavior has not yet been established sufficiently for a final ruling.
+Static decoding of its rotated string table exposed Angular code-generation and
+workspace operations. Its literal service endpoints are license enablement and
+verification, a purchase page, and a walkthrough; license enablement submits
+the editor machine ID. The reviewed code does not establish credential theft
+or a staged executable payload. Endpoint ruling: good; validation passed and
+Hopper confirmed the good label (no-op). The scanner does not itself recover
+all of the obfuscated license-service behavior.
 
 `3cec32595b0f` (Fitten Code) ships a single 8.4 MB JavaScript bundle beginning
 with a rotated string table and heavily mangled identifiers. The initial scan
@@ -292,11 +305,14 @@ are still under review. After connecting to its local WebSocket service, the
 extension also starts a legacy conversation-state migration that submits the
 old state to that service and clears it after a reported successful transfer;
 whether that service forwards the content elsewhere has not been established.
-No endpoint ruling has been made from the product description or obfuscation
-alone.
-
-These archives remain under review; an unflagged scan alone does not establish
-a final endpoint ruling.
+Further static substitution and literal folding found no other literal
+invocation of the upload command, but remaining computed references prevent
+establishing whether the upload class has another entry point. Endpoint ruling:
+inconclusive because that invocation path and the separately installed local
+service's handling of migrated content remain unresolved. The fresh scan shows
+one obfuscation warning; validation passed, Hopper moved the sample to
+inconclusive, and the hash-verified snapshot was placed in
+`/tmp/triage/misplaced-inconclusive`.
 
 `0b0893983983` (Auto Retry Agent) uses a local Chrome DevTools connection to
 inject code that clicks agent approval controls. Its setup can add a remote

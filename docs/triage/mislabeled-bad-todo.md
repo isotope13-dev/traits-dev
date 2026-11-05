@@ -116,7 +116,7 @@ The requested priority is listed first; remaining filetypes are alphabetical. `w
 - [x] tar: `x-triage-bad`, then `x-improve` — 28 good, 4 bad, 8 inconclusive; see tar review
 - [x] text: `x-triage-bad`, then `x-improve` — 37 good, 2 bad, 1 inconclusive; see text review
 - [x] tiff: `x-triage-bad`, then `x-improve` — 39 good, 1 bad; see TIFF review
-- [ ] unknown: `x-triage-bad`, then `x-improve` — classified 22 bad, 16 good, 1 inconclusive; one unknown-type DOS detection gap remains
+- [x] unknown: `x-triage-bad`, then `x-improve` — 22 bad, 16 good, 1 inconclusive; DOS recognition gap fixed and verified
 - [x] vbs: `x-triage-bad`, then `x-improve` — 17 bad, 10 good, 3 dual-use, 10 inconclusive; see VB-family review
 - [x] vhd: `x-triage-bad`, then `x-improve` — 14 bad; see `vhd-bad-review-2026-11-04.md`
 - [x] vsix: `x-triage-bad`, then `x-improve` — 40 directly investigated; 34 good, 6 bad; see `vsix-bad-review-2026-11-04.md`
@@ -124,8 +124,8 @@ The requested priority is listed first; remaining filetypes are alphabetical. `w
 - [x] wav: `x-triage-bad`, then `x-improve` — 1 bad, 4 good; see `wav-bad-review-2026-11-04.md`
 - [x] webp: `x-triage-bad`, then `x-improve` — 3 bad, 7 good, 1 inconclusive; see `webp-bad-review-2026-11-04.md`
 - [x] xml: `x-triage-bad`, then `x-improve` — 4 bad, 36 good; see `xml-bad-review-2026-11-04.md`
-- [ ] xpi: `x-triage-bad`, then `x-improve` — 33/40 completed: 18 bad, 15 good; 7 pending; see `xpi-bad-review-2026-11-04.md`
-- [ ] xz: `x-triage-bad`, then `x-improve`
+- [x] xpi: `x-triage-bad`, then `x-improve` — 40 directly reviewed: 18 bad, 20 good, 2 inconclusive; see `xpi-bad-review-2026-11-04.md`
+- [ ] xz: `x-triage-bad`, then `x-improve` — 4/40 complete: 3 bad, 1 good; 36 pending; see `xz-bad-review-2026-11-04.md`
 - [ ] yaml: `x-triage-bad`, then `x-improve`
 - [ ] yara: `x-triage-bad`, then `x-improve`
 - [ ] zig: `x-triage-bad`, then `x-improve`

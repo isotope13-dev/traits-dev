@@ -1,6 +1,6 @@
 # Unknown filetype mislabeled-bad review — 2026-11-04
 
-The 39-file snapshot has been classified: 22 bad, 16 good and 1 inconclusive. Detection improvement remains open for one sample whose file type is unknown.
+The 39-file snapshot is complete: 22 bad, 16 good and 1 inconclusive. The formerly open DOS recognition gap is closed by the verified existing-classifier correction below.
 
 The following 19 tiny DOS programs are bad. Static disassembly shows file search, creation or opening and writes to the found file, or COM-companion creation. The source files are 23–41 bytes and several reuse DOS register state, so these descriptions are static instruction evidence rather than proof of successful execution. Both scanners report hostile findings after the changes:
 
@@ -19,3 +19,14 @@ The following standalone resources are good:
 - `856260e8f9f6` is a resource-file icon declaration. `e7fc9f336fb7`, `17960dbe5428`, `3d7d3f575d9e`, `1215d92fac8c`, `d9248cf6d4ce`, `fa0c1e4e3fe6`, `1aa874b89372` and `11c6ce119b23` are standalone Cargo manifests whose referenced implementations are absent. Names and dependency features remain available as observations; overlapping suspicious findings based only on those declarations were reduced. The manifests have at most one suspicious finding each and no hostile findings.
 
 `460e19395f87` is a large Node-RED Conda archive. Cleave reported 21,683 extracted entries and Atomscan 19,461, with no hostile traits. The coverage difference and the behavior of the many bundled dependencies could not be independently resolved, so it is inconclusive; Hopper records the ruling through purgatory.
+
+
+## DOS recognition gap closure
+
+The original 32-byte 701a807d85da artifact is now recognized as dos_com without renaming it. The existing bounded 16-bit entry decoder in ../filefacts/src/fileid/dos.rs previously recognized DOS INT21h services but missed a COM program using only a BIOS disk service followed by INT19h bootstrap. Reused that decoder to accept a known AH=02h/03h disk selector at a reachable INT13h followed immediately by INT19h. Read and write operations both identify as COM; identification does not depend on destructive intent. Selector clobbering, unknown selectors, missing bootstrap, unreachable bytes and a bare interrupt pair remain negative. No decoder, format, schema or facts API was added.
+
+All 596 file-identification tests pass, with one existing ignored test (/var/tmp/unknown-fileid-tests.log); the seven DOS tests are included in that count. Rebuilt filefacts, cleave and atomscan using temporary local dependency overrides. Restored only the source entries those overrides removed; both consumer lockfiles match their prebuild SHA snapshots exactly (/var/tmp/unknown-dos-build-lock-restoration.json). Existing signature repairs and other contributors' source-AST changes remain intact.
+
+Both scanners match the original path and an identical extensionless copy as DOS COM, with the hostile disk-write/reboot composite and first-sector/reboot finding. Changing the write selector to a read preserves DOS COM identification and clears both findings. All six original/control outcomes pass (/var/tmp/unknown-dos-controls/results.json). The whole validation gate passes hostile 3340/3340, suspicious 2125/2125, notable 9667/9667 and baseline 1415/1415 (/var/tmp/unknown-dos-closure-validation.log). The differing taxonomy counts reflect concurrent work; no trait change was needed for this closure.
+
+Reverified the original SHA. Hopper confirms its existing bad classification: zero moved, one noop, zero absent/failed (/var/tmp/unknown-dos-hopper-bad.log). No sample instructions executed. Both relevant worktree diff checks pass. The earlier statement that this original remains unscanned is superseded. All requested review/coverage work for the unknown snapshot is now complete.
