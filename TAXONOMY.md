@@ -1447,7 +1447,7 @@ context by ___". **The first matching row wins:**
 | The desktop opener choosing the handler (`ShellExecute`, `open`, `NSWorkspace`) without a required URL target | `micro-behaviors/os/handler/open` |
 | An API starting a child image from an argument vector or command line (`CreateProcess`, `posix_spawn`, `WinExec`, `WshShell.Run` with an executable path) | `exec` |
 | Replacing the current process image (`execve`, `execveat`, `os.execv`, `pcntl_exec`) | `micro-behaviors/process/replace`; replacement does not require a new process |
-| Only an executable name, launch flag, permission or import | Its path, configuration or import observation, not process creation |
+| Only an executable name, launch flag, permission, import or API symbol reference | Its path, configuration or metadata observation, not process creation |
 
 A DOS interrupt service-number comparison belongs with DOS interrupt evidence;
 it identifies a tested service, not a dispatched process-creation call.
