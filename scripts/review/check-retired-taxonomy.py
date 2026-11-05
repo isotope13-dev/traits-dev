@@ -5,6 +5,78 @@ import re
 from pathlib import Path
 
 RETIRED = {
+    'metadata/file/invisible-unicode':
+        'Use the character property, source or binary evidence, or named product subject.',
+    'metadata/file/comment':
+        'Use the source-comment, document-markup, behavior, or objective subject.',
+    'metadata/file/naming':
+        'Use source identifier populations, function naming, or the specific literal subject.',
+    'metadata/file/import':
+        'Use metadata/import/count for import counts or the named dependency subject.',
+    'metadata/file/attribution':
+        'Use source attribution, license, or the specific named provenance subject.',
+    'metadata/file/system-info':
+        'Use the system-information or privilege subject evidenced by the observation.',
+    'metadata/file/system-info/privilege-name':
+        'Use privilege reference evidence; a name alone does not establish privilege use.',
+    'micro-behaviors/communications/url/http-path':
+        'Use the observed URL resource, request, construction, or named-service subject.',
+    'micro-behaviors/communications/url/http-path/service':
+        'Use the named service, protocol, or observed endpoint subject.',
+    'micro-behaviors/communications/url/http-path/bot':
+        'Use the automation endpoint or named service subject.',
+    'micro-behaviors/communications/url/http-path/resource':
+        'Use the resource, request, URL construction, or named-product subject.',
+    'objectives/command-and-control/backdoor/dispatch/legacy':
+        'Use the named program or the observed command-and-control behavior.',
+    'metadata/file/profile':
+        'Use the most likely behavior or objective, or the actual neutral evidence subject.',
+    'metadata/file/profile/script/transformation':
+        'Use the observed transformation, execution behavior, or supported objective.',
+    'metadata/file/profile/script/evaluation':
+        'Use the observed evaluation, process, code construction, or supported objective.',
+    'metadata/file/profile/script/network':
+        'Use the observed network, interpreter execution, or supported objective.',
+    'metadata/file/profile/script/automation':
+        'Use the named library, observed automation, interpreter, or neutral syntax subject.',
+    'metadata/file/profile/process':
+        'Use the observed process behavior, command, or supported objective.',
+    'metadata/file/profile/process/shell':
+        'Use the observed shell operation, argument, interpreter input, or supported objective.',
+    'metadata/file/profile/process/creation-api':
+        'Use the observed process creation, API reference, command, or supported objective.',
+    'metadata/file/profile/process/evaluation':
+        'Use the observed interpreter, evaluation, process, network, or supported objective.',
+    'metadata/file/profile/process/hidden':
+        'Use process launch, window configuration, argument syntax, or the supported objective.',
+    'metadata/file/profile/process/artifact':
+        'Use the observed execution, injection, file, cryptographic, or diagnostic subject.',
+    'metadata/file/profile/windows-api':
+        'Use the supported behavior or objective reflected by the API combination.',
+    'metadata/file/profile/memory':
+        'Use the observed memory, process, file, or supported execution subject.',
+    'metadata/file/profile/memory/protection-code':
+        'Use memory protection, allocation, network, instruction, or supported execution evidence.',
+    'metadata/file/profile/memory/protection-context':
+        'Use the observed memory operation, API resolution, or supported subject.',
+    'metadata/file/profile/memory/protection-api':
+        'Use the observed memory operation, API resolution, or language class reference.',
+    'metadata/file/profile/pe-loader-context':
+        'Use the observed executable property or supported loading, injection, or evasion behavior.',
+    'metadata/file/profile/pe-loader-context/resource':
+        'Use resource access, named components, or the supported staging, packing, or evasion objective.',
+    'metadata/file/profile/pe-loader-context/layout':
+        'Use the measured binary property or supported loading, packing, or evasion behavior.',
+    'metadata/file/profile/pe-loader-context/network':
+        'Use the observed network behavior, named packer, or supported execution objective.',
+    'metadata/file/profile/pe-loader-context/resolution':
+        'Use the observed API-resolution behavior or supported obfuscation objective.',
+    'metadata/file/profile/com':
+        'Use the named COM component or its supported operation or objective.',
+    'metadata/file/profile/com/encoded':
+        'Use the named component or the supported encoding and obfuscation behavior.',
+    'metadata/file/profile/com/progid':
+        'Use the named COM component or the supported operation.',
     'metadata/file/profile/com/class-id':
         'Use the named COM component or the supported object-creation behavior.',
     'metadata/file/profile/com/interface':

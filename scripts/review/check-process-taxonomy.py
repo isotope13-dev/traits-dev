@@ -14,10 +14,12 @@ def violations(root, policy):
         path = root / retired
         if path.is_dir():
             count = sum(1 for item in path.rglob("*") if item.is_file() and item.suffix in (".yaml", ".yml"))
+            destinations = guidance["destinations"]
+            advice = ", ".join(destinations) if destinations else "choose a current home for each evidenced behavior"
             yield (
                 f"{retired}: retired process category ({count} YAML files). "
                 f"{guidance['reason']}\n  Destinations: "
-                + ", ".join(guidance["destinations"])
+                + advice
             )
 
 
@@ -49,6 +51,16 @@ def retired_references(root, policy):
                         break
 
 
+def invalid_destinations(root, policy):
+    for retired, guidance in policy.items():
+        for destination in guidance["destinations"]:
+            if not (root / destination).is_dir() or any(
+                destination == other or destination.startswith(other + "/")
+                for other in policy
+            ):
+                yield f"{retired}: policy suggests unavailable or retired destination {destination}"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--traits-dir", type=Path, default=Path(__file__).resolve().parents[2])
@@ -56,6 +68,7 @@ def main():
     policy = json.loads(POLICY.read_text())
     errors = list(violations(args.traits_dir, policy))
     errors.extend(retired_references(args.traits_dir, policy))
+    errors.extend(invalid_destinations(args.traits_dir, policy))
     if errors:
         print("\n".join(errors))
         return 1
