@@ -290,7 +290,7 @@ is suspicious on this behavior rather than hostile by identity. Full
 validation passed and Hopper confirmed the existing bad label.
 
 `0aaebf73e917` (AI Box 1.1.7) is hostile under the user's policy. Like 2.0.2,
-archive, it reads Cursor access and refresh tokens and installs editor hooks.
+it reads Cursor access and refresh tokens and installs editor hooks.
 Opening its panel fetches an Apollo configuration and syncs enabled hook
 script bodies into Cursor or Qoder's executable hooks. The response can
 change independently of the installed archive and the reviewed code has no
@@ -978,8 +978,8 @@ returned `scriptContent` into Cursor or Qoder hook directories with executable
 permissions, and register the commands in the editor's hook configuration.
 Those scripts can run on subsequent editor events. The remote script contents
 are not present in the archive, and their behavior is unknown. The older
-release remains under review; the version 2.0.2 ruling does not automatically
-apply to it. A new notable observation links a transformed `scriptContent`
+release was subsequently reviewed and classified separately, as documented
+above. A new notable observation links a transformed `scriptContent`
 field to a file write; a suspicious composite reports that observation
 alongside editor hook configuration. Cleave matches both bundles, and an
 altered-field control clears both observations. Atomscan matches the older
@@ -1061,8 +1061,9 @@ and a different-executable control pass, and the actual bundle matches. Added
 a notable observation for the bundled runtime's default sandbox condition;
 reversing the comparison clears it. The similarly named Microsoft-removed
 `DevelopmentInc.kombai-vs` identity is a different publisher and name and is
-not treated as an identity match. The archive scan matched the unpinned-command and obfuscation observations;
-a revised archive scan and clean shared-tree validation remain pending.
+not treated as an identity match. The revised archive scan matches the unpinned-command and obfuscation
+observations and their hostile composite. Updated Cleave validation passed;
+Hopper confirmed the bad label.
 
 The packaged `runtime.js` is strongly obfuscated. Static decoding of its
 string table shows a randomly generated identifier stored in VS Code secrets
@@ -1125,8 +1126,8 @@ for a loopback URL proxy with wildcard CORS, plus an archive-level hostile
 composite. A two-member archive built from the relevant files matches; removing
 the manifest URL or wildcard CORS clears the composite. The compound rule
 reports archive co-occurrence, not a claimed data flow between components.
-A revised complete archive scan, clean shared-tree validation, and Hopper
-confirmation remain pending.
+The revised full scan matches the compound finding. Updated Cleave validation
+passed and Hopper confirmed the bad label.
 
 ### Toolpath Support 0.1.1 — `525b5dce224a`
 
@@ -1140,9 +1141,8 @@ installer was found in the extension entry point. Four bundled native modules
 and five WebAssembly files match their exact published npm package versions.
 The initial archive scan had no suspicious findings; a structural token-logging
 observation was added and matches the entry point. A token-count control clears
-it. The revised full scan has only the token-logging suspicious finding. Clean
-validation and Hopper confirmation remain pending; the intended label is good
-with this one unusual security finding.
+it. The revised full scan has only the token-logging suspicious finding. Updated Cleave validation passed and Hopper recorded the good label with this
+one unusual security finding.
 
 ### Snowflake VS Code 1.30.1 — `573598f4e608`
 
@@ -1166,8 +1166,7 @@ Added a proximity observation for a remote shell pipeline near terminal
 submission, a structural observation for the unquoted Conda filename template,
 and a same-file hostile composite. Controls remove the installer or place the
 filename in quotes; the latter clears this narrowly scoped observation and is
-not a general claim that double quotes eliminate shell injection. The bundle and full archive match all three findings. Clean shared-tree
-validation and Hopper confirmation are pending.
+not a general claim that double quotes eliminate shell injection. The bundle and full archive match all three findings. Updated Cleave validation passed and Hopper confirmed the bad label.
 
 ### DietCode 4.2.1 — `57d743342450`
 
@@ -1189,8 +1188,7 @@ browser controls are used to check boundaries. The initial archive scan also
 misidentified an SVG embedded in a documentation URL query as rendered markup;
 the rule now requires an actual markup boundary, and the documentation and an
 inline SVG positive control were checked. The revised archive scan matches the combined finding and clears the
-documentation false positive. Clean shared validation and Hopper confirmation
-remain pending.
+documentation false positive. Updated Cleave validation passed and Hopper confirmed the bad label.
 
 ### Parable Workspaces 1.3.0 — `58106cca0305`
 
@@ -1200,8 +1198,7 @@ installer or remote command path was found, and the full archive scan reports
 no suspicious or hostile traits. The workspace view escapes names and tags but
 interpolates some other record fields into HTML; its CSP restricts scripts to
 a nonce. A malicious imported record could affect markup, but this review has
-not established script execution. The intended endpoint label is good;
-clean validation and Hopper confirmation remain pending.
+not established script execution. Updated Cleave validation passed and Hopper recorded the good label.
 
 ### Mobb Tracy 0.3.20 — `65db57f6e8c6`
 
@@ -1212,9 +1209,8 @@ the corresponding Cursor database and Mobb service paths; the collection is
 sensitive and should be understood before deploying the extension. The readme
 discloses that behavior. No unrelated exfiltration destination or unpinned
 runtime installer was identified, and the archive scan has no suspicious or
-hostile findings. A clear decision is good for this artifact; shared validation
-and Hopper confirmation remain pending. This is not a determination that any
-particular deployment of its monitoring is authorized.
+hostile findings. Updated Cleave validation passed and Hopper recorded the
+good label. This is not a determination that any particular deployment of its monitoring is authorized.
 
 ### Claude Trace 1.0.0 — `6614489c830b`
 
@@ -1230,10 +1226,10 @@ package.
 
 Added structural detection of terminal-submitted floating Homebrew commands,
 a terminal/permission-bypass proximity observation, and a same-file hostile
-composite. A full-version formula selector, a different terminal receiver, and a removed
-bypass clear the combination; a major/minor selector still matches. The
-revised archive scan matches all three findings. Shared validation and Hopper
-confirmation remain pending.
+composite. A full-version formula selector, a different terminal receiver,
+and a removed bypass clear the combination; a major/minor selector still matches. The
+revised archive scan matches all three findings. Updated Cleave validation
+passed and Hopper confirmed the bad label.
 
 ### n8n as Code 2.16.0 — `68109cce79da`
 
@@ -1255,8 +1251,8 @@ the parent package's build directory. Since that shape alone does not prove an
 escape from the installed package, the generic parent-main finding is now
 notable; the actual manifests retain the observation without a false
 suspicious verdict. The revised full scan matches the combined hostile rule
-and has no Redux suspicious finding. Clean validation and Hopper confirmation
-remain pending.
+and has no Redux suspicious finding. Updated Cleave validation passed and
+Hopper confirmed the bad label.
 
 ### Intlayer 8.12.0 — `69d5b20b779b`
 
@@ -1274,5 +1270,117 @@ The initial scan claimed that VM-evaluated content came from a nearby base64
 decode. The decode is part of dotenv-vault decryption, while the VM evaluates
 project configuration; those two operations are independent. The generic
 rule now describes proximity and is notable rather than asserting a data flow
-or a suspicious payload. A revised archive scan, shared validation, and Hopper
-confirmation are pending; the intended label is good for the reviewed build.
+or a suspicious payload. The revised archive scan has no suspicious or hostile
+finding. Updated Cleave validation passed and Hopper recorded the good label.
+
+### SysML v2 Support 0.35.0 — `6a1bbb4fdaf9`
+
+The VSIX matches the published Open VSX SHA-256. Its code provides language,
+visualization, and model-inspection features, with an MCP definition provider.
+The archive has no bundled native executables and the scan reports no
+suspicious or hostile findings. Some visualizer data is rendered with
+`innerHTML`, and the dashboard enables command URIs; the inspected views also
+use a restrictive script CSP. No attacker-controlled route to script or command
+execution was established. Updated Cleave validation passed and Hopper
+recorded the good label.
+
+### Checkmarx Developer Assist 1.22.0 — `0abf36146b5b`
+
+The VSIX SHA-256 matches the Open VSX publication. Its bundled Linux CLI's Go
+build metadata declares ast-cli 2.3.55. The extension invokes the CLI's ASCA
+latest-engine installation when that scanner is enabled, and separately invokes
+SCA realtime scanning. The corresponding upstream 2.3.55 source uses a shared
+installer to obtain the ASCA and SCA helpers, compare downloaded hash *files*
+for update decisions, and extract the downloaded archives without comparing
+those archives against the hash. Checkmarx's [GHSA-vf6p-x2fw-5hcg](https://github.com/Checkmarx/ast-cli/security/advisories/GHSA-vf6p-x2fw-5hcg)
+identifies versions through 2.3.59 as affected and 2.3.60 as fixed. The build
+version is embedded metadata, not independent proof of source equivalence; no
+malicious helper, download, or execution was observed.
+
+The two independent, conditionally used floating helper installation paths,
+combined with the version-specific integrity weakness, support a bad label
+under the requested policy. Added an observation for the affected Linux Go
+build metadata, observations for the ASCA and SCA wrapper calls, and archive
+composites. A synthetic build-metadata archive matches; changing the version
+to 2.3.60 or removing either call clears the hostile combination. Its tiny ELF
+fixture contains only synthetic Go build metadata, not the vendor binary. The
+revised full scan matches the three composites; updated Cleave validation
+passed and Hopper confirmed the bad label.
+
+### Fake Codex / OPENEDAI 0.4.51 — `70f33f51433f`
+
+Microsoft lists `OPENEDAI.OPENEDAI` as an impersonation identity. The archive
+uses OpenAI Codex branding but replaces the official version's activation
+script with an obfuscated loader. Offline decoding of the loader's string table
+and zero-width bitstream reveals JavaScript that fetches a remote response,
+writes it as a temporary `.cmd` file, and invokes `cmd /c` with the Windows
+console hidden. The embedded endpoint is `fingercakes4sale[.]store/dsyuC`. The fetch and evaluation are initiated by the extension
+activation path; Windows command execution depends on that platform and a
+successful response. No remote request or payload execution was performed by
+this review, and the remote file's contents are unknown.
+
+The four bundled Linux and Windows Codex/ripgrep binaries match the genuine
+Open VSX `openai.chatgpt` 0.4.51 release by SHA-256; the malicious replacement
+is the activation script, not an inferred modification to those binaries.
+Added a structural observation linking a decoder result to `eval`, a hostile
+composite requiring obfuscation and zero-width data, and a suspicious exact
+Microsoft-listed identity observation. Synthetic controls changing the eval
+argument or removing zero-width characters clear the hostile composite;
+changing the publisher or name clears the identity finding. The revised
+archive scan matches the hostile loader and impersonation signal. Updated
+Cleave validation passed and Hopper confirmed the bad label.
+
+### DeepV Code 1.0.342 — `7b751f11d569`
+
+The VSIX matches its Open VSX publication. When a language-server client is
+needed and the corresponding executable is unavailable, the extension can run
+`go install` for `gopls` with its default `latest` version and then start the
+resulting binary. Independently, its Rust/C++ server installer queries GitHub's
+latest release, downloads a selected asset and launches the extracted binary.
+It also has npm-based language-server installation paths. These operations are
+conditional on the language-server path and cache/system availability; no
+installation, download, or remote content was observed. The independent
+floating Go and GitHub paths support a bad label under the requested policy.
+
+Added source observations for a latest-default Go installer with an
+unversioned call and a latest GitHub release with an asset URL, plus a
+same-file hostile composite. Controls pin the default, supply an explicit Go
+version, or select a tagged GitHub release; each clears the combination. The
+bundle and revised archive scan match. Updated Cleave validation passed and
+Hopper confirmed the bad label.
+
+- **843b784b5f75 Ordino 0.3.7 — bad.** Its test action sends `npx playwright test` to a terminal, which can resolve an unpinned package when absent locally. Separately, the bundled browser-session manager calls `chromium.launch({ headless })`; its bundled Playwright implementation adds `--no-sandbox` unless `chromiumSandbox` is explicitly true. Both paths are conditional on using their respective product features; neither a download nor a browser launch was observed during review. All 11 packaged keyring native modules match the corresponding six npm `@napi-rs/keyring-*` 1.3.0 binaries. The Playwright dashboard's automation-cloaking code is bundled library functionality and was not attributed to the product's browser-session call path. Added an archive composite for the floating terminal command plus the evidenced default browser launch; pinned-command and explicit-sandbox controls clear the composite.
+
+- **86cf9d6c69f3 TLA+ 2026.4.111628 — good.** The archive SHA-256 matches the same publisher and version on Open VSX. It contains duplicate copies of two TLA+ tools/CommunityModules JARs, runs the packaged Java tools, and the reviewed JavaScript exposes no floating installer or hostile finding. The tools JAR identifies the upstream TLA+ build revision in its manifest; this metadata is supporting context, not independent verification of every JAR byte.
+
+- **b3b2ec96a786 TestFox 8.3.3 — bad.** Published Open VSX SHA-256 matches. Its QA Use commands submit unversioned `npx @desplega.ai/qa-use ...` to a terminal, and its browser testing implementation independently launches Playwright Chromium with `--no-sandbox` and `--disable-setuid-sandbox`. Its active SQL-injection test sends predefined payloads to a selected endpoint, including a `DROP TABLE` statement and a UNION credential-selection payload. These are conditional testing paths; no tests, downloads, or browser launches were run in this review. The sole native addon matches npm `fsevents` 2.3.2. New floating-npx/unsandboxed-launch composites have positive fixtures for ordinary and comma-sequence terminal submissions and negative controls for a pinned package and sandbox-preserving flag.
+
+- **84e092e19789 OrkestraAI 1.2.1 — good.** Task-board and pull-request integration for Jira, GitHub, Azure and ClickUp; source contains optional GitHub token lookup through `gh auth token` for its GitHub feature and credentials for configured provider APIs. No independent credential exfiltration, active floating installer, native modules, or suspicious/hostile scan finding was established. Its lone `npx` occurrence is an embedded development-script description, not an executed runtime command. The exact version was unavailable through the queried Open VSX API, so publisher authenticity was not independently established.
+
+- **ba5f3d4dde5e DebugMCP 1.1.4 — good, with a network-exposure finding.** The SHA-256 matches Open VSX, and the [Microsoft project](https://github.com/microsoft/DebugMCP) identifies `ozzafar.debugmcpextension` as its extension, so that publisher name is not impersonation. On activation, Express calls `app.listen(this.port, ...)` without a host, exposing its MCP debugger endpoint on available interfaces; the endpoint includes an expression-evaluation tool and no application-level authentication was observed. Access depends on network and debugger context. This is one suspicious exposure in a general debugging integration, with no active floating installer found. Both Windows process-list executables match npm `ps-list` 9.0.0. Added a narrowly scoped detection with a loopback-host negative control.
+
+- **d59765488ae5 Cline Nightly 3.78.1776173129 — bad.** SHA-256 matches Open VSX. Its CLI-install action submits `npm install -g cline` without a version, and a separate browser helper resolves Chromium `latest` on a cache miss and tests the resolved executable with `--no-sandbox`. These paths are conditional; no install, download, or browser launch was performed. All 15 bundled tree-sitter WASM files match the npm-verified copies in DietCode 57d743. Existing floating-npm/unsandboxed-latest-browser composite matches the actual archive.
+
+- **b22d92d7ec18 Spring Boot Tools 2.2.2026041600 — good.** SHA-256 matches the exact VMware Open VSX publication. Its bundled Java language-server and Spring libraries support the advertised development features; the scan found no suspicious or hostile behavior and inspection found no active floating package installer in its extension code. The large set of bundled JARs was not independently compared byte-for-byte with upstream artifacts.
+
+- **8822ab9d01d4 Angular Auto Helper 18.92.0 — bad.** The package is a renamed Nx Console 18.92.0 copy: 33 common archive members are byte-identical and the main bundle changes its extension identity; it replaces the upstream copyright name with `drobnyak` and omits numerous upstream dependencies. This altered attribution is evidence of misleading provenance, not proof of an added malicious payload. A Connect to Nx Cloud action requests `nx@latest` after a provenance check, and separate project/migration flows call `git commit --no-verify`, bypassing hooks. Both are conditional; no installation or commit was run. Added a composite with pinned-Nx and hook-preserving negative controls.
+
+- **d77c0bdab11f MS SQL Manager 0.20.1 — bad.** SHA-256 matches Open VSX. Backup/export features conditionally run `dotnet tool install -g Microsoft.SqlPackage` without a version when the tool is missing. Independently, chart export creates HTML that loads `chart.js@4` from jsDelivr when the exported HTML is opened; that browser load is distinct from extension-host execution. Neither path was run during review. Added a composite for both paths, with version-pinned controls. The bundled `msnodesqlv8` native addon was identified but not independently matched to a published build.
+
+- **d78ab24f702c Agentforce DX 1.16.0 — good.** Exact Open VSX SHA-256; implements Salesforce agent development, with no native executables in the archive, no active floating installer located in product code, and no suspicious/hostile scan finding. The claimed repository URL contains a typo, which by itself does not establish impersonation.
+
+- **d84d8d092199 Reactive MD 1.2.0 — good.** Exact Open VSX SHA-256. It executes user-authored JSX for its live-preview feature and can deploy via configured SSH/rsync; no unrelated payload, floating package execution, native binary, or suspicious/hostile scan finding was established. Its SSH invocation uses `StrictHostKeyChecking=accept-new`, which accepts an unknown host key on first connection.
+
+- **b4b3e0660666 DSP-IDE — good.** Its actual manifest says 3.11.1 although the collection filename says 3.11.2001; it is an EIDE-derived MCU development extension and its scan had no suspicious/hostile finding. Static extraction of the two custom PyInstaller executables showed Python 3.11 entry points for parsing TI COFF and formatting file data, with no network or command execution in their reviewed names/bytecode. The bundled 7za executable exactly matches official 7-Zip 19.00. The claimed GitHub project is an upstream fork reference, not proof that this repack is authored by that project.
+
+- **c249d7be5a6f Embedder Infineon 0.3.101 — good, with one unusual security finding.** Exact Open VSX SHA-256; Microsoft lists this identity as untrustworthy, without an artifact-specific explanation. Its actual in-extension download uses the manifest's fixed CLI version 0.3.101, while the floating `latest` shell command is only copied to the clipboard or shown for manual use. On macOS, the installer removes quarantine and the executable's signature and re-signs it with permissive entitlements. The bundled Mach-O contains a Bun runtime; its generic PTY and socket imports do not by themselves establish a socket shell. Added quarantine/re-signing coverage and excluded the unlinked Bun runtime import profile; a no-quarantine control clears the new finding.
+
+- **caa6590de40d GDSFactory+ Testing 2026.409.6 — good.** Exact Open VSX SHA-256; no suspicious or hostile scan findings and no active floating installer or permission bypass was found in reviewed extension code. Its Anthropic SDK runs with default permission mode and a confirmation hook. All nine SDK-native/WASM files match npm `@anthropic-ai/claude-agent-sdk` 0.1.77. A separate 23 MB schematic WebAssembly module is proprietary and was not independently byte-matched; its imports include browser UI and fetch functions, which alone do not establish hostile behavior.
+
+- **d49fa3175045 Kilo Code 7.2.14 — good, with one floating-version finding.** The sample is the Windows ARM64 build and its SHA-256 matches that platform-specific Open VSX release; the default API result refers to a different platform. When browser automation is enabled, it configures an enabled local MCP server using `npx @playwright/mcp@latest`. No independent suspicious behavior was established. The 182 MB embedded executable is a Bun standalone build: its filesystem enumeration and credential-path references are unlinked runtime capabilities, not evidence of credential theft. The generic encoded filesystem/dotenv/JSON-POST co-occurrence also does not show a data flow. Corrected these overbroad findings, added the floating MCP command detection, and confirmed a pinned-version control clears it.
+
+- **baa9a3e0a2b5 MCPincer 1.7.94 — inconclusive.** It describes Cursor account-usage features and ships multiple heavily obfuscated modules that access Cursor authentication-related state. Its packaged Windows SQLite executable exactly matches official SQLite 3.51.3. The exact Open VSX version was not available from the queried API. The obfuscation prevented establishing the complete credential destination and execution/update paths; no credential exfiltration is asserted. Its obfuscated credential-reader and related suspicious findings remain.
+
+- **d9cafd9ea684 DBCode 1.30.7 — inconclusive.** Exact Open VSX SHA-256. The heavily obfuscated extension contains many network and dynamic-code facilities; static review could not establish all data flows in the 17 MB host bundle. Its export generator embeds mutable `dbcodeio/public@latest` scripts in HTML that runs when an exported report is opened, but no claim is made that the extension host executes those remote scripts. Corrected two false hostile correlations: generic HTML-file ActiveX plus base64 decoding was mislabeled Nemucod, and unrelated `fetch` plus dynamic functions were mislabeled a remote code loader. Remaining obfuscation findings are retained; no credential exfiltration is asserted.
+
+- **f36520ad4000 Sapling Go source archive — good.** This non-VSIX archive was present in the requested directory and exactly matches the Go module proxy's bytes for the same Facebook Sapling revision. Scanner follow-up reports security-held npm registry records for `isl-server` and `reviewstack`, but the matching package names and versions are local Yarn workspaces in the archive; the external records are not the resolved workspace contents. This exposes a remaining follow-phase limitation: it does not account for local workspace resolution before reporting those leaf-level dependency findings. No malicious payload in the source archive was established.
