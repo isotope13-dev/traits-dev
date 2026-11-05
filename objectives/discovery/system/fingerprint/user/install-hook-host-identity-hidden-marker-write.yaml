@@ -1,0 +1,66 @@
+# Install-hook proof-of-execution marker drop. A package lifecycle hook
+# (postinstall or preinstall) runs a bundled script the moment the package
+# is installed; that script queries the installing host's username and
+# hostname and writes the collected identity into a hidden entry under the
+# system temp directory. This is the standard "look, I ran on your machine"
+# shape of dependency-confusion uploads, typosquat probes and worm stagers:
+# the execution is attacker-chosen and unconsented even when the payload
+# only drops a receipt, and the hidden marker plus collected identity is
+# what distinguishes it from a build step that legitimately logs its host.
+#
+# Required evidence is content-derived and survives renames of the marker,
+# the payload script, the package and the log strings: the manifest hook
+# declaration, a script the hook launches, a user-identity query paired with
+# a hostname query, a hidden tmpdir destination, and a write whose data
+# argument embeds the queried identity. Self-describing "worm"/"INFECTED"
+# wording is NOT required (the suspicious sibling composite covers
+# wording-led variants), so the same rule catches the quiet build of the
+# same technique.
+#
+# Limits: identity hoisted into a variable before the write, bracket-access
+# API spellings, non-JavaScript payloads, and non-hidden or non-temp marker
+# destinations are not established by these legs.
+defaults:
+  platforms: [windows, linux, macos, unix]
+  for: [javascript, typescript, package.json, npm, tar, zip]
+  attack: T1195.002,T1082,T1033
+
+traits:
+  # Corroborating indicator: the written data names an infection and embeds
+  # host identity after the claim. Order-dependent (claim-then-identity); a
+  # reversed order is not covered by this atom.
+  - id: node-write-infected-host-marker
+    desc: Write claims infection with host identity
+    platforms: [unix, windows]
+    for: [javascript, typescript]
+    crit: notable
+    conf: 0.95
+    if:
+      type: text
+      case_insensitive: true
+      regex: 'writeFile(Sync)?\s*\([^;]{0,200}infected[^;]{0,200}(hostname\(\)|userInfo\(\))'
+
+composite_rules:
+  - id: install-hook-host-identity-hidden-marker-write
+    desc: Install hook writes queried host identity into hidden temp marker
+    crit: hostile
+    conf: 0.97
+    scope: archive
+    all:
+      # The hook launches a local script (any name: index.js, install.js,
+      # a shell script) rather than a fixed entry point.
+      - id: micro-behaviors/os/package-manager/hook-install::npm-install-local-script-command
+      # The script queries user identity and the hostname (the composite
+      # accepts os.userInfo() in any member form, including full-object
+      # serialization, paired with a hostname query).
+      - id: micro-behaviors/os/sysinfo/profile::node-host-user-query
+      # The destination is a hidden entry under the system temp directory,
+      # in any of the path-building spellings.
+      - id: micro-behaviors/fs/path/hidden::node-tmpdir-hidden-entry
+      # The write's own data argument embeds the queried identity value.
+      - id: micro-behaviors/fs/write/file/content::js-write-host-identity-data
+    any:
+      # The delivery surface: a declared lifecycle hook outside routine
+      # packaging patterns, pre- or post-install.
+      - id: metadata/package/scripts/lifecycle::filtered-postinstall-hook
+      - id: metadata/package/scripts/lifecycle::filtered-preinstall-hook
