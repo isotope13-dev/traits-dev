@@ -16,5 +16,12 @@ hostile. A filename/content mismatch alone does not establish malicious intent,
 so that combination now has a neutral format observation; the loader's bad
 ruling rests on the decoded behavior described above.
 
+`034c3ed203cc`, `62dde529b296`, and `6885fcb5172d` are valid fonts that
+Fontconfig identifies as Scheherazade Regular, Scheherazade Bold, and Noto Sans
+Living Regular. Their scans report no suspicious or hostile traits. Endpoint
+rulings: good; validation passed and Hopper confirmed all three labels
+(no-ops).
+
 Other entries in the font pool, including an Access database that shares a
-TrueType prefix, remain under review.
+TrueType prefix and several files without recognizable font signatures,
+remain under review.
