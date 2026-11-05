@@ -30,5 +30,8 @@ class-ID and WScript.Shell references had been mischaracterized as a hostile
 launch. They now produce a neutral proximity observation, with positive and
 negative controls. A Drupal PHP evaluator's normal closing-tag prefix was
 also mistaken for a bareword bypass; the revised observation requires a word
-prefix and retains the stronger webshell combinations. A Ring source example
-is misidentified as Python and needs further review before the archive verdict.
+prefix and retains the stronger webshell combinations. A Ring GUI example was
+misidentified as Python; a content-based file-identification fix recognizes it
+as text and retains Python identification for a genuine Python control. The
+fresh archive scan reports no suspicious or hostile traits. Endpoint ruling:
+good; validation passed and Hopper confirmed the label.

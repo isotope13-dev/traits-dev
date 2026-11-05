@@ -24,5 +24,7 @@ contains labeled prompt-injection test examples; a JavaScript source string
 mentioning a system prompt is now recorded as a neutral phrase observation,
 while a direct prompt text retains its suspicious observation.
 
-The full archive rescan is running with these changes. No endpoint ruling or
-Hopper move has yet been made.
+The full archive rescan covered 41,831 reported components and found no
+hostile traits. Its only suspicious trait is the conflicting-header test
+described above, also propagated to the archive. Endpoint ruling: good;
+validation passed and Hopper confirmed the label (no-op).

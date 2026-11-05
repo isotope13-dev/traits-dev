@@ -4,6 +4,83 @@ This tracks the 100-file snapshot under
 `/var/tmp/triage-vsix-20261104/mislabeled-bad/`. The snapshot paths do not
 necessarily reflect current Hopper labels. Unlisted files remain unreviewed.
 
+`fefada6d0a4e` (AIOS Icon Theme 5.35.0) is recorded good with one
+suspicious identity finding. Microsoft lists `kyledunne.aios-icon-theme` for
+impersonation without a version-specific payload explanation; its own
+description identifies it as a Material Icon Theme fork. The archive matches
+the Open VSX published checksum, and neither desktop nor web entry point
+contains an identified floating installer. Added an identity-level finding
+with changed-publisher and changed-name controls; this is not a claim that
+the listed identity alone proves a hostile payload. Grouped this rule and an
+existing Material theme rule under a shared themes directory to stay within
+the taxonomy's directory-width limit; no YAML references used the old theme
+namespace. The final archive scan and full validation passed, and Hopper
+moved this exact sample to good.
+
+`81cf6eb8041b` (Preview Everything 3.7.1) is retained bad under the
+user's policy. In Markdown-to-PDF export, documents containing Mermaid
+diagrams cause generated HTML to load `mermaid.min.js` from an unversioned
+jsDelivr npm path in a Puppeteer browser. Independently, the bundled Markdown
+PlantUML plugin encodes diagram source into an image URL for the public
+PlantUML renderer; the PDF browser loads the resulting HTML. The reviewed
+package documentation does not identify that external renderer. These paths
+require the relevant export and diagram content; no particular document
+transfer, script response, or malicious script execution is established.
+The floating code plus potential disclosure of diagram source meet the user's
+rule. Added observations and a combined hostile archive finding; controls
+pinning the Mermaid URL or removing its injection, or replacing the public
+PlantUML endpoint or image sink, clear the corresponding finding. A compressed
+fixture contains the shipped entry point and manifest. Archive scan and full
+validation passed, and Hopper confirmed the existing bad label.
+
+`8a864bc3c1bd` (TAO·CODER 1.0.3) is retained bad under the user's
+policy. A registered `installClineCli` handler sends `npm install -g cline`
+to an editor terminal without a version pin. Separately, when its browser
+feature cannot use a configured or detected local Chrome, its fallback
+resolves the latest Chromium revision, downloads it if absent from cache and
+launches the resulting executable. A configured browser or cached result
+can avoid the download, and the sample does not prove either execution
+occurred or that downloaded contents were malicious. These independent
+floating execution paths meet the user's policy. Added linked observations,
+two suspicious archive findings, and a combined hostile finding; controls
+pinning the npm command or revision, or disconnecting the browser launch,
+clear the relevant observation. The original scan also flagged a permutation
+loader by combining a PDF bidirectional-text routine and an unrelated Lodash
+assignment roughly a megabyte apart. Added a proximity constraint to that
+heuristic; the false finding clears and validation fixtures still pass. The
+final archive scan and full validation passed, and Hopper confirmed bad.
+
+`b5b03e321684` (AG Auto Click & Scroll 9.2.9) is retained bad. It
+patches the IDE workbench, writes an injected script, and rewrites product
+checksums; the injected script actively finds and clicks agent approval
+controls, including Allow and Always Allow. It also hides or closes notices
+mentioning IDE corruption and reinstall. Separately, opening the promotional
+offer calls a function that turns automatic approval back on, updates the
+running configuration, and persists the enabled preference even if it was
+previously disabled. That promotional action does not itself establish that an
+agent command was run. The archive matches the published Open VSX checksum.
+Added hostile findings for the approval-click implementation and promotional
+reenablement and a suspicious finding for suppressing corruption notices,
+alongside the existing hostile workbench-patch finding. Controls removing the
+click, approval match, warning hide, or reenable/persist path clear their
+respective observations. Both shipped JavaScript files are preserved as
+compressed hostile fixtures. The post-merge scan and full validation passed;
+Hopper confirmed the existing bad label.
+
+`5888889e0c63` (VinvAI 0.1.2) is retained bad under the user's policy.
+The `Install Engines` command submits an unversioned `uv` installer script
+from astral.sh to a visible terminal when uv is missing. Independently, when
+the Claude CLI harness is selected, the runner constructs and spawns its
+command with `--permission-mode bypassPermissions`. Neither observation
+establishes that a particular installation or agent command ran, or that
+the downloaded installer was malicious. The two independent behaviors meet
+the user's rule. Added observations binding the installer to terminal
+dispatch and the bypass option to the spawned harness, plus a hostile archive
+composite. Controls removing the installer, dispatch, bypass flag or spawn
+clear the corresponding observation. The archive scan and full validation
+passed; Hopper reported the bad label already recorded. The snapshot path
+included `mislabeled-good`, but Hopper's current label was already bad.
+
 `89bd0d3933d6` (Sinch Conversation API 0.1.8) is hostile under the
 user's policy. Its archive matches the Open VSX published checksum. The
 registered `sinch.skills.generate` command submits `npx skills add
@@ -911,3 +988,114 @@ co-occurrence and does not assert that every match fetches its scripts.
 Detection of indirect floating commands, the full remote hook deployment flow,
 and a generic escalation for every possible independent suspicious trait
 remain incomplete.
+
+### Roo Plus 3.68.0 — `88b672b06742`
+
+This Open VSX archive matches the published SHA-256. Microsoft lists the
+`xavier-arosemena.roo-plus` identity as untrustworthy, but supplies neither a
+version-specific ruling nor a reason. The extension's TLS-verification bypass
+is gated by VS Code development mode and explicitly enabled insecure debug
+proxy settings; the reviewed production activation returns before applying
+it. Its Semble downloader pins v0.4.1 and verifies a hardcoded platform SHA-256
+before extracting the executable. All 40 bundled WebAssembly binaries match
+published npm package versions. No unpinned runtime installation was found.
+The one suspicious atomscan finding describes the TLS assignment in source;
+it does not establish that the installed extension executes the assignment.
+
+Added a notable identity composite with exact publisher and name controls;
+changing either prevents the match. Atomscan reports that composite and the
+TLS source observation, with no hostile finding. `make validate` passed and Hopper moved this artifact to good. This does not
+imply that the publisher's other releases are safe.
+
+### ISDL 0.3.22 — `0d19c175e26e`
+
+The installed extension provides an ISDL language server, Foundry system
+code generation, and opt-in GitHub publishing. Its GitHub sign-in uses VS
+Code authentication or a user-entered PAT, validates against api.github.com,
+and stores the PAT in VS Code secrets. A user-selected generation command
+passes source and destination paths in double quotes to a `shell: true`
+Node subprocess; shell metacharacters such as command substitution in a path
+can therefore create an injection vulnerability. This is a code defect, not
+an embedded exploit. The packaged CLI is local, and the `npm install` text
+found in the project is README content, not an extension-executed installer.
+The full archive scan returned no suspicious or hostile traits. `make validate` passed and Hopper moved it to good; coverage of the shell-path
+injection vulnerability has not been added.
+
+### Perplexity MCP 0.8.39 — `1cd7839d889f`
+
+The dashboard's user-selected Speed Boost install spawns npm with
+`install impit@latest`, enabling package installation scripts and later use of
+the installed native dependency. Independently, its browser session hides the
+Chromium automation marker and suppresses the automation switch; the client
+uses those options when launching a browser for Perplexity. Under the user's
+policy the floating install plus this separate security-evasion behavior is
+hostile. This is not evidence that an installation or session occurred. The
+separate cloudflared downloader pins a version and checks SHA-256.
+
+The bundle also contains `tar-fs/test/fixtures/invalid.tar`, with `foo -> ../`
+followed by a file `foo/bar` containing `hello`. On a vulnerable extractor this
+can write outside the extraction directory. It is a packaged extraction-escape
+proof-of-concept fixture; the extension's actual extraction of it has not been
+shown. The original scan reports the archive-escape observation.
+
+Added a structural npm-spawn observation, Chromium cloaking observations,
+and a hostile composite for their file-level co-occurrence. Pinned npm, unrelated function calls, comments, and single-feature controls
+clear the respective findings. The updated archive scan reports both suspicious
+observations and the hostile composite. `make validate` passed and Hopper
+confirmed the existing bad label.
+
+### Kombai 1.4.325 — `2262c6ead366`
+
+The TypeScript checking path constructs `tsc -p ... --noEmit` and invokes it
+with `npx`, without selecting a version. Resolution may use a project's local
+binary; if it is absent, npm's own availability and installation/prompt behavior
+apply. Separately, the extension launches a local Chromium executable through
+its bundled Playwright runtime without `chromiumSandbox: true`; the bundled
+runtime consequently appends `--no-sandbox`. Browser use is conditional and
+no actual browser launch or package installation has been observed. Under the
+requested policy, these independent behaviors support a bad label.
+
+Added a suspicious observation for a variable-argument npx spawn near a `tsc`
+literal; it reports proximity rather than asserting data flow. The positive
+and a different-executable control pass, and the actual bundle matches. Added
+a notable observation for the bundled runtime's default sandbox condition;
+reversing the comparison clears it. The similarly named Microsoft-removed
+`DevelopmentInc.kombai-vs` identity is a different publisher and name and is
+not treated as an identity match. The archive scan matched the unpinned-command and obfuscation observations;
+a revised archive scan and clean shared-tree validation remain pending.
+
+The packaged `runtime.js` is strongly obfuscated. Static decoding of its
+string table shows a randomly generated identifier stored in VS Code secrets
+under `editor.workspace.sessionPersistenceId`, and another in
+`~/.config/.node_repl_history_meta/.runtime_state`. The generated context also
+uses VS Code machine/session information and process environment fields,
+including the VS Code PID and IPC-hook path. The activation code initializes
+the module; later request code attaches the returned context as
+`x-client-context` and to socket messages. These are implemented collection
+and transmission paths, not evidence that a particular request occurred or
+that existing user credentials were read. Existing obfuscation and editor
+fingerprinting observations match the sample.
+
+### CopilotKit VS Code Extension 0.2.3 — `279b97222cf8`
+
+Multiple extension webviews load `@tailwindcss/browser@4` from jsDelivr;
+the major-only URL allows the served JavaScript to change. When the playground
+opens with a suitable workspace provider and model, the extension starts a
+Copilot agent listener on a random loopback port with `cors: true`. The bundled
+runtime implements that option with wildcard allowed origins and methods; the
+extension's listener construction does not provide an authentication hook.
+Language-model tool exposure is separately opt-in. A web origin would still
+need to reach and discover the listener, and browser local-network restrictions
+may prevent the request. No unauthorized request or download was observed.
+The floating script and the independent cross-origin local agent endpoint
+support a bad ruling under the requested policy.
+
+Added a suspicious major-version jsDelivr script observation, a suspicious
+Copilot runtime loopback/CORS observation, and a hostile composite for their
+file-level co-occurrence. An exact-version script and each single-feature
+control clear the combined finding; the extracted extension bundle matches.
+The complete archive scan matched the combined rule, and Hopper confirmed the
+existing bad label. Its bundled documentation also exposed a false positive
+for decimal-encoded block glyphs; the rule now excludes pure box/block diagram
+runs while preserving encoded prose. Both controls and the affected document
+were checked; validation after that correction is pending.

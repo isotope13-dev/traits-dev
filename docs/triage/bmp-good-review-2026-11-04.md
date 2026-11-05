@@ -53,4 +53,18 @@ bundled runtime libraries; `2485aa8a965a` contains VSCodium build source.
 Their local slow scans report no suspicious or hostile findings. Endpoint
 rulings: good; validation passed and Hopper confirmed both labels (no-ops).
 
-The remaining software archives in the pool are still under review.
+`9307e1ffad00` is Telegram iOS source and `3671165bd52f` is LAMMPS source.
+Their scans covered 15,175 and 5,300 reported components respectively and
+contained no suspicious or hostile traits. Endpoint rulings: good;
+validation passed and Hopper confirmed both labels.
+
+`b49c16fb565b` is a MariaDB source RPM. An integration test clears its own
+ColumnStore logs while resetting test services; this was previously reported
+as system-log evidence removal. The general log-path truncation is now a
+neutral observation, while direct system authentication or audit log
+truncation remains suspicious and is retained by a positive control. Its
+password-administration script copies `/etc/shadow` before updating root's
+password hash, so the shadow-copy observation remains as the archive's one
+justified suspicious finding. The full rescan covered 38,803 components and
+reported no hostile traits. Endpoint ruling: good; validation passed and
+Hopper confirmed the label.

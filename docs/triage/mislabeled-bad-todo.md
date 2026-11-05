@@ -125,7 +125,7 @@ The requested priority is listed first; remaining filetypes are alphabetical. `w
 - [x] webp: `x-triage-bad`, then `x-improve` — 3 bad, 7 good, 1 inconclusive; see `webp-bad-review-2026-11-04.md`
 - [x] xml: `x-triage-bad`, then `x-improve` — 4 bad, 36 good; see `xml-bad-review-2026-11-04.md`
 - [x] xpi: `x-triage-bad`, then `x-improve` — 40 directly reviewed: 18 bad, 20 good, 2 inconclusive; see `xpi-bad-review-2026-11-04.md`
-- [ ] xz: `x-triage-bad`, then `x-improve` — 4/40 complete: 3 bad, 1 good; 36 pending; see `xz-bad-review-2026-11-04.md`
+- [ ] xz: `x-triage-bad`, then `x-improve` — 11/40 complete: 9 bad, 2 good; 29 pending; see `xz-bad-review-2026-11-04.md`
 - [ ] yaml: `x-triage-bad`, then `x-improve`
 - [ ] yara: `x-triage-bad`, then `x-improve`
 - [ ] zig: `x-triage-bad`, then `x-improve`
