@@ -1,0 +1,59 @@
+# A standalone DOS image of <= 512 bytes cannot hold both machine code and a
+# full 512-byte MBR sector. When its first BIOS disk call overwrites fixed disk
+# 80h CHS 0/0/1 via INT 13h AH=03h without reading the existing MBR or reading
+# a backup file from DOS, it unconditionally destroys the 64-byte partition
+# table and boot signature. Immediately terminating, rebooting, or halting
+# completes a dedicated MBR wiper stub.
+defaults:
+  platforms: [windows, unix]
+  for: [dos_com, data, static-lib]
+  size_max: 512
+  attack: T1561.002
+  mbc: E1561
+
+traits:
+  - id: tiny-dos-blind-fixed-disk-mbr-overwrite
+    desc: Tiny DOS code blindly overwrites hard-disk MBR
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: yara
+      source: |
+        rule tiny_dos_blind_fixed_disk_mbr_overwrite {
+          meta:
+            filetypes = "dos_com,data,static-lib"
+          strings:
+            $fn_ax  = { B8 ~00 03 }
+            $fn_ah  = { ( B4 03 [0-6] B0 ~00 | B0 ~00 [0-6] B4 03 ) }
+            $chs_cx = { ( B9 01 00 | 31 C9 41 | 33 C9 41 | ( B5 00 | 30 ED | 32 ED ) [0-6] B1 01 | B1 01 [0-6] ( B5 00 | 30 ED | 32 ED ) ) }
+            $hdd_dx = { ( BA 80 00 | 31 D2 B2 80 | 33 D2 B2 80 | ( B6 00 | 30 F6 | 32 F6 ) [0-6] B2 80 | B2 80 [0-6] ( B6 00 | 30 F6 | 32 F6 ) ) }
+            $int13  = { CD 13 }
+            $bios_read = { ( B8 ?? ( 02 | 0A | 42 ) | B4 ( 02 | 0A | 42 ) ) [0-28] CD 13 }
+            $dos_read_or_prompt = { ( B4 ( 01 | 06 | 07 | 08 | 0A | 0C | 0F | 14 | 21 | 27 | 3D | 3F ) | B8 ?? ( 01 | 06 | 07 | 08 | 0A | 0C | 0F | 14 | 21 | 27 | 3D | 3F ) ) [0-16] CD 21 }
+            $int25 = { CD 25 }
+            $int16 = { CD 16 }
+          condition:
+            filesize <= 512 and
+            not (filesize == 512 and uint16be(0x1fe) == 0x55aa) and
+            not $bios_read and
+            not $dos_read_or_prompt and
+            not $int25 and
+            not $int16 and
+            #int13 > 0 and @int13[1] >= 8 and @int13[1] <= 48 and
+            ($fn_ax in (0..@int13[1] - 2) or $fn_ah in (0..@int13[1] - 2)) and
+            $chs_cx in (0..@int13[1] - 2) and
+            $hdd_dx in (0..@int13[1] - 2)
+        }
+    unless:
+      - id: well-known/tool/reverse-engineering/pedump::pedump-packer-marker
+
+composite_rules:
+  - id: tiny-dos-fixed-disk-mbr-wiper
+    desc: Tiny DOS stub wipes hard-disk MBR
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: tiny-dos-blind-fixed-disk-mbr-overwrite
+      - id: micro-behaviors/os/msdos/disk::dos-first-int13-immediate-finish
+    unless:
+      - id: well-known/tool/reverse-engineering/pedump::pedump-packer-marker

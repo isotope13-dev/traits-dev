@@ -126,6 +126,74 @@ traits:
       pattern: "(31|33) D2 CD 13 [0-4] B8 00 4C CD 21"
       offset_range: [0, 512]
 
+  - id: dos-int13-fixed-disk-mbr-write
+    desc: BIOS writes to hard-disk first sector
+    crit: notable
+    conf: 0.95
+    for: [dos_com, data, static-lib, ole]
+    if:
+      type: yara
+      source: |
+        rule dos_int13_fixed_disk_mbr_write {
+          meta:
+            filetypes = "dos_com,data,static-lib,ole"
+          strings:
+            $fn_ax  = { B8 ~00 03 }
+            $fn_ah  = { ( B4 03 [0-6] B0 ~00 | B0 ~00 [0-6] B4 03 ) }
+            $chs_cx = { ( B9 01 00 | 31 C9 41 | 33 C9 41 | ( B5 00 | 30 ED | 32 ED ) [0-6] B1 01 | B1 01 [0-6] ( B5 00 | 30 ED | 32 ED ) ) }
+            $hdd_dx = { ( BA 80 00 | 31 D2 B2 80 | 33 D2 B2 80 | ( B6 00 | 30 F6 | 32 F6 ) [0-6] B2 80 | B2 80 [0-6] ( B6 00 | 30 F6 | 32 F6 ) ) }
+            $int13  = { CD 13 }
+          condition:
+            (#fn_ax > 0 or #fn_ah > 0) and #chs_cx > 0 and #hdd_dx > 0 and #int13 > 0 and
+            for any i in (1..#int13) : (
+              @int13[i] >= 8 and @int13[i] <= 512 and
+              (
+                for any a in (1..#fn_ax) : (
+                  @fn_ax[a] + 3 <= @int13[i] and @int13[i] - @fn_ax[a] <= 32 and
+                  (i == 1 or @fn_ax[a] >= @int13[i - 1] + 2)
+                ) or
+                for any b in (1..#fn_ah) : (
+                  @fn_ah[b] + 4 <= @int13[i] and @int13[i] - @fn_ah[b] <= 32 and
+                  (i == 1 or @fn_ah[b] >= @int13[i - 1] + 2)
+                )
+              ) and
+              for any c in (1..#chs_cx) : (
+                @chs_cx[c] + 3 <= @int13[i] and @int13[i] - @chs_cx[c] <= 32 and
+                (i == 1 or @chs_cx[c] >= @int13[i - 1] + 2)
+              ) and
+              for any d in (1..#hdd_dx) : (
+                @hdd_dx[d] + 3 <= @int13[i] and @int13[i] - @hdd_dx[d] <= 32 and
+                (i == 1 or @hdd_dx[d] >= @int13[i - 1] + 2)
+              )
+            )
+        }
+    unless:
+      - id: well-known/tool/reverse-engineering/pedump::pedump-packer-marker
+
+  - id: dos-first-int13-immediate-finish
+    desc: First BIOS disk call immediately finishes
+    crit: notable
+    conf: 0.92
+    for: [dos_com, data, static-lib, ole]
+    size_max: 512
+    if:
+      type: yara
+      source: |
+        rule dos_first_int13_immediate_finish {
+          meta:
+            filetypes = "dos_com,data,static-lib,ole"
+          strings:
+            $int13_finish = { CD 13 [0-12] ( CD 20 | CD 19 | B4 4C [0-4] CD 21 | B8 ?? 4C CD 21 | B4 00 CD 21 | 31 C0 CD 21 | 33 C0 CD 21 | C3 | FA F4 | EB FE ) }
+            $int13_any = { CD 13 }
+          condition:
+            filesize <= 512 and
+            #int13_finish > 0 and #int13_any > 0 and
+            @int13_finish[1] == @int13_any[1] and
+            @int13_finish[1] >= 8 and @int13_finish[1] <= 48
+        }
+    unless:
+      - id: well-known/tool/reverse-engineering/pedump::pedump-packer-marker
+
 
 composite_rules:
   - id: dos-fixed-disk-write-and-exit
@@ -183,4 +251,16 @@ composite_rules:
     all:
       - id: dos-int13-mbr-sector-target
       - id: dos-int13-sector-write-exit
+
+  - id: dos-fixed-disk-mbr-write-and-exit
+    desc: Hard-disk MBR write and exit sequences
+    crit: notable
+    conf: 0.98
+    for: [dos_com, data, static-lib, ole]
+    all:
+      - id: dos-int13-fixed-disk-mbr-write
+    any:
+      - id: dos-int13-sector-write-exit
+      - id: dos-int13-then-dos-exit
+      - id: micro-behaviors/process/exit/terminate::dos-terminate-after-disk-service
 
