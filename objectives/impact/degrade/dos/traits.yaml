@@ -182,6 +182,48 @@ traits:
     if:
       type: hex
       pattern: "B0 AD E6 64"
+  # With ES=0, loads another IVT entry (MOV AX,ES:[nn]; MOV BX,ES:[nn+2])
+  # and stores it into the INT 09h slot at 0000:0024h. The keyboard IRQ
+  # then lands in an unrelated handler that never reads port 60h or sends
+  # EOI, so input dies. A real hook stores its own CS:offset and keeps the
+  # old INT 09h vector, so the source is never 24h itself.
+  # Vienna.DearUser copies this stub over the host and points INT 09h at
+  # INT 04h; $stub decrypts its backward-SUB additive body in place.
+  - id: dos-keyboard-vector-redirect-lockout
+    desc: Points keyboard INT 09h at another vector
+    crit: hostile
+    conf: 0.95
+    attack: T1499
+    platforms: [windows, unix]
+    for: [dos_com, data]
+    size_max: 65536
+    if:
+      type: yara
+      source: |
+        rule dos_keyboard_vector_redirect_lockout {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $off = { 26 A1 ?? 00 26 8B 1E ?? 00 26 A3 24 00 }
+            $seg = { 26 A1 ?? 00 26 8B 1E ?? 00 [0-8] 26 89 1E 26 00 }
+            $stub = { B9 ?? 05 BF ?? ?? 8A 45 FF 8B DF 4B 28 07 E2 FB }
+          condition:
+            for any i in (1..#off) : (uint8(@off[i] + 2) != 0x24) or
+            for any i in (1..#seg) : (uint8(@seg[i] + 2) != 0x24) or
+            for any i in (1..#stub) : (
+              @stub[i] + 19 + uint16(@stub[i] + 1) <= filesize and
+              (((uint8(@stub[i] + 0x3EB) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x26) and
+              (((uint8(@stub[i] + 0x3EC) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0xA1) and
+              (((uint8(@stub[i] + 0x3EE) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x00) and
+              (((uint8(@stub[i] + 0x3EF) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x26) and
+              (((uint8(@stub[i] + 0x3F0) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x8B) and
+              (((uint8(@stub[i] + 0x3F1) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x1E) and
+              (((uint8(@stub[i] + 0x3F4) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x26) and
+              (((uint8(@stub[i] + 0x3F5) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0xA3) and
+              (((uint8(@stub[i] + 0x3F6) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x24) and
+              (((uint8(@stub[i] + 0x3F7) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x00)
+            )
+        }
   # MOV AX,0003h / INT 10h: resets 80x25 color text mode, clearing the
   # screen. Ordinary alone; paired with the disable above it is the
   # payload's screen wipe.
