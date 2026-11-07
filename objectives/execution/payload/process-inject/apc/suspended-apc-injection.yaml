@@ -1,0 +1,102 @@
+# Early-Bird APC injection into a newly created suspended process without
+# requiring a separate VirtualProtectEx step (for example when remote memory is
+# allocated PAGE_EXECUTE_READWRITE directly via VirtualAllocEx). Covers both
+# compiled PE/DLL modules and native/managed/Go/Rust source implementations.
+defaults:
+  platforms: [windows]
+  attack: T1055.004
+  mbc: B0018
+
+traits:
+  - id: x86-createprocess-suspended-flag-push
+    desc: x86 push of CREATE_SUSPENDED flag
+    crit: notable
+    conf: 0.88
+    arch: [x86]
+    for: [pe, dll]
+    size_max: 5242880
+    if:
+      type: hex
+      section: .text
+      pattern: '(68 04 00 00 08 | 68 04 00 00 00) [0-24] FF (15|D0|D1|D2|D3|D6|D7)'
+
+  - id: source-suspended-process-flag
+    desc: Source CREATE_SUSPENDED creation flag
+    crit: notable
+    conf: 0.92
+    for: [c, cpp, go, csharp, rust]
+    if:
+      type: text
+      exclude_comments: true
+      regex: '\b(CREATE_SUSPENDED|0x0*8000004)\b'
+
+  - id: source-remote-virtual-alloc
+    desc: Calls VirtualAllocEx or NtAllocateVirtualMemory
+    crit: component
+    conf: 0.94
+    for: [c, cpp, go, csharp, rust]
+    if:
+      type: text
+      exclude_comments: true
+      regex: '\b(VirtualAllocEx|NtAllocateVirtualMemory|ZwAllocateVirtualMemory)\s*\('
+
+  - id: source-remote-memory-write
+    desc: Calls WriteProcessMemory or NtWriteVirtualMemory
+    crit: component
+    conf: 0.94
+    for: [c, cpp, go, csharp, rust]
+    if:
+      type: text
+      exclude_comments: true
+      regex: '\b(WriteProcessMemory|NtWriteVirtualMemory|ZwWriteVirtualMemory)\s*\('
+
+  - id: source-queue-apc-call
+    desc: Source call to QueueUserAPC or NtQueueApcThread
+    crit: notable
+    conf: 0.95
+    for: [c, cpp, go, csharp, rust]
+    if:
+      type: text
+      exclude_comments: true
+      regex: '\b(QueueUserAPC|NtQueueApcThread|ZwQueueApcThread)\s*\('
+
+  - id: source-resume-thread-call
+    desc: Source call to ResumeThread or NtResumeThread
+    crit: component
+    conf: 0.92
+    for: [c, cpp, go, csharp, rust]
+    if:
+      type: text
+      exclude_comments: true
+      regex: '\b(ResumeThread|NtResumeThread|ZwResumeThread)\s*\('
+
+composite_rules:
+  - id: binary-suspended-process-apc-injection
+    desc: Spawns a suspended process, writes remote memory, queues APC, and resumes thread
+    crit: hostile
+    conf: 0.98
+    for: [pe, dll]
+    all:
+      - id: micro-behaviors/os/callback/apc::queue-user-apc
+      - id: micro-behaviors/mem/alloc/virtual::virtual-alloc-ex
+      - id: micro-behaviors/mem/write/arbitrary::write-process-memory-binary
+      - id: micro-behaviors/process/info/thread::resume-thread-import
+    any:
+      - id: micro-behaviors/process/create/exec::x64-createprocess-suspended
+      - id: x86-createprocess-suspended-flag-push
+    unless:
+      - id: metadata/signature/verified/platform/
+
+  - id: source-suspended-process-apc-injection
+    desc: Source-level Early-Bird APC injection into a suspended child process
+    crit: hostile
+    conf: 0.98
+    for: [c, cpp, go, csharp, rust]
+    all:
+      - id: source-suspended-process-flag
+      - id: source-remote-virtual-alloc
+      - id: source-remote-memory-write
+      - id: source-queue-apc-call
+      - id: source-resume-thread-call
+    unless:
+      - id: well-known/lib/platform/wine::wine-compatibility-test-source

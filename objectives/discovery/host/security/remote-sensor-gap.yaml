@@ -1,0 +1,75 @@
+# Domain-wide or remote host security-sensor gap enumeration (T1518.001):
+# probes remote Windows hosts via tasklist /S, remote process cmdlets, or UNC
+# C$ admin shares to identify endpoints missing EDR sensors (such as CrowdStrike
+# Falcon). Standalone remote sensor checks remain suspicious because IT posture
+# scripts can audit deployment; pairing with AD credential/delegation attacks
+# or offensive red-team slang elevates to hostile target selection.
+defaults:
+  platforms: [windows, unix]
+  for: [powershell, batch, python, go, csharp, scripts, source]
+  attack: T1518.001
+
+traits:
+  - id: tasklist-remote-system-flag
+    desc: Invokes tasklist with /S remote host switch
+    crit: notable
+    conf: 0.92
+    if:
+      type: text
+      regex: '(?i)\btasklist(\.exe)?\s+/[sS]\s+\S+'
+
+  - id: remote-edr-install-share-path
+    desc: EDR sensor path on UNC C$ share
+    crit: notable
+    conf: 0.94
+    if:
+      type: text
+      regex: '(?i)\\+[cC]\$\\+[^\r\n"''`]{0,60}\\+(CrowdStrike|SentinelOne|CarbonBlack)'
+
+  - id: falcon-chinese-redteam-slang
+    desc: PRC red-team slang for Falcon sensor
+    crit: notable
+    conf: 0.86
+    if:
+      type: text
+      substr: '猎鹰'
+
+composite_rules:
+  - id: remote-host-enum-primitive
+    desc: Remote Windows process or C$ admin-share probe
+    crit: component
+    conf: 0.9
+    any:
+      - id: tasklist-remote-system-flag
+      - id: remote-edr-install-share-path
+      - id: micro-behaviors/network/share::ps-admin-c-share-path
+
+  - id: edr-sensor-artifact-reference
+    desc: EDR process or sensor directory reference
+    crit: component
+    conf: 0.92
+    any:
+      - id: micro-behaviors/os/security/product::security-process-name-reference
+      - id: micro-behaviors/os/security/product::falcon-service-process-reference
+      - id: remote-edr-install-share-path
+
+  - id: remote-edr-sensor-inventory
+    desc: Enumerates remote Windows hosts to check EDR sensor presence
+    crit: suspicious
+    conf: 0.91
+    all:
+      - id: remote-host-enum-primitive
+      - id: edr-sensor-artifact-reference
+    near_lines: 25
+
+  - id: domain-edr-gap-target-selection
+    desc: Enumerates domain hosts lacking EDR sensors alongside offensive AD tradecraft
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: remote-edr-sensor-inventory
+    any:
+      - id: micro-behaviors/os/security/directory-service::laps-password-attribute
+      - id: micro-behaviors/os/security/directory-service::resource-based-delegation-attribute
+      - id: micro-behaviors/os/security/directory-service::rbcd-modification-reference
+      - id: falcon-chinese-redteam-slang

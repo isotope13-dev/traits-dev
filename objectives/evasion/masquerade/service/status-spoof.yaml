@@ -1,0 +1,67 @@
+# Windows service status spoofing: ServiceMain reports SERVICE_RUNNING, spawns
+# a background worker thread, immediately reports SERVICE_STOPPED to deceive the
+# Service Control Manager, and then blocks on WaitForSingleObject(INFINITE) so
+# the process stays alive while appearing stopped. Legitimate services block on
+# their stop event BEFORE reporting SERVICE_STOPPED and return immediately after.
+defaults:
+  platforms: [windows]
+  attack: T1036,T1543.003
+
+traits:
+  - id: x64-service-stopped-then-infinite-wait
+    desc: Sets SERVICE_STOPPED then waits INFINITE
+    crit: suspicious
+    conf: 0.95
+    arch: [x86-64]
+    for: [pe, dll]
+    size_max: 5242880
+    if:
+      type: hex
+      section: .text
+      # Store 1 (SERVICE_STOPPED) into dwCurrentState, call SetServiceStatus via
+      # register or IAT, then pass 0xFFFFFFFF (INFINITE) in EDX to Wait API.
+      pattern: 'C7 (05 ?? ?? ?? ?? | 44 24 ?? | 45 ?? | 43 04 | 46 04 | 47 04) 01 00 00 00 [0-16] FF (D0|D1|D2|D3|D6|D7|15) [0-28] BA FF FF FF FF FF 15'
+
+  - id: source-service-running-state-set
+    desc: Sets Windows service SERVICE_RUNNING state
+    crit: notable
+    conf: 0.9
+    for: [c, cpp, go, csharp, rust]
+    if:
+      type: text
+      exclude_comments: true
+      regex: 'dwCurrentState\s*=\s*(SERVICE_RUNNING|0x0*4)\b'
+
+  - id: source-service-stopped-before-infinite-wait
+    desc: Sets SERVICE_STOPPED before INFINITE wait
+    crit: suspicious
+    conf: 0.95
+    for: [c, cpp, go, csharp, rust]
+    if:
+      type: text
+      exclude_comments: true
+      regex: '(?s)SERVICE_STOPPED.{1,160}SetServiceStatus.{1,160}INFINITE'
+
+composite_rules:
+  - id: binary-service-stopped-status-spoof
+    desc: Windows service spoofs SERVICE_STOPPED status while blocking on worker thread
+    crit: hostile
+    conf: 0.98
+    for: [pe, dll]
+    all:
+      - id: x64-service-stopped-then-infinite-wait
+      - id: micro-behaviors/os/service/dispatch::register-service-handler
+      - id: micro-behaviors/os/service/dispatch::set-service-status
+      - id: micro-behaviors/process/thread/create::create-thread
+    unless:
+      - id: metadata/signature/verified/platform/
+
+  - id: source-service-stopped-status-spoof
+    desc: Service handler spoofs SERVICE_STOPPED before waiting on worker thread
+    crit: hostile
+    conf: 0.98
+    for: [c, cpp, go, csharp, rust]
+    all:
+      - id: source-service-running-state-set
+      - id: source-service-stopped-before-infinite-wait
+    near_lines: 30
