@@ -1,0 +1,121 @@
+# Encrypted 16-bit DOS .COM appending infectors decoded directly from the
+# virus stub's runtime key or stack-pointer coordinate, plus unencrypted
+# equivalents so both encrypted specimens and decrypted bodies are covered.
+defaults:
+  platforms: [windows, unix]
+  for: [dos_com, data]
+  attack: T1080
+  size_max: 65536
+
+traits:
+  # RedBlood.1053 and variants:
+  # Seeks target .COM EOF (`MOV AX, 4202h; SUB CX, CX; CWD; INT 21h`), computes
+  # `E9 <disp16> 00` entry jump (`SUB AX, 3; MOV byte [BP+...], 0E9h`), samples
+  # a random initial key from PIT timer channel 0 (`IN AL, 40h`), copies the
+  # virus (`REP MOVSB`), and re-encrypts the body with an incrementing-AL byte
+  # XOR loop (`XOR [SI], AL; INC SI; INC AL; LOOP`).
+  - id: dos-pit-keyed-incrementing-xor-appender
+    desc: Appends PIT-keyed incrementing-XOR COM virus
+    crit: hostile
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule dos_pit_keyed_incrementing_xor_appender {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $stub = { B0 ?? B9 ( 6D 03 | ?? 03 ) BE ?? ?? 30 04 ( FE C0 46 | 46 FE C0 ) E2 F9 }
+            $plain = { B8 02 42 2B C9 99 CD 21 [8-20] 2D 03 00 C6 86 ?? ?? E9 [24-48] E4 40 88 86 ?? ?? [12-28] F3 A4 [4-16] 30 04 46 FE C0 E2 F9 }
+          condition:
+            $plain or
+            for any i in (1..#stub) : (
+              @stub[i] + 15 + 0x166 <= filesize and
+              ((uint8(@stub[i] + 15 + 0x104) ^ ((uint8(@stub[i] + 1) + 0x104) & 0xFF)) == 0xB8) and
+              ((uint8(@stub[i] + 15 + 0x105) ^ ((uint8(@stub[i] + 1) + 0x105) & 0xFF)) == 0x02) and
+              ((uint8(@stub[i] + 15 + 0x106) ^ ((uint8(@stub[i] + 1) + 0x106) & 0xFF)) == 0x42) and
+              ((uint8(@stub[i] + 15 + 0x116) ^ ((uint8(@stub[i] + 1) + 0x116) & 0xFF)) == 0x2D) and
+              ((uint8(@stub[i] + 15 + 0x117) ^ ((uint8(@stub[i] + 1) + 0x117) & 0xFF)) == 0x03) and
+              ((uint8(@stub[i] + 15 + 0x11D) ^ ((uint8(@stub[i] + 1) + 0x11D) & 0xFF)) == 0xE9) and
+              ((uint8(@stub[i] + 15 + 0x140) ^ ((uint8(@stub[i] + 1) + 0x140) & 0xFF)) == 0xE4) and
+              ((uint8(@stub[i] + 15 + 0x141) ^ ((uint8(@stub[i] + 1) + 0x141) & 0xFF)) == 0x40) and
+              ((uint8(@stub[i] + 15 + 0x153) ^ ((uint8(@stub[i] + 1) + 0x153) & 0xFF)) == 0xF3) and
+              ((uint8(@stub[i] + 15 + 0x154) ^ ((uint8(@stub[i] + 1) + 0x154) & 0xFF)) == 0xA4) and
+              ((uint8(@stub[i] + 15 + 0x15F) ^ ((uint8(@stub[i] + 1) + 0x15F) & 0xFF)) == 0x30) and
+              ((uint8(@stub[i] + 15 + 0x160) ^ ((uint8(@stub[i] + 1) + 0x160) & 0xFF)) == 0x04) and
+              ((uint8(@stub[i] + 15 + 0x164) ^ ((uint8(@stub[i] + 1) + 0x164) & 0xFF)) == 0xE2) and
+              ((uint8(@stub[i] + 15 + 0x165) ^ ((uint8(@stub[i] + 1) + 0x165) & 0xFF)) == 0xF9)
+            )
+        }
+
+  # Duwende.724 and variants:
+  # Reads the target .COM entry (`MOV AH, 3Fh`), checks whether the first byte
+  # is already `E9h` (`CMP AL, 0E9h`) so it can follow the first near jump and
+  # patch a second chained `E9` jump at the target's jump destination, and
+  # re-encrypts the virus in top-of-memory using a sliding word-XOR loop
+  # (`LODSW; XOR AX, BX; STOSW; INC BX; INC BX`) before appending.
+  - id: dos-chained-entry-jump-sp-xor-appender
+    desc: Chains COM jump and appends SP-XOR virus
+    crit: hostile
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule dos_chained_entry_jump_sp_xor_appender {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $stub = { BE ?? ?? BD ?? ?? 87 EC FD AD 33 C4 50 81 FC ?? ?? 74 EA EB F4 }
+            $plain = { AD 33 C3 AB 43 43 E2 F8 [80-110] B4 3F B9 03 00 [4-12] 3C E9 }
+          condition:
+            $plain or
+            for any i in (1..#stub) : (
+              @stub[i] >= 0x2A0 and
+              ((uint16(@stub[i] - 0x170) ^ ((uint16(@stub[i] + 4) - 0x170 + 2) & 0xFFFF)) == 0x33AD) and
+              ((uint16(@stub[i] - 0x16E) ^ ((uint16(@stub[i] + 4) - 0x16E + 2) & 0xFFFF)) == 0xABC3) and
+              ((uint16(@stub[i] - 0x16C) ^ ((uint16(@stub[i] + 4) - 0x16C + 2) & 0xFFFF)) == 0x4343) and
+              ((uint16(@stub[i] - 0x10C) ^ ((uint16(@stub[i] + 4) - 0x10C + 2) & 0xFFFF)) == 0x3FB4) and
+              ((uint16(@stub[i] - 0x100) ^ ((uint16(@stub[i] + 4) - 0x100 + 2) & 0xFFFF)) == 0x3CE5)
+            )
+        }
+
+  # Vienna.DearUser.1407 and variants:
+  # Searches the PSP environment block (`MOV ES, CS:[002Ch]`) for `PATH=`,
+  # strips Read-Only attributes (`AX=4300h/4301h`), opens `.COM` targets R/W
+  # (`AX=3D02h`), re-encrypts the body by byte-addition (`ADD AL, AH`), appends
+  # to EOF (`AH=40h`), seeks to BOF (`AX=4200h`), and writes the 3-byte `E9`
+  # entry jump.
+  - id: dos-vienna-additive-encrypted-path-appender
+    desc: Searches PATH and appends additive-encrypted COM
+    crit: hostile
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule dos_vienna_additive_encrypted_path_appender {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $stub = { B9 ?? 05 BF ?? ?? 8A 45 FF 8B DF 4B 28 07 E2 FB }
+            $plain = { B8 00 43 CD 21 B8 01 43 89 4C 08 83 E1 FE [8-20] B8 02 3D [120-165] B9 49 05 8A 05 02 C4 88 05 47 E2 F7 }
+          condition:
+            $plain or
+            for any i in (1..#stub) : (
+              @stub[i] + 19 + uint16(@stub[i] + 1) <= filesize and
+              (((uint8(@stub[i] + 0x9E) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x8E) and
+              (((uint8(@stub[i] + 0x9F) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x06) and
+              (((uint8(@stub[i] + 0xA0) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x2C) and
+              (((uint8(@stub[i] + 0x179) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0xB8) and
+              (((uint8(@stub[i] + 0x17A) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x00) and
+              (((uint8(@stub[i] + 0x17B) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x43) and
+              (((uint8(@stub[i] + 0x191) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0xB8) and
+              (((uint8(@stub[i] + 0x192) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x02) and
+              (((uint8(@stub[i] + 0x193) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x3D) and
+              (((uint8(@stub[i] + 0x228) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x8A) and
+              (((uint8(@stub[i] + 0x22A) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x02) and
+              (((uint8(@stub[i] + 0x22B) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0xC4) and
+              (((uint8(@stub[i] + 0x241) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0xB8) and
+              (((uint8(@stub[i] + 0x242) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x00) and
+              (((uint8(@stub[i] + 0x243) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x42)
+            )
+        }

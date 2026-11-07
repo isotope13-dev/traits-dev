@@ -1,0 +1,69 @@
+# Duwende.724 and variants: memory-resident MCB carving, INT 21h EXEC/Find
+# hooking, and FCB/DTA file-size stealth, matched both in decrypted form and
+# through the backward SP-keyed word-XOR decryptor stub.
+defaults:
+  platforms: [windows, unix]
+  for: [dos_com, data]
+  size_max: 65536
+
+traits:
+  # Shrinks the current Memory Control Block (`MOV AX, [DI+3]; SUB AX, 2Fh;
+  # MOV BL, 'M'; XCHG [DI], BL`), copies itself to high memory, hooks INT 21h
+  # (`AX=3521h; INT 21h` / `AH=25h; INT 21h`), and intercepts FCB Find (`11h`/`12h`),
+  # EXEC (`4Bh`), and DTA Find (`4Eh`/`4Fh`).
+  - id: dos-mcb-carve-int21-exec-find-hook
+    desc: Carves MCB and hooks INT 21h EXEC/Find
+    crit: hostile
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule dos_mcb_carve_int21_exec_find_hook {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $stub = { BE ?? ?? BD ?? ?? 87 EC FD AD 33 C4 50 81 FC ?? ?? 74 EA EB F4 }
+            $plain_mcb = { 8E D8 8B 45 03 [3-16] B3 4D 86 1D }
+            $plain_hook = { 80 FC 12 74 ?? 80 FC 4F 74 ?? 80 FC 4B 74 ?? 80 FC 11 74 ?? 80 FC 4E }
+          condition:
+            ($plain_mcb and $plain_hook) or
+            for any i in (1..#stub) : (
+              @stub[i] >= 0x2A0 and
+              ((uint16(@stub[i] - 0x29E) ^ ((uint16(@stub[i] + 4) - 0x29E + 2) & 0xFFFF)) == 0x458B) and
+              ((uint16(@stub[i] - 0x28C) ^ ((uint16(@stub[i] + 4) - 0x28C + 2) & 0xFFFF)) == 0x4DB3) and
+              ((uint16(@stub[i] - 0x28A) ^ ((uint16(@stub[i] + 4) - 0x28A + 2) & 0xFFFF)) == 0x1D86) and
+              ((uint16(@stub[i] - 0x236) ^ ((uint16(@stub[i] + 4) - 0x236 + 2) & 0xFFFF)) == 0x12FC) and
+              ((uint16(@stub[i] - 0x22C) ^ ((uint16(@stub[i] + 4) - 0x22C + 2) & 0xFFFF)) == 0x4BFC) and
+              ((uint16(@stub[i] - 0x222) ^ ((uint16(@stub[i] + 4) - 0x222 + 2) & 0xFFFF)) == 0x4EFC) and
+              ((uint16(@stub[i] - 0x1E) ^ ((uint16(@stub[i] + 4) - 0x1E + 2) & 0xFFFF)) == 0x21B8) and
+              ((uint16(@stub[i] - 0x1C) ^ ((uint16(@stub[i] + 4) - 0x1C + 2) & 0xFFFF)) == 0xCD35)
+            )
+        }
+
+  # Checks the infected file's timestamp marker (low 5 bits of seconds == day
+  # of month: `MOV AH, 1Fh; AND AL, AH`) and subtracts the 724-byte (`02D4h`)
+  # virus length from the 32-bit file size in the FCB or DTA (`MOV AX, 02D4h;
+  # CWD; CMP [BX+2], DX; JNZ ...; MOV DX, [BX]; SUB DX, AX`).
+  - id: dos-sp-xor-fcb-dta-size-stealth
+    desc: Subtracts virus length from FCB/DTA file sizes
+    crit: hostile
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule dos_sp_xor_fcb_dta_size_stealth {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $stub = { BE ?? ?? BD ?? ?? 87 EC FD AD 33 C4 50 81 FC ?? ?? 74 EA EB F4 }
+            $plain = { 8D 5F 1D B8 D4 02 99 39 57 02 75 ?? 8B 17 2B D0 }
+          condition:
+            $plain or
+            for any i in (1..#stub) : (
+              @stub[i] >= 0x2A0 and
+              ((uint16(@stub[i] - 0x1EE) ^ ((uint16(@stub[i] + 4) - 0x1EE + 2) & 0xFFFF)) == 0x221F) and
+              ((uint16(@stub[i] - 0x58) ^ ((uint16(@stub[i] + 4) - 0x58 + 2) & 0xFFFF)) == 0xB81D) and
+              ((uint16(@stub[i] - 0x56) ^ ((uint16(@stub[i] + 4) - 0x56 + 2) & 0xFFFF)) == 0x02D4) and
+              ((uint16(@stub[i] - 0x4C) ^ ((uint16(@stub[i] + 4) - 0x4C + 2) & 0xFFFF)) == 0xD02B)
+            )
+        }

@@ -1,0 +1,115 @@
+# Encrypted 16-bit DOS .COM virus decryptors where the entry transfer (`E9`
+# near jump or `E8` near call) and the unencrypted loop stub expose the exact
+# key or stack-pointer coordinate needed to decode the relocated virus body
+# without assuming a fixed encryption key or fixed host size.
+defaults:
+  platforms: [windows, unix]
+  for: [dos_com, data]
+  attack: T1027
+  size_max: 65536
+
+traits:
+  # RedBlood.1053 and variants:
+  # Entry `E9 <disp16> 00` lands on a 15-byte incrementing-key byte-XOR
+  # decryptor stub (`MOV AL, k0; MOV CX, len; MOV SI, body; XOR [SI], AL;
+  # INC AL; INC SI; LOOP`). Decoding the first 18 bytes at `@stub + 15`
+  # with `(uint8(@stub + 1) + off) & 0xFF` yields `CALL $+3; POP BP;
+  # SUB BP, 0116h; MOV DI, 0100h; PUSH DI; LEA SI, [BP+044Eh]; MOVSW; MOVSW`.
+  - id: dos-entry-incrementing-xor-relocated-body
+    desc: Incrementing-XOR stub decodes relocated COM body
+    crit: hostile
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule dos_entry_incrementing_xor_relocated_body {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $stub = { B0 ?? B9 ( 6D 03 | ?? 03 ) BE ?? ?? 30 04 ( FE C0 46 | 46 FE C0 ) E2 F9 }
+          condition:
+            uint8(0) == 0xE9 and
+            for any i in (1..#stub) : (
+              @stub[i] + 0x40 <= filesize and
+              ((uint8(@stub[i] + 15 + 0x00) ^ ((uint8(@stub[i] + 1) + 0x00) & 0xFF)) == 0xE8) and
+              ((uint8(@stub[i] + 15 + 0x01) ^ ((uint8(@stub[i] + 1) + 0x01) & 0xFF)) == 0x00) and
+              ((uint8(@stub[i] + 15 + 0x02) ^ ((uint8(@stub[i] + 1) + 0x02) & 0xFF)) == 0x00) and
+              ((uint8(@stub[i] + 15 + 0x03) ^ ((uint8(@stub[i] + 1) + 0x03) & 0xFF)) == 0x5D) and
+              ((uint8(@stub[i] + 15 + 0x04) ^ ((uint8(@stub[i] + 1) + 0x04) & 0xFF)) == 0x81) and
+              ((uint8(@stub[i] + 15 + 0x05) ^ ((uint8(@stub[i] + 1) + 0x05) & 0xFF)) == 0xED) and
+              ((uint8(@stub[i] + 15 + 0x08) ^ ((uint8(@stub[i] + 1) + 0x08) & 0xFF)) == 0xBF) and
+              ((uint8(@stub[i] + 15 + 0x09) ^ ((uint8(@stub[i] + 1) + 0x09) & 0xFF)) == 0x00) and
+              ((uint8(@stub[i] + 15 + 0x0A) ^ ((uint8(@stub[i] + 1) + 0x0A) & 0xFF)) == 0x01) and
+              ((uint8(@stub[i] + 15 + 0x0B) ^ ((uint8(@stub[i] + 1) + 0x0B) & 0xFF)) == 0x57) and
+              ((uint8(@stub[i] + 15 + 0x10) ^ ((uint8(@stub[i] + 1) + 0x10) & 0xFF)) == 0xA5) and
+              ((uint8(@stub[i] + 15 + 0x11) ^ ((uint8(@stub[i] + 1) + 0x11) & 0xFF)) == 0xA5)
+            )
+        }
+
+  # Duwende.724 and variants:
+  # An unencrypted 21-byte backward stack-pointer (`SP`) word-XOR decryptor at
+  # the end of the virus (`MOV SI, end-2; MOV BP, end; XCHG SP, BP; STD;
+  # LODSW; XOR AX, SP; PUSH AX; CMP SP, start; JZ @stub-3; JMP loop`) decodes
+  # the preceding words using the runtime stack pointer `SP` as a sliding
+  # 16-bit XOR key, then jumps to the newly decoded `MOV SP, BP; RET` (`8B E5 C3`)
+  # trampoline immediately preceding `@stub`.
+  - id: dos-call-backward-sp-xor-trampoline
+    desc: Calls backward SP-keyed XOR decryptor stub
+    crit: hostile
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule dos_call_backward_sp_xor_trampoline {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $stub = { BE ?? ?? BD ?? ?? 87 EC FD AD 33 C4 50 81 FC ?? ?? 74 EA EB F4 }
+          condition:
+            for any i in (1..#stub) : (
+              @stub[i] >= 0x2A0 and
+              uint16(@stub[i] + 4) == uint16(@stub[i] + 1) + 2 and
+              ((uint16(@stub[i] - 0x02) ^ (uint16(@stub[i] + 4) & 0xFFFF)) == 0xC3E5) and
+              (((uint16(@stub[i] - 0x04) ^ ((uint16(@stub[i] + 4) - 2) & 0xFFFF)) >> 8) == 0x8B)
+            )
+        }
+
+  # Vienna.DearUser.1407 and variants:
+  # Entry `E9 <disp16>` jumps to a 16-byte backward byte-subtraction decryptor
+  # (`MOV CX, len; MOV DI, key_ptr+1; MOV AL, [DI-1]; MOV BX, DI; DEC BX;
+  # SUB [BX], AL; LOOP`) whose key byte sits immediately after the encrypted
+  # body at `@stub + 18 + uint16(@stub + 1)`. Decoding the start of the body
+  # with `key` yields key mutation (`INC AL; CMP AL, 2Dh; JAE $+4; ADD AL, 4;
+  # MOV [DI-1], AL`) and 3-byte host entry restoration (`PUSH DI; MOV CX, 3;
+  # LEA SI, [DI+0Ah]; MOV DI, 0100h; REP MOVSB`).
+  - id: dos-entry-backward-sub-mutating-decryptor
+    desc: Entry backward-SUB decryptor mutates key
+    crit: hostile
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule dos_entry_backward_sub_mutating_decryptor {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $stub = { B9 ?? 05 BF ?? ?? 8A 45 FF 8B DF 4B 28 07 E2 FB }
+          condition:
+            uint8(0) == 0xE9 and
+            for any i in (1..#stub) : (
+              @stub[i] + 19 + uint16(@stub[i] + 1) <= filesize and
+              (((uint8(@stub[i] + 0x13) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0xFE) and
+              (((uint8(@stub[i] + 0x14) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0xC0) and
+              (((uint8(@stub[i] + 0x15) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x3C) and
+              (((uint8(@stub[i] + 0x1B) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x88) and
+              (((uint8(@stub[i] + 0x1C) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x45) and
+              (((uint8(@stub[i] + 0x1D) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0xFF) and
+              (((uint8(@stub[i] + 0x1E) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x57) and
+              (((uint8(@stub[i] + 0x1F) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0xB9) and
+              (((uint8(@stub[i] + 0x25) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0xBF) and
+              (((uint8(@stub[i] + 0x26) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x00) and
+              (((uint8(@stub[i] + 0x27) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x01) and
+              (((uint8(@stub[i] + 0x28) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0xF3) and
+              (((uint8(@stub[i] + 0x29) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0xA4)
+            )
+        }
