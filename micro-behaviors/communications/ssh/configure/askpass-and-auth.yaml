@@ -1,0 +1,132 @@
+# SSH client authentication, askpass helper, and multi-prompt retry configuration.
+# Headless deploy tooling and authentication-bypass exploits share SSH_ASKPASS and
+# password-auth client flags; stateful prompt switching across attempts is anomalous.
+defaults:
+  platforms: [unix, windows]
+  for: [scripts, source, binaries, -beam, -wasm, -static-lib]
+  crit: notable
+  conf: 0.94
+  attack: T1021.004
+
+traits:
+  - id: ssh-askpass-env
+    desc: Sets SSH_ASKPASS helper environment variable
+    if:
+      type: text
+      exclude_comments: true
+      regex: '(?i)\bSSH_ASKPASS\s*=|["'']SSH_ASKPASS["'']\s*[,:=]|env\(\s*["'']SSH_ASKPASS["'']'
+
+  - id: ssh-askpass-require-force
+    desc: Forces headless SSH_ASKPASS without TTY
+    conf: 0.97
+    if:
+      type: text
+      exclude_comments: true
+      regex: '(?i)SSH_ASKPASS_REQUIRE["'']?\s*[:=]\s*["'']?(force|prefer)\b'
+
+  - id: ssh-preferred-auth-password
+    desc: Enables SSH PreferredAuthentications password
+    conf: 0.95
+    if:
+      type: text
+      exclude_comments: true
+      regex: '(?i)PreferredAuthentications[=\s]+["'']?[\w,-]{0,28}(password|keyboard-inter)'
+
+  - id: ssh-client-disable-pubkey-auth
+    desc: Disables SSH client public-key authentication
+    if:
+      type: text
+      exclude_comments: true
+      regex: '(?i)(-o\s*["'']?PubkeyAuthentication[=\s]+no\b|\bPubkeyAuthentication=no\b)'
+
+  - id: ssh-multiple-password-prompts
+    desc: Sets SSH NumberOfPasswordPrompts above one
+    conf: 0.95
+    if:
+      type: text
+      exclude_comments: true
+      regex: '(?i)\bNumberOfPasswordPrompts[=\s]+["'']?([2-9]|[1-9]\d+)\b'
+
+  - id: shell-variable-file-existence-test
+    desc: Shell tests variable-referenced file existence
+    platforms: [unix]
+    for: [shell]
+    conf: 0.88
+    if:
+      type: text
+      exclude_comments: true
+      regex: '(\[\s*-[ef]\s+|\btest\s+-[ef]\s+)["'']?\$[A-Za-z_{\w]'
+
+  - id: go-ssh-password-auth-method
+    desc: Configures Go SSH password auth method
+    for: [go]
+    conf: 0.96
+    if:
+      type: text
+      exclude_comments: true
+      regex: '\bssh\.(Password|PasswordCallback|RetryableAuthMethod)\s*\('
+
+  - id: go-ssh-multi-attempt-auth-config
+    desc: Configures multi-attempt Go SSH auth methods
+    for: [go]
+    conf: 0.96
+    if:
+      type: text
+      exclude_comments: true
+      regex: '(?s)(\bssh\.RetryableAuthMethod\s*\(|\[\]ssh\.AuthMethod\s*\{[^}]{4,160},)'
+
+  - id: js-ssh2-multi-auth-handler
+    desc: Configures Node ssh2 multi-step auth handler
+    for: [javascript, typescript]
+    conf: 0.94
+    if:
+      type: text
+      exclude_comments: true
+      regex: '\bauthHandler\s*[:(]|keyboard-interactive[''"]\s*,\s*(\([^)\n]{0,40}\)|[\w$]+)\s*=>'
+
+  - id: js-ssh2-password-property
+    desc: Configures JS connect or auth password option
+    for: [javascript, typescript]
+    conf: 0.92
+    if:
+      type: text
+      exclude_comments: true
+      regex: '(?s)\.connect\s*\(\s*\{[^}]{0,160}\bpassword\s*:|\btype\s*:\s*[''"]password[''"]'
+
+composite_rules:
+  - id: js-ssh2-password-auth
+    desc: Configures Node ssh2 password authentication
+    for: [javascript, typescript]
+    conf: 0.95
+    all:
+      - id: micro-behaviors/communications/ssh/client::ssh2-js
+      - id: js-ssh2-password-property
+    near_bytes: 2048
+
+  - id: ssh-staged-askpass-helper
+    desc: Stages executable SSH_ASKPASS helper script
+    for: [scripts, source]
+    conf: 0.96
+    all:
+      - id: ssh-askpass-env
+    any:
+      - id: micro-behaviors/fs/chmod/executable/mode::shell-plus-x
+      - id: micro-behaviors/fs/chmod/modify::chmod-command
+      - id: micro-behaviors/fs/chmod/executable/mode::python-executable
+      - id: micro-behaviors/fs/chmod/modify::node-chmod
+    near_bytes: 1024
+
+  - id: ssh-stateful-askpass-prompt-switch
+    desc: SSH_ASKPASS switches state file across prompts
+    crit: suspicious
+    conf: 0.96
+    attack: T1190,T1021.004
+    for: [shell]
+    platforms: [unix]
+    all:
+      - id: ssh-askpass-env
+      - id: shell-variable-file-existence-test
+    any:
+      - id: micro-behaviors/fs/write/file/redirect::shell-cat-heredoc-file-write
+      - id: micro-behaviors/fs/temp/file::shell-mktemp-file-call
+    near_bytes: 1024
