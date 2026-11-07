@@ -1,0 +1,59 @@
+defaults:
+  for: [pe, dll]
+  platforms: [windows]
+composite_rules:
+  # The id 88 rules reference. Either spelling of "no signature" satisfies it:
+  # the absent signature record (what actually fires today) or an explicitly
+  # empty certificate table.
+  - id: unsigned
+    desc: Binary is not digitally signed
+    crit: notable
+    conf: 1.0
+    any:
+      - id: unsigned-empty-cert-table
+      - id: unsigned-missing-signature-record
+
+
+traits:
+  # `pe.cert_table_size` is emitted only when a PE *has* a certificate table --
+  # measured across the corpus: CCleaner (signed) reports 13016, while every
+  # unsigned PE omits the field entirely. A `max: 0` threshold on a field that
+  # is absent exactly when the condition holds can never match, so this was a
+  # dead trait, and with it the 88 rules that gate on `::unsigned` -- most of
+  # them hostile composites whose whole point is "and the binary is unsigned".
+  # Kept under its own id for the file types where the field is emitted as a
+  # real zero; `unsigned` below is now the composite consumers resolve to.
+  - id: unsigned-empty-cert-table
+    desc: PE certificate table is empty
+    crit: notable
+    conf: 1.0
+    if:
+      type: metrics
+      field: pe.cert_table_size
+      max: 0
+
+  - id: unsigned-missing-signature-record
+    desc: PE lacks signature record
+    crit: notable
+    conf: 0.9
+    if:
+      type: value
+      path: pe.signatures[0].subject
+      exists: false
+    unless:
+      - id: metadata/binary/header/malformed::malformed-pe-structure
+      - id: metadata/binary/layout/checksum::cert-table-present
+
+  - id: unsigned-pe-executable
+    desc: PE executable is unsigned
+    crit: notable
+    conf: 0.8
+    if:
+      id: unsigned
+    # Both entries here named this trait's own directory, so the trait's own
+    # match satisfied its own `unless:` and it never surfaced. An unsigned PE
+    # should defer to a *positive* trust finding, not to the directory that
+    # holds the unsigned check itself.
+    unless:
+      - id: metadata/file/extension/identity::uac-exe-basename
+      - id: metadata/binary/section/ratio::section-exceeds-file-size

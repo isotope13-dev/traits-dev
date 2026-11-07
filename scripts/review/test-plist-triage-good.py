@@ -15,9 +15,9 @@ IB = PREFIX + "interface-builder-object-data-class"
 MASQUERADE = "objectives/evasion/masquerade/identity/bundle::generic-utils-bundle-id"
 CMS = PREFIX + "cms-wrapped-plist"
 ALL_DEVICES = "metadata/package/publishing::profile-all-device-distribution"
-SYSTEM_EXTENSION = "metadata/signed/entitlements::profile-system-extension-install"
-ASSOCIATED_DOMAINS = "metadata/signed/entitlements::profile-associated-domains-wildcard"
-KEYCHAIN = "metadata/signed/entitlements::profile-keychain-access-group"
+SYSTEM_EXTENSION = "metadata/signature/entitlements::profile-system-extension-install"
+ASSOCIATED_DOMAINS = "metadata/signature/entitlements::profile-associated-domains-wildcard"
+KEYCHAIN = "metadata/signature/entitlements::profile-keychain-access-group"
 REVIEWED = {ARCHIVER, IB, MASQUERADE, CMS, ALL_DEVICES, SYSTEM_EXTENSION, ASSOCIATED_DOMAINS, KEYCHAIN}
 
 

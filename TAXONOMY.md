@@ -954,7 +954,7 @@ Unbound text that merely resembles an operation name remains text evidence.
 | `crypto/hash/{digest,hmac}` | Cryptographic digest or MAC, including implementation presence; CryptoAPI hashing is `digest`. `digest/<algorithm>` (`md5`, `sha1`, `sha2`, `sha3`, `blake`) holds rules whose matcher names the algorithm, whatever the language; `digest/unnamed-algorithm` holds evidence that names none (`createHash(alg)`, `ComputeHash`). A digest compared against an embedded value is `os/security/auth/digest-comparison`. Mining markers are not hashing: Stratum protocol references are `communications/blockchain/stratum`, while mining-specific capabilities are `communications/blockchain/mining`. Hash-based proof-of-work belongs in `crypto/hash/proof-of-work`; it also supports non-mining uses. Noncryptographic checksums → `data/checksum`. |
 | `crypto/kdf` | Key derivation, whether or not the algorithm is known (PBKDF2 parameters, salt). |
 | `crypto/key/{generate,import,export,exchange,derive,representation}` | Key lifecycle and representation. Bitcoin WIF is a key representation, not a mnemonic. |
-| `crypto/certificate` | Parsing, validating, installing and storing certificates. The file's own signature is `metadata/signed`. |
+| `crypto/certificate` | Parsing, validating, installing and storing certificates. The file's own signature is `metadata/signature`. |
 | `crypto/analysis` | Cryptanalysis observations, such as chosen-plaintext and key-guessing clues, without assuming a specific cipher family, target credential or hostile use. |
 | `crypto/provider` | Provider acquisition and release with no narrower operation; `CryptHashData` is hashing. No remainder bucket. |
 | `crypto/mnemonic` | Seed-phrase wordlists, generation and validation. Not a KDF (BIP-39 separates them). A bare `self.wordlist` is `data/collection`. |
@@ -2359,8 +2359,8 @@ phrasing leaf, leaving 85 there and seven in the credential leaf.
 | `package` | A manifest field or package role (below) | Properties of the distributed component, not its runtime behavior. |
 | `permission` | Declared authority by protected surface (`host`, `clipboard`, `storage`, `network`, …); grant scope and manifest-level profiles combining declared authority or target scope | A hostname without grant context is not a permission; a grant or target profile does not prove API use, injection, interception or theft. Invoking an API is a capability. |
 | `registry` | Package-registry publication records: release history, reach, custody, listing claims | Not the Windows registry (`micro-behaviors/os/registry`). Reputation is not a verdict. |
-| `signed` | `certificate`, `entitlements`, `code-directory`, `platform`, `resource`, `script`, `trust-level` | Signature identifiers and resource manifests are claims or structures; signer names alone do not establish a valid chain. |
-| `vendor` | OS or platform vendor provenance (Apple, Microsoft, NetBSD, GNU) | Certificate fields are `signed`; manifest vendor fields are `package`; third-party products are `well-known/`. |
+| `signature` | Engine trust states `verified`, `unverified`, `self-signed`, `invalid`; YAML `absent`, `ad-hoc`, `claim`, `certificate`, `entitlements`, `code-directory`, `resource`, `script` | Only `verified/` proves a signer, and it holds engine findings only. Every other path is a claim or a structure; signer names alone do not establish a valid chain. |
+| `vendor` | OS or platform vendor provenance (Apple, Microsoft, NetBSD, GNU) | Certificate fields are `signature`; manifest vendor fields are `package`; third-party products are `well-known/`. |
 
 `package/description/marketing` records generic promotional wording and its
 co-occurrence with package fields; `function` records claims of a specific
@@ -2607,7 +2607,7 @@ command runs.
 
 Raw signed-entitlement keys are emitted as runtime facts under
 `metadata/entitlement/<category>::<key>`. The rules in
-`metadata/signed/entitlements` interpret those facts into named properties;
+`metadata/signature/entitlements` interpret those facts into named properties;
 the raw entitlement IDs are engine output, not duplicate YAML declarations.
 
 `metadata/package/testing/presence/suite` records names and paths associated
@@ -2682,7 +2682,7 @@ in `filename`; an extension-only observation belongs in `file/extension`.
 Parsed container-kind declarations (cabinet, Phar) belong in `file/format`,
 signature bytes in `file/magic`, and bytes specifically in a PE resource in
 `binary/resource`. Phar signature presence and scheme belong in
-`signed/trust-level`; they establish neither signature validity nor a trusted
+`signature/certificate/format`; they establish neither signature validity nor a trusted
 publisher. A member called `BNDLTOOL.RSA` remains a member-name observation.
 Within `binary/resource`, `label` records generic tokens, names and captions
 observed in the resource section; a text match there does not establish a
@@ -2904,15 +2904,15 @@ gates; do not silently include additional formats. Partial extraction is a
 
 | Matcher evidence | Home | Does not establish |
 |---|---|---|
-| Leaf signer distinguished-name fields | `signed/certificate/subject` | Product identity |
-| Issuer distinguished-name text | `signed/certificate/issuer/name` | That the named authority issued it |
-| Exact verified-chain thumbprint of a Microsoft code-signing CA | `signed/certificate/issuer/microsoft` | Microsoft authorship when the CA attests third parties |
-| Exact thumbprint of a Microsoft third-party component CA | `signed/certificate/issuer/attestation` | Microsoft platform provenance |
-| Presence, length or shape of chain entries | `signed/certificate/issuer/chain` | Any authority's identity |
-| Verification, digest integrity, nested signatures | `signed/certificate/signature` | Signer identity |
-| EKU, key usage, other constraints | `signed/certificate/security` | That the signature verifies |
+| Leaf signer distinguished-name fields | `signature/certificate/subject` | Product identity |
+| Issuer distinguished-name text | `signature/certificate/issuer/name` | That the named authority issued it |
+| Exact verified-chain thumbprint of a Microsoft code-signing CA | `signature/certificate/issuer/microsoft` | Microsoft authorship when the CA attests third parties |
+| Exact thumbprint of a Microsoft third-party component CA | `signature/certificate/issuer/attestation` | Microsoft platform provenance |
+| Presence, length or shape of chain entries | `signature/certificate/issuer/chain` | Any authority's identity |
+| Verification, digest integrity, nested signatures | `signature/certificate/integrity` | Signer identity |
+| EKU, key usage, other constraints | `signature/certificate/security` | That the signature verifies |
 
-**Script-signature markers** belong in `signed/script`. A `SIG` begin/end
+**Script-signature markers** belong in `signature/script`. A `SIG` begin/end
 marker is evidence of marker text only; it does not establish signature
 validity, signer identity, or trust. Keep it separate from certificate
 verification and signer fields.
@@ -2930,7 +2930,7 @@ certificate is `micro-behaviors/crypto/certificate`.
 | `build` vs `lang` | Orchestration (cmake, docker, CI) → `build`; language toolchain → `lang`. |
 | `build` vs `package` | Transform output → `build`; project hygiene → the `package` subject (`documentation`, `testing`, `config`, `logging`, `error-handling`). |
 | `package` vs `permission` | Ordinary fields and members → `package`; declared authority (permissions, host grants, OAuth scopes, content-script scope) → `permission`. |
-| `signed` vs `vendor` | Signature chain or entitlements → `signed`; vendor identified by strings or resources → `vendor`. |
+| `signature` vs `vendor` | Signature chain or entitlements → `signature`; vendor identified by strings or resources → `vendor`. |
 
 Engine-emitted IDs (imports, permissions, signers, browser-extension host
 grants) keep their producer schema. Reference them; never shadow them with YAML

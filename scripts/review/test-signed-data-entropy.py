@@ -11,7 +11,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 CLEAVE = ROOT.parent / 'cleave/target/release/cleave'
-RULE = 'metadata/signed/certificate/signature::signer-verified-pe-high-entropy-data-section'
+RULE = 'metadata/signature/certificate/integrity::signer-verified-pe-high-entropy-data-section'
 
 with tempfile.TemporaryDirectory(prefix='signed-data-entropy-') as temp:
     work = Path(temp)

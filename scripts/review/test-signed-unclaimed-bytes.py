@@ -11,8 +11,8 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 CLEAVE = ROOT.parent / 'cleave/target/release/cleave'
-PROFILE = 'metadata/signed/certificate/signature::signer-checksum-mismatch-unclaimed-bytes'
-INTEGRITY = 'metadata/signed/certificate/signature::pe-signature-verified'
+PROFILE = 'metadata/signature/certificate/integrity::signer-checksum-mismatch-unclaimed-bytes'
+INTEGRITY = 'metadata/signature/certificate/integrity::pe-signature-verified'
 
 with tempfile.TemporaryDirectory(prefix='signed-extra-bytes-') as temp:
     work = Path(temp)

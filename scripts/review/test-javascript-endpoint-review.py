@@ -98,7 +98,7 @@ def main():
         for name in ['quoted-callback.js', 'generic-builder.js', 'schema-only.js', 'ordinary-dns.js', 'quiet-inventory.js', 'deferred-dns.js', 'fake-dns.js', 'quoted-dns.js']:
             assert not ids(name, 5), (name, ids(name, 5))
         if args.node_sample:
-            signature = 'metadata/signed/certificate/signature::pe-signature-digest-mismatch'
+            signature = 'metadata/signature/certificate/integrity::pe-signature-digest-mismatch'
             gui = 'well-known/lib/runtime/scripted/node-runtime::gui-runtime-signed-image-mismatch'
             assert {signature, gui} <= ids(args.node_sample.name, 4)
             assert not {signature, gui} & ids(args.node_reference.name)

@@ -1181,9 +1181,21 @@ composite_rules:
     all:
       - id: metadata/binary/layout::is-executable
     unless:
-      - id: metadata/signed/platform::apple
-      - id: metadata/signed/platform::microsoft
+      - id: metadata/signature/verified/platform::apple
+      - id: metadata/signature/verified/platform::microsoft
 ```
+
+**Signatures in suppressions:** cite only `metadata/signature/verified/`. The
+engine files every signer finding under the trust its signature earned --
+`verified/`, `unverified/`, `self-signed/`, `invalid/<reason>/` -- and only
+`verified/` proves who signed. A self-signed "Microsoft Corporation" names
+whoever made the certificate, so the `unverified-signature-suppressor`
+validator rejects any other `metadata/signature/` path in `unless:` or
+`downgrade:`. A detection leg that names a signer whatever its signature
+proves (a masquerade, a stolen certificate) lists the states it wants, or
+cites the shared `metadata/signature/claim/` composite for that name.
+`verified/` holds engine findings only; vendor context built on a verified
+signature lives with the vendor under `well-known/`.
 
 `none:` is also unavailable inside `downgrade:`. When a downgrade needs a negative guard, define the positive context as a separate rule with `unless:` and reference that context from `downgrade:`; putting `unless:` on the original rule would suppress the finding itself.
 
@@ -1264,7 +1276,7 @@ same values as composite `scope:` (`archive`, `outer`, `package`):
     downgrade:
       scope: archive          # see findings from anywhere in the same archive
       any:
-        - id: metadata/signed/platform/
+        - id: metadata/signature/verified/
 ```
 
 Inline `type: path` conditions in a container-scoped downgrade still match
@@ -1376,7 +1388,7 @@ traits:
       exact: "ptrace"
     downgrade:                           # → notable if signed
       any:
-        - id: metadata/signed/platform::apple
+        - id: metadata/signature/verified/platform::apple
         - id: metadata/quality::versioned
 
 composite_rules:
