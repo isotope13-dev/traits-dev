@@ -1,0 +1,65 @@
+# Native x64 launch that sets CREATE_NO_WINDOW (0x08000000) in the creation
+# flags passed to CreateProcessA/W: the child console is never shown. Common
+# for helpers that shell out quietly, so this is a capability, not intent.
+# Resolve the import call through the section mapping and import table so a
+# flags store before an unrelated call does not count. Both the optimized
+# `call [rip+imp]` form and the unoptimized `mov rax,[rip+imp]; call rax`
+# form are covered; the flag bit is a Windows ABI constant.
+defaults:
+  platforms: [windows]
+  for: [pe, dll]
+  arch: [x86-64]
+  crit: notable
+  conf: 0.95
+traits:
+  - id: x64-createprocess-no-window
+    desc: x64 CreateProcess sets CREATE_NO_WINDOW
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule x64_createprocess_no_window {
+          strings:
+            $direct = { C7 44 24 28 ?? ?? ?? ?? [0-48] FF 15 ?? ?? ?? ?? }
+            $viarax = { C7 44 24 28 ?? ?? ?? ?? [0-48] 48 8B 05 ?? ?? ?? ?? FF D0 }
+            $overwrite = { (C7|89) ?? 24 28 }
+          condition:
+            pe.is_64bit() and (
+              for any i in (1..#direct) : (
+                uint32(@direct[i] + 4) & 0x08000000 != 0 and
+                not for any j in (1..#overwrite) : (
+                  @overwrite[j] >= @direct[i] + 8 and
+                  @overwrite[j] < @direct[i] + !direct[i] - 6
+                ) and
+                for any s in pe.sections : (
+                  s.characteristics & 0x20000000 != 0 and
+                  @direct[i] >= s.raw_data_offset and
+                  @direct[i] + !direct[i] <= s.raw_data_offset + s.raw_data_size and
+                  (
+                    s.virtual_address + @direct[i] + !direct[i] - s.raw_data_offset +
+                      int32(@direct[i] + !direct[i] - 4) == pe.import_rva("kernel32.dll", "CreateProcessA") or
+                    s.virtual_address + @direct[i] + !direct[i] - s.raw_data_offset +
+                      int32(@direct[i] + !direct[i] - 4) == pe.import_rva("kernel32.dll", "CreateProcessW")
+                  )
+                )
+              ) or
+              for any i in (1..#viarax) : (
+                uint32(@viarax[i] + 4) & 0x08000000 != 0 and
+                not for any j in (1..#overwrite) : (
+                  @overwrite[j] >= @viarax[i] + 8 and
+                  @overwrite[j] < @viarax[i] + !viarax[i] - 9
+                ) and
+                for any s in pe.sections : (
+                  s.characteristics & 0x20000000 != 0 and
+                  @viarax[i] >= s.raw_data_offset and
+                  @viarax[i] + !viarax[i] <= s.raw_data_offset + s.raw_data_size and
+                  (
+                    s.virtual_address + @viarax[i] + !viarax[i] - 2 - s.raw_data_offset +
+                      int32(@viarax[i] + !viarax[i] - 6) == pe.import_rva("kernel32.dll", "CreateProcessA") or
+                    s.virtual_address + @viarax[i] + !viarax[i] - 2 - s.raw_data_offset +
+                      int32(@viarax[i] + !viarax[i] - 6) == pe.import_rva("kernel32.dll", "CreateProcessW")
+                  )
+                )
+              )
+            )
+        }

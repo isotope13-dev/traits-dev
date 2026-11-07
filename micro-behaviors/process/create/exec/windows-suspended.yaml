@@ -31,7 +31,8 @@ traits:
   # Native call facts have no arguments. A hex pattern plus an API import
   # cannot establish which API receives the flags. Resolve the RIP-relative
   # call through the section mapping and import table instead. The constant
-  # is a required Windows ABI bit, not a campaign constant.
+  # is a required Windows ABI bit, not a campaign constant. Both the optimized
+  # `call [rip+imp]` and unoptimized `mov rax,[rip+imp]; call rax` forms count.
   - id: x64-createprocess-suspended
     desc: x64 CreateProcess sets suspended creation bit
     for: [pe, dll]
@@ -42,25 +43,45 @@ traits:
         import "pe"
         rule x64_createprocess_suspended {
           strings:
-            $launch = { C7 44 24 28 ?? ?? ?? ?? [0-24] FF 15 ?? ?? ?? ?? }
+            $launch = { C7 44 24 28 ?? ?? ?? ?? [0-48] FF 15 ?? ?? ?? ?? }
+            $viarax = { C7 44 24 28 ?? ?? ?? ?? [0-48] 48 8B 05 ?? ?? ?? ?? FF D0 }
             $overwrite = { (C7|89) ?? 24 28 }
           condition:
-            pe.is_64bit() and $launch and
-            for any i in (1..#launch) : (
-              uint32(@launch[i] + 4) & 4 != 0 and
-              not for any j in (1..#overwrite) : (
-                @overwrite[j] >= @launch[i] + 8 and
-                @overwrite[j] < @launch[i] + !launch[i] - 6
-              ) and
-              for any s in pe.sections : (
-                s.characteristics & 0x20000000 != 0 and
-                @launch[i] >= s.raw_data_offset and
-                @launch[i] + !launch[i] <= s.raw_data_offset + s.raw_data_size and
-                (
-                  s.virtual_address + @launch[i] + !launch[i] - s.raw_data_offset +
-                    int32(@launch[i] + !launch[i] - 4) == pe.import_rva("kernel32.dll", "CreateProcessW") or
-                  s.virtual_address + @launch[i] + !launch[i] - s.raw_data_offset +
-                    int32(@launch[i] + !launch[i] - 4) == pe.import_rva("kernel32.dll", "CreateProcessA")
+            pe.is_64bit() and (
+              for any i in (1..#launch) : (
+                uint32(@launch[i] + 4) & 4 != 0 and
+                not for any j in (1..#overwrite) : (
+                  @overwrite[j] >= @launch[i] + 8 and
+                  @overwrite[j] < @launch[i] + !launch[i] - 6
+                ) and
+                for any s in pe.sections : (
+                  s.characteristics & 0x20000000 != 0 and
+                  @launch[i] >= s.raw_data_offset and
+                  @launch[i] + !launch[i] <= s.raw_data_offset + s.raw_data_size and
+                  (
+                    s.virtual_address + @launch[i] + !launch[i] - s.raw_data_offset +
+                      int32(@launch[i] + !launch[i] - 4) == pe.import_rva("kernel32.dll", "CreateProcessW") or
+                    s.virtual_address + @launch[i] + !launch[i] - s.raw_data_offset +
+                      int32(@launch[i] + !launch[i] - 4) == pe.import_rva("kernel32.dll", "CreateProcessA")
+                  )
+                )
+              ) or
+              for any i in (1..#viarax) : (
+                uint32(@viarax[i] + 4) & 4 != 0 and
+                not for any j in (1..#overwrite) : (
+                  @overwrite[j] >= @viarax[i] + 8 and
+                  @overwrite[j] < @viarax[i] + !viarax[i] - 9
+                ) and
+                for any s in pe.sections : (
+                  s.characteristics & 0x20000000 != 0 and
+                  @viarax[i] >= s.raw_data_offset and
+                  @viarax[i] + !viarax[i] <= s.raw_data_offset + s.raw_data_size and
+                  (
+                    s.virtual_address + @viarax[i] + !viarax[i] - 2 - s.raw_data_offset +
+                      int32(@viarax[i] + !viarax[i] - 6) == pe.import_rva("kernel32.dll", "CreateProcessW") or
+                    s.virtual_address + @viarax[i] + !viarax[i] - 2 - s.raw_data_offset +
+                      int32(@viarax[i] + !viarax[i] - 6) == pe.import_rva("kernel32.dll", "CreateProcessA")
+                  )
                 )
               )
             )
