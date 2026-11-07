@@ -1,0 +1,228 @@
+# RSS/Atom feeds syndicate a site's post HTML, either raw inside CDATA or
+# entity-escaped (`&lt;script&gt;`, `&quot;`, `&#39;`). The engine types a
+# feed as xml, so the HTML-scoped markup atoms never see that post body.
+# These atoms read feed-carried markup in both spellings: `(<|&lt;)` for a
+# tag opener, `(>|&gt;)` for its close and `[&#039quot;"']{1,6}` for an
+# attribute quote. Inside a tag, `([^<>&]|&[^gl])` keeps an escaped match
+# from running past `&gt;` into the next element. Each atom records a
+# structural property of the feed or of the markup it carries; the
+# injection claims live in objectives/.
+defaults:
+  platforms: [windows, unix]
+  for: [xml]
+  conf: 0.9
+
+traits:
+  # The document element of an RSS 2.0, Atom or RSS 1.0 (RDF) feed, near
+  # the start of the file. Identifies the artifact as a syndication feed.
+  - id: syndication-feed-root
+    desc: RSS or Atom feed document root
+    crit: baseline
+    if:
+      type: text
+      regex: '<(rss\b[^<>]{0,300}\bversion=|feed\b[^<>]{0,300}/2005/Atom|rdf:RDF\b[^<>]{0,300}/rss/)'
+      offset_range: [0, 4096]
+
+  - id: wordpress-feed-generator
+    desc: Feed declares WordPress as generator
+    crit: baseline
+    if:
+      type: text
+      regex: '<generator>https?://wordpress\.org/\?v=\d'
+
+  # WordPress versions enqueued assets (`?ver=1.2.3`) and serves them from
+  # wp-includes/ or wp-content/ paths. A remote script whose source is a
+  # single file at the root of a host, carrying that same `?ver=` suffix, is
+  # dressed as an enqueued asset without being one. Post bodies do not carry
+  # enqueued assets at all; shortcode output that does keeps the wp-content
+  # path and is outside this pattern.
+  - id: feed-markup-root-path-versioned-script
+    desc: Feed markup loads root-path ?ver= script
+    crit: suspicious
+    if:
+      type: text
+      regex: '[<;]script[^<>]{0,99}?src=[&#039quot;"'']{1,6}https?://[\w.-]+/[\w-]{1,32}\.js\?ver=\d+\.\d'
+
+  # A remote script element placed straight after sentence punctuation:
+  # the element is spliced into the prose of a stored post. Editor and
+  # oEmbed embeds (tweet/gist/Instagram loaders) follow their own
+  # blockquote or container markup instead.
+  - id: feed-markup-sentence-spliced-remote-script
+    desc: Remote script spliced after post sentence
+    crit: suspicious
+    if:
+      type: text
+      regex: '\p{L}[.!?](<|&lt;)script\b[^<>]{0,99}?\bsrc=[&#039quot;"'']{1,6}https?://'
+
+  # A remote script element opening directly after another script closes.
+  - id: feed-markup-chained-remote-script
+    desc: Remote script directly follows another script
+    crit: notable
+    if:
+      type: text
+      regex: '/script(>|&gt;)\s?(<|&lt;)script\b[^<>]{0,99}?\bsrc=[&#039quot;"'']{1,6}https?://'
+
+  # Markup past the closing tag of the feed's document element. A feed ends
+  # at `</rss>` / `</feed>` / `</rdf:RDF>`; a script there was appended to
+  # the response, not authored in the feed.
+  - id: feed-root-close-trailing-script
+    desc: Script element after feed document end
+    crit: notable
+    if:
+      type: text
+      regex: '</(rss|feed|rdf:RDF)>\s*<script\b'
+
+  - id: feed-markup-iframe-height-one
+    desc: Feed iframe is one pixel high
+    crit: notable
+    if:
+      type: text
+      regex: '(<|&lt;)iframe\b([^<>&]|&[^gl]){0,300}?\bheight=[&#039quot;"'']{0,6}[01](px)?[^\w.%]'
+
+  - id: feed-markup-iframe-width-one
+    desc: Feed iframe is one pixel wide
+    crit: notable
+    if:
+      type: text
+      regex: '(<|&lt;)iframe\b([^<>&]|&[^gl]){0,300}?\bwidth=[&#039quot;"'']{0,6}[01](px)?[^\w.%]'
+
+  - id: feed-markup-remote-iframe-source
+    desc: Remote iframe source in feed markup
+    crit: notable
+    if:
+      type: text
+      regex: '(<|&lt;)iframe\b([^<>&]|&[^gl]){0,300}?\bsrc=[&#039quot;"'']{0,6}(https?:)?//\w'
+
+  # An empty, id-only div placed immediately before an inline (src-less)
+  # script element: an anchor node the script can address. Raw (CDATA) and
+  # entity-escaped spellings.
+  - id: empty-anchor-div-inline-script-raw
+    desc: Empty id div precedes inline script
+    crit: notable
+    if:
+      type: text
+      regex: '<div id=["''][\w-]{4,48}["'']></div>\s{0,4}<script>'
+
+  - id: empty-anchor-div-inline-script-escaped
+    desc: Escaped empty id div precedes inline script
+    crit: notable
+    if:
+      type: text
+      regex: 'div id=&(quot|#0?39);[\w-]{4,48}&(quot|#0?39);&gt;&lt;/div&gt;\s{0,4}&lt;script&gt;'
+
+  # Script statements carried in feed post markup (raw or escaped quotes)
+  # that together keep a new, fully transparent iframe under the pointer.
+  - id: feed-script-creates-iframe
+    desc: Feed-carried script creates an iframe
+    crit: notable
+    if:
+      type: text
+      regex: 'createElement\([&#039quot;"'']{1,6}iframe[&#039quot;"'']{1,6}\)'
+
+  - id: feed-script-zero-opacity-style
+    desc: Feed-carried script sets opacity to zero
+    crit: notable
+    if:
+      type: text
+      regex: '\.style\.opacity\s*=\s*[&#039quot;"'']{0,6}0[&#039quot;"''\s;]'
+
+  - id: feed-script-mousemove-listener
+    desc: Feed-carried script listens for mousemove
+    crit: notable
+    if:
+      type: text
+      regex: 'addEventListener\([&#039quot;"'']{1,6}mousemove'
+
+  - id: feed-script-coordinate-offset-style
+    desc: Feed script offsets element by coordinates
+    crit: notable
+    if:
+      type: text
+      regex: '\.style\.(top|left)\s*=\s*\(\s*\w+\s*[-+]\s*\d+\s*\)\s*\+\s*[&#039quot;"'']{1,6}px'
+
+  # schema.org rating microdata written as the literal line "Rating N
+  # stars, based on N comments" (ratingValue and reviewCount spans).
+  - id: rating-value-snippet-markup
+    desc: Rating label wraps schema.org ratingValue
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      regex: '(>|&gt;)\s*Rating\s*(<|&lt;)span itemprop=[&#039quot;"'']{1,6}ratingValue'
+
+  - id: stars-based-on-review-count-markup
+    desc: Star line text wraps reviewCount
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      regex: 'stars, based on (<|&lt;)span itemprop=[&#039quot;"'']{1,6}reviewCount'
+
+  # Feed item titles phrased as purchase queries ("X Canada Buy Online").
+  - id: buy-online-item-title
+    desc: Feed item title is a buy-online query
+    crit: notable
+    conf: 0.75
+    if:
+      type: text
+      regex: '(?i)<title>[^<]{0,80}\b(buy|order|purchase)\b[^<]{0,40}\bonline\b'
+
+composite_rules:
+  # Both size attributes and the remote source inside one iframe tag.
+  - id: feed-markup-one-pixel-remote-iframe
+    desc: One-pixel remote iframe in feed markup
+    crit: suspicious
+    conf: 0.9
+    near_bytes: 300
+    all:
+      - id: feed-markup-iframe-height-one
+      - id: feed-markup-iframe-width-one
+      - id: feed-markup-remote-iframe-source
+
+  - id: feed-markup-empty-anchor-div-inline-script
+    desc: Empty anchor div then inline script
+    crit: notable
+    any:
+      - id: empty-anchor-div-inline-script-raw
+      - id: empty-anchor-div-inline-script-escaped
+
+  # An inline script appended after the feed's closing root tag that
+  # fetches eval by name.
+  - id: feed-root-trailing-eval-script
+    desc: Eval-lookup script appended after feed end
+    crit: suspicious
+    conf: 0.9
+    near_bytes: 4000
+    all:
+      - id: feed-root-close-trailing-script
+      - id: micro-behaviors/process/interpreter/eval/indirect::bracket-quoted-eval-lookup
+
+  - id: feed-script-transparent-iframe-tracks-pointer
+    desc: Transparent new iframe follows the pointer
+    crit: suspicious
+    conf: 0.92
+    near_bytes: 3000
+    all:
+      - id: feed-script-creates-iframe
+      - id: feed-script-zero-opacity-style
+      - id: feed-script-mousemove-listener
+      - id: feed-script-coordinate-offset-style
+
+  - id: rating-stars-review-count-line
+    desc: Star-rating line built from rating microdata
+    crit: notable
+    conf: 0.85
+    near_bytes: 300
+    all:
+      - id: rating-value-snippet-markup
+      - id: stars-based-on-review-count-markup
+
+  # Search-result bait in feed items: the star-rating line or titles
+  # written as buy-online queries.
+  - id: feed-search-bait-presentation
+    desc: Star-rating line or buy-online item titles
+    crit: notable
+    conf: 0.8
+    any:
+      - id: rating-stars-review-count-line
+      - id: buy-online-item-title
