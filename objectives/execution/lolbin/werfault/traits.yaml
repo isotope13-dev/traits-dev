@@ -1,0 +1,104 @@
+# System binary proxy execution and credential-dump triggering via internal
+# Windows Error Reporting host switches (WerFault.exe / WerFaultSecure.exe) and
+# werui.dll SilentProcessExit entry points.
+# MBC: C0049 (Execution - LoLBins)
+# ATT&CK: T1218 (System Binary Proxy Execution)
+defaults:
+  platforms: [windows]
+  for: [scripts, source, binaries]
+  attack: T1218
+  mbc: C0049
+
+traits:
+  - id: werfault-silent-exit-flags
+    desc: WerFault -s and -e SilentProcessExit flags
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      exclude_comments: true
+      regex: '(?i)(^|[\s"'',])[-/]s([\s"'',].{0,60})?[\s"'',][-/]e[\s"'',=]+\S+'
+
+  - id: werfault-hang-mode-flags
+    desc: WerFault /hc or /h hang-reporting flags
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      exclude_comments: true
+      regex: '(?i)(^|[\s"'',])[-/]hc?([\s"'',].{0,60})?[\s"'',][-/]p[\s"'',=]+\S+'
+
+  - id: werfault-reflection-flags
+    desc: WerFault -pr or -pss reflection flags
+    crit: component
+    conf: 0.9
+    if:
+      type: text
+      exclude_comments: true
+      regex: '(?i)(^|[\s"'',])[-/](pr|pss)([\s"'',].{0,60})?[\s"'',][-/]s[\s"'',=]+\S+'
+
+composite_rules:
+  - id: werfault-silent-exit-switch-invocation
+    desc: Invokes WerFault with internal SilentProcessExit switches (-s and -e)
+    crit: suspicious
+    conf: 0.96
+    near_bytes: 256
+    all:
+      - id: well-known/app/system/microsoft/error-reporting::werfault-executable-reference
+      - id: werfault-silent-exit-flags
+    unless:
+      - id: well-known/app/system/microsoft/platform::microsoft-signed-system-component-context
+      - id: metadata/vendor/identity::microsoft-corp-versioninfo
+      - id: metadata/file/format/log::windows-event-csv-records
+
+  - id: werfault-hang-mode-invocation
+    desc: Invokes WerFault with internal hang-reporting switches (/hc or /h and /p)
+    crit: suspicious
+    conf: 0.95
+    near_bytes: 256
+    all:
+      - id: well-known/app/system/microsoft/error-reporting::werfault-executable-reference
+      - id: werfault-hang-mode-flags
+    unless:
+      - id: well-known/app/system/microsoft/platform::microsoft-signed-system-component-context
+      - id: metadata/vendor/identity::microsoft-corp-versioninfo
+      - id: metadata/file/format/log::windows-event-csv-records
+
+  - id: werfault-reflection-switch-invocation
+    desc: Invokes WerFault with internal reflection or snapshot switches (-pr/-pss)
+    crit: suspicious
+    conf: 0.94
+    near_bytes: 256
+    all:
+      - id: well-known/app/system/microsoft/error-reporting::werfault-executable-reference
+      - id: werfault-reflection-flags
+    unless:
+      - id: well-known/app/system/microsoft/platform::microsoft-signed-system-component-context
+      - id: metadata/vendor/identity::microsoft-corp-versioninfo
+      - id: metadata/file/format/log::windows-event-csv-records
+
+  - id: werfault-silent-exit-lsass-proxy
+    desc: Triggers Windows Error Reporting SilentProcessExit to dump LSASS
+    crit: hostile
+    conf: 0.98
+    attack: T1218,T1003.001
+    all:
+      - id: micro-behaviors/process/debug/dump::lsass-process-or-query-target
+    any:
+      - id: werfault-silent-exit-switch-invocation
+      - id: micro-behaviors/process/debug/dump::wer-silent-process-exit-api
+    unless:
+      - id: well-known/app/system/microsoft/platform::microsoft-signed-system-component-context
+      - id: metadata/file/format/log::windows-event-csv-records
+
+  - id: werfault-hang-debugger-proxy-exec
+    desc: Registers WER Hangs Debugger and invokes WerFault hang mode to execute it
+    crit: hostile
+    conf: 0.98
+    attack: T1218,T1546
+    all:
+      - id: micro-behaviors/os/registry/process/write::wer-hangs-debugger-write
+      - id: werfault-hang-mode-invocation
+    unless:
+      - id: well-known/app/system/microsoft/platform::microsoft-signed-system-component-context
+      - id: metadata/file/format/log::windows-event-csv-records

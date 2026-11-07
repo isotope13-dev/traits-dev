@@ -1,0 +1,86 @@
+# Windows Error Reporting Hangs\Debugger persistence and concealed machine-hive
+# PowerShell script stagers. Legitimate JIT debuggers register a system binary
+# such as vsjitdebugger.exe under System32; pointing Hangs\Debugger at a script
+# interpreter/LOLBin or user-writable path establishes arbitrary code execution
+# whenever WerFault processes an application hang.
+defaults:
+  platforms: [windows]
+  for: [binaries, scripts, source, reg]
+  attack: T1546
+
+traits:
+  - id: alt-script-host-token
+    desc: Script host or regsvr32 binary token
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      exclude_comments: true
+      regex: '(?i)\b(mshta|wscript|cscript|regsvr32)(\.exe)?\b'
+
+  - id: public-or-programdata-staging-path
+    desc: Users Public, ProgramData, or Temp path
+    crit: component
+    conf: 0.86
+    if:
+      type: text
+      exclude_comments: true
+      regex: '(?i)[\\/]+(Users[\\/]+Public|ProgramData|Windows[\\/]+Temp)[\\/]+'
+
+  - id: machine-hive-key-prefix
+    desc: HKLM or HKEY_LOCAL_MACHINE key prefix
+    crit: component
+    conf: 0.85
+    if:
+      type: text
+      exclude_comments: true
+      regex: '(?i)\b(HKLM|HKEY_LOCAL_MACHINE)(:|\\)'
+
+composite_rules:
+  - id: user-writable-staging-surface
+    desc: References a user-writable Windows staging directory
+    crit: component
+    conf: 0.86
+    any:
+      - id: public-or-programdata-staging-path
+      - id: micro-behaviors/fs/path/app-data/platform::windows-appdata-directory-path
+      - id: micro-behaviors/fs/path/app-data/platform::windows-writable-user-path-reference
+
+  - id: debugger-script-or-staging-target
+    desc: Script host, LOLBin, or user-writable staging path
+    crit: component
+    conf: 0.88
+    any:
+      - id: alt-script-host-token
+      - id: user-writable-staging-surface
+      - id: micro-behaviors/fs/path/application/interpreter::powershell-executable-token
+      - id: micro-behaviors/fs/path/application/interpreter::cmd-exe-image-name
+      - id: well-known/app/system/microsoft/rundll32::rundll32-command-reference
+      - id: metadata/lang/source/syntax/command/launch::rundll32-command-syntax-reference
+
+  - id: wer-hangs-debugger-payload-persistence
+    desc: Registers script host, LOLBin, or staging path as WER Hangs Debugger
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: micro-behaviors/os/registry/process/write::wer-hangs-debugger-write
+      - id: debugger-script-or-staging-target
+    unless:
+      - id: metadata/file/format/log::windows-event-csv-records
+
+  - id: machine-registry-hidden-bypass-script-stager
+    desc: Persists hidden policy-bypassed PowerShell stager in HKLM
+    crit: hostile
+    conf: 0.97
+    attack: T1547,T1059.001,T1564.003
+    all:
+      - id: machine-hive-key-prefix
+      - id: micro-behaviors/os/registry/process/write::registry-mutation-surface
+      - id: user-writable-staging-surface
+    any:
+      - id: objectives/evasion/security-bypass/policy/execution::batch-concealed-policy-override-call
+      - id: objectives/evasion/security-bypass/policy/execution::pe-concealed-policy-override-profile
+      - id: micro-behaviors/process/argument/visibility::powershell-bypass-file-hidden-flags
+    unless:
+      - id: metadata/file/format/log::windows-event-csv-records
+      - id: metadata/build/msbuild::msbuild-exec-task-text
