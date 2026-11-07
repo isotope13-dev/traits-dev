@@ -1,0 +1,98 @@
+# uFile / uFiler pay-per-install download wrappers (Russian file-sharing and
+# warez sites, 2017+).
+#
+# Instead of the advertised file, the download is a small MessagePack
+# ".ufile" descriptor plus a note telling the reader to install the uFiler
+# download manager to open it. The descriptor carries the real directUrl and
+# the referring webmaster's partner/flow IDs, so each install of the bundling
+# client is credited to an affiliate. Usual bait: cracks and activators.
+defaults:
+  platforms: [windows]
+  conf: 0.92
+  attack: T1204.002,T1105
+
+traits:
+  - id: ufile-descriptor-header
+    desc: uFile download descriptor (MessagePack "uFile/" header)
+    crit: notable
+    for: [data]
+    if:
+      type: yara
+      source: |
+        rule ufile_descriptor_header {
+          strings:
+            $hdr = { A9 75 46 69 6C 65 2F ?? 2E ?? }
+            $id = { A7 75 46 69 6C 65 49 64 }
+          condition:
+            $hdr at 0 and $id in (0..4096)
+        }
+
+  # Per-webmaster attribution: who gets paid when the client is installed.
+  - id: ufile-affiliate-distribution-fields
+    desc: Download descriptor records affiliate channel, flow and webmaster IDs
+    crit: notable
+    for: [data]
+    if:
+      type: yara
+      source: |
+        rule ufile_affiliate_distribution_fields {
+          strings:
+            $channel = "distributionChannel"
+            $flow = "distributionFlowId"
+            $wm = "distributionWmId"
+          condition:
+            all of them
+        }
+
+  - id: ufile-wrapped-license-activator
+    desc: Download descriptor wraps a Windows/Office license activator
+    crit: notable
+    for: [data]
+    if:
+      type: yara
+      source: |
+        rule ufile_wrapped_license_activator {
+          strings:
+            $a = /KMS[ _-]?Auto/ nocase
+            $b = /KMS[ _-]?pico/ nocase
+            $c = /KMS[ _-]?Tools/ nocase
+            $d = /Re-?Loader[ _-]Activator/ nocase
+          condition:
+            any of them
+        }
+
+  # The companion note: the file needs a particular downloader to open.
+  - id: ufiler-client-install-note
+    desc: Note tells the reader to install the uFiler client to open a .ufile download
+    crit: notable
+    for: [text]
+    if:
+      type: text
+      regex: '(?is)\.ufile.{0,600}ufiler(?:\.pro)?|ufiler(?:\.pro)?.{0,600}\.ufile'
+
+composite_rules:
+  # Named unwanted-software family: suspicious, never hostile.
+  - id: ufile-affiliate-download-stub
+    desc: uFile pay-per-install download stub with affiliate attribution
+    crit: suspicious
+    for: [data]
+    all:
+      - id: ufile-descriptor-header
+      - id: ufile-affiliate-distribution-fields
+
+  - id: ufile-activator-bait
+    desc: uFile pay-per-install stub baited with a license activator
+    crit: suspicious
+    for: [data]
+    all:
+      - id: ufile-descriptor-header
+      - id: ufile-wrapped-license-activator
+
+  - id: ufile-bundle-with-client-install-note
+    desc: Archive ships a uFile stub alongside instructions to install its downloader
+    crit: suspicious
+    for: [zip, 7z, rar, text]
+    scope: outer
+    all:
+      - id: ufiler-client-install-note
+      - id: metadata/archive/layout::archive-few-members
