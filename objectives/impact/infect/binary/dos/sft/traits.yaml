@@ -10,6 +10,27 @@ defaults:
   size_max: 65536
 
 traits:
+  # CMP AH,3Eh; JE/JNE: the INT 21h handler singles out file close.
+  - id: dos-int21-close-intercept
+    desc: Handler tests for DOS file-close service
+    for: [dos_com, static-lib, data]
+    crit: notable
+    conf: 0.8
+    if:
+      type: hex
+      pattern: "80 FC 3E (74|75)"
+
+  # ADD DI,28h; CMP WORD ES:[DI],imm: compares the extension field of a
+  # System File Table entry (offset 28h) to choose which files to touch.
+  - id: dos-sft-extension-compare
+    desc: Compares an SFT entry's file extension
+    for: [dos_com, static-lib, data]
+    crit: notable
+    conf: 0.88
+    if:
+      type: hex
+      pattern: "83 C7 28 26 81 3D ?? ??"
+
   # MOV AX,1220h; INT 2Fh ... MOV AX,1216h; INT 2Fh.
   # AX=1216h reads the JFT index from BL, so that load (MOV BL, ES:[DI])
   # may sit between the MOV and the second INT 2Fh.
@@ -23,7 +44,7 @@ traits:
       type: hex
       pattern: "B8 20 12 CD 2F [0-16] B8 16 12 [0-6] CD 2F"
 
-  # MOV WORD ES:[DI+2],2 or OR BYTE ES:[DI+2],2 - the SFT's open-mode
+  # MOV WORD ES:[DI+2],2 or OR BYTE/WORD ES:[DI+2],2 - the SFT's open-mode
   # read/write bit is forced whether the virus replaces the mode or sets it.
   - id: dos-sft-force-rw
     desc: DOS forces SFT open mode to read/write
@@ -32,7 +53,7 @@ traits:
     conf: 0.85
     if:
       type: hex
-      pattern: "(26 C7 45 02 02 00|26 80 4D 02 02)"
+      pattern: "(26 C7 45 02 02 00|26 80 4D 02 02|26 83 4D 02 02)"
 
 composite_rules:
   - id: dos-sft-exec-infector
@@ -60,3 +81,17 @@ composite_rules:
       - id: dos-sft-lookup
       - id: dos-sft-force-rw
       - id: micro-behaviors/fs/write/file/handle/int21::dos-write-via-farcall
+
+  # The close-hook variant: the handler waits for INT 21h AH=3Eh, resolves
+  # the handle to its SFT entry, picks targets by the entry's extension and
+  # forces the entry writable before appending itself.
+  - id: dos-sft-close-infector
+    for: [dos_com, static-lib, data]
+    desc: DOS close hook infects files chosen through the SFT
+    crit: hostile
+    conf: 0.94
+    all:
+      - id: dos-int21-close-intercept
+      - id: dos-sft-lookup
+      - id: dos-sft-force-rw
+      - id: dos-sft-extension-compare
