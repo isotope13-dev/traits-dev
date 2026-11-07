@@ -1,0 +1,332 @@
+# Windows pipe-to-Winsock and Winsock-to-pipe stream relay capabilities across
+# compiled x86/x86-64 PEs (direct IAT calls, register-hoisted -O2 loops, and
+# multi-threaded bidirectional workers) and C/C++ source code.
+defaults:
+  platforms: [windows]
+  crit: notable
+
+traits:
+  - id: pe-pipe-readfile-to-winsock-send-loop
+    desc: Loop reads handle and sends bytes
+    conf: 0.92
+    for: [pe, dll]
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule pe_pipe_readfile_to_winsock_send_loop {
+          strings:
+            $x64_rot = {
+              45 31 C9 ( FF 15 ?? ?? ?? ?? | FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) | 41 FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) ) [3-18]
+              48 C7 44 24 20 00 00 00 00 [6-30]
+              ( FF 15 ?? ?? ?? ?? | FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) | 41 FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) ) 85 C0 ( 74 ?? | 0F 84 ?? ?? ?? ?? )
+              44 8B ( 44 24 ?? | ( 4? | 5? | 6? | 7? ) ?? | 84 24 ?? ?? ?? ?? | ( 8? | 9? | A? | B? ) ?? ?? ?? ?? ) 45 85 C0 75 ??
+            }
+            $x64_unrot = {
+              48 C7 44 24 20 00 00 00 00 [6-32]
+              ( FF 15 ?? ?? ?? ?? | FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) | 41 FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) ) 85 C0
+              ( 74 ?? | 0F 84 ?? ?? ?? ?? | 0F 95 ?? )
+              [0-54] 45 31 C9 ( FF 15 ?? ?? ?? ?? | FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) | 41 FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) )
+            }
+            $x86_loop = {
+              6A 00 [4-22] ( FF 15 ?? ?? ?? ?? | FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) ) 85 C0
+              ( 74 ?? | 0F 84 ?? ?? ?? ?? | 0F 95 ?? )
+              [0-40] 6A 00 50 [1-12] ( FF 15 ?? ?? ?? ?? | FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) )
+            }
+          condition:
+            for any sec in pe.sections : (
+              sec.characteristics & pe.SECTION_MEM_EXECUTE != 0 and (
+                for any i in (1..#x64_rot) : (
+                  @x64_rot[i] >= sec.raw_data_offset and
+                  @x64_rot[i] < sec.raw_data_offset + sec.raw_data_size
+                ) or
+                for any i in (1..#x64_unrot) : (
+                  @x64_unrot[i] >= sec.raw_data_offset and
+                  @x64_unrot[i] < sec.raw_data_offset + sec.raw_data_size
+                ) or
+                for any i in (1..#x86_loop) : (
+                  @x86_loop[i] >= sec.raw_data_offset and
+                  @x86_loop[i] < sec.raw_data_offset + sec.raw_data_size
+                )
+              )
+            )
+        }
+
+  - id: pe-winsock-recv-to-pipe-writefile-loop
+    desc: Writes received socket bytes to handle
+    conf: 0.92
+    for: [pe, dll]
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule pe_winsock_recv_to_pipe_writefile_loop {
+          strings:
+            $x64 = {
+              45 31 C9 ( FF 15 ?? ?? ?? ?? | FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) | 41 FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) ) 85 C0
+              ( 7E ?? | 0F 8E ?? ?? ?? ?? ) [2-20]
+              48 C7 44 24 20 00 00 00 00 [0-16] 41 89 C0 [0-16]
+              ( FF 15 ?? ?? ?? ?? | FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) | 41 FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) )
+            }
+            $x86 = {
+              6A 00 [4-18] ( FF 15 ?? ?? ?? ?? | FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) ) 85 C0
+              ( 7E ?? | 0F 8E ?? ?? ?? ?? ) 6A 00 [2-10] 50 [1-10]
+              ( FF 15 ?? ?? ?? ?? | FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) )
+            }
+          condition:
+            for any sec in pe.sections : (
+              sec.characteristics & pe.SECTION_MEM_EXECUTE != 0 and (
+                for any i in (1..#x64) : (
+                  @x64[i] >= sec.raw_data_offset and
+                  @x64[i] < sec.raw_data_offset + sec.raw_data_size
+                ) or
+                for any i in (1..#x86) : (
+                  @x86[i] >= sec.raw_data_offset and
+                  @x86[i] < sec.raw_data_offset + sec.raw_data_size
+                )
+              )
+            )
+        }
+
+  - id: pe-startupinfo-direct-winsock-pipe-relay
+    desc: Relays spawned stdio pipe to Winsock
+    conf: 0.96
+    for: [pe, dll]
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule pe_startupinfo_direct_winsock_pipe_relay {
+          strings:
+            $si_x64 = {
+              68 00 00 00 [0-140] C7 ( 00 | ( 40 | 41 | 42 | 43 | 45 | 46 | 47 ) ?? | 44 24 ?? | ( 80 | 81 | 82 | 83 | 85 | 86 | 87 ) ?? ?? ?? ?? | 84 24 ?? ?? ?? ?? ) ( 00 | 01 ) 01 00 00
+            }
+            $si_x86 = {
+              44 00 00 00 [0-165] C7 ( 00 | 05 ?? ?? ?? ?? | ( 40 | 41 | 42 | 43 | 45 | 46 | 47 ) ?? | 44 24 ?? | ( 80 | 81 | 82 | 83 | 85 | 86 | 87 ) ?? ?? ?? ?? | 84 24 ?? ?? ?? ?? ) ( 00 | 01 ) 01 00 00
+            }
+          condition:
+            (
+              pe.machine == pe.MACHINE_AMD64 and
+              for any sec in pe.sections : (
+                sec.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                for any i in (1..#si_x64) : (
+                  @si_x64[i] >= sec.raw_data_offset and
+                  @si_x64[i] + 40 < sec.raw_data_offset + sec.raw_data_size and
+                  for any cp in (@si_x64[i] + 12 .. @si_x64[i] + 680) : (
+                    uint16(cp) == 0x15ff and
+                    (
+                      sec.virtual_address + (cp - sec.raw_data_offset) + 6 + int32(cp + 2) == pe.import_rva("KERNEL32.dll", "CreateProcessA") or
+                      sec.virtual_address + (cp - sec.raw_data_offset) + 6 + int32(cp + 2) == pe.import_rva("KERNEL32.dll", "CreateProcessW")
+                    ) and
+                    for any k in (cp + 6 .. cp + 520) : (
+                      uint16(k) == 0x15ff and
+                      sec.virtual_address + (k - sec.raw_data_offset) + 6 + int32(k + 2) == pe.import_rva("KERNEL32.dll", "ReadFile") and
+                      for any m in (k + 6 .. k + 140) : (
+                        uint16(m) == 0x15ff and
+                        (
+                          sec.virtual_address + (m - sec.raw_data_offset) + 6 + int32(m + 2) == pe.import_rva("WS2_32.dll", "send") or
+                          sec.virtual_address + (m - sec.raw_data_offset) + 6 + int32(m + 2) == pe.import_rva("WS2_32.dll", 19) or
+                          sec.virtual_address + (m - sec.raw_data_offset) + 6 + int32(m + 2) == pe.import_rva("WS2_32.dll", "WSASend") or
+                          sec.virtual_address + (m - sec.raw_data_offset) + 6 + int32(m + 2) == pe.import_rva("WSOCK32.dll", "send") or
+                          sec.virtual_address + (m - sec.raw_data_offset) + 6 + int32(m + 2) == pe.import_rva("WSOCK32.dll", 19)
+                        ) and
+                        for all e in (@si_x64[i] .. m) : (
+                          not (
+                            (uint8(e) == 0x5b or uint8(e) == 0x5d or uint8(e) == 0x5e or uint8(e) == 0x5f or uint8(e) == 0xc9) and
+                            (uint8(e + 1) == 0xc3 or uint8(e + 1) == 0xc2)
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            ) or (
+              pe.machine == pe.MACHINE_I386 and
+              for any sec in pe.sections : (
+                sec.characteristics & pe.SECTION_MEM_EXECUTE != 0 and
+                for any i in (1..#si_x86) : (
+                  @si_x86[i] >= sec.raw_data_offset and
+                  @si_x86[i] + 40 < sec.raw_data_offset + sec.raw_data_size and
+                  for any cp in (@si_x86[i] + 12 .. @si_x86[i] + 720) : (
+                    uint16(cp) == 0x15ff and
+                    (
+                      uint32(cp + 2) == pe.image_base + pe.import_rva("KERNEL32.dll", "CreateProcessA") or
+                      uint32(cp + 2) == pe.image_base + pe.import_rva("KERNEL32.dll", "CreateProcessW")
+                    ) and
+                    for any k in (cp + 6 .. cp + 560) : (
+                      uint16(k) == 0x15ff and
+                      uint32(k + 2) == pe.image_base + pe.import_rva("KERNEL32.dll", "ReadFile") and
+                      for any m in (k + 6 .. k + 140) : (
+                        uint16(m) == 0x15ff and
+                        (
+                          uint32(m + 2) == pe.image_base + pe.import_rva("WS2_32.dll", "send") or
+                          uint32(m + 2) == pe.image_base + pe.import_rva("WS2_32.dll", 19) or
+                          uint32(m + 2) == pe.image_base + pe.import_rva("WS2_32.dll", "WSASend") or
+                          uint32(m + 2) == pe.image_base + pe.import_rva("WSOCK32.dll", "send") or
+                          uint32(m + 2) == pe.image_base + pe.import_rva("WSOCK32.dll", 19)
+                        ) and
+                        for all e in (@si_x86[i] .. m) : (
+                          not (
+                            (uint8(e) == 0x5b or uint8(e) == 0x5d or uint8(e) == 0x5e or uint8(e) == 0x5f or uint8(e) == 0xc9) and
+                            (uint8(e + 1) == 0xc3 or uint8(e + 1) == 0xc2)
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
+
+  - id: pe-startupinfo-indirect-winsock-pipe-relay
+    desc: StartupInfo stdio precedes ReadFile-send loop
+    conf: 0.95
+    for: [pe, dll]
+    if:
+      type: yara
+      source: |
+        import "pe"
+        rule pe_startupinfo_indirect_winsock_pipe_relay {
+          strings:
+            $si_x64 = {
+              68 00 00 00 [0-140] C7 ( 00 | ( 40 | 41 | 42 | 43 | 45 | 46 | 47 ) ?? | 44 24 ?? | ( 80 | 81 | 82 | 83 | 85 | 86 | 87 ) ?? ?? ?? ?? | 84 24 ?? ?? ?? ?? ) ( 00 | 01 ) 01 00 00
+            }
+            $si_x86 = {
+              44 00 00 00 [0-165] C7 ( 00 | 05 ?? ?? ?? ?? | ( 40 | 41 | 42 | 43 | 45 | 46 | 47 ) ?? | 44 24 ?? | ( 80 | 81 | 82 | 83 | 85 | 86 | 87 ) ?? ?? ?? ?? | 84 24 ?? ?? ?? ?? ) ( 00 | 01 ) 01 00 00
+            }
+            $rf_x64_rot = {
+              45 31 C9 ( FF 15 ?? ?? ?? ?? | FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) | 41 FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) ) [3-18]
+              48 C7 44 24 20 00 00 00 00 [6-30]
+              ( FF 15 ?? ?? ?? ?? | FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) | 41 FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) ) 85 C0 ( 74 ?? | 0F 84 ?? ?? ?? ?? )
+              44 8B ( 44 24 ?? | ( 4? | 5? | 6? | 7? ) ?? | 84 24 ?? ?? ?? ?? | ( 8? | 9? | A? | B? ) ?? ?? ?? ?? ) 45 85 C0 75 ??
+            }
+            $rf_x64_unrot = {
+              48 C7 44 24 20 00 00 00 00 [6-32]
+              ( FF 15 ?? ?? ?? ?? | FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) | 41 FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) ) 85 C0
+              ( 74 ?? | 0F 84 ?? ?? ?? ?? | 0F 95 ?? )
+              [0-54] 45 31 C9 ( FF 15 ?? ?? ?? ?? | FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) | 41 FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) )
+            }
+            $rf_x86 = {
+              6A 00 [4-22] ( FF 15 ?? ?? ?? ?? | FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) ) 85 C0
+              ( 74 ?? | 0F 84 ?? ?? ?? ?? | 0F 95 ?? )
+              [0-40] 6A 00 50 [1-12] ( FF 15 ?? ?? ?? ?? | FF ( D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 ) )
+            }
+          condition:
+            for any sec in pe.sections : (
+              sec.characteristics & pe.SECTION_MEM_EXECUTE != 0 and (
+                (
+                  pe.machine == pe.MACHINE_AMD64 and
+                  for any i in (1..#si_x64) : (
+                    @si_x64[i] >= sec.raw_data_offset and
+                    @si_x64[i] < sec.raw_data_offset + sec.raw_data_size and (
+                      for any j in (1..#rf_x64_rot) : (
+                        @rf_x64_rot[j] > @si_x64[i] and @rf_x64_rot[j] <= @si_x64[i] + 480 and
+                        for all e in (@si_x64[i] .. @rf_x64_rot[j]) : (
+                          not (
+                            (uint8(e) == 0x5b or uint8(e) == 0x5d or uint8(e) == 0x5e or uint8(e) == 0x5f or uint8(e) == 0xc9) and
+                            (uint8(e + 1) == 0xc3 or uint8(e + 1) == 0xc2)
+                          )
+                        )
+                      ) or
+                      for any j in (1..#rf_x64_unrot) : (
+                        @rf_x64_unrot[j] > @si_x64[i] and @rf_x64_unrot[j] <= @si_x64[i] + 480 and
+                        for all e in (@si_x64[i] .. @rf_x64_unrot[j]) : (
+                          not (
+                            (uint8(e) == 0x5b or uint8(e) == 0x5d or uint8(e) == 0x5e or uint8(e) == 0x5f or uint8(e) == 0xc9) and
+                            (uint8(e + 1) == 0xc3 or uint8(e + 1) == 0xc2)
+                          )
+                        )
+                      )
+                    )
+                  )
+                ) or (
+                  pe.machine == pe.MACHINE_I386 and
+                  for any i in (1..#si_x86) : (
+                    @si_x86[i] >= sec.raw_data_offset and
+                    @si_x86[i] < sec.raw_data_offset + sec.raw_data_size and
+                    for any j in (1..#rf_x86) : (
+                      @rf_x86[j] > @si_x86[i] and @rf_x86[j] <= @si_x86[i] + 480 and
+                      for all e in (@si_x86[i] .. @rf_x86[j]) : (
+                        not (
+                          (uint8(e) == 0x5b or uint8(e) == 0x5d or uint8(e) == 0x5e or uint8(e) == 0x5f or uint8(e) == 0xc9) and
+                          (uint8(e + 1) == 0xc3 or uint8(e + 1) == 0xc2)
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
+
+  - id: c-same-func-pipe-spawn-and-winsock-send
+    desc: Spawns piped child and sends output
+    conf: 0.96
+    for: [c, cpp]
+    if:
+      type: tree-sitter
+      query: |
+        ((function_definition
+          body: (compound_statement) @body) @evidence
+          (#match? @body "\\bCreatePipe\\s*\\(")
+          (#match? @body "\\bCreateProcess(AsUser)?[AW]?\\s*\\(")
+          (#match? @body "\\bReadFile\\s*\\(")
+          (#match? @body "\\b(WSA)?[Ss]end\\s*\\("))
+
+  - id: c-readfile-to-winsock-send-loop
+    desc: Passes ReadFile buffer to Winsock send
+    conf: 0.92
+    for: [c, cpp]
+    if:
+      type: text
+      exclude_comments: true
+      regex: '\bReadFile\s*\([^;{}]{1,90}\)[\s\S]{0,65}\b(WSA)?[Ss]end\s*\('
+
+  - id: c-winsock-recv-to-writefile-loop
+    desc: Passes Winsock recv buffer to WriteFile
+    conf: 0.92
+    for: [c, cpp]
+    if:
+      type: text
+      exclude_comments: true
+      regex: '\b(WSA)?[Rr]ecv\s*\([^;{}]{1,90}\)[\s\S]{0,65}\bWriteFile\s*\('
+
+composite_rules:
+  - id: pe-bidirectional-winsock-pipe-relay
+    desc: Bidirectional Winsock and handle relay loops
+    conf: 0.95
+    for: [pe, dll]
+    all:
+      - id: pe-pipe-readfile-to-winsock-send-loop
+      - id: pe-winsock-recv-to-pipe-writefile-loop
+
+  - id: pe-winsock-pipe-stream-relay
+    desc: PE relays spawned pipe over Winsock
+    conf: 0.95
+    for: [pe, dll]
+    all:
+      - id: micro-behaviors/fs/read/file/handle::read-file
+    any:
+      - id: pe-startupinfo-direct-winsock-pipe-relay
+      - id: pe-startupinfo-indirect-winsock-pipe-relay
+      - id: pe-bidirectional-winsock-pipe-relay
+
+  - id: c-bidirectional-winsock-pipe-relay
+    desc: Bidirectional Winsock and pipe relay loops
+    conf: 0.95
+    for: [c, cpp]
+    all:
+      - id: c-readfile-to-winsock-send-loop
+      - id: c-winsock-recv-to-writefile-loop
+
+  - id: c-winsock-pipe-stream-relay
+    desc: C/C++ relays child pipe over Winsock
+    conf: 0.96
+    for: [c, cpp]
+    all:
+      - id: c-readfile-to-winsock-send-loop
+    any:
+      - id: c-same-func-pipe-spawn-and-winsock-send
+      - id: c-bidirectional-winsock-pipe-relay
