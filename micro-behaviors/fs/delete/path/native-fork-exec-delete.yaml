@@ -1,0 +1,1017 @@
+# Concurrent fork/exec/delete on a single stage pathname across ELF and Mach-O.
+# Resolves dynamic/static symbol bindings for fork, remove/unlink, and exec*,
+# verifies an immediate conditional split on fork()'s return value without a
+# synchronous wait/waitpid barrier, and proves both arms pass the same first
+# pathname argument (%rdi on x86-64, x0 on AArch64).
+defaults:
+  platforms: [linux, macos]
+  for: [elf, macho]
+  crit: notable
+
+traits:
+  - id: elf-x64-fork-exec-delete-same-path
+    desc: ELF x64 fork runs, deletes same path
+    conf: 0.99
+    platforms: [linux]
+    for: [elf]
+    arch: [x86-64]
+    if:
+      type: yara
+      source: |
+        import "elf"
+        rule elf_x64_fork_exec_delete_same_path {
+          strings:
+            $s_fork = "\x00fork\x00"
+            $s_del1 = "\x00remove\x00"
+            $s_del2 = "\x00unlink\x00"
+            $s_exec = /\x00exec(v|vp|ve|l|lp|le)\x00/
+            $s_wait = /\x00wait(pid|4|id)?\x00/
+            $br = {
+              (
+                85 C0 (74 | 75 | 7E | 7F | 0F 84 | 0F 85 | 0F 8E | 0F 8F) |
+                83 F8 00 (74 | 75 | 7E | 7F | 0F 84 | 0F 85 | 0F 8E | 0F 8F) |
+                89 85 ?? ?? ?? ?? 83 BD ?? ?? ?? ?? 00 (74 | 75 | 7E | 7F | 0F 84 | 0F 85) |
+                89 45 ?? 83 7D ?? 00 (74 | 75 | 7E | 7F | 0F 84 | 0F 85) |
+                89 44 24 ?? 83 7C 24 ?? 00 (74 | 75 | 7E | 7F | 0F 84 | 0F 85)
+              )
+            }
+          condition:
+            uint32(0) == 0x464C457F and
+            elf.machine == elf.EM_X86_64 and
+            $s_fork and ($s_del1 or $s_del2) and $s_exec and
+            for any code in elf.sections : (
+              (code.flags & 0x4) != 0 and code.name == ".text" and
+              with delta = code.address - code.offset : (
+                for any i in (1..#br) : (
+                  @br[i] >= code.offset + 5 and @br[i] + 24 <= code.offset + code.size and
+                  for any jcc_delta in (2, 3, 7, 9, 13) : (
+                    (
+                      (jcc_delta == 2 and uint16(@br[i]) == 0xC085) or
+                      (jcc_delta == 3 and uint16(@br[i]) == 0xF883) or
+                      (jcc_delta == 7 and uint16(@br[i]) == 0x4589 and uint8(@br[i] + 2) == uint8(@br[i] + 5)) or
+                      (jcc_delta == 9 and uint16(@br[i]) == 0x4489 and uint8(@br[i] + 3) == uint8(@br[i] + 7)) or
+                      (jcc_delta == 13 and uint16(@br[i]) == 0x8589 and uint32(@br[i] + 2) == uint32(@br[i] + 8))
+                    ) and
+                    with jcc_off = @br[i] + jcc_delta : (
+                      for any jcc_len in (2, 6) : (
+                        ((jcc_len == 6 and uint8(jcc_off) == 0x0F) or (jcc_len == 2 and uint8(jcc_off) != 0x0F)) and
+                        with arm1_start = jcc_off + jcc_len : (
+                          for any target in (jcc_off + 2 + int8(jcc_off + 1), jcc_off + 6 + int32(jcc_off + 2)) : (
+                            (
+                              (jcc_len == 2 and target == jcc_off + 2 + int8(jcc_off + 1)) or
+                              (jcc_len == 6 and target == jcc_off + 6 + int32(jcc_off + 2))
+                            ) and
+                            target >= arm1_start + 5 and
+                            target <= arm1_start + 56 and
+                            target + 6 <= code.offset + code.size and
+                            for any hoist_len in (0, 3, 4, 5, 7) : (
+                              (hoist_len == 0 or jcc_delta == 2) and
+                              @br[i] >= code.offset + 5 + hoist_len and
+                              with fork_end = @br[i] - hoist_len : (
+                                (
+                                  hoist_len == 0 or
+                                  (hoist_len == 3 and (
+                                    (uint16(fork_end) == 0x8948 and (uint8(fork_end + 2) == 0xDF or uint8(fork_end + 2) == 0xEF)) or
+                                    (uint16(fork_end) == 0x894C and (uint8(fork_end + 2) == 0xE7 or uint8(fork_end + 2) == 0xEF or uint8(fork_end + 2) == 0xF7 or uint8(fork_end + 2) == 0xFF))
+                                  )) or
+                                  (hoist_len == 4 and ((uint8(fork_end) == 0x48 and uint16(fork_end + 1) == 0x7D8B) or uint32(fork_end) == 0x243C8B48)) or
+                                  (hoist_len == 5 and uint32(fork_end) == 0x247C8B48) or
+                                  (hoist_len == 7 and uint8(fork_end) == 0x48 and (uint16(fork_end + 1) == 0x3D8D or uint16(fork_end + 1) == 0xBD8B))
+                                ) and
+                                // Verify call to fork immediately ending at fork_end
+                                (
+                                  (
+                                    uint8(fork_end - 5) == 0xE8 and
+                                    with f_va = delta + fork_end + int32(fork_end - 4) : (
+                                      (for any fn in elf.symtab : (
+                                        (fn.name == "fork" or fn.name == "__libc_fork") and fn.value == f_va
+                                      )) or
+                                      (for any plt in elf.sections : (
+                                        (plt.name == ".plt" or plt.name == ".plt.sec") and
+                                        f_va >= plt.address and f_va + 8 <= plt.address + plt.size and
+                                        with p_off = plt.offset + (f_va - plt.address) : (
+                                          for any ps in (0, 4, 5) : (
+                                            (
+                                              (ps == 0 and uint16(p_off) == 0x25FF) or
+                                              (ps == 4 and p_off + 10 <= plt.offset + plt.size and uint32(p_off) == 0xFA1E0FF3 and uint16(p_off + 4) == 0x25FF) or
+                                              (ps == 5 and p_off + 11 <= plt.offset + plt.size and uint32(p_off) == 0xFA1E0FF3 and uint8(p_off + 4) == 0xF2 and uint16(p_off + 5) == 0x25FF)
+                                            ) and
+                                            with f_got = f_va + ps + 6 + int32(p_off + ps + 2) : (
+                                              for any rel in elf.sections : (
+                                                (rel.name == ".rela.plt" or rel.name == ".rela.dyn") and rel.size >= 24 and
+                                                for any r in (0..rel.size \ 24 - 1) : (
+                                                  uint64(rel.offset + 24 * r) == f_got and
+                                                  with sym_i = uint32(rel.offset + 24 * r + 12) : (
+                                                    sym_i < elf.dynsym_entries and
+                                                    (elf.dynsym[sym_i].name == "fork" or elf.dynsym[sym_i].name == "__libc_fork")
+                                                  )
+                                                )
+                                              )
+                                            )
+                                          )
+                                        )
+                                      ))
+                                    )
+                                  ) or
+                                  (
+                                    fork_end >= code.offset + 6 and
+                                    uint16(fork_end - 6) == 0x15FF and
+                                    with f_got = delta + fork_end + int32(fork_end - 4) : (
+                                      for any rel in elf.sections : (
+                                        (rel.name == ".rela.dyn" or rel.name == ".rela.plt") and rel.size >= 24 and
+                                        for any r in (0..rel.size \ 24 - 1) : (
+                                          uint64(rel.offset + 24 * r) == f_got and
+                                          with sym_i = uint32(rel.offset + 24 * r + 12) : (
+                                            sym_i < elf.dynsym_entries and
+                                            (elf.dynsym[sym_i].name == "fork" or elf.dynsym[sym_i].name == "__libc_fork")
+                                          )
+                                        )
+                                      )
+                                    )
+                                  )
+                                ) and
+                                // Locate remove/unlink in one arm and exec* in the other arm
+                                for any d_end in (arm1_start + 5 .. target + 45) : (
+                                  d_end <= code.offset + code.size and
+                                  for any d_arm in (arm1_start, target) : (
+                                    ((d_arm == arm1_start and d_end <= target) or (d_arm == target and d_end >= target + 5)) and
+                                    for any d_len in (5, 6) : (
+                                      d_end >= d_arm + d_len and
+                                      (
+                                        (
+                                          d_len == 5 and uint8(d_end - 5) == 0xE8 and
+                                          with d_va = delta + d_end + int32(d_end - 4) : (
+                                            (for any fn in elf.symtab : (
+                                              (fn.name == "remove" or fn.name == "unlink") and fn.value == d_va
+                                            )) or
+                                            (for any plt in elf.sections : (
+                                              (plt.name == ".plt" or plt.name == ".plt.sec") and
+                                              d_va >= plt.address and d_va + 8 <= plt.address + plt.size and
+                                              with p_off = plt.offset + (d_va - plt.address) : (
+                                                for any ps in (0, 4, 5) : (
+                                                  (
+                                                    (ps == 0 and uint16(p_off) == 0x25FF) or
+                                                    (ps == 4 and p_off + 10 <= plt.offset + plt.size and uint32(p_off) == 0xFA1E0FF3 and uint16(p_off + 4) == 0x25FF) or
+                                                    (ps == 5 and p_off + 11 <= plt.offset + plt.size and uint32(p_off) == 0xFA1E0FF3 and uint8(p_off + 4) == 0xF2 and uint16(p_off + 5) == 0x25FF)
+                                                  ) and
+                                                  with d_got = d_va + ps + 6 + int32(p_off + ps + 2) : (
+                                                    for any rel in elf.sections : (
+                                                      (rel.name == ".rela.plt" or rel.name == ".rela.dyn") and rel.size >= 24 and
+                                                      for any r in (0..rel.size \ 24 - 1) : (
+                                                        uint64(rel.offset + 24 * r) == d_got and
+                                                        with sym_i = uint32(rel.offset + 24 * r + 12) : (
+                                                          sym_i < elf.dynsym_entries and
+                                                          (elf.dynsym[sym_i].name == "remove" or elf.dynsym[sym_i].name == "unlink")
+                                                        )
+                                                      )
+                                                    )
+                                                  )
+                                                )
+                                              )
+                                            ))
+                                          )
+                                        ) or
+                                        (
+                                          d_len == 6 and uint16(d_end - 6) == 0x15FF and
+                                          with d_got = delta + d_end + int32(d_end - 4) : (
+                                            for any rel in elf.sections : (
+                                              (rel.name == ".rela.dyn" or rel.name == ".rela.plt") and rel.size >= 24 and
+                                              for any r in (0..rel.size \ 24 - 1) : (
+                                                uint64(rel.offset + 24 * r) == d_got and
+                                                with sym_i = uint32(rel.offset + 24 * r + 12) : (
+                                                  sym_i < elf.dynsym_entries and
+                                                  (elf.dynsym[sym_i].name == "remove" or elf.dynsym[sym_i].name == "unlink")
+                                                )
+                                              )
+                                            )
+                                          )
+                                        )
+                                      ) and
+                                      with e_arm = (arm1_start + target) - d_arm,
+                                           d_call = d_end - d_len : (
+                                        for any e_end in (arm1_start + 5 .. target + 45) : (
+                                          e_end <= code.offset + code.size and
+                                          ((e_arm == arm1_start and e_end <= target) or (e_arm == target and e_end >= target + 5)) and
+                                          for any e_len in (5, 6) : (
+                                            e_end >= e_arm + e_len and
+                                            (
+                                              (
+                                                e_len == 5 and uint8(e_end - 5) == 0xE8 and
+                                                with e_va = delta + e_end + int32(e_end - 4) : (
+                                                  (for any fn in elf.symtab : (
+                                                    (fn.name == "execv" or fn.name == "execvp" or fn.name == "execve" or fn.name == "execl" or fn.name == "execlp" or fn.name == "execle") and fn.value == e_va
+                                                  )) or
+                                                  (for any plt in elf.sections : (
+                                                    (plt.name == ".plt" or plt.name == ".plt.sec") and
+                                                    e_va >= plt.address and e_va + 8 <= plt.address + plt.size and
+                                                    with p_off = plt.offset + (e_va - plt.address) : (
+                                                      for any ps in (0, 4, 5) : (
+                                                        (
+                                                          (ps == 0 and uint16(p_off) == 0x25FF) or
+                                                          (ps == 4 and p_off + 10 <= plt.offset + plt.size and uint32(p_off) == 0xFA1E0FF3 and uint16(p_off + 4) == 0x25FF) or
+                                                          (ps == 5 and p_off + 11 <= plt.offset + plt.size and uint32(p_off) == 0xFA1E0FF3 and uint8(p_off + 4) == 0xF2 and uint16(p_off + 5) == 0x25FF)
+                                                        ) and
+                                                        with e_got = e_va + ps + 6 + int32(p_off + ps + 2) : (
+                                                          for any rel in elf.sections : (
+                                                            (rel.name == ".rela.plt" or rel.name == ".rela.dyn") and rel.size >= 24 and
+                                                            for any r in (0..rel.size \ 24 - 1) : (
+                                                              uint64(rel.offset + 24 * r) == e_got and
+                                                              with sym_i = uint32(rel.offset + 24 * r + 12) : (
+                                                                sym_i < elf.dynsym_entries and
+                                                                (elf.dynsym[sym_i].name == "execv" or elf.dynsym[sym_i].name == "execvp" or elf.dynsym[sym_i].name == "execve" or elf.dynsym[sym_i].name == "execl" or elf.dynsym[sym_i].name == "execlp" or elf.dynsym[sym_i].name == "execle")
+                                                              )
+                                                            )
+                                                          )
+                                                        )
+                                                      )
+                                                    )
+                                                  ))
+                                                )
+                                              ) or
+                                              (
+                                                e_len == 6 and uint16(e_end - 6) == 0x15FF and
+                                                with e_got = delta + e_end + int32(e_end - 4) : (
+                                                  for any rel in elf.sections : (
+                                                    (rel.name == ".rela.dyn" or rel.name == ".rela.plt") and rel.size >= 24 and
+                                                    for any r in (0..rel.size \ 24 - 1) : (
+                                                      uint64(rel.offset + 24 * r) == e_got and
+                                                      with sym_i = uint32(rel.offset + 24 * r + 12) : (
+                                                        sym_i < elf.dynsym_entries and
+                                                        (elf.dynsym[sym_i].name == "execv" or elf.dynsym[sym_i].name == "execvp" or elf.dynsym[sym_i].name == "execve" or elf.dynsym[sym_i].name == "execl" or elf.dynsym[sym_i].name == "execlp" or elf.dynsym[sym_i].name == "execle")
+                                                      )
+                                                    )
+                                                  )
+                                                )
+                                              )
+                                            ) and
+                                            with e_call = e_end - e_len : (
+                                              // Exclude synchronous wait/waitpid cleanup before deletion
+                                              (
+                                                not $s_wait or
+                                                d_call < d_arm + 5 or
+                                                not (
+                                                  for any w_end in (d_arm + 5 .. d_call) : (
+                                                    (
+                                                      uint8(w_end - 5) == 0xE8 and
+                                                      with w_va = delta + w_end + int32(w_end - 4) : (
+                                                        (for any fn in elf.symtab : (
+                                                          (fn.name == "wait" or fn.name == "waitpid" or fn.name == "wait4" or fn.name == "waitid") and fn.value == w_va
+                                                        )) or
+                                                        (for any plt in elf.sections : (
+                                                          (plt.name == ".plt" or plt.name == ".plt.sec") and
+                                                          w_va >= plt.address and w_va + 8 <= plt.address + plt.size and
+                                                          with p_off = plt.offset + (w_va - plt.address) : (
+                                                            for any ps in (0, 4, 5) : (
+                                                              (
+                                                                (ps == 0 and uint16(p_off) == 0x25FF) or
+                                                                (ps == 4 and p_off + 10 <= plt.offset + plt.size and uint32(p_off) == 0xFA1E0FF3 and uint16(p_off + 4) == 0x25FF) or
+                                                                (ps == 5 and p_off + 11 <= plt.offset + plt.size and uint32(p_off) == 0xFA1E0FF3 and uint8(p_off + 4) == 0xF2 and uint16(p_off + 5) == 0x25FF)
+                                                              ) and
+                                                              with w_got = w_va + ps + 6 + int32(p_off + ps + 2) : (
+                                                                for any rel in elf.sections : (
+                                                                  (rel.name == ".rela.plt" or rel.name == ".rela.dyn") and rel.size >= 24 and
+                                                                  for any r in (0..rel.size \ 24 - 1) : (
+                                                                    uint64(rel.offset + 24 * r) == w_got and
+                                                                    with sym_i = uint32(rel.offset + 24 * r + 12) : (
+                                                                      sym_i < elf.dynsym_entries and
+                                                                      (elf.dynsym[sym_i].name == "wait" or elf.dynsym[sym_i].name == "waitpid" or elf.dynsym[sym_i].name == "wait4" or elf.dynsym[sym_i].name == "waitid")
+                                                                    )
+                                                                  )
+                                                                )
+                                                              )
+                                                            )
+                                                          )
+                                                        ))
+                                                      )
+                                                    ) or
+                                                    (
+                                                      w_end >= d_arm + 6 and uint16(w_end - 6) == 0x15FF and
+                                                      with w_got = delta + w_end + int32(w_end - 4) : (
+                                                        for any rel in elf.sections : (
+                                                          (rel.name == ".rela.dyn" or rel.name == ".rela.plt") and rel.size >= 24 and
+                                                          for any r in (0..rel.size \ 24 - 1) : (
+                                                            uint64(rel.offset + 24 * r) == w_got and
+                                                            with sym_i = uint32(rel.offset + 24 * r + 12) : (
+                                                              sym_i < elf.dynsym_entries and
+                                                              (elf.dynsym[sym_i].name == "wait" or elf.dynsym[sym_i].name == "waitpid" or elf.dynsym[sym_i].name == "wait4" or elf.dynsym[sym_i].name == "waitid")
+                                                            )
+                                                          )
+                                                        )
+                                                      )
+                                                    )
+                                                  )
+                                                )
+                                              ) and
+                                              // Prove both arms pass the same %rdi pathname argument
+                                              (
+                                                (hoist_len > 0 and d_call <= d_arm + 4 and e_call <= e_arm + 18) or
+                                                (
+                                                  hoist_len == 0 and
+                                                  d_call >= d_arm + 3 and e_call >= e_arm + 3 and
+                                                  for any ld_d in (d_arm .. d_call - 3) : (
+                                                    ld_d + 10 >= d_call and
+                                                    for any ld_e in (e_arm .. e_call - 3) : (
+                                                      (
+                                                        ((uint16(ld_d) == 0x8948 and (uint8(ld_d + 2) == 0xDF or uint8(ld_d + 2) == 0xEF)) or
+                                                         (uint16(ld_d) == 0x894C and (uint8(ld_d + 2) == 0xE7 or uint8(ld_d + 2) == 0xEF or uint8(ld_d + 2) == 0xF7 or uint8(ld_d + 2) == 0xFF))) and
+                                                        uint16(ld_d) == uint16(ld_e) and uint8(ld_d + 2) == uint8(ld_e + 2)
+                                                      ) or
+                                                      (
+                                                        ld_d + 4 <= d_call and ld_e + 4 <= e_call and
+                                                        ((uint8(ld_d) == 0x48 and uint16(ld_d + 1) == 0x7D8B) or uint32(ld_d) == 0x243C8B48) and
+                                                        uint32(ld_d) == uint32(ld_e)
+                                                      ) or
+                                                      (
+                                                        ld_d + 5 <= d_call and ld_e + 5 <= e_call and
+                                                        (
+                                                          (uint32(ld_d) == 0x247C8B48 and uint32(ld_e) == 0x247C8B48 and uint8(ld_d + 4) == uint8(ld_e + 4)) or
+                                                          (uint8(ld_d) == 0xBF and uint8(ld_e) == 0xBF and uint32(ld_d + 1) == uint32(ld_e + 1))
+                                                        )
+                                                      ) or
+                                                      (
+                                                        ld_d + 7 <= d_call and ld_e + 7 <= e_call and
+                                                        uint8(ld_d) == 0x48 and uint16(ld_d + 1) == 0xBD8B and
+                                                        uint8(ld_e) == 0x48 and uint16(ld_e + 1) == 0xBD8B and
+                                                        uint32(ld_d + 3) == uint32(ld_e + 3)
+                                                      ) or
+                                                      (
+                                                        ld_d + 7 <= d_call and ld_e + 7 <= e_call and
+                                                        uint8(ld_d) == 0x48 and uint16(ld_d + 1) == 0x3D8D and
+                                                        uint8(ld_e) == 0x48 and uint16(ld_e + 1) == 0x3D8D and
+                                                        ld_d + 7 + int32(ld_d + 3) == ld_e + 7 + int32(ld_e + 3)
+                                                      ) or
+                                                      (
+                                                        ld_d + 8 <= d_call and ld_e + 8 <= e_call and
+                                                        uint32(ld_d) == 0x24BC8B48 and uint32(ld_e) == 0x24BC8B48 and
+                                                        uint32(ld_d + 4) == uint32(ld_e + 4)
+                                                      )
+                                                    )
+                                                  )
+                                                )
+                                              )
+                                            )
+                                          )
+                                        )
+                                      )
+                                    )
+                                  )
+                                )
+                              )
+                            )
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
+
+  - id: elf-arm64-fork-exec-delete-same-path
+    desc: ELF ARM64 fork runs, deletes same path
+    conf: 0.99
+    platforms: [linux]
+    for: [elf]
+    arch: [aarch64]
+    if:
+      type: yara
+      source: |
+        import "elf"
+        rule elf_arm64_fork_exec_delete_same_path {
+          strings:
+            $s_fork = "\x00fork\x00"
+            $s_del1 = "\x00remove\x00"
+            $s_del2 = "\x00unlink\x00"
+            $s_exec = /\x00exec(v|vp|ve|l|lp|le)\x00/
+            $s_wait = /\x00wait(pid|4|id)?\x00/
+            $cb = { ?? (00 | 01 | 02 | 03) 00 (34 | 35) }
+          condition:
+            uint32(0) == 0x464C457F and
+            elf.machine == elf.EM_AARCH64 and
+            $s_fork and ($s_del1 or $s_del2) and $s_exec and
+            for any code in elf.sections : (
+              (code.flags & 0x4) != 0 and code.name == ".text" and
+              with delta = code.address - code.offset : (
+                for any i in (1..#cb) : (
+                  @cb[i] % 4 == 0 and
+                  @cb[i] >= code.offset + 4 and @cb[i] + 20 <= code.offset + code.size and
+                  for any pre in (4, 12) : (
+                    @cb[i] >= code.offset + pre and
+                    (
+                      (pre == 4 and (uint32(@cb[i]) & 0x1F) == 0) or
+                      (pre == 12 and (
+                        (
+                          (uint32(@cb[i] - 8) & 0xFFC003FF) == 0xB90003E0 and
+                          (uint32(@cb[i] - 4) & 0xFFC003E0) == 0xB94003E0 and
+                          ((uint32(@cb[i] - 8) >> 10) & 0xFFF) == ((uint32(@cb[i] - 4) >> 10) & 0xFFF) and
+                          (uint32(@cb[i]) & 0x1F) == (uint32(@cb[i] - 4) & 0x1F)
+                        ) or
+                        (
+                          (uint32(@cb[i] - 8) & 0xFFE00FFF) == 0xB80003A0 and
+                          (uint32(@cb[i] - 4) & 0xFFE00FE0) == 0xB84003A0 and
+                          ((uint32(@cb[i] - 8) >> 12) & 0x1FF) == ((uint32(@cb[i] - 4) >> 12) & 0x1FF) and
+                          (uint32(@cb[i]) & 0x1F) == (uint32(@cb[i] - 4) & 0x1F)
+                        )
+                      ))
+                    ) and
+                    with f_off = @cb[i] - pre,
+                         arm1_start = @cb[i] + 4,
+                         target = @cb[i] + ((((uint32(@cb[i]) >> 5) & 0x7FFFF) ^ 0x40000) - 0x40000) * 4 : (
+                      (uint32(f_off) & 0xFC000000) == 0x94000000 and
+                      target >= arm1_start + 8 and target <= arm1_start + 64 and
+                      target + 8 <= code.offset + code.size and
+                      with f_va = delta + f_off + (((uint32(f_off) & 0x03FFFFFF) ^ 0x02000000) - 0x02000000) * 4 : (
+                        (
+                          (for any fn in elf.symtab : (
+                            (fn.name == "fork" or fn.name == "__libc_fork") and fn.value == f_va
+                          )) or
+                          (for any plt in elf.sections : (
+                            plt.name == ".plt" and f_va >= plt.address and f_va + 12 <= plt.address + plt.size and
+                            with p_off = plt.offset + (f_va - plt.address) : (
+                              for any bti in (0, 4) : (
+                                ((bti == 0 and uint32(p_off) != 0xD503245F) or (bti == 4 and p_off + 12 <= plt.offset + plt.size and uint32(p_off) == 0xD503245F)) and
+                                with adrp_off = p_off + bti, adrp_va = f_va + bti : (
+                                  (uint32(adrp_off) & 0x9F00001F) == 0x90000010 and
+                                  (uint32(adrp_off + 4) & 0xFFC003FF) == 0xF9400211 and
+                                  with f_got = ((adrp_va & ~0xFFF) + ((((((uint32(adrp_off) >> 5) & 0x7FFFF) * 4 + ((uint32(adrp_off) >> 29) & 3)) ^ 0x100000) - 0x100000) * 4096)) + (((uint32(adrp_off + 4) >> 10) & 0xFFF) * 8) : (
+                                    for any rel in elf.sections : (
+                                      (rel.name == ".rela.plt" or rel.name == ".rela.dyn") and rel.size >= 24 and
+                                      for any r in (0..rel.size \ 24 - 1) : (
+                                        uint64(rel.offset + 24 * r) == f_got and
+                                        with sym_i = uint32(rel.offset + 24 * r + 12) : (
+                                          sym_i < elf.dynsym_entries and
+                                          (elf.dynsym[sym_i].name == "fork" or elf.dynsym[sym_i].name == "__libc_fork")
+                                        )
+                                      )
+                                    )
+                                  )
+                                )
+                              )
+                            )
+                          ))
+                        ) and
+                        for any kd in (1..28) : (
+                          with d_off = arm1_start + 4 * kd : (
+                            d_off + 4 <= code.offset + code.size and
+                            d_off <= target + 48 and
+                            (uint32(d_off) & 0xFC000000) == 0x94000000 and
+                            not (for any kr in (0..kd) : (uint32(arm1_start + 4 * kr) == 0xD65F03C0)) and
+                            for any d_arm in (arm1_start, target) : (
+                              ((d_arm == arm1_start and d_off < target) or (d_arm == target and d_off >= target + 4)) and
+                              with d_va = delta + d_off + (((uint32(d_off) & 0x03FFFFFF) ^ 0x02000000) - 0x02000000) * 4 : (
+                                (for any fn in elf.symtab : (
+                                  (fn.name == "remove" or fn.name == "unlink") and fn.value == d_va
+                                )) or
+                                (for any plt in elf.sections : (
+                                  plt.name == ".plt" and d_va >= plt.address and d_va + 12 <= plt.address + plt.size and
+                                  with p_off = plt.offset + (d_va - plt.address) : (
+                                    for any bti in (0, 4) : (
+                                      ((bti == 0 and uint32(p_off) != 0xD503245F) or (bti == 4 and p_off + 12 <= plt.offset + plt.size and uint32(p_off) == 0xD503245F)) and
+                                      with adrp_off = p_off + bti, adrp_va = d_va + bti : (
+                                        (uint32(adrp_off) & 0x9F00001F) == 0x90000010 and
+                                        (uint32(adrp_off + 4) & 0xFFC003FF) == 0xF9400211 and
+                                        with d_got = ((adrp_va & ~0xFFF) + ((((((uint32(adrp_off) >> 5) & 0x7FFFF) * 4 + ((uint32(adrp_off) >> 29) & 3)) ^ 0x100000) - 0x100000) * 4096)) + (((uint32(adrp_off + 4) >> 10) & 0xFFF) * 8) : (
+                                          for any rel in elf.sections : (
+                                            (rel.name == ".rela.plt" or rel.name == ".rela.dyn") and rel.size >= 24 and
+                                            for any r in (0..rel.size \ 24 - 1) : (
+                                              uint64(rel.offset + 24 * r) == d_got and
+                                              with sym_i = uint32(rel.offset + 24 * r + 12) : (
+                                                sym_i < elf.dynsym_entries and
+                                                (elf.dynsym[sym_i].name == "remove" or elf.dynsym[sym_i].name == "unlink")
+                                              )
+                                            )
+                                          )
+                                        )
+                                      )
+                                    )
+                                  )
+                                ))
+                              ) and
+                              with e_arm = (arm1_start + target) - d_arm : (
+                                for any ke in (1..28) : (
+                                  with e_off = arm1_start + 4 * ke : (
+                                    e_off + 4 <= code.offset + code.size and
+                                    e_off <= target + 48 and
+                                    ((e_arm == arm1_start and e_off < target) or (e_arm == target and e_off >= target + 4)) and
+                                    (uint32(e_off) & 0xFC000000) == 0x94000000 and
+                                    not (for any kr2 in (0..ke) : (uint32(arm1_start + 4 * kr2) == 0xD65F03C0)) and
+                                    with e_va = delta + e_off + (((uint32(e_off) & 0x03FFFFFF) ^ 0x02000000) - 0x02000000) * 4 : (
+                                      (for any fn in elf.symtab : (
+                                        (fn.name == "execv" or fn.name == "execvp" or fn.name == "execve" or fn.name == "execl" or fn.name == "execlp" or fn.name == "execle") and fn.value == e_va
+                                      )) or
+                                      (for any plt in elf.sections : (
+                                        plt.name == ".plt" and e_va >= plt.address and e_va + 12 <= plt.address + plt.size and
+                                        with p_off = plt.offset + (e_va - plt.address) : (
+                                          for any bti in (0, 4) : (
+                                            ((bti == 0 and uint32(p_off) != 0xD503245F) or (bti == 4 and p_off + 12 <= plt.offset + plt.size and uint32(p_off) == 0xD503245F)) and
+                                            with adrp_off = p_off + bti, adrp_va = e_va + bti : (
+                                              (uint32(adrp_off) & 0x9F00001F) == 0x90000010 and
+                                              (uint32(adrp_off + 4) & 0xFFC003FF) == 0xF9400211 and
+                                              with e_got = ((adrp_va & ~0xFFF) + ((((((uint32(adrp_off) >> 5) & 0x7FFFF) * 4 + ((uint32(adrp_off) >> 29) & 3)) ^ 0x100000) - 0x100000) * 4096)) + (((uint32(adrp_off + 4) >> 10) & 0xFFF) * 8) : (
+                                                for any rel in elf.sections : (
+                                                  (rel.name == ".rela.plt" or rel.name == ".rela.dyn") and rel.size >= 24 and
+                                                  for any r in (0..rel.size \ 24 - 1) : (
+                                                    uint64(rel.offset + 24 * r) == e_got and
+                                                    with sym_i = uint32(rel.offset + 24 * r + 12) : (
+                                                      sym_i < elf.dynsym_entries and
+                                                      (elf.dynsym[sym_i].name == "execv" or elf.dynsym[sym_i].name == "execvp" or elf.dynsym[sym_i].name == "execve" or elf.dynsym[sym_i].name == "execl" or elf.dynsym[sym_i].name == "execlp" or elf.dynsym[sym_i].name == "execle")
+                                                    )
+                                                  )
+                                                )
+                                              )
+                                            )
+                                          )
+                                        )
+                                      ))
+                                    ) and
+                                    // Exclude synchronous wait/waitpid cleanup before deletion
+                                    (
+                                      not $s_wait or
+                                      d_off <= d_arm + 4 or
+                                      not (
+                                        for any kw in (0..(d_off - d_arm) \ 4 - 1) : (
+                                          with w_off = d_arm + 4 * kw : (
+                                            (uint32(w_off) & 0xFC000000) == 0x94000000 and
+                                            with w_va = delta + w_off + (((uint32(w_off) & 0x03FFFFFF) ^ 0x02000000) - 0x02000000) * 4 : (
+                                              (for any fn in elf.symtab : (
+                                                (fn.name == "wait" or fn.name == "waitpid" or fn.name == "wait4" or fn.name == "waitid") and fn.value == w_va
+                                              )) or
+                                              (for any plt in elf.sections : (
+                                                plt.name == ".plt" and w_va >= plt.address and w_va + 12 <= plt.address + plt.size and
+                                                with p_off = plt.offset + (w_va - plt.address) : (
+                                                  for any bti in (0, 4) : (
+                                                    ((bti == 0 and uint32(p_off) != 0xD503245F) or (bti == 4 and p_off + 12 <= plt.offset + plt.size and uint32(p_off) == 0xD503245F)) and
+                                                    with adrp_off = p_off + bti, adrp_va = w_va + bti : (
+                                                      (uint32(adrp_off) & 0x9F00001F) == 0x90000010 and
+                                                      (uint32(adrp_off + 4) & 0xFFC003FF) == 0xF9400211 and
+                                                      with w_got = ((adrp_va & ~0xFFF) + ((((((uint32(adrp_off) >> 5) & 0x7FFFF) * 4 + ((uint32(adrp_off) >> 29) & 3)) ^ 0x100000) - 0x100000) * 4096)) + (((uint32(adrp_off + 4) >> 10) & 0xFFF) * 8) : (
+                                                        for any rel in elf.sections : (
+                                                          (rel.name == ".rela.plt" or rel.name == ".rela.dyn") and rel.size >= 24 and
+                                                          for any r in (0..rel.size \ 24 - 1) : (
+                                                            uint64(rel.offset + 24 * r) == w_got and
+                                                            with sym_i = uint32(rel.offset + 24 * r + 12) : (
+                                                              sym_i < elf.dynsym_entries and
+                                                              (elf.dynsym[sym_i].name == "wait" or elf.dynsym[sym_i].name == "waitpid" or elf.dynsym[sym_i].name == "wait4" or elf.dynsym[sym_i].name == "waitid")
+                                                            )
+                                                          )
+                                                        )
+                                                      )
+                                                    )
+                                                  )
+                                                )
+                                              ))
+                                            )
+                                          )
+                                        )
+                                      )
+                                    ) and
+                                    // Prove both arms pass the same x0 pathname argument
+                                    for any jd in (0..(d_off - d_arm) \ 4 - 1) : (
+                                      for any je in (0..(e_off - e_arm) \ 4 - 1) : (
+                                        with ld_d = d_arm + 4 * jd,
+                                             ld_e = e_arm + 4 * je,
+                                             wd = uint32(d_arm + 4 * jd),
+                                             we = uint32(e_arm + 4 * je) : (
+                                          ld_d + 8 >= d_off and
+                                          (
+                                            (
+                                              ((wd & 0xFFC003FF) == 0xF94003E0 or (wd & 0xFFE00FFF) == 0xF84003A0) and
+                                              wd == we
+                                            ) or
+                                            (
+                                              (wd & 0xFFE0FFFF) == 0xAA0003E0 and
+                                              ((wd >> 16) & 0x1F) >= 19 and ((wd >> 16) & 0x1F) <= 28 and
+                                              wd == we
+                                            ) or
+                                            (
+                                              (wd & 0x9F00001F) == 0x10000000 and
+                                              (we & 0x9F00001F) == 0x10000000 and
+                                              ld_d + ((((wd >> 5) & 0x7FFFF) * 4 + ((wd >> 29) & 3)) ^ 0x100000) - 0x100000 ==
+                                              ld_e + ((((we >> 5) & 0x7FFFF) * 4 + ((we >> 29) & 3)) ^ 0x100000) - 0x100000
+                                            ) or
+                                            (
+                                              ld_d + 8 <= d_off and ld_e + 8 <= e_off and
+                                              (wd & 0x9F00001F) == 0x90000000 and
+                                              (we & 0x9F00001F) == 0x90000000 and
+                                              (uint32(ld_d + 4) & 0xFFC003FF) == 0x91000000 and
+                                              (uint32(ld_e + 4) & 0xFFC003FF) == 0x91000000 and
+                                              (((delta + ld_d) & ~0xFFF) + ((((((wd >> 5) & 0x7FFFF) * 4 + ((wd >> 29) & 3)) ^ 0x100000) - 0x100000) * 4096)) + ((uint32(ld_d + 4) >> 10) & 0xFFF) ==
+                                              (((delta + ld_e) & ~0xFFF) + ((((((we >> 5) & 0x7FFFF) * 4 + ((we >> 29) & 3)) ^ 0x100000) - 0x100000) * 4096)) + ((uint32(ld_e + 4) >> 10) & 0xFFF)
+                                            )
+                                          )
+                                        )
+                                      )
+                                    )
+                                  )
+                                )
+                              )
+                            )
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
+
+  - id: macho-x64-fork-exec-delete-same-path
+    desc: Mach-O x64 fork runs, deletes same path
+    conf: 0.99
+    platforms: [macos]
+    for: [macho]
+    arch: [x86-64]
+    if:
+      type: yara
+      source: |
+        import "macho"
+        rule macho_x64_fork_exec_delete_same_path {
+          strings:
+            $fork_name = "_fork\x00"
+            $del_name1 = "_remove\x00"
+            $del_name2 = "_unlink\x00"
+            $exec_name = /_exec(v|vp|ve|l|lp|le)\x00/
+            $wait_name = /_wait(pid|4|id)?\x00/
+            $dysym = { 0B 00 00 00 50 00 00 00 }
+            $br = {
+              (
+                85 C0 (74 | 75 | 7E | 7F | 0F 84 | 0F 85 | 0F 8E | 0F 8F) |
+                83 F8 00 (74 | 75 | 7E | 7F | 0F 84 | 0F 85 | 0F 8E | 0F 8F) |
+                89 85 ?? ?? ?? ?? 83 BD ?? ?? ?? ?? 00 (74 | 75 | 7E | 7F | 0F 84 | 0F 85) |
+                89 45 ?? 83 7D ?? 00 (74 | 75 | 7E | 7F | 0F 84 | 0F 85) |
+                89 44 24 ?? 83 7C 24 ?? 00 (74 | 75 | 7E | 7F | 0F 84 | 0F 85)
+              )
+            }
+          condition:
+            uint32(0) == 0xFEEDFACF and
+            $fork_name and ($del_name1 or $del_name2) and $exec_name and
+            for any d in (1..#dysym) : (
+              @dysym[d] >= 32 and @dysym[d] + 80 <= 32 + macho.sizeofcmds and
+              @dysym[d] % 8 == 0 and
+              with indirect = uint32(@dysym[d] + 56) : (
+                for any seg in macho.segments : (
+                  for any code in seg.sections : (
+                    (code.flags & 0x80000000) != 0 and code.sectname == "__text" and
+                    for any linkseg in macho.segments : (
+                      for any stubs in linkseg.sections : (
+                        (stubs.flags & 0xFF) == 8 and stubs.reserved2 > 0 and
+                        with delta = code.addr - code.offset : (
+                          for any i in (1..#br) : (
+                            @br[i] >= code.offset + 5 and @br[i] + 24 <= code.offset + code.size and
+                            for any jcc_delta in (2, 3, 7, 9, 13) : (
+                              (
+                                (jcc_delta == 2 and uint16(@br[i]) == 0xC085) or
+                                (jcc_delta == 3 and uint16(@br[i]) == 0xF883) or
+                                (jcc_delta == 7 and uint16(@br[i]) == 0x4589 and uint8(@br[i] + 2) == uint8(@br[i] + 5)) or
+                                (jcc_delta == 9 and uint16(@br[i]) == 0x4489 and uint8(@br[i] + 3) == uint8(@br[i] + 7)) or
+                                (jcc_delta == 13 and uint16(@br[i]) == 0x8589 and uint32(@br[i] + 2) == uint32(@br[i] + 8))
+                              ) and
+                              with jcc_off = @br[i] + jcc_delta : (
+                                for any jcc_len in (2, 6) : (
+                                  ((jcc_len == 6 and uint8(jcc_off) == 0x0F) or (jcc_len == 2 and uint8(jcc_off) != 0x0F)) and
+                                  with arm1_start = jcc_off + jcc_len : (
+                                    for any target in (jcc_off + 2 + int8(jcc_off + 1), jcc_off + 6 + int32(jcc_off + 2)) : (
+                                      (
+                                        (jcc_len == 2 and target == jcc_off + 2 + int8(jcc_off + 1)) or
+                                        (jcc_len == 6 and target == jcc_off + 6 + int32(jcc_off + 2))
+                                      ) and
+                                      target >= arm1_start + 5 and
+                                      target <= arm1_start + 56 and
+                                      target + 5 <= code.offset + code.size and
+                                      for any hoist_len in (0, 3, 4, 5, 7) : (
+                                        (hoist_len == 0 or jcc_delta == 2) and
+                                        @br[i] >= code.offset + 5 + hoist_len and
+                                        with fork_end = @br[i] - hoist_len : (
+                                          (
+                                            hoist_len == 0 or
+                                            (hoist_len == 3 and (
+                                              (uint16(fork_end) == 0x8948 and (uint8(fork_end + 2) == 0xDF or uint8(fork_end + 2) == 0xEF)) or
+                                              (uint16(fork_end) == 0x894C and (uint8(fork_end + 2) == 0xE7 or uint8(fork_end + 2) == 0xEF or uint8(fork_end + 2) == 0xF7 or uint8(fork_end + 2) == 0xFF))
+                                            )) or
+                                            (hoist_len == 4 and ((uint8(fork_end) == 0x48 and uint16(fork_end + 1) == 0x7D8B) or uint32(fork_end) == 0x243C8B48)) or
+                                            (hoist_len == 5 and uint32(fork_end) == 0x247C8B48) or
+                                            (hoist_len == 7 and uint8(fork_end) == 0x48 and (uint16(fork_end + 1) == 0x3D8D or uint16(fork_end + 1) == 0xBD8B))
+                                          ) and
+                                          uint8(fork_end - 5) == 0xE8 and
+                                          with f_va = delta + fork_end + int32(fork_end - 4) : (
+                                            f_va >= stubs.addr and f_va < stubs.addr + stubs.size and
+                                            (f_va - stubs.addr) % stubs.reserved2 == 0 and
+                                            with nf = uint32(indirect + 4 * (stubs.reserved1 + (f_va - stubs.addr) \ stubs.reserved2)) : (
+                                              nf < macho.symtab.nsyms and
+                                              for any kf in (1..#fork_name) : (
+                                                macho.symtab.stroff + macho.symtab.nlists[nf].n_strx == @fork_name[kf]
+                                              )
+                                            )
+                                          ) and
+                                          for any d_end in (arm1_start + 5 .. target + 45) : (
+                                            d_end <= code.offset + code.size and
+                                            uint8(d_end - 5) == 0xE8 and
+                                            for any d_arm in (arm1_start, target) : (
+                                              ((d_arm == arm1_start and d_end <= target) or (d_arm == target and d_end >= target + 5)) and
+                                              with d_va = delta + d_end + int32(d_end - 4) : (
+                                                d_va >= stubs.addr and d_va < stubs.addr + stubs.size and
+                                                (d_va - stubs.addr) % stubs.reserved2 == 0 and
+                                                with nd = uint32(indirect + 4 * (stubs.reserved1 + (d_va - stubs.addr) \ stubs.reserved2)) : (
+                                                  nd < macho.symtab.nsyms and
+                                                  (
+                                                    (for any kd1 in (1..#del_name1) : (macho.symtab.stroff + macho.symtab.nlists[nd].n_strx == @del_name1[kd1])) or
+                                                    (for any kd2 in (1..#del_name2) : (macho.symtab.stroff + macho.symtab.nlists[nd].n_strx == @del_name2[kd2]))
+                                                  )
+                                                )
+                                              ) and
+                                              with e_arm = (arm1_start + target) - d_arm,
+                                                   d_call = d_end - 5 : (
+                                                for any e_end in (arm1_start + 5 .. target + 45) : (
+                                                  e_end <= code.offset + code.size and
+                                                  ((e_arm == arm1_start and e_end <= target) or (e_arm == target and e_end >= target + 5)) and
+                                                  uint8(e_end - 5) == 0xE8 and
+                                                  with e_va = delta + e_end + int32(e_end - 4),
+                                                       e_call = e_end - 5 : (
+                                                    e_va >= stubs.addr and e_va < stubs.addr + stubs.size and
+                                                    (e_va - stubs.addr) % stubs.reserved2 == 0 and
+                                                    with ne = uint32(indirect + 4 * (stubs.reserved1 + (e_va - stubs.addr) \ stubs.reserved2)) : (
+                                                      ne < macho.symtab.nsyms and
+                                                      for any ke in (1..#exec_name) : (
+                                                        macho.symtab.stroff + macho.symtab.nlists[ne].n_strx == @exec_name[ke]
+                                                      )
+                                                    ) and
+                                                    (
+                                                      not $wait_name or
+                                                      d_call < d_arm + 5 or
+                                                      not (
+                                                        for any w_end in (d_arm + 5 .. d_call) : (
+                                                          uint8(w_end - 5) == 0xE8 and
+                                                          with w_va = delta + w_end + int32(w_end - 4) : (
+                                                            w_va >= stubs.addr and w_va < stubs.addr + stubs.size and
+                                                            (w_va - stubs.addr) % stubs.reserved2 == 0 and
+                                                            with nw = uint32(indirect + 4 * (stubs.reserved1 + (w_va - stubs.addr) \ stubs.reserved2)) : (
+                                                              nw < macho.symtab.nsyms and
+                                                              for any kw in (1..#wait_name) : (
+                                                                macho.symtab.stroff + macho.symtab.nlists[nw].n_strx == @wait_name[kw]
+                                                              )
+                                                            )
+                                                          )
+                                                        )
+                                                      )
+                                                    ) and
+                                                    (
+                                                      (hoist_len > 0 and d_call <= d_arm + 4 and e_call <= e_arm + 18) or
+                                                      (
+                                                        hoist_len == 0 and
+                                                        d_call >= d_arm + 3 and e_call >= e_arm + 3 and
+                                                        for any ld_d in (d_arm .. d_call - 3) : (
+                                                          ld_d + 10 >= d_call and
+                                                          for any ld_e in (e_arm .. e_call - 3) : (
+                                                            (
+                                                              ((uint16(ld_d) == 0x8948 and (uint8(ld_d + 2) == 0xDF or uint8(ld_d + 2) == 0xEF)) or
+                                                               (uint16(ld_d) == 0x894C and (uint8(ld_d + 2) == 0xE7 or uint8(ld_d + 2) == 0xEF or uint8(ld_d + 2) == 0xF7 or uint8(ld_d + 2) == 0xFF))) and
+                                                              uint16(ld_d) == uint16(ld_e) and uint8(ld_d + 2) == uint8(ld_e + 2)
+                                                            ) or
+                                                            (
+                                                              ld_d + 4 <= d_call and ld_e + 4 <= e_call and
+                                                              ((uint8(ld_d) == 0x48 and uint16(ld_d + 1) == 0x7D8B) or uint32(ld_d) == 0x243C8B48) and
+                                                              uint32(ld_d) == uint32(ld_e)
+                                                            ) or
+                                                            (
+                                                              ld_d + 5 <= d_call and ld_e + 5 <= e_call and
+                                                              uint32(ld_d) == 0x247C8B48 and uint32(ld_e) == 0x247C8B48 and
+                                                              uint8(ld_d + 4) == uint8(ld_e + 4)
+                                                            ) or
+                                                            (
+                                                              ld_d + 7 <= d_call and ld_e + 7 <= e_call and
+                                                              uint8(ld_d) == 0x48 and uint16(ld_d + 1) == 0xBD8B and
+                                                              uint8(ld_e) == 0x48 and uint16(ld_e + 1) == 0xBD8B and
+                                                              uint32(ld_d + 3) == uint32(ld_e + 3)
+                                                            ) or
+                                                            (
+                                                              ld_d + 7 <= d_call and ld_e + 7 <= e_call and
+                                                              uint8(ld_d) == 0x48 and uint16(ld_d + 1) == 0x3D8D and
+                                                              uint8(ld_e) == 0x48 and uint16(ld_e + 1) == 0x3D8D and
+                                                              ld_d + 7 + int32(ld_d + 3) == ld_e + 7 + int32(ld_e + 3)
+                                                            ) or
+                                                            (
+                                                              ld_d + 8 <= d_call and ld_e + 8 <= e_call and
+                                                              uint32(ld_d) == 0x24BC8B48 and uint32(ld_e) == 0x24BC8B48 and
+                                                              uint32(ld_d + 4) == uint32(ld_e + 4)
+                                                            )
+                                                          )
+                                                        )
+                                                      )
+                                                    )
+                                                  )
+                                                )
+                                              )
+                                            )
+                                          )
+                                        )
+                                      )
+                                    )
+                                  )
+                                )
+                              )
+                            )
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
+
+  - id: macho-arm64-fork-exec-delete-same-path
+    desc: Mach-O ARM64 fork runs, deletes same path
+    conf: 0.99
+    platforms: [macos]
+    for: [macho]
+    arch: [aarch64]
+    if:
+      type: yara
+      source: |
+        import "macho"
+        rule macho_arm64_fork_exec_delete_same_path {
+          strings:
+            $fork_name = "_fork\x00"
+            $del_name1 = "_remove\x00"
+            $del_name2 = "_unlink\x00"
+            $exec_name = /_exec(v|vp|ve|l|lp|le)\x00/
+            $wait_name = /_wait(pid|4|id)?\x00/
+            $dysym = { 0B 00 00 00 50 00 00 00 }
+            $cb = { ?? (00 | 01 | 02 | 03) 00 (34 | 35) }
+          condition:
+            uint32(0) == 0xFEEDFACF and
+            $fork_name and ($del_name1 or $del_name2) and $exec_name and
+            for any d in (1..#dysym) : (
+              @dysym[d] >= 32 and @dysym[d] + 80 <= 32 + macho.sizeofcmds and
+              @dysym[d] % 8 == 0 and
+              with indirect = uint32(@dysym[d] + 56) : (
+                for any seg in macho.segments : (
+                  for any code in seg.sections : (
+                    (code.flags & 0x80000000) != 0 and code.sectname == "__text" and
+                    for any linkseg in macho.segments : (
+                      for any stubs in linkseg.sections : (
+                        (stubs.flags & 0xFF) == 8 and stubs.reserved2 > 0 and
+                        with delta = code.addr - code.offset : (
+                          for any i in (1..#cb) : (
+                            @cb[i] % 4 == 0 and
+                            @cb[i] >= code.offset + 4 and @cb[i] + 20 <= code.offset + code.size and
+                            for any pre in (4, 12) : (
+                              @cb[i] >= code.offset + pre and
+                              (
+                                (pre == 4 and (uint32(@cb[i]) & 0x1F) == 0) or
+                                (pre == 12 and (
+                                  (
+                                    (uint32(@cb[i] - 8) & 0xFFC003FF) == 0xB90003E0 and
+                                    (uint32(@cb[i] - 4) & 0xFFC003E0) == 0xB94003E0 and
+                                    ((uint32(@cb[i] - 8) >> 10) & 0xFFF) == ((uint32(@cb[i] - 4) >> 10) & 0xFFF) and
+                                    (uint32(@cb[i]) & 0x1F) == (uint32(@cb[i] - 4) & 0x1F)
+                                  ) or
+                                  (
+                                    (uint32(@cb[i] - 8) & 0xFFE00FFF) == 0xB80003A0 and
+                                    (uint32(@cb[i] - 4) & 0xFFE00FE0) == 0xB84003A0 and
+                                    ((uint32(@cb[i] - 8) >> 12) & 0x1FF) == ((uint32(@cb[i] - 4) >> 12) & 0x1FF) and
+                                    (uint32(@cb[i]) & 0x1F) == (uint32(@cb[i] - 4) & 0x1F)
+                                  )
+                                ))
+                              ) and
+                              with f_off = @cb[i] - pre,
+                                   arm1_start = @cb[i] + 4,
+                                   target = @cb[i] + ((((uint32(@cb[i]) >> 5) & 0x7FFFF) ^ 0x40000) - 0x40000) * 4 : (
+                                (uint32(f_off) & 0xFC000000) == 0x94000000 and
+                                target >= arm1_start + 8 and target <= arm1_start + 64 and
+                                target + 8 <= code.offset + code.size and
+                                with f_va = delta + f_off + (((uint32(f_off) & 0x03FFFFFF) ^ 0x02000000) - 0x02000000) * 4 : (
+                                  f_va >= stubs.addr and f_va < stubs.addr + stubs.size and
+                                  (f_va - stubs.addr) % stubs.reserved2 == 0 and
+                                  with nf = uint32(indirect + 4 * (stubs.reserved1 + (f_va - stubs.addr) \ stubs.reserved2)) : (
+                                    nf < macho.symtab.nsyms and
+                                    for any kf in (1..#fork_name) : (
+                                      macho.symtab.stroff + macho.symtab.nlists[nf].n_strx == @fork_name[kf]
+                                    )
+                                  )
+                                ) and
+                                for any kd in (1..28) : (
+                                  with d_off = arm1_start + 4 * kd : (
+                                    d_off + 4 <= code.offset + code.size and
+                                    d_off <= target + 48 and
+                                    (uint32(d_off) & 0xFC000000) == 0x94000000 and
+                                    not (for any kr in (0..kd) : (uint32(arm1_start + 4 * kr) == 0xD65F03C0)) and
+                                    for any d_arm in (arm1_start, target) : (
+                                      ((d_arm == arm1_start and d_off < target) or (d_arm == target and d_off >= target + 4)) and
+                                      with d_va = delta + d_off + (((uint32(d_off) & 0x03FFFFFF) ^ 0x02000000) - 0x02000000) * 4 : (
+                                        d_va >= stubs.addr and d_va < stubs.addr + stubs.size and
+                                        (d_va - stubs.addr) % stubs.reserved2 == 0 and
+                                        with nd = uint32(indirect + 4 * (stubs.reserved1 + (d_va - stubs.addr) \ stubs.reserved2)) : (
+                                          nd < macho.symtab.nsyms and
+                                          (
+                                            (for any kd1 in (1..#del_name1) : (macho.symtab.stroff + macho.symtab.nlists[nd].n_strx == @del_name1[kd1])) or
+                                            (for any kd2 in (1..#del_name2) : (macho.symtab.stroff + macho.symtab.nlists[nd].n_strx == @del_name2[kd2]))
+                                          )
+                                        )
+                                      ) and
+                                      with e_arm = (arm1_start + target) - d_arm : (
+                                        for any ke in (1..28) : (
+                                          with e_off = arm1_start + 4 * ke : (
+                                            e_off + 4 <= code.offset + code.size and
+                                            e_off <= target + 48 and
+                                            ((e_arm == arm1_start and e_off < target) or (e_arm == target and e_off >= target + 4)) and
+                                            (uint32(e_off) & 0xFC000000) == 0x94000000 and
+                                            not (for any kr2 in (0..ke) : (uint32(arm1_start + 4 * kr2) == 0xD65F03C0)) and
+                                            with e_va = delta + e_off + (((uint32(e_off) & 0x03FFFFFF) ^ 0x02000000) - 0x02000000) * 4 : (
+                                              e_va >= stubs.addr and e_va < stubs.addr + stubs.size and
+                                              (e_va - stubs.addr) % stubs.reserved2 == 0 and
+                                              with ne = uint32(indirect + 4 * (stubs.reserved1 + (e_va - stubs.addr) \ stubs.reserved2)) : (
+                                                ne < macho.symtab.nsyms and
+                                                for any ke_i in (1..#exec_name) : (
+                                                  macho.symtab.stroff + macho.symtab.nlists[ne].n_strx == @exec_name[ke_i]
+                                                )
+                                              )
+                                            ) and
+                                            (
+                                              not $wait_name or
+                                              d_off <= d_arm + 4 or
+                                              not (
+                                                for any kw in (0..(d_off - d_arm) \ 4 - 1) : (
+                                                  with w_off = d_arm + 4 * kw : (
+                                                    (uint32(w_off) & 0xFC000000) == 0x94000000 and
+                                                    with w_va = delta + w_off + (((uint32(w_off) & 0x03FFFFFF) ^ 0x02000000) - 0x02000000) * 4 : (
+                                                      w_va >= stubs.addr and w_va < stubs.addr + stubs.size and
+                                                      (w_va - stubs.addr) % stubs.reserved2 == 0 and
+                                                      with nw = uint32(indirect + 4 * (stubs.reserved1 + (w_va - stubs.addr) \ stubs.reserved2)) : (
+                                                        nw < macho.symtab.nsyms and
+                                                        for any kw_i in (1..#wait_name) : (
+                                                          macho.symtab.stroff + macho.symtab.nlists[nw].n_strx == @wait_name[kw_i]
+                                                        )
+                                                      )
+                                                    )
+                                                  )
+                                                )
+                                              )
+                                            ) and
+                                            for any jd in (0..(d_off - d_arm) \ 4 - 1) : (
+                                              for any je in (0..(e_off - e_arm) \ 4 - 1) : (
+                                                with ld_d = d_arm + 4 * jd,
+                                                     ld_e = e_arm + 4 * je,
+                                                     wd = uint32(d_arm + 4 * jd),
+                                                     we = uint32(e_arm + 4 * je) : (
+                                                  ld_d + 8 >= d_off and
+                                                  (
+                                                    (
+                                                      ((wd & 0xFFC003FF) == 0xF94003E0 or (wd & 0xFFE00FFF) == 0xF84003A0) and
+                                                      wd == we
+                                                    ) or
+                                                    (
+                                                      (wd & 0xFFE0FFFF) == 0xAA0003E0 and
+                                                      ((wd >> 16) & 0x1F) >= 19 and ((wd >> 16) & 0x1F) <= 28 and
+                                                      wd == we
+                                                    ) or
+                                                    (
+                                                      (wd & 0x9F00001F) == 0x10000000 and
+                                                      (we & 0x9F00001F) == 0x10000000 and
+                                                      ld_d + ((((wd >> 5) & 0x7FFFF) * 4 + ((wd >> 29) & 3)) ^ 0x100000) - 0x100000 ==
+                                                      ld_e + ((((we >> 5) & 0x7FFFF) * 4 + ((we >> 29) & 3)) ^ 0x100000) - 0x100000
+                                                    ) or
+                                                    (
+                                                      ld_d + 8 <= d_off and ld_e + 8 <= e_off and
+                                                      (wd & 0x9F00001F) == 0x90000000 and
+                                                      (we & 0x9F00001F) == 0x90000000 and
+                                                      (uint32(ld_d + 4) & 0xFFC003FF) == 0x91000000 and
+                                                      (uint32(ld_e + 4) & 0xFFC003FF) == 0x91000000 and
+                                                      (((delta + ld_d) & ~0xFFF) + ((((((wd >> 5) & 0x7FFFF) * 4 + ((wd >> 29) & 3)) ^ 0x100000) - 0x100000) * 4096)) + ((uint32(ld_d + 4) >> 10) & 0xFFF) ==
+                                                      (((delta + ld_e) & ~0xFFF) + ((((((we >> 5) & 0x7FFFF) * 4 + ((we >> 29) & 3)) ^ 0x100000) - 0x100000) * 4096)) + ((uint32(ld_e + 4) >> 10) & 0xFFF)
+                                                    )
+                                                  )
+                                                )
+                                              )
+                                            )
+                                          )
+                                        )
+                                      )
+                                    )
+                                  )
+                                )
+                              )
+                            )
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
+
+composite_rules:
+  - id: native-fork-exec-delete-same-path
+    desc: Native fork runs, deletes same path
+    conf: 0.99
+    any:
+      - id: elf-x64-fork-exec-delete-same-path
+      - id: elf-arm64-fork-exec-delete-same-path
+      - id: macho-x64-fork-exec-delete-same-path
+      - id: macho-arm64-fork-exec-delete-same-path
+      - id: micro-behaviors/fs/delete/path::macho-fork-remove-execvp-path

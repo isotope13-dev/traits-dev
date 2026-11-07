@@ -1,20 +1,58 @@
-# A stage loader that forks around the execution of a dot-hidden /tmp stage
-# and deletes that stage erases its own dropped artifact as it hands off to
-# the payload. Ordinary build and install tools also fork, exec and clean
-# temporary files, but they neither stage nor run dot-hidden /tmp binaries,
-# so the hidden path leg keeps this claim out of their reach.
+# A native stage loader writes a payload to disk, marks it executable, forks,
+# and concurrently executes and deletes that exact same stage pathname (without
+# waiting for child exit) so the dropped binary disappears from disk as the
+# payload starts. Requiring call-graph and same-pathname binding via
+# native-fork-exec-delete-same-path keeps ordinary runtime libraries (such as
+# liblxc) and synchronous compiler/installer helpers out of reach.
 defaults:
   platforms: [linux, macos]
   for: [elf, macho]
   attack: T1070.004,T1105
 
 composite_rules:
-  - id: native-stage-fork-exec-self-delete
-    desc: Forked loader runs hidden stage and deletes it
-    crit: hostile
-    conf: 0.95
-    all:
-      - id: micro-behaviors/process/create/fork::fork
-      - id: micro-behaviors/process/replace::c-exec-variants
-      - id: micro-behaviors/fs/delete/path::remove-binary-symbol
+  - id: native-stage-file-write-capability
+    desc: Native stage file-write API reference
+    crit: component
+    conf: 0.7
+    any:
+      - id: micro-behaviors/fs/write/file/descriptor::write
+      - id: micro-behaviors/fs/write/file/handle/unspecified::fputc
+
+  - id: native-stage-chmod-capability
+    desc: Native stage chmod API reference
+    crit: component
+    conf: 0.7
+    any:
+      - id: micro-behaviors/fs/chmod/modify::chmod-symbol
+      - id: micro-behaviors/fs/chmod/modify::fchmod-symbol
+      - id: micro-behaviors/fs/chmod/modify::fchmodat-symbol
+      - id: micro-behaviors/fs/chmod/modify::lchmod-symbol
+      - id: micro-behaviors/fs/chmod/modify::static-chmod-symbol-text
+      - id: micro-behaviors/fs/chmod/modify::chmod-direct-syscall
+      - id: micro-behaviors/fs/chmod/modify::aarch64-fchmodat-syscall-sequence
+
+  - id: native-stage-concealment-or-delivery
+    desc: Hidden stage path, socket, XOR, or kthread
+    crit: component
+    conf: 0.85
+    any:
+      - id: micro-behaviors/fs/path/hidden::nul-terminated-hidden-temp-stage-path
       - id: micro-behaviors/fs/path/hidden::hidden-tmp-dotfile-path
+      - id: micro-behaviors/fs/path/hidden::hidden-tmp-path
+      - id: micro-behaviors/fs/path/hidden::var-tmp-hidden
+      - id: micro-behaviors/fs/path/hidden::dev-shm-hidden-path
+      - id: micro-behaviors/communications/socket/receive::recv-symbol
+      - id: micro-behaviors/data/encoding/xor/unspecified-key::macho-stack-indexed-byte-xor-loop
+      - id: micro-behaviors/process/info/name::bracketed-kworker-name-reference
+      - id: micro-behaviors/process/info/name::bracketed-kthreadd-name-reference
+      - id: micro-behaviors/process/info/name::bracketed-rcu-thread-name-reference
+
+  - id: native-stage-fork-exec-self-delete
+    desc: Forked loader runs and deletes staged binary
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: micro-behaviors/fs/delete/path::native-fork-exec-delete-same-path
+      - id: native-stage-file-write-capability
+      - id: native-stage-chmod-capability
+      - id: native-stage-concealment-or-delivery
