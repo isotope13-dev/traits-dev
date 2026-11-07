@@ -1,0 +1,51 @@
+# Capability-free Rust security scanner unit tests pass attack payloads to
+# content/skill/rule matchers and assert on findings without any execution,
+# network, FFI, or production file-write surface.
+defaults:
+  platforms: [unix, windows]
+  for: [rust]
+  crit: notable
+  conf: 0.97
+
+traits:
+  - id: rust-scanner-test-assertion
+    desc: Rust test asserts scanner payload match
+    if:
+      type: tree-sitter
+      language: rust
+      query: |
+        (
+          (attribute_item
+            (attribute) @attribute
+          )
+          .
+          (function_item
+            body: (block) @body
+          )
+          (#match? @attribute "^(tokio::|async_std::)?test$")
+          (#match? @body "(?i)\\b(scan|detect|inspect|check)\\w*\\s*\\(")
+          (#match? @body "(/dev/tcp/|mkfifo|\\bnc(at)?\\s+-|/bin/(ba)?sh)")
+          (#match? @body "\\bassert(_eq|_ne)?!\\s*\\(")
+        )
+    unless:
+      - type: tree-sitter
+        language: rust
+        query: |
+          (unsafe_block) @unsafe_code
+          (foreign_mod_item) @ffi_block
+          ((use_declaration) @use_decl (#match? @use_decl "\\b(process|Command|Child|Stdio|subprocess|duct|net|TcpStream|TcpListener|UdpSocket|UnixStream|socket2|reqwest|ureq|hyper|curl|tungstenite|libc|nix)\\b"))
+          ((scoped_identifier) @scoped (#match? @scoped "(^|::)(process|Command|Child|Stdio|subprocess|duct|net|TcpStream|TcpListener|UdpSocket|UnixStream|socket2|reqwest|ureq|hyper|curl|tungstenite|libc|nix)(::|$)"))
+          (source_file (function_item body: (block) @fn_body) (#match? @fn_body "\\b(fs::write|File::create|OpenOptions)\\b"))
+          (source_file (impl_item body: (declaration_list) @impl_body) (#match? @impl_body "\\b(fs::write|File::create|OpenOptions)\\b"))
+          (source_file (mod_item name: (identifier) @mname body: (declaration_list) @mbody) (#not-eq? @mname "tests") (#match? @mbody "\\b(fs::write|File::create|OpenOptions)\\b"))
+
+composite_rules:
+  - id: rust-scanner-payload-unit-test
+    desc: Capability-free Rust scanner unit test
+    crit: exception
+    all:
+      - id: metadata/package/testing/harness/unit::rust-test
+      - id: rust-scanner-test-assertion
+    any:
+      - id: well-known/tool/detection/pattern-catalog::rust-scan-severity-rule-table
+      - id: micro-behaviors/data/parse/regex::rust-regex-builder-call
