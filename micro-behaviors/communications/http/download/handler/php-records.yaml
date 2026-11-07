@@ -11,3 +11,42 @@ traits:
       type: text
       regex: '(?i)archive/.{0,80}\.(zip|txt).{0,80}Download'
 
+
+  # The file streamed back is named by the request itself: a superglobal is
+  # the read argument (bare, wrapped in one decode/trim call, or appended to a
+  # base directory), or is copied verbatim into a variable that is read later
+  # in the same block. Paths passed through a sanitizer or lookup do not match.
+  - id: php-request-path-file-output
+    desc: PHP outputs file named by request parameter
+    crit: notable
+    conf: 0.93
+    attack: T1005
+    if:
+      type: tree-sitter
+      language: php
+      query: |
+        ((function_call_expression
+           function: (name) @read
+           arguments: (arguments . (argument
+             [(subscript_expression . (variable_name (name) @sg))
+              (binary_expression right: (subscript_expression . (variable_name (name) @sg)))
+              (function_call_expression arguments: (arguments . (argument (subscript_expression . (variable_name (name) @sg)))))])))
+          (#match? @read "(?i)^(readfile)$")
+          (#match? @sg "^_(GET|POST|REQUEST)$"))
+
+        ((_
+           (expression_statement (assignment_expression
+             left: (variable_name) @var
+             right: [(subscript_expression . (variable_name (name) @sg))
+                     (function_call_expression arguments: (arguments . (argument (subscript_expression . (variable_name (name) @sg)))))
+                     (binary_expression left: (subscript_expression . (variable_name (name) @sg)))
+                     (conditional_expression body: (subscript_expression . (variable_name (name) @sg)))]))
+           [(expression_statement (function_call_expression
+              function: (name) @read
+              arguments: (arguments . (argument (variable_name) @used))))
+            (if_statement body: (compound_statement (expression_statement (function_call_expression
+              function: (name) @read
+              arguments: (arguments . (argument (variable_name) @used))))))])
+          (#match? @read "(?i)^(readfile)$")
+          (#match? @sg "^_(GET|POST|REQUEST)$")
+          (#eq? @var @used))
