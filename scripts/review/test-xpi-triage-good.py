@@ -133,7 +133,7 @@ const cookie = document.cookie;
         },
         "redirect.js": {"micro-behaviors/communications/http/dynamic::dnr-main-frame-search-redirect"},
         "suggest/manifest.json": {"metadata/permission/activation::custom-search-and-suggestion-provider"},
-        "catalog.js": {"metadata/file/catalog/identity::quoted-domain-catalog"},
+        "catalog.js": {"metadata/file/catalog/network::quoted-domain-catalog"},
         "endpoint.js": {"objectives/command-and-control/beacon/network/typosquat::typosquat-google-domain"},
         "optional-bytecode.js": {"micro-behaviors/os/module/load/path::try-catch-bytecode-loader"},
         "wallet.js": {"micro-behaviors/crypto/key/export::secret-key-array-field"},

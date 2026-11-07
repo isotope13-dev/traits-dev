@@ -351,7 +351,7 @@ defaults:
 
 | Type | Purpose | Matchers | Modifiers |
 |------|---------|----------|-----------|
-| `text` | Byte-scan extracted runs (binaries) or raw text (source) | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `exclude_html_comments`, `is` |
+| `text` | Byte-scan extracted runs (binaries) or raw text (source) | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `exclude_comments`, `exclude_html_comments`, `is` |
 | `literal` | Parser-extracted constants — strings and numbers | `exact`, `substr`, `regex`, `word`, `value`, `radix` | `kind: string\|number`, count, density, location, `case_insensitive`, `exclude_docstrings`, `is` |
 | `raw` | Raw file bytes | `exact`, `substr`, `regex`, `word` | count, density, location, `case_insensitive`, `is` |
 | `symbol` | Imports/exports/forwards/functions/calls | `exact`, `substr`, `regex` | `platforms`, `is`, `kind`, `arg` (call only) |
@@ -383,6 +383,14 @@ and ASP.NET (`<%-- --%>`) comments during raw source scans. It preserves byte
 offsets and line endings, and does not interpret comment-like text inside
 `script`, `style`, `textarea`, or other raw-text elements as markup comments.
 Decoded string layers are still searched as decoded content, not as HTML.
+
+`exclude_comments: true` on a `text` condition skips source-language comments
+(the comment bodies filefacts parses: `//`, `#`, `/* */`, `<# #>`, `rem`, …)
+during raw source scans, so commented-out code and prose about a command do not
+match. Offsets and line endings are preserved. It applies only to languages
+filefacts parses into a syntax tree; AppleScript comments, for one, are not
+masked. Use it when the matcher describes code; leave it off for rules about
+what comments say, which belong in `type: comment`.
 
 **Matcher notes:**
 - `word` - Word boundary match (equivalent to `\b{value}\b`). Available on `text`, `literal`, `raw`, `section`, `encoded`. NOT available on `symbol`, `basename`, `hex`.

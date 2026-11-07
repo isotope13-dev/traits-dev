@@ -1674,6 +1674,23 @@ or metadata evidence until a harmful action is supported.
   a private key from an environment variable, file or keychain has the same
   `stealer/credential/value/key` home. Its acquisition store remains referenced
   evidence. Never infer an item subtype from the store alone.
+- **Phishing pages and their hand-offs.** Under `credential-access/phishing`,
+  place a page, attachment or app by what *it* does to the visitor:
+  `landing` solicits or collects credentials or contact data (a login form, a
+  password prompt, a harvest POST, the branding and bot screening that dress
+  such a page); `redirect` only forwards the visitor to the next hop (instant
+  refreshes, traffic brokers, hosting-platform hops, OAuth error bounces,
+  decrypted next-hop URLs); `login-redirect` is the narrower kit hand-off stub
+  that forwards to a tokenized login URL; `mfa` targets one-time codes and MFA
+  secrets, including extensions that read them from pages; `webview-wrapper`
+  is an app that presents phishing pages, remote or bundled, in an embedded web
+  view; `link-deception` disguises a link's real target. Precedence: collecting
+  beats forwarding (a page that posts the password and then redirects is
+  `landing`), and a tokenized-login forward is `login-redirect`, not `redirect`.
+  An MFA-code harvest is `mfa` even when it also takes the password. Example:
+  a blank attachment that refreshes to `anexodocumentos` is `redirect`; the
+  login page it lands on is `landing`. Counterexample: a credential-relaying
+  reverse proxy is `mfa-relay`, not `landing`.
 - **Activation before delivery detail.** An admitted acquisition- or
   staging-to-activation chain is placed by its sink; language, transport,
   encryption and carrier are supporting facts.
@@ -2732,12 +2749,42 @@ Unicode text and literal populations follow their observed properties or
 supported behaviors; writing-system mixtures and localization alone do not
 establish concealment.
 `file/catalog/service`
-records service-name references and embedded
-service configuration markers; a name mention does not establish service use,
-while a provisioning composite must include the relevant configuration and
-behavior evidence. `file/catalog/identity` describes reference catalogs found
-inside the analyzed file; it does not identify the analyzed file as a product,
-which belongs in `well-known/`. `lang/source/comment` records source-comment
+records service-name references, embedded service configuration markers and
+service fingerprint tables (Nmap's HTTP fingerprints); a name mention does not
+establish service use, while a provisioning composite must include the relevant
+configuration and behavior evidence.
+
+The children of `file/catalog` answer one question: **what kind of entry does
+the embedded or standalone reference table list?** Entry is a table's shape
+(many records of one kind, or a named table declaration), never one mention;
+a single name, path or identifier belongs with its own subject. A catalog marks
+its entries as data, so these rules mostly serve as benign context for
+detectors that would otherwise read the listed names as behavior. None of them
+identifies the analyzed file as a product, which belongs in `well-known/`.
+
+| Child | Admission and boundary | Example | Counterexample |
+|---|---|---|---|
+| `package` | Inventories of software packages or modules and their versions, hashes or importers: distribution indexes, package-name lists, dependency reports. Declaring a dependency is `metadata/package`; importing one is `metadata/import`. | Debian `Packages` index; `depaware.txt` | A `requirements.txt` that installs them |
+| `network` | Tables of hostnames, domain suffixes or network-address assignments: blocklists, the Public Suffix List, OUI vendor registries, widget-source host registries. Contacting a host is a communications capability. | Ad-blocker domain set; IEEE OUI registry | One hard-coded C2 domain |
+| `file-type` | Mappings from file names, extensions or MIME types to a type, icon or syntax: MIME databases, extension tables, editor filetype registries, packed build-manifest name tables. Opening or targeting those files is a behavior. | mime-db table; Neovim filetype map | A stealer's list of wallet file names |
+| `vocabulary` | Language and API vocabularies: keyword and highlighting lists, symbol indexes, function-signature and API-version tables, error-code tables, tokenizer vocabularies and word-frequency lists. Calling a listed API is a capability. | Notepad++ `langs.xml`; BPE `vocab.json` | Source that calls the listed functions |
+| `policy` | Catalogs of access-control policy documents, such as a cloud provider's published managed IAM policies. A policy the package grants or attaches is a privilege or cloud-configuration subject. | AWS managed-policy dataset | An IAM policy granting `s3:*` |
+| `pattern-rules` | Named detection-rule tables and rule-definition files, including this repository's own trait YAML. | Elastic SIEM rule; cleave trait file | A program that runs those patterns |
+| `threat-pattern` | Threat-knowledge records: IOC tables, adversary-technique datasets (MITRE ATT&CK), feed reports. | ATT&CK `enterprise-attack.json` | A loader carrying its own C2 list |
+| `exploit`, `module-index` | Exploit inventories and exploit-module indexes. | Metasploit module index | An exploit implementation |
+
+Precedence when a table fits several children: `pattern-rules` and
+`threat-pattern` first (their records describe hostile content, which the
+other children would misread as behavior), then the most specific entry kind:
+`policy`, `network`, `file-type`, `package`, `vocabulary`. A host blocklist
+that also names products is `network`; a dependency report naming domains is
+`package`. The retired `file/catalog/identity` leaf mixed these kinds and also
+held non-catalog rules: PDPOP registry and library names moved to
+`micro-behaviors/os/registry/key/reference` and
+`micro-behaviors/fs/path/system/library`, the Apple Calendar bundle identifier
+to `micro-behaviors/os/application/target/productivity`, and the Linux kernel's
+SELinux policy installer to `well-known/app/system/linux-kernel`.
+`lang/source/comment` records source-comment
 content and shape measurements; HTML markup belongs with the document. Comment
 text indicating a specific behavior or intent belongs with that subject and
 must be described as a claim, not executable code or a verified fact. Source declarations,

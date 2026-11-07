@@ -1,0 +1,168 @@
+defaults:
+  platforms: [windows, unix]
+  for:
+    - javascript
+traits:
+  - id: extension-remote-auth-endpoint
+    desc: Calls remote auth endpoint
+    crit: notable
+    conf: 0.98
+    if:
+      type: text
+      regex: 'https?://[^"''\s]{1,180}/api/chrome-ext/auth|\$\{[^}]{1,160}\}/api/chrome-ext/auth'
+      case_insensitive: true
+
+  - id: extension-page-secret-selector
+    desc: References Amazon MFA secret selector
+    crit: notable
+    conf: 0.98
+    if:
+      type: text
+      substr: '#sia-auth-app-formatted-secret'
+
+  - id: extension-page-secret-value-read
+    desc: Reads Amazon MFA formatted secret
+    crit: notable
+    conf: 0.95
+    if:
+      type: text
+      # Keep the page-specific selector in the same matcher as the read. A
+      # generic `secret ... textContent` shape also describes ordinary secret
+      # input widgets whose visibility icon updates its text.
+      regex: 'sia-auth-app-formatted-secret[\s\S]{0,240}textContent'
+
+  - id: js-sensitive-mfa-report
+    desc: Report call tagged sensitive category
+    # Matcher only proves a report()/log call passes a "sensitive" category
+    # argument — a generic telemetry idiom (a seller tool reporting a
+    # "needs verification code" status event tags it sensitive too). It is a
+    # supporting fragment; the collection composite also requires a bound
+    # input value passed to the sensitive report.
+    crit: notable
+    conf: 0.8
+    if:
+      type: text
+      regex: 'report\s*\(.{0,400}["'']sensitive["'']'
+      case_insensitive: true
+  - id: extension-identity-label
+    desc: Identity verification label
+    crit: notable
+    conf: 0.96
+    if:
+      type: text
+      substr: Verify Identity
+
+  - id: extension-email-label
+    desc: Verification email input label
+    crit: notable
+    conf: 0.9
+    if:
+      type: text
+      substr: Enter Email
+
+  - id: extension-pin-label
+    desc: Verification PIN input label
+    crit: notable
+    conf: 0.9
+    unless:
+      - id: metadata/path/directory::test-directory-component
+    if:
+      type: text
+      substr: Enter PIN
+
+  - id: extension-verification-email-path
+    desc: Verification email endpoint path
+    crit: notable
+    conf: 0.96
+    if:
+      type: text
+      substr: /send-email/
+
+  - id: extension-verification-email-storage
+    desc: Stores email with disable setting
+    crit: notable
+    conf: 0.97
+    if:
+      type: text
+      regex: '(?is)storage\.local\.set\s*\(.{0,180}disable_analysis.{0,120}userEmail'
+
+composite_rules:
+  - id: extension-email-pin-verification-lure
+    desc: Email and PIN verification lure
+    crit: notable
+    conf: 0.98
+    near_lines: 30
+    all:
+      - id: extension-identity-label
+      - id: extension-email-label
+      - id: extension-pin-label
+
+  - id: extension-verification-email-request
+    desc: Verification code email request
+    crit: notable
+    conf: 0.99
+    near_lines: 30
+    all:
+      - id: micro-behaviors/communications/http/auth::verification-code-field
+      - id: extension-verification-email-path
+      - id: metadata/lang/source/syntax/identity-field::recipient-email-identifier-field
+      - id: micro-behaviors/communications/http/request/client::fetch-post-pattern
+
+  - id: extension-mfa-code-collection
+    for: [javascript, crx, xpi, zip]
+    desc: Extension reads and reports page MFA codes
+    crit: hostile
+    conf: 0.98
+    attack: T1056.002
+    scope: archive
+    all:
+      - id: metadata/file/format/browser-extension::web-extension-root-manifest
+      - id: micro-behaviors/ui/window/otp-field::js-mfa-code-value-access
+      - id: micro-behaviors/ui/window/otp-field::mfa-input-value-to-sensitive-report
+      - id: js-sensitive-mfa-report
+
+  - id: extension-mfa-credential-phishing
+    desc: MFA credential phishing in extension
+    crit: hostile
+    conf: 0.99
+    attack: T1056.002,T1056.003,T1041
+    scope: archive
+    for: [crx, zip, chrome-manifest, javascript, html]
+    all:
+      - id: metadata/file/format/browser-extension::web-extension-root-manifest
+      - id: metadata/permission/host::host-shopping-sites
+      - id: micro-behaviors/process/inject/webextension::webextension-scripting-execute
+      - id: metadata/permission/manifest::permission-scripting
+      - id: metadata/permission/active-tab::permission-active-tab
+      - id: micro-behaviors/communications/http/request/client::js-fetch-call
+      - id: micro-behaviors/communications/http/request/verb::post-method-text
+      - id: extension-remote-auth-endpoint
+      - id: micro-behaviors/data/serialize/schema-credential::username-password-json-body
+      - id: micro-behaviors/data/collection/dom::dom-element-lookup--queryselector
+      - id: extension-page-secret-selector
+      - id: extension-page-secret-value-read
+
+  - id: extension-page-mfa-secret-extraction
+    desc: Reads MFA secret from page
+    crit: suspicious
+    conf: 0.98
+    near_lines: 30
+    all:
+      - id: micro-behaviors/process/inject/webextension::webextension-scripting-execute
+      - id: micro-behaviors/data/collection/dom::dom-element-lookup--queryselector
+      - id: extension-page-secret-selector
+      - id: extension-page-secret-value-read
+
+  - id: extension-verification-credential-lure
+    desc: Email verification gates analysis disable
+    crit: suspicious
+    conf: 0.99
+    attack: T1056.002,T1041,T1562.001
+    scope: archive
+    for: [crx, xpi, zip, chrome-manifest, javascript]
+    all:
+      - id: metadata/file/format/browser-extension::web-extension-root-manifest
+      - id: metadata/permission/host::broad-host-access
+      - id: extension-email-pin-verification-lure
+      - id: extension-verification-email-request
+      - id: extension-verification-email-storage

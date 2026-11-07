@@ -34,7 +34,7 @@ def main():
         "sigma.c": ('const char *key = "expand 32-byte k";\n', {sigma}, {salsa, xsalsa, chacha, chacha_operation}),
         "salsa-catalog.kt": (
             'val archive = """\n' + catalog + '"""\nfun sample() { salsa20_crypt(data) }\n',
-            {salsa, "metadata/file/catalog/identity::debian-packages-index"},
+            {salsa, "metadata/file/catalog/package::debian-packages-index"},
             {xsalsa, chacha},
         ),
         "small.js": (js, {transformed}, set()),
