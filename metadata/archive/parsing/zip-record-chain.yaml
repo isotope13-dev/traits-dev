@@ -1,0 +1,79 @@
+# Raw ZIP record-signature observations that survive a failed parse.
+#
+# A normal ZIP has one end-of-central-directory (EOCD) record. Archives that
+# store nested ZIPs/JARs uncompressed (Spring Boot fat JARs, update bundles)
+# carry one EOCD per nested archive, but each nested archive also holds many
+# local headers, so local headers far outnumber EOCD records. A file built by
+# concatenating hundreds of complete single-member ZIPs has the three record
+# types in lockstep. Windows Explorer reads such a chain from its final
+# records while most archive libraries and scanners reject it.
+defaults:
+  platforms: [windows, linux, macos]
+  for: [zip]
+  conf: 0.9
+
+traits:
+  - id: zip-single-member-archive-chain
+    desc: File is a chain of 20+ complete single-member ZIP archives
+    crit: notable
+    size_min: 4096
+    if:
+      type: yara
+      source: |
+        rule zip_single_member_archive_chain {
+          strings:
+            $lfh = { 50 4B 03 04 }
+            $cdh = { 50 4B 01 02 }
+            $eocd = { 50 4B 05 06 }
+          condition:
+            uint32(0) == 0x04034b50 and
+            #eocd >= 20 and
+            #lfh <= #eocd + 2 and
+            #cdh <= #eocd + 2 and
+            #lfh + 2 >= #eocd
+        }
+
+  # The final EOCD is where readers start. A last record that stops short of
+  # its comment-length field, or that names a non-first disk in a file that
+  # carries no split-archive marker, makes conforming readers treat the file
+  # as truncated or as one volume of a multi-part set.
+  - id: zip-final-eocd-malformed
+    desc: Final ZIP end-of-central-directory record is cut short or claims a later disk
+    crit: notable
+    size_min: 4096
+    if:
+      type: yara
+      source: |
+        rule zip_final_eocd_malformed {
+          strings:
+            $eocd = { 50 4B 05 06 }
+          condition:
+            uint32(0) == 0x04034b50 and (
+              $eocd at (filesize - 20) or
+              ($eocd at (filesize - 22) and
+               (uint16(filesize - 18) != 0 or uint16(filesize - 16) != 0))
+            )
+        }
+
+  # Each local header records how many compressed bytes follow it. In a
+  # valid archive the next local header starts at or after that point, apart
+  # from members that are themselves stored ZIPs. Here every one of the first
+  # twenty headers claims to extend past the header after it, so a reader
+  # that trusts the local sizes walks off into the following members.
+  - id: zip-local-sizes-overrun-next-header
+    desc: Every early ZIP local header declares a size that overruns the next local header
+    crit: notable
+    size_min: 4096
+    if:
+      type: yara
+      source: |
+        rule zip_local_sizes_overrun_next_header {
+          strings:
+            $lfh = { 50 4B 03 04 }
+          condition:
+            uint32(0) == 0x04034b50 and #lfh >= 21 and
+            for all i in (1..20) : (
+              uint16(@lfh[i] + 6) & 0x0008 == 0 and
+              uint32(@lfh[i] + 18) > @lfh[i + 1] - @lfh[i]
+            )
+        }
