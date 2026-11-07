@@ -1,0 +1,93 @@
+# A DOS COM program runs with ES=DS=CS, so the BX buffer of its INT 13h call
+# is an offset into its own image (file offset = BX - 100h). When that 512-byte
+# region ends in the 55AAh boot signature, the program carries a boot sector
+# and writes it to CHS 0/0/1. Without first reading the target sector or
+# prompting, a non-BPB image replaces the disk's boot record and its geometry
+# block outright (Trojan.DOS.Erase). Installers read the old sector to keep
+# the BPB, ship a BPB jump, or ask before writing.
+defaults:
+  platforms: [windows, unix]
+  for: [dos_com, data, static-lib]
+  size_min: 512
+  size_max: 65280
+  attack: T1561.002
+  mbc: E1561
+
+traits:
+  - id: dos-blind-embedded-boot-image-write
+    desc: DOS writes embedded boot image unread
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: yara
+      source: |
+        rule dos_blind_embedded_boot_image_write {
+          meta:
+            filetypes = "dos_com,data,static-lib"
+          strings:
+            $fn  = { ( B8 01 03 | B4 03 [0-6] B0 01 | B0 01 [0-6] B4 03 ) }
+            $bx  = { BB ?? ?? }
+            $cx  = { ( B9 01 00 | 31 C9 41 | 33 C9 41 | B1 01 [0-6] ( B5 00 | 30 ED | 32 ED ) | ( B5 00 | 30 ED | 32 ED ) [0-6] B1 01 ) }
+            $dh  = { ( 31 D2 | 33 D2 | BA ?? 00 | B6 00 | 30 F6 | 32 F6 ) }
+            $int13 = { CD 13 }
+            $bios_read = { ( B8 ?? ( 02 | 0A | 42 ) | B4 ( 02 | 0A | 42 ) ) [0-28] CD 13 }
+            $dos_input = { ( B4 ( 01 | 06 | 07 | 08 | 0A | 0C | 3F ) | B8 ?? ( 01 | 06 | 07 | 08 | 0A | 0C | 3F ) ) [0-16] CD 21 }
+            $int16 = { CD 16 }
+          condition:
+            #int13 > 0 and @int13[1] >= 8 and @int13[1] <= 256 and
+            $fn in (@int13[1] - 32 .. @int13[1]) and
+            $cx in (@int13[1] - 32 .. @int13[1]) and
+            $dh in (@int13[1] - 32 .. @int13[1]) and
+            not $bios_read in (0 .. @int13[1]) and
+            not $dos_input in (0 .. @int13[1]) and
+            not $int16 in (0 .. @int13[1]) and
+            for any i in (1 .. #bx) : (
+              @bx[i] < @int13[1] and @int13[1] - @bx[i] <= 32 and
+              uint16(@bx[i] + 1) >= 0x100 + @int13[1] + 2 and
+              uint16(@bx[i] + 1) + 0x100 <= filesize and
+              uint16be(uint16(@bx[i] + 1) + 0xFE) == 0x55AA and
+              uint8(uint16(@bx[i] + 1) - 0x100) != 0xEB and
+              uint8(uint16(@bx[i] + 1) - 0x100) != 0xE9
+            )
+        }
+
+  # The embedded image itself, once booted from 0:7C00, writes its own loaded
+  # sector back out through INT 13h AH=03h and never reads a sector, so it
+  # loads no operating system: it only copies itself onto another disk.
+  - id: dos-embedded-boot-image-self-copy
+    desc: Embedded boot image only rewrites itself
+    crit: suspicious
+    conf: 0.94
+    if:
+      type: yara
+      source: |
+        rule dos_embedded_boot_image_self_copy {
+          meta:
+            filetypes = "dos_com,data,static-lib"
+          strings:
+            $bx  = { BB ?? ?? }
+            $int13 = { CD 13 }
+            $self_write = { ( ( B8 ?? 03 | B4 03 ) [0-10] BB 00 7C | BB 00 7C [0-10] ( B8 ?? 03 | B4 03 ) ) [0-12] CD 13 }
+            $bios_read = { ( B8 ?? ( 02 | 0A | 42 ) | B4 ( 02 | 0A | 42 ) ) [0-28] CD 13 }
+          condition:
+            #int13 > 0 and @int13[1] >= 8 and @int13[1] <= 256 and
+            for any i in (1 .. #bx) : (
+              @bx[i] < @int13[1] and @int13[1] - @bx[i] <= 32 and
+              uint16(@bx[i] + 1) >= 0x100 + @int13[1] + 2 and
+              uint16(@bx[i] + 1) + 0x100 <= filesize and
+              uint16be(uint16(@bx[i] + 1) + 0xFE) == 0x55AA and
+              $self_write in (uint16(@bx[i] + 1) - 0x100 .. uint16(@bx[i] + 1) + 0xFE) and
+              not $bios_read in (uint16(@bx[i] + 1) - 0x100 .. uint16(@bx[i] + 1) + 0xFE)
+            )
+        }
+
+composite_rules:
+  # Dropper and dropped sector together: the program blindly replaces a boot
+  # record with a non-BPB sector whose only code spreads that sector further.
+  - id: dos-boot-record-replacer
+    desc: DOS replaces boot record with self-copier
+    crit: hostile
+    conf: 0.97
+    all:
+      - id: dos-blind-embedded-boot-image-write
+      - id: dos-embedded-boot-image-self-copy
