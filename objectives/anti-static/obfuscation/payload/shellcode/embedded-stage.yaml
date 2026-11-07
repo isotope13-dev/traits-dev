@@ -1,0 +1,47 @@
+# Position-independent loaders (Donut, sRDI-style wrappers) open with a
+# `call` that jumps over an embedded stage and `pop`s its address as the
+# loader's argument. A high-entropy stage of several KiB is an encrypted
+# payload, not data a benign stub carries.
+defaults:
+  platforms: [windows]
+  for: [shellcode]
+  attack: T1027,T1620
+
+traits:
+  - id: shellcode-call-over-encrypted-stage
+    desc: Shellcode calls over encrypted embedded stage
+    crit: notable
+    if:
+      type: yara
+      source: |
+        import "math"
+        rule shellcode_call_over_encrypted_stage {
+          strings:
+            $call = { E8 ?? ?? 00 00 }
+          condition:
+            $call at 0 and uint32(1) >= 4096 and
+            uint32(1) + 6 < filesize and
+            uint8(uint32(1) + 5) >= 0x58 and uint8(uint32(1) + 5) <= 0x5F and
+            math.entropy(5, uint32(1)) >= 7.2
+        }
+  - id: shellcode-trailing-native-loader
+    desc: Shellcode carries native code after the stage
+    crit: notable
+    if:
+      type: yara
+      source: |
+        rule shellcode_trailing_native_loader {
+          strings:
+            $prologue = { 48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 }
+          condition:
+            uint8(0) == 0xE8 and #prologue > 0 and @prologue[1] > uint32(1)
+        }
+
+composite_rules:
+  - id: shellcode-encrypted-stage-reflective-loader
+    desc: Shellcode passes encrypted stage to its loader
+    crit: hostile
+    conf: 0.95
+    all:
+      - id: shellcode-call-over-encrypted-stage
+      - id: shellcode-trailing-native-loader
