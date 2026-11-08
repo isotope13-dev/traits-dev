@@ -122,7 +122,79 @@ traits:
       type: hex
       pattern: "80 29 44 [0-8] 80 01 44"
 
+  # INT 13h read of hard-disk CHS 0/0/1, then a loop that rewrites each
+  # buffer byte or word in place (NOT, NEG, XOR, ADD/SUB, ROL/ROR) and
+  # branches back, then an INT 13h write that resets CX to sector 1. The
+  # sector is rewritten with its own bytes scrambled: the partition table and
+  # 55AAh signature are destroyed without any new content being supplied.
+  # Boot-sector viruses that hide an encrypted MBR copy write it elsewhere,
+  # so they do not reset CX to 0001h after the loop.
+  - id: dos-mbr-read-transform-writeback
+    desc: DOS scrambles MBR bytes and writes back
+    crit: suspicious
+    conf: 0.95
+    for: [dos_com, data, static-lib, ole]
+    attack: T1561.002
+    if:
+      type: yara
+      source: |
+        rule dos_mbr_read_transform_writeback {
+          meta:
+            filetypes = "dos_com,data,static-lib,ole"
+          strings:
+            $rd  = { ( B8 ?? 02 | B4 02 ) [0-20] CD 13 }
+            $wr  = { ( B8 ?? 03 | B4 03 ) [0-20] CD 13 }
+            $chs = { ( B9 01 00 | 31 C9 41 | 33 C9 41 | ( B5 00 | 30 ED | 32 ED ) [0-6] B1 01 | B1 01 [0-6] ( B5 00 | 30 ED | 32 ED ) ) }
+            $hdd = { ( BA 80 00 | 31 D2 B2 80 | 33 D2 B2 80 | ( B6 00 | 30 F6 | 32 F6 ) [0-6] B2 80 | B2 80 [0-6] ( B6 00 | 30 F6 | 32 F6 ) ) }
+            $xf  = {
+              ( 8A ( 04 | 05 | 07 ) ( F6 D0 | F6 D8 | 34 ?? | 04 ?? | 2C ?? | D0 C0 | D0 C8 ) 88 ( 04 | 05 | 07 )
+              | 8B ( 04 | 05 | 07 ) ( F7 D0 | F7 D8 | 35 ?? ?? | 05 ?? ?? | 2D ?? ?? ) 89 ( 04 | 05 | 07 )
+              | AC ( F6 D0 | F6 D8 | 34 ?? | 04 ?? | 2C ?? | D0 C0 | D0 C8 ) AA
+              | AD ( F7 D0 | F7 D8 | 35 ?? ?? | 05 ?? ?? | 2D ?? ?? ) AB
+              | ( F6 | F7 ) ( 14 | 15 | 17 | 1C | 1D | 1F )
+              | 80 ( 34 | 35 | 37 | 04 | 05 | 07 | 2C | 2D | 2F ) ??
+              | 81 ( 34 | 35 | 37 | 04 | 05 | 07 | 2C | 2D | 2F ) ?? ??
+              | ( D0 | D1 ) ( 04 | 05 | 07 | 0C | 0D | 0F )
+              | ( 30 | 31 | 00 | 01 | 28 | 29 ) ( 04 | 05 | 07 | 0C | 0D | 0F | 14 | 15 | 17 | 1C | 1D | 1F | 24 | 25 | 27 | 2C | 2D | 2F | 34 | 35 | 37 | 3C | 3D | 3F )
+              ) [0-8] ( 75 | 72 | 76 | 7C | 7E | E2 ) ( E? | F? )
+            }
+          condition:
+            for any i in (1..#rd) : (
+              for any c in (1..#chs) : ( @chs[c] + 3 <= @rd[i] + !rd[i] and @rd[i] + !rd[i] - @chs[c] <= 32 ) and
+              for any d in (1..#hdd) : ( @hdd[d] + 3 <= @rd[i] + !rd[i] and @rd[i] + !rd[i] - @hdd[d] <= 32 ) and
+              for any k in (1..#xf) : (
+                @xf[k] >= @rd[i] + !rd[i] and @xf[k] - @rd[i] <= 96 and
+                for any j in (1..#wr) : (
+                  @wr[j] >= @xf[k] + !xf[k] and @wr[j] - @xf[k] <= 64 and
+                  for any e in (1..#chs) : (
+                    @chs[e] >= @xf[k] + !xf[k] and @chs[e] + 3 <= @wr[j] + !wr[j]
+                  )
+                )
+              )
+            )
+        }
+    unless:
+      - id: well-known/tool/reverse-engineering/pedump::pedump-packer-marker
+
 composite_rules:
+  # The scrambled sector goes back to fixed disk 80h CHS 0/0/1 (the second
+  # leg checks AH=03h, CX=0001h and DL=80h at one INT 13h). A disk-lock
+  # utility that scrambles the MBR behind a password reads the keyboard
+  # first; without any console input the program destroys the boot record
+  # on its own.
+  - id: dos-unprompted-mbr-scrambler
+    desc: DOS program scrambles the MBR unprompted
+    crit: hostile
+    conf: 0.96
+    for: [dos_com, data, static-lib, ole]
+    attack: T1561.002
+    all:
+      - id: dos-mbr-read-transform-writeback
+      - id: micro-behaviors/os/msdos/disk::dos-int13-fixed-disk-mbr-write
+    unless:
+      - id: micro-behaviors/ui/terminal::dos-console-key-input
+      - id: well-known/tool/reverse-engineering/pedump::pedump-packer-marker
+
   - id: dos-exec-virus-weekday-disk-overwrite
     desc: DOS infector overwrites C drive sectors through cylinder 40
     crit: hostile
