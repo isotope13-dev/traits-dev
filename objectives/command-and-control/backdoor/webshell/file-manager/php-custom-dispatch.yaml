@@ -1,0 +1,51 @@
+defaults:
+  platforms: [unix, windows]
+  for: [php]
+  attack: T1505.003
+  mbc: B0030
+# Custom PHP shell protocol: require request/local argument bindings
+# and their matching helper implementations, without banners or DB names.
+# Comments cannot supply the required source snippets.
+traits:
+  - id: php-custom-request-file-manager-pattern
+    desc: Custom PHP request-file management pattern
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule php_custom_request_file_manager {
+          strings:
+            $code_z1 = /\$z1\s*=\s*([A-Za-z_]\w*\s*\(\s*)*\$_(REQUEST|POST)\[['"]z1['"]\]/
+            $code_z2 = /\$z2\s*=\s*([A-Za-z_]\w*\s*\(\s*)*\$_(REQUEST|POST)\[['"]z2['"]\]/
+            $write_z1 = /\bz1\s*=/
+            $write_z2 = /\bz2\s*=/
+            $comment = /\/\*.*?\*\//s
+
+            $code_read_dispatch = /ReadFileCode\s*\(\s*\$z1\s*\)/
+            $code_upload_dispatch = /UploadFileCode\s*\(\s*\$z1\s*,\s*\$z2\s*\)/
+            $code_read_helper = /function\s+ReadFileCode\s*\(\s*\$[A-Za-z_]\w*\s*\)/
+            $code_read = /fopen\s*\(\s*\$[A-Za-z_]\w*\s*,\s*["']r["']\s*\)/
+            $code_upload_helper = /function\s+UploadFileCode\s*\(\s*\$[A-Za-z_]\w*\s*,\s*\$[A-Za-z_]\w*\s*\)/
+            $code_write = /fwrite\s*\(\s*fopen\s*\(\s*\$[A-Za-z_]\w*\s*,\s*["']a["']\s*\)/
+            $code_data = /urldecode\s*\(\s*["']%["']\s*\.\s*substr\s*\(/
+
+          condition:
+            all of ($code*) and
+            #write_z1 == 1 and #write_z2 == 1 and
+            for all of ($code*) : (
+              #comment == 0 or for all c in (1..#comment) : (
+                @ < @comment[c] or @ >= @comment[c] + !comment[c]
+              )
+            )
+        }
+
+composite_rules:
+  - id: php-custom-request-file-manager
+    desc: PHP request-controlled file read and upload webshell
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: php-custom-request-file-manager-pattern
+      - id: micro-behaviors/fs/write/file/handle/unspecified::php-fwrite
+      - id: micro-behaviors/fs/file/open/unspecified::php-fopen-call

@@ -1,0 +1,47 @@
+defaults:
+  platforms: [unix, windows]
+  for: [php]
+  attack: T1505.003
+  mbc: B0030
+# Custom PHP shell protocol: require request/local argument bindings
+# and their matching helper implementations, without banners or DB names.
+# Comments cannot supply the required source snippets.
+traits:
+  - id: php-custom-request-command-pattern
+    desc: Custom PHP request-command dispatch pattern
+    crit: suspicious
+    conf: 0.99
+    if:
+      type: yara
+      source: |
+        rule php_custom_request_command {
+          strings:
+            $code_z1 = /\$z1\s*=\s*([A-Za-z_]\w*\s*\(\s*)*\$_(REQUEST|POST)\[['"]z1['"]\]/
+            $code_z2 = /\$z2\s*=\s*([A-Za-z_]\w*\s*\(\s*)*\$_(REQUEST|POST)\[['"]z2['"]\]/
+            $write_z1 = /\bz1\s*=/
+            $write_z2 = /\bz2\s*=/
+            $comment = /\/\*.*?\*\//s
+
+            $code_helper = /function\s+ExecuteCommandCode\s*\(\s*\$cmdPath\s*,\s*\$command\s*\)/
+            $code_dispatch = /ExecuteCommandCode\s*\(\s*\$z1\s*,\s*\$z2\s*\)/
+            $code_system = /@(system|exec|passthru|shell_exec)\s*\(\s*\$r\s*\.\s*["']\s*2>&1["']/
+
+          condition:
+            all of ($code*) and
+            #write_z1 == 1 and #write_z2 == 1 and
+            for all of ($code*) : (
+              #comment == 0 or for all c in (1..#comment) : (
+                @ < @comment[c] or @ >= @comment[c] + !comment[c]
+              )
+            )
+        }
+
+composite_rules:
+  - id: php-custom-request-command
+    desc: PHP request-to-command webshell
+    crit: hostile
+    conf: 0.99
+    all:
+      - id: php-custom-request-command-pattern
+      - id: micro-behaviors/process/create/shell/command-string::php-system-call
+      - id: micro-behaviors/data/stream/write::php-echo-statement
