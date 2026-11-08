@@ -1,0 +1,104 @@
+# A boot sector is only bootable while its last word is 55AAh. Reading CHS
+# 0/0/1 into a buffer at BX, storing anything else at buffer+1FEh, and
+# writing the sector back with INT 13h AH=03h leaves the code and partition
+# table intact but makes BIOS refuse the disk (Trojan.DOS.Killpar). A COM
+# program addresses the buffer either absolutely (the store target equals the
+# MOV BX immediate + 1FEh) or as [BX+1FEh]. MBR installers and repair tools
+# store 55AAh there, edit table entries below 1FEh, or ask before writing.
+# Untested forms: DI/SI-based stores, REP STOS over the tail, INT 13h
+# extended (AH=43h) writes, and buffers set up through a register copy.
+defaults:
+  platforms: [windows, unix]
+  for: [dos_com, data, static-lib]
+  size_max: 65536
+  attack: T1561.002
+  mbc: E1561
+
+traits:
+  - id: dos-unprompted-boot-signature-clear
+    desc: DOS clears boot sector signature, no prompt
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: yara
+      source: |
+        rule dos_unprompted_boot_signature_clear {
+          meta:
+            filetypes = "dos_com,data,static-lib"
+          strings:
+            $int13 = { CD 13 }
+            $fn_rd = { ( B8 ?? 02 | B4 02 ) }
+            $fn_wr = { ( B8 ?? 03 | B4 03 ) }
+            $cx01  = { ( B9 01 00 | 31 C9 41 | 33 C9 41 | ( B5 00 | 30 ED | 32 ED ) [0-6] B1 01 | B1 01 [0-6] ( B5 00 | 30 ED | 32 ED ) ) }
+            $dh0   = { ( BA ?? 00 | 31 D2 | 33 D2 | B6 00 | 30 F6 | 32 F6 ) }
+            $bx    = { BB ?? ?? }
+            $st_w  = { C7 06 ?? ?? ?? ?? }
+            $st_b  = { C6 06 ?? ?? ?? }
+            $st_ax = { ( 31 C0 | 33 C0 | 29 C0 | 2B C0 ) [0-6] A3 ?? ?? }
+            $st_bw = { C7 87 FE 01 ?? ?? }
+            $st_bb = { C6 87 ( FE | FF ) 01 ?? }
+            $dos_in = { ( B4 ( 01 | 07 | 08 | 0A | 0C ) | B8 ?? ( 01 | 07 | 08 | 0A | 0C ) ) [0-16] CD 21 }
+            $int16 = { CD 16 }
+          condition:
+            not $dos_in and not $int16 and
+            for any k in (1..#int13) : (
+              $fn_rd in (@int13[k] - 32 .. @int13[k]) and
+              $cx01 in (@int13[k] - 32 .. @int13[k]) and
+              $dh0 in (@int13[k] - 32 .. @int13[k]) and
+              for any m in (k + 1 .. #int13) : (
+                @int13[m] - @int13[k] <= 96 and
+                $fn_wr in (@int13[k] + 2 .. @int13[m]) and
+                (
+                  for any j in (1..#st_bw) : (
+                    @st_bw[j] > @int13[k] and @st_bw[j] < @int13[m] and
+                    uint16(@st_bw[j] + 4) != 0xAA55
+                  ) or
+                  for any j in (1..#st_bb) : (
+                    @st_bb[j] > @int13[k] and @st_bb[j] < @int13[m] and
+                    ((uint8(@st_bb[j] + 2) == 0xFE and uint8(@st_bb[j] + 4) != 0x55) or
+                     (uint8(@st_bb[j] + 2) == 0xFF and uint8(@st_bb[j] + 4) != 0xAA))
+                  ) or
+                  for any i in (1..#bx) : (
+                    @bx[i] < @int13[k] and @int13[k] - @bx[i] <= 32 and
+                    (
+                      for any j in (1..#st_w) : (
+                        @st_w[j] > @int13[k] and @st_w[j] < @int13[m] and
+                        uint16(@st_w[j] + 2) == uint16(@bx[i] + 1) + 0x1FE and
+                        uint16(@st_w[j] + 4) != 0xAA55
+                      ) or
+                      for any j in (1..#st_b) : (
+                        @st_b[j] > @int13[k] and @st_b[j] < @int13[m] and
+                        ((uint16(@st_b[j] + 2) == uint16(@bx[i] + 1) + 0x1FE and uint8(@st_b[j] + 4) != 0x55) or
+                         (uint16(@st_b[j] + 2) == uint16(@bx[i] + 1) + 0x1FF and uint8(@st_b[j] + 4) != 0xAA))
+                      ) or
+                      for any j in (1..#st_ax) : (
+                        @st_ax[j] > @int13[k] and @st_ax[j] < @int13[m] and
+                        uint16(@st_ax[j] + !st_ax[j] - 2) == uint16(@bx[i] + 1) + 0x1FE
+                      )
+                    )
+                  )
+                )
+              )
+            )
+        }
+    # The engine only evaluates rules with an exception on sub-100-byte
+    # files; PEdump signature records are raw x86 byte data, not programs.
+    unless:
+      - id: well-known/tool/reverse-engineering/pedump::pedump-packer-marker
+
+composite_rules:
+  # The same sector call targets the first hard disk's CHS 0/0/1, so the
+  # damaged sector is the MBR: the machine no longer boots from that disk.
+  - id: dos-silent-mbr-signature-killer
+    desc: DOS silently invalidates hard-disk MBR
+    crit: hostile
+    conf: 0.96
+    all:
+      - id: dos-unprompted-boot-signature-clear
+    any:
+      - id: micro-behaviors/os/msdos/disk::dos-int13-mbr-sector-target
+      - id: micro-behaviors/os/msdos/disk::dos-int13-fixed-disk-mbr-write
+      - id: micro-behaviors/os/msdos/disk::dos-int13-fixed-disk-write
+      - id: objectives/impact/infect/binary/dos/file::dos-hard-disk-call
+      - id: dos-int13-dx-80h-hard-disk-call
+    needs: 1
