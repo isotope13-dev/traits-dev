@@ -1,0 +1,52 @@
+# DOS stores file time seconds in two-second units; the low five bits of the
+# time word reach 1Fh (62 s) only when a program writes that invalid value.
+# Direct-action infectors use it as a self-recognition marker: skip a found
+# file whose seconds field is already 1Fh, then stamp each modified host with
+# it. The check masks the found time word; the stamp forces the bits before
+# AX=5701h. Register choice and junk between instructions vary.
+defaults:
+  for: [dos_com, data]
+  platforms: [windows, unix]
+  attack: T1080
+  size_max: 65536
+
+traits:
+  - id: dos-seconds-62-skip-and-stamp
+    desc: Skips and stamps files with 62-second time
+    crit: suspicious
+    conf: 0.95
+    if:
+      type: yara
+      source: |
+        rule dos_seconds_62_skip_and_stamp {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $check = { ( 24 1F 3C 1F | 80 E1 1F 80 F9 1F | 83 E1 1F 83 F9 1F | 80 E1 1F 80 F1 1F ) ( 74 | 75 ) }
+            $stamp = { ( 80 C9 1F | 83 C9 1F ) [0-8] B8 01 57 [0-8] CD 21 }
+            $stamp_ax = { B8 01 57 [0-8] ( 80 C9 1F | 83 C9 1F ) [0-4] CD 21 }
+          condition:
+            for any c in (1..#check) : (
+              for any s in (1..#stamp) : (
+                @stamp[s] > @check[c] and @stamp[s] - @check[c] < 2048
+              ) or
+              for any t in (1..#stamp_ax) : (
+                @stamp_ax[t] > @check[c] and @stamp_ax[t] - @check[c] < 2048
+              )
+            )
+        }
+
+composite_rules:
+  # Enumerate candidate hosts, read their header, write into them and gate
+  # the whole loop on the 62-second marker.
+  - id: dos-seconds-marker-host-infector
+    desc: Searches, rewrites and marks hosts with 62s time
+    crit: hostile
+    conf: 0.96
+    for: [dos_com]
+    all:
+      - id: dos-seconds-62-skip-and-stamp
+      - id: micro-behaviors/fs/search/command::dos-int21-find-first-call
+      - id: micro-behaviors/fs/search/command::dos-int21-find-next
+      - id: objectives/impact/infect/binary/dos/file::dos-read-three-bytes
+      - id: micro-behaviors/fs/write/file/handle/int21::dos-int21-write-call

@@ -171,6 +171,39 @@ traits:
       pattern: "8D BE ?? ?? 8D B6 ?? ?? A5 A4 3E C6 86 ?? ?? E9 3E 8B 86 ?? ?? 2D 03 00 3E 89 86 ?? ?? B9 03 00"
       offset_range: [0, 4096]
 
+  # Read the host's first three bytes, seek to EOF, store (length - 3) as the
+  # displacement following a jump opcode, rewind, then write three bytes from
+  # the byte just before that displacement. Junk or breakpoint bytes may sit
+  # between instructions; the buffer binding, not addresses, is the evidence.
+  # The body append may run through a relocated helper, so it is not required.
+  - id: com-eof-length-entry-jump-rewrite
+    desc: Rewrites COM entry with EOF-length jump
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: yara
+      source: |
+        rule com_eof_length_entry_jump_rewrite {
+          strings:
+            $read = { B4 3F [0-6] ( B9 03 00 | B1 03 ) [0-16] CD 21 }
+            $eof = { B8 02 42 [0-16] CD 21 [0-24] ( 2D 03 00 | 83 E8 03 ) [0-6] 89 ( 84 | 85 | 86 | 87 ) }
+            $sof = { B8 00 42 [0-16] CD 21 }
+            $w3 = { B4 40 [0-6] ( B9 03 00 | B1 03 ) [0-12] ( 81 C2 | 8D 94 | 8D 95 | 8D 96 ) }
+          condition:
+            for any e in (1..#eof) : (
+              for any r in (1..#read) : (
+                @read[r] < @eof[e] and @eof[e] - @read[r] < 128
+              ) and
+              for any s in (1..#sof) : (
+                @sof[s] > @eof[e] and @sof[s] - @eof[e] < 1024 and
+                for any w in (1..#w3) : (
+                  @w3[w] > @sof[s] and @w3[w] - @sof[s] < 48 and
+                  uint16(@w3[w] + !w3[w]) + 1 == uint16(@eof[e] + !eof[e])
+                )
+              )
+            )
+        }
+
   - id: objectives/impact/infect/binary/dos/append::com-append-and-entry-jump
     desc: Appends code and redirects COM entry
     crit: suspicious
@@ -343,6 +376,7 @@ composite_rules:
       - id: micro-behaviors/fs/search/command::dos-int21-find-first-call
     any:
       - id: com-indirect-entry-jump-write
+      - id: com-eof-length-entry-jump-rewrite
       - id: com-split-entry-jump-append
       - id: com-split-entry-jump-bp-append
       - id: objectives/impact/infect/binary/dos/append::com-append-and-entry-jump
