@@ -169,7 +169,7 @@ An import finding does not establish that the imported function is called.
 JavaScript imports use the `npm` ecosystem. Static YAML namespaces such as
 `metadata/import/package::…` retain their existing IDs.
 
-Some findings are emitted by cleave itself rather than loaded from YAML, for example package facts such as `supply-chain/install-hook/postinstall`. Treat these as built-in facts when triaging: they may appear in output like traits, but they cannot be suppressed with a YAML `unless:` on a local trait id unless the engine exposes a corresponding rule hook. Do not create duplicate YAML traits solely to shadow them. Instead, document the benign context in `metadata/` or adjust the consuming YAML composites that reference YAML install-hook traits; engine-level severity changes belong in cleave, not this taxonomy.
+A few findings are emitted by cleave itself rather than loaded from YAML, such as archive extraction guards. Treat these as built-in findings when triaging: they may appear in output like traits, but they cannot be suppressed with a YAML `unless:` on a local trait id unless the engine exposes a corresponding rule hook. Do not create duplicate YAML traits solely to shadow them; engine-level severity changes belong in cleave, not this taxonomy. File-format observations (npm manifest judgements, installer kinds, embedded executables) are filefacts facts that ordinary YAML traits read, so they are tuned here like any other rule.
 
 A Base64-decoded ZIP emits the notable format observation
 `metadata/file/encoding::base64-decoded-zip`. Encoding and ZIP magic alone

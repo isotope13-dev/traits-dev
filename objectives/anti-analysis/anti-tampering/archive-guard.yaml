@@ -1,0 +1,89 @@
+# What cleave's extraction guards observed while unpacking an archive
+# (`archive_guard.*` values, `archive.guard.*` metrics): members that would
+# land outside the extraction root, links that point out of it, a decompression
+# ratio past the bomb threshold, and names or sizes built to exhaust a parser.
+# Entries naming the extraction root itself, OS packages' absolute member
+# names and root-filesystem images' links are not recorded at all.
+defaults:
+  platforms: [unix, windows]
+  for: [archives]
+  conf: 0.9
+
+traits:
+  - id: archive-path-traversal
+    desc: Archive member escapes extraction directory
+    crit: suspicious
+    if:
+      type: value
+      path: archive_guard.path_traversals
+      exists: true
+    unless:
+      - id: metadata/package/testing/presence/integration::dummy-escape-txt-traversal-fixture
+  # A link out of the extraction root. Interpreter shims, shared-library
+  # development links, masked services and system-to-system links are how
+  # OS trees are built; a link that climbs with `..` is reported regardless.
+  - id: archive-symlink-escape
+    desc: Archive symlink points outside the archive
+    crit: notable
+    if:
+      type: value
+      path: archive_guard.symlink_escapes
+      regex: '[^/ ]+( -> \S+)?$'
+      not:
+        - regex: '(^|/)python3? -> /usr/bin/python3?$'
+        - regex: '^(\./)*(usr/)?lib(32|64|x32)?/\S* -> /lib(32|64|x32)?/\S*$'
+        - regex: '^(\./)*(usr/)?bin/pidof -> /sbin/killall5$'
+        - regex: '^(\./)*dev/(core -> /proc/kcore|fd -> /proc/self/fd)$'
+        - regex: '^(\./)*etc/sgml/catalog -> /var/lib/sgml-base/supercatalog$'
+        - regex: '^(\./)*usr/share/locale/locale\.alias -> /etc/locale\.alias$'
+        - regex: '^(\./)*lib/systemd/system/\S+\.service -> /dev/null$'
+        - regex: '^(\./)*(etc|lib(32|64|x32)?|bin|usr)/\S* -> /(usr/(share|s?bin|local/s?bin)|bin|opt)/'
+        - regex: '^(\./)*(etc|lib(32|64|x32)?|bin|usr)/\S* -> /(lib/systemd|etc/(alternatives|ssl|dpkg))/'
+        - regex: '^(\./)*(sbin\S*|var/lock|var/run\S*) -> /(usr/(share|s?bin|local/s?bin)|bin|opt)/'
+        - regex: '^(\./)*(etc|lib\w*|s?bin|usr|var)\S* -> /(etc/localtime|run|run/lock)$'
+    unless:
+      - id: metadata/package/testing/presence/integration::tar-fs-invalid-symlink-fixture
+  - id: archive-symlink-climbs-out
+    desc: Archive symlink climbs out with ..
+    crit: notable
+    if:
+      type: value
+      path: archive_guard.symlink_escapes
+      regex: '(^|/)\.\.(/| )|-> \S*\.\.(/|$)'
+    unless:
+      - id: metadata/package/testing/presence/integration::tar-fs-invalid-symlink-fixture
+  - id: archive-zip-bomb
+    desc: Archive decompresses past the bomb ratio
+    crit: suspicious
+    if:
+      type: value
+      path: archive_guard.zip_bomb
+      exists: true
+  - id: archive-hostile-entry-name
+    desc: Archive entry name over 1 KiB
+    crit: suspicious
+    if:
+      type: metrics
+      field: archive.guard.longest_entry_name
+      min: 1025
+  - id: archive-long-entry-name
+    desc: Archive entry name past the length limit
+    crit: notable
+    if:
+      type: metrics
+      field: archive.guard.longest_entry_name
+      min: 1
+  - id: archive-excessive-size
+    desc: Archive expands past the total size limit
+    crit: notable
+    if:
+      type: metrics
+      field: archive.guard.total_size
+      min: 1
+  - id: archive-large-file
+    desc: Archive member past the file size limit
+    crit: notable
+    if:
+      type: value
+      path: archive_guard.large_files
+      exists: true
