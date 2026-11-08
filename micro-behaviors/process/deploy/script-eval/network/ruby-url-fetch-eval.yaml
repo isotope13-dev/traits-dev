@@ -1,0 +1,109 @@
+defaults:
+  platforms: [unix, windows]
+  for: [ruby]
+  crit: notable
+  attack: T1105,T1059
+traits:
+  # Provenance, not proximity: the eval argument must originate from a URL
+  # literal that passes through a fetch call (Net::HTTP.get(URI(url)),
+  # URI.open(url), Kernel#open(url) with open-uri). A local
+  # eval(File.read(path)) has no URL origin and stays out. The Ruby flow
+  # producer records the bare method name only and does not connect a
+  # receiver to `.body`/`.read`, so those chains are covered below.
+  - id: ruby-eval-of-url-fetch-result
+    desc: Ruby evals result of fetching a URL
+    conf: 0.95
+    if:
+      type: symbol
+      kind: call
+      regex: '^(Kernel\.)?(eval|instance_eval|class_eval|module_eval)$'
+      arg:
+        from:
+          value: '^(?i)(https?|ftp)://'
+          through:
+            - call: '^(URI|URI\.parse|parse)$'
+              arguments: [0]
+            - call: '^(get|get_response|open|urlopen)$'
+              arguments: [0]
+
+  # The response form: an HTTP client call whose result (or its .body / .read)
+  # is evaluated, directly or through up to two local bindings, plus
+  # Kernel#open on a URL literal (open-uri). The receiver constant or URL
+  # carries the network evidence, since the bare method names (get, open,
+  # read) also describe local file reads.
+  - id: ruby-eval-of-http-client-response
+    desc: Ruby evals an HTTP client response
+    conf: 0.95
+    if:
+      type: tree-sitter
+      language: ruby
+      query: |
+        ((call
+          method: (identifier) @sink
+          arguments: (argument_list
+            (call
+              receiver: (call receiver: (_) @client method: (identifier) @fetch)
+              method: (identifier) @body))) @flow
+          (#match? @sink "^(eval|instance_eval|class_eval|module_eval)$")
+          (#match? @client "^(::)?(Net::HTTP|HTTParty|RestClient|Faraday|HTTPX?|Excon|Typhoeus|URI)$")
+          (#match? @fetch "^(get|get_response|post|open)$")
+          (#match? @body "^(body|read|to_s)$"))
+        ((call
+          method: (identifier) @sink
+          arguments: (argument_list
+            (call receiver: (_) @client method: (identifier) @fetch))) @flow
+          (#match? @sink "^(eval|instance_eval|class_eval|module_eval)$")
+          (#match? @client "^(::)?(Net::HTTP|HTTParty|RestClient|Faraday|HTTPX?|Excon|Typhoeus|URI)$")
+          (#match? @fetch "^(get|get_response|post|open)$"))
+        ((_
+          (assignment
+            left: (identifier) @response
+            right: (call receiver: (_) @client method: (identifier) @fetch))
+          (call
+            method: (identifier) @sink
+            arguments: (argument_list
+              (call receiver: (identifier) @read_response method: (identifier) @body)))) @flow
+          (#eq? @response @read_response)
+          (#match? @sink "^(eval|instance_eval|class_eval|module_eval)$")
+          (#match? @client "^(::)?(Net::HTTP|HTTParty|RestClient|Faraday|HTTPX?|Excon|Typhoeus|URI)$")
+          (#match? @fetch "^(get|get_response|post|open)$")
+          (#match? @body "^(body|read|to_s)$"))
+        ((_
+          (assignment
+            left: (identifier) @response
+            right: (call receiver: (_) @client method: (identifier) @fetch))
+          (call
+            method: (identifier) @sink
+            arguments: (argument_list (identifier) @evaluated))) @flow
+          (#eq? @response @evaluated)
+          (#match? @sink "^(eval|instance_eval|class_eval|module_eval)$")
+          (#match? @client "^(::)?(Net::HTTP|HTTParty|RestClient|Faraday|HTTPX?|Excon|Typhoeus|URI)$")
+          (#match? @fetch "^(get|get_response|post|open)$"))
+        ((_
+          (assignment
+            left: (identifier) @response
+            right: (call receiver: (_) @client method: (identifier) @fetch))
+          (assignment
+            left: (identifier) @source
+            right: (call receiver: (identifier) @read_response method: (identifier) @body))
+          (call
+            method: (identifier) @sink
+            arguments: (argument_list (identifier) @evaluated))) @flow
+          (#eq? @response @read_response)
+          (#eq? @source @evaluated)
+          (#match? @sink "^(eval|instance_eval|class_eval|module_eval)$")
+          (#match? @client "^(::)?(Net::HTTP|HTTParty|RestClient|Faraday|HTTPX?|Excon|Typhoeus|URI)$")
+          (#match? @fetch "^(get|get_response|post|open)$")
+          (#match? @body "^(body|read|to_s)$"))
+        ((call
+          method: (identifier) @sink
+          arguments: (argument_list
+            (call
+              receiver: (call
+                method: (identifier) @fetch
+                arguments: (argument_list . (string) @url))
+              method: (identifier) @body))) @flow
+          (#match? @sink "^(eval|instance_eval|class_eval|module_eval)$")
+          (#eq? @fetch "open")
+          (#match? @url "^.(https?|ftp)://")
+          (#match? @body "^(body|read|to_s)$"))
