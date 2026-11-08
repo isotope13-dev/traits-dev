@@ -13,3 +13,47 @@ traits:
       # its DTA, adjust extended FCB layout, and test the seconds marker
       # before clearing it and subtracting the appended body length.
       pattern: "80 FC 11 74 ?? 80 FC 12 74 ?? EB ?? EB ?? BB ?? ?? 2E FF 2E ?? ?? C3 9C 0E E8 ?? ?? 3C 00 75 ?? 50 53 52 1E 06 B4 51 CD ?? 8E C3 26 3B 1E 16 00 75 ?? 8B DA 8A 07 50 B4 2F CD ?? 58 FE C0 75 03 83 C3 07 26 8B 47 17 25 1F 00 34 01 75 ?? 26 80 67 17 E0 26 81 6F 1D ?? ?? 26 19 47 1F"
+
+  # Generalizable FCB DTA stealth: queries the active DTA via AH=2Fh, masks the
+  # 5-bit seconds marker in the FCB timestamp field at ES:[BX+17h], and subtracts
+  # the appended length from the 32-bit FCB file size at ES:[BX+1Dh..1Fh] (either
+  # in-place or via load/SUB/SBB/store).
+  - id: dos-fcb-timestamp-marked-size-subtract
+    desc: Subtracts size from timestamp-marked FCB
+    crit: suspicious
+    conf: 0.97
+    attack: T1564.001,T1574
+    if:
+      type: yara
+      source: |
+        rule dos_fcb_timestamp_marked_size_subtract {
+          meta:
+            filetypes = "dos_com,static-lib,data"
+          strings:
+            $get_dta = { ( B4 2F | B8 ?? 2F ) [0-6] ( CD 21 | E8 ?? ?? | 2E FF 1E ?? ?? ) }
+            $fcb_time_check = { 26 ( 8A | 8B | F6 ) 47 17 [0-8] ( 24 1F | 25 1F 00 | 83 E0 1F | 80 E? 1F | A8 1F ) }
+            $fcb_size_sub_mem = { 26 ( 81 6F 1D ?? ?? | 83 6F 1D ?? | 29 47 1D ) [0-8] 26 ( 83 5F 1F 00 | 19 47 1F | 19 57 1F ) }
+            $fcb_size_sub_reg = {
+              26 8B 47 1D
+              26 8B 57 1F
+              ( 2D ?? ?? | 81 E8 ?? ?? | 83 E8 ?? )
+              ( 83 DA 00 | 81 DA 00 00 | 19 ?? | 1B ?? )
+              [0-6]
+              26 89 47 1D
+              26 89 57 1F
+            }
+          condition:
+            $get_dta and $fcb_time_check and ($fcb_size_sub_mem or $fcb_size_sub_reg)
+        }
+
+composite_rules:
+  - id: dos-int21-fcb-marked-size-stealth
+    desc: DOS FCB search hook hides infected size
+    crit: hostile
+    conf: 0.98
+    attack: T1564.001,T1574
+    for: [dos_com]
+    all:
+      - id: micro-behaviors/os/msdos/interrupt::dos-set-int21-call
+      - id: objectives/impact/infect/binary/dos/interrupt::dos-int21-fcb-find-intercept
+      - id: dos-fcb-timestamp-marked-size-subtract

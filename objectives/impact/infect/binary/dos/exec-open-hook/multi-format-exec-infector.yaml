@@ -1,0 +1,95 @@
+# Resident DOS EXEC (AX=4B00h) multi-format infector primitives and composites:
+# screens target filenames against an AV utility prefix table, rewrites MZ
+# headers with a self-recognition checksum marker, and patches multiple
+# displaced E9 jump chunks into COM targets while recording (length, offset,
+# bytes) restoration records.
+defaults:
+  platforms: [windows, unix]
+  for: [dos_com, data]
+  attack: T1080
+  size_max: 65536
+
+traits:
+  # Uppercases the target path, checks for a 3-byte extension (EXE/COM) with
+  # REPE CMPSB, locates the filename stem after ':' or '\', and scans the
+  # leading 2-byte stem with REPNE SCASW against an AV prefix table.
+  - id: dos-filename-av-prefix-scasw-filter
+    desc: Screens EXE/COM stem against AV prefixes
+    crit: suspicious
+    conf: 0.95
+    attack: T1518.001,T1080
+    if:
+      type: yara
+      source: |
+        rule dos_filename_av_prefix_scasw_filter {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $upcase = { 3C 61 72 ?? 3C 7A 77 ?? ( 34 20 | 2C 20 | 24 DF ) AA }
+            $ext_cmp = { B9 03 00 F3 A6 [2-24] B9 03 00 F3 A6 }
+            $sep_scasw = {
+              FD [0-6] AC 3C 3A 74 ?? 3C 5C 74 ?? E2 ??
+              [2-12]
+              FC AD [0-8] F2 AF
+            }
+          condition:
+            $upcase and $ext_cmp and $sep_scasw
+        }
+
+  # Displaces multiple chunks of a COM file with E9 jumps, recording each
+  # displaced chunk as (length, offset, bytes) via AH=3Fh before overwriting
+  # it via AX=4200h / AH=40h, paired with the in-memory loop that restores
+  # each (length, offset + 0100h, bytes) record before jumping to CS:0100h.
+  - id: dos-com-multi-chunk-e9-patch-infector
+    desc: Patches and restores multi-chunk COM jumps
+    crit: suspicious
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        rule dos_com_multi_chunk_e9_patch_infector {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $restore_chunks = {
+              51 AD 8B C8 AD 8B F8 81 C7 00 01 F3 A4 59 E2 F0
+              0E B8 00 01 50 CB
+            }
+            $emit_e9_chunk = {
+              B0 E9 AA [12-64] AB [4-24] E8 ?? ??
+            }
+            $save_and_patch = {
+              B4 3F [0-12]
+              FF 36 ?? ?? 8F 04
+              FF 36 ?? ?? 8F 44 02
+              [0-8] 83 C2 04 [0-8] E8 ?? ??
+              [12-32]
+              B8 00 42 ( 2B C9 | 33 C9 ) 8B 16 ?? ?? E8 ?? ??
+              B4 40
+            }
+          condition:
+            $restore_chunks and $emit_e9_chunk and $save_and_patch
+        }
+
+composite_rules:
+  - id: dos-exec-hook-mz-marker-entry-infector
+    desc: DOS EXEC hook rewrites marked MZ headers
+    crit: hostile
+    conf: 0.98
+    for: [dos_com]
+    all:
+      - id: objectives/impact/infect/binary/dos/exec-open-hook::dos-int21-handler-install-alternative
+      - id: micro-behaviors/os/msdos/interrupt::dos-int21-exec-intercept
+      - id: micro-behaviors/data/parse/executable-header::dos-mz-checksum-marker-entry-rewrite
+      - id: micro-behaviors/fs/write/file/handle/int21::dos-int21-write-call
+
+  - id: dos-exec-hook-com-chunk-patch-infector
+    desc: DOS EXEC hook patches displaced COM chunks
+    crit: hostile
+    conf: 0.98
+    for: [dos_com]
+    all:
+      - id: objectives/impact/infect/binary/dos/exec-open-hook::dos-int21-handler-install-alternative
+      - id: micro-behaviors/os/msdos/interrupt::dos-int21-exec-intercept
+      - id: dos-com-multi-chunk-e9-patch-infector
+      - id: micro-behaviors/fs/file/read-write::dos-e9-store-and-file-write-sequences

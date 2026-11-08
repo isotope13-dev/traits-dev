@@ -1,0 +1,56 @@
+# Single-step (INT 01h) Trap Flag gate: saves and hooks the INT 01h vector at
+# 0000:0004h, sets the CPU Trap Flag (TF, 0100h) via PUSHF/POP/OR/PUSH/POPF,
+# executes one instruction before a decoy termination (INT 20h / AH=4Ch / RET),
+# and uses the custom INT 01h handler to clear TF (AND FEFFh) and branch past
+# the decoy termination before restoring 0000:0004h. Under a debugger that
+# intercepts single-step traps, execution falls through into the decoy exit.
+defaults:
+  platforms: [windows, unix]
+  for: [dos_com, data]
+  attack: T1622
+  mbc: B0001.032
+  size_max: 65536
+
+traits:
+  - id: dos-int01-trap-flag-decoy-exit-gate
+    desc: INT 01h Trap Flag gate skips exit
+    crit: suspicious
+    conf: 0.96
+    if:
+      type: yara
+      source: |
+        rule dos_int01_trap_flag_decoy_exit_gate {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $clear_tf = {
+              9C
+              ( 58 25 FF FE 50 | 5B 81 E3 FF FE 53 | 59 81 E1 FF FE 51 | 5A 81 E2 FF FE 52 )
+              9D [0-8] ( EB ?? | E9 ?? ?? )
+            }
+            $set_tf_gate = {
+              26 ( A3 04 00 | 89 ?? 04 00 ) [0-6]
+              26 8C ?? 06 00
+              9C
+              ( 58 0D 00 01 50 | 5B 81 CB 00 01 53 | 59 81 C9 00 01 51 | 5A 81 CA 00 01 52 )
+              9D [1-4]
+              ( CD 20 | B4 4C CD 21 | C3 )
+            }
+            $restore_ivt = {
+              26 ( 89 ?? 04 00 | A3 04 00 ) [0-6]
+              26 ( 89 ?? 06 00 | 8C ?? 06 00 )
+            }
+          condition:
+            $clear_tf and $set_tf_gate and $restore_ivt
+        }
+
+composite_rules:
+  - id: dos-int01-trap-flag-gated-tsr
+    desc: DOS EXEC hook with INT01h trap gate
+    crit: hostile
+    conf: 0.98
+    for: [dos_com]
+    all:
+      - id: dos-int01-trap-flag-decoy-exit-gate
+      - id: micro-behaviors/os/msdos/interrupt::dos-set-int21-vector
+      - id: micro-behaviors/os/msdos/interrupt::dos-int21-exec-intercept
