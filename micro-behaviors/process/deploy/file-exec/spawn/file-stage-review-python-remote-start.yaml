@@ -1,41 +1,105 @@
 defaults:
   platforms: [windows, unix]
   for: [python]
-  attack: T1195.002,T1105,T1059.003
+  attack: T1105,T1204.002,T1059.003
 traits:
-  - id: python-top-level-retrieve-start-attempt
-    desc: Top-level executable retrieval and start attempt
+  # A file saved by urlretrieve/wget.download is then handed to the Windows
+  # shell for a detached launch: `start <path>` (argv list, `cmd /c start`,
+  # or a "start " + path / f"start {path}" command string) or
+  # os.startfile(path). The saved and launched paths must be the same literal
+  # or identifier in later statements of one block, so a download beside an
+  # unrelated process call does not match. Build helpers that fetch a tool and
+  # run it with arguments for its output are not a detached hand-off. The
+  # receiver of the retrieval call is deliberately free: a misspelled
+  # `urllib.urlrequest` still records the intended fetch, without claiming
+  # that the transfer succeeds.
+  - id: python-downloaded-file-detached-launch
+    desc: Detached launch of a just-downloaded file
     crit: notable
-    conf: 0.98
-    # This is intent evidence, including a misspelled urllib.urlrequest
-    # receiver. It does not claim that the transfer succeeded or that the
-    # following start call is reachable when attribute lookup fails.
+    conf: 0.97
     if:
       type: tree-sitter
       language: python
       query: |
-        ((module
-          (try_statement body: (block
-            (expression_statement (call
-              function: (attribute
-                object: (attribute object: (identifier) @module
-                  attribute: (identifier) @request)
-                attribute: (identifier) @retrieve)
+        ((_
+          (expression_statement [
+            (call function: (_) @fetch
+              arguments: (argument_list . (_) .
+                [(string (string_content) @saved) (identifier) @saved]))
+            (assignment right: (call function: (_) @fetch
+              arguments: (argument_list . (_) .
+                [(string (string_content) @saved) (identifier) @saved])))])
+          (expression_statement [
+            (call function: (_) @launcher
               arguments: (argument_list .
-                (string (string_content) @url)
-                (string (string_content) @saved))))
-            (expression_statement (call
-              function: (_) @runner
+                (list . (string (string_content) @start) .
+                  [(string (string_content) @launched) (identifier) @launched] .)))
+            (assignment right: (call function: (_) @launcher
               arguments: (argument_list .
-                (list . (string (string_content) @start)
-                  (string (string_content) @launched))
-                (keyword_argument name: (identifier) @shell
-                  value: (true)))))))) @attempt
-          (#eq? @module "urllib")
-          (#match? @request "^(request|urlrequest)$")
-          (#eq? @retrieve "urlretrieve")
-          (#match? @url "^https?://[^[:space:]]{1,240}[.]exe([?#]|$)")
-          (#eq? @saved @launched)
+                (list . (string (string_content) @start) .
+                  [(string (string_content) @launched) (identifier) @launched] .))))]) @evidence)
+          (#match? @fetch "((^|[.])urlretrieve|^wget[.]download)$")
+          (#match? @launcher "^((subprocess|sp)[.])?(run|call|check_call|Popen)$")
           (#eq? @start "start")
-          (#eq? @shell "shell")
-          (#match? @runner "^(run|call|check_call|subprocess[.](run|call|check_call))$"))
+          (#eq? @saved @launched))
+        ((_
+          (expression_statement [
+            (call function: (_) @fetch
+              arguments: (argument_list . (_) .
+                [(string (string_content) @saved) (identifier) @saved]))
+            (assignment right: (call function: (_) @fetch
+              arguments: (argument_list . (_) .
+                [(string (string_content) @saved) (identifier) @saved])))])
+          (expression_statement [
+            (call function: (_) @launcher
+              arguments: (argument_list .
+                (list . (string (string_content) @shell) .
+                  (string (string_content) @switch) .
+                  (string (string_content) @start) .
+                  [(string (string_content) @launched) (identifier) @launched] .)))
+            (assignment right: (call function: (_) @launcher
+              arguments: (argument_list .
+                (list . (string (string_content) @shell) .
+                  (string (string_content) @switch) .
+                  (string (string_content) @start) .
+                  [(string (string_content) @launched) (identifier) @launched] .))))]) @evidence)
+          (#match? @fetch "((^|[.])urlretrieve|^wget[.]download)$")
+          (#match? @launcher "^((subprocess|sp)[.])?(run|call|check_call|Popen)$")
+          (#match? @shell "^(?i)cmd([.]exe)?$")
+          (#match? @switch "^(?i)/c$")
+          (#eq? @start "start")
+          (#eq? @saved @launched))
+        ((_
+          (expression_statement [
+            (call function: (_) @fetch
+              arguments: (argument_list . (_) .
+                [(string (string_content) @saved) (identifier) @saved]))
+            (assignment right: (call function: (_) @fetch
+              arguments: (argument_list . (_) .
+                [(string (string_content) @saved) (identifier) @saved])))])
+          (expression_statement
+            (call function: (_) @launcher
+              arguments: (argument_list .
+                [(string (string_content) @launched) (identifier) @launched]))) @evidence)
+          (#match? @fetch "((^|[.])urlretrieve|^wget[.]download)$")
+          (#match? @launcher "(^|[.])startfile$")
+          (#eq? @saved @launched))
+        ((_
+          (expression_statement [
+            (call function: (_) @fetch
+              arguments: (argument_list . (_) .
+                (identifier) @saved))
+            (assignment right: (call function: (_) @fetch
+              arguments: (argument_list . (_) .
+                (identifier) @saved)))])
+          (expression_statement
+            (call function: (_) @launcher
+              arguments: (argument_list .
+                [(binary_operator left: (string (string_content) @start)
+                   right: (identifier) @launched)
+                 (string (string_content) @start
+                   (interpolation expression: (identifier) @launched))]))) @evidence)
+          (#match? @fetch "((^|[.])urlretrieve|^wget[.]download)$")
+          (#match? @launcher "^((os|subprocess|sp)[.])?(system|run|call|check_call|Popen)$")
+          (#match? @start "^start (\"\" )?$")
+          (#eq? @saved @launched))
