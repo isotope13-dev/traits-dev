@@ -11,3 +11,47 @@ traits:
     if:
       type: hex
       pattern: 'B9 18 00 BA ?? ?? B4 3F CD 21 3B C8 75 ?? 8B 0E ?? ?? 81 F9 5A 4D'
+
+  # AH=3Fh read followed within a few instructions by a word compare against
+  # the MZ signature: the program tests whether a file it read is an EXE.
+  - id: dos-read-prefix-mz-check
+    desc: DOS reads file then checks MZ signature
+    crit: notable
+    conf: 0.88
+    if:
+      type: hex
+      pattern: '(B4 3F|B8 ?? 3F) [0-8] CD 21 [0-32] (81 F9|81 FA|81 FB|3D|81 3C|81 3F|81 3E ?? ??|2E 81 3E ?? ??) (4D 5A|5A 4D)'
+
+  # After an AH=3Fh read, a word compare whose immediate equals the first two
+  # bytes of this COM image itself: the program checks whether the file it
+  # read already begins with its own entry code. Applies to the COM image
+  # whose first word is its entry; an MZ first word is excluded.
+  - id: dos-read-prefix-own-entry-check
+    desc: Compares read file prefix to own entry
+    crit: notable
+    conf: 0.9
+    for: [dos_com, data]
+    if:
+      type: yara
+      source: |
+        rule dos_read_prefix_own_entry_check {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $read = { ( B4 3F | B8 ?? 3F ) [0-8] CD 21 }
+            $cmp = { 81 ( F9 | FA | FB | 3C | 3F ) ?? ?? ( 74 | 75 ) }
+            $cax = { 3D ?? ?? ( 74 | 75 ) }
+          condition:
+            uint16(0) != 0x5A4D and uint16(0) != 0x4D5A and
+            uint8(0) != 0 and uint8(0) != uint8(1) and
+            for any r in (1..#read) : (
+              for any c in (1..#cmp) : (
+                @cmp[c] > @read[r] and @cmp[c] - @read[r] < 48 and
+                uint16(@cmp[c]+2) == uint16(0)
+              ) or
+              for any a in (1..#cax) : (
+                @cax[a] > @read[r] and @cax[a] - @read[r] < 48 and
+                uint16(@cax[a]+1) == uint16(0)
+              )
+            )
+        }
