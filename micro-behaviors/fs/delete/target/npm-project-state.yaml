@@ -1,0 +1,94 @@
+# Deletion aimed at an npm project's own manifest and install state.
+#
+# Clean scripts routinely remove node_modules and lockfiles; they do not
+# remove package.json, the project definition itself. The invariant is a
+# deletion whose operands include package.json together with other npm
+# state (node_modules, lockfiles, .npmrc), whatever the deleting language:
+# a quoted name list fed to a recursive delete (PowerShell @(...) loop, JS
+# array + fs.rmSync, Python list + rmtree) or a direct rm/del/unlink operand.
+# These atoms say only what is removed; whose project it is comes from the
+# consumer (INIT_CWD, ancestor of the package directory, install hook).
+defaults:
+  platforms: [unix, windows]
+  for: [scripts]
+  attack: T1485
+
+traits:
+  # A name list containing package.json whose loop body calls a removal
+  # API. The body ends at a closing brace followed by whitespace or ")", so a
+  # removal after the loop, or a loop that only reads the names, does not
+  # match; "${x}" interpolations inside the body do not end it.
+  - id: powershell-package-json-list-remove-loop
+    desc: PowerShell loop removes package.json list items
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: '(?i)package\.json[''"][^)]{0,60}\)\W{0,20}foreach[^{]{0,40}\{([^}]|\}\S){0,240}Remove-Item'
+
+  - id: js-package-json-list-remove-loop
+    desc: JS loop removes package.json list entries
+    crit: notable
+    conf: 0.85
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'package\.json[''"].{0,60}\]\W{0,9}for(Each)?.{0,60}\{([^}]|\}[^\s)]){0,200}(rm|unlink)\w*\('
+
+  - id: js-inline-package-json-list-remove-loop
+    desc: JS for-of over inline package.json list removes
+    crit: notable
+    conf: 0.85
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: 'of\s*\[.{0,120}package\.json[''"].{0,60}\]\s*\)\s*\{([^}]|\}[^\s)]){0,200}(rm|unlink)\w*\('
+
+  - id: npm-state-quoted-list-element
+    desc: Quoted npm install-state name list element
+    crit: component
+    conf: 0.7
+    if:
+      type: text
+      regex: '[''"](node_modules|package-lock\.json|\.npmrc|yarn\.lock|pnpm-lock\.yaml)[''"]\s*[,)\]]'
+
+  - id: package-json-removal-command
+    desc: rm, del or Remove-Item names package.json
+    crit: notable
+    conf: 0.85
+    if:
+      type: text
+      regex: '(?i)\b(rm|del|Remove-Item)\s+[-/][^;&|\r\n]{0,80}package\.json([''"\s)]|$)'
+      exclude_comments: true
+
+  - id: package-json-removal-call
+    desc: unlink or rm call names package.json
+    crit: notable
+    conf: 0.85
+    for: [javascript, typescript]
+    if:
+      type: text
+      regex: '\b(unlink|rm)(Sync)?\([^;\r\n]{0,80}[''"]package\.json[''"]'
+      exclude_comments: true
+
+composite_rules:
+  - id: package-json-state-list-remove-loop
+    desc: Loop removes package.json and npm state
+    crit: notable
+    conf: 0.85
+    near_lines: 6
+    all:
+      - id: npm-state-quoted-list-element
+    any:
+      - id: powershell-package-json-list-remove-loop
+      - id: js-package-json-list-remove-loop
+      - id: js-inline-package-json-list-remove-loop
+
+  - id: package-json-deletion
+    desc: Deletion code targets package.json manifest
+    crit: notable
+    conf: 0.85
+    any:
+      - id: package-json-state-list-remove-loop
+      - id: package-json-removal-command
+      - id: package-json-removal-call
