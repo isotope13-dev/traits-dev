@@ -119,3 +119,47 @@ traits:
               (((uint8(@stub[i] + 0x243) + 256 - uint8(@stub[i] + 18 + uint16(@stub[i] + 1))) & 0xFF) == 0x42)
             )
         }
+
+  # Instant Virus Production kit (IVP) appenders and look-alikes:
+  # CALL/POP/SUB BP finds the image, then immediately CALLs a tail routine
+  # (`LEA BX,[BP+start]; MOV CX,len; MOV DH,CS:[BP+key]; MOV AH,CS:[BX];
+  # XOR AH,DH; MOV CS:[BX],AH; INC BX; LOOP; RET`) that decrypts the body
+  # in place with a one-byte key stored inside the virus. The key changes on
+  # every infection (taken from INT 21h/2Ch seconds), so the body is matched
+  # after decrypting it with the stub's own key: a COM wildcard, FindFirst
+  # (AH=4Eh) and file write (AH=40h) prove it hunts and writes COM files.
+  - id: dos-bp-keyed-xor-com-appender
+    desc: Self-XOR virus body seeks and writes COMs
+    crit: hostile
+    conf: 0.98
+    if:
+      type: yara
+      source: |
+        rule dos_bp_keyed_xor_com_appender {
+          meta:
+            filetypes = "dos_com,data"
+          strings:
+            $base = { E8 00 00 5D 81 ED ?? ?? E8 ?? ?? }
+            $dec = { 8D (9E|B6|BE) ?? ?? B9 ?? ?? 2E 8A (B6|96|86|9E|BE|AE|A6) ?? ?? 2E 8A ?? 32 ?? 2E 88 ?? 4? E2 F5 C3 }
+          condition:
+            for any b in (1..#base) : (
+              for any d in (1..#dec) : (
+                ((@base[b] + 11 + uint16(@base[b] + 9)) & 0xFFFF) == @dec[d] and
+                @base[b] + 3 >= uint16(@base[b] + 6) and
+                for any k in (uint8(@base[b] + 3 - uint16(@base[b] + 6) + uint16(@dec[d] + 10))) : (
+                  for any s in (@base[b] + 3 - uint16(@base[b] + 6) + uint16(@dec[d] + 2)) : (
+                    s + uint16(@dec[d] + 5) <= filesize and
+                    for any j in (0 .. uint16(@dec[d] + 5) - 4) : (
+                      (uint32(s + j) ^ (k * 0x01010101)) & 0xDFDFFFFF == 0x4F432E2A
+                    ) and
+                    for any j in (0 .. uint16(@dec[d] + 5) - 2) : (
+                      (uint16(s + j) ^ (k * 0x0101)) == 0x4EB4
+                    ) and
+                    for any j in (0 .. uint16(@dec[d] + 5) - 2) : (
+                      (uint16(s + j) ^ (k * 0x0101)) == 0x40B4
+                    )
+                  )
+                )
+              )
+            )
+        }
