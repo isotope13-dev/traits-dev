@@ -1,0 +1,50 @@
+# Resident INT 21h handlers that intercept FindFirst/FindNext (AH=4Eh/4Fh), retrieve the
+# active DTA via AH=2Fh, test the 5-bit seconds marker in the DTA timestamp (offset 16h),
+# and subtract the virus size from the DTA file-size field (offset 1Ah) conceal file growth.
+defaults:
+  for: [dos_com]
+  platforms: [windows, unix]
+  size_max: 65536
+  attack: T1564.001,T1574
+
+traits:
+  - id: dos-findfirst-findnext-filter
+    desc: DOS handler filters FindFirst and FindNext
+    crit: notable
+    conf: 0.94
+    if:
+      type: yara
+      source: |
+        rule dos_findfirst_findnext_filter {
+          strings:
+            $s1 = { 80 FC 4F ( 74 | 75 ) ?? [0-8] 80 FC 4E ( 74 | 75 ) ?? }
+            $s2 = { 80 FC 4E ( 74 | 75 ) ?? [0-8] 80 FC 4F ( 74 | 75 ) ?? }
+          condition:
+            any of them
+        }
+
+  - id: dos-dta-timestamp-marked-size-subtract
+    desc: Subtracts size from timestamp-marked DOS DTA
+    crit: notable
+    conf: 0.96
+    if:
+      type: yara
+      source: |
+        rule dos_dta_timestamp_marked_size_subtract {
+          strings:
+            $get_dta = { ( B4 2F | B8 ?? 2F ) [0-6] ( CD 21 | E8 ?? ?? | 2E FF 1E ?? ?? ) }
+            $dta_time_check = { 26 ( 8A | 8B | F6 ) 47 16 [0-8] ( 24 1F | 25 1F 00 | 80 E? 1F | A8 1F ) }
+            $dta_size_sub = { 26 ( 81 6F 1A | 83 6F 1A | 29 47 1A | 2B 47 1A ) }
+          condition:
+            $get_dta and $dta_time_check and $dta_size_sub
+        }
+
+composite_rules:
+  - id: dos-int21-dta-marked-size-stealth
+    desc: DOS FindFirst/FindNext hook hides infected DTA size
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: micro-behaviors/os/msdos/interrupt::dos-set-int21-vector
+      - id: dos-findfirst-findnext-filter
+      - id: dos-dta-timestamp-marked-size-subtract
