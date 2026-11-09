@@ -2473,11 +2473,10 @@ referenced operation was called.
 encoding or armor represented by a format wrapper, and `shape` records
 encoding-like structure without a supported scheme claim. `metadata/lang/encoding`
 uses `base64`, `hex`, `xor`, `url`, `unicode-escape`, `wide`, and `shape` for
-the same distinctions in source representation. Engine-emitted
-`metadata/lang/encoding/layer::<scheme>` identifies a recovered source layer
-by its decoding scheme; it does not establish execution. The other children
-describe the observed representation without asserting a decoder call,
-concealment, or execution.
+the same distinctions in source representation. Every child describes the
+observed representation without asserting a decoder call, concealment, or
+execution; a recovered layer is recorded as the child file's encoding chain,
+not as a finding.
 
 Text shaped like `require('../common')` or `function test()` does not alone
 establish a package test-harness role. The rule combining those alternative
@@ -3167,7 +3166,7 @@ for current mappings, resource splits and reference-set checks.
 
 | Legacy home | Target home | How rules move | Status |
 |---|---|---|---|
-| meta `file/encoded`, `lang/encoded` | meta `file/encoding`, `lang/encoding`; emitted `lang/encoding/layer::<scheme>` | Representation and recovered-layer facts retain distinct meanings | Applied (rule directories and decoded-layer emitter migrated; both old directories are rejected) |
+| meta `file/encoded`, `lang/encoded` | meta `file/encoding`, `lang/encoding` | Representation and recovered-layer facts retain distinct meanings | Applied (rule directories migrated; both old directories are rejected; the decoded-layer emitter `lang/encoding/layer::<scheme>` is retired in favor of the child file's encoding chain) |
 | mb `data/db/sql` (retire) | mb `data/db/{read/{records,column,key-value},query,open,config,write,schema}`, editor and protocol subjects, or declared metadata | Preserve query targets and the distinction between reference, preparation and execution | Applied (70 rules; no compatibility alias) |
 | mb `process/create/spawn` (retire) | `create/{exec,hidden,subprocess/launch,shell/encoded}` | Classify the operation, not API spelling | Applied (11 rules; crowded destination siblings reorganized) |
 | obj `exfiltration/serialization` (retire) | `exfiltration/stealer/credential` for supported export; `data/serialize/{schema-credential,envelope,binary}` for preparation/format evidence | A serialization format is not a stolen item or proof of transfer | Applied (12 moved; unreferenced synthetic QNX rule removed) |
