@@ -1,22 +1,53 @@
-# Source-level keylogger: a global keyboard hook or key-state poll paired
-# with an outbound delivery channel in the same file. The PE composites in
+# Source-level keylogger: managed keyboard capture paired with an outbound
+# delivery channel in the same file. The PE composites in
 # windows-keyhook-http.yaml require WinINet/binary legs, so managed source
 # that hooks WH_KEYBOARD_LL and posts over HttpClient fell through.
+# Capture has two managed shapes -- installing a low-level hook or polling
+# key state -- and a logger needs only one of them, so the capture role is
+# a grouped alternative rather than a conjunction.
 defaults:
   platforms: [windows]
   for: [csharp]
   attack: T1056.001
   mbc: E1056.001
 
+traits:
+  # A 255/256/byte.MaxValue loop bound alone is an ordinary buffer idiom, so
+  # this stays a component: it only gains keylogging meaning beside the poll.
+  - id: csharp-full-range-loop-header
+    desc: Loop bound at the virtual-key ceiling
+    crit: component
+    conf: 0.8
+    if:
+      type: text
+      regex: '(?i)\bfor\s*\([^()\n]{0,100}(255|256|byte\s*\.\s*MaxValue)'
+
 composite_rules:
-  - id: csharp-hook-keylogger-network-delivery
-    desc: C# keyboard hook keylogger with network delivery
+  # A bare GetAsyncKeyState call also serves single hotkeys. The polling
+  # branch therefore needs the full-range scan context above; the hook
+  # branch installs a keyboard hook type on its own.
+  - id: csharp-poll-range-capture
+    desc: Ranged key-state poll capture
+    crit: suspicious
+    conf: 0.9
+    all:
+      - id: micro-behaviors/hardware/input/keyboard/poll::get-async-key-state-source
+      - id: csharp-full-range-loop-header
+  - id: csharp-keyboard-capture-alternative
+    desc: C# keyboard capture via hook or ranged key-state poll
+    crit: notable
+    conf: 0.9
+    any:
+      - id: micro-behaviors/hardware/input/keyboard/hook::windows-keyboard-hook-install
+      - id: micro-behaviors/hardware/input/keyboard/poll::full-virtual-key-scan
+      - id: csharp-poll-range-capture
+  - id: csharp-keylogger-network-delivery
+    desc: C# keylogger with network delivery
     crit: hostile
     conf: 0.95
     attack: T1056.001,T1041
     all:
-      - id: micro-behaviors/hardware/input/keyboard/hook::windows-keyboard-hook-install
-      - id: micro-behaviors/hardware/input/keyboard/poll::get-async-key-state-source
+      - id: csharp-keyboard-capture-alternative
     any:
       - id: micro-behaviors/communications/http/post::postasync
       - id: micro-behaviors/communications/socket/connect/endpoint::tcpclient-host-port-constructor
