@@ -5,6 +5,42 @@ defaults:
   attack: T1059.004
   mbc: B0030.002
 composite_rules:
+  # Plex2Shell (CVE-2026-96652/96654/96655/96656) delivery: the payload is a
+  # constructor-only ELF shared object written into a Plex codec directory.
+  # The transcoder dlopen()s every *.so it finds there, which runs the object's
+  # DT_INIT_ARRAY constructor on load -- before symbol resolution, so the
+  # library needs no exported entry point, no `lib` prefix and no execute bit.
+  # The constructor opens the reverse shell as the plex account (uid 1000).
+  #
+  # Distinct from the IP-anchored rules below: precision here rests on the
+  # object SHAPE, not on a pinned address, so it still fires when the C2 is a
+  # hostname (the writeup's 127.0.0.1.<attacker>.sslip.io wildcard) rather than
+  # a literal IP. A loadable shared object (ET_DYN, no program interpreter) with
+  # almost no code of its own that nonetheless bundles the full socket -> connect
+  # -> dup2(stdio) -> exec(/bin/sh) reverse-shell set is the signature. Real
+  # libraries that carry those symbols (libc.so.6, sudoers.so, ncat) have a
+  # large function surface and are excluded by few-functions; LD_PRELOAD shims
+  # (faketime, sanitizers) never also dup stdio onto a socket and exec a shell.
+  - id: constructor-only-shared-object-reverse-shell
+    desc: Constructor-only shared object opens a reverse shell on load
+    conf: 0.95
+    attack: T1059.004,T1574
+    all:
+      - id: metadata/binary/header/identity::shared-object-type
+      - id: metadata/binary/linking/dynamic::init-array-present
+      - id: metadata/binary/code/complexity::few-functions
+      - id: micro-behaviors/communications/socket/create::posix-socket-import
+      - id: micro-behaviors/communications/socket/connect/attempt::connect-symbol
+      - id: micro-behaviors/process/fd/dup::dup2
+      - id: micro-behaviors/fs/path/application/interpreter::bin-sh-path-reference
+      - id: micro-behaviors/process/replace::c-exec-variants
+    unless:
+      # A real program (PIE executable) has a program interpreter; a dlopen'd
+      # payload / preload object does not.
+      - id: metadata/binary/linking/runtime::interpreter
+      - id: well-known/tool/sysadmin/busybox::busybox-binary
+      - id: metadata/binary/linking/runtime::musl-loader-basename
+      - id: metadata/binary/symbols/name/c-runtime::libc-export-reference-clues
   # The two rules around this one are both static-only, which left the most
   # ordinary compiled reverse shell uncovered:
   #   * native-address-stdio-shell needs glibc's INTERNAL aliases
@@ -24,6 +60,12 @@ composite_rules:
   # 21 also carry a pinned host address -- so the address leg is what separates
   # an implant from the general-purpose tools, and the six legs together have no
   # false positive on that corpus.
+  # The exec leg accepts any of the exec-family forms. exec-variant-symbol-text
+  # only matches an exec token that lands in .text, which happens for statically
+  # linked or inlined binaries; a dynamically linked, stripped ELF carries
+  # `execl`/`execve` in .dynstr instead, where it surfaces as a symbol/import.
+  # Requiring only the .text form left exactly the `gcc revshell.c` case this
+  # rule names uncovered. The pinned external address stays the precision anchor.
   - id: dynamic-linked-reverse-shell-linux
     desc: Dynamically linked reverse shell to pinned IP
     conf: 0.97
@@ -32,8 +74,12 @@ composite_rules:
       - id: micro-behaviors/communications/socket/connect/attempt::connect-symbol
       - id: micro-behaviors/process/fd/dup::dup2
       - id: micro-behaviors/fs/path/application/interpreter::bin-sh-path-reference
-      - id: metadata/binary/symbols/name/process::exec-variant-symbol-text
       - id: micro-behaviors/communications/ip/literal::external-ipv4-shaped-text-binary
+    any:
+      - id: metadata/binary/symbols/name/process::exec-variant-symbol-text
+      - id: metadata/binary/symbols/name/process::execve-import
+      - id: micro-behaviors/process/replace::c-exec-variants
+    needs: 1
   # Fork/clone before connect+dup2+/bin/sh is the classic detached reverse
   # shell shape. Catches stripped static GetShell/Trojan.Linux variants that
   # background before dialing out — not covered by symbol-based native-address-stdio-shell.
