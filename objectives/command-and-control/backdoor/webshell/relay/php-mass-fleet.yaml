@@ -1,0 +1,60 @@
+defaults:
+  platforms: [unix, windows]
+  for: [php]
+  attack: T1505.003,T1071.001,T1105
+
+traits:
+  # The operator submits a list of managed shell records in one request:
+  # either a comma-separated POST field split with explode(), or a POST
+  # array field. Field spelling is the panel's own form, so the list
+  # construction is required together with a fleet relay composite below.
+  - id: php-fleet-list-explode-post
+    desc: PHP splits POST field into target list
+    crit: notable
+    conf: 0.93
+    if:
+      type: text
+      regex: 'explode\s*\(\s*[''"],[''"]\s*,\s*\$_POST\['
+
+  - id: php-fleet-list-array-post
+    desc: PHP reads POST array as target list
+    crit: notable
+    conf: 0.93
+    if:
+      type: text
+      regex: '(is_array|foreach)\s*\(\s*\$_POST\[[''"]id[''"]'
+
+composite_rules:
+  - id: php-fleet-target-list-from-post
+    desc: PHP builds shell list from POST
+    crit: notable
+    conf: 0.93
+    any:
+      - id: php-fleet-list-explode-post
+      - id: php-fleet-list-array-post
+
+  # Fleet code execution: one operator request fans the same remote-code
+  # task out to every stored shell endpoint in the target list.
+  - id: php-mass-webshell-code-execution
+    desc: PHP executes code across a fleet of webshells
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: objectives/command-and-control/backdoor/webshell/relay::php-wso-action-argument
+      - id: php-fleet-target-list-from-post
+      - id: micro-behaviors/communications/http/request/superglobal::php-code-request-parameter
+      - id: micro-behaviors/data/encode/url::http-build-query-call
+    any:
+      - id: micro-behaviors/data/control-flow/dispatch/named::php-get-content-call
+      - id: micro-behaviors/communications/http/request/body/construction::php-query-body-url-helper
+
+  # Fleet file planting: a locally staged upload is relayed to every
+  # stored shell endpoint in the target list in one request.
+  - id: php-mass-webshell-file-upload
+    desc: PHP uploads a file across a fleet of webshells
+    crit: hostile
+    conf: 0.98
+    all:
+      - id: objectives/command-and-control/backdoor/webshell/relay::php-upload-relay-webshell
+      - id: php-fleet-target-list-from-post
+      - id: micro-behaviors/fs/file/move::move-uploaded-file
